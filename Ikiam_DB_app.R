@@ -941,7 +941,8 @@ increment_alphanumeric_id <- function(id) {
 apply_predictive_editors <- function(output, session, output_id, cur_df, rv,
                                      prev_df = NULL,
                                      update_inputs = c("both","add_only","none"),
-                                     start_values = list(start = NULL, add = NULL)) {
+                                     start_values = list(start = NULL, add = NULL),
+                                     defer_render = FALSE) {
   update_inputs <- match.arg(update_inputs)
   # ---- CAM_ID source (include live picks + last-change hint) ----
   next_cam_hint <- NULL
@@ -1008,7 +1009,15 @@ apply_predictive_editors <- function(output, session, output_id, cur_df, rv,
       custom[[idc]] <- list(type="dropdown", source = tube_source, strict = FALSE, allowInvalid = TRUE)
     }
   }
-  render_table(output, output_id, cur_df, rv, custom_editors = custom)
+  # Defer full Handsontable re-render until after the current flush if requested.
+  # This prevents repainting the widget while an edit is still being committed.
+  if (isTRUE(defer_render)) {
+    session$onFlushed(function(){
+      render_table(output, output_id, cur_df, rv, custom_editors = custom)
+    }, once = TRUE)
+  } else {
+    render_table(output, output_id, cur_df, rv, custom_editors = custom)
+  }
 
       # ---- (Tubos tab) refresh Tube start selects to reflect new prediction ----
     if (update_inputs != "none") {
@@ -2027,6 +2036,9 @@ register_tubos_server <- function(input, output, session, rv) {
   }, ignoreInit = TRUE)
 
   rv$tube_tbl <- NULL
+  # busy flag + debounced stream to prevent mid-edit re-renders
+  rv$busy_tube <- FALSE
+  tube_table_deb <- debounce(reactive(input$tube_table), 200)
 
   observeEvent(input$tube_apply, {
     req(input$tube_ids)
@@ -2088,7 +2100,8 @@ register_tubos_server <- function(input, output, session, rv) {
     rv$tube_tbl <- build_tube_table(df, ids)
     apply_predictive_editors(
       output, session, "tube_table", rv$tube_tbl, rv,
-      prev_df = NULL, update_inputs = "none"
+      prev_df = NULL, update_inputs = "none",
+      defer_render = TRUE
     )
 
     # --- NEW: prime "Tube ID (para añadir)" with the next after those just used ---
@@ -2108,8 +2121,11 @@ register_tubos_server <- function(input, output, session, rv) {
     }
   })
 
-  observeEvent(input$tube_table, {
+  observeEvent(tube_table_deb(), {
     req(input$tube_table)
+    if (isTRUE(rv$busy_tube)) return()
+    rv$busy_tube <- TRUE
+    on.exit({ rv$busy_tube <- FALSE }, add = TRUE)
     prev_tbl <- rv$tube_tbl
     new_tbl  <- hot_to_r(input$tube_table)
     if (is.null(new_tbl) || !nrow(new_tbl)) return()
@@ -2150,10 +2166,11 @@ register_tubos_server <- function(input, output, session, rv) {
     # Re-render & refresh predictions, but DO NOT reset the two start-ID selects
     apply_predictive_editors(
       output, session, "tube_table", rv$tube_tbl, rv,
-      prev_df = prev_tbl, update_inputs = "add_only",
-      start_values = list(start = input$tube_start_id, add = input$tube_add_start_id)
+      prev_df = prev_tbl, update_inputs = "none",
+      start_values = list(start = input$tube_start_id, add = input$tube_add_start_id),
+      defer_render = TRUE
     )
-  })
+  }, ignoreInit = TRUE)
 
   observeEvent(input$tube_add, {
     req(rv$data$Insectary_data)
@@ -2239,7 +2256,8 @@ register_tubos_server <- function(input, output, session, rv) {
     apply_predictive_editors(
       output, session, "tube_table", rv$tube_tbl, rv,
       prev_df = NULL, update_inputs = "add_only",
-      start_values = list(start = input$tube_start_id, add = cur_id)
+      start_values = list(start = input$tube_start_id, add = cur_id),
+      defer_render = TRUE
     )
 
     # After adding, set "Tube ID (para añadir)" to the next after those just written.
@@ -2336,6 +2354,9 @@ register_emergidos_server <- function(input, output, session, rv) {
   })
 
   rv$em_tbl <- NULL
+  # busy flag + debounced stream for emergidos table
+  rv$busy_em <- FALSE
+  em_table_deb <- debounce(reactive(input$em_table), 200)
 
   observeEvent(input$em_load, {
     req(input$em_clutch, input$em_n > 0, nzchar(input$em_start_id) || !is.na(auto_start_insectary_id(rv$data$Insectary_data)))
@@ -2387,8 +2408,11 @@ register_emergidos_server <- function(input, output, session, rv) {
     )
   })
 
-  observeEvent(input$em_table, {
+  observeEvent(em_table_deb(), {
     req(input$em_table)
+    if (isTRUE(rv$busy_em)) return()
+    rv$busy_em <- TRUE
+    on.exit({ rv$busy_em <- FALSE }, add = TRUE)
     prev_tbl <- rv$em_tbl
     new_tbl <- hot_to_r(input$em_table)
     if (is.null(new_tbl) || !nrow(new_tbl)) return()
@@ -2396,8 +2420,10 @@ register_emergidos_server <- function(input, output, session, rv) {
       new_tbl <- apply_clutch_defaults_on_change(prev_tbl, new_tbl, rv$data$Insectary_stocks)
     }
     rv$em_tbl <- new_tbl
-    apply_predictive_editors(output, session, "em_table", rv$em_tbl, rv, prev_df = prev_tbl)
-  })
+    apply_predictive_editors(output, session, "em_table", rv$em_tbl, rv,
+                             prev_df = prev_tbl, update_inputs = "none",
+                             defer_render = TRUE)
+  }, ignoreInit = TRUE)
 
   render_save_button(output, "em_save_btn", reactive(rv$auth))
   observeEvent(input$em_save_btn, {
@@ -3006,6 +3032,10 @@ server <- function(input, output, session) {
   })
 
   rv$dead_tbl <- NULL
+  # busy flag + debounced stream for muertes table
+  rv$busy_dead <- FALSE
+  dead_table_deb <- debounce(reactive(input$dead_table), 200)
+
   observeEvent(input$dead_load, {
     req(input$dead_ids)
     df <- build_dead_table(rv$data$Insectary_data, input$dead_ids, isTRUE(input$dead_review_only),
@@ -3024,15 +3054,20 @@ server <- function(input, output, session) {
     apply_predictive_editors(output, session, "dead_table", rv$dead_tbl, rv)
   })
 
-  observeEvent(input$dead_table, {
+  observeEvent(dead_table_deb(), {
     req(input$dead_table)
+    if (isTRUE(rv$busy_dead)) return()
+    rv$busy_dead <- TRUE
+    on.exit({ rv$busy_dead <- FALSE }, add = TRUE)
     prev_tbl <- rv$dead_tbl
     new_tbl <- hot_to_r(input$dead_table)
     if (is.null(new_tbl)) return()
     new_tbl <- apply_clutch_defaults_on_change(prev_tbl, new_tbl, rv$data$Insectary_stocks)
     rv$dead_tbl <- new_tbl
-    apply_predictive_editors(output, session, "dead_table", rv$dead_tbl, rv, prev_df = prev_tbl)
-  })
+    apply_predictive_editors(output, session, "dead_table", rv$dead_tbl, rv,
+                             prev_df = prev_tbl, update_inputs = "none",
+                             defer_render = TRUE)
+  }, ignoreInit = TRUE)
 
   observeEvent(input$dead_show_photos, {
     if (!isTRUE(input$dead_show_photos)) {
