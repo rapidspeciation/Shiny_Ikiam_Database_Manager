@@ -12,7 +12,7 @@ For detailed deployment instructions, see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## How it works
 
-The app provides a secure, multi-user interface to interact with a central database hosted on Google Sheets. It authenticates users via a local `users.json` file and connects to Google Sheets using a service account. Changes made by users are first saved to a local state on the server. An authorized user can then review, manage, and commit these changes in batches to the master Google Sheet, ensuring data integrity and providing an audit trail.
+The app provides a secure, multi-user interface to interact with a central database hosted on Google Sheets. It connects to Google Sheets using a service account. Changes made by users are first saved to a local state on the server. An authorized user can then review, manage, and commit these changes in batches to the master Google Sheet, ensuring data integrity and providing an audit trail.
 
 ## Features
 
@@ -30,6 +30,3 @@ The app provides a secure, multi-user interface to interact with a central datab
     -   Individually undo/redo specific edits.
     -   Commit approved changes to the Google Sheet in a single operation.
 -   **Commit History (`Historial de Cambios` Tab)**: View a log of past data commits, filterable by date, user, and commit ID.
-
-5.  **Update the Project**:
-    -   To fetch the latest changes, go to the Git tab and click the blue down arrow (Pull).
