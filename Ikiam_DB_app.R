@@ -1096,7 +1096,7 @@ render_save_button <- function(output, output_id, auth_reactive) {
 
 # -- Commit helper (for Subir Cambios tab) --
 # Commit a data.frame of changes to Google Sheets
-commit_changes_to_sheet <- function(changes_df, sheet_name = "Insectary_data") {
+commit_changes_to_sheet <- function(changes_df, sheet_name = "Insectary_data", report_cb = NULL) {
   if (nrow(changes_df) == 0) return(invisible(TRUE))
   req(gsheet_id)
   failures <- data.frame(Insectary_ID=character(), Column=character(), Reason=character(), A1=character(), stringsAsFactors = FALSE)
@@ -1169,6 +1169,27 @@ commit_changes_to_sheet <- function(changes_df, sheet_name = "Insectary_data") {
   tasks <- tasks[order(tasks$col_start, tasks$col_end, tasks$row_idx), , drop = FALSE]
   split_by_range <- split(tasks, paste(tasks$col_start, tasks$col_end))
 
+  # Pre-compute contiguous row segments per (col_start,col_end) to know total steps
+  segments <- data.frame(row_start=integer(0), row_end=integer(0),
+                         col_start=integer(0), col_end=integer(0))
+  for (key in names(split_by_range)) {
+    tk <- split_by_range[[key]]
+    tk <- tk[order(tk$row_idx), , drop = FALSE]
+    if (!nrow(tk)) next
+    start_i <- tk$row_idx[1]; prev_i <- start_i
+    for (i in seq_len(nrow(tk))) {
+      if (i > 1 && tk$row_idx[i] != prev_i + 1) {
+        segments <- rbind(segments, data.frame(row_start=start_i, row_end=prev_i,
+                                               col_start=tk$col_start[1], col_end=tk$col_end[1]))
+        start_i <- tk$row_idx[i]
+      }
+      prev_i <- tk$row_idx[i]
+    }
+    segments <- rbind(segments, data.frame(row_start=start_i, row_end=prev_i,
+                                           col_start=tk$col_start[1], col_end=tk$col_end[1]))
+  }
+  total_steps <- nrow(segments)
+
   write_block <- function(row_start, row_end, col_start, col_end) {
     sub <- current[seq(row_start, row_end), seq(col_start, col_end), drop = FALSE]
     in_block <- changes_df$row_idx >= row_start & changes_df$row_idx <= row_end &
@@ -1198,6 +1219,8 @@ commit_changes_to_sheet <- function(changes_df, sheet_name = "Insectary_data") {
     ids_in_block <- current$Insectary_ID[seq(row_start, row_end)]
     cols_str <- paste(col_names, collapse = ", ")
     ids_str  <- paste(ids_in_block, collapse = ", ")
+
+    if (exists(".inc", inherits = FALSE)) .inc(sprintf("range=%s | cols=[%s] | Insectary_ID=[%s]", range_a1, cols_str, ids_str))
 
     try_rect <- function() {
       googlesheets4::range_write(
@@ -1237,6 +1260,8 @@ commit_changes_to_sheet <- function(changes_df, sheet_name = "Insectary_data") {
         cellranger::num_to_letter(cc), row_end   + 1
       )
 
+      if (exists(".inc", inherits = FALSE)) .inc(sprintf("col=%s | range=%s | Insectary_ID=[%s]", c_name, range_col, ids_str))
+
       ok_col <- tryCatch({
         googlesheets4::range_write(ss = gsheet_id, data = sub_col, sheet = sheet_name,
                                    range = range_col, col_names = FALSE, reformat = FALSE)
@@ -1263,6 +1288,9 @@ commit_changes_to_sheet <- function(changes_df, sheet_name = "Insectary_data") {
 
         a1 <- paste0(cellranger::num_to_letter(cc), r + 1, ":", cellranger::num_to_letter(cc), r + 1)
         id_here <- current$Insectary_ID[r]
+
+        if (exists(".inc", inherits = FALSE)) .inc(sprintf("cell=%s | col=%s | Insectary_ID=%s", a1, c_name, id_here))
+
         ok_cell <- tryCatch({
           googlesheets4::range_write(ss = gsheet_id,
                                      data = data.frame(x = new_val, stringsAsFactors = FALSE),
@@ -1288,23 +1316,19 @@ commit_changes_to_sheet <- function(changes_df, sheet_name = "Insectary_data") {
     invisible(NULL)
   }
 
-  for (key in names(split_by_range)) {
-    tk <- split_by_range[[key]]
-    tk <- tk[order(tk$row_idx), , drop = FALSE]
-    start_i <- tk$row_idx[1]; prev_i <- start_i
-    for (i in seq_len(nrow(tk))) {
-      if (i == 1) next
-      if (tk$row_idx[i] != prev_i + 1) {
-        write_block(start_i, prev_i, tk$col_start[1], tk$col_end[1])
-        start_i <- tk$row_idx[i]
+  # Execute each segment and report progress/counter + range/IDs
+  if (total_steps) {
+    for (i in seq_len(total_steps)) {
+      rs <- segments$row_start[i]; re <- segments$row_end[i]
+      cs <- segments$col_start[i]; ce <- segments$col_end[i]
+      a1 <- paste0(cellranger::num_to_letter(cs), rs + 1, ":",
+                   cellranger::num_to_letter(ce), re + 1)
+      ids_block <- paste(current$Insectary_ID[seq(rs, re)], collapse = ", ")
+      if (is.function(report_cb)) {
+        msg <- sprintf("Escribiendo %s  |  IDs: %s", a1, ids_block)
+        try(report_cb(i, total_steps, msg), silent = TRUE)
       }
-      prev_i <- tk$row_idx[i]
-      if (i == nrow(tk)) {
-        write_block(start_i, prev_i, tk$col_start[1], tk$col_end[1])
-      }
-    }
-    if (nrow(tk) == 1) {
-      write_block(tk$row_idx[1], tk$row_idx[1], tk$col_start[1], tk$col_end[1])
+      write_block(rs, re, cs, ce)
     }
   }
   return(failures)
@@ -1462,9 +1486,29 @@ apply_whole_org_defaults_for_row <- function(tbl, i, j, tissue_def, medium_def, 
   tbl
 }
 
-update_ids_picker <- function(session, input_id, df, selected = NULL) {
-  ids <- sort(unique(df$Insectary_ID))
-  updateSelectizeInput(session, input_id, choices = ids, selected = selected, server = TRUE)
+update_ids_picker <- function(session, input_id, df, selected = NULL,
+                              start_from_id = NULL, offset_before = 200) {
+  # Preserve original DF order (first occurrence)
+  ids_all <- as.character(df$Insectary_ID)
+  ids <- ids_all[!duplicated(ids_all)]
+
+  # If we have a pivot ID, rotate the vector so rendering starts ~offset_before before it
+  if (!is.null(start_from_id) && nzchar(start_from_id) && length(ids)) {
+    idx <- match(start_from_id, ids)
+    if (!is.na(idx)) {
+      start_idx <- max(1L, idx - as.integer(offset_before))
+      if (start_idx > 1L) {
+        ids <- c(ids[start_idx:length(ids)], ids[1:(start_idx-1L)])
+      }
+    }
+  }
+  updateSelectizeInput(
+    session, input_id,
+    choices  = ids,
+    selected = selected,
+    server   = TRUE,
+    options  = list(sortField = NULL)   # don't let Selectize re-sort
+  )
 }
 
 suggest_next_id_after_block <- function(df, start_id, n) {
@@ -1546,7 +1590,8 @@ RegistrarMuertesTab <- tabPanel(
             "dead_ids", "IDs",
             choices = NULL, multiple = TRUE,
             options = list(placeholder = 'Seleccione uno o más IDs', maxOptions = 5000, openOnFocus = TRUE,
-                           onBlur = SELECTIZE_CONFIRM_ONBLUR)
+                           onBlur = SELECTIZE_CONFIRM_ONBLUR,
+                           sortField = NULL)
           ),
           checkboxInput("dead_review_only", "Solo revisar", value = FALSE)
         )
@@ -1592,7 +1637,8 @@ RegistrarTubosTab <- tabPanel(
           "tube_ids", "IDs",
           choices = NULL, multiple = TRUE,
           options = list(placeholder = "Seleccione uno o más IDs", maxOptions = 2000, openOnFocus = TRUE,
-                         onBlur = SELECTIZE_CONFIRM_ONBLUR)
+                         onBlur = SELECTIZE_CONFIRM_ONBLUR,
+                         sortField = NULL)
         )
       ),
       column(6,
@@ -1716,7 +1762,8 @@ RegistrarEmergidosTab <- tabPanel(
               options = list(
                 placeholder = "Seleccione un ID",
                 maxOptions = 5000, openOnFocus = TRUE,
-                onBlur = SELECTIZE_CONFIRM_ONBLUR
+                onBlur = SELECTIZE_CONFIRM_ONBLUR,
+                sortField = NULL
               )
             )
         ),
@@ -1732,7 +1779,8 @@ RegistrarEmergidosTab <- tabPanel(
               options = list(
                 placeholder = "Seleccione un ID",
                 maxOptions = 5000, openOnFocus = TRUE,
-                onBlur = SELECTIZE_CONFIRM_ONBLUR
+                onBlur = SELECTIZE_CONFIRM_ONBLUR,
+                sortField = NULL
               )
             )
         )
@@ -1916,7 +1964,9 @@ register_tubos_server <- function(input, output, session, rv) {
   
   observe({
     req(rv$data$Insectary_data)
-    update_ids_picker(session, "tube_ids", rv$data$Insectary_data)
+    df <- rv$data$Insectary_data
+    pivot_id <- auto_start_insectary_id(df)  # reuse as anchor
+    update_ids_picker(session, "tube_ids", df, start_from_id = pivot_id, offset_before = 200)
     # Suggestions for Tube start id
     sug <- build_tube_id_suggestions(rv$data$Insectary_data)
     # Convert to named list for selectize rendering
@@ -2264,27 +2314,24 @@ register_emergidos_server <- function(input, output, session, rv) {
   # Populate start/add ID dropdowns and keep sensible defaults
   observe({
     req(rv$data$Insectary_data)
-    ids <- sort(unique(rv$data$Insectary_data$Insectary_ID))
+    df <- rv$data$Insectary_data
+    start_default <- auto_start_insectary_id(df)  # your existing predictor
 
-    # Default start: same logic as before (auto_next empty row after last filled SPECIES)
-    start_default <- auto_start_insectary_id(rv$data$Insectary_data)
-
-    updateSelectizeInput(
-      session, "em_start_id",
-      choices  = ids,
+    # Start picker: rotate so it renders near (predicted − 100)
+    update_ids_picker(
+      session, "em_start_id", df,
       selected = isolate({
         cur <- input$em_start_id %||% ""
         if (nzchar(cur)) cur else start_default
       }),
-      server   = TRUE
+      start_from_id = start_default, offset_before = 200
     )
 
-    # For "add" we don't force a default here; it will be set after load/add
-    updateSelectizeInput(
-      session, "em_add_id",
-      choices  = ids,
+    # Add picker: same rotation so it opens near the same zone (you can change to next suggested if you prefer)
+    update_ids_picker(
+      session, "em_add_id", df,
       selected = isolate(input$em_add_id),
-      server   = TRUE
+      start_from_id = start_default, offset_before = 200
     )
   })
 
@@ -2303,9 +2350,12 @@ register_emergidos_server <- function(input, output, session, rv) {
     df  <- rv$data$Insectary_data
     sid <- input$em_start_id %||% auto_start_insectary_id(df)
     next_id <- suggest_next_id_after_block(df, sid, input$em_n)
+    # Keep original order for choices
+    ord_ids <- df$Insectary_ID[!duplicated(df$Insectary_ID)]
     updateSelectizeInput(session, "em_add_id",
-      choices = sort(unique(df$Insectary_ID)),
-      selected = next_id, server = TRUE
+      choices = ord_ids,
+      selected = next_id, server = TRUE,
+      options  = list(sortField = NULL)
     )
   })
 
@@ -2329,9 +2379,11 @@ register_emergidos_server <- function(input, output, session, rv) {
     df  <- rv$data$Insectary_data
     sid <- if (nzchar(input$em_add_id)) input$em_add_id else auto_start_insectary_id(df)
     next_id <- suggest_next_id_after_block(df, sid, input$em_n)
+    ord_ids <- df$Insectary_ID[!duplicated(df$Insectary_ID)]
     updateSelectizeInput(session, "em_add_id",
-      choices = sort(unique(df$Insectary_ID)),
-      selected = next_id, server = TRUE
+      choices = ord_ids,
+      selected = next_id, server = TRUE,
+      options  = list(sortField = NULL)
     )
   })
 
@@ -2361,6 +2413,14 @@ register_emergidos_server <- function(input, output, session, rv) {
 }
 
 register_subir_server <- function(input, output, session, rv) {
+  # --- helpers for live UI updates during long ops ---
+  flush_now <- function() {
+    # Push pending UI changes immediately
+    try(shiny::flushReact(), silent = TRUE)
+  }
+  safe_remove_notif <- function(id) {
+    try(removeNotification(id), silent = TRUE)
+  }
 
   # Cambios activos (rv$changes) ya existen.
   # Guardaremos los revertidos aquí para poder hacer Redo:
@@ -2536,9 +2596,43 @@ register_subir_server <- function(input, output, session, rv) {
     ch_write <- send_core %>% group_by(Insectary_ID, Column) %>%
       arrange(desc(ts)) %>% slice(1) %>% ungroup()
 
-    showModal(modalDialog("Subiendo cambios a Google Sheets...", footer = NULL))
+    # Live status modal (counter + range/IDs)
+    commit_status <- reactiveVal("Preparando escritura…")
+    output$commit_live_msg <- renderUI(HTML(sprintf(
+      "<div style='font-family:monospace;white-space:pre-wrap;font-size:12px;'>%s</div>",
+      htmltools::htmlEscape(commit_status())
+    )))
+    showModal(modalDialog(
+      tagList(
+        h4("Subiendo cambios a Google Sheets"),
+        uiOutput("commit_live_msg"),
+        div(id = "commit_hint", class = "muted", "No cierres esta ventana hasta finalizar.")
+      ),
+      easyClose = FALSE, footer = NULL
+    ))
     on.exit(removeModal())
-    fail_rep <- commit_changes_to_sheet(ch_write, sheet_name = "Insectary_data")
+
+    # Reporter callback invoked by commit_changes_to_sheet()
+    reporter <- function(i, n, label) {
+      # 1) Update the modal text
+      commit_status(sprintf("%d/%d  •  %s", i, n, label))
+      output$commit_live_msg <- renderUI(HTML(sprintf(
+        "<div style='font-family:monospace;white-space:pre-wrap;font-size:12px;'>%s</div>",
+        htmltools::htmlEscape(commit_status())
+      )))
+      flush_now()
+      # 2) (Optional) also surface as a single live toast outside the modal
+      safe_remove_notif("commit_live_toast")
+      showNotification(
+        commit_status(),
+        id       = "commit_live_toast",
+        type     = "message",
+        duration = NULL
+      )
+    }
+
+    fail_rep <- commit_changes_to_sheet(ch_write, sheet_name = "Insectary_data", report_cb = reporter)
+    safe_remove_notif("commit_live_toast")
 
     if (nrow(fail_rep)) {
       key <- paste(fail_rep$Insectary_ID, fail_rep$Column)
@@ -2884,21 +2978,26 @@ server <- function(input, output, session) {
   # ---- Registrar Muertes (Step 4) ----
   observe({
     req(rv$data$Insectary_data)
-    update_ids_picker(session, "dead_ids", rv$data$Insectary_data)
-    cause_choices <- unique(c("NA", get_lists_col(rv, "ORGANISM_PART")))
-    sel <- pick_default_value(cause_choices, "NA")
-    updateSelectizeInput(session, "dead_cause_default", choices = cause_choices, selected = sel, server = TRUE)
+    df <- rv$data$Insectary_data
+    pivot_id <- auto_start_insectary_id(df)
+    update_ids_picker(session, "dead_ids", df, start_from_id = pivot_id, offset_before = 200)
+    # Use unique values from Insectary_data$Death_cause, ensure "Unknown" is present and selected
+    dc <- rv$data$Insectary_data$Death_cause
+    cause_choices <- unique(c("Unknown", sort(unique(na.omit(as.character(dc))))))
+    updateSelectizeInput(session, "dead_cause_default",
+                         choices = cause_choices, selected = "Unknown", server = TRUE)
   })
 
   output$dead_controls_row <- renderUI({
     req(rv$data$Insectary_data)
-    cause_choices <- unique(c("NA", get_lists_col(rv, "ORGANISM_PART")))
-    sel <- pick_default_value(cause_choices, "NA") %||% "NA"
+    # Mirror the same source & default as in the observer above
+    dc <- rv$data$Insectary_data$Death_cause
+    cause_choices <- unique(c("Unknown", sort(unique(na.omit(as.character(dc))))))
 
     div(class = if (isTRUE(input$dead_review_only)) "dimmed" else "",
         div(class = "inline-controls",
             selectizeInput("dead_cause_default", "Causa por defecto",
-                           choices = cause_choices, selected = sel,
+                           choices = cause_choices, selected = "Unknown",
                            options = list(openOnFocus = TRUE)),
             dateInput("dead_date", "Fecha de muerte",
                       value = Sys.Date(), format = "d-M-yy", language = "en")
@@ -3016,7 +3115,9 @@ server <- function(input, output, session) {
     if (changed_count > 0) {
       rv$data$Insectary_data <- base
       # Keep the same ID choices and selection (prevents dropdown going blank)
-      isolate(update_ids_picker(session, "dead_ids", rv$data$Insectary_data, selected = input$dead_ids))
+      df <- rv$data$Insectary_data
+      pivot_id <- auto_start_insectary_id(df)
+      isolate(update_ids_picker(session, "dead_ids", df, selected = input$dead_ids, start_from_id = pivot_id, offset_before = 200))
       showNotification("Actualizado y guardado en local.", type = "message")
     } else {
       showNotification("No hubo cambios para guardar.", type = "message")
