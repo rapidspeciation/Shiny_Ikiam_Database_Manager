@@ -66,6 +66,28 @@ render_simple_table_message <- function(output, output_id, msg) {
   )
 }
 
+# Reusable "confirm on blur" handler for Selectize (Android-friendly)
+# When the field loses focus, it selects the highlighted option;
+# if there's exactly one match, it selects that one automatically.
+SELECTIZE_CONFIRM_ONBLUR <- htmlwidgets::JS("
+  function(){
+    if(!this.items.length){
+      var $a = this.$dropdown.find('.active');
+      if ($a.length){
+        this.addItem($a.attr('data-value'), true);
+      } else {
+        var q = this.getTextboxValue();
+        if (q && this.search){
+          var r = this.search(q);
+          if (r && r.items && r.items.length === 1){
+            this.addItem(r.items[0].id, true);
+          }
+        }
+      }
+    }
+  }
+")
+
 # Persisted state file (app-wide, not per-sheet RDS which are in `rds_paths`)
 LOCAL_STATE_FILE <- "local_state.rds"
 
@@ -1523,7 +1545,8 @@ RegistrarMuertesTab <- tabPanel(
           selectizeInput(
             "dead_ids", "IDs",
             choices = NULL, multiple = TRUE,
-            options = list(placeholder = 'Seleccione uno o más IDs', maxOptions = 5000, openOnFocus = TRUE)
+            options = list(placeholder = 'Seleccione uno o más IDs', maxOptions = 5000, openOnFocus = TRUE,
+                           onBlur = SELECTIZE_CONFIRM_ONBLUR)
           ),
           checkboxInput("dead_review_only", "Solo revisar", value = FALSE)
         )
@@ -1568,7 +1591,8 @@ RegistrarTubosTab <- tabPanel(
         selectizeInput(
           "tube_ids", "IDs",
           choices = NULL, multiple = TRUE,
-          options = list(placeholder = "Seleccione uno o más IDs", maxOptions = 2000, openOnFocus = TRUE)
+          options = list(placeholder = "Seleccione uno o más IDs", maxOptions = 2000, openOnFocus = TRUE,
+                         onBlur = SELECTIZE_CONFIRM_ONBLUR)
         )
       ),
       column(6,
@@ -1586,7 +1610,8 @@ RegistrarTubosTab <- tabPanel(
             plugins = list("restore_on_backspace"),
             onDelete = I("function(values){ if(this.items.length){ var val=this.items[0]; this.setTextboxValue(val); this.clear(true); return false; } }"),
             onType = I("function (str) { Shiny.setInputValue('cam_start_id_draft', str, {priority:'event'}); }"),
-            render = I("{option: function(item, escape){var lbl=item.label||item.text||item.value;return '<div>'+escape(lbl)+'</div>';}, item: function(item, escape){return '<div>'+escape(item.value)+'</div>';}}")
+            render = I("{option: function(item, escape){var lbl=item.label||item.text||item.value;return '<div>'+escape(lbl)+'</div>';}, item: function(item, escape){return '<div>'+escape(item.value)+'</div>';}}"),
+            onBlur = SELECTIZE_CONFIRM_ONBLUR
           )
         )
       )
@@ -1632,7 +1657,8 @@ RegistrarTubosTab <- tabPanel(
             searchField = c("value","label"),
             plugins = list("restore_on_backspace"),
             onDelete = I("function(values){ if(this.items.length){ var val=this.items[0]; this.setTextboxValue(val); this.clear(true); return false; } }"),
-            onType = I("function (str) { Shiny.setInputValue('tube_start_id_draft', str, {priority:'event'}); }")
+            onType = I("function (str) { Shiny.setInputValue('tube_start_id_draft', str, {priority:'event'}); }"),
+            onBlur = SELECTIZE_CONFIRM_ONBLUR
           )
         )
       ),
@@ -1647,7 +1673,8 @@ RegistrarTubosTab <- tabPanel(
             plugins = list("restore_on_backspace"),
             onDelete = I("function(values){ if(this.items.length){ var val=this.items[0]; this.setTextboxValue(val); this.clear(true); return false; } }"),
             onType = I("function (str) { Shiny.setInputValue('tube_add_start_id_draft', str, {priority:'event'}); }"),
-            render = I("{option: function(item, escape){var lbl=item.label||item.text||item.value; return '<div>'+escape(lbl)+'</div>';}, item: function(item, escape){return '<div>'+escape(item.value)+'</div>';}}")
+            render = I("{option: function(item, escape){var lbl=item.label||item.text||item.value; return '<div>'+escape(lbl)+'</div>';}, item: function(item, escape){return '<div>'+escape(item.value)+'</div>';}}"),
+            onBlur = SELECTIZE_CONFIRM_ONBLUR
           )
         )
       )
@@ -1688,7 +1715,8 @@ RegistrarEmergidosTab <- tabPanel(
               choices = NULL, multiple = FALSE,
               options = list(
                 placeholder = "Seleccione un ID",
-                maxOptions = 5000, openOnFocus = TRUE
+                maxOptions = 5000, openOnFocus = TRUE,
+                onBlur = SELECTIZE_CONFIRM_ONBLUR
               )
             )
         ),
@@ -1703,7 +1731,8 @@ RegistrarEmergidosTab <- tabPanel(
               choices = NULL, multiple = FALSE,
               options = list(
                 placeholder = "Seleccione un ID",
-                maxOptions = 5000, openOnFocus = TRUE
+                maxOptions = 5000, openOnFocus = TRUE,
+                onBlur = SELECTIZE_CONFIRM_ONBLUR
               )
             )
         )

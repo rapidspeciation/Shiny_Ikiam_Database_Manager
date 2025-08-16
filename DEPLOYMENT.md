@@ -1,7 +1,7 @@
 # DEPLOYMENT.md (for `rapidspeciation/Shiny_Ikiam_Database_Manager`)
 
-> These steps **build on** the EC2/Docker/Nginx/HTTPS setup from **Shiny Ikiam Wings Gallery**. Follow that repo for instance provisioning, Docker/Nginx install, and HTTPS.
-> No new FreeDNS entries needed. This app will be served at **`https://wings.gallery.info.gf/db`** via Nginx path routing.
+> These steps **build on** the EC2/Docker/Nginx/HTTPS setup from **Shiny Ikiam Wings Gallery**.
+> No new FreeDNS entries are needed. This app will be served at **`https://wings.gallery.info.gf/db/`** via Nginx path routing on the **same domain and certificate**.
 
 ## 1) Get the code onto the same EC2 instance
 
@@ -13,24 +13,22 @@ cd Shiny_Ikiam_Database_Manager
 
 ## 2) Add the required JSON files (next to `Ikiam_DB_app.R`)
 
-> The app expects `users.json` and `shiny-ikiam-db.json` **in the same directory** as `Ikiam_DB_app.R`. Create the files now (contents added later by you).
+> The app reads `users.json` and `shiny-ikiam-db.json` **from the same directory** as `Ikiam_DB_app.R`.
 
 ```bash
-# Inside the repo folder
+# Inside the repo
 cd /home/ec2-user/Shiny_Ikiam_Database_Manager
 
-# Create empty files (you will paste real contents later)
+# Create the files (paste real contents later with nano)
 touch users.json
 touch shiny-ikiam-db.json
 
-# (Optional) quick check
+# Quick check
 ls -1 Ikiam_DB_app.R users.json shiny-ikiam-db.json
 ```
 
-* **users.json**: holds the user list + passwords your app reads with `jsonlite::fromJSON("users.json")`.
-* **shiny-ikiam-db.json**: Google Service Account credentials used by `googlesheets4::gs4_auth(path = "shiny-ikiam-db.json")`.
-
-> You'll paste your real JSON content into those two files yourself (e.g., with `nano users.json` and `nano shiny-ikiam-db.json`) before running the container.
+* **users.json** → consumed by `jsonlite::fromJSON("users.json")`
+* **shiny-ikiam-db.json** → used by `googlesheets4::gs4_auth(path = "shiny-ikiam-db.json")`
 
 ## 3) Build the Docker image
 
@@ -41,7 +39,7 @@ docker build -t sikwings_db_build .
 
 ## 4) Run the Database Manager container
 
-Map host **8081 → container 8080**; bind-mount the repo so code + the two JSON files are visible inside the container at `/srv/shiny-server`.
+Map **host 8081 → container 8080** and live-mount the repo so app code + JSON files are visible inside the container:
 
 ```bash
 docker run -d -p 8081:8080 \
@@ -51,69 +49,105 @@ docker run -d -p 8081:8080 \
   sikwings_db_build
 ```
 
-> Because the JSON files live in the repo directory on the host, they're automatically present inside the container (same path your code uses). No extra mounts needed.
+> Do **not** open port 8081 in the security group; Nginx will proxy internally from 443→8081.
 
-## 5) Nginx: route `/db` to this container (reuse the same domain)
+## 5) Nginx: add path routing **without overwriting Certbot's config**
 
-Append/update your existing config (the Wings app stays at `/` → `localhost:8080`; the DB app lives at `/db` → `localhost:8081`).
+> You **must not** replace `/etc/nginx/conf.d/shiny.conf` (Certbot manages it).
+> Instead, create a **snippet** with your proxy locations and **include** it only in the TLS (443) server.
+
+### 5.1 Create the shared locations snippet
 
 ```bash
-sudo tee /etc/nginx/conf.d/shiny.conf > /dev/null <<'EOF'
-# Nginx reverse proxy for Shiny apps at wings.gallery.info.gf
-
-server {
-    listen 80;
-    server_name wings.gallery.info.gf;
-
-    # ---- Root app (Wings Gallery) at "/" -> :8080 ----
-    location / {
-        proxy_pass http://localhost:8080/;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_read_timeout 600s;
-        proxy_send_timeout 600s;
-    }
-
-    # ---- Database Manager at "/db" -> :8081 ----
-    # Keep trailing slashes; rewrite strips the prefix so the app sees "/"
-    location /db/ {
-        rewrite ^/db/(.*)$ /$1 break;
-        proxy_pass http://localhost:8081/;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_read_timeout 600s;
-        proxy_send_timeout 600s;
-    }
-
-    # Redirect "/db" -> "/db/"
-    location = /db { return 301 /db/; }
+sudo mkdir -p /etc/nginx/snippets
+sudo tee /etc/nginx/snippets/ikiam-locations.conf > /dev/null <<'EOF'
+# Wings app at "/"
+location / {
+    proxy_pass http://localhost:8080/;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_read_timeout 600s;
+    proxy_send_timeout 600s;
 }
-EOF
 
+# Database Manager app at "/db"
+location /db/ {
+    # Strip the "/db/" prefix so the Shiny app thinks it's at "/"
+    rewrite ^/db/(.*)$ /$1 break;
+    proxy_pass http://localhost:8081/;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_read_timeout 600s;
+    proxy_send_timeout 600s;
+}
+
+# Normalize "/db" -> "/db/"
+location = /db { return 301 /db/; }
+EOF
+```
+
+### 5.2 Include the snippet in the **443 ssl** server
+
+Find the TLS vhost file (created by Certbot) and edit it:
+
+```bash
+# Locate the 443 block for wings.gallery.info.gf
+sudo grep -R "listen 443" -n /etc/nginx/conf.d/ /etc/nginx/nginx.conf
+sudo grep -R "server_name wings.gallery.info.gf" -n /etc/nginx/conf.d/ /etc/nginx/nginx.conf
+
+# Edit the file that has:  listen 443 ssl;  server_name wings.gallery.info.gf;
+sudo nano /etc/nginx/conf.d/shiny.conf
+```
+
+Inside the **server { … }** block that has `listen 443 ssl;` and `server_name wings.gallery.info.gf;`, add this line **once** (not inside another `location`):
+
+```
+include /etc/nginx/snippets/ikiam-locations.conf;
+```
+
+> Do **not** duplicate the same `location` blocks inline and in the snippet. Keep them **only** in the snippet.
+
+Reload:
+
+```bash
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
 ## 6) HTTPS
 
-You already enabled HTTPS with Certbot for `wings.gallery.info.gf` in the Wings repo. That single certificate covers **all paths**, including `/db`. No DNS changes required.
-If HTTPS isn't set up yet, complete the Certbot step from the Wings repo, then ensure the TLS server block mirrors both locations (`/` and `/db/`).
+You already enabled HTTPS via Certbot for `wings.gallery.info.gf`. That single certificate secures **all paths**, including `/db/`. No DNS changes needed.
 
-## 7) Future updates (hot-update flow)
+## 7) Verify
+
+```bash
+# Containers
+docker ps --format "table {{.Names}}\t{{.Ports}}\t{{.Status}}"
+
+# Local HTTP proxy (optional)
+curl -I http://127.0.0.1/
+curl -I http://127.0.0.1/db/
+
+# Public HTTPS
+curl -I https://wings.gallery.info.gf/
+curl -I https://wings.gallery.info.gf/db/
+```
+
+## 8) Future updates (hot-update flow)
 
 ```bash
 cd /home/ec2-user/Shiny_Ikiam_Database_Manager
 
-# Stop current container (auto-removed due to --rm)
+# Stop the running container (auto-removed due to --rm)
 docker stop sikwings_db_instance
 
-# Pull latest code
+# Pull latest app code
 git pull
 
-# (If you changed users.json or shiny-ikiam-db.json, edit them now with nano)
+# (If you changed users.json or shiny-ikiam-db.json, edit them now)
 # nano users.json
 # nano shiny-ikiam-db.json
 
@@ -125,7 +159,7 @@ docker run -d -p 8081:8080 \
   sikwings_db_build
 ```
 
-> **Rebuild needed only if the Dockerfile changed** (e.g., added packages):
+> Rebuild only if the **Dockerfile** changed (e.g., new packages):
 >
 > ```bash
 > docker stop sikwings_db_instance
@@ -136,3 +170,10 @@ docker run -d -p 8081:8080 \
 >   -v $(pwd):/srv/shiny-server \
 >   sikwings_db_build
 > ```
+
+## 9) Troubleshooting quick hits
+
+* **Don't overwrite Certbot's file** with `tee > /etc/nginx/conf.d/shiny.conf`. Always edit and **include the snippet**.
+* `https://…` fails while `http://127.0.0.1/db/` works → the 443 server likely **doesn't include** the snippet.
+* `nginx -T | sed -n '/server_name wings\.gallery\.info\.gf/,/}/p'` → confirm the include line is inside the **443** server.
+* Keep EC2 security group open for **80/tcp** and **443/tcp** only; never expose **8080/8081** publicly.
