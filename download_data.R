@@ -8,16 +8,14 @@ library(tidyr)
 Sys.setlocale(locale = "en_US.UTF-8")
 
 # Define constants
-gsheet_id <- "1iQpZmykHOFpVaNGzI3-1ycVIbWLKkx5KFWbmiejkT98"
+gsheet_id <- "1QZj6YgHAJ9NmFXFPCtu-i-1NDuDmAdMF2Wogts7S2_4"
 # Using the direct export link with sheet-specific 'gid's to avoid Google's gviz API bug.
 sheet_gids <- c(
   "Collection_data" = "900206579",
   "Photo_links"     = "439406691",
   "CRISPR"          = "952436162",
   "Insectary_data"  = "402580526",
-  # Añadir Insectary_stocks provisto por el usuario (gid: 1546273864)
   "Insectary_stocks" = "1546273864",
-  # NUEVO: hoja de listas de referencia para dropdowns y validaciones
   "Lists"            = "731131660"
 )
 sheets <- names(sheet_gids)
