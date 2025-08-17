@@ -88,6 +88,12 @@ SELECTIZE_CONFIRM_ONBLUR <- htmlwidgets::JS("
   }
 ")
 
+## ---- Helper: safe filenames (Windows-friendly) -----------------------------
+safe_filename <- function(x) {
+  # Replace characters illegal or awkward in filenames (\, /, :, *, ?, ", <, >, | and spaces)
+  gsub("[^A-Za-z0-9._-]+", "_", as.character(x))
+}
+
 # Persisted state file (app-wide, not per-sheet RDS which are in `rds_paths`)
 LOCAL_STATE_FILE <- "local_state.rds"
 
@@ -1994,7 +2000,7 @@ HistorialCambiosTab <- tabPanel(
         selectInput("hist_commits", "Commits", choices = c("ALL"), selected = "ALL")
       ),
       div(class="grow",
-        selectizeInput("hist_ids", "IDs",
+        selectizeInput("hist_ids", "Insectary_IDs",
           choices = NULL, multiple = TRUE,
           options = list(placeholder = "Todos"))
       ),
@@ -2630,6 +2636,7 @@ register_subir_server <- function(input, output, session, rv) {
     if (length(users)) {
       sel_users <- isolate(input$chg_user_filter)
       ch2 <- if (length(sel_users)) dplyr::filter(ch, .data$user_label %in% sel_users) else ch
+      ch2 <- ch2 %>% dplyr::filter(!grepl("_uploaded$", .data$batch_id %||% ""))
       commits <- sort(unique(na.omit(ch2$batch_id)))
       updateSelectizeInput(session, "chg_commit_filter",
                            choices = commits, selected = isolate(input$chg_commit_filter), server = TRUE)
@@ -2674,6 +2681,10 @@ register_subir_server <- function(input, output, session, rv) {
     if (length(sel_commits)) {
       act <- act %>% dplyr::filter(.data$batch_id %in% sel_commits)
       und <- und %>% dplyr::filter(.data$batch_id %in% sel_commits)
+    } else {
+      # NO selection means "all un-uploaded"; hide uploaded by default
+      act <- act %>% dplyr::filter(!grepl("_uploaded$", .data$batch_id %||% ""))
+      und <- und %>% dplyr::filter(!grepl("_uploaded$", .data$batch_id %||% ""))
     }
 
     if (nrow(act) == 0 && nrow(und) == 0) return(NULL)
@@ -2782,7 +2793,6 @@ register_subir_server <- function(input, output, session, rv) {
 
     send_core <- ch_send[, intersect(names(ch_send), CHANGE_LOG_COLS), drop = FALSE]
 
-    ts <- format(Sys.time(), "%Y-%m-%d_%H-%M-%S")
     dir.create("data", showWarnings = FALSE)
 
     # Colapsa a último cambio por (ID, Columna)
@@ -2833,12 +2843,40 @@ register_subir_server <- function(input, output, session, rv) {
                                 "Skipped (protected)", "Committed")
     } else ch_write$Result <- "Committed"
 
-    saveRDS(ch_write, file = file.path("data", paste0("commit_", ts, ".rds")))
+    # --- Save ONE snapshot per selected batch and append "_uploaded" ---
+    batches_committed <- sort(unique(na.omit(ch_send$batch_id)))
+    for (b in batches_committed) {
+      part <- ch_write %>% dplyr::filter(.data$batch_id == b)
+      if (!nrow(part)) next
+      # store a Windows-safe, filename-aligned commit_id
+      part$commit_id <- safe_filename(paste0(b, "_uploaded"))
+      fn <- file.path("data", paste0("commit_", part$commit_id[1], ".rds"))
+      saveRDS(part, file = fn)
+    }
+
+    # --- Mark the committed rows inside rv$changes as uploaded (rename batch_id) ---
+    if (length(batches_committed)) {
+      mark <- rv$changes$batch_id %in% batches_committed
+      rv$changes$batch_id[mark] <- ifelse(
+        grepl("_uploaded$", rv$changes$batch_id[mark]),
+        rv$changes$batch_id[mark],
+        paste0(rv$changes$batch_id[mark], "_uploaded")
+      )
+      # Persist local state so filters immediately reflect new names
+      save_local_state(list(
+        version = rv$version, data = rv$data, changes = rv$changes, history = rv$history
+      ))
+    }
     if (any(ch_write$Result == "Skipped (protected)")) {
       nskip <- sum(ch_write$Result == "Skipped (protected)")
       showNotification(sprintf("Se omitieron %d cambio(s) por celdas protegidas.", nskip), type = "warning", duration = 8)
     }
     showNotification("Cambios subidos a Google Sheets.", type = "message")
+
+    # Refresh filters/UI to hide uploaded commits from the Commit(s) list
+    shinyjs::click("chg_show")
+    # And also rebuild the Commit(s) dropdown
+    isolate(refresh_user_filter())
   })
 
   observeEvent(input$chg_update_db, {
@@ -2889,9 +2927,14 @@ register_hist_server <- function(input, output, session, rv) {
     parts <- lapply(files, function(f){
       df <- tryCatch(readRDS(f), error = function(e) NULL)
       if (is.null(df) || !nrow(df)) return(NULL)
-      # commit_id from filename
-      commit_id <- sub("^commit_(.*)\\.rds$", "\\1", basename(f))
-      df$commit_id <- commit_id
+      # always provide a sanitized commit_id
+      if ("commit_id" %in% names(df) && any(nzchar(df$commit_id))) {
+        df$commit_id <- safe_filename(as.character(df$commit_id))
+      } else {
+        df$commit_id <- sub("^commit_(.*)\\.rds$", "\\1", basename(f))
+      }
+      # ensure normalization regardless of source
+      df$commit_id <- safe_filename(as.character(df$commit_id))
       df
     })
     parts <- Filter(Negate(is.null), parts)
@@ -2913,13 +2956,14 @@ register_hist_server <- function(input, output, session, rv) {
       all_hist$Result  <- ifelse(all_hist$New == all_hist$Current, "Possibly not applied", "Committed")
     }
 
-    # ----- date filter -----
+    # ----- date filter (robust if ts came in as character) -----
     rng <- as.Date(input$hist_range)
     if (!isTRUE(input$hist_use_range)) {
       # single day (end only); keep start==end and keep start disabled in UI
       rng[1] <- rng[2]
     }
-    all_hist <- dplyr::filter(all_hist, as.Date(ts) >= rng[1], as.Date(ts) <= rng[2])
+    ts_dates <- suppressWarnings(as.Date(as.POSIXlt(all_hist$ts, tz = "")))
+    all_hist <- dplyr::filter(all_hist, !is.na(ts_dates), ts_dates >= rng[1], ts_dates <= rng[2])
 
     # ----- users filter -----
     sel_users <- input$hist_users
@@ -2987,6 +3031,27 @@ register_hist_server <- function(input, output, session, rv) {
     }
   })
 
+  # Refresh Historial pickers when entering the tab
+  observeEvent(input$nav_main, {
+    if (identical(input$nav_main, "Historial de Cambios")) {
+      # Rebuild Users from disk + live changes
+      files <- list.files("data", pattern = "^commit_.*\\.rds$", full.names = TRUE)
+      users <- character(0)
+      if (length(files)) {
+        U <- lapply(files, function(f) tryCatch(readRDS(f), error=function(e) NULL))
+        U <- Filter(Negate(is.null), U)
+        if (length(U)) users <- unique(dplyr::bind_rows(U)$user_label)
+      }
+      if (nrow(rv$changes)) users <- c(users, unique(rv$changes$user_label))
+      users <- sort(unique(na.omit(users)))
+      updateSelectizeInput(session, "hist_users",
+        choices = c("ALL", users), selected = "ALL", server = TRUE
+      )
+      # Also refresh Commits/IDs now
+      apply_hist_filters(update_inputs = TRUE)
+    }
+  }, ignoreInit = TRUE)
+
   # When date/user/commit change, refresh dependent pickers
   observeEvent(list(input$hist_use_range, input$hist_range, input$hist_users), {
     apply_hist_filters(update_inputs = TRUE)
@@ -2994,7 +3059,7 @@ register_hist_server <- function(input, output, session, rv) {
 
   # ---- build table on 'Buscar' ----
   observeEvent(input$hist_load, {
-    hist_df <- apply_hist_filters(update_inputs = FALSE)
+    hist_df <- apply_hist_filters(update_inputs = TRUE)
     if (is.null(hist_df) || !nrow(hist_df)) { render_simple_table_message(output, "hist_table", "No hay historial que coincida."); return() }
 
     # always show current value for context
