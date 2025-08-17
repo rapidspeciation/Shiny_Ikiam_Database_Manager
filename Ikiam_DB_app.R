@@ -1271,6 +1271,60 @@ commit_changes_to_sheet <- function(changes_df, sheet_name = "Insectary_data", r
   # Use the .rds snapshot for row/col mapping (header row is in the sheet)
   current <- readRDS(rds_paths[["Insectary_data"]])
 
+  # --- Inject Preservation_medium "edited by App" note(s) when applicable ----
+  # Only do this when the incoming payload carries `tab` (comes from normal "Subir" flow).
+  if ("tab" %in% names(changes_df) && "Preservation_medium" %in% names(current)) {
+    # Map tab -> message (English phrases per spec)
+    map_tab_msg <- function(tb) {
+      if (grepl("Muert", tb, ignore.case = TRUE))      return("Deaths set by App")
+      if (grepl("Tubos", tb, ignore.case = TRUE))      return("Tubes set by App")
+      if (grepl("Emergid", tb, ignore.case = TRUE))    return("Emergidos set by App")
+      return(NA_character_)
+    }
+    today_note <- function(tb) {
+      msg <- map_tab_msg(tb)
+      if (is.na(msg)) return(NA_character_)
+      paste0(fmt_ui_date(Sys.Date()), ": ", msg)
+    }
+    # Build one Preservation_medium append per Insectary_ID present in this commit,
+    # combining multiple tabs (rare) into a single string separated by " | "
+    add_rows <- list()
+    for (id in unique(changes_df$Insectary_ID)) {
+      if (is.na(id) || !nzchar(id)) next
+      # Which tabs touched this ID?
+      tabs <- unique(na.omit(as.character(changes_df$tab[changes_df$Insectary_ID == id])))
+      notes <- unique(na.omit(vapply(tabs, today_note, character(1))))
+      if (!length(notes)) next
+      # Current PM value
+      idx <- which(current$Insectary_ID == id)
+      if (!length(idx)) next
+      prev_pm <- as.character(current$Preservation_medium[idx][1])
+      prev_pm[is.na(prev_pm)] <- ""
+      # Compose new value, but avoid adding duplicates of the same note(s)
+      pm_now <- prev_pm
+      for (nt in notes) {
+        if (!nzchar(pm_now)) {
+          pm_now <- nt
+        } else if (!grepl(paste0("\\Q", nt, "\\E"), pm_now, perl = TRUE)) {
+          pm_now <- paste0(pm_now, " | ", nt)
+        }
+      }
+      # If changed, enqueue a synthetic change row (Column=Preservation_medium)
+      if (!identical(pm_now, prev_pm)) {
+        add_rows[[length(add_rows) + 1]] <- data.frame(
+          Insectary_ID = id,
+          Column       = "Preservation_medium",
+          New          = pm_now,
+          stringsAsFactors = FALSE
+        )
+      }
+    }
+    if (length(add_rows)) {
+      changes_df <- dplyr::bind_rows(changes_df[, intersect(c("Insectary_ID","Column","New","tab"), names(changes_df)), drop = FALSE],
+                                     dplyr::bind_rows(add_rows))
+    }
+  }
+
   # Date columns used for coercion before writing to Sheets
   date_cols_all <- DATE_COLS
 
@@ -2680,9 +2734,7 @@ register_subir_server <- function(input, output, session, rv) {
     # Push pending UI changes immediately
     try(shiny::flushReact(), silent = TRUE)
   }
-  safe_remove_notif <- function(id) {
-    try(removeNotification(id), silent = TRUE)
-  }
+  # keep: we won't need a remover for the unified, in-place toast
 
   # Cambios activos (rv$changes) ya existen.
   # Guardaremos los revertidos aquí para poder hacer Redo:
@@ -2855,43 +2907,19 @@ register_subir_server <- function(input, output, session, rv) {
     ch_write <- send_core %>% group_by(Insectary_ID, Column) %>%
       arrange(desc(ts)) %>% slice(1) %>% ungroup()
 
-    # Live status modal (counter + range/IDs)
-    commit_status <- reactiveVal("Preparando escritura…")
-    output$commit_live_msg <- renderUI(HTML(sprintf(
-      "<div style='font-family:monospace;white-space:pre-wrap;font-size:12px;'>%s</div>",
-      htmltools::htmlEscape(commit_status())
-    )))
-    showModal(modalDialog(
-      tagList(
-        h4("Subiendo cambios a Google Sheets"),
-        uiOutput("commit_live_msg"),
-        div(id = "commit_hint", class = "muted", "No cierres esta ventana hasta finalizar.")
-      ),
-      easyClose = FALSE, footer = NULL
-    ))
-    on.exit(removeModal())
+    # Unified, in-place toast that updates as we progress
+    notif_id <- "uploading_changes"
+    showNotification("Preparando escritura…", type = "message", duration = NULL, id = notif_id)
 
-    # Reporter callback invoked by commit_changes_to_sheet()
+    # Reporter callback invoked by commit_changes_to_sheet() — update same toast
+    commit_status <- reactiveVal("Preparando escritura…")
     reporter <- function(i, n, label) {
-      # 1) Update the modal text
       commit_status(sprintf("%d/%d  •  %s", i, n, label))
-      output$commit_live_msg <- renderUI(HTML(sprintf(
-        "<div style='font-family:monospace;white-space:pre-wrap;font-size:12px;'>%s</div>",
-        htmltools::htmlEscape(commit_status())
-      )))
       flush_now()
-      # 2) (Optional) also surface as a single live toast outside the modal
-      safe_remove_notif("commit_live_toast")
-      showNotification(
-        commit_status(),
-        id       = "commit_live_toast",
-        type     = "message",
-        duration = NULL
-      )
+      showNotification(commit_status(), type = "message", duration = NULL, id = notif_id)
     }
 
     fail_rep <- commit_changes_to_sheet(ch_write, sheet_name = "Insectary_data", report_cb = reporter)
-    safe_remove_notif("commit_live_toast")
 
     if (nrow(fail_rep)) {
       key <- paste(fail_rep$Insectary_ID, fail_rep$Column)
@@ -2923,11 +2951,15 @@ register_subir_server <- function(input, output, session, rv) {
         version = rv$version, data = rv$data, changes = rv$changes, history = rv$history
       ))
     }
+    # Finalize the single toast: replace text and set a short duration
     if (any(ch_write$Result == "Skipped (protected)")) {
       nskip <- sum(ch_write$Result == "Skipped (protected)")
-      showNotification(sprintf("Se omitieron %d cambio(s) por celdas protegidas.", nskip), type = "warning", duration = 8)
+      showNotification(sprintf("Cambios subidos. Omitidos %d por celdas protegidas.", nskip),
+                       type = "warning", duration = 5, id = notif_id)
+    } else {
+      showNotification("Cambios subidos a Google Sheets.",
+                       type = "message", duration = 5, id = notif_id)
     }
-    showNotification("Cambios subidos a Google Sheets.", type = "message")
 
     # Refresh filters/UI to hide uploaded commits from the Commit(s) list
     shinyjs::click("chg_show")
