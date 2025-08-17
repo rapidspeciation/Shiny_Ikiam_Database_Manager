@@ -1250,11 +1250,30 @@ render_save_button <- function(output, output_id, auth_reactive) {
       tags$button(
         id = paste0(output_id, "_placeholder"), type = "button", # Use a different id to avoid event conflicts
         class = "btn btn-danger",
-        disabled = NA, "Inicia sesion para guardar cambios"
+        disabled = NA, paste0("No tienes permiso para ", "Guardar en local")
       )
     } else {
       # Enabled, green button
       actionButton(output_id, "Guardar en local", class = "btn btn-success")
+    }
+  })
+}
+
+## Reusable auth-aware action button (same UX as Guardar en local)
+auth_button_ui <- function(output_id) uiOutput(output_id)
+render_auth_button <- function(output, output_id, auth_reactive,
+                               label, enabled_class = "btn btn-primary",
+                               allow_guest = FALSE,
+                               disabled_prefix = "No tienes permiso para ") {
+  output[[output_id]] <- renderUI({
+    a <- auth_reactive() %||% list(is_logged_in = FALSE, is_guest = FALSE)
+    if (!isTRUE(a$is_logged_in) || (isTRUE(a$is_guest) && !allow_guest)) {
+      tags$button(
+        id = paste0(output_id, "_placeholder"), type = "button",
+        class = "btn btn-danger", disabled = NA, paste0(disabled_prefix, label)
+      )
+    } else {
+      actionButton(output_id, label, class = enabled_class)
     }
   })
 }
@@ -2076,9 +2095,9 @@ SubirCambiosTab <- tabPanel(
       column(12,
         div(class = "inline-controls",
           actionButton("chg_show", "Mostrar cambios", class = "btn-primary"),
-          actionButton("chg_commit", "Subir a Google Sheets", class = "btn-success"),
-          actionButton("chg_update_db", "Actualizar Base", class = "btn-default"),
-          actionButton("chg_clear", "Limpiar cambios filtrados", class = "btn-warning")
+          auth_button_ui("chg_commit"),
+          auth_button_ui("chg_update_db"),
+          auth_button_ui("chg_clear")
         )
       )
     ),
@@ -2122,11 +2141,31 @@ HistorialCambiosTab <- tabPanel(
           options = list(placeholder = "Todos"))
       ),
       actionButton("hist_load", "Buscar", class = "btn-primary"),
-      actionButton("hist_retry", "Reintentar subir seleccionados", class = "btn-success"),
-      actionButton("hist_undo_push", "Deshacer cambios en Google Sheets", class = "btn-danger")
+      auth_button_ui("hist_retry"),
+      auth_button_ui("hist_undo")
     ),
 
     fluidRow(column(12, DTOutput("hist_table")))
+  )
+)
+
+## -- Tab 7: Buscador --
+BuscadorTab <- tabPanel(
+  "Buscador",
+  fluidPage(
+    tags$head(tags$style(HTML("
+      .inline{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;}
+      .grow{flex:1 1 220px;}
+    "))),
+    div(class="inline",
+      div(class="grow", textInput("srch_query", "Buscar", value = "", placeholder = "Escribe texto a buscar…")),
+      actionButton("srch_go", "Buscar", class = "btn-primary"),
+      actionButton("srch_load", "Cargar/Revertir", class = "btn-default"),
+      uiOutput("srch_save_btn_ui")
+    ),
+    fluidRow(
+      column(12, make_table_ui("srch_table", height_spacer_px = 320))
+    )
   )
 )
 
@@ -2221,6 +2260,7 @@ ui <- tagList(
     RegistrarMuertesTab,
     RegistrarTubosTab,
     RegistrarEmergidosTab,
+    BuscadorTab,
     SubirCambiosTab,
     HistorialCambiosTab
   )
@@ -2548,6 +2588,19 @@ register_tubos_server <- function(input, output, session, rv) {
     req(nrow(tbl) > 0)
     apply_table_changes(rv, tab_label = "Registrar Tubos", tbl = tbl,
                         skip_if_blank_cols = c("Preservation_date"))
+
+    # --- REFRESH VISIBLE ROWS FROM UPDATED BASE, PRESERVING SELECTION ---
+    # 1) persist already happened inside apply_table_changes; take current ids
+    sel_ids <- unique(na.omit(tbl$Insectary_ID))
+    # 2) rebuild the same rows from the updated base and re-render
+    rv$tube_tbl <- build_tube_table(rv$data$Insectary_data, sel_ids)
+    hot_render_predictive(output, session, "tube_table", rv$tube_tbl, rv, force = TRUE)
+    # 3) keep the IDs picker (choices + selection) stable
+    df <- rv$data$Insectary_data
+    pivot_id <- auto_start_insectary_id(df)
+    isolate(update_ids_picker(session, "tube_ids", df,
+            selected = input$tube_ids, start_from_id = pivot_id, offset_before = 200))
+
     showNotification("Tubos guardados en local.", type = "message")
   })
 }
@@ -2585,6 +2638,16 @@ register_emergidos_server <- function(input, output, session, rv) {
     if ("Sex" %in% names(new_records)) new_records <- dplyr::relocate(new_records, Sex, .after = Insectary_ID)
     if ("Notes_Insectary_data" %in% names(new_records)) new_records <- dplyr::relocate(new_records, Notes_Insectary_data, .after = Intro2Insectary_date)
     new_records
+  }
+
+  # NEW: after-save rebuild helper by explicit IDs (keeps same column arrangement)
+  build_em_table_by_ids <- function(df, ids) {
+    out <- df %>% dplyr::filter(.data$Insectary_ID %in% ids)
+    # match the usual visible columns order from build_em_table
+    if ("Sex" %in% names(out)) out <- dplyr::relocate(out, Sex, .after = Insectary_ID)
+    if ("Notes_Insectary_data" %in% names(out))
+      out <- dplyr::relocate(out, Notes_Insectary_data, .after = Intro2Insectary_date)
+    out
   }
 
   observe({
@@ -2724,6 +2787,21 @@ register_emergidos_server <- function(input, output, session, rv) {
     tbl <- rv$em_tbl %||% hot_to_r(input$em_table)
     req(nrow(tbl) > 0)
     apply_table_changes(rv, tab_label = "Registrar Emergidos", tbl = tbl)
+
+    # --- REFRESH VISIBLE ROWS FROM UPDATED BASE, PRESERVING SELECTION ---
+    sel_ids <- unique(na.omit(tbl$Insectary_ID))
+    rv$em_tbl <- build_em_table_by_ids(rv$data$Insectary_data, sel_ids)
+    hot_render_predictive(output, session, "em_table", rv$em_tbl, rv, force = TRUE)
+    # keep pickers stable
+    df <- rv$data$Insectary_data
+    start_default <- auto_start_insectary_id(df)
+    isolate({
+      update_ids_picker(session, "em_start_id", df,
+                        selected = input$em_start_id, start_from_id = start_default, offset_before = 200)
+      update_ids_picker(session, "em_add_id",   df,
+                        selected = input$em_add_id, start_from_id = start_default, offset_before = 200)
+    })
+
     showNotification("Emergidos guardados en local.", type = "message")
   })
 }
@@ -2781,12 +2859,10 @@ register_subir_server <- function(input, output, session, rv) {
 
   observe(refresh_user_filter())
 
-  observe({
-    guest <- auth_is_guest(rv)
-    shinyjs::toggleState("chg_commit", !guest)
-    shinyjs::toggleState("chg_update_db", !guest)
-    shinyjs::toggleState("chg_clear", !guest)
-  })
+  # Auth-aware buttons (disable for not logged in and for invitados)
+  render_auth_button(output, "chg_commit",    reactive(rv$auth), "Subir a Google Sheets",      enabled_class = "btn btn-success", allow_guest = FALSE)
+  render_auth_button(output, "chg_update_db", reactive(rv$auth), "Actualizar Base",            enabled_class = "btn btn-default", allow_guest = FALSE)
+  render_auth_button(output, "chg_clear",     reactive(rv$auth), "Limpiar cambios filtrados",  enabled_class = "btn btn-warning", allow_guest = FALSE)
 
   add_toggle_cols <- function(x, status) {
     if (!nrow(x)) return(x)
@@ -3080,6 +3156,10 @@ register_hist_server <- function(input, output, session, rv) {
       selected = "ALL", server = TRUE)
   })
 
+  # Auth-aware buttons (disable for not logged in and for invitados)
+  render_auth_button(output, "hist_retry", reactive(rv$auth), "Reintentar subir seleccionados",    enabled_class = "btn btn-success", allow_guest = FALSE)
+  render_auth_button(output, "hist_undo",  reactive(rv$auth), "Deshacer cambios en Google Sheets", enabled_class = "btn btn-warning", allow_guest = FALSE)
+
   # ---- enable/disable start date based on 'usar rango' and keep start=end ----
   observe({
     start_id <- "hist_range_start"
@@ -3178,32 +3258,109 @@ register_hist_server <- function(input, output, session, rv) {
     shinyjs::click("hist_load")  # refresh table
   })
 
-  # ---- new: push PREVIOUS values to Sheets (undo at source) ----
-  observeEvent(input$hist_undo_push, {
+  # ---- undo-to-previous functionality (overwrite with Previous) ----
+  observeEvent(input$hist_undo, {
+    if (!auth_is_logged_in(rv) || auth_is_guest(rv)) {
+      showNotification("Inicia sesión con usuario no invitado para deshacer.", type="error"); return()
+    }
     hist_df <- apply_hist_filters(update_inputs = FALSE)
     sel <- input$hist_table_rows_selected
-    if (!length(sel) || is.null(hist_df)) {
-      showNotification("Selecciona una o más filas en Historial.", type = "warning"); return()
+    if (is.null(hist_df) || !length(sel)) {
+      showNotification("Selecciona una o más filas en Historial.", type="warning"); return()
     }
     df_sel <- hist_df[sel, , drop = FALSE]
-
-    # Overwrite selected cells with their 'Previous' value
-    to_commit <- df_sel %>% dplyr::transmute(Insectary_ID, Column, New = Previous)
-    showModal(modalDialog("Deshaciendo en Google Sheets (escribiendo 'Previo')…", footer=NULL))
-    on.exit(removeModal())
-
-    failures <- commit_changes_to_sheet(to_commit, sheet_name = "Insectary_data")
-    ts <- format(Sys.time(), "%Y-%m-%d_%H-%M-%S")
-    df_sel$Result <- if (nrow(failures)) {
-      key <- paste(failures$Insectary_ID, failures$Column)
-      ifelse(paste(df_sel$Insectary_ID, df_sel$Column) %in% key, "Skipped (protected)", "Committed")
-    } else "Committed"
-    df_sel$commit_id <- paste0("undo_", ts)
-    ensure_data_dir()
-    saveRDS(df_sel, file = file.path(DATA_DIR, paste0("commit_undo_", ts, ".rds")))
-    showNotification("Deshacer completado (se escribió 'Previo').", type = "message")
+    to_commit <- df_sel %>% dplyr::select(Insectary_ID, Column, New = Previous)
+    showNotification("Deshaciendo cambios seleccionados en Google Sheets…", type="message", duration=NULL, id="hist_undo_toast")
+    fails <- commit_changes_to_sheet(to_commit, sheet_name = "Insectary_data")
+    if (nrow(fails)) {
+      showNotification(sprintf("Deshacer completado con omisiones (%d).", nrow(fails)), type="warning", duration=6, id="hist_undo_toast")
+    } else {
+      showNotification("Deshacer completado.", type="message", duration=5, id="hist_undo_toast")
+    }
     shinyjs::click("hist_load")
   })
+}
+
+## -- Server logic for: Buscador --
+register_search_server <- function(input, output, session, rv) {
+  rv$srch_tbl <- NULL
+
+  # Save button (auth-aware)
+  output$srch_save_btn_ui <- renderUI({
+    a <- rv$auth %||% list(is_logged_in=FALSE)
+    if (!isTRUE(a$is_logged_in)) {
+      tags$button(id="srch_save_btn_placeholder", type="button",
+                  class="btn btn-danger", disabled=NA, "Inicia sesion para guardar cambios")
+    } else {
+      actionButton("srch_save_btn", "Guardar Cambios", class = "btn btn-success")
+    }
+  })
+
+  # Run search
+  observeEvent(input$srch_go, {
+    q <- trimws(input$srch_query %||% "")
+    if (!nzchar(q)) { render_simple_table_message(output, "srch_table", "Escribe un texto para buscar."); return() }
+    df <- rv$data$Insectary_data %||% data.frame()
+    if (!nrow(df)) { render_simple_table_message(output, "srch_table", "No hay datos."); return() }
+    # robust string match across all columns
+    mat <- apply(df, 1, function(row) any(grepl(q, as.character(row), ignore.case = TRUE, perl = TRUE)))
+    hit <- df[which(mat), , drop = FALSE]
+    if (!nrow(hit)) { render_simple_table_message(output, "srch_table", "Sin coincidencias."); return() }
+    rv$srch_tbl <- hit
+    render_table(output, "srch_table", rv$srch_tbl, rv)
+  }, ignoreInit = TRUE)
+
+  # Cargar/Revertir = reload current results from base
+  observeEvent(input$srch_load, {
+    q <- trimws(input$srch_query %||% "")
+    if (!nzchar(q)) return()
+    df <- rv$data$Insectary_data %||% data.frame()
+    if (!nrow(df)) return()
+    mat <- apply(df, 1, function(row) any(grepl(q, as.character(row), ignore.case = TRUE, perl = TRUE)))
+    hit <- df[which(mat), , drop = FALSE]
+    rv$srch_tbl <- hit
+    render_table(output, "srch_table", rv$srch_tbl, rv)
+  }, ignoreInit = TRUE)
+
+  # Debounced edit handling for the search table
+  hot_debounced_observer(
+    input, output, session, rv,
+    input_id  = "srch_table",
+    rv_slot   = "srch_tbl",
+    process_fun = function(prev_tbl, new_tbl) {
+      # Apply clutch-driven defaults on change (consistent with other tabs)
+      apply_clutch_defaults_on_change(prev_tbl, new_tbl, rv$data$Insectary_stocks)
+    },
+    update_inputs = "none",
+    debounce_ms   = 200,
+    key_columns   = c("CLUTCH NUMBER","CAM_ID", paste0("Tube_", 1:4, "_tissue"))
+  )
+
+  # Save edits
+  observeEvent(input$srch_save_btn, {
+    if (!auth_is_logged_in(rv)) { showNotification("Inicia sesión para guardar.", type = "error"); return() }
+    force_hot_commit(session, "srch_table")
+    tbl <- rv$srch_tbl %||% hot_to_r(input$srch_table)
+    req(nrow(tbl) > 0)
+    apply_table_changes(rv, tab_label = "Buscador", tbl = tbl)
+    
+    # --- REFRESH SEARCH RESULTS FROM UPDATED BASE ---
+    # Re-run the search with current query to show updated values
+    q <- trimws(input$srch_query %||% "")
+    if (nzchar(q)) {
+      df <- rv$data$Insectary_data %||% data.frame()
+      if (nrow(df)) {
+        mat <- apply(df, 1, function(row) any(grepl(q, as.character(row), ignore.case = TRUE, perl = TRUE)))
+        hit <- df[which(mat), , drop = FALSE]
+        if (nrow(hit)) {
+          rv$srch_tbl <- hit
+          render_table(output, "srch_table", rv$srch_tbl, rv)
+        }
+      }
+    }
+    
+    showNotification("Cambios guardados (Buscador).", type="message")
+  }, ignoreInit = TRUE)
 }
 
 
@@ -3442,10 +3599,9 @@ server <- function(input, output, session) {
       idx <- which(base$Insectary_ID == id)
       if (length(idx) == 0) next
       
-      cols_to_check <- names(tbl)
-      if(isTRUE(input$dead_review_only)) {
-        cols_to_check <- setdiff(cols_to_check, c("Death_cause", "New_Death_Date", "Previous_Death_Cause", "Previous_Death_Date"))
-      }
+      # Always consider Death_cause and New_Death_Date changes (map to Death_date),
+      # but never write the Previous_* helper columns.
+      cols_to_check <- setdiff(names(tbl), c("Previous_Death_Cause", "Previous_Death_Date"))
       
       for(col in cols_to_check) {
         target_col <- if(col == "New_Death_Date") "Death_date" else col
@@ -3494,11 +3650,27 @@ server <- function(input, output, session) {
     }
     
     if (changed_count > 0) {
+      # 1) persist the updated base
       rv$data$Insectary_data <- base
-      # Keep the same ID choices and selection (prevents dropdown going blank)
+
+      # 2) refresh the on-screen table FROM the updated base, preserving mode and the same rows
+      sel_ids <- unique(na.omit(tbl$Insectary_ID))
+      rv$dead_tbl <- build_dead_table(
+        rv$data$Insectary_data,
+        ids          = sel_ids,
+        review_only  = isTRUE(input$dead_review_only),
+        default_cause= input$dead_cause_default,
+        date_input_str = input$dead_date
+      )
+      # Ensure UI shows the newly-committed values (Death_cause + Death_date)
+      hot_render_predictive(output, session, "dead_table", rv$dead_tbl, rv, force = TRUE)
+
+      # 3) keep ID picker stable (choices + selection)
       df <- rv$data$Insectary_data
       pivot_id <- auto_start_insectary_id(df)
-      isolate(update_ids_picker(session, "dead_ids", df, selected = input$dead_ids, start_from_id = pivot_id, offset_before = 200))
+      isolate(update_ids_picker(session, "dead_ids", df,
+              selected = input$dead_ids, start_from_id = pivot_id, offset_before = 200))
+
       showNotification("Actualizado y guardado en local.", type = "message")
     } else {
       showNotification("No hubo cambios para guardar.", type = "message")
@@ -3510,6 +3682,7 @@ server <- function(input, output, session) {
   register_emergidos_server(input, output, session, rv)
   register_subir_server(input, output, session, rv)
   register_hist_server(input, output, session, rv)
+  register_search_server(input, output, session, rv)
 }
 
 # --- DRY: unified table change applier (used by Tubos & Emergidos) ---
