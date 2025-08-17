@@ -8,12 +8,10 @@ suppressPackageStartupMessages({
   library(DT)
   library(rhandsontable)
   library(dplyr)
-  library(tidyr)
   library(stringr)
   library(rlang)
   library(googlesheets4)
   library(cellranger)
-  library(readr)
   library(jsonlite)
   library(digest)
 })
@@ -37,6 +35,21 @@ APP_STATE_VERSION <- 2L
 UI_DATE_FMT_R <- "%d-%b-%y"   # R's strftime format for "d-MMM-yy"
 UI_DATE_REGEX <- "^\\d{1,2}-[A-Za-z]{3}-\\d{2}$"
 
+# Centralized list of *data* date columns (single source of truth)
+DATE_COLS <- c("Intro2Insectary_date", "Preservation_date", "Death_date")
+
+# Tube columns registry (single source of truth)
+TUBE_SLOTS <- 1:4
+tube_col <- function(slot, kind = c("id","tissue","medium")){
+  kind <- match.arg(kind)
+  if (kind == "id")     return(paste0("Tube_", slot, "_id"))
+  if (kind == "tissue") return(paste0("Tube_", slot, "_tissue"))
+  # 'medium' exists for slots 1 and 2 in source data
+  paste0("T", slot, "_Preservation_medium")
+}
+TUBE_ID_COLS     <- vapply(TUBE_SLOTS, tube_col, character(1), kind = "id")
+TUBE_TISSUE_COLS <- vapply(TUBE_SLOTS, tube_col, character(1), kind = "tissue")
+
 # Normalized list of acceptable inbound date formats (single source of truth)
 DATE_FORMAT_CANDIDATES <- c(
   UI_DATE_FMT_R, "%Y-%m-%d", "%d-%b-%Y", "%Y/%m/%d",
@@ -44,7 +57,7 @@ DATE_FORMAT_CANDIDATES <- c(
 )
 
 # Common checks/utilities used across modules
-is_date_col <- function(col) col %in% c("Death_date","Intro2Insectary_date","Preservation_date")
+is_date_col <- function(col) col %in% DATE_COLS
 fmt_if_date <- function(v, col) if (is_date_col(col)) fmt_ui_date(v) else v
 
 TISSUE_WHOLE <- "WHOLE_ORGANISM"
@@ -88,11 +101,59 @@ SELECTIZE_CONFIRM_ONBLUR <- htmlwidgets::JS("
   }
 ")
 
+## ---- Reusable Selectize option presets --------------------------------------
+# Base multi/single ID pickers share the same UX knobs across tabs
+SEL_OPTS_MULTI_IDS <- list(
+  placeholder = "Seleccione uno o más IDs",
+  maxOptions  = 5000, openOnFocus = TRUE,
+  onBlur      = SELECTIZE_CONFIRM_ONBLUR,
+  sortField   = NULL
+)
+SEL_OPTS_IDS <- list(
+  placeholder = "Seleccione un ID",
+  maxOptions  = 5000, openOnFocus = TRUE,
+  onBlur      = SELECTIZE_CONFIRM_ONBLUR,
+  sortField   = NULL
+)
+
 ## ---- Helper: safe filenames (Windows-friendly) -----------------------------
 safe_filename <- function(x) {
   # Replace characters illegal or awkward in filenames (\, /, :, *, ?, ", <, >, | and spaces)
   gsub("[^A-Za-z0-9._-]+", "_", as.character(x))
 }
+
+# ---- Commit snapshot helpers (single source of truth) -----------------------
+DATA_DIR <- "data"
+commit_file_path <- function(commit_id) file.path(DATA_DIR, paste0("commit_", safe_filename(commit_id), ".rds"))
+ensure_data_dir <- function() dir.create(DATA_DIR, showWarnings = FALSE)
+
+write_commit_snapshot <- function(df, commit_id) {
+  ensure_data_dir()
+  df$commit_id <- commit_id
+  if (!inherits(df$ts, "POSIXct")) suppressWarnings(df$ts <- as.POSIXct(df$ts))
+  saveRDS(df, commit_file_path(commit_id))
+  invisible(TRUE)
+}
+
+read_commit_snapshots <- function() {
+  files <- list.files(DATA_DIR, pattern = "^commit_.*\\.rds$", full.names = TRUE)
+  if (!length(files)) return(NULL)
+  parts <- lapply(files, function(f){
+    x <- tryCatch(readRDS(f), error=function(e) NULL)
+    if (is.null(x) || !nrow(x)) return(NULL)
+    if (!"commit_id" %in% names(x) || all(!nzchar(as.character(x$commit_id)))) {
+      x$commit_id <- sub("^commit_(.*)\\.rds$", "\\1", basename(f))
+    }
+    if (!inherits(x$ts, "POSIXct")) suppressWarnings(x$ts <- as.POSIXct(x$ts))
+    x
+  })
+  parts <- Filter(Negate(is.null), parts)
+  if (!length(parts)) return(NULL)
+  dplyr::bind_rows(parts)
+}
+
+# Local-day extractor (timezone-safe)
+local_day <- function(ts) as.Date(as.POSIXlt(ts, tz = ""))
 
 # Persisted state file (app-wide, not per-sheet RDS which are in `rds_paths`)
 LOCAL_STATE_FILE <- "local_state.rds"
@@ -180,6 +241,15 @@ parse_ui_date <- function(x) {
     }
     if (all(parsed_any)) break
   }
+  out
+}
+
+# Coerce UI strings ("d-MMM-yy") to Date for Sheets writes
+to_sheet_date <- function(x) {
+  xs <- as.character(x)
+  blank <- is.na(xs) | xs == "" | toupper(xs) == "NA"
+  out <- as.Date(rep(NA_character_, length(xs)))
+  suppressWarnings({ out[!blank] <- as.Date(fmt_ui_date(xs[!blank]), format = "%d-%b-%y") })
   out
 }
 
@@ -474,17 +544,8 @@ autofill_by_clutch <- function(df, stocks_df) {
   out <- df
   for (i in seq_len(nrow(out))) {
     row <- out[i, , drop = FALSE]
-    # SPECIES if empty via stocks; Stock_of_origin rule
-    row <- apply_stock_origin_rule(row, stocks_df)
-
-    # Wild_Reared default for clutch-driven rows
-    if ("Wild_Reared" %in% names(row) && is_na_like_val(row$Wild_Reared[1])) {
-      row$Wild_Reared <- "Reared"
-    }
-    # Collection_location default for clutch-driven rows
-    if ("Collection_location" %in% names(row) && is_na_like_val(row$Collection_location[1])) {
-      row$Collection_location <- "Mariposario Ikiam"
-    }
+    # SPECIES/Stock_of_origin + clutch-side defaults in one call
+    row <- apply_row_core_defaults(row, stocks_df)
 
     out[i, names(row)] <- row
   }
@@ -516,38 +577,10 @@ apply_clutch_defaults_on_change <- function(prev_tbl, new_tbl, stocks_df) {
       row$SPECIES <- sp_from_stock
     }
 
-    # Stock_of_origin derived from SPECIES — only if empty/"NA"
-    if ("Stock_of_origin" %in% names(row) && is_na_like_val(row$Stock_of_origin[1])) {
-      row$Stock_of_origin <- stock_origin_from_species(row$SPECIES[1] %||% NA_character_)
-    }
+    # Apply all downstream defaults in one place (keeps behavior, reduces code)
+    row <- apply_row_core_defaults(row, stocks_df)
 
-    # Only fill these if blank
-    if ("Wild_Reared" %in% names(row) && is_na_like_val(row$Wild_Reared[1])) {
-      row$Wild_Reared <- "Reared"
-    }
-          if ("Collection_location" %in% names(row) && is_na_like_val(row$Collection_location[1])) {
-        row$Collection_location <- "Mariposario Ikiam"
-      }
-
-      # --- NEW: clutch/species-driven extras ---
-      if ("CAM_ID_CollData" %in% names(row)) {
-        if (!is_na_like_val(clutch_val) && toupper(as.character(clutch_val)) != "NA" &&
-            is_na_like_val(row$CAM_ID_CollData[1])) {
-          row$CAM_ID_CollData <- "NA"
-        }
-      }
-      sp_now <- row$SPECIES[1] %||% NA_character_
-      if (!is_na_like_val(sp_now) && grepl("x", sp_now, ignore.case = TRUE)) {
-        if ("Research_purpose" %in% names(row) && is_na_like_val(row$Research_purpose[1])) {
-          row$Research_purpose <- "F1/F2 mutation rate"
-        }
-        if ("Pedigree" %in% names(row) && is_na_like_val(row$Pedigree[1])) {
-          row$Pedigree <- "YES"
-        }
-      }
-      # --- end NEW ---
-
-      new_tbl[i, names(row)] <- row
+    new_tbl[i, names(row)] <- row
   }
   new_tbl
 }
@@ -780,7 +813,7 @@ configure_common_editors <- function(rh, df, rv) {
   }
 
   # Date columns in the single visible format "D-MMM-YY"
-  date_cols <- intersect(names(df), c("Intro2Insectary_date", "Preservation_date", "Death_date", "New_Death_Date"))
+  date_cols <- intersect(names(df), c(DATE_COLS, "New_Death_Date"))
   for (dc in date_cols) {
     rh <- safe_hot_col(rh, dc, type = "date", dateFormat = "D-MMM-YY", correctFormat = TRUE)
   }
@@ -792,7 +825,7 @@ configure_common_editors <- function(rh, df, rv) {
     tube_sug <- build_tube_id_suggestions(rv$data$Insectary_data,
                                           max_suggestions_per_medium = 4, max_total = 100)
     tube_choices <- unique(tube_sug$value)
-    for (k in 1:4) {
+    for (k in TUBE_SLOTS) {
       id_col <- paste0("Tube_", k, "_id")
       if (id_col %in% names(df)) {
         rh <- safe_hot_col(rh, id_col, type = "dropdown",
@@ -979,7 +1012,7 @@ apply_predictive_editors <- function(output, session, output_id, cur_df, rv,
   # ---- Tube sources (use live picks as extra_tubes + last-change hint) ----
   # harvest live tubes from cur_df
   extra <- list()
-  for (j in 1:4) {
+  for (j in TUBE_SLOTS) {
     idc <- paste0("Tube_", j, "_id"); tic <- paste0("Tube_", j, "_tissue"); mic <- paste0("T", j, "_Preservation_medium")
     if (idc %in% names(cur_df)) {
       ids_now <- as.character(cur_df[[idc]])
@@ -1003,7 +1036,7 @@ apply_predictive_editors <- function(output, session, output_id, cur_df, rv,
 
   last_tube_hint <- NULL
   if (!is.null(prev_df)) {
-    for (j in 1:4) {
+    for (j in TUBE_SLOTS) {
       col <- paste0("Tube_", j, "_id")
       if (col %in% names(cur_df) && col %in% names(prev_df) && nrow(cur_df) == nrow(prev_df)) {
         changed_rows <- which(as.character(cur_df[[col]]) != as.character(prev_df[[col]]))
@@ -1021,7 +1054,7 @@ apply_predictive_editors <- function(output, session, output_id, cur_df, rv,
   if ("CAM_ID" %in% names(cur_df)) {
     custom$CAM_ID <- list(type="dropdown", source = cam_source, strict = FALSE, allowInvalid = TRUE)
   }
-  for (j in 1:4) {
+  for (j in TUBE_SLOTS) {
     idc <- paste0("Tube_", j, "_id")
     if (idc %in% names(cur_df)) {
       custom[[idc]] <- list(type="dropdown", source = tube_source, strict = FALSE, allowInvalid = TRUE)
@@ -1235,29 +1268,11 @@ commit_changes_to_sheet <- function(changes_df, sheet_name = "Insectary_data", r
   req(gsheet_id)
   failures <- data.frame(Insectary_ID=character(), Column=character(), Reason=character(), A1=character(), stringsAsFactors = FALSE)
 
-  # --- SIMPLE normalizers for outgoing values ---
-  strip_apostrophe <- function(v) sub("^'+", "", as.character(v))
-  norm_outgoing_value <- function(v, col_name) {
-    v <- strip_apostrophe(v)
-    # Only normalize format for known date columns
-    if (col_name %in% c("Death_date","Intro2Insectary_date","Preservation_date")) {
-      return(fmt_ui_date(v))
-    }
-    v
-  }
-
   # Use the .rds snapshot for row/col mapping (header row is in the sheet)
   current <- readRDS(rds_paths[["Insectary_data"]])
 
-  # ---- helper: coerce "d-MMM-yy" strings to Date (NA / "" / "NA" -> NA) ----
-  .to_sheet_date <- function(x) {
-    xs <- as.character(x)
-    blank <- is.na(xs) | xs == "" | toupper(xs) == "NA"
-    out <- as.Date(rep(NA_character_, length(xs)))
-    suppressWarnings({ out[!blank] <- as.Date(xs[!blank], format = "%d-%b-%y") })
-    out
-  }
-  date_cols_all <- c("Intro2Insectary_date","Preservation_date","Death_date")
+  # Date columns used for coercion before writing to Sheets
+  date_cols_all <- DATE_COLS
 
   # Map rows by Insectary_ID and columns by name
   changes_df <- changes_df %>%
@@ -1329,6 +1344,22 @@ commit_changes_to_sheet <- function(changes_df, sheet_name = "Insectary_data", r
     in_block <- changes_df$row_idx >= row_start & changes_df$row_idx <= row_end &
                 changes_df$col_idx >= col_start & changes_df$col_idx <= col_end
     chb <- changes_df[in_block, , drop = FALSE]
+
+    # CLUTCH NUMBER handling: detect changes in this block
+    clutch_col_name <- "CLUTCH NUMBER"
+    clutch_idx_abs  <- match(clutch_col_name, names(current))
+    has_clutch_in_block <- !is.na(clutch_idx_abs) && clutch_idx_abs >= col_start && clutch_idx_abs <= col_end
+    ch_clutch <- if (isTRUE(has_clutch_in_block)) chb[chb$col_idx == clutch_idx_abs, , drop = FALSE] else chb[0, , drop = FALSE]
+    # Neutralize CLUTCH NUMBER inside block write so we can re-write it per-cell with proper typing
+    if (nrow(ch_clutch)) {
+      for (k in seq_len(nrow(ch_clutch))) {
+        rr <- ch_clutch$row_idx[k] - row_start + 1
+        cc <- clutch_idx_abs - col_start + 1
+        if (rr >= 1 && rr <= nrow(sub) && cc >= 1 && cc <= ncol(sub)) {
+          sub[rr, cc] <- current[ch_clutch$row_idx[k], clutch_idx_abs]
+        }
+      }
+    }
     if (nrow(chb)) {
       for (k in seq_len(nrow(chb))) {
         rr <- chb$row_idx[k] - row_start + 1
@@ -1342,7 +1373,7 @@ commit_changes_to_sheet <- function(changes_df, sheet_name = "Insectary_data", r
     dc_in_block  <- intersect(col_names, date_cols_all)
     if (length(dc_in_block)) {
       for (nm in dc_in_block) {
-        sub[[nm]] <- .to_sheet_date(sub[[nm]])
+        sub[[nm]] <- to_sheet_date(sub[[nm]])
       }
     }
 
@@ -1353,6 +1384,39 @@ commit_changes_to_sheet <- function(changes_df, sheet_name = "Insectary_data", r
     ids_in_block <- current$Insectary_ID[seq(row_start, row_end)]
     cols_str <- paste(col_names, collapse = ", ")
     ids_str  <- paste(ids_in_block, collapse = ", ")
+
+    # Helper to write CLUTCH NUMBER per-cell with numeric typing when purely numeric
+    write_clutch_cells <- function() {
+      if (!nrow(ch_clutch)) return(invisible(NULL))
+      for (k in seq_len(nrow(ch_clutch))) {
+        r_abs <- ch_clutch$row_idx[k]
+        a1 <- paste0(cellranger::num_to_letter(clutch_idx_abs), r_abs + 1, ":", cellranger::num_to_letter(clutch_idx_abs), r_abs + 1)
+        id_here <- current$Insectary_ID[r_abs]
+        new_val <- ch_clutch$New[k]
+        is_num_like <- grepl("^\\s*[0-9]+\\s*$", as.character(new_val))
+        payload <- if (is_num_like) data.frame(x = as.numeric(new_val)) else data.frame(x = as.character(new_val), stringsAsFactors = FALSE)
+        ok_cell <- tryCatch({
+          googlesheets4::range_write(
+            ss = gsheet_id, data = payload, sheet = sheet_name,
+            range = a1, col_names = FALSE, reformat = FALSE
+          )
+          message(sprintf("[GS WRITE OK] cell=%s | col=%s | Insectary_ID=%s", a1, clutch_col_name, id_here))
+          TRUE
+        }, error = function(e) {
+          emsg <- conditionMessage(e)
+          message(sprintf("[GS WRITE ERROR] cell=%s | col=%s | Insectary_ID=%s | reason=%s", a1, clutch_col_name, id_here, emsg))
+          failures <<- rbind(
+            failures,
+            data.frame(Insectary_ID = id_here, Column = clutch_col_name,
+                       Reason = paste0("Write error: ", emsg),
+                       A1 = a1, stringsAsFactors = FALSE)
+          )
+          FALSE
+        })
+        if (!ok_cell) next
+      }
+      invisible(NULL)
+    }
 
     if (exists(".inc", inherits = FALSE)) .inc(sprintf("range=%s | cols=[%s] | Insectary_ID=[%s]", range_a1, cols_str, ids_str))
 
@@ -1371,11 +1435,16 @@ commit_changes_to_sheet <- function(changes_df, sheet_name = "Insectary_data", r
                       range_a1, cols_str, ids_str, emsg))
       FALSE
     })
-    if (ok) return(invisible(NULL))
+    if (ok) {
+      if (nrow(ch_clutch)) write_clutch_cells()
+      return(invisible(NULL))
+    }
 
     # Fallback 1: write each column independently
     for (cc in seq(col_start, col_end)) {
       c_name <- names(current)[cc]
+      # Skip CLUTCH NUMBER here; we'll write it per-cell with proper typing
+      if (isTRUE(has_clutch_in_block) && identical(c_name, clutch_col_name)) next
       sub_col <- current[seq(row_start, row_end), cc, drop = FALSE]
       # inject only the changed values for this column
       ch_col <- chb[chb$col_idx == cc, , drop = FALSE]
@@ -1387,7 +1456,7 @@ commit_changes_to_sheet <- function(changes_df, sheet_name = "Insectary_data", r
       }
       # date coercion if needed
       if (c_name %in% date_cols_all) {
-        sub_col[[1]] <- .to_sheet_date(sub_col[[1]])
+        sub_col[[1]] <- to_sheet_date(sub_col[[1]])
       }
       range_col <- paste0(
         cellranger::num_to_letter(cc), row_start + 1, ":",
@@ -1417,8 +1486,10 @@ commit_changes_to_sheet <- function(changes_df, sheet_name = "Insectary_data", r
         if (nrow(ch_cell)) new_val <- ch_cell$New[1]
         # date coercion if needed
         if (c_name %in% date_cols_all) {
-          new_val <- .to_sheet_date(new_val)[1]
+          new_val <- to_sheet_date(new_val)[1]
         }
+        # Skip CLUTCH NUMBER here; we'll write it per-cell below with numeric typing
+        if (isTRUE(has_clutch_in_block) && identical(c_name, clutch_col_name)) next
 
         a1 <- paste0(cellranger::num_to_letter(cc), r + 1, ":", cellranger::num_to_letter(cc), r + 1)
         id_here <- current$Insectary_ID[r]
@@ -1447,6 +1518,8 @@ commit_changes_to_sheet <- function(changes_df, sheet_name = "Insectary_data", r
         if (!ok_cell) { next }
       }
     }
+    # Finally, write CLUTCH NUMBER cells with numeric typing where applicable
+    if (nrow(ch_clutch)) write_clutch_cells()
     invisible(NULL)
   }
 
@@ -1555,10 +1628,20 @@ apply_clutch_side_defaults <- function(row_df) {
   row_df
 }
 
+## Unified row-level defaults (wrapper) ----------------------------------------
+# Applies stock/species rules AND simple clutch-side defaults in one place.
+apply_row_core_defaults <- function(row_df, stocks_df) {
+  # 1) SPECIES/Stock_of_origin + research extras
+  row_df <- apply_stock_origin_rule(row_df, stocks_df)
+  # 2) Side defaults driven by clutch presence (Wild_Reared, Collection_location)
+  row_df <- apply_clutch_side_defaults(row_df)
+  row_df
+}
+
 collect_live_tubes <- function(cur_df) {
   if (is.null(cur_df) || !nrow(cur_df)) return(NULL)
   parts <- list()
-  for (j in 1:4) {
+  for (j in TUBE_SLOTS) {
     idc <- paste0("Tube_", j, "_id")
     tic <- paste0("Tube_", j, "_tissue")
     mic <- paste0("T", j, "_Preservation_medium")
@@ -1608,7 +1691,7 @@ apply_whole_org_defaults_for_row <- function(tbl, i, j, tissue_def, medium_def, 
       if (is_na_like_val(lb)) tbl$Location_body[i] <- "Ikiam"
     }
     if (isTRUE(autofill_na)) {
-      for (jj in (j+1):4) {
+      for (jj in (j+1):max(TUBE_SLOTS)) {
         ii <- paste0("Tube_", jj, "_id"); tt <- paste0("Tube_", jj, "_tissue")
         if (ii %in% names(tbl)) tbl[[ii]][i] <- "NA"
         if (tt %in% names(tbl)) tbl[[tt]][i] <- "NA"
@@ -1725,9 +1808,7 @@ RegistrarMuertesTab <- tabPanel(
           selectizeInput(
             "dead_ids", "IDs",
             choices = NULL, multiple = TRUE,
-            options = list(placeholder = 'Seleccione uno o más IDs', maxOptions = 5000, openOnFocus = TRUE,
-                           onBlur = SELECTIZE_CONFIRM_ONBLUR,
-                           sortField = NULL)
+            options = SEL_OPTS_MULTI_IDS
           ),
           checkboxInput("dead_review_only", "Solo revisar", value = FALSE)
         )
@@ -1772,9 +1853,7 @@ RegistrarTubosTab <- tabPanel(
         selectizeInput(
           "tube_ids", "IDs",
           choices = NULL, multiple = TRUE,
-          options = list(placeholder = "Seleccione uno o más IDs", maxOptions = 2000, openOnFocus = TRUE,
-                         onBlur = SELECTIZE_CONFIRM_ONBLUR,
-                         sortField = NULL)
+          options = SEL_OPTS_MULTI_IDS
         )
       ),
       column(6,
@@ -1822,7 +1901,7 @@ RegistrarTubosTab <- tabPanel(
       ),
       column(3,
         br(),  # align checkbox vertically with inputs without custom CSS
-        checkboxInput("tube_autofill_na", "Autocompletar con NAs columnas con tubos vacíos si Tejido es WHOLE_ORGANISM", value = FALSE)
+        checkboxInput("tube_autofill_na", "Autocompletar con NAs columnas con tubos vacíos si Tejido es WHOLE_ORGANISM", value = TRUE)
       )
     ),
 
@@ -1892,16 +1971,8 @@ RegistrarEmergidosTab <- tabPanel(
         div(class="grow", selectInput("em_clutch", "CLUTCH NUMBER", choices = NULL)),
         div(class="grow", numericInput("em_n", "Número de individuos", value = 1, min = 1)),
         div(class="grow",
-            selectizeInput(
-              "em_start_id", "Insectary ID inicial",
-              choices = NULL, multiple = FALSE,
-              options = list(
-                placeholder = "Seleccione un ID",
-                maxOptions = 5000, openOnFocus = TRUE,
-                onBlur = SELECTIZE_CONFIRM_ONBLUR,
-                sortField = NULL
-              )
-            )
+            selectizeInput("em_start_id", "Insectary ID inicial",
+              choices = NULL, multiple = FALSE, options = SEL_OPTS_IDS)
         ),
         div(class="grow", dateInput("em_intro_date", "Intro a Insectario", value = Sys.Date(), format = "d-M-yy", language = "en"))
       ),
@@ -1909,16 +1980,8 @@ RegistrarEmergidosTab <- tabPanel(
       # Row 2: Add-one start (only the input)
       div(class="inline",
         div(class="grow",
-            selectizeInput(
-              "em_add_id", "Insectary ID para añadir",
-              choices = NULL, multiple = FALSE,
-              options = list(
-                placeholder = "Seleccione un ID",
-                maxOptions = 5000, openOnFocus = TRUE,
-                onBlur = SELECTIZE_CONFIRM_ONBLUR,
-                sortField = NULL
-              )
-            )
+            selectizeInput("em_add_id", "Insectary ID para añadir",
+              choices = NULL, multiple = FALSE, options = SEL_OPTS_IDS)
         )
       ),
 
@@ -1926,7 +1989,7 @@ RegistrarEmergidosTab <- tabPanel(
     div(class="inline",
       checkboxInput(
         "em_autofill_na",
-        "Autocompletar con NAs columnas con tubos vacíos si Tejido es WHOLE_ORGANISM", value = FALSE)
+        "Autocompletar con NAs columnas con tubos vacíos si Tejido es WHOLE_ORGANISM", value = TRUE)
     ),
 
     # Row 4: Buttons alone in one row
@@ -2005,7 +2068,8 @@ HistorialCambiosTab <- tabPanel(
           options = list(placeholder = "Todos"))
       ),
       actionButton("hist_load", "Buscar", class = "btn-primary"),
-      actionButton("hist_retry", "Reintentar subir seleccionados", class = "btn-success")
+      actionButton("hist_retry", "Reintentar subir seleccionados", class = "btn-success"),
+      actionButton("hist_undo_push", "Deshacer cambios en Google Sheets", class = "btn-danger")
     ),
 
     fluidRow(column(12, DTOutput("hist_table")))
@@ -2211,7 +2275,7 @@ register_tubos_server <- function(input, output, session, rv) {
       if (!length(idx)) next
 
       # Find first available tube slot and fill
-      for (j in 1:4) {
+      for (j in TUBE_SLOTS) {
         tube_field   <- paste0("Tube_", j, "_id")
         tissue_field <- paste0("Tube_", j, "_tissue")
         medium_field <- paste0("T", j, "_Preservation_medium")
@@ -2278,10 +2342,10 @@ register_tubos_server <- function(input, output, session, rv) {
       # 1) clutch-driven defaults only when CLUTCH NUMBER changed
       new_tbl <- apply_clutch_defaults_on_change(prev_tbl, new_tbl, rv$data$Insectary_stocks)
       # 2) detect newly-filled Tube_*_id and backfill dependent fields
-      today_ui   <- fmt_ui_date(Sys.Date())
+      today_ui   <- fmt_ui_date(input$tube_pres_date %||% Sys.Date())
       tissue_def <- input$tube_tissue_default
       medium_def <- input$tube_medium_default
-      for (j in 1:4) {
+      for (j in TUBE_SLOTS) {
         idc <- paste0("Tube_", j, "_id")
         if (!(idc %in% names(new_tbl))) next
         prev_vec <- if (!is.null(prev_tbl) && idc %in% names(prev_tbl)) prev_tbl[[idc]] else rep(NA_character_, nrow(new_tbl))
@@ -2297,7 +2361,7 @@ register_tubos_server <- function(input, output, session, rv) {
         }
       }
       # 3) detect Tube_*_tissue changes to WHOLE_ORGANISM and cascade NA/NOT_COLLECTED
-      for (j in 1:4) {
+      for (j in TUBE_SLOTS) {
         tis_col <- paste0("Tube_", j, "_tissue")
         if (!(tis_col %in% names(new_tbl))) next
         prev_t  <- if (!is.null(prev_tbl) && tis_col %in% names(prev_tbl)) prev_tbl[[tis_col]] else rep(NA_character_, nrow(new_tbl))
@@ -2356,13 +2420,13 @@ register_tubos_server <- function(input, output, session, rv) {
     if (nzchar(cur_id) && nrow(tbl) && length(new_ids_this_click)) {
       tissue_def <- input$tube_tissue_default
       medium_def <- input$tube_medium_default
-      today_ui   <- fmt_ui_date(Sys.Date())
+      today_ui   <- fmt_ui_date(input$tube_pres_date %||% Sys.Date())
 
       rows_to_fill <- which(tbl$Insectary_ID %in% new_ids_this_click)
 
       for (i in rows_to_fill) {
         wrote <- FALSE
-        for (j in 1:4) {
+        for (j in TUBE_SLOTS) {
           id_col  <- paste0("Tube_", j, "_id")
           tis_col <- paste0("Tube_", j, "_tissue")
           med_col <- paste0("T", j, "_Preservation_medium")
@@ -2449,8 +2513,7 @@ register_emergidos_server <- function(input, output, session, rv) {
       if (is_na_like_val(cur_clutch)) {
         new_records$`CLUTCH NUMBER`[i] <- clutch
         row_i <- new_records[i, , drop = FALSE]
-        row_i <- apply_stock_origin_rule(row_i, rv$data$Insectary_stocks)
-        row_i <- apply_clutch_side_defaults(row_i)
+        row_i <- apply_row_core_defaults(row_i, rv$data$Insectary_stocks)
         new_records[i, names(row_i)] <- row_i
       }
     }
@@ -2570,7 +2633,7 @@ register_emergidos_server <- function(input, output, session, rv) {
 
       # 2) cascade on WHOLE_ORGANISM for tube columns (same behavior as Tubos)
       today_ui <- fmt_ui_date(Sys.Date())
-      for (j in 1:4) {
+      for (j in TUBE_SLOTS) {
         tis_col <- paste0("Tube_", j, "_tissue")
         if (!(tis_col %in% names(new_tbl))) next
 
@@ -2627,22 +2690,41 @@ register_subir_server <- function(input, output, session, rv) {
 
   change_key <- function(df) paste(df$ts, df$Insectary_ID, df$Column, sep = " | ")
 
+  # Shared filter helper for Active/Undone changes
+  filter_changes <- function(act, und, sel_users, sel_commits) {
+    act <- normalize_batch_ids(act); und <- normalize_batch_ids(und)
+    if (length(sel_users)) {
+      act <- act %>% dplyr::filter(.data$user_label %in% sel_users)
+      und <- und %>% dplyr::filter(.data$user_label %in% sel_users)
+    }
+    if (length(sel_commits)) {
+      act <- act %>% dplyr::filter(.data$batch_id %in% sel_commits)
+      und <- und %>% dplyr::filter(.data$batch_id %in% sel_commits)
+    } else {
+      # No commit selection -> hide *_uploaded by default
+      act <- act %>% dplyr::filter(!grepl("_uploaded$", .data$batch_id %||% ""))
+      und <- und %>% dplyr::filter(!grepl("_uploaded$", .data$batch_id %||% ""))
+    }
+    commits <- sort(unique(na.omit(act$batch_id)))
+    list(act = act, und = und, commits = commits)
+  }
+
   refresh_user_filter <- function() {
     ch <- normalize_batch_ids(rv$changes)
     users <- sort(unique(na.omit(ch$user_label)))
     updateSelectizeInput(session, "chg_user_filter",
                          choices = users, selected = isolate(input$chg_user_filter), server = TRUE)
     # Commit options depend on (possibly multiple) user selections
-    if (length(users)) {
-      sel_users <- isolate(input$chg_user_filter)
-      ch2 <- if (length(sel_users)) dplyr::filter(ch, .data$user_label %in% sel_users) else ch
-      ch2 <- ch2 %>% dplyr::filter(!grepl("_uploaded$", .data$batch_id %||% ""))
-      commits <- sort(unique(na.omit(ch2$batch_id)))
-      updateSelectizeInput(session, "chg_commit_filter",
-                           choices = commits, selected = isolate(input$chg_commit_filter), server = TRUE)
-    } else {
+    if (!length(users)) {
       updateSelectizeInput(session, "chg_commit_filter", choices = character(0), selected = character(0), server = TRUE)
+      return(invisible(NULL))
     }
+    sel_users   <- isolate(input$chg_user_filter)
+    sel_commits <- character(0)  # while populating, treat as 'none selected'
+    res <- filter_changes(rv$changes, rv$chg_undone, sel_users, sel_commits)
+    updateSelectizeInput(session, "chg_commit_filter",
+                         choices = res$commits,
+                         selected = isolate(input$chg_commit_filter), server = TRUE)
   }
 
   observe(refresh_user_filter())
@@ -2663,38 +2745,12 @@ register_subir_server <- function(input, output, session, rv) {
   }
 
   build_changes_view <- function() {
-    act <- rv$changes
-    und <- rv$chg_undone
-    if (nrow(act) == 0 && nrow(und) == 0) return(NULL)
-
-    act <- normalize_batch_ids(act)
-    und <- normalize_batch_ids(und)
-
-    # Multi-user filter by user_label
-    sel_users <- input$chg_user_filter
-    if (length(sel_users)) {
-      act <- act %>% dplyr::filter(.data$user_label %in% sel_users)
-      und <- und %>% dplyr::filter(.data$user_label %in% sel_users)
-    }
-    # Multi-commit filter
-    sel_commits <- input$chg_commit_filter
-    if (length(sel_commits)) {
-      act <- act %>% dplyr::filter(.data$batch_id %in% sel_commits)
-      und <- und %>% dplyr::filter(.data$batch_id %in% sel_commits)
-    } else {
-      # NO selection means "all un-uploaded"; hide uploaded by default
-      act <- act %>% dplyr::filter(!grepl("_uploaded$", .data$batch_id %||% ""))
-      und <- und %>% dplyr::filter(!grepl("_uploaded$", .data$batch_id %||% ""))
-    }
-
-    if (nrow(act) == 0 && nrow(und) == 0) return(NULL)
-
-    act <- add_toggle_cols(act, "Active")
-    und <- add_toggle_cols(und, "Undone")
-
-    out <- dplyr::bind_rows(act, und) %>%
-      dplyr::arrange(dplyr::desc(Status), dplyr::desc(ts))  # Active primero
-    out
+    if (nrow(rv$changes) == 0 && nrow(rv$chg_undone) == 0) return(NULL)
+    res <- filter_changes(rv$changes, rv$chg_undone, input$chg_user_filter, input$chg_commit_filter)
+    if (nrow(res$act) == 0 && nrow(res$und) == 0) return(NULL)
+    act <- add_toggle_cols(res$act, "Active")
+    und <- add_toggle_cols(res$und, "Undone")
+    dplyr::bind_rows(act, und) %>% dplyr::arrange(dplyr::desc(Status), dplyr::desc(ts))
   }
 
   observeEvent(input$chg_show, {
@@ -2793,7 +2849,7 @@ register_subir_server <- function(input, output, session, rv) {
 
     send_core <- ch_send[, intersect(names(ch_send), CHANGE_LOG_COLS), drop = FALSE]
 
-    dir.create("data", showWarnings = FALSE)
+    ensure_data_dir()
 
     # Colapsa a último cambio por (ID, Columna)
     ch_write <- send_core %>% group_by(Insectary_ID, Column) %>%
@@ -2848,10 +2904,10 @@ register_subir_server <- function(input, output, session, rv) {
     for (b in batches_committed) {
       part <- ch_write %>% dplyr::filter(.data$batch_id == b)
       if (!nrow(part)) next
-      # store a Windows-safe, filename-aligned commit_id
-      part$commit_id <- safe_filename(paste0(b, "_uploaded"))
-      fn <- file.path("data", paste0("commit_", part$commit_id[1], ".rds"))
-      saveRDS(part, file = fn)
+      # Keep a human commit label inside the file (unsanitized, for UI)
+      part$commit_id <- paste0(b, "_uploaded")
+      # Use centralized helper to persist snapshot (Windows-safe path)
+      write_commit_snapshot(part, part$commit_id[1])
     }
 
     # --- Mark the committed rows inside rv$changes as uploaded (rename batch_id) ---
@@ -2875,7 +2931,7 @@ register_subir_server <- function(input, output, session, rv) {
 
     # Refresh filters/UI to hide uploaded commits from the Commit(s) list
     shinyjs::click("chg_show")
-    # And also rebuild the Commit(s) dropdown
+    # And also rebuild the Commit(s) dropdown using shared helper
     isolate(refresh_user_filter())
   })
 
@@ -2921,30 +2977,11 @@ register_subir_server <- function(input, output, session, rv) {
 register_hist_server <- function(input, output, session, rv) {
 
   # ---- helpers ----
-  load_commit_files <- function() {
-    files <- list.files("data", pattern = "^commit_.*\\.rds$", full.names = TRUE)
-    if (!length(files)) return(NULL)
-    parts <- lapply(files, function(f){
-      df <- tryCatch(readRDS(f), error = function(e) NULL)
-      if (is.null(df) || !nrow(df)) return(NULL)
-      # always provide a sanitized commit_id
-      if ("commit_id" %in% names(df) && any(nzchar(df$commit_id))) {
-        df$commit_id <- safe_filename(as.character(df$commit_id))
-      } else {
-        df$commit_id <- sub("^commit_(.*)\\.rds$", "\\1", basename(f))
-      }
-      # ensure normalization regardless of source
-      df$commit_id <- safe_filename(as.character(df$commit_id))
-      df
-    })
-    parts <- Filter(Negate(is.null), parts)
-    if (!length(parts)) return(NULL)
-    dplyr::bind_rows(parts)
-  }
+  # Commit snapshots are read via read_commit_snapshots() (centralized).
 
   # returns filtered df AND updates commit/ID pickers
   apply_hist_filters <- function(update_inputs = TRUE) {
-    all_hist <- load_commit_files()
+    all_hist <- read_commit_snapshots()
     if (is.null(all_hist)) return(NULL)
 
     # Fill 'Result' for old snapshots if missing
@@ -2962,7 +2999,7 @@ register_hist_server <- function(input, output, session, rv) {
       # single day (end only); keep start==end and keep start disabled in UI
       rng[1] <- rng[2]
     }
-    ts_dates <- suppressWarnings(as.Date(as.POSIXlt(all_hist$ts, tz = "")))
+    ts_dates <- suppressWarnings(local_day(all_hist$ts))
     all_hist <- dplyr::filter(all_hist, !is.na(ts_dates), ts_dates >= rng[1], ts_dates <= rng[2])
 
     # ----- users filter -----
@@ -3001,14 +3038,9 @@ register_hist_server <- function(input, output, session, rv) {
 
   # ---- initialize pickers ----
   observe({
-    # build initial Users (include ALL)
-    files <- list.files("data", pattern = "^commit_.*\\.rds$", full.names = TRUE)
-    users <- character(0)
-    if (length(files)) {
-      U <- lapply(files, function(f) tryCatch(readRDS(f), error=function(e) NULL))
-      U <- Filter(Negate(is.null), U)
-      if (length(U)) users <- unique(dplyr::bind_rows(U)$user_label)
-    }
+    # build initial Users (include ALL) from centralized loader
+    snap <- read_commit_snapshots()
+    users <- if (!is.null(snap) && nrow(snap)) unique(snap$user_label) else character(0)
     if (nrow(rv$changes)) users <- c(users, unique(rv$changes$user_label))
     users <- sort(unique(na.omit(users)))
     updateSelectizeInput(session, "hist_users",
@@ -3034,14 +3066,9 @@ register_hist_server <- function(input, output, session, rv) {
   # Refresh Historial pickers when entering the tab
   observeEvent(input$nav_main, {
     if (identical(input$nav_main, "Historial de Cambios")) {
-      # Rebuild Users from disk + live changes
-      files <- list.files("data", pattern = "^commit_.*\\.rds$", full.names = TRUE)
-      users <- character(0)
-      if (length(files)) {
-        U <- lapply(files, function(f) tryCatch(readRDS(f), error=function(e) NULL))
-        U <- Filter(Negate(is.null), U)
-        if (length(U)) users <- unique(dplyr::bind_rows(U)$user_label)
-      }
+      # Rebuild Users from disk + live changes using centralized loader
+      snap <- read_commit_snapshots()
+      users <- if (!is.null(snap) && nrow(snap)) unique(snap$user_label) else character(0)
       if (nrow(rv$changes)) users <- c(users, unique(rv$changes$user_label))
       users <- sort(unique(na.omit(users)))
       updateSelectizeInput(session, "hist_users",
@@ -3090,7 +3117,7 @@ register_hist_server <- function(input, output, session, rv) {
     )
   })
 
-  # ---- retry functionality (preserved from previous version) ----
+  # ---- retry functionality (force overwrite with 'New') ----
   observeEvent(input$hist_retry, {
     # Get the filtered data from the current search
     hist_df <- apply_hist_filters(update_inputs = FALSE)
@@ -3099,15 +3126,10 @@ register_hist_server <- function(input, output, session, rv) {
       showNotification("Selecciona una o más filas en Historial.", type = "warning"); return()
     }
     
-    # Map selection to the actual data
+    # Map selection to the actual data (always overwrite with 'New')
     df_sel <- hist_df[sel, , drop = FALSE]
-
-    # Commit only items not marked Committed
-    df_sel <- df_sel %>% filter(Result != "Committed")
-    if (!nrow(df_sel)) { showNotification("Nada para reintentar.", type="message"); return() }
-
-    to_commit <- df_sel %>% select(Insectary_ID, Column, New)
-    showModal(modalDialog("Reintentando subir cambios seleccionados...", footer=NULL))
+    to_commit <- df_sel %>% dplyr::select(Insectary_ID, Column, New)
+    showModal(modalDialog("Subiendo (forzando) valores 'Nuevo' de filas seleccionadas…", footer=NULL))
     on.exit(removeModal())
 
     failures <- commit_changes_to_sheet(to_commit, sheet_name = "Insectary_data")
@@ -3116,10 +3138,39 @@ register_hist_server <- function(input, output, session, rv) {
       key <- paste(failures$Insectary_ID, failures$Column)
       ifelse(paste(df_sel$Insectary_ID, df_sel$Column) %in% key, "Skipped (protected)", "Committed")
     } else "Committed"
-
-    saveRDS(df_sel, file = file.path("data", paste0("commit_retry_", ts, ".rds")))
-    showNotification("Reintento finalizado.", type = "message")
+    
+    df_sel$commit_id <- paste0("retry_", ts)
+    ensure_data_dir()
+    saveRDS(df_sel, file = file.path(DATA_DIR, paste0("commit_retry_", ts, ".rds")))
+    showNotification("Sobrescritura completada (usando 'Nuevo').", type = "message")
     shinyjs::click("hist_load")  # refresh table
+  })
+
+  # ---- new: push PREVIOUS values to Sheets (undo at source) ----
+  observeEvent(input$hist_undo_push, {
+    hist_df <- apply_hist_filters(update_inputs = FALSE)
+    sel <- input$hist_table_rows_selected
+    if (!length(sel) || is.null(hist_df)) {
+      showNotification("Selecciona una o más filas en Historial.", type = "warning"); return()
+    }
+    df_sel <- hist_df[sel, , drop = FALSE]
+
+    # Overwrite selected cells with their 'Previous' value
+    to_commit <- df_sel %>% dplyr::transmute(Insectary_ID, Column, New = Previous)
+    showModal(modalDialog("Deshaciendo en Google Sheets (escribiendo 'Previo')…", footer=NULL))
+    on.exit(removeModal())
+
+    failures <- commit_changes_to_sheet(to_commit, sheet_name = "Insectary_data")
+    ts <- format(Sys.time(), "%Y-%m-%d_%H-%M-%S")
+    df_sel$Result <- if (nrow(failures)) {
+      key <- paste(failures$Insectary_ID, failures$Column)
+      ifelse(paste(df_sel$Insectary_ID, df_sel$Column) %in% key, "Skipped (protected)", "Committed")
+    } else "Committed"
+    df_sel$commit_id <- paste0("undo_", ts)
+    ensure_data_dir()
+    saveRDS(df_sel, file = file.path(DATA_DIR, paste0("commit_undo_", ts, ".rds")))
+    showNotification("Deshacer completado (se escribió 'Previo').", type = "message")
+    shinyjs::click("hist_load")
   })
 }
 
@@ -3262,7 +3313,7 @@ server <- function(input, output, session) {
             checkboxInput(
               "dead_autofill_na",
               "Autocompletar con NAs columnas con tubos vacíos si Tejido es WHOLE_ORGANISM",
-              value = FALSE
+              value = TRUE
             )
         )
     )
@@ -3299,7 +3350,7 @@ server <- function(input, output, session) {
       # 2) cascade on WHOLE_ORGANISM like in Tubos tab
       #    (also prime New_Death_Date if blank)
       today_ui <- fmt_ui_date(input$dead_date %||% Sys.Date())
-      for (j in 1:4) {
+      for (j in TUBE_SLOTS) {
         tis_col <- paste0("Tube_", j, "_tissue")
         if (!(tis_col %in% names(new_tbl))) next
 
