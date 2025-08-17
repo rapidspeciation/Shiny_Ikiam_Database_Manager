@@ -865,6 +865,11 @@ render_table <- function(output, output_id, df, rv, custom_editors = NULL, stret
         }
       }
     }
+
+    # Make previous-value columns read-only to prevent accidental edits
+    if ("Previous_Death_Date"   %in% names(df)) rh <- safe_hot_col(rh, "Previous_Death_Date",   readOnly = TRUE)
+    if ("Previous_Death_Cause"  %in% names(df)) rh <- safe_hot_col(rh, "Previous_Death_Cause",  readOnly = TRUE)
+
     # CAM_ID: limit source to PREDICTIONS (from custom_editors if provided),
     # and color invalids against the full Lists whitelist.
     if ("CAM_ID" %in% names(df)) {
@@ -891,6 +896,11 @@ render_table <- function(output, output_id, df, rv, custom_editors = NULL, stret
     }
     rh
   })
+  # After render, bind edit hooks so we can detect active editing on the client
+  session <- shiny::getDefaultReactiveDomain()
+  if (!is.null(session)) {
+    session$sendCustomMessage('hotBindHooks', list(id = output_id))
+  }
 }
 
 ## Photo grid (for CAM_IDs in the table) --------------------------------------
@@ -942,8 +952,10 @@ apply_predictive_editors <- function(output, session, output_id, cur_df, rv,
                                      prev_df = NULL,
                                      update_inputs = c("both","add_only","none"),
                                      start_values = list(start = NULL, add = NULL),
-                                     defer_render = FALSE) {
+                                     defer_render = FALSE,
+                                     render_mode = c("auto","force","none")) {
   update_inputs <- match.arg(update_inputs)
+  render_mode   <- match.arg(render_mode)
   # ---- CAM_ID source (include live picks + last-change hint) ----
   next_cam_hint <- NULL
   if (!is.null(prev_df) && all(c("CAM_ID" %in% names(cur_df), "CAM_ID" %in% names(prev_df))) &&
@@ -1009,14 +1021,26 @@ apply_predictive_editors <- function(output, session, output_id, cur_df, rv,
       custom[[idc]] <- list(type="dropdown", source = tube_source, strict = FALSE, allowInvalid = TRUE)
     }
   }
-  # Defer full Handsontable re-render until after the current flush if requested.
-  # This prevents repainting the widget while an edit is still being committed.
-  if (isTRUE(defer_render)) {
-    session$onFlushed(function(){
+  # ---- Decide whether to re-render the table ----
+  do_render <- switch(render_mode,
+    force = TRUE,
+    none  = FALSE,
+    auto  = {
+      if (is.null(prev_df)) TRUE else {
+        nrow(prev_df) != nrow(cur_df) || !identical(names(prev_df), names(cur_df))
+      }
+    }
+  )
+  if (isTRUE(do_render)) {
+    # Defer full Handsontable re-render until after current flush if requested.
+    # This prevents repainting the widget while an edit is still being committed.
+    if (isTRUE(defer_render)) {
+      session$onFlushed(function(){
+        render_table(output, output_id, cur_df, rv, custom_editors = custom)
+      }, once = TRUE)
+    } else {
       render_table(output, output_id, cur_df, rv, custom_editors = custom)
-    }, once = TRUE)
-  } else {
-    render_table(output, output_id, cur_df, rv, custom_editors = custom)
+    }
   }
 
       # ---- (Tubos tab) refresh Tube start selects to reflect new prediction ----
@@ -1046,6 +1070,101 @@ apply_predictive_editors <- function(output, session, output_id, cur_df, rv,
         updateSelectizeInput(session, "tube_add_start_id", choices = labelize(choices_add), selected = sel_add, server = TRUE)
       }
     }
+}
+
+## ---------- Reusable HOT helpers (debounce/guard/render) ----------
+# Force-or-auto predictive render with deferred paint (to avoid flicker)
+hot_render_predictive <- function(output, session, output_id, cur_df, rv,
+                                  prev_df = NULL,
+                                  update_inputs = "none",
+                                  start_values = list(),
+                                  force = FALSE) {
+  apply_predictive_editors(
+    output, session, output_id, cur_df, rv,
+    prev_df       = prev_df,
+    update_inputs = update_inputs,
+    start_values  = start_values,
+    defer_render  = TRUE,
+    render_mode   = if (isTRUE(force)) "force" else "auto"
+  )
+}
+
+# Generic, reusable debounced observer for a Handsontable:
+# - input_id: the rHandsontableOutput id (e.g., "tube_table")
+# - rv_slot : name of the rv field to store the data.frame (e.g., "tube_tbl")
+# - process_fun(prev_df, new_df): returns processed new_df
+# - update_inputs/start_values: forwarded to predictive editors
+# - debounce_ms: quiet time window before processing
+hot_debounced_observer <- function(input, output, session, rv,
+                                   input_id, rv_slot,
+                                   process_fun,
+                                   update_inputs = "none",
+                                   start_values = list(),
+                                   debounce_ms = 200,
+                                   key_columns = character(0)) {
+  # Busy flag per table
+  busy_name <- paste0("busy_", rv_slot)
+  rv[[busy_name]] <- FALSE
+  # Debounced stream of the HOT input
+  deb <- debounce(reactive(input[[input_id]]), debounce_ms)
+  observeEvent(deb(), {
+    req(input[[input_id]])
+    # Skip while client-side editor is open
+    edit_flag_name <- paste0(input_id, "_editing")
+    if (isTRUE(input[[edit_flag_name]])) return()
+
+    # Re-entrancy guard
+    if (isTRUE(rv[[busy_name]])) return()
+    rv[[busy_name]] <- TRUE
+    on.exit({ rv[[busy_name]] <- FALSE }, add = TRUE)
+
+    prev_df <- rv[[rv_slot]]
+    new_df  <- hot_to_r(input[[input_id]])
+    if (is.null(new_df) || !is.data.frame(new_df) || !nrow(new_df)) return()
+
+    # Detect whether any key column has changed vs previous df
+    changed_key <- FALSE
+    if (!is.null(prev_df)) {
+      cols <- intersect(key_columns, intersect(names(prev_df), names(new_df)))
+      if (length(cols)) {
+        for (cn in cols) {
+          pv <- as.character(prev_df[[cn]])
+          cv <- as.character(new_df[[cn]])
+          if (length(pv) != length(cv) ||
+              any(is.na(pv) != is.na(cv)) ||
+              any((pv != cv)[!(is.na(pv) | is.na(cv))])) {
+            changed_key <- TRUE; break
+          }
+        }
+      }
+    }
+
+    # Let caller transform / enforce row-wise rules
+    new_df <- process_fun(prev_df, new_df)
+    rv[[rv_slot]] <- new_df
+
+    # Keep predictions fresh but do NOT repaint mid-edit
+    apply_predictive_editors(
+      output, session, input_id, rv[[rv_slot]], rv,
+      prev_df       = prev_df,
+      update_inputs = update_inputs,
+      start_values  = start_values,
+      defer_render  = TRUE,
+      render_mode   = "none"
+    )
+
+    # If key columns changed, run a forced (deferred) repaint so UI reflects rules
+    if (isTRUE(changed_key)) {
+      apply_predictive_editors(
+        output, session, input_id, rv[[rv_slot]], rv,
+        prev_df       = prev_df,
+        update_inputs = update_inputs,
+        start_values  = start_values,
+        defer_render  = TRUE,
+        render_mode   = "force"
+      )
+    }
+  }, ignoreInit = TRUE)
 }
 
 ## User directory & passwords --------------------------------------------------
@@ -1350,35 +1469,35 @@ build_dead_table <- function(insectary_df, ids, review_only, default_cause, date
   df <- insectary_df %>% dplyr::filter(.data$Insectary_ID %in% ids)
   if (!nrow(df)) return(df)
 
-  # Ensure consistent UI date strings in view
+  # Ensure consistent UI date strings in view for Death_date
   if ("Death_date" %in% names(df)) {
     df$Death_date <- vapply(df$Death_date, fmt_ui_date, character(1))
   }
 
-  if (isTRUE(review_only)) {
-    # Pure review: do NOT add helper columns, do NOT prefill or reorder.
-    return(df)
-  }
-
-  # Editing mode (not review): add helper columns and prefill if empty
+  # Prepare helper columns ALWAYS (same structure for review and edit)
   target_date_ui <- fmt_ui_date(date_input_str %||% Sys.Date())
 
   prev_date <- df$Death_date
   prev_cause <- df$Death_cause
 
-  # Compute New_Death_Date: keep old if non-empty, else set to target_date_ui
-  new_date <- ifelse(
-    is.na(prev_date) | prev_date == "" | toupper(prev_date) == "NA",
-    target_date_ui,
-    prev_date
-  )
-
-  # Compute edited Death_cause: keep old if non-empty, else from default_cause
-  new_cause <- ifelse(
-    is.na(prev_cause) | prev_cause == "" | toupper(prev_cause) == "NA",
-    default_cause %||% prev_cause,
-    prev_cause
-  )
+  if (isTRUE(review_only)) {
+    # Review mode: mirror previous values; user sees same structure but cannot
+    # change "Previous_*" columns (made readOnly in render_table).
+    new_date  <- prev_date
+    new_cause <- prev_cause
+  } else {
+    # Editing mode: prefill new values only when empty
+    new_date <- ifelse(
+      is.na(prev_date) | prev_date == "" | toupper(prev_date) == "NA",
+      target_date_ui,
+      prev_date
+    )
+    new_cause <- ifelse(
+      is.na(prev_cause) | prev_cause == "" | toupper(prev_cause) == "NA",
+      default_cause %||% prev_cause,
+      prev_cause
+    )
+  }
 
   # Assemble view with helper columns
   tbl <- df %>%
@@ -1464,7 +1583,9 @@ apply_whole_org_defaults_for_row <- function(tbl, i, j, tissue_def, medium_def, 
   }
   if (j <= 2 && med_col %in% names(tbl)) {
     mv <- tbl[[med_col]][i]
-    if (is_na_like_val(mv)) tbl[[med_col]][i] <- medium_def
+    # If caller didn't provide a medium default, use NOT_COLLECTED for current slot when blank
+    md <- medium_def %||% "NOT_COLLECTED"
+    if (is_na_like_val(mv)) tbl[[med_col]][i] <- md
   }
   is_whole <- (tis_col %in% names(tbl)) && identical(tbl[[tis_col]][i], TISSUE_WHOLE)
   if (is_whole) {
@@ -1487,7 +1608,7 @@ apply_whole_org_defaults_for_row <- function(tbl, i, j, tissue_def, medium_def, 
         if (tt %in% names(tbl)) tbl[[tt]][i] <- "NA"
         if (jj <= 2) {
           mm <- paste0("T", jj, "_Preservation_medium")
-          if (mm %in% names(tbl)) tbl[[mm]][i] <- "NA"
+          if (mm %in% names(tbl)) tbl[[mm]][i] <- "NOT_COLLECTED"
         }
       }
     }
@@ -1695,7 +1816,7 @@ RegistrarTubosTab <- tabPanel(
       ),
       column(3,
         br(),  # align checkbox vertically with inputs without custom CSS
-        checkboxInput("tube_autofill_na", "Autocompletar con NAs columnas con tubos vacíos", value = FALSE)
+        checkboxInput("tube_autofill_na", "Autocompletar con NAs columnas con tubos vacíos si Tejido es WHOLE_ORGANISM", value = FALSE)
       )
     ),
 
@@ -1795,7 +1916,14 @@ RegistrarEmergidosTab <- tabPanel(
         )
       ),
 
-    # Row 3: Buttons alone in one row
+    # Row 3: WHOLE_ORGANISM autofill toggle (same behavior as Tubos)
+    div(class="inline",
+      checkboxInput(
+        "em_autofill_na",
+        "Autocompletar con NAs columnas con tubos vacíos si Tejido es WHOLE_ORGANISM", value = FALSE)
+    ),
+
+    # Row 4: Buttons alone in one row
     div(class="inline",
       actionButton("em_load", "Preparar/Revertir filas", class = "btn-primary"),
       actionButton("em_add",  "Añadir a la tabla", class = "btn-default"),
@@ -1941,6 +2069,24 @@ ui <- tagList(
         }
       }catch(e){ /* ignore */ }
     });
+
+    // Bind Handsontable edit hooks to signal editing state to Shiny
+    Shiny.addCustomMessageHandler('hotBindHooks', function(m){
+      try{
+        var id = m && m.id; if(!id) return;
+        var root = document.getElementById(id);
+        if(!root) return;
+        var hot = $(root).find('.handsontable').data('handsontable');
+        if(!hot || hot.__hooksBound) return;
+        hot.__hooksBound = true;
+        hot.addHook('afterBeginEditing', function(){
+          Shiny.setInputValue(id + '_editing', true, {priority:'event'});
+        });
+        hot.addHook('afterFinishEditing', function(){
+          Shiny.setInputValue(id + '_editing', false, {priority:'event'});
+        });
+      }catch(e){ /* noop */ }
+    });
   ")),
 ),
   navbarPage(
@@ -2036,9 +2182,6 @@ register_tubos_server <- function(input, output, session, rv) {
   }, ignoreInit = TRUE)
 
   rv$tube_tbl <- NULL
-  # busy flag + debounced stream to prevent mid-edit re-renders
-  rv$busy_tube <- FALSE
-  tube_table_deb <- debounce(reactive(input$tube_table), 200)
 
   observeEvent(input$tube_apply, {
     req(input$tube_ids)
@@ -2098,11 +2241,10 @@ register_tubos_server <- function(input, output, session, rv) {
     }
 
     rv$tube_tbl <- build_tube_table(df, ids)
-    apply_predictive_editors(
-      output, session, "tube_table", rv$tube_tbl, rv,
-      prev_df = NULL, update_inputs = "none",
-      defer_render = TRUE
-    )
+    hot_render_predictive(output, session, "tube_table",
+                          rv$tube_tbl, rv,
+                          prev_df = NULL, update_inputs = "none",
+                          force = TRUE)
 
     # --- NEW: prime "Tube ID (para añadir)" with the next after those just used ---
     if (nzchar(start_id) && length(ids) > 0) {
@@ -2121,56 +2263,59 @@ register_tubos_server <- function(input, output, session, rv) {
     }
   })
 
-  observeEvent(tube_table_deb(), {
-    req(input$tube_table)
-    if (isTRUE(rv$busy_tube)) return()
-    rv$busy_tube <- TRUE
-    on.exit({ rv$busy_tube <- FALSE }, add = TRUE)
-    prev_tbl <- rv$tube_tbl
-    new_tbl  <- hot_to_r(input$tube_table)
-    if (is.null(new_tbl) || !nrow(new_tbl)) return()
-
-    # Fill clutch-driven defaults only when CLUTCH NUMBER changed
-    new_tbl <- apply_clutch_defaults_on_change(prev_tbl, new_tbl, rv$data$Insectary_stocks)
-
-    # Detect Tube_N_id newly set and fill tissue/medium/date accordingly
-    today_ui   <- fmt_ui_date(Sys.Date())
-    tissue_def <- input$tube_tissue_default
-    medium_def <- input$tube_medium_default
-
-    for (j in 1:4) {
-      idc <- paste0("Tube_", j, "_id")
-      if (!(idc %in% names(new_tbl))) next
-
-      prev_vec <- if (!is.null(prev_tbl) && idc %in% names(prev_tbl)) prev_tbl[[idc]] else rep(NA_character_, nrow(new_tbl))
-      cur_vec  <- new_tbl[[idc]]
-
-      # rows where id changed from empty to non-empty
-      changed_rows <- which( is_na_like_val(prev_vec) & !is_na_like_val(cur_vec) )
-      if (!length(changed_rows)) next
-
-      tis_col <- paste0("Tube_", j, "_tissue")
-      med_col <- paste0("T", j, "_Preservation_medium")
-
-      for (i in changed_rows) {
-        new_tbl <- apply_whole_org_defaults_for_row(
-          new_tbl, i = i, j = j,
-          tissue_def = tissue_def, medium_def = medium_def,
-          today_ui = today_ui, autofill_na = input$tube_autofill_na
-        )
+  # Reuse a generic debounced observer for tube_table
+  hot_debounced_observer(
+    input, output, session, rv,
+    input_id  = "tube_table",
+    rv_slot   = "tube_tbl",
+    process_fun = function(prev_tbl, new_tbl) {
+      # 1) clutch-driven defaults only when CLUTCH NUMBER changed
+      new_tbl <- apply_clutch_defaults_on_change(prev_tbl, new_tbl, rv$data$Insectary_stocks)
+      # 2) detect newly-filled Tube_*_id and backfill dependent fields
+      today_ui   <- fmt_ui_date(Sys.Date())
+      tissue_def <- input$tube_tissue_default
+      medium_def <- input$tube_medium_default
+      for (j in 1:4) {
+        idc <- paste0("Tube_", j, "_id")
+        if (!(idc %in% names(new_tbl))) next
+        prev_vec <- if (!is.null(prev_tbl) && idc %in% names(prev_tbl)) prev_tbl[[idc]] else rep(NA_character_, nrow(new_tbl))
+        cur_vec  <- new_tbl[[idc]]
+        changed_rows <- which(is_na_like_val(prev_vec) & !is_na_like_val(cur_vec))
+        if (!length(changed_rows)) next
+        for (i in changed_rows) {
+          new_tbl <- apply_whole_org_defaults_for_row(
+            new_tbl, i = i, j = j,
+            tissue_def = tissue_def, medium_def = medium_def,
+            today_ui = today_ui, autofill_na = input$tube_autofill_na
+          )
+        }
       }
-    }
-
-    rv$tube_tbl <- new_tbl
-
-    # Re-render & refresh predictions, but DO NOT reset the two start-ID selects
-    apply_predictive_editors(
-      output, session, "tube_table", rv$tube_tbl, rv,
-      prev_df = prev_tbl, update_inputs = "none",
-      start_values = list(start = input$tube_start_id, add = input$tube_add_start_id),
-      defer_render = TRUE
-    )
-  }, ignoreInit = TRUE)
+      # 3) detect Tube_*_tissue changes to WHOLE_ORGANISM and cascade NA/NOT_COLLECTED
+      for (j in 1:4) {
+        tis_col <- paste0("Tube_", j, "_tissue")
+        if (!(tis_col %in% names(new_tbl))) next
+        prev_t  <- if (!is.null(prev_tbl) && tis_col %in% names(prev_tbl)) prev_tbl[[tis_col]] else rep(NA_character_, nrow(new_tbl))
+        cur_t   <- new_tbl[[tis_col]]
+        to_whole <- which(!is_na_like_val(cur_t) &
+                          grepl("^\\s*WHOLE_ORGANISM\\s*$", cur_t, ignore.case = TRUE) &
+                          (is_na_like_val(prev_t) | !grepl("^\\s*WHOLE_ORGANISM\\s*$", prev_t, ignore.case = TRUE)))
+        if (!length(to_whole)) next
+        for (i in to_whole) {
+          new_tbl <- apply_whole_org_defaults_for_row(
+            new_tbl, i = i, j = j,
+            tissue_def = TISSUE_WHOLE, medium_def = medium_def,
+            today_ui = today_ui, autofill_na = input$tube_autofill_na
+          )
+        }
+      }
+      new_tbl
+    },
+    update_inputs = "none",
+    start_values  = list(start = input$tube_start_id, add = input$tube_add_start_id),
+    debounce_ms   = 200,
+    key_columns   = c("CLUTCH NUMBER","CAM_ID",
+                      paste0("Tube_", 1:4, "_tissue"))
+  )
 
   observeEvent(input$tube_add, {
     req(rv$data$Insectary_data)
@@ -2253,12 +2398,11 @@ register_tubos_server <- function(input, output, session, rv) {
     rv$tube_tbl <- tbl
 
     # re-render & refresh predictions; keep 'Tube ID inicial' selection as-is
-    apply_predictive_editors(
-      output, session, "tube_table", rv$tube_tbl, rv,
-      prev_df = NULL, update_inputs = "add_only",
-      start_values = list(start = input$tube_start_id, add = cur_id),
-      defer_render = TRUE
-    )
+    hot_render_predictive(output, session, "tube_table",
+                          rv$tube_tbl, rv,
+                          prev_df = NULL, update_inputs = "add_only",
+                          start_values = list(start = input$tube_start_id, add = cur_id),
+                          force = TRUE)
 
     # After adding, set "Tube ID (para añadir)" to the next after those just written.
     # 'cur_id' has already been incremented by the loop; use it and include label.
@@ -2354,9 +2498,6 @@ register_emergidos_server <- function(input, output, session, rv) {
   })
 
   rv$em_tbl <- NULL
-  # busy flag + debounced stream for emergidos table
-  rv$busy_em <- FALSE
-  em_table_deb <- debounce(reactive(input$em_table), 200)
 
   observeEvent(input$em_load, {
     req(input$em_clutch, input$em_n > 0, nzchar(input$em_start_id) || !is.na(auto_start_insectary_id(rv$data$Insectary_data)))
@@ -2365,7 +2506,10 @@ register_emergidos_server <- function(input, output, session, rv) {
     intro_ui <- fmt_ui_date(input$em_intro_date %||% Sys.Date())
     tbl <- build_em_table(df, input$em_clutch, input$em_n, start_id, intro_ui)
     rv$em_tbl <- tbl
-    apply_predictive_editors(output, session, "em_table", rv$em_tbl, rv)
+    hot_render_predictive(output, session, "em_table",
+                          rv$em_tbl, rv,
+                          prev_df = NULL,
+                          force = TRUE)
     
     # Suggest the next ID *after* the loaded block
     df  <- rv$data$Insectary_data
@@ -2394,7 +2538,7 @@ register_emergidos_server <- function(input, output, session, rv) {
       combined <- combined[!duplicated(combined$Insectary_ID), , drop = FALSE]
     }
     rv$em_tbl <- combined
-    apply_predictive_editors(output, session, "em_table", rv$em_tbl, rv)
+    hot_render_predictive(output, session, "em_table", rv$em_tbl, rv, force = TRUE)
 
     # Keep same behavior but push the next suggestion into the dropdown
     df  <- rv$data$Insectary_data
@@ -2408,22 +2552,45 @@ register_emergidos_server <- function(input, output, session, rv) {
     )
   })
 
-  observeEvent(em_table_deb(), {
-    req(input$em_table)
-    if (isTRUE(rv$busy_em)) return()
-    rv$busy_em <- TRUE
-    on.exit({ rv$busy_em <- FALSE }, add = TRUE)
-    prev_tbl <- rv$em_tbl
-    new_tbl <- hot_to_r(input$em_table)
-    if (is.null(new_tbl) || !nrow(new_tbl)) return()
-    if ("CLUTCH NUMBER" %in% names(new_tbl)) {
-      new_tbl <- apply_clutch_defaults_on_change(prev_tbl, new_tbl, rv$data$Insectary_stocks)
-    }
-    rv$em_tbl <- new_tbl
-    apply_predictive_editors(output, session, "em_table", rv$em_tbl, rv,
-                             prev_df = prev_tbl, update_inputs = "none",
-                             defer_render = TRUE)
-  }, ignoreInit = TRUE)
+  hot_debounced_observer(
+    input, output, session, rv,
+    input_id  = "em_table",
+    rv_slot   = "em_tbl",
+    process_fun = function(prev_tbl, new_tbl) {
+      # 1) clutch-driven defaults
+      if ("CLUTCH NUMBER" %in% names(new_tbl)) {
+        new_tbl <- apply_clutch_defaults_on_change(prev_tbl, new_tbl, rv$data$Insectary_stocks)
+      }
+
+      # 2) cascade on WHOLE_ORGANISM for tube columns (same behavior as Tubos)
+      today_ui <- fmt_ui_date(Sys.Date())
+      for (j in 1:4) {
+        tis_col <- paste0("Tube_", j, "_tissue")
+        if (!(tis_col %in% names(new_tbl))) next
+
+        prev_t <- if (!is.null(prev_tbl) && tis_col %in% names(prev_tbl))
+                    prev_tbl[[tis_col]] else rep(NA_character_, nrow(new_tbl))
+        cur_t  <- new_tbl[[tis_col]]
+
+        to_whole <- which(!is_na_like_val(cur_t) &
+                          grepl("^\\s*WHOLE_ORGANISM\\s*$", cur_t, ignore.case = TRUE) &
+                          (is_na_like_val(prev_t) | !grepl("^\\s*WHOLE_ORGANISM\\s*$", prev_t, ignore.case = TRUE)))
+        if (!length(to_whole)) next
+
+        for (i in to_whole) {
+          new_tbl <- apply_whole_org_defaults_for_row(
+            new_tbl, i = i, j = j,
+            tissue_def = TISSUE_WHOLE, medium_def = NULL,
+            today_ui = today_ui, autofill_na = isTRUE(input$em_autofill_na)
+          )
+        }
+      }
+      new_tbl
+    },
+    update_inputs = "none",
+    debounce_ms   = 200,
+    key_columns   = c("CLUTCH NUMBER","CAM_ID", paste0("Tube_", 1:4, "_tissue"))
+  )
 
   render_save_button(output, "em_save_btn", reactive(rv$auth))
   observeEvent(input$em_save_btn, {
@@ -3026,22 +3193,24 @@ server <- function(input, output, session) {
                            choices = cause_choices, selected = "Unknown",
                            options = list(openOnFocus = TRUE)),
             dateInput("dead_date", "Fecha de muerte",
-                      value = Sys.Date(), format = "d-M-yy", language = "en")
+                      value = Sys.Date(), format = "d-M-yy", language = "en"),
+            checkboxInput(
+              "dead_autofill_na",
+              "Autocompletar con NAs columnas con tubos vacíos si Tejido es WHOLE_ORGANISM",
+              value = FALSE
+            )
         )
     )
   })
 
   rv$dead_tbl <- NULL
-  # busy flag + debounced stream for muertes table
-  rv$busy_dead <- FALSE
-  dead_table_deb <- debounce(reactive(input$dead_table), 200)
 
   observeEvent(input$dead_load, {
     req(input$dead_ids)
     df <- build_dead_table(rv$data$Insectary_data, input$dead_ids, isTRUE(input$dead_review_only),
                            input$dead_cause_default, input$dead_date)
     rv$dead_tbl <- df
-    apply_predictive_editors(output, session, "dead_table", rv$dead_tbl, rv)
+    hot_render_predictive(output, session, "dead_table", rv$dead_tbl, rv, force = TRUE)
   })
 
   observeEvent(input$dead_add, {
@@ -3051,23 +3220,52 @@ server <- function(input, output, session) {
                              input$dead_cause_default, input$dead_date)
     combined <- distinct(bind_rows(current, add_df), Insectary_ID, .keep_all = TRUE)
     rv$dead_tbl <- combined
-    apply_predictive_editors(output, session, "dead_table", rv$dead_tbl, rv)
+    hot_render_predictive(output, session, "dead_table", rv$dead_tbl, rv, force = TRUE)
   })
 
-  observeEvent(dead_table_deb(), {
-    req(input$dead_table)
-    if (isTRUE(rv$busy_dead)) return()
-    rv$busy_dead <- TRUE
-    on.exit({ rv$busy_dead <- FALSE }, add = TRUE)
-    prev_tbl <- rv$dead_tbl
-    new_tbl <- hot_to_r(input$dead_table)
-    if (is.null(new_tbl)) return()
-    new_tbl <- apply_clutch_defaults_on_change(prev_tbl, new_tbl, rv$data$Insectary_stocks)
-    rv$dead_tbl <- new_tbl
-    apply_predictive_editors(output, session, "dead_table", rv$dead_tbl, rv,
-                             prev_df = prev_tbl, update_inputs = "none",
-                             defer_render = TRUE)
-  }, ignoreInit = TRUE)
+  hot_debounced_observer(
+    input, output, session, rv,
+    input_id  = "dead_table",
+    rv_slot   = "dead_tbl",
+    process_fun = function(prev_tbl, new_tbl) {
+      # 1) clutch-driven defaults
+      new_tbl <- apply_clutch_defaults_on_change(prev_tbl, new_tbl, rv$data$Insectary_stocks)
+
+      # 2) cascade on WHOLE_ORGANISM like in Tubos tab
+      #    (also prime New_Death_Date if blank)
+      today_ui <- fmt_ui_date(input$dead_date %||% Sys.Date())
+      for (j in 1:4) {
+        tis_col <- paste0("Tube_", j, "_tissue")
+        if (!(tis_col %in% names(new_tbl))) next
+
+        prev_t <- if (!is.null(prev_tbl) && tis_col %in% names(prev_tbl))
+                    prev_tbl[[tis_col]] else rep(NA_character_, nrow(new_tbl))
+        cur_t  <- new_tbl[[tis_col]]
+
+        to_whole <- which(!is_na_like_val(cur_t) &
+                          grepl("^\\s*WHOLE_ORGANISM\\s*$", cur_t, ignore.case = TRUE) &
+                          (is_na_like_val(prev_t) | !grepl("^\\s*WHOLE_ORGANISM\\s*$", prev_t, ignore.case = TRUE)))
+        if (!length(to_whole)) next
+
+        for (i in to_whole) {
+          new_tbl <- apply_whole_org_defaults_for_row(
+            new_tbl, i = i, j = j,
+            tissue_def = TISSUE_WHOLE, medium_def = NULL,
+            today_ui = today_ui, autofill_na = isTRUE(input$dead_autofill_na)
+          )
+          # The Muertes table has New_Death_Date instead of Death_date in view.
+          if ("New_Death_Date" %in% names(new_tbl)) {
+            nd <- new_tbl$New_Death_Date[i]
+            if (is_na_like_val(nd)) new_tbl$New_Death_Date[i] <- today_ui
+          }
+        }
+      }
+      new_tbl
+    },
+    update_inputs = "none",
+    debounce_ms   = 200,
+    key_columns   = c("CLUTCH NUMBER","CAM_ID", paste0("Tube_", 1:4, "_tissue"))
+  )
 
   observeEvent(input$dead_show_photos, {
     if (!isTRUE(input$dead_show_photos)) {
