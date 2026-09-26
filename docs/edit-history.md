@@ -1,6 +1,6 @@
 # Writing, history, and selected undo
 
-The user has accepted this history and selected-undo approach and expects simultaneous edits to the same rows to be uncommon. People will routinely edit through both the app and Google Sheets. This document records intended behavior; the app, watcher, journal, and undo implementation do not yet exist.
+The user has accepted this history and selected-undo approach and expects simultaneous edits to the same rows to be uncommon. People will routinely edit through both the app and Google Sheets. This document records the accepted design. The deployed app, snapshot reconciliation, journal, and selected undo are described in [verification](verification.md). Direct Sheet history remains limited to observed snapshot differences.
 
 ## Expected use and implementation scope
 

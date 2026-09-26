@@ -53,6 +53,6 @@ Meeting knowledge is a curated snapshot of the 69 reviewed documents. It is not 
 - Sheet snapshot reconciliation can miss edits overwritten between snapshots and cannot reliably identify external editors.
 - Reversal checks protect selected fields and observed later edits. Google Sheets does not provide a transactional compare-and-swap against concurrent direct edits.
 - Multi-record operations must expose partial results if a later record fails. Retrying uses operation IDs to avoid duplicate writes.
-- A biological mark may occur more than once historically. Select the intended source record from search results.
+- A biological mark may occur more than once historically. Select the intended source record from search results. Related-record matches are candidates, not globally enforced foreign keys; review downstream studies when correcting identifiers or reversing specimen observations.
 - App observations preserve extra details without claiming to update absent spreadsheet fields. Study eligibility and mutation definitions require researchers' recorded criteria.
 - Camera scanning depends on browser support; typed ID search remains available. Offline work stays on the originating device until synchronized.
