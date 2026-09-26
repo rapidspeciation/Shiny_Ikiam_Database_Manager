@@ -7,6 +7,7 @@ import { backup } from 'node:sqlite';
 import { gzipSync } from 'node:zlib';
 import { Store } from './store.mjs';
 import { applyBatch } from './batch.mjs';
+import { deleteTrack, listTracks, saveTrack } from './monitoring.mjs';
 import { idSuggestions, tablePayload, tableRevision } from './grid.mjs';
 import { SANDBOX_ID, moduleMap, validateValues } from './schema.mjs';
 import {
@@ -481,6 +482,17 @@ export async function createApp(config = {}, options = {}) {
           'cache-control': 'no-store',
         });
         return res.end(csv);
+      }
+      if (method === 'GET' && path === '/api/monitoring/tracks') return json(res, 200, { tracks: listTracks(store) });
+      if (method === 'POST' && path === '/api/monitoring/tracks') {
+        requireEditor(user);
+        requireId(body);
+        const saved = saveTrack(store, body, user);
+        return json(res, saved.duplicate ? 200 : 201, saved);
+      }
+      if (method === 'DELETE' && /^\/api\/monitoring\/tracks\/[^/]+$/.test(path)) {
+        requireEditor(user);
+        return json(res, 200, deleteTrack(store, decodePart(path.split('/')[4]), user));
       }
       if (method === 'GET' && path === '/api/attachments')
         return json(res, 200, { attachments: listAttachments(store, query.recordId) });

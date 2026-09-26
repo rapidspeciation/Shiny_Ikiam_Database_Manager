@@ -4,6 +4,10 @@ Vue, Vue Router, Pinia            MIT License   https://vuejs.org
 Tabulator (tabulator-tables)      MIT License   https://tabulator.info
 Lucide icons (lucide-vue-next)    ISC License   https://lucide.dev
 Tailwind CSS (build-time styles)  MIT License   https://tailwindcss.com
+Leaflet (monitoring map)          BSD 2-Clause  https://leafletjs.com
+
+Map tiles are loaded at run time, not bundled: Esri World Imagery and
+OpenStreetMap (© OpenStreetMap contributors, ODbL), credited on the map.
 
 Exact versions are pinned in frontend/package-lock.json. The server has no
 third-party runtime dependencies. Code 128 patterns: see ZXing-LICENSE.

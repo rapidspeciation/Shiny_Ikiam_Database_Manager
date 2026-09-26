@@ -190,6 +190,24 @@ test('Google write request touches only named cells and formats a numeric date',
   assert.equal(requests[2].updateCells.range.startColumnIndex, 5);
 });
 
+test('Google write request gives a new time-of-day cell a time format', async () => {
+  const google = Object.create(GoogleSheets.prototype),
+    calls = [];
+  google.gridRows = new Map([['Collection_data', 100]]);
+  google.metadataAt = Date.now();
+  google.request = async (path, options) => {
+    calls.push({ path, body: JSON.parse(options.body) });
+    return { replies: [{}] };
+  };
+  await google.writeBatch([
+    { sheet: 'Collection_data', row: 5, changes: { Collection_time: 0.4, Collector: 'FCH' }, timeFormat: ['Collection_time'] },
+  ]);
+  const [time, text] = calls[0].body.requests;
+  assert.deepEqual(time.updateCells.rows[0].values[0].userEnteredFormat, { numberFormat: { type: 'TIME', pattern: 'h:mm' } });
+  assert.equal(time.updateCells.fields, 'userEnteredValue,userEnteredFormat.numberFormat');
+  assert.equal(text.updateCells.fields, 'userEnteredValue');
+});
+
 test('a slow sync read does not block an edit or overwrite its newer value', async () => {
   const { store, sheets } = await fixture();
   const record = store.getRecordBySheetRow('Insectary_data', 2);

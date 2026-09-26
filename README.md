@@ -8,6 +8,10 @@ The interface follows the original [Shiny database manager](https://github.com/r
 
 - **Tablas**: any sheet as a spreadsheet. Search all columns, filter each column, edit cells, paste ranges from Excel or Sheets, fill down (Ctrl+D), add rows, download CSV. Formula cells are grey and read-only. Tapping a row number opens the whole row as a form, which is the easiest way to edit on a phone.
 - **Colecta**: new Collection_data individuals with session defaults (place, collector, date), suggested CAM IDs from the Lists pools and subspecies choices for the chosen species.
+- **Monitoreo**: the monthly Ithomiini monitoring at Ikiam ([docs/monitoring.md](docs/monitoring.md)).
+  - *Importar recorrido*: a Wikiloc GPX turns each waypoint note ("M1 Hyposcada illinissa ida hembra 9:20 0.5m NO id: B69") into a Collection_data row. The transect section comes from the GPS point, weather codes are translated and a repeated field mark counts as a recapture. The day's start and end go into SamplingDay_data.
+  - *Resumen*: the tables of the monthly reports and the 30-preserved rule.
+  - *Mapa*: satellite map with the four transect sections, the uploaded walks and their captures.
 - **Muertes**: choose many Insectary IDs (type or paste a list), set the death date and cause, review the grid, save.
 - **Tubos**: assign consecutive CAM and tube IDs with default tissue, medium and date, including the WHOLE_ORGANISM NA rule, and print barcode labels.
 - **Emergidos**: new adults from a clutch go into the next pre-filled Insectary_data rows; SPECIES and location come from the sheet's formulas.

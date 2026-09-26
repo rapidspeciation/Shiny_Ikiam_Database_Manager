@@ -168,8 +168,8 @@ export class GoogleSheets {
   }
   /**
    * Writes cells of several rows (and sheets) in one batchUpdate, which Google
-   * applies atomically. `writes` is a list of { sheet, row, changes, dateFormat }
-   * where dateFormat lists fields whose cell needs a date number format.
+   * applies atomically. `writes` is a list of { sheet, row, changes, dateFormat, timeFormat }
+   * where dateFormat and timeFormat list fields whose cell needs a date or time number format.
    */
   async writeBatch(writes) {
     const requests = [];
@@ -308,7 +308,7 @@ function consecutiveRuns(rows) {
   }
   return runs;
 }
-function cellRequests({ sheet, row, changes, dateFormat = [] }) {
+function cellRequests({ sheet, row, changes, dateFormat = [], timeFormat = [] }) {
   const mod = moduleMap.get(sheet);
   if (!mod?.sheetId) throw new Error(`Sheet ${sheet} has no verified sheet ID`);
   return Object.entries(changes).map(([field, value]) => {
@@ -317,6 +317,8 @@ function cellRequests({ sheet, row, changes, dateFormat = [] }) {
     const cell = asCell(value);
     const formatDate = dateFormat.includes(field) && typeof value === 'number';
     if (formatDate) cell.userEnteredFormat = { numberFormat: { type: 'DATE', pattern: 'd-mmm-yy' } };
+    const formatTime = timeFormat.includes(field) && typeof value === 'number';
+    if (formatTime) cell.userEnteredFormat = { numberFormat: { type: 'TIME', pattern: 'h:mm' } };
     return {
       updateCells: {
         range: {
@@ -327,7 +329,7 @@ function cellRequests({ sheet, row, changes, dateFormat = [] }) {
           endColumnIndex: column + 1,
         },
         rows: [{ values: [cell] }],
-        fields: formatDate ? 'userEnteredValue,userEnteredFormat.numberFormat' : 'userEnteredValue',
+        fields: formatDate || formatTime ? 'userEnteredValue,userEnteredFormat.numberFormat' : 'userEnteredValue',
       },
     };
   });
@@ -358,6 +360,12 @@ export function headerMismatches(sheet, row) {
 export function hasDateFormat(cell) {
   const type = cell?.userEnteredFormat?.numberFormat?.type;
   return type === 'DATE' || type === 'DATE_TIME';
+}
+
+/** True when the live cell already displays as a time. */
+export function hasTimeFormat(cell) {
+  const type = cell?.userEnteredFormat?.numberFormat?.type;
+  return type === 'TIME' || type === 'DATE_TIME';
 }
 
 export function rowValues(sheet, row) {

@@ -8,7 +8,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { comparable, labelFor, moduleMap, validateValues } from './schema.mjs';
-import { hasDateFormat, headerMismatches, rowKey, rowValues } from './sheets.mjs';
+import { hasDateFormat, hasTimeFormat, headerMismatches, rowKey, rowValues } from './sheets.mjs';
 
 /** Where a write came from. Chosen by the server, never by the client. */
 export const SOURCES = new Set(['app', 'undo', 'ai_approved', 'import']);
@@ -390,6 +390,11 @@ class Plan {
       .filter(c => mod.fields.find(f => f.key === c.field)?.type === 'date' && typeof c.after === 'number')
       .filter(c => !hasDateFormat(liveRow.cells[mod.fields.find(f => f.key === c.field).column]))
       .map(c => c.field);
+    // Times of day are stored as day fractions; a new cell needs a time format to show "9:20".
+    const timeFormat = changes
+      .filter(c => /(^|_)time$/i.test(c.field) && typeof c.after === 'number' && c.after >= 0 && c.after < 1)
+      .filter(c => !hasTimeFormat(liveRow.cells[mod.fields.find(f => f.key === c.field).column]))
+      .map(c => c.field);
     target.changes = changes;
     target.before = before;
     this.writes.push({
@@ -397,6 +402,7 @@ class Plan {
       row: target.row,
       changes: Object.fromEntries(changes.map(c => [c.field, c.after])),
       dateFormat,
+      timeFormat,
     });
   }
 

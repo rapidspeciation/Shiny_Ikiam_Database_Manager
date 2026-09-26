@@ -1,8 +1,8 @@
 // Keeps the app usable without coverage in the field: the app files and the
 // last copy of each sheet are served from cache when the network is down.
 // Edits are never queued here; they stay in the page's pending changes until saved.
-const CACHE = 'ithomiini-v2'
-const READS = /\/api\/(auth\/session|bootstrap|table|ids)(\?|$)/
+const CACHE = 'ithomiini-v3'
+const READS = /\/api\/(auth\/session|bootstrap|table|ids|monitoring\/tracks)(\?|$)/
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(['./', './index.html'])))

@@ -5,6 +5,7 @@ import { dirname } from 'node:path';
 import { modules, moduleMap, labelFor, validateValues, comparable, nextInsectaryId, makeSourceUrl } from './schema.mjs';
 import { GoogleSheets, LocalSheets, headerMismatches, rowKey, rowValues } from './sheets.mjs';
 import { applyBatch } from './batch.mjs';
+import { initMonitoring } from './monitoring.mjs';
 
 const json = value => JSON.stringify(value);
 const parse = value => (value ? JSON.parse(value) : null);
@@ -41,6 +42,7 @@ export class Store {
         .some(c => c.name === 'observed')
     )
       this.db.exec('ALTER TABLE records ADD COLUMN observed INTEGER NOT NULL DEFAULT 1');
+    initMonitoring(this.db);
     this.sheets = sheets || (config.localMode ? new LocalSheets(seed || {}) : new GoogleSheets(config));
     this.localMode = this.sheets instanceof LocalSheets;
     this.queue = Promise.resolve();
