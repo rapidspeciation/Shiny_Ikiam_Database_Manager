@@ -1,0 +1,3224 @@
+{
+  "source_spreadsheet_id": "1QZj6YgHAJ9NmFXFPCtu-i-1NDuDmAdMF2Wogts7S2_4",
+  "snapshot_date": "2026-09-25",
+  "description": "Headers and formula-column counts only; no specimen rows. Unprofiled tabs lack usable table headers in this export. Formula columns may also contain literal values. Names and available sheet IDs are from the authenticated Sheets API; exported_name preserves Excel sanitization/truncation.",
+  "sheets": [
+    {
+      "name": "Stocks_state",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "headerless_or_empty",
+      "headers": [],
+      "formula_cells_by_field": {},
+      "exported_name": "Stocks_state",
+      "sheet_id": 1875665731
+    },
+    {
+      "name": "messenoides_phenotypes",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "headerless_or_empty",
+      "headers": [],
+      "formula_cells_by_field": {},
+      "exported_name": "messenoides_phenotypes",
+      "sheet_id": 1383835950
+    },
+    {
+      "name": "Non_Ithomiini_FlashFrozen_Summary",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "headerless_or_empty",
+      "headers": [],
+      "formula_cells_by_field": {},
+      "exported_name": "Non_Ithomiini_FlashFrozen_Summa",
+      "sheet_id": 540442747
+    },
+    {
+      "name": "FlashFrozenSamples_Summary",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "headerless_or_empty",
+      "headers": [],
+      "formula_cells_by_field": {},
+      "exported_name": "FlashFrozenSamples_Summary",
+      "sheet_id": 273630834
+    },
+    {
+      "name": "Panama_Summ",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "headerless_or_empty",
+      "headers": [],
+      "formula_cells_by_field": {},
+      "exported_name": "Panama_Summ",
+      "sheet_id": 17436796
+    },
+    {
+      "name": "Brazil_Summ",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "headerless_or_empty",
+      "headers": [],
+      "formula_cells_by_field": {},
+      "exported_name": "Brazil_Summ",
+      "sheet_id": 1146467158
+    },
+    {
+      "name": "Peru_SutureZone_Summ",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "headerless_or_empty",
+      "headers": [],
+      "formula_cells_by_field": {},
+      "exported_name": "Peru_SutureZone_Summ",
+      "sheet_id": 1367999711
+    },
+    {
+      "name": "Peru_OnlySutureZone_Summ",
+      "state": "hidden",
+      "header_row": 1,
+      "profile_status": "headerless_or_empty",
+      "headers": [],
+      "formula_cells_by_field": {},
+      "exported_name": "Peru_OnlySutureZone_Summ",
+      "sheet_id": 402149597
+    },
+    {
+      "name": "VisualAcuity_Summary",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "headerless_or_empty",
+      "headers": [],
+      "formula_cells_by_field": {},
+      "exported_name": "VisualAcuity_Summary",
+      "sheet_id": 503658513
+    },
+    {
+      "name": "MonitoringSamples_Summary",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "headerless_or_empty",
+      "headers": [],
+      "formula_cells_by_field": {},
+      "exported_name": "MonitoringSamples_Summary",
+      "sheet_id": 674766857
+    },
+    {
+      "name": "MarkReleased_Monitoring_Summary",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "headerless_or_empty",
+      "headers": [],
+      "formula_cells_by_field": {},
+      "exported_name": "MarkReleased_Monitoring_Summary",
+      "sheet_id": 603466360
+    },
+    {
+      "name": "F1/F2_Summary",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "headerless_or_empty",
+      "headers": [],
+      "formula_cells_by_field": {},
+      "exported_name": "F1F2_Summary",
+      "sheet_id": 1615795403
+    },
+    {
+      "name": "F1/F2_Summary_Melinaea",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "headerless_or_empty",
+      "headers": [],
+      "formula_cells_by_field": {},
+      "exported_name": "F1F2_Summary_Melinaea",
+      "sheet_id": 174699965
+    },
+    {
+      "name": "F1/F2_SummarybyStock",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "headerless_or_empty",
+      "headers": [],
+      "formula_cells_by_field": {},
+      "exported_name": "F1F2_SummarybyStock",
+      "sheet_id": 2024372805
+    },
+    {
+      "name": "Melinaea_times",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "headerless_or_empty",
+      "headers": [],
+      "formula_cells_by_field": {},
+      "exported_name": "Melinaea_times",
+      "sheet_id": 2128943453
+    },
+    {
+      "name": "Collection_data",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "Data_entry_order"
+        },
+        {
+          "column": 2,
+          "name": "Release_Collect"
+        },
+        {
+          "column": 3,
+          "name": "FieldMark_ID"
+        },
+        {
+          "column": 4,
+          "name": "Insectary_ID"
+        },
+        {
+          "column": 5,
+          "name": "CAM_ID_insectary"
+        },
+        {
+          "column": 6,
+          "name": "CAM_ID"
+        },
+        {
+          "column": 7,
+          "name": "Tube_1_id"
+        },
+        {
+          "column": 8,
+          "name": "Tube_1_tissue"
+        },
+        {
+          "column": 9,
+          "name": "Tube_2_id"
+        },
+        {
+          "column": 10,
+          "name": "Tube_2_tissue"
+        },
+        {
+          "column": 11,
+          "name": "Tube_3_id"
+        },
+        {
+          "column": 12,
+          "name": "Tube_3_tissue"
+        },
+        {
+          "column": 13,
+          "name": "Tube_4_id_LEGS"
+        },
+        {
+          "column": 14,
+          "name": "Purpose"
+        },
+        {
+          "column": 15,
+          "name": "Family"
+        },
+        {
+          "column": 16,
+          "name": "Subfamily"
+        },
+        {
+          "column": 17,
+          "name": "Tribe"
+        },
+        {
+          "column": 18,
+          "name": "Genus"
+        },
+        {
+          "column": 19,
+          "name": "SPECIES"
+        },
+        {
+          "column": 20,
+          "name": "Subspecies_Form"
+        },
+        {
+          "column": 21,
+          "name": "Identifier"
+        },
+        {
+          "column": 22,
+          "name": "ID_status"
+        },
+        {
+          "column": 23,
+          "name": "Sex"
+        },
+        {
+          "column": 24,
+          "name": "Country"
+        },
+        {
+          "column": 25,
+          "name": "Side_Andes"
+        },
+        {
+          "column": 26,
+          "name": "Collection_location"
+        },
+        {
+          "column": 27,
+          "name": "Transect_section"
+        },
+        {
+          "column": 28,
+          "name": "Bait"
+        },
+        {
+          "column": 29,
+          "name": "Forest_stratum"
+        },
+        {
+          "column": 30,
+          "name": "Collection_date"
+        },
+        {
+          "column": 31,
+          "name": "Collection_time"
+        },
+        {
+          "column": 32,
+          "name": "Collector"
+        },
+        {
+          "column": 33,
+          "name": "Rainfall"
+        },
+        {
+          "column": 34,
+          "name": "Cloud_cover"
+        },
+        {
+          "column": 35,
+          "name": "Flight_height"
+        },
+        {
+          "column": 36,
+          "name": "Butterfly_weight"
+        },
+        {
+          "column": 37,
+          "name": "Death_date"
+        },
+        {
+          "column": 38,
+          "name": "Preservation_date"
+        },
+        {
+          "column": 39,
+          "name": "Preservation_medium"
+        },
+        {
+          "column": 40,
+          "name": "Preserved_dead_alive"
+        },
+        {
+          "column": 41,
+          "name": "Photo_dorsal"
+        },
+        {
+          "column": 42,
+          "name": "Photo_ventral"
+        },
+        {
+          "column": 43,
+          "name": "Splitted_body"
+        },
+        {
+          "column": 44,
+          "name": "Location_WholeBody"
+        },
+        {
+          "column": 45,
+          "name": "Location_Head"
+        },
+        {
+          "column": 46,
+          "name": "Location_Torax"
+        },
+        {
+          "column": 47,
+          "name": "Location_abdomen"
+        },
+        {
+          "column": 48,
+          "name": "Location_Legs"
+        },
+        {
+          "column": 49,
+          "name": "Location_wings"
+        },
+        {
+          "column": 50,
+          "name": "Notes_Collection_data"
+        },
+        {
+          "column": 51,
+          "name": "Tube_1_rack"
+        },
+        {
+          "column": 52,
+          "name": "Tube_2_rack"
+        },
+        {
+          "column": 53,
+          "name": "Tube_3_rack"
+        },
+        {
+          "column": 54,
+          "name": "Tube_4_rack"
+        },
+        {
+          "column": 55,
+          "name": "Tube_1_manifest"
+        },
+        {
+          "column": 56,
+          "name": "Tube_2_manifest"
+        },
+        {
+          "column": 57,
+          "name": "Tube_3_manifest"
+        },
+        {
+          "column": 58,
+          "name": "Tube_4_manifest"
+        },
+        {
+          "column": 59,
+          "name": "COLLECTOR_SAMPLE_ID"
+        },
+        {
+          "column": 60,
+          "name": "Specimen ID"
+        },
+        {
+          "column": 61,
+          "name": "ToLID"
+        },
+        {
+          "column": 62,
+          "name": "TAXON_ID"
+        },
+        {
+          "column": 63,
+          "name": "COMMON_NAME"
+        },
+        {
+          "column": 64,
+          "name": "COLLECTED_BY"
+        },
+        {
+          "column": 65,
+          "name": "COLLECTOR_AFFILIATION"
+        },
+        {
+          "column": 66,
+          "name": "COLLECTOR_EMAIL"
+        },
+        {
+          "column": 67,
+          "name": "DATE_OF_COLLECTION"
+        },
+        {
+          "column": 68,
+          "name": "COLLECTION_LOCATION"
+        },
+        {
+          "column": 69,
+          "name": "DECIMAL_LATITUDE"
+        },
+        {
+          "column": 70,
+          "name": "DECIMAL_LONGITUDE"
+        },
+        {
+          "column": 71,
+          "name": "HABITAT"
+        },
+        {
+          "column": 72,
+          "name": "ELEVATION"
+        },
+        {
+          "column": 73,
+          "name": "IDENTIFIED_BY"
+        },
+        {
+          "column": 74,
+          "name": "IDENTIFIER_AFFILIATION"
+        },
+        {
+          "column": 75,
+          "name": "IDENTIFIER_EMAIL"
+        },
+        {
+          "column": 76,
+          "name": "DATE_OF_PRESERVATION"
+        },
+        {
+          "column": 77,
+          "name": "Select_TEMP"
+        }
+      ],
+      "formula_cells_by_field": {
+        "Data_entry_order": 7413,
+        "Family": 9753,
+        "Subfamily": 9753,
+        "Tribe": 9753,
+        "Genus": 9753,
+        "Country": 9754,
+        "Side_Andes": 9754,
+        "Death_date": 1270,
+        "Preservation_date": 1253,
+        "Preservation_medium": 1074,
+        "Preserved_dead_alive": 1206,
+        "Photo_dorsal": 9754,
+        "Photo_ventral": 9754,
+        "Tube_1_rack": 9754,
+        "Tube_2_rack": 9754,
+        "Tube_3_rack": 9754,
+        "Tube_4_rack": 9754,
+        "Tube_1_manifest": 9754,
+        "Tube_2_manifest": 9754,
+        "Tube_3_manifest": 9754,
+        "Tube_4_manifest": 9754,
+        "COLLECTOR_SAMPLE_ID": 9754,
+        "Specimen ID": 9754,
+        "ToLID": 9754,
+        "TAXON_ID": 9754,
+        "COMMON_NAME": 9754,
+        "COLLECTED_BY": 9754,
+        "COLLECTOR_AFFILIATION": 9754,
+        "COLLECTOR_EMAIL": 9754,
+        "DATE_OF_COLLECTION": 9754,
+        "COLLECTION_LOCATION": 9754,
+        "DECIMAL_LATITUDE": 9754,
+        "DECIMAL_LONGITUDE": 9754,
+        "HABITAT": 9754,
+        "ELEVATION": 9754,
+        "IDENTIFIED_BY": 9751,
+        "IDENTIFIER_AFFILIATION": 9751,
+        "IDENTIFIER_EMAIL": 9754,
+        "DATE_OF_PRESERVATION": 9754,
+        "Select_TEMP": 9754,
+        "Purpose": 374,
+        "Tube_1_id": 95,
+        "Tube_4_id_LEGS": 5,
+        "Location_Head": 30,
+        "Location_Torax": 30,
+        "Location_abdomen": 30,
+        "CAM_ID_insectary": 48,
+        "Tube_1_tissue": 15,
+        "Insectary_ID": 2
+      },
+      "exported_name": "Collection_data",
+      "sheet_id": 900206579
+    },
+    {
+      "name": "Insectary_data",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "Insectary_ID"
+        },
+        {
+          "column": 2,
+          "name": "Wild_Reared"
+        },
+        {
+          "column": 3,
+          "name": "CLUTCH NUMBER"
+        },
+        {
+          "column": 4,
+          "name": "Stock_of_origin"
+        },
+        {
+          "column": 5,
+          "name": "SPECIES"
+        },
+        {
+          "column": 6,
+          "name": "Sex"
+        },
+        {
+          "column": 7,
+          "name": "Collection_location"
+        },
+        {
+          "column": 8,
+          "name": "Intro2Insectary_date"
+        },
+        {
+          "column": 9,
+          "name": "Death_date"
+        },
+        {
+          "column": 10,
+          "name": "Death_cause"
+        },
+        {
+          "column": 11,
+          "name": "Research_purpose"
+        },
+        {
+          "column": 12,
+          "name": "Pedigree"
+        },
+        {
+          "column": 13,
+          "name": "Preservation_date"
+        },
+        {
+          "column": 14,
+          "name": "LIFESTAGE"
+        },
+        {
+          "column": 15,
+          "name": "CAM_ID_CollData"
+        },
+        {
+          "column": 16,
+          "name": "CAM_ID"
+        },
+        {
+          "column": 17,
+          "name": "Tube_1_id"
+        },
+        {
+          "column": 18,
+          "name": "Tube_1_tissue"
+        },
+        {
+          "column": 19,
+          "name": "T1_Preservation_medium"
+        },
+        {
+          "column": 20,
+          "name": "Tube_2_id"
+        },
+        {
+          "column": 21,
+          "name": "Tube_2_tissue"
+        },
+        {
+          "column": 22,
+          "name": "T2_Preservation_medium"
+        },
+        {
+          "column": 23,
+          "name": "Tube_3_id"
+        },
+        {
+          "column": 24,
+          "name": "Tube_3_tissue"
+        },
+        {
+          "column": 25,
+          "name": "Tube_4_id"
+        },
+        {
+          "column": 26,
+          "name": "Tube_4_tissue"
+        },
+        {
+          "column": 27,
+          "name": "Preservation_medium"
+        },
+        {
+          "column": 28,
+          "name": "Preserved_Dead_Alive"
+        },
+        {
+          "column": 29,
+          "name": "Location_body"
+        },
+        {
+          "column": 30,
+          "name": "Photo_dorsal"
+        },
+        {
+          "column": 31,
+          "name": "Photo_ventral"
+        },
+        {
+          "column": 32,
+          "name": "Notes_Insectary_data"
+        },
+        {
+          "column": 33,
+          "name": "Tube_1_rack"
+        },
+        {
+          "column": 34,
+          "name": "Tube_2_rack"
+        },
+        {
+          "column": 35,
+          "name": "Tube_3_rack"
+        },
+        {
+          "column": 36,
+          "name": "Tube_4_rack"
+        },
+        {
+          "column": 37,
+          "name": "Tube_1_manifest"
+        },
+        {
+          "column": 38,
+          "name": "Tube_2_manifest"
+        },
+        {
+          "column": 39,
+          "name": "Tube_3_manifest"
+        },
+        {
+          "column": 40,
+          "name": "Tube_4_manifest"
+        },
+        {
+          "column": 41,
+          "name": "COLLECTOR_SAMPLE_ID"
+        },
+        {
+          "column": 42,
+          "name": "COLLECTED_BY"
+        },
+        {
+          "column": 43,
+          "name": "COLLECTOR_AFFILIATION"
+        },
+        {
+          "column": 44,
+          "name": "COLLECTOR_EMAIL"
+        },
+        {
+          "column": 45,
+          "name": "DATE_OF_COLLECTION"
+        },
+        {
+          "column": 46,
+          "name": "COLLECTION_LOCATION"
+        },
+        {
+          "column": 47,
+          "name": "DECIMAL_LATITUDE"
+        },
+        {
+          "column": 48,
+          "name": "DECIMAL_LONGITUDE"
+        },
+        {
+          "column": 49,
+          "name": "HABITAT"
+        },
+        {
+          "column": 50,
+          "name": "ELEVATION"
+        },
+        {
+          "column": 51,
+          "name": "IDENTIFIED_BY"
+        },
+        {
+          "column": 52,
+          "name": "IDENTIFIER_AFFILIATION"
+        },
+        {
+          "column": 53,
+          "name": "IDENTIFIER_EMAIL"
+        }
+      ],
+      "formula_cells_by_field": {
+        "Pedigree": 10316,
+        "CAM_ID_CollData": 7893,
+        "Photo_dorsal": 13203,
+        "Photo_ventral": 13203,
+        "Tube_1_rack": 13461,
+        "Tube_2_rack": 13461,
+        "Tube_3_rack": 13461,
+        "Tube_4_rack": 13461,
+        "Tube_1_manifest": 13461,
+        "Tube_2_manifest": 13461,
+        "Tube_3_manifest": 13461,
+        "Tube_4_manifest": 13461,
+        "COLLECTOR_SAMPLE_ID": 13461,
+        "DATE_OF_COLLECTION": 13461,
+        "COLLECTION_LOCATION": 13461,
+        "DECIMAL_LATITUDE": 13461,
+        "DECIMAL_LONGITUDE": 13461,
+        "HABITAT": 13461,
+        "ELEVATION": 13461,
+        "T2_Preservation_medium": 1013,
+        "Insectary_ID": 3766,
+        "SPECIES": 4647,
+        "Collection_location": 6317,
+        "Notes_Insectary_data": 9,
+        "Location_body": 2
+      },
+      "exported_name": "Insectary_data",
+      "sheet_id": 402580526
+    },
+    {
+      "name": "Insectary_stocks",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "CLUTCH NUMBER"
+        },
+        {
+          "column": 2,
+          "name": "Generation"
+        },
+        {
+          "column": 3,
+          "name": "SPECIES"
+        },
+        {
+          "column": 4,
+          "name": "DATE LAID"
+        },
+        {
+          "column": 5,
+          "name": "NUMBER OF EGGS"
+        },
+        {
+          "column": 6,
+          "name": "INSECTARY OR LABORATORY"
+        },
+        {
+          "column": 7,
+          "name": "HATCHING DATE"
+        },
+        {
+          "column": 8,
+          "name": "NUMBER OF LARVAE"
+        },
+        {
+          "column": 9,
+          "name": "PUPA DATE"
+        },
+        {
+          "column": 10,
+          "name": "NUMBER OF PUPA"
+        },
+        {
+          "column": 11,
+          "name": "Earliest Emerge Date"
+        },
+        {
+          "column": 12,
+          "name": "Number of Adults in Insectary_data"
+        },
+        {
+          "column": 13,
+          "name": "EMERGENCE DATE"
+        },
+        {
+          "column": 14,
+          "name": "NUMBER OF ADULTS"
+        },
+        {
+          "column": 15,
+          "name": "NUMBER OF PUPAE/LARVAE FOR DISECTIONS"
+        },
+        {
+          "column": 16,
+          "name": "NOTES"
+        },
+        {
+          "column": 17,
+          "name": "Species"
+        },
+        {
+          "column": 18,
+          "name": "HatchingTime"
+        },
+        {
+          "column": 19,
+          "name": "Hatch2Pupa"
+        },
+        {
+          "column": 20,
+          "name": "Pupa2Adult"
+        },
+        {
+          "column": 21,
+          "name": "Eggs"
+        }
+      ],
+      "formula_cells_by_field": {
+        "Species": 996,
+        "HatchingTime": 996,
+        "Hatch2Pupa": 996,
+        "Pupa2Adult": 996,
+        "Eggs": 996,
+        "NUMBER OF EGGS": 987,
+        "Earliest Emerge Date": 1027,
+        "Number of Adults in Insectary_data": 1028,
+        "NUMBER OF LARVAE": 1001,
+        "NUMBER OF PUPA": 759,
+        "NUMBER OF ADULTS": 484,
+        "NUMBER OF PUPAE/LARVAE FOR DISECTIONS": 68,
+        "EMERGENCE DATE": 1
+      },
+      "exported_name": "Insectary_stocks",
+      "sheet_id": 1546273864
+    },
+    {
+      "name": "Filter_Coll_data",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "CAM_ID"
+        },
+        {
+          "column": 2,
+          "name": "CAMid_Filter_reason"
+        }
+      ],
+      "formula_cells_by_field": {},
+      "exported_name": "Filter_Coll_data",
+      "sheet_id": 1268411357
+    },
+    {
+      "name": "PopGenSamples_Summary",
+      "state": "hidden",
+      "header_row": 1,
+      "profile_status": "headerless_or_empty",
+      "headers": [],
+      "formula_cells_by_field": {},
+      "exported_name": "PopGenSamples_Summary",
+      "sheet_id": 1904839465
+    },
+    {
+      "name": "Pheromones_data",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "CAM_ID"
+        },
+        {
+          "column": 2,
+          "name": "Source"
+        },
+        {
+          "column": 3,
+          "name": "SPECIES"
+        },
+        {
+          "column": 4,
+          "name": "Subspecies_Form"
+        },
+        {
+          "column": 5,
+          "name": "Wild_Reared"
+        },
+        {
+          "column": 6,
+          "name": "Treatment"
+        },
+        {
+          "column": 7,
+          "name": "Location"
+        },
+        {
+          "column": 8,
+          "name": "Side_Andes"
+        },
+        {
+          "column": 9,
+          "name": "Tube_1_id"
+        },
+        {
+          "column": 10,
+          "name": "Tube_1_tissue"
+        },
+        {
+          "column": 11,
+          "name": "Tube_2_id"
+        },
+        {
+          "column": 12,
+          "name": "Tube_2_tissue"
+        },
+        {
+          "column": 13,
+          "name": "Tube_3_id"
+        },
+        {
+          "column": 14,
+          "name": "Tube_3_tissue"
+        }
+      ],
+      "formula_cells_by_field": {
+        "Subspecies_Form": 28,
+        "Location": 45,
+        "Side_Andes": 254,
+        "Tube_1_id": 257,
+        "Tube_2_id": 257,
+        "Tube_3_id": 257
+      },
+      "exported_name": "Pheromones_data",
+      "sheet_id": 1291587214
+    },
+    {
+      "name": "F1/F2_MutationRate",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "SPECIES"
+        },
+        {
+          "column": 2,
+          "name": "species2"
+        },
+        {
+          "column": 3,
+          "name": "Generation"
+        },
+        {
+          "column": 4,
+          "name": "Insectary_ID"
+        },
+        {
+          "column": 5,
+          "name": "Wild_Reared"
+        },
+        {
+          "column": 6,
+          "name": "Sex"
+        },
+        {
+          "column": 7,
+          "name": "M_grand_mother_ID"
+        },
+        {
+          "column": 8,
+          "name": "M_GM_CAM_ID"
+        },
+        {
+          "column": 9,
+          "name": "Origin_M_grand_mother"
+        },
+        {
+          "column": 10,
+          "name": "M_grand_father_ID"
+        },
+        {
+          "column": 11,
+          "name": "M_GF_CAM_ID"
+        },
+        {
+          "column": 12,
+          "name": "Origin_M_ grand_father"
+        },
+        {
+          "column": 13,
+          "name": "Mother_ID"
+        },
+        {
+          "column": 14,
+          "name": "M_CAM_ID"
+        },
+        {
+          "column": 15,
+          "name": "M_clutch"
+        },
+        {
+          "column": 16,
+          "name": "F_grand_mother_ID"
+        },
+        {
+          "column": 17,
+          "name": "F_GM_CAM_ID"
+        },
+        {
+          "column": 18,
+          "name": "F_origin_grand_mother"
+        },
+        {
+          "column": 19,
+          "name": "F_grand_father_ID"
+        },
+        {
+          "column": 20,
+          "name": "F_GF_CAM_ID"
+        },
+        {
+          "column": 21,
+          "name": "F_origin_grand_father"
+        },
+        {
+          "column": 22,
+          "name": "Father_ID"
+        },
+        {
+          "column": 23,
+          "name": "F_CAM_ID"
+        },
+        {
+          "column": 24,
+          "name": "F_clutch"
+        },
+        {
+          "column": 25,
+          "name": "F2_clutch"
+        },
+        {
+          "column": 26,
+          "name": "Mating"
+        },
+        {
+          "column": 27,
+          "name": "Couple"
+        },
+        {
+          "column": 28,
+          "name": "CAM_ID"
+        },
+        {
+          "column": 29,
+          "name": "Split_tube"
+        },
+        {
+          "column": 30,
+          "name": "Tube_1"
+        },
+        {
+          "column": 31,
+          "name": "Tube_1_tissue"
+        },
+        {
+          "column": 32,
+          "name": "T1_Preservation_medium"
+        },
+        {
+          "column": 33,
+          "name": "Tube_2"
+        },
+        {
+          "column": 34,
+          "name": "Tube_2_tissue"
+        },
+        {
+          "column": 35,
+          "name": "T2_Preservation_medium"
+        },
+        {
+          "column": 36,
+          "name": "Tube_3"
+        },
+        {
+          "column": 37,
+          "name": "Tube_3_tissue"
+        },
+        {
+          "column": 38,
+          "name": "Preserved_Dead_Alive"
+        },
+        {
+          "column": 39,
+          "name": "Mating_started"
+        },
+        {
+          "column": 40,
+          "name": "Manting_ended"
+        },
+        {
+          "column": 41,
+          "name": "Notes_F1_F2_MutationRate"
+        },
+        {
+          "column": 42,
+          "name": "Tube_1_rack"
+        },
+        {
+          "column": 43,
+          "name": "Tube_2_rack"
+        },
+        {
+          "column": 44,
+          "name": "Tube_3_rack"
+        },
+        {
+          "column": 45,
+          "name": "Tube_1_manifest"
+        },
+        {
+          "column": 46,
+          "name": "Tube_2_manifest"
+        },
+        {
+          "column": 47,
+          "name": "Tube_3_manifest"
+        },
+        {
+          "column": 48,
+          "name": "RELATIONSHIP"
+        },
+        {
+          "column": 49,
+          "name": "COLLECTED_BY"
+        },
+        {
+          "column": 50,
+          "name": "DATE_OF_COLLECTION"
+        },
+        {
+          "column": 51,
+          "name": "COLLECTION_LOCATION"
+        },
+        {
+          "column": 52,
+          "name": "ORIGINAL_COLLECTION_DATE"
+        },
+        {
+          "column": 53,
+          "name": "DESCRIPTION_OF_COLLECTION_METHOD"
+        },
+        {
+          "column": 54,
+          "name": "IDENTIFIED_BY"
+        },
+        {
+          "column": 55,
+          "name": "DATE_OF_PRESERVATION"
+        }
+      ],
+      "formula_cells_by_field": {
+        "SPECIES": 2419,
+        "Wild_Reared": 2101,
+        "Sex": 2101,
+        "M_GM_CAM_ID": 1063,
+        "Origin_M_grand_mother": 2092,
+        "M_GF_CAM_ID": 1063,
+        "Origin_M_ grand_father": 2086,
+        "M_CAM_ID": 1063,
+        "F_GM_CAM_ID": 1063,
+        "F_origin_grand_mother": 2016,
+        "F_GF_CAM_ID": 1063,
+        "F_origin_grand_father": 2106,
+        "F_CAM_ID": 1063,
+        "CAM_ID": 2041,
+        "Tube_1": 2286,
+        "Tube_1_tissue": 2287,
+        "T1_Preservation_medium": 2333,
+        "Tube_2": 2287,
+        "Tube_2_tissue": 2287,
+        "T2_Preservation_medium": 2333,
+        "Tube_3": 2287,
+        "Tube_3_tissue": 2287,
+        "Preserved_Dead_Alive": 2287,
+        "Tube_1_rack": 1001,
+        "Tube_2_rack": 1000,
+        "Tube_3_rack": 1000,
+        "Tube_1_manifest": 1000,
+        "Tube_2_manifest": 1000,
+        "Tube_3_manifest": 1000,
+        "RELATIONSHIP": 996,
+        "COLLECTED_BY": 996,
+        "DATE_OF_COLLECTION": 2022,
+        "COLLECTION_LOCATION": 996,
+        "ORIGINAL_COLLECTION_DATE": 996,
+        "DESCRIPTION_OF_COLLECTION_METHOD": 996,
+        "IDENTIFIED_BY": 996,
+        "DATE_OF_PRESERVATION": 996,
+        "Couple": 1833
+      },
+      "exported_name": "F1F2_MutationRate",
+      "sheet_id": 1025337416
+    },
+    {
+      "name": "Melinaea_crosses",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "Generation"
+        },
+        {
+          "column": 2,
+          "name": "Cross direction"
+        },
+        {
+          "column": 3,
+          "name": "Female"
+        },
+        {
+          "column": 4,
+          "name": "Female (wild/ reared)"
+        },
+        {
+          "column": 5,
+          "name": "Emerge_date"
+        },
+        {
+          "column": 6,
+          "name": "Male"
+        },
+        {
+          "column": 7,
+          "name": "Male (wild/ reared)"
+        },
+        {
+          "column": 8,
+          "name": "Start date"
+        },
+        {
+          "column": 9,
+          "name": "Finish date (revision of couple)"
+        },
+        {
+          "column": 10,
+          "name": "Reason finish date"
+        },
+        {
+          "column": 11,
+          "name": "Days difference"
+        },
+        {
+          "column": 12,
+          "name": "Mating_started"
+        },
+        {
+          "column": 13,
+          "name": "Manting_ended"
+        },
+        {
+          "column": 14,
+          "name": "Last hour of mating review"
+        },
+        {
+          "column": 15,
+          "name": "Death_date_female"
+        },
+        {
+          "column": 16,
+          "name": "Death_date_male"
+        },
+        {
+          "column": 18,
+          "name": "#clutch"
+        },
+        {
+          "column": 19,
+          "name": "Number of Eggs laid"
+        },
+        {
+          "column": 20,
+          "name": "Number of Eggs Hatched (larva)"
+        },
+        {
+          "column": 21,
+          "name": "Number of Pupae"
+        },
+        {
+          "column": 22,
+          "name": "Number of Adults Emerged"
+        },
+        {
+          "column": 23,
+          "name": "Hatch rate"
+        },
+        {
+          "column": 25,
+          "name": "Earliest egg date laid"
+        },
+        {
+          "column": 26,
+          "name": "Days difference (earliest egg date laid - start date)"
+        },
+        {
+          "column": 27,
+          "name": "Days difference (earliest egg date laid - mating started)"
+        },
+        {
+          "column": 28,
+          "name": "Days difference (mating started-Started date)"
+        },
+        {
+          "column": 29,
+          "name": "Days difference (Earliest egg date laid- Emerged date)"
+        }
+      ],
+      "formula_cells_by_field": {
+        "Female (wild/ reared)": 50,
+        "Emerge_date": 50,
+        "Male (wild/ reared)": 50,
+        "Days difference": 54,
+        "Death_date_female": 50,
+        "Death_date_male": 48,
+        "Number of Eggs laid": 50,
+        "Number of Eggs Hatched (larva)": 50,
+        "Number of Pupae": 50,
+        "Number of Adults Emerged": 50,
+        "Hatch rate": 50,
+        "Earliest egg date laid": 50,
+        "Days difference (earliest egg date laid - start date)": 59,
+        "Days difference (earliest egg date laid - mating started)": 59,
+        "Days difference (mating started-Started date)": 59,
+        "Days difference (Earliest egg date laid- Emerged date)": 59
+      },
+      "exported_name": "Melinaea_crosses",
+      "sheet_id": 543439229
+    },
+    {
+      "name": "Melinaea_eggs",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "Clutch_No."
+        },
+        {
+          "column": 2,
+          "name": "SPECIES"
+        },
+        {
+          "column": 3,
+          "name": "Mother ID"
+        },
+        {
+          "column": 4,
+          "name": "Father ID"
+        },
+        {
+          "column": 5,
+          "name": "Date_Laid"
+        },
+        {
+          "column": 6,
+          "name": "# total eggs laid"
+        },
+        {
+          "column": 7,
+          "name": "Preservation_date"
+        },
+        {
+          "column": 8,
+          "name": "# eggs preserved"
+        },
+        {
+          "column": 9,
+          "name": "Tube_ID"
+        },
+        {
+          "column": 10,
+          "name": "Condition_sample"
+        },
+        {
+          "column": 11,
+          "name": "Notes"
+        },
+        {
+          "column": 12,
+          "name": "Tube_rack"
+        }
+      ],
+      "formula_cells_by_field": {
+        "SPECIES": 59,
+        "Tube_rack": 998
+      },
+      "exported_name": "Melinaea_eggs",
+      "sheet_id": 1497549783
+    },
+    {
+      "name": "SamplingDay_data",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "Date"
+        },
+        {
+          "column": 2,
+          "name": "Location"
+        },
+        {
+          "column": 3,
+          "name": "Purpose"
+        },
+        {
+          "column": 4,
+          "name": "Start_time"
+        },
+        {
+          "column": 5,
+          "name": "End_time"
+        },
+        {
+          "column": 6,
+          "name": "Collectors_initials"
+        },
+        {
+          "column": 7,
+          "name": "DataLogger"
+        },
+        {
+          "column": 8,
+          "name": "Notes"
+        }
+      ],
+      "formula_cells_by_field": {},
+      "exported_name": "SamplingDay_data",
+      "sheet_id": 1769179015
+    },
+    {
+      "name": "Crosses_Lys_x_Pol",
+      "state": "visible",
+      "header_row": 6,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "Attempt N"
+        },
+        {
+          "column": 2,
+          "name": "female Id"
+        },
+        {
+          "column": 3,
+          "name": "Female Species"
+        },
+        {
+          "column": 4,
+          "name": "Female date introduced"
+        },
+        {
+          "column": 5,
+          "name": "male Id"
+        },
+        {
+          "column": 6,
+          "name": "Male Species"
+        },
+        {
+          "column": 7,
+          "name": "Male (wild/ reared)"
+        },
+        {
+          "column": 8,
+          "name": "male date introduced"
+        },
+        {
+          "column": 9,
+          "name": "MATING DATE"
+        },
+        {
+          "column": 10,
+          "name": "Treatment No"
+        },
+        {
+          "column": 11,
+          "name": "Finish date"
+        },
+        {
+          "column": 12,
+          "name": "Notes"
+        }
+      ],
+      "formula_cells_by_field": {
+        "Female Species": 106,
+        "Male Species": 72,
+        "Male (wild/ reared)": 72,
+        "Female date introduced": 61
+      },
+      "exported_name": "Crosses_Lys_x_Pol",
+      "sheet_id": 347192273
+    },
+    {
+      "name": "Hybrid_Attempts",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "Insectary_ID"
+        },
+        {
+          "column": 2,
+          "name": "Species"
+        },
+        {
+          "column": 3,
+          "name": "Wild_Reared"
+        },
+        {
+          "column": 4,
+          "name": "Sex"
+        },
+        {
+          "column": 5,
+          "name": "Emerge_date"
+        },
+        {
+          "column": 6,
+          "name": "Start_date"
+        },
+        {
+          "column": 7,
+          "name": "Death_date"
+        },
+        {
+          "column": 8,
+          "name": "Mature_date"
+        },
+        {
+          "column": 9,
+          "name": "Return_to_stock_date"
+        },
+        {
+          "column": 10,
+          "name": "Jail_N"
+        },
+        {
+          "column": 11,
+          "name": "Experiment"
+        },
+        {
+          "column": 12,
+          "name": "Mate_with"
+        },
+        {
+          "column": 13,
+          "name": "Mating_date"
+        },
+        {
+          "column": 14,
+          "name": "Experiment choice:"
+        }
+      ],
+      "formula_cells_by_field": {
+        "Wild_Reared": 993,
+        "Sex": 993,
+        "Emerge_date": 993,
+        "Mature_date": 996,
+        "Return_to_stock_date": 996,
+        "Species": 992,
+        "Death_date": 984
+      },
+      "exported_name": "Hybrid_Attempts",
+      "sheet_id": 613837341
+    },
+    {
+      "name": "Nail_Polish",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "Nail Polish average survival time (only bold rows):"
+        },
+        {
+          "column": 4,
+          "name": "8"
+        }
+      ],
+      "formula_cells_by_field": {
+        "column_2": 23,
+        "column_3": 24,
+        "8": 24,
+        "column_6": 24,
+        "column_8": 24,
+        "column_9": 24
+      },
+      "exported_name": "Nail_Polish",
+      "sheet_id": 1231948548
+    },
+    {
+      "name": "Stocks_Matings",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "male_ID"
+        },
+        {
+          "column": 2,
+          "name": "female_ID"
+        },
+        {
+          "column": 3,
+          "name": "check_Sex"
+        },
+        {
+          "column": 4,
+          "name": "Male_Wild_Reared"
+        },
+        {
+          "column": 5,
+          "name": "Female_Wild_Reared"
+        },
+        {
+          "column": 6,
+          "name": "Species"
+        },
+        {
+          "column": 7,
+          "name": "Mating_date"
+        },
+        {
+          "column": 8,
+          "name": "Mating_time"
+        },
+        {
+          "column": 9,
+          "name": "Male_Emerge_Date"
+        },
+        {
+          "column": 10,
+          "name": "Female_Emerge_Date"
+        },
+        {
+          "column": 11,
+          "name": "Male_days_from_emerge"
+        },
+        {
+          "column": 12,
+          "name": "Female_days_from_emerge"
+        },
+        {
+          "column": 13,
+          "name": "Notes"
+        }
+      ],
+      "formula_cells_by_field": {
+        "check_Sex": 998,
+        "Male_Wild_Reared": 998,
+        "Female_Wild_Reared": 998,
+        "Species": 998,
+        "Male_Emerge_Date": 998,
+        "Female_Emerge_Date": 998,
+        "Male_days_from_emerge": 998,
+        "Female_days_from_emerge": 998
+      },
+      "exported_name": "Stocks_Matings",
+      "sheet_id": 1198954647
+    },
+    {
+      "name": "CRISPR",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "CRISPR_No."
+        },
+        {
+          "column": 2,
+          "name": "Eggs_No."
+        },
+        {
+          "column": 3,
+          "name": "CRISPR_date"
+        },
+        {
+          "column": 4,
+          "name": "Guide"
+        },
+        {
+          "column": 5,
+          "name": "Stock_of_origin"
+        },
+        {
+          "column": 6,
+          "name": "Hatch_date"
+        },
+        {
+          "column": 7,
+          "name": "Pupa_date"
+        },
+        {
+          "column": 8,
+          "name": "Emerge_date"
+        },
+        {
+          "column": 9,
+          "name": "Species"
+        },
+        {
+          "column": 10,
+          "name": "Sex"
+        },
+        {
+          "column": 11,
+          "name": "Mutant"
+        },
+        {
+          "column": 12,
+          "name": "CAM_ID"
+        },
+        {
+          "column": 13,
+          "name": "Tube_ID"
+        },
+        {
+          "column": 14,
+          "name": "Photo_dorsal"
+        },
+        {
+          "column": 15,
+          "name": "Photo_ventral"
+        },
+        {
+          "column": 16,
+          "name": "Photo_ventral_2"
+        },
+        {
+          "column": 17,
+          "name": "Notes"
+        }
+      ],
+      "formula_cells_by_field": {
+        "Species": 998,
+        "Photo_ventral_2": 2518,
+        "Photo_dorsal": 2518,
+        "Photo_ventral": 2518
+      },
+      "exported_name": "CRISPR",
+      "sheet_id": 952436162
+    },
+    {
+      "name": "Wing_tissue",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "Clutch_No."
+        },
+        {
+          "column": 2,
+          "name": "SPECIES"
+        },
+        {
+          "column": 3,
+          "name": "Reared_at"
+        },
+        {
+          "column": 4,
+          "name": "Research_purpose"
+        },
+        {
+          "column": 5,
+          "name": "Preservation_medium"
+        },
+        {
+          "column": 6,
+          "name": "5th_date_time"
+        },
+        {
+          "column": 7,
+          "name": "Pupation_date"
+        },
+        {
+          "column": 8,
+          "name": "Pupation_time"
+        },
+        {
+          "column": 9,
+          "name": "Dissection_date"
+        },
+        {
+          "column": 10,
+          "name": "Dissection_time"
+        },
+        {
+          "column": 11,
+          "name": "Pupa_dev_time"
+        },
+        {
+          "column": 12,
+          "name": "Time_point"
+        },
+        {
+          "column": 13,
+          "name": "CAM_ID"
+        },
+        {
+          "column": 14,
+          "name": "Tube_1_id"
+        },
+        {
+          "column": 15,
+          "name": "Tube_1_tissue"
+        },
+        {
+          "column": 16,
+          "name": "Tube_2_id"
+        },
+        {
+          "column": 17,
+          "name": "Tube_2_tissue"
+        },
+        {
+          "column": 18,
+          "name": "Tube_3_id"
+        },
+        {
+          "column": 19,
+          "name": "Tube_3_tissue"
+        },
+        {
+          "column": 20,
+          "name": "Tube_4_id"
+        },
+        {
+          "column": 21,
+          "name": "Tube_4_tissue"
+        },
+        {
+          "column": 22,
+          "name": "Tube_5_id"
+        },
+        {
+          "column": 23,
+          "name": "Tube_5_tissue"
+        },
+        {
+          "column": 24,
+          "name": "Time_FW_t1"
+        },
+        {
+          "column": 25,
+          "name": "Time_HW_t2"
+        },
+        {
+          "column": 26,
+          "name": "Time_FW_t3"
+        },
+        {
+          "column": 27,
+          "name": "Time_FW_t4"
+        },
+        {
+          "column": 28,
+          "name": "Photo_FW"
+        },
+        {
+          "column": 29,
+          "name": "Photo_HW"
+        },
+        {
+          "column": 30,
+          "name": "USE IT ?"
+        },
+        {
+          "column": 31,
+          "name": "Notes_Wing_tissue"
+        },
+        {
+          "column": 32,
+          "name": "Tube_1_rack"
+        },
+        {
+          "column": 33,
+          "name": "Tube_2_rack"
+        },
+        {
+          "column": 34,
+          "name": "Tube_3_rack"
+        },
+        {
+          "column": 35,
+          "name": "Tube_4_rack"
+        },
+        {
+          "column": 36,
+          "name": "Tube_5_rack"
+        },
+        {
+          "column": 37,
+          "name": "Tube_1_manifest"
+        },
+        {
+          "column": 38,
+          "name": "Tube_2_manifest"
+        },
+        {
+          "column": 39,
+          "name": "Tube_3_manifest"
+        },
+        {
+          "column": 40,
+          "name": "Tube_4_manifest"
+        },
+        {
+          "column": 41,
+          "name": "Tube_5_manifest"
+        }
+      ],
+      "formula_cells_by_field": {
+        "Tube_1_rack": 811,
+        "Tube_2_rack": 811,
+        "SPECIES": 332,
+        "Reared_at": 608,
+        "Tube_3_rack": 811,
+        "Tube_4_rack": 811,
+        "Tube_5_rack": 811,
+        "Tube_1_manifest": 811,
+        "Tube_2_manifest": 811,
+        "Tube_3_manifest": 811,
+        "Tube_4_manifest": 811,
+        "Pupa_dev_time": 811,
+        "Time_point": 759,
+        "Tube_5_manifest": 811,
+        "Tube_3_tissue": 811,
+        "Tube_4_tissue": 811,
+        "Tube_5_tissue": 811,
+        "Preservation_medium": 805,
+        "Tube_1_tissue": 805,
+        "Tube_2_tissue": 805,
+        "5th_date_time": 372,
+        "Tube_1_id": 55,
+        "Tube_3_id": 378,
+        "Tube_4_id": 378,
+        "Tube_5_id": 378,
+        "Time_FW_t1": 378,
+        "Time_HW_t2": 378,
+        "Time_FW_t3": 378,
+        "Time_FW_t4": 378,
+        "Photo_FW": 378,
+        "Photo_HW": 378,
+        "Tube_2_id": 54
+      },
+      "exported_name": "Wing_tissue",
+      "sheet_id": 1416000937
+    },
+    {
+      "name": "Location_data",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "Collection_location"
+        },
+        {
+          "column": 2,
+          "name": "Latitude"
+        },
+        {
+          "column": 3,
+          "name": "Longitude"
+        },
+        {
+          "column": 4,
+          "name": "Elevation"
+        },
+        {
+          "column": 5,
+          "name": "what3words (Eng)"
+        },
+        {
+          "column": 6,
+          "name": "what3words (Esp)"
+        },
+        {
+          "column": 7,
+          "name": "Country"
+        },
+        {
+          "column": 8,
+          "name": "Province"
+        },
+        {
+          "column": 9,
+          "name": "Elevation_Std"
+        },
+        {
+          "column": 10,
+          "name": "Elevation_category"
+        },
+        {
+          "column": 11,
+          "name": "Side_Andes"
+        },
+        {
+          "column": 12,
+          "name": "Abbreviation"
+        },
+        {
+          "column": 13,
+          "name": "Notes"
+        },
+        {
+          "column": 14,
+          "name": "COLLECTION_LOCATION"
+        },
+        {
+          "column": 15,
+          "name": "DECIMAL_LATITUDE"
+        },
+        {
+          "column": 16,
+          "name": "DECIMAL_LONGITUDE"
+        },
+        {
+          "column": 17,
+          "name": "HABITAT"
+        }
+      ],
+      "formula_cells_by_field": {
+        "DECIMAL_LONGITUDE": 962,
+        "HABITAT": 962,
+        "COLLECTION_LOCATION": 962,
+        "DECIMAL_LATITUDE": 962
+      },
+      "exported_name": "Location_data",
+      "sheet_id": 1114138165
+    },
+    {
+      "name": "Taxonomy_v30Oct23_old",
+      "state": "hidden",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "Source"
+        },
+        {
+          "column": 2,
+          "name": "SPECIES"
+        },
+        {
+          "column": 3,
+          "name": "Family"
+        },
+        {
+          "column": 4,
+          "name": "Subfamily"
+        },
+        {
+          "column": 5,
+          "name": "Tribe"
+        },
+        {
+          "column": 6,
+          "name": "Genus"
+        },
+        {
+          "column": 7,
+          "name": "Species"
+        },
+        {
+          "column": 8,
+          "name": "Mimicry_ring"
+        },
+        {
+          "column": 9,
+          "name": "Mimicry_complex_Beccaloni1997"
+        },
+        {
+          "column": 10,
+          "name": "Beccaloni1997_notes"
+        },
+        {
+          "column": 11,
+          "name": "Beccaloni1997_Fig_TEMP"
+        },
+        {
+          "column": 12,
+          "name": "Photo_1"
+        },
+        {
+          "column": 13,
+          "name": "Photo_2"
+        },
+        {
+          "column": 14,
+          "name": "Notes"
+        }
+      ],
+      "formula_cells_by_field": {
+        "SPECIES": 7015
+      },
+      "exported_name": "Taxonomy_v30Oct23_old",
+      "sheet_id": 404013478
+    },
+    {
+      "name": "Taxonomy_v18Jun25",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "sort"
+        },
+        {
+          "column": 2,
+          "name": "source"
+        },
+        {
+          "column": 3,
+          "name": "family"
+        },
+        {
+          "column": 4,
+          "name": "family_author"
+        },
+        {
+          "column": 5,
+          "name": "family_common_name"
+        },
+        {
+          "column": 6,
+          "name": "subfamily"
+        },
+        {
+          "column": 7,
+          "name": "tribe"
+        },
+        {
+          "column": 8,
+          "name": "genus"
+        },
+        {
+          "column": 9,
+          "name": "genus_author"
+        },
+        {
+          "column": 10,
+          "name": "species"
+        },
+        {
+          "column": 11,
+          "name": "subspecies"
+        },
+        {
+          "column": 12,
+          "name": "taxon_author"
+        },
+        {
+          "column": 13,
+          "name": "link"
+        },
+        {
+          "column": 14,
+          "name": "inaturalist"
+        },
+        {
+          "column": 15,
+          "name": "common_name"
+        },
+        {
+          "column": 16,
+          "name": "distribution"
+        },
+        {
+          "column": 17,
+          "name": "taxon_rank"
+        },
+        {
+          "column": 18,
+          "name": "NCBI_Taxonomy_18Jun25_preferred_name"
+        },
+        {
+          "column": 19,
+          "name": "NCBI_Taxonomy_18Jun25_taxid"
+        },
+        {
+          "column": 20,
+          "name": "notes_Taxonomy_v18Jun25"
+        },
+        {
+          "column": 21,
+          "name": "Filter"
+        }
+      ],
+      "formula_cells_by_field": {
+        "Filter": 11166,
+        "species": 86
+      },
+      "exported_name": "Taxonomy_v18Jun25",
+      "sheet_id": 1251116294
+    },
+    {
+      "name": "Filter_species",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "species"
+        },
+        {
+          "column": 2,
+          "name": "taxonid"
+        }
+      ],
+      "formula_cells_by_field": {},
+      "exported_name": "Filter_species",
+      "sheet_id": 1197263209
+    },
+    {
+      "name": "Photo_links",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "Full Path"
+        },
+        {
+          "column": 2,
+          "name": "Name"
+        },
+        {
+          "column": 3,
+          "name": "Type"
+        },
+        {
+          "column": 4,
+          "name": "Capture Date"
+        },
+        {
+          "column": 5,
+          "name": "URL"
+        },
+        {
+          "column": 6,
+          "name": "Date"
+        },
+        {
+          "column": 7,
+          "name": "Description"
+        },
+        {
+          "column": 8,
+          "name": "Size KB"
+        },
+        {
+          "column": 9,
+          "name": "Owner Email"
+        },
+        {
+          "column": 10,
+          "name": "Replace .(jpg|HEIC|heic) with .JPG for CRISPR"
+        }
+      ],
+      "formula_cells_by_field": {
+        "Replace .(jpg|HEIC|heic) with .JPG for CRISPR": 18252
+      },
+      "exported_name": "Photo_links",
+      "sheet_id": 439406691
+    },
+    {
+      "name": "Lists",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "Name"
+        },
+        {
+          "column": 2,
+          "name": "Abbreviation"
+        },
+        {
+          "column": 3,
+          "name": "Abbr_name"
+        },
+        {
+          "column": 4,
+          "name": "Affiliation"
+        },
+        {
+          "column": 5,
+          "name": "EMAIL"
+        },
+        {
+          "column": 7,
+          "name": "ORGANISM_PART"
+        },
+        {
+          "column": 9,
+          "name": "Research_purpose"
+        },
+        {
+          "column": 11,
+          "name": "Tissue locations"
+        },
+        {
+          "column": 13,
+          "name": "Insectary_species"
+        },
+        {
+          "column": 15,
+          "name": "CRISPR"
+        },
+        {
+          "column": 17,
+          "name": "Country"
+        },
+        {
+          "column": 18,
+          "name": "Province"
+        },
+        {
+          "column": 20,
+          "name": "Wild_indv_CAMid"
+        },
+        {
+          "column": 22,
+          "name": "WingDissec&CRISPR_CAMid"
+        },
+        {
+          "column": 24,
+          "name": "Tissue4GenAnnot_CAMid"
+        },
+        {
+          "column": 26,
+          "name": "InsectaryWild&Reared_CAMid"
+        },
+        {
+          "column": 27,
+          "name": "Insectary_batch"
+        },
+        {
+          "column": 29,
+          "name": "WingDissecOnly_CAMid"
+        },
+        {
+          "column": 31,
+          "name": "CRISPRonly_CAMid"
+        },
+        {
+          "column": 33,
+          "name": "Genera_0176"
+        },
+        {
+          "column": 34,
+          "name": "YES"
+        }
+      ],
+      "formula_cells_by_field": {
+        "Abbr_name": 57
+      },
+      "exported_name": "Lists",
+      "sheet_id": 731131660
+    },
+    {
+      "name": "Ithomiini_tube_locations_18Jun26",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "Sort"
+        },
+        {
+          "column": 2,
+          "name": "Tube_ID"
+        },
+        {
+          "column": 3,
+          "name": "Rack_ID"
+        },
+        {
+          "column": 4,
+          "name": "Tube_location"
+        },
+        {
+          "column": 5,
+          "name": "Batch"
+        },
+        {
+          "column": 6,
+          "name": "Export_permit"
+        },
+        {
+          "column": 7,
+          "name": "IV58_UK_Import_Licence"
+        },
+        {
+          "column": 8,
+          "name": "Collection_permit"
+        },
+        {
+          "column": 9,
+          "name": "Sanger_FW_ID"
+        },
+        {
+          "column": 10,
+          "name": "Sanger_FWRA"
+        },
+        {
+          "column": 11,
+          "name": "Exclude"
+        },
+        {
+          "column": 12,
+          "name": "Genus"
+        },
+        {
+          "column": 13,
+          "name": "Genera_0176"
+        },
+        {
+          "column": 14,
+          "name": "DATE_OF_COLLECTION"
+        },
+        {
+          "column": 15,
+          "name": "Next export permit"
+        },
+        {
+          "column": 16,
+          "name": "COLLECTOR_SAMPLE_ID"
+        },
+        {
+          "column": 17,
+          "name": "FILTER"
+        }
+      ],
+      "formula_cells_by_field": {
+        "Genus": 11579,
+        "Genera_0176": 11579,
+        "DATE_OF_COLLECTION": 11579,
+        "Next export permit": 11579,
+        "COLLECTOR_SAMPLE_ID": 11579,
+        "FILTER": 11579,
+        "Export_permit": 2
+      },
+      "exported_name": "Ithomiini_tube_locations_18Jun2",
+      "sheet_id": 640146567
+    },
+    {
+      "name": "MEIER_manifests_30Jan25_OLD",
+      "state": "hidden",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "MANIFEST"
+        },
+        {
+          "column": 2,
+          "name": "Tube/Well ID"
+        },
+        {
+          "column": 3,
+          "name": "Scientific Name"
+        },
+        {
+          "column": 4,
+          "name": "Specimen ID"
+        },
+        {
+          "column": 5,
+          "name": "ToLID"
+        },
+        {
+          "column": 6,
+          "name": "Rack/Plate ID"
+        },
+        {
+          "column": 7,
+          "name": "Taxon ID"
+        },
+        {
+          "column": 8,
+          "name": "Common Name"
+        },
+        {
+          "column": 9,
+          "name": "Organism Part"
+        },
+        {
+          "column": 10,
+          "name": "Collector Sample ID"
+        },
+        {
+          "column": 11,
+          "name": "Collection Location"
+        },
+        {
+          "column": 12,
+          "name": "Preservation Approach"
+        },
+        {
+          "column": 13,
+          "name": "Preservative Solution"
+        },
+        {
+          "column": 14,
+          "name": "Size of Tissue in Tube"
+        },
+        {
+          "column": 15,
+          "name": "Purpose of Specimen"
+        },
+        {
+          "column": 16,
+          "name": "Other Information"
+        },
+        {
+          "column": 17,
+          "name": "Date Sample Arrived at Sanger"
+        },
+        {
+          "column": 18,
+          "name": "Freezer Id"
+        },
+        {
+          "column": 19,
+          "name": "Tray - Shelf"
+        },
+        {
+          "column": 20,
+          "name": "Original Geographic Location"
+        },
+        {
+          "column": 21,
+          "name": "Corrected_Collector_Sample_ID"
+        }
+      ],
+      "formula_cells_by_field": {
+        "Corrected_Collector_Sample_ID": 3720
+      },
+      "exported_name": "MEIER_manifests_30Jan25_OLD",
+      "sheet_id": 648607076
+    },
+    {
+      "name": "ME_TempData",
+      "state": "hidden",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "CAM_ID"
+        },
+        {
+          "column": 2,
+          "name": "ME_ID"
+        },
+        {
+          "column": 3,
+          "name": "Time"
+        },
+        {
+          "column": 4,
+          "name": "Temp_thorax"
+        },
+        {
+          "column": 5,
+          "name": "Temp_air"
+        },
+        {
+          "column": 6,
+          "name": "Behaviour"
+        },
+        {
+          "column": 7,
+          "name": "Substrate"
+        },
+        {
+          "column": 8,
+          "name": "Temp_substrate"
+        },
+        {
+          "column": 9,
+          "name": "Height"
+        },
+        {
+          "column": 10,
+          "name": "Habitat"
+        },
+        {
+          "column": 11,
+          "name": "Creek"
+        },
+        {
+          "column": 12,
+          "name": "Notes"
+        }
+      ],
+      "formula_cells_by_field": {
+        "Temp_substrate": 864,
+        "Substrate": 865
+      },
+      "exported_name": "ME_TempData",
+      "sheet_id": 620643882
+    },
+    {
+      "name": "Life_History",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "Clutch_No."
+        },
+        {
+          "column": 2,
+          "name": "SPECIES"
+        },
+        {
+          "column": 3,
+          "name": "Prepupa_date"
+        },
+        {
+          "column": 4,
+          "name": "Prepupa_time"
+        },
+        {
+          "column": 5,
+          "name": "Pupation_date"
+        },
+        {
+          "column": 6,
+          "name": "Pupation_time"
+        },
+        {
+          "column": 7,
+          "name": "Time_point"
+        },
+        {
+          "column": 8,
+          "name": "CAM_ID"
+        },
+        {
+          "column": 9,
+          "name": "Tube_ID"
+        },
+        {
+          "column": 10,
+          "name": "Preservation_date"
+        },
+        {
+          "column": 11,
+          "name": "Notes_Life_History"
+        },
+        {
+          "column": 12,
+          "name": "Tube_rack"
+        }
+      ],
+      "formula_cells_by_field": {
+        "SPECIES": 133,
+        "Tube_rack": 999
+      },
+      "exported_name": "Life_History",
+      "sheet_id": 1072029768
+    },
+    {
+      "name": "Sperm_dissections",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "SPECIES"
+        },
+        {
+          "column": 2,
+          "name": "Father_CAMid"
+        },
+        {
+          "column": 3,
+          "name": "Intro2Insectary_date"
+        },
+        {
+          "column": 4,
+          "name": "wild/reared"
+        },
+        {
+          "column": 5,
+          "name": "Father_Split_tube"
+        },
+        {
+          "column": 6,
+          "name": "F_Tube_1_id"
+        },
+        {
+          "column": 7,
+          "name": "F_Tube_1_tissue"
+        },
+        {
+          "column": 8,
+          "name": "F_Tube_2_id"
+        },
+        {
+          "column": 9,
+          "name": "F_Tube_2_tissue"
+        },
+        {
+          "column": 10,
+          "name": "F_Tube_3_id"
+        },
+        {
+          "column": 11,
+          "name": "F_Tube_3_tissue"
+        },
+        {
+          "column": 12,
+          "name": "Mother_CAMid"
+        },
+        {
+          "column": 13,
+          "name": "M_Tube_1_id"
+        },
+        {
+          "column": 14,
+          "name": "M_Tube_1_tissue"
+        },
+        {
+          "column": 15,
+          "name": "M_Tube_2_id"
+        },
+        {
+          "column": 16,
+          "name": "M_Tube_2_tissue"
+        },
+        {
+          "column": 17,
+          "name": "M_Tube_3_id"
+        },
+        {
+          "column": 18,
+          "name": "M_Tube_3_tissue"
+        },
+        {
+          "column": 19,
+          "name": "M_Tube_4_id"
+        },
+        {
+          "column": 20,
+          "name": "M_Tube_4_tissue"
+        },
+        {
+          "column": 21,
+          "name": "Mating_started"
+        },
+        {
+          "column": 22,
+          "name": "Manting_ended"
+        },
+        {
+          "column": 23,
+          "name": "Dissection_date"
+        },
+        {
+          "column": 24,
+          "name": "Dissection_lag"
+        },
+        {
+          "column": 25,
+          "name": "Notes"
+        },
+        {
+          "column": 26,
+          "name": "F_Tube_1_id"
+        },
+        {
+          "column": 27,
+          "name": "T_Father_thorax"
+        },
+        {
+          "column": 28,
+          "name": "T_Father_abdomen"
+        },
+        {
+          "column": 29,
+          "name": "T_Mother_head"
+        },
+        {
+          "column": 30,
+          "name": "T_Mother_thorax"
+        },
+        {
+          "column": 31,
+          "name": "T_Sperm"
+        },
+        {
+          "column": 32,
+          "name": "T_Mother_abdomen"
+        }
+      ],
+      "formula_cells_by_field": {
+        "Intro2Insectary_date": 63,
+        "wild/reared": 63,
+        "F_Tube_1_id": 1062,
+        "F_Tube_1_tissue": 63,
+        "F_Tube_2_id": 63,
+        "F_Tube_2_tissue": 63,
+        "F_Tube_3_id": 63,
+        "F_Tube_3_tissue": 63,
+        "M_Tube_1_id": 999,
+        "M_Tube_1_tissue": 999,
+        "M_Tube_2_id": 999,
+        "M_Tube_2_tissue": 999,
+        "M_Tube_3_id": 999,
+        "M_Tube_3_tissue": 999,
+        "M_Tube_4_id": 999,
+        "M_Tube_4_tissue": 999,
+        "T_Father_thorax": 999,
+        "T_Father_abdomen": 999,
+        "T_Mother_head": 999,
+        "T_Mother_thorax": 999,
+        "T_Sperm": 999,
+        "T_Mother_abdomen": 999
+      },
+      "exported_name": "Sperm_dissections",
+      "sheet_id": 738988675
+    },
+    {
+      "name": "MEIER_manifests_23Jun26",
+      "state": "hidden",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "Sampleset ID"
+        },
+        {
+          "column": 2,
+          "name": "Tube/Well ID"
+        },
+        {
+          "column": 3,
+          "name": "Rack/plate ID"
+        },
+        {
+          "column": 4,
+          "name": "STS Collector Sample ID"
+        },
+        {
+          "column": 5,
+          "name": "STS Specimen ID"
+        },
+        {
+          "column": 6,
+          "name": "STS ToLID ID"
+        },
+        {
+          "column": 7,
+          "name": "Scientific Name"
+        },
+        {
+          "column": 8,
+          "name": "Organism Part"
+        },
+        {
+          "column": 9,
+          "name": "Collection country"
+        },
+        {
+          "column": 10,
+          "name": "STS Collector Sample ID ORIGINAL"
+        },
+        {
+          "column": 11,
+          "name": "Filter_Tube/Well ID"
+        }
+      ],
+      "formula_cells_by_field": {
+        "Filter_Tube/Well ID": 8234,
+        "STS Collector Sample ID": 268
+      },
+      "exported_name": "MEIER_manifests_23Jun26",
+      "sheet_id": 1835364891
+    },
+    {
+      "name": "Filter_MEIER_manifests",
+      "state": "hidden",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "Tube/Well ID"
+        },
+        {
+          "column": 2,
+          "name": "Filter"
+        }
+      ],
+      "formula_cells_by_field": {},
+      "exported_name": "Filter_MEIER_manifests",
+      "sheet_id": 640187655
+    },
+    {
+      "name": "Barcoding_DNA",
+      "state": "hidden",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "CAM_ID"
+        },
+        {
+          "column": 2,
+          "name": "Tube_1_id"
+        },
+        {
+          "column": 3,
+          "name": "Tube_1_tissue"
+        },
+        {
+          "column": 4,
+          "name": "Tube_2_id"
+        },
+        {
+          "column": 5,
+          "name": "Tube_2_tissue"
+        },
+        {
+          "column": 6,
+          "name": "Tube_3_id"
+        },
+        {
+          "column": 7,
+          "name": "Tube_3_tissue"
+        },
+        {
+          "column": 8,
+          "name": "Tube_4_id_LEGS"
+        },
+        {
+          "column": 9,
+          "name": "Tribe"
+        },
+        {
+          "column": 10,
+          "name": "SPECIES_4Nov24"
+        },
+        {
+          "column": 11,
+          "name": "Subspecies_Form"
+        },
+        {
+          "column": 12,
+          "name": "Date_DNAextracted4barcoding"
+        },
+        {
+          "column": 13,
+          "name": "Nanodrop_concentration_ng/ul"
+        },
+        {
+          "column": 14,
+          "name": "Nanodrop_260/280"
+        },
+        {
+          "column": 15,
+          "name": "Nanodrop_260/230"
+        },
+        {
+          "column": 16,
+          "name": "Notes_Collection_data"
+        },
+        {
+          "column": 17,
+          "name": "Tube_1_rack"
+        },
+        {
+          "column": 18,
+          "name": "Tube_2_rack"
+        },
+        {
+          "column": 19,
+          "name": "Tube_3_rack"
+        },
+        {
+          "column": 20,
+          "name": "Tube_4_rack"
+        },
+        {
+          "column": 21,
+          "name": "Tube_1_manifest"
+        },
+        {
+          "column": 22,
+          "name": "Tube_2_manifest"
+        },
+        {
+          "column": 23,
+          "name": "Tube_3_manifest"
+        },
+        {
+          "column": 24,
+          "name": "Tube_4_manifest"
+        },
+        {
+          "column": 25,
+          "name": "Specimen ID"
+        },
+        {
+          "column": 26,
+          "name": "ToLID"
+        }
+      ],
+      "formula_cells_by_field": {
+        "Tribe": 225,
+        "Tube_1_rack": 225,
+        "Tube_2_rack": 225,
+        "Tube_3_rack": 225,
+        "Tube_4_rack": 225,
+        "Tube_1_manifest": 225,
+        "Tube_2_manifest": 225,
+        "Tube_3_manifest": 225,
+        "Tube_4_manifest": 225,
+        "Specimen ID": 225,
+        "ToLID": 225
+      },
+      "exported_name": "Barcoding_DNA",
+      "sheet_id": 1537444615
+    },
+    {
+      "name": "Sheets_description",
+      "state": "hidden",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "Table"
+        },
+        {
+          "column": 2,
+          "name": "Type_of_table"
+        },
+        {
+          "column": 3,
+          "name": "Contents_or_purpose"
+        },
+        {
+          "column": 4,
+          "name": "Visible_or_hidden"
+        },
+        {
+          "column": 5,
+          "name": "Protected"
+        }
+      ],
+      "formula_cells_by_field": {},
+      "exported_name": "Sheets_description",
+      "sheet_id": 1718182748
+    },
+    {
+      "name": "Versions log",
+      "state": "hidden",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "Date"
+        },
+        {
+          "column": 2,
+          "name": "Name"
+        },
+        {
+          "column": 3,
+          "name": "Updates description"
+        }
+      ],
+      "formula_cells_by_field": {},
+      "exported_name": "Versions log",
+      "sheet_id": 798582826
+    },
+    {
+      "name": "File_notes",
+      "state": "visible",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "Date"
+        },
+        {
+          "column": 2,
+          "name": "Name_(Initials)"
+        },
+        {
+          "column": 3,
+          "name": "Note"
+        }
+      ],
+      "formula_cells_by_field": {},
+      "exported_name": "File_notes"
+    },
+    {
+      "name": "Columns_description",
+      "state": "hidden",
+      "header_row": 1,
+      "profile_status": "profiled",
+      "headers": [
+        {
+          "column": 1,
+          "name": "Table"
+        },
+        {
+          "column": 2,
+          "name": "Col_order"
+        },
+        {
+          "column": 3,
+          "name": "Column_name"
+        },
+        {
+          "column": 4,
+          "name": "Description_of_contents"
+        }
+      ],
+      "formula_cells_by_field": {},
+      "exported_name": "Columns_description",
+      "sheet_id": 1990811665
+    }
+  ]
+}

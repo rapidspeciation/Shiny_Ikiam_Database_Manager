@@ -1,0 +1,14 @@
+.local/
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+__pycache__/
+*.pyc
+*.xlsx
+*.csv
+*.sqlite
+*.sqlite-*
+credentials*.json
+token*.json
