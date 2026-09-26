@@ -1,6 +1,12 @@
 # Writing, history, and selected undo
 
-Design proposal following the user's decision that people will routinely edit through both the app and Google Sheets. This document records intended behavior; the app, watcher, journal, and undo implementation do not yet exist.
+The user has accepted this history and selected-undo approach and expects simultaneous edits to the same rows to be uncommon. People will routinely edit through both the app and Google Sheets. This document records intended behavior; the app, watcher, journal, and undo implementation do not yet exist.
+
+## Expected use and implementation scope
+
+Optimize for ordinary saves with automatic history and occasional selected reversals. Use lightweight checks of current record identity and target values, serialize cooperating app writes where needed, and show a clear review prompt when a conflict is detected. The low expected overlap supports a simple first implementation.
+
+Keep later-edit checks for undo: an older change may have been superseded hours or days later even when nobody edited simultaneously. Durable history, formula preservation, safe retries, and reconciliation remain useful under this operating assumption. Add more elaborate collaboration controls only if observed use justifies them.
 
 ## Recommendation
 

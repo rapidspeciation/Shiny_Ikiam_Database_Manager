@@ -23,6 +23,8 @@ Begin with shared identity, authentication, formula-safe operations, ID allocati
 
 The UI should show the selected record's identifying context before save and a clear saved/pending/error result afterward. A repeated submission must not create a duplicate event. Ambiguous IDs should return candidates rather than silently selecting a row. A source formula must remain a formula after an update to a related record.
 
+The user expects simultaneous edits to the same rows to be uncommon and has accepted the combined history/undo approach. Keep conflict handling lightweight: fresh value checks, coordinated app writes, and review when a conflict is detected. Undo must still check for later edits made at different times.
+
 The meeting summaries show that cross pivots depend on Insectary_data, Insectary_stocks, and F1/F2_MutationRate being current. Connect operations across those tables explicitly. Sample inventory, lab workflows, reporting, and AI belong to the planned application, rather than a list of features to omit after an initial prototype. Search, scanning, tasks, and AI lookup can be introduced whenever the supporting records and access rules are ready.
 
 ## Hosting direction
