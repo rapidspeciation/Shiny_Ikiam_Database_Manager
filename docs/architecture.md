@@ -8,6 +8,8 @@ flowchart LR
     Browser <-->|"Authenticated HTTPS"| API["Ithomiini API on claudeclaw"]
     API <-->|"Validated reads and writes"| Sheets["Personal Google Sheets test copy"]
     API <--> State["Private app state, audit, jobs, attachments"]
+    Sheets --> Observer["Direct-edit notifications and reconciliation"]
+    Observer --> State
     API <--> AI["AI tools and isolated analysis jobs"]
     AI --> Provider["Configured AI provider"]
     AI --> Records["Permitted records, protocols, meeting index"]
@@ -43,7 +45,9 @@ Google Sheets remains the biological record store during the trial. Every trial 
 
 Forms and AI use the same named operations for collections, emergences, deaths, clutch observations, crosses, samples, and corrections. Each validates the selected records and permitted fields, preserves formulas, and returns a saved/pending/error result. AI and photo/voice entry can prepare edits with affected records and old/new values for review before applying them.
 
-The backend can serialize its own ID allocations. Direct spreadsheet edits bypass that coordination, so stale rows and changed identifiers need detection and reconciliation. A local journal and Sheets writes are separate operations; retries and partial failures require recoverable state rather than an assumed cross-system transaction.
+The user intends routine editing through both the app and Google Sheets. The backend serializes its own operations, journals exact app changes, and reconciles direct edits through notifications and snapshots. The [history and selected undo design](edit-history.md) describes linked reversal actions, conflicts, dependencies, and incomplete external evidence.
+
+Direct spreadsheet edits bypass backend coordination. Google does not document a general expected-version condition on its batch update schema, so fresh reads and verification cannot eliminate every race with a native edit. A local journal and Sheets writes are separate operations; retries and partial failures require recoverable state rather than an assumed cross-system transaction.
 
 Offline drafts use a bounded permitted working set, show the last sync time, and retain provisional IDs until accepted. Analyses retain source versions, methods, filters, denominators, and uncertainty. The same access checks govern forms, search, chat, generated results, and attachments.
 

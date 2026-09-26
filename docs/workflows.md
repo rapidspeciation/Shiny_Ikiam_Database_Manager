@@ -59,5 +59,5 @@ The assistant can answer questions such as which records match an ID, which cros
 - Which sheets and fields are the source for each write, and which fields are calculated.
 - Which of the workflows established by the weekly meeting summaries field staff would prioritize in the first phone trial.
 - Whether phones must record events without connectivity, and how queued submissions should behave when an identifier or record has changed.
-- Who can enter, correct, or review records, and whether direct spreadsheet edits remain part of the workflow.
+- Who can enter, correct, or review records. Routine direct spreadsheet editing is part of the workflow; its [history and reversal limits](edit-history.md) must be visible.
 - How much of the application should be publicly reachable, and whether the personal GitHub plan supports Pages from a private repository.

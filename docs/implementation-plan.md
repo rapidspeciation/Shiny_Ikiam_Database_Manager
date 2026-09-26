@@ -1,6 +1,6 @@
 # Full application implementation plan
 
-The discovery and sandbox API test are complete. Application implementation has not started. The [full feature catalog](feature-catalog.md) defines the intended breadth, combining the original request, workbook, meeting evidence, and useful additions. Delivery stages organize the work; they do not limit the final application to the first forms.
+The discovery and sandbox API test are complete. Application implementation has not started. The [full feature catalog](feature-catalog.md) defines the intended breadth, combining the original request, workbook, meeting evidence, and useful additions. Delivery stages organize the work; they do not limit the final application to the first forms. The user has chosen routine editing through both the app and Google Sheets, with a combined [history and selected undo design](edit-history.md).
 
 ## Product areas
 
@@ -42,7 +42,7 @@ The assistant should retrieve linked records and protocols, analyze permitted da
 - A phone-sized interface finds both historical and current ID formats and displays species and sex without confusing preservation condition with life status.
 - Every write is restricted to the personal test copy and permitted fields.
 - Recording a death updates the intended insectary record; dependent collection formulas remain intact.
-- Two simultaneous new-individual submissions receive distinct IDs according to the current allocation policy.
+- Two simultaneous app submissions receive distinct IDs according to the current allocation policy. Routine direct Sheet allocations are reconciled and any detected collisions are surfaced.
 - Retrying the same request has one effect, and the UI distinguishes saved data from a pending or failed submission.
 - Current row allocation preserves prefilled IDs, validation, and calculated cells.
 - Date-only entries and local collection times remain correct despite the workbook's UK locale and London time zone.
@@ -53,6 +53,8 @@ The assistant should retrieve linked records and protocols, analyze permitted da
 - Experimental outcomes preserve uncertainty. Eggs do not establish observed mating or fertilization, and analyses define denominators and exclusions.
 - Voice/photo extraction and AI edits produce inspectable drafts and use the same permissions and validation as manual forms.
 - Generated analyses and weekly reports retain source versions and distinguish observations, missing records, and proposed actions.
+- Selected undo preserves unrelated edits, records a new linked reversal, checks known later field changes and dependencies, and clearly labels incomplete evidence from direct Sheet edits.
+- Reconciliation distinguishes entered values/formulas from recalculated results and does not invent an editor or a complete sequence for snapshot-only differences.
 - Backups, restoration, rollback, and separation from Tiputini are verified before relying on the app for daily work.
 
-Detailed decisions include the current ID/reuse policy, role permissions, offline working sets, cage naming, notification channels, label hardware, missing experimental fields, AI providers, and scientific analysis definitions. The catalog keeps these visible without discarding the broader intended scope. Existing data is not automatically cleaned or migrated to settle them.
+Detailed decisions include the current ID/reuse policy, role permissions, offline working sets, cage naming, notification channels, label hardware, missing experimental fields, AI providers, scientific analysis definitions, and the direct-edit observation mechanism. Routine direct Sheet editing remains supported. The catalog keeps these visible without discarding the broader intended scope. Existing data is not automatically cleaned or migrated to settle them.
