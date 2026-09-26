@@ -1,0 +1,23 @@
+Bundled web fonts
+
+Fira Sans Book, Medium, and SemiBold
+  Files: web/fonts/fira-book.ttf, fira-medium.ttf, fira-semibold.ttf
+  Copied unchanged from: /usr/share/fonts/TTF/FiraSans-Book.ttf,
+    /usr/share/fonts/TTF/FiraSans-Medium.ttf,
+    /usr/share/fonts/TTF/FiraSans-SemiBold.ttf
+  Copyright: Digitized data copyright 2012-2018, The Mozilla Foundation
+    and Telefonica S.A., bBox Type GmbH and Carrois Corporate GbR.
+  Reserved Font Name: Fira (as stated in the fonts' embedded metadata)
+  License: SIL Open Font License 1.1; see FiraSans-OFL.txt
+  Project: https://github.com/bBoxType/FiraSans
+
+Noto Serif Regular
+  File: web/fonts/noto-serif.ttf
+  Copied unchanged from: /usr/share/fonts/noto/NotoSerif-Regular.ttf
+  Copyright: Copyright 2022 The Noto Project Authors
+  License: SIL Open Font License 1.1; see NotoSerif-OFL.txt
+  Project: https://github.com/notofonts/latin-greek-cyrillic
+
+The bundled font files have not been modified. The Noto Serif font's embedded
+license notice identifies the SIL Open Font License; NotoSerif-OFL.txt is copied
+from that font project's upstream repository.

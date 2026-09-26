@@ -1,0 +1,5 @@
+# Insert inside tbs-insect-gallery.duckdns.org before its fallback handler.
+redir /ithomiini /ithomiini/ 308
+handle_path /ithomiini/* {
+    reverse_proxy 127.0.0.1:8794
+}

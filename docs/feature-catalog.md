@@ -1,6 +1,6 @@
 # Product capability catalog
 
-This is the full set of useful capabilities to consider for an Ithomiini field, insectary, specimen, and research data system. It is a product vision, not a promise that every feature exists or belongs in the first release. The [25 September 2026 workbook profile](database-findings.md), [sheet headers](workbook-schema.json), [meeting review](meetings.md), [original request and app review](discovery.md), and [workflow notes](workflows.md) supply the evidence. Meeting notes describe practice and problems, not verified completeness of historical rows. The present application has not been implemented.
+This is the full set of useful capabilities to consider for an Ithomiini field, insectary, specimen, and research data system. It is a product vision, not a promise that every feature exists or belongs in the first release. The [25 September 2026 workbook profile](database-findings.md), [sheet headers](workbook-schema.json), [meeting review](meetings.md), [original request and app review](discovery.md), and [workflow notes](workflows.md) supply the evidence. Meeting notes describe practice and problems, not verified completeness of historical rows. The implementation and deployment evidence is tracked in [verification](verification.md).
 
 In the catalog, **sheet-backed** means the current workbook has named fields or tables for the information. It does not mean the proposed screen or process exists. **Add** means the product needs a new event, link, field, rule, or service to deliver the action. **Verify** means staff must settle the meaning, method, or authority before it can be treated as a fact. Existing source values and formulas should remain visible when a new model adds detail.
 
@@ -46,7 +46,7 @@ In the catalog, **sheet-backed** means the current workbook has named fields or 
 
 ## Delivery and evidence boundaries
 
-The interface can be served from GitHub Pages. A separate authenticated backend on the existing `claudeclaw` host should own data access, ID allocation, validation, audit, synchronization, and AI calls; private Google and AI credentials stay on that backend. [Architecture](architecture.md) owns the detailed design. This catalog does not make Apps Script the primary backend. During the trial, writes target the personal test copy. Formula-bearing cells require operation-specific write rules.
+The user selected one HTTPS app on `claudeclaw` because this repository is private. Its authenticated backend owns data access, ID allocation, validation, audit, synchronization, and AI calls; credentials stay on that backend. [Architecture](architecture.md) owns the detailed design. This catalog does not make Apps Script the primary backend. During the trial, writes target the personal test copy. Formula-bearing cells require operation-specific write rules.
 
 Shared usability and operations also include Spanish/English labels where needed, accessible controls, large phone targets, keyboard/scanner support, consistent desktop views, contextual protocol help, and printable field or cage summaries. Imports should preview validation and duplicate candidates before saving. Exports should preserve IDs, units, dates, and data provenance. Backups, tested restoration, service rollback, and explicit sandbox/production indicators are part of operating the application.
 

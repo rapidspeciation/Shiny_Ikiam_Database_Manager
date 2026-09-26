@@ -1,5 +1,7 @@
 # Full application implementation plan
 
+Implementation update: the frontend and backend now run together at the claudeclaw HTTPS `/ithomiini/` route. The private-repository Pages proposal below is historical. See [operations](operations.md) and [verification](verification.md) for the delivered runtime and checks.
+
 The discovery and sandbox API test are complete. Application implementation has not started. The [full feature catalog](feature-catalog.md) defines the intended breadth, combining the original request, workbook, meeting evidence, and useful additions. Delivery stages organize the work; they do not limit the final application to the first forms. The user has chosen routine editing through both the app and Google Sheets, with a combined [history and selected undo design](edit-history.md).
 
 ## Product areas

@@ -1,5 +1,7 @@
 # GitHub Pages and claudeclaw
 
+Implementation update: the frontend and backend now run together at the claudeclaw HTTPS `/ithomiini/` route. The private-repository Pages proposal below is historical. See [operations](operations.md) and [verification](verification.md) for the delivered runtime and checks.
+
 Updated 25 September 2026. The preferred direction is the user's proposed GitHub Pages frontend with a separate backend and chatbot on the existing claudeclaw server. No new service has been deployed.
 
 ```mermaid
