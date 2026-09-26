@@ -1,41 +1,43 @@
-# Proposed first implementation
+# Full application implementation plan
 
-The discovery and sandbox API test are complete. Application implementation has not started. This plan combines the original request, the current workbook, and [meeting evidence](meetings.md).
+The discovery and sandbox API test are complete. Application implementation has not started. The [full feature catalog](feature-catalog.md) defines the intended breadth, combining the original request, workbook, meeting evidence, and useful additions. Delivery stages organize the work; they do not limit the final application to the first forms.
 
-## Application structure
+## Product areas
 
-| Section | Initial purpose |
+| Section | Purpose |
 | --- | --- |
-| Today | Recent entries, clutch rounds, and entries still waiting to sync |
-| Collection | Fast entry of a collected individual with session defaults and current taxonomy |
-| Insectary | Find an individual, inspect species/sex/origin, record death or emergence, and inspect a clutch |
-| Experiments | Crosses, egg outcomes, and linked pheromone/tissue samples |
-| Explore | Filtered records, wing photographs, maps, and derived summaries |
-| Assistant | Questions over permitted records with source links and saved results |
+| Today | Daily rounds, tasks, reminders, recent observations, and synchronization status |
+| Field | Complete collection entry, sessions and sampling effort, recaptures, locations, taxonomy, and media |
+| Insectary | Individual histories, cage/clutch views, movements, emergence, development, deaths, and preservation |
+| Experiments | Crosses, egg outcomes, pedigrees, treatments, pheromones, CRISPR, sperm, life-history, and barcoding workflows |
+| Samples | Tissue splits, tubes, racks and storage, labels/scanning, manifests, shipments, and sample custody |
+| Explore | Search, linked tables, photographs, maps, charts, saved views, and scientific/weekly reports |
+| Assistant | Record and document retrieval, analyses and saved results, voice/photo drafts, and reviewed edits |
+| Administration | People and roles, corrections, data-quality review, imports, audit, backups, and configuration |
 
-The first phone view should put specimen lookup and common recording actions within easy reach. Tiputini supplies useful examples for exploration and chat results. Its full hosted architecture is larger than this first application needs.
+These are capability groups, not a requirement to put eight tabs on a small phone. The interface should keep frequent actions easy to reach while giving every cataloged workflow an appropriate place.
 
-## First working slice
+## Delivery sequence
 
-Implement authenticated lookup and a death-recording form against the personal copy, followed by new collection entry and batch emergence. This tests the user's most immediate actions and the formula-sensitive update path before adding the more varied experiment schemas. Include a clutch view early so staff retain the notebook's immediate overview of development and emergence.
+Begin with shared identity, authentication, formula-safe operations, ID allocation, audit, retry handling, and a mobile application shell. Build complete field and insectary recording on those foundations, including lookup, deaths, collections, emergence, clutch views, and offline drafts. Then extend the same record/sample operations into all experiment and laboratory workflows in the catalog.
 
 The UI should show the selected record's identifying context before save and a clear saved/pending/error result afterward. A repeated submission must not create a duplicate event. Ambiguous IDs should return candidates rather than silently selecting a row. A source formula must remain a formula after an update to a related record.
 
-Next, add clutch-round entry and cross/egg events. The meeting summaries show that the cross pivots depend on Insectary_data, Insectary_stocks, and F1/F2_MutationRate being current. Connect those operations explicitly instead of offering unrestricted cell editing. Pheromone extraction follows once the individual, treatment, and sample links are reliable.
+The meeting summaries show that cross pivots depend on Insectary_data, Insectary_stocks, and F1/F2_MutationRate being current. Connect operations across those tables explicitly. Sample inventory, lab workflows, reporting, and AI belong to the planned application, rather than a list of features to omit after an initial prototype. Search, scanning, tasks, and AI lookup can be introduced whenever the supporting records and access rules are ready.
 
-## Hosting recommendation to test
+## Hosting direction
 
-Use a static phone interface and a small managed service for writes. GitHub Pages can host the interface if the personal GitHub plan supports private-repository Pages. Authentication must protect data access even though the site's assets are public.
+Use GitHub Pages for the frontend and a separate backend/chatbot on the existing claudeclaw server, following the user's preferred architecture. The read-only host check succeeded and found spare memory and disk. [Architecture details](architecture.md) record the capacity snapshot and the cross-origin authentication work needed.
 
-An Apps Script service is the first candidate while Sheets remains the main database. A single script lock can serialize cooperating ID allocation and save operations. Prototype caller authentication, deployment access, browser communication, formula preservation, and retry behavior before committing to that design. A script lock does not coordinate direct manual edits to Sheets.
+The backend handles authenticated reads/writes, coordinated app ID allocation, audit, synchronization, jobs, and AI tools. It has separate state and credentials from Tiputini. The frontend calls HTTPS; SSH is only for administration. Apps Script is an alternative for a narrower integration, not the primary proposal now.
 
-If reliable offline event synchronization, stronger transaction guarantees, or more demanding access controls become necessary, evaluate a managed API with a transactional store. That would be a larger data-model change because Sheets would become a synchronized view. The current task does not justify that migration yet.
+Retain Sheets as the biological record store during the trial. App-owned drafts, jobs, chat, tasks, and audit can have separate storage. A journal and Sheets updates are not one atomic transaction, so partial failures need explicit recovery. Direct spreadsheet edits require reconciliation with the app. A future biological database migration is a separate decision.
 
 Keep a write audit and request identifier in the sandbox design. Do not add columns to the original workbook merely to satisfy the new app. Any change to the production schema should be a separate migration after the prototype has established what is needed.
 
-The chatbot needs a hosted AI connection with protected credentials and the same access rules as record lookup. Start with read-only questions, cited records, and derived tables or charts. Writing through chat remains a separate design decision. Personal Codex access in Tiputini is not a browser-only service that can be copied into GitHub Pages.
+The assistant should retrieve linked records and protocols, analyze permitted data, create charts and reports, and prepare single or batch edits through the same validated operations as forms. Voice and photographs can produce editable drafts. Show affected records and old/new values before applying conversational changes. Existing Tiputini components can inform this implementation, but provider accounts and data permissions must be configured for this app.
 
-## Acceptance checks for the first slice
+## Acceptance checks across the scope
 
 - A phone-sized interface finds both historical and current ID formats and displays species and sex without confusing preservation condition with life status.
 - Every write is restricted to the personal test copy and permitted fields.
@@ -45,5 +47,12 @@ The chatbot needs a hosted AI connection with protected credentials and the same
 - Current row allocation preserves prefilled IDs, validation, and calculated cells.
 - Date-only entries and local collection times remain correct despite the workbook's UK locale and London time zone.
 - A second authorized account can perform the intended actions; an unauthorized account cannot fetch or modify records.
+- Field entry includes the original requested fields, editable suggestions, recent defaults, and configurable recent-row browsing.
+- Cage/clutch views, recaptures, pedigrees, samples, photographs, and manifests resolve the same underlying individuals consistently.
+- Offline drafts survive restart, show pending status, and provide a clear resolution for conflicting changes.
+- Experimental outcomes preserve uncertainty. Eggs do not establish observed mating or fertilization, and analyses define denominators and exclusions.
+- Voice/photo extraction and AI edits produce inspectable drafts and use the same permissions and validation as manual forms.
+- Generated analyses and weekly reports retain source versions and distinguish observations, missing records, and proposed actions.
+- Backups, restoration, rollback, and separation from Tiputini are verified before relying on the app for daily work.
 
-Offline behavior, operator roles, ID reuse rules, and any new fields needed for pheromone extraction remain questions for the prototype. The existing raw data should not be cleaned or migrated automatically to resolve those questions.
+Detailed decisions include the current ID/reuse policy, role permissions, offline working sets, cage naming, notification channels, label hardware, missing experimental fields, AI providers, and scientific analysis definitions. The catalog keeps these visible without discarding the broader intended scope. Existing data is not automatically cleaned or migrated to settle them.

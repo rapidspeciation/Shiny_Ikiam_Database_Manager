@@ -1,6 +1,6 @@
 # Workflows to prototype
 
-These proposals follow the September 25 workbook export. The [sandbox write test](sandbox-test.md) passed for both main sheets. The [meeting review](meetings.md) identifies the recurring notebook-transfer delays and clutch/cross recording needs. See the [first implementation plan](implementation-plan.md) for their proposed order.
+These proposals follow the September 25 workbook export. The [sandbox write test](sandbox-test.md) passed for both main sheets. The [meeting review](meetings.md) identifies the recurring notebook-transfer delays and clutch/cross recording needs. These notes cover the initially examined workflows; the [feature catalog](feature-catalog.md) supplies the full scope and the [implementation plan](implementation-plan.md) orders delivery.
 
 ## Phone entry and lookup
 
@@ -51,7 +51,7 @@ Pheromones_data records CAM_ID, Source, species/form, Wild_Reared, Treatment, lo
 
 Adapt Tiputini's table, gallery, map, and saved-result patterns around biological records. Collection, insectary, and experiment filters should use their own definitions of species, dates, and status. The gallery and maps can supply interaction references, while current data comes from the permitted database.
 
-An initial assistant can answer questions such as which records match an ID, which crosses involve a butterfly, or which samples lack a tube assignment. Answers should link to exact records and distinguish missing data from a biological fact. Record-changing chat actions, the AI provider, access rules, and hosting remain undecided.
+The assistant can answer questions such as which records match an ID, which crosses involve a butterfly, or which samples lack a tube assignment. Answers should link to exact records and distinguish missing data from a biological fact. The expanded scope includes source-linked analyses, voice/photo drafts, and reviewed changes through the same operations as forms. Hosting now follows the proposed claudeclaw backend; the provider, detailed access rules, and tools remain implementation decisions.
 
 ## Decisions still requiring evidence
 

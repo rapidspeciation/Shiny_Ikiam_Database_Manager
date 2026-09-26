@@ -2,7 +2,7 @@
 
 Discovery and sandbox for a phone-friendly collection and insectary application.
 
-The first stage reviews the live workbook, weekly meeting summaries, the previous Ikiam applications, and the Tiputini DataHub. The application will be designed after those workflows are understood.
+The discovery stage reviewed the live workbook, weekly meeting summaries, the previous Ikiam applications, and the Tiputini DataHub. The intended scope covers field, insectary, experiment, sample, and research workflows, with a GitHub Pages frontend and a separate backend/chatbot on claudeclaw.
 
 ## Intended workflows
 
@@ -23,4 +23,4 @@ Raw workbook exports, meeting documents, credentials, and local diagnostics stay
 
 ## Context
 
-See [the discovery notes](docs/discovery.md), [database findings](docs/database-findings.md), [meeting review](docs/meetings.md), and [schema](docs/workbook-schema.json) for the evidence. [Proposed workflows](docs/workflows.md) and the [first implementation plan](docs/implementation-plan.md) describe the next stage.
+See [the discovery notes](docs/discovery.md), [database findings](docs/database-findings.md), [meeting review](docs/meetings.md), and [schema](docs/workbook-schema.json) for the evidence. The [full feature catalog](docs/feature-catalog.md), [architecture](docs/architecture.md), [workflow details](docs/workflows.md), and [implementation plan](docs/implementation-plan.md) describe the intended application. Delivery stages organize the work without limiting the final scope to the initial forms.
