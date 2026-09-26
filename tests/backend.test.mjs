@@ -67,7 +67,7 @@ test('new-record suggestions expose preallocated formula fields before submissio
   const address=await app.listen(0,'127.0.0.1');
   try{
     const origin=`http://127.0.0.1:${address.port}`;
-    const setup=await fetch(`${origin}/ithomiini/api/auth/setup`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:'test-setup-secret',username:'testadmin',password:'long-test-password',displayName:'Test'})});
+    const setup=await fetch(`${origin}/ithomiini/api/auth/setup`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:'test-setup-secret',username:'testadmin',password:'test12',displayName:'Test'})});
     assert.equal(setup.status,201);
     const cookie=setup.headers.get('set-cookie').split(';')[0];
     const response=await fetch(`${origin}/ithomiini/api/suggestions?module=Insectary_data`,{headers:{cookie}});

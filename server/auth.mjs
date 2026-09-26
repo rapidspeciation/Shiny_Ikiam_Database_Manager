@@ -11,7 +11,7 @@ export function publicUser(row) {
   return row && { id:row.id, username:row.username, displayName:row.display_name, role:row.role, active:Boolean(row.active) };
 }
 export function validatePassword(password) {
-  if(typeof password!=='string'||password.length<12||password.length>256) throw bad('WEAK_PASSWORD','Password must have 12 to 256 characters');
+  if(typeof password!=='string'||password.length<6||password.length>16) throw bad('WEAK_PASSWORD','Password must have 6 to 16 characters');
 }
 export function passwordFields(password) {
   validatePassword(password);

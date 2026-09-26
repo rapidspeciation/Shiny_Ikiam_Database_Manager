@@ -23,7 +23,7 @@ test('HTTP workflow enforces access, saves exact fields, reverses a selected edi
     return { response, data };
   }
   assert.equal((await call('/api/records')).response.status, 401);
-  const setup = await call('/api/auth/setup', 'POST', { token: 'private-integration-setup', username: 'integration_admin', password: 'private-test-password-only' });
+  const setup = await call('/api/auth/setup', 'POST', { token: 'private-integration-setup', username: 'integration_admin', password: 'test-admin-123' });
   assert.equal(setup.response.status, 201);
   const boot = await call('/api/bootstrap');
   assert.equal(boot.data.settings.sandbox, true);
@@ -55,10 +55,10 @@ test('HTTP workflow enforces access, saves exact fields, reverses a selected edi
   const task = await call('/api/tasks', 'POST', { title: 'Check specimen', recordId: record.id });
   assert.equal(task.response.status, 201);
   assert.equal((await call(`/api/tasks/${task.data.task.id}`, 'PATCH', { status: 'done' })).data.task.status, 'done');
-  const user = await call('/api/admin/users', 'POST', { username: 'integration_observer', password: 'private-observer-password', role: 'observer' });
+  const user = await call('/api/admin/users', 'POST', { username: 'integration_observer', password: 'test-reader-123', role: 'observer' });
   assert.equal(user.response.status, 201);
   await call('/api/auth/logout', 'POST', {});
-  await call('/api/auth/login', 'POST', { username: 'integration_observer', password: 'private-observer-password' });
+  await call('/api/auth/login', 'POST', { username: 'integration_observer', password: 'test-reader-123' });
   assert.equal((await call('/api/records')).response.status, 200);
   assert.equal((await call('/api/events', 'POST', { kind: 'attempted_edit' })).response.status, 403);
   assert.equal((await call('/api/admin/users')).response.status, 403);
