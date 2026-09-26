@@ -31,6 +31,8 @@ const props = withDefaults(
     rowOptions?: Record<string, (row: Record<string, CellValue>) => string[]>
     /** Fields that are formulas in the rows new records will be written into. */
     createFormulas?: string[]
+    /** Row ids to highlight, e.g. the IDs a person just loaded. */
+    highlight?: string[]
   }>(),
   {
     creates: () => [],
@@ -42,6 +44,7 @@ const props = withDefaults(
     height: '100%',
     rowOptions: () => ({}),
     createFormulas: () => [],
+    highlight: () => [],
   },
 )
 const emit = defineEmits<{ notice: [message: string]; removeCreate: [clientId: string] }>()
@@ -352,6 +355,9 @@ function build() {
     clipboardPasteParser: 'range',
     clipboardPasteAction: pasteRange,
     columnDefaults: { headerSortTristate: true },
+    rowFormatter: (row: RowComponent) => {
+      row.getElement().classList.toggle('is-highlight', props.highlight.includes((row.getData() as GridRow).__id))
+    },
     // A custom paste action is supported at runtime but missing from the type definitions.
   } as unknown as ConstructorParameters<typeof Tabulator>[1])
   table.on('cellEdited', onCellEdited)
