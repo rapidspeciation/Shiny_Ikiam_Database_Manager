@@ -1,0 +1,165 @@
+@import 'tailwindcss';
+
+@font-face {
+  font-family: 'Fira Sans';
+  src: url('/fonts/fira-book.ttf') format('truetype');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Fira Sans';
+  src: url('/fonts/fira-medium.ttf') format('truetype');
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Fira Sans';
+  src: url('/fonts/fira-semibold.ttf') format('truetype');
+  font-weight: 600;
+  font-display: swap;
+}
+
+@theme {
+  --font-sans: 'Fira Sans', system-ui, sans-serif;
+  --color-brand-50: #eef5f1;
+  --color-brand-100: #d5e8dd;
+  --color-brand-600: #2d6a4f;
+  --color-brand-700: #1f4d3a;
+  --color-brand-800: #173a2c;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+body {
+  @apply bg-stone-50 text-stone-900 antialiased;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-800 hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md bg-brand-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-800 hover:bg-red-50 disabled:opacity-50;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center rounded-md p-1.5 text-stone-600 hover:bg-stone-100;
+  }
+  .field-label {
+    @apply mb-1 block text-xs font-medium text-stone-600;
+  }
+  .field-input {
+    @apply block w-full rounded-md border border-stone-300 bg-white px-2.5 py-1.5 text-sm focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none;
+  }
+  .field-input.is-dirty {
+    @apply border-amber-400 bg-amber-50;
+  }
+  .toolbar {
+    @apply flex flex-wrap items-end gap-3 border-b border-stone-200 bg-white px-3 py-3 sm:px-4;
+  }
+  .hint {
+    @apply text-xs text-stone-500;
+  }
+}
+
+/* Spreadsheet grid */
+.sheet-grid {
+  position: relative;
+}
+.sheet-grid .tabulator {
+  font-size: 13px;
+  border: 0;
+  background: white;
+}
+.sheet-grid .tabulator .tabulator-header {
+  background: #f5f5f4;
+  border-bottom: 1px solid #d6d3d1;
+}
+.sheet-grid .tabulator .tabulator-header .tabulator-col {
+  background: #f5f5f4;
+}
+.sheet-grid .tabulator .tabulator-col-title {
+  font-weight: 600;
+  font-size: 12px;
+}
+.sheet-grid .tabulator .tabulator-header-filter input {
+  font-size: 12px;
+  padding: 2px 4px;
+  border: 1px solid #e7e5e4;
+  border-radius: 3px;
+}
+.sheet-grid .tabulator-row .tabulator-cell {
+  border-right: 1px solid #eeeceb;
+  padding: 4px 6px;
+}
+.sheet-grid .tabulator-row.tabulator-row-even {
+  background: #fcfcfb;
+}
+.sheet-grid .tabulator-cell.is-formula {
+  color: #57534e;
+  background: #f3f4f1;
+  font-style: italic;
+}
+.sheet-grid .tabulator-cell.is-locked {
+  color: #78716c;
+}
+.sheet-grid .tabulator-cell.is-dirty {
+  background: #fef3c7 !important;
+  box-shadow: inset 0 0 0 1px #f59e0b;
+}
+.sheet-grid .tabulator-cell.is-error {
+  background: #fee2e2 !important;
+  box-shadow: inset 0 0 0 1px #dc2626;
+}
+.sheet-grid .tabulator-cell.row-number {
+  color: #78716c;
+  background: #f5f5f4;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.sheet-grid .tabulator-cell.row-number:hover {
+  color: #1f4d3a;
+  text-decoration: underline;
+}
+.sheet-grid .tabulator-cell.row-number.is-new {
+  color: #1f4d3a;
+  font-weight: 600;
+  background: #d5e8dd;
+}
+.sheet-grid .tabulator-cell.tabulator-editing {
+  box-shadow: inset 0 0 0 2px #2d6a4f;
+}
+
+/* Tube labels: hidden on screen, the only thing printed while present. */
+.print-labels {
+  display: none;
+}
+@media print {
+  body:has(.print-labels) #app {
+    display: none;
+  }
+  .print-labels {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4mm;
+    font:
+      9pt 'Fira Sans',
+      sans-serif;
+  }
+  .print-label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    border: 1px dashed #999;
+    padding: 2mm;
+    break-inside: avoid;
+  }
+  .print-label-code {
+    width: 100%;
+  }
+}

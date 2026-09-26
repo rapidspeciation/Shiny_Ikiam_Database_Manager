@@ -7,14 +7,20 @@ import assert from 'node:assert/strict';
 const base = process.env.LIVE_SMOKE_URL?.replace(/\/$/, '');
 if (!base || !process.env.TEST_ACCOUNT_FILE) throw new Error('LIVE_SMOKE_URL and TEST_ACCOUNT_FILE are required');
 const account = JSON.parse(readFileSync(process.env.TEST_ACCOUNT_FILE));
-let cookie = '', csrf = '';
+let cookie = '',
+  csrf = '';
 async function call(path, method = 'GET', body) {
-  const response = await fetch(base + path, { method, headers: {
-    ...(cookie ? { cookie, 'x-csrf-token': csrf } : {}),
-    ...(body ? { 'content-type': 'application/json' } : {}),
-  }, body: body ? JSON.stringify({ requestId: randomUUID(), ...body }) : undefined });
+  const response = await fetch(base + path, {
+    method,
+    headers: {
+      ...(cookie ? { cookie, 'x-csrf-token': csrf } : {}),
+      ...(body ? { 'content-type': 'application/json' } : {}),
+    },
+    body: body ? JSON.stringify({ requestId: randomUUID(), ...body }) : undefined,
+  });
   const data = await response.json();
-  if (!response.ok) throw new Error(`${method} ${path}: ${response.status} ${data.error?.code || ''} ${data.error?.message || ''}`);
+  if (!response.ok)
+    throw new Error(`${method} ${path}: ${response.status} ${data.error?.code || ''} ${data.error?.message || ''}`);
   if (response.headers.get('set-cookie')) cookie = response.headers.get('set-cookie').split(';')[0];
   if (data.csrf) csrf = data.csrf;
   return data;
@@ -24,7 +30,9 @@ await call(initial.setupRequired ? '/api/auth/setup' : '/api/auth/login', 'POST'
 const boot = await call('/api/bootstrap');
 assert.equal(boot.settings.sandbox, true);
 assert.match(boot.settings.sheetUrl, /19FXrunwWKK1pbyHqWNPcytmaDmyBQoK7yabzIdRQQYM/);
-console.log(`Authenticated; ${boot.modules.length} modules; ${boot.stats.totalRecords} indexed records; sync=${boot.sync.state}`);
+console.log(
+  `Authenticated; ${boot.modules.length} modules; ${boot.stats.totalRecords} indexed records; sync=${boot.sync.state}`,
+);
 const stats = { modules: boot.modules.length, records: boot.stats.totalRecords, sync: boot.sync.state };
 if (process.env.LIVE_WRITE_TEST === '1') {
   const { records } = await call('/api/records?module=Collection_data&observedOnly=true&limit=10');
@@ -33,7 +41,11 @@ if (process.env.LIVE_WRITE_TEST === '1') {
   const before = record.values.Notes_Collection_data;
   let action;
   try {
-    const edit = await call(`/api/records/${record.id}`, 'PATCH', { values: { Notes_Collection_data: `ITHOMIINI DEPLOYMENT CHECK ${randomUUID()}` }, expectedVersion: record.version, reason: 'Deployment verification. Automatically restored immediately.' });
+    const edit = await call(`/api/records/${record.id}`, 'PATCH', {
+      values: { Notes_Collection_data: `ITHOMIINI DEPLOYMENT CHECK ${randomUUID()}` },
+      expectedVersion: record.version,
+      reason: 'Deployment verification. Automatically restored immediately.',
+    });
     assert.equal(edit.status, 'verified');
     action = edit.action;
     const preview = await call('/api/history/preview', 'POST', { actionIds: [action.id] });
@@ -41,7 +53,10 @@ if (process.env.LIVE_WRITE_TEST === '1') {
     console.log('Live Sheet write and reversal preview verified');
   } finally {
     if (action) {
-      await call('/api/history/undo', 'POST', { actionIds: [action.id], reason: 'Restore deployment verification value' });
+      await call('/api/history/undo', 'POST', {
+        actionIds: [action.id],
+        reason: 'Restore deployment verification value',
+      });
       const restored = (await call(`/api/records/${record.id}`)).record;
       assert.deepEqual(restored.values.Notes_Collection_data, before);
       assert.deepEqual(restored.values.Sex, record.values.Sex);
@@ -61,9 +76,17 @@ if (process.env.LIVE_AI_TEST === '1') {
   assert.equal(capabilities.configured, true);
   const thread = await call('/api/chat/threads', 'POST', { title: 'Deployment verification' });
   const id = thread.thread?.id ?? thread.id;
-  const result = await call(`/api/chat/threads/${id}/messages`, 'POST', { message: 'Use the data tools to report the number of collection records and explain what that count means. Cite the source. Do not propose edits.' });
+  const result = await call(`/api/chat/threads/${id}/messages`, 'POST', {
+    message:
+      'Use the data tools to report the number of collection records and explain what that count means. Cite the source. Do not propose edits.',
+  });
   assert.ok(result.message);
   console.log('Live AI answered with', result.sources?.length ?? result.message.sources?.length ?? 0, 'sources');
   stats.ai = true;
 }
-if (process.env.SMOKE_RESULT_FILE) writeFileSync(process.env.SMOKE_RESULT_FILE, JSON.stringify({ ...stats, checkedAt: new Date().toISOString() }, null, 2), { mode: 0o600 });
+if (process.env.SMOKE_RESULT_FILE)
+  writeFileSync(
+    process.env.SMOKE_RESULT_FILE,
+    JSON.stringify({ ...stats, checkedAt: new Date().toISOString() }, null, 2),
+    { mode: 0o600 },
+  );

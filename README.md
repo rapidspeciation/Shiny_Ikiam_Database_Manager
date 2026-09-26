@@ -4,26 +4,31 @@ A phone and desktop app for collection, insectary, breeding, experiments, sample
 
 ## Workflows
 
-- Enter collected individuals with validated fields and current ID suggestions.
-- Find a butterfly by its identifiers and show species, sex, origin, and recorded status.
-- Record deaths, preservation, tissue tubes, and newly emerged butterflies.
-- Link crosses, stocks, eggs, and pheromone samples to the relevant individuals.
-- Explore records, photographs, and maps.
-- Ask an AI assistant questions with links to the records supporting its answers.
+The interface follows the original [Shiny database manager](https://github.com/rapidspeciation/Shiny_Ikiam_Database_Manager): task tabs in a top bar, and an editable spreadsheet grid that shows the real sheet columns.
 
-Additional sections provide dated rounds, movements, treatments, custody and shipment observations, tasks, CSV import and export, attachments, reports, and reviewed AI proposals. Extra observations live in the app database and are labelled separately from spreadsheet records.
+- **Tablas**: any sheet as a spreadsheet. Search all columns, filter each column, edit cells, paste ranges from Excel or Sheets, fill down (Ctrl+D), add rows, download CSV. Formula cells are grey and read-only. Tapping a row number opens the whole row as a form, which is the easiest way to edit on a phone.
+- **Colecta**: new Collection_data individuals with session defaults (place, collector, date), suggested CAM IDs from the Lists pools and subspecies choices for the chosen species.
+- **Muertes**: choose many Insectary IDs (type or paste a list), set the death date and cause, review the grid, save.
+- **Tubos**: assign consecutive CAM and tube IDs with default tissue, medium and date, including the WHOLE_ORGANISM NA rule, and print barcode labels.
+- **Emergidos**: new adults from a clutch go into the next pre-filled Insectary_data rows; SPECIES and location come from the sheet's formulas.
+- **Historial**: every change as before → after, filterable by ID, person, sheet and date, with selected undo (and redo by undoing an undo).
+- **Asistente**: questions answered from the records with row citations; proposed edits need approval.
+
+Edits stay on the device (surviving reloads and lost coverage) until **Guardar en la hoja**, which writes them all at once as one history entry. This replaces the original "Guardar en local → Subir cambios" steps.
 
 ## Run and verify
 
-Node 24 is required. There are no third-party runtime packages or build step.
+Node 24 is required. The server has no third-party runtime packages; the frontend (Vue 3, Tabulator, Tailwind) is built with Vite into `web/`.
 
 ```sh
-npm run check
-npm test
+npm --prefix frontend install   # once
+npm run check                   # syntax + frontend type check
+npm test                        # server and frontend tests
+npm run build                   # frontend → web/
 LOCAL_MODE=1 SECURE_COOKIES=0 SETUP_TOKEN=your-private-setup-token npm start
 ```
 
-Open `http://127.0.0.1:8794/ithomiini/`. Local mode uses an isolated sheet adapter. For a private snapshot, set `SEED_FILE` to a JSON object containing `sheets`, keyed by exact sheet name, with `{row,cells}` Google grid rows. Keep snapshots outside Git.
+Open `http://127.0.0.1:8794/ithomiini/`. For frontend development run the server, then `npm --prefix frontend run dev` and open `http://localhost:5173/ithomiini/` (API requests are proxied to port 8794). Local mode uses an isolated sheet adapter. For a private snapshot, set `SEED_FILE` to a JSON object containing `sheets`, keyed by exact sheet name, with `{row,cells}` Google grid rows. Keep snapshots outside Git.
 
 For live use, configure `GOOGLE_CREDENTIALS_FILE` with a protected OAuth client and refresh token file and leave `LOCAL_MODE` unset. See [operations](docs/operations.md) and [deployment configuration](deploy/service.env.example). Never put credentials in frontend files or commit them.
 

@@ -1,5 +1,29 @@
 # Release verification
 
+## Interface rebuild and backend review, 26 September 2026
+
+The interface was rebuilt to follow the original Shiny manager (see DESIGN.md) and the backend was reviewed. The review confirmed, with local reproductions, and this release fixes:
+
+- writes were never checked against the live header row, so an inserted column would shift every write;
+- editing a row that moved in the Sheet before the next sync crashed with a database uniqueness error;
+- a sync reading during a write could revert the app's copy and log a false external edit;
+- the client-chosen action type became the history source, which also enabled formula writes and faked provenance;
+- unknown field names were silently stored only in the app;
+- tube and CAM IDs could be duplicated through edits;
+- ten failed sign-ins by anyone behind the proxy locked out every user;
+- each saved row cost three Google requests under a 60-per-minute quota, so a 50-row save took about two minutes and blocked other users;
+- numeric-looking columns rejected workbook values such as `994(6)`, several date columns were typed as text or numbers, and pasted dates in `14-Aug-25` or `14/08/2025` form were refused;
+- rows in sheets without identifier columns were relabelled after a row insertion;
+- column filters on names containing dots, and malformed filters, failed.
+
+A second independent review of the new code found, and this release also fixes: an edit of an unused row and a new row in the same save could target the same row; retrying a save whose outcome was unclear could create the new rows twice (the browser now keeps one request ID per set of changes, new rows wait while a save to that sheet is unconfirmed, and unconfirmed saves are re-checked automatically after a few seconds); syncs after rows were deleted and then inserted failed permanently on a database uniqueness error (this bug also exists in the first release); a row inserted at the top of a sheet without identifiers took the identity of the row below; edits typed while a save was running were dropped; one person's unsaved changes stayed on screen for the next person signing in on the same device; new rows could overwrite values typed into a free row in Google Sheets.
+
+Automated checks: 37 server tests (14 new ones reproduce the issues above) and 6 frontend unit tests pass; `npm run check` passes the syntax and type checks. Browser checks against the full private snapshot in local mode, on desktop and phone sizes, had no page errors and covered: loading Insectary_data (620 KB compressed instead of 64 MB), pasting IDs and recording deaths for three butterflies, reviewing and saving, undoing from Historial, pasting into the grid with formula cells protected, creating two emerged adults in pre-filled rows N5D and N6D, assigning CAM and tube IDs with the WHOLE_ORGANISM rule and printing labels, and adding a collected individual with the next CAM ID from the Lists pool. `scripts/browser-smoke.mjs` repeats these checks against a running app.
+
+Not yet verified against the live test Sheet or deployed; the earlier deployment below still runs the previous interface.
+
+## First release, 25 September 2026
+
 Verified on 25 September 2026 in Ecuador, continuing into 26 September UTC. The application is hosted at `https://tbs-insect-gallery.duckdns.org/ithomiini/` and connects only to the personal test workbook.
 
 ## Automated checks

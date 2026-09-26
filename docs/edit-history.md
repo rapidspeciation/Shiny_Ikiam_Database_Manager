@@ -12,7 +12,7 @@ Keep later-edit checks for undo: an older change may have been superseded hours 
 
 Use one durable history service on claudeclaw. Log app writes before sending them to Google and verify the result afterward. Observe direct spreadsheet edits through a Sheet-side edit/change notifier plus backend reconciliation. Present both sources in one history screen, while recording their different evidence quality.
 
-Undo is a new, linked reversal action. It preserves the original edit, records who requested the reversal, and changes only the selected information that is still eligible to reverse. Redo is also a new action, with the same checks. Neither restores an entire earlier spreadsheet snapshot during ordinary use.
+Undo is a new, linked reversal action. Since 26 September 2026 a reversal of several rows is checked and written as one atomic Google batch update, so it applies completely or not at all; there is no partial undo to recover. It preserves the original edit, records who requested the reversal, and changes only the selected information that is still eligible to reverse. Redo is also a new action, with the same checks. Neither restores an entire earlier spreadsheet snapshot during ordinary use.
 
 ## Why the old implementation needs replacement
 

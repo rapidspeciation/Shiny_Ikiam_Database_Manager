@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { code128Symbols, code128Svg } from '../web/barcode.js';
+import { code128Symbols, code128Svg } from '../frontend/src/lib/barcode.ts';
 
 test('labels encode Code 128B with weighted checksum, stop symbol, and quiet zones', () => {
   assert.deepEqual(code128Symbols('AB'), [104, 33, 34, 102, 106]);

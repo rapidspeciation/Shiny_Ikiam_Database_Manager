@@ -8,7 +8,7 @@ web
 
 ## Stack
 
-Implementation choice under the user's explicit instruction to build the agreed app autonomously: Node 24 with built-in HTTP, SQLite, crypto, and test modules; standards-based browser HTML, CSS, and JavaScript modules. This avoids new runtime package dependencies. Host the frontend and backend together on claudeclaw behind existing HTTPS.
+Server: Node 24 with built-in HTTP, SQLite, crypto, and test modules and no third-party runtime packages. Frontend: Vue 3, Pinia, Tabulator (spreadsheet grid) and Tailwind, built with Vite, matching the user's other web apps. Host the frontend and backend together on claudeclaw behind existing HTTPS. The interface follows the original Shiny manager; see DESIGN.md.
 
 ## Users
 

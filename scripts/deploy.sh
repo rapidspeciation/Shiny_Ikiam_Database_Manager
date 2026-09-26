@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+npm --prefix frontend ci
 node scripts/check.mjs
-node --test tests/*.test.mjs
+npm test
+npm run build
 release="$(date -u +%Y%m%dT%H%M%SZ)"
 ssh claudeclaw "mkdir -p /home/ubuntu/ithomiini/releases/$release /home/ubuntu/ithomiini/shared /home/ubuntu/.config/systemd/user"
 tar -czf - server web docs package.json deploy scripts licenses PRODUCT.md DESIGN.md | ssh claudeclaw "tar -xzf - -C /home/ubuntu/ithomiini/releases/$release"

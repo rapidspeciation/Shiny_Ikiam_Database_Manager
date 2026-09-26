@@ -1,21 +1,21 @@
 # Interface direction
 
-This is an operational field-station workspace, built directly in code under the user's instruction to finish the app autonomously. Product decisions come from the confirmed conversation and PRODUCT.md. The Impeccable direction seed selected the sixth grounded direction: the field-station operations desk.
+Rebuilt on 26 September 2026 after the user found the first interface hard to follow. The first version organised the app as a "field-station operations desk" with dashboards, cards and twenty workflow forms; the team could not see the spreadsheet they work with, and most forms stored data only in the app. The interface now follows the original Shiny database manager the team already knew.
 
-The grounded directions considered were a collection register, cage-round clipboard, specimen-label catalog, laboratory bench board, research-library index, field-station operations desk, and scientific atlas. The operations desk joins daily work, a central searchable register, and a contextual record pane. External art challengers were declined because darkroom, one-bit desktop, dance notation, type construction, simulated weather, and draped fabric conventions obscured the actual field tasks. Retain their useful disciplines through explicit save stages, unambiguous selection, ordered observations, aligned data, visible event direction, and collapsible contextual controls.
+## Principles
+
+- **The spreadsheet is visible.** Every tab centres on an editable grid with the sheet's real column names and row numbers. Formula cells are grey and locked; unsaved cells are amber; cells needing review are red.
+- **Tabs name the task.** Tablas, Colecta, Muertes, Tubos, Emergidos, Historial, Asistente, as in the original app (Registrar Muertes, Registrar Tubos, Registrar Emergidos, Buscador, Historial de Cambios).
+- **Batch first.** Choose many IDs, set defaults once, fill the grid, review, save. Suggested IDs (Insectary, CAM, tube) follow the original app's rules and skip IDs already used.
+- **One save step.** Changes stay on the device until "Guardar en la hoja"; the review dialog lists every change as before → after. A save is one history entry and can be undone as a unit or field by field.
+- **Everything is written to the Sheet.** No workflow stores data only in the app.
+
+## Layout
+
+A green top bar holds the tabs, the test-copy badge and the user menu; on phones the tabs get their own scrolling row. Each tab has a toolbar of inputs and buttons above a full-height grid. Unsaved changes show a persistent bar at the bottom with Descartar, Revisar and Guardar. Tapping a row number opens the full row as a vertical form, which is how phones edit wide rows.
+
+Keyboard: type on a selected cell to replace it, Enter or F2 to edit, Ctrl+C/Ctrl+V for ranges, Ctrl+D to fill down, Supr to clear. Dates display as 14-Aug-25 (the original app's format) and accept 2025-08-14, 14/08/2025 or 14-ago-25.
 
 ## Visual system
 
-Use a bright warm-white working surface, deep forest-green navigation and text, muted botanical secondary tones, and restrained ochre for pending work. Use red only for errors and destructive intent. Typography is a self-hosted humanist sans for controls and records, with a restrained serif for main section titles when available. Body text stays readable in field light, controls at least 44px on phones, and data numerals align.
-
-Desktop has a narrow persistent navigation rail, a top search/action bar, a central working area, and an optional record-detail pane. Phone layout uses a compact header, prominent search and new-record actions, a bottom navigation for frequent tasks, and an accessible full module menu. Tables scroll within their own region; phone record lists show the identifying fields first. Long forms use labeled sections, retained drafts, and a clear save status.
-
-Daily work is an actual activity/task list with direct actions, not a decorative KPI-card grid. Experiments and sample modules have their own meaningful forms while sharing record search and source references. History presents before/after fields and selectable changes. Chat uses threads, sources, and a results area with reviewed actions.
-
-## States and accessibility
-
-Support loading, unavailable, empty, validation error, pending offline, conflict, verified saved, and read-only formula states. Display the personal test-copy label persistently without implementation jargon in ordinary forms. Preserve focus on errors, keyboard navigation, semantic controls, visible focus, reduced motion, and sufficient contrast. Use authored SVG icons consistently. Avoid emoji icons, decorative gradients, and modal-only long forms.
-
-## Verification
-
-Inspect desktop and phone screenshots together after functional integration, fix the resulting defects in one batch, and confirm once. Functional failures can be tested again as required; visual polish has a bounded pass.
+Fira Sans, a deep green brand colour, neutral stone greys, amber for pending work and red only for errors. Controls are at least 36px high and the grid uses 13px text so wide sheets stay readable.

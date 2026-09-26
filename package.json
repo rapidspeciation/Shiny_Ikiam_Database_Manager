@@ -1,12 +1,13 @@
 {
   "name": "ithomiini-database",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "engines": { "node": ">=24.0.0" },
   "scripts": {
     "start": "node server/index.mjs",
-    "test": "node --test tests/*.test.mjs",
+    "build": "npm --prefix frontend run build",
+    "test": "node --test tests/*.test.mjs && npm --prefix frontend test",
     "check": "node scripts/check.mjs"
   }
 }

@@ -12,3 +12,5 @@ __pycache__/
 *.sqlite-*
 credentials*.json
 token*.json
+# Built by `npm run build` from frontend/; deployed, not committed.
+web/

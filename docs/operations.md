@@ -17,7 +17,7 @@ The setup screen requires a private random token and creates the first active ad
 
 ## Deploy and monitor
 
-`scripts/deploy.sh` runs syntax checks and tests, uploads a release, switches the symlink, and restarts only `ithomiini.service`. Caddy configuration is installed separately after validation; `deploy/Caddyfile.fragment` shows the route. Preserve existing routes when updating Caddy.
+`scripts/deploy.sh` installs the frontend's locked dependencies, runs the syntax and type checks and all tests, builds the frontend into `web/`, uploads a release, switches the symlink, and restarts only `ithomiini.service`. Caddy configuration is installed separately after validation; `deploy/Caddyfile.fragment` shows the route. Preserve existing routes when updating Caddy.
 
 ```sh
 ssh claudeclaw 'systemctl --user status ithomiini.service'
@@ -52,7 +52,9 @@ Meeting knowledge is a curated snapshot of the 69 reviewed documents. It is not 
 
 - Sheet snapshot reconciliation can miss edits overwritten between snapshots and cannot reliably identify external editors.
 - Reversal checks protect selected fields and observed later edits. Google Sheets does not provide a transactional compare-and-swap against concurrent direct edits.
-- Multi-record operations must expose partial results if a later record fails. Retrying uses operation IDs to avoid duplicate writes.
+- Saves and undos of several rows are one atomic Google batch update. If Google rejects it nothing is written and the same request can be retried; if the outcome is unknown (network loss after sending) the action is marked "Sin confirmar" until the startup check or an administrator's re-check in Historial settles it.
+- Before any write the app compares the live header row with its column map. If someone inserts, removes or renames a column in the Sheet, saving and syncing that sheet stop until the column map (`docs/workbook-schema.json`) is regenerated.
+- Sheets without identifier columns are matched by identical row content during sync; editing such a row is refused if it changed in the Sheet since the last sync.
 - A biological mark may occur more than once historically. Select the intended source record from search results. Related-record matches are candidates, not globally enforced foreign keys; review downstream studies when correcting identifiers or reversing specimen observations.
-- App observations preserve extra details without claiming to update absent spreadsheet fields. Study eligibility and mutation definitions require researchers' recorded criteria.
-- Camera scanning depends on browser support; typed ID search remains available. Offline work stays on the originating device until synchronized.
+- The new interface writes only to sheet columns. Older app-only observations (events) remain in the database and API but are not shown. Study eligibility and mutation definitions require researchers' recorded criteria.
+- Offline: the app shell and the last loaded sheets are cached; unsaved changes stay on the device and are saved manually when the connection returns.
