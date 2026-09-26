@@ -20,6 +20,9 @@ const FIXED: Record<string, string[]> = {
   Release_Collect: ['Collected_Sent2Insectary', 'Collected_Preserved'],
 }
 
+/** Identifiers, links and notes are free text even when few values are used yet. */
+const FREE_TEXT = /(^|[_ ])id$|CAM_ID|Tube_\d_id|Photo|Notes|URL|Link|Path|Specimen ID|ToLID|SAMPLE_ID|EMAIL/i
+
 /** Above this many distinct values a column is treated as free text. */
 const MAX_CHOICES = 150
 
@@ -53,7 +56,7 @@ export function buildOptions(table: Table, lists?: Table, extra: Record<string, 
     }
     const listName = LIST_SOURCES.find(([pattern]) => pattern.test(field.key))?.[1]
     const canonical = [...(FIXED[field.key] || []), ...listColumn(lists, listName || ''), ...(extra[field.key] || [])]
-    if (!canonical.length && counts.size > MAX_CHOICES) continue
+    if (!canonical.length && (counts.size > MAX_CHOICES || FREE_TEXT.test(field.key))) continue
     const used = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([value]) => value)
     // Explicit choices (e.g. clutches, newest first) keep their order; otherwise
     // the most used values come first, as in the original app.

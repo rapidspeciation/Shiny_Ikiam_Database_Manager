@@ -95,6 +95,19 @@ function buildData(): GridRow[] {
   return [...created, ...existing]
 }
 
+/** Columns edited with a dropdown list; their editable cells show a ▾ arrow. */
+function hasChoices(field: string) {
+  return !!props.rowOptions[field] || !!props.options[field]?.length
+}
+
+/** Clicking the ▾ arrow opens the list straight away, without a double click. */
+function onCellClick(event: UIEvent, cell: CellComponent) {
+  const el = cell.getElement()
+  if (!el.classList.contains('has-choices') || !(event instanceof MouseEvent)) return
+  // Deferred: the click that selects the cell would otherwise close the list at once.
+  if (event.clientX >= el.getBoundingClientRect().right - 22) setTimeout(() => cell.edit(true))
+}
+
 function formatter(cell: CellComponent) {
   const data = cell.getData() as GridRow
   const field = cell.getField()
@@ -104,6 +117,7 @@ function formatter(cell: CellComponent) {
   el.classList.toggle('is-locked', !isFormula(data, field) && !canEdit(data, field))
   el.classList.toggle('is-dirty', !data.__new && pending.isDirty(data.__id, field))
   el.classList.toggle('is-error', !!pending.errors[errorKey])
+  el.classList.toggle('has-choices', hasChoices(field) && canEdit(data, field))
   el.title = pending.errors[errorKey] || (isFormula(data, field) ? 'Fórmula de la hoja (solo lectura)' : '')
   return document.createTextNode(displayValue(cell.getValue(), fieldIndex.get(field)))
 }
@@ -361,6 +375,7 @@ function build() {
     // A custom paste action is supported at runtime but missing from the type definitions.
   } as unknown as ConstructorParameters<typeof Tabulator>[1])
   table.on('cellEdited', onCellEdited)
+  table.on('cellClick', onCellClick)
   table.on('tableBuilt', () => {
     built = true
     if (refreshWhenBuilt) refresh()

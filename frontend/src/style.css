@@ -100,6 +100,14 @@ body {
 .sheet-grid .tabulator-row.tabulator-row-even {
   background: #fcfcfb;
 }
+.sheet-grid .tabulator-cell.has-choices { position: relative; padding-right: 22px; cursor: default; }
+.sheet-grid .tabulator-cell.has-choices::after {
+  content: '▾'; position: absolute; right: 0; top: 0; bottom: 0; width: 20px;
+  display: flex; align-items: center; justify-content: center;
+  color: #44403c; font-size: 15px; cursor: pointer;
+}
+.sheet-grid .tabulator-cell.has-choices:hover::after { color: #1f4d3a; background: #eef5f1; }
+.sheet-grid .tabulator-cell.has-choices.tabulator-editing::after { display: none; }
 .sheet-grid .tabulator-cell.is-formula {
   color: #57534e;
   background: #f3f4f1;
