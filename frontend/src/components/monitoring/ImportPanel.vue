@@ -287,6 +287,7 @@ async function sendTrack(t: {
           recapture: sameIndividual(c, t.date).length > 0,
           section: c.section,
           photos: c.photos,
+          row: (c as { row?: number }).row ?? null,
         }),
       ),
     },

@@ -45,7 +45,16 @@ const showLines = persistentRef('monitoring:lines', true)
 const showRecaptures = persistentRef('monitoring:recaptures', true)
 const panel = ref(true)
 
-const visible = computed(() => tracks.value.filter(t => !hidden.value.includes(t.id)))
+// With over a hundred walks, the map starts filtered by year and collector.
+const yearFilter = persistentRef('monitoring:mapYear', '')
+const collectorFilter = persistentRef('monitoring:mapCollector', '')
+const years = computed(() => [...new Set(tracks.value.map(t => t.date.slice(0, 4)))].sort().reverse())
+const collectors = computed(() => [...new Set(tracks.value.map(t => (t.collector || '').split(' - ')[0]).filter(Boolean))].sort())
+const inFilters = (t: StoredTrack) =>
+  (!yearFilter.value || t.date.startsWith(yearFilter.value)) &&
+  (!collectorFilter.value || (t.collector || '').split(' - ')[0] === collectorFilter.value)
+const listed = computed(() => tracks.value.filter(inFilters))
+const visible = computed(() => listed.value.filter(t => !hidden.value.includes(t.id)))
 const trackColor = computed(() => new Map(tracks.value.map((t, i) => [t.id, PALETTE[i % PALETTE.length]])))
 const points = computed(() =>
   visible.value.flatMap(t =>
@@ -64,6 +73,8 @@ const colorOf = (t: StoredTrack, c: StoredCapture) =>
 
 /** The sheet row a stored capture became (same day and mark, or same species and minute). */
 function sheetRow(t: StoredTrack, c: StoredCapture) {
+  // The row the capture was matched to when it was stored.
+  if (c.row) return rows.value.find(r => r.row === c.row)
   const day = isoToSerial(t.date)
   return rows.value.find(r => {
     if (r.values.Collection_date !== day) return false
@@ -99,7 +110,7 @@ function popup(t: StoredTrack, c: StoredCapture) {
   const photos = (c.photos || [])
     .map(
       id =>
-        `<a href="api/monitoring/photos/${id}" target="_blank" rel="noopener"><img src="api/monitoring/photos/${id}" alt="" style="width:200px;max-height:200px;object-fit:cover;border-radius:4px;margin-top:4px"></a>`,
+        `<a href="api/monitoring/photos/${id}" target="_blank" rel="noopener"><img src="api/monitoring/photos/${id}" alt="" width="200" height="150" style="width:200px;height:150px;object-fit:cover;border-radius:4px;margin-top:4px;background:#f5f5f4"></a>`,
     )
     .join('')
   return lines.filter(Boolean).join('<br>') + photos
@@ -124,12 +135,14 @@ function draw() {
           .bindTooltip(`${formatSerial(isoToSerial(t.date))} · ${(t.collector || '').split(' - ')[0]}`, { sticky: true })
           .addTo(layer)
   if (showRecaptures.value) {
+    // Same mark and same species: a mark reused on another species is another butterfly.
     const byMark = new Map<string, [number, number][]>()
-    for (const { capture } of points.value)
-      if (capture.markId) {
-        const list = byMark.get(capture.markId) || []
+    for (const { capture } of [...points.value].sort((a, b) => a.track.date.localeCompare(b.track.date)))
+      if (capture.markId && capture.species) {
+        const key = `${capture.markId} · ${capture.species}`
+        const list = byMark.get(key) || []
         list.push([capture.lat, capture.lon])
-        byMark.set(capture.markId, list)
+        byMark.set(key, list)
       }
     for (const [id, list] of byMark)
       if (list.length > 1)
@@ -215,6 +228,22 @@ const withoutGps = computed(() => {
       class="flex w-72 shrink-0 flex-col overflow-y-auto border-r border-stone-200 bg-white text-sm max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-[1000] max-md:shadow-lg"
     >
       <div class="space-y-3 border-b border-stone-200 p-3">
+        <div class="grid grid-cols-2 gap-2">
+          <label class="block">
+            <span class="field-label">Año</span>
+            <select v-model="yearFilter" class="field-input">
+              <option value="">Todos</option>
+              <option v-for="y in years" :key="y" :value="y">{{ y }}</option>
+            </select>
+          </label>
+          <label class="block">
+            <span class="field-label">Recolector</span>
+            <select v-model="collectorFilter" class="field-input">
+              <option value="">Todos</option>
+              <option v-for="c in collectors" :key="c" :value="c">{{ c }}</option>
+            </select>
+          </label>
+        </div>
         <label class="block">
           <span class="field-label">Colorear puntos por</span>
           <select v-model="colorBy" class="field-input">
@@ -233,10 +262,10 @@ const withoutGps = computed(() => {
         <label class="flex items-center gap-2"><input v-model="showRecaptures" type="checkbox" /> Unir recapturas</label>
       </div>
       <div class="p-3">
-        <p class="field-label">Recorridos ({{ tracks.length }})</p>
+        <p class="field-label">Recorridos ({{ listed.length }} de {{ tracks.length }})</p>
         <p v-if="tracksLoaded && !tracks.length" class="hint">Aún no hay recorridos. Súbelos en “Importar”.</p>
         <ul class="space-y-1">
-          <li v-for="t in tracks" :key="t.id" class="group flex items-center gap-2">
+          <li v-for="t in listed" :key="t.id" class="group flex items-center gap-2">
             <input :id="`t-${t.id}`" type="checkbox" :checked="!hidden.includes(t.id)" @change="toggle(t.id)" />
             <span class="h-3 w-3 shrink-0 rounded-full" :style="{ background: trackColor.get(t.id) }" />
             <label :for="`t-${t.id}`" class="min-w-0 flex-1 truncate" :title="t.name">

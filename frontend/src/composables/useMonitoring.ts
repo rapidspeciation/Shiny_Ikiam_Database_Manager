@@ -42,7 +42,7 @@ export type StoredCapture = Pick<
   | 'markId'
   | 'section'
   | 'photos'
-> & { recapture: boolean }
+> & { recapture: boolean; row?: number | null }
 
 /** A walk read from a public Wikiloc page by tools/wikiloc, waiting for review. */
 export interface WikilocWalk {

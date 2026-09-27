@@ -74,6 +74,8 @@ function cleanCapture(c) {
     recapture: !!c.recapture,
     section: number(c.section, 1, 4),
     photos: cleanPhotoIds(c.photos),
+    // The Collection_data row the capture was matched to when stored (for the map popup).
+    row: number(c.row, 1, 10_000_000),
   };
 }
 

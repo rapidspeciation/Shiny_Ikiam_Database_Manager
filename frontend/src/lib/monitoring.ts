@@ -637,7 +637,10 @@ export function existingRow(rows: TableRow[], date: string, c: Capture): TableRo
  * For the map, a capture that is already a sheet row takes the row's curated
  * species, subspecies, sex, mark and section (the note may lack them).
  */
-export function withSheetValues<T extends Capture & { section: number | null }>(c: T, row: TableRow | null): T {
+export function withSheetValues<T extends Capture & { section: number | null }>(
+  c: T,
+  row: TableRow | null,
+): T & { row?: number } {
   if (!row) return c
   const v = row.values
   const section = Number(text(v.Transect_section))
@@ -648,6 +651,7 @@ export function withSheetValues<T extends Capture & { section: number | null }>(
     sex: /^female/i.test(text(v.Sex)) ? 'female' : /^male/i.test(text(v.Sex)) ? 'male' : c.sex,
     markId: hasMark(row) ? text(v.FieldMark_ID).toUpperCase() : c.markId,
     section: section >= 1 && section <= 4 ? section : c.section,
+    row: row.row,
   }
 }
 
