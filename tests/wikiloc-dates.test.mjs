@@ -29,4 +29,7 @@ const cases = [
 test('walk dates come from the title day and the month Wikiloc recorded', () => {
   for (const [title, recorded, expected] of cases) assert.equal(walkDate(title, recorded), expected, title);
   assert.equal(walkDate('Apuya', 'mayo 2025'), null);
+  // No day in the title: the upload day, only when it is in the recorded month.
+  assert.equal(walkDate('Censo de itómidos Ikiam FCH', 'febrero 2023', '2023-02-14T20:10+0100'), '2023-02-14');
+  assert.equal(walkDate('Censo de itómidos Ikiam FCH', 'febrero 2023', '2023-03-01T10:00+0100'), null);
 });

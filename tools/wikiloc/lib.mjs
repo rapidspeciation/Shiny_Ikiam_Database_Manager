@@ -46,7 +46,7 @@ export function dateFromName(text) {
  * than typed years ("27/4/2024" recorded in April 2025) and fills missing ones
  * ("Monitoreo 13 sep"). Returns null when the title has no usable day.
  */
-export function walkDate(title, done) {
+export function walkDate(title, done, created) {
   const m = /([a-záé]+)\s+(?:de\s+)?(\d{4})/i.exec(String(done || ''));
   const doneMonth = m ? monthOf(m[1]) : 0;
   const doneYear = m ? +m[2] : null;
@@ -56,7 +56,11 @@ export function walkDate(title, done) {
   if (sameMonth) return iso(doneYear, doneMonth, sameMonth.d);
   // A month the title got wrong ("19/20/2025"): keep its day in the recorded month.
   const dayOnly = candidates.find(c => c.m < 1 || c.m > 12);
-  return dayOnly ? iso(doneYear, doneMonth, dayOnly.d) : null;
+  if (dayOnly) return iso(doneYear, doneMonth, dayOnly.d);
+  // No day in the title at all: the upload day, if it is in the recorded month
+  // (walks were usually uploaded the same day). Review it in the app.
+  const up = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(created || ''));
+  return up && +up[1] === doneYear && +up[2] === doneMonth ? `${up[1]}-${up[2]}-${up[3]}` : null;
 }
 
 function browserPath() {
@@ -113,12 +117,15 @@ export async function readTrail(page, url) {
     const done = /Fecha de realizaci[oó]n\s*\n?\s*([^\n]+)/i.exec(document.body.innerText)?.[1] || '';
     // The author's profile number (the first profile link on a trail page is its author).
     const author = /user\.do\?id=(\d+)/.exec([...document.querySelectorAll('a[href*="user.do?id="]')][0]?.href || '')?.[1] || null;
-    return { name: md.mapData?.[0]?.nom || document.title, track, waypoints, done, author };
+    const created = /"dateCreated"\s*:\s*"([^"]+)"/.exec(
+      [...document.querySelectorAll('script[type="application/ld+json"]')].map(s => s.textContent).join('\n'),
+    )?.[1];
+    return { name: md.mapData?.[0]?.nom || document.title, track, waypoints, done, author, created };
   });
   return {
     url,
     name: trail.name,
-    date: walkDate(trail.name, trail.done),
+    date: walkDate(trail.name, trail.done, trail.created),
     recorded: trail.done || null,
     author: trail.author,
     track: trail.track,
