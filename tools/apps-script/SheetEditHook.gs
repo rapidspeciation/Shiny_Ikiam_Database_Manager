@@ -8,16 +8,7 @@
  */
 const APP_URL = 'https://tbs-insect-gallery.duckdns.org/ithomiini/api/hooks/sheet-edit';
 
-/**
- * The secret shared with the app: the HOOK_SECRET script property, or a
- * HOOK_SECRET constant in a separate Config.gs (tools/apps-script/install.sh writes one).
- */
-function hookSecret() {
-  return PropertiesService.getScriptProperties().getProperty('HOOK_SECRET') ||
-    (typeof HOOK_SECRET === 'string' ? HOOK_SECRET : null);
-}
-
-/** Run once from the editor. */
+/** Run once from the editor (it is the first function, so the Run button picks it). */
 function setup() {
   if (!hookSecret())
     throw new Error('Add the script property HOOK_SECRET first (Project Settings → Script Properties).');
@@ -52,6 +43,15 @@ function send(events) {
   if (response.getResponseCode() !== 202)
     console.warn('The app answered ' + response.getResponseCode() + ': ' + response.getContentText());
   return response;
+}
+
+/**
+ * The secret shared with the app: the HOOK_SECRET script property, or a
+ * HOOK_SECRET constant in a separate Config.gs (tools/apps-script/install.sh writes one).
+ */
+function hookSecret() {
+  return PropertiesService.getScriptProperties().getProperty('HOOK_SECRET') ||
+    (typeof HOOK_SECRET === 'string' ? HOOK_SECRET : null);
 }
 
 /** Logs "202 {"accepted":0}" when the address and secret are right. */
