@@ -20,13 +20,15 @@ Each capture is a Wikiloc waypoint whose name holds the data, in any order:
 | `id B69` | field mark: the butterfly was marked and released | FieldMark_ID, Release_Collect = Mark_Released |
 | `recaptura` | optional: a mark seen before is a recapture anyway | Notes_Collection_data ("Recapture") |
 
-Without a mark the capture is `Collected_Preserved`; CAM and tube IDs are added later (Colecta or Tubos). Words the app does not understand are kept in Notes_Collection_data.
+Without a mark the capture is `Collected_Preserved`; CAM and tube IDs are added later (Colecta or Tubos). Words the app does not understand are kept in Notes_Collection_data. A mark may also be written on its own ("B51 9:51 female sol 1,5m …"). A point noted without a species (identified later from its photo) is matched to its sheet row by day, minute and sex.
+
+**Pasar al mapa … ya registrados en la hoja** stores, in one go, every waiting Wikiloc walk whose captures are all already rows in the sheet; on the map each capture shows the row's curated species, sex, mark and section. Walks with captures missing from the sheet stay for review, which is a quick way to find monitoring captures that were never entered.
 
 Ways to bring a walk in (all in Importar recorrido):
 
 - **Share from the phone** (Android): install the app (Chrome menu → *Instalar app* / *Añadir a pantalla de inicio*). In Wikiloc, *Enviar a tu GPS → Enviar ruta como archivo* (the GPX) or *Compartir* (the link), and pick *Ikiam DB*. A GPX opens for review at once, with the GPS times that fill SamplingDay_data. A link is queued like a pasted one. iPhones do not offer web apps in the share menu; there, save the GPX and use *Elegir GPX de Wikiloc*, or paste the link.
 - **GPX file**: *Elegir GPX de Wikiloc*.
-- **Paste a Wikiloc link**, or **Buscar nuevos en Wikiloc** for the followed profiles (e.g. Franz's), which brings every trail whose title contains "monitoreo" and that is not in the app yet. Wikiloc blocks the app server, so these are done by a processor on a computer at home (tools/wikiloc, see its README). The walk, with its photos, appears under *Desde Wikiloc, por revisar* a minute or two later. The bar shows whether that computer is online; while it is off, links wait in the queue. The public page has no GPS times, so SamplingDay_data is not filled from it; if the GPX of the same day was already imported, *Solo añadir las fotos al GPX ya subido* attaches the photos to it.
+- **Paste a Wikiloc link**, or **Buscar nuevos en Wikiloc** for the followed profiles (Franz Chandi, Alex Arias and María José Sánchez, each with their collector), which brings every trail whose title contains "monitor" and that is not in the app yet. The walk's date is the day written in the title within the month and year Wikiloc recorded (titles have typos such as "27/4/2024" for April 2025, or no year). Wikiloc blocks the app server, so these are done by a processor on a computer at home (tools/wikiloc, see its README). The walk, with its photos, appears under *Desde Wikiloc, por revisar* a minute or two later. The bar shows whether that computer is online; while it is off, links wait in the queue. The public page has no GPS times, so SamplingDay_data is not filled from it; if the GPX of the same day was already imported, *Solo añadir las fotos al GPX ya subido* attaches the photos to it.
 
 ## Rules the app applies
 
