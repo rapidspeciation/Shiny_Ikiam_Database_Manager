@@ -62,7 +62,7 @@ Comparing the 9 saved versions of 23–27 Sep 2026:
    - Sampling day 375004 (probably 21 Sep 2026).
 9. **This app's Emergidos screen writes Pedigree and CAM_ID_CollData.** Those are formula cells in most rows, so saving a hybrid clutch would be refused. The Shiny app simply overwrote the formulas. **To fix before use.**
 10. **The documented protocol and the data disagree:**
-    - Wing clips "in ethanol from now on" (meeting 66), but the 36 clips of 2025–26 are flash frozen.
+    - Wing clips "in ethanol from now on" (meeting 66), but the 36 clips of 2025–26 are flash frozen. (Settled: flash frozen, a later decision; see section 5.)
     - Research_purpose should be set at emergence, but it is set at death.
 
 ## 3. How predictable each field is
@@ -148,7 +148,7 @@ These are measured on history, using only earlier rows. They set what the app ca
    - A follow-up list gives one-tap hatch/pupa updates with the expected dates.
 5. **Cruces (crosses).** Pair start/end from the whiteboard, straight into F1/F2_MutationRate. It links to the clutches that follow.
 6. **Preservación / Tubos (preservation and tubes).**
-   - The user declares the **active racks** once ("Rack monitoreo FS904153…", "Rack clips FS63886…").
+   - The **active racks** are inferred from the last tubes used, per kind of work and medium (see section 5).
    - Each tube suggestion comes from its rack, with +1 inside a butterfly.
    - Checks: barcode format (2 letters + 8 digits), uniqueness everywhere, and the CAM pool (with its remaining count).
    - Phone-camera barcode scanning.
@@ -172,10 +172,28 @@ These are measured on history, using only earlier rows. They set what the app ca
 - **Batch saves already cover several sheets at once.** Each new screen is a header plus a grid on top of that.
 - **A nightly checks job** on the server, feeding "Revisión de datos" and, if wanted, a weekly message to the team.
 
-## 5. Decisions needed
+## 5. Decisions
 
-1. **Wing clips:** ethanol, as meeting 66 said, or flash frozen, as the 2025–26 clips are? And may the clip date get its own column in Insectary_data? (Adding a column needs Patricio's OK, per File_notes.)
-2. **Racks:** confirm the idea of "active racks", and which runs are currently open.
-3. **CAM pools:** request the next CAM range soon (about 84 wild IDs left).
-4. **Should the app fix the formula faults in the workbook**, or should Patricio? (Wing_tissue rack/manifest lookups, the Insectary photo formula.)
-5. **Production:** these screens only pay off once the app writes to the main workbook, not the test copy.
+Answered on 27 Sep 2026:
+
+1. **Wing clips are flash frozen.** That was decided after meeting 66, and the Tubos screen defaults to it. Until the clip date gets its own column, Tubos adds it to `Notes_Insectary_data` as `27/9/26 FCH: Wing clip 27/9/26`, the form the old notes used, so clips can still be counted.
+2. **Racks run in parallel.** Three or four racks are in use at once: flash frozen and ethanol use different racks, and crosses (F1/F2) use different racks from collection and monitoring. The app infers the open runs from the last tubes used, grouped by kind of work (Cruces, Insectario, Monitoreo, Colecta, legs) and medium. Tubos offers the next free tube of each run and picks the one matching the loaded butterflies and the medium. Nobody declares racks.
+3. **Formula faults** are listed at the bottom of Tablas ("Avisos del libro de Google Sheets") as reminders. The app does not edit those formulas.
+4. **Production waits.** Everything is tried on the test workbook first.
+
+Still open:
+
+- **CAM pools:** request the next CAM range soon (about 84 wild IDs left).
+- A real column for the wing-clip date (needs Patricio's OK, per File_notes).
+
+## 6. Saving and seeing changes from Google Sheets
+
+Measured on the test workbook, 27 Sep 2026:
+
+| What | Before | Now |
+|---|---|---|
+| A change typed in the app reaches Google Sheets | when "Guardar en la hoja" was pressed, then ~7.7 s (read, write, read back to verify) | **automatically** 2.5 s after the last edit, then the same ~7.7 s |
+| A change typed directly in Google Sheets shows in the app | at the next full read: every 5 min, and a full read takes ~2 min, so up to ~7 min | a few seconds with the Apps Script trigger (tools/apps-script); open pages check every 10 s |
+
+- **Automatic saving** replaces the save button (it can be turned off in the bar at the bottom). Each save is still one atomic batch that is verified by reading it back, and it stays undoable in Historial. A save that fails because of the network retries on its own. A save with invalid values waits in "Revisar", as before.
+- **The Apps Script trigger** sends the sheet and rows of each edit to the app, which reads only those rows again. Inserting, deleting or sorting rows makes the app read that one sheet again. Formula results that change because of another sheet still wait for the 5-minute read.

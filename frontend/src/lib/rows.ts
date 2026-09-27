@@ -30,3 +30,24 @@ export function fillIfBlank(module: string, row: TableRow, label: string, field:
   pending.setCell(module, row, label, field, value)
   return true
 }
+
+/**
+ * A person's initials as used in notes and the Collector list ("FCH" for
+ * "FCH - Franz Chandi"), matched by name; otherwise built from the name.
+ */
+export function initialsOf(name: string, collectors: string[]): string {
+  const words = name.toLowerCase().split(/\s+/).filter(Boolean)
+  const found = collectors.find(c => {
+    const [, full = ''] = c.split(' - ')
+    const parts = full.toLowerCase()
+    return words.length > 0 && words.every(w => parts.includes(w))
+  })
+  if (found) return found.split(' - ')[0].trim()
+  return (
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .map(w => w[0]!.toUpperCase())
+      .join('') || 'APP'
+  )
+}

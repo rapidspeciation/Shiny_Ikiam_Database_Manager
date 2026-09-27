@@ -7,15 +7,19 @@ import LoginView from './views/LoginView.vue'
 import { notice } from './lib/notice'
 import { usePending } from './stores/pending'
 import { useSession } from './stores/session'
+import { useTables } from './stores/tables'
 
 const session = useSession()
 const pending = usePending()
+const tables = useTables()
 
 onMounted(() => session.init())
 watch(
   () => session.user?.username,
   name => {
-    if (name) pending.restore()
+    if (!name) return
+    pending.restore()
+    tables.follow()
   },
 )
 </script>

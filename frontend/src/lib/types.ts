@@ -59,6 +59,10 @@ export interface Table {
   rows: TableRow[]
   /** Columns whose header no longer matches the live Sheet; saving there is blocked. */
   headerProblems: { field: string; found: string | null }[]
+  /** Newest change in the server's copy, to ask for later changes only. */
+  latest?: string
+  /** Column keys of the wire rows, in sheet order (may repeat). */
+  keys?: string[]
 }
 
 export interface Change {

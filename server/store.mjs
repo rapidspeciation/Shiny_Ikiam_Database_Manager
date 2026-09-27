@@ -42,6 +42,7 @@ export class Store {
         .some(c => c.name === 'observed')
     )
       this.db.exec('ALTER TABLE records ADD COLUMN observed INTEGER NOT NULL DEFAULT 1');
+    this.db.exec('CREATE INDEX IF NOT EXISTS records_updated ON records(sheet,updated_at)');
     initMonitoring(this.db);
     this.sheets = sheets || (config.localMode ? new LocalSheets(seed || {}) : new GoogleSheets(config));
     this.localMode = this.sheets instanceof LocalSheets;
@@ -469,7 +470,8 @@ export class Store {
                 formulas: item.formulas,
                 label: labelFor(sheet, item.values),
                 version: previous?.version || 1,
-                updatedAt: previous?.updatedAt || now(),
+                // A moved row counts as updated so open pages pick up its new row number.
+                updatedAt: found && found.row_num !== item.row ? now() : previous?.updatedAt || now(),
                 missing: false,
               };
               if (found && found.row_num !== item.row) moved++;
@@ -503,7 +505,9 @@ export class Store {
             }
             for (const prior of old)
               if (!seen.has(prior.id)) {
-                this.db.prepare('UPDATE records SET missing=1,row_num=? WHERE id=?').run(displaced--, prior.id);
+                this.db
+                  .prepare('UPDATE records SET missing=1,row_num=?,updated_at=? WHERE id=?')
+                  .run(displaced--, now(), prior.id);
                 missing++;
               }
             this.db.exec('COMMIT');
@@ -559,6 +563,95 @@ export class Store {
           'INSERT INTO changes(id,action_id,record_id,sheet,row_num,field,before_json,after_json) VALUES(?,?,?,?,?,?,?,?)',
         )
         .run(randomUUID(), id, record.id, record.sheet, record.row, d.field, json(d.before), json(d.after));
+  }
+  /**
+   * Re-reads a few rows after someone edited them directly in Google Sheets
+   * (reported by the Apps Script trigger), instead of reading the whole sheet.
+   * Each row updates the record already at that row number. Returns
+   * { needsSync: true } when only a sheet sync can settle it: a write is in
+   * progress, or a row matches no record and is not a new row at the end.
+   */
+  async refreshRows(sheet, rowNumbers) {
+    const mod = moduleMap.get(sheet);
+    if (!mod) throw error('MODULE_NOT_FOUND', 'Unknown module', 404);
+    const rows = [...new Set(rowNumbers.map(Number))]
+      .filter(r => Number.isInteger(r) && r > mod.headerRow)
+      .sort((a, b) => a - b);
+    if (!rows.length) return { changed: 0, added: 0, removed: 0 };
+    if (this.inflight.get(sheet)) return { needsSync: true };
+    const epoch = this.writeEpoch.get(sheet) || 0;
+    const live = await this.sheets.readRows([{ sheet, rows }]);
+    return this.runExclusive(() => {
+      if (epoch !== (this.writeEpoch.get(sheet) || 0)) return { needsSync: true };
+      let changed = 0,
+        added = 0,
+        removed = 0,
+        needsSync = false;
+      const last = this.db.prepare('SELECT max(row_num) n FROM records WHERE sheet=? AND missing=0').get(sheet).n ?? 0;
+      this.db.exec('BEGIN IMMEDIATE');
+      try {
+        for (const row of rows) {
+          const item = rowValues(sheet, live.get(rowKey(sheet, row)));
+          const empty =
+            !Object.values(item.values).some(v => v !== null && v !== '') && !Object.keys(item.formulas).length;
+          const previous = this.hydrate(
+            this.db.prepare('SELECT * FROM records WHERE sheet=? AND row_num=? AND missing=0').get(sheet, row),
+          );
+          if (!previous) {
+            if (empty) continue;
+            // A row typed below the data is new; anything else may be a moved row.
+            if (row <= last) {
+              needsSync = true;
+              continue;
+            }
+            this.persistRecord({
+              id: randomUUID(),
+              sheet,
+              row,
+              ...item,
+              label: labelFor(sheet, item.values),
+              version: 1,
+              updatedAt: now(),
+              missing: false,
+            });
+            added++;
+            continue;
+          }
+          if (empty) {
+            this.db
+              .prepare('UPDATE records SET missing=1,row_num=?,updated_at=? WHERE id=?')
+              .run(this.displacedRow(sheet), now(), previous.id);
+            removed++;
+            continue;
+          }
+          const diffs = [];
+          for (const field of mod.fields) {
+            const before = previous.formulas[field.key]
+              ? { formula: previous.formulas[field.key] }
+              : previous.values[field.key];
+            const after = item.formulas[field.key] ? { formula: item.formulas[field.key] } : item.values[field.key];
+            if (comparable(before) !== comparable(after)) diffs.push({ field: field.key, before, after });
+          }
+          if (!diffs.length) continue;
+          const record = {
+            ...previous,
+            ...item,
+            label: labelFor(sheet, item.values),
+            version: previous.version + 1,
+            updatedAt: now(),
+            missing: false,
+          };
+          this.recordExternalChanges(record, diffs);
+          this.persistRecord(record);
+          changed++;
+        }
+        this.db.exec('COMMIT');
+      } catch (e) {
+        this.db.exec('ROLLBACK');
+        throw e;
+      }
+      return { changed, added, removed, needsSync };
+    });
   }
   validateRole(user) {
     if (!user || !['editor', 'reviewer', 'admin'].includes(user.role))

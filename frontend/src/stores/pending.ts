@@ -33,6 +33,11 @@ interface BatchItemError {
 
 const same = (a: CellValue | undefined, b: CellValue | undefined) => (a ?? '') === (b ?? '')
 
+/** Pause after the last edit before saving automatically. */
+const AUTO_DELAY = 2500
+let autoTimer: ReturnType<typeof setTimeout> | null = null
+let autoRetries = 0
+
 /**
  * Edits are kept in the browser (and in localStorage, so a closed tab or a
  * dropped connection loses nothing) until the person presses "Guardar".
@@ -52,6 +57,10 @@ export const usePending = defineStore('pending', {
     /** Bumped whenever changes happen outside a grid's own editing (save, discard, bulk fills). */
     revision: 0,
     lastSaved: null as { count: number; at: string } | null,
+    /** Save automatically a moment after the last change (per person, remembered on this device). */
+    autoSave: true,
+    /** Why automatic saving is waiting (offline, conflict to review…), if it is. */
+    autoBlocked: '' as string,
   }),
   getters: {
     changeCount: s => Object.values(s.edits).reduce((n, e) => n + Object.keys(e.values).length, 0) + s.creates.length,
@@ -61,12 +70,52 @@ export const usePending = defineStore('pending', {
     storageKey() {
       return `ithomiini:pending:${useSession().user?.username || 'anon'}`
     },
+    setAutoSave(on: boolean) {
+      this.autoSave = on
+      localStorage.setItem(`${this.storageKey()}:auto`, on ? '1' : '0')
+      if (on) this.scheduleAutoSave(500)
+    },
+    /** Saves all pending changes shortly after the last edit (one atomic batch). */
+    scheduleAutoSave(delay = AUTO_DELAY) {
+      if (autoTimer) clearTimeout(autoTimer)
+      autoTimer = null
+      if (!this.autoSave || !this.changeCount) return
+      autoTimer = setTimeout(() => this.runAutoSave(), delay)
+    },
+    async runAutoSave() {
+      autoTimer = null
+      if (!this.autoSave || !this.changeCount) return
+      if (this.saving) return this.scheduleAutoSave(1500)
+      if (!navigator.onLine) {
+        this.autoBlocked = 'Sin conexión: se guardará al volver la conexión'
+        return
+      }
+      // Conflicts need a person: automatic saving waits until the flagged cells are edited.
+      if (Object.keys(this.errors).length) {
+        this.autoBlocked = 'Hay cambios por revisar antes de guardar'
+        return
+      }
+      try {
+        await this.save('')
+        autoRetries = 0
+        this.autoBlocked = ''
+      } catch (e) {
+        const code = e instanceof ApiError ? e.code : ''
+        if (['WRITE_UNCERTAIN', 'OFFLINE', 'SERVER_ERROR'].includes(code) || (e instanceof ApiError && e.status >= 500)) {
+          autoRetries++
+          this.autoBlocked = 'No se pudo guardar; se reintentará'
+          this.scheduleAutoSave(Math.min(60_000, 5_000 * 2 ** autoRetries))
+        } else this.autoBlocked = 'Hay cambios por revisar antes de guardar'
+      }
+    },
     /** Loads the signed-in person's unsaved changes, and nobody else's. */
     restore() {
       this.edits = {}
       this.creates = []
       this.errors = {}
       this.requestId = null
+      this.autoSave = localStorage.getItem(`${this.storageKey()}:auto`) !== '0'
+      this.autoBlocked = ''
       try {
         const saved = JSON.parse(localStorage.getItem(this.storageKey()) || 'null')
         if (saved) {
@@ -93,6 +142,10 @@ export const usePending = defineStore('pending', {
         this.storageKey(),
         JSON.stringify({ edits: this.edits, creates: this.creates, requestId: this.requestId }),
       )
+      if (changed) {
+        this.autoBlocked = ''
+        this.scheduleAutoSave()
+      }
     },
     value(row: TableRow, field: string): CellValue {
       const edit = this.edits[row.id]

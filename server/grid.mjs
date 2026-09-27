@@ -24,18 +24,54 @@ export function tablePayload(store, module) {
     module,
     columns: mod.fields.map(({ column, ...field }) => field),
     headerProblems: store.headerProblems.get(module) || [],
-    rows: rows.map(r => {
-      const values = JSON.parse(r.values_json);
-      const formulas = JSON.parse(r.formulas_json);
-      return {
-        id: r.id,
-        row: r.row_num,
-        version: r.version,
-        observed: Boolean(r.observed),
-        v: keys.map(k => values[k] ?? null),
-        f: keys.flatMap((k, i) => (formulas[k] ? [i] : [])),
-      };
-    }),
+    rows: rows.map(r => wireRow(keys, r)),
+    latest: latestUpdate(store, module),
+  };
+}
+
+/** One row as an array of values in column order, plus the indexes of formula cells. */
+function wireRow(keys, r) {
+  const values = JSON.parse(r.values_json);
+  const formulas = JSON.parse(r.formulas_json);
+  return {
+    id: r.id,
+    row: r.row_num,
+    version: r.version,
+    observed: Boolean(r.observed),
+    v: keys.map(k => values[k] ?? null),
+    f: keys.flatMap((k, i) => (formulas[k] ? [i] : [])),
+  };
+}
+
+function latestUpdate(store, module) {
+  return store.db.prepare('SELECT max(updated_at) u FROM records WHERE sheet=?').get(module).u || '';
+}
+
+/**
+ * What changed in a sheet's local copy since `since` (the `latest` of an earlier
+ * reply), so open pages can follow edits without reloading the whole sheet.
+ * `count` lets the page check that it holds the same rows as the server.
+ */
+export function tableChanges(store, module, since) {
+  const mod = moduleMap.get(module);
+  if (!mod) throw fail('MODULE_NOT_FOUND', 'Unknown module', 404);
+  const keys = mod.fields.map(f => f.key);
+  const visible = r => !r.missing && r.row_num > mod.headerRow && r.row_num < 2000000000;
+  const recent = store.db
+    .prepare(
+      'SELECT id,row_num,version,observed,missing,values_json,formulas_json FROM records WHERE sheet=? AND updated_at>=?',
+    )
+    .all(module, String(since || ''));
+  const count = store.db
+    .prepare('SELECT count(*) n FROM records WHERE sheet=? AND missing=0 AND row_num>? AND row_num<2000000000')
+    .get(module, mod.headerRow).n;
+  return {
+    module,
+    revision: tableRevision(store, module),
+    latest: latestUpdate(store, module),
+    count,
+    rows: recent.filter(visible).map(r => wireRow(keys, r)),
+    removed: recent.filter(r => !visible(r)).map(r => r.id),
   };
 }
 
@@ -118,12 +154,23 @@ function usedCamIds(store) {
 }
 
 const TUBE_ID = /^Tube_\d_id(?:_LEGS)?$/;
+/** Columns that hold tube barcodes in any sheet (not their tissue, rack or manifest). */
+const TUBE_COLUMN = /tube/i;
+const NOT_TUBE_COLUMN = /tissue|rack|manifest|location|split|size|filter/i;
+const BARCODE = /^[A-Z]{2}\d{7,9}$/;
+
+/** Every tube barcode already used anywhere in the workbook (so a suggestion is never taken). */
 function usedTubeIds(store) {
   const used = new Set();
-  for (const sheet of ['Insectary_data', 'Collection_data'])
-    for (const r of rowsOf(store, sheet))
-      for (const [key, value] of Object.entries(r.values))
-        if (TUBE_ID.test(key) && !blank(value)) used.add(String(value).trim());
+  for (const mod of moduleMap.values()) {
+    const keys = mod.fields.map(f => f.key).filter(k => TUBE_COLUMN.test(k) && !NOT_TUBE_COLUMN.test(k));
+    if (!keys.length) continue;
+    for (const r of rowsOf(store, mod.id))
+      for (const key of keys) {
+        const value = String(r.values[key] ?? '').trim();
+        if (BARCODE.test(value)) used.add(value);
+      }
+  }
   return used;
 }
 
@@ -186,31 +233,57 @@ function camSuggestions(store) {
   return { suggestions };
 }
 
+/**
+ * Tube suggestions per rack. Several racks are in use at once: flash frozen
+ * and ethanol go to different racks, and crosses (F1/F2, West × East) use other
+ * racks than field collections and monitoring. Tubes are grouped by that work
+ * and medium; the next free tube after each recently used run is suggested,
+ * newest first.
+ */
+const CROSSES = /F1\/F2|WEST x EAST|cross|mutation/i;
 function tubeSuggestions(store) {
   const items = [];
+  const add = (id, context, medium, date, row) => {
+    const value = String(id ?? '').trim();
+    if (!BARCODE.test(value)) return;
+    const m = blank(medium) || /^(NA|NOT_COLLECTED)$/i.test(String(medium)) ? 'Medio sin indicar' : String(medium);
+    items.push({ id: value, row, group: `${context} · ${m}`, context, medium: m, date: numeric(date) });
+  };
   for (const r of rowsOf(store, 'Insectary_data')) {
     if (!r.observed) continue;
-    for (const slot of [1, 2, 3, 4]) {
-      const id = r.values[`Tube_${slot}_id`];
-      if (blank(id)) continue;
-      const medium = r.values[`T${slot}_Preservation_medium`];
-      items.push({
-        id,
-        row: r.row,
-        group: blank(medium) ? 'Unknown' : String(medium),
-        date: numeric(r.values.Preservation_date),
-      });
-    }
+    const context = CROSSES.test(String(r.values.Research_purpose ?? '')) ? 'Cruces' : 'Insectario';
+    for (const slot of [1, 2, 3, 4])
+      add(
+        r.values[`Tube_${slot}_id`],
+        context,
+        r.values[`T${Math.min(slot, 2)}_Preservation_medium`],
+        r.values.Preservation_date,
+        r.row,
+      );
+  }
+  for (const r of rowsOf(store, 'Collection_data')) {
+    if (!r.observed) continue;
+    const context = /monitor/i.test(String(r.values.Purpose ?? '')) ? 'Monitoreo' : 'Colecta';
+    const date = numeric(r.values.Preservation_date) ?? numeric(r.values.Collection_date);
+    for (const slot of [1, 2, 3]) add(r.values[`Tube_${slot}_id`], context, r.values.Preservation_medium, date, r.row);
+    add(r.values.Tube_4_id_LEGS, `${context} (patas)`, 'Patas', date, r.row);
   }
   const runs = nextAfterRuns(items, usedTubeIds(store));
-  const perKey = new Map();
+  const byGroup = new Map();
   const suggestions = [];
   for (const run of runs) {
-    const key = `${run.prefix}\u0000${run.group}`;
-    const n = perKey.get(key) || 0;
-    if (n >= 4 || suggestions.length >= 100 || suggestions.some(s => s.value === run.value)) continue;
-    perKey.set(key, n + 1);
-    suggestions.push({ value: run.value, medium: run.group, label: withDate(`${run.value} ${run.group}`, run.date) });
+    const n = byGroup.get(run.group) || 0;
+    // The two most recent runs of each rack group; old abandoned runs are left out.
+    if (n >= 2 || suggestions.length >= 40 || suggestions.some(s => s.value === run.value)) continue;
+    byGroup.set(run.group, n + 1);
+    const [context, medium] = run.group.split(' · ');
+    suggestions.push({
+      value: run.value,
+      medium,
+      context,
+      date: run.date,
+      label: withDate(`${run.value} · ${medium} · ${context}`, run.date),
+    });
   }
   return { suggestions };
 }

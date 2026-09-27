@@ -25,7 +25,8 @@ import {
   saveTrack,
   saveWalk,
 } from './monitoring.mjs';
-import { idSuggestions, tablePayload, tableRevision } from './grid.mjs';
+import { idSuggestions, tableChanges, tablePayload, tableRevision } from './grid.mjs';
+import { createSheetHook } from './hooks.mjs';
 import { SANDBOX_ID, moduleMap, validateValues } from './schema.mjs';
 import {
   setup,
@@ -136,6 +137,7 @@ export function configFromEnv(env = process.env) {
     secureCookies: env.SECURE_COOKIES !== '0',
     spreadsheetId: SANDBOX_ID,
     syncIntervalMs: Number(env.SYNC_INTERVAL_MS || 300000),
+    sheetHookSecret: env.SHEET_HOOK_SECRET,
     aiApiKey: env.AI_API_KEY || env.OPENAI_API_KEY,
     aiModel: env.AI_MODEL || env.OPENAI_MODEL,
     aiBaseUrl: env.AI_BASE_URL,
@@ -279,6 +281,7 @@ export async function createApp(config = {}, options = {}) {
   }
   const loginLimiter = new LoginLimiter();
   const tableCache = new Map();
+  const sheetHook = createSheetHook(store, { secret: config.sheetHookSecret });
   const server = http.createServer(async (req, res) => {
     const requestId = randomUUID();
     res.setHeader('x-request-id', requestId);
@@ -304,6 +307,9 @@ export async function createApp(config = {}, options = {}) {
           setupRequired: !store.db.prepare("SELECT 1 FROM users WHERE role='admin' AND active=1").get(),
         });
       const body = ['POST', 'PATCH', 'PUT', 'DELETE'].includes(method) ? await bodyOf(req) : {};
+      // Called by the Apps Script trigger, which has no session; it sends a shared secret instead.
+      if (method === 'POST' && path === '/api/hooks/sheet-edit')
+        return json(res, 202, sheetHook.receive(req.headers, body));
       if (method === 'POST' && path === '/api/auth/setup') {
         const user = setup(store, body, config);
         const auth = login(store, { username: user.username, password: body.password });
@@ -418,6 +424,8 @@ export async function createApp(config = {}, options = {}) {
         }
         return send(res, 200, cached.text, { etag, 'cache-control': 'no-cache' }, cached.gzipped);
       }
+      if (method === 'GET' && path === '/api/table/changes')
+        return json(res, 200, tableChanges(store, String(query.module || ''), query.since));
       if (method === 'GET' && path === '/api/ids') return json(res, 200, idSuggestions(store, query));
       if (method === 'POST' && path === '/api/actions') {
         requireEditor(user);
@@ -477,7 +485,8 @@ export async function createApp(config = {}, options = {}) {
       if (method === 'GET' && path === '/api/options')
         return json(res, 200, { options: optionsFor(store, query.module, query.field, query.q, query.species) });
       if (method === 'GET' && path === '/api/suggestions') return json(res, 200, suggestionsFor(store, query.module));
-      if (method === 'GET' && path === '/api/sync') return json(res, 200, store.syncStatus);
+      if (method === 'GET' && path === '/api/sync')
+        return json(res, 200, { ...store.syncStatus, hook: sheetHook.status });
       if (method === 'POST' && path === '/api/sync') {
         requireEditor(user);
         return json(res, 200, await store.sync({ force: true }));
@@ -536,7 +545,8 @@ export async function createApp(config = {}, options = {}) {
         requireEditor(user);
         return json(res, 200, finishJob(store, decodePart(path.split('/')[5]), body));
       }
-      if (method === 'GET' && path === '/api/monitoring/wikiloc/profiles') return json(res, 200, { profiles: listProfiles(store) });
+      if (method === 'GET' && path === '/api/monitoring/wikiloc/profiles')
+        return json(res, 200, { profiles: listProfiles(store) });
       if (method === 'POST' && path === '/api/monitoring/wikiloc/profiles') {
         requireEditor(user);
         return json(res, 201, addProfile(store, body, user));

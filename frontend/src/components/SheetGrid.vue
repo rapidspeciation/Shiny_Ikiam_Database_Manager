@@ -59,6 +59,7 @@ let table: Tabulator | null = null
 // Tabulator builds asynchronously; data changes before that point wait for it.
 let built = false
 let refreshWhenBuilt = false
+let refreshAfterEdit = false
 let formulaIndex = new Map<string, Set<string>>()
 let rowIndex = new Map<string, TableRow>()
 let fieldIndex = new Map<string, Field>()
@@ -376,6 +377,14 @@ function build() {
   } as unknown as ConstructorParameters<typeof Tabulator>[1])
   table.on('cellEdited', onCellEdited)
   table.on('cellClick', onCellClick)
+  // A refresh that arrived while typing (e.g. an automatic save finished) runs after the edit.
+  const afterEdit = () => {
+    if (!refreshAfterEdit) return
+    refreshAfterEdit = false
+    setTimeout(refresh)
+  }
+  table.on('cellEdited', afterEdit)
+  table.on('cellEditCancelled', afterEdit)
   table.on('tableBuilt', () => {
     built = true
     if (refreshWhenBuilt) refresh()
@@ -391,6 +400,11 @@ function refresh() {
     return
   }
   refreshWhenBuilt = false
+  // Never redraw under an open cell editor: it would throw away what is being typed.
+  if (host.value.querySelector('.tabulator-editing')) {
+    refreshAfterEdit = true
+    return
+  }
   table.replaceData(buildData()).then(applySearch)
 }
 

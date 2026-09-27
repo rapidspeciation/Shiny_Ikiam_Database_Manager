@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Plus, RefreshCw, ArrowDownToLine, ExternalLink, Search, FileDown } from 'lucide-vue-next'
 import SheetGrid from '../components/SheetGrid.vue'
+import WorkbookWarnings from '../components/WorkbookWarnings.vue'
 import { useSheet } from '../composables/useSheet'
 import { notify } from '../lib/notice'
 import { usePending } from '../stores/pending'
@@ -135,5 +136,6 @@ function addRow() {
         "
       />
     </div>
+    <WorkbookWarnings :sheet="module" />
   </div>
 </template>
