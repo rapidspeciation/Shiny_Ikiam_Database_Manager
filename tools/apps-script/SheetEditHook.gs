@@ -8,9 +8,18 @@
  */
 const APP_URL = 'https://tbs-insect-gallery.duckdns.org/ithomiini/api/hooks/sheet-edit';
 
-/** Run once from the editor (after setting the HOOK_SECRET script property). */
+/**
+ * The secret shared with the app: the HOOK_SECRET script property, or a
+ * HOOK_SECRET constant in a separate Config.gs (tools/apps-script/install.sh writes one).
+ */
+function hookSecret() {
+  return PropertiesService.getScriptProperties().getProperty('HOOK_SECRET') ||
+    (typeof HOOK_SECRET === 'string' ? HOOK_SECRET : null);
+}
+
+/** Run once from the editor. */
 function setup() {
-  if (!PropertiesService.getScriptProperties().getProperty('HOOK_SECRET'))
+  if (!hookSecret())
     throw new Error('Add the script property HOOK_SECRET first (Project Settings → Script Properties).');
   const spreadsheet = SpreadsheetApp.getActive();
   for (const trigger of ScriptApp.getProjectTriggers()) ScriptApp.deleteTrigger(trigger);
@@ -32,7 +41,7 @@ function onSheetChange(e) {
 }
 
 function send(events) {
-  const secret = PropertiesService.getScriptProperties().getProperty('HOOK_SECRET');
+  const secret = hookSecret();
   const response = UrlFetchApp.fetch(APP_URL, {
     method: 'post',
     contentType: 'application/json',

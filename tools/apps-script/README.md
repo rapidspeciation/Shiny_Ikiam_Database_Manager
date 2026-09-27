@@ -7,6 +7,16 @@ and open pages pick up the change on their next check (every 10 seconds).
 
 Install it in the **test workbook** only, for now.
 
+## With gogcli
+
+`./install.sh` creates the script inside the test workbook (or updates it) and
+writes the secret into a `Config.gs` next to it. It needs a gog login that
+includes the `appscript` service and the Apps Script API turned on at
+https://script.google.com/home/usersettings. Then open the printed link, choose
+`setup` and press **Run** once, accepting the permissions.
+
+## By hand
+
 1. Open the test workbook → **Extensions → Apps Script**.
 2. Replace the contents of `Code.gs` with `SheetEditHook.gs`. Save.
 3. **Project Settings** (gear icon) → **Script Properties** → add
