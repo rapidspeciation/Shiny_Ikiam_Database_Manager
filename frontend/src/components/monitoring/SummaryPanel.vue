@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Download, ListPlus, SlidersHorizontal } from 'lucide-vue-next'
+import { Download, SlidersHorizontal } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import BarList from '../charts/BarList.vue'
 import ChartCard from '../charts/ChartCard.vue'
@@ -25,7 +25,6 @@ import {
   monthOf,
   monthRange,
   nextMarkId,
-  noteRecaptureValues,
   noteRecaptures,
   preservedForRule,
   recaptureIds,
@@ -41,7 +40,7 @@ import { useTables } from '../../stores/tables'
  * "Reporte": a live monitoring report. The filters live in the link (so a
  * filtered view can be shared) and scope every number, chart and table below.
  */
-const { table, rows: allRows, isIthomiini, options, createFormulas } = useMonitoring()
+const { table, rows: allRows, isIthomiini } = useMonitoring()
 const pending = usePending()
 const tables = useTables()
 const route = useRoute()
@@ -134,6 +133,8 @@ const recaptures = computed(() => recaptureIds(allRows.value))
 // The 30 rule counts every preserved butterfly from Ikiam and Casa de Lin, whatever its purpose.
 const rulePreserved = computed(() => preservedForRule(table.value?.rows || []))
 const species = computed(() => speciesStats(filtered.value, bySubspecies.value, recaptures.value))
+const allSpecies = ref(false)
+const shownSpecies = computed(() => (allSpecies.value ? species.value : species.value.slice(0, 10)))
 const totals = computed(() => {
   const t = { total: 0, preserved: 0, marked: 0, recaptured: 0 }
   for (const s of species.value) {
@@ -282,17 +283,6 @@ const noteOnly = computed(() =>
       ),
   ),
 )
-function createNoteRows() {
-  const names = options.value.Collector || []
-  for (const n of noteOnly.value) {
-    const values = noteRecaptureValues(n, names)
-    for (const field of createFormulas.value) delete values[field]
-    pending.addCreate('Collection_data', `${n.row.values.FieldMark_ID} ${n.date}`, values)
-  }
-  pending.touch()
-  notify('Filas de recaptura añadidas: revísalas en "Importar recorrido" y pulsa Guardar.', 'success')
-  router.replace({ query: { vista: 'importar' } })
-}
 const days = (a: number | null, b: number | null) => (a === null || b === null ? '' : `${b - a} días`)
 const date = (d: number | null) => (d === null ? '—' : formatSerial(d))
 
@@ -410,38 +400,6 @@ const pct = (a: number, b: number) => (b ? `${Math.round((100 * a) / b)} %` : '�
           <p class="text-2xl font-semibold text-brand-700">{{ nextMark || '—' }}</p>
         </div>
       </div>
-
-      <section v-if="conflicts.length || noteOnly.length" class="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm">
-        <h2 class="font-semibold text-amber-950">Revisión de datos</h2>
-        <details v-if="conflicts.length" class="mt-2">
-          <summary class="cursor-pointer">
-            {{ conflicts.length }} marcas registradas en más de una especie (ID repetida o especie equivocada); no cuentan como
-            recaptura
-          </summary>
-          <ul class="mt-1 space-y-0.5 text-xs">
-            <li v-for="c in conflicts" :key="c.id">
-              <b>{{ c.id }}</b
-              >:
-              <span v-for="(r, i) in c.rows" :key="r.id"
-                >{{ i ? '; ' : '' }}<i>{{ r.values.SPECIES }}</i> {{ date(r.values.Collection_date as number) }}
-                {{ String(r.values.Collector ?? '').split(' - ')[0] }} (fila {{ r.row }})</span
-              >
-            </li>
-          </ul>
-        </details>
-        <div v-if="noteOnly.length" class="mt-2">
-          <p>{{ noteOnly.length }} recapturas escritas solo en las notas de la fila de marcaje:</p>
-          <ul class="mt-1 space-y-0.5 text-xs">
-            <li v-for="(n, i) in noteOnly" :key="i">
-              <b>{{ n.row.values.FieldMark_ID }}</b> <i>{{ n.row.values.SPECIES }}</i> · {{ n.date }} ·
-              {{ formatMinutes(n.minutes) || 'sin hora' }} (fila {{ n.row.row }}): “{{ n.note }}”
-            </li>
-          </ul>
-          <button class="btn mt-2" @click="createNoteRows">
-            <ListPlus :size="15" /> Crear {{ noteOnly.length }} filas de recaptura para revisar
-          </button>
-        </div>
-      </section>
 
       <div class="grid gap-4 xl:grid-cols-2">
         <ChartCard
@@ -589,7 +547,7 @@ const pct = (a: number, b: number) => (b ? `${Math.round((100 * a) / b)} %` : '�
               </tr>
             </thead>
             <tbody>
-              <tr v-for="s in species" :key="s.key" class="border-t border-stone-100">
+              <tr v-for="s in shownSpecies" :key="s.key" class="border-t border-stone-100">
                 <td class="px-3 py-1.5">
                   <i>{{ s.species }}</i> <span class="text-stone-500">{{ s.subspecies }}</span>
                 </td>
@@ -615,6 +573,13 @@ const pct = (a: number, b: number) => (b ? `${Math.round((100 * a) / b)} %` : '�
                 <td class="px-3 py-1.5 text-right tabular-nums">{{ s.female || '' }}</td>
                 <td class="px-3 py-1.5 text-right tabular-nums">{{ s.male || '' }}</td>
                 <td class="px-3 py-1.5 text-right font-medium tabular-nums">{{ s.total }}</td>
+              </tr>
+              <tr v-if="species.length > 10" class="border-t border-stone-100">
+                <td colspan="8" class="px-3 py-1.5">
+                  <button class="text-xs text-brand-700 underline" @click="allSpecies = !allSpecies">
+                    {{ allSpecies ? 'Mostrar solo las 10 más abundantes' : `Ver todas (${species.length} especies)` }}
+                  </button>
+                </td>
               </tr>
               <tr class="border-t border-stone-300 bg-stone-50 font-medium">
                 <td class="px-3 py-1.5" colspan="2">Total</td>
@@ -704,6 +669,35 @@ const pct = (a: number, b: number) => (b ? `${Math.round((100 * a) / b)} %` : '�
           </div>
         </section>
       </div>
+
+      <section v-if="conflicts.length || noteOnly.length" class="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm">
+        <h2 class="font-semibold text-amber-950">Revisión de datos</h2>
+        <details v-if="conflicts.length" class="mt-2">
+          <summary class="cursor-pointer">
+            {{ conflicts.length }} marcas registradas en más de una especie (ID repetida o especie equivocada); no cuentan como
+            recaptura
+          </summary>
+          <ul class="mt-1 space-y-0.5 text-xs">
+            <li v-for="c in conflicts" :key="c.id">
+              <b>{{ c.id }}</b
+              >:
+              <span v-for="(r, i) in c.rows" :key="r.id"
+                >{{ i ? '; ' : '' }}<i>{{ r.values.SPECIES }}</i> {{ date(r.values.Collection_date as number) }}
+                {{ String(r.values.Collector ?? '').split(' - ')[0] }} (fila {{ r.row }})</span
+              >
+            </li>
+          </ul>
+        </details>
+        <div v-if="noteOnly.length" class="mt-2">
+          <p>{{ noteOnly.length }} recapturas escritas solo en las notas de la fila de marcaje (no son filas propias):</p>
+          <ul class="mt-1 space-y-0.5 text-xs">
+            <li v-for="(n, i) in noteOnly" :key="i">
+              <b>{{ n.row.values.FieldMark_ID }}</b> <i>{{ n.row.values.SPECIES }}</i> · {{ n.date }} ·
+              {{ formatMinutes(n.minutes) || 'sin hora' }} (fila {{ n.row.row }}): “{{ n.note }}”
+            </li>
+          </ul>
+        </div>
+      </section>
     </div>
   </div>
 </template>

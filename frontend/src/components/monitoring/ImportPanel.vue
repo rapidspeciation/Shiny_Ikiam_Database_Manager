@@ -303,18 +303,26 @@ async function storeTrack() {
 }
 
 /**
- * Waiting Wikiloc walks whose every capture is already a row of the sheet
- * (same day and mark, or species and minute): they only need to go on the map.
+ * Waiting Wikiloc walks that are already in the sheet: every capture that has
+ * its row goes on the map. Points without a row are left out (field notes that
+ * were never entered, usually Wikiloc mistakes). Walks without any point go on
+ * the map as a trail; walks none of whose points are in the sheet stay for review.
  */
 const registered = computed(() => {
   if (!table.value) return []
   return waiting.value
-    .filter(w => w.date && w.collector && w.waypoints.length)
-    .map(w => ({ w, captures: w.waypoints.map(p => locateCapture({ ...p, time: null }, taxa.value)) }))
-    .filter(x => x.captures.every(c => existingRow(rows.value, x.w.date!, c)))
+    .filter(w => w.date && w.collector)
+    .map(w => {
+      const all = w.waypoints.map(p => locateCapture({ ...p, time: null }, taxa.value))
+      const captures = all.filter(c => existingRow(rows.value, w.date!, c))
+      return { w, captures, left: all.length - captures.length }
+    })
+    .filter(x => x.captures.length || !x.w.waypoints.length)
 })
+const leftOut = computed(() => registered.value.reduce((n, x) => n + x.left, 0))
 async function registerAll() {
-  if (!confirm(`¿Pasar al mapa ${registered.value.length} recorridos cuyas capturas ya están en la hoja? No se añaden filas.`))
+  const extra = leftOut.value ? ` Se dejan fuera ${leftOut.value} puntos que no están en la hoja.` : ''
+  if (!confirm(`¿Pasar al mapa ${registered.value.length} recorridos ya registrados en la hoja? No se añaden filas.${extra}`))
     return
   busy.value = true
   let done = 0
