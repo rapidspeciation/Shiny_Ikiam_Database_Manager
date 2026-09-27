@@ -119,7 +119,7 @@ describe('waypoint notes', () => {
       CLOUD.SC,
       'B73',
     ],
-    ['M9 Godyris dircenna female 10:58 parches 1.7m', 'Godyris dircenna', 'dircenna', 'female', 658, 1.7, CLOUD.SC, null],
+    ['M9 Godyris dircenna female 10:58 parches 1.7m', 'Godyris dircenna', null, 'female', 658, 1.7, CLOUD.SC, null],
   ])('%s', (note, species, subspecies, sex, minutes, height, cloud, mark) => {
     const c = parseCapture(note, taxa)
     expect(c).toMatchObject({ species, subspecies, sex, minutes, height, cloud, markId: mark, known: true, rest: '' })
@@ -157,7 +157,6 @@ describe('sheet values', () => {
       Rainfall: 'DY_(dry)',
       Flight_height: 1.7,
       Tube_1_tissue: 'NOT_COLLECTED',
-      Notes_Collection_data: '26/9/2026 FCH: Recapture',
     })
     expect(v.Collection_time).toBeCloseTo(577 / 1440)
   })
@@ -495,5 +494,14 @@ describe('report figures', () => {
       (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) * 111_000,
     )
     expect(d).toEqual([{ id: 'B56', species: 'H i', from: '2026-07-20', to: '2026-09-26', metres: 111 }])
+  })
+})
+
+describe('marks anywhere in the note', () => {
+  it('reads an M mark at the end, but an M number at the start is the point number', () => {
+    expect(parseCapture('Oleria onega j macho 1.2m nc dry t4 M61', taxa)).toMatchObject({ markId: 'M61', height: 1.2 })
+    expect(parseCapture('M84 Hembra m84 1m', taxa)).toMatchObject({ seq: 84, markId: 'M84' })
+    expect(parseCapture('M2 oleria onega janarilla macho 9:25 1.25m NO id b70', taxa)).toMatchObject({ seq: 2, markId: 'B70' })
+    expect(parseCapture('M4 hyposcada illinisa ida hembra 9:37 NO 1.70m id B56 recaptura', taxa).markId).toBe('B56')
   })
 })

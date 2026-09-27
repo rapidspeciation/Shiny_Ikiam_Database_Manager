@@ -218,7 +218,10 @@ export function parseCapture(input: string, taxa: Taxa): Capture {
   const numbers = many ? many[1].match(/\d+/g)!.map(Number) : []
   const seq = numbers.length ? null : take(/^\s*m\s?(\d{1,3})\b/)
   // "id: B69", or a mark written on its own as some collectors do ("B51 9:51 female …").
-  const mark = take(/\bid\s*[:#.]?\s*([a-z]{1,3})\s*-?\s*(\d{1,4})\b/) || take(/\b([ab])\s?(\d{1,3})\b(?![.,:]\d)/)
+  // An M mark later in the note also counts ("… t4 M61"); at the start, "M1" is the point number.
+  const mark =
+    take(/\bid\s*[:#.]?\s*([a-z]{1,3})\s*-?\s*(\d{1,4})\b/) ||
+    take(/(?<=\S.*)\b([abm])\s?(\d{1,3})\b(?![.,:]\d)|\b([ab])\s?(\d{1,3})\b(?![.,:]\d)/)
   // "9:20", "9h20", or "10.19" (a dot, when it cannot be a height: hour 6–18, two-digit minutes, no unit).
   const time = take(/\b([01]?\d|2[0-3])\s?[:h]\s?([0-5]\d)\b/) || take(/\b(0?[6-9]|1[0-8])\.([0-5]\d)\b(?!\s*(?:m|cm)\b)/)
   const height = take(/\b(\d+(?:[.,]\d+)?)\s*(cm|m)\b/)
@@ -247,7 +250,7 @@ export function parseCapture(input: string, taxa: Taxa): Capture {
     height: h !== null && Number.isFinite(h) ? Math.round(h * 100) / 100 : null,
     cloud,
     rain,
-    markId: mark ? `${mark[1].toUpperCase()}${Number(mark[2])}` : null,
+    markId: mark ? `${(mark[1] || mark[3]).toUpperCase()}${Number(mark[2] || mark[4])}` : null,
     recaptureNote: !!recapture,
     rest,
     count: Math.max(1, numbers.length),
@@ -277,8 +280,8 @@ export function matchTaxon(words: string[], taxa: Taxa) {
   }
   const subs = taxa.get(best.species) || []
   const word = words[2]
-  // With no subspecies written, a species only ever recorded with one subspecies gets that one.
-  if (!word) return { species: best.species, subspecies: subs.length === 1 ? subs[0] : null, known: true, used: 2 }
+  // No subspecies written: left empty (the grid offers the known ones); guessing it is not safe.
+  if (!word) return { species: best.species, subspecies: null, known: true, used: 2 }
   const sub = subs.find(s => levenshtein(word, s.toLowerCase()) <= tolerance(s))
   if (sub) return { species: best.species, subspecies: sub, known: true, used: 3 }
   // An unknown third word is taken as a new subspecies name (to be reviewed).
@@ -330,7 +333,8 @@ export function captureValues(c: Capture, ctx: CaptureContext): Record<string, C
       Preservation_medium: 'NOT_COLLECTED',
     })
   const initials = ctx.collector.split(' - ')[0]
-  const note = [c.recaptureNote ? 'Recapture' : '', c.rest].filter(Boolean).join('; ')
+  // A recapture needs no note: the repeated field mark already says it.
+  const note = c.rest
   if (note) {
     const [y, m, d] = ctx.date.split('-').map(Number)
     values.Notes_Collection_data = `${d}/${m}/${y} ${initials}: ${note}`
