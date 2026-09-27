@@ -30,6 +30,17 @@ Ways to bring a walk in (all in Importar recorrido):
 - **GPX file**: *Elegir GPX de Wikiloc*.
 - **Paste a Wikiloc link**, or **Buscar nuevos en Wikiloc** for the followed profiles (Franz Chandi, Alex Arias and María José Sánchez, each with their collector), which brings every trail whose title contains "monitor" and that is not in the app yet. The walk's date is the day written in the title within the month and year Wikiloc recorded (titles have typos such as "27/4/2024" for April 2025, or no year). Wikiloc blocks the app server, so these are done by a processor on a computer at home (tools/wikiloc, see its README). The walk, with its photos, appears under *Desde Wikiloc, por revisar* a minute or two later. The bar shows whether that computer is online; while it is off, links wait in the queue. The public page has no GPS times, so SamplingDay_data is not filled from it; if the GPX of the same day was already imported, *Solo añadir las fotos al GPX ya subido* attaches the photos to it.
 
+## Reporte (live report)
+
+Monitoreo → Reporte replaces the monthly slides. One row of filters (period, collector, transect, species, only Ithomiini, by subspecies) scopes everything below and is kept in the page link, so a filtered view can be shared (e.g. `#/monitoreo?vista=resumen&desde=2025-01&hasta=2025-12&rec=AA`). It shows:
+
+- **Headline numbers:** individuals, monitoring days (one per collector and date, from SamplingDay_data plus days with captures), individuals per day, species, preserved and marked, recaptures (and the share of marked individuals recaptured), and the next mark.
+- **Charts:** individuals per month by fate (preserved, newly marked, recaptured); individuals per monitoring day per month (catch per effort); a month-by-month comparison between years (months without monitoring are gaps, not zeros); the most abundant species; and captures by hour, flight height and cloud cover.
+- **Tables:** species with the 30-preserved rule; individuals per transect and month; recapture histories with the median time between captures.
+- **Data review:** reused marks and recaptures written only in notes.
+
+Every chart has a *Tabla* view with its exact numbers. *CSV* downloads the filtered rows as they are in the sheet.
+
 ## Rules the app applies
 
 - **Transect**: the nearest of the four sections to the waypoint (none if more than 40 m from the trail). The sections were reconstructed on 26 Sep 2026 by fitting the coloured transects of the QGIS map in the monitoring reports onto that day's GPS track (median error about 1 m); see `frontend/src/lib/transects.ts`. The last ~80 m of T1 towards the campus come from the QGIS map only.

@@ -8,7 +8,7 @@ import SummaryPanel from '../components/monitoring/SummaryPanel.vue'
 /** Ikiam monthly monitoring: import a Wikiloc walk, the report tables, and the map. */
 const PANELS = [
   { id: 'importar', label: 'Importar recorrido' },
-  { id: 'resumen', label: 'Resumen' },
+  { id: 'resumen', label: 'Reporte' },
   { id: 'mapa', label: 'Mapa' },
 ] as const
 const route = useRoute()

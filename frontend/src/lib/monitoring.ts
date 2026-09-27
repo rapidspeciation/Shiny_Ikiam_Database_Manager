@@ -718,3 +718,113 @@ export function noteRecaptureValues(r: NoteRecapture, collectors: string[]): Rec
     Notes_Collection_data: `${d}/${m}/${y} ${r.initials || ''}: Recapture, moved from the note of row ${r.row.row}`,
   }
 }
+
+// ------------------------------------------------------- the live report
+
+/** Every month from `from` to `to` (YYYY-MM), inclusive. */
+export function monthRange(from: string, to: string): string[] {
+  const out: string[] = []
+  let [y, m] = from.split('-').map(Number)
+  const [ty, tm] = to.split('-').map(Number)
+  while ((y < ty || (y === ty && m <= tm)) && out.length < 600) {
+    out.push(`${y}-${String(m).padStart(2, '0')}`)
+    m++
+    if (m > 12) {
+      m = 1
+      y++
+    }
+  }
+  return out
+}
+
+export type Kind = 'preserved' | 'marked' | 'recaptured' | 'other'
+export function kindOf(row: TableRow, recaptures: Set<string>): Kind {
+  if (recaptures.has(row.id)) return 'recaptured'
+  const kind = text(row.values.Release_Collect)
+  return kind === 'Collected_Preserved' ? 'preserved' : kind === 'Mark_Released' ? 'marked' : 'other'
+}
+
+/** Individuals per month, split by what happened to them. */
+export function kindsByMonth(rows: TableRow[], months: string[], recaptures: Set<string>) {
+  const index = new Map(months.map((m, i) => [m, i]))
+  const out: Record<Kind, number[]> = {
+    preserved: months.map(() => 0),
+    marked: months.map(() => 0),
+    recaptured: months.map(() => 0),
+    other: months.map(() => 0),
+  }
+  for (const row of rows) {
+    const i = index.get(monthOf(row) || '')
+    if (i !== undefined) out[kindOf(row, recaptures)][i]++
+  }
+  return out
+}
+
+const initialsOf = (collector: string) => collector.split(' - ')[0].trim().toUpperCase()
+
+/**
+ * Monitoring effort: one "day" per collector and date, from SamplingDay_data
+ * (Ikiam monitoring) plus any day with captures. Returns keys "YYYY-MM-DD|INI".
+ */
+export function effortDays(dayRows: TableRow[], captures: TableRow[]): Set<string> {
+  const out = new Set<string>()
+  for (const r of dayRows) {
+    const d = r.values.Date
+    if (!r.observed || typeof d !== 'number' || d < 40000 || d > 60000) continue
+    if (!/^monitor/i.test(text(r.values.Purpose)) || !/ikiam/i.test(text(r.values.Location))) continue
+    out.add(`${serialToIso(d)}|${text(r.values.Collectors_initials).toUpperCase()}`)
+  }
+  for (const r of captures) {
+    const d = dateOf(r)
+    if (d !== null) out.add(`${serialToIso(d)}|${initialsOf(text(r.values.Collector))}`)
+  }
+  return out
+}
+
+/** Captures per hour of the day (index = hour). */
+export function byHour(rows: TableRow[], from = 7, to = 15) {
+  const out = Array.from({ length: to - from + 1 }, () => 0)
+  for (const r of rows) {
+    const t = r.values.Collection_time
+    if (typeof t !== 'number' || t <= 0 || t >= 1) continue
+    const h = Math.floor(t * 24)
+    if (h >= from && h <= to) out[h - from]++
+  }
+  return out
+}
+
+export const HEIGHT_CLASSES = ['< 0,5', '0,5–1', '1–1,5', '1,5–2', '2–3', '≥ 3']
+/** Captures per flight-height class (metres at first sight). */
+export function byHeight(rows: TableRow[]) {
+  const out = HEIGHT_CLASSES.map(() => 0)
+  for (const r of rows) {
+    const h = Number(r.values.Flight_height)
+    if (r.values.Flight_height === null || r.values.Flight_height === '' || !Number.isFinite(h)) continue
+    out[h < 0.5 ? 0 : h < 1 ? 1 : h < 1.5 ? 2 : h < 2 ? 3 : h < 3 ? 4 : 5]++
+  }
+  return out
+}
+
+export const CLOUD_CLASSES: [string, string][] = [
+  ['S', 'Soleado'],
+  ['S&C', 'Sol y nubes'],
+  ['CL', 'Nublado claro'],
+  ['CD', 'Nublado oscuro'],
+]
+/** Captures per cloud-cover code. */
+export function byCloud(rows: TableRow[]) {
+  const out = CLOUD_CLASSES.map(() => 0)
+  for (const r of rows) {
+    const code = text(r.values.Cloud_cover).split('_')[0]
+    const i = CLOUD_CLASSES.findIndex(([c]) => c === code)
+    if (i >= 0) out[i]++
+  }
+  return out
+}
+
+export const median = (values: number[]) => {
+  if (!values.length) return null
+  const s = [...values].sort((a, b) => a - b)
+  const mid = Math.floor(s.length / 2)
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2
+}

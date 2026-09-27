@@ -3,7 +3,14 @@ import {
   CLOUD,
   captureValues,
   locateCapture,
+  byCloud,
+  byHeight,
+  byHour,
+  effortDays,
   existingRow,
+  kindsByMonth,
+  median,
+  monthRange,
   markConflicts,
   withSheetValues,
   markHistories,
@@ -347,5 +354,67 @@ describe("other collectors' notes", () => {
       section: 1,
     })
     expect(existingRow(sheet, '2026-09-21', { ...parseCapture('9:27 sol male 1,5m', taxa) })?.values.SPECIES).toBe('Oleria onega')
+  })
+})
+
+describe('live report', () => {
+  const rows = [
+    row({
+      SPECIES: 'Oleria onega',
+      Release_Collect: 'Collected_Preserved',
+      Collection_date: 46284,
+      Collection_time: 0.4,
+      Flight_height: 0.3,
+      Cloud_cover: 'CL_(cloudy_light)',
+      Collector: 'AA - Alex Arias',
+    }),
+    row({
+      SPECIES: 'Oleria onega',
+      Release_Collect: 'Mark_Released',
+      FieldMark_ID: 'B1',
+      Collection_date: 46284,
+      Collection_time: 0.45,
+      Flight_height: 1.2,
+      Cloud_cover: 'S&C_(sun_&_cloud_patches)',
+      Collector: 'AA - Alex Arias',
+    }),
+    row({
+      SPECIES: 'Oleria onega',
+      Release_Collect: 'Mark_Released',
+      FieldMark_ID: 'B1',
+      Collection_date: 46300,
+      Collection_time: 0.4,
+      Flight_height: '3',
+      Collector: 'MJS - María José Sánchez',
+    }),
+  ]
+  it('lists every month of a range', () => {
+    expect(monthRange('2025-11', '2026-02')).toEqual(['2025-11', '2025-12', '2026-01', '2026-02'])
+  })
+  it('splits each month by preserved, marked and recaptured', () => {
+    const k = kindsByMonth(rows, ['2026-09', '2026-10'], recaptureIds(rows))
+    expect([k.preserved, k.marked, k.recaptured]).toEqual([
+      [1, 0],
+      [1, 0],
+      [0, 1],
+    ])
+  })
+  it('counts monitoring days per collector from SamplingDay_data and captures', () => {
+    const day = (values: Record<string, CellValue>) => ({ ...row(values), values })
+    const days = effortDays(
+      [
+        day({ Date: 46284, Location: 'Ikiam', Purpose: 'Monitoring', Collectors_initials: 'AA' }),
+        day({ Date: 46290, Location: 'Ikiam', Purpose: 'Monitoring', Collectors_initials: 'FCH' }),
+        day({ Date: 375004, Location: 'Ikiam', Purpose: 'Monitoring', Collectors_initials: 'AA' }),
+      ],
+      rows,
+    )
+    expect([...days].sort()).toEqual(['2026-09-19|AA', '2026-09-25|FCH', '2026-10-05|MJS'])
+  })
+  it('counts captures by hour, flight height and cloud cover', () => {
+    expect(byHour(rows).slice(2, 4)).toEqual([2, 1])
+    expect(byHeight(rows)).toEqual([1, 0, 1, 0, 0, 1])
+    expect(byCloud(rows)).toEqual([0, 1, 1, 0])
+    expect(median([5, 1, 9, 3])).toBe(4)
   })
 })
