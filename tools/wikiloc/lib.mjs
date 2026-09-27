@@ -9,14 +9,54 @@ export const DEFAULT_APP = 'https://tbs-insect-gallery.duckdns.org/ithomiini/';
 
 const MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 const EN = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-/** "Monitoreo ithomidos FCH 14 mayo 2025" → 2025-05-14 */
+const monthOf = word => {
+  const abbr = String(word).toLowerCase().slice(0, 3);
+  return MONTHS.indexOf(abbr) + 1 || EN.indexOf(abbr) + 1 || 0;
+};
+const iso = (y, m, d) => {
+  const t = new Date(Date.UTC(y, m - 1, d));
+  return t.getUTCMonth() === m - 1 && t.getUTCDate() === d ? t.toISOString().slice(0, 10) : null;
+};
+const fullYear = y => (y < 100 ? 2000 + y : y);
+
+/**
+ * Candidate dates written in a trail title, as typed in the field:
+ * "14 mayo 2025", "21/sep/2026", "19/09/2026", "8/9/2025", "16/082024",
+ * "13noviembre23", "13 sep" (no year), "18/06" (no year).
+ */
+export function titleDates(text) {
+  const t = String(text || '').toLowerCase();
+  const out = [];
+  const word = /(\d{1,2})\s*(?:de\s*|\/|-|\.)?\s*([a-záé]{3,})\.?\s*(?:de\s*|del\s*|\/|-)?\s*(\d{4}|\d{2}(?!\d))?/g;
+  for (const m of t.matchAll(word)) if (monthOf(m[2])) out.push({ d: +m[1], m: monthOf(m[2]), y: m[3] ? fullYear(+m[3]) : null });
+  const num = /(\d{1,2})[/.-](\d{1,2})(?:[/.-]?(\d{4}|\d{2}(?!\d)))?/g;
+  for (const m of t.matchAll(num)) out.push({ d: +m[1], m: +m[2], y: m[3] ? fullYear(+m[3]) : null });
+  return out.filter(c => c.d >= 1 && c.d <= 31);
+}
+
+/** "Monitoreo ithomidos FCH 14 mayo 2025" → 2025-05-14 (title only). */
 export function dateFromName(text) {
-  const m = /(\d{1,2})[\s-]*(?:de[\s-]*)?([a-záé]{3})[a-záé]*\.?[\s-]*(?:de[\s-]*)?(\d{4})/i.exec(text || '');
-  if (!m) return null;
-  const abbr = m[2].toLowerCase();
-  const month = MONTHS.indexOf(abbr) + 1 || EN.indexOf(abbr) + 1;
-  if (!month) return null;
-  return `${m[3]}-${String(month).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}`;
+  const c = titleDates(text).find(c => c.y && c.m >= 1 && c.m <= 12);
+  return c ? iso(c.y, c.m, c.d) : null;
+}
+
+/**
+ * The walk's date: the day from the title, checked against the month and year
+ * Wikiloc recorded ("Fecha de realización: abril 2025"), which is more reliable
+ * than typed years ("27/4/2024" recorded in April 2025) and fills missing ones
+ * ("Monitoreo 13 sep"). Returns null when the title has no usable day.
+ */
+export function walkDate(title, done) {
+  const m = /([a-záé]+)\s+(?:de\s+)?(\d{4})/i.exec(String(done || ''));
+  const doneMonth = m ? monthOf(m[1]) : 0;
+  const doneYear = m ? +m[2] : null;
+  const candidates = titleDates(title);
+  if (!doneMonth || !doneYear) return dateFromName(title);
+  const sameMonth = candidates.find(c => c.m === doneMonth);
+  if (sameMonth) return iso(doneYear, doneMonth, sameMonth.d);
+  // A month the title got wrong ("19/20/2025"): keep its day in the recorded month.
+  const dayOnly = candidates.find(c => c.m < 1 || c.m > 12);
+  return dayOnly ? iso(doneYear, doneMonth, dayOnly.d) : null;
 }
 
 function browserPath() {
@@ -70,12 +110,17 @@ export async function readTrail(page, url) {
       if (!layer.getLatLngs || track.length) return;
       for (const p of layer.getLatLngs().flat(3)) track.push([p.lat, p.lng, p.alt ?? null, null]);
     });
-    return { name: md.mapData?.[0]?.nom || document.title, track, waypoints };
+    const done = /Fecha de realizaci[oó]n\s*\n?\s*([^\n]+)/i.exec(document.body.innerText)?.[1] || '';
+    // The author's profile number (the first profile link on a trail page is its author).
+    const author = /user\.do\?id=(\d+)/.exec([...document.querySelectorAll('a[href*="user.do?id="]')][0]?.href || '')?.[1] || null;
+    return { name: md.mapData?.[0]?.nom || document.title, track, waypoints, done, author };
   });
   return {
     url,
     name: trail.name,
-    date: dateFromName(trail.name) || dateFromName(url.replace(/-/g, ' ')),
+    date: walkDate(trail.name, trail.done),
+    recorded: trail.done || null,
+    author: trail.author,
     track: trail.track,
     waypoints: trail.waypoints,
   };

@@ -27,9 +27,9 @@ const client = appClient(app, () => signIn(app, config.username, config.password
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 
-async function sendWalk(page, url, jobId) {
+async function sendWalk(page, url, jobId, collector) {
   const walk = await readTrail(page, url);
-  const saved = await client.request('monitoring/wikiloc', { method: 'POST', body: { ...walk, jobId } });
+  const saved = await client.request('monitoring/wikiloc', { method: 'POST', body: { ...walk, jobId, collector } });
   const failed = saved.failed?.length ? `, ${saved.failed.length} fotos fallaron` : '';
   return `${walk.name}: ${walk.waypoints.length} puntos, ${photoCount(walk)} fotos${failed}`;
 }
@@ -45,7 +45,7 @@ async function run(job) {
     const done = [];
     for (const t of fresh) {
       await browser.page.waitForTimeout(4000);
-      done.push(await sendWalk(browser.page, t.url, job.id));
+      done.push(await sendWalk(browser.page, t.url, job.id, job.profile?.collector));
     }
     return {
       profileName: name,

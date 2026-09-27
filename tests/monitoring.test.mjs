@@ -174,3 +174,14 @@ test('links and profile checks become jobs for the home computer, which claims a
   assert.deepEqual(jobs.map(j => j.status), ['done', 'done']);
   assert.ok(workerSeen);
 });
+
+test('a walk takes its collector from the followed profile of its author', async () => {
+  const s = store();
+  addProfile(s, { url: '11910166', collector: 'AA - Alex Arias' }, editor);
+  const { walk } = await saveWalk(s, { ...walkBody(), author: '11910166', recorded: 'mayo 2025' }, editor, { fetchImage: fakeImage([]) });
+  assert.equal(walk.collector, 'AA - Alex Arias');
+  assert.equal(walk.recorded, 'mayo 2025');
+  // Following again updates the pattern and collector instead of failing.
+  const again = addProfile(s, { url: '11910166', pattern: 'monitor', collector: 'AA - Alex Arias' }, editor);
+  assert.equal(again.profile.pattern, 'monitor');
+});

@@ -45,6 +45,10 @@ export interface WikilocWalk {
   status: 'waiting' | 'imported'
   trackId: string | null
   createdBy: string
+  /** Set when the walk comes from a followed profile (e.g. "AA - Alex Arias"). */
+  collector?: string | null
+  /** Wikiloc's "Fecha de realización", e.g. "abril 2025". */
+  recorded?: string | null
   track: TrackPoint[]
   waypoints: { lat: number; lon: number; ele: number | null; text: string; photos: string[] }[]
 }

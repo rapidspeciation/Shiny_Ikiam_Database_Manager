@@ -19,6 +19,7 @@ import {
   preservedForRule,
   trackLength,
   trackSpan,
+  withSheetValues,
   type Gpx,
   type ImportedCapture,
 } from '../../lib/monitoring'
@@ -98,7 +99,10 @@ async function receiveShared() {
 const onShared = () => receiveShared().catch(e => notify(errorText(e), 'error'))
 onMounted(onShared)
 // Also when the app was already open on this screen.
-watch(() => route.query.compartido, flag => flag && onShared())
+watch(
+  () => route.query.compartido,
+  flag => flag && onShared(),
+)
 
 const waiting = computed(() => walks.value.filter(w => w.status === 'waiting'))
 function openWalk(w: WikilocWalk) {
@@ -109,7 +113,8 @@ function openWalk(w: WikilocWalk) {
   }
   date.value = w.date || ''
   skip.value = new Set()
-  detectCollector()
+  if (w.collector) collector.value = w.collector
+  else detectCollector()
 }
 async function removeWalk(w: WikilocWalk) {
   if (!confirm(`¿Quitar "${w.name}" de la lista? Se puede volver a traer desde Wikiloc.`)) return
@@ -173,16 +178,16 @@ const marks = computed(() => {
   return out
 })
 /** Rows with the same field mark from before this walk: if any, the capture is a recapture. */
-function earlier(c: ImportedCapture) {
-  if (!c.markId || !date.value) return []
-  const day = isoToSerial(date.value)
+function earlier(c: ImportedCapture, when = date.value) {
+  if (!c.markId || !when) return []
+  const day = isoToSerial(when)
   return (marks.value.get(c.markId) || []).filter(
     r => typeof r.values.Collection_date === 'number' && r.values.Collection_date < day,
   )
 }
 /** Earlier rows of the same mark on the same species: the capture is a recapture. */
-const sameIndividual = (c: ImportedCapture) =>
-  earlier(c).filter(r => !!c.species && String(r.values.SPECIES ?? '').toLowerCase() === c.species.toLowerCase())
+const sameIndividual = (c: ImportedCapture, when = date.value) =>
+  earlier(c, when).filter(r => !!c.species && String(r.values.SPECIES ?? '').toLowerCase() === c.species.toLowerCase())
 // The 30-preserved rule counts every preserved butterfly from Ikiam and Casa de Lin.
 // Counted up to the day of the walk, so an old walk is judged by the count it had then.
 const preservedBySpecies = computed(() =>
@@ -244,37 +249,87 @@ function toggle(i: number) {
 const ready = computed(() => !!table.value && !!file.value && /^\d{4}-\d{2}-\d{2}$/.test(date.value) && !!collector.value)
 
 /** Keeps the track and its points in the app (same file twice is stored once). */
-async function storeTrack() {
-  if (!file.value) return
+/** Keeps a walk's track and points in the app (the same walk twice is stored once). */
+async function sendTrack(t: {
+  name: string
+  track: Gpx['track']
+  walkId?: string
+  date: string
+  collector: string
+  captures: ImportedCapture[]
+}) {
   await api('monitoring/tracks', {
     method: 'POST',
     body: {
       requestId: requestId(),
-      date: date.value,
-      collector: collector.value,
-      name: file.value.gpx.name || file.value.name,
-      track: file.value.gpx.track,
-      wikilocWalkId: file.value.walk?.id,
-      captures: captures.value.map(c => ({
-        lat: c.lat,
-        lon: c.lon,
-        ele: c.ele,
-        text: c.text,
-        seq: c.seq,
-        species: c.species,
-        subspecies: c.subspecies,
-        sex: c.sex,
-        minutes: c.minutes,
-        height: c.height,
-        cloud: c.cloud,
-        markId: c.markId,
-        recapture: sameIndividual(c).length > 0,
-        section: c.section,
-        photos: c.photos,
-      })),
+      date: t.date,
+      collector: t.collector,
+      name: t.name,
+      track: t.track,
+      wikilocWalkId: t.walkId,
+      captures: t.captures
+        .map(raw => withSheetValues(raw, existingRow(rows.value, t.date, raw)))
+        .map(c => ({
+          lat: c.lat,
+          lon: c.lon,
+          ele: c.ele,
+          text: c.text,
+          seq: c.seq,
+          species: c.species,
+          subspecies: c.subspecies,
+          sex: c.sex,
+          minutes: c.minutes,
+          height: c.height,
+          cloud: c.cloud,
+          markId: c.markId,
+          recapture: sameIndividual(c, t.date).length > 0,
+          section: c.section,
+          photos: c.photos,
+        })),
     },
   })
+}
+async function storeTrack() {
+  if (!file.value) return
+  await sendTrack({
+    name: file.value.gpx.name || file.value.name,
+    track: file.value.gpx.track,
+    walkId: file.value.walk?.id,
+    date: date.value,
+    collector: collector.value,
+    captures: captures.value,
+  })
   await Promise.all([loadTracks(), loadWalks()])
+}
+
+/**
+ * Waiting Wikiloc walks whose every capture is already a row of the sheet
+ * (same day and mark, or species and minute): they only need to go on the map.
+ */
+const registered = computed(() => {
+  if (!table.value) return []
+  return waiting.value
+    .filter(w => w.date && w.collector && w.waypoints.length)
+    .map(w => ({ w, captures: w.waypoints.map(p => locateCapture({ ...p, time: null }, taxa.value)) }))
+    .filter(x => x.captures.every(c => existingRow(rows.value, x.w.date!, c)))
+})
+async function registerAll() {
+  if (!confirm(`¿Pasar al mapa ${registered.value.length} recorridos cuyas capturas ya están en la hoja? No se añaden filas.`))
+    return
+  busy.value = true
+  let done = 0
+  try {
+    for (const { w, captures } of registered.value) {
+      await sendTrack({ name: w.name, track: w.track, walkId: w.id, date: w.date!, collector: w.collector!, captures })
+      done++
+    }
+    notify(`${done} recorridos pasados al mapa`, 'success')
+  } catch (e) {
+    notify(`${done} pasados; luego falló: ${errorText(e)}`, 'error')
+  } finally {
+    await Promise.all([loadTracks(), loadWalks()])
+    busy.value = false
+  }
 }
 
 async function onlyTrack() {
@@ -418,9 +473,12 @@ const clean = (v: unknown) => (isBlank(v as CellValue) ? '—' : String(v))
 
     <div
       v-if="waiting.length"
-      class="flex flex-wrap items-center gap-2 border-b border-stone-200 bg-brand-50 px-3 py-2 text-sm sm:px-4"
+      class="flex max-h-32 flex-wrap items-center gap-2 overflow-y-auto border-b border-stone-200 bg-brand-50 px-3 py-2 text-sm sm:px-4"
     >
-      <span class="font-medium text-brand-700">Desde Wikiloc, por revisar:</span>
+      <span class="font-medium text-brand-700">Desde Wikiloc, por revisar ({{ waiting.length }}):</span>
+      <button v-if="registered.length" class="btn-primary py-0.5" :disabled="busy" @click="registerAll">
+        <MapPin :size="14" /> Pasar al mapa {{ registered.length }} ya registrados en la hoja
+      </button>
       <span
         v-for="w in waiting"
         :key="w.id"
@@ -428,7 +486,8 @@ const clean = (v: unknown) => (isBlank(v as CellValue) ? '—' : String(v))
         :class="file?.walk?.id === w.id ? 'border-brand-600' : 'border-stone-300'"
       >
         <button class="hover:underline" @click="openWalk(w)">
-          {{ w.date ? formatSerial(isoToSerial(w.date)) : w.name }} · {{ w.waypoints.length }} puntos
+          {{ w.date ? formatSerial(isoToSerial(w.date)) : `${w.recorded || w.name} (sin día)` }}
+          <template v-if="w.collector"> · {{ w.collector.split(' - ')[0] }}</template> · {{ w.waypoints.length }} puntos
         </button>
         <a :href="w.url" target="_blank" rel="noopener" class="btn-ghost" title="Abrir en Wikiloc"><ExternalLink :size="13" /></a>
         <button class="btn-ghost" title="Quitar de la lista" @click="removeWalk(w)"><Trash2 :size="13" /></button>
@@ -438,7 +497,9 @@ const clean = (v: unknown) => (isBlank(v as CellValue) ? '—' : String(v))
     <section v-if="file" class="max-h-[60%] shrink-0 overflow-auto border-b border-stone-200 bg-white">
       <p v-if="file.walk" class="bg-stone-50 px-3 py-1.5 text-xs text-stone-600">
         Leído de la página pública de Wikiloc: sin horas GPS del recorrido (SamplingDay_data no se completa).
-        <template v-if="!date"> Escribe la fecha arriba.</template>
+        <template v-if="!date">
+          Escribe la fecha arriba<template v-if="file.walk.recorded"> (Wikiloc: {{ file.walk.recorded }})</template>.</template
+        >
       </p>
       <!-- Phones: one card per waypoint. -->
       <ul class="divide-y divide-stone-100 text-sm sm:hidden">

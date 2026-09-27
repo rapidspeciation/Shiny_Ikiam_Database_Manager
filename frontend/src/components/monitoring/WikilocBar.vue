@@ -26,16 +26,19 @@ interface Profile {
   name: string | null
   pattern: string
   lastChecked: string | null
+  collector: string | null
 }
 
 const session = useSession()
-const { loadWalks } = useMonitoring()
+const { loadWalks, options } = useMonitoring()
 const link = ref('')
 const jobs = ref<Job[]>([])
 const workerSeen = ref<string | null>(null)
 const profiles = ref<Profile[]>([])
 const showProfiles = ref(false)
 const newProfile = ref('')
+const newCollector = ref('')
+const collectors = computed(() => (options.value.Collector || []).filter(c => / - /.test(c)))
 let timer: ReturnType<typeof setTimeout> | null = null
 
 const active = computed(() => jobs.value.filter(j => j.status === 'queued' || j.status === 'running'))
@@ -103,8 +106,12 @@ async function loadProfiles() {
 }
 async function follow() {
   try {
-    await api('monitoring/wikiloc/profiles', { method: 'POST', body: { url: newProfile.value } })
+    await api('monitoring/wikiloc/profiles', {
+      method: 'POST',
+      body: { url: newProfile.value, collector: newCollector.value || null },
+    })
     newProfile.value = ''
+    newCollector.value = ''
     await loadProfiles()
   } catch (e) {
     notify(errorText(e), 'error')
@@ -170,8 +177,8 @@ watch(showProfiles, v => v && loadProfiles())
 
     <div v-if="showProfiles" class="mt-2 rounded-md border border-stone-200 bg-stone-50 p-2 text-xs">
       <p class="mb-1 text-stone-600">
-        “Buscar nuevos” revisa estos perfiles y trae las rutas cuyo título contiene el patrón (p. ej. “monitoreo”) y que aún no
-        están en la app.
+        “Buscar nuevos” revisa estos perfiles y trae las rutas cuyo título contiene el patrón (p. ej. “monitor”) y que aún no
+        están en la app, asignadas al recolector del perfil.
       </p>
       <ul class="mb-2 space-y-1">
         <li v-for="p in profiles" :key="p.id" class="flex items-center gap-2">
@@ -183,7 +190,9 @@ watch(showProfiles, v => v && loadProfiles())
           >
             {{ p.name || `Perfil ${p.wikilocUser}` }}
           </a>
-          <span class="text-stone-500">título con “{{ p.pattern }}” · revisado {{ ago(p.lastChecked) }}</span>
+          <span class="text-stone-500"
+            >{{ p.collector || 'sin recolector' }} · título con “{{ p.pattern }}” · revisado {{ ago(p.lastChecked) }}</span
+          >
           <button class="btn-ghost" title="Dejar de seguir" @click="unfollow(p)"><Trash2 :size="13" /></button>
         </li>
       </ul>
@@ -194,6 +203,10 @@ watch(showProfiles, v => v && loadProfiles())
           placeholder="Enlace del perfil: https://es.wikiloc.com/wikiloc/user.do?id=…"
           aria-label="Enlace del perfil de Wikiloc"
         />
+        <select v-model="newCollector" class="field-input max-w-56" aria-label="Recolector de ese perfil">
+          <option value="">Recolector…</option>
+          <option v-for="c in collectors" :key="c" :value="c">{{ c }}</option>
+        </select>
         <button class="btn" :disabled="!newProfile.trim()"><UserPlus :size="14" /> Seguir</button>
       </form>
     </div>

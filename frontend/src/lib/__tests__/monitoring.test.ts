@@ -3,7 +3,9 @@ import {
   CLOUD,
   captureValues,
   locateCapture,
+  existingRow,
   markConflicts,
+  withSheetValues,
   markHistories,
   noteRecaptureValues,
   noteRecaptures,
@@ -307,5 +309,43 @@ describe('recaptures written only in notes', () => {
       Collection_date: 45480,
     })
     expect(noteRecaptures([marked, copy]).map(f => f.date)).toEqual(['2024-08-16'])
+  })
+})
+
+describe("other collectors' notes", () => {
+  it('reads a mark written on its own', () => {
+    const c = parseCapture('B51 9:51 female sol 1,5m Hyposcada illinissa ida', taxa)
+    expect(c).toMatchObject({
+      markId: 'B51',
+      minutes: 591,
+      height: 1.5,
+      cloud: CLOUD.S,
+      species: 'Hyposcada illinissa',
+      sex: 'female',
+    })
+    expect(parseCapture('M1 Hyposcada illinissa ida hembra 9:20 0.5m NO id: B69', taxa).seq).toBe(1)
+  })
+  it('matches a point without species to its row by time and sex, and takes the sheet values for the map', () => {
+    const sheet = [
+      row({
+        SPECIES: 'Godyris dircenna',
+        Subspecies_Form: 'dircenna',
+        Sex: 'female',
+        Collection_date: 46286,
+        Collection_time: 562 / 1440,
+        Transect_section: 1,
+      }),
+      row({ SPECIES: 'Oleria onega', Sex: 'male', Collection_date: 46286, Collection_time: 567 / 1440 }),
+    ]
+    const c = { ...parseCapture('9:22 sol 2m female', taxa), section: 2 }
+    const found = existingRow(sheet, '2026-09-21', c)
+    expect(found?.values.SPECIES).toBe('Godyris dircenna')
+    expect(withSheetValues(c, found)).toMatchObject({
+      species: 'Godyris dircenna',
+      subspecies: 'dircenna',
+      sex: 'female',
+      section: 1,
+    })
+    expect(existingRow(sheet, '2026-09-21', { ...parseCapture('9:27 sol male 1,5m', taxa) })?.values.SPECIES).toBe('Oleria onega')
   })
 })

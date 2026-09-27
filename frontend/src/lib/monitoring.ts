@@ -212,7 +212,8 @@ export function parseCapture(input: string, taxa: Taxa): Capture {
     return m
   }
   const seq = take(/^\s*m\s?(\d{1,3})\b/)
-  const mark = take(/\bid\s*[:#.]?\s*([a-z]{1,3})\s*-?\s*(\d{1,4})\b/)
+  // "id: B69", or a mark written on its own as some collectors do ("B51 9:51 female …").
+  const mark = take(/\bid\s*[:#.]?\s*([a-z]{1,3})\s*-?\s*(\d{1,4})\b/) || take(/\b([ab])\s?(\d{1,3})\b(?![.,:]\d)/)
   const time = take(/\b([01]?\d|2[0-3])\s?[:h]\s?([0-5]\d)\b/)
   const height = take(/\b(\d+(?:[.,]\d+)?)\s*(cm|m)\b/)
   const recapture = take(/\b(recap\w*|recatch\w*)\b/)
@@ -571,23 +572,46 @@ export function monthsByYear(rows: TableRow[], recaptures = recaptureIds(rows)) 
   return out
 }
 
-/** Whether a capture is already in the sheet (same day, species and minute ±2). */
+/**
+ * Whether a capture is already in the sheet: same day and mark, or same day,
+ * species and minute (±2). A point noted without a species (identified later
+ * from its photo) matches on the day and minute, and on the sex if both have one.
+ */
 export function existingRow(rows: TableRow[], date: string, c: Capture): TableRow | null {
   const serial = isoToSerial(date)
-  return (
-    rows.find(row => {
-      if (dateOf(row) !== serial) return false
-      if (c.markId && text(row.values.FieldMark_ID).toUpperCase() === c.markId) return true
-      const minutes = typeof row.values.Collection_time === 'number' ? Math.round(row.values.Collection_time * 1440) : null
-      return (
-        !!c.species &&
-        text(row.values.SPECIES).toLowerCase() === c.species.toLowerCase() &&
-        c.minutes !== null &&
-        minutes !== null &&
-        Math.abs(minutes - c.minutes) <= 2
-      )
-    }) || null
-  )
+  const sameDay = rows.filter(row => dateOf(row) === serial)
+  const minuteOf = (row: TableRow) =>
+    typeof row.values.Collection_time === 'number' ? Math.round(row.values.Collection_time * 1440) : null
+  const near = (row: TableRow) => c.minutes !== null && minuteOf(row) !== null && Math.abs(minuteOf(row)! - c.minutes) <= 2
+  if (c.markId) {
+    const marked = sameDay.find(row => text(row.values.FieldMark_ID).toUpperCase() === c.markId)
+    if (marked) return marked
+  }
+  if (c.species)
+    return sameDay.find(row => text(row.values.SPECIES).toLowerCase() === c.species!.toLowerCase() && near(row)) || null
+  const sexOf = (row: TableRow) =>
+    text(row.values.Sex)
+      .toLowerCase()
+      .replace(/\s*\?$/, '')
+  return sameDay.find(row => near(row) && (!c.sex || !sexOf(row) || sexOf(row) === c.sex)) || null
+}
+
+/**
+ * For the map, a capture that is already a sheet row takes the row's curated
+ * species, subspecies, sex, mark and section (the note may lack them).
+ */
+export function withSheetValues<T extends Capture & { section: number | null }>(c: T, row: TableRow | null): T {
+  if (!row) return c
+  const v = row.values
+  const section = Number(text(v.Transect_section))
+  return {
+    ...c,
+    species: text(v.SPECIES) || c.species,
+    subspecies: text(v.Subspecies_Form) || c.subspecies,
+    sex: /^female/i.test(text(v.Sex)) ? 'female' : /^male/i.test(text(v.Sex)) ? 'male' : c.sex,
+    markId: hasMark(row) ? text(v.FieldMark_ID).toUpperCase() : c.markId,
+    section: section >= 1 && section <= 4 ? section : c.section,
+  }
 }
 
 // ------------------------------------------- recaptures written only in notes

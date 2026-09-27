@@ -21,6 +21,9 @@ export function initMonitoring(db) {
       added_by TEXT NOT NULL, created_at TEXT NOT NULL, last_checked TEXT);
     CREATE TABLE IF NOT EXISTS wikiloc_jobs(id TEXT PRIMARY KEY, kind TEXT NOT NULL, target TEXT NOT NULL, status TEXT NOT NULL,
       message TEXT, requested_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);`);
+  // Added later: the collector whose walks a followed profile holds (e.g. "AA - Alex Arias").
+  if (!db.prepare('PRAGMA table_info(wikiloc_profiles)').all().some(c => c.name === 'collector'))
+    db.exec('ALTER TABLE wikiloc_profiles ADD COLUMN collector TEXT');
 }
 
 const text = (value, max = 300) => {
@@ -234,7 +237,13 @@ export async function saveWalk(store, body, user, { fetchImage = fetchPhoto } = 
     waypoints.push({ lat, lon, ele: number(w.ele, -1000, 10000), text: text(w.text, 500) || '', photos });
   }
   const name = text(body.name, 200) || `Wikiloc ${wikilocId}`;
-  const data = JSON.stringify({ track, waypoints });
+  // The collector: given by the profile being checked, or known from the trail's author.
+  const author = /^\d{3,12}$/.test(String(body.author || '')) ? String(body.author) : null;
+  const collector =
+    text(body.collector, 120) ||
+    (author && store.db.prepare('SELECT collector FROM wikiloc_profiles WHERE wikiloc_user=?').get(author)?.collector) ||
+    null;
+  const data = JSON.stringify({ track, waypoints, collector, recorded: text(body.recorded, 60), author });
   const existing = store.db.prepare('SELECT * FROM wikiloc_walks WHERE wikiloc_id=?').get(wikilocId);
   if (existing) {
     store.db.prepare('UPDATE wikiloc_walks SET url=?, name=?, date=?, data_json=? WHERE id=?').run(url, name, date, data, existing.id);
@@ -316,6 +325,7 @@ const profileRow = r => ({
   addedBy: r.added_by,
   createdAt: r.created_at,
   lastChecked: r.last_checked,
+  collector: r.collector || null,
 });
 
 /** A Wikiloc trail link, cleaned: https, Wikiloc host, ending in the trail number. */
@@ -409,12 +419,28 @@ export function listProfiles(store) {
 export function addProfile(store, body, user) {
   const id = /user\.do\?id=(\d{3,12})/.exec(String(body.url || ''))?.[1] || /^\d{3,12}$/.exec(String(body.url || '').trim())?.[0];
   if (!id) throw fail('INVALID_PROFILE', 'Paste the link of a Wikiloc profile (…/wikiloc/user.do?id=…)');
-  const pattern = text(body.pattern, 100) || 'monitoreo';
+  // "monitor" also catches typos such as "Monitoro 12/7".
+  const pattern = text(body.pattern, 100) || 'monitor';
+  const collector = text(body.collector, 120);
   const existing = store.db.prepare('SELECT * FROM wikiloc_profiles WHERE wikiloc_user=?').get(id);
-  if (existing) return { profile: profileRow(existing) };
-  const row = { id: randomUUID(), wikiloc_user: id, name: text(body.name, 120), pattern, added_by: user.username, created_at: now(), last_checked: null };
+  if (existing) {
+    store.db
+      .prepare('UPDATE wikiloc_profiles SET pattern=?, collector=COALESCE(?, collector) WHERE id=?')
+      .run(text(body.pattern, 100) || existing.pattern, collector, existing.id);
+    return { profile: profileRow(store.db.prepare('SELECT * FROM wikiloc_profiles WHERE id=?').get(existing.id)) };
+  }
+  const row = {
+    id: randomUUID(),
+    wikiloc_user: id,
+    name: text(body.name, 120),
+    pattern,
+    added_by: user.username,
+    created_at: now(),
+    last_checked: null,
+    collector,
+  };
   store.db
-    .prepare('INSERT INTO wikiloc_profiles(id,wikiloc_user,name,pattern,added_by,created_at,last_checked) VALUES(?,?,?,?,?,?,?)')
+    .prepare('INSERT INTO wikiloc_profiles(id,wikiloc_user,name,pattern,added_by,created_at,last_checked,collector) VALUES(?,?,?,?,?,?,?,?)')
     .run(...Object.values(row));
   return { profile: profileRow(row) };
 }
