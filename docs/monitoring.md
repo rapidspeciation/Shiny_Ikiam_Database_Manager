@@ -22,7 +22,7 @@ Each capture is a Wikiloc waypoint whose name holds the data, in any order:
 
 Without a mark the capture is `Collected_Preserved`; CAM and tube IDs are added later (Colecta or Tubos). Words the app does not understand are kept in Notes_Collection_data. A mark may also be written on its own ("B51 9:51 female sol 1,5m …"). A point noted without a species (identified later from its photo) is matched to its sheet row by day, minute and sex.
 
-**Pasar al mapa … ya registrados en la hoja** stores, in one go, every waiting Wikiloc walk whose captures are all already rows in the sheet; on the map each capture shows the row's curated species, sex, mark and section. Walks with captures missing from the sheet stay for review, which is a quick way to find monitoring captures that were never entered.
+**Pasar al mapa … ya registrados en la hoja** stores, in one go, every waiting Wikiloc walk with captures in the sheet. Points are paired with the collector's rows of that day by mark, species and minute (or minute and sex); short old notes ("Mariposa 1 y 2", "Marip 3") are paired in order when the number of butterflies and rows agree; a title one day off is corrected when the marks match the next or previous day. On the map each capture shows the row's curated species, sex, mark and section. Points without a row are left out (field notes never entered, usually Wikiloc mistakes). Walks none of whose points are in the sheet stay for review.
 
 Ways to bring a walk in (all in Importar recorrido):
 
@@ -32,14 +32,15 @@ Ways to bring a walk in (all in Importar recorrido):
 
 ## Reporte (live report)
 
-Monitoreo → Reporte replaces the monthly slides. One row of filters (period, collector, transect, species, only Ithomiini, by subspecies) scopes everything below and is kept in the page link, so a filtered view can be shared (e.g. `#/monitoreo?vista=resumen&desde=2025-01&hasta=2025-12&rec=AA`). It shows:
+Monitoreo → Reporte replaces the monthly slides. One row of filters (period, collector, transect, species, only Ithomiini, by subspecies) scopes everything below and is kept in the page link, so a filtered view can be shared (e.g. `#/monitoreo?vista=resumen&desde=2025-01&hasta=2025-12&rec=AA`). Charts use Apache ECharts (SVG), loaded only when the report opens; hover details sit beside the pointer, never over the mark; every chart has a *Tabla* view.
 
-- **Headline numbers:** individuals, monitoring days (one per collector and date, from SamplingDay_data plus days with captures), individuals per day, species, preserved and marked, recaptures (and the share of marked individuals recaptured), and the next mark.
-- **Charts:** individuals per month by fate (preserved, newly marked, recaptured); individuals per monitoring day per month (catch per effort); a month-by-month comparison between years (months without monitoring are gaps, not zeros); the most abundant species; and captures by hour, flight height and cloud cover.
-- **Tables:** species with the 30-preserved rule; individuals per transect and month; recapture histories with the median time between captures.
-- **Data review:** reused marks and recaptures written only in notes.
-
-Every chart has a *Tabla* view with its exact numbers. *CSV* downloads the filtered rows as they are in the sheet.
+- **Headline numbers:** individuals, monitoring days (one per collector and date, from SamplingDay_data plus days with captures), individuals per day, species, preserved and marked, recaptures (and the share of marked individuals recaptured), next mark.
+- **Abundance and effort:** individuals per month by fate (zoomable), individuals per monitoring day, monitoring days per collector, comparison between years.
+- **Species:** most abundant species by fate, species accumulation curve (with singletons and doubletons), seasonality (individuals per monitoring day by calendar month), composition by transect, sex ratio.
+- **Behaviour and weather:** hour of capture, flight height, cloud cover.
+- **Marking and recapture:** days between captures of the same individual, and distance moved when both captures have GPS (walks on the map).
+- **Tables:** species with the 30-preserved rule (top 10, expandable), individuals per transect and month, recapture histories.
+- **Data review** (at the bottom, as notes): marks recorded on two species, recaptures written only in notes, and monitoring rows whose Purpose is empty or "NA" (counted as monitoring when the collector recorded that day in SamplingDay_data).
 
 ## Rules the app applies
 

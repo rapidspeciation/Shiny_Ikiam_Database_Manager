@@ -194,6 +194,8 @@ export interface Capture {
   recaptureNote: boolean
   /** Words that were not understood; kept for the notes column. */
   rest: string
+  /** Butterflies noted at this one point ("Mariposa 1 y 2" is two). */
+  count: number
 }
 
 const WEATHER: [RegExp, string][] = [
@@ -211,10 +213,14 @@ export function parseCapture(input: string, taxa: Taxa): Capture {
     if (m) text = text.slice(0, m.index) + ' ' + text.slice(m.index + m[0].length)
     return m
   }
-  const seq = take(/^\s*m\s?(\d{1,3})\b/)
+  // "Mariposa 1 y 2", "Marip 3 4 y 5": several butterflies noted at one point.
+  const many = take(/^\s*(?:mariposas?|marip\.?)\s+((?:\d{1,3}(?:\s*(?:,|y|e)\s*|\s+))*\d{1,3})\b(?!\s*(?:[.,:]\d|m\b|cm\b))/)
+  const numbers = many ? many[1].match(/\d+/g)!.map(Number) : []
+  const seq = numbers.length ? null : take(/^\s*m\s?(\d{1,3})\b/)
   // "id: B69", or a mark written on its own as some collectors do ("B51 9:51 female …").
   const mark = take(/\bid\s*[:#.]?\s*([a-z]{1,3})\s*-?\s*(\d{1,4})\b/) || take(/\b([ab])\s?(\d{1,3})\b(?![.,:]\d)/)
-  const time = take(/\b([01]?\d|2[0-3])\s?[:h]\s?([0-5]\d)\b/)
+  // "9:20", "9h20", or "10.19" (a dot, when it cannot be a height: hour 6–18, two-digit minutes, no unit).
+  const time = take(/\b([01]?\d|2[0-3])\s?[:h]\s?([0-5]\d)\b/) || take(/\b(0?[6-9]|1[0-8])\.([0-5]\d)\b(?!\s*(?:m|cm)\b)/)
   const height = take(/\b(\d+(?:[.,]\d+)?)\s*(cm|m)\b/)
   const recapture = take(/\b(recap\w*|recatch\w*)\b/)
   let sex: Capture['sex'] = null
@@ -232,7 +238,7 @@ export function parseCapture(input: string, taxa: Taxa): Capture {
   const h = height ? Number(height[1].replace(',', '.')) / (height[2] === 'cm' ? 100 : 1) : null
   return {
     text: input,
-    seq: seq ? Number(seq[1]) : null,
+    seq: numbers.length ? numbers[0] : seq ? Number(seq[1]) : null,
     species: taxon.species,
     subspecies: taxon.subspecies,
     known: taxon.known,
@@ -244,6 +250,7 @@ export function parseCapture(input: string, taxa: Taxa): Capture {
     markId: mark ? `${mark[1].toUpperCase()}${Number(mark[2])}` : null,
     recaptureNote: !!recapture,
     rest,
+    count: Math.max(1, numbers.length),
   }
 }
 
@@ -370,9 +377,33 @@ export function tribesFrom(rows: TableRow[]): Map<string, string> {
   return out
 }
 
-/** Rows of the Ikiam monitoring (the only ones counted in the summaries). */
-export function isMonitoringRow(row: TableRow) {
-  return row.observed && /^monitoring/i.test(text(row.values.Purpose)) && /^ikiam$/i.test(text(row.values.Collection_location))
+/** Key of a collector's day: "46284|AA". */
+export const dayKey = (serial: number, collector: string) => `${serial}|${collector.split(' - ')[0].trim().toUpperCase()}`
+
+/** Collector-days recorded as Ikiam monitoring in SamplingDay_data. */
+export function monitoringDays(dayRows: TableRow[]): Set<string> {
+  const out = new Set<string>()
+  for (const r of dayRows) {
+    const d = r.values.Date
+    if (r.observed && typeof d === 'number' && /^monitor/i.test(text(r.values.Purpose)) && /ikiam/i.test(text(r.values.Location)))
+      out.add(dayKey(d, text(r.values.Collectors_initials)))
+  }
+  return out
+}
+
+/** Purpose left empty or "NA". */
+export const noPurpose = (row: TableRow) => /^(|na|n\/a|none)$/i.test(text(row.values.Purpose))
+
+/**
+ * Rows of the Ikiam monitoring (the only ones counted in the summaries):
+ * Purpose "Monitoring…", or no Purpose on a day the collector recorded as
+ * monitoring in SamplingDay_data (some early rows were entered with "NA").
+ */
+export function isMonitoringRow(row: TableRow, days?: Set<string>) {
+  if (!row.observed || !/^ikiam$/i.test(text(row.values.Collection_location))) return false
+  if (/^monitoring/i.test(text(row.values.Purpose))) return true
+  const d = dateOf(row)
+  return !!days && d !== null && noPurpose(row) && days.has(dayKey(d, text(row.values.Collector)))
 }
 
 /**
@@ -583,8 +614,10 @@ export function existingRow(rows: TableRow[], date: string, c: Capture): TableRo
   const minuteOf = (row: TableRow) =>
     typeof row.values.Collection_time === 'number' ? Math.round(row.values.Collection_time * 1440) : null
   const near = (row: TableRow) => c.minutes !== null && minuteOf(row) !== null && Math.abs(minuteOf(row)! - c.minutes) <= 2
-  if (c.markId) {
-    const marked = sameDay.find(row => text(row.values.FieldMark_ID).toUpperCase() === c.markId)
+  // A mark, or "M84" at the start of a note (read as the point number) when the sheet has that mark.
+  const mark = c.markId || (c.seq !== null ? `M${c.seq}` : null)
+  if (mark) {
+    const marked = sameDay.find(row => text(row.values.FieldMark_ID).toUpperCase() === mark)
     if (marked) return marked
   }
   if (c.species)
@@ -827,4 +860,142 @@ export const median = (values: number[]) => {
   const s = [...values].sort((a, b) => a - b)
   const mid = Math.floor(s.length / 2)
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2
+}
+
+/**
+ * Pairs a walk's points with the collector's rows of that day: point by point
+ * (mark, species and minute, or minute and sex), then, when notes are too short
+ * ("Marip 3"), in order, if the remaining butterflies and rows are as many.
+ * A title one day off is tolerated when the points match the next or previous day.
+ */
+export function matchWalk<T extends Capture>(rows: TableRow[], date: string, collector: string, captures: T[]) {
+  const attempt = (serial: number) => {
+    const day = rows.filter(r => dateOf(r) === serial && dayKey(serial, text(r.values.Collector)) === dayKey(serial, collector))
+    const iso = serialToIso(serial)
+    const used = new Set<string>()
+    const pairs: { capture: T; row: TableRow }[] = []
+    const left: T[] = []
+    for (const c of captures) {
+      const row = existingRow(
+        day.filter(r => !used.has(r.id)),
+        iso,
+        c,
+      )
+      if (row) {
+        used.add(row.id)
+        pairs.push({ capture: c, row })
+      } else left.push(c)
+    }
+    const rest = day.filter(r => !used.has(r.id)).sort(byTime)
+    const wanted = left.reduce((n, c) => n + c.count, 0)
+    let ordered = false
+    if (left.length && wanted === rest.length) {
+      let i = 0
+      for (const c of left) for (let k = 0; k < c.count; k++) pairs.push({ capture: c, row: rest[i++] })
+      ordered = true
+      left.length = 0
+    }
+    return { date: iso, pairs, left, ordered }
+  }
+  const base = isoToSerial(date)
+  let best = attempt(base)
+  for (const shift of [-1, 1]) {
+    if (best.pairs.length === captures.length) break
+    const other = attempt(base + shift)
+    // Another day only when its points match by content (not just by order).
+    if (!other.ordered && other.pairs.length > best.pairs.length) best = other
+  }
+  return best
+}
+const byTime = (a: TableRow, b: TableRow) =>
+  (typeof a.values.Collection_time === 'number' ? a.values.Collection_time : 9) -
+    (typeof b.values.Collection_time === 'number' ? b.values.Collection_time : 9) || a.row - b.row
+
+/**
+ * Species accumulation: after each monitoring day (in date order), how many
+ * species have been seen. Levelling off means the assemblage is well sampled.
+ */
+export function speciesAccumulation(rows: TableRow[]) {
+  const byDay = new Map<number, Set<string>>()
+  for (const r of rows) {
+    const d = dateOf(r)
+    const sp = text(r.values.SPECIES)
+    if (d === null || !sp) continue
+    byDay.set(d, (byDay.get(d) || new Set()).add(sp))
+  }
+  const seen = new Set<string>()
+  return [...byDay.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([d, species], i) => {
+      species.forEach(s => seen.add(s))
+      return { day: i + 1, date: d, species: seen.size }
+    })
+}
+
+/** Species seen only once or twice (rare in the samples). */
+export function rareSpecies(rows: TableRow[]) {
+  const n = new Map<string, number>()
+  for (const r of rows) if (text(r.values.SPECIES)) n.set(text(r.values.SPECIES), (n.get(text(r.values.SPECIES)) || 0) + 1)
+  return { once: [...n.values()].filter(v => v === 1).length, twice: [...n.values()].filter(v => v === 2).length }
+}
+
+/**
+ * Seasonality: individuals per monitoring day for each species and calendar
+ * month (all years pooled), so months with more walks do not look richer.
+ */
+export function seasonality(rows: TableRow[], effort: Iterable<string>, species: string[]) {
+  const daysPerMonth = Array.from({ length: 12 }, () => 0)
+  for (const key of effort) daysPerMonth[Number(key.slice(5, 7)) - 1]++
+  const counts = species.map(() => Array.from({ length: 12 }, () => 0))
+  for (const r of rows) {
+    const i = species.indexOf(text(r.values.SPECIES))
+    const m = monthOf(r)
+    if (i >= 0 && m) counts[i][Number(m.slice(5)) - 1]++
+  }
+  return {
+    daysPerMonth,
+    values: counts.map(row => row.map((n, m) => (daysPerMonth[m] ? Math.round((n / daysPerMonth[m]) * 100) / 100 : 0))),
+    counts,
+  }
+}
+
+/** Individuals of each species per transect section (1–4). */
+export function speciesBySection(rows: TableRow[], species: string[]) {
+  const out = species.map(() => [0, 0, 0, 0])
+  const other = [0, 0, 0, 0]
+  for (const r of rows) {
+    const t = Number(text(r.values.Transect_section))
+    if (!(t >= 1 && t <= 4)) continue
+    const i = species.indexOf(text(r.values.SPECIES))
+    if (i >= 0) out[i][t - 1]++
+    else other[t - 1]++
+  }
+  return { bySpecies: out, other }
+}
+
+/** Distances (m) between successive GPS positions of the same marked individual. */
+export function recaptureDistances(
+  captures: { markId: string | null; species: string | null; date: string; lat: number; lon: number }[],
+  distance: (a: [number, number], b: [number, number]) => number,
+) {
+  const groups = new Map<string, typeof captures>()
+  for (const c of captures) {
+    if (!c.markId || !c.species) continue
+    const key = `${c.markId}|${c.species}`
+    groups.set(key, [...(groups.get(key) || []), c])
+  }
+  const out: { id: string; species: string; from: string; to: string; metres: number }[] = []
+  for (const list of groups.values()) {
+    list.sort((a, b) => a.date.localeCompare(b.date))
+    for (let i = 1; i < list.length; i++)
+      if (list[i].date !== list[i - 1].date)
+        out.push({
+          id: list[i].markId!,
+          species: list[i].species!,
+          from: list[i - 1].date,
+          to: list[i].date,
+          metres: Math.round(distance([list[i - 1].lat, list[i - 1].lon], [list[i].lat, list[i].lon])),
+        })
+  }
+  return out
 }

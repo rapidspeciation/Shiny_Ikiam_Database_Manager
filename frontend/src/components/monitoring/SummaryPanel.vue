@@ -2,23 +2,14 @@
 import { computed, ref } from 'vue'
 import { Download, SlidersHorizontal } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
-import BarList from '../charts/BarList.vue'
-import ChartCard from '../charts/ChartCard.vue'
-import ColumnChart from '../charts/ColumnChart.vue'
-import LineChart from '../charts/LineChart.vue'
-import { OTHER, SERIES, format, heat } from '../charts/chart'
+import ReportCharts from './ReportCharts.vue'
+import { format, heat } from '../charts/chart'
 import { useMonitoring } from '../../composables/useMonitoring'
 import { formatSerial, isoToSerial, serialToIso, todayIso } from '../../lib/dates'
 import {
-  CLOUD_CLASSES,
-  HEIGHT_CLASSES,
   MARK_THRESHOLD,
-  byCloud,
-  byHeight,
-  byHour,
   effortDays,
   formatMinutes,
-  kindsByMonth,
   markConflicts,
   markHistories,
   median,
@@ -31,7 +22,6 @@ import {
   sectionsByMonth,
   speciesStats,
 } from '../../lib/monitoring'
-import { notify } from '../../lib/notice'
 import type { TableRow } from '../../lib/types'
 import { usePending } from '../../stores/pending'
 import { useTables } from '../../stores/tables'
@@ -40,7 +30,7 @@ import { useTables } from '../../stores/tables'
  * "Reporte": a live monitoring report. The filters live in the link (so a
  * filtered view can be shared) and scope every number, chart and table below.
  */
-const { table, rows: allRows, isIthomiini } = useMonitoring()
+const { table, rows: allRows, isIthomiini, withoutPurpose, tracks } = useMonitoring()
 const pending = usePending()
 const tables = useTables()
 const route = useRoute()
@@ -174,81 +164,8 @@ const effort = computed(() => {
 })
 const perDay = computed(() => (effort.value.length ? totals.value.total / effort.value.length : 0))
 
-// ---- charts
 const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 const monthLabel = (m: string) => `${MONTHS[Number(m.slice(5)) - 1]} ${m.slice(2, 4)}`
-const months = computed(() => {
-  const seen = filtered.value.map(monthOf).filter(Boolean).sort() as string[]
-  const start = from.value || seen[0]
-  const end = to.value || seen.at(-1)
-  return start && end && start <= end ? monthRange(start, end) : []
-})
-const daysByMonth = computed(() => {
-  const out = new Map<string, number>()
-  for (const key of effort.value) out.set(key.slice(0, 7), (out.get(key.slice(0, 7)) || 0) + 1)
-  return out
-})
-const KINDS = [
-  { key: 'preserved', label: 'Preservados', color: SERIES[0] },
-  { key: 'marked', label: 'Marcados (nuevos)', color: SERIES[1] },
-  { key: 'recaptured', label: 'Recapturas', color: SERIES[2] },
-  { key: 'other', label: 'Otros', color: OTHER },
-] as const
-const monthly = computed(() => {
-  const counts = kindsByMonth(filtered.value, months.value, recaptures.value)
-  return KINDS.map(k => ({ key: k.key, label: k.label, color: k.color, values: counts[k.key] }))
-})
-const monthlyTotal = computed(() => months.value.map((_, i) => monthly.value.reduce((n, s) => n + s.values[i], 0)))
-const perDaySeries = computed(() => [
-  {
-    key: 'perday',
-    label: 'individuos por día',
-    color: SERIES[0],
-    values: months.value.map((m, i) => {
-      const d = daysByMonth.value.get(m) || 0
-      return d ? Math.round((monthlyTotal.value[i] / d) * 10) / 10 : 0
-    }),
-  },
-])
-
-/** One line per year; a year keeps its colour whatever the filters (colour follows the year). */
-const yearColor = (year: string) => SERIES[(Number(year) - 2023 + SERIES.length * 10) % SERIES.length]
-const yearly = computed(() => {
-  const byYear = new Map<string, number[]>()
-  for (const r of filtered.value) {
-    const m = monthOf(r)
-    if (!m) continue
-    const values = byYear.get(m.slice(0, 4)) || MONTHS.map(() => 0)
-    values[Number(m.slice(5)) - 1]++
-    byYear.set(m.slice(0, 4), values)
-  }
-  return [...byYear.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([year, values]) => ({
-      key: year,
-      label: year,
-      color: yearColor(year),
-      // Months without monitoring are gaps, not zeros.
-      values: values.map((v, i) =>
-        [...daysByMonth.value.keys()].includes(`${year}-${String(i + 1).padStart(2, '0')}`) || v ? v : NaN,
-      ),
-    }))
-})
-
-const topSpecies = computed(() =>
-  speciesStats(filtered.value, false, recaptures.value)
-    .slice(0, 15)
-    .map(s => ({
-      label: s.species,
-      value: s.total,
-      italic: true,
-      detail: `${s.preserved} preservados, ${s.marked} marcados, ${s.recaptured} recapturas`,
-    })),
-)
-const HOURS = Array.from({ length: 9 }, (_, i) => `${i + 7}h`)
-const hours = computed(() => [{ key: 'h', label: 'individuos', color: SERIES[0], values: byHour(filtered.value) }])
-const heights = computed(() => [{ key: 'a', label: 'individuos', color: SERIES[0], values: byHeight(filtered.value) }])
-const clouds = computed(() => [{ key: 'c', label: 'individuos', color: SERIES[0], values: byCloud(filtered.value) }])
 
 const perSection = computed(() => sectionsByMonth(filtered.value))
 const sectionMax = computed(() => Math.max(1, ...[...perSection.value.values()].flatMap(c => c.slice(1))))
@@ -401,129 +318,7 @@ const pct = (a: number, b: number) => (b ? `${Math.round((100 * a) / b)} %` : '�
         </div>
       </div>
 
-      <div class="grid gap-4 xl:grid-cols-2">
-        <ChartCard
-          title="Individuos por mes"
-          :subtitle="`${months.length} meses · pasa el cursor para ver los días de monitoreo`"
-          :legend="KINDS.map(k => ({ label: k.label, color: k.color }))"
-        >
-          <ColumnChart
-            :categories="months.map(monthLabel)"
-            :series="monthly"
-            unit="individuos"
-            :note="i => `${daysByMonth.get(months[i]) || 0} días de monitoreo`"
-          />
-          <template #table>
-            <table class="w-full">
-              <thead class="sticky top-0 bg-white text-stone-500">
-                <tr>
-                  <th class="py-1 text-left">Mes</th>
-                  <th v-for="k in KINDS" :key="k.key" class="py-1 text-right">{{ k.label }}</th>
-                  <th class="py-1 text-right">Total</th>
-                  <th class="py-1 text-right">Días</th>
-                </tr>
-              </thead>
-              <tbody class="tabular-nums">
-                <tr v-for="(m, i) in months" :key="m" class="border-t border-stone-100">
-                  <td class="py-0.5">{{ monthLabel(m) }}</td>
-                  <td v-for="s in monthly" :key="s.key" class="text-right">{{ s.values[i] || '' }}</td>
-                  <td class="text-right font-medium">{{ monthlyTotal[i] || '' }}</td>
-                  <td class="text-right">{{ daysByMonth.get(m) || '' }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </template>
-        </ChartCard>
-
-        <ChartCard
-          title="Individuos por día de monitoreo"
-          subtitle="Captura por esfuerzo: individuos del mes ÷ días de monitoreo"
-        >
-          <ColumnChart
-            :categories="months.map(monthLabel)"
-            :series="perDaySeries"
-            unit="individuos por día"
-            :note="i => `${monthlyTotal[i]} individuos en ${daysByMonth.get(months[i]) || 0} días`"
-          />
-          <template #table>
-            <table class="w-full">
-              <thead class="sticky top-0 bg-white text-stone-500">
-                <tr>
-                  <th class="py-1 text-left">Mes</th>
-                  <th class="py-1 text-right">Individuos</th>
-                  <th class="py-1 text-right">Días</th>
-                  <th class="py-1 text-right">Por día</th>
-                </tr>
-              </thead>
-              <tbody class="tabular-nums">
-                <tr v-for="(m, i) in months" :key="m" class="border-t border-stone-100">
-                  <td class="py-0.5">{{ monthLabel(m) }}</td>
-                  <td class="text-right">{{ monthlyTotal[i] }}</td>
-                  <td class="text-right">{{ daysByMonth.get(m) || 0 }}</td>
-                  <td class="text-right">{{ perDaySeries[0].values[i] }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </template>
-        </ChartCard>
-
-        <ChartCard
-          title="Comparación entre años"
-          subtitle="Individuos por mes; los meses sin monitoreo quedan vacíos"
-          :legend="yearly.map(s => ({ label: s.label, color: s.color, line: true }))"
-        >
-          <LineChart :categories="MONTHS" :series="yearly" />
-          <template #table>
-            <table class="w-full">
-              <thead class="sticky top-0 bg-white text-stone-500">
-                <tr>
-                  <th class="py-1 text-left">Mes</th>
-                  <th v-for="s in yearly" :key="s.key" class="py-1 text-right">{{ s.label }}</th>
-                </tr>
-              </thead>
-              <tbody class="tabular-nums">
-                <tr v-for="(m, i) in MONTHS" :key="m" class="border-t border-stone-100">
-                  <td class="py-0.5">{{ m }}</td>
-                  <td v-for="s in yearly" :key="s.key" class="text-right">
-                    {{ Number.isFinite(s.values[i]) ? s.values[i] : '—' }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </template>
-        </ChartCard>
-
-        <ChartCard
-          title="Especies más abundantes"
-          :subtitle="`Individuos en el periodo (${topSpecies.length} de ${species.length})`"
-        >
-          <BarList :rows="topSpecies" />
-          <template #table>
-            <p class="text-stone-500">La tabla completa está más abajo.</p>
-          </template>
-        </ChartCard>
-      </div>
-
-      <div class="grid gap-4 lg:grid-cols-3">
-        <ChartCard title="Hora de captura">
-          <ColumnChart :categories="HOURS" :series="hours" :height="150" unit="individuos" />
-          <template #table>
-            <p v-for="(h, i) in HOURS" :key="h" class="tabular-nums">{{ h }}: {{ hours[0].values[i] }}</p>
-          </template>
-        </ChartCard>
-        <ChartCard title="Altura de vuelo (m)">
-          <ColumnChart :categories="HEIGHT_CLASSES" :series="heights" :height="150" unit="individuos" />
-          <template #table>
-            <p v-for="(h, i) in HEIGHT_CLASSES" :key="h" class="tabular-nums">{{ h }} m: {{ heights[0].values[i] }}</p>
-          </template>
-        </ChartCard>
-        <ChartCard title="Nubosidad">
-          <ColumnChart :categories="CLOUD_CLASSES.map(c => c[1])" :series="clouds" :height="150" unit="individuos" />
-          <template #table>
-            <p v-for="(c, i) in CLOUD_CLASSES" :key="c[0]" class="tabular-nums">{{ c[1] }}: {{ clouds[0].values[i] }}</p>
-          </template>
-        </ChartCard>
-      </div>
+      <ReportCharts :rows="filtered" :effort="effort" :recaptures="recaptures" :from="from" :to="to" :tracks="tracks" />
 
       <section>
         <h2 class="mb-1 font-semibold">Especies</h2>
@@ -670,8 +465,24 @@ const pct = (a: number, b: number) => (b ? `${Math.round((100 * a) / b)} %` : '�
         </section>
       </div>
 
-      <section v-if="conflicts.length || noteOnly.length" class="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm">
+      <section
+        v-if="conflicts.length || noteOnly.length || withoutPurpose.length"
+        class="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm"
+      >
         <h2 class="font-semibold text-amber-950">Revisión de datos</h2>
+        <details v-if="withoutPurpose.length" class="mt-2">
+          <summary class="cursor-pointer">
+            {{ withoutPurpose.length }} filas de monitoreo con Purpose vacío o “NA” (de un día registrado como monitoreo en
+            SamplingDay_data); se cuentan como monitoreo
+          </summary>
+          <p class="mt-1 text-xs">
+            Filas
+            <span v-for="(r, i) in withoutPurpose" :key="r.id"
+              >{{ i ? ', ' : '' }}{{ r.row }} ({{ date(r.values.Collection_date as number) }}
+              {{ String(r.values.Collector ?? '').split(' - ')[0] }})</span
+            >
+          </p>
+        </details>
         <details v-if="conflicts.length" class="mt-2">
           <summary class="cursor-pointer">
             {{ conflicts.length }} marcas registradas en más de una especie (ID repetida o especie equivocada); no cuentan como

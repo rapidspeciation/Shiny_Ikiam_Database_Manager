@@ -9,6 +9,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "echarts": "^6.1.0",
     "leaflet": "^1.9.4",
     "lucide-vue-next": "^1.0.0",
     "pinia": "^4.0.3",

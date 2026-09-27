@@ -18,6 +18,7 @@ import {
   parseGpx,
   preservedForRule,
   trackLength,
+  matchWalk,
   trackSpan,
   withSheetValues,
   type Gpx,
@@ -257,6 +258,8 @@ async function sendTrack(t: {
   date: string
   collector: string
   captures: ImportedCapture[]
+  /** Captures already paired with their sheet rows (bulk import). */
+  paired?: boolean
 }) {
   await api('monitoring/tracks', {
     method: 'POST',
@@ -267,9 +270,8 @@ async function sendTrack(t: {
       name: t.name,
       track: t.track,
       wikilocWalkId: t.walkId,
-      captures: t.captures
-        .map(raw => withSheetValues(raw, existingRow(rows.value, t.date, raw)))
-        .map(c => ({
+      captures: (t.paired ? t.captures : t.captures.map(raw => withSheetValues(raw, existingRow(rows.value, t.date, raw)))).map(
+        c => ({
           lat: c.lat,
           lon: c.lon,
           ele: c.ele,
@@ -285,7 +287,8 @@ async function sendTrack(t: {
           recapture: sameIndividual(c, t.date).length > 0,
           section: c.section,
           photos: c.photos,
-        })),
+        }),
+      ),
     },
   })
 }
@@ -314,8 +317,8 @@ const registered = computed(() => {
     .filter(w => w.date && w.collector)
     .map(w => {
       const all = w.waypoints.map(p => locateCapture({ ...p, time: null }, taxa.value))
-      const captures = all.filter(c => existingRow(rows.value, w.date!, c))
-      return { w, captures, left: all.length - captures.length }
+      const match = matchWalk(rows.value, w.date!, w.collector!, all)
+      return { w, date: match.date, captures: match.pairs.map(p => withSheetValues(p.capture, p.row)), left: match.left.length }
     })
     .filter(x => x.captures.length || !x.w.waypoints.length)
 })
@@ -327,8 +330,8 @@ async function registerAll() {
   busy.value = true
   let done = 0
   try {
-    for (const { w, captures } of registered.value) {
-      await sendTrack({ name: w.name, track: w.track, walkId: w.id, date: w.date!, collector: w.collector!, captures })
+    for (const { w, date: day, captures } of registered.value) {
+      await sendTrack({ name: w.name, track: w.track, walkId: w.id, date: day, collector: w.collector!, captures, paired: true })
       done++
     }
     notify(`${done} recorridos pasados al mapa`, 'success')

@@ -8,7 +8,15 @@ import {
   byHour,
   effortDays,
   existingRow,
+  isMonitoringRow,
   kindsByMonth,
+  rareSpecies,
+  recaptureDistances,
+  seasonality,
+  speciesAccumulation,
+  speciesBySection,
+  matchWalk,
+  monitoringDays,
   median,
   monthRange,
   markConflicts,
@@ -416,5 +424,76 @@ describe('live report', () => {
     expect(byHeight(rows)).toEqual([1, 0, 1, 0, 0, 1])
     expect(byCloud(rows)).toEqual([0, 1, 1, 0])
     expect(median([5, 1, 9, 3])).toBe(4)
+  })
+})
+
+describe('matching old walks to the sheet', () => {
+  it('reads several butterflies at one point, times with a dot and M marks at the start', () => {
+    expect(parseCapture('Mariposa 1 y 2', taxa)).toMatchObject({ count: 2, seq: 1 })
+    expect(parseCapture('Marip 3', taxa)).toMatchObject({ count: 1, seq: 3 })
+    expect(parseCapture('Mariposa 3 4 y 5', taxa).count).toBe(3)
+    expect(parseCapture('Dos, 1.20 seco oscuro, 10.19', taxa)).toMatchObject({ minutes: 619, height: null })
+    expect(parseCapture('Mariposa 1 2.5m hembra 9:12 NC seco', taxa)).toMatchObject({ count: 1, height: 2.5, minutes: 552 })
+  })
+  const day = (values: Record<string, CellValue>) => row({ Collector: 'FCH - Franz Chandi', Collection_date: 44971, ...values })
+  it('pairs short notes with the rows of the day in order when the numbers agree', () => {
+    const rows = [day({ SPECIES: 'A a' }), day({ SPECIES: 'B b' }), day({ SPECIES: 'C c' }), day({ SPECIES: 'D d' })]
+    const points = ['Mariposa 1 y 2', 'Marip 3', 'Marip 4'].map(t => parseCapture(t, taxa))
+    const m = matchWalk(rows, '2023-02-14', 'FCH - Franz Chandi', points)
+    expect(m.pairs.map(p => p.row.values.SPECIES)).toEqual(['A a', 'B b', 'C c', 'D d'])
+    expect(m.left).toHaveLength(0)
+    // Other collectors' rows that day are not used.
+    const other = matchWalk([...rows, day({ SPECIES: 'E e', Collector: 'AA - Alex Arias' })], '2023-02-14', 'FCH', points)
+    expect(other.pairs).toHaveLength(4)
+  })
+  it('finds a walk whose title is one day off by its marks', () => {
+    const rows = [
+      row({ Collector: 'AA - Alex Arias', Collection_date: 45827, FieldMark_ID: 'A52', SPECIES: 'Hyposcada illinissa' }),
+    ]
+    const m = matchWalk(rows, '2025-06-20', 'AA - Alex Arias', [parseCapture('A52 lluvia NO 9:52 0.5m', taxa)])
+    expect(m.date).toBe('2025-06-19')
+    expect(m.pairs).toHaveLength(1)
+  })
+  it('counts rows without Purpose on a monitoring day as monitoring', () => {
+    const days = monitoringDays([row({ Date: 45149, Location: 'Ikiam', Purpose: 'Monitoring', Collectors_initials: 'FCH' })])
+    const na = row({ Purpose: 'NA', Collector: 'FCH - Franz Chandi', Collection_date: 45149 })
+    expect(isMonitoringRow(na, days)).toBe(true)
+    expect(isMonitoringRow({ ...na, values: { ...na.values, Collection_date: 45150 } }, days)).toBe(false)
+    expect(isMonitoringRow(na)).toBe(false)
+  })
+})
+
+describe('report figures', () => {
+  const r = (sp: string, date: number, extra: Record<string, CellValue> = {}) =>
+    row({ SPECIES: sp, Collection_date: date, ...extra })
+  const rows = [
+    r('A a', 46000, { Transect_section: 4 }),
+    r('B b', 46000, { Transect_section: 4 }),
+    r('A a', 46010),
+    r('C c', 46040, { Transect_section: 1 }),
+  ]
+  it('accumulates species day by day', () => {
+    expect(speciesAccumulation(rows).map(p => p.species)).toEqual([2, 2, 3])
+    expect(rareSpecies(rows)).toEqual({ once: 2, twice: 1 })
+  })
+  it('gives individuals per monitoring day by calendar month', () => {
+    const s = seasonality(rows, ['2025-12-09|FCH', '2025-12-10|AA', '2026-01-18|AA'], ['A a'])
+    // Two individuals over two December days; none in January.
+    expect(s.values[0][11]).toBe(1)
+    expect(s.values[0][0]).toBe(0)
+  })
+  it('splits species by transect section', () => {
+    expect(speciesBySection(rows, ['A a'])).toEqual({ bySpecies: [[0, 0, 0, 1]], other: [1, 0, 0, 1] })
+  })
+  it('measures how far a marked individual moved between captures', () => {
+    const d = recaptureDistances(
+      [
+        { markId: 'B56', species: 'H i', date: '2026-07-20', lat: 0, lon: 0 },
+        { markId: 'B56', species: 'H i', date: '2026-09-26', lat: 0, lon: 0.001 },
+        { markId: 'B56', species: 'G z', date: '2026-08-01', lat: 1, lon: 1 },
+      ],
+      (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) * 111_000,
+    )
+    expect(d).toEqual([{ id: 'B56', species: 'H i', from: '2026-07-20', to: '2026-09-26', metres: 111 }])
   })
 })

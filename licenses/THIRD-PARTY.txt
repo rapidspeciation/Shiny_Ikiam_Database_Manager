@@ -5,6 +5,7 @@ Tabulator (tabulator-tables)      MIT License   https://tabulator.info
 Lucide icons (lucide-vue-next)    ISC License   https://lucide.dev
 Tailwind CSS (build-time styles)  MIT License   https://tailwindcss.com
 Leaflet (monitoring map)          BSD 2-Clause  https://leafletjs.com
+Apache ECharts (report charts)    Apache 2.0    https://echarts.apache.org
 
 The optional Wikiloc helper (tools/wikiloc, run on a person's computer, not
 bundled or deployed) uses playwright-core (Apache License 2.0).

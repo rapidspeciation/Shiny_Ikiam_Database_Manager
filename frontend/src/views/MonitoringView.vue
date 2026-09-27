@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ImportPanel from '../components/monitoring/ImportPanel.vue'
-import MapPanel from '../components/monitoring/MapPanel.vue'
-import SummaryPanel from '../components/monitoring/SummaryPanel.vue'
+
+// The report (ECharts) and the map (Leaflet) load only when opened.
+const SummaryPanel = defineAsyncComponent(() => import('../components/monitoring/SummaryPanel.vue'))
+const MapPanel = defineAsyncComponent(() => import('../components/monitoring/MapPanel.vue'))
 
 /** Ikiam monthly monitoring: import a Wikiloc walk, the report tables, and the map. */
 const PANELS = [

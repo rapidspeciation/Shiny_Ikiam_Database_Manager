@@ -1,7 +1,16 @@
 import { computed, ref } from 'vue'
 import { api } from '../lib/api'
-import { isMonitoringRow, taxaFrom, tribesFrom, type ImportedCapture, type TrackPoint } from '../lib/monitoring'
+import {
+  isMonitoringRow,
+  monitoringDays,
+  noPurpose,
+  taxaFrom,
+  tribesFrom,
+  type ImportedCapture,
+  type TrackPoint,
+} from '../lib/monitoring'
 import { errorText, notify } from '../lib/notice'
+import { useTables } from '../stores/tables'
 import { useSheet } from './useSheet'
 
 /** A monitoring walk kept in the app: its GPS track and the captures marked on it. */
@@ -79,7 +88,13 @@ async function loadTracks() {
 export function useMonitoring() {
   const module = ref('Collection_data')
   const sheet = useSheet(module)
-  const rows = computed(() => sheet.table.value?.rows.filter(isMonitoringRow) || [])
+  const tables = useTables()
+  tables.load('SamplingDay_data').catch(() => {})
+  /** Collector-days recorded as monitoring in SamplingDay_data. */
+  const days = computed(() => (void tables.version, monitoringDays(tables.tables.SamplingDay_data?.rows || [])))
+  const rows = computed(() => sheet.table.value?.rows.filter(r => isMonitoringRow(r, days.value)) || [])
+  /** Monitoring rows whose Purpose was left empty or "NA" (to fix in the sheet). */
+  const withoutPurpose = computed(() => rows.value.filter(noPurpose))
   const taxa = computed(() => taxaFrom(sheet.table.value?.rows || []))
   /** The 30-preserved rule applies to Ithomiini only (e.g. Heliconius numata is preserved on purpose). */
   const tribes = computed(() => tribesFrom(sheet.table.value?.rows || []))
@@ -88,5 +103,5 @@ export function useMonitoring() {
     loadTracks()
     loadWalks()
   }
-  return { ...sheet, rows, taxa, tribes, isIthomiini, tracks, tracksLoaded, loadTracks, walks, loadWalks }
+  return { ...sheet, rows, days, withoutPurpose, taxa, tribes, isIthomiini, tracks, tracksLoaded, loadTracks, walks, loadWalks }
 }
