@@ -22,17 +22,11 @@ Each capture is a Wikiloc waypoint whose name holds the data, in any order:
 
 Without a mark the capture is `Collected_Preserved`; CAM and tube IDs are added later (Colecta or Tubos). Words the app does not understand are kept in Notes_Collection_data.
 
-Two ways to bring a walk in:
+Ways to bring a walk in (all in Importar recorrido):
 
-- **GPX file** (new walks): in the Wikiloc app, *Send to your GPS → Send trail as file*, then *Elegir GPX de Wikiloc*. The GPX has the GPS times, so the day's start and end go into SamplingDay_data.
-- **Wikiloc link** (old walks, and photos): on a computer with this repository, run
-
-  ```
-  npm --prefix tools/wikiloc install    # once
-  npm run wikiloc -- https://es.wikiloc.com/rutas-senderismo/...-213523060 [more links]
-  ```
-
-  The helper opens each public trail page in a headless browser (Wikiloc has no API, and its Cloudflare check blocks the server but lets a home connection through). It reads each waypoint's note, position and photos and the trail line, without any Wikiloc login, and sends them to the app. The app server downloads the photos (from wklcdn.com). The walk then appears under *Desde Wikiloc, por revisar* in Importar recorrido. The public page has no GPS times, so SamplingDay_data is not filled from it. If the GPX of the same day was already imported, *Solo añadir las fotos al GPX ya subido* attaches the photos to it by matching the waypoint notes. The app login is asked once and kept in `~/.config/ithomiini-wikiloc/session.json` (mode 600). The pages are opened a few seconds apart; use it only for the team's own trails.
+- **Share from the phone** (Android): install the app (Chrome menu → *Instalar app* / *Añadir a pantalla de inicio*). In Wikiloc, *Enviar a tu GPS → Enviar ruta como archivo* (the GPX) or *Compartir* (the link), and pick *Ikiam DB*. A GPX opens for review at once, with the GPS times that fill SamplingDay_data. A link is queued like a pasted one. iPhones do not offer web apps in the share menu; there, save the GPX and use *Elegir GPX de Wikiloc*, or paste the link.
+- **GPX file**: *Elegir GPX de Wikiloc*.
+- **Paste a Wikiloc link**, or **Buscar nuevos en Wikiloc** for the followed profiles (e.g. Franz's), which brings every trail whose title contains "monitoreo" and that is not in the app yet. Wikiloc blocks the app server, so these are done by a processor on a computer at home (tools/wikiloc, see its README). The walk, with its photos, appears under *Desde Wikiloc, por revisar* a minute or two later. The bar shows whether that computer is online; while it is off, links wait in the queue. The public page has no GPS times, so SamplingDay_data is not filled from it; if the GPX of the same day was already imported, *Solo añadir las fotos al GPX ya subido* attaches the photos to it.
 
 ## Rules the app applies
 

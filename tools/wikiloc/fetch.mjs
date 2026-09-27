@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * Sends monitoring walks from Wikiloc to the Ithomiini app, from their URLs.
+ * Sends monitoring walks from Wikiloc to the Ithomiini app, from their links.
  *
- *   npm run wikiloc -- https://es.wikiloc.com/rutas-senderismo/...-213523060 [more URLs]
+ *   npm run wikiloc -- https://es.wikiloc.com/rutas-senderismo/...-213523060 [more links]
  *
  * Wikiloc has no API and its Cloudflare check blocks servers, so the public
  * trail page is opened by a headless browser on this computer (a home
@@ -11,6 +11,8 @@
  * used. The walk then waits in Monitoreo → Importar recorrido for review; the
  * app server downloads the photos. Pages are opened one at a time, a few
  * seconds apart. Only use it for your own team's trails.
+ *
+ * Links pasted in the app are handled by worker.mjs instead (see README.md).
  *
  * Options: --app <url> (default ITHOMIINI_APP or the live app), --dry-run
  * (print what would be sent). The app login is asked once and the session is
@@ -22,6 +24,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from 'n
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { DEFAULT_APP, openBrowser, photoCount, readTrail, signIn } from './lib.mjs';
 
 const args = process.argv.slice(2);
 const flag = name => {
@@ -31,68 +34,11 @@ const flag = name => {
   return value ?? '';
 };
 const dryRun = args.includes('--dry-run') && !!args.splice(args.indexOf('--dry-run'), 1);
-const app = (flag('--app') || process.env.ITHOMIINI_APP || 'https://tbs-insect-gallery.duckdns.org/ithomiini/').replace(/\/?$/, '/');
+const app = (flag('--app') || process.env.ITHOMIINI_APP || DEFAULT_APP).replace(/\/?$/, '/');
 const urls = args.filter(a => /^https:\/\/([a-z]{2}\.)?wikiloc\.com\//.test(a));
 if (!urls.length) {
   console.error('Usage: npm run wikiloc -- <Wikiloc trail URL> [...] [--app URL] [--dry-run]');
   process.exit(1);
-}
-
-let chromium;
-try {
-  ({ chromium } = await import('playwright-core'));
-} catch {
-  console.error('Install the helper first: npm --prefix tools/wikiloc install');
-  process.exit(1);
-}
-
-const MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-const EN = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-/** "Monitoreo ithomidos FCH 14 mayo 2025" → 2025-05-14 */
-export function dateFromName(text) {
-  const m = /(\d{1,2})[\s-]*(?:de[\s-]*)?([a-záé]{3})[a-záé]*\.?[\s-]*(?:de[\s-]*)?(\d{4})/i.exec(text || '');
-  if (!m) return null;
-  const abbr = m[2].toLowerCase();
-  const month = (MONTHS.indexOf(abbr) + 1 || EN.indexOf(abbr) + 1);
-  if (!month) return null;
-  return `${m[3]}-${String(month).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}`;
-}
-
-function browserPath() {
-  if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
-  return ['/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable'].find(existsSync);
-}
-
-/** Everything useful on a public trail page, as the page's own map has it. */
-async function readTrail(page, url) {
-  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
-  for (let i = 0; i < 30 && /moment|momento|attention|cloudflare/i.test(await page.title()); i++) await page.waitForTimeout(1000);
-  await page.waitForFunction(() => window.mapData?.waypoints, null, { timeout: 30_000 });
-  await page.waitForTimeout(1500); // let the map draw the trail line
-  return page.evaluate(() => {
-    const md = window.mapData;
-    const waypoints = (md.waypoints || []).map(w => {
-      const card = document.getElementById(`wp-${w.id}`);
-      const extra = [...(card?.querySelectorAll('.wpcard__body p, .description p') || [])]
-        .map(p => p.innerText.trim())
-        .filter(t => t && t !== w.name);
-      return {
-        lat: w.lat,
-        lon: w.lon,
-        ele: w.elevation ?? null,
-        text: [w.name, ...extra].join(' ').replace(/\s+/g, ' ').trim(),
-        // The "Master" copy is the largest one Wikiloc serves.
-        photos: (w.photos || []).map(p => p.url.replace(/(\d+)(?:Master)?\.jpe?g$/i, '$1Master.jpg')),
-      };
-    });
-    const track = [];
-    window.trailMap?.eachLayer?.(layer => {
-      if (!layer.getLatLngs || track.length) return;
-      for (const p of layer.getLatLngs().flat(3)) track.push([p.lat, p.lng, p.alt ?? null, null]);
-    });
-    const done = /Fecha de realizaci[oó]n\s*\n?\s*([^\n]+)/i.exec(document.body.innerText)?.[1] || '';
-    return { name: md.mapData?.[0]?.nom || document.title, track, waypoints, done };
-  });
 }
 
 function ask(question, hidden = false) {
@@ -117,57 +63,43 @@ async function session() {
   }
   const username = process.env.ITHOMIINI_USER || (await ask(`Usuario de la app (${app}): `));
   const password = process.env.ITHOMIINI_PASSWORD || (await ask('Contraseña: ', true));
-  const r = await fetch(`${app}api/auth/login`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username, password }),
-  });
-  const body = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(body.error?.message || `Login failed (${r.status})`);
-  const cookie = (r.headers.get('set-cookie') || '').split(';')[0];
+  const auth = await signIn(app, username, password);
   mkdirSync(join(homedir(), '.config', 'ithomiini-wikiloc'), { recursive: true, mode: 0o700 });
-  writeFileSync(sessionFile, JSON.stringify({ app, cookie }));
+  writeFileSync(sessionFile, JSON.stringify({ app, cookie: auth.cookie }));
   chmodSync(sessionFile, 0o600);
-  return { cookie, csrf: body.csrf };
+  return auth;
 }
 
+let browser;
+try {
+  browser = await openBrowser();
+} catch {
+  console.error('Install the helper first: npm --prefix tools/wikiloc install');
+  process.exit(1);
+}
 const auth = dryRun ? null : await session();
-const browser = await chromium.launch({
-  executablePath: browserPath(),
-  headless: true,
-  args: ['--disable-blink-features=AutomationControlled'],
-});
-const context = await browser.newContext({
-  locale: 'es-EC',
-  userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
-});
-const page = await context.newPage();
 let failures = 0;
 for (const [i, url] of urls.entries()) {
-  if (i) await page.waitForTimeout(4000);
+  if (i) await browser.page.waitForTimeout(4000);
   try {
-    const trail = await readTrail(page, url);
-    const payload = {
-      url,
-      name: trail.name,
-      date: dateFromName(trail.name) || dateFromName(url.replace(/-/g, ' ')),
-      track: trail.track,
-      waypoints: trail.waypoints,
-    };
-    const photos = payload.waypoints.reduce((n, w) => n + w.photos.length, 0);
-    console.log(`${payload.name}: ${payload.waypoints.length} puntos, ${photos} fotos, ${payload.track.length} puntos de trazado, fecha ${payload.date || '¿?'}`);
+    const walk = await readTrail(browser.page, url);
+    console.log(
+      `${walk.name}: ${walk.waypoints.length} puntos, ${photoCount(walk)} fotos, ${walk.track.length} puntos de trazado, fecha ${walk.date || '¿?'}`,
+    );
     if (dryRun) {
-      console.log(JSON.stringify(payload, null, 1).slice(0, 1500));
+      console.log(JSON.stringify(walk, null, 1).slice(0, 1500));
       continue;
     }
     const r = await fetch(`${app}api/monitoring/wikiloc`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie: auth.cookie, 'x-csrf-token': auth.csrf },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(walk),
     });
     const body = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(body.error?.message || `App answered ${r.status}`);
-    console.log(`  → en la app para revisar${body.updated ? ' (actualizado)' : ''}${body.failed?.length ? `; ${body.failed.length} fotos no se pudieron bajar` : ''}`);
+    console.log(
+      `  → en la app para revisar${body.updated ? ' (actualizado)' : ''}${body.failed?.length ? `; ${body.failed.length} fotos no se pudieron bajar` : ''}`,
+    );
   } catch (e) {
     failures++;
     console.error(`${url}: ${e.message}`);

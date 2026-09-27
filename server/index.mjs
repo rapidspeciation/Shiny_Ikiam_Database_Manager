@@ -8,12 +8,20 @@ import { gzipSync } from 'node:zlib';
 import { Store } from './store.mjs';
 import { applyBatch } from './batch.mjs';
 import {
+  addProfile,
   attachWalkPhotos,
+  claimJob,
   deleteTrack,
   deleteWalk,
   getPhoto,
+  finishJob,
+  listJobs,
+  listProfiles,
   listTracks,
   listWalks,
+  queueLink,
+  queueSync,
+  removeProfile,
   saveTrack,
   saveWalk,
 } from './monitoring.mjs';
@@ -112,6 +120,7 @@ const mime = {
   '.jpg': 'image/jpeg',
   '.ico': 'image/x-icon',
   '.json': 'application/json',
+  '.webmanifest': 'application/manifest+json',
 };
 
 export function configFromEnv(env = process.env) {
@@ -278,6 +287,13 @@ export async function createApp(config = {}, options = {}) {
         path = routePath(req.url, config.basePath),
         method = req.method;
       if (method === 'GET' && path === '/health') return json(res, 200, { status: 'ok', sync: store.syncStatus.state });
+      // Shares are normally caught by the service worker; if it was not active yet,
+      // open the import screen and let the person share again.
+      if (method === 'POST' && path === '/share-target') {
+        req.resume();
+        res.writeHead(303, { location: `${config.basePath}/#/monitoreo?vista=importar&compartido=0` });
+        return res.end();
+      }
       if (!path.startsWith('/api/')) return serveStatic(req, res, path, config.basePath);
       if (method !== 'GET' && method !== 'HEAD') checkOrigin(req);
       const session = getSession(store, req.headers.cookie);
@@ -502,6 +518,32 @@ export async function createApp(config = {}, options = {}) {
       if (method === 'POST' && /^\/api\/monitoring\/tracks\/[^/]+\/photos$/.test(path)) {
         requireEditor(user);
         return json(res, 200, attachWalkPhotos(store, decodePart(path.split('/')[4]), String(body.walkId || '')));
+      }
+      if (method === 'GET' && path === '/api/monitoring/wikiloc/jobs') return json(res, 200, listJobs(store));
+      if (method === 'POST' && path === '/api/monitoring/wikiloc/links') {
+        requireEditor(user);
+        return json(res, 201, queueLink(store, body, user));
+      }
+      if (method === 'POST' && path === '/api/monitoring/wikiloc/sync') {
+        requireEditor(user);
+        return json(res, 201, queueSync(store, user));
+      }
+      if (method === 'POST' && path === '/api/monitoring/wikiloc/jobs/claim') {
+        requireEditor(user);
+        return json(res, 200, claimJob(store));
+      }
+      if (method === 'POST' && /^\/api\/monitoring\/wikiloc\/jobs\/[^/]+$/.test(path)) {
+        requireEditor(user);
+        return json(res, 200, finishJob(store, decodePart(path.split('/')[5]), body));
+      }
+      if (method === 'GET' && path === '/api/monitoring/wikiloc/profiles') return json(res, 200, { profiles: listProfiles(store) });
+      if (method === 'POST' && path === '/api/monitoring/wikiloc/profiles') {
+        requireEditor(user);
+        return json(res, 201, addProfile(store, body, user));
+      }
+      if (method === 'DELETE' && /^\/api\/monitoring\/wikiloc\/profiles\/[^/]+$/.test(path)) {
+        requireEditor(user);
+        return json(res, 200, removeProfile(store, decodePart(path.split('/')[5])));
       }
       if (method === 'GET' && path === '/api/monitoring/wikiloc') return json(res, 200, { walks: listWalks(store) });
       if (method === 'POST' && path === '/api/monitoring/wikiloc') {

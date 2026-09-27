@@ -16,7 +16,11 @@ export function initMonitoring(db) {
     CREATE TABLE IF NOT EXISTS wikiloc_walks(id TEXT PRIMARY KEY, wikiloc_id TEXT UNIQUE NOT NULL, url TEXT NOT NULL, name TEXT NOT NULL,
       date TEXT, data_json TEXT NOT NULL, status TEXT NOT NULL, track_id TEXT, created_by TEXT NOT NULL, created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS monitoring_photos(id TEXT PRIMARY KEY, walk_id TEXT NOT NULL, mime_type TEXT NOT NULL, data BLOB NOT NULL,
-      source_url TEXT NOT NULL, created_at TEXT NOT NULL);`);
+      source_url TEXT NOT NULL, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS wikiloc_profiles(id TEXT PRIMARY KEY, wikiloc_user TEXT UNIQUE NOT NULL, name TEXT, pattern TEXT NOT NULL,
+      added_by TEXT NOT NULL, created_at TEXT NOT NULL, last_checked TEXT);
+    CREATE TABLE IF NOT EXISTS wikiloc_jobs(id TEXT PRIMARY KEY, kind TEXT NOT NULL, target TEXT NOT NULL, status TEXT NOT NULL,
+      message TEXT, requested_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);`);
 }
 
 const text = (value, max = 300) => {
@@ -241,7 +245,7 @@ export async function saveWalk(store, body, user, { fetchImage = fetchPhoto } = 
     .prepare(
       "INSERT INTO wikiloc_walks(id,wikiloc_id,url,name,date,data_json,status,track_id,created_by,created_at) VALUES(?,?,?,?,?,?,'waiting',NULL,?,?)",
     )
-    .run(id, wikilocId, url, name, date, data, user.username, new Date().toISOString());
+    .run(id, wikilocId, url, name, date, data, jobRequester(store, body.jobId) || user.username, new Date().toISOString());
   return { walk: walkRow(store.db.prepare('SELECT * FROM wikiloc_walks WHERE id=?').get(id)), failed, updated: false };
 }
 
@@ -282,4 +286,140 @@ export function attachWalkPhotos(store, trackId, walkId) {
   store.db.prepare('UPDATE monitoring_tracks SET data_json=? WHERE id=?').run(JSON.stringify(data), trackId);
   markImported(store, walk.id, trackId);
   return { track: fromRow(store.db.prepare('SELECT * FROM monitoring_tracks WHERE id=?').get(trackId)), matched };
+}
+
+// ------------------------------------------------ links and followed profiles
+
+/*
+ * People paste Wikiloc links (or share them from the phone), or ask to look
+ * for new monitoring trails on followed profiles. The server cannot open
+ * Wikiloc, so these become jobs that a computer on a home connection
+ * (tools/wikiloc/worker.mjs) claims, runs and reports back.
+ */
+const now = () => new Date().toISOString();
+const STALE_MS = 15 * 60_000;
+const jobRow = r => ({
+  id: r.id,
+  kind: r.kind,
+  target: r.target,
+  status: r.status,
+  message: r.message,
+  requestedBy: r.requested_by,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});
+const profileRow = r => ({
+  id: r.id,
+  wikilocUser: r.wikiloc_user,
+  name: r.name,
+  pattern: r.pattern,
+  addedBy: r.added_by,
+  createdAt: r.created_at,
+  lastChecked: r.last_checked,
+});
+
+/** A Wikiloc trail link, cleaned: https, Wikiloc host, ending in the trail number. */
+export function trailUrl(value) {
+  const text = String(value || '').trim();
+  const match = /https:\/\/(?:[a-z]{2,3}\.)?wikiloc\.com\/[^\s?#]*?-(\d{6,12})(?=[/?#\s]|$)/i.exec(text);
+  return match ? { url: match[0], wikilocId: match[1] } : null;
+}
+
+function addJob(store, kind, target, user) {
+  const open = store.db
+    .prepare("SELECT * FROM wikiloc_jobs WHERE kind=? AND target=? AND status IN ('queued','running')")
+    .get(kind, target);
+  if (open) return jobRow(open);
+  const row = { id: randomUUID(), kind, target, status: 'queued', message: null, requested_by: user.username, created_at: now(), updated_at: now() };
+  store.db
+    .prepare('INSERT INTO wikiloc_jobs(id,kind,target,status,message,requested_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)')
+    .run(...Object.values(row));
+  return jobRow(row);
+}
+
+/** Queues a pasted or shared link (any text containing one is accepted). */
+export function queueLink(store, body, user) {
+  const found = trailUrl(body.url || body.text);
+  if (!found) throw fail('INVALID_WALK', 'No Wikiloc trail link found');
+  const known = store.db.prepare("SELECT status FROM wikiloc_walks WHERE wikiloc_id=?").get(found.wikilocId);
+  return { job: addJob(store, 'trail', found.url, user), known: known?.status || null };
+}
+
+/** One job per followed profile, to look for monitoring trails not yet in the app. */
+export function queueSync(store, user) {
+  const profiles = store.db.prepare('SELECT * FROM wikiloc_profiles ORDER BY created_at').all();
+  if (!profiles.length) throw fail('NO_PROFILES', 'Add a Wikiloc profile to follow first');
+  return { jobs: profiles.map(p => addJob(store, 'profile', p.wikiloc_user, user)) };
+}
+
+export function listJobs(store) {
+  const jobs = store.db.prepare('SELECT * FROM wikiloc_jobs ORDER BY created_at DESC LIMIT 30').all().map(jobRow);
+  return { jobs, workerSeen: store.getSetting('wikilocWorkerSeen') };
+}
+
+/** The worker takes the oldest waiting job; jobs stuck "running" for 15 minutes are retried. */
+export function claimJob(store) {
+  store.setSetting('wikilocWorkerSeen', now());
+  store.db
+    .prepare("UPDATE wikiloc_jobs SET status='queued', updated_at=? WHERE status='running' AND updated_at < ?")
+    .run(now(), new Date(Date.now() - STALE_MS).toISOString());
+  const job = store.db.prepare("SELECT * FROM wikiloc_jobs WHERE status='queued' ORDER BY created_at LIMIT 1").get();
+  if (!job) return { job: null };
+  store.db.prepare("UPDATE wikiloc_jobs SET status='running', updated_at=? WHERE id=?").run(now(), job.id);
+  const out = jobRow({ ...job, status: 'running' });
+  if (job.kind === 'profile') {
+    const profile = store.db.prepare('SELECT * FROM wikiloc_profiles WHERE wikiloc_user=?').get(job.target);
+    out.profile = profile ? profileRow(profile) : null;
+    out.knownIds = [
+      ...new Set([
+        ...store.db.prepare('SELECT wikiloc_id FROM wikiloc_walks').all().map(r => r.wikiloc_id),
+        ...store.db
+          .prepare("SELECT json_extract(data_json,'$.wikiloc.id') AS id FROM monitoring_tracks WHERE id IS NOT NULL")
+          .all()
+          .map(r => r.id)
+          .filter(Boolean),
+      ]),
+    ];
+  }
+  return { job: out };
+}
+
+export function finishJob(store, id, body) {
+  const job = store.db.prepare('SELECT * FROM wikiloc_jobs WHERE id=?').get(id);
+  if (!job) throw fail('JOB_NOT_FOUND', 'Job not found', 404);
+  const status = body.status === 'done' ? 'done' : 'failed';
+  store.db
+    .prepare('UPDATE wikiloc_jobs SET status=?, message=?, updated_at=? WHERE id=?')
+    .run(status, text(body.message, 1000), now(), id);
+  if (job.kind === 'profile' && status === 'done')
+    store.db.prepare('UPDATE wikiloc_profiles SET last_checked=?, name=COALESCE(?, name) WHERE wikiloc_user=?').run(now(), text(body.profileName, 120), job.target);
+  return { job: jobRow(store.db.prepare('SELECT * FROM wikiloc_jobs WHERE id=?').get(id)) };
+}
+
+/** Who requested the job a walk comes from: the walk is theirs, not the worker's. */
+export function jobRequester(store, jobId) {
+  return jobId ? store.db.prepare('SELECT requested_by FROM wikiloc_jobs WHERE id=?').get(String(jobId))?.requested_by || null : null;
+}
+
+export function listProfiles(store) {
+  return store.db.prepare('SELECT * FROM wikiloc_profiles ORDER BY created_at').all().map(profileRow);
+}
+
+/** Follows a profile, given its page link (…/wikiloc/user.do?id=13756119) or number. */
+export function addProfile(store, body, user) {
+  const id = /user\.do\?id=(\d{3,12})/.exec(String(body.url || ''))?.[1] || /^\d{3,12}$/.exec(String(body.url || '').trim())?.[0];
+  if (!id) throw fail('INVALID_PROFILE', 'Paste the link of a Wikiloc profile (…/wikiloc/user.do?id=…)');
+  const pattern = text(body.pattern, 100) || 'monitoreo';
+  const existing = store.db.prepare('SELECT * FROM wikiloc_profiles WHERE wikiloc_user=?').get(id);
+  if (existing) return { profile: profileRow(existing) };
+  const row = { id: randomUUID(), wikiloc_user: id, name: text(body.name, 120), pattern, added_by: user.username, created_at: now(), last_checked: null };
+  store.db
+    .prepare('INSERT INTO wikiloc_profiles(id,wikiloc_user,name,pattern,added_by,created_at,last_checked) VALUES(?,?,?,?,?,?,?)')
+    .run(...Object.values(row));
+  return { profile: profileRow(row) };
+}
+
+export function removeProfile(store, id) {
+  if (!store.db.prepare('DELETE FROM wikiloc_profiles WHERE id=?').run(id).changes) throw fail('PROFILE_NOT_FOUND', 'Profile not found', 404);
+  return { ok: true };
 }

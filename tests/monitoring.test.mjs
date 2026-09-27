@@ -3,7 +3,14 @@ import assert from 'node:assert/strict';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import {
+  addProfile,
   attachWalkPhotos,
+  claimJob,
+  finishJob,
+  listJobs,
+  queueLink,
+  queueSync,
+  trailUrl,
   deleteTrack,
   getPhoto,
   listTracks,
@@ -131,4 +138,39 @@ test('reviewing a Wikiloc walk marks it imported; its photos can join a GPX trac
   const saved = saveTrack(s2, { ...body('request-0101'), wikilocWalkId: w2.id, captures: [{ ...body('x').captures[0], photos: ['129692483'] }] }, editor);
   assert.equal(saved.track.wikiloc.id, '213523060');
   assert.equal(listWalks(s2)[0].trackId, saved.track.id);
+});
+
+test('shared or pasted text yields the Wikiloc trail link', () => {
+  assert.deepEqual(trailUrl('Mira mi ruta en Wikiloc: https://es.wikiloc.com/rutas-senderismo/monitoreo-ithomidos-fch-26-sep-2026-288058472 #wikiloc'), {
+    url: 'https://es.wikiloc.com/rutas-senderismo/monitoreo-ithomidos-fch-26-sep-2026-288058472',
+    wikilocId: '288058472',
+  });
+  assert.equal(trailUrl('https://example.com/ruta-288058472'), null);
+});
+
+test('links and profile checks become jobs for the home computer, which claims and finishes them', async () => {
+  const s = store();
+  const worker = { id: 'w', username: 'wikiloc-worker', role: 'editor' };
+  assert.throws(() => queueSync(s, editor), { code: 'NO_PROFILES' });
+  addProfile(s, { url: 'https://es.wikiloc.com/wikiloc/user.do?id=13756119' }, editor);
+  assert.throws(() => addProfile(s, { url: 'https://example.com' }, editor), { code: 'INVALID_PROFILE' });
+  const link = queueLink(s, { text: 'https://es.wikiloc.com/rutas-senderismo/monitoreo-ithomidos-fch-26-sep-2026-288058472' }, editor);
+  // The same link twice is one job.
+  assert.equal(queueLink(s, { url: link.job.target }, editor).job.id, link.job.id);
+  queueSync(s, editor);
+  const first = claimJob(s).job;
+  assert.equal(first.kind, 'trail');
+  const second = claimJob(s).job;
+  assert.equal(second.kind, 'profile');
+  assert.equal(second.profile.wikilocUser, '13756119');
+  assert.ok(Array.isArray(second.knownIds));
+  assert.equal(claimJob(s).job, null);
+  // A walk sent for a job belongs to whoever asked for it.
+  const { walk } = await saveWalk(s, { ...walkBody(), jobId: first.id }, worker, { fetchImage: fakeImage([]) });
+  assert.equal(walk.createdBy, 'editor');
+  finishJob(s, first.id, { status: 'done', message: 'ok' });
+  finishJob(s, second.id, { status: 'done', message: '1 nueva', profileName: 'Franz Chandi 1' });
+  const { jobs, workerSeen } = listJobs(s);
+  assert.deepEqual(jobs.map(j => j.status), ['done', 'done']);
+  assert.ok(workerSeen);
 });

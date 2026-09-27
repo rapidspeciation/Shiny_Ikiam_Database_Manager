@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, shallowRef, watch } from 'vue'
+import { computed, onMounted, ref, shallowRef, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ExternalLink, FileUp, ImagePlus, ListPlus, MapPin, Trash2 } from 'lucide-vue-next'
 import SheetGrid from '../SheetGrid.vue'
+import WikilocBar from './WikilocBar.vue'
 import { useMonitoring, type WikilocWalk } from '../../composables/useMonitoring'
 import { api, requestId } from '../../lib/api'
 import { isBlank } from '../../lib/cells'
@@ -52,22 +54,51 @@ const recentCount = ref(15)
 const collectors = computed(() => (options.value.Collector || []).filter(c => / - /.test(c)))
 const initials = computed(() => collector.value.split(' - ')[0].trim())
 
-async function choose(event: Event) {
-  const input = event.target as HTMLInputElement
-  const picked = input.files?.[0]
-  input.value = ''
-  if (!picked) return
+/** Loads a GPX (chosen with the button or shared from the phone) for review. */
+function loadGpx(name: string, text: string) {
   try {
-    const gpx = parseGpx(await picked.text())
+    const gpx = parseGpx(text)
     if (!gpx.waypoints.length && !gpx.track.length) return notify('El archivo no tiene puntos ni recorrido', 'error')
-    file.value = { name: picked.name, gpx }
-    date.value = trackSpan(gpx.track)?.date || /(\d{4}-\d{2}-\d{2})/.exec(picked.name)?.[1] || ''
+    file.value = { name, gpx }
+    date.value = trackSpan(gpx.track)?.date || /(\d{4}-\d{2}-\d{2})/.exec(name)?.[1] || ''
     skip.value = new Set()
     detectCollector()
   } catch (e) {
     notify(errorText(e), 'error')
   }
 }
+async function choose(event: Event) {
+  const input = event.target as HTMLInputElement
+  const picked = input.files?.[0]
+  input.value = ''
+  if (picked) loadGpx(picked.name, await picked.text())
+}
+
+/**
+ * Something shared to the installed app from Android's share menu (see
+ * public/sw.js): a GPX file is opened for review, a Wikiloc link is queued.
+ */
+const route = useRoute()
+const router = useRouter()
+const bar = ref<InstanceType<typeof WikilocBar>>()
+async function receiveShared() {
+  const flag = route.query.compartido
+  if (!flag) return
+  router.replace({ query: { vista: 'importar' } })
+  if (flag === '0') return notify('La app aún no estaba lista; vuelve a compartir desde Wikiloc.', 'error')
+  const inbox = await caches.open('ithomiini-share')
+  const response = await inbox.match('./shared')
+  await inbox.delete('./shared')
+  if (!response) return
+  const shared = (await response.json()) as { file: { name: string; text: string } | null; text: string; url: string }
+  if (shared.file) loadGpx(shared.file.name || 'compartido.gpx', shared.file.text)
+  else if (/wikiloc\.com/.test(`${shared.url} ${shared.text}`)) await bar.value?.queue(`${shared.url} ${shared.text}`)
+  else notify('Lo compartido no es un GPX ni un enlace de Wikiloc', 'error')
+}
+const onShared = () => receiveShared().catch(e => notify(errorText(e), 'error'))
+onMounted(onShared)
+// Also when the app was already open on this screen.
+watch(() => route.query.compartido, flag => flag && onShared())
 
 const waiting = computed(() => walks.value.filter(w => w.status === 'waiting'))
 function openWalk(w: WikilocWalk) {
@@ -383,6 +414,8 @@ const clean = (v: unknown) => (isBlank(v as CellValue) ? '—' : String(v))
       </p>
     </div>
 
+    <WikilocBar ref="bar" />
+
     <div
       v-if="waiting.length"
       class="flex flex-wrap items-center gap-2 border-b border-stone-200 bg-brand-50 px-3 py-2 text-sm sm:px-4"
@@ -531,10 +564,7 @@ const clean = (v: unknown) => (isBlank(v as CellValue) ? '—' : String(v))
 
     <p class="hint px-4 py-1">
       <template v-if="monitoringCreates.length">{{ monitoringCreates.length }} filas nuevas de monitoreo (verde)</template>
-      <template v-else>
-        Elige el GPX exportado desde Wikiloc, o trae recorridos por su enlace con
-        <code class="rounded bg-stone-100 px-1">npm run wikiloc -- &lt;enlace&gt;</code> en tu computadora.
-      </template>
+      <template v-else> Elige o comparte el GPX de Wikiloc, o pega el enlace de la ruta arriba. </template>
       <template v-if="dayCreates.length"> · {{ dayCreates.length }} fila nueva en SamplingDay_data</template>
       · últimos {{ recentCount }} registros de monitoreo.
       <button class="underline" @click="recentCount += 15">Cargar más</button>
