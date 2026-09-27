@@ -14,6 +14,7 @@ export interface StoredTrack {
   createdAt: string
   track: TrackPoint[]
   captures: StoredCapture[]
+  wikiloc?: { id: string; url: string } | null
 }
 
 export type StoredCapture = Pick<
@@ -31,11 +32,35 @@ export type StoredCapture = Pick<
   | 'cloud'
   | 'markId'
   | 'section'
+  | 'photos'
 > & { recapture: boolean }
+
+/** A walk read from a public Wikiloc page by tools/wikiloc, waiting for review. */
+export interface WikilocWalk {
+  id: string
+  wikilocId: string
+  url: string
+  name: string
+  date: string | null
+  status: 'waiting' | 'imported'
+  trackId: string | null
+  createdBy: string
+  track: TrackPoint[]
+  waypoints: { lat: number; lon: number; ele: number | null; text: string; photos: string[] }[]
+}
 
 // Shared by the three monitoring panels, so switching between them does not reload.
 const tracks = ref<StoredTrack[]>([])
 const tracksLoaded = ref(false)
+const walks = ref<WikilocWalk[]>([])
+
+async function loadWalks() {
+  try {
+    walks.value = (await api<{ walks: WikilocWalk[] }>('monitoring/wikiloc')).walks
+  } catch (e) {
+    notify(errorText(e), 'error')
+  }
+}
 
 async function loadTracks() {
   try {
@@ -55,6 +80,9 @@ export function useMonitoring() {
   /** The 30-preserved rule applies to Ithomiini only (e.g. Heliconius numata is preserved on purpose). */
   const tribes = computed(() => tribesFrom(sheet.table.value?.rows || []))
   const isIthomiini = (species: string | null | undefined) => !!species && tribes.value.get(species) === 'Ithomiini'
-  if (!tracksLoaded.value) loadTracks()
-  return { ...sheet, rows, taxa, tribes, isIthomiini, tracks, tracksLoaded, loadTracks }
+  if (!tracksLoaded.value) {
+    loadTracks()
+    loadWalks()
+  }
+  return { ...sheet, rows, taxa, tribes, isIthomiini, tracks, tracksLoaded, loadTracks, walks, loadWalks }
 }

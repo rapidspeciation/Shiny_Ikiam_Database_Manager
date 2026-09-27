@@ -2,7 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
-import { deleteTrack, listTracks, saveTrack } from '../server/monitoring.mjs';
+import {
+  attachWalkPhotos,
+  deleteTrack,
+  getPhoto,
+  listTracks,
+  listWalks,
+  saveTrack,
+  saveWalk,
+} from '../server/monitoring.mjs';
 
 const editor = { id: 'e1', username: 'editor', role: 'editor' };
 const other = { id: 'e2', username: 'other', role: 'editor' };
@@ -53,4 +61,74 @@ test('only the uploader, a reviewer or an admin removes a track', () => {
   deleteTrack(s, track.id, reviewer);
   assert.equal(listTracks(s).length, 0);
   assert.throws(() => deleteTrack(s, track.id, editor), { code: 'TRACK_NOT_FOUND' });
+});
+
+const walkBody = () => ({
+  url: 'https://es.wikiloc.com/rutas-senderismo/monitoreo-ithomidos-sendero-ikiam-fch-14-mayo-2025-213523060',
+  name: 'Monitoreo ithomidos sendero Ikiam FCH 14 mayo 2025',
+  date: '2025-05-14',
+  track: [[-0.951408, -77.864418, 600], [-0.951263, -77.863767, null]],
+  waypoints: [
+    {
+      lat: -0.952753,
+      lon: -77.864755,
+      ele: 593,
+      text: 'M1 Oleria tigilla macho 9:30 1m NC',
+      photos: ['https://s2.wklcdn.com/image_458/13756119/213523061/129692483Master.jpg'],
+    },
+  ],
+});
+const fakeImage = calls => async url => {
+  calls.push(url);
+  return { type: 'image/jpeg', data: Buffer.from('jpeg') };
+};
+
+test('a Wikiloc walk is stored once with its photos, and refreshed when sent again', async () => {
+  const s = store();
+  const calls = [];
+  const first = await saveWalk(s, walkBody(), editor, { fetchImage: fakeImage(calls) });
+  assert.equal(first.walk.status, 'waiting');
+  assert.equal(first.walk.wikilocId, '213523060');
+  assert.deepEqual(first.walk.waypoints[0].photos, ['129692483']);
+  assert.equal(getPhoto(s, '129692483').mime_type, 'image/jpeg');
+  const again = await saveWalk(s, walkBody(), editor, { fetchImage: fakeImage(calls) });
+  assert.equal(again.updated, true);
+  assert.equal(calls.length, 1, 'a stored photo is not downloaded again');
+  assert.equal(listWalks(s).length, 1);
+});
+
+test('a Wikiloc walk only accepts Wikiloc pages and wklcdn photos', async () => {
+  const s = store();
+  await assert.rejects(saveWalk(s, { ...walkBody(), url: 'https://example.com/123456789' }, editor), { code: 'INVALID_WALK' });
+  const body = walkBody();
+  body.waypoints[0].photos = ['https://evil.example/image_458/1/2/3.jpg'];
+  await assert.rejects(saveWalk(s, body, editor, { fetchImage: fakeImage([]) }), { code: 'INVALID_WALK' });
+});
+
+test('a failed photo download is reported without losing the walk', async () => {
+  const s = store();
+  const saved = await saveWalk(s, walkBody(), editor, {
+    fetchImage: async () => {
+      throw new Error('photo 404');
+    },
+  });
+  assert.equal(saved.failed.length, 1);
+  assert.deepEqual(saved.walk.waypoints[0].photos, []);
+});
+
+test('reviewing a Wikiloc walk marks it imported; its photos can join a GPX track of the same walk', async () => {
+  const s = store();
+  const { walk } = await saveWalk(s, walkBody(), editor, { fetchImage: fakeImage([]) });
+  const gpx = body('request-0100');
+  gpx.captures[0].text = 'M1 Oleria tigilla macho 9:30 1m NC';
+  const { track } = saveTrack(s, gpx, editor);
+  const joined = attachWalkPhotos(s, track.id, walk.id);
+  assert.equal(joined.matched, 1);
+  assert.deepEqual(joined.track.captures[0].photos, ['129692483']);
+  assert.equal(listWalks(s)[0].status, 'imported');
+  const s2 = store();
+  const { walk: w2 } = await saveWalk(s2, walkBody(), editor, { fetchImage: fakeImage([]) });
+  const saved = saveTrack(s2, { ...body('request-0101'), wikilocWalkId: w2.id, captures: [{ ...body('x').captures[0], photos: ['129692483'] }] }, editor);
+  assert.equal(saved.track.wikiloc.id, '213523060');
+  assert.equal(listWalks(s2)[0].trackId, saved.track.id);
 });

@@ -7,7 +7,16 @@ import { backup } from 'node:sqlite';
 import { gzipSync } from 'node:zlib';
 import { Store } from './store.mjs';
 import { applyBatch } from './batch.mjs';
-import { deleteTrack, listTracks, saveTrack } from './monitoring.mjs';
+import {
+  attachWalkPhotos,
+  deleteTrack,
+  deleteWalk,
+  getPhoto,
+  listTracks,
+  listWalks,
+  saveTrack,
+  saveWalk,
+} from './monitoring.mjs';
 import { idSuggestions, tablePayload, tableRevision } from './grid.mjs';
 import { SANDBOX_ID, moduleMap, validateValues } from './schema.mjs';
 import {
@@ -489,6 +498,31 @@ export async function createApp(config = {}, options = {}) {
         requireId(body);
         const saved = saveTrack(store, body, user);
         return json(res, saved.duplicate ? 200 : 201, saved);
+      }
+      if (method === 'POST' && /^\/api\/monitoring\/tracks\/[^/]+\/photos$/.test(path)) {
+        requireEditor(user);
+        return json(res, 200, attachWalkPhotos(store, decodePart(path.split('/')[4]), String(body.walkId || '')));
+      }
+      if (method === 'GET' && path === '/api/monitoring/wikiloc') return json(res, 200, { walks: listWalks(store) });
+      if (method === 'POST' && path === '/api/monitoring/wikiloc') {
+        requireEditor(user);
+        const saved = await saveWalk(store, body, user);
+        return json(res, saved.updated ? 200 : 201, saved);
+      }
+      if (method === 'DELETE' && /^\/api\/monitoring\/wikiloc\/[^/]+$/.test(path)) {
+        requireEditor(user);
+        return json(res, 200, deleteWalk(store, decodePart(path.split('/')[4]), user));
+      }
+      if (method === 'GET' && /^\/api\/monitoring\/photos\/\d+$/.test(path)) {
+        const photo = getPhoto(store, path.split('/')[4]);
+        if (!photo) throw fail('PHOTO_NOT_FOUND', 'Photo not found', 404);
+        res.writeHead(200, {
+          'content-type': photo.mime_type,
+          'content-security-policy': 'sandbox; default-src none',
+          'x-content-type-options': 'nosniff',
+          'cache-control': 'private, max-age=86400',
+        });
+        return res.end(photo.data);
       }
       if (method === 'DELETE' && /^\/api\/monitoring\/tracks\/[^/]+$/.test(path)) {
         requireEditor(user);

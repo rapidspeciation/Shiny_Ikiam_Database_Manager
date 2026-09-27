@@ -31,6 +31,8 @@ export interface GpxWaypoint {
   ele: number | null
   time: string | null
   text: string
+  /** IDs of photos stored in the app (walks read from Wikiloc pages). */
+  photos?: string[]
 }
 
 export interface Gpx {
@@ -334,6 +336,7 @@ export interface ImportedCapture extends Capture {
   ele: number | null
   section: number | null
   sectionDistance: number
+  photos: string[]
 }
 
 export function locateCapture(w: GpxWaypoint, taxa: Taxa): ImportedCapture {
@@ -347,6 +350,7 @@ export function locateCapture(w: GpxWaypoint, taxa: Taxa): ImportedCapture {
     ele: w.ele,
     section: near.distance <= MAX_SECTION_DISTANCE ? near.section : null,
     sectionDistance: Math.round(near.distance),
+    photos: w.photos || [],
   }
 }
 
@@ -370,27 +374,70 @@ export function isMonitoringRow(row: TableRow) {
   return row.observed && /^monitoring/i.test(text(row.values.Purpose)) && /^ikiam$/i.test(text(row.values.Collection_location))
 }
 
+/**
+ * Places whose preserved individuals count towards the 30-preserved rule. The
+ * team counted every preserved butterfly from Ikiam and nearby Casa de Lin,
+ * whatever its purpose: with that count every species had reached 30 when its
+ * marking started (e.g. Oleria gunilla, 31 in July 2024).
+ */
+export const RULE_LOCATIONS = ['Ikiam', 'Casa de Lin']
+export const isRuleRow = (row: TableRow) =>
+  row.observed && RULE_LOCATIONS.some(l => l.toLowerCase() === text(row.values.Collection_location).toLowerCase())
+
+/** Preserved individuals per species for the 30-preserved rule (optionally only before a date serial). */
+export function preservedForRule(rows: TableRow[], before?: number): Map<string, number> {
+  const out = new Map<string, number>()
+  for (const row of rows)
+    if (
+      isRuleRow(row) &&
+      text(row.values.Release_Collect) === 'Collected_Preserved' &&
+      (before === undefined || (dateOf(row) ?? Infinity) < before)
+    ) {
+      const species = text(row.values.SPECIES)
+      if (species) out.set(species, (out.get(species) || 0) + 1)
+    }
+  return out
+}
+
 export const hasMark = (row: TableRow) => {
   const id = text(row.values.FieldMark_ID)
   return !!id && !/^(NA|N\/A|not given)$/i.test(id)
 }
+const markOf = (row: TableRow) => text(row.values.FieldMark_ID).toUpperCase()
 
 const dateOf = (row: TableRow) => (typeof row.values.Collection_date === 'number' ? row.values.Collection_date : null)
 const byDate = (a: TableRow, b: TableRow) => (dateOf(a) ?? 0) - (dateOf(b) ?? 0) || a.row - b.row
 
+/** Rows per field mark, oldest first. */
+function markGroups(rows: TableRow[]) {
+  const groups = new Map<string, TableRow[]>()
+  for (const row of [...rows].filter(hasMark).sort(byDate)) groups.set(markOf(row), [...(groups.get(markOf(row)) || []), row])
+  return groups
+}
+
 /**
- * Mark_Released rows whose field mark was already seen earlier: the first
- * row of a mark is the marking, every later row with the same mark a recapture.
+ * Recaptures: rows whose field mark was seen before on the same species. The
+ * same mark on another species is a reused ID, not a recapture (see markConflicts).
  */
 export function recaptureIds(rows: TableRow[]): Set<string> {
-  const seen = new Set<string>()
   const out = new Set<string>()
-  for (const row of [...rows].filter(hasMark).sort(byDate)) {
-    const id = text(row.values.FieldMark_ID).toUpperCase()
-    if (seen.has(id)) out.add(row.id)
-    seen.add(id)
+  for (const list of markGroups(rows).values()) {
+    const seen = new Set<string>()
+    for (const row of list) {
+      const species = text(row.values.SPECIES).toLowerCase()
+      if (seen.has(species)) out.add(row.id)
+      seen.add(species)
+    }
   }
   return out
+}
+
+/** Field marks recorded on more than one species: an ID given twice, or a wrong species. */
+export function markConflicts(rows: TableRow[]): { id: string; rows: TableRow[] }[] {
+  const out: { id: string; rows: TableRow[] }[] = []
+  for (const [id, list] of markGroups(rows))
+    if (new Set(list.map(r => text(r.values.SPECIES).toLowerCase())).size > 1) out.push({ id, rows: list })
+  return out.sort((a, b) => (dateOf(b.rows.at(-1)!) ?? 0) - (dateOf(a.rows.at(-1)!) ?? 0))
 }
 
 export interface SpeciesStat {
@@ -446,29 +493,30 @@ export interface MarkHistory {
   events: { row: TableRow; date: number | null; collector: string; section: string; minutes: number | null }[]
 }
 
-/** Every field mark that was seen more than once, with its capture history. */
+/** Every marked individual seen more than once (same mark and species), with its captures. */
 export function markHistories(rows: TableRow[]): MarkHistory[] {
-  const groups = new Map<string, TableRow[]>()
-  for (const row of rows.filter(hasMark)) {
-    const id = text(row.values.FieldMark_ID).toUpperCase()
-    groups.set(id, [...(groups.get(id) || []), row])
-  }
   const out: MarkHistory[] = []
-  for (const [id, list] of groups) {
-    if (list.length < 2) continue
-    list.sort(byDate)
-    out.push({
-      id,
-      species: [text(list[0].values.SPECIES), text(list[0].values.Subspecies_Form)].filter(Boolean).join(' '),
-      sex: text(list[0].values.Sex),
-      events: list.map(row => ({
-        row,
-        date: dateOf(row),
-        collector: text(row.values.Collector).split(' - ')[0],
-        section: text(row.values.Transect_section),
-        minutes: typeof row.values.Collection_time === 'number' ? Math.round(row.values.Collection_time * 1440) : null,
-      })),
-    })
+  for (const [id, list] of markGroups(rows)) {
+    const bySpecies = new Map<string, TableRow[]>()
+    for (const row of list) {
+      const species = text(row.values.SPECIES).toLowerCase()
+      bySpecies.set(species, [...(bySpecies.get(species) || []), row])
+    }
+    for (const same of bySpecies.values()) {
+      if (same.length < 2) continue
+      out.push({
+        id,
+        species: [text(same[0].values.SPECIES), text(same[0].values.Subspecies_Form)].filter(Boolean).join(' '),
+        sex: text(same[0].values.Sex),
+        events: same.map(row => ({
+          row,
+          date: dateOf(row),
+          collector: text(row.values.Collector).split(' - ')[0],
+          section: text(row.values.Transect_section),
+          minutes: typeof row.values.Collection_time === 'number' ? Math.round(row.values.Collection_time * 1440) : null,
+        })),
+      })
+    }
   }
   return out.sort((a, b) => (b.events.at(-1)?.date ?? 0) - (a.events.at(-1)?.date ?? 0))
 }
@@ -540,4 +588,109 @@ export function existingRow(rows: TableRow[], date: string, c: Capture): TableRo
       )
     }) || null
   )
+}
+
+// ------------------------------------------- recaptures written only in notes
+
+export interface NoteRecapture {
+  row: TableRow
+  /** The part of the note that describes the recapture. */
+  note: string
+  date: string | null
+  minutes: number | null
+  height: number | null
+  cloud: string | null
+  rain: string | null
+  initials: string | null
+  section: number | null
+}
+
+const NOTE_CLOUD: [RegExp, string][] = [
+  [/cloudy[\s_-]*dark|\bCD\b|CD_|nublado oscuro/i, CLOUD.CD],
+  [/cloudy[\s_-]*light|\bCL\b|CL_|nublado claro/i, CLOUD.CL],
+  [/sun[\s_&and-]*cloud|S&C|parches/i, CLOUD.SC],
+  [/\bsun(ny)?\b|\bsol\b|S_\(|cloudless/i, CLOUD.S],
+]
+
+function noteDate(text: string): string | null {
+  const m = /date\s*=\s*(\d{1,2})\/(\d{1,2})\/(\d{2,4})/i.exec(text) || /^\s*(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b/.exec(text)
+  if (!m) return null
+  const year = Number(m[3]) < 100 ? 2000 + Number(m[3]) : Number(m[3])
+  return `${year}-${String(m[2]).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}`
+}
+
+/**
+ * Recaptures that were written in the notes of the marking row instead of as
+ * their own row (e.g. "7/7/24 AA: recatch&realease transect=4, time=9:59,
+ * height=0.5m"). Each becomes a proposal for a new Mark_Released row.
+ */
+export function noteRecaptures(rows: TableRow[]): NoteRecapture[] {
+  const out: NoteRecapture[] = []
+  const groups = markGroups(rows)
+  for (const row of rows.filter(hasMark)) {
+    for (const part of text(row.values.Notes_Collection_data).split('|')) {
+      if (!/recap|recatch|re-catch/i.test(part)) continue
+      const date = noteDate(part)
+      // A note on the recapture row itself ("Butterfly recatch") needs no new row.
+      if (!date || isoToSerial(date) === dateOf(row)) continue
+      const already = (groups.get(markOf(row)) || []).some(
+        r => dateOf(r) === isoToSerial(date) && text(r.values.SPECIES) === text(row.values.SPECIES),
+      )
+      if (already) continue
+      const time = /\b([01]?\d|2[0-3]):([0-5]\d)/.exec(part)
+      const height =
+        /height\s*=?\s*(\d+(?:[.,]\d+)?)\s*m?\b/i.exec(part) ||
+        /fligh\w*\s*h\w*\s*(\d+(?:[.,]\d+)?)/i.exec(part) ||
+        /\b(\d+(?:[.,]\d+)?)\s*m\b/.exec(part)
+      const initials = /collector\s*=\s*([A-Z]{2,4})\b/.exec(part) || /^\s*[\d/-]+\s+([A-Z]{2,4})\s*:/.exec(part)
+      const section = /transect\s*[=#]?\s*#?\s*([1-4])\b/i.exec(part)
+      out.push({
+        row,
+        note: part.trim(),
+        date,
+        minutes: time ? Number(time[1]) * 60 + Number(time[2]) : null,
+        height: height ? Number(height[1].replace(',', '.')) : null,
+        cloud: NOTE_CLOUD.find(([re]) => re.test(part))?.[1] ?? null,
+        rain: /drizzle|llovizna|\bDZ\b/i.test(part) ? RAIN.DZ : /\bDY\b|\bdry\b|seco/i.test(part) ? RAIN.DY : null,
+        initials: initials ? initials[1] : null,
+        section: section ? Number(section[1]) : null,
+      })
+    }
+  }
+  return out
+}
+
+/** A new Mark_Released row for a recapture found in notes, copying the marked individual. */
+export function noteRecaptureValues(r: NoteRecapture, collectors: string[]): Record<string, CellValue> {
+  const v = r.row.values
+  const collector = (r.initials && collectors.find(c => c.split(' - ')[0].trim() === r.initials)) || r.initials
+  const [y, m, d] = (r.date || '').split('-').map(Number)
+  return {
+    Release_Collect: 'Mark_Released',
+    FieldMark_ID: v.FieldMark_ID,
+    Insectary_ID: 'NA',
+    CAM_ID_insectary: 'NA',
+    CAM_ID: 'NA',
+    Tube_1_id: 'NA',
+    Tube_1_tissue: 'NOT_COLLECTED',
+    Purpose: v.Purpose,
+    SPECIES: v.SPECIES,
+    Subspecies_Form: v.Subspecies_Form,
+    Identifier: collector,
+    ID_status: v.ID_status,
+    Sex: v.Sex,
+    Country: v.Country,
+    Collection_location: v.Collection_location,
+    Transect_section: r.section,
+    Collection_date: r.date ? isoToSerial(r.date) : null,
+    Collection_time: r.minutes === null ? null : r.minutes / 1440,
+    Collector: collector,
+    Rainfall: r.rain || RAIN.DY,
+    Cloud_cover: r.cloud,
+    Flight_height: r.height,
+    Butterfly_weight: 'NA',
+    Preservation_date: 'NA',
+    Preservation_medium: 'NOT_COLLECTED',
+    Notes_Collection_data: `${d}/${m}/${y} ${r.initials || ''}: Recapture, moved from the note of row ${r.row.row}`,
+  }
 }

@@ -12,7 +12,11 @@ const fail = (code, message, status = 400) => Object.assign(new Error(message), 
 
 export function initMonitoring(db) {
   db.exec(`CREATE TABLE IF NOT EXISTS monitoring_tracks(id TEXT PRIMARY KEY, request_id TEXT UNIQUE, fingerprint TEXT UNIQUE NOT NULL,
-    date TEXT NOT NULL, collector TEXT, name TEXT NOT NULL, data_json TEXT NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL)`);
+    date TEXT NOT NULL, collector TEXT, name TEXT NOT NULL, data_json TEXT NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS wikiloc_walks(id TEXT PRIMARY KEY, wikiloc_id TEXT UNIQUE NOT NULL, url TEXT NOT NULL, name TEXT NOT NULL,
+      date TEXT, data_json TEXT NOT NULL, status TEXT NOT NULL, track_id TEXT, created_by TEXT NOT NULL, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS monitoring_photos(id TEXT PRIMARY KEY, walk_id TEXT NOT NULL, mime_type TEXT NOT NULL, data BLOB NOT NULL,
+      source_url TEXT NOT NULL, created_at TEXT NOT NULL);`);
 }
 
 const text = (value, max = 300) => {
@@ -62,7 +66,15 @@ function cleanCapture(c) {
     markId: text(c.markId, 20),
     recapture: !!c.recapture,
     section: number(c.section, 1, 4),
+    photos: cleanPhotoIds(c.photos),
   };
+}
+
+function cleanPhotoIds(ids) {
+  if (ids === undefined || ids === null) return [];
+  if (!Array.isArray(ids) || ids.length > 20 || ids.some(id => typeof id !== 'string' || !/^\d{1,20}$/.test(id)))
+    throw fail('INVALID_TRACK', 'Invalid photo list');
+  return ids;
 }
 
 const fromRow = row => ({
@@ -91,13 +103,18 @@ export function saveTrack(store, body, user) {
   if (!track.length && !captures.length) throw fail('INVALID_TRACK', 'The file has no track or waypoints');
   const name = text(body.name, 200) || `Monitoreo ${date}`;
   const collector = text(body.collector, 120);
+  const walk = body.wikilocWalkId ? store.db.prepare('SELECT * FROM wikiloc_walks WHERE id=?').get(String(body.wikilocWalkId)) : null;
+  if (body.wikilocWalkId && !walk) throw fail('WALK_NOT_FOUND', 'Wikiloc walk not found', 404);
   const fingerprint = createHash('sha256')
     .update(JSON.stringify([date, track, captures.map(c => [c.lat, c.lon, c.text])]))
     .digest('hex');
   const existing =
     store.db.prepare('SELECT * FROM monitoring_tracks WHERE request_id=?').get(body.requestId) ||
     store.db.prepare('SELECT * FROM monitoring_tracks WHERE fingerprint=?').get(fingerprint);
-  if (existing) return { track: fromRow(existing), duplicate: true };
+  if (existing) {
+    if (walk) markImported(store, walk.id, existing.id);
+    return { track: fromRow(existing), duplicate: true };
+  }
   const row = {
     id: randomUUID(),
     request_id: body.requestId,
@@ -105,7 +122,7 @@ export function saveTrack(store, body, user) {
     date,
     collector,
     name,
-    data_json: JSON.stringify({ track, captures }),
+    data_json: JSON.stringify({ track, captures, wikiloc: walk ? { id: walk.wikiloc_id, url: walk.url } : null }),
     created_by: user.username,
     created_at: new Date().toISOString(),
   };
@@ -114,6 +131,7 @@ export function saveTrack(store, body, user) {
       'INSERT INTO monitoring_tracks(id,request_id,fingerprint,date,collector,name,data_json,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)',
     )
     .run(...Object.values(row));
+  if (walk) markImported(store, walk.id, row.id);
   return { track: fromRow(row), duplicate: false };
 }
 
@@ -125,4 +143,143 @@ export function deleteTrack(store, id, user) {
     throw fail('FORBIDDEN', 'Only the uploader, a reviewer or an administrator can remove this track', 403);
   store.db.prepare('DELETE FROM monitoring_tracks WHERE id=?').run(id);
   return { ok: true };
+}
+
+// ------------------------------------------------------------------ Wikiloc
+
+/*
+ * Walks read from public Wikiloc trail pages by the helper in tools/wikiloc
+ * (Wikiloc has no API and blocks servers with Cloudflare, so the page is read
+ * by a browser on a home connection). They wait here, with their photos,
+ * until someone reviews them in "Importar recorrido".
+ */
+const PHOTO_HOST = /^https:\/\/s\d*\.wklcdn\.com\/image_\d+\/[\w/]+\.jpe?g$/i;
+const MAX_PHOTO = 8 * 1024 * 1024;
+const walkRow = row => {
+  const data = JSON.parse(row.data_json);
+  return {
+    id: row.id,
+    wikilocId: row.wikiloc_id,
+    url: row.url,
+    name: row.name,
+    date: row.date,
+    status: row.status,
+    trackId: row.track_id,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    ...data,
+  };
+};
+function markImported(store, walkId, trackId) {
+  store.db.prepare("UPDATE wikiloc_walks SET status='imported', track_id=? WHERE id=?").run(trackId, walkId);
+}
+
+export function listWalks(store) {
+  return store.db.prepare('SELECT * FROM wikiloc_walks ORDER BY date DESC, created_at DESC').all().map(walkRow);
+}
+
+async function fetchPhoto(url) {
+  const response = await fetch(url, { signal: AbortSignal.timeout(30_000), redirect: 'error' });
+  if (!response.ok) throw new Error(`photo ${response.status}`);
+  const type = response.headers.get('content-type') || '';
+  if (!/^image\/(jpeg|png|webp)$/.test(type.split(';')[0].trim())) throw new Error('not an image');
+  const data = Buffer.from(await response.arrayBuffer());
+  if (data.length > MAX_PHOTO) throw new Error('photo too large');
+  return { type: type.split(';')[0].trim(), data };
+}
+
+/**
+ * Stores (or refreshes) a walk read from Wikiloc and downloads its photos.
+ * The same trail sent again replaces the waiting copy; photos already stored
+ * are not downloaded twice.
+ */
+export async function saveWalk(store, body, user, { fetchImage = fetchPhoto } = {}) {
+  const url = text(body.url, 500);
+  const wikilocId = /(\d{6,12})\/?(?:[?#].*)?$/.exec(url || '')?.[1];
+  if (!url || !/^https:\/\/([a-z]{2}\.)?wikiloc\.com\//.test(url) || !wikilocId)
+    throw fail('INVALID_WALK', 'A Wikiloc trail URL is required');
+  const date = text(body.date, 10);
+  if (date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date))))
+    throw fail('INVALID_WALK', 'Invalid date');
+  const track = cleanTrack(body.track || []);
+  if (!Array.isArray(body.waypoints) || body.waypoints.length > MAX_CAPTURES)
+    throw fail('INVALID_WALK', 'Invalid waypoint list');
+  const waypoints = [];
+  const failed = [];
+  for (const w of body.waypoints) {
+    if (!w || typeof w !== 'object') throw fail('INVALID_WALK', 'Invalid waypoint');
+    const [lat, lon] = coordinate(w.lat, w.lon);
+    const urls = Array.isArray(w.photos) ? w.photos.slice(0, 20) : [];
+    const photos = [];
+    for (const photoUrl of urls) {
+      const id = /\/(\d+)(?:Master)?\.jpe?g$/i.exec(String(photoUrl))?.[1];
+      if (!PHOTO_HOST.test(String(photoUrl)) || !id) throw fail('INVALID_WALK', 'Photos must come from wklcdn.com');
+      if (!store.db.prepare('SELECT 1 FROM monitoring_photos WHERE id=?').get(id)) {
+        try {
+          const image = await fetchImage(String(photoUrl));
+          store.db
+            .prepare('INSERT INTO monitoring_photos(id,walk_id,mime_type,data,source_url,created_at) VALUES(?,?,?,?,?,?)')
+            .run(id, wikilocId, image.type, image.data, String(photoUrl), new Date().toISOString());
+        } catch (e) {
+          failed.push({ url: String(photoUrl), error: String(e.message).slice(0, 120) });
+          continue;
+        }
+      }
+      photos.push(id);
+    }
+    waypoints.push({ lat, lon, ele: number(w.ele, -1000, 10000), text: text(w.text, 500) || '', photos });
+  }
+  const name = text(body.name, 200) || `Wikiloc ${wikilocId}`;
+  const data = JSON.stringify({ track, waypoints });
+  const existing = store.db.prepare('SELECT * FROM wikiloc_walks WHERE wikiloc_id=?').get(wikilocId);
+  if (existing) {
+    store.db.prepare('UPDATE wikiloc_walks SET url=?, name=?, date=?, data_json=? WHERE id=?').run(url, name, date, data, existing.id);
+    return { walk: walkRow(store.db.prepare('SELECT * FROM wikiloc_walks WHERE id=?').get(existing.id)), failed, updated: true };
+  }
+  const id = randomUUID();
+  store.db
+    .prepare(
+      "INSERT INTO wikiloc_walks(id,wikiloc_id,url,name,date,data_json,status,track_id,created_by,created_at) VALUES(?,?,?,?,?,?,'waiting',NULL,?,?)",
+    )
+    .run(id, wikilocId, url, name, date, data, user.username, new Date().toISOString());
+  return { walk: walkRow(store.db.prepare('SELECT * FROM wikiloc_walks WHERE id=?').get(id)), failed, updated: false };
+}
+
+export function deleteWalk(store, id, user) {
+  const row = store.db.prepare('SELECT * FROM wikiloc_walks WHERE id=?').get(id);
+  if (!row) throw fail('WALK_NOT_FOUND', 'Wikiloc walk not found', 404);
+  if (row.created_by !== user.username && !['reviewer', 'admin'].includes(user.role))
+    throw fail('FORBIDDEN', 'Only the uploader, a reviewer or an administrator can remove this walk', 403);
+  store.db.prepare('DELETE FROM wikiloc_walks WHERE id=?').run(id);
+  return { ok: true };
+}
+
+export function getPhoto(store, id) {
+  return store.db.prepare('SELECT id, mime_type, data FROM monitoring_photos WHERE id=?').get(String(id)) || null;
+}
+
+/**
+ * Adds the photos of a Wikiloc walk to a track already stored from a GPX of
+ * the same walk (matching waypoints by their note), so the GPS times are kept.
+ */
+export function attachWalkPhotos(store, trackId, walkId) {
+  const trackRow = store.db.prepare('SELECT * FROM monitoring_tracks WHERE id=?').get(trackId);
+  if (!trackRow) throw fail('TRACK_NOT_FOUND', 'Track not found', 404);
+  const walk = store.db.prepare('SELECT * FROM wikiloc_walks WHERE id=?').get(walkId);
+  if (!walk) throw fail('WALK_NOT_FOUND', 'Wikiloc walk not found', 404);
+  const key = t => String(t || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const photos = new Map(JSON.parse(walk.data_json).waypoints.map(w => [key(w.text), w.photos]));
+  const data = JSON.parse(trackRow.data_json);
+  let matched = 0;
+  for (const c of data.captures) {
+    const found = photos.get(key(c.text));
+    if (found?.length) {
+      c.photos = [...new Set([...(c.photos || []), ...found])];
+      matched++;
+    }
+  }
+  data.wikiloc = { id: walk.wikiloc_id, url: walk.url };
+  store.db.prepare('UPDATE monitoring_tracks SET data_json=? WHERE id=?').run(JSON.stringify(data), trackId);
+  markImported(store, walk.id, trackId);
+  return { track: fromRow(store.db.prepare('SELECT * FROM monitoring_tracks WHERE id=?').get(trackId)), matched };
 }

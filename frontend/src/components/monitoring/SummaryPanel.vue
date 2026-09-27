@@ -1,35 +1,44 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Download } from 'lucide-vue-next'
+import { Download, ListPlus } from 'lucide-vue-next'
+import { useRouter } from 'vue-router'
 import { useMonitoring } from '../../composables/useMonitoring'
-import { formatSerial, serialToIso } from '../../lib/dates'
+import { formatSerial, isoToSerial, serialToIso } from '../../lib/dates'
 import {
   MARK_THRESHOLD,
   formatMinutes,
+  markConflicts,
   markHistories,
   monthOf,
+  noteRecaptures,
+  noteRecaptureValues,
+  preservedForRule,
   monthsByYear,
   nextMarkId,
   recaptureIds,
   sectionsByMonth,
   speciesStats,
 } from '../../lib/monitoring'
+import { notify } from '../../lib/notice'
 import { persistentRef } from '../../lib/persist'
+import { usePending } from '../../stores/pending'
 import type { TableRow } from '../../lib/types'
 
 /**
  * "Resumen": the tables of the monthly monitoring reports, computed from the
  * Ikiam monitoring rows of Collection_data, plus the 30-preserved rule.
  */
-const { table, rows: allRows, isIthomiini } = useMonitoring()
+const { table, rows: allRows, isIthomiini, options, createFormulas } = useMonitoring()
+const pending = usePending()
+const router = useRouter()
 
 const from = persistentRef('monitoring:from', '')
 const to = persistentRef('monitoring:to', '')
 const collector = persistentRef('monitoring:who', '')
 const section = persistentRef('monitoring:section', '')
 const bySubspecies = persistentRef('monitoring:subspecies', false)
-// The monthly reports count only Ithomiini.
-const onlyIthomiini = persistentRef('monitoring:ithomiini', true)
+// Every capture of a walk (M1, M2, …) is monitoring; the monthly reports showed only Ithomiini.
+const onlyIthomiini = persistentRef('monitoring:onlyIthomiini', false)
 const rows = computed(() =>
   onlyIthomiini.value ? allRows.value.filter(r => isIthomiini(String(r.values.SPECIES ?? ''))) : allRows.value,
 )
@@ -48,7 +57,8 @@ const filtered = computed(() =>
 
 // Recaptures and the 30 rule always look at the whole history, whatever the filters.
 const recaptures = computed(() => recaptureIds(allRows.value))
-const allTime = computed(() => new Map(speciesStats(allRows.value, false, recaptures.value).map(s => [s.species, s])))
+// The 30 rule counts every preserved butterfly from Ikiam and Casa de Lin, whatever its purpose.
+const rulePreserved = computed(() => preservedForRule(table.value?.rows || []))
 const species = computed(() => speciesStats(filtered.value, bySubspecies.value, recaptures.value))
 const totals = computed(() => {
   const t = { total: 0, preserved: 0, marked: 0, recaptured: 0, days: new Set<number>() }
@@ -65,7 +75,7 @@ const nextMark = computed(() => nextMarkId(allRows.value))
 
 /** Species that already reached the threshold and those closest to it. */
 const ruleOf = (name: string) => {
-  const preserved = allTime.value.get(name)?.preserved || 0
+  const preserved = rulePreserved.value.get(name) || 0
   return {
     applies: isIthomiini(name),
     preserved,
@@ -87,6 +97,29 @@ const histories = computed(() => {
   const inRange = new Set(filtered.value.map(r => r.id))
   return markHistories(rows.value).filter(h => h.events.some(e => inRange.has(e.row.id)))
 })
+/** Data to review: marks given to two species, and recaptures written only in notes. */
+const conflicts = computed(() => markConflicts(allRows.value))
+const noteOnly = computed(() =>
+  noteRecaptures(allRows.value).filter(
+    n =>
+      !pending.creates.some(
+        c =>
+          c.values.FieldMark_ID === n.row.values.FieldMark_ID &&
+          c.values.Collection_date === (n.date ? isoToSerial(n.date) : null),
+      ),
+  ),
+)
+function createNoteRows() {
+  const collectors = options.value.Collector || []
+  for (const n of noteOnly.value) {
+    const values = noteRecaptureValues(n, collectors)
+    for (const field of createFormulas.value) delete values[field]
+    pending.addCreate('Collection_data', `${n.row.values.FieldMark_ID} ${n.date}`, values)
+  }
+  pending.touch()
+  notify('Filas de recaptura añadidas: revísalas en "Importar recorrido" y pulsa Guardar.', 'success')
+  router.replace({ query: { vista: 'importar' } })
+}
 const days = (a: number | null, b: number | null) => (a === null || b === null ? '' : `${b - a} días`)
 const date = (d: number | null) => (d === null ? '—' : formatSerial(d))
 
@@ -155,7 +188,7 @@ const sexOf = (row: TableRow) => String(row.values.Sex ?? '')
         </select>
       </label>
       <label class="flex items-center gap-2 pb-1.5 text-sm"
-        ><input v-model="onlyIthomiini" type="checkbox" /> Solo Ithomiini</label
+        ><input v-model="onlyIthomiini" type="checkbox" /> Solo Ithomiini (como en los reportes)</label
       >
       <label class="flex items-center gap-2 pb-1.5 text-sm"
         ><input v-model="bySubspecies" type="checkbox" /> Por subespecie</label
@@ -192,11 +225,44 @@ const sexOf = (row: TableRow) => String(row.values.Sex ?? '')
         </div>
       </div>
 
+      <section v-if="conflicts.length || noteOnly.length" class="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm">
+        <h2 class="font-semibold text-amber-950">Revisión de datos</h2>
+        <details v-if="conflicts.length" class="mt-2">
+          <summary class="cursor-pointer">
+            {{ conflicts.length }} marcas registradas en más de una especie (ID repetida o especie equivocada); no cuentan como
+            recaptura
+          </summary>
+          <ul class="mt-1 space-y-0.5 text-xs">
+            <li v-for="c in conflicts" :key="c.id">
+              <b>{{ c.id }}</b
+              >:
+              <span v-for="(r, i) in c.rows" :key="r.id"
+                >{{ i ? '; ' : '' }}<i>{{ r.values.SPECIES }}</i> {{ date(r.values.Collection_date as number) }}
+                {{ String(r.values.Collector ?? '').split(' - ')[0] }} (fila {{ r.row }})</span
+              >
+            </li>
+          </ul>
+        </details>
+        <div v-if="noteOnly.length" class="mt-2">
+          <p>{{ noteOnly.length }} recapturas escritas solo en las notas de la fila de marcaje:</p>
+          <ul class="mt-1 space-y-0.5 text-xs">
+            <li v-for="(n, i) in noteOnly" :key="i">
+              <b>{{ n.row.values.FieldMark_ID }}</b> <i>{{ n.row.values.SPECIES }}</i> · {{ n.date }} ·
+              {{ formatMinutes(n.minutes) || 'sin hora' }} (fila {{ n.row.row }}): “{{ n.note }}”
+            </li>
+          </ul>
+          <button class="btn mt-2" @click="createNoteRows">
+            <ListPlus :size="15" /> Crear {{ noteOnly.length }} filas de recaptura para revisar
+          </button>
+        </div>
+      </section>
+
       <section>
         <h2 class="mb-1 font-semibold">Especies</h2>
         <p class="hint mb-2">
-          Regla del protocolo: con {{ MARK_THRESHOLD }} individuos preservados de una especie de Ithomiini (monitoreo de Ikiam,
-          todo el histórico) se pasa a marcar y liberar. Las demás columnas siguen los filtros.
+          Regla del protocolo: con {{ MARK_THRESHOLD }} individuos preservados de una especie de Ithomiini se pasa a marcar y
+          liberar. Cuentan todos los preservados de Ikiam y Casa de Lin (monitoreo u otro propósito, todo el histórico); las demás
+          columnas siguen los filtros.
         </p>
         <div class="overflow-x-auto rounded-md border border-stone-200 bg-white">
           <table class="w-full text-sm">

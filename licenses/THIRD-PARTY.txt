@@ -6,6 +6,9 @@ Lucide icons (lucide-vue-next)    ISC License   https://lucide.dev
 Tailwind CSS (build-time styles)  MIT License   https://tailwindcss.com
 Leaflet (monitoring map)          BSD 2-Clause  https://leafletjs.com
 
+The optional Wikiloc helper (tools/wikiloc, run on a person's computer, not
+bundled or deployed) uses playwright-core (Apache License 2.0).
+
 Map tiles are loaded at run time, not bundled: Esri World Imagery and
 OpenStreetMap (© OpenStreetMap contributors, ODbL), credited on the map.
 

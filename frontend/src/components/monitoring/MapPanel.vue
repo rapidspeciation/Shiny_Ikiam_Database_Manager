@@ -96,7 +96,13 @@ function popup(t: StoredTrack, c: StoredCapture) {
     `<span style="color:#78716c">${escape(c.text)}</span>`,
     row ? `Collection_data fila ${row.row}` : '<span style="color:#b45309">Aún no está en la hoja</span>',
   ]
-  return lines.filter(Boolean).join('<br>')
+  const photos = (c.photos || [])
+    .map(
+      id =>
+        `<a href="api/monitoring/photos/${id}" target="_blank" rel="noopener"><img src="api/monitoring/photos/${id}" alt="" style="width:200px;max-height:200px;object-fit:cover;border-radius:4px;margin-top:4px"></a>`,
+    )
+    .join('')
+  return lines.filter(Boolean).join('<br>') + photos
 }
 
 function draw() {

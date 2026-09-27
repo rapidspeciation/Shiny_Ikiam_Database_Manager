@@ -3,7 +3,11 @@ import {
   CLOUD,
   captureValues,
   locateCapture,
+  markConflicts,
   markHistories,
+  noteRecaptureValues,
+  noteRecaptures,
+  preservedForRule,
   nextMarkId,
   parseCapture,
   parseGpx,
@@ -202,5 +206,106 @@ describe('summaries', () => {
     const table = sectionsByMonth(rows)
     expect(table.get('2026-09')).toEqual([1, 0, 0, 1, 1])
     expect(table.get('2026-07')).toEqual([0, 0, 0, 0, 1])
+  })
+})
+
+describe('marks and the 30 rule', () => {
+  it('treats a mark reused on another species as a conflict, not a recapture', () => {
+    const rows = [
+      row({ SPECIES: 'Godyris zavaleta', Release_Collect: 'Mark_Released', FieldMark_ID: 'B56', Collection_date: 46223 }),
+      row({ SPECIES: 'Hyposcada illinissa', Release_Collect: 'Mark_Released', FieldMark_ID: 'B56', Collection_date: 46284 }),
+      row({ SPECIES: 'Hyposcada illinissa', Release_Collect: 'Mark_Released', FieldMark_ID: 'B56', Collection_date: 46291 }),
+    ]
+    expect([...recaptureIds(rows)]).toEqual([rows[2].id])
+    expect(markConflicts(rows).map(c => c.id)).toEqual(['B56'])
+    expect(markHistories(rows).map(h => h.species)).toEqual(['Hyposcada illinissa'])
+  })
+  it('counts preserved butterflies from Ikiam and Casa de Lin, whatever the purpose', () => {
+    const counts = preservedForRule([
+      row({ SPECIES: 'Oleria gunilla', Release_Collect: 'Collected_Preserved' }),
+      row({ SPECIES: 'Oleria gunilla', Release_Collect: 'Collected_Preserved', Purpose: 'Ikiam trapping inventory' }),
+      row({
+        SPECIES: 'Oleria gunilla',
+        Release_Collect: 'Collected_Preserved',
+        Collection_location: 'Casa de Lin',
+        Purpose: 'NA',
+      }),
+      row({ SPECIES: 'Oleria gunilla', Release_Collect: 'Collected_Preserved', Collection_location: 'Apuya' }),
+      row({ SPECIES: 'Oleria gunilla', Release_Collect: 'Mark_Released', FieldMark_ID: 'B1' }),
+    ])
+    expect(counts.get('Oleria gunilla')).toBe(3)
+  })
+})
+
+describe('recaptures written only in notes', () => {
+  const marked = row({
+    SPECIES: 'Hyposcada illinissa',
+    Subspecies_Form: 'ida',
+    Sex: 'male',
+    Release_Collect: 'Mark_Released',
+    FieldMark_ID: 'M45',
+    Collection_date: 45455,
+    Notes_Collection_data:
+      '12/6/24 FCH: Monitoring by FCH butterfly M3 | 7/72024 AA: recatch&realease transect=4, date=7/7/24, time=9:59, collector=AA, Rainfall=DY, cloud_cover=CL_(cloudy_light), height=0.5m  | 16/8/2024 AA: recatch&realease transect=4, date=16/8/24, time=10:38, collector=AA, Rainfall=drizzle, cloud_cover=CD_(cloudy_dark), height=0.3m',
+  })
+  const others = [
+    row({
+      SPECIES: 'Hyposcada anchiala',
+      FieldMark_ID: 'B2',
+      Release_Collect: 'Mark_Released',
+      Collection_date: 46332,
+      Notes_Collection_data: '12-11-25 MJS: Recapture at 9:27 1m dry and sun ',
+    }),
+    row({
+      SPECIES: 'Oleria gunilla',
+      FieldMark_ID: 'B41',
+      Release_Collect: 'Mark_Released',
+      Collection_date: 46160,
+      Notes_Collection_data: '20/5/26 AA: recatched -cloudy light-10:49- fligh H 1,5',
+    }),
+    // A note on the recapture row itself needs no new row.
+    row({
+      SPECIES: 'Hyposcada illinissa',
+      FieldMark_ID: 'B39',
+      Release_Collect: 'Mark_Released',
+      Collection_date: 46227,
+      Notes_Collection_data: '24/7/2026 MJS: Butterfly recatch, collected in transect #4 ',
+    }),
+  ]
+  it('finds each recapture with its date, time, weather and height', () => {
+    const found = noteRecaptures([marked, ...others])
+    expect(
+      found.map(f => [f.row.values.FieldMark_ID, f.date, f.minutes, f.height, f.cloud, f.rain, f.initials, f.section]),
+    ).toEqual([
+      ['M45', '2024-07-07', 599, 0.5, CLOUD.CL, 'DY_(dry)', 'AA', 4],
+      ['M45', '2024-08-16', 638, 0.3, CLOUD.CD, 'DZ_(drizzle)', 'AA', 4],
+      ['B2', '2025-11-12', 567, 1, CLOUD.S, 'DY_(dry)', 'MJS', null],
+      ['B41', '2026-05-20', 649, 1.5, CLOUD.CL, null, 'AA', null],
+    ])
+  })
+  it('proposes a new Mark_Released row that copies the marked individual', () => {
+    const [first] = noteRecaptures([marked])
+    const v = noteRecaptureValues(first, ['AA - Alex Arias', 'FCH - Franz Chandi'])
+    expect(v).toMatchObject({
+      Release_Collect: 'Mark_Released',
+      FieldMark_ID: 'M45',
+      SPECIES: 'Hyposcada illinissa',
+      Subspecies_Form: 'ida',
+      Sex: 'male',
+      Collection_date: 45480,
+      Collector: 'AA - Alex Arias',
+      Transect_section: 4,
+      Flight_height: 0.5,
+    })
+    expect(v.Notes_Collection_data).toContain('moved from the note of row')
+  })
+  it('skips recaptures that already have their own row', () => {
+    const copy = row({
+      SPECIES: 'Hyposcada illinissa',
+      FieldMark_ID: 'M45',
+      Release_Collect: 'Mark_Released',
+      Collection_date: 45480,
+    })
+    expect(noteRecaptures([marked, copy]).map(f => f.date)).toEqual(['2024-08-16'])
   })
 })

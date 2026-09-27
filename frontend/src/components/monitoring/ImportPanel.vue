@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef, watch } from 'vue'
-import { FileUp, ListPlus, MapPin } from 'lucide-vue-next'
+import { ExternalLink, FileUp, ImagePlus, ListPlus, MapPin, Trash2 } from 'lucide-vue-next'
 import SheetGrid from '../SheetGrid.vue'
-import { useMonitoring } from '../../composables/useMonitoring'
+import { useMonitoring, type WikilocWalk } from '../../composables/useMonitoring'
 import { api, requestId } from '../../lib/api'
 import { isBlank } from '../../lib/cells'
 import { formatSerial, isoToSerial } from '../../lib/dates'
@@ -14,7 +14,7 @@ import {
   hasMark,
   locateCapture,
   parseGpx,
-  speciesStats,
+  preservedForRule,
   trackLength,
   trackSpan,
   type Gpx,
@@ -38,10 +38,11 @@ const DAY_SHEET = 'SamplingDay_data'
 const pending = usePending()
 const tables = useTables()
 const session = useSession()
-const { table, rows, taxa, isIthomiini, options, creates, createFormulas, loadTracks } = useMonitoring()
+const { table, rows, taxa, isIthomiini, options, creates, createFormulas, tracks, loadTracks, walks, loadWalks } = useMonitoring()
 tables.load(DAY_SHEET).catch(() => {})
 
-const file = shallowRef<{ name: string; gpx: Gpx } | null>(null)
+/** The walk being reviewed: a GPX file, or a walk read from a Wikiloc page (with photos). */
+const file = shallowRef<{ name: string; gpx: Gpx; walk?: WikilocWalk } | null>(null)
 const date = ref('')
 const collector = persistentRef('monitoring:collector', '')
 const skip = ref<Set<number>>(new Set())
@@ -67,6 +68,52 @@ async function choose(event: Event) {
     notify(errorText(e), 'error')
   }
 }
+
+const waiting = computed(() => walks.value.filter(w => w.status === 'waiting'))
+function openWalk(w: WikilocWalk) {
+  file.value = {
+    name: w.name,
+    gpx: { name: w.name, track: w.track, waypoints: w.waypoints.map(p => ({ ...p, time: null })) },
+    walk: w,
+  }
+  date.value = w.date || ''
+  skip.value = new Set()
+  detectCollector()
+}
+async function removeWalk(w: WikilocWalk) {
+  if (!confirm(`¿Quitar "${w.name}" de la lista? Se puede volver a traer desde Wikiloc.`)) return
+  try {
+    await api(`monitoring/wikiloc/${encodeURIComponent(w.id)}`, { method: 'DELETE', body: {} })
+    if (file.value?.walk?.id === w.id) file.value = null
+    await loadWalks()
+  } catch (e) {
+    notify(errorText(e), 'error')
+  }
+}
+/** A GPX of the same walk already stored (it has the GPS times): the Wikiloc photos can join it. */
+const gpxTrack = computed(() =>
+  file.value?.walk
+    ? tracks.value.find(t => t.date === date.value && t.collector === collector.value && !t.wikiloc) || null
+    : null,
+)
+async function addPhotosToTrack() {
+  if (!file.value?.walk || !gpxTrack.value) return
+  busy.value = true
+  try {
+    const result = await api<{ matched: number }>(`monitoring/tracks/${encodeURIComponent(gpxTrack.value.id)}/photos`, {
+      method: 'POST',
+      body: { walkId: file.value.walk.id },
+    })
+    await Promise.all([loadTracks(), loadWalks()])
+    notify(`Fotos añadidas a ${result.matched} puntos del recorrido del ${formatSerial(isoToSerial(date.value))}`, 'success')
+    file.value = null
+  } catch (e) {
+    notify(errorText(e), 'error')
+  } finally {
+    busy.value = false
+  }
+}
+const photoUrl = (id: string) => `api/monitoring/photos/${id}`
 
 /** Wikiloc names like "Monitoreo ithomidos FCH 26 SEP 2026" carry the collector's initials. */
 function detectCollector() {
@@ -102,7 +149,14 @@ function earlier(c: ImportedCapture) {
     r => typeof r.values.Collection_date === 'number' && r.values.Collection_date < day,
   )
 }
-const preservedBySpecies = computed(() => new Map(speciesStats(rows.value, false).map(s => [s.species, s.preserved])))
+/** Earlier rows of the same mark on the same species: the capture is a recapture. */
+const sameIndividual = (c: ImportedCapture) =>
+  earlier(c).filter(r => !!c.species && String(r.values.SPECIES ?? '').toLowerCase() === c.species.toLowerCase())
+// The 30-preserved rule counts every preserved butterfly from Ikiam and Casa de Lin.
+// Counted up to the day of the walk, so an old walk is judged by the count it had then.
+const preservedBySpecies = computed(() =>
+  preservedForRule(table.value?.rows || [], /^\d{4}-\d{2}-\d{2}$/.test(date.value) ? isoToSerial(date.value) : undefined),
+)
 
 interface Check {
   text: string
@@ -114,21 +168,21 @@ const checks = computed(() =>
     if (!table.value) return { existing: null, list: [{ kind: 'info', text: 'Cargando la hoja…' } as Check] }
     const out: Check[] = []
     const existing = date.value ? existingRow(rows.value, date.value, c) : null
-    if (existing) out.push({ kind: 'info', text: `Ya está en la hoja (fila ${existing.row})` })
+    // Already in the sheet: nothing will be written, so no further checks.
+    if (existing) return { existing, list: [{ kind: 'info', text: `Ya está en la hoja (fila ${existing.row})` } as Check] }
     if (c.markId) {
-      const first = earlier(c)[0]
-      if (first) {
-        const firstSpecies = String(first.values.SPECIES ?? '')
+      const first = sameIndividual(c)[0]
+      const others = earlier(c).filter(r => !sameIndividual(c).includes(r))
+      if (first)
         out.push({
           kind: 'ok',
           text: `Recaptura de ${c.markId} (marcada ${formatSerial(first.values.Collection_date as number)})`,
         })
-        if (c.species && firstSpecies && firstSpecies !== c.species)
-          out.push({ kind: 'warn', text: `${c.markId} se marcó como ${firstSpecies}` })
-      } else {
-        out.push({ kind: 'ok', text: `Nueva marca ${c.markId}` })
-        if (c.recaptureNote) out.push({ kind: 'warn', text: `Dice recaptura, pero ${c.markId} no está en la hoja` })
-      }
+      else out.push({ kind: 'ok', text: `Nueva marca ${c.markId}` })
+      for (const r of others)
+        out.push({ kind: 'warn', text: `${c.markId} ya se usó para ${r.values.SPECIES} (fila ${r.row}): ¿ID repetida?` })
+      if (!first && c.recaptureNote && !others.length)
+        out.push({ kind: 'warn', text: `Dice recaptura, pero ${c.markId} no está en la hoja` })
       if (captures.value.some((o, j) => j !== i && o.markId === c.markId))
         out.push({ kind: 'warn', text: `${c.markId} aparece dos veces en este recorrido` })
     } else {
@@ -169,6 +223,7 @@ async function storeTrack() {
       collector: collector.value,
       name: file.value.gpx.name || file.value.name,
       track: file.value.gpx.track,
+      wikilocWalkId: file.value.walk?.id,
       captures: captures.value.map(c => ({
         lat: c.lat,
         lon: c.lon,
@@ -182,12 +237,13 @@ async function storeTrack() {
         height: c.height,
         cloud: c.cloud,
         markId: c.markId,
-        recapture: earlier(c).length > 0 || c.recaptureNote,
+        recapture: sameIndividual(c).length > 0,
         section: c.section,
+        photos: c.photos,
       })),
     },
   })
-  await loadTracks()
+  await Promise.all([loadTracks(), loadWalks()])
 }
 
 async function onlyTrack() {
@@ -327,7 +383,30 @@ const clean = (v: unknown) => (isBlank(v as CellValue) ? '—' : String(v))
       </p>
     </div>
 
-    <section v-if="file" class="max-h-[55%] shrink-0 overflow-auto border-b border-stone-200 bg-white">
+    <div
+      v-if="waiting.length"
+      class="flex flex-wrap items-center gap-2 border-b border-stone-200 bg-brand-50 px-3 py-2 text-sm sm:px-4"
+    >
+      <span class="font-medium text-brand-700">Desde Wikiloc, por revisar:</span>
+      <span
+        v-for="w in waiting"
+        :key="w.id"
+        class="inline-flex items-center gap-1 rounded-md border bg-white py-0.5 pr-0.5 pl-2"
+        :class="file?.walk?.id === w.id ? 'border-brand-600' : 'border-stone-300'"
+      >
+        <button class="hover:underline" @click="openWalk(w)">
+          {{ w.date ? formatSerial(isoToSerial(w.date)) : w.name }} · {{ w.waypoints.length }} puntos
+        </button>
+        <a :href="w.url" target="_blank" rel="noopener" class="btn-ghost" title="Abrir en Wikiloc"><ExternalLink :size="13" /></a>
+        <button class="btn-ghost" title="Quitar de la lista" @click="removeWalk(w)"><Trash2 :size="13" /></button>
+      </span>
+    </div>
+
+    <section v-if="file" class="max-h-[60%] shrink-0 overflow-auto border-b border-stone-200 bg-white">
+      <p v-if="file.walk" class="bg-stone-50 px-3 py-1.5 text-xs text-stone-600">
+        Leído de la página pública de Wikiloc: sin horas GPS del recorrido (SamplingDay_data no se completa).
+        <template v-if="!date"> Escribe la fecha arriba.</template>
+      </p>
       <!-- Phones: one card per waypoint. -->
       <ul class="divide-y divide-stone-100 text-sm sm:hidden">
         <li
@@ -344,6 +423,9 @@ const clean = (v: unknown) => (isBlank(v as CellValue) ? '—' : String(v))
             :aria-label="`Incluir ${c.text}`"
             @change="toggle(i)"
           />
+          <a v-for="id in c.photos.slice(0, 1)" :key="id" :href="photoUrl(id)" target="_blank" rel="noopener" class="shrink-0">
+            <img :src="photoUrl(id)" alt="" loading="lazy" class="h-16 w-16 rounded object-cover" />
+          </a>
           <div class="min-w-0">
             <p>
               <b>{{ c.seq !== null ? `M${c.seq}` : '' }}</b> <i>{{ clean(c.species) }}</i> {{ c.subspecies || '' }}
@@ -369,6 +451,7 @@ const clean = (v: unknown) => (isBlank(v as CellValue) ? '—' : String(v))
         <thead class="sticky top-0 bg-stone-100 text-stone-600">
           <tr>
             <th class="px-2 py-1.5"></th>
+            <th v-if="file.walk" class="px-2 py-1.5">Foto</th>
             <th class="px-2 py-1.5">Punto</th>
             <th class="px-2 py-1.5">Especie</th>
             <th class="px-2 py-1.5">Sexo</th>
@@ -395,6 +478,16 @@ const clean = (v: unknown) => (isBlank(v as CellValue) ? '—' : String(v))
                 :aria-label="`Incluir ${c.text}`"
                 @change="toggle(i)"
               />
+            </td>
+            <td v-if="file.walk" class="px-2 py-1.5">
+              <a v-for="id in c.photos" :key="id" :href="photoUrl(id)" target="_blank" rel="noopener" class="mr-1 inline-block">
+                <img
+                  :src="photoUrl(id)"
+                  alt=""
+                  loading="lazy"
+                  class="h-14 w-14 rounded object-cover hover:ring-2 hover:ring-brand-600"
+                />
+              </a>
             </td>
             <td class="max-w-64 px-2 py-1.5 text-stone-500" :title="c.text">{{ c.text }}</td>
             <td class="px-2 py-1.5 whitespace-nowrap">
@@ -423,6 +516,9 @@ const clean = (v: unknown) => (isBlank(v as CellValue) ? '—' : String(v))
         <button class="btn-primary" :disabled="!ready || busy || !included.length" @click="addRows">
           <ListPlus :size="15" /> Añadir {{ included.length }} filas a Collection_data
         </button>
+        <button v-if="gpxTrack" class="btn" :disabled="busy" @click="addPhotosToTrack">
+          <ImagePlus :size="15" /> Solo añadir las fotos al GPX ya subido de este día
+        </button>
         <button class="btn" :disabled="!ready || busy" title="Para recorridos cuyas filas ya están en la hoja" @click="onlyTrack">
           <MapPin :size="15" /> Solo guardar el recorrido (mapa)
         </button>
@@ -435,7 +531,10 @@ const clean = (v: unknown) => (isBlank(v as CellValue) ? '—' : String(v))
 
     <p class="hint px-4 py-1">
       <template v-if="monitoringCreates.length">{{ monitoringCreates.length }} filas nuevas de monitoreo (verde)</template>
-      <template v-else>Elige el GPX exportado desde Wikiloc (Descargar → GPX, con waypoints).</template>
+      <template v-else>
+        Elige el GPX exportado desde Wikiloc, o trae recorridos por su enlace con
+        <code class="rounded bg-stone-100 px-1">npm run wikiloc -- &lt;enlace&gt;</code> en tu computadora.
+      </template>
       <template v-if="dayCreates.length"> · {{ dayCreates.length }} fila nueva en SamplingDay_data</template>
       · últimos {{ recentCount }} registros de monitoreo.
       <button class="underline" @click="recentCount += 15">Cargar más</button>
