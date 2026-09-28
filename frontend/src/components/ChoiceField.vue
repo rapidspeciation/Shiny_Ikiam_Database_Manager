@@ -195,11 +195,22 @@ function onInput() {
   active.value = text.value.trim() && entries.value.length ? 0 : -1
   reveal()
 }
+/** Focused by a click just now: the mouseup that follows would put the caret back and undo the selection. */
+let focusedByPointer = false
 function onFocus() {
   tapOnly.value = false
-  // Select-like lists: typing replaces the value (it only filters).
-  if (!props.freetext) input.value?.select()
+  // As in a spreadsheet cell, typing replaces the value (free text included). A moment
+  // later: a click places the caret after the focus event, which undid the selection.
+  input.value?.select()
+  if (focusedByPointer) setTimeout(() => document.activeElement === input.value && input.value?.select())
   show()
+}
+function onPointerDown() {
+  focusedByPointer = document.activeElement !== input.value
+}
+function onMouseUp(event: MouseEvent) {
+  if (focusedByPointer) event.preventDefault()
+  focusedByPointer = false
 }
 function onKey(event: KeyboardEvent) {
   // Keys that finish composing an accented letter or a suggestion of the phone's keyboard.
@@ -262,6 +273,8 @@ function onArrow() {
       :placeholder="placeholder ?? (allowEmpty ? '—' : undefined)"
       @input="onInput"
       @focus="onFocus"
+      @pointerdown="onPointerDown"
+      @mouseup="onMouseUp"
       @click="open || show()"
       @keydown="onKey"
       @blur="onBlur"
