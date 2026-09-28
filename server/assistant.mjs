@@ -123,7 +123,7 @@ export const TOOLS = [
           kind: {
             type: 'string',
             description:
-              'repeat, cam_cross, list, insectary_link, link_mismatch, date_order, future_date, missing_sample, mark_reuse (comma-separated)',
+              'repeat, cam_cross, list, insectary_link, link_mismatch, date_order, future_date, bad_date, missing_sample, mark_reuse (comma-separated)',
           },
           recordId: { type: 'string', description: 'Only the issues of this row' },
           limit: { type: 'integer', description: '1 to 200, default 50' },

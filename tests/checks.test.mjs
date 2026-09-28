@@ -102,9 +102,22 @@ async function fixture() {
       },
       { row: 4, cells: [formulaCell('=(ROW()+3)&"D"', 'N7D')] },
     ],
+    SamplingDay_data: [
+      // 375004 typed for 21/9/2026; the note says the day.
+      {
+        row: 2,
+        values: {
+          Date: 375004,
+          Location: 'Ikiam',
+          Purpose: 'Monitoring',
+          Collectors_initials: 'AA',
+          Notes: '21/9/2026 AA: Sunny',
+        },
+      },
+    ],
   });
   const store = new Store({ localMode: true }, { sheets });
-  await store.sync({ sheets: ['Collection_data', 'Insectary_data'] });
+  await store.sync({ sheets: ['Collection_data', 'Insectary_data', 'SamplingDay_data'] });
   return store;
 }
 const find = (out, kind, sheet, row, field) =>
@@ -121,9 +134,14 @@ test('check_data finds each kind of inconsistency, with the row, the value and t
     link_mismatch: 2,
     date_order: 2,
     future_date: 1,
+    bad_date: 1,
     missing_sample: 3,
     mark_reuse: 1,
   });
+  // A number that is no date, flagged once (not as a date in the future), with the day its note gives.
+  const broken = find(out, 'bad_date', 'SamplingDay_data', 2, 'Date');
+  assert.match(broken.problem, /375004 \(año 2926\), que no es una fecha/);
+  assert.deepEqual(broken.fix.values, { Date: '2026-09-21' });
   // Tubes are unique across the workbook.
   assert.match(find(out, 'repeat', 'Collection_data', 9, 'Tube_1_id').problem, /FS00000010 también está en Insectary_data fila 2/);
   // A CAM given to a field butterfly and to an insectary butterfly.
