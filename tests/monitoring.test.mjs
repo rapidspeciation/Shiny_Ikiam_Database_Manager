@@ -17,6 +17,7 @@ import {
   listWalks,
   saveTrack,
   saveWalk,
+  reopenWalk,
 } from '../server/monitoring.mjs';
 
 const editor = { id: 'e1', username: 'editor', role: 'editor' };
@@ -184,4 +185,77 @@ test('a walk takes its collector from the followed profile of its author', async
   // Following again updates the pattern and collector instead of failing.
   const again = addProfile(s, { url: '11910166', pattern: 'monitor', collector: 'AA - Alex Arias' }, editor);
   assert.equal(again.profile.pattern, 'monitor');
+});
+
+test('an imported walk can be reviewed again: re-pasting its link says so, and importing it again replaces its track', async () => {
+  const s = store();
+  const { walk } = await saveWalk(s, walkBody(), editor, { fetchImage: fakeImage([]) });
+  const first = saveTrack(s, { ...body('request-0200'), date: '2025-05-14', wikilocWalkId: walk.id }, editor);
+  assert.equal(listWalks(s)[0].status, 'imported');
+  // Pasting the link again: the screen learns the walk was imported and can reopen it.
+  const pasted = queueLink(s, { text: walk.url }, editor);
+  assert.equal(pasted.known, 'imported');
+  assert.equal(pasted.walkId, walk.id);
+  assert.equal(reopenWalk(s, walk.id).walk.status, 'waiting');
+  // Reviewed and imported again: the same track, with the new captures.
+  const again = saveTrack(
+    s,
+    { ...body('request-0201'), date: '2025-05-14', wikilocWalkId: walk.id, captures: [{ ...body('x').captures[0], markId: 'B70', row: 7 }] },
+    editor,
+  );
+  assert.equal(again.track.id, first.track.id);
+  assert.equal(again.track.captures[0].markId, 'B70');
+  assert.equal(listTracks(s).length, 1);
+  assert.equal(listWalks(s)[0].status, 'imported');
+  // A replayed request changes nothing.
+  assert.equal(saveTrack(s, { ...body('request-0201'), captures: [] }, editor).track.captures[0].markId, 'B70');
+  assert.throws(() => reopenWalk(s, 'nope'), { code: 'WALK_NOT_FOUND' });
+});
+
+test('whoever brought the walk in may remove its track; the walk then waits for review again', async () => {
+  const s = store();
+  const { walk } = await saveWalk(s, walkBody(), editor, { fetchImage: fakeImage([]) });
+  // Another editor imported it; the editor who asked for the walk may still remove it.
+  const { track } = saveTrack(s, { ...body('request-0300'), wikilocWalkId: walk.id }, other);
+  const third = { id: 'e3', username: 'third', role: 'editor' };
+  assert.deepEqual(
+    [editor, other, third, reviewer].map(u => listTracks(s, u)[0].canDelete),
+    [true, true, false, true],
+  );
+  assert.throws(() => deleteTrack(s, track.id, third), { code: 'FORBIDDEN' });
+  deleteTrack(s, track.id, editor);
+  assert.equal(listTracks(s).length, 0);
+  assert.deepEqual([listWalks(s)[0].status, listWalks(s)[0].trackId], ['waiting', null]);
+});
+
+test('stored captures follow their butterfly when sheet rows are removed', async () => {
+  const EPOCH = Date.UTC(1899, 11, 30);
+  const serial = iso => Math.round((Date.parse(`${iso}T00:00:00Z`) - EPOCH) / 864e5);
+  const day = { Collection_date: serial('2026-09-26'), Collector: 'FCH - Franz Chandi', Purpose: 'Monitoring', Collection_location: 'Ikiam' };
+  // Row 2 was removed from the sheet: B69 moved up from row 3 to row 2, and row 3 is now another butterfly.
+  const sheets = new LocalSheets({
+    Collection_data: [
+      { row: 2, values: { ...day, FieldMark_ID: 'B69', SPECIES: 'Hyposcada illinissa', Sex: 'female', Collection_time: 560 / 1440 } },
+      { row: 3, values: { ...day, FieldMark_ID: 'NA', SPECIES: 'Oleria tigilla', Sex: 'male', Collection_time: 600 / 1440 } },
+    ],
+  });
+  const s = new Store({ localMode: true }, { sheets });
+  await s.sync({ sheets: ['Collection_data'] });
+  const stored = body('request-0400');
+  const b69 = stored.captures[0];
+  stored.captures = [
+    { ...b69, row: 3 },
+    // Its row was removed and nothing else matches it.
+    { ...b69, text: 'M2 Oleria onega macho 9:50', markId: null, species: 'Oleria onega', sex: 'male', minutes: 590, row: 4 },
+    // Still right.
+    { ...b69, text: 'M3 Oleria tigilla macho 10:00', markId: null, species: 'Oleria tigilla', sex: 'male', minutes: 600, row: 3 },
+  ];
+  saveTrack(s, stored, editor);
+  const [track] = listTracks(s);
+  assert.deepEqual(
+    track.captures.map(c => c.row),
+    [2, null, 3],
+  );
+  assert.ok(track.captures[0].recordId);
+  s.close();
 });
