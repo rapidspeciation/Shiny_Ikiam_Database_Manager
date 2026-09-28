@@ -106,6 +106,10 @@ body {
   font-weight: 600;
   color: #1f4d3a;
 }
+/* A column that does not apply to the row's Release_Collect (CAM for the insectary, Insectary_ID for a preserved one). */
+.collect-grid .tabulator-cell.is-off {
+  background: #f5f5f4;
+}
 .collect-grid .tabulator-cell.row-remove {
   color: #a8a29e;
   cursor: pointer;
@@ -234,6 +238,7 @@ body.touch-bar-open main {
 }
 .sheet-grid .tabulator-cell.has-choices:hover::after { color: #1f4d3a; background: #eef5f1; }
 .sheet-grid .tabulator-cell.has-choices.tabulator-editing::after { display: none; }
+.sheet-grid .tabulator-cell.has-choices.is-off::after { display: none; }
 .sheet-grid .tabulator-cell.is-formula {
   color: #57534e;
   background: #f3f4f1;

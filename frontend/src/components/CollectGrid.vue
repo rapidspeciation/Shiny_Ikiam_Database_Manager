@@ -3,7 +3,7 @@ import { onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
-import { FATES, HEADERS, SEX_VALUES, idsText, type Column, type Draft } from '../lib/collect'
+import { FATES, HEADERS, SEX_VALUES, applies, notApplicable, type Column, type Draft } from '../lib/collect'
 import {
   attachCopyMarker,
   attachFillHandle,
@@ -30,10 +30,12 @@ const props = defineProps<{
   species: string[]
   subspeciesFor: (species: string) => string[]
   purposes: string[]
+  /** Preservation_medium's list in the sheet. */
+  mediums: string[]
   /** Spreads a block pasted at a row and column; false for a single value. */
   paste: (text: string, index: number, column: Column) => boolean
-  /** Why a row's Insectary ID cannot be saved (repeated, already recorded, no pre-made row). */
-  idProblem?: (d: Draft) => string | null
+  /** Why a row's Insectary ID, CAM or tube cannot be saved (repeated, already used, no pre-made row). */
+  idProblem?: (d: Draft, column: Column) => string | null
   /** A value outside the sheet's list for its column (red corner, as in Google Sheets). */
   cellProblem?: (d: Draft, column: Column) => string | null
 }>()
@@ -60,26 +62,52 @@ const toRow = (d: Draft): Row => ({
   sex: d.sex,
   fate: d.fate,
   time: d.time,
-  ids: idsText(d),
+  insectaryId: d.insectaryId,
+  cam: d.cam,
+  tube: d.tube,
+  medium: d.medium,
   purpose: d.purpose,
   notes: d.notes,
 })
 const draftOf = (row: RowComponent) => props.drafts.find(d => d.key === (row.getData() as Row).__key)
 
-/** Insectary ID (the suggestion can be changed to the ID written on the wings), or CAM and tube; nothing for a release. */
-const canEdit: CanEdit = (row, field) =>
-  field === 'ids' ? draftOf(row)?.fate !== 'liberada' : !['__key', '__remove'].includes(field)
+/**
+ * Insectary_ID only for butterflies going to the insectary (the suggestion can
+ * be changed to the ID written on the wings); CAM, tube and medium only for
+ * those preserved in the field.
+ */
+const canEdit: CanEdit = (row, field) => {
+  if (field === '__key' || field === '__remove') return false
+  const d = draftOf(row)
+  return !d || applies(d, field as Column)
+}
+const whyNot = (row: RowComponent, field: string) => {
+  const d = draftOf(row)
+  return d && field in HEADERS && !applies(d, field as Column) ? notApplicable(field as Column) : null
+}
 
 /** Columns chosen from a list show a ▾ arrow; clicking it opens the list (see onCellClick). */
 const choices = (values: () => string[]) => ({ cssClass: 'has-choices', ...choiceEditor(() => values()) })
 
-/** Plain cells, with the red corner when the value is outside the sheet's list. */
-const listed = (field: Column) => (cell: CellComponent) => {
+const ID_COLUMNS: Column[] = ['insectaryId', 'cam', 'tube']
+/**
+ * A cell as the sheet will check it: grey where the column does not apply to
+ * the row's Release_Collect, red corner for a value outside the sheet's list,
+ * red for an ID, CAM or tube that is repeated or already used.
+ */
+const display = (field: Column, text?: (value: unknown) => string) => (cell: CellComponent) => {
   const d = draftOf(cell.getRow())
-  const problem = d && props.cellProblem?.(d, field)
-  cell.getElement().classList.toggle('is-invalid', !!problem)
-  cell.getElement().title = problem || ''
-  return String(cell.getValue() ?? '')
+  const el = cell.getElement()
+  const off = !!d && !applies(d, field)
+  const invalid = (!off && d && props.cellProblem?.(d, field)) || null
+  const error = (!off && d && ID_COLUMNS.includes(field) && props.idProblem?.(d, field)) || null
+  el.classList.toggle('is-off', off)
+  el.classList.toggle('is-invalid', !!invalid)
+  el.classList.toggle('is-error', !!error)
+  el.classList.toggle('is-id', field === 'insectaryId' && !off)
+  el.title =
+    error || invalid || (field === 'insectaryId' && !off ? 'El ID escrito en las alas (se sugiere el siguiente libre)' : '')
+  return off ? '' : text ? text(cell.getValue()) : String(cell.getValue() ?? '')
 }
 
 function columns(): ColumnDefinition[] {
@@ -87,7 +115,7 @@ function columns(): ColumnDefinition[] {
     title: HEADERS[field],
     field,
     width,
-    formatter: listed(field),
+    formatter: display(field),
     editor: 'input' as const,
     editable: (cell: CellComponent) => canEdit(cell.getRow(), field),
     ...extra,
@@ -107,19 +135,13 @@ function columns(): ColumnDefinition[] {
     text('fate', 210, {
       cssClass: 'has-choices',
       ...choiceEditor(() => Object.fromEntries(Object.entries(FATES).map(([k, f]) => [k, f.label]))),
-      formatter: cell => FATES[cell.getValue() as keyof typeof FATES]?.label ?? '',
+      formatter: display('fate', value => FATES[value as keyof typeof FATES]?.label ?? ''),
     }),
     text('time', 110),
-    text('ids', 250, {
-      formatter: cell => {
-        const d = draftOf(cell.getRow())
-        const problem = d && props.idProblem?.(d)
-        cell.getElement().classList.toggle('is-id', d?.fate === 'insectario')
-        cell.getElement().classList.toggle('is-error', !!problem)
-        cell.getElement().title = problem || (d?.fate === 'insectario' ? 'El ID escrito en las alas (se sugiere el siguiente libre)' : '')
-        return String(cell.getValue() ?? '')
-      },
-    }),
+    text('insectaryId', 110),
+    text('cam', 120),
+    text('tube', 125),
+    text('medium', 190, choices(() => props.mediums)),
     text('purpose', 150, choices(() => props.purposes)),
     text('notes', 220),
     {
@@ -164,11 +186,12 @@ function completed(field: Column, text: string, row: Row) {
     species: () => props.species,
     subspecies: () => props.subspeciesFor(row.species),
     purpose: () => props.purposes,
+    medium: () => props.mediums,
   }
   return options[field] ? complete(text, options[field]!()) : text
 }
 
-const onKeydown = spreadsheetKeys(() => table, canEdit, message => emit('notice', message))
+const onKeydown = spreadsheetKeys(() => table, canEdit, message => emit('notice', message), whyNot)
 const onEditingKey = editingKeys(() => table)
 
 onMounted(() => {

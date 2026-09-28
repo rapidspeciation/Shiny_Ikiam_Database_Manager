@@ -10,7 +10,7 @@ import { isoToSerial, todayIso } from '../lib/dates'
 import { errorText, notify } from '../lib/notice'
 import { listColumn } from '../lib/options'
 import { listProblem, verificationsFor } from '../lib/verifications'
-import { COLUMNS, FATES, HEADERS, SEX_VALUES, insectarySex, type Column, type Draft, type Fate } from '../lib/collect'
+import { COLUMNS, FATES, HEADERS, SEX_VALUES, applies, insectarySex, type Column, type Draft, type Fate } from '../lib/collect'
 import { parseBlock, parseCamTube, parseFate, parseSex, parseTime } from '../lib/paste'
 import { persistentRef } from '../lib/persist'
 import { orderColumns } from '../lib/rows'
@@ -89,6 +89,7 @@ const places = computed(() => [...new Set([...ranked('Collection_location'), ...
 const people = computed(() => options.value.Collector || ranked('Collector'))
 const rainfalls = computed(() => options.value.Rainfall || ranked('Rainfall'))
 const clouds = computed(() => options.value.Cloud_cover || ranked('Cloud_cover'))
+const mediums = computed(() => options.value.Preservation_medium || ['Flash frozen'])
 
 // Insectary IDs: the pre-made unused rows of Insectary_data, in order.
 const freeIds = ref<string[]>([])
@@ -129,6 +130,18 @@ const camPool = computed(() => {
   const at = pool.indexOf(latest('CAM_ID'))
   return [...pool.slice(at + 1), ...pool.slice(0, at + 1)].filter(id => !usedCams.value.has(id))
 })
+const usedTubes = computed(() => {
+  tables.version
+  const used = new Map<string, string>()
+  for (const [sheet, keys] of [
+    [MODULE, ['Tube_1_id', 'Tube_2_id', 'Tube_3_id', 'Tube_4_id_LEGS']],
+    ['Insectary_data', ['Tube_1_id', 'Tube_2_id', 'Tube_3_id', 'Tube_4_id']],
+  ] as const)
+    for (const row of tables.tables[sheet]?.rows || [])
+      for (const key of keys)
+        if (!isBlank(row.values[key]) && String(row.values[key]).trim() !== 'NA') used.set(String(row.values[key]).trim().toUpperCase(), `${sheet} fila ${row.row}`)
+  return used
+})
 const nextCam = () => camPool.value.find(id => !drafts.value.some(d => d.cam === id)) || ''
 const tubeRun = ref<string[]>([])
 async function loadTubes() {
@@ -150,6 +163,7 @@ function setFate(draft: Draft, fate: Fate) {
   draft.insectaryId = fate === 'insectario' ? draft.insectaryId || nextInsectaryId() : ''
   draft.cam = fate === 'preservada' ? draft.cam || nextCam() : ''
   draft.tube = fate === 'preservada' ? draft.tube || nextTube() : ''
+  draft.medium = fate === 'preservada' ? draft.medium || header.value.medium : ''
 }
 // Rows added before the free IDs, CAMs or tubes had arrived get them once they do.
 watch([freeIds, camPool, tubeRun], () => {
@@ -157,6 +171,8 @@ watch([freeIds, camPool, tubeRun], () => {
     if (d.fate === 'insectario' && !d.insectaryId) d.insectaryId = nextInsectaryId()
     if (d.fate === 'preservada' && !d.cam) d.cam = nextCam()
     if (d.fate === 'preservada' && !d.tube) d.tube = nextTube()
+    // Lists kept from before the medium was a column of its own.
+    if (d.fate === 'preservada' && !d.medium) d.medium = header.value.medium
   }
 })
 async function add() {
@@ -204,6 +220,7 @@ function blankDraft(): Draft {
     insectaryId: '',
     cam: '',
     tube: '',
+    medium: '',
   }
 }
 function setColumn(d: Draft, column: Column, text: string) {
@@ -212,19 +229,23 @@ function setColumn(d: Draft, column: Column, text: string) {
     const fate = parseFate(text)
     if (fate) setFate(d, fate)
   } else if (column === 'time') d.time = parseTime(text)
-  else if (column === 'ids') {
-    if (d.fate === 'insectario') {
-      // The ID written on the wings, if it is not the one suggested (checked in `problems`).
-      const id = text.trim().toUpperCase()
-      if (/^[0-9A-ZÑ]{2,6}$/.test(id)) d.insectaryId = id
-      return
-    }
-    // A preserved butterfly takes a CAM and tube ("CAM079895 · FS90415305").
+  else if (!applies(d, column)) return
+  else if (column === 'insectaryId') {
+    // The ID written on the wings, if it is not the one suggested (checked in `problems`).
+    const id = text.trim().toUpperCase()
+    if (/^[0-9A-ZÑ]{2,6}$/.test(id)) d.insectaryId = id
+  } else if (column === 'cam') {
+    // "CAM079895", or CAM and tube together ("CAM079895 · FS90415305 (Flash frozen)").
     const { cam, tube } = parseCamTube(text)
-    if (d.fate === 'preservada') {
-      if (cam || !text.trim()) d.cam = cam
-      if (tube || !text.trim()) d.tube = tube
-    }
+    if (cam || !text.trim()) d.cam = cam
+    if (tube) d.tube = tube
+    const medium = mediums.value.find(m => text.includes(`(${m})`))
+    if (medium) d.medium = medium
+  } else if (column === 'tube') d.tube = text.trim().toUpperCase()
+  else if (column === 'medium') {
+    d.medium = text.trim()
+    // The next rows added take the same medium (and its tubes).
+    if (d.medium) header.value.medium = d.medium
   } else d[column] = text === 'NA' && column === 'subspecies' ? '' : text
 }
 /**
@@ -352,7 +373,17 @@ const idRows = computed(() => {
     if (!isBlank(r.values.Insectary_ID)) out.set(String(r.values.Insectary_ID).trim().toUpperCase(), { row: r.row, observed: r.observed })
   return out
 })
-function idProblem(d: Draft): string | null {
+/** An Insectary ID, CAM or tube repeated in the list, or already used in the sheets. */
+function idProblem(d: Draft, column: Column = 'insectaryId'): string | null {
+  if (column === 'cam' || column === 'tube') {
+    const value = d[column].trim().toUpperCase()
+    if (d.fate !== 'preservada' || !value) return null
+    if (drafts.value.filter(x => x.fate === 'preservada' && x[column].trim().toUpperCase() === value).length > 1)
+      return `${value} está repetido en la lista`
+    if (column === 'cam' && usedCams.value.has(value)) return `${value} ya está usado en las hojas`
+    const used = column === 'tube' && usedTubes.value.get(value)
+    return used ? `${value} ya está usado (${used})` : null
+  }
   if (d.fate !== 'insectario' || !d.insectaryId) return null
   if (drafts.value.filter(x => x.fate === 'insectario' && x.insectaryId === d.insectaryId).length > 1)
     return `${d.insectaryId} está repetido en la lista`
@@ -375,6 +406,7 @@ const LISTED: Partial<Record<Column, string>> = {
   species: 'SPECIES',
   sex: 'Sex',
   purpose: 'Purpose',
+  medium: 'Preservation_medium',
 }
 function cellProblem(d: Draft, column: Column): string | null {
   const field = LISTED[column]
@@ -389,13 +421,15 @@ const problems = computed(() => [
     if (!d.species) out.push(`fila ${n}: falta la especie`)
     if (!d.sex) out.push(`fila ${n}: falta el sexo`)
     if (d.fate === 'insectario' && !d.insectaryId) out.push(`fila ${n}: no quedan Insectary IDs libres`)
-    const idIssue = idProblem(d)
-    if (idIssue) out.push(`fila ${n}: ${idIssue}`)
+    for (const column of ['insectaryId', 'cam', 'tube'] as const) {
+      const idIssue = idProblem(d, column)
+      if (idIssue) out.push(`fila ${n}: ${HEADERS[column]} ${idIssue}`)
+    }
     for (const column of Object.keys(LISTED) as Column[]) {
       const issue = cellProblem(d, column)
       if (issue) out.push(`fila ${n}: ${LISTED[column]} ${issue}`)
     }
-    if (d.fate === 'preservada' && (!d.cam || !d.tube)) out.push(`fila ${n}: falta CAM o tubo`)
+    if (d.fate === 'preservada' && (!d.cam || !d.tube || !d.medium)) out.push(`fila ${n}: falta CAM_ID, Tube_1_id o Preservation_medium`)
     return out
   }),
 ])
@@ -444,7 +478,7 @@ function collectionRow(d: Draft): Record<string, CellValue> {
       Butterfly_weight: 'NA',
       Death_date: date,
       Preservation_date: date,
-      Preservation_medium: header.value.medium,
+      Preservation_medium: d.medium || header.value.medium,
       Preserved_dead_alive: 'Alive',
       Splitted_body: 'No',
       Location_Head: 'Ikiam',
@@ -575,14 +609,6 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
       <button class="btn-primary" @click="add">
         <Plus :size="15" /> Añadir {{ Math.max(1, addCount || 1) }} {{ Math.max(1, addCount || 1) === 1 ? 'fila' : 'filas' }}
       </button>
-      <label v-if="drafts.some(d => d.fate === 'preservada')">
-        <span class="field-label">Preservation_medium</span>
-        <select v-model="header.medium" class="field-input">
-          <option>Flash frozen</option>
-          <option>Ethanol</option>
-          <option>DMSO</option>
-        </select>
-      </label>
     </div>
 
     <div v-if="drafts.length" class="border-b border-stone-200 bg-white px-3 pb-2">
@@ -638,6 +664,7 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         :species="speciesList"
         :subspecies-for="subspeciesFor"
         :purposes="options.Purpose || []"
+        :mediums="mediums"
         :paste="pasteText"
         :id-problem="idProblem"
         :cell-problem="cellProblem"
@@ -763,22 +790,42 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
                   @change="d.time = parseTime(d.time)"
                 />
               </td>
-              <td class="px-1 whitespace-nowrap">
+              <td class="px-1">
                 <input
                   v-if="d.fate === 'insectario'"
                   :value="d.insectaryId"
-                  data-col="ids"
+                  data-col="insectaryId"
                   class="field-input w-24 font-semibold tracking-wide text-brand-800"
                   :class="{ 'border-amber-500 bg-amber-50': idProblem(d) }"
                   :title="idProblem(d) || 'El ID escrito en las alas (se sugiere el siguiente libre)'"
-                  @change="setColumn(d, 'ids', ($event.target as HTMLInputElement).value)"
-                  @paste="onPaste($event, i, 'ids')"
+                  @change="setColumn(d, 'insectaryId', ($event.target as HTMLInputElement).value)"
+                  @paste="onPaste($event, i, 'insectaryId')"
                 />
-                <template v-else-if="d.fate === 'preservada'">
-                  <input v-model="d.cam" data-col="ids" class="field-input w-28" @paste="onPaste($event, i, 'ids')" />
-                  <input v-model="d.tube" class="field-input ml-1 w-28" />
-                </template>
               </td>
+              <template v-if="d.fate === 'preservada'">
+                <td v-for="c in ['cam', 'tube'] as const" :key="c" class="px-1">
+                  <input
+                    :value="d[c]"
+                    :data-col="c"
+                    class="field-input w-32"
+                    :class="{ 'border-red-500 bg-red-50': idProblem(d, c) }"
+                    :title="idProblem(d, c) || undefined"
+                    @change="setColumn(d, c, ($event.target as HTMLInputElement).value)"
+                    @paste="onPaste($event, i, c)"
+                  />
+                </td>
+                <td class="px-1">
+                  <select
+                    :value="d.medium"
+                    data-col="medium"
+                    class="field-input w-48"
+                    @change="setColumn(d, 'medium', ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option v-for="m in mediums" :key="m" :value="m">{{ m }}</option>
+                  </select>
+                </td>
+              </template>
+              <td v-else colspan="3"></td>
               <td class="px-1">
                 <input
                   v-model="d.purpose"

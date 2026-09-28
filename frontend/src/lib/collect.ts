@@ -13,6 +13,8 @@ export interface Draft {
   insectaryId: string
   cam: string
   tube: string
+  /** Preservation_medium of a preserved butterfly's tube. */
+  medium: string
 }
 /** The Release_Collect value each fate is saved as; the list shows it exactly as the sheet will have it. */
 export const FATES: Record<Fate, { label: string; value: string }> = {
@@ -37,19 +39,44 @@ export const HEADERS: Record<Column, string> = {
   sex: 'Sex',
   fate: 'Release_Collect',
   time: 'Collection_time',
-  ids: 'Insectary_ID / CAM_ID · Tube_1_id',
+  insectaryId: 'Insectary_ID',
+  cam: 'CAM_ID',
+  tube: 'Tube_1_id',
+  medium: 'Preservation_medium',
   purpose: 'Purpose',
   notes: 'Notes_Collection_data',
 }
 
 /**
  * The list's columns in the order they appear, which is also the order cells
- * pasted from a spreadsheet are spread over ("ids" is the Insectary ID, or
- * "CAM · tubo" for a preserved butterfly).
+ * pasted from a spreadsheet are spread over. Insectary_ID is for butterflies
+ * sent to the insectary; CAM_ID, Tube_1_id and Preservation_medium for those
+ * preserved in the field.
  */
-export const COLUMNS = ['location', 'species', 'subspecies', 'sex', 'fate', 'time', 'ids', 'purpose', 'notes'] as const
+export const COLUMNS = [
+  'location',
+  'species',
+  'subspecies',
+  'sex',
+  'fate',
+  'time',
+  'insectaryId',
+  'cam',
+  'tube',
+  'medium',
+  'purpose',
+  'notes',
+] as const
 export type Column = (typeof COLUMNS)[number]
 
-/** What the "ids" column shows: the Insectary ID, or the CAM and tube of a preserved butterfly. */
-export const idsText = (d: Draft) =>
-  d.fate === 'insectario' ? d.insectaryId : d.fate === 'preservada' ? [d.cam, d.tube].filter(Boolean).join(' · ') : ''
+/** Whether a column is filled for a row's Release_Collect (the others are left out of the sheet, or NA). */
+export function applies(d: Pick<Draft, 'fate'>, column: Column): boolean {
+  if (column === 'insectaryId') return d.fate === 'insectario'
+  if (column === 'cam' || column === 'tube' || column === 'medium') return d.fate === 'preservada'
+  return true
+}
+/** Why a column is not filled for a row (typing there says so). */
+export const notApplicable = (column: Column) =>
+  column === 'insectaryId'
+    ? 'Insectary_ID es solo para Collected_Sent2Insectary: cambia primero Release_Collect'
+    : `${HEADERS[column]} es solo para Collected_Preserved: cambia primero Release_Collect`

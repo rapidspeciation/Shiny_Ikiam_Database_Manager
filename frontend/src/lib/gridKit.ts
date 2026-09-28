@@ -59,8 +59,14 @@ function giveText(tries = 0) {
 /**
  * Spreadsheet keys: typing on a selected cell replaces its content; Enter or
  * F2 edits it in place; Ctrl+D fills down; Supr clears the selection.
+ * `whyNot` explains a cell that cannot be typed in, when there is a reason to give.
  */
-export function spreadsheetKeys(table: () => Tabulator | null, canEdit: CanEdit, notice: Notice) {
+export function spreadsheetKeys(
+  table: () => Tabulator | null,
+  canEdit: CanEdit,
+  notice: Notice,
+  whyNot?: (row: RowComponent, field: string) => string | null,
+) {
   return (event: KeyboardEvent) => {
     const t = table()
     const typing = event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey
@@ -85,6 +91,9 @@ export function spreadsheetKeys(table: () => Tabulator | null, canEdit: CanEdit,
     } else if (cell && editable && (event.key === 'Enter' || event.key === 'F2')) {
       event.preventDefault()
       cell.edit(true)
+    } else if (cell && !editable && typing && whyNot?.(cell.getRow(), cell.getField())) {
+      event.preventDefault()
+      notice(whyNot(cell.getRow(), cell.getField())!)
     } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') {
       event.preventDefault()
       fillDown(t, canEdit, notice)
