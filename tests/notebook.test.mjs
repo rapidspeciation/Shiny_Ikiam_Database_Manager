@@ -395,6 +395,19 @@ test('a photographed page is read in the background, reviewed, corrected and app
     const thread = (await call('GET', `/api/chat/threads/${job.threadId}`)).body;
     assert.equal(thread.messages[0].attachments.length, 1);
     assert.match(thread.messages[1].content, /2\. «8VD messen\. ♀ 848 messen\. 8\/8» → .*Sex=female\?/);
+    // "¿Qué dice la línea 2?": the chat's tool gives the line as read, beside the sheet.
+    const tool = await call('POST', '/api/ai/voice/tool', { threadId: job.threadId, name: 'notebook_page', args: { line: 2 } });
+    const page = tool.body.result;
+    assert.equal(page.jobId, job.id);
+    assert.deepEqual(page.lines.map(l => l.n), [2]);
+    assert.deepEqual(page.lines[0].cells.Sex, {
+      notebook: 'female',
+      sheet: 'female',
+      status: 'same',
+      doubtful: true,
+      alternatives: ['male'],
+    });
+    assert.equal(page.lines[0].cells.Intro2Insectary_date.notebook, '2025-08-08');
 
     // The person picks the other reading of line 2 and unticks line 1: the proposal follows.
     const patched = (await call('PATCH', `/api/notebook/jobs/${job.id}`, { edits: { 2: { Sex: 'male' } }, picks: { 1: false } })).body.job;
