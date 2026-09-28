@@ -1,6 +1,7 @@
 // Read-side helpers for the spreadsheet grid: whole-sheet payloads and the
 // next-identifier suggestions the original Shiny app offered.
 
+import { REFERENCES } from './insectaryId.mjs';
 import { moduleMap } from './schema.mjs';
 
 const blank = value => value === null || value === undefined || /^\s*(|NA|N\/A)\s*$/i.test(String(value));
@@ -103,26 +104,57 @@ function rowsOf(store, sheet) {
  */
 export function idSuggestions(store, { kind, start, count } = {}) {
   const n = Math.min(Math.max(Number(count) || 20, 1), 500);
-  if (kind === 'insectary') return insectaryIds(store, start, n);
+  // Every free pre-made row can be offered (earlier empty rows included).
+  if (kind === 'insectary') return insectaryIds(store, start, Math.min(Math.max(Number(count) || 20, 1), 5000));
   if (kind === 'cam') return start ? { sequence: sequence(start, n, usedCamIds(store)) } : camSuggestions(store);
   if (kind === 'tube') return start ? { sequence: sequence(start, n, usedTubeIds(store)) } : tubeSuggestions(store);
   throw fail('INVALID_KIND', 'kind must be insectary, cam or tube');
 }
 
+/**
+ * Free pre-made Insectary IDs. The letter at the end is the round of the
+ * sheet's ID formula (A0A…Z9A, then A0B…Z9B, …, now D), not a kind of
+ * butterfly. The team mostly goes on after the last row used, but also fills
+ * earlier empty rows (backlogs, emergences typed later: H0B–H2B, L8D…), so
+ * those count too, after the ones at the end. An ID is free when its row is
+ * empty and no row of any sheet names it; an ID with two pre-made rows is left out.
+ * `tail` is how many come after the last row used (the usual suggestion).
+ */
 function insectaryIds(store, start, count) {
   const rows = rowsOf(store, 'Insectary_data');
+  const norm = value => String(value ?? '').trim().toUpperCase();
+  const used = new Set(rows.filter(r => r.observed).map(r => norm(r.values.Insectary_ID)));
+  for (const [sheet, fields] of Object.entries(REFERENCES))
+    for (const r of moduleMap.has(sheet) ? rowsOf(store, sheet) : [])
+      for (const field of fields) if (!blank(r.values[field])) used.add(norm(r.values[field]));
+  const copies = new Map();
+  for (const r of rows) copies.set(norm(r.values.Insectary_ID), (copies.get(norm(r.values.Insectary_ID)) || 0) + 1);
   const lastObserved = rows.reduce((max, r) => (r.observed ? Math.max(max, r.row) : max), 0);
-  let free = rows.filter(r => !r.observed && r.row > lastObserved && !blank(r.values.Insectary_ID));
+  const free = rows.filter(r => {
+    const id = norm(r.values.Insectary_ID);
+    return !r.observed && id && !blank(id) && !used.has(id) && copies.get(id) === 1;
+  });
+  const tail = free.filter(r => r.row > lastObserved);
+  // Earlier rows: the newest round first (D before C before B), in sheet order; IDs of older forms (85Y) last.
+  const round = r => /^[A-ZÑ]\d([A-Z])$/.exec(norm(r.values.Insectary_ID))?.[1] ?? '';
+  const earlier = free.filter(r => r.row < lastObserved);
+  const newest = new Map();
+  for (const r of earlier) newest.set(round(r), Math.max(newest.get(round(r)) ?? 0, r.row));
+  const rank = r => (round(r) ? newest.get(round(r)) : -1);
+  earlier.sort((a, b) => rank(b) - rank(a) || a.row - b.row);
+  let pool = [...tail, ...earlier];
   if (start) {
-    const at = free.findIndex(r => r.values.Insectary_ID === start);
-    if (at < 0) throw fail('ID_NOT_AVAILABLE', `${start} is not an unused pre-filled Insectary ID`, 409);
-    free = free.slice(at);
+    // From a chosen ID the rows follow in sheet order (H0B → H1B → H2B).
+    const from = free.find(r => norm(r.values.Insectary_ID) === norm(start));
+    if (!from) throw fail('ID_NOT_AVAILABLE', `${start} is not an unused pre-filled Insectary ID`, 409);
+    pool = free.filter(r => r.row >= from.row);
   }
-  const ids = free.slice(0, count).map(r => ({ value: r.values.Insectary_ID, row: r.row }));
+  const ids = pool.slice(0, count).map(r => ({ value: String(r.values.Insectary_ID).trim(), row: r.row }));
   return {
     suggestions: ids.slice(0, 1).map(i => ({ value: i.value, label: `${i.value} (fila ${i.row})` })),
     sequence: ids.map(i => i.value),
     rows: ids,
+    tail: start ? ids.length : Math.min(tail.length, ids.length),
   };
 }
 

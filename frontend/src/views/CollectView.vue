@@ -91,13 +91,22 @@ const rainfalls = computed(() => options.value.Rainfall || ranked('Rainfall'))
 const clouds = computed(() => options.value.Cloud_cover || ranked('Cloud_cover'))
 const mediums = computed(() => options.value.Preservation_medium || ['Flash frozen'])
 
-// Insectary IDs: the pre-made unused rows of Insectary_data, in order.
+// Insectary IDs: the free pre-made rows of Insectary_data, those after the last row used first,
+// then earlier empty rows (server/grid.mjs insectaryIds).
 const freeIds = ref<string[]>([])
+/** How many of freeIds come after the last row used; the rest are earlier empty rows. */
+const tailCount = ref(0)
+/** Free pre-made IDs with their rows, in sheet order (the fill handle continues in that order). */
+const premade = ref<{ value: string; row: number }[]>([])
 async function loadFreeIds() {
   try {
-    const { sequence } = await api<{ sequence: string[] }>('ids?kind=insectary&count=200')
+    const { sequence, rows, tail } = await api<{ sequence: string[]; rows: { value: string; row: number }[]; tail: number }>(
+      'ids?kind=insectary&count=5000',
+    )
     const pendingIds = new Set(pending.creates.filter(c => c.module === 'Insectary_data').map(c => String(c.values.Insectary_ID)))
     freeIds.value = sequence.filter(id => !pendingIds.has(id))
+    tailCount.value = sequence.slice(0, tail).filter(id => !pendingIds.has(id)).length
+    premade.value = rows.filter(r => !pendingIds.has(r.value)).sort((a, b) => a.row - b.row)
   } catch (e) {
     notify(errorText(e), 'error')
   }
@@ -109,11 +118,22 @@ const collectedIds = computed(() => {
   for (const r of observed.value) if (!isBlank(r.values.Insectary_ID)) out.set(String(r.values.Insectary_ID).trim().toUpperCase(), r.row)
   return out
 })
-/** The pre-made ID `step` rows after `id` in Insectary_data (N9D + 1 → O0D), for the fill handle. */
+/**
+ * The free pre-made ID `step` rows after `id` in Insectary_data (N9D + 1 → O0D),
+ * for the fill handle; from an ID that is not free itself, the free rows after its row.
+ */
 function nextId(id: string, step: number): string | null {
-  const at = freeIds.value.indexOf(id.toUpperCase())
-  return at < 0 ? null : (freeIds.value[at + step] ?? null)
+  const key = id.trim().toUpperCase()
+  const at = premade.value.findIndex(r => r.value.toUpperCase() === key)
+  if (at >= 0) return premade.value[at + step]?.value ?? null
+  const row = idRows.value.get(key)?.row
+  return row === undefined ? null : (premade.value.filter(r => r.row > row)[step - 1]?.value ?? null)
 }
+/** IDs of earlier empty rows given to the list: they may already be on the wings of a butterfly not typed in yet. */
+const earlierIds = computed(() => {
+  const earlier = new Set(freeIds.value.slice(tailCount.value))
+  return drafts.value.filter(d => d.fate === 'insectario' && earlier.has(d.insectaryId)).map(d => d.insectaryId)
+})
 const nextInsectaryId = () =>
   freeIds.value.find(id => !drafts.value.some(d => d.insectaryId === id) && !collectedIds.value.has(id.toUpperCase())) || ''
 
@@ -428,7 +448,8 @@ const problems = computed(() => [
     const out: string[] = []
     if (!d.species) out.push(`fila ${n}: falta la especie`)
     if (!d.sex) out.push(`fila ${n}: falta el sexo`)
-    if (d.fate === 'insectario' && !d.insectaryId) out.push(`fila ${n}: no quedan Insectary IDs libres`)
+    if (d.fate === 'insectario' && !d.insectaryId)
+      out.push(`fila ${n}: no quedan Insectary IDs libres; crea más filas preasignadas en Insectary_data`)
     for (const column of ['insectaryId', 'cam', 'tube'] as const) {
       const idIssue = idProblem(d, column)
       if (idIssue) out.push(`fila ${n}: ${HEADERS[column]} ${idIssue}`)
@@ -918,6 +939,11 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         <span v-if="problems.length" class="text-xs text-amber-800"
           >{{ problems[0] }}<template v-if="problems.length > 1"> (y {{ problems.length - 1 }} más)</template></span
         >
+        <span v-if="earlierIds.length" class="w-full text-xs text-amber-800">
+          Ya no quedan filas preasignadas al final de Insectary_data: {{ earlierIds.slice(0, 4).join(', ')
+          }}{{ earlierIds.length > 4 ? '…' : '' }} son filas vacías anteriores. Comprueba que ningún ID esté ya escrito en otra
+          mariposa, o crea más filas preasignadas en Insectary_data.
+        </span>
         <button v-if="emptyCount" class="btn" @click="removeEmpty"><Eraser :size="15" /> Quitar filas vacías</button>
         <button class="btn-primary ml-auto" :disabled="saving || !!problems.length" @click="save">
           <Save :size="15" /> {{ saving ? 'Guardando…' : `Guardar colecta (${drafts.length})` }}
