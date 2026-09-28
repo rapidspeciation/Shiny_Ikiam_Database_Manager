@@ -6,6 +6,7 @@ import InsectarySummary from '../components/home/InsectarySummary.vue'
 import NatureSummary from '../components/home/NatureSummary.vue'
 import LatestIdsCard from '../components/home/LatestIdsCard.vue'
 import TeamCounts from '../components/home/TeamCounts.vue'
+import UpcomingCard from '../components/home/UpcomingCard.vue'
 import { format } from '../components/charts/chart'
 import { api } from '../lib/api'
 import { errorText } from '../lib/notice'
@@ -38,6 +39,7 @@ watch(() => session.user?.username, load)
     <div class="mx-auto max-w-7xl space-y-8 p-4 sm:p-6">
       <!-- For the team, what they need when writing labels comes first. -->
       <LatestIdsCard v-if="data?.team" :ids="data.team.latestIds" />
+      <UpcomingCard v-if="data?.team" :upcoming="data.team.upcoming" />
       <header class="space-y-3">
         <div class="flex flex-wrap items-end gap-x-4 gap-y-1">
           <h1 class="min-w-0 flex-1 text-xl font-semibold">Mariposas Ithomiini · Ikiam</h1>

@@ -11,7 +11,22 @@ export interface BoardEntry {
   next: string | null
 }
 
+/** A clutch whose next stage is due: its eggs hatch, its larvae pupate or its pupae emerge. */
+export interface Coming {
+  clutch: string
+  species: string | null
+  event: 'hatch' | 'pupate' | 'emerge'
+  /** Eggs, larvae or pupae in it now, if recorded. */
+  n: number | null
+  since: string
+  expected: string
+  /** Days from today (negative: already late). */
+  inDays: number
+  where: string | null
+}
+
 export interface Team {
+  upcoming: { aheadDays: number; lateDays: number; items: Coming[]; late: Coming[] }
   latestIds: {
     insectaryCam: BoardEntry | null
     collectionCam: BoardEntry | null

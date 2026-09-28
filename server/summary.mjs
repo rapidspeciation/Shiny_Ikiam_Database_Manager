@@ -256,6 +256,56 @@ function crosses(store) {
   };
 }
 
+/** How far ahead (and behind) the coming hatchings, pupations and emergences are listed. */
+const AHEAD_DAYS = 7;
+const LATE_DAYS = 3;
+
+/**
+ * What should happen soon in the insectary: clutches whose eggs should hatch,
+ * whose larvae should pupate, or whose pupae should emerge, from the date of
+ * their current stage plus their species' median time in it (the median of all
+ * species when a species has fewer than 5 clutches measured). Clutches more
+ * than a few days past the expected date go to `late`: the change was probably
+ * not written down.
+ */
+export function upcoming(stocks, today) {
+  const days = stageDays(stocks);
+  const all = { egg: [], larva: [], pupa: [] };
+  for (const s of days.values()) for (const k of Object.keys(all)) all[k].push(...s[k]);
+  const medianFor = (species, stage) => {
+    const own = days.get(binomial(species))?.[stage] ?? [];
+    return own.length >= 5 ? median(own) : median(all[stage]);
+  };
+  const NEXT = { egg: 'hatch', larva: 'pupate', pupa: 'emerge' };
+  const START = { egg: 'DATE LAID', larva: 'HATCHING DATE', pupa: 'PUPA DATE' };
+  const items = [];
+  const late = [];
+  for (const r of stocks) {
+    const laid = date(r['DATE LAID']);
+    if (!laid || laid <= today - CLUTCH_DAYS || date(r['EMERGENCE DATE']) || !blank(r['NUMBER OF ADULTS'])) continue;
+    const { stage, n } = clutchStage(r);
+    const since = date(r[START[stage]]) ?? (stage === 'larva' ? laid + medianFor(r.SPECIES, 'egg') : null);
+    const typical = medianFor(r.SPECIES, stage);
+    if (since === null || typical === null) continue;
+    const expected = Math.round(since + typical);
+    const inDays = expected - today;
+    const item = {
+      clutch: text(r['CLUTCH NUMBER']),
+      species: blank(r.SPECIES) ? null : text(r.SPECIES),
+      event: NEXT[stage],
+      n,
+      since: iso(since),
+      expected: iso(expected),
+      inDays,
+      where: blank(r['INSECTARY OR LABORATORY']) ? null : text(r['INSECTARY OR LABORATORY']),
+    };
+    if (inDays < -LATE_DAYS) late.push(item);
+    else if (inDays <= AHEAD_DAYS) items.push(item);
+  }
+  const order = (a, b) => a.inDays - b.inDays || a.clutch.localeCompare(b.clutch, 'en', { numeric: true });
+  return { aheadDays: AHEAD_DAYS, lateDays: LATE_DAYS, items: items.sort(order), late: late.sort(order).reverse() };
+}
+
 /** The date a butterfly entered the insectary: caught (wild) or its clutch's emergence (reared). */
 function entered(row, clutchOf) {
   if (/wild/i.test(text(row.Wild_Reared))) return date(row.Intro2Insectary_date);
@@ -463,18 +513,21 @@ const DEATHS = {
 };
 
 /** Median days as egg, larva and pupa per species (subspecies together), from the clutch dates; hybrids are left out. */
-function lifeCycle(stocks) {
-  const STAGES = [
-    ['egg', 'DATE LAID', 'HATCHING DATE', 1, 30],
-    ['larva', 'HATCHING DATE', 'PUPA DATE', 3, 60],
-    ['pupa', 'PUPA DATE', 'EMERGENCE DATE', 3, 40],
-  ];
+const STAGES = [
+  ['egg', 'DATE LAID', 'HATCHING DATE', 1, 30],
+  ['larva', 'HATCHING DATE', 'PUPA DATE', 3, 60],
+  ['pupa', 'PUPA DATE', 'EMERGENCE DATE', 3, 40],
+];
+/** Subspecies share their species' development times: "Mechanitis polymnia proceriformis" → "Mechanitis polymnia". */
+const binomial = name => text(name).split(/\s+/).slice(0, 2).join(' ');
+
+/** Days spent in each stage by every clutch with both dates, per species (hybrids left out). */
+function stageDays(stocks) {
   const bySpecies = new Map();
   for (const r of stocks) {
     const full = text(r.SPECIES);
     if (blank(full) || /\sx\s|\bVS\b/i.test(full)) continue;
-    // Subspecies share their species' development times.
-    const name = full.split(/\s+/).slice(0, 2).join(' ');
+    const name = binomial(full);
     const s = bySpecies.get(name) || { name, egg: [], larva: [], pupa: [] };
     for (const [stage, from, to, min, max] of STAGES) {
       const a = date(r[from]),
@@ -483,7 +536,11 @@ function lifeCycle(stocks) {
     }
     bySpecies.set(name, s);
   }
-  return [...bySpecies.values()]
+  return bySpecies;
+}
+
+function lifeCycle(stocks) {
+  return [...stageDays(stocks).values()]
     .filter(s => s.egg.length >= 5 && s.larva.length >= 5 && s.pupa.length >= 5)
     .map(s => ({ name: s.name, egg: median(s.egg), larva: median(s.larva), pupa: median(s.pupa) }))
     .map(s => ({ ...s, total: s.egg + s.larva + s.pupa }))
@@ -707,6 +764,7 @@ export function createSummary(store) {
             return {
               latestIds: latestIds(store),
               insectary: insectary(store, today),
+              upcoming: upcoming(rowsOf(store, 'Insectary_stocks'), today),
               monitoring: monitoring(collection, rowsOf(store, 'SamplingDay_data'), today),
               collections: collections(collection, today),
               crispr: crispr(rowsOf(store, 'CRISPR')),

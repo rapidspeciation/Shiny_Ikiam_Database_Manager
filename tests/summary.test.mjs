@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createApp } from '../server/index.mjs';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
-import { activity, clutchStage, marks, sessions, todaySerial } from '../server/summary.mjs';
+import { activity, clutchStage, marks, sessions, todaySerial, upcoming } from '../server/summary.mjs';
 
 const today = todaySerial();
 
@@ -151,4 +151,38 @@ test('the last mark is the highest in the series in use, not a later recapture',
   });
   assert.equal(marks([row('B99', 1)]).next, 'C1');
   assert.equal(marks([row('NA', 1)]), null);
+});
+
+test('coming hatchings, pupations and emergences use the species median for the current stage', () => {
+  const T = 46300;
+  // Five finished clutches: 5 days as eggs, 15 as larvae, 8 as pupae.
+  const done = Array.from({ length: 5 }, (_, i) => ({
+    'CLUTCH NUMBER': 900 + i,
+    SPECIES: 'Mechanitis lysimnia',
+    'DATE LAID': T - 100,
+    'HATCHING DATE': T - 95,
+    'PUPA DATE': T - 80,
+    'EMERGENCE DATE': T - 72,
+  }));
+  const now = [
+    { 'CLUTCH NUMBER': 1, SPECIES: 'Mechanitis lysimnia', 'DATE LAID': T - 4, 'NUMBER OF EGGS': 20 },
+    { 'CLUTCH NUMBER': 2, SPECIES: 'Mechanitis lysimnia eurydice', 'DATE LAID': T - 20, 'HATCHING DATE': T - 14, 'NUMBER OF LARVAE': 9 },
+    { 'CLUTCH NUMBER': 3, SPECIES: 'Mechanitis lysimnia', 'DATE LAID': T - 30, 'HATCHING DATE': T - 25, 'PUPA DATE': T - 10 },
+    { 'CLUTCH NUMBER': 4, SPECIES: 'Mechanitis lysimnia', 'DATE LAID': T - 3, 'NUMBER OF EGGS': 5, 'HATCHING DATE': T - 1 },
+  ];
+  const out = upcoming([...done, ...now], T);
+  const byClutch = Object.fromEntries(out.items.map(i => [i.clutch, i]));
+  assert.equal(byClutch['1'].event, 'hatch');
+  assert.equal(byClutch['1'].inDays, 1);
+  assert.equal(byClutch['1'].n, 20);
+  // A subspecies uses its species' times.
+  assert.equal(byClutch['2'].event, 'pupate');
+  assert.equal(byClutch['2'].inDays, 1);
+  // Its pupae were due 2 days ago: late, but still listed.
+  assert.equal(byClutch['3'].event, 'emerge');
+  assert.equal(byClutch['3'].inDays, -2);
+  // Hatched yesterday: pupation is 14 days away, beyond the week listed.
+  assert.equal(byClutch['4'], undefined);
+  assert.equal(out.items.length, 3);
+  assert.equal(out.late.length, 0);
 });
