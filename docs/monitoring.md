@@ -42,6 +42,20 @@ Monitoreo → Reporte replaces the monthly slides. One row of filters (period, c
 - **Tables:** species with the 30-preserved rule (top 10, expandable), individuals per transect and month, recapture histories.
 - **Data review** (at the bottom, as notes): marks recorded on two species, recaptures written only in notes, and monitoring rows whose Purpose is empty or "NA" (counted as monitoring when the collector recorded that day in SamplingDay_data).
 
+## Mapa
+
+Monitoreo → Mapa shows the captures of the walks on the map over a satellite image, with the transect sections T1–T4. The filters follow the atlas (rapidspeciation.github.io/ithomiini_maps): nothing chosen shows everything, and each option shows how many captures it would show given the other filters. The filters and layers are kept in the page link (*Compartir* copies it), e.g. `#/monitoreo?vista=mapa&fechas=2026-09-21&capa=grupos`.
+
+- **Filters:** monitoring dates (a searchable list grouped by year; choosing a date shows every walk of that day), species (searchable, with the legend colour), and chips for year, collector, transect, sex and type (preserved, marked, recapture).
+- **Mostrar como:** *Puntos*; *Grupos*, clusters whose ring shows the colours of the captures inside; *Calor*, a heatmap scaled to the busiest spot at each zoom.
+- **Colours:** by species (the 10 most common over all walks keep their colour; the rest are grey "Otras"), sex, type or walk. Clicking a legend entry filters by it.
+- **Layers:** the transects are on; the walks' Wikiloc GPS lines are off by default and, when on, show only for the walks shown (broken where the signal jumped more than 60 m). *Unir recapturas* joins the captures of the same mark and species.
+- **Walks of the chosen days** can be opened in Wikiloc or removed from the map.
+
+## Recapturas
+
+Monitoreo → Recapturas lists every marked butterfly caught more than once (same mark and same species), with the photos of the marking and of each recapture side by side, the days and metres between captures, collector, transect, time and sheet row. A photo opens large (arrows move through that butterfly's photos). *En el mapa* shows only that individual on the map; a capture's popup on the map links back to its photos.
+
 ## Rules the app applies
 
 - **Transect**: the nearest of the four sections to the waypoint (none if more than 40 m from the trail). The sections were reconstructed on 26 Sep 2026 by fitting the coloured transects of the QGIS map in the monitoring reports onto that day's GPS track (median error about 1 m); see `frontend/src/lib/transects.ts`. The last ~80 m of T1 towards the campus come from the QGIS map only.
