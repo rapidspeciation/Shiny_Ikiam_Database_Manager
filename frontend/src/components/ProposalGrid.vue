@@ -7,14 +7,18 @@ import type { CellValue } from '../lib/types'
 
 /**
  * Rows the assistant wants to change, shown like the sheet: changed cells are
- * green with the old value struck through. Unticked rows are left as they are.
+ * green with the old value struck through; new rows (e.g. from a Wikiloc walk)
+ * are all green. Unticked rows are left as they are.
  */
 export interface ProposalChange {
   index: number
-  recordId: string
+  /** null for a new row not written yet. */
+  recordId: string | null
   sheet: string
-  row: number
+  /** null for a new row not written yet. */
+  row: number | null
   label: string
+  create?: boolean
   before: Record<string, CellValue>
   values: Record<string, CellValue>
   current: Record<string, CellValue>
@@ -25,6 +29,10 @@ export interface Proposal {
   id: string
   reason: string
   status: 'pending' | 'applying' | 'applied' | 'needs_review' | 'discarded'
+  sheets?: string[]
+  /** The conversation it comes from (T3 Code, Revisión de datos, a chat). */
+  source?: string
+  createdAt?: string
   fields: string[]
   types: Record<string, string>
   applied: number[] | null
@@ -48,6 +56,7 @@ function toggleAll() {
 }
 const show = (field: string, value: CellValue | undefined) =>
   displayValue(value, { key: field, type: (props.proposal.types[field] ?? 'text') as 'text' })
+const created = computed(() => props.proposal.changes.filter(c => c.create).length)
 const wasApplied = (index: number) => props.proposal.status === 'applied' && (props.proposal.applied ?? []).includes(index)
 const statusText = computed(
   () =>
@@ -63,7 +72,8 @@ const statusText = computed(
 <template>
   <div class="mt-2 rounded-md border border-stone-300 bg-white text-stone-800">
     <p class="border-b border-stone-200 px-2 py-1.5 text-xs font-medium">
-      Cambios propuestos · {{ proposal.changes[0]?.sheet }}
+      Cambios propuestos · {{ (proposal.sheets ?? [proposal.changes[0]?.sheet]).join(', ') }}
+      <template v-if="created"> · {{ created }} {{ created === 1 ? 'fila nueva' : 'filas nuevas' }}</template>
       <span class="font-normal text-stone-500">— {{ proposal.reason }}</span>
     </p>
     <div class="max-h-96 overflow-auto">
@@ -105,11 +115,19 @@ const statusText = computed(
               />
               <Check v-else-if="wasApplied(c.index)" :size="14" class="text-brand-700" />
             </td>
-            <td class="border-b border-stone-100 px-1.5 py-1 text-stone-500 tabular-nums">{{ c.row }}</td>
+            <td class="border-b border-stone-100 px-1.5 py-1 text-stone-500 tabular-nums">
+              <span v-if="c.row">{{ c.row }}</span>
+              <span v-else class="rounded bg-emerald-100 px-1 text-[11px] font-medium text-emerald-900">nueva</span>
+            </td>
             <td class="border-b border-stone-100 px-1.5 py-1 font-medium whitespace-nowrap">
-              <RouterLink :to="{ path: '/tablas', query: { hoja: c.sheet, buscar: c.label } }" class="hover:underline">
+              <RouterLink
+                v-if="c.recordId"
+                :to="{ path: '/tablas', query: { hoja: c.sheet, buscar: c.label } }"
+                class="hover:underline"
+              >
                 {{ c.label }}
               </RouterLink>
+              <template v-else>{{ c.label }}</template>
             </td>
             <td
               v-for="f in proposal.fields"
@@ -119,14 +137,14 @@ const statusText = computed(
             >
               <template v-if="f in c.values">
                 <span class="font-medium text-emerald-900">{{ show(f, c.values[f]) || 'vacío' }}</span>
-                <span class="block text-[11px] text-stone-500">
+                <span v-if="!c.create" class="block text-[11px] text-stone-500">
                   <template v-if="c.replaceFormula?.includes(f)">fórmula: </template>
                   <span class="line-through">{{ show(f, c.before[f]) || 'vacío' }}</span>
                 </span>
               </template>
               <template v-else>{{ show(f, c.current[f]) }}</template>
             </td>
-            <td class="border-b border-stone-100 px-1.5 py-1 text-stone-600">{{ c.note }}</td>
+            <td class="min-w-64 border-b border-stone-100 px-1.5 py-1 text-stone-600">{{ c.note }}</td>
           </tr>
         </tbody>
       </table>
