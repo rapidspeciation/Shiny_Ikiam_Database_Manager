@@ -62,9 +62,13 @@ export function clearRange(table: Tabulator, canEdit: CanEdit) {
 // meanwhile waits for them too, then saves and moves on.
 type Move = { table: Tabulator; key: string; shift: boolean }
 let opening: { cell: CellComponent; text: string; then?: Move } | null = null
+/** Keys typed on a cell are waiting for its editor: the grid must not redraw that cell now. */
+export const typingPending = () => !!opening
 function giveText(tries = 0) {
   if (!opening) return
   const input = opening.cell.getElement().querySelector('input')
+  // An editor closed before it could open (e.g. the row was redrawn) is opened again once.
+  if (!input && tries === 8) opening.cell.edit(true)
   if (!input) return tries < 20 ? requestAnimationFrame(() => giveText(tries + 1)) : void (opening = null)
   const { text, then } = opening
   opening = null

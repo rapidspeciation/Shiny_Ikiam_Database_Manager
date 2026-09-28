@@ -6,12 +6,26 @@ import SheetGrid from '../components/SheetGrid.vue'
 import { useSheet } from '../composables/useSheet'
 import { api } from '../lib/api'
 import { isBlank } from '../lib/cells'
-import { isoToSerial, todayIso } from '../lib/dates'
+import { formatSerial, isoToSerial, todayIso, weekdayOf } from '../lib/dates'
 import { errorText, notify } from '../lib/notice'
 import { listColumn } from '../lib/options'
 import { listProblem, verificationsFor } from '../lib/verifications'
-import { COLUMNS, FATES, HEADERS, SEX_VALUES, applies, insectarySex, type Column, type Draft, type Fate } from '../lib/collect'
-import { parseBlock, parseCamTube, parseFate, parseSex, parseTime } from '../lib/paste'
+import {
+  COLUMNS,
+  FATES,
+  HEADERS,
+  INSECTARY_ID,
+  SEX_VALUES,
+  TUBE_ID,
+  applies,
+  insectarySex,
+  misfit,
+  summarize,
+  type Column,
+  type Draft,
+  type Fate,
+} from '../lib/collect'
+import { parseBlock, parseCamTube, parseFate, parseSex, parseTime, stepId } from '../lib/paste'
 import { persistentRef } from '../lib/persist'
 import { orderColumns } from '../lib/rows'
 import type { CellValue } from '../lib/types'
@@ -56,6 +70,13 @@ const addSpecies = ref('')
  */
 const view = persistentRef<'tabla' | 'formulario'>('collect:view2', 'tabla', { lasting: true })
 const touchScreen = window.matchMedia('(pointer: coarse)').matches
+/** Phones show the outing as one line ("23-Sep · Cavernas · PAS ✎") until tapped; open while no place is chosen. */
+const headerOpen = ref(!touchScreen || !header.value.location)
+const headerChip = computed(() => {
+  const h = header.value
+  const day = h.date ? formatSerial(isoToSerial(h.date)).replace(/-\d{2}$/, '') : 'sin fecha'
+  return [day, h.location || 'sin lugar', h.collector.split(' - ')[0]].filter(Boolean).join(' · ')
+})
 const grid = ref<InstanceType<typeof CollectGrid>>()
 const saving = ref(false)
 const recentCount = ref(10)
@@ -84,20 +105,55 @@ const ranked = (field: string, filter?: (values: Record<string, CellValue>) => b
   return [...counts].sort((a, b) => b[1] - a[1]).map(([v]) => v)
 }
 const speciesList = computed(() => ranked('SPECIES'))
-const subspeciesFor = (species: string) => ranked('Subspecies_Form', v => v.SPECIES === species)
+/**
+ * Subspecies or forms for each species: those used with it in Collection_data
+ * (most used first), then those in Insectary_data's SPECIES ("Ithomia salapia
+ * derasa") and in the Lists' Insectary_species. Taxonomy_v18Jun25 has a
+ * subspecies column, but it is NA for every species, and the sheet does not
+ * validate Subspecies_Form, so a new form is not marked.
+ */
+const subspecies = computed(() => {
+  void tables.versions.Insectary_data
+  const counts = new Map<string, Map<string, number>>()
+  const add = (species: string, sub: string, n = 1) => {
+    if (!species || !sub || /^(NA|N\/A)$/i.test(sub)) return
+    const forms = counts.get(species) || new Map<string, number>()
+    forms.set(sub, (forms.get(sub) || 0) + n)
+    counts.set(species, forms)
+  }
+  for (const r of observed.value) add(String(r.values.SPECIES ?? '').trim(), String(r.values.Subspecies_Form ?? '').trim(), 1000)
+  // "Genus species subspecies" (not hybrids: "… x …", "… VS …").
+  const split = (name: string) => {
+    const words = name.trim().split(/\s+/)
+    if (words.length > 2 && !/ x |\bVS\b/i.test(name)) add(words.slice(0, 2).join(' '), words.slice(2).join(' '))
+  }
+  for (const r of tables.tables.Insectary_data?.rows || []) if (r.observed && !isBlank(r.values.SPECIES)) split(String(r.values.SPECIES))
+  for (const name of listColumn(lists.value, 'Insectary_species')) split(name)
+  return new Map([...counts].map(([species, forms]) => [species, [...forms].sort((a, b) => b[1] - a[1]).map(([f]) => f)]))
+})
+const subspeciesFor = (species: string) => subspecies.value.get(species.trim()) || []
 const places = computed(() => [...new Set([...ranked('Collection_location'), ...(options.value.Collection_location || [])])])
 const people = computed(() => options.value.Collector || ranked('Collector'))
 const rainfalls = computed(() => options.value.Rainfall || ranked('Rainfall'))
 const clouds = computed(() => options.value.Cloud_cover || ranked('Cloud_cover'))
 const mediums = computed(() => options.value.Preservation_medium || ['Flash frozen'])
 
-// Insectary IDs: the pre-made unused rows of Insectary_data, in order.
+// Insectary IDs: the free pre-made rows of Insectary_data, those after the last row used first,
+// then earlier empty rows (server/grid.mjs insectaryIds).
 const freeIds = ref<string[]>([])
+/** How many of freeIds come after the last row used; the rest are earlier empty rows. */
+const tailCount = ref(0)
+/** Free pre-made IDs with their rows, in sheet order (the fill handle continues in that order). */
+const premade = ref<{ value: string; row: number }[]>([])
 async function loadFreeIds() {
   try {
-    const { sequence } = await api<{ sequence: string[] }>('ids?kind=insectary&count=200')
+    const { sequence, rows, tail } = await api<{ sequence: string[]; rows: { value: string; row: number }[]; tail: number }>(
+      'ids?kind=insectary&count=5000',
+    )
     const pendingIds = new Set(pending.creates.filter(c => c.module === 'Insectary_data').map(c => String(c.values.Insectary_ID)))
     freeIds.value = sequence.filter(id => !pendingIds.has(id))
+    tailCount.value = sequence.slice(0, tail).filter(id => !pendingIds.has(id)).length
+    premade.value = rows.filter(r => !pendingIds.has(r.value)).sort((a, b) => a.row - b.row)
   } catch (e) {
     notify(errorText(e), 'error')
   }
@@ -109,11 +165,22 @@ const collectedIds = computed(() => {
   for (const r of observed.value) if (!isBlank(r.values.Insectary_ID)) out.set(String(r.values.Insectary_ID).trim().toUpperCase(), r.row)
   return out
 })
-/** The pre-made ID `step` rows after `id` in Insectary_data (N9D + 1 → O0D), for the fill handle. */
+/**
+ * The free pre-made ID `step` rows after `id` in Insectary_data (N9D + 1 → O0D),
+ * for the fill handle; from an ID that is not free itself, the free rows after its row.
+ */
 function nextId(id: string, step: number): string | null {
-  const at = freeIds.value.indexOf(id.toUpperCase())
-  return at < 0 ? null : (freeIds.value[at + step] ?? null)
+  const key = id.trim().toUpperCase()
+  const at = premade.value.findIndex(r => r.value.toUpperCase() === key)
+  if (at >= 0) return premade.value[at + step]?.value ?? null
+  const row = idRows.value.get(key)?.row
+  return row === undefined ? null : (premade.value.filter(r => r.row > row)[step - 1]?.value ?? null)
 }
+/** IDs of earlier empty rows given to the list: they may already be on the wings of a butterfly not typed in yet. */
+const earlierIds = computed(() => {
+  const earlier = new Set(freeIds.value.slice(tailCount.value))
+  return drafts.value.filter(d => d.fate === 'insectario' && earlier.has(d.insectaryId)).map(d => d.insectaryId)
+})
 const nextInsectaryId = () =>
   freeIds.value.find(id => !drafts.value.some(d => d.insectaryId === id) && !collectedIds.value.has(id.toUpperCase())) || ''
 
@@ -163,25 +230,43 @@ async function loadTubes() {
 watch(() => header.value.medium, loadTubes, { immediate: true })
 const nextTube = () => tubeRun.value.find(id => !drafts.value.some(d => d.tube === id)) || ''
 
+/**
+ * The CAM or tube after that of the preserved row above, when it is free: the
+ * team's notebooks run consecutively (CAM079905, CAM079906…).
+ */
+function following(d: Draft, column: 'cam' | 'tube'): string {
+  const at = drafts.value.indexOf(d)
+  const above = drafts.value
+    .slice(0, at < 0 ? drafts.value.length : at)
+    .reverse()
+    .find(x => x.fate === 'preservada' && x[column])
+  const next = above ? stepId(above[column].trim().toUpperCase(), 1) : null
+  if (!next || drafts.value.some(x => x !== d && x[column].trim().toUpperCase() === next)) return ''
+  if (column === 'cam') return camPool.value.includes(next) ? next : ''
+  return TUBE_ID.test(next) && !usedTubes.value.has(next) ? next : ''
+}
 function setFate(draft: Draft, fate: Fate) {
   draft.fate = fate
   draft.insectaryId = fate === 'insectario' ? draft.insectaryId || nextInsectaryId() : ''
-  draft.cam = fate === 'preservada' ? draft.cam || nextCam() : ''
-  draft.tube = fate === 'preservada' ? draft.tube || nextTube() : ''
+  draft.cam = fate === 'preservada' ? draft.cam || following(draft, 'cam') || nextCam() : ''
+  draft.tube = fate === 'preservada' ? draft.tube || following(draft, 'tube') || nextTube() : ''
   draft.medium = fate === 'preservada' ? draft.medium || header.value.medium : ''
 }
 // Rows added before the free IDs, CAMs or tubes had arrived get them once they do.
 watch([freeIds, camPool, tubeRun], () => {
   for (const d of drafts.value) {
     if (d.fate === 'insectario' && !d.insectaryId) d.insectaryId = nextInsectaryId()
-    if (d.fate === 'preservada' && !d.cam) d.cam = nextCam()
-    if (d.fate === 'preservada' && !d.tube) d.tube = nextTube()
+    if (d.fate === 'preservada' && !d.cam) d.cam = following(d, 'cam') || nextCam()
+    if (d.fate === 'preservada' && !d.tube) d.tube = following(d, 'tube') || nextTube()
     // Lists kept from before the medium was a column of its own.
     if (d.fate === 'preservada' && !d.medium) d.medium = header.value.medium
   }
 })
 async function add() {
-  if (!header.value.location) return notify('Elige el lugar de colecta')
+  if (!header.value.location) {
+    headerOpen.value = true
+    return notify('Elige el lugar de colecta')
+  }
   const count = Math.min(60, Math.max(1, Math.round(addCount.value || 1)))
   const first = drafts.value.length
   for (let i = 0; i < count; i++) {
@@ -228,41 +313,54 @@ function blankDraft(): Draft {
     medium: '',
   }
 }
-function setColumn(d: Draft, column: Column, text: string) {
+/** Writes a typed or pasted value in a row; says so when the row changes Release_Collect because of it. */
+function setColumn(d: Draft, column: Column, text: string): string | null {
   if (column === 'sex') d.sex = parseSex(text)
   else if (column === 'fate') {
     const fate = parseFate(text)
     if (fate) setFate(d, fate)
   } else if (column === 'time') d.time = parseTime(text)
-  else if (!applies(d, column)) return
-  else if (column === 'insectaryId') {
-    // The ID written on the wings, if it is not the one suggested (checked in `problems`).
-    const id = text.trim().toUpperCase()
-    if (/^[0-9A-ZÑ]{2,6}$/.test(id)) d.insectaryId = id
-  } else if (column === 'cam') {
+  else if (column === 'cam') {
     // "CAM079895", or CAM and tube together ("CAM079895 · FS90415305 (Flash frozen)").
     const { cam, tube } = parseCamTube(text)
+    if (!applies(d, column) && !cam) return null
+    // A CAM given to a butterfly sent to the insectary (or released) means it was preserved: its Insectary ID is freed.
+    const freed = !applies(d, column) && d.fate === 'insectario' ? d.insectaryId : ''
+    const switched = !applies(d, column)
+    if (switched) setFate(d, 'preservada')
     if (cam || !text.trim()) d.cam = cam
     if (tube) d.tube = tube
     const medium = mediums.value.find(m => text.includes(`(${m})`))
     if (medium) d.medium = medium
-  } else if (column === 'tube') d.tube = text.trim().toUpperCase()
+    if (switched) return `pasa a Collected_Preserved por el CAM ${cam}${freed ? ` (queda libre ${freed})` : ''}`
+  } else if (!applies(d, column)) return null
+  else if (column === 'insectaryId') {
+    // The ID written on the wings, if it is not the one suggested (checked in `problems`).
+    const id = text.trim().toUpperCase()
+    if (INSECTARY_ID.test(id)) d.insectaryId = id
+  } else if (column === 'tube') d.tube = /^(NA|N\/A)$/i.test(text.trim()) ? '' : text.trim().toUpperCase()
   else if (column === 'medium') {
     d.medium = text.trim()
     // The next rows added take the same medium (and its tubes).
     if (d.medium) header.value.medium = d.medium
   } else d[column] = text === 'NA' && column === 'subspecies' ? '' : text
+  return null
 }
+const shorten = (text: string) => (text.length > 24 ? `${text.slice(0, 22)}…` : text)
 /**
  * A block copied from a spreadsheet, pasted at a row and column: fills down and
  * across, adding rows if needed. False when the text is a single value (the
- * cell takes it as typed).
+ * cell takes it as typed). Values that do not fit their column (a note in
+ * Tube_1_id, a CAM in Insectary_ID: the block was pasted a column off) are
+ * left out, and the notice says which.
  */
 function pasteText(text: string, index: number, column: Column): boolean {
   const block = parseBlock(text)
   if (!block) return false
   const start = COLUMNS.indexOf(column)
   let added = 0
+  const skipped: string[] = []
+  const switched: number[] = []
   block.forEach((cells, r) => {
     if (!drafts.value[index + r]) {
       drafts.value.push(blankDraft())
@@ -272,10 +370,19 @@ function pasteText(text: string, index: number, column: Column): boolean {
     const d = drafts.value[index + r]
     cells.forEach((text, c) => {
       const target = COLUMNS[start + c]
-      if (target) setColumn(d, target, text)
+      if (!target) return
+      const why = misfit(target, text)
+      if (why) return void skipped.push(`«${shorten(text.trim())}» en ${HEADERS[target]}, fila ${index + r + 1}: ${why}`)
+      if (setColumn(d, target, text)) switched.push(index + r + 1)
     })
   })
-  notify(`Pegadas ${block.length} filas${added ? ` (${added} nuevas)` : ''}: la lista tiene ${drafts.value.length}`)
+  const notes = [`Pegadas ${block.length} filas${added ? ` (${added} nuevas)` : ''}: la lista tiene ${drafts.value.length}`]
+  if (switched.length) notes.push(`filas ${switched.join(', ')} pasan a Collected_Preserved por su CAM`)
+  if (skipped.length)
+    notes.push(
+      `no se pegaron ${skipped.length} ${skipped.length === 1 ? 'valor que no encaja' : 'valores que no encajan'} (¿columnas corridas?): ${skipped.slice(0, 3).join('; ')}${skipped.length > 3 ? '…' : ''}`,
+    )
+  notify(notes.join('. '), skipped.length ? 'error' : undefined)
   return true
 }
 function onPaste(event: ClipboardEvent, index: number, column: Column) {
@@ -285,9 +392,11 @@ function onPaste(event: ClipboardEvent, index: number, column: Column) {
 function editCell(key: string, column: Column, text: string) {
   const d = drafts.value.find(x => x.key === key)
   if (!d) return
-  if (column === 'insectaryId' && text.trim() && !/^[0-9A-ZÑ]{2,6}$/i.test(text.trim()))
-    return notify(`«${text.trim()}» no parece un Insectary ID (p. ej. N9D); para CAM y tubo usa CAM_ID y Tube_1_id`)
-  setColumn(d, column, text)
+  const why = misfit(column, text)
+  // The cell goes back to what the list holds (CollectGrid).
+  if (why) return notify(`«${shorten(text.trim())}» ${why}: no se escribió en ${HEADERS[column]}`)
+  const note = setColumn(d, column, text)
+  if (note) notify(`Fila ${drafts.value.indexOf(d) + 1} ${note}`)
 }
 function focusCell(index: number, column: Column) {
   const key = drafts.value[index]?.key
@@ -428,7 +537,8 @@ const problems = computed(() => [
     const out: string[] = []
     if (!d.species) out.push(`fila ${n}: falta la especie`)
     if (!d.sex) out.push(`fila ${n}: falta el sexo`)
-    if (d.fate === 'insectario' && !d.insectaryId) out.push(`fila ${n}: no quedan Insectary IDs libres`)
+    if (d.fate === 'insectario' && !d.insectaryId)
+      out.push(`fila ${n}: no quedan Insectary IDs libres; crea más filas preasignadas en Insectary_data`)
     for (const column of ['insectaryId', 'cam', 'tube'] as const) {
       const idIssue = idProblem(d, column)
       if (idIssue) out.push(`fila ${n}: ${HEADERS[column]} ${idIssue}`)
@@ -511,6 +621,22 @@ const insectaryRow = (d: Draft): Record<string, CellValue> => ({
   Intro2Insectary_date: serial(header.value.date),
 })
 
+/** Read over before saving: the day (a list typed days later was saved as today), places, sexes, CAMs. */
+const confirming = ref(false)
+const summary = computed(() => summarize(drafts.value))
+const isToday = computed(() => header.value.date === todayIso())
+const longDate = computed(() =>
+  header.value.date ? `${weekdayOf(header.value.date)} ${formatSerial(isoToSerial(header.value.date))}` : 'sin fecha',
+)
+function askSave() {
+  if (!drafts.value.length) return
+  if (problems.value.length) return notify(problems.value.slice(0, 3).join('; '), 'error')
+  confirming.value = true
+}
+function confirmSave() {
+  confirming.value = false
+  save()
+}
 async function save() {
   if (!drafts.value.length) return
   if (problems.value.length) return notify(problems.value.slice(0, 3).join('; '), 'error')
@@ -558,10 +684,32 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
 
 <template>
   <div class="flex h-full flex-col overflow-y-auto">
-    <div class="toolbar">
+    <datalist id="collect-people">
+      <option v-for="p in people" :key="p" :value="p" />
+    </datalist>
+    <datalist id="collect-species">
+      <option v-for="s in speciesList" :key="s" :value="s" />
+    </datalist>
+    <!-- Phones: the outing folds into one line, so the list is in sight; a tap opens it. -->
+    <button
+      v-if="touchScreen"
+      type="button"
+      class="flex w-full items-center gap-2 border-b border-stone-200 bg-white px-3 py-2 text-left text-sm"
+      :aria-expanded="headerOpen"
+      @click="headerOpen = !headerOpen"
+    >
+      <span class="min-w-0 flex-1 truncate rounded-full bg-stone-100 px-3 py-1" :class="{ 'bg-amber-50 text-amber-900': isToday }">
+        {{ headerChip }}
+      </span>
+      <span class="shrink-0 text-brand-700">{{ headerOpen ? 'Cerrar' : '✎' }}</span>
+    </button>
+    <div v-if="headerOpen" class="toolbar">
       <label>
-        <span class="field-label">Collection_date</span>
-        <input v-model="header.date" type="date" class="field-input" />
+        <span class="field-label"
+          >Collection_date <span class="font-normal text-stone-500">{{ weekdayOf(header.date) }}</span></span
+        >
+        <input v-model="header.date" type="date" class="field-input" :class="{ 'border-amber-500 bg-amber-50': isToday }" />
+        <span v-if="isToday" class="block text-xs text-amber-800">¿Es hoy la fecha de la colecta?</span>
       </label>
       <label class="min-w-52">
         <span class="field-label">Collector</span>
@@ -585,15 +733,9 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
           <option v-for="c in clouds" :key="c" :value="c">{{ c }}</option>
         </select>
       </label>
-      <datalist id="collect-people">
-        <option v-for="p in people" :key="p" :value="p" />
-      </datalist>
-      <datalist id="collect-species">
-        <option v-for="s in speciesList" :key="s" :value="s" />
-      </datalist>
     </div>
-    <div class="toolbar border-t-0">
-      <label class="min-w-64">
+    <div class="toolbar border-t-0" :class="{ 'gap-2 py-2': !headerOpen }">
+      <label v-if="headerOpen" class="min-w-64">
         <span class="field-label">Collection_location (cámbialo para añadir mariposas de otro sitio)</span>
         <input v-model="header.location" class="field-input" list="collect-places" />
         <datalist id="collect-places">
@@ -604,7 +746,7 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         <span class="field-label">Filas a añadir</span>
         <input v-model.number="addCount" type="number" min="1" max="60" class="field-input w-20" />
       </label>
-      <label class="min-w-48">
+      <label v-if="headerOpen" class="min-w-48">
         <span class="field-label">SPECIES (opcional)</span>
         <input v-model="addSpecies" class="field-input" list="collect-species" placeholder="la misma para todas" />
       </label>
@@ -918,8 +1060,13 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         <span v-if="problems.length" class="text-xs text-amber-800"
           >{{ problems[0] }}<template v-if="problems.length > 1"> (y {{ problems.length - 1 }} más)</template></span
         >
+        <span v-if="earlierIds.length" class="w-full text-xs text-amber-800">
+          Ya no quedan filas preasignadas al final de Insectary_data: {{ earlierIds.slice(0, 4).join(', ')
+          }}{{ earlierIds.length > 4 ? '…' : '' }} son filas vacías anteriores. Comprueba que ningún ID esté ya escrito en otra
+          mariposa, o crea más filas preasignadas en Insectary_data.
+        </span>
         <button v-if="emptyCount" class="btn" @click="removeEmpty"><Eraser :size="15" /> Quitar filas vacías</button>
-        <button class="btn-primary ml-auto" :disabled="saving || !!problems.length" @click="save">
+        <button class="btn-primary ml-auto" :disabled="saving || !!problems.length" @click="askSave">
           <Save :size="15" /> {{ saving ? 'Guardando…' : `Guardar colecta (${drafts.length})` }}
         </button>
       </div>
@@ -953,6 +1100,65 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
           }
         "
       />
+    </div>
+
+    <div
+      v-if="confirming"
+      class="fixed inset-0 z-40 grid place-items-center bg-black/40 p-2"
+      @click.self="confirming = false"
+      @keydown.esc="confirming = false"
+    >
+      <section class="flex max-h-[90vh] w-full max-w-lg flex-col rounded-lg bg-white shadow-xl" role="dialog" aria-label="Guardar colecta">
+        <header class="flex items-center border-b border-stone-200 px-4 py-3">
+          <h2 class="flex-1 text-lg font-semibold">Guardar {{ drafts.length }} mariposas</h2>
+          <button class="btn-ghost" aria-label="Cerrar" @click="confirming = false"><X :size="20" /></button>
+        </header>
+        <div class="flex-1 space-y-2 overflow-y-auto px-4 py-3 text-sm">
+          <p class="text-base">
+            <strong class="capitalize">{{ longDate }}</strong> · {{ summary.places.join(', ') }}
+          </p>
+          <p v-if="isToday" class="rounded bg-amber-50 px-2 py-1 text-amber-800">
+            La fecha es hoy. Si pasas a limpio una colecta de otro día, cambia Collection_date antes de guardar.
+          </p>
+          <p>
+            Al insectario: <strong>{{ summary.insectary.female }} ♀ · {{ summary.insectary.male }} ♂</strong
+            ><template v-if="summary.insectary.other"> · {{ summary.insectary.other }} sin sexo</template>
+            <br />
+            Preservadas: <strong>{{ summary.preserved }}</strong
+            ><template v-if="summary.cams">
+              ({{ summary.cams.first }}<template v-if="summary.cams.first !== summary.cams.last"> – {{ summary.cams.last }}</template
+              ><template v-if="!summary.cams.consecutive">, con saltos</template>)</template
+            >
+            <template v-if="summary.released"><br />Liberadas: <strong>{{ summary.released }}</strong></template>
+          </p>
+          <table class="w-full">
+            <thead class="text-left text-xs text-stone-500">
+              <tr>
+                <th class="py-1">Especie</th>
+                <th class="w-10 text-right">♀</th>
+                <th class="w-10 text-right">♂</th>
+                <th class="w-10 text-right">?</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="s in summary.species" :key="s.name" class="border-t border-stone-100">
+                <td class="py-1 pr-2">{{ s.name }}</td>
+                <td class="text-right tabular-nums">{{ s.female || '' }}</td>
+                <td class="text-right tabular-nums">{{ s.male || '' }}</td>
+                <td class="text-right tabular-nums">{{ s.other || '' }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="text-stone-600">
+            Collector: {{ header.collector || '—' }} · Identifier: {{ header.identifier || '—' }} · Rainfall:
+            {{ header.rainfall || '—' }} · Cloud_cover: {{ header.cloud || '—' }}
+          </p>
+        </div>
+        <footer class="flex justify-end gap-2 border-t border-stone-200 px-4 py-3">
+          <button class="btn" @click="confirming = false">Volver</button>
+          <button class="btn-primary" :disabled="saving" @click="confirmSave"><Save :size="15" /> Guardar en la hoja</button>
+        </footer>
+      </section>
     </div>
   </div>
 </template>

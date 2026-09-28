@@ -29,15 +29,21 @@ const males = persistentRef('emerged:males', 0)
 const unknown = persistentRef('emerged:unknown', 0)
 const startId = persistentRef('emerged:start', '')
 const introDate = persistentRef('emerged:date', todayIso())
+/** Free pre-made IDs: those after the last row used first (the suggestion), then earlier empty rows. */
 const freeIds = ref<string[]>([])
+/** The same IDs in sheet order, which a batch follows from its first ID (H0B → H1B → H2B). */
+const inOrder = ref<string[]>([])
+const idsLoaded = ref(false)
 const recentCount = ref(15)
 
 async function loadFreeIds() {
   try {
-    const result = await api<{ sequence: string[] }>('ids?kind=insectary&count=200')
+    const result = await api<{ sequence: string[]; rows: { value: string; row: number }[] }>('ids?kind=insectary&count=5000')
     const used = new Set(pending.creates.filter(c => c.module === MODULE).map(c => String(c.values.Insectary_ID)))
     freeIds.value = result.sequence.filter(id => !used.has(id))
+    inOrder.value = [...result.rows].sort((a, b) => a.row - b.row).map(r => r.value).filter(id => !used.has(id))
     if (!startId.value || !freeIds.value.includes(startId.value)) startId.value = freeIds.value[0] || ''
+    idsLoaded.value = true
   } catch (e) {
     notify(errorText(e), 'error')
   }
@@ -79,10 +85,12 @@ function defaultsFor(speciesName: string): Record<string, CellValue> {
 function prepare(sexes: (string | null)[]) {
   if (!clutch.value) return notify('Elige el clutch')
   if (!sexes.length) return notify('Indica cuántas hembras, machos o sin sexo emergieron')
-  const start = freeIds.value.indexOf(startId.value)
-  if (start < 0) return notify('Elige un Insectary ID inicial de la lista')
-  const ids = freeIds.value.slice(start, start + sexes.length)
-  if (ids.length < sexes.length) notify(`Solo hay ${ids.length} filas preasignadas libres`, 'error')
+  if (!inOrder.value.length) return notify('No quedan filas preasignadas libres: crea más filas preasignadas en Insectary_data', 'error')
+  const start = inOrder.value.indexOf(startId.value.trim().toUpperCase())
+  if (start < 0) return notify(`${startId.value || 'Ese ID'} no es una fila preasignada libre de Insectary_data: elige uno de la lista`)
+  const ids = inOrder.value.slice(start, start + sexes.length)
+  if (ids.length < sexes.length)
+    notify(`Solo hay ${ids.length} filas preasignadas libres desde ${ids[0]}: crea más filas preasignadas en Insectary_data`, 'error')
   ids.forEach((id, i) =>
     pending.addCreate(MODULE, id, {
       Insectary_ID: id,
@@ -95,6 +103,7 @@ function prepare(sexes: (string | null)[]) {
     }),
   )
   freeIds.value = freeIds.value.filter(id => !ids.includes(id))
+  inOrder.value = inOrder.value.filter(id => !ids.includes(id))
   startId.value = freeIds.value[0] || ''
   pending.touch()
   notify(`${ids.length} filas nuevas (${ids[0]}–${ids.at(-1)}); revisa la subespecie si alguna es distinta`)
@@ -154,9 +163,18 @@ const recent = computed(() => {
       </label>
       <label>
         <span class="field-label">Insectary ID inicial</span>
-        <select v-model="startId" class="field-input w-32">
-          <option v-for="id in freeIds.slice(0, 60)" :key="id" :value="id">{{ id }}</option>
-        </select>
+        <!-- Any free pre-made row can start the batch (earlier empty rows too); type to search. -->
+        <input
+          v-model="startId"
+          class="field-input w-32 uppercase"
+          list="emerged-free-ids"
+          :placeholder="freeIds.length ? '' : 'no quedan'"
+          :title="freeIds.length ? `${freeIds.length} filas preasignadas libres` : 'Crea más filas preasignadas en Insectary_data'"
+          @focus="($event.target as HTMLInputElement).select()"
+        />
+        <datalist id="emerged-free-ids">
+          <option v-for="id in freeIds" :key="id" :value="id" />
+        </datalist>
       </label>
       <label>
         <span class="field-label">Intro a insectario</span>
@@ -181,6 +199,9 @@ const recent = computed(() => {
           }})</template
         >.
       </template>
+      <strong v-if="idsLoaded && !freeIds.length" class="text-amber-800"
+        >No quedan filas preasignadas libres: crea más filas preasignadas en Insectary_data.</strong
+      >
       Las filas nuevas usan las filas preasignadas; escribe cada ID en las alas. Debajo se muestran los últimos
       {{ recentCount }} registros.
       <button class="underline" @click="recentCount += 15">ver más</button>

@@ -13,6 +13,7 @@ import {
   editingKeys,
   spreadsheetKeys,
   tileToSelection,
+  typingPending,
   watchSize,
   type CanEdit,
 } from '../lib/gridKit'
@@ -78,11 +79,13 @@ const draftOf = (row: RowComponent) => props.drafts.find(d => d.key === (row.get
  * be changed to the ID written on the wings); CAM, tube and medium only for
  * those preserved in the field.
  */
-const canEdit: CanEdit = (row, field) => {
+const canFill: CanEdit = (row, field) => {
   if (field === '__key' || field === '__remove') return false
   const d = draftOf(row)
   return !d || applies(d, field as Column)
 }
+/** Typing or pasting a CAM also works on other rows: they become Collected_Preserved (CollectView.setColumn). */
+const canEdit: CanEdit = (row, field) => field === 'cam' || canFill(row, field)
 const whyNot = (row: RowComponent, field: string) => {
   const d = draftOf(row)
   return d && field in HEADERS && !applies(d, field as Column) ? notApplicable(field as Column) : null
@@ -108,7 +111,10 @@ const display = (field: Column, text?: (value: unknown) => string) => (cell: Cel
   el.classList.toggle('is-error', !!error)
   el.classList.toggle('is-id', field === 'insectaryId' && !off)
   el.title =
-    error || invalid || (field === 'insectaryId' && !off ? 'El ID escrito en las alas (se sugiere el siguiente libre)' : '')
+    error ||
+    invalid ||
+    (field === 'insectaryId' && !off ? 'El ID escrito en las alas (se sugiere el siguiente libre)' : '') ||
+    (field === 'cam' && off ? 'Escribe o pega un CAM para pasarla a Collected_Preserved' : '')
   return off ? '' : text ? text(cell.getValue()) : String(cell.getValue() ?? '')
 }
 
@@ -162,19 +168,55 @@ function columns(): ColumnDefinition[] {
 // What the grid shows, per row, to send it only the rows that change.
 let shown = new Map<string, string>()
 let shownOrder = ''
+/** The last redraw sent to the grid (selecting a cell waits for it: new data resets the selection). */
+let drawn: Promise<unknown> = Promise.resolve()
+let builtNow = () => {}
+const whenBuilt = new Promise<void>(resolve => (builtNow = resolve))
+let stale = false
+let repaintDue = false
+let retry: number | undefined
+/**
+ * A cell is being edited, or keys typed on it wait for its editor. Redrawing
+ * then threw the editor away with the letters typed so far (the list changes
+ * while typing: IDs arrive, the row before was just saved).
+ */
+const busy = () => !!host.value?.querySelector('.tabulator-editing') || typingPending()
+function later() {
+  window.clearTimeout(retry)
+  retry = window.setTimeout(flush, 250)
+}
+/** Whatever waited for an edit to end. */
+function flush() {
+  if (stale) sync()
+  else if (repaintDue) repaint()
+}
 function sync() {
   if (!table || !built) return
+  if (busy()) {
+    stale = true
+    return later()
+  }
+  stale = false
   const rows = props.drafts.map(toRow)
   const order = rows.map(r => r.__key).join('|')
   if (order !== shownOrder) {
-    table.replaceData(rows)
+    drawn = table.replaceData(rows)
   } else {
     const changed = rows.filter(r => shown.get(r.__key) !== JSON.stringify(r))
     // The list is short: repaint every row, since a change in one (e.g. an ID) can flag another.
-    if (changed.length) table.updateData(changed).then(() => table?.getRows().forEach(row => row.reformat()))
+    if (changed.length) drawn = table.updateData(changed).then(repaint)
   }
   shownOrder = order
   shown = new Map(rows.map(r => [r.__key, JSON.stringify(r)]))
+}
+function repaint() {
+  if (!table) return
+  if (busy()) {
+    repaintDue = true
+    return later()
+  }
+  repaintDue = false
+  table.getRows().forEach(row => row.reformat())
 }
 
 /**
@@ -240,6 +282,7 @@ onMounted(() => {
   table.on('tableBuilt', () => {
     built = true
     sync()
+    builtNow()
   })
   // The ▾ arrow at a cell's right edge opens its list straight away.
   table.on('cellClick', (event: UIEvent, cell: CellComponent) => {
@@ -255,18 +298,19 @@ onMounted(() => {
     nextTick(() => {
       const d = props.drafts.find(x => x.key === row.__key)
       if (!d || !table) return
-      const now = toRow(d)
-      if (JSON.stringify(now) !== JSON.stringify(cell.getRow().getData())) {
-        table.updateData([now])
-        shown.set(now.__key, JSON.stringify(now))
-      }
+      if (JSON.stringify(toRow(d)) !== JSON.stringify(cell.getRow().getData())) {
+        shown.delete(d.key)
+        sync()
+      } else flush()
     })
   })
+  table.on('cellEditCancelled', () => nextTick(flush))
   const notice = (message: string) => emit('notice', message)
   fill = touch
     ? attachTouchSheet(table, host.value.parentElement!, { canEdit, notice })
     : attachFillHandle(table, host.value.parentElement!, {
-        canEdit,
+        // Dragging only fills where the column applies: a CAM dragged down does not turn insectary rows into preserved ones.
+        canEdit: canFill,
         // Dragging an ID continues it, as Sheets continues a number; other columns copy.
         series: (field, value, step) => {
           const id = String(value ?? '').trim()
@@ -283,6 +327,7 @@ onMounted(() => {
 })
 onActivated(() => table?.redraw())
 onBeforeUnmount(() => {
+  window.clearTimeout(retry)
   fill?.destroy()
   sizeWatch?.disconnect()
   copied?.destroy()
@@ -293,8 +338,14 @@ onBeforeUnmount(() => {
 })
 watch(() => props.drafts.map(d => JSON.stringify(d)).join('\n'), sync)
 
-/** Select a cell and bring it into view (e.g. the first row just added). */
-function focusCell(index: number, field: Column) {
+/**
+ * Select a cell and bring it into view (e.g. the first row just added). After
+ * the new rows are drawn: new data puts the selection back on the first cell.
+ */
+async function focusCell(index: number, field: Column) {
+  // The list's first rows also build the grid.
+  await whenBuilt
+  await drawn.catch(() => {})
   const row = table?.getRows()[index]
   if (!row || !table) return
   table.scrollToRow(row, 'center', false).catch(() => {})
@@ -303,7 +354,8 @@ function focusCell(index: number, field: Column) {
   } catch {
     /* Range selection is off on touch screens. */
   }
-  host.value?.focus()
+  // Keys go where Tabulator listens for them (its rows), as after a click.
+  ;(table as unknown as { rowManager: { element: HTMLElement } }).rowManager.element.focus({ preventScroll: true })
 }
 defineExpose({ focusCell })
 </script>

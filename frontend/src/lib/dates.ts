@@ -17,6 +17,12 @@ export function formatSerial(serial: number): string {
   return `${d.getUTCDate()}-${MONTHS[d.getUTCMonth()]}-${String(d.getUTCFullYear()).slice(2)}`
 }
 
+/** "martes", for an ISO date: the weekday helps notice a wrong collection date. */
+export function weekdayOf(iso: string): string {
+  const time = Date.parse(`${iso}T12:00:00Z`)
+  return Number.isNaN(time) ? '' : new Intl.DateTimeFormat('es', { weekday: 'long', timeZone: 'UTC' }).format(time)
+}
+
 /** Today in Ecuador, as an ISO date. */
 export function todayIso(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(new Date())
