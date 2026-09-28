@@ -4,7 +4,7 @@ import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
 import { FATES, HEADERS, SEX_VALUES, idsText, type Column, type Draft } from '../lib/collect'
-import { attachCopyMarker, attachFillHandle, spreadsheetKeys, tileToSelection, type CanEdit } from '../lib/gridKit'
+import { attachCopyMarker, attachFillHandle, attachTouchSheet, spreadsheetKeys, tileToSelection, type CanEdit } from '../lib/gridKit'
 import { complete, parseBlock } from '../lib/paste'
 
 /**
@@ -36,7 +36,7 @@ type Row = Record<Column, string> & { __key: string }
 const host = ref<HTMLDivElement>()
 let table: Tabulator | null = null
 let built = false
-let fill: ReturnType<typeof attachFillHandle> | null = null
+let fill: { destroy: () => void } | null = null
 let copied: ReturnType<typeof attachCopyMarker> | null = null
 const touch = window.matchMedia('(pointer: coarse)').matches
 
@@ -194,11 +194,11 @@ onMounted(() => {
     layout: 'fitData',
     headerSortClickElement: 'icon',
     placeholder: 'Sin filas',
-    selectableRange: touch ? false : 1,
+    selectableRange: 1,
     selectableRangeColumns: true,
     selectableRangeRows: true,
     selectableRangeClearCells: false,
-    editTriggerEvent: touch ? 'click' : 'dblclick',
+    editTriggerEvent: 'dblclick',
     clipboard: true,
     // Copied as shown (♀, Al insectario), which reads well in a spreadsheet and pastes back the same.
     clipboardCopyConfig: { columnHeaders: false, rowHeaders: false, formatCells: true },
@@ -237,11 +237,13 @@ onMounted(() => {
     const field = cell.getField() as Column
     emit('edit', row.__key, field, completed(field, String(cell.getValue() ?? ''), row))
   })
-  fill = attachFillHandle(table, host.value.parentElement!, {
-    canEdit,
-    touch,
-    onFilled: rows => emit('notice', `Copiado a ${rows} ${rows === 1 ? 'fila' : 'filas'}`),
-  })
+  const notice = (message: string) => emit('notice', message)
+  fill = touch
+    ? attachTouchSheet(table, host.value.parentElement!, { canEdit, notice })
+    : attachFillHandle(table, host.value.parentElement!, {
+        canEdit,
+        onFilled: rows => notice(`Copiado a ${rows} ${rows === 1 ? 'fila' : 'filas'}`),
+      })
   copied = attachCopyMarker(table, host.value.parentElement!, message => emit('notice', message))
   host.value.addEventListener('keydown', onKeydown)
 })

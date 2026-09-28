@@ -113,6 +113,33 @@ body {
 .collect-grid .tabulator-cell.row-remove:hover {
   color: #b91c1c;
 }
+/* Touch screens: what can be done with the selection, pinned at the bottom of the screen. */
+.touch-actions {
+  position: fixed;
+  z-index: 30;
+  left: 50%;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  display: none;
+  gap: 2px;
+  transform: translateX(-50%);
+  padding: 4px;
+  border-radius: 999px;
+  background: #1f2a24;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
+}
+.touch-actions button {
+  padding: 8px 14px;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.touch-actions button:active {
+  background: #3d5247;
+}
+body.touch-bar-open main {
+  padding-bottom: calc(64px + env(safe-area-inset-bottom));
+}
 /* Cells copied with Ctrl+C: a moving dashed border, as in Google Sheets. */
 .copy-box {
   position: absolute;

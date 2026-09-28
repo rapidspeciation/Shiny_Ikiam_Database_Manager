@@ -50,12 +50,12 @@ const addFate = ref<Fate>('insectario')
 /** Optional: the species of all the rows being added (e.g. five Mechanitis at once). */
 const addSpecies = ref('')
 /**
- * Computers get the list as a spreadsheet (ranges, copy/paste, fill handle);
- * phones get form rows with big buttons, and a bar to apply values to the
- * rows ticked. Either can be chosen.
+ * The list as a spreadsheet everywhere: ranges, copy/paste and the fill handle
+ * on computers; tap, stretch and the action bar on phones (lib/gridKit.ts).
+ * The form (big buttons, ticked rows and a bar to apply values) stays available.
  */
+const view = persistentRef<'tabla' | 'formulario'>('collect:view2', 'tabla', { lasting: true })
 const touchScreen = window.matchMedia('(pointer: coarse)').matches
-const view = persistentRef<'tabla' | 'formulario'>('collect:view', touchScreen ? 'formulario' : 'tabla', { lasting: true })
 const grid = ref<InstanceType<typeof CollectGrid>>()
 const saving = ref(false)
 const recentCount = ref(10)
@@ -604,7 +604,11 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
           </button>
         </span>
         <span class="hint w-full">Se guarda en este navegador, aunque recargues o cierres la página, hasta que la guardes o la vacíes.</span>
-        <span v-if="view === 'tabla'" class="hint w-full"
+        <span v-if="view === 'tabla' && touchScreen" class="hint w-full"
+          >Toca una celda para seleccionarla y dos veces para editarla · arrastra el círculo de la esquina para ampliar la selección
+          · la barra de abajo copia, pega, rellena hacia abajo o borra lo seleccionado.</span
+        >
+        <span v-else-if="view === 'tabla'" class="hint w-full"
           >Como en una hoja de cálculo: selecciona celdas y arrastra el cuadrito de la esquina hacia abajo para copiarlas · pega
           celdas de Excel o Sheets (llena hacia abajo y a la derecha, y añade filas si faltan) · Ctrl+D copia la primera fila de la
           selección · escribe sobre una celda para reemplazarla, doble clic para editarla.</span

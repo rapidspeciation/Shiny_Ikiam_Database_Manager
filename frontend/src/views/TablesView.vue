@@ -107,7 +107,8 @@ function addRow() {
     </p>
     <p class="hint px-4 py-1">
       <template v-if="touch"
-        >Toca una celda para editarla · toca el número de fila para ver la fila completa · gris = fórmula.</template
+        >Toca una celda para seleccionarla y dos veces para editarla · arrastra el círculo para ampliar la selección · abajo:
+        Copiar, Pegar, Rellenar ↓, Borrar · toca el número de fila para ver la fila completa · gris = fórmula.</template
       >
       <template v-else>
         Escribe sobre una celda o haz doble clic para editar · pega rangos desde Excel o Sheets · Ctrl+D rellena hacia abajo · las

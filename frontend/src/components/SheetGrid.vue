@@ -4,7 +4,7 @@ import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
 import { displayValue, normalizeInput } from '../lib/cells'
-import { attachCopyMarker, attachFillHandle, fillDown as fillDownRange, spreadsheetKeys, type CanEdit } from '../lib/gridKit'
+import { attachCopyMarker, attachFillHandle, attachTouchSheet, fillDown as fillDownRange, spreadsheetKeys, type CanEdit } from '../lib/gridKit'
 import type { CellValue, Field, TableRow } from '../lib/types'
 import { type PendingCreate, usePending } from '../stores/pending'
 import { useSession } from '../stores/session'
@@ -415,7 +415,7 @@ const editableCell: CanEdit = (row, field) => fieldIndex.has(field) && canEdit(r
 const notice = (message: string) => emit('notice', message)
 const fillDown = () => table && fillDownRange(table, editableCell, notice)
 const onKeydown = spreadsheetKeys(() => table, editableCell, notice)
-let fill: ReturnType<typeof attachFillHandle> | null = null
+let fill: { destroy: () => void } | null = null
 let copied: ReturnType<typeof attachCopyMarker> | null = null
 
 function applySearch() {
@@ -447,11 +447,12 @@ function build() {
     nestedFieldSeparator: false,
     placeholder: 'Sin filas',
     initialSort: props.newestFirst ? [{ column: '__row', dir: 'desc' }] : [],
-    selectableRange: touchDevice ? false : 1,
+    // Also on touch screens: a tap selects (a scrolling finger does not), see attachTouchSheet.
+    selectableRange: 1,
     selectableRangeColumns: true,
     selectableRangeRows: true,
     selectableRangeClearCells: false,
-    editTriggerEvent: touchDevice ? 'click' : 'dblclick',
+    editTriggerEvent: 'dblclick',
     clipboard: true,
     clipboardCopyConfig: { columnHeaders: false, rowHeaders: false, formatCells: true },
     clipboardCopyRowRange: 'range',
@@ -466,13 +467,16 @@ function build() {
   table.on('cellEdited', onCellEdited)
   table.on('cellClick', onCellClick)
   fill?.destroy()
-  fill = host.value.parentElement
-    ? attachFillHandle(table, host.value.parentElement, {
-        canEdit: editableCell,
-        touch: touchDevice,
-        onFilled: rows => notice(`Copiado a ${rows} ${rows === 1 ? 'fila' : 'filas'}`),
-      })
-    : null
+  const container = host.value.parentElement
+  // Computers: the fill handle. Touch screens: tap to select, a handle to stretch the selection, and an action bar.
+  fill = !container
+    ? null
+    : touchDevice
+      ? attachTouchSheet(table, container, { canEdit: editableCell, notice })
+      : attachFillHandle(table, container, {
+          canEdit: editableCell,
+          onFilled: rows => notice(`Copiado a ${rows} ${rows === 1 ? 'fila' : 'filas'}`),
+        })
   copied?.destroy()
   copied = host.value.parentElement ? attachCopyMarker(table, host.value.parentElement, notice) : null
   // A refresh that arrived while typing (e.g. an automatic save finished) runs after the edit.

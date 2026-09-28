@@ -83,40 +83,40 @@ export function spreadsheetKeys(table: () => Tabulator | null, canEdit: CanEdit,
   }
 }
 
+/** What scrolls while dragging: the grid itself (Tablas), or the page around it (the Colecta list). */
+function scrollingAround(container: HTMLElement): HTMLElement | null {
+  const box = container.querySelector<HTMLElement>('.tabulator-tableholder')
+  if (box && box.scrollHeight > box.clientHeight + 1) return box
+  for (let el = container.parentElement; el; el = el.parentElement) {
+    const overflow = getComputedStyle(el).overflowY
+    if ((overflow === 'auto' || overflow === 'scroll') && el.scrollHeight > el.clientHeight + 1) return el
+  }
+  return null
+}
+
 /**
- * The fill handle: a small square at the bottom-right corner of the selected
- * cells (on a touch screen, of the cell last tapped). Dragging it down copies
+ * The fill handle (computers): a small square at the bottom-right corner of
+ * the selected cells. Dragging it down copies
  * those cells to the rows it passes over, repeating them if several rows were
  * selected, as in Excel or Sheets. Read-only cells are skipped.
  */
 export function attachFillHandle(
   table: Tabulator,
   container: HTMLElement,
-  { canEdit, touch, onFilled }: { canEdit: CanEdit; touch: boolean; onFilled?: (count: number) => void },
+  { canEdit, onFilled }: { canEdit: CanEdit; onFilled?: (count: number) => void },
 ) {
   const handle = document.createElement('div')
-  handle.className = `fill-handle${touch ? ' is-touch' : ''}`
+  handle.className = 'fill-handle'
   handle.title = 'Arrastra hacia abajo para copiar'
   container.appendChild(handle)
-  let touched: CellComponent | null = null
   let source: { rows: RowComponent[]; fields: string[] } | null = null
   let dragging = false
 
   const holder = () => container.querySelector<HTMLElement>('.tabulator-tableholder')
-  /** What scrolls while dragging: the grid itself (Tablas), or the page around it (the Colecta list). */
-  function scrolling(): HTMLElement | null {
-    const box = holder()
-    if (box && box.scrollHeight > box.clientHeight + 1) return box
-    for (let el = container.parentElement; el; el = el.parentElement) {
-      const overflow = getComputedStyle(el).overflowY
-      if ((overflow === 'auto' || overflow === 'scroll') && el.scrollHeight > el.clientHeight + 1) return el
-    }
-    return null
-  }
+  const scrolling = () => scrollingAround(container)
   const hide = () => (handle.style.display = 'none')
 
   function currentSource() {
-    if (touch) return touched ? { rows: [touched.getRow()], fields: [touched.getField()] } : null
     const range = table.getRanges()[0]
     if (!range) return null
     const rows = range.getRows()
@@ -225,12 +225,6 @@ export function attachFillHandle(
   const later = () => requestAnimationFrame(place)
   for (const event of ['rangeAdded', 'rangeChanged', 'rangeRemoved', 'scrollVertical', 'scrollHorizontal', 'renderComplete'])
     table.on(event as 'renderComplete', later)
-  if (touch)
-    for (const event of ['cellClick', 'cellEdited'])
-      table.on(event as 'cellEdited', (...args: unknown[]) => {
-        touched = args.find(a => a && typeof (a as CellComponent).getField === 'function') as CellComponent
-        later()
-      })
   return { place, destroy: () => handle.remove() }
 }
 
@@ -295,6 +289,180 @@ export function attachCopyMarker(table: Tabulator, container: HTMLElement, notic
     destroy: () => {
       container.removeEventListener('keydown', onKey)
       box.remove()
+    },
+  }
+}
+
+/**
+ * Phones and tablets, as Google Sheets on a phone: tap a cell to select it,
+ * double-tap it (or "Editar") to edit; drag the round handle on the
+ * selection's corner to stretch it over more cells; a bar offers Copiar,
+ * Pegar, Rellenar ↓ and Borrar for the selection. One finger elsewhere scrolls.
+ */
+let touchedSheet: HTMLElement | null = null
+
+export function attachTouchSheet(
+  table: Tabulator,
+  container: HTMLElement,
+  { canEdit, notice }: { canEdit: CanEdit; notice: Notice },
+) {
+  const handle = document.createElement('div')
+  handle.className = 'fill-handle is-touch'
+  handle.title = 'Arrastra para ampliar la selección'
+  container.appendChild(handle)
+  const bar = document.createElement('div')
+  bar.className = 'touch-actions'
+  const button = (label: string, action: () => void) => {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.textContent = label
+    // Keep the selection: the tap on the bar must not reach the grid.
+    b.addEventListener('pointerdown', e => e.preventDefault())
+    b.addEventListener('click', e => {
+      e.stopPropagation()
+      // A tap that made the bar appear must not also press the button now under the finger.
+      if (Date.now() - shownAt < 500) return
+      action()
+    })
+    bar.appendChild(b)
+  }
+  let copied = ''
+  let shownAt = 0
+  table.on('clipboardCopied', (plain: string) => (copied = plain))
+  button('Copiar', () => table.copyToClipboard('range'))
+  button('Pegar', async () => {
+    const text = (await navigator.clipboard?.readText?.().catch(() => '')) || copied
+    if (!text) return notice('No hay nada copiado todavía')
+    const data = new DataTransfer()
+    data.setData('text/plain', text)
+    table.element.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+  })
+  button('Rellenar ↓', () => fillDown(table, canEdit, notice))
+  button('Borrar', () => clearRange(table, canEdit))
+  button('Editar', () => {
+    const cell = activeCell(table)
+    if (cell && canEdit(cell.getRow(), cell.getField())) cell.edit(true)
+  })
+  container.appendChild(bar)
+
+  // While the bar shows, the page keeps room for it at the bottom, so no row stays hidden under it.
+  const barRoom = (open: boolean) => document.body.classList.toggle('touch-bar-open', open)
+  const hide = () => {
+    handle.style.display = 'none'
+    if (bar.style.display !== 'none' && touchedSheet === container) barRoom(false)
+    bar.style.display = 'none'
+  }
+  let dragging = false
+  function place() {
+    if (dragging) return
+    // Only the grid last touched shows its handle and bar (a page can hold two grids,
+    // and Tabulator selects each grid's first cell on its own).
+    if (touchedSheet !== container) return hide()
+    const range = table.getRanges()[0]
+    const cells = range?.getCells().flat() as CellComponent[] | undefined
+    const last = cells?.at(-1)?.getElement()
+    if (!range || !last?.isConnected) return hide()
+    if (bar.style.display !== 'flex') shownAt = Date.now()
+    bar.style.display = 'flex'
+    barRoom(true)
+    const cell = last.getBoundingClientRect()
+    const view = (container.querySelector('.tabulator-tableholder') as HTMLElement | null)?.getBoundingClientRect()
+    if (view && (cell.bottom < view.top || cell.bottom > view.bottom + 1 || cell.right < view.left || cell.right > view.right + 1)) {
+      handle.style.display = 'none'
+      return
+    }
+    const origin = container.getBoundingClientRect()
+    handle.style.display = 'block'
+    handle.style.left = `${cell.right - origin.left}px`
+    handle.style.top = `${cell.bottom - origin.top}px`
+  }
+
+  /** The cell under a finger. */
+  function cellAt(x: number, y: number): CellComponent | null {
+    const el = document.elementFromPoint(x, y)?.closest('.tabulator-cell') as HTMLElement | null
+    const rowEl = el?.closest('.tabulator-row')
+    const field = el?.getAttribute('tabulator-field')
+    if (!el || !rowEl || !field) return null
+    const row = table.getRows('active').find(r => r.getElement() === rowEl)
+    return (row?.getCell(field) as CellComponent | undefined) ?? null
+  }
+
+  // Dragging the handle stretches the selection to the cell under the finger (scrolling near the edge).
+  handle.addEventListener('pointerdown', down => {
+    const range = table.getRanges()[0]
+    if (!range) return
+    down.preventDefault()
+    down.stopPropagation()
+    handle.setPointerCapture(down.pointerId)
+    dragging = true
+    let x = down.clientX
+    let y = down.clientY
+    const stretch = () => {
+      const cell = cellAt(x, y)
+      if (cell) (range as unknown as { setEndBound: (c: CellComponent) => void }).setEndBound(cell)
+    }
+    const scroller = window.setInterval(() => {
+      const box = scrollingAround(container)
+      if (!box) return
+      const view = box.getBoundingClientRect()
+      if (y > view.bottom - 28) box.scrollTop += 24
+      else if (y < view.top + 28) box.scrollTop -= 24
+      else return
+      stretch()
+    }, 60)
+    const move = (e: PointerEvent) => {
+      x = e.clientX
+      y = e.clientY
+      stretch()
+    }
+    const up = () => {
+      window.clearInterval(scroller)
+      handle.removeEventListener('pointermove', move)
+      handle.removeEventListener('pointerup', up)
+      handle.removeEventListener('pointercancel', up)
+      dragging = false
+      place()
+    }
+    handle.addEventListener('pointermove', move)
+    handle.addEventListener('pointerup', up)
+    handle.addEventListener('pointercancel', up)
+  })
+
+  // A double tap edits the cell (one tap selects it, as in Google Sheets).
+  let lastTap: { cell: CellComponent; at: number } | null = null
+  const remember = () => {
+    if (touchedSheet !== container) {
+      touchedSheet = container
+      // After the tap is over: shown now, the bar could take the tap's own click.
+      setTimeout(() => window.dispatchEvent(new Event('touch-sheet')), 400)
+    }
+  }
+  container.addEventListener('pointerdown', remember, true)
+  const onOtherSheet = () => place()
+  window.addEventListener('touch-sheet', onOtherSheet)
+  table.on('cellClick', (_e: UIEvent, cell: CellComponent) => {
+    const now = Date.now()
+    const double =
+      lastTap && now - lastTap.at < 450 && lastTap.cell.getRow() === cell.getRow() && lastTap.cell.getField() === cell.getField()
+    lastTap = double ? null : { cell, at: now }
+    // Deferred: opened during the tap's own click, the editor would close as the grid takes the focus.
+    if (double && canEdit(cell.getRow(), cell.getField())) setTimeout(() => cell.edit(true), 30)
+  })
+
+  const later = () => requestAnimationFrame(place)
+  for (const event of ['rangeAdded', 'rangeChanged', 'rangeRemoved', 'scrollVertical', 'scrollHorizontal', 'renderComplete'])
+    table.on(event as 'renderComplete', later)
+  return {
+    place,
+    destroy: () => {
+      container.removeEventListener('pointerdown', remember, true)
+      window.removeEventListener('touch-sheet', onOtherSheet)
+      if (touchedSheet === container) {
+        touchedSheet = null
+        barRoom(false)
+      }
+      handle.remove()
+      bar.remove()
     },
   }
 }
