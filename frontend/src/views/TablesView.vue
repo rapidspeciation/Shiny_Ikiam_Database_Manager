@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ChoiceField from '../components/ChoiceField.vue'
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { Plus, RefreshCw, ArrowDownToLine, ExternalLink, Search, FileDown, ShieldAlert, NotebookPen } from 'lucide-vue-next'
@@ -60,6 +61,12 @@ const grouped = computed(() => {
   for (const m of session.modules) (out[GROUPS[m.group] || m.group] ||= []).push({ id: m.id, count: m.recordCount })
   return out
 })
+/** The sheets by group, each with its number of rows in grey. */
+const sheetChoices = computed(() =>
+  Object.entries(grouped.value).flatMap(([group, list]) =>
+    list.map(m => ({ value: m.id, label: m.id, hint: String(m.count), group })),
+  ),
+)
 const rows = computed(() => (table.value ? (showUnused.value ? table.value.rows : table.value.rows.filter(r => r.observed)) : []))
 const mod = computed(() => session.module(module.value))
 const frozen = computed(() => mod.value?.identityFields.slice(0, 1) || [])
@@ -78,11 +85,7 @@ function addRow() {
     <div class="toolbar">
       <label>
         <span class="field-label">Hoja</span>
-        <select v-model="module" class="field-input min-w-52">
-          <optgroup v-for="(list, group) in grouped" :key="group" :label="group">
-            <option v-for="m in list" :key="m.id" :value="m.id">{{ m.id }} ({{ m.count }})</option>
-          </optgroup>
-        </select>
+        <ChoiceField v-model="module" class="field-input min-w-52" :options="sheetChoices" :freetext="false" />
       </label>
       <label class="min-w-48 flex-1">
         <span class="field-label">Buscar en todas las columnas</span>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ChoiceField from '../components/ChoiceField.vue'
 import DateField from '../components/DateField.vue'
 import { computed, ref, watch } from 'vue'
 import { Rows3, Plus } from 'lucide-vue-next'
@@ -145,10 +146,7 @@ const recent = computed(() => {
     <div class="toolbar">
       <label class="min-w-40">
         <span class="field-label">CLUTCH NUMBER</span>
-        <input v-model="clutch" class="field-input" list="clutches" placeholder="p. ej. 994(6)" />
-        <datalist id="clutches">
-          <option v-for="c in clutches" :key="c" :value="c" />
-        </datalist>
+        <ChoiceField v-model="clutch" class="field-input" :options="clutches" placeholder="p. ej. 994(6)" />
       </label>
       <label>
         <span class="field-label">Hembras</span>
@@ -165,17 +163,14 @@ const recent = computed(() => {
       <label>
         <span class="field-label">Insectary ID inicial</span>
         <!-- Any free pre-made row can start the batch (earlier empty rows too); type to search. -->
-        <input
+        <ChoiceField
           v-model="startId"
           class="field-input w-32 uppercase"
-          list="emerged-free-ids"
+          :options="freeIds"
           :placeholder="freeIds.length ? '' : 'no quedan'"
           :title="freeIds.length ? `${freeIds.length} filas preasignadas libres` : 'Crea más filas preasignadas en Insectary_data'"
           @focus="($event.target as HTMLInputElement).select()"
         />
-        <datalist id="emerged-free-ids">
-          <option v-for="id in freeIds" :key="id" :value="id" />
-        </datalist>
       </label>
       <label>
         <span class="field-label">Intro a insectario</span>

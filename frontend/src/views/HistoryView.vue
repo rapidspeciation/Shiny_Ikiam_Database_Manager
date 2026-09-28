@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ChoiceField from '../components/ChoiceField.vue'
 import DateField from '../components/DateField.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ChevronDown, ChevronRight, Search, Undo2, RefreshCw, X } from 'lucide-vue-next'
@@ -29,6 +30,8 @@ const STATUS: Record<string, string> = {
 }
 
 const filters = reactive({ q: '', actor: '', source: '', sheet: '', from: '', to: '' })
+const sourceChoices = [{ value: '', label: 'Todos' }, ...Object.entries(SOURCES).map(([value, label]) => ({ value, label }))]
+const sheetChoices = computed(() => [{ value: '', label: 'Todas' }, ...session.modules.map(m => ({ value: m.id, label: m.id }))])
 const actions = ref<Action[]>([])
 const total = ref(0)
 const loading = ref(false)
@@ -152,17 +155,11 @@ async function recover() {
       </label>
       <label>
         <span class="field-label">Origen</span>
-        <select v-model="filters.source" class="field-input">
-          <option value="">Todos</option>
-          <option v-for="(label, key) in SOURCES" :key="key" :value="key">{{ label }}</option>
-        </select>
+        <ChoiceField v-model="filters.source" class="field-input" :options="sourceChoices" :freetext="false" />
       </label>
       <label>
         <span class="field-label">Hoja</span>
-        <select v-model="filters.sheet" class="field-input">
-          <option value="">Todas</option>
-          <option v-for="m in session.modules" :key="m.id" :value="m.id">{{ m.id }}</option>
-        </select>
+        <ChoiceField v-model="filters.sheet" class="field-input" :options="sheetChoices" :freetext="false" />
       </label>
       <label>
         <span class="field-label">Desde</span>

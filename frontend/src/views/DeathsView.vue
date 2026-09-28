@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ChoiceField from '../components/ChoiceField.vue'
 import DateField from '../components/DateField.vue'
 import { computed, ref } from 'vue'
 import { Download, Plus } from 'lucide-vue-next'
@@ -143,10 +144,7 @@ function load(append: boolean) {
       </label>
       <label class="min-w-44">
         <span class="field-label">Causa por defecto</span>
-        <input v-model="cause" class="field-input" list="death-causes" placeholder="p. ej. Natural" />
-        <datalist id="death-causes">
-          <option v-for="o in options.Death_cause || []" :key="o" :value="o" />
-        </datalist>
+        <ChoiceField v-model="cause" class="field-input" :options="options.Death_cause || []" placeholder="p. ej. Natural" />
       </label>
       <label
         class="flex max-w-64 items-center gap-2 pb-1.5 text-xs"

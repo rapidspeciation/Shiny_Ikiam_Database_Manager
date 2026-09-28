@@ -7,10 +7,20 @@ import { spawn } from 'node:child_process';
 import { copyFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
+/**
+ * Only Sonnet or Opus (the current ones: `sonnet` = claude-sonnet-5-5, `opus` =
+ * claude-opus-5-5 on claudeclaw). Fable is far too expensive for this app and
+ * older models are not wanted, so any other name falls back to Sonnet.
+ */
+export function allowedModel(name, fallback = 'sonnet') {
+  const model = String(name || '').trim().toLowerCase();
+  return /^(sonnet|opus)$|^claude-(sonnet|opus)-5-5(\[1m\])?$/.test(model) ? model : fallback;
+}
+
 export function claudeConfig(env = process.env) {
   return {
     bin: env.ITHOMIINI_CLAUDE_BIN || '',
-    model: env.ITHOMIINI_CLAUDE_MODEL || 'sonnet',
+    model: allowedModel(env.ITHOMIINI_CLAUDE_MODEL),
     // A subscription is personal: only these usernames get Claude, others use the API provider.
     users: new Set(
       String(env.ITHOMIINI_CLAUDE_USERS || '')

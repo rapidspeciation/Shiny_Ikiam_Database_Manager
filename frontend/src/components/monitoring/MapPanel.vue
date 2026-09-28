@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ChoiceField from '../ChoiceField.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import L from 'leaflet'
@@ -32,7 +33,7 @@ import { useSession } from '../../stores/session'
  * The filters and layers live in the page link, so a view can be shared.
  */
 const session = useSession()
-const { rows, tracks, tracksLoaded, loadTracks } = useMonitoring()
+const { rows, tracks, tracksLoaded, loadTracks, outsideRecaptures } = useMonitoring()
 const route = useRoute()
 const router = useRouter()
 
@@ -117,7 +118,18 @@ async function copyLink() {
 
 // ------------------------------------------------------------ data
 type Point = MapPoint<StoredTrack>
-const allPoints = computed<Point[]>(() => tracks.value.flatMap(walk => walk.captures.map(capture => ({ walk, capture }))))
+/** Wikiloc points of recaptures that are not rows of the sheet: shown as recaptures of their individual. */
+const outsideByRef = computed(() => new Map(outsideRecaptures.value.filter(o => o.point?.ref).map(o => [o.point!.ref!, o])))
+const allPoints = computed<Point[]>(() =>
+  tracks.value.flatMap(walk =>
+    walk.captures.map((capture, i) => {
+      const o = outsideByRef.value.get(`${walk.id}|${i}`)
+      if (!o) return { walk, capture }
+      const species = String(o.first.values.SPECIES ?? '') || capture.species
+      return { walk, capture: { ...capture, species, markId: o.mark, recapture: true, outside: o.key } }
+    }),
+  ),
+)
 const points = computed(() => allPoints.value.filter(p => passes(p, filters.value)))
 /** Walks with a shown point, plus every walk of a chosen date (some have only a trail). */
 const shownWalks = computed(() => {
@@ -317,7 +329,7 @@ const escape = (s: string) => s.replace(/[&<>"']/g, ch => `&#${ch.charCodeAt(0)}
 
 function popup(t: StoredTrack, c: StoredCapture) {
   const row = sheetRow(t, c)
-  const key = c.markId && c.species ? individualKey(c.markId, c.species) : ''
+  const key = c.outside || (c.markId && c.species ? individualKey(c.markId, c.species) : '')
   const history = key ? histories.value.get(key) : undefined
   const lines = [
     `<b><i>${escape(c.species || 'Sin especie')}</i> ${escape(c.subspecies || '')}</b>`,
@@ -331,9 +343,13 @@ function popup(t: StoredTrack, c: StoredCapture) {
     c.markId ? `Marca <b>${escape(c.markId)}</b>${c.recapture ? ' (recaptura)' : ''}` : 'Preservado',
     `${dateLabel(t.date)} · ${escape(collectorOf(t))}${c.section ? ` · T${c.section}` : ''}`,
     `<span style="color:#78716c">${escape(c.text)}</span>`,
-    row ? `Collection_data fila ${row.row}` : '<span style="color:#b45309">Aún no está en la hoja</span>',
-    history
-      ? `<a href="#/monitoreo?vista=recapturas&individuo=${encodeURIComponent(key)}">Ver sus ${history.events.length} capturas con fotos →</a>`
+    c.outside
+      ? '<span style="color:#b45309">Recaptura solo en Wikiloc: no es una fila de la hoja</span>'
+      : row
+        ? `Collection_data fila ${row.row}`
+        : '<span style="color:#b45309">Aún no está en la hoja</span>',
+    history || c.outside
+      ? `<a href="#/monitoreo?vista=recapturas&individuo=${encodeURIComponent(key)}">Ver ${history ? `sus ${history.events.length} capturas` : 'sus capturas'} con fotos →</a>`
       : '',
   ]
   const photos = (c.photos || [])
@@ -654,12 +670,17 @@ const withoutGps = computed(() => {
         </label>
         <label v-else class="block">
           <span class="field-label">Colorear por</span>
-          <select v-model="colorBy" class="field-input">
-            <option value="especie">Especie</option>
-            <option value="sexo">Sexo</option>
-            <option value="tipo">Tipo (preservado, marcado, recaptura)</option>
-            <option value="recorrido">Recorrido</option>
-          </select>
+          <ChoiceField
+            v-model="colorBy"
+            class="field-input"
+            :freetext="false"
+            :options="[
+              { value: 'especie', label: 'Especie' },
+              { value: 'sexo', label: 'Sexo' },
+              { value: 'tipo', label: 'Tipo (preservado, marcado, recaptura)' },
+              { value: 'recorrido', label: 'Recorrido' },
+            ]"
+          />
         </label>
         <label class="flex items-center gap-2"><input v-model="showTransects" type="checkbox" /> Transectos T1–T4</label>
         <label class="flex items-center gap-2"><input v-model="showGps" type="checkbox" /> Trazados GPS de Wikiloc</label>

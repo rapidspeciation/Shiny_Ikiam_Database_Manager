@@ -144,3 +144,23 @@ test('a starting CAM or tube already in use is reported with where it is, and th
   assert.equal(idSuggestions(store, { kind: 'cam', start: 'CAM078275', count: 1 }).startUsed, undefined);
   store.close();
 });
+
+test('undo puts back a tube that was already repeated in another sheet', async () => {
+  const { store, at } = await fixture();
+  // A repeat that was already in the workbook: N2D's tube is also on a Collection_data row.
+  await applyBatch(
+    store,
+    { requestId: randomUUID(), edits: [{ id: at(2).id, values: { Tube_1_id: null }, expected: { Tube_1_id: 'FS00000010' } }] },
+    user,
+  );
+  const collection = store.getRecordBySheetRow('Collection_data', 2);
+  store.db.prepare('UPDATE records SET values_json=? WHERE id=?').run(
+    JSON.stringify({ ...collection.values, Tube_1_id: 'FS00000010' }),
+    collection.id,
+  );
+  const cleared = store.db.prepare("SELECT id FROM actions ORDER BY created_at DESC LIMIT 1").get();
+  const undone = await store.undo({ actionIds: [cleared.id], requestId: randomUUID() }, user);
+  assert.equal(undone.status, 'verified');
+  assert.equal(at(2).values.Tube_1_id, 'FS00000010');
+  store.close();
+});

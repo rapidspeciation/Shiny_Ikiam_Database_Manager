@@ -163,6 +163,7 @@ export async function walkDraft(store, { walkId, url, date, collector } = {}) {
     .sort((a, b) => (a.seq ?? 1e9) - (b.seq ?? 1e9) || (a.minutes ?? 0) - (b.minutes ?? 0));
   // Points already entered: paired with the collector's rows of that day, as "Pasar al mapa" does.
   let paired = null;
+  let pairing = null;
   if (day && who) {
     const match = m.matchWalk(monitoring, day, who, captures);
     if (match.date !== day) {
@@ -170,6 +171,7 @@ export async function walkDraft(store, { walkId, url, date, collector } = {}) {
       day = match.date;
     }
     paired = new Map(match.pairs.map(p => [p.capture, p.row]));
+    pairing = new Map(captures.map((c, i) => [c, match.matches[i]]));
   }
 
   const lists = listOptions(store, MODULE);
@@ -190,6 +192,10 @@ export async function walkDraft(store, { walkId, url, date, collector } = {}) {
       ...(paired ? { existing: paired.get(c) ?? null } : {}),
     });
     const checks = review.list.map(k => `${k.kind}: ${k.text}`);
+    // How sure the pairing with its row is (mark, sure, tie, order, none); doubtful ones are listed in Monitoreo → Dudas.
+    const how = pairing?.get(c);
+    if (how && m.doubtfulMatch(how))
+      checks.push(`warn: emparejada con la fila ${review.existing?.row ?? '—'} por ${how.confidence === 'tie' ? 'empate' : how.confidence === 'order' ? 'orden' : 'marca/hora'}${how.conflicts.length ? ` (no coincide: ${how.conflicts.join(', ')})` : ''}: revisar en Monitoreo → Dudas`);
     if (c.species && lists.SPECIES && !lists.SPECIES.values.has(c.species))
       checks.push(`warn: ${c.species} no está en Taxonomy_v18Jun25 (la hoja lo rechazaría)`);
     const point = {
@@ -207,6 +213,7 @@ export async function walkDraft(store, { walkId, url, date, collector } = {}) {
       section: c.section,
       photos: c.photos.length,
       inSheet: review.existing ? { row: review.existing.row, recordId: review.existing.id } : null,
+      pairing: how ? { confidence: how.confidence, conflicts: how.conflicts } : null,
       checks,
     };
     points.push(point);

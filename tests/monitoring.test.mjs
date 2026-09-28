@@ -18,6 +18,10 @@ import {
   saveTrack,
   saveWalk,
   reopenWalk,
+  rematchTracks,
+  applyRematch,
+  linkCapture,
+  storeReviewedWalk,
 } from '../server/monitoring.mjs';
 
 const editor = { id: 'e1', username: 'editor', role: 'editor' };
@@ -257,5 +261,168 @@ test('stored captures follow their butterfly when sheet rows are removed', async
     [2, null, 3],
   );
   assert.ok(track.captures[0].recordId);
+  s.close();
+});
+
+// ---------------------------------------------------- matching again, and the doubts
+
+const serialOf = iso => Math.round((Date.parse(`${iso}T00:00:00Z`) - Date.UTC(1899, 11, 30)) / 864e5);
+/** Part of Monitoreo 8/9/2025 (AA) as it was on the map: each point one row too early. */
+async function misPaired() {
+  const at = (row, time, SPECIES, Sex, extra = {}) => {
+    const [h, m] = time.split(':').map(Number);
+    return {
+      row,
+      values: {
+        Collection_date: serialOf('2025-09-08'),
+        Collection_time: (h * 60 + m) / 1440,
+        Collector: 'AA - Alex Arias',
+        Purpose: 'Monitoring',
+        Collection_location: 'Ikiam',
+        FieldMark_ID: 'NA',
+        SPECIES,
+        Sex,
+        ...extra,
+      },
+    };
+  };
+  const sheets = new LocalSheets({
+    Collection_data: [
+      at(2, '9:12', 'Hypothyris euclea', 'female'),
+      at(3, '9:14', 'Eresia eunice', 'female'),
+      at(4, '9:15', 'Methona confusa', 'male'),
+      at(5, '9:16', 'Mechanitis polymnia', 'male', { Subspecies_Form: 'proceriformis' }),
+      at(6, '9:12', 'Hypothyris euclea', 'male', { Collection_date: serialOf('2025-09-10') }),
+    ],
+  });
+  const s = new Store({ localMode: true }, { sheets });
+  await s.sync({ sheets: ['Collection_data'] });
+  const id = row => s.db.prepare("SELECT id FROM records WHERE sheet='Collection_data' AND row_num=?").get(row).id;
+  const point = (text, minutes, row) => ({ lat: -0.95, lon: -77.86 - minutes / 1e5, text, minutes, row, recordId: id(row) });
+  const { track } = saveTrack(
+    s,
+    {
+      requestId: 'request-0500',
+      date: '2025-09-08',
+      collector: 'AA - Alex Arias',
+      name: 'Monitoreo 8/9/2025',
+      track: [],
+      captures: [point('9:14 sol female 0.3m', 554, 2), point('9:15 sol 0.4m', 555, 3), point('Pol p male 9:16 sol 2m', 556, 4)],
+    },
+    editor,
+  );
+  return { s, id, track };
+}
+
+test('matching the stored walks again lists what would change, and applies it only when asked', async () => {
+  const { s, id, track } = await misPaired();
+  const first = rematchTracks(s, reviewer);
+  assert.deepEqual(
+    first.changes.map(c => [c.text, c.before.row, c.after.row]),
+    [
+      ['9:14 sol female 0.3m', 2, 3],
+      ['9:15 sol 0.4m', 3, 4],
+      ['Pol p male 9:16 sol 2m', 4, 5],
+    ],
+  );
+  // Nothing is written until the changes are applied.
+  assert.deepEqual(listTracks(s)[0].captures.map(c => c.row), [2, 3, 4]);
+  assert.ok(first.doubts.every(d => d.changed));
+  assert.deepEqual(first.walks.map(w => [w.id, w.doubts]), [[track.id, 3]]);
+  // A change that is no longer the same (another from) is skipped.
+  assert.deepEqual(applyRematch(s, { changes: [{ ...first.changes[0], from: id(4) }] }), { applied: 0, skipped: 1 });
+  assert.deepEqual(applyRematch(s, { changes: first.changes }), { applied: 3, skipped: 0 });
+  const [after] = listTracks(s);
+  assert.deepEqual(
+    after.captures.map(c => [c.row, c.species]),
+    [
+      [3, 'Eresia eunice'],
+      [4, 'Methona confusa'],
+      [5, 'Mechanitis polymnia'],
+    ],
+  );
+  assert.equal(rematchTracks(s).changes.length, 0);
+  s.close();
+});
+
+test('a pairing chosen by a person is kept when matching again, and "none" leaves the point without a row', async () => {
+  const { s, id, track } = await misPaired();
+  linkCapture(s, track.id, { index: 0, recordId: id(2) });
+  linkCapture(s, track.id, { index: 1, recordId: null });
+  assert.throws(() => linkCapture(s, track.id, { index: 2, recordId: id(6) }), { code: 'INVALID_LINK' });
+  const { changes } = rematchTracks(s);
+  assert.deepEqual(
+    changes.map(c => c.text),
+    ['Pol p male 9:16 sol 2m'],
+  );
+  applyRematch(s, { changes });
+  const [t] = listTracks(s);
+  assert.deepEqual(
+    t.captures.map(c => [c.row, c.link]),
+    [
+      [2, 'manual'],
+      [null, 'none'],
+      [5, null],
+    ],
+  );
+  // Reviewed again (the same walk imported again): the pairings made by hand stay.
+  saveTrack(
+    s,
+    {
+      requestId: 'request-0501',
+      date: t.date,
+      collector: t.collector,
+      name: t.name,
+      track: [],
+      captures: t.captures.map(c => ({ ...c, row: null, recordId: null, link: null })),
+    },
+    editor,
+  );
+  assert.deepEqual(
+    listTracks(s)[0].captures.map(c => c.link),
+    ['manual', 'none', null],
+  );
+  s.close();
+});
+
+test('a waiting walk whose points do not pair surely is listed to be paired by hand, then stored with those rows', async () => {
+  const { s, id } = await misPaired();
+  const { walk } = await saveWalk(
+    s,
+    {
+      ...walkBody(),
+      date: '2025-09-10',
+      collector: 'AA - Alex Arias',
+      waypoints: [
+        { lat: -0.95, lon: -77.86, text: 'Marip 1', photos: [] },
+        { lat: -0.95, lon: -77.87, text: 'Planta', photos: [] },
+      ],
+    },
+    editor,
+  );
+  const listed = rematchTracks(s).doubts.filter(d => d.walkId === walk.id);
+  assert.deepEqual(
+    listed.map(d => [d.text, d.confidence]),
+    [
+      ['Marip 1', 'order'],
+      ['Planta', 'none'],
+    ],
+  );
+  // The rows it could be, although the matcher gave that one to "Marip 1".
+  assert.deepEqual(
+    listed[1].candidates.map(r => r.row),
+    [6],
+  );
+  assert.throws(() => storeReviewedWalk(s, walk.id, { links: [[id(6)]] }, editor), { code: 'INVALID_LINK' });
+  const { track } = storeReviewedWalk(s, walk.id, { links: [[id(6)], []] }, editor);
+  assert.deepEqual(
+    track.captures.map(c => [c.row, c.link]),
+    [
+      [6, 'manual'],
+      [null, 'none'],
+    ],
+  );
+  assert.equal(listWalks(s)[0].status, 'imported');
+  assert.equal(rematchTracks(s).doubts.filter(d => d.walkId === walk.id).length, 0);
   s.close();
 });

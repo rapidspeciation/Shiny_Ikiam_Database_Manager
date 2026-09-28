@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ChoiceField from '../ChoiceField.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Link, RefreshCw, Trash2, UserPlus } from 'lucide-vue-next'
 import { useMonitoring } from '../../composables/useMonitoring'
@@ -231,10 +232,15 @@ watch(showProfiles, v => v && loadProfiles())
           placeholder="Enlace del perfil: https://es.wikiloc.com/wikiloc/user.do?id=…"
           aria-label="Enlace del perfil de Wikiloc"
         />
-        <select v-model="newCollector" class="field-input max-w-56" aria-label="Recolector de ese perfil">
-          <option value="">Recolector…</option>
-          <option v-for="c in collectors" :key="c" :value="c">{{ c }}</option>
-        </select>
+        <ChoiceField
+          v-model="newCollector"
+          class="field-input max-w-56"
+          aria-label="Recolector de ese perfil"
+          placeholder="Recolector…"
+          :freetext="false"
+          allow-empty
+          :options="collectors"
+        />
         <button class="btn" :disabled="!newProfile.trim()"><UserPlus :size="14" /> Seguir</button>
       </form>
     </div>

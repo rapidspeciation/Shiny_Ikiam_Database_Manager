@@ -545,6 +545,8 @@ class Plan {
 
   /** Rejects IDs that another row already uses, or that repeat within the batch. */
   checkUniqueIds() {
+    // Undo puts back what was there before (repeats included): refusing it would leave the data half restored.
+    if (this.source === 'undo') return;
     const proposed = [];
     for (const t of this.targets)
       for (const c of t.changes || []) {

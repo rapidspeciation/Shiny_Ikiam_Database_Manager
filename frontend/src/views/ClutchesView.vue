@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ChoiceField from '../components/ChoiceField.vue'
 import DateField from '../components/DateField.vue'
 import { computed, ref } from 'vue'
 import { NotebookPen, Plus } from 'lucide-vue-next'
@@ -100,10 +101,7 @@ const columns = computed(() =>
       </label>
       <label class="min-w-72">
         <span class="field-label">Especie</span>
-        <input v-model="form.species" class="field-input" list="clutch-species" />
-        <datalist id="clutch-species">
-          <option v-for="s in speciesList" :key="s" :value="s" />
-        </datalist>
+        <ChoiceField v-model="form.species" class="field-input" :options="speciesList" />
       </label>
       <label>
         <span class="field-label">Puesta</span>
@@ -115,10 +113,7 @@ const columns = computed(() =>
       </label>
       <label>
         <span class="field-label">Dónde</span>
-        <select v-model="form.place" class="field-input">
-          <option>Insectary</option>
-          <option>Laboratory</option>
-        </select>
+        <ChoiceField v-model="form.place" class="field-input" :options="['Insectary', 'Laboratory']" :freetext="false" />
       </label>
       <button class="btn-primary"><Plus :size="15" /> Nuevo clutch</button>
       <RouterLink

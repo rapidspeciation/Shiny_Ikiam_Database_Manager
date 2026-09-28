@@ -31,13 +31,13 @@ Comparing the 9 saved versions of 23–27 Sep 2026:
 - **Columns first, then rows.** A field trip (rows 8133–8180) was typed in two passes. First Release_Collect and FieldMark_ID were filled down for 35 rows. Then Insectary_ID, taxonomy, identifier, sex and location for 48 rows.
 - **Placeholders are made ahead.** 83 empty Insectary IDs were generated in one go (rows 13325–13407).
 - **IDs within a session are consecutive.** On 24 Sep, 19 preserved field butterflies got CAM079905… and FS90415311… (+1 each). On 27 Sep, insectary preservations continued the **same FS904153xx rack** (FS90415322), so one rack is shared between Collection and Insectary.
-- **Fill-down errors are real and recent.** Clutch 994(6) (rows 13383–13386) got death dates 24, 25, 26, 27 Sep, one per row, and CAMs that repeat others. On 27 Sep, CAM078276 was dragged into 12 empty rows.
+- **Fill-down errors are real and recent.** Clutch 994(6) (rows 13383–13386) got death dates 24, 25, 26, 27 Sep, one per row, and CAMs that repeat others. (Correction, 28 Sep: the 12 extra copies of CAM078276 seen in a 27-Sep revision were a deliberate demonstration of the sheet's duplicate highlighting, deleted within hours, not a fill-down.)
 - **Several people enter data.** Monitoring rows were typed the same day by the new assistant (26 Sep). Tubes from older insectary rows were catalogued by KN ("Half thorax"). The shared lab account entered the field trip. Taxonomy was re-identified by PAS.
 
 ## 2. Problems found, most urgent first
 
 1. **Wild CAM IDs are almost used up.** CAM079915 is the last; about 84 are left in the wild pool and about 220 in the insectary block.
-2. **Duplicate CAM IDs this month.** CAM078273–078275 are each used by two butterflies (U7A/C9B/E9B and N1D–N3D). CAM078276 is in 14 rows. The cause is two people using parallel runs, plus fill-down.
+2. **Duplicate CAM IDs this month.** CAM078273–078275 are each used by two butterflies (U7A/C9B/E9B and N1D–N3D). CAM078276 was also used twice. The cause is two people using parallel runs; copying or dragging cells can also strip the sheet's duplicate highlighting, so the repeats were not coloured.
 3. **Insectary_data is about 5 weeks behind** (emergences still only in the notebook). Meeting 137 plans training on this.
 4. **Field marks restarted at B40** (Aug 2026), so 24 marks belong to two butterflies.
 5. **Formula bugs in the workbook:**

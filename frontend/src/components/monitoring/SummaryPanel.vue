@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ChoiceField from '../ChoiceField.vue'
 import { computed, ref } from 'vue'
 import { Download, SlidersHorizontal } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
@@ -232,12 +233,18 @@ const pct = (a: number, b: number) => (b ? `${Math.round((100 * a) / b)} %` : 'â
     <div class="toolbar" :class="showFilters ? 'max-sm:flex' : 'max-sm:hidden'">
       <label>
         <span class="field-label">Periodo</span>
-        <select v-model="period" class="field-input">
-          <option value="todo">Todo</option>
-          <option value="12m">Ãšltimos 12 meses</option>
-          <option v-for="y in years" :key="y" :value="y">{{ y }}</option>
-          <option value="otro" disabled>Personalizado</option>
-        </select>
+        <ChoiceField
+          v-model="period"
+          class="field-input"
+          :freetext="false"
+          :options="[
+            { value: 'todo', label: 'Todo' },
+            { value: '12m', label: 'Ãšltimos 12 meses' },
+            ...years.map(y => ({ value: String(y), label: String(y) })),
+            // Shown when Desde/Hasta were set by hand.
+            { value: 'otro', label: 'Personalizado' },
+          ]"
+        />
       </label>
       <label>
         <span class="field-label">Desde</span>
@@ -249,24 +256,30 @@ const pct = (a: number, b: number) => (b ? `${Math.round((100 * a) / b)} %` : 'â
       </label>
       <label class="min-w-40">
         <span class="field-label">Recolector</span>
-        <select v-model="collector" class="field-input">
-          <option value="">Todos</option>
-          <option v-for="c in collectors" :key="c" :value="c.split(' - ')[0].trim()">{{ c }}</option>
-        </select>
+        <ChoiceField
+          v-model="collector"
+          class="field-input"
+          :freetext="false"
+          :options="[{ value: '', label: 'Todos' }, ...collectors.map(c => ({ value: c.split(' - ')[0].trim(), label: c }))]"
+        />
       </label>
       <label>
         <span class="field-label">Transecto</span>
-        <select v-model="section" class="field-input">
-          <option value="">Todos</option>
-          <option v-for="t in ['1', '2', '3', '4']" :key="t" :value="t">T{{ t }}</option>
-        </select>
+        <ChoiceField
+          v-model="section"
+          class="field-input"
+          :freetext="false"
+          :options="[{ value: '', label: 'Todos' }, ...['1', '2', '3', '4'].map(t => ({ value: t, label: `T${t}` }))]"
+        />
       </label>
       <label class="min-w-48">
         <span class="field-label">Especie</span>
-        <select v-model="speciesFilter" class="field-input">
-          <option value="">Todas</option>
-          <option v-for="s in speciesList" :key="s" :value="s">{{ s }}</option>
-        </select>
+        <ChoiceField
+          v-model="speciesFilter"
+          class="field-input"
+          :freetext="false"
+          :options="[{ value: '', label: 'Todas' }, ...speciesList.map(s => ({ value: s, label: s }))]"
+        />
       </label>
       <label class="flex items-center gap-2 pb-1.5 text-sm"
         ><input v-model="onlyIthomiini" type="checkbox" /> Solo Ithomiini</label
