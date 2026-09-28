@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onDeactivated, reactive, ref, watch } from 'vue'
 import { CheckSquare, Copy, Eraser, Plus, Save, Trash2, X } from 'lucide-vue-next'
 import CollectGrid from '../components/CollectGrid.vue'
 import SheetGrid from '../components/SheetGrid.vue'
@@ -623,6 +623,10 @@ const insectaryRow = (d: Draft): Record<string, CellValue> => ({
 
 /** Read over before saving: the day (a list typed days later was saved as today), places, sexes, CAMs. */
 const confirming = ref(false)
+// Escape closes the summary wherever the focus is (the dialog itself is not focused when it opens).
+const closeOnEscape = (e: KeyboardEvent) => e.key === 'Escape' && (confirming.value = false)
+watch(confirming, open => (open ? window.addEventListener : window.removeEventListener)('keydown', closeOnEscape))
+onDeactivated(() => (confirming.value = false))
 const summary = computed(() => summarize(drafts.value))
 const isToday = computed(() => header.value.date === todayIso())
 const longDate = computed(() =>
@@ -1106,7 +1110,6 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
       v-if="confirming"
       class="fixed inset-0 z-40 grid place-items-center bg-black/40 p-2"
       @click.self="confirming = false"
-      @keydown.esc="confirming = false"
     >
       <section class="flex max-h-[90vh] w-full max-w-lg flex-col rounded-lg bg-white shadow-xl" role="dialog" aria-label="Guardar colecta">
         <header class="flex items-center border-b border-stone-200 px-4 py-3">
