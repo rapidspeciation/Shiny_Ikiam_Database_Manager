@@ -4,6 +4,7 @@ import { RouterView, useRoute } from 'vue-router'
 import AppHeader from './components/AppHeader.vue'
 import SaveBar from './components/SaveBar.vue'
 import LoginView from './views/LoginView.vue'
+import { openPaths } from './router'
 import { notice } from './lib/notice'
 import { usePending } from './stores/pending'
 import { useSession } from './stores/session'
@@ -17,7 +18,9 @@ const tables = useTables()
 onMounted(() => session.init())
 watch(
   () => session.user?.username,
-  name => {
+  (name, before) => {
+    // Visitors get reduced copies of a few sheets: signing in or out starts afresh.
+    if (name !== before) tables.$reset()
     if (!name) return
     pending.restore()
     tables.follow()
@@ -26,14 +29,14 @@ watch(
 </script>
 
 <template>
-  <!-- The invitation page works without an account. -->
+  <!-- The invitation page, the home page and the monitoring report work without an account. -->
   <RouterView v-if="route.path === '/activar'" />
   <div v-else-if="!session.ready" class="grid h-full place-items-center text-stone-500">Cargando…</div>
-  <LoginView v-else-if="!session.user" />
+  <LoginView v-else-if="!session.user && !openPaths.has(route.path)" />
   <div v-else class="flex h-full flex-col">
     <AppHeader />
     <main class="min-h-0 flex-1"><RouterView /></main>
-    <SaveBar />
+    <SaveBar v-if="session.user" />
   </div>
   <div
     v-if="notice.text"

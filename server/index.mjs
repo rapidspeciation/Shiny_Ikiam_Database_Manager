@@ -28,6 +28,7 @@ import {
 import { idSuggestions, tableChanges, tablePayload, tableRevision } from './grid.mjs';
 import { createSheetHook } from './hooks.mjs';
 import { createInvitations, mailerFromEnv } from './invitations.mjs';
+import { createSummary, publicTable } from './summary.mjs';
 import { SANDBOX_ID, moduleMap, validateValues } from './schema.mjs';
 import {
   setup,
@@ -291,6 +292,7 @@ export async function createApp(config = {}, options = {}) {
   const loginLimiter = new LoginLimiter();
   const tableCache = new Map();
   const sheetHook = createSheetHook(store, { secret: config.sheetHookSecret });
+  const summary = createSummary(store);
   const invitations = createInvitations(
     store,
     options.mailer ?? mailerFromEnv(),
@@ -308,7 +310,7 @@ export async function createApp(config = {}, options = {}) {
       // open the import screen and let the person share again.
       if (method === 'POST' && path === '/share-target') {
         req.resume();
-        res.writeHead(303, { location: `${config.basePath}/#/monitoreo?vista=importar&compartido=0` });
+        res.writeHead(303, { location: `${config.basePath === '/' ? '' : config.basePath}/#/monitoreo?vista=importar&compartido=0` });
         return res.end();
       }
       if (!path.startsWith('/api/')) return serveStatic(req, res, path, config.basePath, config.t3?.url);
@@ -363,6 +365,20 @@ export async function createApp(config = {}, options = {}) {
           loginLimiter.failed(req, body.username);
           throw e;
         }
+      }
+      // The home page and the monitoring report are open to visitors: summaries only
+      // (the insectary's state is added for signed-in people) and the report's columns.
+      if (method === 'GET' && path === '/api/summary') return json(res, 200, summary.build({ signedIn: !!session }));
+      if (method === 'GET' && path === '/api/public/table') {
+        const module = url.searchParams.get('module') || '';
+        const revision = tableRevision(store, module);
+        let cached = tableCache.get(`public:${module}`);
+        if (cached?.revision !== revision) {
+          const text = JSON.stringify({ ...publicTable(store, module), revision });
+          cached = { revision, text, gzipped: gzipSync(text) };
+          tableCache.set(`public:${module}`, cached);
+        }
+        return send(res, 200, cached.text, {}, cached.gzipped);
       }
       // The invitation page is used before the person has an account.
       if (method === 'GET' && path === '/api/invitations/lookup')

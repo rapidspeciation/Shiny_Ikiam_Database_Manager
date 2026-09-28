@@ -1,9 +1,14 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useSession } from '../stores/session'
 import { errorText } from '../lib/notice'
 
 const session = useSession()
+const route = useRoute()
+const router = useRouter()
+// Already signed in (e.g. an old "Iniciar sesión" link).
+onMounted(() => session.user && router.replace('/inicio'))
 const hashToken = new URLSearchParams(location.hash.split('?')[1] || '').get('token') || ''
 const setupMode = computed(() => session.setupRequired || !!hashToken)
 
@@ -26,7 +31,11 @@ async function submit() {
         password.value,
       )
       history.replaceState(null, '', location.pathname + '#/tablas')
-    } else await session.login(username.value.trim(), password.value)
+    } else {
+      await session.login(username.value.trim(), password.value)
+      // From the "Iniciar sesión" button: back to where the person was.
+      if (route.path === '/entrar') await router.replace(String(route.query.volver || '/inicio'))
+    }
   } catch (e) {
     error.value = errorText(e)
   } finally {
@@ -75,6 +84,9 @@ async function submit() {
       <button class="btn-primary w-full py-2" :disabled="busy">
         {{ busy ? 'Un momento…' : setupMode ? 'Crear cuenta' : 'Entrar' }}
       </button>
+      <RouterLink v-if="!setupMode" to="/inicio" class="mt-4 block text-center text-sm text-stone-600 underline">
+        Ver los resúmenes del proyecto sin cuenta
+      </RouterLink>
     </form>
   </div>
 </template>

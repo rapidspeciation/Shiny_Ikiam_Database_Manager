@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { RouterLink } from 'vue-router'
-import { ExternalLink, LogOut, Users, ChevronDown } from 'lucide-vue-next'
+import { computed, ref } from 'vue'
+import { RouterLink, useRoute } from 'vue-router'
+import { ExternalLink, LogIn, LogOut, Users, ChevronDown } from 'lucide-vue-next'
 import { tabs } from '../router'
 import { useSession } from '../stores/session'
 import { usePending } from '../stores/pending'
@@ -10,6 +10,9 @@ import { notify } from '../lib/notice'
 const session = useSession()
 const pending = usePending()
 const menu = ref(false)
+const route = useRoute()
+/** Without an account only the open pages are listed. */
+const shown = computed(() => (session.user ? tabs : tabs.filter(t => 'open' in t && t.open)))
 
 async function logout() {
   if (
@@ -27,7 +30,7 @@ async function logout() {
   <header class="border-b border-brand-800 bg-brand-700 text-white">
     <!-- One row on wide screens; on phones the tabs get their own full-width row. -->
     <div class="flex flex-wrap items-center gap-x-3 px-3 sm:flex-nowrap sm:px-4">
-      <RouterLink to="/tablas" class="flex shrink-0 items-center gap-2 py-2 font-semibold">
+      <RouterLink to="/inicio" class="flex shrink-0 items-center gap-2 py-2 font-semibold">
         <img src="/mark.svg" alt="" class="h-6 w-6" />
         <span>Ikiam Insectary DB</span>
       </RouterLink>
@@ -36,7 +39,7 @@ async function logout() {
         aria-label="Secciones"
       >
         <RouterLink
-          v-for="tab in tabs"
+          v-for="tab in shown"
           :key="tab.path"
           :to="tab.path"
           class="shrink-0 border-b-2 border-transparent px-3 py-3 text-sm font-medium whitespace-nowrap text-brand-100 hover:text-white"
@@ -55,7 +58,14 @@ async function logout() {
       >
         {{ session.settings.sandboxLabel }} <ExternalLink :size="12" />
       </a>
-      <div class="relative ml-auto shrink-0 sm:ml-0">
+      <RouterLink
+        v-if="!session.user"
+        :to="{ path: '/entrar', query: { volver: route.fullPath } }"
+        class="ml-auto flex shrink-0 items-center gap-1 rounded px-2 py-1 text-sm hover:bg-brand-800 sm:ml-0"
+      >
+        <LogIn :size="15" /> Iniciar sesión
+      </RouterLink>
+      <div v-else class="relative ml-auto shrink-0 sm:ml-0">
         <button class="flex items-center gap-1 rounded px-2 py-1 text-sm hover:bg-brand-800" @click="menu = !menu">
           {{ session.user?.displayName }} <ChevronDown :size="14" />
         </button>

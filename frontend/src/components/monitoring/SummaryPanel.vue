@@ -24,6 +24,7 @@ import {
 } from '../../lib/monitoring'
 import type { TableRow } from '../../lib/types'
 import { usePending } from '../../stores/pending'
+import { useSession } from '../../stores/session'
 import { useTables } from '../../stores/tables'
 
 /**
@@ -33,6 +34,8 @@ import { useTables } from '../../stores/tables'
 const { table, rows: allRows, isIthomiini, withoutPurpose, tracks } = useMonitoring()
 const pending = usePending()
 const tables = useTables()
+/** Visitors see the summaries only: no CSV, mark histories, next mark or data review. */
+const signedIn = computed(() => !!useSession().user)
 const route = useRoute()
 const router = useRouter()
 tables.load('SamplingDay_data').catch(() => {})
@@ -274,7 +277,7 @@ const pct = (a: number, b: number) => (b ? `${Math.round((100 * a) / b)} %` : '�
       <label class="flex items-center gap-2 pb-1.5 text-sm"
         ><input v-model="bySubspecies" type="checkbox" /> Por subespecie</label
       >
-      <button class="btn" title="Las filas filtradas, como están en la hoja" @click="exportCsv">
+      <button v-if="signedIn" class="btn" title="Las filas filtradas, como están en la hoja" @click="exportCsv">
         <Download :size="15" /> CSV
       </button>
     </div>
@@ -312,7 +315,7 @@ const pct = (a: number, b: number) => (b ? `${Math.round((100 * a) / b)} %` : '�
             <span class="text-sm font-normal text-stone-500">{{ pct(totals.recaptured, markedIndividuals) }}</span>
           </p>
         </div>
-        <div class="rounded-md border border-brand-600 bg-brand-50 px-3 py-2">
+        <div v-if="signedIn" class="rounded-md border border-brand-600 bg-brand-50 px-3 py-2">
           <p class="text-xs text-brand-700">Próxima marca</p>
           <p class="text-2xl font-semibold text-brand-700">{{ nextMark || '—' }}</p>
         </div>
@@ -427,7 +430,7 @@ const pct = (a: number, b: number) => (b ? `${Math.round((100 * a) / b)} %` : '�
           </div>
         </section>
 
-        <section>
+        <section v-if="signedIn">
           <h2 class="mb-1 font-semibold">Recapturas ({{ histories.length }} individuos)</h2>
           <p class="hint mb-2">
             Mediana entre capturas: {{ median(intervals) ?? '—' }} días · máximo
@@ -466,7 +469,7 @@ const pct = (a: number, b: number) => (b ? `${Math.round((100 * a) / b)} %` : '�
       </div>
 
       <section
-        v-if="conflicts.length || noteOnly.length || withoutPurpose.length"
+        v-if="signedIn && (conflicts.length || noteOnly.length || withoutPurpose.length)"
         class="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm"
       >
         <h2 class="font-semibold text-amber-950">Revisión de datos</h2>

@@ -10,6 +10,7 @@ import {
   type TrackPoint,
 } from '../lib/monitoring'
 import { errorText, notify } from '../lib/notice'
+import { useSession } from '../stores/session'
 import { useTables } from '../stores/tables'
 import { useSheet } from './useSheet'
 
@@ -99,7 +100,8 @@ export function useMonitoring() {
   /** The 30-preserved rule applies to Ithomiini only (e.g. Heliconius numata is preserved on purpose). */
   const tribes = computed(() => tribesFrom(sheet.table.value?.rows || []))
   const isIthomiini = (species: string | null | undefined) => !!species && tribes.value.get(species) === 'Ithomiini'
-  if (!tracksLoaded.value) {
+  // GPS tracks are the raw data behind the map: only with an account.
+  if (!tracksLoaded.value && useSession().user) {
     loadTracks()
     loadWalks()
   }
