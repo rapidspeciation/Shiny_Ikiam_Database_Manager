@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Plus, RefreshCw, ArrowDownToLine, ExternalLink, Search, FileDown } from 'lucide-vue-next'
+import { Plus, RefreshCw, ArrowDownToLine, ExternalLink, Search, FileDown, ShieldAlert } from 'lucide-vue-next'
 import SheetGrid from '../components/SheetGrid.vue'
 import WorkbookWarnings from '../components/WorkbookWarnings.vue'
+import DataReview from '../components/DataReview.vue'
 import { useSheet } from '../composables/useSheet'
 import { notify } from '../lib/notice'
 import { usePending } from '../stores/pending'
@@ -30,6 +31,13 @@ const search = ref(String(route.query.buscar || ''))
 const debounced = ref(search.value)
 const showUnused = ref(false)
 const grid = ref<InstanceType<typeof SheetGrid>>()
+/** "Revisión de datos" in place of the grid: the inconsistencies found across the workbook. */
+const review = ref(route.query.revision === '1')
+function openIssue(sheet: string, label: string) {
+  review.value = false
+  module.value = sheet
+  search.value = debounced.value = label
+}
 const { table, ready, loading, options, creates, createFormulas, load } = useSheet(module)
 
 let timer: ReturnType<typeof setTimeout>
@@ -86,6 +94,14 @@ function addRow() {
         <input v-model="showUnused" type="checkbox" /> Filas vacías preasignadas
       </label>
       <div class="flex gap-2">
+        <button
+          class="btn"
+          :class="{ 'bg-brand-50 text-brand-700': review }"
+          title="Datos que no cuadran en todo el libro: IDs repetidos, fechas, colecta ↔ insectario…"
+          @click="review = !review"
+        >
+          <ShieldAlert :size="15" /> Revisión de datos
+        </button>
         <button v-if="session.canEdit" class="btn" @click="addRow"><Plus :size="15" /> Añadir fila</button>
         <button class="btn" title="Copiar la primera fila seleccionada hacia abajo (Ctrl+D)" @click="grid?.fillDown()">
           <ArrowDownToLine :size="15" /> Rellenar
@@ -105,7 +121,7 @@ function addRow() {
       Las columnas de {{ module }} cambiaron en Google Sheets ({{ table.headerProblems.map(p => p.field).join(', ') }}). No se
       puede guardar en esta hoja hasta actualizar la aplicación.
     </p>
-    <p class="hint px-4 py-1">
+    <p v-if="!review" class="hint px-4 py-1">
       <template v-if="touch"
         >Toca una celda para seleccionarla y dos veces para editarla · arrastra el círculo para ampliar la selección · abajo:
         Copiar, Pegar, Rellenar ↓, Borrar · toca el número de fila para ver la fila completa · gris = fórmula.</template
@@ -115,7 +131,8 @@ function addRow() {
         celdas grises son fórmulas · clic en el número de fila para ver la fila completa.
       </template>
     </p>
-    <div class="min-h-0 flex-1">
+    <DataReview v-if="review" :sheet="module" class="min-h-0 flex-1" @open="openIssue" />
+    <div v-else class="min-h-0 flex-1">
       <p v-if="!ready || !table" class="p-6 text-stone-500">Cargando {{ module }}…</p>
       <SheetGrid
         v-else

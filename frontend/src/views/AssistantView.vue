@@ -7,6 +7,7 @@ import { errorText, notify } from '../lib/notice'
 import { useTables } from '../stores/tables'
 import ProposalGrid, { type Proposal } from '../components/ProposalGrid.vue'
 import T3Frame from '../components/T3Frame.vue'
+import ProposalsLive from '../components/assistant/ProposalsLive.vue'
 import { persistentRef } from '../lib/persist'
 
 /**
@@ -58,30 +59,17 @@ const status = ref<{ configured: boolean; provider: string; model: string | null
 const scroller = ref<HTMLElement>()
 const t3Url = ref<string | null>(null)
 const mode = persistentRef<'t3' | 'chat'>('assistant:mode', 't3')
-// Proposals made from T3 Code (or any conversation) waiting for review.
-const waiting = ref<Proposal[]>([])
-const drawerOpen = ref(false)
-let loadedOnce = false
-function toggleDrawer() {
-  drawerOpen.value = !drawerOpen.value
-  fresh.value = false
-}
+// Proposals (from T3 Code or any conversation) beside T3, or under it on phones; see ProposalsLive.
+const panel = persistentRef('assistant:proposals', window.matchMedia('(min-width: 768px)').matches)
+const waiting = ref(0)
 const fresh = ref(false)
-const t3Frame = ref<InstanceType<typeof T3Frame>>()
-async function loadWaiting() {
-  if (document.visibilityState !== 'visible' || mode.value !== 't3') return
-  try {
-    const next = (await api<{ proposals: Proposal[] }>('chat/proposals')).proposals
-    // A new proposal only lights the button; the drawer never opens by itself.
-    if (loadedOnce && next.some(p => !waiting.value.some(w => w.id === p.id)) && !drawerOpen.value) fresh.value = true
-    loadedOnce = true
-    waiting.value = next
-  } catch {
-    /* The panel just stays as it was. */
-  }
+function arrived() {
+  // A new proposal shows the panel, so the person sees the edit as the assistant makes it.
+  fresh.value = !panel.value
+  panel.value = true
+  setTimeout(() => (fresh.value = false), 4000)
 }
-const poll = setInterval(loadWaiting, 5000)
-onBeforeUnmount(() => clearInterval(poll))
+const t3Frame = ref<InstanceType<typeof T3Frame>>()
 const gallery = ref<HTMLInputElement>()
 const camera = ref<HTMLInputElement>()
 const started = ref(0)
@@ -92,7 +80,6 @@ onBeforeUnmount(() => clearInterval(tick))
 onMounted(async () => {
   try {
     t3Url.value = (await api<{ url: string | null }>('t3/status')).url
-    loadWaiting()
     status.value = await api('ai/status')
     threads.value = (await api<{ threads: Thread[] }>('chat/threads')).threads
     if (threads.value[0]) await open(threads.value[0].id)
@@ -249,14 +236,14 @@ const cellOf = (row: Record<string, unknown> | unknown[], key: string, i: number
           :class="
             fresh
               ? 'animate-pulse bg-emerald-600 text-white'
-              : waiting.length
+              : waiting
                 ? 'bg-emerald-100 text-emerald-900'
                 : 'text-stone-500'
           "
-          :title="waiting.length ? 'Revisar los cambios que propuso el asistente' : 'No hay cambios por revisar'"
-          @click="toggleDrawer"
+          :title="panel ? 'Ocultar los cambios propuestos' : 'Mostrar los cambios propuestos'"
+          @click="panel = !panel"
         >
-          <ListChecks :size="14" /> Cambios propuestos ({{ waiting.length }})
+          <ListChecks :size="14" /> Cambios propuestos ({{ waiting }})
         </button>
         <button class="btn-ghost" title="Volver a conectar T3" @click="t3Frame?.connect(true)"><RefreshCw :size="13" /></button>
         <a class="btn-ghost" :href="t3Url" target="_blank" rel="noopener" title="Abrir T3 en otra pestaña"
@@ -264,30 +251,16 @@ const cellOf = (row: Record<string, unknown> | unknown[], key: string, i: number
         /></a>
       </template>
     </div>
-    <div v-if="t3Url && mode === 't3'" class="relative flex min-h-0 flex-1">
+    <div v-if="t3Url && mode === 't3'" class="flex min-h-0 flex-1 flex-col md:flex-row">
       <T3Frame ref="t3Frame" :url="t3Url" class="min-h-0 flex-1" />
-      <!-- Proposed edits slide over T3 only when asked for. -->
-      <div v-if="drawerOpen" class="absolute inset-0 z-10 flex justify-end bg-stone-900/20" @click.self="drawerOpen = false">
-        <aside class="flex h-full w-full max-w-5xl flex-col bg-stone-50 shadow-xl">
-          <header class="flex items-center border-b border-stone-200 bg-white px-3 py-2">
-            <h2 class="text-sm font-medium">Cambios propuestos por el asistente</h2>
-            <button class="btn-ghost ml-auto" title="Cerrar" @click="drawerOpen = false"><X :size="16" /></button>
-          </header>
-          <div class="flex-1 overflow-y-auto px-3 pb-3">
-            <p v-if="!waiting.length" class="py-6 text-sm text-stone-500">
-              No hay cambios por revisar. Cuando el asistente proponga cambios en la hoja aparecerán aquí.
-            </p>
-            <ProposalGrid
-              v-for="p in waiting"
-              :key="p.id"
-              :proposal="p"
-              :busy="applying === p.id"
-              @apply="indexes => apply(p, indexes).then(loadWaiting)"
-              @discard="discard(p).then(loadWaiting)"
-            />
-          </div>
-        </aside>
-      </div>
+      <!-- Proposed edits beside T3 (under it on phones), updated as the assistant drafts them. -->
+      <ProposalsLive
+        v-show="panel"
+        class="max-h-[45%] border-t border-stone-300 md:max-h-none md:w-[42%] md:max-w-3xl md:border-t-0 md:border-l"
+        @count="n => (waiting = n)"
+        @fresh="arrived"
+        @close="panel = false"
+      />
     </div>
     <div v-else class="flex min-h-0 flex-1">
       <aside class="hidden w-60 shrink-0 flex-col border-r border-stone-200 bg-white md:flex">

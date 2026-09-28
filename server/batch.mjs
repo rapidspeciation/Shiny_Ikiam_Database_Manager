@@ -586,7 +586,7 @@ const UNIQUE_SHEETS = () =>
     .filter(m => UNIQUE[m.id] || m.fields.some(f => TUBE_FIELD.test(f.key)))
     .map(m => m.id);
 
-function uniqueIdIndex(store) {
+export function uniqueIdIndex(store) {
   const index = new Map();
   for (const sheet of UNIQUE_SHEETS()) {
     const unique = field => isUnique(sheet, field);

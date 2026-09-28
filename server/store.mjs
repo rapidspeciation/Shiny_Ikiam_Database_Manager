@@ -889,7 +889,7 @@ export class Store {
     }));
     return applyBatch(this, { requestId, reason, edits }, user, { source: 'undo', reverses: actionIds.join(',') });
   }
-  /** Applies reviewed AI proposals as one action. */
+  /** Applies reviewed AI proposals (edits and new rows) as one action. */
   async applyProposal(changes, { user, requestId, reason } = {}) {
     if (!Array.isArray(changes) || !changes.length) throw error('INVALID_PROPOSAL', 'No proposed changes');
     return applyBatch(
@@ -898,12 +898,16 @@ export class Store {
         requestId,
         reason,
         // Each proposed field is checked against the value the assistant read.
-        edits: changes.map(c => ({
-          id: c.recordId,
-          values: c.values,
-          ...(c.before ? { expected: c.before } : { expectedVersion: c.expectedVersion }),
-          ...(c.replaceFormula?.length ? { replaceFormula: c.replaceFormula } : {}),
-        })),
+        edits: changes
+          .filter(c => !c.create)
+          .map(c => ({
+            id: c.recordId,
+            values: c.values,
+            ...(c.before ? { expected: c.before } : { expectedVersion: c.expectedVersion }),
+            ...(c.replaceFormula?.length ? { replaceFormula: c.replaceFormula } : {}),
+          })),
+        // New rows (e.g. the captures of a Wikiloc walk) go into the next unused rows.
+        creates: changes.filter(c => c.create).map(c => ({ module: c.sheet, clientId: c.clientId, values: c.values })),
       },
       user,
       { source: 'ai_approved' },

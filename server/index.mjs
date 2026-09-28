@@ -31,6 +31,7 @@ import { createInvitations, mailerFromEnv } from './invitations.mjs';
 import { createSummary } from './summary.mjs';
 import { applyIdChange, planIdChange } from './insectaryId.mjs';
 import { UNIQUE, TUBE_FIELD } from './verifications.mjs';
+import { checkData } from './checks.mjs';
 import { listOptions } from './verify.mjs';
 import { SANDBOX_ID, moduleMap, validateValues } from './schema.mjs';
 import {
@@ -494,6 +495,8 @@ export async function createApp(config = {}, options = {}) {
         const unique = mod.fields.map(f => f.key).filter(k => UNIQUE[module]?.includes(k) || TUBE_FIELD.test(k));
         return send(res, 200, JSON.stringify({ module, unique, lists }), { 'cache-control': 'no-cache' });
       }
+      // Revisión de datos: inconsistencies across the workbook (the assistant's check_data tool).
+      if (method === 'GET' && path === '/api/checks') return json(res, 200, checkData(store, query));
       // Correcting an Insectary ID after saving: preview, then one undoable save.
       if (method === 'GET' && path === '/api/insectary-ids/plan') {
         const plan = planIdChange(store, query.from, query.to);

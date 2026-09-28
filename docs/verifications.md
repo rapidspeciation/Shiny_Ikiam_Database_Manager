@@ -47,3 +47,17 @@ from Lists, Location_data, Taxonomy_v18Jun25 or Insectary_stocks.
 
 It painted CAM_ID light red when it was not in the Lists pool, and its dropdowns were not strict.
 It did not check repeated values.
+
+## Revisión de datos (the whole workbook at once)
+
+`server/checks.mjs` scans the local copy for inconsistencies the sheet's own rules do not catch
+across rows and sheets: repeats and strict-list values (as above), a CAM given to two butterflies
+(Collection_data, Insectary_data and Wing_tissue CAM_ID), Collected_Sent2Insectary rows without a
+filled Insectary_data row and wild insectary butterflies without a collection row, species / sex /
+copied-CAM mismatches between the two rows of one butterfly, deaths or preservations before
+collection or entry, dates after today, preserved rows without CAM_ID or Tube_1_id, and field
+marks on two species. A fix is offered only when obvious (spelling of a list value, the other
+sheet's CAM, a year typed one off). The scan is cached until the copy changes.
+
+It is shown in Tablas → Revisión de datos (obvious fixes can be sent as one proposal to confirm in
+Asistente) and is the assistant's `check_data` tool (`GET /api/checks?sheet=&kind=&limit=&offset=`).
