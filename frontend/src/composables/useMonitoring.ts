@@ -2,6 +2,8 @@ import { computed, ref } from 'vue'
 import { api } from '../lib/api'
 import {
   isMonitoringRow,
+  locateCapture,
+  matchWalk,
   monitoringDays,
   noPurpose,
   taxaFrom,
@@ -9,6 +11,7 @@ import {
   type ImportedCapture,
   type TrackPoint,
 } from '../lib/monitoring'
+import { recapturesOutsideSheet, type LoosePoint } from '../lib/monitoringMap'
 import { errorText, notify } from '../lib/notice'
 import { useTables } from '../stores/tables'
 import { useSheet } from './useSheet'
@@ -44,7 +47,15 @@ export type StoredCapture = Pick<
   | 'markId'
   | 'section'
   | 'photos'
-> & { recapture: boolean; row?: number | null; recordId?: string | null }
+> & {
+  recapture: boolean
+  row?: number | null
+  recordId?: string | null
+  /** Paired by a person: with a row ('manual') or with none ('none'). */
+  link?: 'manual' | 'none' | null
+  /** On the map only: a recapture that is not a row of the sheet (its individual's key). */
+  outside?: string
+}
 
 /** A walk read from a public Wikiloc page by tools/wikiloc, waiting for review. */
 export interface WikilocWalk {
@@ -114,6 +125,31 @@ export function useMonitoring() {
   /** The 30-preserved rule applies to Ithomiini only (e.g. Heliconius numata is preserved on purpose). */
   const tribes = computed(() => tribesFrom(sheet.table.value?.rows || []))
   const isIthomiini = (species: string | null | undefined) => !!species && tribes.value.get(species) === 'Ithomiini'
+  /**
+   * Recaptures that are not rows of the sheet: written only in notes, or only as
+   * Wikiloc points (on the map, or in walks waiting for review for more than two
+   * weeks: a recent walk may just not be entered yet).
+   */
+  const outsideRecaptures = computed(() => {
+    if (!sheet.table.value) return []
+    const loose: LoosePoint[] = []
+    for (const t of tracks.value)
+      t.captures.forEach((c, i) => {
+        if (!c.row && c.markId)
+          loose.push({ ...c, date: t.date, collector: t.collector, photos: c.photos || [], ref: `${t.id}|${i}` })
+      })
+    const recent = new Date(Date.now() - 14 * 864e5).toISOString().slice(0, 10)
+    for (const w of walks.value) {
+      if (w.status !== 'waiting' || !w.date || !w.collector || w.date > recent) continue
+      const points = w.waypoints.map(p => locateCapture({ ...p, time: null }, taxa.value, localTaxa.value))
+      const match = matchWalk(rows.value, w.date, w.collector, points)
+      points.forEach((c, i) => {
+        if (!match.matches[i].rows.length && c.markId)
+          loose.push({ ...c, date: match.date, collector: w.collector!, ref: `${w.id}|${i}` })
+      })
+    }
+    return recapturesOutsideSheet(rows.value, loose)
+  })
   if (!tracksLoaded.value) {
     loadTracks()
     loadWalks()
@@ -127,6 +163,7 @@ export function useMonitoring() {
     localTaxa,
     tribes,
     isIthomiini,
+    outsideRecaptures,
     tracks,
     tracksLoaded,
     loadTracks,
