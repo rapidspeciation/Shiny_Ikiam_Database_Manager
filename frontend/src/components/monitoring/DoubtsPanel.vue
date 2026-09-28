@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ChoiceField from '../ChoiceField.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Check, ChevronLeft, ChevronRight, Copy, ExternalLink, MapPin, RefreshCw, X } from 'lucide-vue-next'
 import { useMonitoring } from '../../composables/useMonitoring'
@@ -265,10 +266,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     <div class="toolbar">
       <label class="block">
         <span class="field-label">Colector</span>
-        <select v-model="who" class="field-input">
-          <option value="">Todos</option>
-          <option v-for="c in collectors" :key="c" :value="c">{{ c }}</option>
-        </select>
+        <ChoiceField
+          v-model="who"
+          class="field-input"
+          :freetext="false"
+          :options="[{ value: '', label: 'Todos' }, ...collectors.map(c => ({ value: c, label: c }))]"
+        />
       </label>
       <p class="hint pb-2">
         {{ total }} puntos dudosos en {{ groups.length - waitingWalks }} recorridos del mapa<template v-if="waitingWalks"

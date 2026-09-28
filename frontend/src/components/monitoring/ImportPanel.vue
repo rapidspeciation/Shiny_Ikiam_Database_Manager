@@ -103,6 +103,16 @@ const collectorLists = computed(() =>
   monitoringCollectors(options.value.Collector || [], rows.value, tables.tables[DAY_SHEET]?.rows || []),
 )
 const people = computed(() => [...collectorLists.value.usual, ...collectorLists.value.others])
+const collectorChoices = computed(() =>
+  (['usual', 'others'] as const).flatMap(kind =>
+    collectorLists.value[kind].map(c => ({
+      value: c,
+      label: c,
+      group: kind === 'usual' ? 'Monitoreo' : 'Otros',
+      hint: c === lastCollector.value ? 'el último usado' : undefined,
+    })),
+  ),
+)
 const isReviewer = computed(() => ['reviewer', 'admin'].includes(session.user?.role || ''))
 const initials = computed(() => collector.value.split(' - ')[0].trim())
 const shortName = (c: string) => collectorLabel(c, people.value)
@@ -758,24 +768,15 @@ const dayLabel = (iso: string) => formatSerial(isoToSerial(iso))
           <span class="field-label">
             Recolector <span v-if="collectorFrom" class="font-normal text-stone-500">({{ collectorFrom }})</span>
           </span>
-          <select
-            :value="collector"
+          <ChoiceField
+            :model-value="collector"
             class="field-input"
             :class="{ 'border-amber-500': !collector }"
-            @change="pickCollector(($event.target as HTMLSelectElement).value)"
-          >
-            <option value="" disabled>Elegir…</option>
-            <optgroup label="Monitoreo">
-              <option v-for="c in collectorLists.usual" :key="c" :value="c">
-                {{ c }}{{ c === lastCollector ? ' (el último usado)' : '' }}
-              </option>
-            </optgroup>
-            <optgroup label="Otros">
-              <option v-for="c in collectorLists.others" :key="c" :value="c">
-                {{ c }}{{ c === lastCollector ? ' (el último usado)' : '' }}
-              </option>
-            </optgroup>
-          </select>
+            placeholder="Elegir…"
+            :freetext="false"
+            :options="collectorChoices"
+            @update:model-value="pickCollector"
+          />
         </label>
         <button
           v-if="!collector && lastCollector && people.includes(lastCollector)"

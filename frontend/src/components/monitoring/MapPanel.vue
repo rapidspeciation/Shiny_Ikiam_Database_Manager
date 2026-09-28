@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ChoiceField from '../ChoiceField.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import L from 'leaflet'
@@ -669,12 +670,17 @@ const withoutGps = computed(() => {
         </label>
         <label v-else class="block">
           <span class="field-label">Colorear por</span>
-          <select v-model="colorBy" class="field-input">
-            <option value="especie">Especie</option>
-            <option value="sexo">Sexo</option>
-            <option value="tipo">Tipo (preservado, marcado, recaptura)</option>
-            <option value="recorrido">Recorrido</option>
-          </select>
+          <ChoiceField
+            v-model="colorBy"
+            class="field-input"
+            :freetext="false"
+            :options="[
+              { value: 'especie', label: 'Especie' },
+              { value: 'sexo', label: 'Sexo' },
+              { value: 'tipo', label: 'Tipo (preservado, marcado, recaptura)' },
+              { value: 'recorrido', label: 'Recorrido' },
+            ]"
+          />
         </label>
         <label class="flex items-center gap-2"><input v-model="showTransects" type="checkbox" /> Transectos T1–T4</label>
         <label class="flex items-center gap-2"><input v-model="showGps" type="checkbox" /> Trazados GPS de Wikiloc</label>

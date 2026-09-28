@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ChoiceField from '../ChoiceField.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ChevronLeft, ChevronRight, MapPinned, X } from 'lucide-vue-next'
@@ -119,11 +120,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </div>
         <label class="block">
           <span class="field-label">Ordenar</span>
-          <select v-model="sort" class="field-input">
-            <option value="recent">Última captura más reciente</option>
-            <option value="captures">Más capturas</option>
-            <option value="span">Más tiempo entre la primera y la última</option>
-          </select>
+          <ChoiceField
+            v-model="sort"
+            class="field-input"
+            :freetext="false"
+            :options="[
+              { value: 'recent', label: 'Última captura más reciente' },
+              { value: 'captures', label: 'Más capturas' },
+              { value: 'span', label: 'Más tiempo entre la primera y la última' },
+            ]"
+          />
         </label>
         <label class="flex items-center gap-2 pb-2 text-sm">
           <input v-model="onlyPhotos" type="checkbox" /> Solo con fotos ({{ withPhotos }})
