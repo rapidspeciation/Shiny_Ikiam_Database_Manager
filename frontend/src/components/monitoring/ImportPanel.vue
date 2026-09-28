@@ -9,12 +9,14 @@ import { api, requestId } from '../../lib/api'
 import { isBlank } from '../../lib/cells'
 import { formatSerial, isoToSerial } from '../../lib/dates'
 import {
-  MARK_THRESHOLD,
   captureValues,
+  collectorFromName,
   existingRow,
   formatMinutes,
-  hasMark,
   locateCapture,
+  markIndex,
+  reviewCapture,
+  sameIndividual as sameMarked,
   parseGpx,
   preservedForRule,
   trackLength,
@@ -27,7 +29,7 @@ import {
 import { errorText, notify } from '../../lib/notice'
 import { persistentRef } from '../../lib/persist'
 import { fillIfBlank, orderColumns } from '../../lib/rows'
-import type { CellValue, TableRow } from '../../lib/types'
+import type { CellValue } from '../../lib/types'
 import { usePending } from '../../stores/pending'
 import { useSession } from '../../stores/session'
 import { useTables } from '../../stores/tables'
@@ -152,11 +154,9 @@ async function addPhotosToTrack() {
 }
 const photoUrl = (id: string) => `api/monitoring/photos/${id}`
 
-/** Wikiloc names like "Monitoreo ithomidos FCH 26 SEP 2026" carry the collector's initials. */
 function detectCollector() {
   if (!file.value) return
-  const name = `${file.value.gpx.name} ${file.value.name}`
-  const found = collectors.value.find(c => new RegExp(`\\b${c.split(' - ')[0].trim()}\\b`).test(name))
+  const found = collectorFromName(`${file.value.gpx.name} ${file.value.name}`, collectors.value)
   if (found) collector.value = found
 }
 // The list of collectors arrives with Collection_data, possibly after the file was chosen.
@@ -170,74 +170,29 @@ const captures = computed<ImportedCapture[]>(() =>
 )
 
 /** Earlier rows of each field mark, to tell a new mark from a recapture. */
-const marks = computed(() => {
-  const out = new Map<string, TableRow[]>()
-  for (const row of rows.value.filter(hasMark)) {
-    const id = String(row.values.FieldMark_ID).trim().toUpperCase()
-    out.set(id, [...(out.get(id) || []), row])
-  }
-  return out
-})
-/** Rows with the same field mark from before this walk: if any, the capture is a recapture. */
-function earlier(c: ImportedCapture, when = date.value) {
-  if (!c.markId || !when) return []
-  const day = isoToSerial(when)
-  return (marks.value.get(c.markId) || []).filter(
-    r => typeof r.values.Collection_date === 'number' && r.values.Collection_date < day,
-  )
-}
+const marks = computed(() => markIndex(rows.value))
 /** Earlier rows of the same mark on the same species: the capture is a recapture. */
-const sameIndividual = (c: ImportedCapture, when = date.value) =>
-  earlier(c, when).filter(r => !!c.species && String(r.values.SPECIES ?? '').toLowerCase() === c.species.toLowerCase())
+const sameIndividual = (c: ImportedCapture, when = date.value) => sameMarked(c, marks.value, when)
 // The 30-preserved rule counts every preserved butterfly from Ikiam and Casa de Lin.
 // Counted up to the day of the walk, so an old walk is judged by the count it had then.
 const preservedBySpecies = computed(() =>
   preservedForRule(table.value?.rows || [], /^\d{4}-\d{2}-\d{2}$/.test(date.value) ? isoToSerial(date.value) : undefined),
 )
 
-interface Check {
-  text: string
-  kind: 'ok' | 'info' | 'warn'
-}
 const checks = computed(() =>
-  captures.value.map((c, i) => {
+  captures.value.map((c, i) =>
     // Until the sheet is loaded, marks and names cannot be checked yet.
-    if (!table.value) return { existing: null, list: [{ kind: 'info', text: 'Cargando la hoja…' } as Check] }
-    const out: Check[] = []
-    const existing = date.value ? existingRow(rows.value, date.value, c) : null
-    // Already in the sheet: nothing will be written, so no further checks.
-    if (existing) return { existing, list: [{ kind: 'info', text: `Ya está en la hoja (fila ${existing.row})` } as Check] }
-    if (c.markId) {
-      const first = sameIndividual(c)[0]
-      const others = earlier(c).filter(r => !sameIndividual(c).includes(r))
-      if (first)
-        out.push({
-          kind: 'ok',
-          text: `Recaptura de ${c.markId} (marcada ${formatSerial(first.values.Collection_date as number)})`,
+    table.value
+      ? reviewCapture(c, i, {
+          rows: rows.value,
+          date: date.value,
+          captures: captures.value,
+          marks: marks.value,
+          preserved: preservedBySpecies.value,
+          isIthomiini,
         })
-      else out.push({ kind: 'ok', text: `Nueva marca ${c.markId}` })
-      for (const r of others)
-        out.push({ kind: 'warn', text: `${c.markId} ya se usó para ${r.values.SPECIES} (fila ${r.row}): ¿ID repetida?` })
-      if (!first && c.recaptureNote && !others.length)
-        out.push({ kind: 'warn', text: `Dice recaptura, pero ${c.markId} no está en la hoja` })
-      if (captures.value.some((o, j) => j !== i && o.markId === c.markId))
-        out.push({ kind: 'warn', text: `${c.markId} aparece dos veces en este recorrido` })
-    } else {
-      out.push({ kind: 'info', text: 'Preservado (sin marca)' })
-      const preserved = c.species ? preservedBySpecies.value.get(c.species) || 0 : 0
-      if (preserved >= MARK_THRESHOLD && isIthomiini(c.species))
-        out.push({ kind: 'warn', text: `${c.species} ya tiene ${preserved} preservados: ¿no debía marcarse?` })
-    }
-    if (!c.species) out.push({ kind: 'warn', text: 'Sin especie' })
-    else if (!c.known) out.push({ kind: 'warn', text: 'Nombre no encontrado en la hoja: revisar' })
-    if (!c.sex) out.push({ kind: 'warn', text: 'Sin sexo' })
-    if (c.minutes === null) out.push({ kind: 'warn', text: 'Sin hora' })
-    if (c.height === null) out.push({ kind: 'warn', text: 'Sin altura' })
-    if (!c.cloud) out.push({ kind: 'warn', text: 'Sin clima' })
-    if (c.section === null) out.push({ kind: 'warn', text: `Lejos del sendero (${c.sectionDistance} m)` })
-    if (c.rest) out.push({ kind: 'info', text: `A notas: “${c.rest}”` })
-    return { existing, list: out }
-  }),
+      : { existing: null, recapture: null, list: [{ kind: 'info' as const, text: 'Cargando la hoja…' }] },
+  ),
 )
 const included = computed(() => captures.value.filter((_, i) => !skip.value.has(i) && !checks.value[i].existing))
 function toggle(i: number) {

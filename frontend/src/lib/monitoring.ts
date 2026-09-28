@@ -1,6 +1,8 @@
-import { isoToSerial, serialToIso } from './dates'
-import { MAX_SECTION_DISTANCE, nearestSection } from './transects'
-import type { CellValue, TableRow } from './types'
+// Explicit .ts extensions: the server loads this file too (Node strips the types), so the
+// assistant builds monitoring rows exactly as the Monitoreo review does (server/walks.mjs).
+import { formatSerial, isoToSerial, serialToIso } from './dates.ts'
+import { MAX_SECTION_DISTANCE, nearestSection } from './transects.ts'
+import type { CellValue, TableRow } from './types.ts'
 
 /**
  * Ithomiini monitoring at Ikiam: reading Wikiloc GPX files, turning waypoint
@@ -364,6 +366,103 @@ export function locateCapture(w: GpxWaypoint, taxa: Taxa): ImportedCapture {
     sectionDistance: Math.round(near.distance),
     photos: w.photos || [],
   }
+}
+
+/** Wikiloc names like "Monitoreo ithomidos FCH 26 SEP 2026" carry the collector's initials. */
+export function collectorFromName(name: string, collectors: string[]): string | null {
+  return collectors.find(c => new RegExp(`\\b${c.split(' - ')[0].trim()}\\b`).test(name)) || null
+}
+
+/** Rows per field mark (upper case), to tell a new mark from a recapture. */
+export function markIndex(rows: TableRow[]): Map<string, TableRow[]> {
+  const out = new Map<string, TableRow[]>()
+  for (const row of rows.filter(hasMark)) {
+    const id = String(row.values.FieldMark_ID).trim().toUpperCase()
+    out.set(id, [...(out.get(id) || []), row])
+  }
+  return out
+}
+
+/** Rows with the same field mark from before `when` (ISO): if any, the capture may be a recapture. */
+export function earlierMarks(c: Capture, marks: Map<string, TableRow[]>, when: string): TableRow[] {
+  if (!c.markId || !when) return []
+  const day = isoToSerial(when)
+  return (marks.get(c.markId) || []).filter(r => typeof r.values.Collection_date === 'number' && r.values.Collection_date < day)
+}
+
+/** Earlier rows of the same mark on the same species: the capture is a recapture. */
+export function sameIndividual(c: Capture, marks: Map<string, TableRow[]>, when: string): TableRow[] {
+  return earlierMarks(c, marks, when).filter(
+    r => !!c.species && String(r.values.SPECIES ?? '').toLowerCase() === c.species.toLowerCase(),
+  )
+}
+
+export interface CaptureCheck {
+  text: string
+  kind: 'ok' | 'info' | 'warn'
+}
+
+export interface ReviewContext {
+  /** Collection_data rows. */
+  rows: TableRow[]
+  /** Day of the walk (ISO). */
+  date: string
+  /** Every capture of the walk, to spot a mark noted twice. */
+  captures: Capture[]
+  marks: Map<string, TableRow[]>
+  /** Preserved individuals per species up to the walk (preservedForRule). */
+  preserved: Map<string, number>
+  isIthomiini: (species: string | null | undefined) => boolean
+  /** The row already holding the capture, when the caller matched it another way (e.g. matchWalk). */
+  existing?: TableRow | null
+}
+
+/**
+ * What the review says about one capture: already in the sheet, new mark or
+ * recapture, a mark used for another species, the 30-preserved rule, and the
+ * parts missing from the note. Shared by "Importar recorrido" and the assistant.
+ */
+export function reviewCapture(
+  c: ImportedCapture,
+  i: number,
+  ctx: ReviewContext,
+): { existing: TableRow | null; recapture: TableRow | null; list: CaptureCheck[] } {
+  const out: CaptureCheck[] = []
+  const existing = ctx.existing !== undefined ? ctx.existing : ctx.date ? existingRow(ctx.rows, ctx.date, c) : null
+  // Already in the sheet: nothing will be written, so no further checks.
+  if (existing) return { existing, recapture: null, list: [{ kind: 'info', text: `Ya está en la hoja (fila ${existing.row})` }] }
+  let recapture: TableRow | null = null
+  if (c.markId) {
+    const same = sameIndividual(c, ctx.marks, ctx.date)
+    const others = earlierMarks(c, ctx.marks, ctx.date).filter(r => !same.includes(r))
+    recapture = same[0] || null
+    if (recapture)
+      out.push({
+        kind: 'ok',
+        text: `Recaptura de ${c.markId} (marcada ${formatSerial(recapture.values.Collection_date as number)})`,
+      })
+    else out.push({ kind: 'ok', text: `Nueva marca ${c.markId}` })
+    for (const r of others)
+      out.push({ kind: 'warn', text: `${c.markId} ya se usó para ${r.values.SPECIES} (fila ${r.row}): ¿ID repetida?` })
+    if (!recapture && c.recaptureNote && !others.length)
+      out.push({ kind: 'warn', text: `Dice recaptura, pero ${c.markId} no está en la hoja` })
+    if (ctx.captures.some((o, j) => j !== i && o.markId === c.markId))
+      out.push({ kind: 'warn', text: `${c.markId} aparece dos veces en este recorrido` })
+  } else {
+    out.push({ kind: 'info', text: 'Preservado (sin marca)' })
+    const preserved = c.species ? ctx.preserved.get(c.species) || 0 : 0
+    if (preserved >= MARK_THRESHOLD && ctx.isIthomiini(c.species))
+      out.push({ kind: 'warn', text: `${c.species} ya tiene ${preserved} preservados: ¿no debía marcarse?` })
+  }
+  if (!c.species) out.push({ kind: 'warn', text: 'Sin especie' })
+  else if (!c.known) out.push({ kind: 'warn', text: 'Nombre no encontrado en la hoja: revisar' })
+  if (!c.sex) out.push({ kind: 'warn', text: 'Sin sexo' })
+  if (c.minutes === null) out.push({ kind: 'warn', text: 'Sin hora' })
+  if (c.height === null) out.push({ kind: 'warn', text: 'Sin altura' })
+  if (!c.cloud) out.push({ kind: 'warn', text: 'Sin clima' })
+  if (c.section === null) out.push({ kind: 'warn', text: `Lejos del sendero (${c.sectionDistance} m)` })
+  if (c.rest) out.push({ kind: 'info', text: `A notas: “${c.rest}”` })
+  return { existing, recapture, list: out }
 }
 
 // ------------------------------------------------------------ summaries
