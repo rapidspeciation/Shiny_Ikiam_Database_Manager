@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { complete, parseBlock, parseCamTube, parseFate, parseSex, parseTime } from '../paste'
+import { complete, parseBlock, parseCamTube, parseFate, parseSex, parseTime, stepId } from '../paste'
 
 describe('pasting cells from a spreadsheet', () => {
   it('splits rows and cells, and leaves a single value to the input', () => {
@@ -39,5 +39,16 @@ describe('pasting cells from a spreadsheet', () => {
     expect(complete('Ithomia', species)).toBe('Ithomia salapia')
     // Nothing matches: a new value, kept as typed.
     expect(complete('Oleria onega', species)).toBe('Oleria onega')
+  })
+})
+
+describe('stepId', () => {
+  it('moves the number at the end on, keeping its width', () => {
+    expect(stepId('CAM079895', 1)).toBe('CAM079896')
+    expect(stepId('FS90415305', 3)).toBe('FS90415308')
+    expect(stepId('CAM079899', 1)).toBe('CAM079900')
+  })
+  it('leaves IDs without a final number to the caller', () => {
+    expect(stepId('O6D', 1)).toBeNull()
   })
 })

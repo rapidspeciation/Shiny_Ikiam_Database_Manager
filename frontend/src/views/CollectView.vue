@@ -109,6 +109,11 @@ const collectedIds = computed(() => {
   for (const r of observed.value) if (!isBlank(r.values.Insectary_ID)) out.set(String(r.values.Insectary_ID).trim().toUpperCase(), r.row)
   return out
 })
+/** The pre-made ID `step` rows after `id` in Insectary_data (N9D + 1 → O0D), for the fill handle. */
+function nextId(id: string, step: number): string | null {
+  const at = freeIds.value.indexOf(id.toUpperCase())
+  return at < 0 ? null : (freeIds.value[at + step] ?? null)
+}
 const nextInsectaryId = () =>
   freeIds.value.find(id => !drafts.value.some(d => d.insectaryId === id) && !collectedIds.value.has(id.toUpperCase())) || ''
 
@@ -649,7 +654,8 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
           la barra de abajo copia, pega, rellena hacia abajo o borra lo seleccionado.
         </p>
         <p v-else-if="view === 'tabla'">
-          Como en una hoja de cálculo: selecciona celdas y arrastra el cuadrito de la esquina hacia abajo para copiarlas · pega
+          Como en una hoja de cálculo: selecciona celdas y arrastra el cuadrito de la esquina hacia abajo para copiarlas (Insectary_ID, CAM_ID y
+          Tube_1_id siguen la serie: O6D → O7D, CAM079895 → CAM079896) · pega
           celdas de Excel o Sheets (llena hacia abajo y a la derecha, y añade filas si faltan) · Ctrl+D copia la primera fila de la
           selección · escribe sobre una celda para reemplazarla, doble clic para editarla.
         </p>
@@ -670,6 +676,7 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         :mediums="mediums"
         :paste="pasteText"
         :id-problem="idProblem"
+        :next-id="nextId"
         :cell-problem="cellProblem"
         @edit="editCell"
         @remove="remove"

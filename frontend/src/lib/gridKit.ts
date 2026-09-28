@@ -164,12 +164,23 @@ function scrollingAround(container: HTMLElement): HTMLElement | null {
  * The fill handle (computers): a small square at the bottom-right corner of
  * the selected cells. Dragging it down copies
  * those cells to the rows it passes over, repeating them if several rows were
- * selected, as in Excel or Sheets. Read-only cells are skipped.
+ * selected, as in Excel or Sheets. Read-only cells are skipped. Columns with a
+ * `series` continue it instead (N5D → N6D → N7D, CAM079895 → CAM079896), as
+ * Sheets continues a number.
  */
 export function attachFillHandle(
   table: Tabulator,
   container: HTMLElement,
-  { canEdit, onFilled }: { canEdit: CanEdit; onFilled?: (count: number) => void },
+  {
+    canEdit,
+    onFilled,
+    series,
+  }: {
+    canEdit: CanEdit
+    onFilled?: (count: number) => void
+    /** The value `step` places after `value` in a column's series, or null to copy. */
+    series?: (field: string, value: unknown, step: number) => unknown
+  },
 ) {
   const handle = document.createElement('div')
   handle.className = 'fill-handle'
@@ -276,7 +287,8 @@ export function attachFillHandle(
         const src = from[(i - last - 1) % from.length]
         for (const f of fields)
           if (canEdit(target, f)) {
-            target.getCell(f).setValue(src.getCell(f).getValue())
+            const next = series?.(f, from.at(-1)!.getCell(f).getValue(), i - last)
+            target.getCell(f).setValue(next ?? src.getCell(f).getValue())
             count++
           }
       }

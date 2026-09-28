@@ -87,3 +87,11 @@ export function parseTime(text: string): string {
   const m = /^(\d{1,2})[:.h]?(\d{2})$/.exec(text.trim())
   return m && Number(m[1]) < 24 && Number(m[2]) < 60 ? `${m[1].padStart(2, '0')}:${m[2]}` : text.trim()
 }
+
+/** The number at the end of an ID moved on by `step`, keeping its width: CAM079895 + 2 → CAM079897. */
+export function stepId(id: string, step: number): string | null {
+  const m = /^(.*?)(\d+)$/.exec(id.trim())
+  if (!m) return null
+  const n = Number(m[2]) + step
+  return n < 0 ? null : `${m[1]}${String(n).padStart(m[2].length, '0')}`
+}

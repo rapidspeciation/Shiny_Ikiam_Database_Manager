@@ -16,7 +16,7 @@ import {
   watchSize,
   type CanEdit,
 } from '../lib/gridKit'
-import { complete, parseBlock } from '../lib/paste'
+import { complete, parseBlock, stepId } from '../lib/paste'
 
 /**
  * The Colecta list as a spreadsheet (on computers): select cells, copy and
@@ -34,6 +34,8 @@ const props = defineProps<{
   mediums: string[]
   /** Spreads a block pasted at a row and column; false for a single value. */
   paste: (text: string, index: number, column: Column) => boolean
+  /** The Insectary ID `step` places after `id` among the pre-made rows (the fill handle continues them). */
+  nextId?: (id: string, step: number) => string | null
   /** Why a row's Insectary ID, CAM or tube cannot be saved (repeated, already used, no pre-made row). */
   idProblem?: (d: Draft, column: Column) => string | null
   /** A value outside the sheet's list for its column (red corner, as in Google Sheets). */
@@ -265,6 +267,13 @@ onMounted(() => {
     ? attachTouchSheet(table, host.value.parentElement!, { canEdit, notice })
     : attachFillHandle(table, host.value.parentElement!, {
         canEdit,
+        // Dragging an ID continues it, as Sheets continues a number; other columns copy.
+        series: (field, value, step) => {
+          const id = String(value ?? '').trim()
+          if (!id) return null
+          if (field === 'insectaryId') return props.nextId?.(id, step) ?? null
+          return field === 'cam' || field === 'tube' ? stepId(id, step) : null
+        },
         onFilled: rows => notice(`Copiado a ${rows} ${rows === 1 ? 'fila' : 'filas'}`),
       })
   copied = attachCopyMarker(table, host.value.parentElement!, message => emit('notice', message))
