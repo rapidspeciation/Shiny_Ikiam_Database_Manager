@@ -86,21 +86,24 @@ function view(row) {
 
 function message(invitation, link, inviter) {
   const role = ROLE_NAMES[invitation.role] ?? invitation.role;
+  const intro = `El proyecto de ithómidos te invitó a Ithomiini database, la app del equipo para los datos de colecta, monitoreo e insectario (acceso de ${role}).`;
+  // Who sent it, unless that is only the app's own name.
+  const by = inviter && !/^ithomiini database/i.test(inviter) ? `Invitación enviada por ${inviter}.` : '';
   const text = [
     `Hola ${invitation.display_name}:`,
     '',
-    `${inviter} te invitó a Ithomiini database, la app del equipo para los datos de colecta, monitoreo e insectario (acceso de ${role}).`,
+    intro,
     '',
     'Crea tu usuario y contraseña con este enlace (vale 7 días y se usa una sola vez):',
     link,
     '',
-    'Si no esperabas este correo, ignóralo.',
+    [by, 'Si no esperabas este correo, ignóralo.'].filter(Boolean).join(' '),
   ].join('\n');
   const html = `<div style="font-family:system-ui,sans-serif;max-width:32rem;line-height:1.5;color:#292524">
 <p>Hola ${escape(invitation.display_name)}:</p>
-<p>${escape(inviter)} te invitó a <strong>Ithomiini database</strong>, la app del equipo para los datos de colecta, monitoreo e insectario (acceso de ${escape(role)}).</p>
+<p>${escape(intro).replace('Ithomiini database', '<strong>Ithomiini database</strong>')}</p>
 <p><a href="${escape(link)}" style="display:inline-block;background:#1f513a;color:#fff;padding:.6rem 1rem;border-radius:.4rem;text-decoration:none">Crear mi cuenta</a></p>
-<p style="font-size:.85rem;color:#57534e">El enlace vale 7 días y se usa una sola vez. Si no esperabas este correo, ignóralo.</p>
+<p style="font-size:.85rem;color:#57534e">El enlace vale 7 días y se usa una sola vez. ${escape(by)} Si no esperabas este correo, ignóralo.</p>
 </div>`;
   return { subject: 'Tu cuenta en Ithomiini database', text, html };
 }
