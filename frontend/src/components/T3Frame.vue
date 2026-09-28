@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { ExternalLink, RefreshCw } from 'lucide-vue-next'
 import { api } from '../lib/api'
 import { errorText } from '../lib/notice'
 import { useSession } from '../stores/session'
@@ -30,17 +29,11 @@ async function connect(force = false) {
   }
 }
 onMounted(() => connect())
+defineExpose({ connect })
 </script>
 
 <template>
   <div class="flex h-full flex-col">
-    <div class="flex items-center gap-2 border-b border-stone-200 bg-white px-3 py-1 text-xs text-stone-600">
-      <span>T3 Code · cambia de modelo o proveedor, adjunta fotos y archivos, y revisa tu uso en su menú.</span>
-      <button class="btn-ghost ml-auto" title="Volver a conectar" @click="connect(true)"><RefreshCw :size="13" /></button>
-      <a class="btn-ghost" :href="url" target="_blank" rel="noopener" title="Abrir en otra pestaña"
-        ><ExternalLink :size="13"
-      /></a>
-    </div>
     <p v-if="problem" class="bg-amber-50 px-4 py-2 text-sm text-amber-900">{{ problem }}</p>
     <iframe
       v-if="src"
