@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DateField from '../DateField.vue'
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -720,7 +721,7 @@ const dayLabel = (iso: string) => formatSerial(isoToSerial(iso))
       <template v-if="file">
         <label>
           <span class="field-label">Fecha</span>
-          <input v-model="date" type="date" class="field-input" />
+          <DateField v-model="date" class="field-input" />
         </label>
         <label class="min-w-52">
           <span class="field-label">

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DateField from '../components/DateField.vue'
 import { computed, ref } from 'vue'
 import { Plus } from 'lucide-vue-next'
 import SheetGrid from '../components/SheetGrid.vue'
@@ -105,7 +106,7 @@ const columns = computed(() =>
       </label>
       <label>
         <span class="field-label">Puesta</span>
-        <input v-model="form.date" type="date" class="field-input" />
+        <DateField v-model="form.date" class="field-input" />
       </label>
       <label>
         <span class="field-label">Huevos</span>

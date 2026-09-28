@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DateField from '../components/DateField.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ChevronDown, ChevronRight, Search, Undo2, RefreshCw, X } from 'lucide-vue-next'
 import { api, requestId } from '../lib/api'
@@ -165,11 +166,11 @@ async function recover() {
       </label>
       <label>
         <span class="field-label">Desde</span>
-        <input v-model="filters.from" type="date" class="field-input" />
+        <DateField v-model="filters.from" class="field-input" />
       </label>
       <label>
         <span class="field-label">Hasta</span>
-        <input v-model="filters.to" type="date" class="field-input" />
+        <DateField v-model="filters.to" class="field-input" />
       </label>
       <button class="btn-primary" :disabled="loading"><Search :size="15" /> Buscar</button>
       <button

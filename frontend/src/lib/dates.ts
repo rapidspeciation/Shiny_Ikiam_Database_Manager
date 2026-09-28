@@ -59,7 +59,7 @@ export function todayIso(): string {
 
 /**
  * Parses what a person types into a date cell: 14-Aug-25, 14/08/2025,
- * 2025-08-14 or a serial number. Returns a serial, or null if unreadable.
+ * 140825, 2025-08-14 or a serial number. Returns a serial, or null if unreadable.
  */
 export function parseDateInput(text: string): number | null {
   const serial = readDate(text)
@@ -78,6 +78,9 @@ function readDate(text: string): number | null {
     return month ? fromParts(fullYear(+m[3]), month, +m[1]) : null
   }
   m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/.exec(s)
+  if (m) return fromParts(fullYear(+m[3]), +m[2], +m[1])
+  // Digits only, day first (a phone's number pad has no "/"): 280926 or 28092026.
+  m = /^(\d{2})(\d{2})(\d{2}|\d{4})$/.exec(s)
   if (m) return fromParts(fullYear(+m[3]), +m[2], +m[1])
   return null
 }

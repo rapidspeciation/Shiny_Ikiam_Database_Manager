@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DateField from '../components/DateField.vue'
 import { computed, ref, watch } from 'vue'
 import { Rows3, Plus } from 'lucide-vue-next'
 import SheetGrid from '../components/SheetGrid.vue'
@@ -178,7 +179,7 @@ const recent = computed(() => {
       </label>
       <label>
         <span class="field-label">Intro a insectario</span>
-        <input v-model="introDate" type="date" class="field-input" />
+        <DateField v-model="introDate" class="field-input" />
       </label>
       <div class="flex gap-2">
         <button class="btn-primary" @click="prepare(batch())">

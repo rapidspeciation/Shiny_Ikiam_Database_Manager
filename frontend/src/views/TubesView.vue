@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DateField from '../components/DateField.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { Download, Plus, Printer, Wand2 } from 'lucide-vue-next'
 import IdPicker from '../components/IdPicker.vue'
@@ -400,7 +401,7 @@ function nextAfter(id: string) {
       <template v-if="isClip">
         <label>
           <span class="field-label">Fecha del corte de ala</span>
-          <input v-model="clipDate" type="date" min="1990-01-01" max="2099-12-31" class="field-input" />
+          <DateField v-model="clipDate" class="field-input" />
           <span v-if="clipError" class="block text-xs text-red-700">{{ clipError }}</span>
           <span v-else-if="clipDate" class="block text-xs text-stone-600">{{ dayLabel(clipDate) }}</span>
           <span v-else class="block text-xs text-amber-800">Obligatoria: va en la nota</span>
@@ -418,7 +419,7 @@ function nextAfter(id: string) {
       </template>
       <label v-else>
         <span class="field-label">Preservation_date</span>
-        <input v-model="presDate" type="date" min="1990-01-01" max="2099-12-31" class="field-input" />
+        <DateField v-model="presDate" class="field-input" />
         <span v-if="presError" class="block text-xs text-red-700">{{ presError }}</span>
         <span v-else-if="presDate" class="block text-xs text-stone-600">{{ dayLabel(presDate) }}</span>
         <span v-else class="block text-xs text-amber-800">Elige la fecha</span>

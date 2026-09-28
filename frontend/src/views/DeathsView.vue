@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DateField from '../components/DateField.vue'
 import { computed, ref } from 'vue'
 import { Download, Plus } from 'lucide-vue-next'
 import IdPicker from '../components/IdPicker.vue'
@@ -135,7 +136,7 @@ function load(append: boolean) {
       <IdPicker v-model="picked" :options="ids" :loading="!ready" :warn="warn" label="Insectary IDs" />
       <label>
         <span class="field-label">Fecha de muerte</span>
-        <input v-model="date" type="date" min="1990-01-01" max="2099-12-31" class="field-input" />
+        <DateField v-model="date" class="field-input" />
         <span v-if="dateError" class="block text-xs text-red-700">{{ dateError }}</span>
         <span v-else-if="date" class="block text-xs text-stone-600">{{ dayLabel(date) }}</span>
         <span v-else class="block text-xs text-amber-800">Elige la fecha</span>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DateField from '../components/DateField.vue'
 import { computed, nextTick, onDeactivated, reactive, ref, watch } from 'vue'
 import { CheckSquare, Copy, Eraser, Plus, Save, Trash2, X } from 'lucide-vue-next'
 import CollectGrid from '../components/CollectGrid.vue'
@@ -712,7 +713,7 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         <span class="field-label"
           >Collection_date <span class="font-normal text-stone-500">{{ weekdayOf(header.date) }}</span></span
         >
-        <input v-model="header.date" type="date" class="field-input" :class="{ 'border-amber-500 bg-amber-50': isToday }" />
+        <DateField v-model="header.date" class="field-input" :class="{ 'border-amber-500 bg-amber-50': isToday }" />
         <span v-if="isToday" class="block text-xs text-amber-800">¿Es hoy la fecha de la colecta?</span>
       </label>
       <label class="min-w-52">
