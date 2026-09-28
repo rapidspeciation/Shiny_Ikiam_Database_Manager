@@ -42,38 +42,71 @@ const fail = (code, message, status = 400, details) => Object.assign(new Error(m
 export async function applyBatch(store, body, user, { source = 'app', reverses = null } = {}) {
   store.validateRole(user);
   store.requireRequestId(body.requestId);
-  if (!SOURCES.has(source)) throw fail('INVALID_SOURCE', 'Unknown write source');
+  if (!SOURCES.has(source)) throw fail('INVALID_SOURCE', 'Origen de escritura desconocido');
   const edits = Array.isArray(body.edits) ? body.edits : [];
   const creates = Array.isArray(body.creates) ? body.creates : [];
   if (edits.length + creates.length > MAX_BATCH)
-    throw fail('BATCH_TOO_LARGE', `Save at most ${MAX_BATCH} rows at a time`);
+    throw fail('BATCH_TOO_LARGE', `Guarda como máximo ${MAX_BATCH} filas a la vez`);
 
   return store.runExclusive(async () => {
     // A retried request returns the original outcome instead of writing twice.
     const prior = store.actionByRequest(body.requestId);
     if (prior) {
       if (prior.action.actor !== (user.id || user.username))
-        throw fail('REQUEST_ID_CONFLICT', 'This request ID belongs to another user', 409);
+        throw fail('REQUEST_ID_CONFLICT', 'Este ID de solicitud pertenece a otra persona', 409);
       if (prior.status === 'failed') {
         // Nothing was written last time, so the same request may be tried again.
         store.db.prepare('UPDATE actions SET request_id=NULL WHERE id=?').run(prior.action.id);
       } else if (prior.status !== 'verified') {
-        throw fail('WRITE_UNCERTAIN', 'The previous attempt is still being confirmed; try again shortly', 409, {
-          actionId: prior.action.id,
-        });
+        throw fail(
+          'WRITE_UNCERTAIN',
+          'El intento anterior aún se está confirmando; vuelve a intentarlo en un momento',
+          409,
+          {
+            actionId: prior.action.id,
+          },
+        );
       } else
         return { ...prior, actions: [prior.action], records: prior.records || (prior.record ? [prior.record] : []) };
     }
-    if (!edits.length && !creates.length) throw fail('INVALID_VALUES', 'Nothing to save');
-    const plan = new Plan(store, source);
-    plan.addEdits(edits);
-    plan.addCreates(creates);
-    plan.throwIfConflicts();
+    if (!edits.length && !creates.length) throw fail('INVALID_VALUES', 'No hay nada que guardar');
+    // With `partial`, a change that cannot be saved (a repeated CAM, a cell changed by
+    // someone else…) is left out and reported in `skipped`, and everything else is saved.
+    // Without it (undo, the assistant) the batch stays all or nothing.
+    const partial = body.partial === true && source === 'app';
+    const skipped = [];
+    let input = { edits, creates };
+    let plan = planFor(store, source, input);
+    for (let round = 0; partial && plan.conflicts.length && round < 5; round++) {
+      const rest = withoutConflicts(input, plan.conflicts);
+      if (!rest) break;
+      skipped.push(...plan.conflicts);
+      input = rest;
+      plan = planFor(store, source, input);
+    }
+    throwIfConflicts(plan, skipped);
 
     const live = await store.sheets.readRows(plan.readTargets());
     await plan.resolve(live);
-    plan.throwIfConflicts();
-    if (!plan.writes.length) return { status: 'unchanged', action: null, actions: [], records: [], created: [] };
+    for (let round = 0; partial && plan.conflicts.length && round < 5; round++) {
+      const rest = withoutConflicts(input, plan.conflicts);
+      if (!rest) break;
+      skipped.push(...plan.conflicts);
+      input = rest;
+      plan = planFor(store, source, input);
+      if (plan.conflicts.length) continue;
+      // The smaller batch touches the same rows or fewer; read any row not read yet.
+      const missing = plan
+        .readTargets()
+        .map(({ sheet, rows }) => ({ sheet, rows: rows.filter(row => !live.has(rowKey(sheet, row))) }))
+        .filter(t => t.rows.length);
+      if (missing.length) for (const [key, row] of await store.sheets.readRows(missing)) live.set(key, row);
+      await plan.resolve(live);
+    }
+    throwIfConflicts(plan, skipped);
+    plan.skipped = skipped;
+    if (!plan.writes.length)
+      return { status: 'unchanged', action: null, actions: [], records: [], created: [], skipped };
 
     const actionId = beginAction(
       store,
@@ -92,7 +125,9 @@ export async function applyBatch(store, body, user, { source = 'app', reverses =
         if (!rejected) scheduleRecovery(store);
         throw fail(
           rejected ? 'WRITE_REJECTED' : 'WRITE_UNCERTAIN',
-          rejected ? 'Google Sheets rejected the change; nothing was saved' : 'Sheet write could not be confirmed',
+          rejected
+            ? 'Google Sheets rechazó el cambio; no se guardó nada'
+            : 'No se pudo confirmar la escritura en Google Sheets',
           rejected ? 502 : 503,
           { actionId, cause: e.message?.slice(0, 300) },
         );
@@ -103,24 +138,61 @@ export async function applyBatch(store, body, user, { source = 'app', reverses =
       } catch {
         store.finishAction(actionId, 'uncertain', null);
         scheduleRecovery(store);
-        throw fail('WRITE_UNCERTAIN', 'Sheet write could not be confirmed', 503, { actionId });
+        throw fail('WRITE_UNCERTAIN', 'No se pudo confirmar la escritura en Google Sheets', 503, { actionId });
       }
       const records = plan.verifyAndPersist(check);
       if (!records) {
         scheduleRecovery(store);
         store.finishAction(actionId, 'uncertain', null);
-        throw fail('WRITE_UNCERTAIN', 'Sheet write could not be verified', 503, { actionId });
+        throw fail('WRITE_UNCERTAIN', 'No se pudo verificar la escritura en Google Sheets', 503, { actionId });
       }
       const created = plan.targets.filter(t => t.clientId).map(t => ({ clientId: t.clientId, recordId: t.record.id }));
       const action = store.action(store.db.prepare('SELECT * FROM actions WHERE id=?').get(actionId));
       action.status = 'verified';
-      const result = { status: 'verified', action, actions: [action], records, created };
-      store.finishAction(actionId, 'verified', { records, record: records[0], created, status: 'verified' });
+      const result = { status: 'verified', action, actions: [action], records, created, skipped };
+      // `skipped` is kept with the outcome, so a retried request reports the same cells left out.
+      store.finishAction(actionId, 'verified', { records, record: records[0], created, status: 'verified', skipped });
       return result;
     } finally {
       store.endWrite(sheets);
     }
   });
+}
+
+function planFor(store, source, { edits, creates }) {
+  const plan = new Plan(store, source);
+  plan.addEdits(edits);
+  plan.addCreates(creates);
+  return plan;
+}
+
+function throwIfConflicts(plan, skipped) {
+  if (plan.conflicts.length || (skipped.length && !plan.targets.length))
+    throw fail('BATCH_CONFLICT', 'Algunos cambios necesitan revisión; no se guardó nada', 409, {
+      items: [...skipped, ...plan.conflicts],
+    });
+}
+
+/**
+ * The batch without the changes that conflict: the field of an edit when the
+ * conflict names one, else the whole row. New rows are saved together or not at
+ * all: rows typed together are often linked (a field butterfly's Collection_data
+ * and Insectary_data rows). Null when a conflict belongs to no single change
+ * (e.g. the sheet's columns changed).
+ */
+export function withoutConflicts({ edits, creates }, conflicts) {
+  if (conflicts.some(c => !c.id && !c.clientId)) return null;
+  const rows = new Set(conflicts.filter(c => c.id && !c.field).map(c => c.id));
+  const fields = new Set(conflicts.filter(c => c.id && c.field).map(c => `${c.id}\u0000${c.field}`));
+  const keptEdits = [];
+  edits.forEach(edit => {
+    if (rows.has(edit?.id)) return;
+    const values = Object.fromEntries(
+      Object.entries(edit?.values || {}).filter(([field]) => !fields.has(`${edit.id}\u0000${field}`)),
+    );
+    if (Object.keys(values).length) keptEdits.push({ ...edit, values });
+  });
+  return { edits: keptEdits, creates: conflicts.some(c => c.clientId) ? [] : creates };
 }
 
 /** Collects, validates and resolves the rows a batch touches. */
@@ -145,11 +217,6 @@ class Plan {
     });
   }
 
-  throwIfConflicts() {
-    if (this.conflicts.length)
-      throw fail('BATCH_CONFLICT', 'Some changes need review; nothing was saved', 409, { items: this.conflicts });
-  }
-
   validate(target, module, values) {
     try {
       return validateValues(module, values, {
@@ -172,15 +239,16 @@ class Plan {
         Array.isArray(edit?.replaceFormula) ? edit.replaceFormula.filter(f => allowed?.has(f)) : [],
       );
       if (!record || record.missing || record.row <= 0)
-        return this.conflict(target, 'RECORD_NOT_FOUND', 'The row is no longer available; reload the table');
-      if (seen.has(record.id)) return this.conflict(target, 'DUPLICATE_EDIT', 'The same row appears twice in one save');
+        return this.conflict(target, 'RECORD_NOT_FOUND', 'La fila ya no está disponible; recarga la tabla');
+      if (seen.has(record.id))
+        return this.conflict(target, 'DUPLICATE_EDIT', 'La misma fila aparece dos veces en un guardado');
       seen.add(record.id);
       Object.assign(target, { sheet: record.sheet, row: record.row, record });
       if (!target.expected && edit.expectedVersion !== undefined && Number(edit.expectedVersion) !== record.version)
-        return this.conflict(target, 'VERSION_CONFLICT', 'The row changed since it was opened');
+        return this.conflict(target, 'VERSION_CONFLICT', 'La fila cambió desde que se abrió');
       target.clean = this.validate(target, record.sheet, edit.values);
       if (target.clean && !Object.keys(target.clean).length)
-        return this.conflict(target, 'INVALID_VALUES', 'No fields to update');
+        return this.conflict(target, 'INVALID_VALUES', 'No hay columnas que actualizar');
       if (target.clean) this.targets.push(target);
     });
   }
@@ -193,7 +261,7 @@ class Plan {
       target.replaceFormula = new Set(
         Array.isArray(create?.replaceFormula) ? create.replaceFormula.filter(f => allowed?.has(f)) : [],
       );
-      if (!moduleMap.has(create?.module)) return this.conflict(target, 'MODULE_NOT_FOUND', 'Unknown sheet');
+      if (!moduleMap.has(create?.module)) return this.conflict(target, 'MODULE_NOT_FOUND', 'Hoja desconocida');
       // If an earlier save to this sheet may or may not have landed, a new row could
       // duplicate it. Wait until that save is confirmed (this happens automatically).
       const unsettled = this.store.db
@@ -205,12 +273,12 @@ class Plan {
         return this.conflict(
           target,
           'WRITE_UNCERTAIN',
-          `An earlier save to ${create.module} is still being confirmed; try again in a minute`,
+          `Un guardado anterior en ${create.module} aún se está confirmando; vuelve a intentarlo en un minuto`,
         );
       target.clean = this.validate(target, create.module, create.values);
       if (!target.clean) return;
       if (!Object.values(target.clean).some(v => !blank(v)))
-        return this.conflict(target, 'INVALID_VALUES', 'A new row needs at least one value');
+        return this.conflict(target, 'INVALID_VALUES', 'Una fila nueva necesita al menos un valor');
       const placeholderId = create.module === 'Insectary_data' ? target.clean.Insectary_ID : null;
       if (placeholderId) {
         const matches = this.store.db
@@ -219,11 +287,11 @@ class Plan {
           )
           .all(placeholderId);
         if (matches.some(r => r.observed))
-          return this.conflict(target, 'DUPLICATE_ID', `Insectary_ID ${placeholderId} is already recorded`, {
+          return this.conflict(target, 'DUPLICATE_ID', `Insectary_ID ${placeholderId} ya está registrado`, {
             field: 'Insectary_ID',
           });
         if (matches.length > 1)
-          return this.conflict(target, 'IDENTITY_CONFLICT', `More than one unused row has ID ${placeholderId}`);
+          return this.conflict(target, 'IDENTITY_CONFLICT', `Hay más de una fila sin usar con el ID ${placeholderId}`);
         if (matches.length === 1) target.candidates = [matches[0].row_num];
       }
       if (!target.candidates) byModule.set(create.module, [...(byModule.get(create.module) || []), target]);
@@ -270,7 +338,7 @@ class Plan {
         this.conflict(
           null,
           'HEADER_MISMATCH',
-          `The columns of ${sheet} changed in Google Sheets; the app must be updated before saving there`,
+          `Las columnas de ${sheet} cambiaron en Google Sheets; hay que actualizar la app antes de guardar ahí`,
           {
             sheet,
             problems: problems.slice(0, 10),
@@ -290,7 +358,7 @@ class Plan {
     for (const write of this.writes) {
       const key = `${write.sheet}:${write.row}`;
       if (written.has(key))
-        this.conflict(null, 'ROW_COLLISION', `Two changes in this save target ${write.sheet} row ${write.row}`);
+        this.conflict(null, 'ROW_COLLISION', `Dos cambios de este guardado van a ${write.sheet} fila ${write.row}`);
       written.add(key);
     }
     this.checkUniqueIds();
@@ -309,7 +377,7 @@ class Plan {
           return this.conflict(
             target,
             'ROW_MOVED',
-            'The row moved or its identifier changed in Google Sheets; reload the table',
+            'La fila se movió o su identificador cambió en Google Sheets; recarga la tabla',
           );
         target.row = liveRow.row;
       }
@@ -320,7 +388,7 @@ class Plan {
       return this.conflict(
         target,
         'ROW_CHANGED',
-        'This row changed in Google Sheets; reload the table before editing it',
+        'Esta fila cambió en Google Sheets; recarga la tabla antes de editarla',
       );
     }
     const before = rowValues(record.sheet, liveRow);
@@ -328,11 +396,11 @@ class Plan {
     for (const [field, after] of Object.entries(target.clean)) {
       const replacing = !!before.formulas[field] && target.replaceFormula.has(field);
       if (before.formulas[field] && this.source !== 'undo' && !replacing)
-        return this.conflict(target, 'FORMULA_CELL', `${field} is calculated by a formula`, { field });
+        return this.conflict(target, 'FORMULA_CELL', `${field} se calcula con una fórmula de la hoja`, { field });
       if (replacing) {
         const predicted = before.values[field] ?? null;
         if (comparable(predicted) === comparable(after))
-          return this.conflict(target, 'MATCHES_FORMULA', `${field} already gives ${after}; nothing to type`, {
+          return this.conflict(target, 'MATCHES_FORMULA', `${field} ya da ${after}; no hace falta escribirlo`, {
             field,
           });
         if (
@@ -340,7 +408,7 @@ class Plan {
           Object.hasOwn(target.expected, field) &&
           comparable(target.expected[field]) !== comparable(predicted)
         )
-          return this.conflict(target, 'EXTERNAL_CONFLICT', `${field} was changed by someone else`, {
+          return this.conflict(target, 'EXTERNAL_CONFLICT', `Otra persona cambió ${field} en la hoja`, {
             field,
             expected: target.expected[field],
             actual: predicted,
@@ -356,7 +424,7 @@ class Plan {
       // Typing the text a cell already holds (e.g. "944" stored as text) is not a change.
       if (typeof actual === 'string' && target.raw[field] === actual) continue;
       if (comparable(actual) !== comparable(expected ?? null))
-        this.conflict(target, 'EXTERNAL_CONFLICT', `${field} was changed by someone else`, {
+        this.conflict(target, 'EXTERNAL_CONFLICT', `Otra persona cambió ${field} en la hoja`, {
           field,
           expected: expected ?? null,
           actual: actual ?? null,
@@ -417,20 +485,22 @@ class Plan {
             changes.push({ field, before: { formula: before.formulas[field] }, after });
             continue;
           }
-          return this.conflict(target, 'FORMULA_CELL', `${field} is calculated by a formula in the new row`, { field });
+          return this.conflict(target, 'FORMULA_CELL', `${field} se calcula con una fórmula en la fila nueva`, {
+            field,
+          });
         }
         // "NA" is written on purpose (the workbook uses it); only empty values are skipped.
         if (after !== null && after !== '') changes.push({ field, before: before.values[field] ?? null, after });
       }
-      if (!changes.length) return this.conflict(target, 'INVALID_VALUES', 'The new row has nothing to save');
+      if (!changes.length) return this.conflict(target, 'INVALID_VALUES', 'La fila nueva no tiene nada que guardar');
       return this.addWrite(target, liveRow, before, changes);
     }
     this.conflict(
       target,
       'NO_FREE_ROW',
       target.sheet === 'Insectary_data' && target.clean.Insectary_ID
-        ? `The unused row for ${target.clean.Insectary_ID} is no longer free; reload and choose another ID`
-        : 'Could not find a free row; reload the table and try again',
+        ? `La fila sin usar de ${target.clean.Insectary_ID} ya no está libre; recarga y elige otro ID`
+        : 'No se encontró una fila libre; recarga la tabla y vuelve a intentarlo',
     );
   }
 
@@ -502,14 +572,14 @@ class Plan {
         this.conflict(
           p.target,
           'DUPLICATE_ID',
-          `${p.value} is already used in ${stillHeld[0].sheet} row ${stillHeld[0].row}`,
+          `${p.value} ya está usado en ${stillHeld[0].sheet} fila ${stillHeld[0].row}${stillHeld[0].label ? ` (${stillHeld[0].label})` : ''}`,
           {
             field: p.field,
             value: p.value,
           },
         );
       if (inBatch.has(key) && inBatch.get(key) !== ownId)
-        this.conflict(p.target, 'DUPLICATE_ID', `${p.value} is entered twice in this save`, {
+        this.conflict(p.target, 'DUPLICATE_ID', `${p.value} está dos veces en este guardado`, {
           field: p.field,
           value: p.value,
         });
@@ -555,7 +625,17 @@ function beginAction(store, { requestId, user, source, reason, reverses }, plan)
       .prepare(
         'INSERT INTO actions(id,request_id,actor,source,created_at,status,reason,reverses,result_json) VALUES(?,?,?,?,?,?,?,?,?)',
       )
-      .run(id, requestId, user.id || user.username, source, now, 'pending', reason || null, reverses || null, null);
+      .run(
+        id,
+        requestId,
+        user.id || user.username,
+        source,
+        now,
+        'pending',
+        reason || null,
+        reverses || null,
+        plan.skipped?.length ? JSON.stringify({ skipped: plan.skipped }) : null,
+      );
     const insert = store.db.prepare(
       'INSERT INTO changes(id,action_id,record_id,sheet,row_num,field,before_json,after_json) VALUES(?,?,?,?,?,?,?,?)',
     );
@@ -582,9 +662,7 @@ function beginAction(store, { requestId, user, source, reason, reverses }, plan)
 /** Map of "scope\0value" → rows holding that identifier in the local copy. */
 /** The sheets that hold IDs checked for repeats: those in UNIQUE, and any with tube columns. */
 const UNIQUE_SHEETS = () =>
-  [...moduleMap.values()]
-    .filter(m => UNIQUE[m.id] || m.fields.some(f => TUBE_FIELD.test(f.key)))
-    .map(m => m.id);
+  [...moduleMap.values()].filter(m => UNIQUE[m.id] || m.fields.some(f => TUBE_FIELD.test(f.key))).map(m => m.id);
 
 export function uniqueIdIndex(store) {
   const index = new Map();
@@ -599,7 +677,10 @@ export function uniqueIdIndex(store) {
         if (!unique(field) || !isIdValue(value)) continue;
         const scope = TUBE_FIELD.test(field) ? 'tube' : `${sheet}:${field}`;
         const key = `${scope}\u0000${String(value).trim()}`;
-        index.set(key, [...(index.get(key) || []), { id: r.id, sheet, row: r.row_num, field }]);
+        index.set(key, [
+          ...(index.get(key) || []),
+          { id: r.id, sheet, row: r.row_num, field, label: labelFor(sheet, values) },
+        ]);
       }
     }
   }

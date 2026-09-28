@@ -12,7 +12,36 @@ export function isoToSerial(iso: string): number {
   return Math.round((Date.parse(`${iso}T00:00:00Z`) - EPOCH) / DAY)
 }
 
+/** Sheets serial days the app accepts as dates: 1 Jan 1990 to 31 Dec 2099 (a year typed 92026 is refused). */
+export const FIRST_SERIAL = 32874
+export const LAST_SERIAL = 73051
+export const inDateRange = (serial: number) => Number.isFinite(serial) && serial >= FIRST_SERIAL && serial < LAST_SERIAL
+
+/**
+ * An ISO date from a date box as a serial, or null when it is not a real date
+ * between 1990 and 2099 (a date box accepts years such as 92026).
+ */
+export function serialFromIso(iso: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim())
+  if (!m) return null
+  const serial = fromParts(+m[1], +m[2], +m[3])
+  return serial !== null && inDateRange(serial) ? serial : null
+}
+
+const WEEKDAYS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
+/** "sábado 27-Sep-26 · ayer": the weekday makes a wrong day easy to notice. */
+export function dayLabel(iso: string, today = todayIso()): string {
+  const serial = serialFromIso(iso)
+  if (serial === null) return ''
+  const weekday = WEEKDAYS[new Date(EPOCH + serial * DAY).getUTCDay()]
+  const ago = (serialFromIso(today) ?? serial) - serial
+  const when = ago === 0 ? 'hoy' : ago === 1 ? 'ayer' : ago > 1 ? `hace ${ago} días` : ago === -1 ? 'mañana' : `en ${-ago} días`
+  return `${weekday} ${formatSerial(serial)} · ${when}`
+}
+
 export function formatSerial(serial: number): string {
+  // Never "NaN-undefined-N": a broken value says so.
+  if (!Number.isFinite(serial)) return 'fecha no válida'
   const d = new Date(EPOCH + Math.round(serial) * DAY)
   return `${d.getUTCDate()}-${MONTHS[d.getUTCMonth()]}-${String(d.getUTCFullYear()).slice(2)}`
 }
@@ -33,6 +62,11 @@ export function todayIso(): string {
  * 2025-08-14 or a serial number. Returns a serial, or null if unreadable.
  */
 export function parseDateInput(text: string): number | null {
+  const serial = readDate(text)
+  return serial !== null && inDateRange(serial) ? serial : null
+}
+
+function readDate(text: string): number | null {
   const s = text.trim()
   if (!s) return null
   if (/^\d{4,5}(\.\d+)?$/.test(s)) return Math.round(Number(s))

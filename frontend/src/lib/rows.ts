@@ -33,21 +33,23 @@ export function fillIfBlank(module: string, row: TableRow, label: string, field:
 
 /**
  * A person's initials as used in notes and the Collector list ("FCH" for
- * "FCH - Franz Chandi"), matched by name; otherwise built from the name.
+ * "FCH - Franz Chandi"): matched by name, or by a username that is the code;
+ * otherwise the first letter of each word of the name, letters only (so
+ * "Prueba web (DF)" gives "PWD", never "PW(D").
  */
-export function initialsOf(name: string, collectors: string[]): string {
-  const words = name.toLowerCase().split(/\s+/).filter(Boolean)
-  const found = collectors.find(c => {
-    const [, full = ''] = c.split(' - ')
-    const parts = full.toLowerCase()
-    return words.length > 0 && words.every(w => parts.includes(w))
-  })
-  if (found) return found.split(' - ')[0].trim()
-  return (
-    name
-      .split(/\s+/)
-      .filter(Boolean)
-      .map(w => w[0]!.toUpperCase())
-      .join('') || 'APP'
-  )
+export function initialsOf(name: string, collectors: string[], username = ''): string {
+  const letters = (w: string) => w.replace(/[^\p{L}]/gu, '')
+  const words = name.toLowerCase().split(/\s+/).map(letters).filter(Boolean)
+  const code = (c: string) => c.split(' - ')[0].trim()
+  const found =
+    collectors.find(c => {
+      const full = (c.split(' - ')[1] ?? '').toLowerCase()
+      return words.length > 0 && !!full && words.every(w => full.includes(w))
+    }) ?? collectors.find(c => !!username.trim() && code(c).toLowerCase() === username.trim().toLowerCase())
+  if (found) return code(found)
+  const made = words
+    .map(w => w[0]!.toUpperCase())
+    .join('')
+    .slice(0, 4)
+  return made || letters(username).slice(0, 3).toUpperCase() || 'APP'
 }

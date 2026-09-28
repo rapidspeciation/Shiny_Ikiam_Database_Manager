@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { X, Save, RotateCcw } from 'lucide-vue-next'
 import { displayValue } from '../lib/cells'
 import { usePending } from '../stores/pending'
@@ -21,9 +21,9 @@ const edits = computed(() =>
       field,
       before: displayValue(e.before[field], fieldOf(e.module, field)),
       after: displayValue(e.values[field], fieldOf(e.module, field)),
-      error: pending.errors[`${e.id}:${field}`],
+      error: pending.issues[`${e.id}:${field}`],
     })),
-    rowError: pending.errors[`${e.id}:*`],
+    rowError: pending.issues[`${e.id}:*`],
   })),
 )
 
@@ -39,10 +39,14 @@ function removeCreate(clientId: string) {
   pending.touch()
 }
 function createErrors(clientId: string) {
-  return Object.entries(pending.errors)
+  return Object.entries(pending.issues)
     .filter(([key]) => key.startsWith(`${clientId}:`))
     .map(([, message]) => message)
 }
+// Escape closes the dialog, as any dialog.
+const onKey = (e: KeyboardEvent) => e.key === 'Escape' && emit('close')
+window.addEventListener('keydown', onKey)
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <template>

@@ -12,14 +12,22 @@ import { errorText, notify } from '../lib/notice'
  */
 const pending = usePending()
 const reviewing = ref(false)
-const errorCount = computed(() => Object.keys(pending.errors).length)
+/** Pending cells that are not being saved, and why (the save bar shows the first reason). */
+const issues = computed(() => Object.values(pending.issues))
+const errorCount = computed(() => issues.value.length)
+const cells = (n: number) => `${n} ${n === 1 ? 'celda' : 'celdas'}`
 
 async function save(reason = '') {
   try {
-    const count = pending.changeCount
-    await pending.save(reason)
-    reviewing.value = false
-    notify(`${count} ${count === 1 ? 'cambio guardado' : 'cambios guardados'} en Google Sheets`, 'success')
+    const { saved } = await pending.save(reason)
+    const left = errorCount.value
+    if (!left) reviewing.value = false
+    if (saved && !left) notify(`${saved} ${saved === 1 ? 'cambio guardado' : 'cambios guardados'} en Google Sheets`, 'success')
+    else if (saved) notify(`${saved} guardados; ${cells(left)} sin guardar: ${issues.value[0]}`, 'error')
+    else if (left) {
+      notify(`${cells(left)} sin guardar: ${issues.value[0]}`, 'error')
+      reviewing.value = true
+    }
   } catch (e) {
     notify(errorText(e), 'error')
     reviewing.value = true
@@ -64,11 +72,18 @@ function discard() {
     <span v-else class="font-medium text-amber-950">
       {{ pending.changeCount }} {{ pending.changeCount === 1 ? 'cambio' : 'cambios' }} en {{ pending.rowCount }}
       {{ pending.rowCount === 1 ? 'fila' : 'filas' }}
-      {{ pending.autoSave && !pending.autoBlocked ? 'por guardar' : 'sin guardar' }}
+      {{ pending.autoSave && !pending.autoBlocked && errorCount < pending.changeCount ? 'por guardar' : 'sin guardar' }}
     </span>
-    <span v-if="errorCount" class="flex items-center gap-1 text-red-800">
-      <AlertTriangle :size="15" /> {{ errorCount }} por revisar
-    </span>
+    <button
+      v-if="errorCount"
+      type="button"
+      class="flex min-w-0 max-w-full items-center gap-1 text-left font-medium text-red-800 hover:underline"
+      :title="issues.join('\n')"
+      @click="reviewing = true"
+    >
+      <AlertTriangle :size="15" class="shrink-0" /> {{ cells(errorCount) }} sin guardar:
+      <span class="truncate font-normal">{{ issues[0] }}</span>
+    </button>
     <span v-if="!online" class="rounded bg-stone-700 px-2 py-0.5 text-xs text-white">Sin conexión</span>
     <span v-if="pending.autoSave && pending.autoBlocked" class="text-xs text-amber-900">{{ pending.autoBlocked }}</span>
     <span v-else-if="!pending.autoSave" class="hint hidden md:inline">Se conservan en este dispositivo hasta que guardes.</span>

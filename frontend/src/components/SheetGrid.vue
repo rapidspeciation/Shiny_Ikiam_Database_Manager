@@ -13,9 +13,11 @@ import {
   openList,
   editingKeys,
   spreadsheetKeys,
+  tileToSelection,
   watchSize,
   type CanEdit,
 } from '../lib/gridKit'
+import { parseBlock } from '../lib/paste'
 import type { CellValue, Field, TableRow } from '../lib/types'
 import { type PendingCreate, usePending } from '../stores/pending'
 import { useSession } from '../stores/session'
@@ -103,6 +105,8 @@ function indexRows() {
 let shownRows = new Map<string, TableRow>()
 let shownEdits = new Map<string, string>()
 let shownCreates = ''
+let shownOrder = ''
+const orderKey = () => (props.newestFirst ? '' : props.rows.map(r => r.id).join('|'))
 
 const editKey = (id: string, edits: Record<string, { values: Record<string, CellValue> }>) =>
   edits[id] ? JSON.stringify(edits[id].values) : ''
@@ -127,6 +131,7 @@ function buildData(): GridRow[] {
   shownRows = new Map(props.rows.map(r => [r.id, r]))
   shownEdits = new Map(Object.keys(edits).map(id => [id, editKey(id, edits)]))
   shownCreates = createsKey()
+  shownOrder = orderKey()
   return [...created, ...props.rows.map(r => gridRow(r, keys, edits))]
 }
 
@@ -137,6 +142,9 @@ function buildData(): GridRow[] {
  */
 function updateChanged(): boolean {
   if (!table || createsKey() !== shownCreates) return false
+  // Task screens set their own order (loaded IDs on top): a new order is drawn as a whole, as
+  // updateOrAddData would append new rows at the bottom and leave moved ones in place. Those grids are small.
+  if (!props.newestFirst && orderKey() !== shownOrder) return false
   const edits = toRaw(pending.edits)
   const keys = props.columns.map(f => f.key)
   const changed: TableRow[] = []
@@ -214,6 +222,8 @@ const rules = computed(() => verificationsFor(props.module))
 const repeated = computed(() => {
   void tables.versions[props.module]
   void pending.revision
+  // Every typed change counts at once, so a repeated CAM turns red as it is entered.
+  void pending.edited
   const edits = toRaw(pending.edits)
   const fields = rules.value?.unique || []
   const rows = (tables.tables[props.module]?.rows || props.rows)
@@ -242,17 +252,19 @@ function decorate(cell: CellComponent) {
   const field = cell.getField()
   const el = cell.getElement()
   const errorKey = `${data.__id}:${field}`
+  // Refused by the server, or failing the app's checks before saving (e.g. a date with year 92026).
+  const error = pending.errors[errorKey] || pending.problems[errorKey]
   const formula = isFormula(data, field)
   const check = formula ? {} : checkTitle(field, cell.getValue(), data)
   el.classList.toggle('is-formula', formula)
   el.classList.toggle('is-locked', !formula && !canEdit(data, field))
   el.classList.toggle('is-dirty', !data.__new && pending.isDirty(data.__id, field))
-  el.classList.toggle('is-error', !!pending.errors[errorKey])
+  el.classList.toggle('is-error', !!error)
   el.classList.toggle('is-repeated', !!check.repeated)
   el.classList.toggle('is-invalid', !!check.invalid)
   el.classList.toggle('has-choices', hasChoices(field) && canEdit(data, field))
   el.title =
-    pending.errors[errorKey] || check.repeated || check.invalid || (formula ? 'Fórmula de la hoja (solo lectura)' : '')
+    error || check.repeated || check.invalid || (formula ? 'Fórmula de la hoja (solo lectura)' : '')
 }
 
 function formatter(cell: CellComponent) {
@@ -377,6 +389,25 @@ function record(data: GridRow, field: string, value: CellValue) {
   if (row) pending.setCell(props.module, row, labelOf(row.values), field, value)
 }
 
+/**
+ * The copied block as rows of { field: text }, from the first selected column
+ * on. A selection narrower or shorter than the block still takes all of it,
+ * repeated over every selected row, as in Google Sheets (Tabulator's "range"
+ * parser cut the block to the selection's width: one column of it).
+ */
+function pasteParser(text: string) {
+  const range = table?.getRanges()[0]
+  if (!table || !range) return false
+  const block = parseBlock(text) ?? [[text.replace(/\r?\n$/, '')]]
+  const tiled = tileToSelection(block, range.getRows().length, range.getColumns().length)
+  const visible = table.getColumns().filter(c => c.isVisible())
+  const first = range.getColumns()[0]?.getField()
+  const start = visible.findIndex(c => c.getField() === first)
+  if (start < 0) return false
+  const fields = visible.slice(start, start + (tiled[0]?.length ?? 0)).map(c => c.getField())
+  return tiled.map(line => Object.fromEntries(fields.map((f, j) => [f, line[j]])))
+}
+
 /** Paste a block of cells starting at the selected cell, skipping read-only cells. */
 function pasteRange(rowsData: Record<string, unknown>[]) {
   if (!table || !rowsData.length) return []
@@ -387,8 +418,8 @@ function pasteRange(rowsData: Record<string, unknown>[]) {
   const firstId = (selectedRows[0].getData() as GridRow).__id
   const startIndex = active.findIndex(r => (r.getData() as GridRow).__id === firstId)
   if (startIndex < 0) return []
-  // A single selected cell takes the whole pasted block; a larger selection is filled by repeating it.
-  const count = selectedRows.length > 1 ? selectedRows.length : rowsData.length
+  // The parser already repeated the block over the selection (tileToSelection).
+  const count = rowsData.length
   let skipped = 0
   const touched: RowComponent[] = []
   for (const [offset, row] of active.slice(startIndex, startIndex + count).entries()) {
@@ -454,7 +485,7 @@ function build() {
     clipboard: true,
     clipboardCopyConfig: { columnHeaders: false, rowHeaders: false, formatCells: true },
     clipboardCopyRowRange: 'range',
-    clipboardPasteParser: 'range',
+    clipboardPasteParser: pasteParser,
     clipboardPasteAction: pasteRange,
     columnDefaults: { headerSortTristate: true },
     rowFormatter: (row: RowComponent) => {
@@ -512,7 +543,21 @@ function refresh() {
     refreshAfterEdit = true
     return
   }
-  if (!updateChanged()) table.replaceData(buildData()).then(applySearch)
+  if (!updateChanged())
+    table.replaceData(buildData()).then(() => {
+      applySearch()
+      showHighlight()
+    })
+  else showHighlight()
+}
+
+/** Newly highlighted rows (IDs just loaded) are scrolled into view once drawn. */
+let highlightPending = false
+function showHighlight() {
+  const first = props.highlight[0]
+  if (!highlightPending || !table || !first) return
+  highlightPending = false
+  if (table.getRow(first)) table.scrollToRow(first, 'top', false).catch(() => {})
 }
 
 onMounted(() => {
@@ -553,10 +598,15 @@ const layoutKey = () =>
     props.lockedFields.join('|'),
   ].join('\n')
 watch(layoutKey, build)
+// Before the rows' watcher, so the refresh it starts knows to scroll.
+watch(
+  () => props.highlight.join('|'),
+  (now, before) => (highlightPending = !!now && now !== before),
+)
 watch(() => [props.rows, props.creates.length, pending.revision], refresh)
 watch(() => props.search, applySearch)
-// Repaint what is on screen when the sheet's rules arrive or a repeat appears or goes.
-watch([rules, repeated], () => {
+// Repaint what is on screen when the sheet's rules arrive, a repeat appears or goes, or a check changes.
+watch([rules, repeated, () => JSON.stringify(pending.problems), () => JSON.stringify(pending.errors)], () => {
   // Only the rows on screen are drawn; repainting them is enough (a full redraw re-measures the layout).
   if (table && built) for (const row of table.getRows('visible')) decorateRow(row)
 })

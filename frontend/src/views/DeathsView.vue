@@ -4,7 +4,8 @@ import { Download, Plus } from 'lucide-vue-next'
 import IdPicker from '../components/IdPicker.vue'
 import SheetGrid from '../components/SheetGrid.vue'
 import { useSheet } from '../composables/useSheet'
-import { isoToSerial, todayIso } from '../lib/dates'
+import { isBlank } from '../lib/cells'
+import { dayLabel, formatSerial, serialFromIso } from '../lib/dates'
 import { notify } from '../lib/notice'
 import { persistentRef } from '../lib/persist'
 import { fillIfBlank, orderColumns, rowsById } from '../lib/rows'
@@ -16,10 +17,35 @@ const module = ref(MODULE)
 const pending = usePending()
 const { table, ready, options } = useSheet(module)
 
+/**
+ * What the team writes for a butterfly that was not preserved (Unknown,
+ * Disappearance, Eaten…), as in every such row of 2026: no CAM, no tubes,
+ * media NOT_COLLECTED.
+ */
+const NOT_PRESERVED: Record<string, string> = {
+  Preserved_Dead_Alive: 'NA',
+  CAM_ID: 'NA',
+  Tube_1_id: 'NA',
+  Tube_1_tissue: 'NA',
+  T1_Preservation_medium: 'NOT_COLLECTED',
+  Tube_2_id: 'NA',
+  Tube_2_tissue: 'NA',
+  T2_Preservation_medium: 'NOT_COLLECTED',
+  Tube_3_id: 'NA',
+  Tube_3_tissue: 'NA',
+  Tube_4_id: 'NA',
+  Tube_4_tissue: 'NA',
+  Preservation_medium: 'NOT_COLLECTED',
+  Preservation_date: 'NA',
+  Location_body: 'NA',
+}
+
 const picked = persistentRef<string[]>('deaths:picked', [])
 const loaded = persistentRef<string[]>('deaths:loaded', [])
-const date = persistentRef('deaths:date', todayIso())
+// The last date used stays on this device (a new tab does not reset it to today); its weekday is shown.
+const date = persistentRef('deaths:date', '', { lasting: true })
 const cause = persistentRef('deaths:cause', '')
+const notPreserved = persistentRef('deaths:not-preserved', true)
 const reviewOnly = persistentRef('deaths:review', false)
 const recentCount = ref(30)
 
@@ -56,9 +82,22 @@ const columns = computed(() =>
     : [],
 )
 
+const dateError = computed(() =>
+  date.value && serialFromIso(date.value) === null ? 'Fecha no válida: el año debe estar entre 1990 y 2099' : '',
+)
+
+/** A butterfly already recorded dead is probably a mistyped ID (B9 of 2022 instead of B9D). */
+function warn(id: string): string | null {
+  const row = table.value ? rowsById(table.value.rows, 'Insectary_ID', [id])[0] : undefined
+  const death = row?.values.Death_date
+  return typeof death === 'number' ? `${id} ya murió el ${formatSerial(death)} (${row!.values.Death_cause ?? 'sin causa'})` : null
+}
+
 /** Loads the chosen rows; new rows get the date and cause where the cell is still empty. */
 function load(append: boolean) {
   if (!table.value || !picked.value.length) return notify('Elige al menos un ID')
+  if (dateError.value) return notify(dateError.value, 'error')
+  const serial = date.value ? serialFromIso(date.value) : null
   const list = append ? [...new Set([...loaded.value, ...picked.value])] : [...picked.value]
   const fresh = append ? picked.value.filter(id => !loaded.value.includes(id)) : picked.value
   loaded.value = list
@@ -66,22 +105,40 @@ function load(append: boolean) {
   if (!reviewOnly.value)
     for (const row of rowsById(table.value.rows, 'Insectary_ID', fresh)) {
       const label = String(row.values.Insectary_ID)
-      if (date.value && fillIfBlank(MODULE, row, label, 'Death_date', isoToSerial(date.value))) filled++
-      if (cause.value && fillIfBlank(MODULE, row, label, 'Death_cause', cause.value)) filled++
+      const set = (field: string, value: string | number) => {
+        if (fillIfBlank(MODULE, row, label, field, value)) filled++
+      }
+      if (serial !== null) set('Death_date', serial)
+      if (cause.value) set('Death_cause', cause.value)
+      // Not preserved: only rows without a CAM or tube yet (a preserved one keeps its IDs).
+      const why = pending.value(row, 'Death_cause')
+      if (
+        notPreserved.value &&
+        !isBlank(why) &&
+        why !== 'Killed_Preserved' &&
+        isBlank(pending.value(row, 'CAM_ID')) &&
+        isBlank(pending.value(row, 'Tube_1_id'))
+      )
+        for (const [field, value] of Object.entries(NOT_PRESERVED)) set(field, value)
     }
   picked.value = []
   pending.touch()
-  notify(filled ? `${filled} celdas completadas; revisa y guarda` : 'Filas cargadas')
+  if (!date.value && !reviewOnly.value)
+    notify('Sin fecha de muerte: elige la fecha y pulsa Cargar de nuevo para completarla', 'error')
+  else notify(filled ? `${filled} celdas completadas; revisa y guarda` : 'Filas cargadas')
 }
 </script>
 
 <template>
   <div class="flex h-full flex-col">
     <div class="toolbar">
-      <IdPicker v-model="picked" :options="ids" label="Insectary IDs" />
+      <IdPicker v-model="picked" :options="ids" :loading="!ready" :warn="warn" label="Insectary IDs" />
       <label>
         <span class="field-label">Fecha de muerte</span>
-        <input v-model="date" type="date" class="field-input" />
+        <input v-model="date" type="date" min="1990-01-01" max="2099-12-31" class="field-input" />
+        <span v-if="dateError" class="block text-xs text-red-700">{{ dateError }}</span>
+        <span v-else-if="date" class="block text-xs text-stone-600">{{ dayLabel(date) }}</span>
+        <span v-else class="block text-xs text-amber-800">Elige la fecha</span>
       </label>
       <label class="min-w-44">
         <span class="field-label">Causa por defecto</span>
@@ -89,6 +146,12 @@ function load(append: boolean) {
         <datalist id="death-causes">
           <option v-for="o in options.Death_cause || []" :key="o" :value="o" />
         </datalist>
+      </label>
+      <label
+        class="flex max-w-64 items-center gap-2 pb-1.5 text-xs"
+        title="Para causas distintas de Killed_Preserved y filas sin CAM ni tubo: CAM, tubos, tejidos, Preservation_date, Location_body y Preserved_Dead_Alive en NA; medios en NOT_COLLECTED"
+      >
+        <input v-model="notPreserved" type="checkbox" /> Sin preservar: CAM y tubos NA, medios NOT_COLLECTED
       </label>
       <label class="flex items-center gap-2 pb-1.5 text-sm"> <input v-model="reviewOnly" type="checkbox" /> Solo revisar </label>
       <div class="flex gap-2">

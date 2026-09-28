@@ -119,22 +119,22 @@ export function comparable(value) {
 }
 export function validateValues(module, values, { allowFormula = false, normalize = true } = {}) {
   const mod = moduleMap.get(module);
-  if (!mod) throw Object.assign(new Error('Unknown module'), { status: 404, code: 'MODULE_NOT_FOUND' });
+  if (!mod) throw Object.assign(new Error('Hoja desconocida'), { status: 404, code: 'MODULE_NOT_FOUND' });
   if (!values || typeof values !== 'object' || Array.isArray(values))
-    throw Object.assign(new Error('Values must be an object'), { status: 400, code: 'INVALID_VALUES' });
+    throw Object.assign(new Error('Los valores deben ser un objeto'), { status: 400, code: 'INVALID_VALUES' });
   const out = {};
   for (const [key, val] of Object.entries(values)) {
     const f = mod.fields.find(x => x.key === key);
     if (!f || f.readonly)
-      throw Object.assign(new Error(`Field is not editable: ${key}`), { status: 400, code: 'INVALID_FIELD' });
+      throw Object.assign(new Error(`${key} no se puede editar`), { status: 400, code: 'INVALID_FIELD', field: key });
     if (val && typeof val === 'object') {
       if (!allowFormula || typeof val.formula !== 'string' || !val.formula.startsWith('='))
-        throw Object.assign(new Error(`Invalid value for ${key}`), { status: 400, code: 'INVALID_VALUE' });
+        throw Object.assign(new Error(`Valor no válido en ${key}`), { status: 400, code: 'INVALID_VALUE', field: key });
       out[key] = { formula: val.formula };
       continue;
     }
     if (val !== null && !['string', 'number', 'boolean'].includes(typeof val))
-      throw Object.assign(new Error(`Invalid value for ${key}`), { status: 400, code: 'INVALID_VALUE' });
+      throw Object.assign(new Error(`Valor no válido en ${key}`), { status: 400, code: 'INVALID_VALUE', field: key });
     if (!normalize || val === null || val === '') {
       out[key] = val === '' ? null : val;
       continue;
@@ -148,6 +148,7 @@ export function validateValues(module, values, { allowFormula = false, normalize
     }
     if (f.type === 'date') {
       if (typeof val === 'number' && Number.isFinite(val)) {
+        if (!plausibleSerial(key, val)) throw badDate(key);
         out[key] = val;
         continue;
       }
@@ -158,17 +159,30 @@ export function validateValues(module, values, { allowFormula = false, normalize
           continue;
         }
         const serial = parseDateText(candidate);
-        if (serial !== null) {
+        if (serial !== null && plausibleSerial(key, serial)) {
           out[key] = serial;
           continue;
         }
       }
-      throw Object.assign(new Error(`A valid date is required for ${key}`), { status: 400, code: 'INVALID_DATE' });
+      throw badDate(key);
     }
     out[key] = val;
   }
   return out;
 }
+
+// A year typed wrong (92026 for 2026) makes a date the sheet would keep for ever.
+const FIRST_SERIAL = 32874; // 1 Jan 1990
+const LAST_SERIAL = 73051; // 1 Jan 2100
+// "Days difference (…)" columns count days, not dates.
+const plausibleSerial = (key, serial) =>
+  /^days difference/i.test(key) || (serial >= FIRST_SERIAL && serial < LAST_SERIAL);
+const badDate = key =>
+  Object.assign(new Error(`Fecha no válida en ${key}: usa 14-Aug-25 o 2025-08-14, entre 1990 y 2099`), {
+    status: 400,
+    code: 'INVALID_DATE',
+    field: key,
+  });
 
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
