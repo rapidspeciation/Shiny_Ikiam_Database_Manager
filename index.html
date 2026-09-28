@@ -4,6 +4,10 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Ithomiini database</title>
+    <script>
+      // A link with an app page (…/#/asistente) goes straight to the app; the bare address stays as the project's home page.
+      if (location.hash.startsWith('#/')) location.replace('https://tbs-insect-gallery.duckdns.org/ithomiini/' + location.hash)
+    </script>
     <style>
       body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.55; color: #292524; }
       h1 { font-size: 1.5rem; }
@@ -21,7 +25,7 @@
       the project's Google Sheets workbook. Accounts are created by an administrator.
     </p>
     <ul>
-      <li><a href="https://tbs-insect-gallery.duckdns.org/ithomiini/">Abrir la app / Open the app</a> (solo con cuenta / accounts only)</li>
+      <li><a href="app/">Abrir la app / Open the app</a> (solo con cuenta / accounts only)</li>
       <li><a href="privacy.html">Política de privacidad / Privacy policy</a></li>
       <li>Contacto / contact: jmithominii@gmail.com</li>
     </ul>
