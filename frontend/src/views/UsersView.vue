@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ChoiceField from '../components/ChoiceField.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { Copy, Mail, RefreshCw, UserPlus, X } from 'lucide-vue-next'
 import { api, requestId } from '../lib/api'
@@ -36,6 +37,7 @@ const ROLES: Record<string, string> = {
   reviewer: 'Revisor',
   admin: 'Administrador',
 }
+const roleChoices = Object.entries(ROLES).map(([value, label]) => ({ value, label }))
 const STATUS: Record<Invitation['status'], string> = { pending: 'Esperando', used: 'Cuenta creada', expired: 'Vencida' }
 const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('es-EC', { day: 'numeric', month: 'short' }) : '')
 
@@ -135,9 +137,7 @@ async function resetPassword(user: User) {
         </label>
         <label>
           <span class="field-label">Permiso</span>
-          <select v-model="invite.role" class="field-input">
-            <option v-for="(label, key) in ROLES" :key="key" :value="key">{{ label }}</option>
-          </select>
+          <ChoiceField v-model="invite.role" class="field-input" :options="roleChoices" :freetext="false" />
         </label>
         <button class="btn-primary" :disabled="sending">
           <Mail :size="15" /> {{ sending ? 'Enviando…' : 'Enviar invitación' }}
@@ -207,13 +207,13 @@ async function resetPassword(user: User) {
             <td>{{ u.displayName }}</td>
             <td class="text-stone-600">{{ u.email }}</td>
             <td>
-              <select
-                :value="u.role"
+              <ChoiceField
+                :model-value="u.role"
                 class="field-input w-40"
-                @change="update(u, { role: ($event.target as HTMLSelectElement).value })"
-              >
-                <option v-for="(label, key) in ROLES" :key="key" :value="key">{{ label }}</option>
-              </select>
+                :options="roleChoices"
+                :freetext="false"
+                @update:model-value="update(u, { role: $event })"
+              />
             </td>
             <td><input type="checkbox" :checked="u.active" @change="update(u, { active: !u.active })" /></td>
             <td><button class="text-xs underline" @click="resetPassword(u)">Cambiar contraseña</button></td>
@@ -249,9 +249,7 @@ async function resetPassword(user: User) {
           </label>
           <label>
             <span class="field-label">Permiso</span>
-            <select v-model="form.role" class="field-input">
-              <option v-for="(label, key) in ROLES" :key="key" :value="key">{{ label }}</option>
-            </select>
+            <ChoiceField v-model="form.role" class="field-input" :options="roleChoices" :freetext="false" />
           </label>
           <button class="btn"><UserPlus :size="15" /> Crear cuenta</button>
         </form>

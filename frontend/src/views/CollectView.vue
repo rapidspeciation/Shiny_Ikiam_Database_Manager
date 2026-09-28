@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ChoiceField from '../components/ChoiceField.vue'
 import DateField from '../components/DateField.vue'
 import { computed, nextTick, onDeactivated, reactive, ref, watch } from 'vue'
 import { CheckSquare, Copy, Eraser, Plus, Save, Trash2, X } from 'lucide-vue-next'
@@ -138,6 +139,7 @@ const people = computed(() => options.value.Collector || ranked('Collector'))
 const rainfalls = computed(() => options.value.Rainfall || ranked('Rainfall'))
 const clouds = computed(() => options.value.Cloud_cover || ranked('Cloud_cover'))
 const mediums = computed(() => options.value.Preservation_medium || ['Flash frozen'])
+const fateChoices = Object.entries(FATES).map(([value, f]) => ({ value, label: f.label }))
 
 // Insectary IDs: the free pre-made rows of Insectary_data, those after the last row used first,
 // then earlier empty rows (server/grid.mjs insectaryIds).
@@ -280,7 +282,7 @@ async function add() {
   if (view.value === 'tabla') return void grid.value?.focusCell(first, 'species')
   const row = document.querySelector<HTMLElement>(`[data-draft="${drafts.value[first]?.key}"]`)
   row?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-  row?.querySelector<HTMLInputElement>('input[list=collect-species]')?.focus({ preventScroll: true })
+  row?.querySelector<HTMLInputElement>('[data-col=species]')?.focus({ preventScroll: true })
 }
 function remove(key: string) {
   drafts.value = drafts.value.filter(d => d.key !== key)
@@ -689,12 +691,6 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
 
 <template>
   <div class="flex h-full flex-col overflow-y-auto">
-    <datalist id="collect-people">
-      <option v-for="p in people" :key="p" :value="p" />
-    </datalist>
-    <datalist id="collect-species">
-      <option v-for="s in speciesList" :key="s" :value="s" />
-    </datalist>
     <!-- Phones: the outing folds into one line, so the list is in sight; a tap opens it. -->
     <button
       v-if="touchScreen"
@@ -718,34 +714,25 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
       </label>
       <label class="min-w-52">
         <span class="field-label">Collector</span>
-        <input v-model="header.collector" class="field-input" list="collect-people" />
+        <ChoiceField v-model="header.collector" class="field-input" :options="people" />
       </label>
       <label class="min-w-52">
         <span class="field-label">Identifier</span>
-        <input v-model="header.identifier" class="field-input" list="collect-people" />
+        <ChoiceField v-model="header.identifier" class="field-input" :options="people" />
       </label>
       <label>
         <span class="field-label">Rainfall</span>
-        <select v-model="header.rainfall" class="field-input">
-          <option value="">—</option>
-          <option v-for="r in rainfalls" :key="r" :value="r">{{ r }}</option>
-        </select>
+        <ChoiceField v-model="header.rainfall" class="field-input" :options="rainfalls" :freetext="false" allow-empty />
       </label>
       <label>
         <span class="field-label">Cloud_cover</span>
-        <select v-model="header.cloud" class="field-input">
-          <option value="">—</option>
-          <option v-for="c in clouds" :key="c" :value="c">{{ c }}</option>
-        </select>
+        <ChoiceField v-model="header.cloud" class="field-input" :options="clouds" :freetext="false" allow-empty />
       </label>
     </div>
     <div class="toolbar border-t-0" :class="{ 'gap-2 py-2': !headerOpen }">
       <label v-if="headerOpen" class="min-w-64">
         <span class="field-label">Collection_location (cámbialo para añadir mariposas de otro sitio)</span>
-        <input v-model="header.location" class="field-input" list="collect-places" />
-        <datalist id="collect-places">
-          <option v-for="p in places" :key="p" :value="p" />
-        </datalist>
+        <ChoiceField v-model="header.location" class="field-input" :options="places" />
       </label>
       <label>
         <span class="field-label">Filas a añadir</span>
@@ -753,13 +740,11 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
       </label>
       <label v-if="headerOpen" class="min-w-48">
         <span class="field-label">SPECIES (opcional)</span>
-        <input v-model="addSpecies" class="field-input" list="collect-species" placeholder="la misma para todas" />
+        <ChoiceField v-model="addSpecies" class="field-input" :options="speciesList" placeholder="la misma para todas" />
       </label>
       <label>
         <span class="field-label">Release_Collect</span>
-        <select v-model="addFate" class="field-input">
-          <option v-for="(f, key) in FATES" :key="key" :value="key">{{ f.label }}</option>
-        </select>
+        <ChoiceField v-model="addFate" class="field-input" :options="fateChoices" :freetext="false" />
       </label>
       <button class="btn-primary" @click="add">
         <Plus :size="15" /> Añadir {{ Math.max(1, addCount || 1) }} {{ Math.max(1, addCount || 1) === 1 ? 'fila' : 'filas' }}
@@ -875,42 +860,39 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
                 </button>
               </td>
               <td class="px-1">
-                <input
+                <ChoiceField
                   v-model="d.location"
                   data-col="location"
                   :class="{ 'border-red-500 bg-red-50': cellProblem(d, 'location') }"
                   :title="cellProblem(d, 'location') || undefined"
                   class="field-input w-44"
-                  list="collect-places"
+                  :options="places"
                   @paste="onPaste($event, i, 'location')"
                   @keydown="onCellKey($event, i, 'location')"
                 />
               </td>
               <td class="px-1">
-                <input
+                <ChoiceField
                   v-model="d.species"
                   data-col="species"
                   :class="{ 'border-red-500 bg-red-50': cellProblem(d, 'species') }"
                   :title="cellProblem(d, 'species') || undefined"
                   class="field-input w-48"
-                  list="collect-species"
+                  :options="speciesList"
                   @paste="onPaste($event, i, 'species')"
                   @keydown="onCellKey($event, i, 'species')"
                 />
               </td>
               <td class="px-1">
-                <input
+                <ChoiceField
                   v-model="d.subspecies"
                   data-col="subspecies"
                   class="field-input w-36"
-                  :list="`collect-sub-${d.key}`"
+                  :options="subspeciesFor(d.species)"
                   placeholder="—"
                   @paste="onPaste($event, i, 'subspecies')"
                   @keydown="onCellKey($event, i, 'subspecies')"
                 />
-                <datalist :id="`collect-sub-${d.key}`">
-                  <option v-for="sub in subspeciesFor(d.species)" :key="sub" :value="sub" />
-                </datalist>
               </td>
               <td class="px-1 whitespace-nowrap">
                 <button
@@ -926,15 +908,15 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
                 </button>
               </td>
               <td class="px-1">
-                <select
-                  :value="d.fate"
+                <ChoiceField
+                  :model-value="d.fate"
                   data-col="fate"
                   class="field-input w-56"
+                  :options="fateChoices"
+                  :freetext="false"
                   @paste="onPaste($event, i, 'fate')"
-                  @change="setFate(d, ($event.target as HTMLSelectElement).value as Fate)"
-                >
-                  <option v-for="(f, key) in FATES" :key="key" :value="key">{{ f.label }}</option>
-                </select>
+                  @update:model-value="setFate(d, $event as Fate)"
+                />
               </td>
               <td class="px-1">
                 <input
@@ -972,25 +954,25 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
                   />
                 </td>
                 <td class="px-1">
-                  <select
-                    :value="d.medium"
+                  <ChoiceField
+                    :model-value="d.medium"
                     data-col="medium"
                     class="field-input w-48"
-                    @change="setColumn(d, 'medium', ($event.target as HTMLSelectElement).value)"
-                  >
-                    <option v-for="m in mediums" :key="m" :value="m">{{ m }}</option>
-                  </select>
+                    :options="mediums"
+                    :freetext="false"
+                    @update:model-value="setColumn(d, 'medium', $event)"
+                  />
                 </td>
               </template>
               <td v-else colspan="3"></td>
               <td class="px-1">
-                <input
+                <ChoiceField
                   v-model="d.purpose"
                   data-col="purpose"
                   :class="{ 'border-red-500 bg-red-50': cellProblem(d, 'purpose') }"
                   :title="cellProblem(d, 'purpose') || undefined"
                   class="field-input w-28"
-                  list="collect-purposes"
+                  :options="options.Purpose || []"
                   @paste="onPaste($event, i, 'purpose')"
                   @keydown="onCellKey($event, i, 'purpose')"
                 />
@@ -1010,9 +992,6 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
             </tr>
           </tbody>
         </table>
-        <datalist id="collect-purposes">
-          <option v-for="p in options.Purpose || []" :key="p" :value="p" />
-        </datalist>
       </div>
       <!-- Phones: what to apply to the rows ticked, pinned at the bottom of the screen. -->
       <div
@@ -1024,14 +1003,11 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         >
         <label class="min-w-40 flex-1">
           <span class="field-label">SPECIES</span>
-          <input v-model="bulk.species" class="field-input" list="collect-species" />
+          <ChoiceField v-model="bulk.species" class="field-input" :options="speciesList" />
         </label>
         <label class="min-w-32 flex-1">
           <span class="field-label">Subspecies_Form</span>
-          <input v-model="bulk.subspecies" class="field-input" list="collect-bulk-sub" />
-          <datalist id="collect-bulk-sub">
-            <option v-for="sub in subspeciesFor(bulk.species)" :key="sub" :value="sub" />
-          </datalist>
+          <ChoiceField v-model="bulk.subspecies" class="field-input" :options="subspeciesFor(bulk.species)" />
         </label>
         <span class="whitespace-nowrap">
           <button
@@ -1046,10 +1022,15 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
             {{ value }}
           </button>
         </span>
-        <select v-model="bulk.fate" class="field-input w-52" aria-label="Release_Collect">
-          <option value="">Release_Collect…</option>
-          <option v-for="(f, key) in FATES" :key="key" :value="key">{{ f.label }}</option>
-        </select>
+        <ChoiceField
+          v-model="bulk.fate"
+          class="field-input w-52"
+          aria-label="Release_Collect"
+          placeholder="Release_Collect…"
+          :options="fateChoices"
+          :freetext="false"
+          allow-empty
+        />
         <button class="btn-primary" @click="applyBulk"><CheckSquare :size="15" /> Aplicar</button>
         <button class="btn" @click="removeSelected"><Trash2 :size="15" /> Quitar</button>
         <button class="btn" @click="selected = []"><X :size="15" /> Desmarcar</button>
