@@ -3,8 +3,12 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import { basename, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createReports } from './reports.mjs';
-import { TYPED_OVER_FORMULA } from './batch.mjs';
-import { comparable, moduleMap, validateValues } from './schema.mjs';
+import { TYPED_OVER_FORMULA, uniqueIdIndex } from './batch.mjs';
+import { allIssues, checkData } from './checks.mjs';
+import { comparable, labelFor, moduleMap, validateValues } from './schema.mjs';
+import { TUBE_FIELD, isIdValue, isUnique } from './verifications.mjs';
+import { listOptions, listProblem } from './verify.mjs';
+import { queueWalk, walkDraft } from './walks.mjs';
 import { claudeAllowed, claudeConfig, prepareWorkspace, runClaude } from './claude.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -15,6 +19,17 @@ const owner = user => String(user?.id ?? user?.username ?? '');
 const json = value => JSON.stringify(value);
 const EDITORS = ['editor', 'reviewer', 'admin'];
 const isoDate = serial => new Date(Date.UTC(1899, 11, 30) + serial * 864e5).toISOString().slice(0, 10);
+const TIME_FIELD = /(^|_)time$/i;
+/** "9:20" in a time column becomes the day fraction Sheets stores (the grids show it as 9:20). */
+const withSheetTimes = values =>
+  !values || typeof values !== 'object' || Array.isArray(values)
+    ? values
+    : Object.fromEntries(
+        Object.entries(values).map(([key, value]) => {
+          const m = TIME_FIELD.test(key) && typeof value === 'string' && /^\s*([01]?\d|2[0-3]):([0-5]\d)\s*$/.exec(value);
+          return [key, m ? (Number(m[1]) * 60 + Number(m[2])) / 1440 : value];
+        }),
+      );
 const parse = value => {
   try {
     return JSON.parse(value);
@@ -97,9 +112,64 @@ const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'check_data',
+      description:
+        'Scan the workbook for inconsistencies: repeated IDs/tubes, a CAM given to two butterflies, values outside strict dropdown lists, Collection_data rows sent to the insectary without a filled Insectary_data row (and wild insectary butterflies without a collection row), species/sex/CAM mismatches between the two rows of one butterfly, deaths or preservations dated before collection or entry, future dates, preserved rows without CAM or Tube_1_id, and field marks used for two species. Each issue has sheet, row, recordId, field, value, problem and, when the right value is obvious, fix = {recordId, values} ready for propose_changes. Paginated; filter by sheet and kind (comma-separated). Call without kind first to see the counts.',
+      parameters: {
+        type: 'object',
+        properties: {
+          sheet: { type: 'string', description: 'Only this sheet, e.g. Collection_data' },
+          kind: {
+            type: 'string',
+            description:
+              'repeat, cam_cross, list, insectary_link, link_mismatch, date_order, future_date, missing_sample, mark_reuse (comma-separated)',
+          },
+          recordId: { type: 'string', description: 'Only the issues of this row' },
+          limit: { type: 'integer', description: '1 to 200, default 50' },
+          offset: { type: 'integer' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'queue_wikiloc',
+      description:
+        'Queue a Wikiloc monitoring walk (trail URL) to be read by the home computer (the server cannot open Wikiloc). If the walk was already read it returns its walkId at once. Then call get_walk.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'Wikiloc trail link, e.g. https://es.wikiloc.com/rutas-senderismo/…-123456789' },
+          refresh: { type: 'boolean', description: 'Read it again even if already read (notes corrected in Wikiloc)' },
+        },
+        required: ['url'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_walk',
+      description:
+        'A Wikiloc walk read from its page: every point with the parsed note (species matched to the sheet and Taxonomy, subspecies, sex, time, height, weather codes, mark, transect section), whether it is already in Collection_data, the review checks of Monitoreo (recapture, mark used for another species, 30-preserved rule, missing parts), and newRows: Collection_data values for the points not in the sheet yet, ready for propose_changes. While the walk is still being read it returns its queue status. Give date or collector when the walk lacks them.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: { type: 'string' },
+          walkId: { type: 'string' },
+          date: { type: 'string', description: 'YYYY-MM-DD, when the title has no day' },
+          collector: { type: 'string', description: 'As in Collection_data, e.g. "FCH - Franz Chandi"' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'propose_changes',
       description:
-        'Draft edits to existing rows. They appear to the person as a table with the changed cells highlighted and are only written when the person confirms. Formula cells cannot be changed, except SPECIES in Insectary_data when what emerged differs from the formula prediction. Give a short note per row saying where the value comes from.',
+        'Draft edits to existing rows (changes) and/or new rows (newRows, e.g. from get_walk). They appear to the person as a table with the changed cells highlighted and are only written when the person confirms. Formula cells cannot be changed, except SPECIES in Insectary_data when what emerged differs from the formula prediction. Give a short note per row saying where the value comes from. Use one proposal per task (e.g. one per walk or per kind of fix).',
       parameters: {
         type: 'object',
         properties: {
@@ -115,9 +185,21 @@ const TOOLS = [
               required: ['recordId', 'values'],
             },
           },
+          newRows: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                sheet: { type: 'string' },
+                values: { type: 'object', description: 'Column → value; dates as YYYY-MM-DD, times as H:MM' },
+                note: { type: 'string' },
+              },
+              required: ['sheet', 'values'],
+            },
+          },
           reason: { type: 'string' },
         },
-        required: ['changes', 'reason'],
+        required: ['reason'],
       },
     },
   },
@@ -161,6 +243,8 @@ function init(db) {
   if (!has('ai_messages', 'attachments_json'))
     db.exec("ALTER TABLE ai_messages ADD COLUMN attachments_json TEXT NOT NULL DEFAULT '[]'");
   if (!has('ai_proposals', 'applied_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN applied_json TEXT');
+  // New rows of a proposal, once written: their record IDs (to show their sheet rows).
+  if (!has('ai_proposals', 'created_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN created_json TEXT');
   // Personal tokens for agents outside the app (T3 Code projects) to use the same tools.
   db.exec(`CREATE TABLE IF NOT EXISTS ai_tokens (
     token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, label TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT
@@ -454,15 +538,90 @@ export function createAssistant({ store, config = {} }) {
     };
   }
 
+  /** Columns that are formulas in the next unused (pre-made) row of a sheet: a new row leaves them. */
+  function createFormulaFields(sheet) {
+    const last =
+      db.prepare('SELECT max(row_num) n FROM records WHERE sheet=? AND missing=0 AND observed=1').get(sheet).n ??
+      moduleMap.get(sheet).headerRow;
+    const next = db
+      .prepare(
+        'SELECT formulas_json FROM records WHERE sheet=? AND missing=0 AND observed=0 AND row_num>? ORDER BY row_num LIMIT 1',
+      )
+      .get(sheet, last);
+    return new Set(Object.keys(parse(next?.formulas_json ?? '{}') ?? {}));
+  }
+
+  /**
+   * A new row for a proposal, checked now as the save will check it (strict lists,
+   * IDs already used), so the assistant can correct it before the person sees it.
+   */
+  function proposedRow(candidate, index, ids) {
+    const at = `newRows[${index}]`;
+    const sheet = String(candidate?.sheet ?? '');
+    if (!moduleMap.has(sheet)) return { error: `${at}: unknown sheet ${clip(sheet, 60)}` };
+    const raw = candidate.values;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !Object.keys(raw).length || Object.keys(raw).length > 80)
+      return { error: `${at}: invalid values` };
+    let values;
+    try {
+      values = validateValues(sheet, withSheetTimes(raw));
+    } catch (e) {
+      return { error: `${at}: ${e.message}` };
+    }
+    const formulas = createFormulaFields(sheet);
+    const dropped = Object.keys(values).filter(key => formulas.has(key));
+    for (const key of Object.keys(values)) if (formulas.has(key) || values[key] === null) delete values[key];
+    if (!Object.keys(values).length) return { error: `${at}: the new row has no values` };
+    const lists = listOptions(store, sheet);
+    for (const [field, value] of Object.entries(values)) {
+      const problem = lists[field]?.strict && listProblem(lists, field, value);
+      if (problem) return { error: `${at}: ${problem}` };
+    }
+    for (const [field, value] of Object.entries(values)) {
+      if (!isUnique(sheet, field) || !isIdValue(value)) continue;
+      const key = `${TUBE_FIELD.test(field) ? 'tube' : `${sheet}:${field}`}\u0000${String(value).trim()}`;
+      const holder = ids.used().get(key)?.[0];
+      if (holder) return { error: `${at}: ${value} is already used in ${holder.sheet} row ${holder.row}` };
+      if (ids.proposed.has(key)) return { error: `${at}: ${value} appears twice in this proposal` };
+      ids.proposed.add(key);
+    }
+    const identity = moduleMap.get(sheet).identityFields.map(key => values[key]).find(isIdValue);
+    const time = Object.entries(raw).find(([key]) => TIME_FIELD.test(key))?.[1];
+    return {
+      change: {
+        create: true,
+        sheet,
+        clientId: randomUUID(),
+        recordId: null,
+        row: null,
+        label: clip(identity ?? ([values.SPECIES, time].filter(Boolean).join(' ') || labelFor(sheet, values)), 80),
+        before: {},
+        values,
+        replaceFormula: [],
+        note: clip(candidate.note, 300),
+        ...(dropped.length ? { dropped } : {}),
+      },
+    };
+  }
+
   function proposeChanges(args, context) {
     if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot propose edits' };
-    if (!Array.isArray(args.changes) || !args.changes.length || args.changes.length > 100)
-      return { error: 'Provide 1 to 100 changes' };
+    const edits = Array.isArray(args.changes) ? args.changes : [];
+    const creates = Array.isArray(args.newRows) ? args.newRows : [];
+    if (!edits.length && !creates.length) return { error: 'Provide changes to existing rows or newRows' };
+    if (edits.length + creates.length > 100) return { error: 'Provide at most 100 rows per proposal' };
     const changes = [];
-    for (const candidate of args.changes) {
+    let index;
+    const ids = { proposed: new Set(), used: () => (index ??= uniqueIdIndex(store)) };
+    for (const [i, candidate] of creates.entries()) {
+      const out = proposedRow(candidate, i, ids);
+      if (out.error) return out;
+      changes.push(out.change);
+    }
+    for (const candidate of edits) {
       const old = store.getRecord(String(candidate?.recordId ?? ''));
       if (!old || old.missing) return { error: `Row ${clip(candidate?.recordId, 60)} not found; use find_records` };
-      const raw = candidate.values;
+      const raw = withSheetTimes(candidate.values);
       if (
         !raw ||
         typeof raw !== 'object' ||
@@ -509,7 +668,14 @@ export function createAssistant({ store, config = {} }) {
     ).run(id, context.threadId, owner(context.user), json(changes), clip(args.reason, 500), 'pending', now());
     const proposal = { id, changes, reason: clip(args.reason, 500), status: 'pending' };
     context.proposals.push(proposal);
-    return { proposalId: id, rows: changes.length, status: 'waiting for the person to confirm' };
+    changed(owner(context.user));
+    const dropped = [...new Set(changes.flatMap(c => c.dropped ?? []))];
+    return {
+      proposalId: id,
+      rows: changes.length,
+      status: 'waiting for the person to confirm',
+      ...(dropped.length ? { leftOut: `Formula columns left out of the new rows: ${dropped.join(', ')}` } : {}),
+    };
   }
 
   /** Writes the chosen rows of a proposal as one save (undoable in Historial). */
@@ -529,50 +695,85 @@ export function createAssistant({ store, config = {} }) {
       .run(proposal.id);
     if (!claimed.changes)
       throw Object.assign(new Error('Proposal is already being applied.'), { status: 409, code: 'proposal_used' });
+    changed(proposal.owner_id);
     try {
       const result = await store.applyProposal(
         chosen.map(i => all[i]),
         { user, requestId, reason: clip(reason || proposal.reason, 500) },
       );
       const status = ['verified', 'unchanged'].includes(result?.status) ? 'applied' : 'needs_review';
-      db.prepare('UPDATE ai_proposals SET status = ?, applied_at = ?, applied_json = ? WHERE id = ?').run(
-        status,
-        status === 'applied' ? now() : null,
-        json(chosen),
-        proposal.id,
-      );
+      const created = Object.fromEntries((result?.created ?? []).map(c => [c.clientId, c.recordId]));
+      db.prepare(
+        'UPDATE ai_proposals SET status = ?, applied_at = ?, applied_json = ?, created_json = ? WHERE id = ?',
+      ).run(status, status === 'applied' ? now() : null, json(chosen), json(created), proposal.id);
       return { proposalId: proposal.id, status, applied: chosen, result };
     } catch (cause) {
       db.prepare("UPDATE ai_proposals SET status = 'needs_review' WHERE id = ?").run(proposal.id);
       throw cause;
+    } finally {
+      changed(proposal.owner_id);
     }
   }
 
-  /** A proposal as the review table shows it: each row with the current values of the changed columns. */
+  /**
+   * A proposal as the review table shows it: each row with the current values of
+   * the changed columns. New rows have no current values (and, once written, their row).
+   */
   function proposalView(proposal, row) {
     const fields = [...new Set(proposal.changes.flatMap(c => Object.keys(c.values)))];
-    const sheet = proposal.changes[0]?.sheet;
-    const types = Object.fromEntries(
-      fields.map(f => [f, moduleMap.get(sheet)?.fields.find(x => x.key === f)?.type ?? 'text']),
-    );
+    const sheets = [...new Set(proposal.changes.map(c => c.sheet))];
+    const typeOf = f =>
+      sheets.map(s => moduleMap.get(s)?.fields.find(x => x.key === f)?.type).find(Boolean) ?? 'text';
+    const created = parse(row?.created_json ?? 'null') ?? {};
     return {
       ...proposal,
       status: row?.status ?? proposal.status,
       appliedAt: row?.applied_at ?? null,
       applied: parse(row?.applied_json ?? 'null'),
+      sheets,
       fields,
-      types,
+      types: Object.fromEntries(fields.map(f => [f, typeOf(f)])),
       changes: proposal.changes.map((change, index) => {
-        const record = store.getRecord(change.recordId);
+        const recordId = change.create ? (created[change.clientId] ?? null) : change.recordId;
+        const record = recordId ? store.getRecord(recordId) : null;
         return {
           ...change,
+          recordId,
           index,
           row: record?.row ?? change.row,
           label: change.label ?? record?.label,
-          current: Object.fromEntries(fields.map(f => [f, record?.values?.[f] ?? null])),
+          current: change.create ? {} : Object.fromEntries(fields.map(f => [f, record?.values?.[f] ?? null])),
         };
       }),
     };
+  }
+
+  /*
+   * Live list of proposals for the Asistente tab: a revision per person that
+   * changes whenever one of their proposals is added, applied or discarded, and
+   * requests that wait (long polling) until it changes.
+   */
+  const boot = randomUUID().slice(0, 8);
+  const revisions = new Map();
+  const waiters = new Map();
+  const revisionOf = ownerId => `${boot}.${revisions.get(ownerId) ?? 0}`;
+  function changed(ownerId) {
+    revisions.set(ownerId, (revisions.get(ownerId) ?? 0) + 1);
+    for (const wake of waiters.get(ownerId) ?? []) wake();
+    waiters.delete(ownerId);
+  }
+  function waitForChange(ownerId, seen, ms) {
+    if (seen !== revisionOf(ownerId)) return Promise.resolve();
+    return new Promise(resolve => {
+      const list = waiters.get(ownerId) ?? waiters.set(ownerId, new Set()).get(ownerId);
+      const wake = () => {
+        clearTimeout(timer);
+        list.delete(wake);
+        resolve();
+      };
+      const timer = setTimeout(wake, ms);
+      list.add(wake);
+    });
   }
 
   async function executeTool(name, args, context) {
@@ -613,6 +814,29 @@ export function createAssistant({ store, config = {} }) {
       context.results.push(result);
       return result;
     }
+    if (name === 'check_data') {
+      const out = checkData(store, {
+        sheet: args.sheet ? clip(args.sheet, 100) : undefined,
+        kind: args.kind ? clip(args.kind, 300) : undefined,
+        recordId: args.recordId ? clip(args.recordId, 120) : undefined,
+        limit: Math.min(Number(args.limit) || 50, 200),
+        offset: args.offset,
+      });
+      for (const issue of out.issues)
+        context.sources.set(issue.recordId, { id: issue.recordId, type: 'record', sheet: issue.sheet, row: issue.row, label: issue.label });
+      return out;
+    }
+    if (name === 'queue_wikiloc') {
+      if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot queue walks' };
+      return queueWalk(store, { url: clip(args.url, 500), refresh: !!args.refresh }, context.user);
+    }
+    if (name === 'get_walk')
+      return walkDraft(store, {
+        walkId: args.walkId ? clip(args.walkId, 60) : undefined,
+        url: args.url ? clip(args.url, 500) : undefined,
+        date: args.date ? clip(args.date, 10) : undefined,
+        collector: args.collector ? clip(args.collector, 120) : undefined,
+      });
     if (name === 'propose_changes') return proposeChanges(args, context);
     if (name === 'apply_proposal') {
       const proposal = db
@@ -753,7 +977,12 @@ export function createAssistant({ store, config = {} }) {
       if (response.tool_calls.length > 8) throw new Error('AI requested too many tools');
       messages.push({ role: 'assistant', content: response.content ?? null, tool_calls: response.tool_calls });
       for (const call of response.tool_calls) {
-        const result = await executeTool(call.function?.name, parse(call.function?.arguments ?? '{}') ?? {}, context);
+        let result;
+        try {
+          result = await executeTool(call.function?.name, parse(call.function?.arguments ?? '{}') ?? {}, context);
+        } catch (e) {
+          result = { error: clip(e.message, 300) };
+        }
         messages.push({ role: 'tool', tool_call_id: call.id, content: json(result).slice(0, 18000) });
       }
     }
@@ -803,6 +1032,20 @@ export function createAssistant({ store, config = {} }) {
    * person, and its proposals go to their "T3 Code" conversation for review.
    */
   const agents = new Map();
+  /** A person's conversation with a fixed title (T3 Code, Revisión de datos), created on first use. */
+  function namedThread(user, title) {
+    const found = db.prepare('SELECT id FROM ai_threads WHERE owner_id = ? AND title = ?').get(owner(user), title);
+    if (found) return found.id;
+    const id = randomUUID();
+    db.prepare('INSERT INTO ai_threads (id,owner_id,title,created_at,updated_at) VALUES (?,?,?,?,?)').run(
+      id,
+      owner(user),
+      title,
+      now(),
+      now(),
+    );
+    return id;
+  }
   function agentTurn(token) {
     const hash = createHash('sha256').update(token).digest('hex');
     const row = db
@@ -812,17 +1055,7 @@ export function createAssistant({ store, config = {} }) {
       .get(hash);
     if (!row) return null;
     const user = { id: row.id, username: row.username, displayName: row.display_name, role: row.role };
-    let thread = db.prepare("SELECT id FROM ai_threads WHERE owner_id = ? AND title = 'T3 Code'").get(owner(user));
-    if (!thread) {
-      thread = { id: randomUUID() };
-      db.prepare('INSERT INTO ai_threads (id,owner_id,title,created_at,updated_at) VALUES (?,?,?,?,?)').run(
-        thread.id,
-        owner(user),
-        'T3 Code',
-        now(),
-        now(),
-      );
-    }
+    const thread = { id: namedThread(user, 'T3 Code') };
     const cached = agents.get(hash);
     if (cached?.context.threadId === thread.id) return cached;
     const turn = {
@@ -978,6 +1211,7 @@ export function createAssistant({ store, config = {} }) {
         db.prepare('DELETE FROM ai_proposals WHERE thread_id = ?').run(record.id);
         db.prepare('DELETE FROM ai_messages WHERE thread_id = ?').run(record.id);
         db.prepare('DELETE FROM ai_threads WHERE id = ?').run(record.id);
+        changed(owner(user));
         return { status: 200, body: { deleted: true } };
       }
       if (threadMatch[2] && method === 'POST') {
@@ -1006,29 +1240,57 @@ export function createAssistant({ store, config = {} }) {
       }
     }
     if (path === '/api/chat/proposals' && method === 'GET') {
+      // wait=1 with the revision the page holds: answer when a proposal is added, applied or
+      // discarded (or after 20 s), so the Asistente tab shows edits as the assistant drafts them.
+      if (query.wait) await waitForChange(owner(user), String(query.revision ?? ''), 20000);
+      const revision = revisionOf(owner(user));
       const rows = db
         .prepare(
-          "SELECT m.proposals_json, m.created_at FROM ai_messages m JOIN ai_threads t ON t.id = m.thread_id WHERE t.owner_id = ? AND m.proposals_json <> '[]' ORDER BY m.created_at DESC LIMIT 50",
+          `SELECT p.*, t.title FROM ai_proposals p JOIN ai_threads t ON t.id = p.thread_id WHERE p.owner_id = ? ${
+            query.all ? '' : "AND p.status = 'pending'"
+          } ORDER BY p.created_at DESC, p.rowid DESC LIMIT 50`,
         )
         .all(owner(user));
-      const status = new Map(
-        db
-          .prepare('SELECT id,status,applied_at,applied_json FROM ai_proposals WHERE owner_id = ?')
-          .all(owner(user))
-          .map(r => [r.id, r]),
+      const proposals = rows.map(r => ({
+        ...proposalView({ id: r.id, changes: parse(r.changes_json) ?? [], reason: r.reason, status: r.status }, r),
+        createdAt: r.created_at,
+        source: r.title,
+      }));
+      return { status: 200, body: { revision, proposals } };
+    }
+    // "Proponer arreglos" in Tablas → Revisión de datos: the obvious fixes as one proposal to confirm.
+    if (path === '/api/chat/proposals/from-checks' && method === 'POST') {
+      if (!Array.isArray(body.ids) || !body.ids.length || body.ids.length > 100)
+        return bad(400, 'invalid_ids', 'Choose 1 to 100 issues.');
+      const wanted = new Set(body.ids.map(String));
+      const merged = new Map();
+      for (const issue of allIssues(store).issues) {
+        if (!wanted.has(issue.id) || !issue.fix) continue;
+        const change = merged.get(issue.fix.recordId) ?? { recordId: issue.fix.recordId, values: {}, notes: [] };
+        Object.assign(change.values, issue.fix.values);
+        change.notes.push(issue.problem);
+        merged.set(issue.fix.recordId, change);
+      }
+      if (!merged.size) return bad(409, 'no_fixes', 'Those issues have no obvious fix, or were already fixed.');
+      const threadId = namedThread(user, 'Revisión de datos');
+      const context = { threadId, user, records: new Map(), sources: new Map(), results: [], proposals: [], applied: [] };
+      const out = proposeChanges(
+        {
+          reason: 'Arreglos de la Revisión de datos',
+          changes: [...merged.values()].map(c => ({ recordId: c.recordId, values: c.values, note: c.notes.join(' · ') })),
+        },
+        context,
       );
-      const proposals = rows
-        .flatMap(r =>
-          (parse(r.proposals_json) ?? []).map(p => ({ ...proposalView(p, status.get(p.id)), createdAt: r.created_at })),
-        )
-        .filter(p => (query.all ? true : p.status === 'pending'));
-      return { status: 200, body: { proposals } };
+      if (out.error) return bad(409, 'invalid_fix', out.error);
+      insertMessage(threadId, 'assistant', 'Arreglos propuestos desde Revisión de datos', [], [], context.proposals);
+      return { status: 201, body: out };
     }
     const discardMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/discard$/.exec(path);
     if (discardMatch && method === 'POST') {
       const done = db
         .prepare("UPDATE ai_proposals SET status = 'discarded' WHERE id = ? AND owner_id = ? AND status = 'pending'")
         .run(discardMatch[1], owner(user));
+      if (done.changes) changed(owner(user));
       return done.changes
         ? { status: 200, body: { proposalId: discardMatch[1], status: 'discarded' } }
         : bad(409, 'proposal_used', 'Proposal is no longer pending.');
