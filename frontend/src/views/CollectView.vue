@@ -70,6 +70,13 @@ const addSpecies = ref('')
  */
 const view = persistentRef<'tabla' | 'formulario'>('collect:view2', 'tabla', { lasting: true })
 const touchScreen = window.matchMedia('(pointer: coarse)').matches
+/** Phones show the outing as one line ("23-Sep · Cavernas · PAS ✎") until tapped; open while no place is chosen. */
+const headerOpen = ref(!touchScreen || !header.value.location)
+const headerChip = computed(() => {
+  const h = header.value
+  const day = h.date ? formatSerial(isoToSerial(h.date)).replace(/-\d{2}$/, '') : 'sin fecha'
+  return [day, h.location || 'sin lugar', h.collector.split(' - ')[0]].filter(Boolean).join(' · ')
+})
 const grid = ref<InstanceType<typeof CollectGrid>>()
 const saving = ref(false)
 const recentCount = ref(10)
@@ -256,7 +263,10 @@ watch([freeIds, camPool, tubeRun], () => {
   }
 })
 async function add() {
-  if (!header.value.location) return notify('Elige el lugar de colecta')
+  if (!header.value.location) {
+    headerOpen.value = true
+    return notify('Elige el lugar de colecta')
+  }
   const count = Math.min(60, Math.max(1, Math.round(addCount.value || 1)))
   const first = drafts.value.length
   for (let i = 0; i < count; i++) {
@@ -674,7 +684,26 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
 
 <template>
   <div class="flex h-full flex-col overflow-y-auto">
-    <div class="toolbar">
+    <datalist id="collect-people">
+      <option v-for="p in people" :key="p" :value="p" />
+    </datalist>
+    <datalist id="collect-species">
+      <option v-for="s in speciesList" :key="s" :value="s" />
+    </datalist>
+    <!-- Phones: the outing folds into one line, so the list is in sight; a tap opens it. -->
+    <button
+      v-if="touchScreen"
+      type="button"
+      class="flex w-full items-center gap-2 border-b border-stone-200 bg-white px-3 py-2 text-left text-sm"
+      :aria-expanded="headerOpen"
+      @click="headerOpen = !headerOpen"
+    >
+      <span class="min-w-0 flex-1 truncate rounded-full bg-stone-100 px-3 py-1" :class="{ 'bg-amber-50 text-amber-900': isToday }">
+        {{ headerChip }}
+      </span>
+      <span class="shrink-0 text-brand-700">{{ headerOpen ? 'Cerrar' : '✎' }}</span>
+    </button>
+    <div v-if="headerOpen" class="toolbar">
       <label>
         <span class="field-label"
           >Collection_date <span class="font-normal text-stone-500">{{ weekdayOf(header.date) }}</span></span
@@ -704,15 +733,9 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
           <option v-for="c in clouds" :key="c" :value="c">{{ c }}</option>
         </select>
       </label>
-      <datalist id="collect-people">
-        <option v-for="p in people" :key="p" :value="p" />
-      </datalist>
-      <datalist id="collect-species">
-        <option v-for="s in speciesList" :key="s" :value="s" />
-      </datalist>
     </div>
-    <div class="toolbar border-t-0">
-      <label class="min-w-64">
+    <div class="toolbar border-t-0" :class="{ 'gap-2 py-2': !headerOpen }">
+      <label v-if="headerOpen" class="min-w-64">
         <span class="field-label">Collection_location (cámbialo para añadir mariposas de otro sitio)</span>
         <input v-model="header.location" class="field-input" list="collect-places" />
         <datalist id="collect-places">
@@ -723,7 +746,7 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         <span class="field-label">Filas a añadir</span>
         <input v-model.number="addCount" type="number" min="1" max="60" class="field-input w-20" />
       </label>
-      <label class="min-w-48">
+      <label v-if="headerOpen" class="min-w-48">
         <span class="field-label">SPECIES (opcional)</span>
         <input v-model="addSpecies" class="field-input" list="collect-species" placeholder="la misma para todas" />
       </label>
