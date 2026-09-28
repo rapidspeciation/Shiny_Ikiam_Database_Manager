@@ -23,6 +23,8 @@ export interface PendingCreate {
   module: string
   label: string
   values: Record<string, CellValue>
+  /** Rows that wait for Guardar (a walk's captures, before their species are identified), never saved automatically. */
+  manual?: boolean
 }
 
 interface BatchItemError {
@@ -121,7 +123,7 @@ export const usePending = defineStore('pending', {
       }
       try {
         // Cells refused before wait until they are edited again; everything else is saved.
-        await this.save('', { retryRefused: false })
+        await this.save('', { retryRefused: false, auto: true })
         autoRetries = 0
         this.autoBlocked = ''
       } catch (e) {
@@ -234,8 +236,8 @@ export const usePending = defineStore('pending', {
       delete this.errors[`${row.id}:${field}`]
       this.persist()
     },
-    addCreate(module: string, label: string, values: Record<string, CellValue>) {
-      const item = { clientId: requestId(), module, label, values }
+    addCreate(module: string, label: string, values: Record<string, CellValue>, { manual = false } = {}) {
+      const item: PendingCreate = { clientId: requestId(), module, label, values, ...(manual ? { manual } : {}) }
       this.creates.push(item)
       this.persist()
       return item
@@ -270,7 +272,7 @@ export const usePending = defineStore('pending', {
      * (automatic saving waits until they are edited). The server saves what it
      * can and lists what it left out (records/batch with `partial`).
      */
-    async save(reason: string, { retryRefused = true } = {}): Promise<SaveResult> {
+    async save(reason: string, { retryRefused = true, auto = false } = {}): Promise<SaveResult> {
       if (this.saving || !this.changeCount) return { saved: 0, left: 0 }
       this.check()
       const held = (key: string) => !!this.problems[key] || (!retryRefused && !!this.errors[key])
@@ -291,7 +293,9 @@ export const usePending = defineStore('pending', {
         })
         .filter(e => Object.keys(e.values).length)
       // A new row goes whole or not at all.
-      const creates = (JSON.parse(JSON.stringify(this.creates)) as PendingCreate[]).filter(c => !heldRow(c.clientId))
+      const creates = (JSON.parse(JSON.stringify(this.creates)) as PendingCreate[]).filter(
+        c => !heldRow(c.clientId) && !(auto && c.manual),
+      )
       if (!edits.length && !creates.length) return { saved: 0, left: this.changeCount }
       const body = {
         reason: reason || null,

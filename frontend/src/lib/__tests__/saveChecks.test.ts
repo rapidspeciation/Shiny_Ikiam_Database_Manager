@@ -167,4 +167,18 @@ describe('saving pending changes', () => {
     expect(await pending.save('', { retryRefused: false })).toEqual({ saved: 0, left: 1 })
     expect(sent).toHaveLength(2)
   })
+
+  it("leaves a walk's new rows for Guardar: automatic saving sends only the other changes", async () => {
+    const pending = usePending()
+    pending.setAutoSave(false)
+    pending.addCreate('Insectary_data', 'captura', { Insectary_ID: 'Z9Z' }, { manual: true })
+    pending.setCell('Insectary_data', rows[2], 'N4D', 'Death_cause', 'Unknown')
+    await pending.save('', { retryRefused: false, auto: true })
+    expect(sent[0].edits).toEqual([{ id: 'r3', values: { Death_cause: 'Unknown' }, expected: { Death_cause: null } }])
+    expect(JSON.stringify(sent[0])).not.toContain('Z9Z')
+    expect(pending.creates).toHaveLength(1)
+    // Guardar sends it.
+    await pending.save('')
+    expect(JSON.stringify(sent[1])).toContain('Z9Z')
+  })
 })

@@ -516,7 +516,8 @@ async function addRows() {
       })
       for (const field of createFormulas.value) delete values[field]
       const label = [c.markId || c.species, formatMinutes(c.minutes)].filter(Boolean).join(' ')
-      const item = pending.addCreate(MODULE, label || 'monitoreo', values)
+      // The walk waits for Guardar: automatic saving would write rows whose species are still to identify.
+      const item = pending.addCreate(MODULE, label || 'monitoreo', values, { manual: true })
       const shownLabel = [c.markId, c.species || 'sin especie', formatMinutes(c.minutes)].filter(Boolean).join(' ')
       photoIndex.value[item.clientId] = { photos: c.photos, text: c.text, label: shownLabel }
     }

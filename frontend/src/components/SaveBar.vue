@@ -15,6 +15,8 @@ const reviewing = ref(false)
 /** Pending cells that are not being saved, and why (the save bar shows the first reason). */
 const issues = computed(() => Object.values(pending.issues))
 const errorCount = computed(() => issues.value.length)
+/** A walk's captures wait for Guardar (automatic saving leaves them). */
+const waitingRows = computed(() => pending.creates.filter(c => c.manual).length)
 const cells = (n: number) => `${n} ${n === 1 ? 'celda' : 'celdas'}`
 
 async function save(reason = '') {
@@ -91,7 +93,10 @@ function discard() {
       <span class="truncate font-normal">{{ issues[0] }}</span>
     </button>
     <span v-if="!online" class="rounded bg-stone-700 px-2 py-0.5 text-xs text-white">Sin conexión</span>
-    <span v-if="pending.autoSave && pending.autoBlocked" class="text-xs text-amber-900">{{ pending.autoBlocked }}</span>
+    <span v-if="pending.autoSave && waitingRows" class="text-xs text-amber-900">
+      {{ waitingRows }} {{ waitingRows === 1 ? 'fila del recorrido espera' : 'filas del recorrido esperan' }} a que pulses Guardar
+    </span>
+    <span v-else-if="pending.autoSave && pending.autoBlocked" class="text-xs text-amber-900">{{ pending.autoBlocked }}</span>
     <span v-else-if="!pending.autoSave" class="hint hidden md:inline">Se conservan en este dispositivo hasta que guardes.</span>
     <div class="ml-auto flex flex-wrap items-center gap-2">
       <label
