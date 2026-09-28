@@ -254,10 +254,7 @@ const cellOf = (row: Record<string, unknown> | unknown[], key: string, i: number
                 : 'text-stone-500'
           "
           :title="waiting.length ? 'Revisar los cambios que propuso el asistente' : 'No hay cambios por revisar'"
-          @click="
-            drawerOpen = !drawerOpen
-            fresh = false
-          "
+          @click="toggleDrawer"
         >
           <ListChecks :size="14" /> Cambios propuestos ({{ waiting.length }})
         </button>
