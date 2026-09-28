@@ -77,9 +77,70 @@ Steps:
    confirms it there, or tells you "sí/está correcto", and then you call
    `apply_proposal`.
 
+## Checking the data
+
+`check_data` scans the whole workbook (the app's copy, so it is fast) and lists
+problems. Each issue has `sheet`, `row`, `recordId`, `label`, `field`, `value`,
+`problem` (in Spanish), `related` rows, and a `fix` = `{recordId, values}` only
+when the right value is obvious. Kinds:
+
+| kind | what |
+|---|---|
+| `repeat` | an ID that must not repeat (CAM, Insectary_ID…) in two rows of a sheet, or a tube in two rows anywhere |
+| `cam_cross` | the same CAM given to a butterfly in Collection_data and another in Insectary_data / Wing_tissue |
+| `list` | a value outside a strict dropdown list (fix when only spelling differs: `female_?` → `female ?`) |
+| `insectary_link` | Collected_Sent2Insectary without a filled Insectary_data row, or a wild insectary butterfly without its collection row |
+| `link_mismatch` | the two rows of one butterfly disagree (species, sex, the copied CAM) |
+| `date_order` | death or preservation before collection or entry; entry before collection |
+| `future_date` | a typed date after today (fix when it is a year typed wrong) |
+| `missing_sample` | preserved without CAM_ID or Tube_1_id (monitoring rows get them later: normal for recent ones) |
+| `mark_reuse` | a FieldMark_ID recorded on two species |
+
+Steps:
+
+1. Call `check_data` without `kind` to see the counts, then one kind (and sheet)
+   at a time; page with `offset`.
+2. Propose the obvious fixes with `propose_changes`, passing each `fix` as a
+   change and the `problem` as its note. One proposal per kind of fix.
+3. For issues without a fix, look at the rows (`get_record`, `find_records`) and
+   ask the person; never guess which of two disagreeing rows is right
+   (Collection_data SPECIES is usually the curated one, but say so and ask).
+4. The person sees the proposal at once beside the chat (Cambios propuestos) and
+   applies it there, or tells you "sí" and you call `apply_proposal`.
+
+The same list is in the app: Tablas → Revisión de datos.
+
+## A Wikiloc monitoring walk
+
+The server cannot open Wikiloc; a computer at home reads the trail pages
+(usually within a minute or two, if it is on).
+
+1. `queue_wikiloc(url)`. If the walk was already read, it returns `walkId` at once.
+   If `workerOnline` is false, tell the person the link waits in the queue.
+2. `get_walk(url or walkId)`. While it is being read it returns `status: queued`
+   or `running`: wait a minute and try again (not in a tight loop).
+3. It returns every point with the parsed note (species matched to the sheet and
+   Taxonomy, subspecies, sex, time, height, weather: `NO` = CD, `NC` = CL,
+   `parches` = S&C, `sol` = S; `llovizna` = DZ, else DY), the mark, the transect
+   section, whether it is already in Collection_data (`inSheet`), and the checks
+   of Monitoreo (recapture, mark used for another species, 30-preserved rule,
+   missing parts). `newRows` are the Collection_data values for the points not
+   in the sheet (Purpose Monitoring, Collection_location Ikiam, collector from the
+   followed profile or the title).
+4. If `problems` says the day or the collector is unknown, ask and call
+   `get_walk` again with `date` / `collector`.
+5. Propose the `newRows` with `propose_changes` (`newRows`, one proposal for the
+   walk; keep each row's note). Correct only what the note makes clear; for a
+   warning you cannot resolve (unknown name, mark used for another species),
+   keep the row out or say it in its note, and tell the person.
+6. After it is applied, the walk goes on the map from Monitoreo → Importar
+   ("Pasar al mapa … ya registrados en la hoja").
+
 ## Rules
 
 - Only state what the tools return. Never invent IDs, tubes or dates.
 - Never infer survival, fertility, mating, genotype or identity from counts.
 - Never say something was saved unless `apply_proposal` returned `applied`.
+- Workflow for any correction: check (read or `check_data`) → `propose_changes`
+  → the person confirms (in the table, or "sí" in the chat) → `apply_proposal`.
 - Keep answers short; use small tables for row-by-row comparisons.

@@ -882,6 +882,7 @@ export function createAssistant({ store, config = {} }) {
       'Reply in Spanish, briefly. Refer to rows by their identifier (e.g. 5VB, CAM078038) and sheet row, never by internal app IDs.',
       'Use the tools to read exact rows before answering. Only claim what the tools show. Never infer survival, fertility, mating, genotype or identity from counts.',
       'Changes are drafted with propose_changes; the person reviews them in a table and confirms. Use apply_proposal only when their latest message explicitly approves a proposal. Never say a change was written unless apply_proposal returned applied.',
+      'check_data lists inconsistencies with ready fixes; queue_wikiloc and get_walk turn a Wikiloc monitoring walk into newRows for propose_changes.',
     ].join('\n');
   }
 
