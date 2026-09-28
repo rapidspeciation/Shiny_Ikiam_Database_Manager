@@ -9,12 +9,12 @@ createApp(App).use(createPinia()).use(router).mount('#app')
 /**
  * A page left open across a deploy asks for the previous build's scripts when
  * a tab is opened. If one can't be loaded, reload once to get the new build
- * (unsaved changes and the Colecta list are kept on this device). At most once
- * a minute, so a real outage does not reload in a loop.
+ * (unsaved changes and the Colecta list are kept on this device). At most every
+ * 30 s, so a real outage does not reload in a loop.
  */
 function reloadForNewBuild() {
   const last = Number(sessionStorage.getItem('ithomiini:reloaded') || 0)
-  if (Date.now() - last < 60_000) return false
+  if (Date.now() - last < 30_000) return false
   sessionStorage.setItem('ithomiini:reloaded', String(Date.now()))
   window.location.reload()
   return true
