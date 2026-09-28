@@ -271,6 +271,21 @@ const rowInfo = row =>
     section: clean(row.values.Transect_section) || null,
   };
 
+/**
+ * Rows of the day within ten minutes of the point (or of its row), so a person
+ * can pick another one when the note and its row disagree (e.g. a mark written
+ * on the next row of the sheet).
+ */
+function nearby(day, point, match) {
+  const minute = r => (typeof r.values.Collection_time === 'number' ? Math.round(r.values.Collection_time * 1440) : null);
+  const at = point.timeFromTrack ? null : point.minutes ?? (match.rows[0] ? minute(match.rows[0]) : null);
+  if (at === null) return [];
+  return day
+    .filter(r => minute(r) !== null && Math.abs(minute(r) - at) <= 10)
+    .sort((a, b) => Math.abs(minute(a) - at) - Math.abs(minute(b) - at))
+    .slice(0, 6);
+}
+
 /** Public (wklcdn) addresses of the photos, for the message to a collector. */
 function photoLinks(store, ids) {
   if (!ids?.length) return [];
@@ -349,7 +364,7 @@ export function rematchTracks(store, user = null) {
         changed,
         current: current.map(id => rowInfo(id && index.byId.get(id))),
         proposed: proposed.map(id => rowInfo(id && index.byId.get(id))),
-        candidates: [...new Map([...m.rows, ...m.candidates].map(r => [r.id, r])).values()].map(rowInfo),
+        candidates: [...new Map([...m.rows, ...m.candidates, ...nearby(day, points[p], m)].map(r => [r.id, r])).values()].map(rowInfo),
       });
     });
     if (count) walks.push({ source: 'track', id: t.id, date: t.date, collector: t.collector, name: t.name, doubts: count });

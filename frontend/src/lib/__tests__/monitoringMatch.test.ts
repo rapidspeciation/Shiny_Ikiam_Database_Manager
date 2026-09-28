@@ -48,7 +48,10 @@ describe('abbreviations in the notes', () => {
   })
   it('does not read weather or other words as names', () => {
     // "obscuro" is not Harjesia obscura, "flor" is not a Pseudoscada.
-    expect(parseCapture('B33 hembra seco obscuro 0.5m 10:06', taxa, taxa)).toMatchObject({ species: null, cloud: 'CD_(cloudy_dark)' })
+    expect(parseCapture('B33 hembra seco obscuro 0.5m 10:06', taxa, taxa)).toMatchObject({
+      species: null,
+      cloud: 'CD_(cloudy_dark)',
+    })
     expect(parseCapture('Eresia 0.5m 10:23 sun', taxa, taxa).species).toBe('Eresia eunice')
     expect(parseCapture('1 Seco claro 1m 8:50 fuera del monitoreo', taxa, taxa).species).toBeNull()
   })
@@ -58,7 +61,12 @@ describe('abbreviations in the notes', () => {
     expect(parseCapture('3-4 10:47 seco claro 50cm', taxa)).toMatchObject({ seq: 3, count: 2, minutes: 647 })
     expect(parseCapture('Dos, 1.20 seco oscuro, 10.19', taxa)).toMatchObject({ seq: 2, minutes: 619 })
     expect(parseCapture('3ra mariposa', taxa).seq).toBe(3)
-    expect(parseCapture('2 Seco, soleado, macho 2 m 10 03', taxa)).toMatchObject({ seq: 2, minutes: 603, height: 2, markId: null })
+    expect(parseCapture('2 Seco, soleado, macho 2 m 10 03', taxa)).toMatchObject({
+      seq: 2,
+      minutes: 603,
+      height: 2,
+      markId: null,
+    })
     expect(parseCapture('B42 recatch Macho seco, soleado 10 con 09', taxa)).toMatchObject({ minutes: 609, recaptureNote: true })
     expect(parseCapture('Seco, sol, nueve, 55,2 m', taxa).minutes).toBe(595)
   })
@@ -110,7 +118,13 @@ const AA = [
   day('11:14', 'Pseudoscada florula', 'female'),
   day('11:23', 'Hypothyris anastasia', 'male'),
   // Another collector the same day and minute: never used.
-  row({ Collector: 'CR - Carlos Robalino', Collection_date: 45908, Collection_time: 674 / 1440, SPECIES: 'Greta andromica', Sex: 'female' }),
+  row({
+    Collector: 'CR - Carlos Robalino',
+    Collection_date: 45908,
+    Collection_time: 674 / 1440,
+    SPECIES: 'Greta andromica',
+    Sex: 'female',
+  }),
 ]
 const NOTES = [
   'Female 9:03 sol 1m',
@@ -182,11 +196,41 @@ describe('pairing a walk with its rows (8 Sep 2025, AA)', () => {
 
 describe('ties and order', () => {
   const rows = [
-    row({ Collector: 'FCH - Franz Chandi', Collection_date: 45342, Collection_time: 550 / 1440, SPECIES: 'Oleria gunilla', Sex: 'male' }),
-    row({ Collector: 'FCH - Franz Chandi', Collection_date: 45342, Collection_time: 550 / 1440, SPECIES: 'Hypothyris anastasia', Sex: 'male' }),
-    row({ Collector: 'FCH - Franz Chandi', Collection_date: 45342, Collection_time: 575 / 1440, SPECIES: 'Oleria onega', Sex: 'female' }),
-    row({ Collector: 'FCH - Franz Chandi', Collection_date: 45342, Collection_time: 590 / 1440, SPECIES: 'Ithomia salapia', Sex: 'female' }),
-    row({ Collector: 'FCH - Franz Chandi', Collection_date: 45342, Collection_time: 600 / 1440, SPECIES: 'Oleria onega', Sex: 'male' }),
+    row({
+      Collector: 'FCH - Franz Chandi',
+      Collection_date: 45342,
+      Collection_time: 550 / 1440,
+      SPECIES: 'Oleria gunilla',
+      Sex: 'male',
+    }),
+    row({
+      Collector: 'FCH - Franz Chandi',
+      Collection_date: 45342,
+      Collection_time: 550 / 1440,
+      SPECIES: 'Hypothyris anastasia',
+      Sex: 'male',
+    }),
+    row({
+      Collector: 'FCH - Franz Chandi',
+      Collection_date: 45342,
+      Collection_time: 575 / 1440,
+      SPECIES: 'Oleria onega',
+      Sex: 'female',
+    }),
+    row({
+      Collector: 'FCH - Franz Chandi',
+      Collection_date: 45342,
+      Collection_time: 590 / 1440,
+      SPECIES: 'Ithomia salapia',
+      Sex: 'female',
+    }),
+    row({
+      Collector: 'FCH - Franz Chandi',
+      Collection_date: 45342,
+      Collection_time: 600 / 1440,
+      SPECIES: 'Oleria onega',
+      Sex: 'male',
+    }),
   ]
   it('marks two identical notes at the same minute as a tie, in walk order', () => {
     const points = ['M1 macho 9:10 parches 1m', 'M2 macho 9:10 1.5m parches'].map(t => parseCapture(t, taxa, taxa))

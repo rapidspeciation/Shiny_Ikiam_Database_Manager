@@ -173,6 +173,8 @@ export function taxaFrom(rows: TableRow[]): Taxa {
 
 function levenshtein(a: string, b: string) {
   if (a === b) return 0
+  // More letters apart than any tolerance: not worth the table (names are read for every word of a note).
+  if (Math.abs(a.length - b.length) > 2) return 3
   let prev = Array.from({ length: b.length + 1 }, (_, i) => i)
   for (let i = 1; i <= a.length; i++) {
     const cur = [i]
@@ -251,21 +253,24 @@ export function parseCapture(input: string, taxa: Taxa, local?: Taxa): Capture {
   // "Mariposa 1 y 2", "Marip 3 4 y 5": several butterflies noted at one point.
   const many = take(/^\s*(?:mariposas?|marip\.?)\s+((?:\d{1,3}(?:\s*(?:,|y|e)\s*|\s+))*\d{1,3})\b(?!\s*(?:[.,:]\d|m\b|cm\b))/)
   // MJS starts with the point number, often twice ("4 4 50cm", "4 y 5 4 y 5 9:39", "3-4 10:47").
-  const leading = many
-    ? null
-    : take(/^\s*(\d{1,3}(?:\s*(?:y|-)\s*\d{1,3})*)(?:\s+\1)?\b(?!\s*(?:[.,:h]\s?\d|m\b|cm\b|con\b))/)
+  const leading = many ? null : take(/^\s*(\d{1,3}(?:\s*(?:y|-)\s*\d{1,3})*)(?:\s+\1)?\b(?!\s*(?:[.,:h]\s?\d|m\b|cm\b|con\b))/)
   const numbers = many ? many[1].match(/\d+/g)!.map(Number) : leading ? leading[1].match(/\d+/g)!.map(Number) : []
-  const seq = numbers.length
-    ? null
-    : take(/^\s*m\s?(\d{1,3})\b/) ||
-      take(/^\s*(\d{1,2})\s?(?:ra|da|ro|do|ta|to|er|°|ª|º)\b/) ||
-      take(new RegExp(`^\\s*(${NUMBER_WORDS.join('|')})\\b`))
+  const mSeq = numbers.length ? null : take(/^\s*m\s?(\d{1,3})\b/)
+  const seq =
+    mSeq ||
+    (numbers.length
+      ? null
+      : take(/^\s*(\d{1,2})\s?(?:ra|da|ro|do|ta|to|er|°|ª|º)\b/) || take(new RegExp(`^\\s*(${NUMBER_WORDS.join('|')})\\b`)))
   // "id: B69", or a mark written on its own as some collectors do ("B51 9:51 female …").
   // An M mark later in the note also counts ("… t4 M61"); at the start, "M1" is the point number.
   const mark =
     take(/\bid\s*[:#.]?\s*([a-z]{1,3})\s*-?\s*(\d{1,4})\b/) ||
     // ("2 m 10 03" is a height and a time: an m after a number is the unit.)
     take(/(?<=\S.*)\b([ab]|(?<!\s\d+(?:[.,]\d+)?\s?)m)\s?(\d{1,3})\b(?![.,:]\d)|\b([ab])\s?(\d{1,3})\b(?![.,:]\d)/)
+  // An M number at the start is FCH's point number (M1–M15), but a mark in AA's 2024
+  // notes ("M45 recatch 0,5m 9:59"): above 30, or when the note says recapture, and no other mark.
+  const leadingMark =
+    !mark && mSeq && (Number(mSeq[1]) > 30 || /\b(recap|recatch|reencontr)/.test(text)) ? `M${Number(mSeq[1])}` : null
   // "9:20", "9h20", or "10.19" (a dot, when it cannot be a height: hour 6–18, two-digit minutes, no unit);
   // dictated times: "10, 43", "10 con 09", "10 05", "nueve, 55".
   const time =
@@ -295,7 +300,7 @@ export function parseCapture(input: string, taxa: Taxa, local?: Taxa): Capture {
     text: input,
     seq: numbers.length
       ? numbers[0]
-      : seq
+      : seq && !leadingMark
         ? NUMBER_WORDS.includes(seq[1])
           ? NUMBER_WORDS.indexOf(seq[1]) + 1
           : Number(seq[1])
@@ -309,7 +314,7 @@ export function parseCapture(input: string, taxa: Taxa, local?: Taxa): Capture {
     height: h !== null && Number.isFinite(h) ? Math.round(h * 100) / 100 : null,
     cloud,
     rain,
-    markId: mark ? `${(mark[1] || mark[3]).toUpperCase()}${Number(mark[2] || mark[4])}` : null,
+    markId: mark ? `${(mark[1] || mark[3]).toUpperCase()}${Number(mark[2] || mark[4])}` : leadingMark,
     recaptureNote: !!recapture,
     rest,
     count: Math.max(1, numbers.length),
@@ -318,6 +323,16 @@ export function parseCapture(input: string, taxa: Taxa, local?: Taxa): Capture {
 }
 
 const capital = (w: string) => w.charAt(0).toUpperCase() + w.slice(1)
+/** Species split into lower-case genus and epithet, once per list of names. */
+const splitNames = new WeakMap<Taxa, [string, string, string][]>()
+function namesOf(taxa: Taxa) {
+  let out = splitNames.get(taxa)
+  if (!out) {
+    out = [...taxa.keys()].map(s => [s, ...(s.toLowerCase().split(' ') as [string, string])])
+    splitNames.set(taxa, out)
+  }
+  return out
+}
 const bare = (w: string) => w.replace(/\.$/, '')
 /** "f. travella" is written "travella". */
 const subName = (s: string) => s.toLowerCase().replace(/^f\.\s*/, '')
@@ -343,7 +358,12 @@ interface TaxonHit {
 function subspeciesAfter(species: string, word: string | undefined, taxa: Taxa, local: Taxa | undefined, free: boolean) {
   const subs = taxa.get(species) || []
   const here = local?.get(species) || []
-  const only = { subspecies: here.length === 1 ? here[0] : null, used: 0, known: true, guess: here.length === 1 ? ('ikiam' as const) : null }
+  const only = {
+    subspecies: here.length === 1 ? here[0] : null,
+    used: 0,
+    known: true,
+    guess: here.length === 1 ? ('ikiam' as const) : null,
+  }
   if (!word) return only
   const w = bare(word)
   const full = subs.find(s => levenshtein(w, subName(s)) <= tolerance(subName(s)))
@@ -391,9 +411,8 @@ export function findTaxon(words: string[], taxa: Taxa, local?: Taxa, original?: 
     if (next) {
       const abbreviated = words[k].endsWith('.') || g.length <= 4
       const found: { species: string; cost: number; short: boolean }[] = []
-      for (const species of taxa.keys()) {
-        const [genus, epithet] = species.toLowerCase().split(' ')
-        const gd = g.length >= 4 ? levenshtein(g, genus) : 99
+      for (const [species, genus, epithet] of namesOf(taxa)) {
+        const gd = g.length >= 4 && genus[0] === g[0] ? levenshtein(g, genus) : 99
         // A typo in the genus costs half: the epithet says more ("hyposaca anchiala" is not "anchiala" alone).
         const gc = gd <= tolerance(genus) ? gd / 2 : abbreviated && genus.startsWith(g) ? 0.3 : -1
         if (gc < 0) continue
@@ -403,7 +422,9 @@ export function findTaxon(words: string[], taxa: Taxa, local?: Taxa, original?: 
           ed <= tolerance(epithet)
             ? ed
             : epithet.startsWith(next) && (next.length >= 3 || (gc < 0.3 && next.length >= 1))
-              ? next.length >= 3 ? 0.3 : 0.6
+              ? next.length >= 3
+                ? 0.3
+                : 0.6
               : -1
         if (ec < 0) continue
         const short = gc === 0.3 || (ec >= 0.3 && ed > tolerance(epithet))
@@ -429,10 +450,9 @@ export function findTaxon(words: string[], taxa: Taxa, local?: Taxa, original?: 
     if (g.length < 3) continue
     // The epithet alone ("Numata", "Salapia", "Pol p").
     const alone: { species: string; cost: number }[] = []
-    for (const species of here.keys()) {
-      const epithet = species.toLowerCase().split(' ')[1]
-      const d = levenshtein(g, epithet)
-      if (g.length >= 5 && d <= (epithet.length >= 8 ? 2 : 1)) alone.push({ species, cost: 1 + d })
+    for (const [species, , epithet] of namesOf(here)) {
+      const d = g.length >= 5 ? levenshtein(g, epithet) : 99
+      if (d <= (epithet.length >= 8 ? 2 : 1)) alone.push({ species, cost: 1 + d })
       else if (g.length >= 5 && epithet.startsWith(g)) alone.push({ species, cost: 1.3 })
       else if (
         g.length === 3 &&
@@ -445,14 +465,32 @@ export function findTaxon(words: string[], taxa: Taxa, local?: Taxa, original?: 
     const epithetHit = alone.length ? unique(alone) : null
     if (epithetHit) {
       const sub = subspeciesAfter(epithetHit.species, words[k + 1], taxa, local, false)
-      offer({ species: epithetHit.species, subspecies: sub.subspecies, known: sub.known, subspeciesGuess: sub.guess, start: k, used: 1 + sub.used, cost: epithetHit.cost })
+      offer({
+        species: epithetHit.species,
+        subspecies: sub.subspecies,
+        known: sub.known,
+        subspeciesGuess: sub.guess,
+        start: k,
+        used: 1 + sub.used,
+        cost: epithetHit.cost,
+      })
     }
     if (g.length < 5) continue
     // A genus with one species at Ikiam ("ceratinia" → Ceratinia tutia).
-    const ofGenus = [...here.keys()].filter(s => levenshtein(g, s.toLowerCase().split(' ')[0]) <= (g.length >= 7 ? 1 : 0))
+    const ofGenus = namesOf(here)
+      .filter(([, genus]) => (g.length >= 7 ? levenshtein(g, genus) <= 1 : g === genus))
+      .map(([species]) => species)
     if (ofGenus.length === 1) {
       const sub = subspeciesAfter(ofGenus[0], words[k + 1], taxa, local, false)
-      offer({ species: ofGenus[0], subspecies: sub.subspecies, known: sub.known, subspeciesGuess: sub.guess, start: k, used: 1 + sub.used, cost: 1.7 })
+      offer({
+        species: ofGenus[0],
+        subspecies: sub.subspecies,
+        known: sub.known,
+        subspeciesGuess: sub.guess,
+        start: k,
+        used: 1 + sub.used,
+        cost: 1.7,
+      })
     }
     // A subspecies found in one species only ("deceptus", "bicolora").
     const bySub: { species: string; sub: string; cost: number }[] = []
@@ -465,7 +503,15 @@ export function findTaxon(words: string[], taxa: Taxa, local?: Taxa, original?: 
       }
     const subHit = bySub.length ? unique(bySub) : null
     if (subHit)
-      offer({ species: subHit.species, subspecies: (subHit as (typeof bySub)[number]).sub, known: true, subspeciesGuess: 'prefix', start: k, used: 1, cost: subHit.cost })
+      offer({
+        species: subHit.species,
+        subspecies: (subHit as (typeof bySub)[number]).sub,
+        known: true,
+        subspeciesGuess: 'prefix',
+        start: k,
+        used: 1,
+        cost: subHit.cost,
+      })
   }
   if (best) {
     const { cost: _cost, ...hit } = best as TaxonHit & { cost: number }
@@ -474,10 +520,20 @@ export function findTaxon(words: string[], taxa: Taxa, local?: Taxa, original?: 
   // A species not in the sheet yet, written in full at the start: kept as written, to be reviewed
   // (when its genus is known or it is written with a capital, not "nubkado srci").
   const [g, e] = [bare(words[0] || ''), words[1] || '']
-  const named = [...taxa.keys()].some(s => s.toLowerCase().startsWith(`${g} `)) || (!!original && new RegExp(`\\b${capital(g)}\\b`).test(original))
+  const named =
+    [...taxa.keys()].some(s => s.toLowerCase().startsWith(`${g} `)) ||
+    (!!original && new RegExp(`\\b${capital(g)}\\b`).test(original))
   if (g.length < 3 || e.length < 3 || !named) return none
   const sub = words[2] && words[2].length > 2 ? words[2] : null
-  return { species: `${capital(g)} ${e}`, subspecies: sub, known: false, used: sub ? 3 : 2, start: 0, subspeciesGuess: null, unknownSpecies: true }
+  return {
+    species: `${capital(g)} ${e}`,
+    subspecies: sub,
+    known: false,
+    used: sub ? 3 : 2,
+    start: 0,
+    subspeciesGuess: null,
+    unknownSpecies: true,
+  }
 }
 
 // ------------------------------------------------------ rows for the sheet
@@ -1322,6 +1378,8 @@ interface PointFacts {
   minute: number | null
   approx: number | null
   mark: string | null
+  /** Its mark is on another row of the day (a slip in the note), so a row with another mark may still be it. */
+  markElsewhere: boolean
   species: string
   sex: 'female' | 'male' | null
   count: number
@@ -1334,7 +1392,7 @@ function rowFacts(rows: TableRow[]): RowFacts[] {
     .map((row, rank) => ({
       row,
       minute: minuteOfRow(row),
-      mark: hasMark(row) ? markOf(row) : null,
+      mark: hasMark(row) ? baseMark(markOf(row)) : null,
       species: binomial(row.values.SPECIES),
       sex: sexOf(row.values.Sex),
       rank,
@@ -1367,6 +1425,8 @@ function pairCost(p: PointFacts, r: RowFacts): { cost: number; conflicts: MatchC
     conflicts.push('sexo')
   }
   if (p.mark && r.mark && p.mark !== r.mark) {
+    // Two marks are two butterflies (a recapture not entered, next to a new mark), unless the note's mark is taken.
+    if (!p.markElsewhere && !sameNumber(p.mark, r.mark)) return null
     cost += 4
     conflicts.push('marca')
   } else if (p.mark && !r.mark) {
@@ -1376,9 +1436,18 @@ function pairCost(p: PointFacts, r: RowFacts): { cost: number; conflicts: MatchC
   return cost < UNPAIRED ? { cost, conflicts } : null
 }
 
-/** Whether a point placed by order can be this row: species and sex do not disagree (a mark that does is listed as a doubt). */
+/** A mark without the suffix a row may add when it was given twice ("A13.1", "A13.2" → A13). */
+const baseMark = (mark: string) => /^[A-Z]+\d+/.exec(mark)?.[0] ?? mark
+/** The same number with another letter (MJS's "a66" for the sheet's M66): a slip, not another butterfly. */
+const sameNumber = (a: string, b: string) => /\d+/.exec(a)?.[0] === /\d+/.exec(b)?.[0]
+
+/** Whether a point placed by order can be this row: species, sex and mark do not disagree (a mark taken by another row may be a slip: listed as a doubt). */
 function fits(p: PointFacts, r: RowFacts) {
-  return !(p.species && r.species && p.species !== r.species) && !(p.sex && r.sex && p.sex !== r.sex)
+  return (
+    !(p.species && r.species && p.species !== r.species) &&
+    !(p.sex && r.sex && p.sex !== r.sex) &&
+    !(p.mark && r.mark && p.mark !== r.mark && !p.markElsewhere && !sameNumber(p.mark, r.mark))
+  )
 }
 const markConflict = (p: PointFacts, r: RowFacts): MatchConflict[] => (p.mark && p.mark !== r.mark ? ['marca'] : [])
 
@@ -1564,7 +1633,8 @@ function placeByOrder(slots: Slot[], order: number[], rows: RowFacts[], taken: S
     for (let i = 1; i <= n; i++)
       for (let j = 1; j <= m; j++) {
         dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1])
-        if (fits(run[i - 1].point, window[j - 1])) dp[i][j] = Math.max(dp[i][j], dp[i - 1][j - 1] + score(1, cost(run[i - 1], window[j - 1])))
+        if (fits(run[i - 1].point, window[j - 1]))
+          dp[i][j] = Math.max(dp[i][j], dp[i - 1][j - 1] + score(1, cost(run[i - 1], window[j - 1])))
       }
     let [i, j] = [n, m]
     while (i > 0 && j > 0) {
@@ -1605,7 +1675,8 @@ function matchDay<T extends Capture>(rows: TableRow[], captures: T[], fixed: Map
       index,
       minute: fromTrack ? null : c.minutes,
       approx: fromTrack ? c.minutes : null,
-      mark: c.markId ? c.markId.toUpperCase() : null,
+      mark: c.markId ? baseMark(c.markId.toUpperCase()) : null,
+      markElsewhere: !!c.markId && facts.some(r => r.mark === baseMark(c.markId!.toUpperCase())),
       species: c.species && !c.unknownSpecies ? binomial(c.species) : '',
       sex: c.sex,
       count: Math.max(1, c.count || 1),
@@ -1626,7 +1697,9 @@ function matchDay<T extends Capture>(rows: TableRow[], captures: T[], fixed: Map
     const slot = slots.find(s => s.point.index === i && !s.row)
     const p = slot?.point
     if (!slot || !p?.mark) continue
-    const options = facts.filter(r => !taken.has(r.row.id) && r.mark === p.mark && !(p.species && r.species && p.species !== r.species))
+    const options = facts.filter(
+      r => !taken.has(r.row.id) && r.mark === p.mark && !(p.species && r.species && p.species !== r.species),
+    )
     const delta = (r: RowFacts) => (p.minute !== null && r.minute !== null ? Math.abs(p.minute - r.minute) : 1e6)
     const r = options.sort((a, b) => delta(a) - delta(b))[0]
     if (!r) continue
@@ -1657,7 +1730,13 @@ function matchDay<T extends Capture>(rows: TableRow[], captures: T[], fixed: Map
   return captures.map((_, index): PointMatch => {
     if (manual.has(index)) {
       const chosen = manual.get(index)!
-      return { rows: chosen.map(r => r.row), confidence: chosen.length ? 'sure' : 'none', candidates: [], conflicts: [], manual: true }
+      return {
+        rows: chosen.map(r => r.row),
+        confidence: chosen.length ? 'sure' : 'none',
+        candidates: [],
+        conflicts: [],
+        manual: true,
+      }
     }
     const own = slots.filter(s => s.point.index === index)
     const placed = own.filter(s => s.row)
@@ -1774,7 +1853,8 @@ export function existingRow(rows: TableRow[], date: string, c: Capture): TableRo
     index: 0,
     minute: c.minutes,
     approx: null,
-    mark: c.markId ? c.markId.toUpperCase() : null,
+    mark: c.markId ? baseMark(c.markId.toUpperCase()) : null,
+    markElsewhere: false,
     species: c.species && !c.unknownSpecies ? binomial(c.species) : '',
     sex: c.sex,
     count: 1,
