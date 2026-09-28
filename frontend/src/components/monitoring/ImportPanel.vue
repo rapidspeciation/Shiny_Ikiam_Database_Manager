@@ -27,6 +27,7 @@ import {
   captureValues,
   collectorFromName,
   collectorLabel,
+  doubtfulMatch,
   existingRow,
   formatMinutes,
   hasMark,
@@ -102,6 +103,7 @@ const collectorLists = computed(() =>
   monitoringCollectors(options.value.Collector || [], rows.value, tables.tables[DAY_SHEET]?.rows || []),
 )
 const people = computed(() => [...collectorLists.value.usual, ...collectorLists.value.others])
+const isReviewer = computed(() => ['reviewer', 'admin'].includes(session.user?.role || ''))
 const initials = computed(() => collector.value.split(' - ')[0].trim())
 const shortName = (c: string) => collectorLabel(c, people.value)
 
@@ -290,20 +292,35 @@ const preservedBySpecies = computed(() =>
   preservedForRule(table.value?.rows || [], /^\d{4}-\d{2}-\d{2}$/.test(date.value) ? isoToSerial(date.value) : undefined),
 )
 
+/** The walk's points paired with the collector's rows of that day (the same matcher as the map and the assistant). */
+const pairing = computed(() =>
+  table.value && /^\d{4}-\d{2}-\d{2}$/.test(date.value) && collector.value
+    ? matchWalk(rows.value, date.value, collector.value, captures.value, { shift: false })
+    : null,
+)
+const HOW: Record<string, string> = { tie: 'empate con otra fila', order: 'orden del recorrido', sure: 'hora', mark: 'marca' }
 const checks = computed(() =>
-  captures.value.map((c, i) =>
+  captures.value.map((c, i) => {
     // Until the sheet is loaded, marks and names cannot be checked yet.
-    table.value
-      ? reviewCapture(c, i, {
-          rows: rows.value,
-          date: date.value,
-          captures: captures.value,
-          roles: roles.value,
-          preserved: preservedBySpecies.value,
-          isIthomiini,
-        })
-      : { existing: null, recapture: null, list: [{ kind: 'info' as const, text: 'Cargando la hoja…' }] },
-  ),
+    if (!table.value) return { existing: null, recapture: null, list: [{ kind: 'info' as const, text: 'Cargando la hoja…' }] }
+    const m = pairing.value?.matches[i]
+    const review = reviewCapture(c, i, {
+      rows: rows.value,
+      date: date.value,
+      captures: captures.value,
+      roles: roles.value,
+      preserved: preservedBySpecies.value,
+      isIthomiini,
+      ...(m ? { existing: m.rows[0] ?? null } : {}),
+    })
+    // A doubtful pairing is said here and listed in Dudas de emparejamiento once on the map.
+    if (m && m.rows.length && doubtfulMatch(m))
+      review.list.push({
+        kind: 'warn',
+        text: `Fila ${m.rows[0].row} por ${HOW[m.confidence]}${m.conflicts.filter(k => k !== 'hora').length ? ` (no coincide: ${m.conflicts.filter(k => k !== 'hora').join(', ')})` : ''}: revisar en Dudas`,
+      })
+    return review
+  }),
 )
 const included = computed(() => captures.value.filter((_, i) => !skip.value.has(i) && !checks.value[i].existing))
 function toggle(i: number) {
@@ -326,7 +343,13 @@ async function sendTrack(t: {
   /** Captures already paired with their sheet rows (bulk import). */
   paired?: boolean
 }) {
-  const withRows = t.paired ? t.captures : t.captures.map(raw => withSheetValues(raw, existingRow(rows.value, t.date, raw)))
+  // Paired as a whole walk (each row once, the closest); without a collector, each point on its own.
+  const match = t.paired ? null : t.collector ? matchWalk(rows.value, t.date, t.collector, t.captures, { shift: false }) : null
+  const withRows = t.paired
+    ? t.captures
+    : t.captures.map((raw, i) =>
+        withSheetValues(raw, match ? (match.matches[i].rows[0] ?? null) : existingRow(rows.value, t.date, raw)),
+      )
   const recaptures = walkMarkRoles(rows.value, t.date, withRows)
   await api('monitoring/tracks', {
     method: 'POST',
@@ -376,7 +399,9 @@ async function storeTrack() {
  * Waiting Wikiloc walks that are already in the sheet: every capture that has
  * its row goes on the map. Points without a row are left out (field notes that
  * were never entered, usually Wikiloc mistakes). Walks without any point go on
- * the map as a trail; walks none of whose points are in the sheet stay for review.
+ * the map as a trail; walks none of whose points are in the sheet stay for review,
+ * and so do walks with a doubtful pairing (a tie, or placed only by order): those
+ * are paired by hand in Dudas de emparejamiento.
  */
 const registered = computed(() => {
   if (!table.value) return []
@@ -385,9 +410,15 @@ const registered = computed(() => {
     .map(w => {
       const all = w.waypoints.map(p => locateCapture({ ...p, time: null }, taxa.value, localTaxa.value))
       const match = matchWalk(rows.value, w.date!, w.collector!, all)
-      return { w, date: match.date, captures: match.pairs.map(p => withSheetValues(p.capture, p.row)), left: match.left.length }
+      return {
+        w,
+        date: match.date,
+        captures: match.pairs.map(p => withSheetValues(p.capture, p.row)),
+        left: match.left.length,
+        doubtful: match.matches.some(doubtfulMatch),
+      }
     })
-    .filter(x => x.captures.length || !x.w.waypoints.length)
+    .filter(x => (x.captures.length && !x.doubtful) || !x.w.waypoints.length)
 })
 const leftOut = computed(() => registered.value.reduce((n, x) => n + x.left, 0))
 async function registerAll() {
@@ -782,6 +813,15 @@ const dayLabel = (iso: string) => formatSerial(isoToSerial(iso))
         </button>
         <button class="ml-auto text-xs text-stone-700 underline" :aria-expanded="showStored" @click="showStored = !showStored">
           Ya en el mapa ({{ tracks.length }})
+        </button>
+        <!-- Reviewers match every stored walk again there, and anyone of the team pairs the doubtful points. -->
+        <button
+          v-if="session.canEdit && tracks.length"
+          class="text-xs text-stone-700 underline"
+          title="Puntos cuyo emparejamiento con la hoja es dudoso, y lo que cambiaría al emparejar de nuevo"
+          @click="router.replace({ query: { vista: 'dudas' } })"
+        >
+          {{ isReviewer ? 'Emparejar de nuevo y dudas' : 'Dudas de emparejamiento' }}
         </button>
       </div>
       <div

@@ -11,13 +11,26 @@ import { individuals, type Individual } from '../../lib/monitoringMap'
 /**
  * "Recapturas": every marked butterfly caught more than once, with the photos
  * of its first capture and of each recapture side by side, so the mark and the
- * species can be checked by eye.
+ * species can be checked by eye. Recaptures that are not rows of the sheet
+ * (written only in notes, or only in Wikiloc) are shown too, marked as such.
  */
-const { rows, tracks } = useMonitoring()
+const { rows, tracks, outsideRecaptures } = useMonitoring()
 const route = useRoute()
 const router = useRouter()
 
-const all = computed(() => individuals(markHistories(rows.value), tracks.value))
+const all = computed(() => individuals(markHistories(rows.value), tracks.value, outsideRecaptures.value))
+const outsideCount = computed(() => outsideRecaptures.value.length)
+const speciesOf = (i: Individual) => String(i.events.find(e => e.row)?.row?.values.SPECIES ?? '')
+const OUTSIDE: Record<string, string> = {
+  nota: 'solo en notas',
+  wikiloc: 'solo en Wikiloc',
+  'nota y Wikiloc': 'solo en notas y Wikiloc',
+}
+const OUTSIDE_HINT: Record<string, string> = {
+  nota: 'Escrita en las notas de la fila de marcaje; no es una fila de la hoja',
+  wikiloc: 'Un punto de Wikiloc con la marca; no es una fila de la hoja',
+  'nota y Wikiloc': 'Escrita en las notas de la fila de marcaje y con su punto en Wikiloc; no es una fila de la hoja',
+}
 
 const chosen = computed({
   get: () => String(route.query.individuo ?? ''),
@@ -31,7 +44,7 @@ const sort = ref<'recent' | 'captures' | 'span'>('recent')
 const speciesOptions = computed<FilterOption[]>(() => {
   const n = new Map<string, number>()
   for (const i of all.value) {
-    const s = String(i.events[0].row.values.SPECIES ?? '')
+    const s = speciesOf(i)
     n.set(s, (n.get(s) || 0) + 1)
   }
   return [...n]
@@ -44,7 +57,7 @@ const shown = computed(() => {
   const list = all.value.filter(
     i =>
       (!q || `${i.id} ${i.species}`.toLowerCase().includes(q)) &&
-      (!species.value.length || species.value.includes(String(i.events[0].row.values.SPECIES ?? ''))) &&
+      (!species.value.length || species.value.includes(speciesOf(i))) &&
       (!onlyPhotos.value || i.photos > 0),
   )
   const last = (i: Individual) => i.events.at(-1)?.date ?? 0
@@ -117,7 +130,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </label>
       </template>
       <p class="hint ml-auto pb-2">
-        {{ shown.length }} de {{ all.length }} individuos recapturados (misma marca y misma especie)
+        {{ shown.length }} de {{ all.length }} individuos recapturados (misma marca y misma especie)<template v-if="outsideCount"
+          >; {{ outsideCount }} recapturas solo en notas o en Wikiloc (no son filas de la hoja)</template
+        >
       </p>
     </div>
 
@@ -137,7 +152,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           </button>
         </header>
         <ol class="flex gap-3 overflow-x-auto p-3">
-          <li v-for="(e, n) in i.events" :key="e.row.id" class="flex shrink-0 items-start gap-3">
+          <li v-for="(e, n) in i.events" :key="e.row?.id ?? `${i.key}-${n}`" class="flex shrink-0 items-start gap-3">
             <div
               v-if="n"
               class="flex h-36 w-16 flex-col items-center justify-center text-center text-xs text-stone-500"
@@ -167,11 +182,19 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               </div>
               <figcaption class="mt-1 text-xs leading-snug">
                 <span class="font-medium">{{ n ? `Recaptura ${n}` : 'Marcado' }}</span> · {{ date(e.date) }}<br />
+                <span
+                  v-if="e.outside"
+                  class="mr-1 inline-block rounded bg-amber-100 px-1 font-medium text-amber-800"
+                  :title="OUTSIDE_HINT[e.outside]"
+                  >{{ OUTSIDE[e.outside] }}</span
+                >
                 <span class="text-stone-500">
                   {{ e.collector }}<template v-if="e.section"> · T{{ e.section }}</template
-                  ><template v-if="e.minutes !== null"> · {{ formatMinutes(e.minutes) }}</template> · fila {{ e.row.row }}
+                  ><template v-if="e.minutes !== null"> · {{ formatMinutes(e.minutes) }}</template
+                  ><template v-if="e.row"> · fila {{ e.row.row }}</template>
                   <template v-if="e.photos.length > 2"> · +{{ e.photos.length - 2 }} fotos</template>
                 </span>
+                <span v-if="e.note" class="mt-0.5 line-clamp-2 block text-stone-500" :title="e.note">“{{ e.note }}”</span>
               </figcaption>
             </figure>
           </li>
@@ -191,7 +214,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <i>{{ viewer.individual.species }}</i>
         <span class="text-stone-300">
           {{ current.capture === 1 ? 'Marcado' : `Recaptura ${current.capture - 1}` }} · {{ date(current.event.date) }} ·
-          {{ current.event.collector }} · foto {{ viewer.index + 1 }} de {{ viewerPhotos.length }}
+          {{ current.event.collector }}<template v-if="current.event.outside"> · {{ OUTSIDE[current.event.outside] }}</template> ·
+          foto {{ viewer.index + 1 }} de {{ viewerPhotos.length }}
         </span>
         <button class="ml-auto rounded p-1 hover:bg-white/10" title="Cerrar (Esc)" @click="viewer = null">
           <X :size="20" />

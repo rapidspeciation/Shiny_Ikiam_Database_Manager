@@ -4,6 +4,8 @@ import {
   facetCounts,
   individuals,
   passes,
+  recapturesOutsideSheet,
+  type LoosePoint,
   rankColors,
   type MapCapture,
   type MapFilters,
@@ -136,5 +138,91 @@ describe('recaptured individuals', () => {
     expect(b51.events[1].metres).toBe(11)
     expect(b51.photos).toBe(3)
     expect(b51.span).toBe(33)
+  })
+})
+
+describe('recaptures that are not rows of the sheet', () => {
+  const rows = [
+    row({
+      SPECIES: 'Hyposcada illinissa',
+      Sex: 'male',
+      FieldMark_ID: 'M45',
+      Release_Collect: 'Mark_Released',
+      Collection_date: 45455,
+      Collector: 'FCH - Franz Chandi',
+      Notes_Collection_data:
+        '12/6/24 FCH: Monitoring by FCH butterfly M3 | 7/72024 AA: recatch&realease transect=4, date=7/7/24, time=9:59, collector=AA, Rainfall=DY, height=0.5m  | 16/8/2024 AA: recatch&realease transect=4, date=16/8/24, time=10:38, collector=AA',
+    }),
+    row({
+      SPECIES: 'Hyposcada illinissa',
+      FieldMark_ID: 'B32',
+      Release_Collect: 'Mark_Released',
+      Collection_date: 46089,
+      Collector: 'AA - Alex Arias',
+      Notes_Collection_data: '12/4/26 AA: Recapture Cloudy Dark/10:10am/flight height 1,5m',
+    }),
+    row({
+      SPECIES: 'Oleria gunilla',
+      Sex: 'male',
+      FieldMark_ID: 'B35',
+      Collection_date: 46100,
+      Collector: 'MJS - María José Sánchez',
+    }),
+    row({ SPECIES: 'Oleria onega', FieldMark_ID: 'B36', Collection_date: 46100, Collector: 'MJS - María José Sánchez' }),
+    row({ SPECIES: 'Oleria onega', FieldMark_ID: 'B36', Collection_date: 46124, Collector: 'AA - Alex Arias' }),
+  ]
+  const point = (p: Partial<LoosePoint>): LoosePoint => ({
+    date: '2026-04-12',
+    collector: 'AA - Alex Arias',
+    text: '',
+    markId: null,
+    species: null,
+    sex: null,
+    minutes: null,
+    section: null,
+    lat: 0,
+    lon: 0,
+    photos: [],
+    ...p,
+  })
+  const points = [
+    point({ text: 'NO B32 10:10 1,5m', markId: 'B32', minutes: 610, photos: ['w1'] }),
+    point({
+      text: 'B35 Oleria gunilla lota male 10:17 NO',
+      markId: 'B35',
+      species: 'Oleria gunilla',
+      sex: 'male',
+      minutes: 617,
+      photos: ['w2'],
+    }),
+    // Its row that day is in the sheet: not outside.
+    point({ markId: 'B36', species: 'Oleria onega' }),
+    // A mark never given before is a new butterfly, not a recapture; another species is another butterfly.
+    point({ markId: 'B99' }),
+    point({ markId: 'B35', species: 'Hyposcada anchiala' }),
+  ]
+  const outside = recapturesOutsideSheet(rows, points)
+  it('finds recaptures written only in notes and Wikiloc points of earlier marks, as one per mark and day', () => {
+    expect(outside.map(o => [o.mark, o.date, o.source, o.minutes, o.point?.photos ?? []])).toEqual([
+      ['M45', '2024-07-07', 'nota', 599, []],
+      ['M45', '2024-08-16', 'nota', 638, []],
+      ['B32', '2026-04-12', 'nota y Wikiloc', 610, ['w1']],
+      ['B35', '2026-04-12', 'wikiloc', 617, ['w2']],
+    ])
+    expect(outside[0].first.values.FieldMark_ID).toBe('M45')
+  })
+  it('shows them as captures of their individual, with the photos of the recapture', () => {
+    const list = individuals(markHistories(rows), [], outside)
+    const m45 = list.find(i => i.id === 'M45')!
+    expect(m45.events.map(e => [e.row?.row ?? null, e.outside ?? null])).toEqual([
+      [rows[0].row, null],
+      [null, 'nota'],
+      [null, 'nota'],
+    ])
+    expect(m45.events[1].days).toBe(25)
+    const b35 = list.find(i => i.id === 'B35')!
+    expect(b35.events.map(e => e.photos)).toEqual([[], ['w2']])
+    // B36 has two rows and nothing outside: as before.
+    expect(list.find(i => i.id === 'B36')!.events.every(e => e.row && !e.outside)).toBe(true)
   })
 })

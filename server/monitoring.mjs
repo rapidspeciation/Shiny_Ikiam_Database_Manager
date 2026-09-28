@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
+// The pairing of walk points with sheet rows is shared with the browser (Node strips the types).
+import * as lib from '../frontend/src/lib/monitoring.ts';
 
 /**
  * GPS tracks and capture points of the Ikiam monitoring walks (Wikiloc GPX
@@ -78,6 +80,8 @@ function cleanCapture(c) {
     row: number(c.row, 1, 10_000_000),
     // Its record, which keeps pointing at the butterfly when rows above it are removed.
     recordId: text(c.recordId, 80),
+    // Chosen by a person (a row, or "none": no row): matching again never changes it.
+    link: c.link === 'manual' || c.link === 'none' ? c.link : null,
   };
 }
 
@@ -131,13 +135,28 @@ function rowsByDay(store) {
     .prepare("SELECT id,row_num,values_json FROM records WHERE sheet='Collection_data' AND observed=1 AND missing=0 AND row_num<2000000000")
     .all()) {
     const v = JSON.parse(r.values_json);
-    const row = { id: r.id, row: r.row_num, values: v };
+    const row = { id: r.id, row: r.row_num, version: 0, observed: true, values: v, formulas: [] };
     byId.set(r.id, row);
     if (typeof v.Collection_date === 'number') (byDay.get(v.Collection_date) || byDay.set(v.Collection_date, []).get(v.Collection_date)).push(row);
   }
-  const entry = { stamp, byDay, byId };
+  // Names to read the notes with (built once per state of the sheet, when first needed).
+  let names = null;
+  const taxa = () => {
+    if (!names) {
+      const all = [...byId.values()];
+      names = { taxa: lib.taxaFrom(all), local: lib.taxaFrom(all.filter(r => /^ikiam$/i.test(clean(r.values.Collection_location)))) };
+    }
+    return names;
+  };
+  const entry = { stamp, byDay, byId, taxa };
   dayIndexes.set(store, entry);
   return entry;
+}
+
+/** The rows of a walk's day, of its collector (every row of the day when the walk has none). */
+function dayRows(index, date, collector) {
+  const who = initialsOf(collector);
+  return (index.byDay.get(serialOf(date)) || []).filter(r => !who || initialsOf(r.values.Collector) === who);
 }
 
 /** Whether a sheet row is still the capture's butterfly: same day, and mark, minute, species and sex that agree. */
@@ -146,7 +165,9 @@ function holds(row, capture, serial) {
   if (v.Collection_date !== serial) return false;
   if (capture.markId && clean(v.FieldMark_ID).toUpperCase() !== capture.markId.toUpperCase()) return false;
   const minute = typeof v.Collection_time === 'number' ? Math.round(v.Collection_time * 1440) : null;
-  if (capture.minutes !== null && minute !== null && Math.abs(minute - capture.minutes) > 2) return false;
+  // The same mark that day is the butterfly even with another hour written (a common slip).
+  if (!capture.markId && capture.minutes !== null && minute !== null && Math.abs(minute - capture.minutes) > lib.TIME_TOLERANCE)
+    return false;
   const species = clean(v.SPECIES).toLowerCase();
   if (capture.species && species && species !== capture.species.toLowerCase()) return false;
   const sex = sexOf(v.Sex);
@@ -154,38 +175,321 @@ function holds(row, capture, serial) {
 }
 
 /**
+ * A link by record still holds while the record is of that day and keeps the
+ * capture's mark: the record is the butterfly even when its minute, species or
+ * sex are corrected later (a row number, instead, may now be another butterfly).
+ */
+function recordHolds(row, capture, serial) {
+  if (row.values.Collection_date !== serial) return false;
+  return !capture.markId || !lib.hasMark(row) || clean(row.values.FieldMark_ID).toUpperCase() === capture.markId.toUpperCase();
+}
+
+/** A capture shown with its row's curated species, sex, mark and section (the note may lack them). */
+function withRow(c, row) {
+  if (!row) return { ...c, row: null, recordId: null };
+  const v = row.values;
+  const section = Number(clean(v.Transect_section));
+  return {
+    ...c,
+    species: clean(v.SPECIES) || c.species,
+    subspecies: clean(v.Subspecies_Form) || c.subspecies,
+    sex: sexOf(v.Sex) || c.sex,
+    markId: lib.hasMark(row) ? clean(v.FieldMark_ID).toUpperCase() : c.markId,
+    section: section >= 1 && section <= 4 ? section : c.section,
+    row: row.row,
+    recordId: row.id,
+  };
+}
+
+/**
  * The stored captures point at Collection_data rows (for the map popup and the
  * recapture photos). When rows are removed or moved in the sheet, a stored row
  * number points at another butterfly: each capture is checked against its row
- * and, if it no longer holds it, found again by day, collector and mark or
- * minute. Captures stored before their rows were saved (an import) are found
- * the same way. Nothing is written; the links are fixed on every read.
+ * and, if it no longer holds it, found again with the shared matcher
+ * (lib.matchWalk), taking only pairings by mark or sure ones. Captures stored
+ * before their rows were saved (an import) are found the same way. A link
+ * chosen by a person stays while its record exists. Nothing is written; the
+ * links are fixed on every read.
  */
 export function relinkCaptures(store, tracks) {
-  const { byDay, byId } = rowsByDay(store);
+  const index = rowsByDay(store);
+  const { byId } = index;
   const byRow = new Map();
   for (const r of byId.values()) byRow.set(r.row, r);
   for (const t of tracks) {
     const serial = serialOf(t.date);
-    const collector = initialsOf(t.collector);
-    const day = (byDay.get(serial) || []).filter(r => !collector || initialsOf(r.values.Collector) === collector);
     const taken = new Set();
-    t.captures = t.captures.map(c => {
-      const linked = (c.recordId && byId.get(c.recordId)) || (c.row && byRow.get(c.row));
-      if (linked && holds(linked, c, serial) && !taken.has(linked.id)) {
+    const open = [];
+    t.captures = t.captures.map((c, i) => {
+      if (c.link === 'none') return { ...c, row: null, recordId: null };
+      const record = c.recordId && byId.get(c.recordId);
+      const linked = record || (c.row && byRow.get(c.row));
+      const kept =
+        linked &&
+        !taken.has(linked.id) &&
+        (c.link === 'manual' ? linked === record : record ? recordHolds(record, c, serial) : holds(linked, c, serial));
+      if (kept) {
         taken.add(linked.id);
-        return { ...c, row: linked.row, recordId: linked.id };
+        return withRow(c, linked);
       }
-      const found = day.filter(r => !taken.has(r.id) && (c.markId || c.minutes !== null) && holds(r, c, serial));
-      if (found.length === 1) {
-        taken.add(found[0].id);
-        return { ...c, row: found[0].row, recordId: found[0].id };
-      }
-      // Gone from the sheet (or ambiguous): no row rather than the wrong one.
+      open.push(i);
       return { ...c, row: null, recordId: null };
+    });
+    const free = dayRows(index, t.date, t.collector).filter(r => !taken.has(r.id));
+    if (!open.length || !free.length) continue;
+    const { taxa, local } = index.taxa();
+    const { points, groups } = lib.storedPoints(
+      open.map(i => t.captures[i]),
+      taxa,
+      local,
+    );
+    const match = lib.matchWalk(free, t.date, t.collector || '', points, { shift: false });
+    groups.forEach((g, p) => {
+      const m = match.matches[p];
+      // Gone from the sheet, or not sure: no row rather than the wrong one.
+      if (m.confidence !== 'mark' && m.confidence !== 'sure') return;
+      g.forEach((k, n) => {
+        if (m.rows[n]) t.captures[open[k]] = withRow(t.captures[open[k]], m.rows[n]);
+      });
     });
   }
   return tracks;
+}
+
+// ------------------------------------------------ matching again, and the doubts
+
+const rowInfo = row =>
+  row && {
+    recordId: row.id,
+    row: row.row,
+    species: clean(row.values.SPECIES) || null,
+    subspecies: clean(row.values.Subspecies_Form) || null,
+    sex: sexOf(row.values.Sex),
+    minutes: typeof row.values.Collection_time === 'number' ? Math.round(row.values.Collection_time * 1440) : null,
+    markId: lib.hasMark(row) ? clean(row.values.FieldMark_ID).toUpperCase() : null,
+    kind: clean(row.values.Release_Collect) || null,
+    section: clean(row.values.Transect_section) || null,
+  };
+
+/**
+ * Rows of the day within ten minutes of the point (or of its row), so a person
+ * can pick another one when the note and its row disagree (e.g. a mark written
+ * on the next row of the sheet).
+ */
+function nearby(day, point, match) {
+  const minute = r => (typeof r.values.Collection_time === 'number' ? Math.round(r.values.Collection_time * 1440) : null);
+  const at = point.timeFromTrack ? null : point.minutes ?? (match.rows[0] ? minute(match.rows[0]) : null);
+  if (at === null) return [];
+  return day
+    .filter(r => minute(r) !== null && Math.abs(minute(r) - at) <= 10)
+    .sort((a, b) => Math.abs(minute(a) - at) - Math.abs(minute(b) - at))
+    .slice(0, 6);
+}
+
+/** Public (wklcdn) addresses of the photos, for the message to a collector. */
+function photoLinks(store, ids) {
+  if (!ids?.length) return [];
+  const get = store.db.prepare('SELECT source_url FROM monitoring_photos WHERE id=?');
+  return ids.map(id => get.get(String(id))?.source_url).filter(Boolean);
+}
+
+/**
+ * Every stored walk paired again with the shared matcher (links chosen by a
+ * person are kept), compared with its links as they are read now. Returns, per
+ * stored capture, what would change, and the doubtful points (ties, points
+ * placed by order, notes that disagree with their row, and the changes). Also
+ * the walks still waiting in "por revisar" that have rows that day, with each
+ * point's proposed row, to be paired by a person before going on the map.
+ * Nothing is written.
+ */
+export function rematchTracks(store, user = null) {
+  const index = rowsByDay(store);
+  const { taxa, local } = index.taxa();
+  const tracks = listTracks(store, user);
+  const changes = [];
+  const doubts = [];
+  const walks = [];
+  for (const t of tracks) {
+    const day = dayRows(index, t.date, t.collector);
+    const { points, groups } = lib.storedPoints(t.captures, taxa, local);
+    // Kept as a person chose them: the whole point was chosen (every stored copy).
+    const fixed = new Map();
+    groups.forEach((g, p) => {
+      if (g.every(i => t.captures[i].link === 'manual' || t.captures[i].link === 'none'))
+        fixed.set(p, g.flatMap(i => (t.captures[i].link === 'manual' && t.captures[i].recordId ? [t.captures[i].recordId] : [])));
+    });
+    const match = lib.matchWalk(day, t.date, t.collector || '', points, { fixed, shift: false });
+    let count = 0;
+    groups.forEach((g, p) => {
+      const m = match.matches[p];
+      const next = m.rows.map(r => r.id);
+      const current = g.map(i => t.captures[i].recordId || null);
+      // Copies keep the row they have when it is still one of the point's rows.
+      const spare = next.filter(id => !current.includes(id));
+      const proposed = current.map(id => (id && next.includes(id) ? id : (spare.shift() ?? null)));
+      const changed = !m.manual && proposed.some((id, k) => id !== current[k]);
+      g.forEach((i, k) => {
+        if (!m.manual && proposed[k] !== current[k])
+          changes.push({
+            trackId: t.id,
+            index: i,
+            from: current[k],
+            to: proposed[k],
+            date: t.date,
+            collector: t.collector,
+            name: t.name,
+            text: t.captures[i].text,
+            confidence: m.confidence,
+            before: rowInfo(current[k] && index.byId.get(current[k])),
+            after: rowInfo(proposed[k] && index.byId.get(proposed[k])),
+          });
+      });
+      if (!changed && !lib.doubtfulMatch(m)) return;
+      count++;
+      const c = t.captures[g[0]];
+      doubts.push({
+        source: 'track',
+        trackId: t.id,
+        indexes: g,
+        date: t.date,
+        collector: t.collector,
+        name: t.name,
+        wikiloc: t.wikiloc?.url || null,
+        text: c.text,
+        minutes: points[p].timeFromTrack ? null : points[p].minutes,
+        photos: c.photos || [],
+        photoLinks: photoLinks(store, c.photos),
+        confidence: m.confidence,
+        conflicts: m.conflicts,
+        changed,
+        current: current.map(id => rowInfo(id && index.byId.get(id))),
+        proposed: proposed.map(id => rowInfo(id && index.byId.get(id))),
+        candidates: [...new Map([...m.rows, ...m.candidates, ...nearby(day, points[p], m)].map(r => [r.id, r])).values()].map(rowInfo),
+      });
+    });
+    if (count) walks.push({ source: 'track', id: t.id, date: t.date, collector: t.collector, name: t.name, doubts: count });
+  }
+  // Walks waiting for review whose points do not all pair surely (e.g. old notes without times).
+  for (const w of listWalks(store).filter(w => w.status === 'waiting' && w.date && w.collector)) {
+    const captures = w.waypoints.map(p => lib.locateCapture({ ...p, time: null }, taxa, local));
+    const match = lib.matchWalk([...index.byId.values()], w.date, w.collector, captures);
+    const day = dayRows(index, match.date, w.collector);
+    if (!day.length || !match.matches.some(m => lib.doubtfulMatch(m) || m.confidence === 'none')) continue;
+    if (!match.matches.some(m => m.rows.length || m.candidates.length)) continue;
+    match.matches.forEach((m, i) => {
+      const used = new Set(match.matches.flatMap((o, j) => (j === i ? [] : o.rows.map(r => r.id))));
+      doubts.push({
+        source: 'walk',
+        walkId: w.id,
+        indexes: [i],
+        date: match.date,
+        collector: w.collector,
+        name: w.name,
+        wikiloc: w.url,
+        text: captures[i].text,
+        minutes: captures[i].minutes,
+        photos: captures[i].photos,
+        photoLinks: photoLinks(store, captures[i].photos),
+        confidence: m.confidence,
+        conflicts: m.conflicts,
+        changed: false,
+        current: [],
+        proposed: m.rows.map(rowInfo),
+        // Any row of that day not proposed for another point.
+        candidates: [...new Map([...m.rows, ...m.candidates, ...day.filter(r => !used.has(r.id))].map(r => [r.id, r])).values()]
+          .sort((a, b) => (rowInfo(a).minutes ?? 1e6) - (rowInfo(b).minutes ?? 1e6) || a.row - b.row)
+          .map(rowInfo),
+      });
+    });
+    walks.push({ source: 'walk', id: w.id, date: match.date, collector: w.collector, name: w.name, doubts: captures.length });
+  }
+  return { changes, doubts, walks };
+}
+
+/** Applies the changes of rematchTracks that are still the same now (each named by track, capture, from and to). */
+export function applyRematch(store, body) {
+  const wanted = Array.isArray(body.changes) ? body.changes : [];
+  if (!wanted.length || wanted.length > 5000) throw fail('INVALID_CHANGES', 'Give the changes to apply');
+  const key = c => `${c.trackId}|${c.index}|${c.from ?? ''}|${c.to ?? ''}`;
+  const asked = new Set(wanted.map(key));
+  const { changes } = rematchTracks(store);
+  const index = rowsByDay(store);
+  const byTrack = new Map();
+  for (const c of changes) if (asked.has(key(c))) byTrack.set(c.trackId, [...(byTrack.get(c.trackId) || []), c]);
+  let applied = 0;
+  for (const [trackId, list] of byTrack) {
+    const row = store.db.prepare('SELECT * FROM monitoring_tracks WHERE id=?').get(trackId);
+    if (!row) continue;
+    const data = JSON.parse(row.data_json);
+    for (const c of list) {
+      const capture = data.captures[c.index];
+      if (!capture) continue;
+      data.captures[c.index] = { ...withRow(capture, c.to ? index.byId.get(c.to) : null), link: null };
+      applied++;
+    }
+    store.db.prepare('UPDATE monitoring_tracks SET data_json=? WHERE id=?').run(JSON.stringify(data), trackId);
+  }
+  return { applied, skipped: wanted.length - applied };
+}
+
+/**
+ * A person pairs one stored capture with a row (or says it is none of them,
+ * `recordId` null). Kept as chosen: matching again never changes it.
+ */
+export function linkCapture(store, trackId, body) {
+  const row = store.db.prepare('SELECT * FROM monitoring_tracks WHERE id=?').get(trackId);
+  if (!row) throw fail('TRACK_NOT_FOUND', 'Track not found', 404);
+  const data = JSON.parse(row.data_json);
+  const i = Number(body.index);
+  if (!Number.isInteger(i) || !data.captures[i]) throw fail('INVALID_LINK', 'Unknown capture');
+  const index = rowsByDay(store);
+  let target = null;
+  if (body.recordId) {
+    target = index.byId.get(String(body.recordId));
+    if (!target || target.values.Collection_date !== serialOf(row.date)) throw fail('INVALID_LINK', 'That row is not of the walk’s day');
+    // The row leaves any other capture of the walk that had it.
+    data.captures.forEach((c, k) => {
+      if (k !== i && c.recordId === target.id) data.captures[k] = { ...c, row: null, recordId: null, link: null };
+    });
+  }
+  data.captures[i] = { ...withRow(data.captures[i], target), link: target ? 'manual' : 'none' };
+  store.db.prepare('UPDATE monitoring_tracks SET data_json=? WHERE id=?').run(JSON.stringify(data), trackId);
+  return { track: relinkCaptures(store, [fromRow(store.db.prepare('SELECT * FROM monitoring_tracks WHERE id=?').get(trackId))])[0] };
+}
+
+/**
+ * A waiting Wikiloc walk reviewed in "Dudas": each point with the rows a person
+ * chose (none for a point that is not a butterfly of the sheet), stored on the
+ * map with those links kept as chosen.
+ */
+export function storeReviewedWalk(store, walkId, body, user) {
+  const walk = store.db.prepare('SELECT * FROM wikiloc_walks WHERE id=?').get(walkId);
+  if (!walk) throw fail('WALK_NOT_FOUND', 'Wikiloc walk not found', 404);
+  const data = JSON.parse(walk.data_json);
+  const date = text(body.date, 10) || walk.date;
+  const collector = text(body.collector, 120) || data.collector;
+  if (!date || !collector) throw fail('INVALID_WALK', 'The walk needs a date and a collector');
+  const links = Array.isArray(body.links) ? body.links : [];
+  if (links.length !== data.waypoints.length) throw fail('INVALID_LINK', 'Give the rows of every point');
+  const index = rowsByDay(store);
+  const { taxa, local } = index.taxa();
+  const seen = new Set();
+  const points = data.waypoints.map(p => lib.locateCapture({ ...p, time: null }, taxa, local));
+  // New mark or recapture, from the marks before the walk (as Importar recorrido does).
+  const roles = lib.walkMarkRoles([...index.byId.values()], date, points);
+  const captures = data.waypoints.flatMap((p, i) => {
+    const c = points[i];
+    const ids = Array.isArray(links[i]) ? links[i].map(String) : [];
+    const rows = ids.map(id => {
+      const r = index.byId.get(id);
+      if (!r || r.values.Collection_date !== serialOf(date) || seen.has(id)) throw fail('INVALID_LINK', 'A chosen row is not of that day, or chosen twice');
+      seen.add(id);
+      return r;
+    });
+    const base = { ...c, recapture: roles[i]?.role === 'recapture' };
+    return rows.length ? rows.map(r => ({ ...withRow(base, r), link: 'manual' })) : [{ ...base, row: null, recordId: null, link: 'none' }];
+  });
+  return saveTrack(store, { requestId: text(body.requestId, 80) || randomUUID(), date, collector, name: walk.name, track: data.track, wikilocWalkId: walk.id, captures }, user);
 }
 
 /**
@@ -219,7 +523,17 @@ export function saveTrack(store, body, user) {
     // track with GPS times is not replaced by the Wikiloc page's track, which has none.
     const old = JSON.parse(existing.data_json);
     const timed = points => points.some(p => p[3]);
-    const data = { ...old, track: timed(old.track || []) && !timed(track) ? old.track : track, captures };
+    // A point a person paired by hand keeps that pairing (same note at the same place).
+    const chosen = new Map(
+      (old.captures || []).filter(c => c.link).map(c => [`${c.text}|${c.lat}|${c.lon}`, c]),
+    );
+    const kept = captures.map(c => {
+      const was = !c.link && chosen.get(`${c.text}|${c.lat}|${c.lon}`);
+      if (!was) return c;
+      chosen.delete(`${c.text}|${c.lat}|${c.lon}`);
+      return { ...c, row: was.row, recordId: was.recordId, link: was.link };
+    });
+    const data = { ...old, track: timed(old.track || []) && !timed(track) ? old.track : track, captures: kept };
     if (walk) data.wikiloc = { id: walk.wikiloc_id, url: walk.url };
     const clash = store.db.prepare('SELECT id FROM monitoring_tracks WHERE fingerprint=? AND id<>?').get(fingerprint, existing.id);
     store.db

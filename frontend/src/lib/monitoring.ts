@@ -173,6 +173,8 @@ export function taxaFrom(rows: TableRow[]): Taxa {
 
 function levenshtein(a: string, b: string) {
   if (a === b) return 0
+  // More letters apart than any tolerance: not worth the table (names are read for every word of a note).
+  if (Math.abs(a.length - b.length) > 2) return 3
   let prev = Array.from({ length: b.length + 1 }, (_, i) => i)
   for (let i = 1; i <= a.length; i++) {
     const cur = [i]
@@ -209,6 +211,8 @@ export interface Capture {
   rest: string
   /** Butterflies noted at this one point ("Mariposa 1 y 2" is two). */
   count: number
+  /** The species is kept as written: it is not among the known names (not used to pair with rows). */
+  unknownSpecies?: boolean
 }
 
 const WEATHER: [RegExp, string][] = [
@@ -216,11 +220,19 @@ const WEATHER: [RegExp, string][] = [
   [/\bnublado claro\b|\bnc\b|\bcl\b/, CLOUD.CL],
   // Taken whole, so nothing of it is left for the notes: "parches nube y sol", "sol y nubes", "parches de sol".
   [
-    /\b(?:parches?|intervalos?)(?:\s+(?:de\s+)?(?:nubes?|sol))?(?:\s+(?:y|e|con)\s+(?:nubes?|sol))?\b|\b(?:sol|nubes?)\s+(?:y|e|con)\s+(?:nubes?|sol)\b|\bs&c\b|\bsc\b/,
+    /\b(?:parches?|intervalos?)(?:\s+(?:de\s+)?(?:nubes?|sol))?(?:\s+(?:y|e|con)\s+(?:nubes?|sol))?\b|\b(?:sol|nubes?)\s+(?:y|e|con)\s+(?:nubes?|sol)\b|\bs&(?:amp;)?[cp]\b|\bsc\b/,
     CLOUD.SC,
   ],
-  [/\bsoleado\b|\bdespejado\b|\bsol\b/, CLOUD.S],
+  [/\bsoleado\b|\bdespejado\b|\bsol\b|\bsun(?:ny)?\b/, CLOUD.S],
+  // MJS writes "seco obscuro", "claro seco": read after the phrases above, and before
+  // "obscuro" could be taken for a name (Harjesia obscura).
+  [/\bob?scuro\b/, CLOUD.CD],
+  [/\bclaro\b/, CLOUD.CL],
 ]
+
+/** Point numbers written as words at the start of a note ("Uno.", "Dos,"). */
+const NUMBER_WORDS = ['uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve', 'diez']
+const HOUR_WORDS: Record<string, number> = { seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10, once: 11, doce: 12 }
 
 /**
  * Understands one waypoint note. Order and case of the parts do not matter.
@@ -228,7 +240,11 @@ const WEATHER: [RegExp, string][] = [
  * missing subspecies are resolved against them first.
  */
 export function parseCapture(input: string, taxa: Taxa, local?: Taxa): Capture {
-  let text = ` ${input.toLowerCase().replace(/\s+/g, ' ')} `
+  // "O.gunilla", "H.a": a dot between letters separates an abbreviation from the next word.
+  let text = ` ${input
+    .toLowerCase()
+    .replace(/([a-záéíóúñ])\.(?=[a-záéíóúñ])/g, '$1. ')
+    .replace(/\s+/g, ' ')} `
   const take = (re: RegExp) => {
     const m = re.exec(text)
     if (m) text = text.slice(0, m.index) + ' ' + text.slice(m.index + m[0].length)
@@ -236,101 +252,288 @@ export function parseCapture(input: string, taxa: Taxa, local?: Taxa): Capture {
   }
   // "Mariposa 1 y 2", "Marip 3 4 y 5": several butterflies noted at one point.
   const many = take(/^\s*(?:mariposas?|marip\.?)\s+((?:\d{1,3}(?:\s*(?:,|y|e)\s*|\s+))*\d{1,3})\b(?!\s*(?:[.,:]\d|m\b|cm\b))/)
-  const numbers = many ? many[1].match(/\d+/g)!.map(Number) : []
-  const seq = numbers.length ? null : take(/^\s*m\s?(\d{1,3})\b/)
+  // MJS starts with the point number, often twice ("4 4 50cm", "4 y 5 4 y 5 9:39", "3-4 10:47").
+  const leading = many ? null : take(/^\s*(\d{1,3}(?:\s*(?:y|-)\s*\d{1,3})*)(?:\s+\1)?\b(?!\s*(?:[.,:h]\s?\d|m\b|cm\b|con\b))/)
+  const numbers = many ? many[1].match(/\d+/g)!.map(Number) : leading ? leading[1].match(/\d+/g)!.map(Number) : []
+  const mSeq = numbers.length ? null : take(/^\s*m\s?(\d{1,3})\b/)
+  const seq =
+    mSeq ||
+    (numbers.length
+      ? null
+      : take(/^\s*(\d{1,2})\s?(?:ra|da|ro|do|ta|to|er|°|ª|º)\b/) || take(new RegExp(`^\\s*(${NUMBER_WORDS.join('|')})\\b`)))
   // "id: B69", or a mark written on its own as some collectors do ("B51 9:51 female …").
   // An M mark later in the note also counts ("… t4 M61"); at the start, "M1" is the point number.
   const mark =
     take(/\bid\s*[:#.]?\s*([a-z]{1,3})\s*-?\s*(\d{1,4})\b/) ||
-    take(/(?<=\S.*)\b([abm])\s?(\d{1,3})\b(?![.,:]\d)|\b([ab])\s?(\d{1,3})\b(?![.,:]\d)/)
-  // "9:20", "9h20", or "10.19" (a dot, when it cannot be a height: hour 6–18, two-digit minutes, no unit).
-  const time = take(/\b([01]?\d|2[0-3])\s?[:h]\s?([0-5]\d)\b/) || take(/\b(0?[6-9]|1[0-8])\.([0-5]\d)\b(?!\s*(?:m|cm)\b)/)
+    // ("2 m 10 03" is a height and a time: an m after a number is the unit.)
+    take(/(?<=\S.*)\b([ab]|(?<!\s\d+(?:[.,]\d+)?\s?)m)\s?(\d{1,3})\b(?![.,:]\d)|\b([ab])\s?(\d{1,3})\b(?![.,:]\d)/)
+  // An M number at the start is FCH's point number (M1–M15), but a mark in AA's 2024
+  // notes ("M45 recatch 0,5m 9:59"): above 30, or when the note says recapture, and no other mark.
+  const leadingMark =
+    !mark && mSeq && (Number(mSeq[1]) > 30 || /\b(recap|recatch|reencontr)/.test(text)) ? `M${Number(mSeq[1])}` : null
+  // "9:20", "9h20", or "10.19" (a dot, when it cannot be a height: hour 6–18, two-digit minutes, no unit);
+  // dictated times: "10, 43", "10 con 09", "10 05", "nueve, 55".
+  const time =
+    take(/\b([01]?\d|2[0-3])\s?[:h]\s?([0-5]\d)\b/) ||
+    take(/\b(0?[6-9]|1[0-8])\.([0-5]\d)\b(?!\s*(?:m|cm)\b)/) ||
+    take(/\b(0?[6-9]|1[0-8])(?:\s*,\s*(?:con\s+)?|\s+con\s+|\s)([0-5]\d)\b(?![.,]\d|\s*(?:m|cm)\b)/) ||
+    take(new RegExp(`\\b(${Object.keys(HOUR_WORDS).join('|')})\\s*(?:,|con|y)?\\s*([0-5]\\d)\\b`))
   const height = take(/\b(\d+(?:[.,]\d+)?)\s*(cm|m)\b/)
-  const recapture = take(/\b(recap\w*|recatch\w*)\b/)
+  const recapture = take(/\b(recap\w*|recatch\w*|reencontrad\w*)\b/)
   let sex: Capture['sex'] = null
   if (take(/\b(hembra|female|fem)\b/)) sex = 'female'
   else if (take(/\b(macho|male)\b/)) sex = 'male'
   let cloud: string | null = null
   for (const [re, code] of WEATHER) if (!cloud && take(re)) cloud = code
+  // Weather words left over ("sol, soleado, obscuro") are not names.
+  while (take(/\b(?:ob?scuro|claro|nublado|soleado|nubes?)\b/));
   let rain: string | null = null
-  if (take(/\b(llovizna|garua|garúa|drizzle|dz)\b/)) rain = RAIN.DZ
+  if (take(/\b(llovizna|llov|garua|garúa|drizzle|drizzel|dz)\b/)) rain = RAIN.DZ
   else if (take(/\b(seco|dry|dy)\b/)) rain = RAIN.DY
 
-  const words = text.split(/[\s,;:]+/).filter(w => /^[a-záéíóúñ-]+\.?$/.test(w))
-  const taxon = matchTaxon(words, taxa, local)
-  const rest = words.slice(taxon.used).join(' ')
+  const words = text.split(/[\s,;:?¿!()]+/).filter(w => /^[a-záéíóúñ-]+\.?$/.test(w))
+  const taxon = findTaxon(words, taxa, local, input)
+  const rest = [...words.slice(0, taxon.start), ...words.slice(taxon.start + taxon.used)].join(' ')
   const h = height ? Number(height[1].replace(',', '.')) / (height[2] === 'cm' ? 100 : 1) : null
+  const hour = time ? (HOUR_WORDS[time[1]] ?? Number(time[1])) : null
   return {
     text: input,
-    seq: numbers.length ? numbers[0] : seq ? Number(seq[1]) : null,
+    seq: numbers.length
+      ? numbers[0]
+      : seq && !leadingMark
+        ? NUMBER_WORDS.includes(seq[1])
+          ? NUMBER_WORDS.indexOf(seq[1]) + 1
+          : Number(seq[1])
+        : null,
     species: taxon.species,
     subspecies: taxon.subspecies,
     known: taxon.known,
     subspeciesGuess: taxon.subspeciesGuess,
     sex,
-    minutes: time ? Number(time[1]) * 60 + Number(time[2]) : null,
+    minutes: time ? hour! * 60 + Number(time[2]) : null,
     height: h !== null && Number.isFinite(h) ? Math.round(h * 100) / 100 : null,
     cloud,
     rain,
-    markId: mark ? `${(mark[1] || mark[3]).toUpperCase()}${Number(mark[2] || mark[4])}` : null,
+    markId: mark ? `${(mark[1] || mark[3]).toUpperCase()}${Number(mark[2] || mark[4])}` : leadingMark,
     recaptureNote: !!recapture,
     rest,
     count: Math.max(1, numbers.length),
+    ...(taxon.unknownSpecies ? { unknownSpecies: true } : {}),
   }
 }
 
 const capital = (w: string) => w.charAt(0).toUpperCase() + w.slice(1)
+/** Species split into lower-case genus and epithet, once per list of names. */
+const splitNames = new WeakMap<Taxa, [string, string, string][]>()
+function namesOf(taxa: Taxa) {
+  let out = splitNames.get(taxa)
+  if (!out) {
+    out = [...taxa.keys()].map(s => [s, ...(s.toLowerCase().split(' ') as [string, string])])
+    splitNames.set(taxa, out)
+  }
+  return out
+}
+const bare = (w: string) => w.replace(/\.$/, '')
+/** "f. travella" is written "travella". */
+const subName = (s: string) => s.toLowerCase().replace(/^f\.\s*/, '')
+
+interface TaxonHit {
+  species: string | null
+  subspecies: string | null
+  known: boolean
+  subspeciesGuess: 'ikiam' | 'prefix' | null
+  /** Where the name starts among the words, and how many words it takes. */
+  start: number
+  used: number
+  /** Only set when the name is not among the known species ("Genus epithet" as written). */
+  unknownSpecies?: boolean
+}
 
 /**
- * Finds "genus epithet [subspecies]" at the start of the words, allowing small
- * typos. Abbreviations are resolved against the names in `taxa`, preferring
- * those seen at Ikiam (`local`): "H. illinissa", "god. Zavaleta" (Godyris),
- * "m. Confusa" (Methona); "id" → ida and "m" → matronalis when only one
- * subspecies of the species starts so. With no subspecies written, the only
- * subspecies seen at Ikiam is taken (e.g. Methona confusa psamathe).
+ * The subspecies written after a name: in full (small typos allowed), or its
+ * start when only one subspecies of the species (at Ikiam first) starts so
+ * ("id" → ida, "m" → matronalis). Nothing written: the only one seen at Ikiam.
+ * `free` takes an unknown word as a new subspecies (a name written in full).
  */
-export function matchTaxon(words: string[], taxa: Taxa, local?: Taxa) {
-  const none = { species: null, subspecies: null, known: false, used: 0, subspeciesGuess: null }
-  if (words.length < 2) return none
-  const raw = words[0]
-  const [g, e] = [raw.replace(/\.$/, ''), words[1]]
-  // A dot or at most three letters: the start of a genus ("h.", "god.", "hyp").
-  const abbreviated = raw.endsWith('.') || g.length <= 3
-  let best: { species: string; cost: number } | null = null
-  for (const species of taxa.keys()) {
-    const [genus, epithet] = species.toLowerCase().split(' ')
-    const gc = abbreviated && genus.startsWith(g) ? 0 : g.length === 1 ? 99 : levenshtein(g, genus)
-    const ec = levenshtein(e, epithet)
-    if (gc > tolerance(genus) || ec > tolerance(epithet)) continue
-    // Ties go to the species seen at Ikiam.
-    const cost = gc + ec + (local && !local.has(species) ? 0.5 : 0)
-    if (!best || cost < best.cost) best = { species, cost }
+function subspeciesAfter(species: string, word: string | undefined, taxa: Taxa, local: Taxa | undefined, free: boolean) {
+  const subs = taxa.get(species) || []
+  const here = local?.get(species) || []
+  const only = {
+    subspecies: here.length === 1 ? here[0] : null,
+    used: 0,
+    known: true,
+    guess: here.length === 1 ? ('ikiam' as const) : null,
   }
-  if (!best) {
-    if (g.length < 3 || e.length < 3) return none
-    const sub = words[2] && words[2].length > 2 ? words[2] : null
-    return { species: `${capital(g)} ${e}`, subspecies: sub, known: false, used: sub ? 3 : 2, subspeciesGuess: null }
-  }
-  const subs = taxa.get(best.species) || []
-  const here = local?.get(best.species) || []
-  const word = words[2]
-  if (!word) {
-    // Only one subspecies at Ikiam: that one. Otherwise left empty (the grid offers the known ones).
-    const only = here.length === 1 ? here[0] : null
-    return { species: best.species, subspecies: only, known: true, used: 2, subspeciesGuess: only ? ('ikiam' as const) : null }
-  }
-  const sub = subs.find(s => levenshtein(word, s.toLowerCase()) <= tolerance(s))
-  if (sub) return { species: best.species, subspecies: sub, known: true, used: 3, subspeciesGuess: null }
-  // The start of a subspecies ("id", "m"), when only one of that species (at Ikiam first) starts so.
-  const start = word.replace(/\.$/, '')
+  if (!word) return only
+  const w = bare(word)
+  const full = subs.find(s => levenshtein(w, subName(s)) <= tolerance(subName(s)))
+  if (full) return { subspecies: full, used: 1, known: true, guess: null }
   for (const list of [here, subs]) {
-    const starting = list.filter(s => s.toLowerCase().startsWith(start))
-    if (starting.length === 1)
-      return { species: best.species, subspecies: starting[0], known: true, used: 3, subspeciesGuess: 'prefix' as const }
+    const starting = list.filter(s => subName(s).startsWith(w))
+    if (starting.length === 1) return { subspecies: starting[0], used: 1, known: true, guess: 'prefix' as const }
     if (starting.length > 1) break
   }
-  // An unknown third word is taken as a new subspecies name (to be reviewed).
-  return { species: best.species, subspecies: word, known: false, used: 3, subspeciesGuess: null }
+  // An unknown word right after a name written in full is taken as a new subspecies (to be reviewed).
+  if (free && w.length >= 5) return { subspecies: w, used: 1, known: false, guess: null }
+  return only
+}
+
+/**
+ * Finds a species name anywhere among the words of a note, allowing small typos
+ * and the abbreviations the collectors use. Abbreviations are read against the
+ * names seen at Ikiam (`local`) and must point to one species:
+ * - genus and epithet: "Hyposcada illinissa", "H. illinissa", "hyp anast"
+ *   (Hypothyris anastasia), "god zav m", "O.gunilla", "ithomia s. s.";
+ * - the epithet alone: "Numata", "onega janarilla", "Eucle Intermedia", and
+ *   "Pol p" (three letters only with a subspecies that fits: polymnia proceriformis);
+ * - a genus with a single species at Ikiam ("ceratinia"), or a subspecies
+ *   found in one species only ("deceptus", "bicolora").
+ * The cheapest reading wins (typos and abbreviations cost), the first one on a tie.
+ */
+export function findTaxon(words: string[], taxa: Taxa, local?: Taxa, original?: string): TaxonHit {
+  const none: TaxonHit = { species: null, subspecies: null, known: false, used: 0, start: 0, subspeciesGuess: null }
+  const here = local && local.size ? local : taxa
+  let best: (TaxonHit & { cost: number }) | null = null
+  const offer = (hit: TaxonHit & { cost: number }) => {
+    if (hit.cost <= 3 && (!best || hit.cost < best.cost - 1e-9)) best = hit
+  }
+  /** The single cheapest species, or null when two tie (an abbreviation that says nothing). */
+  const unique = (found: { species: string; cost: number }[]) => {
+    const min = Math.min(...found.map(f => f.cost))
+    const at = found.filter(f => f.cost <= min + 1e-9)
+    return at.length === 1 ? at[0] : null
+  }
+  for (let k = 0; k < words.length; k++) {
+    const g = bare(words[k])
+    if (g.length < 1) continue
+    const next = words[k + 1] ? bare(words[k + 1]) : ''
+    // Genus and epithet. A dot or at most four letters: the start of a genus ("h.", "god.", "mech").
+    if (next) {
+      const abbreviated = words[k].endsWith('.') || g.length <= 4
+      const found: { species: string; cost: number; short: boolean }[] = []
+      for (const [species, genus, epithet] of namesOf(taxa)) {
+        const gd = g.length >= 4 && genus[0] === g[0] ? levenshtein(g, genus) : 99
+        // A typo in the genus costs half: the epithet says more ("hyposaca anchiala" is not "anchiala" alone).
+        const gc = gd <= tolerance(genus) ? gd / 2 : abbreviated && genus.startsWith(g) ? 0.3 : -1
+        if (gc < 0) continue
+        const ed = levenshtein(next, epithet)
+        // The start of an epithet: three letters, or one after a genus written in full ("ithomia s.").
+        const ec =
+          ed <= tolerance(epithet)
+            ? ed
+            : epithet.startsWith(next) && (next.length >= 3 || (gc < 0.3 && next.length >= 1))
+              ? next.length >= 3
+                ? 0.3
+                : 0.6
+              : -1
+        if (ec < 0) continue
+        const short = gc === 0.3 || (ec >= 0.3 && ed > tolerance(epithet))
+        // Abbreviations are read against the names seen at Ikiam; ties go to those.
+        if (short && local?.size && !local.has(species)) continue
+        found.push({ species, cost: gc + ec + (local?.size && !local.has(species) ? 0.5 : 0), short })
+      }
+      const hit = found.length ? (found.some(f => f.short) ? unique(found) : found.sort((a, b) => a.cost - b.cost)[0]) : null
+      if (hit) {
+        const full = !(found.find(f => f.species === hit.species)?.short ?? true)
+        const sub = subspeciesAfter(hit.species, words[k + 2], taxa, local, full)
+        offer({
+          species: hit.species,
+          subspecies: sub.subspecies,
+          known: sub.known,
+          subspeciesGuess: sub.guess,
+          start: k,
+          used: 2 + sub.used,
+          cost: hit.cost,
+        })
+      }
+    }
+    if (g.length < 3) continue
+    // The epithet alone ("Numata", "Salapia", "Pol p").
+    const alone: { species: string; cost: number }[] = []
+    for (const [species, , epithet] of namesOf(here)) {
+      const d = g.length >= 5 ? levenshtein(g, epithet) : 99
+      if (d <= (epithet.length >= 8 ? 2 : 1)) alone.push({ species, cost: 1 + d })
+      else if (g.length >= 5 && epithet.startsWith(g)) alone.push({ species, cost: 1.3 })
+      else if (
+        g.length === 3 &&
+        epithet.startsWith(g) &&
+        next &&
+        (here.get(species) || []).some(s => subName(s).startsWith(next))
+      )
+        alone.push({ species, cost: 1.5 })
+    }
+    const epithetHit = alone.length ? unique(alone) : null
+    if (epithetHit) {
+      const sub = subspeciesAfter(epithetHit.species, words[k + 1], taxa, local, false)
+      offer({
+        species: epithetHit.species,
+        subspecies: sub.subspecies,
+        known: sub.known,
+        subspeciesGuess: sub.guess,
+        start: k,
+        used: 1 + sub.used,
+        cost: epithetHit.cost,
+      })
+    }
+    if (g.length < 5) continue
+    // A genus with one species at Ikiam ("ceratinia" → Ceratinia tutia).
+    const ofGenus = namesOf(here)
+      .filter(([, genus]) => (g.length >= 7 ? levenshtein(g, genus) <= 1 : g === genus))
+      .map(([species]) => species)
+    if (ofGenus.length === 1) {
+      const sub = subspeciesAfter(ofGenus[0], words[k + 1], taxa, local, false)
+      offer({
+        species: ofGenus[0],
+        subspecies: sub.subspecies,
+        known: sub.known,
+        subspeciesGuess: sub.guess,
+        start: k,
+        used: 1 + sub.used,
+        cost: 1.7,
+      })
+    }
+    // A subspecies found in one species only ("deceptus", "bicolora").
+    const bySub: { species: string; sub: string; cost: number }[] = []
+    for (const [species, subs] of here)
+      for (const s of subs) {
+        const name = subName(s)
+        if (name.length < 5) continue
+        if (name === g) bySub.push({ species, sub: s, cost: 2 })
+        else if (g.length >= 5 && name.startsWith(g)) bySub.push({ species, sub: s, cost: 2.3 })
+      }
+    const subHit = bySub.length ? unique(bySub) : null
+    if (subHit)
+      offer({
+        species: subHit.species,
+        subspecies: (subHit as (typeof bySub)[number]).sub,
+        known: true,
+        subspeciesGuess: 'prefix',
+        start: k,
+        used: 1,
+        cost: subHit.cost,
+      })
+  }
+  if (best) {
+    const { cost: _cost, ...hit } = best as TaxonHit & { cost: number }
+    return hit
+  }
+  // A species not in the sheet yet, written in full at the start: kept as written, to be reviewed
+  // (when its genus is known or it is written with a capital, not "nubkado srci").
+  const [g, e] = [bare(words[0] || ''), words[1] || '']
+  const named =
+    [...taxa.keys()].some(s => s.toLowerCase().startsWith(`${g} `)) ||
+    (!!original && new RegExp(`\\b${capital(g)}\\b`).test(original))
+  if (g.length < 3 || e.length < 3 || !named) return none
+  const sub = words[2] && words[2].length > 2 ? words[2] : null
+  return {
+    species: `${capital(g)} ${e}`,
+    subspecies: sub,
+    known: false,
+    used: sub ? 3 : 2,
+    start: 0,
+    subspeciesGuess: null,
+    unknownSpecies: true,
+  }
 }
 
 // ------------------------------------------------------ rows for the sheet
@@ -1113,30 +1316,560 @@ export function monthsByYear(rows: TableRow[], recaptures = recaptureIds(rows)) 
   return out
 }
 
+// ------------------------------------------- pairing walk points with sheet rows
+
 /**
- * Whether a capture is already in the sheet: same day and mark, or same day,
- * species and minute (±2). A point noted without a species (identified later
- * from its photo) matches on the day and minute, and on the sex if both have one.
+ * How a walk point was paired with its sheet row: by its field mark; `sure`,
+ * the only best row by minute, species and sex; `tie`, another row (or point)
+ * fits exactly as well; `order`, placed between its neighbours because the
+ * note has no time (or nothing else fits); `none`, no row.
+ */
+export type MatchConfidence = 'mark' | 'sure' | 'tie' | 'order' | 'none'
+/** Where the note and its row disagree. */
+export type MatchConflict = 'sexo' | 'especie' | 'marca' | 'hora'
+
+export interface PointMatch {
+  /** Its rows: a note of several butterflies ("Mariposa 1 y 2") has several. */
+  rows: TableRow[]
+  confidence: MatchConfidence
+  /** Rows it could also be: those that fit as well (tie), or the free rows between its neighbours (order, none). */
+  candidates: TableRow[]
+  conflicts: MatchConflict[]
+  /** Chosen by a person: matching never changes it. */
+  manual: boolean
+}
+
+export interface MatchOptions {
+  /** Links chosen by a person, by capture index: record ids, or null for "No es ninguna". */
+  fixed?: Map<number, string[] | null>
+  /** Also try the day before and after when the title's date is off (default true). */
+  shift?: boolean
+}
+
+/**
+ * Minutes a note's time may differ from its row's. Measured on the 218 marked
+ * points with a time on the map (Sep 2026): 210 differ by 0 minutes, one by 2,
+ * two by 3 (a mark written on the next row of the sheet) and five by 10–70
+ * (a wrong hour, found only by the mark). Rows are typed from the notes, so a
+ * wider window would mostly catch the wrong butterfly: beyond 2 minutes a point
+ * is only placed by its order in the walk, and listed as a doubt.
+ */
+export const TIME_TOLERANCE = 2
+/** A pairing that costs this much is worse than no row (species and sex both disagree, say). */
+const UNPAIRED = 7
+/** Order within equal costs: rows in time order follow the points in walk order (a tiebreak only). */
+const ORDER_WEIGHT = 1e-4
+const BIG = 1e9
+
+const minuteOfRow = (row: TableRow) =>
+  typeof row.values.Collection_time === 'number' ? Math.round(row.values.Collection_time * 1440) : null
+
+interface RowFacts {
+  row: TableRow
+  minute: number | null
+  mark: string | null
+  species: string
+  sex: 'female' | 'male' | null
+  rank: number
+}
+interface PointFacts {
+  index: number
+  /** Time written in the note; a time read from the GPS track is only `approx`. */
+  minute: number | null
+  approx: number | null
+  mark: string | null
+  /** Its mark is on another row of the day (a slip in the note), so a row with another mark may still be it. */
+  markElsewhere: boolean
+  species: string
+  sex: 'female' | 'male' | null
+  count: number
+  rank: number
+}
+
+function rowFacts(rows: TableRow[]): RowFacts[] {
+  return [...rows]
+    .sort((a, b) => (minuteOfRow(a) ?? 1e6) - (minuteOfRow(b) ?? 1e6) || a.row - b.row)
+    .map((row, rank) => ({
+      row,
+      minute: minuteOfRow(row),
+      mark: hasMark(row) ? baseMark(markOf(row)) : null,
+      species: binomial(row.values.SPECIES),
+      sex: sexOf(row.values.Sex),
+      rank,
+    }))
+}
+
+/**
+ * The walk's order: by the point numbers when most points have one ("M3",
+ * "4 4 50cm"), otherwise as listed. Points with a time are ranked by it.
+ */
+function walkOrder(captures: Capture[]): number[] {
+  const numbered = captures.filter(c => c.seq !== null).length * 2 >= captures.length
+  const order = captures.map((_, i) => i)
+  return numbered ? order.sort((a, b) => (captures[a].seq ?? 1e6) - (captures[b].seq ?? 1e6) || a - b) : order
+}
+
+/** What a pairing costs (minutes apart plus disagreements), or null when it cannot be. */
+function pairCost(p: PointFacts, r: RowFacts): { cost: number; conflicts: MatchConflict[] } | null {
+  if (p.minute === null || r.minute === null) return null
+  const d = Math.abs(p.minute - r.minute)
+  if (d > TIME_TOLERANCE) return null
+  let cost = d
+  const conflicts: MatchConflict[] = []
+  if (p.species && r.species && p.species !== r.species) {
+    cost += 4
+    conflicts.push('especie')
+  }
+  if (p.sex && r.sex && p.sex !== r.sex) {
+    cost += 3
+    conflicts.push('sexo')
+  }
+  if (p.mark && r.mark && p.mark !== r.mark) {
+    // Two marks are two butterflies (a recapture not entered, next to a new mark), unless the note's mark is taken.
+    if (!p.markElsewhere && !sameNumber(p.mark, r.mark)) return null
+    cost += 4
+    conflicts.push('marca')
+  } else if (p.mark && !r.mark) {
+    cost += 1
+    conflicts.push('marca')
+  } else if (!p.mark && r.mark) cost += 0.5 // a marked row usually has its mark in the note
+  return cost < UNPAIRED ? { cost, conflicts } : null
+}
+
+/** A mark without the suffix a row may add when it was given twice ("A13.1", "A13.2" → A13). */
+const baseMark = (mark: string) => /^[A-Z]+\d+/.exec(mark)?.[0] ?? mark
+/** The same number with another letter (MJS's "a66" for the sheet's M66): a slip, not another butterfly. */
+const sameNumber = (a: string, b: string) => /\d+/.exec(a)?.[0] === /\d+/.exec(b)?.[0]
+
+/** Whether a point placed by order can be this row: species, sex and mark do not disagree (a mark taken by another row may be a slip: listed as a doubt). */
+function fits(p: PointFacts, r: RowFacts) {
+  return (
+    !(p.species && r.species && p.species !== r.species) &&
+    !(p.sex && r.sex && p.sex !== r.sex) &&
+    !(p.mark && r.mark && p.mark !== r.mark && !p.markElsewhere && !sameNumber(p.mark, r.mark))
+  )
+}
+const markConflict = (p: PointFacts, r: RowFacts): MatchConflict[] => (p.mark && p.mark !== r.mark ? ['marca'] : [])
+
+/** Minimum-cost assignment of each row of `cost` to a distinct column (Hungarian method; rows ≤ columns). */
+function hungarian(cost: number[][]): number[] {
+  const n = cost.length
+  const m = cost[0]?.length ?? 0
+  const u = new Array(n + 1).fill(0)
+  const v = new Array(m + 1).fill(0)
+  const p = new Array(m + 1).fill(0)
+  const way = new Array(m + 1).fill(0)
+  for (let i = 1; i <= n; i++) {
+    p[0] = i
+    let j0 = 0
+    const minv = new Array(m + 1).fill(Infinity)
+    const used = new Array(m + 1).fill(false)
+    do {
+      used[j0] = true
+      const i0 = p[j0]
+      let delta = Infinity
+      let j1 = 0
+      for (let j = 1; j <= m; j++)
+        if (!used[j]) {
+          const cur = cost[i0 - 1][j - 1] - u[i0] - v[j]
+          if (cur < minv[j]) {
+            minv[j] = cur
+            way[j] = j0
+          }
+          if (minv[j] < delta) {
+            delta = minv[j]
+            j1 = j
+          }
+        }
+      for (let j = 0; j <= m; j++)
+        if (used[j]) {
+          u[p[j]] += delta
+          v[j] -= delta
+        } else minv[j] -= delta
+      j0 = j1
+    } while (p[j0] !== 0)
+    do {
+      const j1 = way[j0]
+      p[j0] = p[j1]
+      j0 = j1
+    } while (j0)
+  }
+  const out = new Array(n).fill(-1)
+  for (let j = 1; j <= m; j++) if (p[j]) out[p[j] - 1] = j - 1
+  return out
+}
+
+interface Slot {
+  point: PointFacts
+  row: RowFacts | null
+  confidence: MatchConfidence
+  conflicts: MatchConflict[]
+  candidates: RowFacts[]
+}
+
+/**
+ * Timed points and free rows within the time tolerance: the assignment that
+ * pairs the most points at the least cost (minutes apart, species, sex, mark),
+ * solved per group of points and rows that could be exchanged. A point is a
+ * tie when another assignment of the same cost gives it another row or none.
+ */
+function assignTimed(slots: Slot[], rows: RowFacts[], taken: Set<string>) {
+  const open = slots.filter(s => !s.row && s.point.minute !== null)
+  const free = rows.filter(r => !taken.has(r.row.id) && r.minute !== null)
+  const edges = open.map(s => free.map(r => pairCost(s.point, r)))
+  // Groups of slots and rows linked by possible pairings (union-find over slots, then rows).
+  const parent = [...open.map((_, i) => i), ...free.map((_, j) => open.length + j)]
+  const find = (x: number): number => (parent[x] === x ? x : (parent[x] = find(parent[x])))
+  edges.forEach((list, i) => list.forEach((e, j) => e && (parent[find(i)] = find(open.length + j))))
+  const groups = new Map<number, { slots: number[]; rows: number[] }>()
+  open.forEach((_, i) => {
+    if (!edges[i].some(Boolean)) return
+    const g = groups.get(find(i)) || { slots: [], rows: [] }
+    g.slots.push(i)
+    groups.set(find(i), g)
+  })
+  free.forEach((_, j) => groups.get(find(open.length + j))?.rows.push(j))
+  for (const g of groups.values()) {
+    const solve = (forbid: (slot: number, row: number) => boolean, force: number | null = null) => {
+      const matrix = g.slots.map(i => [
+        ...g.rows.map(j => {
+          const e = edges[i][j]
+          if (!e || forbid(i, j)) return BIG
+          return e.cost + ORDER_WEIGHT * Math.abs(open[i].point.rank - free[j].rank)
+        }),
+        ...g.slots.map(() => (i === force ? BIG : UNPAIRED)),
+      ])
+      const pick = hungarian(matrix)
+      let real = 0
+      pick.forEach((col, k) => {
+        const e = col < g.rows.length ? edges[g.slots[k]][g.rows[col]] : null
+        real += matrix[k][col] >= BIG ? BIG : e ? e.cost : UNPAIRED
+      })
+      return { pick: pick.map(col => (col < g.rows.length ? g.rows[col] : -1)), real }
+    }
+    const best = solve(() => false)
+    const samePoint = (a: number, b: number) => open[a].point === open[b].point
+    g.slots.forEach((i, k) => {
+      const j = best.pick[k]
+      const slot = open[i]
+      const alternatives = new Set<number>()
+      // Another assignment as good without this pairing (a slot of the same point taking it is not another reading).
+      if (j >= 0) {
+        const alt = solve((s, r) => samePoint(s, i) && r === j)
+        if (alt.real <= best.real + 1e-6) alt.pick.forEach((r, kk) => samePoint(g.slots[kk], i) && r >= 0 && alternatives.add(r))
+        if (alt.real <= best.real + 1e-6 && !alternatives.size) alternatives.add(-1)
+      } else {
+        const alt = solve(() => false, i)
+        if (alt.real <= best.real + 1e-6) alt.pick.forEach((r, kk) => g.slots[kk] === i && r >= 0 && alternatives.add(r))
+      }
+      // Rows it could as well be: within the minutes, species and sex not disagreeing.
+      const candidates = g.rows
+        .filter(r => edges[i][r] && !edges[i][r]!.conflicts.some(c => c === 'especie' || c === 'sexo'))
+        .sort((a, b) => edges[i][a]!.cost - edges[i][b]!.cost || free[a].rank - free[b].rank)
+        .map(r => free[r])
+      if (j >= 0) {
+        slot.row = free[j]
+        slot.conflicts = edges[i][j]!.conflicts
+        slot.confidence = alternatives.size ? 'tie' : 'sure'
+        taken.add(free[j].row.id)
+      } else slot.confidence = alternatives.size ? 'tie' : 'none'
+      slot.candidates = slot.confidence === 'tie' ? candidates : []
+    })
+  }
+}
+
+/**
+ * Points without a time (or whose note has none that fits), in walk order
+ * between two placed neighbours: paired in order with the free rows between
+ * their neighbours' rows, skipping rows whose species, sex or mark disagree.
+ */
+function placeByOrder(slots: Slot[], order: number[], rows: RowFacts[], taken: Set<string>) {
+  const byPoint = new Map<number, Slot[]>()
+  for (const s of slots) byPoint.set(s.point.index, [...(byPoint.get(s.point.index) || []), s])
+  /** A point's place in time: its row's minute, else its note's; null for points without either. */
+  const anchor = (i: number) => {
+    const own = byPoint.get(i) || []
+    const times = own.map(s => s.row?.minute).filter((m): m is number => m !== null && m !== undefined)
+    if (times.length) return Math.min(...times)
+    return own[0]?.point.minute ?? null
+  }
+  let q = 0
+  while (q < order.length) {
+    if (anchor(order[q]) !== null || !byPoint.has(order[q])) {
+      q++
+      continue
+    }
+    // A run of points without a time, between the nearest neighbours that have one.
+    let end = q
+    while (end + 1 < order.length && anchor(order[end + 1]) === null) end++
+    let lo = -Infinity
+    for (let b = q - 1; b >= 0; b--) {
+      const t = anchor(order[b])
+      if (t !== null) {
+        lo = t
+        break
+      }
+    }
+    let hi = Infinity
+    for (let a = end + 1; a < order.length; a++) {
+      const t = anchor(order[a])
+      if (t !== null) {
+        hi = t
+        break
+      }
+    }
+    if (lo > hi) [lo, hi] = [hi, lo]
+    const window = rows.filter(r => !taken.has(r.row.id) && (r.minute === null || (r.minute >= lo && r.minute <= hi)))
+    const run = order.slice(q, end + 1).flatMap(i => (byPoint.get(i) || []).filter(s => !s.row && s.confidence !== 'tie'))
+    // Alignment of the run (in walk order) with the window (in time order): most pairs, then fewest penalties.
+    const n = run.length
+    const m = window.length
+    const score = (pairs: number, penalty: number) => pairs * 1000 - penalty
+    const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0))
+    const cost = (s: Slot, r: RowFacts) =>
+      (r.mark && !s.point.mark ? 0.5 : 0) +
+      (s.point.mark && r.mark !== s.point.mark ? 4 : 0) +
+      (s.point.approx !== null && r.minute !== null ? Math.abs(s.point.approx - r.minute) / 100 : 0)
+    for (let i = 1; i <= n; i++)
+      for (let j = 1; j <= m; j++) {
+        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1])
+        if (fits(run[i - 1].point, window[j - 1]))
+          dp[i][j] = Math.max(dp[i][j], dp[i - 1][j - 1] + score(1, cost(run[i - 1], window[j - 1])))
+      }
+    let [i, j] = [n, m]
+    while (i > 0 && j > 0) {
+      if (dp[i][j] === dp[i - 1][j]) i--
+      else if (dp[i][j] === dp[i][j - 1]) j--
+      else {
+        const s = run[i - 1]
+        s.row = window[j - 1]
+        s.confidence = 'order'
+        s.conflicts = markConflict(s.point, s.row)
+        taken.add(s.row.row.id)
+        i--
+        j--
+      }
+    }
+    for (const s of run) s.candidates = window.slice(0, 12)
+    q = end + 1
+  }
+}
+
+function matchDay<T extends Capture>(rows: TableRow[], captures: T[], fixed: Map<number, string[] | null>) {
+  const facts = rowFacts(rows)
+  const byId = new Map(facts.map(r => [r.row.id, r]))
+  const order = walkOrder(captures)
+  const rankOf = new Map(
+    captures
+      .map((c, i) => ({ i, t: (c as { timeFromTrack?: boolean }).timeFromTrack ? null : c.minutes }))
+      .filter(x => x.t !== null)
+      .sort((a, b) => a.t! - b.t! || order.indexOf(a.i) - order.indexOf(b.i))
+      .map((x, rank) => [x.i, rank]),
+  )
+  const slots: Slot[] = []
+  const manual = new Map<number, RowFacts[]>()
+  const taken = new Set<string>()
+  captures.forEach((c, index) => {
+    const fromTrack = !!(c as { timeFromTrack?: boolean }).timeFromTrack
+    const point: PointFacts = {
+      index,
+      minute: fromTrack ? null : c.minutes,
+      approx: fromTrack ? c.minutes : null,
+      mark: c.markId ? baseMark(c.markId.toUpperCase()) : null,
+      markElsewhere: !!c.markId && facts.some(r => r.mark === baseMark(c.markId!.toUpperCase())),
+      species: c.species && !c.unknownSpecies ? binomial(c.species) : '',
+      sex: c.sex,
+      count: Math.max(1, c.count || 1),
+      rank: rankOf.get(index) ?? 0,
+    }
+    if (fixed.has(index)) {
+      const chosen = (fixed.get(index) || []).map(id => byId.get(id)).filter((r): r is RowFacts => !!r)
+      chosen.forEach(r => taken.add(r.row.id))
+      manual.set(index, chosen)
+      // Its rows still place the points around it.
+      for (const r of chosen) slots.push({ point, row: r, confidence: 'sure', conflicts: [], candidates: [] })
+      return
+    }
+    for (let k = 0; k < point.count; k++) slots.push({ point, row: null, confidence: 'none', conflicts: [], candidates: [] })
+  })
+  // 1. Field marks: the day's row with the point's mark, whatever its minute (a wrong hour is common), unless the species disagrees.
+  for (const i of order) {
+    const slot = slots.find(s => s.point.index === i && !s.row)
+    const p = slot?.point
+    if (!slot || !p?.mark) continue
+    const options = facts.filter(
+      r => !taken.has(r.row.id) && r.mark === p.mark && !(p.species && r.species && p.species !== r.species),
+    )
+    const delta = (r: RowFacts) => (p.minute !== null && r.minute !== null ? Math.abs(p.minute - r.minute) : 1e6)
+    const r = options.sort((a, b) => delta(a) - delta(b))[0]
+    if (!r) continue
+    slot.row = r
+    slot.confidence = 'mark'
+    slot.conflicts = [
+      ...(p.sex && r.sex && p.sex !== r.sex ? ['sexo' as const] : []),
+      ...(p.minute !== null && r.minute !== null && Math.abs(p.minute - r.minute) > TIME_TOLERANCE ? ['hora' as const] : []),
+    ]
+    taken.add(r.row.id)
+  }
+  // 2. Points with a time: the best assignment by minute, species, sex and mark.
+  assignTimed(slots, facts, taken)
+  // 3. Points without a time, placed in walk order between their neighbours.
+  placeByOrder(slots, order, facts, taken)
+  // 4. As many points left as rows (short old notes such as "Marip 3"): all of them in order.
+  const leftSlots = order.flatMap(i => slots.filter(s => s.point.index === i && !s.row && s.confidence !== 'tie'))
+  const leftRows = facts.filter(r => !taken.has(r.row.id))
+  if (leftSlots.length && leftSlots.length === leftRows.length && leftSlots.every((s, k) => fits(s.point, leftRows[k])))
+    leftSlots.forEach((s, k) => {
+      s.row = leftRows[k]
+      s.confidence = 'order'
+      s.conflicts = markConflict(s.point, s.row)
+      s.candidates = leftRows
+      taken.add(s.row.row.id)
+    })
+  const weakest: MatchConfidence[] = ['none', 'tie', 'order', 'sure', 'mark']
+  return captures.map((_, index): PointMatch => {
+    if (manual.has(index)) {
+      const chosen = manual.get(index)!
+      return {
+        rows: chosen.map(r => r.row),
+        confidence: chosen.length ? 'sure' : 'none',
+        candidates: [],
+        conflicts: [],
+        manual: true,
+      }
+    }
+    const own = slots.filter(s => s.point.index === index)
+    const placed = own.filter(s => s.row)
+    const confidence = placed.length
+      ? weakest[Math.min(...placed.map(s => weakest.indexOf(s.confidence)))]
+      : own.some(s => s.confidence === 'tie')
+        ? 'tie'
+        : 'none'
+    const candidates = [...new Set(own.flatMap(s => s.candidates))].filter(r => !placed.some(s => s.row === r))
+    return {
+      rows: placed.map(s => s.row!.row),
+      confidence,
+      candidates: candidates.map(r => r.row),
+      conflicts: [...new Set(placed.flatMap(s => s.conflicts))],
+      manual: false,
+    }
+  })
+}
+
+const pairedByContent = (matches: PointMatch[]) =>
+  matches.filter(m => m.confidence === 'mark' || m.confidence === 'sure' || m.confidence === 'tie').length
+
+/**
+ * Pairs a walk's points with the collector's rows of that day. Marks first;
+ * then the assignment of timed points to rows (±2 minutes) with the least
+ * total difference that respects species and sex; then points without a time,
+ * in walk order between their neighbours; and when the notes are too short
+ * ("Marip 3"), all in order if the butterflies and rows left are as many.
+ * Each point says how sure its pairing is (see MatchConfidence). A title one
+ * day off is tolerated when the points match the next or previous day by content.
+ * Used by Importar recorrido, the server (stored walks) and the assistant.
+ */
+export function matchWalk<T extends Capture>(
+  rows: TableRow[],
+  date: string,
+  collector: string,
+  captures: T[],
+  options: MatchOptions = {},
+) {
+  const attempt = (serial: number) => {
+    // Without a collector (an old GPX), every row of the day.
+    const day = rows.filter(
+      r => dateOf(r) === serial && (!collector || dayKey(serial, text(r.values.Collector)) === dayKey(serial, collector)),
+    )
+    const matches = matchDay(day, captures, options.fixed || new Map())
+    return {
+      date: serialToIso(serial),
+      matches,
+      pairs: captures.flatMap((capture, i) => matches[i].rows.map(row => ({ capture, row }))),
+      left: captures.filter((_, i) => !matches[i].rows.length),
+      ordered: matches.some(m => m.confidence === 'order'),
+    }
+  }
+  const base = isoToSerial(date)
+  let best = attempt(base)
+  if (options.shift === false) return best
+  for (const shift of [-1, 1]) {
+    if (!best.left.length) break
+    const other = attempt(base + shift)
+    // Another day only when more of its points match by content (not just by order).
+    if (pairedByContent(other.matches) > pairedByContent(best.matches)) best = other
+  }
+  return best
+}
+
+/** What a stored capture keeps (see server/monitoring.mjs). */
+export interface StoredPoint {
+  text: string
+  lat: number
+  lon: number
+  minutes: number | null
+}
+
+/**
+ * The points of a stored walk, read again from their notes (the stored species,
+ * sex and mark are those of the row it was paired with). A time the note does
+ * not have came from the GPS track. A note of several butterflies was stored
+ * once per row ("Mariposa 1 y 2"): those copies are one point again, and
+ * `groups` gives the stored captures of each point.
+ */
+export function storedPoints(captures: StoredPoint[], taxa: Taxa, local?: Taxa) {
+  const groups = new Map<string, number[]>()
+  captures.forEach((c, i) => {
+    const key = `${c.text}|${c.lat}|${c.lon}`
+    groups.set(key, [...(groups.get(key) || []), i])
+  })
+  const points = [...groups.values()].map(indexes => {
+    const c = captures[indexes[0]]
+    const p = parseCapture(c.text, taxa, local)
+    return {
+      ...p,
+      minutes: p.minutes ?? c.minutes,
+      timeFromTrack: p.minutes === null && c.minutes !== null,
+      count: indexes.length,
+    }
+  })
+  return { points, groups: [...groups.values()] }
+}
+
+/** Doubtful pairings, to be looked at with the photos: a tie, placed by order, or a note that disagrees with its row. */
+export const doubtfulMatch = (m: PointMatch) =>
+  !m.manual && (m.confidence === 'tie' || m.confidence === 'order' || m.conflicts.some(c => c !== 'hora'))
+
+/**
+ * Whether a single capture is already in the sheet: the day's row with its
+ * mark, or the closest by minute (±2) whose species and sex agree. A point
+ * noted without a species (identified later from its photo) matches on the
+ * minute, and on the sex if both have one. A whole walk is paired with matchWalk.
  */
 export function existingRow(rows: TableRow[], date: string, c: Capture): TableRow | null {
   const serial = isoToSerial(date)
-  const sameDay = rows.filter(row => dateOf(row) === serial)
-  const minuteOf = (row: TableRow) =>
-    typeof row.values.Collection_time === 'number' ? Math.round(row.values.Collection_time * 1440) : null
-  const near = (row: TableRow) => c.minutes !== null && minuteOf(row) !== null && Math.abs(minuteOf(row)! - c.minutes) <= 2
-  // A mark, or "M84" at the start of a note (read as the point number) when the sheet has that mark.
-  const mark = c.markId || (c.seq !== null ? `M${c.seq}` : null)
-  if (mark) {
-    const marked = sameDay.find(row => text(row.values.FieldMark_ID).toUpperCase() === mark)
-    if (marked) return marked
+  const day = rowFacts(rows.filter(row => dateOf(row) === serial))
+  const p: PointFacts = {
+    index: 0,
+    minute: c.minutes,
+    approx: null,
+    mark: c.markId ? baseMark(c.markId.toUpperCase()) : null,
+    markElsewhere: false,
+    species: c.species && !c.unknownSpecies ? binomial(c.species) : '',
+    sex: c.sex,
+    count: 1,
+    rank: 0,
   }
-  if (c.species)
-    return sameDay.find(row => text(row.values.SPECIES).toLowerCase() === c.species!.toLowerCase() && near(row)) || null
-  const sexOf = (row: TableRow) =>
-    text(row.values.Sex)
-      .toLowerCase()
-      .replace(/\s*\?$/, '')
-  return sameDay.find(row => near(row) && (!c.sex || !sexOf(row) || sexOf(row) === c.sex)) || null
+  if (p.mark) {
+    const marked = day.filter(r => r.mark === p.mark && !(p.species && r.species && p.species !== r.species))
+    const delta = (r: RowFacts) => (p.minute !== null && r.minute !== null ? Math.abs(p.minute - r.minute) : 1e6)
+    if (marked.length) return marked.sort((a, b) => delta(a) - delta(b))[0].row
+  }
+  const fitting = day
+    .map(r => ({ r, e: pairCost(p, r) }))
+    .filter(x => x.e && !x.e.conflicts.some(k => k !== 'marca'))
+    .sort((a, b) => a.e!.cost - b.e!.cost || a.r.rank - b.r.rank)
+  return fitting[0]?.r.row ?? null
 }
 
 /**
@@ -1376,55 +2109,6 @@ export const median = (values: number[]) => {
   const mid = Math.floor(s.length / 2)
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2
 }
-
-/**
- * Pairs a walk's points with the collector's rows of that day: point by point
- * (mark, species and minute, or minute and sex), then, when notes are too short
- * ("Marip 3"), in order, if the remaining butterflies and rows are as many.
- * A title one day off is tolerated when the points match the next or previous day.
- */
-export function matchWalk<T extends Capture>(rows: TableRow[], date: string, collector: string, captures: T[]) {
-  const attempt = (serial: number) => {
-    const day = rows.filter(r => dateOf(r) === serial && dayKey(serial, text(r.values.Collector)) === dayKey(serial, collector))
-    const iso = serialToIso(serial)
-    const used = new Set<string>()
-    const pairs: { capture: T; row: TableRow }[] = []
-    const left: T[] = []
-    for (const c of captures) {
-      const row = existingRow(
-        day.filter(r => !used.has(r.id)),
-        iso,
-        c,
-      )
-      if (row) {
-        used.add(row.id)
-        pairs.push({ capture: c, row })
-      } else left.push(c)
-    }
-    const rest = day.filter(r => !used.has(r.id)).sort(byTime)
-    const wanted = left.reduce((n, c) => n + c.count, 0)
-    let ordered = false
-    if (left.length && wanted === rest.length) {
-      let i = 0
-      for (const c of left) for (let k = 0; k < c.count; k++) pairs.push({ capture: c, row: rest[i++] })
-      ordered = true
-      left.length = 0
-    }
-    return { date: iso, pairs, left, ordered }
-  }
-  const base = isoToSerial(date)
-  let best = attempt(base)
-  for (const shift of [-1, 1]) {
-    if (best.pairs.length === captures.length) break
-    const other = attempt(base + shift)
-    // Another day only when its points match by content (not just by order).
-    if (!other.ordered && other.pairs.length > best.pairs.length) best = other
-  }
-  return best
-}
-const byTime = (a: TableRow, b: TableRow) =>
-  (typeof a.values.Collection_time === 'number' ? a.values.Collection_time : 9) -
-    (typeof b.values.Collection_time === 'number' ? b.values.Collection_time : 9) || a.row - b.row
 
 /**
  * Species accumulation: after each monitoring day (in date order), how many
