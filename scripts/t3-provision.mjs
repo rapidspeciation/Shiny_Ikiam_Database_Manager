@@ -85,6 +85,15 @@ writeFileSync(
   JSON.stringify({ enableAllProjectMcpServers: true, permissions: { allow: ['mcp__ithomiini'] } }, null, 2),
 );
 
+// Claude Code only applies the folder's settings once the folder is trusted.
+for (const config of [join(process.env.HOME, '.claude.json'), join(process.env.HOME, '.claude', '.claude.json')]) {
+  if (!existsSync(config)) continue;
+  const data = JSON.parse(readFileSync(config, 'utf8'));
+  data.projects ??= {};
+  data.projects[workspace] = { ...data.projects[workspace], hasTrustDialogAccepted: true };
+  writeFileSync(config, JSON.stringify(data, null, 2));
+}
+
 const title = `Ithomiini · ${user.display_name}`;
 const marker = join(workspace, '.claude', 't3-project');
 if (!existsSync(marker)) {
