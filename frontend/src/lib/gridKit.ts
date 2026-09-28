@@ -1,6 +1,26 @@
-import { EditModule } from 'tabulator-tables'
+import { EditModule, KeybindingsModule } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent, Tabulator } from 'tabulator-tables'
 import { complete, pickChoice } from './paste'
+
+/**
+ * Tabulator 6.5 reads a typed character by its character code, so "(" (40)
+ * was taken for the down arrow, "&" (38) up, "%" (37) left, "'" (39) right,
+ * and "$ # ! \"" for Home, End and the page keys: typing "DY_(dry)" saved
+ * "DY_" and moved to the row below, which got the rest. Only letters and
+ * digits keep their code (the same as the key's old keyCode); every grid
+ * gets this, since they all import this file before building a table.
+ */
+export function tabulatorKeyCode(e: Pick<KeyboardEvent, 'key' | 'keyCode'>, original: (e: KeyboardEvent) => number) {
+  if (e.key?.length === 1 && !/^[\p{L}\p{N}]$/u.test(e.key)) return 0
+  return original(e as KeyboardEvent)
+}
+{
+  const keys = KeybindingsModule.prototype as unknown as { getKeyCode: (e: KeyboardEvent) => number }
+  const original = keys.getKeyCode
+  keys.getKeyCode = function (this: unknown, e: KeyboardEvent) {
+    return tabulatorKeyCode(e, event => original.call(this, event))
+  }
+}
 
 /**
  * Spreadsheet habits shared by the Tabulator grids (Tablas, the task screens,
@@ -755,8 +775,8 @@ function suggestionBox(
  * shows them as you type, so they are marked after each key.)
  */
 function markPick() {
-  const input = document.activeElement as HTMLInputElement | null
-  if (!input?.closest?.('.tabulator-editing')) return
+  const input = document.activeElement
+  if (!(input instanceof HTMLInputElement) || !input.closest('.tabulator-editing')) return
   const items = [...document.querySelectorAll<HTMLElement>('.tabulator-edit-list .tabulator-edit-list-item')]
   const shown = items.filter(el => el.offsetParent !== null)
   const pick = pickChoice(input.value, shown.map(el => el.textContent?.trim() ?? ''))
