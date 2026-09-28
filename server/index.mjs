@@ -828,7 +828,7 @@ function serveStatic(req, res, path, base, frameSrc = '') {
   res.writeHead(200, {
     'content-type': mime[extname(file)] || 'application/octet-stream',
     'x-content-type-options': 'nosniff',
-    'content-security-policy': `default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; img-src 'self' data: blob: https:; connect-src 'self'; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self'${frameSrc ? `; frame-src ${frameSrc}` : ''}`,
+    'content-security-policy': `default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; img-src 'self' data: blob: https:; connect-src 'self' wss://generativelanguage.googleapis.com; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self'${frameSrc ? `; frame-src ${frameSrc}` : ''}`,
     'cache-control': file.endsWith('index.html') ? 'no-cache' : 'public, max-age=3600',
   });
   if (req.method === 'HEAD') return res.end();
