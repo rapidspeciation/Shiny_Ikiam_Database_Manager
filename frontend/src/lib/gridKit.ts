@@ -1,0 +1,235 @@
+import type { CellComponent, RowComponent, Tabulator } from 'tabulator-tables'
+
+/**
+ * Spreadsheet habits shared by the Tabulator grids (Tablas, the task screens,
+ * the Colecta list): keys, fill down, clear, and the fill handle that copies
+ * cells by dragging, with a mouse or a finger.
+ */
+export type CanEdit = (row: RowComponent, field: string) => boolean
+type Notice = (message: string) => void
+
+/** The single selected cell, if the selection is one cell. */
+export function activeCell(table: Tabulator): CellComponent | null {
+  const cells = table.getRanges()[0]?.getCells().flat() as CellComponent[] | undefined
+  return cells?.length === 1 ? cells[0] : null
+}
+
+/** Copy the first row of the selection down to the rest (Ctrl+D). */
+export function fillDown(table: Tabulator, canEdit: CanEdit, notice: Notice) {
+  const range = table.getRanges()[0]
+  if (!range) return notice('Selecciona un rango de celdas para rellenar')
+  const rows = range.getRows()
+  if (rows.length < 2) return notice('Selecciona al menos dos filas para rellenar hacia abajo')
+  for (const column of range.getColumns()) {
+    const field = column.getField()
+    const source = rows[0].getCell(field).getValue()
+    for (const row of rows.slice(1)) if (canEdit(row, field)) row.getCell(field).setValue(source)
+  }
+}
+
+/** Clear the editable cells of the selection (Supr / Delete). */
+export function clearRange(table: Tabulator, canEdit: CanEdit) {
+  const range = table.getRanges()[0]
+  if (!range) return
+  for (const cell of range.getCells().flat() as CellComponent[])
+    if (canEdit(cell.getRow(), cell.getField())) cell.setValue(null)
+}
+
+/**
+ * Spreadsheet keys: typing on a selected cell replaces its content; Enter or
+ * F2 edits it in place; Ctrl+D fills down; Supr clears the selection.
+ */
+export function spreadsheetKeys(table: () => Tabulator | null, canEdit: CanEdit, notice: Notice) {
+  // Keys typed while a cell's editor is still opening are kept and given to it,
+  // so a fast typist does not lose the first letters.
+  let opening: { cell: CellComponent; text: string } | null = null
+  function giveText(tries = 0) {
+    if (!opening) return
+    const input = opening.cell.getElement().querySelector('input')
+    if (!input) return tries < 20 ? requestAnimationFrame(() => giveText(tries + 1)) : void (opening = null)
+    input.value = opening.text
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    // List editors (Tabulator's autocomplete) notice typing on keyup, not on input.
+    input.dispatchEvent(new KeyboardEvent('keyup', { key: opening.text.at(-1), bubbles: true }))
+    input.setSelectionRange(input.value.length, input.value.length)
+    opening = null
+  }
+  return (event: KeyboardEvent) => {
+    const t = table()
+    const typing = event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey
+    if (opening && typing) {
+      event.preventDefault()
+      opening.text += event.key
+      return
+    }
+    if (!t || (event.target as HTMLElement).closest('input, textarea, select, .tabulator-editing')) return
+    const cell = activeCell(t)
+    const editable = !!cell && canEdit(cell.getRow(), cell.getField())
+    if (cell && editable && typing) {
+      event.preventDefault()
+      opening = { cell, text: event.key }
+      cell.edit(true)
+      requestAnimationFrame(() => giveText())
+    } else if (cell && editable && (event.key === 'Enter' || event.key === 'F2')) {
+      event.preventDefault()
+      cell.edit(true)
+    } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') {
+      event.preventDefault()
+      fillDown(t, canEdit, notice)
+    } else if (event.key === 'Delete') {
+      event.preventDefault()
+      clearRange(t, canEdit)
+    }
+  }
+}
+
+/**
+ * The fill handle: a small square at the bottom-right corner of the selected
+ * cells (on a touch screen, of the cell last tapped). Dragging it down copies
+ * those cells to the rows it passes over, repeating them if several rows were
+ * selected, as in Excel or Sheets. Read-only cells are skipped.
+ */
+export function attachFillHandle(
+  table: Tabulator,
+  container: HTMLElement,
+  { canEdit, touch, onFilled }: { canEdit: CanEdit; touch: boolean; onFilled?: (count: number) => void },
+) {
+  const handle = document.createElement('div')
+  handle.className = `fill-handle${touch ? ' is-touch' : ''}`
+  handle.title = 'Arrastra hacia abajo para copiar'
+  container.appendChild(handle)
+  let touched: CellComponent | null = null
+  let source: { rows: RowComponent[]; fields: string[] } | null = null
+  let dragging = false
+
+  const holder = () => container.querySelector<HTMLElement>('.tabulator-tableholder')
+  /** What scrolls while dragging: the grid itself (Tablas), or the page around it (the Colecta list). */
+  function scrolling(): HTMLElement | null {
+    const box = holder()
+    if (box && box.scrollHeight > box.clientHeight + 1) return box
+    for (let el = container.parentElement; el; el = el.parentElement) {
+      const overflow = getComputedStyle(el).overflowY
+      if ((overflow === 'auto' || overflow === 'scroll') && el.scrollHeight > el.clientHeight + 1) return el
+    }
+    return null
+  }
+  const hide = () => (handle.style.display = 'none')
+
+  function currentSource() {
+    if (touch) return touched ? { rows: [touched.getRow()], fields: [touched.getField()] } : null
+    const range = table.getRanges()[0]
+    if (!range) return null
+    const rows = range.getRows()
+    const fields = range
+      .getColumns()
+      .map(c => c.getField())
+      .filter(f => f && !f.startsWith('__'))
+    return rows.length && fields.length ? { rows, fields } : null
+  }
+
+  function place() {
+    if (dragging) return
+    source = currentSource()
+    const box = holder()
+    if (!source || !box) return hide()
+    const el = source.rows.at(-1)!.getCell(source.fields.at(-1)!)?.getElement()
+    if (!el?.isConnected) return hide()
+    const cell = el.getBoundingClientRect()
+    const view = box.getBoundingClientRect()
+    if (cell.bottom < view.top || cell.bottom > view.bottom + 1 || cell.right < view.left || cell.right > view.right + 1)
+      return hide()
+    const origin = container.getBoundingClientRect()
+    handle.style.display = 'block'
+    handle.style.left = `${cell.right - origin.left}px`
+    handle.style.top = `${cell.bottom - origin.top}px`
+  }
+
+  let marked: HTMLElement[] = []
+  const unmark = () => {
+    for (const el of marked) el.classList.remove('fill-target')
+    marked = []
+  }
+
+  handle.addEventListener('pointerdown', down => {
+    if (!source) return
+    down.preventDefault()
+    down.stopPropagation()
+    handle.setPointerCapture(down.pointerId)
+    dragging = true
+    const { rows: from, fields } = source
+    const active = table.getRows('active')
+    const indexOf = new Map(active.map((r, i) => [r.getElement(), i]))
+    const last = active.indexOf(from.at(-1)!)
+    let end = last
+    let pointerX = down.clientX
+    let pointerY = down.clientY
+    const mark = () => {
+      unmark()
+      for (let i = last + 1; i <= end; i++)
+        for (const f of fields) {
+          const el = active[i].getCell(f)?.getElement()
+          if (el) {
+            el.classList.add('fill-target')
+            marked.push(el)
+          }
+        }
+    }
+    const track = (x: number, y: number) => {
+      pointerX = x
+      pointerY = y
+      const row = document.elementFromPoint(x, y)?.closest('.tabulator-row') as HTMLElement | null
+      const i = row ? indexOf.get(row) : undefined
+      if (i !== undefined) {
+        end = Math.max(last, i)
+        mark()
+      }
+    }
+    // Near the bottom edge the grid scrolls on its own, so long runs can be filled.
+    const scroller = window.setInterval(() => {
+      const box = scrolling()
+      if (!box) return
+      const view = box.getBoundingClientRect()
+      if (pointerY > view.bottom - 24) {
+        box.scrollTop += 24
+        const y = pointerY
+        track(pointerX, Math.min(y, view.bottom - 2))
+        pointerY = y
+      }
+    }, 60)
+    const move = (e: PointerEvent) => track(e.clientX, e.clientY)
+    const up = () => {
+      window.clearInterval(scroller)
+      handle.removeEventListener('pointermove', move)
+      handle.removeEventListener('pointerup', up)
+      handle.removeEventListener('pointercancel', up)
+      unmark()
+      dragging = false
+      let count = 0
+      for (let i = last + 1; i <= end; i++) {
+        const target = active[i]
+        const src = from[(i - last - 1) % from.length]
+        for (const f of fields)
+          if (canEdit(target, f)) {
+            target.getCell(f).setValue(src.getCell(f).getValue())
+            count++
+          }
+      }
+      if (count) onFilled?.(end - last)
+      place()
+    }
+    handle.addEventListener('pointermove', move)
+    handle.addEventListener('pointerup', up)
+    handle.addEventListener('pointercancel', up)
+  })
+
+  const later = () => requestAnimationFrame(place)
+  for (const event of ['rangeAdded', 'rangeChanged', 'rangeRemoved', 'scrollVertical', 'scrollHorizontal', 'renderComplete'])
+    table.on(event as 'renderComplete', later)
+  if (touch)
+    for (const event of ['cellClick', 'cellEdited'])
+      table.on(event as 'cellEdited', (...args: unknown[]) => {
+        touched = args.find(a => a && typeof (a as CellComponent).getField === 'function') as CellComponent
+        later()
+      })
+  return { place, destroy: () => handle.remove() }
+}

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
-import { Eraser, Plus, Save, Trash2 } from 'lucide-vue-next'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { CheckSquare, Eraser, Plus, Save, Trash2, X } from 'lucide-vue-next'
+import CollectGrid from '../components/CollectGrid.vue'
 import SheetGrid from '../components/SheetGrid.vue'
 import { useSheet } from '../composables/useSheet'
 import { api } from '../lib/api'
@@ -8,6 +9,7 @@ import { isBlank } from '../lib/cells'
 import { isoToSerial, todayIso } from '../lib/dates'
 import { errorText, notify } from '../lib/notice'
 import { listColumn } from '../lib/options'
+import { COLUMNS, FATES, type Column, type Draft, type Fate } from '../lib/collect'
 import { parseBlock, parseCamTube, parseFate, parseSex, parseTime } from '../lib/paste'
 import { persistentRef } from '../lib/persist'
 import { orderColumns } from '../lib/rows'
@@ -24,26 +26,6 @@ import { useTables } from '../stores/tables'
  * is filled in the same save. Butterflies preserved in the field get a CAM ID
  * and a tube. A second place can be added by changing the place and adding more.
  */
-type Fate = 'insectario' | 'preservada' | 'liberada'
-interface Draft {
-  key: string
-  location: string
-  species: string
-  subspecies: string
-  sex: '' | 'female' | 'male' | 'NA'
-  fate: Fate
-  time: string
-  purpose: string
-  notes: string
-  insectaryId: string
-  cam: string
-  tube: string
-}
-const FATES: Record<Fate, { label: string; value: string }> = {
-  insectario: { label: 'Al insectario', value: 'Collected_Sent2Insectary' },
-  preservada: { label: 'Preservada', value: 'Collected_Preserved' },
-  liberada: { label: 'Liberada', value: 'Released_Unmarked' },
-}
 const MODULE = 'Collection_data'
 const module = ref(MODULE)
 const pending = usePending()
@@ -66,6 +48,14 @@ const addCount = ref(1)
 const addFate = ref<Fate>('insectario')
 /** Optional: the species of all the rows being added (e.g. five Mechanitis at once). */
 const addSpecies = ref('')
+/**
+ * Computers get the list as a spreadsheet (ranges, copy/paste, fill handle);
+ * phones get form rows with big buttons, and a bar to apply values to the
+ * rows ticked. Either can be chosen.
+ */
+const touchScreen = window.matchMedia('(pointer: coarse)').matches
+const view = persistentRef<'tabla' | 'formulario'>('collect:view', touchScreen ? 'formulario' : 'tabla', { lasting: true })
+const grid = ref<InstanceType<typeof CollectGrid>>()
 const saving = ref(false)
 const recentCount = ref(10)
 
@@ -172,6 +162,7 @@ async function add() {
   notify(`Se añadieron ${count} ${count === 1 ? 'fila' : 'filas'}: la lista tiene ${drafts.value.length}`)
   // Straight to the first new row, ready to type its species.
   await nextTick()
+  if (view.value === 'tabla') return void grid.value?.focusCell(first, 'species')
   const row = document.querySelector<HTMLElement>(`[data-draft="${drafts.value[first]?.key}"]`)
   row?.scrollIntoView({ block: 'center', behavior: 'smooth' })
   row?.querySelector<HTMLInputElement>('input[list=collect-species]')?.focus({ preventScroll: true })
@@ -191,8 +182,6 @@ function removeEmpty() {
  * Spreadsheet habits in the list. The columns in the order they appear, which
  * is also the order pasted cells are spread over (from the cell pasted into).
  */
-const COLUMNS = ['location', 'species', 'subspecies', 'sex', 'fate', 'time', 'ids', 'purpose', 'notes'] as const
-type Column = (typeof COLUMNS)[number]
 function blankDraft(): Draft {
   return {
     key: crypto.randomUUID(),
@@ -216,19 +205,22 @@ function setColumn(d: Draft, column: Column, text: string) {
     if (fate) setFate(d, fate)
   } else if (column === 'time') d.time = parseTime(text)
   else if (column === 'ids') {
-    // Only a preserved butterfly takes a pasted CAM and tube; Insectary IDs come from the sheet.
+    // Only a preserved butterfly takes a CAM and tube ("CAM079895 · FS90415305"); Insectary IDs come from the sheet.
     const { cam, tube } = parseCamTube(text)
     if (d.fate === 'preservada') {
-      if (cam) d.cam = cam
-      if (tube) d.tube = tube
+      if (cam || !text.trim()) d.cam = cam
+      if (tube || !text.trim()) d.tube = tube
     }
   } else d[column] = text === 'NA' && column === 'subspecies' ? '' : text
 }
-/** Ctrl+V of a block copied from a spreadsheet: fills down and across, adding rows if needed. */
-function onPaste(event: ClipboardEvent, index: number, column: Column) {
-  const block = parseBlock(event.clipboardData?.getData('text/plain') || '')
-  if (!block) return
-  event.preventDefault()
+/**
+ * A block copied from a spreadsheet, pasted at a row and column: fills down and
+ * across, adding rows if needed. False when the text is a single value (the
+ * cell takes it as typed).
+ */
+function pasteText(text: string, index: number, column: Column): boolean {
+  const block = parseBlock(text)
+  if (!block) return false
   const start = COLUMNS.indexOf(column)
   let added = 0
   block.forEach((cells, r) => {
@@ -244,6 +236,15 @@ function onPaste(event: ClipboardEvent, index: number, column: Column) {
     })
   })
   notify(`Pegadas ${block.length} filas${added ? ` (${added} nuevas)` : ''}: la lista tiene ${drafts.value.length}`)
+  return true
+}
+function onPaste(event: ClipboardEvent, index: number, column: Column) {
+  if (pasteText(event.clipboardData?.getData('text/plain') || '', index, column)) event.preventDefault()
+}
+/** A cell edited in the grid (typed, pasted as one value, filled by dragging or Ctrl+D). */
+function editCell(key: string, column: Column, text: string) {
+  const d = drafts.value.find(x => x.key === key)
+  if (d) setColumn(d, column, text)
 }
 function focusCell(index: number, column: Column) {
   const key = drafts.value[index]?.key
@@ -265,6 +266,44 @@ function onCellKey(event: KeyboardEvent, index: number, column: Column) {
     event.preventDefault()
     focusCell(index + 1, column)
   }
+}
+// Rows ticked in the form (phones), and what to apply to them.
+const selected = ref<string[]>([])
+const anchor = ref('')
+const isSelected = (key: string) => selected.value.includes(key)
+function toggleSelect(key: string) {
+  selected.value = isSelected(key) ? selected.value.filter(k => k !== key) : [...selected.value, key]
+  anchor.value = key
+}
+/** Ticks every row from the last one ticked to this one. */
+function selectTo(key: string) {
+  const keys = drafts.value.map(d => d.key)
+  const [a, b] = [keys.indexOf(anchor.value), keys.indexOf(key)].sort((x, y) => x - y)
+  if (a < 0) return toggleSelect(key)
+  selected.value = [...new Set([...selected.value, ...keys.slice(a, b + 1)])]
+  anchor.value = key
+}
+watch(
+  () => drafts.value.map(d => d.key).join('|'),
+  () => (selected.value = selected.value.filter(k => drafts.value.some(d => d.key === k))),
+)
+const bulk = reactive({ species: '', subspecies: '', sex: '' as Draft['sex'], fate: '' as '' | Fate })
+/** Applies the values filled in the bar (the empty ones are left alone) to the rows ticked. */
+function applyBulk() {
+  const rows = drafts.value.filter(d => isSelected(d.key))
+  for (const d of rows) {
+    if (bulk.species) {
+      d.species = bulk.species
+      d.subspecies = bulk.subspecies
+    } else if (bulk.subspecies) d.subspecies = bulk.subspecies
+    if (bulk.sex) d.sex = bulk.sex
+    if (bulk.fate) setFate(d, bulk.fate)
+  }
+  notify(`Aplicado a ${rows.length} ${rows.length === 1 ? 'fila' : 'filas'}`)
+}
+function removeSelected() {
+  drafts.value = drafts.value.filter(d => !isSelected(d.key))
+  selected.value = []
 }
 function clearAll() {
   const filled = drafts.value.length - emptyCount.value
@@ -487,17 +526,47 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         <span v-if="emptyCount" class="text-amber-800">{{ emptyCount }} vacías</span>
         <button v-if="emptyCount" class="btn" @click="removeEmpty"><Eraser :size="15" /> Quitar filas vacías</button>
         <button class="btn" @click="clearAll"><Trash2 :size="15" /> Vaciar lista</button>
-        <span class="hint">Se guarda en este navegador, aunque recargues o cierres la página, hasta que la guardes o la vacíes.</span>
-        <span class="hint w-full"
-          >Como en una hoja de cálculo: pega celdas copiadas de Excel o Sheets (Ctrl+V llena hacia abajo y a la derecha, en el orden
-          de las columnas, y añade filas si faltan) · Ctrl+D copia la fila de arriba (especie con subespecie) · Enter baja a la
-          siguiente fila.</span
+        <span class="ml-auto inline-flex overflow-hidden rounded-md border border-stone-300 text-xs">
+          <button
+            v-for="v in ['tabla', 'formulario'] as const"
+            :key="v"
+            class="px-2.5 py-1"
+            :class="view === v ? 'bg-brand-700 text-white' : 'bg-white text-stone-700'"
+            @click="view = v"
+          >
+            {{ v === 'tabla' ? 'Tabla' : 'Formulario' }}
+          </button>
+        </span>
+        <span class="hint w-full">Se guarda en este navegador, aunque recargues o cierres la página, hasta que la guardes o la vacíes.</span>
+        <span v-if="view === 'tabla'" class="hint w-full"
+          >Como en una hoja de cálculo: selecciona celdas y arrastra el cuadrito de la esquina hacia abajo para copiarlas · pega
+          celdas de Excel o Sheets (llena hacia abajo y a la derecha, y añade filas si faltan) · Ctrl+D copia la primera fila de la
+          selección · escribe sobre una celda para reemplazarla, doble clic para editarla.</span
+        >
+        <span v-else class="hint w-full"
+          >Marca filas (o «hasta aquí» para marcar varias seguidas) y aplica especie, sexo o destino a todas a la vez · en computador
+          también se puede pegar desde Excel, Ctrl+D copia la fila de arriba y Enter baja.</span
         >
       </div>
-      <div class="overflow-x-auto">
+      <CollectGrid
+        v-if="view === 'tabla'"
+        ref="grid"
+        class="mt-2"
+        :drafts="drafts"
+        :places="places"
+        :species="speciesList"
+        :subspecies-for="subspeciesFor"
+        :purposes="options.Purpose || []"
+        :paste="pasteText"
+        @edit="editCell"
+        @remove="remove"
+        @notice="notify"
+      />
+      <div v-else class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead class="text-left text-xs text-stone-600">
             <tr>
+              <th class="w-8 px-1 py-1"><span class="sr-only">Marcar</span></th>
               <th class="px-1 py-1">#</th>
               <th class="px-1">Lugar</th>
               <th class="px-1">Especie</th>
@@ -512,8 +581,32 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(d, i) in drafts" :key="d.key" :data-draft="d.key" class="border-t border-stone-100 align-middle">
-              <td class="px-1 text-stone-500 tabular-nums">{{ i + 1 }}</td>
+            <tr
+              v-for="(d, i) in drafts"
+              :key="d.key"
+              :data-draft="d.key"
+              class="border-t border-stone-100 align-middle"
+              :class="{ 'bg-brand-50': isSelected(d.key) }"
+            >
+              <td class="px-1">
+                <input
+                  type="checkbox"
+                  class="h-5 w-5 accent-brand-700"
+                  :checked="isSelected(d.key)"
+                  :aria-label="`Marcar fila ${i + 1}`"
+                  @change="toggleSelect(d.key)"
+                />
+              </td>
+              <td class="px-1 text-stone-500 tabular-nums">
+                {{ i + 1 }}
+                <button
+                  v-if="selected.length && !isSelected(d.key)"
+                  class="ml-1 rounded bg-stone-100 px-1.5 py-0.5 text-xs whitespace-nowrap text-brand-700"
+                  @click="selectTo(d.key)"
+                >
+                  hasta aquí
+                </button>
+              </td>
               <td class="px-1">
                 <input
                   v-model="d.location"
@@ -627,6 +720,50 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         <datalist id="collect-purposes">
           <option v-for="p in options.Purpose || []" :key="p" :value="p" />
         </datalist>
+      </div>
+      <!-- Phones: what to apply to the rows ticked, pinned at the bottom of the screen. -->
+      <div
+        v-if="view === 'formulario' && selected.length"
+        class="sticky bottom-0 z-10 -mx-3 mt-2 flex flex-wrap items-end gap-2 border-t border-brand-700 bg-brand-50 px-3 py-2 text-sm"
+      >
+        <span class="w-full font-semibold text-brand-800"
+          >{{ selected.length }} {{ selected.length === 1 ? 'fila marcada' : 'filas marcadas' }}: aplicar lo que llenes</span
+        >
+        <label class="min-w-40 flex-1">
+          <span class="field-label">Especie</span>
+          <input v-model="bulk.species" class="field-input" list="collect-species" />
+        </label>
+        <label class="min-w-32 flex-1">
+          <span class="field-label">Subespecie</span>
+          <input v-model="bulk.subspecies" class="field-input" list="collect-bulk-sub" />
+          <datalist id="collect-bulk-sub">
+            <option v-for="sub in subspeciesFor(bulk.species)" :key="sub" :value="sub" />
+          </datalist>
+        </label>
+        <span class="whitespace-nowrap">
+          <button
+            v-for="[value, sign] in [
+              ['female', '♀'],
+              ['male', '♂'],
+              ['NA', '?'],
+            ] as const"
+            :key="value"
+            type="button"
+            class="mr-0.5 h-9 w-9 rounded border text-base"
+            :class="bulk.sex === value ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white'"
+            :aria-label="`Sexo ${value}`"
+            @click="bulk.sex = bulk.sex === value ? '' : value"
+          >
+            {{ sign }}
+          </button>
+        </span>
+        <select v-model="bulk.fate" class="field-input w-36" aria-label="Destino">
+          <option value="">Destino…</option>
+          <option v-for="(f, key) in FATES" :key="key" :value="key">{{ f.label }}</option>
+        </select>
+        <button class="btn-primary" @click="applyBulk"><CheckSquare :size="15" /> Aplicar</button>
+        <button class="btn" @click="removeSelected"><Trash2 :size="15" /> Quitar</button>
+        <button class="btn" @click="selected = []"><X :size="15" /> Desmarcar</button>
       </div>
       <div class="mt-2 flex flex-wrap items-center gap-3 text-sm">
         <span v-for="[place, g] in groups" :key="place" class="rounded bg-stone-100 px-2 py-0.5">

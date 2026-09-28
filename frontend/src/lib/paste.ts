@@ -20,13 +20,14 @@ export function parseSex(text: string): '' | 'female' | 'male' | 'NA' {
   return 'NA'
 }
 
-/** "Insectario" / "Preservada" / "Liberada", or the sheet's Release_Collect codes. */
+/** "Insectario" / "Preservada" / "Liberada", their first letters, or the sheet's Release_Collect codes. */
 export function parseFate(text: string): 'insectario' | 'preservada' | 'liberada' | null {
-  const t = text.trim().toLowerCase()
+  const t = text.trim().toLowerCase().replace(/^al\s+/, '')
   if (/insect|sent2/.test(t)) return 'insectario'
   if (/preserv/.test(t)) return 'preservada'
   if (/liber|releas/.test(t)) return 'liberada'
-  return null
+  // Typed shortcuts: i…, p…, l…
+  return t.startsWith('i') ? 'insectario' : t.startsWith('p') ? 'preservada' : t.startsWith('l') ? 'liberada' : null
 }
 
 /** "CAM079895 · FS90415305 (Flash frozen)" → the CAM ID and the tube, if present. */

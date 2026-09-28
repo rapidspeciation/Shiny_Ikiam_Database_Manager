@@ -4,6 +4,7 @@ import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
 import { displayValue, normalizeInput } from '../lib/cells'
+import { attachFillHandle, fillDown as fillDownRange, spreadsheetKeys, type CanEdit } from '../lib/gridKit'
 import type { CellValue, Field, TableRow } from '../lib/types'
 import { type PendingCreate, usePending } from '../stores/pending'
 import { useSession } from '../stores/session'
@@ -353,66 +354,12 @@ function pasteRange(rowsData: Record<string, unknown>[]) {
   return touched
 }
 
-/** Copy the first row of the selection down to the rest (Ctrl+D). */
-function fillDown() {
-  if (!table) return
-  const range = table.getRanges()[0]
-  if (!range) return emit('notice', 'Selecciona un rango de celdas para rellenar')
-  const rows = range.getRows()
-  const columns = range.getColumns()
-  if (rows.length < 2) return emit('notice', 'Selecciona al menos dos filas para rellenar hacia abajo')
-  for (const column of columns) {
-    const field = column.getField()
-    if (!fieldIndex.has(field)) continue
-    const source = rows[0].getCell(field).getValue()
-    for (const row of rows.slice(1)) if (canEdit(row.getData() as GridRow, field)) row.getCell(field).setValue(source)
-  }
-}
-
-/** Clear editable cells of the selection (Supr / Delete). */
-function clearRange() {
-  const range = table?.getRanges()[0]
-  if (!range) return
-  for (const cell of range.getCells().flat()) {
-    if (fieldIndex.has(cell.getField()) && canEdit(cell.getData() as GridRow, cell.getField())) cell.setValue(null)
-  }
-}
-
-/** The single selected cell, if the selection is one cell. */
-function activeCell(): CellComponent | null {
-  const cells = table?.getRanges()[0]?.getCells().flat() as CellComponent[] | undefined
-  return cells?.length === 1 ? cells[0] : null
-}
-
-/**
- * Spreadsheet keys: typing on a selected cell replaces its content; Enter or
- * F2 edits it in place; Ctrl+D fills down; Supr clears the selection.
- */
-function onKeydown(event: KeyboardEvent) {
-  if (!table || (event.target as HTMLElement).closest('input, textarea, select, .tabulator-editing')) return
-  const cell = activeCell()
-  const editable = cell && fieldIndex.has(cell.getField()) && canEdit(cell.getData() as GridRow, cell.getField())
-  if (editable && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
-    event.preventDefault()
-    cell.edit(true)
-    requestAnimationFrame(() => {
-      const input = cell.getElement().querySelector('input')
-      if (!input) return
-      input.value = event.key
-      input.dispatchEvent(new Event('input', { bubbles: true }))
-      input.setSelectionRange(1, 1)
-    })
-  } else if (editable && (event.key === 'Enter' || event.key === 'F2')) {
-    event.preventDefault()
-    cell.edit(true)
-  } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') {
-    event.preventDefault()
-    fillDown()
-  } else if (event.key === 'Delete') {
-    event.preventDefault()
-    clearRange()
-  }
-}
+/** Editable in the grid's terms (Tabulator row + field), for the shared spreadsheet helpers. */
+const editableCell: CanEdit = (row, field) => fieldIndex.has(field) && canEdit(row.getData() as GridRow, field)
+const notice = (message: string) => emit('notice', message)
+const fillDown = () => table && fillDownRange(table, editableCell, notice)
+const onKeydown = spreadsheetKeys(() => table, editableCell, notice)
+let fill: ReturnType<typeof attachFillHandle> | null = null
 
 function applySearch() {
   if (!table || !built) return
@@ -461,6 +408,14 @@ function build() {
   } as unknown as ConstructorParameters<typeof Tabulator>[1])
   table.on('cellEdited', onCellEdited)
   table.on('cellClick', onCellClick)
+  fill?.destroy()
+  fill = host.value.parentElement
+    ? attachFillHandle(table, host.value.parentElement, {
+        canEdit: editableCell,
+        touch: touchDevice,
+        onFilled: rows => notice(`Copiado a ${rows} ${rows === 1 ? 'fila' : 'filas'}`),
+      })
+    : null
   // A refresh that arrived while typing (e.g. an automatic save finished) runs after the edit.
   const afterEdit = () => {
     if (!refreshAfterEdit) return
@@ -529,6 +484,7 @@ const resizeWatcher = new ResizeObserver(([entry]) => {
 })
 onBeforeUnmount(() => {
   resizeWatcher.disconnect()
+  fill?.destroy()
   host.value?.removeEventListener('keydown', onKeydown)
   table?.destroy()
   table = null

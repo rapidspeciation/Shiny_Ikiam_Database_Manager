@@ -1,0 +1,236 @@
+<script setup lang="ts">
+import { onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { TabulatorFull as Tabulator } from 'tabulator-tables'
+import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-tables'
+import 'tabulator-tables/dist/css/tabulator_simple.min.css'
+import { FATES, SEXES, idsText, type Column, type Draft } from '../lib/collect'
+import { attachFillHandle, spreadsheetKeys, type CanEdit } from '../lib/gridKit'
+
+/**
+ * The Colecta list as a spreadsheet (on computers): select cells, copy and
+ * paste ranges (also from Excel or Sheets), drag the fill handle, Ctrl+D,
+ * typing replaces a cell. Every edit goes back to the list through `edit`,
+ * which reads the value as the form does (♀/♂, "CAM · tubo", times…).
+ */
+const props = defineProps<{
+  drafts: Draft[]
+  places: string[]
+  species: string[]
+  subspeciesFor: (species: string) => string[]
+  purposes: string[]
+  /** Spreads a block pasted at a row and column; false for a single value. */
+  paste: (text: string, index: number, column: Column) => boolean
+}>()
+const emit = defineEmits<{
+  edit: [key: string, column: Column, text: string]
+  remove: [key: string]
+  notice: [message: string]
+}>()
+
+type Row = Record<Column, string> & { __key: string }
+const host = ref<HTMLDivElement>()
+let table: Tabulator | null = null
+let built = false
+let fill: ReturnType<typeof attachFillHandle> | null = null
+const touch = window.matchMedia('(pointer: coarse)').matches
+
+const toRow = (d: Draft): Row => ({
+  __key: d.key,
+  location: d.location,
+  species: d.species,
+  subspecies: d.subspecies,
+  sex: d.sex,
+  fate: d.fate,
+  time: d.time,
+  ids: idsText(d),
+  purpose: d.purpose,
+  notes: d.notes,
+})
+const draftOf = (row: RowComponent) => props.drafts.find(d => d.key === (row.getData() as Row).__key)
+
+/** The Insectary ID comes from the sheet; only a preserved butterfly's CAM and tube are typed. */
+const canEdit: CanEdit = (row, field) =>
+  field === 'ids' ? draftOf(row)?.fate === 'preservada' : !['__key', '__remove'].includes(field)
+
+const choices = (values: () => string[]) => ({
+  editor: 'list' as const,
+  editorParams: (() => ({
+    values: values(),
+    autocomplete: true,
+    freetext: true,
+    allowEmpty: true,
+    listOnEmpty: true,
+    filterDelay: 50,
+  })) as never,
+})
+
+function columns(): ColumnDefinition[] {
+  const text = (title: string, field: Column, width: number, extra: Partial<ColumnDefinition> = {}) => ({
+    title,
+    field,
+    width,
+    editor: 'input' as const,
+    editable: (cell: CellComponent) => canEdit(cell.getRow(), field),
+    ...extra,
+  })
+  return [
+    text('Lugar', 'location', 190, choices(() => props.places)),
+    text('Especie', 'species', 200, choices(() => props.species)),
+    text('Subespecie', 'subspecies', 150, {
+      editor: 'list',
+      editorParams: ((cell: CellComponent) => ({
+        values: props.subspeciesFor(String((cell.getData() as Row).species || '')),
+        autocomplete: true,
+        freetext: true,
+        allowEmpty: true,
+        listOnEmpty: true,
+      })) as never,
+    }),
+    text('Sexo', 'sex', 64, {
+      hozAlign: 'center',
+      // Typing works too: h / f / ♀, m / ♂, ? (read like a pasted value).
+      editor: 'list',
+      editorParams: {
+        values: { female: '♀ hembra', male: '♂ macho', NA: '? sin sexo' },
+        autocomplete: true,
+        freetext: true,
+        listOnEmpty: true,
+      },
+      formatter: cell => SEXES[cell.getValue() as keyof typeof SEXES] ?? '',
+    }),
+    text('Destino', 'fate', 130, {
+      editor: 'list',
+      editorParams: {
+        values: Object.fromEntries(Object.entries(FATES).map(([k, f]) => [k, f.label])),
+        autocomplete: true,
+        freetext: true,
+        listOnEmpty: true,
+      },
+      formatter: cell => FATES[cell.getValue() as keyof typeof FATES]?.label ?? '',
+    }),
+    text('Hora', 'time', 70),
+    text('Insectary ID / CAM · tubo', 'ids', 220, {
+      formatter: cell => {
+        const d = draftOf(cell.getRow())
+        cell.getElement().classList.toggle('is-id', d?.fate === 'insectario')
+        return String(cell.getValue() ?? '')
+      },
+    }),
+    text('Propósito', 'purpose', 130, choices(() => props.purposes)),
+    text('Notas', 'notes', 220),
+    {
+      title: '',
+      field: '__remove',
+      width: 36,
+      headerSort: false,
+      hozAlign: 'center',
+      formatter: () => '✕',
+      cssClass: 'row-remove',
+      cellClick: (_e, cell) => emit('remove', (cell.getData() as Row).__key),
+    },
+  ]
+}
+
+// What the grid shows, per row, to send it only the rows that change.
+let shown = new Map<string, string>()
+let shownOrder = ''
+function sync() {
+  if (!table || !built) return
+  const rows = props.drafts.map(toRow)
+  const order = rows.map(r => r.__key).join('|')
+  if (order !== shownOrder) {
+    table.replaceData(rows)
+  } else {
+    const changed = rows.filter(r => shown.get(r.__key) !== JSON.stringify(r))
+    if (changed.length)
+      table.updateData(changed).then(() => {
+        for (const r of changed) {
+          const row = table?.getRow(r.__key)
+          if (row) row.reformat()
+        }
+      })
+  }
+  shownOrder = order
+  shown = new Map(rows.map(r => [r.__key, JSON.stringify(r)]))
+}
+
+const onKeydown = spreadsheetKeys(() => table, canEdit, message => emit('notice', message))
+
+onMounted(() => {
+  if (!host.value) return
+  table = new Tabulator(host.value, {
+    data: [],
+    index: '__key',
+    columns: columns(),
+    // Row numbers as Tabulator's row header, which range selection expects.
+    rowHeader: { formatter: 'rownum', headerSort: false, resizable: false, frozen: true, width: 44, hozAlign: 'right', cssClass: 'row-number' },
+    layout: 'fitData',
+    headerSortClickElement: 'icon',
+    placeholder: 'Sin filas',
+    selectableRange: touch ? false : 1,
+    selectableRangeColumns: true,
+    selectableRangeRows: true,
+    selectableRangeClearCells: false,
+    editTriggerEvent: touch ? 'click' : 'dblclick',
+    clipboard: true,
+    // Copied as shown (♀, Al insectario), which reads well in a spreadsheet and pastes back the same.
+    clipboardCopyConfig: { columnHeaders: false, rowHeaders: false, formatCells: true },
+    clipboardCopyRowRange: 'range',
+    // Pasting goes through the list (it spreads blocks and adds rows); a single value goes to the cell.
+    clipboardPasteParser: (text: string) => {
+      const range = table?.getRanges()[0]
+      const cell = (range?.getCells().flat() as CellComponent[] | undefined)?.[0]
+      if (!cell) return false
+      const field = cell.getField() as Column
+      const index = props.drafts.findIndex(d => d.key === (cell.getData() as Row).__key)
+      if (index < 0 || !field || field === ('__remove' as Column)) return false
+      if (!props.paste(text, index, field) && canEdit(cell.getRow(), field)) emit('edit', props.drafts[index].key, field, text.trim())
+      return false
+    },
+    clipboardPasteAction: () => [],
+    columnDefaults: { headerSort: false },
+  } as unknown as ConstructorParameters<typeof Tabulator>[1])
+  table.on('tableBuilt', () => {
+    built = true
+    sync()
+  })
+  table.on('cellEdited', (cell: CellComponent) => {
+    const key = (cell.getData() as Row).__key
+    emit('edit', key, cell.getField() as Column, String(cell.getValue() ?? ''))
+  })
+  fill = attachFillHandle(table, host.value.parentElement!, {
+    canEdit,
+    touch,
+    onFilled: rows => emit('notice', `Copiado a ${rows} ${rows === 1 ? 'fila' : 'filas'}`),
+  })
+  host.value.addEventListener('keydown', onKeydown)
+})
+onActivated(() => table?.redraw())
+onBeforeUnmount(() => {
+  fill?.destroy()
+  host.value?.removeEventListener('keydown', onKeydown)
+  table?.destroy()
+  table = null
+})
+watch(() => props.drafts.map(d => JSON.stringify(d)).join('\n'), sync)
+
+/** Select a cell and bring it into view (e.g. the first row just added). */
+function focusCell(index: number, field: Column) {
+  const row = table?.getRows()[index]
+  if (!row || !table) return
+  table.scrollToRow(row, 'center', false).catch(() => {})
+  try {
+    ;(table as unknown as { addRange: (a: CellComponent, b: CellComponent) => void }).addRange(row.getCell(field), row.getCell(field))
+  } catch {
+    /* Range selection is off on touch screens. */
+  }
+  host.value?.focus()
+}
+defineExpose({ focusCell })
+</script>
+
+<template>
+  <div class="sheet-grid collect-grid">
+    <div ref="host" tabindex="-1" />
+  </div>
+</template>
