@@ -35,6 +35,11 @@ const onOnline = () => {
 }
 window.addEventListener('offline', onOffline)
 window.addEventListener('online', onOnline)
+// Escape closes the review, as dialogs do (not while a save is running).
+const onKey = (e: KeyboardEvent) => {
+  if (e.key === 'Escape' && reviewing.value && !pending.saving) reviewing.value = false
+}
+window.addEventListener('keydown', onKey)
 
 // "Guardado" stays visible for a few seconds after an automatic save.
 const now = ref(Date.now())
@@ -43,6 +48,7 @@ onBeforeUnmount(() => {
   clearInterval(tick)
   window.removeEventListener('offline', onOffline)
   window.removeEventListener('online', onOnline)
+  window.removeEventListener('keydown', onKey)
 })
 const justSaved = computed(() => !!pending.lastSaved && now.value - Date.parse(pending.lastSaved.at) < 4000)
 
