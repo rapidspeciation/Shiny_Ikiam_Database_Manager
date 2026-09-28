@@ -17,6 +17,9 @@ export interface Draft {
   tube: string
   /** Preservation_medium of a preserved butterfly's tube. */
   medium: string
+  /** Who caught it and who identified it: the header's people by default, changeable per butterfly. */
+  collector: string
+  identifier: string
 }
 /** The Release_Collect value each fate is saved as; the list shows it exactly as the sheet will have it. */
 export const FATES: Record<Fate, { label: string; value: string }> = {
@@ -47,6 +50,8 @@ export const HEADERS: Record<Column, string> = {
   medium: 'Preservation_medium',
   purpose: 'Purpose',
   notes: 'Notes_Collection_data',
+  collector: 'Collector',
+  identifier: 'Identifier',
 }
 
 /**
@@ -68,6 +73,8 @@ export const COLUMNS = [
   'medium',
   'purpose',
   'notes',
+  'collector',
+  'identifier',
 ] as const
 export type Column = (typeof COLUMNS)[number]
 

@@ -18,6 +18,8 @@ describe('the summary shown before saving a Colecta', () => {
     cam: '',
     tube: '',
     medium: '',
+    collector: 'PAS - Patricio Salazar',
+    identifier: 'PAS - Patricio Salazar',
     ...over,
   })
   it('counts sexes sent to the insectary, preserved ones with their CAM range, and species by sex', () => {

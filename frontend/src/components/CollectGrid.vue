@@ -33,6 +33,8 @@ const props = defineProps<{
   purposes: string[]
   /** Preservation_medium's list in the sheet. */
   mediums: string[]
+  /** Collector / Identifier names ("FCH - Franz Chandi"). */
+  people: string[]
   /** Spreads a block pasted at a row and column; false for a single value. */
   paste: (text: string, index: number, column: Column) => boolean
   /** The Insectary ID `step` places after `id` among the pre-made rows (the fill handle continues them). */
@@ -69,6 +71,8 @@ const toRow = (d: Draft): Row => ({
   cam: d.cam,
   tube: d.tube,
   medium: d.medium,
+  collector: d.collector,
+  identifier: d.identifier,
   purpose: d.purpose,
   notes: d.notes,
 })
@@ -152,6 +156,8 @@ function columns(): ColumnDefinition[] {
     text('medium', 190, choices(() => props.mediums)),
     text('purpose', 150, choices(() => props.purposes)),
     text('notes', 220),
+    text('collector', 200, choices(() => props.people)),
+    text('identifier', 200, choices(() => props.people)),
     {
       title: '',
       field: '__remove',
@@ -231,6 +237,8 @@ function completed(field: Column, text: string, row: Row) {
     subspecies: () => props.subspeciesFor(row.species),
     purpose: () => props.purposes,
     medium: () => props.mediums,
+    collector: () => props.people,
+    identifier: () => props.people,
   }
   return options[field] ? complete(text, options[field]!()) : text
 }

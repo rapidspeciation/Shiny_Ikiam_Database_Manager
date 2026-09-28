@@ -61,6 +61,11 @@ const header = persistentRef('collect:header', {
 })
 // A day of field entries must survive a closed tab: kept in this browser, per person, until saved or emptied.
 const drafts = persistentRef<Draft[]>(`collect:drafts:${useSession().user?.username}`, [], { lasting: true })
+// Lists kept from before Collector and Identifier were per row take the header's people.
+for (const d of drafts.value) {
+  d.collector ??= header.value.collector
+  d.identifier ??= header.value.identifier
+}
 const addCount = ref(1)
 const addFate = ref<Fate>('insectario')
 /** Optional: the species of all the rows being added (e.g. five Mechanitis at once). */
@@ -314,6 +319,8 @@ function blankDraft(): Draft {
     cam: '',
     tube: '',
     medium: '',
+    collector: header.value.collector,
+    identifier: header.value.identifier,
   }
 }
 /** Writes a typed or pasted value in a row; says so when the row changes Release_Collect because of it. */
@@ -527,7 +534,12 @@ const LISTED: Partial<Record<Column, string>> = {
   sex: 'Sex',
   purpose: 'Purpose',
   medium: 'Preservation_medium',
+  collector: 'Collector',
+  identifier: 'Identifier',
 }
+/** The people of the list's rows, for the summary before saving. */
+const distinct = (field: 'collector' | 'identifier') =>
+  [...new Set(drafts.value.filter(d => !isEmpty(d)).map(d => d[field]).filter(Boolean))].join(', ') || '—'
 function cellProblem(d: Draft, column: Column): string | null {
   const field = LISTED[column]
   return field ? listProblem(collectionRules.value, field, d[column as 'species']) : null
@@ -569,7 +581,7 @@ function collectionRow(d: Draft): Record<string, CellValue> {
     Insectary_ID: d.fate === 'insectario' ? d.insectaryId : 'NA',
     SPECIES: d.species,
     Subspecies_Form: d.subspecies || 'NA',
-    Identifier: header.value.identifier || null,
+    Identifier: d.identifier || null,
     ID_status: 'COMPLETE',
     Sex: d.sex,
     Collection_location: d.location,
@@ -578,7 +590,7 @@ function collectionRow(d: Draft): Record<string, CellValue> {
     Forest_stratum: 'NA',
     Collection_date: date,
     Collection_time: dayFraction(d.time),
-    Collector: header.value.collector || null,
+    Collector: d.collector || null,
     Rainfall: header.value.rainfall || null,
     Cloud_cover: header.value.cloud || null,
     Flight_height: 'NA',
@@ -713,11 +725,11 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         <span v-if="isToday" class="block text-xs text-amber-800">¿Es hoy la fecha de la colecta?</span>
       </label>
       <label class="min-w-52">
-        <span class="field-label">Collector</span>
+        <span class="field-label">Collector <span class="font-normal text-stone-500">(filas nuevas)</span></span>
         <ChoiceField v-model="header.collector" class="field-input" :options="people" />
       </label>
       <label class="min-w-52">
-        <span class="field-label">Identifier</span>
+        <span class="field-label">Identifier <span class="font-normal text-stone-500">(filas nuevas)</span></span>
         <ChoiceField v-model="header.identifier" class="field-input" :options="people" />
       </label>
       <label>
@@ -806,6 +818,7 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         :subspecies-for="subspeciesFor"
         :purposes="options.Purpose || []"
         :mediums="mediums"
+        :people="people"
         :paste="pasteText"
         :id-problem="idProblem"
         :next-id="nextId"
@@ -986,6 +999,15 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
                   @keydown="onCellKey($event, i, 'notes')"
                 />
               </td>
+              <td v-for="c in ['collector', 'identifier'] as const" :key="c" class="px-1">
+                <ChoiceField
+                  :model-value="d[c]"
+                  :data-col="c"
+                  class="field-input w-48"
+                  :options="people"
+                  @update:model-value="setColumn(d, c, $event)"
+                />
+              </td>
               <td class="px-1 whitespace-nowrap">
                 <button class="btn-ghost" title="Quitar" @click="remove(d.key)"><Trash2 :size="14" /></button>
               </td>
@@ -1135,7 +1157,7 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
             </tbody>
           </table>
           <p class="text-stone-600">
-            Collector: {{ header.collector || '—' }} · Identifier: {{ header.identifier || '—' }} · Rainfall:
+            Collector: {{ distinct('collector') }} · Identifier: {{ distinct('identifier') }} · Rainfall:
             {{ header.rainfall || '—' }} · Cloud_cover: {{ header.cloud || '—' }}
           </p>
         </div>
