@@ -731,13 +731,19 @@ export class Store {
     );
   }
   finishAction(id, status, result) {
+    // Changes a partial save left out stay with the action, so a retry (or a later recovery) reports them.
+    const skipped =
+      result?.skipped ?? parse(this.db.prepare('SELECT result_json FROM actions WHERE id=?').get(id)?.result_json)?.skipped;
+    const extra = skipped?.length ? { skipped } : {};
     this.db
       .prepare('UPDATE actions SET status=?,result_json=? WHERE id=?')
       .run(
         status,
         result
-          ? json({ record: result.record, records: result.records, created: result.created, status: result.status })
-          : null,
+          ? json({ record: result.record, records: result.records, created: result.created, status: result.status, ...extra })
+          : skipped?.length
+            ? json(extra)
+            : null,
         id,
       );
     this.db

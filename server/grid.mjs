@@ -13,7 +13,7 @@ const fail = (code, message, status = 400) => Object.assign(new Error(message), 
  */
 export function tablePayload(store, module) {
   const mod = moduleMap.get(module);
-  if (!mod) throw fail('MODULE_NOT_FOUND', 'Unknown module', 404);
+  if (!mod) throw fail('MODULE_NOT_FOUND', 'Hoja desconocida', 404);
   const rows = store.db
     .prepare(
       'SELECT id,row_num,version,observed,values_json,formulas_json FROM records WHERE sheet=? AND missing=0 AND row_num>? AND row_num<2000000000 ORDER BY row_num',
@@ -54,7 +54,7 @@ function latestUpdate(store, module) {
  */
 export function tableChanges(store, module, since) {
   const mod = moduleMap.get(module);
-  if (!mod) throw fail('MODULE_NOT_FOUND', 'Unknown module', 404);
+  if (!mod) throw fail('MODULE_NOT_FOUND', 'Hoja desconocida', 404);
   const keys = mod.fields.map(f => f.key);
   const visible = r => !r.missing && r.row_num > mod.headerRow && r.row_num < 2000000000;
   const recent = store.db
@@ -104,9 +104,9 @@ function rowsOf(store, sheet) {
 export function idSuggestions(store, { kind, start, count } = {}) {
   const n = Math.min(Math.max(Number(count) || 20, 1), 500);
   if (kind === 'insectary') return insectaryIds(store, start, n);
-  if (kind === 'cam') return start ? { sequence: sequence(start, n, usedCamIds(store)) } : camSuggestions(store);
-  if (kind === 'tube') return start ? { sequence: sequence(start, n, usedTubeIds(store)) } : tubeSuggestions(store);
-  throw fail('INVALID_KIND', 'kind must be insectary, cam or tube');
+  if (kind === 'cam') return start ? fromStart(start, n, usedCamIds(store)) : camSuggestions(store);
+  if (kind === 'tube') return start ? fromStart(start, n, usedTubeIds(store)) : tubeSuggestions(store);
+  throw fail('INVALID_KIND', 'kind debe ser insectary, cam o tube');
 }
 
 function insectaryIds(store, start, count) {
@@ -132,10 +132,21 @@ const splitId = id => {
 };
 const makeId = (prefix, number, width) => `${prefix}${String(number).padStart(width, '0')}`;
 
-/** Consecutive IDs from `start`, skipping any already used. */
+/**
+ * Consecutive IDs from `start`, skipping any already used. When `start` itself
+ * is used, `startUsed` says where, so the page can tell the person instead of
+ * silently starting from another ID.
+ */
+function fromStart(start, count, used) {
+  const value = String(start).trim().toUpperCase();
+  const seq = sequence(value, count, used);
+  const holder = used.get(value);
+  return holder ? { sequence: seq, startUsed: { value, ...holder }, nextFree: seq[0] } : { sequence: seq };
+}
+
 function sequence(start, count, used) {
   const parts = splitId(start);
-  if (!parts) throw fail('INVALID_ID', 'The starting ID must look like CAM078277 or FS00001234');
+  if (!parts) throw fail('INVALID_ID', 'El ID inicial debe ser como CAM078277 o FS00001234');
   const out = [];
   for (let n = parts.number; out.length < count; n++) {
     const id = makeId(parts.prefix, n, parts.width);
@@ -144,12 +155,22 @@ function sequence(start, count, used) {
   return out;
 }
 
+/** Where a used ID is: the first row holding it (sheet, row, the row's label). */
+const holderOf = (sheet, r) => ({
+  sheet,
+  row: r.row,
+  label: String(r.values.Insectary_ID ?? r.values.CAM_ID ?? r.values.FieldMark_ID ?? '').trim() || null,
+});
+
+/** CAM IDs already used, each with the first row holding it. */
 function usedCamIds(store) {
-  const used = new Set();
+  const used = new Map();
   for (const sheet of ['Insectary_data', 'Collection_data'])
     for (const r of rowsOf(store, sheet))
-      for (const key of ['CAM_ID', 'CAM_ID_CollData', 'CAM_ID_insectary'])
-        if (!blank(r.values[key])) used.add(String(r.values[key]).trim());
+      for (const key of ['CAM_ID', 'CAM_ID_CollData', 'CAM_ID_insectary']) {
+        const value = String(r.values[key] ?? '').trim();
+        if (!blank(value) && !used.has(value)) used.set(value, holderOf(sheet, r));
+      }
   return used;
 }
 
@@ -161,14 +182,14 @@ const BARCODE = /^[A-Z]{2}\d{7,9}$/;
 
 /** Every tube barcode already used anywhere in the workbook (so a suggestion is never taken). */
 function usedTubeIds(store) {
-  const used = new Set();
+  const used = new Map();
   for (const mod of moduleMap.values()) {
     const keys = mod.fields.map(f => f.key).filter(k => TUBE_COLUMN.test(k) && !NOT_TUBE_COLUMN.test(k));
     if (!keys.length) continue;
     for (const r of rowsOf(store, mod.id))
       for (const key of keys) {
         const value = String(r.values[key] ?? '').trim();
-        if (BARCODE.test(value)) used.add(value);
+        if (BARCODE.test(value) && !used.has(value)) used.set(value, holderOf(mod.id, r));
       }
   }
   return used;
