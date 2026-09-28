@@ -24,6 +24,8 @@ export interface StoredTrack {
   track: TrackPoint[]
   captures: StoredCapture[]
   wikiloc?: { id: string; url: string } | null
+  /** Whether the person signed in may remove it (server/monitoring.mjs canDeleteTrack). */
+  canDelete?: boolean
 }
 
 export type StoredCapture = Pick<
@@ -42,7 +44,7 @@ export type StoredCapture = Pick<
   | 'markId'
   | 'section'
   | 'photos'
-> & { recapture: boolean; row?: number | null }
+> & { recapture: boolean; row?: number | null; recordId?: string | null }
 
 /** A walk read from a public Wikiloc page by tools/wikiloc, waiting for review. */
 export interface WikilocWalk {
@@ -56,6 +58,8 @@ export interface WikilocWalk {
   createdBy: string
   /** Set when the walk comes from a followed profile (e.g. "AA - Alex Arias"). */
   collector?: string | null
+  /** The Wikiloc profile number of the trail's author. */
+  author?: string | null
   /** Wikiloc's "Fecha de realización", e.g. "abril 2025". */
   recorded?: string | null
   track: TrackPoint[]
@@ -73,6 +77,13 @@ async function loadWalks() {
   } catch (e) {
     notify(errorText(e), 'error')
   }
+}
+
+/** An imported walk back to "por revisar" (server/monitoring.mjs reopenWalk). */
+async function reopenWalk(id: string) {
+  await api(`monitoring/wikiloc/${encodeURIComponent(id)}/reopen`, { method: 'POST', body: {} })
+  await loadWalks()
+  return walks.value.find(w => w.id === id) || null
 }
 
 async function loadTracks() {
@@ -96,6 +107,10 @@ export function useMonitoring() {
   /** Monitoring rows whose Purpose was left empty or "NA" (to fix in the sheet). */
   const withoutPurpose = computed(() => rows.value.filter(noPurpose))
   const taxa = computed(() => taxaFrom(sheet.table.value?.rows || []))
+  /** Names seen at Ikiam: abbreviations and a missing subspecies in the notes are read against them first. */
+  const localTaxa = computed(() =>
+    taxaFrom((sheet.table.value?.rows || []).filter(r => /^ikiam$/i.test(String(r.values.Collection_location ?? '').trim()))),
+  )
   /** The 30-preserved rule applies to Ithomiini only (e.g. Heliconius numata is preserved on purpose). */
   const tribes = computed(() => tribesFrom(sheet.table.value?.rows || []))
   const isIthomiini = (species: string | null | undefined) => !!species && tribes.value.get(species) === 'Ithomiini'
@@ -103,5 +118,20 @@ export function useMonitoring() {
     loadTracks()
     loadWalks()
   }
-  return { ...sheet, rows, days, withoutPurpose, taxa, tribes, isIthomiini, tracks, tracksLoaded, loadTracks, walks, loadWalks }
+  return {
+    ...sheet,
+    rows,
+    days,
+    withoutPurpose,
+    taxa,
+    localTaxa,
+    tribes,
+    isIthomiini,
+    tracks,
+    tracksLoaded,
+    loadTracks,
+    walks,
+    loadWalks,
+    reopenWalk,
+  }
 }

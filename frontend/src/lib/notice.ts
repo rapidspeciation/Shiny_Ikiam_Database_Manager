@@ -3,14 +3,15 @@ import { reactive } from 'vue'
 /** A single transient message shown at the bottom of the screen. */
 export const notice = reactive({ text: '', kind: 'info' as 'info' | 'error' | 'success', id: 0 })
 
-export function notify(text: string, kind: 'info' | 'error' | 'success' = 'info') {
+/** `ms`: how long it stays (shorter where it would cover the inputs someone is about to use). */
+export function notify(text: string, kind: 'info' | 'error' | 'success' = 'info', ms?: number) {
   const id = ++notice.id
   Object.assign(notice, { text, kind })
   setTimeout(
     () => {
       if (notice.id === id) notice.text = ''
     },
-    kind === 'error' ? 9000 : 4500,
+    ms ?? (kind === 'error' ? 9000 : 4500),
   )
 }
 
