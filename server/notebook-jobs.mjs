@@ -57,6 +57,9 @@ export function initNotebookJobs(db) {
   // The page's counts (rows with changes, doubts…), for the strip and the history without reviewing each page.
   if (!db.prepare('PRAGMA table_info(notebook_jobs)').all().some(c => c.name === 'counts_json'))
     db.exec('ALTER TABLE notebook_jobs ADD COLUMN counts_json TEXT');
+  // What reading the page cost (the Claude CLI reports it), to choose between Sonnet and Opus.
+  if (!db.prepare('PRAGMA table_info(notebook_jobs)').all().some(c => c.name === 'cost_usd'))
+    db.exec('ALTER TABLE notebook_jobs ADD COLUMN cost_usd REAL');
 }
 
 /**
@@ -244,6 +247,7 @@ export function createNotebookJobs(deps) {
         status: 'ready',
         transcription_json: json(transcription),
         model: clip(out.model, 80),
+        cost_usd: Number.isFinite(out.costUsd) ? out.costUsd : null,
         duration_ms: Date.now() - started,
       });
       settle(id, { announce: true });
@@ -427,6 +431,7 @@ export function createNotebookJobs(deps) {
       createdAt: job.created_at,
       updatedAt: job.updated_at,
       durationMs: job.duration_ms,
+      costUsd: job.cost_usd ?? null,
       model: job.model,
       threadId: job.thread_id,
       proposalId: job.proposal_id,

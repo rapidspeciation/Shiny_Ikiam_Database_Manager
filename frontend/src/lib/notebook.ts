@@ -80,6 +80,8 @@ export interface Job {
   updatedAt: string
   durationMs: number | null
   model: string | null
+  /** What reading the page cost, when the AI reports it. */
+  costUsd: number | null
   threadId: string | null
   proposalId: string | null
   proposalStatus: string | null

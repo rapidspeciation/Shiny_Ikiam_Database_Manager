@@ -21,6 +21,8 @@ export function claudeConfig(env = process.env) {
   return {
     bin: env.ITHOMIINI_CLAUDE_BIN || '',
     model: allowedModel(env.ITHOMIINI_CLAUDE_MODEL),
+    // Reading notebook photos (Digitalizar cuaderno) may use the other one of the two; the chat's by default.
+    notebookModel: allowedModel(env.ITHOMIINI_NOTEBOOK_MODEL, allowedModel(env.ITHOMIINI_CLAUDE_MODEL)),
     // A subscription is personal: only these usernames get Claude, others use the API provider.
     users: new Set(
       String(env.ITHOMIINI_CLAUDE_USERS || '')
@@ -49,7 +51,8 @@ export async function prepareWorkspace(claude, releaseRoot) {
  * own short system prompt instead of Claude Code's, so it starts and answers faster.
  * Returns { text, costUsd, model }.
  */
-export function runClaudeOnce(claude, { content, system, model = claude.model, effort }) {
+export function runClaudeOnce(claude, { content, system, model: wanted = claude.model, effort }) {
+  const model = allowedModel(wanted);
   const args = [
     '-p',
     '--input-format',

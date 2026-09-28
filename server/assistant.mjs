@@ -9,7 +9,7 @@ import { comparable, labelFor, moduleMap, validateValues } from './schema.mjs';
 import { TUBE_FIELD, isIdValue, isUnique } from './verifications.mjs';
 import { listOptions, listProblem } from './verify.mjs';
 import { queueWalk, walkDraft } from './walks.mjs';
-import { claudeAllowed, claudeConfig, prepareWorkspace, runClaude, runClaudeOnce } from './claude.mjs';
+import { allowedModel, claudeAllowed, claudeConfig, prepareWorkspace, runClaude, runClaudeOnce } from './claude.mjs';
 import { createNotebookJobs } from './notebook-jobs.mjs';
 import { affirmative, startVoiceSession, voiceBrief, voiceConfig, voiceKey } from './voice.mjs';
 
@@ -1305,7 +1305,7 @@ export function createAssistant({ store, config = {} }) {
   async function transcribe(user, { image, prompt, system }) {
     if (config.notebook?.transcribe) return config.notebook.transcribe(user, { image, prompt, system });
     if (claudeAllowed(claude, user)) {
-      const model = process.env.ITHOMIINI_NOTEBOOK_MODEL || claude.model;
+      const model = allowedModel(claude.notebookModel, claude.model);
       return runClaudeOnce(claude, {
         model,
         system,

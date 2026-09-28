@@ -5,6 +5,7 @@ import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { moduleMap, parseDateText } from '../server/schema.mjs';
 import { createAssistant } from '../server/assistant.mjs';
+import { claudeConfig } from '../server/claude.mjs';
 import {
   buildReview,
   pageText,
@@ -17,6 +18,12 @@ import {
 
 const franz = { id: 'u-franz', username: 'franz', displayName: 'Franz Chandi', role: 'editor' };
 const d = text => parseDateText(text);
+
+test('notebook photos are read with Sonnet or Opus only (the chat model unless set)', () => {
+  assert.equal(claudeConfig({ ITHOMIINI_CLAUDE_MODEL: 'sonnet' }).notebookModel, 'sonnet');
+  assert.equal(claudeConfig({ ITHOMIINI_CLAUDE_MODEL: 'sonnet', ITHOMIINI_NOTEBOOK_MODEL: 'opus' }).notebookModel, 'opus');
+  assert.equal(claudeConfig({ ITHOMIINI_CLAUDE_MODEL: 'opus', ITHOMIINI_NOTEBOOK_MODEL: 'fable' }).notebookModel, 'opus');
+});
 
 test('the prompt names the columns of the chosen notebook, or all of them to detect it', () => {
   const stocks = transcriptionPrompt({ kind: 'stocks', lists: { Sex: ['female', 'male'] }, today: '2026-09-28' });
@@ -368,7 +375,7 @@ async function setup(transcribe) {
 }
 
 test('a photographed page is read in the background, reviewed, corrected and applied', async () => {
-  const { store, photo, call, waitReady, calls } = await setup(async () => ({ text: RECORDED, model: 'recorded' }));
+  const { store, photo, call, waitReady, calls } = await setup(async () => ({ text: RECORDED, model: 'recorded', costUsd: 0.05 }));
   try {
     const created = await call('POST', '/api/notebook/jobs', { attachmentId: photo(), kind: 'auto' });
     assert.equal(created.status, 201);
@@ -376,6 +383,7 @@ test('a photographed page is read in the background, reviewed, corrected and app
     const job = await waitReady(created.body.job.id);
     assert.equal(job.status, 'ready');
     assert.equal(job.kind, 'emergence');
+    assert.equal(job.costUsd, 0.05);
     assert.equal(calls.length, 1);
     assert.match(calls[0].prompt, /kind "stocks"/);
     const byLine = Object.fromEntries(job.reviewLines.map(l => [l.n, l]));

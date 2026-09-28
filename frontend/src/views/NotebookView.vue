@@ -494,7 +494,9 @@ function openJob(id: string) {
             <RouterLink v-if="chat" :to="chat" class="btn py-2 max-md:py-3" title="La conversación de esta página: pregunta por una línea">
               <MessageSquare :size="15" /> Preguntar en el chat
             </RouterLink>
-            <span v-if="job.durationMs" class="hint ml-auto">leída en {{ Math.round(job.durationMs / 1000) }} s</span>
+            <span v-if="job.durationMs" class="hint ml-auto" :title="job.model ? `Leída con ${job.model}` : undefined">
+              leída en {{ Math.round(job.durationMs / 1000) }} s<template v-if="job.costUsd !== null"> · {{ job.costUsd.toFixed(2) }} US$</template>
+            </span>
           </footer>
         </section>
       </div>

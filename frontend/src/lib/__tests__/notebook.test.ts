@@ -44,6 +44,7 @@ const job = (over: Partial<Job>): Job => ({
   updatedAt: '2026-09-28T10:00:00Z',
   durationMs: 40000,
   model: 'sonnet',
+  costUsd: 0.1,
   threadId: null,
   proposalId: null,
   proposalStatus: null,
