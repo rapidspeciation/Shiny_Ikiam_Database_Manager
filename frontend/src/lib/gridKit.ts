@@ -233,3 +233,68 @@ export function attachFillHandle(
       })
   return { place, destroy: () => handle.remove() }
 }
+
+/**
+ * Pasting over a selection larger than what was copied fills all of it by
+ * repeating the copied block, as Google Sheets does (one value pasted over
+ * five selected cells fills the five). A single selected cell takes the block as is.
+ */
+export function tileToSelection(block: string[][], rows: number, columns: number): string[][] {
+  const height = rows > 1 ? Math.max(rows, block.length) : block.length
+  const width = columns > 1 ? Math.max(columns, block[0]?.length ?? 1) : (block[0]?.length ?? 1)
+  return Array.from({ length: height }, (_, i) => {
+    const line = block[i % block.length]
+    return Array.from({ length: width }, (_, j) => line[j % line.length] ?? '')
+  })
+}
+
+/**
+ * The copied cells get a moving dashed border (as in Google Sheets) until Esc
+ * or until a cell is edited, and a short notice says how many were copied.
+ */
+export function attachCopyMarker(table: Tabulator, container: HTMLElement, notice: Notice) {
+  const box = document.createElement('div')
+  box.className = 'copy-box'
+  container.appendChild(box)
+  let cells: CellComponent[] | null = null
+  const hide = () => (box.style.display = 'none')
+  function place() {
+    const first = cells?.[0]?.getElement()
+    const last = cells?.at(-1)?.getElement()
+    if (!first?.isConnected || !last?.isConnected) return hide()
+    const a = first.getBoundingClientRect()
+    const z = last.getBoundingClientRect()
+    const o = container.getBoundingClientRect()
+    Object.assign(box.style, {
+      display: 'block',
+      left: `${a.left - o.left}px`,
+      top: `${a.top - o.top}px`,
+      width: `${z.right - a.left}px`,
+      height: `${z.bottom - a.top}px`,
+    })
+  }
+  const clear = () => {
+    cells = null
+    hide()
+  }
+  table.on('clipboardCopied', () => {
+    cells = (table.getRanges()[0]?.getCells().flat() as CellComponent[] | undefined) ?? null
+    place()
+    const n = cells?.length ?? 0
+    if (n) notice(`Copiado: ${n} ${n === 1 ? 'celda' : 'celdas'}. Selecciona dónde pegar y pulsa Ctrl+V`)
+  })
+  table.on('cellEditing', clear)
+  const later = () => requestAnimationFrame(place)
+  for (const event of ['scrollVertical', 'scrollHorizontal', 'renderComplete', 'dataProcessed'])
+    table.on(event as 'renderComplete', later)
+  const onKey = (e: KeyboardEvent) => e.key === 'Escape' && clear()
+  container.addEventListener('keydown', onKey)
+  return {
+    clear,
+    place,
+    destroy: () => {
+      container.removeEventListener('keydown', onKey)
+      box.remove()
+    },
+  }
+}

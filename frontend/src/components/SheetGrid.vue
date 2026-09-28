@@ -4,7 +4,7 @@ import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
 import { displayValue, normalizeInput } from '../lib/cells'
-import { attachFillHandle, fillDown as fillDownRange, spreadsheetKeys, type CanEdit } from '../lib/gridKit'
+import { attachCopyMarker, attachFillHandle, fillDown as fillDownRange, spreadsheetKeys, type CanEdit } from '../lib/gridKit'
 import type { CellValue, Field, TableRow } from '../lib/types'
 import { type PendingCreate, usePending } from '../stores/pending'
 import { useSession } from '../stores/session'
@@ -360,6 +360,7 @@ const notice = (message: string) => emit('notice', message)
 const fillDown = () => table && fillDownRange(table, editableCell, notice)
 const onKeydown = spreadsheetKeys(() => table, editableCell, notice)
 let fill: ReturnType<typeof attachFillHandle> | null = null
+let copied: ReturnType<typeof attachCopyMarker> | null = null
 
 function applySearch() {
   if (!table || !built) return
@@ -416,6 +417,8 @@ function build() {
         onFilled: rows => notice(`Copiado a ${rows} ${rows === 1 ? 'fila' : 'filas'}`),
       })
     : null
+  copied?.destroy()
+  copied = host.value.parentElement ? attachCopyMarker(table, host.value.parentElement, notice) : null
   // A refresh that arrived while typing (e.g. an automatic save finished) runs after the edit.
   const afterEdit = () => {
     if (!refreshAfterEdit) return
@@ -485,6 +488,7 @@ const resizeWatcher = new ResizeObserver(([entry]) => {
 onBeforeUnmount(() => {
   resizeWatcher.disconnect()
   fill?.destroy()
+  copied?.destroy()
   host.value?.removeEventListener('keydown', onKeydown)
   table?.destroy()
   table = null

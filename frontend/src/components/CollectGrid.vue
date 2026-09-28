@@ -4,8 +4,8 @@ import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
 import { FATES, HEADERS, SEX_VALUES, idsText, type Column, type Draft } from '../lib/collect'
-import { attachFillHandle, spreadsheetKeys, type CanEdit } from '../lib/gridKit'
-import { complete } from '../lib/paste'
+import { attachCopyMarker, attachFillHandle, spreadsheetKeys, tileToSelection, type CanEdit } from '../lib/gridKit'
+import { complete, parseBlock } from '../lib/paste'
 
 /**
  * The Colecta list as a spreadsheet (on computers): select cells, copy and
@@ -33,6 +33,7 @@ const host = ref<HTMLDivElement>()
 let table: Tabulator | null = null
 let built = false
 let fill: ReturnType<typeof attachFillHandle> | null = null
+let copied: ReturnType<typeof attachCopyMarker> | null = null
 const touch = window.matchMedia('(pointer: coarse)').matches
 
 const toRow = (d: Draft): Row => ({
@@ -194,11 +195,16 @@ onMounted(() => {
     clipboardPasteParser: (text: string) => {
       const range = table?.getRanges()[0]
       const cell = (range?.getCells().flat() as CellComponent[] | undefined)?.[0]
-      if (!cell) return false
+      if (!range || !cell) return false
       const field = cell.getField() as Column
       const index = props.drafts.findIndex(d => d.key === (cell.getData() as Row).__key)
       if (index < 0 || !field || field === ('__remove' as Column)) return false
-      if (!props.paste(text, index, field) && canEdit(cell.getRow(), field)) emit('edit', props.drafts[index].key, field, text.trim())
+      // Fill the whole selection with the copied block, repeated (Google Sheets does the same).
+      const copied = parseBlock(text) ?? [[text.replace(/\r?\n$/, '').trim()]]
+      const block = tileToSelection(copied, range.getRows().length, range.getColumns().length)
+      if (block.length === 1 && block[0].length === 1) {
+        if (canEdit(cell.getRow(), field)) emit('edit', props.drafts[index].key, field, completed(field, block[0][0], cell.getData() as Row))
+      } else props.paste(block.map(line => line.join('\t')).join('\n'), index, field)
       return false
     },
     clipboardPasteAction: () => [],
@@ -224,11 +230,13 @@ onMounted(() => {
     touch,
     onFilled: rows => emit('notice', `Copiado a ${rows} ${rows === 1 ? 'fila' : 'filas'}`),
   })
+  copied = attachCopyMarker(table, host.value.parentElement!, message => emit('notice', message))
   host.value.addEventListener('keydown', onKeydown)
 })
 onActivated(() => table?.redraw())
 onBeforeUnmount(() => {
   fill?.destroy()
+  copied?.destroy()
   host.value?.removeEventListener('keydown', onKeydown)
   table?.destroy()
   table = null
