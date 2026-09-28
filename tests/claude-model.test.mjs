@@ -12,3 +12,13 @@ test('the assistant only runs Sonnet or Opus 5.5, never Fable or older models', 
   assert.equal(allowedModel(''), 'sonnet');
   assert.equal(claudeConfig({ ITHOMIINI_CLAUDE_MODEL: 'fable' }).model, 'sonnet');
 });
+
+test('"*" gives the shared Claude account to everyone', async () => {
+  const { claudeAllowed } = await import('../server/claude.mjs');
+  const base = { ITHOMIINI_CLAUDE_BIN: '/bin/claude', ITHOMIINI_CLAUDE_WORKSPACE: '/tmp/ws' };
+  const everyone = claudeConfig({ ...base, ITHOMIINI_CLAUDE_USERS: '*' });
+  assert.equal(claudeAllowed(everyone, { username: 'angel' }), true);
+  const listed = claudeConfig({ ...base, ITHOMIINI_CLAUDE_USERS: 'franz.chandi' });
+  assert.equal(claudeAllowed(listed, { username: 'angel' }), false);
+  assert.equal(claudeAllowed(everyone, null), false);
+});

@@ -23,7 +23,7 @@ export function claudeConfig(env = process.env) {
     model: allowedModel(env.ITHOMIINI_CLAUDE_MODEL),
     // Reading notebook photos (Digitalizar cuaderno) may use the other one of the two; the chat's by default.
     notebookModel: allowedModel(env.ITHOMIINI_NOTEBOOK_MODEL, allowedModel(env.ITHOMIINI_CLAUDE_MODEL)),
-    // A subscription is personal: only these usernames get Claude, others use the API provider.
+    // Who uses the shared Claude account: "*" for everyone (the team shares its AI accounts), or a list of usernames.
     users: new Set(
       String(env.ITHOMIINI_CLAUDE_USERS || '')
         .split(',')
@@ -38,7 +38,7 @@ export function claudeConfig(env = process.env) {
 }
 
 export const claudeAllowed = (claude, user) =>
-  Boolean(claude.bin && claude.workspace && claude.users.has(user?.username));
+  Boolean(claude.bin && claude.workspace && user && (claude.users.has('*') || claude.users.has(user.username)));
 
 /** Copies the release's CLAUDE.md into the stable workspace. */
 export async function prepareWorkspace(claude, releaseRoot) {
