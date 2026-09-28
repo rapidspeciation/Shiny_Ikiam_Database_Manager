@@ -158,7 +158,8 @@ function holds(row, capture, serial) {
  * recapture photos). When rows are removed or moved in the sheet, a stored row
  * number points at another butterfly: each capture is checked against its row
  * and, if it no longer holds it, found again by day, collector and mark or
- * minute. Nothing is written; the links are fixed on every read.
+ * minute. Captures stored before their rows were saved (an import) are found
+ * the same way. Nothing is written; the links are fixed on every read.
  */
 export function relinkCaptures(store, tracks) {
   const { byDay, byId } = rowsByDay(store);
@@ -170,7 +171,6 @@ export function relinkCaptures(store, tracks) {
     const day = (byDay.get(serial) || []).filter(r => !collector || initialsOf(r.values.Collector) === collector);
     const taken = new Set();
     t.captures = t.captures.map(c => {
-      if (!c.row && !c.recordId) return c;
       const linked = (c.recordId && byId.get(c.recordId)) || (c.row && byRow.get(c.row));
       if (linked && holds(linked, c, serial) && !taken.has(linked.id)) {
         taken.add(linked.id);

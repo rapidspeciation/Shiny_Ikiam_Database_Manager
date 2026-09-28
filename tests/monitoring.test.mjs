@@ -247,8 +247,8 @@ test('stored captures follow their butterfly when sheet rows are removed', async
     { ...b69, row: 3 },
     // Its row was removed and nothing else matches it.
     { ...b69, text: 'M2 Oleria onega macho 9:50', markId: null, species: 'Oleria onega', sex: 'male', minutes: 590, row: 4 },
-    // Still right.
-    { ...b69, text: 'M3 Oleria tigilla macho 10:00', markId: null, species: 'Oleria tigilla', sex: 'male', minutes: 600, row: 3 },
+    // Stored when the walk was imported, before its row was saved.
+    { ...b69, text: 'M3 Oleria tigilla macho 10:00', markId: null, species: 'Oleria tigilla', sex: 'male', minutes: 600, row: null },
   ];
   saveTrack(s, stored, editor);
   const [track] = listTracks(s);
