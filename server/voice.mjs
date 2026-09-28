@@ -123,7 +123,8 @@ async function mintGemini({ key, setup, fetchImpl = fetch, now = Date.now() }) {
     throw new Error(`Gemini token: HTTP ${response.status} ${detail.slice(0, 300)}`);
   }
   const token = (await response.json())?.name;
-  if (typeof token !== 'string' || !token.startsWith('auth_tokens/')) throw new Error('Gemini token: no token returned');
+  if (typeof token !== 'string' || !token.startsWith('auth_tokens/'))
+    throw new Error('Gemini token: no token returned');
   return {
     token,
     expiresAt,

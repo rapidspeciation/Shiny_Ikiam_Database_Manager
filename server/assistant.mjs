@@ -916,7 +916,9 @@ export function createAssistant({ store, config = {} }) {
         .map(r => [r.id, r]),
     );
     return db
-      .prepare("SELECT proposals_json FROM ai_messages WHERE thread_id = ? AND proposals_json <> '[]' ORDER BY created_at, rowid")
+      .prepare(
+        "SELECT proposals_json FROM ai_messages WHERE thread_id = ? AND proposals_json <> '[]' ORDER BY created_at, rowid",
+      )
       .all(threadId)
       .flatMap(r => (parse(r.proposals_json) ?? []).map(p => proposalView(p, status.get(p.id))));
   }

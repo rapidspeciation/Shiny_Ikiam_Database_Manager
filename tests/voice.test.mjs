@@ -132,7 +132,10 @@ test('minting asks Google for a one-use token and never returns the key', async 
     e => e.unconfigured,
   );
   await assert.rejects(
-    startVoiceSession({ ...voiceConfig({}), apiKey: 'k' }, { prompt: 'p', tools, fetchImpl: fakeGoogle(400).fetchImpl }),
+    startVoiceSession(
+      { ...voiceConfig({}), apiKey: 'k' },
+      { prompt: 'p', tools, fetchImpl: fakeGoogle(400).fetchImpl },
+    ),
     /HTTP 400/,
   );
 });
@@ -145,7 +148,10 @@ test('a call without a voice key says it is not configured', async () => {
     const response = await post(assistant, '/api/ai/voice/session', {});
     assert.equal(response.status, 501);
     assert.equal(response.body.error.code, 'voice_unconfigured');
-    assert.equal((await assistant.handle({ method: 'GET', path: '/api/chat/threads', user: alice })).body.threads.length, 0);
+    assert.equal(
+      (await assistant.handle({ method: 'GET', path: '/api/chat/threads', user: alice })).body.threads.length,
+      0,
+    );
   } finally {
     close();
   }
