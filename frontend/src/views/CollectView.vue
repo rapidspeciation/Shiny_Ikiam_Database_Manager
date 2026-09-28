@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { Plus, Save, Trash2 } from 'lucide-vue-next'
+import { computed, nextTick, ref, watch } from 'vue'
+import { Eraser, Plus, Save, Trash2 } from 'lucide-vue-next'
 import SheetGrid from '../components/SheetGrid.vue'
 import { useSheet } from '../composables/useSheet'
 import { api } from '../lib/api'
@@ -12,6 +12,7 @@ import { persistentRef } from '../lib/persist'
 import { orderColumns } from '../lib/rows'
 import type { CellValue } from '../lib/types'
 import { usePending } from '../stores/pending'
+import { useSession } from '../stores/session'
 import { useTables } from '../stores/tables'
 
 /**
@@ -58,9 +59,12 @@ const header = persistentRef('collect:header', {
   cloud: '',
   medium: 'Flash frozen',
 })
-const drafts = persistentRef<Draft[]>('collect:drafts', [])
+// A day of field entries must survive a closed tab: kept in this browser, per person, until saved or emptied.
+const drafts = persistentRef<Draft[]>(`collect:drafts:${useSession().user?.username}`, [], { lasting: true })
 const addCount = ref(1)
 const addFate = ref<Fate>('insectario')
+/** Optional: the species of all the rows being added (e.g. five Mechanitis at once). */
+const addSpecies = ref('')
 const saving = ref(false)
 const recentCount = ref(10)
 
@@ -148,15 +152,24 @@ function setFate(draft: Draft, fate: Fate) {
   draft.cam = fate === 'preservada' ? draft.cam || nextCam() : ''
   draft.tube = fate === 'preservada' ? draft.tube || nextTube() : ''
 }
-function add() {
+// Rows added before the free IDs, CAMs or tubes had arrived get them once they do.
+watch([freeIds, camPool, tubeRun], () => {
+  for (const d of drafts.value) {
+    if (d.fate === 'insectario' && !d.insectaryId) d.insectaryId = nextInsectaryId()
+    if (d.fate === 'preservada' && !d.cam) d.cam = nextCam()
+    if (d.fate === 'preservada' && !d.tube) d.tube = nextTube()
+  }
+})
+async function add() {
   if (!header.value.location) return notify('Elige el lugar de colecta')
-  for (let i = 0; i < Math.max(1, addCount.value); i++) {
-    const last = drafts.value.at(-1)
+  const count = Math.min(60, Math.max(1, Math.round(addCount.value || 1)))
+  const first = drafts.value.length
+  for (let i = 0; i < count; i++) {
     const draft: Draft = {
       key: crypto.randomUUID(),
       location: header.value.location,
-      species: last?.species ?? '',
-      subspecies: last?.subspecies ?? '',
+      species: addSpecies.value.trim(),
+      subspecies: '',
       sex: '',
       fate: addFate.value,
       time: '',
@@ -169,9 +182,29 @@ function add() {
     drafts.value.push(draft)
     setFate(drafts.value.at(-1)!, addFate.value)
   }
+  notify(`Se añadieron ${count} ${count === 1 ? 'fila' : 'filas'}: la lista tiene ${drafts.value.length}`)
+  // Straight to the first new row, ready to type its species.
+  await nextTick()
+  const row = document.querySelector<HTMLElement>(`[data-draft="${drafts.value[first]?.key}"]`)
+  row?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  row?.querySelector<HTMLInputElement>('input[list=collect-species]')?.focus({ preventScroll: true })
 }
 function remove(key: string) {
   drafts.value = drafts.value.filter(d => d.key !== key)
+}
+/** A row nothing was written in yet (its ID, CAM and tube are filled in by the app). */
+const isEmpty = (d: Draft) => !d.species && !d.subspecies && !d.sex && !d.time && !d.purpose && !d.notes
+const emptyCount = computed(() => drafts.value.filter(isEmpty).length)
+function removeEmpty() {
+  const n = emptyCount.value
+  drafts.value = drafts.value.filter(d => !isEmpty(d))
+  notify(`Se quitaron ${n} filas vacías: quedan ${drafts.value.length}`)
+}
+function clearAll() {
+  const filled = drafts.value.length - emptyCount.value
+  if (filled && !confirm(`¿Vaciar la lista? Se pierden ${filled} filas con datos sin guardar.`)) return
+  drafts.value = []
+  notify('Lista vaciada')
 }
 const groups = computed(() => {
   const out = new Map<string, Record<Fate, number>>()
@@ -182,8 +215,10 @@ const groups = computed(() => {
   }
   return [...out]
 })
-const problems = computed(() =>
-  drafts.value.flatMap((d, i) => {
+const problems = computed(() => [
+  ...(emptyCount.value ? [`${emptyCount.value} filas vacías (quítalas con «Quitar filas vacías»)`] : []),
+  ...drafts.value.flatMap((d, i) => {
+    if (isEmpty(d)) return []
     const n = i + 1
     const out: string[] = []
     if (!d.species) out.push(`fila ${n}: falta la especie`)
@@ -192,7 +227,7 @@ const problems = computed(() =>
     if (d.fate === 'preservada' && (!d.cam || !d.tube)) out.push(`fila ${n}: falta CAM o tubo`)
     return out
   }),
-)
+])
 
 const serial = (iso: string) => (iso ? isoToSerial(iso) : null)
 const dayFraction = (time: string) => {
@@ -340,6 +375,9 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
       <datalist id="collect-people">
         <option v-for="p in people" :key="p" :value="p" />
       </datalist>
+      <datalist id="collect-species">
+        <option v-for="s in speciesList" :key="s" :value="s" />
+      </datalist>
     </div>
     <div class="toolbar border-t-0">
       <label class="min-w-64">
@@ -350,8 +388,12 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         </datalist>
       </label>
       <label>
-        <span class="field-label">Añadir</span>
+        <span class="field-label">Filas a añadir</span>
         <input v-model.number="addCount" type="number" min="1" max="60" class="field-input w-20" />
+      </label>
+      <label class="min-w-48">
+        <span class="field-label">Especie (opcional)</span>
+        <input v-model="addSpecies" class="field-input" list="collect-species" placeholder="la misma para todas" />
       </label>
       <label>
         <span class="field-label">Destino</span>
@@ -359,7 +401,9 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
           <option v-for="(f, key) in FATES" :key="key" :value="key">{{ f.label }}</option>
         </select>
       </label>
-      <button class="btn-primary" @click="add"><Plus :size="15" /> Añadir mariposas</button>
+      <button class="btn-primary" @click="add">
+        <Plus :size="15" /> Añadir {{ Math.max(1, addCount || 1) }} {{ Math.max(1, addCount || 1) === 1 ? 'fila' : 'filas' }}
+      </button>
       <label v-if="drafts.some(d => d.fate === 'preservada')">
         <span class="field-label">Medio (preservadas)</span>
         <select v-model="header.medium" class="field-input">
@@ -370,7 +414,15 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
       </label>
     </div>
 
-    <div v-if="drafts.length" class="border-b border-stone-200 bg-white px-3 py-2">
+    <div v-if="drafts.length" class="border-b border-stone-200 bg-white px-3 pb-2">
+      <!-- Always in sight while scrolling the list: how long it is and how to trim it. -->
+      <div class="sticky top-0 z-10 -mx-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-stone-200 bg-white px-3 py-2 text-sm">
+        <span class="font-semibold">Lista de la colecta: {{ drafts.length }} {{ drafts.length === 1 ? 'fila' : 'filas' }}</span>
+        <span v-if="emptyCount" class="text-amber-800">{{ emptyCount }} vacías</span>
+        <button v-if="emptyCount" class="btn" @click="removeEmpty"><Eraser :size="15" /> Quitar filas vacías</button>
+        <button class="btn" @click="clearAll"><Trash2 :size="15" /> Vaciar lista</button>
+        <span class="hint">Se guarda en este navegador, aunque recargues o cierres la página, hasta que la guardes o la vacíes.</span>
+      </div>
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead class="text-left text-xs text-stone-600">
@@ -389,7 +441,7 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(d, i) in drafts" :key="d.key" class="border-t border-stone-100 align-middle">
+            <tr v-for="(d, i) in drafts" :key="d.key" :data-draft="d.key" class="border-t border-stone-100 align-middle">
               <td class="px-1 text-stone-500 tabular-nums">{{ i + 1 }}</td>
               <td class="px-1"><input v-model="d.location" class="field-input w-44" list="collect-places" /></td>
               <td class="px-1">
@@ -448,9 +500,6 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
             </tr>
           </tbody>
         </table>
-        <datalist id="collect-species">
-          <option v-for="s in speciesList" :key="s" :value="s" />
-        </datalist>
         <datalist id="collect-purposes">
           <option v-for="p in options.Purpose || []" :key="p" :value="p" />
         </datalist>
