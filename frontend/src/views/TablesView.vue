@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { Plus, RefreshCw, ArrowDownToLine, ExternalLink, Search, FileDown, ShieldAlert } from 'lucide-vue-next'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { Plus, RefreshCw, ArrowDownToLine, ExternalLink, Search, FileDown, ShieldAlert, NotebookPen } from 'lucide-vue-next'
+import { kindForSheet } from '../lib/notebook'
 import SheetGrid from '../components/SheetGrid.vue'
 import WorkbookWarnings from '../components/WorkbookWarnings.vue'
 import DataReview from '../components/DataReview.vue'
@@ -103,6 +104,14 @@ function addRow() {
           <ShieldAlert :size="15" /> Revisión de datos
         </button>
         <button v-if="session.canEdit" class="btn" @click="addRow"><Plus :size="15" /> Añadir fila</button>
+        <RouterLink
+          v-if="session.canEdit"
+          :to="{ path: '/cuaderno', query: { tipo: kindForSheet(module) } }"
+          class="btn"
+          title="Digitalizar cuaderno: fotografía páginas y la IA propone los cambios para esta hoja"
+        >
+          <NotebookPen :size="15" /> Cuaderno
+        </RouterLink>
         <button class="btn" title="Copiar la primera fila seleccionada hacia abajo (Ctrl+D)" @click="grid?.fillDown()">
           <ArrowDownToLine :size="15" /> Rellenar
         </button>

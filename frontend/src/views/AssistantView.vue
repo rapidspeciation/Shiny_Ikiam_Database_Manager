@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
-import { Camera, ExternalLink, ImagePlus, ListChecks, Plus, RefreshCw, Send, Trash2, X } from 'lucide-vue-next'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { Camera, ExternalLink, ImagePlus, ListChecks, NotebookPen, Plus, RefreshCw, Send, Trash2, X } from 'lucide-vue-next'
+import { useNotebook } from '../stores/notebook'
 import { api, requestId } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
 import { useTables } from '../stores/tables'
@@ -48,6 +49,8 @@ interface Thread {
 }
 
 const tables = useTables()
+const route = useRoute()
+const router = useRouter()
 const threads = ref<Thread[]>([])
 const current = ref<string | null>(null)
 const messages = ref<Message[]>([])
@@ -83,11 +86,35 @@ onMounted(async () => {
     t3Url.value = (await api<{ url: string | null }>('t3/status')).url
     status.value = await api('ai/status')
     threads.value = (await api<{ threads: Thread[] }>('chat/threads')).threads
-    if (threads.value[0]) await open(threads.value[0].id)
+    if (route.query.hilo) await openLinked()
+    else if (threads.value[0]) await open(threads.value[0].id)
   } catch (e) {
     notify(errorText(e), 'error')
   }
 })
+
+// "Preguntar en el chat" from a digitized page opens that page's conversation (?hilo=…).
+async function openLinked() {
+  const id = String(route.query.hilo ?? '')
+  if (!id) return
+  mode.value = 'chat'
+  if (!threads.value.some(t => t.id === id))
+    threads.value = (await api<{ threads: Thread[] }>('chat/threads')).threads
+  await open(id)
+}
+watch(() => route.query.hilo, id => id && void openLinked())
+
+// Digitalizar cuaderno: on a phone the camera opens here and the pages are read in the background.
+const notebook = useNotebook()
+const pageCamera = ref<HTMLInputElement>()
+async function photographPages(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = [...(input.files ?? [])]
+  input.value = ''
+  if (!files.length) return
+  void router.push('/cuaderno')
+  await notebook.addPhotos(files, 'auto', null)
+}
 
 async function open(id: string) {
   current.value = id
@@ -234,6 +261,17 @@ const cellOf = (row: Record<string, unknown> | unknown[], key: string, i: number
         </button>
       </template>
       <VoiceCall />
+      <RouterLink
+        to="/cuaderno"
+        class="my-0.5 ml-1 flex items-center gap-1 rounded-md bg-brand-700 px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-800"
+        title="Fotografía páginas del cuaderno: la IA las transcribe y propone los cambios para revisar"
+      >
+        <NotebookPen :size="14" /> Digitalizar cuaderno
+      </RouterLink>
+      <input ref="pageCamera" type="file" accept="image/*" capture="environment" multiple class="hidden" @change="photographPages" />
+      <button class="btn-ghost md:hidden" title="Fotografiar una página del cuaderno" @click="pageCamera?.click()">
+        <Camera :size="16" />
+      </button>
       <template v-if="t3Url && mode === 't3'">
         <button
           class="ml-auto flex items-center gap-1 rounded px-2 py-0.5"

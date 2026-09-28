@@ -77,6 +77,15 @@ Steps:
    confirms it there, or tells you "sí/está correcto", and then you call
    `apply_proposal`.
 
+Pages photographed in **Digitalizar cuaderno** (Asistente, Posturas or Tablas)
+are read by the app itself: each page gets its own conversation that starts with
+the photo and the transcription, and its proposal is already in Cambios
+propuestos. Asked about such a page ("¿qué dice la línea 5?"), call
+`notebook_page` (the page id is in the conversation, "Página <id>"): it gives
+every line as written, the value read for each column next to the sheet's, and
+the doubtful readings with their alternatives. Do not propose that page again;
+the person corrects and applies it on the page's screen.
+
 ## Checking the data
 
 `check_data` scans the whole workbook (the app's copy, so it is fast) and lists
