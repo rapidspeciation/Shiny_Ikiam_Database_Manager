@@ -664,14 +664,11 @@ export function createAssistant({ store, config = {} }) {
     const images = [];
     for (const id of attachmentIds) {
       const attachment = await store.getAttachment(String(id));
-      if (
-        !attachment ||
-        !/^image\/(png|jpeg|webp)$/.test(attachment.mimeType) ||
-        !Buffer.isBuffer(attachment.data) ||
-        attachment.data.length > 10_000_000
-      )
+      // SQLite returns blobs as Uint8Array.
+      const data = attachment?.data instanceof Uint8Array ? Buffer.from(attachment.data) : null;
+      if (!data || !/^image\/(png|jpeg|webp)$/.test(attachment.mimeType) || data.length > 10_000_000)
         throw new Error('Invalid image attachment');
-      images.push(attachment);
+      images.push({ ...attachment, data });
     }
     return images;
   }
