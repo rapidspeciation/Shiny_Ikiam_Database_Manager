@@ -20,6 +20,11 @@ and use Playwright from `~/.local/share/ithomiini-wikiloc/node_modules`. The key
 by the page's visible height (Android's own flag can be stale). They add rows to the Colecta
 list of that account and empty it at the end; nothing is saved to the workbook.
 
+SwiftKey (the keyboard the team uses) can replace Gboard: download its APK, check the signer is
+TouchType Limited (`build-tools/35.0.0/apksigner verify --print-certs`), then
+`adb install -r swiftkey.apk` and `adb shell ime set com.touchtype.swiftkey/com.touchtype.KeyboardService`.
+It is taller than Gboard (the page keeps ~40 % of the height while typing).
+
 What the emulator showed (2026-09-28):
 - the action bar appeared over a tapped cell near the bottom, so the second tap of a double
   tap pressed "Borrar";

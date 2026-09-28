@@ -12,6 +12,12 @@ export const keyboardOver = page => page.evaluate(() => visualViewport.height < 
 /** A screenshot of the phone, keyboard included. */
 export const screenshot = file => writeFileSync(file, execFileSync(ADB, ['exec-out', 'screencap', '-p'], { maxBuffer: 64e6 }));
 export async function connect() {
+  // Chrome must be running for its DevTools socket to exist (e.g. after the phone restarts).
+  if (!adb('shell', 'cat', '/proc/net/unix').includes('chrome_devtools_remote')) {
+    adb('shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', 'https://ithomiini-ikiam.duckdns.org/', 'com.android.chrome');
+    for (let i = 0; i < 40 && !adb('shell', 'cat', '/proc/net/unix').includes('chrome_devtools_remote'); i++) await sleep(500);
+    await sleep(2000);
+  }
   adb('forward', 'tcp:9222', 'localabstract:chrome_devtools_remote');
   const browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
   const context = browser.contexts()[0];
