@@ -27,7 +27,7 @@ async function logout() {
 </script>
 
 <template>
-  <header class="border-b border-brand-800 bg-brand-700 text-white">
+  <header class="app-header border-b border-brand-800 bg-brand-700 text-white">
     <!-- One row on wide screens; on phones the tabs get their own full-width row. -->
     <div class="flex flex-wrap items-center gap-x-3 px-3 sm:flex-nowrap sm:px-4">
       <RouterLink to="/inicio" class="flex shrink-0 items-center gap-2 py-2 font-semibold">

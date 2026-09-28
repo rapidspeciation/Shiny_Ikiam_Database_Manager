@@ -541,10 +541,16 @@ function keepEditorVisible() {
   const cell = document.querySelector<HTMLElement>('.tabulator-editing')
   const view = window.visualViewport
   if (!cell || !view) return
-  const r = cell.getBoundingClientRect()
+  // Visible: below any pinned bar of the page (e.g. the Colecta list bar) and above the keyboard.
+  const pinned = [...document.querySelectorAll<HTMLElement>('[data-sticky-bar]')]
+    .map(el => el.getBoundingClientRect())
+    .filter(r => r.height && r.bottom > view.offsetTop)
+  const top = Math.max(view.offsetTop, ...pinned.map(r => r.bottom)) + 8
   const bottom = view.offsetTop + view.height - 12
-  if (r.bottom <= bottom && r.top >= view.offsetTop) return
-  const by = r.bottom - bottom
+  const r = cell.getBoundingClientRect()
+  if (r.top >= top && r.bottom <= bottom) return
+  // Centre it in that space.
+  const by = r.top + r.height / 2 - (top + bottom) / 2
   const listOpen = !!document.querySelector('.tabulator-popup-container')
   for (let el = cell.parentElement; el; el = el.parentElement) {
     if (el.classList.contains('tabulator-tableholder')) {
@@ -558,5 +564,15 @@ function keepEditorVisible() {
   }
   window.scrollBy(0, by)
 }
+
+/** While the phone's keyboard is open the app header steps aside (CSS), leaving the space to the grid. */
+function followKeyboard() {
+  const view = window.visualViewport
+  if (!view) return
+  const open = view.height < window.innerHeight * 0.8
+  if (document.body.classList.contains('keyboard-open') !== open) document.body.classList.toggle('keyboard-open', open)
+  // After the header has gone (or come back), place the edited cell.
+  requestAnimationFrame(() => requestAnimationFrame(keepEditorVisible))
+}
 if (touchScreen && typeof window !== 'undefined' && window.visualViewport)
-  window.visualViewport.addEventListener('resize', () => requestAnimationFrame(keepEditorVisible))
+  window.visualViewport.addEventListener('resize', followKeyboard)

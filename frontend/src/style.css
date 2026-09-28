@@ -137,6 +137,13 @@ body {
 .touch-actions button:active {
   background: #3d5247;
 }
+/* Phones: while the keyboard is open, the app header steps aside and the grid gets the space. */
+body.keyboard-open .app-header {
+  display: none;
+}
+body.keyboard-open .touch-actions {
+  display: none !important;
+}
 body.touch-bar-open main {
   padding-bottom: calc(64px + env(safe-area-inset-bottom));
 }

@@ -586,38 +586,49 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
     </div>
 
     <div v-if="drafts.length" class="border-b border-stone-200 bg-white px-3 pb-2">
-      <!-- Always in sight while scrolling the list: how long it is and how to trim it. -->
-      <div class="sticky top-0 z-10 -mx-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-stone-200 bg-white px-3 py-2 text-sm">
-        <span class="font-semibold">Lista de la colecta: {{ drafts.length }} {{ drafts.length === 1 ? 'fila' : 'filas' }}</span>
-        <span v-if="emptyCount" class="text-amber-800">{{ emptyCount }} vacías</span>
-        <button v-if="emptyCount" class="btn" @click="removeEmpty"><Eraser :size="15" /> Quitar filas vacías</button>
-        <button class="btn" @click="clearAll"><Trash2 :size="15" /> Vaciar lista</button>
-        <span class="ml-auto inline-flex overflow-hidden rounded-md border border-stone-300 text-xs">
+      <!-- Always in sight while scrolling the list, and kept to one line: how long it is, how to trim it, the view. -->
+      <div
+        data-sticky-bar
+        class="sticky top-0 z-10 -mx-3 flex items-center gap-2 border-b border-stone-200 bg-white px-3 py-1.5 text-sm"
+      >
+        <span class="font-semibold whitespace-nowrap">{{ drafts.length }} {{ drafts.length === 1 ? 'fila' : 'filas' }}</span>
+        <span v-if="emptyCount" class="whitespace-nowrap text-amber-800">{{ emptyCount }} vacías</span>
+        <button v-if="emptyCount" class="btn px-2 py-1" title="Quitar filas vacías" @click="removeEmpty">
+          <Eraser :size="15" /><span class="max-sm:hidden">Quitar vacías</span>
+        </button>
+        <button class="btn px-2 py-1" title="Vaciar lista" @click="clearAll">
+          <Trash2 :size="15" /><span class="max-sm:hidden">Vaciar lista</span>
+        </button>
+        <span class="ml-auto inline-flex shrink-0 overflow-hidden rounded-md border border-stone-300 text-xs">
           <button
             v-for="v in ['tabla', 'formulario'] as const"
             :key="v"
-            class="px-2.5 py-1"
+            class="px-2 py-1"
             :class="view === v ? 'bg-brand-700 text-white' : 'bg-white text-stone-700'"
             @click="view = v"
           >
             {{ v === 'tabla' ? 'Tabla' : 'Formulario' }}
           </button>
         </span>
-        <span class="hint w-full">Se guarda en este navegador, aunque recargues o cierres la página, hasta que la guardes o la vacíes.</span>
-        <span v-if="view === 'tabla' && touchScreen" class="hint w-full"
-          >Toca una celda para seleccionarla y dos veces para editarla · arrastra el círculo de la esquina para ampliar la selección
-          · la barra de abajo copia, pega, rellena hacia abajo o borra lo seleccionado.</span
-        >
-        <span v-else-if="view === 'tabla'" class="hint w-full"
-          >Como en una hoja de cálculo: selecciona celdas y arrastra el cuadrito de la esquina hacia abajo para copiarlas · pega
-          celdas de Excel o Sheets (llena hacia abajo y a la derecha, y añade filas si faltan) · Ctrl+D copia la primera fila de la
-          selección · escribe sobre una celda para reemplazarla, doble clic para editarla.</span
-        >
-        <span v-else class="hint w-full"
-          >Marca filas (o «hasta aquí» para marcar varias seguidas) y aplica especie, sexo o destino a todas a la vez · en computador
-          también se puede pegar desde Excel, Ctrl+D copia la fila de arriba y Enter baja.</span
-        >
       </div>
+      <!-- How to use it: scrolls away with the page; folded on phones, where space is short. -->
+      <details class="hint mt-1" :open="!touchScreen">
+        <summary class="cursor-pointer select-none">Cómo se usa · la lista se guarda en este navegador</summary>
+        <p>Se guarda en este navegador, aunque recargues o cierres la página, hasta que la guardes o la vacíes.</p>
+        <p v-if="view === 'tabla' && touchScreen">
+          Toca una celda para seleccionarla y dos veces para editarla · arrastra el círculo de la esquina para ampliar la selección ·
+          la barra de abajo copia, pega, rellena hacia abajo o borra lo seleccionado.
+        </p>
+        <p v-else-if="view === 'tabla'">
+          Como en una hoja de cálculo: selecciona celdas y arrastra el cuadrito de la esquina hacia abajo para copiarlas · pega
+          celdas de Excel o Sheets (llena hacia abajo y a la derecha, y añade filas si faltan) · Ctrl+D copia la primera fila de la
+          selección · escribe sobre una celda para reemplazarla, doble clic para editarla.
+        </p>
+        <p v-else>
+          Marca filas (o «hasta aquí» para marcar varias seguidas) y aplica especie, sexo o destino a todas a la vez · en computador
+          también se puede pegar desde Excel, Ctrl+D copia la fila de arriba y Enter baja.
+        </p>
+      </details>
       <CollectGrid
         v-if="view === 'tabla'"
         ref="grid"
