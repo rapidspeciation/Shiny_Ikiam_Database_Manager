@@ -1,14 +1,34 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { UserPlus } from 'lucide-vue-next'
+import { Copy, Mail, RefreshCw, UserPlus, X } from 'lucide-vue-next'
 import { api, requestId } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
 import type { User } from '../lib/types'
 import { useSession } from '../stores/session'
 
-/** Administrators create accounts for the team and set what each person may do. */
+/**
+ * Administrators invite people by email (they choose their own username and
+ * password from the link) and set what each person may do.
+ */
+interface Invitation {
+  id: string
+  email: string
+  displayName: string
+  role: string
+  createdAt: string
+  expiresAt: string
+  sentAt: string | null
+  sendError: string | null
+  usedAt: string | null
+  status: 'pending' | 'used' | 'expired'
+}
+
 const session = useSession()
 const users = ref<User[]>([])
+const invitations = ref<Invitation[]>([])
+const links = ref<Record<string, string>>({})
+const sending = ref(false)
+const invite = reactive({ email: '', displayName: '', role: 'editor' })
 const form = reactive({ username: '', displayName: '', password: '', role: 'editor' })
 const ROLES: Record<string, string> = {
   observer: 'Solo lectura',
@@ -16,15 +36,57 @@ const ROLES: Record<string, string> = {
   reviewer: 'Revisor',
   admin: 'Administrador',
 }
+const STATUS: Record<Invitation['status'], string> = { pending: 'Esperando', used: 'Cuenta creada', expired: 'Vencida' }
+const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('es-EC', { day: 'numeric', month: 'short' }) : '')
 
 async function load() {
   try {
-    users.value = (await api<{ users: User[] }>('admin/users')).users
+    const [u, i] = await Promise.all([
+      api<{ users: User[] }>('admin/users'),
+      api<{ invitations: Invitation[] }>('admin/invitations'),
+    ])
+    users.value = u.users
+    invitations.value = i.invitations
   } catch (e) {
     notify(errorText(e), 'error')
   }
 }
 onMounted(load)
+
+function after(out: { invitation: Invitation; link: string }) {
+  links.value[out.invitation.id] = out.link
+  if (out.invitation.sentAt && !out.invitation.sendError) notify(`Invitación enviada a ${out.invitation.email}`, 'success')
+  else notify(`No se pudo enviar el correo (${out.invitation.sendError}). Copia el enlace y compártelo.`, 'error')
+}
+async function sendInvite() {
+  sending.value = true
+  try {
+    after(await api('admin/invitations', { method: 'POST', body: { ...invite } }))
+    Object.assign(invite, { email: '', displayName: '', role: 'editor' })
+    await load()
+  } catch (e) {
+    notify(errorText(e), 'error')
+  } finally {
+    sending.value = false
+  }
+}
+async function resend(i: Invitation) {
+  try {
+    after(await api(`admin/invitations/${i.id}/resend`, { method: 'POST', body: {} }))
+    await load()
+  } catch (e) {
+    notify(errorText(e), 'error')
+  }
+}
+async function revoke(i: Invitation) {
+  if (!confirm(`¿Anular la invitación a ${i.email}?`)) return
+  await api(`admin/invitations/${i.id}/revoke`, { method: 'POST', body: {} }).catch(e => notify(errorText(e), 'error'))
+  await load()
+}
+async function copy(id: string) {
+  await navigator.clipboard.writeText(links.value[id])
+  notify('Enlace copiado')
+}
 
 async function create() {
   try {
@@ -59,40 +121,81 @@ async function resetPassword(user: User) {
     <p v-if="!session.isAdmin" class="text-stone-500">Solo un administrador puede gestionar cuentas.</p>
     <template v-else>
       <h1 class="mb-3 text-lg font-semibold">Usuarios</h1>
-      <form class="mb-6 flex flex-wrap items-end gap-3 rounded-lg border border-stone-200 bg-white p-4" @submit.prevent="create">
+      <form
+        class="mb-3 flex flex-wrap items-end gap-3 rounded-lg border border-stone-200 bg-white p-4"
+        @submit.prevent="sendInvite"
+      >
         <label>
-          <span class="field-label">Usuario</span>
-          <input v-model="form.username" class="field-input" autocomplete="off" autocapitalize="none" required />
+          <span class="field-label">Correo</span>
+          <input v-model="invite.email" class="field-input w-64" type="email" autocomplete="off" required />
         </label>
         <label>
-          <span class="field-label">Nombre visible</span>
-          <input v-model="form.displayName" class="field-input" />
-        </label>
-        <label>
-          <span class="field-label">Contraseña inicial</span>
-          <input
-            v-model="form.password"
-            class="field-input"
-            type="text"
-            autocomplete="off"
-            minlength="6"
-            maxlength="16"
-            required
-          />
+          <span class="field-label">Nombre</span>
+          <input v-model="invite.displayName" class="field-input" required />
         </label>
         <label>
           <span class="field-label">Permiso</span>
-          <select v-model="form.role" class="field-input">
+          <select v-model="invite.role" class="field-input">
             <option v-for="(label, key) in ROLES" :key="key" :value="key">{{ label }}</option>
           </select>
         </label>
-        <button class="btn-primary"><UserPlus :size="15" /> Crear cuenta</button>
+        <button class="btn-primary" :disabled="sending">
+          <Mail :size="15" /> {{ sending ? 'Enviando…' : 'Enviar invitación' }}
+        </button>
+        <p class="hint w-full">
+          Llega un correo desde jmithominii@gmail.com con un enlace para que la persona elija su usuario y contraseña. El enlace
+          vale 7 días.
+        </p>
       </form>
-      <table class="w-full max-w-3xl text-sm">
+
+      <table v-if="invitations.length" class="mb-6 w-full max-w-4xl text-sm">
+        <thead class="text-left text-xs text-stone-600">
+          <tr>
+            <th class="py-2">Invitación</th>
+            <th>Permiso</th>
+            <th>Estado</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="i in invitations" :key="i.id" class="border-t border-stone-200">
+            <td class="py-2">
+              {{ i.displayName }} <span class="text-stone-500">&lt;{{ i.email }}&gt;</span>
+            </td>
+            <td>{{ ROLES[i.role] ?? i.role }}</td>
+            <td>
+              {{ STATUS[i.status] }}
+              <span class="hint">
+                <template v-if="i.status === 'pending'">· enviada {{ day(i.sentAt) }}, vence {{ day(i.expiresAt) }}</template>
+                <template v-else-if="i.status === 'used'">· {{ day(i.usedAt) }}</template>
+              </span>
+              <span v-if="i.sendError && i.status === 'pending'" class="block text-xs text-red-700">
+                Correo no enviado: {{ i.sendError }}
+              </span>
+            </td>
+            <td class="whitespace-nowrap text-right">
+              <template v-if="i.status !== 'used'">
+                <button v-if="links[i.id]" class="btn-ghost" title="Copiar enlace" @click="copy(i.id)">
+                  <Copy :size="14" />
+                </button>
+                <button class="btn-ghost" title="Enviar de nuevo (el enlace anterior deja de funcionar)" @click="resend(i)">
+                  <RefreshCw :size="14" />
+                </button>
+                <button v-if="i.status === 'pending'" class="btn-ghost" title="Anular" @click="revoke(i)">
+                  <X :size="14" />
+                </button>
+              </template>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <table class="w-full max-w-4xl text-sm">
         <thead class="text-left text-xs text-stone-600">
           <tr>
             <th class="py-2">Usuario</th>
             <th>Nombre</th>
+            <th>Correo</th>
             <th>Permiso</th>
             <th>Activa</th>
             <th></th>
@@ -102,6 +205,7 @@ async function resetPassword(user: User) {
           <tr v-for="u in users" :key="u.id" class="border-t border-stone-200">
             <td class="py-2">{{ u.username }}</td>
             <td>{{ u.displayName }}</td>
+            <td class="text-stone-600">{{ u.email }}</td>
             <td>
               <select
                 :value="u.role"
@@ -116,6 +220,42 @@ async function resetPassword(user: User) {
           </tr>
         </tbody>
       </table>
+
+      <details class="mt-6 max-w-4xl">
+        <summary class="cursor-pointer text-sm text-stone-600">Crear una cuenta sin correo (con contraseña inicial)</summary>
+        <form
+          class="mt-2 flex flex-wrap items-end gap-3 rounded-lg border border-stone-200 bg-white p-4"
+          @submit.prevent="create"
+        >
+          <label>
+            <span class="field-label">Usuario</span>
+            <input v-model="form.username" class="field-input" autocomplete="off" autocapitalize="none" required />
+          </label>
+          <label>
+            <span class="field-label">Nombre visible</span>
+            <input v-model="form.displayName" class="field-input" />
+          </label>
+          <label>
+            <span class="field-label">Contraseña inicial</span>
+            <input
+              v-model="form.password"
+              class="field-input"
+              type="text"
+              autocomplete="off"
+              minlength="6"
+              maxlength="16"
+              required
+            />
+          </label>
+          <label>
+            <span class="field-label">Permiso</span>
+            <select v-model="form.role" class="field-input">
+              <option v-for="(label, key) in ROLES" :key="key" :value="key">{{ label }}</option>
+            </select>
+          </label>
+          <button class="btn"><UserPlus :size="15" /> Crear cuenta</button>
+        </form>
+      </details>
     </template>
   </div>
 </template>

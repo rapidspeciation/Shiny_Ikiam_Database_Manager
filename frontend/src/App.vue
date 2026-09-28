@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, watch } from 'vue'
-import { RouterView } from 'vue-router'
+import { RouterView, useRoute } from 'vue-router'
 import AppHeader from './components/AppHeader.vue'
 import SaveBar from './components/SaveBar.vue'
 import LoginView from './views/LoginView.vue'
@@ -10,6 +10,7 @@ import { useSession } from './stores/session'
 import { useTables } from './stores/tables'
 
 const session = useSession()
+const route = useRoute()
 const pending = usePending()
 const tables = useTables()
 
@@ -25,7 +26,9 @@ watch(
 </script>
 
 <template>
-  <div v-if="!session.ready" class="grid h-full place-items-center text-stone-500">Cargando…</div>
+  <!-- The invitation page works without an account. -->
+  <RouterView v-if="route.path === '/activar'" />
+  <div v-else-if="!session.ready" class="grid h-full place-items-center text-stone-500">Cargando…</div>
   <LoginView v-else-if="!session.user" />
   <div v-else class="flex h-full flex-col">
     <AppHeader />

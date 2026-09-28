@@ -7,6 +7,8 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/home/ubuntu/ithomiini/current
 EnvironmentFile=/home/ubuntu/.config/ithomiini/service.env
+# The project Gmail login used for invitation emails (gog keyring password and account).
+EnvironmentFile=-/home/ubuntu/.config/ithomiini/gog.env
 ExecStart=/home/ubuntu/.local/share/tiputini-runtime/node-v24.18.0-linux-arm64/bin/node server/index.mjs
 Restart=on-failure
 RestartSec=5
@@ -15,7 +17,7 @@ UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/home/ubuntu/ithomiini/shared /home/ubuntu/.claude
+ReadWritePaths=/home/ubuntu/ithomiini/shared /home/ubuntu/.claude /home/ubuntu/.config/gogcli /home/ubuntu/.local/share/gogcli
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 
 [Install]

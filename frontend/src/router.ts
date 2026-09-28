@@ -17,6 +17,7 @@ export const router = createRouter({
     { path: '/', redirect: '/tablas' },
     ...tabs.map(({ path, name, component }) => ({ path, name, component })),
     { path: '/usuarios', name: 'users', component: () => import('./views/UsersView.vue') },
+    { path: '/activar', name: 'activate', component: () => import('./views/ActivateView.vue') },
     { path: '/:pathMatch(.*)*', redirect: '/tablas' },
   ],
 })

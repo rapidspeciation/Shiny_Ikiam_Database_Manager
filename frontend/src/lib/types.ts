@@ -25,6 +25,7 @@ export interface User {
   displayName: string
   role: 'observer' | 'editor' | 'reviewer' | 'admin'
   active: boolean
+  email?: string | null
 }
 
 export interface Settings {

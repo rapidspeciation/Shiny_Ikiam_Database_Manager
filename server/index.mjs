@@ -27,6 +27,7 @@ import {
 } from './monitoring.mjs';
 import { idSuggestions, tableChanges, tablePayload, tableRevision } from './grid.mjs';
 import { createSheetHook } from './hooks.mjs';
+import { createInvitations, mailerFromEnv } from './invitations.mjs';
 import { SANDBOX_ID, moduleMap, validateValues } from './schema.mjs';
 import {
   setup,
@@ -282,6 +283,11 @@ export async function createApp(config = {}, options = {}) {
   const loginLimiter = new LoginLimiter();
   const tableCache = new Map();
   const sheetHook = createSheetHook(store, { secret: config.sheetHookSecret });
+  const invitations = createInvitations(
+    store,
+    options.mailer ?? mailerFromEnv(),
+    options.mail ? { send: options.mail } : {},
+  );
   const server = http.createServer(async (req, res) => {
     const requestId = randomUUID();
     res.setHeader('x-request-id', requestId);
@@ -349,6 +355,26 @@ export async function createApp(config = {}, options = {}) {
           loginLimiter.failed(req, body.username);
           throw e;
         }
+      }
+      // The invitation page is used before the person has an account.
+      if (method === 'GET' && path === '/api/invitations/lookup')
+        return json(res, 200, { invitation: invitations.lookup(url.searchParams.get('t')) });
+      if (method === 'POST' && path === '/api/invitations/accept') {
+        loginLimiter.check(req, 'invitation');
+        let created;
+        try {
+          created = invitations.accept(body.token, body);
+        } catch (e) {
+          loginLimiter.failed(req, 'invitation');
+          throw e;
+        }
+        const auth = login(store, { username: created.username, password: body.password });
+        return json(
+          res,
+          201,
+          { user: auth.user, csrf: auth.csrf },
+          { 'set-cookie': cookie(auth.token, { path: config.basePath, secure: config.secureCookies }) },
+        );
       }
       if (!session) throw fail('AUTH_REQUIRED', 'Sign in required', 401);
       if (method !== 'GET' && method !== 'HEAD') checkCsrf(session, req.headers['x-csrf-token']);
@@ -628,6 +654,24 @@ export async function createApp(config = {}, options = {}) {
         requireAdmin(user);
         requireId(body);
         return json(res, 200, { user: updateUser(store, path.split('/')[4], body, user) });
+      }
+      if (path === '/api/admin/invitations' && method === 'GET') {
+        requireAdmin(user);
+        return json(res, 200, { invitations: invitations.list() });
+      }
+      if (path === '/api/admin/invitations' && method === 'POST') {
+        requireAdmin(user);
+        return json(res, 201, await invitations.create(body, user));
+      }
+      const invitationAction = /^\/api\/admin\/invitations\/([0-9a-f]{24})\/(resend|revoke)$/.exec(path);
+      if (invitationAction && method === 'POST') {
+        requireAdmin(user);
+        const [, id, action] = invitationAction;
+        return json(
+          res,
+          200,
+          action === 'resend' ? await invitations.resend(id, user) : { invitation: invitations.revoke(id) },
+        );
       }
       if (path === '/api/admin/status' && method === 'GET') {
         requireAdmin(user);

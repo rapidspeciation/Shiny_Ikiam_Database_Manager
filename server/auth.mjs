@@ -16,6 +16,7 @@ export function publicUser(row) {
       displayName: row.display_name,
       role: row.role,
       active: Boolean(row.active),
+      email: row.email ?? null,
     }
   );
 }
