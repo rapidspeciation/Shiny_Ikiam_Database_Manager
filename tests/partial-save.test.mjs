@@ -28,14 +28,18 @@ test('a partial save writes every change except the one that conflicts, and says
     n4 = at(4);
   const requestId = randomUUID();
   const body = {
-      requestId,
-      partial: true,
-      edits: [
-        // The CAM is N2D's; the death date of the same row is fine.
-        { id: n3.id, values: { CAM_ID: 'CAM078274', Death_date: '2026-09-27' }, expected: { CAM_ID: null, Death_date: null } },
-        { id: n4.id, values: { Death_cause: 'Unknown' }, expected: { Death_cause: null } },
-      ],
-    };
+    requestId,
+    partial: true,
+    edits: [
+      // The CAM is N2D's; the death date of the same row is fine.
+      {
+        id: n3.id,
+        values: { CAM_ID: 'CAM078274', Death_date: '2026-09-27' },
+        expected: { CAM_ID: null, Death_date: null },
+      },
+      { id: n4.id, values: { Death_cause: 'Unknown' }, expected: { Death_cause: null } },
+    ],
+  };
   const result = await applyBatch(store, body, user);
   assert.equal(result.status, 'verified');
   assert.equal(at(3).values.Death_date, 46292);
@@ -110,15 +114,22 @@ test('conflicting fields and rows are taken out of a batch', () => {
     { id: 'a', values: { CAM_ID: 'X1', Death_date: 1 } },
     { id: 'b', values: { Sex: 'male' } },
   ];
-  const creates = [{ clientId: 'c', module: 'Insectary_data', values: {} }];
+  const creates = [
+    { clientId: 'c', module: 'Collection_data', values: {} },
+    { clientId: 'd', module: 'Insectary_data', values: {} },
+  ];
   assert.deepEqual(
     withoutConflicts({ edits, creates }, [
       { id: 'a', field: 'CAM_ID' },
       { id: 'b', field: null },
-      { id: null, clientId: 'c' },
     ]),
-    { edits: [{ id: 'a', values: { Death_date: 1 } }], creates: [] },
+    {
+      edits: [{ id: 'a', values: { Death_date: 1 } }],
+      creates,
+    },
   );
+  // New rows go together (a field butterfly's Collection_data and Insectary_data rows).
+  assert.deepEqual(withoutConflicts({ edits, creates }, [{ id: null, clientId: 'c' }]).creates, []);
   // A conflict of no single change (the sheet's columns changed) cannot be isolated.
   assert.equal(withoutConflicts({ edits, creates }, [{ id: null, clientId: null }]), null);
 });

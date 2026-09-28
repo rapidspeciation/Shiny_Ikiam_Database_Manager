@@ -175,7 +175,8 @@ export function validateValues(module, values, { allowFormula = false, normalize
 const FIRST_SERIAL = 32874; // 1 Jan 1990
 const LAST_SERIAL = 73051; // 1 Jan 2100
 // "Days difference (…)" columns count days, not dates.
-const plausibleSerial = (key, serial) => /^days difference/i.test(key) || (serial >= FIRST_SERIAL && serial < LAST_SERIAL);
+const plausibleSerial = (key, serial) =>
+  /^days difference/i.test(key) || (serial >= FIRST_SERIAL && serial < LAST_SERIAL);
 const badDate = key =>
   Object.assign(new Error(`Fecha no válida en ${key}: usa 14-Aug-25 o 2025-08-14, entre 1990 y 2099`), {
     status: 400,

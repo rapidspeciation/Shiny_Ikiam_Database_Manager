@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ChevronDown, ChevronRight, Search, Undo2, RefreshCw, X } from 'lucide-vue-next'
 import { api, requestId } from '../lib/api'
 import { displayValue } from '../lib/cells'
@@ -35,6 +35,10 @@ const open = reactive(new Set<string>())
 const selected = reactive(new Set<string>())
 const excluded = reactive(new Set<string>())
 const preview = ref<null | { changes: PreviewItem[]; conflicts: PreviewItem[]; eligible: boolean }>(null)
+// Escape closes the undo preview, as any dialog.
+const closeOnEscape = (e: KeyboardEvent) => e.key === 'Escape' && (preview.value = null)
+window.addEventListener('keydown', closeOnEscape)
+onBeforeUnmount(() => window.removeEventListener('keydown', closeOnEscape))
 const reason = ref('')
 const busy = ref(false)
 

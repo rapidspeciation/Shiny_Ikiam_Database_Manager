@@ -58,9 +58,14 @@ export async function applyBatch(store, body, user, { source = 'app', reverses =
         // Nothing was written last time, so the same request may be tried again.
         store.db.prepare('UPDATE actions SET request_id=NULL WHERE id=?').run(prior.action.id);
       } else if (prior.status !== 'verified') {
-        throw fail('WRITE_UNCERTAIN', 'El intento anterior aún se está confirmando; vuelve a intentarlo en un momento', 409, {
-          actionId: prior.action.id,
-        });
+        throw fail(
+          'WRITE_UNCERTAIN',
+          'El intento anterior aún se está confirmando; vuelve a intentarlo en un momento',
+          409,
+          {
+            actionId: prior.action.id,
+          },
+        );
       } else
         return { ...prior, actions: [prior.action], records: prior.records || (prior.record ? [prior.record] : []) };
     }
@@ -120,7 +125,9 @@ export async function applyBatch(store, body, user, { source = 'app', reverses =
         if (!rejected) scheduleRecovery(store);
         throw fail(
           rejected ? 'WRITE_REJECTED' : 'WRITE_UNCERTAIN',
-          rejected ? 'Google Sheets rechazó el cambio; no se guardó nada' : 'No se pudo confirmar la escritura en Google Sheets',
+          rejected
+            ? 'Google Sheets rechazó el cambio; no se guardó nada'
+            : 'No se pudo confirmar la escritura en Google Sheets',
           rejected ? 502 : 503,
           { actionId, cause: e.message?.slice(0, 300) },
         );
@@ -168,14 +175,15 @@ function throwIfConflicts(plan, skipped) {
 
 /**
  * The batch without the changes that conflict: the field of an edit when the
- * conflict names one, else the whole row; a new row is left out whole. Null when
- * a conflict belongs to no single change (e.g. the sheet's columns changed).
+ * conflict names one, else the whole row. New rows are saved together or not at
+ * all: rows typed together are often linked (a field butterfly's Collection_data
+ * and Insectary_data rows). Null when a conflict belongs to no single change
+ * (e.g. the sheet's columns changed).
  */
 export function withoutConflicts({ edits, creates }, conflicts) {
   if (conflicts.some(c => !c.id && !c.clientId)) return null;
   const rows = new Set(conflicts.filter(c => c.id && !c.field).map(c => c.id));
   const fields = new Set(conflicts.filter(c => c.id && c.field).map(c => `${c.id}\u0000${c.field}`));
-  const newRows = new Set(conflicts.filter(c => c.clientId).map(c => c.clientId));
   const keptEdits = [];
   edits.forEach(edit => {
     if (rows.has(edit?.id)) return;
@@ -184,8 +192,7 @@ export function withoutConflicts({ edits, creates }, conflicts) {
     );
     if (Object.keys(values).length) keptEdits.push({ ...edit, values });
   });
-  const keptCreates = creates.filter((c, index) => !newRows.has(c?.clientId || `new-${index}`));
-  return { edits: keptEdits, creates: keptCreates };
+  return { edits: keptEdits, creates: conflicts.some(c => c.clientId) ? [] : creates };
 }
 
 /** Collects, validates and resolves the rows a batch touches. */
@@ -208,11 +215,6 @@ class Plan {
       message,
       ...extra,
     });
-  }
-
-  throwIfConflicts() {
-    if (this.conflicts.length)
-      throw fail('BATCH_CONFLICT', 'Algunos cambios necesitan revisión; no se guardó nada', 409, { items: this.conflicts });
   }
 
   validate(target, module, values) {
@@ -238,7 +240,8 @@ class Plan {
       );
       if (!record || record.missing || record.row <= 0)
         return this.conflict(target, 'RECORD_NOT_FOUND', 'La fila ya no está disponible; recarga la tabla');
-      if (seen.has(record.id)) return this.conflict(target, 'DUPLICATE_EDIT', 'La misma fila aparece dos veces en un guardado');
+      if (seen.has(record.id))
+        return this.conflict(target, 'DUPLICATE_EDIT', 'La misma fila aparece dos veces en un guardado');
       seen.add(record.id);
       Object.assign(target, { sheet: record.sheet, row: record.row, record });
       if (!target.expected && edit.expectedVersion !== undefined && Number(edit.expectedVersion) !== record.version)
@@ -482,7 +485,9 @@ class Plan {
             changes.push({ field, before: { formula: before.formulas[field] }, after });
             continue;
           }
-          return this.conflict(target, 'FORMULA_CELL', `${field} se calcula con una fórmula en la fila nueva`, { field });
+          return this.conflict(target, 'FORMULA_CELL', `${field} se calcula con una fórmula en la fila nueva`, {
+            field,
+          });
         }
         // "NA" is written on purpose (the workbook uses it); only empty values are skipped.
         if (after !== null && after !== '') changes.push({ field, before: before.values[field] ?? null, after });
@@ -657,9 +662,7 @@ function beginAction(store, { requestId, user, source, reason, reverses }, plan)
 /** Map of "scope\0value" → rows holding that identifier in the local copy. */
 /** The sheets that hold IDs checked for repeats: those in UNIQUE, and any with tube columns. */
 const UNIQUE_SHEETS = () =>
-  [...moduleMap.values()]
-    .filter(m => UNIQUE[m.id] || m.fields.some(f => TUBE_FIELD.test(f.key)))
-    .map(m => m.id);
+  [...moduleMap.values()].filter(m => UNIQUE[m.id] || m.fields.some(f => TUBE_FIELD.test(f.key))).map(m => m.id);
 
 function uniqueIdIndex(store) {
   const index = new Map();
@@ -674,7 +677,10 @@ function uniqueIdIndex(store) {
         if (!unique(field) || !isIdValue(value)) continue;
         const scope = TUBE_FIELD.test(field) ? 'tube' : `${sheet}:${field}`;
         const key = `${scope}\u0000${String(value).trim()}`;
-        index.set(key, [...(index.get(key) || []), { id: r.id, sheet, row: r.row_num, field, label: labelFor(sheet, values) }]);
+        index.set(key, [
+          ...(index.get(key) || []),
+          { id: r.id, sheet, row: r.row_num, field, label: labelFor(sheet, values) },
+        ]);
       }
     }
   }

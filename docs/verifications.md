@@ -17,7 +17,8 @@ writes through the API, so the app applies them itself.
 
 - Blank cells, `NA`, and texts without a digit (`not given`, `NOT_COLLECTED`) may repeat.
 - The grids colour a repeat and say, on hover, which other rows hold it (unsaved changes included).
-- Saving a value that another row already holds is refused.
+- Saving a value that another row already holds is refused. The grid colours it as it is typed; the cell stays
+  pending and red ("CAM078274 ya está usado en Insectary_data fila 13384 (N2D)") and the other changes are saved.
 
 ## Dropdown lists (red corner, as Google marks invalid data)
 
