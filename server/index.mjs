@@ -22,6 +22,7 @@ import {
   queueLink,
   queueSync,
   removeProfile,
+  reopenWalk,
   saveTrack,
   saveWalk,
 } from './monitoring.mjs';
@@ -597,7 +598,7 @@ export async function createApp(config = {}, options = {}) {
         });
         return res.end(csv);
       }
-      if (method === 'GET' && path === '/api/monitoring/tracks') return json(res, 200, { tracks: listTracks(store) });
+      if (method === 'GET' && path === '/api/monitoring/tracks') return json(res, 200, { tracks: listTracks(store, user) });
       if (method === 'POST' && path === '/api/monitoring/tracks') {
         requireEditor(user);
         requireId(body);
@@ -640,6 +641,10 @@ export async function createApp(config = {}, options = {}) {
         requireEditor(user);
         const saved = await saveWalk(store, body, user);
         return json(res, saved.updated ? 200 : 201, saved);
+      }
+      if (method === 'POST' && /^\/api\/monitoring\/wikiloc\/[^/]+\/reopen$/.test(path)) {
+        requireEditor(user);
+        return json(res, 200, reopenWalk(store, decodePart(path.split('/')[4])));
       }
       if (method === 'DELETE' && /^\/api\/monitoring\/wikiloc\/[^/]+$/.test(path)) {
         requireEditor(user);

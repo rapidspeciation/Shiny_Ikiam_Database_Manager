@@ -63,7 +63,7 @@ const props = withDefaults(
     highlight: () => [],
   },
 )
-const emit = defineEmits<{ notice: [message: string]; removeCreate: [clientId: string] }>()
+const emit = defineEmits<{ notice: [message: string]; removeCreate: [clientId: string]; select: [id: string | null] }>()
 
 type GridRow = Record<string, CellValue> & { __id: string; __row: number | null; __new: string | null }
 
@@ -495,6 +495,10 @@ function build() {
   } as unknown as ConstructorParameters<typeof Tabulator>[1])
   table.on('cellEdited', onCellEdited)
   table.on('cellClick', onCellClick)
+  // The row of the selection, for panels beside the grid (e.g. a capture's photos in Monitoreo).
+  const selected = () => emit('select', (table?.getRanges()[0]?.getRows()[0]?.getData() as GridRow | undefined)?.__id ?? null)
+  table.on('rangeAdded', selected)
+  table.on('rangeChanged', selected)
   fill?.destroy()
   const container = host.value.parentElement
   // Computers: the fill handle. Touch screens: tap to select, a handle to stretch the selection, and an action bar.

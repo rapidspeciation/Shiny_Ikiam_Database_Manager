@@ -30,15 +30,19 @@ interface Profile {
 }
 
 const session = useSession()
-const { loadWalks, options } = useMonitoring()
+const { loadWalks, reopenWalk, options } = useMonitoring()
+const emit = defineEmits<{ reopened: [walkId: string] }>()
 const link = ref('')
 const jobs = ref<Job[]>([])
 const workerSeen = ref<string | null>(null)
 const profiles = ref<Profile[]>([])
 const showProfiles = ref(false)
+/** Phones show only the jobs still running; the rest on demand. */
+const showJobs = ref(false)
 const newProfile = ref('')
 const newCollector = ref('')
-const collectors = computed(() => (options.value.Collector || []).filter(c => / - /.test(c)))
+// "NA - Missing data" is no one to follow.
+const collectors = computed(() => (options.value.Collector || []).filter(c => / - /.test(c) && !/^NA\b/.test(c)))
 let timer: ReturnType<typeof setTimeout> | null = null
 
 const active = computed(() => jobs.value.filter(j => j.status === 'queued' || j.status === 'running'))
@@ -71,15 +75,28 @@ function soon() {
 async function queue(text = link.value) {
   if (!text.trim()) return
   try {
-    const result = await api<{ known: string | null }>('monitoring/wikiloc/links', { method: 'POST', body: { text } })
+    const result = await api<{ known: string | null; walkId: string | null; name: string | null }>('monitoring/wikiloc/links', {
+      method: 'POST',
+      body: { text },
+    })
     link.value = ''
+    soon()
+    // Already imported: it only comes back for review if the person says so.
+    if (result.known === 'imported' && result.walkId) {
+      const name = result.name || 'Esa ruta'
+      if (!confirm(`«${name}» ya se importó. ¿Revisarla de nuevo? Vuelve a "por revisar" y se lee otra vez de Wikiloc.`))
+        return notify('Se vuelve a leer de Wikiloc; la ruta sigue importada.', 'info', 3000)
+      await reopenWalk(result.walkId)
+      emit('reopened', result.walkId)
+      return notify('Ruta de nuevo por revisar.', 'success', 3000)
+    }
     notify(
       result.known
-        ? 'Esa ruta ya estaba en la app; se actualizará.'
+        ? 'Esa ruta ya estaba por revisar; se actualizará.'
         : 'Enlace en cola: el recorrido aparecerá aquí en unos minutos.',
       'success',
+      3000,
     )
-    soon()
   } catch (e) {
     notify(errorText(e), 'error')
   }
@@ -161,7 +178,8 @@ watch(showProfiles, v => v && loadProfiles())
       </label>
       <button class="btn" :disabled="!session.canEdit || !link.trim()">Traer</button>
       <button type="button" class="btn" :disabled="!session.canEdit" @click="sync">
-        <RefreshCw :size="15" :class="{ 'animate-spin': active.some(j => j.kind === 'profile') }" /> Buscar nuevos en Wikiloc
+        <RefreshCw :size="15" :class="{ 'animate-spin': active.some(j => j.kind === 'profile') }" /> Buscar nuevos
+        <span class="-ml-1 hidden sm:inline">en Wikiloc</span>
       </button>
       <button type="button" class="btn-ghost text-xs underline" @click="showProfiles = !showProfiles">
         Perfiles seguidos ({{ profiles.length }})
@@ -171,8 +189,18 @@ watch(showProfiles, v => v && loadProfiles())
         :class="workerOnline ? 'text-brand-700' : 'text-amber-800'"
         :title="`Última señal: ${ago(workerSeen)}`"
       >
-        ● Procesador en casa {{ workerOnline ? 'activo' : `sin señal (${ago(workerSeen)})` }}
+        ● <span class="hidden sm:inline">Procesador en casa</span>
+        {{ workerOnline ? 'activo' : `sin señal (${ago(workerSeen)})` }}
       </span>
+      <button
+        v-if="recent.length"
+        type="button"
+        class="btn-ghost text-xs underline sm:hidden"
+        :aria-expanded="showJobs"
+        @click="showJobs = !showJobs"
+      >
+        Trabajos ({{ recent.length }})
+      </button>
     </form>
 
     <div v-if="showProfiles" class="mt-2 rounded-md border border-stone-200 bg-stone-50 p-2 text-xs">
@@ -212,7 +240,12 @@ watch(showProfiles, v => v && loadProfiles())
     </div>
 
     <ul v-if="recent.length" class="mt-1.5 space-y-0.5 text-xs text-stone-600">
-      <li v-for="j in recent" :key="j.id" class="truncate">
+      <li
+        v-for="j in recent"
+        :key="j.id"
+        class="truncate"
+        :class="{ 'hidden sm:list-item': !showJobs && j.status !== 'queued' && j.status !== 'running' }"
+      >
         <span
           class="mr-1 rounded px-1.5 py-0.5"
           :class="{

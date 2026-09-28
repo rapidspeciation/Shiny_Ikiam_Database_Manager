@@ -76,6 +76,8 @@ function cleanCapture(c) {
     photos: cleanPhotoIds(c.photos),
     // The Collection_data row the capture was matched to when stored (for the map popup).
     row: number(c.row, 1, 10_000_000),
+    // Its record, which keeps pointing at the butterfly when rows above it are removed.
+    recordId: text(c.recordId, 80),
   };
 }
 
@@ -96,11 +98,101 @@ const fromRow = row => ({
   ...JSON.parse(row.data_json),
 });
 
-export function listTracks(store) {
-  return store.db.prepare('SELECT * FROM monitoring_tracks ORDER BY date DESC, created_at DESC').all().map(fromRow);
+/** Stored tracks with their captures linked to the current sheet rows; `canDelete` for the person asking. */
+export function listTracks(store, user = null) {
+  const tracks = store.db
+    .prepare('SELECT * FROM monitoring_tracks ORDER BY date DESC, created_at DESC')
+    .all()
+    .map(row => ({ ...fromRow(row), canDelete: canDeleteTrack(store, row, user) }));
+  return relinkCaptures(store, tracks);
 }
 
-/** Saves a track once: the same file uploaded again returns the stored copy. */
+// ------------------------------------------------ captures and their sheet rows
+
+const EPOCH = Date.UTC(1899, 11, 30);
+const serialOf = iso => Math.round((Date.parse(`${iso}T00:00:00Z`) - EPOCH) / 864e5);
+const clean = v => (v === null || v === undefined ? '' : String(v).trim());
+const initialsOf = collector => clean(collector).split(' - ')[0].trim().toUpperCase();
+const sexOf = v => {
+  const s = clean(v).toLowerCase().replace(/[_\s]*\?$/, '');
+  return s === 'female' || s === 'male' ? s : null;
+};
+
+/** Collection_data rows by date serial, rebuilt only when the local copy changes. */
+const dayIndexes = new WeakMap();
+function rowsByDay(store) {
+  const state = store.db.prepare("SELECT count(*) n, max(updated_at) u FROM records WHERE sheet='Collection_data'").get();
+  const stamp = `${state.n}:${state.u}`;
+  const hit = dayIndexes.get(store);
+  if (hit?.stamp === stamp) return hit;
+  const byDay = new Map();
+  const byId = new Map();
+  for (const r of store.db
+    .prepare("SELECT id,row_num,values_json FROM records WHERE sheet='Collection_data' AND observed=1 AND missing=0 AND row_num<2000000000")
+    .all()) {
+    const v = JSON.parse(r.values_json);
+    const row = { id: r.id, row: r.row_num, values: v };
+    byId.set(r.id, row);
+    if (typeof v.Collection_date === 'number') (byDay.get(v.Collection_date) || byDay.set(v.Collection_date, []).get(v.Collection_date)).push(row);
+  }
+  const entry = { stamp, byDay, byId };
+  dayIndexes.set(store, entry);
+  return entry;
+}
+
+/** Whether a sheet row is still the capture's butterfly: same day, and mark, minute, species and sex that agree. */
+function holds(row, capture, serial) {
+  const v = row.values;
+  if (v.Collection_date !== serial) return false;
+  if (capture.markId && clean(v.FieldMark_ID).toUpperCase() !== capture.markId.toUpperCase()) return false;
+  const minute = typeof v.Collection_time === 'number' ? Math.round(v.Collection_time * 1440) : null;
+  if (capture.minutes !== null && minute !== null && Math.abs(minute - capture.minutes) > 2) return false;
+  const species = clean(v.SPECIES).toLowerCase();
+  if (capture.species && species && species !== capture.species.toLowerCase()) return false;
+  const sex = sexOf(v.Sex);
+  return !(capture.sex && sex && sex !== capture.sex);
+}
+
+/**
+ * The stored captures point at Collection_data rows (for the map popup and the
+ * recapture photos). When rows are removed or moved in the sheet, a stored row
+ * number points at another butterfly: each capture is checked against its row
+ * and, if it no longer holds it, found again by day, collector and mark or
+ * minute. Captures stored before their rows were saved (an import) are found
+ * the same way. Nothing is written; the links are fixed on every read.
+ */
+export function relinkCaptures(store, tracks) {
+  const { byDay, byId } = rowsByDay(store);
+  const byRow = new Map();
+  for (const r of byId.values()) byRow.set(r.row, r);
+  for (const t of tracks) {
+    const serial = serialOf(t.date);
+    const collector = initialsOf(t.collector);
+    const day = (byDay.get(serial) || []).filter(r => !collector || initialsOf(r.values.Collector) === collector);
+    const taken = new Set();
+    t.captures = t.captures.map(c => {
+      const linked = (c.recordId && byId.get(c.recordId)) || (c.row && byRow.get(c.row));
+      if (linked && holds(linked, c, serial) && !taken.has(linked.id)) {
+        taken.add(linked.id);
+        return { ...c, row: linked.row, recordId: linked.id };
+      }
+      const found = day.filter(r => !taken.has(r.id) && (c.markId || c.minutes !== null) && holds(r, c, serial));
+      if (found.length === 1) {
+        taken.add(found[0].id);
+        return { ...c, row: found[0].row, recordId: found[0].id };
+      }
+      // Gone from the sheet (or ambiguous): no row rather than the wrong one.
+      return { ...c, row: null, recordId: null };
+    });
+  }
+  return tracks;
+}
+
+/**
+ * Saves a track once: the same file uploaded again returns the stored copy,
+ * with its captures' row links refreshed. A Wikiloc walk reviewed again
+ * replaces its earlier track.
+ */
 export function saveTrack(store, body, user) {
   const date = text(body.date, 10);
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)))
@@ -117,12 +209,25 @@ export function saveTrack(store, body, user) {
   const fingerprint = createHash('sha256')
     .update(JSON.stringify([date, track, captures.map(c => [c.lat, c.lon, c.text])]))
     .digest('hex');
+  const replay = store.db.prepare('SELECT * FROM monitoring_tracks WHERE request_id=?').get(body.requestId);
+  if (replay) return { track: fromRow(replay), duplicate: true };
   const existing =
-    store.db.prepare('SELECT * FROM monitoring_tracks WHERE request_id=?').get(body.requestId) ||
+    (walk?.track_id && store.db.prepare('SELECT * FROM monitoring_tracks WHERE id=?').get(walk.track_id)) ||
     store.db.prepare('SELECT * FROM monitoring_tracks WHERE fingerprint=?').get(fingerprint);
   if (existing) {
+    // Reviewed again: the captures (rows found, recaptures) are the new ones. A GPX
+    // track with GPS times is not replaced by the Wikiloc page's track, which has none.
+    const old = JSON.parse(existing.data_json);
+    const timed = points => points.some(p => p[3]);
+    const data = { ...old, track: timed(old.track || []) && !timed(track) ? old.track : track, captures };
+    if (walk) data.wikiloc = { id: walk.wikiloc_id, url: walk.url };
+    const clash = store.db.prepare('SELECT id FROM monitoring_tracks WHERE fingerprint=? AND id<>?').get(fingerprint, existing.id);
+    store.db
+      // The latest request id, so a retry of this request is recognised.
+      .prepare('UPDATE monitoring_tracks SET request_id=?, date=?, collector=?, name=?, data_json=?, fingerprint=? WHERE id=?')
+      .run(body.requestId, date, collector, name, JSON.stringify(data), clash ? existing.fingerprint : fingerprint, existing.id);
     if (walk) markImported(store, walk.id, existing.id);
-    return { track: fromRow(existing), duplicate: true };
+    return { track: fromRow(store.db.prepare('SELECT * FROM monitoring_tracks WHERE id=?').get(existing.id)), duplicate: true };
   }
   const row = {
     id: randomUUID(),
@@ -144,13 +249,26 @@ export function saveTrack(store, body, user) {
   return { track: fromRow(row), duplicate: false };
 }
 
-/** Only the person who uploaded a track, a reviewer or an administrator can remove it. */
+/**
+ * Who may remove a stored track: the person who uploaded it or brought its
+ * Wikiloc walk into the app, a reviewer or an administrator. Not every editor:
+ * a GPX track (with its GPS times) cannot be brought back from Wikiloc, and the
+ * track is someone else's walk on the map and in the report's distances.
+ */
+export function canDeleteTrack(store, track, user) {
+  if (!user || !['editor', 'reviewer', 'admin'].includes(user.role)) return false;
+  if (['reviewer', 'admin'].includes(user.role) || track.created_by === user.username) return true;
+  return !!store.db.prepare('SELECT 1 FROM wikiloc_walks WHERE track_id=? AND created_by=?').get(track.id, user.username);
+}
+
+/** Removes a track from the map; its Wikiloc walk goes back to "por revisar". */
 export function deleteTrack(store, id, user) {
   const row = store.db.prepare('SELECT * FROM monitoring_tracks WHERE id=?').get(id);
   if (!row) throw fail('TRACK_NOT_FOUND', 'Track not found', 404);
-  if (row.created_by !== user.username && !['reviewer', 'admin'].includes(user.role))
+  if (!canDeleteTrack(store, row, user))
     throw fail('FORBIDDEN', 'Only the uploader, a reviewer or an administrator can remove this track', 403);
   store.db.prepare('DELETE FROM monitoring_tracks WHERE id=?').run(id);
+  store.db.prepare("UPDATE wikiloc_walks SET status='waiting', track_id=NULL WHERE track_id=?").run(id);
   return { ok: true };
 }
 
@@ -260,6 +378,18 @@ export async function saveWalk(store, body, user, { fetchImage = fetchPhoto } = 
   return { walk: walkRow(store.db.prepare('SELECT * FROM wikiloc_walks WHERE id=?').get(id)), failed, updated: false };
 }
 
+/**
+ * An imported walk back to "por revisar", e.g. after its rows were removed from
+ * the sheet or its notes corrected in Wikiloc. Its track stays on the map until
+ * the walk is imported again, which then replaces it (saveTrack).
+ */
+export function reopenWalk(store, id) {
+  const row = store.db.prepare('SELECT * FROM wikiloc_walks WHERE id=?').get(id);
+  if (!row) throw fail('WALK_NOT_FOUND', 'Wikiloc walk not found', 404);
+  store.db.prepare("UPDATE wikiloc_walks SET status='waiting' WHERE id=?").run(id);
+  return { walk: walkRow(store.db.prepare('SELECT * FROM wikiloc_walks WHERE id=?').get(id)) };
+}
+
 export function deleteWalk(store, id, user) {
   const row = store.db.prepare('SELECT * FROM wikiloc_walks WHERE id=?').get(id);
   if (!row) throw fail('WALK_NOT_FOUND', 'Wikiloc walk not found', 404);
@@ -349,12 +479,22 @@ function addJob(store, kind, target, user) {
   return jobRow(row);
 }
 
-/** Queues a pasted or shared link (any text containing one is accepted). */
+/**
+ * Queues a pasted or shared link (any text containing one is accepted). A walk
+ * already in the app is read again; `known` and `walkId` let the screen offer
+ * to review an imported one again (reopenWalk).
+ */
 export function queueLink(store, body, user) {
   const found = trailUrl(body.url || body.text);
   if (!found) throw fail('INVALID_WALK', 'No Wikiloc trail link found');
-  const known = store.db.prepare("SELECT status FROM wikiloc_walks WHERE wikiloc_id=?").get(found.wikilocId);
-  return { job: addJob(store, 'trail', found.url, user), known: known?.status || null };
+  const known = store.db.prepare('SELECT id, status, name, date FROM wikiloc_walks WHERE wikiloc_id=?').get(found.wikilocId);
+  return {
+    job: addJob(store, 'trail', found.url, user),
+    known: known?.status || null,
+    walkId: known?.id || null,
+    name: known?.name || null,
+    date: known?.date || null,
+  };
 }
 
 /** One job per followed profile, to look for monitoring trails not yet in the app. */

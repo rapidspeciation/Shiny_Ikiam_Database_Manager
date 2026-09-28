@@ -7,7 +7,7 @@
 // The whole scan runs once per state of the local copy (and per day, for
 // future dates) and is cached, so paging and filtering are free.
 
-import { moduleMap } from './schema.mjs';
+import { moduleMap, parseDateText } from './schema.mjs';
 import { TUBE_FIELD, UNIQUE, blankOrNA, isIdValue } from './verifications.mjs';
 import { listOptions } from './verify.mjs';
 
@@ -20,6 +20,7 @@ export const CHECK_KINDS = {
   link_mismatch: 'Colecta e insectario no coinciden',
   date_order: 'Fechas en orden imposible',
   future_date: 'Fecha en el futuro',
+  bad_date: 'Fecha que no es una fecha',
   missing_sample: 'Preservada sin CAM o tubo',
   mark_reuse: 'Marca usada en dos especies',
 };
@@ -103,6 +104,36 @@ function yearSlip(serial, min, max) {
     })
     .filter(s => s >= min && s <= max);
   return found.length === 1 ? found[0] : null;
+}
+
+/**
+ * What is wrong with a typed value of a date column, or null: a serial before
+ * 2000 or more than two years ahead (375004 typed for 21/9/2026), or text.
+ */
+function badDate(value, today) {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return `tiene «${value}», que no es una fecha`;
+    if (value >= 36526 && value <= today + 731) return null;
+    const year = value > 0 && value < 2958466 ? new Date(EPOCH + value * 864e5).getUTCFullYear() : null;
+    return `tiene el número ${value}${year ? ` (año ${year})` : ''}, que no es una fecha`;
+  }
+  if (typeof value !== 'string') return null;
+  const t = value.trim();
+  if (!t || /^(NA|N\/A|NOT_COLLECTED|NOT_PROVIDED|unknown|-)$/i.test(t)) return null;
+  return `es el texto «${t}», no una fecha`;
+}
+
+/** The right day of a broken date, when a note starts with it ("21/9/2026 AA: …") or the text reads as a date. */
+function dayFromNotes(row, noteFields, field) {
+  const value = row.values[field];
+  const parsed = typeof value === 'string' ? parseDateText(value) : null;
+  if (parsed && parsed >= 36526) return { fix: { recordId: row.id, values: { [field]: iso(parsed) } }, fixNote: 'fecha escrita como texto' };
+  for (const key of noteFields) {
+    const m = /^\s*(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})\b/.exec(text(row.values[key]));
+    const day = m && parseDateText(`${m[1]}/${m[2]}/${m[3]}`);
+    if (day) return { fix: { recordId: row.id, values: { [field]: iso(day) } }, fixNote: `día de ${key}` };
+  }
+  return {};
 }
 
 /** Same text once case, underscores, spaces and accents are ignored ("female_?" = "female ?"). */
@@ -329,24 +360,34 @@ function scan(store) {
       });
     }
 
-  // ---- Dates after today (typed ones).
+  // ---- Dates after today (typed ones), and values in a date column that are no date at all.
   for (const [sheet, rows] of sheets) {
     const dates = moduleMap
       .get(sheet)
       .fields.filter(f => f.type === 'date')
       .map(f => f.key);
     if (!dates.length) continue;
+    const noteFields = moduleMap
+      .get(sheet)
+      .fields.map(f => f.key)
+      .filter(k => /notes?/i.test(k));
     for (const row of rows) {
       if (!row.observed) continue;
       for (const field of dates) {
         const value = row.values[field];
-        if (!isDate(value) || value <= today || row.formulas[field]) continue;
-        const slip = value < 2958466 ? yearSlip(value, today - 366, today) : null;
+        if (row.formulas[field] || value === null || value === undefined || typeof value === 'object') continue;
+        const broken = badDate(value, today);
+        if (broken) {
+          add('bad_date', row, field, `${field} ${broken}`, dayFromNotes(row, noteFields, field));
+          continue;
+        }
+        if (!isDate(value) || value <= today) continue;
+        const slip = yearSlip(value, today - 366, today);
         add(
           'future_date',
           row,
           field,
-          value < 2958466 ? `${field} es ${iso(value)}, después de hoy` : `${field} tiene el número ${value}, que no es una fecha`,
+          `${field} es ${iso(value)}, después de hoy`,
           slip ? { fix: { recordId: row.id, values: { [field]: iso(slip) } }, fixNote: 'año mal escrito' } : {},
         );
       }
@@ -385,7 +426,11 @@ function scan(store) {
     named.sort((a, b) => dateOf(a) - dateOf(b) || a.row - b.row);
     const first = binomial(named[0].values.SPECIES);
     const owners = named.filter(r => binomial(r.values.SPECIES) === first);
-    for (const row of named.filter(r => binomial(r.values.SPECIES) !== first))
+    // Once per other species (its first row): its recaptures are the same reused ID, not new problems.
+    const firstOfEach = named.filter(
+      (r, i) => binomial(r.values.SPECIES) !== first && named.findIndex(o => binomial(o.values.SPECIES) === binomial(r.values.SPECIES)) === i,
+    );
+    for (const row of firstOfEach)
       add(
         'mark_reuse',
         row,

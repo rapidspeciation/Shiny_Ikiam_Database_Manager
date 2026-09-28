@@ -93,8 +93,9 @@ when the right value is obvious. Kinds:
 | `link_mismatch` | the two rows of one butterfly disagree (species, sex, the copied CAM) |
 | `date_order` | death or preservation before collection or entry; entry before collection |
 | `future_date` | a typed date after today (fix when it is a year typed wrong) |
+| `bad_date` | a date column holding no date: a number before 2000 or years ahead (375004), or text (fix from a note that starts with the day) |
 | `missing_sample` | preserved without CAM_ID or Tube_1_id (monitoring rows get them later: normal for recent ones) |
-| `mark_reuse` | a FieldMark_ID recorded on two species |
+| `mark_reuse` | a FieldMark_ID recorded on two species (once per other species) |
 
 Steps:
 

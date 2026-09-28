@@ -10,10 +10,10 @@ const RecapturePanel = defineAsyncComponent(() => import('../components/monitori
 
 /** Ikiam monthly monitoring: import a Wikiloc walk, the report tables, the map, and the recaptured individuals. */
 const PANELS = [
-  { id: 'importar', label: 'Importar recorrido' },
-  { id: 'resumen', label: 'Reporte' },
-  { id: 'mapa', label: 'Mapa' },
-  { id: 'recapturas', label: 'Recapturas' },
+  { id: 'importar', label: 'Importar recorrido', short: 'Importar' },
+  { id: 'resumen', label: 'Reporte', short: 'Reporte' },
+  { id: 'mapa', label: 'Mapa', short: 'Mapa' },
+  { id: 'recapturas', label: 'Recapturas', short: 'Recapturas' },
 ] as const
 const route = useRoute()
 const router = useRouter()
@@ -35,7 +35,8 @@ const show = (id: string) => router.replace({ query: { ...route.query, vista: id
         "
         @click="show(p.id)"
       >
-        {{ p.label }}
+        <!-- One line on phones: the tabs' second line cost the grid a row. -->
+        <span class="sm:hidden">{{ p.short }}</span><span class="hidden sm:inline">{{ p.label }}</span>
       </button>
     </nav>
     <div class="min-h-0 flex-1">

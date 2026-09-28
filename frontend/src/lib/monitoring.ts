@@ -41,6 +41,8 @@ export interface Gpx {
   name: string
   track: TrackPoint[]
   waypoints: GpxWaypoint[]
+  /** Wikiloc's <author>: the person's name and profile number, which say whose walk it is. */
+  author?: { name: string; id: string | null } | null
 }
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }
@@ -92,8 +94,15 @@ export function parseGpx(xml: string): Gpx {
     if (text) waypoints.push({ lat: p.lat, lon: p.lon, ele: p.ele, time: p.time, text })
   }
   const trk = /<(?:\w+:)?trk\b[^>]*>([\s\S]*?)<\/(?:\w+:)?trk>/.exec(xml)?.[1] || ''
-  const name = tag(trk.split(/<(?:\w+:)?trkseg/)[0], 'name') || tag(xml.split(/<(?:\w+:)?(?:wpt|trk)\b/)[0], 'name')
-  return { name, track, waypoints }
+  const head = xml.split(/<(?:\w+:)?(?:wpt|trk)\b/)[0]
+  const name =
+    tag(trk.split(/<(?:\w+:)?trkseg/)[0], 'name') ||
+    tag(head.replace(/<(?:\w+:)?author\b[\s\S]*?<\/(?:\w+:)?author>/, ''), 'name')
+  const authorBlock = /<(?:\w+:)?author\b[^>]*>([\s\S]*?)<\/(?:\w+:)?author>/.exec(head)?.[1] || ''
+  const author = authorBlock
+    ? { name: tag(authorBlock, 'name'), id: /user\.do\?id=(\d{3,12})/.exec(authorBlock)?.[1] ?? null }
+    : null
+  return { name, track, waypoints, author }
 }
 
 /** Date (ISO) and minutes after midnight of an instant, in Ecuador. */
@@ -185,6 +194,8 @@ export interface Capture {
   subspecies: string | null
   /** False when the name was not found among the species already in the sheet. */
   known: boolean
+  /** How a subspecies not written in full was chosen: the only one at Ikiam, or the start written ("id" → ida). */
+  subspeciesGuess: 'ikiam' | 'prefix' | null
   sex: 'female' | 'male' | null
   /** Time of capture, minutes after midnight. */
   minutes: number | null
@@ -203,12 +214,20 @@ export interface Capture {
 const WEATHER: [RegExp, string][] = [
   [/\bnublado oscuro\b|\bno\b|\bcd\b/, CLOUD.CD],
   [/\bnublado claro\b|\bnc\b|\bcl\b/, CLOUD.CL],
-  [/\bparches?\b|\bs&c\b|\bsc\b/, CLOUD.SC],
+  // Taken whole, so nothing of it is left for the notes: "parches nube y sol", "sol y nubes", "parches de sol".
+  [
+    /\b(?:parches?|intervalos?)(?:\s+(?:de\s+)?(?:nubes?|sol))?(?:\s+(?:y|e|con)\s+(?:nubes?|sol))?\b|\b(?:sol|nubes?)\s+(?:y|e|con)\s+(?:nubes?|sol)\b|\bs&c\b|\bsc\b/,
+    CLOUD.SC,
+  ],
   [/\bsoleado\b|\bdespejado\b|\bsol\b/, CLOUD.S],
 ]
 
-/** Understands one waypoint note. Order and case of the parts do not matter. */
-export function parseCapture(input: string, taxa: Taxa): Capture {
+/**
+ * Understands one waypoint note. Order and case of the parts do not matter.
+ * `local` holds the species and subspecies seen at Ikiam: abbreviations and a
+ * missing subspecies are resolved against them first.
+ */
+export function parseCapture(input: string, taxa: Taxa, local?: Taxa): Capture {
   let text = ` ${input.toLowerCase().replace(/\s+/g, ' ')} `
   const take = (re: RegExp) => {
     const m = re.exec(text)
@@ -238,7 +257,7 @@ export function parseCapture(input: string, taxa: Taxa): Capture {
   else if (take(/\b(seco|dry|dy)\b/)) rain = RAIN.DY
 
   const words = text.split(/[\s,;:]+/).filter(w => /^[a-záéíóúñ-]+\.?$/.test(w))
-  const taxon = matchTaxon(words, taxa)
+  const taxon = matchTaxon(words, taxa, local)
   const rest = words.slice(taxon.used).join(' ')
   const h = height ? Number(height[1].replace(',', '.')) / (height[2] === 'cm' ? 100 : 1) : null
   return {
@@ -247,6 +266,7 @@ export function parseCapture(input: string, taxa: Taxa): Capture {
     species: taxon.species,
     subspecies: taxon.subspecies,
     known: taxon.known,
+    subspeciesGuess: taxon.subspeciesGuess,
     sex,
     minutes: time ? Number(time[1]) * 60 + Number(time[2]) : null,
     height: h !== null && Number.isFinite(h) ? Math.round(h * 100) / 100 : null,
@@ -261,33 +281,56 @@ export function parseCapture(input: string, taxa: Taxa): Capture {
 
 const capital = (w: string) => w.charAt(0).toUpperCase() + w.slice(1)
 
-/** Finds "genus epithet [subspecies]" at the start of the words, allowing small typos. */
-export function matchTaxon(words: string[], taxa: Taxa) {
-  const none = { species: null, subspecies: null, known: false, used: 0 }
+/**
+ * Finds "genus epithet [subspecies]" at the start of the words, allowing small
+ * typos. Abbreviations are resolved against the names in `taxa`, preferring
+ * those seen at Ikiam (`local`): "H. illinissa", "god. Zavaleta" (Godyris),
+ * "m. Confusa" (Methona); "id" → ida and "m" → matronalis when only one
+ * subspecies of the species starts so. With no subspecies written, the only
+ * subspecies seen at Ikiam is taken (e.g. Methona confusa psamathe).
+ */
+export function matchTaxon(words: string[], taxa: Taxa, local?: Taxa) {
+  const none = { species: null, subspecies: null, known: false, used: 0, subspeciesGuess: null }
   if (words.length < 2) return none
-  const [g, e] = [words[0].replace(/\.$/, ''), words[1]]
+  const raw = words[0]
+  const [g, e] = [raw.replace(/\.$/, ''), words[1]]
+  // A dot or at most three letters: the start of a genus ("h.", "god.", "hyp").
+  const abbreviated = raw.endsWith('.') || g.length <= 3
   let best: { species: string; cost: number } | null = null
   for (const species of taxa.keys()) {
     const [genus, epithet] = species.toLowerCase().split(' ')
-    // "H. illinissa": a genus initial is enough when the epithet matches.
-    const gc = g.length === 1 ? (genus.startsWith(g) ? 0 : 99) : levenshtein(g, genus)
+    const gc = abbreviated && genus.startsWith(g) ? 0 : g.length === 1 ? 99 : levenshtein(g, genus)
     const ec = levenshtein(e, epithet)
-    if ((g.length > 1 && gc > tolerance(genus)) || ec > tolerance(epithet)) continue
-    if (!best || gc + ec < best.cost) best = { species, cost: gc + ec }
+    if (gc > tolerance(genus) || ec > tolerance(epithet)) continue
+    // Ties go to the species seen at Ikiam.
+    const cost = gc + ec + (local && !local.has(species) ? 0.5 : 0)
+    if (!best || cost < best.cost) best = { species, cost }
   }
   if (!best) {
     if (g.length < 3 || e.length < 3) return none
     const sub = words[2] && words[2].length > 2 ? words[2] : null
-    return { species: `${capital(g)} ${e}`, subspecies: sub, known: false, used: sub ? 3 : 2 }
+    return { species: `${capital(g)} ${e}`, subspecies: sub, known: false, used: sub ? 3 : 2, subspeciesGuess: null }
   }
   const subs = taxa.get(best.species) || []
+  const here = local?.get(best.species) || []
   const word = words[2]
-  // No subspecies written: left empty (the grid offers the known ones); guessing it is not safe.
-  if (!word) return { species: best.species, subspecies: null, known: true, used: 2 }
+  if (!word) {
+    // Only one subspecies at Ikiam: that one. Otherwise left empty (the grid offers the known ones).
+    const only = here.length === 1 ? here[0] : null
+    return { species: best.species, subspecies: only, known: true, used: 2, subspeciesGuess: only ? ('ikiam' as const) : null }
+  }
   const sub = subs.find(s => levenshtein(word, s.toLowerCase()) <= tolerance(s))
-  if (sub) return { species: best.species, subspecies: sub, known: true, used: 3 }
+  if (sub) return { species: best.species, subspecies: sub, known: true, used: 3, subspeciesGuess: null }
+  // The start of a subspecies ("id", "m"), when only one of that species (at Ikiam first) starts so.
+  const start = word.replace(/\.$/, '')
+  for (const list of [here, subs]) {
+    const starting = list.filter(s => s.toLowerCase().startsWith(start))
+    if (starting.length === 1)
+      return { species: best.species, subspecies: starting[0], known: true, used: 3, subspeciesGuess: 'prefix' as const }
+    if (starting.length > 1) break
+  }
   // An unknown third word is taken as a new subspecies name (to be reviewed).
-  return { species: best.species, subspecies: word, known: false, used: 3 }
+  return { species: best.species, subspecies: word, known: false, used: 3, subspeciesGuess: null }
 }
 
 // ------------------------------------------------------ rows for the sheet
@@ -299,40 +342,77 @@ export interface CaptureContext {
   date: string
   collector: string
   section: number | null
+  /** Next CAM and tube for a preserved capture (the suggestions Colecta uses). */
+  cam?: string | null
+  tube?: string | null
+  /** Preservation_medium of a preserved capture (Flash frozen unless said otherwise). */
+  medium?: string | null
 }
 
-/** Collection_data values for a capture, following how monitoring rows are filled in the sheet. */
+/**
+ * Collection_data values for a capture, as the team fills monitoring rows (the
+ * 21–23 Sep 2026 rows): a preserved butterfly is frozen alive that day, whole,
+ * at Ikiam; a marked one is released, so its sample columns say NA or
+ * NOT_COLLECTED. A capture without a species is To_identify, with no Identifier.
+ */
 export function captureValues(c: Capture, ctx: CaptureContext): Record<string, CellValue> {
   const marked = !!c.markId
+  const date = isoToSerial(ctx.date)
   const values: Record<string, CellValue> = {
     Release_Collect: marked ? 'Mark_Released' : 'Collected_Preserved',
     FieldMark_ID: c.markId || 'NA',
     Insectary_ID: 'NA',
     CAM_ID_insectary: 'NA',
+    Tube_2_id: 'NA',
+    Tube_2_tissue: 'NOT_COLLECTED',
+    Tube_3_id: 'NA',
+    Tube_3_tissue: 'NOT_COLLECTED',
+    Tube_4_id_LEGS: 'NA',
     Purpose: 'Monitoring',
     SPECIES: c.species,
     Subspecies_Form: c.subspecies,
-    Identifier: ctx.collector || null,
-    ID_status: c.species && c.known ? 'COMPLETE' : null,
+    Identifier: c.species ? ctx.collector || null : null,
+    ID_status: c.species ? 'COMPLETE' : 'To_identify',
     Sex: c.sex,
-    Country: 'Ecuador',
     Collection_location: 'Ikiam',
     Transect_section: ctx.section,
-    Collection_date: isoToSerial(ctx.date),
+    Bait: 'NA',
+    Forest_stratum: 'NA',
+    Collection_date: date,
     Collection_time: c.minutes === null ? null : c.minutes / 1440,
     Collector: ctx.collector || null,
     Rainfall: c.rain || RAIN.DY,
     Cloud_cover: c.cloud,
     Flight_height: c.height,
+    Splitted_body: 'No',
   }
+  const at = (place: string) =>
+    Object.fromEntries(
+      ['Location_Head', 'Location_Torax', 'Location_abdomen', 'Location_Legs', 'Location_wings'].map(k => [k, place]),
+    )
   if (marked)
     Object.assign(values, {
       CAM_ID: 'NA',
       Tube_1_id: 'NA',
       Tube_1_tissue: 'NOT_COLLECTED',
       Butterfly_weight: 'NA',
+      Death_date: 'NA',
       Preservation_date: 'NA',
       Preservation_medium: 'NOT_COLLECTED',
+      Preserved_dead_alive: 'NOT_PRESERVED',
+      ...at('NA'),
+    })
+  else
+    // The weight is taken later in the lab, so it stays empty.
+    Object.assign(values, {
+      CAM_ID: ctx.cam || null,
+      Tube_1_id: ctx.tube || null,
+      Tube_1_tissue: 'WHOLE_ORGANISM',
+      Death_date: date,
+      Preservation_date: date,
+      Preservation_medium: ctx.medium || 'Flash frozen',
+      Preserved_dead_alive: 'Alive',
+      ...at('Ikiam'),
     })
   const initials = ctx.collector.split(' - ')[0]
   // A recapture needs no note: the repeated field mark already says it.
@@ -341,7 +421,25 @@ export function captureValues(c: Capture, ctx: CaptureContext): Record<string, C
     const [y, m, d] = ctx.date.split('-').map(Number)
     values.Notes_Collection_data = `${d}/${m}/${y} ${initials}: ${note}`
   }
+  for (const [k, v] of Object.entries(values)) if (v === null || v === '') delete values[k]
   return values
+}
+
+/**
+ * ID_status and Identifier follow the species while a new row is edited: a
+ * species typed in makes it COMPLETE (identified by the collector unless
+ * someone else is written); emptied, it is To_identify again. Returns only the
+ * cells that change.
+ */
+export function identificationFollows(values: Record<string, CellValue>): Record<string, CellValue> {
+  const species = text(values.SPECIES)
+  const status = text(values.ID_status)
+  const out: Record<string, CellValue> = {}
+  if (species && species !== 'NA') {
+    if (!status || status === 'To_identify') out.ID_status = 'COMPLETE'
+    if (!text(values.Identifier) && text(values.Collector)) out.Identifier = values.Collector
+  } else if (!status || status === 'COMPLETE') out.ID_status = 'To_identify'
+  return out
 }
 
 export interface ImportedCapture extends Capture {
@@ -351,10 +449,12 @@ export interface ImportedCapture extends Capture {
   section: number | null
   sectionDistance: number
   photos: string[]
+  /** The note had no time: it was read from where the GPS track passed the point. */
+  timeFromTrack?: boolean
 }
 
-export function locateCapture(w: GpxWaypoint, taxa: Taxa): ImportedCapture {
-  const c = parseCapture(w.text, taxa)
+export function locateCapture(w: GpxWaypoint, taxa: Taxa, local?: Taxa): ImportedCapture {
+  const c = parseCapture(w.text, taxa, local)
   const near = nearestSection(w.lat, w.lon)
   if (c.minutes === null && w.time) c.minutes = localTime(w.time)?.minutes ?? null
   return {
@@ -368,12 +468,261 @@ export function locateCapture(w: GpxWaypoint, taxa: Taxa): ImportedCapture {
   }
 }
 
-/** Wikiloc names like "Monitoreo ithomidos FCH 26 SEP 2026" carry the collector's initials. */
-export function collectorFromName(name: string, collectors: string[]): string | null {
-  return collectors.find(c => new RegExp(`\\b${c.split(' - ')[0].trim()}\\b`).test(name)) || null
+const metres = (a: [number, number], b: [number, number]) => {
+  const lat = ((a[0] + b[0]) / 2) * (Math.PI / 180)
+  return Math.hypot((b[1] - a[1]) * (Math.PI / 180) * 6371000 * Math.cos(lat), (b[0] - a[0]) * (Math.PI / 180) * 6371000)
 }
 
-/** Rows per field mark (upper case), to tell a new mark from a recapture. */
+/**
+ * Points noted without a time get the time the GPS track passed closest to
+ * them, between the times of the points before and after it (captures in walk
+ * order). Only GPX files have track times; points more than 60 m from the
+ * track are left without.
+ */
+export function timesFromTrack<T extends ImportedCapture>(captures: T[], track: TrackPoint[]): T[] {
+  const timed = track.filter(p => p[3])
+  if (!timed.length || !captures.some(c => c.minutes === null)) return captures
+  // Ecuador has no summer time: one offset turns every GPS time into local minutes.
+  const first = localTime(timed[0][3]!)
+  const t0 = Date.parse(timed[0][3]!)
+  if (!first) return captures
+  const points = timed.map(p => ({
+    at: [p[0], p[1]] as [number, number],
+    minutes: first.minutes + Math.round((Date.parse(p[3]!) - t0) / 60000),
+  }))
+  return captures.map((c, i) => {
+    if (c.minutes !== null) return c
+    const before = captures.slice(0, i).reduce((m, o) => (o.minutes !== null && o.minutes > m ? o.minutes : m), -Infinity)
+    const after = captures.slice(i + 1).reduce((m, o) => (o.minutes !== null && o.minutes < m ? o.minutes : m), Infinity)
+    // The trail is walked out and back: the window between the neighbours picks the right pass.
+    let inWindow: { minutes: number; distance: number } | null = null
+    let anywhere: { minutes: number; distance: number } | null = null
+    for (const p of points) {
+      const distance = metres(p.at, [c.lat, c.lon])
+      if (!anywhere || distance < anywhere.distance) anywhere = { minutes: p.minutes, distance }
+      if (p.minutes >= before && p.minutes <= after && (!inWindow || distance < inWindow.distance))
+        inWindow = { minutes: p.minutes, distance }
+    }
+    // No pass in the window (the GPS clock and the notes disagree): the nearest pass, kept between the neighbours.
+    const best = inWindow && inWindow.distance <= 60 ? inWindow : anywhere
+    if (!best || best.distance > 60) return c
+    return { ...c, minutes: Math.min(Math.max(best.minutes, before), after), timeFromTrack: true }
+  })
+}
+
+const plain = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+
+/**
+ * The collector named in a Wikiloc title or GPX author: the full name ("Franz
+ * Chandi") or the initials ("Monitoreo ithomidos FCH 26 SEP 2026"). Initials
+ * two people share (CR) say nothing.
+ */
+export function collectorFromName(name: string, collectors: string[]): string | null {
+  const people = collectors.filter(c => / - /.test(c) && !/^NA\b/.test(c))
+  const named = people.filter(c => {
+    const full = plain(c.split(' - ').slice(1).join(' - ').trim())
+    return full.length > 3 && plain(name).includes(full)
+  })
+  if (named.length === 1) return named[0]
+  const initials = people.filter(c => new RegExp(`\\b${c.split(' - ')[0].trim()}\\b`).test(name))
+  return initials.length === 1 ? initials[0] : null
+}
+
+/**
+ * The people who walk the monitoring now (monitoring rows or SamplingDay_data
+ * days in the last year of records, most first), then everyone else;
+ * "NA - Missing data" is left out.
+ */
+export function monitoringCollectors(
+  options: string[],
+  rows: TableRow[],
+  dayRows: TableRow[] = [],
+): { usual: string[]; others: string[] } {
+  const people = [...new Set(options)].filter(c => / - /.test(c) && !/^NA\b/.test(c))
+  const latest = rows.reduce((m, r) => Math.max(m, dateOf(r) ?? 0), 0)
+  const counts = new Map<string, number>()
+  const count = (who: string) => counts.set(who, (counts.get(who) || 0) + 1)
+  for (const r of rows) {
+    const d = dateOf(r)
+    const who = text(r.values.Collector)
+    if (d !== null && d > latest - 365 && people.includes(who)) count(who)
+  }
+  // A day walked without captures still makes its collector one of the team.
+  for (const key of monitoringDays(dayRows)) {
+    const [d, initials] = key.split('|')
+    const matches = people.filter(c => c.split(' - ')[0].trim().toUpperCase() === initials)
+    if (Number(d) > latest - 365 && validDay(Number(d)) && matches.length === 1) count(matches[0])
+  }
+  const usual = [...counts].sort((a, b) => b[1] - a[1]).map(([c]) => c)
+  return { usual, others: people.filter(c => !usual.includes(c)).sort((a, b) => a.localeCompare(b)) }
+}
+
+/** A collector's short name: the initials, or the full entry when two people share them (CR). */
+export function collectorLabel(collector: string, collectors: string[]): string {
+  const initials = collector.split(' - ')[0].trim()
+  return collectors.filter(c => c.split(' - ')[0].trim() === initials).length > 1 ? collector : initials
+}
+
+// ------------------------------------------------------- marks and recaptures
+
+/** Sex without the doubt mark ("female ?" → female); blanks and NOT_COLLECTED say nothing. */
+export function sexOf(value: CellValue | undefined): 'female' | 'male' | null {
+  const s = text(value)
+    .toLowerCase()
+    .replace(/[_\s]*\?$/, '')
+    .trim()
+  return s === 'female' || s === 'male' ? s : null
+}
+const binomial = (value: CellValue | undefined) => text(value).toLowerCase().split(/\s+/).slice(0, 2).join(' ')
+const sexWord = (sex: string | null) => (sex === 'female' ? ' hembra' : sex === 'male' ? ' macho' : '')
+
+interface MarkItem {
+  key: string
+  mark: string
+  series: string | null
+  number: number | null
+  /** Lower-case binomial ('' when not identified). */
+  species: string
+  sex: 'female' | 'male' | null
+  row: TableRow | null
+}
+
+export interface MarkRole {
+  /** unsure: the capture has no species, so it cannot be told from the earlier butterfly. */
+  role: 'new' | 'recapture' | 'reused' | 'unsure'
+  /** Recapture: the first and the latest earlier row of the same butterfly. */
+  first: TableRow | null
+  of: TableRow | null
+  /** Earlier rows of the mark that are other butterflies. */
+  others: TableRow[]
+  /** A new mark continuing the series being handed out (B58 after B57), although the number was used before. */
+  continues: boolean
+  /** Before this, the mark was already on two or more species: listed in Revisión de datos, not warned again. */
+  known: boolean
+}
+
+/** Same butterfly: same species and sex (an unknown sex does not tell them apart). */
+const sameAnimal = (a: MarkItem, b: MarkItem) => !!a.species && a.species === b.species && (!a.sex || !b.sex || a.sex === b.sex)
+
+function markItem(
+  key: string,
+  mark: string,
+  species: CellValue | undefined,
+  sex: CellValue | undefined,
+  row: TableRow | null,
+): MarkItem {
+  const m = /^([A-Z]+)(\d+)$/.exec(mark)
+  return { key, mark, series: m?.[1] ?? null, number: m ? Number(m[2]) : null, species: binomial(species), sex: sexOf(sex), row }
+}
+
+/**
+ * Marks handed out day by day. New marks follow a series (B55, B56, …); the
+ * "head" of each series is the last number handed out. A mark above the head is
+ * a new butterfly even if its number was used long ago; one at or below it is a
+ * recapture when an earlier row with that mark is the same species and sex, and
+ * otherwise an ID used twice. The numbering sometimes starts again (Aug 2026:
+ * B40 although B40–B61 had been used in May–July): two or more consecutive
+ * numbers on one day, most of them not recaptures, restart the series there.
+ */
+class MarkLedger {
+  private heads = new Map<string, number>()
+  private byMark = new Map<string, MarkItem[]>()
+
+  /** One day's (or one walk's) marks, in time order; undated rows go without the series (`series` false). */
+  day(items: MarkItem[], series = true): Map<string, MarkRole> {
+    const roles = new Map<string, MarkRole>()
+    const before = new Map(this.heads)
+    for (const item of items) {
+      const earlier = this.byMark.get(item.mark) || []
+      const head = series && item.series ? before.get(item.series) : undefined
+      const same = earlier.filter(e => sameAnimal(e, item))
+      const others = earlier.filter(e => !same.includes(e)).flatMap(e => (e.row ? [e.row] : []))
+      const known = new Set(earlier.map(e => e.species).filter(Boolean)).size >= 2
+      const base = { first: null, of: null, others, continues: false, known }
+      let role: MarkRole
+      if (head !== undefined && item.number !== null && item.number > head)
+        role = { ...base, role: 'new', others: earlier.flatMap(e => (e.row ? [e.row] : [])), continues: true }
+      else if (same.length) role = { ...base, role: 'recapture', first: same[0].row, of: same.at(-1)!.row }
+      else role = { ...base, role: !earlier.length ? 'new' : item.species ? 'reused' : 'unsure' }
+      roles.set(item.key, role)
+      this.byMark.set(item.mark, [...earlier, item])
+    }
+    if (series) this.advance(items, before, roles)
+    return roles
+  }
+
+  private advance(items: MarkItem[], before: Map<string, number>, roles: Map<string, MarkRole>) {
+    const bySeries = new Map<string, MarkItem[]>()
+    for (const item of items)
+      if (item.series && item.number !== null) bySeries.set(item.series, [...(bySeries.get(item.series) || []), item])
+    for (const [series, list] of bySeries) {
+      const numbers = [...new Set(list.map(i => i.number!))].sort((a, b) => a - b)
+      const head = before.get(series)
+      const above = head === undefined ? numbers : numbers.filter(n => n > head)
+      if (above.length) {
+        this.heads.set(series, above.at(-1)!)
+        continue
+      }
+      const runs: number[][] = []
+      for (const n of numbers) {
+        const last = runs.at(-1)
+        if (last && n === last.at(-1)! + 1) last.push(n)
+        else runs.push([n])
+      }
+      const recaptured = (n: number) => list.some(i => i.number === n && roles.get(i.key)?.role === 'recapture')
+      const restart = runs.filter(r => r.length >= 2 && r.filter(recaptured).length * 2 <= r.length).at(-1)
+      if (!restart) continue
+      this.heads.set(series, restart.at(-1)!)
+      for (const i of list) {
+        const r = roles.get(i.key)!
+        if (restart.includes(i.number!))
+          roles.set(i.key, {
+            ...r,
+            role: 'new',
+            first: null,
+            of: null,
+            others: [...(r.of ? [r.of] : []), ...r.others],
+            continues: true,
+          })
+      }
+    }
+  }
+}
+
+/** Every marked row's role, going through the days in order (optionally only days before a date serial). */
+function ledgerOf(rows: TableRow[], before?: number) {
+  const ledger = new MarkLedger()
+  const roles = new Map<string, MarkRole>()
+  const marked = rows.filter(r => hasMark(r) && (before === undefined || (dateOf(r) ?? Infinity) < before)).sort(byDate)
+  const days = new Map<number | null, MarkItem[]>()
+  for (const r of marked) {
+    const d = dateOf(r)
+    days.set(d, [...(days.get(d) || []), markItem(r.id, markOf(r), r.values.SPECIES, r.values.Sex, r)])
+  }
+  for (const [d, items] of days) for (const [k, v] of ledger.day(items, d !== null)) roles.set(k, v)
+  return { ledger, roles }
+}
+
+/** The role of every marked row: new mark, recapture (same mark, species and sex) or an ID used twice. */
+export function markRoles(rows: TableRow[]): Map<string, MarkRole> {
+  return ledgerOf(rows).roles
+}
+
+/** The role of each capture of a walk, from the sheet's marks before the walk's day (null for unmarked captures). */
+export function walkMarkRoles(rows: TableRow[], date: string, captures: Capture[]): (MarkRole | null)[] {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return captures.map(() => null)
+  const { ledger } = ledgerOf(rows, isoToSerial(date))
+  const items = captures.map((c, i) => (c.markId ? markItem(`c${i}`, c.markId.toUpperCase(), c.species, c.sex, null) : null))
+  const inOrder = items
+    .map((item, i) => ({ item, minutes: captures[i].minutes ?? Infinity }))
+    .filter((x): x is { item: MarkItem; minutes: number } => !!x.item)
+    .sort((a, b) => a.minutes - b.minutes)
+    .map(x => x.item)
+  const roles = ledger.day(inOrder)
+  return items.map(item => (item ? roles.get(item.key)! : null))
+}
+
+/** Rows per field mark (upper case). */
 export function markIndex(rows: TableRow[]): Map<string, TableRow[]> {
   const out = new Map<string, TableRow[]>()
   for (const row of rows.filter(hasMark)) {
@@ -381,20 +730,6 @@ export function markIndex(rows: TableRow[]): Map<string, TableRow[]> {
     out.set(id, [...(out.get(id) || []), row])
   }
   return out
-}
-
-/** Rows with the same field mark from before `when` (ISO): if any, the capture may be a recapture. */
-export function earlierMarks(c: Capture, marks: Map<string, TableRow[]>, when: string): TableRow[] {
-  if (!c.markId || !when) return []
-  const day = isoToSerial(when)
-  return (marks.get(c.markId) || []).filter(r => typeof r.values.Collection_date === 'number' && r.values.Collection_date < day)
-}
-
-/** Earlier rows of the same mark on the same species: the capture is a recapture. */
-export function sameIndividual(c: Capture, marks: Map<string, TableRow[]>, when: string): TableRow[] {
-  return earlierMarks(c, marks, when).filter(
-    r => !!c.species && String(r.values.SPECIES ?? '').toLowerCase() === c.species.toLowerCase(),
-  )
 }
 
 export interface CaptureCheck {
@@ -409,7 +744,8 @@ export interface ReviewContext {
   date: string
   /** Every capture of the walk, to spot a mark noted twice. */
   captures: Capture[]
-  marks: Map<string, TableRow[]>
+  /** walkMarkRoles of the captures (computed when not given). */
+  roles?: (MarkRole | null)[]
   /** Preserved individuals per species up to the walk (preservedForRule). */
   preserved: Map<string, number>
   isIthomiini: (species: string | null | undefined) => boolean
@@ -417,9 +753,12 @@ export interface ReviewContext {
   existing?: TableRow | null
 }
 
+const who = (r: TableRow) => `${text(r.values.SPECIES) || 'sin especie'}${sexWord(sexOf(r.values.Sex))} (fila ${r.row})`
+let rolesCache: { rows: TableRow[]; date: string; captures: Capture[]; roles: (MarkRole | null)[] } | null = null
+
 /**
  * What the review says about one capture: already in the sheet, new mark or
- * recapture, a mark used for another species, the 30-preserved rule, and the
+ * recapture, a mark used for another butterfly, the 30-preserved rule, and the
  * parts missing from the note. Shared by "Importar recorrido" and the assistant.
  */
 export function reviewCapture(
@@ -433,19 +772,42 @@ export function reviewCapture(
   if (existing) return { existing, recapture: null, list: [{ kind: 'info', text: `Ya está en la hoja (fila ${existing.row})` }] }
   let recapture: TableRow | null = null
   if (c.markId) {
-    const same = sameIndividual(c, ctx.marks, ctx.date)
-    const others = earlierMarks(c, ctx.marks, ctx.date).filter(r => !same.includes(r))
-    recapture = same[0] || null
-    if (recapture)
+    let roles = ctx.roles
+    if (!roles) {
+      if (rolesCache?.rows !== ctx.rows || rolesCache.date !== ctx.date || rolesCache.captures !== ctx.captures)
+        rolesCache = {
+          rows: ctx.rows,
+          date: ctx.date,
+          captures: ctx.captures,
+          roles: walkMarkRoles(ctx.rows, ctx.date, ctx.captures),
+        }
+      roles = rolesCache.roles
+    }
+    const role = roles[i]
+    if (role?.role === 'recapture') {
+      recapture = role.first
+      const since = role.first?.values.Collection_date
       out.push({
         kind: 'ok',
-        text: `Recaptura de ${c.markId} (marcada ${formatSerial(recapture.values.Collection_date as number)})`,
+        text: `Recaptura de ${c.markId}${typeof since === 'number' ? ` (marcada ${formatSerial(since)})` : ''}`,
       })
-    else out.push({ kind: 'ok', text: `Nueva marca ${c.markId}` })
-    for (const r of others)
-      out.push({ kind: 'warn', text: `${c.markId} ya se usó para ${r.values.SPECIES} (fila ${r.row}): ¿ID repetida?` })
-    if (!recapture && c.recaptureNote && !others.length)
-      out.push({ kind: 'warn', text: `Dice recaptura, pero ${c.markId} no está en la hoja` })
+    } else
+      out.push({ kind: 'ok', text: `Nueva marca ${c.markId}${role?.continues && role.others.length ? ' (sigue la serie)' : ''}` })
+    // An ID used twice before is already in Revisión de datos: warning on every import is noise.
+    if (role?.role === 'reused' && !role.known)
+      out.push({ kind: 'warn', text: `${c.markId} ya se usó para ${role.others.slice(-2).map(who).join(', ')}: ¿ID repetida?` })
+    if (role?.role === 'unsure')
+      out.push({
+        kind: 'warn',
+        text: `${c.markId} era ${role.others.slice(-1).map(who).join('')}: identifica la especie para saber si es recaptura`,
+      })
+    if (role?.role !== 'recapture' && c.recaptureNote)
+      out.push({
+        kind: 'warn',
+        text: role?.others.length
+          ? `Dice recaptura, pero ${c.markId} era ${who(role.others.at(-1)!)}`
+          : `Dice recaptura, pero ${c.markId} no está en la hoja`,
+      })
     if (ctx.captures.some((o, j) => j !== i && o.markId === c.markId))
       out.push({ kind: 'warn', text: `${c.markId} aparece dos veces en este recorrido` })
   } else {
@@ -456,13 +818,47 @@ export function reviewCapture(
   }
   if (!c.species) out.push({ kind: 'warn', text: 'Sin especie' })
   else if (!c.known) out.push({ kind: 'warn', text: 'Nombre no encontrado en la hoja: revisar' })
+  if (c.subspeciesGuess === 'ikiam') out.push({ kind: 'info', text: `Subespecie ${c.subspecies}: la única en Ikiam` })
   if (!c.sex) out.push({ kind: 'warn', text: 'Sin sexo' })
-  if (c.minutes === null) out.push({ kind: 'warn', text: 'Sin hora' })
+  if (c.timeFromTrack) out.push({ kind: 'warn', text: `Hora del GPS (${formatMinutes(c.minutes)}): la nota no la dice` })
+  else if (c.minutes === null) out.push({ kind: 'warn', text: 'Sin hora' })
   if (c.height === null) out.push({ kind: 'warn', text: 'Sin altura' })
   if (!c.cloud) out.push({ kind: 'warn', text: 'Sin clima' })
   if (c.section === null) out.push({ kind: 'warn', text: `Lejos del sendero (${c.sectionDistance} m)` })
   if (c.rest) out.push({ kind: 'info', text: `A notas: “${c.rest}”` })
   return { existing, recapture, list: out }
+}
+
+// ------------------------------------------------------- SamplingDay_data
+
+/** A plausible date serial (2000–2100); 375004 (typed for 21/9/2026) is not. */
+const validDay = (v: CellValue | undefined) => typeof v === 'number' && v >= 36526 && v <= 73051
+
+/**
+ * The SamplingDay_data row of a collector's walk: the row with that date and
+ * initials; otherwise a row of the same collector whose Date is broken (e.g.
+ * 375004) but whose note starts with the walk's day ("21/9/2026 AA: …") or
+ * whose start and end times are within 10 minutes of the GPS. Such a row is
+ * returned as `broken`, to flag rather than add the day twice.
+ */
+export function samplingDayRow(
+  dayRows: TableRow[],
+  date: string,
+  initials: string,
+  span?: { start: number; end: number } | null,
+): { row: TableRow; broken: boolean } | null {
+  const serial = isoToSerial(date)
+  const mine = dayRows.filter(r => r.observed && text(r.values.Collectors_initials).toUpperCase() === initials.toUpperCase())
+  const exact = mine.find(r => r.values.Date === serial)
+  if (exact) return { row: exact, broken: false }
+  const near = (v: CellValue | undefined, m: number) => typeof v === 'number' && Math.abs(v * 1440 - m) <= 10
+  const broken = mine.find(
+    r =>
+      !validDay(r.values.Date) &&
+      (noteDate(text(r.values.Notes)) === date ||
+        (!!span && near(r.values.Start_time, span.start) && near(r.values.End_time, span.end))),
+  )
+  return broken ? { row: broken, broken: true } : null
 }
 
 // ------------------------------------------------------------ summaries
@@ -551,27 +947,41 @@ function markGroups(rows: TableRow[]) {
 }
 
 /**
- * Recaptures: rows whose field mark was seen before on the same species. The
- * same mark on another species is a reused ID, not a recapture (see markConflicts).
+ * The butterflies behind the marked rows: a recapture joins the butterfly it
+ * recaptures (same mark, species and sex, see MarkLedger); every other row is a
+ * butterfly of its own. Rows per mark, oldest first, each with its butterfly's number.
+ */
+function individuals(rows: TableRow[]) {
+  const roles = markRoles(rows)
+  const of = new Map<string, number>()
+  const groups = new Map<string, { row: TableRow; individual: number }[]>()
+  let next = 0
+  for (const row of rows.filter(hasMark).sort(byDate)) {
+    const role = roles.get(row.id)
+    const individual = role?.role === 'recapture' && role.of && of.has(role.of.id) ? of.get(role.of.id)! : next++
+    of.set(row.id, individual)
+    groups.set(markOf(row), [...(groups.get(markOf(row)) || []), { row, individual }])
+  }
+  return groups
+}
+
+/**
+ * Recaptures: rows whose field mark was seen before on the same species and
+ * sex. The same mark on another butterfly is a reused ID, not a recapture (see
+ * markConflicts); a mark continuing the series is new even if its number was
+ * used long ago.
  */
 export function recaptureIds(rows: TableRow[]): Set<string> {
   const out = new Set<string>()
-  for (const list of markGroups(rows).values()) {
-    const seen = new Set<string>()
-    for (const row of list) {
-      const species = text(row.values.SPECIES).toLowerCase()
-      if (seen.has(species)) out.add(row.id)
-      seen.add(species)
-    }
-  }
+  for (const [id, role] of markRoles(rows)) if (role.role === 'recapture') out.add(id)
   return out
 }
 
-/** Field marks recorded on more than one species: an ID given twice, or a wrong species. */
+/** Field marks on more than one butterfly (another species or sex): an ID given twice, or a wrong species. */
 export function markConflicts(rows: TableRow[]): { id: string; rows: TableRow[] }[] {
   const out: { id: string; rows: TableRow[] }[] = []
-  for (const [id, list] of markGroups(rows))
-    if (new Set(list.map(r => text(r.values.SPECIES).toLowerCase())).size > 1) out.push({ id, rows: list })
+  for (const [id, list] of individuals(rows))
+    if (new Set(list.map(x => x.individual)).size > 1) out.push({ id, rows: list.map(x => x.row) })
   return out.sort((a, b) => (dateOf(b.rows.at(-1)!) ?? 0) - (dateOf(a.rows.at(-1)!) ?? 0))
 }
 
@@ -628,16 +1038,13 @@ export interface MarkHistory {
   events: { row: TableRow; date: number | null; collector: string; section: string; minutes: number | null }[]
 }
 
-/** Every marked individual seen more than once (same mark and species), with its captures. */
+/** Every marked individual seen more than once (same mark, species and sex), with its captures. */
 export function markHistories(rows: TableRow[]): MarkHistory[] {
   const out: MarkHistory[] = []
-  for (const [id, list] of markGroups(rows)) {
-    const bySpecies = new Map<string, TableRow[]>()
-    for (const row of list) {
-      const species = text(row.values.SPECIES).toLowerCase()
-      bySpecies.set(species, [...(bySpecies.get(species) || []), row])
-    }
-    for (const same of bySpecies.values()) {
+  for (const [id, list] of individuals(rows)) {
+    const byIndividual = new Map<number, TableRow[]>()
+    for (const x of list) byIndividual.set(x.individual, [...(byIndividual.get(x.individual) || []), x.row])
+    for (const same of byIndividual.values()) {
       if (same.length < 2) continue
       out.push({
         id,
@@ -739,7 +1146,7 @@ export function existingRow(rows: TableRow[], date: string, c: Capture): TableRo
 export function withSheetValues<T extends Capture & { section: number | null }>(
   c: T,
   row: TableRow | null,
-): T & { row?: number } {
+): T & { row?: number; recordId?: string } {
   if (!row) return c
   const v = row.values
   const section = Number(text(v.Transect_section))
@@ -751,6 +1158,7 @@ export function withSheetValues<T extends Capture & { section: number | null }>(
     markId: hasMark(row) ? text(v.FieldMark_ID).toUpperCase() : c.markId,
     section: section >= 1 && section <= 4 ? section : c.section,
     row: row.row,
+    recordId: row.id,
   }
 }
 
