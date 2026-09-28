@@ -16,6 +16,8 @@ A green top bar holds the tabs, the test-copy badge and the user menu; on phones
 
 Keyboard: type on a selected cell to replace it, Enter or F2 to edit, Ctrl+C/Ctrl+V for ranges, Ctrl+D to fill down, Supr to clear. Dates display as 14-Aug-25 (the original app's format) and accept 2025-08-14, 14/08/2025 or 14-ago-25.
 
+Every list of values is one dropdown, in the grids and in the forms above them (ChoiceField): a white list filtered as you type, prefix matches first, the suggestion Enter or Tab takes marked in green. On phones the ▾ opens the list alone, without the keyboard.
+
 ## Visual system
 
 Fira Sans, a deep green brand colour, neutral stone greys, amber for pending work and red only for errors. Controls are at least 36px high and the grid uses 13px text so wide sheets stay readable.

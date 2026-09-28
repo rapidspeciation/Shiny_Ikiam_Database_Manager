@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ChoiceField from '../components/ChoiceField.vue'
 import DateField from '../components/DateField.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { Download, Plus, Printer, Wand2 } from 'lucide-vue-next'
@@ -152,6 +153,22 @@ function load(append: boolean) {
 /** Insectary racks first; the crosses rack when most loaded butterflies belong to crosses. */
 const insectaryRacks = computed(() => tubeSuggestions.value.filter(s => s.context === 'Cruces' || s.context === 'Insectario'))
 const otherRacks = computed(() => tubeSuggestions.value.filter(s => !insectaryRacks.value.includes(s)))
+/** The racks by kind of work; a tube typed below that is not a rack's next one is listed first. */
+const rackChoices = computed(() => [
+  ...(tubeStart.value && !tubeSuggestions.value.some(s => s.value === tubeStart.value)
+    ? [{ value: tubeStart.value, label: tubeStart.value }]
+    : []),
+  ...insectaryRacks.value.map(s => ({ value: s.value, label: s.label, group: 'Insectario y cruces' })),
+  ...otherRacks.value.map(s => ({ value: s.value, label: s.label, group: 'Colectas y monitoreo' })),
+])
+/** Suggested CAM IDs, with the date of their run in grey ("CAM078278 27-Sep-26" → "27-Sep-26"). */
+const camChoices = computed(() =>
+  camSuggestions.value.map(s => ({
+    value: s.value,
+    label: s.value,
+    hint: s.label.startsWith(s.value) ? s.label.slice(s.value.length).trim() : s.label,
+  })),
+)
 function bestRack() {
   const crosses = rows.value.filter(r =>
     /F1\/F2|WEST x EAST|cross|mutation/i.test(String(r.values.Research_purpose ?? '')),
@@ -358,24 +375,17 @@ function nextAfter(id: string) {
     <div class="toolbar">
       <label>
         <span class="field-label">CAM ID inicial</span>
-        <input v-model="camStart" class="field-input w-36" list="cam-suggestions" autocapitalize="characters" />
-        <datalist id="cam-suggestions">
-          <option v-for="s in camSuggestions" :key="s.value" :value="s.value">{{ s.label }}</option>
-        </datalist>
+        <ChoiceField v-model="camStart" class="field-input w-36" :options="camChoices" autocapitalize="characters" />
       </label>
       <label class="min-w-72">
         <span class="field-label">Rack en uso (siguiente tubo libre)</span>
-        <select class="field-input" :value="tubeStart" @change="pickTube(($event.target as HTMLSelectElement).value)">
-          <option v-if="tubeStart && !tubeSuggestions.some(s => s.value === tubeStart)" :value="tubeStart">
-            {{ tubeStart }}
-          </option>
-          <optgroup label="Insectario y cruces">
-            <option v-for="s in insectaryRacks" :key="s.value" :value="s.value">{{ s.label }}</option>
-          </optgroup>
-          <optgroup label="Colectas y monitoreo">
-            <option v-for="s in otherRacks" :key="s.value" :value="s.value">{{ s.label }}</option>
-          </optgroup>
-        </select>
+        <ChoiceField
+          class="field-input"
+          :model-value="tubeStart"
+          :options="rackChoices"
+          :freetext="false"
+          @update:model-value="pickTube"
+        />
       </label>
       <label>
         <span class="field-label">o escribe el tubo</span>
@@ -388,15 +398,11 @@ function nextAfter(id: string) {
       </label>
       <label class="min-w-56">
         <span class="field-label">Tejido por defecto</span>
-        <select v-model="tissue" class="field-input">
-          <option v-for="t in tissues" :key="t" :value="t">{{ t }}</option>
-        </select>
+        <ChoiceField v-model="tissue" class="field-input" :options="tissues" :freetext="false" />
       </label>
       <label>
         <span class="field-label">Medio por defecto</span>
-        <select v-model="medium" class="field-input">
-          <option v-for="m in mediums" :key="m" :value="m">{{ m }}</option>
-        </select>
+        <ChoiceField v-model="medium" class="field-input" :options="mediums" :freetext="false" />
       </label>
       <template v-if="isClip">
         <label>

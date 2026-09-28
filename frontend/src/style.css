@@ -151,8 +151,9 @@ body.keyboard-open .touch-actions {
 body.touch-bar-open main {
   padding-bottom: calc(64px + env(safe-area-inset-bottom));
 }
-/* The suggestion Enter or Tab will take. */
-.tabulator-edit-list .tabulator-edit-list-item.is-pick {
+/* The suggestion Enter or Tab will take, in the grids' lists and in ChoiceField's. */
+.tabulator-edit-list .tabulator-edit-list-item.is-pick,
+.choice-list .is-pick {
   background: #e6f1eb;
   box-shadow: inset 3px 0 0 #1f4d3a;
 }

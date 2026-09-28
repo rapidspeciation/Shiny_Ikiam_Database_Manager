@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ChoiceField from './ChoiceField.vue'
 import { computed, ref } from 'vue'
 import { X, Lock, ExternalLink, Trash2 } from 'lucide-vue-next'
 import InsectaryIdFix from './InsectaryIdFix.vue'
@@ -100,19 +101,25 @@ function change(field: Field, text: string) {
               antes: {{ displayValue(row.values[field.key], field) || 'vacío' }}
             </span>
           </span>
+          <!-- Columns with a list of values: the grid's dropdown (typed values are completed to the first suggestion). -->
+          <div v-if="editable(field) && options[field.key]?.length" class="mt-1">
+            <ChoiceField
+              class="field-input"
+              :class="{ 'is-dirty': row && pending.isDirty(row.id, field.key) }"
+              :model-value="displayValue(current(field), field)"
+              :options="options[field.key]"
+              @update:model-value="change(field, $event)"
+            />
+          </div>
           <input
-            v-if="editable(field)"
+            v-else-if="editable(field)"
             class="field-input mt-1"
             :class="{ 'is-dirty': row && pending.isDirty(row.id, field.key) }"
             :value="displayValue(current(field), field)"
-            :list="options[field.key]?.length ? `opts-${field.key}` : undefined"
             :placeholder="field.type === 'date' ? '14-Aug-25' : ''"
             @change="change(field, ($event.target as HTMLInputElement).value)"
           />
           <p v-else class="mt-1 min-h-6 text-sm text-stone-500">{{ displayValue(current(field), field) || '—' }}</p>
-          <datalist v-if="editable(field) && options[field.key]?.length" :id="`opts-${field.key}`">
-            <option v-for="o in options[field.key].slice(0, 300)" :key="o" :value="o" />
-          </datalist>
         </label>
       </div>
     </aside>
