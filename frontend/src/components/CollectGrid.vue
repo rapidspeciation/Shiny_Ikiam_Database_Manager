@@ -21,6 +21,8 @@ const props = defineProps<{
   purposes: string[]
   /** Spreads a block pasted at a row and column; false for a single value. */
   paste: (text: string, index: number, column: Column) => boolean
+  /** Why a row's Insectary ID cannot be saved (repeated, already recorded, no pre-made row). */
+  idProblem?: (d: Draft) => string | null
 }>()
 const emit = defineEmits<{
   edit: [key: string, column: Column, text: string]
@@ -50,9 +52,9 @@ const toRow = (d: Draft): Row => ({
 })
 const draftOf = (row: RowComponent) => props.drafts.find(d => d.key === (row.getData() as Row).__key)
 
-/** The Insectary ID comes from the sheet; only a preserved butterfly's CAM and tube are typed. */
+/** Insectary ID (the suggestion can be changed to the ID written on the wings), or CAM and tube; nothing for a release. */
 const canEdit: CanEdit = (row, field) =>
-  field === 'ids' ? draftOf(row)?.fate === 'preservada' : !['__key', '__remove'].includes(field)
+  field === 'ids' ? draftOf(row)?.fate !== 'liberada' : !['__key', '__remove'].includes(field)
 
 /** Columns chosen from a list show a ▾ arrow; clicking it opens the list (see onCellClick). */
 const choices = (values: () => string[]) => ({
@@ -112,7 +114,10 @@ function columns(): ColumnDefinition[] {
     text('ids', 250, {
       formatter: cell => {
         const d = draftOf(cell.getRow())
+        const problem = d && props.idProblem?.(d)
         cell.getElement().classList.toggle('is-id', d?.fate === 'insectario')
+        cell.getElement().classList.toggle('is-error', !!problem)
+        cell.getElement().title = problem || (d?.fate === 'insectario' ? 'El ID escrito en las alas (se sugiere el siguiente libre)' : '')
         return String(cell.getValue() ?? '')
       },
     }),
@@ -142,13 +147,8 @@ function sync() {
     table.replaceData(rows)
   } else {
     const changed = rows.filter(r => shown.get(r.__key) !== JSON.stringify(r))
-    if (changed.length)
-      table.updateData(changed).then(() => {
-        for (const r of changed) {
-          const row = table?.getRow(r.__key)
-          if (row) row.reformat()
-        }
-      })
+    // The list is short: repaint every row, since a change in one (e.g. an ID) can flag another.
+    if (changed.length) table.updateData(changed).then(() => table?.getRows().forEach(row => row.reformat()))
   }
   shownOrder = order
   shown = new Map(rows.map(r => [r.__key, JSON.stringify(r)]))

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { X, Lock, ExternalLink, Trash2 } from 'lucide-vue-next'
+import InsectaryIdFix from './InsectaryIdFix.vue'
 import { displayValue, normalizeInput } from '../lib/cells'
 import type { CellValue, Field, TableRow } from '../lib/types'
 import { type PendingCreate, usePending } from '../stores/pending'
@@ -31,6 +32,12 @@ const title = computed(() => {
   const key = props.labelField || session.module(props.module)?.identityFields[0]
   const values = row.value?.values || created.value?.values || {}
   return String((key && values[key]) || (row.value ? `Fila ${row.value.row}` : 'Fila nueva'))
+})
+/** A saved butterfly's Insectary ID can be corrected from its Insectary_data or Collection_data row. */
+const insectaryId = computed(() => {
+  if (!row.value?.observed || !session.canEdit || !['Insectary_data', 'Collection_data'].includes(props.module)) return ''
+  const id = String(row.value.values.Insectary_ID ?? '').trim()
+  return /^(|NA|N\/A)$/i.test(id) ? '' : id
 })
 const sourceUrl = computed(() => {
   const mod = session.module(props.module)
@@ -83,6 +90,7 @@ function change(field: Field, text: string) {
         <button class="btn-ghost" title="Cerrar" @click="emit('close')"><X :size="20" /></button>
       </header>
       <p v-if="message" class="bg-red-50 px-4 py-2 text-sm text-red-800">{{ message }}</p>
+      <InsectaryIdFix v-if="insectaryId" :id="insectaryId" @done="emit('close')" />
       <div class="flex-1 overflow-y-auto px-4 py-2">
         <label v-for="field in columns" :key="field.key" class="block border-b border-stone-100 py-2">
           <span class="flex items-center gap-1 text-xs font-medium text-stone-600">

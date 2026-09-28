@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, watch } from 'vue'
-import { CheckSquare, Eraser, Plus, Save, Trash2, X } from 'lucide-vue-next'
+import { CheckSquare, Copy, Eraser, Plus, Save, Trash2, X } from 'lucide-vue-next'
 import CollectGrid from '../components/CollectGrid.vue'
 import SheetGrid from '../components/SheetGrid.vue'
 import { useSheet } from '../composables/useSheet'
@@ -101,7 +101,14 @@ async function loadFreeIds() {
   }
 }
 watch(() => tables.tables.Insectary_data?.revision, loadFreeIds, { immediate: true })
-const nextInsectaryId = () => freeIds.value.find(id => !drafts.value.some(d => d.insectaryId === id)) || ''
+/** IDs already on butterflies in Collection_data (their Insectary_data row may not be filled in yet). */
+const collectedIds = computed(() => {
+  const out = new Map<string, number>()
+  for (const r of observed.value) if (!isBlank(r.values.Insectary_ID)) out.set(String(r.values.Insectary_ID).trim().toUpperCase(), r.row)
+  return out
+})
+const nextInsectaryId = () =>
+  freeIds.value.find(id => !drafts.value.some(d => d.insectaryId === id) && !collectedIds.value.has(id.toUpperCase())) || ''
 
 // CAM IDs for field-preserved butterflies come from the Lists pool; tubes from the collection rack.
 const usedCams = computed(() => {
@@ -205,7 +212,13 @@ function setColumn(d: Draft, column: Column, text: string) {
     if (fate) setFate(d, fate)
   } else if (column === 'time') d.time = parseTime(text)
   else if (column === 'ids') {
-    // Only a preserved butterfly takes a CAM and tube ("CAM079895 · FS90415305"); Insectary IDs come from the sheet.
+    if (d.fate === 'insectario') {
+      // The ID written on the wings, if it is not the one suggested (checked in `problems`).
+      const id = text.trim().toUpperCase()
+      if (/^[0-9A-ZÑ]{2,6}$/.test(id)) d.insectaryId = id
+      return
+    }
+    // A preserved butterfly takes a CAM and tube ("CAM079895 · FS90415305").
     const { cam, tube } = parseCamTube(text)
     if (d.fate === 'preservada') {
       if (cam || !text.trim()) d.cam = cam
@@ -301,6 +314,13 @@ function applyBulk() {
   }
   notify(`Aplicado a ${rows.length} ${rows.length === 1 ? 'fila' : 'filas'}`)
 }
+/** Touch-screen copy: a row's species, subspecies, sex and fate go to the bar, to apply to the rows ticked. */
+function copyRow(d: Draft, n: number) {
+  Object.assign(bulk, { species: d.species, subspecies: d.subspecies, sex: d.sex, fate: d.fate })
+  selected.value = selected.value.filter(k => k !== d.key)
+  anchor.value = d.key
+  notify(`Copiada la fila ${n}: marca las filas donde pegarla y pulsa Aplicar`)
+}
 function removeSelected() {
   drafts.value = drafts.value.filter(d => !isSelected(d.key))
   selected.value = []
@@ -320,6 +340,29 @@ const groups = computed(() => {
   }
   return [...out]
 })
+/**
+ * An Insectary ID typed by hand must be a free pre-made row of Insectary_data
+ * (the ID belongs to its row) and appear once in the list.
+ */
+const idRows = computed(() => {
+  void tables.versions.Insectary_data
+  const out = new Map<string, { row: number; observed: boolean }>()
+  for (const r of tables.tables.Insectary_data?.rows || [])
+    if (!isBlank(r.values.Insectary_ID)) out.set(String(r.values.Insectary_ID).trim().toUpperCase(), { row: r.row, observed: r.observed })
+  return out
+})
+function idProblem(d: Draft): string | null {
+  if (d.fate !== 'insectario' || !d.insectaryId) return null
+  if (drafts.value.filter(x => x.fate === 'insectario' && x.insectaryId === d.insectaryId).length > 1)
+    return `${d.insectaryId} está repetido en la lista`
+  if (!idRows.value.size) return null
+  const row = idRows.value.get(d.insectaryId)
+  if (!row) return `${d.insectaryId} no tiene fila preparada en Insectary_data`
+  if (row.observed) return `${d.insectaryId} ya está registrado (Insectary_data fila ${row.row})`
+  const collected = collectedIds.value.get(d.insectaryId)
+  if (collected) return `${d.insectaryId} ya está en Collection_data (fila ${collected})`
+  return null
+}
 const problems = computed(() => [
   ...(emptyCount.value ? [`${emptyCount.value} filas vacías`] : []),
   ...drafts.value.flatMap((d, i) => {
@@ -329,6 +372,8 @@ const problems = computed(() => [
     if (!d.species) out.push(`fila ${n}: falta la especie`)
     if (!d.sex) out.push(`fila ${n}: falta el sexo`)
     if (d.fate === 'insectario' && !d.insectaryId) out.push(`fila ${n}: no quedan Insectary IDs libres`)
+    const idIssue = idProblem(d)
+    if (idIssue) out.push(`fila ${n}: ${idIssue}`)
     if (d.fate === 'preservada' && (!d.cam || !d.tube)) out.push(`fila ${n}: falta CAM o tubo`)
     return out
   }),
@@ -558,6 +603,7 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         :subspecies-for="subspeciesFor"
         :purposes="options.Purpose || []"
         :paste="pasteText"
+        :id-problem="idProblem"
         @edit="editCell"
         @remove="remove"
         @notice="notify"
@@ -589,8 +635,16 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
                   @change="toggleSelect(d.key)"
                 />
               </td>
-              <td class="px-1 text-stone-500 tabular-nums">
+              <td class="px-1 whitespace-nowrap text-stone-500 tabular-nums">
                 {{ i + 1 }}
+                <button
+                  class="btn-ghost align-middle"
+                  :aria-label="`Copiar fila ${i + 1}`"
+                  title="Copiar esta fila (para aplicarla a las filas que marques)"
+                  @click="copyRow(d, i + 1)"
+                >
+                  <Copy :size="15" />
+                </button>
                 <button
                   v-if="selected.length && !isSelected(d.key)"
                   class="ml-1 rounded bg-stone-100 px-1.5 py-0.5 text-xs whitespace-nowrap text-brand-700"
@@ -669,12 +723,16 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
                 />
               </td>
               <td class="px-1 whitespace-nowrap">
-                <span
+                <input
                   v-if="d.fate === 'insectario'"
-                  class="rounded bg-brand-50 px-2 py-1 text-base font-semibold tracking-wide text-brand-800"
-                >
-                  {{ d.insectaryId || '—' }}
-                </span>
+                  :value="d.insectaryId"
+                  data-col="ids"
+                  class="field-input w-24 font-semibold tracking-wide text-brand-800"
+                  :class="{ 'border-amber-500 bg-amber-50': idProblem(d) }"
+                  :title="idProblem(d) || 'El ID escrito en las alas (se sugiere el siguiente libre)'"
+                  @change="setColumn(d, 'ids', ($event.target as HTMLInputElement).value)"
+                  @paste="onPaste($event, i, 'ids')"
+                />
                 <template v-else-if="d.fate === 'preservada'">
                   <input v-model="d.cam" data-col="ids" class="field-input w-28" @paste="onPaste($event, i, 'ids')" />
                   <input v-model="d.tube" class="field-input ml-1 w-28" />
@@ -699,7 +757,7 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
                   @keydown="onCellKey($event, i, 'notes')"
                 />
               </td>
-              <td class="px-1">
+              <td class="px-1 whitespace-nowrap">
                 <button class="btn-ghost" title="Quitar" @click="remove(d.key)"><Trash2 :size="14" /></button>
               </td>
             </tr>

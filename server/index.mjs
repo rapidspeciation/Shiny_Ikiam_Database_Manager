@@ -29,6 +29,7 @@ import { idSuggestions, tableChanges, tablePayload, tableRevision } from './grid
 import { createSheetHook } from './hooks.mjs';
 import { createInvitations, mailerFromEnv } from './invitations.mjs';
 import { createSummary } from './summary.mjs';
+import { applyIdChange, planIdChange } from './insectaryId.mjs';
 import { SANDBOX_ID, moduleMap, validateValues } from './schema.mjs';
 import {
   setup,
@@ -480,6 +481,16 @@ export async function createApp(config = {}, options = {}) {
       if (method === 'GET' && path === '/api/table/changes')
         return json(res, 200, tableChanges(store, String(query.module || ''), query.since));
       if (method === 'GET' && path === '/api/ids') return json(res, 200, idSuggestions(store, query));
+      // Correcting an Insectary ID after saving: preview, then one undoable save.
+      if (method === 'GET' && path === '/api/insectary-ids/plan') {
+        const plan = planIdChange(store, query.from, query.to);
+        return json(res, 200, { ...plan, edits: plan.edits.length });
+      }
+      if (method === 'POST' && path === '/api/insectary-ids/change') {
+        requireEditor(user);
+        requireId(body);
+        return json(res, 200, await applyIdChange(store, body, user));
+      }
       if (method === 'POST' && path === '/api/actions') {
         requireEditor(user);
         requireId(body);
