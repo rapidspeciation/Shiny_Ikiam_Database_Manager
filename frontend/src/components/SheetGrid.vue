@@ -11,6 +11,7 @@ import {
   fillDown as fillDownRange,
   choiceEditor,
   openList,
+  editingKeys,
   spreadsheetKeys,
   watchSize,
   type CanEdit,
@@ -411,6 +412,7 @@ const editableCell: CanEdit = (row, field) => fieldIndex.has(field) && canEdit(r
 const notice = (message: string) => emit('notice', message)
 const fillDown = () => table && fillDownRange(table, editableCell, notice)
 const onKeydown = spreadsheetKeys(() => table, editableCell, notice)
+const onEditingKey = editingKeys(() => table)
 let fill: { destroy: () => void } | null = null
 let copied: ReturnType<typeof attachCopyMarker> | null = null
 
@@ -516,6 +518,7 @@ function refresh() {
 onMounted(() => {
   build()
   host.value?.addEventListener('keydown', onKeydown)
+  host.value?.addEventListener('keydown', onEditingKey, true)
   if (host.value) sizeWatch = watchSize(() => table, host.value)
 })
 // Kept alive while another tab is open (see App.vue): its size may have changed meanwhile.
@@ -536,6 +539,7 @@ onBeforeUnmount(() => {
   fill?.destroy()
   copied?.destroy()
   host.value?.removeEventListener('keydown', onKeydown)
+  host.value?.removeEventListener('keydown', onEditingKey, true)
   table?.destroy()
   table = null
 })

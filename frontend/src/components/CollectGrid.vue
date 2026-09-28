@@ -10,6 +10,7 @@ import {
   attachTouchSheet,
   choiceEditor,
   openList,
+  editingKeys,
   spreadsheetKeys,
   tileToSelection,
   watchSize,
@@ -168,6 +169,7 @@ function completed(field: Column, text: string, row: Row) {
 }
 
 const onKeydown = spreadsheetKeys(() => table, canEdit, message => emit('notice', message))
+const onEditingKey = editingKeys(() => table)
 
 onMounted(() => {
   if (!host.value) return
@@ -234,6 +236,7 @@ onMounted(() => {
       })
   copied = attachCopyMarker(table, host.value.parentElement!, message => emit('notice', message))
   host.value.addEventListener('keydown', onKeydown)
+  host.value.addEventListener('keydown', onEditingKey, true)
   sizeWatch = watchSize(() => table, host.value)
 })
 onActivated(() => table?.redraw())
@@ -242,6 +245,7 @@ onBeforeUnmount(() => {
   sizeWatch?.disconnect()
   copied?.destroy()
   host.value?.removeEventListener('keydown', onKeydown)
+  host.value?.removeEventListener('keydown', onEditingKey, true)
   table?.destroy()
   table = null
 })

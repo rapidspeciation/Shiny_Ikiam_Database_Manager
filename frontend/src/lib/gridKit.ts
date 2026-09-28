@@ -37,31 +37,41 @@ export function clearRange(table: Tabulator, canEdit: CanEdit) {
     if (canEdit(cell.getRow(), cell.getField())) cell.setValue(null)
 }
 
+// Keys typed while a cell's editor is still opening are kept and given to it,
+// so a fast typist does not lose the first letters. An Enter or Tab pressed
+// meanwhile waits for them too, then saves and moves on.
+type Move = { table: Tabulator; key: string; shift: boolean }
+let opening: { cell: CellComponent; text: string; then?: Move } | null = null
+function giveText(tries = 0) {
+  if (!opening) return
+  const input = opening.cell.getElement().querySelector('input')
+  if (!input) return tries < 20 ? requestAnimationFrame(() => giveText(tries + 1)) : void (opening = null)
+  const { text, then } = opening
+  opening = null
+  input.value = text
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  // List editors (Tabulator's autocomplete) notice typing on keyup, not on input.
+  input.dispatchEvent(new KeyboardEvent('keyup', { key: text.at(-1), bubbles: true }))
+  input.setSelectionRange(input.value.length, input.value.length)
+  if (then) saveAndMove(then, input)
+}
+
 /**
  * Spreadsheet keys: typing on a selected cell replaces its content; Enter or
  * F2 edits it in place; Ctrl+D fills down; Supr clears the selection.
  */
 export function spreadsheetKeys(table: () => Tabulator | null, canEdit: CanEdit, notice: Notice) {
-  // Keys typed while a cell's editor is still opening are kept and given to it,
-  // so a fast typist does not lose the first letters.
-  let opening: { cell: CellComponent; text: string } | null = null
-  function giveText(tries = 0) {
-    if (!opening) return
-    const input = opening.cell.getElement().querySelector('input')
-    if (!input) return tries < 20 ? requestAnimationFrame(() => giveText(tries + 1)) : void (opening = null)
-    input.value = opening.text
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-    // List editors (Tabulator's autocomplete) notice typing on keyup, not on input.
-    input.dispatchEvent(new KeyboardEvent('keyup', { key: opening.text.at(-1), bubbles: true }))
-    input.setSelectionRange(input.value.length, input.value.length)
-    opening = null
-  }
   return (event: KeyboardEvent) => {
     const t = table()
     const typing = event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey
     if (opening && typing) {
       event.preventDefault()
       opening.text += event.key
+      return
+    }
+    if (t && opening && !touchScreen && (event.key === 'Enter' || event.key === 'Tab')) {
+      event.preventDefault()
+      opening.then = { table: t, key: event.key, shift: event.shiftKey }
       return
     }
     if (!t || (event.target as HTMLElement).closest('input, textarea, select, .tabulator-editing')) return
@@ -83,6 +93,51 @@ export function spreadsheetKeys(table: () => Tabulator | null, canEdit: CanEdit,
       clearRange(t, canEdit)
     }
   }
+}
+
+/**
+ * Enter or Tab in a cell being edited saves it and moves on, as in Google
+ * Sheets: Enter goes down, Tab right (with Shift, up and left). The next cell
+ * is only selected, so typing replaces it and Enter edits it. (Tabulator kept
+ * the edited cell selected, and a second Enter opened it again.)
+ * Listen on the grid in the capture phase, before the editor sees the key.
+ */
+export function editingKeys(table: () => Tabulator | null) {
+  return (event: KeyboardEvent) => {
+    const input = event.target as HTMLElement
+    const t = table()
+    if (!t || touchScreen || !event.isTrusted || event.isComposing) return
+    if ((event.key !== 'Enter' && event.key !== 'Tab') || event.ctrlKey || event.altKey || event.metaKey) return
+    if (!input.closest('.tabulator-editing')) return
+    event.preventDefault()
+    event.stopPropagation()
+    const move = { table: t, key: event.key, shift: event.shiftKey }
+    // Letters typed a moment ago may not be in the box yet.
+    if (opening) {
+      opening.then = move
+      giveText()
+    } else saveAndMove(move, input)
+  }
+}
+
+function saveAndMove({ table, key, shift }: Move, input: HTMLElement) {
+  // The editor saves on its own Enter (a list takes the typed text, or the item picked with the arrows);
+  // given only to the editor, so the grid does not take it as "edit the selected cell".
+  const enter = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', cancelable: true })
+  Object.defineProperty(enter, 'keyCode', { get: () => 13 })
+  input.dispatchEvent(enter)
+  const inner = table as unknown as {
+    modules: {
+      edit?: { currentCell: unknown; cancelEdit: () => void }
+      selectRange?: { navigate: (jump: boolean, expand: boolean, dir: string) => boolean }
+    }
+    rowManager: { element: HTMLElement }
+  }
+  // A list opened and left untouched does not save on Enter: nothing changed.
+  if (inner.modules.edit?.currentCell) inner.modules.edit.cancelEdit()
+  const dir = key === 'Enter' ? (shift ? 'up' : 'down') : shift ? 'left' : 'right'
+  inner.modules.selectRange?.navigate(false, false, dir)
+  inner.rowManager.element.focus({ preventScroll: true })
 }
 
 /** What scrolls while dragging: the grid itself (Tablas), or the page around it (the Colecta list). */
