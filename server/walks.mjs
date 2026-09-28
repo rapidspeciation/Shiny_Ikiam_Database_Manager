@@ -143,6 +143,8 @@ export async function walkDraft(store, { walkId, url, date, collector } = {}) {
     const known = taxa.get(species) || [];
     taxa.set(species, [...known, ...[...entry.subspecies].filter(s => !known.includes(s))]);
   }
+  // Abbreviations and a missing subspecies are resolved against the names seen at Ikiam.
+  const local = m.taxaFrom(all.filter(r => /^ikiam$/i.test(text(r.values.Collection_location))));
   const tribes = m.tribesFrom(all);
   const isIthomiini = species => !!species && (tribes.get(species) ?? tax.get(species)?.tribe) === 'Ithomiini';
   const collectors = [...new Set(observed.map(r => text(r.values.Collector)).filter(c => / - /.test(c)))];
@@ -157,7 +159,7 @@ export async function walkDraft(store, { walkId, url, date, collector } = {}) {
   if (!who) problems.push('No se sabe quién hizo el recorrido: pregunta el colector (p. ej. «FCH - Franz Chandi») y llama get_walk con collector');
 
   const captures = data.waypoints
-    .map(p => m.locateCapture({ ...p, time: null }, taxa))
+    .map(p => m.locateCapture({ ...p, time: null }, taxa, local))
     .sort((a, b) => (a.seq ?? 1e9) - (b.seq ?? 1e9) || (a.minutes ?? 0) - (b.minutes ?? 0));
   // Points already entered: paired with the collector's rows of that day, as "Pasar al mapa" does.
   let paired = null;
@@ -172,7 +174,8 @@ export async function walkDraft(store, { walkId, url, date, collector } = {}) {
 
   const lists = listOptions(store, MODULE);
   const formulas = createFormulas(all);
-  const marks = m.markIndex(monitoring);
+  // New mark, recapture (same mark, species and sex) or reused ID, from the marks before the walk.
+  const roles = day ? m.walkMarkRoles(monitoring, day, captures) : null;
   const preserved = m.preservedForRule(all, day ? parseDateText(day) : undefined);
   const points = [];
   const newRows = [];
@@ -181,7 +184,7 @@ export async function walkDraft(store, { walkId, url, date, collector } = {}) {
       rows: monitoring,
       date: day || '',
       captures,
-      marks,
+      ...(roles ? { roles } : {}),
       preserved,
       isIthomiini,
       ...(paired ? { existing: paired.get(c) ?? null } : {}),
@@ -212,6 +215,7 @@ export async function walkDraft(store, { walkId, url, date, collector } = {}) {
     for (const field of formulas) delete values[field];
     // Readable for the model and the person; propose_changes turns them back into sheet values.
     values.Collection_date = day;
+    for (const key of ['Death_date', 'Preservation_date']) if (typeof values[key] === 'number') values[key] = day;
     if (typeof values.Collection_time === 'number') values.Collection_time = m.formatMinutes(c.minutes);
     for (const key of Object.keys(values)) if (values[key] === null) delete values[key];
     newRows.push({
