@@ -14,6 +14,7 @@ import {
   RotateCcw,
   X,
 } from 'lucide-vue-next'
+import ChoiceField from '../components/ChoiceField.vue'
 import PagePhoto from '../components/notebook/PagePhoto.vue'
 import NotebookGrid from '../components/notebook/NotebookGrid.vue'
 import { displayValue } from '../lib/cells'
@@ -150,6 +151,14 @@ async function retry(k: Kind | 'auto') {
   if (corrected && !confirm('Se perderán las correcciones hechas en esta página. ¿Volver a leerla?')) return
   await store.retry(current.value, k)
 }
+const kindChoices = KINDS.map(k => ({ value: k.id, label: k.sheet ? `${k.label} (${k.sheet})` : k.label }))
+/** "Leer como": another notebook reads the page again. */
+const readAs = computed({
+  get: () => job.value?.kind ?? job.value?.requestedKind ?? 'auto',
+  set: value => {
+    if (value !== (job.value?.kind ?? job.value?.requestedKind)) void retry(value as Kind | 'auto')
+  },
+})
 function setYear(event: Event) {
   const value = Number((event.target as HTMLInputElement).value)
   if (current.value) void store.setYear(current.value, Number.isInteger(value) && value > 1989 ? value : null)
@@ -219,9 +228,13 @@ function openJob(id: string) {
     <div class="toolbar items-end max-md:gap-2 max-md:py-2">
       <label class="max-md:flex-1">
         <span class="field-label max-md:hidden">Cuaderno</span>
-        <select v-model="kind" class="field-input md:min-w-52" title="Qué cuaderno se fotografía (se detecta por los encabezados si no se elige)">
-          <option v-for="k in KINDS" :key="k.id" :value="k.id">{{ k.label }}{{ k.sheet ? ` (${k.sheet})` : '' }}</option>
-        </select>
+        <ChoiceField
+          v-model="kind"
+          class="field-input md:min-w-60"
+          :options="kindChoices"
+          :freetext="false"
+          title="Qué cuaderno se fotografía (se detecta por los encabezados si no se elige)"
+        />
       </label>
       <label class="max-md:hidden">
         <span class="field-label">Año de las fechas</span>
@@ -399,15 +412,14 @@ function openJob(id: string) {
             </template>
             <label class="ml-auto flex items-center gap-1 text-xs text-stone-600">
               Leer como
-              <select
-                class="field-input w-auto py-0.5"
-                :value="job.kind ?? job.requestedKind"
+              <ChoiceField
+                v-model="readAs"
+                class="field-input w-44 py-0.5"
+                :options="kindChoices"
+                :freetext="false"
                 :disabled="['queued', 'reading'].includes(job.status) || !session.canEdit"
                 title="Si el cuaderno no es el que se detectó, se vuelve a leer la página"
-                @change="retry(($event.target as HTMLSelectElement).value as Kind | 'auto')"
-              >
-                <option v-for="k in KINDS" :key="k.id" :value="k.id">{{ k.label }}</option>
-              </select>
+              />
             </label>
           </header>
 
