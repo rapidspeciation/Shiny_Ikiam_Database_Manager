@@ -53,17 +53,25 @@ export function parseFate(text: string): 'insectario' | 'preservada' | 'liberada
 }
 
 /**
- * What was typed in a list cell, completed to the one option it begins (or is,
- * in other capitals): "Ithomia sal" → "Ithomia salapia". Otherwise kept as
- * typed, so a new value can still be entered.
+ * The option that typing picks, as the first suggestion of the list: the same
+ * text (in other capitals), else the first option that starts with it, else
+ * the first that contains it ("mess" → "Mechanitis messenoides"). Options come
+ * most used first. None when nothing matches (a new value).
  */
-export function complete(typed: string, options: string[]): string {
+export function pickChoice(typed: string, options: string[]): string | null {
   const t = typed.trim().toLowerCase()
-  if (!t) return typed.trim()
-  const exact = options.find(o => o.toLowerCase() === t)
-  if (exact) return exact
-  const starts = options.filter(o => o.toLowerCase().startsWith(t))
-  return starts.length === 1 ? starts[0] : typed.trim()
+  if (!t) return null
+  return (
+    options.find(o => o.toLowerCase() === t) ??
+    options.find(o => o.toLowerCase().startsWith(t)) ??
+    options.find(o => o.toLowerCase().includes(t)) ??
+    null
+  )
+}
+
+/** What was typed in a list cell, completed to the option it picks (Enter or Tab); otherwise kept as typed. */
+export function complete(typed: string, options: string[]): string {
+  return pickChoice(typed, options) ?? typed.trim()
 }
 
 /** "CAM079895 · FS90415305 (Flash frozen)" → the CAM ID and the tube, if present. */

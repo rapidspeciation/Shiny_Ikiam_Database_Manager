@@ -1,5 +1,6 @@
 import { EditModule } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent, Tabulator } from 'tabulator-tables'
+import { complete, pickChoice } from './paste'
 
 /**
  * Spreadsheet habits shared by the Tabulator grids (Tablas, the task screens,
@@ -520,6 +521,7 @@ export function listParams(values: string[] | Record<string, string>, cell: Cell
     listOnEmpty: true,
     filterDelay: 50,
     emptyValue: cell.getValue() ?? null,
+
     // Opened with the arrow on a phone: only the list, no keyboard.
     ...(tapOnly ? { elementAttributes: { readonly: 'readonly', inputmode: 'none' } } : {}),
   }
@@ -602,6 +604,7 @@ if (touchScreen && typeof window !== 'undefined' && window.visualViewport)
   window.visualViewport.addEventListener('resize', followKeyboard)
 
 type Choices = string[] | Record<string, string>
+const labelsOf = (values: Choices) => (Array.isArray(values) ? values : Object.values(values))
 type EditorFn = (
   this: unknown,
   cell: CellComponent,
@@ -622,9 +625,11 @@ export function choiceEditor(values: (cell: CellComponent) => Choices, freetext 
   const list = (EditModule as unknown as { editors: Record<string, (...args: unknown[]) => HTMLElement> }).editors.list
   const editor: EditorFn = function (cell, onRendered, success, cancel) {
     const options = values(cell)
+    // Typed text is completed to the first suggestion (Enter or Tab), as in Google Sheets.
+    const save = (value: unknown) => success(typeof value === 'string' ? complete(value, labelsOf(options)) : value)
     if (!touchScreen || arrowCell === cell)
-      return list.call(this, cell, onRendered, success, cancel, listParams(options, cell, freetext) as never)
-    return suggestionBox(cell, onRendered, success, cancel, Array.isArray(options) ? options : Object.values(options))
+      return list.call(this, cell, onRendered, save, cancel, listParams(options, cell, freetext) as never)
+    return suggestionBox(cell, onRendered, save, cancel, labelsOf(options))
   }
   return { editor: editor as never }
 }
@@ -667,3 +672,19 @@ function suggestionBox(
   })
   return input
 }
+
+/**
+ * While typing in a list cell, the suggestion Enter or Tab will take is
+ * highlighted in the list. (Tabulator draws the items once and only hides and
+ * shows them as you type, so they are marked after each key.)
+ */
+function markPick() {
+  const input = document.activeElement as HTMLInputElement | null
+  if (!input?.closest?.('.tabulator-editing')) return
+  const items = [...document.querySelectorAll<HTMLElement>('.tabulator-edit-list .tabulator-edit-list-item')]
+  const shown = items.filter(el => el.offsetParent !== null)
+  const pick = pickChoice(input.value, shown.map(el => el.textContent?.trim() ?? ''))
+  for (const el of items) el.classList.toggle('is-pick', !!pick && el.offsetParent !== null && el.textContent?.trim() === pick)
+}
+if (typeof document !== 'undefined')
+  document.addEventListener('keyup', () => setTimeout(markPick, 80), true)

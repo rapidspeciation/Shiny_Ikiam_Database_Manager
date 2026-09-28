@@ -147,6 +147,11 @@ body.keyboard-open .touch-actions {
 body.touch-bar-open main {
   padding-bottom: calc(64px + env(safe-area-inset-bottom));
 }
+/* The suggestion Enter or Tab will take. */
+.tabulator-edit-list .tabulator-edit-list-item.is-pick {
+  background: #e6f1eb;
+  box-shadow: inset 3px 0 0 #1f4d3a;
+}
 /* Cells copied with Ctrl+C: a moving dashed border, as in Google Sheets. */
 .copy-box {
   position: absolute;

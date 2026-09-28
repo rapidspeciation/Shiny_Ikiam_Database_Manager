@@ -29,12 +29,15 @@ describe('pasting cells from a spreadsheet', () => {
     expect(parseCamTube('')).toEqual({ cam: '', tube: '' })
     expect(['11:02', '9:05', '1102', 'tarde'].map(parseTime)).toEqual(['11:02', '09:05', '11:02', 'tarde'])
   })
-  it('completes a typed start to the only option it begins', () => {
-    const species = ['Ithomia salapia', 'Ithomia agnosia', 'Mechanitis polymnia']
+  it('completes what was typed to the first suggestion, as Enter or Tab in the list', () => {
+    const species = ['Mechanitis polymnia', 'Ithomia salapia', 'Mechanitis messenoides', 'Ithomia agnosia']
     expect(complete('Ithomia sal', species)).toBe('Ithomia salapia')
     expect(complete('ithomia AGNOSIA', species)).toBe('Ithomia agnosia')
-    // Several begin that way, or none: kept as typed (a new name can be entered).
-    expect(complete('Ithomia', species)).toBe('Ithomia')
+    // Contained, not only at the start: "mess" is in Mechanitis messenoides.
+    expect(complete('mess', species)).toBe('Mechanitis messenoides')
+    // Several match: the first in the list (most used first).
+    expect(complete('Ithomia', species)).toBe('Ithomia salapia')
+    // Nothing matches: a new value, kept as typed.
     expect(complete('Oleria onega', species)).toBe('Oleria onega')
   })
 })
