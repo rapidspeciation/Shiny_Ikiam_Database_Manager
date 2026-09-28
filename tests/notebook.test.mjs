@@ -314,7 +314,7 @@ const RECORDED = JSON.stringify({
   lines: [
     { n: 1, y: 0.2, raw: '5VB deceptus ♀ 838 interme 4/8', v: { Insectary_ID: '5VB', SPECIES: 'Mechanitis messenoides deceptus', Sex: 'female', 'CLUTCH NUMBER': '838', Intro2Insectary_date: '4/8' } },
     { n: 2, y: 0.3, raw: '8VD messen. ♀ 848 messen. 8/8', v: { Insectary_ID: '8VD', SPECIES: 'Mechanitis messenoides messenoides', Sex: 'female', 'CLUTCH NUMBER': '848', Intro2Insectary_date: '8/8' }, c: { Sex: 0.5 }, a: { Sex: ['male'] } },
-    { n: 3, y: 0.4, raw: '9VD messen ♂ 848 8/8 dead 9/8 unk', v: { Insectary_ID: '9VD', Sex: 'male', 'CLUTCH NUMBER': '848', Intro2Insectary_date: '8/8', Death_date: '9/8', Death_cause: 'Unknown' } },
+    { n: 3, y: 0.4, raw: '9VD messen ♂ 848 8/8 dead 9/8 unk', v: { Insectary_ID: '9VD', Sex: 'male', 'CLUTCH NUMBER': '848', Intro2Insectary_date: '8/8', Death_date: '9/8', Death_cause: 'Unknown', Tube_1_id: 'FD41377125' } },
   ],
 });
 
@@ -328,7 +328,7 @@ async function setup(transcribe) {
     Insectary_data: [
       { row: 2, values: { Insectary_ID: '5VB', 'CLUTCH NUMBER': 838, Sex: 'female', Intro2Insectary_date: d('2025-08-04') } },
       { row: 3, values: { Insectary_ID: '8VD', 'CLUTCH NUMBER': 848, Sex: 'female' } },
-      { row: 4, values: { Insectary_ID: '9VD', 'CLUTCH NUMBER': 848, Sex: 'male' } },
+      { row: 4, values: { Insectary_ID: '9VD', 'CLUTCH NUMBER': 848, Sex: 'male', Tube_2_id: 'FD41377125' } },
     ],
   });
   for (const [row, value] of [
@@ -390,6 +390,9 @@ test('a photographed page is read in the background, reviewed, corrected and app
     assert.equal(byLine[1].cells.SPECIES.status, 'conflict');
     assert.ok(byLine[2].cells.Sex.doubt);
     assert.equal(byLine[3].cells.Death_date.status, 'fill');
+    // The tube on the page is already this butterfly's Tube_2_id: not written as its Tube_1_id.
+    assert.equal(byLine[3].cells.Tube_1_id.status, 'error');
+    assert.match(byLine[3].cells.Tube_1_id.message, /ya está en Insectary_data fila 4/);
     assert.deepEqual(job.options.Sex.sort(), ['NA', 'NOT_COLLECTED', 'female', 'male']);
 
     // The same proposal is in Cambios propuestos, and the page has its conversation with the transcription.

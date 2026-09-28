@@ -157,7 +157,8 @@ export function createNotebookJobs(deps) {
         if (!(isUnique(sheet, field) || TUBE_FIELD.test(field)) || !isIdValue(value)) return null;
         const unique = usedIds();
         const key = `${TUBE_FIELD.test(field) ? 'tube' : `${sheet}:${field}`}\u0000${String(value).trim()}`;
-        return (unique.get(key) ?? []).find(h => h.id !== recordId) ?? null;
+        // Another row, or another column of this row (the clip's tube already filed as Tube_2_id).
+        return (unique.get(key) ?? []).find(h => h.id !== recordId || h.field !== field) ?? null;
       },
       newRowFormulas: newRowFormulas(sheet),
       typedOverFormula: new Set(sheet === 'Insectary_data' ? ['SPECIES'] : []),
