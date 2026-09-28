@@ -9,7 +9,8 @@ import { comparable, labelFor, moduleMap, validateValues } from './schema.mjs';
 import { TUBE_FIELD, isIdValue, isUnique } from './verifications.mjs';
 import { listOptions, listProblem } from './verify.mjs';
 import { queueWalk, walkDraft } from './walks.mjs';
-import { claudeAllowed, claudeConfig, prepareWorkspace, runClaude } from './claude.mjs';
+import { claudeAllowed, claudeConfig, prepareWorkspace, runClaude, runClaudeOnce } from './claude.mjs';
+import { createNotebookJobs } from './notebook-jobs.mjs';
 import { affirmative, startVoiceSession, voiceBrief, voiceConfig, voiceKey } from './voice.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -207,6 +208,21 @@ export const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'notebook_page',
+      description:
+        'A notebook page digitized in "Digitalizar cuaderno": every line as read from the photo (raw text), the value read for each column next to the sheet\'s current value, its status (fill, conflict, same, doubtful with alternatives) and the proposal made from it. Without jobId, the latest page of this person. Use it to answer questions about a page ("¿qué dice la línea 5?").',
+      parameters: {
+        type: 'object',
+        properties: {
+          jobId: { type: 'string', description: 'The page, as given in its conversation ("Página <id>")' },
+          line: { type: 'integer', description: 'Only this line' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'apply_proposal',
       description:
         "Write a pending proposal to Google Sheets. Only call this when the person's latest message explicitly approves it (e.g. 'sí, aplícalo', 'está correcto'). Optionally only some rows, by their index.",
@@ -285,26 +301,32 @@ function endpoint(ai, path) {
   return new URL(path, base).toString();
 }
 
-async function providerFetch(ai, path, body, multipart = false) {
+async function providerFetch(ai, path, body, multipart = false, timeoutMs = 45000) {
   const key = await keyFor(ai);
   if (!key || !ai.model) throw new Error('AI provider is not configured');
   const response = await fetch(endpoint(ai, path), {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}`, ...(multipart ? {} : { 'Content-Type': 'application/json' }) },
     body: multipart ? body : json(body),
-    signal: AbortSignal.timeout(45000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) throw new Error(`AI provider returned HTTP ${response.status}`);
   const payload = await response.json();
   return payload;
 }
 
-async function complete(ai, messages, tools = TOOLS, model = ai.model) {
-  const payload = await providerFetch({ ...ai, model }, 'chat/completions', {
-    model,
-    messages,
-    ...(tools?.length ? { tools, tool_choice: 'auto' } : {}),
-  });
+async function complete(ai, messages, tools = TOOLS, model = ai.model, timeoutMs) {
+  const payload = await providerFetch(
+    { ...ai, model },
+    'chat/completions',
+    {
+      model,
+      messages,
+      ...(tools?.length ? { tools, tool_choice: 'auto' } : {}),
+    },
+    false,
+    timeoutMs,
+  );
   const message = payload?.choices?.[0]?.message;
   if (!message || (typeof message.content !== 'string' && !Array.isArray(message.tool_calls)))
     throw new Error('AI provider returned no message');
@@ -606,15 +628,21 @@ export function createAssistant({ store, config = {} }) {
     };
   }
 
-  function proposeChanges(args, context) {
-    if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot propose edits' };
+  const idsFor = () => {
+    let index;
+    return { proposed: new Set(), used: () => (index ??= uniqueIdIndex(store)) };
+  };
+
+  /**
+   * The checked rows of a proposal (as the save will check them), or { error }.
+   * `ids` is shared when a page is checked one row at a time (IDs repeated between rows).
+   */
+  function draftChanges(args, ids = idsFor()) {
     const edits = Array.isArray(args.changes) ? args.changes : [];
     const creates = Array.isArray(args.newRows) ? args.newRows : [];
     if (!edits.length && !creates.length) return { error: 'Provide changes to existing rows or newRows' };
     if (edits.length + creates.length > 100) return { error: 'Provide at most 100 rows per proposal' };
     const changes = [];
-    let index;
-    const ids = { proposed: new Set(), used: () => (index ??= uniqueIdIndex(store)) };
     for (const [i, candidate] of creates.entries()) {
       const out = proposedRow(candidate, i, ids);
       if (out.error) return out;
@@ -664,6 +692,14 @@ export function createAssistant({ store, config = {} }) {
       });
     }
     if (!changes.length) return { error: 'Every proposed value is already in the sheet' };
+    return { changes };
+  }
+
+  function proposeChanges(args, context) {
+    if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot propose edits' };
+    const drafted = draftChanges(args);
+    if (drafted.error) return drafted;
+    const { changes } = drafted;
     const id = randomUUID();
     db.prepare(
       'INSERT INTO ai_proposals (id,thread_id,owner_id,changes_json,reason,status,created_at) VALUES (?,?,?,?,?,?,?)',
@@ -840,6 +876,11 @@ export function createAssistant({ store, config = {} }) {
         collector: args.collector ? clip(args.collector, 120) : undefined,
       });
     if (name === 'propose_changes') return proposeChanges(args, context);
+    if (name === 'notebook_page')
+      return notebooks.pageForTool(
+        { jobId: args.jobId ? clip(args.jobId, 60) : undefined, line: Number.isInteger(args.line) ? args.line : undefined },
+        context.user,
+      );
     if (name === 'apply_proposal') {
       const proposal = db
         .prepare('SELECT * FROM ai_proposals WHERE id = ? AND thread_id = ?')
@@ -885,6 +926,7 @@ export function createAssistant({ store, config = {} }) {
       'Use the tools to read exact rows before answering. Only claim what the tools show. Never infer survival, fertility, mating, genotype or identity from counts.',
       'Changes are drafted with propose_changes; the person reviews them in a table and confirms. Use apply_proposal only when their latest message explicitly approves a proposal. Never say a change was written unless apply_proposal returned applied.',
       'check_data lists inconsistencies with ready fixes; queue_wikiloc and get_walk turn a Wikiloc monitoring walk into newRows for propose_changes.',
+      'Notebook pages digitized in "Digitalizar cuaderno" each have a conversation; notebook_page gives what was read on each line and how it compares with the sheet.',
     ].join('\n');
   }
 
@@ -919,9 +961,9 @@ export function createAssistant({ store, config = {} }) {
       })),
       { type: 'text', text: prompt },
     ];
-    const run = (resume, text = prompt) =>
+    const run = (resume, text = prompt, earlier = []) =>
       runClaude(claude, {
-        content: [...content.slice(0, -1), { type: 'text', text }],
+        content: [...earlier, ...content.slice(0, -1), { type: 'text', text }],
         system: systemPrompt(user),
         mcpUrl,
         token,
@@ -929,24 +971,37 @@ export function createAssistant({ store, config = {} }) {
         sessionId: resume ? null : randomUUID(),
         docsDir: join(here, '..', 'docs'),
       });
+    /**
+     * A new session starts with the conversation so far: a notebook page's
+     * conversation begins with its photo and transcription, written by the app.
+     */
+    const fresh = async () => {
+      const recent = db
+        .prepare(
+          'SELECT role,content,attachments_json FROM ai_messages WHERE thread_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 11',
+        )
+        .all(threadId)
+        .reverse()
+        .slice(0, -1);
+      const text = recent.map(m => `${m.role === 'user' ? 'Persona' : 'Asistente'}: ${clip(m.content, 6000)}`).join('\n\n');
+      const photos = images.length ? [] : recent.flatMap(m => (parse(m.attachments_json) ?? []).map(a => a.id)).slice(-2);
+      const earlier = (await loadImages(photos).catch(() => [])).map(image => ({
+        type: 'image',
+        source: { type: 'base64', media_type: image.mimeType, data: image.data.toString('base64') },
+      }));
+      return run(null, text ? `Conversación anterior:\n${text}\n\n${prompt}` : prompt, earlier);
+    };
     try {
       let out;
-      try {
-        out = await run(thread?.claude_session ?? null);
-      } catch (e) {
-        if (!e.missingSession) throw e;
-        // The saved session is gone (e.g. a new server): start again with the recent messages as context.
-        const recent = db
-          .prepare(
-            'SELECT role,content FROM ai_messages WHERE thread_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 11',
-          )
-          .all(threadId)
-          .reverse()
-          .slice(0, -1)
-          .map(m => `${m.role === 'user' ? 'Persona' : 'Asistente'}: ${clip(m.content, 1500)}`)
-          .join('\n\n');
-        out = await run(null, recent ? `Conversación anterior:\n${recent}\n\n${prompt}` : prompt);
-      }
+      if (!thread?.claude_session) out = await fresh();
+      else
+        try {
+          out = await run(thread.claude_session);
+        } catch (e) {
+          if (!e.missingSession) throw e;
+          // The saved session is gone (e.g. a new server): start again with the recent messages as context.
+          out = await fresh();
+        }
       db.prepare('UPDATE ai_threads SET claude_session = ? WHERE id = ?').run(out.sessionId, threadId);
       return out.text;
     } finally {
@@ -1246,10 +1301,73 @@ export function createAssistant({ store, config = {} }) {
     return null;
   }
 
+  /** Reads a notebook photo with the chat's AI: Claude for its users, else the provider's vision model. */
+  async function transcribe(user, { image, prompt, system }) {
+    if (config.notebook?.transcribe) return config.notebook.transcribe(user, { image, prompt, system });
+    if (claudeAllowed(claude, user)) {
+      const model = process.env.ITHOMIINI_NOTEBOOK_MODEL || claude.model;
+      return runClaudeOnce(claude, {
+        model,
+        system,
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: image.mimeType, data: image.data.toString('base64') } },
+          { type: 'text', text: prompt },
+        ],
+      });
+    }
+    const model = ai.visionModel || ai.model;
+    const answer = await complete(
+      ai,
+      [
+        { role: 'system', content: system },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: `data:${image.mimeType};base64,${image.data.toString('base64')}` } },
+          ],
+        },
+      ],
+      [],
+      model,
+      240000,
+    );
+    return { text: String(answer.content ?? ''), model };
+  }
+  const notebooks = createNotebookJobs({
+    store,
+    db,
+    draftChanges,
+    newIds: idsFor,
+    applyProposal,
+    changed,
+    waitForChange,
+    revisionOf,
+    insertMessage,
+    initialsFor,
+    transcribe,
+    newThread: (user, title) => {
+      const id = randomUUID();
+      const time = now();
+      db.prepare('INSERT INTO ai_threads (id,owner_id,title,created_at,updated_at) VALUES (?,?,?,?,?)').run(
+        id,
+        owner(user),
+        clip(title, 120),
+        time,
+        time,
+      );
+      return id;
+    },
+  });
+
   async function handle({ method, path, body = {}, user, query = {} }) {
-    if (!/^\/api\/(chat|reports|knowledge|ai)(?:\/|$)/.test(path)) return null;
+    if (!/^\/api\/(chat|reports|knowledge|ai|notebook)(?:\/|$)/.test(path)) return null;
     if (!user || !owner(user)) return bad(401, 'unauthorized', 'Sign in to use the assistant.');
     if (path === '/api/reports') return reports.handle({ method, path, query, user });
+    if (path.startsWith('/api/notebook/')) {
+      const answer = await notebooks.handle({ method, path, body, user, query });
+      return answer ?? bad(404, 'not_found', 'Notebook route not found.');
+    }
 
     if (path === '/api/ai/status' && method === 'GET') {
       let key = '';
