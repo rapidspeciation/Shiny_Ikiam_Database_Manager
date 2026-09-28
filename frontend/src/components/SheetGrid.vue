@@ -9,7 +9,7 @@ import {
   attachFillHandle,
   attachTouchSheet,
   fillDown as fillDownRange,
-  listParams,
+  choiceEditor,
   openList,
   spreadsheetKeys,
   watchSize,
@@ -279,14 +279,9 @@ function rowNumberFormatter(cell: CellComponent) {
 
 function editorFor(field: Field): Partial<ColumnDefinition> {
   const dependent = props.rowOptions[field.key]
-  if (dependent)
-    return {
-      editor: 'list',
-      editorParams: ((cell: CellComponent) => listParams(dependent(cell.getData() as GridRow), cell)) as never,
-    }
+  if (dependent) return choiceEditor(cell => dependent(cell.getData() as GridRow))
   // Choices are read when the editor opens, so they stay current without rebuilding the grid.
-  if (props.options[field.key]?.length)
-    return { editor: 'list', editorParams: ((cell: CellComponent) => listParams(props.options[field.key] || [], cell)) as never }
+  if (props.options[field.key]?.length) return choiceEditor(() => props.options[field.key] || [])
   return { editor: 'input', editorParams: { selectContents: true } }
 }
 

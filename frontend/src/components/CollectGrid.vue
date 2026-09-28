@@ -8,7 +8,7 @@ import {
   attachCopyMarker,
   attachFillHandle,
   attachTouchSheet,
-  listParams,
+  choiceEditor,
   openList,
   spreadsheetKeys,
   tileToSelection,
@@ -70,11 +70,7 @@ const canEdit: CanEdit = (row, field) =>
   field === 'ids' ? draftOf(row)?.fate !== 'liberada' : !['__key', '__remove'].includes(field)
 
 /** Columns chosen from a list show a ▾ arrow; clicking it opens the list (see onCellClick). */
-const choices = (values: () => string[]) => ({
-  cssClass: 'has-choices',
-  editor: 'list' as const,
-  editorParams: ((cell: CellComponent) => listParams(values(), cell)) as never,
-})
+const choices = (values: () => string[]) => ({ cssClass: 'has-choices', ...choiceEditor(() => values()) })
 
 /** Plain cells, with the red corner when the value is outside the sheet's list. */
 const listed = (field: Column) => (cell: CellComponent) => {
@@ -100,21 +96,16 @@ function columns(): ColumnDefinition[] {
     text('species', 210, choices(() => props.species)),
     text('subspecies', 160, {
       cssClass: 'has-choices',
-      editor: 'list',
-      editorParams: ((cell: CellComponent) =>
-        listParams(props.subspeciesFor(String((cell.getData() as Row).species || '')), cell)) as never,
+      ...choiceEditor(cell => props.subspeciesFor(String((cell.getData() as Row).species || ''))),
     }),
     text('sex', 90, {
       cssClass: 'has-choices',
       // Typing works too: f / h / ♀, m / ♂, ? (read like a pasted value).
-      editor: 'list',
-      editorParams: ((cell: CellComponent) => listParams([...SEX_VALUES], cell)) as never,
+      ...choiceEditor(() => [...SEX_VALUES]),
     }),
     text('fate', 210, {
       cssClass: 'has-choices',
-      editor: 'list',
-      editorParams: ((cell: CellComponent) =>
-        listParams(Object.fromEntries(Object.entries(FATES).map(([k, f]) => [k, f.label])), cell)) as never,
+      ...choiceEditor(() => Object.fromEntries(Object.entries(FATES).map(([k, f]) => [k, f.label]))),
       formatter: cell => FATES[cell.getValue() as keyof typeof FATES]?.label ?? '',
     }),
     text('time', 110),

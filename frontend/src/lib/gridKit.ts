@@ -1,4 +1,5 @@
-import type { CellComponent, RowComponent, Tabulator } from 'tabulator-tables'
+import { EditModule } from 'tabulator-tables'
+import type { CellComponent, ColumnDefinition, RowComponent, Tabulator } from 'tabulator-tables'
 
 /**
  * Spreadsheet habits shared by the Tabulator grids (Tablas, the task screens,
@@ -353,8 +354,27 @@ export function attachTouchSheet(
     bar.style.display = 'none'
   }
   let dragging = false
+  let lastTouch = 0
+  let waiting: number | undefined
+  /** The selected cell must not end up under the bar: the page (or grid) scrolls it above. */
+  function keepAboveBar(cell: HTMLElement) {
+    const barTop = bar.getBoundingClientRect().top
+    const r = cell.getBoundingClientRect()
+    if (!barTop || r.bottom <= barTop - 8) return
+    const box = scrollingAround(container)
+    if (box) box.scrollTop += r.bottom - barTop + 16
+    else window.scrollBy(0, r.bottom - barTop + 16)
+  }
   function place() {
     if (dragging) return
+    // Not while tapping: the bar waits until the taps are over, or a double tap's second
+    // tap would land on the bar that had just appeared over the cell ("Borrar"!).
+    const since = Date.now() - lastTouch
+    if (since < 500) {
+      window.clearTimeout(waiting)
+      waiting = window.setTimeout(place, 520 - since)
+      return
+    }
     // Only the grid last touched shows its handle and bar (a page can hold two grids,
     // and Tabulator selects each grid's first cell on its own).
     if (touchedSheet !== container) return hide()
@@ -362,9 +382,11 @@ export function attachTouchSheet(
     const cells = range?.getCells().flat() as CellComponent[] | undefined
     const last = cells?.at(-1)?.getElement()
     if (!range || !last?.isConnected) return hide()
-    if (bar.style.display !== 'flex') shownAt = Date.now()
+    const appearing = bar.style.display !== 'flex'
+    if (appearing) shownAt = Date.now()
     bar.style.display = 'flex'
     barRoom(true)
+    if (appearing) requestAnimationFrame(() => keepAboveBar(last))
     const cell = last.getBoundingClientRect()
     const view = (container.querySelector('.tabulator-tableholder') as HTMLElement | null)?.getBoundingClientRect()
     if (view && (cell.bottom < view.top || cell.bottom > view.bottom + 1 || cell.right < view.left || cell.right > view.right + 1)) {
@@ -431,6 +453,7 @@ export function attachTouchSheet(
   // A double tap edits the cell (one tap selects it, as in Google Sheets).
   let lastTap: { cell: CellComponent; at: number } | null = null
   const remember = () => {
+    lastTouch = Date.now()
     if (touchedSheet !== container) {
       touchedSheet = container
       // After the tap is over: shown now, the bar could take the tap's own click.
@@ -457,6 +480,7 @@ export function attachTouchSheet(
     destroy: () => {
       container.removeEventListener('pointerdown', remember, true)
       window.removeEventListener('touch-sheet', onOtherSheet)
+      window.clearTimeout(waiting)
       if (touchedSheet === container) {
         touchedSheet = null
         barRoom(false)
@@ -576,3 +600,70 @@ function followKeyboard() {
 }
 if (touchScreen && typeof window !== 'undefined' && window.visualViewport)
   window.visualViewport.addEventListener('resize', followKeyboard)
+
+type Choices = string[] | Record<string, string>
+type EditorFn = (
+  this: unknown,
+  cell: CellComponent,
+  onRendered: (callback: () => void) => void,
+  success: (value: unknown) => void,
+  cancel: () => void,
+) => HTMLElement
+
+/**
+ * Editing a cell with a list of choices. Computers: Tabulator's list, filtered
+ * as you type. Phones (checked on a real Android phone in the emulator):
+ * Tabulator's list did not focus its box, so the keyboard never came, and it
+ * closes on the window resize the keyboard fires as it opens. So a double tap
+ * gives a plain text box with the phone's own suggestions above the keyboard,
+ * and the ▾ arrow gives the list alone (tap to choose, no keyboard).
+ */
+export function choiceEditor(values: (cell: CellComponent) => Choices, freetext = true): Partial<ColumnDefinition> {
+  const list = (EditModule as unknown as { editors: Record<string, (...args: unknown[]) => HTMLElement> }).editors.list
+  const editor: EditorFn = function (cell, onRendered, success, cancel) {
+    const options = values(cell)
+    if (!touchScreen || arrowCell === cell)
+      return list.call(this, cell, onRendered, success, cancel, listParams(options, cell, freetext) as never)
+    return suggestionBox(cell, onRendered, success, cancel, Array.isArray(options) ? options : Object.values(options))
+  }
+  return { editor: editor as never }
+}
+
+/** A text box with the choices as the phone's suggestions (a <datalist>); Enter or leaving it saves. */
+function suggestionBox(
+  cell: CellComponent,
+  onRendered: (callback: () => void) => void,
+  success: (value: unknown) => void,
+  cancel: () => void,
+  options: string[],
+) {
+  const input = document.createElement('input')
+  input.type = 'text'
+  input.value = String(cell.getValue() ?? '')
+  Object.assign(input.style, { width: '100%', height: '100%', padding: '4px', boxSizing: 'border-box', border: '0' })
+  const choices = document.createElement('datalist')
+  choices.id = `choices-${Math.random().toString(36).slice(2)}`
+  for (const option of options.slice(0, 1000)) choices.append(new Option(option))
+  document.body.append(choices)
+  input.setAttribute('list', choices.id)
+  let done = false
+  const finish = (save: boolean) => {
+    if (done) return
+    done = true
+    choices.remove()
+    if (save) success(input.value)
+    else cancel()
+  }
+  input.addEventListener('blur', () => finish(true))
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      finish(true)
+    } else if (e.key === 'Escape') finish(false)
+  })
+  onRendered(() => {
+    input.focus({ preventScroll: true })
+    input.setSelectionRange(input.value.length, input.value.length)
+  })
+  return input
+}
