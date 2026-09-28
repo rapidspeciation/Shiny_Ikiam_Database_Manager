@@ -279,7 +279,10 @@ function onPaste(event: ClipboardEvent, index: number, column: Column) {
 /** A cell edited in the grid (typed, pasted as one value, filled by dragging or Ctrl+D). */
 function editCell(key: string, column: Column, text: string) {
   const d = drafts.value.find(x => x.key === key)
-  if (d) setColumn(d, column, text)
+  if (!d) return
+  if (column === 'insectaryId' && text.trim() && !/^[0-9A-ZÑ]{2,6}$/i.test(text.trim()))
+    return notify(`«${text.trim()}» no parece un Insectary ID (p. ej. N9D); para CAM y tubo usa CAM_ID y Tube_1_id`)
+  setColumn(d, column, text)
 }
 function focusCell(index: number, column: Column) {
   const key = drafts.value[index]?.key

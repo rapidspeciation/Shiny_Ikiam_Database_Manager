@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
@@ -249,6 +249,16 @@ onMounted(() => {
     const row = cell.getData() as Row
     const field = cell.getField() as Column
     emit('edit', row.__key, field, completed(field, String(cell.getValue() ?? ''), row))
+    // A value the list refused (e.g. a CAM typed as an Insectary ID) goes back to what the list holds.
+    nextTick(() => {
+      const d = props.drafts.find(x => x.key === row.__key)
+      if (!d || !table) return
+      const now = toRow(d)
+      if (JSON.stringify(now) !== JSON.stringify(cell.getRow().getData())) {
+        table.updateData([now])
+        shown.set(now.__key, JSON.stringify(now))
+      }
+    })
   })
   const notice = (message: string) => emit('notice', message)
   fill = touch
