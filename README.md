@@ -1,10 +1,12 @@
 # Ithomiini database
 
-A phone and desktop app for collection, insectary, breeding, experiments, samples, and research records. The frontend and authenticated API run together on claudeclaw. The repository is private.
+A phone and desktop app for collection, insectary, breeding, experiments, samples, and research records. The frontend and authenticated API run together on claudeclaw.
+
+This repository used to hold the original Shiny app. It is kept in the [`shiny-app-archive`](https://github.com/rapidspeciation/Shiny_Ikiam_Database_Manager/tree/shiny-app-archive) branch (tag `shiny-app-final`). The [home and privacy pages](https://rapidspeciation.github.io/Shiny_Ikiam_Database_Manager/) are published from the `gh-pages` branch.
 
 ## Workflows
 
-The interface follows the original [Shiny database manager](https://github.com/rapidspeciation/Shiny_Ikiam_Database_Manager): task tabs in a top bar, and an editable spreadsheet grid that shows the real sheet columns.
+The interface follows the original [Shiny database manager](https://github.com/rapidspeciation/Shiny_Ikiam_Database_Manager/tree/shiny-app-archive): task tabs in a top bar, and an editable spreadsheet grid that shows the real sheet columns.
 
 - **Tablas**: any sheet as a spreadsheet. Search all columns, filter each column, edit cells, paste ranges from Excel or Sheets, fill down (Ctrl+D), add rows, download CSV. Formula cells are grey and read-only. Tapping a row number opens the whole row as a form, which is the easiest way to edit on a phone.
 - **Colecta**: new Collection_data individuals with session defaults (place, collector, date), suggested CAM IDs from the Lists pools and subspecies choices for the chosen species.
