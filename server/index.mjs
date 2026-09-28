@@ -828,7 +828,11 @@ function serveStatic(req, res, path, base, frameSrc = '') {
   const clean = decodeURIComponent(path).replace(/^\/+/, ''),
     target = resolve(webRoot, clean || 'index.html');
   if (!target.startsWith(webRoot + '/') && target !== webRoot) throw fail('NOT_FOUND', 'File not found', 404);
-  const file = existsSync(target) && statSync(target).isFile() ? target : join(webRoot, 'index.html');
+  const found = existsSync(target) && statSync(target).isFile();
+  // A missing script or style (a page opened before a deploy asks for the old build's files) is a 404,
+  // not the page itself: served as HTML it broke the page instead of letting it reload.
+  if (!found && /^assets\//.test(clean)) throw fail('NOT_FOUND', 'File not found', 404);
+  const file = found ? target : join(webRoot, 'index.html');
   if (!existsSync(file)) throw fail('NOT_FOUND', 'Frontend is not built', 404);
   res.writeHead(200, {
     'content-type': mime[extname(file)] || 'application/octet-stream',

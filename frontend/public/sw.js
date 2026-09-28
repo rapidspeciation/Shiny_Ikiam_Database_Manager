@@ -1,7 +1,7 @@
 // Keeps the app usable without coverage in the field: the app files and the
 // last copy of each sheet are served from cache when the network is down.
 // Edits are never queued here; they stay in the page's pending changes until saved.
-const CACHE = 'ithomiini-v5'
+const CACHE = 'ithomiini-v6'
 // What was shared to the installed app (a GPX file or a Wikiloc link), kept
 // until the Importar screen picks it up.
 const INBOX = 'ithomiini-share'
@@ -44,7 +44,8 @@ async function cacheFirst(request) {
   const cached = await cache.match(request)
   if (cached) return cached
   const response = await fetch(request)
-  if (response.ok) cache.put(request, response.clone())
+  // Never keep a page under a script's name (the server used to answer a missing old script with the page).
+  if (response.ok && !(response.headers.get('content-type') || '').startsWith('text/html')) cache.put(request, response.clone())
   return response
 }
 

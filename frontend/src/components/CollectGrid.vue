@@ -325,7 +325,10 @@ onMounted(() => {
   host.value.addEventListener('keydown', onEditingKey, true)
   sizeWatch = watchSize(() => table, host.value)
 })
-onActivated(() => table?.redraw())
+// Back on the tab: redraw only a built grid that is on screen (a redraw before the table was built threw, again and again).
+onActivated(() => {
+  if (table && built && host.value?.offsetParent) table.redraw()
+})
 onBeforeUnmount(() => {
   window.clearTimeout(retry)
   fill?.destroy()

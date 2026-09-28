@@ -9,5 +9,7 @@ release="$(date -u +%Y%m%dT%H%M%SZ)"
 ssh claudeclaw "mkdir -p /home/ubuntu/ithomiini/releases/$release /home/ubuntu/ithomiini/shared /home/ubuntu/.config/systemd/user"
 # frontend/src/lib goes too: the assistant's Wikiloc tools run the monitoring code of the app (server/walks.mjs).
 tar -czf - server web docs assistant package.json deploy scripts licenses PRODUCT.md DESIGN.md frontend/src/lib | ssh claudeclaw "tar -xzf - -C /home/ubuntu/ithomiini/releases/$release"
+# The previous builds' scripts stay available for a month: a page opened before this deploy still loads its tabs.
+ssh claudeclaw "set -eu; cd /home/ubuntu/ithomiini; if test -d current/web/assets; then cp -rnp current/web/assets/. releases/$release/web/assets/; find releases/$release/web/assets -type f -mtime +30 -delete; fi"
 ssh claudeclaw "set -eu; cd /home/ubuntu/ithomiini; if test -L current; then readlink current > shared/previous-release; fi; ln -sfn releases/$release current; cp current/deploy/ithomiini*.service current/deploy/ithomiini-*.timer /home/ubuntu/.config/systemd/user/; systemctl --user daemon-reload; systemctl --user enable ithomiini.service; systemctl --user enable --now ithomiini-backup.timer ithomiini-gog-keepalive.timer; systemctl --user restart ithomiini.service"
 echo "Deployed release $release. Check /ithomiini/health before declaring success."
