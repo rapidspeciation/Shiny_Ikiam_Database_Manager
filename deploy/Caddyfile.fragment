@@ -1,5 +1,20 @@
-# Insert inside tbs-insect-gallery.duckdns.org before its fallback handler.
-redir /ithomiini /ithomiini/ 308
-handle_path /ithomiini/* {
-    reverse_proxy 127.0.0.1:8794
+# The app's own sites (appended to /etc/caddy/Caddyfile).
+ithomiini-ikiam.duckdns.org {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8794
 }
+
+t3.ithomiini-ikiam.duckdns.org {
+	reverse_proxy 127.0.0.1:3773
+}
+
+# Inside tbs-insect-gallery.duckdns.org, the former address:
+#     redir /ithomiini https://ithomiini-ikiam.duckdns.org/ 308
+#     handle_path /ithomiini/api/* {
+#         rewrite * /api{uri}
+#         reverse_proxy 127.0.0.1:8794
+#     }
+#     handle_path /ithomiini/* {
+#         redir * https://ithomiini-ikiam.duckdns.org{uri} 308
+#     }
+# and t3.tbs-insect-gallery.duckdns.org redirects to t3.ithomiini-ikiam.duckdns.org.

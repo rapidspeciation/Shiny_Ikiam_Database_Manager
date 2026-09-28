@@ -35,7 +35,7 @@ export function mailerFromEnv(env = process.env) {
     bin: env.ITHOMIINI_GOG_BIN || '',
     account: env.GOG_ACCOUNT || '',
     client: env.GOG_CLIENT || '',
-    // Where invitation links point, e.g. https://tbs-insect-gallery.duckdns.org/ithomiini
+    // Where invitation links point, e.g. https://ithomiini-ikiam.duckdns.org
     publicUrl: (env.APP_PUBLIC_URL || '').replace(/\/+$/, ''),
   };
 }

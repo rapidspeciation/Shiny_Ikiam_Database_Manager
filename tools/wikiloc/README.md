@@ -17,7 +17,7 @@ public trails and reads those whose title matches the profile's pattern
 
 1. An app account for the processor (role editor), e.g. `wikiloc-worker`.
 2. `~/.config/ithomiini-wikiloc/worker.json`, mode 600:
-   `{"app": "https://tbs-insect-gallery.duckdns.org/ithomiini/", "username": "wikiloc-worker", "password": "…"}`
+   `{"app": "https://ithomiini-ikiam.duckdns.org/", "username": "wikiloc-worker", "password": "…"}`
 3. `tools/wikiloc/install-worker.sh` (copies the helper to
    `~/.local/share/ithomiini-wikiloc` and starts the systemd user service
    `ithomiini-wikiloc`; with `loginctl enable-linger` it runs without a login).
