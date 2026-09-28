@@ -350,7 +350,7 @@ function insectary(store, today) {
   };
 }
 
-// ----------------------------------------------------------------- pizarra (signed in)
+// ----------------------------------------------------------------- latest IDs (signed in)
 
 const CAM = /^CAM(\d+)$/i;
 
@@ -396,11 +396,11 @@ export function marks(rows) {
 }
 
 /**
- * What the team writes on the whiteboard: the last CAM ID used in the
+ * The IDs the team labels with: the last CAM ID used in the
  * insectary and in field collections, the last monitoring mark, with their
  * dates, and the next free ones (plus the next Insectary ID and clutch number).
  */
-function pizarra(store) {
+function latestIds(store) {
   const insect = rowsOf(store, 'Insectary_data');
   const field = rowsOf(store, 'Collection_data');
   const used = new Set();
@@ -705,7 +705,7 @@ export function createSummary(store) {
         ? cached('team', TEAM_SHEETS, () => {
             const collection = rowsOf(store, 'Collection_data');
             return {
-              pizarra: pizarra(store),
+              latestIds: latestIds(store),
               insectary: insectary(store, today),
               monitoring: monitoring(collection, rowsOf(store, 'SamplingDay_data'), today),
               collections: collections(collection, today),

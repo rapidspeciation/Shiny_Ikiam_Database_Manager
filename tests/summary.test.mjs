@@ -91,8 +91,8 @@ test('visitors get the natural history; the team counts and the insectary need a
       body: { token: 'test-setup-secret', username: 'boss', password: 'secret1', displayName: 'Boss' },
     });
     const signed = await call('/summary', { cookie: admin.cookie });
-    assert.equal(signed.body.team.pizarra.clutch, '902');
-    assert.equal(signed.body.team.pizarra.mark.last, 'A12');
+    assert.equal(signed.body.team.latestIds.clutch, '902');
+    assert.equal(signed.body.team.latestIds.mark.last, 'A12');
     assert.equal(signed.body.team.collections.total, 2);
     assert.equal(signed.body.team.monitoring.individuals, 1);
     assert.equal(signed.body.team.crispr.hatched, 1);
@@ -142,7 +142,7 @@ test('the hour of day is corrected by the hours people were out searching', () =
   assert.equal(byHour[15], undefined);
 });
 
-test('the whiteboard mark is the highest in the series in use, not a later recapture', () => {
+test('the last mark is the highest in the series in use, not a later recapture', () => {
   const row = (id, day) => ({ FieldMark_ID: id, Collection_date: 46000 + day });
   assert.deepEqual(marks([row('A99', 1), row('B67', 5), row('B68', 6), row('B12', 7)]), {
     last: 'B68',

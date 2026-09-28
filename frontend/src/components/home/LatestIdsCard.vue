@@ -2,12 +2,12 @@
 import { dateLabel, type BoardEntry, type Team } from '../../lib/summary'
 
 /**
- * The lab whiteboard ("Último CAMID o ID de monitoreo usado"), kept up to date
- * from the workbook: the last CAM ID used in the insectary and in field
- * collections, the last monitoring mark, and the next free ones.
+ * The IDs the team needs when labelling, from the workbook: the last CAM ID
+ * used in the insectary and in field collections, the last monitoring mark,
+ * each with its date and the next free one, and the next Insectary ID and clutch.
  */
-defineProps<{ pizarra: Team['pizarra'] }>()
-const rows = (p: Team['pizarra']): { label: string; entry: BoardEntry | null; hint: string }[] => [
+defineProps<{ ids: Team['latestIds'] }>()
+const rows = (p: Team['latestIds']): { label: string; entry: BoardEntry | null; hint: string }[] => [
   { label: 'CAMID insectario', entry: p.insectaryCam, hint: 'Insectary_data (preservación o muerte)' },
   { label: 'CAMID colecta', entry: p.collectionCam, hint: 'Collection_data' },
   { label: 'Marca de monitoreo', entry: p.mark, hint: 'Marcadas y liberadas' },
@@ -16,9 +16,9 @@ const rows = (p: Team['pizarra']): { label: string; entry: BoardEntry | null; hi
 
 <template>
   <section class="rounded-lg border border-stone-300 bg-white p-4 shadow-sm">
-    <h2 class="mb-3 text-lg font-semibold">Pizarra · último usado y siguiente</h2>
+    <h2 class="mb-3 text-lg font-semibold">Últimos IDs usados</h2>
     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-      <div v-for="r in rows(pizarra)" :key="r.label" class="rounded-md bg-stone-50 px-3 py-2" :title="r.hint">
+      <div v-for="r in rows(ids)" :key="r.label" class="rounded-md bg-stone-50 px-3 py-2" :title="r.hint">
         <p class="text-xs font-medium text-stone-500">{{ r.label }}</p>
         <template v-if="r.entry">
           <p class="font-mono text-2xl font-semibold tracking-tight">{{ r.entry.last }}</p>
@@ -31,11 +31,11 @@ const rows = (p: Team['pizarra']): { label: string; entry: BoardEntry | null; hi
       </div>
       <div class="rounded-md bg-stone-50 px-3 py-2" title="Primera fila libre de Insectary_data con ID ya escrito">
         <p class="text-xs font-medium text-stone-500">Siguiente Insectary ID</p>
-        <p class="font-mono text-2xl font-semibold tracking-tight text-brand-700">{{ pizarra.insectaryId ?? '—' }}</p>
+        <p class="font-mono text-2xl font-semibold tracking-tight text-brand-700">{{ ids.insectaryId ?? '—' }}</p>
       </div>
       <div class="rounded-md bg-stone-50 px-3 py-2" title="El número de clutch más alto + 1">
         <p class="text-xs font-medium text-stone-500">Siguiente clutch</p>
-        <p class="font-mono text-2xl font-semibold tracking-tight text-brand-700">{{ pizarra.clutch ?? '—' }}</p>
+        <p class="font-mono text-2xl font-semibold tracking-tight text-brand-700">{{ ids.clutch ?? '—' }}</p>
       </div>
     </div>
   </section>

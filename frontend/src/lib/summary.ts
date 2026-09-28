@@ -4,7 +4,7 @@ export interface Named {
   name: string
   n: number
 }
-/** A number the team writes on the whiteboard: the last one used, its date, and the next free one. */
+/** An ID the team labels with: the last one used, its date, and the next free one. */
 export interface BoardEntry {
   last: string
   date: string | null
@@ -12,7 +12,7 @@ export interface BoardEntry {
 }
 
 export interface Team {
-  pizarra: {
+  latestIds: {
     insectaryCam: BoardEntry | null
     collectionCam: BoardEntry | null
     mark: BoardEntry | null
