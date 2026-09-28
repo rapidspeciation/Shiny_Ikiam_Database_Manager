@@ -385,7 +385,7 @@ const DEATHS = {
   'Heat stroke': 'Golpe de calor',
 };
 
-/** Median days as egg, larva and pupa per species, from the clutch dates (pure species only). */
+/** Median days as egg, larva and pupa per species (subspecies together), from the clutch dates; hybrids are left out. */
 function lifeCycle(stocks) {
   const STAGES = [
     ['egg', 'DATE LAID', 'HATCHING DATE', 1, 30],
@@ -394,8 +394,10 @@ function lifeCycle(stocks) {
   ];
   const bySpecies = new Map();
   for (const r of stocks) {
-    const name = text(r.SPECIES);
-    if (blank(name) || /\sx\s|\bVS\b/i.test(name)) continue;
+    const full = text(r.SPECIES);
+    if (blank(full) || /\sx\s|\bVS\b/i.test(full)) continue;
+    // Subspecies share their species' development times.
+    const name = full.split(/\s+/).slice(0, 2).join(' ');
     const s = bySpecies.get(name) || { name, egg: [], larva: [], pupa: [] };
     for (const [stage, from, to, min, max] of STAGES) {
       const a = date(r[from]),

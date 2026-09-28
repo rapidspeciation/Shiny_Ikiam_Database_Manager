@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import ChartCard from '../charts/ChartCard.vue'
 import EChart from '../charts/EChart.vue'
-import { SERIES, axis, barStyle, base, format, tipRow, tipTitle } from '../charts/chart'
+import { SERIES, axis, barStyle, base, format } from '../charts/chart'
 import { MONTHS, table, type Nature } from '../../lib/summary'
 
 /**
@@ -12,8 +12,26 @@ import { MONTHS, table, type Nature } from '../../lib/summary'
  */
 const props = defineProps<{ nature: Nature }>()
 
-const shadow = { type: 'shadow', shadowStyle: { color: 'rgba(0,0,0,.04)' } }
 const hour = (h: number) => `${h}:00`
+const MUTED = '#898781'
+/** No hover popups on Inicio (they covered the chart): values are written on it, and "Tabla" lists them. */
+const still = () => ({ ...base(), tooltip: { show: false } })
+/** An axis title under or beside the axis. */
+const title = (name: string, gap = 26) => ({
+  name,
+  nameLocation: 'middle',
+  nameGap: gap,
+  nameTextStyle: { color: MUTED, fontSize: 11 },
+})
+/** Labels of a line drawn over bars: on a white chip so they stay readable. */
+const chip = { backgroundColor: 'rgba(255,255,255,.9)', padding: [1, 3], borderRadius: 3 }
+const valueLabel = (position: string, color = '#52514e') => ({
+  show: true,
+  position,
+  color,
+  fontSize: 10,
+  formatter: (v: { value: number | null }) => (v.value === null ? '' : format(v.value)),
+})
 
 const STAGES = [
   { key: 'egg', label: 'Huevo', color: SERIES[3] },
@@ -22,57 +40,45 @@ const STAGES = [
 ] as const
 const lifeRows = computed(() => [...props.nature.lifeCycle].reverse())
 const lifeOption = computed(() => ({
-  ...base({ legend: true }),
-  tooltip: {
-    ...base().tooltip,
-    trigger: 'axis',
-    axisPointer: shadow,
-    formatter: (p: { dataIndex: number }[]) => {
-      const r = lifeRows.value[p[0].dataIndex]
-      return (
-        tipTitle(r.name) +
-        STAGES.map(s => tipRow(s.color, `${format(r[s.key])} días`, s.label)).join('') +
-        `<div style="margin-top:2px">De huevo a adulto: <b>${format(r.total)} días</b></div>`
-      )
-    },
-  },
-  xAxis: axis('value'),
+  ...still(),
+  legend: base({ legend: true }).legend,
+  grid: { ...base({ legend: true }).grid, bottom: 28, right: 44 },
+  xAxis: { ...axis('value'), ...title('Número de días') },
   yAxis: { ...axis('category', lifeRows.value.map(r => r.name)), axisLabel: { color: '#52514e', fontSize: 11, fontStyle: 'italic' } },
-  series: STAGES.map((s, n) => ({
-    name: s.label,
-    type: 'bar',
-    stack: 'days',
-    barMaxWidth: 18,
-    itemStyle: barStyle(s.color, n === STAGES.length - 1, true),
-    label: { show: true, color: '#ffffff', fontSize: 10, formatter: (v: { value: number }) => format(v.value) },
-    data: lifeRows.value.map(r => r[s.key]),
-  })),
+  series: [
+    ...STAGES.map((s, n) => ({
+      name: s.label,
+      type: 'bar',
+      stack: 'days',
+      barMaxWidth: 18,
+      itemStyle: barStyle(s.color, n === STAGES.length - 1, true),
+      label: valueLabel('inside', '#ffffff'),
+      data: lifeRows.value.map(r => r[s.key]),
+    })),
+    // The total, written after each bar.
+    {
+      type: 'bar',
+      stack: 'days',
+      silent: true,
+      itemStyle: { color: 'transparent' },
+      label: { ...valueLabel('right', '#1c1917'), fontWeight: 600, formatter: (v: { dataIndex: number }) => `${format(lifeRows.value[v.dataIndex].total)} d` },
+      data: lifeRows.value.map(() => 0.01),
+    },
+  ],
 }))
 
 /** Legend on top, then the two axis names: the plot starts lower. */
-const twoAxes = () => ({ ...base({ legend: true }), grid: { ...base({ legend: true }).grid, top: 58 } })
+const twoAxes = () => ({ ...still(), legend: base({ legend: true }).legend, grid: { ...base({ legend: true }).grid, top: 58, bottom: 28 } })
 
 const activityOption = computed(() => {
   const rows = props.nature.activity
   return {
     ...twoAxes(),
-    tooltip: {
-      ...base().tooltip,
-      trigger: 'axis',
-      axisPointer: shadow,
-      formatter: (p: { dataIndex: number }[]) => {
-        const r = rows[p[0].dataIndex]
-        return (
-          tipTitle(`${hour(r.hour)} – ${hour(r.hour + 1)}`) +
-          tipRow(SERIES[0], format(r.perHour), 'mariposas por hora de búsqueda') +
-          tipRow(SERIES[1], `${format(r.share)} %`, 'de las capturas (sin corregir)')
-        )
-      },
-    },
-    xAxis: axis('category', rows.map(r => hour(r.hour))),
+    labelLayout: { hideOverlap: true },
+    xAxis: { ...axis('category', rows.map(r => hour(r.hour))), ...title('Hora del día') },
     yAxis: [
-      { ...axis('value'), name: 'por hora', nameTextStyle: { color: '#898781', fontSize: 11 } },
-      { ...axis('value'), name: '% capturas', splitLine: { show: false }, nameTextStyle: { color: '#898781', fontSize: 11 } },
+      { ...axis('value'), name: 'por hora', nameTextStyle: { color: MUTED, fontSize: 11 } },
+      { ...axis('value'), name: '% capturas', splitLine: { show: false }, nameTextStyle: { color: MUTED, fontSize: 11 } },
     ],
     series: [
       {
@@ -80,6 +86,7 @@ const activityOption = computed(() => {
         type: 'bar',
         barMaxWidth: 28,
         itemStyle: barStyle(SERIES[0]),
+        label: valueLabel('insideTop', '#ffffff'),
         data: rows.map(r => r.perHour),
       },
       {
@@ -89,6 +96,7 @@ const activityOption = computed(() => {
         symbolSize: 6,
         lineStyle: { color: SERIES[1], width: 2 },
         itemStyle: { color: SERIES[1] },
+        label: { ...valueLabel('top', SERIES[1]), ...chip, formatter: (v: { value: number }) => `${format(v.value)} %` },
         data: rows.map(r => r.share),
       },
     ],
@@ -96,18 +104,11 @@ const activityOption = computed(() => {
 })
 
 /** Horizontal bars, one per row, with the value at the end. */
-function bars(rows: { label: string; value: number }[], unit: string, color: string) {
+function bars(rows: { label: string; value: number }[], color: string, suffix = '') {
   const list = [...rows].reverse()
   return {
-    ...base(),
-    grid: { ...base().grid, right: 40 },
-    tooltip: {
-      ...base().tooltip,
-      trigger: 'axis',
-      axisPointer: shadow,
-      formatter: (p: { dataIndex: number }[]) =>
-        tipTitle(list[p[0].dataIndex].label) + tipRow(color, format(list[p[0].dataIndex].value), unit),
-    },
+    ...still(),
+    grid: { ...base().grid, right: 44 },
     xAxis: { ...axis('value'), axisLabel: { show: false }, splitLine: { show: false } },
     yAxis: { ...axis('category', list.map(r => r.label)), axisLabel: { color: '#52514e', fontSize: 11 } },
     series: [
@@ -115,7 +116,7 @@ function bars(rows: { label: string; value: number }[], unit: string, color: str
         type: 'bar',
         barMaxWidth: 16,
         itemStyle: barStyle(color, true, true),
-        label: { show: true, position: 'right', color: '#52514e', fontSize: 11, formatter: (v: { value: number }) => format(v.value) },
+        label: { ...valueLabel('right'), fontSize: 11, formatter: (v: { value: number }) => `${format(v.value)}${suffix}` },
         data: list.map(r => r.value),
       },
     ],
@@ -124,22 +125,20 @@ function bars(rows: { label: string; value: number }[], unit: string, color: str
 const cloudsOption = computed(() =>
   bars(
     props.nature.weather.clouds.map(w => ({ label: w.label, value: w.perHour })),
-    'mariposas por hora de búsqueda',
     SERIES[0],
   ),
 )
 const rainOption = computed(() =>
   bars(
     props.nature.weather.rain.map(w => ({ label: w.label, value: w.perHour })),
-    'mariposas por hora de búsqueda',
     SERIES[6],
   ),
 )
 const deathsOption = computed(() =>
   bars(
     props.nature.deaths.map(d => ({ label: d.name, value: d.percent })),
-    '% de las muertes registradas',
     SERIES[7],
+    ' %',
   ),
 )
 const rainSessions = computed(() =>
@@ -150,26 +149,21 @@ const seasonsOption = computed(() => {
   const rows = props.nature.seasons
   return {
     ...twoAxes(),
-    tooltip: {
-      ...base().tooltip,
-      trigger: 'axis',
-      axisPointer: shadow,
-      formatter: (p: { dataIndex: number }[]) => {
-        const r = rows[p[0].dataIndex]
-        return (
-          tipTitle(MONTHS[r.month - 1]) +
-          tipRow(SERIES[0], format(r.perDay), 'mariposas por día de monitoreo') +
-          tipRow(SERIES[2], format(r.species), 'especies vistas')
-        )
-      },
-    },
-    xAxis: axis('category', MONTHS),
+    labelLayout: { hideOverlap: true },
+    xAxis: { ...axis('category', MONTHS), ...title('Mes') },
     yAxis: [
-      { ...axis('value'), name: 'por día', nameTextStyle: { color: '#898781', fontSize: 11 } },
-      { ...axis('value'), name: 'especies', splitLine: { show: false }, nameTextStyle: { color: '#898781', fontSize: 11 } },
+      { ...axis('value'), name: 'por día', nameTextStyle: { color: MUTED, fontSize: 11 } },
+      { ...axis('value'), name: 'especies', splitLine: { show: false }, nameTextStyle: { color: MUTED, fontSize: 11 } },
     ],
     series: [
-      { name: 'Mariposas por día', type: 'bar', barMaxWidth: 24, itemStyle: barStyle(SERIES[0]), data: rows.map(r => r.perDay) },
+      {
+        name: 'Mariposas por día',
+        type: 'bar',
+        barMaxWidth: 24,
+        itemStyle: barStyle(SERIES[0]),
+        label: valueLabel('insideTop', '#ffffff'),
+        data: rows.map(r => r.perDay),
+      },
       {
         name: 'Especies vistas',
         type: 'line',
@@ -177,6 +171,7 @@ const seasonsOption = computed(() => {
         symbolSize: 6,
         lineStyle: { color: SERIES[2], width: 2 },
         itemStyle: { color: SERIES[2] },
+        label: { ...valueLabel('top', SERIES[2]), ...chip },
         data: rows.map(r => r.species),
       },
     ],
@@ -216,7 +211,7 @@ const peak = computed(() => {
     <div class="grid gap-4 lg:grid-cols-2">
       <ChartCard
         title="Ciclo de vida"
-        subtitle="Días que pasa cada especie como huevo, larva y pupa (mediana de las posturas criadas en el insectario de Ikiam)"
+        subtitle="Días que pasa cada especie como huevo, larva y pupa (mediana de las posturas criadas en el insectario de Ikiam; las subespecies juntas)"
         :table="
           table(
             ['Especie', 'Huevo', 'Larva', 'Pupa', 'Total'],
@@ -224,7 +219,7 @@ const peak = computed(() => {
           )
         "
       >
-        <EChart :option="lifeOption" :height="60 + 30 * nature.lifeCycle.length" />
+        <EChart :option="lifeOption" :height="80 + 30 * nature.lifeCycle.length" />
       </ChartCard>
 
       <ChartCard
@@ -237,7 +232,7 @@ const peak = computed(() => {
           )
         "
       >
-        <EChart :option="activityOption" :height="230" />
+        <EChart :option="activityOption" :height="250" />
         <p class="hint mt-2">
           Contar solo las capturas favorece las horas en que más se sale al campo
           <template v-if="peak">(la mayoría se registra a las {{ peak.busiest }})</template>. Por eso las barras dividen lo
@@ -257,7 +252,7 @@ const peak = computed(() => {
           )
         "
       >
-        <EChart :option="seasonsOption" :height="230" />
+        <EChart :option="seasonsOption" :height="250" />
         <p v-if="best.length" class="hint mt-2">Los meses con más mariposas por día: {{ best.join(', ') }}.</p>
       </ChartCard>
 

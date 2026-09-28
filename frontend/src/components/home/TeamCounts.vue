@@ -20,11 +20,10 @@ const collectionChart = computed(() => {
       { label: 'Marcadas y liberadas', color: SERIES[2], data: c.byMonth.marked },
       { label: 'Liberadas sin marca', color: OTHER, data: c.byMonth.released },
     ].filter(s => s.data.some(Boolean)),
-    'individuos',
   )
 })
 const monitoringChart = computed(() =>
-  monthly(props.team.monitoring.months, [{ label: 'Individuos', color: SERIES[0], data: props.team.monitoring.perMonth }], 'individuos'),
+  monthly(props.team.monitoring.months, [{ label: 'Individuos', color: SERIES[0], data: props.team.monitoring.perMonth }]),
 )
 </script>
 

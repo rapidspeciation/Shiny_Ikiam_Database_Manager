@@ -17,7 +17,6 @@ const deathsChart = computed(() => {
       { label: 'Preservadas (sacrificadas)', color: SERIES[0], data: i.preservedPerMonth },
       { label: 'Otras muertes', color: SERIES[1], data: i.deathsPerMonth.map((n, k) => n - i.preservedPerMonth[k]) },
     ],
-    'muertes',
   )
 })
 </script>

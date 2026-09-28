@@ -1,25 +1,16 @@
-import { axis, barStyle, base, format, tipRow, tipTitle } from './chart'
+import { axis, barStyle, base, format } from './chart'
 import { monthLabel } from '../../lib/summary'
 
-/** Stacked monthly bars ("YYYY-MM" months) with a hover summary. */
-export function monthly(months: string[], series: { label: string; color: string; data: number[] }[], unit: string) {
+/**
+ * Stacked monthly bars ("YYYY-MM" months) for Inicio. No hover popup (it
+ * covered the bars): the month's total is written on top, and "Tabla" lists
+ * every value.
+ */
+export function monthly(months: string[], series: { label: string; color: string; data: number[] }[]) {
+  const total = (i: number) => series.reduce((n, s) => n + (s.data[i] || 0), 0)
   return {
     ...base({ legend: series.length > 1 }),
-    tooltip: {
-      ...base().tooltip,
-      trigger: 'axis',
-      axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(0,0,0,.04)' } },
-      formatter: (p: { dataIndex: number }[]) => {
-        const i = p[0].dataIndex
-        return (
-          tipTitle(monthLabel(months[i])) +
-          series
-            .filter(s => s.data[i])
-            .map(s => tipRow(s.color, format(s.data[i]), series.length > 1 ? s.label : unit))
-            .join('')
-        )
-      },
-    },
+    tooltip: { show: false },
     xAxis: axis('category', months.map(monthLabel)),
     yAxis: { ...axis('value'), minInterval: 1 },
     series: series.map((s, n) => ({
@@ -28,6 +19,16 @@ export function monthly(months: string[], series: { label: string; color: string
       stack: 'total',
       barMaxWidth: 22,
       itemStyle: barStyle(s.color, n === series.length - 1),
+      label:
+        n === series.length - 1
+          ? {
+              show: true,
+              position: 'top',
+              color: '#52514e',
+              fontSize: 10,
+              formatter: (v: { dataIndex: number }) => (total(v.dataIndex) ? format(total(v.dataIndex)) : ''),
+            }
+          : { show: false },
       data: s.data,
     })),
   }
