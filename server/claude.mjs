@@ -1,10 +1,11 @@
 // Runs one assistant turn with the Claude Code CLI (`claude -p`), logged in on the
 // server with a Claude subscription. The app's own tools reach Claude through the
 // MCP endpoint /api/ai/mcp, authorized by a token that lives only for this turn.
-// Claude may also read the project docs; it cannot run commands or edit files.
+// Claude may also read the project docs and use the workspace's skills
+// (digitalizar-cuaderno); it cannot run commands or edit files.
 
 import { spawn } from 'node:child_process';
-import { copyFile, mkdir } from 'node:fs/promises';
+import { copyFile, cp, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 /**
@@ -21,8 +22,6 @@ export function claudeConfig(env = process.env) {
   return {
     bin: env.ITHOMIINI_CLAUDE_BIN || '',
     model: allowedModel(env.ITHOMIINI_CLAUDE_MODEL),
-    // Reading notebook photos (Digitalizar cuaderno) may use the other one of the two; the chat's by default.
-    notebookModel: allowedModel(env.ITHOMIINI_NOTEBOOK_MODEL, allowedModel(env.ITHOMIINI_CLAUDE_MODEL)),
     // Who uses the shared Claude account: "*" for everyone (the team shares its AI accounts), or a list of usernames.
     users: new Set(
       String(env.ITHOMIINI_CLAUDE_USERS || '')
@@ -40,90 +39,11 @@ export function claudeConfig(env = process.env) {
 export const claudeAllowed = (claude, user) =>
   Boolean(claude.bin && claude.workspace && user && (claude.users.has('*') || claude.users.has(user.username)));
 
-/** Copies the release's CLAUDE.md into the stable workspace. */
+/** Copies the release's CLAUDE.md and skills (digitalizar-cuaderno) into the stable workspace. */
 export async function prepareWorkspace(claude, releaseRoot) {
   await mkdir(claude.workspace, { recursive: true });
   await copyFile(join(releaseRoot, 'assistant', 'CLAUDE.md'), join(claude.workspace, 'CLAUDE.md'));
-}
-
-/**
- * One answer without tools or a saved session (reading a notebook photo): its
- * own short system prompt instead of Claude Code's, so it starts and answers faster.
- * Returns { text, costUsd, model }.
- */
-export function runClaudeOnce(claude, { content, system, model: wanted = claude.model, effort }) {
-  const model = allowedModel(wanted);
-  const args = [
-    '-p',
-    '--input-format',
-    'stream-json',
-    '--output-format',
-    'stream-json',
-    '--verbose',
-    '--model',
-    model,
-    '--tools',
-    '',
-    '--strict-mcp-config',
-    '--mcp-config',
-    JSON.stringify({ mcpServers: {} }),
-    '--disable-slash-commands',
-    '--no-session-persistence',
-    '--permission-mode',
-    'dontAsk',
-    '--system-prompt',
-    system,
-    ...(effort ? ['--effort', effort] : []),
-  ];
-  return spawnClaude(claude, args, content).then(({ result }) => ({
-    text: String(result.result ?? ''),
-    costUsd: result.total_cost_usd ?? null,
-    model,
-  }));
-}
-
-/** Runs the CLI with one user message; resolves with its final result event. */
-function spawnClaude(claude, args, content) {
-  const env = {
-    HOME: process.env.HOME || '/home/ubuntu',
-    PATH: '/usr/local/bin:/usr/bin:/bin',
-    LANG: 'C.UTF-8',
-    ...(claude.configDir ? { CLAUDE_CONFIG_DIR: claude.configDir } : {}),
-    DISABLE_AUTOUPDATER: '1',
-  };
-  return new Promise((resolve, reject) => {
-    const child = spawn(claude.bin, args, { cwd: claude.workspace || undefined, env, stdio: ['pipe', 'pipe', 'pipe'] });
-    let buffer = '',
-      stderr = '',
-      result = null;
-    const timer = setTimeout(() => child.kill('SIGTERM'), claude.timeoutMs);
-    child.stdout.on('data', chunk => {
-      buffer += chunk;
-      let line;
-      while ((line = buffer.indexOf('\n')) >= 0) {
-        const text = buffer.slice(0, line).trim();
-        buffer = buffer.slice(line + 1);
-        try {
-          const event = text ? JSON.parse(text) : null;
-          if (event?.type === 'result') result = event;
-        } catch {
-          /* Not JSON: a log line. */
-        }
-      }
-    });
-    child.stderr.on('data', chunk => (stderr = (stderr + chunk).slice(-4000)));
-    child.on('error', e => {
-      clearTimeout(timer);
-      reject(e);
-    });
-    child.on('close', code => {
-      clearTimeout(timer);
-      if (result && !result.is_error && result.subtype === 'success') return resolve({ result });
-      const reason = result?.result || result?.subtype || stderr.trim().split('\n').at(-1) || `exit ${code}`;
-      reject(new Error(`Claude: ${String(reason).slice(0, 300)}`));
-    });
-    child.stdin.end(JSON.stringify({ type: 'user', message: { role: 'user', content } }) + '\n');
-  });
+  await cp(join(releaseRoot, 'assistant', 'skills'), join(claude.workspace, '.claude', 'skills'), { recursive: true, force: true });
 }
 
 /**
@@ -141,9 +61,9 @@ export function runClaude(claude, { content, system, mcpUrl, token, sessionId, r
     '--model',
     claude.model,
     '--tools',
-    'Read,Grep,Glob',
+    'Read,Grep,Glob,Skill',
     '--allowedTools',
-    'mcp__ithomiini,Read,Grep,Glob',
+    'mcp__ithomiini,Read,Grep,Glob,Skill',
     '--permission-mode',
     'dontAsk',
     '--strict-mcp-config',

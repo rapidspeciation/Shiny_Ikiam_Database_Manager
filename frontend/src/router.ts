@@ -24,8 +24,8 @@ export const router = createRouter({
     { path: '/', redirect: '/inicio' },
     ...tabs.map(({ path, name, component }) => ({ path, name, component })),
     { path: '/usuarios', name: 'users', component: () => import('./views/UsersView.vue') },
-    // Digitalizar cuaderno: opened from Asistente, Posturas and Tablas.
-    { path: '/cuaderno', name: 'notebook', component: () => import('./views/NotebookView.vue') },
+    // Notebook photos are digitized in the Asistente tab (T3 Code); old links to the digitizer land there.
+    { path: '/cuaderno', redirect: '/asistente' },
     { path: '/activar', name: 'activate', component: () => import('./views/ActivateView.vue') },
     { path: '/entrar', name: 'login', component: LoginView },
     { path: '/:pathMatch(.*)*', redirect: '/inicio' },

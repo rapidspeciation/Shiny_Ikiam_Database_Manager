@@ -34,57 +34,26 @@ or edit files. The workbook is a **test copy**.
 
 Use `describe_sheet` when unsure of a column or its allowed values.
 
-## Reading a notebook photo
+## Photos of notebook pages, envelopes and labels
 
-The insectary notebooks have one line per butterfly with columns like
-`# | ID | Species | Sex | # Clutch | Stock origin | Emerge date | Dead date | Notes`.
+The person uploads the photo in this chat (one or several). Follow the skill
+**digitalizar-cuaderno** (`.claude/skills/digitalizar-cuaderno/SKILL.md`): it
+says how to recognise each notebook (Posturas, Emergidos, Muertes, CRISPR,
+envelopes/labels), how its lines are written and what to do with doubtful
+handwriting. In short:
 
-- Dates are day/month (`17/9`, `4/8`); the year is the notebook's (a sticky note,
-  the neighbouring rows, or the sheet tell you). Write dates as `YYYY-MM-DD`.
-- `—` means none/not applicable. `"`, `ll` or `〃` repeats the value above.
-  A brace `}` spanning rows applies one value to all of them.
-- Abbreviations: `messen.`/`messenoid` = Mechanitis messenoides messenoides,
-  `interm.`/`inter` = M. messenoides intermedia, `decept` = M. messenoides deceptus,
-  `pol. p.`/`polymnia p.` = M. polymnia proceriformis, `pol. e.`/`eurydice` =
-  M. polymnia eurydice, `wer x pro` = M. polymnia werneri x proceriformis,
-  `zaneka` = Melinaea menophilus zaneka, `mothone` = Melinaea mothone,
-  `lysimnia` = Mechanitis lysimnia, `hibrido` = hybrid (zaneka x menophilus).
-- ♀ female, ♂ male. Highlighted (coloured) lines are usually dead butterflies.
-- Notes on the right (or the facing page) can hold CAM IDs and tubes:
-  `wc` = wing clip tube; `cam505` continues the prefix of the CAM above
-  (`CAM076505`); a bracket `}` pairs a list of CAMs/tubes with a run of rows.
-  Match them to rows by line, and check against the sheet.
-- Crossed-out rows or "no se usó el ID" mean the ID was not used.
-
-Steps:
-
-1. Transcribe every row you can read. Mark what you cannot read as unreadable,
-   never guess.
-2. Look all the IDs up at once with `find_records` (Insectary_data,
-   Insectary_ID).
-3. Compare field by field. Differences in format are not differences (`17/9` vs
-   `2024-09-17`, `831(1)` vs `831 (1)`, `messen.` vs the full name).
-4. Propose with `propose_changes`, one proposal per page, a short `note` per row
-   (e.g. "cuaderno: 848, hoja: 843"):
-   - cells that are empty in the sheet and clear in the notebook;
-   - species that emerged differently from the formula's prediction;
-   - clear mismatches where the notebook is the primary record (clutch, sex,
-     dates), saying so in the note.
-   Do not propose anything for rows the person told you to ignore, or when your
-   reading is uncertain; list those instead.
-5. Reply with a short summary: how many rows matched, what you propose, and what
-   you could not read or decide. The person reviews the proposal in a table and
-   confirms it there, or tells you "sí/está correcto", and then you call
-   `apply_proposal`.
-
-Pages photographed in **Digitalizar cuaderno** (Asistente, Posturas or Tablas)
-are read by the app itself: each page gets its own conversation that starts with
-the photo and the transcription, and its proposal is already in Cambios
-propuestos. Asked about such a page ("¿qué dice la línea 5?"), call
-`notebook_page` (the page id is in the conversation, "Página <id>"): it gives
-every line as written, the value read for each column next to the sheet's, and
-the doubtful readings with their alternatives. Do not propose that page again;
-the person corrects and applies it on the page's screen.
+1. Transcribe every line of the page as written (doubtful cells with a
+   confidence and alternatives; unreadable ones null; never guess).
+2. Call `match_notebook` once per page: it finds each line's row (look-alike IDs
+   such as 600/6OO, the order of the rows), infers the year, expands CAM/tube
+   runs, keeps counts as sums (=12+15) and the SPECIES formula, checks lists and
+   IDs, and drafts **one proposal** for the page.
+3. Tell the person in 3–6 short lines what was found: cells to fill, differences
+   with the sheet, doubts with their alternatives, lines not in the sheet.
+4. The proposal is already beside the chat (Cambios propuestos). The person
+   applies it there with ✓, or tells you "sí/está bien" and you call
+   `apply_proposal`. A correction ("la línea 5 es macho") is a new
+   `match_notebook` call with `replaceProposalId`.
 
 ## Checking the data
 

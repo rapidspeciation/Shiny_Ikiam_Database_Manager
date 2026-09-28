@@ -1,12 +1,16 @@
-// Reading a photographed notebook page: the prompt that asks the AI for one
-// entry per notebook line (values, confidence, alternatives, position), the
-// parser for its answer, and the comparison of each line with the sheet that
-// turns the page into a proposal. Pure functions: the sheet is reached
-// through the `lookup` given to buildReview (server/notebook-jobs.mjs).
+// Matching a transcribed notebook page with its sheet: each line Claude read
+// from the photo (the digitalizar-cuaderno skill, through the match_notebook
+// tool) is compared with its row and the page becomes a proposal. Pure
+// functions: the sheet is reached through the `lookup` given to buildReview
+// (server/notebook-tool.mjs).
 
-import { parseDateText } from './schema.mjs';
+import { isSumField, parseDateText, simpleSum } from './schema.mjs';
 
-/** The notebooks that can be digitized, and the sheet columns each one fills. */
+/**
+ * The notebooks that can be digitized, and the sheet columns each one fills.
+ * How each notebook looks and is written is explained to Claude in the skill
+ * assistant/skills/digitalizar-cuaderno/SKILL.md (a test checks it names every column).
+ */
 export const KINDS = {
   stocks: {
     label: 'Posturas',
@@ -28,13 +32,6 @@ export const KINDS = {
       'NUMBER OF ADULTS',
       'NOTES',
     ],
-    looks:
-      'the clutch (stocks) notebook: one line per clutch of eggs; headers like Clutch/#, Species, Date laid/Fecha, # Eggs/Huevos, Hatch date/Eclosión, # Larvae, Pupa date, # Pupae, Emerge date, # Adults, Notes',
-    hints: [
-      'CLUTCH NUMBER as written: 994, or 994(7) for another batch from the same couple.',
-      'Counts are whole numbers; a count written as a sum stays as written ("12+15"). A crossed-out number is not the value: the one written beside it is.',
-      'INSECTARY OR LABORATORY is Insectary or Laboratory (Ins./Lab.).',
-    ],
   },
   emergence: {
     label: 'Emergidos',
@@ -54,12 +51,6 @@ export const KINDS = {
       'Tube_1_id',
       'Notes_Insectary_data',
     ],
-    looks:
-      'the insectary butterfly notebook: one line per butterfly; headers like # | ID | Species | Sex | # Clutch | Stock origin | Emerge date | Dead date | Notes (highlighted lines are usually dead butterflies)',
-    hints: [
-      'The first "#" column is a running count (e.g. 3096): ignore it. Insectary_ID is the butterfly ID written on its wing: a digit then two letters (5VB, 0NX, 6OO, 1OP: there O is the letter O, not zero) or letters then digits (H79, V36). When a character could be 0 or O (1 or I), give the other reading in "a".',
-      'Intro2Insectary_date is the emerge date; Death_date the dead date.',
-    ],
   },
   deaths: {
     label: 'Muertes',
@@ -76,11 +67,6 @@ export const KINDS = {
       'Tube_1_id',
       'Notes_Insectary_data',
     ],
-    looks:
-      'the daily round of dead butterflies: one line per dead butterfly; headers like Date | ID | Species | Sex | Cause | CAM | Notes',
-    hints: [
-      'Insectary_ID is the butterfly ID written on its wing (5VB, H79). A date written once above several lines applies to all of them.',
-    ],
   },
   labels: {
     label: 'Sobres y etiquetas',
@@ -88,11 +74,6 @@ export const KINDS = {
     keys: ['Insectary_ID'],
     newRows: false,
     fields: ['Insectary_ID', 'SPECIES', 'Sex', 'CAM_ID', 'Tube_1_id'],
-    looks:
-      'the label or envelope of one sampled butterfly (not a table): a CAM, the species, the sex, "Reared ID: 1TG" (or an ID), a date, and often a tube held beside it; several photos may show one label each',
-    hints: [
-      'One line per label. Insectary_ID is the Reared ID; copy it exactly (5OS with the letter O and 50S with zero are different butterflies). The tube (2 letters + 8 digits, on the tube or its barcode) goes in Tube_1_id. Ignore the notebook behind the label.',
-    ],
   },
   crispr: {
     label: 'CRISPR',
@@ -112,178 +93,79 @@ export const KINDS = {
       'CAM_ID',
       'Notes',
     ],
-    looks:
-      'the CRISPR notebook: one line per injected egg; headers like CRISPR | # Eggs | CRISPR date | Guide | Specie | Hatch date | Pupa date | Emerge date | Mutant yes/no | CAM ID | Notes',
-    hints: [
-      'CRISPR_No. is the experiment number (e.g. 50), Eggs_No. the egg number (1, 2, 3…). The "Specie" column is Stock_of_origin (e.g. Inter = Mechanitis messenoides intermedia).',
-      'Guide as written (2B, 2A-2D, No guide). Mutant: Yes, No or Check.',
-    ],
   },
 };
 export const KIND_IDS = Object.keys(KINDS);
 
-const SPECIES_HINT =
-  '`messen.`/`messenoid` = Mechanitis messenoides messenoides, `interm.`/`inter` = Mechanitis messenoides intermedia, `decept` = Mechanitis messenoides deceptus, `pol. p.`/`polymnia p.` = Mechanitis polymnia proceriformis, `pol. e.`/`eurydice` = Mechanitis polymnia eurydice, `wer x pro` = Mechanitis polymnia werneri x proceriformis, `zaneka` = Melinaea menophilus zaneka, `mothone` = Melinaea mothone, `lysimnia` = Mechanitis lysimnia, `hibrido` = hybrid (zaneka x menophilus).';
-
-/** One line of the answer, per notebook, so the example never names another notebook's columns. */
-const EXAMPLES = {
-  stocks: {
-    raw: '994(7) lys 20/9 12',
-    x: false,
-    v: { 'CLUTCH NUMBER': '994(7)', SPECIES: 'Mechanitis lysimnia', 'DATE LAID': '20/9', 'NUMBER OF EGGS': '12' },
-    c: { 'NUMBER OF EGGS': 0.6 },
-    a: { 'NUMBER OF EGGS': ['17'] },
-  },
-  emergence: {
-    raw: '5VB decept ♀ 838 interm. 4/8',
-    x: false,
-    v: { Insectary_ID: '5VB', SPECIES: 'Mechanitis messenoides deceptus', Sex: 'female' },
-    c: { Sex: 0.6 },
-    a: { Sex: ['male'] },
-  },
-  deaths: {
-    raw: '17/9 5VB decept ♀ unk',
-    x: false,
-    v: { Insectary_ID: '5VB', Death_date: '17/9', Death_cause: 'Unknown' },
-    c: { Insectary_ID: 0.6 },
-    a: { Insectary_ID: ['5VD'] },
-  },
-  labels: {
-    raw: 'CAM078043 M. menophilus zaneka ♀ (Reared ID: 1TG) 5/Aug/2025 · tubo FS50851822',
-    x: false,
-    v: { Insectary_ID: '1TG', SPECIES: 'Melinaea menophilus zaneka', Sex: 'female', CAM_ID: 'CAM078043', Tube_1_id: 'FS50851822' },
-    c: { Tube_1_id: 0.7 },
-    a: { Tube_1_id: ['FS50851828'] },
-  },
-  crispr: {
-    raw: '50 9 19-6-23 2B Inter 27/6',
-    x: false,
-    v: { 'CRISPR_No.': '50', 'Eggs_No.': '9', CRISPR_date: '19-6-23', Guide: '2B', Hatch_date: '27/6' },
-    c: { Hatch_date: 0.6 },
-    a: { Hatch_date: ['29/6'] },
-  },
+/** What a count kept as a sum adds up to (27 for "=12+15"), or null. */
+const sumTotal = value => {
+  const formula = typeof value === 'string' ? simpleSum(value) : null;
+  return formula ? formula.slice(1).split('+').reduce((sum, term) => sum + Number(term), 0) : null;
 };
-
-export const SYSTEM_PROMPT =
-  'You transcribe photographed pages of the Ikiam insectary notebooks (Tena, Ecuador) into JSON for a database. You read handwriting carefully and never guess: a doubtful reading gets a low confidence and alternatives. Reply with the JSON object only: no prose, no code fences.';
-
-/**
- * The instructions sent with the photo. `kind` 'auto' describes every notebook
- * and lets the model say which one it sees (from the headers).
- */
-export function transcriptionPrompt({ kind = 'auto', species = [], lists = {}, today = '' } = {}) {
-  const kinds = kind === 'auto' ? KIND_IDS : [kind];
-  const parts = [
-    `Today is ${today}. Transcribe this notebook page.`,
-    kind === 'auto'
-      ? 'First decide from the headers and content which notebook it is:'
-      : `It is ${KINDS[kind].looks.replace(/^the /, 'the ')}.`,
-  ];
-  for (const id of kinds) {
-    const k = KINDS[id];
-    parts.push(
-      `- kind "${id}": ${k.looks}. Columns (keys of "v"): ${k.fields.map(f => JSON.stringify(f)).join(', ')}. ${k.hints.join(' ')}`,
-    );
-  }
-  const listLines = Object.entries(lists)
-    .filter(([, values]) => values?.length && values.length <= 40)
-    .map(([field, values]) => `${field}: ${values.join(' | ')}`);
-  parts.push(
-    '',
-    'Rules:',
-    '- One entry per written line of the table, top to bottom. Skip lines that hold only a pre-written ID or number and nothing else.',
-    '- Crossed-out lines, or lines marked "no se usó el ID": include them with "x": true.',
-    '- Repeat marks (", ll, 〃, ||, a wavy line down a column) and a brace } spanning lines: write the repeated value in every line it covers.',
-    '- `—` or `-` alone means none: write "NA".',
-    '- Dates exactly as written, day first: "17/9", "4-8", "19-6-23". Do not convert them. A date written once for several lines applies to all of them.',
-    '- Sex: ♀ = "female", ♂ = "male", NA when written so.',
-    `- Species: write the full name. Abbreviations: ${SPECIES_HINT}${species.length ? ` Names in use: ${species.join('; ')}.` : ''}`,
-    '- Notes (right-hand column or facing page, matched to lines by position or by a bracket): a CAM (CAM + 6 digits; "cam505" continues the prefix of the CAM above, e.g. CAM076505) goes in CAM_ID; a wing clip tube ("wc", 2 letters + 8 digits, a short "553" continues the tube above) in Tube_1_id; the cause of death (unk = Unknown, eaten, spider, ants, disapp = Disappearance, deformed, heat shock = Heat stroke, preserved = Killed_Preserved, only wings = Unknown - Only wings) in Death_cause; any other note text in the notes column.',
-    ...(listLines.length ? ['- Allowed values:', ...listLines.map(l => `  ${l}`)] : []),
-    '- Confidence: for every cell you are not sure of, give "c" (0 to 1) and up to 3 other readings in "a". Omit cells you are sure of. A cell you cannot read: value null, c 0.',
-    '- Position: "y" is the vertical centre of the line on the upright page (0 = top edge, 1 = bottom edge of the photo). "rotate" is how many degrees the photo must turn clockwise to read the text upright (0, 90, 180 or 270); y refers to the upright page.',
-    '- "raw" is the line as written, short (keep abbreviations and symbols).',
-    '',
-    'Answer with this JSON:',
-    JSON.stringify({
-      kind: kind === 'auto' ? KIND_IDS.join('|') : kind,
-      rotate: 0,
-      year: null,
-      headers: ['column headers as written'],
-      lines: [{ n: 1, y: 0.12, ...EXAMPLES[kind === 'auto' ? 'emergence' : kind] }],
-      other: 'text outside the table, if any',
-    }),
-    '"year": the year of the page if written anywhere (a header, a sticky note, a full date), else null.',
-  );
-  return parts.join('\n');
-}
 
 const clip = (value, length) => String(value ?? '').slice(0, length);
 
-/** The JSON object in the model's answer (it may add a fence or a sentence despite the instructions). */
-function jsonIn(text) {
-  const s = String(text ?? '').replace(/```(?:json)?/g, '');
-  const start = s.indexOf('{');
-  const end = s.lastIndexOf('}');
-  if (start < 0 || end <= start) return null;
-  try {
-    return JSON.parse(s.slice(start, end + 1));
-  } catch {
-    return null;
-  }
-}
-
 /**
- * The model's answer as a checked transcription. Unknown columns are dropped,
- * positions and confidences are clamped, lines are numbered.
+ * A page as Claude transcribed it (the match_notebook tool) in the form the
+ * review reads: one entry per notebook line with its values, the confidence of
+ * the doubtful cells and their other readings. Unknown columns are dropped and
+ * reported; a cell with alternatives but no confidence counts as doubtful.
  */
-export function parseTranscription(text, requested = 'auto') {
-  const data = jsonIn(text);
-  if (!data || !Array.isArray(data.lines)) throw new Error('La respuesta de la IA no tiene líneas legibles');
-  const kind = KINDS[requested] ? requested : KINDS[data.kind] ? data.kind : null;
-  if (!kind) throw new Error('No se reconoció el tipo de cuaderno; elígelo y vuelve a leer la página');
+export function checkTranscription({ kind, year = null, lines = [] }) {
+  if (!KINDS[kind]) throw new Error(`Unknown notebook kind "${clip(kind, 40)}": use one of ${KIND_IDS.join(', ')}`);
+  if (!Array.isArray(lines) || !lines.length) throw new Error('Give the lines of the page');
   const fields = new Set(KINDS[kind].fields);
+  const ignored = new Set();
   const number = (value, low, high) => {
     const n = Number(value);
     return Number.isFinite(n) ? Math.min(high, Math.max(low, n)) : null;
   };
-  const lines = data.lines.slice(0, 120).map((line, i) => {
+  const out = lines.slice(0, 150).map((line, i) => {
     const v = {},
       c = {},
       a = {};
-    for (const [field, value] of Object.entries(line?.v ?? {})) {
-      if (!fields.has(field)) continue;
+    for (const [field, value] of Object.entries(line?.values ?? {})) {
+      if (!fields.has(field)) {
+        ignored.add(field);
+        continue;
+      }
       v[field] = value === null || value === undefined ? null : clip(value, 300).trim();
+      if (v[field] === null) c[field] = 0;
     }
-    for (const [field, value] of Object.entries(line?.c ?? {})) {
+    for (const [field, value] of Object.entries(line?.alternatives ?? {})) {
+      if (!fields.has(field)) continue;
+      const options = (Array.isArray(value) ? value : [value])
+        .filter(x => x !== null && x !== undefined)
+        .map(x => clip(x, 120).trim())
+        .filter(x => x && x !== v[field]);
+      if (options.length) {
+        a[field] = [...new Set(options)].slice(0, 3);
+        c[field] = 0.5;
+      }
+    }
+    for (const [field, value] of Object.entries(line?.confidence ?? {})) {
       const n = number(value, 0, 1);
       if (fields.has(field) && n !== null) c[field] = n;
     }
-    for (const [field, value] of Object.entries(line?.a ?? {})) {
-      if (!fields.has(field) || !Array.isArray(value)) continue;
-      const options = value.map(x => clip(x, 120).trim()).filter(x => x && x !== v[field]);
-      if (options.length) a[field] = [...new Set(options)].slice(0, 3);
-    }
     return {
-      n: i + 1,
-      y: number(line?.y, 0, 1),
+      n: Number.isInteger(line?.n) && line.n > 0 ? line.n : i + 1,
+      y: null,
       raw: clip(line?.raw, 300),
-      crossed: Boolean(line?.x),
+      crossed: Boolean(line?.crossedOut),
       v,
       c,
       a,
     };
   });
-  const rotate = [0, 90, 180, 270].includes(Number(data.rotate)) ? Number(data.rotate) : 0;
-  const year = Number.isInteger(Number(data.year)) && data.year >= 1990 && data.year < 2100 ? Number(data.year) : null;
+  const y = Number(year);
   return {
-    kind,
-    detected: KINDS[data.kind] ? data.kind : null,
-    rotate,
-    year,
-    headers: Array.isArray(data.headers) ? data.headers.slice(0, 30).map(h => clip(h, 60)) : [],
-    other: clip(data.other, 2000),
-    lines,
+    transcription: {
+      kind,
+      rotate: 0,
+      year: Number.isInteger(y) && y >= 1990 && y < 2100 ? y : null,
+      lines: out,
+    },
+    ignored: [...ignored],
   };
 }
 
@@ -331,8 +213,28 @@ export function readDate(text, year) {
   return serial === null ? null : { serial, yearWritten: true };
 }
 
+/**
+ * The terms of a count written as a sum: "12+15", "12 + 15", "=12+15", "27-5";
+ * a worked sum "2+4=6+8=14" (a running total, then more terms) gives 2, 4, 8.
+ * Null when the text is not a sum, or its steps do not add up.
+ */
+export function sumTerms(text) {
+  const s = String(text ?? '').replace(/\s+/g, '').replace(/^=/, '');
+  if (!/^\d+(?:[+-]\d+)*(?:=\d+(?:[+-]\d+)*)*$/.test(s)) return null;
+  const parts = s.split('=').map(p => p.match(/[+-]?\d+/g).map(Number));
+  let terms = parts[0];
+  for (const part of parts.slice(1)) {
+    const total = terms.reduce((a, b) => a + b, 0);
+    if (part[0] !== total) return null;
+    // The last step may be the total alone ("…=14").
+    terms = [...terms, ...part.slice(1)];
+  }
+  return terms;
+}
+const formulaOf = terms => `=${terms.map((t, i) => (i && t >= 0 ? `+${t}` : String(t))).join('')}`;
+
 /** The value a notebook cell gives a column, as the sheet stores it, or an error. */
-export function readValue(field, text, { year }) {
+export function readValue(field, text, { year, sheet = null }) {
   if (isNone(text)) return { value: null };
   const s = String(text).trim();
   const type = typeOf(field);
@@ -345,9 +247,11 @@ export function readValue(field, text, { year }) {
     return { value: /^\d+$/.test(compact) ? Number(compact) : compact };
   }
   if (type === 'number') {
-    // Counts are often written as sums (eggs of two plants: "12+15"); the sheet holds =12+15.
-    if (/^\d+(?:\s*\+\s*\d+)+$/.test(s)) return { value: s.split('+').reduce((sum, part) => sum + Number(part), 0) };
-    // A worked sum ("2+4=6+8=14") counts what follows the last "=".
+    const terms = sumTerms(s);
+    // Stock counts are typed as formulas keeping the notebook's terms (=12+15, =19).
+    // Stock counts are kept as the notebook sums them (=12+15, =19); elsewhere the total.
+    if (terms) return { value: (isSumField(sheet, field) && simpleSum(formulaOf(terms))) || terms.reduce((a, b) => a + b, 0) };
+    // A worked sum whose steps do not add up counts what follows the last "=".
     const total = /^[\d\s+\-=]*=\s*(\d+)$/.exec(s);
     if (total) return { value: Number(total[1]) };
     return { value: /^\d+$/.test(s) ? Number(s) : s };
@@ -371,6 +275,11 @@ export function sameValue(field, sheet, notebook) {
   const type = typeOf(field);
   if (type === 'date') return typeof sheet === 'number' && typeof notebook === 'number' && sheet === notebook;
   if (/CLUTCH|_No\./.test(field)) return clutchKey(sheet) === clutchKey(notebook);
+  // Counts kept as sums: two sums compare their terms (=12+15 is not =14+13); a sum and a number, their total.
+  if (type === 'number' && (sumTotal(sheet) !== null || sumTotal(notebook) !== null)) {
+    if (sumTotal(sheet) !== null && sumTotal(notebook) !== null) return simpleSum(sheet) === simpleSum(notebook);
+    return Number(sumTotal(sheet) ?? sheet) === Number(sumTotal(notebook) ?? notebook);
+  }
   if (type === 'number' && Number.isFinite(Number(sheet)) && Number.isFinite(Number(notebook)))
     return Number(sheet) === Number(notebook);
   if (/^Notes|^NOTES$/.test(field)) return textKey(sheet).includes(textKey(notebook));
@@ -603,10 +512,12 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
     for (const field of kind.fields) {
       const typed = field in edited;
       const confidence = typed ? 1 : (line.c[field] ?? (line.v[field] === null && field in line.v ? 0 : 1));
-      const read = readValue(field, text[field], { year: pageYear });
+      const read = readValue(field, text[field], { year: pageYear, sheet: kind.sheet });
       let value = read.value;
       let error = read.error ?? null;
-      const before = record ? (record.values?.[field] ?? null) : null;
+      // A count kept as a sum is compared (and shown) as its formula: =12+15.
+      const sheetSum = isSumField(kind.sheet, field) ? simpleSum(record?.formulas?.[field]) : null;
+      const before = record ? (sheetSum ?? record.values?.[field] ?? null) : null;
       // The key as the sheet writes it (6OO, not 600), once the row is found.
       if (kind.keys.includes(field) && record && status === 'match') value = before;
       // A day/month the sheet has in another year is the same date (the year was only inferred).
@@ -645,7 +556,7 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         else unlisted = true;
       }
       const alternatives = (line.a[field] ?? [])
-        .map(a => readValue(field, a, { year: pageYear }).value)
+        .map(a => readValue(field, a, { year: pageYear, sheet: kind.sheet }).value)
         .filter(a => !isNone(a) && a !== value);
       const cell = {
         value: isNone(value) ? null : value,
@@ -669,6 +580,7 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
                 : null),
       };
       const isKey = kind.keys.includes(field);
+      const sumField = isSumField(kind.sheet, field);
       const formulaHere = record ? Boolean(record.formulas?.[field]) : lookup.newRowFormulas?.has(field);
       if (line.v[field] === null && field in line.v && !typed) cell.status = 'unread';
       else if (cell.value === null) cell.status = isNone(before) ? 'empty' : 'keep';
@@ -688,16 +600,20 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         if (cell.status !== 'same')
           cell.message ??= `La fórmula da «${predicted ?? 'vacío'}»; se escribirá encima`;
       } else if (sameValue(field, before, cell.value)) cell.status = 'same';
-      else if (isNone(before)) cell.status = 'fill';
+      // A count still at the new row's =0 is not filled in yet.
+      else if (isNone(before) || (sumField && record.formulas?.[field] === '=0')) cell.status = 'fill';
       else if (/^Notes|^NOTES$/.test(field)) cell.status = 'fill';
       else cell.status = 'conflict';
       if (isKey && status === 'match') cell.status = 'same';
+      const formula = record?.formulas?.[field];
       if (['fill', 'conflict', 'new'].includes(cell.status) && formulaHere && !(field === 'SPECIES' && cell.formula)) {
-        const allowed = lookup.typedOverFormula?.has(field) && record;
+        // A count typed as a sum (=12+15) is replaced by the notebook's sum; other formulas are kept.
+        const allowed =
+          (lookup.typedOverFormula?.has(field) && record) ||
+          (sumField && (!record || sheetSum !== null) && (typeof cell.value === 'number' || simpleSum(cell.value) !== null));
         if (!allowed) {
-          // Not written (the app never replaces a formula), but a sum typed as =12+15 that
-          // disagrees with the notebook is pointed out, to correct in Google Sheets.
-          const formula = record?.formulas?.[field];
+          // Not written (the app never replaces a formula), but a sum that disagrees with the
+          // notebook is pointed out, to correct in Google Sheets.
           const typedSum = typeof formula === 'string' && /^=[\d\s+\-*/().]+$/.test(formula);
           cell.status = 'formula';
           cell.mismatch = Boolean(record) && !isNone(before);
@@ -782,6 +698,10 @@ export function proposalRows(review) {
       values[field] = cell.write ?? cell.value;
       if (cell.status === 'conflict') notes.push(`${field}: hoja ${show(field, cell.before)} → cuaderno ${show(field, cell.value)}`);
     }
+    // Doubtful readings stay out of the proposal, but the row says so.
+    for (const [field, cell] of Object.entries(line.cells))
+      if (cell.doubt && ['fill', 'conflict', 'new'].includes(cell.status))
+        notes.push(`${field} dudoso: ${[cell.value, ...cell.alternatives].map(v => show(field, v)).join(' / ')} (no incluido)`);
     const note = clip([`Línea ${line.n}: «${line.raw}»`, ...notes].join(' · '), 300);
     if (line.status === 'new') newRows.push({ sheet: review.sheet, values, note, line: line.n });
     else changes.push({ recordId: line.recordId, values, note, line: line.n });
@@ -798,17 +718,4 @@ export function show(field, value) {
     return `${d.getUTCDate()}-${MONTHS[d.getUTCMonth()]}-${String(d.getUTCFullYear()).slice(2)}`;
   }
   return String(value);
-}
-
-/** The page as text for the chat: one numbered line each, so "¿qué dice la línea 5?" can be answered. */
-export function pageText(review) {
-  return review.lines
-    .map(l => {
-      const values = Object.entries(l.cells)
-        .filter(([, c]) => c.value !== null)
-        .map(([f, c]) => `${f}=${show(f, c.value)}${c.doubt ? '?' : ''}`)
-        .join(', ');
-      return `${l.n}. «${l.raw}» → ${values || '—'}${l.message ? ` (${l.message})` : ''}`;
-    })
-    .join('\n');
 }

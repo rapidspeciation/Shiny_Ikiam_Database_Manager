@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { Camera, ExternalLink, ImagePlus, ListChecks, NotebookPen, Plus, RefreshCw, Send, Trash2, X } from 'lucide-vue-next'
-import { useNotebook } from '../stores/notebook'
-import type { Kind } from '../lib/notebook'
+import { RouterLink, useRoute } from 'vue-router'
+import { Camera, ExternalLink, ImagePlus, ListChecks, Plus, RefreshCw, Send, Trash2, X } from 'lucide-vue-next'
 import { api, requestId } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
 import { useTables } from '../stores/tables'
@@ -51,7 +49,6 @@ interface Thread {
 
 const tables = useTables()
 const route = useRoute()
-const router = useRouter()
 const threads = ref<Thread[]>([])
 const current = ref<string | null>(null)
 const messages = ref<Message[]>([])
@@ -104,20 +101,6 @@ async function openLinked() {
   await open(id)
 }
 watch(() => route.query.hilo, id => id && void openLinked())
-
-// Digitalizar cuaderno: on a phone the camera opens here and the pages are read in the background.
-const notebook = useNotebook()
-// The notebook last chosen on the Digitalizar cuaderno screen (detected from the headers otherwise).
-const notebookKind = persistentRef<Kind | 'auto'>('notebook:kind', 'auto', { lasting: true })
-const pageCamera = ref<HTMLInputElement>()
-async function photographPages(event: Event) {
-  const input = event.target as HTMLInputElement
-  const files = [...(input.files ?? [])]
-  input.value = ''
-  if (!files.length) return
-  void router.push('/cuaderno')
-  await notebook.addPhotos(files, notebookKind.value, null)
-}
 
 async function open(id: string) {
   current.value = id
@@ -264,17 +247,6 @@ const cellOf = (row: Record<string, unknown> | unknown[], key: string, i: number
         </button>
       </template>
       <VoiceCall />
-      <RouterLink
-        to="/cuaderno"
-        class="my-0.5 ml-1 flex items-center gap-1 rounded-md bg-brand-700 px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-800"
-        title="Fotografía páginas del cuaderno: la IA las transcribe y propone los cambios para revisar"
-      >
-        <NotebookPen :size="14" /> Digitalizar cuaderno
-      </RouterLink>
-      <input ref="pageCamera" type="file" accept="image/*" capture="environment" multiple class="hidden" @change="photographPages" />
-      <button class="btn-ghost md:hidden" title="Fotografiar una página del cuaderno" @click="pageCamera?.click()">
-        <Camera :size="16" />
-      </button>
       <template v-if="t3Url && mode === 't3'">
         <button
           class="ml-auto flex items-center gap-1 rounded px-2 py-0.5"

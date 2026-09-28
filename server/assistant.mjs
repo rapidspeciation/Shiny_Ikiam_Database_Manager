@@ -5,12 +5,13 @@ import { fileURLToPath } from 'node:url';
 import { createReports } from './reports.mjs';
 import { TYPED_OVER_FORMULA, uniqueIdIndex } from './batch.mjs';
 import { allIssues, checkData } from './checks.mjs';
-import { comparable, labelFor, moduleMap, validateValues } from './schema.mjs';
+import { comparable, isSumField, labelFor, moduleMap, simpleSum, validateValues } from './schema.mjs';
 import { TUBE_FIELD, isIdValue, isUnique } from './verifications.mjs';
 import { listOptions, listProblem } from './verify.mjs';
 import { queueWalk, walkDraft } from './walks.mjs';
-import { allowedModel, claudeAllowed, claudeConfig, prepareWorkspace, runClaude, runClaudeOnce } from './claude.mjs';
-import { createNotebookJobs } from './notebook-jobs.mjs';
+import { claudeAllowed, claudeConfig, prepareWorkspace, runClaude } from './claude.mjs';
+import { KINDS } from './notebook.mjs';
+import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
 import { affirmative, startVoiceSession, voiceBrief, voiceConfig, voiceKey } from './voice.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -205,21 +206,7 @@ export const TOOLS = [
       },
     },
   },
-  {
-    type: 'function',
-    function: {
-      name: 'notebook_page',
-      description:
-        'A notebook page digitized in "Digitalizar cuaderno": every line as read from the photo (raw text), the value read for each column next to the sheet\'s current value, its status (fill, conflict, same, doubtful with alternatives) and the proposal made from it. Without jobId, the latest page of this person. Use it to answer questions about a page ("¿qué dice la línea 5?").',
-      parameters: {
-        type: 'object',
-        properties: {
-          jobId: { type: 'string', description: 'The page, as given in its conversation ("Página <id>")' },
-          line: { type: 'integer', description: 'Only this line' },
-        },
-      },
-    },
-  },
+  MATCH_NOTEBOOK_TOOL,
   {
     type: 'function',
     function: {
@@ -592,9 +579,12 @@ export function createAssistant({ store, config = {} }) {
     } catch (e) {
       return { error: `${at}: ${e.message}` };
     }
+    // A count kept as a sum (=12+15) goes into the new row over its pre-made formula; other formulas stay.
+    for (const [key, value] of Object.entries(values)) if (value?.formula && isSumField(sheet, key)) values[key] = value.formula;
     const formulas = createFormulaFields(sheet);
-    const dropped = Object.keys(values).filter(key => formulas.has(key));
-    for (const key of Object.keys(values)) if (formulas.has(key) || values[key] === null) delete values[key];
+    const kept = key => isSumField(sheet, key) && values[key] !== null;
+    const dropped = Object.keys(values).filter(key => formulas.has(key) && !kept(key));
+    for (const key of Object.keys(values)) if ((formulas.has(key) && !kept(key)) || values[key] === null) delete values[key];
     if (!Object.keys(values).length) return { error: `${at}: the new row has no values` };
     const lists = listOptions(store, sheet);
     for (const [field, value] of Object.entries(values)) {
@@ -669,6 +659,13 @@ export function createAssistant({ store, config = {} }) {
       const before = {},
         replaceFormula = [];
       for (const key of Object.keys(values)) {
+        // A count kept as a sum is shown and written as its formula text (=12+15), over the old sum.
+        const sum = isSumField(old.sheet, key) ? simpleSum(old.formulas?.[key]) : null;
+        if (values[key]?.formula && isSumField(old.sheet, key)) values[key] = values[key].formula;
+        if (sum) {
+          before[key] = sum;
+          continue;
+        }
         if (old.formulas?.[key]) {
           if (!TYPED_OVER_FORMULA[old.sheet]?.has(key))
             return { error: `${old.label}: ${key} is calculated by a formula and cannot be changed` };
@@ -695,18 +692,24 @@ export function createAssistant({ store, config = {} }) {
     return { changes };
   }
 
+  /** A drafted proposal saved for review: it shows at once in Cambios propuestos (and the chat). */
+  function saveProposal(changes, reason, context) {
+    const id = randomUUID();
+    db.prepare(
+      'INSERT INTO ai_proposals (id,thread_id,owner_id,changes_json,reason,status,created_at) VALUES (?,?,?,?,?,?,?)',
+    ).run(id, context.threadId, owner(context.user), json(changes), clip(reason, 500), 'pending', now());
+    const proposal = { id, changes, reason: clip(reason, 500), status: 'pending' };
+    context.proposals.push(proposal);
+    changed(owner(context.user));
+    return proposal;
+  }
+
   function proposeChanges(args, context) {
     if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot propose edits' };
     const drafted = draftChanges(args);
     if (drafted.error) return drafted;
     const { changes } = drafted;
-    const id = randomUUID();
-    db.prepare(
-      'INSERT INTO ai_proposals (id,thread_id,owner_id,changes_json,reason,status,created_at) VALUES (?,?,?,?,?,?,?)',
-    ).run(id, context.threadId, owner(context.user), json(changes), clip(args.reason, 500), 'pending', now());
-    const proposal = { id, changes, reason: clip(args.reason, 500), status: 'pending' };
-    context.proposals.push(proposal);
-    changed(owner(context.user));
+    const { id } = saveProposal(changes, args.reason, context);
     const dropped = [...new Set(changes.flatMap(c => c.dropped ?? []))];
     return {
       proposalId: id,
@@ -876,11 +879,7 @@ export function createAssistant({ store, config = {} }) {
         collector: args.collector ? clip(args.collector, 120) : undefined,
       });
     if (name === 'propose_changes') return proposeChanges(args, context);
-    if (name === 'notebook_page')
-      return notebooks.pageForTool(
-        { jobId: args.jobId ? clip(args.jobId, 60) : undefined, line: Number.isInteger(args.line) ? args.line : undefined },
-        context.user,
-      );
+    if (name === 'match_notebook') return matchNotebook(args, context);
     if (name === 'apply_proposal') {
       const proposal = db
         .prepare('SELECT * FROM ai_proposals WHERE id = ? AND thread_id = ?')
@@ -926,7 +925,7 @@ export function createAssistant({ store, config = {} }) {
       'Use the tools to read exact rows before answering. Only claim what the tools show. Never infer survival, fertility, mating, genotype or identity from counts.',
       'Changes are drafted with propose_changes; the person reviews them in a table and confirms. Use apply_proposal only when their latest message explicitly approves a proposal. Never say a change was written unless apply_proposal returned applied.',
       'check_data lists inconsistencies with ready fixes; queue_wikiloc and get_walk turn a Wikiloc monitoring walk into newRows for propose_changes.',
-      'Notebook pages digitized in "Digitalizar cuaderno" each have a conversation; notebook_page gives what was read on each line and how it compares with the sheet.',
+      'A photo of a notebook page, envelope or label: transcribe every line as the digitalizar-cuaderno instructions say, then match_notebook compares it with the sheet and drafts one proposal per page.',
     ].join('\n');
   }
 
@@ -1014,8 +1013,14 @@ export function createAssistant({ store, config = {} }) {
       .prepare('SELECT role,content FROM ai_messages WHERE thread_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 10')
       .all(threadId)
       .reverse();
+    // Models without Claude Code's skills get the notebook instructions with the photo.
+    const skill = images.length
+      ? await readFile(join(here, '..', 'assistant', 'skills', 'digitalizar-cuaderno', 'SKILL.md'), 'utf8')
+          .then(text => text.replace(/^---[\s\S]*?---\s*/, ''))
+          .catch(() => '')
+      : '';
     const messages = [
-      { role: 'system', content: systemPrompt(user) },
+      { role: 'system', content: [systemPrompt(user), skill].filter(Boolean).join('\n\n') },
       ...history.map(row => ({ role: row.role, content: row.content })),
     ];
     if (images.length)
@@ -1301,73 +1306,55 @@ export function createAssistant({ store, config = {} }) {
     return null;
   }
 
-  /** Reads a notebook photo with the chat's AI: Claude for its users, else the provider's vision model. */
-  async function transcribe(user, { image, prompt, system }) {
-    if (config.notebook?.transcribe) return config.notebook.transcribe(user, { image, prompt, system });
-    if (claudeAllowed(claude, user)) {
-      const model = allowedModel(claude.notebookModel, claude.model);
-      return runClaudeOnce(claude, {
-        model,
-        system,
-        content: [
-          { type: 'image', source: { type: 'base64', media_type: image.mimeType, data: image.data.toString('base64') } },
-          { type: 'text', text: prompt },
-        ],
-      });
+  const notebooks = createNotebookMatcher({ store, db, newIds: idsFor, draftChanges, initialsFor });
+
+  /**
+   * A transcribed notebook page matched with its sheet (match_notebook): one
+   * proposal for the page, replacing the page's earlier one when Claude matches
+   * it again after a correction.
+   */
+  function matchNotebook(args, context) {
+    let matched;
+    try {
+      matched = notebooks.match(args, context.user);
+    } catch (e) {
+      return { error: clip(e.message, 300) };
     }
-    const model = ai.visionModel || ai.model;
-    const answer = await complete(
-      ai,
-      [
-        { role: 'system', content: system },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: prompt },
-            { type: 'image_url', image_url: { url: `data:${image.mimeType};base64,${image.data.toString('base64')}` } },
-          ],
-        },
-      ],
-      [],
-      model,
-      240000,
-    );
-    return { text: String(answer.content ?? ''), model };
+    const editor = EDITORS.includes(context.user.role);
+    const replaced = args.replaceProposalId
+      ? db
+          .prepare("SELECT id FROM ai_proposals WHERE id = ? AND owner_id = ? AND status = 'pending'")
+          .get(String(args.replaceProposalId), owner(context.user))
+      : null;
+    if (replaced && editor) {
+      db.prepare("UPDATE ai_proposals SET status = 'discarded' WHERE id = ? AND status = 'pending'").run(replaced.id);
+      changed(owner(context.user));
+    }
+    const { review } = matched;
+    // The same rows in another pending proposal: the page matched again, maybe in another conversation.
+    const rows = new Set(matched.changes.map(c => c.recordId).filter(Boolean));
+    const overlaps = rows.size
+      ? db
+          .prepare("SELECT id, reason, changes_json FROM ai_proposals WHERE owner_id = ? AND status = 'pending'")
+          .all(owner(context.user))
+          .map(p => ({ id: p.id, reason: p.reason, rows: (parse(p.changes_json) ?? []).filter(c => rows.has(c.recordId)).map(c => c.label) }))
+          .filter(p => p.rows.length)
+          .map(p => ({ proposalId: p.id, reason: p.reason, rows: p.rows.slice(0, 10), count: p.rows.length }))
+      : [];
+    const reason = `Cuaderno ${KINDS[review.kind].label} (${review.sheet})${args.title ? `: ${clip(args.title, 120)}` : ''}`;
+    const proposal = editor && matched.changes.length ? saveProposal(matched.changes, reason, context) : null;
+    return {
+      ...matchSummary(matched, proposal?.id),
+      ...(replaced ? { replaced: replaced.id } : {}),
+      ...(overlaps.length ? { overlaps } : {}),
+      ...(!editor ? { note: 'This person can only read the workbook: nothing was proposed' } : {}),
+    };
   }
-  const notebooks = createNotebookJobs({
-    store,
-    db,
-    draftChanges,
-    newIds: idsFor,
-    applyProposal,
-    changed,
-    waitForChange,
-    revisionOf,
-    insertMessage,
-    initialsFor,
-    transcribe,
-    newThread: (user, title) => {
-      const id = randomUUID();
-      const time = now();
-      db.prepare('INSERT INTO ai_threads (id,owner_id,title,created_at,updated_at) VALUES (?,?,?,?,?)').run(
-        id,
-        owner(user),
-        clip(title, 120),
-        time,
-        time,
-      );
-      return id;
-    },
-  });
 
   async function handle({ method, path, body = {}, user, query = {} }) {
-    if (!/^\/api\/(chat|reports|knowledge|ai|notebook)(?:\/|$)/.test(path)) return null;
+    if (!/^\/api\/(chat|reports|knowledge|ai)(?:\/|$)/.test(path)) return null;
     if (!user || !owner(user)) return bad(401, 'unauthorized', 'Sign in to use the assistant.');
     if (path === '/api/reports') return reports.handle({ method, path, query, user });
-    if (path.startsWith('/api/notebook/')) {
-      const answer = await notebooks.handle({ method, path, body, user, query });
-      return answer ?? bad(404, 'not_found', 'Notebook route not found.');
-    }
 
     if (path === '/api/ai/status' && method === 'GET') {
       let key = '';

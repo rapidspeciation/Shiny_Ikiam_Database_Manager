@@ -1,57 +1,75 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { moduleMap, parseDateText } from '../server/schema.mjs';
 import { createAssistant } from '../server/assistant.mjs';
-import { claudeConfig } from '../server/claude.mjs';
 import {
+  KINDS,
   buildReview,
-  pageText,
-  parseTranscription,
+  checkTranscription,
   proposalRows,
   readValue,
   sameValue,
-  transcriptionPrompt,
+  sumTerms,
 } from '../server/notebook.mjs';
 
-const franz = { id: 'u-franz', username: 'franz', displayName: 'Franz Chandi', role: 'editor' };
 const d = text => parseDateText(text);
+/** A page in the shape the tests were written in ({raw, v, c, a, x}), through the tool's input check. */
+const parseTranscription = text => {
+  const data = JSON.parse(text);
+  return checkTranscription({
+    kind: data.kind,
+    year: data.year,
+    lines: data.lines.map(l => ({ raw: l.raw, values: l.v, confidence: l.c, alternatives: l.a, crossedOut: l.x })),
+  }).transcription;
+};
 
-test('notebook photos are read with Sonnet or Opus only (the chat model unless set)', () => {
-  assert.equal(claudeConfig({ ITHOMIINI_CLAUDE_MODEL: 'sonnet' }).notebookModel, 'sonnet');
-  assert.equal(claudeConfig({ ITHOMIINI_CLAUDE_MODEL: 'sonnet', ITHOMIINI_NOTEBOOK_MODEL: 'opus' }).notebookModel, 'opus');
-  assert.equal(claudeConfig({ ITHOMIINI_CLAUDE_MODEL: 'opus', ITHOMIINI_NOTEBOOK_MODEL: 'fable' }).notebookModel, 'opus');
+test('the skill names every column of every notebook the tool matches', () => {
+  const skill = readFileSync(new URL('../assistant/skills/digitalizar-cuaderno/SKILL.md', import.meta.url), 'utf8');
+  assert.match(skill, /^---\nname: digitalizar-cuaderno\ndescription: .+photo/m);
+  for (const [id, kind] of Object.entries(KINDS)) {
+    assert.ok(skill.includes(`\`${id}\``), `kind ${id}`);
+    for (const field of kind.fields) assert.ok(skill.includes(`\`${field}\``), `${id}: ${field}`);
+  }
 });
 
-test('the prompt names the columns of the chosen notebook, or all of them to detect it', () => {
-  const stocks = transcriptionPrompt({ kind: 'stocks', lists: { Sex: ['female', 'male'] }, today: '2026-09-28' });
-  assert.match(stocks, /"NUMBER OF EGGS"/);
-  assert.doesNotMatch(stocks, /"Insectary_ID"/);
-  assert.match(stocks, /Sex: female \| male/);
-  const auto = transcriptionPrompt({ kind: 'auto', today: '2026-09-28' });
-  for (const kind of ['stocks', 'emergence', 'deaths', 'labels', 'crispr']) assert.match(auto, new RegExp(`kind "${kind}"`));
+test('the tool input is checked: unknown columns reported, doubts kept, crossed lines marked', () => {
+  const { transcription, ignored } = checkTranscription({
+    kind: 'emergence',
+    year: '2025',
+    lines: [
+      { raw: '5VB decept', values: { Insectary_ID: '5VB', Pedigree: 'Yes', Sex: 'female', Death_date: null }, alternatives: { Sex: ['male', 'female'] } },
+      { raw: '6VB tachado', values: { Insectary_ID: '6VB' }, crossedOut: true, confidence: { Insectary_ID: 3 } },
+    ],
+  });
+  assert.equal(transcription.year, 2025);
+  assert.deepEqual(ignored, ['Pedigree']);
+  const [a, b] = transcription.lines;
+  assert.deepEqual(a.v, { Insectary_ID: '5VB', Sex: 'female', Death_date: null });
+  // Alternatives without a confidence make the cell doubtful; an unreadable cell has confidence 0.
+  assert.deepEqual(a.c, { Sex: 0.5, Death_date: 0 });
+  assert.deepEqual(a.a, { Sex: ['male'] });
+  assert.ok(b.crossed);
+  assert.deepEqual(b.c, { Insectary_ID: 1 });
+  assert.throws(() => checkTranscription({ kind: 'diary', lines: [{ raw: 'x', values: {} }] }), /Unknown notebook kind/);
+  assert.throws(() => checkTranscription({ kind: 'stocks', lines: [] }), /Give the lines/);
 });
 
-test('the model answer is read even inside a fence, and unknown columns are dropped', () => {
-  const text =
-    'Aquí está:\n```json\n{"kind":"emergence","rotate":90,"year":2025,"lines":[{"y":1.4,"raw":"5VB decept","v":{"Insectary_ID":"5VB","Pedigree":"Yes","Sex":"female"},"c":{"Sex":0.4,"Nope":1},"a":{"Sex":["male","female"]}}]}\n```';
-  const page = parseTranscription(text);
-  assert.equal(page.kind, 'emergence');
-  assert.equal(page.rotate, 90);
-  assert.equal(page.year, 2025);
-  const [line] = page.lines;
-  assert.equal(line.n, 1);
-  assert.equal(line.y, 1);
-  assert.deepEqual(line.v, { Insectary_ID: '5VB', Sex: 'female' });
-  assert.deepEqual(line.c, { Sex: 0.4 });
-  // An alternative equal to the reading itself is not an alternative.
-  assert.deepEqual(line.a, { Sex: ['male'] });
-  assert.throws(() => parseTranscription('no JSON here'), /no tiene líneas/);
-  assert.throws(() => parseTranscription('{"kind":"diary","lines":[]}'), /tipo de cuaderno/);
-  // The person's choice wins over what the model detected.
-  assert.equal(parseTranscription('{"kind":"emergence","lines":[]}', 'deaths').kind, 'deaths');
+test('counts written as sums keep their terms in Insectary_stocks', () => {
+  assert.deepEqual(sumTerms('12 + 15'), [12, 15]);
+  assert.deepEqual(sumTerms('2+4=6+8=14'), [2, 4, 8]);
+  assert.equal(sumTerms('4+6=0'), null, 'the steps do not add up');
+  const stocks = { sheet: 'Insectary_stocks' };
+  assert.equal(readValue('NUMBER OF EGGS', '12 + 15', stocks).value, '=12+15');
+  assert.equal(readValue('NUMBER OF LARVAE', '2+4=6+8=14', stocks).value, '=2+4+8');
+  assert.equal(readValue('NUMBER OF ADULTS', '19', stocks).value, '=19', 'typed like the sheet types them');
+  assert.equal(readValue('NUMBER OF LARVAE', '4+6=0', stocks).value, 0);
+  assert.ok(sameValue('NUMBER OF EGGS', '=12+15', '=12+15'));
+  assert.ok(sameValue('NUMBER OF EGGS', 27, '=12+15'), 'a plain number and a sum: their total');
+  assert.ok(!sameValue('NUMBER OF EGGS', '=14+13', '=12+15'), 'two sums: their terms');
 });
 
 test('notebook values are read as the sheet stores them', () => {
@@ -179,7 +197,6 @@ test('each line is compared with its row: fills, conflicts, doubts, formulas and
     [['r2', 2, ['CAM_ID', 'Death_date', 'Sex']]],
   );
   assert.match(changes[0].note, /Sex: hoja female → cuaderno male/);
-  assert.match(pageText(review), /^1\. «5VB decept/);
 
   // Another CAM holder makes the cell an error.
   const other = buildReview({ transcription, today: '2026-09-28', lookup: { ...lookup, holder: () => ({ sheet: 'Collection_data', row: 9 }) } });
@@ -258,15 +275,18 @@ test('a full species name in Stock_of_origin takes the list value; a wild butter
   assert.ok(line.cells.SPECIES.include && line.cells.SPECIES.formula);
 });
 
-test('a clutch page adds the clutches the sheet does not have yet, without their formula columns', () => {
+test('a clutch page adds the clutches the sheet does not have yet, and its counts as the notebook sums them', () => {
   const rows = [
-    { id: 's1', row: 900, version: 2, values: { 'CLUTCH NUMBER': '994(6)', SPECIES: 'Mechanitis lysimnia', 'DATE LAID': d('2026-09-01') } },
-    { id: 's2', row: 901, version: 2, values: { 'CLUTCH NUMBER': 993, 'NUMBER OF EGGS': 27, 'NUMBER OF LARVAE': 20 } },
+    { id: 's1', row: 900, version: 2, values: { 'CLUTCH NUMBER': '994(6)', SPECIES: 'Mechanitis lysimnia', 'DATE LAID': d('2026-09-01'), 'NUMBER OF EGGS': 0 } },
+    { id: 's2', row: 901, version: 2, values: { 'CLUTCH NUMBER': 993, 'NUMBER OF EGGS': 27, 'NUMBER OF LARVAE': 20, 'NUMBER OF PUPA': 3 } },
   ];
   const lookup = {
     ...fakeLookup(rows, {
-      newRows: new Set(['NUMBER OF EGGS']),
-      formulas: { s2: { 'NUMBER OF EGGS': '=12+15', 'NUMBER OF LARVAE': '=10+10' } },
+      newRows: new Set(['NUMBER OF EGGS', 'SPECIES']),
+      formulas: {
+        s1: { 'NUMBER OF EGGS': '=0' },
+        s2: { 'NUMBER OF EGGS': '=12+15', 'NUMBER OF LARVAE': '=10+10', 'NUMBER OF PUPA': '=COUNTIF(A:A,1)' },
+      },
     }),
     list: () => undefined,
   };
@@ -276,11 +296,11 @@ test('a clutch page adds the clutches the sheet does not have yet, without their
       year: 2026,
       lines: [
         { raw: '994(6) lys 1/9 30 huevos, eclosión 5/9', v: { 'CLUTCH NUMBER': '994 (6)', 'DATE LAID': '1/9', 'NUMBER OF EGGS': '30', 'HATCHING DATE': '5/9' } },
-        { raw: '994(7) lys 20/9 12', v: { 'CLUTCH NUMBER': '994(7)', SPECIES: 'Mechanitis lysimnia', 'DATE LAID': '20/9', 'NUMBER OF EGGS': '12' } },
+        { raw: '994(7) lys 20/9 12+3', v: { 'CLUTCH NUMBER': '994(7)', SPECIES: 'Mechanitis lysimnia', 'DATE LAID': '20/9', 'NUMBER OF EGGS': '12+3' } },
         // Written in December, read in September: last year; it emerged in January, this year.
         { raw: '995 lys 28/12 … 20/1', v: { 'CLUTCH NUMBER': '995', 'DATE LAID': '28/12', 'EMERGENCE DATE': '20/1' } },
-        // Counts typed in the sheet as sums: the same sum agrees, another one is pointed out (never written).
-        { raw: '993 12+15 larvas 21', v: { 'CLUTCH NUMBER': '993', 'NUMBER OF EGGS': '12+15', 'NUMBER OF LARVAE': '21' } },
+        // Counts kept as sums: the same sum agrees, another sum replaces it, a real formula stays.
+        { raw: '993 12+15 larvas 10+11 pupas 4', v: { 'CLUTCH NUMBER': '993', 'NUMBER OF EGGS': '12+15', 'NUMBER OF LARVAE': '10+11', 'NUMBER OF PUPA': '4' } },
       ],
     }),
   );
@@ -288,37 +308,33 @@ test('a clutch page adds the clutches the sheet does not have yet, without their
   assert.equal(review.yearSource, 'page');
   const [known, fresh, december, sums] = review.lines;
   assert.equal(sums.cells['NUMBER OF EGGS'].status, 'same');
-  assert.equal(sums.cells['NUMBER OF LARVAE'].status, 'formula');
-  assert.ok(sums.cells['NUMBER OF LARVAE'].mismatch && !sums.cells['NUMBER OF LARVAE'].include);
-  assert.match(sums.cells['NUMBER OF LARVAE'].message, /La hoja tiene =10\+10 \(20\); el cuaderno dice 21/);
+  assert.equal(sums.cells['NUMBER OF LARVAE'].status, 'conflict');
+  assert.equal(sums.cells['NUMBER OF LARVAE'].before, '=10+10', 'compared with the formula the sheet has');
+  assert.equal(sums.cells['NUMBER OF LARVAE'].value, '=10+11');
+  assert.ok(sums.cells['NUMBER OF LARVAE'].include);
+  assert.equal(sums.cells['NUMBER OF PUPA'].status, 'formula');
+  assert.ok(!sums.cells['NUMBER OF PUPA'].include);
   assert.equal(known.status, 'match');
   assert.equal(known.cells['HATCHING DATE'].status, 'fill');
-  assert.equal(known.cells['NUMBER OF EGGS'].status, 'fill');
+  assert.equal(known.cells['NUMBER OF EGGS'].status, 'fill', 'a count still at =0 is filled');
   assert.equal(fresh.status, 'new');
-  assert.equal(fresh.cells['NUMBER OF EGGS'].status, 'formula', 'a formula column of the new row is left');
+  assert.equal(fresh.cells['NUMBER OF EGGS'].status, 'new', 'the new row takes the sum over its =0');
+  assert.equal(fresh.cells.SPECIES.status, 'formula', 'another formula column of the new row is left');
   assert.equal(december.cells['DATE LAID'].value, d('2025-12-28'));
   assert.equal(december.cells['EMERGENCE DATE'].value, d('2026-01-20'));
   const { changes, newRows } = proposalRows(review);
-  assert.equal(changes.length, 1);
-  assert.deepEqual(changes[0].values, { 'NUMBER OF EGGS': 30, 'HATCHING DATE': d('2026-09-05') });
-  assert.deepEqual(newRows[0].values, { 'CLUTCH NUMBER': '994(7)', SPECIES: 'Mechanitis lysimnia', 'DATE LAID': d('2026-09-20') });
+  assert.deepEqual(
+    changes.map(c => c.values),
+    [{ 'NUMBER OF EGGS': '=30', 'HATCHING DATE': d('2026-09-05') }, { 'NUMBER OF LARVAE': '=10+11' }],
+  );
+  assert.match(changes[1].note, /NUMBER OF LARVAE: hoja =10\+10 → cuaderno =10\+11/);
+  assert.deepEqual(newRows[0].values, { 'CLUTCH NUMBER': '994(7)', 'DATE LAID': d('2026-09-20'), 'NUMBER OF EGGS': '=12+3' });
 });
 
 // ---------------------------------------------------------------------------
+// match_notebook through MCP, as T3 Code's Claude calls it.
 
-const RECORDED = JSON.stringify({
-  kind: 'emergence',
-  rotate: 0,
-  year: 2025,
-  headers: ['ID', 'Species', 'Sex', '# Clutch', 'Stock origin', 'Emerge date', 'Dead date', 'Notes'],
-  lines: [
-    { n: 1, y: 0.2, raw: '5VB deceptus ♀ 838 interme 4/8', v: { Insectary_ID: '5VB', SPECIES: 'Mechanitis messenoides deceptus', Sex: 'female', 'CLUTCH NUMBER': '838', Intro2Insectary_date: '4/8' } },
-    { n: 2, y: 0.3, raw: '8VD messen. ♀ 848 messen. 8/8', v: { Insectary_ID: '8VD', SPECIES: 'Mechanitis messenoides messenoides', Sex: 'female', 'CLUTCH NUMBER': '848', Intro2Insectary_date: '8/8' }, c: { Sex: 0.5 }, a: { Sex: ['male'] } },
-    { n: 3, y: 0.4, raw: '9VD messen ♂ 848 8/8 dead 9/8 unk', v: { Insectary_ID: '9VD', Sex: 'male', 'CLUTCH NUMBER': '848', Intro2Insectary_date: '8/8', Death_date: '9/8', Death_cause: 'Unknown', Tube_1_id: 'FD41377125' } },
-  ],
-});
-
-async function setup(transcribe) {
+async function setup() {
   const species = moduleMap.get('Insectary_data').fields.find(f => f.key === 'SPECIES').column;
   const sheets = new LocalSheets({
     Insectary_stocks: [
@@ -327,14 +343,16 @@ async function setup(transcribe) {
     ],
     Insectary_data: [
       { row: 2, values: { Insectary_ID: '5VB', 'CLUTCH NUMBER': 838, Sex: 'female', Intro2Insectary_date: d('2025-08-04') } },
-      { row: 3, values: { Insectary_ID: '8VD', 'CLUTCH NUMBER': 848, Sex: 'female' } },
+      { row: 3, values: { Insectary_ID: '8VD', 'CLUTCH NUMBER': 848 } },
       { row: 4, values: { Insectary_ID: '9VD', 'CLUTCH NUMBER': 848, Sex: 'male', Tube_2_id: 'FD41377125' } },
+      { row: 5, values: { Insectary_ID: '6OO', 'CLUTCH NUMBER': 848 } },
     ],
   });
   for (const [row, value] of [
     [2, 'Mechanitis messenoides intermedia'],
     [3, 'Mechanitis messenoides messenoides'],
     [4, 'Mechanitis messenoides messenoides'],
+    [5, 'Mechanitis messenoides messenoides'],
   ])
     sheets.rows.get('Insectary_data').find(r => r.row === row).cells[species] = {
       userEnteredValue: { formulaValue: '=XLOOKUP(C2,Insectary_stocks!A:A,Insectary_stocks!C:C,"")' },
@@ -342,148 +360,129 @@ async function setup(transcribe) {
     };
   const store = new Store({ localMode: true }, { sheets });
   await store.sync({ sheets: ['Insectary_stocks', 'Insectary_data'] });
-  const calls = [];
-  const assistant = createAssistant({
-    store,
-    config: {
-      claude: { bin: '', users: new Set() },
-      notebook: {
-        transcribe: async (user, request) => {
-          calls.push({ user: user.username, prompt: request.prompt, bytes: request.image.data.length });
-          return transcribe(request);
-        },
-      },
-    },
-  });
-  const photo = (bytes = 'page-1') => {
-    const id = randomUUID();
-    store.db
-      .prepare('INSERT INTO attachments VALUES(?,?,?,?,?,?,?)')
-      .run(id, null, 'p12.jpeg', 'image/jpeg', Buffer.from(bytes), franz.id, new Date().toISOString());
-    return id;
-  };
-  const call = (method, path, body) => assistant.handle({ method, path, body, user: franz, query: {} });
-  const waitReady = async id => {
-    for (let i = 0; i < 100; i++) {
-      const { job } = (await call('GET', `/api/notebook/jobs/${id}`)).body;
-      if (!['queued', 'reading'].includes(job.status)) return job;
-      await new Promise(resolve => setTimeout(resolve, 20));
-    }
-    throw new Error('page never read');
-  };
-  return { store, assistant, photo, call, waitReady, calls };
+  const assistant = createAssistant({ store, config: { claude: { bin: '', users: new Set() } } });
+  store.db
+    .prepare(
+      "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u-franz','franz','Franz Chandi','editor','s','h',1,'2026-01-01')",
+    )
+    .run();
+  const token = 'token-for-franz';
+  store.db
+    .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
+    .run(createHash('sha256').update(token).digest('hex'), 'u-franz');
+  const mcp = (method, params) => assistant.mcp({ authorization: `Bearer ${token}` }, { jsonrpc: '2.0', id: 1, method, params });
+  const call = async (name, args) => JSON.parse((await mcp('tools/call', { name, arguments: args })).body.result.content[0].text);
+  const user = { id: 'u-franz', username: 'franz', displayName: 'Franz Chandi', role: 'editor' };
+  const http = (method, path, body) => assistant.handle({ method, path, body, user, query: {} });
+  return { store, mcp, call, http };
 }
 
-test('a photographed page is read in the background, reviewed, corrected and applied', async () => {
-  const { store, photo, call, waitReady, calls } = await setup(async () => ({ text: RECORDED, model: 'recorded', costUsd: 0.05 }));
+const PAGE = {
+  kind: 'emergence',
+  year: 2025,
+  title: 'emergidos 5VB–6OO',
+  lines: [
+    { raw: '5VB deceptus ♀ 838 4/8', values: { Insectary_ID: '5VB', SPECIES: 'Mechanitis messenoides deceptus', Sex: 'female', 'CLUTCH NUMBER': '838', Intro2Insectary_date: '4/8' } },
+    { raw: '8VD messen. ♀ 848 8/8', values: { Insectary_ID: '8VD', SPECIES: 'Mechanitis messenoides messenoides', Sex: 'female', 'CLUTCH NUMBER': '848', Intro2Insectary_date: '8/8' }, confidence: { Sex: 0.5 }, alternatives: { Sex: ['male'] } },
+    { raw: '9VD messen ♂ 848 8/8 dead 9/8 unk wc FD41377125', values: { Insectary_ID: '9VD', Sex: 'male', 'CLUTCH NUMBER': '848', Intro2Insectary_date: '8/8', Death_date: '9/8', Death_cause: 'Unknown', Tube_1_id: 'FD41377125' } },
+    // The ID written with zeros: the row is 6OO (letter O).
+    { raw: '600 " ♂ 848 8/8', values: { Insectary_ID: '600', SPECIES: 'Mechanitis messenoides messenoides', Sex: 'male', Intro2Insectary_date: '8/8' } },
+    { raw: '7ZZ ♀', values: { Insectary_ID: '7ZZ', Sex: 'female' } },
+  ],
+};
+
+test('match_notebook matches a transcribed page and leaves one proposal beside T3; a correction replaces it', async () => {
+  const { store, mcp, call, http } = await setup();
   try {
-    const created = await call('POST', '/api/notebook/jobs', { attachmentId: photo(), kind: 'auto' });
-    assert.equal(created.status, 201);
-    assert.ok(['queued', 'reading'].includes(created.body.job.status));
-    const job = await waitReady(created.body.job.id);
-    assert.equal(job.status, 'ready');
-    assert.equal(job.kind, 'emergence');
-    assert.equal(job.costUsd, 0.05);
-    assert.equal(calls.length, 1);
-    assert.match(calls[0].prompt, /kind "stocks"/);
-    const byLine = Object.fromEntries(job.reviewLines.map(l => [l.n, l]));
-    assert.equal(byLine[1].cells.SPECIES.status, 'conflict');
-    assert.ok(byLine[2].cells.Sex.doubt);
-    assert.equal(byLine[3].cells.Death_date.status, 'fill');
-    // The tube on the page is already this butterfly's Tube_2_id: not written as its Tube_1_id.
-    assert.equal(byLine[3].cells.Tube_1_id.status, 'error');
-    assert.match(byLine[3].cells.Tube_1_id.message, /ya está en Insectary_data fila 4/);
-    assert.deepEqual(job.options.Sex.sort(), ['NA', 'NOT_COLLECTED', 'female', 'male']);
+    const tools = (await mcp('tools/list')).body.result.tools;
+    const tool = tools.find(t => t.name === 'match_notebook');
+    assert.ok(tool, 'offered to T3 Code');
+    assert.match(tool.description, /stocks \(Posturas, Insectary_stocks\): CLUTCH NUMBER/);
+    assert.ok(!tools.some(t => t.name === 'notebook_page'));
 
-    // The same proposal is in Cambios propuestos, and the page has its conversation with the transcription.
-    const live = (await call('GET', '/api/chat/proposals')).body.proposals;
-    assert.equal(live.length, 1);
-    assert.equal(live[0].id, job.proposalId);
-    // Line 2's sex is doubtful (left out); its emergence date fills an empty cell.
-    assert.deepEqual(live[0].changes.map(c => c.line), [1, 2, 3]);
-    assert.deepEqual(Object.keys(live[0].changes[1].values), ['Intro2Insectary_date']);
-    assert.deepEqual(live[0].changes[0].replaceFormula, ['SPECIES']);
-    const thread = (await call('GET', `/api/chat/threads/${job.threadId}`)).body;
-    assert.equal(thread.messages[0].attachments.length, 1);
-    assert.match(thread.messages[1].content, /2\. «8VD messen\. ♀ 848 messen\. 8\/8» → .*Sex=female\?/);
-    // "¿Qué dice la línea 2?": the chat's tool gives the line as read, beside the sheet.
-    const tool = await call('POST', '/api/ai/voice/tool', { threadId: job.threadId, name: 'notebook_page', args: { line: 2 } });
-    const page = tool.body.result;
-    assert.equal(page.jobId, job.id);
-    assert.deepEqual(page.lines.map(l => l.n), [2]);
-    assert.deepEqual(page.lines[0].cells.Sex, {
-      notebook: 'female',
-      sheet: 'female',
-      status: 'same',
-      doubtful: true,
-      alternatives: ['male'],
+    const out = await call('match_notebook', PAGE);
+    assert.equal(out.sheet, 'Insectary_data');
+    assert.equal(out.year, 2025);
+    const line = n => out.lines.find(l => l.n === n);
+    // The species emerged differently from the clutch's prediction: typed over the formula.
+    assert.deepEqual(line(1).differs.SPECIES, {
+      sheet: 'Mechanitis messenoides intermedia',
+      notebook: 'Mechanitis messenoides deceptus',
+      note: 'La fórmula da «Mechanitis messenoides intermedia»; se escribirá encima',
     });
-    assert.equal(page.lines[0].cells.Intro2Insectary_date.notebook, '2025-08-08');
+    // A doubtful sex is left out and reported with its alternative; the date still goes.
+    assert.deepEqual(line(2).doubtful.Sex, { read: 'female', alternatives: ['male'], sheet: null });
+    assert.deepEqual(line(2).fill, { Intro2Insectary_date: '2025-08-08' });
+    // Dates as ISO; the tube already filed as this butterfly's Tube_2_id.
+    assert.deepEqual(line(3).fill, { Intro2Insectary_date: '2025-08-08', Death_date: '2025-08-09', Death_cause: 'Unknown' });
+    assert.match(line(3).problems.Tube_1_id, /ya está en Insectary_data fila 4/);
+    assert.equal(line(4).label, '6OO');
+    assert.match(line(4).message, /Leído «600»; en la hoja es 6OO/);
+    assert.equal(line(5).status, 'missing');
+    assert.equal(line(5).inProposal, false);
+    assert.equal(out.counts.rowsInProposal, 4);
+    assert.ok(out.proposalId);
+    assert.match(out.review, /Cambios propuestos/);
 
-    // The person picks the other reading of line 2 and unticks line 1: the proposal follows.
-    const patched = (await call('PATCH', `/api/notebook/jobs/${job.id}`, { edits: { 2: { Sex: 'male' } }, picks: { 1: false } })).body.job;
-    const line2 = patched.reviewLines.find(l => l.n === 2);
-    assert.equal(line2.cells.Sex.status, 'conflict');
-    assert.ok(line2.cells.Sex.include && line2.picked);
-    const updated = (await call('GET', '/api/chat/proposals')).body.proposals[0];
-    assert.equal(updated.id, job.proposalId, 'the same proposal, updated in place');
-    assert.deepEqual(updated.changes.map(c => c.line), [2, 3]);
+    // Cambios propuestos (the panel beside T3) shows it at once, from T3 Code, with each row's notebook line.
+    const listed = (await http('GET', '/api/chat/proposals')).body.proposals;
+    assert.equal(listed.length, 1);
+    assert.equal(listed[0].id, out.proposalId);
+    assert.equal(listed[0].source, 'T3 Code');
+    assert.match(listed[0].reason, /Cuaderno Emergidos \(Insectary_data\): emergidos 5VB–6OO/);
+    assert.deepEqual(listed[0].changes.map(c => c.line), [1, 2, 3, 4]);
+    assert.deepEqual(listed[0].changes[0].replaceFormula, ['SPECIES']);
+    assert.match(listed[0].changes[1].note, /Sex dudoso: female \/ male \(no incluido\)/);
 
-    // Apply only line 3; line 2 stays as a new proposal.
-    const applied = await call('POST', `/api/notebook/jobs/${job.id}/apply`, { lines: [3], requestId: randomUUID() });
-    assert.equal(applied.status, 200, JSON.stringify(applied.body));
-    assert.equal(applied.body.result.applied, 1);
-    const row4 = store.getRecordBySheetRow('Insectary_data', 4);
-    assert.equal(row4.values.Death_date, d('2025-08-09'));
-    assert.equal(row4.values.Death_cause, 'Unknown');
-    assert.equal(store.getRecordBySheetRow('Insectary_data', 3).values.Sex, 'female', 'line 2 is not written yet');
-    const after = applied.body.job;
-    assert.deepEqual(after.appliedLines, [3]);
-    assert.equal(after.status, 'ready');
-    assert.notEqual(after.proposalId, job.proposalId);
-    const rest = (await call('GET', '/api/chat/proposals')).body.proposals;
-    assert.deepEqual(rest.map(p => p.changes.map(c => c.line)), [[2]]);
+    // "Es macho": the page matched again replaces the proposal.
+    const corrected = structuredClone(PAGE);
+    corrected.lines[1] = { ...corrected.lines[1], values: { ...corrected.lines[1].values, Sex: 'male' }, confidence: {}, alternatives: {} };
+    const again = await call('match_notebook', { ...corrected, replaceProposalId: out.proposalId });
+    assert.equal(again.replaced, out.proposalId);
+    assert.ok(!again.overlaps, 'the replaced proposal is not an overlap');
+    assert.equal(again.lines[1].fill.Sex, 'male');
+    const pending = (await http('GET', '/api/chat/proposals')).body.proposals;
+    assert.deepEqual(pending.map(p => p.id), [again.proposalId]);
 
-    // A second photo of the same page: warned, and the earlier reading is used again.
-    const again = (await call('POST', '/api/notebook/jobs', { attachmentId: photo(), kind: 'auto' })).body.job;
-    assert.equal(again.status, 'ready');
-    assert.equal(calls.length, 1, 'not read again');
-    assert.ok(again.warnings.some(w => w.kind === 'photo' && w.jobId === job.id));
-    await call('POST', `/api/notebook/jobs/${again.id}/discard`, {});
+    // The same page matched from another chat without replacing: the overlap is pointed out.
+    const twice = await call('match_notebook', PAGE);
+    assert.equal(twice.overlaps[0].proposalId, again.proposalId);
+    assert.equal(twice.overlaps[0].count, 4);
+    await http('POST', `/api/chat/proposals/${twice.proposalId}/discard`, {});
 
-    // Discarding closes the page and its proposal; the history keeps it with its applied line.
-    const closed = (await call('POST', `/api/notebook/jobs/${job.id}/discard`, {})).body.job;
-    assert.equal(closed.status, 'done');
-    assert.deepEqual((await call('GET', '/api/chat/proposals')).body.proposals, []);
-    const list = (await call('GET', '/api/notebook/jobs')).body.jobs;
-    assert.deepEqual(
-      list.map(j => [j.status, j.appliedLines.length]),
-      [
-        ['discarded', 0],
-        ['done', 1],
-      ],
-    );
+    // "Sí, aplícalo": applied through apply_proposal, only on the person's word.
+    const applied = await call('apply_proposal', { proposalId: again.proposalId });
+    assert.equal(applied.status, 'applied', JSON.stringify(applied));
+    assert.equal(store.getRecordBySheetRow('Insectary_data', 3).values.Sex, 'male');
+    assert.equal(store.getRecordBySheetRow('Insectary_data', 2).values.SPECIES, 'Mechanitis messenoides deceptus');
+    assert.equal(store.getRecordBySheetRow('Insectary_data', 4).values.Death_cause, 'Unknown');
   } finally {
     store.close();
   }
 });
 
-test('a page the AI cannot read ends in error and can be read again as another notebook', async () => {
-  let answer = 'Lo siento, no puedo leer la foto.';
-  const { store, photo, call, waitReady, calls } = await setup(async () => ({ text: answer, model: 'recorded' }));
+test('a clutch page proposes its counts as the notebook sums them, and they are written as such', async () => {
+  const { store, call, http } = await setup();
   try {
-    const { job } = (await call('POST', '/api/notebook/jobs', { attachmentId: photo('blurry'), kind: 'auto' })).body;
-    const failed = await waitReady(job.id);
-    assert.equal(failed.status, 'error');
-    assert.match(failed.error, /no tiene líneas/);
-    answer = RECORDED;
-    const retried = await call('POST', `/api/notebook/jobs/${job.id}/retry`, { kind: 'deaths' });
-    assert.equal(retried.status, 200);
-    const ready = await waitReady(job.id);
-    assert.equal(ready.kind, 'deaths');
-    assert.ok(!ready.fields.includes('CLUTCH NUMBER'));
-    assert.match(calls[1].prompt, /the daily round of dead butterflies/);
-    assert.doesNotMatch(calls[1].prompt, /kind "stocks"/);
+    const out = await call('match_notebook', {
+      kind: 'stocks',
+      year: 2025,
+      lines: [
+        { raw: '838 interm. 12+15', values: { 'CLUTCH NUMBER': '838', 'NUMBER OF EGGS': '12+15', 'NUMBER OF LARVAE': '2+4=6+8=14' } },
+        { raw: '848 messen. 7', values: { 'CLUTCH NUMBER': '848', 'NUMBER OF EGGS': '7' } },
+      ],
+    });
+    assert.deepEqual(out.lines[0].fill, { 'NUMBER OF EGGS': '=12+15', 'NUMBER OF LARVAE': '=2+4+8' });
+    const [proposal] = (await http('GET', '/api/chat/proposals')).body.proposals;
+    assert.deepEqual(
+      proposal.changes.map(c => c.values),
+      [{ 'NUMBER OF EGGS': '=12+15', 'NUMBER OF LARVAE': '=2+4+8' }, { 'NUMBER OF EGGS': '=7' }],
+    );
+    const applied = await call('apply_proposal', { proposalId: out.proposalId });
+    assert.equal(applied.status, 'applied', JSON.stringify(applied));
+    const clutch = store.getRecordBySheetRow('Insectary_stocks', 2);
+    assert.equal(clutch.formulas['NUMBER OF EGGS'], '=12+15');
+    assert.equal(clutch.formulas['NUMBER OF LARVAE'], '=2+4+8');
   } finally {
     store.close();
   }

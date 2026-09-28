@@ -9,8 +9,8 @@ import { useTables } from '../../stores/tables'
 /**
  * The assistant's proposed edits beside the T3 chat, updated while it works:
  * the request waits on the server (long polling) and returns as soon as a
- * proposal is added, applied or discarded, from T3 Code, the chat or
- * Revisión de datos. The same review grid as the chat: green cells, ticks,
+ * proposal is added, applied or discarded, from T3 Code (e.g. a notebook
+ * photo matched with match_notebook), the chat or Revisión de datos. The same review grid as the chat: green cells, ticks,
  * Aplicar and Descartar.
  */
 const emit = defineEmits<{ count: [n: number]; fresh: []; close: [] }>()
@@ -129,9 +129,7 @@ const origin = (p: Proposal) =>
         :class="{ 'ring-2 ring-emerald-400': arrived.has(p.id) }"
       >
         <p class="mt-2 px-1 text-[11px] text-stone-500">{{ origin(p) }}</p>
-        <!-- A notebook page's proposal changes as the page is corrected: its rows are ticked again. -->
         <ProposalGrid
-          :key="p.changes.length"
           :proposal="p"
           :busy="applying === p.id"
           @apply="indexes => apply(p, indexes)"
