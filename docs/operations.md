@@ -4,7 +4,7 @@
 
 The app uses `https://ithomiini-ikiam.duckdns.org/` (its own DuckDNS name, served at the root: `APP_BASE_PATH=/`), with a separate service on loopback port 8794. T3 Code is at `https://t3.ithomiini-ikiam.duckdns.org/`, same site as the app so it can sit inside the Asistente tab. The DuckDNS token is in `~/.config/ithomiini/duckdns-token` on the server; the server's address is fixed, so nothing updates it periodically.
 
-The app used to live at `https://tbs-insect-gallery.duckdns.org/ithomiini/`, a name shared with other projects. That address now redirects pages to the new domain (the `#/page` part is kept by the browser), and still forwards `/ithomiini/api/*` to the app for older copies of the Sheets hook or the Wikiloc worker. Existing Tiputini services retain their own routes and data.
+The app used to live at `https://tbs-insect-gallery.duckdns.org/ithomiini/`, a name shared with other projects; that route was removed on 2026-09-28. Existing Tiputini services retain their own routes and data.
 
 The setup screen requires a private random token and creates the first active administrator. Administrators create accounts and assign observer, editor, reviewer, or administrator roles. Passwords are hashed with scrypt; sessions use HttpOnly cookies and mutations require a CSRF token. Never publish the setup token. App access does not change Google Drive sharing permissions.
 
