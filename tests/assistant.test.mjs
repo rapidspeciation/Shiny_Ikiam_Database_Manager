@@ -53,7 +53,7 @@ function fixture(config = {}, applyHook) {
       );
       return { records: found.slice(offset, offset + limit), total: found.length };
     },
-    getRecord: async id => records.find(record => record.id === id),
+    getRecord: id => records.find(record => record.id === id),
     applyProposal: async (changes, options) => {
       applied = { changes, options };
       return applyHook ? applyHook(changes, options, records) : { records: [records[0]], status: 'verified' };
@@ -245,12 +245,18 @@ test('proposal stores before, after and version, then uses validated apply hook 
     });
     assert.equal(response.status, 200);
     const proposal = response.body.proposals[0];
-    assert.deepEqual(proposal.changes[0], {
-      recordId: 'r-1',
-      expectedVersion: 3,
-      before: { Research_purpose: '' },
-      values: { Research_purpose: 'Review' },
-    });
+    const { recordId, expectedVersion, before, values, label, current } = proposal.changes[0];
+    assert.deepEqual(
+      { recordId, expectedVersion, before, values, label, current },
+      {
+        recordId: 'r-1',
+        expectedVersion: 3,
+        before: { Research_purpose: '' },
+        values: { Research_purpose: 'Review' },
+        label: 'A0A',
+        current: { Research_purpose: '' },
+      },
+    );
     assert.equal(
       (
         await assistant.handle({

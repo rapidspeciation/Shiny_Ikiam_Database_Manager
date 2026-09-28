@@ -898,11 +898,12 @@ export class Store {
         requestId,
         reason,
         // Each proposed field is checked against the value the assistant read.
-        edits: changes.map(c =>
-          c.before
-            ? { id: c.recordId, values: c.values, expected: c.before }
-            : { id: c.recordId, values: c.values, expectedVersion: c.expectedVersion },
-        ),
+        edits: changes.map(c => ({
+          id: c.recordId,
+          values: c.values,
+          ...(c.before ? { expected: c.before } : { expectedVersion: c.expectedVersion }),
+          ...(c.replaceFormula?.length ? { replaceFormula: c.replaceFormula } : {}),
+        })),
       },
       user,
       { source: 'ai_approved' },

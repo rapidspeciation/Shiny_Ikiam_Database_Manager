@@ -1,8 +1,11 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { basename, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createReports } from './reports.mjs';
+import { TYPED_OVER_FORMULA } from './batch.mjs';
+import { comparable, moduleMap, validateValues } from './schema.mjs';
+import { claudeAllowed, claudeConfig, prepareWorkspace, runClaude } from './claude.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const bad = (status, code, message) => ({ status, body: { error: { code, message } } });
@@ -10,6 +13,8 @@ const now = () => new Date().toISOString();
 const clip = (value, length = 1200) => String(value ?? '').slice(0, length);
 const owner = user => String(user?.id ?? user?.username ?? '');
 const json = value => JSON.stringify(value);
+const EDITORS = ['editor', 'reviewer', 'admin'];
+const isoDate = serial => new Date(Date.UTC(1899, 11, 30) + serial * 864e5).toISOString().slice(0, 10);
 const parse = value => {
   try {
     return JSON.parse(value);
@@ -23,7 +28,7 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'search_records',
-      description: 'Search exact workbook records. Returns a small list with source sheet and row.',
+      description: 'Search workbook rows by free text. Returns a small list with sheet, row and app ID.',
       parameters: {
         type: 'object',
         properties: { query: { type: 'string' }, module: { type: 'string' } },
@@ -34,9 +39,35 @@ const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'find_records',
+      description:
+        'Fetch many rows at once by exact identifier, e.g. the Insectary_IDs read from a notebook page. Returns found rows (non-empty typed values; dates as YYYY-MM-DD) and the identifiers not found.',
+      parameters: {
+        type: 'object',
+        properties: {
+          module: { type: 'string', description: 'Sheet, e.g. Insectary_data, Collection_data, Insectary_stocks' },
+          field: { type: 'string', description: 'Column to match, e.g. Insectary_ID, CAM_ID, CLUTCH NUMBER' },
+          values: { type: 'array', items: { type: 'string' }, description: 'Up to 150 identifiers' },
+        },
+        required: ['module', 'field', 'values'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'get_record',
-      description: 'Fetch one exact record by app ID, including its source and version.',
+      description: 'Fetch one row by app ID, including its sheet row and version.',
       parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'describe_sheet',
+      description:
+        'Columns of a sheet with their type, which ones are formulas, the values in use for short-list columns, and the latest rows.',
+      parameters: { type: 'object', properties: { module: { type: 'string' } }, required: ['module'] },
     },
   },
   {
@@ -68,7 +99,7 @@ const TOOLS = [
     function: {
       name: 'propose_changes',
       description:
-        'Draft exact record edits for human review. Never applies them. First fetch each record with get_record.',
+        'Draft edits to existing rows. They appear to the person as a table with the changed cells highlighted and are only written when the person confirms. Formula cells cannot be changed, except SPECIES in Insectary_data when what emerged differs from the formula prediction. Give a short note per row saying where the value comes from.',
       parameters: {
         type: 'object',
         properties: {
@@ -76,13 +107,30 @@ const TOOLS = [
             type: 'array',
             items: {
               type: 'object',
-              properties: { recordId: { type: 'string' }, values: { type: 'object' } },
+              properties: {
+                recordId: { type: 'string' },
+                values: { type: 'object', description: 'Column → new value; dates as YYYY-MM-DD' },
+                note: { type: 'string' },
+              },
               required: ['recordId', 'values'],
             },
           },
           reason: { type: 'string' },
         },
-        required: ['changes'],
+        required: ['changes', 'reason'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'apply_proposal',
+      description:
+        "Write a pending proposal to Google Sheets. Only call this when the person's latest message explicitly approves it (e.g. 'sí, aplícalo', 'está correcto'). Optionally only some rows, by their index.",
+      parameters: {
+        type: 'object',
+        properties: { proposalId: { type: 'string' }, indexes: { type: 'array', items: { type: 'integer' } } },
+        required: ['proposalId'],
       },
     },
   },
@@ -104,6 +152,15 @@ function init(db) {
     owner_id TEXT NOT NULL, changes_json TEXT NOT NULL, reason TEXT, status TEXT NOT NULL,
     created_at TEXT NOT NULL, applied_at TEXT
   );`);
+  const has = (table, column) =>
+    db
+      .prepare(`PRAGMA table_info(${table})`)
+      .all()
+      .some(c => c.name === column);
+  if (!has('ai_threads', 'claude_session')) db.exec('ALTER TABLE ai_threads ADD COLUMN claude_session TEXT');
+  if (!has('ai_messages', 'attachments_json'))
+    db.exec("ALTER TABLE ai_messages ADD COLUMN attachments_json TEXT NOT NULL DEFAULT '[]'");
+  if (!has('ai_proposals', 'applied_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN applied_json TEXT');
   // A restarted process cannot know whether an in-flight source write completed.
   db.prepare("UPDATE ai_proposals SET status = 'needs_review' WHERE status = 'applying'").run();
 }
@@ -273,6 +330,7 @@ function publicMessage(row) {
     sources: parse(row.sources_json) ?? [],
     results: parse(row.results_json) ?? [],
     proposals: parse(row.proposals_json) ?? [],
+    attachments: parse(row.attachments_json) ?? [],
     createdAt: row.created_at,
   };
 }
@@ -282,10 +340,16 @@ export function createAssistant({ store, config = {} }) {
   const db = store.db;
   init(db);
   const ai = providerConfig(config);
+  const claude = config.claude ?? claudeConfig();
+  const mcpUrl =
+    config.mcpUrl ??
+    `http://127.0.0.1:${config.port ?? 8794}${config.basePath && config.basePath !== '/' ? config.basePath : ''}/api/ai/mcp`;
+  if (claude.bin && claude.workspace)
+    prepareWorkspace(claude, join(here, '..')).catch(e => console.error('Claude workspace:', e.message));
   const reports = createReports({ store, config });
   const thread = (id, user) =>
     db.prepare('SELECT * FROM ai_threads WHERE id = ? AND owner_id = ?').get(id, owner(user));
-  const insertMessage = (threadId, role, content, sources = [], results = [], proposals = []) => {
+  const insertMessage = (threadId, role, content, sources = [], results = [], proposals = [], attachments = []) => {
     const message = {
       id: randomUUID(),
       thread_id: threadId,
@@ -294,18 +358,220 @@ export function createAssistant({ store, config = {} }) {
       sources_json: json(sources),
       results_json: json(results),
       proposals_json: json(proposals),
+      attachments_json: json(attachments),
       created_at: now(),
     };
     db.prepare(
-      'INSERT INTO ai_messages (id,thread_id,role,content,sources_json,results_json,proposals_json,created_at) VALUES (?,?,?,?,?,?,?,?)',
+      'INSERT INTO ai_messages (id,thread_id,role,content,sources_json,results_json,proposals_json,attachments_json,created_at) VALUES (?,?,?,?,?,?,?,?,?)',
     ).run(...Object.values(message));
     db.prepare('UPDATE ai_threads SET updated_at = ? WHERE id = ?').run(message.created_at, threadId);
     return publicMessage(message);
   };
 
-  async function executeTool(call, context) {
-    const args = parse(call.function?.arguments ?? '{}') ?? {};
-    const name = call.function?.name;
+  /** A row as the model sees it: typed values only (formula results are omitted), dates readable. */
+  function compact(record) {
+    const mod = moduleMap.get(record.sheet);
+    const dates = new Set(mod?.fields.filter(f => f.type === 'date').map(f => f.key));
+    const keepFormula = TYPED_OVER_FORMULA[record.sheet] ?? new Set();
+    const values = {};
+    for (const [key, value] of Object.entries(record.values ?? {})) {
+      if (value === null || value === '') continue;
+      if (record.formulas?.[key] && !keepFormula.has(key)) continue;
+      values[key] = dates.has(key) && typeof value === 'number' ? isoDate(value) : value;
+    }
+    return {
+      id: record.id,
+      sheet: record.sheet,
+      row: record.row,
+      label: record.label,
+      version: record.version,
+      values,
+      formulaColumns: Object.keys(record.formulas ?? {}),
+    };
+  }
+
+  function findRecords(args, context) {
+    const mod = moduleMap.get(String(args.module ?? ''));
+    if (!mod) return { error: `Unknown sheet ${clip(args.module, 60)}` };
+    const field = String(args.field ?? '');
+    if (!mod.fields.some(f => f.key === field)) return { error: `Unknown column ${clip(field, 60)}` };
+    if (!Array.isArray(args.values) || !args.values.length) return { error: 'Give at least one identifier' };
+    const query = db.prepare(
+      'SELECT id FROM records WHERE sheet = ? AND missing = 0 AND row_num > 0 AND lower(trim(CAST(json_extract(values_json, ?) AS TEXT))) = ?',
+    );
+    const found = [],
+      missing = [];
+    for (const raw of args.values.slice(0, 150)) {
+      const value = String(raw).trim();
+      const ids = query.all(mod.id, `$."${field.replaceAll('"', '')}"`, value.toLowerCase());
+      if (!ids.length) missing.push(value);
+      for (const { id } of ids) {
+        const record = store.getRecord(id);
+        context.records.set(record.id, record);
+        context.sources.set(record.id, recordSource(record));
+        found.push(compact(record));
+      }
+    }
+    return { found, missing };
+  }
+
+  function describeSheet(args) {
+    const mod = moduleMap.get(String(args.module ?? ''));
+    if (!mod) return { error: `Unknown sheet ${clip(args.module, 60)}` };
+    const recent = db
+      .prepare(
+        'SELECT id FROM records WHERE sheet = ? AND missing = 0 AND observed = 1 AND row_num > 0 ORDER BY row_num DESC LIMIT 1500',
+      )
+      .all(mod.id)
+      .map(r => store.getRecord(r.id));
+    const formulas = new Map(),
+      options = new Map();
+    for (const record of recent) {
+      for (const key of Object.keys(record.formulas ?? {})) formulas.set(key, (formulas.get(key) ?? 0) + 1);
+      for (const [key, value] of Object.entries(record.values ?? {}))
+        if (typeof value === 'string' && value && !record.formulas?.[key]) {
+          const seen = options.get(key) ?? new Map();
+          seen.set(value, (seen.get(value) ?? 0) + 1);
+          options.set(key, seen);
+        }
+    }
+    return {
+      sheet: mod.id,
+      columns: mod.fields.map(f => {
+        const seen = options.get(f.key);
+        return {
+          key: f.key,
+          type: f.type,
+          formula: (formulas.get(f.key) ?? 0) > recent.length / 2,
+          ...(seen && seen.size <= 30 ? { values: [...seen.keys()] } : {}),
+        };
+      }),
+      latestRows: recent.slice(0, 3).map(compact),
+    };
+  }
+
+  function proposeChanges(args, context) {
+    if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot propose edits' };
+    if (!Array.isArray(args.changes) || !args.changes.length || args.changes.length > 100)
+      return { error: 'Provide 1 to 100 changes' };
+    const changes = [];
+    for (const candidate of args.changes) {
+      const old = store.getRecord(String(candidate?.recordId ?? ''));
+      if (!old || old.missing) return { error: `Row ${clip(candidate?.recordId, 60)} not found; use find_records` };
+      const raw = candidate.values;
+      if (
+        !raw ||
+        typeof raw !== 'object' ||
+        Array.isArray(raw) ||
+        !Object.keys(raw).length ||
+        Object.keys(raw).length > 20
+      )
+        return { error: `Invalid values for ${old.label}` };
+      let values;
+      try {
+        values = validateValues(old.sheet, raw);
+      } catch (e) {
+        return { error: `${old.label}: ${e.message}` };
+      }
+      const before = {},
+        replaceFormula = [];
+      for (const key of Object.keys(values)) {
+        if (old.formulas?.[key]) {
+          if (!TYPED_OVER_FORMULA[old.sheet]?.has(key))
+            return { error: `${old.label}: ${key} is calculated by a formula and cannot be changed` };
+          if (comparable(old.values?.[key] ?? null) === comparable(values[key]))
+            return { error: `${old.label}: the ${key} formula already gives ${values[key]}; leave it` };
+          replaceFormula.push(key);
+        }
+        before[key] = old.values?.[key] ?? null;
+      }
+      if (Object.keys(values).every(key => comparable(before[key]) === comparable(values[key]))) continue;
+      changes.push({
+        recordId: old.id,
+        sheet: old.sheet,
+        row: old.row,
+        label: old.label,
+        expectedVersion: old.version,
+        before,
+        values,
+        replaceFormula,
+        note: clip(candidate.note, 300),
+      });
+    }
+    if (!changes.length) return { error: 'Every proposed value is already in the sheet' };
+    const id = randomUUID();
+    db.prepare(
+      'INSERT INTO ai_proposals (id,thread_id,owner_id,changes_json,reason,status,created_at) VALUES (?,?,?,?,?,?,?)',
+    ).run(id, context.threadId, owner(context.user), json(changes), clip(args.reason, 500), 'pending', now());
+    const proposal = { id, changes, reason: clip(args.reason, 500), status: 'pending' };
+    context.proposals.push(proposal);
+    return { proposalId: id, rows: changes.length, status: 'waiting for the person to confirm' };
+  }
+
+  /** Writes the chosen rows of a proposal as one save (undoable in Historial). */
+  async function applyProposal(proposal, user, { requestId, indexes, reason }) {
+    if (proposal.status !== 'pending')
+      throw Object.assign(new Error('Proposal has already been applied.'), { status: 409, code: 'proposal_used' });
+    if (!EDITORS.includes(user.role))
+      throw Object.assign(new Error('Your role cannot apply changes.'), { status: 403, code: 'forbidden' });
+    const all = parse(proposal.changes_json) ?? [];
+    const chosen =
+      Array.isArray(indexes) && indexes.length
+        ? [...new Set(indexes.map(Number))].filter(i => all[i])
+        : all.map((_, i) => i);
+    if (!chosen.length) throw Object.assign(new Error('No rows selected.'), { status: 400, code: 'nothing_selected' });
+    const claimed = db
+      .prepare("UPDATE ai_proposals SET status = 'applying' WHERE id = ? AND status = 'pending'")
+      .run(proposal.id);
+    if (!claimed.changes)
+      throw Object.assign(new Error('Proposal is already being applied.'), { status: 409, code: 'proposal_used' });
+    try {
+      const result = await store.applyProposal(
+        chosen.map(i => all[i]),
+        { user, requestId, reason: clip(reason || proposal.reason, 500) },
+      );
+      const status = ['verified', 'unchanged'].includes(result?.status) ? 'applied' : 'needs_review';
+      db.prepare('UPDATE ai_proposals SET status = ?, applied_at = ?, applied_json = ? WHERE id = ?').run(
+        status,
+        status === 'applied' ? now() : null,
+        json(chosen),
+        proposal.id,
+      );
+      return { proposalId: proposal.id, status, applied: chosen, result };
+    } catch (cause) {
+      db.prepare("UPDATE ai_proposals SET status = 'needs_review' WHERE id = ?").run(proposal.id);
+      throw cause;
+    }
+  }
+
+  /** A proposal as the review table shows it: each row with the current values of the changed columns. */
+  function proposalView(proposal, row) {
+    const fields = [...new Set(proposal.changes.flatMap(c => Object.keys(c.values)))];
+    const sheet = proposal.changes[0]?.sheet;
+    const types = Object.fromEntries(
+      fields.map(f => [f, moduleMap.get(sheet)?.fields.find(x => x.key === f)?.type ?? 'text']),
+    );
+    return {
+      ...proposal,
+      status: row?.status ?? proposal.status,
+      appliedAt: row?.applied_at ?? null,
+      applied: parse(row?.applied_json ?? 'null'),
+      fields,
+      types,
+      changes: proposal.changes.map((change, index) => {
+        const record = store.getRecord(change.recordId);
+        return {
+          ...change,
+          index,
+          row: record?.row ?? change.row,
+          label: change.label ?? record?.label,
+          current: Object.fromEntries(fields.map(f => [f, record?.values?.[f] ?? null])),
+        };
+      }),
+    };
+  }
+
+  async function executeTool(name, args, context) {
     if (name === 'search_records') {
       const query = clip(args.query, 100).trim();
       if (!query) return { error: 'Search query required' };
@@ -315,19 +581,20 @@ export function createAssistant({ store, config = {} }) {
         limit: 12,
         offset: 0,
       });
-      const found = (page.records ?? []).map(record => ({ ...recordSource(record), values: record.values }));
-      for (const record of page.records ?? []) context.records.set(record.id, record);
-      for (const item of found) context.sources.set(item.id, recordSource(item));
-      return { records: found, total: page.total, truncated: page.total > found.length };
+      for (const record of page.records ?? []) {
+        context.records.set(record.id, record);
+        context.sources.set(record.id, recordSource(record));
+      }
+      return { records: (page.records ?? []).map(compact), total: page.total };
     }
+    if (name === 'find_records') return findRecords(args, context);
+    if (name === 'describe_sheet') return describeSheet(args);
     if (name === 'get_record') {
-      const id = clip(args.id, 120);
-      if (!id) return { error: 'Record ID required' };
-      const record = await store.getRecord(id);
+      const record = store.getRecord(clip(args.id, 120));
       if (!record) return { error: 'Record not found' };
       context.records.set(record.id, record);
       context.sources.set(record.id, recordSource(record));
-      return { ...recordSource(record), values: record.values, formulas: record.formulas };
+      return compact(record);
     }
     if (name === 'search_knowledge') {
       const found = searchDocs(await documents(config), args.query);
@@ -342,98 +609,229 @@ export function createAssistant({ store, config = {} }) {
       context.results.push(result);
       return result;
     }
-    if (name === 'propose_changes') {
-      if (!['editor', 'reviewer', 'admin'].includes(context.user.role))
-        return { error: 'Your role cannot propose edits' };
-      if (!Array.isArray(args.changes) || !args.changes.length || args.changes.length > 20)
-        return { error: 'Provide 1 to 20 changes' };
-      const changes = [];
-      for (const candidate of args.changes) {
-        const old = context.records.get(candidate.recordId);
-        if (!old) return { error: `Fetch record ${clip(candidate.recordId, 60)} before proposing it` };
-        const values = candidate.values;
-        if (
-          !values ||
-          typeof values !== 'object' ||
-          Array.isArray(values) ||
-          !Object.keys(values).length ||
-          Object.keys(values).length > 20
-        )
-          return { error: 'Invalid field patch' };
-        const before = {};
-        for (const key of Object.keys(values)) {
-          if (!Object.hasOwn(old.values ?? {}, key) || Object.hasOwn(old.formulas ?? {}, key))
-            return { error: `Field ${clip(key, 60)} is absent or formula based` };
-          before[key] = old.values[key];
-        }
-        changes.push({ recordId: old.id, expectedVersion: old.version, before, values });
+    if (name === 'propose_changes') return proposeChanges(args, context);
+    if (name === 'apply_proposal') {
+      const proposal = db
+        .prepare('SELECT * FROM ai_proposals WHERE id = ? AND thread_id = ?')
+        .get(String(args.proposalId ?? ''), context.threadId);
+      if (!proposal) return { error: 'Proposal not found in this conversation' };
+      try {
+        const out = await applyProposal(proposal, context.user, {
+          requestId: `ai-${randomUUID()}`,
+          indexes: args.indexes,
+          reason: 'Confirmado en el chat',
+        });
+        context.applied.push(proposal.id);
+        return { status: out.status, rows: out.applied.length };
+      } catch (e) {
+        return { error: clip(e.message, 300), details: e.details?.items?.slice(0, 10) };
       }
-      const id = randomUUID();
-      db.prepare(
-        'INSERT INTO ai_proposals (id,thread_id,owner_id,changes_json,reason,status,created_at) VALUES (?,?,?,?,?,?,?)',
-      ).run(id, context.threadId, owner(context.user), json(changes), clip(args.reason, 500), 'pending', now());
-      const proposal = { id, changes, reason: clip(args.reason, 500), status: 'pending' };
-      context.proposals.push(proposal);
-      return { proposal };
     }
     return { error: 'Unknown tool' };
   }
 
-  async function reply(threadId, user, prompt, attachmentIds = []) {
+  function initialsFor(user) {
+    const name = String(user.displayName || user.username || '').trim();
+    const words = name.toLowerCase().split(/\s+/).filter(Boolean);
+    let known = [];
+    try {
+      known = db
+        .prepare(
+          "SELECT DISTINCT json_extract(values_json, '$.Collector') c FROM records WHERE sheet = 'Collection_data' AND json_extract(values_json, '$.Collector') LIKE '% - %'",
+        )
+        .all()
+        .map(r => String(r.c));
+    } catch {
+      /* No mirrored rows (tests). */
+    }
+    const match = known.find(c => words.length && words.every(w => c.toLowerCase().includes(w)));
+    return match ? match.split(' - ')[0].trim() : words.map(w => w[0].toUpperCase()).join('') || 'APP';
+  }
+
+  function systemPrompt(user) {
+    return [
+      `Today is ${now().slice(0, 10)}. You are talking with ${user.displayName || user.username} (initials ${initialsFor(user)}, role ${user.role}).`,
+      'Reply in Spanish, briefly. Refer to rows by their identifier (e.g. 5VB, CAM078038) and sheet row, never by internal app IDs.',
+      'Use the tools to read exact rows before answering. Only claim what the tools show. Never infer survival, fertility, mating, genotype or identity from counts.',
+      'Changes are drafted with propose_changes; the person reviews them in a table and confirms. Use apply_proposal only when their latest message explicitly approves a proposal. Never say a change was written unless apply_proposal returned applied.',
+    ].join('\n');
+  }
+
+  async function loadImages(attachmentIds) {
+    if (!attachmentIds.length) return [];
+    if (attachmentIds.length > 6 || typeof store.getAttachment !== 'function')
+      throw new Error('Attachments are unavailable');
+    const images = [];
+    for (const id of attachmentIds) {
+      const attachment = await store.getAttachment(String(id));
+      if (
+        !attachment ||
+        !/^image\/(png|jpeg|webp)$/.test(attachment.mimeType) ||
+        !Buffer.isBuffer(attachment.data) ||
+        attachment.data.length > 10_000_000
+      )
+        throw new Error('Invalid image attachment');
+      images.push(attachment);
+    }
+    return images;
+  }
+
+  // Tokens that let one Claude turn call the app's tools through /api/ai/mcp.
+  const turns = new Map();
+  const busy = new Set();
+
+  async function replyWithClaude(threadId, user, prompt, images, context) {
+    const thread = db.prepare('SELECT claude_session FROM ai_threads WHERE id = ?').get(threadId);
+    const token = randomBytes(24).toString('hex');
+    turns.set(token, { context, expires: Date.now() + claude.timeoutMs + 60000 });
+    const content = [
+      ...images.map(image => ({
+        type: 'image',
+        source: { type: 'base64', media_type: image.mimeType, data: image.data.toString('base64') },
+      })),
+      { type: 'text', text: prompt },
+    ];
+    const run = (resume, text = prompt) =>
+      runClaude(claude, {
+        content: [...content.slice(0, -1), { type: 'text', text }],
+        system: systemPrompt(user),
+        mcpUrl,
+        token,
+        resume,
+        sessionId: resume ? null : randomUUID(),
+        docsDir: join(here, '..', 'docs'),
+      });
+    try {
+      let out;
+      try {
+        out = await run(thread?.claude_session ?? null);
+      } catch (e) {
+        if (!e.missingSession) throw e;
+        // The saved session is gone (e.g. a new server): start again with the recent messages as context.
+        const recent = db
+          .prepare(
+            'SELECT role,content FROM ai_messages WHERE thread_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 11',
+          )
+          .all(threadId)
+          .reverse()
+          .slice(0, -1)
+          .map(m => `${m.role === 'user' ? 'Persona' : 'Asistente'}: ${clip(m.content, 1500)}`)
+          .join('\n\n');
+        out = await run(null, recent ? `Conversación anterior:\n${recent}\n\n${prompt}` : prompt);
+      }
+      db.prepare('UPDATE ai_threads SET claude_session = ? WHERE id = ?').run(out.sessionId, threadId);
+      return out.text;
+    } finally {
+      turns.delete(token);
+    }
+  }
+
+  async function replyWithApi(threadId, user, prompt, images, context) {
     const history = db
       .prepare('SELECT role,content FROM ai_messages WHERE thread_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 10')
       .all(threadId)
       .reverse();
     const messages = [
-      {
-        role: 'system',
-        content:
-          'You are the Ithomiini research assistant. Use tools to retrieve exact records, approved documents, and reports before answering factual questions. Cite source IDs in square brackets, e.g. [record-id] or [document-id]. Only claim facts supported by tool output; explain missing data and report methods. Never infer survival, fertility, mating, genotype, current life status, or biological identity from simple counts, eggs, or repeated marks. For edits, fetch each exact record, then use propose_changes. Proposals require human review. Never say an edit was applied. No SQL, shell, or external browsing is available.',
-      },
+      { role: 'system', content: systemPrompt(user) },
       ...history.map(row => ({ role: row.role, content: row.content })),
     ];
-    if (attachmentIds.length) {
-      if (attachmentIds.length > 3 || typeof store.getAttachment !== 'function')
-        throw new Error('Attachments are unavailable');
-      const parts = [{ type: 'text', text: prompt }];
-      for (const id of attachmentIds) {
-        const attachment = await store.getAttachment(String(id));
-        if (
-          !attachment ||
-          !/^image\/(png|jpeg|webp)$/.test(attachment.mimeType) ||
-          !Buffer.isBuffer(attachment.data) ||
-          attachment.data.length > 10_000_000
-        )
-          throw new Error('Invalid image attachment');
-        parts.push({
-          type: 'image_url',
-          image_url: { url: `data:${attachment.mimeType};base64,${attachment.data.toString('base64')}` },
-        });
-      }
-      messages[messages.length - 1] = { role: 'user', content: parts };
-    }
-    const context = { threadId, user, records: new Map(), sources: new Map(), results: [], proposals: [] };
-    let answer = '';
-    for (let round = 0; round < 4; round++) {
+    if (images.length)
+      messages[messages.length - 1] = {
+        role: 'user',
+        content: [
+          { type: 'text', text: prompt },
+          ...images.map(image => ({
+            type: 'image_url',
+            image_url: { url: `data:${image.mimeType};base64,${image.data.toString('base64')}` },
+          })),
+        ],
+      };
+    for (let round = 0; round < 6; round++) {
       const response = await complete(ai, messages);
-      if (!response.tool_calls?.length) {
-        answer = clip(response.content, 12000);
-        break;
-      }
+      if (!response.tool_calls?.length) return clip(response.content, 12000);
       if (response.tool_calls.length > 8) throw new Error('AI requested too many tools');
       messages.push({ role: 'assistant', content: response.content ?? null, tool_calls: response.tool_calls });
       for (const call of response.tool_calls) {
-        const result = await executeTool(call, context);
+        const result = await executeTool(call.function?.name, parse(call.function?.arguments ?? '{}') ?? {}, context);
         messages.push({ role: 'tool', tool_call_id: call.id, content: json(result).slice(0, 18000) });
       }
     }
-    if (!answer) throw new Error('AI did not produce an answer');
-    const cited = [...answer.matchAll(/\[([A-Za-z0-9_-]{2,120})\]/g)].map(match => match[1]);
-    answer = answer.replace(/\[([A-Za-z0-9_-]{2,120})\]/g, (full, id) => (context.sources.has(id) ? full : ''));
-    const sources = cited.filter(id => context.sources.has(id)).map(id => context.sources.get(id));
-    const unique = [...new Map(sources.map(item => [item.id, item])).values()];
-    const message = insertMessage(threadId, 'assistant', answer, unique, context.results, context.proposals);
-    return { message, sources: unique, results: context.results, proposals: context.proposals };
+    throw new Error('AI did not produce an answer');
+  }
+
+  async function reply(threadId, user, prompt, attachments = []) {
+    if (busy.has(threadId)) throw Object.assign(new Error('busy'), { busy: true });
+    busy.add(threadId);
+    try {
+      const images = await loadImages(attachments.map(a => a.id));
+      const context = {
+        threadId,
+        user,
+        records: new Map(),
+        sources: new Map(),
+        results: [],
+        proposals: [],
+        applied: [],
+      };
+      let answer = claudeAllowed(claude, user)
+        ? await replyWithClaude(threadId, user, prompt, images, context)
+        : await replyWithApi(threadId, user, prompt, images, context);
+      answer = clip(answer, 12000);
+      const cited = [...answer.matchAll(/\[([A-Za-z0-9_-]{2,120})\]/g)].map(match => match[1]);
+      answer = answer.replace(/\[([A-Za-z0-9_-]{2,120})\]/g, (full, id) => (context.sources.has(id) ? full : ''));
+      const sources = cited.filter(id => context.sources.has(id)).map(id => context.sources.get(id));
+      const unique = [...new Map(sources.map(item => [item.id, item])).values()];
+      const views = context.proposals.map(p =>
+        proposalView(p, db.prepare('SELECT status,applied_at,applied_json FROM ai_proposals WHERE id = ?').get(p.id)),
+      );
+      const message = insertMessage(threadId, 'assistant', answer, unique, context.results, context.proposals);
+      return {
+        message: { ...message, proposals: views },
+        sources: unique,
+        results: context.results,
+        proposals: views,
+        applied: context.applied,
+      };
+    } finally {
+      busy.delete(threadId);
+    }
+  }
+
+  /** MCP (streamable HTTP, JSON replies) for the Claude CLI; one token per turn. */
+  async function mcp(headers, body) {
+    const token = /^Bearer\s+(\S+)$/.exec(String(headers.authorization ?? ''))?.[1];
+    const turn = token && turns.get(token);
+    const id = body?.id ?? null;
+    if (!turn || turn.expires < Date.now())
+      return { status: 401, body: { jsonrpc: '2.0', id, error: { code: -32001, message: 'Unauthorized' } } };
+    const result = value => ({ status: 200, body: { jsonrpc: '2.0', id, result: value } });
+    const method = String(body?.method ?? '');
+    if (method.startsWith('notifications/')) return { status: 202, body: null };
+    if (method === 'initialize')
+      return result({
+        protocolVersion: body.params?.protocolVersion ?? '2025-06-18',
+        capabilities: { tools: { listChanged: false } },
+        serverInfo: { name: 'ithomiini', version: '1.0.0' },
+      });
+    if (method === 'ping') return result({});
+    if (method === 'tools/list')
+      return result({
+        tools: TOOLS.map(t => ({
+          name: t.function.name,
+          description: t.function.description,
+          inputSchema: t.function.parameters,
+        })),
+      });
+    if (method === 'tools/call') {
+      let out;
+      try {
+        out = await executeTool(String(body.params?.name ?? ''), body.params?.arguments ?? {}, turn.context);
+      } catch (e) {
+        out = { error: clip(e.message, 300) };
+      }
+      return result({ content: [{ type: 'text', text: json(out).slice(0, 200000) }], isError: Boolean(out?.error) });
+    }
+    return { status: 200, body: { jsonrpc: '2.0', id, error: { code: -32601, message: 'Method not found' } } };
   }
 
   async function handle({ method, path, body = {}, user, query = {} }) {
@@ -448,14 +846,19 @@ export function createAssistant({ store, config = {} }) {
       } catch {
         /* Status must not reveal file paths. */
       }
+      const useClaude = claudeAllowed(claude, user);
       return {
         status: 200,
         body: {
-          configured: Boolean(ai.model && key),
-          provider: String(ai.baseUrl).includes('openrouter.ai') ? 'OpenRouter' : 'OpenAI-compatible',
-          model: ai.model || null,
+          configured: useClaude || Boolean(ai.model && key),
+          provider: useClaude
+            ? 'Claude'
+            : String(ai.baseUrl).includes('openrouter.ai')
+              ? 'OpenRouter'
+              : 'OpenAI-compatible',
+          model: useClaude ? claude.model : ai.model || null,
           transcription: Boolean(ai.transcriptionModel && key),
-          vision: Boolean(ai.visionModel && key),
+          vision: useClaude || Boolean(ai.visionModel && key),
         },
       };
     }
@@ -494,9 +897,9 @@ export function createAssistant({ store, config = {} }) {
       const record = thread(threadMatch[1], user);
       if (!record) return bad(404, 'not_found', 'Conversation not found.');
       if (!threadMatch[2] && method === 'GET') {
-        const statusById = new Map(
+        const rows = new Map(
           db
-            .prepare('SELECT id,status,applied_at FROM ai_proposals WHERE thread_id = ?')
+            .prepare('SELECT id,status,applied_at,applied_json FROM ai_proposals WHERE thread_id = ?')
             .all(record.id)
             .map(item => [item.id, item]),
         );
@@ -505,11 +908,7 @@ export function createAssistant({ store, config = {} }) {
           .all(record.id)
           .map(row => {
             const message = publicMessage(row);
-            message.proposals = message.proposals.map(proposal => ({
-              ...proposal,
-              status: statusById.get(proposal.id)?.status ?? proposal.status,
-              appliedAt: statusById.get(proposal.id)?.applied_at ?? null,
-            }));
+            message.proposals = message.proposals.map(p => proposalView(p, rows.get(p.id)));
             return message;
           });
         return {
@@ -533,17 +932,32 @@ export function createAssistant({ store, config = {} }) {
         if (
           body.attachmentIds !== undefined &&
           (!Array.isArray(body.attachmentIds) ||
-            body.attachmentIds.length > 3 ||
+            body.attachmentIds.length > 6 ||
             body.attachmentIds.some(id => typeof id !== 'string' || id.length > 120))
         )
-          return bad(400, 'invalid_attachments', 'Use at most three image attachments.');
-        insertMessage(record.id, 'user', message);
+          return bad(400, 'invalid_attachments', 'Use at most six photos.');
+        const attachments = (body.attachmentIds ?? []).map(id => {
+          const found = store.getAttachment?.(id);
+          return { id, name: found?.name ?? 'foto', mimeType: found?.mimeType ?? null };
+        });
+        if (busy.has(record.id)) return bad(409, 'busy', 'The assistant is still answering in this conversation.');
+        insertMessage(record.id, 'user', message, [], [], [], attachments);
         try {
-          return { status: 200, body: await reply(record.id, user, message, body.attachmentIds ?? []) };
-        } catch {
+          return { status: 200, body: await reply(record.id, user, message, attachments) };
+        } catch (e) {
+          console.error('Assistant turn failed:', e.message);
           return bad(502, 'provider_error', 'The assistant could not complete this message. Try again.');
         }
       }
+    }
+    const discardMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/discard$/.exec(path);
+    if (discardMatch && method === 'POST') {
+      const done = db
+        .prepare("UPDATE ai_proposals SET status = 'discarded' WHERE id = ? AND owner_id = ? AND status = 'pending'")
+        .run(discardMatch[1], owner(user));
+      return done.changes
+        ? { status: 200, body: { proposalId: discardMatch[1], status: 'discarded' } }
+        : bad(409, 'proposal_used', 'Proposal is no longer pending.');
     }
     const proposalMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/apply$/.exec(path);
     if (proposalMatch && method === 'POST') {
@@ -552,55 +966,31 @@ export function createAssistant({ store, config = {} }) {
         .get(proposalMatch[1], owner(user));
       if (!proposal) return bad(404, 'not_found', 'Proposal not found.');
       if (proposal.status !== 'pending') return bad(409, 'proposal_used', 'Proposal has already been applied.');
-      if (!['editor', 'reviewer', 'admin'].includes(user.role))
-        return bad(403, 'forbidden', 'Your role cannot apply changes.');
-      if (typeof store.applyProposal !== 'function')
-        return bad(503, 'apply_unavailable', 'Reviewed changes are unavailable.');
       const requestId = typeof body.requestId === 'string' ? body.requestId : '';
       if (requestId.length < 8 || requestId.length > 120)
         return bad(400, 'request_id_required', 'A unique requestId of 8 to 120 characters is required.');
-      const claimed = db
-        .prepare("UPDATE ai_proposals SET status = 'applying' WHERE id = ? AND owner_id = ? AND status = 'pending'")
-        .run(proposal.id, owner(user));
-      if (!claimed.changes) return bad(409, 'proposal_used', 'Proposal is already being applied or reviewed.');
+      if (body.indexes !== undefined && (!Array.isArray(body.indexes) || body.indexes.some(i => !Number.isInteger(i))))
+        return bad(400, 'invalid_indexes', 'indexes must be a list of row numbers.');
       try {
-        const result = await store.applyProposal(parse(proposal.changes_json), {
-          user,
-          requestId,
-          reason: clip(body.reason || proposal.reason, 500),
-        });
-        const status = result?.status === 'verified' ? 'applied' : 'needs_review';
-        db.prepare('UPDATE ai_proposals SET status = ?, applied_at = ? WHERE id = ?').run(
-          status,
-          status === 'applied' ? now() : null,
-          proposal.id,
-        );
-        return { status: status === 'applied' ? 200 : 409, body: { proposalId: proposal.id, status, result } };
+        const out = await applyProposal(proposal, user, { requestId, indexes: body.indexes, reason: body.reason });
+        return { status: out.status === 'applied' ? 200 : 409, body: out };
       } catch (cause) {
-        db.prepare("UPDATE ai_proposals SET status = 'needs_review' WHERE id = ?").run(proposal.id);
-        const current = [];
-        for (const change of parse(proposal.changes_json) ?? []) {
-          const record = await store.getRecord(change.recordId);
-          current.push({
+        const current = (parse(proposal.changes_json) ?? []).map(change => {
+          const record = store.getRecord(change.recordId);
+          return {
             recordId: change.recordId,
             version: record?.version ?? null,
-            values: record
-              ? Object.fromEntries(Object.keys(change.values).map(field => [field, record.values?.[field]]))
-              : null,
-          });
-        }
+            values: record ? Object.fromEntries(Object.keys(change.values).map(f => [f, record.values?.[f]])) : null,
+          };
+        });
+        const status = db.prepare('SELECT status FROM ai_proposals WHERE id = ?').get(proposal.id)?.status;
         return {
           status: cause.status ?? 409,
           body: {
             error: {
               code: cause.code ?? 'apply_failed',
-              message: clip(cause.message, 180),
-              details: {
-                proposalId: proposal.id,
-                status: 'needs_review',
-                current,
-                note: 'Some source changes may have applied. Inspect record history before drafting another change.',
-              },
+              message: clip(cause.message, 300),
+              details: { proposalId: proposal.id, status, current, items: cause.details?.items?.slice(0, 20) ?? [] },
             },
           },
         };
@@ -703,5 +1093,5 @@ export function createAssistant({ store, config = {} }) {
     }
     return bad(404, 'not_found', 'Assistant route not found.');
   }
-  return { handle };
+  return { handle, mcp };
 }

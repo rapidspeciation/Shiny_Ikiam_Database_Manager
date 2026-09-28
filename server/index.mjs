@@ -307,6 +307,20 @@ export async function createApp(config = {}, options = {}) {
           setupRequired: !store.db.prepare("SELECT 1 FROM users WHERE role='admin' AND active=1").get(),
         });
       const body = ['POST', 'PATCH', 'PUT', 'DELETE'].includes(method) ? await bodyOf(req) : {};
+      // The Claude CLI reaches the assistant's tools here with a per-turn token instead of a session.
+      if (path === '/api/ai/mcp') {
+        if (!assistant?.mcp) throw fail('NOT_FOUND', 'Not found', 404);
+        if (method !== 'POST') {
+          res.writeHead(405, { allow: 'POST' });
+          return res.end();
+        }
+        const out = await assistant.mcp(req.headers, body);
+        if (out.status === 202) {
+          res.writeHead(202);
+          return res.end();
+        }
+        return json(res, out.status, out.body);
+      }
       // Called by the Apps Script trigger, which has no session; it sends a shared secret instead.
       if (method === 'POST' && path === '/api/hooks/sheet-edit')
         return json(res, 202, sheetHook.receive(req.headers, body));

@@ -22,6 +22,11 @@ const UNIQUE_FIELDS = {
   Collection_data: field => field === 'CAM_ID' || TUBE_FIELD.test(field),
 };
 
+// Formula cells that may be typed over, and only with a value different from what the
+// formula predicts: the species of an insectary butterfly when what emerged is not what
+// the clutch predicted. The formula is kept in history, so undo puts it back.
+export const TYPED_OVER_FORMULA = { Insectary_data: new Set(['SPECIES']) };
+
 const blank = value => value === null || value === undefined || /^\s*(|NA|N\/A)\s*$/i.test(String(value));
 const cellValue = (values, formulas, field) => (formulas[field] ? { formula: formulas[field] } : values[field]);
 const fail = (code, message, status = 400, details) => Object.assign(new Error(message), { code, status, details });
@@ -154,6 +159,10 @@ class Plan {
     edits.forEach((edit, index) => {
       const target = { index, editId: edit?.id, expected: edit?.expected || null, raw: edit?.values || {} };
       const record = typeof edit?.id === 'string' ? this.store.getRecord(edit.id) : null;
+      const allowed = record && TYPED_OVER_FORMULA[record.sheet];
+      target.replaceFormula = new Set(
+        Array.isArray(edit?.replaceFormula) ? edit.replaceFormula.filter(f => allowed?.has(f)) : [],
+      );
       if (!record || record.missing || record.row <= 0)
         return this.conflict(target, 'RECORD_NOT_FOUND', 'The row is no longer available; reload the table');
       if (seen.has(record.id)) return this.conflict(target, 'DUPLICATE_EDIT', 'The same row appears twice in one save');
@@ -304,8 +313,28 @@ class Plan {
     const before = rowValues(record.sheet, liveRow);
     const changes = [];
     for (const [field, after] of Object.entries(target.clean)) {
-      if (before.formulas[field] && this.source !== 'undo')
+      const replacing = !!before.formulas[field] && target.replaceFormula.has(field);
+      if (before.formulas[field] && this.source !== 'undo' && !replacing)
         return this.conflict(target, 'FORMULA_CELL', `${field} is calculated by a formula`, { field });
+      if (replacing) {
+        const predicted = before.values[field] ?? null;
+        if (comparable(predicted) === comparable(after))
+          return this.conflict(target, 'MATCHES_FORMULA', `${field} already gives ${after}; nothing to type`, {
+            field,
+          });
+        if (
+          target.expected &&
+          Object.hasOwn(target.expected, field) &&
+          comparable(target.expected[field]) !== comparable(predicted)
+        )
+          return this.conflict(target, 'EXTERNAL_CONFLICT', `${field} was changed by someone else`, {
+            field,
+            expected: target.expected[field],
+            actual: predicted,
+          });
+        changes.push({ field, before: { formula: before.formulas[field] }, after });
+        continue;
+      }
       const actual = cellValue(before.values, before.formulas, field);
       const expected =
         target.expected && Object.hasOwn(target.expected, field)
