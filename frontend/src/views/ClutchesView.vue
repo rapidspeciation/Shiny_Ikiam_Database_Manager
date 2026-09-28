@@ -2,7 +2,8 @@
 import ChoiceField from '../components/ChoiceField.vue'
 import DateField from '../components/DateField.vue'
 import { computed, ref } from 'vue'
-import { Plus } from 'lucide-vue-next'
+import { NotebookPen, Plus } from 'lucide-vue-next'
+import { RouterLink } from 'vue-router'
 import SheetGrid from '../components/SheetGrid.vue'
 import { useSheet } from '../composables/useSheet'
 import { isBlank } from '../lib/cells'
@@ -115,6 +116,13 @@ const columns = computed(() =>
         <ChoiceField v-model="form.place" class="field-input" :options="['Insectary', 'Laboratory']" :freetext="false" />
       </label>
       <button class="btn-primary"><Plus :size="15" /> Nuevo clutch</button>
+      <RouterLink
+        :to="{ path: '/cuaderno', query: { tipo: 'stocks' } }"
+        class="btn ml-auto"
+        title="Fotografía páginas del cuaderno de posturas: la IA las transcribe y propone los cambios"
+      >
+        <NotebookPen :size="15" /> Digitalizar cuaderno
+      </RouterLink>
     </form>
     <p class="hint px-4 py-1">
       Eclosión y pupa: escribe la fecha y el número en la fila del clutch. Se muestran los clutches de los últimos 60 días que aún

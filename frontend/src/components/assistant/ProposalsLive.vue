@@ -129,7 +129,9 @@ const origin = (p: Proposal) =>
         :class="{ 'ring-2 ring-emerald-400': arrived.has(p.id) }"
       >
         <p class="mt-2 px-1 text-[11px] text-stone-500">{{ origin(p) }}</p>
+        <!-- A notebook page's proposal changes as the page is corrected: its rows are ticked again. -->
         <ProposalGrid
+          :key="p.changes.length"
           :proposal="p"
           :busy="applying === p.id"
           @apply="indexes => apply(p, indexes)"
