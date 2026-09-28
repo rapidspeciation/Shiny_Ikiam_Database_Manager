@@ -98,7 +98,33 @@ const ranked = (field: string, filter?: (values: Record<string, CellValue>) => b
   return [...counts].sort((a, b) => b[1] - a[1]).map(([v]) => v)
 }
 const speciesList = computed(() => ranked('SPECIES'))
-const subspeciesFor = (species: string) => ranked('Subspecies_Form', v => v.SPECIES === species)
+/**
+ * Subspecies or forms for each species: those used with it in Collection_data
+ * (most used first), then those in Insectary_data's SPECIES ("Ithomia salapia
+ * derasa") and in the Lists' Insectary_species. Taxonomy_v18Jun25 has a
+ * subspecies column, but it is NA for every species, and the sheet does not
+ * validate Subspecies_Form, so a new form is not marked.
+ */
+const subspecies = computed(() => {
+  void tables.versions.Insectary_data
+  const counts = new Map<string, Map<string, number>>()
+  const add = (species: string, sub: string, n = 1) => {
+    if (!species || !sub || /^(NA|N\/A)$/i.test(sub)) return
+    const forms = counts.get(species) || new Map<string, number>()
+    forms.set(sub, (forms.get(sub) || 0) + n)
+    counts.set(species, forms)
+  }
+  for (const r of observed.value) add(String(r.values.SPECIES ?? '').trim(), String(r.values.Subspecies_Form ?? '').trim(), 1000)
+  // "Genus species subspecies" (not hybrids: "… x …", "… VS …").
+  const split = (name: string) => {
+    const words = name.trim().split(/\s+/)
+    if (words.length > 2 && !/ x |\bVS\b/i.test(name)) add(words.slice(0, 2).join(' '), words.slice(2).join(' '))
+  }
+  for (const r of tables.tables.Insectary_data?.rows || []) if (r.observed && !isBlank(r.values.SPECIES)) split(String(r.values.SPECIES))
+  for (const name of listColumn(lists.value, 'Insectary_species')) split(name)
+  return new Map([...counts].map(([species, forms]) => [species, [...forms].sort((a, b) => b[1] - a[1]).map(([f]) => f)]))
+})
+const subspeciesFor = (species: string) => subspecies.value.get(species.trim()) || []
 const places = computed(() => [...new Set([...ranked('Collection_location'), ...(options.value.Collection_location || [])])])
 const people = computed(() => options.value.Collector || ranked('Collector'))
 const rainfalls = computed(() => options.value.Rainfall || ranked('Rainfall'))
