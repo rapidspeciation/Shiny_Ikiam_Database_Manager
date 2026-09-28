@@ -1,6 +1,47 @@
 import { describe, expect, it } from 'vitest'
-import { misfit } from '../collect'
+import { misfit, summarize, type Draft } from '../collect'
+import { weekdayOf } from '../dates'
 import { complete, pickChoice } from '../paste'
+
+describe('the summary shown before saving a Colecta', () => {
+  const draft = (over: Partial<Draft>): Draft => ({
+    key: Math.random().toString(),
+    location: 'Cavernas Templo de Ceremonia',
+    species: 'Ithomia salapia',
+    subspecies: 'salapia',
+    sex: 'female',
+    fate: 'insectario',
+    time: '',
+    purpose: '',
+    notes: '',
+    insectaryId: '',
+    cam: '',
+    tube: '',
+    medium: '',
+    ...over,
+  })
+  it('counts sexes sent to the insectary, preserved ones with their CAM range, and species by sex', () => {
+    const oleria = { species: 'Oleria onega', subspecies: 'astigara', sex: 'male', fate: 'preservada' } as const
+    const s = summarize([
+      draft({}),
+      draft({ sex: 'male' }),
+      draft({ sex: 'female ?' }),
+      draft({ ...oleria, cam: 'CAM079896' }),
+      draft({ ...oleria, cam: 'CAM079895' }),
+      draft({ location: 'Ikiam', fate: 'liberada', sex: 'NOT_COLLECTED' }),
+    ])
+    expect(s.places).toEqual(['Cavernas Templo de Ceremonia', 'Ikiam'])
+    expect(s.insectary).toEqual({ female: 2, male: 1, other: 0 })
+    expect([s.preserved, s.released]).toEqual([2, 1])
+    expect(s.cams).toEqual({ first: 'CAM079895', last: 'CAM079896', consecutive: true })
+    expect(s.species[0]).toEqual({ name: 'Ithomia salapia salapia', female: 2, male: 1, other: 1 })
+    expect(s.species[1]).toEqual({ name: 'Oleria onega astigara', female: 0, male: 2, other: 0 })
+  })
+  it('gives the weekday of the collection date', () => {
+    expect(weekdayOf('2026-09-23')).toBe('miércoles')
+    expect(weekdayOf('')).toBe('')
+  })
+})
 
 describe('values that do not fit a Colecta column', () => {
   it('keeps IDs, CAMs, tubes and times that look right (and blanks or NA)', () => {

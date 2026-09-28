@@ -107,3 +107,42 @@ export const notApplicable = (column: Column) =>
   column === 'insectaryId'
     ? 'Insectary_ID es solo para Collected_Sent2Insectary: cambia primero Release_Collect'
     : `${HEADERS[column]} es solo para Collected_Preserved: cambia primero Release_Collect`
+
+/** What a Colecta list will save, to read over before saving (a wrong day, sexes swapped). */
+export interface CollectSummary {
+  places: string[]
+  insectary: { female: number; male: number; other: number }
+  preserved: number
+  released: number
+  /** First and last CAM of the preserved butterflies, and whether they run without gaps. */
+  cams: { first: string; last: string; consecutive: boolean } | null
+  species: { name: string; female: number; male: number; other: number }[]
+}
+export function summarize(drafts: Draft[]): CollectSummary {
+  const sexOf = (d: Draft) => (d.sex.startsWith('female') ? 'female' : d.sex.startsWith('male') ? 'male' : 'other')
+  const insectary = { female: 0, male: 0, other: 0 }
+  const species = new Map<string, { name: string; female: number; male: number; other: number }>()
+  for (const d of drafts) {
+    if (d.fate === 'insectario') insectary[sexOf(d)]++
+    const name = [d.species, d.subspecies].filter(Boolean).join(' ') || '(sin especie)'
+    const s = species.get(name) || { name, female: 0, male: 0, other: 0 }
+    s[sexOf(d)]++
+    species.set(name, s)
+  }
+  const number = (id: string) => Number(/(\d+)$/.exec(id)?.[1])
+  const cams = drafts
+    .filter(d => d.fate === 'preservada' && d.cam)
+    .map(d => d.cam)
+    .sort((a, b) => number(a) - number(b))
+  const total = (s: { female: number; male: number; other: number }) => s.female + s.male + s.other
+  return {
+    places: [...new Set(drafts.map(d => d.location).filter(Boolean))],
+    insectary,
+    preserved: drafts.filter(d => d.fate === 'preservada').length,
+    released: drafts.filter(d => d.fate === 'liberada').length,
+    cams: cams.length
+      ? { first: cams[0], last: cams.at(-1)!, consecutive: number(cams.at(-1)!) - number(cams[0]) === cams.length - 1 }
+      : null,
+    species: [...species.values()].sort((a, b) => total(b) - total(a) || a.name.localeCompare(b.name)),
+  }
+}

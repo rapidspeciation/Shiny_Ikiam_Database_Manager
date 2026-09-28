@@ -6,7 +6,7 @@ import SheetGrid from '../components/SheetGrid.vue'
 import { useSheet } from '../composables/useSheet'
 import { api } from '../lib/api'
 import { isBlank } from '../lib/cells'
-import { isoToSerial, todayIso } from '../lib/dates'
+import { formatSerial, isoToSerial, todayIso, weekdayOf } from '../lib/dates'
 import { errorText, notify } from '../lib/notice'
 import { listColumn } from '../lib/options'
 import { listProblem, verificationsFor } from '../lib/verifications'
@@ -20,6 +20,7 @@ import {
   applies,
   insectarySex,
   misfit,
+  summarize,
   type Column,
   type Draft,
   type Fate,
@@ -584,6 +585,22 @@ const insectaryRow = (d: Draft): Record<string, CellValue> => ({
   Intro2Insectary_date: serial(header.value.date),
 })
 
+/** Read over before saving: the day (a list typed days later was saved as today), places, sexes, CAMs. */
+const confirming = ref(false)
+const summary = computed(() => summarize(drafts.value))
+const isToday = computed(() => header.value.date === todayIso())
+const longDate = computed(() =>
+  header.value.date ? `${weekdayOf(header.value.date)} ${formatSerial(isoToSerial(header.value.date))}` : 'sin fecha',
+)
+function askSave() {
+  if (!drafts.value.length) return
+  if (problems.value.length) return notify(problems.value.slice(0, 3).join('; '), 'error')
+  confirming.value = true
+}
+function confirmSave() {
+  confirming.value = false
+  save()
+}
 async function save() {
   if (!drafts.value.length) return
   if (problems.value.length) return notify(problems.value.slice(0, 3).join('; '), 'error')
@@ -633,8 +650,11 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
   <div class="flex h-full flex-col overflow-y-auto">
     <div class="toolbar">
       <label>
-        <span class="field-label">Collection_date</span>
-        <input v-model="header.date" type="date" class="field-input" />
+        <span class="field-label"
+          >Collection_date <span class="font-normal text-stone-500">{{ weekdayOf(header.date) }}</span></span
+        >
+        <input v-model="header.date" type="date" class="field-input" :class="{ 'border-amber-500 bg-amber-50': isToday }" />
+        <span v-if="isToday" class="block text-xs text-amber-800">¿Es hoy la fecha de la colecta?</span>
       </label>
       <label class="min-w-52">
         <span class="field-label">Collector</span>
@@ -997,7 +1017,7 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
           mariposa, o crea más filas preasignadas en Insectary_data.
         </span>
         <button v-if="emptyCount" class="btn" @click="removeEmpty"><Eraser :size="15" /> Quitar filas vacías</button>
-        <button class="btn-primary ml-auto" :disabled="saving || !!problems.length" @click="save">
+        <button class="btn-primary ml-auto" :disabled="saving || !!problems.length" @click="askSave">
           <Save :size="15" /> {{ saving ? 'Guardando…' : `Guardar colecta (${drafts.length})` }}
         </button>
       </div>
@@ -1031,6 +1051,65 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
           }
         "
       />
+    </div>
+
+    <div
+      v-if="confirming"
+      class="fixed inset-0 z-40 grid place-items-center bg-black/40 p-2"
+      @click.self="confirming = false"
+      @keydown.esc="confirming = false"
+    >
+      <section class="flex max-h-[90vh] w-full max-w-lg flex-col rounded-lg bg-white shadow-xl" role="dialog" aria-label="Guardar colecta">
+        <header class="flex items-center border-b border-stone-200 px-4 py-3">
+          <h2 class="flex-1 text-lg font-semibold">Guardar {{ drafts.length }} mariposas</h2>
+          <button class="btn-ghost" aria-label="Cerrar" @click="confirming = false"><X :size="20" /></button>
+        </header>
+        <div class="flex-1 space-y-2 overflow-y-auto px-4 py-3 text-sm">
+          <p class="text-base">
+            <strong class="capitalize">{{ longDate }}</strong> · {{ summary.places.join(', ') }}
+          </p>
+          <p v-if="isToday" class="rounded bg-amber-50 px-2 py-1 text-amber-800">
+            La fecha es hoy. Si pasas a limpio una colecta de otro día, cambia Collection_date antes de guardar.
+          </p>
+          <p>
+            Al insectario: <strong>{{ summary.insectary.female }} ♀ · {{ summary.insectary.male }} ♂</strong
+            ><template v-if="summary.insectary.other"> · {{ summary.insectary.other }} sin sexo</template>
+            <br />
+            Preservadas: <strong>{{ summary.preserved }}</strong
+            ><template v-if="summary.cams">
+              ({{ summary.cams.first }}<template v-if="summary.cams.first !== summary.cams.last"> – {{ summary.cams.last }}</template
+              ><template v-if="!summary.cams.consecutive">, con saltos</template>)</template
+            >
+            <template v-if="summary.released"><br />Liberadas: <strong>{{ summary.released }}</strong></template>
+          </p>
+          <table class="w-full">
+            <thead class="text-left text-xs text-stone-500">
+              <tr>
+                <th class="py-1">Especie</th>
+                <th class="w-10 text-right">♀</th>
+                <th class="w-10 text-right">♂</th>
+                <th class="w-10 text-right">?</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="s in summary.species" :key="s.name" class="border-t border-stone-100">
+                <td class="py-1 pr-2">{{ s.name }}</td>
+                <td class="text-right tabular-nums">{{ s.female || '' }}</td>
+                <td class="text-right tabular-nums">{{ s.male || '' }}</td>
+                <td class="text-right tabular-nums">{{ s.other || '' }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="text-stone-600">
+            Collector: {{ header.collector || '—' }} · Identifier: {{ header.identifier || '—' }} · Rainfall:
+            {{ header.rainfall || '—' }} · Cloud_cover: {{ header.cloud || '—' }}
+          </p>
+        </div>
+        <footer class="flex justify-end gap-2 border-t border-stone-200 px-4 py-3">
+          <button class="btn" @click="confirming = false">Volver</button>
+          <button class="btn-primary" :disabled="saving" @click="confirmSave"><Save :size="15" /> Guardar en la hoja</button>
+        </footer>
+      </section>
     </div>
   </div>
 </template>
