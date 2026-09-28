@@ -491,9 +491,10 @@ export function createNotebookJobs(deps) {
     const sourceHash = /^[a-f0-9]{64}$/.test(String(body.sourceHash ?? '')) ? body.sourceHash : null;
     const id = randomUUID();
     // The same photo was read before: its reading is used again (no wait, no cost), with a warning.
+    // Not a reading the person discarded (it may have been the reason).
     const earlier = db
       .prepare(
-        "SELECT id, transcription_json FROM notebook_jobs WHERE transcription_json IS NOT NULL AND (photo_hash = ? OR (? IS NOT NULL AND source_hash = ?)) ORDER BY created_at DESC LIMIT 1",
+        "SELECT id, transcription_json FROM notebook_jobs WHERE transcription_json IS NOT NULL AND status <> 'discarded' AND (photo_hash = ? OR (? IS NOT NULL AND source_hash = ?)) ORDER BY created_at DESC LIMIT 1",
       )
       .get(photoHash, sourceHash, sourceHash);
     const reused =
