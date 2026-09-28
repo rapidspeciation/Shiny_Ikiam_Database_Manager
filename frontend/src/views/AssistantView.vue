@@ -62,6 +62,10 @@ const mode = persistentRef<'t3' | 'chat'>('assistant:mode', 't3')
 const waiting = ref<Proposal[]>([])
 const drawerOpen = ref(false)
 let loadedOnce = false
+function toggleDrawer() {
+  drawerOpen.value = !drawerOpen.value
+  fresh.value = false
+}
 const fresh = ref(false)
 const t3Frame = ref<InstanceType<typeof T3Frame>>()
 async function loadWaiting() {
