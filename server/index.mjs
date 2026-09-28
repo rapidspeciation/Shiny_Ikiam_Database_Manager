@@ -25,6 +25,10 @@ import {
   reopenWalk,
   saveTrack,
   saveWalk,
+  rematchTracks,
+  applyRematch,
+  linkCapture,
+  storeReviewedWalk,
 } from './monitoring.mjs';
 import { idSuggestions, tableChanges, tablePayload, tableRevision } from './grid.mjs';
 import { createSheetHook } from './hooks.mjs';
@@ -223,6 +227,9 @@ function checkOrigin(req) {
 }
 function requireEditor(user) {
   if (!['editor', 'reviewer', 'admin'].includes(user.role)) throw fail('FORBIDDEN', 'Editor role required', 403);
+}
+function requireReviewer(user) {
+  if (!['reviewer', 'admin'].includes(user.role)) throw fail('FORBIDDEN', 'Reviewer role required', 403);
 }
 function cleanTask(body, old = {}) {
   const title = body.title === undefined ? old.title : String(body.title).trim();
@@ -604,6 +611,23 @@ export async function createApp(config = {}, options = {}) {
         requireId(body);
         const saved = saveTrack(store, body, user);
         return json(res, saved.duplicate ? 200 : 201, saved);
+      }
+      // Pairing of walk points with sheet rows: what matching again would change, and the doubts.
+      if (method === 'GET' && path === '/api/monitoring/rematch') {
+        requireEditor(user);
+        return json(res, 200, rematchTracks(store, user));
+      }
+      if (method === 'POST' && path === '/api/monitoring/rematch') {
+        requireReviewer(user);
+        return json(res, 200, applyRematch(store, body));
+      }
+      if (method === 'POST' && /^\/api\/monitoring\/tracks\/[^/]+\/link$/.test(path)) {
+        requireEditor(user);
+        return json(res, 200, linkCapture(store, decodePart(path.split('/')[4]), body));
+      }
+      if (method === 'POST' && /^\/api\/monitoring\/wikiloc\/[^/]+\/store$/.test(path)) {
+        requireEditor(user);
+        return json(res, 201, storeReviewedWalk(store, decodePart(path.split('/')[4]), body, user));
       }
       if (method === 'POST' && /^\/api\/monitoring\/tracks\/[^/]+\/photos$/.test(path)) {
         requireEditor(user);
