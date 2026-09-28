@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 import { Lock } from 'lucide-vue-next'
 import InsectarySummary from '../components/home/InsectarySummary.vue'
 import NatureSummary from '../components/home/NatureSummary.vue'
+import PizarraCard from '../components/home/PizarraCard.vue'
 import TeamCounts from '../components/home/TeamCounts.vue'
 import { format } from '../components/charts/chart'
 import { api } from '../lib/api'
@@ -35,6 +36,8 @@ watch(() => session.user?.username, load)
 <template>
   <div class="h-full overflow-auto bg-stone-50">
     <div class="mx-auto max-w-7xl space-y-8 p-4 sm:p-6">
+      <!-- For the team, what they need when writing labels comes first. -->
+      <PizarraCard v-if="data?.team" :pizarra="data.team.pizarra" />
       <header class="space-y-3">
         <div class="flex flex-wrap items-end gap-x-4 gap-y-1">
           <h1 class="min-w-0 flex-1 text-xl font-semibold">Mariposas Ithomiini · Ikiam</h1>

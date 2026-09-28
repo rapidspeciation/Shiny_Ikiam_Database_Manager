@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createApp } from '../server/index.mjs';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
-import { activity, clutchStage, sessions, todaySerial } from '../server/summary.mjs';
+import { activity, clutchStage, marks, sessions, todaySerial } from '../server/summary.mjs';
 
 const today = todaySerial();
 
@@ -14,7 +14,7 @@ async function fixture() {
         row: 2,
         values: {
           Release_Collect: 'Mark_Released',
-          FieldMark_ID: '12',
+          FieldMark_ID: 'A12',
           SPECIES: 'Oleria onega',
           Collection_location: 'Ikiam',
           Purpose: 'Monitoring',
@@ -91,6 +91,8 @@ test('visitors get the natural history; the team counts and the insectary need a
       body: { token: 'test-setup-secret', username: 'boss', password: 'secret1', displayName: 'Boss' },
     });
     const signed = await call('/summary', { cookie: admin.cookie });
+    assert.equal(signed.body.team.pizarra.clutch, '902');
+    assert.equal(signed.body.team.pizarra.mark.last, 'A12');
     assert.equal(signed.body.team.collections.total, 2);
     assert.equal(signed.body.team.monitoring.individuals, 1);
     assert.equal(signed.body.team.crispr.hatched, 1);
@@ -138,4 +140,15 @@ test('the hour of day is corrected by the hours people were out searching', () =
   assert.equal(byHour[11].perHour, 1);
   assert.equal(byHour[10].share, 85.7); // 6 of the 7 captures
   assert.equal(byHour[15], undefined);
+});
+
+test('the whiteboard mark is the highest in the series in use, not a later recapture', () => {
+  const row = (id, day) => ({ FieldMark_ID: id, Collection_date: 46000 + day });
+  assert.deepEqual(marks([row('A99', 1), row('B67', 5), row('B68', 6), row('B12', 7)]), {
+    last: 'B68',
+    date: '2025-12-15',
+    next: 'B69',
+  });
+  assert.equal(marks([row('B99', 1)]).next, 'C1');
+  assert.equal(marks([row('NA', 1)]), null);
 });

@@ -5,7 +5,7 @@
 // monitoring, CRISPR, crosses) need a session.
 
 import { moduleMap } from './schema.mjs';
-import { tableRevision } from './grid.mjs';
+import { idSuggestions, tableRevision } from './grid.mjs';
 
 const DAY = 86_400_000;
 const EPOCH = Date.UTC(1899, 11, 30);
@@ -350,6 +350,83 @@ function insectary(store, today) {
   };
 }
 
+// ----------------------------------------------------------------- pizarra (signed in)
+
+const CAM = /^CAM(\d+)$/i;
+
+/**
+ * The CAM ID used last in some columns of a sheet: the latest date, then the
+ * highest number. (By number alone, an old CAM from another booklet can win:
+ * insectary rows also hold field CAMs.)
+ */
+function lastCam(rows, columns, dateOf) {
+  let best = null;
+  for (const r of rows)
+    for (const key of columns) {
+      const m = CAM.exec(text(r[key]));
+      const d = dateOf(r);
+      if (!m || d === null) continue;
+      if (!best || d > best.date || (d === best.date && Number(m[1]) > best.number))
+        best = { id: text(r[key]).toUpperCase(), number: Number(m[1]), width: m[1].length, date: d };
+    }
+  return best;
+}
+function nextCam(last, used) {
+  if (!last) return null;
+  for (let n = last.number + 1; ; n++) {
+    const id = `CAM${String(n).padStart(last.width, '0')}`;
+    if (!used.has(id)) return id;
+  }
+}
+
+/** The last monitoring mark given in the series now in use, its date, and the next one (B68 → B69; after 99 the next letter). */
+export function marks(rows) {
+  const given = rows
+    .map((r, i) => ({ r, i, m: /^([A-Z]+)(\d+)$/.exec(text(r.FieldMark_ID).toUpperCase()), date: date(r.Collection_date) }))
+    .filter(x => x.m)
+    .sort((a, b) => (a.date ?? 0) - (b.date ?? 0) || a.i - b.i);
+  const latest = given.at(-1);
+  if (!latest) return null;
+  const series = latest.m[1];
+  const max = Math.max(...given.filter(x => x.m[1] === series).map(x => Number(x.m[2])));
+  // A recapture of an older mark can be the latest row: the last mark given is the highest in the series.
+  const first = given.find(x => x.m[1] === series && Number(x.m[2]) === max);
+  const next = max < 99 ? `${series}${max + 1}` : `${series === 'M' ? 'A' : String.fromCharCode(series.charCodeAt(0) + 1)}1`;
+  return { last: `${series}${max}`, date: iso(first.date), next };
+}
+
+/**
+ * What the team writes on the whiteboard: the last CAM ID used in the
+ * insectary and in field collections, the last monitoring mark, with their
+ * dates, and the next free ones (plus the next Insectary ID and clutch number).
+ */
+function pizarra(store) {
+  const insect = rowsOf(store, 'Insectary_data');
+  const field = rowsOf(store, 'Collection_data');
+  const used = new Set();
+  for (const r of [...insect, ...field])
+    for (const key of ['CAM_ID', 'CAM_ID_CollData', 'CAM_ID_insectary']) if (CAM.test(text(r[key]))) used.add(text(r[key]).toUpperCase());
+  const insectaryCam = lastCam(insect, ['CAM_ID'], r => date(r.Preservation_date) ?? date(r.Death_date));
+  const fieldCam = lastCam(field, ['CAM_ID'], r => date(r.Preservation_date) ?? date(r.Collection_date));
+  const clutches = rowsOf(store, 'Insectary_stocks')
+    .map(r => parseInt(text(r['CLUTCH NUMBER']), 10))
+    .filter(Number.isFinite);
+  let insectaryId = null;
+  try {
+    insectaryId = idSuggestions(store, { kind: 'insectary', count: 1 }).sequence[0] ?? null;
+  } catch {
+    /* No pre-filled Insectary IDs left. */
+  }
+  const cam = last => last && { last: last.id, date: iso(last.date), next: nextCam(last, used) };
+  return {
+    insectaryCam: cam(insectaryCam),
+    collectionCam: cam(fieldCam),
+    mark: marks(field.filter(r => /^mark_released$/i.test(text(r.Release_Collect)))),
+    insectaryId,
+    clutch: clutches.length ? String(Math.max(...clutches) + 1) : null,
+  };
+}
+
 // ----------------------------------------------------------------- natural history (open)
 
 function median(values) {
@@ -628,6 +705,7 @@ export function createSummary(store) {
         ? cached('team', TEAM_SHEETS, () => {
             const collection = rowsOf(store, 'Collection_data');
             return {
+              pizarra: pizarra(store),
               insectary: insectary(store, today),
               monitoring: monitoring(collection, rowsOf(store, 'SamplingDay_data'), today),
               collections: collections(collection, today),
