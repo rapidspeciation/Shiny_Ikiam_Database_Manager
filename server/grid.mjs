@@ -146,7 +146,7 @@ function insectaryIds(store, start, count) {
   if (start) {
     // From a chosen ID the rows follow in sheet order (H0B → H1B → H2B).
     const from = free.find(r => norm(r.values.Insectary_ID) === norm(start));
-    if (!from) throw fail('ID_NOT_AVAILABLE', `${start} is not an unused pre-filled Insectary ID`, 409);
+    if (!from) throw fail('ID_NOT_AVAILABLE', `${start} no es un Insectary ID preasignado libre`, 409);
     pool = free.filter(r => r.row >= from.row);
   }
   const ids = pool.slice(0, count).map(r => ({ value: String(r.values.Insectary_ID).trim(), row: r.row }));

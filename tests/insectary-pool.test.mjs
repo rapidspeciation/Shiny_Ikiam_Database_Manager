@@ -49,6 +49,6 @@ test('starting from an earlier empty row, the IDs follow in sheet order (H1B →
   assert.deepEqual(idSuggestions(store, { kind: 'insectary', start: 'H1B', count: 3 }).sequence, ['H1B', 'H5B', 'M9D']);
   // Used by a butterfly, named in another sheet, or not unique: not offered.
   for (const id of ['H0B', 'H2B', 'H3B', 'H4B'])
-    assert.throws(() => idSuggestions(store, { kind: 'insectary', start: id }), /not an unused pre-filled/);
+    assert.throws(() => idSuggestions(store, { kind: 'insectary', start: id }), /no es un Insectary ID preasignado libre/);
   store.close();
 });
