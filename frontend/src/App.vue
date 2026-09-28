@@ -6,6 +6,7 @@ import SaveBar from './components/SaveBar.vue'
 import LoginView from './views/LoginView.vue'
 import { openPaths } from './router'
 import { notice } from './lib/notice'
+import { updateAvailable } from './lib/updates'
 import { usePending } from './stores/pending'
 import { useSession } from './stores/session'
 import { useTables } from './stores/tables'
@@ -16,6 +17,7 @@ const pending = usePending()
 const tables = useTables()
 
 onMounted(() => session.init())
+const reload = () => window.location.reload()
 watch(
   () => session.user?.username,
   (name, before) => {
@@ -44,6 +46,15 @@ watch(
       </RouterView>
     </main>
     <SaveBar v-if="session.user" />
+  </div>
+  <!-- A new version was deployed while the page was open. -->
+  <div
+    v-if="updateAvailable"
+    role="alert"
+    class="fixed top-2 left-1/2 z-50 flex max-w-[95vw] -translate-x-1/2 items-center gap-3 rounded-md bg-amber-100 px-4 py-2 text-sm text-amber-950 shadow-lg ring-1 ring-amber-300"
+  >
+    <span>Hay una versión nueva de la app. Recarga la página (los cambios sin guardar se conservan).</span>
+    <button class="btn-primary px-3 py-1" @click="reload">Recargar</button>
   </div>
   <!-- Messages let touches through: on a phone they sit over the grid (and its handle). -->
   <div

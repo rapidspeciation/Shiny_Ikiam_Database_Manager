@@ -463,7 +463,9 @@ function latestIds(store) {
     .filter(Number.isFinite);
   let insectaryId = null;
   try {
-    insectaryId = idSuggestions(store, { kind: 'insectary', count: 1 }).sequence[0] ?? null;
+    // Only a row after the last one used is "the next": an earlier empty row may already be on a butterfly's wings.
+    const ids = idSuggestions(store, { kind: 'insectary', count: 1 });
+    insectaryId = ids.tail ? (ids.sequence[0] ?? null) : null;
   } catch {
     /* No pre-filled Insectary IDs left. */
   }

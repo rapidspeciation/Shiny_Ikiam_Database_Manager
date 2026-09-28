@@ -31,7 +31,8 @@ const rows = (p: Team['latestIds']): { label: string; entry: BoardEntry | null; 
       </div>
       <div class="rounded-md bg-stone-50 px-3 py-2" title="Primera fila libre de Insectary_data con ID ya escrito">
         <p class="text-xs font-medium text-stone-500">Siguiente Insectary ID</p>
-        <p class="font-mono text-2xl font-semibold tracking-tight text-brand-700">{{ ids.insectaryId ?? '—' }}</p>
+        <p v-if="ids.insectaryId" class="font-mono text-2xl font-semibold tracking-tight text-brand-700">{{ ids.insectaryId }}</p>
+        <p v-else class="mt-1 text-xs text-amber-800">No quedan filas preasignadas al final de Insectary_data: crea más.</p>
       </div>
       <div class="rounded-md bg-stone-50 px-3 py-2" title="El número de clutch más alto + 1">
         <p class="text-xs font-medium text-stone-500">Siguiente clutch</p>
