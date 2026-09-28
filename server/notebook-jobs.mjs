@@ -54,6 +54,9 @@ export function initNotebookJobs(db) {
   );
   CREATE INDEX IF NOT EXISTS notebook_jobs_owner ON notebook_jobs(owner_id, created_at);
   CREATE INDEX IF NOT EXISTS notebook_jobs_hash ON notebook_jobs(photo_hash);`);
+  // The page's counts (rows with changes, doubts…), for the strip and the history without reviewing each page.
+  if (!db.prepare('PRAGMA table_info(notebook_jobs)').all().some(c => c.name === 'counts_json'))
+    db.exec('ALTER TABLE notebook_jobs ADD COLUMN counts_json TEXT');
 }
 
 /**
@@ -302,7 +305,7 @@ export function createNotebookJobs(deps) {
     const keys = review.lines
       .filter(l => !l.crossed && l.status !== 'nokey')
       .map(l => review.keys.map(k => String(l.cells[k]?.value ?? '').trim()).join(' / '));
-    const fields = { keys_json: json([...new Set(keys)]) };
+    const fields = { keys_json: json([...new Set(keys)]), counts_json: json(review.counts) };
     const current = job.proposal_id ? db.prepare('SELECT * FROM ai_proposals WHERE id = ?').get(job.proposal_id) : null;
     let proposalTouched = false;
     const reason = `Cuaderno ${KINDS[review.kind].label} (${review.sheet}): página del ${job.created_at.slice(0, 10)}`;
@@ -431,7 +434,7 @@ export function createNotebookJobs(deps) {
       lines: transcription?.lines.length ?? 0,
       keys: parse(job.keys_json, []),
       appliedLines: [...appliedLines(job)],
-      ...(review ? { counts: review.counts } : {}),
+      ...(review || job.counts_json ? { counts: review?.counts ?? parse(job.counts_json, undefined) } : {}),
       warnings: warningsOf(job),
     };
   }

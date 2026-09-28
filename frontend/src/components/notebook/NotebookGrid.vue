@@ -283,10 +283,24 @@ function pasteParser(text: string) {
 const notice = (message: string) => emit('notice', message)
 const onKeydown = spreadsheetKeys(() => table, canEdit, notice)
 const onEditingKey = editingKeys(() => table)
-/** Space ticks or unticks the selected rows (before the keys that would start typing a space). */
+/**
+ * Space ticks or unticks the selected rows (before the keys that would start typing a space);
+ * Ctrl+Enter confirms the doubtful readings of the selected cells as they are.
+ */
 function onSpace(event: KeyboardEvent) {
-  if (event.key !== ' ' || event.ctrlKey || event.metaKey || event.altKey) return
   if ((event.target as HTMLElement).closest('input, textarea, select, .tabulator-editing') || !table) return
+  if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    for (const cell of (table.getRanges()[0]?.getCells().flat() ?? []) as CellComponent[]) {
+      const line = lineOf(cell.getRow())
+      const c = line?.cells[cell.getField()]
+      if (line && c?.doubt && c.value !== null && canEdit(cell.getRow(), cell.getField()))
+        emit('edit', line.n, cell.getField(), show(cell.getField(), c.value))
+    }
+    return
+  }
+  if (event.key !== ' ' || event.ctrlKey || event.metaKey || event.altKey) return
   const rows = table.getRanges()[0]?.getRows() ?? []
   if (!rows.length) return
   event.preventDefault()

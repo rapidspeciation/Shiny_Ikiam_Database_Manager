@@ -146,8 +146,8 @@ function goNext() {
 }
 async function retry(k: Kind | 'auto') {
   if (!current.value) return
-  if (detail.value && detail.value.appliedLines.length === 0 && Object.keys(store.waiting[current.value] ?? {}).length)
-    if (!confirm('Se perderán las correcciones hechas en esta página. ¿Volver a leerla?')) return
+  const corrected = lines.value.some(l => Object.values(l.cells).some(c => c.edited))
+  if (corrected && !confirm('Se perderán las correcciones hechas en esta página. ¿Volver a leerla?')) return
   await store.retry(current.value, k)
 }
 function setYear(event: Event) {
@@ -178,6 +178,20 @@ function choose(value: string | null) {
   const at = inspected.value
   if (!current.value || !at) return
   store.edit(current.value, at.line.n, at.field, value)
+  grid.value?.focus()
+}
+/** The other doubtful readings of the selected line, to confirm all at once after looking at the photo. */
+const lineDoubts = computed(() => {
+  const at = inspected.value
+  if (!at || !detail.value) return []
+  return Object.entries(at.line.cells)
+    .filter(([, c]) => c.doubt && c.value !== null && ['fill', 'conflict', 'new'].includes(c.status))
+    .map(([field, c]) => [field, displayValue(c.value, { key: field, type: detail.value!.types[field] ?? 'text' })] as const)
+})
+function confirmLine() {
+  const at = inspected.value
+  if (!current.value || !at) return
+  for (const [field, text] of lineDoubts.value) store.edit(current.value, at.line.n, field, text)
   grid.value?.focus()
 }
 
@@ -437,7 +451,10 @@ function openJob(id: string) {
                   class="btn py-0.5 text-xs"
                   @click="choose(inspected.value)"
                 >
-                  <Check :size="13" /> Confirmar «{{ inspected.value }}»
+                  <Check :size="13" /> Confirmar «{{ inspected.value }}»<span class="text-stone-400 max-md:hidden">(Ctrl+Enter)</span>
+                </button>
+                <button v-if="lineDoubts.length > 1" class="btn py-0.5 text-xs" @click="confirmLine">
+                  <Check :size="13" /> Confirmar las {{ lineDoubts.length }} dudosas de la línea
                 </button>
                 <button v-for="a in inspected.alternatives" :key="a" class="btn py-0.5 text-xs" @click="choose(a)">{{ a }}</button>
                 <button

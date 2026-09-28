@@ -8,12 +8,13 @@ type FieldType = Field['type']
  * notebook page (server/notebook-jobs.mjs) and the small rules the review
  * screen follows (bands on the photo, cell colours, choices, texts).
  */
-export type Kind = 'stocks' | 'emergence' | 'deaths' | 'crispr'
+export type Kind = 'stocks' | 'emergence' | 'deaths' | 'labels' | 'crispr'
 export const KINDS: { id: Kind | 'auto'; label: string; sheet?: string }[] = [
   { id: 'auto', label: 'Detectar por los encabezados' },
   { id: 'stocks', label: 'Posturas', sheet: 'Insectary_stocks' },
   { id: 'emergence', label: 'Emergidos', sheet: 'Insectary_data' },
   { id: 'deaths', label: 'Muertes', sheet: 'Insectary_data' },
+  { id: 'labels', label: 'Sobres y etiquetas', sheet: 'Insectary_data' },
   { id: 'crispr', label: 'CRISPR', sheet: 'CRISPR' },
 ]
 /** The notebook a sheet's pages usually come from (the shortcut from Tablas). */

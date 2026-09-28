@@ -24,7 +24,7 @@ test('the prompt names the columns of the chosen notebook, or all of them to det
   assert.doesNotMatch(stocks, /"Insectary_ID"/);
   assert.match(stocks, /Sex: female \| male/);
   const auto = transcriptionPrompt({ kind: 'auto', today: '2026-09-28' });
-  for (const kind of ['stocks', 'emergence', 'deaths', 'crispr']) assert.match(auto, new RegExp(`kind "${kind}"`));
+  for (const kind of ['stocks', 'emergence', 'deaths', 'labels', 'crispr']) assert.match(auto, new RegExp(`kind "${kind}"`));
 });
 
 test('the model answer is read even inside a fence, and unknown columns are dropped', () => {
@@ -56,6 +56,7 @@ test('notebook values are read as the sheet stores them', () => {
   assert.equal(readValue('CLUTCH NUMBER', '994 (7)', {}).value, '994(7)');
   assert.equal(readValue('CLUTCH NUMBER', '838', {}).value, 838);
   assert.equal(readValue('NUMBER OF EGGS', '12 + 15', {}).value, 27, 'eggs of two plants, written as a sum');
+  assert.equal(readValue('NUMBER OF LARVAE', '2+4=6+8=14', {}).value, 14);
   assert.equal(readValue('Sex', '♂', {}).value, 'male');
   assert.equal(readValue('CAM_ID', 'cam78038', {}).value, 'CAM078038');
   assert.equal(readValue('Tube_1_id', 'fs 50851817', {}).value, 'FS50851817');
@@ -179,6 +180,60 @@ test('each line is compared with its row: fills, conflicts, doubts, formulas and
   assert.match(other.lines[1].cells.CAM_ID.message, /Collection_data fila 9/);
 });
 
+test('IDs read with 0 for O find the pre-made rows in step with the page, not an old butterfly; CAM and tube runs continue', () => {
+  const blankRow = (id, row) => ({ id: `r${row}`, row, version: 1, values: { Insectary_ID: id } });
+  const rows = [
+    blankRow('9OO', 100),
+    blankRow('0OP', 101),
+    blankRow('1OP', 102),
+    blankRow('2OP', 103),
+    // Older butterflies whose IDs look the same (digit zero).
+    { id: 'old1', row: 40, version: 1, values: { Insectary_ID: '00P', Sex: 'male', 'CLUTCH NUMBER': 364 } },
+    { id: 'old2', row: 50, version: 1, values: { Insectary_ID: '10P', Sex: 'female', 'CLUTCH NUMBER': 364 } },
+  ];
+  const lookup = { ...fakeLookup(rows), list: () => undefined, holder: () => null };
+  const transcription = parseTranscription(
+    JSON.stringify({
+      kind: 'emergence',
+      lines: [
+        { raw: '9OO ♀ 715 CAM076671 FS50851380', v: { Insectary_ID: '9OO', Sex: 'female', CAM_ID: 'CAM076671', Tube_1_id: 'FS50851380' } },
+        { raw: '00P ♀ 715 72 81', v: { Insectary_ID: '00P', Sex: 'female', CAM_ID: '72', Tube_1_id: '81' } },
+        { raw: '10P ♀ 715 73 82', v: { Insectary_ID: '10P', Sex: 'female', CAM_ID: 'cam673', Tube_1_id: '82' } },
+        { raw: '2OP ♂', v: { Insectary_ID: '2OP', Sex: 'male' } },
+      ],
+    }),
+  );
+  const review = buildReview({ transcription, today: '2026-09-28', lookup });
+  assert.deepEqual(
+    review.lines.map(l => [l.status, l.row, l.cells.Insectary_ID.value]),
+    [
+      ['match', 100, '9OO'],
+      ['match', 101, '0OP'],
+      ['match', 102, '1OP'],
+      ['match', 103, '2OP'],
+    ],
+  );
+  assert.equal(review.lines[2].message, 'Leído «10P»; en la hoja es 1OP');
+  assert.deepEqual(
+    review.lines.map(l => [l.cells.CAM_ID.value, l.cells.Tube_1_id.value]),
+    [
+      ['CAM076671', 'FS50851380'],
+      ['CAM076672', 'FS50851381'],
+      ['CAM076673', 'FS50851382'],
+      [null, null],
+    ],
+  );
+  assert.match(review.lines[1].cells.CAM_ID.message, /Escrito «72»/);
+  // With nothing around it to tell them apart, a look-alike is left for the person.
+  const alone = buildReview({
+    transcription: parseTranscription(JSON.stringify({ kind: 'emergence', lines: [{ raw: '10P', v: { Insectary_ID: '10P' } }] })),
+    today: '2026-09-28',
+    lookup,
+  });
+  assert.equal(alone.lines[0].status, 'match', 'the ID as read wins a tie');
+  assert.equal(alone.lines[0].row, 50);
+});
+
 test('a full species name in Stock_of_origin takes the list value; a wild butterfly gets its species typed', () => {
   const rows = [{ id: 'w1', row: 5, version: 1, values: { Insectary_ID: '7VC', SPECIES: null, Stock_of_origin: null } }];
   const lookup = fakeLookup(rows, { formulas: { w1: { SPECIES: '=X' } } });
@@ -215,8 +270,8 @@ test('a clutch page adds the clutches the sheet does not have yet, without their
       lines: [
         { raw: '994(6) lys 1/9 30 huevos, eclosión 5/9', v: { 'CLUTCH NUMBER': '994 (6)', 'DATE LAID': '1/9', 'NUMBER OF EGGS': '30', 'HATCHING DATE': '5/9' } },
         { raw: '994(7) lys 20/9 12', v: { 'CLUTCH NUMBER': '994(7)', SPECIES: 'Mechanitis lysimnia', 'DATE LAID': '20/9', 'NUMBER OF EGGS': '12' } },
-        // Written in December, read in September: last year.
-        { raw: '995 lys 28/12', v: { 'CLUTCH NUMBER': '995', 'DATE LAID': '28/12' } },
+        // Written in December, read in September: last year; it emerged in January, this year.
+        { raw: '995 lys 28/12 … 20/1', v: { 'CLUTCH NUMBER': '995', 'DATE LAID': '28/12', 'EMERGENCE DATE': '20/1' } },
         // Counts typed in the sheet as sums: the same sum agrees, another one is pointed out (never written).
         { raw: '993 12+15 larvas 21', v: { 'CLUTCH NUMBER': '993', 'NUMBER OF EGGS': '12+15', 'NUMBER OF LARVAE': '21' } },
       ],
@@ -235,6 +290,7 @@ test('a clutch page adds the clutches the sheet does not have yet, without their
   assert.equal(fresh.status, 'new');
   assert.equal(fresh.cells['NUMBER OF EGGS'].status, 'formula', 'a formula column of the new row is left');
   assert.equal(december.cells['DATE LAID'].value, d('2025-12-28'));
+  assert.equal(december.cells['EMERGENCE DATE'].value, d('2026-01-20'));
   const { changes, newRows } = proposalRows(review);
   assert.equal(changes.length, 1);
   assert.deepEqual(changes[0].values, { 'NUMBER OF EGGS': 30, 'HATCHING DATE': d('2026-09-05') });

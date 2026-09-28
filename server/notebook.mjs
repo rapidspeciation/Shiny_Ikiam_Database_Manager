@@ -57,7 +57,7 @@ export const KINDS = {
     looks:
       'the insectary butterfly notebook: one line per butterfly; headers like # | ID | Species | Sex | # Clutch | Stock origin | Emerge date | Dead date | Notes (highlighted lines are usually dead butterflies)',
     hints: [
-      'The first "#" column is a running count (e.g. 3096): ignore it. Insectary_ID is the butterfly ID written on its wing: a digit then letters (5VB, 0NX) or letters then digits (H79, V36).',
+      'The first "#" column is a running count (e.g. 3096): ignore it. Insectary_ID is the butterfly ID written on its wing: a digit then two letters (5VB, 0NX, 6OO, 1OP: there O is the letter O, not zero) or letters then digits (H79, V36). When a character could be 0 or O (1 or I), give the other reading in "a".',
       'Intro2Insectary_date is the emerge date; Death_date the dead date.',
     ],
   },
@@ -80,6 +80,18 @@ export const KINDS = {
       'the daily round of dead butterflies: one line per dead butterfly; headers like Date | ID | Species | Sex | Cause | CAM | Notes',
     hints: [
       'Insectary_ID is the butterfly ID written on its wing (5VB, H79). A date written once above several lines applies to all of them.',
+    ],
+  },
+  labels: {
+    label: 'Sobres y etiquetas',
+    sheet: 'Insectary_data',
+    keys: ['Insectary_ID'],
+    newRows: false,
+    fields: ['Insectary_ID', 'SPECIES', 'Sex', 'CAM_ID', 'Tube_1_id'],
+    looks:
+      'the label or envelope of one sampled butterfly (not a table): a CAM, the species, the sex, "Reared ID: 1TG" (or an ID), a date, and often a tube held beside it; several photos may show one label each',
+    hints: [
+      'One line per label. Insectary_ID is the Reared ID; copy it exactly (5OS with the letter O and 50S with zero are different butterflies). The tube (2 letters + 8 digits, on the tube or its barcode) goes in Tube_1_id. Ignore the notebook behind the label.',
     ],
   },
   crispr: {
@@ -135,6 +147,13 @@ const EXAMPLES = {
     v: { Insectary_ID: '5VB', Death_date: '17/9', Death_cause: 'Unknown' },
     c: { Insectary_ID: 0.6 },
     a: { Insectary_ID: ['5VD'] },
+  },
+  labels: {
+    raw: 'CAM078043 M. menophilus zaneka ♀ (Reared ID: 1TG) 5/Aug/2025 · tubo FS50851822',
+    x: false,
+    v: { Insectary_ID: '1TG', SPECIES: 'Melinaea menophilus zaneka', Sex: 'female', CAM_ID: 'CAM078043', Tube_1_id: 'FS50851822' },
+    c: { Tube_1_id: 0.7 },
+    a: { Tube_1_id: ['FS50851828'] },
   },
   crispr: {
     raw: '50 9 19-6-23 2B Inter 27/6',
@@ -328,6 +347,9 @@ export function readValue(field, text, { year }) {
   if (type === 'number') {
     // Counts are often written as sums (eggs of two plants: "12+15"); the sheet holds =12+15.
     if (/^\d+(?:\s*\+\s*\d+)+$/.test(s)) return { value: s.split('+').reduce((sum, part) => sum + Number(part), 0) };
+    // A worked sum ("2+4=6+8=14") counts what follows the last "=".
+    const total = /^[\d\s+\-=]*=\s*(\d+)$/.exec(s);
+    if (total) return { value: Number(total[1]) };
     return { value: /^\d+$/.test(s) ? Number(s) : s };
   }
   if (field === 'Sex') {
@@ -392,6 +414,104 @@ function inferYear(lines, dateFields, fallback) {
 }
 
 /**
+ * CAMs and tubes written as runs: "cam505" or "72" under CAM076671 continue its
+ * number (CAM076505, CAM076672), as "81" under FS50851380 is FS50851381.
+ * Fills them in place; returns { line index: { field: as written } }.
+ */
+export function completeRuns(texts) {
+  const done = {};
+  const last = {};
+  texts.forEach((text, i) => {
+    for (const field of Object.keys(text)) {
+      if (field !== 'CAM_ID' && !/^Tube_\d_id$/.test(field)) continue;
+      const raw = String(text[field] ?? '').trim();
+      const short = field === 'CAM_ID' ? /^(?:cam\s*)?(\d{1,4})$/i.exec(raw) : /^(\d{1,4})$/.exec(raw);
+      const full = field === 'CAM_ID' ? /^cam\s*0*(\d{5,6})$/i.exec(raw) : /^[A-Z]{2}\d{8}$/i.exec(raw.replace(/\s+/g, ''));
+      if (short && last[field]) {
+        const prev = last[field];
+        text[field] = prev.slice(0, prev.length - short[1].length) + short[1];
+        (done[i] ??= {})[field] = raw;
+        last[field] = text[field];
+      } else if (full) last[field] = field === 'CAM_ID' ? `CAM${full[1].padStart(6, '0')}` : raw.replace(/\s+/g, '').toUpperCase();
+    }
+  });
+  return done;
+}
+
+const LOOK_DIGIT = { O: '0', I: '1', L: '1', S: '5', B: '8', Z: '2', G: '6' };
+const LOOK_LETTER = { 0: 'O', 1: 'I', 5: 'S', 8: 'B', 2: 'Z', 6: 'G' };
+/** Insectary IDs that look like the one read (600 → 6OO, 10P → 1OP, 5OS ↔ 50S). */
+export function lookAlikes(kind, keyValues) {
+  if (kind.keys.length !== 1 || kind.keys[0] !== 'Insectary_ID') return [];
+  const id = String(keyValues[0] ?? '').toUpperCase();
+  if (id.length < 2 || id.length > 5) return [];
+  let out = [''];
+  for (const ch of id) {
+    const options = [...new Set([ch, LOOK_DIGIT[ch], LOOK_LETTER[ch]].filter(Boolean))];
+    out = out.flatMap(prefix => options.map(o => prefix + o)).slice(0, 64);
+  }
+  return out.filter(v => v !== id).map(v => [v]);
+}
+
+/** How many of a line's cells the sheet row already has (a date counts by day and month). */
+function agreement(kind, record, text, year) {
+  let same = 0;
+  for (const field of kind.fields) {
+    if (kind.keys.includes(field)) continue;
+    const value = readValue(field, text[field], { year }).value;
+    const before = record.values?.[field];
+    if (isNone(value) || isNone(before)) continue;
+    if (typeOf(field) === 'date') same += typeof value === 'number' && typeof before === 'number' && serialDayMonth(value) === serialDayMonth(before) ? 1 : 0;
+    else same += sameValue(field, before, value) ? 1 : 0;
+  }
+  return same;
+}
+
+/**
+ * Picks each line's row among its candidates. Consecutive notebook lines are
+ * usually consecutive sheet rows (IDs are made in advance, in order), so the
+ * choice that keeps the page's rows in step wins, then the one that agrees with
+ * more cells, then the key as read. A line whose best rows tie is left for the person.
+ */
+function chooseRows(items) {
+  const chain = items.filter(i => i.candidates.length && !i.line.crossed);
+  const own = c => c.same + (c.exact ? 0.5 : 0);
+  const step = (a, b, ca, cb) => (cb.record.row - ca.record.row === b.line.n - a.line.n ? 3 : 0);
+  let previous = null;
+  for (const item of chain) {
+    item.best = item.candidates.map(c => {
+      if (!previous) return { c, score: own(c), from: null };
+      let from = null,
+        score = -Infinity;
+      for (const p of previous.best) {
+        const s = p.score + step(previous, item, p.c, c);
+        if (s > score) [score, from] = [s, p];
+      }
+      return { c, score: own(c) + score, from };
+    });
+    previous = item;
+  }
+  if (!previous) return;
+  let node = previous.best.reduce((a, b) => (b.score > a.score ? b : a));
+  for (let i = chain.length - 1; i >= 0 && node; i--) {
+    chain[i].choice = node.c;
+    node = node.from;
+  }
+  chain.forEach((item, i) => {
+    if (item.candidates.length === 1) return void (item.record = item.candidates[0].record);
+    // Several rows: the chosen one must do better here than any other, given its neighbours' choice.
+    const before = chain[i - 1],
+      after = chain[i + 1];
+    const local = c =>
+      own(c) + (before?.choice ? step(before, item, before.choice, c) : 0) + (after?.choice ? step(item, after, c, after.choice) : 0);
+    const mine = local(item.choice);
+    if (item.candidates.every(c => c === item.choice || local(c) < mine)) item.record = item.choice.record;
+    item.readAs = item.record && !item.choice.exact ? item.keyValues.join(' ') : null;
+  });
+  for (const item of items) if (item.record && item.candidates.length === 1 && !item.candidates[0].exact) item.readAs = item.keyValues.join(' ');
+}
+
+/**
  * Compares a transcribed page with the sheet.
  *
  * lookup: {
@@ -413,39 +533,44 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
   const dateFields = kind.fields.filter(f => typeOf(f) === 'date');
 
   // First the keys, to find each line's row (a corrected key finds another row).
-  const lines = transcription.lines.map(line => {
-    const edited = edits[line.n] ?? {};
+  const texts = transcription.lines.map(line => {
     const text = { ...line.v };
-    for (const [field, value] of Object.entries(edited)) if (kind.fields.includes(field)) text[field] = value;
-    const keyValues = kind.keys.map(k => readValue(k, text[k], { year: currentYear }).value);
-    const found = keyValues.every(v => v !== null && v !== '') ? lookup.find(keyValues) : [];
-    return { line, edited, text, keyValues, found, record: found.length === 1 ? found[0] : null };
+    for (const [field, value] of Object.entries(edits[line.n] ?? {})) if (kind.fields.includes(field)) text[field] = value;
+    return text;
   });
+  const completed = completeRuns(texts);
+  const lines = transcription.lines.map((line, i) => {
+    const edited = edits[line.n] ?? {};
+    const text = texts[i];
+    const keyValues = kind.keys.map(k => readValue(k, text[k], { year: currentYear }).value);
+    const readable = keyValues.every(v => v !== null && v !== '');
+    // The rows with this key, and with the look-alike keys (6OO read as 600: 0/O, 1/I, 5/S, 8/B).
+    const candidates = [];
+    if (readable) {
+      for (const record of lookup.find(keyValues)) candidates.push({ record, exact: true });
+      for (const variant of lookAlikes(kind, keyValues))
+        for (const record of lookup.find(variant))
+          if (!candidates.some(c => c.record.id === record.id)) candidates.push({ record, exact: false });
+    }
+    for (const c of candidates) c.same = agreement(kind, c.record, text, currentYear);
+    return { line, edited, text, keyValues, candidates, record: null };
+  });
+  chooseRows(lines);
   const pageYear = year ?? transcription.year ?? inferYear(lines, dateFields, currentYear);
   const yearSource = year ? 'person' : transcription.year ? 'page' : 'inferred';
 
-  // The same key on two lines of the page.
+  // The same key on two lines of the page (as matched: 600 and 6OO are the same butterfly).
+  const keyOf = item =>
+    (item.record ? kind.keys.map(k => item.record.values?.[k]) : item.keyValues).map(clutchKey).join('|');
   const seen = new Map();
   for (const item of lines) {
     if (item.line.crossed || item.keyValues.some(v => v === null)) continue;
-    const key = item.keyValues.map(clutchKey).join('|');
-    seen.set(key, [...(seen.get(key) ?? []), item.line.n]);
+    seen.set(keyOf(item), [...(seen.get(keyOf(item)) ?? []), item.line.n]);
   }
 
-  const out = lines.map(item => {
+  const out = lines.map((item, i) => {
     const { line, edited, text } = item;
-    const key = item.keyValues.map(clutchKey).join('|');
-    const twins = (seen.get(key) ?? []).filter(n => n !== line.n);
-    // Several sheet rows with this key: the one that agrees with the most cells.
-    if (!item.record && item.found.length > 1) {
-      const score = record =>
-        kind.fields.filter(f => {
-          const value = readValue(f, text[f], { year: pageYear }).value;
-          return !isNone(value) && sameValue(f, record.values?.[f], value);
-        }).length;
-      const ranked = item.found.map(r => [r, score(r)]).sort((a, b) => b[1] - a[1]);
-      if (ranked[0][1] > ranked[1][1]) item.record = ranked[0][0];
-    }
+    const twins = (seen.get(keyOf(item)) ?? []).filter(n => n !== line.n);
     const record = item.record;
     let status = line.crossed
       ? 'crossed'
@@ -455,7 +580,7 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
           ? 'duplicate'
           : record
             ? 'match'
-            : item.found.length > 1
+            : item.candidates.length > 1
               ? 'ambiguous'
               : kind.newRows
                 ? 'new'
@@ -464,15 +589,17 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
       crossed: 'Tachada en el cuaderno: no se usa',
       nokey: `Sin ${kind.keys.join(' + ')} legible: escríbelo para buscar la fila`,
       duplicate: `El mismo ${kind.keys.join(' + ')} está también en la línea ${twins.join(', ')}`,
-      ambiguous: `${item.found.length} filas de la hoja tienen este ${kind.keys.join(' + ')} (filas ${item.found.map(r => r.row).join(', ')})`,
+      ambiguous: `${item.candidates.length} filas de la hoja podrían ser esta (filas ${item.candidates.map(c => `${c.record.row} ${c.record.label ?? ''}`.trim()).join(', ')}): escribe el ${kind.keys.join(' + ')} correcto`,
       missing: `${item.keyValues.join(' ')} no está en ${kind.sheet}: ¿está bien leído?`,
       new: `Fila nueva en ${kind.sheet}`,
-      match: '',
+      // Read as a look-alike (600 for 6OO): the row was found by the others around it.
+      match: item.readAs ? `Leído «${item.readAs}»; en la hoja es ${kind.keys.map(k => record.values?.[k]).join(' ')}` : '',
     }[status];
     const usable = status === 'match' || status === 'new';
     // A clutch changed on the page changes what the SPECIES formula will give.
     const clutchText = text['CLUTCH NUMBER'];
     const cells = {};
+    let lastDate = null;
     for (const field of kind.fields) {
       const typed = field in edited;
       const confidence = typed ? 1 : (line.c[field] ?? (line.v[field] === null && field in line.v ? 0 : 1));
@@ -480,12 +607,23 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
       let value = read.value;
       let error = read.error ?? null;
       const before = record ? (record.values?.[field] ?? null) : null;
+      // The key as the sheet writes it (6OO, not 600), once the row is found.
+      if (kind.keys.includes(field) && record && status === 'match') value = before;
       // A day/month the sheet has in another year is the same date (the year was only inferred).
       if (typeOf(field) === 'date' && typeof value === 'number' && !read.yearWritten && typeof before === 'number') {
         if (serialDayMonth(before) === serialDayMonth(value)) value = before;
         else if (!year && value > todaySerial + 7) value = readValue(field, text[field], { year: pageYear - 1 }).value;
       } else if (typeOf(field) === 'date' && typeof value === 'number' && !read.yearWritten && !year && value > todaySerial + 7)
         value = readValue(field, text[field], { year: pageYear - 1 }).value;
+      // The columns follow the stages (laid, hatched, pupa, emerged; emerged, died): a date without
+      // its year that falls well before the one before it is in the next year (laid in December, emerged in January).
+      if (typeOf(field) === 'date' && typeof value === 'number') {
+        if (!read.yearWritten && lastDate !== null && value < lastDate - 30 && value !== before) {
+          const next = readValue(field, text[field], { year: serialYear(value) + 1 }).value;
+          if (typeof next === 'number' && next <= todaySerial + 7) value = next;
+        }
+        lastDate = value;
+      }
       if (field === 'CLUTCH NUMBER' && kind.sheet !== 'Insectary_stocks' && !isNone(value)) {
         // Written as in Insectary_stocks (its list is strict): "685 (3)", not "685(3)".
         const known = lookup.clutch?.(value);
@@ -520,7 +658,15 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         edited: typed,
         include: false,
         formula: false,
-        message: error ?? (unlisted && !list?.strict && !typed ? `«${value}» no está en la lista de ${field}` : null),
+        message:
+          error ??
+          (unlisted && !list?.strict && !typed
+            ? `«${value}» no está en la lista de ${field}`
+            : completed[i]?.[field]
+              ? `Escrito «${completed[i][field]}»: sigue el número de la línea de arriba`
+              : kind.keys.includes(field) && item.readAs && record
+                ? `Leído «${item.readAs}»`
+                : null),
       };
       const isKey = kind.keys.includes(field);
       const formulaHere = record ? Boolean(record.formulas?.[field]) : lookup.newRowFormulas?.has(field);
