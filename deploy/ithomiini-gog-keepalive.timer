@@ -1,0 +1,10 @@
+[Unit]
+Description=Weekly use of the project Google login
+
+[Timer]
+OnCalendar=weekly
+Persistent=true
+RandomizedDelaySec=1h
+
+[Install]
+WantedBy=timers.target

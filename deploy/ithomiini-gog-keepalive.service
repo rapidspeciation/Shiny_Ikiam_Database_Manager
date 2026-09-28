@@ -1,0 +1,7 @@
+[Unit]
+Description=Keep the project Gmail/Drive login (gog, jmithominii) in use so Google does not expire it
+
+[Service]
+Type=oneshot
+EnvironmentFile=/home/ubuntu/.config/ithomiini/gog.env
+ExecStart=/home/ubuntu/.local/bin/gog --account jmithominii@gmail.com --client ithomiini --no-input gmail labels list --json --results-only
