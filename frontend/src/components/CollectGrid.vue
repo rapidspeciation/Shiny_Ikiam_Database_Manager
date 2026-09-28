@@ -3,8 +3,9 @@ import { onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
-import { FATES, SEXES, idsText, type Column, type Draft } from '../lib/collect'
+import { FATES, HEADERS, SEX_VALUES, idsText, type Column, type Draft } from '../lib/collect'
 import { attachFillHandle, spreadsheetKeys, type CanEdit } from '../lib/gridKit'
+import { complete } from '../lib/paste'
 
 /**
  * The Colecta list as a spreadsheet (on computers): select cells, copy and
@@ -52,7 +53,9 @@ const draftOf = (row: RowComponent) => props.drafts.find(d => d.key === (row.get
 const canEdit: CanEdit = (row, field) =>
   field === 'ids' ? draftOf(row)?.fate === 'preservada' : !['__key', '__remove'].includes(field)
 
+/** Columns chosen from a list show a ▾ arrow; clicking it opens the list (see onCellClick). */
 const choices = (values: () => string[]) => ({
+  cssClass: 'has-choices',
   editor: 'list' as const,
   editorParams: (() => ({
     values: values(),
@@ -65,8 +68,8 @@ const choices = (values: () => string[]) => ({
 })
 
 function columns(): ColumnDefinition[] {
-  const text = (title: string, field: Column, width: number, extra: Partial<ColumnDefinition> = {}) => ({
-    title,
+  const text = (field: Column, width: number, extra: Partial<ColumnDefinition> = {}) => ({
+    title: HEADERS[field],
     field,
     width,
     editor: 'input' as const,
@@ -74,9 +77,10 @@ function columns(): ColumnDefinition[] {
     ...extra,
   })
   return [
-    text('Lugar', 'location', 190, choices(() => props.places)),
-    text('Especie', 'species', 200, choices(() => props.species)),
-    text('Subespecie', 'subspecies', 150, {
+    text('location', 200, choices(() => props.places)),
+    text('species', 210, choices(() => props.species)),
+    text('subspecies', 160, {
+      cssClass: 'has-choices',
       editor: 'list',
       editorParams: ((cell: CellComponent) => ({
         values: props.subspeciesFor(String((cell.getData() as Row).species || '')),
@@ -86,19 +90,14 @@ function columns(): ColumnDefinition[] {
         listOnEmpty: true,
       })) as never,
     }),
-    text('Sexo', 'sex', 64, {
-      hozAlign: 'center',
-      // Typing works too: h / f / ♀, m / ♂, ? (read like a pasted value).
+    text('sex', 90, {
+      cssClass: 'has-choices',
+      // Typing works too: f / h / ♀, m / ♂, ? (read like a pasted value).
       editor: 'list',
-      editorParams: {
-        values: { female: '♀ hembra', male: '♂ macho', NA: '? sin sexo' },
-        autocomplete: true,
-        freetext: true,
-        listOnEmpty: true,
-      },
-      formatter: cell => SEXES[cell.getValue() as keyof typeof SEXES] ?? '',
+      editorParams: { values: [...SEX_VALUES], autocomplete: true, freetext: true, listOnEmpty: true },
     }),
-    text('Destino', 'fate', 130, {
+    text('fate', 210, {
+      cssClass: 'has-choices',
       editor: 'list',
       editorParams: {
         values: Object.fromEntries(Object.entries(FATES).map(([k, f]) => [k, f.label])),
@@ -108,16 +107,16 @@ function columns(): ColumnDefinition[] {
       },
       formatter: cell => FATES[cell.getValue() as keyof typeof FATES]?.label ?? '',
     }),
-    text('Hora', 'time', 70),
-    text('Insectary ID / CAM · tubo', 'ids', 220, {
+    text('time', 110),
+    text('ids', 250, {
       formatter: cell => {
         const d = draftOf(cell.getRow())
         cell.getElement().classList.toggle('is-id', d?.fate === 'insectario')
         return String(cell.getValue() ?? '')
       },
     }),
-    text('Propósito', 'purpose', 130, choices(() => props.purposes)),
-    text('Notas', 'notes', 220),
+    text('purpose', 150, choices(() => props.purposes)),
+    text('notes', 220),
     {
       title: '',
       field: '__remove',
@@ -152,6 +151,21 @@ function sync() {
   }
   shownOrder = order
   shown = new Map(rows.map(r => [r.__key, JSON.stringify(r)]))
+}
+
+/**
+ * Enter after typing the start of a value takes the one option it begins
+ * ("Ithomia sal" → "Ithomia salapia"); a new value is kept as typed. Sex and
+ * Release_Collect are read the same way by the list (he → female, pres → Collected_Preserved).
+ */
+function completed(field: Column, text: string, row: Row) {
+  const options: Partial<Record<Column, () => string[]>> = {
+    location: () => props.places,
+    species: () => props.species,
+    subspecies: () => props.subspeciesFor(row.species),
+    purpose: () => props.purposes,
+  }
+  return options[field] ? complete(text, options[field]!()) : text
 }
 
 const onKeydown = spreadsheetKeys(() => table, canEdit, message => emit('notice', message))
@@ -194,9 +208,16 @@ onMounted(() => {
     built = true
     sync()
   })
+  // The ▾ arrow at a cell's right edge opens its list straight away.
+  table.on('cellClick', (event: UIEvent, cell: CellComponent) => {
+    const el = cell.getElement()
+    if (!el.classList.contains('has-choices') || !(event instanceof MouseEvent) || !canEdit(cell.getRow(), cell.getField())) return
+    if (event.clientX >= el.getBoundingClientRect().right - 22) setTimeout(() => cell.edit(true))
+  })
   table.on('cellEdited', (cell: CellComponent) => {
-    const key = (cell.getData() as Row).__key
-    emit('edit', key, cell.getField() as Column, String(cell.getValue() ?? ''))
+    const row = cell.getData() as Row
+    const field = cell.getField() as Column
+    emit('edit', row.__key, field, completed(field, String(cell.getValue() ?? ''), row))
   })
   fill = attachFillHandle(table, host.value.parentElement!, {
     canEdit,

@@ -9,7 +9,7 @@ import { isBlank } from '../lib/cells'
 import { isoToSerial, todayIso } from '../lib/dates'
 import { errorText, notify } from '../lib/notice'
 import { listColumn } from '../lib/options'
-import { COLUMNS, FATES, type Column, type Draft, type Fate } from '../lib/collect'
+import { COLUMNS, FATES, HEADERS, SEX_VALUES, type Column, type Draft, type Fate } from '../lib/collect'
 import { parseBlock, parseCamTube, parseFate, parseSex, parseTime } from '../lib/paste'
 import { persistentRef } from '../lib/persist'
 import { orderColumns } from '../lib/rows'
@@ -321,7 +321,7 @@ const groups = computed(() => {
   return [...out]
 })
 const problems = computed(() => [
-  ...(emptyCount.value ? [`${emptyCount.value} filas vacías (quítalas con «Quitar filas vacías»)`] : []),
+  ...(emptyCount.value ? [`${emptyCount.value} filas vacías`] : []),
   ...drafts.value.flatMap((d, i) => {
     if (isEmpty(d)) return []
     const n = i + 1
@@ -452,26 +452,26 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
   <div class="flex h-full flex-col overflow-y-auto">
     <div class="toolbar">
       <label>
-        <span class="field-label">Fecha</span>
+        <span class="field-label">Collection_date</span>
         <input v-model="header.date" type="date" class="field-input" />
       </label>
       <label class="min-w-52">
-        <span class="field-label">Colector</span>
+        <span class="field-label">Collector</span>
         <input v-model="header.collector" class="field-input" list="collect-people" />
       </label>
       <label class="min-w-52">
-        <span class="field-label">Identificador</span>
+        <span class="field-label">Identifier</span>
         <input v-model="header.identifier" class="field-input" list="collect-people" />
       </label>
       <label>
-        <span class="field-label">Lluvia</span>
+        <span class="field-label">Rainfall</span>
         <select v-model="header.rainfall" class="field-input">
           <option value="">—</option>
           <option v-for="r in rainfalls" :key="r" :value="r">{{ r }}</option>
         </select>
       </label>
       <label>
-        <span class="field-label">Nubosidad</span>
+        <span class="field-label">Cloud_cover</span>
         <select v-model="header.cloud" class="field-input">
           <option value="">—</option>
           <option v-for="c in clouds" :key="c" :value="c">{{ c }}</option>
@@ -486,7 +486,7 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
     </div>
     <div class="toolbar border-t-0">
       <label class="min-w-64">
-        <span class="field-label">Lugar (cámbialo para añadir mariposas de otro sitio)</span>
+        <span class="field-label">Collection_location (cámbialo para añadir mariposas de otro sitio)</span>
         <input v-model="header.location" class="field-input" list="collect-places" />
         <datalist id="collect-places">
           <option v-for="p in places" :key="p" :value="p" />
@@ -497,11 +497,11 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         <input v-model.number="addCount" type="number" min="1" max="60" class="field-input w-20" />
       </label>
       <label class="min-w-48">
-        <span class="field-label">Especie (opcional)</span>
+        <span class="field-label">SPECIES (opcional)</span>
         <input v-model="addSpecies" class="field-input" list="collect-species" placeholder="la misma para todas" />
       </label>
       <label>
-        <span class="field-label">Destino</span>
+        <span class="field-label">Release_Collect</span>
         <select v-model="addFate" class="field-input">
           <option v-for="(f, key) in FATES" :key="key" :value="key">{{ f.label }}</option>
         </select>
@@ -510,7 +510,7 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         <Plus :size="15" /> Añadir {{ Math.max(1, addCount || 1) }} {{ Math.max(1, addCount || 1) === 1 ? 'fila' : 'filas' }}
       </button>
       <label v-if="drafts.some(d => d.fate === 'preservada')">
-        <span class="field-label">Medio (preservadas)</span>
+        <span class="field-label">Preservation_medium</span>
         <select v-model="header.medium" class="field-input">
           <option>Flash frozen</option>
           <option>Ethanol</option>
@@ -568,15 +568,7 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
             <tr>
               <th class="w-8 px-1 py-1"><span class="sr-only">Marcar</span></th>
               <th class="px-1 py-1">#</th>
-              <th class="px-1">Lugar</th>
-              <th class="px-1">Especie</th>
-              <th class="px-1">Subespecie</th>
-              <th class="px-1">Sexo</th>
-              <th class="px-1">Destino</th>
-              <th class="px-1">Hora</th>
-              <th class="px-1">Insectary ID / CAM · tubo</th>
-              <th class="px-1">Propósito</th>
-              <th class="px-1">Notas</th>
+              <th v-for="c in COLUMNS" :key="c" class="px-1">{{ HEADERS[c] }}</th>
               <th></th>
             </tr>
           </thead>
@@ -643,26 +635,22 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
               </td>
               <td class="px-1 whitespace-nowrap">
                 <button
-                  v-for="[value, sign] in [
-                    ['female', '♀'],
-                    ['male', '♂'],
-                    ['NA', '?'],
-                  ] as const"
+                  v-for="value in SEX_VALUES"
                   :key="value"
                   type="button"
-                  class="mr-0.5 h-8 w-8 rounded border text-base"
+                  class="mr-0.5 h-8 rounded border px-2 text-sm"
                   :class="d.sex === value ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white'"
                   :aria-label="value"
                   @click="d.sex = value"
                 >
-                  {{ sign }}
+                  {{ value }}
                 </button>
               </td>
               <td class="px-1">
                 <select
                   :value="d.fate"
                   data-col="fate"
-                  class="field-input w-36"
+                  class="field-input w-56"
                   @paste="onPaste($event, i, 'fate')"
                   @change="setFate(d, ($event.target as HTMLSelectElement).value as Fate)"
                 >
@@ -730,11 +718,11 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
           >{{ selected.length }} {{ selected.length === 1 ? 'fila marcada' : 'filas marcadas' }}: aplicar lo que llenes</span
         >
         <label class="min-w-40 flex-1">
-          <span class="field-label">Especie</span>
+          <span class="field-label">SPECIES</span>
           <input v-model="bulk.species" class="field-input" list="collect-species" />
         </label>
         <label class="min-w-32 flex-1">
-          <span class="field-label">Subespecie</span>
+          <span class="field-label">Subspecies_Form</span>
           <input v-model="bulk.subspecies" class="field-input" list="collect-bulk-sub" />
           <datalist id="collect-bulk-sub">
             <option v-for="sub in subspeciesFor(bulk.species)" :key="sub" :value="sub" />
@@ -742,23 +730,19 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         </label>
         <span class="whitespace-nowrap">
           <button
-            v-for="[value, sign] in [
-              ['female', '♀'],
-              ['male', '♂'],
-              ['NA', '?'],
-            ] as const"
+            v-for="value in SEX_VALUES"
             :key="value"
             type="button"
-            class="mr-0.5 h-9 w-9 rounded border text-base"
+            class="mr-0.5 h-9 rounded border px-2 text-sm"
             :class="bulk.sex === value ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white'"
-            :aria-label="`Sexo ${value}`"
+            :aria-label="`Sex ${value}`"
             @click="bulk.sex = bulk.sex === value ? '' : value"
           >
-            {{ sign }}
+            {{ value }}
           </button>
         </span>
-        <select v-model="bulk.fate" class="field-input w-36" aria-label="Destino">
-          <option value="">Destino…</option>
+        <select v-model="bulk.fate" class="field-input w-52" aria-label="Release_Collect">
+          <option value="">Release_Collect…</option>
           <option v-for="(f, key) in FATES" :key="key" :value="key">{{ f.label }}</option>
         </select>
         <button class="btn-primary" @click="applyBulk"><CheckSquare :size="15" /> Aplicar</button>
@@ -767,13 +751,16 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
       </div>
       <div class="mt-2 flex flex-wrap items-center gap-3 text-sm">
         <span v-for="[place, g] in groups" :key="place" class="rounded bg-stone-100 px-2 py-0.5">
-          {{ place }}: {{ g.insectario }} al insectario · {{ g.preservada }} preservadas<template v-if="g.liberada">
-            · {{ g.liberada }} liberadas</template
+          {{ place }}: {{ g.insectario }} Collected_Sent2Insectary · {{ g.preservada }} Collected_Preserved<template
+            v-if="g.liberada"
+          >
+            · {{ g.liberada }} Released_Unmarked</template
           >
         </span>
         <span v-if="problems.length" class="text-xs text-amber-800"
           >{{ problems[0] }}<template v-if="problems.length > 1"> (y {{ problems.length - 1 }} más)</template></span
         >
+        <button v-if="emptyCount" class="btn" @click="removeEmpty"><Eraser :size="15" /> Quitar filas vacías</button>
         <button class="btn-primary ml-auto" :disabled="saving || !!problems.length" @click="save">
           <Save :size="15" /> {{ saving ? 'Guardando…' : `Guardar colecta (${drafts.length})` }}
         </button>

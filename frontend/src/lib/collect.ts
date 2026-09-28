@@ -14,12 +14,27 @@ export interface Draft {
   cam: string
   tube: string
 }
+/** The Release_Collect value each fate is saved as; the list shows it exactly as the sheet will have it. */
 export const FATES: Record<Fate, { label: string; value: string }> = {
-  insectario: { label: 'Al insectario', value: 'Collected_Sent2Insectary' },
-  preservada: { label: 'Preservada', value: 'Collected_Preserved' },
-  liberada: { label: 'Liberada', value: 'Released_Unmarked' },
+  insectario: { label: 'Collected_Sent2Insectary', value: 'Collected_Sent2Insectary' },
+  preservada: { label: 'Collected_Preserved', value: 'Collected_Preserved' },
+  liberada: { label: 'Released_Unmarked', value: 'Released_Unmarked' },
 }
-export const SEXES = { female: '♀', male: '♂', NA: '?' } as const
+/** Sex as saved in the sheet. */
+export const SEX_VALUES = ['female', 'male', 'NA'] as const
+
+/** The list's columns, named as the sheet's columns. */
+export const HEADERS: Record<Column, string> = {
+  location: 'Collection_location',
+  species: 'SPECIES',
+  subspecies: 'Subspecies_Form',
+  sex: 'Sex',
+  fate: 'Release_Collect',
+  time: 'Collection_time',
+  ids: 'Insectary_ID / CAM_ID · Tube_1_id',
+  purpose: 'Purpose',
+  notes: 'Notes_Collection_data',
+}
 
 /**
  * The list's columns in the order they appear, which is also the order cells
