@@ -28,7 +28,7 @@ import {
 import { idSuggestions, tableChanges, tablePayload, tableRevision } from './grid.mjs';
 import { createSheetHook } from './hooks.mjs';
 import { createInvitations, mailerFromEnv } from './invitations.mjs';
-import { createSummary, publicTable } from './summary.mjs';
+import { createSummary } from './summary.mjs';
 import { SANDBOX_ID, moduleMap, validateValues } from './schema.mjs';
 import {
   setup,
@@ -366,20 +366,9 @@ export async function createApp(config = {}, options = {}) {
           throw e;
         }
       }
-      // The home page and the monitoring report are open to visitors: summaries only
-      // (the insectary's state is added for signed-in people) and the report's columns.
+      // The home page is open to visitors: natural-history summaries only (the team's
+      // counts are added for signed-in people).
       if (method === 'GET' && path === '/api/summary') return json(res, 200, summary.build({ signedIn: !!session }));
-      if (method === 'GET' && path === '/api/public/table') {
-        const module = url.searchParams.get('module') || '';
-        const revision = tableRevision(store, module);
-        let cached = tableCache.get(`public:${module}`);
-        if (cached?.revision !== revision) {
-          const text = JSON.stringify({ ...publicTable(store, module), revision });
-          cached = { revision, text, gzipped: gzipSync(text) };
-          tableCache.set(`public:${module}`, cached);
-        }
-        return send(res, 200, cached.text, {}, cached.gzipped);
-      }
       // The invitation page is used before the person has an account.
       if (method === 'GET' && path === '/api/invitations/lookup')
         return json(res, 200, { invitation: invitations.lookup(url.searchParams.get('t')) });

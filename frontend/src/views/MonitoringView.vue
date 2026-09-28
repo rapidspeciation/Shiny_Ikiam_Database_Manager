@@ -2,7 +2,6 @@
 import { computed, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ImportPanel from '../components/monitoring/ImportPanel.vue'
-import { useSession } from '../stores/session'
 
 // The report (ECharts) and the map (Leaflet) load only when opened.
 const SummaryPanel = defineAsyncComponent(() => import('../components/monitoring/SummaryPanel.vue'))
@@ -16,10 +15,7 @@ const PANELS = [
 ] as const
 const route = useRoute()
 const router = useRouter()
-const session = useSession()
-/** Without an account: the report only (the map and the import show the raw records). */
-const panels = computed(() => (session.user ? PANELS : PANELS.filter(p => p.id === 'resumen')))
-const panel = computed(() => panels.value.find(p => p.id === route.query.vista)?.id || 'resumen')
+const panel = computed(() => PANELS.find(p => p.id === route.query.vista)?.id || 'resumen')
 const show = (id: string) => router.replace({ query: { ...route.query, vista: id } })
 </script>
 
@@ -27,7 +23,7 @@ const show = (id: string) => router.replace({ query: { ...route.query, vista: id
   <div class="flex h-full flex-col">
     <nav class="flex gap-1 border-b border-stone-200 bg-white px-3 pt-2 sm:px-4" aria-label="Monitoreo">
       <button
-        v-for="p in panels"
+        v-for="p in PANELS"
         :key="p.id"
         class="-mb-px rounded-t-md border border-b-0 px-3 py-1.5 text-sm font-medium"
         :class="
@@ -39,9 +35,6 @@ const show = (id: string) => router.replace({ query: { ...route.query, vista: id
       >
         {{ p.label }}
       </button>
-      <p v-if="!session.user" class="self-center pl-2 text-xs text-stone-500">
-        Vista pública: resúmenes y gráficos. El mapa y los registros completos requieren cuenta.
-      </p>
     </nav>
     <div class="min-h-0 flex-1">
       <ImportPanel v-if="panel === 'importar'" />

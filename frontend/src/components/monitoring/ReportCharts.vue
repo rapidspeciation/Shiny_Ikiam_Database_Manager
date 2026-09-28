@@ -651,9 +651,7 @@ const table = (head: string[], rows: (string | number)[][]) => ({ head, rows })
         >
           <EChart :option="simpleBars(INTERVALS, intervalBins, 'recapturas')" :height="180" />
         </ChartCard>
-        <!-- Built from the GPS tracks, which visitors without an account do not get. -->
         <ChartCard
-          v-if="tracks.length"
           title="Distancia entre capturas"
           :subtitle="
             moves.length

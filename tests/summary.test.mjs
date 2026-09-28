@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createApp } from '../server/index.mjs';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
-import { clutchStage, todaySerial } from '../server/summary.mjs';
+import { activity, clutchStage, sessions, todaySerial } from '../server/summary.mjs';
 
 const today = todaySerial();
 
@@ -58,7 +58,7 @@ async function fixture() {
   return store;
 }
 
-test('the home page summaries are open, the insectary only with a session, and visitors get reduced sheets', async () => {
+test('visitors get the natural history; the team counts and the insectary need a session', async () => {
   const store = await fixture();
   const app = await createApp(
     { localMode: true, secureCookies: false, setupToken: 'test-setup-secret', syncIntervalMs: 0 },
@@ -77,23 +77,13 @@ test('the home page summaries are open, the insectary only with a session, and v
   try {
     const open = await call('/summary');
     assert.equal(open.status, 200);
-    assert.equal(open.body.insectary, null);
-    assert.equal(open.body.collections.total, 2);
-    assert.equal(open.body.monitoring.individuals, 1);
-    assert.equal(open.body.monitoring.days, 1);
-    assert.equal(open.body.crispr.eggs, 2);
-    assert.equal(open.body.crispr.hatched, 1);
-    assert.equal(open.body.crispr.mutants, 1);
-
-    // Only the monitoring report's rows (Ikiam) and columns.
-    const table = await call('/public/table?module=Collection_data');
-    assert.equal(table.status, 200);
-    assert.equal(table.body.rows.length, 1);
-    const keys = table.body.columns.map(c => c.key);
-    assert.ok(keys.includes('SPECIES') && keys.includes('FieldMark_ID'));
-    for (const hidden of ['DECIMAL_LATITUDE', 'COLLECTOR_EMAIL', 'CAM_ID', 'Notes_Collection_data'])
-      assert.ok(!keys.includes(hidden), hidden);
-    assert.equal((await call('/public/table?module=Insectary_data')).status, 401);
+    // Visitors get rates and proportions only, no counts of butterflies collected or reared.
+    assert.equal(open.body.team, null);
+    const nature = open.body.nature;
+    assert.equal(nature.facts.places, 2);
+    assert.deepEqual(nature.deaths, [{ name: 'Arañas', percent: 100 }]);
+    assert.ok(!JSON.stringify(nature).includes('someone@example.org'));
+    assert.equal((await call('/public/table?module=Collection_data')).status, 401);
     assert.equal((await call('/table?module=Collection_data')).status, 401);
 
     const admin = await call('/auth/setup', {
@@ -101,7 +91,10 @@ test('the home page summaries are open, the insectary only with a session, and v
       body: { token: 'test-setup-secret', username: 'boss', password: 'secret1', displayName: 'Boss' },
     });
     const signed = await call('/summary', { cookie: admin.cookie });
-    const insectary = signed.body.insectary;
+    assert.equal(signed.body.team.collections.total, 2);
+    assert.equal(signed.body.team.monitoring.individuals, 1);
+    assert.equal(signed.body.team.crispr.hatched, 1);
+    const insectary = signed.body.team.insectary;
     // A0A is alive; A1A has no death date but entered 400 days ago; A2A died.
     assert.equal(insectary.alive, 1);
     assert.equal(insectary.stale, 1);
@@ -122,4 +115,27 @@ test('a clutch is at its latest recorded stage', () => {
     stage: 'pupa',
     n: 6,
   });
+});
+
+test('the hour of day is corrected by the hours people were out searching', () => {
+  const at = (h, m = 0) => (h + m / 60) / 24;
+  const capture = (collector, time) => ({ Collection_date: 46000, Collection_location: 'Ikiam', Collector: collector, Collection_time: time });
+  const list = sessions(
+    [
+      // A wrote down 8:00–12:00 in SamplingDay_data.
+      ...[at(10, 10), at(10, 20), at(10, 40), at(11, 30)].map(t => capture('AA - Ana', t)),
+      // B did not: the effort is the first to the last capture (10:05–10:55).
+      ...[at(10, 5), at(10, 30), at(10, 55)].map(t => capture('BB - Beto', t)),
+      // A single capture is not a session.
+      capture('CC - Carla', at(15)),
+    ],
+    [{ Date: 46000, Collectors_initials: 'AA', Start_time: at(8), End_time: at(12) }],
+  );
+  assert.equal(list.length, 2);
+  const byHour = Object.fromEntries(activity(list, 0).map(h => [h.hour, h]));
+  assert.equal(byHour[8].perHour, 0);
+  assert.equal(byHour[10].perHour, 3.3); // 6 captures in 1 + 50/60 hours
+  assert.equal(byHour[11].perHour, 1);
+  assert.equal(byHour[10].share, 85.7); // 6 of the 7 captures
+  assert.equal(byHour[15], undefined);
 });

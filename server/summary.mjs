@@ -1,11 +1,11 @@
-// The home page ("Inicio"): project-wide summaries computed from the local copy.
-// Anyone can read the collection, monitoring, CRISPR and crossing summaries;
-// the insectary's state (alive, clutches in progress, deaths) needs a session.
-// Visitors without an account also get the monitoring report's rows, reduced
-// to the columns its charts use (no coordinates, notes, tubes or CAM IDs).
+// The home page ("Inicio"). Anyone can read the natural-history summaries:
+// rates and proportions (life-cycle times, when and where butterflies are
+// found, weather, causes of death) that never say how many butterflies were
+// collected or reared. The team's counts (insectary state, collections,
+// monitoring, CRISPR, crosses) need a session.
 
 import { moduleMap } from './schema.mjs';
-import { tablePayload, tableRevision } from './grid.mjs';
+import { tableRevision } from './grid.mjs';
 
 const DAY = 86_400_000;
 const EPOCH = Date.UTC(1899, 11, 30);
@@ -58,9 +58,7 @@ function lastMonths(today, count = 12) {
   });
 }
 
-const speciesName = row => [text(row.SPECIES), text(row.Subspecies_Form)].filter(s => s && !blank(s)).join(' ');
-
-// ----------------------------------------------------------------- public
+// ----------------------------------------------------------------- team (signed in)
 
 function collections(rows, today) {
   const kinds = {
@@ -258,8 +256,6 @@ function crosses(store) {
   };
 }
 
-// ----------------------------------------------------------------- private
-
 /** The date a butterfly entered the insectary: caught (wild) or its clutch's emergence (reared). */
 function entered(row, clutchOf) {
   if (/wild/i.test(text(row.Wild_Reared))) return date(row.Intro2Insectary_date);
@@ -354,10 +350,262 @@ function insectary(store, today) {
   };
 }
 
+// ----------------------------------------------------------------- natural history (open)
+
+function median(values) {
+  const v = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!v.length) return null;
+  const m = v.length >> 1;
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+}
+const quantile = (sorted, q) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.round(q * (sorted.length - 1))))];
+const round = (n, digits = 1) => (n === null || !Number.isFinite(n) ? null : Math.round(n * 10 ** digits) / 10 ** digits);
+function mode(values) {
+  const counts = new Map();
+  for (const v of values) counts.set(v, (counts.get(v) || 0) + 1);
+  return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+}
+
+const CLOUDS = {
+  'S_(cloudless_sunny)': 'Soleado, sin nubes',
+  'S&C_(sun_&_cloud_patches)': 'Sol y nubes',
+  'CL_(cloudy_light)': 'Nublado claro',
+  'CD_(cloudy_dark)': 'Nublado oscuro',
+};
+const RAIN = { 'DY_(dry)': 'Sin lluvia', 'DZ_(drizzle)': 'Llovizna', 'WR_(weak_rain)': 'Lluvia débil' };
+const DEATHS = {
+  Unknown: 'Causa desconocida',
+  Disappearance: 'Desaparecieron',
+  Other: 'Otra causa',
+  Eaten: 'Depredadas',
+  Spider: 'Arañas',
+  'Unknown - Only wings': 'Solo se hallaron las alas',
+  Deformed: 'Deformidad',
+  Ants: 'Hormigas',
+  'Heat stroke': 'Golpe de calor',
+};
+
+/** Median days as egg, larva and pupa per species, from the clutch dates (pure species only). */
+function lifeCycle(stocks) {
+  const STAGES = [
+    ['egg', 'DATE LAID', 'HATCHING DATE', 1, 30],
+    ['larva', 'HATCHING DATE', 'PUPA DATE', 3, 60],
+    ['pupa', 'PUPA DATE', 'EMERGENCE DATE', 3, 40],
+  ];
+  const bySpecies = new Map();
+  for (const r of stocks) {
+    const name = text(r.SPECIES);
+    if (blank(name) || /\sx\s|\bVS\b/i.test(name)) continue;
+    const s = bySpecies.get(name) || { name, egg: [], larva: [], pupa: [] };
+    for (const [stage, from, to, min, max] of STAGES) {
+      const a = date(r[from]),
+        b = date(r[to]);
+      if (a && b && b - a >= min && b - a <= max) s[stage].push(b - a);
+    }
+    bySpecies.set(name, s);
+  }
+  return [...bySpecies.values()]
+    .filter(s => s.egg.length >= 5 && s.larva.length >= 5 && s.pupa.length >= 5)
+    .map(s => ({ name: s.name, egg: median(s.egg), larva: median(s.larva), pupa: median(s.pupa) }))
+    .map(s => ({ ...s, total: s.egg + s.larva + s.pupa }))
+    .sort((a, b) => a.total - b.total);
+}
+
+/**
+ * Collecting sessions (one person, one place, one day) with the hours searched:
+ * the start and end written in SamplingDay_data, else the first and last
+ * capture of the day. Sessions shorter than half an hour are left out.
+ */
+export function sessions(collection, days) {
+  const planned = new Map();
+  for (const r of days) {
+    const d = date(r.Date);
+    if (d && typeof r.Start_time === 'number' && typeof r.End_time === 'number' && r.End_time > r.Start_time)
+      planned.set(`${d}|${text(r.Collectors_initials).toUpperCase()}`, [r.Start_time * 24, r.End_time * 24]);
+  }
+  const groups = new Map();
+  for (const r of collection) {
+    const d = date(r.Collection_date);
+    const t = num(r.Collection_time);
+    if (!d || t === null || t <= 0 || t >= 1 || blank(r.Collection_location)) continue;
+    const key = `${d}|${initials(r.Collector)}|${text(r.Collection_location)}`;
+    const g = groups.get(key) || { day: `${d}|${initials(r.Collector)}`, hours: [], clouds: [], rain: [] };
+    g.hours.push(t * 24);
+    if (CLOUDS[text(r.Cloud_cover)]) g.clouds.push(text(r.Cloud_cover));
+    if (RAIN[text(r.Rainfall)]) g.rain.push(text(r.Rainfall));
+    groups.set(key, g);
+  }
+  const out = [];
+  for (const g of groups.values()) {
+    const first = Math.min(...g.hours),
+      last = Math.max(...g.hours);
+    const plan = planned.get(g.day);
+    const start = plan ? Math.min(plan[0], first) : first;
+    const end = plan ? Math.max(plan[1], last) : last;
+    if (end - start < 0.5 || (!plan && g.hours.length < 3)) continue;
+    out.push({ start, end, hours: g.hours, cloud: mode(g.clouds), rain: mode(g.rain) });
+  }
+  return out;
+}
+
+/** Captures per hour of searching, for each hour of the day (the effort corrects for when people were out). */
+export function activity(list, minEffort = 5) {
+  const out = [];
+  for (let h = 6; h < 18; h++) {
+    let effort = 0,
+      captures = 0;
+    for (const s of list) {
+      effort += Math.max(0, Math.min(s.end, h + 1) - Math.max(s.start, h));
+      captures += s.hours.filter(t => t >= h && t < h + 1).length;
+    }
+    if (effort > 0 && effort >= minEffort)
+      out.push({ hour: h, perHour: round(captures / effort), effortHours: round(effort, 0), share: captures });
+  }
+  const total = out.reduce((n, h) => n + h.share, 0) || 1;
+  return out.map(h => ({ ...h, share: round((100 * h.share) / total) }));
+}
+
+/** Captures per hour of searching under each sky and rain condition (the day's most common record). */
+function weather(list) {
+  const rate = (key, labels) =>
+    Object.entries(labels)
+      .map(([code, label]) => {
+        const chosen = list.filter(s => s[key] === code);
+        const hours = chosen.reduce((n, s) => n + (s.end - s.start), 0);
+        const captures = chosen.reduce((n, s) => n + s.hours.length, 0);
+        return { code, label, sessions: chosen.length, perHour: hours ? round(captures / hours) : null };
+      })
+      .filter(r => r.sessions >= 5);
+  return { clouds: rate('cloud', CLOUDS), rain: rate('rain', RAIN) };
+}
+
+/** Monitoring at Ikiam: butterflies per monitoring day and species seen, by month of the year (all years). */
+function seasons(collection, days) {
+  const dayKeys = monitoringDayKeys(days);
+  const records = collection.filter(r => isMonitoring(r, dayKeys));
+  const effort = new Set(dayKeys);
+  for (const r of records) if (date(r.Collection_date)) effort.add(`${date(r.Collection_date)}|${initials(r.Collector)}`);
+  const perMonth = Array.from({ length: 12 }, () => ({ days: 0, captures: 0, species: new Set() }));
+  for (const key of effort) perMonth[Number(month(Number(key.split('|')[0])).slice(5)) - 1].days++;
+  for (const r of records) {
+    const m = perMonth[Number(month(date(r.Collection_date) ?? 0).slice(5)) - 1];
+    m.captures++;
+    if (!blank(r.SPECIES)) m.species.add(text(r.SPECIES));
+  }
+  return perMonth.map((m, i) => ({
+    month: i + 1,
+    perDay: m.days >= 3 ? round(m.captures / m.days) : null,
+    species: m.days >= 3 ? m.species.size : null,
+  }));
+}
+
+/**
+ * The most often recorded Ithomiini: where they were found most often per day
+ * of collecting at each place (places visited at least 3 days), the elevations
+ * they were found at (10th to 90th percentile) and the share of females.
+ */
+function whereToFind(collection) {
+  const records = collection.filter(r => date(r.Collection_date) && !blank(r.Collection_location));
+  const siteDays = new Map();
+  for (const r of records) {
+    const site = text(r.Collection_location);
+    const set = siteDays.get(site) || new Set();
+    set.add(date(r.Collection_date));
+    siteDays.set(site, set);
+  }
+  const ithomiini = records.filter(r => /^ithomiini$/i.test(text(r.Tribe)) && !blank(r.SPECIES));
+  const common = tally(ithomiini, r => text(r.SPECIES), 12).map(s => s.name);
+  return common.map(name => {
+    const own = ithomiini.filter(r => text(r.SPECIES) === name);
+    const bySite = tally(own, r => text(r.Collection_location))
+      .map(s => ({ name: s.name, days: siteDays.get(s.name)?.size ?? 0, n: s.n }))
+      .filter(s => s.days >= 3)
+      .map(s => ({ name: s.name, perDay: round(s.n / s.days, 2) }))
+      .sort((a, b) => b.perDay - a.perDay)
+      .slice(0, 3);
+    const elevations = own
+      .map(r => num(r.ELEVATION))
+      .filter(e => e !== null && e > 0 && e < 5000)
+      .sort((a, b) => a - b);
+    const sexed = own.filter(r => /^(female|male)$/i.test(text(r.Sex)));
+    return {
+      name,
+      sites: bySite,
+      elevation: elevations.length >= 5 ? [quantile(elevations, 0.1), quantile(elevations, 0.9)] : null,
+      female: sexed.length >= 10 ? Math.round((100 * sexed.filter(r => /^female$/i.test(text(r.Sex))).length) / sexed.length) : null,
+    };
+  });
+}
+
+/** Places with the most species recorded, with the days spent there (richness grows with effort). */
+function richestSites(collection) {
+  const sites = new Map();
+  for (const r of collection) {
+    if (blank(r.Collection_location) || !date(r.Collection_date)) continue;
+    const name = text(r.Collection_location);
+    const s = sites.get(name) || { name, species: new Set(), ithomiini: new Set(), days: new Set(), elevation: [] };
+    if (!blank(r.SPECIES) && !/NOT_FOUND/i.test(text(r.SPECIES))) {
+      s.species.add(text(r.SPECIES));
+      if (/^ithomiini$/i.test(text(r.Tribe))) s.ithomiini.add(text(r.SPECIES));
+    }
+    s.days.add(date(r.Collection_date));
+    if (num(r.ELEVATION) > 0) s.elevation.push(num(r.ELEVATION));
+    sites.set(name, s);
+  }
+  return [...sites.values()]
+    .map(s => ({
+      name: s.name,
+      species: s.species.size,
+      ithomiini: s.ithomiini.size,
+      days: s.days.size,
+      elevation: median(s.elevation),
+    }))
+    .sort((a, b) => b.ithomiini - a.ithomiini || b.species - a.species)
+    .slice(0, 10);
+}
+
+/** How butterflies die in the insectary, as percentages (butterflies sacrificed for samples are left out). */
+function deathCauses(individuals) {
+  const deaths = individuals.filter(r => DEATHS[text(r.Death_cause)] && date(r.Death_date));
+  return tally(deaths, r => DEATHS[text(r.Death_cause)]).map(c => ({
+    name: c.name,
+    percent: round((100 * c.n) / deaths.length),
+  }));
+}
+
+function naturalHistory(store) {
+  const collection = rowsOf(store, 'Collection_data');
+  const days = rowsOf(store, 'SamplingDay_data');
+  const list = sessions(collection, days);
+  const named = collection.filter(r => !blank(r.SPECIES) && !/NOT_FOUND/i.test(text(r.SPECIES)));
+  const years = collection.map(r => date(r.Collection_date)).filter(Boolean);
+  const elevations = collection
+    .map(r => num(r.ELEVATION))
+    .filter(e => e !== null && e > 0 && e < 5000)
+    .sort((a, b) => a - b);
+  return {
+    facts: {
+      ithomiini: new Set(named.filter(r => /^ithomiini$/i.test(text(r.Tribe))).map(r => text(r.SPECIES))).size,
+      species: new Set(named.map(r => text(r.SPECIES))).size,
+      places: new Set(collection.filter(r => !blank(r.Collection_location)).map(r => text(r.Collection_location))).size,
+      since: years.length ? Number(month(Math.min(...years)).slice(0, 4)) : null,
+      elevation: elevations.length ? [quantile(elevations, 0.01), quantile(elevations, 0.99)] : null,
+    },
+    lifeCycle: lifeCycle(rowsOf(store, 'Insectary_stocks')),
+    activity: activity(list),
+    sessions: list.length,
+    weather: weather(list),
+    seasons: seasons(collection, days),
+    species: whereToFind(collection),
+    sites: richestSites(collection),
+    deaths: deathCauses(rowsOf(store, 'Insectary_data')),
+  };
+}
+
 // ----------------------------------------------------------------- entry points
 
-const PUBLIC_SHEETS = ['Collection_data', 'SamplingDay_data', 'CRISPR', 'Melinaea_crosses', 'F1/F2_MutationRate', 'Stocks_Matings', 'Crosses_Lys_x_Pol', 'Insectary_stocks'];
-const PRIVATE_SHEETS = ['Insectary_data', 'Insectary_stocks'];
+const NATURE_SHEETS = ['Collection_data', 'SamplingDay_data', 'Insectary_stocks', 'Insectary_data'];
+const TEAM_SHEETS = [...NATURE_SHEETS, 'CRISPR', 'Melinaea_crosses', 'F1/F2_MutationRate', 'Stocks_Matings', 'Crosses_Lys_x_Pol'];
 
 export function createSummary(store) {
   const cache = new Map();
@@ -370,70 +618,23 @@ export function createSummary(store) {
     return value;
   }
   return {
-    /** Everything for the home page; `insectary` only for signed-in people. */
+    /** Natural history for everyone; `team` only for signed-in people. */
     build({ signedIn }) {
       const today = todaySerial();
-      const open = cached('public', PUBLIC_SHEETS, () => {
-        const collection = rowsOf(store, 'Collection_data');
-        return {
-          collections: collections(collection, today),
-          monitoring: monitoring(collection, rowsOf(store, 'SamplingDay_data'), today),
-          crispr: crispr(rowsOf(store, 'CRISPR')),
-          crosses: crosses(store),
-        };
-      });
-      return {
-        generatedAt: new Date().toISOString(),
-        today: iso(today),
-        ...open,
-        insectary: signedIn ? cached('private', PRIVATE_SHEETS, () => insectary(store, today)) : null,
-      };
+      const nature = cached('nature', NATURE_SHEETS, () => naturalHistory(store));
+      const team = signedIn
+        ? cached('team', TEAM_SHEETS, () => {
+            const collection = rowsOf(store, 'Collection_data');
+            return {
+              insectary: insectary(store, today),
+              monitoring: monitoring(collection, rowsOf(store, 'SamplingDay_data'), today),
+              collections: collections(collection, today),
+              crispr: crispr(rowsOf(store, 'CRISPR')),
+              crosses: crosses(store),
+            };
+          })
+        : null;
+      return { generatedAt: new Date().toISOString(), today: iso(today), nature, team };
     },
-  };
-}
-
-/**
- * The sheets the monitoring report reads, for visitors without an account:
- * only the rows and columns its tables and charts use.
- */
-export const PUBLIC_TABLES = {
-  Collection_data: {
-    rows: values => /^(ikiam|casa de lin)$/i.test(text(values.Collection_location)),
-    columns: [
-      'Release_Collect',
-      'FieldMark_ID',
-      'Family',
-      'Subfamily',
-      'Tribe',
-      'Genus',
-      'SPECIES',
-      'Subspecies_Form',
-      'Sex',
-      'Collection_location',
-      'Transect_section',
-      'Collection_date',
-      'Collection_time',
-      'Collector',
-      'Cloud_cover',
-      'Flight_height',
-      'Purpose',
-    ],
-  },
-  SamplingDay_data: { rows: () => true, columns: ['Date', 'Location', 'Purpose', 'Collectors_initials'] },
-};
-
-export function publicTable(store, module) {
-  const spec = PUBLIC_TABLES[module];
-  if (!spec) throw Object.assign(new Error('Not available without an account'), { code: 'AUTH_REQUIRED', status: 401 });
-  const full = tablePayload(store, module);
-  const keys = full.columns.map(c => c.key);
-  const keep = keys.map((k, i) => (spec.columns.includes(k) && keys.indexOf(k) === i ? i : -1)).filter(i => i >= 0);
-  return {
-    module,
-    columns: keep.map(i => ({ ...full.columns[i], readonly: true })),
-    headerProblems: [],
-    rows: full.rows
-      .filter(r => r.observed && spec.rows(Object.fromEntries(keys.map((k, i) => [k, r.v[i]]))))
-      .map(r => ({ id: r.id, row: 0, version: r.version, observed: true, v: keep.map(i => r.v[i]), f: [] })),
   };
 }

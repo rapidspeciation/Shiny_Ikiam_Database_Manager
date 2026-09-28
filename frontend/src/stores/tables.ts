@@ -2,10 +2,6 @@ import { defineStore } from 'pinia'
 import { markRaw } from 'vue'
 import { api } from '../lib/api'
 import type { Table, TableRow } from '../lib/types'
-import { useSession } from './session'
-
-/** Sheets a visitor without an account can read, reduced to the monitoring report's rows and columns. */
-const OPEN_TABLES = new Set(['Collection_data', 'SamplingDay_data'])
 
 /** A record as returned by the write endpoints. */
 export interface ServerRecord {
@@ -88,16 +84,9 @@ export const useTables = defineStore('tables', {
   actions: {
     async load(module: string, force = false): Promise<Table> {
       if (this.tables[module] && !force) return this.tables[module]
-      const signedIn = !!useSession().user
-      if (!signedIn && !OPEN_TABLES.has(module)) {
-        // Dropdown sources (Lists, stocks) are not needed to read the report.
-        const empty: Table = { module, revision: '', columns: [], rows: [], headerProblems: [] }
-        this.tables[module] = markRaw(empty)
-        return empty
-      }
       this.loading[module] = true
       try {
-        const wire = await api<TableWire>(`${signedIn ? 'table' : 'public/table'}?module=${encodeURIComponent(module)}`)
+        const wire = await api<TableWire>(`table?module=${encodeURIComponent(module)}`)
         const table = fromWire(wire)
         this.tables[module] = markRaw(table)
         this.version++
