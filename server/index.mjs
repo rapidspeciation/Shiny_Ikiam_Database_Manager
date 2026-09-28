@@ -139,6 +139,14 @@ export function configFromEnv(env = process.env) {
     spreadsheetId: SANDBOX_ID,
     syncIntervalMs: Number(env.SYNC_INTERVAL_MS || 300000),
     sheetHookSecret: env.SHEET_HOOK_SECRET,
+    // T3 Code (stock install on its own host), shown inside the Asistente tab.
+    t3: env.ITHOMIINI_T3_URL
+      ? {
+          url: env.ITHOMIINI_T3_URL.replace(/\/+$/, ''),
+          local: env.ITHOMIINI_T3_LOCAL || 'http://127.0.0.1:3773',
+          tokenFile: env.ITHOMIINI_T3_ADMIN_TOKEN_FILE,
+        }
+      : null,
     aiApiKey: env.AI_API_KEY || env.OPENAI_API_KEY,
     aiModel: env.AI_MODEL || env.OPENAI_MODEL,
     aiBaseUrl: env.AI_BASE_URL,
@@ -303,7 +311,7 @@ export async function createApp(config = {}, options = {}) {
         res.writeHead(303, { location: `${config.basePath}/#/monitoreo?vista=importar&compartido=0` });
         return res.end();
       }
-      if (!path.startsWith('/api/')) return serveStatic(req, res, path, config.basePath);
+      if (!path.startsWith('/api/')) return serveStatic(req, res, path, config.basePath, config.t3?.url);
       if (method !== 'GET' && method !== 'HEAD') checkOrigin(req);
       const session = getSession(store, req.headers.cookie);
       if (method === 'GET' && path === '/api/auth/session')
@@ -655,6 +663,12 @@ export async function createApp(config = {}, options = {}) {
         requireId(body);
         return json(res, 200, { user: updateUser(store, path.split('/')[4], body, user) });
       }
+      if (method === 'GET' && path === '/api/t3/status') return json(res, 200, { url: config.t3?.url ?? null });
+      if (method === 'POST' && path === '/api/t3/pair') {
+        requireEditor(user);
+        if (!config.t3?.tokenFile) throw fail('T3_DISABLED', 'T3 Code is not configured', 404);
+        return json(res, 200, await t3Pairing(config.t3, user));
+      }
       if (path === '/api/admin/invitations' && method === 'GET') {
         requireAdmin(user);
         return json(res, 200, { invitations: invitations.list() });
@@ -752,7 +766,27 @@ export async function createApp(config = {}, options = {}) {
   };
 }
 
-function serveStatic(req, res, path, base) {
+/**
+ * A one-time T3 Code sign-in link for the person, made with the broker's admin
+ * token (T3 is a stock install: its own pairing flow, nothing patched).
+ */
+async function t3Pairing(t3, user) {
+  const token = readFileSync(t3.tokenFile, 'utf8').trim();
+  const response = await fetch(`${t3.local}/api/auth/pairing-token`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      label: `ithomiini:${user.username}`,
+      scopes: ['orchestration:read', 'orchestration:operate', 'terminal:operate', 'review:write', 'relay:read'],
+    }),
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!response.ok) throw fail('T3_UNAVAILABLE', `T3 Code answered ${response.status}`, 502);
+  const { credential, expiresAt } = await response.json();
+  return { url: `${t3.url}/pair#token=${encodeURIComponent(credential)}`, expiresAt };
+}
+
+function serveStatic(req, res, path, base, frameSrc = '') {
   if (req.method !== 'GET' && req.method !== 'HEAD') throw fail('METHOD_NOT_ALLOWED', 'Method not allowed', 405);
   const clean = decodeURIComponent(path).replace(/^\/+/, ''),
     target = resolve(webRoot, clean || 'index.html');
@@ -762,8 +796,7 @@ function serveStatic(req, res, path, base) {
   res.writeHead(200, {
     'content-type': mime[extname(file)] || 'application/octet-stream',
     'x-content-type-options': 'nosniff',
-    'content-security-policy':
-      "default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; img-src 'self' data: blob: https:; connect-src 'self'; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self'",
+    'content-security-policy': `default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; img-src 'self' data: blob: https:; connect-src 'self'; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self'${frameSrc ? `; frame-src ${frameSrc}` : ''}`,
     'cache-control': file.endsWith('index.html') ? 'no-cache' : 'public, max-age=3600',
   });
   if (req.method === 'HEAD') return res.end();

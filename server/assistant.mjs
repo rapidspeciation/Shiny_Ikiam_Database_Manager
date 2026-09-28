@@ -161,6 +161,10 @@ function init(db) {
   if (!has('ai_messages', 'attachments_json'))
     db.exec("ALTER TABLE ai_messages ADD COLUMN attachments_json TEXT NOT NULL DEFAULT '[]'");
   if (!has('ai_proposals', 'applied_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN applied_json TEXT');
+  // Personal tokens for agents outside the app (T3 Code projects) to use the same tools.
+  db.exec(`CREATE TABLE IF NOT EXISTS ai_tokens (
+    token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, label TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT
+  )`);
   // A restarted process cannot know whether an in-flight source write completed.
   db.prepare("UPDATE ai_proposals SET status = 'needs_review' WHERE status = 'applying'").run();
 }
@@ -794,10 +798,54 @@ export function createAssistant({ store, config = {} }) {
     }
   }
 
+  /**
+   * An agent outside the app (T3 Code) using a personal token: it acts as that
+   * person, and its proposals go to their "T3 Code" conversation for review.
+   */
+  const agents = new Map();
+  function agentTurn(token) {
+    const hash = createHash('sha256').update(token).digest('hex');
+    const row = db
+      .prepare(
+        'SELECT u.* FROM ai_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ? AND t.revoked_at IS NULL AND u.active = 1',
+      )
+      .get(hash);
+    if (!row) return null;
+    const user = { id: row.id, username: row.username, displayName: row.display_name, role: row.role };
+    let thread = db.prepare("SELECT id FROM ai_threads WHERE owner_id = ? AND title = 'T3 Code'").get(owner(user));
+    if (!thread) {
+      thread = { id: randomUUID() };
+      db.prepare('INSERT INTO ai_threads (id,owner_id,title,created_at,updated_at) VALUES (?,?,?,?,?)').run(
+        thread.id,
+        owner(user),
+        'T3 Code',
+        now(),
+        now(),
+      );
+    }
+    const cached = agents.get(hash);
+    if (cached?.context.threadId === thread.id) return cached;
+    const turn = {
+      expires: Infinity,
+      agent: true,
+      context: {
+        threadId: thread.id,
+        user,
+        records: new Map(),
+        sources: new Map(),
+        results: [],
+        proposals: [],
+        applied: [],
+      },
+    };
+    agents.set(hash, turn);
+    return turn;
+  }
+
   /** MCP (streamable HTTP, JSON replies) for the Claude CLI; one token per turn. */
   async function mcp(headers, body) {
     const token = /^Bearer\s+(\S+)$/.exec(String(headers.authorization ?? ''))?.[1];
-    const turn = token && turns.get(token);
+    const turn = token && (turns.get(token) ?? agentTurn(token));
     const id = body?.id ?? null;
     if (!turn || turn.expires < Date.now())
       return { status: 401, body: { jsonrpc: '2.0', id, error: { code: -32001, message: 'Unauthorized' } } };
@@ -821,10 +869,20 @@ export function createAssistant({ store, config = {} }) {
       });
     if (method === 'tools/call') {
       let out;
+      const before = turn.context.proposals.length;
       try {
         out = await executeTool(String(body.params?.name ?? ''), body.params?.arguments ?? {}, turn.context);
       } catch (e) {
         out = { error: clip(e.message, 300) };
+      }
+      // Proposals from T3 Code are shown in the app for review (Asistente → Cambios propuestos).
+      if (turn.agent && turn.context.proposals.length > before) {
+        const fresh = turn.context.proposals.splice(before);
+        insertMessage(turn.context.threadId, 'assistant', 'Propuesta desde T3 Code', [], [], fresh);
+        out = {
+          ...out,
+          review: 'The person reviews it in the app: Asistente → Cambios propuestos, or tells you to apply it.',
+        };
       }
       return result({ content: [{ type: 'text', text: json(out).slice(0, 200000) }], isError: Boolean(out?.error) });
     }
@@ -946,6 +1004,25 @@ export function createAssistant({ store, config = {} }) {
           return bad(502, 'provider_error', 'The assistant could not complete this message. Try again.');
         }
       }
+    }
+    if (path === '/api/chat/proposals' && method === 'GET') {
+      const rows = db
+        .prepare(
+          "SELECT m.proposals_json, m.created_at FROM ai_messages m JOIN ai_threads t ON t.id = m.thread_id WHERE t.owner_id = ? AND m.proposals_json <> '[]' ORDER BY m.created_at DESC LIMIT 50",
+        )
+        .all(owner(user));
+      const status = new Map(
+        db
+          .prepare('SELECT id,status,applied_at,applied_json FROM ai_proposals WHERE owner_id = ?')
+          .all(owner(user))
+          .map(r => [r.id, r]),
+      );
+      const proposals = rows
+        .flatMap(r =>
+          (parse(r.proposals_json) ?? []).map(p => ({ ...proposalView(p, status.get(p.id)), createdAt: r.created_at })),
+        )
+        .filter(p => (query.all ? true : p.status === 'pending'));
+      return { status: 200, body: { proposals } };
     }
     const discardMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/discard$/.exec(path);
     if (discardMatch && method === 'POST') {

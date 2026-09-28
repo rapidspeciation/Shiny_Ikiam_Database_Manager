@@ -6,6 +6,8 @@ import { api, requestId } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
 import { useTables } from '../stores/tables'
 import ProposalGrid, { type Proposal } from '../components/ProposalGrid.vue'
+import T3Frame from '../components/T3Frame.vue'
+import { persistentRef } from '../lib/persist'
 
 /**
  * Chat with the database assistant. It can read notebook photos; the rows it
@@ -54,6 +56,23 @@ const sending = ref(false)
 const applying = ref<string | null>(null)
 const status = ref<{ configured: boolean; provider: string; model: string | null } | null>(null)
 const scroller = ref<HTMLElement>()
+const t3Url = ref<string | null>(null)
+const mode = persistentRef<'t3' | 'chat'>('assistant:mode', 't3')
+// Proposals made from T3 Code (or any conversation) waiting for review.
+const waiting = ref<Proposal[]>([])
+const panelOpen = ref(true)
+async function loadWaiting() {
+  if (document.visibilityState !== 'visible' || mode.value !== 't3') return
+  try {
+    const next = (await api<{ proposals: Proposal[] }>('chat/proposals')).proposals
+    if (next.length > waiting.value.length) panelOpen.value = true
+    waiting.value = next
+  } catch {
+    /* The panel just stays as it was. */
+  }
+}
+const poll = setInterval(loadWaiting, 5000)
+onBeforeUnmount(() => clearInterval(poll))
 const gallery = ref<HTMLInputElement>()
 const camera = ref<HTMLInputElement>()
 const started = ref(0)
@@ -63,6 +82,8 @@ onBeforeUnmount(() => clearInterval(tick))
 
 onMounted(async () => {
   try {
+    t3Url.value = (await api<{ url: string | null }>('t3/status')).url
+    loadWaiting()
     status.value = await api('ai/status')
     threads.value = (await api<{ threads: Thread[] }>('chat/threads')).threads
     if (threads.value[0]) await open(threads.value[0].id)
@@ -198,125 +219,165 @@ const cellOf = (row: Record<string, unknown> | unknown[], key: string, i: number
 </script>
 
 <template>
-  <div class="flex h-full">
-    <aside class="hidden w-60 shrink-0 flex-col border-r border-stone-200 bg-white md:flex">
-      <button class="btn m-3" @click="newThread()"><Plus :size="15" /> Nueva conversación</button>
-      <ul class="flex-1 overflow-y-auto text-sm">
-        <li v-for="t in threads" :key="t.id" class="group flex items-center" :class="{ 'bg-brand-50': t.id === current }">
-          <button class="min-w-0 flex-1 truncate px-3 py-2 text-left" @click="open(t.id)">{{ t.title }}</button>
-          <button class="btn-ghost invisible mr-1 group-hover:visible" title="Borrar" @click="remove(t.id)">
-            <Trash2 :size="14" />
-          </button>
-        </li>
-      </ul>
-    </aside>
-    <section class="flex min-w-0 flex-1 flex-col">
-      <header class="flex items-center gap-2 border-b border-stone-200 bg-white px-4 py-2">
-        <h2 class="flex-1 truncate font-medium">{{ title }}</h2>
-        <span v-if="status?.configured" class="hint">{{ status.provider }} · {{ status.model }}</span>
-        <button class="btn md:hidden" @click="newThread()"><Plus :size="15" /></button>
-      </header>
-      <p v-if="status && !status.configured" class="bg-amber-50 px-4 py-2 text-sm text-amber-900">
-        El asistente no tiene un proveedor de IA configurado en el servidor.
-      </p>
-      <div ref="scroller" class="flex-1 space-y-4 overflow-y-auto px-4 py-4">
-        <p v-if="!messages.length" class="max-w-2xl text-sm text-stone-500">
-          Pregunta por registros ("¿qué tubos FS se usaron la semana pasada?") o manda la foto de una página del cuaderno: el
-          asistente la transcribe, la compara con la hoja y te muestra los cambios en una tabla para que los confirmes.
-        </p>
-        <div v-for="m in messages" :key="m.id" :class="m.role === 'user' ? 'flex justify-end' : ''">
-          <div
-            class="max-w-full rounded-lg px-3 py-2 text-sm whitespace-pre-wrap md:max-w-4xl"
-            :class="m.role === 'user' ? 'bg-brand-700 text-white' : 'border border-stone-200 bg-white'"
-          >
-            <div v-if="m.attachments?.length" class="mb-1.5 flex flex-wrap gap-1.5">
-              <a v-for="a in m.attachments" :key="a.id" :href="`api/attachments/${a.id}/content`" target="_blank">
-                <img :src="`api/attachments/${a.id}/content`" :alt="a.name" class="h-20 rounded border border-white/40" />
-              </a>
-            </div>
-            {{ m.role === 'assistant' ? clean(m.content) : m.content }}
-            <div v-if="m.sources.length" class="mt-2 flex flex-wrap gap-1">
-              <template v-for="s in m.sources" :key="s.id">
-                <RouterLink
-                  v-if="s.type === 'record' && s.sheet"
-                  :to="{ path: '/tablas', query: { hoja: s.sheet, buscar: s.label } }"
-                  class="rounded bg-stone-100 px-1.5 py-0.5 text-xs text-stone-700 hover:bg-brand-50"
-                >
-                  {{ s.label }} · {{ s.sheet }} fila {{ s.row }}
-                </RouterLink>
-                <span v-else class="rounded bg-stone-100 px-1.5 py-0.5 text-xs text-stone-700">{{ s.title || s.label }}</span>
-              </template>
-            </div>
-            <div v-for="(r, i) in m.results" :key="i" class="mt-2 overflow-x-auto whitespace-normal">
-              <p class="text-xs font-medium">{{ r.title }}</p>
-              <table class="mt-1 text-xs">
-                <tr>
-                  <th v-for="c in columnsOf(r)" :key="c.key" class="border-b border-stone-200 px-2 py-1 text-left">
-                    {{ c.label }}
-                  </th>
-                </tr>
-                <tr v-for="(row, j) in r.rows.slice(0, 25)" :key="j">
-                  <td v-for="(c, k) in columnsOf(r)" :key="c.key" class="px-2 py-0.5">{{ cellOf(row, c.key, k) }}</td>
-                </tr>
-              </table>
-            </div>
-            <div class="whitespace-normal">
-              <ProposalGrid
-                v-for="p in m.proposals"
-                :key="p.id"
-                :proposal="p"
-                :busy="applying === p.id"
-                @apply="indexes => apply(p, indexes)"
-                @discard="discard(p)"
-              />
-            </div>
-          </div>
-        </div>
-        <p v-if="sending" class="text-sm text-stone-500">
-          Pensando… {{ elapsed }} s
-          <span v-if="elapsed > 15" class="hint">(leer una página y compararla con la hoja toma cerca de un minuto)</span>
-        </p>
-      </div>
-      <form class="border-t border-stone-200 bg-white p-3" @submit.prevent="send">
-        <div v-if="photos.length || uploading" class="mb-2 flex flex-wrap items-center gap-2">
-          <div v-for="(p, i) in photos" :key="p.id" class="relative">
-            <img :src="p.url" :alt="p.name" class="h-16 rounded border border-stone-300" />
-            <button
-              type="button"
-              class="absolute -top-1.5 -right-1.5 rounded-full bg-stone-700 p-0.5 text-white"
-              title="Quitar"
-              @click="photos.splice(i, 1)"
-            >
-              <X :size="12" />
-            </button>
-          </div>
-          <span v-if="uploading" class="hint">Subiendo foto…</span>
-        </div>
-        <div class="flex gap-2">
-          <input ref="camera" type="file" accept="image/*" capture="environment" class="hidden" @change="addPhotos" />
-          <input ref="gallery" type="file" accept="image/*" multiple class="hidden" @change="addPhotos" />
-          <div class="flex flex-col gap-1 self-end">
-            <button type="button" class="btn-ghost" title="Tomar foto" :disabled="photos.length >= 6" @click="camera?.click()">
-              <Camera :size="17" />
-            </button>
-            <button type="button" class="btn-ghost" title="Elegir fotos" :disabled="photos.length >= 6" @click="gallery?.click()">
-              <ImagePlus :size="17" />
-            </button>
-          </div>
-          <textarea
-            v-model="draft"
-            rows="2"
-            class="field-input flex-1 resize-none"
-            :placeholder="
-              photos.length ? 'Opcional: qué revisar en la foto' : 'Escribe tu pregunta o manda una foto del cuaderno'
-            "
-            @keydown.enter.exact.prevent="send"
+  <div class="flex h-full flex-col">
+    <div v-if="t3Url" class="flex gap-1 border-b border-stone-200 bg-stone-100 px-3 pt-1 text-sm">
+      <button
+        v-for="[key, label] in [
+          ['t3', 'T3 Code'],
+          ['chat', 'Chat simple'],
+        ] as const"
+        :key="key"
+        class="rounded-t px-3 py-1"
+        :class="mode === key ? 'bg-white font-medium text-stone-900' : 'text-stone-600 hover:text-stone-900'"
+        @click="mode = key"
+      >
+        {{ label }}
+      </button>
+    </div>
+    <div v-if="t3Url && mode === 't3'" class="flex min-h-0 flex-1 flex-col">
+      <T3Frame :url="t3Url" class="min-h-0 flex-1" />
+      <section v-if="waiting.length" class="max-h-[45%] overflow-y-auto border-t-2 border-emerald-600 bg-stone-50 px-3 py-2">
+        <button class="text-sm font-medium" @click="panelOpen = !panelOpen">
+          {{ panelOpen ? '▾' : '▸' }} Cambios propuestos por el asistente ({{ waiting.length }})
+        </button>
+        <template v-if="panelOpen">
+          <ProposalGrid
+            v-for="p in waiting"
+            :key="p.id"
+            :proposal="p"
+            :busy="applying === p.id"
+            @apply="indexes => apply(p, indexes).then(loadWaiting)"
+            @discard="discard(p).then(loadWaiting)"
           />
-          <button class="btn-primary self-end" :disabled="sending || uploading || (!draft.trim() && !photos.length)">
-            <Send :size="15" />
-          </button>
+        </template>
+      </section>
+    </div>
+    <div v-else class="flex min-h-0 flex-1">
+      <aside class="hidden w-60 shrink-0 flex-col border-r border-stone-200 bg-white md:flex">
+        <button class="btn m-3" @click="newThread()"><Plus :size="15" /> Nueva conversación</button>
+        <ul class="flex-1 overflow-y-auto text-sm">
+          <li v-for="t in threads" :key="t.id" class="group flex items-center" :class="{ 'bg-brand-50': t.id === current }">
+            <button class="min-w-0 flex-1 truncate px-3 py-2 text-left" @click="open(t.id)">{{ t.title }}</button>
+            <button class="btn-ghost invisible mr-1 group-hover:visible" title="Borrar" @click="remove(t.id)">
+              <Trash2 :size="14" />
+            </button>
+          </li>
+        </ul>
+      </aside>
+      <section class="flex min-w-0 flex-1 flex-col">
+        <header class="flex items-center gap-2 border-b border-stone-200 bg-white px-4 py-2">
+          <h2 class="flex-1 truncate font-medium">{{ title }}</h2>
+          <span v-if="status?.configured" class="hint">{{ status.provider }} · {{ status.model }}</span>
+          <button class="btn md:hidden" @click="newThread()"><Plus :size="15" /></button>
+        </header>
+        <p v-if="status && !status.configured" class="bg-amber-50 px-4 py-2 text-sm text-amber-900">
+          El asistente no tiene un proveedor de IA configurado en el servidor.
+        </p>
+        <div ref="scroller" class="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+          <p v-if="!messages.length" class="max-w-2xl text-sm text-stone-500">
+            Pregunta por registros ("¿qué tubos FS se usaron la semana pasada?") o manda la foto de una página del cuaderno: el
+            asistente la transcribe, la compara con la hoja y te muestra los cambios en una tabla para que los confirmes.
+          </p>
+          <div v-for="m in messages" :key="m.id" :class="m.role === 'user' ? 'flex justify-end' : ''">
+            <div
+              class="max-w-full rounded-lg px-3 py-2 text-sm whitespace-pre-wrap md:max-w-4xl"
+              :class="m.role === 'user' ? 'bg-brand-700 text-white' : 'border border-stone-200 bg-white'"
+            >
+              <div v-if="m.attachments?.length" class="mb-1.5 flex flex-wrap gap-1.5">
+                <a v-for="a in m.attachments" :key="a.id" :href="`api/attachments/${a.id}/content`" target="_blank">
+                  <img :src="`api/attachments/${a.id}/content`" :alt="a.name" class="h-20 rounded border border-white/40" />
+                </a>
+              </div>
+              {{ m.role === 'assistant' ? clean(m.content) : m.content }}
+              <div v-if="m.sources.length" class="mt-2 flex flex-wrap gap-1">
+                <template v-for="s in m.sources" :key="s.id">
+                  <RouterLink
+                    v-if="s.type === 'record' && s.sheet"
+                    :to="{ path: '/tablas', query: { hoja: s.sheet, buscar: s.label } }"
+                    class="rounded bg-stone-100 px-1.5 py-0.5 text-xs text-stone-700 hover:bg-brand-50"
+                  >
+                    {{ s.label }} · {{ s.sheet }} fila {{ s.row }}
+                  </RouterLink>
+                  <span v-else class="rounded bg-stone-100 px-1.5 py-0.5 text-xs text-stone-700">{{ s.title || s.label }}</span>
+                </template>
+              </div>
+              <div v-for="(r, i) in m.results" :key="i" class="mt-2 overflow-x-auto whitespace-normal">
+                <p class="text-xs font-medium">{{ r.title }}</p>
+                <table class="mt-1 text-xs">
+                  <tr>
+                    <th v-for="c in columnsOf(r)" :key="c.key" class="border-b border-stone-200 px-2 py-1 text-left">
+                      {{ c.label }}
+                    </th>
+                  </tr>
+                  <tr v-for="(row, j) in r.rows.slice(0, 25)" :key="j">
+                    <td v-for="(c, k) in columnsOf(r)" :key="c.key" class="px-2 py-0.5">{{ cellOf(row, c.key, k) }}</td>
+                  </tr>
+                </table>
+              </div>
+              <div class="whitespace-normal">
+                <ProposalGrid
+                  v-for="p in m.proposals"
+                  :key="p.id"
+                  :proposal="p"
+                  :busy="applying === p.id"
+                  @apply="indexes => apply(p, indexes)"
+                  @discard="discard(p)"
+                />
+              </div>
+            </div>
+          </div>
+          <p v-if="sending" class="text-sm text-stone-500">
+            Pensando… {{ elapsed }} s
+            <span v-if="elapsed > 15" class="hint">(leer una página y compararla con la hoja toma cerca de un minuto)</span>
+          </p>
         </div>
-      </form>
-    </section>
+        <form class="border-t border-stone-200 bg-white p-3" @submit.prevent="send">
+          <div v-if="photos.length || uploading" class="mb-2 flex flex-wrap items-center gap-2">
+            <div v-for="(p, i) in photos" :key="p.id" class="relative">
+              <img :src="p.url" :alt="p.name" class="h-16 rounded border border-stone-300" />
+              <button
+                type="button"
+                class="absolute -top-1.5 -right-1.5 rounded-full bg-stone-700 p-0.5 text-white"
+                title="Quitar"
+                @click="photos.splice(i, 1)"
+              >
+                <X :size="12" />
+              </button>
+            </div>
+            <span v-if="uploading" class="hint">Subiendo foto…</span>
+          </div>
+          <div class="flex gap-2">
+            <input ref="camera" type="file" accept="image/*" capture="environment" class="hidden" @change="addPhotos" />
+            <input ref="gallery" type="file" accept="image/*" multiple class="hidden" @change="addPhotos" />
+            <div class="flex flex-col gap-1 self-end">
+              <button type="button" class="btn-ghost" title="Tomar foto" :disabled="photos.length >= 6" @click="camera?.click()">
+                <Camera :size="17" />
+              </button>
+              <button
+                type="button"
+                class="btn-ghost"
+                title="Elegir fotos"
+                :disabled="photos.length >= 6"
+                @click="gallery?.click()"
+              >
+                <ImagePlus :size="17" />
+              </button>
+            </div>
+            <textarea
+              v-model="draft"
+              rows="2"
+              class="field-input flex-1 resize-none"
+              :placeholder="
+                photos.length ? 'Opcional: qué revisar en la foto' : 'Escribe tu pregunta o manda una foto del cuaderno'
+              "
+              @keydown.enter.exact.prevent="send"
+            />
+            <button class="btn-primary self-end" :disabled="sending || uploading || (!draft.trim() && !photos.length)">
+              <Send :size="15" />
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
   </div>
 </template>
