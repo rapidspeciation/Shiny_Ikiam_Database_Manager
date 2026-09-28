@@ -117,6 +117,24 @@ export function asCell(value) {
 export function comparable(value) {
   return JSON.stringify(value ?? null);
 }
+/**
+ * Counts the team types as sums, one term per day or group of eggs (=12+15):
+ * the app writes them as such formulas, keeping the terms.
+ */
+export const SUM_FIELDS = {
+  Insectary_stocks: new Set(['NUMBER OF EGGS', 'NUMBER OF LARVAE', 'NUMBER OF PUPA', 'NUMBER OF ADULTS']),
+};
+const SUM = /^=?\s*\d+(?:\s*\+\s*\d+)*\s*$/;
+/** "=12+15", "12 + 15" or "=27" as the formula "=12+15" / "=27"; null when it is not a simple sum. */
+export function simpleSum(text) {
+  if (typeof text !== 'string' || !SUM.test(text)) return null;
+  const trimmed = text.trim();
+  // A plain number stays a number; only a sum (or an explicit "=") becomes a formula.
+  if (!trimmed.startsWith('=') && !trimmed.includes('+')) return null;
+  return '=' + trimmed.replace(/^=/, '').split('+').map(t => t.trim()).join('+');
+}
+export const isSumField = (module, field) => !!SUM_FIELDS[module]?.has(field);
+
 export function validateValues(module, values, { allowFormula = false, normalize = true } = {}) {
   const mod = moduleMap.get(module);
   if (!mod) throw Object.assign(new Error('Hoja desconocida'), { status: 404, code: 'MODULE_NOT_FOUND' });
@@ -127,6 +145,13 @@ export function validateValues(module, values, { allowFormula = false, normalize
     const f = mod.fields.find(x => x.key === key);
     if (!f || f.readonly)
       throw Object.assign(new Error(`${key} no se puede editar`), { status: 400, code: 'INVALID_FIELD', field: key });
+    if (isSumField(module, key)) {
+      const formula = simpleSum(typeof val === 'object' && val ? val.formula : val);
+      if (formula) {
+        out[key] = { formula };
+        continue;
+      }
+    }
     if (val && typeof val === 'object') {
       if (!allowFormula || typeof val.formula !== 'string' || !val.formula.startsWith('='))
         throw Object.assign(new Error(`Valor no válido en ${key}`), { status: 400, code: 'INVALID_VALUE', field: key });

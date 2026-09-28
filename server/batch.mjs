@@ -7,7 +7,7 @@
 // one read, one write, one verification read.
 
 import { randomUUID } from 'node:crypto';
-import { comparable, labelFor, moduleMap, validateValues } from './schema.mjs';
+import { comparable, isSumField, labelFor, moduleMap, simpleSum, validateValues } from './schema.mjs';
 import { hasDateFormat, hasTimeFormat, headerMismatches, rowKey, rowValues } from './sheets.mjs';
 import { TUBE_FIELD, UNIQUE, isIdValue, isUnique } from './verifications.mjs';
 import { listOptions, listProblem } from './verify.mjs';
@@ -395,7 +395,9 @@ class Plan {
     const changes = [];
     for (const [field, after] of Object.entries(target.clean)) {
       const replacing = !!before.formulas[field] && target.replaceFormula.has(field);
-      if (before.formulas[field] && this.source !== 'undo' && !replacing)
+      // A count kept as a sum (=12+15) may be rewritten; any other formula stays the sheet's.
+      const sumCell = isSumField(record.sheet, field) && !!simpleSum(before.formulas[field]);
+      if (before.formulas[field] && this.source !== 'undo' && !replacing && !sumCell)
         return this.conflict(target, 'FORMULA_CELL', `${field} se calcula con una fórmula de la hoja`, { field });
       if (replacing) {
         const predicted = before.values[field] ?? null;
@@ -417,10 +419,15 @@ class Plan {
         continue;
       }
       const actual = cellValue(before.values, before.formulas, field);
-      const expected =
+      let expected =
         target.expected && Object.hasOwn(target.expected, field)
           ? target.expected[field]
           : cellValue(record.values, record.formulas, field);
+      // The sum a person saw may be sent as its text ("=12+15").
+      if (sumCell && typeof expected === 'string' && simpleSum(expected)) expected = { formula: simpleSum(expected) };
+      // …or as the number it shows (27).
+      if (sumCell && typeof expected === 'number' && comparable(expected) === comparable(before.values[field] ?? null))
+        expected = cellValue(before.values, before.formulas, field);
       // Typing the text a cell already holds (e.g. "944" stored as text) is not a change.
       if (typeof actual === 'string' && target.raw[field] === actual) continue;
       if (comparable(actual) !== comparable(expected ?? null))
@@ -477,6 +484,12 @@ class Plan {
       for (const [field, after] of Object.entries(target.clean)) {
         if (comparable(before.values[field] ?? null) === comparable(after)) continue;
         if (before.formulas[field]) {
+          // A pre-made row's count kept as a sum takes the notebook's sum.
+          if (isSumField(target.sheet, field) && simpleSum(before.formulas[field])) {
+            if (comparable({ formula: before.formulas[field] }) !== comparable(after))
+              changes.push({ field, before: { formula: before.formulas[field] }, after });
+            continue;
+          }
           // e.g. a butterfly of another subspecies than its clutch predicts.
           if (target.replaceFormula.has(field)) {
             // The new row's formula has no clutch to work from yet, so compare with the clutch's species.

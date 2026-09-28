@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import { X, Lock, ExternalLink, Trash2 } from 'lucide-vue-next'
 import InsectaryIdFix from './InsectaryIdFix.vue'
 import { displayValue, normalizeInput } from '../lib/cells'
+import { isSumField } from '../lib/sums'
 import type { CellValue, Field, TableRow } from '../lib/types'
 import { type PendingCreate, usePending } from '../stores/pending'
 import { useSession } from '../stores/session'
@@ -51,10 +52,15 @@ function current(field: Field): CellValue {
   return row.value ? pending.value(row.value, field.key) : null
 }
 function editable(field: Field) {
-  return session.canEdit && !field.readonly && !props.lockedFields.includes(field.key) && !formulas.value.has(field.key)
+  return (
+    session.canEdit &&
+    !field.readonly &&
+    !props.lockedFields.includes(field.key) &&
+    (!formulas.value.has(field.key) || isSumField(props.module, field.key))
+  )
 }
 function change(field: Field, text: string) {
-  const result = normalizeInput(text, field)
+  const result = normalizeInput(text, field, props.module)
   if (!result.ok) {
     message.value = result.message
     return

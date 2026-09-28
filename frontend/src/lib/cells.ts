@@ -1,3 +1,4 @@
+import { isSumField, simpleSum } from './sums'
 import { formatSerial, parseDateInput } from './dates'
 import type { CellValue, Field } from './types'
 
@@ -25,12 +26,15 @@ const NA = /^(NA|N\/A)$/i
  * Dates become Sheets serial numbers; "NA" is kept as text because the
  * workbook uses it deliberately.
  */
-export function normalizeInput(raw: unknown, field: Pick<Field, 'type' | 'key'>): Normalized {
+export function normalizeInput(raw: unknown, field: Pick<Field, 'type' | 'key'>, module = ''): Normalized {
   if (raw === null || raw === undefined) return { ok: true, value: null }
   if (typeof raw === 'number' || typeof raw === 'boolean') return { ok: true, value: raw }
   const text = String(raw).trim()
   if (!text) return { ok: true, value: null }
   if (NA.test(text)) return { ok: true, value: 'NA' }
+  // Counts kept as sums (=12+15) are written as such; other formulas only in Google Sheets.
+  const sum = isSumField(module, field.key) ? simpleSum(text) : null
+  if (sum) return { ok: true, value: sum }
   if (text.startsWith('=')) return { ok: false, message: 'Las fórmulas solo se editan en Google Sheets' }
   if (field.type === 'date') {
     const serial = parseDateInput(text)

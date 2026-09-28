@@ -4,6 +4,7 @@ import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
 import { displayValue, normalizeInput } from '../lib/cells'
+import { isSumField } from '../lib/sums'
 import {
   attachCopyMarker,
   attachFillHandle,
@@ -93,7 +94,14 @@ function isFormula(data: GridRow, field: string) {
 
 function canEdit(data: GridRow, field: string) {
   const def = fieldIndex.get(field)
-  return session.canEdit && !!def && !def.readonly && !props.lockedFields.includes(field) && !isFormula(data, field)
+  return (
+    session.canEdit &&
+    !!def &&
+    !def.readonly &&
+    !props.lockedFields.includes(field) &&
+    // A count kept as a sum (=12+15) can be rewritten; the server refuses any other formula.
+    (!isFormula(data, field) || isSumField(props.module, field))
+  )
 }
 
 function indexRows() {
@@ -254,7 +262,8 @@ function decorate(cell: CellComponent) {
   const errorKey = `${data.__id}:${field}`
   // Refused by the server, or failing the app's checks before saving (e.g. a date with year 92026).
   const error = pending.errors[errorKey] || pending.problems[errorKey]
-  const formula = isFormula(data, field)
+  // Counts kept as sums are editable, so they don't look like the sheet's own formulas.
+  const formula = isFormula(data, field) && !isSumField(props.module, field)
   const check = formula ? {} : checkTitle(field, cell.getValue(), data)
   el.classList.toggle('is-formula', formula)
   el.classList.toggle('is-locked', !formula && !canEdit(data, field))
@@ -363,7 +372,7 @@ function onCellEdited(cell: CellComponent) {
   const field = cell.getField()
   const def = fieldIndex.get(field)
   if (!def) return
-  const result = normalizeInput(cell.getValue(), def)
+  const result = normalizeInput(cell.getValue(), def, props.module)
   if (!result.ok) {
     emit('notice', result.message)
     normalizing = true
