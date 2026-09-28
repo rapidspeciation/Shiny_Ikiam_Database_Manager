@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { Camera, ExternalLink, ImagePlus, ListChecks, NotebookPen, Plus, RefreshCw, Send, Trash2, X } from 'lucide-vue-next'
 import { useNotebook } from '../stores/notebook'
+import type { Kind } from '../lib/notebook'
 import { api, requestId } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
 import { useTables } from '../stores/tables'
@@ -106,6 +107,8 @@ watch(() => route.query.hilo, id => id && void openLinked())
 
 // Digitalizar cuaderno: on a phone the camera opens here and the pages are read in the background.
 const notebook = useNotebook()
+// The notebook last chosen on the Digitalizar cuaderno screen (detected from the headers otherwise).
+const notebookKind = persistentRef<Kind | 'auto'>('notebook:kind', 'auto', { lasting: true })
 const pageCamera = ref<HTMLInputElement>()
 async function photographPages(event: Event) {
   const input = event.target as HTMLInputElement
@@ -113,7 +116,7 @@ async function photographPages(event: Event) {
   input.value = ''
   if (!files.length) return
   void router.push('/cuaderno')
-  await notebook.addPhotos(files, 'auto', null)
+  await notebook.addPhotos(files, notebookKind.value, null)
 }
 
 async function open(id: string) {
