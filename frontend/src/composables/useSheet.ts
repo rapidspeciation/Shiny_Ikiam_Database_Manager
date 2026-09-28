@@ -18,7 +18,7 @@ export function useSheet(module: Ref<string>) {
   // Saved rows are merged into the cached table in place, so each version gets a
   // fresh wrapper object; otherwise Vue would see "the same table" and not update.
   const snapshot = (name: string) => {
-    void tables.version
+    void tables.versions[name]
     const t = tables.tables[name]
     return t ? { ...t } : undefined
   }
@@ -26,6 +26,17 @@ export function useSheet(module: Ref<string>) {
   const lists = computed(() => snapshot('Lists'))
   const stocks = computed(() => snapshot('Insectary_stocks'))
   const loading = computed(() => !!tables.loading[module.value])
+  /**
+   * The sheet and the sheets its dropdowns come from have arrived (or failed).
+   * Grids wait for this: built earlier, they would be built again when the
+   * choices arrive, which freezes the page for seconds on a 13k-row sheet.
+   */
+  const ready = computed(
+    () =>
+      !!table.value &&
+      !tables.loading.Lists &&
+      !(USES_STOCKS.has(module.value) && tables.loading.Insectary_stocks),
+  )
 
   async function load(force = false) {
     try {
@@ -77,6 +88,7 @@ export function useSheet(module: Ref<string>) {
     lists,
     stocks,
     loading,
+    ready,
     options,
     creates,
     createFormulas,

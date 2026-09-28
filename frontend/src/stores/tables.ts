@@ -79,9 +79,19 @@ export const useTables = defineStore('tables', {
   state: () => ({
     tables: {} as Record<string, Table>,
     loading: {} as Record<string, boolean>,
+    /** Bumped when any sheet changes (for views that read several). */
     version: 0,
+    /**
+     * Bumped when that sheet changes. A grid follows only its own sheet, so
+     * loading or refreshing another one does not redraw 13k rows.
+     */
+    versions: {} as Record<string, number>,
   }),
   actions: {
+    changed(module: string) {
+      this.versions[module] = (this.versions[module] || 0) + 1
+      this.version++
+    },
     async load(module: string, force = false): Promise<Table> {
       if (this.tables[module] && !force) return this.tables[module]
       this.loading[module] = true
@@ -89,7 +99,7 @@ export const useTables = defineStore('tables', {
         const wire = await api<TableWire>(`table?module=${encodeURIComponent(module)}`)
         const table = fromWire(wire)
         this.tables[module] = markRaw(table)
-        this.version++
+        this.changed(module)
         return table
       } finally {
         this.loading[module] = false
@@ -125,7 +135,7 @@ export const useTables = defineStore('tables', {
       if (rows.length !== delta.count) return void (await this.load(module, true))
       if (moved) rows.sort((a, b) => a.row - b.row)
       this.tables[module] = markRaw({ ...table, rows, revision: delta.revision, latest: delta.latest })
-      this.version++
+      this.changed(module)
     },
     /** Keeps every loaded sheet following the server while the page is visible. */
     follow() {
@@ -138,6 +148,7 @@ export const useTables = defineStore('tables', {
     },
     /** Replace or append rows after a verified save. */
     merge(records: ServerRecord[]) {
+      const touched = new Set<string>()
       for (const record of records) {
         const table = this.tables[record.sheet]
         if (!table) continue
@@ -145,8 +156,9 @@ export const useTables = defineStore('tables', {
         const index = table.rows.findIndex(r => r.id === row.id)
         if (index >= 0) table.rows[index] = row
         else table.rows.push(row)
+        touched.add(record.sheet)
       }
-      this.version++
+      for (const module of touched) this.changed(module)
     },
     row(module: string, id: string): TableRow | undefined {
       return this.tables[module]?.rows.find(r => r.id === id)

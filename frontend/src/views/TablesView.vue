@@ -30,7 +30,7 @@ const search = ref(String(route.query.buscar || ''))
 const debounced = ref(search.value)
 const showUnused = ref(false)
 const grid = ref<InstanceType<typeof SheetGrid>>()
-const { table, loading, options, creates, createFormulas, load } = useSheet(module)
+const { table, ready, loading, options, creates, createFormulas, load } = useSheet(module)
 
 let timer: ReturnType<typeof setTimeout>
 watch(search, value => {
@@ -115,7 +115,7 @@ function addRow() {
       </template>
     </p>
     <div class="min-h-0 flex-1">
-      <p v-if="!table" class="p-6 text-stone-500">Cargando {{ module }}…</p>
+      <p v-if="!ready || !table" class="p-6 text-stone-500">Cargando {{ module }}…</p>
       <SheetGrid
         v-else
         ref="grid"

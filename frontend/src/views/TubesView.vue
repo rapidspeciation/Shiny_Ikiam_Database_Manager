@@ -25,7 +25,7 @@ const WHOLE = 'WHOLE_ORGANISM'
 const module = ref(MODULE)
 const pending = usePending()
 const session = useSession()
-const { table, options } = useSheet(module)
+const { table, ready, options } = useSheet(module)
 
 interface Suggestion {
   value: string
@@ -303,7 +303,7 @@ function nextAfter(id: string) {
       <button v-if="loaded.length" class="ml-2 underline" @click="loaded = []">Vaciar tabla</button>
     </p>
     <div class="min-h-0 flex-1">
-      <p v-if="!table" class="p-6 text-stone-500">Cargando Insectary_data…</p>
+      <p v-if="!ready" class="p-6 text-stone-500">Cargando Insectary_data…</p>
       <p v-else-if="!rows.length" class="p-6 text-stone-500">Elige IDs arriba y pulsa Cargar.</p>
       <SheetGrid
         v-else

@@ -46,7 +46,7 @@ const MODULE = 'Collection_data'
 const module = ref(MODULE)
 const pending = usePending()
 const tables = useTables()
-const { table, lists, options, creates, createFormulas } = useSheet(module)
+const { table, ready, lists, options, creates, createFormulas } = useSheet(module)
 tables.load('Insectary_data').catch(() => {})
 
 const header = persistentRef('collect:header', {
@@ -479,7 +479,7 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
       <button class="underline" @click="recentCount += 20">ver más</button>
     </p>
     <div class="min-h-80 flex-1">
-      <p v-if="!table" class="p-6 text-stone-500">Cargando Collection_data…</p>
+      <p v-if="!ready" class="p-6 text-stone-500">Cargando Collection_data…</p>
       <SheetGrid
         v-else
         :module="MODULE"

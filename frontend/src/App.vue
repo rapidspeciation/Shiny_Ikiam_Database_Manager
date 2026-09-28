@@ -35,7 +35,14 @@ watch(
   <LoginView v-else-if="!session.user && !openPaths.has(route.path)" />
   <div v-else class="flex h-full flex-col">
     <AppHeader />
-    <main class="min-h-0 flex-1"><RouterView /></main>
+    <!-- Tabs stay alive while another one is open: going back to Tablas does not rebuild a 13k-row grid. -->
+    <main class="min-h-0 flex-1">
+      <RouterView v-slot="{ Component }">
+        <KeepAlive :exclude="['HomeView', 'UsersView', 'LoginView']">
+          <component :is="Component" />
+        </KeepAlive>
+      </RouterView>
+    </main>
     <SaveBar v-if="session.user" />
   </div>
   <div

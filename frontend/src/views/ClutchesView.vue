@@ -18,7 +18,7 @@ import { usePending } from '../stores/pending'
 const MODULE = 'Insectary_stocks'
 const module = ref(MODULE)
 const pending = usePending()
-const { table, options, creates, createFormulas } = useSheet(module)
+const { table, ready, options, creates, createFormulas } = useSheet(module)
 
 const form = persistentRef('clutches:form', { species: '', date: todayIso(), eggs: null as number | null, place: 'Insectary' })
 const number = ref('')
@@ -126,7 +126,7 @@ const columns = computed(() =>
       <label class="ml-2"><input v-model="showAll" type="checkbox" /> ver los últimos 150</label>
     </p>
     <div class="min-h-0 flex-1">
-      <p v-if="!table" class="p-6 text-stone-500">Cargando Insectary_stocks…</p>
+      <p v-if="!ready" class="p-6 text-stone-500">Cargando Insectary_stocks…</p>
       <SheetGrid
         v-else
         :module="MODULE"

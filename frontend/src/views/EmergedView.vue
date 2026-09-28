@@ -21,7 +21,7 @@ const MODULE = 'Insectary_data'
 const STOCK_ORIGINS = ['deceptus', 'messenoides', 'intermedia']
 const module = ref(MODULE)
 const pending = usePending()
-const { table, stocks, options, creates, createFormulas, clutches } = useSheet(module)
+const { table, ready, stocks, options, creates, createFormulas, clutches } = useSheet(module)
 
 const clutch = persistentRef('emerged:clutch', '')
 const females = persistentRef('emerged:females', 0)
@@ -186,7 +186,7 @@ const recent = computed(() => {
       <button class="underline" @click="recentCount += 15">ver más</button>
     </p>
     <div class="min-h-0 flex-1">
-      <p v-if="!table" class="p-6 text-stone-500">Cargando Insectary_data…</p>
+      <p v-if="!ready" class="p-6 text-stone-500">Cargando Insectary_data…</p>
       <SheetGrid
         v-else
         :module="MODULE"

@@ -14,7 +14,7 @@ import { usePending } from '../stores/pending'
 const MODULE = 'Insectary_data'
 const module = ref(MODULE)
 const pending = usePending()
-const { table, options } = useSheet(module)
+const { table, ready, options } = useSheet(module)
 
 const picked = persistentRef<string[]>('deaths:picked', [])
 const loaded = persistentRef<string[]>('deaths:loaded', [])
@@ -105,7 +105,7 @@ function load(append: boolean) {
       · La fecha y la causa por defecto solo se escriben en las celdas vacías o NA de los IDs cargados.
     </p>
     <div class="min-h-0 flex-1">
-      <p v-if="!table" class="p-6 text-stone-500">Cargando Insectary_data…</p>
+      <p v-if="!ready" class="p-6 text-stone-500">Cargando Insectary_data…</p>
       <p v-else-if="!rows.length" class="p-6 text-stone-500">No hay muertes registradas. Elige IDs arriba y pulsa Cargar.</p>
       <SheetGrid
         v-else
