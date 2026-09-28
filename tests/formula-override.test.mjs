@@ -79,3 +79,46 @@ test('the species formula is typed over only when what emerged differs, and undo
   assert.match(restored.userEnteredValue.formulaValue, /^=XLOOKUP/);
   store.close();
 });
+
+test('emerged butterflies keep the clutch prediction unless another subspecies emerged', async () => {
+  const col = key => moduleMap.get('Insectary_data').fields.find(f => f.key === key).column;
+  const sheets = new LocalSheets({
+    Insectary_data: [{ row: 2, values: { Insectary_ID: 'A0A', 'CLUTCH NUMBER': 900, Sex: 'male' } }],
+    Insectary_stocks: [{ row: 2, values: { 'CLUTCH NUMBER': 973, SPECIES: 'Mechanitis polymnia proceriformis' } }],
+  });
+  // Two pre-made rows: the ID and the species are formulas (empty species until a clutch is typed).
+  for (const [row, id] of [
+    [3, 'A1A'],
+    [4, 'A2A'],
+  ]) {
+    const cells = [];
+    cells[col('Insectary_ID')] = {
+      userEnteredValue: { formulaValue: '=NEXTID()' },
+      effectiveValue: { stringValue: id },
+    };
+    cells[col('SPECIES')] = {
+      userEnteredValue: { formulaValue: `=XLOOKUP(C${row},Insectary_stocks!A:A,Insectary_stocks!C:C,"")` },
+    };
+    sheets.rows.get('Insectary_data').push({ row, cells });
+  }
+  const store = new Store({ localMode: true }, { sheets });
+  await store.sync({ sheets: ['Insectary_data', 'Insectary_stocks'] });
+  const emerged = (id, species) => ({
+    module: 'Insectary_data',
+    values: { Insectary_ID: id, 'CLUTCH NUMBER': 973, Sex: 'female', SPECIES: species },
+    replaceFormula: ['SPECIES'],
+  });
+  const saved = await applyBatch(
+    store,
+    {
+      requestId: randomUUID(),
+      creates: [emerged('A1A', 'Mechanitis polymnia proceriformis'), emerged('A2A', 'Mechanitis polymnia eurydice')],
+    },
+    user,
+  );
+  assert.equal(saved.status, 'verified');
+  const cell = row => sheets.rows.get('Insectary_data').find(r => r.row === row).cells[col('SPECIES')];
+  assert.ok(cell(3).userEnteredValue.formulaValue, 'the predicted subspecies keeps the formula');
+  assert.equal(cell(4).userEnteredValue.stringValue, 'Mechanitis polymnia eurydice');
+  store.close();
+});

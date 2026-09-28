@@ -7,6 +7,7 @@ export const tabs = [
   { path: '/muertes', name: 'deaths', label: 'Muertes', component: () => import('./views/DeathsView.vue') },
   { path: '/tubos', name: 'tubes', label: 'Tubos', component: () => import('./views/TubesView.vue') },
   { path: '/emergidos', name: 'emerged', label: 'Emergidos', component: () => import('./views/EmergedView.vue') },
+  { path: '/posturas', name: 'clutches', label: 'Posturas', component: () => import('./views/ClutchesView.vue') },
   { path: '/historial', name: 'history', label: 'Historial', component: () => import('./views/HistoryView.vue') },
   { path: '/asistente', name: 'assistant', label: 'Asistente', component: () => import('./views/AssistantView.vue') },
 ]

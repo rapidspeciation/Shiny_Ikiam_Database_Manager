@@ -218,7 +218,15 @@ export const usePending = defineStore('pending', {
             // Each cell is checked against the value the person saw, so edits by
             // others to different cells of the same row do not block the save.
             edits: edits.map(e => ({ id: e.id, values: e.values, expected: e.before })),
-            creates: creates.map(c => ({ clientId: c.clientId, module: c.module, values: c.values })),
+            // A typed species replaces the clutch's prediction only where it differs (the server checks).
+            creates: creates.map(c => ({
+              clientId: c.clientId,
+              module: c.module,
+              values: c.values,
+              ...(c.module === 'Insectary_data'
+                ? { replaceFormula: ['SPECIES', 'Collection_location'].filter(f => c.values[f]) }
+                : {}),
+            })),
           },
         })
         useTables().merge(result.records)

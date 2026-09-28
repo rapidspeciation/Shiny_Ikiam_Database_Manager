@@ -25,7 +25,17 @@ const UNIQUE_FIELDS = {
 // Formula cells that may be typed over, and only with a value different from what the
 // formula predicts: the species of an insectary butterfly when what emerged is not what
 // the clutch predicted. The formula is kept in history, so undo puts it back.
-export const TYPED_OVER_FORMULA = { Insectary_data: new Set(['SPECIES']) };
+export const TYPED_OVER_FORMULA = { Insectary_data: new Set(['SPECIES', 'Collection_location']) };
+
+/** What the SPECIES formula of an insectary row will give: the species of its clutch in Insectary_stocks. */
+function predictedSpecies(store, sheet, field, values) {
+  if (sheet !== 'Insectary_data' || field !== 'SPECIES' || values['CLUTCH NUMBER'] == null) return undefined;
+  return store.db
+    .prepare(
+      `SELECT json_extract(values_json,'$.SPECIES') s FROM records WHERE sheet='Insectary_stocks' AND missing=0 AND trim(CAST(json_extract(values_json,'$."CLUTCH NUMBER"') AS TEXT))=?`,
+    )
+    .get(String(values['CLUTCH NUMBER']).trim())?.s;
+}
 
 const blank = value => value === null || value === undefined || /^\s*(|NA|N\/A)\s*$/i.test(String(value));
 const cellValue = (values, formulas, field) => (formulas[field] ? { formula: formulas[field] } : values[field]);
@@ -181,6 +191,10 @@ class Plan {
     const byModule = new Map();
     creates.forEach((create, index) => {
       const target = { index, clientId: create?.clientId || `new-${index}`, sheet: create?.module };
+      const allowed = TYPED_OVER_FORMULA[create?.module];
+      target.replaceFormula = new Set(
+        Array.isArray(create?.replaceFormula) ? create.replaceFormula.filter(f => allowed?.has(f)) : [],
+      );
       if (!moduleMap.has(create?.module)) return this.conflict(target, 'MODULE_NOT_FOUND', 'Unknown sheet');
       // If an earlier save to this sheet may or may not have landed, a new row could
       // duplicate it. Wait until that save is confirmed (this happens automatically).
@@ -395,8 +409,17 @@ class Plan {
       const changes = [];
       for (const [field, after] of Object.entries(target.clean)) {
         if (comparable(before.values[field] ?? null) === comparable(after)) continue;
-        if (before.formulas[field])
+        if (before.formulas[field]) {
+          // e.g. a butterfly of another subspecies than its clutch predicts.
+          if (target.replaceFormula.has(field)) {
+            // The new row's formula has no clutch to work from yet, so compare with the clutch's species.
+            if (comparable(predictedSpecies(this.store, target.sheet, field, target.clean)) === comparable(after))
+              continue;
+            changes.push({ field, before: { formula: before.formulas[field] }, after });
+            continue;
+          }
           return this.conflict(target, 'FORMULA_CELL', `${field} is calculated by a formula in the new row`, { field });
+        }
         // "NA" is written on purpose (the workbook uses it); only empty values are skipped.
         if (after !== null && after !== '') changes.push({ field, before: before.values[field] ?? null, after });
       }
