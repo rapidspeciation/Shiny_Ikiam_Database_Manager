@@ -10,8 +10,21 @@ import { isoToSerial, todayIso } from '../lib/dates'
 import { errorText, notify } from '../lib/notice'
 import { listColumn } from '../lib/options'
 import { listProblem, verificationsFor } from '../lib/verifications'
-import { COLUMNS, FATES, HEADERS, SEX_VALUES, applies, insectarySex, type Column, type Draft, type Fate } from '../lib/collect'
-import { parseBlock, parseCamTube, parseFate, parseSex, parseTime } from '../lib/paste'
+import {
+  COLUMNS,
+  FATES,
+  HEADERS,
+  INSECTARY_ID,
+  SEX_VALUES,
+  TUBE_ID,
+  applies,
+  insectarySex,
+  misfit,
+  type Column,
+  type Draft,
+  type Fate,
+} from '../lib/collect'
+import { parseBlock, parseCamTube, parseFate, parseSex, parseTime, stepId } from '../lib/paste'
 import { persistentRef } from '../lib/persist'
 import { orderColumns } from '../lib/rows'
 import type { CellValue } from '../lib/types'
@@ -183,19 +196,34 @@ async function loadTubes() {
 watch(() => header.value.medium, loadTubes, { immediate: true })
 const nextTube = () => tubeRun.value.find(id => !drafts.value.some(d => d.tube === id)) || ''
 
+/**
+ * The CAM or tube after that of the preserved row above, when it is free: the
+ * team's notebooks run consecutively (CAM079905, CAM079906…).
+ */
+function following(d: Draft, column: 'cam' | 'tube'): string {
+  const at = drafts.value.indexOf(d)
+  const above = drafts.value
+    .slice(0, at < 0 ? drafts.value.length : at)
+    .reverse()
+    .find(x => x.fate === 'preservada' && x[column])
+  const next = above ? stepId(above[column].trim().toUpperCase(), 1) : null
+  if (!next || drafts.value.some(x => x !== d && x[column].trim().toUpperCase() === next)) return ''
+  if (column === 'cam') return camPool.value.includes(next) ? next : ''
+  return TUBE_ID.test(next) && !usedTubes.value.has(next) ? next : ''
+}
 function setFate(draft: Draft, fate: Fate) {
   draft.fate = fate
   draft.insectaryId = fate === 'insectario' ? draft.insectaryId || nextInsectaryId() : ''
-  draft.cam = fate === 'preservada' ? draft.cam || nextCam() : ''
-  draft.tube = fate === 'preservada' ? draft.tube || nextTube() : ''
+  draft.cam = fate === 'preservada' ? draft.cam || following(draft, 'cam') || nextCam() : ''
+  draft.tube = fate === 'preservada' ? draft.tube || following(draft, 'tube') || nextTube() : ''
   draft.medium = fate === 'preservada' ? draft.medium || header.value.medium : ''
 }
 // Rows added before the free IDs, CAMs or tubes had arrived get them once they do.
 watch([freeIds, camPool, tubeRun], () => {
   for (const d of drafts.value) {
     if (d.fate === 'insectario' && !d.insectaryId) d.insectaryId = nextInsectaryId()
-    if (d.fate === 'preservada' && !d.cam) d.cam = nextCam()
-    if (d.fate === 'preservada' && !d.tube) d.tube = nextTube()
+    if (d.fate === 'preservada' && !d.cam) d.cam = following(d, 'cam') || nextCam()
+    if (d.fate === 'preservada' && !d.tube) d.tube = following(d, 'tube') || nextTube()
     // Lists kept from before the medium was a column of its own.
     if (d.fate === 'preservada' && !d.medium) d.medium = header.value.medium
   }
@@ -248,41 +276,54 @@ function blankDraft(): Draft {
     medium: '',
   }
 }
-function setColumn(d: Draft, column: Column, text: string) {
+/** Writes a typed or pasted value in a row; says so when the row changes Release_Collect because of it. */
+function setColumn(d: Draft, column: Column, text: string): string | null {
   if (column === 'sex') d.sex = parseSex(text)
   else if (column === 'fate') {
     const fate = parseFate(text)
     if (fate) setFate(d, fate)
   } else if (column === 'time') d.time = parseTime(text)
-  else if (!applies(d, column)) return
-  else if (column === 'insectaryId') {
-    // The ID written on the wings, if it is not the one suggested (checked in `problems`).
-    const id = text.trim().toUpperCase()
-    if (/^[0-9A-ZÑ]{2,6}$/.test(id)) d.insectaryId = id
-  } else if (column === 'cam') {
+  else if (column === 'cam') {
     // "CAM079895", or CAM and tube together ("CAM079895 · FS90415305 (Flash frozen)").
     const { cam, tube } = parseCamTube(text)
+    if (!applies(d, column) && !cam) return null
+    // A CAM given to a butterfly sent to the insectary (or released) means it was preserved: its Insectary ID is freed.
+    const freed = !applies(d, column) && d.fate === 'insectario' ? d.insectaryId : ''
+    const switched = !applies(d, column)
+    if (switched) setFate(d, 'preservada')
     if (cam || !text.trim()) d.cam = cam
     if (tube) d.tube = tube
     const medium = mediums.value.find(m => text.includes(`(${m})`))
     if (medium) d.medium = medium
-  } else if (column === 'tube') d.tube = text.trim().toUpperCase()
+    if (switched) return `pasa a Collected_Preserved por el CAM ${cam}${freed ? ` (queda libre ${freed})` : ''}`
+  } else if (!applies(d, column)) return null
+  else if (column === 'insectaryId') {
+    // The ID written on the wings, if it is not the one suggested (checked in `problems`).
+    const id = text.trim().toUpperCase()
+    if (INSECTARY_ID.test(id)) d.insectaryId = id
+  } else if (column === 'tube') d.tube = /^(NA|N\/A)$/i.test(text.trim()) ? '' : text.trim().toUpperCase()
   else if (column === 'medium') {
     d.medium = text.trim()
     // The next rows added take the same medium (and its tubes).
     if (d.medium) header.value.medium = d.medium
   } else d[column] = text === 'NA' && column === 'subspecies' ? '' : text
+  return null
 }
+const shorten = (text: string) => (text.length > 24 ? `${text.slice(0, 22)}…` : text)
 /**
  * A block copied from a spreadsheet, pasted at a row and column: fills down and
  * across, adding rows if needed. False when the text is a single value (the
- * cell takes it as typed).
+ * cell takes it as typed). Values that do not fit their column (a note in
+ * Tube_1_id, a CAM in Insectary_ID: the block was pasted a column off) are
+ * left out, and the notice says which.
  */
 function pasteText(text: string, index: number, column: Column): boolean {
   const block = parseBlock(text)
   if (!block) return false
   const start = COLUMNS.indexOf(column)
   let added = 0
+  const skipped: string[] = []
+  const switched: number[] = []
   block.forEach((cells, r) => {
     if (!drafts.value[index + r]) {
       drafts.value.push(blankDraft())
@@ -292,10 +333,19 @@ function pasteText(text: string, index: number, column: Column): boolean {
     const d = drafts.value[index + r]
     cells.forEach((text, c) => {
       const target = COLUMNS[start + c]
-      if (target) setColumn(d, target, text)
+      if (!target) return
+      const why = misfit(target, text)
+      if (why) return void skipped.push(`«${shorten(text.trim())}» en ${HEADERS[target]}, fila ${index + r + 1}: ${why}`)
+      if (setColumn(d, target, text)) switched.push(index + r + 1)
     })
   })
-  notify(`Pegadas ${block.length} filas${added ? ` (${added} nuevas)` : ''}: la lista tiene ${drafts.value.length}`)
+  const notes = [`Pegadas ${block.length} filas${added ? ` (${added} nuevas)` : ''}: la lista tiene ${drafts.value.length}`]
+  if (switched.length) notes.push(`filas ${switched.join(', ')} pasan a Collected_Preserved por su CAM`)
+  if (skipped.length)
+    notes.push(
+      `no se pegaron ${skipped.length} ${skipped.length === 1 ? 'valor que no encaja' : 'valores que no encajan'} (¿columnas corridas?): ${skipped.slice(0, 3).join('; ')}${skipped.length > 3 ? '…' : ''}`,
+    )
+  notify(notes.join('. '), skipped.length ? 'error' : undefined)
   return true
 }
 function onPaste(event: ClipboardEvent, index: number, column: Column) {
@@ -305,9 +355,11 @@ function onPaste(event: ClipboardEvent, index: number, column: Column) {
 function editCell(key: string, column: Column, text: string) {
   const d = drafts.value.find(x => x.key === key)
   if (!d) return
-  if (column === 'insectaryId' && text.trim() && !/^[0-9A-ZÑ]{2,6}$/i.test(text.trim()))
-    return notify(`«${text.trim()}» no parece un Insectary ID (p. ej. N9D); para CAM y tubo usa CAM_ID y Tube_1_id`)
-  setColumn(d, column, text)
+  const why = misfit(column, text)
+  // The cell goes back to what the list holds (CollectGrid).
+  if (why) return notify(`«${shorten(text.trim())}» ${why}: no se escribió en ${HEADERS[column]}`)
+  const note = setColumn(d, column, text)
+  if (note) notify(`Fila ${drafts.value.indexOf(d) + 1} ${note}`)
 }
 function focusCell(index: number, column: Column) {
   const key = drafts.value[index]?.key

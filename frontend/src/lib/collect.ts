@@ -1,3 +1,5 @@
+import { parseFate, parseSex } from './paste'
+
 /** One butterfly in the Colecta list, before it is saved to Collection_data (and Insectary_data). */
 export type Fate = 'insectario' | 'preservada' | 'liberada'
 export interface Draft {
@@ -75,6 +77,31 @@ export function applies(d: Pick<Draft, 'fate'>, column: Column): boolean {
   if (column === 'cam' || column === 'tube' || column === 'medium') return d.fate === 'preservada'
   return true
 }
+export const CAM_ID = /^CAM\d{4,}$/i
+export const TUBE_ID = /^[A-Z]{2}\d{7,9}$/i
+export const INSECTARY_ID = /^[0-9A-ZÑ]{2,6}$/i
+const NA = /^(NA|N\/A)$/i
+
+/**
+ * Why a value typed or pasted does not fit an ID or time column, or null.
+ * A block pasted with its columns shifted put a note, upper-cased, in
+ * Tube_1_id; such values are left out and the notice names them.
+ */
+export function misfit(column: Column, text: string): string | null {
+  const t = text.trim()
+  if (!t || NA.test(t)) return null
+  if (column === 'cam')
+    // "CAM079895", or CAM and tube together ("CAM079895 · FS90415305 (Flash frozen)").
+    return /CAM\d{4,}/i.test(t) ? null : 'no es un CAM_ID (CAM + número, p. ej. CAM079895)'
+  if (column === 'tube') return TUBE_ID.test(t) ? null : 'no es un Tube_1_id (2 letras y 7 a 9 cifras, p. ej. FS90415305)'
+  if (column === 'insectaryId')
+    return INSECTARY_ID.test(t) ? null : 'no es un Insectary_ID (p. ej. N9D); para CAM y tubo usa CAM_ID y Tube_1_id'
+  if (column === 'time') return /^\d{1,2}[:.h]?\d{2}$/.test(t) ? null : 'no es una hora (hh:mm)'
+  if (column === 'sex') return parseSex(t) ? null : 'no es un Sex (female, male, female ?, male ?, NOT_COLLECTED)'
+  if (column === 'fate') return parseFate(t) ? null : 'no es un Release_Collect'
+  return null
+}
+
 /** Why a column is not filled for a row (typing there says so). */
 export const notApplicable = (column: Column) =>
   column === 'insectaryId'

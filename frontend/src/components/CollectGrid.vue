@@ -79,11 +79,13 @@ const draftOf = (row: RowComponent) => props.drafts.find(d => d.key === (row.get
  * be changed to the ID written on the wings); CAM, tube and medium only for
  * those preserved in the field.
  */
-const canEdit: CanEdit = (row, field) => {
+const canFill: CanEdit = (row, field) => {
   if (field === '__key' || field === '__remove') return false
   const d = draftOf(row)
   return !d || applies(d, field as Column)
 }
+/** Typing or pasting a CAM also works on other rows: they become Collected_Preserved (CollectView.setColumn). */
+const canEdit: CanEdit = (row, field) => field === 'cam' || canFill(row, field)
 const whyNot = (row: RowComponent, field: string) => {
   const d = draftOf(row)
   return d && field in HEADERS && !applies(d, field as Column) ? notApplicable(field as Column) : null
@@ -109,7 +111,10 @@ const display = (field: Column, text?: (value: unknown) => string) => (cell: Cel
   el.classList.toggle('is-error', !!error)
   el.classList.toggle('is-id', field === 'insectaryId' && !off)
   el.title =
-    error || invalid || (field === 'insectaryId' && !off ? 'El ID escrito en las alas (se sugiere el siguiente libre)' : '')
+    error ||
+    invalid ||
+    (field === 'insectaryId' && !off ? 'El ID escrito en las alas (se sugiere el siguiente libre)' : '') ||
+    (field === 'cam' && off ? 'Escribe o pega un CAM para pasarla a Collected_Preserved' : '')
   return off ? '' : text ? text(cell.getValue()) : String(cell.getValue() ?? '')
 }
 
@@ -304,7 +309,8 @@ onMounted(() => {
   fill = touch
     ? attachTouchSheet(table, host.value.parentElement!, { canEdit, notice })
     : attachFillHandle(table, host.value.parentElement!, {
-        canEdit,
+        // Dragging only fills where the column applies: a CAM dragged down does not turn insectary rows into preserved ones.
+        canEdit: canFill,
         // Dragging an ID continues it, as Sheets continues a number; other columns copy.
         series: (field, value, step) => {
           const id = String(value ?? '').trim()
