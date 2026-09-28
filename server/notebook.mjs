@@ -32,7 +32,8 @@ export const KINDS = {
       'the clutch (stocks) notebook: one line per clutch of eggs; headers like Clutch/#, Species, Date laid/Fecha, # Eggs/Huevos, Hatch date/Eclosión, # Larvae, Pupa date, # Pupae, Emerge date, # Adults, Notes',
     hints: [
       'CLUTCH NUMBER as written: 994, or 994(7) for another batch from the same couple.',
-      'Counts are whole numbers. INSECTARY OR LABORATORY is Insectary or Laboratory (Ins./Lab.).',
+      'Counts are whole numbers; a count written as a sum stays as written ("12+15"). A crossed-out number is not the value: the one written beside it is.',
+      'INSECTARY OR LABORATORY is Insectary or Laboratory (Ins./Lab.).',
     ],
   },
   emergence: {
@@ -324,7 +325,11 @@ export function readValue(field, text, { year }) {
     const compact = s.replace(/\s+/g, '');
     return { value: /^\d+$/.test(compact) ? Number(compact) : compact };
   }
-  if (type === 'number') return { value: /^\d+$/.test(s) ? Number(s) : s };
+  if (type === 'number') {
+    // Counts are often written as sums (eggs of two plants: "12+15"); the sheet holds =12+15.
+    if (/^\d+(?:\s*\+\s*\d+)+$/.test(s)) return { value: s.split('+').reduce((sum, part) => sum + Number(part), 0) };
+    return { value: /^\d+$/.test(s) ? Number(s) : s };
+  }
   if (field === 'Sex') {
     const sex = { '♀': 'female', '♂': 'male', f: 'female', h: 'female', m: 'male' }[s.toLowerCase()];
     return { value: sex ?? s };
@@ -494,8 +499,11 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         const key = textKey(value);
         const hits = [...list.values].filter(o => textKey(o).startsWith(key));
         const exact = hits.find(o => textKey(o) === key);
+        // A full name where the list holds its last word (Stock_of_origin: "messenoides").
+        const tail = [...list.values].filter(o => textKey(o).length > 2 && key.endsWith(` ${textKey(o)}`));
         if (exact) value = exact;
         else if (hits.length === 1 && key.length >= 3) value = hits[0];
+        else if (tail.length === 1) value = tail[0];
         else unlisted = true;
       }
       const alternatives = (line.a[field] ?? [])
@@ -529,8 +537,9 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
             ? (lookup.speciesOfClutch?.(lookup.clutch?.(nextClutch) ?? nextClutch) ?? before)
             : before;
         cell.formula = true;
-        cell.status = sameValue(field, predicted, cell.value) ? 'same' : 'conflict';
-        if (cell.status === 'conflict')
+        // A formula that gives nothing (a wild butterfly, no clutch) is filled with the typed species.
+        cell.status = sameValue(field, predicted, cell.value) ? 'same' : isNone(predicted) ? 'fill' : 'conflict';
+        if (cell.status !== 'same')
           cell.message ??= `La fórmula da «${predicted ?? 'vacío'}»; se escribirá encima`;
       } else if (sameValue(field, before, cell.value)) cell.status = 'same';
       else if (isNone(before)) cell.status = 'fill';
@@ -540,8 +549,17 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
       if (['fill', 'conflict', 'new'].includes(cell.status) && formulaHere && !(field === 'SPECIES' && cell.formula)) {
         const allowed = lookup.typedOverFormula?.has(field) && record;
         if (!allowed) {
+          // Not written (the app never replaces a formula), but a sum typed as =12+15 that
+          // disagrees with the notebook is pointed out, to correct in Google Sheets.
+          const formula = record?.formulas?.[field];
+          const typedSum = typeof formula === 'string' && /^=[\d\s+\-*/().]+$/.test(formula);
           cell.status = 'formula';
-          cell.message ??= 'Columna con fórmula en la hoja: no se escribe';
+          cell.mismatch = Boolean(record) && !isNone(before);
+          cell.message ??= typedSum
+            ? `La hoja tiene ${formula} (${show(field, before)}); el cuaderno dice ${show(field, cell.value)}: corrígelo en Google Sheets`
+            : record
+              ? 'Columna con fórmula en la hoja: no se escribe'
+              : 'Columna con fórmula en las filas nuevas: no se escribe';
         }
       }
       // What the save would refuse: a value outside a strict list, an ID used by another row, an unreadable date.

@@ -55,6 +55,7 @@ test('notebook values are read as the sheet stores them', () => {
   assert.equal(readValue('Death_date', '—', { year: 2025 }).value, null);
   assert.equal(readValue('CLUTCH NUMBER', '994 (7)', {}).value, '994(7)');
   assert.equal(readValue('CLUTCH NUMBER', '838', {}).value, 838);
+  assert.equal(readValue('NUMBER OF EGGS', '12 + 15', {}).value, 27, 'eggs of two plants, written as a sum');
   assert.equal(readValue('Sex', '♂', {}).value, 'male');
   assert.equal(readValue('CAM_ID', 'cam78038', {}).value, 'CAM078038');
   assert.equal(readValue('Tube_1_id', 'fs 50851817', {}).value, 'FS50851817');
@@ -178,9 +179,35 @@ test('each line is compared with its row: fills, conflicts, doubts, formulas and
   assert.match(other.lines[1].cells.CAM_ID.message, /Collection_data fila 9/);
 });
 
+test('a full species name in Stock_of_origin takes the list value; a wild butterfly gets its species typed', () => {
+  const rows = [{ id: 'w1', row: 5, version: 1, values: { Insectary_ID: '7VC', SPECIES: null, Stock_of_origin: null } }];
+  const lookup = fakeLookup(rows, { formulas: { w1: { SPECIES: '=X' } } });
+  const transcription = parseTranscription(
+    JSON.stringify({
+      kind: 'emergence',
+      lines: [{ raw: '7VC zaneka — messen.', v: { Insectary_ID: '7VC', SPECIES: 'Mechanitis lysimnia', Stock_of_origin: 'Mechanitis messenoides messenoides' } }],
+    }),
+  );
+  const [line] = buildReview({ transcription, today: '2026-09-28', lookup }).lines;
+  assert.equal(line.cells.Stock_of_origin.value, 'messenoides');
+  assert.equal(line.cells.Stock_of_origin.status, 'fill');
+  // The formula gives nothing (no clutch): the species is filled over it.
+  assert.equal(line.cells.SPECIES.status, 'fill');
+  assert.ok(line.cells.SPECIES.include && line.cells.SPECIES.formula);
+});
+
 test('a clutch page adds the clutches the sheet does not have yet, without their formula columns', () => {
-  const rows = [{ id: 's1', row: 900, version: 2, values: { 'CLUTCH NUMBER': '994(6)', SPECIES: 'Mechanitis lysimnia', 'DATE LAID': d('2026-09-01') } }];
-  const lookup = { ...fakeLookup(rows, { newRows: new Set(['NUMBER OF EGGS']) }), list: () => undefined };
+  const rows = [
+    { id: 's1', row: 900, version: 2, values: { 'CLUTCH NUMBER': '994(6)', SPECIES: 'Mechanitis lysimnia', 'DATE LAID': d('2026-09-01') } },
+    { id: 's2', row: 901, version: 2, values: { 'CLUTCH NUMBER': 993, 'NUMBER OF EGGS': 27, 'NUMBER OF LARVAE': 20 } },
+  ];
+  const lookup = {
+    ...fakeLookup(rows, {
+      newRows: new Set(['NUMBER OF EGGS']),
+      formulas: { s2: { 'NUMBER OF EGGS': '=12+15', 'NUMBER OF LARVAE': '=10+10' } },
+    }),
+    list: () => undefined,
+  };
   const transcription = parseTranscription(
     JSON.stringify({
       kind: 'stocks',
@@ -190,12 +217,18 @@ test('a clutch page adds the clutches the sheet does not have yet, without their
         { raw: '994(7) lys 20/9 12', v: { 'CLUTCH NUMBER': '994(7)', SPECIES: 'Mechanitis lysimnia', 'DATE LAID': '20/9', 'NUMBER OF EGGS': '12' } },
         // Written in December, read in September: last year.
         { raw: '995 lys 28/12', v: { 'CLUTCH NUMBER': '995', 'DATE LAID': '28/12' } },
+        // Counts typed in the sheet as sums: the same sum agrees, another one is pointed out (never written).
+        { raw: '993 12+15 larvas 21', v: { 'CLUTCH NUMBER': '993', 'NUMBER OF EGGS': '12+15', 'NUMBER OF LARVAE': '21' } },
       ],
     }),
   );
   const review = buildReview({ transcription, today: '2026-09-28', lookup });
   assert.equal(review.yearSource, 'page');
-  const [known, fresh, december] = review.lines;
+  const [known, fresh, december, sums] = review.lines;
+  assert.equal(sums.cells['NUMBER OF EGGS'].status, 'same');
+  assert.equal(sums.cells['NUMBER OF LARVAE'].status, 'formula');
+  assert.ok(sums.cells['NUMBER OF LARVAE'].mismatch && !sums.cells['NUMBER OF LARVAE'].include);
+  assert.match(sums.cells['NUMBER OF LARVAE'].message, /La hoja tiene =10\+10 \(20\); el cuaderno dice 21/);
   assert.equal(known.status, 'match');
   assert.equal(known.cells['HATCHING DATE'].status, 'fill');
   assert.equal(known.cells['NUMBER OF EGGS'].status, 'fill');
@@ -203,6 +236,7 @@ test('a clutch page adds the clutches the sheet does not have yet, without their
   assert.equal(fresh.cells['NUMBER OF EGGS'].status, 'formula', 'a formula column of the new row is left');
   assert.equal(december.cells['DATE LAID'].value, d('2025-12-28'));
   const { changes, newRows } = proposalRows(review);
+  assert.equal(changes.length, 1);
   assert.deepEqual(changes[0].values, { 'NUMBER OF EGGS': 30, 'HATCHING DATE': d('2026-09-05') });
   assert.deepEqual(newRows[0].values, { 'CLUTCH NUMBER': '994(7)', SPECIES: 'Mechanitis lysimnia', 'DATE LAID': d('2026-09-20') });
 });

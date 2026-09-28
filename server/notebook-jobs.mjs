@@ -80,9 +80,12 @@ export function createNotebookJobs(deps) {
   /** Rows by their key columns (normalized: "685 (3)" = "685(3)"), rebuilt when the sheet changes. */
   function keyIndex(sheet, keys) {
     const mod = moduleMap.get(sheet);
+    // Both from indexes (a max() filtered on `missing` read every row: 100 ms a call).
     const stamp = db
-      .prepare('SELECT count(*) n, max(updated_at) u FROM records WHERE sheet = ? AND missing = 0')
-      .get(sheet);
+      .prepare(
+        'SELECT (SELECT count(*) FROM records WHERE sheet = ? AND missing = 0) n, (SELECT max(updated_at) FROM records WHERE sheet = ?) u',
+      )
+      .get(sheet, sheet);
     const cacheKey = `${sheet}\u0000${keys.join('|')}`;
     const hit = indexes.get(cacheKey);
     if (hit?.stamp === `${stamp.n}:${stamp.u}`) return hit.map;
@@ -113,24 +116,40 @@ export function createNotebookJobs(deps) {
     return new Set(Object.keys(parse(next?.formulas_json ?? '{}', {})));
   }
 
+  /** A page is reviewed on every correction: the slower lookups are kept for a few seconds. */
+  const memo = new Map();
+  const remembered = (key, ms, make) => {
+    const hit = memo.get(key);
+    if (hit && hit.until > Date.now()) return hit.value;
+    const value = make();
+    memo.set(key, { until: Date.now() + ms, value });
+    return value;
+  };
+  const listsOf = sheet => remembered(`lists:${sheet}`, 3000, () => listOptions(store, sheet));
+  // IDs used anywhere guide the review only (the save checks them again), so a short-lived copy will do.
+  const usedIds = () => remembered('ids', 30000, () => deps.newIds().used());
+  const initials = user => remembered(`ini:${user.id ?? user.username}`, 600000, () => deps.initialsFor(user));
+
   function lookupFor(sheet, keys) {
-    const lists = listOptions(store, sheet);
-    let unique;
+    const lists = listsOf(sheet);
+    let own, stocks;
+    const mine = () => (own ??= keyIndex(sheet, keys));
+    const clutches = () => (stocks ??= keyIndex('Insectary_stocks', ['CLUTCH NUMBER']));
     const record = id => {
       const r = store.getRecord(id);
       return r && { id: r.id, row: r.row, version: r.version, label: r.label, values: r.values, formulas: r.formulas };
     };
     return {
-      find: values => (keyIndex(sheet, keys).get(values.map(clutchKey).join('|')) ?? []).map(h => record(h.id)).filter(Boolean),
-      clutch: value => keyIndex('Insectary_stocks', ['CLUTCH NUMBER']).get(clutchKey(value))?.[0]?.value ?? null,
+      find: values => (mine().get(values.map(clutchKey).join('|')) ?? []).map(h => record(h.id)).filter(Boolean),
+      clutch: value => clutches().get(clutchKey(value))?.[0]?.value ?? null,
       speciesOfClutch: value => {
-        const hit = keyIndex('Insectary_stocks', ['CLUTCH NUMBER']).get(clutchKey(value))?.[0];
+        const hit = clutches().get(clutchKey(value))?.[0];
         return hit ? (store.getRecord(hit.id)?.values?.SPECIES ?? null) : null;
       },
       list: field => lists[field],
       holder: (field, value, recordId) => {
         if (!(isUnique(sheet, field) || TUBE_FIELD.test(field)) || !isIdValue(value)) return null;
-        unique ??= deps.newIds().used();
+        const unique = usedIds();
         const key = `${TUBE_FIELD.test(field) ? 'tube' : `${sheet}:${field}`}\u0000${String(value).trim()}`;
         return (unique.get(key) ?? []).find(h => h.id !== recordId) ?? null;
       },
@@ -162,7 +181,7 @@ export function createNotebookJobs(deps) {
   function promptLists(kinds) {
     const out = {};
     for (const id of kinds) {
-      const lists = listOptions(store, KINDS[id].sheet);
+      const lists = listsOf(KINDS[id].sheet);
       for (const field of KINDS[id].fields) {
         const values = lists[field]?.values;
         if (values && values.size <= 40 && !['CLUTCH NUMBER', 'SPECIES', 'CAM_ID'].includes(field))
@@ -245,7 +264,7 @@ export function createNotebookJobs(deps) {
       picks: parse(job.picks_json, {}),
       year: job.year ?? null,
       today: ecuadorDay(),
-      initials: deps.initialsFor(user),
+      initials: initials(user),
       lookup: lookupFor(kind.sheet, kind.keys),
     });
   }
@@ -279,9 +298,10 @@ export function createNotebookJobs(deps) {
         }
         changes.push(...out.changes.map(c => ({ ...c, line: row.line })));
       }
+    // As written (994(7), 5VB, "50 / 9"); compared normalized in warningsOf.
     const keys = review.lines
       .filter(l => !l.crossed && l.status !== 'nokey')
-      .map(l => review.keys.map(k => clutchKey(l.cells[k]?.value ?? '')).join('|'));
+      .map(l => review.keys.map(k => String(l.cells[k]?.value ?? '').trim()).join(' / '));
     const fields = { keys_json: json([...new Set(keys)]) };
     const current = job.proposal_id ? db.prepare('SELECT * FROM ai_proposals WHERE id = ?').get(job.proposal_id) : null;
     let proposalTouched = false;
@@ -372,10 +392,11 @@ export function createNotebookJobs(deps) {
     for (const other of others)
       if ((job.photo_hash && other.photo_hash === job.photo_hash) || (job.source_hash && other.source_hash === job.source_hash))
         out.push({ kind: 'photo', jobId: other.id, at: other.created_at, by: by(other), status: other.status });
-    const mine = new Set(parse(job.keys_json, []));
+    const norm = key => key.split(' / ').map(clutchKey).join('|');
+    const mine = new Set(parse(job.keys_json, []).map(norm));
     if (mine.size)
       for (const other of others) {
-        const shared = parse(other.keys_json, []).filter(k => mine.has(k));
+        const shared = parse(other.keys_json, []).filter(k => mine.has(norm(k)));
         if (shared.length >= Math.min(3, mine.size) && !out.some(w => w.jobId === other.id))
           out.push({ kind: 'keys', jobId: other.id, at: other.created_at, by: by(other), keys: shared.slice(0, 8), count: shared.length });
       }
@@ -422,7 +443,7 @@ export function createNotebookJobs(deps) {
     if (!review) return out;
     const applied = new Set(out.appliedLines);
     const sheet = moduleMap.get(review.sheet);
-    const lists = listOptions(store, review.sheet);
+    const lists = listsOf(review.sheet);
     const transcription = parse(job.transcription_json, {});
     return {
       ...out,
@@ -560,6 +581,7 @@ export function createNotebookJobs(deps) {
     }
     // What is left (rows not chosen) becomes a new proposal; a page with nothing left is done.
     touch(job.id, { proposal_id: null });
+    memo.delete('ids');
     const review = settle(job.id);
     if (!get(job.id).proposal_id && !review?.lines.some(l => l.picked && l.changes)) touch(job.id, { status: 'done' });
     deps.changed(job.owner_id);
