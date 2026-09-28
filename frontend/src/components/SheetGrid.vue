@@ -4,7 +4,17 @@ import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
 import { displayValue, normalizeInput } from '../lib/cells'
-import { attachCopyMarker, attachFillHandle, attachTouchSheet, fillDown as fillDownRange, spreadsheetKeys, type CanEdit } from '../lib/gridKit'
+import {
+  attachCopyMarker,
+  attachFillHandle,
+  attachTouchSheet,
+  fillDown as fillDownRange,
+  listParams,
+  openList,
+  spreadsheetKeys,
+  watchSize,
+  type CanEdit,
+} from '../lib/gridKit'
 import type { CellValue, Field, TableRow } from '../lib/types'
 import { type PendingCreate, usePending } from '../stores/pending'
 import { useSession } from '../stores/session'
@@ -190,8 +200,7 @@ function hasChoices(field: string) {
 function onCellClick(event: UIEvent, cell: CellComponent) {
   const el = cell.getElement()
   if (!el.classList.contains('has-choices') || !(event instanceof MouseEvent)) return
-  // Deferred: the click that selects the cell would otherwise close the list at once.
-  if (event.clientX >= el.getBoundingClientRect().right - 22) setTimeout(() => cell.edit(true))
+  if (event.clientX >= el.getBoundingClientRect().right - 22) openList(cell)
 }
 
 /**
@@ -269,23 +278,15 @@ function rowNumberFormatter(cell: CellComponent) {
 }
 
 function editorFor(field: Field): Partial<ColumnDefinition> {
-  const params = (values: string[]) => ({
-    values,
-    autocomplete: true,
-    freetext: true,
-    allowEmpty: true,
-    listOnEmpty: true,
-    filterDelay: 50,
-  })
   const dependent = props.rowOptions[field.key]
   if (dependent)
     return {
       editor: 'list',
-      editorParams: ((cell: CellComponent) => params(dependent(cell.getData() as GridRow))) as never,
+      editorParams: ((cell: CellComponent) => listParams(dependent(cell.getData() as GridRow), cell)) as never,
     }
   // Choices are read when the editor opens, so they stay current without rebuilding the grid.
   if (props.options[field.key]?.length)
-    return { editor: 'list', editorParams: (() => params(props.options[field.key] || [])) as never }
+    return { editor: 'list', editorParams: ((cell: CellComponent) => listParams(props.options[field.key] || [], cell)) as never }
   return { editor: 'input', editorParams: { selectContents: true } }
 }
 
@@ -441,7 +442,7 @@ function build() {
     columns: columnDefs(),
     height: props.height,
     layout: 'fitData',
-    // Size changes are handled by resizeWatcher, which ignores the tab being hidden.
+    // Size changes are handled by watchSize, which ignores the tab being hidden and waits for open editors.
     autoResize: false,
     renderHorizontal: 'virtual',
     nestedFieldSeparator: false,
@@ -520,7 +521,7 @@ function refresh() {
 onMounted(() => {
   build()
   host.value?.addEventListener('keydown', onKeydown)
-  if (host.value) resizeWatcher.observe(host.value)
+  if (host.value) sizeWatch = watchSize(() => table, host.value)
 })
 // Kept alive while another tab is open (see App.vue): its size may have changed meanwhile.
 onActivated(() => {
@@ -532,21 +533,11 @@ onActivated(() => {
 })
 onDeactivated(() => (active = false))
 
-/**
- * Redraw when the grid's size really changes. Tabulator's own watcher also
- * redrew every time the tab was shown again (hidden counts as size 0), which
- * cost a noticeable pause on the big sheets.
- */
-let lastSize = ''
-const resizeWatcher = new ResizeObserver(([entry]) => {
-  const { width, height } = entry.contentRect
-  if (!width || !height) return
-  const size = `${Math.round(width)}x${Math.round(height)}`
-  if (lastSize && size !== lastSize && built) table?.redraw()
-  lastSize = size
-})
+// Size changes are followed by watchSize (lib/gridKit.ts), which ignores the tab being hidden and waits for open editors.
+let sizeWatch: { disconnect: () => void } | null = null
+
 onBeforeUnmount(() => {
-  resizeWatcher.disconnect()
+  sizeWatch?.disconnect()
   fill?.destroy()
   copied?.destroy()
   host.value?.removeEventListener('keydown', onKeydown)

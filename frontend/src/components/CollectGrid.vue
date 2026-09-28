@@ -4,7 +4,17 @@ import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
 import { FATES, HEADERS, SEX_VALUES, idsText, type Column, type Draft } from '../lib/collect'
-import { attachCopyMarker, attachFillHandle, attachTouchSheet, spreadsheetKeys, tileToSelection, type CanEdit } from '../lib/gridKit'
+import {
+  attachCopyMarker,
+  attachFillHandle,
+  attachTouchSheet,
+  listParams,
+  openList,
+  spreadsheetKeys,
+  tileToSelection,
+  watchSize,
+  type CanEdit,
+} from '../lib/gridKit'
 import { complete, parseBlock } from '../lib/paste'
 
 /**
@@ -38,6 +48,7 @@ let table: Tabulator | null = null
 let built = false
 let fill: { destroy: () => void } | null = null
 let copied: ReturnType<typeof attachCopyMarker> | null = null
+let sizeWatch: { disconnect: () => void } | null = null
 const touch = window.matchMedia('(pointer: coarse)').matches
 
 const toRow = (d: Draft): Row => ({
@@ -62,14 +73,7 @@ const canEdit: CanEdit = (row, field) =>
 const choices = (values: () => string[]) => ({
   cssClass: 'has-choices',
   editor: 'list' as const,
-  editorParams: (() => ({
-    values: values(),
-    autocomplete: true,
-    freetext: true,
-    allowEmpty: true,
-    listOnEmpty: true,
-    filterDelay: 50,
-  })) as never,
+  editorParams: ((cell: CellComponent) => listParams(values(), cell)) as never,
 })
 
 /** Plain cells, with the red corner when the value is outside the sheet's list. */
@@ -97,29 +101,20 @@ function columns(): ColumnDefinition[] {
     text('subspecies', 160, {
       cssClass: 'has-choices',
       editor: 'list',
-      editorParams: ((cell: CellComponent) => ({
-        values: props.subspeciesFor(String((cell.getData() as Row).species || '')),
-        autocomplete: true,
-        freetext: true,
-        allowEmpty: true,
-        listOnEmpty: true,
-      })) as never,
+      editorParams: ((cell: CellComponent) =>
+        listParams(props.subspeciesFor(String((cell.getData() as Row).species || '')), cell)) as never,
     }),
     text('sex', 90, {
       cssClass: 'has-choices',
       // Typing works too: f / h / ♀, m / ♂, ? (read like a pasted value).
       editor: 'list',
-      editorParams: { values: [...SEX_VALUES], autocomplete: true, freetext: true, listOnEmpty: true },
+      editorParams: ((cell: CellComponent) => listParams([...SEX_VALUES], cell)) as never,
     }),
     text('fate', 210, {
       cssClass: 'has-choices',
       editor: 'list',
-      editorParams: {
-        values: Object.fromEntries(Object.entries(FATES).map(([k, f]) => [k, f.label])),
-        autocomplete: true,
-        freetext: true,
-        listOnEmpty: true,
-      },
+      editorParams: ((cell: CellComponent) =>
+        listParams(Object.fromEntries(Object.entries(FATES).map(([k, f]) => [k, f.label])), cell)) as never,
       formatter: cell => FATES[cell.getValue() as keyof typeof FATES]?.label ?? '',
     }),
     text('time', 110),
@@ -192,6 +187,8 @@ onMounted(() => {
     // Row numbers as Tabulator's row header, which range selection expects.
     rowHeader: { formatter: 'rownum', headerSort: false, resizable: false, frozen: true, width: 44, hozAlign: 'right', cssClass: 'row-number' },
     layout: 'fitData',
+    // Size changes go through watchSize: a redraw under an open editor (the phone keyboard resizes the page) lost it.
+    autoResize: false,
     headerSortClickElement: 'icon',
     placeholder: 'Sin filas',
     selectableRange: 1,
@@ -230,7 +227,7 @@ onMounted(() => {
   table.on('cellClick', (event: UIEvent, cell: CellComponent) => {
     const el = cell.getElement()
     if (!el.classList.contains('has-choices') || !(event instanceof MouseEvent) || !canEdit(cell.getRow(), cell.getField())) return
-    if (event.clientX >= el.getBoundingClientRect().right - 22) setTimeout(() => cell.edit(true))
+    if (event.clientX >= el.getBoundingClientRect().right - 22) openList(cell)
   })
   table.on('cellEdited', (cell: CellComponent) => {
     const row = cell.getData() as Row
@@ -246,10 +243,12 @@ onMounted(() => {
       })
   copied = attachCopyMarker(table, host.value.parentElement!, message => emit('notice', message))
   host.value.addEventListener('keydown', onKeydown)
+  sizeWatch = watchSize(() => table, host.value)
 })
 onActivated(() => table?.redraw())
 onBeforeUnmount(() => {
   fill?.destroy()
+  sizeWatch?.disconnect()
   copied?.destroy()
   host.value?.removeEventListener('keydown', onKeydown)
   table?.destroy()

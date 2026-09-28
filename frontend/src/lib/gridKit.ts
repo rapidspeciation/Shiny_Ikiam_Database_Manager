@@ -466,3 +466,97 @@ export function attachTouchSheet(
     },
   }
 }
+
+const touchScreen = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
+let arrowCell: CellComponent | null = null
+
+/**
+ * The ▾ arrow opens a cell's list. On a touch screen it opens only the list to
+ * tap from, without the keyboard (a double tap edits with the keyboard).
+ */
+export function openList(cell: CellComponent) {
+  arrowCell = touchScreen ? cell : null
+  // Deferred: the click that selects the cell would otherwise close the list at once.
+  setTimeout(() => cell.edit(true))
+}
+
+/**
+ * Parameters for a list editor. Closing the list without choosing keeps the
+ * value: Tabulator saved an empty cell then (on phones the keyboard takes the
+ * focus away as it opens, and the cell was emptied). Clear with Supr / Borrar.
+ */
+export function listParams(values: string[] | Record<string, string>, cell: CellComponent, freetext = true) {
+  const tapOnly = arrowCell === cell
+  arrowCell = null
+  return {
+    values,
+    autocomplete: !tapOnly,
+    freetext: !tapOnly && freetext,
+    allowEmpty: true,
+    listOnEmpty: true,
+    filterDelay: 50,
+    emptyValue: cell.getValue() ?? null,
+    // Opened with the arrow on a phone: only the list, no keyboard.
+    ...(tapOnly ? { elementAttributes: { readonly: 'readonly', inputmode: 'none' } } : {}),
+  }
+}
+
+/**
+ * Redraws the grid when its size really changes, but never under an open
+ * editor: on a phone the keyboard resizes the page as it opens, and redrawing
+ * then threw the editor away (and closed the keyboard).
+ */
+export function watchSize(table: () => Tabulator | null, element: HTMLElement) {
+  let last = ''
+  let timer: number | undefined
+  const redrawWhenIdle = () => {
+    window.clearTimeout(timer)
+    if (element.querySelector('.tabulator-editing')) timer = window.setTimeout(redrawWhenIdle, 300)
+    else table()?.redraw()
+  }
+  const observer = new ResizeObserver(([entry]) => {
+    const { width, height } = entry.contentRect
+    if (!width || !height) return
+    const size = `${Math.round(width)}x${Math.round(height)}`
+    const changed = last && size !== last
+    last = size
+    if (changed) redrawWhenIdle()
+  })
+  observer.observe(element)
+  return {
+    disconnect: () => {
+      window.clearTimeout(timer)
+      observer.disconnect()
+    },
+  }
+}
+
+/**
+ * When the phone's keyboard opens (it shrinks only the visible area, without a
+ * window resize), the cell being edited is scrolled up above it. The page is
+ * scrolled rather than the grid: Tabulator closes an open list when the grid
+ * scrolls or the window resizes, and the list then saved an empty cell.
+ */
+function keepEditorVisible() {
+  const cell = document.querySelector<HTMLElement>('.tabulator-editing')
+  const view = window.visualViewport
+  if (!cell || !view) return
+  const r = cell.getBoundingClientRect()
+  const bottom = view.offsetTop + view.height - 12
+  if (r.bottom <= bottom && r.top >= view.offsetTop) return
+  const by = r.bottom - bottom
+  const listOpen = !!document.querySelector('.tabulator-popup-container')
+  for (let el = cell.parentElement; el; el = el.parentElement) {
+    if (el.classList.contains('tabulator-tableholder')) {
+      if (listOpen || el.scrollHeight <= el.clientHeight) continue
+    } else {
+      const overflow = getComputedStyle(el).overflowY
+      if (!(overflow === 'auto' || overflow === 'scroll') || el.scrollHeight <= el.clientHeight) continue
+    }
+    el.scrollTop += by
+    return
+  }
+  window.scrollBy(0, by)
+}
+if (touchScreen && typeof window !== 'undefined' && window.visualViewport)
+  window.visualViewport.addEventListener('resize', () => requestAnimationFrame(keepEditorVisible))
