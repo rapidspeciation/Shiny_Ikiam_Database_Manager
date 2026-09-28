@@ -23,6 +23,8 @@ const props = defineProps<{
   paste: (text: string, index: number, column: Column) => boolean
   /** Why a row's Insectary ID cannot be saved (repeated, already recorded, no pre-made row). */
   idProblem?: (d: Draft) => string | null
+  /** A value outside the sheet's list for its column (red corner, as in Google Sheets). */
+  cellProblem?: (d: Draft, column: Column) => string | null
 }>()
 const emit = defineEmits<{
   edit: [key: string, column: Column, text: string]
@@ -70,11 +72,21 @@ const choices = (values: () => string[]) => ({
   })) as never,
 })
 
+/** Plain cells, with the red corner when the value is outside the sheet's list. */
+const listed = (field: Column) => (cell: CellComponent) => {
+  const d = draftOf(cell.getRow())
+  const problem = d && props.cellProblem?.(d, field)
+  cell.getElement().classList.toggle('is-invalid', !!problem)
+  cell.getElement().title = problem || ''
+  return String(cell.getValue() ?? '')
+}
+
 function columns(): ColumnDefinition[] {
   const text = (field: Column, width: number, extra: Partial<ColumnDefinition> = {}) => ({
     title: HEADERS[field],
     field,
     width,
+    formatter: listed(field),
     editor: 'input' as const,
     editable: (cell: CellComponent) => canEdit(cell.getRow(), field),
     ...extra,

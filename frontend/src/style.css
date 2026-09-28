@@ -135,6 +135,22 @@ body {
       right 8px;
   }
 }
+/* The Google Sheet's checks: repeated IDs in pale red, values outside the list with a red corner. */
+.sheet-grid .tabulator-cell.is-repeated {
+  background: #f8d7d3 !important;
+}
+.sheet-grid .tabulator-cell.is-invalid {
+  position: relative;
+}
+.sheet-grid .tabulator-cell.is-invalid::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  border-width: 0 7px 7px 0;
+  border-style: solid;
+  border-color: transparent #d93025 transparent transparent;
+}
 .tabulator-cell.fill-target {
   background: #e6f1eb !important;
   box-shadow: inset 0 0 0 1px #1f4d3a;

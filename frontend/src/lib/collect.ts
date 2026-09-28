@@ -5,7 +5,7 @@ export interface Draft {
   location: string
   species: string
   subspecies: string
-  sex: '' | 'female' | 'male' | 'NA'
+  sex: '' | Sex
   fate: Fate
   time: string
   purpose: string
@@ -20,8 +20,14 @@ export const FATES: Record<Fate, { label: string; value: string }> = {
   preservada: { label: 'Collected_Preserved', value: 'Collected_Preserved' },
   liberada: { label: 'Released_Unmarked', value: 'Released_Unmarked' },
 }
-/** Sex as saved in the sheet. */
-export const SEX_VALUES = ['female', 'male', 'NA'] as const
+/**
+ * Sex as Collection_data's list allows it: the team writes NOT_COLLECTED when it
+ * is not known and "female ?" / "male ?" when it is not sure.
+ */
+export const SEX_VALUES = ['female', 'male', 'female ?', 'male ?', 'NOT_COLLECTED'] as const
+export type Sex = (typeof SEX_VALUES)[number]
+/** Insectary_data's list has no "?" values: an unsure sex is saved as the sex. */
+export const insectarySex = (sex: Sex | '') => (sex === 'female ?' ? 'female' : sex === 'male ?' ? 'male' : sex)
 
 /** The list's columns, named as the sheet's columns. */
 export const HEADERS: Record<Column, string> = {

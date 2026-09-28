@@ -9,18 +9,16 @@
 import { randomUUID } from 'node:crypto';
 import { comparable, labelFor, moduleMap, validateValues } from './schema.mjs';
 import { hasDateFormat, hasTimeFormat, headerMismatches, rowKey, rowValues } from './sheets.mjs';
+import { TUBE_FIELD, UNIQUE, isIdValue, isUnique } from './verifications.mjs';
+import { listOptions, listProblem } from './verify.mjs';
 
 /** Where a write came from. Chosen by the server, never by the client. */
 export const SOURCES = new Set(['app', 'undo', 'ai_approved', 'import']);
 
 export const MAX_BATCH = 500;
 
-// Identifiers that must not repeat. Tube IDs are unique across both main sheets.
-const TUBE_FIELD = /^Tube_\d_id(?:_LEGS)?$/;
-const UNIQUE_FIELDS = {
-  Insectary_data: field => field === 'Insectary_ID' || field === 'CAM_ID' || TUBE_FIELD.test(field),
-  Collection_data: field => field === 'CAM_ID' || TUBE_FIELD.test(field),
-};
+// Identifiers that must not repeat (server/verifications.mjs, as in the Google
+// Sheet's conditional formats). Tube IDs are unique across the whole workbook.
 
 // Formula cells that may be typed over, and only with a value different from what the
 // formula predicts: the species of an insectary butterfly when what emerged is not what
@@ -296,6 +294,7 @@ class Plan {
       written.add(key);
     }
     this.checkUniqueIds();
+    this.checkLists();
   }
 
   async resolveEdit(target, live) {
@@ -458,13 +457,28 @@ class Plan {
     });
   }
 
+  /**
+   * Rejects a new value that is not in a strict list of the sheet (Google Sheets
+   * would refuse it when typed there). Undo and imports put back what was there.
+   */
+  checkLists() {
+    if (this.source === 'undo' || this.source === 'import') return;
+    const bySheet = new Map();
+    for (const t of this.targets)
+      for (const c of t.changes || []) {
+        const options = bySheet.get(t.sheet) ?? bySheet.set(t.sheet, listOptions(this.store, t.sheet)).get(t.sheet);
+        if (!options[c.field]?.strict) continue;
+        const problem = listProblem(options, c.field, c.after);
+        if (problem) this.conflict(t, 'NOT_IN_LIST', problem, { field: c.field, value: c.after });
+      }
+  }
+
   /** Rejects IDs that another row already uses, or that repeat within the batch. */
   checkUniqueIds() {
     const proposed = [];
     for (const t of this.targets)
       for (const c of t.changes || []) {
-        const unique = UNIQUE_FIELDS[t.sheet];
-        if (unique?.(c.field) && !blank(c.after) && typeof c.after !== 'object')
+        if (isUnique(t.sheet, c.field) && isIdValue(c.after) && typeof c.after !== 'object')
           proposed.push({ target: t, field: c.field, value: String(c.after).trim() });
       }
     if (!proposed.length) return;
@@ -566,17 +580,23 @@ function beginAction(store, { requestId, user, source, reason, reverses }, plan)
 }
 
 /** Map of "scope\0value" → rows holding that identifier in the local copy. */
+/** The sheets that hold IDs checked for repeats: those in UNIQUE, and any with tube columns. */
+const UNIQUE_SHEETS = () =>
+  [...moduleMap.values()]
+    .filter(m => UNIQUE[m.id] || m.fields.some(f => TUBE_FIELD.test(f.key)))
+    .map(m => m.id);
+
 function uniqueIdIndex(store) {
   const index = new Map();
-  for (const sheet of Object.keys(UNIQUE_FIELDS)) {
-    const unique = UNIQUE_FIELDS[sheet];
+  for (const sheet of UNIQUE_SHEETS()) {
+    const unique = field => isUnique(sheet, field);
     const rows = store.db
       .prepare('SELECT id,row_num,values_json FROM records WHERE sheet=? AND missing=0 AND observed=1')
       .all(sheet);
     for (const r of rows) {
       const values = JSON.parse(r.values_json);
       for (const [field, value] of Object.entries(values)) {
-        if (!unique(field) || blank(value)) continue;
+        if (!unique(field) || !isIdValue(value)) continue;
         const scope = TUBE_FIELD.test(field) ? 'tube' : `${sheet}:${field}`;
         const key = `${scope}\u0000${String(value).trim()}`;
         index.set(key, [...(index.get(key) || []), { id: r.id, sheet, row: r.row_num, field }]);

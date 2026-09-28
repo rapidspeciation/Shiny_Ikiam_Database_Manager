@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, toRaw, watch } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, toRaw, watch } from 'vue'
 import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
@@ -8,6 +8,8 @@ import { attachCopyMarker, attachFillHandle, fillDown as fillDownRange, spreadsh
 import type { CellValue, Field, TableRow } from '../lib/types'
 import { type PendingCreate, usePending } from '../stores/pending'
 import { useSession } from '../stores/session'
+import { useTables } from '../stores/tables'
+import { listProblem, repeats, verificationsFor } from '../lib/verifications'
 import RowDrawer from './RowDrawer.vue'
 
 /**
@@ -155,7 +157,7 @@ function updateChanged(): boolean {
       // error, formula) can change without the value, e.g. once a save lands.
       for (const r of changed) {
         const row = table?.getRow(r.id)
-        if (row) row.reformat()
+        if (row) decorateRow(row)
       }
       applySearch()
     })
@@ -192,18 +194,70 @@ function onCellClick(event: UIEvent, cell: CellComponent) {
   if (event.clientX >= el.getBoundingClientRect().right - 22) setTimeout(() => cell.edit(true))
 }
 
-function formatter(cell: CellComponent) {
+/**
+ * The Google Sheet's checks, shown as in the sheet: repeated IDs in pale red
+ * (over the whole sheet, unsaved changes included), values outside the
+ * column's list with a red corner. Formula cells are not checked.
+ */
+const tables = useTables()
+const rules = computed(() => verificationsFor(props.module))
+const repeated = computed(() => {
+  void tables.versions[props.module]
+  void pending.revision
+  const edits = toRaw(pending.edits)
+  const fields = rules.value?.unique || []
+  const rows = (tables.tables[props.module]?.rows || props.rows)
+    .filter(r => r.observed)
+    .map(r => ({
+      row: r.row,
+      values: Object.fromEntries(fields.map(f => [f, f in (edits[r.id]?.values || {}) ? edits[r.id].values[f] : r.values[f]])),
+    }))
+  const created = props.creates.map(c => ({ row: null, values: c.values }))
+  return repeats(rules.value, [...rows, ...created])
+})
+function checkTitle(field: string, value: CellValue, data: GridRow) {
+  const holders = repeated.value.get(field)?.get(String(value ?? '').trim())
+  if (holders) {
+    const others = holders.filter(r => r !== data.__row).map(r => (r === null ? 'una fila nueva' : `fila ${r}`))
+    const more = others.length > 5 ? ` y ${others.length - 5} más` : ''
+    return { repeated: `Repetido en ${field}: también en ${others.slice(0, 5).join(', ')}${more}` }
+  }
+  const problem = listProblem(rules.value, field, value)
+  return problem ? { invalid: problem } : {}
+}
+
+/** The cell's markers (formula, unsaved, error, repeated, outside the list…) and its hover text. */
+function decorate(cell: CellComponent) {
   const data = cell.getData() as GridRow
   const field = cell.getField()
   const el = cell.getElement()
   const errorKey = `${data.__id}:${field}`
-  el.classList.toggle('is-formula', isFormula(data, field))
-  el.classList.toggle('is-locked', !isFormula(data, field) && !canEdit(data, field))
+  const formula = isFormula(data, field)
+  const check = formula ? {} : checkTitle(field, cell.getValue(), data)
+  el.classList.toggle('is-formula', formula)
+  el.classList.toggle('is-locked', !formula && !canEdit(data, field))
   el.classList.toggle('is-dirty', !data.__new && pending.isDirty(data.__id, field))
   el.classList.toggle('is-error', !!pending.errors[errorKey])
+  el.classList.toggle('is-repeated', !!check.repeated)
+  el.classList.toggle('is-invalid', !!check.invalid)
   el.classList.toggle('has-choices', hasChoices(field) && canEdit(data, field))
-  el.title = pending.errors[errorKey] || (isFormula(data, field) ? 'Fórmula de la hoja (solo lectura)' : '')
-  return document.createTextNode(displayValue(cell.getValue(), fieldIndex.get(field)))
+  el.title =
+    pending.errors[errorKey] || check.repeated || check.invalid || (formula ? 'Fórmula de la hoja (solo lectura)' : '')
+}
+
+function formatter(cell: CellComponent) {
+  decorate(cell)
+  return document.createTextNode(displayValue(cell.getValue(), fieldIndex.get(field(cell))))
+}
+const field = (cell: CellComponent) => cell.getField()
+
+/**
+ * Updates the markers of a row's cells in place. (Tabulator's row.reformat()
+ * redraws the row and, with columns drawn only when in view, put a cell at the
+ * end of the row, shifting the others under the wrong headers.)
+ */
+function decorateRow(row: RowComponent) {
+  for (const cell of row.getCells()) if (fieldIndex.has(cell.getField())) decorate(cell)
 }
 
 function rowNumberFormatter(cell: CellComponent) {
@@ -262,7 +316,9 @@ function columnDefs(): ColumnDefinition[] {
   }
   return [
     rowColumn,
-    ...(props.columns.map(field => ({
+    // Frozen columns go first: Tabulator only keeps them in line with their
+    // headers at the edge (a frozen CAM_ID in the middle shifted the cells after it).
+    ...([...props.columns.filter(f => props.frozen.includes(f.key)), ...props.columns.filter(f => !props.frozen.includes(f.key))].map(field => ({
       title: field.key,
       field: field.key,
       frozen: props.frozen.includes(field.key),
@@ -312,7 +368,7 @@ function onCellEdited(cell: CellComponent) {
     normalizing = false
   }
   record(data, field, result.value)
-  cell.getRow().reformat()
+  decorateRow(cell.getRow())
 }
 
 function record(data: GridRow, field: string, value: CellValue) {
@@ -505,6 +561,11 @@ const layoutKey = () =>
 watch(layoutKey, build)
 watch(() => [props.rows, props.creates.length, pending.revision], refresh)
 watch(() => props.search, applySearch)
+// Repaint what is on screen when the sheet's rules arrive or a repeat appears or goes.
+watch([rules, repeated], () => {
+  // Only the rows on screen are drawn; repainting them is enough (a full redraw re-measures the layout).
+  if (table && built) for (const row of table.getRows('visible')) decorateRow(row)
+})
 
 defineExpose({ refresh, fillDown })
 </script>

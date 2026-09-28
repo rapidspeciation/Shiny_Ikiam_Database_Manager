@@ -13,7 +13,11 @@ describe('pasting cells from a spreadsheet', () => {
   })
   it('reads sex, fate, CAM and tube, and time as the team writes them', () => {
     expect(['♀', '♂', '?', 'female', 'M', '', 'he', 'hem', 'fe', 'ma', 'mac', 'NA', 'x'].map(parseSex)).toEqual([
-      'female', 'male', 'NA', 'female', 'male', '', 'female', 'female', 'female', 'male', 'male', 'NA', '',
+      'female', 'male', 'NOT_COLLECTED', 'female', 'male', '', 'female', 'female', 'female', 'male', 'male', 'NOT_COLLECTED', '',
+    ])
+    // Unsure sex, as the team writes it in Collection_data.
+    expect(['female ?', 'female?', 'female_?', 'm ?', '♀?', 'not', 'NOT_COLLECTED'].map(parseSex)).toEqual([
+      'female ?', 'female ?', 'female ?', 'male ?', 'female ?', 'NOT_COLLECTED', 'NOT_COLLECTED',
     ])
     expect(
       ['Insectario', 'Al insectario', 'Preservada', 'pres', 'i', 'Collected_Sent2Insectary', 'Released_Unmarked', 'x'].map(parseFate),

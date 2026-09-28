@@ -30,6 +30,8 @@ import { createSheetHook } from './hooks.mjs';
 import { createInvitations, mailerFromEnv } from './invitations.mjs';
 import { createSummary } from './summary.mjs';
 import { applyIdChange, planIdChange } from './insectaryId.mjs';
+import { UNIQUE, TUBE_FIELD } from './verifications.mjs';
+import { listOptions } from './verify.mjs';
 import { SANDBOX_ID, moduleMap, validateValues } from './schema.mjs';
 import {
   setup,
@@ -481,6 +483,17 @@ export async function createApp(config = {}, options = {}) {
       if (method === 'GET' && path === '/api/table/changes')
         return json(res, 200, tableChanges(store, String(query.module || ''), query.since));
       if (method === 'GET' && path === '/api/ids') return json(res, 200, idSuggestions(store, query));
+      // The sheet's own checks for one sheet (repeated IDs, dropdown lists), for the grids to colour.
+      if (method === 'GET' && path === '/api/verifications') {
+        const module = String(query.module || '');
+        const mod = moduleMap.get(module);
+        if (!mod) throw fail('MODULE_NOT_FOUND', 'Unknown module', 404);
+        const lists = Object.fromEntries(
+          Object.entries(listOptions(store, module)).map(([field, o]) => [field, { strict: o.strict, source: o.source, values: [...o.values] }]),
+        );
+        const unique = mod.fields.map(f => f.key).filter(k => UNIQUE[module]?.includes(k) || TUBE_FIELD.test(k));
+        return send(res, 200, JSON.stringify({ module, unique, lists }), { 'cache-control': 'no-cache' });
+      }
       // Correcting an Insectary ID after saving: preview, then one undoable save.
       if (method === 'GET' && path === '/api/insectary-ids/plan') {
         const plan = planIdChange(store, query.from, query.to);

@@ -9,7 +9,7 @@ import { createApp } from '../server/index.mjs';
 const user = { id: 'editor-1', username: 'editor', role: 'editor' };
 const seed = {
   Insectary_data: [
-    { row: 2, values: { Insectary_ID: 'A0A', SPECIES: 'Melinaea menophilus', Sex: 'F', 'CLUTCH NUMBER': '944' } },
+    { row: 2, values: { Insectary_ID: 'A0A', SPECIES: 'Melinaea menophilus', Sex: 'female', 'CLUTCH NUMBER': '944' } },
     {
       row: 3,
       cells: [
@@ -45,7 +45,7 @@ test('ID allocation crosses the historical boundary and uses observed records, n
   const result = await store.createRecord(
     {
       module: 'Insectary_data',
-      values: { Sex: 'M', 'CLUTCH NUMBER': '944', Intro2Insectary_date: '2026-09-25' },
+      values: { Sex: 'male', 'CLUTCH NUMBER': '944', Intro2Insectary_date: '2026-09-25' },
       requestId: 'create-0001',
     },
     user,
@@ -59,7 +59,7 @@ test('ID allocation crosses the historical boundary and uses observed records, n
   assert.equal(result.record.values.Intro2Insectary_date, 46290);
   assert.equal(store.getStats().byModule.Insectary_data, 2);
   assert.equal(
-    (await store.createRecord({ module: 'Insectary_data', values: { Sex: 'M' }, requestId: 'create-0001' }, user))
+    (await store.createRecord({ module: 'Insectary_data', values: { Sex: 'male' }, requestId: 'create-0001' }, user))
       .record.id,
     placeholder.id,
   );
@@ -141,7 +141,7 @@ test('a formula cell rejects direct edits and a changed source cell rejects stal
   const insect = store.getRecordBySheetRow('Insectary_data', 2);
   await sheets.externalEdit('Insectary_data', 2, { Sex: 'X' });
   await assert.rejects(
-    store.updateRecord(insect.id, { values: { Sex: 'M' }, requestId: 'external-0001' }, user),
+    store.updateRecord(insect.id, { values: { Sex: 'male' }, requestId: 'external-0001' }, user),
     e => e.code === 'EXTERNAL_CONFLICT',
   );
   store.close();
@@ -155,7 +155,7 @@ test('selected undo preserves another field and rejects a later same-field edit 
     { values: { SPECIES: 'A' }, expectedVersion: 1, requestId: 'update-0001' },
     user,
   );
-  await store.updateRecord(record.id, { values: { Sex: 'M' }, requestId: 'update-0002' }, user);
+  await store.updateRecord(record.id, { values: { Sex: 'male' }, requestId: 'update-0002' }, user);
   const preview = store.previewUndo({ actionIds: [first.action.id] });
   assert.equal(preview.eligible, true);
   const undo = await store.undo({ actionIds: [first.action.id], requestId: 'undo-0001' }, user);
@@ -163,7 +163,7 @@ test('selected undo preserves another field and rejects a later same-field edit 
     (await store.undo({ actionIds: [first.action.id], requestId: 'undo-0001' }, user)).actions[0].id,
     undo.actions[0].id,
   );
-  assert.equal(store.getRecord(record.id).values.Sex, 'M');
+  assert.equal(store.getRecord(record.id).values.Sex, 'male');
   const second = await store.updateRecord(record.id, { values: { SPECIES: 'B' }, requestId: 'update-0003' }, user);
   await store.updateRecord(record.id, { values: { SPECIES: 'A' }, requestId: 'update-0004' }, user);
   assert.equal(store.previewUndo({ actionIds: [second.action.id] }).eligible, false);
@@ -179,7 +179,7 @@ test('Google write request touches only named cells and formats a numeric date',
     calls.push({ path, body: JSON.parse(options.body) });
     return { replies: [{}, {}] };
   };
-  await google.writeCells('Insectary_data', 11, { Death_date: 46290, Sex: 'F' });
+  await google.writeCells('Insectary_data', 11, { Death_date: 46290, Sex: 'female' });
   const requests = calls[0].body.requests;
   assert.equal(requests[0].appendDimension.length, 1);
   assert.equal(requests.length, 3);
@@ -222,14 +222,14 @@ test('a slow sync read does not block an edit or overwrite its newer value', asy
   };
   const syncing = store.sync({ sheets: ['Insectary_data'] });
   const saved = await Promise.race([
-    store.updateRecord(record.id, { values: { Sex: 'M' }, requestId: 'during-sync-0001' }, user),
+    store.updateRecord(record.id, { values: { Sex: 'male' }, requestId: 'during-sync-0001' }, user),
     new Promise((_, reject) => setTimeout(() => reject(new Error('edit blocked behind sync read')), 500)),
   ]);
   assert.equal(saved.status, 'verified');
   release();
   const status = await syncing;
   assert.equal(status.skipped, 1);
-  assert.equal(store.getRecord(record.id).values.Sex, 'M');
+  assert.equal(store.getRecord(record.id).values.Sex, 'male');
   store.close();
 });
 
@@ -237,7 +237,7 @@ test('a moved source row is resolved by a unique identity before writing', async
   const { store, sheets } = await fixture();
   const record = store.getRecordBySheetRow('Insectary_data', 2);
   sheets.rows.get('Insectary_data').find(r => r.row === 2).row = 5;
-  const result = await store.updateRecord(record.id, { values: { Sex: 'M' }, requestId: 'moved-row-0001' }, user);
+  const result = await store.updateRecord(record.id, { values: { Sex: 'male' }, requestId: 'moved-row-0001' }, user);
   assert.equal(result.record.row, 5);
   assert.equal(store.getRecord(record.id).row, 5);
   assert.equal(store.getRecordBySheetRow('Insectary_data', 2), null);
@@ -248,7 +248,7 @@ async function twoEditsFixture() {
   const { store, sheets } = await fixture();
   const insect = store.getRecordBySheetRow('Insectary_data', 2),
     collection = store.getRecordBySheetRow('Collection_data', 2);
-  const first = await store.updateRecord(insect.id, { values: { Sex: 'M' }, requestId: 'source-edit-0001' }, user);
+  const first = await store.updateRecord(insect.id, { values: { Sex: 'male' }, requestId: 'source-edit-0001' }, user);
   const second = await store.updateRecord(
     collection.id,
     { values: { SPECIES: 'Changed' }, requestId: 'source-edit-0002' },
@@ -261,12 +261,12 @@ test('undo of several records is atomic, and a rejected write can be retried wit
   const { store, sheets, insect, collection, actionIds } = await twoEditsFixture();
   sheets.failNextWrite = Object.assign(new Error('Google Sheets 400: bad request'), { status: 400 });
   await assert.rejects(store.undo({ actionIds, requestId: 'multi-undo-0001' }, user), e => e.code === 'WRITE_REJECTED');
-  assert.equal(store.getRecord(insect.id).values.Sex, 'M');
+  assert.equal(store.getRecord(insect.id).values.Sex, 'male');
   assert.equal(store.getRecord(collection.id).values.SPECIES, 'Changed');
   const result = await store.undo({ actionIds, requestId: 'multi-undo-0001' }, user);
   assert.equal(result.status, 'verified');
   assert.equal(result.actions.length, 1, 'one reversal action covers both rows');
-  assert.equal(store.getRecord(insect.id).values.Sex, 'F');
+  assert.equal(store.getRecord(insect.id).values.Sex, 'female');
   assert.equal(store.getRecord(collection.id).values.SPECIES, 'Species');
   assert.equal((await store.undo({ actionIds, requestId: 'multi-undo-0001' }, user)).action.id, result.action.id);
   store.close();
@@ -281,6 +281,6 @@ test('undo rejects a newer same-field edit even when its value returns, and writ
     e => e.code === 'UNDO_CONFLICT' && e.details.conflicts.some(c => c.field === 'SPECIES'),
   );
   assert.equal(store.getRecord(collection.id).values.SPECIES, 'Changed');
-  assert.equal(store.getRecord(insect.id).values.Sex, 'M');
+  assert.equal(store.getRecord(insect.id).values.Sex, 'male');
   store.close();
 });

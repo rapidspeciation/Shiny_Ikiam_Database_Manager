@@ -17,14 +17,25 @@ function byPrefix<T extends string>(typed: string, names: Record<T, string[]>): 
   return hits.length === 1 ? hits[0] : null
 }
 
-/** ♀ / ♂ / ?, the sheet's values, or the start of the words the team writes (he, fe, ma…), as the sheet's Sex values. */
-export function parseSex(text: string): '' | 'female' | 'male' | 'NA' {
+/**
+ * ♀ / ♂, the sheet's values, or the start of the words the team writes (he,
+ * fe, ma…), as Collection_data's Sex values. A trailing "?" (female?, f ?,
+ * female_?) means unsure; "?" alone or NA means not recorded (NOT_COLLECTED).
+ */
+export function parseSex(text: string): '' | 'female' | 'male' | 'female ?' | 'male ?' | 'NOT_COLLECTED' {
   const t = text.trim().toLowerCase()
   if (!t) return ''
-  if (t.startsWith('♀')) return 'female'
-  if (t.startsWith('♂')) return 'male'
-  if (/^(\?|na|n\/a|not_collected|unknown|desconocido)$/.test(t)) return 'NA'
-  return byPrefix(t, { female: ['female', 'hembra'], male: ['male', 'macho'] }) ?? ''
+  if (/^(\?|na|n\/a|not(_collected)?|unknown|desconocido)$/.test(t) || byPrefix(t, { NOT_COLLECTED: ['not_collected'] }))
+    return 'NOT_COLLECTED'
+  const unsure = /[\s_]*\?$/.test(t)
+  const word = t.replace(/[\s_]*\?$/, '')
+  const sex = word.startsWith('♀')
+    ? 'female'
+    : word.startsWith('♂')
+      ? 'male'
+      : byPrefix(word, { female: ['female', 'hembra'], male: ['male', 'macho'] })
+  if (!sex) return ''
+  return unsure ? `${sex} ?` : sex
 }
 
 /** Release_Collect values, the Spanish names, or the start of either (col_p, pres, i…). */

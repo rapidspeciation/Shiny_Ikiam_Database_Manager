@@ -9,7 +9,8 @@ import { isBlank } from '../lib/cells'
 import { isoToSerial, todayIso } from '../lib/dates'
 import { errorText, notify } from '../lib/notice'
 import { listColumn } from '../lib/options'
-import { COLUMNS, FATES, HEADERS, SEX_VALUES, type Column, type Draft, type Fate } from '../lib/collect'
+import { listProblem, verificationsFor } from '../lib/verifications'
+import { COLUMNS, FATES, HEADERS, SEX_VALUES, insectarySex, type Column, type Draft, type Fate } from '../lib/collect'
 import { parseBlock, parseCamTube, parseFate, parseSex, parseTime } from '../lib/paste'
 import { persistentRef } from '../lib/persist'
 import { orderColumns } from '../lib/rows'
@@ -363,6 +364,22 @@ function idProblem(d: Draft): string | null {
   if (collected) return `${d.insectaryId} ya está en Collection_data (fila ${collected})`
   return null
 }
+/**
+ * The sheet's lists for the columns typed in the list (Collection_data): a
+ * species not in Taxonomy, a place not in Location_data, a purpose or sex not
+ * in Lists. They are strict in the sheet, so saving waits until they are fixed.
+ */
+const collectionRules = computed(() => verificationsFor(MODULE))
+const LISTED: Partial<Record<Column, string>> = {
+  location: 'Collection_location',
+  species: 'SPECIES',
+  sex: 'Sex',
+  purpose: 'Purpose',
+}
+function cellProblem(d: Draft, column: Column): string | null {
+  const field = LISTED[column]
+  return field ? listProblem(collectionRules.value, field, d[column as 'species']) : null
+}
 const problems = computed(() => [
   ...(emptyCount.value ? [`${emptyCount.value} filas vacías`] : []),
   ...drafts.value.flatMap((d, i) => {
@@ -374,6 +391,10 @@ const problems = computed(() => [
     if (d.fate === 'insectario' && !d.insectaryId) out.push(`fila ${n}: no quedan Insectary IDs libres`)
     const idIssue = idProblem(d)
     if (idIssue) out.push(`fila ${n}: ${idIssue}`)
+    for (const column of Object.keys(LISTED) as Column[]) {
+      const issue = cellProblem(d, column)
+      if (issue) out.push(`fila ${n}: ${LISTED[column]} ${issue}`)
+    }
     if (d.fate === 'preservada' && (!d.cam || !d.tube)) out.push(`fila ${n}: falta CAM o tubo`)
     return out
   }),
@@ -443,7 +464,7 @@ const insectaryRow = (d: Draft): Record<string, CellValue> => ({
   'CLUTCH NUMBER': 'NA',
   Stock_of_origin: 'NA',
   SPECIES: [d.species, d.subspecies].filter(s => s && s !== 'NA').join(' '),
-  Sex: d.sex,
+  Sex: insectarySex(d.sex),
   Collection_location: d.location,
   Intro2Insectary_date: serial(header.value.date),
 })
@@ -604,6 +625,7 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         :purposes="options.Purpose || []"
         :paste="pasteText"
         :id-problem="idProblem"
+        :cell-problem="cellProblem"
         @edit="editCell"
         @remove="remove"
         @notice="notify"
@@ -657,6 +679,8 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
                 <input
                   v-model="d.location"
                   data-col="location"
+                  :class="{ 'border-red-500 bg-red-50': cellProblem(d, 'location') }"
+                  :title="cellProblem(d, 'location') || undefined"
                   class="field-input w-44"
                   list="collect-places"
                   @paste="onPaste($event, i, 'location')"
@@ -667,6 +691,8 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
                 <input
                   v-model="d.species"
                   data-col="species"
+                  :class="{ 'border-red-500 bg-red-50': cellProblem(d, 'species') }"
+                  :title="cellProblem(d, 'species') || undefined"
                   class="field-input w-48"
                   list="collect-species"
                   @paste="onPaste($event, i, 'species')"
@@ -742,6 +768,8 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
                 <input
                   v-model="d.purpose"
                   data-col="purpose"
+                  :class="{ 'border-red-500 bg-red-50': cellProblem(d, 'purpose') }"
+                  :title="cellProblem(d, 'purpose') || undefined"
                   class="field-input w-28"
                   list="collect-purposes"
                   @paste="onPaste($event, i, 'purpose')"
