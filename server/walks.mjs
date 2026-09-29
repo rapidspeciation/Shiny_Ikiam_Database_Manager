@@ -64,13 +64,18 @@ function taxonomy(store) {
   return out;
 }
 
-/** Collection_data columns that are formulas in the next unused (pre-made) row: never typed. */
+/**
+ * Collection_data columns that are formulas in the next unused (pre-made) row: never typed.
+ * When those rows have run out the save makes more as copies of the last row with formulas.
+ */
 function createFormulas(rows) {
   let last = -1;
   rows.forEach((r, i) => {
     if (r.observed) last = i;
   });
-  return new Set(rows.slice(last + 1).find(r => !r.observed)?.formulas || []);
+  const next =
+    rows.slice(last + 1).find(r => !r.observed) ?? (last >= 0 && rows[last].formulas.length ? rows[last] : null);
+  return new Set(next?.formulas || []);
 }
 
 /**

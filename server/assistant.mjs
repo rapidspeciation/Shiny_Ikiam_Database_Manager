@@ -12,6 +12,7 @@ import { queueWalk, walkDraft } from './walks.mjs';
 import { claudeAllowed, claudeConfig, prepareWorkspace, runClaude } from './claude.mjs';
 import { KINDS } from './notebook.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
+import { newRowFormulaFields } from './premade.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const bad = (status, code, message) => ({ status, body: { error: { code, message } } });
@@ -549,15 +550,7 @@ export function createAssistant({ store, config = {} }) {
 
   /** Columns that are formulas in the next unused (pre-made) row of a sheet: a new row leaves them. */
   function createFormulaFields(sheet) {
-    const last =
-      db.prepare('SELECT max(row_num) n FROM records WHERE sheet=? AND missing=0 AND observed=1').get(sheet).n ??
-      moduleMap.get(sheet).headerRow;
-    const next = db
-      .prepare(
-        'SELECT formulas_json FROM records WHERE sheet=? AND missing=0 AND observed=0 AND row_num>? ORDER BY row_num LIMIT 1',
-      )
-      .get(sheet, last);
-    return new Set(Object.keys(parse(next?.formulas_json ?? '{}') ?? {}));
+    return newRowFormulaFields(store, sheet);
   }
 
   /**

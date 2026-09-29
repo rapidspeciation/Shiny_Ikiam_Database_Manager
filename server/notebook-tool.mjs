@@ -6,6 +6,7 @@
 // beside the chat. Nothing is written until they apply it.
 
 import { moduleMap } from './schema.mjs';
+import { newRowFormulaFields } from './premade.mjs';
 import { TUBE_FIELD, isIdValue, isUnique } from './verifications.mjs';
 import { listOptions } from './verify.mjs';
 import { KINDS, KIND_IDS, buildReview, checkTranscription, clutchKey, proposalRows, typeOf } from './notebook.mjs';
@@ -99,15 +100,7 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
 
   /** Columns that are formulas in the next unused row of a sheet (a new row leaves them). */
   function newRowFormulas(sheet) {
-    const last =
-      db.prepare('SELECT max(row_num) n FROM records WHERE sheet=? AND missing=0 AND observed=1').get(sheet).n ??
-      moduleMap.get(sheet).headerRow;
-    const next = db
-      .prepare(
-        'SELECT formulas_json FROM records WHERE sheet=? AND missing=0 AND observed=0 AND row_num>? ORDER BY row_num LIMIT 1',
-      )
-      .get(sheet, last);
-    return new Set(Object.keys(parse(next?.formulas_json ?? '{}', {})));
+    return newRowFormulaFields(store, sheet);
   }
 
   /** A page may be matched several times while it is corrected: the slower lookups are kept a few seconds. */

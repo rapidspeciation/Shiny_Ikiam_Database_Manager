@@ -9,7 +9,8 @@
 import { randomUUID } from 'node:crypto';
 import { comparable, isSumField, labelFor, moduleMap, simpleSum, validateValues } from './schema.mjs';
 import { hasDateFormat, hasTimeFormat, rowKey, rowValues } from './sheets.mjs';
-import { describeProblems, headerLayout, sameLayout } from './columns.mjs';import { TUBE_FIELD, UNIQUE, isIdValue, isUnique } from './verifications.mjs';
+import { describeProblems, headerLayout, sameLayout } from './columns.mjs';
+import { ensurePremadeRows } from './premade.mjs';import { TUBE_FIELD, UNIQUE, isIdValue, isUnique } from './verifications.mjs';
 import { listOptions, listProblem } from './verify.mjs';
 
 /** Where a write came from. Chosen by the server, never by the client. */
@@ -85,6 +86,9 @@ export async function applyBatch(store, body, user, { source = 'app', reverses =
       plan = planFor(store, source, input);
     }
     throwIfConflicts(plan, skipped);
+    // New rows past the sheet's pre-made rows would be bare (no formulas, no dropdowns):
+    // make more pre-made rows first, as the team would by dragging the last one down.
+    await ensurePremadeRows(store, plan.newRowNeeds());
 
     const live = await store.sheets.readRows(plan.readTargets());
     await plan.resolve(live);
