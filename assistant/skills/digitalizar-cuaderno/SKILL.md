@@ -45,7 +45,10 @@ is written until the person applies it.
    unless it returned `applied`.
 6. **Corrections** ("la línea 5 es macho", "el 3 es 8"): call `match_notebook`
    again with the whole page corrected (the corrected cell without confidence)
-   and `replaceProposalId` = the page's pending proposal. Say what changed.
+   and `replaceProposalId` = the page's pending proposal: the same table
+   changes in place beside the chat. Cells the person corrected by hand in the
+   table are kept; if your new reading of one differs it comes back in
+   `conflicts`: say so. Say what changed.
 
 Never guess to fill a gap, never invent IDs, CAMs, tubes or dates, and never
 propose with `propose_changes` what `match_notebook` can match.

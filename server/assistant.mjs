@@ -236,6 +236,64 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'update_proposal',
+      description:
+        "Revise a pending proposal in place (the person sees the table change live): when the person corrects something ('la especie es X', 'quita la fila 3', 'falta el colector'), update the SAME proposal instead of making a new one. rows = cells of rows already in it, by their index (null empties a cell of a new row, or drops a proposed change of an existing row); changes / newRows = more rows (a recordId already in it is merged into its row); removeRows = indexes to take out. Every value is checked as in propose_changes (nothing is saved if one fails). Cells the person edited in the table are theirs: they come back as conflicts and are kept; tell the person, and set overridePersonEdits only when they ask you to replace them. Returns the proposal's rows with their index.",
+      parameters: {
+        type: 'object',
+        properties: {
+          proposalId: { type: 'string' },
+          rows: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                index: { type: 'integer', description: 'The row index in the proposal (propose_changes / get_proposal)' },
+                values: { type: 'object', description: 'Column → new value (null to empty); dates as YYYY-MM-DD, times as H:MM' },
+                note: { type: 'string' },
+              },
+              required: ['index'],
+            },
+          },
+          changes: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: { recordId: { type: 'string' }, values: { type: 'object' }, note: { type: 'string' } },
+              required: ['recordId', 'values'],
+            },
+          },
+          newRows: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: { sheet: { type: 'string' }, values: { type: 'object' }, note: { type: 'string' } },
+              required: ['sheet', 'values'],
+            },
+          },
+          removeRows: { type: 'array', items: { type: 'integer' } },
+          reason: { type: 'string', description: 'A new title for the proposal, only if its subject changed' },
+          overridePersonEdits: {
+            type: 'boolean',
+            description: 'Replace cells the person edited by hand; only when the person asked for it',
+          },
+        },
+        required: ['proposalId'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_proposal',
+      description:
+        "A proposal as the person sees it now: each row with its index, values (dates YYYY-MM-DD), note and personEdits (cells the person corrected by hand in the table, with what you had proposed). Read it when the person says they changed the table, before update_proposal on a proposal you did not just make, and before apply_proposal if they edited it.",
+      parameters: { type: 'object', properties: { proposalId: { type: 'string' } }, required: ['proposalId'] },
+    },
+  },
 ];
 
 function init(db) {
@@ -267,6 +325,11 @@ function init(db) {
   if (!has('ai_proposals', 'created_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN created_json TEXT');
   // Issues of the Revisión tab a proposal fixes (list_agreed_fixes): marked applied when it is written.
   if (!has('ai_proposals', 'issues_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN issues_json TEXT');
+  // Proposals are revised in place (update_proposal, the person's edits in the table): a revision per
+  // proposal, when and by whom ('ai' or 'person') it last changed.
+  if (!has('ai_proposals', 'revision')) db.exec('ALTER TABLE ai_proposals ADD COLUMN revision INTEGER NOT NULL DEFAULT 1');
+  if (!has('ai_proposals', 'updated_at')) db.exec('ALTER TABLE ai_proposals ADD COLUMN updated_at TEXT');
+  if (!has('ai_proposals', 'last_by')) db.exec('ALTER TABLE ai_proposals ADD COLUMN last_by TEXT');
   // Personal tokens for agents outside the app (T3 Code projects) to use the same tools.
   db.exec(`CREATE TABLE IF NOT EXISTS ai_tokens (
     token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, label TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT
@@ -488,7 +551,7 @@ export function createAssistant({ store, config = {} }) {
    * A new row for a proposal, checked now as the save will check it (strict lists,
    * IDs already used), so the assistant can correct it before the person sees it.
    */
-  function proposedRow(candidate, index, ids) {
+  function proposedRow(candidate, index, ids, clientId = randomUUID()) {
     const at = `newRows[${index}]`;
     const sheet = String(candidate?.sheet ?? '');
     if (!moduleMap.has(sheet)) return { error: `${at}: unknown sheet ${clip(sheet, 60)}` };
@@ -513,9 +576,7 @@ export function createAssistant({ store, config = {} }) {
       const problem = lists[field]?.strict && listProblem(lists, field, value);
       if (problem) return { error: `${at}: ${problem}` };
     }
-    for (const [field, value] of Object.entries(values)) {
-      if (!isUnique(sheet, field) || !isIdValue(value)) continue;
-      const key = `${TUBE_FIELD.test(field) ? 'tube' : `${sheet}:${field}`}\u0000${String(value).trim()}`;
+    for (const [field, value, key] of uniqueKeys(sheet, values)) {
       const holder = ids.used().get(key)?.[0];
       if (holder) return { error: `${at}: ${value} is already used in ${holder.sheet} row ${holder.row}` };
       if (ids.proposed.has(key)) return { error: `${at}: ${value} appears twice in this proposal` };
@@ -527,7 +588,7 @@ export function createAssistant({ store, config = {} }) {
       change: {
         create: true,
         sheet,
-        clientId: randomUUID(),
+        clientId,
         recordId: null,
         row: null,
         label: clip(identity ?? ([values.SPECIES, time].filter(Boolean).join(' ') || labelFor(sheet, values)), 80),
@@ -539,6 +600,12 @@ export function createAssistant({ store, config = {} }) {
       },
     };
   }
+
+  /** The IDs of a new row that must not be used elsewhere: [field, value, key] (tubes across the workbook). */
+  const uniqueKeys = (sheet, values) =>
+    Object.entries(values)
+      .filter(([field, value]) => isUnique(sheet, field) && isIdValue(value))
+      .map(([field, value]) => [field, value, `${TUBE_FIELD.test(field) ? 'tube' : `${sheet}:${field}`}\u0000${String(value).trim()}`]);
 
   const idsFor = () => {
     let index;
@@ -617,9 +684,10 @@ export function createAssistant({ store, config = {} }) {
   /** A drafted proposal saved for review: it shows at once in Cambios propuestos (and the chat). */
   function saveProposal(changes, reason, context, issueIds = []) {
     const id = randomUUID();
+    const time = now();
     db.prepare(
-      'INSERT INTO ai_proposals (id,thread_id,owner_id,changes_json,reason,status,created_at,issues_json) VALUES (?,?,?,?,?,?,?,?)',
-    ).run(id, context.threadId, owner(context.user), json(changes), clip(reason, 500), 'pending', now(), issueIds.length ? json(issueIds) : null);
+      'INSERT INTO ai_proposals (id,thread_id,owner_id,changes_json,reason,status,created_at,issues_json,updated_at,last_by) VALUES (?,?,?,?,?,?,?,?,?,?)',
+    ).run(id, context.threadId, owner(context.user), json(changes), clip(reason, 500), 'pending', time, issueIds.length ? json(issueIds) : null, time, 'ai');
     const proposal = { id, changes, reason: clip(reason, 500), status: 'pending' };
     context.proposals.push(proposal);
     changed(owner(context.user));
@@ -639,7 +707,301 @@ export function createAssistant({ store, config = {} }) {
       rows: changes.length,
       status: 'waiting for the person to confirm',
       ...(dropped.length ? { leftOut: `Formula columns left out of the new rows: ${dropped.join(', ')}` } : {}),
+      // Row indexes for update_proposal (new rows first, then edits of existing rows).
+      table: changes.map((c, index) => ({ index, sheet: c.sheet, label: c.label, ...(c.create ? { create: true } : { row: c.row }) })),
     };
+  }
+
+  // ------------------------------------------------------------ proposals revised in place
+  /*
+   * A pending proposal changes while the person reviews it: the assistant
+   * revises it (update_proposal, a notebook page matched again) and the person
+   * corrects cells in the table (POST …/edit). Each row keeps its key (the
+   * clientId of a new row, the recordId of an edited one) and the cells the
+   * person typed: personEdits = field → { ai: what the assistant had proposed
+   * (absent: no change to that cell), by, at }. The assistant does not
+   * overwrite those unless asked; it gets them back as conflicts.
+   */
+  const rowKey = change => change.clientId ?? change.recordId;
+  const proposedOf = (change, field) => (field in change.values ? change.values[field] : undefined);
+  const same = (a, b) => comparable(a) === comparable(b);
+  /** A value as the save will store it (dates as serials, times as day fractions), to compare it. */
+  function normal(sheet, field, value) {
+    try {
+      const out = validateValues(sheet, withSheetTimes({ [field]: value }))[field];
+      return out?.formula ?? out;
+    } catch {
+      return value;
+    }
+  }
+
+  /** A cell of a row set (not yet checked). In an existing row, the sheet's own value means no change there. */
+  function setCell(change, field, value) {
+    const values = { ...change.values };
+    if (!change.create && !isSumField(change.sheet, field)) {
+      const record = store.getRecord(change.recordId);
+      if (same(normal(change.sheet, field, value), record?.values?.[field] ?? null)) {
+        delete values[field];
+        return { ...change, values };
+      }
+    }
+    if (value === null && change.create) delete values[field];
+    else values[field] = value;
+    return { ...change, values };
+  }
+
+  /** One row checked again as propose_changes checks it: { change, dropped } or { error }. */
+  function redraftRow(change, index, others, used) {
+    const personEdits = change.personEdits && Object.keys(change.personEdits).length ? change.personEdits : undefined;
+    const keep = fresh => ({ ...change, ...fresh, personEdits });
+    if (!Object.keys(change.values).length)
+      return { change: keep(change.create ? { values: {} } : { values: {}, before: {}, replaceFormula: [] }), dropped: [] };
+    if (change.create) {
+      const proposed = new Set(others.filter(c => c.create).flatMap(c => uniqueKeys(c.sheet, c.values).map(k => k[2])));
+      const out = proposedRow({ sheet: change.sheet, values: change.values, note: change.note }, index, { proposed, used }, change.clientId);
+      // Only formula columns: they are left out, as an empty row.
+      if (/the new row has no values$/.test(out.error ?? ''))
+        return { change: keep({ values: {} }), dropped: Object.keys(change.values) };
+      if (out.error) return { error: out.error.replace(/^newRows\[\d+\]: /, '') };
+      const { dropped = [], ...fresh } = out.change;
+      return { change: { ...keep(fresh), dropped: undefined }, dropped };
+    }
+    const out = draftChanges({ changes: [{ recordId: change.recordId, values: change.values, note: change.note }] });
+    if (out.error === 'Every proposed value is already in the sheet')
+      return { change: keep({ values: {}, before: {}, replaceFormula: [] }), dropped: [] };
+    if (out.error) return { error: out.error };
+    return { change: keep(out.changes[0]), dropped: [] };
+  }
+
+  /**
+   * Revises a proposal's rows. `by`: 'ai' or 'person'. ops: set [{ ref (index or
+   * key), values, note, before }], remove [ref], add { changes, newRows } (the
+   * assistant's new rows), addEmpty [{ sheet }] (an empty new row the person fills).
+   * Each cell is checked as it is set: a refused cell keeps its value (for the
+   * assistant the caller refuses the whole revision).
+   */
+  function reviseChanges(changes, ops, { by, force = false, user } = {}) {
+    let rows = changes.map(c => ({ ...c, values: { ...c.values }, ...(c.personEdits ? { personEdits: { ...c.personEdits } } : {}) }));
+    const find = ref => (typeof ref === 'number' ? (rows[ref] ? ref : -1) : rows.findIndex(c => rowKey(c) === ref));
+    const out = { conflicts: [], rejected: [], overrode: [], leftOut: [] };
+    let index;
+    const used = () => (index ??= uniqueIdIndex(store));
+    const where = i => ({ index: i, key: rowKey(rows[i]), label: rows[i].label, sheet: rows[i].sheet });
+    const who = user ? clip(user.displayName || user.username || owner(user), 80) : 'person';
+
+    for (const op of ops.set ?? []) {
+      const i = find(op.ref);
+      if (i < 0) {
+        out.rejected.push({ ref: op.ref, message: `Row ${clip(op.ref, 60)} is not in the proposal` });
+        continue;
+      }
+      if (typeof op.note === 'string' && by === 'ai') rows[i] = { ...rows[i], note: clip(op.note, 300) };
+      const values = op.values && typeof op.values === 'object' && !Array.isArray(op.values) ? op.values : {};
+      for (const [field, raw] of Object.entries(values)) {
+        const row = rows[i];
+        const value = raw === '' || raw === undefined ? null : raw;
+        const current = proposedOf(row, field);
+        const mark = row.personEdits?.[field];
+        if (by === 'ai' && mark && !force) {
+          if (!same(normal(row.sheet, field, value), current))
+            out.conflicts.push({ ...where(i), field, person: current ?? null, yours: value });
+          continue;
+        }
+        const drafted = redraftRow(setCell(row, field, value), i, rows.filter((_, j) => j !== i), used);
+        if (drafted.error || drafted.dropped.includes(field)) {
+          const message = drafted.error ?? `${field} is a formula in the new row; it is left empty`;
+          if (drafted.error || by === 'person') out.rejected.push({ ...where(i), field, message });
+          else out.leftOut.push(field);
+          if (drafted.error) continue;
+        }
+        const next = drafted.change;
+        const after = proposedOf(next, field);
+        const marks = { ...next.personEdits };
+        if (by === 'ai') delete marks[field];
+        else {
+          const ai = mark ? mark.ai : current;
+          // What the person saw when they started typing was replaced by the assistant meanwhile.
+          if (op.before && field in op.before && !same(op.before[field], current) && !same(current, after))
+            out.overrode.push({ ...where(i), field, ai: current ?? null });
+          if (same(after, ai)) delete marks[field];
+          else marks[field] = { ...(ai === undefined ? {} : { ai }), by: who, at: now() };
+        }
+        rows[i] = { ...next, personEdits: Object.keys(marks).length ? marks : undefined };
+      }
+    }
+
+    const removing = new Set();
+    for (const ref of ops.remove ?? []) {
+      const i = find(ref);
+      if (i < 0) continue;
+      if (by === 'ai' && !force && Object.keys(rows[i].personEdits ?? {}).length) {
+        out.conflicts.push({ ...where(i), field: null, message: 'The person edited this row in the table; it was kept' });
+        continue;
+      }
+      removing.add(i);
+    }
+    rows = rows.filter((_, i) => !removing.has(i));
+
+    const add = ops.add;
+    if (add && ((add.changes ?? []).length || (add.newRows ?? []).length)) {
+      const proposed = new Set(rows.filter(c => c.create).flatMap(c => uniqueKeys(c.sheet, c.values).map(k => k[2])));
+      const drafted = draftChanges(add, { proposed, used });
+      if (drafted.error) out.rejected.push({ message: drafted.error });
+      else {
+        rows.push(...drafted.changes.map(({ dropped, ...c }) => c));
+        out.leftOut.push(...drafted.changes.flatMap(c => c.dropped ?? []));
+      }
+    }
+    for (const { sheet } of ops.addEmpty ?? []) {
+      if (!moduleMap.has(sheet)) continue;
+      rows.push({ create: true, sheet, clientId: randomUUID(), recordId: null, row: null, label: '', before: {}, values: {}, replaceFormula: [], note: '' });
+    }
+    if (rows.length > 100) out.rejected.push({ message: 'At most 100 rows per proposal' });
+    out.leftOut = [...new Set(out.leftOut)];
+    return { changes: rows, ...out };
+  }
+
+  /** Saves a revised proposal (only while pending): its revision goes up and the Asistente tab follows it at once. */
+  function saveRevision(proposal, changes, by, reason = null) {
+    const row = db
+      .prepare(
+        "UPDATE ai_proposals SET changes_json = ?, reason = coalesce(?, reason), revision = revision + 1, updated_at = ?, last_by = ? WHERE id = ? AND status = 'pending' RETURNING revision",
+      )
+      .get(json(changes), reason, now(), by, proposal.id);
+    if (row) changed(proposal.owner_id);
+    return row?.revision ?? null;
+  }
+
+  const ownProposal = (id, user) =>
+    db.prepare('SELECT * FROM ai_proposals WHERE id = ? AND owner_id = ?').get(String(id ?? ''), owner(user));
+  const ownProposalListed = id =>
+    db.prepare('SELECT p.*, t.title FROM ai_proposals p JOIN ai_threads t ON t.id = p.thread_id WHERE p.id = ?').get(id);
+  /** A proposal as Cambios propuestos lists it (with the conversation it comes from). */
+  const listedView = r => ({
+    ...proposalView({ id: r.id, changes: [], reason: r.reason, status: r.status }, r),
+    createdAt: r.created_at,
+    source: r.title,
+  });
+
+  /** The rows of a proposal as the assistant reads them: index, values with readable dates, the person's edits. */
+  function proposalTable(changes) {
+    const readable = (sheet, field, value) =>
+      moduleMap.get(sheet)?.fields.find(f => f.key === field)?.type === 'date' && typeof value === 'number' ? isoDate(value) : value;
+    return changes.map((c, index) => ({
+      index,
+      sheet: c.sheet,
+      label: c.label,
+      ...(c.create ? { create: true } : { row: c.row, recordId: c.recordId }),
+      values: Object.fromEntries(Object.entries(c.values).map(([f, v]) => [f, readable(c.sheet, f, v)])),
+      ...(c.note ? { note: c.note } : {}),
+      ...(c.personEdits
+        ? {
+            personEdits: Object.fromEntries(
+              Object.entries(c.personEdits).map(([f, m]) => [
+                f,
+                {
+                  value: readable(c.sheet, f, proposedOf(c, f) ?? null),
+                  youProposed: 'ai' in m ? readable(c.sheet, f, m.ai) : 'no change',
+                },
+              ]),
+            ),
+          }
+        : {}),
+    }));
+  }
+
+  function getProposal(args, context) {
+    const proposal = ownProposal(args.proposalId, context.user);
+    if (!proposal) return { error: 'Proposal not found' };
+    return {
+      proposalId: proposal.id,
+      status: proposal.status,
+      revision: proposal.revision,
+      reason: proposal.reason,
+      lastChangedBy: proposal.last_by ?? 'ai',
+      rows: proposalTable(parse(proposal.changes_json) ?? []),
+    };
+  }
+
+  /** update_proposal: the assistant revises a pending proposal the person is looking at. */
+  function updateProposal(args, context) {
+    if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot propose edits' };
+    const proposal = ownProposal(args.proposalId, context.user);
+    if (!proposal) return { error: 'Proposal not found' };
+    if (proposal.status !== 'pending')
+      return { error: `The proposal is ${proposal.status}; draft a new one with propose_changes` };
+    const changes = parse(proposal.changes_json) ?? [];
+    const set = (Array.isArray(args.rows) ? args.rows : []).map(r => ({
+      ref: Number.isInteger(r?.index) ? r.index : -1,
+      values: r?.values,
+      note: r?.note,
+    }));
+    const add = { changes: [], newRows: Array.isArray(args.newRows) ? args.newRows : [] };
+    // A row already in the proposal is revised, not added twice.
+    for (const c of Array.isArray(args.changes) ? args.changes : []) {
+      const i = changes.findIndex(r => !r.create && r.recordId === String(c?.recordId ?? ''));
+      if (i >= 0) set.push({ ref: i, values: c.values, note: c.note });
+      else add.changes.push(c);
+    }
+    const remove = (Array.isArray(args.removeRows) ? args.removeRows : []).filter(Number.isInteger);
+    if (!set.length && !remove.length && !add.changes.length && !add.newRows.length && !args.reason)
+      return { error: 'Give rows, changes, newRows or removeRows' };
+    const out = reviseChanges(changes, { set, remove, add }, { by: 'ai', force: !!args.overridePersonEdits, user: context.user });
+    if (out.rejected.length) return { error: 'Nothing was changed', problems: out.rejected.slice(0, 20) };
+    const reason = args.reason ? clip(args.reason, 500) : null;
+    const unchanged = json(out.changes) === json(changes) && !reason;
+    const revision = unchanged ? proposal.revision : saveRevision(proposal, out.changes, 'ai', reason);
+    if (revision === null) return { error: 'The proposal is no longer pending' };
+    return {
+      proposalId: proposal.id,
+      revision,
+      ...(unchanged ? { unchanged: true } : {}),
+      rows: proposalTable(out.changes),
+      ...(out.leftOut.length ? { leftOut: `Formula columns left out of the new rows: ${out.leftOut.join(', ')}` } : {}),
+      ...(out.conflicts.length
+        ? {
+            conflicts: out.conflicts,
+            note: 'The person edited these cells by hand; they were kept. Tell the person, and only replace them (overridePersonEdits) if they ask.',
+          }
+        : {}),
+    };
+  }
+
+  /**
+   * A notebook page matched again (match_notebook with replaceProposalId) takes
+   * the place of the page's proposal, keeping its id; the person's cells stay,
+   * and are conflicts where the new match reads something else.
+   */
+  function carryPersonEdits(old, fresh, user) {
+    const sameRow = (a, b) =>
+      a.create ? b.create && a.sheet === b.sheet && !!a.label && a.label === b.label : !b.create && a.recordId === b.recordId;
+    // New rows keep their key, so the table keeps its ticks.
+    const rows = fresh.map(c => {
+      const before = c.create && old.find(o => sameRow(o, c));
+      return before ? { ...c, clientId: before.clientId } : c;
+    });
+    const conflicts = [];
+    const set = [];
+    for (const o of old) {
+      const edits = Object.entries(o.personEdits ?? {});
+      if (!edits.length) continue;
+      const i = rows.findIndex(c => sameRow(o, c));
+      if (i < 0) {
+        conflicts.push({ label: o.label, sheet: o.sheet, field: null, message: 'A row the person edited is no longer in the match; their edits were dropped' });
+        continue;
+      }
+      for (const [field, mark] of edits) {
+        const person =
+          field in o.values ? o.values[field] : o.create ? null : (store.getRecord(o.recordId)?.values?.[field] ?? null);
+        const ai = proposedOf(rows[i], field);
+        if (ai !== undefined && !same(ai, person) && !same(ai, mark.ai))
+          conflicts.push({ index: i, label: rows[i].label, field, person, yours: ai });
+        set.push({ ref: i, values: { [field]: person } });
+      }
+    }
+    const out = reviseChanges(rows, { set }, { by: 'person', user });
+    for (const r of out.rejected) conflicts.push({ ...r, message: `The person's value no longer fits: ${r.message}` });
+    return { changes: out.changes, conflicts };
   }
 
   /** Writes the chosen rows of a proposal as one save (undoable in Historial). */
@@ -649,10 +1011,10 @@ export function createAssistant({ store, config = {} }) {
     if (!EDITORS.includes(user.role))
       throw Object.assign(new Error('Your role cannot apply changes.'), { status: 403, code: 'forbidden' });
     const all = parse(proposal.changes_json) ?? [];
-    const chosen =
-      Array.isArray(indexes) && indexes.length
-        ? [...new Set(indexes.map(Number))].filter(i => all[i])
-        : all.map((_, i) => i);
+    // A row left without values (the person emptied it in the table) has nothing to write.
+    const chosen = (
+      Array.isArray(indexes) && indexes.length ? [...new Set(indexes.map(Number))].filter(i => all[i]) : all.map((_, i) => i)
+    ).filter(i => Object.keys(all[i].values ?? {}).length);
     if (!chosen.length) throw Object.assign(new Error('No rows selected.'), { status: 400, code: 'nothing_selected' });
     const claimed = db
       .prepare("UPDATE ai_proposals SET status = 'applying' WHERE id = ? AND status = 'pending'")
@@ -686,31 +1048,56 @@ export function createAssistant({ store, config = {} }) {
   /**
    * A proposal as the review table shows it: each row with the current values of
    * the changed columns. New rows have no current values (and, once written, their row).
+   * `row` is its ai_proposals row: its rows as last revised, revision, status.
+   * A pending one also gives what the table needs to edit it: every current value
+   * of the edited rows (columns can be added), their formula columns, and those
+   * of the pre-made rows new rows go into.
    */
   function proposalView(proposal, row) {
-    const fields = [...new Set(proposal.changes.flatMap(c => Object.keys(c.values)))];
-    const sheets = [...new Set(proposal.changes.map(c => c.sheet))];
+    const changes = (row?.changes_json && parse(row.changes_json)) || proposal.changes;
+    const status = row?.status ?? proposal.status;
+    const open = status === 'pending';
+    const fields = [...new Set(changes.flatMap(c => [...Object.keys(c.values), ...Object.keys(c.personEdits ?? {})]))];
+    const sheets = [...new Set(changes.map(c => c.sheet))];
     const typeOf = f =>
       sheets.map(s => moduleMap.get(s)?.fields.find(x => x.key === f)?.type).find(Boolean) ?? 'text';
     const created = parse(row?.created_json ?? 'null') ?? {};
+    const locked = (sheet, keys) => keys.filter(f => !TYPED_OVER_FORMULA[sheet]?.has(f) && !isSumField(sheet, f));
+    const newRowFormulas = open
+      ? Object.fromEntries(
+          sheets.filter(s => changes.some(c => c.create && c.sheet === s)).map(s => [s, locked(s, [...createFormulaFields(s)])]),
+        )
+      : {};
     return {
       ...proposal,
-      status: row?.status ?? proposal.status,
+      status,
+      revision: row?.revision ?? 1,
+      updatedAt: row?.updated_at ?? null,
+      lastBy: row?.last_by ?? null,
       appliedAt: row?.applied_at ?? null,
       applied: parse(row?.applied_json ?? 'null'),
       sheets,
       fields,
       types: Object.fromEntries(fields.map(f => [f, typeOf(f)])),
-      changes: proposal.changes.map((change, index) => {
+      newRowFormulas,
+      changes: changes.map((change, index) => {
         const recordId = change.create ? (created[change.clientId] ?? null) : change.recordId;
         const record = recordId ? store.getRecord(recordId) : null;
         return {
           ...change,
+          key: rowKey(change),
           recordId,
           index,
           row: record?.row ?? change.row,
-          label: change.label ?? record?.label,
+          label: change.label || record?.label || '',
           current: change.create ? {} : Object.fromEntries(fields.map(f => [f, record?.values?.[f] ?? null])),
+          // The rest of the row, for columns the person adds to the table.
+          ...(open && !change.create
+            ? {
+                rowValues: Object.fromEntries(Object.entries(record?.values ?? {}).filter(([, v]) => v !== null && v !== '')),
+                formulas: locked(change.sheet, Object.keys(record?.formulas ?? {})),
+              }
+            : {}),
         };
       }),
     };
@@ -803,6 +1190,8 @@ export function createAssistant({ store, config = {} }) {
         collector: args.collector ? clip(args.collector, 120) : undefined,
       });
     if (name === 'propose_changes') return proposeChanges(args, context);
+    if (name === 'update_proposal') return updateProposal(args, context);
+    if (name === 'get_proposal') return getProposal(args, context);
     if (name === 'list_agreed_fixes') return agreedFixes(store, { kind: args.kind ? clip(args.kind, 300) : undefined, limit: args.limit });
     if (name === 'match_notebook') return matchNotebook(args, context);
     if (name === 'apply_proposal') {
@@ -850,6 +1239,7 @@ export function createAssistant({ store, config = {} }) {
       'Reply in Spanish, briefly. Refer to rows by their identifier (e.g. 5VB, CAM078038) and sheet row, never by internal app IDs.',
       'Use the tools to read exact rows before answering. Only claim what the tools show. Never infer survival, fertility, mating, genotype or identity from counts.',
       'Changes are drafted with propose_changes; the person reviews them in a table and confirms. Use apply_proposal only when their latest message explicitly approves a proposal. Never say a change was written unless apply_proposal returned applied.',
+      'When the person corrects a pending proposal ("la especie es X", "quita esa fila"), revise the same one with update_proposal (rows by index) instead of drafting a new one. The person can also edit cells in the table: get_proposal shows their edits (personEdits); never overwrite them unless they ask (update_proposal returns them as conflicts).',
       'check_data lists inconsistencies with ready fixes; queue_wikiloc and get_walk turn a Wikiloc monitoring walk into newRows for propose_changes.',
       '"Aplica las correcciones acordadas": list_agreed_fixes, then ONE propose_changes with its fixes and issueIds, list the tasks (Drive work), and wait for the person to confirm.',
       'A photo of a notebook page, envelope or label: transcribe every line as the digitalizar-cuaderno instructions say, then match_notebook compares it with the sheet and drafts one proposal per page.',
@@ -1003,7 +1393,7 @@ export function createAssistant({ store, config = {} }) {
       const sources = cited.filter(id => context.sources.has(id)).map(id => context.sources.get(id));
       const unique = [...new Map(sources.map(item => [item.id, item])).values()];
       const views = context.proposals.map(p =>
-        proposalView(p, db.prepare('SELECT status,applied_at,applied_json FROM ai_proposals WHERE id = ?').get(p.id)),
+        proposalView(p, db.prepare('SELECT * FROM ai_proposals WHERE id = ?').get(p.id)),
       );
       const message = insertMessage(threadId, 'assistant', answer, unique, context.results, context.proposals);
       return {
@@ -1130,29 +1520,42 @@ export function createAssistant({ store, config = {} }) {
     const editor = EDITORS.includes(context.user.role);
     const replaced = args.replaceProposalId
       ? db
-          .prepare("SELECT id FROM ai_proposals WHERE id = ? AND owner_id = ? AND status = 'pending'")
+          .prepare("SELECT * FROM ai_proposals WHERE id = ? AND owner_id = ? AND status = 'pending'")
           .get(String(args.replaceProposalId), owner(context.user))
       : null;
-    if (replaced && editor) {
-      db.prepare("UPDATE ai_proposals SET status = 'discarded' WHERE id = ? AND status = 'pending'").run(replaced.id);
-      changed(owner(context.user));
-    }
     const { review } = matched;
     // The same rows in another pending proposal: the page matched again, maybe in another conversation.
     const rows = new Set(matched.changes.map(c => c.recordId).filter(Boolean));
     const overlaps = rows.size
       ? db
-          .prepare("SELECT id, reason, changes_json FROM ai_proposals WHERE owner_id = ? AND status = 'pending'")
-          .all(owner(context.user))
+          .prepare("SELECT id, reason, changes_json FROM ai_proposals WHERE owner_id = ? AND status = 'pending' AND id != ?")
+          .all(owner(context.user), replaced?.id ?? '')
           .map(p => ({ id: p.id, reason: p.reason, rows: (parse(p.changes_json) ?? []).filter(c => rows.has(c.recordId)).map(c => c.label) }))
           .filter(p => p.rows.length)
           .map(p => ({ proposalId: p.id, reason: p.reason, rows: p.rows.slice(0, 10), count: p.rows.length }))
       : [];
     const reason = `Cuaderno ${KINDS[review.kind].label} (${review.sheet})${args.title ? `: ${clip(args.title, 120)}` : ''}`;
-    const proposal = editor && matched.changes.length ? saveProposal(matched.changes, reason, context) : null;
+    let proposal = null;
+    let conflicts = [];
+    if (editor && replaced && matched.changes.length) {
+      // The corrected page takes the place of its proposal (same id): the table beside the chat changes in place.
+      const carried = carryPersonEdits(parse(replaced.changes_json) ?? [], matched.changes, context.user);
+      conflicts = carried.conflicts;
+      if (saveRevision(replaced, carried.changes, 'ai', reason) !== null) proposal = { id: replaced.id };
+    } else if (editor && replaced) {
+      db.prepare("UPDATE ai_proposals SET status = 'discarded' WHERE id = ? AND status = 'pending'").run(replaced.id);
+      changed(owner(context.user));
+    }
+    if (editor && matched.changes.length && !proposal) proposal = saveProposal(matched.changes, reason, context);
     return {
       ...matchSummary(matched, proposal?.id),
       ...(replaced ? { replaced: replaced.id } : {}),
+      ...(conflicts.length
+        ? {
+            conflicts,
+            conflictNote: 'Cells the person corrected by hand in the table were kept. Tell the person where your new reading differs.',
+          }
+        : {}),
       ...(overlaps.length ? { overlaps } : {}),
       ...(!editor ? { note: 'This person can only read the workbook: nothing was proposed' } : {}),
     };
@@ -1228,7 +1631,7 @@ export function createAssistant({ store, config = {} }) {
       if (!threadMatch[2] && method === 'GET') {
         const rows = new Map(
           db
-            .prepare('SELECT id,status,applied_at,applied_json FROM ai_proposals WHERE thread_id = ?')
+            .prepare('SELECT * FROM ai_proposals WHERE thread_id = ?')
             .all(record.id)
             .map(item => [item.id, item]),
         );
@@ -1285,19 +1688,54 @@ export function createAssistant({ store, config = {} }) {
       // discarded (or after 20 s), so the Asistente tab shows edits as the assistant drafts them.
       if (query.wait) await waitForChange(owner(user), String(query.revision ?? ''), 20000);
       const revision = revisionOf(owner(user));
-      const rows = db
-        .prepare(
-          `SELECT p.*, t.title FROM ai_proposals p JOIN ai_threads t ON t.id = p.thread_id WHERE p.owner_id = ? ${
-            query.all ? '' : "AND p.status = 'pending'"
-          } ORDER BY p.created_at DESC, p.rowid DESC LIMIT 50`,
-        )
-        .all(owner(user));
-      const proposals = rows.map(r => ({
-        ...proposalView({ id: r.id, changes: parse(r.changes_json) ?? [], reason: r.reason, status: r.status }, r),
-        createdAt: r.created_at,
-        source: r.title,
-      }));
-      return { status: 200, body: { revision, proposals } };
+      const select = `SELECT p.*, t.title FROM ai_proposals p JOIN ai_threads t ON t.id = p.thread_id WHERE p.owner_id = ?`;
+      const order = 'ORDER BY p.created_at DESC, p.rowid DESC';
+      // all=1: the pending ones and the last few reviewed (the panel shows five), not every old proposal on each change.
+      const rows = [
+        ...db.prepare(`${select} AND p.status IN ('pending', 'applying') ${order} LIMIT 50`).all(owner(user)),
+        ...(query.all
+          ? db.prepare(`${select} AND p.status NOT IN ('pending', 'applying') ${order} LIMIT ?`).all(owner(user), Math.min(Number(query.reviewed) || 5, 50))
+          : []),
+      ];
+      return { status: 200, body: { revision, proposals: rows.map(listedView) } };
+    }
+    // A cell edited by the person in the table (Asistente → Cambios propuestos), checked as a save checks it.
+    const editMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/edit$/.exec(path);
+    if (editMatch && method === 'POST') {
+      if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot edit proposals.');
+      const proposal = ownProposal(editMatch[1], user);
+      if (!proposal) return bad(404, 'not_found', 'Proposal not found.');
+      if (proposal.status !== 'pending') return bad(409, 'proposal_used', 'La propuesta ya no está pendiente.');
+      const cells = body.cells ?? [];
+      const scalar = v => v === null || ['string', 'number', 'boolean'].includes(typeof v);
+      if (
+        !Array.isArray(cells) ||
+        cells.length > 2000 ||
+        cells.some(c => typeof c?.key !== 'string' || typeof c.field !== 'string' || c.field.length > 120 || !scalar(c.value ?? null))
+      )
+        return bad(400, 'invalid_cells', 'cells must be a list of { key, field, value }.');
+      const remove = Array.isArray(body.remove) ? body.remove.filter(k => typeof k === 'string').slice(0, 100) : [];
+      const addEmpty = Array.isArray(body.add) ? body.add.filter(a => typeof a?.sheet === 'string').slice(0, 20) : [];
+      const out = reviseChanges(
+        parse(proposal.changes_json) ?? [],
+        {
+          set: cells.map(c => ({
+            ref: c.key,
+            values: { [c.field]: typeof c.value === 'string' ? clip(c.value, 2000) : (c.value ?? null) },
+            ...(c.before !== undefined && scalar(c.before) ? { before: { [c.field]: c.before } } : {}),
+          })),
+          remove,
+          addEmpty,
+        },
+        { by: 'person', user },
+      );
+      if (out.changes.length > 100) return bad(409, 'too_many_rows', 'Una propuesta tiene como máximo 100 filas.');
+      if (json(out.changes) !== proposal.changes_json && saveRevision(proposal, out.changes, 'person') === null)
+        return bad(409, 'proposal_used', 'La propuesta ya no está pendiente.');
+      return {
+        status: 200,
+        body: { proposal: listedView(ownProposalListed(proposal.id)), rejected: out.rejected, overrode: out.overrode },
+      };
     }
     // The obvious fixes of chosen issues as one proposal to confirm (the old Tablas → Revisión de datos list; kept for links and tools).
     if (path === '/api/chat/proposals/from-checks' && method === 'POST') {
@@ -1373,6 +1811,9 @@ export function createAssistant({ store, config = {} }) {
         return bad(400, 'request_id_required', 'A unique requestId of 8 to 120 characters is required.');
       if (body.indexes !== undefined && (!Array.isArray(body.indexes) || body.indexes.some(i => !Number.isInteger(i))))
         return bad(400, 'invalid_indexes', 'indexes must be a list of row numbers.');
+      // The rows were chosen on the revision the table showed: if the assistant changed it since, look again.
+      if (body.revision !== undefined && Number(body.revision) !== proposal.revision)
+        return bad(409, 'proposal_changed', 'La propuesta cambió mientras la revisabas: mira la tabla y vuelve a aplicar.');
       try {
         const out = await applyProposal(proposal, user, { requestId, indexes: body.indexes, reason: body.reason });
         return { status: out.status === 'applied' ? 200 : 409, body: out };

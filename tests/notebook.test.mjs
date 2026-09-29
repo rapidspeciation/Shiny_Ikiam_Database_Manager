@@ -461,6 +461,45 @@ test('match_notebook matches a transcribed page and leaves one proposal beside T
   }
 });
 
+test('a page matched again keeps its proposal, and the cells the person corrected in the table', async () => {
+  const { store, call, http } = await setup();
+  try {
+    const out = await call('match_notebook', PAGE);
+    const first = (await http('GET', '/api/chat/proposals')).body.proposals[0];
+    const dead = first.changes.find(c => c.label === '9VD');
+    assert.equal(dead.values.Death_cause, 'Unknown');
+    // The person corrects a cell in the table.
+    const edited = await http('POST', `/api/chat/proposals/${out.proposalId}/edit`, {
+      cells: [{ key: dead.key, field: 'Death_cause', value: 'Spider' }],
+    });
+    assert.equal(edited.body.proposal.revision, 2);
+
+    // "La línea 2 es macho": the same proposal changes in place and the person's cell stays.
+    const corrected = structuredClone(PAGE);
+    corrected.lines[1] = { ...corrected.lines[1], values: { ...corrected.lines[1].values, Sex: 'male' }, confidence: {}, alternatives: {} };
+    const again = await call('match_notebook', { ...corrected, replaceProposalId: out.proposalId });
+    assert.equal(again.proposalId, out.proposalId);
+    assert.ok(!again.conflicts, 'the new reading of that cell is the same as before');
+    let shown = (await http('GET', '/api/chat/proposals')).body.proposals;
+    assert.equal(shown.length, 1);
+    assert.equal(shown[0].revision, 3);
+    assert.equal(shown[0].changes.find(c => c.label === '8VD').values.Sex, 'male');
+    assert.equal(shown[0].changes.find(c => c.label === '9VD').values.Death_cause, 'Spider');
+
+    // A new reading of the person's cell is a conflict: theirs is kept.
+    corrected.lines[2] = { ...corrected.lines[2], values: { ...corrected.lines[2].values, Death_cause: 'Eaten' } };
+    const third = await call('match_notebook', { ...corrected, replaceProposalId: out.proposalId });
+    assert.deepEqual(
+      third.conflicts.map(c => [c.label, c.field, c.person, c.yours]),
+      [['9VD', 'Death_cause', 'Spider', 'Eaten']],
+    );
+    shown = (await http('GET', '/api/chat/proposals')).body.proposals;
+    assert.equal(shown[0].changes.find(c => c.label === '9VD').values.Death_cause, 'Spider');
+  } finally {
+    store.close();
+  }
+});
+
 test('a clutch page proposes its counts as the notebook sums them, and they are written as such', async () => {
   const { store, call, http } = await setup();
   try {

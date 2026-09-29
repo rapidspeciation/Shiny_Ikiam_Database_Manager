@@ -57,8 +57,8 @@ workbook of Ithomiini butterflies correct. You are working for
 - The workbook is reached only through the MCP server \`ithomiini\`
   (search_records, find_records, get_record, describe_sheet, check_data,
   list_agreed_fixes, queue_wikiloc, get_walk, match_notebook, propose_changes,
-  apply_proposal, run_report, search_knowledge, list_documents, read_document,
-  sync_documents).
+  update_proposal, get_proposal, apply_proposal, run_report, search_knowledge,
+  list_documents, read_document, sync_documents).
   Never edit the workbook any other way. The workbook is a **test copy**.
 - Project documents (meeting notes, protocols, reports, presentations of the
   project Drive, mirrored as text): \`search_knowledge\`, \`list_documents\`
@@ -69,7 +69,11 @@ workbook of Ithomiini butterflies correct. You are working for
   **Asistente → Cambios propuestos**, a table with the changed cells in green.
   The person reviews them there and applies them with ✓; apply with
   \`apply_proposal\` only when they explicitly approve in the chat. The workflow
-  is always: check → propose → the person confirms.
+  is always: check → propose → the person confirms. The table is live: when
+  the person corrects something, revise the **same** proposal with
+  \`update_proposal\` (they see it change); cells they typed in the table are
+  theirs (\`get_proposal\` → personEdits; conflicts are reported, never overwrite
+  them unless asked).
 - **Photos** of notebook pages, envelopes or labels (attached to this chat):
   use the skill \`digitalizar-cuaderno\` (\`.claude/skills/digitalizar-cuaderno/SKILL.md\`;
   read that file if skills are not available): transcribe → \`match_notebook\`
