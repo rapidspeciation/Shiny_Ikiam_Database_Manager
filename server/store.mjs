@@ -7,6 +7,7 @@ import { GoogleSheets, LocalSheets, rowKey, rowValues } from './sheets.mjs';
 import { headerLayout, sameLayout } from './columns.mjs';
 import { applyBatch } from './batch.mjs';
 import { initMonitoring } from './monitoring.mjs';
+import { initHistory } from './history.mjs';
 
 const json = value => JSON.stringify(value);
 const parse = value => (value ? JSON.parse(value) : null);
@@ -44,6 +45,8 @@ export class Store {
     )
       this.db.exec('ALTER TABLE records ADD COLUMN observed INTEGER NOT NULL DEFAULT 1');
     this.db.exec('CREATE INDEX IF NOT EXISTS records_updated ON records(sheet,updated_at)');
+    // The purpose of each save (Colecta, Muertes…), indexes and purposes of older saves (Historial).
+    initHistory(this.db);
     initMonitoring(this.db);
     this.sheets = sheets || (config.localMode ? new LocalSheets(seed || {}) : new GoogleSheets(config));
     this.localMode = this.sheets instanceof LocalSheets;
@@ -243,9 +246,13 @@ export class Store {
    * History with filters. `q` matches the note, a person, or any identifier,
    * field or value in the changes; `from`/`to` are ISO dates (inclusive).
    */
-  getHistory({ recordId, q, source, actor, sheet, status, from, to, limit = 50, offset = 0 } = {}) {
+  getHistory({ recordId, q, source, actor, sheet, status, purpose, from, to, limit = 50, offset = 0 } = {}) {
     const clauses = [];
     const args = [];
+    if (purpose) {
+      clauses.push('a.purpose=?');
+      args.push(purpose);
+    }
     if (recordId) {
       clauses.push('EXISTS(SELECT 1 FROM changes c WHERE c.action_id=a.id AND c.record_id=?)');
       args.push(recordId);
@@ -313,6 +320,7 @@ export class Store {
       actor: r.actor,
       actorName: editor?.display_name || null,
       source: r.source,
+      purpose: r.purpose ?? null,
       createdAt: r.created_at,
       status: r.status,
       reason: r.reason,
@@ -577,7 +585,7 @@ export class Store {
       created = now();
     this.db
       .prepare(
-        'INSERT INTO actions(id,request_id,actor,source,created_at,status,reason,reverses,result_json) VALUES(?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO actions(id,request_id,actor,source,created_at,status,reason,reverses,result_json,purpose) VALUES(?,?,?,?,?,?,?,?,?,?)',
       )
       .run(
         id,
@@ -589,6 +597,7 @@ export class Store {
         'Snapshot comparison; intermediate edits and editor unknown',
         null,
         null,
+        'sheets',
       );
     for (const d of diffs)
       this.db
@@ -872,7 +881,9 @@ export class Store {
     const selected = [];
     for (const actionId of actionIds) {
       const row = this.db.prepare('SELECT * FROM actions WHERE id=?').get(actionId);
-      if (!row || row.status !== 'verified') throw error('INVALID_SELECTION', 'Action is not verified', 409);
+      // Saves confirmed in Google Sheets, and edits read from it (made directly in the sheet).
+      if (!row || !['verified', 'observed'].includes(row.status))
+        throw error('INVALID_SELECTION', 'Action is not verified', 409);
       selected.push(
         ...this.action(row)
           .changes.filter(c => !changeIds || changeIds.includes(c.id))
@@ -898,11 +909,20 @@ export class Store {
       const lastOrdinal = this.db
         .prepare(`SELECT max(rowid) n FROM changes WHERE id IN (${chain.map(() => '?').join(',')})`)
         .get(...chain.map(c => c.id)).n;
-      const later = this.db
+      const laterRows = this.db
         .prepare(
-          `SELECT c.id FROM changes c JOIN actions a ON a.id=c.action_id WHERE c.record_id=? AND c.field=? AND c.rowid>? AND a.status IN ('verified','observed') AND c.id NOT IN (${chain.map(() => '?').join(',')}) LIMIT 1`,
+          `SELECT c.id, c.action_id, a.source, a.reverses FROM changes c JOIN actions a ON a.id=c.action_id WHERE c.record_id=? AND c.field=? AND c.rowid>? AND a.status IN ('verified','observed') AND c.id NOT IN (${chain.map(() => '?').join(',')}) ORDER BY c.rowid`,
         )
-        .get(first.recordId, first.field, lastOrdinal, ...chain.map(c => c.id));
+        .all(first.recordId, first.field, lastOrdinal, ...chain.map(c => c.id));
+      // A later edit that was itself undone cancels out with its undo: the cell is back to this change's value.
+      const cancelled = new Set();
+      laterRows.forEach((u, i) => {
+        if (u.source !== 'undo' || !u.reverses) return;
+        const reversed = u.reverses.split(',');
+        const target = laterRows.slice(0, i).find(r => !cancelled.has(r.id) && reversed.includes(r.action_id));
+        if (target) cancelled.add(target.id).add(u.id);
+      });
+      const later = laterRows.some(r => !cancelled.has(r.id));
       const current = record?.formulas[first.field]
         ? { formula: record.formulas[first.field] }
         : record?.values[first.field];

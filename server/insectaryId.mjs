@@ -159,6 +159,9 @@ export async function applyIdChange(store, body, user) {
     plan.mode === 'move'
       ? `Cambiar Insectary ID ${plan.from} → ${plan.to}`
       : `Intercambiar Insectary ID ${plan.from} ↔ ${plan.to}`;
-  const result = await applyBatch(store, { requestId: body.requestId, reason, edits: plan.edits }, user, { source: 'app' });
+  const result = await applyBatch(store, { requestId: body.requestId, reason, edits: plan.edits }, user, {
+    source: 'app',
+    purpose: 'cambio_id',
+  });
   return { ...result, plan: { ...plan, edits: undefined } };
 }

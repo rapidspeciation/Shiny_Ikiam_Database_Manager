@@ -8,6 +8,7 @@ import { backup } from 'node:sqlite';
 import { gzipSync } from 'node:zlib';
 import { Store } from './store.mjs';
 import { applyBatch } from './batch.mjs';
+import { historyGroup, historyGroups, previewEdits, undoEdits } from './history.mjs';
 import {
   addProfile,
   attachWalkPhotos,
@@ -153,6 +154,8 @@ export function configFromEnv(env = process.env) {
     spreadsheetId: SANDBOX_ID,
     syncIntervalMs: Number(env.SYNC_INTERVAL_MS || 300000),
     sheetHookSecret: env.SHEET_HOOK_SECRET,
+    // The app's address for links the assistant gives (e.g. to a save in the Historial).
+    publicUrl: (env.APP_PUBLIC_URL || env.APP_ORIGIN || '').replace(/\/+$/, ''),
     // Specimen photos fetched from Drive for the Revisión tab (server/photos.mjs).
     photoCacheDir: env.PHOTO_CACHE_DIR,
     photoCacheMb: Number(env.PHOTO_CACHE_MB || 1024),
@@ -580,8 +583,13 @@ export async function createApp(config = {}, options = {}) {
         return json(res, 200, await domainAction(store, body, user));
       }
       if (method === 'GET' && path === '/api/history') return json(res, 200, store.getHistory(query));
-      if (method === 'POST' && path === '/api/history/preview') return json(res, 200, store.previewUndo(body));
-      if (method === 'POST' && path === '/api/history/undo') return json(res, 200, await store.undo(body, user));
+      // Saves grouped by person, purpose and time (Historial tab); a group with all its changes.
+      if (method === 'GET' && path === '/api/history/groups') return json(res, 200, historyGroups(store, query));
+      if (method === 'GET' && /^\/api\/history\/groups\/[^/]+$/.test(path))
+        return json(res, 200, { group: historyGroup(store, decodePart(path.split('/')[4])) });
+      // Undo whole groups (groupIds), saves (actionIds) or single changes (changeIds).
+      if (method === 'POST' && path === '/api/history/preview') return json(res, 200, previewEdits(store, body));
+      if (method === 'POST' && path === '/api/history/undo') return json(res, 200, await undoEdits(store, body, user));
       if (method === 'GET' && path === '/api/tasks') return json(res, 200, { tasks: store.listTasks() });
       if (method === 'POST' && path === '/api/tasks') {
         requireEditor(user);

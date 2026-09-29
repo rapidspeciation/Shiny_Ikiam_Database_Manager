@@ -15,6 +15,7 @@ import { KINDS } from './notebook.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
 import { newRowFormulaFields } from './premade.mjs';
 import { KNOWLEDGE_TOOLS, createKnowledge, runKnowledgeTool } from './knowledge.mjs';
+import { HISTORY_TOOLS, HISTORY_TOOL_NAMES, runHistoryTool } from './history.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const bad = (status, code, message) => ({ status, body: { error: { code, message } } });
@@ -223,6 +224,8 @@ const TOOLS = [
     },
   },
   MATCH_NOTEBOOK_TOOL,
+  // Historial: find a save, link to it, preview and undo (server/history.mjs).
+  ...HISTORY_TOOLS,
   {
     type: 'function',
     function: {
@@ -805,6 +808,7 @@ export function createAssistant({ store, config = {} }) {
     if (name === 'propose_changes') return proposeChanges(args, context);
     if (name === 'list_agreed_fixes') return agreedFixes(store, { kind: args.kind ? clip(args.kind, 300) : undefined, limit: args.limit });
     if (name === 'match_notebook') return matchNotebook(args, context);
+    if (HISTORY_TOOL_NAMES.has(name)) return runHistoryTool(store, name, args, context, { publicUrl: config.publicUrl });
     if (name === 'apply_proposal') {
       const proposal = db
         .prepare('SELECT * FROM ai_proposals WHERE id = ? AND thread_id = ?')

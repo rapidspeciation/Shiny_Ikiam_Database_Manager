@@ -10,7 +10,9 @@ import { randomUUID } from 'node:crypto';
 import { comparable, isSumField, labelFor, moduleMap, simpleSum, validateValues } from './schema.mjs';
 import { hasDateFormat, hasTimeFormat, rowKey, rowValues } from './sheets.mjs';
 import { describeProblems, headerLayout, sameLayout } from './columns.mjs';
-import { ensurePremadeRows } from './premade.mjs';import { TUBE_FIELD, UNIQUE, isIdValue, isUnique } from './verifications.mjs';
+import { ensurePremadeRows } from './premade.mjs';
+import { cleanPurpose, inferPurpose } from './history.mjs';
+import { TUBE_FIELD, UNIQUE, isIdValue, isUnique } from './verifications.mjs';
 import { listOptions, listProblem } from './verify.mjs';
 
 /** Where a write came from. Chosen by the server, never by the client. */
@@ -40,7 +42,11 @@ const blank = value => value === null || value === undefined || /^\s*(|NA|N\/A)\
 const cellValue = (values, formulas, field) => (formulas[field] ? { formula: formulas[field] } : values[field]);
 const fail = (code, message, status = 400, details) => Object.assign(new Error(message), { code, status, details });
 
-export async function applyBatch(store, body, user, { source = 'app', reverses = null } = {}) {
+/**
+ * `purpose`: the flow a save belongs to (history.mjs PURPOSES). A save from the
+ * app may declare its tab in `body.purpose`; otherwise it is inferred from what it changes.
+ */
+export async function applyBatch(store, body, user, { source = 'app', reverses = null, purpose = null } = {}) {
   store.validateRole(user);
   store.requireRequestId(body.requestId);
   if (!SOURCES.has(source)) throw fail('INVALID_SOURCE', 'Origen de escritura desconocido');
@@ -112,9 +118,17 @@ export async function applyBatch(store, body, user, { source = 'app', reverses =
     if (!plan.writes.length)
       return { status: 'unchanged', action: null, actions: [], records: [], created: [], skipped };
 
+    const declared = source === 'app' ? purpose || cleanPurpose(body.purpose) : null;
     const actionId = beginAction(
       store,
-      { requestId: body.requestId, user, source, reason: body.reason, reverses },
+      {
+        requestId: body.requestId,
+        user,
+        source,
+        reason: body.reason,
+        reverses,
+        purpose: declared || inferPurpose({ source, reason: body.reason }, plannedChanges(plan)),
+      },
       plan,
     );
     const sheets = [...new Set(plan.writes.map(w => w.sheet))];
@@ -684,14 +698,28 @@ class Plan {
   }
 }
 
-function beginAction(store, { requestId, user, source, reason, reverses }, plan) {
+/** The changes of a plan as inferPurpose reads them. */
+function plannedChanges(plan) {
+  return plan.targets.flatMap(t =>
+    (t.changes || []).map(c => ({
+      sheet: t.sheet,
+      field: c.field,
+      before: c.before,
+      after: c.after,
+      isNew: !t.record,
+      rowPurpose: t.sheet === 'Collection_data' ? (t.record?.values?.Purpose ?? t.clean?.Purpose) : undefined,
+    })),
+  );
+}
+
+function beginAction(store, { requestId, user, source, reason, reverses, purpose }, plan) {
   const id = randomUUID();
   const now = new Date().toISOString();
   store.db.exec('BEGIN IMMEDIATE');
   try {
     store.db
       .prepare(
-        'INSERT INTO actions(id,request_id,actor,source,created_at,status,reason,reverses,result_json) VALUES(?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO actions(id,request_id,actor,source,created_at,status,reason,reverses,result_json,purpose) VALUES(?,?,?,?,?,?,?,?,?,?)',
       )
       .run(
         id,
@@ -703,6 +731,7 @@ function beginAction(store, { requestId, user, source, reason, reverses }, plan)
         reason || null,
         reverses || null,
         plan.skipped?.length ? JSON.stringify({ skipped: plan.skipped }) : null,
+        purpose || null,
       );
     const insert = store.db.prepare(
       'INSERT INTO changes(id,action_id,record_id,sheet,row_num,field,before_json,after_json) VALUES(?,?,?,?,?,?,?,?)',
