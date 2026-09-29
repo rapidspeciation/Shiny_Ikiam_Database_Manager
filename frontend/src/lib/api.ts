@@ -1,4 +1,5 @@
 import type { ApiErrorBody } from './types'
+import { t } from './i18n'
 
 export class ApiError extends Error {
   code: string
@@ -32,7 +33,7 @@ export async function api<T>(path: string, options: { method?: string; body?: un
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
     })
   } catch {
-    throw new ApiError(0, { code: 'OFFLINE', message: 'Sin conexión con el servidor' })
+    throw new ApiError(0, { code: 'OFFLINE', message: t('Sin conexión con el servidor') })
   }
   const text = await response.text()
   const data = text ? JSON.parse(text) : {}

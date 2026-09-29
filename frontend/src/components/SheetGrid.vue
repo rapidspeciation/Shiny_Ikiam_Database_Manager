@@ -25,6 +25,7 @@ import { useSession } from '../stores/session'
 import { useTables } from '../stores/tables'
 import { listProblem, repeats, verificationsFor } from '../lib/verifications'
 import RowDrawer from './RowDrawer.vue'
+import { locale, t, tn } from '../lib/i18n'
 
 /**
  * Spreadsheet-like view of one sheet. Edits go to the pending store and are
@@ -246,9 +247,16 @@ const repeated = computed(() => {
 function checkTitle(field: string, value: CellValue, data: GridRow) {
   const holders = repeated.value.get(field)?.get(String(value ?? '').trim())
   if (holders) {
-    const others = holders.filter(r => r !== data.__row).map(r => (r === null ? 'una fila nueva' : `fila ${r}`))
-    const more = others.length > 5 ? ` y ${others.length - 5} más` : ''
-    return { repeated: `Repetido en ${field}: también en ${others.slice(0, 5).join(', ')}${more}` }
+    const others = holders
+      .filter(r => r !== data.__row)
+      .map(r => (r === null ? t('una fila nueva') : t('fila {row}', { row: r })))
+    const rows = others.slice(0, 5).join(', ')
+    return {
+      repeated:
+        others.length > 5
+          ? t('Repetido en {field}: también en {rows} y {n} más', { field, rows, n: others.length - 5 })
+          : t('Repetido en {field}: también en {rows}', { field, rows }),
+    }
   }
   const problem = listProblem(rules.value, field, value)
   return problem ? { invalid: problem } : {}
@@ -261,7 +269,9 @@ function decorate(cell: CellComponent) {
   const el = cell.getElement()
   const errorKey = `${data.__id}:${field}`
   // Refused by the server, or failing the app's checks before saving (e.g. a date with year 92026).
-  const error = pending.errors[errorKey] || pending.problems[errorKey]
+  // Reasons are kept in Spanish (the key of their English).
+  const reason = pending.errors[errorKey] || pending.problems[errorKey]
+  const error = reason ? t(reason) : ''
   // Counts kept as sums are editable, so they don't look like the sheet's own formulas.
   const formula = isFormula(data, field) && !isSumField(props.module, field)
   const check = formula ? {} : checkTitle(field, cell.getValue(), data)
@@ -272,8 +282,7 @@ function decorate(cell: CellComponent) {
   el.classList.toggle('is-repeated', !!check.repeated)
   el.classList.toggle('is-invalid', !!check.invalid)
   el.classList.toggle('has-choices', hasChoices(field) && canEdit(data, field))
-  el.title =
-    error || check.repeated || check.invalid || (formula ? 'Fórmula de la hoja (solo lectura)' : '')
+  el.title = error || check.repeated || check.invalid || (formula ? t('Fórmula de la hoja (solo lectura)') : '')
 }
 
 function formatter(cell: CellComponent) {
@@ -295,7 +304,7 @@ function rowNumberFormatter(cell: CellComponent) {
   const data = cell.getData() as GridRow
   const el = cell.getElement()
   el.classList.toggle('is-new', !!data.__new)
-  const text = data.__new ? 'nueva' : String(data.__row)
+  const text = data.__new ? t('nueva') : String(data.__row)
   return document.createTextNode(text)
 }
 
@@ -313,7 +322,7 @@ function textFilter(headerValue: string, rowValue: CellValue, _data: unknown, pa
 
 function columnDefs(): ColumnDefinition[] {
   const rowColumn: ColumnDefinition = {
-    title: 'Fila',
+    title: t('Fila'),
     field: '__row',
     frozen: true,
     width: 62,
@@ -336,20 +345,23 @@ function columnDefs(): ColumnDefinition[] {
     rowColumn,
     // Frozen columns go first: Tabulator only keeps them in line with their
     // headers at the edge (a frozen CAM_ID in the middle shifted the cells after it).
-    ...([...props.columns.filter(f => props.frozen.includes(f.key)), ...props.columns.filter(f => !props.frozen.includes(f.key))].map(field => ({
+    ...([
+      ...props.columns.filter(f => props.frozen.includes(f.key)),
+      ...props.columns.filter(f => !props.frozen.includes(f.key)),
+    ].map(field => ({
       // A column missing from the sheet keeps its last values, read-only, marked in its header.
       title: field.unavailable ? `${field.key} ⚠` : field.key,
       field: field.key,
       frozen: props.frozen.includes(field.key),
       width: widthOf(field),
       minWidth: 70,
-      headerTooltip: field.unavailable ? `${field.key}: falta en la hoja; último valor leído` : field.label,
+      headerTooltip: field.unavailable ? t('{field}: falta en la hoja; último valor leído', { field: field.key }) : field.label,
       formatter: formatter as never,
       editable: (cell: CellComponent) => canEdit(cell.getData() as GridRow, field.key),
       ...(props.headerFilters
         ? {
             headerFilter: 'input' as const,
-            headerFilterPlaceholder: 'filtrar',
+            headerFilterPlaceholder: t('filtrar'),
             headerFilterFunc: textFilter,
             headerFilterFuncParams: { field },
           }
@@ -444,7 +456,8 @@ function pasteRange(rowsData: Record<string, unknown>[]) {
     }
     touched.push(row)
   }
-  if (skipped) emit('notice', `${skipped} celdas de solo lectura no se modificaron`)
+  if (skipped)
+    emit('notice', tn(skipped, '{n} celda de solo lectura no se modificó', '{n} celdas de solo lectura no se modificaron'))
   return touched
 }
 
@@ -484,7 +497,7 @@ function build() {
     autoResize: false,
     renderHorizontal: 'virtual',
     nestedFieldSeparator: false,
-    placeholder: 'Sin filas',
+    placeholder: t('Sin filas'),
     initialSort: props.newestFirst ? [{ column: '__row', dir: 'desc' }] : [],
     // Also on touch screens: a tap selects (a scrolling finger does not), see attachTouchSheet.
     selectableRange: 1,
@@ -518,7 +531,7 @@ function build() {
       ? attachTouchSheet(table, container, { canEdit: editableCell, notice })
       : attachFillHandle(table, container, {
           canEdit: editableCell,
-          onFilled: rows => notice(`Copiado a ${rows} ${rows === 1 ? 'fila' : 'filas'}`),
+          onFilled: rows => notice(tn(rows, 'Copiado a {n} fila', 'Copiado a {n} filas')),
         })
   copied?.destroy()
   copied = host.value.parentElement ? attachCopyMarker(table, host.value.parentElement, notice) : null
@@ -536,7 +549,7 @@ function build() {
     const field = cell.getField()
     const list = rules.value?.lists[field]
     const problem = list && !list.strict ? listProblem(rules.value, field, cell.getValue()) : null
-    if (problem) notice(`${problem}: se guarda igual; corrígelo si es un error`)
+    if (problem) notice(t('{problem}: se guarda igual; corrígelo si es un error', { problem }))
   })
   table.on('tableBuilt', () => {
     built = true
@@ -611,9 +624,10 @@ onBeforeUnmount(() => {
   table = null
 })
 
-// Rebuild only when the set of columns or their editors really changes.
+// Rebuild only when the set of columns or their editors really changes (or the interface language).
 const layoutKey = () =>
   [
+    locale.value,
     props.module,
     props.columns.map(c => c.key).join('|'),
     Object.keys(props.options).sort().join('|'),

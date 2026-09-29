@@ -1,3 +1,5 @@
+import { intlLocale, t, tn } from './i18n'
+
 // Google Sheets stores dates as serial day numbers counted from 1899-12-30.
 // The original Shiny app displayed them as "14-Aug-25"; we keep that format.
 const EPOCH = Date.UTC(1899, 11, 30)
@@ -28,20 +30,28 @@ export function serialFromIso(iso: string): number | null {
   return serial !== null && inDateRange(serial) ? serial : null
 }
 
-const WEEKDAYS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
 /** "sábado 27-Sep-26 · ayer": the weekday makes a wrong day easy to notice. */
 export function dayLabel(iso: string, today = todayIso()): string {
   const serial = serialFromIso(iso)
   if (serial === null) return ''
-  const weekday = WEEKDAYS[new Date(EPOCH + serial * DAY).getUTCDay()]
+  const weekday = weekdayOf(serialToIso(serial))
   const ago = (serialFromIso(today) ?? serial) - serial
-  const when = ago === 0 ? 'hoy' : ago === 1 ? 'ayer' : ago > 1 ? `hace ${ago} días` : ago === -1 ? 'mañana' : `en ${-ago} días`
+  const when =
+    ago === 0
+      ? t('hoy')
+      : ago === 1
+        ? t('ayer')
+        : ago > 1
+          ? tn(ago, 'hace {n} día', 'hace {n} días')
+          : ago === -1
+            ? t('mañana')
+            : tn(-ago, 'en {n} día', 'en {n} días')
   return `${weekday} ${formatSerial(serial)} · ${when}`
 }
 
 export function formatSerial(serial: number): string {
   // Never "NaN-undefined-N": a broken value says so.
-  if (!Number.isFinite(serial)) return 'fecha no válida'
+  if (!Number.isFinite(serial)) return t('fecha no válida')
   const d = new Date(EPOCH + Math.round(serial) * DAY)
   return `${d.getUTCDate()}-${MONTHS[d.getUTCMonth()]}-${String(d.getUTCFullYear()).slice(2)}`
 }
@@ -49,7 +59,7 @@ export function formatSerial(serial: number): string {
 /** "martes", for an ISO date: the weekday helps notice a wrong collection date. */
 export function weekdayOf(iso: string): string {
   const time = Date.parse(`${iso}T12:00:00Z`)
-  return Number.isNaN(time) ? '' : new Intl.DateTimeFormat('es', { weekday: 'long', timeZone: 'UTC' }).format(time)
+  return Number.isNaN(time) ? '' : new Intl.DateTimeFormat(intlLocale(), { weekday: 'long', timeZone: 'UTC' }).format(time)
 }
 
 /** Today in Ecuador, as an ISO date. */

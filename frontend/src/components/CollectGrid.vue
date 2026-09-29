@@ -18,6 +18,7 @@ import {
   type CanEdit,
 } from '../lib/gridKit'
 import { complete, parseBlock, stepId } from '../lib/paste'
+import { locale, t, tn } from '../lib/i18n'
 
 /**
  * The Colecta list as a spreadsheet (on computers): select cells, copy and
@@ -122,8 +123,8 @@ const display = (field: Column, text?: (value: unknown) => string) => (cell: Cel
   el.title =
     error ||
     invalid ||
-    (field === 'insectaryId' && !off ? 'El ID escrito en las alas (se sugiere el siguiente libre)' : '') ||
-    (field === 'cam' && off ? 'Escribe o pega un CAM para pasarla a Collected_Preserved' : '')
+    (field === 'insectaryId' && !off ? t('El ID escrito en las alas (se sugiere el siguiente libre)') : '') ||
+    (field === 'cam' && off ? t('Escribe o pega un CAM para pasarla a Collected_Preserved') : '')
   return off ? '' : text ? text(cell.getValue()) : String(cell.getValue() ?? '')
 }
 
@@ -138,8 +139,16 @@ function columns(): ColumnDefinition[] {
     ...extra,
   })
   return [
-    text('location', 200, choices(() => props.places)),
-    text('species', 210, choices(() => props.species)),
+    text(
+      'location',
+      200,
+      choices(() => props.places),
+    ),
+    text(
+      'species',
+      210,
+      choices(() => props.species),
+    ),
     text('subspecies', 160, {
       cssClass: 'has-choices',
       ...choiceEditor(cell => props.subspeciesFor(String((cell.getData() as Row).species || ''))),
@@ -158,14 +167,38 @@ function columns(): ColumnDefinition[] {
     text('insectaryId', 110),
     text('cam', 120),
     text('tube', 125),
-    text('medium', 190, choices(() => props.mediums)),
-    text('purpose', 150, choices(() => props.purposes)),
+    text(
+      'medium',
+      190,
+      choices(() => props.mediums),
+    ),
+    text(
+      'purpose',
+      150,
+      choices(() => props.purposes),
+    ),
     text('notes', 220),
-    text('collector', 200, choices(() => props.people)),
-    text('identifier', 200, choices(() => props.people)),
+    text(
+      'collector',
+      200,
+      choices(() => props.people),
+    ),
+    text(
+      'identifier',
+      200,
+      choices(() => props.people),
+    ),
     // Typing "dy" completes to DY_(dry); anything else is marked as outside the sheet's list.
-    text('rainfall', 170, choices(() => props.rainfalls)),
-    text('cloud', 230, choices(() => props.clouds)),
+    text(
+      'rainfall',
+      170,
+      choices(() => props.rainfalls),
+    ),
+    text(
+      'cloud',
+      230,
+      choices(() => props.clouds),
+    ),
     {
       title: '',
       field: '__remove',
@@ -253,7 +286,12 @@ function completed(field: Column, text: string, row: Row) {
   return options[field] ? complete(text, options[field]!()) : text
 }
 
-const onKeydown = spreadsheetKeys(() => table, canEdit, message => emit('notice', message), whyNot)
+const onKeydown = spreadsheetKeys(
+  () => table,
+  canEdit,
+  message => emit('notice', message),
+  whyNot,
+)
 const onEditingKey = editingKeys(() => table)
 
 onMounted(() => {
@@ -263,12 +301,20 @@ onMounted(() => {
     index: '__key',
     columns: columns(),
     // Row numbers as Tabulator's row header, which range selection expects.
-    rowHeader: { formatter: 'rownum', headerSort: false, resizable: false, frozen: true, width: 44, hozAlign: 'right', cssClass: 'row-number' },
+    rowHeader: {
+      formatter: 'rownum',
+      headerSort: false,
+      resizable: false,
+      frozen: true,
+      width: 44,
+      hozAlign: 'right',
+      cssClass: 'row-number',
+    },
     layout: 'fitData',
     // Size changes go through watchSize: a redraw under an open editor (the phone keyboard resizes the page) lost it.
     autoResize: false,
     headerSortClickElement: 'icon',
-    placeholder: 'Sin filas',
+    placeholder: t('Sin filas'),
     selectableRange: 1,
     selectableRangeColumns: true,
     selectableRangeRows: true,
@@ -290,7 +336,8 @@ onMounted(() => {
       const copied = parseBlock(text) ?? [[text.replace(/\r?\n$/, '').trim()]]
       const block = tileToSelection(copied, range.getRows().length, range.getColumns().length)
       if (block.length === 1 && block[0].length === 1) {
-        if (canEdit(cell.getRow(), field)) emit('edit', props.drafts[index].key, field, completed(field, block[0][0], cell.getData() as Row))
+        if (canEdit(cell.getRow(), field))
+          emit('edit', props.drafts[index].key, field, completed(field, block[0][0], cell.getData() as Row))
       } else props.paste(block.map(line => line.join('\t')).join('\n'), index, field)
       return false
     },
@@ -305,7 +352,8 @@ onMounted(() => {
   // The ▾ arrow at a cell's right edge opens its list straight away.
   table.on('cellClick', (event: UIEvent, cell: CellComponent) => {
     const el = cell.getElement()
-    if (!el.classList.contains('has-choices') || !(event instanceof MouseEvent) || !canEdit(cell.getRow(), cell.getField())) return
+    if (!el.classList.contains('has-choices') || !(event instanceof MouseEvent) || !canEdit(cell.getRow(), cell.getField()))
+      return
     if (event.clientX >= el.getBoundingClientRect().right - 22) openList(cell)
   })
   table.on('cellEdited', (cell: CellComponent) => {
@@ -336,7 +384,7 @@ onMounted(() => {
           if (field === 'insectaryId') return props.nextId?.(id, step) ?? null
           return field === 'cam' || field === 'tube' ? stepId(id, step) : null
         },
-        onFilled: rows => notice(`Copiado a ${rows} ${rows === 1 ? 'fila' : 'filas'}`),
+        onFilled: rows => notice(tn(rows, 'Copiado a {n} fila', 'Copiado a {n} filas')),
       })
   copied = attachCopyMarker(table, host.value.parentElement!, message => emit('notice', message))
   host.value.addEventListener('keydown', onKeydown)
@@ -358,6 +406,8 @@ onBeforeUnmount(() => {
   table = null
 })
 watch(() => props.drafts.map(d => JSON.stringify(d)).join('\n'), sync)
+// The cells' hover texts follow the interface language.
+watch(locale, () => built && repaint())
 
 /**
  * Select a cell and bring it into view (e.g. the first row just added). After
@@ -371,7 +421,10 @@ async function focusCell(index: number, field: Column) {
   if (!row || !table) return
   table.scrollToRow(row, 'center', false).catch(() => {})
   try {
-    ;(table as unknown as { addRange: (a: CellComponent, b: CellComponent) => void }).addRange(row.getCell(field), row.getCell(field))
+    ;(table as unknown as { addRange: (a: CellComponent, b: CellComponent) => void }).addRange(
+      row.getCell(field),
+      row.getCell(field),
+    )
   } catch {
     /* Range selection is off on touch screens. */
   }

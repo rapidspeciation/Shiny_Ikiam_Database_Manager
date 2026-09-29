@@ -1,6 +1,7 @@
 import { reactive } from 'vue'
 import { api } from './api'
 import type { CellValue } from './types'
+import { t } from './i18n'
 
 /**
  * The Google Sheet's own checks for one sheet, as the server reads them
@@ -43,7 +44,10 @@ export function listProblem(rules: Verifications | undefined, field: string, val
   if (!list || value === null || value === undefined) return null
   const text = String(value).trim()
   if (!text || list.values.has(text)) return null
-  return `«${text}» no está en la lista de la hoja (${list.source})${list.strict ? '; la hoja no lo acepta' : ''}`
+  const vars = { text, source: list.source }
+  return list.strict
+    ? t('«{text}» no está en la lista de la hoja ({source}); la hoja no lo acepta', vars)
+    : t('«{text}» no está en la lista de la hoja ({source})', vars)
 }
 
 /** For each column that must not repeat: value → the rows that hold it. */

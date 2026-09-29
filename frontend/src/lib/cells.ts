@@ -1,6 +1,7 @@
 import { isSumField, simpleSum } from './sums'
 import { formatSerial, parseDateInput } from './dates'
 import type { CellValue, Field } from './types'
+import { t } from './i18n'
 
 const TIME_FIELD = /(^|_)time$/i
 
@@ -35,11 +36,11 @@ export function normalizeInput(raw: unknown, field: Pick<Field, 'type' | 'key'>,
   // Counts kept as sums (=12+15) are written as such; other formulas only in Google Sheets.
   const sum = isSumField(module, field.key) ? simpleSum(text) : null
   if (sum) return { ok: true, value: sum }
-  if (text.startsWith('=')) return { ok: false, message: 'Las fórmulas solo se editan en Google Sheets' }
+  if (text.startsWith('=')) return { ok: false, message: t('Las fórmulas solo se editan en Google Sheets') }
   if (field.type === 'date') {
     const serial = parseDateInput(text)
     return serial === null
-      ? { ok: false, message: `Fecha no válida en ${field.key}: use 14-Aug-25 o 2025-08-14` }
+      ? { ok: false, message: t('Fecha no válida en {field}: use 14-Aug-25 o 2025-08-14', { field: field.key }) }
       : { ok: true, value: serial }
   }
   const time = TIME_FIELD.test(field.key) ? /^(\d{1,2}):(\d{2})$/.exec(text) : null

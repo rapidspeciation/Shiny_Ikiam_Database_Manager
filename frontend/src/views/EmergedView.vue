@@ -13,6 +13,7 @@ import { persistentRef } from '../lib/persist'
 import { orderColumns } from '../lib/rows'
 import type { CellValue } from '../lib/types'
 import { usePending } from '../stores/pending'
+import { t } from '../lib/i18n'
 
 /**
  * "Registrar Emergidos": new adults from a clutch go into the next unused
@@ -94,17 +95,22 @@ function defaultsFor(speciesName: string): Record<string, CellValue> {
 }
 
 function prepare(sexes: (string | null)[]) {
-  if (!clutch.value) return notify('Elige el clutch')
-  if (!sexes.length) return notify('Indica cuántas hembras, machos o sin sexo emergieron')
+  if (!clutch.value) return notify(t('Elige el clutch'))
+  if (!sexes.length) return notify(t('Indica cuántas hembras, machos o sin sexo emergieron'))
   if (!inOrder.value.length)
-    return notify('No quedan filas preasignadas libres: crea más filas preasignadas en Insectary_data', 'error')
+    return notify(t('No quedan filas preasignadas libres: crea más filas preasignadas en Insectary_data'), 'error')
   const start = inOrder.value.indexOf(startId.value.trim().toUpperCase())
   if (start < 0)
-    return notify(`${startId.value || 'Ese ID'} no es una fila preasignada libre de Insectary_data: elige uno de la lista`)
+    return notify(
+      t('{id} no es una fila preasignada libre de Insectary_data: elige uno de la lista', { id: startId.value || t('Ese ID') }),
+    )
   const ids = inOrder.value.slice(start, start + sexes.length)
   if (ids.length < sexes.length)
     notify(
-      `Solo hay ${ids.length} filas preasignadas libres desde ${ids[0]}: crea más filas preasignadas en Insectary_data`,
+      t('Solo hay {n} filas preasignadas libres desde {id}: crea más filas preasignadas en Insectary_data', {
+        n: ids.length,
+        id: ids[0],
+      }),
       'error',
     )
   ids.forEach((id, i) =>
@@ -123,7 +129,13 @@ function prepare(sexes: (string | null)[]) {
   startId.value = freeIds.value[0] || ''
   females.value = males.value = unknown.value = 0
   pending.touch()
-  notify(`${ids.length} filas nuevas (${ids[0]}–${ids.at(-1)}); revisa la subespecie si alguna es distinta`)
+  notify(
+    t('{n} filas nuevas ({first}–{last}); revisa la subespecie si alguna es distinta', {
+      n: ids.length,
+      first: ids[0],
+      last: ids.at(-1),
+    }),
+  )
 }
 /** The first ID chosen is an empty row earlier in the sheet, not the next one after the last used. */
 const earlierRow = computed(() => {
@@ -177,50 +189,58 @@ const recent = computed(() => {
     <div class="toolbar">
       <label class="min-w-40">
         <span class="field-label">CLUTCH NUMBER</span>
-        <ChoiceField v-model="clutch" class="field-input" :options="clutches" placeholder="p. ej. 994(6)" />
+        <ChoiceField
+          v-model="clutch"
+          class="field-input"
+          :options="clutches"
+          :placeholder="$t('p. ej. {example}', { example: '994(6)' })"
+        />
       </label>
       <label>
-        <span class="field-label">Hembras</span>
+        <span class="field-label">{{ $t('Hembras') }}</span>
         <input v-model.number="females" type="number" min="0" max="100" class="field-input w-20" />
       </label>
       <label>
-        <span class="field-label">Machos</span>
+        <span class="field-label">{{ $t('Machos') }}</span>
         <input v-model.number="males" type="number" min="0" max="100" class="field-input w-20" />
       </label>
       <label>
-        <span class="field-label">Sin sexo</span>
+        <span class="field-label">{{ $t('Sin sexo') }}</span>
         <input v-model.number="unknown" type="number" min="0" max="100" class="field-input w-20" />
       </label>
       <label>
-        <span class="field-label">Insectary ID inicial</span>
+        <span class="field-label">{{ $t('Insectary ID inicial') }}</span>
         <!-- Any free pre-made row can start the batch (earlier empty rows too); type to search. -->
         <ChoiceField
           v-model="startId"
           class="field-input w-32 uppercase"
           :options="freeIds"
-          :placeholder="freeIds.length ? '' : 'no quedan'"
+          :placeholder="freeIds.length ? '' : $t('no quedan')"
           :title="
-            freeIds.length ? `${freeIds.length} filas preasignadas libres` : 'Crea más filas preasignadas en Insectary_data'
+            freeIds.length
+              ? $t('{n} filas preasignadas libres', { n: freeIds.length })
+              : $t('Crea más filas preasignadas en Insectary_data')
           "
           @focus="($event.target as HTMLInputElement).select()"
         />
       </label>
       <label>
-        <span class="field-label">Intro a insectario</span>
+        <span class="field-label">{{ $t('Intro a insectario') }}</span>
         <DateField v-model="introDate" class="field-input" />
       </label>
       <div class="flex gap-2">
         <button class="btn-primary" @click="prepare(batch())">
-          <Rows3 :size="15" /> Preparar {{ batch().length || '' }} filas
+          <Rows3 :size="15" /> {{ batch().length ? $t('Preparar {n} filas', { n: batch().length }) : $t('Preparar filas') }}
         </button>
-        <button class="btn" @click="prepare([null])"><Plus :size="15" /> Añadir una</button>
+        <button class="btn" @click="prepare([null])"><Plus :size="15" /> {{ $t('Añadir una') }}</button>
       </div>
     </div>
     <InsectaryIdsWarning class="mx-4 mt-2" :revision="table?.revision" @extended="loadFreeIds" />
     <p class="hint px-4 py-1">
       <template v-if="clutch"
-        >Especie del clutch: <strong>{{ species || 'no encontrada' }}</strong
-        >. Si una mariposa emergió de otra subespecie, cámbiala en su fila<template v-if="siblings.length > 1">
+        >{{ $t('Especie del clutch:') }} <strong>{{ species || $t('no encontrada') }}</strong
+        >. {{ $t('Si una mariposa emergió de otra subespecie, cámbiala en su fila')
+        }}<template v-if="siblings.length > 1">
           ({{
             siblings
               .map(s => s.split(' ').slice(2).join(' '))
@@ -229,21 +249,31 @@ const recent = computed(() => {
           }})</template
         >.
       </template>
-      <strong v-if="idsLoaded && !freeIds.length" class="text-amber-800"
-        >No quedan filas preasignadas libres: crea más filas preasignadas en Insectary_data.</strong
-      >
-      <strong v-if="earlierRow" class="text-amber-800"
-        >{{ earlierRow.id }} es una fila vacía más arriba en la hoja (fila {{ earlierRow.row }}), no la siguiente ({{
-          earlierRow.next
-        }}).</strong
-      >
-      Las filas nuevas usan las filas preasignadas; escribe cada ID en las alas. Debajo se muestran
-      <template v-if="ofClutch.length">los {{ ofClutch.length }} ya registrados del clutch {{ clutch }} y </template>los últimos
-      {{ recentCount }} registros.
-      <button class="underline" @click="recentCount += 15">ver más</button>
+      <strong v-if="idsLoaded && !freeIds.length" class="text-amber-800">{{
+        $t('No quedan filas preasignadas libres: crea más filas preasignadas en Insectary_data.')
+      }}</strong>
+      <strong v-if="earlierRow" class="text-amber-800">{{
+        $t('{id} es una fila vacía más arriba en la hoja (fila {row}), no la siguiente ({next}).', {
+          id: earlierRow.id,
+          row: earlierRow.row,
+          next: earlierRow.next,
+        })
+      }}</strong>
+      {{
+        ofClutch.length
+          ? $t(
+              'Las filas nuevas usan las filas preasignadas; escribe cada ID en las alas. Debajo se muestran los {n} ya registrados del clutch {clutch} y los últimos {recent} registros.',
+              { n: ofClutch.length, clutch, recent: recentCount },
+            )
+          : $t(
+              'Las filas nuevas usan las filas preasignadas; escribe cada ID en las alas. Debajo se muestran los últimos {recent} registros.',
+              { recent: recentCount },
+            )
+      }}
+      <button class="underline" @click="recentCount += 15">{{ $t('ver más') }}</button>
     </p>
     <div class="min-h-0 flex-1">
-      <p v-if="!ready" class="p-6 text-stone-500">Cargando Insectary_data…</p>
+      <p v-if="!ready" class="p-6 text-stone-500">{{ $t('Cargando {sheet}…', { sheet: 'Insectary_data' }) }}</p>
       <SheetGrid
         v-else
         :module="MODULE"

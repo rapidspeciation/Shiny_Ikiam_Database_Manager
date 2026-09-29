@@ -1,4 +1,5 @@
 import { parseFate, parseSex } from './paste'
+import { t } from './i18n'
 
 /** One butterfly in the Colecta list, before it is saved to Collection_data (and Insectary_data). */
 export type Fate = 'insectario' | 'preservada' | 'liberada'
@@ -102,25 +103,25 @@ const NA = /^(NA|N\/A)$/i
  * Tube_1_id; such values are left out and the notice names them.
  */
 export function misfit(column: Column, text: string): string | null {
-  const t = text.trim()
-  if (!t || NA.test(t)) return null
+  const v = text.trim()
+  if (!v || NA.test(v)) return null
   if (column === 'cam')
     // "CAM079895", or CAM and tube together ("CAM079895 · FS90415305 (Flash frozen)").
-    return /CAM\d{4,}/i.test(t) ? null : 'no es un CAM_ID (CAM + número, p. ej. CAM079895)'
-  if (column === 'tube') return TUBE_ID.test(t) ? null : 'no es un Tube_1_id (2 letras y 7 a 9 cifras, p. ej. FS90415305)'
+    return /CAM\d{4,}/i.test(v) ? null : t('no es un CAM_ID (CAM + número, p. ej. CAM079895)')
+  if (column === 'tube') return TUBE_ID.test(v) ? null : t('no es un Tube_1_id (2 letras y 7 a 9 cifras, p. ej. FS90415305)')
   if (column === 'insectaryId')
-    return INSECTARY_ID.test(t) ? null : 'no es un Insectary_ID (p. ej. N9D); para CAM y tubo usa CAM_ID y Tube_1_id'
-  if (column === 'time') return /^\d{1,2}[:.h]?\d{2}$/.test(t) ? null : 'no es una hora (hh:mm)'
-  if (column === 'sex') return parseSex(t) ? null : 'no es un Sex (female, male, female ?, male ?, NOT_COLLECTED)'
-  if (column === 'fate') return parseFate(t) ? null : 'no es un Release_Collect'
+    return INSECTARY_ID.test(v) ? null : t('no es un Insectary_ID (p. ej. N9D); para CAM y tubo usa CAM_ID y Tube_1_id')
+  if (column === 'time') return /^\d{1,2}[:.h]?\d{2}$/.test(v) ? null : t('no es una hora (hh:mm)')
+  if (column === 'sex') return parseSex(v) ? null : t('no es un Sex (female, male, female ?, male ?, NOT_COLLECTED)')
+  if (column === 'fate') return parseFate(v) ? null : t('no es un Release_Collect')
   return null
 }
 
 /** Why a column is not filled for a row (typing there says so). */
 export const notApplicable = (column: Column) =>
   column === 'insectaryId'
-    ? 'Insectary_ID es solo para Collected_Sent2Insectary: cambia primero Release_Collect'
-    : `${HEADERS[column]} es solo para Collected_Preserved: cambia primero Release_Collect`
+    ? t('Insectary_ID es solo para Collected_Sent2Insectary: cambia primero Release_Collect')
+    : t('{column} es solo para Collected_Preserved: cambia primero Release_Collect', { column: HEADERS[column] })
 
 /** What a Colecta list will save, to read over before saving (a wrong day, sexes swapped). */
 export interface CollectSummary {
@@ -138,7 +139,7 @@ export function summarize(drafts: Draft[]): CollectSummary {
   const species = new Map<string, { name: string; female: number; male: number; other: number }>()
   for (const d of drafts) {
     if (d.fate === 'insectario') insectary[sexOf(d)]++
-    const name = [d.species, d.subspecies].filter(Boolean).join(' ') || '(sin especie)'
+    const name = [d.species, d.subspecies].filter(Boolean).join(' ') || t('(sin especie)')
     const s = species.get(name) || { name, female: 0, male: 0, other: 0 }
     s[sexOf(d)]++
     species.set(name, s)

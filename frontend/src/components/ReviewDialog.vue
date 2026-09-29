@@ -53,24 +53,27 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   <div class="fixed inset-0 z-40 grid place-items-center bg-black/40 p-2" @click.self="emit('close')">
     <section class="flex max-h-[92vh] w-full max-w-3xl flex-col rounded-lg bg-white shadow-xl">
       <header class="flex items-center border-b border-stone-200 px-4 py-3">
-        <h2 class="flex-1 text-lg font-semibold">Revisar cambios antes de guardar</h2>
+        <h2 class="flex-1 text-lg font-semibold">{{ $t('Revisar cambios antes de guardar') }}</h2>
         <button class="btn-ghost" @click="emit('close')"><X :size="20" /></button>
       </header>
       <div class="flex-1 overflow-y-auto px-4 py-3">
-        <p v-if="!pending.changeCount" class="text-stone-500">No hay cambios pendientes.</p>
+        <p v-if="!pending.changeCount" class="text-stone-500">{{ $t('No hay cambios pendientes.') }}</p>
         <div v-for="edit in edits" :key="edit.id" class="mb-3">
           <h3 class="text-sm font-semibold">
-            {{ edit.label || '(sin ID)' }} <span class="font-normal text-stone-500">· {{ edit.module }} fila {{ edit.row }}</span>
+            {{ edit.label || $t('(sin ID)') }}
+            <span class="font-normal text-stone-500"
+              >· {{ $t('{sheet} fila {row}', { sheet: edit.module, row: edit.row }) }}</span
+            >
           </h3>
           <p v-if="edit.rowError" class="text-sm text-red-700">{{ edit.rowError }}</p>
           <table class="mt-1 w-full text-sm">
             <tbody>
               <tr v-for="f in edit.fields" :key="f.field" class="border-t border-stone-100" :class="{ 'bg-red-50': f.error }">
                 <td class="w-1/3 py-1 pr-2 text-stone-600">{{ f.field }}</td>
-                <td class="py-1 pr-2 text-stone-500 line-through decoration-stone-300">{{ f.before || 'vacío' }}</td>
-                <td class="py-1 pr-2 font-medium">{{ f.after || 'vacío' }}</td>
+                <td class="py-1 pr-2 text-stone-500 line-through decoration-stone-300">{{ f.before || $t('vacío') }}</td>
+                <td class="py-1 pr-2 font-medium">{{ f.after || $t('vacío') }}</td>
                 <td class="w-8 text-right">
-                  <button class="btn-ghost" title="Quitar este cambio" @click="revert(edit.id, edit.module, f.field)">
+                  <button class="btn-ghost" :title="$t('Quitar este cambio')" @click="revert(edit.id, edit.module, f.field)">
                     <RotateCcw :size="14" />
                   </button>
                 </td>
@@ -83,8 +86,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </div>
         <div v-for="c in pending.creates" :key="c.clientId" class="mb-3">
           <h3 class="text-sm font-semibold">
-            Fila nueva {{ c.label }} <span class="font-normal text-stone-500">· {{ c.module }}</span>
-            <button class="ml-2 text-xs text-red-700 underline" @click="removeCreate(c.clientId)">quitar</button>
+            {{ $t('Fila nueva {label}', { label: c.label }) }} <span class="font-normal text-stone-500">· {{ c.module }}</span>
+            <button class="ml-2 text-xs text-red-700 underline" @click="removeCreate(c.clientId)">{{ $t('quitar') }}</button>
           </h3>
           <p v-for="m in createErrors(c.clientId)" :key="m" class="text-sm text-red-700">{{ m }}</p>
           <p class="text-sm text-stone-700">
@@ -96,11 +99,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </div>
       <footer class="flex flex-wrap items-end gap-2 border-t border-stone-200 px-4 py-3">
         <label class="min-w-48 flex-1">
-          <span class="field-label">Nota para el historial (opcional)</span>
-          <input v-model="reason" class="field-input" placeholder="p. ej. ronda del lunes" />
+          <span class="field-label">{{ $t('Nota para el historial (opcional)') }}</span>
+          <input v-model="reason" class="field-input" :placeholder="$t('p. ej. ronda del lunes')" />
         </label>
         <button class="btn-primary" :disabled="pending.saving || !pending.changeCount" @click="emit('save', reason)">
-          <Save :size="15" /> {{ pending.saving ? 'Guardando…' : `Guardar ${pending.changeCount} cambios` }}
+          <Save :size="15" /> {{ pending.saving ? $t('Guardando…') : $t('Guardar {n} cambios', { n: pending.changeCount }) }}
         </button>
       </footer>
     </section>

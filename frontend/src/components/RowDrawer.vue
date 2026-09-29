@@ -8,6 +8,7 @@ import { isSumField } from '../lib/sums'
 import type { CellValue, Field, TableRow } from '../lib/types'
 import { type PendingCreate, usePending } from '../stores/pending'
 import { useSession } from '../stores/session'
+import { t } from '../lib/i18n'
 
 /** Vertical view of one row: the easiest way to edit a record on a phone. */
 const props = defineProps<{
@@ -33,7 +34,7 @@ const formulas = computed(() => new Set(row.value ? row.value.formulas : props.c
 const title = computed(() => {
   const key = props.labelField || session.module(props.module)?.identityFields[0]
   const values = row.value?.values || created.value?.values || {}
-  return String((key && values[key]) || (row.value ? `Fila ${row.value.row}` : 'Fila nueva'))
+  return String((key && values[key]) || (row.value ? t('Fila {row}', { row: row.value.row }) : t('Fila nueva')))
 })
 /** A saved butterfly's Insectary ID can be corrected from its Insectary_data or Collection_data row. */
 const insectaryId = computed(() => {
@@ -81,20 +82,29 @@ function change(field: Field, text: string) {
       <header class="flex items-center gap-2 border-b border-stone-200 px-4 py-3">
         <div class="min-w-0 flex-1">
           <h2 class="truncate text-lg font-semibold">{{ title }}</h2>
-          <p class="text-xs text-stone-500">{{ module }}{{ row ? ` · fila ${row.row}` : ' · se creará al guardar' }}</p>
+          <p class="text-xs text-stone-500">
+            {{ module }}{{ row ? ` · ${$t('fila {row}', { row: row.row })}` : ` · ${$t('se creará al guardar')}` }}
+          </p>
         </div>
-        <a v-if="sourceUrl" :href="sourceUrl" target="_blank" rel="noopener" class="btn-ghost" title="Abrir en Google Sheets">
+        <a
+          v-if="sourceUrl"
+          :href="sourceUrl"
+          target="_blank"
+          rel="noopener"
+          class="btn-ghost"
+          :title="$t('Abrir en Google Sheets')"
+        >
           <ExternalLink :size="18" />
         </a>
         <button
           v-if="created"
           class="btn-ghost text-red-700"
-          title="Quitar fila nueva"
+          :title="$t('Quitar fila nueva')"
           @click="emit('removeCreate', created.clientId)"
         >
           <Trash2 :size="18" />
         </button>
-        <button class="btn-ghost" title="Cerrar" @click="emit('close')"><X :size="20" /></button>
+        <button class="btn-ghost" :title="$t('Cerrar')" @click="emit('close')"><X :size="20" /></button>
       </header>
       <p v-if="message" class="bg-red-50 px-4 py-2 text-sm text-red-800">{{ message }}</p>
       <InsectaryIdFix v-if="insectaryId" :id="insectaryId" @done="emit('close')" />
@@ -104,7 +114,7 @@ function change(field: Field, text: string) {
             {{ field.key }}
             <Lock v-if="!editable(field)" :size="12" class="text-stone-400" />
             <span v-if="row && pending.isDirty(row.id, field.key)" class="ml-auto text-amber-700">
-              antes: {{ displayValue(row.values[field.key], field) || 'vacío' }}
+              {{ $t('antes: {value}', { value: displayValue(row.values[field.key], field) || $t('vacío') }) }}
             </span>
           </span>
           <!-- Columns with a list of values: the grid's dropdown (typed values are completed to the first suggestion). -->

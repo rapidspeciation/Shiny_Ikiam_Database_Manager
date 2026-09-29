@@ -34,9 +34,18 @@ function done() {
     v-if="free !== null && free < below"
     class="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950"
   >
-    <span>
-      Quedan <b>{{ free }}</b> Insectary IDs preasignados<template v-if="last"> (hasta {{ last }})</template>.
-    </span>
+    <!-- The number in bold: the sentence is split at {n}. -->
+    <span
+      ><template
+        v-for="(part, i) in (last
+          ? $t('Quedan {n} Insectary IDs preasignados (hasta {last}).', { last })
+          : $t('Quedan {n} Insectary IDs preasignados.')
+        ).split('{n}')"
+        :key="i"
+        ><b v-if="i">{{ free }}</b
+        >{{ part }}</template
+      ></span
+    >
     <ExtendRowsButton sheet="Insectary_data" :count="200" @done="done" />
   </div>
 </template>

@@ -35,6 +35,7 @@ import type { CellValue } from '../lib/types'
 import { usePending } from '../stores/pending'
 import { useSession } from '../stores/session'
 import { useTables } from '../stores/tables'
+import { t, tn } from '../lib/i18n'
 
 /**
  * A day of field collection, entered in bulk. The header holds what the whole
@@ -86,8 +87,8 @@ const touchScreen = window.matchMedia('(pointer: coarse)').matches
 const headerOpen = ref(!touchScreen || !header.value.location)
 const headerChip = computed(() => {
   const h = header.value
-  const day = h.date ? formatSerial(isoToSerial(h.date)).replace(/-\d{2}$/, '') : 'sin fecha'
-  return [day, h.location || 'sin lugar', h.collector.split(' - ')[0]].filter(Boolean).join(' · ')
+  const day = h.date ? formatSerial(isoToSerial(h.date)).replace(/-\d{2}$/, '') : t('sin fecha')
+  return [day, h.location || t('sin lugar'), h.collector.split(' - ')[0]].filter(Boolean).join(' · ')
 })
 const grid = ref<InstanceType<typeof CollectGrid>>()
 const saving = ref(false)
@@ -227,7 +228,7 @@ const usedTubes = computed(() => {
     for (const row of tables.tables[sheet]?.rows || [])
       for (const key of keys)
         if (!isBlank(row.values[key]) && String(row.values[key]).trim() !== 'NA')
-          used.set(String(row.values[key]).trim().toUpperCase(), `${sheet} fila ${row.row}`)
+          used.set(String(row.values[key]).trim().toUpperCase(), t('{sheet} fila {row}', { sheet, row: row.row }))
   return used
 })
 const nextCam = () => camPool.value.find(id => !drafts.value.some(d => d.cam === id)) || ''
@@ -296,7 +297,7 @@ watch([freeIds, camPool, tubeRun], () => {
 async function add() {
   if (!header.value.location) {
     headerOpen.value = true
-    return notify('Elige el lugar de colecta')
+    return notify(t('Elige el lugar de colecta'))
   }
   const count = Math.min(60, Math.max(1, Math.round(addCount.value || 1)))
   const first = drafts.value.length
@@ -304,7 +305,11 @@ async function add() {
     drafts.value.push({ ...blankDraft(), species: addSpecies.value.trim() })
     setFate(drafts.value.at(-1)!, addFate.value)
   }
-  notify(`Se añadieron ${count} ${count === 1 ? 'fila' : 'filas'}: la lista tiene ${drafts.value.length}`)
+  notify(
+    tn(count, 'Se añadieron {n} fila: la lista tiene {total}', 'Se añadieron {n} filas: la lista tiene {total}', {
+      total: drafts.value.length,
+    }),
+  )
   // Straight to the first new row, ready to type its species.
   await nextTick()
   if (view.value === 'tabla') return void grid.value?.focusCell(first, 'species')
@@ -321,7 +326,7 @@ const emptyCount = computed(() => drafts.value.filter(isEmpty).length)
 function removeEmpty() {
   const n = emptyCount.value
   drafts.value = drafts.value.filter(d => !isEmpty(d))
-  notify(`Se quitaron ${n} filas vacías: quedan ${drafts.value.length}`)
+  notify(t('Se quitaron {n} filas vacías: quedan {left}', { n, left: drafts.value.length }))
 }
 /**
  * Spreadsheet habits in the list. The columns in the order they appear, which
@@ -367,7 +372,10 @@ function setColumn(d: Draft, column: Column, text: string): string | null {
     if (tube) d.tube = tube
     const medium = mediums.value.find(m => text.includes(`(${m})`))
     if (medium) d.medium = medium
-    if (switched) return `pasa a Collected_Preserved por el CAM ${cam}${freed ? ` (queda libre ${freed})` : ''}`
+    if (switched)
+      return freed
+        ? t('pasa a Collected_Preserved por el CAM {cam} (queda libre {id})', { cam, id: freed })
+        : t('pasa a Collected_Preserved por el CAM {cam}', { cam })
   } else if (!applies(d, column)) return null
   else if (column === 'insectaryId') {
     // The ID written on the wings, if it is not the one suggested (checked in `problems`).
@@ -407,15 +415,33 @@ function pasteText(text: string, index: number, column: Column): boolean {
       const target = COLUMNS[start + c]
       if (!target) return
       const why = misfit(target, text)
-      if (why) return void skipped.push(`«${shorten(text.trim())}» en ${HEADERS[target]}, fila ${index + r + 1}: ${why}`)
+      if (why)
+        return void skipped.push(
+          t('«{value}» en {column}, fila {row}: {problem}', {
+            value: shorten(text.trim()),
+            column: HEADERS[target],
+            row: index + r + 1,
+            problem: why,
+          }),
+        )
       if (setColumn(d, target, text)) switched.push(index + r + 1)
     })
   })
-  const notes = [`Pegadas ${block.length} filas${added ? ` (${added} nuevas)` : ''}: la lista tiene ${drafts.value.length}`]
-  if (switched.length) notes.push(`filas ${switched.join(', ')} pasan a Collected_Preserved por su CAM`)
+  const total = drafts.value.length
+  const notes = [
+    added
+      ? t('Pegadas {n} filas ({added} nuevas): la lista tiene {total}', { n: block.length, added, total })
+      : t('Pegadas {n} filas: la lista tiene {total}', { n: block.length, total }),
+  ]
+  if (switched.length) notes.push(t('filas {rows} pasan a Collected_Preserved por su CAM', { rows: switched.join(', ') }))
   if (skipped.length)
     notes.push(
-      `no se pegaron ${skipped.length} ${skipped.length === 1 ? 'valor que no encaja' : 'valores que no encajan'} (¿columnas corridas?): ${skipped.slice(0, 3).join('; ')}${skipped.length > 3 ? '…' : ''}`,
+      tn(
+        skipped.length,
+        'no se pegaron {n} valor que no encaja (¿columnas corridas?): {values}',
+        'no se pegaron {n} valores que no encajan (¿columnas corridas?): {values}',
+        { values: `${skipped.slice(0, 3).join('; ')}${skipped.length > 3 ? '…' : ''}` },
+      ),
     )
   notify(notes.join('. '), skipped.length ? 'error' : undefined)
   return true
@@ -429,13 +455,20 @@ function editCell(key: string, column: Column, text: string) {
   if (!d) return
   const why = misfit(column, text)
   // The cell goes back to what the list holds (CollectGrid).
-  if (why) return notify(`«${shorten(text.trim())}» ${why}: no se escribió en ${HEADERS[column]}`)
+  if (why)
+    return notify(
+      t('«{value}» {problem}: no se escribió en {column}', {
+        value: shorten(text.trim()),
+        problem: why,
+        column: HEADERS[column],
+      }),
+    )
   const note = setColumn(d, column, text)
-  if (note) notify(`Fila ${drafts.value.indexOf(d) + 1} ${note}`)
+  if (note) notify(t('Fila {n} {change}', { n: drafts.value.indexOf(d) + 1, change: note }))
   // Outside a list the sheet does not enforce: kept (red corner), with a warning so a typo is noticed.
   const field = LISTED[column]
   const issue = field && !collectionRules.value?.lists[field]?.strict ? cellProblem(d, column) : null
-  if (issue && !note) notify(`${issue}: se guarda igual; corrígelo si es un error`)
+  if (issue && !note) notify(t('{problem}: se guarda igual; corrígelo si es un error', { problem: issue }))
 }
 function focusCell(index: number, column: Column) {
   const key = drafts.value[index]?.key
@@ -490,14 +523,14 @@ function applyBulk() {
     if (bulk.sex) d.sex = bulk.sex
     if (bulk.fate) setFate(d, bulk.fate)
   }
-  notify(`Aplicado a ${rows.length} ${rows.length === 1 ? 'fila' : 'filas'}`)
+  notify(tn(rows.length, 'Aplicado a {n} fila', 'Aplicado a {n} filas'))
 }
 /** Touch-screen copy: a row's species, subspecies, sex and fate go to the bar, to apply to the rows ticked. */
 function copyRow(d: Draft, n: number) {
   Object.assign(bulk, { species: d.species, subspecies: d.subspecies, sex: d.sex, fate: d.fate })
   selected.value = selected.value.filter(k => k !== d.key)
   anchor.value = d.key
-  notify(`Copiada la fila ${n}: marca las filas donde pegarla y pulsa Aplicar`)
+  notify(t('Copiada la fila {n}: marca las filas donde pegarla y pulsa Aplicar', { n }))
 }
 function removeSelected() {
   drafts.value = drafts.value.filter(d => !isSelected(d.key))
@@ -505,9 +538,9 @@ function removeSelected() {
 }
 function clearAll() {
   const filled = drafts.value.length - emptyCount.value
-  if (filled && !confirm(`¿Vaciar la lista? Se pierden ${filled} filas con datos sin guardar.`)) return
+  if (filled && !confirm(t('¿Vaciar la lista? Se pierden {n} filas con datos sin guardar.', { n: filled }))) return
   drafts.value = []
-  notify('Lista vaciada')
+  notify(t('Lista vaciada'))
 }
 const groups = computed(() => {
   const out = new Map<string, Record<Fate, number>>()
@@ -536,20 +569,20 @@ function idProblem(d: Draft, column: Column = 'insectaryId'): string | null {
     const value = d[column].trim().toUpperCase()
     if (d.fate !== 'preservada' || !value) return null
     if (drafts.value.filter(x => x.fate === 'preservada' && x[column].trim().toUpperCase() === value).length > 1)
-      return `${value} está repetido en la lista`
-    if (column === 'cam' && usedCams.value.has(value)) return `${value} ya está usado en las hojas`
+      return t('{id} está repetido en la lista', { id: value })
+    if (column === 'cam' && usedCams.value.has(value)) return t('{id} ya está usado en las hojas', { id: value })
     const used = column === 'tube' && usedTubes.value.get(value)
-    return used ? `${value} ya está usado (${used})` : null
+    return used ? t('{id} ya está usado ({where})', { id: value, where: used }) : null
   }
   if (d.fate !== 'insectario' || !d.insectaryId) return null
   if (drafts.value.filter(x => x.fate === 'insectario' && x.insectaryId === d.insectaryId).length > 1)
-    return `${d.insectaryId} está repetido en la lista`
+    return t('{id} está repetido en la lista', { id: d.insectaryId })
   if (!idRows.value.size) return null
   const row = idRows.value.get(d.insectaryId)
-  if (!row) return `${d.insectaryId} no tiene fila preparada en Insectary_data`
-  if (row.observed) return `${d.insectaryId} ya está registrado (Insectary_data fila ${row.row})`
+  if (!row) return t('{id} no tiene fila preparada en Insectary_data', { id: d.insectaryId })
+  if (row.observed) return t('{id} ya está registrado (Insectary_data fila {row})', { id: d.insectaryId, row: row.row })
   const collected = collectedIds.value.get(d.insectaryId)
-  if (collected) return `${d.insectaryId} ya está en Collection_data (fila ${collected})`
+  if (collected) return t('{id} ya está en Collection_data (fila {row})', { id: d.insectaryId, row: collected })
   return null
 }
 /**
@@ -584,25 +617,25 @@ function cellProblem(d: Draft, column: Column): string | null {
   return field ? listProblem(collectionRules.value, field, d[column as 'species']) : null
 }
 const problems = computed(() => [
-  ...(emptyCount.value ? [`${emptyCount.value} filas vacías`] : []),
+  ...(emptyCount.value ? [t('{n} filas vacías', { n: emptyCount.value })] : []),
   ...drafts.value.flatMap((d, i) => {
     if (isEmpty(d)) return []
     const n = i + 1
     const out: string[] = []
-    if (!d.species) out.push(`fila ${n}: falta la especie`)
-    if (!d.sex) out.push(`fila ${n}: falta el sexo`)
+    if (!d.species) out.push(t('fila {n}: falta la especie', { n }))
+    if (!d.sex) out.push(t('fila {n}: falta el sexo', { n }))
     if (d.fate === 'insectario' && !d.insectaryId)
-      out.push(`fila ${n}: no quedan Insectary IDs libres; crea más filas preasignadas en Insectary_data`)
+      out.push(t('fila {n}: no quedan Insectary IDs libres; crea más filas preasignadas en Insectary_data', { n }))
     for (const column of ['insectaryId', 'cam', 'tube'] as const) {
       const idIssue = idProblem(d, column)
-      if (idIssue) out.push(`fila ${n}: ${HEADERS[column]} ${idIssue}`)
+      if (idIssue) out.push(t('fila {n}: {column} {problem}', { n, column: HEADERS[column], problem: idIssue }))
     }
     for (const column of Object.keys(LISTED) as Column[]) {
       const issue = cellProblem(d, column)
-      if (issue) out.push(`fila ${n}: ${LISTED[column]} ${issue}`)
+      if (issue) out.push(t('fila {n}: {column} {problem}', { n, column: LISTED[column], problem: issue }))
     }
     if (d.fate === 'preservada' && (!d.cam || !d.tube || !d.medium))
-      out.push(`fila ${n}: falta CAM_ID, Tube_1_id o Preservation_medium`)
+      out.push(t('fila {n}: falta CAM_ID, Tube_1_id o Preservation_medium', { n }))
     return out
   }),
 ])
@@ -685,7 +718,7 @@ onDeactivated(() => (confirming.value = false))
 const summary = computed(() => summarize(drafts.value))
 const isToday = computed(() => header.value.date === todayIso())
 const longDate = computed(() =>
-  header.value.date ? `${weekdayOf(header.value.date)} ${formatSerial(isoToSerial(header.value.date))}` : 'sin fecha',
+  header.value.date ? `${weekdayOf(header.value.date)} ${formatSerial(isoToSerial(header.value.date))}` : t('sin fecha'),
 )
 function askSave() {
   if (!drafts.value.length) return
@@ -702,14 +735,15 @@ async function save() {
   saving.value = true
   const added: string[] = []
   for (const d of drafts.value) {
-    added.push(pending.addCreate(MODULE, d.insectaryId || d.cam || 'nuevo', collectionRow(d)).clientId)
+    added.push(pending.addCreate(MODULE, d.insectaryId || d.cam || t('nuevo'), collectionRow(d)).clientId)
     if (d.fate === 'insectario') added.push(pending.addCreate('Insectary_data', d.insectaryId, insectaryRow(d)).clientId)
   }
   pending.touch()
   try {
     await pending.save(`Colecta ${header.value.date}`)
-    if (added.some(id => pending.creates.some(c => c.clientId === id))) throw new Error('Revisa los errores marcados en la tabla')
-    notify(`Colecta guardada: ${drafts.value.length} mariposas`, 'success')
+    if (added.some(id => pending.creates.some(c => c.clientId === id)))
+      throw new Error(t('Revisa los errores marcados en la tabla'))
+    notify(t('Colecta guardada: {n} mariposas', { n: drafts.value.length }), 'success')
     drafts.value = []
     loadFreeIds()
     loadTubes()
@@ -761,7 +795,7 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
       >
         {{ headerChip }}
       </span>
-      <span class="shrink-0 text-brand-700">{{ headerOpen ? 'Cerrar' : '✎' }}</span>
+      <span class="shrink-0 text-brand-700">{{ headerOpen ? $t('Cerrar') : '✎' }}</span>
     </button>
     <div v-if="headerOpen" class="toolbar">
       <label>
@@ -769,60 +803,74 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
           >Collection_date <span class="font-normal text-stone-500">{{ weekdayOf(header.date) }}</span></span
         >
         <DateField v-model="header.date" class="field-input" :class="{ 'border-amber-500 bg-amber-50': isToday }" />
-        <span v-if="isToday" class="block text-xs text-amber-800">¿Es hoy la fecha de la colecta?</span>
+        <span v-if="isToday" class="block text-xs text-amber-800">{{ $t('¿Es hoy la fecha de la colecta?') }}</span>
       </label>
       <label class="min-w-52">
-        <span class="field-label">Collector <span class="font-normal text-stone-500">(filas nuevas)</span></span>
+        <span class="field-label"
+          >Collector <span class="font-normal text-stone-500">{{ $t('(filas nuevas)') }}</span></span
+        >
         <ChoiceField v-model="header.collector" class="field-input" :options="people" />
       </label>
       <label class="min-w-52">
-        <span class="field-label">Identifier <span class="font-normal text-stone-500">(filas nuevas)</span></span>
+        <span class="field-label"
+          >Identifier <span class="font-normal text-stone-500">{{ $t('(filas nuevas)') }}</span></span
+        >
         <ChoiceField v-model="header.identifier" class="field-input" :options="people" />
       </label>
       <label>
-        <span class="field-label">Rainfall <span class="font-normal text-stone-500">(filas nuevas)</span></span>
+        <span class="field-label"
+          >Rainfall <span class="font-normal text-stone-500">{{ $t('(filas nuevas)') }}</span></span
+        >
         <ChoiceField v-model="header.rainfall" class="field-input" :options="rainfalls" :freetext="false" allow-empty />
       </label>
       <label>
-        <span class="field-label">Cloud_cover <span class="font-normal text-stone-500">(filas nuevas)</span></span>
+        <span class="field-label"
+          >Cloud_cover <span class="font-normal text-stone-500">{{ $t('(filas nuevas)') }}</span></span
+        >
         <ChoiceField v-model="header.cloud" class="field-input" :options="clouds" :freetext="false" allow-empty />
       </label>
     </div>
     <div class="toolbar border-t-0" :class="{ 'gap-2 py-2': !headerOpen }">
       <label v-if="headerOpen" class="min-w-64">
-        <span class="field-label">Collection_location (cámbialo para añadir mariposas de otro sitio)</span>
+        <span class="field-label">{{ $t('Collection_location (cámbialo para añadir mariposas de otro sitio)') }}</span>
         <ChoiceField v-model="header.location" class="field-input" :options="places" />
       </label>
       <label>
-        <span class="field-label">Filas a añadir</span>
+        <span class="field-label">{{ $t('Filas a añadir') }}</span>
         <input v-model.number="addCount" type="number" min="1" max="60" class="field-input w-20" />
       </label>
       <label v-if="headerOpen" class="min-w-48">
-        <span class="field-label">SPECIES (opcional)</span>
-        <ChoiceField v-model="addSpecies" class="field-input" :options="speciesList" placeholder="la misma para todas" />
+        <span class="field-label">{{ $t('SPECIES (opcional)') }}</span>
+        <ChoiceField v-model="addSpecies" class="field-input" :options="speciesList" :placeholder="$t('la misma para todas')" />
       </label>
       <label>
         <span class="field-label">Release_Collect</span>
         <ChoiceField v-model="addFate" class="field-input" :options="fateChoices" :freetext="false" />
       </label>
       <button class="btn-primary" @click="add">
-        <Plus :size="15" /> Añadir {{ Math.max(1, addCount || 1) }} {{ Math.max(1, addCount || 1) === 1 ? 'fila' : 'filas' }}
+        <Plus :size="15" /> {{ $tn(Math.max(1, addCount || 1), 'Añadir {n} fila', 'Añadir {n} filas') }}
       </button>
       <div v-if="headerOpen" class="ml-auto flex gap-2">
         <div
           class="rounded-md border border-brand-600 bg-brand-50 px-3 py-1"
-          :title="`Wild_indv_CAMid de Lists: quedan ${upcoming.camsLeft} sin usar`"
+          :title="$t('Wild_indv_CAMid de Lists: quedan {n} sin usar', { n: upcoming.camsLeft })"
         >
-          <p class="text-xs text-brand-700">Próximo CAM_ID</p>
+          <p class="text-xs text-brand-700">{{ $t('Próximo CAM_ID') }}</p>
           <p class="font-mono text-lg font-semibold text-brand-700">{{ upcoming.cam || '—' }}</p>
-          <p v-if="upcoming.camsLeft < 50" class="text-xs text-amber-800">quedan {{ upcoming.camsLeft }}</p>
+          <p v-if="upcoming.camsLeft < 50" class="text-xs text-amber-800">{{ $t('quedan {n}', { n: upcoming.camsLeft }) }}</p>
         </div>
-        <div class="rounded-md border border-stone-300 bg-stone-50 px-3 py-1" :title="`Tubo de la colecta (${header.medium})`">
-          <p class="text-xs text-stone-600">Próximo tubo</p>
+        <div
+          class="rounded-md border border-stone-300 bg-stone-50 px-3 py-1"
+          :title="$t('Tubo de la colecta ({medium})', { medium: header.medium })"
+        >
+          <p class="text-xs text-stone-600">{{ $t('Próximo tubo') }}</p>
           <p class="font-mono text-lg font-semibold">{{ upcoming.tube || '—' }}</p>
         </div>
-        <div class="rounded-md border border-stone-300 bg-stone-50 px-3 py-1" title="Para las mariposas que van al insectario">
-          <p class="text-xs text-stone-600">Próximo Insectary ID</p>
+        <div
+          class="rounded-md border border-stone-300 bg-stone-50 px-3 py-1"
+          :title="$t('Para las mariposas que van al insectario')"
+        >
+          <p class="text-xs text-stone-600">{{ $t('Próximo Insectary ID') }}</p>
           <p class="font-mono text-lg font-semibold">{{ upcoming.insectaryId || '—' }}</p>
         </div>
       </div>
@@ -836,13 +884,13 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         data-sticky-bar
         class="sticky top-0 z-10 -mx-3 flex items-center gap-2 border-b border-stone-200 bg-white px-3 py-1.5 text-sm"
       >
-        <span class="font-semibold whitespace-nowrap">{{ drafts.length }} {{ drafts.length === 1 ? 'fila' : 'filas' }}</span>
-        <span v-if="emptyCount" class="whitespace-nowrap text-amber-800">{{ emptyCount }} vacías</span>
-        <button v-if="emptyCount" class="btn px-2 py-1" title="Quitar filas vacías" @click="removeEmpty">
-          <Eraser :size="15" /><span class="max-sm:hidden">Quitar vacías</span>
+        <span class="font-semibold whitespace-nowrap">{{ $tn(drafts.length, '{n} fila', '{n} filas') }}</span>
+        <span v-if="emptyCount" class="whitespace-nowrap text-amber-800">{{ $t('{n} vacías', { n: emptyCount }) }}</span>
+        <button v-if="emptyCount" class="btn px-2 py-1" :title="$t('Quitar filas vacías')" @click="removeEmpty">
+          <Eraser :size="15" /><span class="max-sm:hidden">{{ $t('Quitar vacías') }}</span>
         </button>
-        <button class="btn px-2 py-1" title="Vaciar lista" @click="clearAll">
-          <Trash2 :size="15" /><span class="max-sm:hidden">Vaciar lista</span>
+        <button class="btn px-2 py-1" :title="$t('Vaciar lista')" @click="clearAll">
+          <Trash2 :size="15" /><span class="max-sm:hidden">{{ $t('Vaciar lista') }}</span>
         </button>
         <span class="ml-auto inline-flex shrink-0 overflow-hidden rounded-md border border-stone-300 text-xs">
           <button
@@ -852,27 +900,34 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
             :class="view === v ? 'bg-brand-700 text-white' : 'bg-white text-stone-700'"
             @click="view = v"
           >
-            {{ v === 'tabla' ? 'Tabla' : 'Formulario' }}
+            {{ v === 'tabla' ? $t('Tabla') : $t('Formulario') }}
           </button>
         </span>
       </div>
       <!-- How to use it: scrolls away with the page; folded on phones, where space is short. -->
       <details class="hint mt-1" :open="!touchScreen">
-        <summary class="cursor-pointer select-none">Cómo se usa · la lista se guarda en este navegador</summary>
-        <p>Se guarda en este navegador, aunque recargues o cierres la página, hasta que la guardes o la vacíes.</p>
+        <summary class="cursor-pointer select-none">{{ $t('Cómo se usa · la lista se guarda en este navegador') }}</summary>
+        <p>{{ $t('Se guarda en este navegador, aunque recargues o cierres la página, hasta que la guardes o la vacíes.') }}</p>
         <p v-if="view === 'tabla' && touchScreen">
-          Toca una celda para seleccionarla y dos veces para editarla · arrastra el círculo de la esquina para ampliar la
-          selección · la barra de abajo copia, pega, rellena hacia abajo o borra lo seleccionado.
+          {{
+            $t(
+              'Toca una celda para seleccionarla y dos veces para editarla · arrastra el círculo de la esquina para ampliar la selección · la barra de abajo copia, pega, rellena hacia abajo o borra lo seleccionado.',
+            )
+          }}
         </p>
         <p v-else-if="view === 'tabla'">
-          Como en una hoja de cálculo: selecciona celdas y arrastra el cuadrito de la esquina hacia abajo para copiarlas
-          (Insectary_ID, CAM_ID y Tube_1_id siguen la serie: O6D → O7D, CAM079895 → CAM079896) · pega celdas de Excel o Sheets
-          (llena hacia abajo y a la derecha, y añade filas si faltan) · Ctrl+D copia la primera fila de la selección · escribe
-          sobre una celda para reemplazarla, doble clic para editarla.
+          {{
+            $t(
+              'Como en una hoja de cálculo: selecciona celdas y arrastra el cuadrito de la esquina hacia abajo para copiarlas (Insectary_ID, CAM_ID y Tube_1_id siguen la serie: O6D → O7D, CAM079895 → CAM079896) · pega celdas de Excel o Sheets (llena hacia abajo y a la derecha, y añade filas si faltan) · Ctrl+D copia la primera fila de la selección · escribe sobre una celda para reemplazarla, doble clic para editarla.',
+            )
+          }}
         </p>
         <p v-else>
-          Marca filas (o «hasta aquí» para marcar varias seguidas) y aplica especie, sexo o destino a todas a la vez · en
-          computador también se puede pegar desde Excel, Ctrl+D copia la fila de arriba y Enter baja.
+          {{
+            $t(
+              'Marca filas (o «hasta aquí» para marcar varias seguidas) y aplica especie, sexo o destino a todas a la vez · en computador también se puede pegar desde Excel, Ctrl+D copia la fila de arriba y Enter baja.',
+            )
+          }}
         </p>
       </details>
       <CollectGrid
@@ -900,7 +955,9 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         <table class="w-full text-sm">
           <thead class="text-left text-xs text-stone-600">
             <tr>
-              <th class="w-8 px-1 py-1"><span class="sr-only">Marcar</span></th>
+              <th class="w-8 px-1 py-1">
+                <span class="sr-only">{{ $t('Marcar') }}</span>
+              </th>
               <th class="px-1 py-1">#</th>
               <th v-for="c in COLUMNS" :key="c" class="px-1">{{ HEADERS[c] }}</th>
               <th></th>
@@ -919,7 +976,7 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
                   type="checkbox"
                   class="h-5 w-5 accent-brand-700"
                   :checked="isSelected(d.key)"
-                  :aria-label="`Marcar fila ${i + 1}`"
+                  :aria-label="$t('Marcar fila {n}', { n: i + 1 })"
                   @change="toggleSelect(d.key)"
                 />
               </td>
@@ -927,8 +984,8 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
                 {{ i + 1 }}
                 <button
                   class="btn-ghost align-middle"
-                  :aria-label="`Copiar fila ${i + 1}`"
-                  title="Copiar esta fila (para aplicarla a las filas que marques)"
+                  :aria-label="$t('Copiar fila {n}', { n: i + 1 })"
+                  :title="$t('Copiar esta fila (para aplicarla a las filas que marques)')"
                   @click="copyRow(d, i + 1)"
                 >
                   <Copy :size="15" />
@@ -938,7 +995,7 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
                   class="ml-1 rounded bg-stone-100 px-1.5 py-0.5 text-xs whitespace-nowrap text-brand-700"
                   @click="selectTo(d.key)"
                 >
-                  hasta aquí
+                  {{ $t('hasta aquí') }}
                 </button>
               </td>
               <td class="px-1">
@@ -1018,7 +1075,7 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
                   data-col="insectaryId"
                   class="field-input w-24 font-semibold tracking-wide text-brand-800"
                   :class="{ 'border-amber-500 bg-amber-50': idProblem(d) }"
-                  :title="idProblem(d) || 'El ID escrito en las alas (se sugiere el siguiente libre)'"
+                  :title="idProblem(d) || $t('El ID escrito en las alas (se sugiere el siguiente libre)')"
                   @change="setColumn(d, 'insectaryId', ($event.target as HTMLInputElement).value)"
                   @paste="onPaste($event, i, 'insectaryId')"
                 />
@@ -1089,7 +1146,7 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
                 />
               </td>
               <td class="px-1 whitespace-nowrap">
-                <button class="btn-ghost" title="Quitar" @click="remove(d.key)"><Trash2 :size="14" /></button>
+                <button class="btn-ghost" :title="$t('Quitar')" @click="remove(d.key)"><Trash2 :size="14" /></button>
               </td>
             </tr>
           </tbody>
@@ -1100,9 +1157,9 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         v-if="view === 'formulario' && selected.length"
         class="sticky bottom-0 z-10 -mx-3 mt-2 flex flex-wrap items-end gap-2 border-t border-brand-700 bg-brand-50 px-3 py-2 text-sm"
       >
-        <span class="w-full font-semibold text-brand-800"
-          >{{ selected.length }} {{ selected.length === 1 ? 'fila marcada' : 'filas marcadas' }}: aplicar lo que llenes</span
-        >
+        <span class="w-full font-semibold text-brand-800">{{
+          $tn(selected.length, '{n} fila marcada: aplicar lo que llenes', '{n} filas marcadas: aplicar lo que llenes')
+        }}</span>
         <label class="min-w-40 flex-1">
           <span class="field-label">SPECIES</span>
           <ChoiceField v-model="bulk.species" class="field-input" :options="speciesList" />
@@ -1133,9 +1190,9 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
           :freetext="false"
           allow-empty
         />
-        <button class="btn-primary" @click="applyBulk"><CheckSquare :size="15" /> Aplicar</button>
-        <button class="btn" @click="removeSelected"><Trash2 :size="15" /> Quitar</button>
-        <button class="btn" @click="selected = []"><X :size="15" /> Desmarcar</button>
+        <button class="btn-primary" @click="applyBulk"><CheckSquare :size="15" /> {{ $t('Aplicar') }}</button>
+        <button class="btn" @click="removeSelected"><Trash2 :size="15" /> {{ $t('Quitar') }}</button>
+        <button class="btn" @click="selected = []"><X :size="15" /> {{ $t('Desmarcar') }}</button>
       </div>
       <div class="mt-2 flex flex-wrap items-center gap-3 text-sm">
         <span v-for="[place, g] in groups" :key="place" class="rounded bg-stone-100 px-2 py-0.5">
@@ -1146,30 +1203,37 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
           >
         </span>
         <span v-if="problems.length" class="text-xs text-amber-800"
-          >{{ problems[0] }}<template v-if="problems.length > 1"> (y {{ problems.length - 1 }} más)</template></span
+          >{{ problems[0]
+          }}<template v-if="problems.length > 1"> {{ $t('(y {n} más)', { n: problems.length - 1 }) }}</template></span
         >
         <span v-if="earlierIds.length" class="w-full text-xs text-amber-800">
-          Ya no quedan filas preasignadas al final de Insectary_data: {{ earlierIds.slice(0, 4).join(', ')
-          }}{{ earlierIds.length > 4 ? '…' : '' }} son filas vacías anteriores. Comprueba que ningún ID esté ya escrito en otra
-          mariposa, o crea más filas preasignadas en Insectary_data.
+          {{
+            $t(
+              'Ya no quedan filas preasignadas al final de Insectary_data: {ids} son filas vacías anteriores. Comprueba que ningún ID esté ya escrito en otra mariposa, o crea más filas preasignadas en Insectary_data.',
+              { ids: earlierIds.slice(0, 4).join(', ') + (earlierIds.length > 4 ? '…' : '') },
+            )
+          }}
         </span>
-        <button v-if="emptyCount" class="btn" @click="removeEmpty"><Eraser :size="15" /> Quitar filas vacías</button>
+        <button v-if="emptyCount" class="btn" @click="removeEmpty"><Eraser :size="15" /> {{ $t('Quitar filas vacías') }}</button>
         <button class="btn-primary ml-auto" :disabled="saving || !!problems.length" @click="askSave">
-          <Save :size="15" /> {{ saving ? 'Guardando…' : `Guardar colecta (${drafts.length})` }}
+          <Save :size="15" /> {{ saving ? $t('Guardando…') : $t('Guardar colecta ({n})', { n: drafts.length }) }}
         </button>
       </div>
       <p class="hint mt-1">
-        Las que van al insectario reciben el Insectary ID para escribir en las alas, sin CAM ID (se da al hacer el wing clip o al
-        preservar). Se guardan en Collection_data e Insectary_data a la vez.
+        {{
+          $t(
+            'Las que van al insectario reciben el Insectary ID para escribir en las alas, sin CAM ID (se da al hacer el wing clip o al preservar). Se guardan en Collection_data e Insectary_data a la vez.',
+          )
+        }}
       </p>
     </div>
 
     <p class="hint px-4 py-1">
-      Últimos {{ recentCount }} registros de Collection_data.
-      <button class="underline" @click="recentCount += 20">ver más</button>
+      {{ $t('Últimos {n} registros de Collection_data.', { n: recentCount }) }}
+      <button class="underline" @click="recentCount += 20">{{ $t('ver más') }}</button>
     </p>
     <div class="min-h-80 flex-1">
-      <p v-if="!ready" class="p-6 text-stone-500">Cargando Collection_data…</p>
+      <p v-if="!ready" class="p-6 text-stone-500">{{ $t('Cargando {sheet}…', { sheet: 'Collection_data' }) }}</p>
       <SheetGrid
         v-else
         :module="MODULE"
@@ -1194,37 +1258,38 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
       <section
         class="flex max-h-[90vh] w-full max-w-lg flex-col rounded-lg bg-white shadow-xl"
         role="dialog"
-        aria-label="Guardar colecta"
+        :aria-label="$t('Guardar colecta')"
       >
         <header class="flex items-center border-b border-stone-200 px-4 py-3">
-          <h2 class="flex-1 text-lg font-semibold">Guardar {{ drafts.length }} mariposas</h2>
-          <button class="btn-ghost" aria-label="Cerrar" @click="confirming = false"><X :size="20" /></button>
+          <h2 class="flex-1 text-lg font-semibold">{{ $t('Guardar {n} mariposas', { n: drafts.length }) }}</h2>
+          <button class="btn-ghost" :aria-label="$t('Cerrar')" @click="confirming = false"><X :size="20" /></button>
         </header>
         <div class="flex-1 space-y-2 overflow-y-auto px-4 py-3 text-sm">
           <p class="text-base">
             <strong class="capitalize">{{ longDate }}</strong> · {{ summary.places.join(', ') }}
           </p>
           <p v-if="isToday" class="rounded bg-amber-50 px-2 py-1 text-amber-800">
-            La fecha es hoy. Si pasas a limpio una colecta de otro día, cambia Collection_date antes de guardar.
+            {{ $t('La fecha es hoy. Si pasas a limpio una colecta de otro día, cambia Collection_date antes de guardar.') }}
           </p>
           <p>
-            Al insectario: <strong>{{ summary.insectary.female }} ♀ · {{ summary.insectary.male }} ♂</strong
-            ><template v-if="summary.insectary.other"> · {{ summary.insectary.other }} sin sexo</template>
+            {{ $t('Al insectario:') }} <strong>{{ summary.insectary.female }} ♀ · {{ summary.insectary.male }} ♂</strong
+            ><template v-if="summary.insectary.other"> · {{ $t('{n} sin sexo', { n: summary.insectary.other }) }}</template>
             <br />
-            Preservadas: <strong>{{ summary.preserved }}</strong
+            {{ $t('Preservadas:') }} <strong>{{ summary.preserved }}</strong
             ><template v-if="summary.cams">
               ({{ summary.cams.first
               }}<template v-if="summary.cams.first !== summary.cams.last"> – {{ summary.cams.last }}</template
-              ><template v-if="!summary.cams.consecutive">, con saltos</template>)</template
+              ><template v-if="!summary.cams.consecutive">, {{ $t('con saltos') }}</template
+              >)</template
             >
             <template v-if="summary.released"
-              ><br />Liberadas: <strong>{{ summary.released }}</strong></template
+              ><br />{{ $t('Liberadas:') }} <strong>{{ summary.released }}</strong></template
             >
           </p>
           <table class="w-full">
             <thead class="text-left text-xs text-stone-500">
               <tr>
-                <th class="py-1">Especie</th>
+                <th class="py-1">{{ $t('Especie') }}</th>
                 <th class="w-10 text-right">♀</th>
                 <th class="w-10 text-right">♂</th>
                 <th class="w-10 text-right">?</th>
@@ -1245,8 +1310,10 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
           </p>
         </div>
         <footer class="flex justify-end gap-2 border-t border-stone-200 px-4 py-3">
-          <button class="btn" @click="confirming = false">Volver</button>
-          <button class="btn-primary" :disabled="saving" @click="confirmSave"><Save :size="15" /> Guardar en la hoja</button>
+          <button class="btn" @click="confirming = false">{{ $t('Volver') }}</button>
+          <button class="btn-primary" :disabled="saving" @click="confirmSave">
+            <Save :size="15" /> {{ $t('Guardar en la hoja') }}
+          </button>
         </footer>
       </section>
     </div>
