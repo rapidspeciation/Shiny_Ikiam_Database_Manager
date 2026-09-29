@@ -3,9 +3,10 @@
 
 import { REFERENCES } from './insectaryId.mjs';
 import { moduleMap } from './schema.mjs';
+import { msg, msgError, tpl } from './messages.mjs';
 
 const blank = value => value === null || value === undefined || /^\s*(|NA|N\/A)\s*$/i.test(String(value));
-const fail = (code, message, status = 400) => Object.assign(new Error(message), { code, status });
+const fail = (code, message, status = 400) => msgError(message, { code, status });
 
 /**
  * One sheet as compact rows: values are arrays in column order and formula
@@ -153,7 +154,7 @@ function insectaryIds(store, start, count) {
   if (start) {
     // From a chosen ID the rows follow in sheet order (H0B → H1B → H2B).
     const from = free.find(r => norm(r.values.Insectary_ID) === norm(start));
-    if (!from) throw fail('ID_NOT_AVAILABLE', `${start} no es un Insectary ID preasignado libre`, 409);
+    if (!from) throw fail('ID_NOT_AVAILABLE', msg('{id} no es un Insectary ID preasignado libre', { id: start }), 409);
     pool = free.filter(r => r.row >= from.row && (r === from || round(r)));
   }
   const ids = pool.slice(0, count).map(r => ({ value: String(r.values.Insectary_ID).trim(), row: r.row }));
@@ -305,6 +306,16 @@ function camSuggestions(store) {
  * newest first.
  */
 const CROSSES = /F1\/F2|WEST x EAST|cross|mutation/i;
+const RACK_WORDS = {
+  Cruces: tpl('Cruces'),
+  Insectario: tpl('Insectario'),
+  Colecta: tpl('Colecta'),
+  Monitoreo: tpl('Monitoreo'),
+  'Colecta (patas)': tpl('Colecta (patas)'),
+  'Monitoreo (patas)': tpl('Monitoreo (patas)'),
+  Patas: tpl('Patas'),
+  'Medio sin indicar': tpl('Medio sin indicar'),
+};
 function tubeSuggestions(store) {
   const items = [];
   const add = (id, context, medium, date, row) => {
@@ -341,13 +352,15 @@ function tubeSuggestions(store) {
     if (n >= 2 || suggestions.length >= 40 || suggestions.some(s => s.value === run.value)) continue;
     byGroup.set(run.group, n + 1);
     const [context, medium] = run.group.split(' · ');
-    suggestions.push({
+    // The app's words (the rack's context, a medium it names) in the interface language; sheet media as they are.
+    const word = w => (RACK_WORDS[w] ? msg(RACK_WORDS[w]) : w);
+    const label = msg(run.date === null ? '{value} · {medium} · {context}' : '{value} · {medium} · {context} {date}', {
       value: run.value,
-      medium,
-      context,
-      date: run.date,
-      label: withDate(`${run.value} · ${medium} · ${context}`, run.date),
+      medium: word(medium),
+      context: word(context),
+      ...(run.date === null ? {} : { date: withDate('', run.date).trim() }),
     });
+    suggestions.push({ value: run.value, medium, context, date: run.date, label: label.text, labelMsg: label.msg });
   }
   return { suggestions };
 }

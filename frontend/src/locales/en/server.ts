@@ -1,8 +1,8 @@
 // Messages that come from the server (errors, notices), shown through errorText.
 // Keyed by the server's exact Spanish message (server/*.mjs). Messages with a
-// variable part (e.g. «Valor no válido en Sex», «Hay 2 filas con A0D en
-// Insectary_data») cannot be keyed and stay in Spanish; most other server
-// messages are already in English.
+// variable part (e.g. «Valor no válido en Sex») come with a descriptor and
+// their templates are in server-built.ts; most other server messages are
+// already in English.
 export default {
   // server/batch.mjs
   'Origen de escritura desconocido': 'Unknown write origin',

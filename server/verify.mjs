@@ -5,6 +5,7 @@
 
 import { LISTS } from './verifications.mjs';
 import { moduleMap } from './schema.mjs';
+import { msg } from './messages.mjs';
 
 const cache = new Map();
 
@@ -45,11 +46,14 @@ export function listOptions(store, sheet) {
   return out;
 }
 
-/** Why a value is not allowed in a list column, or null. Blank cells are always allowed. */
-export function listProblem(options, field, value) {
+/** Why a value is not allowed in a list column, or null, as a msg() (server/messages.mjs). Blank cells are always allowed. */
+export function listProblemMsg(options, field, value) {
   const list = options[field];
   if (!list || value === null || value === undefined || typeof value === 'object') return null;
   const text = String(value).trim();
   if (!text || list.values.has(text)) return null;
-  return `${field}: «${text}» no está en la lista de la hoja (${list.source})`;
+  const source = list.source === 'lista fija de la hoja' ? msg('lista fija de la hoja') : list.source;
+  return msg('{field}: «{value}» no está en la lista de la hoja ({source})', { field, value: text, source });
 }
+/** The same in Spanish. */
+export const listProblem = (options, field, value) => listProblemMsg(options, field, value)?.text ?? null;

@@ -7,8 +7,9 @@
 
 import { applyBatch, TYPED_OVER_FORMULA } from './batch.mjs';
 import { moduleMap } from './schema.mjs';
+import { msg, msgError } from './messages.mjs';
 
-const fail = (code, message, status = 400) => Object.assign(new Error(message), { code, status });
+const fail = (code, message, status = 400) => msgError(message, { code, status });
 const text = value => (value === null || value === undefined ? '' : String(value).trim());
 const blank = value => /^(|NA|N\/A)$/i.test(text(value));
 const norm = value => text(value).toUpperCase();
@@ -60,11 +61,12 @@ export function planIdChange(store, fromInput, toInput) {
   const insectary = records(store, 'Insectary_data');
   const holding = id => insectary.filter(r => norm(r.values.Insectary_ID) === id);
   const sources = holding(from).filter(r => r.observed);
-  if (!sources.length) throw fail('ID_NOT_RECORDED', `${from} no está registrado en Insectary_data`, 404);
-  if (sources.length > 1) throw fail('IDENTITY_CONFLICT', `Hay ${sources.length} filas con ${from} en Insectary_data`, 409);
+  if (!sources.length) throw fail('ID_NOT_RECORDED', msg('{id} no está registrado en Insectary_data', { id: from }), 404);
+  const several = (n, id) => msg('Hay {n} filas con {id} en Insectary_data', { n, id });
+  if (sources.length > 1) throw fail('IDENTITY_CONFLICT', several(sources.length, from), 409);
   const targets = holding(to);
-  if (!targets.length) throw fail('NO_PREMADE_ROW', `${to} no tiene fila preparada en Insectary_data`, 404);
-  if (targets.length > 1) throw fail('IDENTITY_CONFLICT', `Hay ${targets.length} filas con ${to} en Insectary_data`, 409);
+  if (!targets.length) throw fail('NO_PREMADE_ROW', msg('{id} no tiene fila preparada en Insectary_data', { id: to }), 404);
+  if (targets.length > 1) throw fail('IDENTITY_CONFLICT', several(targets.length, to), 409);
   const [source] = sources;
   const [target] = targets;
   const mode = target.observed ? 'swap' : 'move';

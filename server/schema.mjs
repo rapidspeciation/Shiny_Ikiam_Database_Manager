@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { msg, msgError } from './messages.mjs';
 
 const profile = JSON.parse(readFileSync(new URL('../docs/workbook-schema.json', import.meta.url)));
 export const SANDBOX_ID = '19FXrunwWKK1pbyHqWNPcytmaDmyBQoK7yabzIdRQQYM';
@@ -148,7 +149,7 @@ export function validateValues(module, values, { allowFormula = false, normalize
   for (const [key, val] of Object.entries(values)) {
     const f = mod.fields.find(x => x.key === key);
     if (!f || f.readonly)
-      throw Object.assign(new Error(`${key} no se puede editar`), { status: 400, code: 'INVALID_FIELD', field: key });
+      throw msgError(msg('{field} no se puede editar', { field: key }), { status: 400, code: 'INVALID_FIELD', field: key });
     if (isSumField(module, key)) {
       const formula = simpleSum(typeof val === 'object' && val ? val.formula : val);
       if (formula) {
@@ -157,13 +158,11 @@ export function validateValues(module, values, { allowFormula = false, normalize
       }
     }
     if (val && typeof val === 'object') {
-      if (!allowFormula || typeof val.formula !== 'string' || !val.formula.startsWith('='))
-        throw Object.assign(new Error(`Valor no válido en ${key}`), { status: 400, code: 'INVALID_VALUE', field: key });
+      if (!allowFormula || typeof val.formula !== 'string' || !val.formula.startsWith('=')) throw badValue(key);
       out[key] = { formula: val.formula };
       continue;
     }
-    if (val !== null && !['string', 'number', 'boolean'].includes(typeof val))
-      throw Object.assign(new Error(`Valor no válido en ${key}`), { status: 400, code: 'INVALID_VALUE', field: key });
+    if (val !== null && !['string', 'number', 'boolean'].includes(typeof val)) throw badValue(key);
     if (!normalize || val === null || val === '') {
       out[key] = val === '' ? null : val;
       continue;
@@ -207,11 +206,13 @@ const LAST_SERIAL = 73051; // 1 Jan 2100
 const plausibleSerial = (key, serial) =>
   /^days difference/i.test(key) || (serial >= FIRST_SERIAL && serial < LAST_SERIAL);
 const badDate = key =>
-  Object.assign(new Error(`Fecha no válida en ${key}: usa 14-Aug-25 o 2025-08-14, entre 1990 y 2099`), {
+  msgError(msg('Fecha no válida en {field}: usa 14-Aug-25 o 2025-08-14, entre 1990 y 2099', { field: key }), {
     status: 400,
     code: 'INVALID_DATE',
     field: key,
   });
+const badValue = key =>
+  msgError(msg('Valor no válido en {field}', { field: key }), { status: 400, code: 'INVALID_VALUE', field: key });
 
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];

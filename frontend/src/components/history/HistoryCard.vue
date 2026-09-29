@@ -24,7 +24,7 @@ import { PURPOSES, formatWhen, rowsOf, timeRange } from '../../lib/history'
 import { notify } from '../../lib/notice'
 import type { HistoryAction, HistoryChange, HistoryGroup } from '../../lib/types'
 import { useSession } from '../../stores/session'
-import { t, tn } from '../../lib/i18n'
+import { t, tn, tx } from '../../lib/i18n'
 
 /** One card of the Historial: a group of saves, and when open, every change grouped by row. */
 const props = defineProps<{
@@ -68,6 +68,10 @@ const purpose = computed(() => {
   const known = PURPOSES[props.group.purpose]?.label
   return known ? t(known) : props.group.purposeLabel
 })
+/** "12 mariposas de colecta: A0D–A8D" in the interface's language (the server sends its descriptor). */
+const summary = computed(() => tx(props.group.summary, props.group.summaryMsg))
+/** Save reasons: the app's own (e.g. the assistant's) are translated; typed ones stay as written. */
+const reasons = computed(() => props.group.reasons.map(r => t(r)))
 const counts = computed(() => {
   const c = props.group.counts
   const parts = [tn(c.rows, '{n} fila', '{n} filas')]
@@ -177,10 +181,10 @@ async function copyLink() {
           }}</span>
           <span v-for="text in trouble" :key="text" class="rounded bg-amber-100 px-1.5 text-xs text-amber-900">{{ text }}</span>
         </div>
-        <p class="mt-0.5 text-sm break-words text-stone-800">{{ group.summary }}</p>
+        <p class="mt-0.5 text-sm break-words text-stone-800">{{ summary }}</p>
         <p class="hint mt-0.5 break-words">
           {{ counts }} · {{ group.sheets.join(', ') }}
-          <template v-if="group.reasons.length"> · «{{ group.reasons.join(' · ') }}»</template>
+          <template v-if="reasons.length"> · «{{ reasons.join(' · ') }}»</template>
           <template v-if="group.matched?.length && group.matched.length < group.counts.actions">
             ·
             {{ $t('coincide en {n} de {total} guardados', { n: group.matched.length, total: group.counts.actions }) }}</template
@@ -192,7 +196,7 @@ async function copyLink() {
           v-if="canEdit && group.undoable"
           class="btn px-2 py-1 text-xs"
           :title="$t('Deshacer todos los cambios de este guardado (se revisa antes)')"
-          @click="emit('undo', { groupIds: [group.id] }, $t('Deshacer todo: {summary}', { summary: group.summary }))"
+          @click="emit('undo', { groupIds: [group.id] }, $t('Deshacer todo: {summary}', { summary }))"
         >
           <Undo2 :size="14" /> <span class="hidden sm:inline">{{ $t('Deshacer todo') }}</span>
         </button>

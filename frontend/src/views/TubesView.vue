@@ -16,7 +16,7 @@ import { fillIfBlank, initialsOf, orderColumns, rowsById } from '../lib/rows'
 import type { CellValue, TableRow } from '../lib/types'
 import { usePending } from '../stores/pending'
 import { useSession } from '../stores/session'
-import { t } from '../lib/i18n'
+import { t, tx, type Msg } from '../lib/i18n'
 
 /**
  * "Registrar Tubos": choose butterflies, then assign consecutive CAM IDs and
@@ -33,6 +33,8 @@ const { table, ready, options } = useSheet(module)
 interface Suggestion {
   value: string
   label: string
+  /** The label's descriptor (the rack's context and medium in the interface language). */
+  labelMsg?: Msg
   medium?: string
   /** Kind of work the rack is used for: Cruces, Insectario, Monitoreo, Colecta. */
   context?: string
@@ -164,8 +166,8 @@ const rackChoices = computed(() => [
   ...(tubeStart.value && !tubeSuggestions.value.some(s => s.value === tubeStart.value)
     ? [{ value: tubeStart.value, label: tubeStart.value }]
     : []),
-  ...insectaryRacks.value.map(s => ({ value: s.value, label: s.label, group: t('Insectario y cruces') })),
-  ...otherRacks.value.map(s => ({ value: s.value, label: s.label, group: t('Colectas y monitoreo') })),
+  ...insectaryRacks.value.map(s => ({ value: s.value, label: tx(s.label, s.labelMsg), group: t('Insectario y cruces') })),
+  ...otherRacks.value.map(s => ({ value: s.value, label: tx(s.label, s.labelMsg), group: t('Colectas y monitoreo') })),
 ])
 /** Suggested CAM IDs, with the date of their run in grey ("CAM078278 27-Sep-26" → "27-Sep-26"). */
 const camChoices = computed(() =>

@@ -1,5 +1,5 @@
 import type { ApiErrorBody } from './types'
-import { t } from './i18n'
+import { learnMsg, t } from './i18n'
 
 export class ApiError extends Error {
   code: string
@@ -10,7 +10,15 @@ export class ApiError extends Error {
     this.code = body.code
     this.status = status
     this.details = body.details
+    // Messages with values come with their descriptor: t(message) then shows them in the interface language.
+    learnMsg(body.message, body.messageMsg)
+    learnItems((body.details as { items?: unknown } | undefined)?.items)
   }
+}
+
+/** Learns the descriptors of refused items (a save's cells): { message, messageMsg }. */
+export function learnItems(items: unknown) {
+  if (Array.isArray(items)) for (const item of items) learnMsg(item?.message, item?.messageMsg)
 }
 
 let csrf: string | null = null

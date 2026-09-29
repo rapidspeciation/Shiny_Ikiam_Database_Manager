@@ -1,3 +1,5 @@
+import type { Msg } from './i18n'
+
 export type CellValue = string | number | boolean | null
 
 export interface Field {
@@ -139,6 +141,8 @@ export interface HistoryGroup {
   fields: string[]
   labels: string[]
   summary: string
+  /** The summary's descriptor, for the interface language (server/messages.mjs). */
+  summaryMsg?: Msg
   reasons: string[]
   statuses: Record<string, number>
   undone: 'all' | 'some' | null
@@ -172,5 +176,7 @@ export interface UndoPreview {
 export interface ApiErrorBody {
   code: string
   message: string
+  /** The message's descriptor when it has values in it (server/messages.mjs). */
+  messageMsg?: Msg
   details?: unknown
 }

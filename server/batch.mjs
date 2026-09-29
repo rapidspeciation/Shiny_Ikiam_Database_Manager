@@ -13,7 +13,8 @@ import { describeProblems, headerLayout, sameLayout } from './columns.mjs';
 import { ensurePremadeRows } from './premade.mjs';
 import { cleanPurpose, inferPurpose } from './history.mjs';
 import { TUBE_FIELD, UNIQUE, isIdValue, isUnique } from './verifications.mjs';
-import { listOptions, listProblem } from './verify.mjs';
+import { listOptions, listProblemMsg } from './verify.mjs';
+import { msg, msgError, textFields } from './messages.mjs';
 
 /** Where a write came from. Chosen by the server, never by the client. */
 export const SOURCES = new Set(['app', 'undo', 'ai_approved', 'import']);
@@ -40,7 +41,8 @@ function predictedSpecies(store, sheet, field, values) {
 
 const blank = value => value === null || value === undefined || /^\s*(|NA|N\/A)\s*$/i.test(String(value));
 const cellValue = (values, formulas, field) => (formulas[field] ? { formula: formulas[field] } : values[field]);
-const fail = (code, message, status = 400, details) => Object.assign(new Error(message), { code, status, details });
+/** `message`: a text, or a msg() when it has values in it (its descriptor goes to the app, server/messages.mjs). */
+const fail = (code, message, status = 400, details) => msgError(message, { code, status, details });
 
 /**
  * `purpose`: the flow a save belongs to (history.mjs PURPOSES). A save from the
@@ -53,7 +55,7 @@ export async function applyBatch(store, body, user, { source = 'app', reverses =
   const edits = Array.isArray(body.edits) ? body.edits : [];
   const creates = Array.isArray(body.creates) ? body.creates : [];
   if (edits.length + creates.length > MAX_BATCH)
-    throw fail('BATCH_TOO_LARGE', `Guarda como máximo ${MAX_BATCH} filas a la vez`);
+    throw fail('BATCH_TOO_LARGE', msg('Guarda como máximo {n} filas a la vez', { n: MAX_BATCH }));
 
   return store.runExclusive(async () => {
     // A retried request returns the original outcome instead of writing twice.
@@ -227,13 +229,14 @@ class Plan {
     this.pools = [];
   }
 
+  /** `message`: a text or a msg() (message and messageMsg). */
   conflict(target, code, message, extra = {}) {
     this.conflicts.push({
       id: target?.editId ?? target?.record?.id ?? null,
       clientId: target?.clientId ?? null,
       index: target?.index ?? null,
       code,
-      message,
+      ...textFields('message', message),
       ...extra,
     });
   }
@@ -245,7 +248,9 @@ class Plan {
         normalize: this.source !== 'undo',
       });
     } catch (e) {
-      this.conflict(target, e.code || 'INVALID_VALUES', e.message, { field: e.field ?? null });
+      this.conflict(target, e.code || 'INVALID_VALUES', e.messageMsg ? { text: e.message, msg: e.messageMsg } : e.message, {
+        field: e.field ?? null,
+      });
       return null;
     }
   }
@@ -294,7 +299,9 @@ class Plan {
         return this.conflict(
           target,
           'WRITE_UNCERTAIN',
-          `Un guardado anterior en ${create.module} aún se está confirmando; vuelve a intentarlo en un minuto`,
+          msg('Un guardado anterior en {sheet} aún se está confirmando; vuelve a intentarlo en un minuto', {
+            sheet: create.module,
+          }),
         );
       target.clean = this.validate(target, create.module, create.values);
       if (!target.clean) return;
@@ -308,11 +315,11 @@ class Plan {
           )
           .all(placeholderId);
         if (matches.some(r => r.observed))
-          return this.conflict(target, 'DUPLICATE_ID', `Insectary_ID ${placeholderId} ya está registrado`, {
+          return this.conflict(target, 'DUPLICATE_ID', msg('Insectary_ID {id} ya está registrado', { id: placeholderId }), {
             field: 'Insectary_ID',
           });
         if (matches.length > 1)
-          return this.conflict(target, 'IDENTITY_CONFLICT', `Hay más de una fila sin usar con el ID ${placeholderId}`);
+          return this.conflict(target, 'IDENTITY_CONFLICT', msg('Hay más de una fila sin usar con el ID {id}', { id: placeholderId }));
         if (matches.length === 1) target.candidates = [matches[0].row_num];
       }
       if (!target.candidates) byModule.set(create.module, [...(byModule.get(create.module) || []), target]);
@@ -382,7 +389,7 @@ class Plan {
         this.conflict(
           target,
           'COLUMN_MISSING',
-          `Falta la columna ${field} en ${target.sheet} (Google Sheets); ese valor no se puede guardar`,
+          msg('Falta la columna {field} en {sheet} (Google Sheets); ese valor no se puede guardar', { field, sheet: target.sheet }),
           { field },
         );
       return missing.length > 0;
@@ -400,7 +407,11 @@ class Plan {
     for (const write of this.writes) {
       const key = `${write.sheet}:${write.row}`;
       if (written.has(key))
-        this.conflict(null, 'ROW_COLLISION', `Dos cambios de este guardado van a ${write.sheet} fila ${write.row}`);
+        this.conflict(
+          null,
+          'ROW_COLLISION',
+          msg('Dos cambios de este guardado van a {sheet} fila {row}', { sheet: write.sheet, row: write.row }),
+        );
       written.add(key);
     }
     this.checkUniqueIds();
@@ -443,11 +454,11 @@ class Plan {
       // A count kept as a sum (=12+15) may be rewritten; any other formula stays the sheet's.
       const sumCell = isSumField(record.sheet, field) && !!simpleSum(before.formulas[field]);
       if (before.formulas[field] && this.source !== 'undo' && !replacing && !sumCell)
-        return this.conflict(target, 'FORMULA_CELL', `${field} se calcula con una fórmula de la hoja`, { field });
+        return this.conflict(target, 'FORMULA_CELL', msg('{field} se calcula con una fórmula de la hoja', { field }), { field });
       if (replacing) {
         const predicted = before.values[field] ?? null;
         if (comparable(predicted) === comparable(after))
-          return this.conflict(target, 'MATCHES_FORMULA', `${field} ya da ${after}; no hace falta escribirlo`, {
+          return this.conflict(target, 'MATCHES_FORMULA', msg('{field} ya da {value}; no hace falta escribirlo', { field, value: after }), {
             field,
           });
         if (
@@ -455,7 +466,7 @@ class Plan {
           Object.hasOwn(target.expected, field) &&
           comparable(target.expected[field]) !== comparable(predicted)
         )
-          return this.conflict(target, 'EXTERNAL_CONFLICT', `Otra persona cambió ${field} en la hoja`, {
+          return this.conflict(target, 'EXTERNAL_CONFLICT', msg('Otra persona cambió {field} en la hoja', { field }), {
             field,
             expected: target.expected[field],
             actual: predicted,
@@ -476,7 +487,7 @@ class Plan {
       // Typing the text a cell already holds (e.g. "944" stored as text) is not a change.
       if (typeof actual === 'string' && target.raw[field] === actual) continue;
       if (comparable(actual) !== comparable(expected ?? null))
-        this.conflict(target, 'EXTERNAL_CONFLICT', `Otra persona cambió ${field} en la hoja`, {
+        this.conflict(target, 'EXTERNAL_CONFLICT', msg('Otra persona cambió {field} en la hoja', { field }), {
           field,
           expected: expected ?? null,
           actual: actual ?? null,
@@ -550,7 +561,7 @@ class Plan {
             changes.push({ field, before: { formula: before.formulas[field] }, after });
             continue;
           }
-          return this.conflict(target, 'FORMULA_CELL', `${field} se calcula con una fórmula en la fila nueva`, {
+          return this.conflict(target, 'FORMULA_CELL', msg('{field} se calcula con una fórmula en la fila nueva', { field }), {
             field,
           });
         }
@@ -564,7 +575,7 @@ class Plan {
       target,
       'NO_FREE_ROW',
       target.sheet === 'Insectary_data' && target.clean.Insectary_ID
-        ? `La fila sin usar de ${target.clean.Insectary_ID} ya no está libre; recarga y elige otro ID`
+        ? msg('La fila sin usar de {id} ya no está libre; recarga y elige otro ID', { id: target.clean.Insectary_ID })
         : 'No se encontró una fila libre; recarga la tabla y vuelve a intentarlo',
     );
   }
@@ -608,7 +619,7 @@ class Plan {
       for (const c of t.changes || []) {
         const options = bySheet.get(t.sheet) ?? bySheet.set(t.sheet, listOptions(this.store, t.sheet)).get(t.sheet);
         if (!options[c.field]?.strict) continue;
-        const problem = listProblem(options, c.field, c.after);
+        const problem = listProblemMsg(options, c.field, c.after);
         if (problem) this.conflict(t, 'NOT_IN_LIST', problem, { field: c.field, value: c.after });
       }
   }
@@ -644,14 +655,21 @@ class Plan {
         this.conflict(
           p.target,
           'DUPLICATE_ID',
-          `${p.value} ya está usado en ${stillHeld[0].sheet} fila ${stillHeld[0].row}${stillHeld[0].label ? ` (${stillHeld[0].label})` : ''}`,
+          stillHeld[0].label
+            ? msg('{value} ya está usado en {sheet} fila {row} ({label})', {
+                value: p.value,
+                sheet: stillHeld[0].sheet,
+                row: stillHeld[0].row,
+                label: stillHeld[0].label,
+              })
+            : msg('{value} ya está usado en {sheet} fila {row}', { value: p.value, sheet: stillHeld[0].sheet, row: stillHeld[0].row }),
           {
             field: p.field,
             value: p.value,
           },
         );
       if (inBatch.has(key) && inBatch.get(key) !== ownId)
-        this.conflict(p.target, 'DUPLICATE_ID', `${p.value} está dos veces en este guardado`, {
+        this.conflict(p.target, 'DUPLICATE_ID', msg('{value} está dos veces en este guardado', { value: p.value }), {
           field: p.field,
           value: p.value,
         });

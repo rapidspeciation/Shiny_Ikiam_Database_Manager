@@ -9,6 +9,7 @@
 // person keeps saving; any action id of a group finds the group.
 
 import { randomUUID } from 'node:crypto';
+import { msg, msgn, tpl } from './messages.mjs';
 import { moduleMap } from './schema.mjs';
 
 /** Purpose → label shown to people (Spanish, like the rest of the app). */
@@ -445,6 +446,7 @@ function describeGroups(store, groups, matches = null) {
       cells: rows.reduce((n, r) => n + r.cells, 0),
     };
     const id = actionIds.at(-1);
+    const summary = summaryMessage({ purpose: group.purpose, ...counts, labels });
     return {
       id,
       purpose: group.purpose,
@@ -457,7 +459,8 @@ function describeGroups(store, groups, matches = null) {
       sheets: [...new Set(rows.map(r => r.sheet))],
       fields: fields.slice(0, 20),
       labels: compressLabels(labels).slice(0, 12),
-      summary: summaryText({ purpose: group.purpose, ...counts, labels }),
+      summary: summary.text,
+      summaryMsg: summary.msg,
       reasons: [...new Set(group.actions.map(a => a.reason).filter(Boolean))].slice(0, 3),
       statuses,
       undone: undoneCells ? (undoneCells >= undoableCells ? 'all' : 'some') : null,
@@ -497,36 +500,43 @@ export function compressLabels(labels) {
   return out;
 }
 
-const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const NEW_NOUN = {
-  colecta: ['mariposa de colecta', 'mariposas de colecta'],
-  monitoreo: ['captura de monitoreo', 'capturas de monitoreo'],
-  emergidos: ['emergido', 'emergidos'],
-  clutches: ['clutch nuevo', 'clutches nuevos'],
+  colecta: [tpl('{n} mariposa de colecta'), tpl('{n} mariposas de colecta')],
+  monitoreo: [tpl('{n} captura de monitoreo'), tpl('{n} capturas de monitoreo')],
+  emergidos: [tpl('{n} emergido'), tpl('{n} emergidos')],
+  clutches: [tpl('{n} clutch nuevo'), tpl('{n} clutches nuevos')],
 };
 const EDIT_NOUN = {
-  muertes: ['muerte registrada', 'muertes registradas'],
-  tubos: ['mariposa con tubos o CAM', 'mariposas con tubos o CAM'],
-  clutches: ['clutch actualizado', 'clutches actualizados'],
-  sheets: ['fila cambiada en Google Sheets', 'filas cambiadas en Google Sheets'],
-  deshacer: ['fila restaurada', 'filas restauradas'],
-  asistente: ['fila escrita por el asistente', 'filas escritas por el asistente'],
-  cambio_id: ['fila con el ID cambiado', 'filas con el ID cambiado'],
+  muertes: [tpl('{n} muerte registrada'), tpl('{n} muertes registradas')],
+  tubos: [tpl('{n} mariposa con tubos o CAM'), tpl('{n} mariposas con tubos o CAM')],
+  clutches: [tpl('{n} clutch actualizado'), tpl('{n} clutches actualizados')],
+  sheets: [tpl('{n} fila cambiada en Google Sheets'), tpl('{n} filas cambiadas en Google Sheets')],
+  deshacer: [tpl('{n} fila restaurada'), tpl('{n} filas restauradas')],
+  asistente: [tpl('{n} fila escrita por el asistente'), tpl('{n} filas escritas por el asistente')],
+  cambio_id: [tpl('{n} fila con el ID cambiado'), tpl('{n} filas con el ID cambiado')],
 };
 
-/** "12 mariposas de colecta: A0D–A8D, CAM079891–CAM079902" */
-export function summaryText({ purpose, rows = 0, newRows = 0, labels = [] }) {
+/**
+ * "12 mariposas de colecta: A0D–A8D, CAM079891–CAM079902", with its
+ * descriptor for the interface's language (server/messages.mjs).
+ */
+export function summaryMessage({ purpose, rows = 0, newRows = 0, labels = [] }) {
   const edited = rows - newRows;
   let head;
-  if (!rows) head = 'Sin cambios guardados';
-  else if (newRows && edited) head = `${plural(newRows, 'fila nueva', 'filas nuevas')} y ${plural(edited, 'editada', 'editadas')}`;
-  else if (newRows) head = plural(newRows, ...(NEW_NOUN[purpose] ?? ['fila nueva', 'filas nuevas']));
-  else head = plural(edited, ...(EDIT_NOUN[purpose] ?? ['fila editada', 'filas editadas']));
+  if (!rows) head = msg('Sin cambios guardados');
+  else if (newRows && edited)
+    head = msg('{new} y {edited}', {
+      new: msgn(newRows, '{n} fila nueva', '{n} filas nuevas'),
+      edited: msgn(edited, '{n} editada', '{n} editadas'),
+    });
+  else if (newRows) head = msgn(newRows, ...(NEW_NOUN[purpose] ?? [tpl('{n} fila nueva'), tpl('{n} filas nuevas')]));
+  else head = msgn(edited, ...(EDIT_NOUN[purpose] ?? [tpl('{n} fila editada'), tpl('{n} filas editadas')]));
   const items = compressLabels(labels);
   if (!items.length) return head;
-  const shown = items.slice(0, 6).join(', ');
-  return `${head}: ${shown}${items.length > 6 ? ` y ${items.length - 6} más` : ''}`;
+  if (items.length <= 6) return msg('{head}: {items}', { head, items });
+  return msg('{head}: {items} y {more} más', { head, items: items.slice(0, 6), more: items.length - 6 });
 }
+export const summaryText = group => summaryMessage(group).text;
 
 /** One group with its saves and every change (sheet, row, record label, field, before → after). */
 export function historyGroup(store, id) {
@@ -830,7 +840,7 @@ export async function runHistoryTool(store, name, args = {}, context = {}, { pub
       if (!preview.eligible) return { error: 'Some cells changed after that save; nothing was undone', ...view };
       const result = await undoEdits(
         store,
-        { ...selection, requestId: requestId ?? `ai-undo-${randomUUID()}`, reason: String(args.reason || 'Deshecho desde el asistente').slice(0, 300) },
+        { ...selection, requestId: requestId ?? `ai-undo-${randomUUID()}`, reason: String(args.reason || tpl('Deshecho desde el asistente')).slice(0, 300) },
         context.user,
       );
       const undo = result.action ?? result.actions?.[0];
