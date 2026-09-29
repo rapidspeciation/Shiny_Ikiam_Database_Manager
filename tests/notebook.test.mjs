@@ -487,3 +487,25 @@ test('a clutch page proposes its counts as the notebook sums them, and they are 
     store.close();
   }
 });
+
+test('a dash in a text column is the sheet\'s NA: it fills an empty cell and matches an NA', () => {
+  const rows = [
+    { id: 'r1', row: 2, version: 1, values: { Insectary_ID: '8VE', Sex: 'female' } },
+    { id: 'r2', row: 3, version: 1, values: { Insectary_ID: '9VE', Sex: 'female', Stock_of_origin: 'NA' } },
+  ];
+  const lookup = fakeLookup(rows);
+  const transcription = parseTranscription(
+    JSON.stringify({
+      kind: 'emergence',
+      lines: [
+        { y: 0.2, raw: '8VE ♀ — 10/8', v: { Insectary_ID: '8VE', Sex: 'female', Stock_of_origin: '—', Death_date: '—' } },
+        { y: 0.3, raw: '9VE ♀ —', v: { Insectary_ID: '9VE', Sex: 'female', Stock_of_origin: '—' } },
+      ],
+    }),
+  );
+  const [a, b] = buildReview({ transcription, today: '2026-09-28', initials: 'FCH', lookup }).lines;
+  assert.equal(a.cells.Stock_of_origin.value, 'NA');
+  assert.equal(a.cells.Stock_of_origin.status, 'fill');
+  assert.equal(a.cells.Death_date.value, null, 'a dash in a date means nothing to write');
+  assert.equal(b.cells.Stock_of_origin.status, 'same');
+});

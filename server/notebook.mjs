@@ -235,7 +235,10 @@ const formulaOf = terms => `=${terms.map((t, i) => (i && t >= 0 ? `+${t}` : Stri
 
 /** The value a notebook cell gives a column, as the sheet stores it, or an error. */
 export function readValue(field, text, { year, sheet = null }) {
-  if (isNone(text)) return { value: null };
+  // A dash or NA written in a text column is the sheet's "NA" (e.g. no stock of origin, no CAM);
+  // in dates, counts and notes it just means nothing to write.
+  if (isNone(text))
+    return { value: typeOf(field) === 'text' && !/^Notes|^NOTES$/.test(field) && String(text ?? '').trim() ? 'NA' : null };
   const s = String(text).trim();
   const type = typeOf(field);
   if (type === 'date') {
@@ -559,7 +562,8 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         .map(a => readValue(field, a, { year: pageYear, sheet: kind.sheet }).value)
         .filter(a => !isNone(a) && a !== value);
       const cell = {
-        value: isNone(value) ? null : value,
+        // An explicit NA (from a dash in a text column) is kept; other "none" readings are nothing.
+        value: value === 'NA' ? 'NA' : isNone(value) ? null : value,
         before,
         status: 'empty',
         confidence,
@@ -599,7 +603,8 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         cell.status = sameValue(field, predicted, cell.value) ? 'same' : isNone(predicted) ? 'fill' : 'conflict';
         if (cell.status !== 'same')
           cell.message ??= `La fórmula da «${predicted ?? 'vacío'}»; se escribirá encima`;
-      } else if (sameValue(field, before, cell.value)) cell.status = 'same';
+      } else if (cell.value === 'NA' && (before === null || before === undefined || before === '')) cell.status = 'fill';
+      else if (sameValue(field, before, cell.value)) cell.status = 'same';
       // A count still at the new row's =0 is not filled in yet.
       else if (isNone(before) || (sumField && record.formulas?.[field] === '=0')) cell.status = 'fill';
       else if (/^Notes|^NOTES$/.test(field)) cell.status = 'fill';
