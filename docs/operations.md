@@ -14,7 +14,7 @@ The setup screen requires a private random token and creates the first active ad
 | `/home/ubuntu/ithomiini/current` | Symlink to the active release |
 | `/home/ubuntu/ithomiini/shared/database.sqlite` | Records, history, users, sessions, tasks, attachments, and assistant threads |
 | `/home/ubuntu/ithomiini/shared/knowledge/` | Private approved meeting documents (hand-copied snapshot) |
-| `/home/ubuntu/ithomiini/shared/knowledge/drive/` | Text mirror of the project Drive's documents and `manifest.json` (`ithomiini-drive-sync.timer`) |
+| `/home/ubuntu/ithomiini/shared/knowledge/drive/` | Text mirror of the project Drive's documents and `manifest.json` (`ithomiini-drive-sync.service`, on request) |
 | `/home/ubuntu/ithomiini/shared/backups/` | Verified daily SQLite backups |
 | `/home/ubuntu/.config/ithomiini/` | Protected service settings and Google/AI credentials |
 
@@ -51,14 +51,13 @@ Google access uses the user's approved OAuth grant. The credential file contains
 
 The assistant uses a separate protected OpenRouter key file. Text queries use the configured DeepSeek model; photo and audio drafts use the configured Gemini model. Relevant excerpts are sent to that provider when needed. Assistant messages cannot execute shell commands or arbitrary SQL. Applying proposed edits requires a reviewed action through the same validation as forms.
 
-The assistant's documents are the hand-copied snapshot of 69 meeting notes at the top of `shared/knowledge/` and a text mirror of the project Drive in `shared/knowledge/drive/`, kept by `scripts/drive-sync.mjs` (`ithomiini-drive-sync.timer`, twice a day). The folders mirrored and the names never opened are in `deploy/drive-sync.json`: Meetings (with the call transcripts), Protocols, Reports, Insectary and Greenhouse Management and the presentations at the Drive's top; never Admin, Invoices, Photos, Videos, Data, Datalogger, the database backups or any name like InfoAccess/password/contraseña/factura/invoice/contrato. Sheets are never exported, and files over 30 MB are listed without text. gog always runs with `--readonly`; nothing is written to Drive. Only files whose modification time changed are exported again; files removed or trashed in Drive disappear from the mirror on the next run. A Drive document also in the hand-copied snapshot is read from the mirror.
+The assistant's documents are the hand-copied snapshot of 69 meeting notes at the top of `shared/knowledge/` and a text mirror of the project Drive in `shared/knowledge/drive/`, kept by `scripts/drive-sync.mjs` (`ithomiini-drive-sync.service`), run only on request: the assistant's `sync_documents` tool or the command below. There is no timer. PDFs are read with `pdftotext` (poppler-utils, installed). The folders mirrored and the names never opened are in `deploy/drive-sync.json`: Meetings (with the call transcripts), Protocols, Reports, Insectary and Greenhouse Management and the presentations at the Drive's top; never Admin, Invoices, Photos, Videos, Data, Datalogger, the database backups or any name like InfoAccess/password/contraseña/factura/invoice/contrato. Sheets are never exported, and files over 30 MB are listed without text. gog always runs with `--readonly`; nothing is written to Drive. Only files whose modification time changed are exported again; files removed or trashed in Drive disappear from the mirror on the next run. A Drive document also in the hand-copied snapshot is read from the mirror.
 
 Docs are exported as Markdown (embedded images left out), Slides as PowerPoint and read slide by slide with their speaker notes (a deck Drive will not export, over 10 MB with its images, is read one slide at a time with `gog slides read-slide`), PowerPoint and Word files are read from their XML, WebVTT transcripts as speaker paragraphs, and PDFs with `pdftotext` (first 80 pages) when poppler-utils is installed (`sudo apt install poppler-utils`); without it PDFs are listed as "sin texto" with their link. Each document keeps at most 400 KB of text. The assistant searches them (`search_knowledge`, BM25 over ~1500-character passages, accents ignored, filters by kind and date), lists them (`list_documents`, e.g. the last meeting) and reads them (`read_document`), and cites each document's Drive link when it answers from it.
 
 ```sh
 ssh claudeclaw 'systemctl --user start ithomiini-drive-sync.service'   # sync now
 ssh claudeclaw 'journalctl --user -u ithomiini-drive-sync.service -n 20 --no-pager'
-ssh claudeclaw 'systemctl --user list-timers ithomiini-drive-sync.timer'
 ```
 
 The last line of each run gives the counts per kind and status (exported, unchanged, deleted, failed). A failed file keeps its earlier text, is marked `error` in `drive/manifest.json` and is retried on the next run; a failed folder listing stops the run without deleting anything. Video-call links (Meet, Zoom, Teams) are left out of the text; the mirror is private to the server (mode 600).

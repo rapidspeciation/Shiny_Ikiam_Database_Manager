@@ -2,6 +2,7 @@
 // of KNOWLEDGE_DIR and the Drive mirror in KNOWLEDGE_DIR/drive (scripts/drive-sync.mjs).
 // An in-memory BM25 index over ~1500-character chunks, rebuilt only when a file
 // changes (checked with stat, at most every few seconds).
+import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { basename, extname, join, resolve } from 'node:path';
@@ -436,7 +437,42 @@ export function createKnowledge(config = {}) {
     };
   }
 
-  return { search, read, list, get, index };
+  /**
+   * Brings the Drive mirror up to date on request (there is no timer): starts
+   * the systemd unit that runs scripts/drive-sync.mjs, unless it is running,
+   * and waits up to `waitMs` for it. Only changed files are exported again.
+   */
+  async function sync({ waitMs = 90_000 } = {}) {
+    const unit = config.driveSyncUnit ?? 'ithomiini-drive-sync.service';
+    const systemctl = config.systemctl ?? 'systemctl';
+    const manifest = join(roots.find(r => !/\.(md|txt)$/i.test(r)) ?? roots[0], 'drive', 'manifest.json');
+    const syncedAt = async () => JSON.parse(await readFile(manifest, 'utf8').catch(() => '{}')).syncedAt ?? null;
+    const busy = async () => ['active', 'activating'].includes((await exec(systemctl, ['--user', 'is-active', unit])).out);
+    const before = await syncedAt();
+    if (!(await busy())) {
+      const started = await exec(systemctl, ['--user', 'start', '--no-block', unit]);
+      if (!started.ok) return { error: 'No se pudo iniciar la sincronización con Drive', lastSync: before };
+    }
+    const until = Date.now() + waitMs;
+    while (Date.now() < until) {
+      await new Promise(r => setTimeout(r, config.syncPollMs ?? 3000));
+      if (!(await busy())) break;
+    }
+    const after = await syncedAt();
+    const running = await busy();
+    return {
+      running,
+      lastSync: after,
+      note: running
+        ? 'La sincronización sigue en curso (la primera vez tarda unos 2 minutos); busca de nuevo en un momento.'
+        : after !== before
+          ? 'Documentos al día con Drive.'
+          : 'La sincronización terminó sin actualizar el índice; revisa el registro del servicio (journalctl --user -u ithomiini-drive-sync.service).',
+      ...(running ? {} : { counts: (await list({ limit: 1 })).counts }),
+    };
+  }
+
+  return { search, read, list, get, index, sync };
 }
 
 /** The document tools of the assistant (chat, Claude and T3 Code through MCP). */
@@ -498,7 +534,21 @@ export const KNOWLEDGE_TOOLS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'sync_documents',
+      description:
+        'Bring the project documents up to date with Google Drive now (read-only; only changed files are read again). The mirror is not refreshed on its own: use this when someone says a document is new or was edited, or asks to update the documents. Takes seconds, up to about 2 minutes.',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
 ];
+
+const exec = (bin, args) =>
+  new Promise(resolve =>
+    execFile(bin, args, { timeout: 15_000 }, (error, stdout) => resolve({ ok: !error, out: String(stdout || '').trim() })),
+  );
 
 /** Runs a document tool; sources (for [id] citations) go into context.sources. */
 export async function runKnowledgeTool(knowledge, name, args = {}, context) {
@@ -520,6 +570,7 @@ export async function runKnowledgeTool(knowledge, name, args = {}, context) {
     cite(doc);
     return doc;
   }
+  if (name === 'sync_documents') return knowledge.sync();
   if (name === 'list_documents') {
     const out = await knowledge.list({ kind: args.kind, from: args.from, to: args.to, query: args.query, limit: args.limit });
     for (const doc of out.documents) cite(doc);

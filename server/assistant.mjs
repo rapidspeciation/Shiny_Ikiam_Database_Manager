@@ -769,7 +769,7 @@ export function createAssistant({ store, config = {} }) {
       context.sources.set(record.id, recordSource(record));
       return compact(record);
     }
-    if (['search_knowledge', 'read_document', 'list_documents'].includes(name))
+    if (['search_knowledge', 'read_document', 'list_documents', 'sync_documents'].includes(name))
       return runKnowledgeTool(knowledge, name, args, context);
     if (name === 'run_report') {
       const response = await reports.build({ kind: args.kind, module: args.module, field: args.field });
@@ -853,7 +853,7 @@ export function createAssistant({ store, config = {} }) {
       'check_data lists inconsistencies with ready fixes; queue_wikiloc and get_walk turn a Wikiloc monitoring walk into newRows for propose_changes.',
       '"Aplica las correcciones acordadas": list_agreed_fixes, then ONE propose_changes with its fixes and issueIds, list the tasks (Drive work), and wait for the person to confirm.',
       'A photo of a notebook page, envelope or label: transcribe every line as the digitalizar-cuaderno instructions say, then match_notebook compares it with the sheet and drafts one proposal per page.',
-      'Meetings, protocols, reports and presentations of the project Drive: search_knowledge, list_documents (e.g. the last meeting) and read_document. When you answer from a document, name it and give its Drive link (sourceUrl).',
+      'Meetings, protocols, reports and presentations of the project Drive: search_knowledge, list_documents (e.g. the last meeting) and read_document; sync_documents brings them up to date with Drive when asked (not automatic). When you answer from a document, name it and give its Drive link (sourceUrl).',
     ].join('\n');
   }
 

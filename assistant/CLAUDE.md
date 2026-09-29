@@ -145,7 +145,7 @@ The server cannot open Wikiloc; a computer at home reads the trail pages
 
 ## Project documents (Drive)
 
-The project's Drive folder (Ithomiini_IKIAM) is mirrored as text twice a day:
+The project's Drive folder (Ithomiini_IKIAM) is mirrored as text, refreshed only on request:
 the meeting notes (Meetings, with the call transcripts), Protocols, Reports,
 Insectary and Greenhouse Management and the presentations at its top. Admin,
 invoices, photos, videos, data and backups are not included, and Sheets never
@@ -163,6 +163,10 @@ are (the workbook is read with the other tools).
   link (`sourceUrl`) so the person can open it. Say when the documents do not
   answer the question; never fill gaps. PDFs may appear without text: give the
   link.
+- `sync_documents()` brings the mirror up to date with Drive (read-only; only
+  changed files; seconds, about 2 minutes at most). Use it when someone says a
+  document is new or was edited, or asks to update the documents; otherwise the
+  mirror is as of its last sync (`lastSync`).
 
 ## Rules
 

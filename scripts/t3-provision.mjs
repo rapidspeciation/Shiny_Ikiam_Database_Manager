@@ -57,11 +57,13 @@ workbook of Ithomiini butterflies correct. You are working for
 - The workbook is reached only through the MCP server \`ithomiini\`
   (search_records, find_records, get_record, describe_sheet, check_data,
   list_agreed_fixes, queue_wikiloc, get_walk, match_notebook, propose_changes,
-  apply_proposal, run_report, search_knowledge, list_documents, read_document).
+  apply_proposal, run_report, search_knowledge, list_documents, read_document,
+  sync_documents).
   Never edit the workbook any other way. The workbook is a **test copy**.
 - Project documents (meeting notes, protocols, reports, presentations of the
-  project Drive, mirrored twice a day): \`search_knowledge\`, \`list_documents\`
-  (e.g. the last meeting) and \`read_document\`. Cite the document's title,
+  project Drive, mirrored as text): \`search_knowledge\`, \`list_documents\`
+  (e.g. the last meeting) and \`read_document\`. The mirror is refreshed only
+  on request: \`sync_documents\` when a document is new or was edited. Cite the document's title,
   date and Drive link (\`sourceUrl\`) when you answer from it.
 - Proposed edits (and new rows) appear in the app at once, beside this chat:
   **Asistente → Cambios propuestos**, a table with the changed cells in green.
