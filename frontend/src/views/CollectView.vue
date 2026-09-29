@@ -411,6 +411,10 @@ function editCell(key: string, column: Column, text: string) {
   if (why) return notify(`«${shorten(text.trim())}» ${why}: no se escribió en ${HEADERS[column]}`)
   const note = setColumn(d, column, text)
   if (note) notify(`Fila ${drafts.value.indexOf(d) + 1} ${note}`)
+  // Outside a list the sheet does not enforce: kept (red corner), with a warning so a typo is noticed.
+  const field = LISTED[column]
+  const issue = field && !collectionRules.value?.lists[field]?.strict ? cellProblem(d, column) : null
+  if (issue && !note) notify(`${issue}: se guarda igual; corrígelo si es un error`)
 }
 function focusCell(index: number, column: Column) {
   const key = drafts.value[index]?.key

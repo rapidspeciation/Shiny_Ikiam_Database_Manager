@@ -529,6 +529,14 @@ function build() {
   }
   table.on('cellEdited', afterEdit)
   table.on('cellEditCancelled', afterEdit)
+  // A value outside a list the sheet does not enforce is saved (sometimes something else must be
+  // written), marked with the red corner and a warning so a typo is noticed.
+  table.on('cellEdited', (cell: CellComponent) => {
+    const field = cell.getField()
+    const list = rules.value?.lists[field]
+    const problem = list && !list.strict ? listProblem(rules.value, field, cell.getValue()) : null
+    if (problem) notice(`${problem}: se guarda igual; corrígelo si es un error`)
+  })
   table.on('tableBuilt', () => {
     built = true
     if (refreshWhenBuilt) refresh()
