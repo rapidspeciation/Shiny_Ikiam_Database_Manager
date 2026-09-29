@@ -1,0 +1,8 @@
+specimen,issue,decision,target,database,action,decided_by,photos
+CAM000101,envelope-not-file,file-name-wrong,CAM000111,,rename CAM000101 photos to CAM000111,blind review,CAM000101d CAM000101v
+CAM000102,envelope-not-file,reader-error,,,file name is right,Franz,CAM000102d
+CAM000103,envelope-not-file,extra-photos-of-other-specimen,,,"photos filed as CAM000103 show CAM000104, which already has its own photos: merge or delete them; CAM000103 may have no photos of its own",Franz,CAM000103d
+CAM000105,sex,database-sex-differs,,female,"envelope ♂, database female",blind review,CAM000105d CAM000105v
+CAM000106,sex,reader-error,,male,,blind review,CAM000106d
+CAM000107,species,database-species-differs,,Ithomia salapia salapia,"envelope ""Episcada sulphurea Episcada sulphurea"", database ""Ithomia salapia salapia""",blind review,CAM000107d CAM000107v
+CAM000108,species,database-species-differs,,Ithomia salapia salapia,"envelope ""Episcada sulphurea"", database ""Ithomia salapia salapia""",batch of 2 reviewed,CAM000108d
