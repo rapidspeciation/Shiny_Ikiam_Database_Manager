@@ -1,0 +1,19 @@
+[Unit]
+Description=Mirror the project's Drive documents (meetings, protocols, reports) as text for the assistant
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ubuntu/ithomiini/current
+EnvironmentFile=/home/ubuntu/.config/ithomiini/service.env
+# The project Google login (gog keyring password and account); gog runs with --readonly.
+EnvironmentFile=-/home/ubuntu/.config/ithomiini/gog.env
+ExecStart=/home/ubuntu/.local/share/tiputini-runtime/node-v24.18.0-linux-arm64/bin/node scripts/drive-sync.mjs
+TimeoutStartSec=1h
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/ithomiini/shared/knowledge /home/ubuntu/.config/gogcli /home/ubuntu/.local/share/gogcli
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
