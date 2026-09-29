@@ -27,15 +27,19 @@ const pending = usePending()
 const { table, ready, stocks, options, creates, createFormulas, clutches } = useSheet(module)
 
 const clutch = persistentRef('emerged:clutch', '')
-const females = persistentRef('emerged:females', 0)
-const males = persistentRef('emerged:males', 0)
-const unknown = persistentRef('emerged:unknown', 0)
-const startId = persistentRef('emerged:start', '')
+// Counts and the first ID are for one batch: kept from an earlier day they sent a
+// batch to an old empty row (A0D, row 13243) with an extra "sin sexo" butterfly.
+const females = ref(0)
+const males = ref(0)
+const unknown = ref(0)
+const startId = ref('')
 const introDate = persistentRef('emerged:date', todayIso())
 /** Free pre-made IDs: those after the last row used first (the suggestion), then earlier empty rows. */
 const freeIds = ref<string[]>([])
 /** The same IDs in sheet order, which a batch follows from its first ID (H0B → H1B → H2B). */
 const inOrder = ref<string[]>([])
+/** Sheet row of each free pre-made ID. */
+const rowOf = ref(new Map<string, number>())
 const idsLoaded = ref(false)
 const recentCount = ref(15)
 
@@ -44,7 +48,11 @@ async function loadFreeIds() {
     const result = await api<{ sequence: string[]; rows: { value: string; row: number }[] }>('ids?kind=insectary&count=5000')
     const used = new Set(pending.creates.filter(c => c.module === MODULE).map(c => String(c.values.Insectary_ID)))
     freeIds.value = result.sequence.filter(id => !used.has(id))
-    inOrder.value = [...result.rows].sort((a, b) => a.row - b.row).map(r => r.value).filter(id => !used.has(id))
+    inOrder.value = [...result.rows]
+      .sort((a, b) => a.row - b.row)
+      .map(r => r.value)
+      .filter(id => !used.has(id))
+    rowOf.value = new Map(result.rows.map(r => [r.value, r.row]))
     if (!startId.value || !freeIds.value.includes(startId.value)) startId.value = freeIds.value[0] || ''
     idsLoaded.value = true
   } catch (e) {
@@ -88,12 +96,17 @@ function defaultsFor(speciesName: string): Record<string, CellValue> {
 function prepare(sexes: (string | null)[]) {
   if (!clutch.value) return notify('Elige el clutch')
   if (!sexes.length) return notify('Indica cuántas hembras, machos o sin sexo emergieron')
-  if (!inOrder.value.length) return notify('No quedan filas preasignadas libres: crea más filas preasignadas en Insectary_data', 'error')
+  if (!inOrder.value.length)
+    return notify('No quedan filas preasignadas libres: crea más filas preasignadas en Insectary_data', 'error')
   const start = inOrder.value.indexOf(startId.value.trim().toUpperCase())
-  if (start < 0) return notify(`${startId.value || 'Ese ID'} no es una fila preasignada libre de Insectary_data: elige uno de la lista`)
+  if (start < 0)
+    return notify(`${startId.value || 'Ese ID'} no es una fila preasignada libre de Insectary_data: elige uno de la lista`)
   const ids = inOrder.value.slice(start, start + sexes.length)
   if (ids.length < sexes.length)
-    notify(`Solo hay ${ids.length} filas preasignadas libres desde ${ids[0]}: crea más filas preasignadas en Insectary_data`, 'error')
+    notify(
+      `Solo hay ${ids.length} filas preasignadas libres desde ${ids[0]}: crea más filas preasignadas en Insectary_data`,
+      'error',
+    )
   ids.forEach((id, i) =>
     pending.addCreate(MODULE, id, {
       Insectary_ID: id,
@@ -108,9 +121,17 @@ function prepare(sexes: (string | null)[]) {
   freeIds.value = freeIds.value.filter(id => !ids.includes(id))
   inOrder.value = inOrder.value.filter(id => !ids.includes(id))
   startId.value = freeIds.value[0] || ''
+  females.value = males.value = unknown.value = 0
   pending.touch()
   notify(`${ids.length} filas nuevas (${ids[0]}–${ids.at(-1)}); revisa la subespecie si alguna es distinta`)
 }
+/** The first ID chosen is an empty row earlier in the sheet, not the next one after the last used. */
+const earlierRow = computed(() => {
+  const id = startId.value.trim().toUpperCase()
+  const next = freeIds.value[0]
+  if (!id || !next || id === next || !rowOf.value.has(id)) return null
+  return (rowOf.value.get(id) ?? 0) < (rowOf.value.get(next) ?? 0) ? { id, row: rowOf.value.get(id), next } : null
+})
 const batch = () => [
   ...Array(Math.max(0, females.value)).fill('female'),
   ...Array(Math.max(0, males.value)).fill('male'),
@@ -134,11 +155,20 @@ const columns = computed(() =>
       ])
     : [],
 )
-/** Recently recorded rows are shown below the new ones for context. */
+/**
+ * Below the new rows: the butterflies already recorded from the chosen clutch
+ * (wherever they are in the sheet, so a saved batch never drops out of sight
+ * and is not entered twice) and the latest rows.
+ */
+const ofClutch = computed(() =>
+  clutch.value && table.value
+    ? table.value.rows.filter(r => r.observed && String(r.values['CLUTCH NUMBER'] ?? '') === clutch.value)
+    : [],
+)
 const recent = computed(() => {
   if (!table.value) return []
-  const observed = table.value.rows.filter(r => r.observed)
-  return observed.slice(-recentCount.value)
+  const latest = table.value.rows.filter(r => r.observed).slice(-recentCount.value)
+  return [...new Set([...latest, ...ofClutch.value])].sort((a, b) => a.row - b.row)
 })
 </script>
 
@@ -169,7 +199,9 @@ const recent = computed(() => {
           class="field-input w-32 uppercase"
           :options="freeIds"
           :placeholder="freeIds.length ? '' : 'no quedan'"
-          :title="freeIds.length ? `${freeIds.length} filas preasignadas libres` : 'Crea más filas preasignadas en Insectary_data'"
+          :title="
+            freeIds.length ? `${freeIds.length} filas preasignadas libres` : 'Crea más filas preasignadas en Insectary_data'
+          "
           @focus="($event.target as HTMLInputElement).select()"
         />
       </label>
@@ -200,7 +232,13 @@ const recent = computed(() => {
       <strong v-if="idsLoaded && !freeIds.length" class="text-amber-800"
         >No quedan filas preasignadas libres: crea más filas preasignadas en Insectary_data.</strong
       >
-      Las filas nuevas usan las filas preasignadas; escribe cada ID en las alas. Debajo se muestran los últimos
+      <strong v-if="earlierRow" class="text-amber-800"
+        >{{ earlierRow.id }} es una fila vacía más arriba en la hoja (fila {{ earlierRow.row }}), no la siguiente ({{
+          earlierRow.next
+        }}).</strong
+      >
+      Las filas nuevas usan las filas preasignadas; escribe cada ID en las alas. Debajo se muestran
+      <template v-if="ofClutch.length">los {{ ofClutch.length }} ya registrados del clutch {{ clutch }} y </template>los últimos
       {{ recentCount }} registros.
       <button class="underline" @click="recentCount += 15">ver más</button>
     </p>
