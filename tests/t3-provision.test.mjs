@@ -29,6 +29,8 @@ test('T3 workspaces get the brief and the skill; a refresh after a release keeps
     assert.match(brief, /working for\n\*\*Ana Pérez\*\*/);
     assert.match(brief, /match_notebook/);
     assert.match(brief, /## Photos of notebook pages/);
+    assert.match(brief, /## Historial: finding and undoing a save/);
+    assert.match(brief, /list_history/);
     assert.equal(readFileSync(join(workspace, 'AGENTS.md'), 'utf8'), brief);
     assert.match(readFileSync(join(workspace, '.claude', 'skills', 'digitalizar-cuaderno', 'SKILL.md'), 'utf8'), /name: digitalizar-cuaderno/);
     const mcp = JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8')).mcpServers.ithomiini;

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { api, ApiError, requestId } from '../lib/api'
+import { mainPurpose, purposeFromHash } from '../lib/history'
 import { type CheckSheet, localProblems } from '../lib/saveChecks'
 import type { CellValue, TableRow } from '../lib/types'
 import { verificationsFor } from '../lib/verifications'
@@ -15,6 +16,8 @@ export interface PendingEdit {
   version: number
   values: Record<string, CellValue>
   before: Record<string, CellValue>
+  /** The tab the change was typed in (colecta, muertes…), kept with the save in the Historial. */
+  purpose?: string
 }
 
 /** A new row that has not been written to the sheet yet. */
@@ -25,6 +28,8 @@ export interface PendingCreate {
   values: Record<string, CellValue>
   /** Rows that wait for Guardar (a walk's captures, before their species are identified), never saved automatically. */
   manual?: boolean
+  /** The tab the row was added in. */
+  purpose?: string
 }
 
 interface BatchItemError {
@@ -36,6 +41,8 @@ interface BatchItemError {
 }
 
 const same = (a: CellValue | undefined, b: CellValue | undefined) => (a ?? '') === (b ?? '')
+/** The data-entry tab open now (#/colecta…), or undefined. */
+const currentPurpose = () => (typeof location === 'undefined' ? undefined : purposeFromHash(location.hash))
 const itemKey = (item: BatchItemError) => `${item.id || item.clientId}:${item.field || '*'}`
 
 /** What one save did: cells written, and changes still pending afterwards. */
@@ -232,12 +239,21 @@ export const usePending = defineStore('pending', {
           edit = this.edits[row.id] = { module, id: row.id, row: row.row, label, version: row.version, values: {}, before: {} }
         edit.values[field] = value
         edit.before[field] = original
+        edit.purpose = currentPurpose() ?? edit.purpose
       }
       delete this.errors[`${row.id}:${field}`]
       this.persist()
     },
     addCreate(module: string, label: string, values: Record<string, CellValue>, { manual = false } = {}) {
-      const item: PendingCreate = { clientId: requestId(), module, label, values, ...(manual ? { manual } : {}) }
+      const purpose = currentPurpose()
+      const item: PendingCreate = {
+        clientId: requestId(),
+        module,
+        label,
+        values,
+        ...(manual ? { manual } : {}),
+        ...(purpose ? { purpose } : {}),
+      }
       this.creates.push(item)
       this.persist()
       return item
@@ -297,8 +313,11 @@ export const usePending = defineStore('pending', {
         c => !heldRow(c.clientId) && !(auto && c.manual),
       )
       if (!edits.length && !creates.length) return { saved: 0, left: this.changeCount }
+      // The tab most of these changes were typed in: the save's purpose in the Historial.
+      const purpose = mainPurpose([...edits.map(e => e.purpose), ...creates.map(c => c.purpose)]) ?? currentPurpose()
       const body = {
         reason: reason || null,
+        ...(purpose ? { purpose } : {}),
         // Only the changes that conflict are left out; the rest is written.
         partial: true,
         // Each cell is checked against the value the person saw, so edits by
