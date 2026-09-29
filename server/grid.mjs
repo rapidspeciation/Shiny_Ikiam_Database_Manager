@@ -135,9 +135,10 @@ function insectaryIds(store, start, count) {
     return !r.observed && id && !blank(id) && !used.has(id) && copies.get(id) === 1;
   });
   const tail = free.filter(r => r.row > lastObserved);
-  // Earlier rows: the newest round first (D before C before B), in sheet order; IDs of older forms (85Y) last.
+  // Earlier rows: the newest round first (D before C before B), in sheet order. IDs of older
+  // forms (85Y, 6HQ) are not offered: they can still be typed when a wing carries one.
   const round = r => /^[A-ZÑ]\d([A-Z])$/.exec(norm(r.values.Insectary_ID))?.[1] ?? '';
-  const earlier = free.filter(r => r.row < lastObserved);
+  const earlier = free.filter(r => r.row < lastObserved && round(r));
   const newest = new Map();
   for (const r of earlier) newest.set(round(r), Math.max(newest.get(round(r)) ?? 0, r.row));
   const rank = r => (round(r) ? newest.get(round(r)) : -1);
@@ -147,7 +148,7 @@ function insectaryIds(store, start, count) {
     // From a chosen ID the rows follow in sheet order (H0B → H1B → H2B).
     const from = free.find(r => norm(r.values.Insectary_ID) === norm(start));
     if (!from) throw fail('ID_NOT_AVAILABLE', `${start} no es un Insectary ID preasignado libre`, 409);
-    pool = free.filter(r => r.row >= from.row);
+    pool = free.filter(r => r.row >= from.row && (r === from || round(r)));
   }
   const ids = pool.slice(0, count).map(r => ({ value: String(r.values.Insectary_ID).trim(), row: r.row }));
   return {

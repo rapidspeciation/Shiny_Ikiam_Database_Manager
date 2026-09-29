@@ -33,13 +33,13 @@ async function fixture() {
 test('free Insectary IDs: first the rows after the last one used, then the earlier empty rows nobody names', async () => {
   const store = await fixture();
   const ids = idSuggestions(store, { kind: 'insectary', count: 50 });
-  // After the tail: the current round (D) first, then B, then the old forms.
-  assert.deepEqual(ids.sequence, ['N2D', 'N3D', 'M9D', 'H1B', 'H5B', '85Y']);
+  // After the tail: the current round (D) first, then B; old forms (85Y) are not offered.
+  assert.deepEqual(ids.sequence, ['N2D', 'N3D', 'M9D', 'H1B', 'H5B']);
   assert.equal(ids.tail, 2);
   assert.equal(ids.suggestions[0].value, 'N2D');
   assert.deepEqual(
     ids.rows.map(r => r.row),
-    [12, 13, 10, 4, 9, 2],
+    [12, 13, 10, 4, 9],
   );
   store.close();
 });
