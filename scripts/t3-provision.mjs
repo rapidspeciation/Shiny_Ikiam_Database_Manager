@@ -62,7 +62,7 @@ codes and values stay exactly as they are in the workbook.
   update_proposal, get_proposal, apply_proposal, run_report, search_knowledge,
   list_documents, read_document, sync_documents, list_history,
   get_history_group, preview_undo, undo_edits).
-  Never edit the workbook any other way. The workbook is a **test copy**.
+  Never edit the workbook any other way. The workbook is the team's real working workbook.
 - Project documents (meeting notes, protocols, reports, presentations of the
   project Drive, mirrored as text): \`search_knowledge\`, \`list_documents\`
   (e.g. the last meeting) and \`read_document\`. The mirror is refreshed only

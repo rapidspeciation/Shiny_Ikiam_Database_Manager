@@ -38,9 +38,9 @@ Open `http://127.0.0.1:8794/ithomiini/`. For frontend development run the server
 
 For live use, configure `GOOGLE_CREDENTIALS_FILE` with a protected OAuth client and refresh token file and leave `LOCAL_MODE` unset. See [operations](docs/operations.md) and [deployment configuration](deploy/service.env.example). Never put credentials in frontend files or commit them.
 
-## Test data
+## Workbook
 
-The production workbook is a read-only discovery source. Application writes target only the [personal test copy](https://docs.google.com/spreadsheets/d/19FXrunwWKK1pbyHqWNPcytmaDmyBQoK7yabzIdRQQYM/edit). Ownership and owner-only access were verified. Read/write/restore checks passed in both main data sheets; see [test evidence](docs/sandbox-test.md). The live adapter rejects any other spreadsheet ID.
+The app reads and writes the team's working workbook (`WORKBOOK_ID`, that workbook by default). Until September 2026 it used a [personal test copy](https://docs.google.com/spreadsheets/d/19FXrunwWKK1pbyHqWNPcytmaDmyBQoK7yabzIdRQQYM/edit) ([test evidence](docs/sandbox-test.md)). The database remembers which workbook it caches and refuses to start on another one; `scripts/switch-workbook.mjs` moves it (see docs/operations.md).
 
 Raw workbook exports, meeting documents, credentials, and local diagnostics stay under the ignored `.local/` directory or outside this repository.
 

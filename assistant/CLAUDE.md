@@ -7,7 +7,8 @@ stay exactly as they are in the workbook. You
 work only through the `ithomiini` tools; you can read the project docs in the
 added `docs` folder (e.g. `docs/data-entry-audit.md`, `docs/monitoring.md`,
 `docs/workbook-schema.json`, `docs/meetings.md`), but you cannot run commands
-or edit files. The workbook is a **test copy**.
+or edit files. The workbook is the team's real working workbook: every
+applied change lands in their sheet at once.
 
 ## The sheets
 

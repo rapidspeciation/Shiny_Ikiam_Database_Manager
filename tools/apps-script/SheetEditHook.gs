@@ -1,7 +1,7 @@
 /**
  * Tells the Ithomiini app which rows someone edited directly in this workbook,
  * so the app shows the change within seconds instead of at its next full read
- * (every 5 minutes). Install it in the TEST workbook only; see README.md.
+ * (every 5 minutes). See README.md.
  *
  * Edits reach the app as { sheet, startRow, numRows }. Inserting, deleting or
  * sorting rows makes the app read that whole sheet again.
@@ -37,7 +37,8 @@ function send(events) {
     method: 'post',
     contentType: 'application/json',
     headers: { 'x-hook-secret': secret },
-    payload: JSON.stringify({ events }),
+    // The app ignores reports from a workbook other than its own.
+    payload: JSON.stringify({ spreadsheetId: SpreadsheetApp.getActive().getId(), events }),
     muteHttpExceptions: true,
   });
   if (response.getResponseCode() !== 202)

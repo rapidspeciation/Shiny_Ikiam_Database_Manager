@@ -2,8 +2,7 @@ import { readFileSync } from 'node:fs';
 import { msg, msgError } from './messages.mjs';
 
 const profile = JSON.parse(readFileSync(new URL('../docs/workbook-schema.json', import.meta.url)));
-export const SANDBOX_ID = '19FXrunwWKK1pbyHqWNPcytmaDmyBQoK7yabzIdRQQYM';
-export const PRODUCTION_ID = '1QZj';
+import { REAL_ID } from './workbook.mjs';
 
 const groups = {
   Collection_data: 'field',
@@ -267,7 +266,7 @@ export function nextInsectaryId(id) {
   return `${alphabet[ai]}${d}${alphabet[ci]}`;
 }
 
-export function makeSourceUrl(sheet, row, spreadsheetId = SANDBOX_ID) {
+export function makeSourceUrl(sheet, row, spreadsheetId = REAL_ID) {
   const mod = moduleMap.get(sheet);
   return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${mod?.sheetId || 0}&range=A${row}`;
 }

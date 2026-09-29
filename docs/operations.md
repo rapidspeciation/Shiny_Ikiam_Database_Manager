@@ -41,9 +41,22 @@ ssh claudeclaw 'systemctl --user start ithomiini-backup.service'
 ssh claudeclaw 'systemctl --user list-timers ithomiini-backup.timer'
 ```
 
-To restore, stop only `ithomiini.service`, preserve the current database and its WAL/SHM files in a dated recovery directory, copy a verified backup to `shared/database.sqlite`, and restart the service. Do not restore over a running SQLite database. The service will reconcile with the current test Sheet. Restoring the app database does not reverse Google Sheet edits; use reviewed history reversals for those.
+To restore, stop only `ithomiini.service`, preserve the current database and its WAL/SHM files in a dated recovery directory, copy a verified backup to `shared/database.sqlite`, and restart the service. Do not restore over a running SQLite database. The service will reconcile with the workbook. Restoring the app database does not reverse Google Sheet edits; use reviewed history reversals for those.
 
 To roll back code, read `shared/previous-release`, point `current` to that existing release, and restart `ithomiini.service`. Preserve the shared database. Review schema changes before rolling back to a release that cannot read them.
+
+## Switching workbooks
+
+The database caches one workbook (`settings.workbookId`; databases from before it cache the test copy) and the service refuses to start on another (`WORKBOOK_MISMATCH`): a plain sync would log every difference as an edit made in Google Sheets. `scripts/switch-workbook.mjs` moves it. It only reads the new workbook. Rows are matched by their identifiers (then by row), so a specimen keeps its record id, also when its row moved, and monitoring links follow it; rows only in the old workbook are retired. The differences are not logged: the Historial of the old workbook moves to `archived_actions`/`archived_changes` (with undo plans and Revisión verdicts) and starts empty; pending AI proposals are discarded. Users, sessions, monitoring walks and photos, envelope and photo curation, Wikiloc profiles and tokens stay.
+
+```sh
+# dry run on a temporary copy (safe while the service runs)
+ssh claudeclaw 'cd ~/ithomiini/current && export DATABASE_PATH=/home/ubuntu/ithomiini/shared/database.sqlite GOOGLE_CREDENTIALS_FILE=/home/ubuntu/.config/ithomiini/google.json && node=$(sed -n "s/^ExecStart=\([^ ]*\/node\) .*/\1/p" deploy/ithomiini.service) && "$node" scripts/switch-workbook.mjs'
+# apply: service stopped; writes a checked backup to shared/backups/before-workbook-switch-*.sqlite first
+ssh claudeclaw 'systemctl --user stop ithomiini'
+ssh claudeclaw 'cd ~/ithomiini/current && export DATABASE_PATH=/home/ubuntu/ithomiini/shared/database.sqlite GOOGLE_CREDENTIALS_FILE=/home/ubuntu/.config/ithomiini/google.json && node=$(sed -n "s/^ExecStart=\([^ ]*\/node\) .*/\1/p" deploy/ithomiini.service) && "$node" scripts/switch-workbook.mjs --apply'
+ssh claudeclaw 'systemctl --user start ithomiini'
+```
 
 ## Data and AI boundaries
 

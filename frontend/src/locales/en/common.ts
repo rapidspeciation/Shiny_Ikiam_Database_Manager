@@ -19,8 +19,6 @@ export default {
   'Hay cambios sin guardar en este dispositivo. Se conservarán para cuando vuelvas. ¿Cerrar sesión?':
     'There are unsaved changes on this device. They will be kept for when you come back. Sign out?',
   'Sesión cerrada': 'Signed out',
-  'Las escrituras van solo a la copia personal de pruebas': 'Writes go only to the personal test copy',
-  'Copia personal de pruebas': 'Personal test copy',
   'Iniciar sesión': 'Sign in',
   'Abrir Google Sheet': 'Open Google Sheet',
   Usuarios: 'Users',

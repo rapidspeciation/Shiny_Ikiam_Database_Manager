@@ -64,7 +64,7 @@ test('HTTP workflow enforces access, saves exact fields, reverses a selected edi
   });
   assert.equal(setup.response.status, 201);
   const boot = await call('/api/bootstrap');
-  assert.equal(boot.data.settings.sandbox, true);
+  assert.match(boot.data.settings.sheetUrl, /^https:\/\/docs\.google\.com\/spreadsheets\/d\/[\w-]+\/edit$/);
   assert.ok(
     (await call('/api/options?module=Collection_data&field=Identifier')).data.options.some(o => o.value === 'AB Test'),
   );

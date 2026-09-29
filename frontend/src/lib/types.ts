@@ -47,8 +47,6 @@ export interface User {
 
 export interface Settings {
   language: string
-  sandbox: boolean
-  sandboxLabel: string
   sheetUrl: string
   basePath: string
 }

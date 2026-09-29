@@ -56,10 +56,10 @@ async function logout() {
         :href="session.settings.sheetUrl"
         target="_blank"
         rel="noopener"
-        class="hidden shrink-0 items-center gap-1 rounded bg-amber-300 px-2 py-0.5 text-xs font-semibold text-amber-950 md:inline-flex"
-        :title="$t('Las escrituras van solo a la copia personal de pruebas')"
+        class="hidden shrink-0 items-center gap-1 rounded px-2 py-0.5 text-xs font-semibold text-brand-100 ring-1 ring-brand-500 hover:bg-brand-800 hover:text-white md:inline-flex"
+        :title="$t('Abrir Google Sheet')"
       >
-        {{ $t(session.settings.sandboxLabel) }} <ExternalLink :size="12" />
+        Google Sheet <ExternalLink :size="12" />
       </a>
       <!-- Interface language: English by default (lib/i18n.ts). -->
       <button

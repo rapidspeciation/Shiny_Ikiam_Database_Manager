@@ -5,8 +5,8 @@ description: Guide to the "Ikiam Insectary DB" web app (https://ithomiini-ikiam.
 
 # App guide: Ikiam Insectary DB
 
-The team's web app over the Google Sheets workbook (a **test copy** for now:
-the yellow button at the top right opens it). Every page is a hash route:
+The team's web app over the team's Google Sheets workbook (the «Google Sheet»
+button at the top right opens it; saves go straight into it). Every page is a hash route:
 **full link = `https://ithomiini-ikiam.duckdns.org/` + route**, e.g.
 `https://ithomiini-ikiam.duckdns.org/#/monitoreo?vista=dudas`. The UI is in
 Spanish; quote its labels exactly, in «».
