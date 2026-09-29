@@ -131,7 +131,9 @@ lines are usually dead butterflies). Columns: `Insectary_ID` (the ID written on
 the wing: a digit and two letters like `5VB`, `0NX`, `6OO`, or letters and
 digits like `H79`), `SPECIES`, `Sex`, `CLUTCH NUMBER` (`838`, `831(1)`, or the
 text as written such as `CRISPR #159 control`), `Stock_of_origin` (as written:
-`interm.`, `messen.`; the tool completes it from the list), `Intro2Insectary_date`
+`interm.`, `messen.`; the tool completes it from the list; a dash `—` or `-` is
+`"NA"`, which is what the sheet holds for "no stock": always send it, never leave
+the column out), `Intro2Insectary_date`
 (emerge date), `Death_date` (dead date), `Death_cause`, `CAM_ID`, `Tube_1_id`
 (the wing clip tube), `Notes_Insectary_data`. Only existing rows are changed.
 
@@ -145,6 +147,14 @@ sampled butterfly (not a table): a CAM, the species, the sex, "Reared ID: 1TG",
 a date, and often a tube held beside it (read its printed code). One line per
 label. Columns: `Insectary_ID` (the Reared ID, copied exactly), `SPECIES`,
 `Sex`, `CAM_ID`, `Tube_1_id`. Ignore the notebook behind the label.
+Before saying the tube matches, look at the butterfly's row with `get_record`:
+the sheet has four tubes (`Tube_1_id` … `Tube_4_id`), each with its tissue and
+medium. If the label's tube is in another tube column, or its tissue disagrees
+(the envelope says "wing clip" but that tube is `WHOLE_ORGANISM`, or the medium
+differs), say it plainly as a difference for the person to decide ("el tubo del
+sobre está en Tube_2_id como WHOLE_ORGANISM, pero el sobre dice wing clip"),
+and don't propose tube changes on your own. Only say "coincide" when it is the
+same tube in the same column.
 
 **`crispr` — CRISPR → CRISPR.** One line per injected egg: *CRISPR · # Eggs ·
 CRISPR date · Guide · Specie · Hatch date · Pupa date · Emerge date · Mutant
