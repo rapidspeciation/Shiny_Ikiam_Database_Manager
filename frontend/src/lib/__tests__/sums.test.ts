@@ -8,6 +8,7 @@ describe('counts typed as sums', () => {
     expect(simpleSum('= 41 + 36 + 2')).toBe('=41+36+2')
     expect(simpleSum('27')).toBeNull()
     expect(simpleSum('=A2+1')).toBeNull()
+    expect(simpleSum('27-5')).toBe('=27-5')
   })
   it('only in the count columns of Insectary_stocks', () => {
     const eggs = { key: 'NUMBER OF EGGS', type: 'number' as const }

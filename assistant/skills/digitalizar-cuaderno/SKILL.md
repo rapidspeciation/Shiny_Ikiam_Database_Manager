@@ -98,7 +98,11 @@ Give values **as written**; the tool converts them.
   emerged differs from the prediction.
 - **Counts** as written, sums included: `12+15`, `2+4=6+8=14`, `27-5`. The team
   keeps Insectary_stocks counts as sums (one term per day or group); the tool
-  proposes them as the formula `=12+15`, keeping the terms.
+  proposes them as the formula `=12+15`, keeping the terms. A minus is part of
+  the count: `27-5` means 27 larvae of which 5 died (23 alive), so send `27-5`.
+  A number **crossed out** with a line and a new number written beside it is a
+  correction, not a subtraction: send only the new number (and its sum, if it
+  continues one), never the crossed-out one.
 - **CAMs** (`CAM` + 6 digits) and **tubes** (2 letters + 8 digits, e.g.
   `FS50851817`, often with `wc` = wing clip): a short number under a full one
   continues it (`cam505` or `72` under `CAM076671`; `81` under `FS50851380`). You

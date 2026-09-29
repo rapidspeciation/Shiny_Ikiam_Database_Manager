@@ -8,16 +8,12 @@ const SUM_FIELDS: Record<string, ReadonlySet<string>> = {
 }
 export const isSumField = (module: string, field: string) => !!SUM_FIELDS[module]?.has(field)
 
-/** "12+15", "= 12 + 15" or "=27" as "=12+15" / "=27"; null when it is not a simple sum (a plain 27 stays a number). */
+/**
+ * "12+15", "= 12 + 15", "27-5" (27 larvae, 5 died) or "=27" as "=12+15" /
+ * "=27-5" / "=27"; null when it is not a simple sum (a plain 27 stays a number).
+ */
 export function simpleSum(text: string): string | null {
   const t = text.trim()
-  if (!/^=?\s*\d+(?:\s*\+\s*\d+)*$/.test(t) || (!t.startsWith('=') && !t.includes('+'))) return null
-  return (
-    '=' +
-    t
-      .replace(/^=/, '')
-      .split('+')
-      .map(p => p.trim())
-      .join('+')
-  )
+  if (!/^=?\s*\d+(?:\s*[+-]\s*\d+)*$/.test(t) || (!t.startsWith('=') && !/[+-]/.test(t))) return null
+  return '=' + t.replace(/^=/, '').replace(/\s+/g, '')
 }

@@ -124,14 +124,17 @@ export function comparable(value) {
 export const SUM_FIELDS = {
   Insectary_stocks: new Set(['NUMBER OF EGGS', 'NUMBER OF LARVAE', 'NUMBER OF PUPA', 'NUMBER OF ADULTS']),
 };
-const SUM = /^=?\s*\d+(?:\s*\+\s*\d+)*\s*$/;
-/** "=12+15", "12 + 15" or "=27" as the formula "=12+15" / "=27"; null when it is not a simple sum. */
+const SUM = /^=?\s*\d+(?:\s*[+-]\s*\d+)*\s*$/;
+/**
+ * "=12+15", "12 + 15", "27-5" (27 larvae, 5 died) or "=27" as the formula
+ * "=12+15" / "=27-5" / "=27"; null when it is not a simple sum.
+ */
 export function simpleSum(text) {
   if (typeof text !== 'string' || !SUM.test(text)) return null;
   const trimmed = text.trim();
   // A plain number stays a number; only a sum (or an explicit "=") becomes a formula.
-  if (!trimmed.startsWith('=') && !trimmed.includes('+')) return null;
-  return '=' + trimmed.replace(/^=/, '').split('+').map(t => t.trim()).join('+');
+  if (!trimmed.startsWith('=') && !/[+-]/.test(trimmed)) return null;
+  return '=' + trimmed.replace(/^=/, '').replace(/\s+/g, '');
 }
 export const isSumField = (module, field) => !!SUM_FIELDS[module]?.has(field);
 

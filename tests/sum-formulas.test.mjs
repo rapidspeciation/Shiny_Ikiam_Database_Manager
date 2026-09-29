@@ -69,3 +69,9 @@ test('counts are written as the notebook sums them, over an old sum, but never o
   );
   store.close();
 });
+
+test('a count may subtract (27 larvae, 5 died)', () => {
+  assert.equal(simpleSum('27-5'), '=27-5');
+  assert.equal(simpleSum('= 4 + 6 - 10'), '=4+6-10');
+  assert.equal(simpleSum('27'), null);
+});
