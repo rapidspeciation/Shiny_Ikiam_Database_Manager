@@ -91,11 +91,12 @@ export function fieldFor(module, key) {
 }
 export function labelFor(module, values) {
   const mod = moduleMap.get(module);
-  return (
+  // Always text: a number (a clutch 1014) stored in the TEXT label column became "1014.0".
+  return String(
     mod?.identityFields.map(k => values[k]).find(v => v !== null && v !== undefined && String(v).trim()) ||
-    values.SPECIES ||
-    values.Species ||
-    `${module} record`
+      values.SPECIES ||
+      values.Species ||
+      `${module} record`,
   );
 }
 export function entered(cell) {

@@ -45,6 +45,8 @@ export class Store {
     )
       this.db.exec('ALTER TABLE records ADD COLUMN observed INTEGER NOT NULL DEFAULT 1');
     this.db.exec('CREATE INDEX IF NOT EXISTS records_updated ON records(sheet,updated_at)');
+    // Numeric labels stored as REAL text ("1014.0") before labelFor returned text.
+    this.db.exec("UPDATE records SET label=substr(label,1,length(label)-2) WHERE label GLOB '[0-9]*.0' AND label NOT GLOB '*[^0-9.]*'");
     // The purpose of each save (Colecta, Muertes…), indexes and purposes of older saves (Historial).
     initHistory(this.db);
     initMonitoring(this.db);
