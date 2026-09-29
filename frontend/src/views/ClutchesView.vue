@@ -27,9 +27,10 @@ const number = ref('')
 const showAll = ref(false)
 
 const rows = computed(() => table.value?.rows.filter(r => r.observed) || [])
-/** Clutch numbers are integers, sometimes with a batch suffix like "994(6)". */
+/** Clutch numbers are integers, sometimes with a batch suffix like "994(6)"; clutches added but not yet saved count too. */
 const nextNumber = computed(() => {
-  const max = Math.max(0, ...rows.value.map(r => parseInt(String(r.values['CLUTCH NUMBER'] ?? ''), 10)).filter(Number.isFinite))
+  const numbers = [...rows.value, ...creates.value].map(r => parseInt(String(r.values['CLUTCH NUMBER'] ?? ''), 10))
+  const max = Math.max(0, ...numbers.filter(Number.isFinite))
   return String(max + 1)
 })
 const speciesList = computed(() => {
