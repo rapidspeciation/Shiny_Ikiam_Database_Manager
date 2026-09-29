@@ -2,7 +2,7 @@
 // Sets up a person's project in T3 Code (stock install, nothing patched):
 // a folder with the Ithomiini brief for Claude/Codex (CLAUDE.md, AGENTS.md),
 // the skills (every folder of assistant/skills: digitalizar-cuaderno, app-guide), the app's tools over MCP
-// with a personal token, and `t3 project add`. Run on the server:
+// with a personal token (.mcp.json for Claude, .codex/config.toml for Codex), and `t3 project add`. Run on the server:
 //   node scripts/t3-provision.mjs <username>     new person, or a fresh token
 //   node scripts/t3-provision.mjs --refresh-all  after a release (scripts/deploy.sh):
 //     every existing workspace gets the new brief and skills and keeps its token.
@@ -142,6 +142,42 @@ function keptToken(workspace, user) {
 }
 
 /**
+ * The app's tools for Codex (GPT threads in T3): Codex reads neither .mcp.json nor
+ * .claude, so the workspace gets .codex/config.toml with the same server and token,
+ * its tools allowed without asking. Codex only loads a project's .codex/config.toml
+ * once that exact folder is trusted (a trusted parent folder is not enough), so the
+ * workspace alone is marked trusted in the Codex home's config.toml; nothing else of
+ * that file changes (other Codex users on the host keep their settings).
+ */
+function codexConfig(workspace, token) {
+  const q = s => JSON.stringify(s); // a TOML basic string
+  const folder = join(workspace, '.codex');
+  mkdirSync(folder, { recursive: true, mode: 0o700 });
+  const file = join(folder, 'config.toml');
+  writeFileSync(
+    file,
+    `# Written by scripts/t3-provision.mjs: the app's tools (MCP) for Codex threads in T3.
+[mcp_servers.ithomiini]
+url = ${q(mcpUrl)}
+http_headers = { Authorization = ${q(`Bearer ${token}`)} }
+default_tools_approval_mode = "approve"
+`,
+    { mode: 0o600 },
+  );
+  chmodSync(file, 0o600);
+
+  const home = process.env.CODEX_HOME || join(process.env.HOME, '.codex');
+  if (!existsSync(home)) return; // Codex is not installed for this account.
+  const global = join(home, 'config.toml');
+  const text = existsSync(global) ? readFileSync(global, 'utf8') : '';
+  const table = `[projects.${q(workspace)}]`;
+  if (text.split('\n').some(line => line.trim() === table)) return;
+  writeFileSync(global, `${text}${text && !text.endsWith('\n') ? '\n' : ''}\n${table}\ntrust_level = "trusted"\n`, {
+    mode: 0o600,
+  });
+}
+
+/**
  * Writes (or refreshes) a person's workspace. Idempotent: the brief, the skills
  * and the settings are rewritten; the token is kept unless `freshToken`.
  */
@@ -152,12 +188,15 @@ function provision(user, { freshToken, addProject }) {
   writeFileSync(join(workspace, 'CLAUDE.md'), text);
   writeFileSync(join(workspace, 'AGENTS.md'), text);
 
-  // The release's skills replace the workspace's copies (a removed file goes too).
+  // The release's skills replace the workspace's copies (a removed file goes too):
+  // .claude/skills for Claude, .agents/skills for Codex (GPT).
   const skills = join(release, 'assistant', 'skills');
   for (const name of existsSync(skills) ? readdirSync(skills) : []) {
-    const target = join(workspace, '.claude', 'skills', name);
-    rmSync(target, { recursive: true, force: true });
-    cpSync(join(skills, name), target, { recursive: true });
+    for (const folder of ['.claude', '.agents']) {
+      const target = join(workspace, folder, 'skills', name);
+      rmSync(target, { recursive: true, force: true });
+      cpSync(join(skills, name), target, { recursive: true });
+    }
   }
 
   const token = (!freshToken && keptToken(workspace, user)) || mintToken(user);
@@ -171,6 +210,7 @@ function provision(user, { freshToken, addProject }) {
     ),
   );
   chmodSync(mcp, 0o600);
+  codexConfig(workspace, token);
 
   // The app's tools and the skills run without asking; other settings of the folder are kept.
   const settingsFile = join(workspace, '.claude', 'settings.json');
