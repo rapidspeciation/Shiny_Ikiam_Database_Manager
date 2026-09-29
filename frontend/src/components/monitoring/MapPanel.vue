@@ -9,6 +9,7 @@ import FilterSelect, { type FilterOption } from './FilterSelect.vue'
 import { useMonitoring, type StoredCapture, type StoredTrack } from '../../composables/useMonitoring'
 import { api } from '../../lib/api'
 import { formatSerial, isoToSerial } from '../../lib/dates'
+import { locale, t } from '../../lib/i18n'
 import { formatMinutes, markHistories } from '../../lib/monitoring'
 import {
   collectorOf,
@@ -42,6 +43,7 @@ const PALETTE = ['#0072B2', '#E69F00', '#009E73', '#CC79A7', '#56B4E9', '#D55E00
 const OTHER = '#a8a29e'
 const SEX_COLORS: Record<string, string> = { female: '#CC79A7', male: '#0072B2', unknown: OTHER }
 const KIND_COLORS: Record<string, string> = { preserved: '#E69F00', marked: '#009E73', recapture: '#56B4E9' }
+// Spanish labels; t() where shown.
 const SEX_LABELS: Record<string, string> = { female: 'Hembra', male: 'Macho', unknown: 'Sin sexo' }
 const KIND_LABELS: Record<string, string> = { preserved: 'Preservado', marked: 'Marcado', recapture: 'Recaptura' }
 
@@ -110,9 +112,9 @@ function clearFilters() {
 async function copyLink() {
   try {
     await navigator.clipboard.writeText(location.href)
-    notify('Enlace copiado: abre el mapa con estos filtros', 'success')
+    notify(t('Enlace copiado: abre el mapa con estos filtros'), 'success')
   } catch {
-    notify('No se pudo copiar el enlace', 'error')
+    notify(t('No se pudo copiar el enlace'), 'error')
   }
 }
 
@@ -218,21 +220,25 @@ function chips(key: FacetKey, values: string[], label: (v: string) => string = v
 const chipGroups = computed(() => [
   {
     key: 'years' as const,
-    title: 'Año',
+    title: t('Año'),
     chips: chips('years', [...new Set(tracks.value.map(t => t.date.slice(0, 4)))].sort().reverse()),
   },
   {
     key: 'collectors' as const,
-    title: 'Recolector',
+    title: t('Recolector'),
     chips: chips('collectors', [...new Set(tracks.value.map(collectorOf).filter(Boolean))].sort()),
   },
   {
     key: 'sections' as const,
-    title: 'Transecto',
-    chips: chips('sections', ['1', '2', '3', '4', 'none'], v => (v === 'none' ? 'Sin' : `T${v}`)),
+    title: t('Transecto'),
+    chips: chips('sections', ['1', '2', '3', '4', 'none'], v => (v === 'none' ? t('Sin') : `T${v}`)),
   },
-  { key: 'sexes' as const, title: 'Sexo', chips: chips('sexes', ['female', 'male', 'unknown'], v => SEX_LABELS[v]) },
-  { key: 'kinds' as const, title: 'Tipo', chips: chips('kinds', ['preserved', 'marked', 'recapture'], v => KIND_LABELS[v]) },
+  { key: 'sexes' as const, title: t('Sexo'), chips: chips('sexes', ['female', 'male', 'unknown'], v => t(SEX_LABELS[v])) },
+  {
+    key: 'kinds' as const,
+    title: t('Tipo'),
+    chips: chips('kinds', ['preserved', 'marked', 'recapture'], v => t(KIND_LABELS[v])),
+  },
 ])
 function toggleChip(key: FacetKey, value: string) {
   const list = lists[key]
@@ -260,7 +266,7 @@ const legend = computed(() => {
     return {
       items: Object.keys(labels).map(v => ({
         value: v,
-        label: labels[v],
+        label: t(labels[v]),
         color: colors[v],
         count: tally.get(v) || 0,
         key,
@@ -342,29 +348,33 @@ function loadPlugins() {
 
 const escape = (s: string) => s.replace(/[&<>"']/g, ch => `&#${ch.charCodeAt(0)};`)
 
-function popup(t: StoredTrack, c: StoredCapture) {
-  const row = sheetRow(t, c)
+function popup(walk: StoredTrack, c: StoredCapture) {
+  const row = sheetRow(walk, c)
   const key = c.outside || (c.markId && c.species ? individualKey(c.markId, c.species) : '')
   const history = key ? histories.value.get(key) : undefined
   const lines = [
-    `<b><i>${escape(c.species || 'Sin especie')}</i> ${escape(c.subspecies || '')}</b>`,
+    `<b><i>${escape(c.species || t('Sin especie'))}</i> ${escape(c.subspecies || '')}</b>`,
     [
-      c.sex === 'female' ? 'hembra' : c.sex === 'male' ? 'macho' : '',
+      c.sex === 'female' ? t('hembra') : c.sex === 'male' ? t('macho') : '',
       formatMinutes(c.minutes),
       c.height !== null ? `${c.height} m` : '',
     ]
       .filter(Boolean)
       .join(' · '),
-    c.markId ? `Marca <b>${escape(c.markId)}</b>${c.recapture ? ' (recaptura)' : ''}` : 'Preservado',
-    `${dateLabel(t.date)} · ${escape(collectorOf(t))}${c.section ? ` · T${c.section}` : ''}`,
+    c.markId
+      ? t(c.recapture ? 'Marca {mark} (recaptura)' : 'Marca {mark}', { mark: `<b>${escape(c.markId)}</b>` })
+      : t('Preservado'),
+    `${dateLabel(walk.date)} · ${escape(collectorOf(walk))}${c.section ? ` · T${c.section}` : ''}`,
     `<span style="color:#78716c">${escape(c.text)}</span>`,
     c.outside
-      ? '<span style="color:#b45309">Recaptura solo en Wikiloc: no es una fila de la hoja</span>'
+      ? `<span style="color:#b45309">${t('Recaptura solo en Wikiloc: no es una fila de la hoja')}</span>`
       : row
-        ? `Collection_data fila ${row.row}`
-        : '<span style="color:#b45309">Aún no está en la hoja</span>',
+        ? t('Collection_data fila {n}', { n: row.row })
+        : `<span style="color:#b45309">${t('Aún no está en la hoja')}</span>`,
     history || c.outside
-      ? `<a href="#/monitoreo?vista=recapturas&individuo=${encodeURIComponent(key)}">Ver ${history ? `sus ${history.events.length} capturas` : 'sus capturas'} con fotos →</a>`
+      ? `<a href="#/monitoreo?vista=recapturas&individuo=${encodeURIComponent(key)}">${
+          history ? t('Ver sus {n} capturas con fotos →', { n: history.events.length }) : t('Ver sus capturas con fotos →')
+        }</a>`
       : '',
   ]
   const photos = (c.photos || [])
@@ -464,15 +474,15 @@ async function draw() {
   else transects?.remove()
 
   if (showGps.value)
-    for (const t of shownWalks.value)
-      for (const piece of gpsPieces(t))
+    for (const walk of shownWalks.value)
+      for (const piece of gpsPieces(walk))
         L.polyline(piece, {
-          color: colorBy.value === 'recorrido' ? walkColor.value.get(t.id) : '#ffffff',
+          color: colorBy.value === 'recorrido' ? walkColor.value.get(walk.id) : '#ffffff',
           weight: 2,
           opacity: 0.9,
           dashArray: '4 4',
         })
-          .bindTooltip(`${dateLabel(t.date)} · ${collectorOf(t)} (GPS de Wikiloc)`, { sticky: true })
+          .bindTooltip(`${dateLabel(walk.date)} · ${collectorOf(walk)} ${t('(GPS de Wikiloc)')}`, { sticky: true })
           .addTo(overlay)
 
   if (showRecaptures.value || individual.value) {
@@ -486,7 +496,7 @@ async function draw() {
     for (const [key, list] of byMark)
       if (list.length > 1)
         L.polyline(list, { color: '#ef4444', weight: 2.5, dashArray: '2 5' })
-          .bindTooltip(`Recaptura ${key.replace('|', ' · ')}`, { sticky: true })
+          .bindTooltip(t('Recaptura {id}', { id: key.replace('|', ' · ') }), { sticky: true })
           .addTo(overlay)
   }
 
@@ -521,6 +531,15 @@ async function draw() {
   data.addTo(map)
 }
 
+let layersControl: L.Control.Layers | null = null
+/** The base-layer switch, named in the interface language. */
+function addLayersControl(satellite: L.TileLayer, streets: L.TileLayer) {
+  layersControl?.remove()
+  layersControl = L.control
+    .layers({ [t('Satélite')]: satellite, [t('Calles')]: streets }, undefined, { position: 'topright' })
+    .addTo(map!)
+}
+
 onMounted(() => {
   // Canvas draws hundreds of points much faster than one SVG element each.
   map = L.map(host.value!, { zoomControl: true, attributionControl: true, preferCanvas: true })
@@ -528,19 +547,29 @@ onMounted(() => {
     maxZoom: 20,
     // Esri has no imagery of the trail at zoom 19 ("Map data not yet available"); zoom 18 is enlarged instead.
     maxNativeZoom: 18,
-    attribution: 'Imágenes © Esri, Maxar, Earthstar Geographics',
+    attribution: t('Imágenes © Esri, Maxar, Earthstar Geographics'),
   }).addTo(map)
   const streets = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 20,
     maxNativeZoom: 19,
     attribution: '© OpenStreetMap',
   })
-  L.control.layers({ Satélite: satellite, Calles: streets }, undefined, { position: 'topright' }).addTo(map)
+  addLayersControl(satellite, streets)
+  // The language button renames the layers and the imagery credit.
+  stopLocale = watch(locale, () => {
+    if (!map) return
+    const before = satellite.getAttribution?.()
+    satellite.options.attribution = t('Imágenes © Esri, Maxar, Earthstar Geographics')
+    if (map.hasLayer(satellite) && before)
+      map.attributionControl.removeAttribution(before).addAttribution(satellite.options.attribution)
+    addLayersControl(satellite, streets)
+    draw()
+  })
   L.control.scale({ imperial: false }).addTo(map)
   transects = L.featureGroup()
   for (const s of SECTIONS) {
     L.polyline(s.path, { color: s.color, weight: 5, opacity: 0.95 })
-      .bindTooltip(`Transecto ${s.section}`, { sticky: true })
+      .bindTooltip(() => t('Transecto {n}', { n: s.section }), { sticky: true })
       .addTo(transects)
     L.marker(s.path[Math.floor(s.path.length / 2)], {
       icon: L.divIcon({ className: 'transect-label', html: `T${s.section}`, iconSize: [26, 16] }),
@@ -555,7 +584,9 @@ onMounted(() => {
   resize = new ResizeObserver(() => map?.invalidateSize())
   resize.observe(host.value!)
 })
+let stopLocale: (() => void) | null = null
 onBeforeUnmount(() => {
+  stopLocale?.()
   resize?.disconnect()
   map?.remove()
   map = null
@@ -572,10 +603,10 @@ watch(() => [individual.value, points.value.length], fitIndividual)
 const chosenWalks = computed(() => (lists.dates.value.length ? tracks.value.filter(t => lists.dates.value.includes(t.date)) : []))
 const canDelete = (t: StoredTrack) =>
   session.user?.username === t.createdBy || ['reviewer', 'admin'].includes(session.user?.role || '')
-async function remove(t: StoredTrack) {
-  if (!confirm(`¿Quitar el recorrido "${t.name}" del mapa? Las filas de la hoja no cambian.`)) return
+async function remove(walk: StoredTrack) {
+  if (!confirm(t('¿Quitar el recorrido "{name}" del mapa? Las filas de la hoja no cambian.', { name: walk.name }))) return
   try {
-    await api(`monitoring/tracks/${encodeURIComponent(t.id)}`, { method: 'DELETE', body: {} })
+    await api(`monitoring/tracks/${encodeURIComponent(walk.id)}`, { method: 'DELETE', body: {} })
     await loadTracks()
   } catch (e) {
     notify(errorText(e), 'error')
@@ -596,36 +627,38 @@ const withoutGps = computed(() => {
       <div class="space-y-3 border-b border-stone-200 p-3">
         <div class="stat flex items-baseline gap-1.5 bg-stone-50">
           <span class="text-2xl font-semibold text-brand-700 tabular-nums">{{ points.length }}</span>
-          <span class="text-stone-600">de {{ allPoints.length }} capturas</span>
-          <span class="ml-auto text-xs text-stone-500">{{ shownWalks.length }} recorridos</span>
+          <span class="text-stone-600">{{ $t('de {n} capturas', { n: allPoints.length }) }}</span>
+          <span class="ml-auto text-xs text-stone-500">{{ $t('{n} recorridos', { n: shownWalks.length }) }}</span>
         </div>
 
         <div v-if="individual" class="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-2.5 py-2 text-red-950">
           <div class="min-w-0 flex-1">
             <p class="font-medium">
-              Individuo {{ individual.split('|')[0] }} · <i>{{ individual.split('|')[1] }}</i>
+              {{ $t('Individuo {id}', { id: individual.split('|')[0] }) }} · <i>{{ individual.split('|')[1] }}</i>
             </p>
             <p v-if="chosenIndividual" class="text-xs">
-              {{ chosenIndividual.events.length }} capturas ·
-              <RouterLink :to="{ query: { vista: 'recapturas', individuo: individual } }" class="underline">ver fotos</RouterLink>
+              {{ $t('{n} capturas', { n: chosenIndividual.events.length }) }} ·
+              <RouterLink :to="{ query: { vista: 'recapturas', individuo: individual } }" class="underline">{{
+                $t('ver fotos')
+              }}</RouterLink>
             </p>
           </div>
-          <button class="btn-ghost" title="Quitar" @click="individual = ''"><X :size="14" /></button>
+          <button class="btn-ghost" :title="$t('Quitar')" @click="individual = ''"><X :size="14" /></button>
         </div>
 
         <FilterSelect
           v-model="lists.dates.value"
-          label="Fechas de monitoreo"
+          :label="$t('Fechas de monitoreo')"
           :options="dateOptions"
-          all-label="Todas las fechas"
-          placeholder="Buscar fecha (p. ej. sep-26)"
+          :all-label="$t('Todas las fechas')"
+          :placeholder="$t('Buscar fecha (p. ej. sep-26)')"
         />
         <FilterSelect
           v-model="lists.species.value"
-          label="Especies"
+          :label="$t('Especies')"
           :options="speciesOptions"
-          all-label="Todas las especies"
-          placeholder="Buscar especie"
+          :all-label="$t('Todas las especies')"
+          :placeholder="$t('Buscar especie')"
         />
 
         <div v-for="g in chipGroups" :key="g.key">
@@ -653,15 +686,17 @@ const withoutGps = computed(() => {
 
         <div class="flex gap-2">
           <button class="btn flex-1" :disabled="!filterCount" @click="clearFilters">
-            <RotateCcw :size="14" /> Quitar filtros<template v-if="filterCount"> ({{ filterCount }})</template>
+            <RotateCcw :size="14" /> {{ $t('Quitar filtros') }}<template v-if="filterCount"> ({{ filterCount }})</template>
           </button>
-          <button class="btn" title="Copiar el enlace a esta vista" @click="copyLink"><Link2 :size="14" /> Compartir</button>
+          <button class="btn" :title="$t('Copiar el enlace a esta vista')" @click="copyLink">
+            <Link2 :size="14" /> {{ $t('Compartir') }}
+          </button>
         </div>
       </div>
 
       <div class="space-y-3 border-b border-stone-200 p-3">
         <div>
-          <span class="field-label">Mostrar como</span>
+          <span class="field-label">{{ $t('Mostrar como') }}</span>
           <div class="grid grid-cols-3 overflow-hidden rounded-md border border-stone-300 text-center text-sm">
             <button
               v-for="m in [
@@ -675,54 +710,74 @@ const withoutGps = computed(() => {
               :class="mode === m.id ? 'bg-brand-700 font-medium text-white' : 'bg-white text-stone-700 hover:bg-stone-100'"
               @click="mode = m.id"
             >
-              {{ m.label }}
+              {{ $t(m.label) }}
             </button>
           </div>
         </div>
         <label v-if="mode === 'calor'" class="block">
-          <span class="field-label">Radio del calor: {{ heatRadius }} px</span>
+          <span class="field-label">{{ $t('Radio del calor: {n} px', { n: heatRadius }) }}</span>
           <input v-model.number="heatRadius" type="range" min="8" max="45" class="w-full" />
         </label>
         <label v-else class="block">
-          <span class="field-label">Colorear por</span>
+          <span class="field-label">{{ $t('Colorear por') }}</span>
           <ChoiceField
             v-model="colorBy"
             class="field-input"
             :freetext="false"
             :options="[
-              { value: 'especie', label: 'Especie' },
-              { value: 'sexo', label: 'Sexo' },
-              { value: 'tipo', label: 'Tipo (preservado, marcado, recaptura)' },
-              { value: 'recorrido', label: 'Recorrido' },
+              { value: 'especie', label: $t('Especie') },
+              { value: 'sexo', label: $t('Sexo') },
+              { value: 'tipo', label: $t('Tipo (preservado, marcado, recaptura)') },
+              { value: 'recorrido', label: $t('Recorrido') },
             ]"
           />
         </label>
-        <label class="flex items-center gap-2"><input v-model="showTransects" type="checkbox" /> Transectos T1–T4</label>
-        <label class="flex items-center gap-2"><input v-model="showGps" type="checkbox" /> Trazados GPS de Wikiloc</label>
-        <label class="flex items-center gap-2"><input v-model="showRecaptures" type="checkbox" /> Unir recapturas</label>
+        <label class="flex items-center gap-2"
+          ><input v-model="showTransects" type="checkbox" /> {{ $t('Transectos T1–T4') }}</label
+        >
+        <label class="flex items-center gap-2"
+          ><input v-model="showGps" type="checkbox" /> {{ $t('Trazados GPS de Wikiloc') }}</label
+        >
+        <label class="flex items-center gap-2"
+          ><input v-model="showRecaptures" type="checkbox" /> {{ $t('Unir recapturas') }}</label
+        >
       </div>
 
       <div v-if="chosenWalks.length" class="border-b border-stone-200 p-3">
-        <p class="field-label">Recorridos de {{ lists.dates.value.length === 1 ? 'ese día' : 'esos días' }}</p>
+        <p class="field-label">
+          {{ lists.dates.value.length === 1 ? $t('Recorridos de ese día') : $t('Recorridos de esos días') }}
+        </p>
         <ul class="space-y-1">
           <li v-for="t in chosenWalks" :key="t.id" class="group flex items-center gap-1.5">
             <span class="min-w-0 flex-1 truncate" :title="t.name">
-              {{ dateLabel(t.date) }} · {{ collectorOf(t) }} <span class="text-stone-500">({{ t.captures.filter(c => !c.doubt).length }})</span>
+              {{ dateLabel(t.date) }} · {{ collectorOf(t) }}
+              <span class="text-stone-500">({{ t.captures.filter(c => !c.doubt).length }})</span>
             </span>
-            <a v-if="t.wikiloc" :href="t.wikiloc.url" target="_blank" rel="noopener" class="btn-ghost" title="Abrir en Wikiloc">
+            <a
+              v-if="t.wikiloc"
+              :href="t.wikiloc.url"
+              target="_blank"
+              rel="noopener"
+              class="btn-ghost"
+              :title="$t('Abrir en Wikiloc')"
+            >
               <ExternalLink :size="13" />
             </a>
-            <button v-if="canDelete(t)" class="btn-ghost" title="Quitar recorrido del mapa" @click="remove(t)">
+            <button v-if="canDelete(t)" class="btn-ghost" :title="$t('Quitar recorrido del mapa')" @click="remove(t)">
               <Trash2 :size="13" />
             </button>
           </li>
         </ul>
       </div>
 
-      <p v-if="tracksLoaded && !tracks.length" class="hint p-3">Aún no hay recorridos. Súbelos en “Importar”.</p>
+      <p v-if="tracksLoaded && !tracks.length" class="hint p-3">{{ $t('Aún no hay recorridos. Súbelos en “Importar”.') }}</p>
       <p class="hint p-3">
-        Transectos T1–T4 reconstruidos del mapa QGIS de los reportes sobre el GPS del 26-Sep-26. {{ withoutGps }} registros de
-        monitoreo son de días sin recorrido subido; sube sus GPX con “Solo guardar el recorrido” para verlos.
+        {{
+          $t(
+            'Transectos T1–T4 reconstruidos del mapa QGIS de los reportes sobre el GPS del 26-Sep-26. {n} registros de monitoreo son de días sin recorrido subido; sube sus GPX con “Solo guardar el recorrido” para verlos.',
+            { n: withoutGps },
+          )
+        }}
       </p>
     </aside>
 
@@ -739,8 +794,8 @@ const withoutGps = computed(() => {
             class="flex w-full items-center justify-between px-2.5 py-1.5 font-semibold tracking-wide text-stone-600 uppercase"
             @click="legendOpen = !legendOpen"
           >
-            {{ { especie: 'Especies', sexo: 'Sexo', tipo: 'Tipo', recorrido: 'Recorridos' }[colorBy] }}
-            <span class="font-normal normal-case">{{ legendOpen ? 'ocultar' : 'ver' }}</span>
+            {{ $t({ especie: 'Especies', sexo: 'Sexo', tipo: 'Tipo', recorrido: 'Recorridos' }[colorBy]) }}
+            <span class="font-normal normal-case">{{ legendOpen ? $t('ocultar') : $t('ver') }}</span>
           </button>
           <ul v-if="legendOpen" class="border-t border-stone-100 py-1">
             <li v-for="item in legend.items" :key="item.value">
@@ -748,7 +803,7 @@ const withoutGps = computed(() => {
                 type="button"
                 class="flex w-full items-center gap-2 px-2.5 py-0.5 text-left hover:bg-stone-100"
                 :class="lists[item.key].value.includes(item.value) ? 'bg-brand-50' : ''"
-                title="Filtrar por esto"
+                :title="$t('Filtrar por esto')"
                 @click="toggleChip(item.key, item.value)"
               >
                 <span class="h-2.5 w-2.5 shrink-0 rounded-full border border-stone-700" :style="{ background: item.color }" />
@@ -758,12 +813,14 @@ const withoutGps = computed(() => {
             </li>
             <li v-if="legend.other" class="flex items-center gap-2 px-2.5 py-0.5 text-stone-500">
               <span class="h-2.5 w-2.5 shrink-0 rounded-full border border-stone-700" :style="{ background: OTHER }" />
-              <span class="flex-1"
-                >Otras · {{ legend.other.groups }} {{ colorBy === 'recorrido' ? 'recorridos' : 'especies' }}</span
-              >
+              <span class="flex-1">{{
+                colorBy === 'recorrido'
+                  ? $t('Otras · {n} recorridos', { n: legend.other.groups })
+                  : $t('Otras · {n} especies', { n: legend.other.groups })
+              }}</span>
               <span class="tabular-nums">{{ legend.other.count }}</span>
             </li>
-            <li v-if="colorBy !== 'tipo'" class="px-2.5 pt-1 text-stone-500">Borde blanco: recaptura</li>
+            <li v-if="colorBy !== 'tipo'" class="px-2.5 pt-1 text-stone-500">{{ $t('Borde blanco: recaptura') }}</li>
           </ul>
         </div>
         <div
@@ -771,11 +828,14 @@ const withoutGps = computed(() => {
           class="rounded-md border border-stone-200 bg-white/95 px-2.5 py-1.5 text-xs shadow"
           :class="panel ? 'max-md:hidden' : ''"
         >
-          <p class="mb-1 text-stone-600">Capturas por zona</p>
+          <p class="mb-1 text-stone-600">{{ $t('Capturas por zona') }}</p>
           <div class="heat-scale h-2 w-40 rounded" />
-          <div class="flex justify-between text-stone-500"><span>pocas</span><span>muchas</span></div>
+          <div class="flex justify-between text-stone-500">
+            <span>{{ $t('pocas') }}</span
+            ><span>{{ $t('muchas') }}</span>
+          </div>
         </div>
-        <button class="btn shadow" @click="panel = !panel">{{ panel ? 'Ocultar panel' : 'Capas y filtros' }}</button>
+        <button class="btn shadow" @click="panel = !panel">{{ panel ? $t('Ocultar panel') : $t('Capas y filtros') }}</button>
       </div>
     </div>
   </div>

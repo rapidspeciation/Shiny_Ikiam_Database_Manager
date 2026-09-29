@@ -17,10 +17,14 @@ export interface FilterOption {
   group?: string
 }
 
-const props = withDefaults(
-  defineProps<{ modelValue: string[]; options: FilterOption[]; label: string; placeholder?: string; allLabel?: string }>(),
-  { placeholder: 'Buscar…', allLabel: 'Todos' },
-)
+// Without placeholder / allLabel: "Buscar…" and "Todos" in the interface language.
+const props = defineProps<{
+  modelValue: string[]
+  options: FilterOption[]
+  label: string
+  placeholder?: string
+  allLabel?: string
+}>()
 const emit = defineEmits<{ 'update:modelValue': [value: string[]] }>()
 
 const open = ref(false)
@@ -78,10 +82,10 @@ function onFocusOut(event: FocusEvent) {
       <span class="min-w-0 flex-1 truncate" :class="modelValue.length ? '' : 'text-stone-500'">
         {{
           modelValue.length === 0
-            ? allLabel
+            ? (allLabel ?? $t('Todos'))
             : modelValue.length === 1
               ? labelOf.get(modelValue[0]) || modelValue[0]
-              : `${modelValue.length} elegidos`
+              : $t('{n} elegidos', { n: modelValue.length })
         }}
       </span>
       <ChevronDown :size="15" class="shrink-0 text-stone-500" />
@@ -92,7 +96,7 @@ function onFocusOut(event: FocusEvent) {
         :key="v"
         type="button"
         class="inline-flex max-w-full items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-xs text-brand-900 hover:bg-brand-100"
-        :title="`Quitar ${labelOf.get(v) || v}`"
+        :title="$t('Quitar {name}', { name: labelOf.get(v) || v })"
         @click="toggle(v)"
       >
         <span class="truncate">{{ labelOf.get(v) || v }}</span>
@@ -108,12 +112,12 @@ function onFocusOut(event: FocusEvent) {
           ref="input"
           v-model="query"
           class="min-w-0 flex-1 rounded border-0 px-1.5 py-1 text-sm focus:ring-0 focus:outline-none"
-          :placeholder="placeholder"
+          :placeholder="placeholder ?? $t('Buscar…')"
           @keydown="onKey"
           @input="active = 0"
         />
         <button v-if="modelValue.length" type="button" class="btn-ghost text-xs" @click="emit('update:modelValue', [])">
-          Quitar
+          {{ $t('Quitar') }}
         </button>
       </div>
       <ul class="overflow-y-auto py-1" role="listbox" aria-multiselectable="true">
@@ -143,7 +147,7 @@ function onFocusOut(event: FocusEvent) {
             <span class="text-xs text-stone-500 tabular-nums">{{ o.count }}</span>
           </li>
         </template>
-        <li v-if="!matches.length" class="px-2.5 py-2 text-sm text-stone-500">Sin resultados</li>
+        <li v-if="!matches.length" class="px-2.5 py-2 text-sm text-stone-500">{{ $t('Sin resultados') }}</li>
       </ul>
     </div>
   </div>

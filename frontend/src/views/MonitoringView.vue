@@ -32,7 +32,7 @@ const show = (id: string) => router.replace({ query: { ...route.query, vista: id
 
 <template>
   <div class="flex h-full flex-col">
-    <nav class="flex gap-0.5 border-b border-stone-200 bg-white px-3 pt-2 sm:gap-1 sm:px-4" aria-label="Monitoreo">
+    <nav class="flex gap-0.5 border-b border-stone-200 bg-white px-3 pt-2 sm:gap-1 sm:px-4" :aria-label="$t('Monitoreo')">
       <button
         v-for="p in PANELS"
         :key="p.id"
@@ -45,8 +45,8 @@ const show = (id: string) => router.replace({ query: { ...route.query, vista: id
         @click="show(p.id)"
       >
         <!-- One line on phones: the tabs' second line cost the grid a row. -->
-        <span class="sm:hidden">{{ p.short }}</span
-        ><span class="hidden sm:inline">{{ p.label }}</span>
+        <span class="sm:hidden">{{ $t(p.short) }}</span
+        ><span class="hidden sm:inline">{{ $t(p.label) }}</span>
       </button>
     </nav>
     <div class="min-h-0 flex-1">

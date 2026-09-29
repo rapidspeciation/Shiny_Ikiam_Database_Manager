@@ -3,6 +3,8 @@
  * reference palette; the categorical order is fixed, so a series keeps its
  * colour whatever else is filtered out.
  */
+import { intlLocale } from '../../lib/i18n'
+
 export const SERIES = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948']
 export const OTHER = '#a8a7a1'
 /** Sequential blue, light → dark, for magnitude (heat cells). */
@@ -12,12 +14,13 @@ const MUTED = '#898781'
 const GRID = '#e1e0d9'
 const AXIS = '#c3c2b7'
 
+/** A number in the interface language's style (1.234,5 in Spanish, 1,234.5 in English). */
 export const format = (n: number | null | undefined) =>
   typeof n !== 'number' || !Number.isFinite(n)
     ? '—'
     : Number.isInteger(n)
-      ? n.toLocaleString('es-EC')
-      : n.toLocaleString('es-EC', { maximumFractionDigits: 1 })
+      ? n.toLocaleString(intlLocale())
+      : n.toLocaleString(intlLocale(), { maximumFractionDigits: 1 })
 
 /** Heat-cell fill for a value in [0, max] and a legible text colour on it (for HTML tables). */
 export function heat(value: number, max: number) {

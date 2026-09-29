@@ -3,7 +3,8 @@ import { computed } from 'vue'
 import ChartCard from '../charts/ChartCard.vue'
 import EChart from '../charts/EChart.vue'
 import { SERIES, axis, barStyle, base, format } from '../charts/chart'
-import { MONTHS, table, type Nature } from '../../lib/summary'
+import { locale, t } from '../../lib/i18n'
+import { monthNames, table, type Nature } from '../../lib/summary'
 
 /**
  * What the data says about the butterflies themselves, for anyone: how long
@@ -33,6 +34,7 @@ const valueLabel = (position: string, color = '#52514e') => ({
   formatter: (v: { value: number | null }) => (v.value === null ? '' : format(v.value)),
 })
 
+// Spanish labels; t() where shown.
 const STAGES = [
   { key: 'egg', label: 'Huevo', color: SERIES[3] },
   { key: 'larva', label: 'Larva', color: SERIES[2] },
@@ -43,11 +45,17 @@ const lifeOption = computed(() => ({
   ...still(),
   legend: base({ legend: true }).legend,
   grid: { ...base({ legend: true }).grid, bottom: 28, right: 44 },
-  xAxis: { ...axis('value'), ...title('Número de días') },
-  yAxis: { ...axis('category', lifeRows.value.map(r => r.name)), axisLabel: { color: '#52514e', fontSize: 11, fontStyle: 'italic' } },
+  xAxis: { ...axis('value'), ...title(t('Número de días')) },
+  yAxis: {
+    ...axis(
+      'category',
+      lifeRows.value.map(r => r.name),
+    ),
+    axisLabel: { color: '#52514e', fontSize: 11, fontStyle: 'italic' },
+  },
   series: [
     ...STAGES.map((s, n) => ({
-      name: s.label,
+      name: t(s.label),
       type: 'bar',
       stack: 'days',
       barMaxWidth: 18,
@@ -61,28 +69,42 @@ const lifeOption = computed(() => ({
       stack: 'days',
       silent: true,
       itemStyle: { color: 'transparent' },
-      label: { ...valueLabel('right', '#1c1917'), fontWeight: 600, formatter: (v: { dataIndex: number }) => `${format(lifeRows.value[v.dataIndex].total)} d` },
+      label: {
+        ...valueLabel('right', '#1c1917'),
+        fontWeight: 600,
+        formatter: (v: { dataIndex: number }) => `${format(lifeRows.value[v.dataIndex].total)} d`,
+      },
       data: lifeRows.value.map(() => 0.01),
     },
   ],
 }))
 
 /** Legend on top, then the two axis names: the plot starts lower. */
-const twoAxes = () => ({ ...still(), legend: base({ legend: true }).legend, grid: { ...base({ legend: true }).grid, top: 58, bottom: 28 } })
+const twoAxes = () => ({
+  ...still(),
+  legend: base({ legend: true }).legend,
+  grid: { ...base({ legend: true }).grid, top: 58, bottom: 28 },
+})
 
 const activityOption = computed(() => {
   const rows = props.nature.activity
   return {
     ...twoAxes(),
     labelLayout: { hideOverlap: true },
-    xAxis: { ...axis('category', rows.map(r => hour(r.hour))), ...title('Hora del día') },
+    xAxis: {
+      ...axis(
+        'category',
+        rows.map(r => hour(r.hour)),
+      ),
+      ...title(t('Hora del día')),
+    },
     yAxis: [
-      { ...axis('value'), name: 'por hora', nameTextStyle: { color: MUTED, fontSize: 11 } },
-      { ...axis('value'), name: '% capturas', splitLine: { show: false }, nameTextStyle: { color: MUTED, fontSize: 11 } },
+      { ...axis('value'), name: t('por hora'), nameTextStyle: { color: MUTED, fontSize: 11 } },
+      { ...axis('value'), name: t('% capturas'), splitLine: { show: false }, nameTextStyle: { color: MUTED, fontSize: 11 } },
     ],
     series: [
       {
-        name: 'Por hora de búsqueda',
+        name: t('Por hora de búsqueda'),
         type: 'bar',
         barMaxWidth: 28,
         itemStyle: barStyle(SERIES[0]),
@@ -90,7 +112,7 @@ const activityOption = computed(() => {
         data: rows.map(r => r.perHour),
       },
       {
-        name: '% de las capturas',
+        name: t('% de las capturas'),
         type: 'line',
         yAxisIndex: 1,
         symbolSize: 6,
@@ -110,7 +132,13 @@ function bars(rows: { label: string; value: number }[], color: string, suffix = 
     ...still(),
     grid: { ...base().grid, right: 44 },
     xAxis: { ...axis('value'), axisLabel: { show: false }, splitLine: { show: false } },
-    yAxis: { ...axis('category', list.map(r => r.label)), axisLabel: { color: '#52514e', fontSize: 11 } },
+    yAxis: {
+      ...axis(
+        'category',
+        list.map(r => r.label),
+      ),
+      axisLabel: { color: '#52514e', fontSize: 11 },
+    },
     series: [
       {
         type: 'bar',
@@ -124,19 +152,19 @@ function bars(rows: { label: string; value: number }[], color: string, suffix = 
 }
 const cloudsOption = computed(() =>
   bars(
-    props.nature.weather.clouds.map(w => ({ label: w.label, value: w.perHour })),
+    props.nature.weather.clouds.map(w => ({ label: t(w.label), value: w.perHour })),
     SERIES[0],
   ),
 )
 const rainOption = computed(() =>
   bars(
-    props.nature.weather.rain.map(w => ({ label: w.label, value: w.perHour })),
+    props.nature.weather.rain.map(w => ({ label: t(w.label), value: w.perHour })),
     SERIES[6],
   ),
 )
 const deathsOption = computed(() =>
   bars(
-    props.nature.deaths.map(d => ({ label: d.name, value: d.percent })),
+    props.nature.deaths.map(d => ({ label: t(d.name), value: d.percent })),
     SERIES[7],
     ' %',
   ),
@@ -150,14 +178,14 @@ const seasonsOption = computed(() => {
   return {
     ...twoAxes(),
     labelLayout: { hideOverlap: true },
-    xAxis: { ...axis('category', MONTHS), ...title('Mes') },
+    xAxis: { ...axis('category', monthNames()), ...title(t('Mes')) },
     yAxis: [
-      { ...axis('value'), name: 'por día', nameTextStyle: { color: MUTED, fontSize: 11 } },
-      { ...axis('value'), name: 'especies', splitLine: { show: false }, nameTextStyle: { color: MUTED, fontSize: 11 } },
+      { ...axis('value'), name: t('por día'), nameTextStyle: { color: MUTED, fontSize: 11 } },
+      { ...axis('value'), name: t('especies'), splitLine: { show: false }, nameTextStyle: { color: MUTED, fontSize: 11 } },
     ],
     series: [
       {
-        name: 'Mariposas por día',
+        name: t('Mariposas por día'),
         type: 'bar',
         barMaxWidth: 24,
         itemStyle: barStyle(SERIES[0]),
@@ -165,7 +193,7 @@ const seasonsOption = computed(() => {
         data: rows.map(r => r.perDay),
       },
       {
-        name: 'Especies vistas',
+        name: t('Especies vistas'),
         type: 'line',
         yAxisIndex: 1,
         symbolSize: 6,
@@ -179,18 +207,21 @@ const seasonsOption = computed(() => {
 })
 const best = computed(() => {
   const months = props.nature.seasons.filter(r => r.perDay !== null).sort((a, b) => b.perDay! - a.perDay!)
-  return months.slice(0, 3).map(r => MONTHS[r.month - 1].toLowerCase())
+  // Spanish month names are lowercase in a sentence, English ones keep their capital.
+  return months
+    .slice(0, 3)
+    .map(r => (locale.value === 'es' ? monthNames()[r.month - 1].toLowerCase() : monthNames()[r.month - 1]))
 })
 const sky = computed(() => {
   const rows = [...props.nature.weather.clouds].sort((a, b) => b.perHour - a.perHour)
   return rows.length >= 2 ? { best: rows[0], worst: rows.at(-1)! } : null
 })
-/** The most common causes that were actually identified (not "unknown", "disappeared" or "other"). */
+/** The most common causes that were actually identified (not "unknown", "disappeared" or "other"; the server's Spanish labels). */
 const identified = computed(() =>
   props.nature.deaths
     .filter(d => !/desconocida|desaparecieron|otra causa/i.test(d.name))
     .slice(0, 3)
-    .map(d => `${d.name.toLowerCase()} (${format(d.percent)} %)`),
+    .map(d => `${t(d.name).toLowerCase()} (${format(d.percent)} %)`),
 )
 const unexplained = computed(() =>
   props.nature.deaths.filter(d => /desconocida|desaparecieron/i.test(d.name)).reduce((n, d) => n + d.percent, 0),
@@ -206,15 +237,19 @@ const peak = computed(() => {
 
 <template>
   <section class="space-y-4">
-    <h2 class="text-lg font-semibold">Historia natural</h2>
+    <h2 class="text-lg font-semibold">{{ $t('Historia natural') }}</h2>
 
     <div class="grid gap-4 lg:grid-cols-2">
       <ChartCard
-        title="Ciclo de vida"
-        subtitle="Días que pasa cada especie como huevo, larva y pupa (mediana de los clutches criados en el insectario de Ikiam; las subespecies juntas)"
+        :title="$t('Ciclo de vida')"
+        :subtitle="
+          $t(
+            'Días que pasa cada especie como huevo, larva y pupa (mediana de los clutches criados en el insectario de Ikiam; las subespecies juntas)',
+          )
+        "
         :table="
           table(
-            ['Especie', 'Huevo', 'Larva', 'Pupa', 'Total'],
+            [$t('Especie'), $t('Huevo'), $t('Larva'), $t('Pupa'), $t('Total')],
             nature.lifeCycle.map(r => [r.name, r.egg, r.larva, r.pupa, r.total]),
           )
         "
@@ -223,73 +258,95 @@ const peak = computed(() => {
       </ChartCard>
 
       <ChartCard
-        title="¿A qué hora se encuentran más mariposas?"
-        :subtitle="`Mariposas por hora de búsqueda en ${format(nature.sessions)} salidas de campo`"
+        :title="$t('¿A qué hora se encuentran más mariposas?')"
+        :subtitle="$t('Mariposas por hora de búsqueda en {n} salidas de campo', { n: format(nature.sessions) })"
         :table="
           table(
-            ['Hora', 'Por hora de búsqueda', '% de capturas', 'Horas de búsqueda'],
+            [$t('Hora'), $t('Por hora de búsqueda'), $t('% de capturas'), $t('Horas de búsqueda')],
             nature.activity.map(r => [`${r.hour}:00`, r.perHour, r.share, r.effortHours]),
           )
         "
       >
         <EChart :option="activityOption" :height="250" />
         <p class="hint mt-2">
-          Contar solo las capturas favorece las horas en que más se sale al campo
-          <template v-if="peak">(la mayoría se registra a las {{ peak.busiest }})</template>. Por eso las barras dividen lo
-          capturado en cada hora entre las horas que alguien estaba buscando: desde el inicio hasta el final del muestreo
-          anotado, o de la primera a la última captura del día.
-          <template v-if="peak"> Corregido así, la mejor hora es las {{ peak.richest }}.</template>
+          {{ $t('Contar solo las capturas favorece las horas en que más se sale al campo') }}
+          <template v-if="peak">{{ $t('(la mayoría se registra a las {hour})', { hour: peak.busiest }) }}</template
+          >.
+          {{
+            $t(
+              'Por eso las barras dividen lo capturado en cada hora entre las horas que alguien estaba buscando: desde el inicio hasta el final del muestreo anotado, o de la primera a la última captura del día.',
+            )
+          }}
+          <template v-if="peak"> {{ $t('Corregido así, la mejor hora es las {hour}.', { hour: peak.richest }) }}</template>
         </p>
       </ChartCard>
 
       <ChartCard
-        title="¿En qué meses?"
-        subtitle="Monitoreo mensual en Ikiam (transectos fijos), todos los años juntos"
+        :title="$t('¿En qué meses?')"
+        :subtitle="$t('Monitoreo mensual en Ikiam (transectos fijos), todos los años juntos')"
         :table="
           table(
-            ['Mes', 'Mariposas por día', 'Especies'],
-            nature.seasons.map(r => [MONTHS[r.month - 1], r.perDay, r.species]),
+            [$t('Mes'), $t('Mariposas por día'), $t('Especies')],
+            nature.seasons.map(r => [monthNames()[r.month - 1], r.perDay, r.species]),
           )
         "
       >
         <EChart :option="seasonsOption" :height="250" />
-        <p v-if="best.length" class="hint mt-2">Los meses con más mariposas por día: {{ best.join(', ') }}.</p>
+        <p v-if="best.length" class="hint mt-2">
+          {{ $t('Los meses con más mariposas por día: {months}.', { months: best.join(', ') }) }}
+        </p>
       </ChartCard>
 
-      <ChartCard title="¿Con qué clima?" subtitle="Mariposas por hora de búsqueda según el cielo y la lluvia registrados ese día">
+      <ChartCard
+        :title="$t('¿Con qué clima?')"
+        :subtitle="$t('Mariposas por hora de búsqueda según el cielo y la lluvia registrados ese día')"
+      >
         <div class="grid gap-3 sm:grid-cols-2">
           <div>
-            <p class="text-xs text-stone-500">Cielo</p>
+            <p class="text-xs text-stone-500">{{ $t('Cielo') }}</p>
             <EChart :option="cloudsOption" :height="40 + 34 * nature.weather.clouds.length" />
           </div>
           <div>
-            <p class="text-xs text-stone-500">Lluvia</p>
+            <p class="text-xs text-stone-500">{{ $t('Lluvia') }}</p>
             <EChart :option="rainOption" :height="40 + 34 * nature.weather.rain.length" />
           </div>
         </div>
         <p class="hint mt-2">
-          <template v-if="sky"
-            >Con «{{ sky.best.label.toLowerCase() }}» se encuentran {{ format(sky.best.perHour) }} por hora; con «{{
-              sky.worst.label.toLowerCase()
-            }}», {{ format(sky.worst.perHour) }}.
+          <template v-if="sky">
+            {{
+              $t('Con «{best}» se encuentran {bestRate} por hora; con «{worst}», {worstRate}.', {
+                best: $t(sky.best.label).toLowerCase(),
+                bestRate: format(sky.best.perHour),
+                worst: $t(sky.worst.label).toLowerCase(),
+                worstRate: format(sky.worst.perHour),
+              })
+            }}
           </template>
-          Pocas salidas se hacen con lluvia ({{ rainSessions }} con llovizna o lluvia), así que esa comparación es aproximada.
+          {{
+            $t('Pocas salidas se hacen con lluvia ({n} con llovizna o lluvia), así que esa comparación es aproximada.', {
+              n: rainSessions,
+            })
+          }}
         </p>
       </ChartCard>
     </div>
 
     <ChartCard
-      title="¿Dónde encontrar cada especie?"
-      subtitle="Las Ithomiini registradas con más frecuencia: lugares con más individuos por día de colecta (visitados al menos 3 días), altitud donde aparece el 80 % de los registros y proporción de hembras"
+      :title="$t('¿Dónde encontrar cada especie?')"
+      :subtitle="
+        $t(
+          'Las Ithomiini registradas con más frecuencia: lugares con más individuos por día de colecta (visitados al menos 3 días), altitud donde aparece el 80 % de los registros y proporción de hembras',
+        )
+      "
     >
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead class="text-xs text-stone-500">
             <tr>
-              <th class="py-1 text-left">Especie</th>
-              <th class="px-2 text-left">Dónde se ven más (por día de colecta)</th>
-              <th class="px-2 text-right">Altitud</th>
-              <th class="pl-2 text-right" title="Entre los individuos con sexo registrado">Hembras</th>
+              <th class="py-1 text-left">{{ $t('Especie') }}</th>
+              <th class="px-2 text-left">{{ $t('Dónde se ven más (por día de colecta)') }}</th>
+              <th class="px-2 text-right">{{ $t('Altitud') }}</th>
+              <th class="pl-2 text-right" :title="$t('Entre los individuos con sexo registrado')">{{ $t('Hembras') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -313,17 +370,17 @@ const peak = computed(() => {
 
     <div class="grid gap-4 lg:grid-cols-2">
       <ChartCard
-        title="Lugares con más especies de Ithomiini"
-        subtitle="Cuantos más días se muestrea un lugar, más especies aparecen: compárese con los días de muestreo"
+        :title="$t('Lugares con más especies de Ithomiini')"
+        :subtitle="$t('Cuantos más días se muestrea un lugar, más especies aparecen: compárese con los días de muestreo')"
       >
         <table class="w-full text-sm">
           <thead class="text-xs text-stone-500">
             <tr>
-              <th class="py-1 text-left">Lugar</th>
+              <th class="py-1 text-left">{{ $t('Lugar') }}</th>
               <th class="px-2 text-right">Ithomiini</th>
-              <th class="px-2 text-right">Todas</th>
-              <th class="px-2 text-right">Días</th>
-              <th class="pl-2 text-right">Altitud</th>
+              <th class="px-2 text-right">{{ $t('Todas') }}</th>
+              <th class="px-2 text-right">{{ $t('Días') }}</th>
+              <th class="pl-2 text-right">{{ $t('Altitud') }}</th>
             </tr>
           </thead>
           <tbody class="tabular-nums">
@@ -339,14 +396,21 @@ const peak = computed(() => {
       </ChartCard>
 
       <ChartCard
-        title="¿De qué mueren en el insectario?"
-        subtitle="Causas anotadas al registrar cada muerte, en % (no incluye las sacrificadas para muestras)"
-        :table="table(['Causa', '%'], nature.deaths.map(d => [d.name, d.percent]))"
+        :title="$t('¿De qué mueren en el insectario?')"
+        :subtitle="$t('Causas anotadas al registrar cada muerte, en % (no incluye las sacrificadas para muestras)')"
+        :table="
+          table(
+            [$t('Causa'), '%'],
+            nature.deaths.map(d => [$t(d.name), d.percent]),
+          )
+        "
       >
         <EChart :option="deathsOption" :height="40 + 30 * nature.deaths.length" />
         <p class="hint mt-2">
-          En {{ format(Math.round(unexplained)) }} % de los casos no se sabe la causa o la mariposa desapareció.
-          <template v-if="identified.length">Entre las causas identificadas, las más comunes: {{ identified.join(', ') }}.</template>
+          {{ $t('En {n} % de los casos no se sabe la causa o la mariposa desapareció.', { n: format(Math.round(unexplained)) }) }}
+          <template v-if="identified.length">{{
+            $t('Entre las causas identificadas, las más comunes: {causes}.', { causes: identified.join(', ') })
+          }}</template>
         </p>
       </ChartCard>
     </div>

@@ -5,6 +5,8 @@ import EChart from '../charts/EChart.vue'
 import { BLUES, OTHER, SERIES, axis, barStyle, base, format, tipRow, tipTitle } from '../charts/chart'
 import type { StoredTrack } from '../../composables/useMonitoring'
 import { formatSerial } from '../../lib/dates'
+import { t } from '../../lib/i18n'
+import { monthLabel, monthNames } from '../../lib/summary'
 import {
   CLOUD_CLASSES,
   HEIGHT_CLASSES,
@@ -39,8 +41,6 @@ const props = defineProps<{
   tracks: StoredTrack[]
 }>()
 
-const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
-const monthLabel = (m: string) => `${MONTHS[Number(m.slice(5)) - 1]} ${m.slice(2, 4)}`
 const sp = (name: string) => `<i>${name}</i>`
 
 // ------------------------------------------------------------ abundance
@@ -55,6 +55,7 @@ const daysByMonth = computed(() => {
   for (const key of props.effort) out.set(key.slice(0, 7), (out.get(key.slice(0, 7)) || 0) + 1)
   return out
 })
+// Spanish labels; t() where shown. The option computeds call t(), so they are rebuilt when the language changes.
 const KINDS = [
   { key: 'preserved', label: 'Preservados', color: SERIES[0] },
   { key: 'marked', label: 'Marcados (nuevos)', color: SERIES[1] },
@@ -75,9 +76,12 @@ const monthlyOption = computed(() => ({
       const i = p[0].dataIndex
       return (
         tipTitle(monthLabel(months.value[i])) +
-        `<b>${totals.value[i]}</b> individuos · ${daysByMonth.value.get(months.value[i]) || 0} días de monitoreo` +
+        t('{n} individuos · {days} días de monitoreo', {
+          n: `<b>${totals.value[i]}</b>`,
+          days: daysByMonth.value.get(months.value[i]) || 0,
+        }) +
         KINDS.filter(k => kinds.value[k.key][i])
-          .map(k => tipRow(k.color, format(kinds.value[k.key][i]), k.label))
+          .map(k => tipRow(k.color, format(kinds.value[k.key][i]), t(k.label)))
           .join('')
       )
     },
@@ -85,7 +89,7 @@ const monthlyOption = computed(() => ({
   xAxis: axis('category', months.value.map(monthLabel)),
   yAxis: axis('value'),
   series: KINDS.map((k, n) => ({
-    name: k.label,
+    name: t(k.label),
     type: 'bar',
     stack: 'fate',
     barMaxWidth: 24,
@@ -112,7 +116,11 @@ const perDayOption = computed(() => ({
       const m = months.value[i]
       return (
         tipTitle(monthLabel(m)) +
-        `<b>${format(perDay.value[i])}</b> por día · ${totals.value[i]} en ${daysByMonth.value.get(m) || 0} días`
+        t('{rate} por día · {n} en {days} días', {
+          rate: `<b>${format(perDay.value[i])}</b>`,
+          n: totals.value[i],
+          days: daysByMonth.value.get(m) || 0,
+        })
       )
     },
   },
@@ -143,7 +151,7 @@ const effortOption = computed(() => ({
         collectorsInEffort.value
           .map((ini, c) =>
             effortByCollector.value[c][i]
-              ? tipRow(colorOfCollector(ini, c), String(effortByCollector.value[c][i]), `días ${ini}`)
+              ? tipRow(colorOfCollector(ini, c), String(effortByCollector.value[c][i]), t('días {ini}', { ini }))
               : '',
           )
           .join('')
@@ -169,7 +177,7 @@ const yearly = computed(() => {
   for (const r of props.rows) {
     const m = monthOf(r)
     if (!m) continue
-    const values = byYear.get(m.slice(0, 4)) || MONTHS.map(() => 0)
+    const values = byYear.get(m.slice(0, 4)) || Array.from({ length: 12 }, () => 0)
     values[Number(m.slice(5)) - 1]!++
     byYear.set(m.slice(0, 4), values)
   }
@@ -187,13 +195,13 @@ const yearlyOption = computed(() => ({
     ...base().tooltip,
     trigger: 'axis',
     formatter: (p: { dataIndex: number }[]) =>
-      tipTitle(MONTHS[p[0].dataIndex]) +
+      tipTitle(monthNames()[p[0].dataIndex]) +
       yearly.value
         .filter(y => y.values[p[0].dataIndex] !== null)
         .map(y => tipRow(yearColor(y.year), format(y.values[p[0].dataIndex]), y.year))
         .join(''),
   },
-  xAxis: { ...axis('category', MONTHS), boundaryGap: false },
+  xAxis: { ...axis('category', monthNames()), boundaryGap: false },
   yAxis: axis('value'),
   series: yearly.value.map(y => ({
     name: y.year,
@@ -211,6 +219,8 @@ const yearlyOption = computed(() => ({
 
 // ------------------------------------------------------------ species
 const stats = computed(() => speciesStats(props.rows, false, props.recaptures))
+/** Rows without a species count as "Sin especie" (lib/monitoring.ts); shown in the interface language. */
+const spName = (s: string) => (s === 'Sin especie' ? t('Sin especie') : s)
 const top = computed(() => stats.value.slice(0, 15).reverse())
 const topOption = computed(() => ({
   ...base({ legend: true }),
@@ -221,11 +231,11 @@ const topOption = computed(() => ({
     formatter: (p: { dataIndex: number }[]) => {
       const s = top.value[p[0].dataIndex]
       return (
-        tipTitle(s.species) +
-        `<b>${s.total}</b> individuos` +
-        tipRow(SERIES[0], String(s.preserved), 'preservados') +
-        tipRow(SERIES[1], String(s.marked), 'marcados') +
-        tipRow(SERIES[2], String(s.recaptured), 'recapturas')
+        tipTitle(spName(s.species)) +
+        t('{n} individuos', { n: `<b>${s.total}</b>` }) +
+        tipRow(SERIES[0], String(s.preserved), t('preservados')) +
+        tipRow(SERIES[1], String(s.marked), t('marcados')) +
+        tipRow(SERIES[2], String(s.recaptured), t('recapturas'))
       )
     },
   },
@@ -233,12 +243,12 @@ const topOption = computed(() => ({
   yAxis: {
     ...axis(
       'category',
-      top.value.map(s => s.species),
+      top.value.map(s => spName(s.species)),
     ),
     axisLabel: { color: '#52514e', fontSize: 11, fontStyle: 'italic' },
   },
   series: (['preserved', 'marked', 'recaptured'] as const).map((key, n) => ({
-    name: ['Preservados', 'Marcados', 'Recapturas'][n],
+    name: [t('Preservados'), t('Marcados'), t('Recapturas')][n],
     type: 'bar',
     stack: 'fate',
     barMaxWidth: 14,
@@ -256,7 +266,10 @@ const accumulationOption = computed(() => ({
     trigger: 'axis',
     formatter: (p: { dataIndex: number }[]) => {
       const a = accumulation.value[p[0].dataIndex]
-      return tipTitle(`Día ${a.day} · ${formatSerial(a.date)}`) + `<b>${a.species}</b> especies acumuladas`
+      return (
+        tipTitle(t('Día {n} · {date}', { n: a.day, date: formatSerial(a.date) })) +
+        t('{n} especies acumuladas', { n: `<b>${a.species}</b>` })
+      )
     },
   },
   xAxis: {
@@ -265,7 +278,7 @@ const accumulationOption = computed(() => ({
       accumulation.value.map(a => String(a.day)),
     ),
     boundaryGap: false,
-    name: 'días de monitoreo',
+    name: t('días de monitoreo'),
   },
   yAxis: { ...axis('value'), minInterval: 1 },
   series: [
@@ -294,13 +307,20 @@ const seasonOption = computed(() => ({
       const [m, s] = p.data
       const days = season.value.daysPerMonth[m]
       return (
-        tipTitle(`${seasonSpecies.value[s]} · ${MONTHS[m]}`) +
-        `<b>${format(season.value.values[s][m])}</b> por día · ${season.value.counts[s][m]} en ${days} días`
+        tipTitle(`${spName(seasonSpecies.value[s])} · ${monthNames()[m]}`) +
+        t('{rate} por día · {n} en {days} días', {
+          rate: `<b>${format(season.value.values[s][m])}</b>`,
+          n: season.value.counts[s][m],
+          days,
+        })
       )
     },
   },
-  xAxis: { ...axis('category', MONTHS), splitArea: { show: false } },
-  yAxis: { ...axis('category', seasonSpecies.value), axisLabel: { color: '#52514e', fontSize: 11, fontStyle: 'italic' } },
+  xAxis: { ...axis('category', monthNames()), splitArea: { show: false } },
+  yAxis: {
+    ...axis('category', seasonSpecies.value.map(spName)),
+    axisLabel: { color: '#52514e', fontSize: 11, fontStyle: 'italic' },
+  },
   visualMap: {
     min: 0,
     max: seasonMax.value,
@@ -310,7 +330,7 @@ const seasonOption = computed(() => ({
     bottom: 0,
     itemHeight: 120,
     itemWidth: 10,
-    text: ['más', 'menos'],
+    text: [t('más'), t('menos')],
     textStyle: { color: '#898781', fontSize: 11 },
     inRange: { color: BLUES },
   },
@@ -331,7 +351,7 @@ const sectionTotals = computed(() =>
 )
 const sectionOption = computed(() => {
   const share = (n: number, t: number) => (sectionTotals.value[t] ? Math.round((1000 * n) / sectionTotals.value[t]) / 10 : 0)
-  const names = [...sectionSpecies.value, 'Otras']
+  const names = [...sectionSpecies.value.map(spName), t('Otras')]
   const counts = [...bySection.value.bySpecies, bySection.value.other]
   return {
     ...base({ legend: true }),
@@ -341,10 +361,10 @@ const sectionOption = computed(() => {
       trigger: 'axis',
       axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(0,0,0,.04)' } },
       formatter: (p: { dataIndex: number }[]) => {
-        const t = 3 - p[0].dataIndex
+        const k = 3 - p[0].dataIndex
         return (
-          tipTitle(`T${t + 1} · ${sectionTotals.value[t]} individuos`) +
-          names.map((n, i) => (counts[i][t] ? tipRow(i < 6 ? SERIES[i] : OTHER, `${share(counts[i][t], t)} %`, n) : '')).join('')
+          tipTitle(`T${k + 1} · ${t('{n} individuos', { n: sectionTotals.value[k] })}`) +
+          names.map((n, i) => (counts[i][k] ? tipRow(i < 6 ? SERIES[i] : OTHER, `${share(counts[i][k], k)} %`, n) : '')).join('')
         )
       },
     },
@@ -378,9 +398,9 @@ const sexOption = computed(() => ({
       const s = sexSpecies.value[p[0].dataIndex]
       const pct = Math.round((100 * s.female) / (s.female + s.male))
       return (
-        tipTitle(s.species) +
-        tipRow('#e34948', String(s.female), `hembras (${pct} %)`) +
-        tipRow(SERIES[0], String(s.male), 'machos')
+        tipTitle(spName(s.species)) +
+        tipRow('#e34948', String(s.female), t('hembras ({pct} %)', { pct })) +
+        tipRow(SERIES[0], String(s.male), t('machos'))
       )
     },
   },
@@ -388,13 +408,13 @@ const sexOption = computed(() => ({
   yAxis: {
     ...axis(
       'category',
-      sexSpecies.value.map(s => s.species),
+      sexSpecies.value.map(s => spName(s.species)),
     ),
     axisLabel: { color: '#52514e', fontSize: 11, fontStyle: 'italic' },
   },
   series: [
     {
-      name: 'Hembras',
+      name: t('Hembras'),
       type: 'bar',
       stack: 'sex',
       barMaxWidth: 14,
@@ -402,7 +422,7 @@ const sexOption = computed(() => ({
       data: sexSpecies.value.map(s => -s.female),
     },
     {
-      name: 'Machos',
+      name: t('Machos'),
       type: 'bar',
       stack: 'sex',
       barMaxWidth: 14,
@@ -413,7 +433,8 @@ const sexOption = computed(() => ({
 }))
 
 // ------------------------------------------------------ behaviour & weather
-const simpleBars = (categories: string[], values: number[], unit = 'individuos') => ({
+/** Categories and unit are shown as given (translate them before). */
+const simpleBars = (categories: string[], values: number[], unit = t('individuos')) => ({
   ...base(),
   tooltip: {
     ...base().tooltip,
@@ -467,14 +488,14 @@ const table = (head: string[], rows: (string | number)[][]) => ({ head, rows })
 <template>
   <div class="space-y-6">
     <section class="space-y-3">
-      <h2 class="font-semibold">Abundancia y esfuerzo</h2>
+      <h2 class="font-semibold">{{ $t('Abundancia y esfuerzo') }}</h2>
       <div class="grid gap-4 xl:grid-cols-2">
         <ChartCard
-          title="Individuos por mes"
-          :subtitle="zoom ? 'Arrastra la barra inferior (o Shift + rueda) para acercar un periodo' : undefined"
+          :title="$t('Individuos por mes')"
+          :subtitle="zoom ? $t('Arrastra la barra inferior (o Shift + rueda) para acercar un periodo') : undefined"
           :table="
             table(
-              ['Mes', ...KINDS.map(k => k.label), 'Total', 'Días'],
+              [$t('Mes'), ...KINDS.map(k => $t(k.label)), $t('Total'), $t('Días')],
               months.map((m, i) => [monthLabel(m), ...KINDS.map(k => kinds[k.key][i]), totals[i], daysByMonth.get(m) || 0]),
             )
           "
@@ -482,11 +503,11 @@ const table = (head: string[], rows: (string | number)[][]) => ({ head, rows })
           <EChart :option="monthlyOption" :height="260" />
         </ChartCard>
         <ChartCard
-          title="Individuos por día de monitoreo"
-          subtitle="Captura por esfuerzo: individuos del mes ÷ días de monitoreo"
+          :title="$t('Individuos por día de monitoreo')"
+          :subtitle="$t('Captura por esfuerzo: individuos del mes ÷ días de monitoreo')"
           :table="
             table(
-              ['Mes', 'Individuos', 'Días', 'Por día'],
+              [$t('Mes'), $t('Individuos'), $t('Días'), $t('Por día')],
               months.map((m, i) => [monthLabel(m), totals[i], daysByMonth.get(m) || 0, format(perDay[i])]),
             )
           "
@@ -494,11 +515,11 @@ const table = (head: string[], rows: (string | number)[][]) => ({ head, rows })
           <EChart :option="perDayOption" :height="260" />
         </ChartCard>
         <ChartCard
-          title="Días de monitoreo por recolector"
-          subtitle="Quién monitoreó y cuándo (SamplingDay_data y días con capturas)"
+          :title="$t('Días de monitoreo por recolector')"
+          :subtitle="$t('Quién monitoreó y cuándo (SamplingDay_data y días con capturas)')"
           :table="
             table(
-              ['Mes', ...collectorsInEffort],
+              [$t('Mes'), ...collectorsInEffort],
               months.map((m, i) => [monthLabel(m), ...effortByCollector.map(c => c[i])]),
             )
           "
@@ -506,12 +527,12 @@ const table = (head: string[], rows: (string | number)[][]) => ({ head, rows })
           <EChart :option="effortOption" :height="240" />
         </ChartCard>
         <ChartCard
-          title="Comparación entre años"
-          subtitle="Individuos por mes; los meses sin monitoreo quedan vacíos"
+          :title="$t('Comparación entre años')"
+          :subtitle="$t('Individuos por mes; los meses sin monitoreo quedan vacíos')"
           :table="
             table(
-              ['Mes', ...yearly.map(y => y.year)],
-              MONTHS.map((m, i) => [m, ...yearly.map(y => (y.values[i] === null ? '—' : y.values[i]!))]),
+              [$t('Mes'), ...yearly.map(y => y.year)],
+              monthNames().map((m, i) => [m, ...yearly.map(y => (y.values[i] === null ? '—' : y.values[i]!))]),
             )
           "
         >
@@ -521,26 +542,31 @@ const table = (head: string[], rows: (string | number)[][]) => ({ head, rows })
     </section>
 
     <section class="space-y-3">
-      <h2 class="font-semibold">Especies</h2>
+      <h2 class="font-semibold">{{ $t('Especies') }}</h2>
       <div class="grid gap-4 xl:grid-cols-2">
         <ChartCard
-          title="Especies más abundantes"
-          :subtitle="`${Math.min(15, stats.length)} de ${stats.length} especies`"
+          :title="$t('Especies más abundantes')"
+          :subtitle="$t('{n} de {total} especies', { n: Math.min(15, stats.length), total: stats.length })"
           :table="
             table(
-              ['Especie', 'Preservados', 'Marcados', 'Recapturas', 'Total'],
-              stats.map(s => [s.species, s.preserved, s.marked, s.recaptured, s.total]),
+              [$t('Especie'), $t('Preservados'), $t('Marcados'), $t('Recapturas'), $t('Total')],
+              stats.map(s => [spName(s.species), s.preserved, s.marked, s.recaptured, s.total]),
             )
           "
         >
           <EChart :option="topOption" :height="Math.max(200, 34 + top.length * 22)" />
         </ChartCard>
         <ChartCard
-          title="Curva de acumulación de especies"
-          :subtitle="`Especies nuevas por día de monitoreo; si se aplana, el muestreo está completo. ${rare.once} especies vistas una sola vez, ${rare.twice} dos veces.`"
+          :title="$t('Curva de acumulación de especies')"
+          :subtitle="
+            $t(
+              'Especies nuevas por día de monitoreo; si se aplana, el muestreo está completo. {once} especies vistas una sola vez, {twice} dos veces.',
+              { once: rare.once, twice: rare.twice },
+            )
+          "
           :table="
             table(
-              ['Día', 'Fecha', 'Especies'],
+              [$t('Día'), $t('Fecha'), $t('Especies')],
               accumulation.map(a => [a.day, formatSerial(a.date), a.species]),
             )
           "
@@ -548,39 +574,39 @@ const table = (head: string[], rows: (string | number)[][]) => ({ head, rows })
           <EChart :option="accumulationOption" :height="Math.max(200, 34 + top.length * 22)" />
         </ChartCard>
         <ChartCard
-          title="Estacionalidad"
-          subtitle="Individuos por día de monitoreo en cada mes del año (todos los años juntos), especies más abundantes"
+          :title="$t('Estacionalidad')"
+          :subtitle="$t('Individuos por día de monitoreo en cada mes del año (todos los años juntos), especies más abundantes')"
           :table="
             table(
-              ['Especie', ...MONTHS],
-              seasonSpecies.map((s, i) => [s, ...season.values[i].map(v => format(v))]),
+              [$t('Especie'), ...monthNames()],
+              seasonSpecies.map((s, i) => [spName(s), ...season.values[i].map(v => format(v))]),
             )
           "
         >
           <EChart :option="seasonOption" :height="Math.max(240, 60 + seasonSpecies.length * 22)" />
         </ChartCard>
         <ChartCard
-          title="Composición por transecto"
-          subtitle="Proporción de individuos de cada especie en cada sección del sendero"
+          :title="$t('Composición por transecto')"
+          :subtitle="$t('Proporción de individuos de cada especie en cada sección del sendero')"
           :table="
             table(
-              ['Especie', 'T1', 'T2', 'T3', 'T4'],
-              [...sectionSpecies.map((s, i) => [s, ...bySection.bySpecies[i]]), ['Otras', ...bySection.other]],
+              [$t('Especie'), 'T1', 'T2', 'T3', 'T4'],
+              [...sectionSpecies.map((s, i) => [spName(s), ...bySection.bySpecies[i]]), [$t('Otras'), ...bySection.other]],
             )
           "
         >
           <EChart :option="sectionOption" :height="240" />
         </ChartCard>
         <ChartCard
-          title="Proporción de sexos"
-          subtitle="Especies con al menos 5 individuos sexados: hembras a la izquierda, machos a la derecha"
+          :title="$t('Proporción de sexos')"
+          :subtitle="$t('Especies con al menos 5 individuos sexados: hembras a la izquierda, machos a la derecha')"
           :table="
             table(
-              ['Especie', 'Hembras', 'Machos'],
+              [$t('Especie'), $t('Hembras'), $t('Machos')],
               sexSpecies
                 .slice()
                 .reverse()
-                .map(s => [s.species, s.female, s.male]),
+                .map(s => [spName(s.species), s.female, s.male]),
             )
           "
         >
@@ -590,13 +616,13 @@ const table = (head: string[], rows: (string | number)[][]) => ({ head, rows })
     </section>
 
     <section class="space-y-3">
-      <h2 class="font-semibold">Comportamiento y clima</h2>
+      <h2 class="font-semibold">{{ $t('Comportamiento y clima') }}</h2>
       <div class="grid gap-4 lg:grid-cols-3">
         <ChartCard
-          title="Hora de captura"
+          :title="$t('Hora de captura')"
           :table="
             table(
-              ['Hora', 'Individuos'],
+              [$t('Hora'), $t('Individuos')],
               HOURS.map((h, i) => [h, hours[i]]),
             )
           "
@@ -604,29 +630,37 @@ const table = (head: string[], rows: (string | number)[][]) => ({ head, rows })
           <EChart :option="simpleBars(HOURS, hours)" :height="180" />
         </ChartCard>
         <ChartCard
-          title="Altura de vuelo (m)"
+          :title="$t('Altura de vuelo (m)')"
           :table="
             table(
-              ['Altura', 'Individuos'],
-              HEIGHT_CLASSES.map((h, i) => [h, heights[i]]),
-            )
-          "
-        >
-          <EChart :option="simpleBars(HEIGHT_CLASSES, heights)" :height="180" />
-        </ChartCard>
-        <ChartCard
-          title="Nubosidad"
-          :table="
-            table(
-              ['Nubosidad', 'Individuos'],
-              CLOUD_CLASSES.map((c, i) => [c[1], clouds[i]]),
+              [$t('Altura'), $t('Individuos')],
+              HEIGHT_CLASSES.map((h, i) => [$t(h), heights[i]]),
             )
           "
         >
           <EChart
             :option="
               simpleBars(
-                CLOUD_CLASSES.map(c => c[1]),
+                HEIGHT_CLASSES.map(h => $t(h)),
+                heights,
+              )
+            "
+            :height="180"
+          />
+        </ChartCard>
+        <ChartCard
+          :title="$t('Nubosidad')"
+          :table="
+            table(
+              [$t('Nubosidad'), $t('Individuos')],
+              CLOUD_CLASSES.map((c, i) => [$t(c[1]), clouds[i]]),
+            )
+          "
+        >
+          <EChart
+            :option="
+              simpleBars(
+                CLOUD_CLASSES.map(c => $t(c[1])),
                 clouds,
               )
             "
@@ -637,36 +671,36 @@ const table = (head: string[], rows: (string | number)[][]) => ({ head, rows })
     </section>
 
     <section class="space-y-3">
-      <h2 class="font-semibold">Marcaje y recaptura</h2>
+      <h2 class="font-semibold">{{ $t('Marcaje y recaptura') }}</h2>
       <div class="grid gap-4 lg:grid-cols-2">
         <ChartCard
-          title="Tiempo entre capturas (días)"
-          :subtitle="`${intervals.length} recapturas del mismo individuo`"
+          :title="$t('Tiempo entre capturas (días)')"
+          :subtitle="$t('{n} recapturas del mismo individuo', { n: intervals.length })"
           :table="
             table(
-              ['Días', 'Recapturas'],
+              [$t('Días'), $t('Recapturas')],
               INTERVALS.map((d, i) => [d, intervalBins[i]]),
             )
           "
         >
-          <EChart :option="simpleBars(INTERVALS, intervalBins, 'recapturas')" :height="180" />
+          <EChart :option="simpleBars(INTERVALS, intervalBins, $t('recapturas'))" :height="180" />
         </ChartCard>
         <ChartCard
-          title="Distancia entre capturas"
+          :title="$t('Distancia entre capturas')"
           :subtitle="
             moves.length
-              ? `${moves.length} recapturas con GPS en ambas capturas (recorridos del mapa)`
-              : 'Aún no hay recapturas con GPS en ambas capturas: aparecen al pasar recorridos al mapa'
+              ? $t('{n} recapturas con GPS en ambas capturas (recorridos del mapa)', { n: moves.length })
+              : $t('Aún no hay recapturas con GPS en ambas capturas: aparecen al pasar recorridos al mapa')
           "
           :table="
             table(
-              ['Marca', 'Especie', 'Desde', 'Hasta', 'Metros'],
+              [$t('Marca'), $t('Especie'), $t('Desde'), $t('Hasta'), $t('Metros')],
               moves.map(m => [m.id, m.species, m.from, m.to, m.metres]),
             )
           "
         >
-          <EChart v-if="moves.length" :option="simpleBars(MOVES, moveBins, 'recapturas')" :height="180" />
-          <p v-else class="py-10 text-center text-xs text-stone-500">Sin datos todavía.</p>
+          <EChart v-if="moves.length" :option="simpleBars(MOVES, moveBins, $t('recapturas'))" :height="180" />
+          <p v-else class="py-10 text-center text-xs text-stone-500">{{ $t('Sin datos todavía.') }}</p>
         </ChartCard>
       </div>
     </section>
