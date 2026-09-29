@@ -302,6 +302,9 @@ test('verdicts: last one counts, batches, other values, training labels, agreed 
   const done = reviewPage(store, { status: 'applied' });
   assert.equal(done.total, 4);
   assert.ok(done.issues.every(i => i.resolved && i.verdict.status === 'aplicado'));
+  assert.equal(done.counts.envelope_species, 2);
+  // Counted from the pending view too.
+  assert.equal(reviewPage(store, {}).statuses.applied, 4);
   assert.equal((await call('list_agreed_fixes', {})).fixes.length, 0);
   // The Drive task is marked done by hand.
   setVerdicts(store, { ids: ['photo_extra:CAM000103'], verdict: 'applied' }, ana);

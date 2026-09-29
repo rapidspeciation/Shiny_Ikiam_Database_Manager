@@ -1396,7 +1396,7 @@ export function createAssistant({ store, config = {} }) {
       }));
       return { status: 200, body: { revision, proposals } };
     }
-    // "Proponer arreglos" in Tablas → Revisión de datos: the obvious fixes as one proposal to confirm.
+    // The obvious fixes of chosen issues as one proposal to confirm (the old Tablas → Revisión de datos list; kept for links and tools).
     if (path === '/api/chat/proposals/from-checks' && method === 'POST') {
       if (!Array.isArray(body.ids) || !body.ids.length || body.ids.length > 100)
         return bad(400, 'invalid_ids', 'Choose 1 to 100 issues.');

@@ -276,7 +276,7 @@ async function toggleHistory() {
           <span class="font-medium">{{ i.task ? 'Tarea (en Drive, no en la hoja)' : 'Arreglo propuesto' }}:</span>
           {{ fixText(i) }}
         </p>
-        <p v-else-if="!i.resolved" class="text-xs text-stone-500">
+        <p v-else-if="!done" class="text-xs text-stone-500">
           Sin arreglo obvio: si es un problema, da el valor correcto con «Otro valor».
         </p>
 

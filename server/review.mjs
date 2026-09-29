@@ -239,14 +239,19 @@ export function reviewPage(store, query = {}) {
     i => (!kinds.length || kinds.includes(i.kind)) && (!status || status === 'all' || statusOf(i, verdicts) === status),
   );
   // Applied fixes leave the checks (the sheet is right now): shown from what was kept with their verdict.
+  const listed = new Set(issues.map(i => i.id));
+  const gone = [...verdicts.values()]
+    .filter(v => v.verdict === 'applied' && !listed.has(v.issue_id))
+    .map(v => ({ id: v.issue_id, ...parse(v.snapshot_json), resolved: true }))
+    .filter(
+      i =>
+        (!query.sheet || i.sheet === query.sheet) &&
+        (!text || `${i.label} ${i.cam ?? ''} ${i.problem}`.toLowerCase().includes(text)),
+    );
+  for (const i of gone) if (!kinds.length || kinds.includes(i.kind)) statuses.applied++;
   if (status === 'applied' || status === 'all') {
-    const listed = new Set(issues.map(i => i.id));
-    const gone = [...verdicts.values()]
-      .filter(v => v.verdict === 'applied' && !listed.has(v.issue_id))
-      .map(v => ({ id: v.issue_id, ...parse(v.snapshot_json), resolved: true }))
-      .filter(i => (!kinds.length || kinds.includes(i.kind)) && (!query.sheet || i.sheet === query.sheet));
-    statuses.applied += gone.length;
-    chosen = [...chosen, ...gone];
+    for (const i of gone) counts[i.kind] = (counts[i.kind] ?? 0) + 1;
+    chosen = [...chosen, ...gone.filter(i => !kinds.length || kinds.includes(i.kind))];
   }
   const size = Math.min(Math.max(Number(query.limit) || 25, 1), 200);
   const start = Math.max(Number(query.offset) || 0, 0);
