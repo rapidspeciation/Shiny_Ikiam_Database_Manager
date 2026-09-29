@@ -21,6 +21,7 @@ import { parseBlock } from '../../lib/paste'
 import { ID_COLUMN, cellId, cellOf, rowKey, type ProposalChange } from '../../lib/proposals'
 import type { CellValue, Field } from '../../lib/types'
 import { listProblem, verificationsFor } from '../../lib/verifications'
+import { locale, t, tn } from '../../lib/i18n'
 
 /**
  * The rows of one sheet of a proposal as a spreadsheet, like the Colecta list:
@@ -60,7 +61,14 @@ const emit = defineEmits<{
   notice: [message: string]
 }>()
 
-type Row = Record<string, CellValue> & { __key: string; __tick: string; __row: string; __label: string; __note: string; __state: string }
+type Row = Record<string, CellValue> & {
+  __key: string
+  __tick: string
+  __row: string
+  __label: string
+  __note: string
+  __state: string
+}
 
 const host = ref<HTMLDivElement>()
 let table: Tabulator | null = null
@@ -88,8 +96,20 @@ const hasChoices = (field: string) => !!choicesOf(field)?.size
 function toRow(c: ProposalChange): Row {
   const key = rowKey(c)
   const tick =
-    props.ticks === 'pending' ? (props.unticked.has(key) ? '0' : '1') : props.ticks === 'applied' && props.applied.includes(c.index) ? 'applied' : ''
-  const out = { __key: key, __tick: tick, __row: c.row ? String(c.row) : 'nueva', __label: c.label, __note: c.note ?? '' } as Row
+    props.ticks === 'pending'
+      ? props.unticked.has(key)
+        ? '0'
+        : '1'
+      : props.ticks === 'applied' && props.applied.includes(c.index)
+        ? 'applied'
+        : ''
+  const out = {
+    __key: key,
+    __tick: tick,
+    __row: c.row ? String(c.row) : t('nueva'),
+    __label: c.label,
+    __note: c.note ?? '',
+  } as Row
   let state = ''
   for (const f of props.fields) {
     const cell = cellOf(c, f, props.newRowFormulas)
@@ -118,25 +138,32 @@ function formatter(field: string) {
     el.classList.toggle('is-invalid', !!problem)
     el.classList.toggle('is-flash', props.flash.has(cellId(row.__key, field)))
     el.classList.toggle('has-choices', canEditCell(row.__key, field) && hasChoices(field))
-    const was = c.was === undefined ? '' : show(field, c.was) || 'vacío'
+    const was = c.was === undefined ? '' : show(field, c.was) || t('vacío')
+    const before = change.replaceFormula?.includes(field) ? 'Antes: {value} (fórmula)' : 'Antes: {value}'
     el.title = [
       problem,
-      c.kind === 'proposed' && !change.create ? `Antes: ${was}${change.replaceFormula?.includes(field) ? ' (fórmula)' : ''}` : '',
+      c.kind === 'proposed' && !change.create ? t(before, { value: was }) : '',
       c.kind === 'person'
-        ? `Editado por ti${c.aiProposed ? ` · la IA proponía: ${show(field, c.ai) || 'vacío'}` : ''}${change.create ? '' : ` · en la hoja: ${was}`}`
+        ? [
+            t('Editado por ti'),
+            c.aiProposed ? t('la IA proponía: {value}', { value: show(field, c.ai) || t('vacío') }) : '',
+            change.create ? '' : t('en la hoja: {value}', { value: was }),
+          ]
+            .filter(Boolean)
+            .join(' · ')
         : '',
-      c.kind === 'locked' ? 'Fórmula de la hoja: no se escribe' : '',
-      c.kind === 'sheet' && props.editable ? 'Valor actual de la hoja; escribe para cambiarlo' : '',
+      c.kind === 'locked' ? t('Fórmula de la hoja: no se escribe') : '',
+      c.kind === 'sheet' && props.editable ? t('Valor actual de la hoja; escribe para cambiarlo') : '',
     ]
       .filter(Boolean)
       .join('\n')
     const text = show(field, c.value)
     if (!changed || change.create || c.was === undefined || show(field, c.was) === text) return document.createTextNode(text)
     const box = document.createElement('span')
-    box.textContent = text || 'vacío'
+    box.textContent = text || t('vacío')
     const old = document.createElement('s')
     old.className = 'was'
-    old.textContent = show(field, c.was) || 'vacío'
+    old.textContent = show(field, c.was) || t('vacío')
     box.append(' ', old)
     return box
   }
@@ -174,13 +201,13 @@ function columns(): ColumnDefinition[] {
       frozen: wide,
       hozAlign: 'center',
       headerHozAlign: 'center',
-      headerTooltip: 'Elegir todas las filas o ninguna',
+      headerTooltip: t('Elegir todas las filas o ninguna'),
       formatter: tickFormatter as never,
       cellClick: (_e, cell) => props.ticks === 'pending' && emit('toggle', (cell.getData() as Row).__key),
       headerClick: () => props.ticks === 'pending' && emit('toggleAll'),
     })
   cols.push(
-    { title: 'Fila', field: '__row', width: 54, frozen: wide, hozAlign: 'right', cssClass: 'row-number', headerSort: false },
+    { title: t('Fila'), field: '__row', width: 54, frozen: wide, hozAlign: 'right', cssClass: 'row-number', headerSort: false },
     {
       title: 'ID',
       field: '__label',
@@ -208,7 +235,14 @@ function columns(): ColumnDefinition[] {
         : { editor: 'input' as const, editorParams: { selectContents: true } }),
     } as ColumnDefinition)
   }
-  cols.push({ title: 'Nota', field: '__note', headerSort: false, width: 260, cssClass: 'proposal-note', formatter: 'plaintext' })
+  cols.push({
+    title: t('Nota'),
+    field: '__note',
+    headerSort: false,
+    width: 260,
+    cssClass: 'proposal-note',
+    formatter: 'plaintext',
+  })
   if (props.editable)
     cols.push({
       title: '',
@@ -218,7 +252,7 @@ function columns(): ColumnDefinition[] {
       headerSort: false,
       cssClass: 'row-remove',
       formatter: () => '✕',
-      tooltip: 'Quitar esta fila de la propuesta',
+      tooltip: t('Quitar esta fila de la propuesta'),
       cellClick: (_e, cell) => emit('remove', (cell.getData() as Row).__key),
     } as ColumnDefinition)
   return cols
@@ -255,7 +289,7 @@ function onCellEdited(cell: CellComponent) {
   if (JSON.stringify(before) === JSON.stringify(result.value)) return
   const list = rules.value?.lists[field]
   const problem = list && listProblem(rules.value, field, result.value)
-  if (problem) emit('notice', list.strict ? problem : `${problem}: se guarda igual; corrígelo si es un error`)
+  if (problem) emit('notice', list.strict ? problem : t('{problem}: se guarda igual; corrígelo si es un error', { problem }))
   outgoing.push({ key: row.__key, field, value: result.value, before })
   // A paste or a fill sets many cells at once: they go out together.
   if (outgoing.length === 1) queueMicrotask(send)
@@ -294,7 +328,7 @@ function pasteRange(rowsData: Record<string, unknown>[]) {
     }
     touched.push(row)
   }
-  if (skipped) emit('notice', `${skipped} celdas de solo lectura no se modificaron`)
+  if (skipped) emit('notice', t('{n} celdas de solo lectura no se modificaron', { n: skipped }))
   return touched
 }
 
@@ -317,7 +351,8 @@ function sync() {
   stale = false
   byKey = new Map(props.changes.map(c => [rowKey(c), c]))
   const rows = props.changes.map(toRow)
-  const layout = [props.fields.join('|'), props.editable, props.ticks, rules.value ? 1 : 0].join('\n')
+  // The language is part of it: the column titles and tooltips are in it.
+  const layout = [props.fields.join('|'), props.editable, props.ticks, rules.value ? 1 : 0, locale.value].join('\n')
   if (layout !== shownColumns) {
     shownColumns = layout
     table.setColumns(columns())
@@ -336,7 +371,11 @@ function sync() {
   shown = new Map(rows.map(r => [r.__key, JSON.stringify(r)]))
 }
 
-const onKeydown = spreadsheetKeys(() => table, canEdit, message => emit('notice', message))
+const onKeydown = spreadsheetKeys(
+  () => table,
+  canEdit,
+  message => emit('notice', message),
+)
 const onEditingKey = editingKeys(() => table)
 let fill: { destroy: () => void } | null = null
 let copied: ReturnType<typeof attachCopyMarker> | null = null
@@ -345,14 +384,14 @@ let sizeWatch: { disconnect: () => void } | null = null
 onMounted(() => {
   if (!host.value) return
   byKey = new Map(props.changes.map(c => [rowKey(c), c]))
-  shownColumns = [props.fields.join('|'), props.editable, props.ticks, rules.value ? 1 : 0].join('\n')
+  shownColumns = [props.fields.join('|'), props.editable, props.ticks, rules.value ? 1 : 0, locale.value].join('\n')
   table = new Tabulator(host.value, {
     data: [],
     index: '__key',
     columns: columns(),
     layout: 'fitData',
     autoResize: false,
-    placeholder: 'Sin filas',
+    placeholder: t('Sin filas'),
     selectableRange: 1,
     selectableRangeColumns: true,
     selectableRangeRows: true,
@@ -382,7 +421,10 @@ onMounted(() => {
   const container = host.value.parentElement!
   fill = touch
     ? attachTouchSheet(table, container, { canEdit, notice })
-    : attachFillHandle(table, container, { canEdit, onFilled: rows => notice(`Copiado a ${rows} ${rows === 1 ? 'fila' : 'filas'}`) })
+    : attachFillHandle(table, container, {
+        canEdit,
+        onFilled: rows => notice(tn(rows, 'Copiado a {n} fila', 'Copiado a {n} filas')),
+      })
   copied = attachCopyMarker(table, container, notice)
   host.value.addEventListener('keydown', onKeydown)
   host.value.addEventListener('keydown', onEditingKey, true)
@@ -408,7 +450,20 @@ onBeforeUnmount(() => {
   table?.destroy()
   table = null
 })
-watch(() => [props.changes, props.fields, props.unticked, props.flash, props.editable, props.ticks, props.applied, rules.value], sync)
+watch(
+  () => [
+    props.changes,
+    props.fields,
+    props.unticked,
+    props.flash,
+    props.editable,
+    props.ticks,
+    props.applied,
+    rules.value,
+    locale.value,
+  ],
+  sync,
+)
 </script>
 
 <template>

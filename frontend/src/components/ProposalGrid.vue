@@ -19,6 +19,7 @@ import {
 } from '../lib/proposals'
 import type { CellValue } from '../lib/types'
 import { useSession } from '../stores/session'
+import { t } from '../lib/i18n'
 
 export type { Proposal, ProposalChange } from '../lib/proposals'
 
@@ -31,7 +32,11 @@ export type { Proposal, ProposalChange } from '../lib/proposals'
  * rest to the sheet (as does "aplica" in the chat).
  */
 const props = defineProps<{ proposal: Proposal; busy?: boolean }>()
-const emit = defineEmits<{ apply: [indexes: number[], revision: number | undefined]; discard: []; replace: [proposal: Proposal] }>()
+const emit = defineEmits<{
+  apply: [indexes: number[], revision: number | undefined]
+  discard: []
+  replace: [proposal: Proposal]
+}>()
 const session = useSession()
 
 const pending = computed(() => props.proposal.status === 'pending')
@@ -93,10 +98,18 @@ async function save(): Promise<void> {
       dropSaved(cells)
       savedRevision = Math.max(savedRevision, out.proposal.revision ?? 0)
       emit('replace', out.proposal)
-      for (const r of out.rejected.slice(0, 3))
-        notify(`No se guardó${r.field ? ` ${r.field}` : ''}${r.label ? ` (${r.label})` : ''}: ${r.message}`, 'error')
+      for (const r of out.rejected.slice(0, 3)) {
+        const what = [r.field, r.label ? `(${r.label})` : ''].filter(Boolean).join(' ')
+        const message = t(r.message)
+        notify(what ? t('No se guardó {what}: {message}', { what, message }) : t('No se guardó: {message}', { message }), 'error')
+      }
       for (const o of out.overrode.slice(0, 3))
-        notify(`Escribiste encima de un cambio de la IA en ${o.field}${o.label ? ` (${o.label})` : ''}: proponía ${show(o.field, o.ai) || 'vacío'}`)
+        notify(
+          t('Escribiste encima de un cambio de la IA en {field}: proponía {value}', {
+            field: `${o.field}${o.label ? ` (${o.label})` : ''}`,
+            value: show(o.field, o.ai) || t('vacío'),
+          }),
+        )
     } catch (e) {
       const code = (e as { code?: string }).code
       if (code === 'OFFLINE' || (e as { status?: number }).status === 0) {
@@ -215,10 +228,10 @@ const personCells = computed(() => props.proposal.changes.reduce((n, c) => n + O
 const statusText = computed(
   () =>
     ({
-      applied: `Aplicado en la hoja (${props.proposal.applied?.length ?? props.proposal.changes.length} filas)`,
-      needs_review: 'No se pudo aplicar: revisa las filas en la hoja',
-      discarded: 'Descartado',
-      applying: 'Aplicando…',
+      applied: t('Aplicado en la hoja ({n} filas)', { n: props.proposal.applied?.length ?? props.proposal.changes.length }),
+      needs_review: t('No se pudo aplicar: revisa las filas en la hoja'),
+      discarded: t('Descartado'),
+      applying: t('Aplicando…'),
     })[props.proposal.status as string] ?? '',
 )
 </script>
@@ -227,8 +240,8 @@ const statusText = computed(
   <div class="mt-2 rounded-md border border-stone-300 bg-white text-stone-800">
     <p class="flex flex-wrap items-center gap-x-2 border-b border-stone-200 px-2 py-1.5 text-xs font-medium">
       <span>
-        Cambios propuestos · {{ (proposal.sheets ?? [proposal.changes[0]?.sheet]).join(', ') }}
-        <template v-if="created"> · {{ created }} {{ created === 1 ? 'fila nueva' : 'filas nuevas' }}</template>
+        {{ $t('Cambios propuestos') }} · {{ (proposal.sheets ?? [proposal.changes[0]?.sheet]).join(', ') }}
+        <template v-if="created"> · {{ $tn(created, '{n} fila nueva', '{n} filas nuevas') }}</template>
         <span class="font-normal text-stone-500">— {{ proposal.reason }}</span>
       </span>
       <span
@@ -246,24 +259,24 @@ const statusText = computed(
           <button
             v-if="g.changes.some(c => c.create)"
             class="flex items-center gap-0.5 hover:text-emerald-800"
-            title="Añadir una fila nueva vacía a esta hoja"
+            :title="$t('Añadir una fila nueva vacía a esta hoja')"
             @click="addRow(g.sheet)"
           >
-            <Plus :size="12" /> Fila
+            <Plus :size="12" /> {{ $t('Fila') }}
           </button>
           <select
             v-if="addable(g.sheet, g.fields).length"
             class="rounded border border-stone-200 bg-white px-1 py-0.5 text-[11px]"
-            aria-label="Añadir columna"
+            :aria-label="$t('Añadir columna')"
             @change="addColumn(g.sheet, $event)"
           >
-            <option value="">+ Columna…</option>
+            <option value="">{{ $t('+ Columna…') }}</option>
             <option v-for="f in addable(g.sheet, g.fields)" :key="f" :value="f">{{ f }}</option>
           </select>
           <span class="ml-auto flex items-center gap-2">
-            <span class="legend is-proposed">IA</span>
-            <span class="legend is-person">tú</span>
-            <span class="legend is-sheet">hoja</span>
+            <span class="legend is-proposed">{{ $t('IA') }}</span>
+            <span class="legend is-person">{{ $t('tú') }}</span>
+            <span class="legend is-sheet">{{ $t('hoja') }}</span>
           </span>
         </template>
       </div>
@@ -288,14 +301,16 @@ const statusText = computed(
     <div class="flex flex-wrap items-center gap-2 px-2 py-1.5">
       <template v-if="pending">
         <button class="btn-primary bg-emerald-700 hover:bg-emerald-800" :disabled="busy || !chosen.length" @click="apply">
-          <Check :size="15" /> Aplicar {{ chosen.length }} {{ chosen.length === 1 ? 'fila' : 'filas' }}
+          <Check :size="15" /> {{ $tn(chosen.length, 'Aplicar {n} fila', 'Aplicar {n} filas') }}
         </button>
-        <button class="btn" :disabled="busy" @click="emit('discard')"><X :size="15" /> Descartar</button>
+        <button class="btn" :disabled="busy" @click="emit('discard')"><X :size="15" /> {{ $t('Descartar') }}</button>
         <span class="hint">
-          <template v-if="saving">Guardando tus cambios…</template>
-          <template v-else-if="failed">Sin conexión: tus cambios se guardarán al volver</template>
-          <template v-else-if="personCells">{{ personCells }} {{ personCells === 1 ? 'celda editada' : 'celdas editadas' }} por ti · </template>
-          Corrige en la tabla o díselo al asistente; también puedes responder «sí, aplícalo» en el chat.
+          <template v-if="saving">{{ $t('Guardando tus cambios…') }}</template>
+          <template v-else-if="failed">{{ $t('Sin conexión: tus cambios se guardarán al volver') }}</template>
+          <template v-else-if="personCells"
+            >{{ $tn(personCells, '{n} celda editada por ti', '{n} celdas editadas por ti') }} ·
+          </template>
+          {{ $t('Corrige en la tabla o díselo al asistente; también puedes responder «sí, aplícalo» en el chat.') }}
         </span>
       </template>
       <span v-else class="text-xs" :class="proposal.status === 'applied' ? 'text-brand-700' : 'text-amber-800'">

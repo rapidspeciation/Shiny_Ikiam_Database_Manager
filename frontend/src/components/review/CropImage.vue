@@ -26,9 +26,9 @@ function onLoad(event: Event) {
   <div
     v-if="failed"
     class="grid aspect-[4/3] place-items-center rounded bg-stone-100 p-2 text-center text-xs text-stone-500"
-    :title="`Drive no dio ${alt}`"
+    :title="$t('Drive no dio {name}', { name: alt })"
   >
-    <span><ImageOff :size="18" class="mx-auto mb-1" />Sin foto</span>
+    <span><ImageOff :size="18" class="mx-auto mb-1" />{{ $t('Sin foto') }}</span>
   </div>
   <div v-else-if="crop" class="relative overflow-hidden rounded bg-stone-200" :style="crop.frame">
     <img

@@ -11,6 +11,7 @@ import T3Frame from '../components/T3Frame.vue'
 import ProposalsLive from '../components/assistant/ProposalsLive.vue'
 import { persistentRef } from '../lib/persist'
 import { panelShare } from '../lib/proposals'
+import { t, tn } from '../lib/i18n'
 
 /**
  * Chat with the database assistant. It can read notebook photos; the rows it
@@ -150,9 +151,15 @@ async function updateT3() {
   const v = t3Version.value
   if (!v?.updateAvailable) return
   const cut = v.sessions
-    ? `\n\nT3 tiene ${v.sessions} ${v.sessions === 1 ? 'chat abierto' : 'chats abiertos'}: se cortarán las respuestas en curso (los chats guardados no se pierden).`
+    ? '\n\n' +
+      tn(
+        v.sessions,
+        'T3 tiene {n} chat abierto: se cortarán las respuestas en curso (los chats guardados no se pierden).',
+        'T3 tiene {n} chats abiertos: se cortarán las respuestas en curso (los chats guardados no se pierden).',
+      )
     : ''
-  if (!confirm(`¿Actualizar T3 Code de ${v.current} a ${v.latest}? T3 se reinicia (tarda un minuto).${cut}`)) return
+  const question = t('¿Actualizar T3 Code de {from} a {to}? T3 se reinicia (tarda un minuto).', { from: v.current, to: v.latest })
+  if (!confirm(question + cut)) return
   t3Updating.value = true
   try {
     await api('admin/t3', { method: 'POST', body: {} })
@@ -162,13 +169,13 @@ async function updateT3() {
       await loadT3Version()
       const now = t3Version.value
       if (now && !now.updating && now.current !== from) {
-        notify(`T3 actualizado a ${now.current}`, 'success')
+        notify(t('T3 actualizado a {version}', { version: now.current }), 'success')
         t3Frame.value?.connect(true)
         return
       }
       if (now && !now.updating && i > 2) break
     }
-    notify(`T3 no cambió de versión. Últimas líneas del registro:\n${t3Version.value?.log || '—'}`, 'error')
+    notify(`${t('T3 no cambió de versión. Últimas líneas del registro:')}\n${t3Version.value?.log || '—'}`, 'error')
   } catch (e) {
     notify(errorText(e), 'error')
   } finally {
@@ -206,7 +213,7 @@ async function open(id: string) {
   messages.value = (await api<{ messages: Message[] }>(`chat/threads/${id}`)).messages
   scrollDown()
 }
-async function newThread(title = 'Nueva conversación') {
+async function newThread(title = t('Nueva conversación')) {
   const { thread } = await api<{ thread: Thread }>('chat/threads', { method: 'POST', body: { title } })
   threads.value.unshift(thread)
   current.value = thread.id
@@ -214,7 +221,7 @@ async function newThread(title = 'Nueva conversación') {
   return thread.id
 }
 async function remove(id: string) {
-  if (!confirm('¿Borrar esta conversación?')) return
+  if (!confirm(t('¿Borrar esta conversación?'))) return
   await api(`chat/threads/${id}`, { method: 'DELETE' })
   threads.value = threads.value.filter(t => t.id !== id)
   if (current.value === id) {
@@ -254,7 +261,7 @@ async function addPhotos(event: Event) {
 }
 
 async function send() {
-  const text = draft.value.trim() || (photos.value.length ? 'Revisa esta foto del cuaderno y compárala con la hoja.' : '')
+  const text = draft.value.trim() || (photos.value.length ? t('Revisa esta foto del cuaderno y compárala con la hoja.') : '')
   if (!text || sending.value || uploading.value) return
   sending.value = true
   started.value = Date.now()
@@ -298,7 +305,7 @@ async function apply(proposal: Proposal, indexes: number[], revision?: number) {
     proposal.status = out.status
     proposal.applied = out.applied
     await reloadTables()
-    notify(`${out.applied.length} ${out.applied.length === 1 ? 'fila aplicada' : 'filas aplicadas'} en Google Sheets`, 'success')
+    notify(tn(out.applied.length, '{n} fila aplicada en Google Sheets', '{n} filas aplicadas en Google Sheets'), 'success')
   } catch (e) {
     // Changed meanwhile by the assistant: still pending, to look at again.
     if ((e as { code?: string }).code !== 'proposal_changed') proposal.status = 'needs_review'
@@ -319,7 +326,7 @@ function scrollDown() {
   nextTick(() => scroller.value?.scrollTo({ top: scroller.value.scrollHeight }))
 }
 const clean = (text: string) => text.replace(/\[[A-Za-z0-9_-]{8,120}\]/g, '').trim()
-const title = computed(() => threads.value.find(t => t.id === current.value)?.title || 'Nueva conversación')
+const title = computed(() => threads.value.find(th => th.id === current.value)?.title || t('Nueva conversación'))
 const elapsed = computed(() => Math.max(0, Math.round((now.value - started.value) / 1000)))
 
 // Report tables arrive as {key,label} columns and row objects.
@@ -342,7 +349,7 @@ const cellOf = (row: Record<string, unknown> | unknown[], key: string, i: number
         :class="mode === key ? 'border-b-2 border-brand-700 font-medium text-stone-900' : 'text-stone-600 hover:text-stone-900'"
         @click="mode = key"
       >
-        {{ label }}
+        {{ $t(label) }}
       </button>
       <template v-if="mode === 't3'">
         <button
@@ -350,29 +357,40 @@ const cellOf = (row: Record<string, unknown> | unknown[], key: string, i: number
           :class="
             fresh ? 'animate-pulse bg-emerald-600 text-white' : waiting ? 'bg-emerald-100 text-emerald-900' : 'text-stone-500'
           "
-          :title="panel ? 'Ocultar los cambios propuestos' : 'Mostrar los cambios propuestos'"
+          :title="panel ? $t('Ocultar los cambios propuestos') : $t('Mostrar los cambios propuestos')"
           @click="panel = !panel"
         >
-          <ListChecks :size="14" /> Cambios propuestos ({{ waiting }})
+          <ListChecks :size="14" /> {{ $t('Cambios propuestos ({n})', { n: waiting }) }}
         </button>
         <button
           v-if="t3Version?.updateAvailable || t3Updating"
           class="flex items-center gap-1 rounded bg-amber-100 px-2 py-0.5 text-amber-900 hover:bg-amber-200 disabled:opacity-60"
           :disabled="t3Updating"
-          :title="`Hay una versión nueva de T3 Code (${t3Version?.latest}); tienes la ${t3Version?.current}`"
+          :title="
+            $t('Hay una versión nueva de T3 Code ({latest}); tienes la {current}', {
+              latest: t3Version?.latest,
+              current: t3Version?.current,
+            })
+          "
           @click="updateT3"
         >
           <ArrowUpCircle :size="14" :class="{ 'animate-spin': t3Updating }" />
-          {{ t3Updating ? 'Actualizando T3…' : `Actualizar T3 (${t3Version?.current} → ${t3Version?.latest})` }}
+          {{
+            t3Updating
+              ? $t('Actualizando T3…')
+              : $t('Actualizar T3 ({from} → {to})', { from: t3Version?.current, to: t3Version?.latest })
+          }}
         </button>
         <span
           v-else-if="t3Version"
           class="px-1 text-xs text-stone-500"
-          :title="t3Version.latest ? 'Es la última versión estable de T3 Code' : 'No se pudo consultar la última versión'"
-          >T3 {{ t3Version.current }}<template v-if="t3Version.latest"> · al día</template></span
+          :title="t3Version.latest ? $t('Es la última versión estable de T3 Code') : $t('No se pudo consultar la última versión')"
+          >T3 {{ t3Version.current }}<template v-if="t3Version.latest"> · {{ $t('al día') }}</template></span
         >
-        <button class="btn-ghost" title="Volver a conectar T3" @click="t3Frame?.connect(true)"><RefreshCw :size="13" /></button>
-        <a class="btn-ghost" :href="t3Url" target="_blank" rel="noopener" title="Abrir T3 en otra pestaña"
+        <button class="btn-ghost" :title="$t('Volver a conectar T3')" @click="t3Frame?.connect(true)">
+          <RefreshCw :size="13" />
+        </button>
+        <a class="btn-ghost" :href="t3Url" target="_blank" rel="noopener" :title="$t('Abrir T3 en otra pestaña')"
           ><ExternalLink :size="13"
         /></a>
       </template>
@@ -397,10 +415,13 @@ const cellOf = (row: Record<string, unknown> | unknown[], key: string, i: number
         tabindex="0"
         :aria-orientation="layout === 'right' ? 'vertical' : 'horizontal'"
         :aria-valuenow="share"
-        aria-label="Tamaño de los cambios propuestos"
-        title="Arrastra para cambiar el tamaño"
+        :aria-label="$t('Tamaño de los cambios propuestos')"
+        :title="$t('Arrastra para cambiar el tamaño')"
         class="hidden shrink-0 touch-none bg-stone-200 hover:bg-emerald-400 focus:bg-emerald-400 focus:outline-none md:block"
-        :class="[layout === 'right' ? 'w-1.5 cursor-col-resize' : 'h-1.5 cursor-row-resize', { 'bg-emerald-500': dragging !== null }]"
+        :class="[
+          layout === 'right' ? 'w-1.5 cursor-col-resize' : 'h-1.5 cursor-row-resize',
+          { 'bg-emerald-500': dragging !== null },
+        ]"
         @pointerdown="resize"
         @keydown="nudge"
       />
@@ -427,11 +448,11 @@ const cellOf = (row: Record<string, unknown> | unknown[], key: string, i: number
     </div>
     <div v-else class="flex min-h-0 flex-1">
       <aside class="hidden w-60 shrink-0 flex-col border-r border-stone-200 bg-white md:flex">
-        <button class="btn m-3" @click="newThread()"><Plus :size="15" /> Nueva conversación</button>
+        <button class="btn m-3" @click="newThread()"><Plus :size="15" /> {{ $t('Nueva conversación') }}</button>
         <ul class="flex-1 overflow-y-auto text-sm">
           <li v-for="t in threads" :key="t.id" class="group flex items-center" :class="{ 'bg-brand-50': t.id === current }">
             <button class="min-w-0 flex-1 truncate px-3 py-2 text-left" @click="open(t.id)">{{ t.title }}</button>
-            <button class="btn-ghost invisible mr-1 group-hover:visible" title="Borrar" @click="remove(t.id)">
+            <button class="btn-ghost invisible mr-1 group-hover:visible" :title="$t('Borrar')" @click="remove(t.id)">
               <Trash2 :size="14" />
             </button>
           </li>
@@ -444,12 +465,15 @@ const cellOf = (row: Record<string, unknown> | unknown[], key: string, i: number
           <button class="btn md:hidden" @click="newThread()"><Plus :size="15" /></button>
         </header>
         <p v-if="status && !status.configured" class="bg-amber-50 px-4 py-2 text-sm text-amber-900">
-          El asistente no tiene un proveedor de IA configurado en el servidor.
+          {{ $t('El asistente no tiene un proveedor de IA configurado en el servidor.') }}
         </p>
         <div ref="scroller" class="flex-1 space-y-4 overflow-y-auto px-4 py-4">
           <p v-if="!messages.length" class="max-w-2xl text-sm text-stone-500">
-            Pregunta por registros ("¿qué tubos FS se usaron la semana pasada?") o manda la foto de una página del cuaderno: el
-            asistente la transcribe, la compara con la hoja y te muestra los cambios en una tabla para que los confirmes.
+            {{
+              $t(
+                'Pregunta por registros ("¿qué tubos FS se usaron la semana pasada?") o manda la foto de una página del cuaderno: el asistente la transcribe, la compara con la hoja y te muestra los cambios en una tabla para que los confirmes.',
+              )
+            }}
           </p>
           <div v-for="m in messages" :key="m.id" :class="m.role === 'user' ? 'flex justify-end' : ''">
             <div
@@ -469,7 +493,7 @@ const cellOf = (row: Record<string, unknown> | unknown[], key: string, i: number
                     :to="{ path: '/tablas', query: { hoja: s.sheet, buscar: s.label } }"
                     class="rounded bg-stone-100 px-1.5 py-0.5 text-xs text-stone-700 hover:bg-brand-50"
                   >
-                    {{ s.label }} · {{ s.sheet }} fila {{ s.row }}
+                    {{ s.label }} · {{ $t('{sheet} fila {row}', { sheet: s.sheet, row: s.row }) }}
                   </RouterLink>
                   <a
                     v-else-if="s.type === 'document' && /^https:\/\//.test(s.sourceUrl || '')"
@@ -477,7 +501,7 @@ const cellOf = (row: Record<string, unknown> | unknown[], key: string, i: number
                     target="_blank"
                     rel="noopener"
                     class="rounded bg-stone-100 px-1.5 py-0.5 text-xs text-stone-700 underline decoration-stone-300 hover:bg-brand-50"
-                    title="Abrir en Google Drive"
+                    :title="$t('Abrir en Google Drive')"
                   >
                     {{ s.title }}
                   </a>
@@ -511,8 +535,10 @@ const cellOf = (row: Record<string, unknown> | unknown[], key: string, i: number
             </div>
           </div>
           <p v-if="sending" class="text-sm text-stone-500">
-            Pensando… {{ elapsed }} s
-            <span v-if="elapsed > 15" class="hint">(leer una página y compararla con la hoja toma cerca de un minuto)</span>
+            {{ $t('Pensando… {n} s', { n: elapsed }) }}
+            <span v-if="elapsed > 15" class="hint">{{
+              $t('(leer una página y compararla con la hoja toma cerca de un minuto)')
+            }}</span>
           </p>
         </div>
         <form class="border-t border-stone-200 bg-white p-3" @submit.prevent="send">
@@ -522,25 +548,31 @@ const cellOf = (row: Record<string, unknown> | unknown[], key: string, i: number
               <button
                 type="button"
                 class="absolute -top-1.5 -right-1.5 rounded-full bg-stone-700 p-0.5 text-white"
-                title="Quitar"
+                :title="$t('Quitar')"
                 @click="photos.splice(i, 1)"
               >
                 <X :size="12" />
               </button>
             </div>
-            <span v-if="uploading" class="hint">Subiendo foto…</span>
+            <span v-if="uploading" class="hint">{{ $t('Subiendo foto…') }}</span>
           </div>
           <div class="flex gap-2">
             <input ref="camera" type="file" accept="image/*" capture="environment" class="hidden" @change="addPhotos" />
             <input ref="gallery" type="file" accept="image/*" multiple class="hidden" @change="addPhotos" />
             <div class="flex flex-col gap-1 self-end">
-              <button type="button" class="btn-ghost" title="Tomar foto" :disabled="photos.length >= 6" @click="camera?.click()">
+              <button
+                type="button"
+                class="btn-ghost"
+                :title="$t('Tomar foto')"
+                :disabled="photos.length >= 6"
+                @click="camera?.click()"
+              >
                 <Camera :size="17" />
               </button>
               <button
                 type="button"
                 class="btn-ghost"
-                title="Elegir fotos"
+                :title="$t('Elegir fotos')"
                 :disabled="photos.length >= 6"
                 @click="gallery?.click()"
               >
@@ -552,7 +584,7 @@ const cellOf = (row: Record<string, unknown> | unknown[], key: string, i: number
               rows="2"
               class="field-input flex-1 resize-none"
               :placeholder="
-                photos.length ? 'Opcional: qué revisar en la foto' : 'Escribe tu pregunta o manda una foto del cuaderno'
+                photos.length ? $t('Opcional: qué revisar en la foto') : $t('Escribe tu pregunta o manda una foto del cuaderno')
               "
               @keydown.enter.exact.prevent="send"
             />

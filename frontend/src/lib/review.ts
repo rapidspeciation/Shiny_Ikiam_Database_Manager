@@ -88,7 +88,7 @@ export interface ReviewPage {
   issues: Issue[]
 }
 
-/** Status filter: the server's keys, the tab's words. */
+/** Status filter: the server's keys, the tab's words (Spanish, the keys of lib/i18n.ts: shown through t()). */
 export const STATUSES: { key: string; label: string }[] = [
   { key: 'pending', label: 'Pendiente' },
   { key: 'accepted', label: 'Aceptado' },
@@ -188,7 +188,11 @@ export function photoList(photos?: Partial<Photos>) {
     name: photos.files?.[id]?.name ?? id,
     wings: photos.files?.[id]?.wings,
   }))
-  const stem = (name: string) => name.replace(/\.[^.]+$/, '').replace(/\.[^.]+$/, '').toLowerCase()
+  const stem = (name: string) =>
+    name
+      .replace(/\.[^.]+$/, '')
+      .replace(/\.[^.]+$/, '')
+      .toLowerCase()
   const jpgs = new Set(all.filter(p => !RAW.test(p.name)).map(p => stem(p.name)))
   return all.filter(p => !RAW.test(p.name) || !jpgs.has(stem(p.name)))
 }

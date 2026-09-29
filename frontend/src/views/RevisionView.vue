@@ -10,6 +10,7 @@ import { api } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
 import { STATUSES, type Issue, type ReviewPage, type Verdict } from '../lib/review'
 import { useSession } from '../stores/session'
+import { t, tn } from '../lib/i18n'
 
 /**
  * Revisión: every inconsistency of the workbook and of the specimen photos as a
@@ -141,8 +142,8 @@ const allCount = computed(() => (page.value ? Object.values(page.value.counts).r
 // The sidebar lists the sheet's own checks, then the ones read from photos and envelopes.
 const PHOTO_KIND = /^(photo_|envelope_|ai_)/
 const kindGroups = computed(() => [
-  { title: 'Datos de la hoja', kinds: allKinds.value.filter(([k]) => !PHOTO_KIND.test(k)) },
-  { title: 'Fotos y sobres', kinds: allKinds.value.filter(([k]) => PHOTO_KIND.test(k)) },
+  { title: t('Datos de la hoja'), kinds: allKinds.value.filter(([k]) => !PHOTO_KIND.test(k)) },
+  { title: t('Fotos y sobres'), kinds: allKinds.value.filter(([k]) => PHOTO_KIND.test(k)) },
 ])
 const sheetOptions = computed(() => page.value?.sheets ?? [])
 const personOptions = computed(() => (page.value?.people ?? []).map(p => ({ value: p.name, label: p.name, hint: String(p.n) })))
@@ -170,8 +171,10 @@ async function judge(issue: Issue, verdict: string, value?: string, comment?: st
 }
 async function judgeBatch(issue: Issue, verdict: string) {
   if (!issue.group) return
-  if (!confirm(`${verdict === 'accepted' ? 'Aceptar' : 'Rechazar'} los ${issue.group.size} del lote «${issue.group.label}»?`))
-    return
+  const vars = { n: issue.group.size, label: issue.group.label }
+  const question =
+    verdict === 'accepted' ? t('Aceptar los {n} del lote «{label}»?', vars) : t('Rechazar los {n} del lote «{label}»?', vars)
+  if (!confirm(question)) return
   busy.value = true
   try {
     const out = await api<{ ids: string[]; saved: number; verdict: Verdict }>('review/verdicts', {
@@ -179,7 +182,7 @@ async function judgeBatch(issue: Issue, verdict: string) {
       body: { group: issue.group.key, verdict },
     })
     applyVerdict(new Set(out.ids), out.verdict)
-    notify(`${out.saved} ${verdict === 'accepted' ? 'aceptados' : 'rechazados'}`, 'success')
+    notify(verdict === 'accepted' ? t('{n} aceptados', { n: out.saved }) : t('{n} rechazados', { n: out.saved }), 'success')
     refreshCounts()
   } catch (e) {
     notify(errorText(e), 'error')
@@ -192,7 +195,11 @@ async function prepare() {
   try {
     const out = await api<{ rows: number; tasks: number }>('chat/proposals/from-review', { method: 'POST', body: {} })
     notify(
-      `Propuesta de ${out.rows} ${out.rows === 1 ? 'fila' : 'filas'}: confírmala en Asistente → Cambios propuestos`,
+      tn(
+        out.rows,
+        'Propuesta de {n} fila: confírmala en Asistente → Cambios propuestos',
+        'Propuesta de {n} filas: confírmala en Asistente → Cambios propuestos',
+      ),
       'success',
     )
   } catch (e) {
@@ -208,6 +215,11 @@ function clearFilters() {
   kind.value = sheet.value = person.value = from.value = to.value = group.value = search.value = ''
   status.value = 'pending'
 }
+/** The chosen status in lower case, for «No hay nada pendiente con estos filtros». */
+const statusWord = computed(() => {
+  const label = STATUSES.find(st => st.key === status.value)?.label
+  return label ? t(label).toLowerCase() : ''
+})
 const filtered = computed(
   () => !!(kind.value || sheet.value || person.value || from.value || to.value || group.value || search.value),
 )
@@ -215,7 +227,7 @@ const filtered = computed(
 
 <template>
   <div class="flex h-full flex-col">
-    <div v-if="!session.canEdit" class="p-6 text-sm text-stone-600">La revisión es para quienes editan la hoja.</div>
+    <div v-if="!session.canEdit" class="p-6 text-sm text-stone-600">{{ $t('La revisión es para quienes editan la hoja.') }}</div>
     <div v-else class="flex min-h-0 flex-1">
       <!-- Sidebar: status, kinds and filters in the height the screen has to spare (on phones, behind «Filtros»). -->
       <aside
@@ -223,10 +235,10 @@ const filtered = computed(
         :class="showFilters ? 'fixed inset-0 z-40 flex w-full md:static md:w-60' : 'hidden md:flex'"
       >
         <div class="flex items-center justify-between px-3 pt-3 md:hidden">
-          <strong>Filtros</strong>
+          <strong>{{ $t('Filtros') }}</strong>
           <button class="btn-ghost" @click="showFilters = false"><X :size="16" /></button>
         </div>
-        <div class="grid grid-cols-3 gap-1 p-2" role="group" aria-label="Estado">
+        <div class="grid grid-cols-3 gap-1 p-2" role="group" :aria-label="$t('Estado')">
           <button
             v-for="st in STATUSES"
             :key="st.key"
@@ -234,9 +246,8 @@ const filtered = computed(
             :class="status === st.key ? 'bg-brand-700 text-white' : 'bg-stone-100 text-stone-700 hover:bg-stone-200'"
             @click="status = st.key"
           >
-            {{ st.label }}<span v-if="page && st.key !== 'all'" class="block tabular-nums opacity-80">{{
-              page.statuses[st.key] ?? 0
-            }}</span>
+            {{ $t(st.label)
+            }}<span v-if="page && st.key !== 'all'" class="block tabular-nums opacity-80">{{ page.statuses[st.key] ?? 0 }}</span>
           </button>
         </div>
         <nav class="border-t border-stone-100 py-1">
@@ -245,7 +256,7 @@ const filtered = computed(
             :class="!kind ? 'bg-stone-100 font-medium' : ''"
             @click="kind = ''"
           >
-            Todo <span class="text-xs tabular-nums text-stone-500">{{ page ? allCount : '…' }}</span>
+            {{ $t('Todo') }} <span class="text-xs tabular-nums text-stone-500">{{ page ? allCount : '…' }}</span>
           </button>
           <template v-for="g in kindGroups" :key="g.title">
             <p v-if="g.kinds.length" class="px-3 pt-2 pb-0.5 text-[11px] font-semibold tracking-wide text-stone-500 uppercase">
@@ -258,33 +269,53 @@ const filtered = computed(
               :class="kind === key ? 'bg-brand-50 font-medium text-brand-800' : 'text-stone-700'"
               @click="kind = kind === key ? '' : key"
             >
-              <span class="truncate">{{ label }}</span>
+              <span class="truncate">{{ $t(label) }}</span>
               <span class="text-xs tabular-nums text-stone-500">{{ page?.counts[key] ?? 0 }}</span>
             </button>
           </template>
         </nav>
         <div class="space-y-2 border-t border-stone-100 p-3">
           <label class="block">
-            <span class="field-label">Hoja</span>
-            <ChoiceField v-model="sheet" class="field-input" :options="sheetOptions" :freetext="false" allow-empty placeholder="Todas" />
+            <span class="field-label">{{ $t('Hoja') }}</span>
+            <ChoiceField
+              v-model="sheet"
+              class="field-input"
+              :options="sheetOptions"
+              :freetext="false"
+              allow-empty
+              :placeholder="$t('Todas')"
+            />
           </label>
           <label class="block">
-            <span class="field-label">Colector o identificador</span>
-            <ChoiceField v-model="person" class="field-input" :options="personOptions" :freetext="false" allow-empty placeholder="Todos" />
+            <span class="field-label">{{ $t('Colector o identificador') }}</span>
+            <ChoiceField
+              v-model="person"
+              class="field-input"
+              :options="personOptions"
+              :freetext="false"
+              allow-empty
+              :placeholder="$t('Todos')"
+            />
           </label>
           <div class="grid grid-cols-2 gap-2">
             <label class="block">
-              <span class="field-label">Desde</span>
+              <span class="field-label">{{ $t('Desde') }}</span>
               <DateField v-model="from" class="field-input" />
             </label>
             <label class="block">
-              <span class="field-label">Hasta</span>
+              <span class="field-label">{{ $t('Hasta') }}</span>
               <DateField v-model="to" class="field-input" />
             </label>
           </div>
           <div class="flex gap-1">
-            <button v-if="filtered" class="btn flex-1" title="Quitar los filtros" @click="clearFilters"><X :size="15" /> Quitar</button>
-            <a href="api/review/labels" class="btn" title="Descargar los veredictos sobre lecturas de fotos (etiquetas de entrenamiento)">
+            <button v-if="filtered" class="btn flex-1" :title="$t('Quitar los filtros')" @click="clearFilters">
+              <X :size="15" /> {{ $t('Quitar') }}
+            </button>
+            <a
+              href="api/review/labels"
+              class="btn"
+              :title="$t('Descargar los veredictos sobre lecturas de fotos (etiquetas de entrenamiento)')"
+            >
               <Download :size="15" />
             </a>
           </div>
@@ -299,38 +330,54 @@ const filtered = computed(
             :class="{ 'bg-stone-800 text-white': filtered || kind }"
             @click="showFilters = true"
           >
-            <SlidersHorizontal :size="14" /> Filtros
+            <SlidersHorizontal :size="14" /> {{ $t('Filtros') }}
           </button>
           <span class="relative min-w-0 flex-1 md:max-w-md">
             <Search :size="14" class="absolute top-2 left-2 text-stone-400" />
-            <input v-model="search" type="search" class="field-input py-1 pl-7 text-sm" placeholder="Buscar CAM, ID, especie…" />
+            <input
+              v-model="search"
+              type="search"
+              class="field-input py-1 pl-7 text-sm"
+              :placeholder="$t('Buscar CAM, ID, especie…')"
+            />
           </span>
           <ChoiceField
             v-model="sort"
             class="field-input w-44 py-1 text-sm"
-            aria-label="Orden"
+            :aria-label="$t('Orden')"
             :freetext="false"
             :options="[
-              { value: 'recent', label: 'Más recientes primero' },
-              { value: 'old', label: 'Más antiguas primero' },
-              { value: 'kind', label: 'Por tipo y hoja' },
+              { value: 'recent', label: $t('Más recientes primero') },
+              { value: 'old', label: $t('Más antiguas primero') },
+              { value: 'kind', label: $t('Por tipo y hoja') },
             ]"
           />
           <span v-if="page" class="ml-auto tabular-nums whitespace-nowrap text-stone-600">{{
-            page.total ? `${page.offset + 1}–${Math.min(page.offset + page.limit, page.total)} de ${page.total}` : '0'
+            page.total
+              ? $t('{from}–{to} de {total}', {
+                  from: page.offset + 1,
+                  to: Math.min(page.offset + page.limit, page.total),
+                  total: page.total,
+                })
+              : '0'
           }}</span>
-          <button class="btn-ghost" :disabled="!page?.offset" title="Anteriores" @click="offset = Math.max(0, offset - PAGE)">
+          <button
+            class="btn-ghost"
+            :disabled="!page?.offset"
+            :title="$t('Anteriores')"
+            @click="offset = Math.max(0, offset - PAGE)"
+          >
             <ChevronLeft :size="16" />
           </button>
           <button
             class="btn-ghost"
             :disabled="!page || page.offset + page.limit >= page.total"
-            title="Siguientes"
+            :title="$t('Siguientes')"
             @click="offset += PAGE"
           >
             <ChevronRight :size="16" />
           </button>
-          <button class="btn-ghost" :disabled="loading" title="Volver a revisar" @click="load">
+          <button class="btn-ghost" :disabled="loading" :title="$t('Volver a revisar')" @click="load">
             <RefreshCw :size="15" :class="{ 'animate-spin': loading }" />
           </button>
         </div>
@@ -339,33 +386,32 @@ const filtered = computed(
           v-if="page && (page.agreed.fixes || page.agreed.tasks)"
           class="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm text-emerald-950"
         >
-          <strong
-            >{{ page.agreed.fixes }} {{ page.agreed.fixes === 1 ? 'arreglo aceptado listo' : 'arreglos aceptados listos' }} para
-            aplicar</strong
-          >
-          <span v-if="page.agreed.tasks">· {{ page.agreed.tasks }} {{ page.agreed.tasks === 1 ? 'tarea' : 'tareas' }} en Drive</span>
-          <span class="text-emerald-800">Pídele en T3: «aplica las correcciones acordadas»</span>
+          <strong>{{
+            $tn(page.agreed.fixes, '{n} arreglo aceptado listo para aplicar', '{n} arreglos aceptados listos para aplicar')
+          }}</strong>
+          <span v-if="page.agreed.tasks">· {{ $tn(page.agreed.tasks, '{n} tarea en Drive', '{n} tareas en Drive') }}</span>
+          <span class="text-emerald-800">{{ $t('Pídele en T3: «aplica las correcciones acordadas»') }}</span>
           <button
             v-if="page.agreed.fixes"
             class="btn ml-auto py-1"
             :disabled="busy"
-            title="Una propuesta con todos, para confirmar en Asistente"
+            :title="$t('Una propuesta con todos, para confirmar en Asistente')"
             @click="prepare"
           >
-            <Wand2 :size="15" /> Preparar propuesta aquí
+            <Wand2 :size="15" /> {{ $t('Preparar propuesta aquí') }}
           </button>
         </div>
 
         <p v-if="group" class="flex items-center gap-2 bg-stone-100 px-3 py-1 text-xs">
-          Solo el lote «{{ groupLabel }}»
-          <button class="text-brand-700 hover:underline" @click="group = ''">ver todos</button>
+          {{ $t('Solo el lote «{label}»', { label: groupLabel }) }}
+          <button class="text-brand-700 hover:underline" @click="group = ''">{{ $t('ver todos') }}</button>
         </p>
 
         <div ref="list" class="min-h-0 flex-1 overflow-auto bg-stone-50">
           <div class="space-y-2 p-2">
-            <p v-if="!page" class="p-6 text-sm text-stone-500">Revisando…</p>
+            <p v-if="!page" class="p-6 text-sm text-stone-500">{{ $t('Revisando…') }}</p>
             <p v-else-if="!page.issues.length" class="p-6 text-sm text-stone-500">
-              No hay nada {{ STATUSES.find(st => st.key === status)?.label.toLowerCase() }} con estos filtros.
+              {{ $t('No hay nada {status} con estos filtros.', { status: statusWord }) }}
             </p>
             <IssueCard
               v-for="issue in page?.issues"

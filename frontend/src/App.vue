@@ -33,7 +33,7 @@ watch(
 <template>
   <!-- The invitation page and the home page work without an account (the rest needs a login). -->
   <RouterView v-if="route.path === '/activar'" />
-  <div v-else-if="!session.ready" class="grid h-full place-items-center text-stone-500">Cargando…</div>
+  <div v-else-if="!session.ready" class="grid h-full place-items-center text-stone-500">{{ $t('Cargando…') }}</div>
   <LoginView v-else-if="!session.user && !openPaths.has(route.path)" />
   <div v-else class="flex h-full flex-col">
     <AppHeader v-if="!route.meta.bare" />
@@ -53,8 +53,8 @@ watch(
     role="alert"
     class="fixed top-2 left-1/2 z-50 flex max-w-[95vw] -translate-x-1/2 items-center gap-3 rounded-md bg-amber-100 px-4 py-2 text-sm text-amber-950 shadow-lg ring-1 ring-amber-300"
   >
-    <span>Hay una versión nueva de la app. Recarga la página (los cambios sin guardar se conservan).</span>
-    <button class="btn-primary px-3 py-1" @click="reload">Recargar</button>
+    <span>{{ $t('Hay una versión nueva de la app. Recarga la página (los cambios sin guardar se conservan).') }}</span>
+    <button class="btn-primary px-3 py-1" @click="reload">{{ $t('Recargar') }}</button>
   </div>
   <!-- Messages let touches through: on a phone they sit over the grid (and its handle). -->
   <div

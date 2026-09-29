@@ -1,2 +1,66 @@
 // Login, activation, users and invitations, update banner.
-export default {} as Record<string, string>
+export default {
+  // App.vue
+  'Cargando…': 'Loading…',
+  'Hay una versión nueva de la app. Recarga la página (los cambios sin guardar se conservan).':
+    'There is a new version of the app. Reload the page (unsaved changes are kept).',
+  Recargar: 'Reload',
+  // LoginView
+  'Crear la cuenta de administrador': 'Create the administrator account',
+  'Código de configuración': 'Setup code',
+  Usuario: 'Username',
+  'Nombre visible': 'Display name',
+  Contraseña: 'Password',
+  'De 6 a 16 caracteres.': '6 to 16 characters.',
+  'Un momento…': 'One moment…',
+  'Crear cuenta': 'Create account',
+  Entrar: 'Sign in',
+  'Ver los resúmenes del proyecto sin cuenta': 'See the project summaries without an account',
+  // ActivateView
+  'Las contraseñas no coinciden.': 'The passwords do not match.',
+  'Hola {name}. Elige cómo entrarás a la app ({email}).': 'Hello {name}. Choose how you will sign in to the app ({email}).',
+  '3 a 64 letras, números, puntos, guiones.': '3 to 64 letters, numbers, dots, hyphens.',
+  Nombre: 'Name',
+  '6 a 16 caracteres.': '6 to 16 characters.',
+  'Repite la contraseña': 'Repeat the password',
+  'Creando…': 'Creating…',
+  'Crear mi cuenta': 'Create my account',
+  'Esta invitación ya se usó.': 'This invitation has already been used.',
+  'Inicia sesión con tu usuario.': 'Sign in with your username.',
+  'Esta invitación venció. Pide a un administrador que te envíe una nueva.':
+    'This invitation has expired. Ask an administrator to send you a new one.',
+  // UsersView
+  'Solo lectura': 'Read only',
+  Editor: 'Editor',
+  Revisor: 'Reviewer',
+  Administrador: 'Administrator',
+  Esperando: 'Waiting',
+  'Cuenta creada': 'Account created',
+  Vencida: 'Expired',
+  'Invitación enviada a {email}': 'Invitation sent to {email}',
+  'No se pudo enviar el correo ({error}). Copia el enlace y compártelo.':
+    'The email could not be sent ({error}). Copy the link and share it.',
+  '¿Anular la invitación a {email}?': 'Cancel the invitation to {email}?',
+  'Enlace copiado': 'Link copied',
+  'Cuenta {username} creada': 'Account {username} created',
+  'Nueva contraseña para {username} (6 a 16 caracteres)': 'New password for {username} (6 to 16 characters)',
+  'Contraseña cambiada; la persona debe volver a iniciar sesión': 'Password changed; the person must sign in again',
+  'Solo un administrador puede gestionar cuentas.': 'Only an administrator can manage accounts.',
+  Correo: 'Email',
+  Permiso: 'Permission',
+  'Enviando…': 'Sending…',
+  'Enviar invitación': 'Send invitation',
+  'Llega un correo desde {from} con un enlace para que la persona elija su usuario y contraseña. El enlace vale 7 días.':
+    'An email arrives from {from} with a link for the person to choose their username and password. The link is valid for 7 days.',
+  Invitación: 'Invitation',
+  Estado: 'Status',
+  'enviada {sent}, vence {expires}': 'sent {sent}, expires {expires}',
+  'Correo no enviado: {error}': 'Email not sent: {error}',
+  'Copiar enlace': 'Copy link',
+  'Enviar de nuevo (el enlace anterior deja de funcionar)': 'Send again (the previous link stops working)',
+  Anular: 'Cancel invitation',
+  Activa: 'Active',
+  'Cambiar contraseña': 'Change password',
+  'Crear una cuenta sin correo (con contraseña inicial)': 'Create an account without email (with an initial password)',
+  'Contraseña inicial': 'Initial password',
+} as Record<string, string>

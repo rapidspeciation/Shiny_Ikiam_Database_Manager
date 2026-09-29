@@ -24,6 +24,7 @@ import { PURPOSES, formatWhen, rowsOf, timeRange } from '../../lib/history'
 import { notify } from '../../lib/notice'
 import type { HistoryAction, HistoryChange, HistoryGroup } from '../../lib/types'
 import { useSession } from '../../stores/session'
+import { t, tn } from '../../lib/i18n'
 
 /** One card of the Historial: a group of saves, and when open, every change grouped by row. */
 const props = defineProps<{
@@ -59,15 +60,23 @@ const ICONS = {
 } as const
 const icon = computed(() => ICONS[props.group.purpose as keyof typeof ICONS] ?? History)
 const tone = computed(() => PURPOSES[props.group.purpose]?.tone ?? 'bg-stone-100 text-stone-700')
-const who = computed(() => props.group.actorName || (props.group.actor === 'unknown' ? 'alguien en Google Sheets' : props.group.actor))
+const who = computed(
+  () => props.group.actorName || (props.group.actor === 'unknown' ? t('alguien en Google Sheets') : props.group.actor),
+)
+/** The purpose in the interface's language (the server's label for one the app does not know). */
+const purpose = computed(() => {
+  const known = PURPOSES[props.group.purpose]?.label
+  return known ? t(known) : props.group.purposeLabel
+})
 const counts = computed(() => {
   const c = props.group.counts
-  const parts = [`${c.rows} ${c.rows === 1 ? 'fila' : 'filas'}`]
-  if (c.newRows) parts.push(`${c.newRows} ${c.newRows === 1 ? 'nueva' : 'nuevas'}`)
-  parts.push(`${c.cells} ${c.cells === 1 ? 'celda' : 'celdas'}`)
-  if (c.actions > 1) parts.push(`${c.actions} guardados`)
+  const parts = [tn(c.rows, '{n} fila', '{n} filas')]
+  if (c.newRows) parts.push(tn(c.newRows, '{n} nueva', '{n} nuevas'))
+  parts.push(tn(c.cells, '{n} celda', '{n} celdas'))
+  if (c.actions > 1) parts.push(t('{n} guardados', { n: c.actions }))
   return parts.join(' · ')
 })
+/** A save's state (Spanish, the keys of lib/i18n.ts: shown through t()). */
 const STATUS: Record<string, string> = {
   observed: 'Leído de Google Sheets',
   pending: 'En curso',
@@ -78,13 +87,13 @@ const STATUS: Record<string, string> = {
 const trouble = computed(() =>
   Object.entries(props.group.statuses)
     .filter(([s]) => ['pending', 'uncertain', 'failed'].includes(s))
-    .map(([s, n]) => `${n} ${STATUS[s].toLowerCase()}`),
+    .map(([s, n]) => `${n} ${t(STATUS[s]).toLowerCase()}`),
 )
 
 const fieldOf = (sheet: string, key: string) => session.module(sheet)?.fields.find(f => f.key === key)
 function show(value: HistoryChange['before'], sheet: string, field: string) {
-  if (value && typeof value === 'object') return `fórmula ${value.formula}`
-  return displayValue(value, fieldOf(sheet, field)) || 'vacío'
+  if (value && typeof value === 'object') return t('fórmula {formula}', { formula: value.formula })
+  return displayValue(value, fieldOf(sheet, field)) || t('vacío')
 }
 /** A cell whose row, field or values contain the searched text. */
 function found(c: HistoryChange, label: string) {
@@ -102,7 +111,7 @@ const afterClass = (value: HistoryChange['after']) =>
 /** "deshecho" when every cell of a save was put back, "deshecho en parte" when some were. */
 function undoneLabel(action: HistoryAction) {
   const undone = action.changes.filter(c => c.undone).length
-  return !undone ? '' : undone === action.changes.length ? 'deshecho' : 'deshecho en parte'
+  return !undone ? '' : undone === action.changes.length ? t('deshecho') : t('deshecho en parte')
 }
 
 /** Big saves (a whole sync) show their rows a hundred at a time. */
@@ -138,7 +147,7 @@ async function copyLink() {
   const url = `${location.origin}${location.pathname}#/historial?grupo=${props.group.id}`
   try {
     await navigator.clipboard.writeText(url)
-    notify('Enlace copiado')
+    notify(t('Enlace copiado'))
   } catch {
     notify(url)
   }
@@ -152,24 +161,29 @@ async function copyLink() {
     :class="highlighted ? 'border-amber-400 ring-2 ring-amber-300' : 'border-stone-200'"
   >
     <header class="flex cursor-pointer items-start gap-3 p-3" @click="emit('toggle')">
-      <span class="grid size-9 shrink-0 place-items-center rounded-full" :class="tone" :title="group.purposeLabel">
+      <span class="grid size-9 shrink-0 place-items-center rounded-full" :class="tone" :title="purpose">
         <component :is="icon" :size="18" />
       </span>
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm">
-          <strong>{{ group.purposeLabel }}</strong>
+          <strong>{{ purpose }}</strong>
           <span class="text-stone-700">{{ who }}</span>
           <span class="text-xs text-stone-500 tabular-nums">{{ timeRange(group.start, group.end) }}</span>
-          <span v-if="group.undone === 'all'" class="rounded bg-stone-100 px-1.5 text-xs text-stone-600">deshecho</span>
-          <span v-else-if="group.undone === 'some'" class="rounded bg-stone-100 px-1.5 text-xs text-stone-600">deshecho en parte</span>
-          <span v-for="t in trouble" :key="t" class="rounded bg-amber-100 px-1.5 text-xs text-amber-900">{{ t }}</span>
+          <span v-if="group.undone === 'all'" class="rounded bg-stone-100 px-1.5 text-xs text-stone-600">{{
+            $t('deshecho')
+          }}</span>
+          <span v-else-if="group.undone === 'some'" class="rounded bg-stone-100 px-1.5 text-xs text-stone-600">{{
+            $t('deshecho en parte')
+          }}</span>
+          <span v-for="text in trouble" :key="text" class="rounded bg-amber-100 px-1.5 text-xs text-amber-900">{{ text }}</span>
         </div>
         <p class="mt-0.5 text-sm break-words text-stone-800">{{ group.summary }}</p>
         <p class="hint mt-0.5 break-words">
           {{ counts }} · {{ group.sheets.join(', ') }}
           <template v-if="group.reasons.length"> · «{{ group.reasons.join(' · ') }}»</template>
           <template v-if="group.matched?.length && group.matched.length < group.counts.actions">
-            · coincide en {{ group.matched.length }} de {{ group.counts.actions }} guardados</template
+            ·
+            {{ $t('coincide en {n} de {total} guardados', { n: group.matched.length, total: group.counts.actions }) }}</template
           >
         </p>
       </div>
@@ -177,48 +191,56 @@ async function copyLink() {
         <button
           v-if="canEdit && group.undoable"
           class="btn px-2 py-1 text-xs"
-          title="Deshacer todos los cambios de este guardado (se revisa antes)"
-          @click="emit('undo', { groupIds: [group.id] }, `Deshacer todo: ${group.summary}`)"
+          :title="$t('Deshacer todos los cambios de este guardado (se revisa antes)')"
+          @click="emit('undo', { groupIds: [group.id] }, $t('Deshacer todo: {summary}', { summary: group.summary }))"
         >
-          <Undo2 :size="14" /> <span class="hidden sm:inline">Deshacer todo</span>
+          <Undo2 :size="14" /> <span class="hidden sm:inline">{{ $t('Deshacer todo') }}</span>
         </button>
-        <button class="btn-ghost" title="Copiar el enlace a este guardado" @click="copyLink"><Link2 :size="15" /></button>
-        <button class="btn-ghost" :title="open ? 'Cerrar' : 'Ver los cambios'" @click="emit('toggle')">
+        <button class="btn-ghost" :title="$t('Copiar el enlace a este guardado')" @click="copyLink"><Link2 :size="15" /></button>
+        <button class="btn-ghost" :title="open ? $t('Cerrar') : $t('Ver los cambios')" @click="emit('toggle')">
           <ChevronDown :size="16" class="transition-transform" :class="{ 'rotate-180': open }" />
         </button>
       </div>
     </header>
 
     <div v-if="open" class="border-t border-stone-100 px-2 pb-3 sm:px-3">
-      <p v-if="!detail" class="hint p-2">Cargando cambios…</p>
+      <p v-if="!detail" class="hint p-2">{{ $t('Cargando cambios…') }}</p>
       <section v-for="{ action, rows, hidden: rest } in sections" :key="action.id">
         <div v-if="multi" class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-stone-600">
           <span class="font-medium tabular-nums text-stone-800">{{ formatWhen(action.createdAt) }}</span>
-          <span>{{ action.changes.length }} {{ action.changes.length === 1 ? 'celda' : 'celdas' }}</span>
+          <span>{{ $tn(action.changes.length, '{n} celda', '{n} celdas') }}</span>
           <span v-if="action.reason" class="break-words">«{{ action.reason }}»</span>
           <span v-if="STATUS[action.status] && action.status !== 'observed'" class="rounded bg-amber-100 px-1.5 text-amber-900">{{
-            STATUS[action.status]
+            $t(STATUS[action.status])
           }}</span>
           <span v-if="undoneLabel(action)" class="rounded bg-stone-100 px-1.5">{{ undoneLabel(action) }}</span>
           <button
             v-if="canUndo(action) && pending(action.changes).length"
             class="ml-auto inline-flex items-center gap-1 text-brand-700 hover:underline"
-            @click="emit('undo', { actionIds: [action.id] }, `Deshacer el guardado de ${formatWhen(action.createdAt)}`)"
+            @click="
+              emit(
+                'undo',
+                { actionIds: [action.id] },
+                $t('Deshacer el guardado de {when}', { when: formatWhen(action.createdAt) }),
+              )
+            "
           >
-            <Undo2 :size="12" /> Deshacer este guardado
+            <Undo2 :size="12" /> {{ $t('Deshacer este guardado') }}
           </button>
         </div>
         <div v-for="row in rows" :key="row.recordId" class="mt-2 overflow-hidden rounded border border-stone-200">
           <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 bg-stone-50 px-2 py-1 text-xs text-stone-600">
             <strong class="text-sm text-stone-900">{{ row.label }}</strong>
-            <span>{{ row.sheet }} fila {{ row.row }}</span>
-            <span v-if="row.isNew" class="rounded bg-emerald-100 px-1.5 text-emerald-800">fila nueva</span>
+            <span>{{ $t('{sheet} fila {row}', { sheet: row.sheet, row: row.row }) }}</span>
+            <span v-if="row.isNew" class="rounded bg-emerald-100 px-1.5 text-emerald-800">{{ $t('fila nueva') }}</span>
             <button
               v-if="canUndo(action) && row.changes.length > 1 && pending(row.changes).length"
               class="ml-auto inline-flex items-center gap-1 text-brand-700 hover:underline"
-              @click="emit('undo', { changeIds: pending(row.changes) }, `Deshacer los cambios de ${row.label}`)"
+              @click="
+                emit('undo', { changeIds: pending(row.changes) }, $t('Deshacer los cambios de {label}', { label: row.label }))
+              "
             >
-              <Undo2 :size="12" /> Deshacer fila
+              <Undo2 :size="12" /> {{ $t('Deshacer fila') }}
             </button>
           </div>
           <ul class="divide-y divide-stone-100 text-sm">
@@ -237,7 +259,7 @@ async function copyLink() {
                 type="checkbox"
                 class="mt-1"
                 :checked="picked.has(c.id)"
-                :aria-label="`Elegir ${c.field} de ${row.label}`"
+                :aria-label="$t('Elegir {field} de {label}', { field: c.field, label: row.label })"
                 @change="togglePick(c.id)"
               />
               <span v-else></span>
@@ -247,37 +269,41 @@ async function copyLink() {
                   <span class="break-all" :class="beforeClass(c.before)">{{ show(c.before, c.sheet, c.field) }}</span>
                   <ArrowRight :size="12" class="shrink-0 text-stone-400" />
                   <span class="break-all" :class="afterClass(c.after)">{{ show(c.after, c.sheet, c.field) }}</span>
-                  <span v-if="c.undone" class="text-xs text-stone-500">deshecho</span>
+                  <span v-if="c.undone" class="text-xs text-stone-500">{{ $t('deshecho') }}</span>
                 </span>
               </div>
               <button
                 v-if="canUndo(action, c)"
                 class="btn-ghost p-1"
-                :title="`Deshacer solo ${c.field}`"
-                @click="emit('undo', { changeIds: [c.id] }, `Deshacer ${c.field} de ${row.label}`)"
+                :title="$t('Deshacer solo {field}', { field: c.field })"
+                @click="
+                  emit('undo', { changeIds: [c.id] }, $t('Deshacer {field} de {label}', { field: c.field, label: row.label }))
+                "
               >
                 <Undo2 :size="14" />
               </button>
             </li>
           </ul>
         </div>
-        <p v-if="rest" class="hint mt-1">y {{ rest }} filas más en este guardado</p>
+        <p v-if="rest" class="hint mt-1">{{ $t('y {n} filas más en este guardado', { n: rest }) }}</p>
       </section>
       <div v-if="hidden" class="mt-2 text-center">
-        <button class="btn py-1 text-xs" @click="shown += PAGE">Mostrar {{ Math.min(PAGE, hidden) }} filas más</button>
+        <button class="btn py-1 text-xs" @click="shown += PAGE">
+          {{ $t('Mostrar {n} filas más', { n: Math.min(PAGE, hidden) }) }}
+        </button>
       </div>
       <div
         v-if="picked.size"
         class="sticky bottom-0 mt-3 flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm"
       >
-        <span>{{ picked.size }} {{ picked.size === 1 ? 'cambio elegido' : 'cambios elegidos' }}</span>
+        <span>{{ $tn(picked.size, '{n} cambio elegido', '{n} cambios elegidos') }}</span>
         <button
           class="btn-primary ml-auto py-1"
-          @click="emit('undo', { changeIds: [...picked] }, `Deshacer ${picked.size} cambios elegidos`)"
+          @click="emit('undo', { changeIds: [...picked] }, $t('Deshacer {n} cambios elegidos', { n: picked.size }))"
         >
-          <Undo2 :size="14" /> Deshacer selección
+          <Undo2 :size="14" /> {{ $t('Deshacer selección') }}
         </button>
-        <button class="btn py-1" @click="picked.clear()">Quitar</button>
+        <button class="btn py-1" @click="picked.clear()">{{ $t('Quitar') }}</button>
       </div>
     </div>
   </article>

@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import ChoiceField from '../components/ChoiceField.vue'
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { Copy, Mail, RefreshCw, UserPlus, X } from 'lucide-vue-next'
 import { api, requestId } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
 import type { User } from '../lib/types'
 import { useSession } from '../stores/session'
+import { intlLocale, t } from '../lib/i18n'
 
 /**
  * Administrators invite people by email (they choose their own username and
@@ -37,9 +38,10 @@ const ROLES: Record<string, string> = {
   reviewer: 'Revisor',
   admin: 'Administrador',
 }
-const roleChoices = Object.entries(ROLES).map(([value, label]) => ({ value, label }))
+const roleChoices = computed(() => Object.entries(ROLES).map(([value, label]) => ({ value, label: t(label) })))
 const STATUS: Record<Invitation['status'], string> = { pending: 'Esperando', used: 'Cuenta creada', expired: 'Vencida' }
-const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('es-EC', { day: 'numeric', month: 'short' }) : '')
+const day = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleDateString(intlLocale(), { day: 'numeric', month: 'short' }) : ''
 
 async function load() {
   try {
@@ -57,8 +59,13 @@ onMounted(load)
 
 function after(out: { invitation: Invitation; link: string }) {
   links.value[out.invitation.id] = out.link
-  if (out.invitation.sentAt && !out.invitation.sendError) notify(`Invitación enviada a ${out.invitation.email}`, 'success')
-  else notify(`No se pudo enviar el correo (${out.invitation.sendError}). Copia el enlace y compártelo.`, 'error')
+  if (out.invitation.sentAt && !out.invitation.sendError)
+    notify(t('Invitación enviada a {email}', { email: out.invitation.email }), 'success')
+  else
+    notify(
+      t('No se pudo enviar el correo ({error}). Copia el enlace y compártelo.', { error: out.invitation.sendError }),
+      'error',
+    )
 }
 async function sendInvite() {
   sending.value = true
@@ -81,19 +88,19 @@ async function resend(i: Invitation) {
   }
 }
 async function revoke(i: Invitation) {
-  if (!confirm(`¿Anular la invitación a ${i.email}?`)) return
+  if (!confirm(t('¿Anular la invitación a {email}?', { email: i.email }))) return
   await api(`admin/invitations/${i.id}/revoke`, { method: 'POST', body: {} }).catch(e => notify(errorText(e), 'error'))
   await load()
 }
 async function copy(id: string) {
   await navigator.clipboard.writeText(links.value[id])
-  notify('Enlace copiado')
+  notify(t('Enlace copiado'))
 }
 
 async function create() {
   try {
     await api('admin/users', { method: 'POST', body: { ...form, requestId: requestId() } })
-    notify(`Cuenta ${form.username} creada`, 'success')
+    notify(t('Cuenta {username} creada', { username: form.username }), 'success')
     Object.assign(form, { username: '', displayName: '', password: '', role: 'editor' })
     await load()
   } catch (e) {
@@ -110,50 +117,54 @@ async function update(user: User, changes: Record<string, unknown>) {
   }
 }
 async function resetPassword(user: User) {
-  const password = prompt(`Nueva contraseña para ${user.username} (6 a 16 caracteres)`)
+  const password = prompt(t('Nueva contraseña para {username} (6 a 16 caracteres)', { username: user.username }))
   if (password) {
     await update(user, { password })
-    notify('Contraseña cambiada; la persona debe volver a iniciar sesión', 'success')
+    notify(t('Contraseña cambiada; la persona debe volver a iniciar sesión'), 'success')
   }
 }
 </script>
 
 <template>
   <div class="h-full overflow-y-auto p-4">
-    <p v-if="!session.isAdmin" class="text-stone-500">Solo un administrador puede gestionar cuentas.</p>
+    <p v-if="!session.isAdmin" class="text-stone-500">{{ $t('Solo un administrador puede gestionar cuentas.') }}</p>
     <template v-else>
-      <h1 class="mb-3 text-lg font-semibold">Usuarios</h1>
+      <h1 class="mb-3 text-lg font-semibold">{{ $t('Usuarios') }}</h1>
       <form
         class="mb-3 flex flex-wrap items-end gap-3 rounded-lg border border-stone-200 bg-white p-4"
         @submit.prevent="sendInvite"
       >
         <label>
-          <span class="field-label">Correo</span>
+          <span class="field-label">{{ $t('Correo') }}</span>
           <input v-model="invite.email" class="field-input w-64" type="email" autocomplete="off" required />
         </label>
         <label>
-          <span class="field-label">Nombre</span>
+          <span class="field-label">{{ $t('Nombre') }}</span>
           <input v-model="invite.displayName" class="field-input" required />
         </label>
         <label>
-          <span class="field-label">Permiso</span>
+          <span class="field-label">{{ $t('Permiso') }}</span>
           <ChoiceField v-model="invite.role" class="field-input" :options="roleChoices" :freetext="false" />
         </label>
         <button class="btn-primary" :disabled="sending">
-          <Mail :size="15" /> {{ sending ? 'Enviando…' : 'Enviar invitación' }}
+          <Mail :size="15" /> {{ sending ? $t('Enviando…') : $t('Enviar invitación') }}
         </button>
         <p class="hint w-full">
-          Llega un correo desde jmithominii@gmail.com con un enlace para que la persona elija su usuario y contraseña. El enlace
-          vale 7 días.
+          {{
+            $t(
+              'Llega un correo desde {from} con un enlace para que la persona elija su usuario y contraseña. El enlace vale 7 días.',
+              { from: 'jmithominii@gmail.com' },
+            )
+          }}
         </p>
       </form>
 
       <table v-if="invitations.length" class="mb-6 w-full max-w-4xl text-sm">
         <thead class="text-left text-xs text-stone-600">
           <tr>
-            <th class="py-2">Invitación</th>
-            <th>Permiso</th>
-            <th>Estado</th>
+            <th class="py-2">{{ $t('Invitación') }}</th>
+            <th>{{ $t('Permiso') }}</th>
+            <th>{{ $t('Estado') }}</th>
             <th></th>
           </tr>
         </thead>
@@ -162,26 +173,32 @@ async function resetPassword(user: User) {
             <td class="py-2">
               {{ i.displayName }} <span class="text-stone-500">&lt;{{ i.email }}&gt;</span>
             </td>
-            <td>{{ ROLES[i.role] ?? i.role }}</td>
+            <td>{{ ROLES[i.role] ? $t(ROLES[i.role]) : i.role }}</td>
             <td>
-              {{ STATUS[i.status] }}
+              {{ $t(STATUS[i.status]) }}
               <span class="hint">
-                <template v-if="i.status === 'pending'">· enviada {{ day(i.sentAt) }}, vence {{ day(i.expiresAt) }}</template>
+                <template v-if="i.status === 'pending'"
+                  >· {{ $t('enviada {sent}, vence {expires}', { sent: day(i.sentAt), expires: day(i.expiresAt) }) }}</template
+                >
                 <template v-else-if="i.status === 'used'">· {{ day(i.usedAt) }}</template>
               </span>
               <span v-if="i.sendError && i.status === 'pending'" class="block text-xs text-red-700">
-                Correo no enviado: {{ i.sendError }}
+                {{ $t('Correo no enviado: {error}', { error: i.sendError }) }}
               </span>
             </td>
             <td class="whitespace-nowrap text-right">
               <template v-if="i.status !== 'used'">
-                <button v-if="links[i.id]" class="btn-ghost" title="Copiar enlace" @click="copy(i.id)">
+                <button v-if="links[i.id]" class="btn-ghost" :title="$t('Copiar enlace')" @click="copy(i.id)">
                   <Copy :size="14" />
                 </button>
-                <button class="btn-ghost" title="Enviar de nuevo (el enlace anterior deja de funcionar)" @click="resend(i)">
+                <button
+                  class="btn-ghost"
+                  :title="$t('Enviar de nuevo (el enlace anterior deja de funcionar)')"
+                  @click="resend(i)"
+                >
                   <RefreshCw :size="14" />
                 </button>
-                <button v-if="i.status === 'pending'" class="btn-ghost" title="Anular" @click="revoke(i)">
+                <button v-if="i.status === 'pending'" class="btn-ghost" :title="$t('Anular')" @click="revoke(i)">
                   <X :size="14" />
                 </button>
               </template>
@@ -193,11 +210,11 @@ async function resetPassword(user: User) {
       <table class="w-full max-w-4xl text-sm">
         <thead class="text-left text-xs text-stone-600">
           <tr>
-            <th class="py-2">Usuario</th>
-            <th>Nombre</th>
-            <th>Correo</th>
-            <th>Permiso</th>
-            <th>Activa</th>
+            <th class="py-2">{{ $t('Usuario') }}</th>
+            <th>{{ $t('Nombre') }}</th>
+            <th>{{ $t('Correo') }}</th>
+            <th>{{ $t('Permiso') }}</th>
+            <th>{{ $t('Activa') }}</th>
             <th></th>
           </tr>
         </thead>
@@ -216,27 +233,31 @@ async function resetPassword(user: User) {
               />
             </td>
             <td><input type="checkbox" :checked="u.active" @change="update(u, { active: !u.active })" /></td>
-            <td><button class="text-xs underline" @click="resetPassword(u)">Cambiar contraseña</button></td>
+            <td>
+              <button class="text-xs underline" @click="resetPassword(u)">{{ $t('Cambiar contraseña') }}</button>
+            </td>
           </tr>
         </tbody>
       </table>
 
       <details class="mt-6 max-w-4xl">
-        <summary class="cursor-pointer text-sm text-stone-600">Crear una cuenta sin correo (con contraseña inicial)</summary>
+        <summary class="cursor-pointer text-sm text-stone-600">
+          {{ $t('Crear una cuenta sin correo (con contraseña inicial)') }}
+        </summary>
         <form
           class="mt-2 flex flex-wrap items-end gap-3 rounded-lg border border-stone-200 bg-white p-4"
           @submit.prevent="create"
         >
           <label>
-            <span class="field-label">Usuario</span>
+            <span class="field-label">{{ $t('Usuario') }}</span>
             <input v-model="form.username" class="field-input" autocomplete="off" autocapitalize="none" required />
           </label>
           <label>
-            <span class="field-label">Nombre visible</span>
+            <span class="field-label">{{ $t('Nombre visible') }}</span>
             <input v-model="form.displayName" class="field-input" />
           </label>
           <label>
-            <span class="field-label">Contraseña inicial</span>
+            <span class="field-label">{{ $t('Contraseña inicial') }}</span>
             <input
               v-model="form.password"
               class="field-input"
@@ -248,10 +269,10 @@ async function resetPassword(user: User) {
             />
           </label>
           <label>
-            <span class="field-label">Permiso</span>
+            <span class="field-label">{{ $t('Permiso') }}</span>
             <ChoiceField v-model="form.role" class="field-input" :options="roleChoices" :freetext="false" />
           </label>
-          <button class="btn"><UserPlus :size="15" /> Crear cuenta</button>
+          <button class="btn"><UserPlus :size="15" /> {{ $t('Crear cuenta') }}</button>
         </form>
       </details>
     </template>

@@ -12,6 +12,7 @@ import { errorText, notify } from '../lib/notice'
 import type { HistoryGroup, UndoPreview, UndoPreviewItem } from '../lib/types'
 import { useSession } from '../stores/session'
 import { useTables } from '../stores/tables'
+import { t, tn } from '../lib/i18n'
 
 /**
  * Historial: one card per save (a person's saves with one purpose, close in
@@ -28,7 +29,7 @@ const blank = { text: '', user: '', purpose: '', sheet: '', from: '', to: '' }
 const filters = reactive({ ...blank })
 const filtered = computed(() => Object.values(filters).some(Boolean))
 const showFilters = ref(false)
-const purposeChoices = Object.entries(PURPOSES).map(([value, p]) => ({ value, label: p.label }))
+const purposeChoices = computed(() => Object.entries(PURPOSES).map(([value, p]) => ({ value, label: t(p.label) })))
 const sheetChoices = computed(() => session.modules.map(m => ({ value: m.id, label: m.id })))
 
 const groups = ref<HistoryGroup[]>([])
@@ -42,7 +43,8 @@ const highlighted = ref('')
 
 function params(extra: Record<string, string | number> = {}) {
   const p = new URLSearchParams()
-  for (const [key, value] of Object.entries({ ...filters, ...extra })) if (value !== '' && value !== undefined) p.set(key, String(value))
+  for (const [key, value] of Object.entries({ ...filters, ...extra }))
+    if (value !== '' && value !== undefined) p.set(key, String(value))
   return p
 }
 /** Loads the first page again (down to `until`, a linked save), or the next page. */
@@ -123,9 +125,13 @@ watch(
 )
 
 // --- Undo: always a preview first, then one confirmation.
-const undoing = ref<null | { title: string; body: Record<string, string[]>; preview: UndoPreview; requestId: string; groupId: string }>(
-  null,
-)
+const undoing = ref<null | {
+  title: string
+  body: Record<string, string[]>
+  preview: UndoPreview
+  requestId: string
+  groupId: string
+}>(null)
 const reason = ref('')
 const busy = ref(false)
 const closeOnEscape = (e: KeyboardEvent) => e.key === 'Escape' && !busy.value && (undoing.value = null)
@@ -152,7 +158,7 @@ async function confirmUndo() {
     })
     const sheets = new Set(result.action?.changes.map(c => c.sheet) || [])
     await Promise.all([...sheets].filter(s => tables.tables[s]).map(s => tables.load(s, true)))
-    notify('Cambios deshechos en Google Sheets', 'success')
+    notify(t('Cambios deshechos en Google Sheets'), 'success')
     undoing.value = null
     // The card stays in view with its changes marked as undone; the undo is a new card on top.
     details.clear()
@@ -166,6 +172,7 @@ async function confirmUndo() {
   }
 }
 
+/** Why a change cannot be undone (Spanish, the keys of lib/i18n.ts: shown through t()). */
 const CONFLICT: Record<string, string> = {
   later_field_edit: 'se cambió otra vez después',
   missing_record: 'la fila ya no existe',
@@ -175,14 +182,14 @@ const fieldOf = (sheet: string | null | undefined, key: string) =>
   sheet ? session.module(sheet)?.fields.find(f => f.key === key) : undefined
 const empty = (value: UndoPreviewItem['before']) => value === null || value === undefined || value === ''
 function show(item: UndoPreviewItem, value: UndoPreviewItem['before']) {
-  if (value && typeof value === 'object') return `fórmula ${value.formula}`
-  return displayValue(value, fieldOf(item.sheet, item.field)) || 'vacío'
+  if (value && typeof value === 'object') return t('fórmula {formula}', { formula: value.formula })
+  return displayValue(value, fieldOf(item.sheet, item.field)) || t('vacío')
 }
 
 async function recover() {
   try {
     const result = await api<{ recovered: number; failed: number }>('admin/recover', { method: 'POST', body: {} })
-    notify(`${result.recovered} confirmadas, ${result.failed} marcadas como no guardadas`)
+    notify(t('{recovered} confirmadas, {failed} marcadas como no guardadas', result))
     await load()
   } catch (e) {
     notify(errorText(e), 'error')
@@ -194,56 +201,77 @@ async function recover() {
   <div class="flex h-full flex-col">
     <form class="toolbar gap-2 py-2 sm:gap-3" @submit.prevent="load()">
       <label class="min-w-40 flex-1">
-        <span class="field-label">Buscar (ID, campo, valor o nota)</span>
+        <span class="field-label">{{ $t('Buscar (ID, campo, valor o nota)') }}</span>
         <span class="relative block">
           <Search :size="14" class="absolute top-2.5 left-2 text-stone-400" />
-          <input v-model="filters.text" class="field-input pl-7" type="search" placeholder="p. ej. A0D, CAM079891, Death_date" />
+          <input
+            v-model="filters.text"
+            class="field-input pl-7"
+            type="search"
+            :placeholder="$t('p. ej. A0D, CAM079891, Death_date')"
+          />
         </span>
       </label>
-      <button type="button" class="btn sm:hidden" :class="{ 'bg-stone-800 text-white': filtered }" @click="showFilters = !showFilters">
-        <SlidersHorizontal :size="15" /> Filtros
+      <button
+        type="button"
+        class="btn sm:hidden"
+        :class="{ 'bg-stone-800 text-white': filtered }"
+        @click="showFilters = !showFilters"
+      >
+        <SlidersHorizontal :size="15" /> {{ $t('Filtros') }}
       </button>
-      <div class="w-full flex-wrap items-end gap-2 sm:flex sm:w-auto sm:gap-3" :class="showFilters ? 'grid grid-cols-2' : 'hidden'">
+      <div
+        class="w-full flex-wrap items-end gap-2 sm:flex sm:w-auto sm:gap-3"
+        :class="showFilters ? 'grid grid-cols-2' : 'hidden'"
+      >
         <label>
-          <span class="field-label">Persona</span>
-          <input v-model="filters.user" class="field-input sm:w-32" placeholder="Todas" />
+          <span class="field-label">{{ $t('Persona') }}</span>
+          <input v-model="filters.user" class="field-input sm:w-32" :placeholder="$t('Todas')" />
         </label>
         <label>
-          <span class="field-label">Para qué</span>
+          <span class="field-label">{{ $t('Para qué') }}</span>
           <ChoiceField
             v-model="filters.purpose"
             class="field-input sm:w-40"
             :options="purposeChoices"
             :freetext="false"
             allow-empty
-            placeholder="Todo"
+            :placeholder="$t('Todo')"
           />
         </label>
         <label>
-          <span class="field-label">Hoja</span>
+          <span class="field-label">{{ $t('Hoja') }}</span>
           <ChoiceField
             v-model="filters.sheet"
             class="field-input sm:w-44"
             :options="sheetChoices"
             :freetext="false"
             allow-empty
-            placeholder="Todas"
+            :placeholder="$t('Todas')"
           />
         </label>
         <label>
-          <span class="field-label">Desde</span>
+          <span class="field-label">{{ $t('Desde') }}</span>
           <DateField v-model="filters.from" class="field-input sm:w-40" />
         </label>
         <label>
-          <span class="field-label">Hasta</span>
+          <span class="field-label">{{ $t('Hasta') }}</span>
           <DateField v-model="filters.to" class="field-input sm:w-40" />
         </label>
       </div>
-      <button v-if="filtered" type="button" class="btn" title="Quitar los filtros" @click="clearFilters"><X :size="15" /> Quitar</button>
-      <button class="btn-ghost" type="submit" :disabled="loading" title="Actualizar">
+      <button v-if="filtered" type="button" class="btn" :title="$t('Quitar los filtros')" @click="clearFilters">
+        <X :size="15" /> {{ $t('Quitar') }}
+      </button>
+      <button class="btn-ghost" type="submit" :disabled="loading" :title="$t('Actualizar')">
         <RefreshCw :size="15" :class="{ 'animate-spin': loading }" />
       </button>
-      <button v-if="session.isAdmin" type="button" class="btn-ghost" title="Volver a comprobar escrituras sin confirmar" @click="recover">
+      <button
+        v-if="session.isAdmin"
+        type="button"
+        class="btn-ghost"
+        :title="$t('Volver a comprobar escrituras sin confirmar')"
+        @click="recover"
+      >
         <ListChecks :size="15" />
       </button>
     </form>
@@ -251,7 +279,7 @@ async function recover() {
     <div class="min-h-0 flex-1 overflow-y-auto bg-stone-50">
       <div class="mx-auto max-w-4xl space-y-2 p-2 sm:p-3">
         <template v-if="pinned">
-          <p class="hint px-1">Guardado enlazado (más antiguo que la lista):</p>
+          <p class="hint px-1">{{ $t('Guardado enlazado (más antiguo que la lista):') }}</p>
           <HistoryCard
             :group="pinned"
             :detail="details.get(pinned.id) ?? null"
@@ -261,12 +289,12 @@ async function recover() {
             @toggle="toggle(pinned)"
             @undo="(body, title) => review(pinned!, body, title)"
           />
-          <p class="hint px-1 pt-2">Últimos guardados:</p>
+          <p class="hint px-1 pt-2">{{ $t('Últimos guardados:') }}</p>
         </template>
         <p v-if="!groups.length && !loading" class="p-6 text-sm text-stone-500">
-          {{ filtered ? 'No hay guardados con estos filtros.' : 'Todavía no hay guardados.' }}
+          {{ filtered ? $t('No hay guardados con estos filtros.') : $t('Todavía no hay guardados.') }}
         </p>
-        <p v-if="!groups.length && loading" class="p-6 text-sm text-stone-500">Cargando…</p>
+        <p v-if="!groups.length && loading" class="p-6 text-sm text-stone-500">{{ $t('Cargando…') }}</p>
         <HistoryCard
           v-for="group in groups"
           :key="group.id"
@@ -280,17 +308,21 @@ async function recover() {
           @undo="(body, title) => review(group, body, title)"
         />
         <div v-if="next !== null" class="p-3 text-center">
-          <button class="btn" :disabled="loading" @click="load({ more: true })">Cargar más</button>
+          <button class="btn" :disabled="loading" @click="load({ more: true })">{{ $t('Cargar más') }}</button>
         </div>
       </div>
     </div>
 
-    <div v-if="undoing" class="fixed inset-0 z-40 grid place-items-center bg-black/40 p-2" @click.self="!busy && (undoing = null)">
+    <div
+      v-if="undoing"
+      class="fixed inset-0 z-40 grid place-items-center bg-black/40 p-2"
+      @click.self="!busy && (undoing = null)"
+    >
       <section class="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-lg bg-white shadow-xl">
         <header class="flex items-start gap-2 border-b border-stone-200 px-4 py-3">
           <div class="min-w-0 flex-1">
             <h2 class="text-lg font-semibold">
-              Deshacer {{ undoing.preview.changes.length }} {{ undoing.preview.changes.length === 1 ? 'cambio' : 'cambios' }}
+              {{ $tn(undoing.preview.changes.length, 'Deshacer {n} cambio', 'Deshacer {n} cambios') }}
             </h2>
             <p class="hint break-words">{{ undoing.title }}</p>
           </div>
@@ -299,18 +331,23 @@ async function recover() {
         <div class="flex-1 overflow-y-auto px-4 py-3 text-sm">
           <div v-if="undoing.preview.conflicts.length" class="mb-3 rounded bg-red-50 px-3 py-2 text-red-800">
             <p class="font-medium">
-              {{ undoing.preview.conflicts.length }}
-              {{ undoing.preview.conflicts.length === 1 ? 'cambio no se puede deshacer' : 'cambios no se pueden deshacer' }};
-              no se escribe nada. Deshaz primero lo que se cambió después, elige otros cambios o corrígelo a mano.
+              {{
+                $tn(
+                  undoing.preview.conflicts.length,
+                  '{n} cambio no se puede deshacer; no se escribe nada. Deshaz primero lo que se cambió después, elige otros cambios o corrígelo a mano.',
+                  '{n} cambios no se pueden deshacer; no se escribe nada. Deshaz primero lo que se cambió después, elige otros cambios o corrígelo a mano.',
+                )
+              }}
             </p>
             <ul class="mt-1 space-y-0.5">
               <li v-for="c in undoing.preview.conflicts" :key="c.recordId + c.field">
-                <strong>{{ c.label || c.recordId }}</strong> · {{ c.field }}: {{ CONFLICT[c.reason || ''] || c.reason }}
-                (ahora {{ show(c, c.before) }})
+                <strong>{{ c.label || c.recordId }}</strong> · {{ c.field }}:
+                {{ CONFLICT[c.reason || ''] ? $t(CONFLICT[c.reason || '']) : c.reason }}
+                {{ $t('(ahora {value})', { value: show(c, c.before) }) }}
               </li>
             </ul>
           </div>
-          <p class="hint mb-1">Cada celda vuelve al valor que tenía antes del guardado:</p>
+          <p class="hint mb-1">{{ $t('Cada celda vuelve al valor que tenía antes del guardado:') }}</p>
           <ul class="divide-y divide-stone-100">
             <li v-for="c in undoing.preview.changes" :key="c.recordId + c.field" class="py-1 sm:flex sm:items-start sm:gap-2">
               <span class="block shrink-0 sm:w-56">
@@ -318,25 +355,33 @@ async function recover() {
                 <span class="ml-1.5 font-mono text-xs text-stone-600">{{ c.field }}</span>
               </span>
               <span class="flex min-w-0 flex-wrap items-center gap-1">
-                <span class="break-all" :class="empty(c.before) ? 'italic text-stone-400' : 'rounded bg-red-50 px-1 text-red-800 line-through decoration-red-300'">{{
-                  show(c, c.before)
-                }}</span>
+                <span
+                  class="break-all"
+                  :class="
+                    empty(c.before)
+                      ? 'italic text-stone-400'
+                      : 'rounded bg-red-50 px-1 text-red-800 line-through decoration-red-300'
+                  "
+                  >{{ show(c, c.before) }}</span
+                >
                 <ArrowRight :size="12" class="shrink-0 text-stone-400" />
-                <span class="break-all" :class="empty(c.after) ? 'italic text-stone-400' : 'rounded bg-emerald-50 px-1 font-medium text-emerald-900'">{{
-                  show(c, c.after)
-                }}</span>
+                <span
+                  class="break-all"
+                  :class="empty(c.after) ? 'italic text-stone-400' : 'rounded bg-emerald-50 px-1 font-medium text-emerald-900'"
+                  >{{ show(c, c.after) }}</span
+                >
               </span>
             </li>
           </ul>
         </div>
         <footer class="flex flex-wrap items-end gap-2 border-t border-stone-200 px-4 py-3">
           <label class="min-w-48 flex-1">
-            <span class="field-label">Motivo (opcional)</span>
-            <input v-model="reason" class="field-input" placeholder="p. ej. mariposas guardadas dos veces" />
+            <span class="field-label">{{ $t('Motivo (opcional)') }}</span>
+            <input v-model="reason" class="field-input" :placeholder="$t('p. ej. mariposas guardadas dos veces')" />
           </label>
-          <button class="btn" :disabled="busy" @click="undoing = null">Cancelar</button>
+          <button class="btn" :disabled="busy" @click="undoing = null">{{ $t('Cancelar') }}</button>
           <button class="btn-primary" :disabled="busy || !undoing.preview.eligible" @click="confirmUndo">
-            <Undo2 :size="15" /> {{ busy ? 'Deshaciendo…' : 'Deshacer en la hoja' }}
+            <Undo2 :size="15" /> {{ busy ? $t('Deshaciendo…') : $t('Deshacer en la hoja') }}
           </button>
         </footer>
       </section>

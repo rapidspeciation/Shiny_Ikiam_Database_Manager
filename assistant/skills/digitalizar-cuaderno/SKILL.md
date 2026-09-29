@@ -32,7 +32,7 @@ is written until the person applies it.
    photographed together are one call (`kind: "labels"`, one line per label).
    Do not look the rows up yourself first: the tool does it (and better: it also
    tries look-alike IDs and the order of the rows).
-4. **Tell the person in 3–6 short lines, in Spanish**: which notebook and rows
+4. **Tell the person in 3–6 short lines, in their language (Spanish or English)**: which notebook and rows
    (e.g. "Posturas, clutches 120–134"), how many cells to fill, the differences
    with the sheet (sheet → notebook), the doubtful readings with their
    alternatives, and the lines not found in the sheet. End with: the proposal is

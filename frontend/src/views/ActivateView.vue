@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { api, setCsrf } from '../lib/api'
 import { errorText } from '../lib/notice'
 import { useSession } from '../stores/session'
+import { t } from '../lib/i18n'
 
 /** Opened from the invitation email: the person chooses a username and password. */
 const route = useRoute()
@@ -33,7 +34,7 @@ onMounted(async () => {
 
 async function submit() {
   problem.value = ''
-  if (form.password !== form.repeat) return void (problem.value = 'Las contraseñas no coinciden.')
+  if (form.password !== form.repeat) return void (problem.value = t('Las contraseñas no coinciden.'))
   busy.value = true
   try {
     const out = await api<{ csrf: string }>('invitations/accept', {
@@ -57,19 +58,24 @@ async function submit() {
       <h1 class="text-lg font-semibold">Ithomiini database</h1>
       <template v-if="invitation?.status === 'pending'">
         <p class="text-sm text-stone-600">
-          Hola {{ invitation.displayName }}. Elige cómo entrarás a la app ({{ invitation.email }}).
+          {{
+            $t('Hola {name}. Elige cómo entrarás a la app ({email}).', {
+              name: invitation.displayName,
+              email: invitation.email,
+            })
+          }}
         </p>
         <label class="block">
-          <span class="field-label">Usuario</span>
+          <span class="field-label">{{ $t('Usuario') }}</span>
           <input v-model="form.username" class="field-input w-full" autocomplete="username" autocapitalize="none" required />
-          <span class="hint">3 a 64 letras, números, puntos, guiones.</span>
+          <span class="hint">{{ $t('3 a 64 letras, números, puntos, guiones.') }}</span>
         </label>
         <label class="block">
-          <span class="field-label">Nombre</span>
+          <span class="field-label">{{ $t('Nombre') }}</span>
           <input v-model="form.displayName" class="field-input w-full" autocomplete="name" required />
         </label>
         <label class="block">
-          <span class="field-label">Contraseña</span>
+          <span class="field-label">{{ $t('Contraseña') }}</span>
           <input
             v-model="form.password"
             class="field-input w-full"
@@ -79,19 +85,22 @@ async function submit() {
             maxlength="16"
             required
           />
-          <span class="hint">6 a 16 caracteres.</span>
+          <span class="hint">{{ $t('6 a 16 caracteres.') }}</span>
         </label>
         <label class="block">
-          <span class="field-label">Repite la contraseña</span>
+          <span class="field-label">{{ $t('Repite la contraseña') }}</span>
           <input v-model="form.repeat" class="field-input w-full" type="password" autocomplete="new-password" required />
         </label>
-        <button class="btn-primary w-full justify-center" :disabled="busy">{{ busy ? 'Creando…' : 'Crear mi cuenta' }}</button>
+        <button class="btn-primary w-full justify-center" :disabled="busy">
+          {{ busy ? $t('Creando…') : $t('Crear mi cuenta') }}
+        </button>
       </template>
       <p v-else-if="invitation?.status === 'used'" class="text-sm text-stone-700">
-        Esta invitación ya se usó. <RouterLink to="/tablas" class="underline">Inicia sesión</RouterLink> con tu usuario.
+        {{ $t('Esta invitación ya se usó.') }}
+        <RouterLink to="/tablas" class="underline">{{ $t('Inicia sesión con tu usuario.') }}</RouterLink>
       </p>
       <p v-else-if="invitation" class="text-sm text-stone-700">
-        Esta invitación venció. Pide a un administrador que te envíe una nueva.
+        {{ $t('Esta invitación venció. Pide a un administrador que te envíe una nueva.') }}
       </p>
       <p v-if="problem" class="text-sm text-red-700">{{ problem }}</p>
     </form>

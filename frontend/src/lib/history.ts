@@ -1,8 +1,10 @@
 import type { HistoryChange } from './types'
+import { t } from './i18n'
 
 /**
  * The purposes of saves (server/history.mjs PURPOSES): the tab or flow a save
  * came from, with the label and colours of its card in the Historial.
+ * Labels are in Spanish (the keys of lib/i18n.ts): shown through t().
  */
 export const PURPOSES: Record<string, { label: string; tone: string }> = {
   colecta: { label: 'Colecta', tone: 'bg-emerald-100 text-emerald-800' },
@@ -98,7 +100,14 @@ export function rowsOf(changes: HistoryChange[]): RowChanges[] {
   for (const c of changes) {
     let row = rows.get(c.recordId)
     if (!row) {
-      row = { recordId: c.recordId, label: c.label || `${c.sheet} fila ${c.row}`, sheet: c.sheet, row: c.row, isNew: false, changes: [] }
+      row = {
+        recordId: c.recordId,
+        label: c.label || t('{sheet} fila {row}', { sheet: c.sheet, row: c.row }),
+        sheet: c.sheet,
+        row: c.row,
+        isNew: false,
+        changes: [],
+      }
       rows.set(c.recordId, row)
     }
     row.isNew ||= !!c.isNew

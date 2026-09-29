@@ -18,6 +18,7 @@ import {
   type Issue,
   type Verdict,
 } from '../../lib/review'
+import { intlLocale, t } from '../../lib/i18n'
 
 /**
  * One inconsistency: the problem, the rows side by side (differing cells in
@@ -60,8 +61,15 @@ const openPhoto = (id: string) =>
     ),
   )
 const relatedList = computed(() => photoList(i.value.relatedPhotos))
-const acceptLabel = computed(() => (i.value.fix ? 'Aceptar arreglo' : i.value.task ? 'Aceptar tarea' : 'Es un problema'))
+const acceptLabel = computed(() => (i.value.fix ? t('Aceptar arreglo') : i.value.task ? t('Aceptar tarea') : t('Es un problema')))
 const done = computed(() => i.value.verdict?.verdict === 'applied' || i.value.resolved)
+/** The reading's strength (a code of the server) in words (Spanish, the keys of lib/i18n.ts). */
+const STRENGTH_WORD: Record<string, string> = {
+  fuerte: 'lectura fuerte',
+  media: 'lectura media',
+  baja: 'lectura baja',
+  dudosa: 'lectura dudosa',
+}
 const strengthClass: Record<string, string> = {
   fuerte: 'bg-emerald-100 text-emerald-900',
   media: 'bg-amber-100 text-amber-900',
@@ -76,10 +84,10 @@ const verdictClass: Record<string, string> = {
   pending: 'bg-stone-100 text-stone-600',
 }
 const when = (at: string) =>
-  new Date(at).toLocaleString('es-EC', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+  new Date(at).toLocaleString(intlLocale(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
 
 function send(verdict: string) {
-  if (verdict === 'other' && !otherValue.value.trim()) return notify('Escribe el valor correcto', 'error')
+  if (verdict === 'other' && !otherValue.value.trim()) return notify(t('Escribe el valor correcto'), 'error')
   emit('verdict', i.value, verdict, verdict === 'other' ? otherValue.value.trim() : undefined, comment.value.trim() || undefined)
   comment.value = ''
   other.value = false
@@ -97,23 +105,23 @@ async function toggleHistory() {
 <template>
   <article class="rounded-lg border border-stone-200 bg-white p-2.5 shadow-sm">
     <header class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
-      <span class="rounded bg-stone-800 px-1.5 py-0.5 text-xs font-medium text-white">{{ kindLabel }}</span>
+      <span class="rounded bg-stone-800 px-1.5 py-0.5 text-xs font-medium text-white">{{ $t(kindLabel) }}</span>
       <span
         v-if="i.strength"
         class="rounded px-1.5 py-0.5 text-xs font-medium"
         :class="strengthClass[i.strength]"
-        :title="STRENGTH_HINT[i.strength]"
+        :title="$t(STRENGTH_HINT[i.strength])"
       >
-        lectura {{ i.strength }}
+        {{ STRENGTH_WORD[i.strength] ? $t(STRENGTH_WORD[i.strength]) : `lectura ${i.strength}` }}
       </span>
       <strong class="text-sm font-semibold">{{ i.cam || i.label }}</strong>
       <button
         v-if="i.row && !i.resolved"
         class="text-brand-700 hover:underline"
-        title="Abrir la fila en Tablas"
+        :title="$t('Abrir la fila en Tablas')"
         @click="emit('open', i.sheet, i.label)"
       >
-        {{ i.sheet }} fila {{ i.row }}
+        {{ $t('{sheet} fila {row}', { sheet: i.sheet, row: i.row }) }}
       </button>
       <span v-else class="text-stone-500">{{ i.sheet }}</span>
       <span v-if="i.date" class="text-xs text-stone-500">{{ i.date }}</span>
@@ -124,7 +132,7 @@ async function toggleHistory() {
         :class="verdictClass[i.verdict.verdict]"
         :title="i.verdict.comment ?? undefined"
       >
-        {{ VERDICT_WORD[i.verdict.verdict] }}{{ i.verdict.verdict === 'other' ? `: ${i.verdict.value}` : '' }} ·
+        {{ $t(VERDICT_WORD[i.verdict.verdict]) }}{{ i.verdict.verdict === 'other' ? `: ${i.verdict.value}` : '' }} ·
         {{ i.verdict.user }}
       </span>
     </header>
@@ -132,12 +140,15 @@ async function toggleHistory() {
 
     <div class="mt-2 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
       <!-- Photos: first on phones, full width; beside the details on a computer. -->
-      <div v-if="envelope || photos.length || relatedList.length" class="flex flex-wrap items-start gap-2 lg:order-last lg:flex-nowrap">
+      <div
+        v-if="envelope || photos.length || relatedList.length"
+        class="flex flex-wrap items-start gap-2 lg:order-last lg:flex-nowrap"
+      >
         <figure v-if="envelope" class="shrink-0">
-          <button class="block w-full cursor-zoom-in" title="Ver la foto completa" @click="openPhoto(envelope.fileId)">
+          <button class="block w-full cursor-zoom-in" :title="$t('Ver la foto completa')" @click="openPhoto(envelope.fileId)">
             <CropImage
               :src="photoUrl(envelope.fileId, 1600)"
-              :alt="`Sobre en ${envelope.name}`"
+              :alt="$t('Sobre en {name}', { name: envelope.name })"
               :box="envelope.bbox"
               :aspect="envelope.aspect"
               :turned="(envelope.turned + (flipped ? 180 : 0)) % 360"
@@ -145,26 +156,32 @@ async function toggleHistory() {
             />
           </button>
           <figcaption class="mt-0.5 flex items-center gap-2 text-[11px] text-stone-500">
-            Sobre · {{ envelope.name }}
+            {{ $t('Sobre') }} · {{ envelope.name }}
             <button
               class="ml-auto inline-flex items-center gap-1 text-brand-700 hover:underline"
-              title="Girar el recorte 180°"
+              :title="$t('Girar el recorte 180°')"
               @click="flipped = !flipped"
             >
-              <RotateCw :size="12" /> girar
+              <RotateCw :size="12" /> {{ $t('girar') }}
             </button>
           </figcaption>
         </figure>
         <div v-if="photos.length" class="grid grid-cols-2 gap-1.5">
           <figure v-for="p in photos" :key="p.id">
-            <button class="block w-full cursor-zoom-in" :title="`${p.name}: ver completa`" @click="openPhoto(p.id)">
+            <button
+              class="block w-full cursor-zoom-in"
+              :title="$t('{name}: ver completa', { name: p.name })"
+              @click="openPhoto(p.id)"
+            >
               <CropImage :src="photoUrl(p.id)" :alt="p.name" :box="p.wings" class="h-24 w-auto!" />
             </button>
             <figcaption class="max-w-[9rem] truncate text-[11px] text-stone-500">{{ p.name }}</figcaption>
           </figure>
         </div>
         <div v-if="relatedList.length" class="rounded border border-dashed border-stone-300 p-1.5">
-          <p class="mb-1 text-xs text-stone-600">Fotos de {{ i.relatedPhotos?.cam }}, para comparar</p>
+          <p class="mb-1 text-xs text-stone-600">
+            {{ $t('Fotos de {cam}, para comparar', { cam: i.relatedPhotos?.cam }) }}
+          </p>
           <div class="flex flex-wrap gap-1.5">
             <button
               v-for="(p, n) in relatedList"
@@ -185,7 +202,7 @@ async function toggleHistory() {
           <table class="w-full border-collapse text-xs">
             <thead class="bg-stone-50 text-left text-stone-600">
               <tr>
-                <th class="border-b border-stone-200 px-1.5 py-1 font-medium">Fila</th>
+                <th class="border-b border-stone-200 px-1.5 py-1 font-medium">{{ $t('Fila') }}</th>
                 <th
                   v-for="f in i.table.fields"
                   :key="f"
@@ -221,24 +238,26 @@ async function toggleHistory() {
           class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 rounded bg-stone-50 p-2 text-xs"
         >
           <template v-if="i.ocr">
-            <dt class="text-stone-500">Sobre dice</dt>
+            <dt class="text-stone-500">{{ $t('Sobre dice') }}</dt>
             <dd class="font-medium text-sky-900">{{ i.ocr.read }}</dd>
-            <dt class="text-stone-500">Hoja dice</dt>
+            <dt class="text-stone-500">{{ $t('Hoja dice') }}</dt>
             <dd class="font-medium text-red-900">{{ i.ocr.sheet }}</dd>
           </template>
           <template v-if="i.envelopeCamid">
-            <dt class="text-stone-500">CAM leído</dt>
+            <dt class="text-stone-500">{{ $t('CAM leído') }}</dt>
             <dd :class="i.envelopeCamid !== i.cam ? 'font-medium text-red-900' : ''">
               {{ i.envelopeCamid
-              }}<span v-if="i.cam && i.envelopeCamid !== i.cam" class="text-stone-500"> (archivo {{ i.cam }})</span>
+              }}<span v-if="i.cam && i.envelopeCamid !== i.cam" class="text-stone-500">
+                {{ $t('(archivo {cam})', { cam: i.cam }) }}</span
+              >
             </dd>
           </template>
           <template v-if="i.envelopeText">
-            <dt class="text-stone-500">Texto del sobre</dt>
+            <dt class="text-stone-500">{{ $t('Texto del sobre') }}</dt>
             <dd class="break-words text-stone-700">{{ i.envelopeText }}</dd>
           </template>
           <template v-if="i.curation?.decision || i.curation?.decidedBy">
-            <dt class="text-stone-500">Curaduría</dt>
+            <dt class="text-stone-500">{{ $t('Curaduría') }}</dt>
             <dd class="text-stone-700">
               {{ [i.curation.decision, i.curation.note, i.curation.decidedBy].filter(Boolean).join(' · ') }}
             </dd>
@@ -254,10 +273,10 @@ async function toggleHistory() {
           class="rounded border border-stone-200 p-2 text-xs"
         >
           <p class="mb-1 flex items-center gap-2 font-medium text-stone-700">
-            IA de la galería (fotos)
-            <span v-if="i.ai" class="rounded bg-amber-100 px-1.5 py-0.5 text-amber-900"
-              >distinta de la hoja: {{ i.ai.recorded }}</span
-            >
+            {{ $t('IA de la galería (fotos)') }}
+            <span v-if="i.ai" class="rounded bg-amber-100 px-1.5 py-0.5 text-amber-900">{{
+              $t('distinta de la hoja: {value}', { value: i.ai.recorded })
+            }}</span>
           </p>
           <div v-for="[name, conf] in i.prediction.species" :key="name" class="flex items-center gap-2">
             <span class="w-44 truncate">{{ name }}</span>
@@ -267,16 +286,19 @@ async function toggleHistory() {
             <span class="w-10 text-right tabular-nums text-stone-600">{{ percent(conf) }}</span>
           </div>
           <p v-if="i.prediction.sex" class="mt-1 text-stone-600">
-            Sexo: {{ i.prediction.sex.sex === 'male' ? 'macho' : 'hembra' }} · {{ percent(i.prediction.sex.confidence) }}
-            {{ i.prediction.sex.supported ? '· respaldado' : '· incierto' }}
+            {{ $t('Sexo:') }} {{ i.prediction.sex.sex === 'male' ? $t('macho') : $t('hembra') }} ·
+            {{ percent(i.prediction.sex.confidence) }}
+            {{ i.prediction.sex.supported ? $t('· respaldado') : $t('· incierto') }}
           </p>
         </div>
 
         <p v-if="fixText(i)" class="rounded bg-emerald-50 px-2 py-1.5 text-sm text-emerald-900">
-          <span class="font-medium">{{ i.task ? 'Tarea (en Drive, no en la hoja)' : 'Arreglo propuesto' }}:</span>
+          <span class="font-medium">{{ i.task ? $t('Tarea (en Drive, no en la hoja)') : $t('Arreglo propuesto') }}:</span>
           {{ fixText(i) }}
         </p>
-        <p v-else-if="!done" class="text-xs text-stone-500">Sin arreglo obvio: si hace falta, da el valor con «Otro valor».</p>
+        <p v-else-if="!done" class="text-xs text-stone-500">
+          {{ $t('Sin arreglo obvio: si hace falta, da el valor con «Otro valor».') }}
+        </p>
 
         <!-- A batch (e.g. one day's envelopes with the same species): judged together after looking. -->
         <div
@@ -284,37 +306,38 @@ async function toggleHistory() {
           class="flex flex-wrap items-center gap-2 rounded bg-stone-50 px-2 py-1.5 text-xs"
         >
           <Layers :size="14" class="text-stone-500" />
-          <span>Lote «{{ i.group.label }}»: {{ i.group.size }}</span>
-          <button class="text-brand-700 hover:underline" @click="emit('group', i.group.key)">ver solo el lote</button>
+          <span>{{ $t('Lote «{label}»: {n}', { label: i.group.label, n: i.group.size }) }}</span>
+          <button class="text-brand-700 hover:underline" @click="emit('group', i.group.key)">{{ $t('ver solo el lote') }}</button>
           <template v-if="canEdit">
             <button class="btn px-2 py-0.5 text-xs" :disabled="busy" @click="emit('batch', i, 'accepted')">
-              Aceptar los {{ i.group.size }}
+              {{ $t('Aceptar los {n}', { n: i.group.size }) }}
             </button>
             <button class="btn px-2 py-0.5 text-xs" :disabled="busy" @click="emit('batch', i, 'rejected')">
-              Rechazar los {{ i.group.size }}
+              {{ $t('Rechazar los {n}', { n: i.group.size }) }}
             </button>
           </template>
         </div>
 
         <p v-if="i.verdict" class="text-xs text-stone-600">
-          {{ VERDICT_WORD[i.verdict.verdict] }}{{ i.verdict.verdict === 'other' ? ` (${i.verdict.value})` : '' }} por
-          <strong>{{ i.verdict.user }}</strong> · {{ when(i.verdict.at) }}{{ i.verdict.comment ? ` — ${i.verdict.comment}` : '' }}
+          {{ $t(VERDICT_WORD[i.verdict.verdict]) }}{{ i.verdict.verdict === 'other' ? ` (${i.verdict.value})` : '' }}
+          {{ $t('por') }} <strong>{{ i.verdict.user }}</strong> · {{ when(i.verdict.at)
+          }}{{ i.verdict.comment ? ` — ${i.verdict.comment}` : '' }}
           <button class="ml-1 inline-flex items-center gap-0.5 text-brand-700 hover:underline" @click="toggleHistory">
-            <History :size="12" /> historial
+            <History :size="12" /> {{ $t('historial') }}
           </button>
         </p>
         <ul v-if="history" class="space-y-0.5 border-l-2 border-stone-200 pl-2 text-xs text-stone-600">
           <li v-for="(h, n) in history" :key="n">
-            {{ when(h.at) }} · {{ h.user }}: {{ VERDICT_WORD[h.verdict] }}{{ h.value ? ` (${h.value})` : ''
+            {{ when(h.at) }} · {{ h.user }}: {{ $t(VERDICT_WORD[h.verdict]) }}{{ h.value ? ` (${h.value})` : ''
             }}{{ h.comment ? ` — ${h.comment}` : '' }}
           </li>
         </ul>
 
         <div v-if="canEdit && !done" class="flex flex-wrap items-center gap-2">
           <button class="btn-primary" :disabled="busy" @click="send('accepted')"><Check :size="15" /> {{ acceptLabel }}</button>
-          <button class="btn" :disabled="busy" @click="send('rejected')"><X :size="15" /> Rechazar</button>
+          <button class="btn" :disabled="busy" @click="send('rejected')"><X :size="15" /> {{ $t('Rechazar') }}</button>
           <button class="btn" :class="{ 'bg-stone-100': other }" :disabled="busy" @click="other = !other">
-            <PenLine :size="15" /> Otro valor
+            <PenLine :size="15" /> {{ $t('Otro valor') }}
           </button>
           <button
             v-if="i.task && i.verdict && i.verdict.verdict !== 'rejected'"
@@ -322,24 +345,29 @@ async function toggleHistory() {
             :disabled="busy"
             @click="send('applied')"
           >
-            Marcar hecho
+            {{ $t('Marcar hecho') }}
           </button>
-          <button v-if="i.verdict" class="btn-ghost" title="Volver a pendiente" :disabled="busy" @click="send('pending')">
+          <button v-if="i.verdict" class="btn-ghost" :title="$t('Volver a pendiente')" :disabled="busy" @click="send('pending')">
             <Undo2 :size="15" />
           </button>
           <input
             v-model="comment"
             class="field-input min-w-40 flex-1 py-1 text-xs"
-            placeholder="Comentario (opcional)"
+            :placeholder="$t('Comentario (opcional)')"
             maxlength="500"
           />
         </div>
         <div v-if="other && canEdit" class="flex flex-wrap items-end gap-2 rounded bg-sky-50 p-2">
           <label class="min-w-48 flex-1">
-            <span class="field-label">{{ otherField(i) }} correcto</span>
-            <ChoiceField v-model="otherValue" class="field-input" :options="i.choices ?? []" placeholder="Escribe el valor" />
+            <span class="field-label">{{ $t('{field} correcto', { field: otherField(i) }) }}</span>
+            <ChoiceField
+              v-model="otherValue"
+              class="field-input"
+              :options="i.choices ?? []"
+              :placeholder="$t('Escribe el valor')"
+            />
           </label>
-          <button class="btn-primary" :disabled="busy" @click="send('other')">Guardar</button>
+          <button class="btn-primary" :disabled="busy" @click="send('other')">{{ $t('Guardar') }}</button>
         </div>
       </div>
     </div>

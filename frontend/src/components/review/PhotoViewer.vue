@@ -39,11 +39,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         target="_blank"
         rel="noopener"
         class="ml-2 inline-flex items-center gap-1 text-stone-300 hover:text-white"
-        title="Abrir en Google Drive"
+        :title="$t('Abrir en Google Drive')"
       >
         Drive <ExternalLink :size="13" />
       </a>
-      <button class="ml-auto rounded p-1.5 hover:bg-white/10" title="Cerrar (Esc)" @click="emit('close')">
+      <button class="ml-auto rounded p-1.5 hover:bg-white/10" :title="$t('Cerrar (Esc)')" @click="emit('close')">
         <X :size="20" />
       </button>
     </div>
@@ -58,14 +58,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <template v-if="photos.length > 1">
         <button
           class="absolute top-1/2 left-2 -translate-y-1/2 rounded-full bg-black/50 p-2 hover:bg-black/70"
-          title="Anterior (←)"
+          :title="$t('Anterior (←)')"
           @click="move(-1)"
         >
           <ChevronLeft :size="26" />
         </button>
         <button
           class="absolute top-1/2 right-2 -translate-y-1/2 rounded-full bg-black/50 p-2 hover:bg-black/70"
-          title="Siguiente (→)"
+          :title="$t('Siguiente (→)')"
           @click="move(1)"
         >
           <ChevronRight :size="26" />

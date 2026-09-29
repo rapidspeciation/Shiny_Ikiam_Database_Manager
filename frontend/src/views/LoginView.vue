@@ -51,23 +51,23 @@ async function submit() {
         <img src="/mark.svg" alt="" class="h-8 w-8" />
         <div>
           <h1 class="text-lg font-semibold">Ikiam Insectary DB</h1>
-          <p class="text-sm text-stone-500">{{ setupMode ? 'Crear la cuenta de administrador' : 'Iniciar sesión' }}</p>
+          <p class="text-sm text-stone-500">{{ setupMode ? $t('Crear la cuenta de administrador') : $t('Iniciar sesión') }}</p>
         </div>
       </div>
       <label v-if="setupMode" class="mb-3 block">
-        <span class="field-label">Código de configuración</span>
+        <span class="field-label">{{ $t('Código de configuración') }}</span>
         <input v-model="token" class="field-input" type="text" autocomplete="off" spellcheck="false" required />
       </label>
       <label class="mb-3 block">
-        <span class="field-label">Usuario</span>
+        <span class="field-label">{{ $t('Usuario') }}</span>
         <input v-model="username" class="field-input" name="username" autocomplete="username" autocapitalize="none" required />
       </label>
       <label v-if="setupMode" class="mb-3 block">
-        <span class="field-label">Nombre visible</span>
+        <span class="field-label">{{ $t('Nombre visible') }}</span>
         <input v-model="displayName" class="field-input" autocomplete="name" />
       </label>
       <label class="mb-4 block">
-        <span class="field-label">Contraseña</span>
+        <span class="field-label">{{ $t('Contraseña') }}</span>
         <input
           v-model="password"
           class="field-input"
@@ -78,14 +78,14 @@ async function submit() {
           maxlength="16"
           required
         />
-        <span v-if="setupMode" class="hint">De 6 a 16 caracteres.</span>
+        <span v-if="setupMode" class="hint">{{ $t('De 6 a 16 caracteres.') }}</span>
       </label>
       <p v-if="error" class="mb-3 rounded bg-red-50 px-3 py-2 text-sm text-red-800">{{ error }}</p>
       <button class="btn-primary w-full py-2" :disabled="busy">
-        {{ busy ? 'Un momento…' : setupMode ? 'Crear cuenta' : 'Entrar' }}
+        {{ busy ? $t('Un momento…') : setupMode ? $t('Crear cuenta') : $t('Entrar') }}
       </button>
       <RouterLink v-if="!setupMode" to="/inicio" class="mt-4 block text-center text-sm text-stone-600 underline">
-        Ver los resúmenes del proyecto sin cuenta
+        {{ $t('Ver los resúmenes del proyecto sin cuenta') }}
       </RouterLink>
     </form>
   </div>

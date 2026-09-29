@@ -6,6 +6,7 @@ import ProposalGrid, { type Proposal } from '../ProposalGrid.vue'
 import { api, requestId } from '../../lib/api'
 import { errorText, notify } from '../../lib/notice'
 import { useTables } from '../../stores/tables'
+import { intlLocale, tn } from '../../lib/i18n'
 
 /**
  * The assistant's proposed edits beside the T3 chat (at the right or below
@@ -41,7 +42,11 @@ const open = (p: Proposal) => p.status === 'pending' || p.status === 'applying'
 const mine = computed(() => (props.only ? proposals.value.filter(p => p.id === props.only) : proposals.value))
 const pending = computed(() => mine.value.filter(open))
 const reviewed = computed(() => mine.value.filter(p => !open(p)).slice(0, 5))
-watch(() => pending.value.length, n => emit('count', n), { immediate: true })
+watch(
+  () => pending.value.length,
+  n => emit('count', n),
+  { immediate: true },
+)
 const pageLink = computed(() => router.resolve(props.only ? `/propuestas/${props.only}` : '/propuestas').href)
 
 function receive(next: Proposal[], first: boolean) {
@@ -110,7 +115,7 @@ async function apply(proposal: Proposal, indexes: number[], at: number | undefin
     proposal.status = out.status
     proposal.applied = out.applied
     await Promise.all(Object.keys(tables.tables).map(sheet => tables.load(sheet, true)))
-    notify(`${out.applied.length} ${out.applied.length === 1 ? 'fila aplicada' : 'filas aplicadas'} en Google Sheets`, 'success')
+    notify(tn(out.applied.length, '{n} fila aplicada en Google Sheets', '{n} filas aplicadas en Google Sheets'), 'success')
   } catch (e) {
     // Changed meanwhile by the assistant: still pending, to look at again.
     if ((e as { code?: string }).code !== 'proposal_changed') proposal.status = 'needs_review'
@@ -128,7 +133,7 @@ async function discard(proposal: Proposal) {
   }
 }
 const origin = (p: Proposal) =>
-  [p.source, p.createdAt ? new Date(p.createdAt).toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' }) : '']
+  [p.source, p.createdAt ? new Date(p.createdAt).toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' }) : '']
     .filter(Boolean)
     .join(' · ')
 </script>
@@ -137,22 +142,26 @@ const origin = (p: Proposal) =>
   <aside class="flex min-h-0 flex-col bg-stone-50">
     <header class="flex items-center gap-1.5 border-b border-stone-200 bg-white px-3 py-1.5">
       <ListChecks :size="15" class="text-emerald-700" />
-      <h2 class="text-sm font-medium">Cambios propuestos</h2>
-      <span class="text-xs text-stone-500">{{ pending.length ? `${pending.length} por revisar` : 'nada por revisar' }}</span>
+      <h2 class="text-sm font-medium">{{ $t('Cambios propuestos') }}</h2>
+      <span class="text-xs text-stone-500">{{
+        pending.length ? $t('{n} por revisar', { n: pending.length }) : $t('nada por revisar')
+      }}</span>
       <span
         class="ml-auto flex items-center gap-1 text-[11px]"
         :class="connected ? 'text-emerald-700' : 'text-stone-400'"
-        :title="connected ? 'Se actualiza en cuanto el asistente propone o corrige algo' : 'Sin conexión; se vuelve a intentar'"
+        :title="
+          connected ? $t('Se actualiza en cuanto el asistente propone o corrige algo') : $t('Sin conexión; se vuelve a intentar')
+        "
       >
-        <span class="h-1.5 w-1.5 rounded-full" :class="connected ? 'bg-emerald-600' : 'bg-stone-400'" /> en vivo
+        <span class="h-1.5 w-1.5 rounded-full" :class="connected ? 'bg-emerald-600' : 'bg-stone-400'" /> {{ $t('en vivo') }}
       </span>
       <template v-if="layout !== 'page'">
         <span class="mx-1 hidden h-4 w-px bg-stone-200 md:block" />
         <button
           class="btn-ghost hidden md:inline-flex"
           :class="{ 'bg-stone-100 text-emerald-800': layout === 'right' && !full }"
-          title="A la derecha del chat"
-          aria-label="Panel a la derecha"
+          :title="$t('A la derecha del chat')"
+          :aria-label="$t('Panel a la derecha')"
           @click="emit('layout', 'right')"
         >
           <PanelRight :size="15" />
@@ -160,13 +169,13 @@ const origin = (p: Proposal) =>
         <button
           class="btn-ghost hidden md:inline-flex"
           :class="{ 'bg-stone-100 text-emerald-800': layout === 'bottom' && !full }"
-          title="Debajo del chat"
-          aria-label="Panel debajo"
+          :title="$t('Debajo del chat')"
+          :aria-label="$t('Panel debajo')"
           @click="emit('layout', 'bottom')"
         >
           <PanelBottom :size="15" />
         </button>
-        <button class="btn-ghost" :title="full ? 'Volver a ver el chat' : 'Pantalla completa'" @click="emit('full')">
+        <button class="btn-ghost" :title="full ? $t('Volver a ver el chat') : $t('Pantalla completa')" @click="emit('full')">
           <Minimize2 v-if="full" :size="15" /><Maximize2 v-else :size="15" />
         </button>
         <a
@@ -174,21 +183,23 @@ const origin = (p: Proposal) =>
           :href="pageLink"
           target="_blank"
           rel="noopener"
-          title="Abrir en otra pestaña (p. ej. en otra pantalla, con el chat en esta)"
-          aria-label="Abrir en otra pestaña"
+          :title="$t('Abrir en otra pestaña (p. ej. en otra pantalla, con el chat en esta)')"
+          :aria-label="$t('Abrir en otra pestaña')"
         >
           <ExternalLink :size="15" />
         </a>
-        <button class="btn-ghost" title="Ocultar los cambios propuestos" @click="emit('close')"><X :size="15" /></button>
+        <button class="btn-ghost" :title="$t('Ocultar los cambios propuestos')" @click="emit('close')"><X :size="15" /></button>
       </template>
     </header>
     <div class="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
       <p v-if="!pending.length" class="py-4 text-sm text-stone-500">
-        <template v-if="only && !mine.length">Esta propuesta ya no está en la lista.</template>
+        <template v-if="only && !mine.length">{{ $t('Esta propuesta ya no está en la lista.') }}</template>
         <template v-else>
-          Cuando el asistente proponga cambios en la hoja aparecerán aquí al momento, con las celdas cambiadas en verde. Puedes
-          corregirlas en la tabla como en Colecta o pedírselo al asistente (la tabla cambia en vivo); luego pulsa Aplicar, o
-          dile «sí, aplícalo» en el chat.
+          {{
+            $t(
+              'Cuando el asistente proponga cambios en la hoja aparecerán aquí al momento, con las celdas cambiadas en verde. Puedes corregirlas en la tabla como en Colecta o pedírselo al asistente (la tabla cambia en vivo); luego pulsa Aplicar, o dile «sí, aplícalo» en el chat.',
+            )
+          }}
         </template>
       </p>
       <div
@@ -207,7 +218,9 @@ const origin = (p: Proposal) =>
         />
       </div>
       <details v-if="reviewed.length" class="mt-3" @toggle="showReviewed = ($event.target as HTMLDetailsElement).open">
-        <summary class="cursor-pointer text-xs text-stone-600">Revisados hace poco ({{ reviewed.length }})</summary>
+        <summary class="cursor-pointer text-xs text-stone-600">
+          {{ $t('Revisados hace poco ({n})', { n: reviewed.length }) }}
+        </summary>
         <!-- Their tables are only built when opened. -->
         <div v-for="p in showReviewed ? reviewed : []" :key="p.id">
           <p class="mt-2 px-1 text-[11px] text-stone-500">{{ origin(p) }}</p>

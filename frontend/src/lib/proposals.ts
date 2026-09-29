@@ -1,4 +1,5 @@
 import type { CellValue } from './types'
+import { tn } from './i18n'
 
 /**
  * The assistant's proposed changes as the Asistente tab shows them: a live
@@ -157,7 +158,7 @@ export function chosenIndexes(p: Pick<Proposal, 'changes'>, unticked: Set<string
 
 /** "la IA cambió 3 celdas" */
 export function changedText(n: number) {
-  return `La IA cambió ${n} ${n === 1 ? 'celda' : 'celdas'}`
+  return tn(n, 'La IA cambió {n} celda', 'La IA cambió {n} celdas')
 }
 
 /** The panel's share of the screen while dragging its divider: kept between 20 % and 80 %. */
