@@ -1,13 +1,15 @@
 import { readFileSync } from 'node:fs';
-import { SANDBOX_ID, moduleMap, asCell, entered } from './schema.mjs';
+import { moduleMap, asCell, entered } from './schema.mjs';
+import { REAL_ID, checkWorkbookId } from './workbook.mjs';
 import { columnLetter, headerLayout } from './columns.mjs';
 
 const api = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 export class GoogleSheets {
   constructor(config = {}) {
-    this.spreadsheetId = config.spreadsheetId || SANDBOX_ID;
-    if (this.spreadsheetId !== SANDBOX_ID) throw new Error('Only the personal sandbox workbook is permitted');
+    this.spreadsheetId = checkWorkbookId(config.spreadsheetId || REAL_ID);
+    // A read-only adapter (scripts/switch-workbook.mjs) refuses every request that is not a GET.
+    this.readOnly = config.readOnly === true;
     const file = config.googleCredentialsFile || process.env.GOOGLE_CREDENTIALS_FILE;
     if (!file) throw new Error('GOOGLE_CREDENTIALS_FILE is required for live mode');
     this.credentials = JSON.parse(readFileSync(file, 'utf8'));
@@ -40,6 +42,7 @@ export class GoogleSheets {
   async request(path, options = {}) {
     const { background = false, ...fetchOptions } = options;
     const method = fetchOptions.method || 'GET';
+    if (this.readOnly && method !== 'GET') throw new Error('This Google Sheets connection is read-only');
     for (let attempt = 0; attempt < (method === 'GET' ? 5 : 1); attempt++) {
       if (method === 'GET') await this.readSlot(background);
       const response = await fetch(`${api}/${this.spreadsheetId}${path}`, {
@@ -236,10 +239,10 @@ export class GoogleSheets {
  * credential may not edit, as Google reports them.
  */
 export class LocalSheets {
-  constructor(seed = {}, { evaluate, protectedRanges } = {}) {
+  constructor(seed = {}, { evaluate, protectedRanges, spreadsheetId = REAL_ID } = {}) {
     this.rows = new Map();
     this.gridRows = new Map();
-    this.spreadsheetId = SANDBOX_ID;
+    this.spreadsheetId = spreadsheetId;
     this.evaluate = evaluate || defaultEvaluate;
     this.protectedRanges = protectedRanges || {};
     for (const [sheet, rows] of Object.entries(seed)) {

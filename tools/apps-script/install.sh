@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
-# Installs or updates SheetEditHook.gs in the test workbook with gogcli.
+# Installs or updates SheetEditHook.gs in the workbook (WORKBOOK_ID, the team's by default) with gogcli.
+# It adds a script bound to that workbook (Extensions → Apps Script): agree it with the team first.
 # Needs a gog login with the appscript service, and the Apps Script API turned on
 # for that account (https://script.google.com/home/usersettings).
 # After the first install, open the script and run `setup` once to create the triggers.
 set -euo pipefail
 cd "$(dirname "$0")"
-WORKBOOK=19FXrunwWKK1pbyHqWNPcytmaDmyBQoK7yabzIdRQQYM # test copy only
+WORKBOOK=${WORKBOOK_ID:-1QZj6YgHAJ9NmFXFPCtu-i-1NDuDmAdMF2Wogts7S2_4}
 ACCOUNT=${GOG_ACCOUNT:-franz.chandi@gmail.com}
 CLIENT=${GOG_CLIENT:-claudeclaw}
-ID_FILE=~/.config/ithomiini/apps-script-id
+# One script per workbook (the old apps-script-id file belongs to the test copy's script).
+ID_FILE=~/.config/ithomiini/apps-script-id.$WORKBOOK
 gog() { command gog --account "$ACCOUNT" --client "$CLIENT" --no-input "$@"; }
 
 secret=$(ssh claudeclaw 'grep "^SHEET_HOOK_SECRET=" ~/.config/ithomiini/service.env | cut -d= -f2-')

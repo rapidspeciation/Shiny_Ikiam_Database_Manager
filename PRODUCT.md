@@ -24,7 +24,7 @@ The source workbook has 49 sheets with historical ID formats, duplicate marks, p
 
 ## Capabilities and constraints
 
-The full scope is docs/feature-catalog.md. The accepted write/history behavior is docs/edit-history.md. Initial app writes target only personal sandbox spreadsheet 19FXrunwWKK1pbyHqWNPcytmaDmyBQoK7yabzIdRQQYM. The production workbook is never a write target. Keep credentials and private data outside Git and separate from Tiputini. Support offline drafts, source-linked records, formula-preserving writes, explicit uncertainty, history and selective reversal.
+The full scope is docs/feature-catalog.md. The accepted write/history behavior is docs/edit-history.md. App writes go to the team's working workbook (WORKBOOK_ID); the personal test copy 19FXrunwWKK1pbyHqWNPcytmaDmyBQoK7yabzIdRQQYM was the target until September 2026. Keep credentials and private data outside Git and separate from Tiputini. Support offline drafts, source-linked records, formula-preserving writes, explicit uncertainty, history and selective reversal.
 
 ## Evidence on hand
 

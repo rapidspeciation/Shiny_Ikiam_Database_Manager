@@ -8,6 +8,7 @@ import { headerLayout, sameLayout } from './columns.mjs';
 import { applyBatch } from './batch.mjs';
 import { initMonitoring } from './monitoring.mjs';
 import { initHistory } from './history.mjs';
+import { SANDBOX_ID } from './workbook.mjs';
 
 const json = value => JSON.stringify(value);
 const parse = value => (value ? JSON.parse(value) : null);
@@ -15,7 +16,7 @@ const now = () => new Date().toISOString();
 const error = (code, message, status = 400, details) => Object.assign(new Error(message), { code, status, details });
 
 export class Store {
-  constructor(config = {}, { sheets, seed } = {}) {
+  constructor(config = {}, { sheets, seed, switching = false } = {}) {
     this.config = config;
     const dbPath = config.databasePath || ':memory:';
     if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true });
@@ -52,6 +53,8 @@ export class Store {
     initMonitoring(this.db);
     this.sheets = sheets || (config.localMode ? new LocalSheets(seed || {}) : new GoogleSheets(config));
     this.localMode = this.sheets instanceof LocalSheets;
+    // scripts/switch-workbook.mjs opens the database while it still caches the other workbook.
+    if (!switching) this.checkWorkbook();
     this.queue = Promise.resolve();
     this.syncPromise = null;
     this.writeEpoch = new Map();
@@ -68,6 +71,30 @@ export class Store {
   }
   close() {
     this.db.close();
+  }
+  /** The workbook this database caches (settings.workbookId). */
+  cachedWorkbook() {
+    const stored = this.getSetting('workbookId');
+    if (stored) return stored;
+    // Databases from before the setting existed cached the test copy, the only workbook allowed then.
+    if (this.localMode) return null;
+    return this.db.prepare('SELECT 1 FROM records LIMIT 1').get() ? SANDBOX_ID : null;
+  }
+  /**
+   * Refuses to open a database that caches another workbook: syncing it would
+   * log every difference between the two workbooks as an edit in Google Sheets
+   * and keep row ids of the other one. scripts/switch-workbook.mjs moves it.
+   */
+  checkWorkbook() {
+    const id = this.sheets.spreadsheetId;
+    const cached = this.cachedWorkbook();
+    if (cached && cached !== id)
+      throw error(
+        'WORKBOOK_MISMATCH',
+        `The database caches workbook ${cached}, not ${id}: run scripts/switch-workbook.mjs first`,
+        500,
+      );
+    if (!this.getSetting('workbookId')) this.setSetting('workbookId', id);
   }
   getSetting(key) {
     return this.db.prepare('SELECT value FROM settings WHERE key=?').get(key)?.value || null;
@@ -393,9 +420,14 @@ export class Store {
     this.headerProblems.set(sheet, layout.problems);
     return layout;
   }
-  async sync({ sheets = modules.map(m => m.id), force = false } = {}) {
+  /**
+   * Reads sheets and updates the local copy. `history: false` (the workbook
+   * switch only) updates the rows without logging the differences as edits
+   * made in Google Sheets; the result then counts them in `cells`.
+   */
+  async sync({ sheets = modules.map(m => m.id), force = false, history = true } = {}) {
     if (this.syncPromise) return this.syncPromise;
-    const run = this.performSync({ sheets, force });
+    const run = this.performSync({ sheets, force, history });
     this.syncPromise = run;
     try {
       return await run;
@@ -403,7 +435,7 @@ export class Store {
       this.syncPromise = null;
     }
   }
-  async performSync({ sheets, force }) {
+  async performSync({ sheets, force, history = true }) {
     const full = sheets.length === modules.length;
     const revision = full && this.sheets.revision ? await this.sheets.revision() : null;
     if (full && !force && revision && revision === this.getSetting('sourceRevision') && this.syncStatus.lastSync) {
@@ -415,9 +447,12 @@ export class Store {
       changed = 0,
       moved = 0,
       missing = 0,
-      skipped = 0;
+      skipped = 0,
+      cells = 0;
+    const bySheet = {};
     try {
       for (const sheet of sheets) {
+        const before = { added, changed, moved, missing, cells };
         const mod = moduleMap.get(sheet);
         if (!mod) throw error('MODULE_NOT_FOUND', 'Unknown module', 404);
         if (this.inflight.get(sheet)) {
@@ -533,7 +568,8 @@ export class Store {
                   record.version++;
                   record.updatedAt = now();
                   changed++;
-                  this.recordExternalChanges(record, diffs);
+                  cells += diffs.length;
+                  if (history) this.recordExternalChanges(record, diffs);
                 }
               } else added++;
               // A moved row may currently be occupied by a different old record. Shift that old mapping aside first.
@@ -559,6 +595,8 @@ export class Store {
             throw e;
           }
         });
+        const counts = { added, changed, moved, missing, cells };
+        bySheet[sheet] = Object.fromEntries(Object.entries(counts).map(([k, v]) => [k, v - before[k]]));
       }
       this.syncStatus = {
         ...this.syncStatus,
@@ -570,6 +608,8 @@ export class Store {
         moved,
         missing,
         skipped,
+        cells,
+        bySheet,
         headerProblems: Object.fromEntries([...this.headerProblems].filter(([, problems]) => problems.length)),
       };
       if (!skipped) {

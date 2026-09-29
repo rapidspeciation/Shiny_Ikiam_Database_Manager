@@ -1,8 +1,10 @@
 #!/usr/bin/env node
-// Opt-in verification against the personal TEST copy. Never logs credentials.
+// Opt-in verification of the deployed app. Never logs credentials.
+// LIVE_WRITE_TEST=1 writes (and undoes) a note in a Collection_data row: only against a test workbook.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
+import { REAL_ID } from '../server/workbook.mjs';
 
 const base = process.env.LIVE_SMOKE_URL?.replace(/\/$/, '');
 if (!base || !process.env.TEST_ACCOUNT_FILE) throw new Error('LIVE_SMOKE_URL and TEST_ACCOUNT_FILE are required');
@@ -28,12 +30,13 @@ async function call(path, method = 'GET', body) {
 const initial = await call('/api/auth/session');
 await call(initial.setupRequired ? '/api/auth/setup' : '/api/auth/login', 'POST', account);
 const boot = await call('/api/bootstrap');
-assert.equal(boot.settings.sandbox, true);
-assert.match(boot.settings.sheetUrl, /19FXrunwWKK1pbyHqWNPcytmaDmyBQoK7yabzIdRQQYM/);
+assert.match(boot.settings.sheetUrl, /^https:\/\/docs\.google\.com\/spreadsheets\/d\//);
 console.log(
   `Authenticated; ${boot.modules.length} modules; ${boot.stats.totalRecords} indexed records; sync=${boot.sync.state}`,
 );
 const stats = { modules: boot.modules.length, records: boot.stats.totalRecords, sync: boot.sync.state };
+if (process.env.LIVE_WRITE_TEST === '1' && boot.settings.sheetUrl.includes(REAL_ID))
+  throw new Error("LIVE_WRITE_TEST writes into a row: the app now uses the team's real workbook");
 if (process.env.LIVE_WRITE_TEST === '1') {
   const { records } = await call('/api/records?module=Collection_data&observedOnly=true&limit=10');
   const record = records.find(r => !r.formulas.Notes_Collection_data && r.values.SPECIES);

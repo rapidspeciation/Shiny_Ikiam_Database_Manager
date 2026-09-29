@@ -43,7 +43,8 @@ import { checkData } from './checks.mjs';
 import { reviewPage, setVerdicts, trainingLabels, verdictHistory } from './review.mjs';
 import { createPhotoService, photoCacheDir } from './photos.mjs';
 import { listOptions } from './verify.mjs';
-import { SANDBOX_ID, moduleMap, validateValues } from './schema.mjs';
+import { moduleMap, validateValues } from './schema.mjs';
+import { REAL_ID, checkWorkbookId, workbookFromEnv, workbookUrl } from './workbook.mjs';
 import {
   setup,
   login,
@@ -141,6 +142,7 @@ const mime = {
 };
 
 export function configFromEnv(env = process.env) {
+  const workbook = workbookFromEnv(env);
   return {
     host: env.APP_HOST || '127.0.0.1',
     port: Number(env.APP_PORT || 8794),
@@ -151,7 +153,8 @@ export function configFromEnv(env = process.env) {
     localMode: env.LOCAL_MODE === '1',
     seedFile: env.SEED_FILE,
     secureCookies: env.SECURE_COOKIES !== '0',
-    spreadsheetId: SANDBOX_ID,
+    // The Google Sheets workbook (WORKBOOK_ID, the team's workbook by default).
+    spreadsheetId: workbook.id,
     syncIntervalMs: Number(env.SYNC_INTERVAL_MS || 300000),
     sheetHookSecret: env.SHEET_HOOK_SECRET,
     // The app's address for links the assistant gives (e.g. to a save in the Historial).
@@ -298,8 +301,7 @@ function csvEscape(value) {
 export async function createApp(config = {}, options = {}) {
   config = { ...configFromEnv({}), ...config };
   config.basePath = normalizeBase(config.basePath || '/ithomiini');
-  if (config.spreadsheetId && config.spreadsheetId !== SANDBOX_ID)
-    throw new Error('Only the personal sandbox workbook is permitted');
+  config.spreadsheetId = checkWorkbookId(config.spreadsheetId || REAL_ID);
   let seed = options.seed;
   if (!seed && config.localMode && config.seedFile) {
     seed = JSON.parse(readFileSync(config.seedFile, 'utf8'));
@@ -441,9 +443,7 @@ export async function createApp(config = {}, options = {}) {
           sync: store.syncStatus,
           settings: {
             language: 'es',
-            sandbox: true,
-            sandboxLabel: 'Copia personal de pruebas',
-            sheetUrl: `https://docs.google.com/spreadsheets/d/${SANDBOX_ID}/edit`,
+            sheetUrl: workbookUrl(store.sheets.spreadsheetId),
             basePath: config.basePath,
           },
         });
@@ -829,7 +829,7 @@ export async function createApp(config = {}, options = {}) {
           stats: store.getStats(),
           pending: store.db.prepare("SELECT count(*) n FROM actions WHERE status IN ('pending','uncertain')").get().n,
           databasePath: config.databasePath,
-          sandbox: true,
+          workbookId: store.sheets.spreadsheetId,
         });
       }
       if (path === '/api/admin/recover' && method === 'POST') {

@@ -27,6 +27,11 @@ export function createSheetHook(store, { secret, delayMs = 1500, log = console }
   function receive(headers, body) {
     if (!secret) throw fail('HOOK_DISABLED', 'Sheet hook is not configured', 404);
     if (!authorized(headers['x-hook-secret'])) throw fail('HOOK_FORBIDDEN', 'Invalid hook secret', 403);
+    // A script left in another workbook (the old test copy) must not make the app re-read rows of this one.
+    if (body.spreadsheetId && body.spreadsheetId !== store.sheets.spreadsheetId) {
+      status.ignored = (status.ignored || 0) + 1;
+      return { accepted: 0, ignored: 'other workbook' };
+    }
     const events = Array.isArray(body.events) ? body.events : [body];
     let accepted = 0;
     for (const event of events.slice(0, 50)) {
