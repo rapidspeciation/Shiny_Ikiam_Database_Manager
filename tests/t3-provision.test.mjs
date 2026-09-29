@@ -8,7 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 const script = new URL('../scripts/t3-provision.mjs', import.meta.url).pathname;
 
-test('T3 workspaces get the brief and the skill; a refresh after a release keeps each token', () => {
+test('T3 workspaces get the brief and the skills; a refresh after a release keeps each token', () => {
   const home = mkdtempSync(join(tmpdir(), 't3-provision-'));
   try {
     const shared = join(home, 'ithomiini', 'shared');
@@ -31,6 +31,10 @@ test('T3 workspaces get the brief and the skill; a refresh after a release keeps
     assert.match(brief, /## Photos of notebook pages/);
     assert.equal(readFileSync(join(workspace, 'AGENTS.md'), 'utf8'), brief);
     assert.match(readFileSync(join(workspace, '.claude', 'skills', 'digitalizar-cuaderno', 'SKILL.md'), 'utf8'), /name: digitalizar-cuaderno/);
+    // Every folder of assistant/skills is installed, with its reference files; the brief points to the app guide.
+    assert.match(readFileSync(join(workspace, '.claude', 'skills', 'app-guide', 'SKILL.md'), 'utf8'), /name: app-guide/);
+    assert.ok(existsSync(join(workspace, '.claude', 'skills', 'app-guide', 'reference', 'monitoreo.md')));
+    assert.match(brief, /app-guide/);
     const mcp = JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8')).mcpServers.ithomiini;
     // The service's base path is /: the endpoint is /api/ai/mcp.
     assert.equal(mcp.url, 'http://127.0.0.1:8794/api/ai/mcp');

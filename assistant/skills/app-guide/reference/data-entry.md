@@ -1,0 +1,174 @@
+# Data-entry tabs
+
+Base URL: `https://ithomiini-ikiam.duckdns.org/`. Editing needs the editor,
+reviewer or admin role. All tabs keep their pending edits in the save bar
+(see SKILL.md "Saving").
+
+## Grids, keys and dates (every tab with a table)
+
+The tables behave like Google Sheets:
+
+- Type over a selected cell to replace it; double click, Enter or F2 edits in
+  place; Enter/Tab save and move (Shift goes back). «Supr» (Delete) clears the
+  selection. Ctrl+D (or the «Rellenar» button in Tablas) copies the first
+  selected row down the selection.
+- Paste ranges from Excel/Sheets; one value pasted over several selected cells
+  fills them all.
+- **Fill handle**: the small square at the bottom-right of a selection; drag
+  it down to copy. In the Colecta list, `Insectary_ID`, `CAM_ID` and
+  `Tube_1_id` continue the series instead (O6D → O7D, CAM079895 → CAM079896);
+  elsewhere it copies.
+- Grey cells are formulas (read-only). A ▾ arrow marks a dropdown list: click
+  it to open the list. A value outside a non-strict list is saved but flagged
+  with a red corner ("se guarda igual; corrígelo si es un error").
+- Click the **row number** to open the whole row vertically (best on phones):
+  it has «Abrir en Google Sheets» (that exact row) and, in Insectary_data /
+  Collection_data, «Corregir Insectary ID (…)» (moves a butterfly's data to
+  the right pre-made row; «Ver cambios» first).
+- Column headers sort; the «filtrar» box under a header filters (Tablas).
+- **Counts as sums** in Insectary_stocks (`NUMBER OF EGGS`, `NUMBER OF LARVAE`,
+  `NUMBER OF PUPA`, `NUMBER OF ADULTS`): type `12+15`, `=12+15` or `27-5`; the
+  app writes the formula `=12+15`. No other formulas are accepted.
+- **Dates are day first.** Grid cells take `14/08/2025`, `14-8-25`, `140825`
+  or `14082025` (phone number pad), `14-Aug-25` / `14-ago-25`, or `2025-08-14`;
+  years 1990–2099 only. Dates show as `14-Aug-25`. The date boxes above the
+  grids (Colecta, Muertes, Tubos, Emergidos, Clutches, Historial, Revisión)
+  also take `hoy` and `ayer`, and show the weekday ("sábado 27-Sep-26 · ayer").
+- Phones: tap selects, double tap edits, drag the circle to stretch the
+  selection, and a bar at the bottom offers Copiar, Pegar, «Rellenar ↓», Borrar.
+
+## Tablas — `#/tablas`
+
+Any sheet of the workbook as a spreadsheet (the old app's "Buscador").
+
+- «Hoja»: choose the sheet (grouped: Insectario, Campo, Cruces, Experimentos,
+  Muestras, Fotos, Referencia; row counts in grey).
+- «Buscar en todas las columnas»: ID, CAM, tube, species…
+- «Filas vacías preasignadas»: also show the pre-made empty rows.
+- «Revisión de datos» → the Revisión tab filtered to this sheet.
+- «Añadir fila» (a new row at the top, marked «nueva»); «Crear filas
+  preasignadas» (reviewer/admin: asks how many, max 500; copies the last
+  pre-made row's formulas, dropdowns and, in Insectary_data, the next IDs).
+- «Rellenar» (= Ctrl+D), reload, download CSV, open the sheet in Google Sheets.
+- A banner warns when the sheet's header row changed in Google Sheets (a
+  missing/duplicate column blocks reading and saving that sheet).
+
+Links: `#/tablas?hoja=<sheet>&buscar=<text>`, e.g.
+`https://ithomiini-ikiam.duckdns.org/#/tablas?hoja=Insectary_data&buscar=N4D`.
+Sheet names are exact (`Insectary_data`, `Collection_data`,
+`Insectary_stocks`, `SamplingDay_data`, `Wing_tissue`, `Photo_links`,
+`Lists`, `Taxonomy_v18Jun25`, `CRISPR`, `Melinaea_crosses`, …; the full list
+is in the «Hoja» menu). Default sheet: Insectary_data.
+
+## Colecta — `#/colecta`
+
+A day of field collection entered in bulk → Collection_data; butterflies taken
+alive also get their Insectary_data row in the same save.
+
+1. Header (what the outing shares; on phones it folds into one line, tap ✎):
+   «Collection_date» (warns «¿Es hoy la fecha de la colecta?» when it is
+   today), «Collector», «Identifier», «Rainfall» (starts `DY_(dry)`),
+   «Cloud_cover» — they apply to rows added from now on.
+2. «Collection_location», «Filas a añadir», «SPECIES (opcional)» (the same for
+   all), «Release_Collect» (`Collected_Sent2Insectary`, `Collected_Preserved`,
+   `Released_Unmarked`) → «Añadir N filas». Change the place and add more for a
+   second site.
+3. Each row: SPECIES, Subspecies_Form, Sex (`female`, `male`, `female ?`,
+   `male ?`, `NOT_COLLECTED`), Release_Collect, Collection_time (hh:mm),
+   then per fate: **insectary** → the next free pre-made `Insectary_ID` (to
+   write on the wings, no CAM yet); **preserved** → the next `CAM_ID` (from
+   Lists' Wild_indv_CAMid pool) and `Tube_1_id`, and Preservation_medium
+   (`Flash frozen` by default); Purpose, notes, and per-row Collector,
+   Identifier, Rainfall, Cloud_cover.
+4. Boxes on the right: «Próximo CAM_ID» (warns when fewer than 50 are left),
+   «Próximo tubo», «Próximo Insectary ID».
+5. Views «Tabla» (spreadsheet, fill handle continues IDs) or «Formulario»
+   (tick rows, «hasta aquí» for a run, then fill SPECIES/Sex/Release_Collect
+   and «Aplicar»; «Quitar», «Desmarcar»; copy a row to apply it to others).
+6. «Quitar vacías», «Vaciar lista». The list is kept **in this browser** until
+   saved or emptied, even after closing the page.
+7. «Guardar colecta (N)» → a summary («Guardar N mariposas»: date, places,
+   ♀/♂ to the insectary, preserved CAM range and gaps, released, per species)
+   → «Guardar en la hoja». Problems (repeated IDs, missing place…) block it and
+   are listed next to the button.
+
+Below: the last Collection_data records («ver más»), editable.
+No link parameters.
+
+## Muertes — `#/muertes`
+
+Death date and cause of insectary butterflies (Insectary_data).
+
+1. «Insectary IDs»: type an exact ID + Enter, pick from the list, paste a
+   list (`N1D N2D, N3D`) or a range (`B0D-B9D`, pre-made order). Warns when an
+   ID already died ("B9 ya murió el …": probably a mistyped ID).
+2. «Fecha de muerte» (today by default; weekday shown).
+3. «Causa por defecto» (Death_cause list: Unknown, Eaten, Spider,
+   Disappearance, Killed_Preserved, Deformed, Heat stroke, Other…).
+4. «Sin preservar: CAM y tubos NA, medios NOT_COLLECTED» (on by default): for
+   causes other than Killed_Preserved and rows without CAM/tube, sets CAM,
+   tubes, tissues, Preservation_date, Location_body, Preserved_Dead_Alive to
+   `NA` and the media to `NOT_COLLECTED`.
+5. «Escribir fecha y causa (N)» fills only **empty** cells of the chosen rows;
+   check the rows shown under «IDs elegidos» and let it save.
+
+Below: «Últimas N muertes registradas» («ver más»). No link parameters.
+
+## Tubos — `#/tubos`
+
+CAM IDs and tubes for insectary butterflies (Insectary_data), and labels.
+
+1. «Insectary IDs» (as in Muertes; warns when a butterfly already has CAM and
+   tube or died more than 7 days ago) → «Cargar» (replace the table) or
+   «Añadir a la tabla». The tissue follows the rows: mostly dead →
+   `WHOLE_ORGANISM`; alive → WING CLIP.
+2. «CAM ID inicial» (suggested, with the date of its run), «Rack en uso
+   (siguiente tubo libre)» (racks grouped «Insectario y cruces» / «Colectas y
+   monitoreo»; the app picks one from the medium and whether the rows are
+   crosses until you choose) «o escribe el tubo».
+3. «Tejido por defecto», «Medio por defecto» (Flash frozen, Ethanol, DMSO…).
+   Wing clips: «Fecha del corte de ala» (required) and «Iniciales (nota)»: the
+   note `d/m/yy INI: Wing clip d/m/yy` is appended to Notes_Insectary_data.
+   Whole body: «Preservation_date» (required; also sets Death_date,
+   Death_cause Killed_Preserved if empty, Preserved_Dead_Alive, Location_body
+   Ikiam) and «Si el tejido es WHOLE_ORGANISM: tubos siguientes NA…».
+4. «Asignar IDs»: consecutive CAMs to rows without one and the next tube into
+   each row's first empty tube slot. If the start is already used it stops and
+   offers «Usar el siguiente libre: …».
+5. «Imprimir etiquetas»: Code128 labels (tube, ID · CAM, tissue).
+   «Vaciar tabla» clears the loaded rows.
+
+No link parameters.
+
+## Emergidos — `#/emergidos`
+
+New adults of a clutch into the next free pre-made rows of Insectary_data.
+
+1. «CLUTCH NUMBER» (e.g. `994(6)`); the hint shows the clutch's species from
+   Insectary_stocks and its sibling subspecies.
+2. «Hembras», «Machos», «Sin sexo»; «Insectary ID inicial» (the next free
+   pre-made ID; an earlier empty row can be chosen, with a warning);
+   «Intro a insectario» (date).
+3. «Preparar N filas» (or «Añadir una»): new rows with ID, clutch, Sex,
+   Intro2Insectary_date, SPECIES = the clutch's prediction, Wild_Reared
+   `Reared`, Stock_of_origin (deceptus/messenoides/intermedia for Mechanitis
+   messenoides, else NA), Research_purpose `F1/F2 mutation rate` for hybrids.
+4. If another subspecies emerged, change SPECIES in that row (only then).
+   Write each ID on the wings.
+
+Below: the butterflies already recorded from that clutch and the latest rows.
+When few pre-made IDs are left a banner offers «Crear filas preasignadas»
+(reviewer/admin). No link parameters.
+
+## Clutches — `#/clutches`
+
+Clutches (eggs laid) and their follow-up in Insectary_stocks.
+
+1. «Clutch» (empty = the highest number + 1), «Especie», «Puesta» (date),
+   «Huevos», «Dónde» (Insectary / Laboratory) → «Nuevo clutch».
+2. Hatching and pupation: type HATCHING DATE, NUMBER OF LARVAE, PUPA DATE,
+   NUMBER OF PUPA in the clutch's row (counts as sums: `=12+15`).
+3. The grid shows clutches laid in the last 60 days not yet emerged; «ver los
+   últimos 150» shows more.
+
+Link: `#/clutches` (no parameters).

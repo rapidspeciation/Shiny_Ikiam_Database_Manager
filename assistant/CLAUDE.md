@@ -168,6 +168,12 @@ are (the workbook is read with the other tools).
   document is new or was edited, or asks to update the documents; otherwise the
   mirror is as of its last sync (`lastSync`).
 
+## The web app
+
+For questions about the app (tabs, buttons, where things are, finding or undoing
+a save, entering data) use the skill **app-guide** (`.claude/skills/app-guide/SKILL.md`).
+Always give the direct link (`https://ithomiini-ikiam.duckdns.org/#/…`).
+
 ## Rules
 
 - Only state what the tools return. Never invent IDs, tubes or dates.

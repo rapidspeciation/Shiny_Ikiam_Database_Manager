@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Sets up a person's project in T3 Code (stock install, nothing patched):
 // a folder with the Ithomiini brief for Claude/Codex (CLAUDE.md, AGENTS.md),
-// the skills (.claude/skills/digitalizar-cuaderno), the app's tools over MCP
+// the skills (every folder of assistant/skills: digitalizar-cuaderno, app-guide), the app's tools over MCP
 // with a personal token, and `t3 project add`. Run on the server:
 //   node scripts/t3-provision.mjs <username>     new person, or a fresh token
 //   node scripts/t3-provision.mjs --refresh-all  after a release (scripts/deploy.sh):
