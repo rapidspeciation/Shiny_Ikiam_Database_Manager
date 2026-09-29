@@ -655,7 +655,11 @@ export function watchSize(table: () => Tabulator | null, element: HTMLElement) {
   const redrawWhenIdle = () => {
     window.clearTimeout(timer)
     if (element.querySelector('.tabulator-editing')) timer = window.setTimeout(redrawWhenIdle, 300)
-    else table()?.redraw()
+    else {
+      // Only a grid that finished building: one being rebuilt (e.g. on EN/ES) threw on redraw.
+      const grid = table() as (Tabulator & { initialized?: boolean }) | null
+      if (grid?.initialized) grid.redraw()
+    }
   }
   const observer = new ResizeObserver(([entry]) => {
     const { width, height } = entry.contentRect
