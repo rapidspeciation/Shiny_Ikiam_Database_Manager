@@ -42,26 +42,28 @@ watch(() => session.user?.username, load)
       <UpcomingCard v-if="data?.team" :upcoming="data.team.upcoming" />
       <header class="space-y-3">
         <div class="flex flex-wrap items-end gap-x-4 gap-y-1">
-          <h1 class="min-w-0 flex-1 text-xl font-semibold">Mariposas Ithomiini · Ikiam</h1>
-          <p v-if="data" class="text-xs text-stone-500">Datos al {{ dateLabel(data.today) }}</p>
+          <h1 class="min-w-0 flex-1 text-xl font-semibold">{{ $t('Mariposas Ithomiini · Ikiam') }}</h1>
+          <p v-if="data" class="text-xs text-stone-500">{{ $t('Datos al {date}', { date: dateLabel(data.today) }) }}</p>
         </div>
         <p class="max-w-3xl text-sm text-stone-700">
-          Las Ithomiini son mariposas neotropicales, muchas de alas transparentes, que forman anillos de mimetismo: especies
-          distintas comparten los mismos colores de advertencia. Desde Ikiam (Tena, Ecuador) el proyecto las estudia en el campo,
-          en el insectario y en el laboratorio.
+          {{
+            $t(
+              'Las Ithomiini son mariposas neotropicales, muchas de alas transparentes, que forman anillos de mimetismo: especies distintas comparten los mismos colores de advertencia. Desde Ikiam (Tena, Ecuador) el proyecto las estudia en el campo, en el insectario y en el laboratorio.',
+            )
+          }}
         </p>
         <div v-if="data" class="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <div class="stat">
-            <p class="stat-label">Especies de Ithomiini registradas</p>
+            <p class="stat-label">{{ $t('Especies de Ithomiini registradas') }}</p>
             <p class="stat-value">{{ data.nature.facts.ithomiini }}</p>
-            <p class="stat-note">{{ data.nature.facts.species }} especies de mariposas en total</p>
+            <p class="stat-note">{{ $t('{n} especies de mariposas en total', { n: data.nature.facts.species }) }}</p>
           </div>
           <div class="stat">
-            <p class="stat-label">Lugares muestreados</p>
+            <p class="stat-label">{{ $t('Lugares muestreados') }}</p>
             <p class="stat-value">{{ data.nature.facts.places }}</p>
           </div>
           <div class="stat">
-            <p class="stat-label">Altitudes</p>
+            <p class="stat-label">{{ $t('Altitudes') }}</p>
             <p class="stat-value text-lg">
               {{
                 data.nature.facts.elevation
@@ -71,14 +73,14 @@ watch(() => session.user?.username, load)
             </p>
           </div>
           <div class="stat">
-            <p class="stat-label">Registros desde</p>
+            <p class="stat-label">{{ $t('Registros desde') }}</p>
             <p class="stat-value">{{ data.nature.facts.since ?? '—' }}</p>
           </div>
         </div>
       </header>
 
       <p v-if="problem" class="rounded bg-red-50 px-3 py-2 text-sm text-red-800">{{ problem }}</p>
-      <p v-else-if="!data" class="text-stone-500">Cargando resúmenes…</p>
+      <p v-else-if="!data" class="text-stone-500">{{ $t('Cargando resúmenes…') }}</p>
 
       <template v-if="data">
         <InsectarySummary v-if="data.team" :team="data.team" />
@@ -87,9 +89,10 @@ watch(() => session.user?.username, load)
         <p v-else class="flex items-center gap-2 rounded-md border border-stone-200 bg-white px-3 py-2 text-sm text-stone-600">
           <Lock :size="14" />
           <span
-            >El equipo ve además el estado del insectario, el monitoreo y los registros completos al
-            <RouterLink :to="{ path: '/entrar', query: { volver: '/inicio' } }" class="text-brand-700 underline"
-              >iniciar sesión</RouterLink
+            >{{ $t('El equipo ve además el estado del insectario, el monitoreo y los registros completos al') }}
+            <RouterLink :to="{ path: '/entrar', query: { volver: '/inicio' } }" class="text-brand-700 underline">{{
+              $t('iniciar sesión')
+            }}</RouterLink
             >.</span
           >
         </p>

@@ -1,4 +1,5 @@
 /** GET /api/summary: the home page ("Inicio"). */
+import { locale } from './i18n'
 
 export interface Named {
   name: string
@@ -127,7 +128,12 @@ export interface Nature {
   sessions: number
   weather: Record<'clouds' | 'rain', { code: string; label: string; sessions: number; perHour: number }[]>
   seasons: { month: number; perDay: number | null; species: number | null }[]
-  species: { name: string; sites: { name: string; perDay: number }[]; elevation: [number, number] | null; female: number | null }[]
+  species: {
+    name: string
+    sites: { name: string; perDay: number }[]
+    elevation: [number, number] | null
+    female: number | null
+  }[]
   sites: { name: string; species: number; ithomiini: number; days: number; elevation: number | null }[]
   deaths: { name: string; percent: number }[]
 }
@@ -140,9 +146,12 @@ export interface Summary {
 }
 
 export const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
-export const monthLabel = (m: string) => `${MONTHS[Number(m.slice(5)) - 1]} ${m.slice(2, 4)}`
+const MONTHS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+/** Short month names in the interface language. */
+export const monthNames = () => (locale.value === 'en' ? MONTHS_EN : MONTHS)
+export const monthLabel = (m: string) => `${monthNames()[Number(m.slice(5)) - 1]} ${m.slice(2, 4)}`
 export const dateLabel = (d: string | null) =>
-  d ? `${Number(d.slice(8))} ${MONTHS[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}` : '—'
+  d ? `${Number(d.slice(8))} ${monthNames()[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}` : '—'
 export const pct = (a: number, b: number) => (b ? `${Math.round((100 * a) / b)} %` : '—')
 export const table = (head: string[], rows: (string | number | null)[][]) => ({
   head,

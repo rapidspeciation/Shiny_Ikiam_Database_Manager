@@ -5,6 +5,7 @@ import { Check, ChevronLeft, ChevronRight, ExternalLink, MapPin, RefreshCw, X } 
 import { useMonitoring } from '../../composables/useMonitoring'
 import { api, requestId } from '../../lib/api'
 import { formatSerial, isoToSerial } from '../../lib/dates'
+import { t } from '../../lib/i18n'
 import { formatMinutes, type MatchConfidence, type MatchConflict } from '../../lib/monitoring'
 import { errorText, notify } from '../../lib/notice'
 import { useSession } from '../../stores/session'
@@ -120,7 +121,8 @@ const waitingWalks = computed(() => groups.value.filter(g => g.walk.source === '
 
 // ------------------------------------------------------------ labels
 const day = (iso: string) => formatSerial(isoToSerial(iso))
-const sexLabel = (s: string | null) => (s === 'female' ? 'hembra' : s === 'male' ? 'macho' : '')
+const sexLabel = (s: string | null) => (s === 'female' ? t('hembra') : s === 'male' ? t('macho') : '')
+// Spanish; t() where shown.
 const REASON: Record<MatchConfidence, string> = {
   mark: 'Por marca',
   sure: 'Segura',
@@ -136,8 +138,8 @@ const CONFLICT: Record<MatchConflict, string> = {
 }
 const rowLabel = (r: RowInfo) =>
   [
-    `fila ${r.row}`,
-    r.species || 'sin especie',
+    t('fila {n}', { n: r.row }),
+    r.species || t('sin especie'),
     sexLabel(r.sex),
     formatMinutes(r.minutes),
     r.markId || '',
@@ -163,6 +165,7 @@ const lower = (v: string | null | undefined) => (v || '').trim().toLowerCase()
 function compare(d: Doubt, r: RowInfo) {
   const n = d.note
   const species = (s: string | null, sub: string | null) => [s, sub].filter(Boolean).join(' ') || null
+  // Spanish labels (the key of each line); t() where shown.
   const lines: { label: string; note: string | null; row: string | null; differ: boolean }[] = [
     {
       label: 'Especie',
@@ -196,16 +199,18 @@ function compare(d: Doubt, r: RowInfo) {
 function pairedBy(d: Doubt, r: RowInfo) {
   const n = d.note
   const why = [
-    n?.markId && lower(n.markId) === lower(r.markId) ? `la misma marca ${r.markId}` : '',
+    n?.markId && lower(n.markId) === lower(r.markId) ? t('la misma marca {mark}', { mark: r.markId }) : '',
     n?.minutes != null && r.minutes != null && Math.abs(n.minutes - r.minutes) <= 2
-      ? `la misma hora ${formatMinutes(r.minutes)}`
+      ? t('la misma hora {time}', { time: formatMinutes(r.minutes) })
       : '',
   ].filter(Boolean)
-  return why.length
-    ? `tienen ${why.join(' y ')}`
-    : d.confidence === 'mark'
-      ? 'por la marca'
-      : 'es la única fila que encaja a esa hora'
+  return why.length === 2
+    ? t('tienen {a} y {b}', { a: why[0], b: why[1] })
+    : why.length
+      ? t('tienen {a}', { a: why[0] })
+      : d.confidence === 'mark'
+        ? t('por la marca')
+        : t('es la única fila que encaja a esa hora')
 }
 /** Doubts whose other rows are shown ("Es otra fila"). */
 const opened = ref(new Set<string>())
@@ -248,7 +253,7 @@ async function choose(d: Doubt, r: RowInfo | null) {
         method: 'POST',
         body: { index, recordId: r?.recordId ?? null },
       })
-    notify(r ? `Punto emparejado con la fila ${r.row}` : 'Punto sin fila', 'success', 2000)
+    notify(r ? t('Punto emparejado con la fila {n}', { n: r.row }) : t('Punto sin fila'), 'success', 2000)
     await Promise.all([load(), loadTracks()])
   } catch (e) {
     notify(errorText(e), 'error')
@@ -264,15 +269,15 @@ async function storeWalk(walk: WalkCount, doubts: Doubt[]) {
     .sort((a, b) => a.indexes[0] - b.indexes[0])
     .map(d => chosenOf(d))
   const used = links.flat()
-  if (new Set(used).size !== used.length) return notify('Una fila está elegida para dos puntos', 'error')
-  if (!confirm(`¿Pasar al mapa "${walk.name}" con estas filas? Las filas de la hoja no cambian.`)) return
+  if (new Set(used).size !== used.length) return notify(t('Una fila está elegida para dos puntos'), 'error')
+  if (!confirm(t('¿Pasar al mapa "{name}" con estas filas? Las filas de la hoja no cambian.', { name: walk.name }))) return
   busy.value = true
   try {
     await api(`monitoring/wikiloc/${encodeURIComponent(walk.id)}/store`, {
       method: 'POST',
       body: { requestId: requestId(), date: walk.date, collector: walk.collector, links },
     })
-    notify('Recorrido pasado al mapa', 'success')
+    notify(t('Recorrido pasado al mapa'), 'success')
     await Promise.all([load(), loadTracks(), loadWalks()])
   } catch (e) {
     notify(errorText(e), 'error')
@@ -286,14 +291,22 @@ const showChanges = ref(false)
 async function applyChanges() {
   const changes = data.value?.changes || []
   if (!changes.length) return
-  if (!confirm(`¿Aplicar ${changes.length} cambios de emparejamiento? Solo cambian los enlaces del mapa, no la hoja.`)) return
+  if (
+    !confirm(t('¿Aplicar {n} cambios de emparejamiento? Solo cambian los enlaces del mapa, no la hoja.', { n: changes.length }))
+  )
+    return
   busy.value = true
   try {
     const out = await api<{ applied: number; skipped: number }>('monitoring/rematch', {
       method: 'POST',
       body: { changes: changes.map(c => ({ trackId: c.trackId, index: c.index, from: c.from, to: c.to })) },
     })
-    notify(`${out.applied} enlaces cambiados${out.skipped ? `; ${out.skipped} ya no eran iguales` : ''}`, 'success')
+    notify(
+      out.skipped
+        ? t('{n} enlaces cambiados; {skipped} ya no eran iguales', { n: out.applied, skipped: out.skipped })
+        : t('{n} enlaces cambiados', { n: out.applied }),
+      'success',
+    )
     await Promise.all([load(), loadTracks()])
   } catch (e) {
     notify(errorText(e), 'error')
@@ -321,66 +334,75 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   <div class="h-full overflow-y-auto">
     <div class="toolbar">
       <label class="block">
-        <span class="field-label">Colector</span>
+        <span class="field-label">{{ $t('Colector') }}</span>
         <ChoiceField
           v-model="who"
           class="field-input"
           :freetext="false"
-          :options="[{ value: '', label: 'Todos' }, ...collectors.map(c => ({ value: c, label: c }))]"
+          :options="[{ value: '', label: $t('Todos') }, ...collectors.map(c => ({ value: c, label: c }))]"
         />
       </label>
       <p class="hint pb-2">
-        {{ total }} puntos dudosos en {{ groups.length - waitingWalks }} recorridos del mapa<template v-if="waitingWalks"
-          >; {{ waitingWalks }} recorridos por revisar para emparejar a mano</template
+        {{ $t('{n} puntos dudosos en {walks} recorridos del mapa', { n: total, walks: groups.length - waitingWalks })
+        }}<template v-if="waitingWalks"
+          >; {{ $t('{n} recorridos por revisar para emparejar a mano', { n: waitingWalks }) }}</template
         >
       </p>
       <p class="hint order-last basis-full pb-1 text-xs">
-        Cada tarjeta es un punto de Wikiloc (una mariposa) y la fila de Collection_data que le corresponde. No son recapturas: «La
-        nota no coincide» es un punto ya emparejado donde la nota y la hoja dicen algo distinto; «¿Qué fila es?» es un punto que
-        puede ser más de una fila.
+        {{
+          $t(
+            'Cada tarjeta es un punto de Wikiloc (una mariposa) y la fila de Collection_data que le corresponde. No son recapturas: «La nota no coincide» es un punto ya emparejado donde la nota y la hoja dicen algo distinto; «¿Qué fila es?» es un punto que puede ser más de una fila.',
+          )
+        }}
       </p>
-      <button class="btn ml-auto" :disabled="loading" title="Volver a emparejar y calcular las dudas" @click="load">
-        <RefreshCw :size="14" :class="{ 'animate-spin': loading }" /> Actualizar
+      <button class="btn ml-auto" :disabled="loading" :title="$t('Volver a emparejar y calcular las dudas')" @click="load">
+        <RefreshCw :size="14" :class="{ 'animate-spin': loading }" /> {{ $t('Actualizar') }}
       </button>
     </div>
 
     <div class="space-y-3 p-3 sm:p-4">
-      <p v-if="loading && !data" class="hint">Emparejando los recorridos con la hoja…</p>
+      <p v-if="loading && !data" class="hint">{{ $t('Emparejando los recorridos con la hoja…') }}</p>
 
       <!-- Matching every stored walk again: what would change (reviewers apply it). -->
       <section v-if="data?.changes.length" class="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm">
         <div class="flex flex-wrap items-center gap-2">
           <p>
-            Al emparejar de nuevo todos los recorridos con el método actual cambian
-            <b>{{ data.changes.length }}</b> enlaces en {{ changedWalks }} recorridos (están también en la lista de abajo).
+            {{
+              $t(
+                'Al emparejar de nuevo todos los recorridos con el método actual cambian {n} enlaces en {walks} recorridos (están también en la lista de abajo).',
+                { n: data.changes.length, walks: changedWalks },
+              )
+            }}
           </p>
           <button class="btn-ghost text-xs underline" @click="showChanges = !showChanges">
-            {{ showChanges ? 'Ocultar' : 'Ver' }} cambios
+            {{ showChanges ? $t('Ocultar cambios') : $t('Ver cambios') }}
           </button>
           <button v-if="canReview" class="btn-primary ml-auto" :disabled="busy" @click="applyChanges">
-            <Check :size="14" /> Aplicar {{ data.changes.length }} cambios
+            <Check :size="14" /> {{ $t('Aplicar {n} cambios', { n: data.changes.length }) }}
           </button>
-          <span v-else class="hint ml-auto">Los aplica un revisor o administrador.</span>
+          <span v-else class="hint ml-auto">{{ $t('Los aplica un revisor o administrador.') }}</span>
         </div>
         <ul v-if="showChanges" class="mt-2 space-y-0.5 text-xs">
           <li v-for="c in data.changes" :key="`${c.trackId}|${c.index}`">
             {{ day(c.date) }} {{ initials(c.collector) }} · «{{ c.text }}»:
-            <span class="text-stone-500">{{ c.before ? rowLabel(c.before) : 'sin fila' }}</span> →
-            <b>{{ c.after ? rowLabel(c.after) : 'sin fila' }}</b>
-            <span class="text-stone-500"> ({{ REASON[c.confidence] }})</span>
+            <span class="text-stone-500">{{ c.before ? rowLabel(c.before) : $t('sin fila') }}</span> →
+            <b>{{ c.after ? rowLabel(c.after) : $t('sin fila') }}</b>
+            <span class="text-stone-500"> ({{ $t(REASON[c.confidence]) }})</span>
           </li>
         </ul>
       </section>
 
-      <p v-if="data && !groups.length" class="hint">No hay dudas de emparejamiento.</p>
+      <p v-if="data && !groups.length" class="hint">{{ $t('No hay dudas de emparejamiento.') }}</p>
 
       <section v-for="g in groups" :key="walkKey(g.walk)" class="rounded-md border border-stone-200 bg-white">
         <header class="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-stone-100 px-3 py-2">
           <h2 class="text-base font-semibold">{{ day(g.walk.date) }} · {{ initials(g.walk.collector) }}</h2>
           <span class="text-sm text-stone-500">{{ g.walk.name }}</span>
           <span class="text-sm text-stone-500">
-            <template v-if="g.walk.source === 'walk'">por revisar: {{ g.doubts.length }} puntos para emparejar</template>
-            <template v-else>{{ g.doubts.length }} {{ g.doubts.length === 1 ? 'duda' : 'dudas' }}</template>
+            <template v-if="g.walk.source === 'walk'">{{
+              $t('por revisar: {n} puntos para emparejar', { n: g.doubts.length })
+            }}</template>
+            <template v-else>{{ $tn(g.doubts.length, '{n} duda', '{n} dudas') }}</template>
           </span>
           <a
             v-if="g.doubts[0]?.wikiloc"
@@ -388,17 +410,17 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             target="_blank"
             rel="noopener"
             class="btn-ghost text-sm"
-            title="Abrir en Wikiloc"
+            :title="$t('Abrir en Wikiloc')"
             ><ExternalLink :size="14"
           /></a>
           <button
             v-if="g.walk.source === 'walk' && session.canEdit"
             class="btn-primary ml-auto"
             :disabled="busy"
-            title="Guarda el recorrido en el mapa con las filas elegidas"
+            :title="$t('Guarda el recorrido en el mapa con las filas elegidas')"
             @click="storeWalk(g.walk, g.doubts)"
           >
-            <MapPin :size="14" /> Pasar al mapa
+            <MapPin :size="14" /> {{ $t('Pasar al mapa') }}
           </button>
         </header>
         <ol class="divide-y divide-stone-100">
@@ -418,47 +440,57 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                   v-if="!d.photos.length"
                   class="flex h-36 w-full items-center justify-center rounded border border-dashed border-stone-300 text-xs text-stone-400"
                 >
-                  Sin foto
+                  {{ $t('Sin foto') }}
                 </div>
               </div>
               <figcaption class="mt-1 text-sm">
                 «{{ d.text }}»
-                <span v-if="d.indexes.length > 1" class="text-stone-500"> ({{ d.indexes.length }} mariposas)</span>
+                <span v-if="d.indexes.length > 1" class="text-stone-500">
+                  ({{ $t('{n} mariposas', { n: d.indexes.length }) }})</span
+                >
               </figcaption>
             </figure>
             <div v-if="settledRow(d)" class="min-w-0 flex-1 text-sm">
               <p class="mb-1">
-                <span class="rounded bg-amber-100 px-1 text-xs font-medium text-amber-800">La nota no coincide con su fila</span>
+                <span class="rounded bg-amber-100 px-1 text-xs font-medium text-amber-800">{{
+                  $t('La nota no coincide con su fila')
+                }}</span>
               </p>
               <p class="mb-2 text-xs text-stone-500">
-                Es la fila {{ settledRow(d)!.row }} ({{ pairedBy(d, settledRow(d)!) }}); falta saber cuál de las dos tiene razón.
+                {{
+                  $t('Es la fila {n} ({why}); falta saber cuál de las dos tiene razón.', {
+                    n: settledRow(d)!.row,
+                    why: pairedBy(d, settledRow(d)!),
+                  })
+                }}
               </p>
               <table class="mb-2 w-full max-w-xl text-left">
                 <thead class="text-xs text-stone-500">
                   <tr>
                     <th class="w-20 py-0.5 pr-2 font-normal"></th>
-                    <th class="py-0.5 pr-2 font-normal">Nota de Wikiloc</th>
+                    <th class="py-0.5 pr-2 font-normal">{{ $t('Nota de Wikiloc') }}</th>
                     <th class="py-0.5 font-normal">
-                      Fila {{ settledRow(d)!.row }}<span v-if="settledRow(d)!.kind"> · {{ settledRow(d)!.kind }}</span>
+                      {{ $t('Fila {n}', { n: settledRow(d)!.row })
+                      }}<span v-if="settledRow(d)!.kind"> · {{ settledRow(d)!.kind }}</span>
                     </th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="l in compare(d, settledRow(d)!)" :key="l.label" :class="l.differ ? 'bg-amber-50 font-medium' : ''">
-                    <td class="py-0.5 pr-2 text-xs text-stone-500">{{ l.label }}</td>
+                    <td class="py-0.5 pr-2 text-xs text-stone-500">{{ $t(l.label) }}</td>
                     <td class="py-0.5 pr-2" :class="l.differ ? 'text-amber-900' : ''">{{ l.note || '—' }}</td>
                     <td class="py-0.5" :class="l.differ ? 'text-amber-900' : ''">{{ l.row || '—' }}</td>
                   </tr>
                 </tbody>
               </table>
               <ul v-if="opened.has(doubtKey(d))" class="mb-2 space-y-1">
-                <li class="text-xs text-stone-500">Otras filas de ese día:</li>
+                <li class="text-xs text-stone-500">{{ $t('Otras filas de ese día:') }}</li>
                 <li v-for="r in d.candidates.filter(c => c.recordId !== settledRow(d)!.recordId)" :key="r.recordId">
                   <button
                     type="button"
                     class="w-full rounded border border-stone-200 px-2 py-1 text-left hover:border-brand-600 disabled:opacity-60"
                     :disabled="busy || !session.canEdit"
-                    title="Es esta fila"
+                    :title="$t('Es esta fila')"
                     @click="choose(d, r)"
                   >
                     {{ rowLabel(r) }}<span v-if="r.kind" class="text-stone-500"> · {{ r.kind }}</span>
@@ -469,45 +501,45 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 <button
                   class="btn py-0.5"
                   :disabled="busy || !session.canEdit"
-                  title="Queda emparejado con esta fila y sale de las dudas; si la hoja está mal, corrígela en Tablas"
+                  :title="$t('Queda emparejado con esta fila y sale de las dudas; si la hoja está mal, corrígela en Tablas')"
                   @click="choose(d, settledRow(d))"
                 >
-                  <Check :size="13" /> Sí es la fila {{ settledRow(d)!.row }}
+                  <Check :size="13" /> {{ $t('Sí es la fila {n}', { n: settledRow(d)!.row }) }}
                 </button>
                 <button class="btn py-0.5" @click="toggleOthers(d)">
-                  {{ opened.has(doubtKey(d)) ? 'Ocultar otras filas' : 'Es otra fila…' }}
+                  {{ opened.has(doubtKey(d)) ? $t('Ocultar otras filas') : $t('Es otra fila…') }}
                 </button>
               </div>
             </div>
             <div v-else class="min-w-0 flex-1 text-sm">
               <p class="mb-1">
-                <span class="rounded bg-amber-100 px-1 text-xs font-medium text-amber-800">{{ REASON[d.confidence] }}</span>
+                <span class="rounded bg-amber-100 px-1 text-xs font-medium text-amber-800">{{ $t(REASON[d.confidence]) }}</span>
                 <span
                   v-for="c in d.conflicts.filter(c => c !== 'hora' || d.confidence !== 'mark')"
                   :key="c"
                   class="ml-1 text-xs text-amber-800"
-                  >{{ CONFLICT[c] }}</span
+                  >{{ $t(CONFLICT[c]) }}</span
                 >
-                <span v-if="d.changed" class="ml-1 rounded bg-sky-100 px-1 text-xs text-sky-800"
-                  >cambia al emparejar de nuevo</span
-                >
+                <span v-if="d.changed" class="ml-1 rounded bg-sky-100 px-1 text-xs text-sky-800">{{
+                  $t('cambia al emparejar de nuevo')
+                }}</span>
                 <span
                   v-if="d.pending"
                   class="ml-1 rounded bg-stone-100 px-1 text-xs text-stone-700"
-                  title="Pasar al mapa lo guardó sin fila por la duda; no aparece en el mapa hasta elegir su fila"
-                  >guardado sin fila</span
+                  :title="$t('Pasar al mapa lo guardó sin fila por la duda; no aparece en el mapa hasta elegir su fila')"
+                  >{{ $t('guardado sin fila') }}</span
                 >
               </p>
               <p v-if="d.source === 'track'" class="mb-1 text-xs text-stone-500">
-                Ahora:
+                {{ $t('Ahora:') }}
                 {{
                   d.current
                     .filter(Boolean)
                     .map(r => rowLabel(r!))
-                    .join('; ') || 'sin fila'
+                    .join('; ') || $t('sin fila')
                 }}
               </p>
-              <p class="mb-1 text-xs text-stone-500">Filas de ese día que puede ser (elige una):</p>
+              <p class="mb-1 text-xs text-stone-500">{{ $t('Filas de ese día que puede ser (elige una):') }}</p>
               <ul class="space-y-1">
                 <li v-for="r in d.candidates" :key="r.recordId">
                   <button
@@ -515,18 +547,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                     class="w-full rounded border px-2 py-1 text-left hover:border-brand-600 disabled:opacity-60"
                     :class="chosenOf(d).includes(r.recordId) ? 'border-brand-600 bg-brand-50' : 'border-stone-200'"
                     :disabled="busy || !session.canEdit"
-                    :title="chosenOf(d).includes(r.recordId) ? 'Elegida' : 'Es esta fila'"
+                    :title="chosenOf(d).includes(r.recordId) ? $t('Elegida') : $t('Es esta fila')"
                     @click="choose(d, r)"
                   >
                     <Check v-if="chosenOf(d).includes(r.recordId)" :size="13" class="mr-1 inline text-brand-700" />{{ rowLabel(r)
                     }}<span v-if="r.kind" class="text-stone-500"> · {{ r.kind }}</span
-                    ><span v-if="isProposed(d, r)" class="ml-1 text-xs text-sky-700">(propuesta)</span>
+                    ><span v-if="isProposed(d, r)" class="ml-1 text-xs text-sky-700">{{ $t('(propuesta)') }}</span>
                   </button>
                 </li>
               </ul>
               <div class="mt-2 flex flex-wrap gap-2">
                 <button class="btn py-0.5" :disabled="busy || !session.canEdit" @click="choose(d, null)">
-                  <X :size="13" /> No es ninguna
+                  <X :size="13" /> {{ $t('No es ninguna') }}
                 </button>
               </div>
             </div>
@@ -543,8 +575,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       @click.self="viewer = null"
     >
       <div class="flex items-center gap-3 px-4 py-2 text-sm">
-        <span>«{{ viewer.text }}» · foto {{ viewer.index + 1 }} de {{ viewer.photos.length }}</span>
-        <button class="ml-auto rounded p-1 hover:bg-white/10" title="Cerrar (Esc)" @click="viewer = null">
+        <span>«{{ viewer.text }}» · {{ $t('foto {n} de {total}', { n: viewer.index + 1, total: viewer.photos.length }) }}</span>
+        <button class="ml-auto rounded p-1 hover:bg-white/10" :title="$t('Cerrar (Esc)')" @click="viewer = null">
           <X :size="20" />
         </button>
       </div>

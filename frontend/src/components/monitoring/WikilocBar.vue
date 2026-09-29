@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Link, RefreshCw, Trash2, UserPlus } from 'lucide-vue-next'
 import { useMonitoring } from '../../composables/useMonitoring'
 import { api } from '../../lib/api'
+import { t } from '../../lib/i18n'
 import { errorText, notify } from '../../lib/notice'
 import { useSession } from '../../stores/session'
 
@@ -60,7 +61,7 @@ async function refresh() {
     const finished = data.jobs.filter(j => before.has(j.id) && (j.status === 'done' || j.status === 'failed'))
     if (finished.length) {
       await loadWalks()
-      for (const j of finished) notify(j.message || 'Listo', j.status === 'done' ? 'success' : 'error')
+      for (const j of finished) notify(j.message || t('Listo'), j.status === 'done' ? 'success' : 'error')
     }
   } catch {
     /* offline: try again later */
@@ -84,17 +85,19 @@ async function queue(text = link.value) {
     soon()
     // Already imported: it only comes back for review if the person says so.
     if (result.known === 'imported' && result.walkId) {
-      const name = result.name || 'Esa ruta'
-      if (!confirm(`«${name}» ya se importó. ¿Revisarla de nuevo? Vuelve a "por revisar" y se lee otra vez de Wikiloc.`))
-        return notify('Se vuelve a leer de Wikiloc; la ruta sigue importada.', 'info', 3000)
+      const name = result.name || t('Esa ruta')
+      if (
+        !confirm(t('«{name}» ya se importó. ¿Revisarla de nuevo? Vuelve a "por revisar" y se lee otra vez de Wikiloc.', { name }))
+      )
+        return notify(t('Se vuelve a leer de Wikiloc; la ruta sigue importada.'), 'info', 3000)
       await reopenWalk(result.walkId)
       emit('reopened', result.walkId)
-      return notify('Ruta de nuevo por revisar.', 'success', 3000)
+      return notify(t('Ruta de nuevo por revisar.'), 'success', 3000)
     }
     notify(
       result.known
-        ? 'Esa ruta ya estaba por revisar; se actualizará.'
-        : 'Enlace en cola: el recorrido aparecerá aquí en unos minutos.',
+        ? t('Esa ruta ya estaba por revisar; se actualizará.')
+        : t('Enlace en cola: el recorrido aparecerá aquí en unos minutos.'),
       'success',
       3000,
     )
@@ -107,7 +110,7 @@ defineExpose({ queue })
 async function sync() {
   try {
     await api('monitoring/wikiloc/sync', { method: 'POST', body: {} })
-    notify('Buscando rutas nuevas de monitoreo en los perfiles seguidos…', 'success')
+    notify(t('Buscando rutas nuevas de monitoreo en los perfiles seguidos…'), 'success')
     soon()
   } catch (e) {
     notify(errorText(e), 'error')
@@ -136,22 +139,27 @@ async function follow() {
   }
 }
 async function unfollow(p: Profile) {
-  if (!confirm(`¿Dejar de seguir el perfil ${p.name || p.wikilocUser}?`)) return
+  if (!confirm(t('¿Dejar de seguir el perfil {name}?', { name: p.name || p.wikilocUser }))) return
   await api(`monitoring/wikiloc/profiles/${encodeURIComponent(p.id)}`, { method: 'DELETE', body: {} }).catch(e =>
     notify(errorText(e), 'error'),
   )
   await loadProfiles()
 }
 
+// Spanish; t() where shown.
 const STATUS = { queued: 'en cola', running: 'procesando…', done: 'listo', failed: 'falló' }
 const ago = (iso: string | null) => {
-  if (!iso) return 'nunca'
+  if (!iso) return t('nunca')
   const minutes = Math.round((Date.now() - Date.parse(iso)) / 60_000)
-  return minutes < 1 ? 'ahora' : minutes < 60 ? `hace ${minutes} min` : `hace ${Math.round(minutes / 60)} h`
+  return minutes < 1
+    ? t('ahora')
+    : minutes < 60
+      ? t('hace {n} min', { n: minutes })
+      : t('hace {n} h', { n: Math.round(minutes / 60) })
 }
 const label = (j: Job) =>
   j.kind === 'profile'
-    ? `Perfil ${profiles.value.find(p => p.wikilocUser === j.target)?.name || j.target}`
+    ? t('Perfil {name}', { name: profiles.value.find(p => p.wikilocUser === j.target)?.name || j.target })
     : (/\/([^/]+)-\d+$/.exec(j.target)?.[1] || j.target).replace(/-/g, ' ')
 
 onMounted(() => {
@@ -172,26 +180,27 @@ watch(showProfiles, v => v && loadProfiles())
         <input
           v-model="link"
           class="field-input"
-          placeholder="Pega el enlace de una ruta de Wikiloc"
+          :placeholder="$t('Pega el enlace de una ruta de Wikiloc')"
           :disabled="!session.canEdit"
-          aria-label="Enlace de Wikiloc"
+          :aria-label="$t('Enlace de Wikiloc')"
         />
       </label>
-      <button class="btn" :disabled="!session.canEdit || !link.trim()">Traer</button>
+      <button class="btn" :disabled="!session.canEdit || !link.trim()">{{ $t('Traer') }}</button>
       <button type="button" class="btn" :disabled="!session.canEdit" @click="sync">
-        <RefreshCw :size="15" :class="{ 'animate-spin': active.some(j => j.kind === 'profile') }" /> Buscar nuevos
-        <span class="-ml-1 hidden sm:inline">en Wikiloc</span>
+        <RefreshCw :size="15" :class="{ 'animate-spin': active.some(j => j.kind === 'profile') }" />
+        {{ $t('Buscar nuevos') }}
+        <span class="-ml-1 hidden sm:inline">{{ $t('en Wikiloc') }}</span>
       </button>
       <button type="button" class="btn-ghost text-xs underline" @click="showProfiles = !showProfiles">
-        Perfiles seguidos ({{ profiles.length }})
+        {{ $t('Perfiles seguidos ({n})', { n: profiles.length }) }}
       </button>
       <span
         class="text-xs"
         :class="workerOnline ? 'text-brand-700' : 'text-amber-800'"
-        :title="`Última señal: ${ago(workerSeen)}`"
+        :title="$t('Última señal: {ago}', { ago: ago(workerSeen) })"
       >
-        ● <span class="hidden sm:inline">Procesador en casa</span>
-        {{ workerOnline ? 'activo' : `sin señal (${ago(workerSeen)})` }}
+        ● <span class="hidden sm:inline">{{ $t('Procesador en casa') }}</span>
+        {{ workerOnline ? $t('activo') : $t('sin señal ({ago})', { ago: ago(workerSeen) }) }}
       </span>
       <button
         v-if="recent.length"
@@ -200,14 +209,17 @@ watch(showProfiles, v => v && loadProfiles())
         :aria-expanded="showJobs"
         @click="showJobs = !showJobs"
       >
-        Trabajos ({{ recent.length }})
+        {{ $t('Trabajos ({n})', { n: recent.length }) }}
       </button>
     </form>
 
     <div v-if="showProfiles" class="mt-2 rounded-md border border-stone-200 bg-stone-50 p-2 text-xs">
       <p class="mb-1 text-stone-600">
-        “Buscar nuevos” revisa estos perfiles y trae las rutas cuyo título contiene el patrón (p. ej. “monitor”) y que aún no
-        están en la app, asignadas al recolector del perfil.
+        {{
+          $t(
+            '“Buscar nuevos” revisa estos perfiles y trae las rutas cuyo título contiene el patrón (p. ej. “monitor”) y que aún no están en la app, asignadas al recolector del perfil.',
+          )
+        }}
       </p>
       <ul class="mb-2 space-y-1">
         <li v-for="p in profiles" :key="p.id" class="flex items-center gap-2">
@@ -217,31 +229,35 @@ watch(showProfiles, v => v && loadProfiles())
             rel="noopener"
             class="underline"
           >
-            {{ p.name || `Perfil ${p.wikilocUser}` }}
+            {{ p.name || $t('Perfil {name}', { name: p.wikilocUser }) }}
           </a>
-          <span class="text-stone-500"
-            >{{ p.collector || 'sin recolector' }} · título con “{{ p.pattern }}” · revisado {{ ago(p.lastChecked) }}</span
-          >
-          <button class="btn-ghost" title="Dejar de seguir" @click="unfollow(p)"><Trash2 :size="13" /></button>
+          <span class="text-stone-500">{{
+            $t('{collector} · título con “{pattern}” · revisado {ago}', {
+              collector: p.collector || $t('sin recolector'),
+              pattern: p.pattern,
+              ago: ago(p.lastChecked),
+            })
+          }}</span>
+          <button class="btn-ghost" :title="$t('Dejar de seguir')" @click="unfollow(p)"><Trash2 :size="13" /></button>
         </li>
       </ul>
       <form class="flex gap-2" @submit.prevent="follow">
         <input
           v-model="newProfile"
           class="field-input"
-          placeholder="Enlace del perfil: https://es.wikiloc.com/wikiloc/user.do?id=…"
-          aria-label="Enlace del perfil de Wikiloc"
+          :placeholder="$t('Enlace del perfil: https://es.wikiloc.com/wikiloc/user.do?id=…')"
+          :aria-label="$t('Enlace del perfil de Wikiloc')"
         />
         <ChoiceField
           v-model="newCollector"
           class="field-input max-w-56"
-          aria-label="Recolector de ese perfil"
-          placeholder="Recolector…"
+          :aria-label="$t('Recolector de ese perfil')"
+          :placeholder="$t('Recolector…')"
           :freetext="false"
           allow-empty
           :options="collectors"
         />
-        <button class="btn" :disabled="!newProfile.trim()"><UserPlus :size="14" /> Seguir</button>
+        <button class="btn" :disabled="!newProfile.trim()"><UserPlus :size="14" /> {{ $t('Seguir') }}</button>
       </form>
     </div>
 
@@ -259,13 +275,13 @@ watch(showProfiles, v => v && loadProfiles())
             'bg-brand-50 text-brand-700': j.status === 'done',
             'bg-red-100 text-red-800': j.status === 'failed',
           }"
-          >{{ STATUS[j.status] }}</span
+          >{{ $t(STATUS[j.status]) }}</span
         >
         {{ label(j) }} · {{ ago(j.updatedAt) }}<template v-if="j.message"> — {{ j.message }}</template>
       </li>
     </ul>
     <p v-if="active.length && !workerOnline" class="mt-1 text-xs text-amber-800">
-      El computador que procesa los enlaces no responde; quedan en cola hasta que vuelva a conectarse.
+      {{ $t('El computador que procesa los enlaces no responde; quedan en cola hasta que vuelva a conectarse.') }}
     </p>
   </div>
 </template>

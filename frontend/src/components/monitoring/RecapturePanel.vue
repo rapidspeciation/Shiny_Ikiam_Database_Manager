@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, MapPinned, X } from 'lucide-vue-next'
 import FilterSelect, { type FilterOption } from './FilterSelect.vue'
 import { useMonitoring } from '../../composables/useMonitoring'
 import { formatSerial } from '../../lib/dates'
+import { t } from '../../lib/i18n'
 import { formatMinutes, markHistories } from '../../lib/monitoring'
 import { individuals, type Individual } from '../../lib/monitoringMap'
 
@@ -22,6 +23,7 @@ const router = useRouter()
 const all = computed(() => individuals(markHistories(rows.value), tracks.value, outsideRecaptures.value))
 const outsideCount = computed(() => outsideRecaptures.value.length)
 const speciesOf = (i: Individual) => String(i.events.find(e => e.row)?.row?.values.SPECIES ?? '')
+// Spanish; t() where shown.
 const OUTSIDE: Record<string, string> = {
   nota: 'solo en notas',
   wikiloc: 'solo en Wikiloc',
@@ -73,7 +75,7 @@ const shown = computed(() => {
 const withPhotos = computed(() => all.value.filter(i => i.photos > 0).length)
 
 const date = (serial: number | null) => (serial === null ? '—' : formatSerial(serial))
-const sexLabel = (s: string) => (/^f/i.test(s) ? 'hembra' : /^m/i.test(s) ? 'macho' : '')
+const sexLabel = (s: string) => (/^f/i.test(s) ? t('hembra') : /^m/i.test(s) ? t('macho') : '')
 const photoUrl = (id: string) => `api/monitoring/photos/${id}`
 function onMap(i: Individual) {
   router.replace({ query: { vista: 'mapa', individuo: i.key, unir: '1' } })
@@ -108,43 +110,49 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   <div class="h-full overflow-y-auto">
     <div class="toolbar">
       <template v-if="chosen">
-        <button class="btn" @click="chosen = ''"><ChevronLeft :size="14" /> Todos los individuos</button>
+        <button class="btn" @click="chosen = ''"><ChevronLeft :size="14" /> {{ $t('Todos los individuos') }}</button>
       </template>
       <template v-else>
         <label class="block w-44">
-          <span class="field-label">Marca o especie</span>
-          <input v-model="search" class="field-input" placeholder="p. ej. B39" />
+          <span class="field-label">{{ $t('Marca o especie') }}</span>
+          <input v-model="search" class="field-input" :placeholder="$t('p. ej. B39')" />
         </label>
         <div class="w-64">
-          <FilterSelect v-model="species" label="Especies" :options="speciesOptions" all-label="Todas las especies" />
+          <FilterSelect
+            v-model="species"
+            :label="$t('Especies')"
+            :options="speciesOptions"
+            :all-label="$t('Todas las especies')"
+          />
         </div>
         <label class="block">
-          <span class="field-label">Ordenar</span>
+          <span class="field-label">{{ $t('Ordenar') }}</span>
           <ChoiceField
             v-model="sort"
             class="field-input"
             :freetext="false"
             :options="[
-              { value: 'recent', label: 'Última captura más reciente' },
-              { value: 'captures', label: 'Más capturas' },
-              { value: 'span', label: 'Más tiempo entre la primera y la última' },
+              { value: 'recent', label: $t('Última captura más reciente') },
+              { value: 'captures', label: $t('Más capturas') },
+              { value: 'span', label: $t('Más tiempo entre la primera y la última') },
             ]"
           />
         </label>
         <label class="flex items-center gap-2 pb-2 text-sm">
-          <input v-model="onlyPhotos" type="checkbox" /> Solo con fotos ({{ withPhotos }})
+          <input v-model="onlyPhotos" type="checkbox" /> {{ $t('Solo con fotos ({n})', { n: withPhotos }) }}
         </label>
       </template>
       <p class="hint ml-auto pb-2">
-        {{ shown.length }} de {{ all.length }} individuos recapturados (misma marca y misma especie)<template v-if="outsideCount"
-          >; {{ outsideCount }} recapturas solo en notas o en Wikiloc (no son filas de la hoja)</template
+        {{ $t('{shown} de {all} individuos recapturados (misma marca y misma especie)', { shown: shown.length, all: all.length })
+        }}<template v-if="outsideCount"
+          >; {{ $t('{n} recapturas solo en notas o en Wikiloc (no son filas de la hoja)', { n: outsideCount }) }}</template
         >
       </p>
     </div>
 
     <!-- Several butterflies per row: a card is as wide as its captures need. -->
     <div class="grid [grid-template-columns:repeat(auto-fill,minmax(min(100%,26rem),1fr))] items-start gap-2 p-2 sm:p-3">
-      <p v-if="!all.length" class="hint">Aún no hay recapturas en Collection_data.</p>
+      <p v-if="!all.length" class="hint">{{ $t('Aún no hay recapturas en Collection_data.') }}</p>
       <section v-for="i in shown" :key="i.key" class="min-w-0 rounded-md border border-stone-200 bg-white">
         <header class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-b border-stone-100 px-2.5 py-1.5 text-sm">
           <h2 class="font-semibold">{{ i.id }}</h2>
@@ -152,10 +160,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             ><i>{{ i.species }}</i> <span class="text-stone-500">{{ sexLabel(i.sex) }}</span></span
           >
           <span class="text-xs text-stone-500">
-            {{ i.events.length }} capturas<template v-if="i.span !== null"> en {{ i.span }} días</template>
+            {{
+              i.span !== null
+                ? $t('{n} capturas en {days} días', { n: i.events.length, days: i.span })
+                : $t('{n} capturas', { n: i.events.length })
+            }}
           </span>
-          <button class="btn-ghost ml-auto gap-1 px-1.5 py-0.5 text-xs" title="Ver sus capturas en el mapa" @click="onMap(i)">
-            <MapPinned :size="15" /> En el mapa
+          <button
+            class="btn-ghost ml-auto gap-1 px-1.5 py-0.5 text-xs"
+            :title="$t('Ver sus capturas en el mapa')"
+            @click="onMap(i)"
+          >
+            <MapPinned :size="15" /> {{ $t('En el mapa') }}
           </button>
         </header>
         <ol class="flex gap-2 overflow-x-auto p-2">
@@ -163,7 +179,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             <div
               v-if="n"
               class="flex h-32 w-11 flex-col items-center justify-center text-center text-[11px] text-stone-500"
-              :title="e.metres !== null ? 'Distancia entre los puntos GPS de las dos capturas' : ''"
+              :title="e.metres !== null ? $t('Distancia entre los puntos GPS de las dos capturas') : ''"
             >
               <ChevronRight :size="18" />
               <span v-if="e.days !== null">+{{ e.days }} d</span>
@@ -184,22 +200,22 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                   v-if="!e.photos.length"
                   class="flex h-32 w-full items-center justify-center rounded border border-dashed border-stone-300 text-xs text-stone-400"
                 >
-                  Sin foto
+                  {{ $t('Sin foto') }}
                 </div>
               </div>
               <figcaption class="mt-1 text-[11px] leading-snug">
-                <span class="font-medium">{{ n ? `Recaptura ${n}` : 'Marcado' }}</span> · {{ date(e.date) }}<br />
+                <span class="font-medium">{{ n ? $t('Recaptura {n}', { n }) : $t('Marcado') }}</span> · {{ date(e.date) }}<br />
                 <span
                   v-if="e.outside"
                   class="mr-1 inline-block rounded bg-amber-100 px-1 font-medium text-amber-800"
-                  :title="OUTSIDE_HINT[e.outside]"
-                  >{{ OUTSIDE[e.outside] }}</span
+                  :title="$t(OUTSIDE_HINT[e.outside])"
+                  >{{ $t(OUTSIDE[e.outside]) }}</span
                 >
                 <span class="text-stone-500">
                   {{ e.collector }}<template v-if="e.section"> · T{{ e.section }}</template
                   ><template v-if="e.minutes !== null"> · {{ formatMinutes(e.minutes) }}</template
-                  ><template v-if="e.row"> · fila {{ e.row.row }}</template>
-                  <template v-if="e.photos.length > 2"> · +{{ e.photos.length - 2 }} fotos</template>
+                  ><template v-if="e.row"> · {{ $t('fila {n}', { n: e.row.row }) }}</template>
+                  <template v-if="e.photos.length > 2"> · {{ $t('+{n} fotos', { n: e.photos.length - 2 }) }}</template>
                 </span>
                 <span v-if="e.note" class="mt-0.5 line-clamp-2 block text-stone-500" :title="e.note">“{{ e.note }}”</span>
               </figcaption>
@@ -220,11 +236,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <span class="font-medium">{{ viewer.individual.id }}</span>
         <i>{{ viewer.individual.species }}</i>
         <span class="text-stone-300">
-          {{ current.capture === 1 ? 'Marcado' : `Recaptura ${current.capture - 1}` }} · {{ date(current.event.date) }} ·
-          {{ current.event.collector }}<template v-if="current.event.outside"> · {{ OUTSIDE[current.event.outside] }}</template> ·
-          foto {{ viewer.index + 1 }} de {{ viewerPhotos.length }}
+          {{ current.capture === 1 ? $t('Marcado') : $t('Recaptura {n}', { n: current.capture - 1 }) }} ·
+          {{ date(current.event.date) }} · {{ current.event.collector
+          }}<template v-if="current.event.outside"> · {{ $t(OUTSIDE[current.event.outside]) }}</template> ·
+          {{ $t('foto {n} de {total}', { n: viewer.index + 1, total: viewerPhotos.length }) }}
         </span>
-        <button class="ml-auto rounded p-1 hover:bg-white/10" title="Cerrar (Esc)" @click="viewer = null">
+        <button class="ml-auto rounded p-1 hover:bg-white/10" :title="$t('Cerrar (Esc)')" @click="viewer = null">
           <X :size="20" />
         </button>
       </div>

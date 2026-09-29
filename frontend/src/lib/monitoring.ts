@@ -777,7 +777,6 @@ export function sexOf(value: CellValue | undefined): 'female' | 'male' | null {
   return s === 'female' || s === 'male' ? s : null
 }
 const binomial = (value: CellValue | undefined) => text(value).toLowerCase().split(/\s+/).slice(0, 2).join(' ')
-const sexWord = (sex: string | null) => (sex === 'female' ? ' hembra' : sex === 'male' ? ' macho' : '')
 
 interface MarkItem {
   key: string
@@ -935,9 +934,36 @@ export function markIndex(rows: TableRow[]): Map<string, TableRow[]> {
   return out
 }
 
+/**
+ * A message as its Spanish text (the key of the translations) and the values
+ * that fill it. This file also runs on the server, without the interface
+ * language, so it gives the phrase and the interface translates it (phraseText
+ * with lib/i18n's t); `text` is the Spanish.
+ */
+export type PhraseValue = string | number | Phrase | Phrase[]
+export interface Phrase {
+  key: string
+  vars?: Record<string, PhraseValue>
+}
+const phrase = (key: string, vars?: Record<string, PhraseValue>): Phrase => ({ key, vars })
+/** A phrase as text; `translate` gives each key in the interface language (Spanish, the key itself, by default). */
+export function phraseText(p: PhraseValue, translate: (key: string) => string = key => key): string {
+  if (typeof p !== 'object') return String(p)
+  if (Array.isArray(p)) return p.map(x => phraseText(x, translate)).join(', ')
+  return translate(p.key).replace(/\{(\w+)\}/g, (all, k: string) =>
+    p.vars && k in p.vars ? phraseText(p.vars[k], translate) : all,
+  )
+}
+
 export interface CaptureCheck {
   text: string
   kind: 'ok' | 'info' | 'warn'
+  /** The same message, to show in the interface language. */
+  phrase?: Phrase
+}
+const check = (kind: CaptureCheck['kind'], key: string, vars?: Record<string, PhraseValue>): CaptureCheck => {
+  const p = phrase(key, vars)
+  return { kind, text: phraseText(p), phrase: p }
 }
 
 export interface ReviewContext {
@@ -956,7 +982,13 @@ export interface ReviewContext {
   existing?: TableRow | null
 }
 
-const who = (r: TableRow) => `${text(r.values.SPECIES) || 'sin especie'}${sexWord(sexOf(r.values.Sex))} (fila ${r.row})`
+const who = (r: TableRow): Phrase => {
+  const species = text(r.values.SPECIES) || phrase('sin especie')
+  const sex = sexOf(r.values.Sex)
+  return sex
+    ? phrase('{species} {sex} (fila {n})', { species, sex: phrase(sex === 'female' ? 'hembra' : 'macho'), n: r.row })
+    : phrase('{species} (fila {n})', { species, n: r.row })
+}
 let rolesCache: { rows: TableRow[]; date: string; captures: Capture[]; roles: (MarkRole | null)[] } | null = null
 
 /**
@@ -972,7 +1004,7 @@ export function reviewCapture(
   const out: CaptureCheck[] = []
   const existing = ctx.existing !== undefined ? ctx.existing : ctx.date ? existingRow(ctx.rows, ctx.date, c) : null
   // Already in the sheet: nothing will be written, so no further checks.
-  if (existing) return { existing, recapture: null, list: [{ kind: 'info', text: `Ya está en la hoja (fila ${existing.row})` }] }
+  if (existing) return { existing, recapture: null, list: [check('info', 'Ya está en la hoja (fila {n})', { n: existing.row })] }
   let recapture: TableRow | null = null
   if (c.markId) {
     let roles = ctx.roles
@@ -990,45 +1022,53 @@ export function reviewCapture(
     if (role?.role === 'recapture') {
       recapture = role.first
       const since = role.first?.values.Collection_date
-      out.push({
-        kind: 'ok',
-        text: `Recaptura de ${c.markId}${typeof since === 'number' ? ` (marcada ${formatSerial(since)})` : ''}`,
-      })
+      out.push(
+        typeof since === 'number'
+          ? check('ok', 'Recaptura de {mark} (marcada {date})', { mark: c.markId, date: formatSerial(since) })
+          : check('ok', 'Recaptura de {mark}', { mark: c.markId }),
+      )
     } else
-      out.push({ kind: 'ok', text: `Nueva marca ${c.markId}${role?.continues && role.others.length ? ' (sigue la serie)' : ''}` })
+      out.push(
+        role?.continues && role.others.length
+          ? check('ok', 'Nueva marca {mark} (sigue la serie)', { mark: c.markId })
+          : check('ok', 'Nueva marca {mark}', { mark: c.markId }),
+      )
     // An ID used twice before is already in Revisión de datos: warning on every import is noise.
     if (role?.role === 'reused' && !role.known)
-      out.push({ kind: 'warn', text: `${c.markId} ya se usó para ${role.others.slice(-2).map(who).join(', ')}: ¿ID repetida?` })
+      out.push(
+        check('warn', '{mark} ya se usó para {rows}: ¿ID repetida?', { mark: c.markId, rows: role.others.slice(-2).map(who) }),
+      )
     if (role?.role === 'unsure')
-      out.push({
-        kind: 'warn',
-        text: `${c.markId} era ${role.others.slice(-1).map(who).join('')}: identifica la especie para saber si es recaptura`,
-      })
+      out.push(
+        check('warn', '{mark} era {rows}: identifica la especie para saber si es recaptura', {
+          mark: c.markId,
+          rows: role.others.slice(-1).map(who),
+        }),
+      )
     if (role?.role !== 'recapture' && c.recaptureNote)
-      out.push({
-        kind: 'warn',
-        text: role?.others.length
-          ? `Dice recaptura, pero ${c.markId} era ${who(role.others.at(-1)!)}`
-          : `Dice recaptura, pero ${c.markId} no está en la hoja`,
-      })
+      out.push(
+        role?.others.length
+          ? check('warn', 'Dice recaptura, pero {mark} era {row}', { mark: c.markId, row: who(role.others.at(-1)!) })
+          : check('warn', 'Dice recaptura, pero {mark} no está en la hoja', { mark: c.markId }),
+      )
     if (ctx.captures.some((o, j) => j !== i && o.markId === c.markId))
-      out.push({ kind: 'warn', text: `${c.markId} aparece dos veces en este recorrido` })
+      out.push(check('warn', '{mark} aparece dos veces en este recorrido', { mark: c.markId }))
   } else {
-    out.push({ kind: 'info', text: 'Preservado (sin marca)' })
+    out.push(check('info', 'Preservado (sin marca)'))
     const preserved = c.species ? ctx.preserved.get(c.species) || 0 : 0
     if (preserved >= MARK_THRESHOLD && ctx.isIthomiini(c.species))
-      out.push({ kind: 'warn', text: `${c.species} ya tiene ${preserved} preservados: ¿no debía marcarse?` })
+      out.push(check('warn', '{species} ya tiene {n} preservados: ¿no debía marcarse?', { species: c.species!, n: preserved }))
   }
-  if (!c.species) out.push({ kind: 'warn', text: 'Sin especie' })
-  else if (!c.known) out.push({ kind: 'warn', text: 'Nombre no encontrado en la hoja: revisar' })
-  if (c.subspeciesGuess === 'ikiam') out.push({ kind: 'info', text: `Subespecie ${c.subspecies}: la única en Ikiam` })
-  if (!c.sex) out.push({ kind: 'warn', text: 'Sin sexo' })
-  if (c.timeFromTrack) out.push({ kind: 'warn', text: `Hora del GPS (${formatMinutes(c.minutes)}): la nota no la dice` })
-  else if (c.minutes === null) out.push({ kind: 'warn', text: 'Sin hora' })
-  if (c.height === null) out.push({ kind: 'warn', text: 'Sin altura' })
-  if (!c.cloud) out.push({ kind: 'warn', text: 'Sin clima' })
-  if (c.section === null) out.push({ kind: 'warn', text: `Lejos del sendero (${c.sectionDistance} m)` })
-  if (c.rest) out.push({ kind: 'info', text: `A notas: “${c.rest}”` })
+  if (!c.species) out.push(check('warn', 'Sin especie'))
+  else if (!c.known) out.push(check('warn', 'Nombre no encontrado en la hoja: revisar'))
+  if (c.subspeciesGuess === 'ikiam') out.push(check('info', 'Subespecie {name}: la única en Ikiam', { name: c.subspecies ?? '' }))
+  if (!c.sex) out.push(check('warn', 'Sin sexo'))
+  if (c.timeFromTrack) out.push(check('warn', 'Hora del GPS ({time}): la nota no la dice', { time: formatMinutes(c.minutes) }))
+  else if (c.minutes === null) out.push(check('warn', 'Sin hora'))
+  if (c.height === null) out.push(check('warn', 'Sin altura'))
+  if (!c.cloud) out.push(check('warn', 'Sin clima'))
+  if (c.section === null) out.push(check('warn', 'Lejos del sendero ({n} m)', { n: String(c.sectionDistance) }))
+  if (c.rest) out.push(check('info', 'A notas: “{note}”', { note: c.rest }))
   return { existing, recapture, list: out }
 }
 

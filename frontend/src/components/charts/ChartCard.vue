@@ -21,7 +21,7 @@ const showTable = ref(false)
         <p v-if="subtitle" class="text-xs text-stone-500">{{ subtitle }}</p>
       </div>
       <button v-if="table" class="shrink-0 text-xs text-stone-500 underline hover:text-stone-800" @click="showTable = !showTable">
-        {{ showTable ? 'Gráfico' : 'Tabla' }}
+        {{ showTable ? $t('Gráfico') : $t('Tabla') }}
       </button>
     </header>
     <div v-if="showTable && table" class="max-h-72 overflow-auto text-xs">
