@@ -6,6 +6,7 @@ import { tabs } from '../router'
 import { useSession } from '../stores/session'
 import { usePending } from '../stores/pending'
 import { notify } from '../lib/notice'
+import { locale, t } from '../lib/i18n'
 
 const session = useSession()
 const pending = usePending()
@@ -19,12 +20,12 @@ const shown = computed(() =>
 async function logout() {
   if (
     pending.changeCount &&
-    !confirm('Hay cambios sin guardar en este dispositivo. Se conservarán para cuando vuelvas. ¿Cerrar sesión?')
+    !confirm(t('Hay cambios sin guardar en este dispositivo. Se conservarán para cuando vuelvas. ¿Cerrar sesión?'))
   )
     return
   await session.logout()
   pending.clear()
-  notify('Sesión cerrada')
+  notify(t('Sesión cerrada'))
 }
 </script>
 
@@ -38,7 +39,7 @@ async function logout() {
       </RouterLink>
       <nav
         class="order-last -mx-3 -mb-px flex w-full min-w-0 overflow-x-auto px-1 sm:order-none sm:mx-0 sm:w-auto sm:flex-1 sm:px-0"
-        aria-label="Secciones"
+        :aria-label="$t('Secciones')"
       >
         <RouterLink
           v-for="tab in shown"
@@ -47,7 +48,7 @@ async function logout() {
           class="shrink-0 border-b-2 border-transparent px-3 py-3 text-sm font-medium whitespace-nowrap text-brand-100 hover:text-white"
           active-class="!border-white !text-white"
         >
-          {{ tab.label }}
+          {{ $t(tab.label) }}
         </RouterLink>
       </nav>
       <a
@@ -56,18 +57,29 @@ async function logout() {
         target="_blank"
         rel="noopener"
         class="hidden shrink-0 items-center gap-1 rounded bg-amber-300 px-2 py-0.5 text-xs font-semibold text-amber-950 md:inline-flex"
-        title="Las escrituras van solo a la copia personal de pruebas"
+        :title="$t('Las escrituras van solo a la copia personal de pruebas')"
       >
-        {{ session.settings.sandboxLabel }} <ExternalLink :size="12" />
+        {{ $t(session.settings.sandboxLabel) }} <ExternalLink :size="12" />
       </a>
+      <!-- Interface language: English by default (lib/i18n.ts). -->
+      <button
+        class="ml-auto shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold text-brand-100 ring-1 ring-brand-500 hover:bg-brand-800 hover:text-white sm:ml-0"
+        :title="$t('Cambiar idioma')"
+        :aria-label="$t('Cambiar idioma')"
+        @click="locale = locale === 'en' ? 'es' : 'en'"
+      >
+        <span :class="locale === 'en' ? 'text-white' : 'opacity-60'">EN</span>
+        <span class="opacity-60">/</span>
+        <span :class="locale === 'es' ? 'text-white' : 'opacity-60'">ES</span>
+      </button>
       <RouterLink
         v-if="!session.user"
         :to="{ path: '/entrar', query: { volver: route.fullPath } }"
-        class="ml-auto flex shrink-0 items-center gap-1 rounded px-2 py-1 text-sm hover:bg-brand-800 sm:ml-0"
+        class="flex shrink-0 items-center gap-1 rounded px-2 py-1 text-sm hover:bg-brand-800"
       >
-        <LogIn :size="15" /> Iniciar sesión
+        <LogIn :size="15" /> {{ $t('Iniciar sesión') }}
       </RouterLink>
-      <div v-else class="relative ml-auto shrink-0 sm:ml-0">
+      <div v-else class="relative shrink-0">
         <button class="flex items-center gap-1 rounded px-2 py-1 text-sm hover:bg-brand-800" @click="menu = !menu">
           {{ session.user?.displayName }} <ChevronDown :size="14" />
         </button>
@@ -84,13 +96,13 @@ async function logout() {
             rel="noopener"
             class="flex items-center gap-2 px-3 py-2 hover:bg-stone-100 md:hidden"
           >
-            <ExternalLink :size="15" /> Abrir Google Sheet
+            <ExternalLink :size="15" /> {{ $t('Abrir Google Sheet') }}
           </a>
           <RouterLink v-if="session.isAdmin" to="/usuarios" class="flex items-center gap-2 px-3 py-2 hover:bg-stone-100">
-            <Users :size="15" /> Usuarios
+            <Users :size="15" /> {{ $t('Usuarios') }}
           </RouterLink>
           <button class="flex w-full items-center gap-2 px-3 py-2 hover:bg-stone-100" @click="logout">
-            <LogOut :size="15" /> Cerrar sesión
+            <LogOut :size="15" /> {{ $t('Cerrar sesión') }}
           </button>
         </div>
       </div>

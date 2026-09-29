@@ -25,5 +25,6 @@ export default defineConfig(({ command }) => ({
     port: 5173,
     proxy: { '/ithomiini/api': { target: process.env.API_TARGET || 'http://127.0.0.1:8794', changeOrigin: false } },
   },
-  test: { environment: 'happy-dom' },
+  // Tests check the Spanish texts (the keys); i18n.test.ts switches language itself.
+  test: { environment: 'happy-dom', setupFiles: ['./src/test-setup.ts'] },
 }))

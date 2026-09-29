@@ -4,8 +4,13 @@ import App from './App.vue'
 import { router } from './router'
 import './style.css'
 import { updateAvailable, watchForUpdates } from './lib/updates'
+import { t, tn } from './lib/i18n'
 
-createApp(App).use(createPinia()).use(router).mount('#app')
+const app = createApp(App)
+// $t / $tn in every template: the interface in English or Spanish (lib/i18n.ts).
+app.config.globalProperties.$t = t
+app.config.globalProperties.$tn = tn
+app.use(createPinia()).use(router).mount('#app')
 
 // A tab whose script belongs to a build replaced since the page opened: ask to reload (lib/updates.ts).
 window.addEventListener('vite:preloadError', event => {
