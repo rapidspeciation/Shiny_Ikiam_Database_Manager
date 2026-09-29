@@ -29,6 +29,8 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     assert.match(brief, /working for\n\*\*Ana Pérez\*\*/);
     assert.match(brief, /match_notebook/);
     assert.match(brief, /## Photos of notebook pages/);
+    assert.match(brief, /## Historial: finding and undoing a save/);
+    assert.match(brief, /list_history/);
     assert.equal(readFileSync(join(workspace, 'AGENTS.md'), 'utf8'), brief);
     assert.match(readFileSync(join(workspace, '.claude', 'skills', 'digitalizar-cuaderno', 'SKILL.md'), 'utf8'), /name: digitalizar-cuaderno/);
     // Every folder of assistant/skills is installed, with its reference files; the brief points to the app guide.

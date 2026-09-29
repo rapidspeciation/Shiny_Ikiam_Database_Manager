@@ -105,6 +105,70 @@ export interface Action {
   changes: Change[]
 }
 
+export interface HistoryChange extends Change {
+  /** The save made this row (a new row). */
+  isNew?: boolean
+  /** Already put back by a later undo. */
+  undone?: boolean
+}
+
+/** One save inside a group of the Historial (GET history/groups/:id). */
+export interface HistoryAction {
+  id: string
+  createdAt: string
+  source: string
+  status: string
+  reason: string | null
+  reverses: string | null
+  reversedBy: string | null
+  undoable: boolean
+  changes: HistoryChange[]
+}
+
+/** Saves by one person with one purpose close in time (server/history.mjs). */
+export interface HistoryGroup {
+  id: string
+  purpose: string
+  purposeLabel: string
+  actor: string
+  actorName: string | null
+  start: string
+  end: string
+  counts: { actions: number; rows: number; newRows: number; cells: number }
+  sheets: string[]
+  fields: string[]
+  labels: string[]
+  summary: string
+  reasons: string[]
+  statuses: Record<string, number>
+  undone: 'all' | 'some' | null
+  undoable: boolean
+  actionIds: string[]
+  matched?: string[]
+  link: string
+  /** Only in the detail of a group. */
+  actions?: HistoryAction[]
+}
+
+/** What an undo would write: each cell's value now (before) and the value it goes back to (after). */
+export interface UndoPreviewItem {
+  recordId: string
+  field: string
+  before: Change['before']
+  after: Change['after']
+  label?: string | null
+  sheet?: string | null
+  row?: number | null
+  reason?: string
+}
+
+export interface UndoPreview {
+  changes: UndoPreviewItem[]
+  conflicts: UndoPreviewItem[]
+  eligible: boolean
+  selection: { actionIds: string[]; changeIds: string[] }
+}
+
 export interface ApiErrorBody {
   code: string
   message: string

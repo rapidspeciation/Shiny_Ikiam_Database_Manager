@@ -168,6 +168,20 @@ describe('saving pending changes', () => {
     expect(sent).toHaveLength(2)
   })
 
+  it('sends the tab most changes were typed in, as the purpose of the save (Historial)', async () => {
+    const pending = usePending()
+    pending.setAutoSave(false)
+    location.hash = '#/tubos'
+    pending.setCell('Insectary_data', rows[2], 'N4D', 'Sex', 'male')
+    location.hash = '#/muertes'
+    pending.setCell('Insectary_data', rows[1], 'N3D', 'Death_cause', 'Unknown')
+    pending.setCell('Insectary_data', rows[2], 'N4D', 'Death_cause', 'Unknown')
+    location.hash = '#/historial'
+    await pending.save('')
+    expect((sent[0] as unknown as { purpose: string }).purpose).toBe('muertes')
+    location.hash = ''
+  })
+
   it("leaves a walk's new rows for Guardar: automatic saving sends only the other changes", async () => {
     const pending = usePending()
     pending.setAutoSave(false)

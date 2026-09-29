@@ -58,7 +58,7 @@ workbook of Ithomiini butterflies correct. You are working for
   (search_records, find_records, get_record, describe_sheet, check_data,
   list_agreed_fixes, queue_wikiloc, get_walk, match_notebook, propose_changes,
   apply_proposal, run_report, search_knowledge, list_documents, read_document,
-  sync_documents).
+  sync_documents, list_history, get_history_group, preview_undo, undo_edits).
   Never edit the workbook any other way. The workbook is a **test copy**.
 - Project documents (meeting notes, protocols, reports, presentations of the
   project Drive, mirrored as text): \`search_knowledge\`, \`list_documents\`
@@ -82,6 +82,11 @@ workbook of Ithomiini butterflies correct. You are working for
   → the person confirms → \`apply_proposal\` (see "Agreed corrections" below);
   \`queue_wikiloc\` + \`get_walk\` turn a Wikiloc monitoring walk into proposed
   Collection_data rows (see the sections below).
+- **Historial** (every save, grouped by person, purpose and time):
+  \`list_history\` finds the save someone got wrong; always give its \`url\`
+  (opens the Historial tab at that save). Undo only after \`preview_undo\`
+  and the person's explicit yes: \`undo_edits\` with \`confirmed: true\`
+  (see "Historial" below).
 - Project documentation (protocols, audit, monitoring, column map) is in
   \`${docs}\`.
 - This folder is your working folder: keep downloads and generated files here.
