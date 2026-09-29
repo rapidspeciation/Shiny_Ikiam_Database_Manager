@@ -139,7 +139,8 @@ const subspecies = computed(() => {
     const words = name.trim().split(/\s+/)
     if (words.length > 2 && !/ x |\bVS\b/i.test(name)) add(words.slice(0, 2).join(' '), words.slice(2).join(' '))
   }
-  for (const r of tables.tables.Insectary_data?.rows || []) if (r.observed && !isBlank(r.values.SPECIES)) split(String(r.values.SPECIES))
+  for (const r of tables.tables.Insectary_data?.rows || [])
+    if (r.observed && !isBlank(r.values.SPECIES)) split(String(r.values.SPECIES))
   for (const name of listColumn(lists.value, 'Insectary_species')) split(name)
   return new Map([...counts].map(([species, forms]) => [species, [...forms].sort((a, b) => b[1] - a[1]).map(([f]) => f)]))
 })
@@ -175,7 +176,8 @@ watch(() => tables.tables.Insectary_data?.revision, loadFreeIds, { immediate: tr
 /** IDs already on butterflies in Collection_data (their Insectary_data row may not be filled in yet). */
 const collectedIds = computed(() => {
   const out = new Map<string, number>()
-  for (const r of observed.value) if (!isBlank(r.values.Insectary_ID)) out.set(String(r.values.Insectary_ID).trim().toUpperCase(), r.row)
+  for (const r of observed.value)
+    if (!isBlank(r.values.Insectary_ID)) out.set(String(r.values.Insectary_ID).trim().toUpperCase(), r.row)
   return out
 })
 /**
@@ -224,7 +226,8 @@ const usedTubes = computed(() => {
   ] as const)
     for (const row of tables.tables[sheet]?.rows || [])
       for (const key of keys)
-        if (!isBlank(row.values[key]) && String(row.values[key]).trim() !== 'NA') used.set(String(row.values[key]).trim().toUpperCase(), `${sheet} fila ${row.row}`)
+        if (!isBlank(row.values[key]) && String(row.values[key]).trim() !== 'NA')
+          used.set(String(row.values[key]).trim().toUpperCase(), `${sheet} fila ${row.row}`)
   return used
 })
 const nextCam = () => camPool.value.find(id => !drafts.value.some(d => d.cam === id)) || ''
@@ -258,6 +261,21 @@ function following(d: Draft, column: 'cam' | 'tube'): string {
   if (column === 'cam') return camPool.value.includes(next) ? next : ''
   return TUBE_ID.test(next) && !usedTubes.value.has(next) ? next : ''
 }
+/**
+ * What the next row added would get, as in Monitoreo's "Próxima marca": the
+ * CAM and tube after the last preserved row of the list (else the next free
+ * ones), the next free Insectary ID, and how many CAMs of the pool are left.
+ */
+const upcoming = computed(() => {
+  const none = {} as Draft
+  const cams = camPool.value.filter(id => !drafts.value.some(d => d.cam.trim().toUpperCase() === id.toUpperCase()))
+  return {
+    cam: following(none, 'cam') || nextCam(),
+    camsLeft: cams.length,
+    tube: following(none, 'tube') || nextTube(),
+    insectaryId: nextInsectaryId(),
+  }
+})
 function setFate(draft: Draft, fate: Fate) {
   draft.fate = fate
   draft.insectaryId = fate === 'insectario' ? draft.insectaryId || nextInsectaryId() : ''
@@ -508,7 +526,8 @@ const idRows = computed(() => {
   void tables.versions.Insectary_data
   const out = new Map<string, { row: number; observed: boolean }>()
   for (const r of tables.tables.Insectary_data?.rows || [])
-    if (!isBlank(r.values.Insectary_ID)) out.set(String(r.values.Insectary_ID).trim().toUpperCase(), { row: r.row, observed: r.observed })
+    if (!isBlank(r.values.Insectary_ID))
+      out.set(String(r.values.Insectary_ID).trim().toUpperCase(), { row: r.row, observed: r.observed })
   return out
 })
 /** An Insectary ID, CAM or tube repeated in the list, or already used in the sheets. */
@@ -552,7 +571,14 @@ const LISTED: Partial<Record<Column, string>> = {
 }
 /** The people of the list's rows, for the summary before saving. */
 const distinct = (field: 'collector' | 'identifier' | 'rainfall' | 'cloud') =>
-  [...new Set(drafts.value.filter(d => !isEmpty(d)).map(d => d[field]).filter(Boolean))].join(', ') || '—'
+  [
+    ...new Set(
+      drafts.value
+        .filter(d => !isEmpty(d))
+        .map(d => d[field])
+        .filter(Boolean),
+    ),
+  ].join(', ') || '—'
 function cellProblem(d: Draft, column: Column): string | null {
   const field = LISTED[column]
   return field ? listProblem(collectionRules.value, field, d[column as 'species']) : null
@@ -575,7 +601,8 @@ const problems = computed(() => [
       const issue = cellProblem(d, column)
       if (issue) out.push(`fila ${n}: ${LISTED[column]} ${issue}`)
     }
-    if (d.fate === 'preservada' && (!d.cam || !d.tube || !d.medium)) out.push(`fila ${n}: falta CAM_ID, Tube_1_id o Preservation_medium`)
+    if (d.fate === 'preservada' && (!d.cam || !d.tube || !d.medium))
+      out.push(`fila ${n}: falta CAM_ID, Tube_1_id o Preservation_medium`)
     return out
   }),
 ])
@@ -728,7 +755,10 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
       :aria-expanded="headerOpen"
       @click="headerOpen = !headerOpen"
     >
-      <span class="min-w-0 flex-1 truncate rounded-full bg-stone-100 px-3 py-1" :class="{ 'bg-amber-50 text-amber-900': isToday }">
+      <span
+        class="min-w-0 flex-1 truncate rounded-full bg-stone-100 px-3 py-1"
+        :class="{ 'bg-amber-50 text-amber-900': isToday }"
+      >
         {{ headerChip }}
       </span>
       <span class="shrink-0 text-brand-700">{{ headerOpen ? 'Cerrar' : '✎' }}</span>
@@ -778,13 +808,27 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
       <button class="btn-primary" @click="add">
         <Plus :size="15" /> Añadir {{ Math.max(1, addCount || 1) }} {{ Math.max(1, addCount || 1) === 1 ? 'fila' : 'filas' }}
       </button>
+      <div v-if="headerOpen" class="ml-auto flex gap-2">
+        <div
+          class="rounded-md border border-brand-600 bg-brand-50 px-3 py-1"
+          :title="`Wild_indv_CAMid de Lists: quedan ${upcoming.camsLeft} sin usar`"
+        >
+          <p class="text-xs text-brand-700">Próximo CAM_ID</p>
+          <p class="font-mono text-lg font-semibold text-brand-700">{{ upcoming.cam || '—' }}</p>
+          <p v-if="upcoming.camsLeft < 50" class="text-xs text-amber-800">quedan {{ upcoming.camsLeft }}</p>
+        </div>
+        <div class="rounded-md border border-stone-300 bg-stone-50 px-3 py-1" :title="`Tubo de la colecta (${header.medium})`">
+          <p class="text-xs text-stone-600">Próximo tubo</p>
+          <p class="font-mono text-lg font-semibold">{{ upcoming.tube || '—' }}</p>
+        </div>
+        <div class="rounded-md border border-stone-300 bg-stone-50 px-3 py-1" title="Para las mariposas que van al insectario">
+          <p class="text-xs text-stone-600">Próximo Insectary ID</p>
+          <p class="font-mono text-lg font-semibold">{{ upcoming.insectaryId || '—' }}</p>
+        </div>
+      </div>
     </div>
     <!-- Live butterflies take the next pre-made Insectary IDs. -->
-    <InsectaryIdsWarning
-      class="mx-3 my-2"
-      :revision="tables.tables.Insectary_data?.revision"
-      @extended="loadFreeIds"
-    />
+    <InsectaryIdsWarning class="mx-3 my-2" :revision="tables.tables.Insectary_data?.revision" @extended="loadFreeIds" />
 
     <div v-if="drafts.length" class="border-b border-stone-200 bg-white px-3 pb-2">
       <!-- Always in sight while scrolling the list, and kept to one line: how long it is, how to trim it, the view. -->
@@ -817,18 +861,18 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         <summary class="cursor-pointer select-none">Cómo se usa · la lista se guarda en este navegador</summary>
         <p>Se guarda en este navegador, aunque recargues o cierres la página, hasta que la guardes o la vacíes.</p>
         <p v-if="view === 'tabla' && touchScreen">
-          Toca una celda para seleccionarla y dos veces para editarla · arrastra el círculo de la esquina para ampliar la selección ·
-          la barra de abajo copia, pega, rellena hacia abajo o borra lo seleccionado.
+          Toca una celda para seleccionarla y dos veces para editarla · arrastra el círculo de la esquina para ampliar la
+          selección · la barra de abajo copia, pega, rellena hacia abajo o borra lo seleccionado.
         </p>
         <p v-else-if="view === 'tabla'">
-          Como en una hoja de cálculo: selecciona celdas y arrastra el cuadrito de la esquina hacia abajo para copiarlas (Insectary_ID, CAM_ID y
-          Tube_1_id siguen la serie: O6D → O7D, CAM079895 → CAM079896) · pega
-          celdas de Excel o Sheets (llena hacia abajo y a la derecha, y añade filas si faltan) · Ctrl+D copia la primera fila de la
-          selección · escribe sobre una celda para reemplazarla, doble clic para editarla.
+          Como en una hoja de cálculo: selecciona celdas y arrastra el cuadrito de la esquina hacia abajo para copiarlas
+          (Insectary_ID, CAM_ID y Tube_1_id siguen la serie: O6D → O7D, CAM079895 → CAM079896) · pega celdas de Excel o Sheets
+          (llena hacia abajo y a la derecha, y añade filas si faltan) · Ctrl+D copia la primera fila de la selección · escribe
+          sobre una celda para reemplazarla, doble clic para editarla.
         </p>
         <p v-else>
-          Marca filas (o «hasta aquí» para marcar varias seguidas) y aplica especie, sexo o destino a todas a la vez · en computador
-          también se puede pegar desde Excel, Ctrl+D copia la fila de arriba y Enter baja.
+          Marca filas (o «hasta aquí» para marcar varias seguidas) y aplica especie, sexo o destino a todas a la vez · en
+          computador también se puede pegar desde Excel, Ctrl+D copia la fila de arriba y Enter baja.
         </p>
       </details>
       <CollectGrid
@@ -1146,12 +1190,12 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
       />
     </div>
 
-    <div
-      v-if="confirming"
-      class="fixed inset-0 z-40 grid place-items-center bg-black/40 p-2"
-      @click.self="confirming = false"
-    >
-      <section class="flex max-h-[90vh] w-full max-w-lg flex-col rounded-lg bg-white shadow-xl" role="dialog" aria-label="Guardar colecta">
+    <div v-if="confirming" class="fixed inset-0 z-40 grid place-items-center bg-black/40 p-2" @click.self="confirming = false">
+      <section
+        class="flex max-h-[90vh] w-full max-w-lg flex-col rounded-lg bg-white shadow-xl"
+        role="dialog"
+        aria-label="Guardar colecta"
+      >
         <header class="flex items-center border-b border-stone-200 px-4 py-3">
           <h2 class="flex-1 text-lg font-semibold">Guardar {{ drafts.length }} mariposas</h2>
           <button class="btn-ghost" aria-label="Cerrar" @click="confirming = false"><X :size="20" /></button>
@@ -1169,10 +1213,13 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
             <br />
             Preservadas: <strong>{{ summary.preserved }}</strong
             ><template v-if="summary.cams">
-              ({{ summary.cams.first }}<template v-if="summary.cams.first !== summary.cams.last"> – {{ summary.cams.last }}</template
+              ({{ summary.cams.first
+              }}<template v-if="summary.cams.first !== summary.cams.last"> – {{ summary.cams.last }}</template
               ><template v-if="!summary.cams.consecutive">, con saltos</template>)</template
             >
-            <template v-if="summary.released"><br />Liberadas: <strong>{{ summary.released }}</strong></template>
+            <template v-if="summary.released"
+              ><br />Liberadas: <strong>{{ summary.released }}</strong></template
+            >
           </p>
           <table class="w-full">
             <thead class="text-left text-xs text-stone-500">
