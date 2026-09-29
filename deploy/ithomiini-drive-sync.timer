@@ -1,0 +1,10 @@
+[Unit]
+Description=Twice-daily mirror of the project's Drive documents for the assistant
+
+[Timer]
+OnCalendar=*-*-* 04,16:30:00 UTC
+Persistent=true
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target

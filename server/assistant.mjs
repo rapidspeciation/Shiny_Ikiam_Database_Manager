@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { readFile, readdir, stat } from 'node:fs/promises';
-import { basename, extname, join, resolve } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createReports } from './reports.mjs';
 import { TYPED_OVER_FORMULA, uniqueIdIndex } from './batch.mjs';
@@ -14,6 +14,7 @@ import { claudeAllowed, claudeConfig, prepareWorkspace, runClaude } from './clau
 import { KINDS } from './notebook.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
 import { newRowFormulaFields } from './premade.mjs';
+import { KNOWLEDGE_TOOLS, createKnowledge, runKnowledgeTool } from './knowledge.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const bad = (status, code, message) => ({ status, body: { error: { code, message } } });
@@ -89,14 +90,7 @@ const TOOLS = [
       parameters: { type: 'object', properties: { module: { type: 'string' } }, required: ['module'] },
     },
   },
-  {
-    type: 'function',
-    function: {
-      name: 'search_knowledge',
-      description: 'Search approved local protocols and meeting notes.',
-      parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
-    },
-  },
+  ...KNOWLEDGE_TOOLS,
   {
     type: 'function',
     function: {
@@ -356,94 +350,6 @@ function recordSource(record) {
   };
 }
 
-async function knowledgeFiles(config) {
-  const roots =
-    config.knowledgeRoots ??
-    (config.knowledgeRoot
-      ? [config.knowledgeRoot]
-      : process.env.KNOWLEDGE_DIR
-        ? [process.env.KNOWLEDGE_DIR]
-        : [join(here, '..', 'docs', 'meetings.md'), join(here, '..', 'docs', 'workflows.md')]);
-  const paths = [];
-  for (const configured of roots) {
-    const root = resolve(configured);
-    let info;
-    try {
-      info = await stat(root);
-    } catch {
-      continue;
-    }
-    if (info.isFile()) {
-      paths.push(root);
-      continue;
-    }
-    if (!info.isDirectory()) continue;
-    for (const item of (await readdir(root, { withFileTypes: true })).slice(0, 300)) {
-      if (item.isFile() && ['.md', '.txt'].includes(extname(item.name).toLowerCase()))
-        paths.push(join(root, item.name));
-    }
-  }
-  return paths.slice(0, 400);
-}
-
-async function documents(config) {
-  const entries = [];
-  for (const path of await knowledgeFiles(config)) {
-    let info;
-    try {
-      info = await stat(path);
-    } catch {
-      continue;
-    }
-    if (!info.isFile() || info.size > 150000) continue;
-    const text = await readFile(path, 'utf8');
-    const front = /^---\n([\s\S]*?)\n---\n/.exec(text);
-    const metadata = Object.fromEntries(
-      (front?.[1] ?? '')
-        .split('\n')
-        .map(line => /^([A-Za-z][\w-]*):\s*(.*)$/.exec(line))
-        .filter(Boolean)
-        .map(match => [match[1], match[2].replace(/^['"]|['"]$/g, '')]),
-    );
-    const content = front ? text.slice(front[0].length) : text;
-    const id = createHash('sha256').update(path).digest('hex').slice(0, 20);
-    const name = basename(path);
-    const driveId = /^([A-Za-z0-9_-]{25,})\.txt$/.exec(name)?.[1];
-    entries.push({
-      id,
-      title: metadata.title ?? content.match(/^#\s+(.+)$/m)?.[1] ?? name,
-      text: content,
-      sourceUrl:
-        metadata.sourceUrl ?? (driveId ? `https://docs.google.com/document/d/${driveId}/edit` : `/api/knowledge/${id}`),
-    });
-  }
-  return entries;
-}
-
-function searchDocs(docs, query) {
-  const terms = clip(query, 120)
-    .toLowerCase()
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter(term => term.length > 2)
-    .slice(0, 8);
-  if (!terms.length) return [];
-  return docs
-    .map(doc => {
-      const content = doc.text.toLowerCase();
-      const hits = terms.map(term => content.indexOf(term)).filter(index => index >= 0);
-      const first = Math.min(...hits);
-      return {
-        doc,
-        score: hits.length,
-        snippet: Number.isFinite(first) ? clip(doc.text.slice(Math.max(0, first - 180), first + 800), 1000) : '',
-      };
-    })
-    .filter(item => item.score)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 8)
-    .map(({ doc, snippet }) => ({ id: doc.id, type: 'document', title: doc.title, snippet, sourceUrl: doc.sourceUrl }));
-}
-
 function publicMessage(row) {
   return {
     id: row.id,
@@ -469,6 +375,7 @@ export function createAssistant({ store, config = {} }) {
   if (claude.bin && claude.workspace)
     prepareWorkspace(claude, join(here, '..')).catch(e => console.error('Claude workspace:', e.message));
   const reports = createReports({ store, config });
+  const knowledge = createKnowledge(config);
   const thread = (id, user) =>
     db.prepare('SELECT * FROM ai_threads WHERE id = ? AND owner_id = ?').get(id, owner(user));
   const insertMessage = (threadId, role, content, sources = [], results = [], proposals = [], attachments = []) => {
@@ -862,11 +769,8 @@ export function createAssistant({ store, config = {} }) {
       context.sources.set(record.id, recordSource(record));
       return compact(record);
     }
-    if (name === 'search_knowledge') {
-      const found = searchDocs(await documents(config), args.query);
-      for (const item of found) context.sources.set(item.id, item);
-      return { documents: found };
-    }
+    if (['search_knowledge', 'read_document', 'list_documents'].includes(name))
+      return runKnowledgeTool(knowledge, name, args, context);
     if (name === 'run_report') {
       const response = await reports.build({ kind: args.kind, module: args.module, field: args.field });
       if (response.status !== 200) return response.body;
@@ -949,6 +853,7 @@ export function createAssistant({ store, config = {} }) {
       'check_data lists inconsistencies with ready fixes; queue_wikiloc and get_walk turn a Wikiloc monitoring walk into newRows for propose_changes.',
       '"Aplica las correcciones acordadas": list_agreed_fixes, then ONE propose_changes with its fixes and issueIds, list the tasks (Drive work), and wait for the person to confirm.',
       'A photo of a notebook page, envelope or label: transcribe every line as the digitalizar-cuaderno instructions say, then match_notebook compares it with the sheet and drafts one proposal per page.',
+      'Meetings, protocols, reports and presentations of the project Drive: search_knowledge, list_documents (e.g. the last meeting) and read_document. When you answer from a document, name it and give its Drive link (sourceUrl).',
     ].join('\n');
   }
 
@@ -1281,13 +1186,18 @@ export function createAssistant({ store, config = {} }) {
         },
       };
     }
-    if (path === '/api/knowledge' && method === 'GET')
-      return { status: 200, body: { documents: searchDocs(await documents(config), query.q) } };
-    const docMatch = /^\/api\/knowledge\/([a-f0-9]{20})$/.exec(path);
+    if (path === '/api/knowledge' && method === 'GET') {
+      const passages = await knowledge.search({ query: query.q, kind: query.kind, from: query.from, to: query.to, perDoc: 1 });
+      return { status: 200, body: { documents: passages } };
+    }
+    const docMatch = /^\/api\/knowledge\/([A-Za-z0-9_-]{20,80})$/.exec(path);
     if (docMatch && method === 'GET') {
-      const doc = (await documents(config)).find(item => item.id === docMatch[1]);
+      const doc = await knowledge.get(docMatch[1]);
       return doc
-        ? { status: 200, body: { id: doc.id, title: doc.title, text: doc.text, sourceUrl: doc.sourceUrl } }
+        ? {
+            status: 200,
+            body: { id: doc.id, title: doc.title, kind: doc.kind, date: doc.date, text: doc.text, sourceUrl: doc.sourceUrl },
+          }
         : bad(404, 'not_found', 'Document not found.');
     }
     if (path === '/api/chat/threads' && method === 'GET') {

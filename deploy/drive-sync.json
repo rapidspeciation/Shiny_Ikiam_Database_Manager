@@ -1,0 +1,16 @@
+{
+  "comment": "Folders of the project Drive (Ithomiini_IKIAM) mirrored as text for the assistant by scripts/drive-sync.mjs. Read-only; Sheets are never exported.",
+  "folders": [
+    { "id": "1qv_fU0MqSx0ANIjbE86Fz037i3vGvCv5", "name": "Meetings", "kind": "meeting" },
+    { "id": "1Hl8-WYKXeqoT3f3KKb0BclvVFm4aymRE", "name": "Protocols", "kind": "protocol" },
+    { "id": "1Flqkdgc8IKQ4VFO-gSJjiCZJz1Ub18u2", "name": "Reports", "kind": "report" },
+    { "id": "18nVACuykYDJCH1Oo_rGgIzLfPAS5-L4R", "name": "Insectary and Greenhouse Management", "kind": "document" },
+    { "id": "1VtSQ80TpomTybPGcfL1iexLeRkFJEAp-", "name": "Ithomiini_IKIAM", "kind": "presentation", "recursive": false }
+  ],
+  "excludeNames": ["Admin", "Invoices", "Photos", "Videos", "Data", "Datalogger", "Ithomiini_DB back ups"],
+  "excludePattern": "InfoAcc?ess|password|contrase|factura|invoice|contrat",
+  "maxFileMb": 30,
+  "maxTextKb": 400,
+  "pdfPages": 80,
+  "concurrency": 3
+}

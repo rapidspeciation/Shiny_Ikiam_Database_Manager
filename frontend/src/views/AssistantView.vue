@@ -22,6 +22,7 @@ interface Source {
   row?: number
   label?: string
   title?: string
+  sourceUrl?: string
 }
 interface Result {
   title: string
@@ -389,6 +390,16 @@ const cellOf = (row: Record<string, unknown> | unknown[], key: string, i: number
                   >
                     {{ s.label }} · {{ s.sheet }} fila {{ s.row }}
                   </RouterLink>
+                  <a
+                    v-else-if="s.type === 'document' && /^https:\/\//.test(s.sourceUrl || '')"
+                    :href="s.sourceUrl"
+                    target="_blank"
+                    rel="noopener"
+                    class="rounded bg-stone-100 px-1.5 py-0.5 text-xs text-stone-700 underline decoration-stone-300 hover:bg-brand-50"
+                    title="Abrir en Google Drive"
+                  >
+                    {{ s.title }}
+                  </a>
                   <span v-else class="rounded bg-stone-100 px-1.5 py-0.5 text-xs text-stone-700">{{ s.title || s.label }}</span>
                 </template>
               </div>
