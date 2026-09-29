@@ -61,6 +61,8 @@ const header = persistentRef('collect:header', {
   medium: 'Flash frozen',
 })
 // A day of field entries must survive a closed tab: kept in this browser, per person, until saved or emptied.
+// It is usually dry on collecting days: Rainfall starts as DY_(dry) (it can still be changed, per row too).
+if (!header.value.rainfall) header.value.rainfall = 'DY_(dry)'
 const drafts = persistentRef<Draft[]>(`collect:drafts:${useSession().user?.username}`, [], { lasting: true })
 // Lists kept from before Collector and Identifier were per row take the header's people.
 for (const d of drafts.value) {
@@ -693,18 +695,22 @@ async function save() {
 
 const columns = computed(() =>
   table.value
-    ? orderColumns(table.value.columns, [
-        'Collection_date',
-        'Collection_location',
-        'Release_Collect',
+    ? // Who the butterfly is first (Insectary_ID pinned), then what it is, then what happened, when, where and by whom.
+      orderColumns(table.value.columns, [
         'Insectary_ID',
         'CAM_ID',
         'Tube_1_id',
         'SPECIES',
         'Subspecies_Form',
         'Sex',
+        'Release_Collect',
+        'Collection_date',
+        'Collection_location',
         'Collector',
         'Identifier',
+        'Rainfall',
+        'Cloud_cover',
+        'Preservation_medium',
         'Notes_Collection_data',
       ])
     : [],
@@ -1127,7 +1133,7 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         :creates="creates"
         :columns="columns"
         :options="options"
-        :frozen="['Collection_date']"
+        :frozen="['Insectary_ID']"
         :create-formulas="createFormulas"
         label-field="Insectary_ID"
         @notice="notify"
