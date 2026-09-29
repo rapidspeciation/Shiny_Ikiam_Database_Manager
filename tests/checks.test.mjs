@@ -139,6 +139,12 @@ test('check_data finds each kind of inconsistency, with the row, the value and t
     missing_sample: 3,
     mark_reuse: 1,
     walk_doubt: 0,
+    photo_camid: 0,
+    photo_extra: 0,
+    envelope_sex: 0,
+    envelope_species: 0,
+    photo_missing: 0,
+    ai_species: 0,
   });
   // A number that is no date, flagged once (not as a date in the future), with the day its note gives.
   const broken = find(out, 'bad_date', 'SamplingDay_data', 2, 'Date');

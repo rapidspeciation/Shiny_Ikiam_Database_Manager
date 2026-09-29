@@ -1,0 +1,8 @@
+{"type": "envelope-not-file", "stratum": "envelope-not-file:all-photos", "folder": "CAM000101", "photos": ["CAM000101/CAM000101d__Genus_sp.jpg", "CAM000101/CAM000101v__Genus_sp.jpg"], "read": ["CAM000111"], "conf": 0.99}
+{"type": "envelope-not-file", "stratum": "envelope-not-file:high", "folder": "CAM000102", "photos": ["CAM000102/CAM000102d__Genus_sp.jpg"], "read": ["CAM000112"], "conf": 0.8}
+{"type": "envelope-not-file", "stratum": "envelope-not-file:all-photos", "folder": "CAM000103", "photos": ["CAM000103/CAM000103d__Genus_sp.jpg"], "read": ["CAM000104"], "conf": 0.99}
+{"type": "sex", "stratum": "sex:both-photos", "folder": "CAM000105", "photos": ["CAM000105/CAM000105d__Genus_sp.jpg", "CAM000105/CAM000105v__Genus_sp.jpg"], "envelope": "male", "database": ["female"], "lines": ["polymnia ♂", "polymnia ♂"]}
+{"type": "sex", "stratum": "sex:one-photo", "folder": "CAM000106", "photos": ["CAM000106/CAM000106d__Genus_sp.jpg"], "envelope": "female", "database": ["male"], "lines": ["♀"]}
+{"type": "species", "stratum": "species:both-photos", "folder": "CAM000107", "photos": ["CAM000107/CAM000107d__Genus_sp.jpg", "CAM000107/CAM000107v__Genus_sp.jpg"], "envelope": ["episcada"], "database": ["Ithomia Ithomia salapia salapia"], "lines": ["Episcada", "sulphurea"]}
+{"type": "species", "stratum": "species:both-photos", "folder": "CAM000108", "photos": ["CAM000108/CAM000108d__Genus_sp.jpg"], "envelope": ["episcada"], "database": ["Ithomia Ithomia salapia salapia"], "lines": ["Episcada", "sulphurea"]}
+{"type": "dv-disagree", "stratum": "dv-disagree:confident", "folder": "CAM000110", "photos": ["CAM000110/CAM000110d__Genus_sp.jpg", "CAM000110/CAM000110v__Genus_sp.jpg"], "read": ["CAM000119", "CAM000110"]}
