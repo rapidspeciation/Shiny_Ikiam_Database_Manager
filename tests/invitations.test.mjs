@@ -51,6 +51,7 @@ test('an admin invites someone by email; the link creates their account once and
     assert.equal(sent.length, 1);
     assert.equal(sent[0].to, 'ana@example.org');
     assert.match(sent[0].text, /El proyecto de ithómidos te invitó a Ithomiini database/);
+    assert.match(sent[0].text, /The Ithomiini project invited you to Ithomiini database/);
     assert.match(sent[0].text, /Invitación enviada por La Jefa\./);
     const token = /#\/activar\?t=([\w-]+)/.exec(sent[0].text)[1];
     assert.ok(sent[0].html.includes(`https://app.example.org/ithomiini/#/activar?t=${token}`));

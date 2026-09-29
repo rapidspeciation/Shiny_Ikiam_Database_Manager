@@ -9,6 +9,7 @@ import { passwordFields, publicUser, validateUsername } from './auth.mjs';
 const DAY = 24 * 60 * 60 * 1000;
 const ROLES = ['observer', 'editor', 'reviewer', 'admin'];
 const ROLE_NAMES = { observer: 'lectura', editor: 'edición', reviewer: 'revisión', admin: 'administración' };
+const ROLE_NAMES_EN = { observer: 'read-only', editor: 'editor', reviewer: 'reviewer', admin: 'administrator' };
 const EMAIL = /^[^\s@<>"]+@[^\s@<>"]+\.[a-z]{2,}$/i;
 const digest = text => createHash('sha256').update(text).digest('hex');
 const now = () => new Date().toISOString();
@@ -84,28 +85,38 @@ function view(row) {
   };
 }
 
+/** The invitation email, in English then Spanish (the team is in Ecuador and the UK). */
 function message(invitation, link, inviter) {
-  const role = ROLE_NAMES[invitation.role] ?? invitation.role;
-  const intro = `El proyecto de ithómidos te invitó a Ithomiini database, la app del equipo para los datos de colecta, monitoreo e insectario (acceso de ${role}).`;
+  const name = invitation.display_name;
+  const roleEs = ROLE_NAMES[invitation.role] ?? invitation.role;
+  const roleEn = ROLE_NAMES_EN[invitation.role] ?? invitation.role;
   // Who sent it, unless that is only the app's own name.
-  const by = inviter && !/^ithomiini database/i.test(inviter) ? `Invitación enviada por ${inviter}.` : '';
-  const text = [
-    `Hola ${invitation.display_name}:`,
-    '',
-    intro,
-    '',
-    'Crea tu usuario y contraseña con este enlace (vale 7 días y se usa una sola vez):',
-    link,
-    '',
-    [by, 'Si no esperabas este correo, ignóralo.'].filter(Boolean).join(' '),
-  ].join('\n');
+  const named = inviter && !/^ithomiini database/i.test(inviter);
+  const en = {
+    hello: `Hi ${name},`,
+    intro: `The Ithomiini project invited you to Ithomiini database, the team's app for collecting, monitoring and insectary data (${roleEn} access).`,
+    how: 'Create your username and password with this link (valid for 7 days, single use):',
+    button: 'Create my account',
+    end: [named ? `Invitation sent by ${inviter}.` : '', 'If you were not expecting this email, ignore it.'].filter(Boolean).join(' '),
+  };
+  const es = {
+    hello: `Hola ${name}:`,
+    intro: `El proyecto de ithómidos te invitó a Ithomiini database, la app del equipo para los datos de colecta, monitoreo e insectario (acceso de ${roleEs}).`,
+    how: 'Crea tu usuario y contraseña con este enlace (vale 7 días y se usa una sola vez):',
+    button: 'Crear mi cuenta',
+    end: [named ? `Invitación enviada por ${inviter}.` : '', 'Si no esperabas este correo, ignóralo.'].filter(Boolean).join(' '),
+  };
+  const text = [en.hello, '', en.intro, '', en.how, link, '', en.end, '', '— Español —', '', es.hello, '', es.intro, '', es.how, link, '', es.end].join('\n');
+  const block = m => `<p>${escape(m.hello)}</p>
+<p>${escape(m.intro).replace('Ithomiini database', '<strong>Ithomiini database</strong>')}</p>
+<p><a href="${escape(link)}" style="display:inline-block;background:#1f513a;color:#fff;padding:.6rem 1rem;border-radius:.4rem;text-decoration:none">${escape(m.button)}</a></p>
+<p style="font-size:.85rem;color:#57534e">${escape(m.how.replace(/:$/, '.'))} ${escape(m.end)}</p>`;
   const html = `<div style="font-family:system-ui,sans-serif;max-width:32rem;line-height:1.5;color:#292524">
-<p>Hola ${escape(invitation.display_name)}:</p>
-<p>${escape(intro).replace('Ithomiini database', '<strong>Ithomiini database</strong>')}</p>
-<p><a href="${escape(link)}" style="display:inline-block;background:#1f513a;color:#fff;padding:.6rem 1rem;border-radius:.4rem;text-decoration:none">Crear mi cuenta</a></p>
-<p style="font-size:.85rem;color:#57534e">El enlace vale 7 días y se usa una sola vez. ${escape(by)} Si no esperabas este correo, ignóralo.</p>
+${block(en)}
+<hr style="border:none;border-top:1px solid #d6d3d1;margin:1.5rem 0">
+${block(es)}
 </div>`;
-  return { subject: 'Tu cuenta en Ithomiini database', text, html };
+  return { subject: 'Your Ithomiini database account · Tu cuenta en Ithomiini database', text, html };
 }
 
 export function createInvitations(store, mailer, { send = sendMail } = {}) {
