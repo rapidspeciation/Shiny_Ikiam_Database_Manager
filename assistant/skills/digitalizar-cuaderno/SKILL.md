@@ -22,7 +22,11 @@ is written until the person applies it.
    pages; coloured highlights and the notes help to keep them in step) and give
    its right-hand values too (e.g. Posturas: pupa date, pupae, emerge date,
    adults, `ins`/`lab`, notes). Skip only lines that hold nothing but a
-   pre-written ID or number.
+   pre-written ID or number. Before calling the tool, check that the two halves
+   are in step: the stages must make sense on each line (no hatch date or 0
+   larvae → no pupae or adults; a note like "no hatch" or "all died" sits on
+   such a line; `ins`/`lab` is written on almost every line). If they do not,
+   the right-hand page is shifted by a line: re-align it.
 3. **Call `match_notebook` once per page** with `kind`, the `lines` and, only if
    the year is written somewhere on the page, `year`. Several envelopes/labels
    photographed together are one call (`kind: "labels"`, one line per label).
@@ -87,7 +91,8 @@ Give values **as written**; the tool converts them.
   `pro x wer` = Mechanitis polymnia proceriformis x werneri;
   `lysimnia`/`lys` = Mechanitis lysimnia;
   `zaneka` = Melinaea menophilus zaneka; `mothone` = Melinaea mothone;
-  `hibrido`/`zaneka x hibrido` = hybrid (zaneka x menophilus), written as on the page.
+  `hibrido`, `hibrido x hibrido`, `zaneka x hibrido`, `hibrido x zaneka` =
+  Melinaea menophilus zaneka x menophilus (the hybrid stock).
   Always give the species as written: the tool keeps the SPECIES formula of
   Insectary_data (predicted from the clutch) and only types over it when what
   emerged differs from the prediction.
