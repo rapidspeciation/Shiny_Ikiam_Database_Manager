@@ -277,18 +277,32 @@ export function photoIssues(store, { sheets, add, ref, today }) {
   }
 
   // ---- The Wings Gallery's species against the recorded one (same rule as the gallery's "differs from recorded").
+  // The sheet's species list (~10,000 names) indexed once by genus + species: looking them up
+  // for every prediction made this scan take 30 s on the server.
+  const speciesIndexes = new Map();
+  const speciesIndex = sheet => {
+    const options = lists[sheet]?.SPECIES;
+    if (!options) return null;
+    if (!speciesIndexes.has(sheet)) {
+      const index = new Map();
+      for (const v of options.values) {
+        const key = binomial(v);
+        (index.get(key) || index.set(key, []).get(key)).push(v);
+      }
+      speciesIndexes.set(sheet, index);
+    }
+    return speciesIndexes.get(sheet);
+  };
   for (const [cam, prediction] of data.predictions) {
     const row = rowOf(cam);
     if (!row) continue;
     const compared = rankComparison(row.values, prediction, 'species');
     if (compared.status !== 'disagreement') continue;
     const confidence = compared.confidence ?? 0;
-    const options = lists[row.sheet]?.SPECIES;
+    const byBinomial = speciesIndex(row.sheet);
     const choices = prediction.species
       .slice(0, 3)
-      .flatMap(([name]) =>
-        options ? [...options.values].filter(v => binomial(v) === binomial(canonicalTaxon(name))).slice(0, 3) : [name],
-      );
+      .flatMap(([name]) => (byBinomial ? (byBinomial.get(binomial(canonicalTaxon(name))) ?? []).slice(0, 3) : [name]));
     add(
       'ai_species',
       row,
