@@ -1,10 +1,11 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import LoginView from './views/LoginView.vue'
 
-/** `open`: visible without an account (natural-history summaries only). */
+/** `open`: visible without an account (natural-history summaries only); `editors`: only for people who edit. */
 export const tabs = [
   { path: '/inicio', name: 'home', label: 'Inicio', open: true, component: () => import('./views/HomeView.vue') },
   { path: '/tablas', name: 'tables', label: 'Tablas', component: () => import('./views/TablesView.vue') },
+  { path: '/revision', name: 'review', label: 'Revisión', editors: true, component: () => import('./views/RevisionView.vue') },
   { path: '/colecta', name: 'collect', label: 'Colecta', component: () => import('./views/CollectView.vue') },
   { path: '/monitoreo', name: 'monitoring', label: 'Monitoreo', component: () => import('./views/MonitoringView.vue') },
   { path: '/muertes', name: 'deaths', label: 'Muertes', component: () => import('./views/DeathsView.vue') },

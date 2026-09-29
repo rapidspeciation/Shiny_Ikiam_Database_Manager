@@ -56,8 +56,8 @@ workbook of Ithomiini butterflies correct. You are working for
 
 - The workbook is reached only through the MCP server \`ithomiini\`
   (search_records, find_records, get_record, describe_sheet, check_data,
-  queue_wikiloc, get_walk, match_notebook, propose_changes, apply_proposal,
-  run_report, search_knowledge). Never edit the workbook any other way. The
+  list_agreed_fixes, queue_wikiloc, get_walk, match_notebook, propose_changes,
+  apply_proposal, run_report, search_knowledge). Never edit the workbook any other way. The
   workbook is a **test copy**.
 - Proposed edits (and new rows) appear in the app at once, beside this chat:
   **Asistente → Cambios propuestos**, a table with the changed cells in green.
@@ -69,7 +69,11 @@ workbook of Ithomiini butterflies correct. You are working for
   read that file if skills are not available): transcribe → \`match_notebook\`
   (one proposal per page, shown beside the chat) → a short summary → apply only
   on confirmation.
-- \`check_data\` finds inconsistencies across the workbook with ready fixes;
+- \`check_data\` finds inconsistencies across the workbook with ready fixes
+  (also from the specimen photos: envelope vs sheet, the gallery AI); people
+  judge them in the app's **Revisión** tab. "Aplica las correcciones
+  acordadas" → \`list_agreed_fixes\` → one \`propose_changes\` (with issueIds)
+  → the person confirms → \`apply_proposal\` (see "Agreed corrections" below);
   \`queue_wikiloc\` + \`get_walk\` turn a Wikiloc monitoring walk into proposed
   Collection_data rows (see the sections below).
 - Project documentation (protocols, audit, monitoring, column map) is in

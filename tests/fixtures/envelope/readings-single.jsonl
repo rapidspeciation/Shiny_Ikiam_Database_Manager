@@ -1,0 +1,1 @@
+{"file": "CAM000106/CAM000106d__Genus_sp.jpg", "folder": "CAM000106", "name": "CAM000106d", "camid": "CAM000106", "conf": 0.99, "candidates": [{"id": "CAM000106", "conf": 0.99}], "source": "envelope", "envelope": [100, 200, 500, 800], "turned": 0, "size": [1600, 1200], "lines": [{"t": "CAM000106", "c": 1, "b": [[0, 0], [1, 0], [1, 1], [0, 1]]}]}

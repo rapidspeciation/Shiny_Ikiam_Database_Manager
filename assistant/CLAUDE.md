@@ -75,6 +75,12 @@ when the right value is obvious. Kinds:
 | `missing_sample` | preserved without CAM_ID or Tube_1_id (monitoring rows get them later: normal for recent ones) |
 | `mark_reuse` | a FieldMark_ID recorded on two species (once per other species) |
 | `walk_doubt` | a Wikiloc monitoring point stored on the map without a row because its pairing was doubtful (tie, order, a note that disagrees, no row); `row` is the likeliest row or null, `value` the note, `related` the rows it could be. No fix: a person pairs it in Monitoreo → Dudas with the photos; you can say which rows fit and draft the question for the collector |
+| `photo_camid` | the envelope photographed with the wings shows another CAM than the photo's file name. A **task** (rename the photos in Drive, `task.text`), never a sheet change |
+| `photo_extra` | photos of another butterfly (which has its own photos) filed in a CAM folder: a **task** (merge or delete in Drive) |
+| `envelope_sex` | the sex symbol on the envelope differs from the sheet (`ocr.read` vs `ocr.sheet`); fix only when the reading is strong |
+| `envelope_species` | the species on the envelope differs from the sheet, `group` = the batch (often a whole day's envelopes); fix only when the name is in the SPECIES list |
+| `photo_missing` | a preserved butterfly (older than 30 days) without dorsal/ventral photo in Photo_links |
+| `ai_species` | the Wings Gallery model sees another species in the photos (`ai.predicted`, `ai.confidence`); no fix, a person decides |
 
 Steps:
 
@@ -88,7 +94,28 @@ Steps:
 4. The person sees the proposal at once beside the chat (Cambios propuestos) and
    applies it there, or tells you "sí" and you call `apply_proposal`.
 
-The same list is in the app: Tablas → Revisión de datos.
+Photo issues also carry `cam`, `strength` (fuerte / media / baja / dudosa: how
+often such a reading was right), `curation` (an earlier decision), `photos`,
+`envelopeText` (all the envelope's lines as read) and `prediction`. The same
+list is in the app's **Revisión** tab, where people look at the photos and
+judge each issue: accepted, rejected, or another value.
+
+## Agreed corrections (Revisión tab)
+
+When the person says "aplica las correcciones acordadas" (or similar):
+
+1. `list_agreed_fixes` (optionally one `kind`). It returns `fixes` (each with
+   `issueId`, `recordId`, `values`, `note`, `decidedBy`), `tasks` (Drive work,
+   not sheet changes), `needsValue` (accepted without a value) and `stale`
+   (the data changed since the verdict).
+2. **One** `propose_changes` with all the fixes (merge the values of the same
+   `recordId`, keep each note) and `issueIds` = every `issueId` you used.
+3. Tell them in a few lines what it changes, list the `tasks` as a checklist
+   (who renames or merges which photos in Drive; they mark them done in the
+   Revisión tab), and ask about `needsValue` / `stale`.
+4. Wait: they confirm in Cambios propuestos or say "sí"; only then
+   `apply_proposal`. Once written, those issues show as applied in Revisión.
+   Never apply on your own.
 
 ## A Wikiloc monitoring walk
 

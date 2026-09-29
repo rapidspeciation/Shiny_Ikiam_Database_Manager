@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { createReports } from './reports.mjs';
 import { TYPED_OVER_FORMULA, uniqueIdIndex } from './batch.mjs';
 import { allIssues, checkData } from './checks.mjs';
+import { agreedFixes, markApplied } from './review.mjs';
 import { comparable, isSumField, labelFor, moduleMap, simpleSum, validateValues } from './schema.mjs';
 import { TUBE_FIELD, isIdValue, isUnique } from './verifications.mjs';
 import { listOptions, listProblem } from './verify.mjs';
@@ -117,7 +118,7 @@ const TOOLS = [
     function: {
       name: 'check_data',
       description:
-        'Scan the workbook for inconsistencies: repeated IDs/tubes, a CAM given to two butterflies, values outside strict dropdown lists, Collection_data rows sent to the insectary without a filled Insectary_data row (and wild insectary butterflies without a collection row), species/sex/CAM mismatches between the two rows of one butterfly, deaths or preservations dated before collection or entry, future dates, preserved rows without CAM or Tube_1_id, field marks used for two species, and Wikiloc monitoring points stored on the map without a row because their pairing was doubtful (walk_doubt: row/recordId is the likeliest row or null, value the note, walk = {date, collector, trackId}; they are paired by a person in Monitoreo → Dudas, never with propose_changes). Each issue has sheet, row, recordId, field, value, problem and, when the right value is obvious, fix = {recordId, values} ready for propose_changes. Paginated; filter by sheet and kind (comma-separated). Call without kind first to see the counts.',
+        'Scan the workbook for inconsistencies: repeated IDs/tubes, a CAM given to two butterflies, values outside strict dropdown lists, Collection_data rows sent to the insectary without a filled Insectary_data row (and wild insectary butterflies without a collection row), species/sex/CAM mismatches between the two rows of one butterfly, deaths or preservations dated before collection or entry, future dates, preserved rows without CAM or Tube_1_id, field marks used for two species, and Wikiloc monitoring points stored on the map without a row because their pairing was doubtful (walk_doubt: row/recordId is the likeliest row or null, value the note, walk = {date, collector, trackId}; they are paired by a person in Monitoreo → Dudas, never with propose_changes). From the specimen photos: photo_camid (the envelope in the photo shows another CAM than the file name: a Drive rename, task), photo_extra (photos of another butterfly in a CAM folder: task), envelope_sex / envelope_species (the envelope says another sex/species than the sheet; ocr = what was read), photo_missing (preserved without photos in Photo_links), ai_species (the Wings Gallery model sees another species; ai = {predicted, confidence}). Photo issues carry cam, strength (fuerte/media/baja/dudosa), curation (earlier decision), photos, envelopeText, envelopeCamid, prediction; tasks carry task.text and are never sheet changes. People judge issues in the Revisión tab; use list_agreed_fixes for the fixes they accepted. Each issue has sheet, row, recordId, field, value, problem and, when the right value is obvious, fix = {recordId, values} ready for propose_changes. Paginated; filter by sheet and kind (comma-separated). Call without kind first to see the counts.',
       parameters: {
         type: 'object',
         properties: {
@@ -125,7 +126,7 @@ const TOOLS = [
           kind: {
             type: 'string',
             description:
-              'repeat, cam_cross, list, insectary_link, link_mismatch, date_order, future_date, bad_date, missing_sample, mark_reuse, walk_doubt (comma-separated)',
+              'repeat, cam_cross, list, insectary_link, link_mismatch, date_order, future_date, bad_date, missing_sample, mark_reuse, walk_doubt, photo_camid, photo_extra, envelope_sex, envelope_species, photo_missing, ai_species (comma-separated)',
           },
           recordId: { type: 'string', description: 'Only the issues of this row' },
           limit: { type: 'integer', description: '1 to 200, default 50' },
@@ -201,8 +202,29 @@ const TOOLS = [
             },
           },
           reason: { type: 'string' },
+          issueIds: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'The issueId of every fix from list_agreed_fixes used in this proposal: once the person applies it, those issues show as applied in the Revisión tab',
+          },
         },
         required: ['reason'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_agreed_fixes',
+      description:
+        'The corrections people agreed on in the Revisión tab (verdict accepted, or another value they gave), ready to propose: fixes = {issueId, recordId, sheet, row, label, values, note, decidedBy} for propose_changes; tasks = work that is no sheet change (Drive renames and merges of specimen photos) to explain as a checklist; needsValue = accepted without a value (ask); stale = the data changed since the verdict. When the person says "aplica las correcciones acordadas": call this, make ONE propose_changes with all fixes (merge values per recordId, keep notes) and issueIds, tell them what it changes and list the tasks, and wait for their confirmation before apply_proposal. Never apply on your own.',
+      parameters: {
+        type: 'object',
+        properties: {
+          kind: { type: 'string', description: 'Only these kinds (comma-separated), e.g. envelope_sex' },
+          limit: { type: 'integer', description: '1 to 100, default 100' },
+        },
       },
     },
   },
@@ -249,6 +271,8 @@ function init(db) {
   if (!has('ai_proposals', 'applied_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN applied_json TEXT');
   // New rows of a proposal, once written: their record IDs (to show their sheet rows).
   if (!has('ai_proposals', 'created_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN created_json TEXT');
+  // Issues of the Revisión tab a proposal fixes (list_agreed_fixes): marked applied when it is written.
+  if (!has('ai_proposals', 'issues_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN issues_json TEXT');
   // Personal tokens for agents outside the app (T3 Code projects) to use the same tools.
   db.exec(`CREATE TABLE IF NOT EXISTS ai_tokens (
     token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, label TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT
@@ -684,11 +708,11 @@ export function createAssistant({ store, config = {} }) {
   }
 
   /** A drafted proposal saved for review: it shows at once in Cambios propuestos (and the chat). */
-  function saveProposal(changes, reason, context) {
+  function saveProposal(changes, reason, context, issueIds = []) {
     const id = randomUUID();
     db.prepare(
-      'INSERT INTO ai_proposals (id,thread_id,owner_id,changes_json,reason,status,created_at) VALUES (?,?,?,?,?,?,?)',
-    ).run(id, context.threadId, owner(context.user), json(changes), clip(reason, 500), 'pending', now());
+      'INSERT INTO ai_proposals (id,thread_id,owner_id,changes_json,reason,status,created_at,issues_json) VALUES (?,?,?,?,?,?,?,?)',
+    ).run(id, context.threadId, owner(context.user), json(changes), clip(reason, 500), 'pending', now(), issueIds.length ? json(issueIds) : null);
     const proposal = { id, changes, reason: clip(reason, 500), status: 'pending' };
     context.proposals.push(proposal);
     changed(owner(context.user));
@@ -700,7 +724,8 @@ export function createAssistant({ store, config = {} }) {
     const drafted = draftChanges(args);
     if (drafted.error) return drafted;
     const { changes } = drafted;
-    const { id } = saveProposal(changes, args.reason, context);
+    const issueIds = Array.isArray(args.issueIds) ? args.issueIds.slice(0, 500).map(i => clip(i, 200)) : [];
+    const { id } = saveProposal(changes, args.reason, context, issueIds);
     const dropped = [...new Set(changes.flatMap(c => c.dropped ?? []))];
     return {
       proposalId: id,
@@ -738,6 +763,10 @@ export function createAssistant({ store, config = {} }) {
       db.prepare(
         'UPDATE ai_proposals SET status = ?, applied_at = ?, applied_json = ?, created_json = ? WHERE id = ?',
       ).run(status, status === 'applied' ? now() : null, json(chosen), json(created), proposal.id);
+      // Agreed issues of the Revisión tab whose rows were written: now applied.
+      const issueIds = parse(proposal.issues_json ?? 'null');
+      if (status === 'applied' && issueIds?.length)
+        markApplied(store, issueIds, { recordIds: new Set(chosen.map(i => all[i].recordId)), proposalId: proposal.id, user });
       return { proposalId: proposal.id, status, applied: chosen, result };
     } catch (cause) {
       db.prepare("UPDATE ai_proposals SET status = 'needs_review' WHERE id = ?").run(proposal.id);
@@ -870,6 +899,7 @@ export function createAssistant({ store, config = {} }) {
         collector: args.collector ? clip(args.collector, 120) : undefined,
       });
     if (name === 'propose_changes') return proposeChanges(args, context);
+    if (name === 'list_agreed_fixes') return agreedFixes(store, { kind: args.kind ? clip(args.kind, 300) : undefined, limit: args.limit });
     if (name === 'match_notebook') return matchNotebook(args, context);
     if (name === 'apply_proposal') {
       const proposal = db
@@ -917,6 +947,7 @@ export function createAssistant({ store, config = {} }) {
       'Use the tools to read exact rows before answering. Only claim what the tools show. Never infer survival, fertility, mating, genotype or identity from counts.',
       'Changes are drafted with propose_changes; the person reviews them in a table and confirms. Use apply_proposal only when their latest message explicitly approves a proposal. Never say a change was written unless apply_proposal returned applied.',
       'check_data lists inconsistencies with ready fixes; queue_wikiloc and get_walk turn a Wikiloc monitoring walk into newRows for propose_changes.',
+      '"Aplica las correcciones acordadas": list_agreed_fixes, then ONE propose_changes with its fixes and issueIds, list the tasks (Drive work), and wait for the person to confirm.',
       'A photo of a notebook page, envelope or label: transcribe every line as the digitalizar-cuaderno instructions say, then match_notebook compares it with the sheet and drafts one proposal per page.',
     ].join('\n');
   }
@@ -1358,7 +1389,7 @@ export function createAssistant({ store, config = {} }) {
       }));
       return { status: 200, body: { revision, proposals } };
     }
-    // "Proponer arreglos" in Tablas → Revisión de datos: the obvious fixes as one proposal to confirm.
+    // The obvious fixes of chosen issues as one proposal to confirm (the old Tablas → Revisión de datos list; kept for links and tools).
     if (path === '/api/chat/proposals/from-checks' && method === 'POST') {
       if (!Array.isArray(body.ids) || !body.ids.length || body.ids.length > 100)
         return bad(400, 'invalid_ids', 'Choose 1 to 100 issues.');
@@ -1384,6 +1415,31 @@ export function createAssistant({ store, config = {} }) {
       if (out.error) return bad(409, 'invalid_fix', out.error);
       insertMessage(threadId, 'assistant', 'Arreglos propuestos desde Revisión de datos', [], [], context.proposals);
       return { status: 201, body: out };
+    }
+    // "Preparar propuesta" in the Revisión tab: every agreed fix as one proposal to confirm.
+    if (path === '/api/chat/proposals/from-review' && method === 'POST') {
+      const agreed = agreedFixes(store, { kind: body.kind ? clip(body.kind, 300) : undefined, limit: 100 });
+      if (!agreed.fixes.length) return bad(409, 'no_fixes', 'No accepted fixes are waiting.');
+      const merged = new Map();
+      for (const f of agreed.fixes) {
+        const change = merged.get(f.recordId) ?? { recordId: f.recordId, values: {}, notes: [] };
+        Object.assign(change.values, f.values);
+        change.notes.push(f.note);
+        merged.set(f.recordId, change);
+      }
+      const threadId = namedThread(user, 'Revisión de datos');
+      const context = { threadId, user, records: new Map(), sources: new Map(), results: [], proposals: [], applied: [] };
+      const out = proposeChanges(
+        {
+          reason: 'Correcciones acordadas en Revisión',
+          changes: [...merged.values()].map(c => ({ recordId: c.recordId, values: c.values, note: c.notes.join(' · ') })),
+          issueIds: agreed.fixes.map(f => f.issueId),
+        },
+        context,
+      );
+      if (out.error) return bad(409, 'invalid_fix', out.error);
+      insertMessage(threadId, 'assistant', 'Correcciones acordadas en Revisión', [], [], context.proposals);
+      return { status: 201, body: { ...out, fixes: agreed.fixes.length, tasks: agreed.tasks.length } };
     }
     const discardMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/discard$/.exec(path);
     if (discardMatch && method === 'POST') {

@@ -12,6 +12,8 @@ import { moduleMap, parseDateText } from './schema.mjs';
 import { TUBE_FIELD, UNIQUE, blankOrNA, isIdValue } from './verifications.mjs';
 import { listOptions } from './verify.mjs';
 import { pendingPoints, tracksRevision } from './monitoring.mjs';
+import { photoContext, photoIndex, reviewData, reviewRevision } from './photodata.mjs';
+import { photoIssues } from './photo-checks.mjs';
 
 /** Kinds of issue, in the order they are listed, with their Spanish names for the app. */
 export const CHECK_KINDS = {
@@ -26,6 +28,13 @@ export const CHECK_KINDS = {
   missing_sample: 'Preservada sin CAM o tubo',
   mark_reuse: 'Marca usada en dos especies',
   walk_doubt: 'Punto de Wikiloc sin emparejar',
+  // From the photos (server/photo-checks.mjs).
+  photo_camid: 'Sobre con otro CAM que la foto',
+  photo_extra: 'Fotos de otra mariposa en la carpeta',
+  envelope_sex: 'Sexo del sobre distinto',
+  envelope_species: 'Especie del sobre distinta',
+  photo_missing: 'Preservada sin fotos',
+  ai_species: 'La IA ve otra especie',
 };
 const KIND_ORDER = Object.keys(CHECK_KINDS);
 
@@ -51,6 +60,9 @@ const sexOf = value => {
     .trim();
   return s === 'female' || s === 'male' ? s : null;
 };
+/** Who collected or identified the butterfly, and its day, for the filters of the Revisión tab. */
+const WHO_FIELDS = ['Collector', 'Identifier', 'COLLECTED_BY', 'IDENTIFIED_BY', 'Collectors_initials'];
+const DATE_FIELDS = ['Collection_date', 'Intro2Insectary_date', 'Preservation_date', 'Death_date', 'Date'];
 const hasMark = value => !!text(value) && !/^(NA|N\/A|not given)$/i.test(text(value));
 
 /**
@@ -155,12 +167,13 @@ function scan(store) {
   const seen = new Map();
   const add = (kind, row, field, problem, extra = {}) => {
     // A stable key for the app's list; a row can have the same kind of problem twice in one column.
-    const key = `${kind}:${row.id}:${field}`;
+    const key = `${kind}:${row?.id}:${field}`;
     seen.set(key, (seen.get(key) || 0) + 1);
     issues.push({
       id: seen.get(key) > 1 ? `${key}:${seen.get(key)}` : key,
       kind,
-      ...ref(row, field),
+      // Photos filed under a CAM that has no row yet: no row to point to.
+      ...(row ? ref(row, field) : { sheet: 'Photo_links', row: null, recordId: null, label: extra.label ?? '', field, value: null }),
       problem,
       ...extra,
     });
@@ -486,12 +499,32 @@ function scan(store) {
     });
   }
 
+  photoIssues(store, { sheets, add, ref, today });
+
+  // Who and when, for the Revisión tab's filters; and the photos of every issue about a butterfly with a CAM.
+  const rows = new Map([...sheets.values()].flat().map(r => [r.id, r]));
+  const data = reviewData(store);
+  const index = photoIndex(store);
+  for (const issue of issues) {
+    const row = issue.recordId ? rows.get(issue.recordId) : null;
+    if (!row) continue;
+    const who = WHO_FIELDS.map(k => text(row.values[k])).filter(v => v && !/^(NA|N\/A|NOT_PROVIDED)$/i.test(v));
+    if (who.length) issue.who = [...new Set(who)];
+    const day = DATE_FIELDS.map(k => row.values[k]).find(isDate);
+    if (day) issue.date = iso(day);
+    const cam = text(row.values.CAM_ID).toUpperCase();
+    if (issue.photos || !/^CAM\d+$/.test(cam)) continue;
+    const found = photoContext(data, index, cam);
+    if (found) Object.assign(issue, { cam, ...found });
+  }
+
   // Newest rows first inside each kind and sheet: recent mistakes are the ones people remember (newest walks, for walk points).
   return issues.sort(
     (a, b) =>
       KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) ||
       a.sheet.localeCompare(b.sheet) ||
-      (a.walk && b.walk ? b.walk.date.localeCompare(a.walk.date) || a.walk.index - b.walk.index : b.row - a.row),
+      (a.group && b.group ? b.group.size - a.group.size || a.group.key.localeCompare(b.group.key) : 0) ||
+      (a.walk && b.walk ? b.walk.date.localeCompare(a.walk.date) || a.walk.index - b.walk.index : (b.row ?? 0) - (a.row ?? 0)),
   );
 }
 
@@ -499,8 +532,8 @@ const cache = new WeakMap();
 /** Every issue, recomputed only when the local copy (or the day) changed. */
 export function allIssues(store) {
   const state = store.db.prepare('SELECT count(*) n, max(updated_at) u FROM records').get();
-  // The stored walks too: their unpaired points are listed (walk_doubt).
-  const stamp = `${state.n}:${state.u}:${todaySerial()}:${tracksRevision(store)}`;
+  // The stored walks and the imported photo readings too (walk_doubt, the photo kinds).
+  const stamp = `${state.n}:${state.u}:${todaySerial()}:${tracksRevision(store)}:${reviewRevision(store.db)}`;
   const hit = cache.get(store);
   if (hit?.stamp === stamp) return hit;
   const started = Date.now();

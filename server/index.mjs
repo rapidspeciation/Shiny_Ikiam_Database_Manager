@@ -38,6 +38,8 @@ import { createSummary } from './summary.mjs';
 import { applyIdChange, planIdChange } from './insectaryId.mjs';
 import { UNIQUE, TUBE_FIELD } from './verifications.mjs';
 import { checkData } from './checks.mjs';
+import { reviewPage, setVerdicts, trainingLabels, verdictHistory } from './review.mjs';
+import { createPhotoService, photoCacheDir } from './photos.mjs';
 import { listOptions } from './verify.mjs';
 import { SANDBOX_ID, moduleMap, validateValues } from './schema.mjs';
 import {
@@ -150,6 +152,9 @@ export function configFromEnv(env = process.env) {
     spreadsheetId: SANDBOX_ID,
     syncIntervalMs: Number(env.SYNC_INTERVAL_MS || 300000),
     sheetHookSecret: env.SHEET_HOOK_SECRET,
+    // Specimen photos fetched from Drive for the Revisión tab (server/photos.mjs).
+    photoCacheDir: env.PHOTO_CACHE_DIR,
+    photoCacheMb: Number(env.PHOTO_CACHE_MB || 1024),
     // T3 Code (stock install on its own host), shown inside the Asistente tab.
     t3: env.ITHOMIINI_T3_URL
       ? {
@@ -306,6 +311,12 @@ export async function createApp(config = {}, options = {}) {
   const tableCache = new Map();
   const sheetHook = createSheetHook(store, { secret: config.sheetHookSecret });
   const summary = createSummary(store);
+  const photos = createPhotoService(store, {
+    // Next to the database file the store really opened; in memory for an in-memory database.
+    dir: config.photoCacheDir || photoCacheDir({}, store.db.location?.() ?? null),
+    maxBytes: (config.photoCacheMb || 1024) * 1024 * 1024,
+    ...(options.fetchPhoto ? { fetchImpl: options.fetchPhoto } : {}),
+  });
   const invitations = createInvitations(
     store,
     options.mailer ?? mailerFromEnv(),
@@ -513,6 +524,44 @@ export async function createApp(config = {}, options = {}) {
       }
       // Revisión de datos: inconsistencies across the workbook (the assistant's check_data tool).
       if (method === 'GET' && path === '/api/checks') return json(res, 200, checkData(store, query));
+      // The Revisión tab: the same issues with people's verdicts, and the specimen photos they show.
+      if (method === 'GET' && path === '/api/review') {
+        requireEditor(user);
+        return json(res, 200, reviewPage(store, query));
+      }
+      if (method === 'GET' && path === '/api/review/verdicts') {
+        requireEditor(user);
+        return json(res, 200, { history: verdictHistory(store, query.issueId) });
+      }
+      if (method === 'POST' && path === '/api/review/verdicts') {
+        requireEditor(user);
+        return json(res, 200, setVerdicts(store, body, user));
+      }
+      // Verdicts on what models read from the photos, kept as training labels.
+      if (method === 'GET' && path === '/api/review/labels') {
+        requireEditor(user);
+        res.writeHead(200, {
+          'content-type': 'application/x-ndjson; charset=utf-8',
+          'content-disposition': 'attachment; filename="review-labels.jsonl"',
+          'cache-control': 'no-store',
+        });
+        return res.end(trainingLabels(store));
+      }
+      if (method === 'GET' && /^\/api\/photo\/[\w-]+$/.test(path)) {
+        const photo = await photos.get(path.split('/')[3], Number(query.w || 400));
+        if (req.headers['if-none-match'] === photo.etag) {
+          res.writeHead(304, { etag: photo.etag, 'cache-control': 'private, max-age=2592000, immutable' });
+          return res.end();
+        }
+        res.writeHead(200, {
+          'content-type': photo.mime,
+          'content-security-policy': 'sandbox; default-src none',
+          'x-content-type-options': 'nosniff',
+          'cache-control': 'private, max-age=2592000, immutable',
+          etag: photo.etag,
+        });
+        return res.end(photo.data);
+      }
       // Correcting an Insectary ID after saving: preview, then one undoable save.
       if (method === 'GET' && path === '/api/insectary-ids/plan') {
         const plan = planIdChange(store, query.from, query.to);
