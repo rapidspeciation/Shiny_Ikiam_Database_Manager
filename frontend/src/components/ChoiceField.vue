@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, useAttrs, useId, watch } from 'vue'
 import { type Choice, type ChoiceOptions, commitText, filterChoices, labelOf, toChoices } from '../lib/choices'
+import { t } from '../lib/i18n'
 
 /**
  * The app's one dropdown, like the grids' list: a text box with a ▾ and a
@@ -285,8 +286,8 @@ function onArrow() {
       type="button"
       class="absolute inset-y-px right-px flex w-6 items-center justify-center rounded-r-md text-[15px] text-stone-700 hover:bg-brand-50 hover:text-brand-700"
       tabindex="-1"
-      aria-label="Ver la lista"
-      title="Ver la lista"
+      :aria-label="t('Ver la lista')"
+      :title="t('Ver la lista')"
       @mousedown.prevent
       @click="onArrow"
     >
@@ -322,9 +323,9 @@ function onArrow() {
             <span v-if="o.hint" class="ml-auto text-xs text-stone-500">{{ o.hint }}</span>
           </div>
         </template>
-        <div v-if="!entries.length" class="px-2.5 py-1 text-stone-500">Ninguna opción coincide</div>
+        <div v-if="!entries.length" class="px-2.5 py-1 text-stone-500">{{ t('Ninguna opción coincide') }}</div>
         <div v-if="more > 0" class="border-t border-stone-200 px-2.5 pt-1 text-xs text-stone-500">
-          {{ more }} más: escribe para filtrar
+          {{ t('{n} más: escribe para filtrar', { n: more }) }}
         </div>
       </div>
     </Teleport>

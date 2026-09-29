@@ -12,6 +12,7 @@ import { notify } from '../lib/notice'
 import { persistentRef } from '../lib/persist'
 import { fillIfBlank, orderColumns, rowsById } from '../lib/rows'
 import { usePending } from '../stores/pending'
+import { t } from '../lib/i18n'
 
 /**
  * "Registrar Muertes": the IDs typed show their rows at once (to look at them),
@@ -90,14 +91,20 @@ const columns = computed(() =>
 )
 
 const dateError = computed(() =>
-  date.value && serialFromIso(date.value) === null ? 'Fecha no válida: el año debe estar entre 1990 y 2099' : '',
+  date.value && serialFromIso(date.value) === null ? t('Fecha no válida: el año debe estar entre 1990 y 2099') : '',
 )
 
 /** A butterfly already recorded dead is probably a mistyped ID (B9 of 2022 instead of B9D). */
 function warn(id: string): string | null {
   const row = table.value ? rowsById(table.value.rows, 'Insectary_ID', [id])[0] : undefined
   const death = row?.values.Death_date
-  return typeof death === 'number' ? `${id} ya murió el ${formatSerial(death)} (${row!.values.Death_cause ?? 'sin causa'})` : null
+  return typeof death === 'number'
+    ? t('{id} ya murió el {date} ({cause})', {
+        id,
+        date: formatSerial(death),
+        cause: String(row!.values.Death_cause ?? t('sin causa')),
+      })
+    : null
 }
 
 /** Chosen rows whose date or cause is still empty: what "Escribir" would fill. */
@@ -109,9 +116,9 @@ const toWrite = computed(() =>
 
 /** Writes the date and cause in the chosen rows' empty cells (as pending edits, to review and save). */
 function write() {
-  if (!table.value || !chosenRows.value.length) return notify('Escribe al menos un Insectary ID')
+  if (!table.value || !chosenRows.value.length) return notify(t('Escribe al menos un Insectary ID'))
   if (dateError.value) return notify(dateError.value, 'error')
-  if (!date.value) return notify('Elige la fecha de muerte', 'error')
+  if (!date.value) return notify(t('Elige la fecha de muerte'), 'error')
   const serial = serialFromIso(date.value)
   let filled = 0
   for (const row of chosenRows.value) {
@@ -133,7 +140,11 @@ function write() {
       for (const [field, value] of Object.entries(NOT_PRESERVED)) set(field, value)
   }
   pending.touch()
-  notify(filled ? `${filled} celdas escritas; revisa y guarda` : 'Nada que escribir: esas filas ya tienen fecha y causa')
+  notify(
+    filled
+      ? t('{n} celdas escritas; revisa y guarda', { n: filled })
+      : t('Nada que escribir: esas filas ya tienen fecha y causa'),
+  )
 }
 </script>
 
@@ -142,45 +153,60 @@ function write() {
     <div class="toolbar">
       <IdPicker v-model="picked" :options="ids" :loading="!ready" :warn="warn" label="Insectary IDs" />
       <label>
-        <span class="field-label">Fecha de muerte</span>
+        <span class="field-label">{{ $t('Fecha de muerte') }}</span>
         <DateField v-model="date" class="field-input" />
         <span v-if="dateError" class="block text-xs text-red-700">{{ dateError }}</span>
         <span v-else-if="date" class="block text-xs text-stone-600">{{ dayLabel(date) }}</span>
-        <span v-else class="block text-xs text-amber-800">Elige la fecha</span>
+        <span v-else class="block text-xs text-amber-800">{{ $t('Elige la fecha') }}</span>
       </label>
       <label class="min-w-44">
-        <span class="field-label">Causa por defecto</span>
-        <ChoiceField v-model="cause" class="field-input" :options="options.Death_cause || []" placeholder="p. ej. Natural" />
+        <span class="field-label">{{ $t('Causa por defecto') }}</span>
+        <ChoiceField
+          v-model="cause"
+          class="field-input"
+          :options="options.Death_cause || []"
+          :placeholder="$t('p. ej. {example}', { example: 'Natural' })"
+        />
       </label>
       <label
         class="flex max-w-64 items-center gap-2 pb-1.5 text-xs"
-        title="Para causas distintas de Killed_Preserved y filas sin CAM ni tubo: CAM, tubos, tejidos, Preservation_date, Location_body y Preserved_Dead_Alive en NA; medios en NOT_COLLECTED"
+        :title="
+          $t(
+            'Para causas distintas de Killed_Preserved y filas sin CAM ni tubo: CAM, tubos, tejidos, Preservation_date, Location_body y Preserved_Dead_Alive en NA; medios en NOT_COLLECTED',
+          )
+        "
       >
-        <input v-model="notPreserved" type="checkbox" /> Sin preservar: CAM y tubos NA, medios NOT_COLLECTED
+        <input v-model="notPreserved" type="checkbox" /> {{ $t('Sin preservar: CAM y tubos NA, medios NOT_COLLECTED') }}
       </label>
       <button
         class="btn-primary"
         :disabled="!chosenRows.length"
         :title="
           chosenRows.length
-            ? `Escribe la fecha y la causa en las celdas vacías de los ${chosenRows.length} IDs elegidos`
-            : 'Escribe primero los Insectary IDs'
+            ? $t('Escribe la fecha y la causa en las celdas vacías de los {n} IDs elegidos', { n: chosenRows.length })
+            : $t('Escribe primero los Insectary IDs')
         "
         @click="write"
       >
-        <PenLine :size="15" /> Escribir fecha y causa<template v-if="chosenRows.length"> ({{ chosenRows.length }})</template>
+        <PenLine :size="15" /> {{ $t('Escribir fecha y causa')
+        }}<template v-if="chosenRows.length"> ({{ chosenRows.length }})</template>
       </button>
     </div>
     <div class="flex min-h-0 flex-1 flex-col">
-      <p v-if="!ready" class="p-6 text-stone-500">Cargando Insectary_data…</p>
+      <p v-if="!ready" class="p-6 text-stone-500">{{ $t('Cargando {sheet}…', { sheet: 'Insectary_data' }) }}</p>
       <template v-else>
         <section v-if="chosenRows.length" class="flex max-h-[45%] shrink-0 flex-col border-b-4 border-stone-200">
           <p class="hint px-4 py-1">
-            <strong>IDs elegidos ({{ chosenRows.length }})</strong>
+            <strong>{{ $t('IDs elegidos ({n})', { n: chosenRows.length }) }}</strong>
             <template v-if="toWrite.length">
-              · {{ toWrite.length }} sin fecha o causa: «Escribir fecha y causa» las completa (solo celdas vacías o NA).</template
+              ·
+              {{
+                $t('{n} sin fecha o causa: «Escribir fecha y causa» las completa (solo celdas vacías o NA).', {
+                  n: toWrite.length,
+                })
+              }}</template
             >
-            <template v-else> · ya tienen fecha y causa.</template>
+            <template v-else> · {{ $t('ya tienen fecha y causa.') }}</template>
           </p>
           <SheetGrid
             :module="MODULE"
@@ -196,10 +222,10 @@ function write() {
           />
         </section>
         <p class="hint px-4 py-1">
-          <strong>Últimas {{ recentDeaths.length }} muertes registradas</strong>
-          <button class="ml-1 underline" @click="recentCount += 30">ver más</button>
+          <strong>{{ $t('Últimas {n} muertes registradas', { n: recentDeaths.length }) }}</strong>
+          <button class="ml-1 underline" @click="recentCount += 30">{{ $t('ver más') }}</button>
         </p>
-        <p v-if="!recentDeaths.length" class="p-6 text-stone-500">No hay muertes registradas.</p>
+        <p v-if="!recentDeaths.length" class="p-6 text-stone-500">{{ $t('No hay muertes registradas.') }}</p>
         <div v-else class="min-h-0 flex-1">
           <SheetGrid
             :module="MODULE"

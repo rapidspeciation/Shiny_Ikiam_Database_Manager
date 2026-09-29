@@ -16,6 +16,7 @@ import { fillIfBlank, initialsOf, orderColumns, rowsById } from '../lib/rows'
 import type { CellValue, TableRow } from '../lib/types'
 import { usePending } from '../stores/pending'
 import { useSession } from '../stores/session'
+import { t } from '../lib/i18n'
 
 /**
  * "Registrar Tubos": choose butterflies, then assign consecutive CAM IDs and
@@ -120,11 +121,12 @@ function warn(id: string): string | null {
   if (!row) return null
   const cam = row.values.CAM_ID
   const tube = row.values.Tube_1_id
-  if (!isBlank(cam) && !isBlank(tube)) return `${id} ya tiene ${cam} y el tubo ${tube}`
+  if (!isBlank(cam) && !isBlank(tube))
+    return t('{id} ya tiene {cam} y el tubo {tube}', { id, cam: String(cam), tube: String(tube) })
   const death = row.values.Death_date
   const today = serialFromIso(todayIso())
   if (typeof death === 'number' && today !== null && today - death > 7)
-    return `${id} ya murió el ${formatSerial(death)} (hace ${today - death} días)`
+    return t('{id} ya murió el {date} (hace {n} días)', { id, date: formatSerial(death), n: today - death })
   return null
 }
 
@@ -133,7 +135,7 @@ function warn(id: string): string | null {
  * preserved go whole (WHOLE_ORGANISM); living ones get a wing clip.
  */
 function load(append: boolean) {
-  if (!picked.value.length) return notify('Elige al menos un ID')
+  if (!picked.value.length) return notify(t('Elige al menos un ID'))
   loaded.value = append ? [...new Set([...loaded.value, ...picked.value])] : [...picked.value]
   picked.value = []
   const dead = rows.value.filter(r => !isBlank(pending.value(r, 'Death_cause')) || !isBlank(pending.value(r, 'Death_date')))
@@ -143,8 +145,12 @@ function load(append: boolean) {
     tissue.value = next
     notify(
       next === WHOLE
-        ? `Tejido: ${WHOLE} (${killed.length || dead.length} de ${rows.value.length} filas son muertes)`
-        : 'Tejido: WING CLIP (mariposas vivas)',
+        ? t('Tejido: {tissue} ({n} de {total} filas son muertes)', {
+            tissue: WHOLE,
+            n: killed.length || dead.length,
+            total: rows.value.length,
+          })
+        : t('Tejido: WING CLIP (mariposas vivas)'),
     )
   }
   pending.touch()
@@ -158,8 +164,8 @@ const rackChoices = computed(() => [
   ...(tubeStart.value && !tubeSuggestions.value.some(s => s.value === tubeStart.value)
     ? [{ value: tubeStart.value, label: tubeStart.value }]
     : []),
-  ...insectaryRacks.value.map(s => ({ value: s.value, label: s.label, group: 'Insectario y cruces' })),
-  ...otherRacks.value.map(s => ({ value: s.value, label: s.label, group: 'Colectas y monitoreo' })),
+  ...insectaryRacks.value.map(s => ({ value: s.value, label: s.label, group: t('Insectario y cruces') })),
+  ...otherRacks.value.map(s => ({ value: s.value, label: s.label, group: t('Colectas y monitoreo') })),
 ])
 /** Suggested CAM IDs, with the date of their run in grey ("CAM078278 27-Sep-26" → "27-Sep-26"). */
 const camChoices = computed(() =>
@@ -198,10 +204,10 @@ function pickTube(value: string) {
 }
 
 const presError = computed(() =>
-  presDate.value && serialFromIso(presDate.value) === null ? 'Fecha no válida: el año debe estar entre 1990 y 2099' : '',
+  presDate.value && serialFromIso(presDate.value) === null ? t('Fecha no válida: el año debe estar entre 1990 y 2099') : '',
 )
 const clipError = computed(() =>
-  clipDate.value && serialFromIso(clipDate.value) === null ? 'Fecha no válida: el año debe estar entre 1990 y 2099' : '',
+  clipDate.value && serialFromIso(clipDate.value) === null ? t('Fecha no válida: el año debe estar entre 1990 y 2099') : '',
 )
 const initials = computed(
   () =>
@@ -211,7 +217,7 @@ const initials = computed(
 
 const notePreview = computed(() => {
   const clip = clipDate.value ? serialFromIso(clipDate.value) : null
-  return `${noteDate(serialFromIso(todayIso())!)} ${initials.value}: Wing clip ${clip === null ? '(fecha del corte)' : noteDate(clip)}`
+  return `${noteDate(serialFromIso(todayIso())!)} ${initials.value}: Wing clip ${clip === null ? t('(fecha del corte)') : noteDate(clip)}`
 })
 
 /** Where an unsaved change of another row already holds this CAM or tube. */
@@ -219,19 +225,34 @@ function pendingHolder(field: RegExp, value: string) {
   for (const edit of Object.values(pending.edits))
     for (const [f, v] of Object.entries(edit.values))
       if (field.test(f) && String(v ?? '').trim() === value && !loaded.value.includes(edit.label))
-        return `${value} ya está en ${edit.module} fila ${edit.row} (${edit.label}), sin guardar todavía`
+        return t('{value} ya está en {sheet} fila {row} ({label}), sin guardar todavía', {
+          value,
+          sheet: edit.module,
+          row: edit.row,
+          label: edit.label,
+        })
   return null
 }
 /** Says why a starting ID cannot be used (and offers the next free one) instead of starting from another. */
 function checkStart(kind: 'cam' | 'tube', start: string, result: Sequence | null) {
   const holder = result?.startUsed
   const text = holder
-    ? `${holder.value} ya está usado en ${holder.sheet} fila ${holder.row}${holder.label && holder.label !== holder.value ? ` (${holder.label})` : ''}`
+    ? t('{value} ya está usado en {sheet} fila {row}{label}', {
+        value: holder.value,
+        sheet: holder.sheet,
+        row: holder.row,
+        label: holder.label && holder.label !== holder.value ? ` (${holder.label})` : '',
+      })
     : pendingHolder(kind === 'cam' ? /^CAM_ID$/ : /^Tube_\d_id/, start)
   if (!text) return true
-  const what = kind === 'cam' ? 'CAM ID inicial' : 'tubo inicial'
+  const what = kind === 'cam' ? t('CAM ID inicial') : t('tubo inicial')
   startIssue.value = { kind, text: `${what}: ${text}.`, next: result?.nextFree }
-  notify(`${text}. No se asignó nada${result?.nextFree ? `; el siguiente libre es ${result.nextFree}` : ''}.`, 'error')
+  notify(
+    result?.nextFree
+      ? t('{problem}. No se asignó nada; el siguiente libre es {next}.', { problem: text, next: result.nextFree })
+      : t('{problem}. No se asignó nada.', { problem: text }),
+    'error',
+  )
   return false
 }
 function useNext() {
@@ -248,14 +269,14 @@ const placeholder = (value: CellValue) => isBlank(value) || /^(NOT_COLLECTED|NOT
 /** Fills CAM IDs and the next empty tube slot of every loaded row, in order. */
 async function assign() {
   const target = rows.value
-  if (!target.length) return notify('Carga primero las filas')
+  if (!target.length) return notify(t('Carga primero las filas'))
   const date = presDate.value ? serialFromIso(presDate.value) : null
   const clip = clipDate.value ? serialFromIso(clipDate.value) : null
   if (isClip.value) {
     // The clip date goes in the notes: never a silent "today".
-    if (clip === null) return notify(clipError.value || 'Escribe la fecha del corte de ala', 'error')
+    if (clip === null) return notify(clipError.value || t('Escribe la fecha del corte de ala'), 'error')
   } else if (tissue.value === WHOLE && presDate.value && date === null) return notify(presError.value, 'error')
-  else if (tissue.value === WHOLE && !presDate.value) return notify('Escribe la fecha de preservación', 'error')
+  else if (tissue.value === WHOLE && !presDate.value) return notify(t('Escribe la fecha de preservación'), 'error')
   const needCam = target.filter(r => isBlank(pending.value(r, 'CAM_ID'))).length
   const needTube = target.filter(r => firstEmptySlot(r) !== null).length
   try {
@@ -315,7 +336,7 @@ async function assign() {
     if (cams.length) camStart.value = nextAfter(cams.at(-1)!)
     if (tubes.length) tubeStart.value = nextAfter(tubes.at(-1)!)
     pending.touch()
-    notify(filled ? `${filled} celdas completadas; revisa y guarda` : 'No había celdas vacías que completar')
+    notify(filled ? t('{n} celdas completadas; revisa y guarda', { n: filled }) : t('No había celdas vacías que completar'))
   } catch (e) {
     notify(errorText(e), 'error')
   }
@@ -335,7 +356,7 @@ const labels = computed(() =>
   ),
 )
 function printLabels() {
-  if (!labels.value.length) return notify('No hay tubos con ID en la tabla')
+  if (!labels.value.length) return notify(t('No hay tubos con ID en la tabla'))
   window.print()
 }
 
@@ -368,17 +389,17 @@ function nextAfter(id: string) {
     <div class="toolbar">
       <IdPicker v-model="picked" :options="ids" :loading="!ready" :warn="warn" label="Insectary IDs" />
       <div class="flex gap-2">
-        <button class="btn-primary" @click="load(false)"><Download :size="15" /> Cargar</button>
-        <button class="btn" @click="load(true)"><Plus :size="15" /> Añadir a la tabla</button>
+        <button class="btn-primary" @click="load(false)"><Download :size="15" /> {{ $t('Cargar') }}</button>
+        <button class="btn" @click="load(true)"><Plus :size="15" /> {{ $t('Añadir a la tabla') }}</button>
       </div>
     </div>
     <div class="toolbar">
       <label>
-        <span class="field-label">CAM ID inicial</span>
+        <span class="field-label">{{ $t('CAM ID inicial') }}</span>
         <ChoiceField v-model="camStart" class="field-input w-36" :options="camChoices" autocapitalize="characters" />
       </label>
       <label class="min-w-72">
-        <span class="field-label">Rack en uso (siguiente tubo libre)</span>
+        <span class="field-label">{{ $t('Rack en uso (siguiente tubo libre)') }}</span>
         <ChoiceField
           class="field-input"
           :model-value="tubeStart"
@@ -388,7 +409,7 @@ function nextAfter(id: string) {
         />
       </label>
       <label>
-        <span class="field-label">o escribe el tubo</span>
+        <span class="field-label">{{ $t('o escribe el tubo') }}</span>
         <input
           :value="tubeStart"
           class="field-input w-36"
@@ -397,23 +418,23 @@ function nextAfter(id: string) {
         />
       </label>
       <label class="min-w-56">
-        <span class="field-label">Tejido por defecto</span>
+        <span class="field-label">{{ $t('Tejido por defecto') }}</span>
         <ChoiceField v-model="tissue" class="field-input" :options="tissues" :freetext="false" />
       </label>
       <label>
-        <span class="field-label">Medio por defecto</span>
+        <span class="field-label">{{ $t('Medio por defecto') }}</span>
         <ChoiceField v-model="medium" class="field-input" :options="mediums" :freetext="false" />
       </label>
       <template v-if="isClip">
         <label>
-          <span class="field-label">Fecha del corte de ala</span>
+          <span class="field-label">{{ $t('Fecha del corte de ala') }}</span>
           <DateField v-model="clipDate" class="field-input" />
           <span v-if="clipError" class="block text-xs text-red-700">{{ clipError }}</span>
           <span v-else-if="clipDate" class="block text-xs text-stone-600">{{ dayLabel(clipDate) }}</span>
-          <span v-else class="block text-xs text-amber-800">Obligatoria: va en la nota</span>
+          <span v-else class="block text-xs text-amber-800">{{ $t('Obligatoria: va en la nota') }}</span>
         </label>
         <label>
-          <span class="field-label">Iniciales (nota)</span>
+          <span class="field-label">{{ $t('Iniciales (nota)') }}</span>
           <input
             v-model="initialsTyped"
             class="field-input w-20"
@@ -428,29 +449,35 @@ function nextAfter(id: string) {
         <DateField v-model="presDate" class="field-input" />
         <span v-if="presError" class="block text-xs text-red-700">{{ presError }}</span>
         <span v-else-if="presDate" class="block text-xs text-stone-600">{{ dayLabel(presDate) }}</span>
-        <span v-else class="block text-xs text-amber-800">Elige la fecha</span>
+        <span v-else class="block text-xs text-amber-800">{{ $t('Elige la fecha') }}</span>
       </label>
       <label class="flex max-w-64 items-center gap-2 pb-1 text-xs">
-        <input v-model="autofillNa" type="checkbox" /> Si el tejido es WHOLE_ORGANISM: tubos siguientes NA, tejido y medio
-        NOT_COLLECTED
+        <input v-model="autofillNa" type="checkbox" />
+        {{ $t('Si el tejido es WHOLE_ORGANISM: tubos siguientes NA, tejido y medio NOT_COLLECTED') }}
       </label>
-      <button class="btn-primary" :disabled="!rows.length" @click="assign"><Wand2 :size="15" /> Asignar IDs</button>
-      <button class="btn" :disabled="!rows.length" @click="printLabels"><Printer :size="15" /> Imprimir etiquetas</button>
+      <button class="btn-primary" :disabled="!rows.length" @click="assign"><Wand2 :size="15" /> {{ $t('Asignar IDs') }}</button>
+      <button class="btn" :disabled="!rows.length" @click="printLabels">
+        <Printer :size="15" /> {{ $t('Imprimir etiquetas') }}
+      </button>
     </div>
     <p v-if="startIssue" class="px-4 py-1 text-sm text-red-800">
-      {{ startIssue.text }} No se asignó nada.
+      {{ startIssue.text }} {{ $t('No se asignó nada.') }}
       <button v-if="startIssue.next" class="ml-1 underline" @click="useNext">
-        Usar el siguiente libre: {{ startIssue.next }}
+        {{ $t('Usar el siguiente libre: {next}', { next: startIssue.next }) }}
       </button>
     </p>
     <p class="hint px-4 py-1">
-      "Asignar IDs" da CAM IDs y tubos consecutivos, saltando los ya usados, solo en celdas vacías y en el orden de la tabla.
-      <template v-if="isClip">Nota que se añade: «{{ notePreview }}».</template>
-      <button v-if="loaded.length" class="ml-2 underline" @click="loaded = []">Vaciar tabla</button>
+      {{
+        $t(
+          '"Asignar IDs" da CAM IDs y tubos consecutivos, saltando los ya usados, solo en celdas vacías y en el orden de la tabla.',
+        )
+      }}
+      <template v-if="isClip">{{ $t('Nota que se añade: «{note}».', { note: notePreview }) }}</template>
+      <button v-if="loaded.length" class="ml-2 underline" @click="loaded = []">{{ $t('Vaciar tabla') }}</button>
     </p>
     <div class="min-h-0 flex-1">
-      <p v-if="!ready" class="p-6 text-stone-500">Cargando Insectary_data…</p>
-      <p v-else-if="!rows.length" class="p-6 text-stone-500">Elige IDs arriba y pulsa Cargar.</p>
+      <p v-if="!ready" class="p-6 text-stone-500">{{ $t('Cargando {sheet}…', { sheet: 'Insectary_data' }) }}</p>
+      <p v-else-if="!rows.length" class="p-6 text-stone-500">{{ $t('Elige IDs arriba y pulsa Cargar.') }}</p>
       <SheetGrid
         v-else
         :module="MODULE"

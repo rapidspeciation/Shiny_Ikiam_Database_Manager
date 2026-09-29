@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { api, ApiError, requestId } from '../lib/api'
 import { mainPurpose, purposeFromHash } from '../lib/history'
+import { t } from '../lib/i18n'
 import { type CheckSheet, localProblems } from '../lib/saveChecks'
 import type { CellValue, TableRow } from '../lib/types'
 import { verificationsFor } from '../lib/verifications'
@@ -85,13 +86,16 @@ export const usePending = defineStore('pending', {
     lastSaved: null as { count: number; at: string } | null,
     /** Save automatically a moment after the last change (per person, remembered on this device). */
     autoSave: true,
-    /** Why automatic saving is waiting (offline, conflict to review…), if it is. */
+    /** Why automatic saving is waiting (offline, conflict to review…), if it is: Spanish, shown through $t. */
     autoBlocked: '' as string,
   }),
   getters: {
     changeCount: s => Object.values(s.edits).reduce((n, e) => n + Object.keys(e.values).length, 0) + s.creates.length,
     rowCount: s => Object.keys(s.edits).length + s.creates.length,
-    /** Pending cells that are not being saved, with the reason (server refusals and the app's checks). */
+    /**
+     * Pending cells that are not being saved, with the reason (server refusals and the app's checks),
+     * in the interface language (reasons are kept in Spanish, the key of their English).
+     */
     issues(s): Record<string, string> {
       const newRows = new Set(s.creates.map(c => c.clientId))
       const out: Record<string, string> = {}
@@ -99,7 +103,7 @@ export const usePending = defineStore('pending', {
         const [id, field] = [key.slice(0, key.lastIndexOf(':')), key.slice(key.lastIndexOf(':') + 1)]
         // A refusal of a cell that is no longer pending (put back, or saved since) no longer counts.
         const stillPending = newRows.has(id) || (!!s.edits[id] && (field === '*' || field in s.edits[id].values))
-        if (stillPending || !id || id === 'null' || id === 'undefined') out[key] ??= message
+        if (stillPending || !id || id === 'null' || id === 'undefined') out[key] ??= t(message)
       }
       return out
     },

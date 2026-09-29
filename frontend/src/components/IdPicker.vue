@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { X } from 'lucide-vue-next'
 import { idTokens, resolveIds } from '../lib/ids'
+import { t } from '../lib/i18n'
 
 /**
  * Multi-select for identifiers. Type an ID and press Enter to add it (only an
@@ -20,7 +21,8 @@ const props = withDefaults(
     /** A warning for a chosen ID, e.g. "B9 ya murió el 3-Mar-22". */
     warn?: (id: string) => string | null
   }>(),
-  { label: 'IDs', placeholder: 'Escribe, pega IDs o un rango (B0D-B9D)', loading: false, warn: undefined },
+  // The placeholder's default is in the template, so it follows the interface language.
+  { label: 'IDs', placeholder: undefined, loading: false, warn: undefined },
 )
 const emit = defineEmits<{ 'update:modelValue': [value: string[]] }>()
 
@@ -90,7 +92,7 @@ function onKey(event: KeyboardEvent) {
     } else if (event.key !== 'Tab') {
       // Only an exact ID is added: a partial one ("B9") could be an old butterfly.
       event.preventDefault()
-      hint.value = `«${typed}» no es un ID exacto: escríbelo completo o elígelo de la lista`
+      hint.value = t('«{typed}» no es un ID exacto: escríbelo completo o elígelo de la lista', { typed })
     }
   } else if (event.key === 'Backspace' && !text.value && props.modelValue.length) {
     emit('update:modelValue', props.modelValue.slice(0, -1))
@@ -142,14 +144,19 @@ function clear() {
         class="inline-flex items-center gap-0.5 rounded bg-brand-50 px-1.5 py-0.5 text-sm text-brand-800"
       >
         {{ id }}
-        <button type="button" class="text-brand-700 hover:text-red-700" :aria-label="`Quitar ${id}`" @click="remove(id)">
+        <button
+          type="button"
+          class="text-brand-700 hover:text-red-700"
+          :aria-label="$t('Quitar {id}', { id })"
+          @click="remove(id)"
+        >
           <X :size="13" />
         </button>
       </span>
       <input
         v-model="text"
         class="min-w-24 flex-1 border-0 p-0.5 text-sm outline-none"
-        :placeholder="modelValue.length ? '' : placeholder"
+        :placeholder="modelValue.length ? '' : (placeholder ?? $t('Escribe, pega IDs o un rango (B0D-B9D)'))"
         autocapitalize="characters"
         enterkeyhint="done"
         @focus="open = true"
@@ -164,18 +171,26 @@ function clear() {
         class="px-1 text-xs text-stone-500 hover:underline"
         @click="clear"
       >
-        limpiar
+        {{ $t('limpiar') }}
       </button>
     </div>
     <p v-if="waiting.length" class="mt-1 text-xs text-stone-600">
-      Cargando IDs… {{ waiting.length }} {{ waiting.length === 1 ? 'ID espera' : 'IDs esperan' }} a que llegue la hoja
+      {{
+        $tn(
+          waiting.length,
+          'Cargando IDs… {n} ID espera a que llegue la hoja',
+          'Cargando IDs… {n} IDs esperan a que llegue la hoja',
+        )
+      }}
     </p>
     <p v-if="hint" class="mt-1 text-xs text-amber-800">{{ hint }}</p>
-    <p v-if="unknown.length" class="mt-1 text-xs text-red-700">No encontrados: {{ unknown.join(', ') }}</p>
+    <p v-if="unknown.length" class="mt-1 text-xs text-red-700">{{ $t('No encontrados: {ids}', { ids: unknown.join(', ') }) }}</p>
     <!-- Two at most, so a long batch does not push the page down; the rest on hover. -->
-    <p v-for="w in warnings.slice(0, 2)" :key="w!" class="mt-1 text-xs text-amber-800">Atención: {{ w }}</p>
+    <p v-for="w in warnings.slice(0, 2)" :key="w!" class="mt-1 text-xs text-amber-800">
+      {{ $t('Atención: {warning}', { warning: w }) }}
+    </p>
     <p v-if="warnings.length > 2" class="mt-1 text-xs text-amber-800" :title="warnings.slice(2).join('\n')">
-      y {{ warnings.length - 2 }} avisos más (pasa el ratón para verlos)
+      {{ $t('y {n} avisos más (pasa el ratón para verlos)', { n: warnings.length - 2 }) }}
     </p>
     <ul
       v-if="open && matches.length"

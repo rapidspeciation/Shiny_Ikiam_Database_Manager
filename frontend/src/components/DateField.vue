@@ -7,7 +7,7 @@ import { isoToSerial, parseDateInput, serialToIso, todayIso } from '../lib/dates
  * A date typed day first (28/09/2026), as the team writes it. The browser's
  * own date box follows the browser's language (month first in English), so
  * it is only used for the calendar button. v-model is an ISO date ('' when empty).
- * Accepts 28/09/2026, 28-9-26, 280926, 28-Sep-26, "hoy" and "ayer".
+ * Accepts 28/09/2026, 28-9-26, 280926, 28-Sep-26, "hoy"/"today" and "ayer"/"yesterday".
  */
 defineOptions({ inheritAttrs: false })
 const model = defineModel<string>({ default: '' })
@@ -28,8 +28,8 @@ watch(model, iso => {
 function read(value: string): string | null {
   const s = value.trim().toLowerCase()
   if (!s) return ''
-  if (s === 'hoy') return todayIso()
-  if (s === 'ayer') return serialToIso(isoToSerial(todayIso()) - 1)
+  if (s === 'hoy' || s === 'today') return todayIso()
+  if (s === 'ayer' || s === 'yesterday') return serialToIso(isoToSerial(todayIso()) - 1)
   const serial = parseDateInput(s)
   return serial === null ? null : serialToIso(serial)
 }
@@ -58,9 +58,9 @@ function openCalendar() {
       v-model="text"
       type="text"
       autocomplete="off"
-      placeholder="dd/mm/aaaa"
+      :placeholder="$t('dd/mm/aaaa')"
       :class="{ 'border-red-500 bg-red-50': invalid }"
-      :title="invalid ? 'Fecha no válida: escribe día/mes/año, p. ej. 28/09/2026' : undefined"
+      :title="invalid ? $t('Fecha no válida: escribe día/mes/año, p. ej. 28/09/2026') : undefined"
       class="w-full pr-9"
       @change="commit"
       @keydown.enter="commit"
@@ -68,7 +68,7 @@ function openCalendar() {
     <button
       type="button"
       class="absolute inset-y-0 right-0 flex w-8 items-center justify-center text-stone-500 hover:text-brand-700"
-      title="Elegir en el calendario"
+      :title="$t('Elegir en el calendario')"
       tabindex="-1"
       @click="openCalendar"
     >

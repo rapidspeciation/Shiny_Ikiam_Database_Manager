@@ -11,6 +11,7 @@ import { notify } from '../lib/notice'
 import { persistentRef } from '../lib/persist'
 import { orderColumns } from '../lib/rows'
 import { usePending } from '../stores/pending'
+import { t } from '../lib/i18n'
 
 /**
  * "Clutches": new clutches (eggs laid) and their follow-up in Insectary_stocks.
@@ -42,12 +43,12 @@ const speciesList = computed(() => {
 
 function addClutch() {
   const clutch = (number.value || nextNumber.value).trim()
-  if (!form.value.species) return notify('Elige la especie del clutch')
+  if (!form.value.species) return notify(t('Elige la especie del clutch'))
   if (
     rows.value.some(r => String(r.values['CLUTCH NUMBER']) === clutch) ||
     creates.value.some(c => String(c.values['CLUTCH NUMBER']) === clutch)
   )
-    return notify(`El clutch ${clutch} ya existe`, 'error')
+    return notify(t('El clutch {clutch} ya existe', { clutch }), 'error')
   const values: Record<string, string | number | null> = {
     'CLUTCH NUMBER': /^\d+$/.test(clutch) ? Number(clutch) : clutch,
     SPECIES: form.value.species,
@@ -60,7 +61,7 @@ function addClutch() {
   pending.touch()
   number.value = ''
   form.value.eggs = null
-  notify(`Clutch ${clutch} añadido`)
+  notify(t('Clutch {clutch} añadido', { clutch }))
 }
 
 /** In progress: laid in the last 60 days and not yet emerged. */
@@ -100,30 +101,33 @@ const columns = computed(() =>
         <input v-model="number" class="field-input w-28" :placeholder="nextNumber" />
       </label>
       <label class="min-w-72">
-        <span class="field-label">Especie</span>
+        <span class="field-label">{{ $t('Especie') }}</span>
         <ChoiceField v-model="form.species" class="field-input" :options="speciesList" />
       </label>
       <label>
-        <span class="field-label">Puesta</span>
+        <span class="field-label">{{ $t('Puesta') }}</span>
         <DateField v-model="form.date" class="field-input" />
       </label>
       <label>
-        <span class="field-label">Huevos</span>
+        <span class="field-label">{{ $t('Huevos') }}</span>
         <input v-model.number="form.eggs" type="number" min="0" class="field-input w-24" />
       </label>
       <label>
-        <span class="field-label">Dónde</span>
+        <span class="field-label">{{ $t('Dónde') }}</span>
         <ChoiceField v-model="form.place" class="field-input" :options="['Insectary', 'Laboratory']" :freetext="false" />
       </label>
-      <button class="btn-primary"><Plus :size="15" /> Nuevo clutch</button>
+      <button class="btn-primary"><Plus :size="15" /> {{ $t('Nuevo clutch') }}</button>
     </form>
     <p class="hint px-4 py-1">
-      Eclosión y pupa: escribe la fecha y el número en la fila del clutch. Se muestran los clutches de los últimos 60 días que aún
-      no emergen.
-      <label class="ml-2"><input v-model="showAll" type="checkbox" /> ver los últimos 150</label>
+      {{
+        $t(
+          'Eclosión y pupa: escribe la fecha y el número en la fila del clutch. Se muestran los clutches de los últimos 60 días que aún no emergen.',
+        )
+      }}
+      <label class="ml-2"><input v-model="showAll" type="checkbox" /> {{ $t('ver los últimos 150') }}</label>
     </p>
     <div class="min-h-0 flex-1">
-      <p v-if="!ready" class="p-6 text-stone-500">Cargando Insectary_stocks…</p>
+      <p v-if="!ready" class="p-6 text-stone-500">{{ $t('Cargando {sheet}…', { sheet: 'Insectary_stocks' }) }}</p>
       <SheetGrid
         v-else
         :module="MODULE"

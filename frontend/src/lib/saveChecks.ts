@@ -1,6 +1,7 @@
 import { inDateRange } from './dates'
 import { blankOrNA, listProblem, type Verifications } from './verifications'
 import type { CellValue, Field, TableRow } from './types'
+import { t } from './i18n'
 
 /**
  * The checks a pending change must pass before it is sent to Google Sheets,
@@ -16,7 +17,7 @@ export function dateProblem(field: Pick<Field, 'key' | 'type'> | undefined, valu
   // "Days difference (…)" columns count days, not dates.
   if (/^days difference/i.test(field.key) || /^\s*(NA|N\/A)\s*$/i.test(String(value))) return null
   if (typeof value === 'number' && inDateRange(value)) return null
-  return `Fecha no válida en ${field.key}: usa 14-Aug-25 o 2025-08-14, entre 1990 y 2099`
+  return t('Fecha no válida en {field}: usa 14-Aug-25 o 2025-08-14, entre 1990 y 2099', { field: field.key })
 }
 
 export interface CheckChange {
@@ -38,9 +39,12 @@ const labelOf = (values: Record<string, CellValue>) =>
   String(values.Insectary_ID ?? values.CAM_ID ?? values.FieldMark_ID ?? '').trim()
 
 function where(value: string, h: Holder) {
-  if (h.row === null) return `${value} ya está en una fila nueva sin guardar de ${h.sheet}`
+  if (h.row === null) return t('{value} ya está en una fila nueva sin guardar de {sheet}', { value, sheet: h.sheet })
   const label = h.label && h.label !== value ? ` (${h.label})` : ''
-  return `${value} ya está usado en ${h.sheet} fila ${h.row}${label}${h.unsaved ? ', sin guardar todavía' : ''}`
+  const vars = { value, sheet: h.sheet, row: h.row, label }
+  return h.unsaved
+    ? t('{value} ya está usado en {sheet} fila {row}{label}, sin guardar todavía', vars)
+    : t('{value} ya está usado en {sheet} fila {row}{label}', vars)
 }
 
 /**

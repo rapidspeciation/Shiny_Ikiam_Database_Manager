@@ -11,6 +11,7 @@ import { useSheet } from '../composables/useSheet'
 import { notify } from '../lib/notice'
 import { usePending } from '../stores/pending'
 import { useSession } from '../stores/session'
+import { t } from '../lib/i18n'
 
 /** Any sheet as an editable spreadsheet: the "Buscador" of the original app. */
 const session = useSession()
@@ -18,6 +19,7 @@ const pending = usePending()
 const route = useRoute()
 const router = useRouter()
 
+/** Group names in Spanish (the key of their English), translated where shown. */
 const GROUPS: Record<string, string> = {
   insectary: 'Insectario',
   field: 'Campo',
@@ -60,7 +62,8 @@ watch(
 
 const grouped = computed(() => {
   const out: Record<string, { id: string; count: number }[]> = {}
-  for (const m of session.modules) (out[GROUPS[m.group] || m.group] ||= []).push({ id: m.id, count: m.recordCount })
+  for (const m of session.modules)
+    (out[GROUPS[m.group] ? t(GROUPS[m.group]) : m.group] ||= []).push({ id: m.id, count: m.recordCount })
   return out
 })
 /** The sheets by group, each with its number of rows in grey. */
@@ -77,7 +80,7 @@ const sheetLink = computed(() =>
 )
 
 function addRow() {
-  pending.addCreate(module.value, 'nueva', {})
+  pending.addCreate(module.value, t('nueva'), {})
   pending.touch()
 }
 
@@ -87,12 +90,12 @@ const headerNotice = computed(() => {
   if (!problems.length) return null
   const text = (p: HeaderProblem) =>
     p.kind === 'missing'
-      ? `falta la columna ${p.field}`
+      ? t('falta la columna {field}', { field: p.field })
       : p.kind === 'new'
-        ? `columna nueva ${p.field} en ${p.column} (ignorada)`
+        ? t('columna nueva {field} en {column} (ignorada)', { field: p.field, column: p.column })
         : p.kind === 'duplicate'
-          ? `${p.field} aparece dos veces (${p.columns?.join(', ')})`
-          : 'no se reconoce la fila de encabezados'
+          ? t('{field} aparece dos veces ({columns})', { field: p.field, columns: p.columns?.join(', ') })
+          : t('no se reconoce la fila de encabezados')
   const shown = problems.filter(p => p.blocking || !problems.some(q => q.blocking)).slice(0, 8)
   return {
     blocking: problems.some(p => p.blocking),
@@ -106,64 +109,80 @@ const headerNotice = computed(() => {
   <div class="flex h-full flex-col">
     <div class="toolbar">
       <label>
-        <span class="field-label">Hoja</span>
+        <span class="field-label">{{ $t('Hoja') }}</span>
         <ChoiceField v-model="module" class="field-input min-w-52" :options="sheetChoices" :freetext="false" />
       </label>
       <label class="min-w-48 flex-1">
-        <span class="field-label">Buscar en todas las columnas</span>
+        <span class="field-label">{{ $t('Buscar en todas las columnas') }}</span>
         <span class="relative block">
           <Search :size="15" class="absolute top-2.5 left-2.5 text-stone-400" />
-          <input v-model="search" class="field-input pl-8" placeholder="ID, CAM, tubo, especie…" type="search" />
+          <input v-model="search" class="field-input pl-8" :placeholder="$t('ID, CAM, tubo, especie…')" type="search" />
         </span>
       </label>
       <label class="flex items-center gap-2 pb-1.5 text-sm">
-        <input v-model="showUnused" type="checkbox" /> Filas vacías preasignadas
+        <input v-model="showUnused" type="checkbox" /> {{ $t('Filas vacías preasignadas') }}
       </label>
       <div class="flex gap-2">
         <RouterLink
           v-if="session.canEdit"
           :to="{ path: '/revision', query: { hoja: module } }"
           class="btn"
-          title="Datos que no cuadran en todo el libro (IDs repetidos, fechas, colecta ↔ insectario, sobres y fotos), en la pestaña Revisión"
+          :title="
+            $t(
+              'Datos que no cuadran en todo el libro (IDs repetidos, fechas, colecta ↔ insectario, sobres y fotos), en la pestaña Revisión',
+            )
+          "
         >
-          <ShieldAlert :size="15" /> Revisión de datos
+          <ShieldAlert :size="15" /> {{ $t('Revisión de datos') }}
         </RouterLink>
-        <button v-if="session.canEdit" class="btn" @click="addRow"><Plus :size="15" /> Añadir fila</button>
+        <button v-if="session.canEdit" class="btn" @click="addRow"><Plus :size="15" /> {{ $t('Añadir fila') }}</button>
         <ExtendRowsButton v-if="session.isReviewer" :sheet="module" :count="50" @done="load(true)" />
-        <button class="btn" title="Copiar la primera fila seleccionada hacia abajo (Ctrl+D)" @click="grid?.fillDown()">
-          <ArrowDownToLine :size="15" /> Rellenar
+        <button class="btn" :title="$t('Copiar la primera fila seleccionada hacia abajo (Ctrl+D)')" @click="grid?.fillDown()">
+          <ArrowDownToLine :size="15" /> {{ $t('Rellenar') }}
         </button>
-        <button class="btn" :disabled="loading" title="Volver a cargar desde el servidor" @click="load(true)">
+        <button class="btn" :disabled="loading" :title="$t('Volver a cargar desde el servidor')" @click="load(true)">
           <RefreshCw :size="15" :class="{ 'animate-spin': loading }" />
         </button>
-        <a :href="`api/export?module=${encodeURIComponent(module)}&format=csv`" class="btn" title="Descargar la hoja como CSV">
+        <a
+          :href="`api/export?module=${encodeURIComponent(module)}&format=csv`"
+          class="btn"
+          :title="$t('Descargar la hoja como CSV')"
+        >
           <FileDown :size="15" />
         </a>
-        <a v-if="sheetLink" :href="sheetLink" target="_blank" rel="noopener" class="btn" title="Abrir en Google Sheets">
+        <a v-if="sheetLink" :href="sheetLink" target="_blank" rel="noopener" class="btn" :title="$t('Abrir en Google Sheets')">
           <ExternalLink :size="15" />
         </a>
       </div>
     </div>
     <p v-if="headerNotice?.blocking" class="bg-red-50 px-4 py-2 text-sm text-red-800">
-      La hoja {{ module }} cambió en Google Sheets: {{ headerNotice.text }}. No se lee ni se guarda en esta hoja hasta corregir
-      los encabezados.
+      {{
+        $t(
+          'La hoja {sheet} cambió en Google Sheets: {problems}. No se lee ni se guarda en esta hoja hasta corregir los encabezados.',
+          { sheet: module, problems: headerNotice.text },
+        )
+      }}
     </p>
     <p v-else-if="headerNotice && session.isReviewer" class="bg-amber-50 px-4 py-2 text-sm text-amber-900">
-      La hoja cambió: {{ headerNotice.text }}.
-      <template v-if="headerNotice.missing">Esas columnas se muestran con su último valor y no se pueden editar.</template>
+      {{ $t('La hoja cambió: {problems}.', { problems: headerNotice.text }) }}
+      <template v-if="headerNotice.missing">{{
+        $t('Esas columnas se muestran con su último valor y no se pueden editar.')
+      }}</template>
     </p>
     <p class="hint px-4 py-1">
-      <template v-if="touch"
-        >Toca una celda para seleccionarla y dos veces para editarla · arrastra el círculo para ampliar la selección · abajo:
-        Copiar, Pegar, Rellenar ↓, Borrar · toca el número de fila para ver la fila completa · gris = fórmula.</template
-      >
-      <template v-else>
-        Escribe sobre una celda o haz doble clic para editar · pega rangos desde Excel o Sheets · Ctrl+D rellena hacia abajo · las
-        celdas grises son fórmulas · clic en el número de fila para ver la fila completa.
-      </template>
+      <template v-if="touch">{{
+        $t(
+          'Toca una celda para seleccionarla y dos veces para editarla · arrastra el círculo para ampliar la selección · abajo: Copiar, Pegar, Rellenar ↓, Borrar · toca el número de fila para ver la fila completa · gris = fórmula.',
+        )
+      }}</template>
+      <template v-else>{{
+        $t(
+          'Escribe sobre una celda o haz doble clic para editar · pega rangos desde Excel o Sheets · Ctrl+D rellena hacia abajo · las celdas grises son fórmulas · clic en el número de fila para ver la fila completa.',
+        )
+      }}</template>
     </p>
     <div class="min-h-0 flex-1">
-      <p v-if="!ready || !table" class="p-6 text-stone-500">Cargando {{ module }}…</p>
+      <p v-if="!ready || !table" class="p-6 text-stone-500">{{ $t('Cargando {sheet}…', { sheet: module }) }}</p>
       <SheetGrid
         v-else
         ref="grid"

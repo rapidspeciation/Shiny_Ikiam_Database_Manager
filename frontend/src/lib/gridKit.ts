@@ -1,6 +1,7 @@
 import { EditModule, KeybindingsModule } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent, Tabulator } from 'tabulator-tables'
 import { complete, pickChoice } from './paste'
+import { t, tn } from './i18n'
 
 /**
  * Tabulator 6.5 reads a typed character by its character code, so "(" (40)
@@ -39,9 +40,9 @@ export function activeCell(table: Tabulator): CellComponent | null {
 /** Copy the first row of the selection down to the rest (Ctrl+D). */
 export function fillDown(table: Tabulator, canEdit: CanEdit, notice: Notice) {
   const range = table.getRanges()[0]
-  if (!range) return notice('Selecciona un rango de celdas para rellenar')
+  if (!range) return notice(t('Selecciona un rango de celdas para rellenar'))
   const rows = range.getRows()
-  if (rows.length < 2) return notice('Selecciona al menos dos filas para rellenar hacia abajo')
+  if (rows.length < 2) return notice(t('Selecciona al menos dos filas para rellenar hacia abajo'))
   for (const column of range.getColumns()) {
     const field = column.getField()
     const source = rows[0].getCell(field).getValue()
@@ -53,8 +54,7 @@ export function fillDown(table: Tabulator, canEdit: CanEdit, notice: Notice) {
 export function clearRange(table: Tabulator, canEdit: CanEdit) {
   const range = table.getRanges()[0]
   if (!range) return
-  for (const cell of range.getCells().flat() as CellComponent[])
-    if (canEdit(cell.getRow(), cell.getField())) cell.setValue(null)
+  for (const cell of range.getCells().flat() as CellComponent[]) if (canEdit(cell.getRow(), cell.getField())) cell.setValue(null)
 }
 
 // Keys typed while a cell's editor is still opening are kept and given to it,
@@ -208,7 +208,8 @@ export function attachFillHandle(
 ) {
   const handle = document.createElement('div')
   handle.className = 'fill-handle'
-  handle.title = 'Arrastra hacia abajo para copiar'
+  // Read on hover, so it follows the interface language.
+  handle.addEventListener('pointerenter', () => (handle.title = t('Arrastra hacia abajo para copiar')))
   container.appendChild(handle)
   let source: { rows: RowComponent[]; fields: string[] } | null = null
   let dragging = false
@@ -377,7 +378,14 @@ export function attachCopyMarker(table: Tabulator, container: HTMLElement, notic
     cells = (table.getRanges()[0]?.getCells().flat() as CellComponent[] | undefined) ?? null
     place()
     const n = cells?.length ?? 0
-    if (n) notice(`Copiado: ${n} ${n === 1 ? 'celda' : 'celdas'}. Selecciona dónde pegar y pulsa Ctrl+V`)
+    if (n)
+      notice(
+        tn(
+          n,
+          'Copiado: {n} celda. Selecciona dónde pegar y pulsa Ctrl+V',
+          'Copiado: {n} celdas. Selecciona dónde pegar y pulsa Ctrl+V',
+        ),
+      )
   })
   table.on('cellEditing', clear)
   const later = () => requestAnimationFrame(place)
@@ -410,14 +418,17 @@ export function attachTouchSheet(
 ) {
   const handle = document.createElement('div')
   handle.className = 'fill-handle is-touch'
-  handle.title = 'Arrastra para ampliar la selección'
+  handle.addEventListener('pointerenter', () => (handle.title = t('Arrastra para ampliar la selección')))
   container.appendChild(handle)
   const bar = document.createElement('div')
   bar.className = 'touch-actions'
+  // Labels are the Spanish keys, written in the interface language each time the bar appears.
+  const labels: [HTMLButtonElement, string][] = []
   const button = (label: string, action: () => void) => {
     const b = document.createElement('button')
     b.type = 'button'
-    b.textContent = label
+    b.textContent = t(label)
+    labels.push([b, label])
     // Keep the selection: the tap on the bar must not reach the grid.
     b.addEventListener('pointerdown', e => e.preventDefault())
     b.addEventListener('click', e => {
@@ -434,7 +445,7 @@ export function attachTouchSheet(
   button('Copiar', () => table.copyToClipboard('range'))
   button('Pegar', async () => {
     const text = (await navigator.clipboard?.readText?.().catch(() => '')) || copied
-    if (!text) return notice('No hay nada copiado todavía')
+    if (!text) return notice(t('No hay nada copiado todavía'))
     const data = new DataTransfer()
     data.setData('text/plain', text)
     table.element.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
@@ -484,13 +495,19 @@ export function attachTouchSheet(
     const last = cells?.at(-1)?.getElement()
     if (!range || !last?.isConnected) return hide()
     const appearing = bar.style.display !== 'flex'
-    if (appearing) shownAt = Date.now()
+    if (appearing) {
+      shownAt = Date.now()
+      for (const [b, label] of labels) b.textContent = t(label)
+    }
     bar.style.display = 'flex'
     barRoom(true)
     if (appearing) requestAnimationFrame(() => keepAboveBar(last))
     const cell = last.getBoundingClientRect()
     const view = (container.querySelector('.tabulator-tableholder') as HTMLElement | null)?.getBoundingClientRect()
-    if (view && (cell.bottom < view.top || cell.bottom > view.bottom + 1 || cell.right < view.left || cell.right > view.right + 1)) {
+    if (
+      view &&
+      (cell.bottom < view.top || cell.bottom > view.bottom + 1 || cell.right < view.left || cell.right > view.right + 1)
+    ) {
       handle.style.display = 'none'
       return
     }
@@ -783,8 +800,10 @@ function markPick() {
   if (!(input instanceof HTMLInputElement) || !input.closest('.tabulator-editing')) return
   const items = [...document.querySelectorAll<HTMLElement>('.tabulator-edit-list .tabulator-edit-list-item')]
   const shown = items.filter(el => el.offsetParent !== null)
-  const pick = pickChoice(input.value, shown.map(el => el.textContent?.trim() ?? ''))
+  const pick = pickChoice(
+    input.value,
+    shown.map(el => el.textContent?.trim() ?? ''),
+  )
   for (const el of items) el.classList.toggle('is-pick', !!pick && el.offsetParent !== null && el.textContent?.trim() === pick)
 }
-if (typeof document !== 'undefined')
-  document.addEventListener('keyup', () => setTimeout(markPick, 80), true)
+if (typeof document !== 'undefined') document.addEventListener('keyup', () => setTimeout(markPick, 80), true)
