@@ -163,9 +163,9 @@ function columns(): ColumnDefinition[] {
     text('notes', 220),
     text('collector', 200, choices(() => props.people)),
     text('identifier', 200, choices(() => props.people)),
-    // Weather takes only the sheet's codes (typing "dy" gives DY_(dry)).
-    text('rainfall', 170, { cssClass: 'has-choices', ...choiceEditor(() => props.rainfalls, false) }),
-    text('cloud', 230, { cssClass: 'has-choices', ...choiceEditor(() => props.clouds, false) }),
+    // Typing "dy" completes to DY_(dry); anything else is marked as outside the sheet's list.
+    text('rainfall', 170, choices(() => props.rainfalls)),
+    text('cloud', 230, choices(() => props.clouds)),
     {
       title: '',
       field: '__remove',
