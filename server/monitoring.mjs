@@ -282,6 +282,15 @@ const rowInfo = row =>
     section: clean(row.values.Transect_section) || null,
   };
 
+/** What the Wikiloc note itself says, beside its row's values in Dudas. */
+const noteInfo = c => ({
+  species: c.species || null,
+  subspecies: c.subspecies || null,
+  sex: c.sex || null,
+  minutes: c.timeFromTrack ? null : c.minutes ?? null,
+  markId: c.markId || null,
+});
+
 /**
  * Rows of the day within ten minutes of the point (or of its row), so a person
  * can pick another one when the note and its row disagree (e.g. a mark written
@@ -373,6 +382,7 @@ function trackDoubts(store, index, t) {
       wikiloc: t.wikiloc?.url || null,
       text: c.text,
       minutes: points[p].timeFromTrack ? null : points[p].minutes,
+      note: noteInfo(points[p]),
       photos: c.photos || [],
       photoLinks: photoLinks(store, c.photos),
       confidence: m.confidence,
@@ -439,6 +449,7 @@ export function rematchTracks(store, user = null) {
         wikiloc: w.url,
         text: captures[i].text,
         minutes: captures[i].minutes,
+        note: noteInfo(captures[i]),
         photos: captures[i].photos,
         photoLinks: photoLinks(store, captures[i].photos),
         confidence: m.confidence,

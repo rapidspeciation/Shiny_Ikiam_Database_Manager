@@ -31,6 +31,13 @@ interface RowInfo {
   kind: string | null
   section: string | null
 }
+interface NoteInfo {
+  species: string | null
+  subspecies: string | null
+  sex: 'female' | 'male' | null
+  minutes: number | null
+  markId: string | null
+}
 interface Doubt {
   source: 'track' | 'walk'
   trackId?: string
@@ -42,6 +49,8 @@ interface Doubt {
   wikiloc: string | null
   text: string
   minutes: number | null
+  /** What the note itself says (species, sex, mark, time), to set beside its row. */
+  note?: NoteInfo
   photos: string[]
   photoLinks: string[]
   confidence: MatchConfidence
@@ -115,8 +124,8 @@ const sexLabel = (s: string | null) => (s === 'female' ? 'hembra' : s === 'male'
 const REASON: Record<MatchConfidence, string> = {
   mark: 'Por marca',
   sure: 'Segura',
-  tie: 'Empate: otra fila encaja igual',
-  order: 'Por orden: la nota no tiene hora que encaje',
+  tie: '¿Qué fila es? Otra fila encaja igual',
+  order: '¿Qué fila es? Puesta por orden: la nota no tiene hora que encaje',
   none: 'Sin fila',
 }
 const CONFLICT: Record<MatchConflict, string> = {
@@ -136,6 +145,76 @@ const rowLabel = (r: RowInfo) =>
   ]
     .filter(Boolean)
     .join(' · ')
+
+// ------------------------------------------------------------ the note beside its row
+/**
+ * Paired surely (by its mark, or the only row at its minute) but the note says
+ * something else than its row: the question is which of the two is right, not
+ * which row it is. Shown as the note beside the row; the other rows of the
+ * day only on asking.
+ */
+function settledRow(d: Doubt): RowInfo | null {
+  if (d.source !== 'track' || d.pending || d.changed || d.indexes.length !== 1) return null
+  if (d.confidence !== 'mark' && d.confidence !== 'sure') return null
+  return d.current[0] ?? null
+}
+const lower = (v: string | null | undefined) => (v || '').trim().toLowerCase()
+/** Species, sex, mark and time of the note and of its row; `differ` where both say something and it is not the same. */
+function compare(d: Doubt, r: RowInfo) {
+  const n = d.note
+  const species = (s: string | null, sub: string | null) => [s, sub].filter(Boolean).join(' ') || null
+  const lines: { label: string; note: string | null; row: string | null; differ: boolean }[] = [
+    {
+      label: 'Especie',
+      note: species(n?.species ?? null, n?.subspecies ?? null),
+      row: species(r.species, r.subspecies),
+      // A note without the subspecies agrees with a row that has it.
+      differ: !!n?.species && !!r.species && lower(n.species) !== lower(r.species),
+    },
+    {
+      label: 'Sexo',
+      note: sexLabel(n?.sex ?? null) || null,
+      row: sexLabel(r.sex) || null,
+      differ: !!n?.sex && !!r.sex && n.sex !== r.sex,
+    },
+    {
+      label: 'Marca',
+      note: n?.markId ?? null,
+      row: r.markId,
+      differ: !!n?.markId && !!r.markId && lower(n.markId) !== lower(r.markId),
+    },
+    {
+      label: 'Hora',
+      note: n?.minutes != null ? formatMinutes(n.minutes) : null,
+      row: r.minutes != null ? formatMinutes(r.minutes) : null,
+      differ: false,
+    },
+  ]
+  return lines.filter(l => l.note || l.row)
+}
+/** Why the point is surely this row: the same mark, the same minute. */
+function pairedBy(d: Doubt, r: RowInfo) {
+  const n = d.note
+  const why = [
+    n?.markId && lower(n.markId) === lower(r.markId) ? `la misma marca ${r.markId}` : '',
+    n?.minutes != null && r.minutes != null && Math.abs(n.minutes - r.minutes) <= 2
+      ? `la misma hora ${formatMinutes(r.minutes)}`
+      : '',
+  ].filter(Boolean)
+  return why.length
+    ? `tienen ${why.join(' y ')}`
+    : d.confidence === 'mark'
+      ? 'por la marca'
+      : 'es la única fila que encaja a esa hora'
+}
+/** Doubts whose other rows are shown ("Es otra fila"). */
+const opened = ref(new Set<string>())
+const doubtKey = (d: Doubt) => `${walkKey(d)}|${d.indexes[0]}`
+function toggleOthers(d: Doubt) {
+  const next = new Set(opened.value)
+  if (!next.delete(doubtKey(d))) next.add(doubtKey(d))
+  opened.value = next
+}
 
 // ------------------------------------------------------------ choosing rows
 /** Rows chosen for the points of a waiting walk (by point index), before it goes on the map. */
@@ -231,6 +310,19 @@ const firstName = (collector: string | null) => {
   return FIRST_NAMES[i] || (collector || '').split(' - ')[1]?.split(' ')[0] || i
 }
 function message(d: Doubt) {
+  const settled = settledRow(d)
+  if (settled) {
+    const differ = compare(d, settled).filter(l => l.differ)
+    return [
+      `Hola ${firstName(d.collector)}, estoy revisando el monitoreo del ${d.date.split('-').reverse().map(Number).join('/')}.`,
+      `En Wikiloc el punto «${d.text}» es la fila ${settled.row} de Collection_data, pero`,
+      differ.map(l => `la nota dice ${l.label.toLowerCase()} ${l.note} y la hoja ${l.row}`).join(', y ') + ':',
+      '¿cuál es el correcto?',
+      d.photoLinks[0] ? `Foto: ${d.photoLinks[0]}` : d.wikiloc ? `Recorrido: ${d.wikiloc}` : '',
+    ]
+      .filter(Boolean)
+      .join(' ')
+  }
   const options = [...d.proposed.filter((r): r is RowInfo => !!r), ...d.candidates.filter(r => !isProposed(d, r))].slice(0, 3)
   const rows = options.map(
     r =>
@@ -284,6 +376,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         {{ total }} puntos dudosos en {{ groups.length - waitingWalks }} recorridos del mapa<template v-if="waitingWalks"
           >; {{ waitingWalks }} recorridos por revisar para emparejar a mano</template
         >
+      </p>
+      <p class="hint order-last basis-full pb-1 text-xs">
+        Cada tarjeta es un punto de Wikiloc (una mariposa) y la fila de Collection_data que le corresponde. No son recapturas: «La
+        nota no coincide» es un punto ya emparejado donde la nota y la hoja dicen algo distinto; «¿Qué fila es?» es un punto que
+        puede ser más de una fila.
       </p>
       <button class="btn ml-auto" :disabled="loading" title="Volver a emparejar y calcular las dudas" @click="load">
         <RefreshCw :size="14" :class="{ 'animate-spin': loading }" /> Actualizar
@@ -372,7 +469,63 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 <span v-if="d.indexes.length > 1" class="text-stone-500"> ({{ d.indexes.length }} mariposas)</span>
               </figcaption>
             </figure>
-            <div class="min-w-0 flex-1 text-sm">
+            <div v-if="settledRow(d)" class="min-w-0 flex-1 text-sm">
+              <p class="mb-1">
+                <span class="rounded bg-amber-100 px-1 text-xs font-medium text-amber-800">La nota no coincide con su fila</span>
+              </p>
+              <p class="mb-2 text-xs text-stone-500">
+                Es la fila {{ settledRow(d)!.row }} ({{ pairedBy(d, settledRow(d)!) }}); falta saber cuál de las dos tiene razón.
+              </p>
+              <table class="mb-2 w-full max-w-xl text-left">
+                <thead class="text-xs text-stone-500">
+                  <tr>
+                    <th class="w-20 py-0.5 pr-2 font-normal"></th>
+                    <th class="py-0.5 pr-2 font-normal">Nota de Wikiloc</th>
+                    <th class="py-0.5 font-normal">
+                      Fila {{ settledRow(d)!.row }}<span v-if="settledRow(d)!.kind"> · {{ settledRow(d)!.kind }}</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="l in compare(d, settledRow(d)!)" :key="l.label" :class="l.differ ? 'bg-amber-50 font-medium' : ''">
+                    <td class="py-0.5 pr-2 text-xs text-stone-500">{{ l.label }}</td>
+                    <td class="py-0.5 pr-2" :class="l.differ ? 'text-amber-900' : ''">{{ l.note || '—' }}</td>
+                    <td class="py-0.5" :class="l.differ ? 'text-amber-900' : ''">{{ l.row || '—' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <ul v-if="opened.has(doubtKey(d))" class="mb-2 space-y-1">
+                <li class="text-xs text-stone-500">Otras filas de ese día:</li>
+                <li v-for="r in d.candidates.filter(c => c.recordId !== settledRow(d)!.recordId)" :key="r.recordId">
+                  <button
+                    type="button"
+                    class="w-full rounded border border-stone-200 px-2 py-1 text-left hover:border-brand-600 disabled:opacity-60"
+                    :disabled="busy || !session.canEdit"
+                    title="Es esta fila"
+                    @click="choose(d, r)"
+                  >
+                    {{ rowLabel(r) }}<span v-if="r.kind" class="text-stone-500"> · {{ r.kind }}</span>
+                  </button>
+                </li>
+              </ul>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  class="btn py-0.5"
+                  :disabled="busy || !session.canEdit"
+                  title="Queda emparejado con esta fila y sale de las dudas; si la hoja está mal, corrígela en Tablas"
+                  @click="choose(d, settledRow(d))"
+                >
+                  <Check :size="13" /> Sí es la fila {{ settledRow(d)!.row }}
+                </button>
+                <button class="btn py-0.5" @click="toggleOthers(d)">
+                  {{ opened.has(doubtKey(d)) ? 'Ocultar otras filas' : 'Es otra fila…' }}
+                </button>
+                <button class="btn py-0.5" :title="message(d)" @click="ask(d)">
+                  <Copy :size="13" /> Preguntar a {{ firstName(d.collector) }}
+                </button>
+              </div>
+            </div>
+            <div v-else class="min-w-0 flex-1 text-sm">
               <p class="mb-1">
                 <span class="rounded bg-amber-100 px-1 text-xs font-medium text-amber-800">{{ REASON[d.confidence] }}</span>
                 <span
@@ -400,6 +553,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                     .join('; ') || 'sin fila'
                 }}
               </p>
+              <p class="mb-1 text-xs text-stone-500">Filas de ese día que puede ser (elige una):</p>
               <ul class="space-y-1">
                 <li v-for="r in d.candidates" :key="r.recordId">
                   <button
