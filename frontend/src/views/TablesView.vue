@@ -33,8 +33,10 @@ const search = ref(String(route.query.buscar || ''))
 const debounced = ref(search.value)
 const showUnused = ref(false)
 const grid = ref<InstanceType<typeof SheetGrid>>()
-// "Revisión de datos" is its own tab now (Revisión); old links to it land there.
-if (route.query.revision === '1') router.replace({ path: '/revision', query: route.query.hoja ? { hoja: route.query.hoja } : {} })
+// "Revisión de datos" is its own tab now (Revisión); old links to it land there (also when Tablas is already open).
+const toRevision = (query: typeof route.query) =>
+  query.revision === '1' && router.replace({ path: '/revision', query: query.hoja ? { hoja: query.hoja } : {} })
+toRevision(route.query)
 const { table, ready, loading, options, creates, createFormulas, load } = useSheet(module)
 
 let timer: ReturnType<typeof setTimeout>
@@ -42,10 +44,15 @@ watch(search, value => {
   clearTimeout(timer)
   timer = setTimeout(() => (debounced.value = value), 250)
 })
-watch(module, value => router.replace({ query: { hoja: value } }))
+// The link keeps the sheet and the search, so a copied link opens the same view.
+const linkQuery = () => ({ hoja: module.value, ...(debounced.value ? { buscar: debounced.value } : {}) })
+// Tablas stays alive in the background (KeepAlive): only its own route is touched.
+const here = () => route.path === '/tablas'
+watch([module, debounced], () => here() && router.replace({ query: linkQuery() }))
 watch(
   () => route.query,
   query => {
+    if (!here() || toRevision(query)) return
     if (query.hoja && query.hoja !== module.value) module.value = String(query.hoja)
     if (query.buscar !== undefined) search.value = debounced.value = String(query.buscar)
   },
@@ -138,8 +145,8 @@ const headerNotice = computed(() => {
       </div>
     </div>
     <p v-if="headerNotice?.blocking" class="bg-red-50 px-4 py-2 text-sm text-red-800">
-      La hoja {{ module }} cambió en Google Sheets: {{ headerNotice.text }}. No se lee ni se guarda en esta hoja hasta
-      corregir los encabezados.
+      La hoja {{ module }} cambió en Google Sheets: {{ headerNotice.text }}. No se lee ni se guarda en esta hoja hasta corregir
+      los encabezados.
     </p>
     <p v-else-if="headerNotice && session.isReviewer" class="bg-amber-50 px-4 py-2 text-sm text-amber-900">
       La hoja cambió: {{ headerNotice.text }}.

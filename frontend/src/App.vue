@@ -31,7 +31,7 @@ watch(
 </script>
 
 <template>
-  <!-- The invitation page, the home page and the monitoring report work without an account. -->
+  <!-- The invitation page and the home page work without an account (the rest needs a login). -->
   <RouterView v-if="route.path === '/activar'" />
   <div v-else-if="!session.ready" class="grid h-full place-items-center text-stone-500">Cargando…</div>
   <LoginView v-else-if="!session.user && !openPaths.has(route.path)" />
