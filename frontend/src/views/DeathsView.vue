@@ -2,7 +2,7 @@
 import ChoiceField from '../components/ChoiceField.vue'
 import DateField from '../components/DateField.vue'
 import { computed, ref } from 'vue'
-import { Download, Plus } from 'lucide-vue-next'
+import { PenLine } from 'lucide-vue-next'
 import IdPicker from '../components/IdPicker.vue'
 import SheetGrid from '../components/SheetGrid.vue'
 import { useSheet } from '../composables/useSheet'
@@ -13,7 +13,11 @@ import { persistentRef } from '../lib/persist'
 import { fillIfBlank, orderColumns, rowsById } from '../lib/rows'
 import { usePending } from '../stores/pending'
 
-/** "Registrar Muertes": choose butterflies, then set death date and cause for all of them. */
+/**
+ * "Registrar Muertes": the IDs typed show their rows at once (to look at them),
+ * and "Escribir" puts the death date and cause in those rows' empty cells.
+ * The latest recorded deaths are a separate table below.
+ */
 const MODULE = 'Insectary_data'
 const module = ref(MODULE)
 const pending = usePending()
@@ -43,12 +47,16 @@ const NOT_PRESERVED: Record<string, string> = {
 }
 
 const picked = persistentRef<string[]>('deaths:picked', [])
-const loaded = persistentRef<string[]>('deaths:loaded', [])
+// Lists kept from when the IDs had to be loaded with a button.
+const oldLoaded = persistentRef<string[]>('deaths:loaded', [])
+if (oldLoaded.value.length) {
+  if (!picked.value.length) picked.value = oldLoaded.value
+  oldLoaded.value = []
+}
 // Deaths are usually entered the same day: today by default, with its weekday shown.
 const date = ref(todayIso())
 const cause = persistentRef('deaths:cause', '')
 const notPreserved = persistentRef('deaths:not-preserved', true)
-const reviewOnly = persistentRef('deaths:review', false)
 const recentCount = ref(30)
 
 const ids = computed(() => {
@@ -57,19 +65,16 @@ const ids = computed(() => {
   for (const row of table.value.rows) if (row.observed && row.values.Insectary_ID) out.push(String(row.values.Insectary_ID))
   return [...new Set(out)].reverse()
 })
-const loadedRows = computed(() => (table.value ? rowsById(table.value.rows, 'Insectary_ID', loaded.value) : []))
+const chosenRows = computed(() => (table.value ? rowsById(table.value.rows, 'Insectary_ID', picked.value) : []))
 /** The latest recorded deaths, newest death date first, so the tab never opens empty. */
 const recentDeaths = computed(() => {
   if (!table.value) return []
-  const chosen = new Set(loadedRows.value.map(r => r.id))
+  const chosen = new Set(chosenRows.value.map(r => r.id))
   return table.value.rows
     .filter(r => r.observed && typeof r.values.Death_date === 'number' && !chosen.has(r.id))
     .sort((a, b) => (b.values.Death_date as number) - (a.values.Death_date as number) || b.row - a.row)
     .slice(0, recentCount.value)
 })
-// Loaded IDs first (highlighted), then recent deaths.
-const rows = computed(() => [...loadedRows.value, ...recentDeaths.value])
-const highlight = computed(() => loadedRows.value.map(r => r.id))
 const columns = computed(() =>
   table.value
     ? orderColumns(table.value.columns, [
@@ -95,39 +100,40 @@ function warn(id: string): string | null {
   return typeof death === 'number' ? `${id} ya murió el ${formatSerial(death)} (${row!.values.Death_cause ?? 'sin causa'})` : null
 }
 
-/** Loads the chosen rows; new rows get the date and cause where the cell is still empty. */
-function load(append: boolean) {
-  if (!table.value || !picked.value.length) return notify('Elige al menos un ID')
+/** Chosen rows whose date or cause is still empty: what "Escribir" would fill. */
+const toWrite = computed(() =>
+  chosenRows.value.filter(
+    r => isBlank(pending.value(r, 'Death_date')) || (cause.value && isBlank(pending.value(r, 'Death_cause'))),
+  ),
+)
+
+/** Writes the date and cause in the chosen rows' empty cells (as pending edits, to review and save). */
+function write() {
+  if (!table.value || !chosenRows.value.length) return notify('Escribe al menos un Insectary ID')
   if (dateError.value) return notify(dateError.value, 'error')
-  const serial = date.value ? serialFromIso(date.value) : null
-  const list = append ? [...new Set([...loaded.value, ...picked.value])] : [...picked.value]
-  const fresh = append ? picked.value.filter(id => !loaded.value.includes(id)) : picked.value
-  loaded.value = list
+  if (!date.value) return notify('Elige la fecha de muerte', 'error')
+  const serial = serialFromIso(date.value)
   let filled = 0
-  if (!reviewOnly.value)
-    for (const row of rowsById(table.value.rows, 'Insectary_ID', fresh)) {
-      const label = String(row.values.Insectary_ID)
-      const set = (field: string, value: string | number) => {
-        if (fillIfBlank(MODULE, row, label, field, value)) filled++
-      }
-      if (serial !== null) set('Death_date', serial)
-      if (cause.value) set('Death_cause', cause.value)
-      // Not preserved: only rows without a CAM or tube yet (a preserved one keeps its IDs).
-      const why = pending.value(row, 'Death_cause')
-      if (
-        notPreserved.value &&
-        !isBlank(why) &&
-        why !== 'Killed_Preserved' &&
-        isBlank(pending.value(row, 'CAM_ID')) &&
-        isBlank(pending.value(row, 'Tube_1_id'))
-      )
-        for (const [field, value] of Object.entries(NOT_PRESERVED)) set(field, value)
+  for (const row of chosenRows.value) {
+    const label = String(row.values.Insectary_ID)
+    const set = (field: string, value: string | number) => {
+      if (fillIfBlank(MODULE, row, label, field, value)) filled++
     }
-  picked.value = []
+    if (serial !== null) set('Death_date', serial)
+    if (cause.value) set('Death_cause', cause.value)
+    // Not preserved: only rows without a CAM or tube yet (a preserved one keeps its IDs).
+    const why = pending.value(row, 'Death_cause')
+    if (
+      notPreserved.value &&
+      !isBlank(why) &&
+      why !== 'Killed_Preserved' &&
+      isBlank(pending.value(row, 'CAM_ID')) &&
+      isBlank(pending.value(row, 'Tube_1_id'))
+    )
+      for (const [field, value] of Object.entries(NOT_PRESERVED)) set(field, value)
+  }
   pending.touch()
-  if (!date.value && !reviewOnly.value)
-    notify('Sin fecha de muerte: elige la fecha y pulsa Cargar de nuevo para completarla', 'error')
-  else notify(filled ? `${filled} celdas completadas; revisa y guarda` : 'Filas cargadas')
+  notify(filled ? `${filled} celdas escritas; revisa y guarda` : 'Nada que escribir: esas filas ya tienen fecha y causa')
 }
 </script>
 
@@ -152,36 +158,62 @@ function load(append: boolean) {
       >
         <input v-model="notPreserved" type="checkbox" /> Sin preservar: CAM y tubos NA, medios NOT_COLLECTED
       </label>
-      <label class="flex items-center gap-2 pb-1.5 text-sm"> <input v-model="reviewOnly" type="checkbox" /> Solo revisar </label>
-      <div class="flex gap-2">
-        <button class="btn-primary" @click="load(false)"><Download :size="15" /> Cargar</button>
-        <button class="btn" @click="load(true)"><Plus :size="15" /> Añadir a la tabla</button>
-      </div>
+      <button
+        class="btn-primary"
+        :disabled="!chosenRows.length"
+        :title="
+          chosenRows.length
+            ? `Escribe la fecha y la causa en las celdas vacías de los ${chosenRows.length} IDs elegidos`
+            : 'Escribe primero los Insectary IDs'
+        "
+        @click="write"
+      >
+        <PenLine :size="15" /> Escribir fecha y causa<template v-if="chosenRows.length"> ({{ chosenRows.length }})</template>
+      </button>
     </div>
-    <p class="hint px-4 py-1">
-      <template v-if="loaded.length">Arriba (resaltados) los {{ loadedRows.length }} IDs cargados; debajo, </template>
-      <template v-else>Se muestran </template>
-      las últimas {{ recentDeaths.length }} muertes registradas.
-      <button class="underline" @click="recentCount += 30">ver más</button>
-      <button v-if="loaded.length" class="ml-2 underline" @click="loaded = []">Quitar IDs cargados</button>
-      · La fecha y la causa por defecto solo se escriben en las celdas vacías o NA de los IDs cargados.
-    </p>
-    <div class="min-h-0 flex-1">
+    <div class="flex min-h-0 flex-1 flex-col">
       <p v-if="!ready" class="p-6 text-stone-500">Cargando Insectary_data…</p>
-      <p v-else-if="!rows.length" class="p-6 text-stone-500">No hay muertes registradas. Elige IDs arriba y pulsa Cargar.</p>
-      <SheetGrid
-        v-else
-        :module="MODULE"
-        :rows="rows"
-        :columns="columns"
-        :options="options"
-        :frozen="['Insectary_ID']"
-        :highlight="highlight"
-        :header-filters="false"
-        :newest-first="false"
-        label-field="Insectary_ID"
-        @notice="notify"
-      />
+      <template v-else>
+        <section v-if="chosenRows.length" class="flex max-h-[45%] shrink-0 flex-col border-b-4 border-stone-200">
+          <p class="hint px-4 py-1">
+            <strong>IDs elegidos ({{ chosenRows.length }})</strong>
+            <template v-if="toWrite.length">
+              · {{ toWrite.length }} sin fecha o causa: «Escribir fecha y causa» las completa (solo celdas vacías o NA).</template
+            >
+            <template v-else> · ya tienen fecha y causa.</template>
+          </p>
+          <SheetGrid
+            :module="MODULE"
+            :rows="chosenRows"
+            :columns="columns"
+            :options="options"
+            :frozen="['Insectary_ID']"
+            :header-filters="false"
+            :newest-first="false"
+            :height="`${Math.min(chosenRows.length, 10) * 2.25 + 2.5}rem`"
+            label-field="Insectary_ID"
+            @notice="notify"
+          />
+        </section>
+        <p class="hint px-4 py-1">
+          <strong>Últimas {{ recentDeaths.length }} muertes registradas</strong>
+          <button class="ml-1 underline" @click="recentCount += 30">ver más</button>
+        </p>
+        <p v-if="!recentDeaths.length" class="p-6 text-stone-500">No hay muertes registradas.</p>
+        <div v-else class="min-h-0 flex-1">
+          <SheetGrid
+            :module="MODULE"
+            :rows="recentDeaths"
+            :columns="columns"
+            :options="options"
+            :frozen="['Insectary_ID']"
+            :header-filters="false"
+            :newest-first="false"
+            label-field="Insectary_ID"
+            @notice="notify"
+          />
+        </div>
+      </template>
     </div>
   </div>
 </template>

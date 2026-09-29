@@ -172,7 +172,11 @@ function clear() {
     </p>
     <p v-if="hint" class="mt-1 text-xs text-amber-800">{{ hint }}</p>
     <p v-if="unknown.length" class="mt-1 text-xs text-red-700">No encontrados: {{ unknown.join(', ') }}</p>
-    <p v-for="w in warnings" :key="w!" class="mt-1 text-xs text-amber-800">Atención: {{ w }}</p>
+    <!-- Two at most, so a long batch does not push the page down; the rest on hover. -->
+    <p v-for="w in warnings.slice(0, 2)" :key="w!" class="mt-1 text-xs text-amber-800">Atención: {{ w }}</p>
+    <p v-if="warnings.length > 2" class="mt-1 text-xs text-amber-800" :title="warnings.slice(2).join('\n')">
+      y {{ warnings.length - 2 }} avisos más (pasa el ratón para verlos)
+    </p>
     <ul
       v-if="open && matches.length"
       class="absolute z-30 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-stone-200 bg-white py-1 text-sm shadow-lg"
