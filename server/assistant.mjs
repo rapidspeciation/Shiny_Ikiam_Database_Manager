@@ -915,7 +915,8 @@ export function createAssistant({ store, config = {} }) {
       /* No mirrored rows (tests). */
     }
     const match = known.find(c => words.length && words.every(w => c.toLowerCase().includes(w)));
-    return match ? match.split(' - ')[0].trim() : words.map(w => w[0].toUpperCase()).join('') || 'APP';
+    const letters = words.map(w => w.replace(/[^\p{L}]/gu, '')[0]).filter(Boolean);
+    return match ? match.split(' - ')[0].trim() : letters.join('').toUpperCase() || 'APP';
   }
 
   function systemPrompt(user) {

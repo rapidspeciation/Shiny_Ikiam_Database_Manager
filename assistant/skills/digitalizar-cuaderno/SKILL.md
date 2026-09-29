@@ -15,9 +15,13 @@ is written until the person applies it.
 
 1. **Identify the notebook** from the headers (table below). If you cannot tell,
    say so in one line and use the closest kind; never stop to ask first.
-2. **Transcribe every line**, top to bottom, including crossed-out ones
-   (`crossedOut: true`). A spread of two facing pages is one page: the right-hand
-   page continues the same lines. Skip only lines that hold nothing but a
+2. **Transcribe every line and every column**, top to bottom, including
+   crossed-out lines (`crossedOut: true`) and the notes. A spread of two facing
+   pages is one page: the right-hand page continues the same lines, so follow
+   each line across the gutter (count the ruled lines from the header on both
+   pages; coloured highlights and the notes help to keep them in step) and give
+   its right-hand values too (e.g. Posturas: pupa date, pupae, emerge date,
+   adults, `ins`/`lab`, notes). Skip only lines that hold nothing but a
    pre-written ID or number.
 3. **Call `match_notebook` once per page** with `kind`, the `lines` and, only if
    the year is written somewhere on the page, `year`. Several envelopes/labels
@@ -47,7 +51,9 @@ propose with `propose_changes` what `match_notebook` can match.
 Propose what is clear and mark the rest; do not stop to ask before proposing.
 
 - A cell you are not sure of: give your best reading in `values`, a `confidence`
-  below 0.8 and up to 3 `alternatives`. The tool leaves doubtful cells out of
+  below 0.8 and up to 3 `alternatives`. Use it for characters you cannot tell
+  apart, not for whole columns: a value you can read, on a line you could
+  follow, is sure. The tool leaves doubtful cells out of
   the proposal and lists them; you ask about them in your reply.
 - A cell you cannot read at all: `null` (not a guess).
 - Look-alikes to consider: 0/O, 1/I/7, 5/S, 8/B, 2/Z, 6/G, 4/9, 3/8; ♀/♂ written
@@ -75,7 +81,8 @@ Give values **as written**; the tool converts them.
   `decept` = Mechanitis messenoides deceptus;
   `pol. p.`/`polymnia p.`/`proceriformis` = Mechanitis polymnia proceriformis;
   `pol. e.`/`eurydice` = Mechanitis polymnia eurydice;
-  `polymnia` alone = Mechanitis polymnia;
+  `polymnia` alone = Mechanitis polymnia proceriformis (the usual polymnia
+  stock; alternative Mechanitis polymnia eurydice);
   `wer x pro` = Mechanitis polymnia werneri x proceriformis;
   `pro x wer` = Mechanitis polymnia proceriformis x werneri;
   `lysimnia`/`lys` = Mechanitis lysimnia;
