@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto';
 import { labelFor, moduleMap } from './schema.mjs';
 import { columnLetter, describeProblems, headerLayout, headerText } from './columns.mjs';
-import { rowKey, rowValues } from './sheets.mjs';
+import { rowKey, rowValues, shiftFormula } from './sheets.mjs';
 
 export const MAX_EXTEND = 500;
 /** Rows made at once when a save needs a row past the pre-made ones. */
@@ -200,6 +200,37 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
   const lockedColumns = new Set();
   for (let column = 0; column < width; column++) if (isLocked(column, fillFrom, end)) lockedColumns.add(column);
 
+  // Insectary_data's ID formula adds one to the ID above and keeps the round letter, so
+  // after Z9D it would give "[0D". A new round starts as the team starts one: its first ID
+  // typed (A0E, or the one after the IDs of that round already in the sheet), then the
+  // formula with the new letter.
+  const idColumn = sheet === 'Insectary_data' ? layout.columns.get('Insectary_ID') : undefined;
+  let ids = null;
+  if (idColumn !== undefined && !lockedColumns.has(idColumn)) {
+    const fill =
+      kind(cellsAt(template)[idColumn]) === 'F'
+        ? { source: template, from: start }
+        : fills.find(f => f.column === idColumn);
+    if (fill)
+      ids = planIds({
+        previous: text(cellsAt(fill.from - 1)[idColumn]),
+        source: fill.source,
+        formula: cellsAt(fill.source)[idColumn].userEnteredValue.formulaValue,
+        from: fill.from,
+        end,
+        existing: new Set(
+          store.db
+            .prepare(
+              "SELECT upper(trim(json_extract(values_json,'$.Insectary_ID'))) id FROM records WHERE sheet=? AND missing=0 AND row_num<?",
+            )
+            .all(sheet, fill.from)
+            .map(r => r.id)
+            .filter(Boolean),
+        ),
+      });
+    if (ids?.problem) throw fail('ID_SERIES', ids.problem, 409);
+  }
+
   const { sheetId } = info;
   const requests = [];
   if (end > info.rowCount)
@@ -224,6 +255,17 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
         destination: range(sheetId, f.from, end, f.column, f.column + 1),
         pasteType: 'PASTE_FORMULA',
         pasteOrientation: 'NORMAL',
+      },
+    });
+  // From the first new round on, each ID cell is written: the round's first ID, then its formula.
+  if (ids?.written.length)
+    requests.push({
+      updateCells: {
+        range: range(sheetId, ids.written[0].row, end, idColumn, idColumn + 1),
+        rows: ids.written.map(w => ({
+          values: [{ userEnteredValue: w.formula ? { formulaValue: w.formula } : { stringValue: w.id } }],
+        })),
+        fields: 'userEnteredValue',
       },
     });
 
@@ -254,9 +296,12 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
   }
   for (const f of fills) if (!lockedColumns.has(f.column)) formulaColumns.set(f.column, f.from);
   const checks = { formulas: true, validation: true, formats: true, ids: null };
+  // The first ID of a new round is typed, not a formula.
+  const typedId = row => ids?.written.some(w => w.row === row && !w.formula);
   for (const [column, from] of formulaColumns) {
     let bad = 0;
-    for (let row = from; row <= end; row++) if (kind(at(row)[column]) !== 'F') bad++;
+    for (let row = from; row <= end; row++)
+      if (kind(at(row)[column]) !== 'F' && !(column === idColumn && typedId(row))) bad++;
     if (bad) {
       checks.formulas = false;
       note(`Falta la fórmula en ${name(column)}`, bad);
@@ -270,7 +315,7 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
       format = 0;
     for (let row = start; row <= end; row++) {
       const cell = at(row)[column];
-      if (kind(cell) === 'c') constants++;
+      if (kind(cell) === 'c' && !(column === idColumn && typedId(row))) constants++;
       if (JSON.stringify(cell?.dataValidation ?? null) !== JSON.stringify(want?.dataValidation ?? null)) validation++;
       if (
         JSON.stringify(cell?.userEnteredFormat?.numberFormat ?? null) !==
@@ -295,31 +340,19 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
   // Insectary IDs: the series goes on with no gap and no repeat.
   let firstId = null,
     lastId = null,
-    ids = 0;
-  const idColumn = sheet === 'Insectary_data' ? layout.columns.get('Insectary_ID') : undefined;
-  if (idColumn !== undefined && formulaColumns.has(idColumn)) {
+    idCount = 0;
+  if (ids) {
     checks.ids = true;
-    const from = formulaColumns.get(idColumn);
-    const existing = new Set(
-      store.db
-        .prepare(
-          "SELECT trim(json_extract(values_json,'$.Insectary_ID')) id FROM records WHERE sheet=? AND missing=0 AND row_num<?",
-        )
-        .all(sheet, from)
-        .map(r => String(r.id ?? '').toUpperCase())
-        .filter(Boolean),
-    );
-    let previous = text(from - 1 >= checkFrom ? at(from - 1)[idColumn] : cellsAt(from - 1)[idColumn]);
     const seen = new Set();
-    for (let row = from; row <= end; row++) {
+    for (const [i, expected] of ids.expected.entries()) {
+      const row = ids.from + i;
       const id = text(at(row)[idColumn]);
-      const expected = nextInSeries(previous);
-      if (!/^[A-Z]\d[A-Z]$/.test(id) || id !== expected) {
+      if (id !== expected) {
         checks.ids = false;
-        note(`Fila ${row}: el Insectary ID es «${id || 'vacío'}», se esperaba ${expected || 'un ID válido'}`);
+        note(`Fila ${row}: el Insectary ID es «${id || 'vacío'}», se esperaba ${expected}`);
         break;
       }
-      if (existing.has(id) || seen.has(id)) {
+      if (ids.existing.has(id) || seen.has(id)) {
         checks.ids = false;
         note(`Fila ${row}: el Insectary ID ${id} ya existe`);
         break;
@@ -327,8 +360,7 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
       seen.add(id);
       firstId ??= id;
       lastId = id;
-      ids++;
-      previous = id;
+      idCount++;
     }
   }
 
@@ -373,7 +405,8 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
       : null,
     firstId,
     lastId,
-    ids,
+    ids: idCount,
+    newRounds: ids?.written.filter(w => !w.formula).map(w => ({ row: w.row, id: w.id })) ?? [],
     checks,
     ok: !problems.length,
     problems: problems.slice(0, 20),
@@ -412,13 +445,61 @@ function segments(width, locked) {
 /**
  * The ID after `id` as the sheet's formula makes it: the digit goes up, and
  * after 9 the letter goes up (by character code) with digit 0; the last letter
- * (the round) stays. Null when `id` is not of that form.
+ * (the round) stays. Null when `id` is not of that form, or after Z9 (a new round).
  */
 export function nextInSeries(id) {
   const m = /^([A-Z])(\d)([A-Z])$/.exec(String(id ?? '').trim());
-  if (!m) return null;
+  if (!m || (m[1] === 'Z' && m[2] === '9')) return null;
   const digit = Number(m[2]);
   return digit === 9
     ? `${String.fromCharCode(m[1].charCodeAt(0) + 1)}0${m[3]}`
     : `${m[1]}${digit + 1}${m[3]}`;
+}
+
+const seriesIndex = id => (id.charCodeAt(0) - 65) * 10 + Number(id[1]);
+const seriesId = (index, round) => `${String.fromCharCode(65 + Math.floor(index / 10))}${index % 10}${round}`;
+
+/**
+ * The Insectary IDs rows `from`–`end` will get: the formula of row `source`
+ * continues `previous` (…Z9D); a new round starts with its first free ID typed
+ * (after any of that round already in `existing`) and the same formula with the
+ * new round letter. Returns { from, expected: [id per row], written: [{ row, id,
+ * formula? }] for the rows from the first new round on, existing } or { problem }.
+ */
+export function planIds({ previous, source, formula, from, end, existing }) {
+  const expected = [];
+  const written = [];
+  const round = /"0([A-Z])"/.exec(formula)?.[1];
+  let id = String(previous ?? '').trim().toUpperCase();
+  if (!/^[A-Z]\d[A-Z]$/.test(id))
+    return { problem: `La fila ${from - 1} no tiene un Insectary ID de la serie (${id || 'vacío'})` };
+  let letter = round;
+  for (let row = from; row <= end; row++) {
+    const next = nextInSeries(id);
+    if (next) id = next;
+    else {
+      // Z9 reached: the next round, from the first ID not used yet in it.
+      if (!round) return { problem: `La serie de Insectary IDs llega a ${id} y su fórmula no indica la ronda` };
+      letter = String.fromCharCode(id.charCodeAt(2) + 1);
+      if (letter > 'Z') return { problem: `La serie de Insectary IDs llega a ${id}: no hay más rondas` };
+      const taken = [...existing].filter(x => x.length === 3 && x[2] === letter && /^[A-Z]\d$/.test(x.slice(0, 2)));
+      const first = taken.length ? Math.max(...taken.map(seriesIndex)) + 1 : 0;
+      if (first > seriesIndex('Z9A')) return { problem: `La ronda ${letter} de Insectary IDs ya está usada` };
+      id = seriesId(first, letter);
+      written.push({ row, id });
+      expected.push(id);
+      continue;
+    }
+    if (written.length)
+      written.push({
+        row,
+        id,
+        // The formula of `source`, moved to this row, with the round's letter.
+        formula: shiftFormula(formula, row - source)
+          .replaceAll(`"0${round}"`, `"0${letter}"`)
+          .replaceAll(`"${round}"`, `"${letter}"`),
+      });
+    expected.push(id);
+  }
+  return { from, expected, written, existing };
 }

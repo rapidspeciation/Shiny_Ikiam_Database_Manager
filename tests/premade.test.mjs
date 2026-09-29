@@ -26,6 +26,17 @@ function evaluate(formula, { value }) {
   if (ref) return nextInSeries(value(Number(ref[1]), 0)) ?? '#VALUE!';
   return null;
 }
+/** As `evaluate`, with the round letter the formula writes (after Z9D it gives "[0D", as Sheets does). */
+function roundEvaluate(formula, { value }) {
+  const ref = /^=IF\(MID\(A(\d+),2,1\)/.exec(formula);
+  if (!ref) return null;
+  const round = /"0([A-Z])"/.exec(formula)[1];
+  const previous = String(value(Number(ref[1]), 0) ?? '');
+  const digit = Number(previous[1]);
+  return digit === 9
+    ? `${String.fromCharCode(previous.charCodeAt(0) + 1)}0${round}`
+    : `${previous[0]}${digit + 1}${round}`;
+}
 const SEX_LIST = { condition: { type: 'ONE_OF_RANGE', values: [{ userEnteredValue: '=Lists!$E$2:$E' }] }, strict: true };
 const DATE = { numberFormat: { type: 'DATE', pattern: 'd-mmm-yy' } };
 const F = (formula, value = null) => ({
@@ -40,13 +51,13 @@ const V = value => ({ userEnteredValue: { stringValue: value }, effectiveValue: 
  * filled down (up to `last`). Every row has Pedigree and DATE_OF_COLLECTION
  * formulas, a dropdown on Sex and a date format on Death_date.
  */
-function workbook({ used, withIds, last, typedOver = [] }) {
+function workbook({ used, withIds, last, typedOver = [], firstId = 'Q0D', firstRow = 2 }) {
   const rows = [];
-  let id = 'Q0D';
-  for (let row = 2; row <= last; row++) {
+  let id = firstId;
+  for (let row = firstRow; row <= last; row++) {
     const cells = [];
     if (row <= withIds) {
-      cells[col('Insectary_ID')] = row === 2 ? V(id) : F(idFormula(row), id);
+      cells[col('Insectary_ID')] = row === firstRow ? V(id) : F(idFormula(row), id);
       id = nextInSeries(id);
     }
     cells[col('SPECIES')] = typedOver.includes(row) ? V('Mechanitis messenoides') : F(`=IFS(C${row}="","",TRUE,"x")`);
@@ -120,6 +131,27 @@ test('when the last pre-made row is already used, its values are not copied and 
     assert.equal(cell(row, 'Wild_Reared')?.userEnteredValue, undefined);
     assert.equal(cell(row, 'SPECIES').userEnteredValue.formulaValue, `=IFS(C${row}="","",TRUE,"x")`);
   }
+  store.close();
+});
+
+test('after Z9D a new round starts, typed, after the IDs of that round already in the sheet', async () => {
+  // Rows 2–3 hold A0E and A1E (typed by mistake long ago); the D series runs Z5D–Z9D in rows 4–8.
+  const rows = [
+    { row: 2, cells: [V('A0E')] },
+    { row: 3, cells: [F(idFormula(3).replaceAll('D"', 'E"'), 'A1E')] },
+    ...workbook({ used: 5, withIds: 8, last: 8, firstId: 'Z5D', firstRow: 4 }),
+  ];
+  const sheets = new LocalSheets({ [SHEET]: rows }, { evaluate: roundEvaluate });
+  const store = new Store({ localMode: true }, { sheets });
+  await store.sync({ sheets: [SHEET] });
+  const result = await extendPremadeRows(store, SHEET, 4, reviewer);
+  assert.equal(result.ok, true, JSON.stringify(result.problems));
+  assert.deepEqual(result.newRounds, [{ row: 9, id: 'A2E' }]);
+  assert.equal(result.firstId, 'A2E');
+  assert.equal(result.lastId, 'A5E');
+  const a = row => sheets.cell(SHEET, row, col('Insectary_ID')).userEnteredValue;
+  assert.deepEqual(a(9), { stringValue: 'A2E' });
+  assert.equal(a(10).formulaValue, idFormula(10).replaceAll('D"', 'E"'));
   store.close();
 });
 
