@@ -142,33 +142,34 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </p>
     </div>
 
-    <div class="space-y-3 p-3 sm:p-4">
+    <!-- Several butterflies per row: a card is as wide as its captures need. -->
+    <div class="grid [grid-template-columns:repeat(auto-fill,minmax(min(100%,26rem),1fr))] items-start gap-2 p-2 sm:p-3">
       <p v-if="!all.length" class="hint">Aún no hay recapturas en Collection_data.</p>
-      <section v-for="i in shown" :key="i.key" class="rounded-md border border-stone-200 bg-white">
-        <header class="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-stone-100 px-3 py-2">
-          <h2 class="text-base font-semibold">{{ i.id }}</h2>
+      <section v-for="i in shown" :key="i.key" class="min-w-0 rounded-md border border-stone-200 bg-white">
+        <header class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-b border-stone-100 px-2.5 py-1.5 text-sm">
+          <h2 class="font-semibold">{{ i.id }}</h2>
           <span
             ><i>{{ i.species }}</i> <span class="text-stone-500">{{ sexLabel(i.sex) }}</span></span
           >
-          <span class="text-sm text-stone-500">
+          <span class="text-xs text-stone-500">
             {{ i.events.length }} capturas<template v-if="i.span !== null"> en {{ i.span }} días</template>
           </span>
-          <button class="btn-ghost ml-auto gap-1 text-sm" title="Ver sus capturas en el mapa" @click="onMap(i)">
+          <button class="btn-ghost ml-auto gap-1 px-1.5 py-0.5 text-xs" title="Ver sus capturas en el mapa" @click="onMap(i)">
             <MapPinned :size="15" /> En el mapa
           </button>
         </header>
-        <ol class="flex gap-3 overflow-x-auto p-3">
-          <li v-for="(e, n) in i.events" :key="e.row?.id ?? `${i.key}-${n}`" class="flex shrink-0 items-start gap-3">
+        <ol class="flex gap-2 overflow-x-auto p-2">
+          <li v-for="(e, n) in i.events" :key="e.row?.id ?? `${i.key}-${n}`" class="flex shrink-0 items-start gap-2">
             <div
               v-if="n"
-              class="flex h-36 w-16 flex-col items-center justify-center text-center text-xs text-stone-500"
+              class="flex h-32 w-11 flex-col items-center justify-center text-center text-[11px] text-stone-500"
               :title="e.metres !== null ? 'Distancia entre los puntos GPS de las dos capturas' : ''"
             >
               <ChevronRight :size="18" />
               <span v-if="e.days !== null">+{{ e.days }} d</span>
               <span v-if="e.metres !== null">{{ e.metres }} m</span>
             </div>
-            <figure class="w-48">
+            <figure class="w-40">
               <div class="flex gap-1">
                 <button
                   v-for="id in e.photos.slice(0, 2)"
@@ -177,16 +178,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                   class="block flex-1 overflow-hidden rounded bg-stone-100"
                   @click="open(i, id)"
                 >
-                  <img :src="photoUrl(id)" alt="" loading="lazy" class="h-36 w-full object-cover" />
+                  <img :src="photoUrl(id)" alt="" loading="lazy" class="h-32 w-full object-cover" />
                 </button>
                 <div
                   v-if="!e.photos.length"
-                  class="flex h-36 w-full items-center justify-center rounded border border-dashed border-stone-300 text-xs text-stone-400"
+                  class="flex h-32 w-full items-center justify-center rounded border border-dashed border-stone-300 text-xs text-stone-400"
                 >
                   Sin foto
                 </div>
               </div>
-              <figcaption class="mt-1 text-xs leading-snug">
+              <figcaption class="mt-1 text-[11px] leading-snug">
                 <span class="font-medium">{{ n ? `Recaptura ${n}` : 'Marcado' }}</span> · {{ date(e.date) }}<br />
                 <span
                   v-if="e.outside"

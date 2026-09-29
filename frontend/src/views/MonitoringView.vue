@@ -26,7 +26,8 @@ const PANELS = computed(() => ALL_PANELS.filter(p => p.id !== 'dudas' || session
 const route = useRoute()
 const router = useRouter()
 const panel = computed(() => PANELS.value.find(p => p.id === route.query.vista)?.id || 'resumen')
-const show = (id: string) => router.replace({ query: { ...route.query, vista: id } })
+// Changing tabs shows the whole list: a butterfly chosen with «En el mapa» or «ver fotos» stays only while you look at it.
+const show = (id: string) => router.replace({ query: { ...route.query, vista: id, individuo: undefined } })
 </script>
 
 <template>

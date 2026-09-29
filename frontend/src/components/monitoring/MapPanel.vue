@@ -132,7 +132,20 @@ const allPoints = computed<Point[]>(() =>
     }),
   ),
 )
-const points = computed(() => allPoints.value.filter(p => passes(p, filters.value)))
+const filtered = computed(() => allPoints.value.filter(p => passes(p, filters.value)))
+/**
+ * With Tipo = Recaptura (and not Marcado), each recaptured butterfly's other
+ * captures come too, its marking above all: otherwise it is one lone point and
+ * there is nothing to join.
+ */
+const points = computed(() => {
+  const kinds = lists.kinds.value
+  if (!kinds.includes('recapture') || kinds.includes('marked')) return filtered.value
+  const keyOf = (p: Point) => (p.capture.markId && p.capture.species ? individualKey(p.capture.markId, p.capture.species) : '')
+  const keys = new Set(filtered.value.map(keyOf).filter(Boolean))
+  const shown = new Set(filtered.value)
+  return [...filtered.value, ...allPoints.value.filter(p => !shown.has(p) && keys.has(keyOf(p)))]
+})
 /** Walks with a shown point, plus every walk of a chosen date (some have only a trail). */
 const shownWalks = computed(() => {
   const ids = new Set(points.value.map(p => p.walk.id))
