@@ -900,7 +900,8 @@ export function createAssistant({ store, config = {} }) {
               Object.entries(c.personEdits).map(([f, m]) => [
                 f,
                 {
-                  value: readable(c.sheet, f, proposedOf(c, f) ?? null),
+                  // In an existing row, a cell left out of the proposal keeps the sheet's value.
+                  value: f in c.values ? readable(c.sheet, f, c.values[f]) : c.create ? null : 'no change (keep the sheet value)',
                   youProposed: 'ai' in m ? readable(c.sheet, f, m.ai) : 'no change',
                 },
               ]),

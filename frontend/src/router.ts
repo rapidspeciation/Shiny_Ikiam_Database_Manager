@@ -30,6 +30,8 @@ export const router = createRouter({
     { path: '/usuarios', name: 'users', component: () => import('./views/UsersView.vue') },
     // Notebook photos are digitized in the Asistente tab (T3 Code); old links to the digitizer land there.
     { path: '/cuaderno', redirect: '/asistente' },
+    // Cambios propuestos on their own browser tab (e.g. a second monitor), without the app's header.
+    { path: '/propuestas/:id?', name: 'proposals', component: () => import('./views/ProposalsView.vue'), meta: { bare: true } },
     { path: '/activar', name: 'activate', component: () => import('./views/ActivateView.vue') },
     { path: '/entrar', name: 'login', component: LoginView },
     { path: '/:pathMatch(.*)*', redirect: '/inicio' },

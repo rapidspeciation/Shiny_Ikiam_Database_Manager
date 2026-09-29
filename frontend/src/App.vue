@@ -36,7 +36,7 @@ watch(
   <div v-else-if="!session.ready" class="grid h-full place-items-center text-stone-500">Cargando…</div>
   <LoginView v-else-if="!session.user && !openPaths.has(route.path)" />
   <div v-else class="flex h-full flex-col">
-    <AppHeader />
+    <AppHeader v-if="!route.meta.bare" />
     <!-- Tabs stay alive while another one is open: going back to Tablas does not rebuild a 13k-row grid. -->
     <main class="min-h-0 flex-1">
       <RouterView v-slot="{ Component }">
@@ -45,7 +45,7 @@ watch(
         </KeepAlive>
       </RouterView>
     </main>
-    <SaveBar v-if="session.user" />
+    <SaveBar v-if="session.user && !route.meta.bare" />
   </div>
   <!-- A new version was deployed while the page was open. -->
   <div

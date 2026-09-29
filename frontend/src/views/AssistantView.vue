@@ -10,6 +10,7 @@ import ProposalGrid, { type Proposal } from '../components/ProposalGrid.vue'
 import T3Frame from '../components/T3Frame.vue'
 import ProposalsLive from '../components/assistant/ProposalsLive.vue'
 import { persistentRef } from '../lib/persist'
+import { panelShare } from '../lib/proposals'
 
 /**
  * Chat with the database assistant. It can read notebook photos; the rows it
@@ -65,6 +66,48 @@ const mode = persistentRef<'t3' | 'chat'>('assistant:mode', 't3')
 // Proposals (from T3 Code or any conversation) beside T3, or under it on phones; see ProposalsLive.
 // Closed at first (T3 gets the whole width); a new proposal opens it, and the button toggles it.
 const panel = persistentRef('assistant:proposals-open', false)
+// At the right of T3 or below it (computers), with the share of the space dragged on the divider;
+// on phones below T3. "Pantalla completa" puts it over T3; another browser tab: #/propuestas.
+const layout = persistentRef<'right' | 'bottom'>('assistant:proposals-layout', 'right', { lasting: true })
+const shares = persistentRef('assistant:proposals-share', { right: 42, bottom: 40 }, { lasting: true })
+const full = ref(false)
+const split = ref<HTMLElement>()
+const dragging = ref<number | null>(null)
+const share = computed(() => dragging.value ?? shares.value[layout.value])
+/** Dragging the divider resizes the panel (T3's frame lets the pointer through meanwhile). */
+function resize(down: PointerEvent) {
+  const box = split.value?.getBoundingClientRect()
+  const bar = down.currentTarget as HTMLElement
+  if (!box) return
+  down.preventDefault()
+  bar.setPointerCapture(down.pointerId)
+  const side = layout.value
+  const at = (e: PointerEvent) =>
+    side === 'right' ? panelShare(e.clientX, box.left, box.width) : panelShare(e.clientY, box.top, box.height)
+  dragging.value = share.value
+  const move = (e: PointerEvent) => (dragging.value = at(e))
+  const up = () => {
+    if (dragging.value !== null) shares.value = { ...shares.value, [side]: dragging.value }
+    dragging.value = null
+    bar.removeEventListener('pointermove', move)
+    bar.removeEventListener('pointerup', up)
+    bar.removeEventListener('pointercancel', up)
+  }
+  bar.addEventListener('pointermove', move)
+  bar.addEventListener('pointerup', up)
+  bar.addEventListener('pointercancel', up)
+}
+/** The divider with the keyboard: arrows give the panel more or less room. */
+function nudge(event: KeyboardEvent) {
+  const step = ({ ArrowLeft: 5, ArrowUp: 5, ArrowRight: -5, ArrowDown: -5 } as Record<string, number>)[event.key]
+  if (!step) return
+  event.preventDefault()
+  shares.value = { ...shares.value, [layout.value]: Math.min(80, Math.max(20, share.value + step)) }
+}
+function place(side: 'right' | 'bottom') {
+  layout.value = side
+  full.value = false
+}
 const waiting = ref(0)
 const fresh = ref(false)
 function arrived() {
@@ -245,19 +288,20 @@ async function send() {
 async function reloadTables() {
   await Promise.all(Object.keys(tables.tables).map(sheet => tables.load(sheet, true)))
 }
-async function apply(proposal: Proposal, indexes: number[]) {
+async function apply(proposal: Proposal, indexes: number[], revision?: number) {
   applying.value = proposal.id
   try {
     const out = await api<{ status: Proposal['status']; applied: number[] }>(`chat/proposals/${proposal.id}/apply`, {
       method: 'POST',
-      body: { requestId: requestId(), indexes },
+      body: { requestId: requestId(), indexes, revision },
     })
     proposal.status = out.status
     proposal.applied = out.applied
     await reloadTables()
     notify(`${out.applied.length} ${out.applied.length === 1 ? 'fila aplicada' : 'filas aplicadas'} en Google Sheets`, 'success')
   } catch (e) {
-    proposal.status = 'needs_review'
+    // Changed meanwhile by the assistant: still pending, to look at again.
+    if ((e as { code?: string }).code !== 'proposal_changed') proposal.status = 'needs_review'
     notify(errorText(e), 'error')
   } finally {
     applying.value = null
@@ -333,15 +377,52 @@ const cellOf = (row: Record<string, unknown> | unknown[], key: string, i: number
         /></a>
       </template>
     </div>
-    <div v-if="t3Url && mode === 't3'" class="flex min-h-0 flex-1 flex-col md:flex-row">
-      <T3Frame ref="t3Frame" :url="t3Url" class="min-h-0 flex-1" />
-      <!-- Proposed edits beside T3 (under it on phones), updated as the assistant drafts them. -->
+    <div
+      v-if="t3Url && mode === 't3'"
+      ref="split"
+      class="flex min-h-0 flex-1 flex-col"
+      :class="{ 'md:flex-row': layout === 'right', 'select-none': dragging !== null }"
+      :style="{ '--share': `${share}%` }"
+    >
+      <T3Frame
+        ref="t3Frame"
+        :url="t3Url"
+        class="min-h-0 min-w-0 flex-1"
+        :class="{ 'pointer-events-none': dragging !== null, hidden: panel && full }"
+      />
+      <!-- The divider: drag it (or use the arrow keys) to give the panel more or less room. -->
+      <div
+        v-show="panel && !full"
+        role="separator"
+        tabindex="0"
+        :aria-orientation="layout === 'right' ? 'vertical' : 'horizontal'"
+        :aria-valuenow="share"
+        aria-label="Tamaño de los cambios propuestos"
+        title="Arrastra para cambiar el tamaño"
+        class="hidden shrink-0 touch-none bg-stone-200 hover:bg-emerald-400 focus:bg-emerald-400 focus:outline-none md:block"
+        :class="[layout === 'right' ? 'w-1.5 cursor-col-resize' : 'h-1.5 cursor-row-resize', { 'bg-emerald-500': dragging !== null }]"
+        @pointerdown="resize"
+        @keydown="nudge"
+      />
+      <!-- Proposed edits beside T3 (under it on phones), updated live as the assistant and the person edit them. -->
       <ProposalsLive
         v-show="panel"
-        class="max-h-[45%] border-t border-stone-300 md:max-h-none md:w-[42%] md:max-w-3xl md:border-t-0 md:border-l"
+        :layout="layout"
+        :full="full"
+        class="border-stone-300"
+        :class="
+          full
+            ? 'min-h-0 flex-1'
+            : [
+                'max-h-[45%] border-t md:max-h-none md:shrink-0 md:grow-0 md:basis-(--share)',
+                layout === 'right' ? 'md:min-w-0 md:border-t-0 md:border-l' : 'md:min-h-0',
+              ]
+        "
         @count="n => (waiting = n)"
         @fresh="arrived"
         @close="panel = false"
+        @layout="place"
+        @full="full = !full"
       />
     </div>
     <div v-else class="flex min-h-0 flex-1">
@@ -422,8 +503,9 @@ const cellOf = (row: Record<string, unknown> | unknown[], key: string, i: number
                   :key="p.id"
                   :proposal="p"
                   :busy="applying === p.id"
-                  @apply="indexes => apply(p, indexes)"
+                  @apply="(indexes, revision) => apply(p, indexes, revision)"
                   @discard="discard(p)"
+                  @replace="next => Object.assign(p, next)"
                 />
               </div>
             </div>
