@@ -253,6 +253,14 @@ export function reviewPage(store, query = {}) {
     for (const i of gone) counts[i.kind] = (counts[i.kind] ?? 0) + 1;
     chosen = [...chosen, ...gone.filter(i => !kinds.length || kinds.includes(i.kind))];
   }
+  // Newest first by default (recent problems are the easiest to fix); "old", or "kind" for the checks' own order.
+  const order = String(query.sort ?? 'recent');
+  if (order === 'recent' || order === 'old') {
+    const dir = order === 'recent' ? -1 : 1;
+    chosen = [...chosen].sort(
+      (a, b) => (a.date ? 0 : 1) - (b.date ? 0 : 1) || (a.date && b.date ? dir * String(a.date).localeCompare(String(b.date)) : 0),
+    );
+  }
   const size = Math.min(Math.max(Number(query.limit) || 25, 1), 200);
   const start = Math.max(Number(query.offset) || 0, 0);
   const page = chosen.slice(start, start + size).map(i => ({

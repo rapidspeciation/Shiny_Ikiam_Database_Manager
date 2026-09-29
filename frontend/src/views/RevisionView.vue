@@ -32,6 +32,8 @@ const to = ref(q('hasta'))
 const status = ref(q('estado') || 'pending')
 const group = ref(q('lote'))
 const search = ref(q('q'))
+// Newest first by default: recent problems are the easiest to sort out.
+const sort = ref(q('orden') || 'recent')
 const offset = ref(0)
 const page = ref<ReviewPage | null>(null)
 const loading = ref(false)
@@ -49,9 +51,16 @@ const filters = computed(() => ({
   estado: status.value === 'pending' ? '' : status.value,
   lote: group.value,
   q: search.value,
+  orden: sort.value === 'recent' ? '' : sort.value,
 }))
 function params(extra: Record<string, string> = {}) {
-  const out = new URLSearchParams({ limit: String(PAGE), offset: String(offset.value), status: status.value, ...extra })
+  const out = new URLSearchParams({
+    limit: String(PAGE),
+    offset: String(offset.value),
+    status: status.value,
+    sort: sort.value,
+    ...extra,
+  })
   const map: Record<string, string> = {
     kind: kind.value,
     sheet: sheet.value,
@@ -85,7 +94,7 @@ async function refreshCounts() {
 }
 
 let typing: ReturnType<typeof setTimeout>
-watch([kind, sheet, person, from, to, status, group], () => {
+watch([kind, sheet, person, from, to, status, group, sort], () => {
   if (offset.value) offset.value = 0
   else load()
 })
@@ -118,6 +127,7 @@ watch(
     set(status, q('estado') || 'pending')
     set(group, q('lote'))
     set(search, q('q'))
+    set(sort, q('orden') || 'recent')
   },
 )
 load()
@@ -295,6 +305,17 @@ const filtered = computed(
             <Search :size="14" class="absolute top-2 left-2 text-stone-400" />
             <input v-model="search" type="search" class="field-input py-1 pl-7 text-sm" placeholder="Buscar CAM, ID, especie…" />
           </span>
+          <ChoiceField
+            v-model="sort"
+            class="field-input w-44 py-1 text-sm"
+            aria-label="Orden"
+            :freetext="false"
+            :options="[
+              { value: 'recent', label: 'Más recientes primero' },
+              { value: 'old', label: 'Más antiguas primero' },
+              { value: 'kind', label: 'Por tipo y hoja' },
+            ]"
+          />
           <span v-if="page" class="ml-auto tabular-nums whitespace-nowrap text-stone-600">{{
             page.total ? `${page.offset + 1}–${Math.min(page.offset + page.limit, page.total)} de ${page.total}` : '0'
           }}</span>

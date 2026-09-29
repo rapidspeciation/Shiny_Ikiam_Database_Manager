@@ -199,11 +199,16 @@ function scan(store) {
       }
     }
   }
+  // A tube named in two sheets for the same butterfly (Barcoding_DNA or F1/F2 listing a specimen's
+  // tubes, the same CAM in both rows) is a reference, not a repeat.
+  const camOf = row => text(row.values.CAM_ID || row.values.CAM_ID_CollData || row.values.CAM_ID_insectary);
+  const sameSpecimen = (a, b) => a.row.sheet !== b.row.sheet && isIdValue(camOf(a.row)) && camOf(a.row) === camOf(b.row);
   for (const [key, list] of holders) {
     if (list.length < 2) continue;
     const value = key.split('\u0000')[1];
     for (const h of list) {
-      const others = list.filter(o => o !== h);
+      const others = list.filter(o => o !== h && !sameSpecimen(o, h));
+      if (!others.length) continue;
       add(
         'repeat',
         h.row,

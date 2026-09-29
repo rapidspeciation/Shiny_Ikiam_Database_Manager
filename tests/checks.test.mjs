@@ -314,3 +314,24 @@ test('walk_doubt lists the Wikiloc points stored without a row, until a person p
   );
   store.close();
 });
+
+test('a tube listed in another sheet for the same butterfly is a reference, not a repeat', async () => {
+  const sheets = new LocalSheets({
+    Collection_data: [
+      { row: 2, values: { CAM_ID: 'CAM070918', Tube_1_id: 'FD30881820', SPECIES: 'Thyridia psidii' } },
+      { row: 3, values: { CAM_ID: 'CAM070919', Tube_1_id: 'FD30881999', SPECIES: 'Thyridia psidii' } },
+    ],
+    Barcoding_DNA: [
+      // The same butterfly's tube: fine.
+      { row: 2, values: { CAM_ID: 'CAM070918', Tube_1_id: 'FD30881820' } },
+      // Another butterfly's tube under a different CAM: a real repeat.
+      { row: 3, values: { CAM_ID: 'CAM070111', Tube_1_id: 'FD30881999' } },
+    ],
+  });
+  const store = new Store({ localMode: true }, { sheets });
+  await store.sync({ sheets: ['Collection_data', 'Barcoding_DNA'] });
+  const repeats = allIssues(store).issues.filter(i => i.kind === 'repeat').map(i => i.value);
+  assert.ok(!repeats.includes('FD30881820'));
+  assert.ok(repeats.includes('FD30881999'));
+  store.close();
+});
