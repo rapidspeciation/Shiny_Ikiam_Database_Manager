@@ -82,8 +82,15 @@ function cleanCapture(c) {
     recordId: text(c.recordId, 80),
     // Chosen by a person (a row, or "none": no row): matching again never changes it.
     link: c.link === 'manual' || c.link === 'none' ? c.link : null,
+    // Stored without a row because its pairing was doubtful: listed in Dudas until a person pairs it.
+    ...(c.doubt === true && !c.recordId && !c.link ? { doubt: true } : {}),
   };
 }
+
+/** Bumped on every write to the stored tracks, so Revisión de datos knows when to look again. */
+const revisions = new WeakMap();
+const touched = store => revisions.set(store, (revisions.get(store) || 0) + 1);
+export const tracksRevision = store => revisions.get(store) || 0;
 
 function cleanPhotoIds(ids) {
   if (ids === undefined || ids === null) return [];
@@ -184,8 +191,10 @@ function recordHolds(row, capture, serial) {
   return !capture.markId || !lib.hasMark(row) || clean(row.values.FieldMark_ID).toUpperCase() === capture.markId.toUpperCase();
 }
 
-/** A capture shown with its row's curated species, sex, mark and section (the note may lack them). */
-function withRow(c, row) {
+/** A capture shown with its row's curated species, sex, mark and section (the note may lack them). Paired: no longer a doubt. */
+function withRow(capture, row) {
+  const c = { ...capture };
+  delete c.doubt;
   if (!row) return { ...c, row: null, recordId: null };
   const v = row.values;
   const section = Number(clean(v.Transect_section));
@@ -207,9 +216,10 @@ function withRow(c, row) {
  * number points at another butterfly: each capture is checked against its row
  * and, if it no longer holds it, found again with the shared matcher
  * (lib.matchWalk), taking only pairings by mark or sure ones. Captures stored
- * before their rows were saved (an import) are found the same way. A link
- * chosen by a person stays while its record exists. Nothing is written; the
- * links are fixed on every read.
+ * before their rows were saved (an import) are found the same way; those stored
+ * as doubtful only when the note agrees with the row. A link chosen by a person
+ * stays while its record exists. Nothing is written; the links are fixed on
+ * every read.
  */
 export function relinkCaptures(store, tracks) {
   const index = rowsByDay(store);
@@ -248,6 +258,7 @@ export function relinkCaptures(store, tracks) {
       const m = match.matches[p];
       // Gone from the sheet, or not sure: no row rather than the wrong one.
       if (m.confidence !== 'mark' && m.confidence !== 'sure') return;
+      if (g.some(k => t.captures[open[k]].doubt) && lib.doubtfulMatch(m)) return;
       g.forEach((k, n) => {
         if (m.rows[n]) t.captures[open[k]] = withRow(t.captures[open[k]], m.rows[n]);
       });
@@ -293,14 +304,107 @@ function photoLinks(store, ids) {
   return ids.map(id => get.get(String(id))?.source_url).filter(Boolean);
 }
 
+/** Stored without a row as doubtful, and not paired since (on reading, or by a person). */
+const waitingPair = c => !!c.doubt && !c.recordId && !c.link;
+
 /**
- * Every stored walk paired again with the shared matcher (links chosen by a
- * person are kept), compared with its links as they are read now. Returns, per
- * stored capture, what would change, and the doubtful points (ties, points
- * placed by order, notes that disagree with their row, and the changes). Also
- * the walks still waiting in "por revisar" that have rows that day, with each
- * point's proposed row, to be paired by a person before going on the map.
- * Nothing is written.
+ * One stored walk (links as read now) paired again with the shared matcher,
+ * keeping the links chosen by a person: the links that would change, and the
+ * doubtful points. Points stored without a row as doubtful are always doubts
+ * and never changes (the banner does not pair them); a person picks their row,
+ * also among the rows of the day that no other point has.
+ */
+function trackDoubts(store, index, t) {
+  const { taxa, local } = index.taxa();
+  const changes = [];
+  const doubts = [];
+  const day = dayRows(index, t.date, t.collector);
+  const { points, groups } = lib.storedPoints(t.captures, taxa, local);
+  // Kept as a person chose them: the whole point was chosen (every stored copy).
+  const fixed = new Map();
+  groups.forEach((g, p) => {
+    if (g.every(i => t.captures[i].link === 'manual' || t.captures[i].link === 'none'))
+      fixed.set(p, g.flatMap(i => (t.captures[i].link === 'manual' && t.captures[i].recordId ? [t.captures[i].recordId] : [])));
+  });
+  const match = lib.matchWalk(day, t.date, t.collector || '', points, { fixed, shift: false });
+  const linked = new Set(t.captures.map(c => c.recordId).filter(Boolean));
+  groups.forEach((g, p) => {
+    const m = match.matches[p];
+    // While any copy of the point waits for its row, a person pairs it (not the banner).
+    const pending = g.some(i => waitingPair(t.captures[i]));
+    const next = m.rows.map(r => r.id);
+    const current = g.map(i => t.captures[i].recordId || null);
+    // Copies keep the row they have when it is still one of the point's rows.
+    const spare = next.filter(id => !current.includes(id));
+    const proposed = current.map(id => (id && next.includes(id) ? id : (spare.shift() ?? null)));
+    const changed = !pending && !m.manual && proposed.some((id, k) => id !== current[k]);
+    g.forEach((i, k) => {
+      if (changed && proposed[k] !== current[k])
+        changes.push({
+          trackId: t.id,
+          index: i,
+          from: current[k],
+          to: proposed[k],
+          date: t.date,
+          collector: t.collector,
+          name: t.name,
+          text: t.captures[i].text,
+          confidence: m.confidence,
+          before: rowInfo(current[k] && index.byId.get(current[k])),
+          after: rowInfo(proposed[k] && index.byId.get(proposed[k])),
+        });
+    });
+    if (!pending && !changed && !lib.doubtfulMatch(m)) return;
+    const c = t.captures[g[0]];
+    const near = [...m.rows, ...m.candidates, ...nearby(day, points[p], m)];
+    // Without a row yet: any row of the day no other point has, in time order.
+    const free = pending
+      ? day
+          .filter(r => !linked.has(r.id))
+          .sort((a, b) => (rowInfo(a).minutes ?? 1e6) - (rowInfo(b).minutes ?? 1e6) || a.row - b.row)
+      : [];
+    doubts.push({
+      source: 'track',
+      trackId: t.id,
+      indexes: g,
+      date: t.date,
+      collector: t.collector,
+      name: t.name,
+      wikiloc: t.wikiloc?.url || null,
+      text: c.text,
+      minutes: points[p].timeFromTrack ? null : points[p].minutes,
+      photos: c.photos || [],
+      photoLinks: photoLinks(store, c.photos),
+      confidence: m.confidence,
+      conflicts: m.conflicts,
+      changed,
+      pending,
+      current: current.map(id => rowInfo(id && index.byId.get(id))),
+      proposed: proposed.map(id => rowInfo(id && index.byId.get(id))),
+      candidates: [...new Map([...near, ...free].map(r => [r.id, r])).values()].map(rowInfo),
+    });
+  });
+  return { changes, doubts };
+}
+
+/**
+ * Points of stored walks still waiting for a row (stored as doubtful), with the
+ * rows they could be: the walk_doubt kind of Revisión de datos.
+ */
+export function pendingPoints(store) {
+  const index = rowsByDay(store);
+  return listTracks(store)
+    .filter(t => t.captures.some(waitingPair))
+    .flatMap(t => trackDoubts(store, index, t).doubts.filter(d => d.pending));
+}
+
+/**
+ * Every stored walk paired again (trackDoubts): per stored capture, what would
+ * change, and the doubtful points (ties, points placed by order, notes that
+ * disagree with their row, points stored without a row as doubtful, and the
+ * changes). Also the walks still waiting in "por revisar" that have rows that
+ * day, with each point's proposed row, to be paired by a person before going
+ * on the map. Nothing is written.
  */
 export function rematchTracks(store, user = null) {
   const index = rowsByDay(store);
@@ -310,64 +414,11 @@ export function rematchTracks(store, user = null) {
   const doubts = [];
   const walks = [];
   for (const t of tracks) {
-    const day = dayRows(index, t.date, t.collector);
-    const { points, groups } = lib.storedPoints(t.captures, taxa, local);
-    // Kept as a person chose them: the whole point was chosen (every stored copy).
-    const fixed = new Map();
-    groups.forEach((g, p) => {
-      if (g.every(i => t.captures[i].link === 'manual' || t.captures[i].link === 'none'))
-        fixed.set(p, g.flatMap(i => (t.captures[i].link === 'manual' && t.captures[i].recordId ? [t.captures[i].recordId] : [])));
-    });
-    const match = lib.matchWalk(day, t.date, t.collector || '', points, { fixed, shift: false });
-    let count = 0;
-    groups.forEach((g, p) => {
-      const m = match.matches[p];
-      const next = m.rows.map(r => r.id);
-      const current = g.map(i => t.captures[i].recordId || null);
-      // Copies keep the row they have when it is still one of the point's rows.
-      const spare = next.filter(id => !current.includes(id));
-      const proposed = current.map(id => (id && next.includes(id) ? id : (spare.shift() ?? null)));
-      const changed = !m.manual && proposed.some((id, k) => id !== current[k]);
-      g.forEach((i, k) => {
-        if (!m.manual && proposed[k] !== current[k])
-          changes.push({
-            trackId: t.id,
-            index: i,
-            from: current[k],
-            to: proposed[k],
-            date: t.date,
-            collector: t.collector,
-            name: t.name,
-            text: t.captures[i].text,
-            confidence: m.confidence,
-            before: rowInfo(current[k] && index.byId.get(current[k])),
-            after: rowInfo(proposed[k] && index.byId.get(proposed[k])),
-          });
-      });
-      if (!changed && !lib.doubtfulMatch(m)) return;
-      count++;
-      const c = t.captures[g[0]];
-      doubts.push({
-        source: 'track',
-        trackId: t.id,
-        indexes: g,
-        date: t.date,
-        collector: t.collector,
-        name: t.name,
-        wikiloc: t.wikiloc?.url || null,
-        text: c.text,
-        minutes: points[p].timeFromTrack ? null : points[p].minutes,
-        photos: c.photos || [],
-        photoLinks: photoLinks(store, c.photos),
-        confidence: m.confidence,
-        conflicts: m.conflicts,
-        changed,
-        current: current.map(id => rowInfo(id && index.byId.get(id))),
-        proposed: proposed.map(id => rowInfo(id && index.byId.get(id))),
-        candidates: [...new Map([...m.rows, ...m.candidates, ...nearby(day, points[p], m)].map(r => [r.id, r])).values()].map(rowInfo),
-      });
-    });
-    if (count) walks.push({ source: 'track', id: t.id, date: t.date, collector: t.collector, name: t.name, doubts: count });
+    const found = trackDoubts(store, index, t);
+    changes.push(...found.changes);
+    doubts.push(...found.doubts);
+    if (found.doubts.length)
+      walks.push({ source: 'track', id: t.id, date: t.date, collector: t.collector, name: t.name, doubts: found.doubts.length });
   }
   // Walks waiting for review whose points do not all pair surely (e.g. old notes without times).
   for (const w of listWalks(store).filter(w => w.status === 'waiting' && w.date && w.collector)) {
@@ -428,6 +479,7 @@ export function applyRematch(store, body) {
       applied++;
     }
     store.db.prepare('UPDATE monitoring_tracks SET data_json=? WHERE id=?').run(JSON.stringify(data), trackId);
+    touched(store);
   }
   return { applied, skipped: wanted.length - applied };
 }
@@ -454,6 +506,7 @@ export function linkCapture(store, trackId, body) {
   }
   data.captures[i] = { ...withRow(data.captures[i], target), link: target ? 'manual' : 'none' };
   store.db.prepare('UPDATE monitoring_tracks SET data_json=? WHERE id=?').run(JSON.stringify(data), trackId);
+  touched(store);
   return { track: relinkCaptures(store, [fromRow(store.db.prepare('SELECT * FROM monitoring_tracks WHERE id=?').get(trackId))])[0] };
 }
 
@@ -531,7 +584,7 @@ export function saveTrack(store, body, user) {
       const was = !c.link && chosen.get(`${c.text}|${c.lat}|${c.lon}`);
       if (!was) return c;
       chosen.delete(`${c.text}|${c.lat}|${c.lon}`);
-      return { ...c, row: was.row, recordId: was.recordId, link: was.link };
+      return { ...withRow(c, null), row: was.row, recordId: was.recordId, link: was.link };
     });
     const data = { ...old, track: timed(old.track || []) && !timed(track) ? old.track : track, captures: kept };
     if (walk) data.wikiloc = { id: walk.wikiloc_id, url: walk.url };
@@ -540,6 +593,7 @@ export function saveTrack(store, body, user) {
       // The latest request id, so a retry of this request is recognised.
       .prepare('UPDATE monitoring_tracks SET request_id=?, date=?, collector=?, name=?, data_json=?, fingerprint=? WHERE id=?')
       .run(body.requestId, date, collector, name, JSON.stringify(data), clash ? existing.fingerprint : fingerprint, existing.id);
+    touched(store);
     if (walk) markImported(store, walk.id, existing.id);
     return { track: fromRow(store.db.prepare('SELECT * FROM monitoring_tracks WHERE id=?').get(existing.id)), duplicate: true };
   }
@@ -559,6 +613,7 @@ export function saveTrack(store, body, user) {
       'INSERT INTO monitoring_tracks(id,request_id,fingerprint,date,collector,name,data_json,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)',
     )
     .run(...Object.values(row));
+  touched(store);
   if (walk) markImported(store, walk.id, row.id);
   return { track: fromRow(row), duplicate: false };
 }
@@ -582,6 +637,7 @@ export function deleteTrack(store, id, user) {
   if (!canDeleteTrack(store, row, user))
     throw fail('FORBIDDEN', 'Only the uploader, a reviewer or an administrator can remove this track', 403);
   store.db.prepare('DELETE FROM monitoring_tracks WHERE id=?').run(id);
+  touched(store);
   store.db.prepare("UPDATE wikiloc_walks SET status='waiting', track_id=NULL WHERE track_id=?").run(id);
   return { ok: true };
 }
@@ -739,6 +795,7 @@ export function attachWalkPhotos(store, trackId, walkId) {
   }
   data.wikiloc = { id: walk.wikiloc_id, url: walk.url };
   store.db.prepare('UPDATE monitoring_tracks SET data_json=? WHERE id=?').run(JSON.stringify(data), trackId);
+  touched(store);
   markImported(store, walk.id, trackId);
   return { track: fromRow(store.db.prepare('SELECT * FROM monitoring_tracks WHERE id=?').get(trackId)), matched };
 }

@@ -120,13 +120,15 @@ async function copyLink() {
 type Point = MapPoint<StoredTrack>
 /** Wikiloc points of recaptures that are not rows of the sheet: shown as recaptures of their individual. */
 const outsideByRef = computed(() => new Map(outsideRecaptures.value.filter(o => o.point?.ref).map(o => [o.point!.ref!, o])))
+// Points stored without a row as doubtful are left off until paired in Dudas (their note may be the wrong butterfly).
 const allPoints = computed<Point[]>(() =>
   tracks.value.flatMap(walk =>
-    walk.captures.map((capture, i) => {
+    walk.captures.flatMap((capture, i) => {
+      if (capture.doubt) return []
       const o = outsideByRef.value.get(`${walk.id}|${i}`)
-      if (!o) return { walk, capture }
+      if (!o) return [{ walk, capture }]
       const species = String(o.first.values.SPECIES ?? '') || capture.species
-      return { walk, capture: { ...capture, species, markId: o.mark, recapture: true, outside: o.key } }
+      return [{ walk, capture: { ...capture, species, markId: o.mark, recapture: true, outside: o.key } }]
     }),
   ),
 )
@@ -692,7 +694,7 @@ const withoutGps = computed(() => {
         <ul class="space-y-1">
           <li v-for="t in chosenWalks" :key="t.id" class="group flex items-center gap-1.5">
             <span class="min-w-0 flex-1 truncate" :title="t.name">
-              {{ dateLabel(t.date) }} · {{ collectorOf(t) }} <span class="text-stone-500">({{ t.captures.length }})</span>
+              {{ dateLabel(t.date) }} · {{ collectorOf(t) }} <span class="text-stone-500">({{ t.captures.filter(c => !c.doubt).length }})</span>
             </span>
             <a v-if="t.wikiloc" :href="t.wikiloc.url" target="_blank" rel="noopener" class="btn-ghost" title="Abrir en Wikiloc">
               <ExternalLink :size="13" />

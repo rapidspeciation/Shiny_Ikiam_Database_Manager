@@ -56,9 +56,12 @@ across rows and sheets: repeats and strict-list values (as above), a CAM given t
 (Collection_data, Insectary_data and Wing_tissue CAM_ID), Collected_Sent2Insectary rows without a
 filled Insectary_data row and wild insectary butterflies without a collection row, species / sex /
 copied-CAM mismatches between the two rows of one butterfly, deaths or preservations before
-collection or entry, dates after today, preserved rows without CAM_ID or Tube_1_id, and field
-marks on two species. A fix is offered only when obvious (spelling of a list value, the other
-sheet's CAM, a year typed one off). The scan is cached until the copy changes.
+collection or entry, dates after today, preserved rows without CAM_ID or Tube_1_id, field
+marks on two species, and Wikiloc monitoring points stored on the map without a row because
+their pairing was doubtful (`walk_doubt`, with the walk, the note and the rows it could be; paired
+in Monitoreo → Dudas, see monitoring.md). A fix is offered only when obvious (spelling of a list
+value, the other sheet's CAM, a year typed one off). The scan is cached until the copy or the
+stored walks change.
 
 It is shown in Tablas → Revisión de datos (obvious fixes can be sent as one proposal to confirm in
 Asistente) and is the assistant's `check_data` tool (`GET /api/checks?sheet=&kind=&limit=&offset=`).

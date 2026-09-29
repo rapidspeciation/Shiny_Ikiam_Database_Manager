@@ -25,6 +25,7 @@ import { isBlank } from '../../lib/cells'
 import { formatSerial, isoToSerial } from '../../lib/dates'
 import {
   captureValues,
+  capturesToStore,
   collectorFromName,
   collectorLabel,
   doubtfulMatch,
@@ -323,11 +324,11 @@ const checks = computed(() =>
       isIthomiini,
       ...(m ? { existing: m.rows[0] ?? null } : {}),
     })
-    // A doubtful pairing is said here and listed in Dudas de emparejamiento once on the map.
+    // A doubtful pairing is said here; on the map the point waits without a row in Dudas de emparejamiento.
     if (m && m.rows.length && doubtfulMatch(m))
       review.list.push({
         kind: 'warn',
-        text: `Fila ${m.rows[0].row} por ${HOW[m.confidence]}${m.conflicts.filter(k => k !== 'hora').length ? ` (no coincide: ${m.conflicts.filter(k => k !== 'hora').join(', ')})` : ''}: revisar en Dudas`,
+        text: `Fila ${m.rows[0].row} por ${HOW[m.confidence]}${m.conflicts.filter(k => k !== 'hora').length ? ` (no coincide: ${m.conflicts.filter(k => k !== 'hora').join(', ')})` : ''}: se guarda sin fila, para emparejar en Dudas`,
       })
     return review
   }),
@@ -349,17 +350,18 @@ async function sendTrack(t: {
   walkId?: string
   date: string
   collector: string
-  captures: ImportedCapture[]
+  captures: (ImportedCapture & { doubt?: boolean })[]
   /** Captures already paired with their sheet rows (bulk import). */
   paired?: boolean
 }) {
   // Paired as a whole walk (each row once, the closest); without a collector, each point on its own.
   const match = t.paired ? null : t.collector ? matchWalk(rows.value, t.date, t.collector, t.captures, { shift: false }) : null
-  const withRows = t.paired
+  // Doubtful points go without a row, for Dudas; points without one get their new row when it is saved.
+  const withRows: (ImportedCapture & { doubt?: boolean })[] = t.paired
     ? t.captures
-    : t.captures.map((raw, i) =>
-        withSheetValues(raw, match ? (match.matches[i].rows[0] ?? null) : existingRow(rows.value, t.date, raw)),
-      )
+    : match
+      ? capturesToStore(t.captures, match.matches, { unpaired: false })
+      : t.captures.map(raw => withSheetValues(raw, existingRow(rows.value, t.date, raw)))
   const recaptures = walkMarkRoles(rows.value, t.date, withRows)
   await api('monitoring/tracks', {
     method: 'POST',
@@ -388,6 +390,7 @@ async function sendTrack(t: {
         photos: c.photos,
         row: (c as { row?: number }).row ?? null,
         recordId: (c as { recordId?: string }).recordId ?? null,
+        doubt: c.doubt || undefined,
       })),
     },
   })
@@ -406,12 +409,13 @@ async function storeTrack() {
 }
 
 /**
- * Waiting Wikiloc walks that are already in the sheet: every capture that has
- * its row goes on the map. Points without a row are left out (field notes that
- * were never entered, usually Wikiloc mistakes). Walks without any point go on
- * the map as a trail; walks none of whose points are in the sheet stay for review,
- * and so do walks with a doubtful pairing (a tie, or placed only by order): those
- * are paired by hand in Dudas de emparejamiento.
+ * Waiting Wikiloc walks that are already (partly) in the sheet go on the map:
+ * points paired by mark or surely with their rows; doubtful points (a tie,
+ * placed only by order, a note that disagrees, no row) without a row, flagged
+ * for Dudas de emparejamiento and Revisión de datos, so one unclear point does
+ * not hold back the walk. Walks without any point go on the map as a trail;
+ * walks none of whose points are in the sheet stay for review (their rows are
+ * added in the import).
  */
 const registered = computed(() => {
   if (!table.value) return []
@@ -423,16 +427,18 @@ const registered = computed(() => {
       return {
         w,
         date: match.date,
-        captures: match.pairs.map(p => withSheetValues(p.capture, p.row)),
-        left: match.left.length,
-        doubtful: match.matches.some(doubtfulMatch),
+        paired: match.pairs.length,
+        captures: capturesToStore(all, match.matches),
+        doubts: match.matches.filter(m => !m.rows.length || doubtfulMatch(m)).length,
       }
     })
-    .filter(x => (x.captures.length && !x.doubtful) || !x.w.waypoints.length)
+    .filter(x => x.paired || !x.w.waypoints.length)
 })
-const leftOut = computed(() => registered.value.reduce((n, x) => n + x.left, 0))
+const doubtCount = computed(() => registered.value.reduce((n, x) => n + x.doubts, 0))
 async function registerAll() {
-  const extra = leftOut.value ? ` Se dejan fuera ${leftOut.value} puntos que no están en la hoja.` : ''
+  const extra = doubtCount.value
+    ? ` ${doubtCount.value} puntos dudosos o sin fila se guardan sin emparejar y quedan en Dudas y en Revisión de datos.`
+    : ''
   if (!confirm(`¿Pasar al mapa ${registered.value.length} recorridos ya registrados en la hoja? No se añaden filas.${extra}`))
     return
   busy.value = true
@@ -857,6 +863,9 @@ const dayLabel = (iso: string) => formatSerial(isoToSerial(iso))
           <span>{{ t.collector ? shortName(t.collector) : 'sin recolector' }}</span>
           <span class="text-stone-500">
             {{ t.captures.length }} puntos · {{ t.captures.filter(c => c.row).length }} con fila
+            <template v-if="t.captures.some(c => c.doubt)">
+              · <span class="text-amber-800">{{ t.captures.filter(c => c.doubt).length }} en Dudas</span></template
+            >
             <template v-if="t.wikiloc"> · Wikiloc</template><template v-else> · GPX</template>
           </span>
           <span class="ml-auto flex gap-1">

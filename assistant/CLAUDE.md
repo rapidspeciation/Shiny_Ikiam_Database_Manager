@@ -74,6 +74,7 @@ when the right value is obvious. Kinds:
 | `bad_date` | a date column holding no date: a number before 2000 or years ahead (375004), or text (fix from a note that starts with the day) |
 | `missing_sample` | preserved without CAM_ID or Tube_1_id (monitoring rows get them later: normal for recent ones) |
 | `mark_reuse` | a FieldMark_ID recorded on two species (once per other species) |
+| `walk_doubt` | a Wikiloc monitoring point stored on the map without a row because its pairing was doubtful (tie, order, a note that disagrees, no row); `row` is the likeliest row or null, `value` the note, `related` the rows it could be. No fix: a person pairs it in Monitoreo → Dudas with the photos; you can say which rows fit and draft the question for the collector |
 
 Steps:
 

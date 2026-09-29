@@ -1895,6 +1895,29 @@ export function withSheetValues<T extends Capture & { section: number | null }>(
   }
 }
 
+/**
+ * A walk's points as they are stored on the map. A point paired by its mark or
+ * surely takes its rows (one copy per row). A doubtful one (a tie, placed only
+ * by order, a note that disagrees with its row) is stored without a row, so the
+ * map and Recapturas show nothing wrong, and flagged `doubt`: Dudas and
+ * Revisión de datos list it until a person pairs it. A point without any row
+ * is flagged too when `unpaired` (Pasar al mapa adds no rows); an import that
+ * adds its row leaves it plain, linked once the row is saved. A note of several
+ * butterflies keeps one copy per butterfly.
+ */
+export function capturesToStore<T extends Capture & { section: number | null }>(
+  captures: T[],
+  matches: PointMatch[],
+  { unpaired = true }: { unpaired?: boolean } = {},
+): (T & { row?: number; recordId?: string; doubt?: boolean })[] {
+  return captures.flatMap((c, i) => {
+    const m = matches[i]
+    if (m.rows.length && !doubtfulMatch(m)) return m.rows.map(row => withSheetValues(c, row))
+    if (!m.rows.length && !unpaired) return [c]
+    return Array.from({ length: Math.max(1, c.count || 1, m.rows.length) }, () => ({ ...c, doubt: true }))
+  })
+}
+
 // ------------------------------------------- recaptures written only in notes
 
 export interface NoteRecapture {

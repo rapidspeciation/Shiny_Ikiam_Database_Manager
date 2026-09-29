@@ -13,7 +13,9 @@ import { useSession } from '../../stores/session'
  * "Dudas de emparejamiento": walk points whose sheet row is not certain (a tie
  * with another row, placed only by the walk's order, a note that disagrees with
  * its row, or a row that matching again would change), each beside its Wikiloc
- * photos and note, with the rows it could be. One click keeps a row (never
+ * photos and note, with the rows it could be. Points that Pasar al mapa stored
+ * without a row because of such a doubt wait here (and in Revisión de datos)
+ * with every free row of the day. One click keeps a row (never
  * changed by matching again); "No es ninguna" leaves the point without a row.
  * Old walks still waiting in "por revisar" are paired here point by point and
  * then go on the map. Reviewers apply the changes of matching all walks again.
@@ -45,6 +47,8 @@ interface Doubt {
   confidence: MatchConfidence
   conflicts: MatchConflict[]
   changed: boolean
+  /** Stored without a row because of the doubt: off the map until a row is chosen. */
+  pending?: boolean
   current: (RowInfo | null)[]
   proposed: (RowInfo | null)[]
   candidates: RowInfo[]
@@ -148,12 +152,15 @@ async function choose(d: Doubt, r: RowInfo | null) {
     picks.value = { ...picks.value, [pickKey(d)]: r ? [r.recordId] : [] }
     return
   }
-  // Several butterflies at one point: the next stored copy without this row takes it.
+  // Several butterflies at one point: a copy without a row first, else the next one without this row.
+  const empty = d.current.findIndex(c => !c)
   const k = r
-    ? Math.max(
-        0,
-        d.current.findIndex(c => c?.recordId !== r.recordId),
-      )
+    ? empty >= 0
+      ? empty
+      : Math.max(
+          0,
+          d.current.findIndex(c => c?.recordId !== r.recordId),
+        )
     : 0
   busy.value = true
   try {
@@ -376,6 +383,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 >
                 <span v-if="d.changed" class="ml-1 rounded bg-sky-100 px-1 text-xs text-sky-800"
                   >cambia al emparejar de nuevo</span
+                >
+                <span
+                  v-if="d.pending"
+                  class="ml-1 rounded bg-stone-100 px-1 text-xs text-stone-700"
+                  title="Pasar al mapa lo guardó sin fila por la duda; no aparece en el mapa hasta elegir su fila"
+                  >guardado sin fila</span
                 >
               </p>
               <p v-if="d.source === 'track'" class="mb-1 text-xs text-stone-500">

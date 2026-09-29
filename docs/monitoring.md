@@ -28,7 +28,7 @@ The new rows are filled as the team fills monitoring rows (the 21–23 Sep 2026 
 
 **After *Añadir filas***: the rows without species come first; choosing a row shows its Wikiloc photos and note beside the grid (above it on phones); a photo opens large, and ←/→ go through the photos of the new rows. *Duplicar fila* copies the chosen row into a new one without time, mark, CAM, tube and weight, for a capture typed by hand. On phones the job log and the list of walks fold away so the grid keeps at least eight rows.
 
-**Pasar al mapa … ya registrados en la hoja** stores, in one go, every waiting Wikiloc walk with captures in the sheet whose pairings are all sure (see below); a title one day off is corrected when the marks match the next or previous day. On the map each capture shows the row's curated species, sex, mark and section. Points without a row are left out (field notes never entered, usually Wikiloc mistakes). Walks none of whose points are in the sheet stay for review; walks with a doubtful pairing are paired by hand in *Dudas de emparejamiento*.
+**Pasar al mapa … ya registrados en la hoja** stores, in one go, every waiting Wikiloc walk with captures in the sheet (see below); a title one day off is corrected when the marks match the next or previous day. Points paired by mark or surely are linked to their rows; on the map each shows the row's curated species, sex, mark and section. Doubtful points (a tie, placed only by order, a note that disagrees with its row) and points without a row do not hold the walk back (decided Sep 2026): they are stored on the walk **without a row**, flagged as doubtful, left off the map and Recapturas (their note may be the wrong butterfly), and listed in *Dudas de emparejamiento* and in *Revisión de datos* (`walk_doubt`) until a person pairs them. Walks none of whose points are in the sheet stay for review (their rows are added in the import). Importing one walk follows the same rule: a doubtful point is not given its likely row; a point without a row gets the new row added for it once that row is saved.
 
 ### Pairing points with rows
 
@@ -41,13 +41,15 @@ One matcher (`matchWalk` in `frontend/src/lib/monitoring.ts`) is used by Importa
 
 Each point says how sure its pairing is: **mark**, **sure**, **tie** (another row, or another point, fits exactly as well: e.g. two "10:30 male" notes and two male rows at 10:30), **order** (placed by the walk's order only) or **none**, and where note and row disagree (species, sex, mark, hour). Ties, order and disagreements are *doubtful*.
 
-The stored walks keep their links by record: a link stays while its record is of that day (and keeps the mark), even if the row's minute, species or sex are corrected later; a broken link is found again with the matcher (only mark or sure pairings are taken on reading). A link chosen by a person is never changed by matching.
+The stored walks keep their links by record: a link stays while its record is of that day (and keeps the mark), even if the row's minute, species or sex are corrected later; a broken link is found again with the matcher (only mark or sure pairings are taken on reading; for a point stored as doubtful, only when its note also agrees with the row, e.g. once the other point of a tie was paired by hand). A link chosen by a person is never changed by matching.
 
 ### Dudas de emparejamiento
 
 Monitoreo → **Dudas** (editors, reviewers and administrators) lists, per walk and with counts, each doubtful point with its Wikiloc photos (they open large) and note beside the rows it could be (species, sex, time, mark, section, fate, row): the proposed one, the ones that fit as well, and the rows within ten minutes. One click keeps a row (a manual link); *No es ninguna* leaves the point without a row; *Preguntar a Alex / María José / Franz* copies a short Spanish message with the date, the note, the time, the rows it could be and the photo's link, to send to the collector.
 
-At the top, **matching again**: every stored walk is paired again with the current matcher and the links that would change are listed (before → after, and why); nothing changes until a reviewer or administrator presses *Aplicar* (`GET/POST /api/monitoring/rematch`). *Ya en el mapa* in Importar has the link to it.
+Points that *Pasar al mapa* stored without a row are listed here marked *guardado sin fila*, with every row of that day not taken by another point of the walk; choosing one links the point (and it appears on the map), *No es ninguna* closes it.
+
+At the top, **matching again**: every stored walk is paired again with the current matcher and the links that would change are listed (before → after, and why); nothing changes until a reviewer or administrator presses *Aplicar* (`GET/POST /api/monitoring/rematch`). Points stored without a row are never paired there, only by a person. *Ya en el mapa* in Importar has the link to it.
 
 Walks still waiting in *por revisar* whose points do not pair surely (old notes without times, "Planta", "fuera del monitoreo") are listed there too, every point with its proposed row and the rows of that day; *Pasar al mapa* stores the walk with the rows chosen (kept as chosen).
 
