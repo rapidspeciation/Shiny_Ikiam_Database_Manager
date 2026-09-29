@@ -179,7 +179,16 @@ test('Google write request touches only named cells and formats a numeric date',
     calls.push({ path, body: JSON.parse(options.body) });
     return { replies: [{}, {}] };
   };
-  await google.writeCells('Insectary_data', 11, { Death_date: 46290, Sex: 'female' });
+  // The columns come from the live header (here Sex moved to column M), never from the profile.
+  await google.writeBatch([
+    {
+      sheet: 'Insectary_data',
+      row: 11,
+      changes: { Death_date: 46290, Sex: 'female' },
+      columns: { Death_date: 8, Sex: 12 },
+      dateFormat: ['Death_date'],
+    },
+  ]);
   const requests = calls[0].body.requests;
   assert.equal(requests[0].appendDimension.length, 1);
   assert.equal(requests.length, 3);
@@ -187,7 +196,11 @@ test('Google write request touches only named cells and formats a numeric date',
   assert.equal(requests[1].updateCells.fields, 'userEnteredValue,userEnteredFormat.numberFormat');
   assert.equal(requests[2].updateCells.fields, 'userEnteredValue');
   assert.equal(requests[1].updateCells.range.startColumnIndex, 8);
-  assert.equal(requests[2].updateCells.range.startColumnIndex, 5);
+  assert.equal(requests[2].updateCells.range.startColumnIndex, 12);
+  await assert.rejects(
+    google.writeBatch([{ sheet: 'Insectary_data', row: 3, changes: { Sex: 'male' } }]),
+    /No live column for Sex/,
+  );
 });
 
 test('Google write request gives a new time-of-day cell a time format', async () => {
@@ -200,7 +213,13 @@ test('Google write request gives a new time-of-day cell a time format', async ()
     return { replies: [{}] };
   };
   await google.writeBatch([
-    { sheet: 'Collection_data', row: 5, changes: { Collection_time: 0.4, Collector: 'FCH' }, timeFormat: ['Collection_time'] },
+    {
+      sheet: 'Collection_data',
+      row: 5,
+      changes: { Collection_time: 0.4, Collector: 'FCH' },
+      columns: { Collection_time: 10, Collector: 11 },
+      timeFormat: ['Collection_time'],
+    },
   ]);
   const [time, text] = calls[0].body.requests;
   assert.deepEqual(time.updateCells.rows[0].values[0].userEnteredFormat, { numberFormat: { type: 'TIME', pattern: 'h:mm' } });

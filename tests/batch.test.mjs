@@ -98,10 +98,10 @@ test('a cell changed by someone else rejects the whole save and writes nothing',
   store.close();
 });
 
-test('a changed header row blocks writes and sync for that sheet', async () => {
+test('a header written twice blocks writes and sync for that sheet', async () => {
   const { store, sheets, at } = await fixture();
   const header = sheets.rows.get('Insectary_data').find(r => r.row === 1);
-  header.cells.splice(1, 0, { userEnteredValue: { stringValue: 'New column' } });
+  header.cells[1] = { userEnteredValue: { stringValue: 'Sex' } };
   await assert.rejects(
     applyBatch(
       store,
