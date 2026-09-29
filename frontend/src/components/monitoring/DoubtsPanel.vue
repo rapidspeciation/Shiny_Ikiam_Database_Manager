@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import ChoiceField from '../ChoiceField.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Check, ChevronLeft, ChevronRight, Copy, ExternalLink, MapPin, RefreshCw, X } from 'lucide-vue-next'
+import { Check, ChevronLeft, ChevronRight, ExternalLink, MapPin, RefreshCw, X } from 'lucide-vue-next'
 import { useMonitoring } from '../../composables/useMonitoring'
 import { api, requestId } from '../../lib/api'
 import { formatSerial, isoToSerial } from '../../lib/dates'
@@ -303,49 +303,6 @@ async function applyChanges() {
 }
 const changedWalks = computed(() => new Set((data.value?.changes || []).map(c => c.trackId)).size)
 
-// ------------------------------------------------------------ asking the collector
-const FIRST_NAMES: Record<string, string> = { AA: 'Alex', MJS: 'María José', FCH: 'Franz' }
-const firstName = (collector: string | null) => {
-  const i = initials(collector)
-  return FIRST_NAMES[i] || (collector || '').split(' - ')[1]?.split(' ')[0] || i
-}
-function message(d: Doubt) {
-  const settled = settledRow(d)
-  if (settled) {
-    const differ = compare(d, settled).filter(l => l.differ)
-    return [
-      `Hola ${firstName(d.collector)}, estoy revisando el monitoreo del ${d.date.split('-').reverse().map(Number).join('/')}.`,
-      `En Wikiloc el punto «${d.text}» es la fila ${settled.row} de Collection_data, pero`,
-      differ.map(l => `la nota dice ${l.label.toLowerCase()} ${l.note} y la hoja ${l.row}`).join(', y ') + ':',
-      '¿cuál es el correcto?',
-      d.photoLinks[0] ? `Foto: ${d.photoLinks[0]}` : d.wikiloc ? `Recorrido: ${d.wikiloc}` : '',
-    ]
-      .filter(Boolean)
-      .join(' ')
-  }
-  const options = [...d.proposed.filter((r): r is RowInfo => !!r), ...d.candidates.filter(r => !isProposed(d, r))].slice(0, 3)
-  const rows = options.map(
-    r =>
-      `la fila ${r.row} (${[r.species || 'sin especie', sexLabel(r.sex), formatMinutes(r.minutes)].filter(Boolean).join(', ')})`,
-  )
-  return [
-    `Hola ${firstName(d.collector)}, estoy revisando el monitoreo del ${d.date.split('-').reverse().map(Number).join('/')}.`,
-    `En Wikiloc hay un punto con la nota «${d.text}»${d.minutes !== null ? ` (${formatMinutes(d.minutes)})` : ''}: ¿qué mariposa es?`,
-    rows.length ? `Puede ser ${rows.join(' o ')} de Collection_data.` : 'No encuentro su fila en Collection_data.',
-    d.photoLinks[0] ? `Foto: ${d.photoLinks[0]}` : d.wikiloc ? `Recorrido: ${d.wikiloc}` : '',
-  ]
-    .filter(Boolean)
-    .join(' ')
-}
-async function ask(d: Doubt) {
-  try {
-    await navigator.clipboard.writeText(message(d))
-    notify(`Mensaje para ${firstName(d.collector)} copiado`, 'success', 2000)
-  } catch {
-    notify('No se pudo copiar el mensaje', 'error')
-  }
-}
-
 // ------------------------------------------------------------ enlarged photo
 const photoUrl = (id: string) => `api/monitoring/photos/${id}`
 const viewer = ref<{ photos: string[]; index: number; text: string } | null>(null)
@@ -520,9 +477,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 <button class="btn py-0.5" @click="toggleOthers(d)">
                   {{ opened.has(doubtKey(d)) ? 'Ocultar otras filas' : 'Es otra fila…' }}
                 </button>
-                <button class="btn py-0.5" :title="message(d)" @click="ask(d)">
-                  <Copy :size="13" /> Preguntar a {{ firstName(d.collector) }}
-                </button>
               </div>
             </div>
             <div v-else class="min-w-0 flex-1 text-sm">
@@ -573,9 +527,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               <div class="mt-2 flex flex-wrap gap-2">
                 <button class="btn py-0.5" :disabled="busy || !session.canEdit" @click="choose(d, null)">
                   <X :size="13" /> No es ninguna
-                </button>
-                <button class="btn py-0.5" :title="message(d)" @click="ask(d)">
-                  <Copy :size="13" /> Preguntar a {{ firstName(d.collector) }}
                 </button>
               </div>
             </div>
