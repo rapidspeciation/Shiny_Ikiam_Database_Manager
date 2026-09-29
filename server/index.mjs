@@ -31,6 +31,7 @@ import {
   storeReviewedWalk,
 } from './monitoring.mjs';
 import { idSuggestions, tableChanges, tablePayload, tableRevision } from './grid.mjs';
+import { extendPremadeRows } from './premade.mjs';
 import { createSheetHook } from './hooks.mjs';
 import { createInvitations, mailerFromEnv } from './invitations.mjs';
 import { createSummary } from './summary.mjs';
@@ -492,6 +493,13 @@ export async function createApp(config = {}, options = {}) {
       if (method === 'GET' && path === '/api/table/changes')
         return json(res, 200, tableChanges(store, String(query.module || ''), query.since));
       if (method === 'GET' && path === '/api/ids') return json(res, 200, idSuggestions(store, query));
+      // More pre-made rows (formulas, formats, dropdowns; Insectary IDs) at the end of a sheet.
+      if (method === 'POST' && /^\/api\/sheets\/[^/]+\/extend$/.test(path)) {
+        requireReviewer(user);
+        const sheet = decodePart(path.split('/')[3]);
+        if (!moduleMap.has(sheet)) throw fail('MODULE_NOT_FOUND', 'Hoja desconocida', 404);
+        return json(res, 200, await extendPremadeRows(store, sheet, body.count, user));
+      }
       // The sheet's own checks for one sheet (repeated IDs, dropdown lists), for the grids to colour.
       if (method === 'GET' && path === '/api/verifications') {
         const module = String(query.module || '');

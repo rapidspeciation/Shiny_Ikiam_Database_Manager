@@ -21,9 +21,15 @@ export function tablePayload(store, module) {
     )
     .all(module, mod.headerRow);
   const keys = mod.fields.map(f => f.key);
+  const layout = store.layouts.get(module);
   return {
     module,
-    columns: mod.fields.map(({ column, ...field }) => field),
+    // A field whose column is missing from the sheet shows its last known values, read-only.
+    columns: mod.fields.map(({ column, ...field }) =>
+      layout && !layout.blocked && !layout.columns.has(field.key)
+        ? { ...field, readonly: true, unavailable: true }
+        : field,
+    ),
     headerProblems: store.headerProblems.get(module) || [],
     rows: rows.map(r => wireRow(keys, r)),
     latest: latestUpdate(store, module),
@@ -151,11 +157,15 @@ function insectaryIds(store, start, count) {
     pool = free.filter(r => r.row >= from.row && (r === from || round(r)));
   }
   const ids = pool.slice(0, count).map(r => ({ value: String(r.values.Insectary_ID).trim(), row: r.row }));
+  // The last pre-made ID of the series ("hasta Q5D" in the warning when few are left).
+  const lastPremade = rows.findLast(r => round(r))?.values.Insectary_ID;
   return {
     suggestions: ids.slice(0, 1).map(i => ({ value: i.value, label: `${i.value} (fila ${i.row})` })),
     sequence: ids.map(i => i.value),
     rows: ids,
     tail: start ? ids.length : Math.min(tail.length, ids.length),
+    freeAtEnd: tail.length,
+    last: lastPremade ? String(lastPremade).trim() : null,
   };
 }
 

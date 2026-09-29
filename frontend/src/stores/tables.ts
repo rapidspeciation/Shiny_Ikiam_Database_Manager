@@ -33,7 +33,7 @@ interface TableWire {
   revision: string
   latest?: string
   columns: Table['columns']
-  headerProblems: { field: string; found: string | null }[]
+  headerProblems: Table['headerProblems']
   rows: WireRow[]
 }
 

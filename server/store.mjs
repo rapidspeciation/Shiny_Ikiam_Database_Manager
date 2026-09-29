@@ -3,7 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync, chmodSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { modules, moduleMap, labelFor, validateValues, comparable, nextInsectaryId, makeSourceUrl } from './schema.mjs';
-import { GoogleSheets, LocalSheets, headerMismatches, rowKey, rowValues } from './sheets.mjs';
+import { GoogleSheets, LocalSheets, rowKey, rowValues } from './sheets.mjs';
+import { headerLayout, sameLayout } from './columns.mjs';
 import { applyBatch } from './batch.mjs';
 import { initMonitoring } from './monitoring.mjs';
 
@@ -51,6 +52,8 @@ export class Store {
     this.writeEpoch = new Map();
     this.inflight = new Map();
     this.headerProblems = new Map();
+    // Each sheet's column map from its live header, as the last sync read it.
+    this.layouts = new Map();
     this.syncStatus = {
       state: this.localMode ? 'offline_seed' : 'not_synced',
       lastSync: this.getSetting('lastSync'),
@@ -356,6 +359,30 @@ export class Store {
   fingerprint(sheet, values) {
     return json(this.identity(sheet, values));
   }
+  /**
+   * A row read while some of its columns are missing from the sheet keeps the
+   * last known values of those fields: a renamed column neither blanks the data
+   * nor makes used rows look free. Fields stay in the profile's order.
+   */
+  keepUnavailable(sheet, item, previous, layout) {
+    if (!layout.missing.length) return item;
+    const values = {},
+      formulas = {};
+    for (const { key } of moduleMap.get(sheet).fields) {
+      if (Object.hasOwn(values, key)) continue;
+      const source = layout.columns.has(key) ? item : previous;
+      if (source?.values && Object.hasOwn(source.values, key)) values[key] = source.values[key];
+      if (source?.formulas?.[key]) formulas[key] = source.formulas[key];
+    }
+    return { ...item, values, formulas };
+  }
+  /** The column map for a sheet from a header row just read; records the problems admins see. */
+  readLayout(sheet, header) {
+    const layout = headerLayout(sheet, header);
+    this.layouts.set(sheet, layout);
+    this.headerProblems.set(sheet, layout.problems);
+    return layout;
+  }
   async sync({ sheets = modules.map(m => m.id), force = false } = {}) {
     if (this.syncPromise) return this.syncPromise;
     const run = this.performSync({ sheets, force });
@@ -389,18 +416,22 @@ export class Store {
         }
         const epoch = this.writeEpoch.get(sheet) || 0;
         const rows = await this.sheets.readSheet(sheet);
-        const header = rows.find(r => r.row === mod.headerRow);
-        const problems = header ? headerMismatches(sheet, header) : [];
-        this.headerProblems.set(sheet, problems);
-        if (problems.length) {
-          // Reading with a stale column map would scramble every value.
+        const layout = this.readLayout(sheet, rows.find(r => r.row === mod.headerRow));
+        if (layout.blocked) {
+          // Which column holds which field is unclear: reading would scramble values.
           skipped++;
           continue;
         }
         const current = rows
           .filter(r => r.row > mod.headerRow)
-          .map(r => ({ row: r.row, ...rowValues(sheet, r) }))
+          .map(r => ({ row: r.row, ...rowValues(sheet, r, layout) }))
           .filter(r => Object.values(r.values).some(v => v !== null && v !== '') || Object.keys(r.formulas).length);
+        // Only the columns present are compared: a missing column keeps its last known values.
+        const view = record =>
+          layout.missing.length
+            ? json(Object.fromEntries(Object.entries(record.values).filter(([k]) => layout.columns.has(k)))) +
+              json(Object.fromEntries(Object.entries(record.formulas).filter(([k]) => layout.columns.has(k))))
+            : json(record.values) + json(record.formulas);
         await this.runExclusive(async () => {
           if (epoch !== (this.writeEpoch.get(sheet) || 0)) {
             skipped++;
@@ -420,7 +451,7 @@ export class Store {
             const byContent = new Map();
             for (const r of old) {
               if (Object.keys(parse(r.identity_json) || {}).length) continue;
-              const key = r.values_json + r.formulas_json;
+              const key = view({ values: parse(r.values_json), formulas: parse(r.formulas_json) });
               byContent.set(key, [...(byContent.get(key) || []), r]);
             }
             // Match in two passes so a row inserted above does not take the identity of
@@ -435,7 +466,7 @@ export class Store {
             for (const item of current) {
               const identity = this.fingerprint(sheet, item.values);
               if (identity === '{}') {
-                const same = (byContent.get(json(item.values) + json(item.formulas)) || []).filter(
+                const same = (byContent.get(view(item)) || []).filter(
                   o => !seen.has(o.id),
                 );
                 if (same.length === 1) claim(item, same[0]);
@@ -459,9 +490,10 @@ export class Store {
             // Parked row numbers go below every number already used, so repeated syncs never collide.
             let displaced =
               Math.min(0, this.db.prepare('SELECT min(row_num) n FROM records WHERE sheet=?').get(sheet).n ?? 0) - 1;
-            for (const item of current) {
-              const found = matched.get(item) || null;
+            for (const read of current) {
+              const found = matched.get(read) || null;
               const previous = found && this.hydrate(found);
+              const item = this.keepUnavailable(sheet, read, previous, layout);
               const record = {
                 id: found?.id || randomUUID(),
                 sheet,
@@ -478,6 +510,7 @@ export class Store {
               if (previous) {
                 const diffs = [];
                 for (const field of mod.fields) {
+                  if (!layout.columns.has(field.key)) continue;
                   const before = previous.formulas[field.key]
                     ? { formula: previous.formulas[field.key] }
                     : previous.values[field.key];
@@ -580,7 +613,11 @@ export class Store {
     if (!rows.length) return { changed: 0, added: 0, removed: 0 };
     if (this.inflight.get(sheet)) return { needsSync: true };
     const epoch = this.writeEpoch.get(sheet) || 0;
-    const live = await this.sheets.readRows([{ sheet, rows }]);
+    // The header comes in the same request: the rows are read with the columns as they are now.
+    const live = await this.sheets.readRows([{ sheet, rows: [mod.headerRow, ...rows] }]);
+    const layout = headerLayout(sheet, live.get(rowKey(sheet, mod.headerRow)));
+    // Columns moved or renamed since the last sync: only a whole-sheet read can settle it.
+    if (layout.blocked || !sameLayout(layout, this.layouts.get(sheet))) return { needsSync: true };
     return this.runExclusive(() => {
       if (epoch !== (this.writeEpoch.get(sheet) || 0)) return { needsSync: true };
       let changed = 0,
@@ -591,12 +628,13 @@ export class Store {
       this.db.exec('BEGIN IMMEDIATE');
       try {
         for (const row of rows) {
-          const item = rowValues(sheet, live.get(rowKey(sheet, row)));
-          const empty =
-            !Object.values(item.values).some(v => v !== null && v !== '') && !Object.keys(item.formulas).length;
+          const read = rowValues(sheet, live.get(rowKey(sheet, row)), layout);
           const previous = this.hydrate(
             this.db.prepare('SELECT * FROM records WHERE sheet=? AND row_num=? AND missing=0').get(sheet, row),
           );
+          const item = this.keepUnavailable(sheet, read, previous, layout);
+          const empty =
+            !Object.values(item.values).some(v => v !== null && v !== '') && !Object.keys(item.formulas).length;
           if (!previous) {
             if (empty) continue;
             // A row typed below the data is new; anything else may be a moved row.
@@ -626,6 +664,7 @@ export class Store {
           }
           const diffs = [];
           for (const field of mod.fields) {
+            if (!layout.columns.has(field.key)) continue;
             const before = previous.formulas[field.key]
               ? { formula: previous.formulas[field.key] }
               : previous.values[field.key];
@@ -769,18 +808,31 @@ export class Store {
       try {
         const bySheet = Map.groupBy(changes, c => c.sheet);
         const live = await this.sheets.readRows(
-          [...bySheet].map(([sheet, list]) => ({ sheet, rows: list.map(c => c.row) })),
+          [...bySheet].map(([sheet, list]) => ({
+            sheet,
+            rows: [moduleMap.get(sheet).headerRow, ...list.map(c => c.row)],
+          })),
         );
+        const layouts = new Map(
+          [...bySheet.keys()].map(sheet => [
+            sheet,
+            headerLayout(sheet, live.get(rowKey(sheet, moduleMap.get(sheet).headerRow))),
+          ]),
+        );
+        // Until the columns can be told apart again the outcome stays uncertain.
+        if ([...layouts.values()].some(l => l.blocked || l.missing.some(f => changes.some(c => c.field === f))))
+          continue;
+        const read = c => rowValues(c.sheet, live.get(rowKey(c.sheet, c.row)), layouts.get(c.sheet));
         const at = c => {
-          const current = rowValues(c.sheet, live.get(rowKey(c.sheet, c.row)));
+          const current = read(c);
           return current.formulas[c.field] ? { formula: current.formulas[c.field] } : current.values[c.field];
         };
         if (changes.every(c => comparable(at(c)) === comparable(c.after))) {
           const records = [];
           for (const c of changes) {
             if (records.some(r => r.id === c.recordId)) continue;
-            const current = rowValues(c.sheet, live.get(rowKey(c.sheet, c.row)));
             const existing = this.getRecord(c.recordId);
+            const current = this.keepUnavailable(c.sheet, read(c), existing, layouts.get(c.sheet));
             const record = {
               id: c.recordId,
               sheet: c.sheet,

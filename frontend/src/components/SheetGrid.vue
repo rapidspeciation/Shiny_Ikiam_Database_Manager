@@ -337,12 +337,13 @@ function columnDefs(): ColumnDefinition[] {
     // Frozen columns go first: Tabulator only keeps them in line with their
     // headers at the edge (a frozen CAM_ID in the middle shifted the cells after it).
     ...([...props.columns.filter(f => props.frozen.includes(f.key)), ...props.columns.filter(f => !props.frozen.includes(f.key))].map(field => ({
-      title: field.key,
+      // A column missing from the sheet keeps its last values, read-only, marked in its header.
+      title: field.unavailable ? `${field.key} ⚠` : field.key,
       field: field.key,
       frozen: props.frozen.includes(field.key),
       width: widthOf(field),
       minWidth: 70,
-      headerTooltip: field.label,
+      headerTooltip: field.unavailable ? `${field.key}: falta en la hoja; último valor leído` : field.label,
       formatter: formatter as never,
       editable: (cell: CellComponent) => canEdit(cell.getData() as GridRow, field.key),
       ...(props.headerFilters

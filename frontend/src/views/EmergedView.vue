@@ -4,6 +4,7 @@ import DateField from '../components/DateField.vue'
 import { computed, ref, watch } from 'vue'
 import { Rows3, Plus } from 'lucide-vue-next'
 import SheetGrid from '../components/SheetGrid.vue'
+import InsectaryIdsWarning from '../components/InsectaryIdsWarning.vue'
 import { useSheet } from '../composables/useSheet'
 import { api } from '../lib/api'
 import { isoToSerial, todayIso } from '../lib/dates'
@@ -183,6 +184,7 @@ const recent = computed(() => {
         <button class="btn" @click="prepare([null])"><Plus :size="15" /> Añadir una</button>
       </div>
     </div>
+    <InsectaryIdsWarning class="mx-4 mt-2" :revision="table?.revision" @extended="loadFreeIds" />
     <p class="hint px-4 py-1">
       <template v-if="clutch"
         >Especie del clutch: <strong>{{ species || 'no encontrada' }}</strong

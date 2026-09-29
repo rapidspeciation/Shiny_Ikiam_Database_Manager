@@ -8,8 +8,9 @@
 
 import { randomUUID } from 'node:crypto';
 import { comparable, isSumField, labelFor, moduleMap, simpleSum, validateValues } from './schema.mjs';
-import { hasDateFormat, hasTimeFormat, headerMismatches, rowKey, rowValues } from './sheets.mjs';
-import { TUBE_FIELD, UNIQUE, isIdValue, isUnique } from './verifications.mjs';
+import { hasDateFormat, hasTimeFormat, rowKey, rowValues } from './sheets.mjs';
+import { describeProblems, headerLayout, sameLayout } from './columns.mjs';
+import { ensurePremadeRows } from './premade.mjs';import { TUBE_FIELD, UNIQUE, isIdValue, isUnique } from './verifications.mjs';
 import { listOptions, listProblem } from './verify.mjs';
 
 /** Where a write came from. Chosen by the server, never by the client. */
@@ -85,6 +86,9 @@ export async function applyBatch(store, body, user, { source = 'app', reverses =
       plan = planFor(store, source, input);
     }
     throwIfConflicts(plan, skipped);
+    // New rows past the sheet's pre-made rows would be bare (no formulas, no dropdowns):
+    // make more pre-made rows first, as the team would by dragging the last one down.
+    await ensurePremadeRows(store, plan.newRowNeeds());
 
     const live = await store.sheets.readRows(plan.readTargets());
     await plan.resolve(live);
@@ -204,6 +208,9 @@ class Plan {
     /** One entry per affected row: { sheet, row, record, clean, expected, clientId?, candidates? } */
     this.targets = [];
     this.writes = [];
+    /** Live column map of each sheet, from the header row read with the batch. */
+    this.layouts = new Map();
+    this.pools = [];
   }
 
   conflict(target, code, message, extra = {}) {
@@ -309,7 +316,13 @@ class Plan {
       const pool = [];
       for (let row = last + 1; pool.length < targets.length + 5; row++) if (!reserved.has(row)) pool.push(row);
       for (const target of targets) target.candidates = pool;
+      this.pools.push({ sheet: module, lastRow: pool[targets.length - 1] });
     }
+  }
+
+  /** For each sheet getting new rows at the end: the last row they may need. */
+  newRowNeeds() {
+    return this.pools;
   }
 
   readTargets() {
@@ -324,36 +337,51 @@ class Plan {
 
   writeTargets() {
     const bySheet = new Map();
-    for (const w of this.writes) bySheet.set(w.sheet, [...(bySheet.get(w.sheet) || []), w.row]);
+    for (const w of this.writes)
+      bySheet.set(w.sheet, [...(bySheet.get(w.sheet) || [moduleMap.get(w.sheet).headerRow]), w.row]);
     return [...bySheet].map(([sheet, rows]) => ({ sheet, rows }));
   }
 
   async resolve(live) {
     const brokenSheets = new Set();
+    this.layouts = new Map();
     for (const sheet of new Set(this.targets.map(t => t.sheet))) {
-      const header = live.get(rowKey(sheet, moduleMap.get(sheet).headerRow));
-      const problems = headerMismatches(sheet, header);
-      if (problems.length) {
+      // Fields are mapped to columns by the header read now, just before writing.
+      const layout = headerLayout(sheet, live.get(rowKey(sheet, moduleMap.get(sheet).headerRow)));
+      this.layouts.set(sheet, layout);
+      if (layout.blocked) {
+        const problems = layout.problems.filter(p => p.blocking);
         brokenSheets.add(sheet);
         this.conflict(
           null,
           'HEADER_MISMATCH',
-          `Las columnas de ${sheet} cambiaron en Google Sheets; hay que actualizar la app antes de guardar ahí`,
-          {
-            sheet,
-            problems: problems.slice(0, 10),
-          },
+          `No se guarda en ${sheet}: ${describeProblems(sheet, problems)}. Corrige los encabezados en Google Sheets`,
+          { sheet, problems: problems.slice(0, 10) },
         );
       }
     }
+    // A field whose column is gone cannot be saved; the rest of the row can.
+    const unavailable = target => {
+      const layout = this.layouts.get(target.sheet);
+      const missing = Object.keys(target.clean).filter(field => !layout.columns.has(field));
+      for (const field of missing)
+        this.conflict(
+          target,
+          'COLUMN_MISSING',
+          `Falta la columna ${field} en ${target.sheet} (Google Sheets); ese valor no se puede guardar`,
+          { field },
+        );
+      return missing.length > 0;
+    };
     // Rows being edited are resolved first and reserved, so a new row never lands on them.
     const used = new Set();
     for (const target of this.targets.filter(t => t.record && !brokenSheets.has(t.sheet))) {
+      if (unavailable(target)) continue;
       await this.resolveEdit(target, live);
       used.add(`${target.sheet}:${target.row}`);
     }
     for (const target of this.targets.filter(t => !t.record && !brokenSheets.has(t.sheet)))
-      this.resolveCreate(target, live, used);
+      if (!unavailable(target)) this.resolveCreate(target, live, used);
     const written = new Set();
     for (const write of this.writes) {
       const key = `${write.sheet}:${write.row}`;
@@ -367,9 +395,12 @@ class Plan {
 
   async resolveEdit(target, live) {
     const { record } = target;
+    const layout = this.layouts.get(record.sheet);
     let liveRow = live.get(rowKey(record.sheet, record.row));
     const expectedIdentity = this.store.identity(record.sheet, record.values);
-    const current = rowValues(record.sheet, liveRow);
+    const current = rowValues(record.sheet, liveRow, layout);
+    // Columns missing from the sheet keep their last known value in the app: compare the rest.
+    const present = values => Object.fromEntries(Object.entries(values).filter(([k]) => layout.columns.has(k)));
     if (Object.keys(expectedIdentity).length) {
       if (comparable(this.store.identity(record.sheet, current.values)) !== comparable(expectedIdentity)) {
         liveRow = await this.findMovedRow(record, expectedIdentity);
@@ -382,8 +413,8 @@ class Plan {
         target.row = liveRow.row;
       }
     } else if (
-      comparable(record.values) !== comparable(current.values) ||
-      comparable(record.formulas) !== comparable(current.formulas)
+      comparable(present(record.values)) !== comparable(current.values) ||
+      comparable(present(record.formulas)) !== comparable(current.formulas)
     ) {
       return this.conflict(
         target,
@@ -391,7 +422,7 @@ class Plan {
         'Esta fila cambió en Google Sheets; recarga la tabla antes de editarla',
       );
     }
-    const before = rowValues(record.sheet, liveRow);
+    const before = rowValues(record.sheet, liveRow, layout);
     const changes = [];
     for (const [field, after] of Object.entries(target.clean)) {
       const replacing = !!before.formulas[field] && target.replaceFormula.has(field);
@@ -445,13 +476,17 @@ class Plan {
     this.movedCache ??= new Map();
     if (!this.movedCache.has(record.sheet))
       this.movedCache.set(record.sheet, await this.store.sheets.readSheet(record.sheet));
-    const matches = this.movedCache
-      .get(record.sheet)
-      .filter(
-        r =>
-          r.row > moduleMap.get(record.sheet).headerRow &&
-          comparable(this.store.identity(record.sheet, rowValues(record.sheet, r).values)) === comparable(identity),
-      );
+    const rows = this.movedCache.get(record.sheet);
+    const headerRow = moduleMap.get(record.sheet).headerRow;
+    const layout = headerLayout(record.sheet, rows.find(r => r.row === headerRow));
+    // Columns rearranged since the batch's own read: the row found would be written with a stale map.
+    if (!sameLayout(layout, this.layouts.get(record.sheet))) return null;
+    const matches = rows.filter(
+      r =>
+        r.row > headerRow &&
+        comparable(this.store.identity(record.sheet, rowValues(record.sheet, r, layout).values)) ===
+          comparable(identity),
+    );
     return matches.length === 1 ? matches[0] : null;
   }
 
@@ -459,8 +494,11 @@ class Plan {
     for (const row of target.candidates) {
       if (used.has(`${target.sheet}:${row}`)) continue;
       const liveRow = live.get(rowKey(target.sheet, row));
-      const before = rowValues(target.sheet, liveRow);
+      const before = rowValues(target.sheet, liveRow, this.layouts.get(target.sheet));
       if (this.store.hasObservation(target.sheet, before.values, before.formulas)) continue;
+      // With a column missing, the row may be in use through that column: trust the app's last read.
+      if (this.layouts.get(target.sheet).missing.length && this.store.getRecordBySheetRow(target.sheet, row)?.observed)
+        continue;
       // Someone may have typed into this row in Google Sheets: never overwrite a value.
       const typedOver = Object.entries(target.clean).some(
         ([field, after]) =>
@@ -520,14 +558,18 @@ class Plan {
   addWrite(target, liveRow, before, changes) {
     if (!changes.length) return;
     const mod = moduleMap.get(target.sheet);
+    // Each field goes to the column the live header gives it.
+    const layout = this.layouts.get(target.sheet);
+    const columns = Object.fromEntries(changes.map(c => [c.field, layout.columns.get(c.field)]));
+    const cellOf = field => liveRow?.cells?.[columns[field]];
     const dateFormat = changes
       .filter(c => mod.fields.find(f => f.key === c.field)?.type === 'date' && typeof c.after === 'number')
-      .filter(c => !hasDateFormat(liveRow.cells[mod.fields.find(f => f.key === c.field).column]))
+      .filter(c => !hasDateFormat(cellOf(c.field)))
       .map(c => c.field);
     // Times of day are stored as day fractions; a new cell needs a time format to show "9:20".
     const timeFormat = changes
       .filter(c => /(^|_)time$/i.test(c.field) && typeof c.after === 'number' && c.after >= 0 && c.after < 1)
-      .filter(c => !hasTimeFormat(liveRow.cells[mod.fields.find(f => f.key === c.field).column]))
+      .filter(c => !hasTimeFormat(cellOf(c.field)))
       .map(c => c.field);
     target.changes = changes;
     target.before = before;
@@ -535,6 +577,7 @@ class Plan {
       sheet: target.sheet,
       row: target.row,
       changes: Object.fromEntries(changes.map(c => [c.field, c.after])),
+      columns,
       dateFormat,
       timeFormat,
     });
@@ -605,9 +648,19 @@ class Plan {
   /** Confirms Google holds exactly what was written, then updates the local copy. */
   verifyAndPersist(check) {
     const records = [];
+    // The check is read with its own header: were columns moved meanwhile, the cells moved with them.
+    const layouts = new Map();
+    const layoutOf = sheet => {
+      if (!layouts.has(sheet))
+        layouts.set(sheet, headerLayout(sheet, check.get(rowKey(sheet, moduleMap.get(sheet).headerRow))));
+      return layouts.get(sheet);
+    };
     for (const target of this.targets.filter(t => t.changes?.length)) {
       const liveRow = check.get(rowKey(target.sheet, target.row));
-      const now = rowValues(target.sheet, liveRow);
+      const layout = layoutOf(target.sheet);
+      if (layout.blocked) return null;
+      const previous = target.record || this.store.getRecordBySheetRow(target.sheet, target.row);
+      const now = this.store.keepUnavailable(target.sheet, rowValues(target.sheet, liveRow, layout), previous, layout);
       const matches = target.changes.every(
         c => comparable(cellValue(now.values, now.formulas, c.field)) === comparable(c.after),
       );

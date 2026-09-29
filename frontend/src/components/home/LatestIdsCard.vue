@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { dateLabel, type BoardEntry, type Team } from '../../lib/summary'
+import InsectaryIdsWarning from '../InsectaryIdsWarning.vue'
 
 /**
  * The IDs the team needs when labelling, from the workbook: the last CAM ID
@@ -7,6 +8,7 @@ import { dateLabel, type BoardEntry, type Team } from '../../lib/summary'
  * each with its date and the next free one, and the next Insectary ID and clutch.
  */
 defineProps<{ ids: Team['latestIds'] }>()
+defineEmits<{ extended: [] }>()
 const rows = (p: Team['latestIds']): { label: string; entry: BoardEntry | null; hint: string }[] => [
   { label: 'CAMID insectario', entry: p.insectaryCam, hint: 'Insectary_data (preservación o muerte)' },
   { label: 'CAMID colecta', entry: p.collectionCam, hint: 'Collection_data' },
@@ -39,5 +41,6 @@ const rows = (p: Team['latestIds']): { label: string; entry: BoardEntry | null; 
         <p class="font-mono text-2xl font-semibold tracking-tight text-brand-700">{{ ids.clutch ?? '—' }}</p>
       </div>
     </div>
+    <InsectaryIdsWarning class="mt-3" @extended="$emit('extended')" />
   </section>
 </template>
