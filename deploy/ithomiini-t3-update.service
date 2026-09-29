@@ -1,0 +1,12 @@
+# Updates T3 Code to the newest stable release; started on demand by the app
+# (Asistente → Actualizar T3, admins only). `t3 update` restarts T3's service.
+[Unit]
+Description=Update T3 Code (on demand from the Ithomiini app)
+
+[Service]
+Type=oneshot
+Environment=T3CODE_HOME=/home/ubuntu/.t3
+ExecStart=/home/ubuntu/.local/bin/t3 update --channel stable --yes
+StandardOutput=append:/home/ubuntu/.t3/userdata/logs/t3-update.log
+StandardError=append:/home/ubuntu/.t3/userdata/logs/t3-update.log
+TimeoutStartSec=600

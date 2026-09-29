@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import { Camera, ExternalLink, ImagePlus, ListChecks, Plus, RefreshCw, Send, Trash2, X } from 'lucide-vue-next'
+import { ArrowUpCircle, Camera, ExternalLink, ImagePlus, ListChecks, Plus, RefreshCw, Send, Trash2, X } from 'lucide-vue-next'
 import { api, requestId } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
 import { useTables } from '../stores/tables'
+import { useSession } from '../stores/session'
 import ProposalGrid, { type Proposal } from '../components/ProposalGrid.vue'
 import T3Frame from '../components/T3Frame.vue'
 import ProposalsLive from '../components/assistant/ProposalsLive.vue'
@@ -79,6 +80,58 @@ const now = ref(Date.now())
 const tick = setInterval(() => (now.value = Date.now()), 1000)
 onBeforeUnmount(() => clearInterval(tick))
 
+// ------------------------------------------------------------ updating T3 (admins)
+interface T3Version {
+  current: string | null
+  latest: string | null
+  updateAvailable: boolean
+  sessions: number
+  updating: boolean
+  log: string
+}
+const session = useSession()
+const t3Version = ref<T3Version | null>(null)
+const t3Updating = ref(false)
+async function loadT3Version() {
+  if (!session.isAdmin) return
+  try {
+    t3Version.value = await api<T3Version>('admin/t3')
+  } catch {
+    t3Version.value = null
+  }
+}
+onMounted(loadT3Version)
+/** Starts `t3 update` on the server, then waits for T3 to come back on the new version and reconnects. */
+async function updateT3() {
+  const v = t3Version.value
+  if (!v?.updateAvailable) return
+  const cut = v.sessions
+    ? `\n\nT3 tiene ${v.sessions} ${v.sessions === 1 ? 'chat abierto' : 'chats abiertos'}: se cortarán las respuestas en curso (los chats guardados no se pierden).`
+    : ''
+  if (!confirm(`¿Actualizar T3 Code de ${v.current} a ${v.latest}? T3 se reinicia (tarda un minuto).${cut}`)) return
+  t3Updating.value = true
+  try {
+    await api('admin/t3', { method: 'POST', body: {} })
+    const from = v.current
+    for (let i = 0; i < 60; i++) {
+      await new Promise(r => setTimeout(r, 5000))
+      await loadT3Version()
+      const now = t3Version.value
+      if (now && !now.updating && now.current !== from) {
+        notify(`T3 actualizado a ${now.current}`, 'success')
+        t3Frame.value?.connect(true)
+        return
+      }
+      if (now && !now.updating && i > 2) break
+    }
+    notify(`T3 no cambió de versión. Últimas líneas del registro:\n${t3Version.value?.log || '—'}`, 'error')
+  } catch (e) {
+    notify(errorText(e), 'error')
+  } finally {
+    t3Updating.value = false
+  }
+}
+
 onMounted(async () => {
   try {
     t3Url.value = (await api<{ url: string | null }>('t3/status')).url
@@ -96,11 +149,13 @@ async function openLinked() {
   const id = String(route.query.hilo ?? '')
   if (!id) return
   mode.value = 'chat'
-  if (!threads.value.some(t => t.id === id))
-    threads.value = (await api<{ threads: Thread[] }>('chat/threads')).threads
+  if (!threads.value.some(t => t.id === id)) threads.value = (await api<{ threads: Thread[] }>('chat/threads')).threads
   await open(id)
 }
-watch(() => route.query.hilo, id => id && void openLinked())
+watch(
+  () => route.query.hilo,
+  id => id && void openLinked(),
+)
 
 async function open(id: string) {
   current.value = id
@@ -248,17 +303,29 @@ const cellOf = (row: Record<string, unknown> | unknown[], key: string, i: number
         <button
           class="ml-auto flex items-center gap-1 rounded px-2 py-0.5"
           :class="
-            fresh
-              ? 'animate-pulse bg-emerald-600 text-white'
-              : waiting
-                ? 'bg-emerald-100 text-emerald-900'
-                : 'text-stone-500'
+            fresh ? 'animate-pulse bg-emerald-600 text-white' : waiting ? 'bg-emerald-100 text-emerald-900' : 'text-stone-500'
           "
           :title="panel ? 'Ocultar los cambios propuestos' : 'Mostrar los cambios propuestos'"
           @click="panel = !panel"
         >
           <ListChecks :size="14" /> Cambios propuestos ({{ waiting }})
         </button>
+        <button
+          v-if="t3Version?.updateAvailable || t3Updating"
+          class="flex items-center gap-1 rounded bg-amber-100 px-2 py-0.5 text-amber-900 hover:bg-amber-200 disabled:opacity-60"
+          :disabled="t3Updating"
+          :title="`Hay una versión nueva de T3 Code (${t3Version?.latest}); tienes la ${t3Version?.current}`"
+          @click="updateT3"
+        >
+          <ArrowUpCircle :size="14" :class="{ 'animate-spin': t3Updating }" />
+          {{ t3Updating ? 'Actualizando T3…' : `Actualizar T3 (${t3Version?.current} → ${t3Version?.latest})` }}
+        </button>
+        <span
+          v-else-if="t3Version"
+          class="px-1 text-xs text-stone-500"
+          :title="t3Version.latest ? 'Es la última versión estable de T3 Code' : 'No se pudo consultar la última versión'"
+          >T3 {{ t3Version.current }}<template v-if="t3Version.latest"> · al día</template></span
+        >
         <button class="btn-ghost" title="Volver a conectar T3" @click="t3Frame?.connect(true)"><RefreshCw :size="13" /></button>
         <a class="btn-ghost" :href="t3Url" target="_blank" rel="noopener" title="Abrir T3 en otra pestaña"
           ><ExternalLink :size="13"

@@ -1,3 +1,4 @@
+import { t3Admin } from './t3admin.mjs';
 import http from 'node:http';
 import { readFileSync, statSync, createReadStream, existsSync, chmodSync } from 'node:fs';
 import { join, resolve, extname, dirname } from 'node:path';
@@ -161,6 +162,7 @@ export function configFromEnv(env = process.env) {
           url: env.ITHOMIINI_T3_URL.replace(/\/+$/, ''),
           local: env.ITHOMIINI_T3_LOCAL || 'http://127.0.0.1:3773',
           tokenFile: env.ITHOMIINI_T3_ADMIN_TOKEN_FILE,
+          home: env.ITHOMIINI_T3_HOME || '/home/ubuntu/.t3',
         }
       : null,
     aiApiKey: env.AI_API_KEY || env.OPENAI_API_KEY,
@@ -782,6 +784,13 @@ export async function createApp(config = {}, options = {}) {
         return json(res, 200, { user: updateUser(store, path.split('/')[4], body, user) });
       }
       if (method === 'GET' && path === '/api/t3/status') return json(res, 200, { url: config.t3?.url ?? null });
+      // Admins update T3 Code from the Asistente tab (server/t3admin.mjs).
+      if (path === '/api/admin/t3' && (method === 'GET' || method === 'POST')) {
+        requireAdmin(user);
+        if (!config.t3) throw fail('T3_DISABLED', 'T3 Code is not configured', 404);
+        const admin = t3Admin({ home: config.t3.home });
+        return json(res, 200, method === 'GET' ? await admin.status() : await admin.update());
+      }
       if (method === 'POST' && path === '/api/t3/pair') {
         requireEditor(user);
         if (!config.t3?.tokenFile) throw fail('T3_DISABLED', 'T3 Code is not configured', 404);
