@@ -12,7 +12,6 @@ import { queueWalk, walkDraft } from './walks.mjs';
 import { claudeAllowed, claudeConfig, prepareWorkspace, runClaude } from './claude.mjs';
 import { KINDS } from './notebook.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
-import { affirmative, startVoiceSession, voiceBrief, voiceConfig, voiceKey } from './voice.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const bad = (status, code, message) => ({ status, body: { error: { code, message } } });
@@ -41,7 +40,7 @@ const parse = value => {
   }
 };
 
-export const TOOLS = [
+const TOOLS = [
   {
     type: 'function',
     function: {
@@ -445,7 +444,6 @@ export function createAssistant({ store, config = {} }) {
   if (claude.bin && claude.workspace)
     prepareWorkspace(claude, join(here, '..')).catch(e => console.error('Claude workspace:', e.message));
   const reports = createReports({ store, config });
-  const voice = config.voice ?? voiceConfig();
   const thread = (id, user) =>
     db.prepare('SELECT * FROM ai_threads WHERE id = ? AND owner_id = ?').get(id, owner(user));
   const insertMessage = (threadId, role, content, sources = [], results = [], proposals = [], attachments = []) => {
@@ -889,7 +887,7 @@ export function createAssistant({ store, config = {} }) {
         const out = await applyProposal(proposal, context.user, {
           requestId: `ai-${randomUUID()}`,
           indexes: args.indexes,
-          reason: context.voice ? 'Confirmado de voz en la llamada' : 'Confirmado en el chat',
+          reason: 'Confirmado en el chat',
         });
         context.applied.push(proposal.id);
         return { status: out.status, rows: out.applied.length };
@@ -1186,127 +1184,6 @@ export function createAssistant({ store, config = {} }) {
     return { status: 200, body: { jsonrpc: '2.0', id, error: { code: -32601, message: 'Method not found' } } };
   }
 
-  /**
-   * Live voice calls. Each call is a conversation titled "Llamada …" holding its
-   * transcript and proposals, so they also show in Cambios propuestos and the chat.
-   */
-  const mints = new Map();
-  const ecuadorDay = date => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(date);
-  async function voicePrompt(user) {
-    const date = new Date();
-    const weekday = new Intl.DateTimeFormat('es-EC', { timeZone: 'America/Guayaquil', weekday: 'long' }).format(date);
-    return [
-      `Today is ${weekday} ${ecuadorDay(date)} in Ecuador. You are talking with ${user.displayName || user.username} (initials ${initialsFor(user)}, role ${user.role}).`,
-      EDITORS.includes(user.role) ? '' : 'Their role can only read the workbook: do not propose changes.',
-      await voiceBrief(),
-    ]
-      .filter(Boolean)
-      .join('\n');
-  }
-  function threadProposals(threadId) {
-    const status = new Map(
-      db
-        .prepare('SELECT id,status,applied_at,applied_json FROM ai_proposals WHERE thread_id = ?')
-        .all(threadId)
-        .map(r => [r.id, r]),
-    );
-    return db
-      .prepare(
-        "SELECT proposals_json FROM ai_messages WHERE thread_id = ? AND proposals_json <> '[]' ORDER BY created_at, rowid",
-      )
-      .all(threadId)
-      .flatMap(r => (parse(r.proposals_json) ?? []).map(p => proposalView(p, status.get(p.id))));
-  }
-  /** Finished transcript lines, saved in order before the tool call they led to. */
-  function saveTranscript(threadId, lines) {
-    let saved = 0;
-    for (const line of Array.isArray(lines) ? lines.slice(0, 200) : []) {
-      const text = clip(line?.text, 6000).trim();
-      if (!text) continue;
-      insertMessage(threadId, line.role === 'user' ? 'user' : 'assistant', text);
-      saved++;
-    }
-    return saved;
-  }
-
-  async function voiceRoute({ path, body, user }) {
-    if (path === '/api/ai/voice/session') {
-      const recent = (mints.get(owner(user)) ?? []).filter(time => time > Date.now() - 600_000);
-      // Reconnects mint too; this only stops a runaway loop from spending the key.
-      if (recent.length >= 30) return bad(429, 'voice_rate_limited', 'Too many call connections; wait a few minutes.');
-      const existing = body.threadId ? thread(String(body.threadId), user) : null;
-      if (body.threadId && !existing) return bad(404, 'not_found', 'Conversation not found.');
-      let session;
-      try {
-        session = await startVoiceSession(voice, { prompt: await voicePrompt(user), tools: TOOLS });
-      } catch (e) {
-        if (e.unconfigured) return bad(501, 'voice_unconfigured', 'Voice calls are not configured on the server.');
-        console.error('Voice session failed:', e.message);
-        return bad(502, 'provider_error', 'The call could not start. Try again.');
-      }
-      mints.set(owner(user), [...recent, Date.now()]);
-      let call = existing;
-      if (!call) {
-        const time = now();
-        const clock = new Intl.DateTimeFormat('es-EC', {
-          timeZone: 'America/Guayaquil',
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false,
-        }).format(new Date());
-        call = { id: randomUUID(), title: `Llamada ${ecuadorDay(new Date())} ${clock}` };
-        db.prepare('INSERT INTO ai_threads (id,owner_id,title,created_at,updated_at) VALUES (?,?,?,?,?)').run(
-          call.id,
-          owner(user),
-          call.title,
-          time,
-          time,
-        );
-      }
-      return {
-        status: 200,
-        body: { ...session, threadId: call.id, title: call.title, proposals: threadProposals(call.id) },
-      };
-    }
-    const call = thread(String(body.threadId ?? ''), user);
-    if (!call) return bad(404, 'not_found', 'Conversation not found.');
-    if (path === '/api/ai/voice/transcript')
-      return { status: 200, body: { saved: saveTranscript(call.id, body.lines) } };
-    if (path === '/api/ai/voice/tool') {
-      const name = String(body.name ?? '');
-      if (!TOOLS.some(t => t.function.name === name)) return bad(400, 'unknown_tool', 'Unknown tool.');
-      const args = body.args && typeof body.args === 'object' && !Array.isArray(body.args) ? body.args : {};
-      saveTranscript(call.id, body.lines);
-      const context = {
-        threadId: call.id,
-        user,
-        voice: true,
-        records: new Map(),
-        sources: new Map(),
-        results: [],
-        proposals: [],
-        applied: [],
-      };
-      let result;
-      if (name === 'apply_proposal' && !affirmative(body.heard))
-        result = {
-          error:
-            'The person has not said yes out loud. Read the proposal back in a few words and ask them to confirm, or to press ✓ on the screen.',
-        };
-      else
-        try {
-          result = await executeTool(name, args, context);
-        } catch (e) {
-          result = { error: clip(e.message, 300) };
-        }
-      if (context.proposals.length)
-        insertMessage(call.id, 'assistant', 'Propuesta durante la llamada', [], [], context.proposals);
-      // The whole result goes back to the model; nothing is cut.
-      return { status: 200, body: { result, proposals: threadProposals(call.id), applied: context.applied } };
-    }
-    return null;
-  }
-
   const notebooks = createNotebookMatcher({ store, db, newIds: idsFor, draftChanges, initialsFor });
 
   /**
@@ -1377,17 +1254,8 @@ export function createAssistant({ store, config = {} }) {
           model: useClaude ? claude.model : ai.model || null,
           transcription: Boolean(ai.transcriptionModel && key),
           vision: useClaude || Boolean(ai.visionModel && key),
-          voice: {
-            configured: Boolean(await voiceKey(voice).catch(() => '')),
-            provider: voice.provider,
-            model: voice.model,
-          },
         },
       };
-    }
-    if (/^\/api\/ai\/voice\/(session|tool|transcript)$/.test(path) && method === 'POST') {
-      const answer = await voiceRoute({ path, body, user });
-      if (answer) return answer;
     }
     if (path === '/api/knowledge' && method === 'GET')
       return { status: 200, body: { documents: searchDocs(await documents(config), query.q) } };

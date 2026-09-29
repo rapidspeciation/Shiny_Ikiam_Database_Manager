@@ -8,7 +8,6 @@ import { useTables } from '../stores/tables'
 import ProposalGrid, { type Proposal } from '../components/ProposalGrid.vue'
 import T3Frame from '../components/T3Frame.vue'
 import ProposalsLive from '../components/assistant/ProposalsLive.vue'
-import VoiceCall from '../components/assistant/VoiceCall.vue'
 import { persistentRef } from '../lib/persist'
 
 /**
@@ -230,24 +229,21 @@ const cellOf = (row: Record<string, unknown> | unknown[], key: string, i: number
 
 <template>
   <div class="flex h-full flex-col">
-    <!-- One slim bar, so T3 keeps nearly the whole screen. The call lives here once, whatever the mode. -->
-    <div class="flex items-center gap-1 border-b border-stone-200 bg-stone-100 px-2 text-sm">
-      <template v-if="t3Url">
-        <button
-          v-for="[key, label] in [
-            ['t3', 'T3 Code'],
-            ['chat', 'Chat simple'],
-          ] as const"
-          :key="key"
-          class="px-3 py-1"
-          :class="mode === key ? 'border-b-2 border-brand-700 font-medium text-stone-900' : 'text-stone-600 hover:text-stone-900'"
-          @click="mode = key"
-        >
-          {{ label }}
-        </button>
-      </template>
-      <VoiceCall />
-      <template v-if="t3Url && mode === 't3'">
+    <!-- One slim bar, so T3 keeps nearly the whole screen. -->
+    <div v-if="t3Url" class="flex items-center gap-1 border-b border-stone-200 bg-stone-100 px-2 text-sm">
+      <button
+        v-for="[key, label] in [
+          ['t3', 'T3 Code'],
+          ['chat', 'Chat simple'],
+        ] as const"
+        :key="key"
+        class="px-3 py-1"
+        :class="mode === key ? 'border-b-2 border-brand-700 font-medium text-stone-900' : 'text-stone-600 hover:text-stone-900'"
+        @click="mode = key"
+      >
+        {{ label }}
+      </button>
+      <template v-if="mode === 't3'">
         <button
           class="ml-auto flex items-center gap-1 rounded px-2 py-0.5"
           :class="
