@@ -13,7 +13,13 @@ import { moduleMap } from './schema.mjs';
 
 export const VERDICTS = ['accepted', 'rejected', 'other', 'pending', 'applied'];
 /** The tab's status of an issue, from its last verdict. */
-export const STATUS = { pending: 'pendiente', accepted: 'aceptado', rejected: 'rechazado', other: 'otro', applied: 'aplicado' };
+export const STATUS = {
+  pending: 'pendiente',
+  accepted: 'aceptado',
+  rejected: 'rechazado',
+  other: 'otro',
+  applied: 'aplicado',
+};
 const EPOCH = Date.UTC(1899, 11, 30);
 const iso = serial => new Date(EPOCH + Math.round(serial) * 864e5).toISOString().slice(0, 10);
 const fail = (code, message, status = 400) => Object.assign(new Error(message), { code, status });
@@ -41,7 +47,9 @@ export function initVerdicts(db) {
 export function latestVerdicts(db) {
   initVerdicts(db);
   const rows = db
-    .prepare('SELECT v.* FROM issue_verdicts v JOIN (SELECT issue_id, max(id) id FROM issue_verdicts GROUP BY issue_id) l ON l.id = v.id')
+    .prepare(
+      'SELECT v.* FROM issue_verdicts v JOIN (SELECT issue_id, max(id) id FROM issue_verdicts GROUP BY issue_id) l ON l.id = v.id',
+    )
     .all();
   return new Map(rows.map(r => [r.issue_id, r]));
 }
@@ -58,7 +66,20 @@ const publicVerdict = v =>
 
 /** What is kept of an issue with each verdict: enough to show it, and to learn from it, after it is gone. */
 function snapshot(issue) {
-  const keep = ['kind', 'sheet', 'row', 'recordId', 'label', 'field', 'value', 'problem', 'fix', 'fixNote', 'task', 'cam'];
+  const keep = [
+    'kind',
+    'sheet',
+    'row',
+    'recordId',
+    'label',
+    'field',
+    'value',
+    'problem',
+    'fix',
+    'fixNote',
+    'task',
+    'cam',
+  ];
   const more = ['photos', 'envelopeCamid', 'envelopeText', 'prediction', 'ocr', 'ai', 'strength', 'curation', 'group'];
   return Object.fromEntries([...keep, ...more].filter(k => issue[k] !== undefined).map(k => [k, issue[k]]));
 }
@@ -79,7 +100,8 @@ export function setVerdicts(store, body, user) {
     ? issues.filter(i => i.group?.key === String(body.group))
     : (Array.isArray(body.ids) ? body.ids : []).map(id => byId.get(String(id)));
   if (!chosen.length || chosen.length > 500) throw fail('INVALID_IDS', 'Choose 1 to 500 issues');
-  if (chosen.some(i => !i)) throw fail('ISSUE_NOT_FOUND', 'An issue is no longer listed (it may be fixed already); reload', 409);
+  if (chosen.some(i => !i))
+    throw fail('ISSUE_NOT_FOUND', 'An issue is no longer listed (it may be fixed already); reload', 409);
   const value = verdict === 'other' ? clip(body.value, 300).trim() : null;
   if (verdict === 'other' && !value) throw fail('VALUE_REQUIRED', 'Give the right value');
   if (verdict === 'applied' && chosen.some(i => !i.task))
@@ -92,13 +114,27 @@ export function setVerdicts(store, body, user) {
   db.exec('BEGIN');
   try {
     for (const issue of chosen)
-      insert.run(issue.id, issue.kind, verdict, value, clip(body.comment, 500).trim() || null, String(user.id), name, at, JSON.stringify(snapshot(issue)));
+      insert.run(
+        issue.id,
+        issue.kind,
+        verdict,
+        value,
+        clip(body.comment, 500).trim() || null,
+        String(user.id),
+        name,
+        at,
+        JSON.stringify(snapshot(issue)),
+      );
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;
   }
-  return { saved: chosen.length, ids: chosen.map(i => i.id), verdict: publicVerdict({ verdict, value, comment: body.comment || null, user_name: name, at }) };
+  return {
+    saved: chosen.length,
+    ids: chosen.map(i => i.id),
+    verdict: publicVerdict({ verdict, value, comment: body.comment || null, user_name: name, at }),
+  };
 }
 
 export function verdictHistory(store, issueId) {
@@ -110,7 +146,8 @@ export function verdictHistory(store, issueId) {
 }
 
 const statusOf = (issue, verdicts) => verdicts.get(issue.id)?.verdict ?? 'pending';
-const inRange = (issue, from, to) => (!from || (issue.date && issue.date >= from)) && (!to || (issue.date && issue.date <= to));
+const inRange = (issue, from, to) =>
+  (!from || (issue.date && issue.date >= from)) && (!to || (issue.date && issue.date <= to));
 const matchesPerson = (issue, person) => {
   if (!person) return true;
   const p = person.toLowerCase();
@@ -118,13 +155,26 @@ const matchesPerson = (issue, person) => {
 };
 
 /** Values of the rows of an issue, side by side: its row and the related ones, the compared columns first. */
-const CONTEXT = ['CAM_ID', 'Insectary_ID', 'SPECIES', 'Sex', 'Collection_date', 'Intro2Insectary_date', 'Preservation_date', 'Collector'];
+const CONTEXT = [
+  'CAM_ID',
+  'Insectary_ID',
+  'SPECIES',
+  'Sex',
+  'Collection_date',
+  'Intro2Insectary_date',
+  'Preservation_date',
+  'Collector',
+];
 function sideBySide(store, issue) {
   const ids = [issue.recordId, ...(issue.related ?? []).map(r => r.recordId)].filter(Boolean);
   const records = [...new Set(ids)].map(id => store.getRecord(id)).filter(r => r && !r.missing);
   if (!records.length) return null;
   const compare = [
-    ...new Set([issue.field, ...(issue.related ?? []).map(r => r.field), ...Object.keys(issue.fix?.values ?? {})].filter(Boolean)),
+    ...new Set(
+      [issue.field, ...(issue.related ?? []).map(r => r.field), ...Object.keys(issue.fix?.values ?? {})].filter(
+        Boolean,
+      ),
+    ),
   ];
   const has = f => records.some(r => moduleMap.get(r.sheet)?.fields.some(x => x.key === f));
   const fields = [...new Set([...compare, ...CONTEXT])].filter(has).slice(0, 9);
@@ -163,8 +213,11 @@ export function reviewPage(store, query = {}) {
   const unknown = kinds.find(k => !CHECK_KINDS[k]);
   if (unknown) throw fail('INVALID_KIND', `Unknown kind ${clip(unknown, 40)}`);
   const status = String(query.status ?? '');
-  if (status && status !== 'all' && !STATUS[status]) throw fail('INVALID_STATUS', `status must be one of ${Object.keys(STATUS).join(', ')}, all`);
-  const text = String(query.q ?? '').trim().toLowerCase();
+  if (status && status !== 'all' && !STATUS[status])
+    throw fail('INVALID_STATUS', `status must be one of ${Object.keys(STATUS).join(', ')}, all`);
+  const text = String(query.q ?? '')
+    .trim()
+    .toLowerCase();
   const base = issues.filter(
     i =>
       (!query.sheet || i.sheet === query.sheet) &&
@@ -182,7 +235,9 @@ export function reviewPage(store, query = {}) {
     if (!kinds.length || kinds.includes(i.kind)) statuses[s]++;
     for (const w of i.who ?? []) people.set(w, (people.get(w) ?? 0) + 1);
   }
-  let chosen = base.filter(i => (!kinds.length || kinds.includes(i.kind)) && (!status || status === 'all' || statusOf(i, verdicts) === status));
+  let chosen = base.filter(
+    i => (!kinds.length || kinds.includes(i.kind)) && (!status || status === 'all' || statusOf(i, verdicts) === status),
+  );
   // Applied fixes leave the checks (the sheet is right now): shown from what was kept with their verdict.
   if (status === 'applied' || status === 'all') {
     const listed = new Set(issues.map(i => i.id));
@@ -254,7 +309,11 @@ function agreedChange(issue, v) {
 export function agreedFixes(store, { kind, limit = 100 } = {}) {
   const verdicts = latestVerdicts(store.db);
   const { issues } = allIssues(store);
-  const kinds = kind ? String(kind).split(',').map(k => k.trim()) : null;
+  const kinds = kind
+    ? String(kind)
+        .split(',')
+        .map(k => k.trim())
+    : null;
   const listed = new Set(issues.map(i => i.id));
   const fixes = [],
     tasks = [],
@@ -264,9 +323,21 @@ export function agreedFixes(store, { kind, limit = 100 } = {}) {
     const v = verdicts.get(issue.id);
     if (!v || !['accepted', 'other'].includes(v.verdict) || (kinds && !kinds.includes(issue.kind))) continue;
     const who = `${v.verdict === 'other' ? `valor ${v.value} dado` : 'aceptado'} por ${v.user_name}${v.comment ? `: ${v.comment}` : ''}`;
-    const base = { issueId: issue.id, kind: issue.kind, sheet: issue.sheet, row: issue.row, label: issue.label, decidedBy: v.user_name };
+    const base = {
+      issueId: issue.id,
+      kind: issue.kind,
+      sheet: issue.sheet,
+      row: issue.row,
+      label: issue.label,
+      decidedBy: v.user_name,
+    };
     if (issue.task) {
-      tasks.push({ ...base, cam: issue.cam, task: v.verdict === 'other' ? `${issue.task.text} (otro valor: ${v.value})` : issue.task.text, comment: v.comment });
+      tasks.push({
+        ...base,
+        cam: issue.cam,
+        task: v.verdict === 'other' ? `${issue.task.text} (otro valor: ${v.value})` : issue.task.text,
+        comment: v.comment,
+      });
       continue;
     }
     const change = agreedChange(issue, v);
@@ -274,7 +345,9 @@ export function agreedFixes(store, { kind, limit = 100 } = {}) {
     else if (change.stale) stale.push({ ...base, problem: issue.problem });
     else fixes.push({ ...base, recordId: change.recordId, values: change.values, note: `${issue.problem} (${who})` });
   }
-  const gone = [...verdicts.values()].filter(v => ['accepted', 'other'].includes(v.verdict) && !listed.has(v.issue_id)).length;
+  const gone = [...verdicts.values()].filter(
+    v => ['accepted', 'other'].includes(v.verdict) && !listed.has(v.issue_id),
+  ).length;
   const size = Math.min(Math.max(Number(limit) || 100, 1), 100);
   return {
     total: fixes.length,
@@ -303,7 +376,18 @@ export function markApplied(store, issueIds, { recordIds, proposalId, user }) {
     const snap = parse(v.snapshot_json) ?? {};
     const recordId = snap.fix?.recordId ?? snap.recordId;
     if (recordIds && !recordIds.has(recordId)) continue;
-    insert.run(id, v.kind, 'applied', v.value, null, String(user.id), user.displayName || user.username || String(user.id), at, proposalId, v.snapshot_json);
+    insert.run(
+      id,
+      v.kind,
+      'applied',
+      v.value,
+      null,
+      String(user.id),
+      user.displayName || user.username || String(user.id),
+      at,
+      proposalId,
+      v.snapshot_json,
+    );
     marked++;
   }
   return marked;

@@ -41,21 +41,31 @@ export function recordedTaxonomy(item = {}) {
 export function predictionRank(pred, rank) {
   const row = Array.isArray(pred?.[rank]) ? pred[rank][0] : null;
   if (!Array.isArray(row) || !row[0]) return null;
-  return { label: canonicalTaxon(row[0]), rawLabel: clean(row[0]), confidence: typeof row[1] === 'number' ? row[1] : null };
+  return {
+    label: canonicalTaxon(row[0]),
+    rawLabel: clean(row[0]),
+    confidence: typeof row[1] === 'number' ? row[1] : null,
+  };
 }
 
 export function rankComparison(item, pred, rank = 'species') {
   const recorded = recordedTaxonomy(item)[rank];
   const model = predictionRank(pred, rank);
-  if (!model || !recorded) return { rank, recorded, predicted: model?.label || '', confidence: model?.confidence ?? null, status: 'missing' };
+  if (!model || !recorded)
+    return { rank, recorded, predicted: model?.label || '', confidence: model?.confidence ?? null, status: 'missing' };
   const equal = model.label.toLowerCase() === recorded.toLowerCase();
   return {
     rank,
     recorded,
     predicted: model.label,
     confidence: model.confidence,
-    status: equal ? (model.rawLabel.toLowerCase() !== recorded.toLowerCase() ? 'synonym-only' : 'agreement') : 'disagreement',
+    status: equal
+      ? model.rawLabel.toLowerCase() !== recorded.toLowerCase()
+        ? 'synonym-only'
+        : 'agreement'
+      : 'disagreement',
   };
 }
 
-export const predictionDiffers = (item, pred, rank = 'species') => rankComparison(item, pred, rank).status === 'disagreement';
+export const predictionDiffers = (item, pred, rank = 'species') =>
+  rankComparison(item, pred, rank).status === 'disagreement';

@@ -35,7 +35,10 @@ export const driveUrls = (id, width) => [
  * @param options.maxBytes cache bound
  * @param options.fetchImpl fetch (tests pass a fake one)
  */
-export function createPhotoService(store, { dir = null, maxBytes = 1024 * 1024 * 1024, fetchImpl = fetch, concurrency = 4 } = {}) {
+export function createPhotoService(
+  store,
+  { dir = null, maxBytes = 1024 * 1024 * 1024, fetchImpl = fetch, concurrency = 4 } = {},
+) {
   const db = store.db;
   db.exec(`CREATE TABLE IF NOT EXISTS photo_cache(key TEXT PRIMARY KEY, file_id TEXT NOT NULL, width INTEGER NOT NULL,
     mime TEXT NOT NULL, bytes INTEGER NOT NULL, fetched_at TEXT NOT NULL, used_at INTEGER NOT NULL)`);
@@ -46,7 +49,9 @@ export function createPhotoService(store, { dir = null, maxBytes = 1024 * 1024 *
   let running = 0;
   const queue = [];
   const slot = () =>
-    running < concurrency ? (running++, Promise.resolve()) : new Promise(resolve => queue.push(resolve)).then(() => running++);
+    running < concurrency
+      ? (running++, Promise.resolve())
+      : new Promise(resolve => queue.push(resolve)).then(() => running++);
   const release = () => {
     running--;
     queue.shift()?.();
@@ -67,7 +72,8 @@ export function createPhotoService(store, { dir = null, maxBytes = 1024 * 1024 *
       return null;
     }
     // Used times are coarse (an hour) so browsing does not write to the database on every image.
-    if (Date.now() - row.used_at > 3600_000) db.prepare('UPDATE photo_cache SET used_at=? WHERE key=?').run(Date.now(), key);
+    if (Date.now() - row.used_at > 3600_000)
+      db.prepare('UPDATE photo_cache SET used_at=? WHERE key=?').run(Date.now(), key);
     return { mime: row.mime, data };
   }
 
@@ -93,7 +99,9 @@ export function createPhotoService(store, { dir = null, maxBytes = 1024 * 1024 *
     for (const url of driveUrls(id, width)) {
       try {
         const response = await fetchImpl(url, { redirect: 'follow', signal: AbortSignal.timeout(20000) });
-        const mime = String(response.headers.get('content-type') || '').split(';')[0].trim();
+        const mime = String(response.headers.get('content-type') || '')
+          .split(';')[0]
+          .trim();
         if (!response.ok || !/^image\/(jpeg|png|webp|gif)$/.test(mime)) {
           last = `${response.status} ${mime}`;
           continue;
@@ -108,7 +116,8 @@ export function createPhotoService(store, { dir = null, maxBytes = 1024 * 1024 *
         last = e.message;
       }
     }
-    throw fail('PHOTO_UNAVAILABLE', `Drive did not give the photo (${last}); is it shared by link?`, 502);
+    // Not shared by link, or a format Drive does not preview (some HEIC): the card says "Sin foto".
+    throw fail('PHOTO_UNAVAILABLE', `Drive did not give the photo (${last}); is it shared by link?`, 404);
   }
 
   /** The photo as { mime, data, etag }, from the cache or Drive. */
@@ -120,7 +129,8 @@ export function createPhotoService(store, { dir = null, maxBytes = 1024 * 1024 *
     const etag = `"${createHash('sha1').update(key).digest('base64url').slice(0, 16)}"`;
     const cached = read(key);
     if (cached) return { ...cached, etag };
-    if ((failed.get(key) ?? 0) > Date.now()) throw fail('PHOTO_UNAVAILABLE', 'Drive did not give the photo; try again later', 502);
+    if ((failed.get(key) ?? 0) > Date.now())
+      throw fail('PHOTO_UNAVAILABLE', 'Drive did not give the photo; try again later', 404);
     // Several cards asking for the same photo share one download.
     let pending = inFlight.get(key);
     if (!pending) {

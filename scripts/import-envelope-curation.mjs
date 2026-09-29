@@ -28,7 +28,9 @@ const dbPath = option('--db') ?? process.env.DATABASE_PATH;
 const noGallery = args.includes('--no-gallery') && args.splice(args.indexOf('--no-gallery'), 1);
 const [first, manifest] = args;
 if (!first || (!manifest && !/\.json(\.gz)?$/.test(first))) {
-  console.error('Usage: import-envelope-curation.mjs [--bundle out.json.gz] <curation-dir> <manifest.csv> [--gallery dir|url] | <bundle.json.gz>');
+  console.error(
+    'Usage: import-envelope-curation.mjs [--bundle out.json.gz] <curation-dir> <manifest.csv> [--gallery dir|url] | <bundle.json.gz>',
+  );
   process.exit(2);
 }
 

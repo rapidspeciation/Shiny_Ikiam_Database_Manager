@@ -28,11 +28,11 @@ export function parseCsv(text) {
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
     if (quoted) {
-      if (c === '"' && text[i + 1] === '"') (field += '"'), i++;
+      if (c === '"' && text[i + 1] === '"') ((field += '"'), i++);
       else if (c === '"') quoted = false;
       else field += c;
     } else if (c === '"') quoted = true;
-    else if (c === ',') row.push(field), (field = '');
+    else if (c === ',') (row.push(field), (field = ''));
     else if (c === '\n' || c === '\r') {
       if (c === '\r' && text[i + 1] === '\n') i++;
       row.push(field);
@@ -41,7 +41,7 @@ export function parseCsv(text) {
       field = '';
     } else field += c;
   }
-  if (field || row.length) row.push(field), rows.push(row);
+  if (field || row.length) (row.push(field), rows.push(row));
   const [head, ...body] = rows.filter(r => r.some(Boolean));
   return body.map(r => Object.fromEntries(head.map((h, i) => [h.trim(), r[i] ?? ''])));
 }
@@ -70,7 +70,9 @@ export function readCuration(dir, manifestPath) {
     if (parsed && r.google_id) ids.set(parsed.stem.toUpperCase(), r.google_id);
   }
   const fulltext = new Map(jsonl(join(dir, 'fulltext.jsonl')).map(r => [r.file, r.lines]));
-  const files = ['readings-0.jsonl', 'readings-1.jsonl', 'readings-2.jsonl', 'readings-single.jsonl'].filter(f => existsSync(join(dir, f)));
+  const files = ['readings-0.jsonl', 'readings-1.jsonl', 'readings-2.jsonl', 'readings-single.jsonl'].filter(f =>
+    existsSync(join(dir, f)),
+  );
   const readings = [];
   const seen = new Set();
   for (const file of files)
@@ -96,9 +98,15 @@ export function readCuration(dir, manifestPath) {
     }
 
   // Decisions: corrections.csv (final, with who decided), then decisions.json (Franz), then decided.json.
-  const corrections = existsSync(join(dir, 'corrections.csv')) ? parseCsv(readFileSync(join(dir, 'corrections.csv'), 'utf8')) : [];
-  const decided = existsSync(join(dir, 'decided.json')) ? JSON.parse(readFileSync(join(dir, 'decided.json'), 'utf8')) : {};
-  const franz = existsSync(join(dir, 'decisions.json')) ? JSON.parse(readFileSync(join(dir, 'decisions.json'), 'utf8')) : {};
+  const corrections = existsSync(join(dir, 'corrections.csv'))
+    ? parseCsv(readFileSync(join(dir, 'corrections.csv'), 'utf8'))
+    : [];
+  const decided = existsSync(join(dir, 'decided.json'))
+    ? JSON.parse(readFileSync(join(dir, 'decided.json'), 'utf8'))
+    : {};
+  const franz = existsSync(join(dir, 'decisions.json'))
+    ? JSON.parse(readFileSync(join(dir, 'decisions.json'), 'utf8'))
+    : {};
   const final = new Map(corrections.map(c => [`${c.specimen}|${c.issue}`, c]));
   const used = new Set();
   const flags = [];
@@ -145,10 +153,33 @@ export function readCuration(dir, manifestPath) {
   return { version: 1, source: basename(dir), createdAt: new Date().toISOString(), readings, flags };
 }
 
+/**
+ * All the wings of a photo in one box (the gallery's unionBox: a photo can have
+ * one box per wing), with a little margin, inside the photo.
+ */
+export function unionBox(list, padding = 0.03) {
+  const valid = list.filter(
+    b =>
+      Array.isArray(b?.box) &&
+      b.box.length === 4 &&
+      b.box.every(Number.isFinite) &&
+      b.box[0] < b.box[2] &&
+      b.box[1] < b.box[3],
+  );
+  if (!valid.length) return null;
+  let [x1, y1, x2, y2] = [0, 1, 2, 3].map(i => (i < 2 ? Math.min : Math.max)(...valid.map(b => b.box[i])));
+  const [dx, dy] = [(x2 - x1) * padding, (y2 - y1) * padding];
+  const clamp = n => Math.min(1, Math.max(0, n));
+  [x1, y1, x2, y2] = [clamp(x1 - dx), clamp(y1 - dy), clamp(x2 + dx), clamp(y2 + dy)];
+  return { box: [x1, y1, x2, y2].map(n => round(n)), conf: round(Math.min(...valid.map(b => b.conf ?? 1)), 3) };
+}
+
 /** The gallery's data files, from a folder or its public URL. */
 async function galleryFile(from, name) {
   if (/^https?:\/\//.test(from)) {
-    const response = await fetch(new URL(`${name}.json`, from.endsWith('/') ? from : `${from}/`), { signal: AbortSignal.timeout(120000) });
+    const response = await fetch(new URL(`${name}.json`, from.endsWith('/') ? from : `${from}/`), {
+      signal: AbortSignal.timeout(120000),
+    });
     if (!response.ok) throw new Error(`${name}.json: HTTP ${response.status}`);
     return response.json();
   }
@@ -161,12 +192,14 @@ export async function readGallery(from = GALLERY_URL) {
   const boxes = await galleryFile(from, 'wing_boxes_v6');
   const wingBoxes = [];
   for (const [name, list] of Object.entries(boxes)) {
-    const best = (Array.isArray(list) ? list : []).filter(b => Array.isArray(b?.box)).sort((a, b) => !!b.union - !!a.union || (b.conf ?? 0) - (a.conf ?? 0))[0];
-    if (best) wingBoxes.push([name, best.box.map(n => round(n)), round(best.conf, 3)]);
+    const union = unionBox(Array.isArray(list) ? list : []);
+    if (union) wingBoxes.push([name, union.box, union.conf]);
   }
   // The gallery's current predictions: live, then coverage, then the paired dorsal/ventral model (which wins).
   const [expanded, coverage, live] = await Promise.all(
-    ['predictions_expanded_concat_dv', 'predictions_coverage_current', 'predictions_live_real'].map(n => galleryFile(from, n).catch(() => ({}))),
+    ['predictions_expanded_concat_dv', 'predictions_coverage_current', 'predictions_live_real'].map(n =>
+      galleryFile(from, n).catch(() => ({})),
+    ),
   );
   const merged = { ...live, ...coverage, ...expanded };
   const sexes = await galleryFile(from, 'sex_predictions').catch(() => ({}));
@@ -175,7 +208,8 @@ export async function readGallery(from = GALLERY_URL) {
   for (const cam of new Set([...Object.keys(merged), ...Object.keys(sexes)])) {
     const p = merged[cam] ?? {};
     const s = sexes[cam];
-    const sex = s && ['male', 'female'].includes(String(s.sex).toLowerCase()) && Number.isFinite(s.confidence) ? s : null;
+    const sex =
+      s && ['male', 'female'].includes(String(s.sex).toLowerCase()) && Number.isFinite(s.confidence) ? s : null;
     predictions.push({
       cam: cam.toUpperCase(),
       species: top(p.species, 5),
@@ -209,7 +243,23 @@ export function importBundle(db, bundle) {
         'INSERT INTO envelope_readings(name,file_id,cam,view,bbox_json,turned,size_json,camid,camid_conf,candidates_json,camid_lines_json,text_json,model,source,imported_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
       );
       for (const r of bundle.readings)
-        insert.run(r.name, r.fileId, r.cam, r.view, json(r.bbox), r.turned || 0, json(r.size), r.camid, r.conf, json(r.candidates), json(r.camidLines), json(r.text), bundle.source ?? null, r.source, at);
+        insert.run(
+          r.name,
+          r.fileId,
+          r.cam,
+          r.view,
+          json(r.bbox),
+          r.turned || 0,
+          json(r.size),
+          r.camid,
+          r.conf,
+          json(r.candidates),
+          json(r.camidLines),
+          json(r.text),
+          bundle.source ?? null,
+          r.source,
+          at,
+        );
       counts.readings = bundle.readings.length;
     }
     if (bundle.flags) {
@@ -218,7 +268,22 @@ export function importBundle(db, bundle) {
         'INSERT OR REPLACE INTO photo_flags(id,cam,type,stratum,strength,photos_json,data_json,decision,target,database_value,action,decided_by,source,imported_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
       );
       for (const f of bundle.flags)
-        insert.run(f.id, f.cam, f.type, f.stratum, f.strength, json(f.photos), json(f.data), f.decision, f.target, f.database, f.action, f.decidedBy, bundle.source ?? null, at);
+        insert.run(
+          f.id,
+          f.cam,
+          f.type,
+          f.stratum,
+          f.strength,
+          json(f.photos),
+          json(f.data),
+          f.decision,
+          f.target,
+          f.database,
+          f.action,
+          f.decidedBy,
+          bundle.source ?? null,
+          at,
+        );
       counts.flags = bundle.flags.length;
     }
     if (bundle.wingBoxes) {
@@ -233,7 +298,18 @@ export function importBundle(db, bundle) {
         'INSERT OR REPLACE INTO photo_predictions(cam,species_json,genus_json,subspecies_json,sex,sex_conf,sex_supported,sex_species,source,imported_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
       );
       for (const p of bundle.predictions)
-        insert.run(p.cam, json(p.species), json(p.genus), json(p.subspecies), p.sex ?? null, p.sexConf ?? null, p.sexSupported ? 1 : 0, p.sexSpecies ?? null, bundle.gallery ?? null, at);
+        insert.run(
+          p.cam,
+          json(p.species),
+          json(p.genus),
+          json(p.subspecies),
+          p.sex ?? null,
+          p.sexConf ?? null,
+          p.sexSupported ? 1 : 0,
+          p.sexSpecies ?? null,
+          bundle.gallery ?? null,
+          at,
+        );
       counts.predictions = bundle.predictions.length;
     }
     db.exec('COMMIT');

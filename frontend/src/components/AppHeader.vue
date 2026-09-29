@@ -11,8 +11,10 @@ const session = useSession()
 const pending = usePending()
 const menu = ref(false)
 const route = useRoute()
-/** Without an account only the open pages are listed. */
-const shown = computed(() => (session.user ? tabs : tabs.filter(t => 'open' in t && t.open)))
+/** Without an account only the open pages are listed; Revisión only for people who edit. */
+const shown = computed(() =>
+  session.user ? tabs.filter(t => !('editors' in t && t.editors) || session.canEdit) : tabs.filter(t => 'open' in t && t.open),
+)
 
 async function logout() {
   if (

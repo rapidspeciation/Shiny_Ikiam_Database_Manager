@@ -63,5 +63,13 @@ in Monitoreo → Dudas, see monitoring.md). A fix is offered only when obvious (
 value, the other sheet's CAM, a year typed one off). The scan is cached until the copy or the
 stored walks change.
 
-It is shown in Tablas → Revisión de datos (obvious fixes can be sent as one proposal to confirm in
-Asistente) and is the assistant's `check_data` tool (`GET /api/checks?sheet=&kind=&limit=&offset=`).
+It is also fed by the specimen photos (`server/photo-checks.mjs`, data imported with
+`scripts/import-envelope-curation.mjs`, whose header says how): the envelope's CAM against the file
+name (`photo_camid`) and photos of another butterfly in a folder (`photo_extra`), both tasks in
+Drive; the envelope's sex and species against the sheet (`envelope_sex`, `envelope_species`,
+grouped by batch); preserved butterflies without photos (`photo_missing`); and the Wings Gallery's
+species prediction against the recorded one (`ai_species`).
+
+It is shown in the **Revisión** tab (cards with the rows side by side, the photos and the envelope,
+and a verdict per card; Tablas → Revisión de datos opens it) and is the assistant's `check_data`
+tool (`GET /api/checks?sheet=&kind=&limit=&offset=`); the agreed fixes are `list_agreed_fixes`.

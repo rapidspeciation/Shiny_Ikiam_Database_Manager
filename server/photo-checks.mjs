@@ -17,12 +17,7 @@ export const TASK_KINDS = new Set(['photo_camid', 'photo_extra']);
 export const MODEL_KINDS = new Set(['photo_camid', 'photo_extra', 'envelope_sex', 'envelope_species', 'ai_species']);
 
 const text = value => (value === null || value === undefined ? '' : String(value).trim());
-const binomial = value =>
-  text(value)
-    .toLowerCase()
-    .split(/\s+/)
-    .slice(0, 2)
-    .join(' ');
+const binomial = value => text(value).toLowerCase().split(/\s+/).slice(0, 2).join(' ');
 const sexOf = value => {
   const s = text(value)
     .toLowerCase()
@@ -48,7 +43,11 @@ const stemOf = file => String(file).split('/').pop().split('__')[0];
 function once(name) {
   const words = text(name).split(/\s+/).filter(Boolean);
   const half = words.length / 2;
-  if (Number.isInteger(half) && half && words.slice(0, half).join(' ').toLowerCase() === words.slice(half).join(' ').toLowerCase())
+  if (
+    Number.isInteger(half) &&
+    half &&
+    words.slice(0, half).join(' ').toLowerCase() === words.slice(half).join(' ').toLowerCase()
+  )
     return words.slice(0, half).join(' ');
   return words.join(' ');
 }
@@ -99,25 +98,31 @@ export function photoIssues(store, { sheets, add, ref, today }) {
     }
     const ctx = context(f.cam, names);
     const other = rowOf(target);
-    add('photo_camid', row, 'CAM_ID', `Las fotos ${names.join(', ')} están guardadas como ${f.cam} (${speciesOf(f.cam)}), pero el sobre dice ${target} (${speciesOf(target)})`, {
-      id: `photo_camid:${f.cam}`,
-      cam: f.cam,
-      label: f.cam,
-      ...(row ? {} : { sheet: 'Photo_links', value: f.cam }),
-      ...ctx,
-      envelopeCamid: target,
-      strength: f.decision === 'file-name-wrong' ? 'fuerte' : strengthOf(f),
-      ...curation(f),
-      task: {
-        type: 'rename',
-        from: f.cam,
-        to: target,
-        files: names,
-        text: `Renombrar en Drive ${names.join(', ')} de ${f.cam} a ${target}${/after/.test(f.action ?? '') ? ' (después de mover las fotos que hoy ocupan ese nombre)' : ''}`,
+    add(
+      'photo_camid',
+      row,
+      'CAM_ID',
+      `Las fotos ${names.join(', ')} están guardadas como ${f.cam} (${speciesOf(f.cam)}), pero el sobre dice ${target} (${speciesOf(target)})`,
+      {
+        id: `photo_camid:${f.cam}`,
+        cam: f.cam,
+        label: f.cam,
+        ...(row ? {} : { sheet: 'Photo_links', value: f.cam }),
+        ...ctx,
+        envelopeCamid: target,
+        strength: f.decision === 'file-name-wrong' ? 'fuerte' : strengthOf(f),
+        ...curation(f),
+        task: {
+          type: 'rename',
+          from: f.cam,
+          to: target,
+          files: names,
+          text: `Renombrar en Drive ${names.join(', ')} de ${f.cam} a ${target}${/after/.test(f.action ?? '') ? ' (después de mover las fotos que hoy ocupan ese nombre)' : ''}`,
+        },
+        ...(other ? { related: [ref(other, 'CAM_ID')] } : {}),
+        relatedPhotos: { cam: target, ...(context(target).photos ?? {}) },
       },
-      ...(other ? { related: [ref(other, 'CAM_ID')] } : {}),
-      relatedPhotos: { cam: target, ...(context(target).photos ?? {}) },
-    });
+    );
   }
   // The other side of the same finding: photos filed under X show Y, which has its own photos.
   for (const f of data.flags.filter(f => f.type === 'duplicate' && f.decision === 'file-name-wrong')) {
@@ -132,25 +137,31 @@ export function photoIssues(store, { sheets, add, ref, today }) {
   for (const { flag: f, target, names } of extra.values()) {
     const row = rowOf(f.cam);
     const other = rowOf(target);
-    add('photo_extra', row, 'CAM_ID', `Las fotos guardadas como ${f.cam} (${names.join(', ')}) muestran ${target}, que ya tiene sus propias fotos`, {
-      id: `photo_extra:${f.cam}`,
-      cam: f.cam,
-      label: f.cam,
-      ...(row ? {} : { sheet: 'Photo_links', value: f.cam }),
-      ...context(f.cam, names),
-      envelopeCamid: target,
-      strength: 'fuerte',
-      ...curation(f),
-      task: {
-        type: 'merge',
-        from: f.cam,
-        to: target,
-        files: names,
-        text: `Unir o borrar en Drive ${names.join(', ')}: son fotos de ${target}, que ya tiene las suyas; ${f.cam} puede no tener fotos propias`,
+    add(
+      'photo_extra',
+      row,
+      'CAM_ID',
+      `Las fotos guardadas como ${f.cam} (${names.join(', ')}) muestran ${target}, que ya tiene sus propias fotos`,
+      {
+        id: `photo_extra:${f.cam}`,
+        cam: f.cam,
+        label: f.cam,
+        ...(row ? {} : { sheet: 'Photo_links', value: f.cam }),
+        ...context(f.cam, names),
+        envelopeCamid: target,
+        strength: 'fuerte',
+        ...curation(f),
+        task: {
+          type: 'merge',
+          from: f.cam,
+          to: target,
+          files: names,
+          text: `Unir o borrar en Drive ${names.join(', ')}: son fotos de ${target}, que ya tiene las suyas; ${f.cam} puede no tener fotos propias`,
+        },
+        ...(other ? { related: [ref(other, 'CAM_ID')] } : {}),
+        relatedPhotos: { cam: target, ...(context(target).photos ?? {}) },
       },
-      ...(other ? { related: [ref(other, 'CAM_ID')] } : {}),
-      relatedPhotos: { cam: target, ...(context(target).photos ?? {}) },
-    });
+    );
   }
 
   // ---- The sex symbol on the envelope against the sheet.
@@ -163,20 +174,29 @@ export function photoIssues(store, { sheets, add, ref, today }) {
       const recorded = sexOf(row.values.Sex);
       if (!recorded || recorded === read) continue;
       const fixable = strength === 'fuerte' && f.decision !== 'unclear' && !row.formulas.Sex;
-      add('envelope_sex', row, 'Sex', `El sobre de ${f.cam} dice ${SEX_WORD[read]}; la hoja dice ${text(row.values.Sex)}`, {
-        id: `envelope_sex:${f.cam}:${row.sheet}`,
-        cam: f.cam,
-        ...context(f.cam, f.photos.map(stemOf)),
-        ocr: { field: 'Sex', read, lines: f.data.lines ?? [], sheet: text(row.values.Sex) },
-        strength,
-        ...curation(f),
-        ...(fixable ? { fix: { recordId: row.id, values: { Sex: read } }, fixNote: 'sexo del sobre' } : {}),
-      });
+      add(
+        'envelope_sex',
+        row,
+        'Sex',
+        `El sobre de ${f.cam} dice ${SEX_WORD[read]}; la hoja dice ${text(row.values.Sex)}`,
+        {
+          id: `envelope_sex:${f.cam}:${row.sheet}`,
+          cam: f.cam,
+          ...context(f.cam, f.photos.map(stemOf)),
+          ocr: { field: 'Sex', read, lines: f.data.lines ?? [], sheet: text(row.values.Sex) },
+          strength,
+          ...curation(f),
+          ...(fixable ? { fix: { recordId: row.id, values: { Sex: read } }, fixNote: 'sexo del sobre' } : {}),
+        },
+      );
     }
   }
 
   // ---- The species on the envelope against the sheet, grouped by batch (many are a whole day's envelopes).
-  const lists = { Collection_data: listOptions(store, 'Collection_data'), Insectary_data: listOptions(store, 'Insectary_data') };
+  const lists = {
+    Collection_data: listOptions(store, 'Collection_data'),
+    Insectary_data: listOptions(store, 'Insectary_data'),
+  };
   const species = [];
   for (const f of data.flags.filter(f => f.type === 'species')) {
     if (f.decision === 'reader-error') continue;
@@ -197,7 +217,8 @@ export function photoIssues(store, { sheets, add, ref, today }) {
     const { f, row, read, recorded } = s;
     const options = lists[row.sheet]?.SPECIES;
     const choices = options ? [...options.values].filter(v => binomial(v) === binomial(read)).slice(0, 8) : [];
-    const exact = choices.find(v => v.toLowerCase() === read.toLowerCase()) ?? (choices.length === 1 ? choices[0] : null);
+    const exact =
+      choices.find(v => v.toLowerCase() === read.toLowerCase()) ?? (choices.length === 1 ? choices[0] : null);
     const strength = strengthOf(f);
     const key = batchKey(s);
     const size = batches.get(key);
@@ -208,9 +229,16 @@ export function photoIssues(store, { sheets, add, ref, today }) {
       ocr: { field: 'SPECIES', read, lines: f.data.lines ?? [], sheet: recorded },
       strength,
       ...curation(f),
-      group: { key: `envelope_species:${key}`, label: `Hoja ${capitalized(binomial(recorded))} → sobre ${capitalized(binomial(read))}`, size },
+      group: {
+        key: `envelope_species:${key}`,
+        label: `Hoja ${capitalized(binomial(recorded))} → sobre ${capitalized(binomial(read))}`,
+        size,
+      },
       ...(choices.length ? { choices } : {}),
-      ...(exact && strength !== 'dudosa' && f.decision !== 'unclear' && (!row.formulas.SPECIES || row.sheet === 'Insectary_data')
+      ...(exact &&
+      strength !== 'dudosa' &&
+      f.decision !== 'unclear' &&
+      (!row.formulas.SPECIES || row.sheet === 'Insectary_data')
         ? { fix: { recordId: row.id, values: { SPECIES: exact } }, fixNote: 'especie del sobre' }
         : {}),
     });
@@ -258,7 +286,9 @@ export function photoIssues(store, { sheets, add, ref, today }) {
     const options = lists[row.sheet]?.SPECIES;
     const choices = prediction.species
       .slice(0, 3)
-      .flatMap(([name]) => (options ? [...options.values].filter(v => binomial(v) === binomial(canonicalTaxon(name))).slice(0, 3) : [name]));
+      .flatMap(([name]) =>
+        options ? [...options.values].filter(v => binomial(v) === binomial(canonicalTaxon(name))).slice(0, 3) : [name],
+      );
     add(
       'ai_species',
       row,

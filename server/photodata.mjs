@@ -34,9 +34,9 @@ export function reviewRevision(db) {
 }
 export function bumpReviewRevision(db) {
   initPhotoTables(db);
-  db.prepare("INSERT INTO review_meta(key,value) VALUES('revision',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(
-    new Date().toISOString(),
-  );
+  db.prepare(
+    "INSERT INTO review_meta(key,value) VALUES('revision',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+  ).run(new Date().toISOString());
 }
 
 /** "CAM070046d.JPG", "CAM070046v (2).jpg", "CAM074081v2" → { cam, view, stem }; null for other photos. */
@@ -89,7 +89,8 @@ export function photoIndex(store) {
     // The same file name twice (a copy in another folder): the first listed wins.
     if ([...(byCam.get(parsed.cam)?.[parsed.view] ?? [])].some(f => files.get(f)?.name === parsed.stem)) return;
     files.set(id, { name: parsed.stem, cam: parsed.cam, view: parsed.view, source });
-    const entry = byCam.get(parsed.cam) ?? byCam.set(parsed.cam, { dorsal: [], ventral: [], other: [] }).get(parsed.cam);
+    const entry =
+      byCam.get(parsed.cam) ?? byCam.set(parsed.cam, { dorsal: [], ventral: [], other: [] }).get(parsed.cam);
     entry[parsed.view].push(id);
   };
   for (const r of db
@@ -157,7 +158,10 @@ export function reviewData(store) {
       decidedBy: f.decided_by,
     }));
   const boxes = new Map(
-    db.prepare('SELECT name, box_json, conf FROM photo_wing_boxes').all().map(b => [b.name.toUpperCase(), parse(b.box_json)]),
+    db
+      .prepare('SELECT name, box_json, conf FROM photo_wing_boxes')
+      .all()
+      .map(b => [b.name.toUpperCase(), parse(b.box_json)]),
   );
   const predictions = new Map(
     db
@@ -169,7 +173,9 @@ export function reviewData(store) {
           species: parse(p.species_json) ?? [],
           genus: parse(p.genus_json) ?? [],
           subspecies: parse(p.subspecies_json) ?? [],
-          sex: p.sex ? { sex: p.sex, confidence: p.sex_conf, supported: !!p.sex_supported, species: p.sex_species } : null,
+          sex: p.sex
+            ? { sex: p.sex, confidence: p.sex_conf, supported: !!p.sex_supported, species: p.sex_species }
+            : null,
         },
       ]),
   );

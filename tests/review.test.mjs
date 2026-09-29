@@ -9,7 +9,7 @@ import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { checkData } from '../server/checks.mjs';
 import { createAssistant } from '../server/assistant.mjs';
-import { importBundle, parseCsv, readCuration, readGallery } from '../server/envelope-import.mjs';
+import { importBundle, parseCsv, readCuration, readGallery, unionBox } from '../server/envelope-import.mjs';
 import { agreedFixes, latestVerdicts, reviewPage, setVerdicts, trainingLabels } from '../server/review.mjs';
 import { createPhotoService } from '../server/photos.mjs';
 import { photoIndex, photoName } from '../server/photodata.mjs';
@@ -21,7 +21,9 @@ const ids = JSON.parse(readFileSync(join(DIR, 'ids.json'), 'utf8'));
 const EPOCH = Date.UTC(1899, 11, 30);
 const serial = iso => Math.round((Date.parse(`${iso}T00:00:00Z`) - EPOCH) / 864e5);
 const fileId = name => ids[name] ?? `1${createHash('sha1').update(name).digest('hex').slice(0, 32)}`;
-const link = name => ({ values: { Name: `${name}.JPG`, Type: 'image/jpeg', URL: `https://drive.google.com/file/d/${fileId(name)}/view` } });
+const link = name => ({
+  values: { Name: `${name}.JPG`, Type: 'image/jpeg', URL: `https://drive.google.com/file/d/${fileId(name)}/view` },
+});
 const preserved = (row, cam, SPECIES, more = {}) => ({
   row,
   values: {
@@ -47,9 +49,13 @@ const seed = {
     preserved(9, 'CAM000110', 'Oleria gunilla', { Tube_1_id: 'FS00001010' }),
     preserved(10, 'CAM000104', 'Oleria gunilla'),
   ],
-  Taxonomy_v18Jun25: ['Episcada sulphurea', 'Ithomia salapia salapia', 'Oleria gunilla', 'Hypothyris anastasia', 'Mechanitis polymnia'].map(
-    (species, i) => ({ row: i + 2, values: { species } }),
-  ),
+  Taxonomy_v18Jun25: [
+    'Episcada sulphurea',
+    'Ithomia salapia salapia',
+    'Oleria gunilla',
+    'Hypothyris anastasia',
+    'Mechanitis polymnia',
+  ].map((species, i) => ({ row: i + 2, values: { species } })),
   // CAM000102, 103 and 106 are known only from the manifest (as photos renamed or not yet listed).
   Photo_links: [
     'CAM000101d',
@@ -96,7 +102,18 @@ test('the curation import reads readings, full text, flags with their decisions,
   assert.equal(flag('envelope-not-file|CAM000102|envelope-not-file:high').decidedBy, 'Franz');
   assert.equal(flag('species|CAM000108|species:both-photos').decidedBy, 'batch of 2 reviewed');
   assert.equal(flag('dv-disagree|CAM000110|dv-disagree:confident').decision, null);
-  assert.deepEqual(bundle.wingBoxes.find(b => b[0] === 'CAM000105d')[1], [0.1, 0.1, 0.7, 0.6]);
+  // All the wings in one box, with a margin (the gallery has one box per wing on some photos).
+  assert.deepEqual(bundle.wingBoxes.find(b => b[0] === 'CAM000105d')[1], [0.082, 0.085, 0.718, 0.615]);
+  assert.deepEqual(
+    unionBox(
+      [
+        { box: [0.2, 0.2, 0.3, 0.3], conf: 0.9 },
+        { box: [0.5, 0.4, 0.6, 0.5], conf: 0.8 },
+      ],
+      0,
+    ).box,
+    [0.2, 0.2, 0.6, 0.5],
+  );
   const prediction = bundle.predictions.find(p => p.cam === 'CAM000105');
   assert.deepEqual(prediction.species[0], ['Mechanitis polymnia', 0.9]);
   assert.equal(prediction.sexSupported, true);
@@ -117,7 +134,12 @@ test('photo checks: envelope CAM, extra photos, envelope sex and species (by bat
   const { store } = await fixture();
   const out = checkData(store, { limit: 500 });
   assert.deepEqual(
-    Object.fromEntries(['photo_camid', 'photo_extra', 'envelope_sex', 'envelope_species', 'photo_missing', 'ai_species'].map(k => [k, out.counts[k]])),
+    Object.fromEntries(
+      ['photo_camid', 'photo_extra', 'envelope_sex', 'envelope_species', 'photo_missing', 'ai_species'].map(k => [
+        k,
+        out.counts[k],
+      ]),
+    ),
     { photo_camid: 1, photo_extra: 1, envelope_sex: 1, envelope_species: 2, photo_missing: 2, ai_species: 1 },
   );
   // A rename in Drive, not a sheet change: a task, with the envelope crop of the photo that shows the other CAM.
@@ -128,13 +150,22 @@ test('photo checks: envelope CAM, extra photos, envelope sex and species (by bat
   assert.equal(rename.strength, 'fuerte');
   assert.equal(rename.curation.decidedBy, 'blind review');
   assert.deepEqual(rename.photos.dorsal, [ids.CAM000101d]);
-  assert.deepEqual(rename.photos.envelope, { fileId: ids.CAM000101d, name: 'CAM000101d', bbox: [0.0625, 0.1667, 0.3125, 0.6667], turned: 0, aspect: 1.3333 });
+  assert.deepEqual(rename.photos.envelope, {
+    fileId: ids.CAM000101d,
+    name: 'CAM000101d',
+    bbox: [0.0625, 0.1667, 0.3125, 0.6667],
+    turned: 0,
+    aspect: 1.3333,
+  });
   assert.match(rename.envelopeText, /Oleria gunilla/);
   assert.equal(rename.envelopeCamid, 'CAM000111');
   assert.equal(rename.related[0].row, 3);
   assert.deepEqual(rename.relatedPhotos.dorsal, [fileId('CAM000111d')]);
   // Reading errors already decided are not raised again (CAM000102, CAM000106).
-  assert.equal(out.issues.some(i => i.cam === 'CAM000102' || (i.cam === 'CAM000106' && i.kind === 'envelope_sex')), false);
+  assert.equal(
+    out.issues.some(i => i.cam === 'CAM000102' || (i.cam === 'CAM000106' && i.kind === 'envelope_sex')),
+    false,
+  );
   // Photos of CAM000104 filed as CAM000103, which has no row.
   const extra = issueOf(store, 'photo_extra', 'CAM000103');
   assert.equal(extra.row, null);
@@ -144,7 +175,7 @@ test('photo checks: envelope CAM, extra photos, envelope sex and species (by bat
   const sex = issueOf(store, 'envelope_sex', 'CAM000105');
   assert.deepEqual(sex.fix, { recordId: sex.recordId, values: { Sex: 'male' } });
   assert.equal(sex.ocr.read, 'male');
-  assert.deepEqual(sex.photos.files[ids.CAM000105d].wings, [0.1, 0.1, 0.7, 0.6]);
+  assert.deepEqual(sex.photos.files[ids.CAM000105d].wings, [0.082, 0.085, 0.718, 0.615]);
   assert.equal(sex.prediction.sex.sex, 'male');
   assert.deepEqual(sex.who, ['FCH - Franz Chandi']);
   assert.equal(sex.date, '2023-03-01');
@@ -161,7 +192,10 @@ test('photo checks: envelope CAM, extra photos, envelope sex and species (by bat
   const ai = issueOf(store, 'ai_species', 'CAM000110');
   assert.deepEqual(ai.ai, { recorded: 'Oleria gunilla', predicted: 'Hypothyris anastasia', confidence: 0.95 });
   assert.equal(ai.strength, 'fuerte');
-  assert.equal(predictionDiffers({ SPECIES: 'Mechanitis polymnia polymnia' }, { species: [['Mechanitis polymnia', 0.9]] }), false);
+  assert.equal(
+    predictionDiffers({ SPECIES: 'Mechanitis polymnia polymnia' }, { species: [['Mechanitis polymnia', 0.9]] }),
+    false,
+  );
   // Issues of the other kinds about a butterfly with photos show them too.
   const repeat = out.issues.find(i => i.kind === 'repeat' && i.row === 9);
   assert.equal(repeat.cam, 'CAM000110');
@@ -174,7 +208,9 @@ test('verdicts: last one counts, batches, other values, training labels, agreed 
   const { store } = await fixture();
   const assistant = createAssistant({ store, config: { claude: {} } });
   store.db
-    .prepare("INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u1','ana','Ana','editor','s','h',1,'2026-01-01')")
+    .prepare(
+      "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u1','ana','Ana','editor','s','h',1,'2026-01-01')",
+    )
     .run();
   const token = 'token-for-ana';
   store.db
@@ -218,14 +254,19 @@ test('verdicts: last one counts, batches, other values, training labels, agreed 
   assert.throws(() => reviewPage(store, { status: 'x' }), { code: 'INVALID_STATUS' });
 
   // Rejected readings are training labels.
-  const labels = trainingLabels(store).trim().split('\n').map(l => JSON.parse(l));
+  const labels = trainingLabels(store)
+    .trim()
+    .split('\n')
+    .map(l => JSON.parse(l));
   const rejected = labels.find(l => l.kind === 'photo_camid');
   assert.equal(rejected.verdict, 'rejected');
   assert.equal(rejected.envelopeCamid, 'CAM000111');
   assert.equal(rejected.envelope.fileId, ids.CAM000101d);
 
   // T3: "aplica las correcciones acordadas".
-  const tools = (await assistant.mcp({ authorization: `Bearer ${token}` }, { jsonrpc: '2.0', id: 1, method: 'tools/list' })).body.result.tools;
+  const tools = (
+    await assistant.mcp({ authorization: `Bearer ${token}` }, { jsonrpc: '2.0', id: 1, method: 'tools/list' })
+  ).body.result.tools;
   assert.ok(tools.some(t => t.name === 'list_agreed_fixes'));
   const agreed = await call('list_agreed_fixes', {});
   assert.equal(agreed.fixes.length, 4);
@@ -252,7 +293,10 @@ test('verdicts: last one counts, batches, other values, training labels, agreed 
   assert.equal(store.getRecordBySheetRow('Collection_data', 4).values.Sex, 'male');
   assert.equal(store.getRecordBySheetRow('Collection_data', 6).values.SPECIES, 'Episcada sulphurea');
   const verdicts = latestVerdicts(store.db);
-  assert.deepEqual([sex.id, species.id, ai.id].map(id => verdicts.get(id).verdict), ['applied', 'applied', 'applied']);
+  assert.deepEqual(
+    [sex.id, species.id, ai.id].map(id => verdicts.get(id).verdict),
+    ['applied', 'applied', 'applied'],
+  );
   assert.equal(verdicts.get(sex.id).proposal_id, proposed.proposalId);
   // The fixed issues left the checks; the tab still shows them as applied.
   const done = reviewPage(store, { status: 'applied' });
@@ -270,7 +314,10 @@ test('"Preparar propuesta" makes one proposal of the agreed fixes; a fix changed
   const assistant = createAssistant({ store, config: { claude: {} } });
   const sex = issueOf(store, 'envelope_sex', 'CAM000105');
   const species = issueOf(store, 'envelope_species', 'CAM000107');
-  assert.equal((await assistant.handle({ method: 'POST', path: '/api/chat/proposals/from-review', user: ana, body: {} })).status, 409);
+  assert.equal(
+    (await assistant.handle({ method: 'POST', path: '/api/chat/proposals/from-review', user: ana, body: {} })).status,
+    409,
+  );
   setVerdicts(store, { ids: [sex.id, species.id], verdict: 'accepted' }, ana);
   // The accepted fix was another one: shown as stale, not proposed.
   store.db
@@ -294,13 +341,18 @@ test('photos come from Drive once (lh3, else the thumbnail), are cached within a
   const jpeg = size => new Response(Buffer.alloc(size, 7), { headers: { 'content-type': 'image/jpeg' } });
   const fetchImpl = async url => {
     asked.push(url);
-    return url.includes('lh3') ? new Response('no', { status: 403, headers: { 'content-type': 'text/html' } }) : jpeg(3000);
+    return url.includes('lh3')
+      ? new Response('no', { status: 403, headers: { 'content-type': 'text/html' } })
+      : jpeg(3000);
   };
   const photos = createPhotoService(store, { dir, maxBytes: 7000, fetchImpl });
   const first = await photos.get(ids.CAM000101d, 400);
   assert.equal(first.mime, 'image/jpeg');
   assert.equal(first.data.length, 3000);
-  assert.deepEqual(asked.map(u => new URL(u).host), ['lh3.googleusercontent.com', 'drive.google.com']);
+  assert.deepEqual(
+    asked.map(u => new URL(u).host),
+    ['lh3.googleusercontent.com', 'drive.google.com'],
+  );
   // Two cards at once share a download; the next time it comes from the cache.
   await Promise.all([photos.get(ids.CAM000101d, 400), photos.get(ids.CAM000101d, 400)]);
   assert.equal(asked.length, 2);
@@ -317,11 +369,20 @@ test('photos come from Drive once (lh3, else the thumbnail), are cached within a
 
 test('the Revisión API needs an editor; photos are served behind login with a sandbox policy', async t => {
   const app = await createApp(
-    { databasePath: ':memory:', localMode: true, secureCookies: false, syncIntervalMs: 0, setupToken: 'private-review-setup' },
+    {
+      databasePath: ':memory:',
+      localMode: true,
+      secureCookies: false,
+      syncIntervalMs: 0,
+      setupToken: 'private-review-setup',
+    },
     { seed, fetchPhoto: async () => new Response(Buffer.alloc(10, 1), { headers: { 'content-type': 'image/jpeg' } }) },
   );
   await app.ready;
-  importBundle(app.store.db, { ...readCuration(DIR, join(DIR, 'manifest.csv')), ...(await readGallery(join(DIR, 'gallery'))) });
+  importBundle(app.store.db, {
+    ...readCuration(DIR, join(DIR, 'manifest.csv')),
+    ...(await readGallery(join(DIR, 'gallery'))),
+  });
   const address = await app.listen(0);
   t.after(() => app.close());
   const base = `http://127.0.0.1:${address.port}/ithomiini`;
@@ -330,20 +391,32 @@ test('the Revisión API needs an editor; photos are served behind login with a s
   const call = async (path, method = 'GET', body) => {
     const response = await fetch(base + path, {
       method,
-      headers: { ...(body ? { 'content-type': 'application/json' } : {}), ...(cookie ? { cookie, 'x-csrf-token': csrf } : {}) },
+      headers: {
+        ...(body ? { 'content-type': 'application/json' } : {}),
+        ...(cookie ? { cookie, 'x-csrf-token': csrf } : {}),
+      },
       body: body ? JSON.stringify(body) : undefined,
     });
     if (response.headers.get('set-cookie')) cookie = response.headers.get('set-cookie').split(';')[0];
     return response;
   };
   assert.equal((await call(`/api/photo/${ids.CAM000101d}?w=400`)).status, 401);
-  const setup = await (await call('/api/auth/setup', 'POST', { token: 'private-review-setup', username: 'rev_admin', password: 'test-admin-123' })).json();
+  const setup = await (
+    await call('/api/auth/setup', 'POST', {
+      token: 'private-review-setup',
+      username: 'rev_admin',
+      password: 'test-admin-123',
+    })
+  ).json();
   csrf = setup.csrf;
   const photo = await call(`/api/photo/${ids.CAM000101d}?w=1600`);
   assert.equal(photo.status, 200);
   assert.equal(photo.headers.get('content-security-policy'), 'sandbox; default-src none');
   assert.match(photo.headers.get('cache-control'), /private, max-age=\d+/);
-  assert.equal((await call(`/api/photo/${ids.CAM000101d}?w=1600`, 'GET')).headers.get('etag'), photo.headers.get('etag'));
+  assert.equal(
+    (await call(`/api/photo/${ids.CAM000101d}?w=1600`, 'GET')).headers.get('etag'),
+    photo.headers.get('etag'),
+  );
   const page = await (await call('/api/review?kind=envelope_sex')).json();
   assert.equal(page.total, 1);
   const saved = await call('/api/review/verdicts', 'POST', { ids: [page.issues[0].id], verdict: 'accepted' });
