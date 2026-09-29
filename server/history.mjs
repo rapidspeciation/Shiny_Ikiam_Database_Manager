@@ -427,7 +427,17 @@ function describeGroups(store, groups, matches = null) {
     const statuses = {};
     for (const a of group.actions) statuses[a.status] = (statuses[a.status] ?? 0) + 1;
     const undoable = group.actions.filter(a => UNDOABLE.has(a.status));
-    const reversed = undoable.filter(a => undone.has(a.id));
+    // Cells of confirmed saves, and how many of them a later undo put back.
+    const undoableIds = undoable.map(a => a.id);
+    const undoableCells = undoableIds.length
+      ? db.prepare(`SELECT count(*) n FROM changes WHERE action_id IN (${marks(undoableIds)})`).get(...undoableIds).n
+      : 0;
+    let undoneCells = 0;
+    for (const a of undoable.filter(a => undone.has(a.id))) {
+      const cells = undone.get(a.id).cells;
+      for (const c of db.prepare('SELECT record_id, field FROM changes WHERE action_id = ?').all(a.id))
+        if (cells.has(`${c.record_id}\u0000${c.field}`)) undoneCells++;
+    }
     const counts = {
       actions: group.actions.length,
       rows: rows.length,
@@ -450,8 +460,8 @@ function describeGroups(store, groups, matches = null) {
       summary: summaryText({ purpose: group.purpose, ...counts, labels }),
       reasons: [...new Set(group.actions.map(a => a.reason).filter(Boolean))].slice(0, 3),
       statuses,
-      undone: reversed.length ? (reversed.length === undoable.length ? 'all' : 'some') : null,
-      undoable: undoable.length > reversed.length,
+      undone: undoneCells ? (undoneCells >= undoableCells ? 'all' : 'some') : null,
+      undoable: undoableCells > undoneCells,
       actionIds,
       ...(matches ? { matched: actionIds.filter(a => matches.has(a)) } : {}),
       link: `#/historial?grupo=${id}`,

@@ -258,16 +258,19 @@ test('undo a whole group, one save or one change, after a preview; the undo is a
   await undoEdits(store, { changeIds: [sex.id], requestId: 'undo-change-1' }, ana);
   assert.equal(row('Insectary_data', 3).values.Sex, 'female');
   assert.equal(row('Insectary_data', 3).values.Notes_Insectary_data, 'sexo corregido');
-  assert.equal(historyGroup(store, ids.t61).undone, 'all', 'the save counts as undone (in part)');
-  assert.equal(historyGroup(store, ids.t61).undoable, false);
+  assert.equal(historyGroup(store, ids.t61).undone, 'some');
+  assert.equal(historyGroup(store, ids.t61).undoable, true, 'the other cell can still be undone');
 
   // One change of a group, then "Deshacer todo" undoes the rest.
   const deaths = historyGroup(store, ids.m12).actions[0].changes;
   await undoEdits(store, { changeIds: [deaths[0].id], requestId: 'undo-death-1' }, bob);
+  assert.equal(historyGroup(store, ids.m12).undone, 'some');
   const rest = previewEdits(store, { groupIds: [ids.m12] });
   assert.deepEqual(rest.changes.map(c => c.label), ['A3A']);
   await undoEdits(store, { groupIds: [ids.m12], requestId: 'undo-death-2' }, bob);
   assert.equal(row('Insectary_data', 5).values.Death_date ?? null, null);
+  assert.equal(historyGroup(store, ids.m12).undone, 'all');
+  assert.equal(historyGroup(store, ids.m12).undoable, false);
 
   // Edits made directly in Google Sheets can be undone too.
   const sync = previewEdits(store, { groupIds: [ids.s106] });
