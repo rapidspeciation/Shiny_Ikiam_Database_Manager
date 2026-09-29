@@ -7,7 +7,7 @@ import IdPicker from '../components/IdPicker.vue'
 import SheetGrid from '../components/SheetGrid.vue'
 import { useSheet } from '../composables/useSheet'
 import { isBlank } from '../lib/cells'
-import { dayLabel, formatSerial, serialFromIso } from '../lib/dates'
+import { dayLabel, formatSerial, serialFromIso, todayIso } from '../lib/dates'
 import { notify } from '../lib/notice'
 import { persistentRef } from '../lib/persist'
 import { fillIfBlank, orderColumns, rowsById } from '../lib/rows'
@@ -44,8 +44,8 @@ const NOT_PRESERVED: Record<string, string> = {
 
 const picked = persistentRef<string[]>('deaths:picked', [])
 const loaded = persistentRef<string[]>('deaths:loaded', [])
-// The last date used stays on this device (a new tab does not reset it to today); its weekday is shown.
-const date = persistentRef('deaths:date', '', { lasting: true })
+// Deaths are usually entered the same day: today by default, with its weekday shown.
+const date = ref(todayIso())
 const cause = persistentRef('deaths:cause', '')
 const notPreserved = persistentRef('deaths:not-preserved', true)
 const reviewOnly = persistentRef('deaths:review', false)

@@ -51,7 +51,7 @@ const detail = (c: Coming) => `${START[c.event]} ${dateLabel(c.since)} → ${EVE
     </div>
     <details v-if="upcoming.late.length" class="mt-3 text-sm">
       <summary class="cursor-pointer text-amber-800">
-        {{ upcoming.late.length }} posturas pasaron su fecha esperada hace más de {{ upcoming.lateDays }} días: revisar si falta
+        {{ upcoming.late.length }} clutches pasaron su fecha esperada hace más de {{ upcoming.lateDays }} días: revisar si falta
         registrar la eclosión, la pupa o la emergencia
       </summary>
       <ul class="mt-2 grid gap-x-6 sm:grid-cols-2 lg:grid-cols-3">

@@ -251,7 +251,7 @@ const monitoringChart = computed(() =>
           <p class="stat-note">{{ team.crosses.melinaea.mated }} aparearon · {{ team.crosses.melinaea.clutches }} con postura</p>
         </div>
         <div class="stat">
-          <p class="stat-label">Posturas de cruces</p>
+          <p class="stat-label">Clutches de cruces</p>
           <p class="stat-value">{{ team.crosses.clutchesByGeneration.reduce((n, g) => n + g.n, 0) }}</p>
           <p class="stat-note">
             {{ team.crosses.clutchesByGeneration.map(g => `${g.name} ${g.n}`).join(' · ') }}

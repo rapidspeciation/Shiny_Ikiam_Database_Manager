@@ -38,23 +38,23 @@ const deathsChart = computed(() => {
         </p>
       </div>
       <div class="stat" :title="`Puestas en los últimos ${team.insectary.clutchDays} días que aún no emergen`">
-        <p class="stat-label">Posturas en curso</p>
+        <p class="stat-label">Clutches en curso</p>
         <p class="stat-value">{{ format(team.insectary.clutches) }}</p>
       </div>
       <div class="stat">
         <p class="stat-label">Huevos</p>
         <p class="stat-value">{{ format(team.insectary.stages.egg.n) }}</p>
-        <p class="stat-note">en {{ team.insectary.stages.egg.clutches }} posturas</p>
+        <p class="stat-note">en {{ team.insectary.stages.egg.clutches }} clutches</p>
       </div>
       <div class="stat">
         <p class="stat-label">Larvas</p>
         <p class="stat-value">{{ format(team.insectary.stages.larva.n) }}</p>
-        <p class="stat-note">en {{ team.insectary.stages.larva.clutches }} posturas</p>
+        <p class="stat-note">en {{ team.insectary.stages.larva.clutches }} clutches</p>
       </div>
       <div class="stat">
         <p class="stat-label">Pupas</p>
         <p class="stat-value">{{ format(team.insectary.stages.pupa.n) }}</p>
-        <p class="stat-note">en {{ team.insectary.stages.pupa.clutches }} posturas</p>
+        <p class="stat-note">en {{ team.insectary.stages.pupa.clutches }} clutches</p>
       </div>
       <div class="stat">
         <p class="stat-label">Últimos 30 días</p>
@@ -95,13 +95,13 @@ const deathsChart = computed(() => {
           </table>
         </div>
       </ChartCard>
-      <ChartCard title="Posturas en curso por especie" subtitle="Individuos según la etapa más reciente registrada">
+      <ChartCard title="Clutches en curso por especie" subtitle="Individuos según la etapa más reciente registrada">
         <div class="max-h-80 overflow-auto text-sm">
           <table class="w-full">
             <thead class="sticky top-0 bg-white text-xs text-stone-500">
               <tr>
                 <th class="py-1 text-left">Especie</th>
-                <th class="px-2 text-right">Posturas</th>
+                <th class="px-2 text-right">Clutches</th>
                 <th class="px-2 text-right">Huevos</th>
                 <th class="px-2 text-right">Larvas</th>
                 <th class="pl-2 text-right">Pupas</th>

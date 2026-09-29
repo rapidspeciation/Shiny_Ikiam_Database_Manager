@@ -13,7 +13,7 @@ import { orderColumns } from '../lib/rows'
 import { usePending } from '../stores/pending'
 
 /**
- * "Posturas": new clutches (eggs laid) and their follow-up in Insectary_stocks.
+ * "Clutches": new clutches (eggs laid) and their follow-up in Insectary_stocks.
  * Hatching and pupation are typed straight into the clutch's row below; the
  * clutches still in progress come first.
  */

@@ -211,7 +211,7 @@ const peak = computed(() => {
     <div class="grid gap-4 lg:grid-cols-2">
       <ChartCard
         title="Ciclo de vida"
-        subtitle="Días que pasa cada especie como huevo, larva y pupa (mediana de las posturas criadas en el insectario de Ikiam; las subespecies juntas)"
+        subtitle="Días que pasa cada especie como huevo, larva y pupa (mediana de los clutches criados en el insectario de Ikiam; las subespecies juntas)"
         :table="
           table(
             ['Especie', 'Huevo', 'Larva', 'Pupa', 'Total'],

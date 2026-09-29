@@ -61,7 +61,8 @@ const scroller = ref<HTMLElement>()
 const t3Url = ref<string | null>(null)
 const mode = persistentRef<'t3' | 'chat'>('assistant:mode', 't3')
 // Proposals (from T3 Code or any conversation) beside T3, or under it on phones; see ProposalsLive.
-const panel = persistentRef('assistant:proposals', window.matchMedia('(min-width: 768px)').matches)
+// Closed at first (T3 gets the whole width); a new proposal opens it, and the button toggles it.
+const panel = persistentRef('assistant:proposals-open', false)
 const waiting = ref(0)
 const fresh = ref(false)
 function arrived() {
