@@ -5,7 +5,9 @@
 // The curation's decisions are kept: flags already found to be reading errors
 // are not raised again, and its strength (how often such a flag was real in the
 // blind review) goes with each issue.
+// Texts are msg() (server/messages.mjs): Spanish plus a descriptor the interface translates.
 
+import { msg } from './messages.mjs';
 import { photoContext, photoIndex, reviewData } from './photodata.mjs';
 import { canonicalTaxon, rankComparison } from './taxonomy.mjs';
 import { listOptions } from './verify.mjs';
@@ -25,7 +27,9 @@ const sexOf = value => {
     .trim();
   return s === 'female' || s === 'male' ? s : null;
 };
-const SEX_WORD = { male: '♂ macho', female: '♀ hembra' };
+const SEX_WORD = { male: () => msg('♂ macho'), female: () => msg('♀ hembra') };
+/** A task's text and its descriptor (task.text, task.textMsg). */
+const taskText = m => ({ text: m.text, textMsg: m.msg });
 /** How often a flag of this stratum was real in the blind sample (strata-summary.csv). */
 const STRATUM_STRENGTH = {
   'envelope-not-file:all-photos': 'fuerte',
@@ -77,7 +81,7 @@ export function photoIssues(store, { sheets, add, ref, today }) {
   const context = (cam, prefer) => photoContext(data, index, cam, prefer) ?? {};
   const speciesOf = cam => {
     const row = rowOf(cam);
-    return row ? text(row.values.SPECIES) || 'sin especie' : 'sin fila en la hoja';
+    return row ? text(row.values.SPECIES) || msg('sin especie') : msg('sin fila en la hoja');
   };
   const decided = f => (f.decidedBy ? { decidedBy: f.decidedBy } : {});
   const curation = f => ({
@@ -102,7 +106,13 @@ export function photoIssues(store, { sheets, add, ref, today }) {
       'photo_camid',
       row,
       'CAM_ID',
-      `Las fotos ${names.join(', ')} están guardadas como ${f.cam} (${speciesOf(f.cam)}), pero el sobre dice ${target} (${speciesOf(target)})`,
+      msg('Las fotos {files} están guardadas como {cam} ({species}), pero el sobre dice {target} ({targetSpecies})', {
+        files: names,
+        cam: f.cam,
+        species: speciesOf(f.cam),
+        target,
+        targetSpecies: speciesOf(target),
+      }),
       {
         id: `photo_camid:${f.cam}`,
         cam: f.cam,
@@ -117,7 +127,15 @@ export function photoIssues(store, { sheets, add, ref, today }) {
           from: f.cam,
           to: target,
           files: names,
-          text: `Renombrar en Drive ${names.join(', ')} de ${f.cam} a ${target}${/after/.test(f.action ?? '') ? ' (después de mover las fotos que hoy ocupan ese nombre)' : ''}`,
+          ...taskText(
+            /after/.test(f.action ?? '')
+              ? msg('Renombrar en Drive {files} de {from} a {to} (después de mover las fotos que hoy ocupan ese nombre)', {
+                  files: names,
+                  from: f.cam,
+                  to: target,
+                })
+              : msg('Renombrar en Drive {files} de {from} a {to}', { files: names, from: f.cam, to: target }),
+          ),
         },
         ...(other ? { related: [ref(other, 'CAM_ID')] } : {}),
         relatedPhotos: { cam: target, ...(context(target).photos ?? {}) },
@@ -141,7 +159,11 @@ export function photoIssues(store, { sheets, add, ref, today }) {
       'photo_extra',
       row,
       'CAM_ID',
-      `Las fotos guardadas como ${f.cam} (${names.join(', ')}) muestran ${target}, que ya tiene sus propias fotos`,
+      msg('Las fotos guardadas como {cam} ({files}) muestran {target}, que ya tiene sus propias fotos', {
+        cam: f.cam,
+        files: names,
+        target,
+      }),
       {
         id: `photo_extra:${f.cam}`,
         cam: f.cam,
@@ -156,7 +178,13 @@ export function photoIssues(store, { sheets, add, ref, today }) {
           from: f.cam,
           to: target,
           files: names,
-          text: `Unir o borrar en Drive ${names.join(', ')}: son fotos de ${target}, que ya tiene las suyas; ${f.cam} puede no tener fotos propias`,
+          ...taskText(
+            msg('Unir o borrar en Drive {files}: son fotos de {target}, que ya tiene las suyas; {cam} puede no tener fotos propias', {
+              files: names,
+              target,
+              cam: f.cam,
+            }),
+          ),
         },
         ...(other ? { related: [ref(other, 'CAM_ID')] } : {}),
         relatedPhotos: { cam: target, ...(context(target).photos ?? {}) },
@@ -178,7 +206,7 @@ export function photoIssues(store, { sheets, add, ref, today }) {
         'envelope_sex',
         row,
         'Sex',
-        `El sobre de ${f.cam} dice ${SEX_WORD[read]}; la hoja dice ${text(row.values.Sex)}`,
+        msg('El sobre de {cam} dice {read}; la hoja dice {sheet}', { cam: f.cam, read: SEX_WORD[read](), sheet: text(row.values.Sex) }),
         {
           id: `envelope_sex:${f.cam}:${row.sheet}`,
           cam: f.cam,
@@ -186,7 +214,7 @@ export function photoIssues(store, { sheets, add, ref, today }) {
           ocr: { field: 'Sex', read, lines: f.data.lines ?? [], sheet: text(row.values.Sex) },
           strength,
           ...curation(f),
-          ...(fixable ? { fix: { recordId: row.id, values: { Sex: read } }, fixNote: 'sexo del sobre' } : {}),
+          ...(fixable ? { fix: { recordId: row.id, values: { Sex: read } }, fixNote: msg('sexo del sobre') } : {}),
         },
       );
     }
@@ -222,7 +250,11 @@ export function photoIssues(store, { sheets, add, ref, today }) {
     const strength = strengthOf(f);
     const key = batchKey(s);
     const size = batches.get(key);
-    add('envelope_species', row, 'SPECIES', `El sobre de ${f.cam} dice ${read}; la hoja dice ${recorded}`, {
+    const label = msg('Hoja {sheet} → sobre {envelope}', {
+      sheet: capitalized(binomial(recorded)),
+      envelope: capitalized(binomial(read)),
+    });
+    add('envelope_species', row, 'SPECIES', msg('El sobre de {cam} dice {read}; la hoja dice {sheet}', { cam: f.cam, read, sheet: recorded }), {
       id: `envelope_species:${f.cam}:${row.sheet}`,
       cam: f.cam,
       ...context(f.cam, f.photos.map(stemOf)),
@@ -231,7 +263,8 @@ export function photoIssues(store, { sheets, add, ref, today }) {
       ...curation(f),
       group: {
         key: `envelope_species:${key}`,
-        label: `Hoja ${capitalized(binomial(recorded))} → sobre ${capitalized(binomial(read))}`,
+        label: label.text,
+        labelMsg: label.msg,
         size,
       },
       ...(choices.length ? { choices } : {}),
@@ -239,7 +272,7 @@ export function photoIssues(store, { sheets, add, ref, today }) {
       strength !== 'dudosa' &&
       f.decision !== 'unclear' &&
       (!row.formulas.SPECIES || row.sheet === 'Insectary_data')
-        ? { fix: { recordId: row.id, values: { SPECIES: exact } }, fixNote: 'especie del sobre' }
+        ? { fix: { recordId: row.id, values: { SPECIES: exact } }, fixNote: msg('especie del sobre') }
         : {}),
     });
   }
@@ -268,9 +301,20 @@ export function photoIssues(store, { sheets, add, ref, today }) {
           'photo_missing',
           row,
           field,
-          missing.length
-            ? `${cam} preservada sin foto ${missing.join(' ni ')} en Photo_links`
-            : `${cam}: Photo_links tiene sus fotos, pero ${notFound.join(' y ')} dice Not Found (¿nombre de archivo distinto?)`,
+          missing.length === 2
+            ? msg('{cam} preservada sin foto dorsal ni ventral en Photo_links', { cam })
+            : missing.length
+              ? msg('{cam} preservada sin foto {view} en Photo_links', { cam, view: missing[0] })
+              : notFound.length === 2
+                ? msg('{cam}: Photo_links tiene sus fotos, pero {a} y {b} dice Not Found (¿nombre de archivo distinto?)', {
+                    cam,
+                    a: notFound[0],
+                    b: notFound[1],
+                  })
+                : msg('{cam}: Photo_links tiene sus fotos, pero {field} dice Not Found (¿nombre de archivo distinto?)', {
+                    cam,
+                    field: notFound[0],
+                  }),
           { cam, ...context(cam), strength: missing.length === 2 ? 'fuerte' : 'media' },
         );
       }
@@ -307,7 +351,12 @@ export function photoIssues(store, { sheets, add, ref, today }) {
       'ai_species',
       row,
       'SPECIES',
-      `La IA de la galería ve ${compared.predicted} (${Math.round(confidence * 100)} %) en las fotos de ${cam}; la hoja dice ${text(row.values.SPECIES)}`,
+      msg('La IA de la galería ve {predicted} ({percent} %) en las fotos de {cam}; la hoja dice {sheet}', {
+        predicted: compared.predicted,
+        percent: Math.round(confidence * 100),
+        cam,
+        sheet: text(row.values.SPECIES),
+      }),
       {
         id: `ai_species:${cam}`,
         cam,

@@ -92,7 +92,16 @@ test('a cell changed by someone else rejects the whole save and writes nothing',
       },
       user,
     ),
-    e => e.code === 'BATCH_CONFLICT' && e.details.items.some(i => i.code === 'EXTERNAL_CONFLICT' && i.field === 'Sex'),
+    e =>
+      e.code === 'BATCH_CONFLICT' &&
+      e.details.items.some(
+        i =>
+          i.code === 'EXTERNAL_CONFLICT' &&
+          i.field === 'Sex' &&
+          // The message with its descriptor, for the interface language (server/messages.mjs).
+          i.message === 'Otra persona cambió Sex en la hoja' &&
+          JSON.stringify(i.messageMsg) === JSON.stringify({ key: 'Otra persona cambió {field} en la hoja', vars: { field: 'Sex' } }),
+      ),
   );
   assert.equal((await sheets.readRow('Insectary_data', 2)).cells[5].userEnteredValue.stringValue, 'female');
   store.close();

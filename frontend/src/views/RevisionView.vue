@@ -8,7 +8,7 @@ import IssueCard from '../components/review/IssueCard.vue'
 import PhotoViewer from '../components/review/PhotoViewer.vue'
 import { api } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
-import { STATUSES, type Issue, type ReviewPage, type Verdict } from '../lib/review'
+import { STATUSES, groupLabel as labelOf, type Issue, type ReviewPage, type Verdict } from '../lib/review'
 import { useSession } from '../stores/session'
 import { t, tn } from '../lib/i18n'
 
@@ -147,9 +147,10 @@ const kindGroups = computed(() => [
 ])
 const sheetOptions = computed(() => page.value?.sheets ?? [])
 const personOptions = computed(() => (page.value?.people ?? []).map(p => ({ value: p.name, label: p.name, hint: String(p.n) })))
-const groupLabel = computed(
-  () => page.value?.issues.find(i => i.group?.key === group.value)?.group?.label ?? group.value.split(':').slice(1).join(':'),
-)
+const groupLabel = computed(() => {
+  const found = page.value?.issues.find(i => i.group?.key === group.value)?.group
+  return found ? labelOf(found) : group.value.split(':').slice(1).join(':')
+})
 
 function applyVerdict(ids: Set<string>, verdict: Verdict) {
   for (const issue of page.value?.issues ?? []) if (ids.has(issue.id)) issue.verdict = verdict
@@ -171,7 +172,7 @@ async function judge(issue: Issue, verdict: string, value?: string, comment?: st
 }
 async function judgeBatch(issue: Issue, verdict: string) {
   if (!issue.group) return
-  const vars = { n: issue.group.size, label: issue.group.label }
+  const vars = { n: issue.group.size, label: labelOf(issue.group) }
   const question =
     verdict === 'accepted' ? t('Aceptar los {n} del lote «{label}»?', vars) : t('Rechazar los {n} del lote «{label}»?', vars)
   if (!confirm(question)) return

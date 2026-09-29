@@ -121,12 +121,27 @@ async function fixture() {
   await store.sync({ sheets: ['Collection_data', 'Insectary_data', 'SamplingDay_data'] });
   return store;
 }
+/** A descriptor (server/messages.mjs) filled in Spanish, as the app does in Spanish: it must give the problem's text. */
+const spanish = m => {
+  const value = v => (Array.isArray(v) ? v.map(value).join(', ') : v && typeof v === 'object' ? spanish(v) : String(v ?? ''));
+  return m.key.replace(/\{(\w+)\}/g, (all, k) => (m.vars && k in m.vars ? value(m.vars[k]) : all));
+};
+const sameTexts = issues => {
+  for (const i of issues) {
+    assert.ok(i.problemMsg, i.id);
+    assert.equal(spanish(i.problemMsg), i.problem);
+    if (i.fixNote) assert.equal(spanish(i.fixNoteMsg), i.fixNote);
+  }
+};
+
 const find = (out, kind, sheet, row, field) =>
   out.issues.find(i => i.kind === kind && i.sheet === sheet && i.row === row && (!field || i.field === field));
 
 test('check_data finds each kind of inconsistency, with the row, the value and the obvious fix', async () => {
   const store = await fixture();
   const out = checkData(store, { limit: 500 });
+  // Each problem comes with its descriptor for the interface language, built from the same template.
+  sameTexts(out.issues);
   assert.deepEqual(out.counts, {
     repeat: 2,
     cam_cross: 2,
@@ -290,6 +305,7 @@ test('walk_doubt lists the Wikiloc points stored without a row, until a person p
     editor,
   );
   const out = checkData(store, { kind: 'walk_doubt' });
+  sameTexts(out.issues);
   assert.equal(out.total, 3);
   assert.equal(out.counts.walk_doubt, 3);
   const [tie, , plant] = out.issues;

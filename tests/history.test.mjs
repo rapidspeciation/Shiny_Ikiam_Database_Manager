@@ -112,6 +112,17 @@ test('saves group by person and purpose within 30 minutes, even when others save
   assert.equal(colecta.link, `#/historial?grupo=${ids.c0}`);
   assert.equal(groups[5].summary, '2 muertes registradas: A0A, A3A');
   assert.equal(groups[1].summary, '3 filas cambiadas en Google Sheets: A0A, A2A, A3A');
+  // With its descriptor for the interface language (server/messages.mjs): the same template, the values apart.
+  assert.deepEqual(colecta.summaryMsg, {
+    key: '{head}: {items}',
+    vars: {
+      head: {
+        key: '{new} y {edited}',
+        vars: { new: { key: '{n} filas nuevas', vars: { n: 3 } }, edited: { key: '{n} editada', vars: { n: 1 } } },
+      },
+      items: ['CAM000001', 'CAM000101–CAM000103'],
+    },
+  });
   assert.equal(historyGroup(store, ids.c10).id, ids.c0);
   assert.equal(historyGroup(store, ids.s106).counts.actions, 1);
 

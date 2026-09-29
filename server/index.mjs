@@ -865,6 +865,8 @@ export async function createApp(config = {}, options = {}) {
         error: {
           code: e.code || 'SERVER_ERROR',
           message: status >= 500 && !e.code ? 'Server error' : e.message,
+          // Its descriptor, for the interface language (server/messages.mjs).
+          ...(e.messageMsg && (status < 500 || e.code) ? { messageMsg: e.messageMsg } : {}),
           ...(e.details ? { details: e.details } : {}),
         },
       });

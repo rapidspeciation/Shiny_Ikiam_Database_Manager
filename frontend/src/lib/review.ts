@@ -3,6 +3,7 @@
  * server/review.mjs) and the pure rules of its cards (crops, differing cells,
  * texts), kept apart from the components so they are tested without a browser.
  */
+import { tx, type Msg } from './i18n'
 
 export type Box = [number, number, number, number]
 export interface Photos {
@@ -45,9 +46,12 @@ export interface Issue {
   field: string
   value: unknown
   problem: string
+  /** Descriptors of the server's texts, for the interface language (server/messages.mjs); older verdicts lack them. */
+  problemMsg?: Msg
   related?: IssueRef[]
   fix?: { recordId: string; values: Record<string, unknown> }
   fixNote?: string
+  fixNoteMsg?: Msg
   link?: string
   cam?: string
   photos?: Photos
@@ -63,8 +67,8 @@ export interface Issue {
   ai?: { recorded: string; predicted: string; confidence: number }
   strength?: 'fuerte' | 'media' | 'baja' | 'dudosa'
   curation?: { type: string; stratum: string | null; decision: string | null; note: string | null; decidedBy?: string }
-  task?: { type: string; from: string; to: string; files: string[]; text: string }
-  group?: { key: string; label: string; size: number }
+  task?: { type: string; from: string; to: string; files: string[]; text: string; textMsg?: Msg }
+  group?: { key: string; label: string; labelMsg?: Msg; size: number }
   choices?: string[]
   who?: string[]
   date?: string
@@ -160,16 +164,20 @@ export function differingCells(table: SideBySide, issueField?: string): Set<stri
 
 export const shown = (v: unknown) => (v === null || v === undefined || v === '' ? '—' : String(v))
 
-/** The proposed change in words: "Sex → male", or the task. */
-export function fixText(issue: Pick<Issue, 'fix' | 'fixNote' | 'task'>) {
-  if (issue.task) return issue.task.text
+/** The proposed change in words: "Sex → male", or the task (in the interface language). */
+export function fixText(issue: Pick<Issue, 'fix' | 'fixNote' | 'fixNoteMsg' | 'task'>) {
+  if (issue.task) return tx(issue.task.text, issue.task.textMsg)
   if (!issue.fix) return ''
   return (
     Object.entries(issue.fix.values)
       .map(([f, v]) => `${f} → ${shown(v)}`)
-      .join(', ') + (issue.fixNote ? ` (${issue.fixNote})` : '')
+      .join(', ') + (issue.fixNote ? ` (${tx(issue.fixNote, issue.fixNoteMsg)})` : '')
   )
 }
+
+/** The issue's problem, and its batch's label, in the interface language. */
+export const problemText = (issue: Pick<Issue, 'problem' | 'problemMsg'>) => tx(issue.problem, issue.problemMsg)
+export const groupLabel = (group: { label: string; labelMsg?: Msg }) => tx(group.label, group.labelMsg)
 
 /** The column a different value goes to ("Otro valor"). */
 export const otherField = (issue: Pick<Issue, 'fix' | 'field' | 'task'>) =>

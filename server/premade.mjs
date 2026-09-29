@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { labelFor, moduleMap } from './schema.mjs';
 import { columnLetter, describeProblems, headerLayout, headerText } from './columns.mjs';
 import { rowKey, rowValues, shiftFormula } from './sheets.mjs';
+import { msg, msgError } from './messages.mjs';
 
 export const MAX_EXTEND = 500;
 /** Rows made at once when a save needs a row past the pre-made ones. */
@@ -17,7 +18,7 @@ const LOOKBACK = 300;
 /** …and for a formula typed over in the last pre-made row. */
 const TYPED_OVER_LOOKBACK = 50;
 
-const fail = (code, message, status = 400, details) => Object.assign(new Error(message), { code, status, details });
+const fail = (code, message, status = 400, details) => msgError(message, { code, status, details });
 const kind = cell => {
   const value = cell?.userEnteredValue;
   return !value ? '.' : 'formulaValue' in value ? 'F' : 'c';
@@ -111,9 +112,9 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
   if (!mod) throw fail('MODULE_NOT_FOUND', 'Hoja desconocida', 404);
   count = Number(count);
   if (!Number.isInteger(count) || count < 1 || count > MAX_EXTEND)
-    throw fail('INVALID_COUNT', `Indica entre 1 y ${MAX_EXTEND} filas`);
+    throw fail('INVALID_COUNT', msg('Indica entre 1 y {n} filas', { n: MAX_EXTEND }));
   const known = tail(store, sheet);
-  if (!known.formulaRow) throw fail('NO_TEMPLATE', `${sheet} no tiene filas con fórmulas que copiar`, 409);
+  if (!known.formulaRow) throw fail('NO_TEMPLATE', msg('{sheet} no tiene filas con fórmulas que copiar', { sheet }), 409);
   const info = await store.sheets.sheetInfo(sheet);
   const first = Math.max(mod.headerRow + 1, known.formulaRow - LOOKBACK);
   const last = Math.min(info.rowCount, Math.max(known.formulaRow, known.lastRow) + count + 5);
@@ -142,11 +143,14 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
     if (kinds.includes('c')) lastUsed = row;
     if (kinds.some(k => k !== '.')) lastContent = row;
   }
-  if (!template) throw fail('NO_TEMPLATE', `${sheet} no tiene filas con fórmulas que copiar`, 409);
+  if (!template) throw fail('NO_TEMPLATE', msg('{sheet} no tiene filas con fórmulas que copiar', { sheet }), 409);
   if (lastContent > template)
     throw fail(
       'BARE_ROWS',
-      `En ${sheet} hay filas escritas sin fórmulas después de la última fila preasignada (${template}), hasta la ${lastContent}; revísalas en Google Sheets`,
+      msg(
+        'En {sheet} hay filas escritas sin fórmulas después de la última fila preasignada ({template}), hasta la {last}; revísalas en Google Sheets',
+        { sheet, template, last: lastContent },
+      ),
       409,
     );
   const start = template + 1;
@@ -283,7 +287,13 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
   const at = row => grid[row - checkFrom]?.cells || [];
   const templateCells = at(template);
   const problems = [];
-  const note = (message, count = 1) => problems.push(count > 1 ? `${message} (${count} filas)` : message);
+  // Their descriptors, for the interface language (server/messages.mjs).
+  const problemsMsg = [];
+  const note = (m, count = 1) => {
+    const full = count > 1 ? msg('{problem} ({n} filas)', { problem: m, n: count }) : m;
+    problems.push(full.text);
+    problemsMsg.push(full.msg);
+  };
   const headerCells = read.get(rowKey(sheet, mod.headerRow))?.cells || [];
   const name = column => {
     const title = headerText(headerCells[column]);
@@ -304,7 +314,7 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
       if (kind(at(row)[column]) !== 'F' && !(column === idColumn && typedId(row))) bad++;
     if (bad) {
       checks.formulas = false;
-      note(`Falta la fórmula en ${name(column)}`, bad);
+      note(msg('Falta la fórmula en {column}', { column: name(column) }), bad);
     }
   }
   for (let column = 0; column < width; column++) {
@@ -325,15 +335,15 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
     }
     if (constants) {
       checks.formulas = false;
-      note(`Quedó un valor copiado en ${name(column)}`, constants);
+      note(msg('Quedó un valor copiado en {column}', { column: name(column) }), constants);
     }
     if (validation) {
       checks.validation = false;
-      note(`La validación de ${name(column)} no coincide con la fila ${template}`, validation);
+      note(msg('La validación de {column} no coincide con la fila {row}', { column: name(column), row: template }), validation);
     }
     if (format) {
       checks.formats = false;
-      note(`El formato de ${name(column)} no coincide con la fila ${template}`, format);
+      note(msg('El formato de {column} no coincide con la fila {row}', { column: name(column), row: template }), format);
     }
   }
 
@@ -349,12 +359,16 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
       const id = text(at(row)[idColumn]);
       if (id !== expected) {
         checks.ids = false;
-        note(`Fila ${row}: el Insectary ID es «${id || 'vacío'}», se esperaba ${expected}`);
+        note(
+          id
+            ? msg('Fila {row}: el Insectary ID es «{id}», se esperaba {expected}', { row, id, expected })
+            : msg('Fila {row}: el Insectary ID es «vacío», se esperaba {expected}', { row, expected }),
+        );
         break;
       }
       if (ids.existing.has(id) || seen.has(id)) {
         checks.ids = false;
-        note(`Fila ${row}: el Insectary ID ${id} ya existe`);
+        note(msg('Fila {row}: el Insectary ID {id} ya existe', { row, id }));
         break;
       }
       seen.add(id);
@@ -410,6 +424,7 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
     checks,
     ok: !problems.length,
     problems: problems.slice(0, 20),
+    problemsMsg: problemsMsg.slice(0, 20),
     ownerColumns,
     protectedRanges: info.protectedRanges.map(({ range: r, ...p }) => ({
       columns:
@@ -472,19 +487,23 @@ export function planIds({ previous, source, formula, from, end, existing }) {
   const round = /"0([A-Z])"/.exec(formula)?.[1];
   let id = String(previous ?? '').trim().toUpperCase();
   if (!/^[A-Z]\d[A-Z]$/.test(id))
-    return { problem: `La fila ${from - 1} no tiene un Insectary ID de la serie (${id || 'vacío'})` };
+    return {
+      problem: id
+        ? msg('La fila {row} no tiene un Insectary ID de la serie ({id})', { row: from - 1, id })
+        : msg('La fila {row} no tiene un Insectary ID de la serie (vacío)', { row: from - 1 }),
+    };
   let letter = round;
   for (let row = from; row <= end; row++) {
     const next = nextInSeries(id);
     if (next) id = next;
     else {
       // Z9 reached: the next round, from the first ID not used yet in it.
-      if (!round) return { problem: `La serie de Insectary IDs llega a ${id} y su fórmula no indica la ronda` };
+      if (!round) return { problem: msg('La serie de Insectary IDs llega a {id} y su fórmula no indica la ronda', { id }) };
       letter = String.fromCharCode(id.charCodeAt(2) + 1);
-      if (letter > 'Z') return { problem: `La serie de Insectary IDs llega a ${id}: no hay más rondas` };
+      if (letter > 'Z') return { problem: msg('La serie de Insectary IDs llega a {id}: no hay más rondas', { id }) };
       const taken = [...existing].filter(x => x.length === 3 && x[2] === letter && /^[A-Z]\d$/.test(x.slice(0, 2)));
       const first = taken.length ? Math.max(...taken.map(seriesIndex)) + 1 : 0;
-      if (first > seriesIndex('Z9A')) return { problem: `La ronda ${letter} de Insectary IDs ya está usada` };
+      if (first > seriesIndex('Z9A')) return { problem: msg('La ronda {letter} de Insectary IDs ya está usada', { letter }) };
       id = seriesId(first, letter);
       written.push({ row, id });
       expected.push(id);

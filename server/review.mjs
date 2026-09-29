@@ -75,8 +75,10 @@ function snapshot(issue) {
     'field',
     'value',
     'problem',
+    'problemMsg',
     'fix',
     'fixNote',
+    'fixNoteMsg',
     'task',
     'cam',
   ];

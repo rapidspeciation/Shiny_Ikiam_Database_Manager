@@ -118,7 +118,22 @@ test('the curation import reads readings, full text, flags with their decisions,
   assert.deepEqual(prediction.species[0], ['Mechanitis polymnia', 0.9]);
   assert.equal(prediction.sexSupported, true);
   assert.equal(JSON.stringify(bundle).includes('model_meta'), false);
-  const before = checkData(store, { limit: 500 }).total;
+  const all = checkData(store, { limit: 500 });
+  const before = all.total;
+  // Every text of the photo issues comes with its descriptor (server/messages.mjs), which gives the same Spanish.
+  const spanish = m => {
+    const value = v => (Array.isArray(v) ? v.map(value).join(', ') : v && typeof v === 'object' ? spanish(v) : String(v ?? ''));
+    return m.key.replace(/\{(\w+)\}/g, (a, k) => (m.vars && k in m.vars ? value(m.vars[k]) : a));
+  };
+  const photoKinds = new Set(['photo_camid', 'photo_extra', 'envelope_sex', 'envelope_species', 'photo_missing', 'ai_species']);
+  const photos = all.issues.filter(i => photoKinds.has(i.kind));
+  assert.ok(photos.some(i => i.task) && photos.some(i => i.group) && photos.some(i => i.fixNote));
+  for (const i of photos) {
+    assert.equal(spanish(i.problemMsg), i.problem);
+    if (i.fixNote) assert.equal(spanish(i.fixNoteMsg), i.fixNote);
+    if (i.task) assert.equal(spanish(i.task.textMsg), i.task.text);
+    if (i.group) assert.equal(spanish(i.group.labelMsg), i.group.label);
+  }
   // Importing the same data again leaves the same rows (and the same issues).
   assert.deepEqual(importBundle(store.db, bundle), { readings: 12, flags: 8, wingBoxes: 2, predictions: 2 });
   assert.equal(store.db.prepare('SELECT count(*) n FROM photo_flags').get().n, 8);

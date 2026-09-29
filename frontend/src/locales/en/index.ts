@@ -11,6 +11,7 @@ import home from './home'
 import monitoring from './monitoring'
 import review from './review'
 import server from './server'
+import serverBuilt from './server-built'
 
 export const en: Record<string, string> = Object.assign(
   {},
@@ -23,4 +24,5 @@ export const en: Record<string, string> = Object.assign(
   assistant,
   account,
   server,
+  serverBuilt,
 )

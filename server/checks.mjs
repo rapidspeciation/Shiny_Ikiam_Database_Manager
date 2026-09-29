@@ -7,7 +7,13 @@
 //
 // The whole scan runs once per state of the local copy and of the stored walks
 // (and per day, for future dates) and is cached, so paging and filtering are free.
+//
+// Problem texts are Spanish (the assistant reads them); each also goes as a
+// descriptor (problemMsg, fixNoteMsg) the interface shows in its language
+// (server/messages.mjs). The descriptor does not depend on the language, so the
+// cache holds one list for everyone.
 
+import { msg, textFields, tpl } from './messages.mjs';
 import { moduleMap, parseDateText } from './schema.mjs';
 import { TUBE_FIELD, UNIQUE, blankOrNA, isIdValue } from './verifications.mjs';
 import { listOptions } from './verify.mjs';
@@ -125,28 +131,31 @@ function yearSlip(serial, min, max) {
  * What is wrong with a typed value of a date column, or null: a serial before
  * 2000 or more than two years ahead (375004 typed for 21/9/2026), or text.
  */
-function badDate(value, today) {
+function badDate(field, value, today) {
   if (typeof value === 'number') {
-    if (!Number.isFinite(value)) return `tiene «${value}», que no es una fecha`;
+    if (!Number.isFinite(value)) return msg('{field} tiene «{value}», que no es una fecha', { field, value });
     if (value >= 36526 && value <= today + 731) return null;
     const year = value > 0 && value < 2958466 ? new Date(EPOCH + value * 864e5).getUTCFullYear() : null;
-    return `tiene el número ${value}${year ? ` (año ${year})` : ''}, que no es una fecha`;
+    return year
+      ? msg('{field} tiene el número {value} (año {year}), que no es una fecha', { field, value, year })
+      : msg('{field} tiene el número {value}, que no es una fecha', { field, value });
   }
   if (typeof value !== 'string') return null;
   const t = value.trim();
   if (!t || /^(NA|N\/A|NOT_COLLECTED|NOT_PROVIDED|unknown|-)$/i.test(t)) return null;
-  return `es el texto «${t}», no una fecha`;
+  return msg('{field} es el texto «{value}», no una fecha', { field, value: t });
 }
 
 /** The right day of a broken date, when a note starts with it ("21/9/2026 AA: …") or the text reads as a date. */
 function dayFromNotes(row, noteFields, field) {
   const value = row.values[field];
   const parsed = typeof value === 'string' ? parseDateText(value) : null;
-  if (parsed && parsed >= 36526) return { fix: { recordId: row.id, values: { [field]: iso(parsed) } }, fixNote: 'fecha escrita como texto' };
+  if (parsed && parsed >= 36526)
+    return { fix: { recordId: row.id, values: { [field]: iso(parsed) } }, fixNote: msg('fecha escrita como texto') };
   for (const key of noteFields) {
     const m = /^\s*(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})\b/.exec(text(row.values[key]));
     const day = m && parseDateText(`${m[1]}/${m[2]}/${m[3]}`);
-    if (day) return { fix: { recordId: row.id, values: { [field]: iso(day) } }, fixNote: `día de ${key}` };
+    if (day) return { fix: { recordId: row.id, values: { [field]: iso(day) } }, fixNote: msg('día de {field}', { field: key }) };
   }
   return {};
 }
@@ -165,7 +174,8 @@ function scan(store) {
   const sheets = load(store);
   const issues = [];
   const seen = new Map();
-  const add = (kind, row, field, problem, extra = {}) => {
+  /** `problem` and `extra.fixNote`: a msg() (text and descriptor) or a plain text. */
+  const add = (kind, row, field, problem, { fixNote, ...extra } = {}) => {
     // A stable key for the app's list; a row can have the same kind of problem twice in one column.
     const key = `${kind}:${row?.id}:${field}`;
     seen.set(key, (seen.get(key) || 0) + 1);
@@ -174,7 +184,8 @@ function scan(store) {
       kind,
       // Photos filed under a CAM that has no row yet: no row to point to.
       ...(row ? ref(row, field) : { sheet: 'Photo_links', row: null, recordId: null, label: extra.label ?? '', field, value: null }),
-      problem,
+      ...textFields('problem', problem),
+      ...(fixNote ? textFields('fixNote', fixNote) : {}),
       ...extra,
     });
   };
@@ -209,16 +220,22 @@ function scan(store) {
     for (const h of list) {
       const others = list.filter(o => o !== h && !sameSpecimen(o, h));
       if (!others.length) continue;
+      const places = others
+        .slice(0, 3)
+        .map(o =>
+          o.row === h.row
+            ? o.field
+            : o.row.sheet === h.row.sheet
+              ? msg('fila {row}', { row: o.row.row })
+              : msg('{sheet} fila {row}', { sheet: o.row.sheet, row: o.row.row }),
+        );
       add(
         'repeat',
         h.row,
         h.field,
-        `${value} también está en ${others
-          .slice(0, 3)
-          .map(o =>
-            o.row === h.row ? o.field : `${o.row.sheet === h.row.sheet ? '' : `${o.row.sheet} `}fila ${o.row.row}`,
-          )
-          .join(', ')}${others.length > 3 ? ` y ${others.length - 3} más` : ''}`,
+        others.length > 3
+          ? msg('{value} también está en {places} y {more} más', { value, places, more: others.length - 3 })
+          : msg('{value} también está en {places}', { value, places }),
         { related: others.slice(0, 5).map(o => ref(o.row, o.field)) },
       );
     }
@@ -242,7 +259,10 @@ function scan(store) {
         'cam_cross',
         row,
         CAM_OWNERS[row.sheet],
-        `${value} también es el CAM de ${others.map(o => `${o.sheet} fila ${o.row} (${o.label})`).join(', ')}`,
+        msg('{value} también es el CAM de {rows}', {
+          value,
+          rows: others.map(o => msg('{sheet} fila {row} ({label})', { sheet: o.sheet, row: o.row, label: o.label })),
+        }),
         { related: others.slice(0, 5).map(o => ref(o, CAM_OWNERS[o.sheet])) },
       );
     }
@@ -267,7 +287,9 @@ function scan(store) {
         const t = text(value);
         if (!t || o.values.has(t)) continue;
         const match = byLoose.get(field).get(loose(t));
-        add('list', row, field, `«${t}» no está en la lista de ${field} (${o.source})`, {
+        // The source is a sheet range, or verify.mjs's words for a list typed in the validation rule.
+        const source = o.source === 'lista fija de la hoja' ? msg('lista fija de la hoja') : o.source;
+        add('list', row, field, msg('«{value}» no está en la lista de {field} ({source})', { value: t, field, source }), {
           ...(match ? { fix: { recordId: row.id, values: { [field]: match } } } : {}),
         });
       }
@@ -289,7 +311,7 @@ function scan(store) {
     if (text(row.values.Release_Collect) !== 'Collected_Sent2Insectary') continue;
     const id = text(row.values.Insectary_ID).toUpperCase();
     if (!isIdValue(id)) {
-      add('insectary_link', row, 'Insectary_ID', 'Enviada al insectario sin Insectary_ID');
+      add('insectary_link', row, 'Insectary_ID', msg('Enviada al insectario sin Insectary_ID'));
       continue;
     }
     const rows = insectaryById.get(id) || [];
@@ -300,18 +322,22 @@ function scan(store) {
         row,
         'Insectary_ID',
         rows.length
-          ? `La fila de ${id} en Insectary_data (fila ${rows[0].row}) está vacía: falta registrar la mariposa`
-          : `${id} no tiene fila en Insectary_data`,
+          ? msg('La fila de {id} en Insectary_data (fila {row}) está vacía: falta registrar la mariposa', {
+              id,
+              row: rows[0].row,
+            })
+          : msg('{id} no tiene fila en Insectary_data', { id }),
         rows.length ? { related: [ref(rows[0], 'Insectary_ID')] } : {},
       );
   }
   for (const row of insectary) {
     const id = text(row.values.Insectary_ID).toUpperCase();
     if (!isIdValue(id) || !/^wild/i.test(text(row.values.Wild_Reared)) || collectionById.has(id)) continue;
-    add('insectary_link', row, 'Insectary_ID', `Mariposa silvestre ${id} sin fila en Collection_data`);
+    add('insectary_link', row, 'Insectary_ID', msg('Mariposa silvestre {id} sin fila en Collection_data', { id }));
   }
 
   // Species, sex, CAMs and dates of the same butterfly in both sheets.
+  const SAYS_BOTH = tpl('{id}: Insectary_data dice {insectary}, Collection_data (fila {row}) dice {collection}');
   for (const [id, cRows] of collectionById) {
     const iRows = (insectaryById.get(id) || []).filter(r => r.observed);
     for (const c of cRows)
@@ -323,7 +349,7 @@ function scan(store) {
             'link_mismatch',
             i,
             'SPECIES',
-            `${id}: Insectary_data dice ${text(i.values.SPECIES)}, Collection_data (fila ${c.row}) dice ${text(c.values.SPECIES)}`,
+            msg(SAYS_BOTH, { id, insectary: text(i.values.SPECIES), row: c.row, collection: text(c.values.SPECIES) }),
             { related: [ref(c, 'SPECIES')] },
           );
         const [csx, isx] = [sexOf(c.values.Sex), sexOf(i.values.Sex)];
@@ -332,7 +358,7 @@ function scan(store) {
             'link_mismatch',
             i,
             'Sex',
-            `${id}: Insectary_data dice ${text(i.values.Sex)}, Collection_data (fila ${c.row}) dice ${text(c.values.Sex)}`,
+            msg(SAYS_BOTH, { id, insectary: text(i.values.Sex), row: c.row, collection: text(c.values.Sex) }),
             { related: [ref(c, 'Sex')] },
           );
         // The copy of the other sheet's CAM, when typed (it is a formula in most rows).
@@ -346,7 +372,14 @@ function scan(store) {
             'link_mismatch',
             row,
             field,
-            `${id}: ${field} dice ${mine}, pero el CAM_ID de ${other.sheet} (fila ${other.row}) es ${theirs}`,
+            msg('{id}: {field} dice {mine}, pero el CAM_ID de {sheet} (fila {row}) es {theirs}', {
+              id,
+              field,
+              mine,
+              sheet: other.sheet,
+              row: other.row,
+              theirs,
+            }),
             { related: [ref(other, source)], fix: { recordId: row.id, values: { [field]: theirs } } },
           );
         }
@@ -356,7 +389,12 @@ function scan(store) {
             'date_order',
             i,
             'Intro2Insectary_date',
-            `${id} entró al insectario (${iso(intro)}) antes de ser colectada (${iso(caught)}, Collection_data fila ${c.row})`,
+            msg('{id} entró al insectario ({intro}) antes de ser colectada ({caught}, Collection_data fila {row})', {
+              id,
+              intro: iso(intro),
+              caught: iso(caught),
+              row: c.row,
+            }),
             { related: [ref(c, 'Collection_date')] },
           );
       }
@@ -364,20 +402,25 @@ function scan(store) {
 
   // ---- Events before the butterfly was caught or entered the insectary.
   const order = [
-    ['Collection_data', 'Death_date', 'Collection_date', 'murió', 'ser colectada'],
-    ['Collection_data', 'Preservation_date', 'Collection_date', 'se preservó', 'ser colectada'],
-    ['Insectary_data', 'Death_date', 'Intro2Insectary_date', 'murió', 'entrar al insectario'],
-    ['Insectary_data', 'Preservation_date', 'Intro2Insectary_date', 'se preservó', 'entrar al insectario'],
-    ['Insectary_data', 'Preservation_date', 'Death_date', 'se preservó', 'morir'],
+    ['Collection_data', 'Death_date', 'Collection_date', tpl('{label} murió ({later}) antes de ser colectada ({earlier})')],
+    ['Collection_data', 'Preservation_date', 'Collection_date', tpl('{label} se preservó ({later}) antes de ser colectada ({earlier})')],
+    ['Insectary_data', 'Death_date', 'Intro2Insectary_date', tpl('{label} murió ({later}) antes de entrar al insectario ({earlier})')],
+    [
+      'Insectary_data',
+      'Preservation_date',
+      'Intro2Insectary_date',
+      tpl('{label} se preservó ({later}) antes de entrar al insectario ({earlier})'),
+    ],
+    ['Insectary_data', 'Preservation_date', 'Death_date', tpl('{label} se preservó ({later}) antes de morir ({earlier})')],
   ];
-  for (const [sheet, later, earlier, did, before] of order)
+  for (const [sheet, later, earlier, problem] of order)
     for (const row of observed(sheet)) {
       const [a, b] = [row.values[later], row.values[earlier]];
       if (!isDate(a) || !isDate(b) || a >= b || row.formulas[later]) continue;
       const slip = yearSlip(a, b, today);
-      add('date_order', row, later, `${row.label} ${did} (${iso(a)}) antes de ${before} (${iso(b)})`, {
+      add('date_order', row, later, msg(problem, { label: row.label, later: iso(a), earlier: iso(b) }), {
         related: [ref(row, earlier)],
-        ...(slip ? { fix: { recordId: row.id, values: { [later]: iso(slip) } }, fixNote: 'año mal escrito' } : {}),
+        ...(slip ? { fix: { recordId: row.id, values: { [later]: iso(slip) } }, fixNote: msg('año mal escrito') } : {}),
       });
     }
 
@@ -397,9 +440,9 @@ function scan(store) {
       for (const field of dates) {
         const value = row.values[field];
         if (row.formulas[field] || value === null || value === undefined || typeof value === 'object') continue;
-        const broken = badDate(value, today);
+        const broken = badDate(field, value, today);
         if (broken) {
-          add('bad_date', row, field, `${field} ${broken}`, dayFromNotes(row, noteFields, field));
+          add('bad_date', row, field, broken, dayFromNotes(row, noteFields, field));
           continue;
         }
         if (!isDate(value) || value <= today) continue;
@@ -408,8 +451,8 @@ function scan(store) {
           'future_date',
           row,
           field,
-          `${field} es ${iso(value)}, después de hoy`,
-          slip ? { fix: { recordId: row.id, values: { [field]: iso(slip) } }, fixNote: 'año mal escrito' } : {},
+          msg('{field} es {date}, después de hoy', { field, date: iso(value) }),
+          slip ? { fix: { recordId: row.id, values: { [field]: iso(slip) } }, fixNote: msg('año mal escrito') } : {},
         );
       }
     }
@@ -424,13 +467,13 @@ function scan(store) {
     for (const row of observed(sheet)) {
       if (!isPreserved(row)) continue;
       if (!isIdValue(row.values.CAM_ID) && !row.formulas.CAM_ID)
-        add('missing_sample', row, 'CAM_ID', 'Preservada sin CAM_ID');
+        add('missing_sample', row, 'CAM_ID', msg('Preservada sin CAM_ID'));
       if (
         !isIdValue(row.values.Tube_1_id) &&
         !row.formulas.Tube_1_id &&
         text(row.values.Tube_1_tissue).toUpperCase() !== 'NOT_COLLECTED'
       )
-        add('missing_sample', row, 'Tube_1_id', 'Preservada sin Tube_1_id');
+        add('missing_sample', row, 'Tube_1_id', msg('Preservada sin Tube_1_id'));
     }
 
   // ---- A field mark on two species: an ID given twice, or a wrong species (docs/monitoring.md).
@@ -456,9 +499,20 @@ function scan(store) {
         'mark_reuse',
         row,
         'FieldMark_ID',
-        `${mark} ya se usó para ${text(owners[0].values.SPECIES)} (fila ${owners[0].row}${
-          isDate(owners[0].values.Collection_date) ? `, ${iso(owners[0].values.Collection_date)}` : ''
-        }); aquí es ${text(row.values.SPECIES)}`,
+        isDate(owners[0].values.Collection_date)
+          ? msg('{mark} ya se usó para {species} (fila {row}, {date}); aquí es {here}', {
+              mark,
+              species: text(owners[0].values.SPECIES),
+              row: owners[0].row,
+              date: iso(owners[0].values.Collection_date),
+              here: text(row.values.SPECIES),
+            })
+          : msg('{mark} ya se usó para {species} (fila {row}); aquí es {here}', {
+              mark,
+              species: text(owners[0].values.SPECIES),
+              row: owners[0].row,
+              here: text(row.values.SPECIES),
+            }),
         { related: owners.slice(0, 5).map(o => ref(o, 'SPECIES')) },
       );
   }
@@ -468,21 +522,44 @@ function scan(store) {
   const byId = new Map(collection.map(r => [r.id, r]));
   const day = date => date.split('-').reverse().join('/');
   const clock = m => (m === null ? '' : `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`);
-  const sexWord = s => (s === 'female' ? 'hembra' : s === 'male' ? 'macho' : '');
+  const sexWord = s => (s === 'female' ? msg('hembra') : s === 'male' ? msg('macho') : '');
   const rowText = r =>
-    `fila ${r.row} (${[r.species || 'sin especie', sexWord(r.sex), clock(r.minutes), r.markId].filter(Boolean).join(', ')})`;
-  const disagree = 'la nota no coincide del todo con su fila';
+    msg('fila {row} ({details})', {
+      row: r.row,
+      details: [r.species || msg('sin especie'), sexWord(r.sex), clock(r.minutes), r.markId].filter(Boolean),
+    });
+  const disagree = tpl('la nota no coincide del todo con su fila');
   const WHY = {
-    tie: 'empate con otra fila',
-    order: 'solo por el orden del recorrido',
+    tie: tpl('empate con otra fila'),
+    order: tpl('solo por el orden del recorrido'),
     sure: disagree,
     mark: disagree,
-    none: 'ninguna fila encaja',
+    none: tpl('ninguna fila encaja'),
   };
+  const CONFLICT = { especie: tpl('especie'), sexo: tpl('sexo'), marca: tpl('marca') };
+  const MAYBE = [
+    tpl('No hay filas libres de ese día.'),
+    tpl('Puede ser la {a}.'),
+    tpl('Puede ser la {a} o la {b}.'),
+    tpl('Puede ser la {a} o la {b} o la {c}.'),
+  ];
   for (const d of pendingPoints(store)) {
     const proposed = d.proposed.find(Boolean) || null;
     const options = [proposed, ...d.candidates.filter(r => r.recordId !== proposed?.recordId)].filter(Boolean).slice(0, 3);
     const conflicts = d.conflicts.filter(c => c !== 'hora');
+    const vars = {
+      text: d.text,
+      day: day(d.date),
+      collector: d.collector || msg('sin colector'),
+      why: msg(WHY[d.confidence] ?? String(d.confidence)),
+      options: msg(MAYBE[options.length], Object.fromEntries(options.map((r, i) => ['abc'[i], rowText(r)]))),
+    };
+    const problem = conflicts.length
+      ? msg(
+          'Punto «{text}» del recorrido del {day} ({collector}) guardado sin fila: {why} (no coincide: {conflicts}). {options} Emparéjalo en Monitoreo → Dudas.',
+          { ...vars, conflicts: conflicts.map(c => (CONFLICT[c] ? msg(CONFLICT[c]) : c)) },
+        )
+      : msg('Punto «{text}» del recorrido del {day} ({collector}) guardado sin fila: {why}. {options} Emparéjalo en Monitoreo → Dudas.', vars);
     issues.push({
       id: `walk_doubt:${d.trackId}:${d.indexes[0]}`,
       kind: 'walk_doubt',
@@ -493,11 +570,7 @@ function scan(store) {
       label: `Wikiloc ${day(d.date)} ${text(d.collector).split(' - ')[0]}`,
       field: 'Wikiloc',
       value: d.text,
-      problem:
-        `Punto «${d.text}» del recorrido del ${day(d.date)} (${d.collector || 'sin colector'}) guardado sin fila: ` +
-        `${WHY[d.confidence]}${conflicts.length ? ` (no coincide: ${conflicts.join(', ')})` : ''}. ` +
-        (options.length ? `Puede ser la ${options.map(rowText).join(' o la ')}. ` : 'No hay filas libres de ese día. ') +
-        'Emparéjalo en Monitoreo → Dudas.',
+      ...textFields('problem', problem),
       link: '#/monitoreo?vista=dudas',
       walk: { trackId: d.trackId, index: d.indexes[0], date: d.date, collector: d.collector, name: d.name, wikiloc: d.wikiloc },
       related: options.flatMap(r => (byId.has(r.recordId) ? [ref(byId.get(r.recordId), 'SPECIES')] : [])),

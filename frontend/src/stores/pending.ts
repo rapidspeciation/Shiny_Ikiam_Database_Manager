@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { api, ApiError, requestId } from '../lib/api'
+import { api, ApiError, learnItems, requestId } from '../lib/api'
 import { mainPurpose, purposeFromHash } from '../lib/history'
 import { t } from '../lib/i18n'
 import { type CheckSheet, localProblems } from '../lib/saveChecks'
@@ -363,6 +363,7 @@ export const usePending = defineStore('pending', {
         useTables().merge(result.records)
         const skipped = new Set((result.skipped || []).map(itemKey))
         clearSentErrors()
+        learnItems(result.skipped)
         for (const item of result.skipped || []) this.errors[itemKey(item)] = item.message
         // Remove only what was saved and has not been changed again since.
         let saved = 0

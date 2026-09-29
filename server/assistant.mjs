@@ -6,6 +6,7 @@ import { createReports } from './reports.mjs';
 import { TYPED_OVER_FORMULA, uniqueIdIndex } from './batch.mjs';
 import { allIssues, checkData } from './checks.mjs';
 import { agreedFixes, markApplied } from './review.mjs';
+import { tpl, withoutMsgs } from './messages.mjs';
 import { comparable, isSumField, labelFor, moduleMap, simpleSum, validateValues } from './schema.mjs';
 import { TUBE_FIELD, isIdValue, isUnique } from './verifications.mjs';
 import { listOptions, listProblem } from './verify.mjs';
@@ -1180,7 +1181,7 @@ export function createAssistant({ store, config = {} }) {
       });
       for (const issue of out.issues.filter(i => i.recordId))
         context.sources.set(issue.recordId, { id: issue.recordId, type: 'record', sheet: issue.sheet, row: issue.row, label: issue.label });
-      return out;
+      return { ...out, issues: withoutMsgs(out.issues) };
     }
     if (name === 'queue_wikiloc') {
       if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot queue walks' };
@@ -1208,7 +1209,7 @@ export function createAssistant({ store, config = {} }) {
         const out = await applyProposal(proposal, context.user, {
           requestId: `ai-${randomUUID()}`,
           indexes: args.indexes,
-          reason: 'Confirmado en el chat',
+          reason: tpl('Confirmado en el chat'),
         });
         context.applied.push(proposal.id);
         return { status: out.status, rows: out.applied.length };
@@ -1760,7 +1761,7 @@ export function createAssistant({ store, config = {} }) {
       const context = { threadId, user, records: new Map(), sources: new Map(), results: [], proposals: [], applied: [] };
       const out = proposeChanges(
         {
-          reason: 'Arreglos de la Revisión de datos',
+          reason: tpl('Arreglos de la Revisión de datos'),
           changes: [...merged.values()].map(c => ({ recordId: c.recordId, values: c.values, note: c.notes.join(' · ') })),
         },
         context,
@@ -1784,7 +1785,7 @@ export function createAssistant({ store, config = {} }) {
       const context = { threadId, user, records: new Map(), sources: new Map(), results: [], proposals: [], applied: [] };
       const out = proposeChanges(
         {
-          reason: 'Correcciones acordadas en Revisión',
+          reason: tpl('Correcciones acordadas en Revisión'),
           changes: [...merged.values()].map(c => ({ recordId: c.recordId, values: c.values, note: c.notes.join(' · ') })),
           issueIds: agreed.fixes.map(f => f.issueId),
         },

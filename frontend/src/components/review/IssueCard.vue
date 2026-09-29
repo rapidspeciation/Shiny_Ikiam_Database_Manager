@@ -10,10 +10,12 @@ import {
   VERDICT_WORD,
   differingCells,
   fixText,
+  groupLabel,
   otherField,
   percent,
   photoList,
   photoUrl,
+  problemText,
   shown,
   type Issue,
   type Verdict,
@@ -136,7 +138,7 @@ async function toggleHistory() {
         {{ i.verdict.user }}
       </span>
     </header>
-    <p class="mt-1 text-sm text-stone-900">{{ i.problem }}</p>
+    <p class="mt-1 text-sm text-stone-900">{{ problemText(i) }}</p>
 
     <div class="mt-2 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
       <!-- Photos: first on phones, full width; beside the details on a computer. -->
@@ -306,7 +308,7 @@ async function toggleHistory() {
           class="flex flex-wrap items-center gap-2 rounded bg-stone-50 px-2 py-1.5 text-xs"
         >
           <Layers :size="14" class="text-stone-500" />
-          <span>{{ $t('Lote «{label}»: {n}', { label: i.group.label, n: i.group.size }) }}</span>
+          <span>{{ $t('Lote «{label}»: {n}', { label: groupLabel(i.group), n: i.group.size }) }}</span>
           <button class="text-brand-700 hover:underline" @click="emit('group', i.group.key)">{{ $t('ver solo el lote') }}</button>
           <template v-if="canEdit">
             <button class="btn px-2 py-0.5 text-xs" :disabled="busy" @click="emit('batch', i, 'accepted')">

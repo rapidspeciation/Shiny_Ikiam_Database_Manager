@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { locale, t, tn } from '../i18n'
+import { learnMsg, locale, t, tm, tn, tx } from '../i18n'
 import { en } from '../../locales/en'
 
 const SRC = join(__dirname, '..', '..')
@@ -30,6 +30,24 @@ function keys(): string[] {
   return [...out]
 }
 
+/**
+ * Every template the server builds a text from (server/messages.mjs): literals
+ * in msg(…) / tpl(…) (first argument) and msgn(…) (second and third).
+ */
+function serverTemplates(): string[] {
+  const dir = join(SRC, '..', '..', 'server')
+  const out = new Set<string>()
+  const str = String.raw`'((?:[^'\\\n]|\\.)*)'`
+  const one = new RegExp(String.raw`(?<![\w$.])(?:msg|tpl)\(\s*` + str, 'g')
+  const plural = new RegExp(String.raw`(?<![\w$.])msgn\([^,()]{1,80},\s*` + str + String.raw`\s*,\s*` + str, 'g')
+  for (const name of readdirSync(dir).filter(n => n.endsWith('.mjs'))) {
+    const text = readFileSync(join(dir, name), 'utf8')
+    for (const m of text.matchAll(one)) out.add(m[1])
+    for (const m of text.matchAll(plural)) out.add(m[1]).add(m[2])
+  }
+  return [...out]
+}
+
 describe('i18n', () => {
   it('English by default, Spanish on request, placeholders filled', () => {
     locale.value = 'en'
@@ -44,6 +62,28 @@ describe('i18n', () => {
   it('every text passed to t() has its English', () => {
     const missing = keys().filter(k => /[a-záéíóúñ]/i.test(k) && !(k in en))
     expect(missing).toEqual([])
+  })
+  it('every template the server builds texts from has its English', () => {
+    const templates = serverTemplates()
+    expect(templates.length).toBeGreaterThan(100)
+    expect(templates.filter(k => /[a-záéíóúñ]/i.test(k) && !(k in en))).toEqual([])
+  })
+  it('server descriptors: nested words and lists translated, sheet values kept, Spanish unchanged', () => {
+    const m = {
+      key: '{head}: {items} y {more} más',
+      vars: { head: { key: '{n} filas restauradas', vars: { n: 10 } }, items: ['A0D–A8D', 'R4D'], more: 2 },
+    }
+    locale.value = 'en'
+    expect(tm(m)).toBe('10 rows restored: A0D–A8D, R4D and 2 more')
+    expect(tx('10 filas restauradas: …', m)).toBe('10 rows restored: A0D–A8D, R4D and 2 more')
+    expect(tx('Sin cambios guardados')).toBe('No saved changes')
+    // An error with values: t(message) finds it through the descriptor that came with it.
+    learnMsg('Otra persona cambió Sex en la hoja', { key: 'Otra persona cambió {field} en la hoja', vars: { field: 'Sex' } })
+    expect(t('Otra persona cambió Sex en la hoja')).toBe('Someone else changed Sex in the sheet')
+    locale.value = 'es'
+    expect(tm(m)).toBe('10 filas restauradas: A0D–A8D, R4D y 2 más')
+    expect(t('Otra persona cambió Sex en la hoja')).toBe('Otra persona cambió Sex en la hoja')
+    locale.value = 'en'
   })
   it('no empty translations, same placeholders in both languages', () => {
     for (const [es, text] of Object.entries(en)) {

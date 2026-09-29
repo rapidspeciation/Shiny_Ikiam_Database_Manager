@@ -4,7 +4,7 @@ import { Rows3 } from 'lucide-vue-next'
 import { api } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
 import { useSession } from '../stores/session'
-import { t } from '../lib/i18n'
+import { t, tm, type Msg } from '../lib/i18n'
 
 /**
  * "Crear filas preasignadas": more empty rows at the end of a sheet, copies of
@@ -23,6 +23,8 @@ interface Extended {
   lastId: string | null
   ok: boolean
   problems: string[]
+  /** The problems' descriptors, for the interface language (server/messages.mjs). */
+  problemsMsg?: Msg[]
   ownerColumns: string[]
 }
 
@@ -43,7 +45,12 @@ async function extend() {
       : ''
     const text = `${t('Filas {from}–{to} creadas en {sheet}{ids}.', { from: r.added.from, to: r.added.to, sheet: props.sheet, ids })}${owner}`
     if (r.ok) notify(text, owner ? 'info' : 'success', owner ? 12000 : undefined)
-    else notify(`${text} ${t('Revisa: {problems}', { problems: r.problems.join('; ') })}`, 'error', 15000)
+    else
+      notify(
+        `${text} ${t('Revisa: {problems}', { problems: (r.problemsMsg?.map(tm) ?? r.problems).join('; ') })}`,
+        'error',
+        15000,
+      )
     emit('done')
   } catch (e) {
     notify(errorText(e), 'error')
