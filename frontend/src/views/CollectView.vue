@@ -65,6 +65,8 @@ const drafts = persistentRef<Draft[]>(`collect:drafts:${useSession().user?.usern
 for (const d of drafts.value) {
   d.collector ??= header.value.collector
   d.identifier ??= header.value.identifier
+  d.rainfall ??= header.value.rainfall
+  d.cloud ??= header.value.cloud
 }
 const addCount = ref(1)
 const addFate = ref<Fate>('insectario')
@@ -321,6 +323,8 @@ function blankDraft(): Draft {
     medium: '',
     collector: header.value.collector,
     identifier: header.value.identifier,
+    rainfall: header.value.rainfall,
+    cloud: header.value.cloud,
   }
 }
 /** Writes a typed or pasted value in a row; says so when the row changes Release_Collect because of it. */
@@ -536,9 +540,11 @@ const LISTED: Partial<Record<Column, string>> = {
   medium: 'Preservation_medium',
   collector: 'Collector',
   identifier: 'Identifier',
+  rainfall: 'Rainfall',
+  cloud: 'Cloud_cover',
 }
 /** The people of the list's rows, for the summary before saving. */
-const distinct = (field: 'collector' | 'identifier') =>
+const distinct = (field: 'collector' | 'identifier' | 'rainfall' | 'cloud') =>
   [...new Set(drafts.value.filter(d => !isEmpty(d)).map(d => d[field]).filter(Boolean))].join(', ') || '—'
 function cellProblem(d: Draft, column: Column): string | null {
   const field = LISTED[column]
@@ -591,8 +597,8 @@ function collectionRow(d: Draft): Record<string, CellValue> {
     Collection_date: date,
     Collection_time: dayFraction(d.time),
     Collector: d.collector || null,
-    Rainfall: header.value.rainfall || null,
-    Cloud_cover: header.value.cloud || null,
+    Rainfall: d.rainfall || null,
+    Cloud_cover: d.cloud || null,
     Flight_height: 'NA',
     Purpose: d.purpose || null,
     Notes_Collection_data: d.notes || null,
@@ -733,11 +739,11 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         <ChoiceField v-model="header.identifier" class="field-input" :options="people" />
       </label>
       <label>
-        <span class="field-label">Rainfall</span>
+        <span class="field-label">Rainfall <span class="font-normal text-stone-500">(filas nuevas)</span></span>
         <ChoiceField v-model="header.rainfall" class="field-input" :options="rainfalls" :freetext="false" allow-empty />
       </label>
       <label>
-        <span class="field-label">Cloud_cover</span>
+        <span class="field-label">Cloud_cover <span class="font-normal text-stone-500">(filas nuevas)</span></span>
         <ChoiceField v-model="header.cloud" class="field-input" :options="clouds" :freetext="false" allow-empty />
       </label>
     </div>
@@ -819,6 +825,8 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         :purposes="options.Purpose || []"
         :mediums="mediums"
         :people="people"
+        :rainfalls="rainfalls"
+        :clouds="clouds"
         :paste="pasteText"
         :id-problem="idProblem"
         :next-id="nextId"
@@ -1008,6 +1016,17 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
                   @update:model-value="setColumn(d, c, $event)"
                 />
               </td>
+              <td v-for="c in ['rainfall', 'cloud'] as const" :key="c" class="px-1">
+                <ChoiceField
+                  :model-value="d[c]"
+                  :data-col="c"
+                  class="field-input w-48"
+                  :options="c === 'rainfall' ? rainfalls : clouds"
+                  :freetext="false"
+                  allow-empty
+                  @update:model-value="setColumn(d, c, $event)"
+                />
+              </td>
               <td class="px-1 whitespace-nowrap">
                 <button class="btn-ghost" title="Quitar" @click="remove(d.key)"><Trash2 :size="14" /></button>
               </td>
@@ -1158,7 +1177,7 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
           </table>
           <p class="text-stone-600">
             Collector: {{ distinct('collector') }} · Identifier: {{ distinct('identifier') }} · Rainfall:
-            {{ header.rainfall || '—' }} · Cloud_cover: {{ header.cloud || '—' }}
+            {{ distinct('rainfall') }} · Cloud_cover: {{ distinct('cloud') }}
           </p>
         </div>
         <footer class="flex justify-end gap-2 border-t border-stone-200 px-4 py-3">

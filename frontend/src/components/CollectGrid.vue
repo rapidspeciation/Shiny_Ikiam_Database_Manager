@@ -35,6 +35,9 @@ const props = defineProps<{
   mediums: string[]
   /** Collector / Identifier names ("FCH - Franz Chandi"). */
   people: string[]
+  /** The sheet's weather codes (DY_(dry), S&C_(sun_&_cloud_patches)…). */
+  rainfalls: string[]
+  clouds: string[]
   /** Spreads a block pasted at a row and column; false for a single value. */
   paste: (text: string, index: number, column: Column) => boolean
   /** The Insectary ID `step` places after `id` among the pre-made rows (the fill handle continues them). */
@@ -73,6 +76,8 @@ const toRow = (d: Draft): Row => ({
   medium: d.medium,
   collector: d.collector,
   identifier: d.identifier,
+  rainfall: d.rainfall,
+  cloud: d.cloud,
   purpose: d.purpose,
   notes: d.notes,
 })
@@ -158,6 +163,9 @@ function columns(): ColumnDefinition[] {
     text('notes', 220),
     text('collector', 200, choices(() => props.people)),
     text('identifier', 200, choices(() => props.people)),
+    // Weather takes only the sheet's codes (typing "dy" gives DY_(dry)).
+    text('rainfall', 170, { cssClass: 'has-choices', ...choiceEditor(() => props.rainfalls, false) }),
+    text('cloud', 230, { cssClass: 'has-choices', ...choiceEditor(() => props.clouds, false) }),
     {
       title: '',
       field: '__remove',
@@ -239,6 +247,8 @@ function completed(field: Column, text: string, row: Row) {
     medium: () => props.mediums,
     collector: () => props.people,
     identifier: () => props.people,
+    rainfall: () => props.rainfalls,
+    cloud: () => props.clouds,
   }
   return options[field] ? complete(text, options[field]!()) : text
 }

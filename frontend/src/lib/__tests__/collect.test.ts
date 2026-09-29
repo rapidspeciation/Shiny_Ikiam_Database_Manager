@@ -20,6 +20,8 @@ describe('the summary shown before saving a Colecta', () => {
     medium: '',
     collector: 'PAS - Patricio Salazar',
     identifier: 'PAS - Patricio Salazar',
+    rainfall: 'DY_(dry)',
+    cloud: 'S&C_(sun_&_cloud_patches)',
     ...over,
   })
   it('counts sexes sent to the insectary, preserved ones with their CAM range, and species by sex', () => {

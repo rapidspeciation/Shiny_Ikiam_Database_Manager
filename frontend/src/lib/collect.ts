@@ -20,6 +20,9 @@ export interface Draft {
   /** Who caught it and who identified it: the header's people by default, changeable per butterfly. */
   collector: string
   identifier: string
+  /** Weather when it was caught: the header's by default, changeable per butterfly (it changes during the day). */
+  rainfall: string
+  cloud: string
 }
 /** The Release_Collect value each fate is saved as; the list shows it exactly as the sheet will have it. */
 export const FATES: Record<Fate, { label: string; value: string }> = {
@@ -52,6 +55,8 @@ export const HEADERS: Record<Column, string> = {
   notes: 'Notes_Collection_data',
   collector: 'Collector',
   identifier: 'Identifier',
+  rainfall: 'Rainfall',
+  cloud: 'Cloud_cover',
 }
 
 /**
@@ -75,6 +80,8 @@ export const COLUMNS = [
   'notes',
   'collector',
   'identifier',
+  'rainfall',
+  'cloud',
 ] as const
 export type Column = (typeof COLUMNS)[number]
 
