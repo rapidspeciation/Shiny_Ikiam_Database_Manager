@@ -5,6 +5,21 @@ export interface Field {
   label: string
   type: 'text' | 'number' | 'date'
   readonly?: boolean
+  /** Its column is missing from the live sheet: last known values, read-only. */
+  unavailable?: boolean
+}
+
+/**
+ * A difference between a sheet's live header and the fields the app knows:
+ * a known column missing, a new column (ignored), a header written twice, or a
+ * header row the app cannot read. `blocking` ones stop reads and saves of the sheet.
+ */
+export interface HeaderProblem {
+  kind: 'missing' | 'new' | 'duplicate' | 'header'
+  field: string | null
+  column?: string
+  columns?: string[]
+  blocking?: boolean
 }
 
 export interface Module {
@@ -58,8 +73,8 @@ export interface Table {
   revision: string
   columns: Field[]
   rows: TableRow[]
-  /** Columns whose header no longer matches the live Sheet; saving there is blocked. */
-  headerProblems: { field: string; found: string | null }[]
+  /** How the live header differs from the fields the app knows (server/columns.mjs). */
+  headerProblems: HeaderProblem[]
   /** Newest change in the server's copy, to ask for later changes only. */
   latest?: string
   /** Column keys of the wire rows, in sheet order (may repeat). */

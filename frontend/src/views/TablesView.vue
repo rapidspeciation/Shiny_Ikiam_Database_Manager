@@ -6,6 +6,8 @@ import { Plus, RefreshCw, ArrowDownToLine, ExternalLink, Search, FileDown, Shiel
 import SheetGrid from '../components/SheetGrid.vue'
 import WorkbookWarnings from '../components/WorkbookWarnings.vue'
 import DataReview from '../components/DataReview.vue'
+import ExtendRowsButton from '../components/ExtendRowsButton.vue'
+import type { HeaderProblem } from '../lib/types'
 import { useSheet } from '../composables/useSheet'
 import { notify } from '../lib/notice'
 import { usePending } from '../stores/pending'
@@ -77,6 +79,26 @@ function addRow() {
   pending.addCreate(module.value, 'nueva', {})
   pending.touch()
 }
+
+/** How the sheet's header row differs from the columns the app knows (moved columns are not a problem). */
+const headerNotice = computed(() => {
+  const problems = table.value?.headerProblems || []
+  if (!problems.length) return null
+  const text = (p: HeaderProblem) =>
+    p.kind === 'missing'
+      ? `falta la columna ${p.field}`
+      : p.kind === 'new'
+        ? `columna nueva ${p.field} en ${p.column} (ignorada)`
+        : p.kind === 'duplicate'
+          ? `${p.field} aparece dos veces (${p.columns?.join(', ')})`
+          : 'no se reconoce la fila de encabezados'
+  const shown = problems.filter(p => p.blocking || !problems.some(q => q.blocking)).slice(0, 8)
+  return {
+    blocking: problems.some(p => p.blocking),
+    missing: problems.some(p => p.kind === 'missing'),
+    text: shown.map(text).join(' · ') + (problems.length > shown.length ? ' · …' : ''),
+  }
+})
 </script>
 
 <template>
@@ -106,6 +128,7 @@ function addRow() {
           <ShieldAlert :size="15" /> Revisión de datos
         </button>
         <button v-if="session.canEdit" class="btn" @click="addRow"><Plus :size="15" /> Añadir fila</button>
+        <ExtendRowsButton v-if="session.isReviewer" :sheet="module" :count="50" @done="load(true)" />
         <button class="btn" title="Copiar la primera fila seleccionada hacia abajo (Ctrl+D)" @click="grid?.fillDown()">
           <ArrowDownToLine :size="15" /> Rellenar
         </button>
@@ -120,9 +143,13 @@ function addRow() {
         </a>
       </div>
     </div>
-    <p v-if="table?.headerProblems.length" class="bg-red-50 px-4 py-2 text-sm text-red-800">
-      Las columnas de {{ module }} cambiaron en Google Sheets ({{ table.headerProblems.map(p => p.field).join(', ') }}). No se
-      puede guardar en esta hoja hasta actualizar la aplicación.
+    <p v-if="headerNotice?.blocking" class="bg-red-50 px-4 py-2 text-sm text-red-800">
+      La hoja {{ module }} cambió en Google Sheets: {{ headerNotice.text }}. No se lee ni se guarda en esta hoja hasta
+      corregir los encabezados.
+    </p>
+    <p v-else-if="headerNotice && session.isReviewer" class="bg-amber-50 px-4 py-2 text-sm text-amber-900">
+      La hoja cambió: {{ headerNotice.text }}.
+      <template v-if="headerNotice.missing">Esas columnas se muestran con su último valor y no se pueden editar.</template>
     </p>
     <p v-if="!review" class="hint px-4 py-1">
       <template v-if="touch"

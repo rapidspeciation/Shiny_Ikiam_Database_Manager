@@ -5,6 +5,7 @@ import { computed, nextTick, onDeactivated, reactive, ref, watch } from 'vue'
 import { CheckSquare, Copy, Eraser, Plus, Save, Trash2, X } from 'lucide-vue-next'
 import CollectGrid from '../components/CollectGrid.vue'
 import SheetGrid from '../components/SheetGrid.vue'
+import InsectaryIdsWarning from '../components/InsectaryIdsWarning.vue'
 import { useSheet } from '../composables/useSheet'
 import { api } from '../lib/api'
 import { isBlank } from '../lib/cells'
@@ -772,6 +773,12 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
         <Plus :size="15" /> Añadir {{ Math.max(1, addCount || 1) }} {{ Math.max(1, addCount || 1) === 1 ? 'fila' : 'filas' }}
       </button>
     </div>
+    <!-- Live butterflies take the next pre-made Insectary IDs. -->
+    <InsectaryIdsWarning
+      class="mx-3 my-2"
+      :revision="tables.tables.Insectary_data?.revision"
+      @extended="loadFreeIds"
+    />
 
     <div v-if="drafts.length" class="border-b border-stone-200 bg-white px-3 pb-2">
       <!-- Always in sight while scrolling the list, and kept to one line: how long it is, how to trim it, the view. -->

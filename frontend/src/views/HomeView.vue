@@ -38,7 +38,7 @@ watch(() => session.user?.username, load)
   <div class="h-full overflow-auto bg-stone-50">
     <div class="mx-auto max-w-7xl space-y-8 p-4 sm:p-6">
       <!-- For the team, what they need when writing labels comes first. -->
-      <LatestIdsCard v-if="data?.team" :ids="data.team.latestIds" />
+      <LatestIdsCard v-if="data?.team" :ids="data.team.latestIds" @extended="load" />
       <UpcomingCard v-if="data?.team" :upcoming="data.team.upcoming" />
       <header class="space-y-3">
         <div class="flex flex-wrap items-end gap-x-4 gap-y-1">

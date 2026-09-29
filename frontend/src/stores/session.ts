@@ -22,6 +22,8 @@ export const useSession = defineStore('session', {
   getters: {
     canEdit: s => !!s.user && ['editor', 'reviewer', 'admin'].includes(s.user.role),
     isAdmin: s => s.user?.role === 'admin',
+    /** Reviewers and admins: may also make pre-made rows in the workbook. */
+    isReviewer: s => !!s.user && ['reviewer', 'admin'].includes(s.user.role),
     module: s => (id: string) => s.modules.find(m => m.id === id),
   },
   actions: {
