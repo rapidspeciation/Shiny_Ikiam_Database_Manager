@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -20,7 +20,11 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     mkdirSync(join(home, '.config', 'ithomiini'), { recursive: true });
     writeFileSync(join(home, '.config', 'ithomiini', 'service.env'), 'APP_PORT=8794\nAPP_BASE_PATH=/\n');
     writeFileSync(join(home, '.claude.json'), '{}');
-    const env = { ...process.env, HOME: home, ITHOMIINI_SHARED: shared, T3_BIN: '/bin/true' };
+    // Codex is installed and has another user's settings (e.g. another service's trusted folder).
+    mkdirSync(join(home, '.codex'), { recursive: true });
+    const codexGlobal = '[projects."/home/other/job"]\ntrust_level = "trusted"\n\n[tui]\nscreen_reader_detection_done = true';
+    writeFileSync(join(home, '.codex', 'config.toml'), codexGlobal);
+    const env = { ...process.env, HOME: home, CODEX_HOME: join(home, '.codex'), ITHOMIINI_SHARED: shared, T3_BIN: '/bin/true' };
     const run = (...args) => execFileSync(process.execPath, [script, ...args], { env, encoding: 'utf8' });
 
     run('ana');
@@ -44,6 +48,18 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     assert.deepEqual(settings.permissions.allow, ['mcp__ithomiini', 'Skill']);
     assert.ok(JSON.parse(readFileSync(join(home, '.claude.json'), 'utf8')).projects[workspace].hasTrustDialogAccepted);
 
+    // Codex (GPT threads): the same brief (AGENTS.md), skills and MCP server with the same token.
+    assert.match(readFileSync(join(workspace, '.agents', 'skills', 'digitalizar-cuaderno', 'SKILL.md'), 'utf8'), /name: digitalizar-cuaderno/);
+    const codex = readFileSync(join(workspace, '.codex', 'config.toml'), 'utf8');
+    assert.match(codex, /^\[mcp_servers\.ithomiini\]$/m);
+    assert.match(codex, /^url = "http:\/\/127\.0\.0\.1:8794\/api\/ai\/mcp"$/m);
+    assert.ok(codex.includes(`http_headers = { Authorization = "${mcp.headers.Authorization}" }`));
+    assert.match(codex, /^default_tools_approval_mode = "approve"$/m);
+    assert.equal(statSync(join(workspace, '.codex', 'config.toml')).mode & 0o777, 0o600);
+    // Only the workspace is trusted in the Codex home; the rest of that file is kept as it was.
+    const trusted = `${codexGlobal}\n\n[projects."${workspace}"]\ntrust_level = "trusted"\n`;
+    assert.equal(readFileSync(join(home, '.codex', 'config.toml'), 'utf8'), trusted);
+
     // A stale file of an old skill version, a person's own setting, a workspace of a user who left.
     writeFileSync(join(workspace, '.claude', 'skills', 'digitalizar-cuaderno', 'old.md'), 'x');
     writeFileSync(join(workspace, '.claude', 'settings.json'), JSON.stringify({ ...settings, model: 'opus' }));
@@ -58,11 +74,15 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     assert.equal(JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8')).mcpServers.ithomiini.headers.Authorization, mcp.headers.Authorization, 'the token is kept');
     assert.equal(JSON.parse(readFileSync(join(workspace, '.claude', 'settings.json'), 'utf8')).model, 'opus');
     assert.equal(db.prepare('SELECT count(*) n FROM ai_tokens WHERE revoked_at IS NULL').get().n, 1);
+    assert.equal(readFileSync(join(workspace, '.codex', 'config.toml'), 'utf8'), codex, 'Codex keeps the token too');
+    assert.equal(readFileSync(join(home, '.codex', 'config.toml'), 'utf8'), trusted, 'the workspace is trusted once');
 
     // Provisioning the person again gives a fresh token (the old one stops working).
     run('ana');
     assert.notEqual(JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8')).mcpServers.ithomiini.headers.Authorization, mcp.headers.Authorization);
     assert.equal(db.prepare('SELECT count(*) n FROM ai_tokens WHERE revoked_at IS NULL').get().n, 1);
+    const fresh = JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8')).mcpServers.ithomiini.headers.Authorization;
+    assert.ok(readFileSync(join(workspace, '.codex', 'config.toml'), 'utf8').includes(`Authorization = "${fresh}"`), 'Codex gets the new token');
     db.close();
   } finally {
     rmSync(home, { recursive: true, force: true });
