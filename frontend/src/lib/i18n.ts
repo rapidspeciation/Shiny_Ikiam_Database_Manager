@@ -15,6 +15,7 @@
  */
 import { ref, watch } from 'vue'
 import { en } from '../locales/en'
+import { setTranslator } from './translate.ts'
 
 export type Locale = 'en' | 'es'
 const KEY = 'ui:locale'
@@ -40,3 +41,6 @@ export function tn(n: number, one: string, many: string, vars?: Vars): string {
 }
 /** The locale for Intl (dates, numbers): en-GB keeps day-first dates. */
 export const intlLocale = () => (locale.value === 'en' ? 'en-GB' : 'es-EC')
+
+// Files shared with the server (dates.ts) translate through lib/translate.ts.
+setTranslator({ t, intlLocale })

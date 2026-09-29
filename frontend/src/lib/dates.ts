@@ -1,4 +1,4 @@
-import { intlLocale, t, tn } from './i18n'
+import { intlLocale, t, tn } from './translate.ts'
 
 // Google Sheets stores dates as serial day numbers counted from 1899-12-30.
 // The original Shiny app displayed them as "14-Aug-25"; we keep that format.
