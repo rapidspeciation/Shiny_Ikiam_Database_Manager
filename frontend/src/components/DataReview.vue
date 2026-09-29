@@ -19,11 +19,15 @@ interface Ref {
   field?: string
   value?: unknown
 }
-interface Issue extends Ref {
+/** A Wikiloc point without a row (walk_doubt) has no row, or only its likeliest one, and a link to Dudas. */
+interface Issue extends Omit<Ref, 'row' | 'recordId'> {
+  row: number | null
+  recordId: string | null
   id: string
   kind: string
   field: string
   problem: string
+  link?: string
   fix?: { recordId: string; values: Record<string, unknown> }
   fixNote?: string
   related?: Ref[]
@@ -164,15 +168,24 @@ const fixText = (i: Issue) =>
             </td>
             <td class="border-b border-stone-100 px-1.5 py-1 text-stone-600">{{ i.sheet }}</td>
             <td class="border-b border-stone-100 px-1.5 py-1 tabular-nums">
-              <button class="text-brand-700 hover:underline" title="Abrir en la tabla" @click="emit('open', i.sheet, i.label)">
+              <button
+                v-if="i.row && !i.link"
+                class="text-brand-700 hover:underline"
+                title="Abrir en la tabla"
+                @click="emit('open', i.sheet, i.label)"
+              >
                 {{ i.row }}
               </button>
+              <span v-else class="text-stone-500">{{ i.row ?? '—' }}</span>
             </td>
             <td class="border-b border-stone-100 px-1.5 py-1 font-medium whitespace-nowrap">{{ i.label }}</td>
             <td class="border-b border-stone-100 px-1.5 py-1">{{ i.field }}</td>
             <td class="border-b border-stone-100 bg-red-50 px-1.5 py-1">{{ show(i.value) }}</td>
             <td class="min-w-72 border-b border-stone-100 px-1.5 py-1">
               {{ i.problem }}
+              <RouterLink v-if="i.link" :to="i.link.replace(/^#/, '')" class="ml-1 text-brand-700 hover:underline">
+                → Dudas
+              </RouterLink>
               <span v-for="r in i.related?.slice(0, 3)" :key="`${r.sheet}${r.row}`" class="ml-1">
                 <button class="text-brand-700 hover:underline" @click="emit('open', r.sheet, r.label)">
                   → {{ r.sheet === i.sheet ? '' : `${r.sheet} ` }}fila {{ r.row }}

@@ -16,6 +16,8 @@ export interface MapCapture {
   photos?: string[]
   recapture: boolean
   row?: number | null
+  /** Stored without a row because its pairing was doubtful (not shown until paired). */
+  doubt?: boolean
 }
 
 /** A walk on the map: its date, collector and captures. */
@@ -267,7 +269,7 @@ export function individuals(histories: MarkHistory[], walks: MapWalk[], outside:
   for (const w of walks)
     for (const c of w.captures) {
       if (c.row) byRow.set(c.row, c)
-      if (c.markId && c.species) byDayMark.set(`${isoToSerial(w.date)}|${individualKey(c.markId, c.species)}`, c)
+      if (c.markId && c.species && !c.doubt) byDayMark.set(`${isoToSerial(w.date)}|${individualKey(c.markId, c.species)}`, c)
     }
   type Raw = Omit<IndividualEvent, 'days' | 'metres'>
   const groups = new Map<string, { id: string; species: string; sex: string; events: Raw[] }>()

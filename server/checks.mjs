@@ -2,14 +2,16 @@
 // copy (never by asking Google). Each issue names the sheet row, the column and
 // the value, says what is wrong and, when the right value is obvious, carries a
 // fix shaped like a propose_changes change ({ recordId, values }), so the
-// assistant can draft the correction and the person confirms it.
+// assistant can draft the correction and the person confirms it. Wikiloc points
+// stored without a row (walk_doubt) name the row they most likely are, if any.
 //
-// The whole scan runs once per state of the local copy (and per day, for
-// future dates) and is cached, so paging and filtering are free.
+// The whole scan runs once per state of the local copy and of the stored walks
+// (and per day, for future dates) and is cached, so paging and filtering are free.
 
 import { moduleMap, parseDateText } from './schema.mjs';
 import { TUBE_FIELD, UNIQUE, blankOrNA, isIdValue } from './verifications.mjs';
 import { listOptions } from './verify.mjs';
+import { pendingPoints, tracksRevision } from './monitoring.mjs';
 
 /** Kinds of issue, in the order they are listed, with their Spanish names for the app. */
 export const CHECK_KINDS = {
@@ -23,6 +25,7 @@ export const CHECK_KINDS = {
   bad_date: 'Fecha que no es una fecha',
   missing_sample: 'Preservada sin CAM o tubo',
   mark_reuse: 'Marca usada en dos especies',
+  walk_doubt: 'Punto de Wikiloc sin emparejar',
 };
 const KIND_ORDER = Object.keys(CHECK_KINDS);
 
@@ -442,10 +445,53 @@ function scan(store) {
       );
   }
 
-  // Newest rows first inside each kind and sheet: recent mistakes are the ones people remember.
+  // ---- Wikiloc points stored on the map without a row because their pairing was doubtful (docs/monitoring.md).
+  // No fix: which row it is needs the photos, or the collector.
+  const byId = new Map(collection.map(r => [r.id, r]));
+  const day = date => date.split('-').reverse().join('/');
+  const clock = m => (m === null ? '' : `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`);
+  const sexWord = s => (s === 'female' ? 'hembra' : s === 'male' ? 'macho' : '');
+  const rowText = r =>
+    `fila ${r.row} (${[r.species || 'sin especie', sexWord(r.sex), clock(r.minutes), r.markId].filter(Boolean).join(', ')})`;
+  const disagree = 'la nota no coincide del todo con su fila';
+  const WHY = {
+    tie: 'empate con otra fila',
+    order: 'solo por el orden del recorrido',
+    sure: disagree,
+    mark: disagree,
+    none: 'ninguna fila encaja',
+  };
+  for (const d of pendingPoints(store)) {
+    const proposed = d.proposed.find(Boolean) || null;
+    const options = [proposed, ...d.candidates.filter(r => r.recordId !== proposed?.recordId)].filter(Boolean).slice(0, 3);
+    const conflicts = d.conflicts.filter(c => c !== 'hora');
+    issues.push({
+      id: `walk_doubt:${d.trackId}:${d.indexes[0]}`,
+      kind: 'walk_doubt',
+      sheet: 'Collection_data',
+      // The row it would most likely be; none when nothing fits.
+      row: proposed?.row ?? null,
+      recordId: proposed?.recordId ?? null,
+      label: `Wikiloc ${day(d.date)} ${text(d.collector).split(' - ')[0]}`,
+      field: 'Wikiloc',
+      value: d.text,
+      problem:
+        `Punto «${d.text}» del recorrido del ${day(d.date)} (${d.collector || 'sin colector'}) guardado sin fila: ` +
+        `${WHY[d.confidence]}${conflicts.length ? ` (no coincide: ${conflicts.join(', ')})` : ''}. ` +
+        (options.length ? `Puede ser la ${options.map(rowText).join(' o la ')}. ` : 'No hay filas libres de ese día. ') +
+        'Emparéjalo en Monitoreo → Dudas.',
+      link: '#/monitoreo?vista=dudas',
+      walk: { trackId: d.trackId, index: d.indexes[0], date: d.date, collector: d.collector, name: d.name, wikiloc: d.wikiloc },
+      related: options.flatMap(r => (byId.has(r.recordId) ? [ref(byId.get(r.recordId), 'SPECIES')] : [])),
+    });
+  }
+
+  // Newest rows first inside each kind and sheet: recent mistakes are the ones people remember (newest walks, for walk points).
   return issues.sort(
     (a, b) =>
-      KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || a.sheet.localeCompare(b.sheet) || b.row - a.row,
+      KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) ||
+      a.sheet.localeCompare(b.sheet) ||
+      (a.walk && b.walk ? b.walk.date.localeCompare(a.walk.date) || a.walk.index - b.walk.index : b.row - a.row),
   );
 }
 
@@ -453,7 +499,8 @@ const cache = new WeakMap();
 /** Every issue, recomputed only when the local copy (or the day) changed. */
 export function allIssues(store) {
   const state = store.db.prepare('SELECT count(*) n, max(updated_at) u FROM records').get();
-  const stamp = `${state.n}:${state.u}:${todaySerial()}`;
+  // The stored walks too: their unpaired points are listed (walk_doubt).
+  const stamp = `${state.n}:${state.u}:${todaySerial()}:${tracksRevision(store)}`;
   const hit = cache.get(store);
   if (hit?.stamp === stamp) return hit;
   const started = Date.now();

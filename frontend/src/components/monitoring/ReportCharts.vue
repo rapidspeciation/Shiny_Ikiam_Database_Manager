@@ -450,7 +450,7 @@ const intervalBins = computed(() => {
 const moves = computed(() => {
   const inRange = new Set(props.rows.map(r => `${String(r.values.FieldMark_ID ?? '').toUpperCase()}|${r.values.SPECIES}`))
   const points = props.tracks.flatMap(t =>
-    t.captures.map(c => ({ markId: c.markId, species: c.species, date: t.date, lat: c.lat, lon: c.lon })),
+    t.captures.filter(c => !c.doubt).map(c => ({ markId: c.markId, species: c.species, date: t.date, lat: c.lat, lon: c.lon })),
   )
   return recaptureDistances(points, distance).filter(m => inRange.has(`${m.id}|${m.species}`))
 })

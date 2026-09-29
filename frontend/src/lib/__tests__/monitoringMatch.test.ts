@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { doubtfulMatch, existingRow, matchWalk, parseCapture, storedPoints, taxaFrom } from '../monitoring'
+import { capturesToStore, doubtfulMatch, existingRow, matchWalk, parseCapture, storedPoints, taxaFrom } from '../monitoring'
 import type { CellValue, TableRow } from '../types'
 
 let n = 6866
@@ -191,6 +191,40 @@ describe('pairing a walk with its rows (8 Sep 2025, AA)', () => {
     const again = matchWalk(AA, '2025-09-08', 'AA - Alex Arias', points, { fixed })
     expect(again.matches[NOTES.indexOf('9:14 sol female 0.3m')]).toMatchObject({ manual: true, rows: [chosen] })
     expect(again.matches.filter(x => x.rows.includes(chosen))).toHaveLength(1)
+  })
+})
+
+describe('storing a walk on the map (Pasar al mapa)', () => {
+  const points = [...NOTES, 'Planta'].map(t => ({ ...parseCapture(t, taxa, taxa), section: null }))
+  const m = matchWalk(AA, '2025-09-08', 'AA - Alex Arias', points)
+  const stored = capturesToStore(points, m.matches)
+  const of = (note: string) => stored.filter(c => c.text === note)
+
+  it('links the points paired by mark or surely, with their rows', () => {
+    const pol = m.matches[NOTES.indexOf('Pol p male 9:16 sol 2m')].rows[0]
+    expect(of('Pol p male 9:16 sol 2m')).toEqual([expect.objectContaining({ row: pol.row, recordId: pol.id })])
+    expect(of('Pol p male 9:16 sol 2m')[0].doubt).toBeUndefined()
+    expect(of('A68 sol female 9:10 1.7m')[0]).toMatchObject({ markId: 'A68', recordId: expect.any(String) })
+  })
+  it('keeps ties, disagreeing notes and points without a row on the walk, without a row and flagged', () => {
+    for (const note of ['9:14 sol female 0.3m', '10:30 sol 0.5m male', '9:55 sol 1.5m A70 female', 'Planta']) {
+      expect(of(note)).toHaveLength(1)
+      expect(of(note)[0]).toMatchObject({ doubt: true })
+      expect(of(note)[0].recordId).toBeUndefined()
+    }
+    // Every point is kept: nothing left out, each row used once.
+    expect(stored).toHaveLength(points.length)
+    const used = stored.flatMap(c => (c.recordId ? [c.recordId] : []))
+    expect(new Set(used).size).toBe(used.length)
+  })
+  it('leaves a point without a row plain when its row is being added (Importar recorrido)', () => {
+    const imported = capturesToStore(points, m.matches, { unpaired: false })
+    expect(imported.find(c => c.text === 'Planta')?.doubt).toBeUndefined()
+    expect(imported.find(c => c.text === '9:14 sol female 0.3m')?.doubt).toBe(true)
+  })
+  it('keeps one copy per butterfly of a doubtful note', () => {
+    const two = { ...parseCapture('3-4 10:47 seco claro 50cm', taxa), section: null }
+    expect(capturesToStore([two], matchWalk([], '2025-09-08', 'AA - Alex Arias', [two]).matches)).toHaveLength(2)
   })
 })
 

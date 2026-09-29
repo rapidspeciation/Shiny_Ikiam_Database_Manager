@@ -5,6 +5,7 @@ import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { allIssues, checkData } from '../server/checks.mjs';
 import { createAssistant } from '../server/assistant.mjs';
+import { linkCapture, saveTrack } from '../server/monitoring.mjs';
 
 const EPOCH = Date.UTC(1899, 11, 30);
 const serial = iso => Math.round((Date.parse(`${iso}T00:00:00Z`) - EPOCH) / 864e5);
@@ -137,6 +138,7 @@ test('check_data finds each kind of inconsistency, with the row, the value and t
     bad_date: 1,
     missing_sample: 3,
     mark_reuse: 1,
+    walk_doubt: 0,
   });
   // A number that is no date, flagged once (not as a date in the future), with the day its note gives.
   const broken = find(out, 'bad_date', 'SamplingDay_data', 2, 'Date');
@@ -253,5 +255,56 @@ test('the assistant follows check_data with propose_changes, and the person appl
   const pending = await assistant.handle({ method: 'GET', path: '/api/chat/proposals', user, query: {} });
   assert.equal(pending.body.proposals[0].source, 'Revisión de datos');
   assert.deepEqual(pending.body.proposals[0].changes[0].values, { Collection_date: serial(isoOf(today - 20)) });
+  store.close();
+});
+
+test('walk_doubt lists the Wikiloc points stored without a row, until a person pairs them in Dudas', async () => {
+  const day = { Collection_date: serial('2025-09-08'), Collector: 'AA - Alex Arias', Purpose: 'Monitoring', Collection_location: 'Ikiam' };
+  const sheets = new LocalSheets({
+    Collection_data: [
+      { row: 2, values: { ...day, Collection_time: 554 / 1440, SPECIES: 'Hypothyris euclea', Sex: 'female', FieldMark_ID: 'NA' } },
+      { row: 3, values: { ...day, Collection_time: 554 / 1440, SPECIES: 'Eresia eunice', Sex: 'female', FieldMark_ID: 'NA' } },
+    ],
+  });
+  const store = new Store({ localMode: true }, { sheets });
+  await store.sync({ sheets: ['Collection_data'] });
+  const editor = { id: 'e1', username: 'editor', role: 'editor' };
+  // As Pasar al mapa stores them: two notes that tie for the two rows, and one with no row.
+  const point = (text, lon, minutes, sex) => ({ lat: -0.95, lon, text, minutes, sex, doubt: true });
+  const { track } = saveTrack(
+    store,
+    {
+      requestId: randomUUID(),
+      date: '2025-09-08',
+      collector: 'AA - Alex Arias',
+      name: 'Monitoreo 8/9/2025',
+      track: [],
+      captures: [point('9:14 sol female 0.3m', -77.861, 554, 'female'), point('9:14 sol female 1m', -77.862, 554, 'female'), point('Planta', -77.863, null, null)],
+    },
+    editor,
+  );
+  const out = checkData(store, { kind: 'walk_doubt' });
+  assert.equal(out.total, 3);
+  assert.equal(out.counts.walk_doubt, 3);
+  const [tie, , plant] = out.issues;
+  assert.equal(tie.sheet, 'Collection_data');
+  assert.equal(tie.value, '9:14 sol female 0.3m');
+  assert.equal(tie.label, 'Wikiloc 08/09/2025 AA');
+  assert.equal(tie.link, '#/monitoreo?vista=dudas');
+  assert.deepEqual(tie.walk, { trackId: track.id, index: 0, date: '2025-09-08', collector: 'AA - Alex Arias', name: 'Monitoreo 8/9/2025', wikiloc: null });
+  assert.match(tie.problem, /del recorrido del 08\/09\/2025 \(AA - Alex Arias\) guardado sin fila: empate con otra fila\. Puede ser la fila \d \(/);
+  assert.match(tie.problem, /Emparéjalo en Monitoreo → Dudas/);
+  assert.equal(tie.fix, undefined);
+  assert.deepEqual(tie.related.map(r => r.row).sort(), [2, 3]);
+  // Nothing fits "Planta": no row, the free rows of the day to choose from.
+  assert.equal(plant.row, null);
+  assert.equal(plant.recordId, null);
+  assert.match(plant.problem, /ninguna fila encaja\. Puede ser la fila 2 .* o la fila 3/);
+  // Paired in Dudas: gone from the list at once (the scan follows the stored walks too).
+  linkCapture(store, track.id, { index: 2, recordId: null });
+  assert.deepEqual(
+    checkData(store, { kind: 'walk_doubt' }).issues.map(i => i.value),
+    ['9:14 sol female 0.3m', '9:14 sol female 1m'],
+  );
   store.close();
 });

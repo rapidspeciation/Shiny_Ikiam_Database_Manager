@@ -426,3 +426,124 @@ test('a waiting walk whose points do not pair surely is listed to be paired by h
   assert.equal(rematchTracks(s).doubts.filter(d => d.walkId === walk.id).length, 0);
   s.close();
 });
+
+// ---------------------------------------------------- Pasar al mapa with doubtful points
+
+/**
+ * A waiting walk stored as the bulk "Pasar al mapa" does (frontend capturesToStore):
+ * two identical 9:14 notes tie for two rows, "Planta" has none, the rest are sure.
+ */
+async function storedWithDoubts() {
+  const lib = await import('../frontend/src/lib/monitoring.ts');
+  const at = (row, time, SPECIES, Sex) => {
+    const [h, m] = time.split(':').map(Number);
+    const values = { Collection_date: serialOf('2025-09-08'), Collection_time: (h * 60 + m) / 1440, Collector: 'AA - Alex Arias' };
+    return { row, values: { ...values, Purpose: 'Monitoring', Collection_location: 'Ikiam', FieldMark_ID: 'NA', SPECIES, Sex } };
+  };
+  const sheets = new LocalSheets({
+    Collection_data: [
+      at(2, '9:14', 'Hypothyris euclea', 'female'),
+      at(3, '9:14', 'Eresia eunice', 'female'),
+      at(4, '9:15', 'Methona confusa', 'male'),
+      at(5, '9:16', 'Mechanitis polymnia', 'male'),
+    ],
+  });
+  const s = new Store({ localMode: true }, { sheets });
+  await s.sync({ sheets: ['Collection_data'] });
+  const rows = s.db
+    .prepare("SELECT id,row_num,values_json FROM records WHERE sheet='Collection_data' AND row_num>1")
+    .all()
+    .map(r => ({ id: r.id, row: r.row_num, version: 0, observed: true, values: JSON.parse(r.values_json), formulas: [] }));
+  const id = row => rows.find(r => r.row === row).id;
+  const taxa = lib.taxaFrom(rows);
+  const notes = ['9:14 sol female 0.3m', '9:14 sol female 1m', '9:15 sol 0.4m', 'Pol p male 9:16 sol 2m', 'Planta'];
+  const points = notes.map((text, i) =>
+    lib.locateCapture({ lat: -0.95, lon: -77.86 - i / 1e4, ele: null, text, time: null, photos: [`${100 + i}`] }, taxa, taxa),
+  );
+  const match = lib.matchWalk(rows, '2025-09-08', 'AA - Alex Arias', points);
+  const captures = lib.capturesToStore(points, match.matches);
+  const { track } = saveTrack(
+    s,
+    { requestId: 'request-0600', date: match.date, collector: 'AA - Alex Arias', name: 'Monitoreo 8/9/2025', track: [], captures },
+    editor,
+  );
+  return { s, id, track, match };
+}
+
+test('Pasar al mapa stores a walk with doubtful points: sure ones linked, doubtful ones without a row, listed in Dudas', async () => {
+  const { s, id, track, match } = await storedWithDoubts();
+  assert.deepEqual(
+    match.matches.map(m => m.confidence),
+    ['tie', 'tie', 'sure', 'sure', 'none'],
+  );
+  // Read again: the doubtful points stay without a row (the tie is not settled by reading).
+  const [read] = listTracks(s);
+  assert.deepEqual(
+    read.captures.map(c => [c.text, c.row, !!c.doubt]),
+    [
+      ['9:14 sol female 0.3m', null, true],
+      ['9:14 sol female 1m', null, true],
+      ['9:15 sol 0.4m', 4, false],
+      ['Pol p male 9:16 sol 2m', 5, false],
+      ['Planta', null, true],
+    ],
+  );
+  const found = rematchTracks(s);
+  // The banner does not pair them: they are doubts for a person.
+  assert.equal(found.changes.length, 0);
+  const doubts = found.doubts.filter(d => d.trackId === track.id);
+  assert.deepEqual(
+    doubts.map(d => [d.text, d.confidence, d.pending, d.photos]),
+    [
+      ['9:14 sol female 0.3m', 'tie', true, ['100']],
+      ['9:14 sol female 1m', 'tie', true, ['101']],
+      ['Planta', 'none', true, ['104']],
+    ],
+  );
+  // Any free row of the day can be picked, even for a note with nothing to match.
+  assert.deepEqual(
+    doubts[2].candidates.map(r => r.row),
+    [2, 3],
+  );
+  assert.deepEqual(found.walks.map(w => [w.id, w.doubts]), [[track.id, 3]]);
+  // Picking a row links the point, and it leaves Dudas; "No es ninguna" too.
+  linkCapture(s, track.id, { index: 4, recordId: null });
+  assert.deepEqual(
+    rematchTracks(s).doubts.map(d => d.text),
+    ['9:14 sol female 0.3m', '9:14 sol female 1m'],
+  );
+  linkCapture(s, track.id, { index: 0, recordId: id(3) });
+  // The other 9:14 note now fits the row left surely: linked on reading, no longer a doubt.
+  const [after] = listTracks(s);
+  assert.deepEqual(
+    after.captures.map(c => [c.row, c.link, !!c.doubt]),
+    [
+      [3, 'manual', false],
+      [2, null, false],
+      [4, null, false],
+      [5, null, false],
+      [null, 'none', false],
+    ],
+  );
+  assert.deepEqual(rematchTracks(s), { changes: [], doubts: [], walks: [] });
+  s.close();
+});
+
+test('a point stored as doubtful is linked on reading only when its note agrees with the row', async () => {
+  const { s } = await storedWithDoubts();
+  // A female Mechanitis polymnia at 9:16, whose row is a male: paired, but the sex disagrees.
+  const walk = (requestId, lat, doubt) => ({
+    requestId,
+    date: '2025-09-08',
+    collector: 'AA - Alex Arias',
+    name: requestId,
+    track: [],
+    captures: [{ lat, lon: -77.9, text: 'Mechanitis polymnia female 9:16 sol', minutes: 556, sex: 'female', doubt }],
+  });
+  saveTrack(s, walk('request-0601', -0.951, true), editor);
+  saveTrack(s, walk('request-0602', -0.952, false), editor);
+  const rowOf = name => listTracks(s).find(t => t.name === name).captures[0].row;
+  assert.equal(rowOf('request-0601'), null);
+  assert.equal(rowOf('request-0602'), 5);
+  s.close();
+});

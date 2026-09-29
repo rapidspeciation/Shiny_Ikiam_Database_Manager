@@ -117,7 +117,7 @@ export const TOOLS = [
     function: {
       name: 'check_data',
       description:
-        'Scan the workbook for inconsistencies: repeated IDs/tubes, a CAM given to two butterflies, values outside strict dropdown lists, Collection_data rows sent to the insectary without a filled Insectary_data row (and wild insectary butterflies without a collection row), species/sex/CAM mismatches between the two rows of one butterfly, deaths or preservations dated before collection or entry, future dates, preserved rows without CAM or Tube_1_id, and field marks used for two species. Each issue has sheet, row, recordId, field, value, problem and, when the right value is obvious, fix = {recordId, values} ready for propose_changes. Paginated; filter by sheet and kind (comma-separated). Call without kind first to see the counts.',
+        'Scan the workbook for inconsistencies: repeated IDs/tubes, a CAM given to two butterflies, values outside strict dropdown lists, Collection_data rows sent to the insectary without a filled Insectary_data row (and wild insectary butterflies without a collection row), species/sex/CAM mismatches between the two rows of one butterfly, deaths or preservations dated before collection or entry, future dates, preserved rows without CAM or Tube_1_id, field marks used for two species, and Wikiloc monitoring points stored on the map without a row because their pairing was doubtful (walk_doubt: row/recordId is the likeliest row or null, value the note, walk = {date, collector, trackId}; they are paired by a person in Monitoreo → Dudas, never with propose_changes). Each issue has sheet, row, recordId, field, value, problem and, when the right value is obvious, fix = {recordId, values} ready for propose_changes. Paginated; filter by sheet and kind (comma-separated). Call without kind first to see the counts.',
       parameters: {
         type: 'object',
         properties: {
@@ -125,7 +125,7 @@ export const TOOLS = [
           kind: {
             type: 'string',
             description:
-              'repeat, cam_cross, list, insectary_link, link_mismatch, date_order, future_date, bad_date, missing_sample, mark_reuse (comma-separated)',
+              'repeat, cam_cross, list, insectary_link, link_mismatch, date_order, future_date, bad_date, missing_sample, mark_reuse, walk_doubt (comma-separated)',
           },
           recordId: { type: 'string', description: 'Only the issues of this row' },
           limit: { type: 'integer', description: '1 to 200, default 50' },
@@ -863,7 +863,7 @@ export function createAssistant({ store, config = {} }) {
         limit: Math.min(Number(args.limit) || 50, 200),
         offset: args.offset,
       });
-      for (const issue of out.issues)
+      for (const issue of out.issues.filter(i => i.recordId))
         context.sources.set(issue.recordId, { id: issue.recordId, type: 'record', sheet: issue.sheet, row: issue.row, label: issue.label });
       return out;
     }

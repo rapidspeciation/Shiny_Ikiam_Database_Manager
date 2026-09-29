@@ -53,6 +53,8 @@ export type StoredCapture = Pick<
   recordId?: string | null
   /** Paired by a person: with a row ('manual') or with none ('none'). */
   link?: 'manual' | 'none' | null
+  /** Stored without a row because its pairing was doubtful: left off the map until paired in Dudas. */
+  doubt?: boolean
   /** On the map only: a recapture that is not a row of the sheet (its individual's key). */
   outside?: string
 }
@@ -135,7 +137,8 @@ export function useMonitoring() {
     const loose: LoosePoint[] = []
     for (const t of tracks.value)
       t.captures.forEach((c, i) => {
-        if (!c.row && c.markId)
+        // A doubtful point's mark may be misread: it is no recapture until paired.
+        if (!c.row && c.markId && !c.doubt)
           loose.push({ ...c, date: t.date, collector: t.collector, photos: c.photos || [], ref: `${t.id}|${i}` })
       })
     const recent = new Date(Date.now() - 14 * 864e5).toISOString().slice(0, 10)
