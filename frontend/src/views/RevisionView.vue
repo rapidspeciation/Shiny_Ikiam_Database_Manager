@@ -121,11 +121,19 @@ watch(
   },
 )
 load()
+// On a phone, picking a kind or status goes back to the cards.
+watch([kind, status], () => (showFilters.value = false))
 
 const allKinds = computed(() =>
   page.value ? Object.entries(page.value.kinds).filter(([k]) => page.value!.counts[k] || k === kind.value) : [],
 )
 const allCount = computed(() => (page.value ? Object.values(page.value.counts).reduce((a, b) => a + b, 0) : 0))
+// The sidebar lists the sheet's own checks, then the ones read from photos and envelopes.
+const PHOTO_KIND = /^(photo_|envelope_|ai_)/
+const kindGroups = computed(() => [
+  { title: 'Datos de la hoja', kinds: allKinds.value.filter(([k]) => !PHOTO_KIND.test(k)) },
+  { title: 'Fotos y sobres', kinds: allKinds.value.filter(([k]) => PHOTO_KIND.test(k)) },
+])
 const sheetOptions = computed(() => page.value?.sheets ?? [])
 const personOptions = computed(() => (page.value?.people ?? []).map(p => ({ value: p.name, label: p.name, hint: String(p.n) })))
 const groupLabel = computed(
@@ -198,169 +206,163 @@ const filtered = computed(
 <template>
   <div class="flex h-full flex-col">
     <div v-if="!session.canEdit" class="p-6 text-sm text-stone-600">La revisión es para quienes editan la hoja.</div>
-    <template v-else>
-      <div class="toolbar">
-        <div class="flex flex-wrap gap-1" role="group" aria-label="Estado">
+    <div v-else class="flex min-h-0 flex-1">
+      <!-- Sidebar: status, kinds and filters in the height the screen has to spare (on phones, behind «Filtros»). -->
+      <aside
+        class="w-60 shrink-0 flex-col overflow-y-auto border-r border-stone-200 bg-white text-sm"
+        :class="showFilters ? 'fixed inset-0 z-40 flex w-full md:static md:w-60' : 'hidden md:flex'"
+      >
+        <div class="flex items-center justify-between px-3 pt-3 md:hidden">
+          <strong>Filtros</strong>
+          <button class="btn-ghost" @click="showFilters = false"><X :size="16" /></button>
+        </div>
+        <div class="grid grid-cols-3 gap-1 p-2" role="group" aria-label="Estado">
           <button
-            v-for="s in STATUSES"
-            :key="s.key"
-            class="rounded-full px-2.5 py-1 text-xs whitespace-nowrap"
-            :class="status === s.key ? 'bg-brand-700 text-white' : 'bg-stone-100 text-stone-700 hover:bg-stone-200'"
-            @click="status = s.key"
+            v-for="st in STATUSES"
+            :key="st.key"
+            class="rounded px-1.5 py-1 text-xs leading-tight"
+            :class="status === st.key ? 'bg-brand-700 text-white' : 'bg-stone-100 text-stone-700 hover:bg-stone-200'"
+            @click="status = st.key"
           >
-            {{ s.label }}<template v-if="page && s.key !== 'all'"> ({{ page.statuses[s.key] ?? 0 }})</template>
-          </button>
-          <!-- Phones: the other filters behind one button, so the cards keep the screen. -->
-          <button
-            class="rounded-full px-2.5 py-1 text-xs whitespace-nowrap md:hidden"
-            :class="showFilters || filtered ? 'bg-stone-800 text-white' : 'bg-stone-100 text-stone-700'"
-            @click="showFilters = !showFilters"
-          >
-            <SlidersHorizontal :size="12" class="inline" /> Filtros
+            {{ st.label }}<span v-if="page && st.key !== 'all'" class="block tabular-nums opacity-80">{{
+              page.statuses[st.key] ?? 0
+            }}</span>
           </button>
         </div>
-        <div class="w-full flex-wrap items-end gap-3 md:contents" :class="showFilters ? 'flex' : 'hidden'">
-          <label class="w-44">
-            <span class="field-label">Hoja</span>
-            <ChoiceField
-              v-model="sheet"
-              class="field-input"
-              :options="sheetOptions"
-              :freetext="false"
-              allow-empty
-              placeholder="Todas"
-            />
-          </label>
-          <label class="w-52">
-            <span class="field-label">Colector o identificador</span>
-            <ChoiceField
-              v-model="person"
-              class="field-input"
-              :options="personOptions"
-              :freetext="false"
-              allow-empty
-              placeholder="Todos"
-            />
-          </label>
-          <label class="w-36">
-            <span class="field-label">Desde</span>
-            <DateField v-model="from" class="field-input" />
-          </label>
-          <label class="w-36">
-            <span class="field-label">Hasta</span>
-            <DateField v-model="to" class="field-input" />
-          </label>
-          <label class="min-w-40 flex-1">
-            <span class="field-label">Buscar</span>
-            <span class="relative block">
-              <Search :size="15" class="absolute top-2.5 left-2.5 text-stone-400" />
-              <input v-model="search" type="search" class="field-input pl-8" placeholder="CAM, ID, especie…" />
-            </span>
-          </label>
-          <div class="flex gap-1 pb-0.5">
-            <button v-if="filtered" class="btn" title="Quitar los filtros" @click="clearFilters"><X :size="15" /></button>
-            <button class="btn" :disabled="loading" title="Volver a revisar" @click="load">
-              <RefreshCw :size="15" :class="{ 'animate-spin': loading }" />
-            </button>
-            <a
-              href="api/review/labels"
-              class="btn"
-              title="Descargar los veredictos sobre lecturas de fotos (etiquetas de entrenamiento)"
+        <nav class="border-t border-stone-100 py-1">
+          <button
+            class="flex w-full items-center justify-between px-3 py-1 text-left hover:bg-stone-50"
+            :class="!kind ? 'bg-stone-100 font-medium' : ''"
+            @click="kind = ''"
+          >
+            Todo <span class="text-xs tabular-nums text-stone-500">{{ page ? allCount : '…' }}</span>
+          </button>
+          <template v-for="g in kindGroups" :key="g.title">
+            <p v-if="g.kinds.length" class="px-3 pt-2 pb-0.5 text-[11px] font-semibold tracking-wide text-stone-500 uppercase">
+              {{ g.title }}
+            </p>
+            <button
+              v-for="[key, label] in g.kinds"
+              :key="key"
+              class="flex w-full items-center justify-between gap-2 px-3 py-1 text-left hover:bg-stone-50"
+              :class="kind === key ? 'bg-brand-50 font-medium text-brand-800' : 'text-stone-700'"
+              @click="kind = kind === key ? '' : key"
             >
+              <span class="truncate">{{ label }}</span>
+              <span class="text-xs tabular-nums text-stone-500">{{ page?.counts[key] ?? 0 }}</span>
+            </button>
+          </template>
+        </nav>
+        <div class="space-y-2 border-t border-stone-100 p-3">
+          <label class="block">
+            <span class="field-label">Hoja</span>
+            <ChoiceField v-model="sheet" class="field-input" :options="sheetOptions" :freetext="false" allow-empty placeholder="Todas" />
+          </label>
+          <label class="block">
+            <span class="field-label">Colector o identificador</span>
+            <ChoiceField v-model="person" class="field-input" :options="personOptions" :freetext="false" allow-empty placeholder="Todos" />
+          </label>
+          <div class="grid grid-cols-2 gap-2">
+            <label class="block">
+              <span class="field-label">Desde</span>
+              <DateField v-model="from" class="field-input" />
+            </label>
+            <label class="block">
+              <span class="field-label">Hasta</span>
+              <DateField v-model="to" class="field-input" />
+            </label>
+          </div>
+          <div class="flex gap-1">
+            <button v-if="filtered" class="btn flex-1" title="Quitar los filtros" @click="clearFilters"><X :size="15" /> Quitar</button>
+            <a href="api/review/labels" class="btn" title="Descargar los veredictos sobre lecturas de fotos (etiquetas de entrenamiento)">
               <Download :size="15" />
             </a>
           </div>
         </div>
-      </div>
+      </aside>
 
-      <!-- One scrolling row of kinds on phones, so the cards keep the screen. -->
-      <div
-        class="flex items-center gap-1.5 overflow-x-auto border-b border-stone-200 bg-white px-3 py-2 text-xs sm:px-4 md:flex-wrap"
-      >
-        <button
-          class="shrink-0 rounded-full px-2.5 py-1 whitespace-nowrap"
-          :class="!kind ? 'bg-stone-800 text-white' : 'bg-stone-100 text-stone-700 hover:bg-stone-200'"
-          @click="kind = ''"
-        >
-          Todo ({{ page ? allCount : '…' }})
-        </button>
-        <button
-          v-for="[key, label] in allKinds"
-          :key="key"
-          class="shrink-0 rounded-full px-2.5 py-1 whitespace-nowrap"
-          :class="kind === key ? 'bg-stone-800 text-white' : 'bg-stone-100 text-stone-700 hover:bg-stone-200'"
-          @click="kind = kind === key ? '' : key"
-        >
-          {{ label }} ({{ page?.counts[key] ?? 0 }})
-        </button>
-      </div>
-
-      <div
-        v-if="page && (page.agreed.fixes || page.agreed.tasks)"
-        class="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-950 sm:px-4"
-      >
-        <strong
-          >{{ page.agreed.fixes }} {{ page.agreed.fixes === 1 ? 'arreglo aceptado listo' : 'arreglos aceptados listos' }} para
-          aplicar</strong
-        >
-        <span v-if="page.agreed.tasks"
-          >· {{ page.agreed.tasks }} {{ page.agreed.tasks === 1 ? 'tarea' : 'tareas' }} en Drive</span
-        >
-        <span class="text-emerald-800">Pídele en T3: «aplica las correcciones acordadas»</span>
-        <button
-          v-if="page.agreed.fixes"
-          class="btn ml-auto"
-          :disabled="busy"
-          title="Una propuesta con todos, para confirmar en Asistente"
-          @click="prepare"
-        >
-          <Wand2 :size="15" /> Preparar propuesta aquí
-        </button>
-      </div>
-
-      <p v-if="group" class="flex items-center gap-2 bg-stone-100 px-3 py-1.5 text-xs sm:px-4">
-        Solo el lote «{{ groupLabel }}»
-        <button class="text-brand-700 hover:underline" @click="group = ''">ver todos</button>
-      </p>
-
-      <div ref="list" class="min-h-0 flex-1 overflow-auto bg-stone-50">
-        <div class="mx-auto max-w-6xl space-y-3 p-2 sm:p-4">
-          <p v-if="!page" class="p-6 text-sm text-stone-500">Revisando…</p>
-          <p v-else-if="!page.issues.length" class="p-6 text-sm text-stone-500">
-            No hay nada {{ STATUSES.find(s => s.key === status)?.label.toLowerCase() }} con estos filtros.
-          </p>
-          <IssueCard
-            v-for="issue in page?.issues"
-            :key="issue.id"
-            :issue="issue"
-            :kind-label="page?.kinds[issue.kind] ?? issue.kind"
-            :can-edit="session.canEdit"
-            :busy="busy"
-            @verdict="judge"
-            @batch="judgeBatch"
-            @group="key => (group = key)"
-            @photos="(photos, index) => (viewer = { photos, index })"
-            @open="openRow"
-          />
+      <section class="flex min-w-0 flex-1 flex-col">
+        <!-- One slim bar: search, where you are in the list, the pages. -->
+        <div class="flex items-center gap-2 border-b border-stone-200 bg-white px-2 py-1.5 text-xs sm:px-3">
+          <button
+            class="btn px-2 py-1 md:hidden"
+            :class="{ 'bg-stone-800 text-white': filtered || kind }"
+            @click="showFilters = true"
+          >
+            <SlidersHorizontal :size="14" /> Filtros
+          </button>
+          <span class="relative min-w-0 flex-1 md:max-w-md">
+            <Search :size="14" class="absolute top-2 left-2 text-stone-400" />
+            <input v-model="search" type="search" class="field-input py-1 pl-7 text-sm" placeholder="Buscar CAM, ID, especie…" />
+          </span>
+          <span v-if="page" class="ml-auto tabular-nums whitespace-nowrap text-stone-600">{{
+            page.total ? `${page.offset + 1}–${Math.min(page.offset + page.limit, page.total)} de ${page.total}` : '0'
+          }}</span>
+          <button class="btn-ghost" :disabled="!page?.offset" title="Anteriores" @click="offset = Math.max(0, offset - PAGE)">
+            <ChevronLeft :size="16" />
+          </button>
+          <button
+            class="btn-ghost"
+            :disabled="!page || page.offset + page.limit >= page.total"
+            title="Siguientes"
+            @click="offset += PAGE"
+          >
+            <ChevronRight :size="16" />
+          </button>
+          <button class="btn-ghost" :disabled="loading" title="Volver a revisar" @click="load">
+            <RefreshCw :size="15" :class="{ 'animate-spin': loading }" />
+          </button>
         </div>
-      </div>
 
-      <div v-if="page" class="flex flex-wrap items-center gap-2 border-t border-stone-200 bg-white px-3 py-2 text-xs sm:px-4">
-        <span>{{
-          page.total ? `${page.offset + 1}–${Math.min(page.offset + page.limit, page.total)} de ${page.total}` : '0'
-        }}</span>
-        <button class="btn-ghost" :disabled="!page.offset" title="Anteriores" @click="offset = Math.max(0, offset - PAGE)">
-          <ChevronLeft :size="15" />
-        </button>
-        <button class="btn-ghost" :disabled="page.offset + page.limit >= page.total" title="Siguientes" @click="offset += PAGE">
-          <ChevronRight :size="15" />
-        </button>
-        <span class="hint ml-auto hidden md:inline">
-          Revisado {{ new Date(page.checkedAt).toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' }) }} · el
-          asistente ve la misma lista (check_data, list_agreed_fixes)
-        </span>
-      </div>
-    </template>
+        <div
+          v-if="page && (page.agreed.fixes || page.agreed.tasks)"
+          class="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm text-emerald-950"
+        >
+          <strong
+            >{{ page.agreed.fixes }} {{ page.agreed.fixes === 1 ? 'arreglo aceptado listo' : 'arreglos aceptados listos' }} para
+            aplicar</strong
+          >
+          <span v-if="page.agreed.tasks">· {{ page.agreed.tasks }} {{ page.agreed.tasks === 1 ? 'tarea' : 'tareas' }} en Drive</span>
+          <span class="text-emerald-800">Pídele en T3: «aplica las correcciones acordadas»</span>
+          <button
+            v-if="page.agreed.fixes"
+            class="btn ml-auto py-1"
+            :disabled="busy"
+            title="Una propuesta con todos, para confirmar en Asistente"
+            @click="prepare"
+          >
+            <Wand2 :size="15" /> Preparar propuesta aquí
+          </button>
+        </div>
+
+        <p v-if="group" class="flex items-center gap-2 bg-stone-100 px-3 py-1 text-xs">
+          Solo el lote «{{ groupLabel }}»
+          <button class="text-brand-700 hover:underline" @click="group = ''">ver todos</button>
+        </p>
+
+        <div ref="list" class="min-h-0 flex-1 overflow-auto bg-stone-50">
+          <div class="space-y-2 p-2">
+            <p v-if="!page" class="p-6 text-sm text-stone-500">Revisando…</p>
+            <p v-else-if="!page.issues.length" class="p-6 text-sm text-stone-500">
+              No hay nada {{ STATUSES.find(st => st.key === status)?.label.toLowerCase() }} con estos filtros.
+            </p>
+            <IssueCard
+              v-for="issue in page?.issues"
+              :key="issue.id"
+              :issue="issue"
+              :kind-label="page?.kinds[issue.kind] ?? issue.kind"
+              :can-edit="session.canEdit"
+              :busy="busy"
+              @verdict="judge"
+              @batch="judgeBatch"
+              @group="key => (group = key)"
+              @photos="(photos, index) => (viewer = { photos, index })"
+              @open="openRow"
+            />
+          </div>
+        </div>
+      </section>
+    </div>
     <PhotoViewer v-if="viewer" v-model="viewer.index" :photos="viewer.photos" @close="viewer = null" />
   </div>
 </template>

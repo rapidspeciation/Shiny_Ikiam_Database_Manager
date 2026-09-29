@@ -176,13 +176,21 @@ export const otherField = (issue: Pick<Issue, 'fix' | 'field' | 'task'>) =>
   issue.task ? 'CAM correcto' : issue.fix ? Object.keys(issue.fix.values)[0] : issue.field
 
 /** The photos of a card in viewing order (dorsal, ventral, other), for ←/→ in the full view. */
+const RAW = /\.(orf|cr2|cr3|nef|arw|dng|raw|rw2)$/i
+/**
+ * The specimen's photos, dorsal then ventral. A camera's raw file (.ORF, .cr2…)
+ * shows the same view as its JPG, so it is listed only when there is no JPG.
+ */
 export function photoList(photos?: Partial<Photos>) {
   if (!photos) return []
-  return [...(photos.dorsal ?? []), ...(photos.ventral ?? []), ...(photos.other ?? [])].map(id => ({
+  const all = [...(photos.dorsal ?? []), ...(photos.ventral ?? []), ...(photos.other ?? [])].map(id => ({
     id,
     name: photos.files?.[id]?.name ?? id,
     wings: photos.files?.[id]?.wings,
   }))
+  const stem = (name: string) => name.replace(/\.[^.]+$/, '').replace(/\.[^.]+$/, '').toLowerCase()
+  const jpgs = new Set(all.filter(p => !RAW.test(p.name)).map(p => stem(p.name)))
+  return all.filter(p => !RAW.test(p.name) || !jpgs.has(stem(p.name)))
 }
 
 export const percent = (n: number) => `${Math.round(n * 100)} %`

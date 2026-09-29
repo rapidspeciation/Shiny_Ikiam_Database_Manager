@@ -95,8 +95,8 @@ async function toggleHistory() {
 </script>
 
 <template>
-  <article class="rounded-lg border border-stone-200 bg-white p-3 shadow-sm md:p-4">
-    <header class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+  <article class="rounded-lg border border-stone-200 bg-white p-2.5 shadow-sm">
+    <header class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
       <span class="rounded bg-stone-800 px-1.5 py-0.5 text-xs font-medium text-white">{{ kindLabel }}</span>
       <span
         v-if="i.strength"
@@ -106,7 +106,7 @@ async function toggleHistory() {
       >
         lectura {{ i.strength }}
       </span>
-      <strong class="font-semibold">{{ i.cam || i.label }}</strong>
+      <strong class="text-sm font-semibold">{{ i.cam || i.label }}</strong>
       <button
         v-if="i.row && !i.resolved"
         class="text-brand-700 hover:underline"
@@ -128,12 +128,12 @@ async function toggleHistory() {
         {{ i.verdict.user }}
       </span>
     </header>
-    <p class="mt-1.5 text-sm text-stone-900">{{ i.problem }}</p>
+    <p class="mt-1 text-sm text-stone-900">{{ i.problem }}</p>
 
-    <div class="mt-3 grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(16rem,24rem)]">
+    <div class="mt-2 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
       <!-- Photos: first on phones, full width; beside the details on a computer. -->
-      <div v-if="envelope || photos.length || relatedList.length" class="space-y-2 md:order-last">
-        <figure v-if="envelope">
+      <div v-if="envelope || photos.length || relatedList.length" class="flex flex-wrap items-start gap-2 lg:order-last lg:flex-nowrap">
+        <figure v-if="envelope" class="shrink-0">
           <button class="block w-full cursor-zoom-in" title="Ver la foto completa" @click="openPhoto(envelope.fileId)">
             <CropImage
               :src="photoUrl(envelope.fileId, 1600)"
@@ -141,11 +141,11 @@ async function toggleHistory() {
               :box="envelope.bbox"
               :aspect="envelope.aspect"
               :turned="(envelope.turned + (flipped ? 180 : 0)) % 360"
-              class="mx-auto max-h-96 w-full"
+              class="h-52 w-auto"
             />
           </button>
-          <figcaption class="mt-0.5 flex items-center gap-2 text-xs text-stone-500">
-            Sobre (recorte de {{ envelope.name }}{{ envelope.turned ? ', girado por el lector' : '' }})
+          <figcaption class="mt-0.5 flex items-center gap-2 text-[11px] text-stone-500">
+            Sobre · {{ envelope.name }}
             <button
               class="ml-auto inline-flex items-center gap-1 text-brand-700 hover:underline"
               title="Girar el recorte 180°"
@@ -155,17 +155,17 @@ async function toggleHistory() {
             </button>
           </figcaption>
         </figure>
-        <div v-if="photos.length" class="grid grid-cols-2 gap-2">
+        <div v-if="photos.length" class="grid grid-cols-2 gap-1.5">
           <figure v-for="p in photos" :key="p.id">
             <button class="block w-full cursor-zoom-in" :title="`${p.name}: ver completa`" @click="openPhoto(p.id)">
-              <CropImage :src="photoUrl(p.id)" :alt="p.name" :box="p.wings" />
+              <CropImage :src="photoUrl(p.id)" :alt="p.name" :box="p.wings" class="h-24 w-auto!" />
             </button>
-            <figcaption class="mt-0.5 truncate text-xs text-stone-500">{{ p.name }}</figcaption>
+            <figcaption class="max-w-[9rem] truncate text-[11px] text-stone-500">{{ p.name }}</figcaption>
           </figure>
         </div>
-        <div v-if="relatedList.length" class="rounded border border-dashed border-stone-300 p-2">
+        <div v-if="relatedList.length" class="rounded border border-dashed border-stone-300 p-1.5">
           <p class="mb-1 text-xs text-stone-600">Fotos de {{ i.relatedPhotos?.cam }}, para comparar</p>
-          <div class="grid grid-cols-3 gap-1.5">
+          <div class="flex flex-wrap gap-1.5">
             <button
               v-for="(p, n) in relatedList"
               :key="p.id"
@@ -173,13 +173,13 @@ async function toggleHistory() {
               :title="p.name"
               @click="emit('photos', relatedList, n)"
             >
-              <CropImage :src="photoUrl(p.id)" :alt="p.name" :box="p.wings" />
+              <CropImage :src="photoUrl(p.id)" :alt="p.name" :box="p.wings" class="h-20 w-auto!" />
             </button>
           </div>
         </div>
       </div>
 
-      <div class="min-w-0 space-y-3">
+      <div class="min-w-0 space-y-2">
         <!-- The rows involved side by side, the cells that disagree in red. -->
         <div v-if="i.table?.rows.length" class="overflow-x-auto">
           <table class="w-full border-collapse text-xs">
@@ -276,9 +276,7 @@ async function toggleHistory() {
           <span class="font-medium">{{ i.task ? 'Tarea (en Drive, no en la hoja)' : 'Arreglo propuesto' }}:</span>
           {{ fixText(i) }}
         </p>
-        <p v-else-if="!done" class="text-xs text-stone-500">
-          Sin arreglo obvio: si es un problema, da el valor correcto con «Otro valor».
-        </p>
+        <p v-else-if="!done" class="text-xs text-stone-500">Sin arreglo obvio: si hace falta, da el valor con «Otro valor».</p>
 
         <!-- A batch (e.g. one day's envelopes with the same species): judged together after looking. -->
         <div
