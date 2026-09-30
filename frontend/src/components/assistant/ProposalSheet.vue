@@ -6,18 +6,27 @@ import 'tabulator-tables/dist/css/tabulator_simple.min.css'
 import { FileSpreadsheet, Sparkles } from 'lucide-vue-next'
 import { displayValue, editText, normalizeInput } from '../../lib/cells'
 import {
+  attachColumnFit,
   attachCopyMarker,
   attachFillHandle,
   attachTouchSheet,
+  backToGrid,
   choiceEditor,
   editingKeys,
+  followSelection,
+  longText,
   openList,
+  selectedCell,
+  setFromBar,
   spreadsheetKeys,
   textEditor,
   tileToSelection,
   typingPending,
   watchSize,
   type CanEdit,
+  type CellBarInfo,
+  type CellBarNote,
+  type Direction,
 } from '../../lib/gridKit'
 import { parseBlock } from '../../lib/paste'
 import { ID_COLUMN, cellId, cellOf, rowKey, selectionActions, type ProposalChange } from '../../lib/proposals'
@@ -25,6 +34,7 @@ import { isSumField, sumTotal } from '../../lib/sums'
 import type { CellValue, Field } from '../../lib/types'
 import { listProblem, verificationsFor } from '../../lib/verifications'
 import { locale, t, tn } from '../../lib/i18n'
+import CellBar from '../CellBar.vue'
 
 /**
  * The rows of one sheet of a proposal as a spreadsheet, like the Colecta list:
@@ -217,18 +227,21 @@ function rowFormatter(cell: CellComponent) {
   return row.__row
 }
 
+/** A cell as drawn, as text: its value, then the sheet's value struck through or the assistant's set aside. */
+function drawnText(change: ProposalChange, field: string) {
+  const cell = cellOf(change, field, props.newRowFormulas)
+  const beside =
+    cell.kind === 'reverted'
+      ? ` ${textWithTotal(field, cell.ai)}`
+      : cell.was !== undefined && cell.kind !== 'sheet'
+        ? ` ${textWithTotal(field, cell.was)}`
+        : ''
+  return textWithTotal(field, cell.value) + beside
+}
+
 function widthOf(field: string) {
   let chars = field.length + 2
-  for (const c of props.changes) {
-    const cell = cellOf(c, field, props.newRowFormulas)
-    const beside =
-      cell.kind === 'reverted'
-        ? ` ${textWithTotal(field, cell.ai)}`
-        : cell.was !== undefined && cell.kind !== 'sheet'
-          ? ` ${textWithTotal(field, cell.was)}`
-          : ''
-    chars = Math.max(chars, (textWithTotal(field, cell.value) + beside).length)
-  }
+  for (const c of props.changes) chars = Math.max(chars, drawnText(c, field).length)
   return Math.max(70, Math.min(260, Math.round(chars * 7.2 + 28)))
 }
 
@@ -306,6 +319,49 @@ function columns(): ColumnDefinition[] {
       cellClick: (_e, cell) => emit('remove', (cell.getData() as Row).__key),
     } as ColumnDefinition)
   return cols
+}
+
+// ------------------------------------------------------------ the cell bar
+/** The selected cell as the bar above the table shows it, with the sheet's and the assistant's values under it. */
+const bar = ref<CellBarInfo | null>(null)
+const editText$ = (field: string, value: CellValue | undefined) => editText(value ?? null, { key: field, type: typeOf(field) })
+function describe(cell: CellComponent | null): CellBarInfo | null {
+  if (!cell) return null
+  const row = cell.getData() as Row
+  const field = cell.getField()
+  const base = { index: row.__key, field, row: row.__label, editable: false, multiline: false }
+  // The row's own columns: its note (where the values come from), its ID and row number.
+  if (field === '__note') return { ...base, column: t('Nota'), text: row.__note }
+  if (field === '__label') return { ...base, column: 'ID', text: row.__label }
+  if (field === '__row') return { ...base, column: t('Fila'), text: row.__row }
+  const c = fieldSet.value.has(field) ? info(row.__key, field) : null
+  const change = byKey.get(row.__key)
+  if (!c || !change) return null
+  const notes: CellBarNote[] = []
+  const total = totalOf(field, c.value)
+  if (total !== null) notes.push({ text: `= ${total}`, kind: 'total' })
+  // What the sheet has now (an existing row), and what the assistant proposed when the person changed it.
+  if (!change.create && (c.kind === 'proposed' || c.kind === 'person'))
+    notes.push({ label: t('Hoja'), text: editText$(field, c.was) || t('vacío'), kind: 'sheet' })
+  if (c.aiProposed && (c.kind === 'person' || c.kind === 'reverted'))
+    notes.push({ label: t('IA'), text: editText$(field, c.ai) || t('vacío'), kind: 'ai' })
+  const editable = canEditCell(row.__key, field)
+  return {
+    ...base,
+    column: field,
+    text: editText$(field, c.value),
+    editable,
+    multiline: longText(field) && !hasChoices(field),
+    readonly: editable ? '' : c.kind === 'locked' ? t('Fórmula de la hoja: no se escribe') : '',
+    notes,
+  }
+}
+const showBar = () => (bar.value = table ? describe(selectedCell(table)) : null)
+function saveFromBar(target: CellBarInfo, text: string, move: Direction | 'here' | null) {
+  if (!table) return
+  if (!setFromBar(table, target, text, canEdit)) emit('notice', t('Esa celda ya no se puede editar'))
+  if (move) backToGrid(table, move)
+  showBar()
 }
 
 // ------------------------------------------------------------ edits
@@ -467,6 +523,7 @@ const onEditingKey = editingKeys(() => table)
 let fill: { destroy: () => void } | null = null
 let copied: ReturnType<typeof attachCopyMarker> | null = null
 let sizeWatch: { disconnect: () => void } | null = null
+let fit: { destroy: () => void } | null = null
 
 onMounted(() => {
   if (!host.value) return
@@ -479,7 +536,8 @@ onMounted(() => {
     layout: 'fitData',
     // At most the height of the panel it is in (less its title and buttons), so the column names stay
     // in sight while scrolling the rows (the panel or chat around it is a size container: 100cqh).
-    maxHeight: 'max(10rem, calc(100cqh - 8rem))',
+    // (Less the cell bar above it.)
+    maxHeight: 'max(10rem, calc(100cqh - 10rem))',
     autoResize: false,
     placeholder: t('Sin filas'),
     selectableRange: 1,
@@ -517,6 +575,13 @@ onMounted(() => {
         onFilled: rows => notice(tn(rows, 'Copiado a {n} fila', 'Copiado a {n} filas')),
       })
   copied = attachCopyMarker(table, container, notice)
+  fit = attachColumnFit(table, host.value, {
+    text: (data, field) => {
+      const change = byKey.get(String(data.__key))
+      return fieldSet.value.has(field) && change ? drawnText(change, field) : String(data[field] ?? '')
+    },
+  })
+  followSelection(table, showBar)
   host.value.addEventListener('keydown', onKeydown)
   host.value.addEventListener('keydown', onEditingKey, true)
   sizeWatch = watchSize(() => table, host.value)
@@ -534,6 +599,7 @@ onBeforeUnmount(() => {
   window.clearTimeout(retry)
   fill?.destroy()
   copied?.destroy()
+  fit?.destroy()
   sizeWatch?.disconnect()
   shownWatch?.disconnect()
   host.value?.removeEventListener('keydown', onKeydown)
@@ -583,7 +649,11 @@ watch(
       <slot name="end" />
     </div>
     <div class="sheet-grid proposal-sheet">
-      <div ref="host" tabindex="-1" />
+      <CellBar :info="bar" @save="saveFromBar" @back="move => table && backToGrid(table, move)" />
+      <!-- The grid's own box: the fill handle and the copied cells' border are placed in it, below the bar. -->
+      <div class="relative">
+        <div ref="host" tabindex="-1" />
+      </div>
     </div>
   </div>
 </template>

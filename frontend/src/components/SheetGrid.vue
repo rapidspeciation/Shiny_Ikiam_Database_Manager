@@ -4,20 +4,28 @@ import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
 import { displayValue, editText, normalizeInput } from '../lib/cells'
-import { isSumField } from '../lib/sums'
+import { isSumField, sumTotal } from '../lib/sums'
 import {
+  attachColumnFit,
   attachCopyMarker,
   attachFillHandle,
   attachTouchSheet,
+  backToGrid,
   fillDown as fillDownRange,
   choiceEditor,
   openList,
   editingKeys,
+  followSelection,
+  longText,
+  selectedCell,
+  setFromBar,
   spreadsheetKeys,
   textEditor,
   tileToSelection,
   watchSize,
   type CanEdit,
+  type CellBarInfo,
+  type Direction,
 } from '../lib/gridKit'
 import { parseBlock } from '../lib/paste'
 import type { CellValue, Field, TableRow } from '../lib/types'
@@ -26,6 +34,7 @@ import { useSession } from '../stores/session'
 import { useTables } from '../stores/tables'
 import { listProblem, repeats, verificationsFor } from '../lib/verifications'
 import RowDrawer from './RowDrawer.vue'
+import CellBar from './CellBar.vue'
 import { locale, t, tn } from '../lib/i18n'
 
 /**
@@ -471,6 +480,48 @@ const onKeydown = spreadsheetKeys(() => table, editableCell, notice)
 const onEditingKey = editingKeys(() => table)
 let fill: { destroy: () => void } | null = null
 let copied: ReturnType<typeof attachCopyMarker> | null = null
+let fit: { destroy: () => void } | null = null
+
+/** The selected cell as the bar above the grid shows it (CellBar). */
+const bar = ref<CellBarInfo | null>(null)
+function describe(cell: CellComponent | null): CellBarInfo | null {
+  if (!cell) return null
+  const data = cell.getData() as GridRow
+  const key = cell.getField()
+  const row = labelOf(data) || (data.__new ? t('nueva') : t('fila {row}', { row: data.__row ?? '' }))
+  if (key === '__row')
+    return {
+      index: data.__id,
+      field: key,
+      column: t('Fila'),
+      row,
+      text: data.__new ? t('nueva') : String(data.__row),
+      editable: false,
+      multiline: false,
+    }
+  const def = fieldIndex.get(key)
+  if (!def) return null
+  const editable = canEdit(data, key)
+  const total = isSumField(props.module, key) ? sumTotal(data[key]) : null
+  return {
+    index: data.__id,
+    field: key,
+    column: key,
+    row,
+    text: editText(data[key], def),
+    editable,
+    multiline: longText(key) && !hasChoices(key),
+    readonly: editable ? '' : isFormula(data, key) ? t('Fórmula de la hoja (solo lectura)') : t('Solo lectura'),
+    notes: total === null ? [] : [{ text: `= ${total}`, kind: 'total' }],
+  }
+}
+const showBar = () => (bar.value = table ? describe(selectedCell(table)) : null)
+function saveFromBar(target: CellBarInfo, text: string, move: Direction | 'here' | null) {
+  if (!table) return
+  if (!setFromBar(table, target, text, editableCell)) notice(t('Esa celda ya no se puede editar'))
+  if (move) backToGrid(table, move)
+  showBar()
+}
 
 function applySearch() {
   if (!table || !built) return
@@ -520,6 +571,8 @@ function build() {
   } as unknown as ConstructorParameters<typeof Tabulator>[1])
   table.on('cellEdited', onCellEdited)
   table.on('cellClick', onCellClick)
+  followSelection(table, showBar)
+  bar.value = null
   // The row of the selection, for panels beside the grid (e.g. a capture's photos in Monitoreo).
   const selected = () => emit('select', (table?.getRanges()[0]?.getRows()[0]?.getData() as GridRow | undefined)?.__id ?? null)
   table.on('rangeAdded', selected)
@@ -537,6 +590,12 @@ function build() {
         })
   copied?.destroy()
   copied = host.value.parentElement ? attachCopyMarker(table, host.value.parentElement, notice) : null
+  // Double-clicking a column's right border fits it to the text shown (the rows on screen and a sample).
+  fit?.destroy()
+  fit = attachColumnFit(table, host.value, {
+    text: (data, key) =>
+      key === '__row' ? String(data.__row ?? t('nueva')) : displayValue(data[key] as CellValue, fieldIndex.get(key)),
+  })
   // A refresh that arrived while typing (e.g. an automatic save finished) runs after the edit.
   const afterEdit = () => {
     if (!refreshAfterEdit) return
@@ -601,7 +660,8 @@ onMounted(() => {
   build()
   host.value?.addEventListener('keydown', onKeydown)
   host.value?.addEventListener('keydown', onEditingKey, true)
-  if (host.value) sizeWatch = watchSize(() => table, host.value)
+  // Its height is fixed (the rows area follows by CSS): the cell bar growing a line or two needs no redraw.
+  if (host.value) sizeWatch = watchSize(() => table, host.value, { followsHeight: true })
 })
 // Kept alive while another tab is open (see App.vue): its size may have changed meanwhile.
 onActivated(() => {
@@ -620,6 +680,7 @@ onBeforeUnmount(() => {
   sizeWatch?.disconnect()
   fill?.destroy()
   copied?.destroy()
+  fit?.destroy()
   host.value?.removeEventListener('keydown', onKeydown)
   host.value?.removeEventListener('keydown', onEditingKey, true)
   table?.destroy()
@@ -653,8 +714,12 @@ defineExpose({ refresh, fillDown })
 </script>
 
 <template>
-  <div class="sheet-grid" :style="{ height }">
-    <div ref="host" class="h-full" tabindex="-1" />
+  <div class="sheet-grid flex flex-col" :style="{ height }">
+    <CellBar :info="bar" @save="saveFromBar" @back="move => table && backToGrid(table, move)" />
+    <!-- The grid's own box: the fill handle and the copied cells' border are placed in it, so they move with the grid. -->
+    <div class="relative min-h-0 flex-1">
+      <div ref="host" class="h-full" tabindex="-1" />
+    </div>
     <RowDrawer
       v-if="drawerId"
       :module="module"

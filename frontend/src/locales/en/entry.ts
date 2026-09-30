@@ -450,4 +450,9 @@ export default {
   'con saltos': 'with gaps',
   'Liberadas:': 'Released:',
   Volver: 'Back',
+  // The cell bar above the grids (components/CellBar.vue).
+  'Selecciona una celda para ver todo su texto': 'Select a cell to see all of its text',
+  'Contenido de {column}': 'Content of {column}',
+  'Contenido de la celda': 'Cell content',
+  'Esa celda ya no se puede editar': 'That cell can no longer be edited',
 } as Record<string, string>

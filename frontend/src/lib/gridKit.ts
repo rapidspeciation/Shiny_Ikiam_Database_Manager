@@ -446,7 +446,15 @@ export function attachFillHandle(
   })
 
   const later = () => requestAnimationFrame(place)
-  for (const event of ['rangeAdded', 'rangeChanged', 'rangeRemoved', 'scrollVertical', 'scrollHorizontal', 'renderComplete'])
+  for (const event of [
+    'rangeAdded',
+    'rangeChanged',
+    'rangeRemoved',
+    'scrollVertical',
+    'scrollHorizontal',
+    'renderComplete',
+    'columnResized',
+  ])
     table.on(event as 'renderComplete', later)
   return { place, destroy: () => handle.remove() }
 }
@@ -509,7 +517,7 @@ export function attachCopyMarker(table: Tabulator, container: HTMLElement, notic
   })
   table.on('cellEditing', clear)
   const later = () => requestAnimationFrame(place)
-  for (const event of ['scrollVertical', 'scrollHorizontal', 'renderComplete', 'dataProcessed'])
+  for (const event of ['scrollVertical', 'scrollHorizontal', 'renderComplete', 'dataProcessed', 'columnResized'])
     table.on(event as 'renderComplete', later)
   const onKey = (e: KeyboardEvent) => e.key === 'Escape' && clear()
   container.addEventListener('keydown', onKey)
@@ -711,7 +719,15 @@ export function attachTouchSheet(
   })
 
   const later = () => requestAnimationFrame(place)
-  for (const event of ['rangeAdded', 'rangeChanged', 'rangeRemoved', 'scrollVertical', 'scrollHorizontal', 'renderComplete'])
+  for (const event of [
+    'rangeAdded',
+    'rangeChanged',
+    'rangeRemoved',
+    'scrollVertical',
+    'scrollHorizontal',
+    'renderComplete',
+    'columnResized',
+  ])
     table.on(event as 'renderComplete', later)
   return {
     place,
@@ -764,13 +780,29 @@ export function listParams(values: string[] | Record<string, string>, cell: Cell
   }
 }
 
+type Size = { width: number; height: number }
+/**
+ * Whether a grid must be redrawn after its box changed size. A grid of fixed
+ * height (Tablas) sizes its rows area by CSS, and keeps rows drawn well beyond
+ * the view: a few lines more or less in height (the cell bar above it growing
+ * with a long note) need no redraw, which in Tablas took ~300 ms.
+ */
+export function needsRedraw(before: Size | null, after: Size, followsHeight = false) {
+  if (!before) return false
+  if (Math.round(before.width) !== Math.round(after.width)) return true
+  const by = Math.abs(Math.round(after.height) - Math.round(before.height))
+  return followsHeight ? by > 120 : by > 0
+}
+
 /**
  * Redraws the grid when its size really changes, but never under an open
  * editor: on a phone the keyboard resizes the page as it opens, and redrawing
- * then threw the editor away (and closed the keyboard).
+ * then threw the editor away (and closed the keyboard). `followsHeight`: the
+ * grid has a fixed height (see needsRedraw).
  */
-export function watchSize(table: () => Tabulator | null, element: HTMLElement) {
-  let last = ''
+export function watchSize(table: () => Tabulator | null, element: HTMLElement, { followsHeight = false } = {}) {
+  // The size the grid was last drawn at.
+  let drawn: Size | null = null
   let timer: number | undefined
   const redrawWhenIdle = () => {
     window.clearTimeout(timer)
@@ -784,10 +816,10 @@ export function watchSize(table: () => Tabulator | null, element: HTMLElement) {
   const observer = new ResizeObserver(([entry]) => {
     const { width, height } = entry.contentRect
     if (!width || !height) return
-    const size = `${Math.round(width)}x${Math.round(height)}`
-    const changed = last && size !== last
-    last = size
-    if (changed) redrawWhenIdle()
+    const size = { width, height }
+    const redraw = needsRedraw(drawn, size, followsHeight)
+    if (!drawn || redraw) drawn = size
+    if (redraw) redrawWhenIdle()
   })
   observer.observe(element)
   return {
@@ -931,6 +963,262 @@ function suggestionBox(
     input.setSelectionRange(input.value.length, input.value.length)
   })
   return input
+}
+
+// ------------------------------------------------------------ the cell bar (components/CellBar.vue)
+
+/** A line under the cell bar's text: the sheet's value, the assistant's, a sum's total. */
+export interface CellBarNote {
+  label?: string
+  text: string
+  kind?: 'sheet' | 'ai' | 'total'
+}
+/**
+ * What the bar above a grid shows for the selected cell, as Google Sheets'
+ * formula bar: where it is (column · row ID) and its whole text, editable
+ * where the cell is. `index` (the row's index in the grid) and `field` say
+ * where an edit goes, even if the selection has moved on meanwhile.
+ */
+export interface CellBarInfo {
+  index: string
+  field: string
+  column: string
+  row: string
+  /** The text as the cell's editor opens with it (dates day first, a sum as =12+15). */
+  text: string
+  editable: boolean
+  /** Shift+Enter or Alt+Enter start a new line (notes); elsewhere Enter always saves. */
+  multiline: boolean
+  /** Why a cell cannot be edited, when there is one to give (a formula, a column that does not apply). */
+  readonly?: string
+  notes?: CellBarNote[]
+}
+export type Direction = 'up' | 'down' | 'left' | 'right'
+
+/** Free-text columns where a line break belongs (notes, comments). */
+export const longText = (field: string) => /note|comment|observ|descrip|remark/i.test(field)
+
+/**
+ * What a key does in the cell bar: Enter saves and goes down (Shift+Enter up),
+ * Tab right (Shift+Tab left), Ctrl+Enter saves and stays, Esc gives up the
+ * change. In a notes column Shift+Enter or Alt+Enter break the line instead.
+ */
+export function barKey(
+  e: Pick<KeyboardEvent, 'key' | 'shiftKey' | 'altKey' | 'ctrlKey' | 'metaKey' | 'isComposing'>,
+  multiline: boolean,
+): { action: 'save'; move: Direction | 'here' } | { action: 'newline' } | { action: 'cancel' } | null {
+  if (e.isComposing) return null
+  if (e.key === 'Escape') return { action: 'cancel' }
+  if (e.key === 'Tab') return { action: 'save', move: e.shiftKey ? 'left' : 'right' }
+  if (e.key !== 'Enter') return null
+  if (multiline && (e.shiftKey || e.altKey)) return { action: 'newline' }
+  if (e.ctrlKey || e.metaKey || e.altKey) return { action: 'save', move: 'here' }
+  return { action: 'save', move: e.shiftKey ? 'up' : 'down' }
+}
+
+type SelectInner = {
+  modules: {
+    selectRange?: {
+      activeRange?: { start: { row: number; col: number }; destroyed?: boolean } | false
+      getRowByRangePos: (
+        pos: number,
+      ) => { getCell: (column: unknown) => { getComponent: () => CellComponent } | false } | undefined
+      getColumnByRangePos: (pos: number) => unknown
+      navigate: (jump: boolean, expand: boolean, dir: string) => boolean
+    }
+  }
+  rowManager: { element: HTMLElement }
+}
+
+/** The selection's active cell: where it began (a range dragged or stretched with Shift keeps it), as in Sheets. */
+export function selectedCell(table: Tabulator): CellComponent | null {
+  const select = (table as unknown as SelectInner).modules.selectRange
+  const start = select?.activeRange ? select.activeRange.start : null
+  if (select && start && start.row !== undefined && start.col !== undefined) {
+    const row = select.getRowByRangePos(start.row)
+    const column = select.getColumnByRangePos(start.col)
+    const cell = row && column ? row.getCell(column) : null
+    if (cell) return cell.getComponent()
+  }
+  return (table.getRanges()[0]?.getCells().flat()[0] as CellComponent | undefined) ?? null
+}
+
+/**
+ * Calls `show` (once per frame) whenever the selected cell or what it holds
+ * may have changed, so the bar follows the grid.
+ */
+export function followSelection(table: Tabulator, show: () => void) {
+  let waiting = 0
+  const later = () => {
+    if (!waiting) waiting = requestAnimationFrame(() => ((waiting = 0), show()))
+  }
+  for (const event of [
+    'rangeAdded',
+    'rangeChanged',
+    'rangeRemoved',
+    'cellEdited',
+    'dataProcessed',
+    'rowUpdated',
+    'renderComplete',
+  ])
+    table.on(event as 'renderComplete', later)
+  return later
+}
+
+/**
+ * Writes the bar's text into its cell the way a cell's editor does (the grid's
+ * cellEdited reads, checks and records it, as a typed or pasted value).
+ * False when the row is gone or the cell can no longer be edited.
+ */
+export function setFromBar(table: Tabulator, target: Pick<CellBarInfo, 'index' | 'field'>, text: string, canEdit: CanEdit) {
+  const row = table.getRow(target.index)
+  if (!row || !canEdit(row, target.field)) return false
+  row.getCell(target.field)?.setValue(text)
+  return true
+}
+
+/** Back to the grid after the bar (its keys work again), moving the selection as Enter or Tab would. */
+export function backToGrid(table: Tabulator, move: Direction | 'here') {
+  const inner = table as unknown as SelectInner
+  inner.rowManager.element.focus({ preventScroll: true })
+  if (move !== 'here') inner.modules.selectRange?.navigate(false, false, move)
+}
+
+// ------------------------------------------------------------ fitting a column to its content
+
+/** Up to `limit` rows spread evenly over `rows` (the first and last included). */
+export function spread<T>(rows: readonly T[], limit: number): T[] {
+  if (rows.length <= limit) return [...rows]
+  const out: T[] = []
+  const step = (rows.length - 1) / (limit - 1)
+  for (let i = 0; i < limit; i++) out.push(rows[Math.round(i * step)])
+  return out
+}
+
+/**
+ * The width that shows the widest of `texts` (and the header) whole: its text
+ * plus the cell's padding, within `min` and `max` (longer texts are read in the
+ * cell bar).
+ */
+export function fitWidth(
+  texts: Iterable<string>,
+  measure: (text: string) => number,
+  { padding, header = 0, min = 0, max = 480 }: { padding: number; header?: number; min?: number; max?: number },
+) {
+  let widest = 0
+  const seen = new Set<string>()
+  for (const text of texts) {
+    if (!text || seen.has(text)) continue
+    seen.add(text)
+    widest = Math.max(widest, measure(text))
+  }
+  return Math.round(Math.min(max, Math.max(min, header, widest ? widest + padding + 1 : 0)))
+}
+
+let measuring: CanvasRenderingContext2D | null | undefined
+/** Text widths in a font, measured on a canvas (no layout); by letter count where there is no canvas. */
+function measurer(font: string) {
+  if (measuring === undefined) measuring = document.createElement('canvas').getContext('2d')
+  const context = measuring
+  if (!context) return (text: string) => text.length * 7.2
+  context.font = font
+  return (text: string) => context.measureText(text).width
+}
+const fontOf = (style: CSSStyleDeclaration) => `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`
+const px = (value: string) => parseFloat(value) || 0
+
+/**
+ * Double-clicking the border at the right of a column's name fits the column
+ * to what it holds, as in Google Sheets or Excel: the rows on screen and a
+ * sample of the rest (never all of a 100,000-row sheet), measured in the
+ * grid's font, up to `max` pixels. (Tabulator's own double click measured every
+ * cell drawn so far, one layout each, and had no limit.) `text` is a row's
+ * cell as the grid shows it.
+ */
+export function attachColumnFit(
+  table: Tabulator,
+  element: HTMLElement,
+  { text, max = 480 }: { text?: (data: Record<string, unknown>, field: string) => string; max?: number } = {},
+) {
+  const textOf = text ?? ((data, field) => String(data[field] ?? ''))
+  const onDoubleClick = (event: MouseEvent) => {
+    const handle = (event.target as HTMLElement | null)?.closest?.('.tabulator-col-resize-handle')
+    const field = handle?.previousElementSibling?.getAttribute('tabulator-field')
+    if (!handle || !field) return
+    // Before Tabulator's own handler on the border, and no sort or selection from the header.
+    event.preventDefault()
+    event.stopPropagation()
+    fitColumn(table, field, textOf, max)
+  }
+  element.addEventListener('dblclick', onDoubleClick, true)
+  return { destroy: () => element.removeEventListener('dblclick', onDoubleClick, true) }
+}
+
+type InnerRow = { type: string; getData: () => Record<string, unknown> }
+type InnerTable = {
+  rowManager: { getDisplayRows: () => InnerRow[] }
+  modules: {
+    resizeColumns?: {
+      dispatch: (event: string, column: unknown) => void
+      dispatchExternal: (event: string, column: unknown) => void
+    }
+  }
+}
+
+/** Fits one column (see attachColumnFit); returns its new width, or null when the grid has no such column. */
+export function fitColumn(
+  table: Tabulator,
+  field: string,
+  text: (data: Record<string, unknown>, field: string) => string,
+  max = 480,
+) {
+  const column = table.getColumn(field)
+  if (!column) return null
+  const inner = table as unknown as InnerTable
+  const onScreen = table.getRows('visible')
+  const cells = onScreen.map(row => row.getCell(field)?.getElement()).filter(el => el?.isConnected) as HTMLElement[]
+  const rows = [
+    ...onScreen.map(row => row.getData()),
+    ...spread(
+      inner.rowManager.getDisplayRows().filter(r => r.type === 'row'),
+      1000,
+    ).map(r => r.getData()),
+  ]
+  // The cells' font and padding as drawn (a list cell keeps room for its ▾).
+  let padding = 13
+  let font = '13px "Fira Sans"'
+  if (cells.length) {
+    const first = getComputedStyle(cells[0])
+    font = fontOf(first)
+    padding = Math.max(
+      ...cells.slice(0, 30).map(el => {
+        const s = getComputedStyle(el)
+        return px(s.paddingLeft) + px(s.paddingRight) + px(s.borderLeftWidth) + px(s.borderRightWidth)
+      }),
+    )
+  }
+  // The header's name whole, with the room it keeps around it (padding, the sort arrow).
+  const head = column.getElement()
+  const title = head.querySelector<HTMLElement>('.tabulator-col-title')
+  let header = 0
+  if (title?.isConnected) {
+    const s = getComputedStyle(title)
+    const room = head.offsetWidth - (title.clientWidth - px(s.paddingLeft) - px(s.paddingRight))
+    header = Math.ceil(measurer(fontOf(s))(title.textContent ?? '') + room)
+  }
+  const min = (column.getDefinition().minWidth as number | undefined) ?? 40
+  const width = fitWidth(
+    rows.map(data => text(data, field)),
+    measurer(font),
+    { padding, header, min, max },
+  )
+  if (width === column.getWidth()) return width
+  column.setWidth(width)
+  // As after dragging the border: the selection's outline and anything laid out by column follow.
+  const internal = (column as unknown as { _column: unknown })._column
+  inner.modules.resizeColumns?.dispatch('column-resized', internal)
+  inner.modules.resizeColumns?.dispatchExternal('columnResized', column)
+  return width
 }
 
 /**

@@ -5,21 +5,29 @@ import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-ta
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
 import { FATES, HEADERS, SEX_VALUES, applies, notApplicable, type Column, type Draft } from '../lib/collect'
 import {
+  attachColumnFit,
   attachCopyMarker,
   attachFillHandle,
   attachTouchSheet,
+  backToGrid,
   choiceEditor,
+  followSelection,
   openList,
   editingKeys,
   revealGridRow,
+  selectedCell,
+  setFromBar,
   spreadsheetKeys,
   tileToSelection,
   typingPending,
   watchSize,
   type CanEdit,
+  type CellBarInfo,
+  type Direction,
 } from '../lib/gridKit'
 import { complete, parseBlock, stepId } from '../lib/paste'
 import { locale, t, tn } from '../lib/i18n'
+import CellBar from './CellBar.vue'
 
 /**
  * The Colecta list as a spreadsheet (on computers): select cells, copy and
@@ -62,7 +70,9 @@ let built = false
 let fill: { destroy: () => void } | null = null
 let copied: ReturnType<typeof attachCopyMarker> | null = null
 let sizeWatch: { disconnect: () => void } | null = null
+let fit: { destroy: () => void } | null = null
 const touch = window.matchMedia('(pointer: coarse)').matches
+const root = ref<HTMLDivElement>()
 
 const toRow = (d: Draft): Row => ({
   __key: d.key,
@@ -106,6 +116,11 @@ const whyNot = (row: RowComponent, field: string) => {
 const choices = (values: () => string[]) => ({ cssClass: 'has-choices', ...choiceEditor(() => values()) })
 
 const ID_COLUMNS: Column[] = ['insectaryId', 'cam', 'tube']
+/** A cell's text as the list shows it: nothing where the column does not apply, a fate by its label. */
+function shownText(d: Draft | undefined, field: Column, value: unknown) {
+  if (d && !applies(d, field)) return ''
+  return field === 'fate' ? (FATES[value as keyof typeof FATES]?.label ?? '') : String(value ?? '')
+}
 /**
  * A cell as the sheet will check it: grey where the column does not apply to
  * the row's Release_Collect, red corner for a value outside the sheet's list,
@@ -287,6 +302,38 @@ function completed(field: Column, text: string, row: Row) {
   return options[field] ? complete(text, options[field]!()) : text
 }
 
+/** The selected cell as the bar above the list shows it (CellBar). */
+const bar = ref<CellBarInfo | null>(null)
+function describe(cell: CellComponent | null): CellBarInfo | null {
+  const field = cell?.getField() as Column | undefined
+  if (!cell || !field || !(field in HEADERS)) return null
+  const row = cell.getData() as Row
+  const index = props.drafts.findIndex(d => d.key === row.__key)
+  const d = props.drafts[index]
+  const id = d && (applies(d, 'insectaryId') ? d.insectaryId : d.cam)
+  const editable = canEdit(cell.getRow(), field)
+  return {
+    index: row.__key,
+    field,
+    column: HEADERS[field],
+    row: [t('fila {row}', { row: index + 1 }), id].filter(Boolean).join(' · '),
+    // Where the column does not apply the cell shows nothing; the bar too, unless something is typed (a CAM).
+    text: shownText(d, field, row[field]),
+    editable,
+    multiline: field === 'notes',
+    readonly: editable ? '' : (whyNot(cell.getRow(), field) ?? ''),
+  }
+}
+const showBar = () => (bar.value = table ? describe(selectedCell(table)) : null)
+function saveFromBar(target: CellBarInfo, text: string, move: Direction | 'here' | null) {
+  if (!table) return
+  if (!setFromBar(table, target, text, canEdit)) emit('notice', t('Esa celda ya no se puede editar'))
+  if (move) backToGrid(table, move)
+  showBar()
+}
+// The column names stay pinned below the bar as the page scrolls (style.css): the bar's height, as it grows.
+let barSize: ResizeObserver | null = null
+
 const onKeydown = spreadsheetKeys(
   () => table,
   canEdit,
@@ -391,6 +438,20 @@ onMounted(() => {
         onFilled: rows => notice(tn(rows, 'Copiado a {n} fila', 'Copiado a {n} filas')),
       })
   copied = attachCopyMarker(table, host.value.parentElement!, message => emit('notice', message))
+  fit = attachColumnFit(table, host.value, {
+    text: (data, field) =>
+      shownText(
+        props.drafts.find(d => d.key === data.__key),
+        field as Column,
+        data[field],
+      ),
+  })
+  followSelection(table, showBar)
+  const barEl = root.value?.querySelector<HTMLElement>('[data-cell-bar]')
+  if (barEl && root.value) {
+    barSize = new ResizeObserver(() => root.value?.style.setProperty('--cell-bar-height', `${barEl.offsetHeight}px`))
+    barSize.observe(barEl)
+  }
   host.value.addEventListener('keydown', onKeydown)
   host.value.addEventListener('keydown', onEditingKey, true)
   sizeWatch = watchSize(() => table, host.value)
@@ -404,6 +465,8 @@ onBeforeUnmount(() => {
   fill?.destroy()
   sizeWatch?.disconnect()
   copied?.destroy()
+  fit?.destroy()
+  barSize?.disconnect()
   host.value?.removeEventListener('keydown', onKeydown)
   host.value?.removeEventListener('keydown', onEditingKey, true)
   table?.destroy()
@@ -441,7 +504,11 @@ defineExpose({ focusCell })
 </script>
 
 <template>
-  <div class="sheet-grid collect-grid">
-    <div ref="host" tabindex="-1" />
+  <div ref="root" class="sheet-grid collect-grid">
+    <CellBar :info="bar" @save="saveFromBar" @back="move => table && backToGrid(table, move)" />
+    <!-- The grid's own box: the fill handle and the copied cells' border are placed in it, below the bar. -->
+    <div class="relative">
+      <div ref="host" tabindex="-1" />
+    </div>
   </div>
 </template>
