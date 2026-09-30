@@ -41,6 +41,9 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     assert.match(readFileSync(join(workspace, '.claude', 'skills', 'app-guide', 'SKILL.md'), 'utf8'), /name: app-guide/);
     assert.ok(existsSync(join(workspace, '.claude', 'skills', 'app-guide', 'reference', 'monitoreo.md')));
     assert.match(brief, /app-guide/);
+    // Claude Code subagents (assistant/agents): the notebook readers and reviewers, on their own model.
+    assert.match(readFileSync(join(workspace, '.claude', 'agents', 'notebook-reader.md'), 'utf8'), /^name: notebook-reader$/m);
+    assert.match(readFileSync(join(workspace, '.claude', 'agents', 'notebook-reviewer.md'), 'utf8'), /^model: claude-sonnet-5-5$/m);
     const mcp = JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8')).mcpServers.ithomiini;
     // The service's base path is /: the endpoint is /api/ai/mcp.
     assert.equal(mcp.url, 'http://127.0.0.1:8794/api/ai/mcp');
@@ -62,6 +65,7 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
 
     // A stale file of an old skill version, a person's own setting, a workspace of a user who left.
     writeFileSync(join(workspace, '.claude', 'skills', 'digitalizar-cuaderno', 'old.md'), 'x');
+    writeFileSync(join(workspace, '.claude', 'agents', 'old-agent.md'), 'x');
     writeFileSync(join(workspace, '.claude', 'settings.json'), JSON.stringify({ ...settings, model: 'opus' }));
     mkdirSync(join(shared, 't3-workspaces', 'old'), { recursive: true });
     writeFileSync(join(workspace, 'CLAUDE.md'), 'outdated');
@@ -71,6 +75,8 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     assert.match(out, /Skipped old: no active user/);
     assert.equal(readFileSync(join(workspace, 'CLAUDE.md'), 'utf8'), brief);
     assert.ok(!existsSync(join(workspace, '.claude', 'skills', 'digitalizar-cuaderno', 'old.md')));
+    assert.ok(!existsSync(join(workspace, '.claude', 'agents', 'old-agent.md')));
+    assert.ok(existsSync(join(workspace, '.claude', 'agents', 'notebook-reader.md')));
     assert.equal(JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8')).mcpServers.ithomiini.headers.Authorization, mcp.headers.Authorization, 'the token is kept');
     assert.equal(JSON.parse(readFileSync(join(workspace, '.claude', 'settings.json'), 'utf8')).model, 'opus');
     assert.equal(db.prepare('SELECT count(*) n FROM ai_tokens WHERE revoked_at IS NULL').get().n, 1);

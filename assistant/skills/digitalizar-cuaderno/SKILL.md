@@ -275,11 +275,12 @@ the start, in parallel, while you wait:
 
 1. Cut the strips (above), `--per 10`, and group them in 2–3 blocks of lines
    (e.g. lines 1–10, 11–20, 21–30), each block with its left and right strips.
-2. Start one reader subagent per block, **all of them in one message** (several
-   Agent calls in the same reply, `run_in_background: false`, so they run at
-   the same time). Give each: the notebook kind and its columns, the strip
-   paths of its block, the line range, and the value rules (point it to this
-   skill's "Doubtful handwriting" and "Writing the values"). It transcribes
+2. Start one reader per block — `subagent_type: "notebook-reader"` (a faster
+   model that knows this skill's value rules; `general-purpose` if that type is
+   not available) — **all of them in one message** (several Agent calls in the
+   same reply, `run_in_background: false`, so they run at the same time). Give
+   each: the notebook kind and its columns, the strip paths of its block and
+   the line range. It transcribes
    **blind** every line and column of its block and returns the `lines` JSON
    of `match_notebook` (with `confidence` on doubtful cells). Do not give it
    your own readings or the sheet's values.
@@ -303,7 +304,8 @@ what is likely to be wrong, not what is clearly fine:
    alignment of the right-hand page (re-read its lines with their IDs to check
    they are in step). Clear, plausible lines get no second reading.
 2. **Start every reviewer in one message** (several Agent calls in the same
-   reply, `run_in_background: false`): one per block of lines, each with only
+   reply, `run_in_background: false`, `subagent_type: "notebook-reviewer"`, or
+   `general-purpose` if that type is not available): one per block of lines, each with only
    its strips (and the photo path, for `--zoom`) and the list of lines (by ID)
    and columns to read. **Never tell
    it your readings**, never quote values or abbreviations from the proposal in
