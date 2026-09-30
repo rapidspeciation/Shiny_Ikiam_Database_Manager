@@ -17,8 +17,9 @@ is written until the person applies it.
    say so in one line and use the closest kind; never stop to ask first.
 2. **Crop the page with the skill's tool** (see "Crops" below): an overview
    with rulers, then strips of ~10 lines with the header repeated, straightened
-   and enhanced. A page of more than ~12 lines is read by reader subagents in
-   parallel from the start (see "Long pages").
+   and enhanced. Read the page yourself from the strips (several per reply);
+   several pages at once are read by reader subagents in parallel (see
+   "Several pages at once").
    **Transcribe every line and every column**, top to bottom, including
    crossed-out lines (`crossedOut: true`) and the notes. A spread of two facing
    pages is one page: the right-hand page continues the same lines, so follow
@@ -268,26 +269,24 @@ One command cuts the photo for reading (Pillow; the output goes to this chat's
 Labels, envelopes and short pages (≤ ~12 lines) can be read from the overview
 or one strip per page; the tool is for tables.
 
-## Long pages: split the reading across subagents
+## Several pages at once: reader subagents in parallel
 
-A page (or spread) with more than ~12 lines is read by reader subagents from
-the start, in parallel, while you wait:
+Read a single page yourself from its strips: in the lab, splitting one page
+across readers was slower (the readers, then merging their answers, took longer
+than reading it) and not more accurate. When the person sends several pages
+(several photos of tables) in one message:
 
-1. Cut the strips (above), `--per 10`, and group them in 2–3 blocks of lines
-   (e.g. lines 1–10, 11–20, 21–30), each block with its left and right strips.
-2. Start one reader per block — `subagent_type: "notebook-reader"` (a faster
+1. Cut the strips of every page (above).
+2. Start one reader per page — `subagent_type: "notebook-reader"` (a faster
    model that knows this skill's value rules; `general-purpose` if that type is
    not available) — **all of them in one message** (several Agent calls in the
    same reply, `run_in_background: false`, so they run at the same time). Give
-   each: the notebook kind and its columns, the strip paths of its block and
-   the line range. It transcribes
-   **blind** every line and column of its block and returns the `lines` JSON
-   of `match_notebook` (with `confidence` on doubtful cells). Do not give it
-   your own readings or the sheet's values.
-3. Merge the blocks in notebook order (a line on the border of two blocks is
-   read twice: keep one, and look at the strip where they differ), check the
-   stages make sense on each line, and call `match_notebook` **once** for the
-   page: that is the proposal. Then verify.
+   each: the notebook kind and its columns, and its page's strip paths. It
+   transcribes **blind** every line and column and returns the `lines` JSON of
+   `match_notebook` (with `confidence` on doubtful cells). Do not give it your
+   own readings or the sheet's values.
+3. Check each page's lines (the stages make sense on each line) and call
+   `match_notebook` once per page as the answers arrive. Then verify.
 
 ## Verification: a targeted second reading (always, after proposing)
 
@@ -314,9 +313,10 @@ what is likely to be wrong, not what is clearly fine:
    (`get_proposal`) and returns a table `line | column | page | proposal |
    confidence` of every disagreement, plus impossible stages it sees.
 3. **Correct the same proposal**: where the photo settles a disagreement (look
-   at a zoomed crop yourself), fix it with `update_proposal` (a few cells) or
-   `match_notebook` with the whole page and `replaceProposalId` (many cells, a
-   shifted page). Where it does not, keep the cell doubtful (`confidence`) and
+   at a zoomed crop yourself), fix it with `update_proposal` (seconds: the rows
+   by `index`, only the cells that change). Use `match_notebook` with the whole
+   page and `replaceProposalId` only when many lines change (a shifted block):
+   writing the whole page again takes more than a minute. Where it does not, keep the cell doubtful (`confidence`) and
    ask the person in the summary.
 4. In the summary, say that a second reading was done, how many cells it
    checked and what it changed.

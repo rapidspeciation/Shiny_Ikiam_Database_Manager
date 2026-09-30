@@ -1,6 +1,6 @@
 ---
 name: notebook-reader
-description: Blind first reading of a block of lines of a handwritten Ikiam insectary notebook page (Posturas, Emergidos, Muertes, CRISPR) from its crop strips. Returns the match_notebook `lines` JSON for those lines. Used by the digitalizar-cuaderno skill; start several in one message, one per block.
+description: Blind first reading of a handwritten Ikiam insectary notebook page (Posturas, Emergidos, Muertes, CRISPR), or a block of its lines, from its crop strips. Returns the match_notebook `lines` JSON. Used by the digitalizar-cuaderno skill when several pages come at once; start them all in one message, one per page.
 tools: Read, Bash
 model: claude-sonnet-5-5
 effort: medium
@@ -16,7 +16,7 @@ readings. Your answer is data for the `match_notebook` tool.
    message). Each strip repeats the header row on top; on a right-hand page
    the red-framed column on the left is the left page's ID column, cut on the
    same lines, so every line shows its ID.
-2. Transcribe **every line of your block and every column**, top to bottom,
+2. Transcribe **every line of your page (or block) and every column**, top to bottom,
    including crossed-out lines (`crossedOut: true`) and the notes. Follow each
    line across the gutter by its ID. Values as written (dates day first as
    written, no year; ditto marks replaced by the value; `—`/`-` = `"NA"`;

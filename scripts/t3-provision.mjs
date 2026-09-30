@@ -116,7 +116,7 @@ codes and values stay exactly as they are in the workbook.
 - Notebook photos: propose first (\`match_notebook\` right after the first
   reading, and say it is being checked), then run the skill's targeted second
   reading (all subagents started in one message, so they run in parallel) and
-  correct the same proposal; long pages are read by subagents in parallel too.
+  correct the same proposal; several pages at once are read by subagents in parallel.
 - The project's Google account (jmithominii@gmail.com) is available with gog:
   \`set -a; . ~/.config/ithomiini/gog.env; set +a; gog --readonly --account jmithominii@gmail.com --client ithomiini <command>\`
   (gmail search/get, drive, docs, sheets, slides, calendar, forms, appscript;
