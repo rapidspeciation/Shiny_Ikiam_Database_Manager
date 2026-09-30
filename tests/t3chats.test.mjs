@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { createAssistant } from '../server/assistant.mjs';
-import { chatsOnScreen, createT3Chats, openChat } from '../server/t3chats.mjs';
+import { addReports, chatsOnScreen, createT3Chats, openChat } from '../server/t3chats.mjs';
 
 // Proposals by T3 Code chat: which chat drafted a proposal, and which chat the panel follows.
 
@@ -55,8 +55,9 @@ function t3Home() {
     db.prepare('INSERT INTO projection_thread_activities VALUES (?,?,?,?,?)').run(randomUUID(), threadId, kind, JSON.stringify(payload), iso());
     db.prepare('UPDATE projection_threads SET updated_at = ? WHERE thread_id = ?').run(iso(), threadId);
   };
-  /** A T3 page shows this chat now. */
-  const screen = (path, at) => appendFileSync(join(home, 'userdata', 'logs', 'server.trace.ndjson'), traceLine(path, at) + '\n');
+  /** A T3 page shows this chat now (its last two reports, 2 s apart). */
+  const screen = (path, at = Date.now()) =>
+    appendFileSync(join(home, 'userdata', 'logs', 'server.trace.ndjson'), `${traceLine(path, at - 2000)}\n${traceLine(path, at)}\n`);
   return { home, db, call, screen };
 }
 
@@ -127,24 +128,40 @@ test("T3's trace log tells the chat on screen; a person's latest one is open, tw
     'drafts and other requests are not chats',
   );
   const franz = id => id === A || id === B;
-  assert.equal(openChat(seen, franz, { now }), A, 'the latest of their chats; Ana’s is not theirs');
-  // Two pages (phone and computer) on A and B, both reporting: the one the panel shows stays.
-  assert.equal(openChat(seen, franz, { now, current: B }), A, 'B was not reported after A appeared: that page moved on');
-  const both = [...seen, [B, now - 500]].sort((a, b) => a[1] - b[1]);
-  assert.equal(openChat(both, franz, { now, current: A }), A);
-  assert.equal(openChat(both, franz, { now, current: B }), B);
-  // One page moving from A to B: B at once.
-  const moved = [
-    [A, now - 7000],
-    [A, now - 4000],
-    [B, now - 1000],
-  ];
-  assert.equal(openChat(moved, franz, { now, current: A }), B);
+  const streaksOf = reports => addReports(new Map(), reports);
+  const every2s = (thread, from, to) => Array.from({ length: Math.floor((from - to) / 2000) + 1 }, (_, i) => [thread, now - from + i * 2000]);
+  const sorted = (...lists) => lists.flat().sort((a, b) => a[1] - b[1]);
+  // One page on A, then the person clicks B: B once it has reported twice.
+  const moved = sorted(every2s(A, 20_000, 8000), every2s(B, 6000, 0));
+  assert.equal(openChat(streaksOf(moved), franz, { now }), B);
+  assert.equal(openChat(streaksOf(sorted(every2s(A, 20_000, 8000), [[B, now]])), franz, { now }), A, 'one report is not enough yet');
+  // A second page left on A keeps reporting it: B, opened later, is the chat the person is on.
+  const twoPages = sorted(every2s(A, 20_000, 0), every2s(B, 6000, 0));
+  // Its reports pause for a few seconds now and then: not a new streak.
+  const paused = sorted(every2s(A, 60_000, 30_000), every2s(A, 24_000, 0), every2s(B, 40_000, 0));
+  assert.equal(openChat(streaksOf(paused), franz, { now }), B);
+  assert.equal(openChat(streaksOf(twoPages), franz, { now }), B);
+  // Back from B to A on the same page: A starts again.
+  const back = sorted(every2s(A, 50_000, 40_000), every2s(B, 38_000, 8000), every2s(A, 6000, 0));
+  assert.equal(openChat(streaksOf(back), franz, { now }), A);
+  // Ana's chats are not theirs; a tab in the background (a report a minute) is never open.
+  assert.equal(openChat(streaksOf(sorted(every2s(OTHER, 6000, 0), every2s(A, 20_000, 0))), franz, { now }), A);
+  const background = streaksOf(sorted(every2s(A, 20_000, 0)));
+  addReports(background, [[B, now - 60_000]]);
+  addReports(background, [[B, now]]);
+  assert.equal(openChat(background, franz, { now }), A);
+  // Streaks carry over between reads of the log: a later read without B's start keeps it.
+  const kept = streaksOf(twoPages);
+  addReports(kept, [
+    [A, now + 1000],
+    [B, now + 1500],
+  ]);
+  assert.equal(openChat(kept, franz, { now: now + 2000 }), B);
   // The page stopped reporting a little while ago: still the chat it showed.
-  assert.equal(openChat([[A, now - 15_000]], franz, { now, current: B }), A);
+  assert.equal(openChat(streaksOf(every2s(A, 21_000, 15_000)), franz, { now }), A);
   // A page closed a while ago says nothing.
-  assert.equal(openChat(seen, franz, { now: now + 60_000 }), null);
-  assert.equal(openChat([], franz, { now }), null);
+  assert.equal(openChat(streaksOf(moved), franz, { now: now + 60_000 }), null);
+  assert.equal(openChat(new Map(), franz, { now }), null);
 });
 
 test('a proposal is linked to the T3 chat that made it: by tool-use id, later if T3 records the call late, or by its result', async () => {

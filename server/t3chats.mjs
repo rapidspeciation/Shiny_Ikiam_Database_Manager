@@ -20,8 +20,12 @@ const TRACE_PATH = '"url.path":"/api/observability/v1/traces"';
 const PROPOSAL_ID = new RegExp(`proposalId\\\\?"\\s*:\\s*\\\\?"(${UUID})`, 'g');
 /** How long a page's last report counts as "open now" (it reports every ~3 s). */
 const OPEN_MS = 20_000;
-/** Two pages on different chats (two tabs, phone and computer): the one shown so far is kept. */
-const BOTH_MS = 8_000;
+/**
+ * A chat reported again after this long was opened again: a page reports every
+ * ~2 s, with pauses of up to ~6 s. A streak needs two reports, so a tab the
+ * browser lets report only about once a minute never counts as open.
+ */
+const GAP_MS = 15_000;
 
 /**
  * The chats T3 pages showed lately, from the end of T3's trace log: each
@@ -53,20 +57,37 @@ export function chatsOnScreen(text) {
 }
 
 /**
- * The chat open now among a person's chats: the one on screen most recently.
- * `current` (what the panel shows) stays while another page keeps showing it,
- * i.e. it is reported again after the newest chat was (a page moving to
- * another chat stops reporting the first one).
+ * Adds reports to `streaks` (thread → { start, last, reports }): a chat's streak starts
+ * when a page begins showing it, i.e. its first report after a gap. Mutates and
+ * returns `streaks`. Pure otherwise, for tests.
  */
-export function openChat(seen, mine, { now = Date.now(), current = null } = {}) {
-  const recent = seen.filter(([thread, at]) => mine(thread) && now - at <= OPEN_MS);
-  if (!recent.length) return null;
-  const [best, bestAt] = recent.at(-1);
-  if (!current || current === best) return best;
-  // In the last few seconds: `current` reported after the newest chat was: two pages.
-  const appeared = recent.find(([thread, at]) => thread === best && now - at < BOTH_MS)?.[1] ?? bestAt;
-  const kept = recent.findLast(([thread]) => thread === current)?.[1];
-  return kept > appeared ? current : best;
+export function addReports(streaks, seen) {
+  for (const [thread, at] of seen) {
+    const known = streaks.get(thread);
+    if (known && at <= known.last) continue;
+    streaks.set(
+      thread,
+      !known || at - known.last > GAP_MS
+        ? { start: at, last: at, reports: 1 }
+        : { start: known.start, last: at, reports: known.reports + 1 },
+    );
+  }
+  return streaks;
+}
+
+/**
+ * The chat open now among a person's chats: of those on screen (reported
+ * lately), the one opened most recently. A page left on another chat (a second
+ * tab, the phone) keeps reporting it, but the chat the person just clicked
+ * started later.
+ */
+export function openChat(streaks, mine, { now = Date.now() } = {}) {
+  let best = null;
+  for (const [thread, { start, last, reports }] of streaks) {
+    if (!mine(thread) || reports < 2 || now - last > OPEN_MS) continue;
+    if (!best || start > best.start || (start === best.start && last > best.last)) best = { thread, start, last };
+  }
+  return best?.thread ?? null;
 }
 
 /** Reads the last `bytes` of a file ('' if missing). */
@@ -225,30 +246,32 @@ export function createT3Chats({ home, now = Date.now } = {}) {
     return new Map([...found].map(([id, f]) => [id, f.thread]));
   }
 
-  let screen = { at: 0, size: -1, seen: [] };
+  let screen = { at: 0, size: -1 };
+  const streaks = new Map();
   /** The chats on screen lately (T3's trace log, read again at most every second). */
   function onScreen() {
-    if (!traceFile) return screen.seen;
-    if (now() - screen.at < 1000) return screen.seen;
+    if (!traceFile || now() - screen.at < 1000) return streaks;
     let size = -1;
     try {
       size = statSync(traceFile).size;
     } catch {
       /* no trace log */
     }
-    if (size !== screen.size) screen.seen = size < 0 ? [] : chatsOnScreen(tail(traceFile, 256 * 1024));
-    screen = { at: now(), size, seen: screen.seen };
-    return screen.seen;
+    if (size >= 0 && size !== screen.size) addReports(streaks, chatsOnScreen(tail(traceFile, 256 * 1024)));
+    // Chats not reported for a while are forgotten (their next report starts a new streak anyway).
+    for (const [thread, { last }] of streaks) if (now() - last > 10 * 60_000) streaks.delete(thread);
+    screen = { at: now(), size };
+    return streaks;
   }
 
   /** The person's chat open in T3 now, or null (no T3 page open, or T3 does not say). */
-  function open(username, current = null) {
+  function open(username) {
     const seen = onScreen();
-    if (!seen.length) return null;
+    if (!seen.size) return null;
     const own = new Set(projectsOf(username));
     if (!own.size) return null;
-    const info = threads(seen.map(([thread]) => thread));
-    return openChat(seen, thread => own.has(info.get(thread)?.projectId), { now: now(), current });
+    const info = threads([...seen.keys()]);
+    return openChat(seen, thread => own.has(info.get(thread)?.projectId), { now: now() });
   }
 
   return {

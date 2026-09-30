@@ -1321,8 +1321,8 @@ export function createAssistant({ store, config = {} }) {
    * message in it, or one of its proposals changed; 'app' = the proposals made
    * outside T3 chats), else all of them (no T3 chats at all).
    */
-  function followed(user, groups, current) {
-    const open = t3?.open(user.username, current) ?? null;
+  function followed(user, groups) {
+    const open = t3?.open(user.username) ?? null;
     if (open) return { chat: open, how: 'open' };
     const latest = t3?.chatsOf(user.username, 1)[0];
     let best = latest ? { chat: latest.id, at: latest.lastUserAt ?? '' } : null;
@@ -1931,12 +1931,12 @@ export function createAssistant({ store, config = {} }) {
       // discarded (or after 20 s), so the Asistente tab shows edits as the assistant drafts them;
       // with T3, also when another chat is opened there.
       if (query.wait)
-        await waitForChange(me, String(query.revision ?? ''), 20000, t3 && !query.only ? () => followed(user, chatGroups(me), follow).chat !== follow : null);
+        await waitForChange(me, String(query.revision ?? ''), 20000, t3 && !query.only ? () => followed(user, chatGroups(me)).chat !== follow : null);
       linkByToolUse(me);
       void linkByResult(me).catch(e => console.error('Proposals by chat:', e.message));
       const revision = revisionOf(me);
       const groups = chatGroups(me);
-      const followNow = followed(user, groups, follow);
+      const followNow = followed(user, groups);
       const scope = query.only ? { chat: 'all', how: 'only' } : asked === 'auto' ? followNow : { chat: asked, how: 'chosen' };
       const select = `SELECT p.*, t.title FROM ai_proposals p JOIN ai_threads t ON t.id = p.thread_id WHERE p.owner_id = ?`;
       const where =
