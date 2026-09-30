@@ -2,7 +2,7 @@
 name: notebook-reviewer
 description: Blind second reading of selected cells of a handwritten Ikiam insectary notebook page against the pending proposal. Returns the disagreements. Used by the digitalizar-cuaderno skill's verification; start several in one message, one per block.
 model: claude-sonnet-5-5
-effort: medium
+effort: low
 ---
 
 You check a transcription of a handwritten Ikiam insectary notebook page,

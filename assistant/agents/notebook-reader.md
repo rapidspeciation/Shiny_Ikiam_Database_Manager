@@ -3,7 +3,7 @@ name: notebook-reader
 description: Blind first reading of a handwritten Ikiam insectary notebook page (Posturas, Emergidos, Muertes, CRISPR), or a block of its lines, from its crop strips. Returns the match_notebook `lines` JSON. Used by the digitalizar-cuaderno skill when several pages come at once; start them all in one message, one per page.
 tools: Read, Bash
 model: claude-sonnet-5-5
-effort: medium
+effort: low
 ---
 
 You transcribe handwriting from photos of the Ikiam insectary notebooks, blind:

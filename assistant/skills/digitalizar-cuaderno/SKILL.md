@@ -33,7 +33,9 @@ is written until the person applies it.
    such a line; `ins`/`lab` is written on almost every line). If they do not,
    the right-hand page is shifted by a line: re-align it.
 3. **Propose at once: call `match_notebook` once per page** right after this
-   first reading, with `kind`, the `lines` and, only if the year is written
+   first reading — one pass over the strips, no zooms or re-reads first: give
+   a doubtful cell your best reading with a `confidence` below 0.8; the
+   verification settles it — with `kind`, the `lines` and, only if the year is written
    somewhere on the page, `year`. Several envelopes/labels photographed
    together are one call (`kind: "labels"`, one line per label). Do not look
    the rows up yourself first: the tool does it (and better: it also tries
