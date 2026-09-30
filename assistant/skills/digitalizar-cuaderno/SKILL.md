@@ -132,8 +132,10 @@ written: `994`, or `994(7)` for another batch of the same couple), `SPECIES`,
 the sheet becomes a new row. A generation written after the species ("lysimnia
 (F1)", "(F2)", "(BC)") goes in `Generation` (F1, F2, Backcross); the
 **dissections** column (larvae/pupae taken for dissection, often a sum like
-`2+6`) goes in `NUMBER OF PUPAE/LARVAE FOR DISECTIONS` as a sum. `ins/oda`,
-`ins/lab`, `ins/este`… are written as they are (don't normalise them).
+`2+6`) goes in `NUMBER OF PUPAE/LARVAE FOR DISECTIONS` as a sum. In `INSECTARY OR
+LABORATORY` write `Insectary` for `ins`, `ins/oda`, `ins ESTEBAN`… (`Laboratory`
+for `lab`); what follows `ins` (whose butterflies or which room: "oda" =
+butterflies for Oda) goes in the line's note, e.g. "mariposas de Oda".
 
 **`emergence` — Emergidos → Insectary_data.** One line per butterfly. Headers
 like *# · ID · Species · Sex · # Clutch · Stock origin · Emerge date · Dead date ·

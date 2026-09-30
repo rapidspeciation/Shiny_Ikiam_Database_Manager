@@ -296,6 +296,13 @@ export function readValue(field, text, { year, sheet = null }) {
     if (total) return { value: Number(total[1]) };
     return { value: /^\d+$/.test(s) ? Number(s) : s };
   }
+  // The notebook's "ins", "ins/oda", "ins ESTEBAN" is the Insectary ("lab…" the Laboratory); the part
+  // after it (whose butterflies, which room) belongs in the notes, not in this list column.
+  if (field === 'INSECTARY OR LABORATORY') {
+    if (/^ins/i.test(s)) return { value: 'Insectary' };
+    if (/^lab/i.test(s)) return { value: 'Laboratory' };
+    return { value: s };
+  }
   if (field === 'Sex') {
     const sex = { '♀': 'female', '♂': 'male', f: 'female', h: 'female', m: 'male' }[s.toLowerCase()];
     return { value: sex ?? s };

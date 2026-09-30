@@ -65,6 +65,9 @@ test('counts written as sums keep their terms in Insectary_stocks', () => {
   const stocks = { sheet: 'Insectary_stocks' };
   assert.equal(readValue('NUMBER OF EGGS', '12 + 15', stocks).value, '=12+15');
   assert.equal(readValue('NUMBER OF LARVAE', '2+4=6+8=14', stocks).value, '=2+4+8');
+  assert.equal(readValue('INSECTARY OR LABORATORY', 'ins/oda', stocks).value, 'Insectary');
+  assert.equal(readValue('INSECTARY OR LABORATORY', 'ins ESTEBAN', stocks).value, 'Insectary');
+  assert.equal(readValue('INSECTARY OR LABORATORY', 'lab', stocks).value, 'Laboratory');
   assert.equal(readValue('NUMBER OF ADULTS', '19', stocks).value, '=19', 'typed like the sheet types them');
   assert.equal(readValue('NUMBER OF LARVAE', '4+6=0', stocks).value, 0);
   assert.ok(sameValue('NUMBER OF EGGS', '=12+15', '=12+15'));

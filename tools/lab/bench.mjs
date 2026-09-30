@@ -242,6 +242,17 @@ function refreshTurns(threads) {
 }
 
 /** A run's threads scored against the latest snapshot. */
+/** The words of a text (3+ letters, no accents, lower case), to compare notes loosely. */
+function words(text) {
+  return new Set(
+    String(text ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .match(/[a-z]{3,}/g) ?? [],
+  );
+}
+
 function score(run, cases) {
   const snapshot = loadSnapshot();
   const db = t3db();
@@ -281,11 +292,24 @@ function score(run, cases) {
         if (target) read.set(target.row, { ...read.get(target.row), ...c.values });
         else outside++;
       }
-    const n = { correct: 0, total: 0, wrong: 0, missing: 0, filledCorrect: 0, filledTotal: 0 };
+    const n = { correct: 0, total: 0, wrong: 0, missing: 0, filledCorrect: 0, filledTotal: 0, notesMatch: 0, notesTotal: 0 };
     const errors = [];
     for (const r of rows) {
       const got = read.get(r.row);
       for (const [field, value] of Object.entries(r.values)) {
+        // Notes are scored apart: the sheet keeps each note's original date and author
+        // ("10/6/26 MJS: …"), which a photo does not show; only the words are compared.
+        if (/^notes?\b|^notes_/i.test(field)) {
+          const truthWords = words(value);
+          if (!truthWords.size) continue;
+          n.notesTotal++;
+          const cell = got && Object.hasOwn(got, field) ? got[field] : '';
+          const note = String((cell && typeof cell === 'object' ? (cell.replace ?? cell.value) : cell) ?? '');
+          const mine = words(note.replace(/\d{1,2}\/\d{1,2}\/\d{2,4}\s+[A-Z]{1,4}:/g, ' '));
+          const shared = [...mine].filter(w => truthWords.has(w)).length;
+          if (mine.size && shared / mine.size >= 0.5) n.notesMatch++;
+          continue;
+        }
         n.total++;
         const has = norm(value, field) !== '';
         n.filledTotal += has;
@@ -332,7 +356,7 @@ function report(run, scores) {
         `| ${s.case} | ${s.state} | ${s.correct}/${s.total} (${pct(s.correct, s.total)}) | ${s.filledCorrect}/${s.filledTotal} | ${s.wrong} | ${s.missing} | ${s.rowsProposed}/${s.rows}${s.rowsOutside ? ` +${s.rowsOutside}` : ''} | ${s.secs ? Math.round(s.secs) + ' s' : '–'} |`,
     ),
     '',
-    `All: ${sum('correct')}/${sum('total')} (${pct(sum('correct'), sum('total'))}); filled cells ${sum('filledCorrect')}/${sum('filledTotal')} (${pct(sum('filledCorrect'), sum('filledTotal'))})`,
+    `All: ${sum('correct')}/${sum('total')} (${pct(sum('correct'), sum('total'))}); filled cells ${sum('filledCorrect')}/${sum('filledTotal')} (${pct(sum('filledCorrect'), sum('filledTotal'))}); notes (scored apart, words only) ${sum('notesMatch')}/${sum('notesTotal')}`,
   ].join('\n');
   writePrivate(join(dir, 'scores.json'), JSON.stringify(scores, null, 1));
   writePrivate(join(dir, 'errors.csv'), csv + '\n');
@@ -345,7 +369,7 @@ function report(run, scores) {
       JSON.stringify({
         runId: run.runId, at: run.startedAt, model: run.model, effort: s.effort, case: s.case, state: s.state,
         correct: s.correct, total: s.total, filledCorrect: s.filledCorrect, filledTotal: s.filledTotal,
-        wrong: s.wrong, missing: s.missing, rowsOutside: s.rowsOutside, secs: s.secs, snapshot: taken,
+        wrong: s.wrong, missing: s.missing, notesMatch: s.notesMatch, notesTotal: s.notesTotal, rowsOutside: s.rowsOutside, secs: s.secs, snapshot: taken,
       }),
     );
   writeFileSync(HISTORY, [...old, ...lines].join('\n') + '\n', { mode: 0o600 });
