@@ -11,6 +11,7 @@ import {
   choiceEditor,
   openList,
   editingKeys,
+  revealGridRow,
   spreadsheetKeys,
   tileToSelection,
   typingPending,
@@ -433,6 +434,8 @@ async function focusCell(index: number, field: Column) {
   }
   // Keys go where Tabulator listens for them (its rows), as after a click.
   ;(table as unknown as { rowManager: { element: HTMLElement } }).rowManager.element.focus({ preventScroll: true })
+  // The list scrolls with the page, which scrollToRow leaves alone.
+  revealGridRow(table, row)
 }
 defineExpose({ focusCell })
 </script>

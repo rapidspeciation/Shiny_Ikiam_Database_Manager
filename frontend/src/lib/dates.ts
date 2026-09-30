@@ -56,6 +56,12 @@ export function formatSerial(serial: number): string {
   return `${d.getUTCDate()}-${MONTHS[d.getUTCMonth()]}-${String(d.getUTCFullYear()).slice(2)}`
 }
 
+/** An ISO date as the team types it, day first: 2026-05-26 → 26/05/2026. */
+export function dayFirst(iso: string): string {
+  const [y, m, d] = iso.split('-')
+  return d && m && y ? `${d}/${m}/${y}` : ''
+}
+
 /** "martes", for an ISO date: the weekday helps notice a wrong collection date. */
 export function weekdayOf(iso: string): string {
   const time = Date.parse(`${iso}T12:00:00Z`)

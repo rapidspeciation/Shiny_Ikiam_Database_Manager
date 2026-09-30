@@ -3,7 +3,7 @@ import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, 
 import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
-import { displayValue, normalizeInput } from '../lib/cells'
+import { displayValue, editText, normalizeInput } from '../lib/cells'
 import { isSumField } from '../lib/sums'
 import {
   attachCopyMarker,
@@ -14,6 +14,7 @@ import {
   openList,
   editingKeys,
   spreadsheetKeys,
+  textEditor,
   tileToSelection,
   watchSize,
   type CanEdit,
@@ -313,7 +314,8 @@ function editorFor(field: Field): Partial<ColumnDefinition> {
   if (dependent) return choiceEditor(cell => dependent(cell.getData() as GridRow))
   // Choices are read when the editor opens, so they stay current without rebuilding the grid.
   if (props.options[field.key]?.length) return choiceEditor(() => props.options[field.key] || [])
-  return { editor: 'input', editorParams: { selectContents: true } }
+  // Dates open day first (26/05/2026), not as the sheet's serial number.
+  return textEditor(value => editText(value as CellValue, field))
 }
 
 function textFilter(headerValue: string, rowValue: CellValue, _data: unknown, params: { field: Field }) {

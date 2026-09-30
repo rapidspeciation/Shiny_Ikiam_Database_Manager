@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { CalendarDays } from 'lucide-vue-next'
-import { isoToSerial, parseDateInput, serialToIso, todayIso } from '../lib/dates'
+import { dayFirst, isoToSerial, parseDateInput, serialToIso, todayIso } from '../lib/dates'
 
 /**
  * A date typed day first (28/09/2026), as the team writes it. The browser's
@@ -12,11 +12,7 @@ import { isoToSerial, parseDateInput, serialToIso, todayIso } from '../lib/dates
 defineOptions({ inheritAttrs: false })
 const model = defineModel<string>({ default: '' })
 
-const shown = (iso: string) => {
-  if (!iso) return ''
-  const [y, m, d] = iso.split('-')
-  return `${d}/${m}/${y}`
-}
+const shown = (iso: string) => (iso ? dayFirst(iso) : '')
 const text = ref(shown(model.value))
 const invalid = ref(false)
 const picker = ref<HTMLInputElement>()
