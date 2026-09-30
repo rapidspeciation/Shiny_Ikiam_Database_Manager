@@ -96,6 +96,7 @@ function message(invitation, link, inviter) {
     hello: `Hi ${name},`,
     intro: `The Ithomiini project invited you to Ithomiini database, the team's app for collecting, monitoring and insectary data (${roleEn} access).`,
     how: 'Create your username and password with this link (valid for 7 days, single use):',
+    after: `Then sign in with the username you choose or with this email (${invitation.email}).`,
     button: 'Create my account',
     end: [named ? `Invitation sent by ${inviter}.` : '', 'If you were not expecting this email, ignore it.'].filter(Boolean).join(' '),
   };
@@ -103,14 +104,16 @@ function message(invitation, link, inviter) {
     hello: `Hola ${name}:`,
     intro: `El proyecto de ithómidos te invitó a Ithomiini database, la app del equipo para los datos de colecta, monitoreo e insectario (acceso de ${roleEs}).`,
     how: 'Crea tu usuario y contraseña con este enlace (vale 7 días y se usa una sola vez):',
+    after: `Después entra con el usuario que elijas o con este correo (${invitation.email}).`,
     button: 'Crear mi cuenta',
     end: [named ? `Invitación enviada por ${inviter}.` : '', 'Si no esperabas este correo, ignóralo.'].filter(Boolean).join(' '),
   };
-  const text = [en.hello, '', en.intro, '', en.how, link, '', en.end, '', '— Español —', '', es.hello, '', es.intro, '', es.how, link, '', es.end].join('\n');
+  const lines = m => [m.hello, '', m.intro, '', m.how, link, m.after, '', m.end];
+  const text = [...lines(en), '', '— Español —', '', ...lines(es)].join('\n');
   const block = m => `<p>${escape(m.hello)}</p>
 <p>${escape(m.intro).replace('Ithomiini database', '<strong>Ithomiini database</strong>')}</p>
 <p><a href="${escape(link)}" style="display:inline-block;background:#1f513a;color:#fff;padding:.6rem 1rem;border-radius:.4rem;text-decoration:none">${escape(m.button)}</a></p>
-<p style="font-size:.85rem;color:#57534e">${escape(m.how.replace(/:$/, '.'))} ${escape(m.end)}</p>`;
+<p style="font-size:.85rem;color:#57534e">${escape(m.how.replace(/:$/, '.'))} ${escape(m.after)} ${escape(m.end)}</p>`;
   const html = `<div style="font-family:system-ui,sans-serif;max-width:32rem;line-height:1.5;color:#292524">
 ${block(en)}
 <hr style="border:none;border-top:1px solid #d6d3d1;margin:1.5rem 0">

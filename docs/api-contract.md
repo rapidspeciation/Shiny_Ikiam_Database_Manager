@@ -20,7 +20,8 @@ Native Node 24 ESM server, no third-party runtime dependencies. The Vue frontend
 
 ## Core endpoints
 
-- POST /api/auth/login `{username,password}` -> `{user,csrf}`; POST /api/auth/logout; GET /api/auth/session -> `{user,csrf,setupRequired?}`; POST /api/auth/setup `{token,username,password,displayName}` one-time admin bootstrap, never public open registration.
+- POST /api/auth/login `{username,password}` -> `{user,csrf}`; POST /api/auth/logout; GET /api/auth/session -> `{user,csrf,setupRequired?}`; POST /api/auth/setup `{token,username,password,displayName}` one-time admin bootstrap, never public open registration. `username` may also be the account's email (case-insensitive, trimmed); failed sign-ins are limited per resolved account and per address.
+- Password recovery (server/passwordReset.mjs): POST /api/auth/reset/request `{identifier}` -> 202 `{ok:true}` always (emails `<APP_PUBLIC_URL>/#/restablecer?t=<token>` when the account exists and has an email; 3 per account and 9 per address every 15 min). GET /api/auth/reset/lookup?t= -> `{reset:{username,displayName,status:valid|used|expired}}`. POST /api/auth/reset `{token,password}` -> `{user,csrf}`, signs out every other session. POST /api/admin/users/:id/reset-link -> `{link,email,sent,sendError,username}` (admin). Tokens are random, stored as SHA-256, valid 24 h, single use; a new one replaces older unused ones.
 - GET /api/bootstrap -> `{user,csrf,modules,stats,options,sync,settings}`. Include role, language, sandbox label, sheet URL.
 - GET /api/records?module=&q=&limit=&offset=&filters=<JSON> -> `{records,total,offset,limit}`. Also `sheet=` accepted. GET /api/records/:id -> `{record,related,history}`.
 - POST /api/records `{module,values,requestId}` -> `{record,action,status}`. PATCH /api/records/:id `{values,expectedVersion,requestId,reason}` same result. DELETE /api/records/:id performs reviewed withdrawal, not blind source row removal.

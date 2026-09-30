@@ -19,6 +19,8 @@ export const tabs = [
 
 /** Pages a visitor without an account can open. */
 export const openPaths = new Set(tabs.filter(t => 'open' in t && t.open).map(t => t.path))
+/** Account pages shown on their own (no header), with or without a session: invitation and password reset. */
+export const accountPaths = new Set(['/activar', '/recuperar', '/restablecer'])
 
 export const router = createRouter({
   history: createWebHashHistory(),
@@ -33,6 +35,9 @@ export const router = createRouter({
     // Cambios propuestos on their own browser tab (e.g. a second monitor), without the app's header.
     { path: '/propuestas/:id?', name: 'proposals', component: () => import('./views/ProposalsView.vue'), meta: { bare: true } },
     { path: '/activar', name: 'activate', component: () => import('./views/ActivateView.vue') },
+    // Forgotten password: ask for a link, then open it.
+    { path: '/recuperar', name: 'forgot', component: () => import('./views/ForgotPasswordView.vue') },
+    { path: '/restablecer', name: 'reset', component: () => import('./views/ResetPasswordView.vue') },
     { path: '/entrar', name: 'login', component: LoginView },
     { path: '/:pathMatch(.*)*', redirect: '/inicio' },
   ],

@@ -30,7 +30,12 @@ export function passwordFields(password) {
   return { salt, hash: scryptSync(password, salt, 64).toString('hex') };
 }
 export function verifyPassword(password, user) {
-  if (!user || typeof password !== 'string') return false;
+  if (typeof password !== 'string') return false;
+  // An unknown account takes as long as a wrong password, so timing does not tell which accounts exist.
+  if (!user) {
+    scryptSync(password, 'no-such-account', 64);
+    return false;
+  }
   const given = scryptSync(password, user.salt, 64);
   const expected = Buffer.from(user.password_hash, 'hex');
   return given.length === expected.length && timingSafeEqual(given, expected);
@@ -63,9 +68,20 @@ export function validateUsername(value) {
     throw bad('INVALID_USERNAME', 'Username must be 3 to 64 letters, numbers, dots, underscores, or hyphens');
   return value.toLowerCase();
 }
+/**
+ * The active account someone means by a username or an email (either case,
+ * spaces trimmed). Usernames cannot contain "@"; an email only counts when a
+ * single active account has it.
+ */
+export function resolveAccount(store, identifier) {
+  const text = typeof identifier === 'string' ? identifier.trim().toLowerCase() : '';
+  if (!text) return null;
+  if (!text.includes('@')) return store.db.prepare('SELECT * FROM users WHERE username=? AND active=1').get(text) ?? null;
+  const rows = store.db.prepare('SELECT * FROM users WHERE lower(trim(email))=? AND active=1 LIMIT 2').all(text);
+  return rows.length === 1 ? rows[0] : null;
+}
 export function login(store, body) {
-  const username = typeof body.username === 'string' ? body.username.toLowerCase() : '';
-  const row = store.db.prepare('SELECT * FROM users WHERE username=? AND active=1').get(username);
+  const row = resolveAccount(store, body.username);
   if (!verifyPassword(body.password, row)) throw bad('BAD_CREDENTIALS', 'Invalid username or password', 401);
   const token = randomBytes(32).toString('base64url'),
     csrf = digest(`csrf:${token}`);

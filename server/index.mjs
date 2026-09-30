@@ -36,6 +36,7 @@ import { idSuggestions, tableChanges, tablePayload, tableRevision } from './grid
 import { extendPremadeRows } from './premade.mjs';
 import { createSheetHook } from './hooks.mjs';
 import { createInvitations, mailerFromEnv } from './invitations.mjs';
+import { createPasswordResets } from './passwordReset.mjs';
 import { createSummary } from './summary.mjs';
 import { applyIdChange, planIdChange } from './insectaryId.mjs';
 import { UNIQUE, TUBE_FIELD } from './verifications.mjs';
@@ -54,6 +55,7 @@ import {
   cookie,
   publicUser,
   requireAdmin,
+  resolveAccount,
   createUser,
   updateUser,
   csrfForSession,
@@ -114,11 +116,16 @@ class LoginLimiter {
     else this.failures.delete(key);
     return list;
   }
+  /** An address gets more attempts than an account, since several people may share one. */
+  accountBlocked(req, username) {
+    return this.recent(this.keys(req, username)[0]).length >= this.limit;
+  }
+  addressBlocked(req) {
+    return this.recent(this.keys(req, '')[1]).length >= this.limit * 3;
+  }
   check(req, username) {
-    // An address gets more attempts than an account, since several people may share one.
-    const [user, ip] = this.keys(req, username);
-    if (this.recent(user).length >= this.limit || this.recent(ip).length >= this.limit * 3)
-      throw fail('RATE_LIMITED', 'Too many failed sign-ins; wait 15 minutes and try again', 429);
+    if (this.accountBlocked(req, username) || this.addressBlocked(req))
+      throw fail('RATE_LIMITED', 'Too many attempts; wait 15 minutes and try again', 429);
   }
   failed(req, username) {
     for (const key of this.keys(req, username)) this.failures.set(key, [...this.recent(key), Date.now()]);
@@ -324,11 +331,11 @@ export async function createApp(config = {}, options = {}) {
     maxBytes: (config.photoCacheMb || 1024) * 1024 * 1024,
     ...(options.fetchPhoto ? { fetchImpl: options.fetchPhoto } : {}),
   });
-  const invitations = createInvitations(
-    store,
-    options.mailer ?? mailerFromEnv(),
-    options.mail ? { send: options.mail } : {},
-  );
+  const mailer = options.mailer ?? mailerFromEnv();
+  const invitations = createInvitations(store, mailer, options.mail ? { send: options.mail } : {});
+  const resets = createPasswordResets(store, mailer, options.mail ? { send: options.mail } : {});
+  // Reset links asked for from the sign-in page: 3 per account and 9 per address every 15 minutes.
+  const resetLimiter = new LoginLimiter({ limit: 3 });
   const server = http.createServer(async (req, res) => {
     const requestId = randomUUID();
     res.setHeader('x-request-id', requestId);
@@ -382,10 +389,12 @@ export async function createApp(config = {}, options = {}) {
         );
       }
       if (method === 'POST' && path === '/api/auth/login') {
-        loginLimiter.check(req, body.username);
+        // Username or email: failures count against the account, however it was named.
+        const account = resolveAccount(store, body.username)?.username ?? String(body.username ?? '').trim();
+        loginLimiter.check(req, account);
         try {
           const auth = login(store, body);
-          loginLimiter.succeeded(req, body.username);
+          loginLimiter.succeeded(req, account);
           return json(
             res,
             200,
@@ -393,9 +402,43 @@ export async function createApp(config = {}, options = {}) {
             { 'set-cookie': cookie(auth.token, { path: config.basePath, secure: config.secureCookies }) },
           );
         } catch (e) {
-          loginLimiter.failed(req, body.username);
+          loginLimiter.failed(req, account);
           throw e;
         }
+      }
+      // Forgotten password: the answer is the same whether or not the account exists
+      // (and the email is sent in the background, so the timing does not tell either).
+      if (method === 'POST' && path === '/api/auth/reset/request') {
+        const identifier = String(body.identifier ?? '').trim();
+        if (!identifier) throw fail('IDENTIFIER_REQUIRED', 'Enter your username or email');
+        if (resetLimiter.addressBlocked(req))
+          throw fail('RATE_LIMITED', 'Too many requests; wait 15 minutes and try again', 429);
+        const account = resolveAccount(store, identifier)?.username ?? identifier.toLowerCase();
+        const blocked = resetLimiter.accountBlocked(req, account);
+        resetLimiter.failed(req, account);
+        if (!blocked) resets.request(identifier)?.catch(() => {});
+        return json(res, 202, { ok: true });
+      }
+      if (method === 'GET' && path === '/api/auth/reset/lookup')
+        return json(res, 200, { reset: resets.lookup(url.searchParams.get('t')) });
+      if (method === 'POST' && path === '/api/auth/reset') {
+        // Guessed links count against the address (with failed sign-ins); an expired or used one does not.
+        if (loginLimiter.addressBlocked(req))
+          throw fail('RATE_LIMITED', 'Too many attempts; wait 15 minutes and try again', 429);
+        let changed;
+        try {
+          changed = resets.use(body.token, body.password);
+        } catch (e) {
+          if (e.code === 'RESET_INVALID') loginLimiter.failed(req, 'password-reset');
+          throw e;
+        }
+        const auth = login(store, { username: changed.username, password: body.password });
+        return json(
+          res,
+          200,
+          { user: auth.user, csrf: auth.csrf },
+          { 'set-cookie': cookie(auth.token, { path: config.basePath, secure: config.secureCookies }) },
+        );
       }
       // The home page is open to visitors: natural-history summaries only (the team's
       // counts are added for signed-in people).
@@ -790,6 +833,11 @@ export async function createApp(config = {}, options = {}) {
         requireAdmin(user);
         requireId(body);
         return json(res, 200, { user: updateUser(store, path.split('/')[4], body, user) });
+      }
+      const resetLink = /^\/api\/admin\/users\/([^/]+)\/reset-link$/.exec(path);
+      if (resetLink && method === 'POST') {
+        requireAdmin(user);
+        return json(res, 201, await resets.adminLink(resetLink[1], user));
       }
       if (method === 'GET' && path === '/api/t3/status') return json(res, 200, { url: config.t3?.url ?? null });
       // Admins update T3 Code from the Asistente tab (server/t3admin.mjs).

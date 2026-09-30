@@ -116,6 +116,32 @@ async function update(user: User, changes: Record<string, unknown>) {
     await load()
   }
 }
+const resetLinks = ref<Record<string, string>>({})
+/** A reset link for the person: emailed when they have an address, and shown here to copy. */
+async function resetLink(user: User) {
+  try {
+    const out = await api<{ link: string; email: string | null; sent: boolean; sendError: string | null }>(
+      `admin/users/${user.id}/reset-link`,
+      { method: 'POST', body: {} },
+    )
+    resetLinks.value[user.id] = out.link
+    if (out.sent) notify(t('Enlace enviado a {email}. También puedes copiarlo abajo.', { email: out.email }), 'success')
+    else if (out.email)
+      notify(t('No se pudo enviar el correo ({error}). Copia el enlace y compártelo.', { error: out.sendError }), 'error')
+    else notify(t('{username} no tiene correo: copia el enlace y compártelo.', { username: user.username }))
+  } catch (e) {
+    notify(errorText(e), 'error')
+  }
+}
+async function copyReset(user: User) {
+  try {
+    await navigator.clipboard.writeText(resetLinks.value[user.id])
+    notify(t('Enlace copiado'))
+  } catch {
+    // Without clipboard access (e.g. plain http): select it for Ctrl+C.
+    ;(document.getElementById(`reset-${user.id}`) as HTMLInputElement | null)?.select()
+  }
+}
 async function resetPassword(user: User) {
   const password = prompt(t('Nueva contraseña para {username} (6 a 16 caracteres)', { username: user.username }))
   if (password) {
@@ -219,24 +245,48 @@ async function resetPassword(user: User) {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="u in users" :key="u.id" class="border-t border-stone-200">
-            <td class="py-2">{{ u.username }}</td>
-            <td>{{ u.displayName }}</td>
-            <td class="text-stone-600">{{ u.email }}</td>
-            <td>
-              <ChoiceField
-                :model-value="u.role"
-                class="field-input w-40"
-                :options="roleChoices"
-                :freetext="false"
-                @update:model-value="update(u, { role: $event })"
-              />
-            </td>
-            <td><input type="checkbox" :checked="u.active" @change="update(u, { active: !u.active })" /></td>
-            <td>
-              <button class="text-xs underline" @click="resetPassword(u)">{{ $t('Cambiar contraseña') }}</button>
-            </td>
-          </tr>
+          <template v-for="u in users" :key="u.id">
+            <tr class="border-t border-stone-200">
+              <td class="py-2">{{ u.username }}</td>
+              <td>{{ u.displayName }}</td>
+              <td class="text-stone-600">{{ u.email }}</td>
+              <td>
+                <ChoiceField
+                  :model-value="u.role"
+                  class="field-input w-40"
+                  :options="roleChoices"
+                  :freetext="false"
+                  @update:model-value="update(u, { role: $event })"
+                />
+              </td>
+              <td><input type="checkbox" :checked="u.active" @change="update(u, { active: !u.active })" /></td>
+              <td class="space-x-3 whitespace-nowrap">
+                <button class="text-xs underline" :disabled="!u.active" @click="resetLink(u)">
+                  {{ $t('Enlace para restablecer') }}
+                </button>
+                <button class="text-xs underline" @click="resetPassword(u)">{{ $t('Cambiar contraseña') }}</button>
+              </td>
+            </tr>
+            <!-- The link is also shown, to send it by WhatsApp when the email does not arrive. -->
+            <tr v-if="resetLinks[u.id]">
+              <td colspan="6" class="pb-3">
+                <div class="flex items-center gap-2">
+                  <input
+                    :id="`reset-${u.id}`"
+                    class="field-input min-w-0 flex-1 font-mono text-xs"
+                    :value="resetLinks[u.id]"
+                    readonly
+                    @focus="($event.target as HTMLInputElement).select()"
+                  />
+                  <button class="btn" @click="copyReset(u)"><Copy :size="14" /> {{ $t('Copiar') }}</button>
+                  <button class="btn-ghost" :title="$t('Ocultar')" @click="delete resetLinks[u.id]"><X :size="14" /></button>
+                </div>
+                <p class="hint">
+                  {{ $t('Vale 24 horas y se usa una sola vez; un enlace nuevo reemplaza al anterior. Puedes enviarlo por WhatsApp.') }}
+                </p>
+              </td>
+            </tr>
+          </template>
         </tbody>
       </table>
 

@@ -63,4 +63,36 @@ export default {
   'Cambiar contraseña': 'Change password',
   'Crear una cuenta sin correo (con contraseña inicial)': 'Create an account without email (with an initial password)',
   'Contraseña inicial': 'Initial password',
+  'Enlace para restablecer': 'Reset link',
+  Ocultar: 'Hide',
+  'Vale 24 horas y se usa una sola vez; un enlace nuevo reemplaza al anterior. Puedes enviarlo por WhatsApp.':
+    'Valid for 24 hours and works once; a new link replaces the previous one. You can send it by WhatsApp.',
+  'Enlace enviado a {email}. También puedes copiarlo abajo.': 'Link sent to {email}. You can also copy it below.',
+  '{username} no tiene correo: copia el enlace y compártelo.': '{username} has no email: copy the link and share it.',
+  // LoginView, ForgotPasswordView, ResetPasswordView (password recovery)
+  'Usuario o correo': 'Username or email',
+  '¿Olvidaste tu contraseña?': 'Forgot your password?',
+  'Restablecer la contraseña': 'Reset your password',
+  'Escribe tu usuario o tu correo. Te enviaremos un enlace para elegir una contraseña nueva.':
+    'Enter your username or your email. We will send you a link to choose a new password.',
+  'Enviar enlace': 'Send link',
+  'Si hay una cuenta con ese usuario o correo y tiene un correo registrado, te llegará un enlace en unos minutos. Vale 24 horas.':
+    'If there is an account with that username or email and it has an email address, a link will arrive in a few minutes. It is valid for 24 hours.',
+  '¿No llega? Revisa la carpeta de spam, o pide a un administrador un enlace para restablecer.':
+    'Not arriving? Check your spam folder, or ask an administrator for a reset link.',
+  'Volver a iniciar sesión': 'Back to sign in',
+  'Nueva contraseña': 'New password',
+  Cuenta: 'Account',
+  'Contraseña nueva': 'New password',
+  'Guardar la contraseña y entrar': 'Save the password and sign in',
+  'Este enlace ya se usó.': 'This link has already been used.',
+  'Este enlace venció (vale 24 horas) o fue reemplazado por uno más nuevo.':
+    'This link has expired (it is valid for 24 hours) or was replaced by a newer one.',
+  'Este enlace no es válido.': 'This link is not valid.',
+  'Pedir un enlace nuevo': 'Request a new link',
+  // ActivateView, after the account is created
+  'Tu cuenta está lista.': 'Your account is ready.',
+  'Tu usuario es': 'Your username is',
+  '; también puedes entrar con tu correo ({email}).': '; you can also sign in with your email ({email}).',
+  Continuar: 'Continue',
 } as Record<string, string>
