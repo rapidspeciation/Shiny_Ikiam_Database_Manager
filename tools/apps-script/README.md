@@ -1,7 +1,8 @@
 # Instant updates from Google Sheets
 
 Without this script, an edit made directly in Google Sheets reaches the app at
-its next full read of the workbook: up to 5 minutes, plus about 2 minutes to
+its next full read of the workbook (every 30 minutes on the server since the hook
+was installed, SYNC_INTERVAL_MS=1800000; 5 minutes without it), plus about 2 minutes to
 read it. With it, the app re-reads only the edited rows within a few seconds,
 and open pages pick up the change on their next check (every 10 seconds).
 
@@ -37,3 +38,12 @@ Changes that no trigger reports (a formula recalculating because another
 sheet changed) still arrive with the 5-minute read.
 
 To remove it: **Triggers** (clock icon) → delete both triggers.
+
+## Installed in the team's workbook (30 Sep 2026)
+
+Installed with `install.sh` run on claudeclaw as the project account (so the
+triggers belong to the project, not a person), then `setup` run once in the
+editor. The first report from Google to the new domain took ~70 s; after that,
+edits reach the app in about 5 s (a trigger run takes 2–3 s, well within a free
+account's daily trigger time). Check it with `GET /api/sync` → `hook.received`
+and the script's executions (Apps Script API `processes.listScriptProcesses`).

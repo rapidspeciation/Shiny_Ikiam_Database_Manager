@@ -1,7 +1,7 @@
 /**
  * Tells the Ithomiini app which rows someone edited directly in this workbook,
  * so the app shows the change within seconds instead of at its next full read
- * (every 5 minutes). See README.md.
+ * (every 30 minutes once this hook is installed). See README.md.
  *
  * Edits reach the app as { sheet, startRow, numRows }. Inserting, deleting or
  * sorting rows makes the app read that whole sheet again.
