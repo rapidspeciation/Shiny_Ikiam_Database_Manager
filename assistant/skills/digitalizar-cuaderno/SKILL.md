@@ -129,7 +129,11 @@ written: `994`, or `994(7)` for another batch of the same couple), `SPECIES`,
 `DATE LAID`, `NUMBER OF EGGS`, `INSECTARY OR LABORATORY` (`Insectary` for
 `ins`, `Laboratory` for `lab`), `HATCHING DATE`, `NUMBER OF LARVAE`, `PUPA DATE`,
 `NUMBER OF PUPA`, `EMERGENCE DATE`, `NUMBER OF ADULTS`, `NOTES`. A clutch not in
-the sheet becomes a new row.
+the sheet becomes a new row. A generation written after the species ("lysimnia
+(F1)", "(F2)", "(BC)") goes in `Generation` (F1, F2, Backcross); the
+**dissections** column (larvae/pupae taken for dissection, often a sum like
+`2+6`) goes in `NUMBER OF PUPAE/LARVAE FOR DISECTIONS` as a sum. `ins/oda`,
+`ins/lab`, `ins/este`… are written as they are (don't normalise them).
 
 **`emergence` — Emergidos → Insectary_data.** One line per butterfly. Headers
 like *# · ID · Species · Sex · # Clutch · Stock origin · Emerge date · Dead date ·

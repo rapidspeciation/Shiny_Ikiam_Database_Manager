@@ -45,7 +45,7 @@ version") and the next deploy wipes it. Always change the source.
    restarts the app — about a minute — and refreshes the T3 workspaces; it
    refuses if your commit is not on GitHub). The app restart does not stop
    T3 chats.
-7. Verify: `curl -s https://ithomiini-ikiam.duckdns.org/version.json` shows
+7. Verify: `curl -s https://ithomiini-ikiam.com/version.json` shows
    the new build; tell the person to reload the page (a banner offers it) and
    what to look at. If something broke, say so; the previous release is in
    `/home/ubuntu/ithomiini/shared/previous-release` and a fix goes through

@@ -57,7 +57,7 @@ language the person writes in (Spanish or English); sheet names, column names,
 codes and values stay exactly as they are in the workbook.
 
 - The workbook is reached only through the MCP server \`ithomiini\`
-  (search_records, find_records, get_record, describe_sheet, check_data,
+  (search_records, find_records, count_records, get_record, describe_sheet, check_data,
   list_agreed_fixes, queue_wikiloc, get_walk, match_notebook, propose_changes,
   update_proposal, get_proposal, apply_proposal, run_report, search_knowledge,
   list_documents, read_document, sync_documents, list_history,

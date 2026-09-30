@@ -1,6 +1,6 @@
 # Data-entry tabs
 
-Base URL: `https://ithomiini-ikiam.duckdns.org/`. Editing needs the editor,
+Base URL: `https://ithomiini-ikiam.com/`. Editing needs the editor,
 reviewer or admin role. All tabs keep their pending edits in the save bar
 (see SKILL.md "Saving").
 
@@ -54,7 +54,7 @@ Any sheet of the workbook as a spreadsheet (the old app's "Buscador").
   missing/duplicate column blocks reading and saving that sheet).
 
 Links: `#/tablas?hoja=<sheet>&buscar=<text>`, e.g.
-`https://ithomiini-ikiam.duckdns.org/#/tablas?hoja=Insectary_data&buscar=N4D`.
+`https://ithomiini-ikiam.com/#/tablas?hoja=Insectary_data&buscar=N4D`.
 Sheet names are exact (`Insectary_data`, `Collection_data`,
 `Insectary_stocks`, `SamplingDay_data`, `Wing_tissue`, `Photo_links`,
 `Lists`, `Taxonomy_v18Jun25`, `CRISPR`, `Melinaea_crosses`, …; the full list

@@ -177,7 +177,7 @@ are (the workbook is read with the other tools).
 
 For questions about the app (tabs, buttons, where things are, finding or undoing
 a save, entering data) use the skill **app-guide** (`.claude/skills/app-guide/SKILL.md`).
-Always give the direct link (`https://ithomiini-ikiam.duckdns.org/#/…`).
+Always give the direct link (`https://ithomiini-ikiam.com/#/…`).
 
 ## Historial: finding and undoing a save
 
@@ -234,11 +234,12 @@ another browser tab). Both of you edit it; they see your changes at once.
 - Workflow for any correction: check (read or `check_data`) → `propose_changes`
   → corrections with `update_proposal` on the same proposal → the person
   confirms (in the table, or "sí" in the chat) → `apply_proposal`.
-- **Notes you add** (NOTES, Notes_Collection_data, Notes_Insectary_data…) start
-  with the team's prefix `d/m/yy INI: ` (today's date, day first, and the
-  initials of the person you work for, e.g. `29/9/26 FCH: wing clip`) and are
-  appended after an existing note with ` | `, never replacing it. Keep the
-  prefix even if asked to shorten a note; say it is the team format.
+- **Notes you add** (NOTES, Notes_Collection_data, Notes_Insectary_data…) are
+  written in the team's format `d/m/yy INI: text` (today, day first, and the
+  initials of the person you work for, e.g. `29/9/26 FCH: wing clip`) after the
+  existing note with ` | `, never over it. The tools do this: give only the new
+  text; `{"replace": "…"}` rewrites a whole note, only when the person asks.
+  Keep the prefix even if asked to shorten a note; say it is the team format.
 - **Wild-caught butterflies go in both sheets**: a butterfly collected in the
   field and brought to the insectary needs its Collection_data row
   (Release_Collect `Collected_Sent2Insectary`, collector, place, date, time,
@@ -249,6 +250,10 @@ another browser tab). Both of you edit it; they see your changes at once.
 - **Removing a change from a proposal is not emptying a cell**: to drop a
   proposed value use `update_proposal` with `null` for that cell; to really
   empty a cell of the sheet pass `{ "clear": true }` and say so to the person.
+- Counting or searching many rows: `count_records` (with `groupBy`, e.g.
+  `Collection_date:year`) and `find_records` with `filters`, `fields`, `limit`
+  and `near` (`{location | lat+lon, km}`, e.g. within 15 km of Ikiam); a long
+  answer says it was truncated: narrow it instead of working around the tools.
 - Never read the server's configuration (`~/.config/ithomiini/*.env`) or its
   database files directly, and never paste secrets: use the ithomiini tools
   (`find_records` with `fields`/`limit`, `count_records`); if a tool cannot

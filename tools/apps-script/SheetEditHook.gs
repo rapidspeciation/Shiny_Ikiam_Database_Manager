@@ -6,7 +6,7 @@
  * Edits reach the app as { sheet, startRow, numRows }. Inserting, deleting or
  * sorting rows makes the app read that whole sheet again.
  */
-const APP_URL = 'https://ithomiini-ikiam.duckdns.org/api/hooks/sheet-edit';
+const APP_URL = 'https://ithomiini-ikiam.com/api/hooks/sheet-edit';
 
 /** Run once from the editor (it is the first function, so the Run button picks it). */
 function setup() {

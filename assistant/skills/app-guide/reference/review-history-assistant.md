@@ -1,6 +1,6 @@
 # Inicio, Historial, Asistente, Revisión, accounts
 
-Base URL: `https://ithomiini-ikiam.duckdns.org/`.
+Base URL: `https://ithomiini-ikiam.com/`.
 
 ## Inicio — `#/inicio` (also `/`)
 
@@ -50,7 +50,7 @@ saves, `#/historial?accion=<actionId>` to one save. Get the ids with
 `list_history` / `get_history_group`; `preview_undo` shows what an undo
 would write and its conflicts; `undo_edits` undoes, **only after the person
 explicitly confirms** (same as `apply_proposal`). Example:
-`https://ithomiini-ikiam.duckdns.org/#/historial?accion=<actionId>`.
+`https://ithomiini-ikiam.com/#/historial?accion=<actionId>`.
 
 ## Asistente — `#/asistente`
 
@@ -112,7 +112,7 @@ envelope_sex, envelope_species, photo_missing, ai_species), `hoja=<sheet>`,
 `persona=<name>`, `desde=YYYY-MM-DD`, `hasta=YYYY-MM-DD`,
 `estado=accepted|other|rejected|applied|all` (default pending),
 `lote=<batch key>`, `q=<text>`, `orden=old|kind` (default recent). Example:
-`https://ithomiini-ikiam.duckdns.org/#/revision?tipo=envelope_sex&hoja=Collection_data&orden=old`
+`https://ithomiini-ikiam.com/#/revision?tipo=envelope_sex&hoja=Collection_data&orden=old`
 
 ## Accounts
 

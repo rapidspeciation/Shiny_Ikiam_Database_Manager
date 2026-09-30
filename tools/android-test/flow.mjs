@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { ADB, adb, closeKeyboard, connect, keyboardOver, login, sleep, tap } from './lib.mjs';
 const shot = name => writeFileSync(`${process.env.HOME}/.cache/ithomiini-test/android-${name}.png`, execFileSync(ADB, ['exec-out', 'screencap', '-p'], { maxBuffer: 64e6 }));
 const { page } = await connect(); await login(page);
-await page.goto('https://ithomiini-ikiam.duckdns.org/#/colecta'); await page.reload(); await page.waitForSelector('text=Filas a añadir'); await sleep(3000);
+await page.goto('https://ithomiini-ikiam.com/#/colecta'); await page.reload(); await page.waitForSelector('text=Filas a añadir'); await sleep(3000);
 await page.locator('label:has-text("Collection_location") input').fill('Cavernas Templo de Ceremonia');
 await page.locator('label:has-text("Filas a añadir") input').fill('4'); await page.locator('button:has-text("Añadir 4 filas")').click();
 await page.waitForSelector('.collect-grid .tabulator-row'); await sleep(1200); await closeKeyboard(page); await sleep(600);

@@ -81,7 +81,7 @@ A live report; filters live in the link and scope every number and chart.
 Parameters: `desde=YYYY-MM`, `hasta=YYYY-MM`, `rec=<collector initials>`
 (e.g. `FCH`), `t=1..4`, `sp=<Genus species as in the sheet>`, `ith=1`,
 `sub=1`. Example:
-`https://ithomiini-ikiam.duckdns.org/#/monitoreo?vista=resumen&desde=2026-01&hasta=2026-06&t=2&ith=1`
+`https://ithomiini-ikiam.com/#/monitoreo?vista=resumen&desde=2026-01&hasta=2026-06&t=2&ith=1`
 
 ## Mapa — `?vista=mapa`
 
@@ -104,7 +104,7 @@ Parameters (lists comma-separated): `fechas=YYYY-MM-DD,…`, `anios=2025,2026`,
 `tipos=preserved,marked,recapture`, `individuo=<MARK>|<Genus species>`,
 `capa=grupos|calor` (default puntos), `color=sexo|tipo|recorrido` (default
 especie), `trazado=0` (hide transects), `gps=1`, `unir=1`. Example:
-`https://ithomiini-ikiam.duckdns.org/#/monitoreo?vista=mapa&individuo=B39|Mechanitis%20messenoides&unir=1`
+`https://ithomiini-ikiam.com/#/monitoreo?vista=mapa&individuo=B39|Mechanitis%20messenoides&unir=1`
 
 ## Recapturas — `?vista=recapturas`
 
@@ -140,4 +140,4 @@ note, with the rows it could be (editors).
 
 These are the `walk_doubt` issues of `check_data`: the assistant can say which
 rows fit and draft the question for the collector, but a person pairs them
-here. Link: `https://ithomiini-ikiam.duckdns.org/#/monitoreo?vista=dudas`.
+here. Link: `https://ithomiini-ikiam.com/#/monitoreo?vista=dudas`.

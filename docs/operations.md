@@ -2,7 +2,7 @@
 
 ## Host and account setup
 
-The app uses `https://ithomiini-ikiam.duckdns.org/` (its own DuckDNS name, served at the root: `APP_BASE_PATH=/`), with a separate service on loopback port 8794. T3 Code is at `https://t3.ithomiini-ikiam.duckdns.org/`, same site as the app so it can sit inside the Asistente tab. The DuckDNS token is in `~/.config/ithomiini/duckdns-token` on the server; the server's address is fixed, so nothing updates it periodically.
+The app uses `https://ithomiini-ikiam.com/` (bought 29 Sep 2026 on Cloudflare; DNS-only A records for the apex, `www` and `t3` point at the server; served at the root: `APP_BASE_PATH=/`), with a separate service on loopback port 8794. T3 Code is at `https://t3.ithomiini-ikiam.com/`, same site as the app so it can sit inside the Asistente tab. The old DuckDNS names (`ithomiini-ikiam.duckdns.org`, `t3.…`), blocked on some university networks, redirect there with 308 (Caddy); their token is in `~/.config/ithomiini/duckdns-token`. The Cloudflare DNS token is in the keyring of Franz's PCs (`secret-tool lookup service cloudflare-api credential account-dns-token`), never in the repo.
 
 The app used to live at `https://tbs-insect-gallery.duckdns.org/ithomiini/`, a name shared with other projects; that route was removed on 2026-09-28. Existing Tiputini services retain their own routes and data.
 
@@ -25,7 +25,7 @@ The setup screen requires a private random token and creates the first active ad
 ```sh
 ssh claudeclaw 'systemctl --user status ithomiini.service'
 ssh claudeclaw 'journalctl --user -u ithomiini.service -n 60 --no-pager'
-curl -fsS https://ithomiini-ikiam.duckdns.org/health
+curl -fsS https://ithomiini-ikiam.com/health
 ```
 
 Health confirms the process is running. The authenticated synchronization view shows whether the workbook is current. Startup and changed-workbook refreshes can take longer than ordinary requests because the workbook contains hundreds of thousands of formulas.

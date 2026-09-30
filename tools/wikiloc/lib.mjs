@@ -5,7 +5,7 @@
  */
 import { existsSync } from 'node:fs';
 
-export const DEFAULT_APP = 'https://ithomiini-ikiam.duckdns.org/';
+export const DEFAULT_APP = 'https://ithomiini-ikiam.com/';
 
 const MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 const EN = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];

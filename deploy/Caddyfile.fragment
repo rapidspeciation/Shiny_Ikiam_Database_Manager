@@ -1,10 +1,10 @@
 # The app's own sites (appended to /etc/caddy/Caddyfile).
-ithomiini-ikiam.duckdns.org {
+ithomiini-ikiam.com {
 	encode zstd gzip
 	reverse_proxy 127.0.0.1:8794
 }
 
-t3.ithomiini-ikiam.duckdns.org {
+t3.ithomiini-ikiam.com {
 	reverse_proxy 127.0.0.1:3773
 }
 

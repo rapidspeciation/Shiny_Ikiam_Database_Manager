@@ -1,14 +1,14 @@
 ---
 name: app-guide
-description: Guide to the "Ikiam Insectary DB" web app (https://ithomiini-ikiam.duckdns.org) — every tab (Inicio, Tablas, Colecta, Monitoreo, Muertes, Tubos, Emergidos, Clutches, Historial, Asistente, Revisión, Usuarios), what each is for, who can use it, its controls and workflows, grid and date tips, which Google Sheet it writes, and deep links with query parameters. Use it whenever the person asks how to do something in the app, where something is, why a button or tab is missing, asks for a link, wants to find or undo a saved edit, or wants data entered (collections, monitoring captures, deaths, tubes, emerged adults, clutches) — then prefer drafting a proposal with the ithomiini tools and give the direct link.
+description: Guide to the "Ikiam Insectary DB" web app (https://ithomiini-ikiam.com) — every tab (Inicio, Tablas, Colecta, Monitoreo, Muertes, Tubos, Emergidos, Clutches, Historial, Asistente, Revisión, Usuarios), what each is for, who can use it, its controls and workflows, grid and date tips, which Google Sheet it writes, and deep links with query parameters. Use it whenever the person asks how to do something in the app, where something is, why a button or tab is missing, asks for a link, wants to find or undo a saved edit, or wants data entered (collections, monitoring captures, deaths, tubes, emerged adults, clutches) — then prefer drafting a proposal with the ithomiini tools and give the direct link.
 ---
 
 # App guide: Ikiam Insectary DB
 
 The team's web app over the team's Google Sheets workbook (the «Google Sheet»
 button at the top right opens it; saves go straight into it). Every page is a hash route:
-**full link = `https://ithomiini-ikiam.duckdns.org/` + route**, e.g.
-`https://ithomiini-ikiam.duckdns.org/#/monitoreo?vista=dudas`. The UI is in
+**full link = `https://ithomiini-ikiam.com/` + route**, e.g.
+`https://ithomiini-ikiam.com/#/monitoreo?vista=dudas`. The UI is in
 Spanish; quote its labels exactly, in «».
 
 Per-tab detail (step by step, every control, every link parameter):
@@ -73,7 +73,7 @@ puede deshacer en Historial». Pending changes survive a reload on that device.
 ## Cómo ayudar
 
 1. **"¿Cómo hago…?"** Answer with the steps (their labels, in «») and the
-   direct link, e.g. «Tubos» → https://ithomiini-ikiam.duckdns.org/#/tubos.
+   direct link, e.g. «Tubos» → https://ithomiini-ikiam.com/#/tubos.
    Link to the exact view when a parameter exists (a sheet and search in
    Tablas, a Revisión filter, a Monitoreo sub-view, a map filter). Never
    invent a parameter: only those in the reference files work.
@@ -115,7 +115,7 @@ Example flows:
 
 - **"Encuentra el error de ayer en Death_date y deshazlo"**: `list_history`
   (sheet, field, dates) → the save that did it, with its link
-  (`https://ithomiini-ikiam.duckdns.org/#/historial?accion=<actionId>` opens
+  (`https://ithomiini-ikiam.com/#/historial?accion=<actionId>` opens
   Historial scrolled to it) → `preview_undo` → show before → after and any
   conflict (a value changed later cannot be undone) → wait for "sí" →
   `undo_edits`. Or let them press undo themselves in Historial.

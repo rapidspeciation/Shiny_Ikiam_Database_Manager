@@ -9,7 +9,7 @@ tools/android-test/setup.sh                      # once (~3 GB, needs KVM)
 ~/.local/share/android-test/run-emulator.sh &    # start the phone (no window); boots in ~15 s
 ~/.local/share/android-test/sdk/platform-tools/adb wait-for-device
 # first time only: open Chrome and get past its welcome screens
-adb shell am start -a android.intent.action.VIEW -d https://ithomiini-ikiam.duckdns.org/ com.android.chrome
+adb shell am start -a android.intent.action.VIEW -d https://ithomiini-ikiam.com/ com.android.chrome
 tools/android-test/tap-text.sh "Use without an account"; tools/android-test/tap-text.sh "No thanks"
 node tools/android-test/doubletap.mjs species    # double tap a Colecta cell; logs editor, focus, keyboard
 node tools/android-test/flow.mjs                 # type with Gboard + Enter; ▾ list without keyboard
