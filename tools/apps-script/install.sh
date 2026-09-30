@@ -7,13 +7,23 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 WORKBOOK=${WORKBOOK_ID:-1QZj6YgHAJ9NmFXFPCtu-i-1NDuDmAdMF2Wogts7S2_4}
+# On claudeclaw it runs as the project account (its gog login, gog.env), so the triggers
+# belong to the project and not to a person; from a PC, with that PC's gog login.
+if [ "$(hostname)" = claudeclaw ]; then
+  set -a; . ~/.config/ithomiini/gog.env; set +a
+  PATH="$HOME/.local/bin:$PATH"
+fi
 ACCOUNT=${GOG_ACCOUNT:-franz.chandi@gmail.com}
 CLIENT=${GOG_CLIENT:-claudeclaw}
 # One script per workbook (the old apps-script-id file belongs to the test copy's script).
 ID_FILE=~/.config/ithomiini/apps-script-id.$WORKBOOK
 gog() { command gog --account "$ACCOUNT" --client "$CLIENT" --no-input "$@"; }
 
-secret=$(ssh claudeclaw 'grep "^SHEET_HOOK_SECRET=" ~/.config/ithomiini/service.env | cut -d= -f2-')
+if [ "$(hostname)" = claudeclaw ]; then
+  secret=$(grep "^SHEET_HOOK_SECRET=" ~/.config/ithomiini/service.env | cut -d= -f2-)
+else
+  secret=$(ssh claudeclaw 'grep "^SHEET_HOOK_SECRET=" ~/.config/ithomiini/service.env | cut -d= -f2-')
+fi
 [ -n "$secret" ] || { echo "SHEET_HOOK_SECRET is not set on the server" >&2; exit 1; }
 
 mkdir -p "$(dirname "$ID_FILE")"
