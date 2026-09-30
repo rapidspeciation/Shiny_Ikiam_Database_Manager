@@ -2,11 +2,12 @@ import { t } from './i18n'
 
 /**
  * Cambios propuestos by T3 chat: the panel shows the proposals of the chat
- * open in T3 (the server reads it from T3, see server/t3chats.mjs), or of a
- * chat picked in its selector. Pure helpers, kept apart so they can be tested.
+ * open in T3 (the T3 frame beside it says which, lib/t3Bridge; without it the
+ * server guesses from T3, see server/t3chats.mjs), or of a chat picked in its
+ * selector. Pure helpers, kept apart so they can be tested.
  */
 export interface ChatScope {
-  /** A T3 thread id, 'app' (proposals made outside T3 chats) or 'all'. */
+  /** A T3 thread id, 'draft' (a new chat in T3), 'app' (proposals made outside T3 chats) or 'all'. */
   chat: string
   /** open: the chat open in T3; recent: the chat active last (T3 does not say which is open); all: no T3 chats. */
   how: 'open' | 'recent' | 'all' | 'chosen' | 'only'
@@ -32,11 +33,22 @@ export function keepChoice(chosen: ChatChoice, before: ChatScope | null, follow:
   return chosen
 }
 
-/** The list's address: the chat asked for, the one the page follows, the revision it holds. */
-export function listQuery(o: { chosen: ChatChoice; follow: ChatScope | null; only?: string; revision: string; wait?: boolean }) {
+/**
+ * The list's address: the chat asked for, the one the page follows, the one
+ * its T3 frame shows (seen, lib/t3Bridge), the revision it holds.
+ */
+export function listQuery(o: {
+  chosen: ChatChoice
+  follow: ChatScope | null
+  seen?: string
+  only?: string
+  revision: string
+  wait?: boolean
+}) {
   const q = new URLSearchParams({ all: '1', chat: o.chosen })
   if (o.only) q.set('only', o.only)
   if (o.follow) q.set('follow', o.follow.chat)
+  if (o.seen) q.set('seen', o.seen)
   if (o.wait !== false) q.set('wait', '1')
   q.set('revision', o.revision)
   return `chat/proposals?${q}`
@@ -52,7 +64,7 @@ export function chatOptions(follow: ChatScope | null, chats: ChatEntry[]): { val
       value: 'auto',
       label:
         follow.how === 'open'
-          ? t('Este chat: {title}', { title: titled(follow.title) })
+          ? t('Este chat: {title}', { title: follow.chat === 'draft' ? t('chat nuevo') : titled(follow.title) })
           : t('Último chat: {title}', { title: titled(follow.title) }),
     })
   for (const c of chats) {

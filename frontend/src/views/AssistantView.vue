@@ -10,6 +10,7 @@ import ProposalGrid, { type Proposal } from '../components/ProposalGrid.vue'
 import T3Frame from '../components/T3Frame.vue'
 import ProposalsLive from '../components/assistant/ProposalsLive.vue'
 import { persistentRef } from '../lib/persist'
+import type { T3Seen } from '../lib/t3Bridge'
 import { panelShare } from '../lib/proposals'
 import { t, tn } from '../lib/i18n'
 
@@ -118,6 +119,8 @@ function arrived() {
   setTimeout(() => (fresh.value = false), 4000)
 }
 const t3Frame = ref<InstanceType<typeof T3Frame>>()
+/** The chat T3's frame shows (its bridge), followed by Cambios propuestos. */
+const t3Seen = ref<T3Seen | null>(null)
 const gallery = ref<HTMLInputElement>()
 const camera = ref<HTMLInputElement>()
 const started = ref(0)
@@ -407,6 +410,7 @@ const cellOf = (row: Record<string, unknown> | unknown[], key: string, i: number
         :url="t3Url"
         class="min-h-0 min-w-0 flex-1"
         :class="{ 'pointer-events-none': dragging !== null, hidden: panel && full }"
+        @seen="value => (t3Seen = value)"
       />
       <!-- The divider: drag it (or use the arrow keys) to give the panel more or less room. -->
       <div
@@ -430,6 +434,7 @@ const cellOf = (row: Record<string, unknown> | unknown[], key: string, i: number
         v-show="panel"
         :layout="layout"
         :full="full"
+        :t3="t3Seen"
         class="border-stone-300"
         :class="
           full

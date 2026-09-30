@@ -1,4 +1,5 @@
 import { t3Admin } from './t3admin.mjs';
+import { createT3Bridge } from './t3bridge.mjs';
 import http from 'node:http';
 import { readFileSync, statSync, createReadStream, existsSync, chmodSync } from 'node:fs';
 import { join, resolve, extname, dirname } from 'node:path';
@@ -191,6 +192,8 @@ export function configFromEnv(env = process.env) {
           local: env.ITHOMIINI_T3_LOCAL || 'http://127.0.0.1:3773',
           tokenFile: env.ITHOMIINI_T3_ADMIN_TOKEN_FILE,
           home: env.ITHOMIINI_T3_HOME || '/home/ubuntu/.t3',
+          // The lab: all of T3 through this app on 127.0.0.1:<port>, its pages with the bridge (server/t3bridge.mjs).
+          proxyPort: Number(env.ITHOMIINI_T3_PROXY_PORT) || null,
         }
       : null,
     aiApiKey: env.AI_API_KEY || env.OPENAI_API_KEY,
@@ -351,7 +354,12 @@ export async function createApp(config = {}, options = {}) {
   const resets = createPasswordResets(store, mailer, options.mail ? { send: options.mail } : {});
   // Reset links asked for from the sign-in page: 3 per account and 9 per address every 15 minutes.
   const resetLimiter = new LoginLimiter({ limit: 3 });
+  // T3's pages with the script that tells the Asistente tab which chat they show (server/t3bridge.mjs).
+  const t3Bridge = config.t3?.url && config.t3?.local ? createT3Bridge({ t3: config.t3, appOrigin: config.publicUrl }) : null;
+  let t3Proxy = null;
   const server = http.createServer(async (req, res) => {
+    // Production: Caddy sends T3's page loads here (deploy/Caddyfile.fragment).
+    if (t3Bridge?.owns(req)) return t3Bridge.handle(req, res);
     const requestId = randomUUID();
     res.setHeader('x-request-id', requestId);
     try {
@@ -956,10 +964,21 @@ export async function createApp(config = {}, options = {}) {
     server,
     store,
     ready,
-    listen: (port = config.port, host = config.host) =>
-      new Promise(resolve => server.listen(port, host, () => resolve(server.address()))),
+    listen: async (port = config.port, host = config.host) => {
+      if (t3Bridge && config.t3.proxyPort && !t3Proxy)
+        t3Proxy = await t3Bridge.listen(config.t3.proxyPort).then(
+          proxy => (console.log(`T3 Code (${config.t3.local}) with the bridge on 127.0.0.1:${config.t3.proxyPort}`), proxy),
+          e => console.error('T3 proxy:', e.message),
+        );
+      return new Promise(resolve => server.listen(port, host, () => resolve(server.address())));
+    },
     close: async () => {
       if (interval) clearInterval(interval);
+      if (t3Proxy) {
+        t3Proxy.closeAllConnections();
+        await new Promise(resolve => t3Proxy.close(resolve));
+      }
+      t3Bridge?.close();
       await new Promise(resolve => server.close(resolve));
       store.close();
     },

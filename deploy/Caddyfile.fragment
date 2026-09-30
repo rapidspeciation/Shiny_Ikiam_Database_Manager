@@ -4,7 +4,29 @@ ithomiini-ikiam.com {
 	reverse_proxy 127.0.0.1:8794
 }
 
+# T3 Code, with the app's bridge in its pages (server/t3bridge.mjs): page loads and the
+# bridge script go to the app, which fetches the page from T3 and adds one script tag
+# (it tells the Asistente tab which chat its T3 frame shows). T3's API, built files and
+# websockets go straight to T3. While the app is down its page loads go to T3 too
+# (lb_policy first, a failed dial remembered for fail_duration): T3 without the bridge,
+# and the Asistente guesses the open chat as before.
 t3.ithomiini-ikiam.com {
-	reverse_proxy 127.0.0.1:3773
+	@page {
+		method GET
+		header Accept *text/html*
+		not path /api/* /assets/* /__ithomiini/*
+	}
+	handle /__ithomiini/bridge.js {
+		reverse_proxy 127.0.0.1:8794
+	}
+	handle @page {
+		reverse_proxy 127.0.0.1:8794 127.0.0.1:3773 {
+			lb_policy first
+			lb_try_duration 2s
+			fail_duration 10s
+		}
+	}
+	handle {
+		reverse_proxy 127.0.0.1:3773
+	}
 }
-

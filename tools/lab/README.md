@@ -10,7 +10,7 @@ The lab never writes to the team's Google Sheet. The app runs with
 `LOCAL_MODE=1`: the sheets are an in-memory copy, seeded from a read-only
 snapshot, and no Google credentials reach it. It also never touches the other
 T3 installs on the PC: it has its own home (`~/.t3-ithomiini-lab`) and ports
-(app 8795, T3 3775).
+(app 8795, T3 3775, and the app's proxy of T3 3776).
 
 Private files (snapshot, photos, cases, credentials, results) live in the lab
 folder, `~/.cache/ithomiini-lab` (or `ITHOMIINI_LAB_DIR`), never in the
@@ -31,8 +31,11 @@ tools/lab/tailscale.sh          # open the lab to your other devices (tailnet on
 
 - `tailscale.sh` serves the app (port 8509) and its T3 (port 8510) on this
   machine's Tailscale name over HTTPS, tailnet only, and restarts the app with
-  those addresses. The Asistente tab embeds T3 from its own address. The
-  addresses are saved in `public.env`, so later restarts keep them. Changing
+  those addresses. The Asistente tab embeds T3 from its own address. T3's port
+  goes to the app's T3 proxy (3776), which passes everything to T3 and adds the
+  bridge script to its pages, so Cambios propuestos follows the chat open in
+  the Asistente's frame (`server/t3bridge.mjs`; the proxy is part of the app,
+  so T3 in the frame reconnects when the app restarts). The addresses are saved in `public.env`, so later restarts keep them. Changing
   the serve config uses `sudo tailscale`, because it already holds folder
   entries; the other entries stay.
 
@@ -45,7 +48,8 @@ tools/lab/tailscale.sh          # open the lab to your other devices (tailnet on
   snapshot with every scored cell of the cases emptied, so a model cannot copy
   the answers from the sheet and its proposal holds everything it read. Then it
   starts the app on `http://127.0.0.1:8795`. Sign in as `lab`; the password is
-  in `credentials.json`. The Asistente tab shows the lab T3. Every restart
+  in `credentials.json`. The Asistente tab shows the lab T3 (through the proxy
+  on `http://127.0.0.1:3776`). Every restart
   re-seeds the sheets, so it also undoes a proposal a model applied. `bench.mjs`
   refuses to run while a case's cells are not empty.
   Every start also refreshes the lab workspace (`scripts/t3-provision.mjs

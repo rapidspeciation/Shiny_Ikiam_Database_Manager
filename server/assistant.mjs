@@ -1317,12 +1317,15 @@ export function createAssistant({ store, config = {} }) {
 
   /**
    * The chat whose proposals the panel shows when it follows T3 ("auto"): the
-   * one open in T3 now (see t3chats.mjs), else the one most recently active (a
-   * message in it, or one of its proposals changed; 'app' = the proposals made
-   * outside T3 chats), else all of them (no T3 chats at all).
+   * one open in T3 now (the page's T3 frame says it, `seen`: a thread id,
+   * 'draft' for a new chat or 'none' for no chat on screen; else guessed, see
+   * t3chats.mjs), else the one most recently active (a message in it, or one
+   * of its proposals changed; 'app' = the proposals made outside T3 chats),
+   * else all of them (no T3 chats at all).
    */
-  function followed(user, groups) {
-    const open = t3?.open(user.username) ?? null;
+  function followed(user, groups, seen = null) {
+    if (seen && seen !== 'none') return { chat: seen, how: 'open' };
+    const open = seen ? null : (t3?.open(user.username) ?? null);
     if (open) return { chat: open, how: 'open' };
     const latest = t3?.chatsOf(user.username, 1)[0];
     let best = latest ? { chat: latest.id, at: latest.lastUserAt ?? '' } : null;
@@ -1924,24 +1927,41 @@ export function createAssistant({ store, config = {} }) {
     if (path === '/api/chat/proposals' && method === 'GET') {
       const me = owner(user);
       // chat: 'all' (default), 'app' (made outside T3 chats), a T3 thread id, or 'auto': the chat
-      // T3 shows (see followed()); follow = that chat as the page last got it.
+      // T3 shows (see followed()); follow = that chat as the page last got it. seen = the chat the
+      // page's T3 frame shows (server/t3bridge.mjs): a thread id, 'draft' or 'none'.
       const asked = String(query.chat ?? 'all');
       const follow = String(query.follow ?? '') || null;
+      const seen = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|draft|none)$/.test(String(query.seen ?? ''))
+        ? String(query.seen)
+        : null;
       // wait=1 with the revision the page holds: answer when a proposal is added, applied or
       // discarded (or after 20 s), so the Asistente tab shows edits as the assistant drafts them;
-      // with T3, also when another chat is opened there.
+      // with T3, also when another chat is opened there (a page whose frame says so asks again itself).
       if (query.wait)
-        await waitForChange(me, String(query.revision ?? ''), 20000, t3 && !query.only ? () => followed(user, chatGroups(me)).chat !== follow : null);
+        await waitForChange(
+          me,
+          String(query.revision ?? ''),
+          20000,
+          t3 && !query.only && !seen ? () => followed(user, chatGroups(me)).chat !== follow : null,
+        );
       linkByToolUse(me);
       void linkByResult(me).catch(e => console.error('Proposals by chat:', e.message));
       const revision = revisionOf(me);
       const groups = chatGroups(me);
-      const followNow = followed(user, groups);
+      const followNow = followed(user, groups, seen);
       const scope = query.only ? { chat: 'all', how: 'only' } : asked === 'auto' ? followNow : { chat: asked, how: 'chosen' };
       const select = `SELECT p.*, t.title FROM ai_proposals p JOIN ai_threads t ON t.id = p.thread_id WHERE p.owner_id = ?`;
-      const where =
-        query.only ? ' AND p.id = ?' : scope.chat === 'all' ? '' : scope.chat === 'app' ? " AND coalesce(p.t3_thread, '') = ''" : ' AND p.t3_thread = ?';
-      const args = [me, ...(query.only ? [String(query.only)] : scope.chat === 'all' || scope.chat === 'app' ? [] : [scope.chat])];
+      // A new chat in T3 (a draft): no proposals yet.
+      const where = query.only
+        ? ' AND p.id = ?'
+        : scope.chat === 'all'
+          ? ''
+          : scope.chat === 'app'
+            ? " AND coalesce(p.t3_thread, '') = ''"
+            : scope.chat === 'draft'
+              ? ' AND 0'
+              : ' AND p.t3_thread = ?';
+      const args = [me, ...(query.only ? [String(query.only)] : ['all', 'app', 'draft'].includes(scope.chat) ? [] : [scope.chat])];
       const order = 'ORDER BY p.created_at DESC, p.rowid DESC';
       // all=1: the pending ones and the last few reviewed (the panel shows five), not every old proposal on each change.
       const rows = [
@@ -1954,8 +1974,9 @@ export function createAssistant({ store, config = {} }) {
       ];
       // Titles as T3 shows them now (T3 names a chat after its first message, and it can be renamed).
       const threadIds = [...groups.keys(), scope.chat, followNow.chat, ...rows.map(r => r.t3_thread)];
-      const titles = t3 ? t3.threads(threadIds.filter(id => id && id !== 'app' && id !== 'all')) : new Map();
-      const titleOf = id => (id === 'all' || id === 'app' ? null : (titles.get(id)?.title ?? groups.get(id)?.title ?? null));
+      const named = id => id && id !== 'app' && id !== 'all' && id !== 'draft';
+      const titles = t3 ? t3.threads(threadIds.filter(named)) : new Map();
+      const titleOf = id => (named(id) ? (titles.get(id)?.title ?? groups.get(id)?.title ?? null) : null);
       const chats = [...groups.values()]
         .sort((a, b) => (a.at < b.at ? 1 : -1))
         .map(g => ({ id: g.id, title: titleOf(g.id), pending: g.pending }));

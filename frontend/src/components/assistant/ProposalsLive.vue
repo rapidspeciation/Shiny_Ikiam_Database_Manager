@@ -17,6 +17,7 @@ import {
   type ChatEntry,
   type ChatScope,
 } from '../../lib/proposalChats'
+import { afterMove, seenChat, type T3Seen } from '../../lib/t3Bridge'
 import { useTables } from '../../stores/tables'
 import { intlLocale, tn } from '../../lib/i18n'
 
@@ -27,9 +28,10 @@ import { intlLocale, tn } from '../../lib/i18n'
  * a proposal is added, revised (by the assistant or by the person in the
  * table), applied or discarded, from T3 Code (e.g. a notebook photo matched
  * with match_notebook), the chat or Revisión de datos.
- * It shows the proposals of the chat open in T3 (the server knows it, see
- * server/t3chats.mjs), or of the chat picked in its selector, or all; each
- * table is only built when it comes into view (WhenSeen).
+ * It shows the proposals of the chat open in the T3 frame beside it (its
+ * bridge says which, lib/t3Bridge; without it, or on its own browser tab, the
+ * server guesses from T3, see server/t3chats.mjs), or of the chat picked in its
+ * selector, or all; each table is only built when it comes into view (WhenSeen).
  */
 const props = withDefaults(
   defineProps<{
@@ -39,8 +41,10 @@ const props = withDefaults(
     full?: boolean
     /** Only this proposal (#/propuestas/<id>). */
     only?: string
+    /** What the T3 frame beside it shows (T3Frame). */
+    t3?: T3Seen | null
   }>(),
-  { layout: 'right', full: false, only: '' },
+  { layout: 'right', full: false, only: '', t3: null },
 )
 const emit = defineEmits<{ count: [n: number]; fresh: []; close: []; layout: [value: 'right' | 'bottom']; full: [] }>()
 const tables = useTables()
@@ -57,6 +61,8 @@ const chosen = ref<ChatChoice>('auto')
 const scope = ref<ChatScope | null>(null)
 const tracked = ref<ChatScope | null>(null)
 const chats = ref<ChatEntry[]>([])
+/** The chat the T3 frame shows (a thread, 'draft' or 'none'); undefined: the server guesses. */
+const seen = computed(() => seenChat(props.t3))
 const options = computed(() => chatOptions(tracked.value, chats.value))
 const others = computed(() => elsewhere(scope.value, chats.value))
 /** The time only, when the list is one chat's; with the chat's title when it mixes chats. */
@@ -103,6 +109,11 @@ function choose(value: string) {
   chosen.value = value === tracked.value?.chat ? 'auto' : value
   asking?.abort()
 }
+// Another chat opened in the frame: its list at once (a chat picked by hand gives way to it).
+watch(seen, (now, before) => {
+  chosen.value = afterMove(chosen.value, before, now)
+  asking?.abort()
+})
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 const visible = () =>
   new Promise<void>(resolve => {
@@ -120,10 +131,16 @@ async function follow() {
   while (!stopped) {
     if (document.visibilityState !== 'visible') await visible()
     const ask = (asking = new AbortController())
-    const wanted = props.only || chosen.value
+    const wanted = props.only || `${chosen.value} ${seen.value ?? ''}`
     try {
       const out = await api<{ revision: string; scope: ChatScope; follow: ChatScope; chats: ChatEntry[]; proposals: Proposal[] }>(
-        listQuery({ chosen: chosen.value, follow: tracked.value, only: props.only, revision: asked === wanted ? revision.value : '' }),
+        listQuery({
+          chosen: chosen.value,
+          follow: tracked.value,
+          seen: seen.value,
+          only: props.only,
+          revision: asked === wanted ? revision.value : '',
+        }),
         { signal: ask.signal },
       )
       connected.value = true
@@ -264,7 +281,10 @@ const origin = (p: Proposal) =>
       <p v-if="!pending.length" class="py-4 text-sm text-stone-500">
         <template v-if="only && !mine.length">{{ $t('Esta propuesta ya no está en la lista.') }}</template>
         <template v-else>
-          <strong v-if="!mixed" class="block font-medium text-stone-700">{{ $t('Este chat no tiene cambios por revisar.') }}</strong>
+          <strong v-if="scope?.chat === 'draft'" class="block font-medium text-stone-700">{{
+            $t('Aún no hay propuestas en este chat.')
+          }}</strong>
+          <strong v-else-if="!mixed" class="block font-medium text-stone-700">{{ $t('Este chat no tiene cambios por revisar.') }}</strong>
           {{
             $t(
               'Cuando el asistente proponga cambios en la hoja aparecerán aquí al momento, con las celdas cambiadas en verde. Puedes corregirlas en la tabla como en Colecta o pedírselo al asistente (la tabla cambia en vivo); luego pulsa Aplicar, o dile «sí, aplícalo» en el chat.',

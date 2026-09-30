@@ -23,6 +23,9 @@ describe('proposals by T3 chat', () => {
     expect(Object.fromEntries(q)).toEqual({ all: '1', chat: 'auto', follow: 'a', wait: '1', revision: 'x.3' })
     const one = new URLSearchParams(listQuery({ chosen: 'auto', follow: null, only: 'p1', revision: '', wait: false }).split('?')[1])
     expect(Object.fromEntries(one)).toEqual({ all: '1', chat: 'auto', only: 'p1', revision: '' })
+    // The chat the T3 frame shows (its bridge).
+    const seen = new URLSearchParams(listQuery({ chosen: 'auto', follow: null, seen: 'draft', revision: '' }).split('?')[1])
+    expect(seen.get('seen')).toBe('draft')
   })
 
   it('the selector: the chat T3 shows, each chat with its count, those outside T3, all', () => {
@@ -34,6 +37,7 @@ describe('proposals by T3 chat', () => {
       { value: 'all', label: 'Todos los chats (6)' },
     ])
     expect(chatOptions({ chat: 'b', how: 'recent', title: 'Posturas' }, [])[0].label).toBe('Último chat: Posturas')
+    expect(chatOptions({ chat: 'draft', how: 'open', title: null }, [])[0].label).toBe('Este chat: chat nuevo')
     expect(chatOptions({ chat: 'all', how: 'all', title: null }, [chats[2]]).map(o => o.value)).toEqual(['app', 'all'])
   })
 

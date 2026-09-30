@@ -2,7 +2,8 @@
 # The lab's copy of the app, from this checkout: LOCAL_MODE=1 (an in-memory copy of
 # the workbook seeded from the snapshot; nothing ever reaches Google Sheets), its own
 # database in the lab folder, port 8795, and the lab T3 (tools/lab/t3.sh) in the
-# Asistente tab. Every start re-seeds the sheets from $LAB/seed.json (the snapshot
+# Asistente tab, through the app's T3 proxy on port 3776 (its pages carry the
+# bridge that tells Cambios propuestos which chat is open; server/t3bridge.mjs). Every start re-seeds the sheets from $LAB/seed.json (the snapshot
 # with the benchmark cells emptied, tools/lab/seed.mjs), so a restart undoes any
 # proposal a model applied.
 #   tools/lab/app.sh          run in the foreground
@@ -19,11 +20,12 @@ LAB="${ITHOMIINI_LAB_DIR:-$HOME/.cache/ithomiini-lab}"
 T3HOME="${LAB_T3_HOME:-$HOME/.t3-ithomiini-lab}"
 PORT="${LAB_APP_PORT:-8795}"
 T3PORT="${LAB_T3_PORT:-3775}"
+T3PROXY="${LAB_T3_PROXY_PORT:-3776}"
 URL="http://127.0.0.1:$PORT"
 # The addresses people open (tools/lab/tailscale.sh writes them; default this PC only).
 [ -f "$LAB/public.env" ] && . "$LAB/public.env"
 PUBLIC_URL="${LAB_PUBLIC_URL:-$URL}"
-T3_PUBLIC_URL="${LAB_T3_PUBLIC_URL:-http://127.0.0.1:$T3PORT}"
+T3_PUBLIC_URL="${LAB_T3_PUBLIC_URL:-http://127.0.0.1:$T3PROXY}"
 umask 077
 mkdir -p "$LAB/app"
 
@@ -76,6 +78,7 @@ env_app=(
   SETUP_TOKEN="$(cat "$LAB/setup-token")"
   ITHOMIINI_T3_URL="$T3_PUBLIC_URL"
   ITHOMIINI_T3_LOCAL="http://127.0.0.1:$T3PORT"
+  ITHOMIINI_T3_PROXY_PORT="$T3PROXY"
   ITHOMIINI_T3_ADMIN_TOKEN_FILE="$LAB/t3-admin-token"
   ITHOMIINI_T3_HOME="$T3HOME"
   NODE_OPTIONS=--max-old-space-size=8192

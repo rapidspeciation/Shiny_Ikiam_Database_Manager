@@ -71,8 +71,10 @@ export default {
   '{n} propuesta más en otro chat': '{n} more proposal in another chat',
   '{n} propuestas más en otros chats': '{n} more proposals in other chats',
   'Este chat no tiene cambios por revisar.': 'This chat has no changes to review.',
+  'Aún no hay propuestas en este chat.': 'No proposals in this chat yet.',
   // lib/proposalChats
   'chat sin título': 'untitled chat',
+  'chat nuevo': 'new chat',
   'Este chat: {title}': 'This chat: {title}',
   'Último chat: {title}': 'Latest chat: {title}',
   'Fuera de los chats de T3 ({n})': 'Outside T3 chats ({n})',

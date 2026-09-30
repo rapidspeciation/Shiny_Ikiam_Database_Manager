@@ -32,6 +32,10 @@ Health confirms the process is running. The authenticated synchronization view s
 
 Edits made directly in Google Sheets arrive within seconds when the Apps Script trigger in `tools/apps-script` is installed in the workbook; it calls `POST /api/hooks/sheet-edit` with `SHEET_HOOK_SECRET`. Without it they wait for the 5-minute read. The synchronization status (`GET /api/sync`) shows the trigger's last report under `hook`.
 
+### T3 bridge
+
+Cambios propuestos (Asistente tab) follows the chat open in the T3 Code frame beside it. T3 is a stock install with no embedding API, so the app adds one script tag to T3's pages (`server/t3bridge.mjs`): inside a frame, the script posts the chat on screen to the app's origin (`APP_PUBLIC_URL`) on each navigation; a T3 tab of its own sends nothing. Caddy sends T3's page loads (GET, `Accept: text/html`, not `/api/*` or `/assets/*`) and `/__ithomiini/bridge.js` to the app, which recognises T3's host (`ITHOMIINI_T3_URL`), fetches the page from `ITHOMIINI_T3_LOCAL` and adds the tag; everything else, websockets included, goes from Caddy to T3 as before (`deploy/Caddyfile.fragment`). While the app is down, T3's pages come straight from T3, and the panel guesses the open chat from T3's trace log as it did before the bridge. Installing it: deploy the app first, then replace the `t3.ithomiini-ikiam.com` block of `/etc/caddy/Caddyfile` with the fragment's, `caddy validate`, and reload Caddy. Check: `curl -s -H 'Accept: text/html' https://t3.ithomiini-ikiam.com/ | grep __ithomiini` shows the tag.
+
 ## Back up and restore
 
 The daily timer creates a consistent SQLite backup and checks its integrity. It keeps the newest 14 daily backups. Attachments and assistant threads live in the same database. Administrators can also request a backup from the app.

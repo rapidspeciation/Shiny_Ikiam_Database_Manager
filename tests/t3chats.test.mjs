@@ -263,6 +263,49 @@ test('the panel follows the chat open in T3, else the latest active one; other c
   }
 });
 
+test("the chat the page's T3 frame shows (its bridge) wins over the trace log's guess", async () => {
+  const { store, t3, propose, list } = await fixture();
+  try {
+    t3.call(A, 'tool.started', { toolCallId: 'toolu_A1' });
+    t3.call(B, 'tool.started', { toolCallId: 'toolu_B1' });
+    const inA = await propose('foto 1', 'toolu_A1');
+    await new Promise(resolve => setTimeout(resolve, 5));
+    const inB = await propose('foto 2', 'toolu_B1');
+    // Another T3 tab left on B keeps reporting it; the frame beside the panel shows A.
+    t3.screen(`/${ENV}/${B}`);
+    await new Promise(resolve => setTimeout(resolve, 1100));
+    assert.equal((await list({ chat: 'auto' })).body.scope.chat, B, 'the guess');
+    let body = (await list({ chat: 'auto', seen: A })).body;
+    assert.deepEqual({ ...body.scope }, { chat: A, how: 'open', title: 'Cuaderno de emergidos' });
+    assert.deepEqual(body.proposals.map(p => p.id), [inA]);
+    // A chat picked by hand, while the frame shows A.
+    body = (await list({ chat: B, seen: A })).body;
+    assert.deepEqual([body.scope.chat, body.follow.chat], [B, A]);
+    // A new chat (a draft): none of the other chats' proposals; they stay in the selector.
+    body = (await list({ chat: 'auto', seen: 'draft' })).body;
+    assert.deepEqual({ ...body.scope }, { chat: 'draft', how: 'open', title: null });
+    assert.deepEqual(body.proposals, []);
+    assert.equal(body.chats.length, 2);
+    // No chat on screen (T3's settings): the latest active chat, not the other tab's.
+    body = (await list({ chat: 'auto', seen: 'none' })).body;
+    assert.deepEqual([body.scope.chat, body.scope.how], [B, 'recent']);
+    assert.deepEqual(body.proposals.map(p => p.id), [inB]);
+    // Anything else is ignored (the guess).
+    assert.equal((await list({ chat: 'auto', seen: "x' OR 1" })).body.scope.chat, B);
+    // The page asks again itself when its frame moves: the wait is for proposals only.
+    const { revision } = body;
+    const waiting = list({ chat: 'auto', seen: A, follow: A, wait: '1', revision });
+    const started = Date.now();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await propose('foto 3', 'toolu_A1');
+    body = (await waiting).body;
+    assert.ok(Date.now() - started < 2000);
+    assert.equal(body.proposals.length, 2);
+  } finally {
+    store.close();
+  }
+});
+
 test('without T3 the panel shows every proposal, as before', async () => {
   const { store, propose, list, linked } = await fixture({ withT3: false });
   try {
