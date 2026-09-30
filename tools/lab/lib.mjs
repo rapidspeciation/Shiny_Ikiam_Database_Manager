@@ -150,11 +150,22 @@ function similarity(a, b) {
   return 1 - d[a.length][b.length] / Math.max(a.length, b.length, 1);
 }
 
-/** A read value matches the truth (notes: 85 % similar is enough). */
+/** A note without the "d/m/yy INI:" signatures the app adds to each entry. */
+const unsigned = text => text.replace(/(^|\|)\s*\d{1,2}\/\d{1,2}\/\d{2,4}\s+[^\s:|]{1,12}:\s*/g, '$1').trim();
+
+/**
+ * A read value matches the truth. Notes: the text without the app's signatures,
+ * 85 % similar to the whole note or to one of its entries (later entries people
+ * added in the sheet are not on the page).
+ */
 export function same(read, truth, field) {
   const a = norm(read, field);
   const b = norm(truth, field);
   if (a === b) return true;
-  if (/^notes/i.test(field) && a && b) return similarity(a, b) >= 0.85;
+  if (/notes/i.test(field) && a && b) {
+    const text = unsigned(a);
+    const entries = [b, ...b.split('|')].map(unsigned).filter(Boolean);
+    return entries.some(entry => similarity(text, entry) >= 0.85);
+  }
   return false;
 }

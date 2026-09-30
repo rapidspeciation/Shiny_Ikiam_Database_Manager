@@ -60,9 +60,16 @@ node tools/lab/bench.mjs --history               # model × case, the latest run
   - Output goes to `results/<run>/`: `table.md`, `scores.json`, `errors.csv`
     (every wrong or missing cell), `run.json` (threads, prompt) and screenshots.
     One line per case is appended to `results/history.jsonl`.
-- `--dry` prepares the threads without sending them. `--parallel N` sets how
-  many threads are set up at once. The threads always run in parallel.
-  `--timeout MIN` sets the wait limit (default 40).
+- The threads are set up one after another and then run in parallel. They
+  can't be set up in parallel because T3 shares a project's draft between
+  tabs. `--dry` prepares the threads without sending them. `--timeout MIN`
+  sets the wait limit (default 40).
+- `--rescore <run>` scores a run again, for example after a new snapshot. Its
+  lines in `history.jsonl` are replaced. Only completed threads go into the
+  history; a thread stopped by a usage limit does not.
+- Notes are compared without the `d/m/yy INI:` signatures the app adds. A note
+  is right when it matches the whole note or one of its entries, since later
+  entries in the sheet are not on the page.
 
 Stop with `tools/lab/app.sh --stop` and `tools/lab/t3.sh --stop`.
 
@@ -96,8 +103,9 @@ To add a case:
 
 ## Notes
 
-- Claude and Codex run with this PC's user settings (`~/.claude`, `~/.codex`).
-  The lab workspace denies Claude reads of the lab folder, so a model cannot
+- Claude and Codex run with this PC's user settings (`~/.claude`, `~/.codex`),
+  including personal skills and MCP servers, which the server's T3 does not
+  have. The lab workspace denies Claude reads of the lab folder, so a model cannot
   open the snapshot. Codex has no such rule. The prompt tells every model to
   read only the photos.
 - Only the models the prompt names are used. Don't pick Fable models.
