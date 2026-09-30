@@ -374,7 +374,7 @@ async function setup() {
     };
   const store = new Store({ localMode: true }, { sheets });
   await store.sync({ sheets: ['Insectary_stocks', 'Insectary_data'] });
-  const assistant = createAssistant({ store, config: { claude: { bin: '', users: new Set() } } });
+  const assistant = createAssistant({ store, config: {} });
   store.db
     .prepare(
       "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u-franz','franz','Franz Chandi','editor','s','h',1,'2026-01-01')",

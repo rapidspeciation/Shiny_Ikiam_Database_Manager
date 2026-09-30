@@ -1,7 +1,7 @@
-// Asistente (T3 bar, chat, proposals panel and table).
+// Asistente (T3 bar, proposals panel and table).
 export default {
   // AssistantView
-  'Chat simple': 'Simple chat',
+  'T3 Code no está configurado en este servidor.': 'T3 Code is not configured on this server.',
   'T3 tiene {n} chat abierto: se cortarán las respuestas en curso (los chats guardados no se pierden).':
     'T3 has {n} open chat: replies in progress will be cut off (saved chats are not lost).',
   'T3 tiene {n} chats abiertos: se cortarán las respuestas en curso (los chats guardados no se pierden).':
@@ -10,9 +10,6 @@ export default {
     'Update T3 Code from {from} to {to}? T3 restarts (it takes a minute).',
   'T3 actualizado a {version}': 'T3 updated to {version}',
   'T3 no cambió de versión. Últimas líneas del registro:': 'T3 did not change version. Last lines of the log:',
-  'Nueva conversación': 'New conversation',
-  '¿Borrar esta conversación?': 'Delete this conversation?',
-  'Revisa esta foto del cuaderno y compárala con la hoja.': 'Check this notebook photo and compare it with the sheet.',
   '{n} fila aplicada en Google Sheets': '{n} row applied in Google Sheets',
   '{n} filas aplicadas en Google Sheets': '{n} rows applied in Google Sheets',
   'Ocultar los cambios propuestos': 'Hide the proposed changes',
@@ -29,19 +26,6 @@ export default {
   'Abrir T3 en otra pestaña': 'Open T3 in another tab',
   'Tamaño de los cambios propuestos': 'Size of the proposed changes',
   'Arrastra para cambiar el tamaño': 'Drag to resize',
-  Borrar: 'Delete',
-  'El asistente no tiene un proveedor de IA configurado en el servidor.':
-    'The assistant has no AI provider configured on the server.',
-  'Pregunta por registros ("¿qué tubos FS se usaron la semana pasada?") o manda la foto de una página del cuaderno: el asistente la transcribe, la compara con la hoja y te muestra los cambios en una tabla para que los confirmes.':
-    'Ask about records ("which FS tubes were used last week?") or send the photo of a notebook page: the assistant transcribes it, compares it with the sheet and shows you the changes in a table for you to confirm.',
-  'Pensando… {n} s': 'Thinking… {n} s',
-  '(leer una página y compararla con la hoja toma cerca de un minuto)':
-    '(reading a page and comparing it with the sheet takes about a minute)',
-  'Subiendo foto…': 'Uploading photo…',
-  'Tomar foto': 'Take photo',
-  'Elegir fotos': 'Choose photos',
-  'Opcional: qué revisar en la foto': 'Optional: what to check in the photo',
-  'Escribe tu pregunta o manda una foto del cuaderno': 'Write your question or send a notebook photo',
   // ProposalsView, ProposalsLive
   'Cambios propuestos': 'Proposed changes',
   'Volver al Asistente': 'Back to the Assistant',

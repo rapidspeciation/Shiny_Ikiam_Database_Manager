@@ -1,7 +1,5 @@
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { createReports } from './reports.mjs';
 import { TYPED_OVER_FORMULA, uniqueIdIndex } from './batch.mjs';
 import { allIssues, checkData } from './checks.mjs';
@@ -11,7 +9,6 @@ import { comparable, isSumField, labelFor, moduleMap, simpleSum, validateValues 
 import { TUBE_FIELD, isIdValue, isUnique } from './verifications.mjs';
 import { listOptions, listProblem } from './verify.mjs';
 import { queueWalk, walkDraft } from './walks.mjs';
-import { claudeAllowed, claudeConfig, prepareWorkspace, runClaude } from './claude.mjs';
 import { KINDS, isNone, noteText } from './notebook.mjs';
 import { RECORD_TOOLS, compactRecord, countRecords, findRecords } from './records-tool.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
@@ -20,7 +17,6 @@ import { KNOWLEDGE_TOOLS, createKnowledge, runKnowledgeTool } from './knowledge.
 import { HISTORY_TOOLS, HISTORY_TOOL_NAMES, runHistoryTool } from './history.mjs';
 import { createT3Chats } from './t3chats.mjs';
 
-const here = fileURLToPath(new URL('.', import.meta.url));
 const bad = (status, code, message) => ({ status, body: { error: { code, message } } });
 const now = () => new Date().toISOString();
 const clip = (value, length = 1200) => String(value ?? '').slice(0, length);
@@ -336,7 +332,6 @@ function init(db) {
       .prepare(`PRAGMA table_info(${table})`)
       .all()
       .some(c => c.name === column);
-  if (!has('ai_threads', 'claude_session')) db.exec('ALTER TABLE ai_threads ADD COLUMN claude_session TEXT');
   if (!has('ai_messages', 'attachments_json'))
     db.exec("ALTER TABLE ai_messages ADD COLUMN attachments_json TEXT NOT NULL DEFAULT '[]'");
   if (!has('ai_proposals', 'applied_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN applied_json TEXT');
@@ -438,53 +433,22 @@ function recordSource(record) {
   };
 }
 
-function publicMessage(row) {
-  return {
-    id: row.id,
-    role: row.role,
-    content: row.content,
-    sources: parse(row.sources_json) ?? [],
-    results: parse(row.results_json) ?? [],
-    proposals: parse(row.proposals_json) ?? [],
-    attachments: parse(row.attachments_json) ?? [],
-    createdAt: row.created_at,
-  };
-}
-
 export function createAssistant({ store, config = {} }) {
   if (!store?.db) throw new Error('Assistant requires store.db');
   const db = store.db;
   init(db);
   const ai = providerConfig(config);
-  const claude = config.claude ?? claudeConfig();
-  const mcpUrl =
-    config.mcpUrl ??
-    `http://127.0.0.1:${config.port ?? 8794}${config.basePath && config.basePath !== '/' ? config.basePath : ''}/api/ai/mcp`;
-  if (claude.bin && claude.workspace)
-    prepareWorkspace(claude, join(here, '..')).catch(e => console.error('Claude workspace:', e.message));
   const reports = createReports({ store, config });
   const knowledge = createKnowledge(config);
   // The chats of T3 Code (its state and trace log, read-only): which one made a proposal, which one is open.
   const t3 = config.t3Chats ?? (config.t3?.home ? createT3Chats({ home: config.t3.home }) : null);
-  const thread = (id, user) =>
-    db.prepare('SELECT * FROM ai_threads WHERE id = ? AND owner_id = ?').get(id, owner(user));
-  const insertMessage = (threadId, role, content, sources = [], results = [], proposals = [], attachments = []) => {
-    const message = {
-      id: randomUUID(),
-      thread_id: threadId,
-      role,
-      content,
-      sources_json: json(sources),
-      results_json: json(results),
-      proposals_json: json(proposals),
-      attachments_json: json(attachments),
-      created_at: now(),
-    };
+  /** A note in the person's conversation (T3 Code, Revisión de datos) of the proposals made there. */
+  const insertMessage = (threadId, role, content, sources = [], results = [], proposals = []) => {
+    const at = now();
     db.prepare(
-      'INSERT INTO ai_messages (id,thread_id,role,content,sources_json,results_json,proposals_json,attachments_json,created_at) VALUES (?,?,?,?,?,?,?,?,?)',
-    ).run(...Object.values(message));
-    db.prepare('UPDATE ai_threads SET updated_at = ? WHERE id = ?').run(message.created_at, threadId);
-    return publicMessage(message);
+      'INSERT INTO ai_messages (id,thread_id,role,content,sources_json,results_json,proposals_json,created_at) VALUES (?,?,?,?,?,?,?,?)',
+    ).run(randomUUID(), threadId, role, content, json(sources), json(results), json(proposals), at);
+    db.prepare('UPDATE ai_threads SET updated_at = ? WHERE id = ?').run(at, threadId);
   };
 
   /** A row as the model sees it: every value (formula cells computed), dates readable, the formulas worth reading. */
@@ -492,8 +456,7 @@ export function createAssistant({ store, config = {} }) {
 
   /** find_records (server/records-tool.mjs): the rows it returns can be cited. */
   function findRows(args, context) {
-    // Models reached through the API get tool answers cut at 18000 characters: a smaller budget.
-    const out = findRecords(db, args, context.findBudget ? { budget: context.findBudget } : undefined);
+    const out = findRecords(db, args);
     for (const row of out.found ?? []) {
       const record = store.getRecord(row.id);
       if (!record) continue;
@@ -1454,184 +1417,6 @@ export function createAssistant({ store, config = {} }) {
     return match ? match.split(' - ')[0].trim() : letters.join('').toUpperCase() || 'APP';
   }
 
-  function systemPrompt(user) {
-    return [
-      `Today is ${now().slice(0, 10)}. You are talking with ${user.displayName || user.username} (initials ${initialsFor(user)}, role ${user.role}).`,
-      'Reply briefly, in the language the person writes in (Spanish or English); sheet names, column names, codes and values stay exactly as they are in the workbook. Refer to rows by their identifier (e.g. 5VB, CAM078038) and sheet row, never by internal app IDs.',
-      'Use the tools to read exact rows before answering. Only claim what the tools show. Never infer survival, fertility, mating, genotype or identity from counts.',
-      'Questions over many rows: find_records with filters, near (distance to a place) and only the fields you need; count_records for counts. When an answer is truncated, narrow it; never read the database or the server files instead.',
-      'In proposals, null means no change; empty a cell only with {"clear": true} when the person asks. Notes you add go after the existing note as "d/m/yy INI: text".',
-      'Changes are drafted with propose_changes; the person reviews them in a table and confirms. Use apply_proposal only when their latest message explicitly approves a proposal. Never say a change was written unless apply_proposal returned applied.',
-      'When the person corrects a pending proposal ("la especie es X", "quita esa fila"), revise the same one with update_proposal (rows by index) instead of drafting a new one. The person can also edit cells in the table: get_proposal shows their edits (personEdits); never overwrite them unless they ask (update_proposal returns them as conflicts).',
-      'check_data lists inconsistencies with ready fixes; queue_wikiloc and get_walk turn a Wikiloc monitoring walk into newRows for propose_changes.',
-      '"Aplica las correcciones acordadas": list_agreed_fixes, then ONE propose_changes with its fixes and issueIds, list the tasks (Drive work), and wait for the person to confirm.',
-      'A photo of a notebook page, envelope or label: transcribe every line as the digitalizar-cuaderno instructions say, then match_notebook compares it with the sheet and drafts one proposal per page.',
-      'Meetings, protocols, reports and presentations of the project Drive: search_knowledge, list_documents (e.g. the last meeting) and read_document; sync_documents brings them up to date with Drive when asked (not automatic). When you answer from a document, name it and give its Drive link (sourceUrl).',
-    ].join('\n');
-  }
-
-  async function loadImages(attachmentIds) {
-    if (!attachmentIds.length) return [];
-    if (attachmentIds.length > 6 || typeof store.getAttachment !== 'function')
-      throw new Error('Attachments are unavailable');
-    const images = [];
-    for (const id of attachmentIds) {
-      const attachment = await store.getAttachment(String(id));
-      // SQLite returns blobs as Uint8Array.
-      const data = attachment?.data instanceof Uint8Array ? Buffer.from(attachment.data) : null;
-      if (!data || !/^image\/(png|jpeg|webp)$/.test(attachment.mimeType) || data.length > 10_000_000)
-        throw new Error('Invalid image attachment');
-      images.push({ ...attachment, data });
-    }
-    return images;
-  }
-
-  // Tokens that let one Claude turn call the app's tools through /api/ai/mcp.
-  const turns = new Map();
-  const busy = new Set();
-
-  async function replyWithClaude(threadId, user, prompt, images, context) {
-    const thread = db.prepare('SELECT claude_session FROM ai_threads WHERE id = ?').get(threadId);
-    const token = randomBytes(24).toString('hex');
-    turns.set(token, { context, expires: Date.now() + claude.timeoutMs + 60000 });
-    const content = [
-      ...images.map(image => ({
-        type: 'image',
-        source: { type: 'base64', media_type: image.mimeType, data: image.data.toString('base64') },
-      })),
-      { type: 'text', text: prompt },
-    ];
-    const run = (resume, text = prompt, earlier = []) =>
-      runClaude(claude, {
-        content: [...earlier, ...content.slice(0, -1), { type: 'text', text }],
-        system: systemPrompt(user),
-        mcpUrl,
-        token,
-        resume,
-        sessionId: resume ? null : randomUUID(),
-        docsDir: join(here, '..', 'docs'),
-      });
-    /**
-     * A new session starts with the conversation so far: a notebook page's
-     * conversation begins with its photo and transcription, written by the app.
-     */
-    const fresh = async () => {
-      const recent = db
-        .prepare(
-          'SELECT role,content,attachments_json FROM ai_messages WHERE thread_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 11',
-        )
-        .all(threadId)
-        .reverse()
-        .slice(0, -1);
-      const text = recent.map(m => `${m.role === 'user' ? 'Persona' : 'Asistente'}: ${clip(m.content, 6000)}`).join('\n\n');
-      const photos = images.length ? [] : recent.flatMap(m => (parse(m.attachments_json) ?? []).map(a => a.id)).slice(-2);
-      const earlier = (await loadImages(photos).catch(() => [])).map(image => ({
-        type: 'image',
-        source: { type: 'base64', media_type: image.mimeType, data: image.data.toString('base64') },
-      }));
-      return run(null, text ? `Conversación anterior:\n${text}\n\n${prompt}` : prompt, earlier);
-    };
-    try {
-      let out;
-      if (!thread?.claude_session) out = await fresh();
-      else
-        try {
-          out = await run(thread.claude_session);
-        } catch (e) {
-          if (!e.missingSession) throw e;
-          // The saved session is gone (e.g. a new server): start again with the recent messages as context.
-          out = await fresh();
-        }
-      db.prepare('UPDATE ai_threads SET claude_session = ? WHERE id = ?').run(out.sessionId, threadId);
-      return out.text;
-    } finally {
-      turns.delete(token);
-    }
-  }
-
-  async function replyWithApi(threadId, user, prompt, images, context) {
-    const history = db
-      .prepare('SELECT role,content FROM ai_messages WHERE thread_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 10')
-      .all(threadId)
-      .reverse();
-    // Models without Claude Code's skills get the notebook instructions with the photo.
-    const skill = images.length
-      ? await readFile(join(here, '..', 'assistant', 'skills', 'digitalizar-cuaderno', 'SKILL.md'), 'utf8')
-          .then(text => text.replace(/^---[\s\S]*?---\s*/, ''))
-          .catch(() => '')
-      : '';
-    const messages = [
-      { role: 'system', content: [systemPrompt(user), skill].filter(Boolean).join('\n\n') },
-      ...history.map(row => ({ role: row.role, content: row.content })),
-    ];
-    if (images.length)
-      messages[messages.length - 1] = {
-        role: 'user',
-        content: [
-          { type: 'text', text: prompt },
-          ...images.map(image => ({
-            type: 'image_url',
-            image_url: { url: `data:${image.mimeType};base64,${image.data.toString('base64')}` },
-          })),
-        ],
-      };
-    context.findBudget = 15000;
-    for (let round = 0; round < 6; round++) {
-      const response = await complete(ai, messages);
-      if (!response.tool_calls?.length) return clip(response.content, 12000);
-      if (response.tool_calls.length > 8) throw new Error('AI requested too many tools');
-      messages.push({ role: 'assistant', content: response.content ?? null, tool_calls: response.tool_calls });
-      for (const call of response.tool_calls) {
-        let result;
-        try {
-          result = await executeTool(call.function?.name, parse(call.function?.arguments ?? '{}') ?? {}, context);
-        } catch (e) {
-          result = { error: clip(e.message, 300) };
-        }
-        messages.push({ role: 'tool', tool_call_id: call.id, content: json(result).slice(0, 18000) });
-      }
-    }
-    throw new Error('AI did not produce an answer');
-  }
-
-  async function reply(threadId, user, prompt, attachments = []) {
-    if (busy.has(threadId)) throw Object.assign(new Error('busy'), { busy: true });
-    busy.add(threadId);
-    try {
-      const images = await loadImages(attachments.map(a => a.id));
-      const context = {
-        threadId,
-        user,
-        records: new Map(),
-        sources: new Map(),
-        results: [],
-        proposals: [],
-        applied: [],
-      };
-      let answer = claudeAllowed(claude, user)
-        ? await replyWithClaude(threadId, user, prompt, images, context)
-        : await replyWithApi(threadId, user, prompt, images, context);
-      answer = clip(answer, 12000);
-      const cited = [...answer.matchAll(/\[([A-Za-z0-9_-]{2,120})\]/g)].map(match => match[1]);
-      answer = answer.replace(/\[([A-Za-z0-9_-]{2,120})\]/g, (full, id) => (context.sources.has(id) ? full : ''));
-      const sources = cited.filter(id => context.sources.has(id)).map(id => context.sources.get(id));
-      const unique = [...new Map(sources.map(item => [item.id, item])).values()];
-      const views = context.proposals.map(p =>
-        proposalView(p, db.prepare('SELECT * FROM ai_proposals WHERE id = ?').get(p.id)),
-      );
-      const message = insertMessage(threadId, 'assistant', answer, unique, context.results, context.proposals);
-      return {
-        message: { ...message, proposals: views },
-        sources: unique,
-        results: context.results,
-        proposals: views,
-        applied: context.applied,
-      };
-    } finally {
-      busy.delete(threadId);
-    }
-  }
-
   /**
    * An agent outside the app (T3 Code) using a personal token: it acts as that
    * person, and its proposals go to their "T3 Code" conversation for review.
@@ -1664,8 +1449,6 @@ export function createAssistant({ store, config = {} }) {
     const cached = agents.get(hash);
     if (cached?.context.threadId === thread.id) return cached;
     const turn = {
-      expires: Infinity,
-      agent: true,
       context: {
         threadId: thread.id,
         user,
@@ -1680,12 +1463,12 @@ export function createAssistant({ store, config = {} }) {
     return turn;
   }
 
-  /** MCP (streamable HTTP, JSON replies) for the Claude CLI; one token per turn. */
+  /** MCP (streamable HTTP, JSON replies) for T3 Code's chats, with the person's token (scripts/t3-provision.mjs). */
   async function mcp(headers, body) {
     const token = /^Bearer\s+(\S+)$/.exec(String(headers.authorization ?? ''))?.[1];
-    const turn = token && (turns.get(token) ?? agentTurn(token));
+    const turn = token && agentTurn(token);
     const id = body?.id ?? null;
-    if (!turn || turn.expires < Date.now())
+    if (!turn)
       return { status: 401, body: { jsonrpc: '2.0', id, error: { code: -32001, message: 'Unauthorized' } } };
     const result = value => ({ status: 200, body: { jsonrpc: '2.0', id, result: value } });
     const method = String(body?.method ?? '');
@@ -1709,9 +1492,7 @@ export function createAssistant({ store, config = {} }) {
       let out;
       // A T3 Code chat's call: its own list of proposals (chats call at the same time), and Claude's
       // tool-use id, which T3 records with the call: the proposals it drafts are shown with that chat.
-      const context = turn.agent
-        ? { ...turn.context, proposals: [], t3: { toolUseId: clip(body.params?._meta?.['claudecode/toolUseId'], 100) || null } }
-        : turn.context;
+      const context = { ...turn.context, proposals: [], t3: { toolUseId: clip(body.params?._meta?.['claudecode/toolUseId'], 100) || null } };
       const before = context.proposals.length;
       try {
         out = await executeTool(String(body.params?.name ?? ''), body.params?.arguments ?? {}, context);
@@ -1719,7 +1500,7 @@ export function createAssistant({ store, config = {} }) {
         out = { error: clip(e.message, 300) };
       }
       // Proposals from T3 Code are shown in the app for review (Asistente → Cambios propuestos).
-      if (turn.agent && context.proposals.length > before) {
+      if (context.proposals.length > before) {
         const fresh = context.proposals.splice(before);
         insertMessage(turn.context.threadId, 'assistant', 'Propuesta desde T3 Code', [], [], fresh);
         out = {
@@ -1807,29 +1588,6 @@ export function createAssistant({ store, config = {} }) {
     if (!user || !owner(user)) return bad(401, 'unauthorized', 'Sign in to use the assistant.');
     if (path === '/api/reports') return reports.handle({ method, path, query, user });
 
-    if (path === '/api/ai/status' && method === 'GET') {
-      let key = '';
-      try {
-        key = await keyFor(ai);
-      } catch {
-        /* Status must not reveal file paths. */
-      }
-      const useClaude = claudeAllowed(claude, user);
-      return {
-        status: 200,
-        body: {
-          configured: useClaude || Boolean(ai.model && key),
-          provider: useClaude
-            ? 'Claude'
-            : String(ai.baseUrl).includes('openrouter.ai')
-              ? 'OpenRouter'
-              : 'OpenAI-compatible',
-          model: useClaude ? claude.model : ai.model || null,
-          transcription: Boolean(ai.transcriptionModel && key),
-          vision: useClaude || Boolean(ai.visionModel && key),
-        },
-      };
-    }
     if (path === '/api/knowledge' && method === 'GET') {
       const passages = await knowledge.search({ query: query.q, kind: query.kind, from: query.from, to: query.to, perDoc: 1 });
       return { status: 200, body: { documents: passages } };
@@ -1843,86 +1601,6 @@ export function createAssistant({ store, config = {} }) {
             body: { id: doc.id, title: doc.title, kind: doc.kind, date: doc.date, text: doc.text, sourceUrl: doc.sourceUrl },
           }
         : bad(404, 'not_found', 'Document not found.');
-    }
-    if (path === '/api/chat/threads' && method === 'GET') {
-      const threads = db
-        .prepare(
-          'SELECT id,title,created_at AS createdAt,updated_at AS updatedAt FROM ai_threads WHERE owner_id = ? ORDER BY updated_at DESC LIMIT 100',
-        )
-        .all(owner(user));
-      return { status: 200, body: { threads } };
-    }
-    if (path === '/api/chat/threads' && method === 'POST') {
-      const id = randomUUID();
-      const title = clip(body.title || 'New conversation', 120);
-      const time = now();
-      db.prepare('INSERT INTO ai_threads (id,owner_id,title,created_at,updated_at) VALUES (?,?,?,?,?)').run(
-        id,
-        owner(user),
-        title,
-        time,
-        time,
-      );
-      return { status: 201, body: { thread: { id, title, createdAt: time, updatedAt: time } } };
-    }
-    const threadMatch = /^\/api\/chat\/threads\/([0-9a-f-]{36})(\/messages)?$/.exec(path);
-    if (threadMatch) {
-      const record = thread(threadMatch[1], user);
-      if (!record) return bad(404, 'not_found', 'Conversation not found.');
-      if (!threadMatch[2] && method === 'GET') {
-        const rows = new Map(
-          db
-            .prepare('SELECT * FROM ai_proposals WHERE thread_id = ?')
-            .all(record.id)
-            .map(item => [item.id, item]),
-        );
-        const messages = db
-          .prepare('SELECT * FROM ai_messages WHERE thread_id = ? ORDER BY created_at, rowid')
-          .all(record.id)
-          .map(row => {
-            const message = publicMessage(row);
-            message.proposals = message.proposals.map(p => proposalView(p, rows.get(p.id)));
-            return message;
-          });
-        return {
-          status: 200,
-          body: {
-            thread: { id: record.id, title: record.title, createdAt: record.created_at, updatedAt: record.updated_at },
-            messages,
-          },
-        };
-      }
-      if (!threadMatch[2] && method === 'DELETE') {
-        db.prepare('DELETE FROM ai_proposals WHERE thread_id = ?').run(record.id);
-        db.prepare('DELETE FROM ai_messages WHERE thread_id = ?').run(record.id);
-        db.prepare('DELETE FROM ai_threads WHERE id = ?').run(record.id);
-        changed(owner(user));
-        return { status: 200, body: { deleted: true } };
-      }
-      if (threadMatch[2] && method === 'POST') {
-        const message = typeof body.message === 'string' ? body.message.trim() : '';
-        if (!message || message.length > 6000)
-          return bad(400, 'invalid_message', 'Message must contain 1 to 6000 characters.');
-        if (
-          body.attachmentIds !== undefined &&
-          (!Array.isArray(body.attachmentIds) ||
-            body.attachmentIds.length > 6 ||
-            body.attachmentIds.some(id => typeof id !== 'string' || id.length > 120))
-        )
-          return bad(400, 'invalid_attachments', 'Use at most six photos.');
-        const attachments = (body.attachmentIds ?? []).map(id => {
-          const found = store.getAttachment?.(id);
-          return { id, name: found?.name ?? 'foto', mimeType: found?.mimeType ?? null };
-        });
-        if (busy.has(record.id)) return bad(409, 'busy', 'The assistant is still answering in this conversation.');
-        insertMessage(record.id, 'user', message, [], [], [], attachments);
-        try {
-          return { status: 200, body: await reply(record.id, user, message, attachments) };
-        } catch (e) {
-          console.error('Assistant turn failed:', e.message);
-          return bad(502, 'provider_error', 'The assistant could not complete this message. Try again.');
-        }
-      }
     }
     if (path === '/api/chat/proposals' && method === 'GET') {
       const me = owner(user);

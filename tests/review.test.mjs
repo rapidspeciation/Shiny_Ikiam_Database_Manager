@@ -221,7 +221,7 @@ test('photo checks: envelope CAM, extra photos, envelope sex and species (by bat
 
 test('verdicts: last one counts, batches, other values, training labels, agreed fixes applied from one proposal', async () => {
   const { store } = await fixture();
-  const assistant = createAssistant({ store, config: { claude: {} } });
+  const assistant = createAssistant({ store, config: {} });
   store.db
     .prepare(
       "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u1','ana','Ana','editor','s','h',1,'2026-01-01')",
@@ -329,7 +329,7 @@ test('verdicts: last one counts, batches, other values, training labels, agreed 
 
 test('"Preparar propuesta" makes one proposal of the agreed fixes; a fix changed since the verdict is held back', async () => {
   const { store } = await fixture();
-  const assistant = createAssistant({ store, config: { claude: {} } });
+  const assistant = createAssistant({ store, config: {} });
   const sex = issueOf(store, 'envelope_sex', 'CAM000105');
   const species = issueOf(store, 'envelope_species', 'CAM000107');
   assert.equal(

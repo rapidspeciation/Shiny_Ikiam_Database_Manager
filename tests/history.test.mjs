@@ -315,7 +315,7 @@ test('labels and summaries: runs of identifiers become ranges', () => {
 
 test('assistant tools: find a save with its link, show it, preview and undo only once confirmed, as the person', async () => {
   const { store, ids, row } = await scene();
-  const assistant = createAssistant({ store, config: { claude: {}, publicUrl: 'https://app.example/' } });
+  const assistant = createAssistant({ store, config: { publicUrl: 'https://app.example/' } });
   const tokens = {};
   for (const u of [ana, viewer]) {
     tokens[u.id] = `token-${u.username}`;

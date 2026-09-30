@@ -159,7 +159,7 @@ test('the switch keeps record ids by identity, remaps moved rows and resets the 
         ],
       }),
     );
-  createAssistant({ store, config: { claude: {} } });
+  createAssistant({ store, config: {} });
   store.db
     .prepare("INSERT INTO ai_threads(id,owner_id,title,created_at,updated_at) VALUES('th','u-ana','t','t','t')")
     .run();

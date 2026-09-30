@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
+import { createHash } from 'node:crypto';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -59,24 +60,41 @@ function fixture(config = {}, applyHook) {
       return applyHook ? applyHook(changes, options, records) : { records: [records[0]], status: 'verified' };
     },
   };
-  return {
-    assistant: createAssistant({
-      store,
-      config: {
-        ai: {
-          baseUrl: 'https://mock.example/v1',
-          model: 'test-model',
-          apiKey: 'fake',
-          visionModel: 'vision-model',
-          transcriptionModel: 'audio-model',
-          transcriptionMode: 'chat',
-        },
-        ...config,
+  const assistant = createAssistant({
+    store,
+    config: {
+      ai: {
+        baseUrl: 'https://mock.example/v1',
+        model: 'test-model',
+        apiKey: 'fake',
+        visionModel: 'vision-model',
+        transcriptionModel: 'audio-model',
+        transcriptionMode: 'chat',
       },
-    }),
-    db,
-    getApplied: () => applied,
+      ...config,
+    },
+  });
+  // The people, and the personal tokens their T3 Code chats call the tools with (scripts/t3-provision.mjs).
+  db.exec('CREATE TABLE users (id TEXT PRIMARY KEY, username TEXT, display_name TEXT, role TEXT, active INTEGER)');
+  for (const user of [alice, bob]) {
+    db.prepare('INSERT INTO users VALUES (?,?,?,?,1)').run(user.id, user.id, user.id, user.role);
+    db.prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')").run(
+      createHash('sha256').update(`${user.id}-token`).digest('hex'),
+      user.id,
+    );
+  }
+  /** A tool called from a T3 chat of this person. */
+  const call = async (user, name, args) => {
+    const out = await assistant.mcp(
+      { authorization: `Bearer ${user.id}-token` },
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } },
+    );
+    return JSON.parse(out.body.result.content[0].text);
   };
+  /** A proposal as Cambios propuestos lists it. */
+  const listed = async (user, id) =>
+    (await assistant.handle({ method: 'GET', path: '/api/chat/proposals', user, query: { all: '1', only: id } })).body.proposals[0];
+  return { assistant, db, call, listed, getApplied: () => applied };
 }
 
 function fakeProvider(replies) {
@@ -94,204 +112,83 @@ function fakeProvider(replies) {
   };
 }
 
-test("private threads require authentication and hide another user's messages", async () => {
-  const { assistant, db } = fixture();
-  assert.equal((await assistant.handle({ method: 'GET', path: '/api/chat/threads' })).status, 401);
-  const created = await assistant.handle({
-    method: 'POST',
-    path: '/api/chat/threads',
-    body: { title: 'Clutch 944' },
-    user: alice,
+test("proposals need a sign-in (the tools a person's token) and stay with their owner", async () => {
+  const { assistant, db, call, listed } = fixture();
+  assert.equal((await assistant.handle({ method: 'GET', path: '/api/chat/proposals' })).status, 401);
+  const ask = { jsonrpc: '2.0', id: 1, method: 'tools/list' };
+  assert.equal((await assistant.mcp({}, ask)).status, 401);
+  assert.equal((await assistant.mcp({ authorization: 'Bearer nobody' }, ask)).status, 401);
+  const { proposalId } = await call(alice, 'propose_changes', {
+    changes: [{ recordId: 'r-1', values: { Research_purpose: 'Review' } }],
+    reason: 'Clutch 944',
   });
-  const id = created.body.thread.id;
-  assert.equal((await assistant.handle({ method: 'GET', path: `/api/chat/threads/${id}`, user: bob })).status, 404);
-  assert.deepEqual((await assistant.handle({ method: 'GET', path: '/api/chat/threads', user: bob })).body.threads, []);
-  assert.equal((await assistant.handle({ method: 'DELETE', path: `/api/chat/threads/${id}`, user: bob })).status, 404);
+  assert.equal((await listed(alice, proposalId)).status, 'pending');
+  assert.equal(await listed(bob, proposalId), undefined);
+  const apply = { method: 'POST', path: `/api/chat/proposals/${proposalId}/apply`, body: { requestId: 'b' }, user: bob };
+  assert.equal((await assistant.handle(apply)).status, 404);
+  // Bob only reads the workbook.
+  assert.match((await call(bob, 'propose_changes', { changes: [{ recordId: 'r-1', values: { Sex: 'Male' } }] })).error, /cannot propose/);
   db.close();
 });
 
 test('partial apply is marked for review with current field values and cannot be replayed', async () => {
-  const { assistant, db } = fixture({}, async (_changes, _options, records) => {
+  const { assistant, db, call, listed } = fixture({}, async (_changes, _options, records) => {
     records[0].values.Research_purpose = 'Review';
     records[0].version++;
     throw Object.assign(new Error('Second record changed'), { code: 'VERSION_CONFLICT', status: 409 });
   });
-  const provider = fakeProvider([
-    {
-      content: null,
-      tool_calls: [
-        { id: 'get-1', type: 'function', function: { name: 'get_record', arguments: '{"id":"r-1"}' } },
-        { id: 'get-2', type: 'function', function: { name: 'get_record', arguments: '{"id":"s-1"}' } },
-      ],
-    },
-    {
-      content: null,
-      tool_calls: [
-        {
-          id: 'draft',
-          type: 'function',
-          function: {
-            name: 'propose_changes',
-            arguments:
-              '{"changes":[{"recordId":"r-1","values":{"Research_purpose":"Review"}},{"recordId":"s-1","values":{"NUMBER OF PUPA":5}}]}',
-          },
-        },
-      ],
-    },
-    { content: 'Review the two proposed edits [r-1] [s-1].' },
-  ]);
-  try {
-    const thread = (await assistant.handle({ method: 'POST', path: '/api/chat/threads', body: {}, user: alice })).body
-      .thread;
-    const response = await assistant.handle({
-      method: 'POST',
-      path: `/api/chat/threads/${thread.id}/messages`,
-      body: { message: 'Draft two edits' },
-      user: alice,
-    });
-    const id = response.body.proposals[0].id;
-    const result = await assistant.handle({
-      method: 'POST',
-      path: `/api/chat/proposals/${id}/apply`,
-      body: { requestId: 'partial-1' },
-      user: alice,
-    });
-    assert.equal(result.status, 409);
-    assert.equal(result.body.error.details.status, 'needs_review');
-    assert.equal(result.body.error.details.current[0].values.Research_purpose, 'Review');
-    assert.equal(
-      (
-        await assistant.handle({
-          method: 'POST',
-          path: `/api/chat/proposals/${id}/apply`,
-          body: { requestId: 'partial-1' },
-          user: alice,
-        })
-      ).status,
-      409,
-    );
-    const restored = await assistant.handle({ method: 'GET', path: `/api/chat/threads/${thread.id}`, user: alice });
-    assert.equal(restored.body.messages.at(-1).proposals[0].status, 'needs_review');
-  } finally {
-    provider.restore();
-    db.close();
-  }
+  const { proposalId: id } = await call(alice, 'propose_changes', {
+    changes: [
+      { recordId: 'r-1', values: { Research_purpose: 'Review' } },
+      { recordId: 's-1', values: { 'NUMBER OF PUPA': 5 } },
+    ],
+  });
+  const apply = () =>
+    assistant.handle({ method: 'POST', path: `/api/chat/proposals/${id}/apply`, body: { requestId: 'partial-1' }, user: alice });
+  const result = await apply();
+  assert.equal(result.status, 409);
+  assert.equal(result.body.error.details.status, 'needs_review');
+  assert.equal(result.body.error.details.current[0].values.Research_purpose, 'Review');
+  assert.equal((await apply()).status, 409);
+  assert.equal((await listed(alice, id)).status, 'needs_review');
+  db.close();
 });
 
-test('model searches exact records and only returns cited sources', async () => {
-  const { assistant, db } = fixture();
-  const provider = fakeProvider([
-    {
-      content: null,
-      tool_calls: [
-        { id: 'call-1', type: 'function', function: { name: 'search_records', arguments: '{"query":"A0A"}' } },
-      ],
-    },
-    { content: 'The row records a female [r-1]. Unknown claim [fake-2].' },
-  ]);
-  try {
-    const thread = (await assistant.handle({ method: 'POST', path: '/api/chat/threads', body: {}, user: alice })).body
-      .thread;
-    const response = await assistant.handle({
-      method: 'POST',
-      path: `/api/chat/threads/${thread.id}/messages`,
-      body: { message: 'Find A0A' },
-      user: alice,
-    });
-    assert.equal(response.status, 200);
-    assert.equal(response.body.sources[0].id, 'r-1');
-    assert.match(response.body.message.content, /\[r-1\]/);
-    assert.doesNotMatch(response.body.message.content, /fake-2/);
-    assert.equal(provider.requests.length, 2);
-    const restored = await assistant.handle({ method: 'GET', path: `/api/chat/threads/${thread.id}`, user: alice });
-    assert.equal(restored.body.messages.length, 2);
-  } finally {
-    provider.restore();
-    db.close();
-  }
+test('search_records reads exact rows through the tools', async () => {
+  const { db, call } = fixture();
+  const found = await call(alice, 'search_records', { query: 'A0A' });
+  assert.deepEqual(found.records.map(r => r.id), ['r-1']);
+  assert.match((await call(alice, 'search_records', { query: ' ' })).error, /required/);
+  db.close();
 });
 
 test('proposal stores before, after and version, then uses validated apply hook once', async () => {
-  const { assistant, db, getApplied } = fixture();
-  const provider = fakeProvider([
+  const { assistant, db, call, listed, getApplied } = fixture();
+  const { proposalId } = await call(alice, 'propose_changes', {
+    changes: [{ recordId: 'r-1', values: { Research_purpose: 'Review' } }],
+    reason: 'Requested correction',
+  });
+  const proposal = await listed(alice, proposalId);
+  const { recordId, expectedVersion, before, values, label, current } = proposal.changes[0];
+  assert.deepEqual(
+    { recordId, expectedVersion, before, values, label, current },
     {
-      content: null,
-      tool_calls: [{ id: 'get', type: 'function', function: { name: 'get_record', arguments: '{"id":"r-1"}' } }],
+      recordId: 'r-1',
+      expectedVersion: 3,
+      before: { Research_purpose: '' },
+      values: { Research_purpose: 'Review' },
+      label: 'A0A',
+      current: { Research_purpose: '' },
     },
-    {
-      content: null,
-      tool_calls: [
-        {
-          id: 'draft',
-          type: 'function',
-          function: {
-            name: 'propose_changes',
-            arguments:
-              '{"changes":[{"recordId":"r-1","values":{"Research_purpose":"Review"}}],"reason":"Requested correction"}',
-          },
-        },
-      ],
-    },
-    { content: 'I drafted a change for review [r-1].' },
-  ]);
-  try {
-    const thread = (await assistant.handle({ method: 'POST', path: '/api/chat/threads', body: {}, user: alice })).body
-      .thread;
-    const response = await assistant.handle({
-      method: 'POST',
-      path: `/api/chat/threads/${thread.id}/messages`,
-      body: { message: 'Draft a change' },
-      user: alice,
-    });
-    assert.equal(response.status, 200);
-    const proposal = response.body.proposals[0];
-    const { recordId, expectedVersion, before, values, label, current } = proposal.changes[0];
-    assert.deepEqual(
-      { recordId, expectedVersion, before, values, label, current },
-      {
-        recordId: 'r-1',
-        expectedVersion: 3,
-        before: { Research_purpose: '' },
-        values: { Research_purpose: 'Review' },
-        label: 'A0A',
-        current: { Research_purpose: '' },
-      },
-    );
-    assert.equal(
-      (
-        await assistant.handle({
-          method: 'POST',
-          path: `/api/chat/proposals/${proposal.id}/apply`,
-          body: {},
-          user: bob,
-        })
-      ).status,
-      404,
-    );
-    const applied = await assistant.handle({
-      method: 'POST',
-      path: `/api/chat/proposals/${proposal.id}/apply`,
-      body: { requestId: 'request-1' },
-      user: alice,
-    });
-    assert.equal(applied.status, 200);
-    assert.equal(getApplied().changes[0].expectedVersion, 3);
-    assert.equal(getApplied().options.requestId, 'request-1');
-    assert.equal(
-      (
-        await assistant.handle({
-          method: 'POST',
-          path: `/api/chat/proposals/${proposal.id}/apply`,
-          body: {},
-          user: alice,
-        })
-      ).status,
-      409,
-    );
-  } finally {
-    provider.restore();
-    db.close();
-  }
+  );
+  const apply = (user, body = {}) =>
+    assistant.handle({ method: 'POST', path: `/api/chat/proposals/${proposalId}/apply`, body, user });
+  assert.equal((await apply(bob)).status, 404);
+  assert.equal((await apply(alice, { requestId: 'request-1' })).status, 200);
+  assert.equal(getApplied().changes[0].expectedVersion, 3);
+  assert.equal(getApplied().options.requestId, 'request-1');
+  assert.equal((await apply(alice)).status, 409);
+  db.close();
 });
 
 test('stage report sums observed values and marks missingness', async () => {

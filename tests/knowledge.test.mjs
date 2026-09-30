@@ -156,7 +156,7 @@ test('the document tools reach T3 Code and Claude through MCP, and /api/knowledg
   try {
     db.exec('CREATE TABLE users (id TEXT PRIMARY KEY, username TEXT, display_name TEXT, role TEXT, active INTEGER)');
     db.prepare("INSERT INTO users VALUES ('u1','ana','Ana','viewer',1)").run();
-    const assistant = createAssistant({ store: { db, getRecord: () => null }, config: { claude: {}, knowledgeRoots: [dir] } });
+    const assistant = createAssistant({ store: { db, getRecord: () => null }, config: { knowledgeRoots: [dir] } });
     const token = 'token-for-ana';
     db.prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')").run(
       createHash('sha256').update(token).digest('hex'),

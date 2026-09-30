@@ -31,7 +31,7 @@ async function fixture() {
   });
   const store = new Store({ localMode: true }, { sheets });
   await store.sync({ sheets: ['Collection_data', 'Taxonomy_v18Jun25', 'Location_data'] });
-  const assistant = createAssistant({ store, config: { claude: {} } });
+  const assistant = createAssistant({ store, config: {} });
   store.db
     .prepare(
       "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u1','franz','Franz','editor','s','h',1,'2026-01-01')",

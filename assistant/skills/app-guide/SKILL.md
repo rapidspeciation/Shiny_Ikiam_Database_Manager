@@ -18,7 +18,7 @@ Per-tab detail (step by step, every control, every link parameter):
 - [reference/monitoreo.md](reference/monitoreo.md): Importar recorrido,
   Reporte, Mapa, Recapturas, Dudas de emparejamiento.
 - [reference/review-history-assistant.md](reference/review-history-assistant.md):
-  Inicio, Historial, Asistente (T3 Code, Chat simple, Cambios propuestos),
+  Inicio, Historial, Asistente (T3 Code, Cambios propuestos),
   Revisión, Usuarios, login and invitations, the save bar.
 
 Read the reference file of the tab before giving steps for it.
@@ -36,7 +36,7 @@ Read the reference file of the tab before giving steps for it.
 | Emergidos | `#/emergidos` | new adults of a clutch into pre-made rows | Insectary_data |
 | Clutches | `#/clutches` | new clutches and their follow-up | Insectary_stocks |
 | Historial | `#/historial` | every saved change; selective undo | (undo writes back) |
-| Asistente | `#/asistente` | T3 Code (this assistant) or Chat simple, and Cambios propuestos | via proposals |
+| Asistente | `#/asistente` | T3 Code (this assistant) and Cambios propuestos | via proposals |
 | Revisión | `#/revision?…` | data problems as cards to judge | verdicts (app); fixes via a proposal |
 | Usuarios | `#/usuarios` | accounts and invitations (admin; user menu) | — |
 

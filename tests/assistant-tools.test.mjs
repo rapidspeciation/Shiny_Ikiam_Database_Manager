@@ -27,7 +27,7 @@ async function setup(seed, formulas = []) {
   for (const f of formulas) formula(sheets, ...f);
   const store = new Store({ localMode: true }, { sheets });
   await store.sync({ sheets: Object.keys(seed) });
-  const assistant = createAssistant({ store, config: { claude: { bin: '', users: new Set() } } });
+  const assistant = createAssistant({ store, config: {} });
   store.db
     .prepare(
       "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u-franz','franz','Franz Chandi','editor','s','h',1,'2026-01-01')",
@@ -328,6 +328,49 @@ test('count_records counts by filters, place and groups', async () => {
     assert.deepEqual(byYear.groups.find(g => g['Collection_date:year'] === '2026' && g.Preservation_medium === 'Flash frozen').n, 2);
     assert.ok(byYear.groups.some(g => g['Collection_date:year'] === '(empty)'));
     assert.match((await call('count_records', { sheet: 'Collection_data', groupBy: 'SPECIES:year' })).error, /only date columns/);
+  } finally {
+    store.close();
+  }
+});
+
+test('a T3 chat finds rows and drafts edits; only the rows the person chose are written', async () => {
+  const lookup = '=XLOOKUP(C2,Insectary_stocks!A:A,Insectary_stocks!C:C,"")';
+  const { store, call, list } = await setup(
+    {
+      Insectary_data: [
+        { row: 2, values: { Insectary_ID: '5VB', 'CLUTCH NUMBER': 838, Sex: 'female' } },
+        { row: 3, values: { Insectary_ID: '8VD', 'CLUTCH NUMBER': 843, Sex: 'female' } },
+      ],
+    },
+    [
+      ['Insectary_data', 2, 'SPECIES', lookup, 'Mechanitis messenoides intermedia'],
+      ['Insectary_data', 3, 'SPECIES', lookup, 'Mechanitis messenoides messenoides'],
+    ],
+  );
+  try {
+    const { found, missing } = await call('find_records', { module: 'Insectary_data', field: 'Insectary_ID', values: ['5VB', '8VD', '9ZZ'] });
+    assert.deepEqual(missing, ['9ZZ']);
+    const byId = Object.fromEntries(found.map(r => [r.values.Insectary_ID, r]));
+    const out = await call('propose_changes', {
+      reason: 'Cuaderno de insectario, agosto 2025',
+      changes: [
+        { recordId: byId['5VB'].id, values: { SPECIES: 'Mechanitis messenoides deceptus' }, note: 'emergió deceptus' },
+        { recordId: byId['8VD'].id, values: { 'CLUTCH NUMBER': 848 }, note: 'cuaderno: 848' },
+      ],
+    });
+    assert.equal(out.rows, 2);
+    const [proposal] = await list();
+    assert.deepEqual(proposal.fields.slice(0, 2), ['SPECIES', 'CLUTCH NUMBER']);
+    assert.deepEqual(proposal.changes[0].replaceFormula, ['SPECIES']);
+    assert.equal(proposal.changes[1].current['CLUTCH NUMBER'], 843);
+    // "Está correcto, aplica solo la fila del clutch".
+    const applied = await call('apply_proposal', { proposalId: out.proposalId, indexes: [1] });
+    assert.equal(applied.status, 'applied');
+    assert.equal(store.getRecordBySheetRow('Insectary_data', 3).values['CLUTCH NUMBER'], 848);
+    // The species row was not chosen: its formula is untouched.
+    assert.ok(store.getRecordBySheetRow('Insectary_data', 2).formulas.SPECIES);
+    const [after] = await list();
+    assert.deepEqual([after.status, after.applied], ['applied', [1]]);
   } finally {
     store.close();
   }

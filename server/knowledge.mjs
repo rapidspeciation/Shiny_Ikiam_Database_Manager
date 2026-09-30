@@ -475,7 +475,7 @@ export function createKnowledge(config = {}) {
   return { search, read, list, get, index, sync };
 }
 
-/** The document tools of the assistant (chat, Claude and T3 Code through MCP). */
+/** The document tools of the assistant (T3 Code through MCP). */
 export const KNOWLEDGE_TOOLS = [
   {
     type: 'function',

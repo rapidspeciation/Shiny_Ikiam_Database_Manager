@@ -70,7 +70,7 @@ async function fixture({ withT3 = true } = {}) {
   const store = new Store({ localMode: true }, { sheets });
   await store.sync({ sheets: ['Collection_data', 'Taxonomy_v18Jun25', 'Location_data'] });
   const t3 = withT3 ? t3Home() : null;
-  const assistant = createAssistant({ store, config: { claude: {}, ...(t3 ? { t3: { home: t3.home } } : {}) } });
+  const assistant = createAssistant({ store, config: { ...(t3 ? { t3: { home: t3.home } } : {}) } });
   store.db
     .prepare(
       "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u1','franz','Franz','editor','s','h',1,'2026-01-01')",

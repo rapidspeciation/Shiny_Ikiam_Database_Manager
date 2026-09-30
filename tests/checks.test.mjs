@@ -221,7 +221,7 @@ test('check_data pages and filters by sheet and kind, and is computed once per s
 
 test('the assistant follows check_data with propose_changes, and the person applies the fix', async () => {
   const store = await fixture();
-  const assistant = createAssistant({ store, config: { claude: {} } });
+  const assistant = createAssistant({ store, config: {} });
   store.db
     .prepare(
       "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u1','ana','Ana','editor','s','h',1,'2026-01-01')",

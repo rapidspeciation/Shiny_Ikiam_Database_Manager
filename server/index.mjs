@@ -384,7 +384,7 @@ export async function createApp(config = {}, options = {}) {
           setupRequired: !store.db.prepare("SELECT 1 FROM users WHERE role='admin' AND active=1").get(),
         });
       const body = ['POST', 'PATCH', 'PUT', 'DELETE'].includes(method) ? await bodyOf(req) : {};
-      // The Claude CLI reaches the assistant's tools here with a per-turn token instead of a session.
+      // T3 Code's chats reach the assistant's tools here with the person's token (scripts/t3-provision.mjs) instead of a session.
       if (path === '/api/ai/mcp') {
         if (!assistant?.mcp) throw fail('NOT_FOUND', 'Not found', 404);
         if (method !== 'POST') {

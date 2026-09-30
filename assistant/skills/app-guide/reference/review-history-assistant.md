@@ -54,23 +54,16 @@ explicitly confirms** (same as `apply_proposal`). Example:
 
 ## Asistente — `#/asistente`
 
-A slim bar switches «T3 Code» and «Chat simple» (remembered per device;
-without T3 configured only the chat shows).
+T3 Code (editors): this assistant, full screen, with the person's own
+workspace and the `ithomiini` tools; the app has no other chat.
 
-- **T3 Code** (editors): this assistant, full screen, with the person's own
-  workspace and the `ithomiini` tools. Bar buttons: «Cambios propuestos (N)»
-  (show/hide the panel; it opens by itself and pulses when a proposal
-  arrives), reconnect, open T3 in another tab; admins see the T3 version and,
-  when a newer release exists, «Actualizar T3 (x → y)» (restarts T3; open
-  chats are cut, saved chats are kept).
-- **Chat simple**: conversations on the left («Nueva conversación», delete),
-  a box «Escribe tu pregunta o manda una foto del cuaderno», camera and
-  gallery buttons (up to 6 photos, shrunk before upload; Enter sends).
-  Answers show record chips (open the row in Tablas), document links (Drive),
-  small result tables and proposals. `#/asistente?hilo=<threadId>` opens a
-  given conversation in Chat simple.
-- **Cambios propuestos** (beside T3, below it on phones; also inside the
-  chat messages): each proposal as a table like the sheet: «Fila», the
+- **The bar** above T3: «Cambios propuestos (N)» (show/hide the panel; it
+  opens by itself and pulses when a proposal arrives), reconnect, open T3 in
+  another tab; admins see the T3 version and, when a newer release exists,
+  «Actualizar T3 (x → y)» (restarts T3; open chats are cut, saved chats are
+  kept).
+- **Cambios propuestos** (beside T3, below it on phones): each proposal as a
+  table like the sheet: «Fila», the
   changed cells in green with the old value struck through, new rows marked
   «nueva», «Motivo» per row. The person selects cells and presses «Valor de
   la hoja» (back to the sheet's value, or empty in a new row: the AI value
@@ -83,10 +76,11 @@ without T3 configured only the chat shows).
   `#/propuestas`; there it is an editable Sheets-like grid (the person can
   correct a cell before applying). When the person asks for a change to a
   proposal, revise it with `update_proposal`. It shows the proposals of the
-  chat open in T3 («Este chat: …»; «Último chat: …» when T3 does not say which
-  is open), and «Cambios propuestos (N)» counts those; a selector above the
-  tables picks another chat with proposals, «Fuera de los chats de T3» (Chat
-  simple, Revisión) or «Todos los chats»; «N propuestas más en otros chats»
+  chat open in T3 beside it («Este chat: …»; a new chat not sent yet has none;
+  «Último chat: …» when T3 does not say which is open), and «Cambios
+  propuestos (N)» counts those; a selector above the tables picks another
+  chat with proposals, «Fuera de los chats de T3» (Revisión, and the app's
+  former simple chat) or «Todos los chats»; «N propuestas más en otros chats»
   shows all of them. Opening another chat in T3 follows it again.
 
 ## Revisión — `#/revision` (editors; last tab)
