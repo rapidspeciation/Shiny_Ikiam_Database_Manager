@@ -14,5 +14,7 @@ describe('counts typed as sums', () => {
     const eggs = { key: 'NUMBER OF EGGS', type: 'number' as const }
     expect(normalizeInput('12+15', eggs, 'Insectary_stocks')).toEqual({ ok: true, value: '=12+15' })
     expect(normalizeInput('=12+15', { key: 'Notes', type: 'text' as const }, 'Insectary_stocks').ok).toBe(false)
+    const dissections = { key: 'NUMBER OF PUPAE/LARVAE FOR DISECTIONS', type: 'number' as const }
+    expect(normalizeInput('2+6', dissections, 'Insectary_stocks')).toEqual({ ok: true, value: '=2+6' })
   })
 })

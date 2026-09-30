@@ -4,7 +4,14 @@
  * SUM_FIELDS in server/schema.mjs) and refuses any other formula.
  */
 const SUM_FIELDS: Record<string, ReadonlySet<string>> = {
-  Insectary_stocks: new Set(['NUMBER OF EGGS', 'NUMBER OF LARVAE', 'NUMBER OF PUPA', 'NUMBER OF ADULTS']),
+  Insectary_stocks: new Set([
+    'NUMBER OF EGGS',
+    'NUMBER OF LARVAE',
+    'NUMBER OF PUPA',
+    'NUMBER OF ADULTS',
+    // Typed as =2 or =2+6 in the sheet too.
+    'NUMBER OF PUPAE/LARVAE FOR DISECTIONS',
+  ]),
 }
 export const isSumField = (module: string, field: string) => !!SUM_FIELDS[module]?.has(field)
 

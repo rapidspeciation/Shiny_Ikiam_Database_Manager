@@ -160,7 +160,9 @@ function formatter(field: string) {
     const text = show(field, c.value)
     if (!changed || change.create || c.was === undefined || show(field, c.was) === text) return document.createTextNode(text)
     const box = document.createElement('span')
-    box.textContent = text || t('vacío')
+    // Emptied on purpose ({ clear: true } or the person deleted it): red, not a quiet "vacío".
+    box.textContent = text || t('vaciar')
+    box.classList.toggle('is-clear', !text)
     const old = document.createElement('s')
     old.className = 'was'
     old.textContent = show(field, c.was) || t('vacío')
