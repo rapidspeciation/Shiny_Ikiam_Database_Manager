@@ -62,6 +62,34 @@ type InnerRange = {
     return moved
   }
 }
+/**
+ * Clicking a cell (and closing its editor) gives the focus back to the grid's
+ * scrolling box, and Tabulator did it with a plain focus(): the browser then
+ * scrolled whatever holds the grid (the chat, the Cambios propuestos panel, the
+ * Colecta page) to show as much of that box as it could, so the view jumped
+ * down under the pointer as a cell was clicked or double-clicked. The focus
+ * stays; only the scrolling goes (the cell clicked is already in sight, and
+ * keys that move the selection keep it in sight on their own, see keepInSight).
+ */
+type FocusRange = {
+  table: { rowManager: { element: HTMLElement } }
+  blockKeydown: boolean
+  restoreFocus: () => boolean
+  finishEditingCell: () => void
+}
+{
+  const range = SelectRangeModule.prototype as unknown as FocusRange
+  range.restoreFocus = function (this: FocusRange) {
+    this.table.rowManager.element.focus({ preventScroll: true })
+    return true
+  }
+  range.finishEditingCell = function (this: FocusRange) {
+    this.blockKeydown = true
+    this.table.rowManager.element.focus({ preventScroll: true })
+    setTimeout(() => (this.blockKeydown = false), 10)
+  }
+}
+
 function keepInSight(range: InnerRange) {
   const end = range.activeRange?.end
   if (!end) return
@@ -100,6 +128,14 @@ function revealRow(table: InnerRange['table'], row: HTMLElement) {
   if (!by) return
   if (scroller) scroller.scrollTop += by
   else window.scrollBy(0, by)
+}
+
+/** The same for a row chosen by the app (e.g. the first row just added), once it is drawn. */
+export function revealGridRow(table: Tabulator, row: RowComponent) {
+  requestAnimationFrame(() => {
+    const el = row.getElement()
+    if (el?.isConnected) revealRow(table as unknown as InnerRange['table'], el)
+  })
 }
 
 /** The nearest element around `el` that scrolls up and down; null when it is the page itself. */
@@ -835,6 +871,25 @@ export function choiceEditor(values: (cell: CellComponent) => Choices, freetext 
     if (!touchScreen || arrowCell === cell)
       return list.call(this, cell, onRendered, save, cancel, listParams(options, cell, freetext) as never)
     return suggestionBox(cell, onRendered, save, cancel, labelsOf(options))
+  }
+  return { editor: editor as never }
+}
+
+/**
+ * A plain text editor that opens with the cell as a person reads and types it,
+ * not as the sheet stores it: a date as 26/05/2026 rather than its serial
+ * number 46168, a time as 09:05 (see editText in lib/cells.ts). What is typed
+ * goes back through the grid's cellEdited, which reads it as a paste
+ * (normalizeInput: 26/5/26, 26-May-26, 2026-05-26…). Left as it opened, the
+ * cell is not changed.
+ */
+export function textEditor(text: (value: unknown) => string): Partial<ColumnDefinition> {
+  const input = (EditModule as unknown as { editors: Record<string, (...args: unknown[]) => HTMLElement> }).editors.input
+  const editor: EditorFn = function (cell, onRendered, success, cancel) {
+    const shown = text(cell.getValue())
+    // Tabulator's own box, given the cell with the text in place of its value.
+    const view = Object.create(cell, { getValue: { value: () => shown } }) as CellComponent
+    return input.call(this, view, onRendered, success, cancel, { selectContents: true })
   }
   return { editor: editor as never }
 }

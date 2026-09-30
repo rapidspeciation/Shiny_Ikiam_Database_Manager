@@ -64,10 +64,12 @@ const same = (a: CellValue | undefined, b: CellValue | undefined) => JSON.string
 
 /**
  * How a cell of the table looks: `proposed` (green, the assistant's), `person`
- * (typed by the person), `sheet` (an existing row's value, unchanged), `empty`
- * (a new row's cell with nothing yet), `locked` (a formula).
+ * (typed by the person), `reverted` (the person set it back to the sheet's
+ * value, or emptied a new row's cell: the assistant's value is kept aside, not
+ * written), `sheet` (an existing row's value, unchanged), `empty` (a new row's
+ * cell with nothing yet), `locked` (a formula).
  */
-export type CellKind = 'proposed' | 'person' | 'sheet' | 'empty' | 'locked'
+export type CellKind = 'proposed' | 'person' | 'reverted' | 'sheet' | 'empty' | 'locked'
 export function cellOf(
   change: ProposalChange,
   field: string,
@@ -78,7 +80,7 @@ export function cellOf(
   const ai = mark && 'ai' in mark ? mark.ai : undefined
   const aiProposed = !!mark && 'ai' in mark
   if (field in change.values) return { value: change.values[field], kind: mark ? 'person' : 'proposed', was, ai, aiProposed }
-  if (mark) return { value: change.create ? null : (was ?? null), kind: 'person', was, ai, aiProposed }
+  if (mark) return { value: change.create ? null : (was ?? null), kind: aiProposed ? 'reverted' : 'person', was, ai, aiProposed }
   const locked = change.create ? newRowFormulas.includes(field) : !!change.formulas?.includes(field)
   if (change.create) return { value: null, kind: locked ? 'locked' : 'empty', aiProposed }
   return { value: was ?? null, kind: locked ? 'locked' : 'sheet', was, aiProposed }
@@ -126,10 +128,21 @@ export function changedCells(prev: Proposal | undefined, next: Proposal): string
 }
 
 /**
+ * A cell the person changed and not yet saved: a value typed or pasted, or one
+ * of the two buttons: `use: 'sheet'` (back to the sheet's value; in a new row,
+ * empty) or `use: 'ai'` (the assistant's value again, given as `value`).
+ */
+export interface LocalCell {
+  value: CellValue
+  use?: 'sheet' | 'ai'
+}
+
+/**
  * The person's edits not yet saved, laid over the server's copy: a revision
  * arriving from the assistant meanwhile must not undo what was just typed.
+ * Marked as the server will mark them (reviseChanges in server/assistant.mjs).
  */
-export function withLocal(p: Proposal, local: Map<string, CellValue>): Proposal {
+export function withLocal(p: Proposal, local: Map<string, LocalCell>): Proposal {
   if (!local.size) return p
   return {
     ...p,
@@ -137,23 +150,58 @@ export function withLocal(p: Proposal, local: Map<string, CellValue>): Proposal 
       const key = rowKey(c)
       let values: Record<string, CellValue> | null = null
       let marks: Record<string, PersonEdit> | null = null
-      for (const [id, value] of local) {
+      for (const [id, cell] of local) {
         const [k, field] = id.split('\u0000')
         if (k !== key) continue
         values ??= { ...c.values }
         marks ??= { ...c.personEdits }
-        if (value === null && c.create) delete values[field]
-        else values[field] = value
-        marks[field] = marks[field] ?? (field in c.values ? { ai: c.values[field] } : {})
+        // What the assistant proposed there stays with the person's mark.
+        const mark: PersonEdit = marks[field] ?? (field in c.values ? { ai: c.values[field] } : {})
+        if (cell.use === 'ai') {
+          values[field] = cell.value
+          delete marks[field]
+        } else if (cell.use === 'sheet' || (cell.value === null && c.create)) {
+          delete values[field]
+          if ('ai' in mark) marks[field] = mark
+          else delete marks[field]
+        } else {
+          values[field] = cell.value
+          marks[field] = mark
+        }
       }
-      return values ? { ...c, values, personEdits: marks! } : c
+      if (!values) return c
+      return { ...c, values, personEdits: Object.keys(marks!).length ? marks! : undefined }
     }),
   }
 }
 
-/** Rows to apply: ticked (ticks are kept per row key, so they survive revisions) and with something to write. */
-export function chosenIndexes(p: Pick<Proposal, 'changes'>, unticked: Set<string>): number[] {
-  return p.changes.filter(c => !unticked.has(rowKey(c)) && Object.keys(c.values).length).map(c => c.index)
+/** Rows to apply: those with something to write (a row whose every cell went back to the sheet is left out). */
+export function rowsToWrite(p: Pick<Proposal, 'changes'>): number[] {
+  return p.changes.filter(c => Object.keys(c.values).length).map(c => c.index)
+}
+
+/** How many of the assistant's values the person set back to the sheet's (kept aside, not written). */
+export function notApplied(p: Pick<Proposal, 'changes'>): number {
+  let n = 0
+  for (const c of p.changes)
+    for (const [field, mark] of Object.entries(c.personEdits ?? {})) if ('ai' in mark && !(field in c.values)) n++
+  return n
+}
+
+/**
+ * What the "Valor de la hoja" and "Valor de la IA" buttons can do with the
+ * selected cells: how many hold a change that can go back to the sheet's value
+ * (the assistant's or the person's), and how many can take the assistant's
+ * value again (set back, or typed over by the person).
+ */
+export function selectionActions(cells: Pick<ReturnType<typeof cellOf>, 'kind' | 'aiProposed'>[]) {
+  let sheet = 0
+  let ai = 0
+  for (const c of cells) {
+    if (c.kind === 'proposed' || c.kind === 'person') sheet++
+    if (c.aiProposed && (c.kind === 'reverted' || c.kind === 'person')) ai++
+  }
+  return { sheet, ai }
 }
 
 /** "la IA cambió 3 celdas" */

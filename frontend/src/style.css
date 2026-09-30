@@ -312,6 +312,45 @@ body.touch-bar-open main {
 .legend.is-sheet {
   color: #78716c;
 }
+/* Set back to the sheet's value: grey like the sheet, a dashed green edge and the assistant's value struck through. */
+.proposal-sheet .tabulator-cell.is-reverted,
+.legend.is-reverted {
+  color: #78716c;
+  background: repeating-linear-gradient(135deg, #fff 0 6px, #f3faf6 6px 12px);
+  box-shadow: inset 0 0 0 1px transparent;
+  outline: 1px dashed #34d399;
+  outline-offset: -2px;
+}
+.proposal-sheet .tabulator-cell .aside {
+  color: #047857;
+  opacity: 0.7;
+  font-size: 11px;
+}
+.proposal-sheet .tabulator-cell.row-number.is-skipped {
+  color: #a8a29e;
+  text-decoration: line-through;
+}
+/* Valor de la hoja / Valor de la IA, for the selected cells. */
+.proposal-use {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid #d6d3d1;
+  border-radius: 4px;
+  background: white;
+  padding: 1px 6px;
+  color: #44403c;
+}
+.proposal-use:hover:not(:disabled) {
+  border-color: #6ee7b7;
+  color: #065f46;
+  background: #ecfdf5;
+}
+.proposal-use:disabled {
+  color: #c4c0bc;
+  border-color: #eeeceb;
+  cursor: default;
+}
 .proposal-sheet .tabulator-cell .was {
   margin-left: 4px;
   color: #a8a29e;
@@ -330,11 +369,23 @@ body.touch-bar-open main {
 .proposal-sheet .tabulator-cell.proposal-label {
   font-weight: 600;
 }
-/* What a count written as a sum adds up to: =12+15 (27). */
+/* What a count written as a sum adds up to, apart from the sum: =12+15 then "= 27" in its own box. */
 .proposal-sheet .tabulator-cell .sum-total {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #f5f5f4;
+  color: #92400e;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
 }
-.proposal-sheet .tabulator-cell .was .sum-total {
+.proposal-sheet .tabulator-cell .was .sum-total,
+.proposal-sheet .tabulator-cell .aside .sum-total {
+  margin-left: 3px;
+  background: none;
+  color: inherit;
   font-weight: 400;
 }
 .proposal-sheet .tabulator-cell.proposal-note {

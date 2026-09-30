@@ -56,8 +56,13 @@ const VALUES_DOC =
   'Column → value; dates as YYYY-MM-DD, times as H:MM. null (or leaving the column out) = no change there; {"clear": true} = empty the cell; in a notes column your text is added after the existing note ({"replace": "…"} rewrites it).';
 const VALUES_RULES =
   'Values: null never empties a cell (it means no change); to empty one give {"clear": true}, only when the person wants it emptied. Notes columns (NOTES, Notes, Notes_…): give only the new text; it is written as "d/m/yy INI: text" (today, the person\'s initials) after the existing note with " | ", never over it, unless you give {"replace": "the whole note"} because the person asked to rewrite it.';
-/** A value the assistant dropped (null in update_proposal): the cell goes back to no change. */
+/**
+ * A value the assistant dropped (null in update_proposal), or a cell the person
+ * set back to the sheet's value ("Valor de la hoja"): the cell goes back to no change.
+ */
 const DROP = Symbol('drop');
+/** The person took the assistant's value again ("Valor de la IA"): the one kept with their mark. */
+const AI_VALUE = Symbol('ai value');
 const NOTE_FIELD = /^notes?(?:_|$)/i;
 /** A note already in the team's form: "29/9/26 FCH:", "16/06/2023 AA:", "23Ago26 PAS". */
 const NOTE_PREFIX = /^\s*(?:\d{1,2}\s*[/.-]\s*\d{1,2}\s*[/.-]\s*\d{2,4}|\d{1,2}\s*[A-Za-z]{3}\s*\d{2,4})\s+[A-ZÑ]{2,4}\b/;
@@ -237,7 +242,7 @@ const TOOLS = [
     function: {
       name: 'apply_proposal',
       description:
-        "Write a pending proposal to Google Sheets. Only call this when the person's latest message explicitly approves it (e.g. 'sí, aplícalo', 'está correcto'). Optionally only some rows, by their index.",
+        "Write a pending proposal to Google Sheets. Only call this when the person's latest message explicitly approves it (e.g. 'sí, aplícalo', 'está correcto'). It writes what the table shows: your values, the cells the person typed, and not the cells the person set back to the sheet value (a row left with nothing to write is skipped). Optionally only some rows, by their index.",
       parameters: {
         type: 'object',
         properties: { proposalId: { type: 'string' }, indexes: { type: 'array', items: { type: 'integer' } } },
@@ -303,7 +308,7 @@ const TOOLS = [
     function: {
       name: 'get_proposal',
       description:
-        "A proposal as the person sees it now: each row with its index, values (dates YYYY-MM-DD), note and personEdits (cells the person corrected by hand in the table, with what you had proposed). Read it when the person says they changed the table, before update_proposal on a proposal you did not just make, and before apply_proposal if they edited it.",
+        "A proposal as the person sees it now: each row with its index, values (dates YYYY-MM-DD), note and personEdits (cells the person corrected by hand in the table, or set back to the sheet value with the table's «Valor de la hoja» button, with what you had proposed; those set back are not written). Read it when the person says they changed the table, before update_proposal on a proposal you did not just make, and before apply_proposal if they edited it.",
       parameters: { type: 'object', properties: { proposalId: { type: 'string' } }, required: ['proposalId'] },
     },
   },
@@ -783,7 +788,11 @@ export function createAssistant({ store, config = {} }) {
    * clientId of a new row, the recordId of an edited one) and the cells the
    * person typed: personEdits = field → { ai: what the assistant had proposed
    * (absent: no change to that cell), by, at }. The assistant does not
-   * overwrite those unless asked; it gets them back as conflicts.
+   * overwrite those unless asked; it gets them back as conflicts. A cell the
+   * person set back to the sheet's value (or emptied, in a new row) keeps its
+   * mark with the assistant's value and is left out of `values`: the table shows
+   * the suggestion aside, and applying writes only `values` (a row left without
+   * any is not written).
    */
   const rowKey = change => change.clientId ?? change.recordId;
   const proposedOf = (change, field) => (field in change.values ? change.values[field] : undefined);
@@ -832,7 +841,10 @@ export function createAssistant({ store, config = {} }) {
         return { change: keep({ values: {} }), dropped: Object.keys(change.values) };
       if (out.error) return { error: out.error.replace(/^newRows\[\d+\]: /, '') };
       const { dropped = [], ...fresh } = out.change;
-      return { change: { ...keep(fresh), dropped: undefined }, dropped };
+      // A row whose ID (and species) was set back or emptied keeps the name it was shown with, not "Insectary".
+      const named =
+        !!fresh.values.SPECIES || moduleMap.get(change.sheet).identityFields.some(key => isIdValue(fresh.values[key]));
+      return { change: { ...keep(fresh), ...(named || !change.label ? {} : { label: change.label }), dropped: undefined }, dropped };
     }
     const out = draftChanges({ changes: [{ recordId: change.recordId, values: change.values, note: change.note }] });
     if (out.error === 'Every proposed value is already in the sheet')
@@ -867,9 +879,11 @@ export function createAssistant({ store, config = {} }) {
       const values = op.values && typeof op.values === 'object' && !Array.isArray(op.values) ? op.values : {};
       for (const [field, raw] of Object.entries(values)) {
         const row = rows[i];
-        const value = raw === '' || raw === undefined ? null : raw;
         const current = proposedOf(row, field);
         const mark = row.personEdits?.[field];
+        // "Valor de la IA" where the assistant proposed nothing (or it is already there): nothing to do.
+        if (raw === AI_VALUE && !(mark && 'ai' in mark)) continue;
+        const value = raw === AI_VALUE ? mark.ai : raw === '' || raw === undefined ? null : raw;
         if (by === 'ai' && mark && !force) {
           if (value === DROP ? current !== undefined : !same(normal(row.sheet, field, value), current))
             out.conflicts.push({ ...where(i), field, person: current ?? null, yours: value === DROP ? 'no change' : value });
@@ -891,7 +905,10 @@ export function createAssistant({ store, config = {} }) {
           // What the person saw when they started typing was replaced by the assistant meanwhile.
           if (op.before && field in op.before && !same(op.before[field], current) && !same(current, after))
             out.overrode.push({ ...where(i), field, ai: current ?? null });
-          if (same(after, ai)) delete marks[field];
+          // Back to what the assistant proposed (or, where it proposed nothing, to no change): no longer theirs.
+          // A cell set back to the sheet keeps the assistant's value aside, even one that emptied it (null).
+          const back = after === undefined || ai === undefined ? after === ai : same(after, ai);
+          if (back) delete marks[field];
           else marks[field] = { ...(ai === undefined ? {} : { ai }), by: who, at: now() };
         }
         rows[i] = { ...next, personEdits: Object.keys(marks).length ? marks : undefined };
@@ -974,8 +991,13 @@ export function createAssistant({ store, config = {} }) {
               Object.entries(c.personEdits).map(([f, m]) => [
                 f,
                 {
-                  // In an existing row, a cell left out of the proposal keeps the sheet's value.
-                  value: f in c.values ? readable(c.sheet, f, c.values[f]) : c.create ? null : 'no change (keep the sheet value)',
+                  // A cell the person set back: an existing row keeps the sheet's value, a new row's stays empty.
+                  value:
+                    f in c.values
+                      ? readable(c.sheet, f, c.values[f])
+                      : c.create
+                        ? 'left empty (not written)'
+                        : 'no change (keep the sheet value)',
                   youProposed: 'ai' in m ? readable(c.sheet, f, m.ai) : 'no change',
                 },
               ]),
@@ -1810,18 +1832,36 @@ export function createAssistant({ store, config = {} }) {
       if (
         !Array.isArray(cells) ||
         cells.length > 2000 ||
-        cells.some(c => typeof c?.key !== 'string' || typeof c.field !== 'string' || c.field.length > 120 || !scalar(c.value ?? null))
+        cells.some(
+          c =>
+            typeof c?.key !== 'string' ||
+            typeof c.field !== 'string' ||
+            c.field.length > 120 ||
+            !scalar(c.value ?? null) ||
+            (c.use !== undefined && c.use !== 'sheet' && c.use !== 'ai'),
+        )
       )
-        return bad(400, 'invalid_cells', 'cells must be a list of { key, field, value }.');
+        return bad(400, 'invalid_cells', 'cells must be a list of { key, field, value, use? }.');
       const remove = Array.isArray(body.remove) ? body.remove.filter(k => typeof k === 'string').slice(0, 100) : [];
       const addEmpty = Array.isArray(body.add) ? body.add.filter(a => typeof a?.sheet === 'string').slice(0, 20) : [];
       const out = reviseChanges(
         parse(proposal.changes_json) ?? [],
         {
+          // use: the buttons for the selected cells, "Valor de la hoja" (back to the sheet's value,
+          // the assistant's kept aside) and "Valor de la IA" (the assistant's value again).
           set: cells.map(c => ({
             ref: c.key,
-            values: { [c.field]: typeof c.value === 'string' ? clip(c.value, 2000) : (c.value ?? null) },
-            ...(c.before !== undefined && scalar(c.before) ? { before: { [c.field]: c.before } } : {}),
+            values: {
+              [c.field]:
+                c.use === 'sheet'
+                  ? DROP
+                  : c.use === 'ai'
+                    ? AI_VALUE
+                    : typeof c.value === 'string'
+                      ? clip(c.value, 2000)
+                      : (c.value ?? null),
+            },
+            ...(c.before !== undefined && !c.use && scalar(c.before) ? { before: { [c.field]: c.before } } : {}),
           })),
           remove,
           addEmpty,

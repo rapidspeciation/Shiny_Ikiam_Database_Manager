@@ -55,7 +55,7 @@ handwriting. In short:
 3. Tell the person in 3–6 short lines what was found: cells to fill, differences
    with the sheet, doubts with their alternatives, lines not in the sheet.
 4. The proposal is already beside the chat (Cambios propuestos). The person
-   applies it there with ✓, or tells you "sí/está bien" and you call
+   applies it there with «Aplicar», or tells you "sí/está bien" and you call
    `apply_proposal`. A correction ("la línea 5 es macho") is a new
    `match_notebook` call with `replaceProposalId`: the same proposal changes
    in place, keeping the cells the person corrected by hand (a different new

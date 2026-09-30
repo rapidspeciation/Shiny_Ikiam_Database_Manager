@@ -1,5 +1,5 @@
 import { isSumField, simpleSum } from './sums'
-import { formatSerial, parseDateInput } from './dates'
+import { dayFirst, formatSerial, inDateRange, parseDateInput, serialToIso } from './dates'
 import type { CellValue, Field } from './types'
 import { t } from './i18n'
 
@@ -16,6 +16,16 @@ export function displayValue(value: CellValue | undefined, field?: Pick<Field, '
   }
   if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE'
   return String(value)
+}
+
+/**
+ * A cell's value as its editor opens with it: what a person would type, not
+ * what the sheet stores. Dates day first (26/05/2026, read back in any form
+ * parseDateInput knows), times 09:05; the rest as shown.
+ */
+export function editText(value: CellValue | undefined, field?: Pick<Field, 'type' | 'key'>): string {
+  if (field?.type === 'date' && typeof value === 'number' && inDateRange(value)) return dayFirst(serialToIso(value))
+  return displayValue(value, field)
 }
 
 export type Normalized = { ok: true; value: CellValue } | { ok: false; message: string }

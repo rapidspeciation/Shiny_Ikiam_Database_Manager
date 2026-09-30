@@ -267,3 +267,67 @@ test('the person adds, empties and removes rows; an empty row is not written', a
     store.close();
   }
 });
+
+test('"Valor de la hoja" and "Valor de la IA": cells set back are kept aside and not written; a row with none left is skipped', async () => {
+  const { store, call, http, list, record } = await fixture();
+  try {
+    const { proposalId } = await call('propose_changes', {
+      reason: 'Recorrido',
+      newRows: [newRow({ SPECIES: 'Oleria gunilla', Sex: 'female', FieldMark_ID: 'B41' }), newRow({ SPECIES: 'Oleria gunilla', Sex: 'male' }, 'M2')],
+      changes: [
+        { recordId: record(2).id, values: { Sex: 'female', Flight_height: 3 } },
+        { recordId: record(3).id, values: { Sex: { clear: true } } },
+      ],
+    });
+    const [kept, dropped, edited, cleared] = (await list()).proposals[0].changes;
+    const edit = cells => http('POST', `/api/chat/proposals/${proposalId}/edit`, { cells });
+    const sheet = (key, field) => ({ key, field, value: null, use: 'sheet' });
+    const ai = (key, field) => ({ key, field, value: null, use: 'ai' });
+    assert.equal((await edit([{ key: kept.key, field: 'Sex', value: null, use: 'other' }])).status, 400);
+
+    // Back to the sheet: out of the values, the assistant's value kept with the person's mark.
+    let out = await edit([sheet(edited.key, 'Sex'), sheet(cleared.key, 'Sex'), ...Object.keys(dropped.values).map(f => sheet(dropped.key, f))]);
+    assert.equal(out.status, 200, JSON.stringify(out.body));
+    let rows = out.body.proposal.changes;
+    assert.deepEqual(rows[2].values, { Flight_height: 3 });
+    assert.equal(rows[2].personEdits.Sex.ai, 'female');
+    // Even a suggestion to empty the cell stays aside (null), not lost.
+    assert.deepEqual(rows[3].values, {});
+    assert.equal(rows[3].personEdits.Sex.ai, null);
+    // A new row with every cell set back is empty: nothing of it is written.
+    assert.deepEqual(rows[1].values, {});
+    assert.deepEqual(Object.keys(rows[1].personEdits).sort(), Object.keys(dropped.values).sort());
+    assert.equal(rows[1].label, dropped.label, 'still shown with its name');
+
+    // The assistant reads them, and cannot put its value back unless told to.
+    const read = await call('get_proposal', { proposalId });
+    assert.deepEqual(read.rows[2].personEdits.Sex, { value: 'no change (keep the sheet value)', youProposed: 'female' });
+    assert.deepEqual(read.rows[1].personEdits.Sex, { value: 'left empty (not written)', youProposed: 'male' });
+    const clash = await call('update_proposal', { proposalId, rows: [{ index: 2, values: { Sex: 'female' } }] });
+    assert.equal(clash.conflicts[0].field, 'Sex');
+    assert.ok(!('Sex' in clash.rows[2].values));
+
+    // A cell typed over, then back to the sheet (a new row's: empty), then the assistant's value again.
+    out = await edit([{ key: kept.key, field: 'Sex', value: 'male' }]);
+    assert.equal(out.body.proposal.changes[0].personEdits.Sex.ai, 'female');
+    out = await edit([sheet(kept.key, 'Sex')]);
+    assert.ok(!('Sex' in out.body.proposal.changes[0].values));
+    out = await edit([ai(kept.key, 'Sex'), ai(edited.key, 'Sex'), ai(edited.key, 'Flight_height')]);
+    rows = out.body.proposal.changes;
+    assert.equal(rows[0].values.Sex, 'female');
+    assert.ok(!rows[0].personEdits?.Sex, "back to the assistant's value: no longer the person's");
+    assert.deepEqual(rows[2].values, { Sex: 'female', Flight_height: 3 });
+    assert.equal(rows[2].personEdits, undefined);
+
+    // Applying writes what the table shows; the rows left without values are skipped.
+    const shown = (await list()).proposals[0];
+    const applied = await http('POST', `/api/chat/proposals/${proposalId}/apply`, { requestId: randomUUID(), revision: shown.revision });
+    assert.equal(applied.body.status, 'applied', JSON.stringify(applied.body));
+    assert.deepEqual(applied.body.applied, [0, 2]);
+    assert.equal(record(4).values.Sex, 'female');
+    assert.equal(record(2).values.Sex, 'female');
+    assert.equal(record(3).values.Sex, 'female', 'the emptying set back was not written');
+  } finally {
+    store.close();
+  }
+});

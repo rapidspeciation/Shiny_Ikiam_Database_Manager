@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { displayValue, isBlank, normalizeInput } from '../cells'
+import { displayValue, editText, isBlank, normalizeInput } from '../cells'
 import { formatSerial, isoToSerial, parseDateInput, serialToIso } from '../dates'
 import { buildOptions } from '../options'
 import type { Table } from '../types'
@@ -36,6 +36,17 @@ describe('cells', () => {
     expect(displayValue(45883, date)).toBe('14-Aug-25')
     expect(displayValue(0.5625, { key: 'Collection_time', type: 'text' })).toBe('13:30')
     expect(displayValue(null, text)).toBe('')
+  })
+  it('opens a cell to edit as a person types it: dates day first, times as hours', () => {
+    // Not the serial number the sheet stores (46168), and read back to the same day.
+    expect(editText(46168, date)).toBe('26/05/2026')
+    for (const typed of [editText(46168, date), '26/5/26', '26-May-26', '26/05/2026'])
+      expect(normalizeInput(typed, date)).toEqual({ ok: true, value: 46168 })
+    expect(editText(0.5625, { key: 'Collection_time', type: 'text' })).toBe('13:30')
+    // Anything else as shown: text, a count kept as a sum, NA in a date column, an empty cell.
+    expect(editText('=17+37', { key: 'NUMBER OF EGGS', type: 'number' })).toBe('=17+37')
+    expect(editText('NA', date)).toBe('NA')
+    expect(editText(null, date)).toBe('')
   })
   it('treats empty and NA as blank', () => {
     expect([null, '', 'NA', ' n/a ', 'female'].map(isBlank)).toEqual([true, true, true, true, false])

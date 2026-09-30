@@ -10,10 +10,12 @@ import {
   cellId,
   changedCells,
   changedText,
-  chosenIndexes,
+  notApplied,
   rowKey,
+  rowsToWrite,
   sheetGroups,
   withLocal,
+  type LocalCell,
   type Proposal,
   type ProposalChange,
 } from '../lib/proposals'
@@ -28,8 +30,9 @@ export type { Proposal, ProposalChange } from '../lib/proposals'
  * touches): the assistant's values in green, the person's in blue. The person
  * corrects cells as in Colecta and they are saved to the proposal at once
  * (the assistant sees them and does not overwrite them); what the assistant
- * changes meanwhile flashes. Unticked rows are left out; "Aplicar" writes the
- * rest to the sheet (as does "aplica" in the chat).
+ * changes meanwhile flashes. Selected cells go back to the sheet's value (the
+ * assistant's kept aside, marked) or take the assistant's again; "Aplicar"
+ * writes what the table shows (as does "aplica" in the chat).
  */
 const props = defineProps<{ proposal: Proposal; busy?: boolean }>()
 const emit = defineEmits<{
@@ -44,7 +47,7 @@ const editable = computed(() => pending.value && session.canEdit)
 
 // ------------------------------------------------------------ the person's edits, saved to the proposal
 /** Typed and not yet saved (laid over the server's copy). */
-const local = ref(new Map<string, CellValue>())
+const local = ref(new Map<string, LocalCell>())
 const shown = computed(() => withLocal(props.proposal, local.value))
 const queue = new Map<string, CellEdit>()
 let removes: string[] = []
@@ -60,7 +63,7 @@ function onEdit(cells: CellEdit[]) {
   const next = new Map(local.value)
   for (const c of cells) {
     const id = cellId(c.key, c.field)
-    next.set(id, c.value)
+    next.set(id, c.use ? { value: c.value, use: c.use } : { value: c.value })
     // The first "before" is what the person saw.
     queue.set(id, { ...c, before: queue.get(id)?.before ?? c.before })
   }
@@ -134,7 +137,8 @@ function dropSaved(cells: CellEdit[]) {
   const next = new Map(local.value)
   for (const c of cells) {
     const id = cellId(c.key, c.field)
-    if (!queue.has(id) && JSON.stringify(next.get(id)) === JSON.stringify(c.value)) next.delete(id)
+    const mine = next.get(id)
+    if (!queue.has(id) && mine?.use === c.use && JSON.stringify(mine?.value) === JSON.stringify(c.value)) next.delete(id)
   }
   local.value = next
 }
@@ -183,17 +187,10 @@ watch(
 )
 onBeforeUnmount(() => window.clearTimeout(flashTimer))
 
-// ------------------------------------------------------------ ticks, columns, apply
-const unticked = ref(new Set<string>())
-function toggle(key: string) {
-  const next = new Set(unticked.value)
-  if (!next.delete(key)) next.add(key)
-  unticked.value = next
-}
-function toggleAll() {
-  unticked.value = unticked.value.size ? new Set() : new Set(props.proposal.changes.map(rowKey))
-}
-const chosen = computed(() => chosenIndexes(shown.value, unticked.value))
+// ------------------------------------------------------------ columns, apply
+/** The rows "Aplicar" writes: what the table shows (a row set back to the sheet in every cell is left out). */
+const chosen = computed(() => rowsToWrite(shown.value))
+const setAside = computed(() => notApplied(shown.value))
 
 /** Columns the person added to a sheet's table (kept while the tab is open). */
 const extra = persistentRef<Record<string, string[]>>(`proposal-columns:${props.proposal.id}`, {})
@@ -224,7 +221,7 @@ async function apply() {
 const show = (field: string, value: CellValue | undefined) =>
   displayValue(value, { key: field, type: (props.proposal.types[field] ?? 'text') as 'text' })
 const created = computed(() => props.proposal.changes.filter(c => c.create).length)
-const personCells = computed(() => props.proposal.changes.reduce((n, c) => n + Object.keys(c.personEdits ?? {}).length, 0))
+const personCells = computed(() => shown.value.changes.reduce((n, c) => n + Object.keys(c.personEdits ?? {}).length, 0))
 const statusText = computed(
   () =>
     ({
@@ -253,33 +250,7 @@ const statusText = computed(
       </span>
     </p>
     <div v-for="g in groups" :key="g.sheet" class="border-b border-stone-100 last:border-b-0">
-      <div v-if="groups.length > 1 || editable" class="flex flex-wrap items-center gap-2 px-2 pt-1.5 text-[11px] text-stone-500">
-        <span v-if="groups.length > 1" class="font-medium text-stone-700">{{ g.sheet }}</span>
-        <template v-if="editable">
-          <button
-            v-if="g.changes.some(c => c.create)"
-            class="flex items-center gap-0.5 hover:text-emerald-800"
-            :title="$t('Añadir una fila nueva vacía a esta hoja')"
-            @click="addRow(g.sheet)"
-          >
-            <Plus :size="12" /> {{ $t('Fila') }}
-          </button>
-          <select
-            v-if="addable(g.sheet, g.fields).length"
-            class="rounded border border-stone-200 bg-white px-1 py-0.5 text-[11px]"
-            :aria-label="$t('Añadir columna')"
-            @change="addColumn(g.sheet, $event)"
-          >
-            <option value="">{{ $t('+ Columna…') }}</option>
-            <option v-for="f in addable(g.sheet, g.fields)" :key="f" :value="f">{{ f }}</option>
-          </select>
-          <span class="ml-auto flex items-center gap-2">
-            <span class="legend is-proposed">{{ $t('IA') }}</span>
-            <span class="legend is-person">{{ $t('tú') }}</span>
-            <span class="legend is-sheet">{{ $t('hoja') }}</span>
-          </span>
-        </template>
-      </div>
+      <!-- The table and its bar, where ProposalSheet adds the buttons for the selected cells (Valor de la hoja / de la IA). -->
       <ProposalSheet
         :sheet="g.sheet"
         :changes="g.changes"
@@ -287,16 +258,43 @@ const statusText = computed(
         :types="typesOf(g.sheet)"
         :new-row-formulas="proposal.newRowFormulas?.[g.sheet] ?? []"
         :editable="editable"
-        :ticks="pending ? 'pending' : proposal.status === 'applied' ? 'applied' : 'none'"
-        :unticked="unticked"
-        :applied="proposal.applied ?? []"
+        :applied="proposal.status === 'applied' ? (proposal.applied ?? []) : null"
         :flash="flash"
         @edit="onEdit"
-        @toggle="toggle"
-        @toggle-all="toggleAll"
         @remove="removeRow"
         @notice="m => notify(m)"
-      />
+      >
+        <template v-if="groups.length > 1 || editable" #default>
+          <span v-if="groups.length > 1" class="font-medium text-stone-700">{{ g.sheet }}</span>
+          <button
+            v-if="editable && g.changes.some(c => c.create)"
+            class="flex items-center gap-0.5 hover:text-emerald-800"
+            :title="$t('Añadir una fila nueva vacía a esta hoja')"
+            @click="addRow(g.sheet)"
+          >
+            <Plus :size="12" /> {{ $t('Fila') }}
+          </button>
+          <select
+            v-if="editable && addable(g.sheet, g.fields).length"
+            class="rounded border border-stone-200 bg-white px-1 py-0.5 text-[11px]"
+            :aria-label="$t('Añadir columna')"
+            @change="addColumn(g.sheet, $event)"
+          >
+            <option value="">{{ $t('+ Columna…') }}</option>
+            <option v-for="f in addable(g.sheet, g.fields)" :key="f" :value="f">{{ f }}</option>
+          </select>
+        </template>
+        <template v-if="editable" #end>
+          <span class="ml-auto flex items-center gap-2">
+            <span class="legend is-proposed" :title="$t('Valor de la IA: se escribe al aplicar')">{{ $t('IA') }}</span>
+            <span class="legend is-person" :title="$t('Escrito por ti: se escribe al aplicar')">{{ $t('tú') }}</span>
+            <span class="legend is-sheet" :title="$t('Valor actual de la hoja: no cambia')">{{ $t('hoja') }}</span>
+            <span class="legend is-reverted" :title="$t('Vuelto al valor de la hoja: la sugerencia de la IA no se aplica')">{{
+              $t('IA sin aplicar')
+            }}</span>
+          </span>
+        </template>
+      </ProposalSheet>
     </div>
     <div class="flex flex-wrap items-center gap-2 px-2 py-1.5">
       <template v-if="pending">
@@ -307,8 +305,13 @@ const statusText = computed(
         <span class="hint">
           <template v-if="saving">{{ $t('Guardando tus cambios…') }}</template>
           <template v-else-if="failed">{{ $t('Sin conexión: tus cambios se guardarán al volver') }}</template>
-          <template v-else-if="personCells"
-            >{{ $tn(personCells, '{n} celda editada por ti', '{n} celdas editadas por ti') }} ·
+          <template v-else>
+            <template v-if="personCells > setAside"
+              >{{ $tn(personCells - setAside, '{n} celda editada por ti', '{n} celdas editadas por ti') }} ·
+            </template>
+            <template v-if="setAside"
+              >{{ $tn(setAside, '{n} sugerencia de la IA sin aplicar', '{n} sugerencias de la IA sin aplicar') }} ·
+            </template>
           </template>
           {{ $t('Corrige en la tabla o díselo al asistente; también puedes responder «sí, aplícalo» en el chat.') }}
         </span>

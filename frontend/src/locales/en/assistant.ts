@@ -81,6 +81,12 @@ export default {
   IA: 'AI',
   tú: 'you',
   hoja: 'sheet',
+  'IA sin aplicar': 'AI not applied',
+  'Valor de la IA: se escribe al aplicar': "The AI's value: written when you apply",
+  'Escrito por ti: se escribe al aplicar': 'Typed by you: written when you apply',
+  'Valor actual de la hoja: no cambia': "The sheet's current value: not changed",
+  'Vuelto al valor de la hoja: la sugerencia de la IA no se aplica':
+    "Set back to the sheet's value: the AI's suggestion is not applied",
   'Aplicar {n} fila': 'Apply {n} row',
   'Aplicar {n} filas': 'Apply {n} rows',
   Descartar: 'Discard',
@@ -88,6 +94,8 @@ export default {
   'Sin conexión: tus cambios se guardarán al volver': 'Offline: your changes will be saved when you are back',
   '{n} celda editada por ti': '{n} cell edited by you',
   '{n} celdas editadas por ti': '{n} cells edited by you',
+  '{n} sugerencia de la IA sin aplicar': "{n} AI suggestion not applied",
+  '{n} sugerencias de la IA sin aplicar': "{n} AI suggestions not applied",
   'Corrige en la tabla o díselo al asistente; también puedes responder «sí, aplícalo» en el chat.':
     'Correct it in the table or tell the assistant; you can also answer «yes, apply it» in the chat.',
   'La IA cambió {n} celda': 'The AI changed {n} cell',
@@ -102,7 +110,19 @@ export default {
   'en la hoja: {value}': 'in the sheet: {value}',
   'Fórmula de la hoja: no se escribe': 'Sheet formula: not written',
   'Valor actual de la hoja; escribe para cambiarlo': "The sheet's current value; type to change it",
-  'Elegir todas las filas o ninguna': 'Choose all rows or none',
+  'Vacía: no se escribe': 'Empty: not written',
+  'Valor de la hoja: no cambia': "The sheet's value: not changed",
+  'Esta fila no se escribe: no le queda ningún cambio': 'This row is not written: it has no change left',
+  'Filas escritas en la hoja': 'Rows written to the sheet',
+  'Valor de la hoja': 'Sheet value',
+  'Valor de la IA': 'AI value',
+  'Las celdas elegidas vuelven al valor de la hoja (en una fila nueva, vacías): la sugerencia de la IA queda marcada y no se aplica':
+    "The selected cells go back to the sheet's value (empty in a new row): the AI's suggestion stays marked and is not applied",
+  'Elige celdas cambiadas: arrastra sobre ellas o pulsa el nombre de una columna':
+    'Select changed cells: drag over them or click a column name',
+  'Las celdas elegidas vuelven a tomar el valor que propuso la IA': 'The selected cells take the value the AI proposed again',
+  'Elige celdas con una sugerencia de la IA que cambiaste o no se aplica':
+    "Select cells with an AI suggestion you changed or set back",
   Nota: 'Note',
   'Quitar esta fila de la propuesta': 'Remove this row from the proposal',
   '{problem}: se guarda igual; corrígelo si es un error': '{problem}: saved anyway; correct it if it is a mistake',
