@@ -9,7 +9,7 @@ import { moduleMap } from './schema.mjs';
 import { newRowFormulaFields } from './premade.mjs';
 import { TUBE_FIELD, isIdValue, isUnique } from './verifications.mjs';
 import { listOptions } from './verify.mjs';
-import { KINDS, KIND_IDS, buildReview, checkTranscription, clutchKey, proposalRows, typeOf } from './notebook.mjs';
+import { KINDS, KIND_IDS, buildReview, checkTranscription, clutchKey, columnsOf, proposalRows, typeOf } from './notebook.mjs';
 
 const parse = (value, fallback) => {
   try {
@@ -32,7 +32,10 @@ export const MATCH_NOTEBOOK_TOOL = {
       'Give every line of the page, top to bottom, with the values as written (dates day/month as written, e.g. "17/9"; ditto marks already replaced by the value above; CAMs/tubes written short like "cam505" or "81" may stay short, they continue the one above; counts as written, e.g. "12+15").',
       'The server finds each line\'s row (also through look-alike IDs 0/O, 1/I, 5/S and the order of the rows), infers the year, completes list values, keeps the SPECIES formula unless what emerged differs, and checks lists, IDs and tubes already used.',
       'It returns per line: the row found, cells to fill, differences with the sheet, doubtful cells (left out of the proposal), problems, and the proposalId. Doubtful cells go in with a confidence below 0.8 and their other readings.',
-      `Columns per kind: ${KIND_IDS.map(id => `${id} (${KINDS[id].label}, ${KINDS[id].sheet}): ${KINDS[id].fields.join(', ')}`).join('; ')}.`,
+      'The proposal\'s rows follow the page\'s line order. With includeUnchanged the lines already in the sheet show too, as context rows that are never written (never fake a change to make a line show).',
+      'Notes are written as "d/m/yy INI: text" (today, the person\'s initials) after the note the cell already has, with " | ".',
+      'Posturas: a generation written with the species, e.g. "lys (F1)", goes to Generation (F1, F2, Backcross); the dissections column goes to NUMBER OF PUPAE/LARVAE FOR DISECTIONS (a count, sums kept like the other counts).',
+      `Columns per kind: ${KIND_IDS.map(id => `${id} (${KINDS[id].label}, ${KINDS[id].sheet}): ${columnsOf(KINDS[id]).join(', ')}${KINDS[id].aliases ? ` (also accepted: ${Object.entries(KINDS[id].aliases).map(([a, f]) => `${a} = ${f}`).join(', ')})` : ''}`).join('; ')}.`,
     ].join(' '),
     parameters: {
       type: 'object',
@@ -58,6 +61,11 @@ export const MATCH_NOTEBOOK_TOOL = {
         replaceProposalId: {
           type: 'string',
           description: 'A pending proposal of this page to replace (after the person corrects a reading)',
+        },
+        includeUnchanged: {
+          type: 'boolean',
+          description:
+            'Also show the lines already in the sheet (nothing to write) as grey context rows, so the table follows the whole page. Context rows are never written; never invent a change to make a line show.',
         },
       },
       required: ['kind', 'lines'],
@@ -163,19 +171,48 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
     const rows = proposalRows(review);
     const ids = newIds();
     const changes = [];
-    for (const [key, list] of [
-      ['newRows', rows.newRows],
-      ['changes', rows.changes],
-    ])
-      for (const row of list) {
-        const out = draftChanges({ [key]: [row] }, ids);
-        const line = review.lines.find(l => l.n === row.line);
-        if (out.error) {
-          if (!/already in the sheet/.test(out.error)) line.rowError = clip(out.error.replace(/^newRows\[0\]: /, ''), 300);
-          continue;
-        }
-        changes.push(...out.changes.map(c => ({ ...c, line: row.line })));
+    // In the page's order: the person reads the table beside the notebook.
+    const ordered = [
+      ...rows.newRows.map(row => ['newRows', row]),
+      ...rows.changes.map(row => ['changes', row]),
+    ].sort((a, b) => a[1].line - b[1].line);
+    for (const [key, row] of ordered) {
+      const out = draftChanges({ [key]: [row] }, ids);
+      const line = review.lines.find(l => l.n === row.line);
+      if (out.error) {
+        if (!/already in the sheet/.test(out.error)) line.rowError = clip(out.error.replace(/^newRows\[0\]: /, ''), 300);
+        continue;
       }
+      changes.push(...out.changes.map(c => ({ ...c, line: row.line })));
+    }
+    // includeUnchanged: every line found in the sheet shows, the ones with nothing to write as
+    // read-only context rows (never written), so the table follows the whole page.
+    if (args.includeUnchanged) {
+      const shown = new Set(changes.map(c => c.line));
+      // A row appears once in a proposal (its key is the recordId).
+      const rowsShown = new Set(changes.map(c => c.recordId).filter(Boolean));
+      for (const line of review.lines) {
+        if (shown.has(line.n) || !line.recordId || line.crossed || rowsShown.has(line.recordId)) continue;
+        const record = store.getRecord(line.recordId);
+        if (!record || record.missing) continue;
+        rowsShown.add(record.id);
+        const why = line.message || (line.changes ? 'nada seguro que escribir' : 'ya está en la hoja');
+        changes.push({
+          context: true,
+          recordId: record.id,
+          sheet: record.sheet,
+          row: record.row,
+          label: record.label,
+          expectedVersion: record.version,
+          before: {},
+          values: {},
+          replaceFormula: [],
+          note: clip(`Línea ${line.n}: «${line.raw}» · ${why} (solo contexto, no se escribe)`, 300),
+          line: line.n,
+        });
+      }
+      changes.sort((a, b) => a.line - b.line);
+    }
     return { review, changes, ignored };
   }
 
@@ -186,7 +223,8 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
 export function matchSummary({ review, changes, ignored }, proposalId) {
   const show = (field, value) =>
     typeOf(field) === 'date' && typeof value === 'number' ? isoOf(value) : value === undefined ? null : value;
-  const inProposal = new Set(changes.map(c => c.line));
+  const inProposal = new Set(changes.filter(c => !c.context).map(c => c.line));
+  const context = new Set(changes.filter(c => c.context).map(c => c.line));
   const lines = review.lines.map(l => {
     const out = { n: l.n, raw: l.raw, status: l.status };
     if (l.row) Object.assign(out, { row: l.row, label: l.label });
@@ -215,6 +253,7 @@ export function matchSummary({ review, changes, ignored }, proposalId) {
     Object.assign(out, group);
     if (l.rowError) out.rowError = l.rowError;
     out.inProposal = inProposal.has(l.n);
+    if (context.has(l.n)) out.contextRow = true;
     return out;
   });
   const c = review.counts;
@@ -226,6 +265,7 @@ export function matchSummary({ review, changes, ignored }, proposalId) {
     counts: {
       lines: c.lines,
       rowsInProposal: inProposal.size,
+      ...(context.size ? { contextRows: context.size } : {}),
       cellsToFill: c.fills,
       differences: c.conflicts,
       doubtful: c.doubts,

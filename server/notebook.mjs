@@ -32,6 +32,15 @@ export const KINDS = {
       'NUMBER OF ADULTS',
       'NOTES',
     ],
+    // Also read (not named in the skill yet): the generation, from "(F1)" after the species or
+    // its own column, and the count kept for dissections (the notebook's "dissections" column).
+    extra: ['Generation', 'NUMBER OF PUPAE/LARVAE FOR DISECTIONS'],
+    aliases: {
+      dissections: 'NUMBER OF PUPAE/LARVAE FOR DISECTIONS',
+      disecciones: 'NUMBER OF PUPAE/LARVAE FOR DISECTIONS',
+      'NUMBER OF PUPAE/LARVAE FOR DISSECTIONS': 'NUMBER OF PUPAE/LARVAE FOR DISECTIONS',
+      generación: 'Generation',
+    },
   },
   emergence: {
     label: 'Emergidos',
@@ -96,6 +105,26 @@ export const KINDS = {
   },
 };
 export const KIND_IDS = Object.keys(KINDS);
+/** Every column a notebook fills: the skill's ones, then the extra ones. */
+export const columnsOf = kind => [...kind.fields, ...(kind.extra ?? [])];
+
+/** "Mechanitis lysimnia (F1)": the generation written with the species. */
+const GENERATION = /\(\s*(F1|F2|BC|backcross)\s*\)|\s(F1|F2)\s*$/i;
+/**
+ * A generation written after the species goes to the Generation column (F1,
+ * F2, Backcross), unless the line gives Generation itself; the species loses it.
+ */
+export function generationFromSpecies(text) {
+  const species = text.SPECIES;
+  const m = typeof species === 'string' ? GENERATION.exec(species) : null;
+  if (!m) return text;
+  const g = (m[1] ?? m[2]).toUpperCase();
+  const rest = species.replace(m[0], ' ').replace(/\s+/g, ' ').trim();
+  if (rest) text.SPECIES = rest;
+  else delete text.SPECIES;
+  if (isNone(text.Generation)) text.Generation = g === 'BC' || g === 'BACKCROSS' ? 'Backcross' : g;
+  return text;
+}
 
 /** What a count kept as a sum adds up to (27 for "=12+15"), or null. */
 const sumTotal = value => {
@@ -114,7 +143,15 @@ const clip = (value, length) => String(value ?? '').slice(0, length);
 export function checkTranscription({ kind, year = null, lines = [] }) {
   if (!KINDS[kind]) throw new Error(`Unknown notebook kind "${clip(kind, 40)}": use one of ${KIND_IDS.join(', ')}`);
   if (!Array.isArray(lines) || !lines.length) throw new Error('Give the lines of the page');
-  const fields = new Set(KINDS[kind].fields);
+  const columns = columnsOf(KINDS[kind]);
+  const fields = new Set(columns);
+  // A column named as the notebook names it ("dissections") or in other case is the sheet's.
+  const names = new Map([
+    ...columns.map(f => [f.toLowerCase(), f]),
+    ...Object.entries(KINDS[kind].aliases ?? {}).map(([alias, f]) => [alias.toLowerCase(), f]),
+  ]);
+  const rename = entries =>
+    Object.fromEntries(Object.entries(entries ?? {}).map(([f, v]) => [fields.has(f) ? f : (names.get(String(f).trim().toLowerCase()) ?? f), v]));
   const ignored = new Set();
   const number = (value, low, high) => {
     const n = Number(value);
@@ -124,7 +161,7 @@ export function checkTranscription({ kind, year = null, lines = [] }) {
     const v = {},
       c = {},
       a = {};
-    for (const [field, value] of Object.entries(line?.values ?? {})) {
+    for (const [field, value] of Object.entries(rename(line?.values))) {
       if (!fields.has(field)) {
         ignored.add(field);
         continue;
@@ -132,7 +169,7 @@ export function checkTranscription({ kind, year = null, lines = [] }) {
       v[field] = value === null || value === undefined ? null : clip(value, 300).trim();
       if (v[field] === null) c[field] = 0;
     }
-    for (const [field, value] of Object.entries(line?.alternatives ?? {})) {
+    for (const [field, value] of Object.entries(rename(line?.alternatives))) {
       if (!fields.has(field)) continue;
       const options = (Array.isArray(value) ? value : [value])
         .filter(x => x !== null && x !== undefined)
@@ -143,7 +180,7 @@ export function checkTranscription({ kind, year = null, lines = [] }) {
         c[field] = 0.5;
       }
     }
-    for (const [field, value] of Object.entries(line?.confidence ?? {})) {
+    for (const [field, value] of Object.entries(rename(line?.confidence))) {
       const n = number(value, 0, 1);
       if (fields.has(field) && n !== null) c[field] = n;
     }
@@ -368,7 +405,7 @@ export function lookAlikes(kind, keyValues) {
 /** How many of a line's cells the sheet row already has (a date counts by day and month). */
 function agreement(kind, record, text, year) {
   let same = 0;
-  for (const field of kind.fields) {
+  for (const field of columnsOf(kind)) {
     if (kind.keys.includes(field)) continue;
     const value = readValue(field, text[field], { year }).value;
     const before = record.values?.[field];
@@ -442,13 +479,14 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
   const kind = KINDS[transcription.kind];
   const currentYear = Number(String(today).slice(0, 4));
   const todaySerial = parseDateText(today);
-  const dateFields = kind.fields.filter(f => typeOf(f) === 'date');
+  const dateFields = columnsOf(kind).filter(f => typeOf(f) === 'date');
 
   // First the keys, to find each line's row (a corrected key finds another row).
   const texts = transcription.lines.map(line => {
     const text = { ...line.v };
-    for (const [field, value] of Object.entries(edits[line.n] ?? {})) if (kind.fields.includes(field)) text[field] = value;
-    return text;
+    for (const [field, value] of Object.entries(edits[line.n] ?? {})) if (columnsOf(kind).includes(field)) text[field] = value;
+    // "lys (F1)": the generation goes to its column, where the sheet has one.
+    return columnsOf(kind).includes('Generation') ? generationFromSpecies(text) : text;
   });
   const completed = completeRuns(texts);
   const lines = transcription.lines.map((line, i) => {
@@ -512,7 +550,7 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
     const clutchText = text['CLUTCH NUMBER'];
     const cells = {};
     let lastDate = null;
-    for (const field of kind.fields) {
+    for (const field of columnsOf(kind)) {
       const typed = field in edited;
       const confidence = typed ? 1 : (line.c[field] ?? (line.v[field] === null && field in line.v ? 0 : 1));
       const read = readValue(field, text[field], { year: pageYear, sheet: kind.sheet });
@@ -669,7 +707,7 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
     kind: transcription.kind,
     sheet: kind.sheet,
     keys: kind.keys,
-    fields: kind.fields,
+    fields: columnsOf(kind),
     year: pageYear,
     yearSource,
     rotate: transcription.rotate,

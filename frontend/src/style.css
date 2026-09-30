@@ -318,6 +318,15 @@ body.touch-bar-open main {
   font-size: 11px;
   font-weight: 400;
 }
+/* A cell the proposal empties: "vaciar" and the value it removes, in red. */
+.proposal-sheet .tabulator-cell .is-clear,
+.proposal-sheet .tabulator-cell .is-clear .was {
+  color: #b91c1c;
+  font-weight: 600;
+}
+.proposal-sheet .tabulator-cell .is-clear .was {
+  text-decoration-color: #b91c1c;
+}
 .proposal-sheet .tabulator-cell.proposal-label {
   font-weight: 600;
 }

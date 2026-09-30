@@ -123,7 +123,14 @@ export function comparable(value) {
  * the app writes them as such formulas, keeping the terms.
  */
 export const SUM_FIELDS = {
-  Insectary_stocks: new Set(['NUMBER OF EGGS', 'NUMBER OF LARVAE', 'NUMBER OF PUPA', 'NUMBER OF ADULTS']),
+  Insectary_stocks: new Set([
+    'NUMBER OF EGGS',
+    'NUMBER OF LARVAE',
+    'NUMBER OF PUPA',
+    'NUMBER OF ADULTS',
+    // Typed as =2 or =2+6 in the sheet too.
+    'NUMBER OF PUPAE/LARVAE FOR DISECTIONS',
+  ]),
 };
 const SUM = /^=?\s*\d+(?:\s*[+-]\s*\d+)*\s*$/;
 /**

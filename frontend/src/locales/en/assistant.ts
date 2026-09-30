@@ -94,6 +94,7 @@ export default {
   'La IA cambió {n} celdas': 'The AI changed {n} cells',
   // ProposalSheet
   nueva: 'new',
+  vaciar: 'clear',
   'Antes: {value}': 'Before: {value}',
   'Antes: {value} (fórmula)': 'Before: {value} (formula)',
   'Editado por ti': 'Edited by you',

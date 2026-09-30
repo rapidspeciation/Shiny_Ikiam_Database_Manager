@@ -68,6 +68,11 @@ describe('a cell of the proposal table', () => {
     // A new row's cell the person emptied is still theirs.
     expect(cellOf(created('c1', {}, { personEdits: { Sex: { ai: 'male' } } }), 'Sex')).toMatchObject({ value: null, kind: 'person' })
   })
+  it('an existing cell the proposal empties ({ clear: true }) is a change with the value it removes, shown as "vaciar"', () => {
+    expect(cellOf(edited('r1', { Sex: null }), 'Sex')).toMatchObject({ value: null, kind: 'proposed', was: 'male' })
+    // Leaving the column out is no change: the sheet's value, grey.
+    expect(cellOf(edited('r1', {}), 'Sex')).toMatchObject({ value: 'male', kind: 'sheet' })
+  })
 })
 
 describe('the tables of a proposal', () => {

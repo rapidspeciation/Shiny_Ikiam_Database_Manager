@@ -12,7 +12,8 @@ import { TUBE_FIELD, isIdValue, isUnique } from './verifications.mjs';
 import { listOptions, listProblem } from './verify.mjs';
 import { queueWalk, walkDraft } from './walks.mjs';
 import { claudeAllowed, claudeConfig, prepareWorkspace, runClaude } from './claude.mjs';
-import { KINDS } from './notebook.mjs';
+import { KINDS, isNone, noteText } from './notebook.mjs';
+import { RECORD_TOOLS, compactRecord, countRecords, findRecords } from './records-tool.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
 import { newRowFormulaFields } from './premade.mjs';
 import { KNOWLEDGE_TOOLS, createKnowledge, runKnowledgeTool } from './knowledge.mjs';
@@ -45,12 +46,30 @@ const parse = value => {
   }
 };
 
+/*
+ * What the assistant's values mean in a proposal. Emptying a cell is never
+ * implicit: null (or leaving the column out) is "no change there", and only
+ * { clear: true } empties a cell. A note the assistant adds keeps the team's
+ * "d/m/yy INI: " form after what the cell holds; { replace } rewrites it.
+ */
+const VALUES_DOC =
+  'Column → value; dates as YYYY-MM-DD, times as H:MM. null (or leaving the column out) = no change there; {"clear": true} = empty the cell; in a notes column your text is added after the existing note ({"replace": "…"} rewrites it).';
+const VALUES_RULES =
+  'Values: null never empties a cell (it means no change); to empty one give {"clear": true}, only when the person wants it emptied. Notes columns (NOTES, Notes, Notes_…): give only the new text; it is written as "d/m/yy INI: text" (today, the person\'s initials) after the existing note with " | ", never over it, unless you give {"replace": "the whole note"} because the person asked to rewrite it.';
+/** A value the assistant dropped (null in update_proposal): the cell goes back to no change. */
+const DROP = Symbol('drop');
+const NOTE_FIELD = /^notes?(?:_|$)/i;
+/** A note already in the team's form: "29/9/26 FCH:", "16/06/2023 AA:", "23Ago26 PAS". */
+const NOTE_PREFIX = /^\s*(?:\d{1,2}\s*[/.-]\s*\d{1,2}\s*[/.-]\s*\d{2,4}|\d{1,2}\s*[A-Za-z]{3}\s*\d{2,4})\s+[A-ZÑ]{2,4}\b/;
+const ecuadorDay = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(new Date());
+
 const TOOLS = [
   {
     type: 'function',
     function: {
       name: 'search_records',
-      description: 'Search workbook rows by free text. Returns a small list with sheet, row and app ID.',
+      description:
+        'Search workbook rows by free text. Returns a small list (12) with sheet, row and app ID. For exact identifiers or column conditions use find_records; for counts, count_records.',
       parameters: {
         type: 'object',
         properties: { query: { type: 'string' }, module: { type: 'string' } },
@@ -58,28 +77,13 @@ const TOOLS = [
       },
     },
   },
-  {
-    type: 'function',
-    function: {
-      name: 'find_records',
-      description:
-        'Fetch many rows at once by exact identifier, e.g. the Insectary_IDs read from a notebook page. Returns found rows (non-empty typed values; dates as YYYY-MM-DD) and the identifiers not found.',
-      parameters: {
-        type: 'object',
-        properties: {
-          module: { type: 'string', description: 'Sheet, e.g. Insectary_data, Collection_data, Insectary_stocks' },
-          field: { type: 'string', description: 'Column to match, e.g. Insectary_ID, CAM_ID, CLUTCH NUMBER' },
-          values: { type: 'array', items: { type: 'string' }, description: 'Up to 150 identifiers' },
-        },
-        required: ['module', 'field', 'values'],
-      },
-    },
-  },
+  ...RECORD_TOOLS,
   {
     type: 'function',
     function: {
       name: 'get_record',
-      description: 'Fetch one row by app ID, including its sheet row and version.',
+      description:
+        'Fetch one row by app ID, including its sheet row and version: every non-empty value (formula cells with their computed value) and formulas = the formula text of each formula cell.',
       parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
     },
   },
@@ -169,7 +173,8 @@ const TOOLS = [
     function: {
       name: 'propose_changes',
       description:
-        'Draft edits to existing rows (changes) and/or new rows (newRows, e.g. from get_walk). They appear to the person as a table with the changed cells highlighted and are only written when the person confirms. Formula cells cannot be changed, except SPECIES in Insectary_data when what emerged differs from the formula prediction. Give a short note per row saying where the value comes from. Use one proposal per task (e.g. one per walk or per kind of fix).',
+        'Draft edits to existing rows (changes) and/or new rows (newRows, e.g. from get_walk). They appear to the person as a table with the changed cells highlighted and are only written when the person confirms. Formula cells cannot be changed, except SPECIES in Insectary_data when what emerged differs from the formula prediction. Give a short note per row saying where the value comes from. Use one proposal per task (e.g. one per walk or per kind of fix). ' +
+        VALUES_RULES,
       parameters: {
         type: 'object',
         properties: {
@@ -179,7 +184,7 @@ const TOOLS = [
               type: 'object',
               properties: {
                 recordId: { type: 'string' },
-                values: { type: 'object', description: 'Column → new value; dates as YYYY-MM-DD' },
+                values: { type: 'object', description: VALUES_DOC },
                 note: { type: 'string' },
               },
               required: ['recordId', 'values'],
@@ -191,7 +196,7 @@ const TOOLS = [
               type: 'object',
               properties: {
                 sheet: { type: 'string' },
-                values: { type: 'object', description: 'Column → value; dates as YYYY-MM-DD, times as H:MM' },
+                values: { type: 'object', description: `${VALUES_DOC} In a new row, null and {"clear": true} just leave the cell empty.` },
                 note: { type: 'string' },
               },
               required: ['sheet', 'values'],
@@ -245,7 +250,7 @@ const TOOLS = [
     function: {
       name: 'update_proposal',
       description:
-        "Revise a pending proposal in place (the person sees the table change live): when the person corrects something ('la especie es X', 'quita la fila 3', 'falta el colector'), update the SAME proposal instead of making a new one. rows = cells of rows already in it, by their index (null empties a cell of a new row, or drops a proposed change of an existing row); changes / newRows = more rows (a recordId already in it is merged into its row); removeRows = indexes to take out. Every value is checked as in propose_changes (nothing is saved if one fails). Cells the person edited in the table are theirs: they come back as conflicts and are kept; tell the person, and set overridePersonEdits only when they ask you to replace them. Returns the proposal's rows with their index.",
+        `Revise a pending proposal in place (the person sees the table change live): when the person corrects something ('la especie es X', 'quita la fila 3', 'falta el colector'), update the SAME proposal instead of making a new one. rows = cells of rows already in it, by their index: a value replaces what you proposed there; null drops your proposed change to that cell (an existing row keeps the sheet's value, a new row's cell stays empty) and never empties a cell; {"clear": true} empties the sheet's cell (only when the person wants it emptied; the table shows it in red as vaciar). changes / newRows = more rows (a recordId already in it is merged into its row); removeRows = indexes to take out. Every value is checked as in propose_changes (nothing is saved if one fails). Notes columns: your text is added after the existing note with the "d/m/yy INI: " prefix ({"replace": "…"} rewrites the whole note, only when asked). Cells the person edited in the table are theirs: they come back as conflicts and are kept; tell the person, and set overridePersonEdits only when they ask you to replace them. Returns the proposal's rows with their index (a cell to be emptied shows as {"clear": true}; context rows of match_notebook are marked context and never written).`,
       parameters: {
         type: 'object',
         properties: {
@@ -256,7 +261,11 @@ const TOOLS = [
               type: 'object',
               properties: {
                 index: { type: 'integer', description: 'The row index in the proposal (propose_changes / get_proposal)' },
-                values: { type: 'object', description: 'Column → new value (null to empty); dates as YYYY-MM-DD, times as H:MM' },
+                values: {
+                  type: 'object',
+                  description:
+                    'Column → new value; dates as YYYY-MM-DD, times as H:MM. null = drop your change to that cell (it does NOT empty it); {"clear": true} = empty the cell',
+                },
                 note: { type: 'string' },
               },
               required: ['index'],
@@ -266,7 +275,7 @@ const TOOLS = [
             type: 'array',
             items: {
               type: 'object',
-              properties: { recordId: { type: 'string' }, values: { type: 'object' }, note: { type: 'string' } },
+              properties: { recordId: { type: 'string' }, values: { type: 'object', description: VALUES_DOC }, note: { type: 'string' } },
               required: ['recordId', 'values'],
             },
           },
@@ -464,51 +473,20 @@ export function createAssistant({ store, config = {} }) {
     return publicMessage(message);
   };
 
-  /** A row as the model sees it: typed values only (formula results are omitted), dates readable. */
-  function compact(record) {
-    const mod = moduleMap.get(record.sheet);
-    const dates = new Set(mod?.fields.filter(f => f.type === 'date').map(f => f.key));
-    const keepFormula = TYPED_OVER_FORMULA[record.sheet] ?? new Set();
-    const values = {};
-    for (const [key, value] of Object.entries(record.values ?? {})) {
-      if (value === null || value === '') continue;
-      if (record.formulas?.[key] && !keepFormula.has(key)) continue;
-      values[key] = dates.has(key) && typeof value === 'number' ? isoDate(value) : value;
-    }
-    return {
-      id: record.id,
-      sheet: record.sheet,
-      row: record.row,
-      label: record.label,
-      version: record.version,
-      values,
-      formulaColumns: Object.keys(record.formulas ?? {}),
-    };
-  }
+  /** A row as the model sees it: every value (formula cells computed), dates readable, the formulas worth reading. */
+  const compact = (record, options) => compactRecord(record, options);
 
-  function findRecords(args, context) {
-    const mod = moduleMap.get(String(args.module ?? ''));
-    if (!mod) return { error: `Unknown sheet ${clip(args.module, 60)}` };
-    const field = String(args.field ?? '');
-    if (!mod.fields.some(f => f.key === field)) return { error: `Unknown column ${clip(field, 60)}` };
-    if (!Array.isArray(args.values) || !args.values.length) return { error: 'Give at least one identifier' };
-    const query = db.prepare(
-      'SELECT id FROM records WHERE sheet = ? AND missing = 0 AND row_num > 0 AND lower(trim(CAST(json_extract(values_json, ?) AS TEXT))) = ?',
-    );
-    const found = [],
-      missing = [];
-    for (const raw of args.values.slice(0, 150)) {
-      const value = String(raw).trim();
-      const ids = query.all(mod.id, `$."${field.replaceAll('"', '')}"`, value.toLowerCase());
-      if (!ids.length) missing.push(value);
-      for (const { id } of ids) {
-        const record = store.getRecord(id);
-        context.records.set(record.id, record);
-        context.sources.set(record.id, recordSource(record));
-        found.push(compact(record));
-      }
+  /** find_records (server/records-tool.mjs): the rows it returns can be cited. */
+  function findRows(args, context) {
+    // Models reached through the API get tool answers cut at 18000 characters: a smaller budget.
+    const out = findRecords(db, args, context.findBudget ? { budget: context.findBudget } : undefined);
+    for (const row of out.found ?? []) {
+      const record = store.getRecord(row.id);
+      if (!record) continue;
+      context.records.set(record.id, record);
+      context.sources.set(record.id, recordSource(record));
     }
-    return { found, missing };
+    return out;
   }
 
   function describeSheet(args) {
@@ -542,7 +520,7 @@ export function createAssistant({ store, config = {} }) {
           ...(seen && seen.size <= 30 ? { values: [...seen.keys()] } : {}),
         };
       }),
-      latestRows: recent.slice(0, 3).map(compact),
+      latestRows: recent.slice(0, 3).map(r => compact(r)),
     };
   }
 
@@ -698,8 +676,88 @@ export function createAssistant({ store, config = {} }) {
     return proposal;
   }
 
-  function proposeChanges(args, context) {
+  const initialsCache = new Map();
+  const initialsOf = user => {
+    const key = owner(user) || user?.username || '';
+    const hit = initialsCache.get(key);
+    if (hit && hit.until > Date.now()) return hit.value;
+    const value = initialsFor(user);
+    initialsCache.set(key, { value, until: Date.now() + 600000 });
+    return value;
+  };
+
+  /**
+   * A note the assistant writes, in the team's form: "d/m/yy INI: text" after
+   * what the cell already holds (" | " between them), never over it. Text that
+   * already starts with the old note (the assistant kept it) only gets its new
+   * part prefixed; a note already dated keeps its own prefix.
+   */
+  function addedNote(before, text, user) {
+    const note = String(text).trim();
+    const dated = s => (NOTE_PREFIX.test(s) ? s : noteText(s, { today: ecuadorDay(), initials: initialsOf(user) }));
+    if (isNone(before)) return dated(note);
+    const old = String(before).trim();
+    if (note === old) return old;
+    if (note.startsWith(old)) {
+      const tail = note.slice(old.length).replace(/^\s*\|\s*/, '').trim();
+      return tail ? `${old} | ${dated(tail)}` : old;
+    }
+    return `${old} | ${dated(note)}`;
+  }
+
+  /**
+   * The values the assistant gave for one row, as a proposal keeps them. null,
+   * "" or a missing value is no change (listed in `ignored`, or DROP with
+   * keepDrops, for update_proposal to take back a change it proposed);
+   * { clear: true } empties an existing row's cell (null, the only way to);
+   * { replace: text } is taken as it is; a note is added after the existing one.
+   */
+  function fromAssistant(record, raw, user, { keepDrops = false } = {}) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { values: raw, ignored: [] };
+    const values = {},
+      ignored = [];
+    const nothing = field => (keepDrops ? (values[field] = DROP) : ignored.push(field));
+    for (const [field, value] of Object.entries(raw)) {
+      const object = value && typeof value === 'object' && !Array.isArray(value);
+      if (value === null || value === undefined || value === '') nothing(field);
+      else if (object && (value.clear === true || ('replace' in value && isNone(value.replace) && value.replace !== 'NA'))) {
+        if (record) values[field] = null;
+        else if (keepDrops) values[field] = DROP;
+      } else if (object && 'replace' in value) values[field] = value.replace;
+      else if (NOTE_FIELD.test(field) && typeof value === 'string') values[field] = addedNote(record?.values?.[field], value, user);
+      else values[field] = value;
+    }
+    return { values, ignored };
+  }
+
+  /** propose_changes' arguments with the assistant's values read as fromAssistant says. */
+  function assistantArgs(args, user) {
+    const ignored = [];
+    const changes = [];
+    for (const change of Array.isArray(args.changes) ? args.changes : []) {
+      const record = store.getRecord(String(change?.recordId ?? ''));
+      const out = fromAssistant(record && !record.missing ? record : null, change?.values, user);
+      ignored.push(...out.ignored.map(field => `${record?.label ?? clip(change?.recordId, 60)}: ${field}`));
+      // Only nulls: nothing to change in that row.
+      if (out.ignored.length && out.values && !Object.keys(out.values).length) continue;
+      changes.push({ ...change, values: out.values });
+    }
+    const newRows = (Array.isArray(args.newRows) ? args.newRows : []).map(row => ({
+      ...row,
+      values: fromAssistant(null, row?.values, user).values,
+    }));
+    return { args: { ...args, changes, newRows }, ignored };
+  }
+
+  /**
+   * propose_changes as the assistant calls it; `literal` for fixes built by the
+   * app (the Revisión tab), whose values are taken as they are.
+   */
+  function proposeChanges(input, context, { literal = false } = {}) {
     if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot propose edits' };
+    const { args, ignored } = literal ? { args: input, ignored: [] } : assistantArgs(input, context.user);
+    if (ignored.length && !args.changes.length && !args.newRows.length)
+      return { error: 'Every value was null, and null means no change. To empty a cell give {"clear": true}.' };
     const drafted = draftChanges(args);
     if (drafted.error) return drafted;
     const { changes } = drafted;
@@ -711,6 +769,7 @@ export function createAssistant({ store, config = {} }) {
       rows: changes.length,
       status: 'waiting for the person to confirm',
       ...(dropped.length ? { leftOut: `Formula columns left out of the new rows: ${dropped.join(', ')}` } : {}),
+      ...(ignored.length ? { noChange: ignored.slice(0, 50), noChangeNote: 'null means no change: these cells keep the sheet value. To empty one give {"clear": true}.' } : {}),
       // Row indexes for update_proposal (new rows first, then edits of existing rows).
       table: changes.map((c, index) => ({ index, sheet: c.sheet, label: c.label, ...(c.create ? { create: true } : { row: c.row }) })),
     };
@@ -742,6 +801,11 @@ export function createAssistant({ store, config = {} }) {
   /** A cell of a row set (not yet checked). In an existing row, the sheet's own value means no change there. */
   function setCell(change, field, value) {
     const values = { ...change.values };
+    // The assistant dropped its change: the cell goes back to the sheet's value (or empty, in a new row).
+    if (value === DROP) {
+      delete values[field];
+      return { ...change, values };
+    }
     if (!change.create && !isSumField(change.sheet, field)) {
       const record = store.getRecord(change.recordId);
       if (same(normal(change.sheet, field, value), record?.values?.[field] ?? null)) {
@@ -807,8 +871,8 @@ export function createAssistant({ store, config = {} }) {
         const current = proposedOf(row, field);
         const mark = row.personEdits?.[field];
         if (by === 'ai' && mark && !force) {
-          if (!same(normal(row.sheet, field, value), current))
-            out.conflicts.push({ ...where(i), field, person: current ?? null, yours: value });
+          if (value === DROP ? current !== undefined : !same(normal(row.sheet, field, value), current))
+            out.conflicts.push({ ...where(i), field, person: current ?? null, yours: value === DROP ? 'no change' : value });
           continue;
         }
         const drafted = redraftRow(setCell(row, field, value), i, rows.filter((_, j) => j !== i), used);
@@ -831,6 +895,8 @@ export function createAssistant({ store, config = {} }) {
           else marks[field] = { ...(ai === undefined ? {} : { ai }), by: who, at: now() };
         }
         rows[i] = { ...next, personEdits: Object.keys(marks).length ? marks : undefined };
+        // A notebook line shown only for context becomes a real change once someone gives it a value.
+        if (rows[i].context && Object.keys(rows[i].values).length) rows[i] = { ...rows[i], context: undefined };
       }
     }
 
@@ -896,7 +962,11 @@ export function createAssistant({ store, config = {} }) {
       sheet: c.sheet,
       label: c.label,
       ...(c.create ? { create: true } : { row: c.row, recordId: c.recordId }),
-      values: Object.fromEntries(Object.entries(c.values).map(([f, v]) => [f, readable(c.sheet, f, v)])),
+      ...(c.context ? { context: 'already in the sheet: shown for context, never written' } : {}),
+      // An existing row's cell to be emptied reads as it is given: { clear: true } (null means no change).
+      values: Object.fromEntries(
+        Object.entries(c.values).map(([f, v]) => [f, v === null && !c.create ? { clear: true } : readable(c.sheet, f, v)]),
+      ),
       ...(c.note ? { note: c.note } : {}),
       ...(c.personEdits
         ? {
@@ -936,17 +1006,23 @@ export function createAssistant({ store, config = {} }) {
     if (proposal.status !== 'pending')
       return { error: `The proposal is ${proposal.status}; draft a new one with propose_changes` };
     const changes = parse(proposal.changes_json) ?? [];
-    const set = (Array.isArray(args.rows) ? args.rows : []).map(r => ({
-      ref: Number.isInteger(r?.index) ? r.index : -1,
-      values: r?.values,
-      note: r?.note,
-    }));
-    const add = { changes: [], newRows: Array.isArray(args.newRows) ? args.newRows : [] };
+    // The assistant's values: null takes back its change to a cell, { clear: true } empties it, notes are added.
+    const own = (i, values) => {
+      const row = changes[i];
+      const record = row && !row.create ? store.getRecord(row.recordId) : null;
+      return fromAssistant(record, values, context.user, { keepDrops: true }).values;
+    };
+    const set = (Array.isArray(args.rows) ? args.rows : []).map(r => {
+      const ref = Number.isInteger(r?.index) ? r.index : -1;
+      return { ref, values: own(ref, r?.values), note: r?.note };
+    });
+    const extra = assistantArgs({ changes: [], newRows: args.newRows }, context.user).args;
+    const add = { changes: [], newRows: extra.newRows };
     // A row already in the proposal is revised, not added twice.
     for (const c of Array.isArray(args.changes) ? args.changes : []) {
       const i = changes.findIndex(r => !r.create && r.recordId === String(c?.recordId ?? ''));
-      if (i >= 0) set.push({ ref: i, values: c.values, note: c.note });
-      else add.changes.push(c);
+      if (i >= 0) set.push({ ref: i, values: own(i, c.values), note: c.note });
+      else add.changes.push(...assistantArgs({ changes: [c] }, context.user).args.changes);
     }
     const remove = (Array.isArray(args.removeRows) ? args.removeRows : []).filter(Number.isInteger);
     if (!set.length && !remove.length && !add.changes.length && !add.newRows.length && !args.reason)
@@ -1016,10 +1092,11 @@ export function createAssistant({ store, config = {} }) {
     if (!EDITORS.includes(user.role))
       throw Object.assign(new Error('Your role cannot apply changes.'), { status: 403, code: 'forbidden' });
     const all = parse(proposal.changes_json) ?? [];
-    // A row left without values (the person emptied it in the table) has nothing to write.
+    // A row left without values (the person emptied it in the table) has nothing to write, and a
+    // notebook line shown only for context (match_notebook includeUnchanged) is never written.
     const chosen = (
       Array.isArray(indexes) && indexes.length ? [...new Set(indexes.map(Number))].filter(i => all[i]) : all.map((_, i) => i)
-    ).filter(i => Object.keys(all[i].values ?? {}).length);
+    ).filter(i => Object.keys(all[i].values ?? {}).length && !all[i].context);
     if (!chosen.length) throw Object.assign(new Error('No rows selected.'), { status: 400, code: 'nothing_selected' });
     const claimed = db
       .prepare("UPDATE ai_proposals SET status = 'applying' WHERE id = ? AND status = 'pending'")
@@ -1150,16 +1227,17 @@ export function createAssistant({ store, config = {} }) {
         context.records.set(record.id, record);
         context.sources.set(record.id, recordSource(record));
       }
-      return { records: (page.records ?? []).map(compact), total: page.total };
+      return { records: (page.records ?? []).map(r => compact(r)), total: page.total };
     }
-    if (name === 'find_records') return findRecords(args, context);
+    if (name === 'find_records') return findRows(args, context);
+    if (name === 'count_records') return countRecords(db, args);
     if (name === 'describe_sheet') return describeSheet(args);
     if (name === 'get_record') {
       const record = store.getRecord(clip(args.id, 120));
       if (!record) return { error: 'Record not found' };
       context.records.set(record.id, record);
       context.sources.set(record.id, recordSource(record));
-      return compact(record);
+      return compact(record, { allFormulas: true });
     }
     if (['search_knowledge', 'read_document', 'list_documents', 'sync_documents'].includes(name))
       return runKnowledgeTool(knowledge, name, args, context);
@@ -1244,6 +1322,8 @@ export function createAssistant({ store, config = {} }) {
       `Today is ${now().slice(0, 10)}. You are talking with ${user.displayName || user.username} (initials ${initialsFor(user)}, role ${user.role}).`,
       'Reply briefly, in the language the person writes in (Spanish or English); sheet names, column names, codes and values stay exactly as they are in the workbook. Refer to rows by their identifier (e.g. 5VB, CAM078038) and sheet row, never by internal app IDs.',
       'Use the tools to read exact rows before answering. Only claim what the tools show. Never infer survival, fertility, mating, genotype or identity from counts.',
+      'Questions over many rows: find_records with filters, near (distance to a place) and only the fields you need; count_records for counts. When an answer is truncated, narrow it; never read the database or the server files instead.',
+      'In proposals, null means no change; empty a cell only with {"clear": true} when the person asks. Notes you add go after the existing note as "d/m/yy INI: text".',
       'Changes are drafted with propose_changes; the person reviews them in a table and confirms. Use apply_proposal only when their latest message explicitly approves a proposal. Never say a change was written unless apply_proposal returned applied.',
       'When the person corrects a pending proposal ("la especie es X", "quita esa fila"), revise the same one with update_proposal (rows by index) instead of drafting a new one. The person can also edit cells in the table: get_proposal shows their edits (personEdits); never overwrite them unless they ask (update_proposal returns them as conflicts).',
       'check_data lists inconsistencies with ready fixes; queue_wikiloc and get_walk turn a Wikiloc monitoring walk into newRows for propose_changes.',
@@ -1358,6 +1438,7 @@ export function createAssistant({ store, config = {} }) {
           })),
         ],
       };
+    context.findBudget = 15000;
     for (let round = 0; round < 6; round++) {
       const response = await complete(ai, messages);
       if (!response.tool_calls?.length) return clip(response.content, 12000);
@@ -1504,7 +1585,13 @@ export function createAssistant({ store, config = {} }) {
           review: 'The person reviews it in the app: Asistente → Cambios propuestos, or tells you to apply it.',
         };
       }
-      return result({ content: [{ type: 'text', text: json(out).slice(0, 200000) }], isError: Boolean(out?.error) });
+      // An answer cut in the middle is no JSON at all: say so instead, so the query is narrowed.
+      let text = json(out);
+      if (text.length > 200000) {
+        out = { error: `The answer was too long (${text.length} characters). Narrow the query: filters, fields, limit, or count_records for counts.` };
+        text = json(out);
+      }
+      return result({ content: [{ type: 'text', text }], isError: Boolean(out?.error) });
     }
     return { status: 200, body: { jsonrpc: '2.0', id, error: { code: -32601, message: 'Method not found' } } };
   }
@@ -1531,19 +1618,25 @@ export function createAssistant({ store, config = {} }) {
       : null;
     const { review } = matched;
     // The same rows in another pending proposal: the page matched again, maybe in another conversation.
-    const rows = new Set(matched.changes.map(c => c.recordId).filter(Boolean));
+    // Context rows (includeUnchanged) write nothing: they neither overlap nor make a proposal alone.
+    const writes = matched.changes.some(c => !c.context);
+    const rows = new Set(matched.changes.filter(c => !c.context).map(c => c.recordId).filter(Boolean));
     const overlaps = rows.size
       ? db
           .prepare("SELECT id, reason, changes_json FROM ai_proposals WHERE owner_id = ? AND status = 'pending' AND id != ?")
           .all(owner(context.user), replaced?.id ?? '')
-          .map(p => ({ id: p.id, reason: p.reason, rows: (parse(p.changes_json) ?? []).filter(c => rows.has(c.recordId)).map(c => c.label) }))
+          .map(p => ({
+            id: p.id,
+            reason: p.reason,
+            rows: (parse(p.changes_json) ?? []).filter(c => !c.context && rows.has(c.recordId)).map(c => c.label),
+          }))
           .filter(p => p.rows.length)
           .map(p => ({ proposalId: p.id, reason: p.reason, rows: p.rows.slice(0, 10), count: p.rows.length }))
       : [];
     const reason = `Cuaderno ${KINDS[review.kind].label} (${review.sheet})${args.title ? `: ${clip(args.title, 120)}` : ''}`;
     let proposal = null;
     let conflicts = [];
-    if (editor && replaced && matched.changes.length) {
+    if (editor && replaced && writes) {
       // The corrected page takes the place of its proposal (same id): the table beside the chat changes in place.
       const carried = carryPersonEdits(parse(replaced.changes_json) ?? [], matched.changes, context.user);
       conflicts = carried.conflicts;
@@ -1552,7 +1645,7 @@ export function createAssistant({ store, config = {} }) {
       db.prepare("UPDATE ai_proposals SET status = 'discarded' WHERE id = ? AND status = 'pending'").run(replaced.id);
       changed(owner(context.user));
     }
-    if (editor && matched.changes.length && !proposal) proposal = saveProposal(matched.changes, reason, context);
+    if (editor && writes && !proposal) proposal = saveProposal(matched.changes, reason, context);
     return {
       ...matchSummary(matched, proposal?.id),
       ...(replaced ? { replaced: replaced.id } : {}),
@@ -1765,6 +1858,7 @@ export function createAssistant({ store, config = {} }) {
           changes: [...merged.values()].map(c => ({ recordId: c.recordId, values: c.values, note: c.notes.join(' · ') })),
         },
         context,
+        { literal: true },
       );
       if (out.error) return bad(409, 'invalid_fix', out.error);
       insertMessage(threadId, 'assistant', 'Arreglos propuestos desde Revisión de datos', [], [], context.proposals);
@@ -1790,6 +1884,7 @@ export function createAssistant({ store, config = {} }) {
           issueIds: agreed.fixes.map(f => f.issueId),
         },
         context,
+        { literal: true },
       );
       if (out.error) return bad(409, 'invalid_fix', out.error);
       insertMessage(threadId, 'assistant', 'Correcciones acordadas en Revisión', [], [], context.proposals);
