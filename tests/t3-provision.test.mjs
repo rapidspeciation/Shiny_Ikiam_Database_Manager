@@ -88,3 +88,40 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     rmSync(home, { recursive: true, force: true });
   }
 });
+
+test('Another install (the local lab) sets the database, MCP address, workspaces and source by env', () => {
+  const home = mkdtempSync(join(tmpdir(), 't3-provision-lab-'));
+  try {
+    const lab = join(home, 'lab');
+    mkdirSync(lab, { recursive: true });
+    const database = join(lab, 'app.sqlite');
+    const db = new DatabaseSync(database);
+    db.exec(`CREATE TABLE users(id TEXT PRIMARY KEY, username TEXT UNIQUE NOT NULL, display_name TEXT NOT NULL, role TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1);
+      CREATE TABLE ai_tokens(token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, label TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT);
+      INSERT INTO users VALUES ('u1','lab','Lab','admin',1);`);
+    const workspaces = join(home, 't3-lab', 'workspaces');
+    const env = {
+      ...process.env,
+      HOME: home,
+      CODEX_HOME: join(home, '.codex'),
+      ITHOMIINI_SHARED: lab,
+      DATABASE_PATH: database,
+      ITHOMIINI_MCP_URL: 'http://127.0.0.1:8795/api/ai/mcp',
+      ITHOMIINI_T3_WORKSPACES: workspaces,
+      ITHOMIINI_SRC: '/work/ithomiini',
+      ITHOMIINI_DENY_READ: `${lab}:/secret/answers/`,
+      T3_BIN: '/bin/true',
+    };
+    execFileSync(process.execPath, [script, 'lab'], { env, encoding: 'utf8' });
+    const workspace = join(workspaces, 'lab');
+    assert.equal(JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8')).mcpServers.ithomiini.url, 'http://127.0.0.1:8795/api/ai/mcp');
+    assert.match(readFileSync(join(workspace, 'CLAUDE.md'), 'utf8'), /git checkout `\/work\/ithomiini`/);
+    const deny = JSON.parse(readFileSync(join(workspace, '.claude', 'settings.json'), 'utf8')).permissions.deny;
+    assert.ok(deny.includes(`Read(/${database}*)`));
+    assert.ok(deny.includes(`Read(/${lab}/**)`) && deny.includes('Read(//secret/answers/**)'));
+    assert.equal(db.prepare('SELECT count(*) n FROM ai_tokens WHERE revoked_at IS NULL').get().n, 1);
+    db.close();
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});

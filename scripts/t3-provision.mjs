@@ -6,6 +6,11 @@
 //   node scripts/t3-provision.mjs <username>     new person, or a fresh token
 //   node scripts/t3-provision.mjs --refresh-all  after a release (scripts/deploy.sh):
 //     every existing workspace gets the new brief and skills and keeps its token.
+// The server's paths are the defaults; another install (the local test lab, tools/lab) sets them:
+//   ITHOMIINI_SHARED (shared folder), DATABASE_PATH, ITHOMIINI_MCP_URL (or ITHOMIINI_SERVICE_ENV),
+//   ITHOMIINI_T3_WORKSPACES (default <shared>/t3-workspaces), ITHOMIINI_SRC (the source checkout
+//   the brief names), ITHOMIINI_CONFIG_DIR (the service's secrets), ITHOMIINI_DOCS, T3_BIN, and
+//   ITHOMIINI_DENY_READ (more folders Claude threads may not read, separated by ":").
 
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomBytes } from 'node:crypto';
@@ -34,10 +39,15 @@ function serviceMcpUrl() {
 }
 const mcpUrl = process.env.ITHOMIINI_MCP_URL || serviceMcpUrl();
 const t3 = process.env.T3_BIN || join(process.env.HOME, '.local/bin/t3');
-const workspaces = join(shared, 't3-workspaces');
+const workspaces = process.env.ITHOMIINI_T3_WORKSPACES || join(shared, 't3-workspaces');
+/** The install's root (releases/, current/ and src/ beside shared/) and the service's secrets. */
+const root = dirname(shared);
+const source = process.env.ITHOMIINI_SRC || join(root, 'src');
+const configDir = process.env.ITHOMIINI_CONFIG_DIR || join(process.env.HOME, '.config', 'ithomiini');
+const extraDeny = (process.env.ITHOMIINI_DENY_READ || '').split(':').filter(Boolean);
 // The docs of the release that is live (`current`), so the path survives the next release.
-const liveDocs = join(dirname(shared), 'current', 'docs');
-const docs = existsSync(liveDocs) ? liveDocs : join(release, 'docs');
+const liveDocs = join(root, 'current', 'docs');
+const docs = process.env.ITHOMIINI_DOCS || (existsSync(liveDocs) ? liveDocs : join(release, 'docs'));
 
 const arg = process.argv[2];
 if (!arg) throw new Error('Usage: t3-provision.mjs <username> | --refresh-all');
@@ -99,9 +109,9 @@ codes and values stay exactly as they are in the workbook.
 - This folder is your working folder: keep downloads and generated files in
   \`work/<date>-<topic>/\` here (several chats share it; don't reuse names).
 - **Changing the app itself** (screens, grids, tools, texts): use the skill
-  \`app-dev\` — the source is the git checkout \`/home/ubuntu/ithomiini/src\`
+  \`app-dev\` — the source is the git checkout \`${source}\`
   (build, test, commit, push, \`scripts/deploy.sh\`). Never edit the built
-  files in \`/home/ubuntu/ithomiini/releases\` or \`current\`.
+  files in \`${join(root, 'releases')}\` or \`current\`.
 - Long notebook pages: split the reading across subagents and always run the
   skill's adversarial second reading before summarising.
 - The project's Google account (jmithominii@gmail.com) is available with gog:
@@ -249,13 +259,14 @@ function provision(user, { freshToken, addProject }) {
   settings.permissions.deny = [
     ...new Set([
       ...(settings.permissions.deny ?? []),
-      'Read(//home/ubuntu/.config/ithomiini/service.env)',
-      'Read(//home/ubuntu/.config/ithomiini/*.json)',
-      'Read(//home/ubuntu/ithomiini/shared/database.sqlite*)',
-      'Edit(//home/ubuntu/ithomiini/releases/**)',
-      'Edit(//home/ubuntu/ithomiini/current/**)',
-      'Write(//home/ubuntu/ithomiini/releases/**)',
-      'Write(//home/ubuntu/ithomiini/current/**)',
+      `Read(/${join(configDir, 'service.env')})`,
+      `Read(/${join(configDir, '*.json')})`,
+      `Read(/${database}*)`,
+      `Edit(/${join(root, 'releases')}/**)`,
+      `Edit(/${join(root, 'current')}/**)`,
+      `Write(/${join(root, 'releases')}/**)`,
+      `Write(/${join(root, 'current')}/**)`,
+      ...extraDeny.map(folder => `Read(/${folder.replace(/\/+$/, '')}/**)`),
     ]),
   ];
   writeFileSync(settingsFile, JSON.stringify(settings, null, 2));
