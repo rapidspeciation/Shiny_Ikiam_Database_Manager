@@ -96,7 +96,14 @@ codes and values stay exactly as they are in the workbook.
   (see "Historial" below).
 - Project documentation (protocols, audit, monitoring, column map) is in
   \`${docs}\`.
-- This folder is your working folder: keep downloads and generated files here.
+- This folder is your working folder: keep downloads and generated files in
+  \`work/<date>-<topic>/\` here (several chats share it; don't reuse names).
+- **Changing the app itself** (screens, grids, tools, texts): use the skill
+  \`app-dev\` — the source is the git checkout \`/home/ubuntu/ithomiini/src\`
+  (build, test, commit, push, \`scripts/deploy.sh\`). Never edit the built
+  files in \`/home/ubuntu/ithomiini/releases\` or \`current\`.
+- Long notebook pages: split the reading across subagents and always run the
+  skill's adversarial second reading before summarising.
 - The project's Google account (jmithominii@gmail.com) is available with gog:
   \`set -a; . ~/.config/ithomiini/gog.env; set +a; gog --readonly --account jmithominii@gmail.com --client ithomiini <command>\`
   (gmail search/get, drive, docs, sheets, slides, calendar, forms, appscript;
@@ -141,6 +148,15 @@ function keptToken(workspace, user) {
   }
 }
 
+/** The PATH of the assistant's shell commands (Claude and Codex threads). */
+const TOOLS_PATH = [
+  process.execPath.replace(/\/node$/, ''),
+  join(process.env.HOME, '.local', 'bin'),
+  '/usr/local/bin',
+  '/usr/bin',
+  '/bin',
+].join(':');
+
 /**
  * The app's tools for Codex (GPT threads in T3): Codex reads neither .mcp.json nor
  * .claude, so the workspace gets .codex/config.toml with the same server and token,
@@ -161,6 +177,9 @@ function codexConfig(workspace, token) {
 url = ${q(mcpUrl)}
 http_headers = { Authorization = ${q(`Bearer ${token}`)} }
 default_tools_approval_mode = "approve"
+
+[shell_environment_policy]
+set = { PATH = ${q(TOOLS_PATH)} }
 `,
     { mode: 0o600 },
   );
@@ -221,8 +240,24 @@ function provision(user, { freshToken, addProject }) {
     /* A new workspace. */
   }
   settings.enableAllProjectMcpServers = true;
+  // T3's service PATH lacks the tools: node/npm (building and testing the app's source in
+  // ~/ithomiini/src), gog (the project Google account), claude and codex.
+  settings.env = { ...settings.env, PATH: TOOLS_PATH };
   settings.permissions ??= {};
   settings.permissions.allow = [...new Set([...(settings.permissions.allow ?? []), 'mcp__ithomiini', 'Skill'])];
+  // Secrets and built releases are off limits (data goes through the tools; code through ~/ithomiini/src).
+  settings.permissions.deny = [
+    ...new Set([
+      ...(settings.permissions.deny ?? []),
+      'Read(//home/ubuntu/.config/ithomiini/service.env)',
+      'Read(//home/ubuntu/.config/ithomiini/*.json)',
+      'Read(//home/ubuntu/ithomiini/shared/database.sqlite*)',
+      'Edit(//home/ubuntu/ithomiini/releases/**)',
+      'Edit(//home/ubuntu/ithomiini/current/**)',
+      'Write(//home/ubuntu/ithomiini/releases/**)',
+      'Write(//home/ubuntu/ithomiini/current/**)',
+    ]),
+  ];
   writeFileSync(settingsFile, JSON.stringify(settings, null, 2));
 
   // Claude Code only applies the folder's settings once the folder is trusted.

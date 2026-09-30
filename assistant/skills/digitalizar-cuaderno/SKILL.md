@@ -213,3 +213,47 @@ another chat): mention them, and if it is the same page pass their id as
 - Envelopes/labels: all the labels of the message in one call.
 - A page already matched earlier in the conversation: re-match it with
   `replaceProposalId` instead of making a second proposal.
+
+## Long pages: split the reading across subagents
+
+A page (or spread) with more than ~15 lines, or several photos at once, is read
+faster and better in parallel:
+
+1. Cut the page into blocks of ~15 lines (crop images with the header row kept
+   on each crop; save crops in `work/<today>-<topic>/`, never in a shared
+   folder another chat may use).
+2. Start one subagent per block (Task/Agent tool). Each transcribes **blind**,
+   from its crop only, every line and column, and returns the `lines` JSON of
+   `match_notebook` (with `confidence` on doubtful cells). Do not give it your
+   own readings or the sheet's values.
+3. Merge the blocks in notebook order, call `match_notebook` **once** for the
+   page, then run the verification below.
+
+## Verification: an adversarial second reading (always, before summarising)
+
+A transcription is not done until a second reader has checked it:
+
+1. Start one reviewer subagent per block (or one per photo for short pages).
+   Give it only the crop and the columns to read. **Never tell it your
+   readings**, never quote values or abbreviations from the proposal in its
+   prompt (a reviewer told "ins/lab" read "ins/lab" where the page says
+   "ins/oda").
+2. The reviewer first transcribes every cell itself, then reads the proposal
+   (`get_proposal`) and returns a table `line | column | page | proposal |
+   confidence` of every disagreement, plus impossible stages it sees.
+3. Also check plausibility yourself: adults ≤ pupae ≤ larvae ≤ eggs (sums
+   evaluated), dates in order (laid ≤ hatch ≤ pupa ≤ emergence), a hatch date
+   or larvae before any pupa/adult, counts on lines that say "all died"/"no
+   hatch" = 0 or NA.
+4. Where the two readings disagree and the photo does not settle it, keep the
+   cell doubtful (`confidence`) and ask the person in the summary; where the
+   photo settles it, correct the same proposal (`replaceProposalId` /
+   `update_proposal`). Say in the summary that a second reading was done and
+   how many cells it changed.
+
+## Show every line of the page
+
+The person checks the proposal against the page line by line: include the
+lines whose values are already in the sheet as context rows
+(`match_notebook` with `includeUnchanged: true`), in notebook order. Never
+invent small changes (NA, notes) to make a line appear.
