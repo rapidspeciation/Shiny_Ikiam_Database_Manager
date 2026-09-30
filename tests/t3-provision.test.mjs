@@ -49,7 +49,27 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     assert.equal(mcp.url, 'http://127.0.0.1:8794/api/ai/mcp');
     const settings = JSON.parse(readFileSync(join(workspace, '.claude', 'settings.json'), 'utf8'));
     assert.deepEqual(settings.permissions.allow, ['mcp__ithomiini', 'Skill']);
+    assert.ok(settings.permissions.deny.includes(`Read(/${join(home, '.config', 'ithomiini')}/**)`));
     assert.ok(JSON.parse(readFileSync(join(home, '.claude.json'), 'utf8')).projects[workspace].hasTrustDialogAccepted);
+    // Shell commands naming the secrets or the database are stopped by the guard hook; gog.env may be sourced.
+    const [hook] = settings.hooks.PreToolUse;
+    assert.equal(hook.matcher, 'Bash');
+    const guard = command => {
+      try {
+        execFileSync('sh', ['-c', hook.hooks[0].command], { input: JSON.stringify({ tool_input: { command } }), env: { ...env, HOME: home }, encoding: 'utf8', stdio: 'pipe' });
+        return 'allowed';
+      } catch (error) {
+        assert.equal(error.status, 2, error.stderr);
+        assert.match(error.stderr, /Blocked/);
+        return 'blocked';
+      }
+    };
+    assert.equal(guard('grep -iE sheet ~/.config/ithomiini/service.env'), 'blocked');
+    assert.equal(guard('ls $HOME/.config/ithomiini'), 'blocked');
+    assert.equal(guard(`python3 -c "import sqlite3; sqlite3.connect('${join(shared, 'database.sqlite')}')"`), 'blocked');
+    assert.equal(guard('cd ~ && cat .config/ithomiini/gog.env'), 'blocked');
+    assert.equal(guard('set -a; . ~/.config/ithomiini/gog.env; set +a; gog --readonly gmail search x'), 'allowed');
+    assert.equal(guard('python3 crops.py photo.jpg --out work/2026-09-30-posturas'), 'allowed');
 
     // Codex (GPT threads): the same brief (AGENTS.md), skills and MCP server with the same token.
     assert.match(readFileSync(join(workspace, '.agents', 'skills', 'digitalizar-cuaderno', 'SKILL.md'), 'utf8'), /name: digitalizar-cuaderno/);
@@ -79,6 +99,7 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     assert.ok(existsSync(join(workspace, '.claude', 'agents', 'notebook-reader.md')));
     assert.equal(JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8')).mcpServers.ithomiini.headers.Authorization, mcp.headers.Authorization, 'the token is kept');
     assert.equal(JSON.parse(readFileSync(join(workspace, '.claude', 'settings.json'), 'utf8')).model, 'opus');
+    assert.equal(JSON.parse(readFileSync(join(workspace, '.claude', 'settings.json'), 'utf8')).hooks.PreToolUse.length, 1, 'the guard once');
     assert.equal(db.prepare('SELECT count(*) n FROM ai_tokens WHERE revoked_at IS NULL').get().n, 1);
     assert.equal(readFileSync(join(workspace, '.codex', 'config.toml'), 'utf8'), codex, 'Codex keeps the token too');
     assert.equal(readFileSync(join(home, '.codex', 'config.toml'), 'utf8'), trusted, 'the workspace is trusted once');

@@ -2,7 +2,8 @@
 // Sets up a person's project in T3 Code (stock install, nothing patched):
 // a folder with the Ithomiini brief for Claude/Codex (CLAUDE.md, AGENTS.md),
 // the skills (every folder of assistant/skills: digitalizar-cuaderno, app-guide), the Claude Code
-// subagents (assistant/agents: notebook-reader, notebook-reviewer on Sonnet), the app's tools over MCP
+// subagents (assistant/agents: notebook-reader, notebook-reviewer on Sonnet), a shell guard hook
+// (assistant/hooks: no command may name the secrets or the database), the app's tools over MCP
 // with a personal token (.mcp.json for Claude, .codex/config.toml for Codex), and `t3 project add`. Run on the server:
 //   node scripts/t3-provision.mjs <username>     new person, or a fresh token
 //   node scripts/t3-provision.mjs --refresh-all  after a release (scripts/deploy.sh):
@@ -77,6 +78,9 @@ codes and values stay exactly as they are in the workbook.
   list_documents, read_document, sync_documents, list_history,
   get_history_group, preview_undo, undo_edits).
   Never edit the workbook any other way. The workbook is the team's real working workbook.
+  "How many / which" questions: \`count_records\` (\`groupBy\`) and \`find_records\` with
+  \`filters\`, \`near\` (\`{location: "Ikiam", km: 15}\`), \`fields\` and \`limit\`, not
+  \`search_records\`; narrow a truncated answer, never parse saved output or the database.
 - Project documents (meeting notes, protocols, reports, presentations of the
   project Drive, mirrored as text): \`search_knowledge\`, \`list_documents\`
   (e.g. the last meeting) and \`read_document\`. The mirror is refreshed only
@@ -262,6 +266,21 @@ function provision(user, { freshToken, addProject }) {
   rmSync(agentsTarget, { recursive: true, force: true });
   if (existsSync(agents)) cpSync(agents, agentsTarget, { recursive: true });
 
+  // The shell guard (assistant/hooks/guard-bash.mjs): the deny rules below only cover Claude's
+  // file tools, so shell commands naming the secrets, the database or a denied folder are stopped
+  // by a PreToolUse hook. Sourcing gog.env for gog stays allowed.
+  const hooksTarget = join(workspace, '.claude', 'hooks');
+  rmSync(hooksTarget, { recursive: true, force: true });
+  cpSync(join(release, 'assistant', 'hooks'), hooksTarget, { recursive: true });
+  const denied = [configDir, database, ...extraDeny].map(p => p.replace(/\/+$/, ''));
+  // Also the last two parts of a deep path (`cd ~ && cat .config/ithomiini/…`).
+  const tails = denied.map(p => p.split('/').filter(Boolean)).filter(p => p.length >= 3).map(p => p.slice(-2).join('/'));
+  writeFileSync(
+    join(hooksTarget, 'guard-bash.json'),
+    JSON.stringify({ deny: [...new Set([...denied, ...tails])], sourceOnly: [join(configDir, 'gog.env')] }, null, 2),
+  );
+  const guard = `'${process.execPath}' '${join(hooksTarget, 'guard-bash.mjs')}'`;
+
   const token = (!freshToken && keptToken(workspace, user)) || mintToken(user);
   const mcp = join(workspace, '.mcp.json');
   writeFileSync(
@@ -289,12 +308,19 @@ function provision(user, { freshToken, addProject }) {
   settings.env = { ...settings.env, PATH: TOOLS_PATH };
   settings.permissions ??= {};
   settings.permissions.allow = [...new Set([...(settings.permissions.allow ?? []), 'mcp__ithomiini', 'Skill'])];
+  // Our guard replaces its earlier copy; other hooks of the folder are kept.
+  const own = entry => entry?.hooks?.some(h => String(h.command ?? '').includes('guard-bash.mjs'));
+  settings.hooks = {
+    ...settings.hooks,
+    PreToolUse: [...(settings.hooks?.PreToolUse ?? []).filter(e => !own(e)), { matcher: 'Bash', hooks: [{ type: 'command', command: guard }] }],
+  };
   // Secrets and built releases are off limits (data goes through the tools; code through ~/ithomiini/src).
   settings.permissions.deny = [
     ...new Set([
       ...(settings.permissions.deny ?? []),
       `Read(/${join(configDir, 'service.env')})`,
       `Read(/${join(configDir, '*.json')})`,
+      `Read(/${configDir}/**)`,
       `Read(/${database}*)`,
       `Edit(/${join(root, 'releases')}/**)`,
       `Edit(/${join(root, 'current')}/**)`,
