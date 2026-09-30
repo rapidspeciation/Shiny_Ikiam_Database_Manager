@@ -27,7 +27,10 @@ export function setCsrf(token: string | null) {
 }
 
 /** Requests are relative to the page, so the app works under any base path. */
-export async function api<T>(path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
+export async function api<T>(
+  path: string,
+  options: { method?: string; body?: unknown; signal?: AbortSignal } = {},
+): Promise<T> {
   const method = options.method || 'GET'
   const headers: Record<string, string> = {}
   if (options.body !== undefined) headers['content-type'] = 'application/json'
@@ -39,6 +42,7 @@ export async function api<T>(path: string, options: { method?: string; body?: un
       headers,
       credentials: 'same-origin',
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      signal: options.signal,
     })
   } catch {
     throw new ApiError(0, { code: 'OFFLINE', message: t('Sin conexión con el servidor') })
