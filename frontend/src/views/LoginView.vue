@@ -59,8 +59,16 @@ async function submit() {
         <input v-model="token" class="field-input" type="text" autocomplete="off" spellcheck="false" required />
       </label>
       <label class="mb-3 block">
-        <span class="field-label">{{ $t('Usuario') }}</span>
-        <input v-model="username" class="field-input" name="username" autocomplete="username" autocapitalize="none" required />
+        <span class="field-label">{{ setupMode ? $t('Usuario') : $t('Usuario o correo') }}</span>
+        <input
+          v-model="username"
+          class="field-input"
+          name="username"
+          autocomplete="username"
+          autocapitalize="none"
+          spellcheck="false"
+          required
+        />
       </label>
       <label v-if="setupMode" class="mb-3 block">
         <span class="field-label">{{ $t('Nombre visible') }}</span>
@@ -84,7 +92,14 @@ async function submit() {
       <button class="btn-primary w-full py-2" :disabled="busy">
         {{ busy ? $t('Un momento…') : setupMode ? $t('Crear cuenta') : $t('Entrar') }}
       </button>
-      <RouterLink v-if="!setupMode" to="/inicio" class="mt-4 block text-center text-sm text-stone-600 underline">
+      <RouterLink
+        v-if="!setupMode"
+        :to="{ path: '/recuperar', query: username.trim() ? { usuario: username.trim() } : {} }"
+        class="mt-3 block text-center text-sm text-brand-700 underline"
+      >
+        {{ $t('¿Olvidaste tu contraseña?') }}
+      </RouterLink>
+      <RouterLink v-if="!setupMode" to="/inicio" class="mt-2 block text-center text-sm text-stone-600 underline">
         {{ $t('Ver los resúmenes del proyecto sin cuenta') }}
       </RouterLink>
     </form>

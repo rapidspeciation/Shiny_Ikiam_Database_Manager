@@ -4,7 +4,7 @@ import { RouterView, useRoute } from 'vue-router'
 import AppHeader from './components/AppHeader.vue'
 import SaveBar from './components/SaveBar.vue'
 import LoginView from './views/LoginView.vue'
-import { openPaths } from './router'
+import { accountPaths, openPaths } from './router'
 import { notice } from './lib/notice'
 import { updateAvailable } from './lib/updates'
 import { usePending } from './stores/pending'
@@ -31,8 +31,8 @@ watch(
 </script>
 
 <template>
-  <!-- The invitation page and the home page work without an account (the rest needs a login). -->
-  <RouterView v-if="route.path === '/activar'" />
+  <!-- The invitation and password pages and the home page work without an account (the rest needs a login). -->
+  <RouterView v-if="accountPaths.has(route.path)" />
   <div v-else-if="!session.ready" class="grid h-full place-items-center text-stone-500">{{ $t('Cargando…') }}</div>
   <LoginView v-else-if="!session.user && !openPaths.has(route.path)" />
   <div v-else class="flex h-full flex-col">
