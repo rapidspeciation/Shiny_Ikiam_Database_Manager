@@ -11,7 +11,8 @@
 //   ITHOMIINI_SHARED (shared folder), DATABASE_PATH, ITHOMIINI_MCP_URL (or ITHOMIINI_SERVICE_ENV),
 //   ITHOMIINI_T3_WORKSPACES (default <shared>/t3-workspaces), ITHOMIINI_SRC (the source checkout
 //   the brief names), ITHOMIINI_CONFIG_DIR (the service's secrets), ITHOMIINI_DOCS, T3_BIN, and
-//   ITHOMIINI_DENY_READ (more folders Claude threads may not read, separated by ":").
+//   ITHOMIINI_DENY_READ (more folders Claude threads may not read, separated by ":"), and
+//   ITHOMIINI_LAB_URL (the lab app's address: changes to the app stay local, no push or deploy).
 
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomBytes } from 'node:crypto';
@@ -46,6 +47,8 @@ const root = dirname(shared);
 const source = process.env.ITHOMIINI_SRC || join(root, 'src');
 const configDir = process.env.ITHOMIINI_CONFIG_DIR || join(process.env.HOME, '.config', 'ithomiini');
 const extraDeny = (process.env.ITHOMIINI_DENY_READ || '').split(':').filter(Boolean);
+// The local test lab (tools/lab/app.sh): an offline copy of the app on this address.
+const labUrl = process.env.ITHOMIINI_LAB_URL || '';
 // The docs of the release that is live (`current`), so the path survives the next release.
 const liveDocs = join(root, 'current', 'docs');
 const docs = process.env.ITHOMIINI_DOCS || (existsSync(liveDocs) ? liveDocs : join(release, 'docs'));
@@ -109,10 +112,10 @@ codes and values stay exactly as they are in the workbook.
   \`${docs}\`.
 - This folder is your working folder: keep downloads and generated files in
   \`work/<date>-<topic>/\` here (several chats share it; don't reuse names).
-- **Changing the app itself** (screens, grids, tools, texts): use the skill
+${labUrl ? labAppDev() : `- **Changing the app itself** (screens, grids, tools, texts): use the skill
   \`app-dev\` — the source is the git checkout \`${source}\`
   (build, test, commit, push, \`scripts/deploy.sh\`). Never edit the built
-  files in \`${join(root, 'releases')}\` or \`current\`.
+  files in \`${join(root, 'releases')}\` or \`current\`.`}
 - Notebook photos: propose first (\`match_notebook\` right after the first
   reading, and say it is being checked), then run the skill's targeted second
   reading (all subagents started in one message, so they run in parallel) and
@@ -127,6 +130,19 @@ codes and values stay exactly as they are in the workbook.
   the document tools above for Drive documents already mirrored.
 
 ${sheets}`;
+}
+
+/** The lab's rule for changing the app: local only (brief bullet and the top of the app-dev skill). */
+function labAppDev() {
+  return `- **Changing the app itself** (screens, grids, tools, texts): this is the
+  **local test lab**, not the live app. The app at ${labUrl} runs offline on a
+  copy of the workbook (saves never reach Google Sheets). Use the skill
+  \`app-dev\` with its lab steps: change the source in \`${source}\`, run the
+  checks, restart the lab app (\`tools/lab/app.sh --stop && setsid -f tools/lab/app.sh --bg\`
+  from the source folder, about a minute; it rebuilds the page and reloads the
+  copy of the data), ask the person to reload ${labUrl}, and commit on the
+  current branch. **Never \`git push\` or run \`scripts/deploy.sh\`** (it would
+  change the live app) unless the person explicitly asks.`;
 }
 
 /** A new personal token for T3 (the previous one stops working). */
@@ -228,6 +244,14 @@ function provision(user, { freshToken, addProject }) {
       const target = join(workspace, folder, 'skills', name);
       rmSync(target, { recursive: true, force: true });
       cpSync(join(skills, name), target, { recursive: true });
+      // In the lab, app-dev opens with the lab's steps (they replace pull, push and deploy).
+      const skill = join(target, 'SKILL.md');
+      if (labUrl && name === 'app-dev' && existsSync(skill)) {
+        const text = readFileSync(skill, 'utf8');
+        const end = text.indexOf('\n---\n', 4) + 5;
+        const note = `\n> **Lab copy.** These steps are for the live server. Here:\n>\n${labAppDev().replace(/^- /, '').replace(/^/gm, '> ')}\n`;
+        writeFileSync(skill, text.slice(0, end) + note + text.slice(end));
+      }
     }
   }
 
@@ -277,6 +301,8 @@ function provision(user, { freshToken, addProject }) {
       `Write(/${join(root, 'releases')}/**)`,
       `Write(/${join(root, 'current')}/**)`,
       ...extraDeny.map(folder => `Read(/${folder.replace(/\/+$/, '')}/**)`),
+      // The lab never deploys to the live server.
+      ...(labUrl ? ['Bash(scripts/deploy.sh:*)', 'Bash(./scripts/deploy.sh:*)', `Bash(${join(source, 'scripts/deploy.sh')}:*)`] : []),
     ]),
   ];
   writeFileSync(settingsFile, JSON.stringify(settings, null, 2));

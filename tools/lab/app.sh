@@ -38,7 +38,7 @@ stop() {
 provision() {
   T3CODE_HOME="$T3HOME" ITHOMIINI_SHARED="$LAB/app" DATABASE_PATH="$LAB/app/app.sqlite" \
     ITHOMIINI_MCP_URL="$URL/api/ai/mcp" ITHOMIINI_T3_WORKSPACES="$T3HOME/workspaces" \
-    ITHOMIINI_SRC="$HERE" ITHOMIINI_DOCS="$HERE/docs" ITHOMIINI_DENY_READ="$LAB:$HOME/.cache/ithomiini-test" \
+    ITHOMIINI_SRC="$HERE" ITHOMIINI_LAB_URL="$URL" ITHOMIINI_DOCS="$HERE/docs" ITHOMIINI_DENY_READ="$LAB:$HOME/.cache/ithomiini-test" \
     T3_BIN="${T3_BIN:-$HOME/.local/bin/t3}" node "$HERE/scripts/t3-provision.mjs" "$1"
 }
 [ "${1:-}" = "--stop" ] && { stop; exit 0; }
