@@ -110,6 +110,34 @@ function rowsOf(store, sheet) {
  * With `start`, returns `count` consecutive unused IDs beginning at `start`.
  */
 export function idSuggestions(store, { kind, start, count } = {}) {
+  const sheets = ID_SHEETS[kind]?.();
+  if (!sheets) return computeIds(store, { kind, start, count });
+  // Reading every row of these sheets takes up to a second (tube IDs): the answer is kept
+  // until one of the sheets it reads changes.
+  const stamp = sheets.map(sheet => tableRevision(store, sheet)).join('|');
+  let cache = idCache.get(store);
+  if (cache?.stamp !== stamp) idCache.set(store, (cache = { stamp, answers: new Map() }));
+  const key = `${kind}\u0000${start ?? ''}\u0000${count ?? ''}`;
+  if (!cache.answers.has(key)) {
+    const answer = computeIds(store, { kind, start, count });
+    if (cache.answers.size >= 200) cache.answers.clear();
+    cache.answers.set(key, answer);
+  }
+  return structuredClone(cache.answers.get(key));
+}
+
+const idCache = new WeakMap();
+/** The sheets each kind of suggestion reads. */
+const ID_SHEETS = {
+  insectary: () => ['Insectary_data', ...Object.keys(REFERENCES).filter(sheet => moduleMap.has(sheet))],
+  cam: () => ['Insectary_data', 'Collection_data'],
+  tube: () =>
+    [...moduleMap.values()]
+      .filter(mod => mod.fields.some(f => TUBE_COLUMN.test(f.key) && !NOT_TUBE_COLUMN.test(f.key)))
+      .map(mod => mod.id),
+};
+
+function computeIds(store, { kind, start, count } = {}) {
   const n = Math.min(Math.max(Number(count) || 20, 1), 500);
   // Every free pre-made row can be offered (earlier empty rows included).
   if (kind === 'insectary') return insectaryIds(store, start, Math.min(Math.max(Number(count) || 20, 1), 5000));

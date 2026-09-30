@@ -35,4 +35,6 @@ tar -czf - server web docs assistant package.json deploy scripts licenses PRODUC
 on_server "set -eu; cd /home/ubuntu/ithomiini; if test -L current; then readlink current > shared/previous-release; fi; ln -sfn releases/$release current; cp current/deploy/ithomiini*.service current/deploy/ithomiini-*.timer /home/ubuntu/.config/systemd/user/; systemctl --user daemon-reload; systemctl --user enable ithomiini.service; systemctl --user enable --now ithomiini-backup.timer ithomiini-gog-keepalive.timer; systemctl --user restart ithomiini.service"
 # T3 Code workspaces: every person's brief (CLAUDE.md/AGENTS.md) and skills follow the release; tokens are kept.
 on_server 'set -eu; cd /home/ubuntu/ithomiini/current; node=$(sed -n "s/^ExecStart=\([^ ]*\/node\) .*/\1/p" deploy/ithomiini.service); "$node" scripts/t3-provision.mjs --refresh-all'
+# Old releases (about 4 MB each) are deleted: the newest KEEP_RELEASES stay, and always the current and previous ones.
+on_server "bash /home/ubuntu/ithomiini/current/scripts/prune-releases.sh /home/ubuntu/ithomiini ${KEEP_RELEASES:-5}"
 echo "Deployed release $release. Check /ithomiini/health before declaring success."

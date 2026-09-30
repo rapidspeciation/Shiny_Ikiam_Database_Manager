@@ -46,6 +46,9 @@ export class Store {
     )
       this.db.exec('ALTER TABLE records ADD COLUMN observed INTEGER NOT NULL DEFAULT 1');
     this.db.exec('CREATE INDEX IF NOT EXISTS records_updated ON records(sheet,updated_at)');
+    // Covers the per-sheet fingerprints (tableRevision: every table poll, summary and ETag) and the
+    // row counts, so they read this small index instead of every row's JSON (27 ms → 1 ms on 10k rows).
+    this.db.exec('CREATE INDEX IF NOT EXISTS records_state ON records(sheet,missing,observed,row_num,version,updated_at)');
     // Numeric labels stored as REAL text ("1014.0") before labelFor returned text.
     this.db.exec("UPDATE records SET label=substr(label,1,length(label)-2) WHERE label GLOB '[0-9]*.0' AND label NOT GLOB '*[^0-9.]*'");
     // The purpose of each save (Colecta, Muertes…), indexes and purposes of older saves (Historial).
@@ -62,6 +65,8 @@ export class Store {
     this.headerProblems = new Map();
     // Each sheet's column map from its live header, as the last sync read it.
     this.layouts = new Map();
+    // Per sheet, what the last sync read (a digest of the raw rows) and the local copy it left.
+    this.sheetDigests = new Map();
     this.syncStatus = {
       state: this.localMode ? 'offline_seed' : 'not_synced',
       lastSync: this.getSetting('lastSync'),
@@ -442,13 +447,16 @@ export class Store {
       this.syncStatus = { ...this.syncStatus, state: 'ok', checkedAt: now(), unchanged: true };
       return this.syncStatus;
     }
-    this.syncStatus = { ...this.syncStatus, state: 'syncing' };
+    this.syncStatus = { ...this.syncStatus, state: 'syncing', unchanged: false };
+    const started = Date.now(),
+      requestsBefore = this.sheets.requestCount ?? 0;
     let added = 0,
       changed = 0,
       moved = 0,
       missing = 0,
       skipped = 0,
-      cells = 0;
+      cells = 0,
+      sheetsUnchanged = 0;
     const bySheet = {};
     try {
       for (const sheet of sheets) {
@@ -467,10 +475,6 @@ export class Store {
           skipped++;
           continue;
         }
-        const current = rows
-          .filter(r => r.row > mod.headerRow)
-          .map(r => ({ row: r.row, ...rowValues(sheet, r, layout) }))
-          .filter(r => Object.values(r.values).some(v => v !== null && v !== '') || Object.keys(r.formulas).length);
         // Only the columns present are compared: a missing column keeps its last known values.
         const view = record =>
           layout.missing.length
@@ -482,6 +486,18 @@ export class Store {
             skipped++;
             return;
           }
+          // The sheet reads exactly as when it was last reconciled and the local copy has not
+          // changed since: reconciling again would change nothing, so its rows are not compared.
+          // A forced sync ("Sincronizar ahora") always compares.
+          const known = this.sheetDigests.get(sheet);
+          if (!force && rows.digest && known?.digest === rows.digest && known.revision === this.sheetRevision(sheet)) {
+            sheetsUnchanged++;
+            return;
+          }
+          const current = rows
+            .filter(r => r.row > mod.headerRow)
+            .map(r => ({ row: r.row, ...rowValues(sheet, r, layout) }))
+            .filter(r => Object.values(r.values).some(v => v !== null && v !== '') || Object.keys(r.formulas).length);
           this.db.exec('BEGIN IMMEDIATE');
           try {
             const old = this.db.prepare('SELECT * FROM records WHERE sheet=? AND missing=0').all(sheet);
@@ -537,6 +553,11 @@ export class Store {
               Math.min(0, this.db.prepare('SELECT min(row_num) n FROM records WHERE sheet=?').get(sheet).n ?? 0) - 1;
             for (const read of current) {
               const found = matched.get(read) || null;
+              // Most rows are as stored: nothing to compare or write.
+              if (found && found.row_num === read.row && !layout.missing.length && this.storedAs(found, sheet, read)) {
+                seen.add(found.id);
+                continue;
+              }
               const previous = found && this.hydrate(found);
               const item = this.keepUnavailable(sheet, read, previous, layout);
               const record = {
@@ -594,6 +615,7 @@ export class Store {
             this.db.exec('ROLLBACK');
             throw e;
           }
+          if (rows.digest) this.sheetDigests.set(sheet, { digest: rows.digest, revision: this.sheetRevision(sheet) });
         });
         const counts = { added, changed, moved, missing, cells };
         bySheet[sheet] = Object.fromEntries(Object.entries(counts).map(([k, v]) => [k, v - before[k]]));
@@ -609,9 +631,17 @@ export class Store {
         missing,
         skipped,
         cells,
+        sheetsUnchanged,
         bySheet,
         headerProblems: Object.fromEntries([...this.headerProblems].filter(([, problems]) => problems.length)),
+        ms: Date.now() - started,
+        requests: (this.sheets.requestCount ?? 0) - requestsBefore,
       };
+      if (!this.localMode)
+        console.log(
+          `Sync: ${sheets.length} sheets read in ${(this.syncStatus.ms / 1000).toFixed(1)} s (${this.syncStatus.requests} requests), ` +
+            `${sheetsUnchanged} unchanged; ${added} added, ${changed} changed, ${moved} moved, ${missing} missing, ${skipped} skipped`,
+        );
       if (!skipped) {
         this.setSetting('lastSync', this.syncStatus.lastSync);
         if (full && revision) this.setSetting('sourceRevision', revision);
@@ -621,6 +651,25 @@ export class Store {
       this.syncStatus = { ...this.syncStatus, state: 'error', error: e.message };
       throw e;
     }
+  }
+  /** Fingerprint of a sheet's local copy (grid.mjs tableRevision): changes with every write to its rows. */
+  sheetRevision(sheet) {
+    const r = this.db
+      .prepare(
+        'SELECT count(*) n, max(updated_at) u, total(version) v, total(row_num) r FROM records WHERE sheet=? AND missing=0',
+      )
+      .get(sheet);
+    return `${r.n}-${r.u}-${r.v}-${r.r}`;
+  }
+  /** True when a stored row already holds exactly what reconciling it with `read` would write. */
+  storedAs(stored, sheet, read) {
+    return (
+      stored.values_json === json(read.values) &&
+      stored.formulas_json === json(read.formulas) &&
+      stored.label === labelFor(sheet, read.values) &&
+      stored.identity_json === json(this.identity(sheet, read.values)) &&
+      stored.observed === (this.hasObservation(sheet, read.values, read.formulas) ? 1 : 0)
+    );
   }
   recordExternalChanges(record, diffs) {
     const id = randomUUID(),
