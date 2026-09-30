@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { tileToSelection } from '../gridKit'
+import { scrollDelta, tileToSelection } from '../gridKit'
 
 describe('pasting over a selection', () => {
   it('repeats the copied block to fill a larger selection, as Google Sheets does', () => {
@@ -15,7 +15,22 @@ describe('pasting over a selection', () => {
     expect(tileToSelection([['a'], ['b']], 5, 1).map(r => r[0])).toEqual(['a', 'b', 'a', 'b', 'a'])
   })
   it('pastes the block as it is into a single selected cell (it can add rows)', () => {
-    const block = [['x', 'y'], ['z', 'w']]
+    const block = [
+      ['x', 'y'],
+      ['z', 'w'],
+    ]
     expect(tileToSelection(block, 1, 1)).toEqual(block)
+  })
+})
+
+describe('keeping the selected cell in sight', () => {
+  it('scrolls only as far as needed, back or forward', () => {
+    // A view from 100 to 500 (e.g. right of the frozen Fila and ID columns).
+    expect(scrollDelta(150, 250, 100, 500)).toBe(0)
+    expect(scrollDelta(40, 140, 100, 500)).toBe(-60)
+    expect(scrollDelta(450, 560, 100, 500)).toBe(60)
+  })
+  it('shows the start of a cell wider than the view', () => {
+    expect(scrollDelta(450, 1000, 100, 500)).toBe(350)
   })
 })

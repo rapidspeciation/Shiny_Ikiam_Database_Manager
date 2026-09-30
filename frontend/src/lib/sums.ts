@@ -17,3 +17,13 @@ export function simpleSum(text: string): string | null {
   if (!/^=?\s*\d+(?:\s*[+-]\s*\d+)*$/.test(t) || (!t.startsWith('=') && !/[+-]/.test(t))) return null
   return '=' + t.replace(/^=/, '').replace(/\s+/g, '')
 }
+
+/**
+ * What a count written as a sum adds up to ("=12+15" → 27, "=27-5" → 22), to
+ * show beside it; null for a single number or anything that is not a sum.
+ */
+export function sumTotal(value: unknown): number | null {
+  const sum = typeof value === 'string' ? simpleSum(value) : null
+  const terms = sum?.slice(1).match(/[+-]?\d+/g)
+  return terms && terms.length > 1 ? terms.reduce((total, term) => total + Number(term), 0) : null
+}

@@ -191,7 +191,8 @@ const origin = (p: Proposal) =>
         <button class="btn-ghost" :title="$t('Ocultar los cambios propuestos')" @click="emit('close')"><X :size="15" /></button>
       </template>
     </header>
-    <div class="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+    <!-- A size container: each table is at most its height (ProposalSheet), so its column names stay in sight. -->
+    <div class="min-h-0 flex-1 overflow-y-auto px-3 pb-3 [container-type:size]">
       <p v-if="!pending.length" class="py-4 text-sm text-stone-500">
         <template v-if="only && !mine.length">{{ $t('Esta propuesta ya no está en la lista.') }}</template>
         <template v-else>

@@ -346,6 +346,9 @@ onMounted(() => {
   } as unknown as ConstructorParameters<typeof Tabulator>[1])
   table.on('tableBuilt', () => {
     built = true
+    // The column names stay pinned at the top as the page scrolls (style.css): with the phone's
+    // keyboard open, the edited cell is placed below them (gridKit's keepEditorVisible).
+    table?.element.querySelector('.tabulator-header')?.setAttribute('data-sticky-bar', '')
     sync()
     builtNow()
   })

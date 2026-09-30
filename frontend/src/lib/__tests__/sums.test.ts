@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { normalizeInput } from '../cells'
-import { simpleSum } from '../sums'
+import { simpleSum, sumTotal } from '../sums'
 
 describe('counts typed as sums', () => {
   it('keeps the terms of a sum as a formula', () => {
@@ -9,6 +9,15 @@ describe('counts typed as sums', () => {
     expect(simpleSum('27')).toBeNull()
     expect(simpleSum('=A2+1')).toBeNull()
     expect(simpleSum('27-5')).toBe('=27-5')
+  })
+  it('adds up a sum, to show its total beside it', () => {
+    expect(sumTotal('=12+15')).toBe(27)
+    expect(sumTotal('=27-5')).toBe(22)
+    expect(sumTotal('= 41 + 36 + 2')).toBe(79)
+    expect(sumTotal('=27')).toBeNull()
+    expect(sumTotal(27)).toBeNull()
+    expect(sumTotal('=A2+1')).toBeNull()
+    expect(sumTotal(null)).toBeNull()
   })
   it('only in the count columns of Insectary_stocks', () => {
     const eggs = { key: 'NUMBER OF EGGS', type: 'number' as const }

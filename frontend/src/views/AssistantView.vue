@@ -467,7 +467,8 @@ const cellOf = (row: Record<string, unknown> | unknown[], key: string, i: number
         <p v-if="status && !status.configured" class="bg-amber-50 px-4 py-2 text-sm text-amber-900">
           {{ $t('El asistente no tiene un proveedor de IA configurado en el servidor.') }}
         </p>
-        <div ref="scroller" class="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+        <!-- A size container: a proposal's table is at most its height, so its column names stay in sight. -->
+        <div ref="scroller" class="flex-1 space-y-4 overflow-y-auto px-4 py-4 [container-type:size]">
           <p v-if="!messages.length" class="max-w-2xl text-sm text-stone-500">
             {{
               $t(

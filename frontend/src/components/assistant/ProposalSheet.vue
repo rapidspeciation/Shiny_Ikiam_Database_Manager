@@ -19,6 +19,7 @@ import {
 } from '../../lib/gridKit'
 import { parseBlock } from '../../lib/paste'
 import { ID_COLUMN, cellId, cellOf, rowKey, type ProposalChange } from '../../lib/proposals'
+import { isSumField, sumTotal } from '../../lib/sums'
 import type { CellValue, Field } from '../../lib/types'
 import { listProblem, verificationsFor } from '../../lib/verifications'
 import { locale, t, tn } from '../../lib/i18n'
@@ -28,8 +29,11 @@ import { locale, t, tn } from '../../lib/i18n'
  * Enter/Tab move, typing replaces, the fill handle and Ctrl+D copy down, blocks
  * paste from Excel or Sheets, list columns open the sheet's list, dates are
  * read day first. The assistant's values are green, the person's blue, an
- * existing row's other cells grey; cells the assistant just changed flash.
- * Edits go out through `edit` (the parent saves them to the proposal).
+ * existing row's other cells grey; cells the assistant just changed flash;
+ * counts written as sums show their total (=12+15 (27)). The ID stays at the
+ * left and the column names at the top while scrolling (see columns() and the
+ * table's maxHeight). Edits go out through `edit` (the parent saves them to
+ * the proposal).
  */
 export interface CellEdit {
   key: string
@@ -75,12 +79,30 @@ let table: Tabulator | null = null
 let built = false
 let byKey = new Map<string, ProposalChange>()
 const touch = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
-// On a phone the ticks, row and ID scroll with the rest: kept in place they took half the screen.
+// On a phone only the ID stays in place (as the first column): ticks, row and ID together took half the screen.
 const wide = typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches
 const rules = computed(() => verificationsFor(props.sheet))
 const fieldSet = computed(() => new Set(props.fields))
 const typeOf = (field: string) => (props.types[field] ?? 'text') as Field['type']
 const show = (field: string, value: CellValue | undefined) => displayValue(value, { key: field, type: typeOf(field) })
+/** What a count written as a sum (=12+15) adds up to, shown beside it; null for other cells. */
+const totalOf = (field: string, value: CellValue | undefined) => (isSumField(props.sheet, field) ? sumTotal(value) : null)
+/** The cell's text with a sum's total beside it: "=12+15 (27)". */
+function withTotal(field: string, value: CellValue | undefined, text: string): Node {
+  const total = totalOf(field, value)
+  if (total === null) return document.createTextNode(text)
+  const box = document.createElement('span')
+  const sum = document.createElement('span')
+  sum.className = 'sum-total'
+  sum.textContent = `(${total})`
+  box.append(text, ' ', sum)
+  return box
+}
+/** The same as plain text, to size the column. */
+const textWithTotal = (field: string, value: CellValue | undefined) => {
+  const total = totalOf(field, value)
+  return show(field, value) + (total === null ? '' : ` (${total})`)
+}
 
 function info(key: string, field: string) {
   const change = byKey.get(key)
@@ -158,12 +180,12 @@ function formatter(field: string) {
       .filter(Boolean)
       .join('\n')
     const text = show(field, c.value)
-    if (!changed || change.create || c.was === undefined || show(field, c.was) === text) return document.createTextNode(text)
+    if (!changed || change.create || c.was === undefined || show(field, c.was) === text) return withTotal(field, c.value, text)
     const box = document.createElement('span')
-    box.textContent = text || t('vacío')
+    box.append(withTotal(field, c.value, text || t('vacío')))
     const old = document.createElement('s')
     old.className = 'was'
-    old.textContent = show(field, c.was) || t('vacío')
+    old.append(withTotal(field, c.was, show(field, c.was) || t('vacío')))
     box.append(' ', old)
     return box
   }
@@ -185,7 +207,9 @@ function widthOf(field: string) {
   let chars = field.length + 2
   for (const c of props.changes) {
     const cell = cellOf(c, field, props.newRowFormulas)
-    const text = show(field, cell.value) + (cell.was !== undefined && cell.kind !== 'sheet' ? ` ${show(field, cell.was)}` : '')
+    const text =
+      textWithTotal(field, cell.value) +
+      (cell.was !== undefined && cell.kind !== 'sheet' ? ` ${textWithTotal(field, cell.was)}` : '')
     chars = Math.max(chars, text.length)
   }
   return Math.max(70, Math.min(260, Math.round(chars * 7.2 + 28)))
@@ -193,6 +217,18 @@ function widthOf(field: string) {
 
 function columns(): ColumnDefinition[] {
   const cols: ColumnDefinition[] = []
+  // The row's identity stays at the left while scrolling right, with its row number on a computer.
+  // Frozen columns go first (Tabulator keeps them in line only at the edge): on a phone, the ID alone.
+  const id = {
+    title: 'ID',
+    field: '__label',
+    frozen: true,
+    headerSort: false,
+    cssClass: 'proposal-label',
+    // The row's note (where its values come from) also on the ID, as the Nota column is at the far right.
+    tooltip: (_e: MouseEvent, cell: CellComponent) => (cell.getData() as Row).__note,
+  } as ColumnDefinition
+  if (!wide) cols.push(id)
   if (props.ticks !== 'none')
     cols.push({
       title: '✓',
@@ -206,18 +242,16 @@ function columns(): ColumnDefinition[] {
       cellClick: (_e, cell) => props.ticks === 'pending' && emit('toggle', (cell.getData() as Row).__key),
       headerClick: () => props.ticks === 'pending' && emit('toggleAll'),
     })
-  cols.push(
-    { title: t('Fila'), field: '__row', width: 54, frozen: wide, hozAlign: 'right', cssClass: 'row-number', headerSort: false },
-    {
-      title: 'ID',
-      field: '__label',
-      frozen: wide,
-      headerSort: false,
-      cssClass: 'proposal-label',
-      // The row's note (where its values come from) also on the ID, as the Nota column is at the far right.
-      tooltip: (_e: MouseEvent, cell: CellComponent) => (cell.getData() as Row).__note,
-    } as ColumnDefinition,
-  )
+  cols.push({
+    title: t('Fila'),
+    field: '__row',
+    width: 54,
+    frozen: wide,
+    hozAlign: 'right',
+    cssClass: 'row-number',
+    headerSort: false,
+  })
+  if (wide) cols.push(id)
   for (const field of props.fields) {
     const choices = hasChoices(field)
     cols.push({
@@ -390,6 +424,9 @@ onMounted(() => {
     index: '__key',
     columns: columns(),
     layout: 'fitData',
+    // At most the height of the panel it is in (less its title and buttons), so the column names stay
+    // in sight while scrolling the rows (the panel or chat around it is a size container: 100cqh).
+    maxHeight: 'max(10rem, calc(100cqh - 8rem))',
     autoResize: false,
     placeholder: t('Sin filas'),
     selectableRange: 1,
