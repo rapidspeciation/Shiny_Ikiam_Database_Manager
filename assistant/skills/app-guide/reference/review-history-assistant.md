@@ -79,7 +79,12 @@ without T3 configured only the chat shows).
   can be placed right or bottom, or opened alone in its own browser tab at
   `#/propuestas`; there it is an editable Sheets-like grid (the person can
   correct a cell before applying). When the person asks for a change to a
-  proposal, revise it with `update_proposal`.
+  proposal, revise it with `update_proposal`. It shows the proposals of the
+  chat open in T3 («Este chat: …»; «Último chat: …» when T3 does not say which
+  is open), and «Cambios propuestos (N)» counts those; a selector above the
+  tables picks another chat with proposals, «Fuera de los chats de T3» (Chat
+  simple, Revisión) or «Todos los chats»; «N propuestas más en otros chats»
+  shows all of them. Opening another chat in T3 follows it again.
 
 ## Revisión — `#/revision` (editors; last tab)
 
@@ -102,7 +107,8 @@ hoja» and «Fotos y sobres», with counts).
 - When fixes are accepted a green bar says «N arreglos aceptados listos para
   aplicar» (and Drive tasks): ask T3 «aplica las correcciones acordadas»
   (`list_agreed_fixes` → one `propose_changes` with `issueIds`) or press
-  «Preparar propuesta aquí» (then confirm in Asistente → Cambios propuestos).
+  «Preparar propuesta aquí» (then confirm in Asistente → Cambios propuestos,
+  under «Fuera de los chats de T3»).
 - The download button exports the photo verdicts as training labels.
 
 Parameters (only non-default ones appear in the link): `tipo=<kind>` (repeat,

@@ -18,6 +18,7 @@ import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './note
 import { newRowFormulaFields } from './premade.mjs';
 import { KNOWLEDGE_TOOLS, createKnowledge, runKnowledgeTool } from './knowledge.mjs';
 import { HISTORY_TOOLS, HISTORY_TOOL_NAMES, runHistoryTool } from './history.mjs';
+import { createT3Chats } from './t3chats.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const bad = (status, code, message) => ({ status, body: { error: { code, message } } });
@@ -343,6 +344,12 @@ function init(db) {
   if (!has('ai_proposals', 'revision')) db.exec('ALTER TABLE ai_proposals ADD COLUMN revision INTEGER NOT NULL DEFAULT 1');
   if (!has('ai_proposals', 'updated_at')) db.exec('ALTER TABLE ai_proposals ADD COLUMN updated_at TEXT');
   if (!has('ai_proposals', 'last_by')) db.exec('ALTER TABLE ai_proposals ADD COLUMN last_by TEXT');
+  // The T3 Code chat a proposal comes from (server/t3chats.mjs): its thread id ('' = looked for, not
+  // found), its title then, and the tool-use id of the call that drafted it (to find the chat later).
+  if (!has('ai_proposals', 't3_thread')) db.exec('ALTER TABLE ai_proposals ADD COLUMN t3_thread TEXT');
+  if (!has('ai_proposals', 't3_title')) db.exec('ALTER TABLE ai_proposals ADD COLUMN t3_title TEXT');
+  if (!has('ai_proposals', 't3_tool_use')) db.exec('ALTER TABLE ai_proposals ADD COLUMN t3_tool_use TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS ai_proposals_owner_status ON ai_proposals(owner_id, status, created_at)');
   // Personal tokens for agents outside the app (T3 Code projects) to use the same tools.
   db.exec(`CREATE TABLE IF NOT EXISTS ai_tokens (
     token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, label TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT
@@ -452,6 +459,8 @@ export function createAssistant({ store, config = {} }) {
     prepareWorkspace(claude, join(here, '..')).catch(e => console.error('Claude workspace:', e.message));
   const reports = createReports({ store, config });
   const knowledge = createKnowledge(config);
+  // The chats of T3 Code (its state and trace log, read-only): which one made a proposal, which one is open.
+  const t3 = config.t3Chats ?? (config.t3?.home ? createT3Chats({ home: config.t3.home }) : null);
   const thread = (id, user) =>
     db.prepare('SELECT * FROM ai_threads WHERE id = ? AND owner_id = ?').get(id, owner(user));
   const insertMessage = (threadId, role, content, sources = [], results = [], proposals = [], attachments = []) => {
@@ -667,9 +676,24 @@ export function createAssistant({ store, config = {} }) {
   function saveProposal(changes, reason, context, issueIds = []) {
     const id = randomUUID();
     const time = now();
+    const chat = context.t3 ? chatOfCall(context) : null;
     db.prepare(
-      'INSERT INTO ai_proposals (id,thread_id,owner_id,changes_json,reason,status,created_at,issues_json,updated_at,last_by) VALUES (?,?,?,?,?,?,?,?,?,?)',
-    ).run(id, context.threadId, owner(context.user), json(changes), clip(reason, 500), 'pending', time, issueIds.length ? json(issueIds) : null, time, 'ai');
+      'INSERT INTO ai_proposals (id,thread_id,owner_id,changes_json,reason,status,created_at,issues_json,updated_at,last_by,t3_thread,t3_title,t3_tool_use) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+    ).run(
+      id,
+      context.threadId,
+      owner(context.user),
+      json(changes),
+      clip(reason, 500),
+      'pending',
+      time,
+      issueIds.length ? json(issueIds) : null,
+      time,
+      'ai',
+      chat?.id ?? null,
+      chat?.title ?? null,
+      context.t3?.toolUseId ?? null,
+    );
     const proposal = { id, changes, reason: clip(reason, 500), status: 'pending' };
     context.proposals.push(proposal);
     changed(owner(context.user));
@@ -946,11 +970,12 @@ export function createAssistant({ store, config = {} }) {
     db.prepare('SELECT * FROM ai_proposals WHERE id = ? AND owner_id = ?').get(String(id ?? ''), owner(user));
   const ownProposalListed = id =>
     db.prepare('SELECT p.*, t.title FROM ai_proposals p JOIN ai_threads t ON t.id = p.thread_id WHERE p.id = ?').get(id);
-  /** A proposal as Cambios propuestos lists it (with the conversation it comes from). */
-  const listedView = r => ({
+  /** A proposal as Cambios propuestos lists it (with the conversation it comes from: its T3 chat, if known). */
+  const listedView = (r, titles = new Map()) => ({
     ...proposalView({ id: r.id, changes: [], reason: r.reason, status: r.status }, r),
     createdAt: r.created_at,
-    source: r.title,
+    source: (r.t3_thread && (titles.get(r.t3_thread)?.title ?? r.t3_title)) || r.title,
+    chat: r.t3_thread || null,
   });
 
   /** The rows of a proposal as the assistant reads them: index, values with readable dates, the person's edits. */
@@ -1199,18 +1224,97 @@ export function createAssistant({ store, config = {} }) {
     for (const wake of waiters.get(ownerId) ?? []) wake();
     waiters.delete(ownerId);
   }
-  function waitForChange(ownerId, seen, ms) {
+  /** Waits for a change of the person's proposals, or until `moved()` says the chat to show changed (checked every 2 s). */
+  function waitForChange(ownerId, seen, ms, moved = null) {
     if (seen !== revisionOf(ownerId)) return Promise.resolve();
     return new Promise(resolve => {
       const list = waiters.get(ownerId) ?? waiters.set(ownerId, new Set()).get(ownerId);
       const wake = () => {
         clearTimeout(timer);
+        clearInterval(watch);
         list.delete(wake);
         resolve();
       };
       const timer = setTimeout(wake, ms);
+      const watch = moved ? setInterval(() => moved() && wake(), 2000) : undefined;
       list.add(wake);
     });
+  }
+
+  // ------------------------------------------------------------ proposals by T3 chat
+  const ago = (iso, ms) => new Date(Date.parse(iso) - ms).toISOString();
+  /** The T3 chat of a tool call, if T3 has recorded the call already (by its tool-use id; Codex: the only chat answering). */
+  function chatOfCall(context) {
+    if (!t3) return null;
+    const { toolUseId } = context.t3;
+    const id = toolUseId ? t3.threadOfToolUse(toolUseId, ago(now(), 10 * 60_000)) : t3.onlyRunning(context.user.username);
+    return id ? { id, title: t3.threads([id]).get(id)?.title ?? null } : null;
+  }
+  /*
+   * Proposals from T3 Code whose chat is not known yet (T3 had not recorded the
+   * call, or they were made before chats were recorded) are linked when the
+   * list is asked for, at most every 5 s per person, without holding it up:
+   * by tool-use id, then by the chats' tool results naming the proposal. Not
+   * found 10 minutes after it was made: left as a proposal outside the chats.
+   */
+  const linkedAt = new Map();
+  async function linkChats(ownerId) {
+    if (!t3 || Date.now() - (linkedAt.get(ownerId) ?? 0) < 5000) return;
+    linkedAt.set(ownerId, Date.now());
+    const rows = db
+      .prepare(
+        "SELECT p.id, p.created_at, p.t3_tool_use FROM ai_proposals p JOIN ai_threads t ON t.id = p.thread_id WHERE p.owner_id = ? AND p.t3_thread IS NULL AND t.title = 'T3 Code'",
+      )
+      .all(ownerId);
+    if (!rows.length || !t3.available) return;
+    const found = new Map();
+    for (const r of rows) {
+      const id = r.t3_tool_use && t3.threadOfToolUse(r.t3_tool_use, ago(r.created_at, 10 * 60_000));
+      if (id) found.set(r.id, id);
+    }
+    const rest = rows.filter(r => !found.has(r.id));
+    if (rest.length) {
+      const since = ago(rest.map(r => r.created_at).sort()[0], 10 * 60_000);
+      for (const [id, thread] of await t3.findProposals(rest.map(r => r.id), since)) found.set(id, thread);
+    }
+    const titles = t3.threads([...found.values()]);
+    const link = db.prepare('UPDATE ai_proposals SET t3_thread = ?, t3_title = ? WHERE id = ? AND t3_thread IS NULL');
+    for (const [id, thread] of found) link.run(thread, titles.get(thread)?.title ?? null, id);
+    const none = db.prepare("UPDATE ai_proposals SET t3_thread = '' WHERE id = ? AND t3_thread IS NULL");
+    for (const r of rows) if (!found.has(r.id) && Date.now() - Date.parse(r.created_at) > 10 * 60_000) none.run(r.id);
+    if (found.size) changed(ownerId);
+  }
+
+  /**
+   * The chat whose proposals the panel shows when it follows T3 ("auto"): the
+   * one open in T3 now (see t3chats.mjs), else the one most recently active (a
+   * message in it, or one of its proposals changed; 'app' = the proposals made
+   * outside T3 chats), else all of them (no T3 chats at all).
+   */
+  function followed(user, groups, current) {
+    const open = t3?.open(user.username, current) ?? null;
+    if (open) return { chat: open, how: 'open' };
+    const latest = t3?.chatsOf(user.username, 1)[0];
+    let best = latest ? { chat: latest.id, at: latest.lastUserAt ?? '' } : null;
+    for (const g of groups.values()) if (!best || g.at > best.at) best = { chat: g.id, at: g.at };
+    if (!best || (best.chat === 'app' && !latest && groups.size === 1)) return { chat: 'all', how: 'all' };
+    return { chat: best.chat, how: 'recent' };
+  }
+  /** The chats with pending proposals (the panel's chat selector), most recently changed first. */
+  function chatGroups(ownerId) {
+    const rows = db
+      .prepare(
+        "SELECT t3_thread, t3_title, coalesce(updated_at, created_at) at FROM ai_proposals WHERE owner_id = ? AND status IN ('pending', 'applying')",
+      )
+      .all(ownerId);
+    const groups = new Map();
+    for (const r of rows) {
+      const id = r.t3_thread || 'app';
+      const g = groups.get(id) ?? groups.set(id, { id, title: r.t3_title ?? null, pending: 0, at: '' }).get(id);
+      g.pending++;
+      if (r.at > g.at) g.at = r.at;
+    }
+    return groups;
   }
 
   async function executeTool(name, args, context) {
@@ -1570,15 +1674,20 @@ export function createAssistant({ store, config = {} }) {
       });
     if (method === 'tools/call') {
       let out;
-      const before = turn.context.proposals.length;
+      // A T3 Code chat's call: its own list of proposals (chats call at the same time), and Claude's
+      // tool-use id, which T3 records with the call: the proposals it drafts are shown with that chat.
+      const context = turn.agent
+        ? { ...turn.context, proposals: [], t3: { toolUseId: clip(body.params?._meta?.['claudecode/toolUseId'], 100) || null } }
+        : turn.context;
+      const before = context.proposals.length;
       try {
-        out = await executeTool(String(body.params?.name ?? ''), body.params?.arguments ?? {}, turn.context);
+        out = await executeTool(String(body.params?.name ?? ''), body.params?.arguments ?? {}, context);
       } catch (e) {
         out = { error: clip(e.message, 300) };
       }
       // Proposals from T3 Code are shown in the app for review (Asistente → Cambios propuestos).
-      if (turn.agent && turn.context.proposals.length > before) {
-        const fresh = turn.context.proposals.splice(before);
+      if (turn.agent && context.proposals.length > before) {
+        const fresh = context.proposals.splice(before);
         insertMessage(turn.context.threadId, 'assistant', 'Propuesta desde T3 Code', [], [], fresh);
         out = {
           ...out,
@@ -1783,20 +1892,52 @@ export function createAssistant({ store, config = {} }) {
       }
     }
     if (path === '/api/chat/proposals' && method === 'GET') {
+      const me = owner(user);
+      // chat: 'all' (default), 'app' (made outside T3 chats), a T3 thread id, or 'auto': the chat
+      // T3 shows (see followed()); follow = that chat as the page last got it.
+      const asked = String(query.chat ?? 'all');
+      const follow = String(query.follow ?? '') || null;
+      void linkChats(me).catch(e => console.error('Proposals by chat:', e.message));
       // wait=1 with the revision the page holds: answer when a proposal is added, applied or
-      // discarded (or after 20 s), so the Asistente tab shows edits as the assistant drafts them.
-      if (query.wait) await waitForChange(owner(user), String(query.revision ?? ''), 20000);
-      const revision = revisionOf(owner(user));
+      // discarded (or after 20 s), so the Asistente tab shows edits as the assistant drafts them;
+      // with T3, also when another chat is opened there.
+      if (query.wait)
+        await waitForChange(me, String(query.revision ?? ''), 20000, t3 && !query.only ? () => followed(user, chatGroups(me), follow).chat !== follow : null);
+      const revision = revisionOf(me);
+      const groups = chatGroups(me);
+      const followNow = followed(user, groups, follow);
+      const scope = query.only ? { chat: 'all', how: 'only' } : asked === 'auto' ? followNow : { chat: asked, how: 'chosen' };
       const select = `SELECT p.*, t.title FROM ai_proposals p JOIN ai_threads t ON t.id = p.thread_id WHERE p.owner_id = ?`;
+      const where =
+        query.only ? ' AND p.id = ?' : scope.chat === 'all' ? '' : scope.chat === 'app' ? " AND coalesce(p.t3_thread, '') = ''" : ' AND p.t3_thread = ?';
+      const args = [me, ...(query.only ? [String(query.only)] : scope.chat === 'all' || scope.chat === 'app' ? [] : [scope.chat])];
       const order = 'ORDER BY p.created_at DESC, p.rowid DESC';
       // all=1: the pending ones and the last few reviewed (the panel shows five), not every old proposal on each change.
       const rows = [
-        ...db.prepare(`${select} AND p.status IN ('pending', 'applying') ${order} LIMIT 50`).all(owner(user)),
+        ...db.prepare(`${select}${where} AND p.status IN ('pending', 'applying') ${order} LIMIT 200`).all(...args),
         ...(query.all
-          ? db.prepare(`${select} AND p.status NOT IN ('pending', 'applying') ${order} LIMIT ?`).all(owner(user), Math.min(Number(query.reviewed) || 5, 50))
+          ? db
+              .prepare(`${select}${where} AND p.status NOT IN ('pending', 'applying') ${order} LIMIT ?`)
+              .all(...args, Math.min(Number(query.reviewed) || 5, 50))
           : []),
       ];
-      return { status: 200, body: { revision, proposals: rows.map(listedView) } };
+      // Titles as T3 shows them now (T3 names a chat after its first message, and it can be renamed).
+      const threadIds = [...groups.keys(), scope.chat, followNow.chat, ...rows.map(r => r.t3_thread)];
+      const titles = t3 ? t3.threads(threadIds.filter(id => id && id !== 'app' && id !== 'all')) : new Map();
+      const titleOf = id => (id === 'all' || id === 'app' ? null : (titles.get(id)?.title ?? groups.get(id)?.title ?? null));
+      const chats = [...groups.values()]
+        .sort((a, b) => (a.at < b.at ? 1 : -1))
+        .map(g => ({ id: g.id, title: titleOf(g.id), pending: g.pending }));
+      return {
+        status: 200,
+        body: {
+          revision,
+          scope: { ...scope, title: titleOf(scope.chat) },
+          follow: { ...followNow, title: titleOf(followNow.chat) },
+          chats,
+          proposals: rows.map(r => listedView(r, titles)),
+        },
+      };
     }
     // A cell edited by the person in the table (Asistente → Cambios propuestos), checked as a save checks it.
     const editMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/edit$/.exec(path);
