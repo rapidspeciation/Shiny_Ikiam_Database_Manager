@@ -25,6 +25,7 @@ tools/lab/app.sh --bg           # 3. the lab app; the first start creates the ad
 node tools/lab/bench.mjs opus high               # 4. every case, each in its own new thread, in parallel
 node tools/lab/bench.mjs gpt-6.1-sol medium --cases stocks-0929
 node tools/lab/bench.mjs --history               # model × case, the latest run of each
+node tools/lab/timeline.mjs <run> [case]         # where a thread's time went
 ```
 
 - `snapshot.sh` runs `scripts/cache-sandbox.mjs` on the server (`LAB_SSH_HOST`,
@@ -39,6 +40,12 @@ node tools/lab/bench.mjs --history               # model × case, the latest run
   in `credentials.json`. The Asistente tab shows the lab T3. Every restart
   re-seeds the sheets, so it also undoes a proposal a model applied. `bench.mjs`
   refuses to run while a case's cells are not empty.
+  Every start also refreshes the lab workspace (`scripts/t3-provision.mjs
+  --refresh-all`) from the checkout it runs from: its brief, skills
+  (`assistant/skills`) and subagents (`assistant/agents`). After editing those,
+  `tools/lab/app.sh --refresh` rewrites the workspace without a restart; a
+  change to the server needs a restart. Run the app from the checkout you are
+  testing (check with `ss -ltnp | grep 8795`).
 - `t3.sh` writes the lab T3's provider settings. Claude uses the local
   `claude` CLI and its login. Codex uses the local `codex` and `~/.codex`.
   Sonnet 5.5 is a custom model with an effort menu. It also writes
@@ -57,6 +64,16 @@ node tools/lab/bench.mjs --history               # model × case, the latest run
   - A blank truth cell that was left out of the proposal is right.
   - A filled truth cell that is missing from the proposal counts as missing.
     This includes cells `match_notebook` held back as doubtful.
+  - Only the thread's own proposals count: made or revised while it ran, or
+    tagged with its run. An id in its tool results may be another run's
+    proposal of the same rows (`overlaps`).
+  - Times: `first proposal` is when the thread's first proposal appeared in the
+    app (what the person sees beside the chat), `time` the wall-clock time from
+    the message to the last turn. Background subagents end a turn and start
+    another when they finish, so a run is over only when no turn is running
+    and no Claude transcript of the lab workspace has changed for 90 s.
+    `--variant LABEL` names the skill version measured (in the run id and the
+    history).
   - Output goes to `results/<run>/`: `table.md`, `scores.json`, `errors.csv`
     (every wrong or missing cell), `run.json` (threads, prompt) and screenshots.
     One line per case is appended to `results/history.jsonl`.
