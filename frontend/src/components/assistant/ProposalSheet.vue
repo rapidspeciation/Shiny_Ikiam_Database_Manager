@@ -3,7 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
-import { displayValue, normalizeInput } from '../../lib/cells'
+import { FileSpreadsheet, Sparkles } from 'lucide-vue-next'
+import { displayValue, editText, normalizeInput } from '../../lib/cells'
 import {
   attachCopyMarker,
   attachFillHandle,
@@ -12,13 +13,14 @@ import {
   editingKeys,
   openList,
   spreadsheetKeys,
+  textEditor,
   tileToSelection,
   typingPending,
   watchSize,
   type CanEdit,
 } from '../../lib/gridKit'
 import { parseBlock } from '../../lib/paste'
-import { ID_COLUMN, cellId, cellOf, rowKey, type ProposalChange } from '../../lib/proposals'
+import { ID_COLUMN, cellId, cellOf, rowKey, selectionActions, type ProposalChange } from '../../lib/proposals'
 import { isSumField, sumTotal } from '../../lib/sums'
 import type { CellValue, Field } from '../../lib/types'
 import { listProblem, verificationsFor } from '../../lib/verifications'
@@ -28,12 +30,14 @@ import { locale, t, tn } from '../../lib/i18n'
  * The rows of one sheet of a proposal as a spreadsheet, like the Colecta list:
  * Enter/Tab move, typing replaces, the fill handle and Ctrl+D copy down, blocks
  * paste from Excel or Sheets, list columns open the sheet's list, dates are
- * read day first. The assistant's values are green, the person's blue, an
+ * typed day first. The assistant's values are green, the person's blue, an
  * existing row's other cells grey; cells the assistant just changed flash;
- * counts written as sums show their total (=12+15 (27)). The ID stays at the
- * left and the column names at the top while scrolling (see columns() and the
- * table's maxHeight). Edits go out through `edit` (the parent saves them to
- * the proposal).
+ * counts written as sums show their total apart (=12+15 then "= 27"). The
+ * selected cells can go back to the sheet's value (the assistant's is kept
+ * aside, dashed, and not written) or take the assistant's value again. The ID
+ * stays at the left and the column names at the top while scrolling (see
+ * columns() and the table's maxHeight). Edits go out through `edit` (the
+ * parent saves them to the proposal).
  */
 export interface CellEdit {
   key: string
@@ -41,6 +45,8 @@ export interface CellEdit {
   value: CellValue
   /** What the cell showed when the person started typing. */
   before: CellValue
+  /** One of the buttons: back to the sheet's value, or the assistant's again (`value` then holds it). */
+  use?: 'sheet' | 'ai'
 }
 const props = defineProps<{
   sheet: string
@@ -50,24 +56,20 @@ const props = defineProps<{
   /** Formula columns of the pre-made rows new rows go into. */
   newRowFormulas: string[]
   editable: boolean
-  /** Ticks: 'pending' shows them, 'applied' shows ✓ on the rows written. */
-  ticks: 'pending' | 'applied' | 'none'
-  unticked: Set<string>
-  applied: number[]
+  /** An applied proposal: the rows written (a ✓ beside them); null otherwise. */
+  applied: number[] | null
   /** Cells to flash (the assistant just changed them). */
   flash: Set<string>
 }>()
 const emit = defineEmits<{
   edit: [cells: CellEdit[]]
-  toggle: [key: string]
-  toggleAll: []
   remove: [key: string]
   notice: [message: string]
 }>()
 
 type Row = Record<string, CellValue> & {
   __key: string
-  __tick: string
+  __done: string
   __row: string
   __label: string
   __note: string
@@ -79,29 +81,29 @@ let table: Tabulator | null = null
 let built = false
 let byKey = new Map<string, ProposalChange>()
 const touch = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
-// On a phone only the ID stays in place (as the first column): ticks, row and ID together took half the screen.
+// On a phone only the ID stays in place (as the first column): row and ID together took half the screen.
 const wide = typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches
 const rules = computed(() => verificationsFor(props.sheet))
 const fieldSet = computed(() => new Set(props.fields))
 const typeOf = (field: string) => (props.types[field] ?? 'text') as Field['type']
 const show = (field: string, value: CellValue | undefined) => displayValue(value, { key: field, type: typeOf(field) })
-/** What a count written as a sum (=12+15) adds up to, shown beside it; null for other cells. */
+/** What a count written as a sum (=12+15) adds up to, shown after it; null for other cells. */
 const totalOf = (field: string, value: CellValue | undefined) => (isSumField(props.sheet, field) ? sumTotal(value) : null)
-/** The cell's text with a sum's total beside it: "=12+15 (27)". */
+/** The cell's text with a sum's total apart after it: "=12+15" then "= 27" in its own colour. */
 function withTotal(field: string, value: CellValue | undefined, text: string): Node {
   const total = totalOf(field, value)
   if (total === null) return document.createTextNode(text)
   const box = document.createElement('span')
   const sum = document.createElement('span')
   sum.className = 'sum-total'
-  sum.textContent = `(${total})`
-  box.append(text, ' ', sum)
+  sum.textContent = `= ${total}`
+  box.append(text, sum)
   return box
 }
-/** The same as plain text, to size the column. */
+/** The same as plain text, to size the column (the total's box counts as a few letters more). */
 const textWithTotal = (field: string, value: CellValue | undefined) => {
   const total = totalOf(field, value)
-  return show(field, value) + (total === null ? '' : ` (${total})`)
+  return show(field, value) + (total === null ? '' : `  = ${total}  `)
 }
 
 function info(key: string, field: string) {
@@ -117,17 +119,9 @@ const hasChoices = (field: string) => !!choicesOf(field)?.size
 
 function toRow(c: ProposalChange): Row {
   const key = rowKey(c)
-  const tick =
-    props.ticks === 'pending'
-      ? props.unticked.has(key)
-        ? '0'
-        : '1'
-      : props.ticks === 'applied' && props.applied.includes(c.index)
-        ? 'applied'
-        : ''
   const out = {
     __key: key,
-    __tick: tick,
+    __done: props.applied?.includes(c.index) ? '✓' : '',
     __row: c.row ? String(c.row) : t('nueva'),
     __label: c.label,
     __note: c.note ?? '',
@@ -139,7 +133,7 @@ function toRow(c: ProposalChange): Row {
     state += cell.kind[0] + (props.flash.has(cellId(key, f)) ? '*' : '')
   }
   // Markers can change without the value (whose edit it is, a flash): part of the row's signature.
-  out.__state = state + JSON.stringify(c.personEdits ?? null) + (props.editable ? 'e' : '')
+  out.__state = state + JSON.stringify(c.personEdits ?? null) + (props.editable ? 'e' : '') + Object.keys(c.values).length
   return out
 }
 
@@ -155,12 +149,14 @@ function formatter(field: string) {
     const problem = changed ? listProblem(rules.value, field, c.value) : null
     el.classList.toggle('is-proposed', c.kind === 'proposed')
     el.classList.toggle('is-person', c.kind === 'person')
+    el.classList.toggle('is-reverted', c.kind === 'reverted')
     el.classList.toggle('is-sheet', c.kind === 'sheet')
     el.classList.toggle('is-formula', c.kind === 'locked')
     el.classList.toggle('is-invalid', !!problem)
     el.classList.toggle('is-flash', props.flash.has(cellId(row.__key, field)))
     el.classList.toggle('has-choices', canEditCell(row.__key, field) && hasChoices(field))
     const was = c.was === undefined ? '' : show(field, c.was) || t('vacío')
+    const ai = show(field, c.ai) || t('vacío')
     const before = change.replaceFormula?.includes(field) ? 'Antes: {value} (fórmula)' : 'Antes: {value}'
     el.title = [
       problem,
@@ -168,11 +164,17 @@ function formatter(field: string) {
       c.kind === 'person'
         ? [
             t('Editado por ti'),
-            c.aiProposed ? t('la IA proponía: {value}', { value: show(field, c.ai) || t('vacío') }) : '',
+            c.aiProposed ? t('la IA proponía: {value}', { value: ai }) : '',
             change.create ? '' : t('en la hoja: {value}', { value: was }),
           ]
             .filter(Boolean)
             .join(' · ')
+        : '',
+      c.kind === 'reverted'
+        ? [
+            change.create ? t('Vacía: no se escribe') : t('Valor de la hoja: no cambia'),
+            t('la IA proponía: {value}', { value: ai }),
+          ].join(' · ')
         : '',
       c.kind === 'locked' ? t('Fórmula de la hoja: no se escribe') : '',
       c.kind === 'sheet' && props.editable ? t('Valor actual de la hoja; escribe para cambiarlo') : '',
@@ -180,6 +182,16 @@ function formatter(field: string) {
       .filter(Boolean)
       .join('\n')
     const text = show(field, c.value)
+    // Set back to the sheet: its value, then the assistant's struck through (kept aside, not written).
+    if (c.kind === 'reverted') {
+      const box = document.createElement('span')
+      if (text) box.append(withTotal(field, c.value, text), ' ')
+      const aside = document.createElement('s')
+      aside.className = 'aside'
+      aside.append(withTotal(field, c.ai, ai))
+      box.append(aside)
+      return box
+    }
     if (!changed || change.create || c.was === undefined || show(field, c.was) === text) return withTotal(field, c.value, text)
     const box = document.createElement('span')
     // Emptied on purpose ({ clear: true } or the person deleted it): red, not a quiet "vacío".
@@ -194,26 +206,28 @@ function formatter(field: string) {
   }
 }
 
-function tickFormatter(cell: CellComponent) {
-  const value = cell.getValue()
-  if (value === 'applied') return '✓'
-  if (!value) return ''
-  const box = document.createElement('input')
-  box.type = 'checkbox'
-  box.checked = value === '1'
-  box.tabIndex = -1
-  box.style.pointerEvents = 'none'
-  return box
+/** The row number; a row with nothing left to write (every cell back to the sheet's value) is struck through. */
+function rowFormatter(cell: CellComponent) {
+  const row = cell.getData() as Row
+  const change = byKey.get(row.__key)
+  const skipped = props.editable && !!change && !Object.keys(change.values).length
+  const el = cell.getElement()
+  el.classList.toggle('is-skipped', skipped)
+  el.title = skipped ? t('Esta fila no se escribe: no le queda ningún cambio') : ''
+  return row.__row
 }
 
 function widthOf(field: string) {
   let chars = field.length + 2
   for (const c of props.changes) {
     const cell = cellOf(c, field, props.newRowFormulas)
-    const text =
-      textWithTotal(field, cell.value) +
-      (cell.was !== undefined && cell.kind !== 'sheet' ? ` ${textWithTotal(field, cell.was)}` : '')
-    chars = Math.max(chars, text.length)
+    const beside =
+      cell.kind === 'reverted'
+        ? ` ${textWithTotal(field, cell.ai)}`
+        : cell.was !== undefined && cell.kind !== 'sheet'
+          ? ` ${textWithTotal(field, cell.was)}`
+          : ''
+    chars = Math.max(chars, (textWithTotal(field, cell.value) + beside).length)
   }
   return Math.max(70, Math.min(260, Math.round(chars * 7.2 + 28)))
 }
@@ -232,18 +246,15 @@ function columns(): ColumnDefinition[] {
     tooltip: (_e: MouseEvent, cell: CellComponent) => (cell.getData() as Row).__note,
   } as ColumnDefinition
   if (!wide) cols.push(id)
-  if (props.ticks !== 'none')
+  if (props.applied)
     cols.push({
       title: '✓',
-      field: '__tick',
+      field: '__done',
       width: 34,
       frozen: wide,
       hozAlign: 'center',
       headerHozAlign: 'center',
-      headerTooltip: t('Elegir todas las filas o ninguna'),
-      formatter: tickFormatter as never,
-      cellClick: (_e, cell) => props.ticks === 'pending' && emit('toggle', (cell.getData() as Row).__key),
-      headerClick: () => props.ticks === 'pending' && emit('toggleAll'),
+      headerTooltip: t('Filas escritas en la hoja'),
     })
   cols.push({
     title: t('Fila'),
@@ -253,6 +264,7 @@ function columns(): ColumnDefinition[] {
     hozAlign: 'right',
     cssClass: 'row-number',
     headerSort: false,
+    formatter: rowFormatter as never,
   })
   if (wide) cols.push(id)
   for (const field of props.fields) {
@@ -269,7 +281,8 @@ function columns(): ColumnDefinition[] {
       editable: (cell: CellComponent) => canEditCell((cell.getData() as Row).__key, field),
       ...(choices
         ? choiceEditor(() => [...(choicesOf(field) ?? [])])
-        : { editor: 'input' as const, editorParams: { selectContents: true } }),
+        : // Dates open day first (26/05/2026), not as the sheet's serial number.
+          textEditor(value => editText(value as CellValue, { key: field, type: typeOf(field) }))),
     } as ColumnDefinition)
   }
   cols.push({
@@ -332,6 +345,40 @@ function onCellEdited(cell: CellComponent) {
   if (outgoing.length === 1) queueMicrotask(send)
 }
 
+// ------------------------------------------------------------ the sheet's value or the assistant's, for the selection
+/** What the buttons can do with the selected cells (counts, for their labels). */
+const actions = ref({ sheet: 0, ai: 0 })
+function selected() {
+  const out: { key: string; field: string; cell: NonNullable<ReturnType<typeof info>> }[] = []
+  for (const range of table?.getRanges() ?? [])
+    for (const cell of range.getCells().flat() as CellComponent[]) {
+      const field = cell.getField()
+      const key = (cell.getData() as Row).__key
+      const c = fieldSet.value.has(field) && canEditCell(key, field) ? info(key, field) : null
+      if (c) out.push({ key, field, cell: c })
+    }
+  return out
+}
+function updateActions() {
+  const next = props.editable && table ? selectionActions(selected().map(s => s.cell)) : { sheet: 0, ai: 0 }
+  if (next.sheet !== actions.value.sheet || next.ai !== actions.value.ai) actions.value = next
+}
+/**
+ * "Valor de la hoja": the selected cells go back to what the sheet has (a new
+ * row's to empty); the assistant's value is kept aside, marked, and not
+ * written. "Valor de la IA": they take the assistant's value again.
+ */
+function use(which: 'sheet' | 'ai') {
+  const cells: CellEdit[] = []
+  for (const { key, field, cell } of selected()) {
+    if (which === 'sheet' && (cell.kind === 'proposed' || cell.kind === 'person'))
+      cells.push({ key, field, value: null, before: cell.value, use: 'sheet' })
+    if (which === 'ai' && cell.aiProposed && (cell.kind === 'reverted' || cell.kind === 'person'))
+      cells.push({ key, field, value: cell.ai ?? null, before: cell.value, use: 'ai' })
+  }
+  if (cells.length) emit('edit', cells)
+}
+
 /** The copied block as rows of { field: text }, from the first selected column on (as SheetGrid). */
 function pasteParser(text: string) {
   const range = table?.getRanges()[0]
@@ -377,6 +424,9 @@ let stale = false
 let retry: number | undefined
 /** A cell is being edited, or keys typed wait for its editor: redrawing now would throw away what is typed. */
 const busy = () => !!host.value?.querySelector('.tabulator-editing') || typingPending()
+const layoutKey = () =>
+  // The language is part of it: the column titles and tooltips are in it.
+  [props.fields.join('|'), props.editable, props.applied ? 1 : 0, rules.value ? 1 : 0, locale.value].join('\n')
 function sync() {
   if (!table || !built) return
   if (busy()) {
@@ -388,8 +438,7 @@ function sync() {
   stale = false
   byKey = new Map(props.changes.map(c => [rowKey(c), c]))
   const rows = props.changes.map(toRow)
-  // The language is part of it: the column titles and tooltips are in it.
-  const layout = [props.fields.join('|'), props.editable, props.ticks, rules.value ? 1 : 0, locale.value].join('\n')
+  const layout = layoutKey()
   if (layout !== shownColumns) {
     shownColumns = layout
     table.setColumns(columns())
@@ -406,6 +455,7 @@ function sync() {
   }
   shownOrder = order
   shown = new Map(rows.map(r => [r.__key, JSON.stringify(r)]))
+  updateActions()
 }
 
 const onKeydown = spreadsheetKeys(
@@ -421,7 +471,7 @@ let sizeWatch: { disconnect: () => void } | null = null
 onMounted(() => {
   if (!host.value) return
   byKey = new Map(props.changes.map(c => [rowKey(c), c]))
-  shownColumns = [props.fields.join('|'), props.editable, props.ticks, rules.value ? 1 : 0, locale.value].join('\n')
+  shownColumns = layoutKey()
   table = new Tabulator(host.value, {
     data: [],
     index: '__key',
@@ -451,6 +501,7 @@ onMounted(() => {
   table.on('cellEdited', onCellEdited)
   table.on('cellEditCancelled', () => stale && sync())
   table.on('cellEdited', () => stale && setTimeout(sync))
+  for (const event of ['rangeAdded', 'rangeChanged', 'rangeRemoved'] as const) table.on(event as 'dataChanged', updateActions)
   // The ▾ arrow opens the list at once.
   table.on('cellClick', (event: UIEvent, cell: CellComponent) => {
     const el = cell.getElement()
@@ -491,23 +542,48 @@ onBeforeUnmount(() => {
   table = null
 })
 watch(
-  () => [
-    props.changes,
-    props.fields,
-    props.unticked,
-    props.flash,
-    props.editable,
-    props.ticks,
-    props.applied,
-    rules.value,
-    locale.value,
-  ],
+  () => [props.changes, props.fields, props.flash, props.editable, props.applied, rules.value, locale.value],
   sync,
 )
 </script>
 
 <template>
-  <div class="sheet-grid proposal-sheet">
-    <div ref="host" tabindex="-1" />
+  <div>
+    <div v-if="$slots.default || editable" class="flex flex-wrap items-center gap-2 px-2 pt-1.5 text-[11px] text-stone-500">
+      <slot />
+      <template v-if="editable">
+        <!-- Kept from taking the focus: the grid keeps its selection while the button is pressed. -->
+        <button
+          class="proposal-use"
+          :disabled="!actions.sheet"
+          :title="
+            actions.sheet
+              ? $t('Las celdas elegidas vuelven al valor de la hoja (en una fila nueva, vacías): la sugerencia de la IA queda marcada y no se aplica')
+              : $t('Elige celdas cambiadas: arrastra sobre ellas o pulsa el nombre de una columna')
+          "
+          @mousedown.prevent
+          @click="use('sheet')"
+        >
+          <FileSpreadsheet :size="12" /> {{ $t('Valor de la hoja') }}<template v-if="actions.sheet > 1"> ({{ actions.sheet }})</template>
+        </button>
+        <button
+          class="proposal-use"
+          :disabled="!actions.ai"
+          :title="
+            actions.ai
+              ? $t('Las celdas elegidas vuelven a tomar el valor que propuso la IA')
+              : $t('Elige celdas con una sugerencia de la IA que cambiaste o no se aplica')
+          "
+          @mousedown.prevent
+          @click="use('ai')"
+        >
+          <Sparkles :size="12" /> {{ $t('Valor de la IA') }}<template v-if="actions.ai > 1"> ({{ actions.ai }})</template>
+        </button>
+      </template>
+      <slot name="end" />
+    </div>
+    <div class="sheet-grid proposal-sheet">
+      <div ref="host" tabindex="-1" />
+    </div>
   </div>
 </template>

@@ -49,8 +49,8 @@ is written until the person applies it.
    (e.g. "Posturas, clutches 120–134"), how many cells to fill, the differences
    with the sheet (sheet → notebook), what the second reading changed, the
    doubtful readings with their alternatives, and the lines not found in the
-   sheet. End with: they can untick rows in *Cambios propuestos* and press ✓,
-   or tell you "sí/está bien". Use a small table only when there are several
+   sheet. End with: in *Cambios propuestos* they can set cells back to the
+   sheet value («Valor de la hoja») and press «Aplicar», or tell you "sí/está bien". Use a small table only when there are several
    differences.
 6. **Apply only on explicit confirmation**: when the person's latest message
    approves it ("sí", "aplícalo", "está bien"), call `apply_proposal` with the

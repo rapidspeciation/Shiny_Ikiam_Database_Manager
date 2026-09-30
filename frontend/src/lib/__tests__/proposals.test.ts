@@ -5,8 +5,10 @@ import {
   cellOf,
   changedCells,
   changedText,
-  chosenIndexes,
+  notApplied,
   panelShare,
+  rowsToWrite,
+  selectionActions,
   sheetGroups,
   withLocal,
   type Proposal,
@@ -65,8 +67,18 @@ describe('a cell of the proposal table', () => {
     expect(cellOf(fresh, 'Sex').kind).toBe('proposed')
     expect(cellOf(fresh, 'Notes_Collection_data')).toMatchObject({ value: null, kind: 'empty' })
     expect(cellOf(fresh, 'Tribe', ['Tribe']).kind).toBe('locked')
-    // A new row's cell the person emptied is still theirs.
-    expect(cellOf(created('c1', {}, { personEdits: { Sex: { ai: 'male' } } }), 'Sex')).toMatchObject({ value: null, kind: 'person' })
+    // A new row's cell the person emptied: the assistant's value is kept aside, not written.
+    expect(cellOf(created('c1', {}, { personEdits: { Sex: { ai: 'male' } } }), 'Sex')).toMatchObject({
+      value: null,
+      kind: 'reverted',
+      ai: 'male',
+    })
+  })
+  it("a cell set back to the sheet's value shows the sheet's value, the assistant's kept aside", () => {
+    const row = edited('r1', {}, { personEdits: { Sex: { ai: 'female' } } })
+    expect(cellOf(row, 'Sex')).toMatchObject({ value: 'male', kind: 'reverted', ai: 'female', aiProposed: true })
+    // Even a suggestion to empty the cell.
+    expect(cellOf(edited('r1', {}, { personEdits: { Sex: { ai: null } } }), 'Sex')).toMatchObject({ kind: 'reverted', ai: null })
   })
   it('an existing cell the proposal empties ({ clear: true }) is a change with the value it removes, shown as "vaciar"', () => {
     expect(cellOf(edited('r1', { Sex: null }), 'Sex')).toMatchObject({ value: null, kind: 'proposed', was: 'male' })
@@ -113,8 +125,8 @@ describe("the person's unsaved edits", () => {
   it('stay over a revision that arrives meanwhile, marked as theirs', () => {
     const server = proposal([created('c1', { SPECIES: 'Oleria gunilla', Sex: 'male' }), edited('r1', { Sex: 'female' })])
     const local = new Map([
-      [cellId('c1', 'SPECIES'), 'Hypothyris anastasia'],
-      [cellId('c1', 'Sex'), null],
+      [cellId('c1', 'SPECIES'), { value: 'Hypothyris anastasia' }],
+      [cellId('c1', 'Sex'), { value: null }],
     ])
     const shown = withLocal(server, local)
     expect(shown.changes[0].values).toEqual({ SPECIES: 'Hypothyris anastasia' })
@@ -123,13 +135,60 @@ describe("the person's unsaved edits", () => {
     expect(shown.changes[1]).toBe(server.changes[1])
     expect(withLocal(server, new Map())).toBe(server)
   })
+  it('"Valor de la hoja" sets cells back with the assistant\'s value aside; "Valor de la IA" takes it again', () => {
+    const server = proposal([
+      created('c1', { SPECIES: 'Oleria gunilla', Sex: 'male' }),
+      edited('r1', { Sex: 'female', SPECIES: 'Hypothyris anastasia' }, { personEdits: { SPECIES: { ai: 'Oleria gunilla' } } }),
+    ])
+    const back = withLocal(
+      server,
+      new Map([
+        [cellId('c1', 'Sex'), { value: null, use: 'sheet' as const }],
+        [cellId('r1', 'Sex'), { value: null, use: 'sheet' as const }],
+        [cellId('r1', 'SPECIES'), { value: 'Oleria gunilla', use: 'ai' as const }],
+      ]),
+    )
+    expect(back.changes[0].values).toEqual({ SPECIES: 'Oleria gunilla' })
+    expect(cellOf(back.changes[0], 'Sex')).toMatchObject({ kind: 'reverted', ai: 'male' })
+    expect(cellOf(back.changes[1], 'Sex')).toMatchObject({ value: 'male', kind: 'reverted', ai: 'female' })
+    expect(cellOf(back.changes[1], 'SPECIES')).toMatchObject({ value: 'Oleria gunilla', kind: 'proposed' })
+    expect(back.changes[1].personEdits).toEqual({ Sex: { ai: 'female' } })
+    // A cell the person added (the assistant proposed nothing there) set back: no mark left.
+    const added = withLocal(
+      proposal([edited('r1', { Flight_height: 2 }, { personEdits: { Flight_height: {} } })]),
+      new Map([[cellId('r1', 'Flight_height'), { value: null, use: 'sheet' as const }]]),
+    )
+    expect(added.changes[0].values).toEqual({})
+    expect(added.changes[0].personEdits).toBeUndefined()
+  })
+})
+
+describe('the buttons for the selected cells', () => {
+  it('count the cells each one can change', () => {
+    const row = edited(
+      'r1',
+      { Sex: 'female', SPECIES: 'Hypothyris anastasia', Flight_height: 2 },
+      { personEdits: { SPECIES: { ai: 'Oleria gunilla' }, Flight_height: {}, Collector: { ai: 'FCH' } } },
+    )
+    const cells = ['Sex', 'SPECIES', 'Flight_height', 'Collector', 'Tribe'].map(f => cellOf(row, f))
+    // Sex (the AI's), SPECIES and Flight_height (typed) go back to the sheet; SPECIES and Collector (set back) take the AI's again.
+    expect(selectionActions(cells)).toEqual({ sheet: 3, ai: 2 })
+    expect(selectionActions([cellOf(row, 'Tribe')])).toEqual({ sheet: 0, ai: 0 })
+  })
 })
 
 describe('applying', () => {
-  it('takes the ticked rows that have something to write, by their index now', () => {
-    const p = proposal([created('c1', { Sex: 'male' }), created('c2', {}), edited('r1', { Sex: 'female' }), created('c3', { Sex: 'female' })])
-    expect(chosenIndexes(p, new Set())).toEqual([0, 2, 3])
-    expect(chosenIndexes(p, new Set(['r1']))).toEqual([0, 3])
+  it('writes the rows with something left to write, and counts the suggestions set aside', () => {
+    const p = proposal([
+      created('c1', { Sex: 'male' }),
+      // Every cell set back: dropped.
+      created('c2', {}, { personEdits: { Sex: { ai: 'male' }, SPECIES: { ai: 'Oleria gunilla' } } }),
+      edited('r1', { Sex: 'female' }),
+      edited('r2', {}, { personEdits: { Sex: { ai: 'female' } } }),
+      created('c3', { Sex: 'female' }),
+    ])
+    expect(rowsToWrite(p)).toEqual([0, 2, 4])
+    expect(notApplied(p)).toBe(3)
   })
 })
 

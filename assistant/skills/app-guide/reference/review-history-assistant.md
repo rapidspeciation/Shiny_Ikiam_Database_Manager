@@ -72,8 +72,11 @@ without T3 configured only the chat shows).
 - **Cambios propuestos** (beside T3, below it on phones; also inside the
   chat messages): each proposal as a table like the sheet: «Fila», the
   changed cells in green with the old value struck through, new rows marked
-  «nueva», «Motivo» per row, a tick per row («Elegir todas»). «Aplicar N
-  filas» writes the ticked rows as one save (undoable in Historial);
+  «nueva», «Motivo» per row. The person selects cells and presses «Valor de
+  la hoja» (back to the sheet's value, or empty in a new row: the AI value
+  stays aside, dashed and struck through, not written) or «Valor de la IA»
+  (the AI value again). «Aplicar N filas» writes what the table shows as one
+  save (undoable in Historial); a row with every cell set back is skipped;
   «Descartar» drops it; "sí, aplícalo" in the chat does the same through
   `apply_proposal`. «Revisados hace poco (N)» keeps the last five. The panel
   can be placed right or bottom, or opened alone in its own browser tab at
