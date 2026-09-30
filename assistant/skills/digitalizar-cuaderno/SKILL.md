@@ -15,7 +15,12 @@ is written until the person applies it.
 
 1. **Identify the notebook** from the headers (table below). If you cannot tell,
    say so in one line and use the closest kind; never stop to ask first.
-2. **Transcribe every line and every column**, top to bottom, including
+2. **Crop the page with the skill's tool** (see "Crops" below): an overview
+   with rulers, then strips of ~10 lines with the header repeated, straightened
+   and enhanced. Read the page yourself from the strips (several per reply);
+   several pages at once are read by reader subagents in parallel (see
+   "Several pages at once").
+   **Transcribe every line and every column**, top to bottom, including
    crossed-out lines (`crossedOut: true`) and the notes. A spread of two facing
    pages is one page: the right-hand page continues the same lines, so follow
    each line across the gutter (count the ruled lines from the header on both
@@ -27,23 +32,31 @@ is written until the person applies it.
    larvae → no pupae or adults; a note like "no hatch" or "all died" sits on
    such a line; `ins`/`lab` is written on almost every line). If they do not,
    the right-hand page is shifted by a line: re-align it.
-3. **Call `match_notebook` once per page** with `kind`, the `lines` and, only if
-   the year is written somewhere on the page, `year`. Several envelopes/labels
-   photographed together are one call (`kind: "labels"`, one line per label).
-   Do not look the rows up yourself first: the tool does it (and better: it also
-   tries look-alike IDs and the order of the rows).
-4. **Tell the person in 3–6 short lines, in their language (Spanish or English)**: which notebook and rows
+3. **Propose at once: call `match_notebook` once per page** right after this
+   first reading, with `kind`, the `lines` and, only if the year is written
+   somewhere on the page, `year`. Several envelopes/labels photographed
+   together are one call (`kind: "labels"`, one line per label). Do not look
+   the rows up yourself first: the tool does it (and better: it also tries
+   look-alike IDs and the order of the rows). Then tell the person in one line
+   that the proposal is in *Cambios propuestos* and that you are checking it
+   with a second reading (e.g. "La propuesta de Posturas 947–976 ya está en
+   Cambios propuestos; la estoy verificando con una segunda lectura.").
+4. **Verify and correct the same proposal** (see "Verification" below): a
+   targeted second reading, its corrections applied to the same proposal
+   (`update_proposal`, or `match_notebook` with `replaceProposalId`), so the
+   table beside the chat improves while the person looks at it.
+5. **Then tell the person in 3–6 short lines, in their language (Spanish or English)**: which notebook and rows
    (e.g. "Posturas, clutches 120–134"), how many cells to fill, the differences
-   with the sheet (sheet → notebook), the doubtful readings with their
-   alternatives, and the lines not found in the sheet. End with: the proposal is
-   in *Cambios propuestos*, beside the chat; they can untick rows and press ✓, or
-   tell you "sí/está bien". Use a small table only when there are several
+   with the sheet (sheet → notebook), what the second reading changed, the
+   doubtful readings with their alternatives, and the lines not found in the
+   sheet. End with: they can untick rows in *Cambios propuestos* and press ✓,
+   or tell you "sí/está bien". Use a small table only when there are several
    differences.
-5. **Apply only on explicit confirmation**: when the person's latest message
+6. **Apply only on explicit confirmation**: when the person's latest message
    approves it ("sí", "aplícalo", "está bien"), call `apply_proposal` with the
    `proposalId` (optionally only some `indexes`). Never say something was saved
    unless it returned `applied`.
-6. **Corrections** ("la línea 5 es macho", "el 3 es 8"): call `match_notebook`
+7. **Corrections** ("la línea 5 es macho", "el 3 es 8"): call `match_notebook`
    again with the whole page corrected (the corrected cell without confidence)
    and `replaceProposalId` = the page's pending proposal: the same table
    changes in place beside the chat. Cells the person corrected by hand in the
@@ -67,8 +80,8 @@ Propose what is clear and mark the rest; do not stop to ask before proposing.
   small. Butterfly IDs use the **letter O** in series like `6OO`, `1OP`, `5OR`,
   and `5OS` (letter) and `50S` (zero) are two different butterflies: copy what is
   written; the tool finds the right row among the look-alikes.
-- A crossed-out value is not the value: the one written beside or above it is
-  (`68 12̶ 11` → 11).
+- A crossed-out value in a date or text is not the value: the one written
+  beside or above it is. Counts are different: see "Counts" below.
 
 ## Writing the values
 
@@ -89,7 +102,7 @@ Give values **as written**; the tool converts them.
   `pol. p.`/`polymnia p.`/`proceriformis` = Mechanitis polymnia proceriformis;
   `pol. e.`/`eurydice` = Mechanitis polymnia eurydice;
   `polymnia` alone = Mechanitis polymnia proceriformis (the usual polymnia
-  stock; alternative Mechanitis polymnia eurydice);
+  stock: a sure reading, not a doubtful one);
   `wer x pro` = Mechanitis polymnia werneri x proceriformis;
   `pro x wer` = Mechanitis polymnia proceriformis x werneri;
   `lysimnia`/`lys` = Mechanitis lysimnia;
@@ -103,9 +116,15 @@ Give values **as written**; the tool converts them.
   keeps Insectary_stocks counts as sums (one term per day or group); the tool
   proposes them as the formula `=12+15`, keeping the terms. A minus is part of
   the count: `27-5` means 27 larvae of which 5 died (23 alive), so send `27-5`.
-  A number **crossed out** with a line and a new number written beside it is a
-  correction, not a subtraction: send only the new number (and its sum, if it
-  continues one), never the crossed-out one.
+- **Counts corrected on the page** (a number crossed out and a new one written
+  beside or above it, or a total after `=` that is not the sum): send the first
+  value as written, then **each new total after `=`**, in the order written.
+  The tool keeps the first terms and turns every correction into a
+  subtraction (or addition), as the team types them:
+  `31+4 = 1` → `31+4=1` (→ `=31+4-34`); `1̶2̶ 9̶ 4̶ 3̶ 2` → `12=9=4=3=2`
+  (→ `=12-3-5-1-1`); `16+2̶ 1` (the 2 crossed out, 1 written) → `16+2=17`
+  (→ `=16+2-1`); `24-1 = 2̶3̶ = 18` → `24-1=23=18`. Never leave such a cell out
+  because it was corrected: the last total is clear, give it.
 - **CAMs** (`CAM` + 6 digits) and **tubes** (2 letters + 8 digits, e.g.
   `FS50851817`, often with `wc` = wing clip): a short number under a full one
   continues it (`cam505` or `72` under `CAM076671`; `81` under `FS50851380`). You
@@ -220,42 +239,87 @@ another chat): mention them, and if it is the same page pass their id as
 - A page already matched earlier in the conversation: re-match it with
   `replaceProposalId` instead of making a second proposal.
 
-## Long pages: split the reading across subagents
+## Crops
 
-A page (or spread) with more than ~15 lines, or several photos at once, is read
-faster and better in parallel:
+One command cuts the photo for reading (Pillow; the output goes to this chat's
+`work/<today>-<topic>/`, never a folder another chat may use):
 
-1. Cut the page into blocks of ~15 lines (crop images with the header row kept
-   on each crop; save crops in `work/<today>-<topic>/`, never in a shared
-   folder another chat may use).
-2. Start one subagent per block (Task/Agent tool). Each transcribes **blind**,
-   from its crop only, every line and column, and returns the `lines` JSON of
+1. `python3 .claude/skills/digitalizar-cuaderno/crops.py PHOTO --out work/<today>-<topic>`
+   writes `<photo>-overview.jpg`: the photo turned upright (EXIF) with rulers
+   of fractions (0–1) on every side. Look at it once. If the page is still
+   sideways, add `--rotate 90` (clockwise; 270 if that leaves it upside down)
+   to every call.
+2. Read off the overview, for each page of the spread: its left and right edge
+   (`x=0.11-0.50`), the top of the header row (`head=`), the top of the first
+   written line and the bottom of the last one, at the page's left and right
+   edges (`top=0.145,0.14 bottom=0.93,0.915`), and count the written lines.
+   Then:
+   `python3 …/crops.py PHOTO --out DIR --lines 30 --left "x=0.11-0.50 head=0.10 top=0.145,0.14 bottom=0.93,0.915" --right "x=0.50-0.88 head=0.085 top=0.14,0.135 bottom=0.915,0.88"`
+   (one page: `--page "…"`; `--enhance strong` for faint pencil). It prints
+   JSON: each strip's `path` and `lines` (e.g. left 1–10, right 1–10). The
+   borders snap to the printed ruling (`snapped`: how many lines they moved;
+   more than ~0.5 means your numbers were off: check the first strip). Each
+   right-page strip starts with the left page's ID column (framed in red) cut
+   on the same lines, so every right-hand value sits beside its clutch/ID.
+3. View several strips per reply (several Read calls in one message), e.g. the
+   left and right strip of the same lines together.
+4. A cell too small or crossed out: `--zoom x0,y0,x1,y1` (fractions of the
+   photo, repeatable) gives an enlarged crop.
+
+Labels, envelopes and short pages (≤ ~12 lines) can be read from the overview
+or one strip per page; the tool is for tables.
+
+## Several pages at once: reader subagents in parallel
+
+Read a single page yourself from its strips: in the lab, splitting one page
+across readers was slower (the readers, then merging their answers, took longer
+than reading it) and not more accurate. When the person sends several pages
+(several photos of tables) in one message:
+
+1. Cut the strips of every page (above).
+2. Start one reader per page — `subagent_type: "notebook-reader"` (a faster
+   model that knows this skill's value rules; `general-purpose` if that type is
+   not available) — **all of them in one message** (several Agent calls in the
+   same reply, `run_in_background: false`, so they run at the same time). Give
+   each: the notebook kind and its columns, and its page's strip paths. It
+   transcribes **blind** every line and column and returns the `lines` JSON of
    `match_notebook` (with `confidence` on doubtful cells). Do not give it your
    own readings or the sheet's values.
-3. Merge the blocks in notebook order, call `match_notebook` **once** for the
-   page, then run the verification below.
+3. Check each page's lines (the stages make sense on each line) and call
+   `match_notebook` once per page as the answers arrive. Then verify.
 
-## Verification: an adversarial second reading (always, before summarising)
+## Verification: a targeted second reading (always, after proposing)
 
-A transcription is not done until a second reader has checked it:
+The proposal is already beside the chat; verification makes it right. Re-read
+what is likely to be wrong, not what is clearly fine:
 
-1. Start one reviewer subagent per block (or one per photo for short pages).
-   Give it only the crop and the columns to read. **Never tell it your
-   readings**, never quote values or abbreviations from the proposal in its
-   prompt (a reviewer told "ins/lab" read "ins/lab" where the page says
-   "ins/oda").
-2. The reviewer first transcribes every cell itself, then reads the proposal
+1. **Choose the cells to re-read** from the `match_notebook` answer and your
+   reading: doubtful and unread cells and `problems`; cells that fail
+   plausibility (evaluate the sums: adults ≤ pupae ≤ larvae ≤ eggs; dates in
+   order laid ≤ hatch ≤ pupa ≤ emergence; a hatch date or larvae before any
+   pupa/adult; lines that say "all died"/"no hatch" with counts > 0; a line
+   without `ins`/`lab` when its neighbours have it); crossed-out, overwritten
+   or faint cells and long sums (4+ terms); and on a two-page spread the
+   alignment of the right-hand page (re-read its lines with their IDs to check
+   they are in step). Clear, plausible lines get no second reading.
+2. **Start every reviewer in one message** (several Agent calls in the same
+   reply, `run_in_background: false`, `subagent_type: "notebook-reviewer"`, or
+   `general-purpose` if that type is not available): one per block of lines, each with only
+   its strips (and the photo path, for `--zoom`) and the list of lines (by ID)
+   and columns to read. **Never tell
+   it your readings**, never quote values or abbreviations from the proposal in
+   its prompt (a reviewer told "ins/lab" read "ins/lab" where the page says
+   "ins/oda"). It first transcribes those cells itself, then reads the proposal
    (`get_proposal`) and returns a table `line | column | page | proposal |
    confidence` of every disagreement, plus impossible stages it sees.
-3. Also check plausibility yourself: adults ≤ pupae ≤ larvae ≤ eggs (sums
-   evaluated), dates in order (laid ≤ hatch ≤ pupa ≤ emergence), a hatch date
-   or larvae before any pupa/adult, counts on lines that say "all died"/"no
-   hatch" = 0 or NA.
-4. Where the two readings disagree and the photo does not settle it, keep the
-   cell doubtful (`confidence`) and ask the person in the summary; where the
-   photo settles it, correct the same proposal (`replaceProposalId` /
-   `update_proposal`). Say in the summary that a second reading was done and
-   how many cells it changed.
+3. **Correct the same proposal**: where the photo settles a disagreement (look
+   at a zoomed crop yourself), fix it with `update_proposal` (seconds: the rows
+   by `index`, only the cells that change). Use `match_notebook` with the whole
+   page and `replaceProposalId` only when many lines change (a shifted block):
+   writing the whole page again takes more than a minute. Where it does not, keep the cell doubtful (`confidence`) and
+   ask the person in the summary.
+4. In the summary, say that a second reading was done, how many cells it
+   checked and what it changed.
 
 ## Show every line of the page
 

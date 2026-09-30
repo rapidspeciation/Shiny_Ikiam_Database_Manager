@@ -14,6 +14,7 @@ import {
   readValue,
   sameValue,
   sumTerms,
+  correctedTerms,
 } from '../server/notebook.mjs';
 
 const d = text => parseDateText(text);
@@ -69,7 +70,16 @@ test('counts written as sums keep their terms in Insectary_stocks', () => {
   assert.equal(readValue('INSECTARY OR LABORATORY', 'ins ESTEBAN', stocks).value, 'Insectary');
   assert.equal(readValue('INSECTARY OR LABORATORY', 'lab', stocks).value, 'Laboratory');
   assert.equal(readValue('NUMBER OF ADULTS', '19', stocks).value, '=19', 'typed like the sheet types them');
-  assert.equal(readValue('NUMBER OF LARVAE', '4+6=0', stocks).value, 0);
+  assert.equal(readValue('NUMBER OF LARVAE', '4+6=0', stocks).value, '=4+6-10', 'all died: the terms and the correction');
+  assert.equal(readValue('NUMBER OF LARVAE', '4+6=0', {}).value, 0, 'elsewhere the total');
+  // Crossed-out counts, as the team types them: each new total after "=" is a correction.
+  assert.equal(readValue('NUMBER OF LARVAE', '31+4=1', stocks).value, '=31+4-34');
+  assert.equal(readValue('NUMBER OF LARVAE', '12=9=4=3=2', stocks).value, '=12-3-5-1-1');
+  assert.equal(readValue('NUMBER OF LARVAE', '6=3-1=1', stocks).value, '=6-3-1-1');
+  assert.equal(readValue('NUMBER OF LARVAE', '16+2=17', stocks).value, '=16+2-1');
+  assert.equal(readValue('NUMBER OF LARVAE', '24-1=23=18', stocks).value, '=24-1-5');
+  assert.deepEqual(correctedTerms('2+4=6+8=14'), [2, 4, 8]);
+  assert.equal(correctedTerms('ins'), null);
   assert.ok(sameValue('NUMBER OF EGGS', '=12+15', '=12+15'));
   assert.ok(sameValue('NUMBER OF EGGS', 27, '=12+15'), 'a plain number and a sum: their total');
   assert.ok(!sameValue('NUMBER OF EGGS', '=14+13', '=12+15'), 'two sums: their terms');

@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // Sets up a person's project in T3 Code (stock install, nothing patched):
 // a folder with the Ithomiini brief for Claude/Codex (CLAUDE.md, AGENTS.md),
-// the skills (every folder of assistant/skills: digitalizar-cuaderno, app-guide), the app's tools over MCP
+// the skills (every folder of assistant/skills: digitalizar-cuaderno, app-guide), the Claude Code
+// subagents (assistant/agents: notebook-reader, notebook-reviewer on Sonnet), the app's tools over MCP
 // with a personal token (.mcp.json for Claude, .codex/config.toml for Codex), and `t3 project add`. Run on the server:
 //   node scripts/t3-provision.mjs <username>     new person, or a fresh token
 //   node scripts/t3-provision.mjs --refresh-all  after a release (scripts/deploy.sh):
-//     every existing workspace gets the new brief and skills and keeps its token.
+//     every existing workspace gets the new brief, skills and subagents and keeps its token.
 // The server's paths are the defaults; another install (the local test lab, tools/lab) sets them:
 //   ITHOMIINI_SHARED (shared folder), DATABASE_PATH, ITHOMIINI_MCP_URL (or ITHOMIINI_SERVICE_ENV),
 //   ITHOMIINI_T3_WORKSPACES (default <shared>/t3-workspaces), ITHOMIINI_SRC (the source checkout
@@ -112,8 +113,10 @@ codes and values stay exactly as they are in the workbook.
   \`app-dev\` — the source is the git checkout \`${source}\`
   (build, test, commit, push, \`scripts/deploy.sh\`). Never edit the built
   files in \`${join(root, 'releases')}\` or \`current\`.
-- Long notebook pages: split the reading across subagents and always run the
-  skill's adversarial second reading before summarising.
+- Notebook photos: propose first (\`match_notebook\` right after the first
+  reading, and say it is being checked), then run the skill's targeted second
+  reading (all subagents started in one message, so they run in parallel) and
+  correct the same proposal; several pages at once are read by subagents in parallel.
 - The project's Google account (jmithominii@gmail.com) is available with gog:
   \`set -a; . ~/.config/ithomiini/gog.env; set +a; gog --readonly --account jmithominii@gmail.com --client ithomiini <command>\`
   (gmail search/get, drive, docs, sheets, slides, calendar, forms, appscript;
@@ -227,6 +230,13 @@ function provision(user, { freshToken, addProject }) {
       cpSync(join(skills, name), target, { recursive: true });
     }
   }
+
+  // Claude Code subagents (assistant/agents/*.md: notebook readers and reviewers on their own
+  // model and effort) replace the workspace's .claude/agents. Codex has no subagent files.
+  const agents = join(release, 'assistant', 'agents');
+  const agentsTarget = join(workspace, '.claude', 'agents');
+  rmSync(agentsTarget, { recursive: true, force: true });
+  if (existsSync(agents)) cpSync(agents, agentsTarget, { recursive: true });
 
   const token = (!freshToken && keptToken(workspace, user)) || mintToken(user);
   const mcp = join(workspace, '.mcp.json');

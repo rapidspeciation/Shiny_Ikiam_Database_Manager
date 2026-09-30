@@ -268,6 +268,24 @@ export function sumTerms(text) {
   }
   return terms;
 }
+/**
+ * The terms of a count corrected on the page, as the team types it: the first sum as
+ * written, then each new total written after "=" (the crossed-out value replaced) as the
+ * difference from the running total. "31+4=1" → 31, 4, -34; "12=9=4" (12 crossed out, then
+ * 9, then 4) → 12, -3, -5; "2+4=6+8=14" (steps that add up) → 2, 4, 8. Null when not a sum.
+ */
+export function correctedTerms(text) {
+  const s = String(text ?? '').replace(/\s+/g, '').replace(/^=/, '');
+  if (!/^\d+(?:[+-]\d+)*(?:=\d+(?:[+-]\d+)*)*$/.test(s)) return null;
+  const parts = s.split('=').map(p => p.match(/[+-]?\d+/g).map(Number));
+  const terms = [...parts[0]];
+  for (const part of parts.slice(1)) {
+    const total = terms.reduce((a, b) => a + b, 0);
+    if (part[0] !== total) terms.push(part[0] - total);
+    terms.push(...part.slice(1));
+  }
+  return terms;
+}
 const formulaOf = terms => `=${terms.map((t, i) => (i && t >= 0 ? `+${t}` : String(t))).join('')}`;
 
 /** The value a notebook cell gives a column, as the sheet stores it, or an error. */
@@ -287,9 +305,9 @@ export function readValue(field, text, { year, sheet = null }) {
     return { value: /^\d+$/.test(compact) ? Number(compact) : compact };
   }
   if (type === 'number') {
-    const terms = sumTerms(s);
-    // Stock counts are typed as formulas keeping the notebook's terms (=12+15, =19).
-    // Stock counts are kept as the notebook sums them (=12+15, =19); elsewhere the total.
+    // Stock counts are kept as the notebook sums them (=12+15, =19; a corrected count keeps
+    // its first terms and the corrections: =31+4-34); elsewhere the total.
+    const terms = sumTerms(s) ?? (isSumField(sheet, field) ? correctedTerms(s) : null);
     if (terms) return { value: (isSumField(sheet, field) && simpleSum(formulaOf(terms))) || terms.reduce((a, b) => a + b, 0) };
     // A worked sum whose steps do not add up counts what follows the last "=".
     const total = /^[\d\s+\-=]*=\s*(\d+)$/.exec(s);

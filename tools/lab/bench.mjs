@@ -2,7 +2,7 @@
 // Benchmark: a model transcribes the lab's notebook photos in the lab T3 (tools/lab/t3.sh),
 // through the lab app's tools (tools/lab/app.sh), and its proposals are scored cell by
 // cell against the snapshot's current values of those rows (the human-corrected data).
-//   node tools/lab/bench.mjs <model> [effort] [--cases id,prefix…] [--timeout 40] [--dry]
+//   node tools/lab/bench.mjs <model> [effort] [--cases id,prefix…] [--variant label] [--timeout 40] [--dry]
 //   node tools/lab/bench.mjs --rescore <run>    score a run again (e.g. after a new snapshot)
 //   node tools/lab/bench.mjs --history          the results so far, model × case
 // <model>: opus | sonnet | gpt-6.1-sol, or a name as T3's model picker shows it ("GPT-6-Sol").
@@ -11,7 +11,7 @@
 // set up one after another (T3 shares a project's draft between tabs) and run in parallel.
 // Output: $LAB/results/<run>/ (run.json, scores.json, errors.csv, table.md, shots/) and a
 // line per case in $LAB/results/history.jsonl.
-import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -59,6 +59,7 @@ if (rescore) {
 }
 const dry = argv.includes('--dry') && argv.splice(argv.indexOf('--dry'), 1);
 const only = flag('--cases', '');
+const variant = flag('--variant', null); // a label for the skill/tool version being measured
 const timeoutMin = Number(flag('--timeout', 40));
 const [modelArg, effortArg] = argv;
 if (!modelArg) {
@@ -71,7 +72,7 @@ const effort = effortArg ? (EFFORTS[effortArg.toLowerCase()] ?? effortArg) : nul
 
 const cases = loadCases().filter(c => !only || only.split(',').some(p => c.id === p || c.id.startsWith(p)));
 if (!cases.length) throw new Error(`No case matches ${only}`);
-const runId = `${new Date().toISOString().replace(/[-:]/g, '').slice(0, 13)}-${modelName.replace(/\W+/g, '').toLowerCase()}${effort ? '-' + effort.replace(/\W+/g, '').toLowerCase() : ''}`;
+const runId = `${new Date().toISOString().replace(/[-:]/g, '').slice(0, 13)}-${modelName.replace(/\W+/g, '').toLowerCase()}${effort ? '-' + effort.replace(/\W+/g, '').toLowerCase() : ''}${variant ? '-' + variant.replace(/\W+/g, '').toLowerCase() : ''}`;
 const outDir = labPath('results', runId);
 
 /** The same prompt for every model; only the tag and the photo count change. */
@@ -206,15 +207,19 @@ for (const kase of cases) {
   started.push(r);
 }
 await browser.close();
-const run = { runId, model: modelName, effort, startedAt: new Date().toISOString(), lab: LAB, threads: started };
+const run = { runId, model: modelName, effort, variant, startedAt: new Date().toISOString(), lab: LAB, threads: started };
 writePrivate(join(outDir, 'run.json'), JSON.stringify(run, null, 1));
 if (dry) process.exit(0);
 
 // ------------------------------------------------------------------ wait for the turns
+// A thread whose turns are all done may still have background subagents at work: their
+// result starts a new turn. So the run is over only when no thread has a running turn and no
+// Claude transcript of the lab workspace (thread or subagent) has changed for a while.
 const deadline = Date.now() + timeoutMin * 60000;
 for (;;) {
   const open = refreshTurns(started).filter(s => s.state === 'running').length;
-  if (!open || Date.now() > deadline) break;
+  const quiet = Date.now() - lastTranscriptChange() > 90000;
+  if ((!open && quiet) || Date.now() > deadline) break;
   process.stdout.write(`\r${new Date().toTimeString().slice(0, 8)} ${open} of ${started.filter(s => s.threadId).length} threads still working…`);
   await new Promise(r => setTimeout(r, 15000));
 }
@@ -223,6 +228,21 @@ writePrivate(join(outDir, 'run.json'), JSON.stringify(run, null, 1));
 report(run, score(run, cases));
 
 // ------------------------------------------------------------------ helpers
+/** When a Claude transcript of the lab workspace (a thread or one of its subagents) last changed. */
+function lastTranscriptChange() {
+  const dir = join(homedir(), '.claude', 'projects', `${T3_HOME}/workspaces/lab`.replace(/[^A-Za-z0-9]/g, '-'));
+  let latest = 0;
+  const walk = folder => {
+    for (const e of existsSync(folder) ? readdirSync(folder, { withFileTypes: true }) : []) {
+      const path = join(folder, e.name);
+      if (e.isDirectory()) walk(path);
+      else if (e.name.endsWith('.jsonl')) latest = Math.max(latest, statSync(path).mtimeMs);
+    }
+  };
+  walk(dir);
+  return latest;
+}
+
 /** Each thread's turns, model and state from T3's database. */
 function refreshTurns(threads) {
   const db = t3db();
@@ -253,6 +273,22 @@ function words(text) {
   );
 }
 
+/** How many times the thread called each tool (image views, subagents, match_notebook…). */
+function toolCounts(db, threadId) {
+  const counts = {};
+  for (const { p } of db.prepare("SELECT payload_json p FROM projection_thread_activities WHERE thread_id = ? AND kind = 'tool.started'").all(threadId)) {
+    let name = '';
+    try {
+      name = JSON.parse(p).data?.toolName ?? '';
+    } catch {
+      continue;
+    }
+    name = name.replace(/^mcp__ithomiini__/, '');
+    if (name) counts[name] = (counts[name] ?? 0) + 1;
+  }
+  return counts;
+}
+
 function score(run, cases) {
   const snapshot = loadSnapshot();
   const db = t3db();
@@ -276,11 +312,16 @@ function score(run, cases) {
       const answers = db.prepare("SELECT text FROM projection_thread_messages WHERE thread_id = ? AND role = 'assistant' ORDER BY created_at").all(s.threadId);
       out.answer = answers.at(-1)?.text?.slice(0, 2000) ?? null;
     }
+    const threadStart = s.turns?.length ? iso(s.turns[0].requested_at) : 0;
+    const threadEnd = s.turns?.length && s.turns.at(-1).completed_at ? iso(s.turns.at(-1).completed_at) + 5000 : Date.now();
     const proposals = s.threadId
       ? appDb
-          .prepare(`SELECT id, reason, status, changes_json FROM ai_proposals WHERE id IN (${[...ids].map(() => '?').join(',') || "''"}) OR reason LIKE ? ORDER BY created_at`)
+          .prepare(`SELECT id, reason, status, changes_json, created_at, updated_at FROM ai_proposals WHERE id IN (${[...ids].map(() => '?').join(',') || "''"}) OR reason LIKE ? ORDER BY created_at`)
           .all(...ids, `%${s.tag}%`)
           .filter(p => p.status !== 'discarded')
+          // An id in the thread may be another run's proposal of the same rows (match_notebook lists
+          // them as `overlaps`): only the thread's own proposals count, made or revised while it ran.
+          .filter(p => p.reason?.includes(s.tag) || [p.created_at, p.updated_at].some(t => t && iso(t) >= threadStart && iso(t) <= threadEnd))
       : [];
     out.proposals = proposals.map(p => ({ id: p.id, status: p.status, reason: p.reason }));
     if (proposals.some(p => p.status !== 'pending')) out.warning = 'A proposal was applied: restart tools/lab/app.sh before the next run';
@@ -330,8 +371,16 @@ function score(run, cases) {
       }
     }
     const turns = s.turns ?? [];
-    const secs = turns.length && turns.every(t => t.completed_at) ? turns.reduce((t, x) => t + (iso(x.completed_at) - iso(x.requested_at)) / 1000, 0) : null;
-    scores.push({ ...out, ...n, rows: rows.length, rowsProposed: read.size, rowsOutside: outside, secs, errors, modelSelection: s.modelSelection ?? null });
+    // Wall-clock time, first message to the last turn (turns started by background subagents
+    // included); busySecs is the time the main model itself was working.
+    const secs = turns.length && turns.every(t => t.completed_at) ? (iso(turns.at(-1).completed_at) - iso(turns[0].requested_at)) / 1000 : null;
+    const busySecs = secs === null ? null : Math.round(turns.reduce((t, x) => t + (iso(x.completed_at) - iso(x.requested_at)) / 1000, 0));
+    // Time to the first proposal (what the person sees beside the chat) and to its last revision.
+    const start = turns.length ? iso(turns[0].requested_at) : null;
+    const firstSecs = start && proposals.length ? Math.round((Math.min(...proposals.map(p => iso(p.created_at))) - start) / 1000) : null;
+    const lastRevisionSecs = start && proposals.length ? Math.round((Math.max(...proposals.map(p => iso(p.updated_at ?? p.created_at))) - start) / 1000) : null;
+    const tools = s.threadId ? toolCounts(db, s.threadId) : {};
+    scores.push({ ...out, ...n, rows: rows.length, rowsProposed: read.size, rowsOutside: outside, secs, busySecs, firstSecs, lastRevisionSecs, tools, errors, modelSelection: s.modelSelection ?? null });
   }
   db.close();
   appDb.close();
@@ -347,15 +396,16 @@ function report(run, scores) {
     .map(r => r.map(csvCell).join(','))
     .join('\n');
   const table = [
-    `# ${run.runId}: ${run.model}${run.effort ? ' · ' + run.effort : ''}`,
+    `# ${run.runId}: ${run.model}${run.effort ? ' · ' + run.effort : ''}${run.variant ? ' · ' + run.variant : ''}`,
     '',
-    '| case | state | correct / cells | filled cells right | wrong | missing | rows found | time |',
-    '|---|---|---|---|---|---|---|---|',
+    '| case | state | correct / cells | filled cells right | wrong | missing | rows found | first proposal | time | tools |',
+    '|---|---|---|---|---|---|---|---|---|---|',
     ...scores.map(
       s =>
-        `| ${s.case} | ${s.state} | ${s.correct}/${s.total} (${pct(s.correct, s.total)}) | ${s.filledCorrect}/${s.filledTotal} | ${s.wrong} | ${s.missing} | ${s.rowsProposed}/${s.rows}${s.rowsOutside ? ` +${s.rowsOutside}` : ''} | ${s.secs ? Math.round(s.secs) + ' s' : '–'} |`,
+        `| ${s.case} | ${s.state} | ${s.correct}/${s.total} (${pct(s.correct, s.total)}) | ${s.filledCorrect}/${s.filledTotal} | ${s.wrong} | ${s.missing} | ${s.rowsProposed}/${s.rows}${s.rowsOutside ? ` +${s.rowsOutside}` : ''} | ${s.firstSecs ?? '–'} s | ${s.secs ? Math.round(s.secs) + ' s' : '–'} | ${Object.entries(s.tools ?? {}).map(([k, v]) => `${k} ${v}`).join(', ')} |`,
     ),
     '',
+    `Time: first proposal ${sum('firstSecs')} s, total ${Math.round(sum('secs'))} s (sums over the cases).`,
     `All: ${sum('correct')}/${sum('total')} (${pct(sum('correct'), sum('total'))}); filled cells ${sum('filledCorrect')}/${sum('filledTotal')} (${pct(sum('filledCorrect'), sum('filledTotal'))}); notes (scored apart, words only) ${sum('notesMatch')}/${sum('notesTotal')}`,
   ].join('\n');
   writePrivate(join(dir, 'scores.json'), JSON.stringify(scores, null, 1));
@@ -369,7 +419,7 @@ function report(run, scores) {
       JSON.stringify({
         runId: run.runId, at: run.startedAt, model: run.model, effort: s.effort, case: s.case, state: s.state,
         correct: s.correct, total: s.total, filledCorrect: s.filledCorrect, filledTotal: s.filledTotal,
-        wrong: s.wrong, missing: s.missing, notesMatch: s.notesMatch, notesTotal: s.notesTotal, rowsOutside: s.rowsOutside, secs: s.secs, snapshot: taken,
+        wrong: s.wrong, missing: s.missing, notesMatch: s.notesMatch, notesTotal: s.notesTotal, rowsOutside: s.rowsOutside, secs: s.secs, busySecs: s.busySecs, firstSecs: s.firstSecs, tools: s.tools, snapshot: taken, variant: run.variant ?? null,
       }),
     );
   writeFileSync(HISTORY, [...old, ...lines].join('\n') + '\n', { mode: 0o600 });
@@ -386,7 +436,7 @@ function pct(a, b) {
 function printHistory() {
   if (!existsSync(HISTORY)) return console.log('No results yet');
   const lines = readFileSync(HISTORY, 'utf8').trim().split('\n').map(l => JSON.parse(l));
-  const name = l => `${l.model}${l.effort ? ' · ' + l.effort : ''}`;
+  const name = l => `${l.model}${l.effort ? ' · ' + l.effort : ''}${l.variant ? ' · ' + l.variant : ''}`;
   const models = [...new Set(lines.map(name))];
   const caseIds = [...new Set(lines.map(l => l.case))].sort();
   const latest = new Map();
@@ -397,7 +447,8 @@ function printHistory() {
     const cells = caseIds.map(c => latest.get(`${m}\u0000${c}`));
     const ok = cells.reduce((t, l) => t + (l?.correct ?? 0), 0);
     const all = cells.reduce((t, l) => t + (l?.total ?? 0), 0);
-    console.log(`| ${m} | ${cells.map(l => (l ? `${l.correct}/${l.total}${l.secs ? ' ' + Math.round(l.secs) + 's' : ''}` : '')).join(' | ')} | ${pct(ok, all)} |`);
+    const time = l => (l.secs ? ` ${l.firstSecs != null ? l.firstSecs + '/' : ''}${Math.round(l.secs)}s` : '');
+    console.log(`| ${m} | ${cells.map(l => (l ? `${l.correct}/${l.total}${time(l)}` : '')).join(' | ')} | ${pct(ok, all)} |`);
   }
-  console.log(`\n${lines.length} results in ${HISTORY}`);
+  console.log(`\nTimes: first proposal/total, in seconds. ${lines.length} results in ${HISTORY}`);
 }

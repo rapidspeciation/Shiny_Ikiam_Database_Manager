@@ -29,7 +29,7 @@ export const MATCH_NOTEBOOK_TOOL = {
     name: 'match_notebook',
     description: [
       'Match a transcribed notebook page (or envelopes/labels) with the sheet and draft ONE proposal from it, shown at once beside the chat (Cambios propuestos). Follow the digitalizar-cuaderno skill.',
-      'Give every line of the page, top to bottom, with the values as written (dates day/month as written, e.g. "17/9"; ditto marks already replaced by the value above; CAMs/tubes written short like "cam505" or "81" may stay short, they continue the one above; counts as written, e.g. "12+15").',
+      'Give every line of the page, top to bottom, with the values as written (dates day/month as written, e.g. "17/9"; ditto marks already replaced by the value above; CAMs/tubes written short like "cam505" or "81" may stay short, they continue the one above; counts as written, e.g. "12+15"; a count corrected by crossing out: the first value, then each new one after "=", e.g. "31+4=1" or "12=9=4", kept as the team types it, =31+4-34).',
       'The server finds each line\'s row (also through look-alike IDs 0/O, 1/I, 5/S and the order of the rows), infers the year, completes list values, keeps the SPECIES formula unless what emerged differs, and checks lists, IDs and tubes already used.',
       'It returns per line: the row found, cells to fill, differences with the sheet, doubtful cells (left out of the proposal), problems, and the proposalId. Doubtful cells go in with a confidence below 0.8 and their other readings.',
       'The proposal\'s rows follow the page\'s line order. With includeUnchanged the lines already in the sheet show too, as context rows that are never written (never fake a change to make a line show).',
