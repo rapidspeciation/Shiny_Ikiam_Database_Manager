@@ -1,4 +1,4 @@
-import { EditModule, KeybindingsModule } from 'tabulator-tables'
+import { EditModule, KeybindingsModule, SelectRangeModule } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent, Tabulator } from 'tabulator-tables'
 import { complete, pickChoice } from './paste'
 import { t, tn } from './i18n'
@@ -21,6 +21,94 @@ export function tabulatorKeyCode(e: Pick<KeyboardEvent, 'key' | 'keyCode'>, orig
   keys.getKeyCode = function (this: unknown, e: KeyboardEvent) {
     return tabulatorKeyCode(e, event => original.call(this, event))
   }
+}
+
+/**
+ * How far to scroll so that the span from `start` to `end` shows between
+ * `from` and `to`: 0 when it already does, negative to go back. A span wider
+ * (or taller) than the view shows its start.
+ */
+export function scrollDelta(start: number, end: number, from: number, to: number) {
+  if (start < from) return start - from
+  if (end > to) return Math.min(end - to, start - from)
+  return 0
+}
+
+/**
+ * The cell the arrows, Tab or Enter move to stays in sight, as in Google
+ * Sheets. Tabulator scrolls its own grid, but it left a cell reached going left
+ * under the frozen columns (Fila, the ID), and a grid as tall as its rows (the
+ * Colecta list) is scrolled by the page around it, which Tabulator leaves
+ * alone. Every grid gets this, as the key codes above.
+ */
+type InnerColumn = { getElement: () => HTMLElement; getWidth: () => number; visible: boolean }
+type InnerRange = {
+  table: Tabulator & {
+    rowManager: { element: HTMLElement }
+    columnManager: { getElement: () => HTMLElement }
+    modules: { frozenColumns?: { leftColumns: InnerColumn[]; rightColumns: InnerColumn[] } }
+  }
+  activeRange?: { end: { row: number; col: number } }
+  getRowByRangePos: (position: number) => { getElement: () => HTMLElement } | undefined
+  getColumnByRangePos: (position: number) => InnerColumn | undefined
+  navigate: (jump: boolean, expand: boolean, dir: string) => boolean
+}
+{
+  const range = SelectRangeModule.prototype as unknown as InnerRange
+  const original = range.navigate
+  range.navigate = function (this: InnerRange, jump: boolean, expand: boolean, dir: string) {
+    const moved = original.call(this, jump, expand, dir)
+    if (moved) keepInSight(this)
+    return moved
+  }
+}
+function keepInSight(range: InnerRange) {
+  const end = range.activeRange?.end
+  if (!end) return
+  const { table } = range
+  const holder = table.rowManager.element
+  const column = range.getColumnByRangePos(end.col)
+  const frozen = table.modules.frozenColumns
+  // Across, inside the grid: clear of the frozen columns at either side.
+  if (column && !frozen?.leftColumns.includes(column) && !frozen?.rightColumns.includes(column)) {
+    const width = (columns: InnerColumn[] = []) => columns.reduce((sum, c) => sum + (c.visible ? c.getWidth() : 0), 0)
+    const start = column.getElement().offsetLeft
+    const from = holder.scrollLeft + width(frozen?.leftColumns)
+    const to = holder.scrollLeft + holder.clientWidth - width(frozen?.rightColumns)
+    holder.scrollLeft += scrollDelta(start, start + column.getWidth(), from, to)
+  }
+  // Up and down around the grid, once Tabulator has scrolled its own rows and drawn the new ones.
+  requestAnimationFrame(() => {
+    const row = range.getRowByRangePos(end.row)?.getElement()
+    if (row?.isConnected) revealRow(table, row)
+  })
+}
+
+/**
+ * Scrolls the page or panel around a grid so a row shows below what stays
+ * pinned at its top: the grid's column names, a sticky bar (data-sticky-bar).
+ */
+function revealRow(table: InnerRange['table'], row: HTMLElement) {
+  const scroller = scrollParent(table.element)
+  const view = scroller ? scroller.getBoundingClientRect() : { top: 0, bottom: window.innerHeight }
+  const pinned = [...(scroller ?? document).querySelectorAll<HTMLElement>('[data-sticky-bar]')]
+    .map(el => el.getBoundingClientRect())
+    .filter(r => r.height && r.top <= view.top + 1 && r.bottom > view.top)
+  const top = Math.max(view.top, table.columnManager.getElement().getBoundingClientRect().bottom, ...pinned.map(r => r.bottom))
+  const r = row.getBoundingClientRect()
+  const by = scrollDelta(r.top, r.bottom, top, view.bottom)
+  if (!by) return
+  if (scroller) scroller.scrollTop += by
+  else window.scrollBy(0, by)
+}
+
+/** The nearest element around `el` that scrolls up and down; null when it is the page itself. */
+function scrollParent(el: HTMLElement): HTMLElement | null {
+  for (let parent = el.parentElement; parent; parent = parent.parentElement) {
+    const overflow = getComputedStyle(parent).overflowY
+    if ((overflow === 'auto' || overflow === 'scroll') && parent.scrollHeight > parent.clientHeight + 1) return parent
+  }
+  return null
 }
 
 /**
@@ -177,11 +265,7 @@ function saveAndMove({ table, key, shift }: Move, input: HTMLElement) {
 function scrollingAround(container: HTMLElement): HTMLElement | null {
   const box = container.querySelector<HTMLElement>('.tabulator-tableholder')
   if (box && box.scrollHeight > box.clientHeight + 1) return box
-  for (let el = container.parentElement; el; el = el.parentElement) {
-    const overflow = getComputedStyle(el).overflowY
-    if ((overflow === 'auto' || overflow === 'scroll') && el.scrollHeight > el.clientHeight + 1) return el
-  }
-  return null
+  return scrollParent(container)
 }
 
 /**

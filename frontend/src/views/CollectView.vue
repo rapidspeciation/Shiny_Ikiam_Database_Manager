@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import ChoiceField from '../components/ChoiceField.vue'
 import DateField from '../components/DateField.vue'
-import { computed, nextTick, onDeactivated, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onDeactivated, reactive, ref, watch } from 'vue'
 import { CheckSquare, Copy, Eraser, Plus, Save, Trash2, X } from 'lucide-vue-next'
 import CollectGrid from '../components/CollectGrid.vue'
 import SheetGrid from '../components/SheetGrid.vue'
@@ -91,6 +91,20 @@ const headerChip = computed(() => {
   return [day, h.location || t('sin lugar'), h.collector.split(' - ')[0]].filter(Boolean).join(' · ')
 })
 const grid = ref<InstanceType<typeof CollectGrid>>()
+/** The list's bar stays at the top while scrolling, and the grid's column names right under it (style.css). */
+const stickyBar = ref<HTMLElement>()
+const stickyBarHeight = ref(0)
+const barSize =
+  typeof ResizeObserver === 'undefined'
+    ? null
+    : new ResizeObserver(([entry]) => {
+        stickyBarHeight.value = Math.round((entry.target as HTMLElement).offsetHeight)
+      })
+watch(stickyBar, (el, old) => {
+  if (old) barSize?.unobserve(old)
+  if (el) barSize?.observe(el)
+})
+onBeforeUnmount(() => barSize?.disconnect())
 const saving = ref(false)
 const recentCount = ref(10)
 
@@ -878,9 +892,14 @@ const recent = computed(() => observed.value.slice(-recentCount.value))
     <!-- Live butterflies take the next pre-made Insectary IDs. -->
     <InsectaryIdsWarning class="mx-3 my-2" :revision="tables.tables.Insectary_data?.revision" @extended="loadFreeIds" />
 
-    <div v-if="drafts.length" class="border-b border-stone-200 bg-white px-3 pb-2">
+    <div
+      v-if="drafts.length"
+      class="border-b border-stone-200 bg-white px-3 pb-2"
+      :style="{ '--sticky-bar-height': `${stickyBarHeight}px` }"
+    >
       <!-- Always in sight while scrolling the list, and kept to one line: how long it is, how to trim it, the view. -->
       <div
+        ref="stickyBar"
         data-sticky-bar
         class="sticky top-0 z-10 -mx-3 flex items-center gap-2 border-b border-stone-200 bg-white px-3 py-1.5 text-sm"
       >

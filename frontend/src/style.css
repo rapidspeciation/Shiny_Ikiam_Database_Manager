@@ -276,6 +276,20 @@ body.touch-bar-open main {
   box-shadow: inset 0 0 0 2px #2d6a4f;
 }
 
+/*
+ * The Colecta list is as tall as its rows and scrolls with the page: its column
+ * names stay in sight under the list's bar (CollectView sets its height). The
+ * grid clips instead of hiding its overflow, which would pin them to the grid itself.
+ */
+.collect-grid .tabulator {
+  overflow: clip;
+}
+.collect-grid .tabulator .tabulator-header {
+  position: sticky;
+  top: var(--sticky-bar-height, 0px);
+  z-index: 12;
+}
+
 /* Cambios propuestos: the assistant's values green, the person's blue, an existing row's other cells grey. */
 .proposal-sheet .tabulator {
   font-size: 12px;
@@ -306,6 +320,13 @@ body.touch-bar-open main {
 }
 .proposal-sheet .tabulator-cell.proposal-label {
   font-weight: 600;
+}
+/* What a count written as a sum adds up to: =12+15 (27). */
+.proposal-sheet .tabulator-cell .sum-total {
+  font-weight: 700;
+}
+.proposal-sheet .tabulator-cell .was .sum-total {
+  font-weight: 400;
 }
 .proposal-sheet .tabulator-cell.proposal-note {
   color: #57534e;
