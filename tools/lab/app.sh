@@ -8,8 +8,11 @@
 #   tools/lab/app.sh          run in the foreground
 #   tools/lab/app.sh --bg     run detached (log: $LAB/app.log, pid: $LAB/app.pid)
 #   tools/lab/app.sh --stop
+#   tools/lab/app.sh --refresh  only rewrite the lab workspace from this checkout (after editing assistant/)
 # First start: creates the admin `lab` (password in $LAB/credentials.json, mode 600)
 # and provisions its T3 workspace (scripts/t3-provision.mjs) when the lab T3 is up.
+# Every later start refreshes that workspace, so the threads read this checkout's
+# brief, skills and subagents.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
 LAB="${ITHOMIINI_LAB_DIR:-$HOME/.cache/ithomiini-lab}"
@@ -22,12 +25,24 @@ mkdir -p "$LAB/app"
 
 stop() {
   if [ -f "$LAB/app.pid" ] && kill -0 "$(cat "$LAB/app.pid")" 2>/dev/null; then
-    kill "$(cat "$LAB/app.pid")" && echo "Lab app stopped"
+    # The pid is the detached shell's; its node child goes first.
+    pkill -P "$(cat "$LAB/app.pid")" 2>/dev/null || true
+    kill "$(cat "$LAB/app.pid")" 2>/dev/null || true
+    echo "Lab app stopped"
     sleep 1
   fi
   rm -f "$LAB/app.pid"
 }
+# The admin's T3 workspace from this checkout: `lab` the first time (token, T3 project),
+# --refresh-all afterwards (brief, skills and subagents rewritten, token kept).
+provision() {
+  T3CODE_HOME="$T3HOME" ITHOMIINI_SHARED="$LAB/app" DATABASE_PATH="$LAB/app/app.sqlite" \
+    ITHOMIINI_MCP_URL="$URL/api/ai/mcp" ITHOMIINI_T3_WORKSPACES="$T3HOME/workspaces" \
+    ITHOMIINI_SRC="$HERE" ITHOMIINI_DOCS="$HERE/docs" ITHOMIINI_DENY_READ="$LAB:$HOME/.cache/ithomiini-test" \
+    T3_BIN="${T3_BIN:-$HOME/.local/bin/t3}" node "$HERE/scripts/t3-provision.mjs" "$1"
+}
 [ "${1:-}" = "--stop" ] && { stop; exit 0; }
+[ "${1:-}" = "--refresh" ] && { provision --refresh-all; exit 0; }
 [ -f "$LAB/snapshot.json" ] || { echo "No snapshot: run tools/lab/snapshot.sh first" >&2; exit 1; }
 
 # The frontend, built when missing or older than its sources.
@@ -65,6 +80,7 @@ env_app=(
 run_app() { env -u GOOGLE_CREDENTIALS_FILE -u WORKBOOK_ID -u SHEET_HOOK_SECRET "${env_app[@]}" node server/index.mjs; }
 
 stop
+[ -f "$T3HOME/workspaces/lab/.claude/t3-project" ] && provision --refresh-all
 if [ "${1:-}" != "--bg" ]; then
   echo "Lab app on $URL (foreground; the first start takes a minute to load the snapshot)"
   exec env -u GOOGLE_CREDENTIALS_FILE -u WORKBOOK_ID -u SHEET_HOOK_SECRET "${env_app[@]}" node server/index.mjs
@@ -95,10 +111,7 @@ fi
 # The admin's T3 workspace, pointing at this app's database and MCP endpoint.
 if [ ! -f "$T3HOME/workspaces/lab/.claude/t3-project" ]; then
   if curl -fsS -o /dev/null "http://127.0.0.1:$T3PORT/"; then
-    T3CODE_HOME="$T3HOME" ITHOMIINI_SHARED="$LAB/app" DATABASE_PATH="$LAB/app/app.sqlite" \
-      ITHOMIINI_MCP_URL="$URL/api/ai/mcp" ITHOMIINI_T3_WORKSPACES="$T3HOME/workspaces" \
-      ITHOMIINI_SRC="$HERE" ITHOMIINI_DOCS="$HERE/docs" ITHOMIINI_DENY_READ="$LAB:$HOME/.cache/ithomiini-test" \
-      T3_BIN="${T3_BIN:-$HOME/.local/bin/t3}" node scripts/t3-provision.mjs lab
+    provision lab
   else
     echo "Lab T3 is not running: start tools/lab/t3.sh, then run tools/lab/app.sh again to add the workspace"
   fi
