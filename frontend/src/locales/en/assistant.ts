@@ -63,6 +63,20 @@ export default {
   'Cuando el asistente proponga cambios en la hoja aparecerán aquí al momento, con las celdas cambiadas en verde. Puedes corregirlas en la tabla como en Colecta o pedírselo al asistente (la tabla cambia en vivo); luego pulsa Aplicar, o dile «sí, aplícalo» en el chat.':
     'When the assistant proposes changes to the sheet they appear here at once, with the changed cells in green. You can correct them in the table as in Collecting or ask the assistant (the table changes live); then press Apply, or tell it «yes, apply it» in the chat.',
   'Revisados hace poco ({n})': 'Reviewed recently ({n})',
+  'Propuestas de qué chat': 'Proposals of which chat',
+  'T3 no dice qué chat está abierto: se muestra el último con actividad. Elige otro aquí.':
+    'T3 does not say which chat is open: the one with the latest activity is shown. Pick another one here.',
+  'Las propuestas del chat abierto en T3; elige otro chat o todos aquí.':
+    'The proposals of the chat open in T3; pick another chat or all of them here.',
+  '{n} propuesta más en otro chat': '{n} more proposal in another chat',
+  '{n} propuestas más en otros chats': '{n} more proposals in other chats',
+  'Este chat no tiene cambios por revisar.': 'This chat has no changes to review.',
+  // lib/proposalChats
+  'chat sin título': 'untitled chat',
+  'Este chat: {title}': 'This chat: {title}',
+  'Último chat: {title}': 'Latest chat: {title}',
+  'Fuera de los chats de T3 ({n})': 'Outside T3 chats ({n})',
+  'Todos los chats ({n})': 'All chats ({n})',
   // ProposalGrid
   'No se guardó {what}: {message}': '{what} was not saved: {message}',
   'No se guardó: {message}': 'Not saved: {message}',

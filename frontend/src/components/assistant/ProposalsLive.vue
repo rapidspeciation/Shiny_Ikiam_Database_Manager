@@ -3,8 +3,20 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ExternalLink, ListChecks, Maximize2, Minimize2, PanelBottom, PanelRight, X } from 'lucide-vue-next'
 import ProposalGrid, { type Proposal } from '../ProposalGrid.vue'
+import WhenSeen from './WhenSeen.vue'
 import { api, requestId } from '../../lib/api'
 import { errorText, notify } from '../../lib/notice'
+import {
+  cardHeight,
+  chatOptions,
+  elsewhere,
+  hasChats,
+  keepChoice,
+  listQuery,
+  type ChatChoice,
+  type ChatEntry,
+  type ChatScope,
+} from '../../lib/proposalChats'
 import { useTables } from '../../stores/tables'
 import { intlLocale, tn } from '../../lib/i18n'
 
@@ -15,6 +27,9 @@ import { intlLocale, tn } from '../../lib/i18n'
  * a proposal is added, revised (by the assistant or by the person in the
  * table), applied or discarded, from T3 Code (e.g. a notebook photo matched
  * with match_notebook), the chat or Revisión de datos.
+ * It shows the proposals of the chat open in T3 (the server knows it, see
+ * server/t3chats.mjs), or of the chat picked in its selector, or all; each
+ * table is only built when it comes into view (WhenSeen).
  */
 const props = withDefaults(
   defineProps<{
@@ -37,6 +52,15 @@ const applying = ref<string | null>(null)
 /** Proposals that just arrived, outlined for a few seconds. */
 const arrived = ref(new Set<string>())
 const showReviewed = ref(false)
+/** The chat shown ('auto': the one open in T3), the one T3 shows (tracked), the chats with proposals. */
+const chosen = ref<ChatChoice>('auto')
+const scope = ref<ChatScope | null>(null)
+const tracked = ref<ChatScope | null>(null)
+const chats = ref<ChatEntry[]>([])
+const options = computed(() => chatOptions(tracked.value, chats.value))
+const others = computed(() => elsewhere(scope.value, chats.value))
+/** The time only, when the list is one chat's; with the chat's title when it mixes chats. */
+const mixed = computed(() => !scope.value || scope.value.chat === 'all' || scope.value.chat === 'app')
 
 const open = (p: Proposal) => p.status === 'pending' || p.status === 'applying'
 const mine = computed(() => (props.only ? proposals.value.filter(p => p.id === props.only) : proposals.value))
@@ -73,6 +97,12 @@ function replace(next: Proposal) {
 }
 
 let stopped = false
+/** Aborts the waiting request when the person picks another chat, so the list changes at once. */
+let asking: AbortController | null = null
+function choose(value: string) {
+  chosen.value = value === tracked.value?.chat ? 'auto' : value
+  asking?.abort()
+}
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 const visible = () =>
   new Promise<void>(resolve => {
@@ -86,24 +116,40 @@ const visible = () =>
 /** Follows the list for as long as the tab is open; a hidden browser tab stops asking. */
 async function follow() {
   let first = true
+  let asked = ''
   while (!stopped) {
     if (document.visibilityState !== 'visible') await visible()
+    const ask = (asking = new AbortController())
+    const wanted = props.only || chosen.value
     try {
-      const out = await api<{ revision: string; proposals: Proposal[] }>(
-        `chat/proposals?all=1&wait=1&revision=${encodeURIComponent(revision.value)}`,
+      const out = await api<{ revision: string; scope: ChatScope; follow: ChatScope; chats: ChatEntry[]; proposals: Proposal[] }>(
+        listQuery({ chosen: chosen.value, follow: tracked.value, only: props.only, revision: asked === wanted ? revision.value : '' }),
+        { signal: ask.signal },
       )
       connected.value = true
-      if (out.revision !== revision.value || first) receive(out.proposals, first)
+      // Another chat's list: its proposals are not new arrivals.
+      const moved = !scope.value || out.scope.chat !== scope.value.chat
+      receive(out.proposals, first || moved)
+      chosen.value = keepChoice(chosen.value, tracked.value, out.follow)
+      scope.value = out.scope
+      tracked.value = out.follow
+      chats.value = out.chats
       revision.value = out.revision
+      asked = wanted
       first = false
     } catch {
+      // Picked another chat meanwhile: asked again at once.
+      if (ask.signal.aborted) continue
       connected.value = false
       await sleep(5000)
     }
   }
 }
 onMounted(follow)
-onBeforeUnmount(() => (stopped = true))
+onBeforeUnmount(() => {
+  stopped = true
+  asking?.abort()
+})
 
 async function apply(proposal: Proposal, indexes: number[], at: number | undefined) {
   applying.value = proposal.id
@@ -133,7 +179,7 @@ async function discard(proposal: Proposal) {
   }
 }
 const origin = (p: Proposal) =>
-  [p.source, p.createdAt ? new Date(p.createdAt).toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' }) : '']
+  [mixed.value ? p.source : '', p.createdAt ? new Date(p.createdAt).toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' }) : '']
     .filter(Boolean)
     .join(' · ')
 </script>
@@ -191,11 +237,34 @@ const origin = (p: Proposal) =>
         <button class="btn-ghost" :title="$t('Ocultar los cambios propuestos')" @click="emit('close')"><X :size="15" /></button>
       </template>
     </header>
+    <!-- Whose proposals: the chat open in T3 (followed), another chat with proposals, those outside T3, all. -->
+    <div
+      v-if="!only && hasChats(tracked, chats)"
+      class="flex items-center gap-2 border-b border-stone-200 bg-white px-3 py-1 text-xs text-stone-600"
+    >
+      <select
+        class="min-w-0 max-w-full truncate rounded border border-stone-200 bg-white py-0.5 pr-6 pl-1.5 text-xs text-stone-800"
+        :value="chosen"
+        :aria-label="$t('Propuestas de qué chat')"
+        :title="
+          tracked?.how === 'recent'
+            ? $t('T3 no dice qué chat está abierto: se muestra el último con actividad. Elige otro aquí.')
+            : $t('Las propuestas del chat abierto en T3; elige otro chat o todos aquí.')
+        "
+        @change="choose(($event.target as HTMLSelectElement).value)"
+      >
+        <option v-for="o in options" :key="o.value" :value="o.value">{{ o.label }}</option>
+      </select>
+      <button v-if="others" class="shrink-0 hover:text-emerald-800 hover:underline" @click="choose('all')">
+        {{ $tn(others, '{n} propuesta más en otro chat', '{n} propuestas más en otros chats') }}
+      </button>
+    </div>
     <!-- A size container: each table is at most its height (ProposalSheet), so its column names stay in sight. -->
-    <div class="min-h-0 flex-1 overflow-y-auto px-3 pb-3 [container-type:size]">
+    <div class="min-h-0 flex-1 overflow-y-auto px-3 pb-3 [container-type:size]" data-lazy-root>
       <p v-if="!pending.length" class="py-4 text-sm text-stone-500">
         <template v-if="only && !mine.length">{{ $t('Esta propuesta ya no está en la lista.') }}</template>
         <template v-else>
+          <strong v-if="!mixed" class="block font-medium text-stone-700">{{ $t('Este chat no tiene cambios por revisar.') }}</strong>
           {{
             $t(
               'Cuando el asistente proponga cambios en la hoja aparecerán aquí al momento, con las celdas cambiadas en verde. Puedes corregirlas en la tabla como en Colecta o pedírselo al asistente (la tabla cambia en vivo); luego pulsa Aplicar, o dile «sí, aplícalo» en el chat.',
@@ -210,13 +279,15 @@ const origin = (p: Proposal) =>
         :class="{ 'ring-2 ring-emerald-400': arrived.has(p.id) }"
       >
         <p class="mt-2 px-1 text-[11px] text-stone-500">{{ origin(p) }}</p>
-        <ProposalGrid
-          :proposal="p"
-          :busy="applying === p.id"
-          @apply="(indexes, at) => apply(p, indexes, at)"
-          @discard="discard(p)"
-          @replace="replace"
-        />
+        <WhenSeen :height="cardHeight(p.changes.length)">
+          <ProposalGrid
+            :proposal="p"
+            :busy="applying === p.id"
+            @apply="(indexes, at) => apply(p, indexes, at)"
+            @discard="discard(p)"
+            @replace="replace"
+          />
+        </WhenSeen>
       </div>
       <details v-if="reviewed.length" class="mt-3" @toggle="showReviewed = ($event.target as HTMLDetailsElement).open">
         <summary class="cursor-pointer text-xs text-stone-600">
@@ -225,7 +296,7 @@ const origin = (p: Proposal) =>
         <!-- Their tables are only built when opened. -->
         <div v-for="p in showReviewed ? reviewed : []" :key="p.id">
           <p class="mt-2 px-1 text-[11px] text-stone-500">{{ origin(p) }}</p>
-          <ProposalGrid :proposal="p" />
+          <WhenSeen :height="cardHeight(p.changes.length)"><ProposalGrid :proposal="p" /></WhenSeen>
         </div>
       </details>
     </div>
