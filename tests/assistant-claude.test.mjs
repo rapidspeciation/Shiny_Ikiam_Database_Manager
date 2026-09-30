@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -31,6 +31,14 @@ test('Claude reads rows and drafts edits through MCP; only the chosen rows are w
   const store = new Store({ localMode: true }, { sheets });
   await store.sync({ sheets: ['Insectary_data'] });
   const workspace = await mkdtemp(join(tmpdir(), 'claude-ws-'));
+  // The fake Claude runs on this test's Node: the app starts Claude with a minimal PATH,
+  // where `#!/usr/bin/env node` finds no node on hosts that keep it elsewhere (claudeclaw).
+  const fake = join(workspace, 'claude');
+  await writeFile(
+    fake,
+    `#!/bin/sh\nexec '${process.execPath}' '${fileURLToPath(new URL('./fixtures/fake-claude.mjs', import.meta.url))}' "$@"\n`,
+  );
+  await chmod(fake, 0o755);
   const server = http.createServer(async (req, res) => {
     let raw = '';
     for await (const chunk of req) raw += chunk;
@@ -44,7 +52,7 @@ test('Claude reads rows and drafts edits through MCP; only the chosen rows are w
     config: {
       mcpUrl: `http://127.0.0.1:${server.address().port}/mcp`,
       claude: {
-        bin: fileURLToPath(new URL('./fixtures/fake-claude.mjs', import.meta.url)),
+        bin: fake,
         model: 'sonnet',
         users: new Set(['franz']),
         workspace,
