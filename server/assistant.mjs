@@ -1253,36 +1253,44 @@ export function createAssistant({ store, config = {} }) {
   /*
    * Proposals from T3 Code whose chat is not known yet (T3 had not recorded the
    * call, or they were made before chats were recorded) are linked when the
-   * list is asked for, at most every 5 s per person, without holding it up:
-   * by tool-use id, then by the chats' tool results naming the proposal. Not
-   * found 10 minutes after it was made: left as a proposal outside the chats.
+   * list is asked for: by tool-use id at once (before the answer), and by the
+   * chats' tool results naming the proposal at most every 5 s per person,
+   * without holding the answer up. Not found 10 minutes after it was made:
+   * left as a proposal outside the chats.
    */
-  const linkedAt = new Map();
-  async function linkChats(ownerId) {
-    if (!t3 || Date.now() - (linkedAt.get(ownerId) ?? 0) < 5000) return;
-    linkedAt.set(ownerId, Date.now());
-    const rows = db
+  const unlinked = (ownerId, withToolUse = false) =>
+    db
       .prepare(
-        "SELECT p.id, p.created_at, p.t3_tool_use FROM ai_proposals p JOIN ai_threads t ON t.id = p.thread_id WHERE p.owner_id = ? AND p.t3_thread IS NULL AND t.title = 'T3 Code'",
+        `SELECT p.id, p.created_at, p.t3_tool_use FROM ai_proposals p JOIN ai_threads t ON t.id = p.thread_id
+         WHERE p.owner_id = ? AND p.t3_thread IS NULL AND t.title = 'T3 Code'${withToolUse ? ' AND p.t3_tool_use IS NOT NULL' : ''}`,
       )
       .all(ownerId);
-    if (!rows.length || !t3.available) return;
+  function link(ownerId, found) {
+    if (!found.size) return;
+    const titles = t3.threads([...found.values()]);
+    const set = db.prepare('UPDATE ai_proposals SET t3_thread = ?, t3_title = ? WHERE id = ? AND t3_thread IS NULL');
+    for (const [id, thread] of found) set.run(thread, titles.get(thread)?.title ?? null, id);
+    changed(ownerId);
+  }
+  function linkByToolUse(ownerId) {
+    if (!t3) return;
     const found = new Map();
-    for (const r of rows) {
-      const id = r.t3_tool_use && t3.threadOfToolUse(r.t3_tool_use, ago(r.created_at, 10 * 60_000));
+    for (const r of unlinked(ownerId, true)) {
+      const id = t3.threadOfToolUse(r.t3_tool_use, ago(r.created_at, 10 * 60_000));
       if (id) found.set(r.id, id);
     }
-    const rest = rows.filter(r => !found.has(r.id));
-    if (rest.length) {
-      const since = ago(rest.map(r => r.created_at).sort()[0], 10 * 60_000);
-      for (const [id, thread] of await t3.findProposals(rest.map(r => r.id), since)) found.set(id, thread);
-    }
-    const titles = t3.threads([...found.values()]);
-    const link = db.prepare('UPDATE ai_proposals SET t3_thread = ?, t3_title = ? WHERE id = ? AND t3_thread IS NULL');
-    for (const [id, thread] of found) link.run(thread, titles.get(thread)?.title ?? null, id);
+    link(ownerId, found);
+  }
+  const scannedAt = new Map();
+  async function linkByResult(ownerId) {
+    if (!t3 || Date.now() - (scannedAt.get(ownerId) ?? 0) < 5000) return;
+    scannedAt.set(ownerId, Date.now());
+    const rows = unlinked(ownerId);
+    if (!rows.length || !t3.available) return;
+    const since = ago(rows.map(r => r.created_at).sort()[0], 10 * 60_000);
+    link(ownerId, await t3.findProposals(rows.map(r => r.id), since));
     const none = db.prepare("UPDATE ai_proposals SET t3_thread = '' WHERE id = ? AND t3_thread IS NULL");
-    for (const r of rows) if (!found.has(r.id) && Date.now() - Date.parse(r.created_at) > 10 * 60_000) none.run(r.id);
-    if (found.size) changed(ownerId);
+    for (const r of rows) if (Date.now() - Date.parse(r.created_at) > 10 * 60_000) none.run(r.id);
   }
 
   /**
@@ -1897,12 +1905,13 @@ export function createAssistant({ store, config = {} }) {
       // T3 shows (see followed()); follow = that chat as the page last got it.
       const asked = String(query.chat ?? 'all');
       const follow = String(query.follow ?? '') || null;
-      void linkChats(me).catch(e => console.error('Proposals by chat:', e.message));
       // wait=1 with the revision the page holds: answer when a proposal is added, applied or
       // discarded (or after 20 s), so the Asistente tab shows edits as the assistant drafts them;
       // with T3, also when another chat is opened there.
       if (query.wait)
         await waitForChange(me, String(query.revision ?? ''), 20000, t3 && !query.only ? () => followed(user, chatGroups(me), follow).chat !== follow : null);
+      linkByToolUse(me);
+      void linkByResult(me).catch(e => console.error('Proposals by chat:', e.message));
       const revision = revisionOf(me);
       const groups = chatGroups(me);
       const followNow = followed(user, groups, follow);
