@@ -20,7 +20,7 @@ The setup screen requires a private random token and creates the first active ad
 
 ## Deploy and monitor
 
-`scripts/deploy.sh` installs the frontend's locked dependencies, runs the syntax and type checks and all tests, builds the frontend into `web/`, uploads a release, switches the symlink, and restarts only `ithomiini.service`. Caddy configuration is installed separately after validation; `deploy/Caddyfile.fragment` shows the route. Preserve existing routes when updating Caddy.
+`scripts/deploy.sh` installs the frontend's locked dependencies, runs the syntax and type checks and all tests, builds the frontend into `web/`, uploads a release, switches the symlink, and restarts only `ithomiini.service`. It then deletes old releases, keeping the newest `KEEP_RELEASES` (default 5) plus the current and previous ones (`scripts/prune-releases.sh`). Caddy configuration is installed separately after validation; `deploy/Caddyfile.fragment` shows the route. Preserve existing routes when updating Caddy.
 
 ```sh
 ssh claudeclaw 'systemctl --user status ithomiini.service'
