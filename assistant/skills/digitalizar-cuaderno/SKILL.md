@@ -15,7 +15,11 @@ is written until the person applies it.
 
 1. **Identify the notebook** from the headers (table below). If you cannot tell,
    say so in one line and use the closest kind; never stop to ask first.
-2. **Transcribe every line and every column**, top to bottom, including
+2. **Crop the page with the skill's tool** (see "Crops" below): an overview
+   with rulers, then strips of ~10 lines with the header repeated, straightened
+   and enhanced. A page of more than ~12 lines is read by reader subagents in
+   parallel from the start (see "Long pages").
+   **Transcribe every line and every column**, top to bottom, including
    crossed-out lines (`crossedOut: true`) and the notes. A spread of two facing
    pages is one page: the right-hand page continues the same lines, so follow
    each line across the gutter (count the ruled lines from the header on both
@@ -234,21 +238,54 @@ another chat): mention them, and if it is the same page pass their id as
 - A page already matched earlier in the conversation: re-match it with
   `replaceProposalId` instead of making a second proposal.
 
+## Crops
+
+One command cuts the photo for reading (Pillow; the output goes to this chat's
+`work/<today>-<topic>/`, never a folder another chat may use):
+
+1. `python3 .claude/skills/digitalizar-cuaderno/crops.py PHOTO --out work/<today>-<topic>`
+   writes `<photo>-overview.jpg`: the photo turned upright (EXIF) with rulers
+   of fractions (0–1) on every side. Look at it once. If the page is still
+   sideways, add `--rotate 90` (clockwise; 270 if that leaves it upside down)
+   to every call.
+2. Read off the overview, for each page of the spread: its left and right edge
+   (`x=0.11-0.50`), the top of the header row (`head=`), the top of the first
+   written line and the bottom of the last one, at the page's left and right
+   edges (`top=0.145,0.14 bottom=0.93,0.915`), and count the written lines.
+   Then:
+   `python3 …/crops.py PHOTO --out DIR --lines 30 --left "x=0.11-0.50 head=0.10 top=0.145,0.14 bottom=0.93,0.915" --right "x=0.50-0.88 head=0.085 top=0.14,0.135 bottom=0.915,0.88"`
+   (one page: `--page "…"`; `--enhance strong` for faint pencil). It prints
+   JSON: each strip's `path` and `lines` (e.g. left 1–10, right 1–10). The
+   borders snap to the printed ruling (`snapped`: how many lines they moved;
+   more than ~0.5 means your numbers were off: check the first strip). Each
+   right-page strip starts with the left page's ID column (framed in red) cut
+   on the same lines, so every right-hand value sits beside its clutch/ID.
+3. View several strips per reply (several Read calls in one message), e.g. the
+   left and right strip of the same lines together.
+4. A cell too small or crossed out: `--zoom x0,y0,x1,y1` (fractions of the
+   photo, repeatable) gives an enlarged crop.
+
+Labels, envelopes and short pages (≤ ~12 lines) can be read from the overview
+or one strip per page; the tool is for tables.
+
 ## Long pages: split the reading across subagents
 
-A page (or spread) with more than ~15 lines, or several photos at once, is read
-faster and better in parallel:
+A page (or spread) with more than ~12 lines is read by reader subagents from
+the start, in parallel, while you wait:
 
-1. Cut the page into blocks of ~15 lines (crop images with the header row kept
-   on each crop; save crops in `work/<today>-<topic>/`, never in a shared
-   folder another chat may use).
-2. Start one subagent per block (Task/Agent tool), **all of them in one message**
-   (several tool calls in the same reply, `run_in_background: false`, so they
-   run at the same time and you get all the answers together). Each transcribes
-   **blind**, from its crop only, every line and column, and returns the `lines`
-   JSON of `match_notebook` (with `confidence` on doubtful cells). Do not give it
+1. Cut the strips (above), `--per 10`, and group them in 2–3 blocks of lines
+   (e.g. lines 1–10, 11–20, 21–30), each block with its left and right strips.
+2. Start one reader subagent per block, **all of them in one message** (several
+   Agent calls in the same reply, `run_in_background: false`, so they run at
+   the same time). Give each: the notebook kind and its columns, the strip
+   paths of its block, the line range, and the value rules (point it to this
+   skill's "Doubtful handwriting" and "Writing the values"). It transcribes
+   **blind** every line and column of its block and returns the `lines` JSON
+   of `match_notebook` (with `confidence` on doubtful cells). Do not give it
    your own readings or the sheet's values.
-3. Merge the blocks in notebook order and call `match_notebook` **once** for the
+3. Merge the blocks in notebook order (a line on the border of two blocks is
+   read twice: keep one, and look at the strip where they differ), check the
+   stages make sense on each line, and call `match_notebook` **once** for the
    page: that is the proposal. Then verify.
 
 ## Verification: a targeted second reading (always, after proposing)
@@ -267,7 +304,8 @@ what is likely to be wrong, not what is clearly fine:
    they are in step). Clear, plausible lines get no second reading.
 2. **Start every reviewer in one message** (several Agent calls in the same
    reply, `run_in_background: false`): one per block of lines, each with only
-   its crop(s) and the list of lines (by ID) and columns to read. **Never tell
+   its strips (and the photo path, for `--zoom`) and the list of lines (by ID)
+   and columns to read. **Never tell
    it your readings**, never quote values or abbreviations from the proposal in
    its prompt (a reviewer told "ins/lab" read "ins/lab" where the page says
    "ins/oda"). It first transcribes those cells itself, then reads the proposal
