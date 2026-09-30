@@ -3,7 +3,7 @@ import http from 'node:http';
 import { readFileSync, statSync, createReadStream, existsSync, chmodSync } from 'node:fs';
 import { join, resolve, extname, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { backup } from 'node:sqlite';
 import { gzipSync } from 'node:zlib';
 import { Store } from './store.mjs';
@@ -77,6 +77,21 @@ function send(res, status, text, headers = {}, gzipped = null) {
     ...headers,
   });
   res.end(compress ? gzipped || gzipSync(text) : text);
+}
+/**
+ * A large answer that is often asked again unchanged (the walks and tracks of
+ * Monitoreo, a sheet's lists): tagged with a hash of its body, so the browser
+ * revalidates and an unchanged answer comes back as a 304 without the body.
+ */
+function sendTagged(res, value) {
+  const text = JSON.stringify(value);
+  const etag = `"${createHash('sha1').update(text).digest('base64url')}"`;
+  const headers = { etag, 'cache-control': 'private, no-cache' };
+  if (res.req?.headers['if-none-match'] === etag) {
+    res.writeHead(304, headers);
+    return res.end();
+  }
+  return send(res, 200, text, headers);
 }
 function decodePart(part) {
   try {
@@ -525,7 +540,7 @@ export async function createApp(config = {}, options = {}) {
           Object.entries(listOptions(store, module)).map(([field, o]) => [field, { strict: o.strict, source: o.source, values: [...o.values] }]),
         );
         const unique = mod.fields.map(f => f.key).filter(k => UNIQUE[module]?.includes(k) || TUBE_FIELD.test(k));
-        return send(res, 200, JSON.stringify({ module, unique, lists }), { 'cache-control': 'no-cache' });
+        return sendTagged(res, { module, unique, lists });
       }
       // Revisión de datos: inconsistencies across the workbook (the assistant's check_data tool).
       if (method === 'GET' && path === '/api/checks') return json(res, 200, checkData(store, query));
@@ -672,7 +687,7 @@ export async function createApp(config = {}, options = {}) {
         });
         return res.end(csv);
       }
-      if (method === 'GET' && path === '/api/monitoring/tracks') return json(res, 200, { tracks: listTracks(store, user) });
+      if (method === 'GET' && path === '/api/monitoring/tracks') return sendTagged(res, { tracks: listTracks(store, user) });
       if (method === 'POST' && path === '/api/monitoring/tracks') {
         requireEditor(user);
         requireId(body);
@@ -727,7 +742,7 @@ export async function createApp(config = {}, options = {}) {
         requireEditor(user);
         return json(res, 200, removeProfile(store, decodePart(path.split('/')[5])));
       }
-      if (method === 'GET' && path === '/api/monitoring/wikiloc') return json(res, 200, { walks: listWalks(store) });
+      if (method === 'GET' && path === '/api/monitoring/wikiloc') return sendTagged(res, { walks: listWalks(store) });
       if (method === 'POST' && path === '/api/monitoring/wikiloc') {
         requireEditor(user);
         const saved = await saveWalk(store, body, user);
