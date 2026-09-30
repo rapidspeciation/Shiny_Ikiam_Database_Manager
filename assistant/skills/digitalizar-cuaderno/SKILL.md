@@ -17,13 +17,9 @@ is written until the person applies it.
    say so in one line and use the closest kind; never stop to ask first.
 2. **Crop the page with the skill's tool** (see "Crops" below): an overview
    with rulers, then strips of ~10 lines with the header repeated, straightened
-   and enhanced. Read the page yourself from the strips, **all strips in one
-   or two replies**; don't go back to zoom cell by cell: a cell you can't read
-   at once gets your best reading with a `confidence` (the person checks it).
-   Several pages at once are read by reader subagents in parallel (see
-   "Several pages at once"). **Speed matters more than perfection**: the
-   person reviews the table anyway, and a quick draft they correct is better
-   than a slow one.
+   and enhanced. Read the page yourself from the strips (several per reply);
+   several pages at once are read by reader subagents in parallel (see
+   "Several pages at once").
    **Transcribe every line and every column**, top to bottom, including
    crossed-out lines (`crossedOut: true`) and the notes. A spread of two facing
    pages is one page: the right-hand page continues the same lines, so follow
@@ -41,20 +37,21 @@ is written until the person applies it.
    somewhere on the page, `year`. Several envelopes/labels photographed
    together are one call (`kind: "labels"`, one line per label). Do not look
    the rows up yourself first: the tool does it (and better: it also tries
-   look-alike IDs and the order of the rows).
-4. **Quick self-check, no subagents**: look at the tool's answer for
-   impossible lines (adults > pupae > larvae > eggs with the sums evaluated,
-   dates out of order, counts on an "all died" line). Fix only those, in the
-   same proposal (`match_notebook` with `replaceProposalId`), from the strips
-   you already have.
-5. **Then stop and tell the person in 3–6 short lines, in their language (Spanish or English)**: which notebook and rows
+   look-alike IDs and the order of the rows). Then tell the person in one line
+   that the proposal is in *Cambios propuestos* and that you are checking it
+   with a second reading (e.g. "La propuesta de Posturas 947–976 ya está en
+   Cambios propuestos; la estoy verificando con una segunda lectura.").
+4. **Verify and correct the same proposal** (see "Verification" below): a
+   targeted second reading, its corrections applied to the same proposal
+   (`update_proposal`, or `match_notebook` with `replaceProposalId`), so the
+   table beside the chat improves while the person looks at it.
+5. **Then tell the person in 3–6 short lines, in their language (Spanish or English)**: which notebook and rows
    (e.g. "Posturas, clutches 120–134"), how many cells to fill, the differences
-   with the sheet (sheet → notebook), **the doubtful cells to check** (line,
-   column, your reading and the alternative), and the lines not found in the
-   sheet. End with: they can correct cells in *Cambios propuestos*, untick
-   rows and press ✓, or tell you "sí/está bien"; and "si quieres, hago una
-   segunda lectura para verificar" (a slower check, see "Verification"). Use a
-   small table only when there are several doubts.
+   with the sheet (sheet → notebook), what the second reading changed, the
+   doubtful readings with their alternatives, and the lines not found in the
+   sheet. End with: they can untick rows in *Cambios propuestos* and press ✓,
+   or tell you "sí/está bien". Use a small table only when there are several
+   differences.
 6. **Apply only on explicit confirmation**: when the person's latest message
    approves it ("sí", "aplícalo", "está bien"), call `apply_proposal` with the
    `proposalId` (optionally only some `indexes`). Never say something was saved
@@ -291,13 +288,10 @@ than reading it) and not more accurate. When the person sends several pages
 3. Check each page's lines (the stages make sense on each line) and call
    `match_notebook` once per page as the answers arrive. Then verify.
 
-## Verification: a targeted second reading (only when asked)
+## Verification: a targeted second reading (always, after proposing)
 
-Run it only when the person asks ("verifica", "revisa de nuevo",
-"double-check"), or offer it when the page is so faint that more than about a
-fifth of its cells are doubtful. The proposal is already beside the chat;
-verification makes it right. Re-read what is likely to be wrong, not what is
-clearly fine:
+The proposal is already beside the chat; verification makes it right. Re-read
+what is likely to be wrong, not what is clearly fine:
 
 1. **Choose the cells to re-read** from the `match_notebook` answer and your
    reading: doubtful and unread cells and `problems`; cells that fail
