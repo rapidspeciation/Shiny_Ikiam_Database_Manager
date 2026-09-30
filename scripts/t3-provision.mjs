@@ -113,10 +113,12 @@ codes and values stay exactly as they are in the workbook.
   \`app-dev\` — the source is the git checkout \`${source}\`
   (build, test, commit, push, \`scripts/deploy.sh\`). Never edit the built
   files in \`${join(root, 'releases')}\` or \`current\`.
-- Notebook photos: propose first (\`match_notebook\` right after the first
-  reading, and say it is being checked), then run the skill's targeted second
-  reading (all subagents started in one message, so they run in parallel) and
-  correct the same proposal; several pages at once are read by subagents in parallel.
+- Notebook photos: **fast by default** — one reading from the skill's crops,
+  \`match_notebook\` at once, a quick self-check of impossible lines, then a
+  short summary listing the doubtful cells for the person to check. The
+  slower targeted second reading (reviewer subagents, all started in one
+  message) runs only when the person asks ("verifica"); several pages at once
+  are read by subagents in parallel.
 - The project's Google account (jmithominii@gmail.com) is available with gog:
   \`set -a; . ~/.config/ithomiini/gog.env; set +a; gog --readonly --account jmithominii@gmail.com --client ithomiini <command>\`
   (gmail search/get, drive, docs, sheets, slides, calendar, forms, appscript;
