@@ -38,3 +38,44 @@ test('tube suggestions follow each rack in use: by kind of work and medium', asy
   assert.equal(suggestions[0].context.startsWith('Monitoreo'), true);
   store.close();
 });
+
+test('ID suggestions are kept until a sheet they read changes', async () => {
+  const sheets = new LocalSheets({
+    Insectary_data: [
+      {
+        row: 2,
+        values: { Insectary_ID: 'A0A', SPECIES: 'Mechanitis polymnia', CAM_ID: 'CAM000010', Tube_1_id: 'FS50849033', T1_Preservation_medium: 'Ethanol', Preservation_date: 46280 },
+      },
+    ],
+    Collection_data: [],
+  });
+  const store = new Store({ localMode: true }, { sheets });
+  await store.sync({ sheets: ['Insectary_data', 'Collection_data'] });
+  const first = idSuggestions(store, { kind: 'tube' });
+  assert.equal(first.suggestions[0].value, 'FS50849034');
+  // A caller changing its copy does not change the kept answer.
+  first.suggestions[0].value = 'changed';
+  assert.equal(idSuggestions(store, { kind: 'tube' }).suggestions[0].value, 'FS50849034');
+  // A kept answer does not read the rows again.
+  let reads = 0;
+  const prepare = store.db.prepare.bind(store.db);
+  store.db.prepare = sql => (/values_json/.test(sql) && reads++, prepare(sql));
+  idSuggestions(store, { kind: 'tube' });
+  idSuggestions(store, { kind: 'cam' });
+  const afterFirstCam = reads;
+  idSuggestions(store, { kind: 'cam' });
+  assert.ok(afterFirstCam > 0);
+  assert.equal(reads, afterFirstCam);
+  store.db.prepare = prepare;
+  // A tube used in the sheet since: the next suggestion moves on.
+  await sheets.externalEdit('Insectary_data', 3, {
+    Insectary_ID: 'A1A',
+    SPECIES: 'Mechanitis polymnia',
+    Tube_1_id: 'FS50849034',
+    T1_Preservation_medium: 'Ethanol',
+    Preservation_date: 46281,
+  });
+  await store.sync({ sheets: ['Insectary_data'] });
+  assert.equal(idSuggestions(store, { kind: 'tube' }).suggestions[0].value, 'FS50849035');
+  store.close();
+});
