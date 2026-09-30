@@ -1,0 +1,103 @@
+# Local test lab: benchmarking models on notebook photos
+
+A copy of the app and of T3 Code on one PC, to measure how well an AI model
+(through T3 Code, the way the team uses it) transcribes notebook photos into
+the workbook. Each model gets the same photos and the same prompt. Its
+proposals are scored cell by cell against the rows as people corrected them
+by hand in the workbook.
+
+The lab never writes to the team's Google Sheet. The app runs with
+`LOCAL_MODE=1`: the sheets are an in-memory copy, seeded from a read-only
+snapshot, and no Google credentials reach it. It also never touches the other
+T3 installs on the PC: it has its own home (`~/.t3-ithomiini-lab`) and ports
+(app 8795, T3 3775).
+
+Private files (snapshot, photos, cases, credentials, results) live in the lab
+folder, `~/.cache/ithomiini-lab` (or `ITHOMIINI_LAB_DIR`), never in the
+repository.
+
+## Run
+
+```sh
+tools/lab/snapshot.sh           # 1. the workbook as it is now (read-only, via the server's credentials)
+tools/lab/t3.sh --bg            # 2. the lab T3 (Claude + Codex providers)
+tools/lab/app.sh --bg           # 3. the lab app; the first start creates the admin `lab` and its T3 workspace
+node tools/lab/bench.mjs opus high               # 4. every case, each in its own new thread, in parallel
+node tools/lab/bench.mjs gpt-6.1-sol medium --cases stocks-0929
+node tools/lab/bench.mjs --history               # model × case, the latest run of each
+```
+
+- `snapshot.sh` runs `scripts/cache-sandbox.mjs` on the server (`LAB_SSH_HOST`,
+  default `claudeclaw`). That script only reads, over a read-only Sheets
+  connection. The file is copied here with mode 600 and the remote copy is
+  deleted. Run it again after people correct more rows, then restart the app:
+  the ground truth is always read from the latest snapshot.
+- `app.sh` builds the frontend if needed. It writes `seed.json`, which is the
+  snapshot with every scored cell of the cases emptied, so a model cannot copy
+  the answers from the sheet and its proposal holds everything it read. Then it
+  starts the app on `http://127.0.0.1:8795`. Sign in as `lab`; the password is
+  in `credentials.json`. The Asistente tab shows the lab T3. Every restart
+  re-seeds the sheets, so it also undoes a proposal a model applied. `bench.mjs`
+  refuses to run while a case's cells are not empty.
+- `t3.sh` writes the lab T3's provider settings. Claude uses the local
+  `claude` CLI and its login. Codex uses the local `codex` and `~/.codex`.
+  Sonnet 5.5 is a custom model with an effort menu. It also writes
+  `t3-admin-token`, which the app and the benchmark use to open T3.
+- `bench.mjs <model> [effort]`: the model is `opus`, `sonnet` or
+  `gpt-6.1-sol`, or any name as T3's model picker shows it. The effort is
+  `low|medium|high|xhigh|max|ultra`. The script drives T3 with headless
+  Chromium: new thread, model, effort, photos, prompt, send. It waits for the
+  turns in T3's state database. It collects the thread's proposals from the lab
+  app's database: the proposal ids in its tool results, or the run tag in the
+  proposal title. Then it scores them:
+  - A cell is right when the read value equals the truth after normalization.
+    NA and blank count as equal. Dates are compared as days (serial numbers,
+    ISO or dd/mm/yyyy). Sums are compared by their total (`=12+15` = `27`).
+    Case and spaces are ignored. Notes need to be 85% similar.
+  - A blank truth cell that was left out of the proposal is right.
+  - A filled truth cell that is missing from the proposal counts as missing.
+    This includes cells `match_notebook` held back as doubtful.
+  - Output goes to `results/<run>/`: `table.md`, `scores.json`, `errors.csv`
+    (every wrong or missing cell), `run.json` (threads, prompt) and screenshots.
+    One line per case is appended to `results/history.jsonl`.
+- `--dry` prepares the threads without sending them. `--parallel N` sets how
+  many threads are set up at once. The threads always run in parallel.
+  `--timeout MIN` sets the wait limit (default 40).
+
+Stop with `tools/lab/app.sh --stop` and `tools/lab/t3.sh --stop`.
+
+## Cases
+
+`cases.json` in the lab folder:
+
+```json
+{ "cases": [
+  { "id": "stocks-p12", "sheet": "Insectary_stocks", "photos": ["stocks-p12.jpg"],
+    "ranges": [["947", "976"]],
+    "fields": ["SPECIES", "DATE LAID", "NUMBER OF EGGS", "NOTES"],
+    "note": "free text" },
+  { "id": "emergence-p3", "sheet": "Insectary_data", "photos": ["em-3a.jpg", "em-3b.jpg"],
+    "labels": ["0VD", "1VD", "2VD"] }
+] }
+```
+
+To add a case:
+
+1. Copy the photos into `photos/` in the lab folder.
+2. Name the rows. Use `labels` (the sheet's ID: `CLUTCH NUMBER`,
+   `Insectary_ID`…) or `ranges` of labels in sheet order, meaning every row
+   from the first to the last, as on a notebook page.
+3. Choose the scored columns with `fields`. By default every column is scored
+   except the ID; list columns to leave out in `skip`. Cells calculated by a
+   formula are never scored, but typed sums are.
+4. Make sure people have checked those rows in the workbook. Then run
+   `snapshot.sh` and restart `app.sh`, which rebuilds the seed with the new
+   case's cells emptied.
+
+## Notes
+
+- Claude and Codex run with this PC's user settings (`~/.claude`, `~/.codex`).
+  The lab workspace denies Claude reads of the lab folder, so a model cannot
+  open the snapshot. Codex has no such rule. The prompt tells every model to
+  read only the photos.
+- Only the models the prompt names are used. Don't pick Fable models.
