@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { moduleMap, asCell, entered } from './schema.mjs';
 import { REAL_ID, checkWorkbookId } from './workbook.mjs';
 import { columnLetter, headerLayout } from './columns.mjs';
@@ -20,6 +21,8 @@ export class GoogleSheets {
     this.metadata = new Map();
     this.metadataAt = 0;
     this.readTimes = [];
+    // Requests sent to the Sheets API (reported with each sync).
+    this.requestCount = 0;
   }
   async accessToken() {
     if (this.token && this.token.expires > Date.now() + 60_000) return this.token.value;
@@ -39,12 +42,14 @@ export class GoogleSheets {
     this.token = { value: body.access_token, expires: Date.now() + body.expires_in * 1000 };
     return this.token.value;
   }
+  /** A Sheets API request; `text: true` returns the body unparsed. */
   async request(path, options = {}) {
-    const { background = false, ...fetchOptions } = options;
+    const { background = false, text = false, ...fetchOptions } = options;
     const method = fetchOptions.method || 'GET';
     if (this.readOnly && method !== 'GET') throw new Error('This Google Sheets connection is read-only');
     for (let attempt = 0; attempt < (method === 'GET' ? 5 : 1); attempt++) {
       if (method === 'GET') await this.readSlot(background);
+      this.requestCount++;
       const response = await fetch(`${api}/${this.spreadsheetId}${path}`, {
         ...fetchOptions,
         headers: {
@@ -53,7 +58,7 @@ export class GoogleSheets {
           ...fetchOptions.headers,
         },
       });
-      if (response.ok) return response.json();
+      if (response.ok) return text ? response.text() : response.json();
       if (method === 'GET' && [429, 503].includes(response.status) && attempt < 4) {
         const delay = Math.max(Number(response.headers.get('retry-after') || 0) * 1000, 1000 * 2 ** attempt);
         await new Promise(resolve => setTimeout(resolve, delay));
@@ -124,18 +129,21 @@ export class GoogleSheets {
     this.gridRows.set(sheet, count);
     const chunkSize = mod.fields.length > 60 ? 500 : mod.fields.length > 40 ? 800 : 2000;
     const rows = [];
+    const digest = createHash('sha256');
     for (let start = 1; start <= count; start += chunkSize) {
       const end = Math.min(count, start + chunkSize - 1);
       const params = new URLSearchParams({
         ranges: `${quoteTitle(sheet)}!${start}:${end}`,
         fields: 'sheets(data(startRow,rowData(values(userEnteredValue,effectiveValue))))',
       });
-      const result = await this.request(`?${params}`, { background: true });
+      const text = await this.request(`?${params}`, { background: true, text: true });
+      digest.update(`${start}:${end}\n`).update(text);
+      const result = JSON.parse(text);
       const data = result.sheets?.[0]?.data?.[0];
       for (const [i, row] of (data?.rowData || []).entries())
         rows.push({ row: (data.startRow || start - 1) + i + 1, cells: row.values || [] });
     }
-    return rows;
+    return withDigest(rows, digest.digest('base64'));
   }
   async readRow(sheet, row) {
     return (await this.readRows([{ sheet, rows: [row] }])).get(rowKey(sheet, row));
@@ -253,7 +261,8 @@ export class LocalSheets {
     }
   }
   async readSheet(sheet) {
-    return structuredClone(this.rows.get(sheet) || []);
+    const rows = structuredClone(this.rows.get(sheet) || []);
+    return withDigest(rows, createHash('sha256').update(JSON.stringify(rows)).digest('base64'));
   }
   async readRow(sheet, row) {
     return structuredClone((this.rows.get(sheet) || []).find(r => r.row === row) || { row, cells: [] });
@@ -511,6 +520,14 @@ function normalizeSeedRow(row, index, sheet) {
 }
 
 export const rowKey = (sheet, row) => `${sheet}\u0000${row}`;
+
+/**
+ * The rows of a whole-sheet read carry a digest of what Google returned: the same
+ * digest at the next sync means the sheet did not change (Store.performSync).
+ */
+function withDigest(rows, digest) {
+  return Object.defineProperty(rows, 'digest', { value: digest });
+}
 
 function quoteTitle(sheet) {
   return `'${sheet.replaceAll("'", "''")}'`;
