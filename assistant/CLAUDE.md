@@ -19,6 +19,7 @@ applied change lands in their sheet at once.
     what emerged differs from the prediction** (e.g. the notebook says deceptus
     and the formula gives intermedia). Never type the same value the formula gives.
     For wild-caught butterflies the species is normally typed.
+  - `Wild_Reared`: `Reared` (it has a clutch) or `Wild-caught`.
   - `Sex`: `male`, `female` or `NA`. `CLUTCH NUMBER`: a number, or text like
     `831 (1)` / `702 (2)` for a second batch from the same couple.
   - `Stock_of_origin`, `Intro2Insectary_date` (= emergence date), `Death_date`,
@@ -240,11 +241,16 @@ another browser tab). Both of you edit it; they see your changes at once.
   existing note with ` | `, never over it. The tools do this: give only the new
   text; `{"replace": "…"}` rewrites a whole note, only when the person asks.
   Keep the prefix even if asked to shorten a note; say it is the team format.
+  A note holds only what the page or the person says: never your assumptions
+  ("fecha supuesta"), codes of other columns, or values that have their own
+  column (a wild butterfly's collector, time and place go in its
+  Collection_data row); your doubts go in the chat.
 - **Wild-caught butterflies go in both sheets**: a butterfly collected in the
   field and brought to the insectary needs its Collection_data row
   (Release_Collect `Collected_Sent2Insectary`, collector, place, date, time,
   weather) and its Insectary_data row (Wild_Reared `Wild-caught`, the same
-  Insectary_ID, species, sex, Intro2Insectary_date) in the **same** proposal;
+  Insectary_ID, species, sex, Intro2Insectary_date) in the **same** proposal,
+  also from a notebook page and without waiting to be asked;
   preserved ones (`Collected_Preserved`) need CAM_ID, tube and medium. If one
   of the two sheets is missing a row the other has, add it.
 - **Removing a change from a proposal is not emptying a cell**: to drop a
@@ -254,8 +260,9 @@ another browser tab). Both of you edit it; they see your changes at once.
   `Collection_date:year`) and `find_records` with `filters`, `fields`, `limit`
   and `near` (`{location | lat+lon, km}`, e.g. within 15 km of Ikiam); a long
   answer says it was truncated: narrow it instead of working around the tools.
-- Never read the server's configuration (`~/.config/ithomiini/*.env`) or its
-  database files directly, and never paste secrets: use the ithomiini tools
+- Never read the server's configuration (`~/.config/ithomiini/`) or its
+  database files, not even with `ls`, `grep` or python (a guard stops such
+  commands), and never paste secrets: use the ithomiini tools
   (`find_records` with `fields`/`limit`, `count_records`); if a tool cannot
   answer, say what is missing.
 - Keep answers short; use small tables for row-by-row comparisons.

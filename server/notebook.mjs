@@ -60,6 +60,8 @@ export const KINDS = {
       'Tube_1_id',
       'Notes_Insectary_data',
     ],
+    // Reared when the line gives a clutch; Wild-caught when Claude says so (no clutch, a collector's note).
+    extra: ['Wild_Reared'],
   },
   deaths: {
     label: 'Muertes',
@@ -126,11 +128,60 @@ export function generationFromSpecies(text) {
   return text;
 }
 
-/** What a count kept as a sum adds up to (27 for "=12+15"), or null. */
-const sumTotal = value => {
+/** The terms of a count kept as a sum ([7, -3] for "=7-3"), or null. */
+const sumParts = value => {
   const formula = typeof value === 'string' ? simpleSum(value) : null;
-  return formula ? formula.slice(1).split('+').reduce((sum, term) => sum + Number(term), 0) : null;
+  return formula ? formula.slice(1).match(/[+-]?\d+/g).map(Number) : null;
 };
+/** What a count kept as a sum adds up to (27 for "=12+15", 4 for "=7-3"), or null. */
+const sumTotal = value => sumParts(value)?.reduce((sum, term) => sum + term, 0) ?? null;
+
+/**
+ * "ins/oda", "ins/este", "ins ESTEBAN", "in-Oda": the clutch is in the Insectary and the
+ * butterflies are that person's. The note says it as the team wrote it in the workbook.
+ */
+const OWNERS = { oda: 'Oda', este: 'Esteban', esteban: 'Esteban' };
+export const ownerNote = name => `mariposas de ${name}`;
+const OWNER_WORDS = Object.keys(OWNERS).join('|');
+// In a note: "ins/este", "in-Oda", "ins ESTEBAN" (a bare "in" needs its slash or dash).
+const OWNER_CODE = new RegExp(
+  String.raw`\b(?:in(?:s(?:ect(?:ary)?)?)?\.?\s*[/\\\-–—_:,+]\s*|ins(?:ect(?:ary)?)?\.?\s+)(${OWNER_WORDS})\b`,
+  'gi',
+);
+const OWNER_SAID = new RegExp(String.raw`\b(?:mariposas|butterflies)\s+(?:de|of|from)\s+(${OWNER_WORDS})\b`, 'gi');
+const tidy = s =>
+  s
+    .replace(/\s*([;,|/])\s*(?=[;,|/]|$)/g, '')
+    .replace(/^[\s;,|/.:-]+|[\s;,|/:-]+$/g, '')
+    .replace(/\s{2,}/g, ' ');
+/**
+ * Whose butterflies a clutch line says (from its INSECTARY OR LABORATORY cell, or a code
+ * copied into its notes): the column becomes "ins", the notes lose the code and the owner's
+ * note is returned apart. "ins/lab" is a doubt between the two rooms. Changes `text` in place.
+ */
+export function insectaryOwner(text) {
+  const out = { owner: null, doubt: false };
+  const column = String(text['INSECTARY OR LABORATORY'] ?? '').trim();
+  const code = /^in(?:s(?:ect(?:ary)?)?)?\.?\s*(?:[/\\\-–—_:,+]\s*|\s+)([a-záéíóúñ]+)\.?$/i.exec(column);
+  if (code) {
+    const word = code[1].toLowerCase();
+    if (OWNERS[word]) [out.owner, text['INSECTARY OR LABORATORY']] = [OWNERS[word], 'ins'];
+    else if (/^lab/.test(word)) out.doubt = true;
+  }
+  if (typeof text.NOTES === 'string' && text.NOTES.trim()) {
+    let note = text.NOTES;
+    for (const pattern of [OWNER_CODE, OWNER_SAID])
+      note = note.replace(pattern, (_, word) => {
+        out.owner ??= OWNERS[word.toLowerCase()];
+        return '';
+      });
+    note = tidy(note);
+    if (note) text.NOTES = note;
+    else delete text.NOTES;
+    if (out.owner && isNone(column)) text['INSECTARY OR LABORATORY'] = 'ins';
+  }
+  return out;
+}
 
 const clip = (value, length) => String(value ?? '').slice(0, length);
 
@@ -291,9 +342,12 @@ const formulaOf = terms => `=${terms.map((t, i) => (i && t >= 0 ? `+${t}` : Stri
 /** The value a notebook cell gives a column, as the sheet stores it, or an error. */
 export function readValue(field, text, { year, sheet = null }) {
   // A dash or NA written in a text column is the sheet's "NA" (e.g. no stock of origin, no CAM);
-  // in dates, counts and notes it just means nothing to write.
-  if (isNone(text))
-    return { value: typeOf(field) === 'text' && !/^Notes|^NOTES$/.test(field) && String(text ?? '').trim() ? 'NA' : null };
+  // so is one in a clutch's dates and counts (a stage that never came: the team types NA there).
+  // Elsewhere, in dates, counts and notes, it just means nothing to write (a living butterfly).
+  if (isNone(text)) {
+    const na = (typeOf(field) === 'text' || sheet === 'Insectary_stocks') && !/^Notes|^NOTES$/.test(field);
+    return { value: na && String(text ?? '').trim() ? 'NA' : null };
+  }
   const s = String(text).trim();
   const type = typeOf(field);
   if (type === 'date') {
@@ -340,9 +394,11 @@ export function sameValue(field, sheet, notebook) {
   const type = typeOf(field);
   if (type === 'date') return typeof sheet === 'number' && typeof notebook === 'number' && sheet === notebook;
   if (/CLUTCH|_No\./.test(field)) return clutchKey(sheet) === clutchKey(notebook);
-  // Counts kept as sums: two sums compare their terms (=12+15 is not =14+13); a sum and a number, their total.
+  // Counts kept as sums: two sums compare their terms (=12+15 is not =14+13); a sum and a single
+  // number (the notebook's final count, 4 for the sheet's =7-3), their total.
   if (type === 'number' && (sumTotal(sheet) !== null || sumTotal(notebook) !== null)) {
-    if (sumTotal(sheet) !== null && sumTotal(notebook) !== null) return simpleSum(sheet) === simpleSum(notebook);
+    if ((sumParts(sheet)?.length ?? 1) > 1 && (sumParts(notebook)?.length ?? 1) > 1)
+      return simpleSum(sheet) === simpleSum(notebook);
     return Number(sumTotal(sheet) ?? sheet) === Number(sumTotal(notebook) ?? notebook);
   }
   if (type === 'number' && Number.isFinite(Number(sheet)) && Number.isFinite(Number(notebook)))
@@ -507,12 +563,25 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
   const dateFields = columnsOf(kind).filter(f => typeOf(f) === 'date');
 
   // First the keys, to find each line's row (a corrected key finds another row).
+  const owners = [];
   const texts = transcription.lines.map(line => {
     const text = { ...line.v };
     for (const [field, value] of Object.entries(edits[line.n] ?? {})) if (columnsOf(kind).includes(field)) text[field] = value;
+    // "ins/oda": Insectary, and a note saying whose butterflies they are.
+    owners.push(columnsOf(kind).includes('INSECTARY OR LABORATORY') ? insectaryOwner(text) : {});
     // "lys (F1)": the generation goes to its column, where the sheet has one.
     return columnsOf(kind).includes('Generation') ? generationFromSpecies(text) : text;
   });
+  // A clutch page writes "ins" on some lines only: the others are in the same room when every
+  // line that says it agrees (the team types it on every row).
+  const rooms = new Set(
+    transcription.lines
+      .map((line, i) => (line.crossed ? null : texts[i]['INSECTARY OR LABORATORY']))
+      .filter(room => !isNone(room))
+      .map(room => readValue('INSECTARY OR LABORATORY', room, {}).value)
+      .filter(v => v === 'Insectary' || v === 'Laboratory'),
+  );
+  const pageRoom = columnsOf(kind).includes('INSECTARY OR LABORATORY') && rooms.size === 1 ? [...rooms][0] : null;
   const completed = completeRuns(texts);
   const lines = transcription.lines.map((line, i) => {
     const edited = edits[line.n] ?? {};
@@ -577,8 +646,27 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
     let lastDate = null;
     for (const field of columnsOf(kind)) {
       const typed = field in edited;
-      const confidence = typed ? 1 : (line.c[field] ?? (line.v[field] === null && field in line.v ? 0 : 1));
-      const read = readValue(field, text[field], { year: pageYear, sheet: kind.sheet });
+      const unreadable = line.v[field] === null && field in line.v;
+      const owner = owners[i] ?? {};
+      let confidence = typed ? 1 : (line.c[field] ?? (unreadable ? 0 : 1));
+      // What the page implies where the line writes nothing; it only fills an empty cell.
+      let inferred = null;
+      if (usable && !typed && !unreadable && isNone(text[field])) {
+        if (field === 'INSECTARY OR LABORATORY' && pageRoom) inferred = pageRoom;
+        // "(F1)" not written after the species: no generation (the team types NA).
+        else if (field === 'Generation' && kind.sheet === 'Insectary_stocks' && !isNone(text.SPECIES)) inferred = 'NA';
+        // A butterfly with a clutch was reared.
+        else if (field === 'Wild_Reared' && !isNone(text['CLUTCH NUMBER'])) inferred = 'Reared';
+      }
+      let source = inferred ?? text[field];
+      if (field === 'INSECTARY OR LABORATORY' && owner.doubt && !typed) confidence = Math.min(confidence, 0.5);
+      // The note says whose butterflies they are, unless the row's note already does.
+      if (field === 'NOTES' && owner.owner && !typed) {
+        const parts = [text.NOTES, ownerNote(owner.owner)].filter(p => !isNone(p));
+        const fresh = parts.filter(p => !textKey(record?.values?.NOTES ?? '').includes(textKey(p)));
+        source = fresh.length ? fresh.join('; ') : parts.at(-1);
+      }
+      const read = readValue(field, source, { year: pageYear, sheet: kind.sheet });
       let value = read.value;
       let error = read.error ?? null;
       // A count kept as a sum is compared (and shown) as its formula: =12+15.
@@ -616,12 +704,23 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         const exact = hits.find(o => textKey(o) === key);
         // A full name where the list holds its last word (Stock_of_origin: "messenoides").
         const tail = [...list.values].filter(o => textKey(o).length > 2 && key.endsWith(` ${textKey(o)}`));
+        // A short name that is a word of one value only ("salapia" → Ithomia salapia salapia).
+        const words = key.length >= 4 ? [...list.values].filter(o => ` ${textKey(o)} `.includes(` ${key} `)) : [];
+        // Among several, the one the row already has or its clutch gives ("Ithomia salapia").
+        const clutchSpecies =
+          field === 'SPECIES' && !isNone(clutchText)
+            ? lookup.speciesOfClutch?.(lookup.clutch?.(clutchText) ?? clutchText)
+            : null;
+        const known = [before, clutchSpecies].filter(v => typeof v === 'string').map(textKey);
+        const own = [...hits, ...words].find(o => known.includes(textKey(o)));
         if (exact) value = exact;
         else if (hits.length === 1 && key.length >= 3) value = hits[0];
         else if (tail.length === 1) value = tail[0];
+        else if (own) value = own;
+        else if (!hits.length && words.length === 1) value = words[0];
         else unlisted = true;
       }
-      const alternatives = (line.a[field] ?? [])
+      const alternatives = [...(line.a[field] ?? []), ...(field === 'INSECTARY OR LABORATORY' && owner.doubt ? ['lab'] : [])]
         .map(a => readValue(field, a, { year: pageYear, sheet: kind.sheet }).value)
         .filter(a => !isNone(a) && a !== value);
       const cell = {
@@ -673,6 +772,21 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
       else if (/^Notes|^NOTES$/.test(field)) cell.status = 'fill';
       else cell.status = 'conflict';
       if (isKey && status === 'match') cell.status = 'same';
+      // A dash in a count where the sheet has 0 (or the new row's =0): the same nothing.
+      const zero = !isNone(before) && Number(sumTotal(before) ?? before) === 0;
+      if (['fill', 'conflict'].includes(cell.status) && cell.value === 'NA' && zero) cell.status = 'same';
+      if (cell.status === 'conflict') {
+        const sheetTerms = sumField ? sumParts(before) : null;
+        const pageTerms = sumField ? (sumParts(cell.value) ?? [Number(cell.value)]) : null;
+        // What the page only implies (the room, no generation, reared, a dash) never replaces a value.
+        if (inferred !== null)
+          Object.assign(cell, { status: 'keep', message: `La hoja tiene ${show(field, before)}; la línea no lo escribe: se deja` });
+        else if (cell.value === 'NA' && isNone(text[field]) && typeOf(field) !== 'text')
+          Object.assign(cell, { status: 'keep', message: `La hoja tiene ${show(field, before)}; el cuaderno pone «—»: se deja` });
+        // The sheet already has the page's terms and more (added after the page was written).
+        else if (sheetTerms && pageTerms.length < sheetTerms.length && pageTerms.every((t, k) => t === sheetTerms[k]))
+          Object.assign(cell, { status: 'keep', message: `La hoja tiene ${before}: los términos del cuaderno y más; se deja` });
+      }
       const formula = record?.formulas?.[field];
       if (['fill', 'conflict', 'new'].includes(cell.status) && formulaHere && !(field === 'SPECIES' && cell.formula)) {
         // A count typed as a sum (=12+15) is replaced by the notebook's sum; other formulas are kept.

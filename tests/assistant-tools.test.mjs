@@ -152,7 +152,7 @@ test('notes the assistant adds keep the "d/m/yy INI:" form and go after the exis
 const NOTEBOOK_SHEETS = {
   Insectary_stocks: [
     { row: 2, values: { 'CLUTCH NUMBER': 838, SPECIES: 'Mechanitis messenoides intermedia', NOTES: 'old' } },
-    { row: 3, values: { 'CLUTCH NUMBER': 848, SPECIES: 'Mechanitis messenoides messenoides', 'DATE LAID': d('2025-08-08') } },
+    { row: 3, values: { 'CLUTCH NUMBER': 848, Generation: 'NA', SPECIES: 'Mechanitis messenoides messenoides', 'DATE LAID': d('2025-08-08') } },
   ],
 };
 const PAGE = {

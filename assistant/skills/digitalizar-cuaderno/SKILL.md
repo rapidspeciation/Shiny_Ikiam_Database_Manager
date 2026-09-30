@@ -108,7 +108,8 @@ Give values **as written**; the tool converts them.
   `lysimnia`/`lys` = Mechanitis lysimnia;
   `zaneka` = Melinaea menophilus zaneka; `mothone` = Melinaea mothone;
   `hibrido`, `hibrido x hibrido`, `zaneka x hibrido`, `hibrido x zaneka` =
-  Melinaea menophilus zaneka x menophilus (the hybrid stock).
+  Melinaea menophilus zaneka x menophilus (the hybrid stock);
+  `salapia` = Ithomia salapia salapia; `confusa`/`Methona` = Methona confusa psamathe.
   Always give the species as written: the tool keeps the SPECIES formula of
   Insectary_data (predicted from the clutch) and only types over it when what
   emerged differs from the prediction.
@@ -135,7 +136,9 @@ Give values **as written**; the tool converts them.
   stroke, `preserved` = Killed_Preserved, `only wings` = Unknown - Only wings.
 - Anything else in the notes column (e.g. "pupa muerta", "abit deformed",
   "emerged in cage of parents", "ethanol", "flash frozen") goes in the notes
-  column of the kind, as written.
+  column of the kind, as written. Only the page's own notes: never a code of
+  another column (`ins/este`), a value that has its column, or your doubts
+  (those go in your reply).
 
 ## The notebooks (kind → sheet, columns)
 
@@ -149,12 +152,18 @@ written: `994`, or `994(7)` for another batch of the same couple), `SPECIES`,
 `ins`, `Laboratory` for `lab`), `HATCHING DATE`, `NUMBER OF LARVAE`, `PUPA DATE`,
 `NUMBER OF PUPA`, `EMERGENCE DATE`, `NUMBER OF ADULTS`, `NOTES`. A clutch not in
 the sheet becomes a new row. A generation written after the species ("lysimnia
-(F1)", "(F2)", "(BC)") goes in `Generation` (F1, F2, Backcross); the
-**dissections** column (larvae/pupae taken for dissection, often a sum like
-`2+6`) goes in `NUMBER OF PUPAE/LARVAE FOR DISECTIONS` as a sum. In `INSECTARY OR
-LABORATORY` write `Insectary` for `ins`, `ins/oda`, `ins ESTEBAN`… (`Laboratory`
-for `lab`); what follows `ins` (whose butterflies or which room: "oda" =
-butterflies for Oda) goes in the line's note, e.g. "mariposas de Oda".
+(F1)", "(F2)", "(BC)") goes in `Generation` (F1, F2, Backcross; none written →
+the tool writes NA); the **dissections** column (larvae/pupae taken for
+dissection, often a sum like `2+6`) goes in `NUMBER OF PUPAE/LARVAE FOR
+DISECTIONS` as a sum. A dash in a date or count is `"NA"` (the stage never came).
+
+`INSECTARY OR LABORATORY`: give it **exactly as written** (`ins`, `lab`,
+`ins/oda`, `ins/este`, `ins ESTEBAN`, `in-Oda`). The tool writes `Insectary`
+(or `Laboratory`) and, for `ins/<person>`, adds the note "mariposas de Oda" /
+"mariposas de Esteban" (whose butterflies they are, the team's wording); never
+put the code or the owner in `NOTES` yourself. A line with nothing in that
+column takes the room the rest of the page says. When the sheet's sum already
+holds the page's terms and more (added later), the tool keeps it (`kept`).
 
 **`emergence` — Emergidos → Insectary_data.** One line per butterfly. Headers
 like *# · ID · Species · Sex · # Clutch · Stock origin · Emerge date · Dead date ·
@@ -167,7 +176,25 @@ text as written such as `CRISPR #159 control`), `Stock_of_origin` (as written:
 `"NA"`, which is what the sheet holds for "no stock": always send it, never leave
 the column out), `Intro2Insectary_date`
 (emerge date), `Death_date` (dead date), `Death_cause`, `CAM_ID`, `Tube_1_id`
-(the wing clip tube), `Notes_Insectary_data`. Only existing rows are changed.
+(the wing clip tube), `Notes_Insectary_data`, `Wild_Reared`. Only existing rows
+are changed. A line with a clutch is `Reared` (the tool fills it).
+
+**Wild-caught butterflies** on this page (no clutch, "—"; the note gives the
+collector's initials, a time, the weather and a place, e.g. "PAS 12:15 N.C
+C.T.C"): give `Wild_Reared` `Wild-caught`, the species, sex and
+`Intro2Insectary_date` (the day they were caught), and keep the collector,
+time, weather and place **out of** `Notes_Insectary_data`: they go in the
+butterfly's **Collection_data row, in the same proposal**, without being asked
+(`wildWithoutCollection` in the answer lists the missing ones): add them with
+`update_proposal` `newRows`: `Release_Collect` `Collected_Sent2Insectary`, the
+same `Insectary_ID`, `SPECIES` (genus + species) and `Subspecies_Form`, `Sex`,
+`Collector` (the list value starting with the initials: `PAS - …`),
+`Collection_location` (a place abbreviation is the location whose initials
+match among recent collections: C.T.C = Cavernas Templo de Ceremonia),
+`Collection_date` (= the entry date), `Collection_time`, `Cloud_cover` (as in
+monitoring: NO = CD, NC = CL, parches = S&C, sol = S), `Rainfall` (`DY_(dry)`
+unless it says llovizna/lluvia). Ask in your summary what the page does not
+say (the identifier, a doubtful time).
 
 **`deaths` — Muertes → Insectary_data.** The daily round of dead butterflies:
 *Date · ID · Species · Sex · Cause · CAM · Notes*. Columns: `Insectary_ID`,
@@ -224,7 +251,9 @@ through a look-alike ID, e.g. read `600`, sheet `6OO`), `new` (new row),
 (no readable ID), `crossed`. Cells: `fill` (empty in the sheet), `differs`
 (`sheet` vs `notebook`: the notebook is the primary record, but point it out),
 `doubtful` (left out: ask), `problems` (e.g. a tube already used by another row,
-a value outside a strict list), `notWritten` (a formula column), `unread`.
+a value outside a strict list), `notWritten` (a formula column), `unread`,
+`kept` (the sheet's value stays: its sum has the page's terms and more, or the
+line only implied a value; mention it only if it matters).
 `inProposal` tells whether the line is in the proposal; `rowError` why a line was
 left out. `year`/`yearSource` say which year the dates got. `overlaps` lists
 other pending proposals touching the same rows (the same page matched in

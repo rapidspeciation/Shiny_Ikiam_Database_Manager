@@ -341,7 +341,8 @@ test('a clutch page adds the clutches the sheet does not have yet, and its count
     [{ 'NUMBER OF EGGS': '=30', 'HATCHING DATE': d('2026-09-05') }, { 'NUMBER OF LARVAE': '=10+11' }],
   );
   assert.match(changes[1].note, /NUMBER OF LARVAE: hoja =10\+10 → cuaderno =10\+11/);
-  assert.deepEqual(newRows[0].values, { 'CLUTCH NUMBER': '994(7)', 'DATE LAID': d('2026-09-20'), 'NUMBER OF EGGS': '=12+3' });
+  // No "(F1)" after the species: Generation NA, as the team types it.
+  assert.deepEqual(newRows[0].values, { 'CLUTCH NUMBER': '994(7)', 'DATE LAID': d('2026-09-20'), 'NUMBER OF EGGS': '=12+3', Generation: 'NA' });
 });
 
 // ---------------------------------------------------------------------------
@@ -425,9 +426,10 @@ test('match_notebook matches a transcribed page and leaves one proposal beside T
     });
     // A doubtful sex is left out and reported with its alternative; the date still goes.
     assert.deepEqual(line(2).doubtful.Sex, { read: 'female', alternatives: ['male'], sheet: null });
-    assert.deepEqual(line(2).fill, { Intro2Insectary_date: '2025-08-08' });
+    // A butterfly with a clutch was reared.
+    assert.deepEqual(line(2).fill, { Intro2Insectary_date: '2025-08-08', Wild_Reared: 'Reared' });
     // Dates as ISO; the tube already filed as this butterfly's Tube_2_id.
-    assert.deepEqual(line(3).fill, { Intro2Insectary_date: '2025-08-08', Death_date: '2025-08-09', Death_cause: 'Unknown' });
+    assert.deepEqual(line(3).fill, { Intro2Insectary_date: '2025-08-08', Death_date: '2025-08-09', Death_cause: 'Unknown', Wild_Reared: 'Reared' });
     assert.match(line(3).problems.Tube_1_id, /ya está en Insectary_data fila 4/);
     assert.equal(line(4).label, '6OO');
     assert.match(line(4).message, /Leído «600»; en la hoja es 6OO/);
@@ -560,4 +562,142 @@ test('a dash in a text column is the sheet\'s NA: it fills an empty cell and mat
   assert.equal(a.cells.Stock_of_origin.status, 'fill');
   assert.equal(a.cells.Death_date.value, null, 'a dash in a date means nothing to write');
   assert.equal(b.cells.Stock_of_origin.status, 'same');
+});
+
+test('ins/este, ins/oda: the Insectary, and a note saying whose butterflies they are (never the code)', () => {
+  const rows = [
+    { id: 'c1', row: 10, version: 1, values: { 'CLUTCH NUMBER': 957, NOTES: '10/6/26 MJS: Some eggs with fungi' } },
+    { id: 'c2', row: 11, version: 1, values: { 'CLUTCH NUMBER': 960 } },
+    { id: 'c3', row: 12, version: 1, values: { 'CLUTCH NUMBER': 961, 'INSECTARY OR LABORATORY': 'Insectary', NOTES: '29/9/26 FCH: mariposas de Oda' } },
+    { id: 'c4', row: 13, version: 1, values: { 'CLUTCH NUMBER': 962 } },
+    { id: 'c5', row: 14, version: 1, values: { 'CLUTCH NUMBER': 963 } },
+    { id: 'c6', row: 15, version: 1, values: { 'CLUTCH NUMBER': 964, 'INSECTARY OR LABORATORY': 'Laboratory' } },
+  ];
+  const lookup = { ...fakeLookup(rows), list: () => undefined };
+  const transcription = parseTranscription(
+    JSON.stringify({
+      kind: 'stocks',
+      year: 2026,
+      lines: [
+        { raw: '957 … ins/este eggs dry', v: { 'CLUTCH NUMBER': '957', 'INSECTARY OR LABORATORY': 'ins/este', NOTES: 'eggs dry' } },
+        // The code copied into the notes by the reader: still the owner, never the code.
+        { raw: '960 … ins/este', v: { 'CLUTCH NUMBER': '960', 'INSECTARY OR LABORATORY': 'Insectary', NOTES: 'ins/este' } },
+        { raw: '961 … in-Oda', v: { 'CLUTCH NUMBER': '961', 'INSECTARY OR LABORATORY': 'in-Oda' } },
+        { raw: '962 … ins ESTEBAN', v: { 'CLUTCH NUMBER': '962', 'INSECTARY OR LABORATORY': 'ins ESTEBAN', NOTES: 'butterflies of Esteban' } },
+        // Nothing written in the column: the room of the rest of the page.
+        { raw: '963 … —', v: { 'CLUTCH NUMBER': '963', 'INSECTARY OR LABORATORY': '—' } },
+        { raw: '964', v: { 'CLUTCH NUMBER': '964', 'DATE LAID': '3/6' } },
+      ],
+    }),
+  );
+  const review = buildReview({ transcription, today: '2026-09-30', initials: 'FCH', lookup });
+  const [a, b, c, e, f, g] = review.lines;
+  assert.equal(a.cells['INSECTARY OR LABORATORY'].value, 'Insectary');
+  assert.equal(a.cells.NOTES.write, '10/6/26 MJS: Some eggs with fungi | 30/9/26 FCH: eggs dry; mariposas de Esteban');
+  assert.equal(b.cells.NOTES.write, '30/9/26 FCH: mariposas de Esteban');
+  assert.equal(c.cells['INSECTARY OR LABORATORY'].status, 'same');
+  assert.equal(c.cells.NOTES.status, 'same', 'the row already says it');
+  assert.equal(e.cells.NOTES.write, '30/9/26 FCH: mariposas de Esteban', 'said once, as the team says it');
+  assert.equal(f.cells['INSECTARY OR LABORATORY'].value, 'Insectary');
+  assert.ok(f.cells['INSECTARY OR LABORATORY'].include);
+  // A row of another room keeps it: the page only implies the room.
+  assert.equal(g.cells['INSECTARY OR LABORATORY'].status, 'keep');
+  assert.ok(!g.cells['INSECTARY OR LABORATORY'].include);
+
+  // "ins/lab" is a doubt between the rooms; a page of both rooms implies none.
+  const mixed = parseTranscription(
+    JSON.stringify({
+      kind: 'stocks',
+      lines: [
+        { raw: '962 ins/lab', v: { 'CLUTCH NUMBER': '962', 'INSECTARY OR LABORATORY': 'ins/lab' } },
+        { raw: '963 lab', v: { 'CLUTCH NUMBER': '963', 'INSECTARY OR LABORATORY': 'lab' } },
+        { raw: '961', v: { 'CLUTCH NUMBER': '961', 'DATE LAID': '3/6' } },
+      ],
+    }),
+  );
+  const [x, , z] = buildReview({ transcription: mixed, today: '2026-09-30', lookup }).lines;
+  assert.ok(x.cells['INSECTARY OR LABORATORY'].doubt);
+  assert.deepEqual(x.cells['INSECTARY OR LABORATORY'].alternatives, ['Laboratory']);
+  assert.equal(z.cells['INSECTARY OR LABORATORY'].status, 'keep');
+});
+
+test('a clutch line: dashes are NA, no "(F1)" is Generation NA, and the sheet\'s longer sums stay', () => {
+  const rows = [
+    { id: 'k1', row: 20, version: 1, values: { 'CLUTCH NUMBER': 983, Generation: 'F1' } },
+    { id: 'k2', row: 21, version: 1, values: { 'CLUTCH NUMBER': 950, 'NUMBER OF PUPA': 0 } },
+    { id: 'k3', row: 22, version: 1, values: { 'CLUTCH NUMBER': 958, 'PUPA DATE': d('2026-06-20') } },
+  ];
+  const lookup = {
+    ...fakeLookup(rows, {
+      formulas: { k2: { 'NUMBER OF LARVAE': '=7-3', 'NUMBER OF EGGS': '=21-2-8' }, k3: { 'NUMBER OF PUPA': '=7+3+12', 'NUMBER OF EGGS': '=12+16' } },
+    }),
+    list: () => undefined,
+  };
+  const transcription = parseTranscription(
+    JSON.stringify({
+      kind: 'stocks',
+      year: 2026,
+      lines: [
+        { raw: '983 lys — — — —', v: { 'CLUTCH NUMBER': '983', SPECIES: 'Mechanitis lysimnia', 'PUPA DATE': '—', 'NUMBER OF PUPA': 'NA' } },
+        { raw: '950 larvae 4, eggs 9, pupae —', v: { 'CLUTCH NUMBER': '950', 'NUMBER OF LARVAE': '4', 'NUMBER OF EGGS': '9', 'NUMBER OF PUPA': '—' } },
+        { raw: '958 pupa — 7+3, eggs 12', v: { 'CLUTCH NUMBER': '958', 'PUPA DATE': '—', 'NUMBER OF PUPA': '7+3', 'NUMBER OF EGGS': '12' } },
+      ],
+    }),
+  );
+  const [dashes, totals, ahead] = buildReview({ transcription, today: '2026-09-30', lookup }).lines;
+  assert.equal(dashes.cells['PUPA DATE'].value, 'NA');
+  assert.equal(dashes.cells['PUPA DATE'].status, 'fill');
+  assert.equal(dashes.cells['NUMBER OF PUPA'].status, 'fill');
+  assert.equal(dashes.cells.Generation.status, 'keep', 'NA never replaces a generation');
+  assert.equal(totals.cells['NUMBER OF LARVAE'].status, 'same', "the final 4 is the sheet's =7-3");
+  assert.equal(totals.cells['NUMBER OF EGGS'].status, 'conflict', '=21-2-8 is 11, not 9');
+  assert.equal(totals.cells['NUMBER OF PUPA'].status, 'same', 'a dash where the sheet has 0');
+  assert.equal(ahead.cells['NUMBER OF PUPA'].status, 'keep');
+  assert.match(ahead.cells['NUMBER OF PUPA'].message, /=7\+3\+12/);
+  assert.equal(ahead.cells['NUMBER OF EGGS'].status, 'keep', '12, then 16 more in the sheet');
+  assert.equal(ahead.cells['PUPA DATE'].status, 'keep', 'a dash never replaces a date');
+});
+
+test('a species written short takes the list value it names: "salapia", or the clutch\'s among several', () => {
+  const rows = [
+    { id: 'e1', row: 30, version: 1, values: { Insectary_ID: 'Y5D' } },
+    { id: 'e2', row: 31, version: 1, values: { Insectary_ID: 'Y6D' } },
+  ];
+  const species = ['Ithomia salapia salapia', 'Ithomia salapia aquinia', 'Mechanitis lysimnia'];
+  const lookup = {
+    ...fakeLookup(rows, { formulas: { e1: { SPECIES: '=X' }, e2: { SPECIES: '=X' } }, clutches: { 997: { written: 997, species: species[0] } } }),
+    list: field => (field === 'SPECIES' ? { strict: false, values: new Set(species) } : undefined),
+  };
+  const transcription = parseTranscription(
+    JSON.stringify({
+      kind: 'emergence',
+      lines: [
+        { raw: 'Y5D Salapia ♀ 997', v: { Insectary_ID: 'Y5D', SPECIES: 'Ithomia salapia', 'CLUTCH NUMBER': '997' } },
+        { raw: 'Y6D aquinia ♀ —', v: { Insectary_ID: 'Y6D', SPECIES: 'aquinia', 'CLUTCH NUMBER': 'NA', Wild_Reared: 'Wild-caught' } },
+      ],
+    }),
+  );
+  const [reared, wild] = buildReview({ transcription, today: '2026-09-30', lookup }).lines;
+  assert.equal(reared.cells.SPECIES.value, 'Ithomia salapia salapia');
+  assert.ok(!reared.cells.SPECIES.doubt);
+  assert.equal(reared.cells.Wild_Reared.value, 'Reared');
+  assert.equal(wild.cells.SPECIES.value, 'Ithomia salapia aquinia');
+  assert.equal(wild.cells.Wild_Reared.value, 'Wild-caught');
+});
+
+test('match_notebook lists the wild-caught butterflies whose Collection_data row is missing', async () => {
+  const { store, call } = await setup();
+  try {
+    const out = await call('match_notebook', {
+      kind: 'emergence',
+      lines: [
+        { raw: '6OO lysimnia ♀ — PAS 12:10', values: { Insectary_ID: '6OO', Sex: 'female', Wild_Reared: 'Wild-caught' } },
+        { raw: '5VB deceptus ♀ 838', values: { Insectary_ID: '5VB', 'CLUTCH NUMBER': '838' } },
+      ],
+    });
+    assert.deepEqual(out.wildWithoutCollection.ids, ['6OO']);
+    assert.match(out.wildWithoutCollection.todo, /update_proposal newRows/);
+  } finally {
+    store.close();
+  }
 });

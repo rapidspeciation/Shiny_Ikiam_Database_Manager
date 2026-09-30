@@ -34,7 +34,8 @@ export const MATCH_NOTEBOOK_TOOL = {
       'It returns per line: the row found, cells to fill, differences with the sheet, doubtful cells (left out of the proposal), problems, and the proposalId. Doubtful cells go in with a confidence below 0.8 and their other readings.',
       'The proposal\'s rows follow the page\'s line order. With includeUnchanged the lines already in the sheet show too, as context rows that are never written (never fake a change to make a line show).',
       'Notes are written as "d/m/yy INI: text" (today, the person\'s initials) after the note the cell already has, with " | ".',
-      'Posturas: a generation written with the species, e.g. "lys (F1)", goes to Generation (F1, F2, Backcross); the dissections column goes to NUMBER OF PUPAE/LARVAE FOR DISECTIONS (a count, sums kept like the other counts).',
+      'Posturas: a generation written with the species, e.g. "lys (F1)", goes to Generation (F1, F2, Backcross), none written is NA; the dissections column goes to NUMBER OF PUPAE/LARVAE FOR DISECTIONS (a count, sums kept like the other counts); a dash in a date or count is NA; give INSECTARY OR LABORATORY as written ("ins", "lab", "ins/oda", "ins/este"): "ins/<person>" becomes Insectary plus the note "mariposas de <person>", and a line without it takes the page\'s room; a sheet sum that already holds the page\'s terms and more is kept.',
+      'Emergidos: a line with a clutch is Wild_Reared Reared; give Wild_Reared "Wild-caught" for a wild butterfly (no clutch), and add its Collection_data row to the proposal (wildWithoutCollection lists the ones missing).',
       `Columns per kind: ${KIND_IDS.map(id => `${id} (${KINDS[id].label}, ${KINDS[id].sheet}): ${columnsOf(KINDS[id]).join(', ')}${KINDS[id].aliases ? ` (also accepted: ${Object.entries(KINDS[id].aliases).map(([a, f]) => `${a} = ${f}`).join(', ')})` : ''}`).join('; ')}.`,
     ].join(' '),
     parameters: {
@@ -213,14 +214,25 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
       }
       changes.sort((a, b) => a.line - b.line);
     }
-    return { review, changes, ignored };
+    // A wild-caught butterfly also needs its Collection_data row (same Insectary_ID).
+    const wildWithoutCollection = [];
+    if (kind.sheet === 'Insectary_data') {
+      const collected = keyIndex('Collection_data', ['Insectary_ID']);
+      for (const line of review.lines) {
+        const wild = line.cells.Wild_Reared;
+        if (line.status !== 'match' || (wild?.include ? wild.value : wild?.before) !== 'Wild-caught') continue;
+        const id = line.cells.Insectary_ID?.before ?? line.label;
+        if (!collected.has(clutchKey(id))) wildWithoutCollection.push(id);
+      }
+    }
+    return { review, changes, ignored, wildWithoutCollection };
   }
 
   return { match };
 }
 
 /** What the tool tells Claude about the matched page: per line only what matters (not the equal cells). */
-export function matchSummary({ review, changes, ignored }, proposalId) {
+export function matchSummary({ review, changes, ignored, wildWithoutCollection = [] }, proposalId) {
   const show = (field, value) =>
     typeOf(field) === 'date' && typeof value === 'number' ? isoOf(value) : value === undefined ? null : value;
   const inProposal = new Set(changes.filter(c => !c.context).map(c => c.line));
@@ -248,6 +260,8 @@ export function matchSummary({ review, changes, ignored }, proposalId) {
         put('differs', { sheet: show(field, cell.before), notebook, ...(cell.message ? { note: cell.message } : {}) });
       else if (cell.status === 'fill' || cell.status === 'new') put(cell.status === 'new' ? 'newRow' : 'fill', cell.write ?? notebook);
       else if (cell.status === 'same') out.same = (out.same ?? 0) + 1;
+      // The sheet's value stays (it holds the page's terms and more, or the page only implied one).
+      else if (cell.status === 'keep' && cell.message) put('kept', { sheet: show(field, cell.before), notebook, note: cell.message });
     }
     if (group.unread) group.unread = Object.keys(group.unread);
     Object.assign(out, group);
@@ -275,6 +289,14 @@ export function matchSummary({ review, changes, ignored }, proposalId) {
     },
     proposalId: proposalId ?? null,
     ...(ignored.length ? { ignoredColumns: ignored } : {}),
+    ...(wildWithoutCollection.length
+      ? {
+          wildWithoutCollection: {
+            ids: wildWithoutCollection,
+            todo: 'Wild-caught without a Collection_data row: add them to this proposal with update_proposal newRows (Release_Collect Collected_Sent2Insectary, the same Insectary_ID, SPECIES + Subspecies_Form, Sex, Collector, Collection_location, Collection_date, Collection_time, Cloud_cover, Rainfall).',
+          },
+        }
+      : {}),
     lines,
   };
 }

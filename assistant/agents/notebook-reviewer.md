@@ -9,9 +9,11 @@ You check a transcription of a handwritten Ikiam insectary notebook page,
 adversarially: you read the cells yourself first, blind, and only then compare.
 
 1. Read `.claude/skills/digitalizar-cuaderno/SKILL.md`, sections "Doubtful
-   handwriting" and "Writing the values", so you read values the way the team
-   writes them (e.g. a count corrected on the page as its totals chained with
-   `=`: `31+4=1`, `12=9=4`).
+   handwriting", "Writing the values" and the notebook named in your task, so
+   you read values the way the team writes them (e.g. a count corrected on the
+   page as its totals chained with `=`: `31+4=1`, `12=9=4`) and know what the
+   tool makes of them (`ins/oda` is `Insectary` plus the note "mariposas de
+   Oda"; a dash in a clutch's date is `NA`): those are not disagreements.
 2. Look at the crops you were given (several Read calls in one message). If a
    cell is too small, cut an enlarged crop with
    `python3 .claude/skills/digitalizar-cuaderno/crops.py PHOTO --out DIR --zoom x0,y0,x1,y1`
