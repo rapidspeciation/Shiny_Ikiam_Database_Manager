@@ -20,6 +20,10 @@ T3HOME="${LAB_T3_HOME:-$HOME/.t3-ithomiini-lab}"
 PORT="${LAB_APP_PORT:-8795}"
 T3PORT="${LAB_T3_PORT:-3775}"
 URL="http://127.0.0.1:$PORT"
+# The addresses people open (tools/lab/tailscale.sh writes them; default this PC only).
+[ -f "$LAB/public.env" ] && . "$LAB/public.env"
+PUBLIC_URL="${LAB_PUBLIC_URL:-$URL}"
+T3_PUBLIC_URL="${LAB_T3_PUBLIC_URL:-http://127.0.0.1:$T3PORT}"
 umask 077
 mkdir -p "$LAB/app"
 
@@ -38,7 +42,7 @@ stop() {
 provision() {
   T3CODE_HOME="$T3HOME" ITHOMIINI_SHARED="$LAB/app" DATABASE_PATH="$LAB/app/app.sqlite" \
     ITHOMIINI_MCP_URL="$URL/api/ai/mcp" ITHOMIINI_T3_WORKSPACES="$T3HOME/workspaces" \
-    ITHOMIINI_SRC="$HERE" ITHOMIINI_LAB_URL="$URL" ITHOMIINI_DOCS="$HERE/docs" ITHOMIINI_DENY_READ="$LAB:$HOME/.cache/ithomiini-test" \
+    ITHOMIINI_SRC="$HERE" ITHOMIINI_LAB_URL="$PUBLIC_URL" ITHOMIINI_DOCS="$HERE/docs" ITHOMIINI_DENY_READ="$LAB:$HOME/.cache/ithomiini-test" \
     T3_BIN="${T3_BIN:-$HOME/.local/bin/t3}" node "$HERE/scripts/t3-provision.mjs" "$1"
 }
 [ "${1:-}" = "--stop" ] && { stop; exit 0; }
@@ -66,11 +70,11 @@ env_app=(
   APP_HOST=127.0.0.1
   APP_PORT="$PORT"
   APP_BASE_PATH=/
-  APP_PUBLIC_URL="$URL"
+  APP_PUBLIC_URL="$PUBLIC_URL"
   SECURE_COOKIES=0
   SYNC_INTERVAL_MS=0
   SETUP_TOKEN="$(cat "$LAB/setup-token")"
-  ITHOMIINI_T3_URL="http://127.0.0.1:$T3PORT"
+  ITHOMIINI_T3_URL="$T3_PUBLIC_URL"
   ITHOMIINI_T3_LOCAL="http://127.0.0.1:$T3PORT"
   ITHOMIINI_T3_ADMIN_TOKEN_FILE="$LAB/t3-admin-token"
   ITHOMIINI_T3_HOME="$T3HOME"
@@ -92,7 +96,7 @@ for _ in $(seq 300); do
   [ -n "$state" ] && [ "$state" != "syncing" ] && [ "$state" != "not_synced" ] && break
   sleep 2
 done
-echo "Lab app on $URL (sync: ${state:-down}; log $LAB/app.log)"
+echo "Lab app on $PUBLIC_URL (sync: ${state:-down}; log $LAB/app.log)"
 
 # The admin, created once through the app's own setup flow.
 if [ ! -s "$LAB/credentials.json" ]; then

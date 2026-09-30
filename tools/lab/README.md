@@ -26,7 +26,15 @@ node tools/lab/bench.mjs opus high               # 4. every case, each in its ow
 node tools/lab/bench.mjs gpt-6.1-sol medium --cases stocks-0929
 node tools/lab/bench.mjs --history               # model × case, the latest run of each
 node tools/lab/timeline.mjs <run> [case]         # where a thread's time went
+tools/lab/tailscale.sh          # open the lab to your other devices (tailnet only); --off to close it
 ```
+
+- `tailscale.sh` serves the app (port 8509) and its T3 (port 8510) on this
+  machine's Tailscale name over HTTPS, tailnet only, and restarts the app with
+  those addresses. The Asistente tab embeds T3 from its own address. The
+  addresses are saved in `public.env`, so later restarts keep them. Changing
+  the serve config uses `sudo tailscale`, because it already holds folder
+  entries; the other entries stay.
 
 - `snapshot.sh` runs `scripts/cache-sandbox.mjs` on the server (`LAB_SSH_HOST`,
   default `claudeclaw`). That script only reads, over a read-only Sheets

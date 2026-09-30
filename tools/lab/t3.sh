@@ -52,6 +52,9 @@ s.providerInstances = {
   antigravity: { driver: 'antigravity', enabled: false, config: {} },
 };
 s.enableProviderUpdateChecks = false;
+// New chats open like the live T3 (Opus 5.5 · Medium · 1M); a choice made later in T3 is kept.
+s.defaultModelSelection ??= { instanceId: 'claudeAgent', model: 'claude-opus-5-5',
+  options: [{ id: 'contextWindow', value: '1m' }, { id: 'effort', value: 'medium' }] };
 fs.writeFileSync(file, JSON.stringify(s, null, 1), { mode: 0o600 });
 EOF
 
