@@ -72,14 +72,18 @@ type InnerRange = {
  * keys that move the selection keep it in sight on their own, see keepInSight).
  */
 type FocusRange = {
-  table: { rowManager: { element: HTMLElement } }
+  table: { element: HTMLElement; rowManager: { element: HTMLElement } }
   blockKeydown: boolean
   restoreFocus: () => boolean
   finishEditingCell: () => void
 }
 {
   const range = SelectRangeModule.prototype as unknown as FocusRange
+  // Tabulator also calls this when its data changes (a row added to Muertes' chosen IDs): the focus
+  // comes back to the grid only from inside it, never taken from a field elsewhere being typed in.
   range.restoreFocus = function (this: FocusRange) {
+    const focused = document.activeElement
+    if (focused && focused !== document.body && !this.table.element.contains(focused)) return false
     this.table.rowManager.element.focus({ preventScroll: true })
     return true
   }

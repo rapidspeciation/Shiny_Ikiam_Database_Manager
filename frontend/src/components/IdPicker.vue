@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { X } from 'lucide-vue-next'
 import { idTokens, resolveIds } from '../lib/ids'
 import { t } from '../lib/i18n'
@@ -27,6 +27,23 @@ const props = withDefaults(
 const emit = defineEmits<{ 'update:modelValue': [value: string[]] }>()
 
 const text = ref('')
+const input = ref<HTMLInputElement | null>(null)
+/**
+ * After an ID is added the page below redraws (Muertes' grid of chosen IDs), and the browser can
+ * leave the field focused in name only: the next keys type nothing. Focus it again, so the next ID
+ * can be typed at once (unless the person has moved on to another field).
+ */
+function keepTyping() {
+  const el = input.value
+  if (!el || document.activeElement !== el) return
+  nextTick(() =>
+    setTimeout(() => {
+      if (document.activeElement !== el && document.activeElement !== document.body) return
+      el.blur()
+      el.focus({ preventScroll: true })
+    }, 50),
+  )
+}
 const open = ref(false)
 const active = ref(-1)
 const unknown = ref<string[]>([])
@@ -56,6 +73,7 @@ function add(tokens: string[]) {
   unknown.value = missing
   hint.value = ''
   emit('update:modelValue', [...new Set([...props.modelValue, ...found])])
+  keepTyping()
 }
 // The sheet has arrived: the IDs pasted meanwhile are looked up now.
 watch(
@@ -154,6 +172,7 @@ function clear() {
         </button>
       </span>
       <input
+        ref="input"
         v-model="text"
         class="min-w-24 flex-1 border-0 p-0.5 text-sm outline-none"
         :placeholder="modelValue.length ? '' : (placeholder ?? $t('Escribe, pega IDs o un rango (B0D-B9D)'))"
