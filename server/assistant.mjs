@@ -1803,7 +1803,12 @@ export function createAssistant({ store, config = {} }) {
             todo: 'Ask the person about these cells (value, alternatives, why). They check them in the table (edit, pick an alternative, or «Marcar revisadas»), or tell you: then update_proposal (the value they say, or rows[].checked for the ones they confirm) and apply again. Only when they explicitly say to apply them as they are: apply_proposal with confirmDoubtful; to write only the sure cells: skipDoubtful.',
           };
         }
-        return { error: clip(e.message, 300), details: e.details?.items?.slice(0, 10) };
+        // Google's own reason for a rejected save (a protected range, a bad request) helps fix it.
+        return {
+          error: clip(e.message, 300),
+          details: e.details?.items?.slice(0, 10),
+          ...(e.details?.cause ? { cause: clip(e.details.cause, 300) } : {}),
+        };
       }
     }
     return { error: 'Unknown tool' };
