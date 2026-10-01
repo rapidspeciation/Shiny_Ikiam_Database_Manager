@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Sets up a person's project in T3 Code (stock install, nothing patched):
-// a folder with the Ithomiini brief for Claude/Codex (CLAUDE.md, AGENTS.md),
-// the skills (every folder of assistant/skills), the Claude Code
+// a folder with the Ithomiini brief (AGENTS.md for Codex, CLAUDE.md a link to it for Claude),
+// the skills (every folder of assistant/skills, in .claude/skills and .agents/skills), the Claude Code
 // subagents (assistant/agents: notebook-reader, notebook-reviewer on Sonnet), a shell guard hook
 // (assistant/hooks: no command may name the secrets or the database), the app's tools over MCP
 // with a personal token (.mcp.json for Claude, .codex/config.toml for Codex), and `t3 project add`. Run on the server:
@@ -18,9 +18,10 @@
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { composeBrief, labAppDev } from '../server/brief.mjs';
 
 const release = join(dirname(fileURLToPath(import.meta.url)), '..');
 const shared = process.env.ITHOMIINI_SHARED || '/home/ubuntu/ithomiini/shared';
@@ -59,37 +60,8 @@ if (!arg) throw new Error('Usage: t3-provision.mjs <username> | --refresh-all');
 const db = new DatabaseSync(database, { timeout: 30000 });
 const userOf = username => db.prepare('SELECT * FROM users WHERE username = ? AND active = 1').get(username);
 
-/** The brief: who the person is, assistant/AGENTS.md, and this workspace's folders. */
-function brief(user) {
-  const base = readFileSync(join(release, 'assistant', 'AGENTS.md'), 'utf8');
-  const body = base.slice(base.indexOf('\n') + 1).trimStart();
-  return `# Ithomiini database assistant (T3 Code)
-
-You are working for **${user.display_name}** (app user \`${user.username}\`).
-
-${body.trimEnd()}
-
-## This workspace
-
-- Project documentation (data-entry audit, monitoring, workbook schema,
-  meetings, operations): \`${docs}\`.
-- Keep downloads and generated files in \`work/<date>-<topic>/\` here (several
-  chats share this folder; don't reuse names).
-${labUrl ? labAppDev() : `- Changing the app: skill \`app-dev\`. The source is the git checkout \`${source}\`;
-  never edit the built files in \`${join(root, 'releases')}\` or \`current\`.`}
-`;
-}
-
-/** The lab's rule for changing the app: local only (brief bullet and the top of the app-dev skill). */
-function labAppDev() {
-  return `- Changing the app: skill \`app-dev\`, but this is the **local test lab**:
-  the app at ${labUrl} runs offline on a copy of the workbook (saves never
-  reach Google Sheets). Change the source in the git checkout \`${source}\`, run
-  the checks, restart the lab app (\`tools/lab/app.sh --stop && setsid -f tools/lab/app.sh --bg\`
-  from the source folder, about a minute), ask the person to reload ${labUrl},
-  and commit on the current branch. **Never \`git push\` or run
-  \`scripts/deploy.sh\`** unless the person explicitly asks.`;
-}
+/** The brief: who the person is, assistant/AGENTS.md, and this workspace's folders (server/brief.mjs). */
+const brief = user => composeBrief(user, { docs, source, releases: join(root, 'releases'), labUrl, root: release });
 
 /** A new personal token for T3 (the previous one stops working). */
 function mintToken(user) {
@@ -178,12 +150,14 @@ set = { PATH = ${q(TOOLS_PATH)} }
 function provision(user, { freshToken, addProject }) {
   const workspace = join(workspaces, user.username);
   mkdirSync(join(workspace, '.claude', 'skills'), { recursive: true });
-  const text = brief(user);
-  writeFileSync(join(workspace, 'CLAUDE.md'), text);
-  writeFileSync(join(workspace, 'AGENTS.md'), text);
+  // AGENTS.md is the brief (Codex reads it); CLAUDE.md is a link to it, so Claude Code reads the
+  // same text whatever its AGENTS.md setting (it follows the link; a copy could drift).
+  writeFileSync(join(workspace, 'AGENTS.md'), brief(user));
+  rmSync(join(workspace, 'CLAUDE.md'), { force: true });
+  symlinkSync('AGENTS.md', join(workspace, 'CLAUDE.md'));
 
   // The release's skills replace the workspace's copies (a removed file goes too):
-  // .claude/skills for Claude, .agents/skills for Codex (GPT).
+  // .claude/skills for Claude Code, .agents/skills for Codex (its project skills folder).
   const skills = join(release, 'assistant', 'skills');
   for (const name of existsSync(skills) ? readdirSync(skills) : []) {
     for (const folder of ['.claude', '.agents']) {
@@ -195,7 +169,7 @@ function provision(user, { freshToken, addProject }) {
       if (labUrl && name === 'app-dev' && existsSync(skill)) {
         const text = readFileSync(skill, 'utf8');
         const end = text.indexOf('\n---\n', 4) + 5;
-        const note = `\n> **Lab copy.** These steps are for the live server. Here:\n>\n${labAppDev().replace(/^- .*?but this/, 'This').replace(/^/gm, '> ')}\n`;
+        const note = `\n> **Lab copy.** These steps are for the live server. Here:\n>\n${labAppDev(labUrl, source).replace(/^- .*?but this/, 'This').replace(/^/gm, '> ')}\n`;
         writeFileSync(skill, text.slice(0, end) + note + text.slice(end));
       }
     }

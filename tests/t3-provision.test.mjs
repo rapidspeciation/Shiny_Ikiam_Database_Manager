@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, existsSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -29,7 +29,7 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
 
     run('ana');
     const workspace = join(shared, 't3-workspaces', 'ana');
-    const brief = readFileSync(join(workspace, 'CLAUDE.md'), 'utf8');
+    const brief = readFileSync(join(workspace, 'AGENTS.md'), 'utf8');
     assert.match(brief, /working for \*\*Ana Pérez\*\*/);
     // The brief is assistant/AGENTS.md with the person and the workspace's folders; the rest is in skills.
     assert.ok(brief.includes(readFileSync(new URL('../assistant/AGENTS.md', import.meta.url), 'utf8').split('\n').slice(1).join('\n').trim()));
@@ -39,7 +39,10 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
       assert.match(readFileSync(file, 'utf8'), new RegExp(`^---\\nname: ${skill}\\ndescription: .+\\n---\\n`), `skill ${skill} installed`);
     }
     assert.match(brief, /## This workspace/);
-    assert.equal(readFileSync(join(workspace, 'AGENTS.md'), 'utf8'), brief);
+    // CLAUDE.md is a link to AGENTS.md: Claude Code and Codex read the same brief.
+    assert.ok(lstatSync(join(workspace, 'CLAUDE.md')).isSymbolicLink());
+    assert.equal(readlinkSync(join(workspace, 'CLAUDE.md')), 'AGENTS.md');
+    assert.equal(readFileSync(join(workspace, 'CLAUDE.md'), 'utf8'), brief);
     assert.match(readFileSync(join(workspace, '.claude', 'skills', 'digitalizar-cuaderno', 'SKILL.md'), 'utf8'), /name: digitalizar-cuaderno/);
     // Every folder of assistant/skills is installed, with its reference files; the brief points to the app guide.
     assert.match(readFileSync(join(workspace, '.claude', 'skills', 'app-guide', 'SKILL.md'), 'utf8'), /name: app-guide/);
@@ -77,6 +80,7 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
 
     // Codex (GPT threads): the same brief (AGENTS.md), skills and MCP server with the same token.
     assert.match(readFileSync(join(workspace, '.agents', 'skills', 'digitalizar-cuaderno', 'SKILL.md'), 'utf8'), /name: digitalizar-cuaderno/);
+    assert.ok(existsSync(join(workspace, '.agents', 'skills', 'app-guide', 'reference', 'monitoreo.md')));
     const codex = readFileSync(join(workspace, '.codex', 'config.toml'), 'utf8');
     assert.match(codex, /^\[mcp_servers\.ithomiini\]$/m);
     assert.match(codex, /^url = "http:\/\/127\.0\.0\.1:8794\/api\/ai\/mcp"$/m);
@@ -92,12 +96,15 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     writeFileSync(join(workspace, '.claude', 'agents', 'old-agent.md'), 'x');
     writeFileSync(join(workspace, '.claude', 'settings.json'), JSON.stringify({ ...settings, model: 'opus' }));
     mkdirSync(join(shared, 't3-workspaces', 'old'), { recursive: true });
-    writeFileSync(join(workspace, 'CLAUDE.md'), 'outdated');
+    writeFileSync(join(workspace, 'AGENTS.md'), 'outdated');
+    rmSync(join(workspace, 'CLAUDE.md'));
+    writeFileSync(join(workspace, 'CLAUDE.md'), 'a copy from before the link');
 
     const out = run('--refresh-all');
     assert.match(out, /Refreshed: Ithomiini · Ana Pérez/);
     assert.match(out, /Skipped old: no active user/);
-    assert.equal(readFileSync(join(workspace, 'CLAUDE.md'), 'utf8'), brief);
+    assert.equal(readFileSync(join(workspace, 'AGENTS.md'), 'utf8'), brief);
+    assert.equal(readlinkSync(join(workspace, 'CLAUDE.md')), 'AGENTS.md');
     assert.ok(!existsSync(join(workspace, '.claude', 'skills', 'digitalizar-cuaderno', 'old.md')));
     assert.ok(!existsSync(join(workspace, '.claude', 'agents', 'old-agent.md')));
     assert.ok(existsSync(join(workspace, '.claude', 'agents', 'notebook-reader.md')));
@@ -146,7 +153,7 @@ test('Another install (the local lab) sets the database, MCP address, workspaces
     execFileSync(process.execPath, [script, 'lab'], { env, encoding: 'utf8' });
     const workspace = join(workspaces, 'lab');
     assert.equal(JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8')).mcpServers.ithomiini.url, 'http://127.0.0.1:8795/api/ai/mcp');
-    assert.match(readFileSync(join(workspace, 'CLAUDE.md'), 'utf8'), /git checkout `\/work\/ithomiini`/);
+    assert.match(readFileSync(join(workspace, 'AGENTS.md'), 'utf8'), /git checkout `\/work\/ithomiini`/);
     const deny = JSON.parse(readFileSync(join(workspace, '.claude', 'settings.json'), 'utf8')).permissions.deny;
     assert.ok(deny.includes(`Read(/${database}*)`));
     assert.ok(deny.includes(`Read(/${lab}/**)`) && deny.includes('Read(//secret/answers/**)'));
