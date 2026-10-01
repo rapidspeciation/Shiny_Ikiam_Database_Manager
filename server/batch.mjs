@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { comparable, isSumField, labelFor, moduleMap, simpleSum, validateValues } from './schema.mjs';
 import { hasDateFormat, hasTimeFormat, rowKey, rowValues } from './sheets.mjs';
 import { describeProblems, headerLayout, sameLayout } from './columns.mjs';
-import { ensurePremadeRows } from './premade.mjs';
+import { ensurePremadeRows, insectaryIdRow } from './premade.mjs';
 import { cleanPurpose, inferPurpose } from './history.mjs';
 import { TUBE_FIELD, UNIQUE, isIdValue, isUnique, twinRows } from './verifications.mjs';
 import { listOptions, listProblemMsg } from './verify.mjs';
@@ -281,6 +281,7 @@ class Plan {
 
   addCreates(creates) {
     const byModule = new Map();
+    const reach = new Map(); // sheet → the furthest row an Insectary ID ahead of the pre-made rows needs
     creates.forEach((create, index) => {
       const target = { index, clientId: create?.clientId || `new-${index}`, sheet: create?.module };
       const allowed = TYPED_OVER_FORMULA[create?.module];
@@ -321,6 +322,11 @@ class Plan {
         if (matches.length > 1)
           return this.conflict(target, 'IDENTITY_CONFLICT', msg('Hay más de una fila sin usar con el ID {id}', { id: placeholderId }));
         if (matches.length === 1) target.candidates = [matches[0].row_num];
+        // An ID past the pre-made rows (a notebook page ahead of them): they are made up to its row.
+        else {
+          const ahead = insectaryIdRow(this.store, placeholderId);
+          if (ahead) reach.set(create.module, Math.max(reach.get(create.module) ?? 0, ahead.row));
+        }
       }
       if (!target.candidates) byModule.set(create.module, [...(byModule.get(create.module) || []), target]);
       this.targets.push(target);
@@ -335,9 +341,10 @@ class Plan {
           .prepare('SELECT max(row_num) n FROM records WHERE sheet=? AND missing=0 AND observed=1')
           .get(module).n || moduleMap.get(module).headerRow;
       const pool = [];
-      for (let row = last + 1; pool.length < targets.length + 5; row++) if (!reserved.has(row)) pool.push(row);
+      const end = reach.get(module) ?? 0;
+      for (let row = last + 1; pool.length < targets.length + 5 || row <= end; row++) if (!reserved.has(row)) pool.push(row);
       for (const target of targets) target.candidates = pool;
-      this.pools.push({ sheet: module, lastRow: pool[targets.length - 1] });
+      this.pools.push({ sheet: module, lastRow: Math.max(pool[targets.length - 1], end) });
     }
   }
 

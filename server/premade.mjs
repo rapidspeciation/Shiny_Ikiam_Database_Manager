@@ -66,26 +66,56 @@ export function newRowFormulaFields(store, sheet) {
 
 /**
  * Before a save writes new rows at the end of sheets (`needs`: [{ sheet, lastRow }]),
- * makes pre-made rows where the save would go past them. Only sheets kept with
- * pre-made rows (formulas at or after the last used row) get them; a sheet typed
- * without formulas keeps getting plain rows. Runs inside the write queue.
+ * makes pre-made rows where the save would go past them, as many as it needs (in
+ * blocks of at most MAX_EXTEND). Only sheets kept with pre-made rows (formulas at
+ * or after the last used row) get them; a sheet typed without formulas keeps
+ * getting plain rows. Runs inside the write queue.
  */
 export async function ensurePremadeRows(store, needs) {
   for (const { sheet, lastRow } of needs) {
-    const { formulaRow, observedRow } = tail(store, sheet);
-    if (!formulaRow || formulaRow < observedRow || lastRow <= formulaRow) continue;
-    try {
-      await extendRows(store, sheet, Math.min(MAX_EXTEND, Math.max(AUTO_BLOCK, lastRow - formulaRow)), {
-        actor: 'auto',
-      });
-    } catch (e) {
-      throw fail(
-        'PREMADE_FAILED',
-        `No se pudieron preparar filas nuevas en ${sheet} (con sus fórmulas y listas); no se guardó nada: ${e.message}`,
-        e.status && e.status < 500 ? 409 : 503,
-      );
+    for (;;) {
+      const { formulaRow, observedRow } = tail(store, sheet);
+      if (!formulaRow || formulaRow < observedRow || lastRow <= formulaRow) break;
+      try {
+        await extendRows(store, sheet, Math.min(MAX_EXTEND, Math.max(AUTO_BLOCK, lastRow - formulaRow)), {
+          actor: 'auto',
+        });
+      } catch (e) {
+        throw fail(
+          'PREMADE_FAILED',
+          `No se pudieron preparar filas nuevas en ${sheet} (con sus fórmulas y listas); no se guardó nada: ${e.message}`,
+          e.status && e.status < 500 ? 409 : 503,
+        );
+      }
+      if (tail(store, sheet).formulaRow <= formulaRow) break;
     }
   }
+}
+
+/**
+ * Where a new Insectary_data row named by its Insectary ID will go: the free
+ * pre-made row whose ID formula gives it (`{ row }`), or, past the pre-made rows,
+ * the row the formula will give it once they are made (`{ row, ahead: true }`):
+ * the series goes on one ID per row from the last row with an ID, to the end of
+ * its round (Z9). Null when the ID is used, held by more than one empty row, or
+ * not in the series ahead.
+ */
+export function insectaryIdRow(store, id) {
+  id = String(id ?? '').trim().toUpperCase();
+  const rows = store.db
+    .prepare(
+      "SELECT row_num r, observed FROM records WHERE sheet='Insectary_data' AND missing=0 AND row_num<2000000000 AND upper(trim(json_extract(values_json,'$.Insectary_ID')))=?",
+    )
+    .all(id);
+  if (rows.length) return rows.length === 1 && !rows[0].observed ? { row: rows[0].r } : null;
+  const last = store.db
+    .prepare(
+      "SELECT row_num r, json_extract(values_json,'$.Insectary_ID') id FROM records WHERE sheet='Insectary_data' AND missing=0 AND row_num<2000000000 AND trim(coalesce(json_extract(values_json,'$.Insectary_ID'),''))<>'' ORDER BY row_num DESC LIMIT 1",
+    )
+    .get();
+  let next = String(last?.id ?? '').trim().toUpperCase();
+  for (let step = 1; (next = nextInSeries(next)); step++) if (next === id) return { row: last.r + step, ahead: true };
+  return null;
 }
 
 /** The endpoint's entry: `count` more pre-made rows at the end of `sheet`, in the write queue. */

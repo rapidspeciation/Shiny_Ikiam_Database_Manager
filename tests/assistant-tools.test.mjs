@@ -146,6 +146,35 @@ test('notes the assistant adds keep the "d/m/yy INI:" form and go after the exis
   }
 });
 
+test('a new Insectary_data row keeps its Insectary ID: the table names the row by it, and only free IDs ahead are taken', async () => {
+  const idFormula = row => `=LEFT(A${row - 1},1)&(MID(A${row - 1},2,1)+1)&"E"`;
+  const { store, call, list } = await setup(
+    {
+      Insectary_data: [
+        { row: 2, values: { Insectary_ID: 'E0E', Wild_Reared: 'Reared', 'CLUTCH NUMBER': '1006', CAM_ID: 'CAM078320' } },
+        { row: 3, values: {} }, // a pre-made row: E1E by formula
+      ],
+    },
+    [['Insectary_data', 3, 'Insectary_ID', idFormula(3), 'E1E']],
+  );
+  try {
+    const row = (Insectary_ID, CAM_ID) => ({ sheet: 'Insectary_data', values: { Insectary_ID, Wild_Reared: 'Reared', CAM_ID } });
+    const proposed = await call('propose_changes', { reason: 'Emergidos', newRows: [row('e1e', 'CAM078325'), row('E4E', 'CAM078326')] });
+    assert.equal(proposed.leftOut, undefined, JSON.stringify(proposed));
+    assert.deepEqual(proposed.table.map(r => r.label), ['E1E', 'E4E']);
+    const [shown] = await list();
+    assert.equal(shown.changes[1].values.Insectary_ID, 'E4E');
+    assert.ok(!shown.newRowFormulas.Insectary_data.includes('Insectary_ID'), 'the person can correct the ID in the table');
+
+    for (const [id, why] of [['E0E', /already used/], ['E4X', /not a free Insectary ID/]]) {
+      const refused = await call('propose_changes', { reason: 'x', newRows: [row(id, 'CAM078399')] });
+      assert.match(refused.error, why, id);
+    }
+  } finally {
+    store.close();
+  }
+});
+
 // ---------------------------------------------------------------------------
 // match_notebook
 

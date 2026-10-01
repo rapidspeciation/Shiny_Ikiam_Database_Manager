@@ -8,7 +8,7 @@ import { Store } from '../server/store.mjs';
 import { LocalSheets, shiftFormula } from '../server/sheets.mjs';
 import { applyBatch } from '../server/batch.mjs';
 import { idSuggestions } from '../server/grid.mjs';
-import { extendPremadeRows, nextInSeries } from '../server/premade.mjs';
+import { extendPremadeRows, insectaryIdRow, nextInSeries } from '../server/premade.mjs';
 import { createApp } from '../server/index.mjs';
 import { moduleMap } from '../server/schema.mjs';
 
@@ -214,6 +214,39 @@ test('a save that needs a row past the pre-made ones makes a block of them first
   assert.deepEqual(cells[4].dataValidation, SEX_LIST, 'and the dropdowns');
   assert.equal(sheets.rowCount('Insectary_stocks'), 22, 'a block of 20 pre-made rows was made');
   assert.equal((await sheets.readRow('Insectary_stocks', 4)).cells[0]?.userEnteredValue, undefined);
+  store.close();
+});
+
+test('a new row named by an Insectary ID past the pre-made rows gets its row: the rows are made up to it', async () => {
+  // Used Q0D–Q1D (rows 2–3), free pre-made Q2D–Q3D (rows 4–5); R5D's row will be 17.
+  const { store, cell } = await fixture({ used: 3, withIds: 5, last: 5 });
+  assert.deepEqual(insectaryIdRow(store, 'Q2D'), { row: 4 });
+  assert.deepEqual(insectaryIdRow(store, 'r5d'), { row: 17, ahead: true });
+  assert.equal(insectaryIdRow(store, 'Q1D'), null, 'used');
+  assert.equal(insectaryIdRow(store, 'Q4E'), null, 'not in the series');
+  const result = await applyBatch(
+    store,
+    {
+      requestId: randomUUID(),
+      creates: [
+        { module: SHEET, values: { Insectary_ID: 'R5D', Wild_Reared: 'Reared' } },
+        { module: SHEET, values: { Insectary_ID: 'Q2D', Wild_Reared: 'Reared' } },
+      ],
+    },
+    editor,
+  );
+  assert.equal(result.status, 'verified');
+  assert.deepEqual(
+    result.records.map(r => [r.row, r.values.Insectary_ID]),
+    [
+      [17, 'R5D'],
+      [4, 'Q2D'],
+    ],
+  );
+  // The ID stays the sheet's formula; only the typed values are written.
+  assert.equal(cell(17, 'Insectary_ID').userEnteredValue.formulaValue, idFormula(17));
+  assert.equal(cell(17, 'Wild_Reared').userEnteredValue.stringValue, 'Reared');
+  assert.equal(cell(5, 'Wild_Reared')?.userEnteredValue, undefined, 'Q3D stays free');
   store.close();
 });
 

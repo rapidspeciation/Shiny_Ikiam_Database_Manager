@@ -14,7 +14,7 @@ import { queueWalk, walkDraft } from './walks.mjs';
 import { KINDS, isNone, noteText } from './notebook.mjs';
 import { RECORD_TOOLS, compactRecord, countRecords, findRecords } from './records-tool.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
-import { newRowFormulaFields } from './premade.mjs';
+import { insectaryIdRow, newRowFormulaFields } from './premade.mjs';
 import { carryChecks, dropDoubt, setChecked, uncheckedDoubts, unfilledUnreadable, withoutUnchecked } from './doubts.mjs';
 import { KNOWLEDGE_TOOLS, createKnowledge, runKnowledgeTool } from './knowledge.mjs';
 import { HISTORY_TOOLS, HISTORY_TOOL_NAMES, runHistoryTool } from './history.mjs';
@@ -201,6 +201,7 @@ const TOOLS = [
           'Draft edits to existing rows (`changes`) and/or new rows (`newRows`). The person sees them at once as a table beside the chat; nothing is written until they confirm.',
           '- One proposal per task (e.g. per walk or per kind of fix), with a short note per row saying where the values come from.',
           "- Formula cells cannot be changed, except SPECIES in Insectary_data when what emerged differs from the formula's prediction.",
+          "- A new Insectary_data row takes its Insectary_ID (the one on the wing or notebook): the row whose ID formula gives it is filled, and the pre-made rows are extended up to it when they run out.",
           VALUES_RULES,
         ].join('\n'),
       parameters: {
@@ -641,9 +642,15 @@ export function createAssistant({ store, config = {} }) {
     };
   }
 
-  /** Columns that are formulas in the next unused (pre-made) row of a sheet: a new row leaves them. */
+  /**
+   * Columns that are formulas in the next unused (pre-made) row of a sheet: a new row leaves them.
+   * Insectary_data's ID is the exception: a new row names its Insectary ID, which picks the
+   * pre-made row whose ID formula gives it (made when needed); the formula stays.
+   */
   function createFormulaFields(sheet) {
-    return newRowFormulaFields(store, sheet);
+    const fields = newRowFormulaFields(store, sheet);
+    if (sheet === 'Insectary_data') fields.delete('Insectary_ID');
+    return fields;
   }
 
   /**
@@ -680,6 +687,11 @@ export function createAssistant({ store, config = {} }) {
       if (holder) return { error: `${at}: ${value} is already used in ${holder.sheet} row ${holder.row}` };
       if (ids.proposed.has(key)) return { error: `${at}: ${value} appears twice in this proposal` };
       ids.proposed.add(key);
+    }
+    if (sheet === 'Insectary_data' && values.Insectary_ID !== undefined) {
+      values.Insectary_ID = String(values.Insectary_ID).trim().toUpperCase();
+      if (!insectaryIdRow(store, values.Insectary_ID))
+        return { error: `${at}: ${values.Insectary_ID} is not a free Insectary ID (an empty pre-made row's, or one the ID series reaches next)` };
     }
     const identity = moduleMap.get(sheet).identityFields.map(key => values[key]).find(isIdValue);
     const time = Object.entries(raw).find(([key]) => TIME_FIELD.test(key))?.[1];
