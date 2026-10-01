@@ -1411,17 +1411,30 @@ export function createAssistant({ store, config = {} }) {
           index,
           row: record?.row ?? change.row,
           label: change.label || record?.label || '',
-          current: change.create ? {} : Object.fromEntries(fields.map(f => [f, record?.values?.[f] ?? null])),
+          current: change.create ? {} : Object.fromEntries(fields.map(f => [f, shownValue(record, f)])),
           // The rest of the row, for columns the person adds to the table.
           ...(open && !change.create
             ? {
-                rowValues: Object.fromEntries(Object.entries(record?.values ?? {}).filter(([, v]) => v !== null && v !== '')),
+                rowValues: Object.fromEntries(
+                  Object.keys(record?.values ?? {})
+                    .map(f => [f, shownValue(record, f)])
+                    .filter(([, v]) => v !== null && v !== ''),
+                ),
                 formulas: locked(change.sheet, Object.keys(record?.formulas ?? {})),
               }
             : {}),
         };
       }),
     };
+  }
+
+  /**
+   * A sheet cell as the review table shows it: a count kept as a sum shows its
+   * formula (=23+8+4+3), as the person types it, not the total it computes to.
+   */
+  function shownValue(record, field) {
+    const sum = record && isSumField(record.sheet, field) ? simpleSum(record.formulas?.[field]) : null;
+    return sum ?? record?.values?.[field] ?? null;
   }
 
   /*
