@@ -102,9 +102,17 @@ const certaintyCounts = computed(() => {
   return out
 })
 const sheetOptions = computed(() => page.value?.sheets ?? [])
-/** The list with a heading where the source changes. */
+/** The list with a heading where the source changes, and one per group in a source listed by group. */
+const grouped = computed(() => new Set(sources.value.filter(s => s.byGroup).map(s => s.id)))
 const rows = computed(() =>
-  (page.value?.items ?? []).map((item, i, all) => ({ item, heading: i === 0 || all[i - 1].source !== item.source })),
+  (page.value?.items ?? []).map((item, i, all) => {
+    const heading = i === 0 || all[i - 1].source !== item.source
+    const group =
+      grouped.value.has(item.source) && item.group && (heading || all[i - 1].group !== item.group)
+        ? { name: item.group, counts: page.value?.groups?.[item.group] }
+        : null
+    return { item, heading, group }
+  }),
 )
 
 async function copy() {
@@ -246,9 +254,18 @@ function clearFilters() {
         <p v-if="!page" class="p-6 text-sm text-stone-500">{{ $t('Revisando…') }}</p>
         <p v-else-if="!page.items.length" class="p-6 text-sm text-stone-500">{{ $t('No hay sugerencias con estos filtros.') }}</p>
         <ul v-else class="divide-y divide-stone-200 bg-white">
-          <template v-for="{ item, heading } in rows" :key="item.key">
+          <template v-for="{ item, heading, group } in rows" :key="item.key">
             <li v-if="heading" class="sticky top-0 z-10 bg-stone-100 px-3 py-1 text-xs font-semibold tracking-wide text-stone-600 uppercase">
               {{ titleOf(item.source) }}
+            </li>
+            <li v-if="group" class="flex flex-wrap items-baseline gap-x-3 bg-stone-50 px-3 py-1 text-xs text-stone-700">
+              <strong class="font-mono">{{ group.name }}</strong>
+              <span v-if="group.counts" class="tabular-nums text-stone-500">{{
+                [
+                  tn(group.counts.total, '{n} fila', '{n} filas'),
+                  ...CERTAINTIES.filter(c => group.counts?.[c.key]).map(c => `${$t(c.label)} ${group.counts?.[c.key]}`),
+                ].join(' · ')
+              }}</span>
             </li>
             <li class="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-3 py-2 text-sm">
               <span

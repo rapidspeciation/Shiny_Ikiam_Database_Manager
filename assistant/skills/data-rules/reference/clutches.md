@@ -13,9 +13,10 @@ EGGS`, `INSECTARY OR LABORATORY`, `HATCHING DATE`, `NUMBER OF LARVAE`,
 `NUMBER OF PUPAE/LARVAE FOR DISECTIONS`, `NOTES` (some headers end in a space;
 the tools handle it). Formulas, never typed: `Earliest Emerge Date`, `Number of
 Adults in Insectary_data`, `Species`, `HatchingTime`, `Hatch2Pupa`,
-`Pupa2Adult`, `Eggs`. New rows from clutch 989 lack the two Insectary_data
-formulas (the pre-made block ran out): PAS copies them down; don't type values
-there.
+`Pupa2Adult`, `Eggs`. Rows from clutch 989 lack the two Insectary_data
+formulas (from clutch 957 the other four): listed in Revisión → Sugerencias,
+PAS copies them down; don't type values there. Clutches the app creates get
+them.
 
 ## Clutch numbers
 

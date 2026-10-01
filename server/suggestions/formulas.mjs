@@ -1,89 +1,142 @@
-// Collection_data rows of butterflies sent to the insectary (Collected_Sent2Insectary)
-// whose Death_date, Preservation_date, Preservation_medium or Preserved_dead_alive
-// is empty where the rows before have the formula that reads it from the
-// butterfly's Insectary_data row (=XLOOKUP(D…, Insectary_data!A:A, Insectary_data!I:I,"")).
-// Copying the formula down is certain; the suggestion shows the formula for this
-// row and what it gives today. Rows without an Insectary_ID are left out: the
-// lookup would find another butterfly's "NA" row.
+// Cells lacking the formula the team copies down their column
+// (server/formula-patterns.mjs): in the last year a large majority of the rows
+// of the same kind have it (Collection_data's Death/Preservation lookups on the
+// Collected_Sent2Insectary rows, Data_entry_order, Insectary_stocks' emergence
+// lookups…), plus CAM_ID_insectary of butterflies sent to the insectary, by
+// rule. Listed: a blank cell, a placeholder (NA) or a typed value the formula
+// would give anyway; a typed value that differs is someone's decision and is
+// left alone. Each suggestion is the formula moved to the row and what it gives
+// today (worked out by server/formula-eval.mjs); certain when the cell is blank
+// and the column is near-universally the formula, likely when a typed NA would
+// change, check otherwise. A formula is copied by hand in Google Sheets
+// (dragging), so they are `manual`; rows the app creates already get them.
 
 import { msg, tpl } from '../messages.mjs';
 import { moduleMap } from '../schema.mjs';
-import { isIdValue } from '../verifications.mjs';
+import { SCAN_ROWS, detectPatterns, formulaAt, isPlaceholder } from '../formula-patterns.mjs';
+import { evaluateFormula, isFormulaError, rowsBook, sameShown } from '../formula-eval.mjs';
+import { relativeFormula } from '../sheets.mjs';
 
-const FIELDS = ['Death_date', 'Preservation_date', 'Preservation_medium', 'Preserved_dead_alive'];
-const SENT = 'Collected_Sent2Insectary';
-const LOOKUP = /^=XLOOKUP\(\s*D(\d+)\s*,\s*Insectary_data!A:A\s*,\s*Insectary_data!([A-Z]+):\2\s*,\s*""\s*\)$/i;
-/** How far back a row with the formula counts (older rows were typed by hand). */
-const WINDOW = 500;
-
-const letterIndex = letters => [...letters.toUpperCase()].reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0) - 1;
 const text = value => (value === null || value === undefined ? '' : String(value).trim());
+const letterIndex = letters => [...letters].reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0) - 1;
+/** Lookups by a cell of the row itself: XLOOKUP(D12,…), VLOOKUP(A12,…), MATCH(A12,…), COUNTIF(…, A12). */
+const LOOKUP_KEYS = [
+  /\b(?:XLOOKUP|VLOOKUP|MATCH)\(\s*\$?([A-Z]{1,3})\$?(\d+)\s*,/gi,
+  /\bCOUNTIF\([^,()]+,\s*\$?([A-Z]{1,3})\$?(\d+)\s*\)/gi,
+];
+
+const profileColumns = new Map(
+  [...moduleMap.values()].map(m => [m.id, new Map(m.fields.filter(f => !f.readonly).map(f => [f.key, f.column]))]),
+);
 
 export default {
   id: 'formulas',
   title: tpl('Fórmulas que faltan'),
   describe: tpl(
-    'Filas de Collection_data enviadas al insectario (Collected_Sent2Insectary) con Death_date, Preservation_date, Preservation_medium o Preserved_dead_alive vacíos donde las filas anteriores tienen la fórmula que los lee de Insectary_data. Seguro: copiar la fórmula de la fila de arriba; se muestra lo que daría hoy.',
+    'Celdas sin la fórmula que el equipo copia hacia abajo en su columna: en el último año casi todas las filas del mismo tipo la tienen (p. ej. las búsquedas de Death_date y Preservation_* en las filas Collected_Sent2Insectary, Data_entry_order, la emergencia de los clutches en Insectary_stocks), y CAM_ID_insectary de las mariposas enviadas al insectario, que lee su CAM de Insectary_data. Se muestra la fórmula para esa fila y lo que daría hoy. Seguro: la celda está vacía y la columna casi siempre tiene la fórmula; probable: un NA escrito que la fórmula cambiaría; revisar: lo demás. Se copian a mano en Google Sheets (arrastrando); las filas nuevas que crea la app ya las llevan.',
   ),
+  /** Listed by sheet and column (group), with how many each has. */
+  byGroup: true,
   suggest(ctx) {
-    const rows = ctx.sheets.get('Collection_data') ?? [];
-    // The Insectary_data column each letter is (the live header when synced, else the profile).
-    const layout = ctx.store.layouts?.get('Insectary_data');
-    const columns = new Map();
-    for (const f of moduleMap.get('Insectary_data').fields) columns.set(layout?.columns?.get(f.key) ?? f.column, f.key);
-    const insectary = new Map();
-    for (const r of ctx.observed('Insectary_data')) {
-      const id = text(r.values.Insectary_ID).toUpperCase();
-      if (isIdValue(id) && !insectary.has(id)) insectary.set(id, r);
-    }
-    const last = Object.fromEntries(FIELDS.map(f => [f, null]));
+    const columnsOf = sheet => ctx.store.layouts?.get(sheet)?.columns ?? profileColumns.get(sheet) ?? null;
+    const book = rowsBook(ctx.sheets, { columnsOf, headerRow: sheet => moduleMap.get(sheet)?.headerRow ?? 1 });
     const out = [];
-    for (const row of rows) {
-      if (!row.observed || text(row.values.Release_Collect) !== SENT) continue;
-      for (const field of FIELDS) {
-        const formula = row.formulas[field];
-        const m = formula && LOOKUP.exec(formula);
-        if (m) {
-          last[field] = { row, letter: m[2].toUpperCase() };
+    for (const [sheet, rows] of ctx.sheets) {
+      if (!moduleMap.has(sheet)) continue;
+      const observed = rows.filter(r => r.observed).slice(-SCAN_ROWS);
+      const patterns = detectPatterns(sheet, observed, { today: ctx.today, columns: columnsOf });
+      // In sheet order: a formula reading another row (Data_entry_order reads the one above) sees what
+      // that row would give once filled; the rows that have it are worked out again for the same reason.
+      const jobs = [];
+      for (const p of patterns) {
+        const readsOtherRows = /\{[-+][1-9]/.test(p.shape);
+        const first = p.window.find(r => !r.formulas[p.field])?.row ?? Infinity;
+        for (const r of p.window)
+          if (!r.formulas[p.field]) jobs.push([r, p, false]);
+          else if (readsOtherRows && r.row > first && relativeFormula(r.formulas[p.field], r.row) === p.shape)
+            jobs.push([r, p, true]);
+      }
+      jobs.sort((a, b) => a[0].row - b[0].row);
+      for (const [row, p, again] of jobs) {
+        if (again) {
+          const column = columnsOf(sheet)?.get(p.field);
+          const gives = evaluateFormula(row.formulas[p.field], { sheet, row: row.row, book });
+          if (gives !== undefined && !isFormulaError(gives) && column !== undefined)
+            book.overlay.set(`${sheet}\u0000${row.row}\u0000${column}`, gives);
           continue;
         }
-        const from = last[field];
-        const value = row.values[field];
-        if (!from || formula || row.row - from.row.row > WINDOW || (value !== null && value !== undefined && text(value) !== ''))
-          continue;
-        const id = text(row.values.Insectary_ID).toUpperCase();
-        if (!isIdValue(id)) continue;
-        const target = columns.get(letterIndex(from.letter));
-        const twin = insectary.get(id);
-        const gives = twin && target ? ctx.shown('Insectary_data', target, twin.values[target]) : null;
-        out.push({
-          sheet: row.sheet,
-          row: row.row,
-          recordId: row.id,
-          label: row.label,
-          field,
-          current: null,
-          suggested: `=XLOOKUP(D${row.row}, Insectary_data!A:A, Insectary_data!${from.letter}:${from.letter},"")`,
-          certainty: 'certain',
-          // A formula is copied down in Google Sheets: the app writes values only.
-          manual: true,
-          reason:
-            gives === null || gives === undefined || text(gives) === ''
-              ? msg('falta la fórmula de la fila {from}; hoy daría vacío ({id} no tiene {target} en Insectary_data)', {
-                  from: from.row.row,
-                  id,
-                  target: target ?? from.letter,
-                })
-              : msg('falta la fórmula de la fila {from}; hoy daría {value} ({target} de {id} en Insectary_data)', {
-                  from: from.row.row,
-                  value: String(gives),
-                  target,
-                  id,
-                }),
-          ...(twin ? { related: [ctx.ref(twin, target ?? 'Insectary_ID')] } : {}),
-        });
+        const s = suggestion(ctx, book, columnsOf, sheet, row, p);
+        if (s) out.push(s);
       }
     }
     return out;
   },
 };
+
+function suggestion(ctx, book, columnsOf, sheet, row, p) {
+  const value = row.values[p.field];
+  const state = text(value) === '' ? 'blank' : isPlaceholder(value) ? 'placeholder' : 'typed';
+  const formula = formulaAt(p, row.row);
+  // A lookup by an empty or NA key would find another row's "NA" (the Panama rows of Insectary_data).
+  for (const re of LOOKUP_KEYS)
+    for (const m of formula.matchAll(re)) {
+      if (Number(m[2]) !== row.row) continue;
+      const key = book.cell(sheet, row.row, letterIndex(m[1].toUpperCase()));
+      if (text(key) === '' || isPlaceholder(key)) return null;
+    }
+  const gives = evaluateFormula(formula, { sheet, row: row.row, book });
+  let certainty;
+  if (gives !== undefined && isFormulaError(gives)) {
+    if (state === 'typed') return null;
+    certainty = 'check';
+  } else if (state === 'blank') certainty = p.universal ? 'certain' : 'check';
+  else if (gives === undefined) {
+    if (state === 'typed') return null;
+    certainty = 'check';
+  } else if (sameShown(value, gives)) certainty = p.universal ? 'certain' : 'check';
+  else if (state === 'placeholder') certainty = p.universal ? 'likely' : 'check';
+  else return null;
+  // What a later row reading this cell would see once it is filled.
+  const column = columnsOf(sheet)?.get(p.field);
+  if (gives !== undefined && column !== undefined) book.overlay.set(`${sheet}\u0000${row.row}\u0000${column}`, gives);
+  const shownValue =
+    gives === null || text(gives) === ''
+      ? msg('vacío')
+      : isFormulaError(gives)
+        ? gives.error
+        : String(ctx.shown(sheet, p.field, gives));
+  const vars = {
+    n: p.counts.formula,
+    total: p.counts.rows,
+    kind: p.kind ? ` ${p.kind}` : '',
+    example: p.example.row,
+    value: shownValue,
+  };
+  return {
+    sheet,
+    row: row.row,
+    recordId: row.id,
+    label: row.label,
+    field: p.field,
+    current: state === 'blank' ? null : ctx.shown(sheet, p.field, value),
+    suggested: formula,
+    certainty,
+    // A formula is copied down in Google Sheets: the app's proposals write values only.
+    manual: true,
+    group: `${sheet} · ${p.field}${p.kind ? ` · ${p.kind}` : ''}`,
+    reason: p.explicit
+      ? msg(
+          'regla del equipo: CAM_ID_insectary lee el CAM de la mariposa en Insectary_data (vacío mientras vive, su CAM al preservarse, NA si murió sin preservarse); hoy daría {value}',
+          { value: shownValue },
+        )
+      : gives === undefined
+        ? msg(
+            '{n} de {total} filas{kind} del último año tienen esta fórmula (la última, fila {example}); lo que daría no se calcula aquí',
+            vars,
+          )
+        : msg(
+            '{n} de {total} filas{kind} del último año tienen esta fórmula (la última, fila {example}); hoy daría {value}',
+            vars,
+          ),
+  };
+}

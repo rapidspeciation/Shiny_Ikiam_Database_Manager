@@ -255,6 +255,8 @@ export interface SuggestionSource {
   title: string
   describe: string
   counts: Record<Certainty | 'total', number>
+  /** Listed group by group (sheet · column) with a heading and its counts. */
+  byGroup?: boolean
 }
 export interface SuggestionPage {
   computedAt: string
@@ -264,6 +266,8 @@ export interface SuggestionPage {
   limit: number
   sources: SuggestionSource[]
   sheets: string[]
+  /** Per group of a source listed by group (sheet · column): how many, by certainty. */
+  groups?: Record<string, Record<Certainty | 'total', number>>
   items: Suggestion[]
 }
 /** Certainties, surest first: the server's keys, the tab's words (Spanish keys of lib/i18n.ts) and colours. */
