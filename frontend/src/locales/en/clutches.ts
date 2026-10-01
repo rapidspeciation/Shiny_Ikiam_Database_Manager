@@ -114,4 +114,7 @@ export default {
   'Fórmula de {field}': 'Formula of {field}',
   'Escribe una suma, p. ej. =2+3': 'Type a sum, e.g. =2+3',
   'Solo números sumados o restados, p. ej. =2+3+5-10': 'Only numbers added or subtracted, e.g. =2+3+5-10',
+  'Toca para quitar este término': 'Tap to take this term out',
+  'Quitar {term} de la suma: queda {total}': 'Take {term} out of the sum: {total} left',
+  'Quitar término': 'Remove',
 }

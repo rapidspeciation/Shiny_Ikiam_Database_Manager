@@ -182,6 +182,23 @@ function onTotalBlur() {
   else stopTyping()
 }
 
+/** A chip tapped (any term of the sum), to take it out. */
+const picked = ref<number | null>(null)
+function dropTerm(i: number) {
+  const terms = count.value.terms.filter((_, k) => k !== i)
+  picked.value = null
+  message.value = ''
+  // The first term is where the count started: a loss can't come first.
+  if (terms.length && terms[0] < 0) {
+    message.value = reasonText('first')
+    return
+  }
+  if (totalOf(terms) < 0) {
+    message.value = reasonText('negative')
+    return
+  }
+  setCount(terms.length ? countValue(terms) : null)
+}
 function dropLast() {
   message.value = ''
   setCount(countValue(removeLast(count.value.terms)))
@@ -263,18 +280,25 @@ function revert() {
         <X :size="18" />
       </button>
     </div>
-    <!-- The history: each term a chip; the last one can be taken back. -->
+    <!-- The history: each term a chip; tap one to take it out (the button beside them takes the last). -->
     <div v-if="count.terms.length" class="mt-1 flex flex-wrap items-center gap-1" :aria-label="$t('Historia de la suma')">
-      <span
+      <button
         v-for="(label, i) in termLabels(count.terms)"
         :key="i"
-        class="rounded-md px-2 py-0.5 text-sm font-medium tabular-nums"
+        type="button"
+        class="min-h-8 rounded-md px-2 py-0.5 text-sm font-medium tabular-nums"
         :class="[
           count.terms[i] < 0 ? 'bg-red-50 text-red-800' : 'bg-stone-100 text-stone-800',
           dirty && i === count.terms.length - 1 ? 'ring-1 ring-amber-400' : '',
+          picked === i ? 'ring-2 ring-brand-600' : '',
+          canWork ? 'hover:ring-1 hover:ring-stone-400' : 'cursor-default',
         ]"
-        >{{ label }}</span
+        :disabled="!canWork"
+        :title="canWork ? $t('Toca para quitar este término') : undefined"
+        @click="picked = picked === i ? null : i"
       >
+        {{ label }}
+      </button>
       <span class="text-sm text-stone-500 tabular-nums">= {{ total }}</span>
       <button
         v-if="canWork"
@@ -285,6 +309,12 @@ function revert() {
       >
         <Delete :size="18" /> {{ $t('Quitar {term}', { term: termLabels(count.terms).at(-1) ?? '' }) }}
       </button>
+    </div>
+    <!-- A term tapped: take it out of the sum (any one, not only the last). -->
+    <div v-if="picked !== null && canWork" class="mt-1.5 flex flex-wrap items-center gap-2 rounded-md bg-stone-100 px-2 py-1.5 text-sm">
+      <span>{{ $t('Quitar {term} de la suma: queda {total}', { term: termLabels(count.terms)[picked] ?? '', total: totalOf(count.terms.filter((_, k) => k !== picked)) }) }}</span>
+      <button type="button" class="btn-primary h-9 px-3" @click="dropTerm(picked)">{{ $t('Quitar término') }}</button>
+      <button type="button" class="btn h-9 px-3" @click="picked = null">{{ $t('Cancelar') }}</button>
     </div>
     <p v-if="locked" class="mt-1 text-xs text-stone-500">{{ $t('Fórmula de la hoja (solo lectura)') }}</p>
     <p v-else-if="count.text && editable" class="mt-1 text-xs text-amber-900">
