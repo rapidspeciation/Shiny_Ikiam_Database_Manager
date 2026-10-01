@@ -44,8 +44,9 @@ tools/lab/tailscale.sh          # open the lab to your other devices (tailnet on
   connection. The file is copied here with mode 600 and the remote copy is
   deleted. Run it again after people correct more rows, then restart the app:
   the ground truth is always read from the latest snapshot.
-- `app.sh` builds the frontend if needed. It writes `seed.json`, which is the
-  snapshot with every scored cell of the cases emptied, so a model cannot copy
+- `app.sh` builds the frontend if needed and starts the app from the whole
+  snapshot. For a benchmark start it with `LAB_SEED=bench`: it then writes
+  `seed.json`, which is the snapshot with every scored cell of the cases emptied, so a model cannot copy
   the answers from the sheet and its proposal holds everything it read. Then it
   starts the app on `http://127.0.0.1:8795`. Sign in as `lab`; the password is
   in `credentials.json`. The Asistente tab shows the lab T3 (through the proxy

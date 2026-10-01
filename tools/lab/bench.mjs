@@ -105,7 +105,7 @@ if (!(await fetch(T3).then(r => r.ok).catch(() => false))) throw new Error('The 
     }
   db.close();
   if (filled.length)
-    throw new Error(`${filled.length} benchmark cells are not empty in the lab app (e.g. ${filled[0]}): restart tools/lab/app.sh`);
+    throw new Error(`${filled.length} benchmark cells are not empty in the lab app (e.g. ${filled[0]}): restart the lab app with LAB_SEED=bench tools/lab/app.sh`);
 }
 for (const kase of cases)
   for (const photo of kase.photos)

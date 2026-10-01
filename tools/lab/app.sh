@@ -3,9 +3,9 @@
 # the workbook seeded from the snapshot; nothing ever reaches Google Sheets), its own
 # database in the lab folder, port 8795, and the lab T3 (tools/lab/t3.sh) in the
 # Asistente tab, through the app's T3 proxy on port 3776 (its pages carry the
-# bridge that tells Cambios propuestos which chat is open; server/t3bridge.mjs). Every start re-seeds the sheets from $LAB/seed.json (the snapshot
-# with the benchmark cells emptied, tools/lab/seed.mjs), so a restart undoes any
-# proposal a model applied.
+# bridge that tells Cambios propuestos which chat is open; server/t3bridge.mjs). Every start re-seeds the sheets from the snapshot
+# ($LAB/snapshot.json; with LAB_SEED=bench from $LAB/seed.json, the snapshot with the
+# benchmark cells emptied, tools/lab/seed.mjs), so a restart undoes any proposal applied.
 #   tools/lab/app.sh          run in the foreground
 #   tools/lab/app.sh --bg     run detached (log: $LAB/app.log, pid: $LAB/app.pid)
 #   tools/lab/app.sh --stop
@@ -58,15 +58,21 @@ if [ ! -f web/index.html ] || [ -n "$(find frontend/src frontend/index.html -new
   npm run build
 fi
 
-# The seed (snapshot with the cases' cells emptied), rebuilt when the snapshot or cases changed.
-if [ ! -f "$LAB/seed.json" ] || [ "$LAB/snapshot.json" -nt "$LAB/seed.json" ] || [ "$LAB/cases.json" -nt "$LAB/seed.json" ]; then
-  node --max-old-space-size=8192 tools/lab/seed.mjs
+# The data the app starts from: the whole snapshot (for working on the app), or with
+# LAB_SEED=bench the snapshot with the benchmark cases' cells emptied (bench.mjs needs it),
+# rebuilt when the snapshot or cases changed.
+SEED="$LAB/snapshot.json"
+if [ "${LAB_SEED:-full}" = bench ]; then
+  if [ ! -f "$LAB/seed.json" ] || [ "$LAB/snapshot.json" -nt "$LAB/seed.json" ] || [ "$LAB/cases.json" -nt "$LAB/seed.json" ]; then
+    node --max-old-space-size=8192 tools/lab/seed.mjs
+  fi
+  SEED="$LAB/seed.json"
 fi
 
 [ -s "$LAB/setup-token" ] || head -c 24 /dev/urandom | base64 | tr -d '/+=' > "$LAB/setup-token"
 env_app=(
   LOCAL_MODE=1
-  SEED_FILE="$LAB/seed.json"
+  SEED_FILE="$SEED"
   DATABASE_PATH="$LAB/app/app.sqlite"
   PHOTO_CACHE_DIR="$LAB/app/photos"
   APP_HOST=127.0.0.1
