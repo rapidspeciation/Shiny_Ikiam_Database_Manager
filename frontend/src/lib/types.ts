@@ -47,7 +47,9 @@ export interface User {
 
 export interface Settings {
   language: string
-  sheetUrl: string
+  /** The team's workbook; null in the offline lab copy (LOCAL_MODE), which has no sheet. */
+  sheetUrl: string | null
+  localMode?: boolean
   basePath: string
 }
 

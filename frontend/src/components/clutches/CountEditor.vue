@@ -6,6 +6,7 @@ import {
   countedToday,
   countValue,
   effectLabel,
+  formulaOf,
   readCount,
   removeLast,
   termLabels,
@@ -36,6 +37,8 @@ const props = defineProps<{
   locked: boolean
   /** What a + means for this count ("hatched", "pupated"…). */
   more: string
+  /** The count as it was before today's changes (undefined: not changed today). */
+  startOfDay?: CellValue
 }>()
 const emit = defineEmits<{ set: [value: CellValue] }>()
 
@@ -54,6 +57,31 @@ const reasonText = (reason: 'empty' | 'negative' | 'first' | 'unchanged') =>
       : reason === 'first'
         ? t('El primer número no puede ser una pérdida')
         : t('Igual que el total: nada que añadir')
+/**
+ * Every change made here, to take it back exactly (the earlier formula, not a
+ * −N or +N added to it): Undo steps back one change at a time.
+ */
+const steps = ref<CellValue[]>([])
+function setCount(value: CellValue) {
+  steps.value.push(props.value)
+  emit('set', value)
+}
+function undoStep() {
+  if (!steps.value.length) return
+  message.value = ''
+  emit('set', steps.value.pop() as CellValue)
+}
+const same = (a: CellValue | undefined, b: CellValue | undefined) => String(a ?? '').replace(/\s+/g, '') === String(b ?? '').replace(/\s+/g, '')
+/** Today's changes to this count, taken back at once: the formula it had this morning. */
+const changedToday = computed(() => props.startOfDay !== undefined && !same(props.startOfDay, props.value))
+const startText = computed(() => {
+  const c = readCount(props.startOfDay)
+  return c.na ? 'NA' : c.terms.length ? `${formulaOf(c.terms)} (${totalOf(c.terms)})` : '—'
+})
+function backToMorning() {
+  message.value = ''
+  setCount(props.startOfDay ?? null)
+}
 function apply(result: CountResult) {
   if (!result.ok) {
     message.value = reasonText(result.reason)
@@ -61,7 +89,35 @@ function apply(result: CountResult) {
   }
   message.value = ''
   typed.value = ''
-  emit('set', countValue(result.terms))
+  setCount(countValue(result.terms))
+}
+// --- The whole formula, typed (=2+3+5-10)
+const editingFormula = ref(false)
+const formulaText = ref('')
+function startFormula() {
+  const c = count.value
+  formulaText.value = c.na ? 'NA' : c.terms.length ? (formulaOf(c.terms) ?? '') : ''
+  message.value = ''
+  editingFormula.value = true
+}
+const formulaResult = computed(() => {
+  const raw = formulaText.value.trim()
+  if (!raw) return { ok: false as const, why: t('Escribe una suma, p. ej. =2+3') }
+  const c = readCount(raw.startsWith('=') || /^(NA|N\/A)$/i.test(raw) || /^\d+$/.test(raw) ? raw : `=${raw}`)
+  if (c.na) return { ok: true as const, value: 'NA' as CellValue, label: 'NA' }
+  if (c.text !== null || !c.terms.length) return { ok: false as const, why: t('Solo números sumados o restados, p. ej. =2+3+5-10') }
+  if (totalOf(c.terms) < 0) return { ok: false as const, why: t('El total no puede quedar por debajo de 0') }
+  return { ok: true as const, value: countValue(c.terms), label: `= ${totalOf(c.terms)}` }
+})
+function applyFormula() {
+  const r = formulaResult.value
+  if (!r.ok) {
+    message.value = r.why
+    return
+  }
+  editingFormula.value = false
+  message.value = ''
+  setCount(r.value)
 }
 const plus = () => (n.value === null ? (message.value = reasonText('empty')) : apply(appendTerm(count.value.terms, n.value)))
 const minus = () => (n.value === null ? (message.value = reasonText('empty')) : apply(appendTerm(count.value.terms, -n.value)))
@@ -128,11 +184,11 @@ function onTotalBlur() {
 
 function dropLast() {
   message.value = ''
-  emit('set', countValue(removeLast(count.value.terms)))
+  setCount(countValue(removeLast(count.value.terms)))
 }
 function revert() {
   message.value = ''
-  emit('set', props.saved)
+  setCount(props.saved)
 }
 </script>
 
@@ -262,7 +318,42 @@ function revert() {
         <span class="text-[11px] leading-tight">{{ countedEffect || $t('hoy') }}</span>
       </button>
     </div>
+    <!-- The whole formula, typed as in the sheet (=2+3+5-10). -->
+    <div v-if="editingFormula" class="mt-2 flex flex-wrap items-center gap-2">
+      <input
+        v-model="formulaText"
+        class="field-input h-11 min-w-40 flex-1 font-mono"
+        type="text"
+        inputmode="text"
+        autocomplete="off"
+        autocapitalize="off"
+        spellcheck="false"
+        enterkeyhint="done"
+        :aria-label="$t('Fórmula de {field}', { field })"
+        @input="message = ''"
+        @keydown.enter.prevent="applyFormula"
+        @keydown.esc.prevent.stop="editingFormula = false"
+      />
+      <span class="text-sm tabular-nums" :class="formulaResult.ok ? 'font-medium text-brand-800' : 'text-stone-600'">{{
+        formulaResult.ok ? formulaResult.label : ''
+      }}</span>
+      <button type="button" class="btn-primary h-11 px-4" :disabled="!formulaResult.ok" @click="applyFormula">
+        <Check :size="18" /> {{ $t('Poner') }}
+      </button>
+      <button type="button" class="btn h-11 px-3" :aria-label="$t('Cancelar')" @click="editingFormula = false"><X :size="18" /></button>
+    </div>
     <p v-if="message" class="mt-1 text-sm text-red-700">{{ message }}</p>
+    <div v-if="canWork" class="mt-1 flex flex-wrap items-center gap-x-4">
+      <button v-if="steps.length" type="button" class="flex h-9 items-center gap-1 text-sm font-medium text-brand-800 underline" @click="undoStep">
+        <Undo2 :size="14" /> {{ $t('Deshacer') }}
+      </button>
+      <button v-if="changedToday" type="button" class="flex h-9 items-center gap-1 text-sm text-stone-600 underline" @click="backToMorning">
+        <Undo2 :size="14" /> {{ $t('Volver a como estaba esta mañana: {value}', { value: startText }) }}
+      </button>
+      <button v-if="!editingFormula" type="button" class="flex h-9 items-center gap-1 text-sm text-stone-600 underline" @click="startFormula">
+        <PenLine :size="14" /> {{ $t('Editar la fórmula') }}
+      </button>
+    </div>
     <button v-if="dirty && editable" type="button" class="mt-1 flex h-9 items-center gap-1 text-sm text-stone-600 underline" @click="revert">
       <Undo2 :size="14" /> {{ $t('Deshacer los cambios de este número') }}
     </button>

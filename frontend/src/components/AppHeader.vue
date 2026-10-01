@@ -52,8 +52,15 @@ async function logout() {
           {{ $t(tab.label) }}
         </RouterLink>
       </nav>
+      <span
+        v-if="session.settings?.localMode"
+        class="hidden shrink-0 items-center gap-1 rounded bg-amber-300 px-2 py-0.5 text-xs font-semibold text-amber-950 md:inline-flex"
+        :title="$t('Copia sin conexión: los cambios se guardan solo aquí, nunca en la hoja del equipo')"
+      >
+        {{ $t('Copia de prueba') }}
+      </span>
       <a
-        v-if="session.settings"
+        v-else-if="session.settings?.sheetUrl"
         :href="session.settings.sheetUrl"
         target="_blank"
         rel="noopener"
@@ -91,7 +98,7 @@ async function logout() {
         >
           <p class="px-3 py-1 text-xs text-stone-500">{{ session.user?.username }} · {{ session.user?.role }}</p>
           <a
-            v-if="session.settings"
+            v-if="session.settings?.sheetUrl"
             :href="session.settings.sheetUrl"
             target="_blank"
             rel="noopener"

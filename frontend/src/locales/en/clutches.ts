@@ -108,4 +108,10 @@ export default {
   'Las marcas «Revisado» son solo de la app: no se escriben en Google Sheets, todos las ven y se borran al día siguiente.': '“Checked” marks are only in the app: they are not written to Google Sheets, everyone sees them and they reset the next day.',
   'Ningún cambio ese día.': 'No changes that day.',
   'Abrir el clutch {clutch}': 'Open clutch {clutch}',
+  // CountEditor: undo, back to this morning, the whole formula typed.
+  'Volver a como estaba esta mañana: {value}': 'Back to this morning: {value}',
+  'Editar la fórmula': 'Edit the formula',
+  'Fórmula de {field}': 'Formula of {field}',
+  'Escribe una suma, p. ej. =2+3': 'Type a sum, e.g. =2+3',
+  'Solo números sumados o restados, p. ej. =2+3+5-10': 'Only numbers added or subtracted, e.g. =2+3+5-10',
 }

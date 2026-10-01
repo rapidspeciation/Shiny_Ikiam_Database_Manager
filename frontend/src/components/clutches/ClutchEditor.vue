@@ -65,6 +65,13 @@ const get = (key: string): CellValue => (row.value ? pending.value(row.value, ke
 const dirty = (key: string) => !!row.value && pending.isDirty(row.value.id, key)
 const countOf = (key: string) => (row.value ? countCell(row.value, key, pending.value, dirty(key), formulas.value) : null)
 const savedOf = (key: string) => formulas.value?.[key] ?? row.value?.values[key] ?? null
+/** A field as it was before today's changes (the day's first "before"), or undefined if not changed today. */
+function startOfDay(key: string) {
+  const change = row.value ? props.day.today(row.value.id).changes.find(c => c.field === key) : undefined
+  if (!change) return undefined
+  const before = change.before
+  return before && typeof before === 'object' ? before.formula : before
+}
 const editable = (key: string) =>
   props.canEdit && !!row.value && has(key) && !field(key)!.readonly && (!row.value.formulas.includes(key) || !!formulas.value?.[key])
 const today = computed(() => isoToSerial(todayIso()))
@@ -332,6 +339,7 @@ const endedText = (e: ClutchState['ended']) =>
           :editable="editable(s.count)"
           :locked="lockedFormula(row, s.count, formulas)"
           :more="MORE[s.count]()"
+          :start-of-day="startOfDay(s.count)"
           @set="setValue(s.count, $event)"
         >
           <DateRow

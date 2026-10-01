@@ -182,7 +182,8 @@ export class Store {
       kind: moduleMap.get(row.sheet)?.group || 'record',
       updatedAt: row.updated_at,
       version: row.version,
-      sourceUrl: makeSourceUrl(row.sheet, row.row_num, this.sheets.spreadsheetId),
+      // The offline lab copy has no sheet of its own: no link to the team's rows.
+      sourceUrl: this.localMode ? null : makeSourceUrl(row.sheet, row.row_num, this.sheets.spreadsheetId),
       missing: Boolean(row.missing),
       observed: Boolean(row.observed),
     };

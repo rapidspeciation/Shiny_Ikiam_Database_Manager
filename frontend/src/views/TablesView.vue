@@ -76,7 +76,7 @@ const rows = computed(() => (table.value ? (showUnused.value ? table.value.rows 
 const mod = computed(() => session.module(module.value))
 const frozen = computed(() => mod.value?.identityFields.slice(0, 1) || [])
 const sheetLink = computed(() =>
-  session.settings && mod.value ? `${session.settings.sheetUrl}#gid=${mod.value.sheetId}` : undefined,
+  session.settings?.sheetUrl && mod.value ? `${session.settings.sheetUrl}#gid=${mod.value.sheetId}` : undefined,
 )
 
 function addRow() {

@@ -44,7 +44,7 @@ const insectaryId = computed(() => {
 })
 const sourceUrl = computed(() => {
   const mod = session.module(props.module)
-  if (!row.value || !mod || !session.settings) return null
+  if (!row.value || !mod || !session.settings?.sheetUrl) return null
   return `${session.settings.sheetUrl}#gid=${mod.sheetId}&range=A${row.value.row}`
 })
 

@@ -64,7 +64,9 @@ test('HTTP workflow enforces access, saves exact fields, reverses a selected edi
   });
   assert.equal(setup.response.status, 201);
   const boot = await call('/api/bootstrap');
-  assert.match(boot.data.settings.sheetUrl, /^https:\/\/docs\.google\.com\/spreadsheets\/d\/[\w-]+\/edit$/);
+  // An offline copy (LOCAL_MODE) has no sheet of its own: no link to the team's workbook.
+  assert.equal(boot.data.settings.sheetUrl, null);
+  assert.equal(boot.data.settings.localMode, true);
   assert.ok(
     (await call('/api/options?module=Collection_data&field=Identifier')).data.options.some(o => o.value === 'AB Test'),
   );

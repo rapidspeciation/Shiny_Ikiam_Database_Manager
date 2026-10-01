@@ -517,7 +517,9 @@ export async function createApp(config = {}, options = {}) {
           sync: store.syncStatus,
           settings: {
             language: 'es',
-            sheetUrl: workbookUrl(store.sheets.spreadsheetId),
+            // The lab's offline copy (LOCAL_MODE) has no sheet of its own: no link to the team's.
+            sheetUrl: store.localMode ? null : workbookUrl(store.sheets.spreadsheetId),
+            localMode: store.localMode,
             basePath: config.basePath,
           },
         });
