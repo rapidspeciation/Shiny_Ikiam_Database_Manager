@@ -219,16 +219,29 @@ export function clutchNumber(text: string): { base: number; batch: number } | nu
   const m = /^\s*(\d+)\s*(?:\((\d+)\))?\s*$/.exec(text)
   return m ? { base: Number(m[1]), batch: m[2] ? Number(m[2]) : 1 } : null
 }
-/** The next free plain number: the highest one used + 1. */
-export function nextClutch(numbers: string[]): string {
+/**
+ * The next new clutch number: one more than the highest number used (batches
+ * count by their number: 1012(3) is 1012), never one already taken. `used`:
+ * the numbers of the rows holding a clutch and of the clutches being added.
+ */
+export function nextClutch(used: string[]): string {
   let max = 0
-  for (const n of numbers) {
-    const parsed = parseInt(n, 10)
+  const taken = new Set<string>()
+  for (const n of used) {
+    const text = n.trim()
+    taken.add(text)
+    const parsed = parseInt(text, 10)
     if (Number.isFinite(parsed) && parsed > max && parsed < 100000) max = parsed
   }
-  return String(max + 1)
+  let next = max + 1
+  while (taken.has(String(next))) next++
+  return String(next)
 }
-/** The next batch of a mating's clutch: 994 and 994(2) used → "994(3)" (the current form, no space). */
+/**
+ * The next batch of a mating's clutch, in the current form (no space): 994
+ * and 994(2) used → "994(3)"; only 1016 → "1016(2)"; the older "831 (3)" →
+ * "831(4)"; a number not used yet → itself.
+ */
 export function nextBatch(base: number, numbers: string[]): string {
   let batch = 0
   for (const n of numbers) {
@@ -238,18 +251,93 @@ export function nextBatch(base: number, numbers: string[]): string {
   return batch ? `${base}(${batch + 1})` : String(base)
 }
 
+/** A clutch (all the batches of one number) as the new clutch's number list shows it. */
+export interface ClutchOption {
+  base: number
+  /** Its batches so far: 994 … 994(8). */
+  numbers: string[]
+  /** The number the new row gets: the next batch, 994(9). */
+  next: string
+  species: string
+  generation: string
+  parents: { female: string; male: string } | null
+  /** DATE LAID of its latest batch (a date serial), if any. */
+  laid: number | null
+}
+/**
+ * Every clutch number with its batches, newest first (the latest batch's row
+ * last in the sheet), each with what a new batch takes from it: species,
+ * generation and parents (from the latest batch whose NOTES have them).
+ */
+export function clutchOptions(rows: { number: string; species: CellValue; generation: CellValue; laid: CellValue; notes: CellValue }[], numbers: string[]): ClutchOption[] {
+  const byBase = new Map<number, { rows: typeof rows; last: number }>()
+  rows.forEach((r, i) => {
+    const n = clutchNumber(r.number)
+    if (!n) return
+    const entry = byBase.get(n.base) ?? { rows: [], last: i }
+    entry.rows.push(r)
+    entry.last = i
+    byBase.set(n.base, entry)
+  })
+  const text = (v: CellValue) => (isBlank(v) ? '' : String(v).trim())
+  return [...byBase.entries()]
+    .sort((a, b) => b[1].last - a[1].last)
+    .map(([base, { rows: batch }]) => {
+      const latest = batch[batch.length - 1]
+      const withParents = [...batch].reverse().find(r => parentsOf(r.notes))
+      const parents = withParents ? parentsOf(withParents.notes) : null
+      const laid = [...batch].reverse().map(r => r.laid).find(v => typeof v === 'number')
+      return {
+        base,
+        numbers: batch.map(r => r.number.trim()),
+        next: nextBatch(base, numbers),
+        species: text([...batch].reverse().map(r => r.species).find(v => !isBlank(v)) ?? latest.species),
+        generation: text([...batch].reverse().map(r => r.generation).find(v => !isBlank(v)) ?? null),
+        parents: parents ? { female: parents.female, male: parents.male } : null,
+        laid: typeof laid === 'number' ? laid : null,
+      }
+    })
+}
+
 // --- Parents in NOTES
 
 /** The parents as the team writes them, female first: "U8A♀ + C8B♂". */
 export const parentsText = (female: string, male: string) => `${female.trim().toUpperCase()}♀ + ${male.trim().toUpperCase()}♂`
+/** An Insectary ID in an older note: 3–4 capitals and digits, with at least one of each (U7A, 22L, 91Z). */
+const NOTE_ID = String.raw`(?=[A-Z]*\d)(?=\d*[A-Z])[A-Z0-9]{3,4}`
+const PARENTS_MARKED = /([A-Z0-9]{2,6})\s*♀\s*\+\s*([A-Z0-9]{2,6})\s*♂/i
+const PARENTS_PAIR = new RegExp(String.raw`(?<![A-Za-z0-9])(${NOTE_ID})\s*\+\s*(${NOTE_ID})(?![A-Za-z0-9])`)
+export interface WrittenParents {
+  female: string
+  male: string
+  /** The part of NOTES that names them ("U8A♀ + C8B♂", "J7A+ P5A"). */
+  text: string
+  /** Where that part starts in NOTES. */
+  index: number
+}
 /**
- * The parents written in a clutch's NOTES: "U8A♀ + C8B♂" (2026) or the older
- * "F1 clutch parents J7A + P5A" / "J7A+ P5A" (female first in both).
+ * The parents written in a clutch's NOTES, female first: "U8A♀ + C8B♂" (the
+ * 2026 form, looked for first), or a pair of IDs joined by "+" in the older
+ * forms ("F1 clutch parents J7A + P5A", "J7A+ P5A", "F1F2 --> 0AW+6CI",
+ * "F1/F2 mom 22L+20L"). Counts such as "1+1 larvae" are not IDs.
  */
-export function parentsOf(notes: CellValue | undefined): { female: string; male: string; text: string } | null {
-  const s = String(notes ?? '')
-  const m = /([A-Z0-9]{2,6})\s*♀\s*\+\s*([A-Z0-9]{2,6})\s*♂/i.exec(s) ?? /parents\s+([A-Z0-9]{2,6})\s*\+\s*([A-Z0-9]{2,6})/i.exec(s)
-  return m ? { female: m[1].toUpperCase(), male: m[2].toUpperCase(), text: m[0] } : null
+export function parentsOf(notes: CellValue | undefined): WrittenParents | null {
+  const s = isBlank(notes) ? '' : String(notes)
+  const m = PARENTS_MARKED.exec(s) ?? PARENTS_PAIR.exec(s)
+  return m ? { female: m[1].toUpperCase(), male: m[2].toUpperCase(), text: m[0], index: m.index } : null
+}
+/**
+ * NOTES with the parents changed: the part that names them is rewritten in the
+ * standard form ("F1 clutch parents J7A+ P5A | …" → "F1 clutch parents J7A♀ +
+ * P5A♂ | …"), the rest kept as written; with none written, a new dated note
+ * "1/10/26 FCH: U8A♀ + C8B♂" goes after the others.
+ */
+export function withParents(notes: CellValue | undefined, female: string, male: string, today: number, initials: string): string {
+  const text = parentsText(female, male)
+  const found = parentsOf(notes)
+  if (!found) return appendNote(notes, text, today, initials)
+  const s = String(notes)
+  return s.slice(0, found.index) + text + s.slice(found.index + found.text.length)
 }
 /** A clutch of the same mating (the same parents, in the same order), to number the next batch. */
 export function sameMating(rows: { number: string; notes: CellValue }[], female: string, male: string): string | null {
@@ -287,16 +375,28 @@ export const notesOf = (value: CellValue | undefined) =>
         .map(s => s.trim())
         .filter(Boolean)
 
+/**
+ * A note split into who wrote it and when ("29/9/26 FCH", "6 JUN 24 KG") and
+ * its text, to show them apart; a note without that start is all text.
+ */
+export function noteParts(note: string): { head: string; text: string } {
+  const m = /^(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2} [A-Za-z]{3,4} \d{2,4})\s+([A-Z]{1,4})\s*:\s*/.exec(note)
+  return m ? { head: `${m[1]} ${m[2]}`, text: note.slice(m[0].length) } : { head: '', text: note }
+}
+
 /** Phrases the team writes in clutch notes (English, as in the sheet): quick buttons. */
 export const NOTE_PHRASES = [
   'Some eggs dry',
   'Some eggs with fungi',
+  'All eggs turn black',
   'No hatch',
   '1 larva dead',
   '1 pupa dead',
   'Plant with ants',
   'Plant with fungi',
   'Plant changed',
+  'Larvae moved to another plant',
+  'Larvae dissected for cell culture',
 ]
 
 // --- The day's changes, to copy into the notebook

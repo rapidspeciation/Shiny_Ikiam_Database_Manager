@@ -66,4 +66,17 @@ describe('what a commit stores', () => {
     expect(labelOf(fates, 'insectario')).toBe('Collected_Sent2Insectary')
     expect(labelOf(fates, 'otra')).toBe('otra')
   })
+  it('an option is found by its search text too (a clutch by its parents, an ID by its species)', () => {
+    const clutches = [
+      { value: '1017', label: '1017', search: '1017' },
+      { value: '1016(2)', label: '1016(2)', search: '1016(2) 1016' },
+      { value: '994(9)', label: '994(9)', search: '994(9) 994 U7A C7B' },
+    ]
+    expect(filterChoices(clutches, 'c7b').items.map(c => c.value)).toEqual(['994(9)'])
+    expect(commitText('994', clutches)).toBe('994(9)')
+    expect(commitText('1016', clutches)).toBe('1016(2)')
+    expect(commitText('101', clutches)).toBe('1017')
+    expect(commitText('1020', clutches)).toBe('1020')
+    expect(labelOf(clutches, '994(9)')).toBe('994(9)')
+  })
 })

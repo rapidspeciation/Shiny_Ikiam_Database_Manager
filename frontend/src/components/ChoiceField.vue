@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, useAttrs, useId, watch } from 'vue'
-import { type Choice, type ChoiceOptions, commitText, filterChoices, labelOf, toChoices } from '../lib/choices'
+import { type Choice, type ChoiceOptions, commitText, filterChoices, labelOf, searchText, toChoices } from '../lib/choices'
 import { t } from '../lib/i18n'
 
 /**
@@ -47,7 +47,7 @@ const active = ref(-1)
 
 // Built only when needed (the list is open or a value is looked up): options can be long.
 const choices = computed(() => toChoices(props.options))
-const lower = computed(() => choices.value.map(c => c.label.toLowerCase()))
+const lower = computed(() => choices.value.map(searchText))
 const plain = computed(() => typeof props.options[0] !== 'object')
 const shown = (value: string) => (plain.value ? value : labelOf(choices.value, value))
 
@@ -319,8 +319,10 @@ function onArrow() {
             :class="{ 'is-pick': i === active, 'text-stone-500': o === EMPTY }"
             @click="take(o)"
           >
-            <span class="min-w-0 truncate">{{ o.label }}</span>
-            <span v-if="o.hint" class="ml-auto text-xs text-stone-500">{{ o.hint }}</span>
+            <slot name="option" :option="o">
+              <span class="min-w-0 truncate">{{ o.label }}</span>
+              <span v-if="o.hint" class="ml-auto text-xs text-stone-500">{{ o.hint }}</span>
+            </slot>
           </div>
         </template>
         <div v-if="!entries.length" class="px-2.5 py-1 text-stone-500">{{ t('Ninguna opción coincide') }}</div>

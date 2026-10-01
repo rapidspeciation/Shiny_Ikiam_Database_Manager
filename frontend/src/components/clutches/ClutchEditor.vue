@@ -4,27 +4,12 @@ import { Check, ChevronLeft, ChevronRight, Columns3, Loader2, X } from 'lucide-v
 import ChoiceField from '../ChoiceField.vue'
 import CountEditor from './CountEditor.vue'
 import DateRow from './DateRow.vue'
-import ParentsPicker from './ParentsPicker.vue'
+import ClutchNotes from './ClutchNotes.vue'
 import { useKeyboard } from '../../composables/usePhone'
 import { useParents } from '../../composables/useParents'
 import type { ClutchDay } from '../../composables/useClutchDay'
 import { isBlank } from '../../lib/cells'
-import {
-  COUNTS,
-  MODULE,
-  NOTE_PHRASES,
-  STAGES,
-  appendNote,
-  countCell,
-  formulaOf,
-  lockedFormula,
-  noteDay,
-  notesOf,
-  parentsOf,
-  parentsText,
-  readCount,
-  type ClutchState,
-} from '../../lib/clutches'
+import { COUNTS, MODULE, STAGES, countCell, formulaOf, lockedFormula, readCount, type ClutchState } from '../../lib/clutches'
 import { isoToSerial, todayIso } from '../../lib/dates'
 import { errorText, notify } from '../../lib/notice'
 import type { CellValue, Field, TableRow } from '../../lib/types'
@@ -124,38 +109,10 @@ function setValue(key: string, value: CellValue) {
   touched.value = { ...touched.value, [key]: norm(key, value) }
 }
 
-// --- Notes, dated and initialled
-const noteText = ref('')
-const notes = computed(() => notesOf(get('NOTES')))
-function addPhrase(p: string) {
-  noteText.value = noteText.value.trim() ? `${noteText.value.trim()}; ${p}` : p
-}
-function addNote() {
-  const text = noteText.value.trim()
-  if (!text) return
-  setValue('NOTES', appendNote(get('NOTES'), text, today.value, props.initials))
-  noteText.value = ''
-}
-
-// --- Parents (F1/F2), in NOTES for now: "U8A♀ + C8B♂"
-const showParents = ref(false)
-const female = ref('')
-const male = ref('')
-const written = computed(() => parentsOf(get('NOTES')))
-function openParents() {
-  female.value = written.value?.female ?? ''
-  male.value = written.value?.male ?? ''
-  showParents.value = true
-}
-function writeParents() {
-  if (!female.value.trim() || !male.value.trim()) return (message.value = t('Escribe el ID de la hembra y del macho'))
-  const text = parentsText(female.value, male.value)
-  const notesNow = String(get('NOTES') ?? '')
-  // A correction replaces the parents already written; otherwise a new dated note.
-  const value = written.value ? notesNow.replace(written.value.text, text) : appendNote(get('NOTES'), text, today.value, props.initials)
-  setValue('NOTES', value)
+// --- Parents (F1/F2) and notes: components/clutches/ClutchNotes, the parents written in NOTES for now
+/** Parents written on a clutch without a generation: an F1 (the generation buttons change it). */
+function parentsWritten() {
   if (has('Generation') && isBlank(get('Generation'))) setValue('Generation', 'F1')
-  showParents.value = false
 }
 const generations = computed(() => [...new Set(['NA', 'F1', 'F2', 'Backcross', ...(props.options.Generation || [])])].filter(g => g.length < 20))
 
@@ -255,9 +212,7 @@ watch(
   () => {
     const r = row.value
     touched.value = {}
-    noteText.value = ''
     message.value = ''
-    showParents.value = false
     opened.value = r ? { id: r.id, values: Object.fromEntries(props.columns.map(c => [c.key, norm(c.key, current(c.key))])) } : null
     nextTick(() => scroller.value?.scrollTo({ top: 0 }))
   },
@@ -328,6 +283,23 @@ const endedText = (e: ClutchState['ended']) =>
       </div>
       <p v-if="!canEdit" class="mt-2 rounded bg-stone-100 px-3 py-2 text-sm text-stone-700">{{ $t('Solo lectura') }}</p>
 
+      <!-- Parents and NOTES first: read before counting, and easy to find. -->
+      <ClutchNotes
+        v-if="has('NOTES')"
+        class="border-b border-stone-100"
+        :notes="get('NOTES')"
+        :saved="row.values.NOTES ?? null"
+        :dirty="dirty('NOTES')"
+        :editable="editable('NOTES')"
+        :initials="initials"
+        :today="today"
+        :parents="parents"
+        :species="isBlank(get('SPECIES')) ? '' : String(get('SPECIES'))"
+        :clutch-id="row.id"
+        @set="setValue('NOTES', $event)"
+        @parents-written="parentsWritten"
+      />
+
       <!-- Each stage: its count kept as a sum, and the date it started. -->
       <section v-for="s in STAGES" :key="s.count" class="border-b border-stone-100 py-3">
         <CountEditor
@@ -367,57 +339,6 @@ const endedText = (e: ClutchState['ended']) =>
           :more="MORE['NUMBER OF PUPAE/LARVAE FOR DISECTIONS']()"
           @set="setValue('NUMBER OF PUPAE/LARVAE FOR DISECTIONS', $event)"
         />
-      </section>
-
-      <!-- Notes: the old ones as written; a new one is dated and initialled. -->
-      <section class="border-b border-stone-100 py-3">
-        <span class="field-label">NOTES</span>
-        <ul v-if="notes.length" class="space-y-1">
-          <li v-for="(n, i) in notes" :key="i" class="rounded-md bg-stone-50 px-2 py-1 text-sm break-words" :class="{ 'bg-amber-50': dirty('NOTES') && i === notes.length - 1 }">
-            {{ n }}
-          </li>
-        </ul>
-        <template v-if="editable('NOTES')">
-          <div class="mt-2 flex flex-wrap gap-1.5">
-            <button v-for="p in NOTE_PHRASES" :key="p" type="button" class="h-9 rounded-full border border-stone-300 bg-white px-3 text-sm active:bg-stone-100" @click="addPhrase(p)">
-              {{ p }}
-            </button>
-          </div>
-          <label class="mt-2 block">
-            <span class="sr-only">{{ $t('Nota nueva') }}</span>
-            <textarea
-              v-model="noteText"
-              class="field-input text-base"
-              :class="tight ? 'min-h-0' : 'min-h-20'"
-              :rows="tight ? 1 : 2"
-              :placeholder="$t('Nota nueva, en inglés (p. ej. 3 larvae dead)')"
-              enterkeyhint="done"
-            />
-          </label>
-          <div class="mt-1 flex items-center gap-2">
-            <span class="min-w-0 flex-1 truncate text-xs text-stone-500">{{ $t('Se añade como «{prefix} …»', { prefix: `${noteDay(today)} ${initials}:` }) }}</span>
-            <button type="button" class="btn h-11 px-4" :disabled="!noteText.trim()" @click="addNote">{{ $t('Añadir nota') }}</button>
-          </div>
-        </template>
-      </section>
-
-      <!-- Parents of an F1/F2 clutch, written in NOTES for now (female first). -->
-      <section v-if="editable('NOTES') || written" class="border-b border-stone-100 py-3">
-        <div class="flex items-center gap-2">
-          <span class="field-label mb-0 flex-1">{{ $t('Padres') }}</span>
-          <span v-if="written && !showParents" class="text-base font-semibold">{{ written.female }}♀ + {{ written.male }}♂</span>
-          <button v-if="editable('NOTES') && !showParents" type="button" class="btn h-11 px-3" @click="openParents">
-            {{ written ? $t('Corregir') : $t('Escribir padres') }}
-          </button>
-        </div>
-        <div v-if="showParents" class="mt-2">
-          <ParentsPicker v-model:female="female" v-model:male="male" :parents="parents" />
-          <div class="mt-2 flex gap-2">
-            <button type="button" class="btn h-11 flex-1" @click="showParents = false">{{ $t('Cancelar') }}</button>
-            <button type="button" class="btn-primary h-11 flex-1" @click="writeParents">{{ $t('Escribir en NOTES') }}</button>
-          </div>
-          <p class="mt-1 text-xs text-stone-500">{{ $t('Se escribe como «{text}» en NOTES, la hembra primero.', { text: female && male ? parentsText(female, male) : 'U8A♀ + C8B♂' }) }}</p>
-        </div>
       </section>
 
       <!-- Generation, room, species. -->

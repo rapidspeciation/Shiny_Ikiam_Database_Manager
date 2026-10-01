@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Check, History, Plus, Search, X } from 'lucide-vue-next'
 import ClutchEditor from './ClutchEditor.vue'
 import NewClutch from './NewClutch.vue'
+import SexBadge from '../SexBadge.vue'
 import TodayChanges from './TodayChanges.vue'
 import EntryModeToggle from '../EntryModeToggle.vue'
 import RowDrawer from '../RowDrawer.vue'
@@ -86,6 +87,7 @@ interface Item {
   species: string
   counts: Record<CountField, { terms: number[]; na: boolean; text: string | null }>
   state: ClutchState
+  parents: { female: string; male: string } | null
   search: string
 }
 const rows = computed(() => (props.table?.rows || []).filter(r => r.observed))
@@ -109,7 +111,7 @@ const items = computed<Item[]>(() => {
     const number = String(row.values['CLUTCH NUMBER'] ?? '')
     const species = isBlank(get('SPECIES')) ? '' : String(get('SPECIES'))
     const parents = parentsOf(get('NOTES'))
-    out.push({ row, number, species, counts, state, search: `${number} ${species} ${parents ? `${parents.female} ${parents.male}` : ''}`.toLowerCase() })
+    out.push({ row, number, species, counts, state, parents, search: `${number} ${species} ${parents ? `${parents.female} ${parents.male}` : ''}`.toLowerCase() })
   })
   return out
 })
@@ -276,7 +278,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
           <Search :size="18" class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-stone-400" />
           <input
             v-model="query"
-            class="h-12 w-full rounded-xl border border-stone-300 bg-white pr-11 pl-9 text-base placeholder:text-stone-400 focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none"
+            class="h-12 w-full rounded-xl border border-stone-300 bg-white pr-11 pl-9 text-base placeholder:text-stone-400 [&::-webkit-search-cancel-button]:appearance-none focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none"
             type="search"
             inputmode="search"
             autocomplete="off"
@@ -341,7 +343,12 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                     </span>
                   </span>
                 </span>
-                <span class="mt-0.5 block truncate text-sm">{{ item.species || $t('sin especie') }}</span>
+                <span class="mt-0.5 flex min-w-0 items-center gap-1.5 text-sm">
+                  <span class="min-w-0 truncate">{{ item.species || $t('sin especie') }}</span>
+                  <span v-if="item.parents" class="ml-auto flex shrink-0 items-center gap-1 text-xs font-medium tabular-nums text-stone-700">
+                    <SexBadge sex="female" />{{ item.parents.female }} <SexBadge sex="male" />{{ item.parents.male }}
+                  </span>
+                </span>
                 <span class="block truncate text-xs text-stone-500">
                   {{ [laidText(item.row) && $t('Puesta {date}', { date: laidText(item.row) }), value(item.row, 'INSECTARY OR LABORATORY') === 'Laboratory' ? 'Laboratory' : ''].filter(Boolean).join(' · ') }}
                 </span>

@@ -4,6 +4,7 @@ import {
   appendTerm,
   changeText,
   clutchNumber,
+  clutchOptions,
   clutchState,
   countedToday,
   dayText,
@@ -12,6 +13,7 @@ import {
   hasClutch,
   nextBatch,
   nextClutch,
+  noteParts,
   notesOf,
   parentsOf,
   parentsText,
@@ -21,6 +23,7 @@ import {
   termLabels,
   totalOf,
   typedTotal,
+  withParents,
   type CountField,
 } from '../clutches'
 import { formatSerial } from '../dates'
@@ -139,11 +142,53 @@ describe('clutch numbers and parents', () => {
     expect(nextBatch(994, ['994', '994(2)', '994(8)', '1004'])).toBe('994(9)')
     expect(nextBatch(1017, ['994'])).toBe('1017')
   })
+  it('the next new number is above every number used, batches included, and never one taken', () => {
+    // The sheet's end on 1 Oct 2026: batches after the last plain number.
+    const sheet = ['985', '986', '992(1)', '994', '994(8)', '1006(3)', '1015', '1012(2)', '1004(3)', '1012(3)', '1016']
+    expect(nextClutch(sheet)).toBe('1017')
+    expect(nextClutch([...sheet, '1017'])).toBe('1018')
+    // A batch beyond the plain numbers still counts: 1017(2) means 1017 is taken.
+    expect(nextClutch(['1016', '1017(2)'])).toBe('1018')
+    // Out of order (pickup order, not laying order) changes nothing.
+    expect(nextClutch(['1016', '985', '986'])).toBe('1017')
+    expect(nextClutch([' 1016 ', 'NA', ''])).toBe('1017')
+    expect(nextClutch([])).toBe('1')
+  })
+  it('batches in the current form, N then N(2), N(3)… without a space, also after the older forms', () => {
+    expect(nextBatch(1016, ['1016'])).toBe('1016(2)')
+    expect(nextBatch(992, ['992(1)', '992(2)', '992(3)'])).toBe('992(4)')
+    expect(nextBatch(831, ['831', '831 (2)', '831 (3)'])).toBe('831(4)')
+    expect(nextBatch(904, ['904', '904 (2)', '1904'])).toBe('904(3)')
+  })
+  it('lists each clutch once, newest first, with its next batch, species, generation and parents', () => {
+    const rows = [
+      { number: '985', species: 'Mechanitis polymnia proceriformis', generation: 'NA', laid: 46250, notes: '29/9/26 FCH: 4 pupas dead' },
+      { number: '994', species: 'Mechanitis lysimnia', generation: 'F1', laid: 46270, notes: '29/9/26 FCH: U7A♀ + C7B♂; preserved 14/9' },
+      { number: '1004', species: 'Mechanitis polymnia proceriformis', generation: 'F1', laid: 46280, notes: '29/9/26 FCH: Z5A♀ + E9B♂' },
+      { number: '994(4)', species: 'Mechanitis lysimnia', generation: 'F1', laid: 46284, notes: '29/9/26 FCH: Preserved (21-sept 26 KG)' },
+      { number: '1016', species: 'Mechanitis lysimnia', generation: 'NA', laid: null, notes: null },
+    ]
+    const options = clutchOptions(rows, rows.map(r => r.number))
+    expect(options.map(o => o.next)).toEqual(['1016(2)', '994(5)', '1004(2)', '985(2)'])
+    expect(options[1]).toEqual({
+      base: 994,
+      numbers: ['994', '994(4)'],
+      next: '994(5)',
+      species: 'Mechanitis lysimnia',
+      generation: 'F1',
+      // Batch 4's note does not name them: taken from the first batch.
+      parents: { female: 'U7A', male: 'C7B' },
+      laid: 46284,
+    })
+    expect(options[0].parents).toBeNull()
+    expect(options[0].laid).toBeNull()
+  })
   it('parents in NOTES, female first, in the 2026 form and the older one', () => {
     expect(parentsText('u8a', 'C8B ')).toBe('U8A♀ + C8B♂')
-    expect(parentsOf('29/9/26 FCH: U8A♀ + C8B♂; preserved 14/9')).toEqual({ female: 'U8A', male: 'C8B', text: 'U8A♀ + C8B♂' })
-    expect(parentsOf('28/7/26 MJS: F1 clutch parents J7A+ P5A | x')?.male).toBe('P5A')
+    expect(parentsOf('29/9/26 FCH: U8A♀ + C8B♂; preserved 14/9')).toEqual({ female: 'U8A', male: 'C8B', text: 'U8A♀ + C8B♂', index: 13 })
+    expect(parentsOf('28/7/26 MJS: F1 clutch parents J7A+ P5A | x')).toEqual({ female: 'J7A', male: 'P5A', text: 'J7A+ P5A', index: 31 })
     expect(parentsOf('Plant with ants')).toBeNull()
+    expect(parentsOf(null)).toBeNull()
     const rows = [
       { number: '994', notes: '29/9/26 FCH: U7A♀ + C7B♂' },
       { number: '994(8)', notes: '29/9/26 FCH: U7A♀ + C7B♂' },
@@ -151,6 +196,51 @@ describe('clutch numbers and parents', () => {
     ]
     expect(sameMating(rows, 'u7a', 'C7B')).toBe('994')
     expect(sameMating(rows, 'C7B', 'U7A')).toBeNull()
+  })
+  it('parents in the team’s older forms, and counts that are not IDs', () => {
+    const pair = (notes: string) => {
+      const p = parentsOf(notes)
+      return p ? `${p.female}+${p.male}` : null
+    }
+    expect(pair('1/10/24 MJS: F2 clutch parents 0JF + 9HB')).toBe('0JF+9HB')
+    expect(pair('25/4/24 MJS: F1F2 5AA + 3AD')).toBe('5AA+3AD')
+    expect(pair('6 JUN 24 KG: F1F2 --> 0AW+6CI')).toBe('0AW+6CI')
+    expect(pair('6 JUN 24 KG: F1F2-->8DE+2DA (7 larva were changed to another plant)')).toBe('8DE+2DA')
+    expect(pair('2/11/23 MJS: F1/F2 mom 22L+20L | 6/12/23 MJS: Discard this clutch')).toBe('22L+20L')
+    expect(pair('7/8/23 MJS: F1-F2 clutch 10B+11B ')).toBe('10B+11B')
+    expect(pair('6 JUN 24 KG: F1F2: 91Z--->28Y | 20/06/24 AA: correction -> 91Z + 2BY')).toBe('91Z+2BY')
+    expect(pair('29/9/26 FCH: Some eggs with fungus; U7A♀ + C7B♂; preserved 22/9')).toBe('U7A+C7B')
+    // The 2026 form wins over an older pair in the same cell.
+    expect(pair('F1 clutch parents J7A+ P5A | 1/10/26 FCH: J7B♀ + P5A♂')).toBe('J7B+P5A')
+    // Sums of larvae and pupae, generations and dates are not parents.
+    for (const notes of [
+      '10/1/24 MJS: 1+2+1+10 pupae dead and 2+1 larvae dead',
+      '29/9/26 FCH: 1 pupae dead → dark; 2 pupa dead +1',
+      '12-3-26 MJS: 8 eggs get dry +2',
+      '26-5-26 MJS: 2 larvae + 1 pupae dissected 17/5',
+      'F1 + F2 larvae mixed',
+      '6 JUN 24 KG: F1F2 --> 6EO +9 EN',
+    ])
+      expect(parentsOf(notes)).toBeNull()
+  })
+  it('changing the parents rewrites only the part that names them, in the standard form', () => {
+    expect(withParents('29/9/26 FCH: U8A♀ + C8B♂; preserved 14/9', 'u8a', 'C9B', TODAY, 'AA')).toBe('29/9/26 FCH: U8A♀ + C9B♂; preserved 14/9')
+    expect(withParents('28/7/26 MJS: F1 clutch parents J7A+ P5A | 29/9/26 FCH: 5 dry eggs', 'J7A', 'P5A', TODAY, 'FCH')).toBe(
+      '28/7/26 MJS: F1 clutch parents J7A♀ + P5A♂ | 29/9/26 FCH: 5 dry eggs',
+    )
+    expect(withParents('6 JUN 24 KG: F1F2 --> 0AW+6CI', '0AW', '7CI', TODAY, 'FCH')).toBe('6 JUN 24 KG: F1F2 --> 0AW♀ + 7CI♂')
+    // None written: a new dated note after the others.
+    expect(withParents('29/9/26 FCH: 1 dry egg', 'W2B', 'F1B', TODAY, 'FCH')).toBe('29/9/26 FCH: 1 dry egg | 1/10/26 FCH: W2B♀ + F1B♂')
+    expect(withParents(null, 'W2B', 'F1B', TODAY, 'FCH')).toBe('1/10/26 FCH: W2B♀ + F1B♂')
+    // Written again, the parents are found again (and not added twice).
+    const once = withParents('29/9/26 FCH: 1 dry egg', 'W2B', 'F1B', TODAY, 'FCH')
+    expect(withParents(once, 'W2B', 'F2B', TODAY, 'FCH')).toBe('29/9/26 FCH: 1 dry egg | 1/10/26 FCH: W2B♀ + F2B♂')
+  })
+  it('a note shows who wrote it and when apart from its text', () => {
+    expect(noteParts('29/9/26 FCH: U8A♀ + C8B♂; preserved 14/9')).toEqual({ head: '29/9/26 FCH', text: 'U8A♀ + C8B♂; preserved 14/9' })
+    expect(noteParts('12-3-26 MJS: All larvae dead')).toEqual({ head: '12-3-26 MJS', text: 'All larvae dead' })
+    expect(noteParts('6 JUN 24 KG: F1F2 --> 0AW+6CI')).toEqual({ head: '6 JUN 24 KG', text: 'F1F2 --> 0AW+6CI' })
+    expect(noteParts('No hatch')).toEqual({ head: '', text: 'No hatch' })
   })
   it('notes are dated and initialled, added after the old ones', () => {
     expect(appendNote(null, '3 larvae dead', TODAY, 'FCH')).toBe('1/10/26 FCH: 3 larvae dead')

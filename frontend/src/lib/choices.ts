@@ -13,6 +13,8 @@ export interface Choice {
   hint?: string
   /** Heading the option is listed under (as an <optgroup>). */
   group?: string
+  /** What typing finds it by, when more than its label (an ID and its species). */
+  search?: string
 }
 export type ChoiceOptions = readonly string[] | readonly Choice[]
 
@@ -32,7 +34,7 @@ export function filterChoices(
   choices: readonly Choice[],
   typed: string,
   limit = 100,
-  lower: readonly string[] = choices.map(c => c.label.toLowerCase()),
+  lower: readonly string[] = choices.map(searchText),
 ): { items: Choice[]; total: number } {
   const t = typed.trim().toLowerCase()
   let hits: Choice[]
@@ -56,6 +58,9 @@ export function filterChoices(
   }
   return { items: hits.slice(0, limit), total: hits.length }
 }
+
+/** The text an option is found by, lower case: its `search` text, else its label. */
+export const searchText = (c: Choice) => (c.search ?? c.label).toLowerCase()
 
 /** The label shown for a stored value (the value itself when it is not an option). */
 export function labelOf(choices: readonly Choice[], value: string): string {

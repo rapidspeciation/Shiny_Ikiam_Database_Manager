@@ -10,6 +10,7 @@ import ClutchDayPanel from '../components/clutches/ClutchDayPanel.vue'
 import { useEntryMode } from '../composables/useEntryMode'
 import { useSheet } from '../composables/useSheet'
 import { isBlank } from '../lib/cells'
+import { nextClutch } from '../lib/clutches'
 import { isoToSerial, todayIso } from '../lib/dates'
 import { notify } from '../lib/notice'
 import { persistentRef } from '../lib/persist'
@@ -39,11 +40,7 @@ const showHistory = ref(false)
 
 const rows = computed(() => table.value?.rows.filter(r => r.observed) || [])
 /** Clutch numbers are integers, sometimes with a batch suffix like "994(6)"; clutches added but not yet saved count too. */
-const nextNumber = computed(() => {
-  const numbers = [...rows.value, ...creates.value].map(r => parseInt(String(r.values['CLUTCH NUMBER'] ?? ''), 10))
-  const max = Math.max(0, ...numbers.filter(Number.isFinite))
-  return String(max + 1)
-})
+const nextNumber = computed(() => nextClutch([...rows.value, ...creates.value].map(r => String(r.values['CLUTCH NUMBER'] ?? ''))))
 const speciesList = computed(() => {
   const counts = new Map<string, number>()
   for (const r of rows.value.slice(-300))

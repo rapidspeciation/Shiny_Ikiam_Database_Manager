@@ -1,18 +1,19 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, useId, watch } from 'vue'
 import { Loader2, X } from 'lucide-vue-next'
 import ChoiceField from '../ChoiceField.vue'
 import DateField from '../DateField.vue'
 import ParentsPicker from './ParentsPicker.vue'
+import SexBadge from '../SexBadge.vue'
 import { useKeyboard } from '../../composables/usePhone'
 import { useParents } from '../../composables/useParents'
 import { isBlank } from '../../lib/cells'
-import { MODULE, appendNote, hasClutch, nextBatch, nextClutch, parentsText, sameMating } from '../../lib/clutches'
-import { dayLabel, isoToSerial, serialFromIso, serialToIso, todayIso } from '../../lib/dates'
+import { MODULE, appendNote, clutchNumber, clutchOptions, hasClutch, nextBatch, nextClutch, parentsText, sameMating, type ClutchOption } from '../../lib/clutches'
+import { dayLabel, formatSerial, isoToSerial, serialFromIso, serialToIso, todayIso } from '../../lib/dates'
 import { errorText, notify } from '../../lib/notice'
 import type { CellValue, TableRow } from '../../lib/types'
 import { usePending } from '../../stores/pending'
-import { t } from '../../lib/i18n'
+import { t, tn } from '../../lib/i18n'
 
 /**
  * A new clutch, as the table's «Nuevo clutch» writes it (a new row in the next
@@ -43,6 +44,7 @@ const numberTyped = ref(false)
 const chosen = ref('')
 const speciesTyped = ref(false)
 const date = ref(todayIso())
+const generations = ['NA', 'F1', 'F2', 'Backcross']
 const eggs = ref('')
 const place = ref('Insectary')
 const generation = ref('NA')
@@ -50,20 +52,99 @@ const note = ref('')
 const message = ref('')
 const saving = ref(false)
 
+const numberHintId = useId()
+const numberOf = (r: TableRow) => String(r.values['CLUTCH NUMBER'] ?? '').trim()
+/** The rows holding a clutch (not a number written beforehand), as the person sees them. */
+const clutchRows = computed(() => props.rows.filter(r => hasClutch(f => pending.value(r, f))))
+/** Numbers taken: rows with a clutch and clutches being added. */
+const used = computed(() => [
+  ...clutchRows.value.map(numberOf),
+  ...pending.creates.filter(c => c.module === MODULE).map(c => String(c.values['CLUTCH NUMBER'] ?? '').trim()),
+])
+const newNumber = computed(() => nextClutch(used.value))
 const mating = computed(() =>
   withParents.value
     ? sameMating(
-        props.rows.map(r => ({ number: String(r.values['CLUTCH NUMBER'] ?? ''), notes: r.values.NOTES })),
+        clutchRows.value.map(r => ({ number: numberOf(r), notes: pending.value(r, 'NOTES') })),
         female.value,
         male.value,
       )
     : null,
 )
-/** The number suggested: the next batch of the same parents, else the next free number. */
-const suggested = computed(() => (mating.value ? nextBatch(Number(mating.value), props.numbers) : nextClutch(props.numbers)))
+/** The number suggested: the next batch of the same parents, else the next new number. */
+const suggested = computed(() => (mating.value ? nextBatch(Number(mating.value), props.numbers) : newNumber.value))
 watch(suggested, s => {
   if (!numberTyped.value) number.value = s
 }, { immediate: true })
+
+// --- The number's list: the next new number, then each clutch (newest first) as its next batch
+const clutches = computed(() =>
+  clutchOptions(
+    clutchRows.value.map(r => ({
+      number: numberOf(r),
+      species: pending.value(r, 'SPECIES'),
+      generation: pending.value(r, 'Generation'),
+      laid: pending.value(r, 'DATE LAID'),
+      notes: pending.value(r, 'NOTES'),
+    })),
+    props.numbers,
+  ),
+)
+const byNext = computed(() => new Map(clutches.value.map(c => [c.next, c])))
+const numberChoices = computed(() => [
+  { value: newNumber.value, label: newNumber.value, group: t('Clutch nuevo'), search: newNumber.value },
+  ...clutches.value.map(c => ({
+    value: c.next,
+    label: c.next,
+    group: t('Otro lote de un clutch'),
+    search: [c.next, c.base, c.parents?.female, c.parents?.male].filter(Boolean).join(' '),
+  })),
+])
+const batchLine = (c: ClutchOption) => tn(c.numbers.length, 'lote nuevo de {base} · hay {n} lote', 'lote nuevo de {base} · hay {n} lotes', { base: c.base })
+/** The clutch the number is a new batch of, if any. */
+const batchOf = computed<ClutchOption | null>(() => {
+  const n = clutchNumber(number.value)
+  if (!n || used.value.includes(number.value.trim()) || (n.batch === 1 && !byNext.value.has(number.value.trim()))) return null
+  return clutches.value.find(c => c.base === n.base) ?? null
+})
+/**
+ * A number chosen or typed: an existing clutch's next batch takes its parents,
+ * species and generation (they can still be changed).
+ */
+/** What a chosen clutch filled in, taken back when another number is chosen instead. */
+const filled = ref<{ base: number; parents: boolean; species: boolean; generation: boolean } | null>(null)
+function setNumber(value: string) {
+  number.value = value.trim()
+  numberTyped.value = true
+  const c = byNext.value.get(number.value)
+  const before = filled.value
+  filled.value = null
+  if (before && before.base !== c?.base) {
+    if (before.parents) {
+      female.value = ''
+      male.value = ''
+      withParents.value = false
+    }
+    if (before.species) {
+      chosen.value = ''
+      speciesTyped.value = false
+    }
+    if (before.generation) generation.value = withParents.value ? 'F1' : 'NA'
+  }
+  if (!c) return
+  if (c.parents) {
+    withParents.value = true
+    female.value = c.parents.female
+    male.value = c.parents.male
+  }
+  if (c.species) {
+    chosen.value = c.species
+    speciesTyped.value = true
+  }
+  const generationToo = props.hasGeneration && !!c.generation && generations.includes(c.generation)
+  if (generationToo) generation.value = c.generation
+  filled.value = { base: c.base, parents: !!c.parents, species: !!c.species, generation: generationToo }
+}
 watch([female, male, () => parents.loaded.value], () => {
   if (!withParents.value || speciesTyped.value) return
   const s = parents.speciesFrom(female.value, male.value, props.species)
@@ -78,6 +159,12 @@ const quickDates = computed(() => [
   { iso: serialToIso(isoToSerial(todayIso()) - 1), name: t('Ayer') },
 ])
 
+/** A number already taken: its clutch's next batch, to use instead. */
+const instead = computed(() => {
+  const n = clutchNumber(number.value)
+  if (!n || !used.value.includes(number.value.trim())) return ''
+  return nextBatch(n.base, props.numbers)
+})
 /** A row with this number already: an empty one (only the number written) is filled; one with a clutch is refused. */
 const existing = computed(() => {
   const n = number.value.trim()
@@ -87,6 +174,7 @@ const blocker = computed(() => {
   const n = number.value.trim()
   if (!n) return t('Escribe el número del clutch')
   if (existing.value && hasClutch(f => pending.value(existing.value!, f))) return t('El clutch {clutch} ya existe', { clutch: n })
+  if (used.value.includes(n)) return t('El clutch {clutch} ya existe', { clutch: n })
   if (pending.creates.some(c => c.module === MODULE && String(c.values['CLUTCH NUMBER']) === n))
     return t('El clutch {clutch} ya existe', { clutch: n })
   if (!chosen.value) return t('Elige la especie del clutch')
@@ -159,7 +247,6 @@ function reveal(e: FocusEvent) {
   const el = e.target as HTMLElement
   if (el.matches('input, textarea')) setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 350)
 }
-const generations = ['NA', 'F1', 'F2', 'Backcross']
 </script>
 
 <template>
@@ -176,6 +263,60 @@ const generations = ['NA', 'F1', 'F2', 'Backcross']
       </button>
     </header>
     <div class="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3" @focusin="reveal">
+      <section class="grid grid-cols-2 gap-2">
+        <label class="block min-w-0">
+          <span class="field-label">CLUTCH NUMBER</span>
+          <ChoiceField
+            :model-value="number"
+            class="field-input h-12 text-lg font-semibold"
+            :options="numberChoices"
+            inputmode="numeric"
+            enterkeyhint="next"
+            :aria-describedby="numberHintId"
+            @update:model-value="setNumber"
+          >
+            <template #option="{ option }">
+              <span class="flex min-w-0 flex-1 flex-col py-0.5 whitespace-normal">
+                <span class="flex items-baseline gap-2">
+                  <span class="text-base font-semibold tabular-nums">{{ option.value }}</span>
+                  <span v-if="!byNext.get(option.value)" class="text-xs text-brand-800">{{ $t('número siguiente') }}</span>
+                  <span v-else class="text-xs text-stone-600">{{ batchLine(byNext.get(option.value)!) }}</span>
+                </span>
+                <span v-if="byNext.get(option.value)" class="flex flex-wrap items-center gap-x-1.5 text-xs text-stone-600">
+                  <span class="truncate">{{ byNext.get(option.value)!.species || $t('sin especie') }}</span>
+                  <template v-if="byNext.get(option.value)!.parents">
+                    <span class="inline-flex items-center gap-0.5"><SexBadge sex="female" />{{ byNext.get(option.value)!.parents!.female }}</span>
+                    <span class="inline-flex items-center gap-0.5"><SexBadge sex="male" />{{ byNext.get(option.value)!.parents!.male }}</span>
+                  </template>
+                  <span v-if="byNext.get(option.value)!.laid">· {{ formatSerial(byNext.get(option.value)!.laid!) }}</span>
+                </span>
+              </span>
+            </template>
+          </ChoiceField>
+          <span :id="numberHintId" class="mt-0.5 block text-xs text-stone-600">
+            <template v-if="mating && number.trim() === suggested">{{ $t('siguiente lote de {base} (mismos padres)', { base: mating }) }}</template>
+            <template v-else-if="batchOf">{{ $t('Lote nuevo del clutch {base}: padres, especie y generación tomados de él.', { base: batchOf.base }) }}</template>
+            <template v-else-if="number.trim() === newNumber">{{ $t('Clutch nuevo: el número siguiente.') }}</template>
+            <template v-else-if="!instead">{{ $t('siguiente número: {n}', { n: newNumber }) }}</template>
+          </span>
+          <button v-if="instead" type="button" class="btn mt-1 h-11 w-full px-2 text-sm" @click="setNumber(instead)">
+            {{ $t('Usar {n} (lote nuevo)', { n: instead }) }}
+          </button>
+        </label>
+        <label class="block min-w-0">
+          <span class="field-label">NUMBER OF EGGS</span>
+          <input
+            v-model="eggs"
+            class="field-input h-12 text-lg"
+            type="text"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            autocomplete="off"
+            enterkeyhint="done"
+          />
+          <span v-if="eggs.trim()" class="text-xs text-stone-500">={{ eggs.trim() }}</span>
+        </label>
+      </section>
       <section>
         <div class="grid grid-cols-2 gap-2">
           <button
@@ -197,36 +338,7 @@ const generations = ['NA', 'F1', 'F2', 'Backcross']
             {{ $t('Cruce: con padres') }}
           </button>
         </div>
-        <ParentsPicker v-if="withParents" v-model:female="female" v-model:male="male" class="mt-2" :parents="parents" />
-      </section>
-      <section class="grid grid-cols-2 gap-2">
-        <label class="block min-w-0">
-          <span class="field-label">CLUTCH NUMBER</span>
-          <input
-            v-model="number"
-            class="field-input h-12 text-lg font-semibold"
-            autocomplete="off"
-            enterkeyhint="next"
-            @input="numberTyped = true"
-          />
-          <span class="text-xs text-stone-500">
-            <template v-if="mating">{{ $t('siguiente lote de {base} (mismos padres)', { base: mating }) }}</template>
-            <template v-else>{{ $t('siguiente número: {n}', { n: suggested }) }}</template>
-          </span>
-        </label>
-        <label class="block min-w-0">
-          <span class="field-label">NUMBER OF EGGS</span>
-          <input
-            v-model="eggs"
-            class="field-input h-12 text-lg"
-            type="text"
-            inputmode="numeric"
-            pattern="[0-9]*"
-            autocomplete="off"
-            enterkeyhint="done"
-          />
-          <span v-if="eggs.trim()" class="text-xs text-stone-500">={{ eggs.trim() }}</span>
-        </label>
+        <ParentsPicker v-if="withParents" v-model:female="female" v-model:male="male" class="mt-2" :parents="parents" :species="chosen" />
       </section>
       <label class="block">
         <span class="field-label">SPECIES</span>
