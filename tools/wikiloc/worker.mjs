@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 /**
  * Background processor for Wikiloc links pasted or shared in the app, and for
- * "Buscar nuevos en Wikiloc" on followed profiles. Runs on a computer with a
- * home connection (Wikiloc's Cloudflare check blocks the app server).
+ * "Buscar nuevos en Wikiloc" on followed profiles. Runs alongside the app.
  *
  * Every 30 s it asks the app for a waiting job. A link job reads that trail;
  * a profile job lists the profile's public trails and reads those whose title

@@ -8,7 +8,10 @@ function files(path) {
     entry.isDirectory() ? files(`${path}/${entry.name}`) : [`${path}/${entry.name}`],
   );
 }
-const targets = ['server', 'scripts', 'tests'].flatMap(files).filter(path => /\.(m?js)$/.test(path));
+const targets = [
+  ...['server', 'scripts', 'tests'].flatMap(files),
+  ...readdirSync('tools/wikiloc').map(name => `tools/wikiloc/${name}`),
+].filter(path => /\.(m?js)$/.test(path));
 let failed = false;
 for (const path of targets) {
   const result = spawnSync(process.execPath, ['--check', resolve(path)], { encoding: 'utf8' });

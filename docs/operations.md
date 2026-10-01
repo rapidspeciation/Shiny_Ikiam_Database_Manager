@@ -20,7 +20,7 @@ The setup screen requires a private random token and creates the first active ad
 
 ## Deploy and monitor
 
-`scripts/deploy.sh` installs the frontend's locked dependencies, runs the syntax and type checks and all tests, builds the frontend into `web/`, uploads a release, switches the symlink, and restarts only `ithomiini.service`. It then deletes old releases, keeping the newest `KEEP_RELEASES` (default 5) plus the current and previous ones (`scripts/prune-releases.sh`). Caddy configuration is installed separately after validation; `deploy/Caddyfile.fragment` shows the route. Preserve existing routes when updating Caddy.
+`scripts/deploy.sh` installs the frontend's locked dependencies, runs the syntax and type checks and all tests, builds the frontend into `web/`, uploads a release, switches the symlink, and restarts `ithomiini.service`. It also installs and restarts the server's Wikiloc worker. It then deletes old releases, keeping the newest `KEEP_RELEASES` (default 5) plus the current and previous ones (`scripts/prune-releases.sh`). Caddy configuration is installed separately after validation; `deploy/Caddyfile.fragment` shows the route. Preserve existing routes when updating Caddy.
 
 ```sh
 ssh claudeclaw 'systemctl --user status ithomiini.service'
@@ -29,6 +29,19 @@ curl -fsS https://ithomiini-ikiam.com/health
 ```
 
 Health confirms the process is running. The authenticated synchronization view shows whether the workbook is current. Startup and changed-workbook refreshes can take longer than ordinary requests because the workbook contains hundreds of thousands of formulas.
+
+### Wikiloc imports
+
+Links and followed-profile scans are processed by `ithomiini-wikiloc.service` on claudeclaw. Its Camoufox browser runs on a private Xvfb display and reads the public trail pages, with Cloudflare challenge handling. The app stores each walk and downloads its photos for review. This runs independently of any PC. GPX uploads retain their direct import path and supply GPS timestamps.
+
+The worker is installed in `/home/ubuntu/.local/share/ithomiini-wikiloc`, including its Python virtual environment. Its editor-account credentials are in `/home/ubuntu/.config/ithomiini-wikiloc/worker.json`, mode 600. Keep that file across releases. The host needs `python3-venv`, `xvfb`, and GTK libraries; the installer pins its Python packages and fetches the Camoufox browser. See [Wikiloc importer](../tools/wikiloc/README.md).
+
+```sh
+ssh claudeclaw 'systemctl --user status ithomiini-wikiloc.service'
+ssh claudeclaw 'journalctl --user -u ithomiini-wikiloc.service -n 60 --no-pager'
+```
+
+The Importar screen shows the worker heartbeat. Pending jobs stay in SQLite during service outages, and interrupted jobs become eligible for retry after 15 minutes. The former PC worker is disabled after server verification.
 
 Edits made directly in Google Sheets arrive within seconds when the Apps Script trigger in `tools/apps-script` is installed in the workbook; it calls `POST /api/hooks/sheet-edit` with `SHEET_HOOK_SECRET`. Without it they wait for the 5-minute read. The synchronization status (`GET /api/sync`) shows the trigger's last report under `hook`.
 

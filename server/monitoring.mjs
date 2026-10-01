@@ -657,8 +657,7 @@ export function deleteTrack(store, id, user) {
 
 /*
  * Walks read from public Wikiloc trail pages by the helper in tools/wikiloc
- * (Wikiloc has no API and blocks servers with Cloudflare, so the page is read
- * by a browser on a home connection). They wait here, with their photos,
+ * using Camoufox on the app server. They wait here, with their photos,
  * until someone reviews them in "Importar recorrido".
  */
 const PHOTO_HOST = /^https:\/\/s\d*\.wklcdn\.com\/image_\d+\/[\w/]+\.jpe?g$/i;
@@ -815,9 +814,8 @@ export function attachWalkPhotos(store, trackId, walkId) {
 
 /*
  * People paste Wikiloc links (or share them from the phone), or ask to look
- * for new monitoring trails on followed profiles. The server cannot open
- * Wikiloc, so these become jobs that a computer on a home connection
- * (tools/wikiloc/worker.mjs) claims, runs and reports back.
+ * for new monitoring trails on followed profiles. The server's Camoufox
+ * worker (tools/wikiloc/worker.mjs) claims, runs and reports these jobs.
  */
 const now = () => new Date().toISOString();
 const STALE_MS = 15 * 60_000;

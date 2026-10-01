@@ -4,9 +4,8 @@
  *
  *   npm run wikiloc -- https://es.wikiloc.com/rutas-senderismo/...-213523060 [more links]
  *
- * Wikiloc has no API and its Cloudflare check blocks servers, so the public
- * trail page is opened by a headless browser on this computer (a home
- * connection passes the check). From the page it takes each waypoint's note,
+ * Wikiloc has no API, so the public trail page is opened by Camoufox.
+ * From the page it takes each waypoint's note,
  * position, elevation and photos, and the trail line; no Wikiloc login is
  * used. The walk then waits in Monitoreo → Importar recorrido for review; the
  * app server downloads the photos. Pages are opened one at a time, a few
@@ -17,8 +16,8 @@
  * Options: --app <url> (default ITHOMIINI_APP or the live app), --dry-run
  * (print what would be sent). The app login is asked once and the session is
  * kept in ~/.config/ithomiini-wikiloc/session.json (readable only by you).
- * ITHOMIINI_USER / ITHOMIINI_PASSWORD avoid the prompt; CHROMIUM_PATH picks
- * the browser.
+ * ITHOMIINI_USER / ITHOMIINI_PASSWORD avoid the prompt;
+ * ITHOMIINI_WIKILOC_PYTHON picks the Camoufox Python environment.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -73,8 +72,8 @@ async function session() {
 let browser;
 try {
   browser = await openBrowser();
-} catch {
-  console.error('Install the helper first: npm --prefix tools/wikiloc install');
+} catch (error) {
+  console.error(`Cannot start Wikiloc browser: ${error.message}`);
   process.exit(1);
 }
 const auth = dryRun ? null : await session();

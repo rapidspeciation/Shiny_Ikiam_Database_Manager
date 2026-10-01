@@ -6,6 +6,7 @@ node_modules/
 dist/
 __pycache__/
 *.pyc
+tools/wikiloc/venv/
 *.xlsx
 *.csv
 *.sqlite

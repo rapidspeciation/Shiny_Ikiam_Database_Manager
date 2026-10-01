@@ -465,7 +465,7 @@ export default {
   'en Wikiloc': 'on Wikiloc',
   'Perfiles seguidos ({n})': 'Followed profiles ({n})',
   'Última señal: {ago}': 'Last signal: {ago}',
-  'Procesador en casa': 'Home processor',
+  'Importador de Wikiloc': 'Wikiloc importer',
   activo: 'active',
   'sin señal ({ago})': 'no signal ({ago})',
   'Trabajos ({n})': 'Jobs ({n})',
@@ -478,6 +478,6 @@ export default {
   'Recolector de ese perfil': "That profile's collector",
   'Recolector…': 'Collector…',
   Seguir: 'Follow',
-  'El computador que procesa los enlaces no responde; quedan en cola hasta que vuelva a conectarse.':
-    'The computer that processes the links is not answering; they stay queued until it connects again.',
+  'El importador de Wikiloc no responde; los enlaces quedan en cola y se procesarán cuando se restablezca.':
+    'The Wikiloc importer is not responding; links stay queued until it recovers.',
 } as Record<string, string>

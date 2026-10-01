@@ -10,8 +10,8 @@ import { useSession } from '../../stores/session'
 
 /**
  * Wikiloc links pasted here (or shared from the phone) and "Buscar nuevos"
- * on followed profiles become jobs for the computer at home that can open
- * Wikiloc (tools/wikiloc/worker.mjs); finished walks appear for review.
+ * on followed profiles become jobs for the server's Camoufox worker
+ * (tools/wikiloc/worker.mjs); finished walks appear for review.
  */
 interface Job {
   id: string
@@ -49,7 +49,7 @@ let timer: ReturnType<typeof setTimeout> | null = null
 
 const active = computed(() => jobs.value.filter(j => j.status === 'queued' || j.status === 'running'))
 const recent = computed(() => jobs.value.slice(0, 4))
-/** The home computer asks for work every 30 s; two minutes of silence means it is off. */
+/** The server worker asks for work every 30 s; detect a missing heartbeat. */
 const workerOnline = computed(() => !!workerSeen.value && Date.now() - Date.parse(workerSeen.value) < 2 * 60_000)
 
 async function refresh() {
@@ -199,7 +199,7 @@ watch(showProfiles, v => v && loadProfiles())
         :class="workerOnline ? 'text-brand-700' : 'text-amber-800'"
         :title="$t('Última señal: {ago}', { ago: ago(workerSeen) })"
       >
-        ● <span class="hidden sm:inline">{{ $t('Procesador en casa') }}</span>
+        ● <span class="hidden sm:inline">{{ $t('Importador de Wikiloc') }}</span>
         {{ workerOnline ? $t('activo') : $t('sin señal ({ago})', { ago: ago(workerSeen) }) }}
       </span>
       <button
@@ -281,7 +281,7 @@ watch(showProfiles, v => v && loadProfiles())
       </li>
     </ul>
     <p v-if="active.length && !workerOnline" class="mt-1 text-xs text-amber-800">
-      {{ $t('El computador que procesa los enlaces no responde; quedan en cola hasta que vuelva a conectarse.') }}
+      {{ $t('El importador de Wikiloc no responde; los enlaces quedan en cola y se procesarán cuando se restablezca.') }}
     </p>
   </div>
 </template>

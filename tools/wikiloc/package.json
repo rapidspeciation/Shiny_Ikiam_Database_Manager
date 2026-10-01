@@ -2,8 +2,5 @@
   "name": "ithomiini-wikiloc-helper",
   "private": true,
   "type": "module",
-  "description": "Reads monitoring walks from Wikiloc trail pages and sends them to the Ithomiini app for review",
-  "dependencies": {
-    "playwright-core": "^1.59.1"
-  }
+  "description": "Reads monitoring walks from Wikiloc trail pages and sends them to the Ithomiini app for review"
 }

@@ -1,9 +1,9 @@
 /**
  * Shared by fetch.mjs (links given on the command line) and worker.mjs (the
- * background processor): reading public Wikiloc pages with a headless
- * browser, and talking to the Ithomiini app.
+ * background processor): reading public Wikiloc pages with Camoufox,
+ * and talking to the Ithomiini app.
  */
-import { existsSync } from 'node:fs';
+export { openBrowser } from './browser.mjs';
 
 export const DEFAULT_APP = 'https://ithomiini-ikiam.com/';
 
@@ -61,26 +61,6 @@ export function walkDate(title, done, created) {
   // (walks were usually uploaded the same day). Review it in the app.
   const up = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(created || ''));
   return up && +up[1] === doneYear && +up[2] === doneMonth ? `${up[1]}-${up[2]}-${up[3]}` : null;
-}
-
-function browserPath() {
-  if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
-  return ['/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable'].find(existsSync);
-}
-
-/** A headless browser page; call close() when done. */
-export async function openBrowser() {
-  const { chromium } = await import('playwright-core');
-  const browser = await chromium.launch({
-    executablePath: browserPath(),
-    headless: true,
-    args: ['--disable-blink-features=AutomationControlled'],
-  });
-  const context = await browser.newContext({
-    locale: 'es-EC',
-    userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
-  });
-  return { page: await context.newPage(), close: () => browser.close() };
 }
 
 async function open(page, url) {
