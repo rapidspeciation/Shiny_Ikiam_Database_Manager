@@ -49,15 +49,14 @@ only as given). Check a mark first (`find_records` on FieldMark_ID).
 Preservation_date = the walk day; the weight is measured later in the lab
 (leave it).
 
-**Marked and released** (`Mark_Released`), as the rows of Oct 2025–Aug 2026:
-FieldMark_ID = the mark · CAM_ID, CAM_ID_insectary, Insectary_ID, Tube_1–4
-`NA` · Tube_1–3 tissues `NA` · Butterfly_weight, Death_date, Preservation_date
-`NA` · Preservation_medium and Preserved_dead_alive `NOT_PRESERVED` ·
-Location_Head…_wings `NA`, Location_WholeBody blank · Splitted_body `No`.
-Older rows drifted (tissues or medium `NOT_COLLECTED` in some months): mention
-a deviation, never mass-correct old rows. The app's import and `get_walk`
-write `NOT_COLLECTED` in the tissues and medium, like the Sep 2026 rows: leave
-those as they are.
+**Marked and released** (`Mark_Released`): FieldMark_ID = the mark · CAM_ID,
+CAM_ID_insectary, Insectary_ID, Tube_1–4, Butterfly_weight, Death_date,
+Preservation_date, Location_Head…_wings `NA` · Preserved_dead_alive
+`NOT_PRESERVED` · Splitted_body `No`. Tube tissues and Preservation_medium have
+switched back and forth between `NA`/`NOT_PRESERVED` and `NOT_COLLECTED` (by the
+same people); the app's import writes `NOT_COLLECTED`, like the Sep 2026 rows.
+Not settled — ask AA; until then follow the import and never mass-correct old
+rows.
 
 **Released unmarked** (`Released_Unmarked`): as marked, with FieldMark_ID
 `NA`. Rare (last used Sep 2025). Not settled when it applies — ask AA.
