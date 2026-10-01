@@ -38,82 +38,74 @@ Every save, with selective undo: skill **historial**.
 T3 Code (editors): this assistant, full screen, with the person's own
 workspace and the `ithomiini` tools; the app has no other chat.
 
-- **The bar** above T3: «Cambios propuestos (N)» (show/hide the panel; it
-  opens by itself and pulses when a proposal arrives), reconnect, open T3 in
-  another tab; admins see the T3 version and, when a newer release exists,
-  «Actualizar T3 (x → y)» (restarts T3; open chats are cut, saved chats are
-  kept).
-- **Cambios propuestos** (beside T3, below it on phones): each proposal as a
-  table like the sheet: «Fila», the
-  changed cells in green with the old value struck through, new rows marked
-  «nueva», «Motivo» per row. The person selects cells and presses «Valor de
-  la hoja» (back to the sheet's value, or empty in a new row: the AI value
-  stays aside, dashed and struck through, not written) or «Valor de la IA»
-  (the AI value again). Cells the AI is unsure of are amber and dashed with a
-  «?» («N celdas dudosas por revisar» in the header; a click goes to the
-  next); the cell bar shows why and the other readings to pick. Editing,
-  picking a reading, «Valor de la hoja»/«de la IA» or «Marcar revisadas»
-  reviews them; values the line does not write are in italics. «Aplicar N
-  filas» writes what the table shows as one save (undoable in Historial);
-  with unreviewed doubtful cells it asks first («Revisarlas», «Aplicar sin
-  las dudosas», «Aplicar todo igualmente», «Cancelar»); a row with every cell
-  set back is skipped;
-  «Descartar» drops it. «Revisados hace poco (N)» keeps the last five. The panel
-  can be placed right or bottom, or opened alone in its own browser tab at
-  `#/propuestas`; there it is an editable Sheets-like grid (the person can
-  correct a cell before applying). It shows the proposals of the
-  chat open in T3 beside it («Este chat: …»; a new chat not sent yet has none;
-  «Último chat: …» when T3 does not say which is open), and «Cambios
-  propuestos (N)» counts those; a selector above the tables picks another
-  chat with proposals, «Fuera de los chats de T3» (e.g. prepared in Revisión)
-  or «Todos los chats»; «N propuestas más en otros chats»
-  shows all of them. Opening another chat in T3 follows it again.
+### The bar above T3
+
+- «Instrucciones de la IA» opens `#/instrucciones` (anyone signed in): the
+  brief, skills, subagents and tools this assistant follows, each with its
+  change history (link one file with `?archivo=<path>`, e.g.
+  `#/instrucciones?archivo=assistant/skills/monitoring/SKILL.md`).
+- «Cambios propuestos (N)» shows or hides the panel; it opens by itself and
+  pulses when a proposal arrives.
+- Reconnect T3; open T3 in another tab.
+- Admins: the T3 version and, when a newer release exists, «Actualizar T3
+  (x → y)» (restarts T3; open chats are cut, saved chats are kept).
+
+### Cambios propuestos
+
+Beside T3 (below it on phones); placed right or bottom, or alone in its own
+browser tab at `#/propuestas`, an editable Sheets-like grid where the person
+can correct a cell before applying.
+
+- **Each proposal** is a table like the sheet: «Fila», the changed cells in
+  green with the old value struck through, new rows marked «nueva», «Motivo»
+  per row; values the line does not write are in italics.
+- **Choosing values**: select cells and press «Valor de la hoja» (back to the
+  sheet's value, or empty in a new row: the AI value stays aside, dashed and
+  struck through, not written) or «Valor de la IA» (the AI value again).
+- **Doubtful cells** (the AI is unsure) are amber and dashed with a «?»; the
+  header says «N celdas dudosas por revisar» (a click goes to the next) and
+  the cell bar shows why and the other readings to pick. Editing, picking a
+  reading, «Valor de la hoja» / «de la IA» or «Marcar revisadas» reviews them.
+- **«Aplicar N filas»** writes what the table shows as one save (undoable in
+  Historial); a row with every cell set back is skipped. With unreviewed
+  doubtful cells it asks first («Revisarlas», «Aplicar sin las dudosas»,
+  «Aplicar todo igualmente», «Cancelar»). «Descartar» drops the proposal;
+  «Revisados hace poco (N)» keeps the last five.
+- **Which proposals**: those of the chat open in T3 beside it («Este chat:
+  …»; a new chat not sent yet has none; «Último chat: …» when T3 does not say
+  which is open), counted in «Cambios propuestos (N)». A selector above the
+  tables picks another chat with proposals, «Fuera de los chats de T3» (e.g.
+  prepared in Revisión) or «Todos los chats»; «N propuestas más en otros
+  chats» shows all of them. Opening another chat in T3 follows it again.
 
 ## Revisión — `#/revision` (editors; last tab)
 
-Four views along the top: «Problemas» (below), «Sugerencias», «Resueltos»
+Four views along the top: «Problemas» (default), «Sugerencias», «Resueltos»
 and «Alertas» (`vista=sugerencias|resueltos|alertas`).
 
-- «Sugerencias»: corrections the app computes, read only (no apply button):
-  grouped by source (Arreglos de los chequeos, Espacios de más, Fórmulas que
-  faltan, Fechas imposibles, Tubos con un dígito de más o de menos, Colecta e
-  insectario no coinciden, Pedigree sin decidir), each with «Seguro» /
-  «Probable» / «Revisar», the row (link to Tablas), now → suggested («decidir»
-  when a person must choose), the reason, «en Google Sheets» for formula cells,
-  and since when. Filters: certainty, source, «Hoja», search; «CSV» downloads
-  and «Copiar» copies the filtered list. Parameters: `fuente=<source id>`,
-  `certeza=certain|likely|check`, `hoja=`, `q=`. To make the changes, ask the
-  assistant for a proposal with the chosen ones.
-- «Resueltos»: problems and suggestions the sheet no longer has, newest first:
-  since when it was seen, when it was solved, who (or Google Sheets, or not in
-  the history), the change (before → after) and «ver en Historial».
-  Parameters: `tipo=check|suggestion`, `q=`.
-- «Alertas»: the alerts, «Rangos de CAM» (per pool of Lists: range, size,
-  used, highest, next, left, gaps, last use) and «Regla de los 30
-  preservados» (species that reached 30, the day, those preserved after;
-  species close to it).
+### Problemas
 
-«Problemas»: every inconsistency of the workbook and of the specimen photos as a card,
+Every inconsistency of the workbook and of the specimen photos as a card,
 judged by people. Same kinds as `check_data` (sidebar groups «Datos de la
 hoja» and «Fotos y sobres», with counts).
 
-- Status buttons: Pendiente (default), Aceptado, Otro valor, Rechazado,
-  Aplicado, Todos. Filters: kind, «Hoja», «Colector o identificador»,
-  «Desde»/«Hasta», search «Buscar CAM, ID, especie…», order «Más recientes
-  primero» / «Más antiguas primero» / «Por tipo y hoja». 25 cards per page.
-- A card: the problem, the rows involved (row link opens it in Tablas), for
-  photo issues the envelope crop («girar»), photos, «Sobre dice» / «Hoja
+- **Status buttons**: Pendiente (default), Aceptado, Otro valor, Rechazado,
+  Aplicado, Todos.
+- **Filters**: kind, «Hoja», «Colector o identificador», «Desde»/«Hasta»,
+  search «Buscar CAM, ID, especie…», order «Más recientes primero» / «Más
+  antiguas primero» / «Por tipo y hoja». 25 cards per page.
+- **A card**: the problem, the rows involved (a row link opens it in Tablas);
+  for photo issues the envelope crop («girar»), photos, «Sobre dice» / «Hoja
   dice», CAM read, envelope text, earlier curation, AI prediction, strength
-  (fuerte/media/baja/dudosa). Buttons: «Aceptar arreglo» (or «Aceptar tarea»
-  / «Es un problema»), «Rechazar», «Otro valor» (type the right value →
-  «Guardar»), back to pending, «historial» of verdicts. Batches («Lote «…»:
-  N», e.g. a day of envelopes) can be judged together or shown alone («ver
-  solo el lote»).
-- When fixes are accepted a green bar says «N arreglos aceptados listos para
+  (fuerte/media/baja/dudosa).
+- **Buttons**: «Aceptar arreglo» (or «Aceptar tarea» / «Es un problema»),
+  «Rechazar», «Otro valor» (type the right value → «Guardar»), back to
+  pending, «historial» of verdicts. Batches («Lote «…»: N», e.g. a day of
+  envelopes) can be judged together or shown alone («ver solo el lote»).
+- **Accepted fixes**: a green bar says «N arreglos aceptados listos para
   aplicar» (and Drive tasks): ask the assistant «aplica las correcciones
-  acordadas» or press
-  «Preparar propuesta aquí» (then confirm in Asistente → Cambios propuestos,
-  under «Fuera de los chats de T3»).
+  acordadas», or press «Preparar propuesta aquí» (then confirm in Asistente →
+  Cambios propuestos, under «Fuera de los chats de T3»).
 - The download button exports the photo verdicts as training labels.
 
 Parameters (only non-default ones appear in the link): `tipo=<kind>` (repeat,
@@ -124,6 +116,35 @@ envelope_sex, envelope_species, photo_missing, ai_species), `hoja=<sheet>`,
 `estado=accepted|other|rejected|applied|all` (default pending),
 `lote=<batch key>`, `q=<text>`, `orden=old|kind` (default recent). Example:
 `https://ithomiini-ikiam.com/#/revision?tipo=envelope_sex&hoja=Collection_data&orden=old`
+
+### Sugerencias
+
+Corrections the app computes; read only (no apply button: to make them, ask
+the assistant for a proposal with the chosen ones).
+
+- Grouped by source (Arreglos de los chequeos, Espacios de más, Fórmulas que
+  faltan, Fechas imposibles, Tubos con un dígito de más o de menos, Colecta e
+  insectario no coinciden, Pedigree sin decidir).
+- Each: «Seguro» / «Probable» / «Revisar», the row (link to Tablas), now →
+  suggested («decidir» when a person must choose), the reason, «en Google
+  Sheets» for formula cells, and since when.
+- Filters: certainty, source, «Hoja», search; «CSV» downloads and «Copiar»
+  copies the filtered list.
+
+Parameters: `fuente=<source id>`, `certeza=certain|likely|check`, `hoja=`, `q=`.
+
+### Resueltos
+
+Problems and suggestions the sheet no longer has, newest first: since when it
+was seen, when it was solved, who (or Google Sheets, or not in the history),
+the change (before → after) and «ver en Historial». Parameters:
+`tipo=check|suggestion`, `q=`.
+
+### Alertas
+
+The alerts, «Rangos de CAM» (per pool of Lists: range, size, used, highest,
+next, left, gaps, last use) and «Regla de los 30 preservados» (species that
+reached 30, the day, those preserved after; species close to it).
 
 ## Accounts
 

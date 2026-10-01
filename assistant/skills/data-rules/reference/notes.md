@@ -49,6 +49,11 @@
   frozen"), tube or CAM codes, research purpose ("pheromone"), a wild
   butterfly's collector, time, weather and place (they go in its
   Collection_data row), the generation, the room code (`ins/este`).
+- How a butterfly died: `Death_cause` (Eaten, Spider, Ants, Deformed,
+  `Unknown - Only wings`, Heat stroke, Disappearance, Killed_Preserved,
+  Unknown…).
+  Notes like "Only found wings" or "Body eaten" are from before mid-2024,
+  when the list lacked those values; don't write them now.
 - Your own assumptions or doubts ("fecha supuesta", "29/6?", "~2/7"): those go
   in your reply to the person.
 - A restatement of what the row already says, or of the existing note in
@@ -58,24 +63,9 @@
 
 ## Standard phrases (keep the team's wording)
 
-How it died goes in `Death_cause` (its list: Eaten, Spider, Ants, Deformed,
-Unknown - Only wings, Heat stroke, Disappearance, Killed_Preserved, Unknown…),
-not in the note. Notes like "Only found wings" or "Body eaten" are from before
-mid-2024, when the list lacked those values; don't write them now.
-
-Insectary_data: "Emerged incomplete", "Preserved in ultrafridge at -80ºC",
-"Preserved in dryshipper", "F2 preserved for pheromons", "With white flower" / "Without white
-flower" (pheromone treatment; paper CFB / SFB), "Larvae 4th instar",
-"prepupae", "Larvae founded dead, first instar", "Comes from CRISPR control
-#n", "Eggs found outside insectary on d/m/yy", "marked with lines in the
-abdomen", "hair pencils cut", "emerged in cage of parents".
-
-Insectary_stocks: see [clutches.md](clutches.md) ("Some eggs with fungi",
-"no hatch", "female dead → clutch to stock", "U8A♀ + C8B♂").
-
-Collection_data: "Preserved dead ~2h", "Sexed by genitalia", "Recapture",
-"The scale's battery ran out, so the individual could not be weighed",
-"Butterfly sent to insectary for live photos", a trap point ("Trap: A7_S").
-
-SamplingDay_data: rain, fallen trees, people on the trail, "No butterflies
-collected".
+| Sheet | Phrases |
+|---|---|
+| Insectary_data | "Emerged incomplete", "Preserved in ultrafridge at -80ºC", "Preserved in dryshipper", "F2 preserved for pheromons", "With white flower" / "Without white flower" (pheromone treatment; paper CFB / SFB), "Larvae 4th instar", "prepupae", "Larvae founded dead, first instar", "Comes from CRISPR control #n", "Eggs found outside insectary on d/m/yy", "marked with lines in the abdomen", "hair pencils cut", "emerged in cage of parents" |
+| Insectary_stocks | [clutches.md](clutches.md) ("Some eggs with fungi", "no hatch", "female dead → clutch to stock", "U8A♀ + C8B♂") |
+| Collection_data | "Preserved dead ~2h", "Sexed by genitalia", "Recapture", "The scale's battery ran out, so the individual could not be weighed", "Butterfly sent to insectary for live photos", a trap point ("Trap: A7_S") |
+| SamplingDay_data | rain, fallen trees, people on the trail, "No butterflies collected" |

@@ -110,17 +110,25 @@ old habit of `Other` + note "Eaten" ended in 2024.
 
 ## Eggs and larvae preserved (since Sep 2026)
 
-F1 eggs, larvae and prepupae get an Insectary_ID from the pre-made sequence
-each: `Reared`, clutch (`994(3)`), Intro2Insectary_date `NA`, Sex `NA`
-(decided; many Sep 2026 rows say `NOT_COLLECTED`), `LIFESTAGE` = `Egg`,
-`1st instar larva` … `5th instar larva`, `Pre-pupa` (the column is used only for
-this), Death_date = preservation date, cause `Killed_Preserved` (`Alive`) or
-`Other` (found dead, `Dead`), CAM, one tube `WHOLE_ORGANISM` `Flash frozen`,
-Research_purpose `F1/F2 mutation rate`, note `d/m/yy INI: Larvae 4th instar`.
+F1 eggs, larvae and prepupae get an Insectary_ID each, from the pre-made
+sequence. The protocol preserves F1s at the 4th instar; eggs and younger
+larvae that look about to die are preserved early (hence the eggs and 3rd
+instars of Sep 2026).
+
+| Column | Value |
+|---|---|
+| Wild_Reared, CLUTCH NUMBER | `Reared`, the clutch (`994(3)`) |
+| Intro2Insectary_date | `NA` |
+| Sex | `NA` (decided; many Sep 2026 rows say `NOT_COLLECTED`) |
+| LIFESTAGE (used only for this) | `Egg`, `1st instar larva` … `5th instar larva`, `Pre-pupa` |
+| Death_date | the preservation date |
+| Death_cause, Preserved_Dead_Alive | `Killed_Preserved` and `Alive`, or `Other` and `Dead` (found dead) |
+| CAM_ID, Tube_1 | a CAM; one tube `WHOLE_ORGANISM` `Flash frozen` |
+| Research_purpose | `F1/F2 mutation rate` |
+| Note | `d/m/yy INI: Larvae 4th instar` |
+
 The clutch's Insectary_stocks row gets the note "preserved d/m" and a
-subtraction in its count. The protocol preserves F1s at the 4th instar; eggs
-and younger larvae that look about to die are preserved early (hence the eggs
-and 3rd instars of Sep 2026).
+subtraction in its count.
 
 ## Research_purpose and Pedigree
 

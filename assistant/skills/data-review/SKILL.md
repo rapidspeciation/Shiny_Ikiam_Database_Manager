@@ -6,22 +6,29 @@ description: Finding and fixing problems in the Ithomiini workbook and the app's
 # Data review
 
 The app's **Revisión** tab (`https://ithomiini-ikiam.com/#/revision`) shows
-the same lists as the tools: «Problemas» (cards people judge: accepted,
-rejected, another value), «Sugerencias», «Resueltos» (what the sheet no
-longer has, with who changed it) and «Alertas». Nothing is written without a
-proposal the person confirms.
+the same lists as the tools:
+
+| View | Tool |
+|---|---|
+| «Problemas»: cards people judge (accepted, rejected, another value) | `check_data`; the verdicts: `list_agreed_fixes` |
+| «Sugerencias» | `list_suggested_edits` |
+| «Resueltos»: what the sheet no longer has, with who changed it | — |
+| «Alertas» | `get_alerts` |
+
+Nothing is written without a proposal the person confirms.
+
+## Requests
 
 - **"¿Qué está mal?"**: `check_data` counts first, then one kind at a time.
-  For issues without a fix, look at the rows (`get_record`) and look for
-  evidence before asking: a correction note ("from X to Y"), the envelope
-  (`envelope_*` issues of the same row), or `list_suggested_edits` source
-  `twins`, which weighs the history and the envelope for the two rows of one
-  butterfly.
+  For an issue without a fix, look at the rows (`get_record`) and for evidence
+  before asking: a correction note ("from X to Y"), the envelope (`envelope_*`
+  issues of the same row), or `list_suggested_edits` source `twins`, which
+  weighs the history and the envelope for the two rows of one butterfly.
 - **"Aplica las correcciones acordadas"**: `list_agreed_fixes` → one
-  `propose_changes` with its `issueIds` → a few lines on what it changes, the
-  Drive `tasks` as a checklist (people mark them done in Revisión), and the
-  `needsValue` / `stale` questions → apply on their confirmation; those
-  issues then show as applied in Revisión.
+  `propose_changes` with its `issueIds` → tell the person in a few lines what
+  it changes, the Drive `tasks` as a checklist (people mark them done in
+  Revisión) and the `needsValue` / `stale` questions → apply on their
+  confirmation. Those issues then show as applied in Revisión.
 - **Suggested edits** ("propón las sugerencias seguras de tubos"):
   `list_suggested_edits` with those filters → one `propose_changes` → their
   confirmation.

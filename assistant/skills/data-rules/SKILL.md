@@ -5,17 +5,19 @@ description: What a senior member of the Ikiam insectary team knows about record
 
 # Data rules (the team's conventions)
 
-Distilled from what the workbook's rows hold, the meeting notes and protocols
-in Drive, and the team's practice up to Sep 2026. Current practice first; old
-formats only where they help to read old pages.
+Distilled from the workbook's rows, the meeting notes and protocols in Drive,
+and the team's practice up to Sep 2026. Current practice first; old formats
+only where they help to read old pages.
 
 ## Principles
 
-- `NA` = does not apply or was not recorded (a dead or disappeared butterfly
-  gets `NA` wherever a cell does not apply). Blank = not yet (filled at death,
-  when the field envelope arrives, after the photos). `NOT_COLLECTED` = a
-  sample that was not taken. Type list values exactly (`NOT_COLLECTED`, never
-  "NOT COLLECTED").
+| Value | Means |
+|---|---|
+| `NA` | does not apply, or was not recorded. A dead or disappeared butterfly gets `NA` wherever a cell does not apply. |
+| blank | not yet (filled at death, when the field envelope arrives, after the photos) |
+| `NOT_COLLECTED` | a sample that was not taken |
+
+- Type list values exactly (`NOT_COLLECTED`, never "NOT COLLECTED").
 - When the team's way of filling something changed, follow the recent way.
   But a change that appeared only in Sep 2026, when two new people started,
   may be their mistake: follow the way before them unless the team decided
@@ -24,12 +26,15 @@ formats only where they help to read old pages.
   holds the butterfly (Collection_data and Insectary_data twins, experiment
   sheets), with a note "from X to Y"; relabelling envelopes and renaming
   photos are tasks for a person.
-- Where the files say "Not settled — ask X", say what the current practice is
+- Where a file says "Not settled — ask X", say what the current practice is
   and ask that person.
 - `match_notebook`, `check_data`, `get_walk` and the app's tabs already apply
-  many of these rules; the files say where, so don't redo it by hand.
+  many of these rules (the files say where): don't redo it by hand.
 
 ## Which file
+
+Read the file of the case before proposing; for a notebook photo the skill
+**digitalizar-cuaderno** comes first and points here.
 
 | Case | File |
 |---|---|
@@ -40,15 +45,17 @@ formats only where they help to read old pages.
 | Insectary IDs, CAM pools, tubes and racks, tissues, preservation media, duplicates and ID corrections | [reference/samples-ids.md](reference/samples-ids.md) |
 | Notes columns: format, what must and must never go in them, standard phrases | [reference/notes.md](reference/notes.md) |
 | Reading paper: ditto marks, braces, dashes, ticks, highlights, envelopes, cage cards, whiteboards, symbols and shorthand | [reference/reading-paper.md](reference/reading-paper.md) |
-| Monitoring walks, marks, recaptures, the 30-preserved rule, weather codes, SamplingDay_data | skill **monitoring** (`.claude/skills/monitoring/SKILL.md`) |
-
-Read the file of the case before proposing; for a notebook photo the skill
-**digitalizar-cuaderno** comes first and points here.
+| Monitoring walks, marks, recaptures, the 30-preserved rule, weather codes, SamplingDay_data | skill **monitoring** |
 
 ## Who knows what (sheet initials)
 
-PAS: the workbook's owner (CAM ranges with AA, pre-made rows, columns and
-formulas, Pedigree, taxonomy). AO: notebook → sheet transfer since Sep 2026.
-AA: crosses, monitoring, the insectary protocols. ABV: field collections. KG:
-pheromones, photos, stock census. MJS: the previous curator (history of old
-rows). When you draft a question for the team, say who is likely to know.
+When you draft a question for the team, say who is likely to know.
+
+| Initials | Knows |
+|---|---|
+| PAS | the workbook's owner: CAM ranges (with AA), pre-made rows, columns and formulas, Pedigree, taxonomy |
+| AA | crosses, monitoring, the insectary protocols; CAM ranges with PAS |
+| AO | notebook → sheet transfer since Sep 2026 |
+| ABV | field collections |
+| KG | pheromones, photos, stock census |
+| MJS | the previous curator (history of old rows) |

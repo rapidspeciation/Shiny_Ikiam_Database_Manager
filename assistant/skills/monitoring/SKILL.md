@@ -12,54 +12,54 @@ project documentation's `monitoring.md` has the app's full rules.
 
 ## A Wikiloc walk
 
-`queue_wikiloc` → `get_walk` → one `propose_changes` with its `newRows` →
-the person confirms → `apply_proposal`; then check that SamplingDay_data has
-the walker's row for that day (below). The person can also import the walk
-in Monitoreo → Importar, which hands out the next CAM and tube for preserved
-points; a GPX file uploaded there also keeps the GPS times.
+1. `queue_wikiloc` → `get_walk` → one `propose_changes` with its `newRows` →
+   the person confirms → `apply_proposal`.
+2. Check that SamplingDay_data has the walker's row for that day (below).
+
+The person can also import the walk in Monitoreo → Importar, which hands out
+the next CAM and tube for preserved points; a GPX file uploaded there also
+keeps the GPS times.
 
 ## A capture by hand (no Wikiloc)
 
-One new Collection_data row: the template of its fate (below) plus
-Collection_date, Collection_time, Transect_section, Collector and Identifier
-(the walker, as the Lists value), SPECIES / Subspecies_Form / Sex, Rainfall,
-Cloud_cover, Flight_height, and the mark (marked) or CAM and tube (preserved,
-only as given). Check a mark first (`find_records` on FieldMark_ID).
+Check a mark first (`find_records` on FieldMark_ID). Then one new
+Collection_data row: the template of its fate (below) plus Collection_date,
+Collection_time, Transect_section, Collector and Identifier (the walker, as
+the Lists value), SPECIES / Subspecies_Form / Sex, Rainfall, Cloud_cover,
+Flight_height, and the mark (marked) or CAM and tube (preserved, only as
+given).
 
 ## What goes where
 
-- Every capture is a Collection_data row with Purpose `Monitoring` (an
-  opportunistic catch at Ikiam has Purpose `NA`), Collection_location `Ikiam`, Identifier = Collector = the walker,
-  Collection_time, Flight_height (m), Cloud_cover per row, Rainfall per day,
-  Transect_section 1–4. The walkers have left Transect_section blank since
-  Apr 2026: `get_walk` and the import take it from the point's GPS position,
-  and `list_suggested_edits` (source `wikiloc-transects`) suggests the missing
+- **Collection_data**, one row per capture: Purpose `Monitoring` (an
+  opportunistic catch at Ikiam has Purpose `NA`), Collection_location `Ikiam`,
+  Identifier = Collector = the walker, Collection_time, Flight_height (m),
+  Cloud_cover per row, Rainfall per day, Transect_section 1–4.
+- **Transect_section**: the walkers have left it blank since Apr 2026;
+  `get_walk` and the import take it from the point's GPS position, and
+  `list_suggested_edits` (source `wikiloc-transects`) suggests the missing
   ones.
-- All Ithomiini **and** their tiger-pattern mimics (Heliconius numata and
-  others) are recorded; the 30 rule applies to Ithomiini only.
-- Each walker and day: one SamplingDay_data row, also on days without
+- **Which butterflies**: all Ithomiini **and** their tiger-pattern mimics
+  (Heliconius numata and others); the 30 rule applies to Ithomiini only.
+- **SamplingDay_data**, one row per walker and day, also on days without
   captures: Date · Location `Ikiam` · Purpose `Monitoring` · Start_time ·
-  End_time (from a GPX; `NA` if unknown) · Collectors_initials (several joined
-  by `|`: `AA|FCH`) · Notes (rain, fallen trees, "No butterflies collected").
+  End_time (from a GPX; `NA` if unknown) · Collectors_initials (several
+  joined by `|`: `AA|FCH`) · Notes (rain, fallen trees, "No butterflies
+  collected").
 
 ## The fates (templates)
 
-**Preserved** (`Collected_Preserved`): the field-preserved template (skill
-`data-rules`, field collections) with FieldMark_ID `NA` and Death_date =
-Preservation_date = the walk day; the weight is measured later in the lab
-(leave it).
+| Fate | Release_Collect | Values |
+|---|---|---|
+| Preserved | `Collected_Preserved` | the field-preserved template (skill `data-rules`, field collections) with FieldMark_ID `NA` and Death_date = Preservation_date = the walk day; the weight is measured later in the lab (leave it) |
+| Marked and released | `Mark_Released` | FieldMark_ID = the mark · CAM_ID, CAM_ID_insectary, Insectary_ID, Tube_1–4, Butterfly_weight, Death_date, Preservation_date, Location_Head…_wings `NA` · Preserved_dead_alive `NOT_PRESERVED` · Splitted_body `No` |
+| Released unmarked | `Released_Unmarked` | as marked, with FieldMark_ID `NA`. Rare (last used Sep 2025). Not settled when it applies — ask AA |
 
-**Marked and released** (`Mark_Released`): FieldMark_ID = the mark · CAM_ID,
-CAM_ID_insectary, Insectary_ID, Tube_1–4, Butterfly_weight, Death_date,
-Preservation_date, Location_Head…_wings `NA` · Preserved_dead_alive
-`NOT_PRESERVED` · Splitted_body `No`. Tube tissues and Preservation_medium have
-switched back and forth between `NA`/`NOT_PRESERVED` and `NOT_COLLECTED` (by the
-same people); the app's import writes `NOT_COLLECTED`, like the Sep 2026 rows.
-Not settled — ask AA; until then follow the import and never mass-correct old
+Marked and released, tube tissues and Preservation_medium: they have switched
+back and forth between `NA`/`NOT_PRESERVED` and `NOT_COLLECTED` (by the same
+people); the app's import writes `NOT_COLLECTED`, like the Sep 2026 rows. Not
+settled — ask AA; until then follow the import and never mass-correct old
 rows.
-
-**Released unmarked** (`Released_Unmarked`): as marked, with FieldMark_ID
-`NA`. Rare (last used Sep 2025). Not settled when it applies — ask AA.
 
 ## Marks
 
@@ -71,10 +71,10 @@ rows.
   sex.
 - A mark recorded on another species is a conflict (a mistyped mark or
   species), not a recapture: ask the walker.
-- In a waypoint note (`M1 Hyposcada illinissa ida hembra 9:20 0.5m NO id: B69`)
-  the leading `M1` is the capture's order in the walk, **not** a mark; the mark
-  comes after `id`. No mark → preserved. Some walkers write only the mark and
-  leave the species for the photo.
+- In a waypoint note (`M1 Hyposcada illinissa ida hembra 9:20 0.5m NO id:
+  B69`) the leading `M1` is the capture's order in the walk, **not** a mark;
+  the mark comes after `id`. No mark → preserved. Some walkers write only the
+  mark and leave the species for the photo.
 - Before 2023 and on expeditions FieldMark_ID held collectors' field numbers
   (CR12, PAS16, TP5_3, LTS000009): not marks.
 
@@ -91,13 +91,15 @@ rows.
 
 ## The 30-preserved rule
 
-In force: once an Ithomiini species has 30 preserved individuals from Ikiam,
-Casa de Lin and Mariposario Ikiam together (every `Collected_Preserved` row
-from those places, whatever its Purpose), further captures there are marked
-and released. `get_alerts` gives the counts, the day each species reached 30
-and those close to it. Several species went past 30 unnoticed: when you
-propose a preserved capture of a species already at 30, or are asked what to
-do with one, say it should be marked and released.
+- In force: once an Ithomiini species has 30 preserved individuals from
+  Ikiam, Casa de Lin and Mariposario Ikiam together (every
+  `Collected_Preserved` row from those places, whatever its Purpose), further
+  captures there are marked and released.
+- `get_alerts` gives the counts, the day each species reached 30 and those
+  close to it.
+- Several species went past 30 unnoticed: when you propose a preserved
+  capture of a species already at 30, or are asked what to do with one, say
+  it should be marked and released.
 
 ## Weather codes
 
@@ -117,7 +119,8 @@ List values: Rainfall `DY_(dry)`, `DZ_(drizzle)`, `WR_(weak_rain)`,
 | `LF` (lluvia fuerte; deduced: say so) | Rainfall | `SR_(strong_rain)` |
 | `ND`, "no data" | either | `NA` |
 
-`NO` is overcast in a cloud column but "no rain" in a rain column. The 2022
-paper codes were rain `LF/LD/LV/S` and cloud `NO/NC/SyN/DS`, the list's four
-values in the same order (hence `LF` = strong rain). A bare `C` has no known
-mapping: ask the walker. Trap envelopes use `Sol / Parches / NC` the same way.
+- `NO` is overcast in a cloud column but "no rain" in a rain column.
+- The 2022 paper codes were rain `LF/LD/LV/S` and cloud `NO/NC/SyN/DS`, the
+  list's four values in the same order (hence `LF` = strong rain).
+- A bare `C` has no known mapping: ask the walker.
+- Trap envelopes use `Sol / Parches / NC` the same way.

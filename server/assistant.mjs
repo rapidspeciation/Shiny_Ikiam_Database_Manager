@@ -54,8 +54,10 @@ const parse = value => {
  */
 const VALUES_DOC =
   'Column → value; dates YYYY-MM-DD, times H:MM. null (or leaving the column out) = no change; {"clear": true} = empty the cell; notes: only the new text ({"replace": "…"} rewrites the note).';
-const VALUES_RULES =
-  'Values: null never empties a cell (it means no change); to empty one give {"clear": true}, only when the person wants it emptied. Notes columns (NOTES, Notes, Notes_…): give only the new text; it is written as "d/m/yy INI: text" (today, the person\'s initials) after the existing note with " | ", never over it, unless you give {"replace": "the whole note"} because the person asked to rewrite it.';
+const VALUES_RULES = [
+  '- Values: null (or leaving the column out) = no change, never an empty cell. {"clear": true} empties a cell: only when the person wants it emptied.',
+  '- Notes columns (NOTES, Notes, Notes_…): give only the new text. It is written as "d/m/yy INI: text" (today, the person\'s initials) after the existing note with " | ", never over it. {"replace": "the whole note"} rewrites it: only when the person asked.',
+].join('\n');
 /**
  * A value the assistant dropped (null in update_proposal), or a cell the person
  * set back to the sheet's value ("Valor de la hoja"): the cell goes back to no change.
@@ -74,7 +76,7 @@ const TOOLS = [
     function: {
       name: 'search_records',
       description:
-        'Search workbook rows by free text. Returns a small list (12) with sheet, row and app ID. For exact identifiers or column conditions use find_records; for counts, count_records.',
+        'Search workbook rows by free text: up to 12 rows with sheet, row and app ID.\nExact identifiers or column conditions: `find_records`. Counts: `count_records`.',
       parameters: {
         type: 'object',
         properties: { query: { type: 'string' }, module: { type: 'string' } },
@@ -88,7 +90,7 @@ const TOOLS = [
     function: {
       name: 'get_record',
       description:
-        'Fetch one row by app ID, including its sheet row and version: every non-empty value (formula cells with their computed value) and formulas = the formula text of each formula cell.',
+        'One row by app ID: its sheet row, version, every non-empty value (formula cells with their computed value) and `formulas` (the formula text of each formula cell).',
       parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
     },
   },
@@ -127,7 +129,14 @@ const TOOLS = [
     function: {
       name: 'check_data',
       description:
-        "Scan the workbook (the app's copy: fast) for inconsistencies, the same issues people judge in the Revisión tab (the fixes they accepted: list_agreed_fixes). Each issue has kind, sheet, row, recordId, label, field, value, problem (Spanish), related rows and, only when the right value is obvious, fix = {recordId, values} ready for propose_changes (one proposal per kind of fix, the problem as each row's note). Without a fix, never guess which of two disagreeing rows is right: show the person the rows and ask. Photo issues add cam, strength (fuerte/media/baja/dudosa: how often such a reading was right), curation (an earlier decision), photos, envelopeText, envelopeCamid, prediction; an issue with task.text is Drive work, never a sheet change. Call without kind first for the counts, then by kind and sheet, paging with offset.",
+        [
+          "Scan the workbook (the app's copy: fast) for inconsistencies: the issues people judge in the Revisión tab (the fixes they accepted: `list_agreed_fixes`).",
+          '- Call without `kind` first for the counts, then by kind and sheet, paging with `offset`.',
+          '- Each issue: kind, sheet, row, recordId, label, field, value, problem (Spanish), related rows, and `fix` = {recordId, values} only when the right value is obvious: ready for `propose_changes` (one proposal per kind of fix, the problem as each row\'s note).',
+          '- No fix: never guess which of two disagreeing rows is right; show the person the rows and ask.',
+          '- Photo issues add cam, strength (fuerte/media/baja/dudosa: how often such a reading was right), curation (an earlier decision), photos, envelopeText, envelopeCamid, prediction.',
+          '- An issue with `task.text` is Drive work, never a sheet change.',
+        ].join('\n'),
       parameters: {
         type: 'object',
         properties: {
@@ -149,7 +158,7 @@ const TOOLS = [
     function: {
       name: 'queue_wikiloc',
       description:
-        "Queue a Wikiloc monitoring walk (trail URL) for the app server's Wikiloc importer, which reads the public trail page, usually within a minute or two. If the walk was already read it returns its walkId at once. Then call get_walk.",
+        "Queue a Wikiloc monitoring walk (trail URL) for the app server's Wikiloc importer, which reads the public trail page, usually within a minute or two. A walk already read returns its walkId at once. Then call `get_walk`.",
       parameters: {
         type: 'object',
         properties: {
@@ -165,7 +174,13 @@ const TOOLS = [
     function: {
       name: 'get_walk',
       description:
-        'A Wikiloc walk read from its public page (no GPS times): every point with its parsed note (species, subspecies, sex, time, height, weather, mark, transect section from the GPS position), inSheet (already in Collection_data), the Monitoreo checks (recapture, mark on another species, 30-preserved rule, missing parts), and newRows: the points not in the sheet as Collection_data rows in the app\'s import template, for ONE propose_changes. Preserved points come without CAM_ID and Tube_1_id: ask for them (envelope, tube label) or leave them out and say so. While the walk is being read: its queue status; call again a minute later. problems says the day or collector is unknown: ask, then pass date / collector. Once applied, the person puts the walk on the map in Monitoreo → Importar («Pasar al mapa … ya registrados en la hoja»).',
+        [
+          'A Wikiloc walk read from its public page (no GPS times). While it is being read: its queue status; call again a minute later.',
+          '- points: each with its parsed note (species, subspecies, sex, time, height, weather, mark; transect section from the GPS position), inSheet (already in Collection_data) and the Monitoreo checks (recapture, mark on another species, 30-preserved rule, missing parts).',
+          "- newRows: the points not in the sheet as Collection_data rows in the app's import template, for ONE `propose_changes`. Preserved points come without CAM_ID and Tube_1_id: ask for them (envelope, tube label) or leave them out and say so.",
+          '- problems: the day or collector is unknown: ask, then pass `date` / `collector`.',
+          'Once applied, the person puts the walk on the map in Monitoreo → Importar («Pasar al mapa … ya registrados en la hoja»).',
+        ].join('\n'),
       parameters: {
         type: 'object',
         properties: {
@@ -182,8 +197,12 @@ const TOOLS = [
     function: {
       name: 'propose_changes',
       description:
-        'Draft edits to existing rows (changes) and/or new rows (newRows). The person sees them at once as a table beside the chat; nothing is written until they confirm. Formula cells cannot be changed, except SPECIES in Insectary_data when what emerged differs from the formula prediction. A short note per row says where the values come from. One proposal per task (e.g. per walk or per kind of fix). ' +
-        VALUES_RULES,
+        [
+          'Draft edits to existing rows (`changes`) and/or new rows (`newRows`). The person sees them at once as a table beside the chat; nothing is written until they confirm.',
+          '- One proposal per task (e.g. per walk or per kind of fix), with a short note per row saying where the values come from.',
+          "- Formula cells cannot be changed, except SPECIES in Insectary_data when what emerged differs from the formula's prediction.",
+          VALUES_RULES,
+        ].join('\n'),
       parameters: {
         type: 'object',
         properties: {
@@ -228,7 +247,14 @@ const TOOLS = [
     function: {
       name: 'list_agreed_fixes',
       description:
-        'The corrections people agreed on in the Revisión tab (accepted, or another value given): fixes = {issueId, recordId, sheet, row, label, values, note, decidedBy}; tasks = Drive work on the specimen photos (renames, merges), not sheet changes: give them as a checklist; needsValue = accepted without a value (ask); stale = the data changed since the verdict. Then ONE propose_changes with all the fixes (values merged per recordId, notes kept) and their issueIds, and wait for the person\'s confirmation before apply_proposal.',
+        [
+          'The corrections people agreed on in the Revisión tab (accepted, or another value given):',
+          '- fixes: {issueId, recordId, sheet, row, label, values, note, decidedBy}.',
+          '- tasks: Drive work on the specimen photos (renames, merges), not sheet changes: give them as a checklist.',
+          '- needsValue: accepted without a value: ask.',
+          '- stale: the data changed since the verdict.',
+          "Then ONE `propose_changes` with all the fixes (values merged per recordId, notes kept) and their issueIds, and wait for the person's confirmation before `apply_proposal`.",
+        ].join('\n'),
       parameters: {
         type: 'object',
         properties: {
@@ -243,7 +269,14 @@ const TOOLS = [
     function: {
       name: 'list_suggested_edits',
       description:
-        "Read-only: the corrections the app computes from the workbook (Revisión → Sugerencias). Each has sheet, row, recordId, label, field, current, suggested (null = a person must decide), certainty (certain = only the spelling changes; likely = strong evidence; check = a lead for someone who knows) and reason (the evidence, Spanish). manual = true: a formula cell, fixed by hand in Google Sheets (propose_changes cannot write it). Call without filters first: the answer lists the sources with their description and the counts. When the person wants some of them: ONE propose_changes with those (the reason as each row's note), then their confirmation. Never propose 'check' suggestions or ones without a value unless the person decided them.",
+        [
+          'Read-only: the corrections the app computes from the workbook (Revisión → Sugerencias).',
+          '- Call without filters first: the answer lists the sources with their description and counts.',
+          '- Each suggestion: sheet, row, recordId, label, field, current, suggested (null = a person must decide), certainty, reason (the evidence, Spanish).',
+          '- certainty: certain = only the spelling changes; likely = strong evidence; check = a lead for someone who knows.',
+          '- manual: true = a formula cell, fixed by hand in Google Sheets (`propose_changes` cannot write it).',
+          "To make some of them: ONE `propose_changes` with those (the reason as each row's note), then the person's confirmation. Never propose `check` suggestions or ones without a value unless the person decided them.",
+        ].join('\n'),
       parameters: {
         type: 'object',
         properties: {
@@ -263,7 +296,11 @@ const TOOLS = [
     function: {
       name: 'get_alerts',
       description:
-        'Read-only alerts: camPools = the CAM pools of the Lists sheet, per range its size, used, highest, next free, left above the highest used, gaps and last use (a range in use with fewer than 50 or 15 % left is an alert; PAS or AA hand out new ranges); preserveRule = the 30-preserved rule: Ithomiini species with 30 or more Collected_Preserved from Ikiam, Casa de Lin or Mariposario Ikiam, the day each reached 30 and those preserved after it; close = species at 25–29. alerts = the texts shown in the app (Spanish).',
+        [
+          'Read-only alerts (`alerts`: the texts the app shows, in Spanish).',
+          '- camPools: the CAM pools of the Lists sheet; per range its size, used, highest, next free, left above the highest used, gaps and last use. A range in use with fewer than 50 or 15 % left is an alert (PAS or AA hand out new ranges).',
+          '- preserveRule: the 30-preserved rule: Ithomiini species with 30 or more Collected_Preserved from Ikiam, Casa de Lin or Mariposario Ikiam, the day each reached 30 and those preserved after it; close = species at 25–29.',
+        ].join('\n'),
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -275,7 +312,12 @@ const TOOLS = [
     function: {
       name: 'apply_proposal',
       description:
-        "Write a pending proposal to Google Sheets. Only call this when the person's latest message explicitly approves it (e.g. 'sí, aplícalo', 'está correcto'). It writes what the table shows: your values, the cells the person typed, and not the cells the person set back to the sheet value (a row left with nothing to write is skipped). Optionally only some rows, by their index. While doubtful cells (match_notebook's, amber in the table) are not checked it writes nothing and returns them (doubtful: index, label, field, value, alternatives, reason): ask the person about each. confirmDoubtful: true writes them as they are, only when the person said so after seeing them; skipDoubtful: true writes only the sure cells. Unreadable cells still empty are never written (they stay as the sheet has them); the answer lists them (unreadable, unreadableNote): ask the person for those values.",
+        [
+          "Write a pending proposal to Google Sheets. Only when the person's latest message explicitly approves it ('sí, aplícalo', 'está correcto').",
+          "- It writes what the table shows: your values and the cells the person typed, not the cells they set back to the sheet's value (a row left with nothing to write is skipped). `indexes`: only those rows.",
+          "- Doubtful cells (match_notebook's, amber in the table) not yet checked: it writes nothing and returns them (doubtful: index, label, field, value, alternatives, reason); ask the person about each. Then `confirmDoubtful: true` writes them as they are (only when the person said so after seeing them), or `skipDoubtful: true` writes only the sure cells.",
+          '- Unreadable cells still empty are never written (the sheet keeps its value); the answer lists them (unreadable, unreadableNote): ask the person for those values.',
+        ].join('\n'),
       parameters: {
         type: 'object',
         properties: {
@@ -293,7 +335,15 @@ const TOOLS = [
     function: {
       name: 'update_proposal',
       description:
-        `Revise a pending proposal in place (the person sees the table change live): when the person corrects something ('la especie es X', 'quita la fila 3', 'falta el colector'), update the SAME proposal instead of making a new one. rows = cells of rows already in it, by their index: a value replaces what you proposed there; null drops your proposed change to that cell (an existing row keeps the sheet's value, a new row's cell stays empty) and never empties a cell; {"clear": true} empties the sheet's cell (only when the person wants it emptied; the table shows it in red as vaciar). changes / newRows = more rows (a recordId already in it is merged into its row); removeRows = indexes to take out. Every value is checked as in propose_changes (nothing is saved if one fails). Notes columns: your text is added after the existing note with the "d/m/yy INI: " prefix ({"replace": "…"} rewrites the whole note, only when asked). Cells the person edited in the table are theirs: they come back as conflicts and are kept; tell the person, and set overridePersonEdits only when they ask you to replace them. A new value in a doubtful cell makes it no longer doubtful; rows[].checked marks doubtful cells the person confirmed as they are. Returns the proposal's rows with their index (a cell to be emptied shows as {"clear": true}; context rows of match_notebook are marked context and never written; doubtful cells show under doubtful with checked).`,
+        [
+          "Revise a pending proposal in place (the person sees the table change live). When the person corrects something ('la especie es X', 'quita la fila 3', 'falta el colector'), update the SAME proposal; never make a new one.",
+          "- rows: cells of rows already in it, by index. A value replaces yours; null drops your proposed change to that cell (an existing row keeps the sheet's value, a new row's cell stays empty) and never empties it; {\"clear\": true} empties the sheet's cell (only when the person wants it emptied; shown in red as vaciar).",
+          '- rows[].checked: doubtful cells the person confirmed as they are (a new value in a doubtful cell also ends the doubt).',
+          '- changes / newRows: more rows (a recordId already in it merges into its row). removeRows: indexes to take out.',
+          '- Every value is checked as in `propose_changes`; if one fails, nothing is saved. Notes: as in `propose_changes`.',
+          '- Cells the person edited in the table are theirs: they come back as conflicts and are kept. Tell the person; set `overridePersonEdits` only when they ask you to replace them.',
+          'Returns the rows with their index (a cell to be emptied shows as {"clear": true}; match_notebook\'s context rows are marked context and never written; doubtful cells show under doubtful with checked).',
+        ].join('\n'),
       parameters: {
         type: 'object',
         properties: {
@@ -351,7 +401,13 @@ const TOOLS = [
     function: {
       name: 'get_proposal',
       description:
-        "A proposal as the person sees it now: each row with its index, values (dates YYYY-MM-DD), note and personEdits (cells the person corrected by hand in the table, or set back to the sheet value with the table's «Valor de la hoja» button, with what you had proposed; those set back are not written) doubtful (match_notebook's doubtful cells: alternatives, reason, checked) and unreadable (cells the AI could not read: reason, partial, filled; empty ones are never written). Read it when the person says they changed the table, before update_proposal on a proposal you did not just make, and before apply_proposal if they edited it.",
+        [
+          'A proposal as the person sees it now: each row with its index, values (dates YYYY-MM-DD) and note, plus:',
+          "- personEdits: cells the person corrected in the table, or set back to the sheet's value with «Valor de la hoja» (not written), each with what you had proposed.",
+          "- doubtful: match_notebook's doubtful cells (alternatives, reason, checked).",
+          '- unreadable: cells the AI could not read (reason, partial, filled; empty ones are never written).',
+          'Read it when the person says they changed the table, before `update_proposal` on a proposal you did not just make, and before `apply_proposal` if they edited it.',
+        ].join('\n'),
       parameters: { type: 'object', properties: { proposalId: { type: 'string' } }, required: ['proposalId'] },
     },
   },

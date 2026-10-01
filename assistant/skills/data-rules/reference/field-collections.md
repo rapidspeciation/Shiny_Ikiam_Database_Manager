@@ -14,45 +14,55 @@ The kind is decided by `Release_Collect` first, then `Purpose`.
 | Preserved on a monitoring walk | `Collected_Preserved` | Purpose `Monitoring`, place `Ikiam`, FieldMark_ID `NA` |
 | Taken alive to the insectary | `Collected_Sent2Insectary` | an Insectary_ID (pre-made, written on the wing), **no CAM_ID**, a twin row in Insectary_data |
 | Marked and released | `Mark_Released` | FieldMark_ID (M/A/B series), Purpose `Monitoring`, CAM and tubes `NA` |
-| Released unmarked | `Released_Unmarked` | rare (last used Sep 2025): like marked, FieldMark_ID `NA`. Not settled when it applies — ask AA |
+| Released unmarked | `Released_Unmarked` | like marked, FieldMark_ID `NA`; rare (skill **monitoring**) |
 
 ## Templates (current practice, Ecuador rows since Sep 2025)
 
-**Preserved in the field (local team):** CAM_ID (next local wild CAM) ·
-Tube_1_id · Tube_1_tissue `WHOLE_ORGANISM` · Tube_2–4 `NA` (their tissues `NA`
-or `NOT_COLLECTED`) · Preservation_medium `Flash frozen` · Preserved_dead_alive
-`Alive` (`Dead` when found dead/dying, with a note "Preserved dead ~2h") ·
-Death_date = Preservation_date = the collection day (next day if kept
-overnight; still `Alive`) · Splitted_body `No` · Location_Head, _Torax,
-_abdomen, _Legs, _wings `Ikiam`, Location_WholeBody blank · Insectary_ID,
-CAM_ID_insectary, FieldMark_ID `NA` · Butterfly_weight in g (3 decimals; `NA`
-if not weighed, with the reason in a note) · Flight_height `NA` on trips.
+### Preserved in the field (local team)
 
-**Taken alive (at entry):** Release_Collect, Insectary_ID, FieldMark_ID `NA`,
-SPECIES + Subspecies_Form, Identifier, ID_status, Sex (always definite: no
-`?`), Collection_location, Transect `NA`, Bait `NA`, Forest_stratum `NA`,
-Collection_date, Collection_time (or `NA`), Collector, Rainfall, Cloud_cover
-(`NA` when not noted), Flight_height `NA`, CAM_ID `NA`, Purpose `NA`.
-Death_date, Preservation_date, Preservation_medium and Preserved_dead_alive
-are **lookup formulas** from the Insectary_data twin
-(`=XLOOKUP(D…, Insectary_data!A:A, Insectary_data!I:I, "")`, every row up to
-Jul 2026): they give the right value, so keep them and never type over them.
-The Aug–Sep 2026 rows lack them (blank even where the twin has died): point it
-out; the formulas are copied down from the row above (PAS), not typed as
-values. The rest stays **blank** until the butterfly dies in the insectary.
-Then: not preserved → CAM_ID_insectary `NA`, Tube_1_id `NA`, tissues
-`NOT_COLLECTED`, weight, Splitted_body and Location_* `NA`; preserved →
-CAM_ID_insectary = the insectary CAM, Tube_1_id = the insectary tube,
-`WHOLE_ORGANISM`, Splitted_body `No`, Location_* `Ikiam`; CAM_ID stays `NA`.
+| Column | Value |
+|---|---|
+| CAM_ID, Tube_1_id | the next local wild CAM; its tube |
+| Tube_1_tissue | `WHOLE_ORGANISM` |
+| Tube_2–4 | `NA` (their tissues `NA` or `NOT_COLLECTED`) |
+| Preservation_medium | `Flash frozen` |
+| Preserved_dead_alive | `Alive`; `Dead` when found dead or dying, with a note "Preserved dead ~2h" |
+| Death_date = Preservation_date | the collection day (the next day if kept overnight; still `Alive`) |
+| Splitted_body | `No` |
+| Location_Head, _Torax, _abdomen, _Legs, _wings | `Ikiam` (Location_WholeBody blank) |
+| Insectary_ID, CAM_ID_insectary, FieldMark_ID | `NA` |
+| Butterfly_weight | in g, 3 decimals; `NA` if not weighed, with the reason in a note |
+| Flight_height | `NA` on trips |
 
-**Marked–released and released unmarked:** skill **monitoring**.
+### Taken alive
 
-**Expedition rows abroad** (Sanger layout: split bodies, DMSO/AllProtect,
-Location "Sanger - TOL704 freezer") are entered by the expedition leads: never
-copy that layout to local rows.
+- **At entry**: Release_Collect, Insectary_ID, FieldMark_ID `NA`, SPECIES +
+  Subspecies_Form, Identifier, ID_status, Sex (always definite: no `?`),
+  Collection_location, Transect `NA`, Bait `NA`, Forest_stratum `NA`,
+  Collection_date, Collection_time (or `NA`), Collector, Rainfall,
+  Cloud_cover (`NA` when not noted), Flight_height `NA`, CAM_ID `NA`, Purpose
+  `NA`. The rest stays **blank** until the butterfly dies in the insectary.
+- **Lookup formulas**: Death_date, Preservation_date, Preservation_medium and
+  Preserved_dead_alive come from the Insectary_data twin
+  (`=XLOOKUP(D…, Insectary_data!A:A, Insectary_data!I:I, "")`, every row up to
+  Jul 2026): they give the right value, so keep them and never type over
+  them. The Aug–Sep 2026 rows lack them (blank even where the twin has died):
+  point it out; the formulas are copied down from the row above (PAS), not
+  typed as values.
+- **At death, not preserved**: CAM_ID_insectary `NA`, Tube_1_id `NA`, tissues
+  `NOT_COLLECTED`, weight, Splitted_body and Location_* `NA`.
+- **At death, preserved**: CAM_ID_insectary = the insectary CAM, Tube_1_id =
+  the insectary tube, `WHOLE_ORGANISM`, Splitted_body `No`, Location_*
+  `Ikiam`; CAM_ID stays `NA`.
 
-**Pheromone wild males** (Purpose `Pheromones`, all male): weight `NA`, their
-own tube run, the medium as in [samples-ids.md](samples-ids.md).
+### Others
+
+- **Marked and released, released unmarked**: skill **monitoring**.
+- **Expedition rows abroad** (Sanger layout: split bodies, DMSO/AllProtect,
+  Location "Sanger - TOL704 freezer") are entered by the expedition leads:
+  never copy that layout to local rows.
+- **Pheromone wild males** (Purpose `Pheromones`, all male): weight `NA`,
+  their own tube run, the medium as in [samples-ids.md](samples-ids.md).
 
 ## Session values
 
@@ -102,8 +112,7 @@ own tube run, the medium as in [samples-ids.md](samples-ids.md).
 - CAMs: the **local** wild block (not the expeditions' block), next = last
   local + 1 in row order; tubes +1 in the same order. Rows are typed grouped by
   species, then fate, so CAM order is not capture-time order.
-- Large butterflies (Methona, Tithorea, Thyridia, Lycorea) often go in bigger
-  tubes, but there is no size rule: take the tube on the label.
+- Tubes: no size rule; take the tube on the label ([samples-ids.md](samples-ids.md)).
 - Live butterflies get the next free pre-made Insectary_IDs, consecutive
   within a trip (reserved for the field team after that day's emergences).
 - Details and pools: [samples-ids.md](samples-ids.md).

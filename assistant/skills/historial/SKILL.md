@@ -5,26 +5,27 @@ description: The app's Historial tab — every save to the workbook (from the ap
 
 # Historial: finding and undoing a save
 
-Find the save with `list_history` (what the person remembers: who, when,
-which tab, an ID or value), then `get_history_group` to go through its cells
-with them. Always give the save's link. The person can undo it themselves
-there, or you do it from the chat: `preview_undo` → show it and ask →
-`undo_edits` on their yes. Either way the undo is itself a save that can be
-undone.
+1. Find the save with `list_history` from what the person remembers (who,
+   when, which tab, an ID or value).
+2. Go through its cells with them: `get_history_group`. Always give the
+   save's link.
+3. Undo: the person can do it themselves there, or you do it from the chat:
+   `preview_undo` → show it and ask → `undo_edits` on their yes. Either way
+   the undo is itself a save that can be undone.
 
 ## The tab (`https://ithomiini-ikiam.com/#/historial`)
 
-- Links: `#/historial?grupo=<groupId>` opens and scrolls to a group of saves,
-  `#/historial?accion=<actionId>` to one save.
-- Filters: «Buscar (ID, campo, valor o nota)», «Persona», «Origen»
+- **Links**: `#/historial?grupo=<groupId>` opens and scrolls to a group of
+  saves, `#/historial?accion=<actionId>` to one save.
+- **Filters**: «Buscar (ID, campo, valor o nota)», «Persona», «Origen»
   (Aplicación, Google Sheets, Deshacer, Asistente, Importación), «Hoja»,
   «Desde», «Hasta» → «Buscar»; «Cargar más».
-- A card shows who, when, origin, rows, the save's note and its status
+- **A card**: who, when, origin, rows, the save's note and its status
   (Guardado, Detectado = made in Google Sheets, En curso, Sin confirmar, No
   guardado; «deshecho» once undone). Opened, each cell: sheet and row, label,
   column, old value struck through → new value.
-- Undo (editors): select saves (only «Guardado» ones), untick single cells if
-  needed → «Deshacer selección» → the preview «Deshacer N cambios» (a cell
+- **Undo** (editors): select saves (only «Guardado» ones), untick single cells
+  if needed → «Deshacer selección» → the preview «Deshacer N cambios» (a cell
   changed again afterwards is a conflict: take it out or fix it by hand) →
   «Motivo (opcional)» → «Deshacer en la hoja».
-- Admins: a recheck button re-verifies writes left «Sin confirmar».
+- **Admins**: a recheck button re-verifies writes left «Sin confirmar».

@@ -71,8 +71,9 @@
   collection/monitoring; pheromone males. The next tube continues the **same
   rack's** most recent run. Samples taken together (a split body) get
   consecutive tubes; a body added later to a clipped butterfly takes the
-  current run's next tube. No size rule: big species sometimes go in bigger
-  tubes, sometimes not; take the tube on the label.
+  current run's next tube. No size rule: large butterflies (Methona, Tithorea,
+  Thyridia, Lycorea) often go in bigger tubes, but not always; take the tube
+  on the label.
 - A 7-digit or 9-digit tube is a dropped or doubled digit (Sep 2026: `FS3886683`
   for `FS63886683`, `FS5848961` for `FS50848961`): suggest the form that
   continues a known run, flagged; never "fix" it silently.

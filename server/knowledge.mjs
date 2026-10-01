@@ -482,7 +482,11 @@ export const KNOWLEDGE_TOOLS = [
     function: {
       name: 'search_knowledge',
       description:
-        "Search the project's documents, mirrored as text from the project Drive (Ithomiini_IKIAM): meetings and call transcripts, protocols, reports, insectary and greenhouse management, presentations, and the curated notes (no admin, photos, data or Google Sheets). Returns the best passages with the document id, title, kind, date (of the meeting) and sourceUrl. Answering from a document: name it (title, date) and give its sourceUrl; say when the documents do not answer. read_document gives the whole text.",
+        [
+          "Search the project's documents, mirrored as text from the project Drive (Ithomiini_IKIAM): meetings and call transcripts, protocols, reports, insectary and greenhouse management, presentations, curated notes (no admin, photos, data or Google Sheets).",
+          'Returns the best passages with document id, title, kind, date (of the meeting) and sourceUrl; `read_document` gives the whole text.',
+          'Answering from a document: name it (title, date) and give its sourceUrl; say when the documents do not answer.',
+        ].join('\n'),
       parameters: {
         type: 'object',
         properties: {
@@ -539,7 +543,7 @@ export const KNOWLEDGE_TOOLS = [
     function: {
       name: 'sync_documents',
       description:
-        'Bring the project documents up to date with Google Drive now (read-only; only changed files are read again). The mirror is not refreshed on its own: use this when someone says a document is new or was edited, or asks to update the documents. Takes seconds, up to about 2 minutes.',
+        'Bring the project documents up to date with Google Drive now (read-only; only changed files are read again). The mirror does not refresh on its own: use this when someone says a document is new or edited, or asks to update the documents. Takes seconds, up to about 2 minutes.',
       parameters: { type: 'object', properties: {} },
     },
   },

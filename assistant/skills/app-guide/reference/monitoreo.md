@@ -44,10 +44,9 @@ track and points are kept for the map.
 4. The review table lists each point (Foto, Punto, Especie, Sexo, Hora,
    Altura, Clima, Marca, Revisión) with a tick to include it. «Revisión»
    flags: recapture (same mark, species and sex), a mark used for another
-   species, the 30-preserved rule (the first 30 of each Ithomiini species are
-   preserved, then marked), missing parts. The transect section comes from the
-   GPS position. Weather codes from the note: `NO` = CD, `NC` = CL, `parches`
-   = S&C, `sol` = S; `llovizna` = DZ, else DY.
+   species, the 30-preserved rule (skill **monitoring**), missing parts. The
+   transect section comes from the GPS position; the weather codes from the
+   note (skill **monitoring**).
 5. «Añadir N filas a Collection_data»: preserved points get the next CAM and
    tube (as in Colecta); marked ones Release_Collect `Mark_Released`. Points
    without species get ID_status `To_identify`. The rows appear in the grid

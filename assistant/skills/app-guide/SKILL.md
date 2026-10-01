@@ -5,23 +5,29 @@ description: Guide to the "Ikiam Insectary DB" web app (https://ithomiini-ikiam.
 
 # App guide: Ikiam Insectary DB
 
-The team's web app over the team's Google Sheets workbook (the «Google Sheet»
-button at the top right opens it; saves go straight into it). Every page is a hash route:
-**full link = `https://ithomiini-ikiam.com/` + route**, e.g.
-`https://ithomiini-ikiam.com/#/monitoreo?vista=dudas`. The UI is in
-Spanish; quote its labels exactly, in «».
+The team's web app over the team's Google Sheets workbook: saves go straight
+into it (the «Google Sheet» button at the top right opens it).
 
-Per-tab detail (step by step, every control, every link parameter):
+- **Links**: every page is a hash route; full link =
+  `https://ithomiini-ikiam.com/` + route, e.g.
+  `https://ithomiini-ikiam.com/#/monitoreo?vista=dudas`.
+- **Labels**: the interface is in English by default and in Spanish with the
+  EN/ES button at the top. The labels here are the Spanish ones: quote them
+  exactly, in «»; to a person writing in English, name the control by its
+  meaning too.
 
-- [reference/data-entry.md](reference/data-entry.md): Tablas, Colecta, Muertes,
-  Tubos, Emergidos, Clutches, and the grid/keyboard/date tips.
-- [reference/monitoreo.md](reference/monitoreo.md): Importar recorrido,
-  Reporte, Mapa, Recapturas, Dudas de emparejamiento, Datos de Wikiloc.
-- [reference/review-history-assistant.md](reference/review-history-assistant.md):
-  Inicio, Asistente (T3 Code, Cambios propuestos), Revisión, Usuarios, login
-  and invitations, the save bar. Historial: skill **historial**.
+## Reference files
 
-Read the reference file of the tab before giving steps for it.
+Read the tab's file before giving steps for it (every control, every link
+parameter):
+
+| File | Tabs |
+|---|---|
+| [reference/data-entry.md](reference/data-entry.md) | Tablas, Colecta, Muertes, Tubos, Emergidos, Clutches; grid, keyboard and date tips |
+| [reference/monitoreo.md](reference/monitoreo.md) | Monitoreo: Importar recorrido, Reporte, Mapa, Recapturas, Dudas de emparejamiento, Datos de Wikiloc |
+| [reference/review-history-assistant.md](reference/review-history-assistant.md) | Inicio, Asistente (T3 Code, Cambios propuestos, Instrucciones de la IA), Revisión, Usuarios, login and invitations, the save bar |
+
+Historial: skill **historial**.
 
 ## Tabs at a glance
 
@@ -36,7 +42,7 @@ Read the reference file of the tab before giving steps for it.
 | Emergidos | `#/emergidos` | new adults of a clutch into pre-made rows | Insectary_data |
 | Clutches | `#/clutches` | new clutches and their follow-up | Insectary_stocks |
 | Historial | `#/historial` | every saved change; selective undo | (undo writes back) |
-| Asistente | `#/asistente` | T3 Code (this assistant) and Cambios propuestos | via proposals |
+| Asistente | `#/asistente` | T3 Code (this assistant), Cambios propuestos; «Instrucciones de la IA» (`#/instrucciones`) | via proposals |
 | Revisión | `#/revision?…` | data problems as cards to judge | verdicts (app); fixes via a proposal |
 | Usuarios | `#/usuarios` | accounts and invitations (admin; user menu) | — |
 
@@ -45,42 +51,41 @@ Old links still work: `#/posturas` → Clutches, `#/cuaderno` → Asistente,
 
 ## Who sees what
 
-- **Visitor** (no account): only Inicio, with natural-history rates (no counts,
-  no insectary). Any other link opens the login («Iniciar sesión»).
-- **observer** («Solo lectura»): every tab except Revisión; cannot edit, save,
-  undo or use T3 Code; no «Dudas» sub-tab.
-- **editor**: edits and saves everywhere, undoes in Historial, sees Revisión
-  and Monitoreo → Dudas, can propose/apply changes through the assistant.
-- **reviewer** («Revisor»): as editor, plus «Crear filas preasignadas» (more
-  pre-made rows at the end of a sheet), removing anyone's walk from the map,
-  and «Aplicar N cambios» of re-matching in Dudas.
-- **admin**: as reviewer, plus Usuarios (invite, roles, passwords), the
-  «Actualizar T3» button and the recheck button in Historial.
+| Role | Can |
+|---|---|
+| Visitor (no account) | only Inicio, with natural-history rates (no counts, no insectary); any other link opens the login («Iniciar sesión») |
+| observer («Solo lectura») | every tab except Revisión; cannot edit, save, undo or use T3 Code; no «Dudas» sub-tab |
+| editor | edit and save everywhere, undo in Historial, Revisión and Monitoreo → Dudas, propose and apply changes through the assistant |
+| reviewer («Revisor») | as editor, plus «Crear filas preasignadas» (more pre-made rows at the end of a sheet), removing anyone's walk from the map, and «Aplicar N cambios» of re-matching in Dudas |
+| admin | as reviewer, plus Usuarios (invite, roles, passwords), the «Actualizar T3» button and the recheck button in Historial |
 
 ## Saving (all tabs)
 
-Edits are pending cells until written. The bar at the bottom shows «N cambios
-en M filas por guardar»; with «Guardar automáticamente» ticked (default) they
-are written a moment after the last edit; «Guardar ya» / «Guardar en la hoja»
-writes now, «Revisar» lists every pending change («Nota para el historial»
-optional), «Descartar» drops them. Rows of a Wikiloc walk always wait for
-«Guardar ya». Cells refused by a check stay pending and the bar says why
-(«N celdas sin guardar: …»). After saving: «Guardado en Google Sheets … · se
-puede deshacer en Historial». Pending changes survive a reload on that device.
+- Edits are pending cells until written. The bar at the bottom shows «N
+  cambios en M filas por guardar».
+- With «Guardar automáticamente» ticked (default) they are written a moment
+  after the last edit; «Guardar ya» / «Guardar en la hoja» writes now.
+- «Revisar» lists every pending change («Nota para el historial» optional);
+  «Descartar» drops them.
+- Rows of a Wikiloc walk always wait for «Guardar ya».
+- Cells refused by a check stay pending and the bar says why («N celdas sin
+  guardar: …»).
+- After saving: «Guardado en Google Sheets … · se puede deshacer en
+  Historial». Pending changes survive a reload on that device.
 
-## Cómo ayudar
+## How to help
 
-1. **"¿Cómo hago…?"** Answer with the steps (their labels, in «») and the
-   direct link, e.g. «Tubos» → https://ithomiini-ikiam.com/#/tubos. Link to
-   the exact view when a parameter exists (a sheet and search in Tablas, a
-   Revisión filter, a Monitoreo sub-view, a map filter). Never invent a
-   parameter: only those in the reference files work.
+1. **"¿Cómo hago…?"**: the steps (their labels, in «») and the direct link,
+   e.g. «Tubos» → https://ithomiini-ikiam.com/#/tubos. Link to the exact view
+   when a parameter exists (a sheet and search in Tablas, a Revisión filter, a
+   Monitoreo sub-view, a map filter). Only the parameters in the reference
+   files work: never invent one.
 2. **"Pásame / registra estos datos"**: rather than telling them to type,
    draft a proposal (fill everything certain; `describe_sheet` shows the
    latest similar rows to copy shared values from). Cambios propuestos sits
    right of or below the chat, or alone in its own browser tab at
    `#/propuestas`, an editable grid like Google Sheets.
-3. New IDs, CAMs, tubes and marks are handed out by the tabs (Colecta,
+3. **New IDs, CAMs, tubes and marks** are handed out by the tabs (Colecta,
    Emergidos, Tubos; Inicio shows the last used): point there when the person
    needs the next free ones.
-4. "Cannot see a tab or button": check their role (above) first.
+4. **"I cannot see a tab or button"**: check their role (above) first.

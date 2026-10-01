@@ -99,9 +99,11 @@ and cite the document and date): "Protocol for Controlled Crosses and Families"
 
 ## Protocols disagree (not settled — ask AA, citing both)
 
-Dead mated male's body: ethanol + wings in an envelope (polymnia, lys/pol) vs
-flash frozen (menophilus) · female clip timing (right after
-mating, Jan 2024, vs after laying, all later protocols: follow the later) · a
-non-laying female: back to stock vs 15-day quarantine · minimum F2 family
-(> 40 vs ≥ 50). Female and male maturity ages are protocol advice, not data
-fields.
+- A dead mated male's body: ethanol + wings in an envelope (polymnia,
+  lys/pol) vs flash frozen (menophilus).
+- Female clip timing: right after mating (Jan 2024) vs after laying (all
+  later protocols): follow the later.
+- A non-laying female: back to stock vs 15-day quarantine.
+- Minimum F2 family: > 40 vs ≥ 50.
+
+Female and male maturity ages are protocol advice, not data fields.

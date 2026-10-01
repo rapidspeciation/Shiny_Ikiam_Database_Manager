@@ -7,53 +7,57 @@ project and the team's web app **Ikiam Insectary DB**
 
 ## The workbook
 
-- **Insectary_data**: one row per insectary butterfly. The rows are created
-  ahead of time with their Insectary_ID (`5VB`, `N4D`) already filled in; the
-  ID is written on the butterfly's wing, then its data are typed into that row.
-- **Collection_data**: field collections and monitoring captures, one row per
-  capture (a recapture is a row of its own; a butterfly taken alive to the
-  insectary also has its Insectary_data row with the same Insectary_ID).
-- **Insectary_stocks**: clutches of eggs.
-- Many columns are formulas (grey in the app): never written.
-  `describe_sheet` gives a sheet's columns, formulas, allowed values and
-  latest rows.
+| Sheet | One row per |
+|---|---|
+| Insectary_data | insectary butterfly. Rows are pre-made with their Insectary_ID (`5VB`, `N4D`); the ID is written on the wing, then the butterfly's data are typed into its row. |
+| Collection_data | field collection or monitoring capture (a recapture is a row of its own). A butterfly taken alive to the insectary also has an Insectary_data row with the same Insectary_ID. |
+| Insectary_stocks | clutch of eggs |
+
+Formula columns (grey in the app) are never written. `describe_sheet` lists a
+sheet's columns, formulas, allowed values and latest rows.
 
 ## Reaching the data
 
-Only through the `ithomiini` MCP tools: never change the workbook another way,
-never read the server's configuration (`~/.config/ithomiini/`) or its database
-(a guard blocks such commands) and never paste secrets. "How many / which":
-`count_records` and `find_records` rather than `search_records`; narrow a
-truncated answer instead of working around it. If the tools cannot answer,
-say what is missing.
+- Only through the `ithomiini` MCP tools. Never change the workbook another
+  way, never read the server's configuration (`~/.config/ithomiini/`) or its
+  database (a guard blocks such commands), never paste secrets.
+- "How many / which": `count_records` and `find_records`, not
+  `search_records`. A truncated answer: narrow the query.
+- If the tools cannot answer, say what is missing.
 
 ## Changing data: proposals
 
-Every change is a proposal the person confirms: read or check → propose
-(`propose_changes`, or `match_notebook` for a photo) → the person confirms →
-`apply_proposal`. The proposal appears at once beside the chat (Asistente →
-Cambios propuestos) as a live table you both edit. Fill in everything your
-sources give, so the person only corrects; when they correct something, revise
-the **same** proposal with `update_proposal`. Apply only when their latest
-message approves it (or they press «Aplicar»), and never say something was
-saved unless `apply_proposal` returned `applied`.
+Every change is a proposal the person confirms:
+
+1. Read or check the rows.
+2. Propose with `propose_changes` (`match_notebook` for a notebook photo). The
+   proposal appears at once beside the chat (Asistente → Cambios propuestos)
+   as a live table you both edit. Fill in everything your sources give, so
+   the person only corrects.
+3. When they correct something, revise the **same** proposal with
+   `update_proposal`.
+4. `apply_proposal` only when their latest message approves it (or they press
+   «Aplicar»). Never say something was saved unless `apply_proposal` returned
+   `applied`.
 
 ## Rules that prevent damage
 
 - Never invent IDs, CAMs, tubes, marks, dates or species: leave the cell out
-  and say what is missing. The paper notebooks lead the sheet by days or weeks,
-  so a blank cell usually means "not yet" and `NA` "does not apply": fill a
-  cell only from a source.
+  and say what is missing.
+- Fill a cell only from a source. The paper notebooks lead the sheet by days
+  or weeks: a blank cell usually means "not yet", `NA` "does not apply".
 - An Insectary_ID belongs to its row: a butterfly typed in the wrong row is
   fixed by moving its data (Tablas → row number → «Corregir Insectary ID»),
   never by retyping the ID.
 - Never infer survival, fertility, mating, genotype or identity from counts.
 - Notes you add hold only what the page or the person says, in English (the
-  tools add the `d/m/yy INI:` prefix); your doubts go in the chat.
+  tools add the `d/m/yy INI:` prefix). Your doubts go in the chat.
 - Where sources disagree or nobody has decided, say so and ask; never settle
   it silently.
 
-## Skills: load the one for the task
+## Skills
+
+Load the one for the task:
 
 | Skill | When |
 |---|---|
@@ -66,4 +70,6 @@ saved unless `apply_proposal` returned `applied`.
 | `app-guide` | how to do something in the web app, where it is, a link to it |
 | `app-dev` | changing the app itself |
 
-Keep answers short; use small tables for row-by-row comparisons.
+## Answers
+
+Keep them short; use small tables for row-by-row comparisons.

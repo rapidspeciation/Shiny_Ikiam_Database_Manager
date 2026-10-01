@@ -407,7 +407,12 @@ export const RECORD_TOOLS = [
     function: {
       name: 'find_records',
       description:
-        'Rows of one sheet: by exact identifiers (field + values, e.g. the Insectary_IDs read from a notebook page; identifiers not found come back in missing) and/or by column filters and distance to a place (near). Each row has values = every non-empty cell, formula cells with their computed value (dates as YYYY-MM-DD), and formulas = the formula text of counts typed as sums (e.g. =16+2-1), or of every formula column you ask for in fields; formulaColumns lists the formula columns. Ask only the columns you need (fields) and page with limit/offset: the answer says "Truncated: N more rows" when cut; then narrow the query. For "how many" use count_records.',
+        [
+          'Rows of one sheet, by exact identifiers (`field` + `values`, e.g. the Insectary_IDs of a notebook page; identifiers not found come back in `missing`) and/or by column `filters` and distance to a place (`near`).',
+          '- Each row: values = every non-empty cell (formula cells with their computed value; dates YYYY-MM-DD) and formulas = the formula text of counts typed as sums (=16+2-1), or of every formula column you ask for in `fields`. formulaColumns lists the formula columns.',
+          '- Ask only the columns you need (`fields`) and page with limit/offset. A cut answer says "Truncated: N more rows": narrow the query.',
+          '- "How many": `count_records`.',
+        ].join('\n'),
       parameters: {
         type: 'object',
         properties: {
@@ -433,7 +438,7 @@ export const RECORD_TOOLS = [
     function: {
       name: 'count_records',
       description:
-        'Count the rows of one sheet that match filters and/or near (same conditions as find_records), in total and per group (groupBy: up to 3 columns; a date column as "Collection_date:year" or ":month"). Empty cells group as "(empty)". Pre-made rows that only hold formulas are not counted.',
+        'Count the rows of one sheet matching `filters` and/or `near` (as in `find_records`), in total and per group (`groupBy`: up to 3 columns; a date column as "Collection_date:year" or ":month"). Empty cells group as "(empty)". Pre-made rows that only hold formulas are not counted.',
       parameters: {
         type: 'object',
         properties: {

@@ -10,10 +10,11 @@ set -a; . ~/.config/ithomiini/gog.env; set +a
 gog --readonly --account jmithominii@gmail.com --client ithomiini <service> <command>
 ```
 
-Services: gmail (search/get), drive, docs, sheets, slides, calendar, forms,
-appscript (`gog <service> --help`). Always `--readonly`, which blocks every
-change. Drop it only for a write the person explicitly asked for (send an
-email, create an event, edit or share a file), for that command only, after
-showing them the text. Meeting notes, protocols, reports and presentations
-are quicker through the document tools (`search_knowledge`); the workbook only
-through the `ithomiini` tools.
+- Services: gmail (search/get), drive, docs, sheets, slides, calendar, forms,
+  appscript (`gog <service> --help`).
+- Always `--readonly`: it blocks every change. Drop it only for a write the
+  person explicitly asked for (send an email, create an event, edit or share
+  a file), for that command only, after showing them the text.
+- Meeting notes, protocols, reports and presentations are quicker through the
+  document tools (`search_knowledge`); the workbook only through the
+  `ithomiini` tools.
