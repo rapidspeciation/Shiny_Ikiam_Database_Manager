@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SexBadge from '../SexBadge.vue'
 import { computed, ref, watch } from 'vue'
 import { ChevronLeft, ChevronRight, Columns3, Loader2, StickyNote, X } from 'lucide-vue-next'
 import ChoiceField from '../ChoiceField.vue'
@@ -188,8 +189,8 @@ function reveal(e: FocusEvent) {
       <div class="flex items-start gap-2 py-3">
         <div class="min-w-0 flex-1 text-sm">
           <p class="font-medium">{{ facts.species || '—' }}</p>
-          <p class="text-stone-600">
-            {{ [facts.sex, facts.clutch && $t('clutch {c}', { c: facts.clutch })].filter(Boolean).join(' · ') }}
+          <p class="flex items-center gap-1.5 text-stone-600">
+            <SexBadge :sex="facts.sex" />{{ facts.clutch ? $t('clutch {c}', { c: facts.clutch }) : '' }}
           </p>
           <p v-if="facts.entered !== null" class="text-stone-600">
             {{ facts.wild ? $t('Capturada {date}', { date: formatSerial(facts.entered) }) : $t('Emergió {date}', { date: formatSerial(facts.entered) }) }}

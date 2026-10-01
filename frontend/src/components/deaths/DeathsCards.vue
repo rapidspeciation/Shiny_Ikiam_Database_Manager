@@ -5,6 +5,7 @@ import DateField from '../DateField.vue'
 import EntryModeToggle from '../EntryModeToggle.vue'
 import RowDrawer from '../RowDrawer.vue'
 import DeathEditor from './DeathEditor.vue'
+import SexBadge from '../SexBadge.vue'
 import LifeBadge from './LifeBadge.vue'
 import TabHistory from '../history/TabHistory.vue'
 import { useDeathsState } from '../../composables/useDeathsState'
@@ -673,10 +674,9 @@ function chipsOf(row: TableRow) {
   ].map(chip => ({ ...chip, own: hasOwn(row, chip.field) }))
 }
 const showHistory = ref(false)
-/** Sex, clutch and the day it entered the insectary, as one line under the species. */
+/** Clutch and the day it entered the insectary, as one line under the species (the sex is a badge beside it). */
 const line = (f: Facts) =>
   [
-    f.sex,
     f.clutch && t('clutch {c}', { c: f.clutch }),
     f.entered !== null &&
       (f.wild ? t('Capturada {date}', { date: formatSerial(f.entered) }) : t('Emergió {date}', { date: formatSerial(f.entered) })),
@@ -753,7 +753,7 @@ const choice = (on: boolean) =>
                   <span class="w-16 shrink-0 text-lg font-semibold">{{ s.entry.id }}</span>
                   <span class="min-w-0 flex-1">
                     <span class="block truncate text-sm">{{ factsFor(s.entry.row).species || '—' }}</span>
-                    <span class="block truncate text-xs text-stone-500">{{ line(factsFor(s.entry.row)) }}</span>
+                    <span class="flex items-center gap-1.5 truncate text-xs text-stone-500"><SexBadge :sex="factsFor(s.entry.row).sex" />{{ line(factsFor(s.entry.row)) }}</span>
                     <span v-if="s.via" class="block truncate text-xs text-brand-700">{{ s.via }}</span>
                   </span>
                   <LifeBadge :facts="factsFor(s.entry.row)" />
@@ -831,7 +831,7 @@ const choice = (on: boolean) =>
                 <LifeBadge :facts="factsFor(row)" />
               </span>
               <span class="mt-0.5 block text-sm">{{ factsFor(row).species || '—' }}</span>
-              <span class="block text-xs text-stone-600">{{ line(factsFor(row)) }}</span>
+              <span class="flex items-center gap-1.5 text-xs text-stone-600"><SexBadge :sex="factsFor(row).sex" />{{ line(factsFor(row)) }}</span>
               <span v-if="factsFor(row).life.cause" class="block text-xs text-stone-700">Death_cause: {{ factsFor(row).life.cause }}</span>
               <span v-if="factsFor(row).notes" class="block truncate text-xs text-stone-500">{{ factsFor(row).notes }}</span>
             </button>
@@ -1152,7 +1152,7 @@ const choice = (on: boolean) =>
                 <span class="min-w-0 flex-1">
                   <span class="block truncate text-sm">{{ cellText(row.values.Death_cause) || '—' }}</span>
                   <span class="block truncate text-xs text-stone-500">
-                    {{ [cellText(row.values.SPECIES), cellText(row.values.Sex)].filter(Boolean).join(' · ') }}
+                    {{ cellText(row.values.SPECIES) }} <SexBadge :sex="cellText(row.values.Sex)" />
                   </span>
                 </span>
                 <span v-if="!isBlank(row.values.CAM_ID)" class="shrink-0 text-xs text-brand-700">{{ row.values.CAM_ID }}</span>
