@@ -565,7 +565,8 @@ const LOOK_LETTER = { 0: 'O', 1: 'I', 5: 'S', 8: 'B', 2: 'Z', 6: 'G' };
 export function lookAlikes(kind, keyValues) {
   if (kind.keys.length !== 1 || kind.keys[0] !== 'Insectary_ID') return [];
   const id = String(keyValues[0] ?? '').toUpperCase();
-  if (id.length < 2 || id.length > 5) return [];
+  // A suffixed ID (W2B.2, the second butterfly given W2B) is read as it is.
+  if (id.length < 2 || id.length > 5 || id.includes('.')) return [];
   let out = [''];
   for (const ch of id) {
     const options = [...new Set([ch, LOOK_DIGIT[ch], LOOK_LETTER[ch]].filter(Boolean))];
@@ -823,6 +824,12 @@ export function impliedValues({ text, row = {}, note = {}, death = null, intro =
   return { values, reasons };
 }
 
+/** A row nobody has used yet (a pre-made row: its key and formulas only). */
+function unusedRow(kind, record) {
+  if (typeof record.observed === 'boolean') return !record.observed;
+  return Object.entries(record.values ?? {}).every(([field, value]) => kind.keys.includes(field) || record.formulas?.[field] || isNone(value));
+}
+
 /** Existing IDs that differ from one read by a character or two swapped (9NM for 9MN): "did you mean". */
 export function nearIds(read, ids) {
   const a = String(read ?? '').toUpperCase();
@@ -959,13 +966,19 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
     const text = texts[i];
     const keyValues = kind.keys.map(k => readValue(k, text[k], { year: currentYear }).value);
     const readable = keyValues.every(v => v !== null && v !== '');
-    // The rows with this key, and with the look-alike keys (6OO read as 600: 0/O, 1/I, 5/S, 8/B).
+    // The rows with this key and, only where none of them is free, rows with a look-alike key
+    // (6OO read as 600: 0/O, 1/I, 5/S, 8/B, 6/G, 2/Z). A row with the key itself wins over an older
+    // look-alike (G3C, empty, over 63C); when every row with the key holds a butterfly, an empty
+    // pre-made look-alike may still be the one meant (00P written for the pre-made 0OP).
     const candidates = [];
     if (readable) {
-      for (const record of lookup.find(keyValues)) candidates.push({ record, exact: true });
-      for (const variant of lookAlikes(kind, keyValues))
-        for (const record of lookup.find(variant))
-          if (!candidates.some(c => c.record.id === record.id)) candidates.push({ record, exact: false });
+      const exact = lookup.find(keyValues);
+      for (const record of exact) candidates.push({ record, exact: true });
+      if (!exact.some(r => unusedRow(kind, r)))
+        for (const variant of lookAlikes(kind, keyValues))
+          for (const record of lookup.find(variant))
+            if ((!exact.length || unusedRow(kind, record)) && !candidates.some(c => c.record.id === record.id))
+              candidates.push({ record, exact: false });
     }
     for (const c of candidates) c.same = agreement(kind, c.record, text, currentYear);
     return { line, edited, text, keyValues, candidates, record: null };

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { createReports } from './reports.mjs';
-import { TYPED_OVER_FORMULA, uniqueIdIndex } from './batch.mjs';
+import { TYPED_OVER_FORMULA, renamesWithSuffix, uniqueIdIndex } from './batch.mjs';
 import { allIssues, checkData } from './checks.mjs';
 import { agreedFixes, markApplied } from './review.mjs';
 import { CERTAINTIES, suggestionPage } from './suggestions/index.mjs';
@@ -14,7 +14,7 @@ import { queueWalk, walkDraft } from './walks.mjs';
 import { KINDS, isNone, noteText } from './notebook.mjs';
 import { RECORD_TOOLS, compactRecord, countRecords, findRecords } from './records-tool.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
-import { insectaryIdRow, newRowFormulaFields } from './premade.mjs';
+import { duplicateIdRow, insectaryIdRow, newRowFormulaFields } from './premade.mjs';
 import { carryChecks, dropDoubt, setChecked, uncheckedDoubts, unfilledUnreadable, withoutUnchecked } from './doubts.mjs';
 import { KNOWLEDGE_TOOLS, createKnowledge, runKnowledgeTool } from './knowledge.mjs';
 import { HISTORY_TOOLS, HISTORY_TOOL_NAMES, runHistoryTool } from './history.mjs';
@@ -200,8 +200,8 @@ const TOOLS = [
         [
           'Draft edits to existing rows (`changes`) and/or new rows (`newRows`). The person sees them at once as a table beside the chat; nothing is written until they confirm.',
           '- One proposal per task (e.g. per walk or per kind of fix), with a short note per row saying where the values come from.',
-          "- Formula cells cannot be changed, except SPECIES in Insectary_data when what emerged differs from the formula's prediction.",
-          "- A new Insectary_data row takes its Insectary_ID (the one on the wing or notebook): the row whose ID formula gives it is filled, and the pre-made rows are extended up to it when they run out.",
+          "- Formula cells cannot be changed, except SPECIES in Insectary_data when what emerged differs from the formula's prediction, and an Insectary_ID given to two butterflies: the row's own ID with a suffix (W2B → W2B.1).",
+          "- A new Insectary_data row takes its Insectary_ID (the one on the wing or notebook): the row whose ID formula gives it is filled, and the pre-made rows are extended up to it when they run out. The second butterfly of a repeated ID gets a suffixed ID (W2B.2): its row is inserted directly below that ID's rows when applied (undoing the save deletes it).",
           VALUES_RULES,
         ].join('\n'),
       parameters: {
@@ -690,8 +690,13 @@ export function createAssistant({ store, config = {} }) {
     }
     if (sheet === 'Insectary_data' && values.Insectary_ID !== undefined) {
       values.Insectary_ID = String(values.Insectary_ID).trim().toUpperCase();
-      if (!insectaryIdRow(store, values.Insectary_ID))
-        return { error: `${at}: ${values.Insectary_ID} is not a free Insectary ID (an empty pre-made row's, or one the ID series reaches next)` };
+      // A suffixed ID (W2B.2): the second butterfly given an ID, in a row inserted below that ID's rows.
+      const duplicate = duplicateIdRow(store, values.Insectary_ID);
+      if (duplicate?.problem) return { error: `${at}: ${DUPLICATE_PROBLEMS[duplicate.problem](duplicate)}` };
+      if (!duplicate && !insectaryIdRow(store, values.Insectary_ID))
+        return {
+          error: `${at}: ${values.Insectary_ID} is not a free Insectary ID (an empty pre-made row's, one the ID series reaches next, or a suffixed one like W2B.2 for a second butterfly with an ID already used)`,
+        };
     }
     const identity = moduleMap.get(sheet).identityFields.map(key => values[key]).find(isIdValue);
     const time = Object.entries(raw).find(([key]) => TIME_FIELD.test(key))?.[1];
@@ -718,6 +723,14 @@ export function createAssistant({ store, config = {} }) {
       .filter(([field, value]) => isUnique(sheet, field) && isIdValue(value))
       .map(([field, value]) => [field, value, `${TUBE_FIELD.test(field) ? 'tube' : `${sheet}:${field}`}\u0000${String(value).trim()}`]);
 
+  /** Why a suffixed Insectary ID cannot get its row (premade.mjs duplicateIdRow). */
+  const DUPLICATE_PROBLEMS = {
+    used: d => `${d.id} is already used in Insectary_data row ${d.rows.join(', ')}`,
+    no_base: d => `${d.base} is not in Insectary_data: a suffixed ID (${d.id}) is for a second butterfly with an ID already used`,
+    empty_base: d => `the row of ${d.base} is still empty: the butterfly goes in it, without a suffix`,
+    repeated: d => `${d.value} is in more than one row (${d.rows.join(', ')}): fix that before adding ${d.id}`,
+  };
+
   const idsFor = () => {
     let index;
     return { proposed: new Set(), used: () => (index ??= uniqueIdIndex(store)) };
@@ -728,6 +741,7 @@ export function createAssistant({ store, config = {} }) {
    * `ids` is shared when a page is checked one row at a time (IDs repeated between rows).
    */
   function draftChanges(args, ids = idsFor()) {
+    const idsUsed = () => ids.used();
     const edits = Array.isArray(args.changes) ? args.changes : [];
     const creates = Array.isArray(args.newRows) ? args.newRows : [];
     if (!edits.length && !creates.length) return { error: 'Provide changes to existing rows or newRows' };
@@ -747,7 +761,7 @@ export function createAssistant({ store, config = {} }) {
         typeof raw !== 'object' ||
         Array.isArray(raw) ||
         !Object.keys(raw).length ||
-        Object.keys(raw).length > 20
+        Object.keys(raw).length > 80
       )
         return { error: `Invalid values for ${old.label}` };
       let values;
@@ -767,7 +781,17 @@ export function createAssistant({ store, config = {} }) {
           continue;
         }
         if (old.formulas?.[key]) {
-          if (!TYPED_OVER_FORMULA[old.sheet]?.has(key))
+          // Two butterflies with one ID: this row's ID gets a suffix (W2B → W2B.1), typed over its formula.
+          const rename = old.sheet === 'Insectary_data' && key === 'Insectary_ID';
+          if (rename) {
+            values[key] = String(values[key] ?? '').trim().toUpperCase();
+            if (!renamesWithSuffix(old.values?.[key], values[key]))
+              return {
+                error: `${old.label}: Insectary_ID is calculated by a formula; it only takes a suffix (${old.values?.[key]}.1) to tell apart two butterflies with that ID`,
+              };
+            const holder = idsUsed().get(`Insectary_data:Insectary_ID\u0000${values[key]}`)?.[0];
+            if (holder) return { error: `${old.label}: ${values[key]} is already used in ${holder.sheet} row ${holder.row}` };
+          } else if (!TYPED_OVER_FORMULA[old.sheet]?.has(key))
             return { error: `${old.label}: ${key} is calculated by a formula and cannot be changed` };
           if (comparable(old.values?.[key] ?? null) === comparable(values[key]))
             return { error: `${old.label}: the ${key} formula already gives ${values[key]}; leave it` };

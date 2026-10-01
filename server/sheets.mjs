@@ -224,14 +224,18 @@ export class GoogleSheets {
     for (const write of writes) highest.set(write.sheet, Math.max(highest.get(write.sheet) || 0, write.row));
     for (const [sheet, row] of highest) {
       const gridCount = this.gridRows.get(sheet);
-      if (gridCount !== undefined && row > gridCount) {
+      if (gridCount === undefined) continue;
+      // Rows inserted or deleted by this batch change the grid too.
+      const grid = gridCount + netRows(writes, sheet);
+      if (row > grid) {
         requests.push({
-          appendDimension: { sheetId: this.sheetIdOf(sheet), dimension: 'ROWS', length: row - gridCount },
+          appendDimension: { sheetId: this.sheetIdOf(sheet), dimension: 'ROWS', length: row - grid },
         });
-        this.gridRows.set(sheet, row);
         this.metadataAt = 0;
       }
+      this.gridRows.set(sheet, Math.max(grid, row));
     }
+    requests.push(...structureRequests(writes, sheet => this.sheetIdOf(sheet)));
     for (const write of writes) requests.push(...cellRequests(write, this.sheetIdOf(write.sheet)));
     if (!requests.length) throw new Error('No cells to write');
     return this.request(':batchUpdate', { method: 'POST', body: JSON.stringify({ requests }) });
@@ -300,7 +304,11 @@ export class LocalSheets {
       this.failNextWrite = null;
       throw failure;
     }
-    for (const write of writes) await this.writeCells(write.sheet, write.row, write.changes, write.columns);
+    // Rows inserted or deleted first (as Google applies the requests in order), then the cells.
+    const structure = structureRequests(writes, sheet => moduleMap.get(sheet)?.sheetId ?? 0);
+    if (structure.length) await this.batchUpdate(structure);
+    for (const write of writes)
+      if (Object.keys(write.changes || {}).length) await this.writeCells(write.sheet, write.row, write.changes, write.columns);
     return { replies: [] };
   }
   /** Writes by field name: at `columns` when given (as the app does), else where this sheet's header has the field. */
@@ -341,7 +349,9 @@ export class LocalSheets {
       if (request.appendDimension) {
         const sheet = this.sheetById(request.appendDimension.sheetId);
         this.gridRows.set(sheet, this.rowCount(sheet) + request.appendDimension.length);
-      } else if (request.copyPaste) this.copyPaste(request.copyPaste, pasted);
+      } else if (request.insertDimension) this.moveRows(request.insertDimension.range, 1);
+      else if (request.deleteDimension) this.moveRows(request.deleteDimension.range, -1);
+      else if (request.copyPaste) this.copyPaste(request.copyPaste, pasted);
       else if (request.updateCells) this.updateCells(request.updateCells);
       else throw new Error(`LocalSheets cannot apply ${Object.keys(request)[0]}`);
     }
@@ -371,7 +381,29 @@ export class LocalSheets {
     const range = request.copyPaste?.destination || request.updateCells?.range;
     if (range) return [this.sheetById(range.sheetId), range];
     if (request.appendDimension) return [this.sheetById(request.appendDimension.sheetId), null];
+    const rows = request.insertDimension?.range || request.deleteDimension?.range;
+    if (rows) return [this.sheetById(rows.sheetId), { startRowIndex: rows.startIndex, endRowIndex: rows.endIndex }];
     return [null, null];
+  }
+  /**
+   * One row inserted (`delta` 1) or deleted (−1) at `range.startIndex`, as Sheets
+   * does: the rows below move, and every reference of the sheet's formulas to them
+   * moves with them (a reference to a deleted row becomes #REF!).
+   */
+  moveRows({ sheetId, startIndex }, delta) {
+    const sheet = this.sheetById(sheetId);
+    const at = startIndex + 1;
+    let rows = this.rows.get(sheet) || [];
+    if (delta < 0) rows = rows.filter(r => r.row !== at);
+    for (const r of rows) if (r.row >= at) r.row += delta;
+    for (const r of rows)
+      for (const cell of r.cells) {
+        const formula = cell?.userEnteredValue?.formulaValue;
+        if (formula) cell.userEnteredValue = { formulaValue: moveRowRefs(formula, at, delta, sheet) };
+      }
+    rows.sort((a, b) => a.row - b.row);
+    this.rows.set(sheet, rows);
+    if (this.gridRows.has(sheet)) this.gridRows.set(sheet, this.gridRows.get(sheet) + delta);
   }
   isProtected(sheet, rect) {
     const overlaps = (a0, a1, b0, b1) => (a0 ?? 0) < (b1 ?? Infinity) && (b0 ?? 0) < (a1 ?? Infinity);
@@ -501,6 +533,93 @@ export function shiftFormula(formula, dRows, dCols = 0) {
   }
   return out;
 }
+/**
+ * A formula of `sheet` after a row is inserted (`delta` 1) or deleted (−1) there at
+ * row `at`, as Sheets rewrites it: references to rows from there on move (a reference
+ * to the deleted row becomes #REF!); references to other sheets stay.
+ */
+export function moveRowRefs(formula, at, delta, sheet = null) {
+  let out = '';
+  for (let i = 0; i < formula.length; ) {
+    const ch = formula[i];
+    if (ch === '"' || ch === "'") {
+      const end = formula.indexOf(ch, i + 1);
+      const stop = end < 0 ? formula.length : end + 1;
+      out += formula.slice(i, stop);
+      i = stop;
+      continue;
+    }
+    const m = /^(\$?[A-Z]{1,3}\$?)(\d+)(?![\w(])/.exec(formula.slice(i));
+    const before = formula[i - 1];
+    // References to another sheet ('Sheet'!A5) stay: only this sheet's rows moved.
+    if (m && !(before && /[\w.]/.test(before)) && (before !== '!' || sheetBefore(formula, i - 1) === sheet)) {
+      const row = Number(m[2]);
+      out += delta < 0 && row === at ? '#REF!' : `${m[1]}${row >= at ? row + delta : row}`;
+      i += m[0].length;
+      continue;
+    }
+    out += ch;
+    i++;
+  }
+  return out;
+}
+
+/** The sheet name written before the `!` at `bang` ('My sheet'!A1 or Sheet!A1). */
+function sheetBefore(formula, bang) {
+  if (formula[bang - 1] === "'") {
+    let start = bang - 2;
+    while (start >= 0 && !(formula[start] === "'" && formula[start - 1] !== "'")) start -= formula[start - 1] === "'" && formula[start] === "'" ? 2 : 1;
+    return formula.slice(start + 1, bang - 1).replaceAll("''", "'");
+  }
+  return /[\w.]+$/.exec(formula.slice(0, bang))?.[0] ?? null;
+}
+
+/** Rows a batch inserts minus rows it deletes in `sheet`. */
+const netRows = (writes, sheet) => writes.filter(w => w.sheet === sheet).reduce((n, w) => n + (w.insert ? 1 : w.deleteRow ? -1 : 0), 0);
+
+/**
+ * The requests that insert or delete rows for a batch (server/batch.mjs): a write
+ * with `insert` { at, source, width, clear, formulas } is a new row inserted at
+ * row `at`, a copy of row `source` (above it: formulas, formats, dropdowns) whose
+ * constants are cleared (`clear`: columns) and whose typed-over formulas come from
+ * another row above (`formulas`: [{ column, from }]); a write with `deleteRow`
+ * { at } deletes that row. Rows are numbered as before the batch; the operations go
+ * from the bottom of the sheet up, so each leaves the rows above it where they were.
+ */
+export function structureRequests(writes, sheetIdOf) {
+  const ops = writes.filter(w => w.insert || w.deleteRow).sort((a, b) => (b.insert ?? b.deleteRow).at - (a.insert ?? a.deleteRow).at);
+  const requests = [];
+  const rect = (sheetId, row, c0, c1) => ({ sheetId, startRowIndex: row - 1, endRowIndex: row, startColumnIndex: c0, endColumnIndex: c1 });
+  for (const w of ops) {
+    const sheetId = sheetIdOf(w.sheet);
+    if (w.deleteRow) {
+      const { at } = w.deleteRow;
+      requests.push({ deleteDimension: { range: { sheetId, dimension: 'ROWS', startIndex: at - 1, endIndex: at } } });
+      continue;
+    }
+    const { at, source, width, clear = [], formulas = [] } = w.insert;
+    if (!(source < at)) throw new Error('An inserted row copies a row above it');
+    requests.push({
+      insertDimension: { range: { sheetId, dimension: 'ROWS', startIndex: at - 1, endIndex: at }, inheritFromBefore: true },
+    });
+    requests.push({
+      copyPaste: { source: rect(sheetId, source, 0, width), destination: rect(sheetId, at, 0, width), pasteType: 'PASTE_NORMAL', pasteOrientation: 'NORMAL' },
+    });
+    for (const [c0, c1] of consecutiveRuns(clear))
+      requests.push({ updateCells: { range: rect(sheetId, at, c0, c1 + 1), fields: 'userEnteredValue' } });
+    for (const { column, from } of formulas)
+      requests.push({
+        copyPaste: {
+          source: rect(sheetId, from, column, column + 1),
+          destination: rect(sheetId, at, column, column + 1),
+          pasteType: 'PASTE_FORMULA',
+          pasteOrientation: 'NORMAL',
+        },
+      });
+  }
+  return requests;
+}
+
 function columnIndex(letters) {
   let n = 0;
   for (const ch of letters) n = n * 26 + (ch.charCodeAt(0) - 64);

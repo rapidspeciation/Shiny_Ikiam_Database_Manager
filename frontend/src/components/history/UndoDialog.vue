@@ -21,6 +21,8 @@ const CONFLICT: Record<string, string> = {
   later_field_edit: 'se cambió otra vez después',
   missing_record: 'la fila ya no existe',
   value_or_chain_changed: 'ya no tiene el valor guardado',
+  inserted_row_partial: 'es una fila insertada por ese guardado: se deshace entera',
+  inserted_row_changed: 'otro guardado escribió después en esa fila insertada',
 }
 const fieldOf = (sheet: string | null | undefined, key: string) =>
   sheet ? session.module(sheet)?.fields.find(f => f.key === key) : undefined
@@ -58,6 +60,9 @@ const empty = (value: UndoPreviewItem['before']) => value === null || value === 
             </li>
           </ul>
         </div>
+        <p v-for="d in review.preview.rowDeletes ?? []" :key="d.recordId" class="mb-2 rounded bg-amber-50 px-3 py-2 text-amber-900">
+          {{ $t('Se borra la fila {row} ({label}), que insertó ese guardado; las filas de debajo suben una.', { row: d.row ?? '', label: d.label || d.recordId }) }}
+        </p>
         <p class="hint mb-1">{{ $t('Cada celda vuelve al valor que tenía antes del guardado:') }}</p>
         <ul class="divide-y divide-stone-100">
           <li v-for="c in review.preview.changes" :key="c.recordId + c.field" class="py-1 sm:flex sm:items-start sm:gap-2">

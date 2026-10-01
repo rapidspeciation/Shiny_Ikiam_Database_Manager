@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { comparable, isSumField, labelFor, moduleMap, simpleSum, validateValues } from './schema.mjs';
 import { hasDateFormat, hasTimeFormat, rowKey, rowValues } from './sheets.mjs';
 import { describeProblems, headerLayout, sameLayout } from './columns.mjs';
-import { ensurePremadeRows, insectaryIdRow } from './premade.mjs';
+import { duplicateIdRow, ensurePremadeRows, insectaryIdRow, suffixedId } from './premade.mjs';
 import { cleanPurpose, inferPurpose } from './history.mjs';
 import { TUBE_FIELD, UNIQUE, isIdValue, isUnique, twinRows } from './verifications.mjs';
 import { listOptions, listProblemMsg } from './verify.mjs';
@@ -29,6 +29,17 @@ export const MAX_BATCH = 500;
 // the clutch predicted. The formula is kept in history, so undo puts it back.
 export const TYPED_OVER_FORMULA = { Insectary_data: new Set(['SPECIES', 'Collection_location']) };
 
+/**
+ * Insectary_data's Insectary_ID formula may be typed over only to tell apart two
+ * butterflies given the same ID: the row's own ID with a suffix (`W2B` → `W2B.1`).
+ * The next row's formula reads only the first two characters, so the series goes on.
+ */
+export const renamesWithSuffix = (current, next) => {
+  const parsed = suffixedId(next);
+  return !!parsed && parsed.base === String(current ?? '').trim().toUpperCase() && String(next).trim().toUpperCase() === parsed.id;
+};
+const mayReplace = (sheet, field) => TYPED_OVER_FORMULA[sheet]?.has(field) || (sheet === 'Insectary_data' && field === 'Insectary_ID');
+
 /** What the SPECIES formula of an insectary row will give: the species of its clutch in Insectary_stocks. */
 function predictedSpecies(store, sheet, field, values) {
   if (sheet !== 'Insectary_data' || field !== 'SPECIES' || values['CLUTCH NUMBER'] == null) return undefined;
@@ -43,6 +54,34 @@ const blank = value => value === null || value === undefined || /^\s*(|NA|N\/A)\
 const cellValue = (values, formulas, field) => (formulas[field] ? { formula: formulas[field] } : values[field]);
 /** `message`: a text, or a msg() when it has values in it (its descriptor goes to the app, server/messages.mjs). */
 const fail = (code, message, status = 400, details) => msgError(message, { code, status, details });
+const cellKind = cell => {
+  const value = cell?.userEnteredValue;
+  return !value ? '.' : 'formulaValue' in value ? 'F' : 'c';
+};
+/** How many rows above a new row are looked at for a formula typed over in the row it copies. */
+const FORMULA_LOOKBACK = 3;
+
+/** Why a suffixed Insectary ID cannot get its row (premade.mjs duplicateIdRow): { code, message }, or null. */
+export function duplicateProblem(found) {
+  if (!found?.problem) return null;
+  const { id, base } = found;
+  if (found.problem === 'used') return { code: 'DUPLICATE_ID', message: msg('Insectary_ID {id} ya está registrado', { id }) };
+  if (found.problem === 'no_base')
+    return {
+      code: 'ID_NOT_FOUND',
+      message: msg('{base} no está en Insectary_data: {id} es para una segunda mariposa con el ID {base}', { id, base }),
+    };
+  if (found.problem === 'empty_base')
+    return { code: 'ID_FREE', message: msg('La fila de {base} está sin usar: la mariposa va en ella, sin sufijo', { base }) };
+  return {
+    code: 'IDENTITY_CONFLICT',
+    message: msg('{value} está en más de una fila ({rows}): corrígelo antes de añadir {id}', {
+      value: found.value,
+      rows: found.rows.map(String),
+      id,
+    }),
+  };
+}
 
 /**
  * `purpose`: the flow a save belongs to (history.mjs PURPOSES). A save from the
@@ -54,7 +93,9 @@ export async function applyBatch(store, body, user, { source = 'app', reverses =
   if (!SOURCES.has(source)) throw fail('INVALID_SOURCE', 'Origen de escritura desconocido');
   const edits = Array.isArray(body.edits) ? body.edits : [];
   const creates = Array.isArray(body.creates) ? body.creates : [];
-  if (edits.length + creates.length > MAX_BATCH)
+  // Rows a save inserted, deleted when it is undone (Store.undo): only an undo deletes rows.
+  const deletes = source === 'undo' && Array.isArray(body.deletes) ? body.deletes : [];
+  if (edits.length + creates.length + deletes.length > MAX_BATCH)
     throw fail('BATCH_TOO_LARGE', msg('Guarda como máximo {n} filas a la vez', { n: MAX_BATCH }));
 
   return store.runExclusive(async () => {
@@ -78,13 +119,13 @@ export async function applyBatch(store, body, user, { source = 'app', reverses =
       } else
         return { ...prior, actions: [prior.action], records: prior.records || (prior.record ? [prior.record] : []) };
     }
-    if (!edits.length && !creates.length) throw fail('INVALID_VALUES', 'No hay nada que guardar');
+    if (!edits.length && !creates.length && !deletes.length) throw fail('INVALID_VALUES', 'No hay nada que guardar');
     // With `partial`, a change that cannot be saved (a repeated CAM, a cell changed by
     // someone else…) is left out and reported in `skipped`, and everything else is saved.
     // Without it (undo, the assistant) the batch stays all or nothing.
     const partial = body.partial === true && source === 'app';
     const skipped = [];
-    let input = { edits, creates };
+    let input = { edits, creates, deletes };
     let plan = planFor(store, source, input);
     for (let round = 0; partial && plan.conflicts.length && round < 5; round++) {
       const rest = withoutConflicts(input, plan.conflicts);
@@ -117,6 +158,8 @@ export async function applyBatch(store, body, user, { source = 'app', reverses =
     }
     throwIfConflicts(plan, skipped);
     plan.skipped = skipped;
+    // Rows inserted or deleted move the rows below them: everything is numbered as after the write.
+    plan.finalizeRows();
     if (!plan.writes.length)
       return { status: 'unchanged', action: null, actions: [], records: [], created: [], skipped };
 
@@ -143,6 +186,8 @@ export async function applyBatch(store, body, user, { source = 'app', reverses =
         const rejected = e.status >= 400 && e.status < 500;
         store.finishAction(actionId, rejected ? 'failed' : 'uncertain', null);
         if (!rejected) scheduleRecovery(store);
+        // Rows may have been inserted or deleted: the next sync compares the whole sheet.
+        if (!rejected) for (const sheet of plan.structuralSheets()) store.sheetDigests.delete(sheet);
         throw fail(
           rejected ? 'WRITE_REJECTED' : 'WRITE_UNCERTAIN',
           rejected
@@ -152,6 +197,8 @@ export async function applyBatch(store, body, user, { source = 'app', reverses =
           { actionId, cause: e.message?.slice(0, 300) },
         );
       }
+      // The local copy follows the rows the write inserted or deleted.
+      plan.moveStoredRows();
       let check;
       try {
         check = await store.sheets.readRows(plan.writeTargets());
@@ -179,10 +226,11 @@ export async function applyBatch(store, body, user, { source = 'app', reverses =
   });
 }
 
-function planFor(store, source, { edits, creates }) {
+function planFor(store, source, { edits, creates, deletes = [] }) {
   const plan = new Plan(store, source);
   plan.addEdits(edits);
   plan.addCreates(creates);
+  plan.addDeletes(deletes);
   return plan;
 }
 
@@ -260,9 +308,8 @@ class Plan {
     edits.forEach((edit, index) => {
       const target = { index, editId: edit?.id, expected: edit?.expected || null, raw: edit?.values || {} };
       const record = typeof edit?.id === 'string' ? this.store.getRecord(edit.id) : null;
-      const allowed = record && TYPED_OVER_FORMULA[record.sheet];
       target.replaceFormula = new Set(
-        Array.isArray(edit?.replaceFormula) ? edit.replaceFormula.filter(f => allowed?.has(f)) : [],
+        Array.isArray(edit?.replaceFormula) && record ? edit.replaceFormula.filter(f => mayReplace(record.sheet, f)) : [],
       );
       if (!record || record.missing || record.row <= 0)
         return this.conflict(target, 'RECORD_NOT_FOUND', 'La fila ya no está disponible; recarga la tabla');
@@ -308,6 +355,28 @@ class Plan {
       if (!target.clean) return;
       if (!Object.values(target.clean).some(v => !blank(v)))
         return this.conflict(target, 'INVALID_VALUES', 'Una fila nueva necesita al menos un valor');
+      // The same ID on a second butterfly (W2B.2): a row inserted below its group, not a pre-made row.
+      const duplicate = create.module === 'Insectary_data' ? duplicateIdRow(this.store, target.clean.Insectary_ID) : null;
+      if (duplicate) {
+        const problem = duplicateProblem(duplicate);
+        if (problem) return this.conflict(target, problem.code, problem.message, { field: 'Insectary_ID' });
+        if (this.targets.some(t => t.insert?.anchorId === duplicate.anchor.id))
+          return this.conflict(
+            target,
+            'ROW_COLLISION',
+            msg('Las filas nuevas de {base} se guardan de una en una', { base: duplicate.base }),
+            { field: 'Insectary_ID' },
+          );
+        target.clean.Insectary_ID = duplicate.id;
+        target.insert = {
+          base: duplicate.base,
+          anchorId: duplicate.anchor.id,
+          anchorRow: duplicate.anchor.row,
+          anchorValue: duplicate.anchor.value,
+        };
+        this.targets.push(target);
+        return;
+      }
       const placeholderId = create.module === 'Insectary_data' ? target.clean.Insectary_ID : null;
       if (placeholderId) {
         const matches = this.store.db
@@ -348,6 +417,24 @@ class Plan {
     }
   }
 
+  /**
+   * Rows a save inserted, deleted again by its undo (Store.undo): { id, expected }
+   * where `expected` holds what that save wrote in the row. The row is deleted only
+   * while it holds nothing else.
+   */
+  addDeletes(deletes) {
+    deletes.forEach((del, index) => {
+      const target = { index, editId: del?.id, deleteRow: true, expected: del?.expected || {} };
+      const record = typeof del?.id === 'string' ? this.store.getRecord(del.id) : null;
+      if (!record || record.missing || record.row <= 0)
+        return this.conflict(target, 'RECORD_NOT_FOUND', 'La fila ya no está disponible; recarga la tabla');
+      if (this.targets.some(t => t.record?.id === record.id))
+        return this.conflict(target, 'DUPLICATE_EDIT', 'La misma fila aparece dos veces en un guardado');
+      Object.assign(target, { sheet: record.sheet, row: record.row, record });
+      this.targets.push(target);
+    });
+  }
+
   /** For each sheet getting new rows at the end: the last row they may need. */
   newRowNeeds() {
     return this.pools;
@@ -357,7 +444,12 @@ class Plan {
     const bySheet = new Map();
     for (const t of this.targets) {
       const rows = bySheet.get(t.sheet) || new Set([moduleMap.get(t.sheet).headerRow]);
-      for (const row of t.candidates || [t.row]) rows.add(row);
+      const header = moduleMap.get(t.sheet).headerRow;
+      // An inserted row: the row it copies, a few rows above (formulas typed over in it) and the row below.
+      const around = t.insert
+        ? Array.from({ length: FORMULA_LOOKBACK + 2 }, (_, i) => t.insert.anchorRow - FORMULA_LOOKBACK + i).filter(r => r > header)
+        : null;
+      for (const row of around || t.candidates || [t.row]) rows.add(row);
       bySheet.set(t.sheet, rows);
     }
     return [...bySheet].map(([sheet, rows]) => ({ sheet, rows: [...rows] }));
@@ -403,16 +495,21 @@ class Plan {
     };
     // Rows being edited are resolved first and reserved, so a new row never lands on them.
     const used = new Set();
-    for (const target of this.targets.filter(t => t.record && !brokenSheets.has(t.sheet))) {
+    for (const target of this.targets.filter(t => t.record && !t.deleteRow && !brokenSheets.has(t.sheet))) {
       if (unavailable(target)) continue;
       await this.resolveEdit(target, live);
       used.add(`${target.sheet}:${target.row}`);
     }
+    for (const target of this.targets.filter(t => t.deleteRow && !brokenSheets.has(t.sheet))) this.resolveDelete(target, live);
     for (const target of this.targets.filter(t => !t.record && !brokenSheets.has(t.sheet)))
-      if (!unavailable(target)) this.resolveCreate(target, live, used);
+      if (!unavailable(target)) {
+        if (target.insert) this.resolveInsert(target, live);
+        else this.resolveCreate(target, live, used);
+      }
     const written = new Set();
     for (const write of this.writes) {
-      const key = `${write.sheet}:${write.row}`;
+      // A row inserted at a row number goes in before the row there, which may be written too.
+      const key = write.insert ? `${write.sheet}:+${write.insert.at}` : `${write.sheet}:${write.row}`;
       if (written.has(key))
         this.conflict(
           null,
@@ -464,6 +561,13 @@ class Plan {
         return this.conflict(target, 'FORMULA_CELL', msg('{field} se calcula con una fórmula de la hoja', { field }), { field });
       if (replacing) {
         const predicted = before.values[field] ?? null;
+        if (field === 'Insectary_ID' && !renamesWithSuffix(predicted, after))
+          return this.conflict(
+            target,
+            'FORMULA_CELL',
+            msg('El Insectary ID {id} se calcula con una fórmula: solo se cambia añadiéndole un sufijo ({id}.1)', { id: predicted ?? '' }),
+            { field },
+          );
         if (comparable(predicted) === comparable(after))
           return this.conflict(target, 'MATCHES_FORMULA', msg('{field} ya da {value}; no hace falta escribirlo', { field, value: after }), {
             field,
@@ -587,6 +691,164 @@ class Plan {
     );
   }
 
+  /**
+   * A new butterfly whose ID is suffixed (W2B.2): a row inserted directly below the
+   * last row of its ID's group, as the curators insert it. It copies that row
+   * (formulas, formats, dropdowns) without its values; the row below keeps its ID
+   * formula, which still reads the row above the inserted one.
+   */
+  resolveInsert(target, live) {
+    const { sheet, insert } = target;
+    const layout = this.layouts.get(sheet);
+    const header = moduleMap.get(sheet).headerRow;
+    const cellsAt = row => live.get(rowKey(sheet, row))?.cells || [];
+    const idAt = row => String(rowValues(sheet, live.get(rowKey(sheet, row)), layout).values.Insectary_ID ?? '').trim().toUpperCase();
+    const anchor = insert.anchorRow;
+    if (idAt(anchor) !== insert.anchorValue)
+      return this.conflict(
+        target,
+        'ROW_MOVED',
+        msg('La fila {row} ya no es {id} en Google Sheets; recarga y vuelve a intentarlo', { row: anchor, id: insert.anchorValue }),
+      );
+    const below = idAt(anchor + 1);
+    if (below === insert.base || suffixedId(below)?.base === insert.base)
+      return this.conflict(
+        target,
+        'ROW_MOVED',
+        msg('Debajo de {id} (fila {row}) hay otra fila de {base} en Google Sheets; recarga y vuelve a intentarlo', {
+          id: insert.anchorValue,
+          row: anchor,
+          base: insert.base,
+        }),
+      );
+    const idColumn = layout.columns.get('Insectary_ID');
+    const width = Math.max(cellsAt(anchor).length, cellsAt(header).length, ...[...layout.columns.values()].map(c => c + 1));
+    // Every column that is not a formula in the row copied is emptied; a formula typed over
+    // there (a species other than its clutch's) comes back from the nearest row above that has it.
+    const clear = [];
+    const formulas = [];
+    for (let column = 0; column < width; column++) {
+      const kind = cellKind(cellsAt(anchor)[column]);
+      if (kind === 'F') continue;
+      clear.push(column);
+      if (kind !== 'c' || column === idColumn) continue;
+      for (let row = anchor - 1; row >= Math.max(header + 1, anchor - FORMULA_LOOKBACK); row--)
+        if (cellKind(cellsAt(row)[column]) === 'F') {
+          formulas.push({ column, from: row });
+          break;
+        }
+    }
+    const isFormula = field => {
+      const column = layout.columns.get(field);
+      return field !== 'Insectary_ID' && (cellKind(cellsAt(anchor)[column]) === 'F' || formulas.some(f => f.column === column));
+    };
+    const changes = [];
+    for (const [field, after] of Object.entries(target.clean)) {
+      if (after === null || after === '') continue;
+      if (isFormula(field)) {
+        if (target.replaceFormula.has(field)) {
+          if (comparable(predictedSpecies(this.store, sheet, field, target.clean)) === comparable(after)) continue;
+        } else if (!isSumField(sheet, field))
+          return this.conflict(target, 'FORMULA_CELL', msg('{field} se calcula con una fórmula en la fila nueva', { field }), {
+            field,
+          });
+      }
+      changes.push({ field, before: null, after });
+    }
+    target.row = anchor + 1;
+    target.recordId = randomUUID();
+    target.version = 0;
+    // Formats (dates, times) come with the copy of the row above.
+    const write = this.addWrite(target, live.get(rowKey(sheet, anchor)), { values: {}, formulas: {} }, changes);
+    write.insert = { at: anchor + 1, source: anchor, width, clear, formulas };
+  }
+
+  /** A row a save inserted, deleted by its undo while it holds only what that save wrote. */
+  resolveDelete(target, live) {
+    const { record } = target;
+    const layout = this.layouts.get(record.sheet);
+    const liveRow = live.get(rowKey(record.sheet, record.row));
+    const current = rowValues(record.sheet, liveRow, layout);
+    const identity = this.store.identity(record.sheet, record.values);
+    if (!Object.keys(identity).length || comparable(this.store.identity(record.sheet, current.values)) !== comparable(identity))
+      return this.conflict(target, 'ROW_MOVED', 'La fila se movió o su identificador cambió en Google Sheets; recarga la tabla');
+    for (const [field, value] of Object.entries(current.values)) {
+      if (current.formulas[field] || value === null || value === '') continue;
+      if (!Object.hasOwn(target.expected, field) || comparable(target.expected[field]) !== comparable(value))
+        return this.conflict(
+          target,
+          'ROW_CHANGED',
+          msg('La fila {label} tiene datos que no puso ese guardado ({field}); no se borra', { label: record.label, field }),
+          { field },
+        );
+    }
+    target.changes = Object.keys(target.expected)
+      .filter(field => layout.columns.has(field))
+      .map(field => ({ field, before: cellValue(current.values, current.formulas, field) ?? null, after: null }));
+    target.before = current;
+    // Kept in the history at the row it had.
+    target.historyRow = record.row;
+    target.write = { sheet: record.sheet, row: record.row, deleteRow: { at: record.row }, changes: {}, columns: {} };
+    this.writes.push(target.write);
+  }
+
+  /** Sheets where this batch inserts or deletes rows. */
+  structuralSheets() {
+    return [...new Set(this.writes.filter(w => w.insert || w.deleteRow).map(w => w.sheet))];
+  }
+
+  /**
+   * Rows inserted or deleted move the rows below them. The writes and targets are
+   * numbered as the sheet will be after the write (the rows inserted and deleted
+   * keep, in `insert.at`/`deleteRow.at`, where they go in the sheet as it is now).
+   */
+  finalizeRows() {
+    const ops = this.writes.filter(w => w.insert || w.deleteRow);
+    if (!ops.length) return;
+    const final = (sheet, row, self = null) => {
+      let out = row;
+      for (const op of ops) {
+        if (op === self || op.sheet !== sheet) continue;
+        if (op.insert && (self?.insert ? op.insert.at < row : op.insert.at <= row)) out++;
+        if (op.deleteRow && op.deleteRow.at < row) out--;
+      }
+      return out;
+    };
+    for (const target of this.targets) {
+      if (!target.write || target.write.row !== target.row) continue;
+      const own = target.write.insert || target.write.deleteRow ? target.write : null;
+      target.row = target.write.row = final(target.sheet, target.row, own);
+    }
+  }
+
+  /** The local copy after the write: rows below an inserted row move down, below a deleted one up. */
+  moveStoredRows() {
+    const ops = this.writes
+      .filter(w => w.insert || w.deleteRow)
+      .sort((a, b) => (b.insert ?? b.deleteRow).at - (a.insert ?? a.deleteRow).at);
+    if (!ops.length) return;
+    const db = this.store.db;
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      for (const op of ops) {
+        if (op.insert) this.store.shiftRows(op.sheet, op.insert.at, 1);
+        else {
+          const target = this.targets.find(t => t.write === op);
+          db.prepare('UPDATE records SET missing=1,row_num=?,updated_at=? WHERE id=?').run(
+            this.store.displacedRow(op.sheet),
+            new Date().toISOString(),
+            target.record.id,
+          );
+          this.store.shiftRows(op.sheet, op.deleteRow.at + 1, -1);
+        }
+      }
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+  }
+
   addWrite(target, liveRow, before, changes) {
     if (!changes.length) return;
     const mod = moduleMap.get(target.sheet);
@@ -605,14 +867,16 @@ class Plan {
       .map(c => c.field);
     target.changes = changes;
     target.before = before;
-    this.writes.push({
+    target.write = {
       sheet: target.sheet,
       row: target.row,
       changes: Object.fromEntries(changes.map(c => [c.field, c.after])),
       columns,
       dateFormat,
       timeFormat,
-    });
+    };
+    this.writes.push(target.write);
+    return target.write;
   }
 
   /**
@@ -708,6 +972,13 @@ class Plan {
       const liveRow = check.get(rowKey(target.sheet, target.row));
       const layout = layoutOf(target.sheet);
       if (layout.blocked) return null;
+      // A deleted row: the row now in its place is the one that was below it.
+      if (target.deleteRow) {
+        const identity = this.store.identity(target.sheet, target.record.values);
+        const there = this.store.identity(target.sheet, rowValues(target.sheet, liveRow, layout).values);
+        if (comparable(there) === comparable(identity)) return null;
+        continue;
+      }
       const previous = target.record || this.store.getRecordBySheetRow(target.sheet, target.row);
       const now = this.store.keepUnavailable(target.sheet, rowValues(target.sheet, liveRow, layout), previous, layout);
       const matches = target.changes.every(
@@ -778,11 +1049,16 @@ function beginAction(store, { requestId, user, source, reason, reverses, purpose
           id,
           target.record?.id || target.recordId,
           target.sheet,
-          target.row,
+          target.historyRow ?? target.row,
           c.field,
           JSON.stringify(c.before ?? null),
           JSON.stringify(c.after ?? null),
         );
+    // Rows this save inserts: undoing it deletes them (Store.previewUndo).
+    for (const target of plan.targets.filter(t => t.insert && t.changes?.length))
+      store.db
+        .prepare('INSERT INTO inserted_rows(action_id,record_id,sheet) VALUES(?,?,?)')
+        .run(id, target.recordId, target.sheet);
     store.db.exec('COMMIT');
   } catch (e) {
     store.db.exec('ROLLBACK');

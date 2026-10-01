@@ -10,6 +10,10 @@ export default {
   'se cambió otra vez después': 'was changed again later',
   'la fila ya no existe': 'the row no longer exists',
   'ya no tiene el valor guardado': 'no longer has the saved value',
+  'es una fila insertada por ese guardado: se deshace entera': 'it is a row inserted by that save: it is undone whole',
+  'otro guardado escribió después en esa fila insertada': 'another save wrote in that inserted row later',
+  'Se borra la fila {row} ({label}), que insertó ese guardado; las filas de debajo suben una.':
+    'Row {row} ({label}), which that save inserted, is deleted; the rows below move up one.',
   'fórmula {formula}': 'formula {formula}',
   vacío: 'empty',
   '{recovered} confirmadas, {failed} marcadas como no guardadas': '{recovered} confirmed, {failed} marked as not saved',

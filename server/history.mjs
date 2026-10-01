@@ -841,7 +841,13 @@ export async function runHistoryTool(store, name, args = {}, context = {}, { pub
         back: readable(c.sheet, c.field, c.after),
         ...(c.reason ? { conflict: c.reason } : {}),
       });
-      const view = { eligible: preview.eligible, changes: preview.changes.map(cell), conflicts: preview.conflicts.map(cell) };
+      const view = {
+        eligible: preview.eligible,
+        changes: preview.changes.map(cell),
+        conflicts: preview.conflicts.map(cell),
+        // Rows the save inserted (a suffixed Insectary ID): undoing deletes them and the rows below move up.
+        ...(preview.rowDeletes?.length ? { rowsDeleted: preview.rowDeletes.map(d => ({ label: d.label, sheet: d.sheet, row: d.row })) } : {}),
+      };
       if (name === 'preview_undo') return { ...view, next: 'Show this to the person and ask; undo_edits only after they confirm.' };
       if (args.confirmed !== true)
         return { error: 'Not confirmed: show preview_undo to the person and call again with confirmed: true only after they approve.' };

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync, chmodSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { modules, moduleMap, labelFor, validateValues, comparable, nextInsectaryId, makeSourceUrl } from './schema.mjs';
-import { GoogleSheets, LocalSheets, rowKey, rowValues } from './sheets.mjs';
+import { GoogleSheets, LocalSheets, moveRowRefs, rowKey, rowValues } from './sheets.mjs';
 import { headerLayout, sameLayout } from './columns.mjs';
 import { applyBatch } from './batch.mjs';
 import { initMonitoring } from './monitoring.mjs';
@@ -38,6 +38,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS undo_plans(request_id TEXT PRIMARY KEY, actor TEXT NOT NULL, selection_json TEXT NOT NULL, plan_json TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS audit(id TEXT PRIMARY KEY, kind TEXT NOT NULL, detail_json TEXT NOT NULL, created_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS inserted_rows(action_id TEXT NOT NULL, record_id TEXT NOT NULL, sheet TEXT NOT NULL, PRIMARY KEY(action_id, record_id));
     `);
     if (
       !this.db
@@ -153,6 +154,35 @@ export class Store {
       throw e;
     }
     // A displaced record is matched to its real row again by the next sync.
+  }
+  /**
+   * The rows of `sheet` from `from` on move by `delta` (1: a row was inserted above
+   * them, −1: one was deleted), as they did in the Sheet. They count as updated, so
+   * open tables pick up their new row numbers. Runs inside the caller's transaction;
+   * the numbers pass through negative ones so no two rows ever share one.
+   */
+  shiftRows(sheet, from, delta) {
+    const at = now();
+    this.db
+      .prepare('UPDATE records SET row_num=-(row_num+?)-1000000000000, updated_at=? WHERE sheet=? AND row_num>=? AND row_num<2000000000')
+      .run(delta, at, sheet, from);
+    this.db
+      .prepare('UPDATE records SET row_num=-row_num-1000000000000 WHERE sheet=? AND row_num<=-1000000000000')
+      .run(sheet);
+    // Sheets rewrote the references to the rows that moved: the stored formulas follow.
+    const refAt = delta > 0 ? from : from - 1;
+    const update = this.db.prepare('UPDATE records SET formulas_json=?, updated_at=? WHERE id=?');
+    for (const r of this.db.prepare("SELECT id, formulas_json FROM records WHERE sheet=? AND formulas_json<>'{}'").all(sheet)) {
+      const formulas = parse(r.formulas_json);
+      let changed = false;
+      for (const [field, formula] of Object.entries(formulas)) {
+        const moved = moveRowRefs(formula, refAt, delta, sheet);
+        if (moved !== formula) [formulas[field], changed] = [moved, true];
+      }
+      if (changed) update.run(json(formulas), at, r.id);
+    }
+    // The sheet's digest no longer describes the local copy.
+    this.sheetDigests.delete(sheet);
   }
   /** A free row number below every stored one, for a record whose row is taken. */
   displacedRow(sheet) {
@@ -1041,7 +1071,52 @@ export class Store {
         });
       } else changes.push(item);
     }
-    return { changes, conflicts, eligible: conflicts.length === 0 && changes.length > 0 };
+    const rowDeletes = this.insertedRowsUndone(actionIds, selected, changes, conflicts);
+    return { changes, conflicts, rowDeletes, eligible: conflicts.length === 0 && changes.length > 0 };
+  }
+  /**
+   * Rows a selected save inserted (a butterfly with a suffixed ID, W2B.2): undoing
+   * the save deletes the row, so it is undone whole (every cell that save wrote in
+   * it) and only while no other save wrote in it since. Their cells stay in
+   * `changes`, marked `deleteRow`; a row that cannot go turns its cells into conflicts.
+   */
+  insertedRowsUndone(actionIds, selected, changes, conflicts) {
+    const rows = this.db
+      .prepare(`SELECT action_id, record_id, sheet FROM inserted_rows WHERE action_id IN (${actionIds.map(() => '?').join(',')})`)
+      .all(...actionIds);
+    const out = [];
+    const refuse = (recordId, reason) => {
+      for (let i = changes.length - 1; i >= 0; i--)
+        if (changes[i].recordId === recordId) conflicts.push({ ...changes.splice(i, 1)[0], reason });
+    };
+    for (const inserted of rows) {
+      const chosen = selected.filter(c => c.actionId === inserted.action_id && c.recordId === inserted.record_id);
+      if (!chosen.length) continue;
+      const written = this.db
+        .prepare('SELECT count(*) n FROM changes WHERE action_id=? AND record_id=?')
+        .get(inserted.action_id, inserted.record_id).n;
+      if (chosen.length < written) {
+        refuse(inserted.record_id, 'inserted_row_partial');
+        continue;
+      }
+      const record = this.getRecord(inserted.record_id);
+      if (!record || record.missing) continue;
+      // Other saves that wrote in the row since, not undone (and not undos themselves).
+      const others = this.db
+        .prepare(
+          `SELECT DISTINCT a.id FROM changes c JOIN actions a ON a.id=c.action_id WHERE c.record_id=? AND a.status IN ('verified','observed') AND a.source<>'undo' AND a.id NOT IN (${actionIds.map(() => '?').join(',')})
+            AND NOT EXISTS(SELECT 1 FROM actions u WHERE u.status='verified' AND u.source='undo' AND (',' || u.reverses || ',') LIKE '%,' || a.id || ',%')`,
+        )
+        .all(inserted.record_id, ...actionIds);
+      if (others.length) {
+        refuse(inserted.record_id, 'inserted_row_changed');
+        continue;
+      }
+      if (!changes.some(c => c.recordId === inserted.record_id)) continue;
+      for (const c of changes) if (c.recordId === inserted.record_id) c.deleteRow = true;
+      out.push({ recordId: record.id, sheet: record.sheet, row: record.row, label: record.label });
+    }
+    return out;
   }
   /**
    * Reverses the selected changes as one new action. The reversal is checked
@@ -1055,12 +1130,19 @@ export class Store {
     if (prior && prior.status !== 'failed') return applyBatch(this, { requestId }, user, { source: 'undo' });
     const preview = this.previewUndo({ actionIds, changeIds });
     if (!preview.eligible) throw error('UNDO_CONFLICT', 'Selected changes need review', 409, preview);
-    const edits = [...Map.groupBy(preview.changes, c => c.recordId)].map(([id, items]) => ({
-      id,
-      values: Object.fromEntries(items.map(item => [item.field, item.after])),
-      expected: Object.fromEntries(items.map(item => [item.field, item.before])),
-    }));
-    return applyBatch(this, { requestId, reason, edits }, user, { source: 'undo', reverses: actionIds.join(',') });
+    const groups = [...Map.groupBy(preview.changes, c => c.recordId)];
+    const edits = groups
+      .filter(([, items]) => !items[0].deleteRow)
+      .map(([id, items]) => ({
+        id,
+        values: Object.fromEntries(items.map(item => [item.field, item.after])),
+        expected: Object.fromEntries(items.map(item => [item.field, item.before])),
+      }));
+    // A row the save inserted is deleted, not emptied: the rows below it move back up.
+    const deletes = groups
+      .filter(([, items]) => items[0].deleteRow)
+      .map(([id, items]) => ({ id, expected: Object.fromEntries(items.map(item => [item.field, item.before])) }));
+    return applyBatch(this, { requestId, reason, edits, deletes }, user, { source: 'undo', reverses: actionIds.join(',') });
   }
   /** Applies reviewed AI proposals (edits and new rows) as one action. */
   async applyProposal(changes, { user, requestId, reason } = {}) {
