@@ -46,6 +46,7 @@ async function logout() {
           :key="tab.path"
           :to="tab.path"
           class="shrink-0 border-b-2 border-transparent px-3 py-3 text-sm font-medium whitespace-nowrap text-brand-100 hover:text-white"
+          :class="{ '!border-white !text-white': route.meta.tab === tab.path }"
           active-class="!border-white !text-white"
         >
           {{ $t(tab.label) }}

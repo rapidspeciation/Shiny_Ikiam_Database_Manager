@@ -34,6 +34,8 @@ export const router = createRouter({
     { path: '/cuaderno', redirect: '/asistente' },
     // Cambios propuestos on their own browser tab (e.g. a second monitor), without the app's header.
     { path: '/propuestas/:id?', name: 'proposals', component: () => import('./views/ProposalsView.vue'), meta: { bare: true } },
+    // What the assistant is told (brief, skills, subagents, tools) and its history; opened from the Asistente bar.
+    { path: '/instrucciones', name: 'instructions', component: () => import('./views/InstructionsView.vue'), meta: { tab: '/asistente' } },
     { path: '/activar', name: 'activate', component: () => import('./views/ActivateView.vue') },
     // Forgotten password: ask for a link, then open it.
     { path: '/recuperar', name: 'forgot', component: () => import('./views/ForgotPasswordView.vue') },

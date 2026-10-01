@@ -15,3 +15,5 @@ credentials*.json
 token*.json
 # Built by `npm run build` from frontend/; deployed, not committed.
 web/
+# Written by `npm run build` (scripts/instructions-history.mjs); shipped in releases.
+server/instructions-history.json

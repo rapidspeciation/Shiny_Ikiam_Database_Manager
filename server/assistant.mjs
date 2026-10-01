@@ -357,6 +357,10 @@ const TOOLS = [
   },
 ];
 
+/** The tools as MCP's tools/list gives them to T3 Code's chats (and the app's AI instructions page shows them). */
+export const mcpTools = () =>
+  TOOLS.map(t => ({ name: t.function.name, description: t.function.description, inputSchema: t.function.parameters }));
+
 function init(db) {
   db.exec(`CREATE TABLE IF NOT EXISTS ai_threads (
     id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, title TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
@@ -1685,14 +1689,7 @@ export function createAssistant({ store, config = {} }) {
         serverInfo: { name: 'ithomiini', version: '1.0.0' },
       });
     if (method === 'ping') return result({});
-    if (method === 'tools/list')
-      return result({
-        tools: TOOLS.map(t => ({
-          name: t.function.name,
-          description: t.function.description,
-          inputSchema: t.function.parameters,
-        })),
-      });
+    if (method === 'tools/list') return result({ tools: mcpTools() });
     if (method === 'tools/call') {
       let out;
       // A T3 Code chat's call: its own list of proposals (chats call at the same time), and Claude's
@@ -2147,5 +2144,5 @@ export function createAssistant({ store, config = {} }) {
     }
     return bad(404, 'not_found', 'Assistant route not found.');
   }
-  return { handle, mcp };
+  return { handle, mcp, tools: mcpTools };
 }

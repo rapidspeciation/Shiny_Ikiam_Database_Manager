@@ -9,6 +9,7 @@ import deaths from './deaths'
 import entry from './entry'
 import history from './history'
 import home from './home'
+import instructions from './instructions'
 import monitoring from './monitoring'
 import review from './review'
 import server from './server'
@@ -24,6 +25,7 @@ export const en: Record<string, string> = Object.assign(
   review,
   history,
   assistant,
+  instructions,
   account,
   server,
   serverBuilt,

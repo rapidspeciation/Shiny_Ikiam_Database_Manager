@@ -47,6 +47,7 @@ import { reviewPage, setVerdicts, trainingLabels, verdictHistory } from './revie
 import { allSuggestions, suggestionPage, suggestionSources, suggestionsCsv } from './suggestions/index.mjs';
 import { solvedFindings } from './findings.mjs';
 import { alerts } from './alerts.mjs';
+import { createInstructions } from './instructions.mjs';
 import { createPhotoService, photoCacheDir } from './photos.mjs';
 import { listOptions } from './verify.mjs';
 import { moduleMap, validateValues } from './schema.mjs';
@@ -347,6 +348,8 @@ export async function createApp(config = {}, options = {}) {
   const tableCache = new Map();
   const sheetHook = createSheetHook(store, { secret: config.sheetHookSecret });
   const summary = createSummary(store);
+  // The AI instructions page: the assistant's brief, skills, subagents and tools with their history.
+  const instructions = createInstructions({ tools: () => assistant?.tools?.() ?? [], ...options.instructions });
   const photos = createPhotoService(store, {
     // Next to the database file the store really opened; in memory for an in-memory database.
     dir: config.photoCacheDir || photoCacheDir({}, store.db.location?.() ?? null),
@@ -911,6 +914,13 @@ export async function createApp(config = {}, options = {}) {
         return json(res, 201, await resets.adminLink(resetLink[1], user));
       }
       if (method === 'GET' && path === '/api/t3/status') return json(res, 200, { url: config.t3?.url ?? null });
+      // What the assistant is told (any signed-in person): every file, the tools, each one's history.
+      if (method === 'GET' && path === '/api/instructions') return json(res, 200, await instructions.list());
+      if (method === 'GET' && path === '/api/instructions/diff') {
+        const found = await instructions.diff(String(query.id ?? ''), String(query.commit ?? ''));
+        if (!found) throw fail('NOT_FOUND', 'No such change', 404);
+        return json(res, 200, found);
+      }
       // Admins update T3 Code from the Asistente tab (server/t3admin.mjs).
       if (path === '/api/admin/t3' && (method === 'GET' || method === 'POST')) {
         requireAdmin(user);

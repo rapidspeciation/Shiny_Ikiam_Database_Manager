@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { ArrowUpCircle, ExternalLink, ListChecks, RefreshCw } from 'lucide-vue-next'
+import { ArrowUpCircle, BookOpen, ExternalLink, ListChecks, RefreshCw } from 'lucide-vue-next'
+import { RouterLink } from 'vue-router'
 import { api } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
 import { useSession } from '../stores/session'
@@ -148,9 +149,19 @@ onMounted(async () => {
 <template>
   <div class="flex h-full flex-col">
     <!-- One slim bar, so T3 keeps nearly the whole screen. -->
-    <div v-if="t3Url" class="flex items-center gap-1 border-b border-stone-200 bg-stone-100 px-2 py-0.5 text-sm">
+    <div v-if="loaded" class="flex items-center gap-1 border-b border-stone-200 bg-stone-100 px-2 py-0.5 text-sm">
+      <!-- What the assistant is told (brief, skills, tools) and how it changed; anyone signed in can read it. -->
+      <RouterLink
+        to="/instrucciones"
+        class="ml-auto flex items-center gap-1 rounded px-2 py-0.5 text-stone-500 hover:bg-stone-200 hover:text-stone-800"
+        :title="$t('Lo que se le indica al asistente: instrucciones, habilidades y herramientas, con su historial de cambios')"
+      >
+        <BookOpen :size="14" /> <span class="hidden sm:inline">{{ $t('Instrucciones de la IA') }}</span
+        ><span class="sm:hidden">{{ $t('Instrucciones') }}</span>
+      </RouterLink>
       <button
-        class="ml-auto flex items-center gap-1 rounded px-2 py-0.5"
+        v-if="t3Url"
+        class="flex items-center gap-1 rounded px-2 py-0.5"
         :class="
           fresh ? 'animate-pulse bg-emerald-600 text-white' : waiting ? 'bg-emerald-100 text-emerald-900' : 'text-stone-500'
         "
@@ -160,7 +171,7 @@ onMounted(async () => {
         <ListChecks :size="14" /> {{ $t('Cambios propuestos ({n})', { n: waiting }) }}
       </button>
       <button
-        v-if="t3Version?.updateAvailable || t3Updating"
+        v-if="t3Url && (t3Version?.updateAvailable || t3Updating)"
         class="flex items-center gap-1 rounded bg-amber-100 px-2 py-0.5 text-amber-900 hover:bg-amber-200 disabled:opacity-60"
         :disabled="t3Updating"
         :title="
@@ -179,17 +190,19 @@ onMounted(async () => {
         }}
       </button>
       <span
-        v-else-if="t3Version"
+        v-else-if="t3Url && t3Version"
         class="px-1 text-xs text-stone-500"
         :title="t3Version.latest ? $t('Es la última versión estable de T3 Code') : $t('No se pudo consultar la última versión')"
         >T3 {{ t3Version.current }}<template v-if="t3Version.latest"> · {{ $t('al día') }}</template></span
       >
-      <button class="btn-ghost" :title="$t('Volver a conectar T3')" @click="t3Frame?.connect(true)">
-        <RefreshCw :size="13" />
-      </button>
-      <a class="btn-ghost" :href="t3Url" target="_blank" rel="noopener" :title="$t('Abrir T3 en otra pestaña')"
-        ><ExternalLink :size="13"
-      /></a>
+      <template v-if="t3Url">
+        <button class="btn-ghost" :title="$t('Volver a conectar T3')" @click="t3Frame?.connect(true)">
+          <RefreshCw :size="13" />
+        </button>
+        <a class="btn-ghost" :href="t3Url" target="_blank" rel="noopener" :title="$t('Abrir T3 en otra pestaña')"
+          ><ExternalLink :size="13"
+        /></a>
+      </template>
     </div>
     <div
       v-if="t3Url"

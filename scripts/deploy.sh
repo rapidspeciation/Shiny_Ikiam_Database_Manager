@@ -27,6 +27,7 @@ fi
 npm --prefix frontend ci
 node scripts/check.mjs
 npm test
+# Also writes server/instructions-history.json (the AI instructions page's history: the release has no .git).
 npm run build
 release="$(date -u +%Y%m%dT%H%M%SZ)"
 on_server "mkdir -p /home/ubuntu/ithomiini/releases/$release /home/ubuntu/ithomiini/shared /home/ubuntu/.config/systemd/user"
@@ -34,7 +35,7 @@ on_server "mkdir -p /home/ubuntu/ithomiini/releases/$release /home/ubuntu/ithomi
 tar --exclude='tools/wikiloc/node_modules' --exclude='tools/wikiloc/venv' --exclude='tools/wikiloc/__pycache__' -czf - server web docs assistant package.json deploy scripts licenses PRODUCT.md DESIGN.md frontend/src/lib tools/wikiloc | on_server "tar -xzf - -C /home/ubuntu/ithomiini/releases/$release"
 on_server "set -eu; cd /home/ubuntu/ithomiini; if test -L current; then readlink current > shared/previous-release; fi; ln -sfn releases/$release current; cp current/deploy/ithomiini*.service current/deploy/ithomiini-*.timer /home/ubuntu/.config/systemd/user/; systemctl --user daemon-reload; systemctl --user enable ithomiini.service; systemctl --user enable --now ithomiini-backup.timer ithomiini-gog-keepalive.timer; systemctl --user restart ithomiini.service"
 on_server 'set -eu; cd /home/ubuntu/ithomiini/current; node=$(sed -n "s/^ExecStart=\([^ ]*\/node\) .*/\1/p" deploy/ithomiini.service); export PATH="$(dirname "$node"):$PATH"; bash tools/wikiloc/install-worker.sh'
-# T3 Code workspaces: every person's brief (CLAUDE.md/AGENTS.md) and skills follow the release; tokens are kept.
+# T3 Code workspaces: every person's brief (AGENTS.md, CLAUDE.md a link to it) and skills follow the release; tokens are kept.
 on_server 'set -eu; cd /home/ubuntu/ithomiini/current; node=$(sed -n "s/^ExecStart=\([^ ]*\/node\) .*/\1/p" deploy/ithomiini.service); "$node" scripts/t3-provision.mjs --refresh-all'
 # Old releases (about 4 MB each) are deleted: the newest KEEP_RELEASES stay, and always the current and previous ones.
 on_server "bash /home/ubuntu/ithomiini/current/scripts/prune-releases.sh /home/ubuntu/ithomiini ${KEEP_RELEASES:-5}"
