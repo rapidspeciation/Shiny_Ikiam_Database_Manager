@@ -429,6 +429,11 @@ body.touch-bar-open main {
 .legend.is-sheet {
   color: #78716c;
 }
+/* A sheet row between the proposal's rows that it does not change (shown to read in order). */
+.proposal-sheet .tabulator-cell.is-gap {
+  color: #a8a29e;
+  background: #fafaf9;
+}
 /* Set back to the sheet's value: grey like the sheet, a dashed green edge and the assistant's value struck through. */
 .proposal-sheet .tabulator-cell.is-reverted,
 .legend.is-reverted {

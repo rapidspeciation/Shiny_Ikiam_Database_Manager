@@ -130,7 +130,7 @@ function info(key: string, field: string) {
   return change ? cellOf(change, field, props.newRowFormulas) : null
 }
 const canEditCell = (key: string, field: string) =>
-  props.editable && fieldSet.value.has(field) && !!info(key, field) && info(key, field)!.kind !== 'locked'
+  props.editable && !byKey.get(key)?.gap && fieldSet.value.has(field) && !!info(key, field) && info(key, field)!.kind !== 'locked'
 const canEdit: CanEdit = (row, field) => canEditCell((row.getData() as Row).__key, field)
 /** A list to pick from: the sheet's dropdown, except for identifiers (typed or pasted). */
 const choicesOf = (field: string) => (ID_COLUMN.test(field) ? null : rules.value?.lists[field]?.values)
@@ -177,6 +177,7 @@ function formatter(field: string) {
     el.classList.toggle('is-reverted', c.kind === 'reverted')
     el.classList.toggle('is-sheet', c.kind === 'sheet')
     el.classList.toggle('is-formula', c.kind === 'locked')
+    el.classList.toggle('is-gap', !!change.gap)
     el.classList.toggle('is-invalid', !!problem)
     el.classList.toggle('is-flash', props.flash.has(cellId(row.__key, field)))
     el.classList.toggle('has-choices', canEditCell(row.__key, field) && hasChoices(field))
@@ -285,10 +286,15 @@ function rowFormatter(cell: CellComponent) {
   const change = byKey.get(row.__key)
   // (A row whose only cells are unreadable ones still to fill is not: it waits for them.)
   const waiting = !!change && Object.keys(change.unreadable ?? {}).some(f => !(f in change.values))
-  const skipped = props.editable && !!change && !Object.keys(change.values).length && !waiting
+  const gap = !!change?.gap
+  const skipped = props.editable && !!change && !gap && !Object.keys(change.values).length && !waiting
   const el = cell.getElement()
   el.classList.toggle('is-skipped', skipped)
-  el.title = skipped ? t('Esta fila no se escribe: no le queda ningún cambio') : ''
+  el.title = gap
+    ? t('Fila de la hoja que la propuesta no cambia: se muestra para leer en orden')
+    : skipped
+      ? t('Esta fila no se escribe: no le queda ningún cambio')
+      : ''
   return row.__row
 }
 
@@ -381,9 +387,12 @@ function columns(): ColumnDefinition[] {
       hozAlign: 'center',
       headerSort: false,
       cssClass: 'row-remove',
-      formatter: () => '✕',
+      formatter: (cell: CellComponent) => (byKey.get((cell.getData() as Row).__key)?.gap ? '' : '✕'),
       tooltip: t('Quitar esta fila de la propuesta'),
-      cellClick: (_e, cell) => emit('remove', (cell.getData() as Row).__key),
+      cellClick: (_e, cell) => {
+        const key = (cell.getData() as Row).__key
+        if (!byKey.get(key)?.gap) emit('remove', key)
+      },
     } as ColumnDefinition)
   return cols
 }

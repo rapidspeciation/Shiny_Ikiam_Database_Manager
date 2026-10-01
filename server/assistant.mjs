@@ -1417,7 +1417,7 @@ export function createAssistant({ store, config = {} }) {
       fields,
       types: Object.fromEntries(fields.map(f => [f, typeOf(f)])),
       newRowFormulas,
-      changes: changes.map((change, index) => {
+      changes: inSheetOrder(changes.map((change, index) => {
         const recordId = change.create ? (created[change.clientId] ?? null) : change.recordId;
         const record = recordId ? store.getRecord(recordId) : null;
         return {
@@ -1440,8 +1440,67 @@ export function createAssistant({ store, config = {} }) {
               }
             : {}),
         };
-      }),
+      }), open ? { fields, locked } : null),
     };
+  }
+
+  /** At most this many rows of the sheet the proposal leaves alone are shown between its rows. */
+  const GAP_ROWS = 400;
+  /**
+   * The rows as the sheet has them, so the person reads the table beside the
+   * sheet or the notebook page: a sheet's existing rows take the places they
+   * had, by row number (new rows stay where they were), and, in a pending
+   * proposal, the sheet's rows between two of them that it does not change are
+   * shown greyed for context (`gap`: never written, not editable).
+   */
+  function inSheetOrder(rows, open) {
+    const sorted = new Map();
+    for (const sheet of new Set(rows.map(r => r.sheet)))
+      sorted.set(
+        sheet,
+        rows.filter(r => r.sheet === sheet && r.row != null).sort((a, b) => a.row - b.row || a.index - b.index),
+      );
+    const taken = new Map();
+    let room = GAP_ROWS;
+    const out = [];
+    for (const slot of rows) {
+      if (slot.row == null) {
+        out.push(slot);
+        continue;
+      }
+      const list = sorted.get(slot.sheet);
+      const i = taken.get(slot.sheet) ?? 0;
+      taken.set(slot.sheet, i + 1);
+      const r = list[i];
+      const prev = list[i - 1];
+      if (open && prev && r.row - prev.row - 1 <= room)
+        for (let n = prev.row + 1; n < r.row; n++) {
+          const record = store.getRecordBySheetRow(r.sheet, n);
+          if (!record || record.missing) continue;
+          room--;
+          out.push({
+            key: `gap:${record.id}`,
+            recordId: record.id,
+            sheet: r.sheet,
+            row: record.row,
+            label: record.label || '',
+            index: -1,
+            before: {},
+            values: {},
+            context: true,
+            gap: true,
+            current: Object.fromEntries(open.fields.map(f => [f, shownValue(record, f)])),
+            rowValues: Object.fromEntries(
+              Object.keys(record.values ?? {})
+                .map(f => [f, shownValue(record, f)])
+                .filter(([, v]) => v !== null && v !== ''),
+            ),
+            formulas: open.locked(r.sheet, Object.keys(record.formulas ?? {})),
+          });
+        }
+      out.push(r);
+    }
+    return out;
   }
 
   /**

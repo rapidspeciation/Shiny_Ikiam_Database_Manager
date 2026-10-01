@@ -75,6 +75,8 @@ export interface ProposalChange {
   hints?: Record<string, Hint>
   /** A notebook line shown only for context: never written. */
   context?: boolean
+  /** A row of the sheet between the proposal's rows that it does not change: shown greyed, never written nor editable. */
+  gap?: boolean
 }
 export interface Proposal {
   id: string
