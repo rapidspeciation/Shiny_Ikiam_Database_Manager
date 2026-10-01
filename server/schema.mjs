@@ -253,24 +253,50 @@ function serialFromParts(year, month, day) {
   return Math.round((ms - SHEETS_EPOCH) / 86_400_000);
 }
 
-const alphabet = 'ABCDEFGHIJKLMNÑOPQRSTUVWXYZ';
+/** The letters of Insectary IDs: A to Z, no Ñ (the sheet's CHAR(CODE(letter)+1) goes from N to O). */
+const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+/**
+ * The Insectary ID after `id`, as the sheet's formulas make them:
+ * - since 30 Jun 2026, letter + digit + series letter: A0A … A9A, B0A … Z9A,
+ *   then the next series A0B (=IF(MID(prev,2,1)="9", next letter&"0S", …));
+ * - Jun 2023 – Jun 2026, digit + two letters: the digit runs fastest, then the
+ *   last letter, then the middle one (9AZ → 0BA); after 9ZZ came A0A.
+ * An Ñ (older app versions gave N9A → Ñ0A) is read as the N before O.
+ * Anything else (2022's A7, 2023's 45M) starts the current form at A0A.
+ */
 export function nextInsectaryId(id) {
-  if (!id || !/^[A-ZÑ]\d[A-ZÑ]$/.test(id)) return 'A0A';
-  const [a, digit, c] = [...id];
-  let ai = alphabet.indexOf(a),
-    ci = alphabet.indexOf(c),
-    d = Number(digit);
-  if (ai < 0 || ci < 0) return 'A0A';
-  if (++d > 9) {
-    d = 0;
-    if (++ai >= alphabet.length) {
-      ai = 0;
-      ci++;
+  const s = String(id ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/Ñ/g, 'N');
+  const letter = c => alphabet.indexOf(c);
+  let m = /^([A-Z])(\d)([A-Z])$/.exec(s);
+  if (m) {
+    let [a, d, c] = [letter(m[1]), Number(m[2]), letter(m[3])];
+    if (++d > 9) {
+      d = 0;
+      if (++a >= alphabet.length) {
+        a = 0;
+        c++;
+      }
     }
+    if (c >= alphabet.length)
+      throw Object.assign(new Error('Insectary ID space exhausted'), { status: 409, code: 'ID_EXHAUSTED' });
+    return `${alphabet[a]}${d}${alphabet[c]}`;
   }
-  if (ci >= alphabet.length)
-    throw Object.assign(new Error('Insectary ID space exhausted'), { status: 409, code: 'ID_EXHAUSTED' });
-  return `${alphabet[ai]}${d}${alphabet[ci]}`;
+  m = /^(\d)([A-Z])([A-Z])$/.exec(s);
+  if (m) {
+    let [d, middle, last] = [Number(m[1]), letter(m[2]), letter(m[3])];
+    if (++d > 9) {
+      d = 0;
+      if (++last >= alphabet.length) {
+        last = 0;
+        if (++middle >= alphabet.length) return 'A0A';
+      }
+    }
+    return `${d}${alphabet[middle]}${alphabet[last]}`;
+  }
+  return 'A0A';
 }
 
 export function makeSourceUrl(sheet, row, spreadsheetId = REAL_ID) {

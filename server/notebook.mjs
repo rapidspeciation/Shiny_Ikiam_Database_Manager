@@ -7,6 +7,51 @@
 import { isSumField, parseDateText, simpleSum } from './schema.mjs';
 
 /**
+ * What the team types in Insectary_data for a butterfly that died and was not
+ * preserved (Unknown, Disappearance, Eaten…): the block DeathsView writes, plus
+ * Research_purpose NA (insectary.md A8). Only empty cells take it.
+ */
+export const NOT_PRESERVED = {
+  Research_purpose: 'NA',
+  Preservation_date: 'NA',
+  CAM_ID: 'NA',
+  Tube_1_id: 'NA',
+  Tube_1_tissue: 'NA',
+  T1_Preservation_medium: 'NOT_COLLECTED',
+  Tube_2_id: 'NA',
+  Tube_2_tissue: 'NA',
+  T2_Preservation_medium: 'NOT_COLLECTED',
+  Tube_3_id: 'NA',
+  Tube_3_tissue: 'NA',
+  Tube_4_id: 'NA',
+  Tube_4_tissue: 'NA',
+  Preservation_medium: 'NOT_COLLECTED',
+  Preserved_Dead_Alive: 'NA',
+  Location_body: 'NA',
+};
+/** The tissue of a wing clip, exactly as the ORGANISM_PART list has it. */
+export const WING_CLIP = '**OTHER_SOMATIC_ANIMAL_TISSUE** | WING CLIP';
+/** The columns of a death and its preservation that a line implies (templates, note words). */
+const DEATH_EXTRA = [
+  'Research_purpose',
+  'Preservation_date',
+  'Tube_1_tissue',
+  'T1_Preservation_medium',
+  'Tube_2_id',
+  'Tube_2_tissue',
+  'T2_Preservation_medium',
+  'Tube_3_id',
+  'Tube_3_tissue',
+  'Tube_4_id',
+  'Tube_4_tissue',
+  'Preservation_medium',
+  'Preserved_Dead_Alive',
+  'Location_body',
+];
+/** The columns impliedValues fills: after the dates in every notebook's column order. */
+const IMPLIED_FIELDS = new Set(['Death_cause', 'CAM_ID', 'Tube_1_id', ...DEATH_EXTRA]);
+
+/**
  * The notebooks that can be digitized, and the sheet columns each one fills.
  * How each notebook looks and is written is explained to Claude in the skill
  * assistant/skills/digitalizar-cuaderno/SKILL.md (a test checks it names every column).
@@ -61,7 +106,8 @@ export const KINDS = {
       'Notes_Insectary_data',
     ],
     // Reared when the line gives a clutch; Wild-caught when Claude says so (no clutch, a collector's note).
-    extra: ['Wild_Reared'],
+    // The death and preservation columns come from the notes' words and the templates (impliedValues).
+    extra: ['Wild_Reared', ...DEATH_EXTRA],
   },
   deaths: {
     label: 'Muertes',
@@ -78,6 +124,7 @@ export const KINDS = {
       'Tube_1_id',
       'Notes_Insectary_data',
     ],
+    extra: DEATH_EXTRA,
   },
   labels: {
     label: 'Sobres y etiquetas',
@@ -235,6 +282,10 @@ export function checkTranscription({ kind, year = null, lines = [] }) {
       const n = number(value, 0, 1);
       if (fields.has(field) && n !== null) c[field] = n;
     }
+    // Why a cell is doubtful, in a few words ("7 or 1: this hand's 1 has a flag"), shown to the person.
+    const r = {};
+    for (const [field, value] of Object.entries(rename(line?.reasons)))
+      if (fields.has(field) && typeof value === 'string' && value.trim()) r[field] = clip(value, 160).trim();
     return {
       n: Number.isInteger(line?.n) && line.n > 0 ? line.n : i + 1,
       y: null,
@@ -243,6 +294,7 @@ export function checkTranscription({ kind, year = null, lines = [] }) {
       v,
       c,
       a,
+      ...(Object.keys(r).length ? { r } : {}),
     };
   });
   const y = Number(year);
@@ -380,6 +432,9 @@ export function readValue(field, text, { year, sheet = null }) {
     return { value: sex ?? s };
   }
   if (field === 'CAM_ID') {
+    // Seven digits (CAM0770540): a digit too many, kept as written for the checks to point out.
+    const long = /^cam\s*(\d{7,})$/i.exec(s);
+    if (long) return { value: `CAM${long[1]}` };
     const m = /^cam\s*0*(\d{1,6})$/i.exec(s);
     return { value: m ? `CAM${m[1].padStart(6, '0')}` : s.toUpperCase() };
   }
@@ -483,6 +538,253 @@ export function lookAlikes(kind, keyValues) {
   return out.filter(v => v !== id).map(v => [v]);
 }
 
+// ---------------------------------------------------------------------------
+// Checks of a line against the lines around it. They make doubts (the value
+// goes in highlighted, with the other readings), never silent changes.
+
+/** Digits one hand writes alike: 848 for 843, 17 for 11, 6 for 5. */
+const LOOK_DIGITS = new Set(['38', '17', '56', '08', '68', '49', '27', '06', '35', '89', '09'].flatMap(p => [p, p[1] + p[0]]));
+/** Two texts of one length that differ in one character, a digit one hand writes like the other. */
+const oneLookAlike = (a, b) => {
+  if (a.length !== b.length || a === b) return false;
+  const diff = [...a].map((ch, i) => [ch, b[i]]).filter(([x, y]) => x !== y);
+  return diff.length === 1 && LOOK_DIGITS.has(diff[0].join(''));
+};
+
+/**
+ * A run of Emergidos lines read with a clutch that looks like the run next to
+ * it (848 after 843s, the same emerge date): the smaller run, or the one whose
+ * clutch could not give butterflies emerging then, gets the other clutch as an
+ * alternative. `plausible(clutch, emergeText)`: true when the clutch was laid 20
+ * to 90 days before, false when it has no laid date or is not in the sheet, null
+ * when it cannot tell. Returns { [line index]: { value, alternatives, confidence, reason } }.
+ */
+export function clutchRuns(texts, crossed, plausible = () => null) {
+  const runs = [];
+  texts.forEach((text, i) => {
+    const clutch = crossed[i] || isNone(text['CLUTCH NUMBER']) ? null : String(text['CLUTCH NUMBER']).trim();
+    const last = runs.at(-1);
+    if (clutch && last && last.end === i - 1 && clutchKey(last.clutch) === clutchKey(clutch)) {
+      last.end = i;
+      last.lines.push(i);
+    } else if (clutch) runs.push({ clutch, key: clutchKey(clutch), end: i, lines: [i], emerge: String(text.Intro2Insectary_date ?? '').trim() });
+  });
+  const out = {};
+  runs.forEach((run, k) => {
+    const near = [runs[k - 1], runs[k + 1]].filter(o => o && oneLookAlike(run.key, o.key));
+    for (const other of near.sort((a, b) => b.lines.length - a.lines.length)) {
+      const sameDay = run.emerge && run.emerge === other.emerge;
+      const mine = plausible(run.clutch, run.emerge);
+      const theirs = plausible(other.clutch, run.emerge);
+      const swap = mine === false && theirs === true;
+      if (!swap && (!sameDay || other.lines.length <= run.lines.length || (mine === true && theirs === false))) continue;
+      for (const i of run.lines)
+        out[i] = {
+          value: swap ? other.clutch : run.clutch,
+          alternatives: [swap ? run.clutch : other.clutch],
+          confidence: swap ? 0.4 : 0.6,
+          reason: swap
+            ? `Leído ${run.clutch}, entre líneas del ${other.clutch}: el ${run.clutch} no tiene una puesta 20–90 días antes`
+            : `Clutch ${run.clutch} entre líneas del ${other.clutch} (misma emergencia)`,
+        };
+      return;
+    }
+  });
+  return out;
+}
+
+/** The number of a CAM or tube as written: { prefix, digits } ("CAM", "0770540"; "FS", "5848961"), or null. */
+const idParts = (field, value) => {
+  const m = field === 'CAM_ID' ? /^(cam)\s*(\d+)$/i.exec(String(value ?? '').trim()) : /^([A-Z]{2})\s*(\d+)$/i.exec(String(value ?? '').trim());
+  return m ? { prefix: m[1].toUpperCase(), digits: m[2] } : null;
+};
+/** How far a number is from the run of the lines around it (their numbers plus the lines between), or Infinity. */
+const runDistance = (n, i, around) => Math.min(Infinity, ...around.map(o => Math.abs(n - (o.n + (i - o.i)))));
+
+/**
+ * CAMs and tubes that do not fit: a CAM with seven digits (CAM0770540, a digit
+ * too many), a tube with seven or nine (FS5848961, one dropped from FS50848961),
+ * or a CAM far from the run of the lines around it. The value becomes the
+ * reading that continues the run, when one does; the written one stays as an
+ * alternative. Returns { [line index]: { [field]: { value, alternatives, confidence, reason } } }.
+ */
+export function idChecks(texts, crossed) {
+  const out = {};
+  const fields = ['CAM_ID', 'Tube_1_id', 'Tube_2_id'];
+  for (const field of fields) {
+    const size = field === 'CAM_ID' ? 6 : 8;
+    const parts = texts.map((t, i) => (crossed[i] ? null : idParts(field, t[field])));
+    parts.forEach((p, i) => {
+      if (!p) return;
+      // The lines around with a well-formed ID of the same prefix (up to 3 each side).
+      const around = [];
+      for (const step of [-1, 1])
+        for (let j = i + step, k = 0; j >= 0 && j < parts.length && k < 3; j += step) {
+          const o = parts[j];
+          if (o && o.prefix === p.prefix && o.digits.length === size) {
+            around.push({ i: j, n: Number(o.digits) });
+            k++;
+          }
+        }
+      const put = check => ((out[i] ??= {})[field] = check);
+      const written = `${p.prefix}${p.digits}`;
+      if (p.digits.length !== size && Math.abs(p.digits.length - size) === 1) {
+        // Every reading one digit away: a digit dropped (inserted back) or one too many (taken out).
+        const options = new Set();
+        if (p.digits.length < size)
+          for (let at = 0; at <= p.digits.length; at++) for (let d = 0; d <= 9; d++) options.add(p.digits.slice(0, at) + d + p.digits.slice(at));
+        else for (let at = 0; at < p.digits.length; at++) options.add(p.digits.slice(0, at) + p.digits.slice(at + 1));
+        const ranked = [...options]
+          .filter(o => o.length === size && (field !== 'CAM_ID' || /^0/.test(o)))
+          .map(o => ({ o, far: runDistance(Number(o), i, around) }))
+          .sort((a, b) => a.far - b.far || (b.o.startsWith('07') ? 1 : 0) - (a.o.startsWith('07') ? 1 : 0));
+        const fits = ranked.filter(r => r.far <= 20);
+        const best = fits[0]?.far <= 2 ? fits[0] : null;
+        put({
+          value: best ? `${p.prefix}${best.o}` : written,
+          alternatives: [...(best ? [written] : []), ...fits.filter(r => r !== best).slice(0, 2).map(r => `${p.prefix}${r.o}`)],
+          confidence: 0.3,
+          reason: `${written} tiene ${p.digits.length} cifras (son ${size}): ${p.digits.length < size ? '¿falta una?' : '¿una de más?'}`,
+        });
+        return;
+      }
+      // A CAM far from a tight run of the lines around it.
+      if (field !== 'CAM_ID' || p.digits.length !== size) return;
+      const before = around.filter(o => o.i < i).sort((a, b) => b.i - a.i)[0];
+      const after = around.filter(o => o.i > i).sort((a, b) => a.i - b.i)[0];
+      const n = Number(p.digits);
+      if (!before || !after || Math.abs(after.n - before.n) > 20 || Math.min(Math.abs(n - before.n), Math.abs(n - after.n)) <= 50) return;
+      const expected = before.n + (i - before.i);
+      put({
+        value: written,
+        alternatives: expected < after.n || expected === after.n - (after.i - i) ? [`CAM${String(expected).padStart(6, '0')}`] : [],
+        confidence: 0.5,
+        reason: `Fuera de la serie de las líneas vecinas (CAM${String(before.n).padStart(6, '0')} … CAM${String(after.n).padStart(6, '0')})`,
+      });
+    });
+  }
+  return out;
+}
+
+/**
+ * Words of an Emergidos or Muertes note that belong in columns (ai-errors.md
+ * R11): "ethanol" / "flash frozen" (the tube's medium), "wc" (a wing clip),
+ * "pheromone" (killed for pheromones), "preserved", "unk" (cause unknown), and
+ * CAMs and tubes. They leave the note (the rest stays, and a note left empty is
+ * not written) and are returned: { medium, wingClip, pheromone, preserved,
+ * unknown, cams, tubes }. Changes `text` in place.
+ */
+export function noteColumns(text, field = 'Notes_Insectary_data') {
+  const out = { cams: [], tubes: [] };
+  if (typeof text[field] !== 'string' || !text[field].trim()) return out;
+  let note = ` ${text[field]} `;
+  const take = (pattern, found) => {
+    note = note.replace(pattern, (...m) => {
+      found(m);
+      return ' ';
+    });
+  };
+  take(/\bcam\s*0?(\d{5,7})\b/gi, m => out.cams.push(`CAM${m[1].padStart(6, '0')}`));
+  take(/\b([A-Z]{2})\s?(\d{7,9})\b/gi, m => out.tubes.push(`${m[1].toUpperCase()}${m[2]}`));
+  take(/\b(?:ethanol|etanol|alcohol|etoh)\b/gi, () => (out.medium ??= 'Ethanol'));
+  take(/\b(?:flash[\s-]*froz(?:en)?|flash[\s-]*frozen|ultracongelad[oa]s?|nitr[oó]geno(?:\s+l[ií]quido)?)\b/gi, () => (out.medium ??= 'Flash frozen'));
+  take(/(?<![\w/])(?:w\.?\s?c\.?|wing[\s-]*clip(?:ped)?|clip\s+de\s+ala)(?![\w/])/gi, () => (out.wingClip = true));
+  take(/\b(?:pheromon\w*|feromon\w*)\b/gi, () => (out.pheromone = true));
+  take(/(?<![\w/])(?:unk\.?|unknown|desconocid[oa])(?=[\s,;:.)|]|$)/gi, () => (out.unknown = true));
+  // "preserved" is a column's word only when nothing but IDs and media follow it ("preserved in
+  // ultrafridge at -80ºC" stays a note).
+  if (/\bpreserv|preservad|killed/i.test(note)) out.preserved = true;
+  take(/\b(?:killed\s*(?:[&y+]|and)\s*)?(?:preserv\w*|preservad[oa]s?)\.?(?=[\s,;|(){}\[\]-]*$)/gi, () => {});
+  // What is left once the column words are out: brackets, joining words and punctuation are not a note.
+  const rest = note
+    .replace(/[{}[\]()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const empty = /^(?:[\s,;:.|+&/\\\-–—→↗↑"']|\b(?:in|en|and|y|with|con|de|of|to|a|body)\b)*$/i.test(rest);
+  const kept = empty ? '' : tidy(rest);
+  if (kept) text[field] = kept;
+  else delete text[field];
+  return out;
+}
+
+/**
+ * What a death line implies in Insectary_data's other columns, filling only
+ * empty cells (insectary.md A8, A9; ai-errors.md T3): a butterfly that died and
+ * was not preserved takes the NA / NOT_COLLECTED block; a preserved one its
+ * Preservation_date (= the death date), Preserved_Dead_Alive, Location_body
+ * Ikiam, its tube's tissue and medium and the unused tubes NA; the note's words
+ * give the medium, a wing clip, Research_purpose Pheromones and the cause.
+ * `text`: the line's values as written (after noteColumns); `row`: the sheet
+ * row's values; `death`/`intro`: the dates as serials (line or row), or null.
+ * Returns { values: { field: value as the sheet stores it }, reasons: { field: why } }.
+ */
+export function impliedValues({ text, row = {}, note = {}, death = null, intro = null }) {
+  const values = {};
+  const reasons = {};
+  const has = f => !isNone(text[f]) || !isNone(row[f]);
+  const set = (field, value, reason) => {
+    if (values[field] === undefined && isNone(text[field])) [values[field], reasons[field]] = [value, reason];
+  };
+  const said = [note.medium && `«${note.medium === 'Ethanol' ? 'ethanol' : 'flash frozen'}»`, note.wingClip && '«wc»', note.pheromone && '«pheromone»', note.preserved && '«preserved»', note.unknown && '«unk»']
+    .filter(Boolean)
+    .join(', ');
+  const fromNote = `De la nota: ${said}`;
+  const written = String(text.Death_cause ?? row.Death_cause ?? '').trim();
+  const sample = has('CAM_ID') || has('Tube_1_id');
+  const died = death !== null || !isNone(written) || note.unknown;
+  // The cause the line does not write: "unk" is Unknown; preserved, for pheromones, or a CAM on the
+  // day it emerged is Killed_Preserved (a same-day death with a CAM is a butterfly killed to keep).
+  let cause = isNone(written) ? null : written;
+  if (!cause && note.unknown) set('Death_cause', (cause = 'Unknown'), fromNote);
+  else if (!cause && death !== null && (note.preserved || note.pheromone || (sample && (note.medium || (intro !== null && death === intro)))))
+    set('Death_cause', (cause = 'Killed_Preserved'), note.preserved || note.pheromone || note.medium ? fromNote : 'Con CAM y muerta el día que emergió');
+  if (note.pheromone) set('Research_purpose', 'Pheromones', fromNote);
+  const killed = /^killed/i.test(cause ?? '');
+  const year = death ?? intro;
+  const recent = year !== null && new Date(Date.UTC(1899, 11, 30) + year * 864e5).getUTCFullYear() >= 2025;
+  const tube1 = has('Tube_1_id');
+  if (died && !sample && !killed && cause) {
+    for (const [field, value] of Object.entries(NOT_PRESERVED)) set(field, value, 'Muerte sin preservar: como Muertes (NA / NOT_COLLECTED)');
+  } else if (sample && died && (killed || note.preserved || note.medium || note.tubes?.length)) {
+    const why = 'Individuo preservado: lo que el equipo escribe siempre';
+    if (death !== null) set('Preservation_date', death, 'La fecha de muerte (preservado ese día)');
+    if (killed) set('Preserved_Dead_Alive', 'Alive', 'Killed_Preserved: preservado vivo');
+    set('Location_body', 'Ikiam', why);
+    if (tube1) {
+      set('Tube_1_tissue', note.wingClip ? WING_CLIP : 'WHOLE_ORGANISM', note.wingClip ? fromNote : why);
+      if (note.medium || recent) set('T1_Preservation_medium', note.medium ?? 'Flash frozen', note.medium ? fromNote : 'Lo habitual desde 2025');
+    }
+    if (has('Tube_2_id')) {
+      set('Tube_2_tissue', 'WHOLE_ORGANISM', why);
+      if (note.medium || recent) set('T2_Preservation_medium', note.medium ?? 'Flash frozen', note.medium ? fromNote : 'Lo habitual desde 2025');
+    } else if (!note.wingClip) {
+      set('Tube_2_id', 'NA', why);
+      set('Tube_2_tissue', 'NA', why);
+      set('T2_Preservation_medium', 'NOT_COLLECTED', why);
+    }
+    for (const field of ['Tube_3_id', 'Tube_3_tissue', 'Tube_4_id', 'Tube_4_tissue']) set(field, 'NA', why);
+  } else if (tube1 && (note.wingClip || note.medium)) {
+    // A wing clip taken from a living butterfly: its tube's tissue and medium.
+    if (note.wingClip) set('Tube_1_tissue', WING_CLIP, fromNote);
+    if (note.medium || recent) set('T1_Preservation_medium', note.medium ?? 'Flash frozen', note.medium ? fromNote : 'Lo habitual desde 2025');
+  }
+  return { values, reasons };
+}
+
+/** Existing IDs that differ from one read by a character or two swapped (9NM for 9MN): "did you mean". */
+export function nearIds(read, ids) {
+  const a = String(read ?? '').toUpperCase();
+  const out = [];
+  for (const id of ids) {
+    const b = String(id).toUpperCase();
+    if (b.length !== a.length || b === a) continue;
+    const diff = [...a].map((ch, i) => i).filter(i => a[i] !== b[i]);
+    if (diff.length === 1 || (diff.length === 2 && diff[1] === diff[0] + 1 && a[diff[0]] === b[diff[1]] && a[diff[1]] === b[diff[0]]))
+      out.push(id);
+  }
+  return out;
+}
+
 /** How many of a line's cells the sheet row already has (a date counts by day and month). */
 function agreement(kind, record, text, year) {
   let same = 0;
@@ -582,7 +884,23 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
       .filter(v => v === 'Insectary' || v === 'Laboratory'),
   );
   const pageRoom = columnsOf(kind).includes('INSECTARY OR LABORATORY') && rooms.size === 1 ? [...rooms][0] : null;
+  // An Emergidos or Muertes note: its words that belong in columns leave it ("ethanol", "wc",
+  // "pheromone", "unk", CAMs and tubes); a CAM or tube goes to its column when the line has none.
+  const deathKind = kind.sheet === 'Insectary_data' && columnsOf(kind).includes('Death_cause');
+  const notes = texts.map((text, i) => {
+    if (!deathKind || edits[transcription.lines[i].n]?.Notes_Insectary_data !== undefined) return {};
+    const said = noteColumns(text);
+    if (said.cams[0] && isNone(text.CAM_ID)) text.CAM_ID = said.cams[0];
+    for (const tube of said.tubes) {
+      if (isNone(text.Tube_1_id)) text.Tube_1_id = tube;
+      else if (tube !== String(text.Tube_1_id).toUpperCase() && isNone(text.Tube_2_id)) text.Tube_2_id = tube;
+    }
+    return said;
+  });
   const completed = completeRuns(texts);
+  const crossedLines = transcription.lines.map(line => line.crossed);
+  // CAMs with a digit too many, tubes with one dropped, CAMs out of the page's run.
+  const checks = idChecks(texts, crossedLines);
   const lines = transcription.lines.map((line, i) => {
     const edited = edits[line.n] ?? {};
     const text = texts[i];
@@ -602,6 +920,39 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
   chooseRows(lines);
   const pageYear = year ?? transcription.year ?? inferYear(lines, dateFields, currentYear);
   const yearSource = year ? 'person' : transcription.year ? 'page' : 'inferred';
+  const serialOf = (text, fallback) => (isNone(text) ? (typeof fallback === 'number' ? fallback : null) : (readDate(text, pageYear)?.serial ?? null));
+
+  // A clutch read unlike the run next to it (848 among 843s), judged by the laid dates in Insectary_stocks.
+  if (kind.sheet === 'Insectary_data' && columnsOf(kind).includes('CLUTCH NUMBER')) {
+    const plausible = (clutch, emerge) => {
+      const known = lookup.clutch?.(readValue('CLUTCH NUMBER', clutch, {}).value);
+      if (!lookup.laidOfClutch) return null;
+      if (known === null || known === undefined) return false;
+      const laid = lookup.laidOfClutch(known);
+      if (typeof laid !== 'number') return false;
+      const day = serialOf(emerge);
+      return day === null ? true : day - laid >= 20 && day - laid <= 90;
+    };
+    for (const [i, check] of Object.entries(clutchRuns(texts, crossedLines, plausible))) {
+      if (edits[transcription.lines[i].n]?.['CLUTCH NUMBER'] !== undefined) continue;
+      (checks[i] ??= {})['CLUTCH NUMBER'] = check;
+      // The species the formula will give follows the clutch the row gets.
+      texts[i]['CLUTCH NUMBER'] = check.value;
+    }
+  }
+
+  // An ID not in the sheet: the IDs one character away, nearest first to where its neighbours are.
+  for (const [i, item] of lines.entries()) {
+    if (item.record || item.candidates.length || kind.newRows || !lookup.nearIds || item.keyValues.some(v => v === null || v === '')) continue;
+    const found = lines
+      .map((o, j) => (o.record ? { at: o.record.row - (o.line.n - item.line.n), gap: Math.abs(j - i) } : null))
+      .filter(Boolean)
+      .sort((a, b) => a.gap - b.gap)[0];
+    item.near = lookup
+      .nearIds(item.keyValues)
+      .sort((a, b) => (found ? Math.abs(a.row - found.at) - Math.abs(b.row - found.at) : a.row - b.row))
+      .slice(0, 3);
+  }
 
   // The same key on two lines of the page (as matched: 600 and 6OO are the same butterfly).
   const keyOf = item =>
@@ -634,7 +985,9 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
       nokey: `Sin ${kind.keys.join(' + ')} legible: escríbelo para buscar la fila`,
       duplicate: `El mismo ${kind.keys.join(' + ')} está también en la línea ${twins.join(', ')}`,
       ambiguous: `${item.candidates.length} filas de la hoja podrían ser esta (filas ${item.candidates.map(c => `${c.record.row} ${c.record.label ?? ''}`.trim()).join(', ')}): escribe el ${kind.keys.join(' + ')} correcto`,
-      missing: `${item.keyValues.join(' ')} no está en ${kind.sheet}: ¿está bien leído?`,
+      missing:
+        `${item.keyValues.join(' ')} no está en ${kind.sheet}: ¿está bien leído?` +
+        (item.near?.length ? ` ¿Quisiste decir ${item.near.map(n => `${n.value} (fila ${n.row})`).join(' o ')}?` : ''),
       new: `Fila nueva en ${kind.sheet}`,
       // Read as a look-alike (600 for 6OO): the row was found by the others around it.
       match: item.readAs ? `Leído «${item.readAs}»; en la hoja es ${kind.keys.map(k => record.values?.[k]).join(' ')}` : '',
@@ -644,21 +997,50 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
     const clutchText = text['CLUTCH NUMBER'];
     const cells = {};
     let lastDate = null;
+    // A tube from the note where the row already has a first one (a wing clip): the body's, Tube_2.
+    const said = notes[i] ?? {};
+    if (record && said.tubes?.includes(text.Tube_1_id) && isNone(text.Tube_2_id) && !('Tube_1_id' in edited)) {
+      const first = record.values?.Tube_1_id;
+      if (!isNone(first) && String(first).toUpperCase() !== text.Tube_1_id) [text.Tube_2_id, text.Tube_1_id] = [text.Tube_1_id, undefined];
+    }
+    // What a death line implies in the other columns (computed once its dates are read).
+    let implied = null;
+    const impliedNow = () =>
+      (implied ??=
+        deathKind && usable
+          ? impliedValues({
+              text,
+              row: record?.values ?? {},
+              note: said,
+              death: typeof cells.Death_date?.value === 'number' ? cells.Death_date.value : serialOf(null, record?.values?.Death_date),
+              intro:
+                typeof cells.Intro2Insectary_date?.value === 'number'
+                  ? cells.Intro2Insectary_date.value
+                  : serialOf(null, record?.values?.Intro2Insectary_date),
+            })
+          : { values: {}, reasons: {} });
     for (const field of columnsOf(kind)) {
       const typed = field in edited;
       const unreadable = line.v[field] === null && field in line.v;
       const owner = owners[i] ?? {};
       let confidence = typed ? 1 : (line.c[field] ?? (unreadable ? 0 : 1));
+      // A check against the lines around (a clutch unlike its run, a CAM or tube with a digit more or less).
+      const check = typed ? null : (checks[i]?.[field] ?? null);
+      if (check) confidence = Math.min(confidence, check.confidence);
       // What the page implies where the line writes nothing; it only fills an empty cell.
       let inferred = null;
+      let hint = null;
       if (usable && !typed && !unreadable && isNone(text[field])) {
         if (field === 'INSECTARY OR LABORATORY' && pageRoom) inferred = pageRoom;
         // "(F1)" not written after the species: no generation (the team types NA).
         else if (field === 'Generation' && kind.sheet === 'Insectary_stocks' && !isNone(text.SPECIES)) inferred = 'NA';
         // A butterfly with a clutch was reared.
         else if (field === 'Wild_Reared' && !isNone(text['CLUTCH NUMBER'])) inferred = 'Reared';
+        // A death's other columns (the not-preserved block, a preserved butterfly's), the note's words.
+        else if (deathKind && IMPLIED_FIELDS.has(field) && impliedNow().values[field] !== undefined)
+          [inferred, hint] = [impliedNow().values[field], impliedNow().reasons[field]];
       }
-      let source = inferred ?? text[field];
+      let source = check ? check.value : (inferred ?? text[field]);
       if (field === 'INSECTARY OR LABORATORY' && owner.doubt && !typed) confidence = Math.min(confidence, 0.5);
       // The note says whose butterflies they are, unless the row's note already does.
       if (field === 'NOTES' && owner.owner && !typed) {
@@ -666,7 +1048,8 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         const fresh = parts.filter(p => !textKey(record?.values?.NOTES ?? '').includes(textKey(p)));
         source = fresh.length ? fresh.join('; ') : parts.at(-1);
       }
-      const read = readValue(field, source, { year: pageYear, sheet: kind.sheet });
+      // What the page only implies is already as the sheet stores it.
+      const read = inferred !== null ? { value: inferred, yearWritten: true } : readValue(field, source, { year: pageYear, sheet: kind.sheet });
       let value = read.value;
       let error = read.error ?? null;
       // A count kept as a sum is compared (and shown) as its formula: =12+15.
@@ -720,23 +1103,39 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         else if (!hits.length && words.length === 1) value = words[0];
         else unlisted = true;
       }
-      const alternatives = [...(line.a[field] ?? []), ...(field === 'INSECTARY OR LABORATORY' && owner.doubt ? ['lab'] : [])]
+      const alternatives = [
+        ...(check?.alternatives ?? []),
+        ...(line.a[field] ?? []),
+        ...(field === 'INSECTARY OR LABORATORY' && owner.doubt ? ['lab'] : []),
+      ]
         .map(a => readValue(field, a, { year: pageYear, sheet: kind.sheet }).value)
+        // A clutch as Insectary_stocks writes it ("685 (3)").
+        .map(a => (field === 'CLUTCH NUMBER' && kind.sheet !== 'Insectary_stocks' ? (lookup.clutch?.(a) ?? a) : a))
         .filter(a => !isNone(a) && a !== value);
+      const doubt = !typed && (confidence < DOUBT || (unlisted && !list?.strict));
       const cell = {
         // An explicit NA (from a dash in a text column) is kept; other "none" readings are nothing.
         value: value === 'NA' ? 'NA' : isNone(value) ? null : value,
         before,
         status: 'empty',
         confidence,
-        // A value outside a list that is not strict (a species name) is shown but not written until confirmed.
-        doubt: !typed && (confidence < DOUBT || (unlisted && !list?.strict)),
+        // A doubtful reading (or a value outside a list that is not strict, a species name) goes into the
+        // proposal highlighted, with its other readings, for the person to check before applying.
+        doubt,
+        reason: doubt
+          ? (check?.reason ??
+            line.r?.[field] ??
+            (unlisted && !list?.strict ? `«${value}» no está en la lista de ${field}` : `Lectura dudosa (confianza ${Math.round(confidence * 100) / 100})`))
+          : null,
         alternatives: [...new Set(alternatives)],
         edited: typed,
         include: false,
         formula: false,
+        // Not written on the line: the page's room, a template, a word of the note.
+        inferred: inferred !== null,
         message:
           error ??
+          hint ??
           (unlisted && !list?.strict && !typed
             ? `«${value}» no está en la lista de ${field}`
             : completed[i]?.[field]
@@ -780,7 +1179,11 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         const pageTerms = sumField ? (sumParts(cell.value) ?? [Number(cell.value)]) : null;
         // What the page only implies (the room, no generation, reared, a dash) never replaces a value.
         if (inferred !== null)
-          Object.assign(cell, { status: 'keep', message: `La hoja tiene ${show(field, before)}; la línea no lo escribe: se deja` });
+          Object.assign(cell, {
+            status: 'keep',
+            // A template's cell is only said when the row holds something else (NOT_COLLECTED for NA is not news).
+            message: hint ? null : `La hoja tiene ${show(field, before)}; la línea no lo escribe: se deja`,
+          });
         else if (cell.value === 'NA' && isNone(text[field]) && typeOf(field) !== 'text')
           Object.assign(cell, { status: 'keep', message: `La hoja tiene ${show(field, before)}; el cuaderno pone «—»: se deja` });
         // The sheet already has the page's terms and more (added after the page was written).
@@ -788,6 +1191,9 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
           Object.assign(cell, { status: 'keep', message: `La hoja tiene ${before}: los términos del cuaderno y más; se deja` });
       }
       const formula = record?.formulas?.[field];
+      // What the page only implies never goes over a formula (T2_Preservation_medium often is one).
+      if (inferred !== null && hint && formulaHere && ['fill', 'conflict', 'new'].includes(cell.status))
+        Object.assign(cell, { status: 'keep', message: null });
       if (['fill', 'conflict', 'new'].includes(cell.status) && formulaHere && !(field === 'SPECIES' && cell.formula)) {
         // A count typed as a sum (=12+15) is replaced by the notebook's sum; other formulas are kept.
         const allowed =
@@ -810,7 +1216,9 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
       if (['fill', 'conflict', 'new'].includes(cell.status)) {
         if (!error && list?.strict && !list.values.has(String(cell.value).trim()))
           error = `«${cell.value}» no está en la lista de ${field}`;
-        const holder = error ? null : lookup.holder?.(field, cell.value, record?.id ?? null);
+        // The butterfly's own Collection_data row may hold its tube too (the twin of a wild-caught one).
+        const own = { Insectary_ID: record?.values?.Insectary_ID ?? null, CAM_ID: cells.CAM_ID?.value ?? record?.values?.CAM_ID ?? null };
+        const holder = error ? null : lookup.holder?.(field, cell.value, record?.id ?? null, own);
         if (holder) error = `${cell.value} ya está en ${holder.sheet} fila ${holder.row}`;
         if (error) Object.assign(cell, { status: 'error', message: error });
       }
@@ -819,7 +1227,8 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         const note = noteText(cell.value, { today, initials });
         cell.write = isNone(before) ? note : `${before} | ${note}`;
       }
-      cell.include = usable && ['fill', 'conflict', 'new'].includes(cell.status) && !cell.doubt;
+      // Doubtful cells go in too (highlighted, never left out); an unreadable one (null) stays out.
+      cell.include = usable && ['fill', 'conflict', 'new'].includes(cell.status);
       cells[field] = cell;
     }
     const changes = Object.values(cells).filter(c => c.include).length;
@@ -838,6 +1247,7 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
       cells,
       changes,
       picked: picked && changes > 0,
+      ...(item.near?.length ? { near: item.near } : {}),
     };
   });
 
@@ -856,7 +1266,7 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
       rows: out.filter(l => l.changes).length,
       fills: count(c => c.include && c.status === 'fill'),
       conflicts: count(c => c.status === 'conflict'),
-      doubts: count(c => c.doubt && ['fill', 'conflict', 'new'].includes(c.status)),
+      doubts: count(c => c.doubt && c.include),
       errors: count(c => c.status === 'error') + out.filter(l => ['missing', 'ambiguous', 'duplicate', 'nokey'].includes(l.status)).length,
       created: out.filter(l => l.status === 'new' && l.changes).length,
       same: count(c => c.status === 'same'),
@@ -875,18 +1285,33 @@ export function proposalRows(review) {
     if (!line.picked || !line.changes) continue;
     const values = {};
     const notes = [];
+    // Per cell, what the person sees beside the value: a doubt (how sure, the other readings, why)
+    // and, for cells the line does not write, where they come from.
+    const doubts = {};
+    const hints = {};
+    const inferred = [];
     for (const [field, cell] of Object.entries(line.cells)) {
       if (!cell.include) continue;
       values[field] = cell.write ?? cell.value;
       if (cell.status === 'conflict') notes.push(`${field}: hoja ${show(field, cell.before)} → cuaderno ${show(field, cell.value)}`);
+      if (cell.doubt)
+        doubts[field] = {
+          confidence: Math.round(cell.confidence * 100) / 100,
+          // A note's other readings would be written with its date and initials: only the value's.
+          alternatives: /^Notes|^NOTES$/.test(field) ? [] : cell.alternatives.slice(0, 3),
+          reason: clip(cell.reason, 200),
+        };
+      if (cell.inferred) inferred.push(field);
+      if (cell.message && !cell.doubt) hints[field] = clip(cell.message, 200);
     }
-    // Doubtful readings stay out of the proposal, but the row says so.
-    for (const [field, cell] of Object.entries(line.cells))
-      if (cell.doubt && ['fill', 'conflict', 'new'].includes(cell.status))
-        notes.push(`${field} dudoso: ${[cell.value, ...cell.alternatives].map(v => show(field, v)).join(' / ')} (no incluido)`);
     const note = clip([`Línea ${line.n}: «${line.raw}»`, ...notes].join(' · '), 300);
-    if (line.status === 'new') newRows.push({ sheet: review.sheet, values, note, line: line.n });
-    else changes.push({ recordId: line.recordId, values, note, line: line.n });
+    const meta = {
+      ...(Object.keys(doubts).length ? { doubts } : {}),
+      ...(Object.keys(hints).length ? { hints } : {}),
+      ...(inferred.length ? { inferred } : {}),
+    };
+    if (line.status === 'new') newRows.push({ sheet: review.sheet, values, note, line: line.n, ...meta });
+    else changes.push({ recordId: line.recordId, values, note, line: line.n, ...meta });
   }
   return { changes, newRows };
 }

@@ -7,9 +7,9 @@
 
 import { moduleMap } from './schema.mjs';
 import { newRowFormulaFields } from './premade.mjs';
-import { TUBE_FIELD, isIdValue, isUnique } from './verifications.mjs';
+import { TUBE_FIELD, isIdValue, isUnique, twinRows } from './verifications.mjs';
 import { listOptions } from './verify.mjs';
-import { KINDS, KIND_IDS, buildReview, checkTranscription, clutchKey, columnsOf, proposalRows, typeOf } from './notebook.mjs';
+import { KINDS, KIND_IDS, buildReview, checkTranscription, clutchKey, columnsOf, nearIds, proposalRows, typeOf } from './notebook.mjs';
 
 const parse = (value, fallback) => {
   try {
@@ -31,11 +31,15 @@ export const MATCH_NOTEBOOK_TOOL = {
       'Match a transcribed notebook page (or envelopes/labels) with the sheet and draft ONE proposal from it, shown at once beside the chat (Cambios propuestos). Follow the digitalizar-cuaderno skill.',
       'Give every line of the page, top to bottom, with the values as written (dates day/month as written, e.g. "17/9"; ditto marks already replaced by the value above; CAMs/tubes written short like "cam505" or "81" may stay short, they continue the one above; counts as written, e.g. "12+15"; a count corrected by crossing out: the first value, then each new one after "=", e.g. "31+4=1" or "12=9=4", kept as the team types it, =31+4-34).',
       'The server finds each line\'s row (also through look-alike IDs 0/O, 1/I, 5/S and the order of the rows), infers the year, completes list values, keeps the SPECIES formula unless what emerged differs, and checks lists, IDs and tubes already used.',
-      'It returns per line: the row found, cells to fill, differences with the sheet, doubtful cells (left out of the proposal), problems, and the proposalId. Doubtful cells go in with a confidence below 0.8 and their other readings.',
+      'It returns per line: the row found, cells to fill, differences with the sheet, doubtful cells, implied cells, problems, didYouMean (sheet IDs one character away from an ID not found), and the proposalId.',
+      'Doubtful cells GO INTO the proposal with your best reading as the value, highlighted for the person with their alternatives and reason: give a confidence below 0.8, up to 3 alternatives and a short reason. Only a cell you cannot read at all (null) stays out. Never leave a readable value out for being doubtful or implausible: flag it.',
+      'The server also flags (as doubtful, never silently): a clutch unlike the run of lines next to it (848 among 843s, judged by the laid dates), a CAM with 7 digits or far from the run around it, a tube with 7 or 9 digits (the value becomes the reading that continues the run, the written one an alternative).',
+      'apply_proposal refuses while doubtful cells are unchecked and lists them: ask the person about each; they check them in the table, or tell you, then call update_proposal rows[].checked (or the value they say) or apply_proposal with confirmDoubtful.',
       'The proposal\'s rows follow the page\'s line order. With includeUnchanged the lines already in the sheet show too, as context rows that are never written (never fake a change to make a line show).',
       'Notes are written as "d/m/yy INI: text" (today, the person\'s initials) after the note the cell already has, with " | ".',
       'Posturas: a generation written with the species, e.g. "lys (F1)", goes to Generation (F1, F2, Backcross), none written is NA; the dissections column goes to NUMBER OF PUPAE/LARVAE FOR DISECTIONS (a count, sums kept like the other counts); a dash in a date or count is NA; give INSECTARY OR LABORATORY as written ("ins", "lab", "ins/oda", "ins/este"): "ins/<person>" becomes Insectary plus the note "mariposas de <person>", and a line without it takes the page\'s room; a sheet sum that already holds the page\'s terms and more is kept.',
-      'Emergidos: a line with a clutch is Wild_Reared Reared; give Wild_Reared "Wild-caught" for a wild butterfly (no clutch), and add its Collection_data row to the proposal (wildWithoutCollection lists the ones missing).',
+      'Emergidos: a line with a clutch is Wild_Reared Reared; give Wild_Reared "Wild-caught" for a wild butterfly (no clutch), and add its Collection_data row to the proposal (wildWithoutCollection lists the ones missing, with the row ready to complete).',
+      'Emergidos and Muertes: give the notes column as written; its words that belong in columns leave the note and fill only empty cells: "ethanol"/"flash frozen" → the tube\'s medium (T1_/T2_Preservation_medium), "wc" → Tube_1_tissue wing clip, "pheromone" → Research_purpose Pheromones, "preserved" → Death_cause Killed_Preserved, "unk" → Death_cause Unknown, a CAM → CAM_ID, a tube → Tube_1_id, or Tube_2_id when there is one already. A death not preserved (a cause other than Killed_Preserved, no CAM or tube) gets the NA / NOT_COLLECTED block, a preserved one Preservation_date = Death_date, Preserved_Dead_Alive Alive (Killed_Preserved), Location_body Ikiam, WHOLE_ORGANISM, Flash frozen (since 2025) and the unused tubes NA: these show as implied, and never replace a value the row has.',
       `Columns per kind: ${KIND_IDS.map(id => `${id} (${KINDS[id].label}, ${KINDS[id].sheet}): ${columnsOf(KINDS[id]).join(', ')}${KINDS[id].aliases ? ` (also accepted: ${Object.entries(KINDS[id].aliases).map(([a, f]) => `${a} = ${f}`).join(', ')})` : ''}`).join('; ')}.`,
     ].join(' '),
     parameters: {
@@ -54,6 +58,7 @@ export const MATCH_NOTEBOOK_TOOL = {
               values: { type: 'object', description: 'Column → text as read. null = cannot read it' },
               confidence: { type: 'object', description: 'Column → 0..1, only for cells you are not sure of' },
               alternatives: { type: 'object', description: 'Column → other possible readings (up to 3)' },
+              reasons: { type: 'object', description: 'Column → why the cell is doubtful, a few words the person reads (e.g. "1 or 7: this hand")' },
               crossedOut: { type: 'boolean', description: 'The line is crossed out or marked "no se usó el ID"' },
             },
             required: ['raw', 'values'],
@@ -71,6 +76,24 @@ export const MATCH_NOTEBOOK_TOOL = {
       },
       required: ['kind', 'lines'],
     },
+  },
+};
+
+/**
+ * Collection_data's fixed cells per kind of record, as the team types them now
+ * (field.md §2): only the cells a template fixes; the rest comes from the page.
+ */
+export const COLLECTION_TEMPLATES = {
+  // A live capture sent to the insectary: its death and preservation stay blank until it dies.
+  Collected_Sent2Insectary: {
+    Release_Collect: 'Collected_Sent2Insectary',
+    FieldMark_ID: 'NA',
+    CAM_ID: 'NA',
+    ID_status: 'COMPLETE',
+    Transect_section: 'NA',
+    Bait: 'NA',
+    Forest_stratum: 'NA',
+    Flight_height: 'NA',
   },
 };
 
@@ -142,13 +165,32 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
         const hit = clutches().get(clutchKey(value))?.[0];
         return hit ? (store.getRecord(hit.id)?.values?.SPECIES ?? null) : null;
       },
+      // The clutch's DATE LAID (a serial), null when it has none (NA, eggs found), undefined when not in the sheet.
+      laidOfClutch: value => {
+        const hit = clutches().get(clutchKey(value))?.[0];
+        if (!hit) return undefined;
+        const laid = store.getRecord(hit.id)?.values?.['DATE LAID'];
+        return typeof laid === 'number' ? laid : null;
+      },
+      // IDs of the sheet one character away from one read (or two swapped), with their rows.
+      nearIds: values => {
+        if (keys.length !== 1) return [];
+        const map = mine();
+        return nearIds(clutchKey(values[0]), map.keys())
+          .slice(0, 20)
+          .flatMap(key => (map.get(key) ?? []).map(h => ({ value: h.value, row: store.getRecord(h.id)?.row ?? null })))
+          .filter(h => h.row !== null);
+      },
       list: field => lists[field],
-      holder: (field, value, recordId) => {
+      holder: (field, value, recordId, own = {}) => {
         if (!(isUnique(sheet, field) || TUBE_FIELD.test(field)) || !isIdValue(value)) return null;
         const unique = usedIds();
         const key = `${TUBE_FIELD.test(field) ? 'tube' : `${sheet}:${field}`}\u0000${String(value).trim()}`;
+        // A wild-caught butterfly's Collection_data row holds its tube too: not another butterfly.
+        const twin = h =>
+          TUBE_FIELD.test(field) && sheet === 'Insectary_data' && h.sheet === 'Collection_data' && twinRows(own, store.getRecord(h.id)?.values);
         // Another row, or another column of this row (the clip's tube already filed as Tube_2_id).
-        return (unique.get(key) ?? []).find(h => h.id !== recordId || h.field !== field) ?? null;
+        return (unique.get(key) ?? []).find(h => (h.id !== recordId || h.field !== field) && !twin(h)) ?? null;
       },
       newRowFormulas: newRowFormulas(sheet),
       typedOverFormula: new Set(sheet === 'Insectary_data' ? ['SPECIES'] : []),
@@ -184,7 +226,21 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
         if (!/already in the sheet/.test(out.error)) line.rowError = clip(out.error.replace(/^newRows\[0\]: /, ''), 300);
         continue;
       }
-      changes.push(...out.changes.map(c => ({ ...c, line: row.line })));
+      // The doubts (and where implied values come from) of the cells still in the row.
+      const keep = map => {
+        const kept = Object.fromEntries(Object.entries(map ?? {}).filter(([f]) => f in (out.changes[0]?.values ?? {})));
+        return Object.keys(kept).length ? kept : undefined;
+      };
+      const inferred = (row.inferred ?? []).filter(f => f in (out.changes[0]?.values ?? {}));
+      changes.push(
+        ...out.changes.map(c => ({
+          ...c,
+          line: row.line,
+          ...(keep(row.doubts) ? { doubts: keep(row.doubts) } : {}),
+          ...(keep(row.hints) ? { hints: keep(row.hints) } : {}),
+          ...(inferred.length ? { inferred } : {}),
+        })),
+      );
     }
     // includeUnchanged: every line found in the sheet shows, the ones with nothing to write as
     // read-only context rows (never written), so the table follows the whole page.
@@ -222,7 +278,30 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
         const wild = line.cells.Wild_Reared;
         if (line.status !== 'match' || (wild?.include ? wild.value : wild?.before) !== 'Wild-caught') continue;
         const id = line.cells.Insectary_ID?.before ?? line.label;
-        if (!collected.has(clutchKey(id))) wildWithoutCollection.push(id);
+        if (collected.has(clutchKey(id))) continue;
+        // Its Collection_data row as the team types a live capture (field.md R2.6), to complete.
+        const now = field => {
+          const cell = line.cells[field];
+          return cell ? (cell.include ? cell.value : cell.before) : null;
+        };
+        const species = String(now('SPECIES') ?? '').trim().split(/\s+/);
+        const day = now('Intro2Insectary_date');
+        wildWithoutCollection.push({
+          id,
+          row: {
+            sheet: 'Collection_data',
+            values: Object.fromEntries(
+              Object.entries({
+                ...COLLECTION_TEMPLATES.Collected_Sent2Insectary,
+                Insectary_ID: id,
+                SPECIES: species.length >= 2 ? species.slice(0, 2).join(' ') : null,
+                Subspecies_Form: species.length >= 3 ? species.slice(2).join(' ') : null,
+                Sex: now('Sex'),
+                Collection_date: typeof day === 'number' ? isoOf(day) : null,
+              }).filter(([, v]) => v !== null && v !== ''),
+            ),
+          },
+        });
       }
     }
     return { review, changes, ignored, wildWithoutCollection };
@@ -249,13 +328,18 @@ export function matchSummary({ review, changes, ignored, wildWithoutCollection =
       else if (cell.status === 'error') put('problems', cell.message);
       else if (cell.status === 'formula')
         put('notWritten', cell.message ?? 'formula column');
+      // In the proposal, highlighted for the person to check (with these alternatives to pick from).
       else if (cell.doubt && ['fill', 'conflict', 'new'].includes(cell.status))
         put('doubtful', {
           read: notebook,
           alternatives: cell.alternatives.map(a => show(field, a)),
+          confidence: Math.round(cell.confidence * 100) / 100,
+          ...(cell.reason ? { reason: cell.reason } : {}),
           sheet: show(field, cell.before),
-          ...(cell.message ? { note: cell.message } : {}),
+          ...(cell.message && cell.message !== cell.reason ? { note: cell.message } : {}),
         });
+      // Not written on the line: the page's room, a death's template, a word of the note.
+      else if (cell.inferred && (cell.status === 'fill' || cell.status === 'new')) put('implied', notebook);
       else if (cell.status === 'conflict')
         put('differs', { sheet: show(field, cell.before), notebook, ...(cell.message ? { note: cell.message } : {}) });
       else if (cell.status === 'fill' || cell.status === 'new') put(cell.status === 'new' ? 'newRow' : 'fill', cell.write ?? notebook);
@@ -265,6 +349,7 @@ export function matchSummary({ review, changes, ignored, wildWithoutCollection =
     }
     if (group.unread) group.unread = Object.keys(group.unread);
     Object.assign(out, group);
+    if (l.near?.length) out.didYouMean = l.near.map(n => ({ id: n.value, row: n.row }));
     if (l.rowError) out.rowError = l.rowError;
     out.inProposal = inProposal.has(l.n);
     if (context.has(l.n)) out.contextRow = true;
@@ -292,8 +377,9 @@ export function matchSummary({ review, changes, ignored, wildWithoutCollection =
     ...(wildWithoutCollection.length
       ? {
           wildWithoutCollection: {
-            ids: wildWithoutCollection,
-            todo: 'Wild-caught without a Collection_data row: add them to this proposal with update_proposal newRows (Release_Collect Collected_Sent2Insectary, the same Insectary_ID, SPECIES + Subspecies_Form, Sex, Collector, Collection_location, Collection_date, Collection_time, Cloud_cover, Rainfall).',
+            ids: wildWithoutCollection.map(w => w.id),
+            rows: wildWithoutCollection.map(w => w.row),
+            todo: 'Wild-caught without a Collection_data row: add these rows to this proposal with update_proposal newRows, completed from the page (Collector, Identifier, Collection_location, Collection_time, Rainfall, Cloud_cover, Purpose; NA when the page does not say). The template cells are as the team types a live capture: keep them; leave the death and preservation columns empty.',
           },
         }
       : {}),

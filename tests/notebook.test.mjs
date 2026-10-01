@@ -178,8 +178,10 @@ test('each line is compared with its row: fills, conflicts, doubts, formulas and
   assert.ok(b.cells.Sex.include, 'the notebook is the primary record');
   assert.equal(b.cells.SPECIES.status, 'same', 'never type the species the formula already gives');
   assert.equal(b.cells.CAM_ID.status, 'fill', 'the row holding the CAM is this one');
-  assert.ok(b.cells.Death_date.doubt && !b.cells.Death_date.include);
+  // A doubtful reading goes into the proposal, highlighted, with its other readings and why.
+  assert.ok(b.cells.Death_date.doubt && b.cells.Death_date.include);
   assert.deepEqual(b.cells.Death_date.alternatives, [d('2025-08-08')]);
+  assert.equal(b.cells.Death_date.reason, 'Lectura dudosa (confianza 0.5)');
 
   assert.equal(c.status, 'missing');
   assert.ok(!c.picked && !c.changes);
@@ -188,7 +190,8 @@ test('each line is compared with its row: fills, conflicts, doubts, formulas and
   assert.equal(e.status, 'match', 'a crossed-out line does not count as a repeat');
   assert.equal(e.cells.Sex.status, 'error');
   assert.match(e.cells.Sex.message, /lista de Sex/);
-  assert.ok(e.cells.SPECIES.doubt, 'a species outside the list waits for the person');
+  assert.ok(e.cells.SPECIES.doubt && e.cells.SPECIES.include, 'a species outside the list goes in, for the person to check');
+  assert.match(e.cells.SPECIES.reason, /no está en la lista de SPECIES/);
 
   // The person corrects the sex and confirms the date: they become part of the proposal.
   const edited = buildReview({
@@ -207,7 +210,11 @@ test('each line is compared with its row: fills, conflicts, doubts, formulas and
   assert.deepEqual(newRows, []);
   assert.deepEqual(
     changes.map(ch => [ch.recordId, ch.line, Object.keys(ch.values).sort()]),
-    [['r2', 2, ['CAM_ID', 'Death_date', 'Sex']]],
+    [
+      ['r2', 2, ['CAM_ID', 'Death_date', 'Sex']],
+      // The species outside the list goes in as a doubt (the sex outside its strict list cannot).
+      ['r3', 5, ['SPECIES']],
+    ],
   );
   assert.match(changes[0].note, /Sex: hoja female → cuaderno male/);
 
@@ -424,12 +431,20 @@ test('match_notebook matches a transcribed page and leaves one proposal beside T
       notebook: 'Mechanitis messenoides deceptus',
       note: 'La fórmula da «Mechanitis messenoides intermedia»; se escribirá encima',
     });
-    // A doubtful sex is left out and reported with its alternative; the date still goes.
-    assert.deepEqual(line(2).doubtful.Sex, { read: 'female', alternatives: ['male'], sheet: null });
+    // A doubtful sex goes into the proposal, reported with its alternative; the date too.
+    assert.deepEqual(line(2).doubtful.Sex, {
+      read: 'female',
+      alternatives: ['male'],
+      confidence: 0.5,
+      reason: 'Lectura dudosa (confianza 0.5)',
+      sheet: null,
+    });
+    assert.equal(out.counts.doubtful, 1);
     // A butterfly with a clutch was reared.
-    assert.deepEqual(line(2).fill, { Intro2Insectary_date: '2025-08-08', Wild_Reared: 'Reared' });
+    assert.deepEqual(line(2).fill, { Intro2Insectary_date: '2025-08-08' });
+    assert.deepEqual(line(2).implied, { Wild_Reared: 'Reared' }, 'not written on the line: implied');
     // Dates as ISO; the tube already filed as this butterfly's Tube_2_id.
-    assert.deepEqual(line(3).fill, { Intro2Insectary_date: '2025-08-08', Death_date: '2025-08-09', Death_cause: 'Unknown', Wild_Reared: 'Reared' });
+    assert.deepEqual(line(3).fill, { Intro2Insectary_date: '2025-08-08', Death_date: '2025-08-09', Death_cause: 'Unknown' });
     assert.match(line(3).problems.Tube_1_id, /ya está en Insectary_data fila 4/);
     assert.equal(line(4).label, '6OO');
     assert.match(line(4).message, /Leído «600»; en la hoja es 6OO/);
@@ -447,7 +462,11 @@ test('match_notebook matches a transcribed page and leaves one proposal beside T
     assert.match(listed[0].reason, /Cuaderno Emergidos \(Insectary_data\): emergidos 5VB–6OO/);
     assert.deepEqual(listed[0].changes.map(c => c.line), [1, 2, 3, 4]);
     assert.deepEqual(listed[0].changes[0].replaceFormula, ['SPECIES']);
-    assert.match(listed[0].changes[1].note, /Sex dudoso: female \/ male \(no incluido\)/);
+    // The proposal keeps the doubt with the cell: its value, how sure, the alternatives and why.
+    assert.equal(listed[0].changes[1].values.Sex, 'female');
+    assert.deepEqual(listed[0].changes[1].doubts, {
+      Sex: { confidence: 0.5, alternatives: ['male'], reason: 'Lectura dudosa (confianza 0.5)' },
+    });
 
     // "Es macho": the page matched again replaces the proposal.
     const corrected = structuredClone(PAGE);

@@ -12,7 +12,7 @@ import { hasDateFormat, hasTimeFormat, rowKey, rowValues } from './sheets.mjs';
 import { describeProblems, headerLayout, sameLayout } from './columns.mjs';
 import { ensurePremadeRows } from './premade.mjs';
 import { cleanPurpose, inferPurpose } from './history.mjs';
-import { TUBE_FIELD, UNIQUE, isIdValue, isUnique } from './verifications.mjs';
+import { TUBE_FIELD, UNIQUE, isIdValue, isUnique, twinRows } from './verifications.mjs';
 import { listOptions, listProblemMsg } from './verify.mjs';
 import { msg, msgError, textFields } from './messages.mjs';
 
@@ -624,6 +624,16 @@ class Plan {
       }
   }
 
+  /** A tube's other holder is the same butterfly's other row (Insectary_data and its Collection_data twin). */
+  isTwin(target, holder) {
+    const mine = { ...(target.record?.values ?? {}), ...(target.clean ?? {}) };
+    const theirs = this.store.getRecord(holder.id)?.values;
+    if (!theirs) return false;
+    if (target.sheet === 'Insectary_data' && holder.sheet === 'Collection_data') return twinRows(mine, theirs);
+    if (target.sheet === 'Collection_data' && holder.sheet === 'Insectary_data') return twinRows(theirs, mine);
+    return false;
+  }
+
   /** Rejects IDs that another row already uses, or that repeat within the batch. */
   checkUniqueIds() {
     // Undo puts back what was there before (repeats included): refusing it would leave the data half restored.
@@ -641,7 +651,7 @@ class Plan {
       const scope = TUBE_FIELD.test(p.field) ? 'tube' : `${p.target.sheet}:${p.field}`;
       const key = `${scope}\u0000${p.value}`;
       const ownId = p.target.record?.id || p.target.recordId;
-      const holders = (owners.get(key) || []).filter(h => h.id !== ownId);
+      const holders = (owners.get(key) || []).filter(h => h.id !== ownId && !(scope === 'tube' && this.isTwin(p.target, h)));
       // A value being moved away from its current holder in this same batch is free.
       const stillHeld = holders.filter(
         h =>
