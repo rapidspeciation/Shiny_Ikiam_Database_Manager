@@ -2,10 +2,11 @@
 import ChoiceField from '../components/ChoiceField.vue'
 import DateField from '../components/DateField.vue'
 import { computed, ref } from 'vue'
-import { PenLine } from 'lucide-vue-next'
+import { History, PenLine } from 'lucide-vue-next'
 import EntryModeToggle from '../components/EntryModeToggle.vue'
 import IdPicker from '../components/IdPicker.vue'
 import DeathsCards from '../components/deaths/DeathsCards.vue'
+import TabHistory from '../components/history/TabHistory.vue'
 import SheetGrid from '../components/SheetGrid.vue'
 import { useDeathsState } from '../composables/useDeathsState'
 import { useEntryMode } from '../composables/useEntryMode'
@@ -19,8 +20,8 @@ import { usePending } from '../stores/pending'
 import { t } from '../lib/i18n'
 
 /**
- * "Registrar Muertes", as cards (touch screens: search, big buttons, one Save)
- * or as the table (a PC): the IDs typed show their rows at once (to look at
+ * "Registrar Muertes", as cards (the default on every device: search, big
+ * buttons, one Save) or as the table: the IDs typed show their rows at once (to look at
  * them), and "Escribir" puts the death date and cause in those rows' empty
  * cells. The latest recorded deaths are a separate table below. Both modes
  * share what is being registered (useDeathsState), so switching keeps it.
@@ -35,6 +36,7 @@ const { mode } = useEntryMode('deaths')
 const { picked, date, cause, preserved } = useDeathsState()
 const notPreserved = computed({ get: () => !preserved.value, set: v => (preserved.value = !v) })
 const recentCount = ref(30)
+const showHistory = ref(false)
 
 const ids = computed(() => {
   if (!table.value) return []
@@ -156,7 +158,10 @@ function write() {
         <PenLine :size="15" /> {{ $t('Escribir fecha y causa')
         }}<template v-if="chosenRows.length"> ({{ chosenRows.length }})</template>
       </button>
-      <EntryModeToggle v-model="mode" class="ml-auto" />
+      <button class="btn ml-auto" :title="$t('Historial de Muertes')" @click="showHistory = true">
+        <History :size="15" /> {{ $t('Historial') }}
+      </button>
+      <EntryModeToggle v-model="mode" />
     </div>
     <div class="flex min-h-0 flex-1 flex-col">
       <p v-if="!ready" class="p-6 text-stone-500">{{ $t('Cargando {sheet}…', { sheet: 'Insectary_data' }) }}</p>
@@ -207,5 +212,6 @@ function write() {
         </div>
       </template>
     </div>
+    <TabHistory v-if="showHistory" :title="$t('Historial de Muertes')" purpose="muertes" @close="showHistory = false" />
   </div>
 </template>

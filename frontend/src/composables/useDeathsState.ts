@@ -1,13 +1,15 @@
 import { reactive, ref, type Ref } from 'vue'
 import { todayIso } from '../lib/dates'
+import type { OwnChoices } from '../lib/deaths'
 import { persistentRef } from '../lib/persist'
 
 /**
  * What Muertes is registering, shared by its two modes (the cards and the
  * table, see useEntryMode): the butterflies chosen, the death date, the cause,
  * preserved or not, the medium and the CAM and tube typed for each. Switching
- * mode (or turning a phone) keeps all of it. The IDs, cause and preserved live
- * as long as the browser tab (sessionStorage), the medium in this browser.
+ * mode (or turning a phone) keeps all of it. The IDs, cause, preserved and the
+ * cards' own values live as long as the browser tab (sessionStorage), the
+ * medium in this browser.
  */
 export interface DeathsState {
   /** The Insectary IDs chosen, in the order they were added. */
@@ -22,6 +24,14 @@ export interface DeathsState {
   samples: Record<string, { cam: string; tube: string }>
   /** What the app suggested, so a value the person typed is never replaced. */
   suggested: Record<string, { cam: string; tube: string }>
+  /**
+   * The cards' own date, cause or preservation, by Insectary ID (the cards
+   * only: set with the card selected; the rest come from date, cause and
+   * preserved above, which apply to all).
+   */
+  own: Ref<OwnChoices>
+  /** The cards selected (tapped): what the panel sets while any is selected. */
+  selected: Ref<string[]>
 }
 
 const PREFIX = 'ithomiini:'
@@ -95,6 +105,8 @@ export function createDeathsState(): DeathsState {
     medium: persistentRef('deaths:medium', 'Flash frozen', { lasting: true }),
     samples: reactive({}),
     suggested: reactive({}),
+    own: persistentRef<OwnChoices>('deaths:own', {}),
+    selected: ref<string[]>([]),
   }
 }
 

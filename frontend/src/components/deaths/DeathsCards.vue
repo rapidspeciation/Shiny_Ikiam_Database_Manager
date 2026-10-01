@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRaw, watch } from 'vue'
-import { AlertTriangle, Check, ChevronRight, Loader2, Search, Undo2, X } from 'lucide-vue-next'
+import { AlertTriangle, Check, CheckCircle2, ChevronRight, Circle, History, Loader2, Search, Undo2, X } from 'lucide-vue-next'
 import DateField from '../DateField.vue'
 import EntryModeToggle from '../EntryModeToggle.vue'
 import RowDrawer from '../RowDrawer.vue'
 import DeathEditor from './DeathEditor.vue'
 import LifeBadge from './LifeBadge.vue'
+import TabHistory from '../history/TabHistory.vue'
 import { useDeathsState } from '../../composables/useDeathsState'
 import type { EntryMode } from '../../composables/useEntryMode'
 import { useKeyboard, useMedia } from '../../composables/usePhone'
@@ -17,7 +18,8 @@ import {
   WHOLE,
   bestRack,
   buildIndex,
-  deathCells,
+  cardCells,
+  choiceFor,
   factsOf,
   hasGap,
   lifeOf,
@@ -26,8 +28,13 @@ import {
   usedSamples,
   rankCauses,
   searchKey,
+  setChoice,
+  sharedChoice,
+  keepOwn,
   suggest,
+  type ChoiceField,
   type DeathCell,
+  type DeathChoice,
   type Entry,
   type Facts,
   type PreservationGap,
@@ -50,10 +57,14 @@ import { t, tn, tx, type Msg } from '../../lib/i18n'
  * chosen as cards; the death date, the cause as big buttons and preserved or
  * not (each one's CAM and tube right under «Preservada»); then one "Save"
  * that writes exactly what the table's «Escribir fecha y causa» writes
- * (lib/deaths.ts) and saves it, with an Undo. The latest deaths below, by day;
- * any card opens the full-screen editor. On a wide screen (a tablet, a phone
- * held sideways) the search and cards take the left and the registering, with
- * Save, a column on the right. What is chosen is shared with the table (useDeathsState).
+ * (lib/deaths.ts) and saves it, with an Undo. With no card selected the date,
+ * cause and preservation apply to all cards; tapping cards selects them, and
+ * then they apply to those only (each card shows its own, and Save writes each
+ * card's). The latest deaths below, by day; a card's › opens the full-screen
+ * editor; «Historial» lists today's saves of Muertes, to undo one. On a wide
+ * screen (a tablet, a phone held sideways) the search and cards take the left
+ * and the registering, with Save, a column on the right. What is chosen is
+ * shared with the table (useDeathsState).
  */
 const MODULE = 'Insectary_data'
 const props = defineProps<{ table: Table | undefined; ready: boolean; options: Record<string, string[]> }>()
@@ -69,7 +80,7 @@ const roomy = useMedia('(min-width: 1024px)')
 /** A short screen (a phone sideways, ~300 px): what is typed comes before explanations. */
 const short = useMedia('(max-height: 520px)')
 
-const { picked, date, cause, preserved, medium, samples, suggested } = useDeathsState()
+const { picked, date, cause, preserved, medium, samples, suggested, own, selected } = useDeathsState()
 const query = ref('')
 const recentCount = ref(30)
 const today = computed(() => isoToSerial(todayIso()))
@@ -156,10 +167,14 @@ function onPaste(event: ClipboardEvent) {
 }
 function remove(id: string) {
   picked.value = picked.value.filter(p => searchKey(p) !== searchKey(id))
+  selected.value = selected.value.filter(p => searchKey(p) !== searchKey(id))
+  own.value = keepOwn(own.value, picked.value)
 }
 function removeAll() {
   picked.value = []
   missing.value = []
+  selected.value = []
+  own.value = {}
 }
 
 // --- Register: date, cause, preserved or not
@@ -178,20 +193,56 @@ const quickDates = computed(() => [
   { iso: serialToIso(today.value - 1), name: t('Ayer') },
 ])
 const dateError = computed(() =>
-  date.value && serialFromIso(date.value) === null ? t('Fecha no válida: el año debe estar entre 1990 y 2099') : '',
+  shownDate.value && serialFromIso(shownDate.value) === null ? t('Fecha no válida: el año debe estar entre 1990 y 2099') : '',
 )
+// --- Each card its own: tap cards to select them; the panel then sets theirs only
+/** The panel's values: what every card gets unless it has its own. */
+const all = computed<DeathChoice>(() => ({ date: date.value, cause: cause.value, preserved: preserved.value }))
+const choiceOf = (row: TableRow) => choiceFor(all.value, own.value, idOf(row))
+const hasOwn = (row: TableRow, field: ChoiceField) => own.value[idOf(row)]?.[field] !== undefined
+/** The selected cards still chosen, in the cards' order. */
+const selectedIds = computed(() => {
+  const keys = new Set(selected.value.map(searchKey))
+  return cards.value.map(idOf).filter(id => keys.has(searchKey(id)))
+})
+const isSelected = (row: TableRow) => selectedIds.value.includes(idOf(row))
+function toggleSelect(row: TableRow) {
+  const id = idOf(row)
+  selected.value = isSelected(row) ? selected.value.filter(s => searchKey(s) !== searchKey(id)) : [...selected.value, id]
+}
+const doneSelecting = () => (selected.value = [])
+/** What the panel shows for a field: the selected cards' shared value (undefined when they differ), else the panel's. */
+function shown<F extends ChoiceField>(field: F): DeathChoice[F] | undefined {
+  return selectedIds.value.length ? sharedChoice(all.value, own.value, selectedIds.value, field) : all.value[field]
+}
+/** Sets a field for the selected cards, or (none selected) for all of them. */
+function setField<F extends ChoiceField>(field: F, value: DeathChoice[F]) {
+  const next = setChoice(all.value, own.value, selectedIds.value, field, value)
+  if (next.all.date !== date.value) date.value = next.all.date
+  if (next.all.cause !== cause.value) cause.value = next.all.cause
+  if (next.all.preserved !== preserved.value) preserved.value = next.all.preserved
+  own.value = next.own
+}
+/** With nothing selected: the cards that keep their own value of a field ("B7A: Eaten"). */
+function ownOf(field: ChoiceField) {
+  if (selectedIds.value.length) return []
+  return cards.value.filter(r => hasOwn(r, field)).map(idOf)
+}
+const shownDate = computed(() => shown('date') ?? '')
 function pickCause(c: string) {
-  cause.value = c
+  setField('cause', c)
   // Killed to be preserved: the body goes in a tube.
-  if (c === KILLED) preserved.value = true
+  if (c === KILLED) setField('preserved', true)
 }
 const mediums = ['Flash frozen', 'Ethanol', 'DMSO']
 
 /** Rows dying now (no death date yet): in "preserved" each gets its CAM and tube. */
 const dying = (row: TableRow) => lifeOf(get(row)).state !== 'dead'
-const toPreserve = computed(() => (preserved.value ? cards.value.filter(dying) : []))
+const toPreserve = computed(() => cards.value.filter(r => choiceOf(r).preserved && dying(r)))
 /** Already recorded dead: "preserved" does not give them a tube here (Tubos does). */
-const notToPreserve = computed(() => (preserved.value ? cards.value.filter(r => !dying(r)) : []))
+const notToPreserve = computed(() => cards.value.filter(r => choiceOf(r).preserved && !dying(r)))
+/** The medium and the CAM and tube boxes show while any card is preserved, or the panel says «Preservada». */
+const showPreservation = computed(() => shown('preserved') === true || toPreserve.value.length > 0 || notToPreserve.value.length > 0)
 const sampleOf = (id: string) => (samples[id] ??= { cam: '', tube: '' })
 
 // The next free CAM IDs and tubes (server/grid.mjs idSuggestions), asked for only when preserving.
@@ -201,7 +252,7 @@ const racks = ref<(RackSuggestion & { label: string; labelMsg?: Msg })[]>([])
 const rack = computed(() => bestRack(racks.value, chosen.value, medium.value))
 let camStart = ''
 async function loadSampleIds() {
-  if (!preserved.value || !toPreserve.value.length) return
+  if (!toPreserve.value.length) return
   try {
     if (!camStart || !racks.value.length) {
       const [cam, tube] = await Promise.all([
@@ -218,13 +269,14 @@ async function loadSampleIds() {
       camStart ? run('cam', camStart) : [],
       rack.value ? run('tube', rack.value.value) : [],
     ])
-    camRun.value = cams
-    tubeRun.value = tubes
+    // The same runs again (a second load while racks arrived) must not refill a box the person just emptied.
+    if (cams.join() !== camRun.value.join()) camRun.value = cams
+    if (tubes.join() !== tubeRun.value.join()) tubeRun.value = tubes
   } catch (e) {
     notify(errorText(e), 'error')
   }
 }
-watch([preserved, () => toPreserve.value.length, () => rack.value?.value], loadSampleIds, { immediate: true })
+watch([() => toPreserve.value.length, () => rack.value?.value], loadSampleIds, { immediate: true })
 /**
  * Gives each card being preserved the next free CAM and tube no other card has,
  * keeping what the person typed and what was suggested before (a suggestion
@@ -238,13 +290,14 @@ watch([toPreserve, camRun, tubeRun], () => {
     const id = idOf(row)
     const s = sampleOf(id)
     const auto = (suggested[id] ??= { cam: '', tube: '' })
-    if (s.cam && s.cam === auto.cam && camRun.value.length && !camRun.value.includes(s.cam)) s.cam = ''
-    if (s.tube && s.tube === auto.tube && tubeRun.value.length && !tubeRun.value.includes(s.tube)) s.tube = ''
-    if (!s.cam && isBlank(pending.value(row, 'CAM_ID'))) {
+    if (s.cam && s.cam === auto.cam && camRun.value.length && !camRun.value.includes(s.cam)) s.cam = auto.cam = ''
+    if (s.tube && s.tube === auto.tube && tubeRun.value.length && !tubeRun.value.includes(s.tube)) s.tube = auto.tube = ''
+    // A box the person emptied stays empty (`auto` still holds what was suggested there).
+    if (!s.cam && !auto.cam && isBlank(pending.value(row, 'CAM_ID'))) {
       const next = camRun.value.find(v => !taken('cam', v, id))
       if (next) s.cam = auto.cam = next
     }
-    if (!s.tube) {
+    if (!s.tube && !auto.tube) {
       const next = tubeRun.value.find(v => !taken('tube', v, id))
       if (next) s.tube = auto.tube = next
     }
@@ -266,21 +319,9 @@ function gapText(g: PreservationGap) {
 
 /** The cells "Save" would write in each chosen row (the same as the table's «Escribir fecha y causa»). */
 const plans = computed(() => {
-  const serial = date.value ? serialFromIso(date.value) : null
   const out = new Map<string, DeathCell[]>()
-  for (const row of cards.value) {
-    const s = samples[idOf(row)]
-    const keep = preserved.value && dying(row)
-    out.set(
-      row.id,
-      deathCells(row, pending.value, {
-        serial,
-        cause: cause.value,
-        notPreserved: !preserved.value,
-        preserve: keep ? { cam: s?.cam.trim().toUpperCase() || '', tube: s?.tube.trim().toUpperCase() || '', medium: medium.value } : undefined,
-      }),
-    )
-  }
+  for (const row of cards.value)
+    out.set(row.id, cardCells(row, pending.value, choiceOf(row), { sample: samples[idOf(row)], medium: medium.value }))
   return out
 })
 const toSave = computed(() => cards.value.filter(r => plans.value.get(r.id)?.length))
@@ -302,9 +343,15 @@ function planText(row: TableRow) {
 /** Why "Save" cannot run yet (shown above the button: there is no hover on a phone); `gap` takes you to it. */
 const blocker = computed<{ text: string; gap?: string }>(() => {
   if (!chosen.value.length) return { text: t('Añade al menos una mariposa') }
-  if (dateError.value) return { text: dateError.value }
-  if (!date.value) return { text: t('Elige la fecha de muerte') }
-  if (!cause.value) return { text: t('Elige la causa') }
+  // Each card's own date and cause; "of B7A" only when some cards have theirs.
+  const name = (rows: TableRow[]) => (rows.length < cards.value.length ? rows.map(idOf).join(', ') : '')
+  const badDate = cards.value.filter(r => choiceOf(r).date && serialFromIso(choiceOf(r).date) === null)
+  if (badDate.length)
+    return { text: name(badDate) ? `${idOf(badDate[0])}: ${t('Fecha no válida: el año debe estar entre 1990 y 2099')}` : t('Fecha no válida: el año debe estar entre 1990 y 2099') }
+  const noDate = cards.value.filter(r => !choiceOf(r).date)
+  if (noDate.length) return { text: name(noDate) ? t('Falta la fecha de {ids}', { ids: name(noDate) }) : t('Elige la fecha de muerte') }
+  const noCause = cards.value.filter(r => !choiceOf(r).cause && dying(r))
+  if (noCause.length) return { text: name(noCause) ? t('Falta la causa de {ids}', { ids: name(noCause) }) : t('Elige la causa') }
   const first = gaps.value.find(hasGap)
   if (first) {
     const more = gaps.value.filter(hasGap).length - 1
@@ -324,7 +371,7 @@ const otherPending = computed(() => {
 
 // --- Save, then Undo
 const saving = ref(false)
-const lastSave = ref<null | { actionId: string; ids: string[]; count: number }>(null)
+const lastSave = ref<null | { actionId: string; ids: string[]; count: number; all: DeathChoice; own: typeof own.value }>(null)
 const undoing = ref(false)
 const waitIdle = async () => {
   for (let i = 0; i < 300 && pending.saving; i++) await new Promise(r => setTimeout(r, 100))
@@ -334,6 +381,7 @@ async function save() {
   saving.value = true
   const rows = toSave.value
   const ids = rows.map(idOf)
+  const choices = { all: { ...all.value }, own: JSON.parse(JSON.stringify(own.value)) as typeof own.value }
   try {
     for (const row of rows)
       for (const c of plans.value.get(row.id) || []) fillIfBlank(MODULE, row, idOf(row), c.field, c.value, c.overwrite)
@@ -351,12 +399,16 @@ async function save() {
         'error',
       )
       picked.value = picked.value.filter(id => refused.some(r => idOf(r) === id))
+      own.value = keepOwn(own.value, picked.value)
+      selected.value = []
       return
     }
-    lastSave.value = result.actionId ? { actionId: result.actionId, ids, count: rows.length } : null
+    lastSave.value = result.actionId ? { actionId: result.actionId, ids, count: rows.length, ...choices } : null
     picked.value = []
     cause.value = ''
     preserved.value = false
+    own.value = {}
+    selected.value = []
     for (const id of ids) {
       delete samples[id]
       delete suggested[id]
@@ -385,6 +437,11 @@ async function undo() {
     // The cards come back, to correct and save again.
     // (`ids` are in card order, newest first: added back oldest first, the cards look as before.)
     picked.value = [...new Set([...picked.value, ...[...last.ids].reverse()])]
+    // With the date, cause and preservation they were saved with (each card's own too).
+    date.value = last.all.date
+    cause.value = last.all.cause
+    preserved.value = last.all.preserved
+    own.value = { ...own.value, ...keepOwn(last.own, last.ids) }
     lastSave.value = null
     notify(tn(last.count, '{n} muerte deshecha en Google Sheets', '{n} muertes deshechas en Google Sheets'), 'success')
   } catch (e) {
@@ -509,7 +566,7 @@ function onFocusIn() {
 // --- Preserved: its details show right under the choice, in view, and lit for a moment
 const flash = ref(false)
 let flashTimer: ReturnType<typeof setTimeout> | undefined
-watch(preserved, now => {
+watch(showPreservation, now => {
   if (!now) return
   nextTick(() => {
     // The boxes to fill, with «Preservada» still in view above them where there is room.
@@ -540,13 +597,38 @@ function nextBox(event: KeyboardEvent) {
 }
 
 const summary = computed(() => {
+  const ids = cards.value.map(idOf)
+  const same = <F extends ChoiceField>(field: F) => sharedChoice(all.value, own.value, ids, field)
+  const day = same('date')
+  const why = same('cause')
+  const kept = same('preserved')
   const parts = [
-    date.value ? dayLabel(date.value).split(' · ')[0] : '',
-    cause.value,
-    preserved.value ? t('preservadas') : t('sin preservar'),
+    day === undefined ? t('varias fechas') : day ? dayLabel(day).split(' · ')[0] : '',
+    why === undefined ? t('varias causas') : why,
+    kept === undefined ? t('algunas preservadas') : kept ? t('preservadas') : t('sin preservar'),
   ].filter(Boolean)
   return parts.join(' · ')
 })
+/** A card's date, cause and preservation, as chips; `own`: set for this card only. */
+function chipsOf(row: TableRow) {
+  const c = choiceOf(row)
+  const s = samples[idOf(row)]
+  const preserving = c.preserved && dying(row)
+  return [
+    { field: 'date' as const, text: c.date ? (serialFromIso(c.date) !== null ? formatSerial(isoToSerial(c.date)) : c.date) : t('sin fecha'), missing: !c.date },
+    { field: 'cause' as const, text: c.cause || t('sin causa'), missing: !c.cause && dying(row) },
+    {
+      field: 'preserved' as const,
+      text: preserving
+        ? [t('Preservada'), s?.cam.trim().toUpperCase(), s?.tube.trim().toUpperCase()].filter(Boolean).join(' · ')
+        : c.preserved
+          ? t('Preservada')
+          : t('Sin preservar'),
+      missing: false,
+    },
+  ].map(chip => ({ ...chip, own: hasOwn(row, chip.field) }))
+}
+const showHistory = ref(false)
 /** Sex, clutch and the day it entered the insectary, as one line under the species. */
 const line = (f: Facts) =>
   [
@@ -637,6 +719,15 @@ const choice = (on: boolean) =>
           </div>
           <!-- Cards or the table: kept in this browser. -->
           <EntryModeToggle v-model="mode" :compact="!roomy" class="h-13 shrink-0 short:h-11 *:min-w-11" />
+          <!-- Today's saves of Muertes, to see and undo an accident. -->
+          <button
+            class="flex h-13 min-w-11 shrink-0 items-center justify-center gap-1 rounded-md border border-stone-300 bg-white px-2 text-sm text-stone-700 active:bg-stone-100 short:h-11"
+            :aria-label="$t('Historial de Muertes')"
+            :title="$t('Historial de Muertes')"
+            @click="showHistory = true"
+          >
+            <History :size="18" /> <span v-if="roomy">{{ $t('Historial') }}</span>
+          </button>
         </div>
         <p v-if="!ready" class="mt-1.5 text-sm text-stone-500">{{ $t('Cargando {sheet}…', { sheet: MODULE }) }}</p>
         <p v-else-if="alreadyChosen" class="mt-1.5 text-sm text-stone-600">{{ $t('{id} ya está en las tarjetas', { id: alreadyChosen }) }}</p>
@@ -662,16 +753,36 @@ const choice = (on: boolean) =>
         </p>
       </div>
 
-      <!-- The chosen butterflies. -->
+      <!-- The chosen butterflies: tap one (or several) to give it its own date, cause or preservation. -->
       <section v-if="cards.length" class="px-3 pt-3">
-        <div class="flex items-center justify-between">
+        <div class="flex items-center justify-between gap-2">
           <h2 class="text-sm font-semibold text-stone-700">{{ $t('Elegidas ({n})', { n: cards.length }) }}</h2>
           <button class="h-11 px-2 text-sm text-stone-600 underline" @click="removeAll">{{ $t('Quitar todas') }}</button>
         </div>
+        <p v-if="canEdit && cards.length > 1 && !selectedIds.length" class="mb-1.5 text-xs text-stone-500 short:hidden">
+          {{ $t('Toca una tarjeta para darle su propia fecha, causa o preservación.') }}
+        </p>
         <ul class="grid grid-cols-[repeat(auto-fill,minmax(17rem,1fr))] gap-2">
-          <li v-for="(row, i) in cards" :key="row.id" class="relative flex flex-col rounded-xl border border-stone-200 bg-white shadow-sm">
-            <button class="block w-full flex-1 px-3 pt-2.5 pr-12 pb-2 text-left" @click="openEditor('cards', i)">
+          <li
+            v-for="(row, i) in cards"
+            :key="row.id"
+            class="relative flex flex-col rounded-xl border-2 shadow-sm"
+            :class="isSelected(row) ? 'border-brand-600 bg-brand-50 ring-4 ring-brand-600/30' : 'border-stone-200 bg-white'"
+          >
+            <button
+              class="block w-full flex-1 rounded-t-xl px-3 pt-2.5 pr-24 pb-2 text-left"
+              :aria-pressed="canEdit ? isSelected(row) : undefined"
+              :aria-label="canEdit ? (isSelected(row) ? $t('{id} seleccionada: toca para quitarla de la selección', { id: idOf(row) }) : $t('Seleccionar {id}', { id: idOf(row) })) : undefined"
+              @click="canEdit ? toggleSelect(row) : openEditor('cards', i)"
+            >
               <span class="flex flex-wrap items-center gap-2">
+                <component
+                  :is="isSelected(row) ? CheckCircle2 : Circle"
+                  v-if="canEdit"
+                  :size="22"
+                  class="shrink-0"
+                  :class="isSelected(row) ? 'text-brand-700' : 'text-stone-300'"
+                />
                 <span class="text-xl font-semibold">{{ row.values.Insectary_ID }}</span>
                 <LifeBadge :facts="factsFor(row)" />
               </span>
@@ -680,13 +791,23 @@ const choice = (on: boolean) =>
               <span v-if="factsFor(row).life.cause" class="block text-xs text-stone-700">Death_cause: {{ factsFor(row).life.cause }}</span>
               <span v-if="factsFor(row).notes" class="block truncate text-xs text-stone-500">{{ factsFor(row).notes }}</span>
             </button>
-            <button
-              class="absolute top-1 right-1 grid h-11 w-11 place-items-center text-stone-500"
-              :aria-label="$t('Quitar {id}', { id: idOf(row) })"
-              @click="remove(idOf(row))"
-            >
-              <X :size="20" />
-            </button>
+            <div class="absolute top-1 right-1 flex">
+              <button
+                class="grid h-11 w-11 place-items-center rounded-lg text-stone-600 active:bg-stone-100"
+                :aria-label="$t('Ver la ficha de {id}', { id: idOf(row) })"
+                :title="$t('Ver la ficha de {id}', { id: idOf(row) })"
+                @click="openEditor('cards', i)"
+              >
+                <ChevronRight :size="22" />
+              </button>
+              <button
+                class="grid h-11 w-11 place-items-center rounded-lg text-stone-500 active:bg-stone-100"
+                :aria-label="$t('Quitar {id}', { id: idOf(row) })"
+                @click="remove(idOf(row))"
+              >
+                <X :size="20" />
+              </button>
+            </div>
             <!-- Preserved and still lacking its CAM or tube: a tap goes to the box, under «Preservada». -->
             <button
               v-if="canEdit && gapById.get(idOf(row)) && hasGap(gapById.get(idOf(row))!)"
@@ -697,15 +818,32 @@ const choice = (on: boolean) =>
               <span class="min-w-0 flex-1">{{ gapText(gapById.get(idOf(row))!) }}</span>
               <ChevronRight :size="16" class="shrink-0" />
             </button>
-            <p
-              v-else-if="canEdit"
-              class="rounded-b-xl border-t border-stone-100 px-3 py-1.5 text-xs"
-              :class="cause && plans.get(row.id)?.length ? 'bg-brand-50/60 text-brand-800' : 'text-stone-500'"
+            <!-- This card's date, cause and preservation (its own ones in violet), or why nothing is written. -->
+            <div
+              v-if="canEdit"
+              class="rounded-b-xl border-t px-3 py-1.5 text-xs"
+              :class="isSelected(row) ? 'border-brand-100' : 'border-stone-100'"
             >
-              <template v-if="!cause && factsFor(row).life.state !== 'dead'">{{ $t('Elige la causa para registrarla') }}</template>
-              <template v-else-if="plans.get(row.id)?.length">{{ $t('Se escribirá: {what}', { what: planText(row) }) }}</template>
-              <template v-else>{{ $t('Ya registrada: no se cambiará') }}</template>
-            </p>
+              <p v-if="!plans.get(row.id)?.length && factsFor(row).life.state === 'dead'" class="text-stone-500">
+                {{ $t('Ya registrada: no se cambiará') }}
+              </p>
+              <p v-else class="flex flex-wrap gap-1" :data-choice="idOf(row)">
+                <span
+                  v-for="chip in chipsOf(row)"
+                  :key="chip.field"
+                  class="rounded-md px-1.5 py-0.5 font-medium"
+                  :class="
+                    chip.missing
+                      ? 'bg-amber-100 text-amber-900'
+                      : chip.own
+                        ? 'bg-violet-100 text-violet-900 ring-1 ring-violet-300'
+                        : 'bg-stone-100 text-stone-700'
+                  "
+                  :title="chip.own ? $t('Solo de esta tarjeta') : undefined"
+                  >{{ chip.text }}</span
+                >
+              </p>
+            </div>
           </li>
         </ul>
       </section>
@@ -713,6 +851,29 @@ const choice = (on: boolean) =>
       <!-- How they died: here on a phone held upright, in the right column on a wide screen. -->
       <Teleport to="#deaths-register" defer :disabled="!wide">
         <section v-if="canEdit && cards.length" class="space-y-5 px-3 pb-2" :class="wide ? 'pt-3' : 'pt-5'">
+          <!-- What the choices below change: the selected cards, or all of them. -->
+          <div
+            class="sticky top-0 z-10 -mx-3 flex min-h-12 items-center gap-2 border-y px-3 py-1.5"
+            :class="selectedIds.length ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-200 bg-stone-100 text-stone-800'"
+            role="status"
+            data-applies
+          >
+            <p class="min-w-0 flex-1 text-sm">
+              <span class="font-semibold">{{
+                selectedIds.length
+                  ? $t('Se aplica a {ids}', { ids: selectedIds.join(', ') })
+                  : $tn(cards.length, 'Se aplica a la única tarjeta', 'Se aplica a las {n} tarjetas')
+              }}</span>
+              <span v-if="selectedIds.length" class="block text-xs opacity-90">{{ $t('Solo a las seleccionadas; las demás siguen igual.') }}</span>
+            </p>
+            <button
+              v-if="selectedIds.length"
+              class="h-10 shrink-0 rounded-lg bg-white px-4 text-sm font-semibold text-brand-800 active:bg-brand-50"
+              @click="doneSelecting"
+            >
+              {{ $t('Listo') }}
+            </button>
+          </div>
           <div>
             <h2 class="mb-1.5 text-sm font-semibold text-stone-700">{{ $t('Fecha de muerte') }}</h2>
             <div class="grid grid-cols-[1fr_1fr_minmax(9rem,1.4fr)] gap-2">
@@ -720,16 +881,18 @@ const choice = (on: boolean) =>
                 v-for="d in quickDates"
                 :key="d.iso"
                 class="h-12 rounded-lg border text-base font-medium"
-                :class="choice(date === d.iso)"
-                :aria-pressed="date === d.iso"
-                @click="date = d.iso"
+                :class="choice(shownDate === d.iso)"
+                :aria-pressed="shownDate === d.iso"
+                @click="setField('date', d.iso)"
               >
                 {{ d.name }}
               </button>
-              <DateField v-model="date" class="field-input h-12 text-base" />
+              <DateField :model-value="shownDate" class="field-input h-12 text-base" @update:model-value="setField('date', $event)" />
             </div>
             <p v-if="dateError" class="mt-1 text-sm text-red-700">{{ dateError }}</p>
-            <p v-else-if="date" class="mt-1 text-sm text-stone-600">{{ dayLabel(date) }}</p>
+            <p v-else-if="shownDate" class="mt-1 text-sm text-stone-600">{{ dayLabel(shownDate) }}</p>
+            <p v-else-if="shown('date') === undefined" class="mt-1 text-sm text-stone-600">{{ $t('Fechas distintas: elige una para todas las seleccionadas') }}</p>
+            <p v-if="ownOf('date').length" class="mt-1 text-xs text-violet-800">{{ $t('Con fecha propia: {ids}', { ids: ownOf('date').join(', ') }) }}</p>
           </div>
           <div>
             <h2 class="mb-1.5 text-sm font-semibold text-stone-700">Death_cause</h2>
@@ -738,40 +901,48 @@ const choice = (on: boolean) =>
                 v-for="c in causes"
                 :key="c"
                 class="min-h-12 rounded-lg border px-2 py-2 text-base font-medium break-words"
-                :class="choice(cause === c)"
-                :aria-pressed="cause === c"
+                :class="choice(shown('cause') === c)"
+                :aria-pressed="shown('cause') === c"
                 @click="pickCause(c)"
               >
                 {{ c }}
               </button>
             </div>
+            <p v-if="shown('cause') === undefined" class="mt-1 text-sm text-stone-600">{{ $t('Causas distintas: elige una para todas las seleccionadas') }}</p>
+            <p v-if="ownOf('cause').length" class="mt-1 text-xs text-violet-800">{{ $t('Con causa propia: {ids}', { ids: ownOf('cause').join(', ') }) }}</p>
           </div>
           <div>
             <h2 class="mb-1.5 text-sm font-semibold text-stone-700">{{ $t('Preservación') }}</h2>
             <div class="grid grid-cols-2 gap-2">
               <button
                 class="min-h-12 rounded-lg border px-2 text-base font-medium"
-                :class="choice(!preserved)"
-                :aria-pressed="!preserved"
-                @click="preserved = false"
+                :class="choice(shown('preserved') === false)"
+                :aria-pressed="shown('preserved') === false"
+                @click="setField('preserved', false)"
               >
                 {{ $t('Sin preservar') }}
               </button>
               <button
                 class="min-h-12 rounded-lg border px-2 text-base font-medium"
-                :class="choice(preserved)"
-                :aria-pressed="preserved"
-                @click="preserved = true"
+                :class="choice(shown('preserved') === true)"
+                :aria-pressed="shown('preserved') === true"
+                @click="setField('preserved', true)"
               >
                 {{ $t('Preservada') }}
               </button>
             </div>
-            <p v-if="!preserved" class="mt-1.5 text-sm text-stone-600">
+            <p v-if="ownOf('preserved').length" class="mt-1 text-xs text-violet-800">
+              {{ $t('Con preservación propia: {ids}', { ids: ownOf('preserved').join(', ') }) }}
+            </p>
+            <p v-if="shown('preserved') === false" class="mt-1.5 text-sm text-stone-600">
               {{ $t('Sin preservar: CAM y tubos NA, tejidos y medios NOT_COLLECTED') }}
+            </p>
+            <p v-else-if="shown('preserved') === undefined" class="mt-1.5 text-sm text-stone-600">
+              {{ $t('Unas preservadas y otras no: elige una opción para todas las seleccionadas') }}
             </p>
             <!-- Preserved: the medium, then each butterfly's CAM and tube, right here where the eye is. -->
             <div
-              v-else
+              v-if="showPreservation"
               ref="details"
               class="mt-2 rounded-xl border bg-white p-3 transition-shadow duration-700"
               :class="flash ? 'border-brand-600 shadow-[0_0_0_4px_var(--color-brand-100)]' : 'border-stone-200'"
@@ -971,6 +1142,7 @@ const choice = (on: boolean) =>
       </footer>
     </Teleport>
 
+    <TabHistory v-if="showHistory" :title="$t('Historial de Muertes')" purpose="muertes" @close="showHistory = false" />
     <DeathEditor
       v-if="editing && editorRows.length"
       v-model:index="editing.index"

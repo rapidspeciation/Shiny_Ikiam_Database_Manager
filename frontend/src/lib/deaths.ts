@@ -1,4 +1,5 @@
 import { isBlank } from './cells'
+import { serialFromIso } from './dates'
 import type { CellValue, TableRow } from './types'
 
 /**
@@ -409,4 +410,90 @@ export function factsOf(get: (field: string) => CellValue, today: number): Facts
     life: lifeOf(get),
     notes: text('Notes_Insectary_data'),
   }
+}
+
+// --- Each card its own date, cause and preservation
+
+/** What a death is registered with: the date (ISO), the cause, preserved or not. */
+export interface DeathChoice {
+  date: string
+  cause: string
+  preserved: boolean
+}
+export type ChoiceField = keyof DeathChoice
+/** The values a card has of its own (set with the card selected), by Insectary ID; the rest come from the panel. */
+export type OwnChoices = Record<string, Partial<DeathChoice>>
+
+/** A card's date, cause and preservation: its own where it has them, else the panel's (for all cards). */
+export function choiceFor(all: DeathChoice, own: OwnChoices, id: string): DeathChoice {
+  const mine = own[id]
+  return mine ? { ...all, ...mine } : all
+}
+
+/**
+ * One value chosen in the panel. With cards selected it is theirs only (their
+ * own value; the same as the panel's is not kept as their own); with none
+ * selected it is every card's: the panel's value, and no card keeps its own
+ * value of that field. Returns the new panel values and own values (the old
+ * ones are not changed).
+ */
+export function setChoice<F extends ChoiceField>(
+  all: DeathChoice,
+  own: OwnChoices,
+  selected: string[],
+  field: F,
+  value: DeathChoice[F],
+): { all: DeathChoice; own: OwnChoices } {
+  const out: OwnChoices = {}
+  const put = (id: string, mine: Partial<DeathChoice>) => {
+    if (Object.keys(mine).length) out[id] = mine
+  }
+  if (!selected.length) {
+    for (const [id, mine] of Object.entries(own)) {
+      const { [field]: _dropped, ...rest } = mine
+      put(id, rest)
+    }
+    return { all: { ...all, [field]: value }, own: out }
+  }
+  const chosen = new Set(selected)
+  for (const [id, mine] of Object.entries(own)) if (!chosen.has(id)) put(id, mine)
+  for (const id of selected) {
+    const { [field]: _old, ...rest } = own[id] ?? {}
+    put(id, all[field] === value ? rest : { ...rest, [field]: value })
+  }
+  return { all, own: out }
+}
+
+/** The value these cards share for a field, or undefined when they differ (none: undefined). */
+export function sharedChoice<F extends ChoiceField>(all: DeathChoice, own: OwnChoices, ids: string[], field: F): DeathChoice[F] | undefined {
+  if (!ids.length) return undefined
+  const first = choiceFor(all, own, ids[0])[field]
+  return ids.every(id => choiceFor(all, own, id)[field] === first) ? first : undefined
+}
+
+/** Own values of cards no longer chosen are forgotten. */
+export function keepOwn(own: OwnChoices, ids: string[]): OwnChoices {
+  const keep = new Set(ids)
+  return Object.fromEntries(Object.entries(own).filter(([id]) => keep.has(id)))
+}
+
+/**
+ * The cells "Save" writes for one card, with its own date, cause and
+ * preservation (choiceFor): what the table's «Escribir fecha y causa» writes
+ * (deathCells), plus, for a body preserved now, its CAM, tube (`sample`) and
+ * the medium. A butterfly already recorded dead gets no tube here (Tubos does).
+ */
+export function cardCells(
+  row: TableRow,
+  get: Getter,
+  choice: DeathChoice,
+  { sample, medium }: { sample?: { cam: string; tube: string }; medium: string },
+): DeathCell[] {
+  const serial = choice.date ? serialFromIso(choice.date) : null
+  const dying = lifeOf(f => get(row, f)).state !== 'dead'
+  const preserve =
+    choice.preserved && dying
+      ? { cam: sample?.cam.trim().toUpperCase() || '', tube: sample?.tube.trim().toUpperCase() || '', medium }
+      : undefined
+  return deathCells(row, get, { serial, cause: choice.cause, notPreserved: !choice.preserved, preserve })
 }

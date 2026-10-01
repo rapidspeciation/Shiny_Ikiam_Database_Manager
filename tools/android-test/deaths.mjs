@@ -45,7 +45,7 @@ if (!signed)
     { username: creds.username, password: creds.password },
   );
 await page.goto(new URL('#/muertes', APP).href);
-// A fresh screen: no cards or cause left from an earlier run, and the mode the device gets by default (cards).
+// A fresh screen: no cards or cause left from an earlier run, and the default mode (cards, on every device).
 await page.evaluate(() => {
   Object.keys(sessionStorage).filter(k => k.startsWith('ithomiini:deaths:')).forEach(k => sessionStorage.removeItem(k));
   localStorage.removeItem('ithomiini:entry-mode:deaths');
@@ -138,14 +138,26 @@ for (const id of ids.slice(1, 3)) {
 }
 report('cards', await cardIds());
 await shot('2-three-cards');
-// 3. A cause button, not preserved, Save.
+// 3. A cause button for all, not preserved; then the second card selected (tapped) gets its own cause.
 await closeKeyboard();
 await sleep(600);
 await tapOn(page.locator('button[aria-pressed]', { hasText: /^\s*Unknown\s*$/ }).first());
 await tapOn(page.locator('button[aria-pressed]', { hasText: 'Not preserved' }));
 await sleep(500);
+report('applies to (none selected)', await page.locator('[data-applies]').innerText());
 report('footer', await footer());
 await shot('3-cause');
+await tapOn(page.locator(`button[aria-label="Select ${ids[1]}"]`));
+await sleep(400);
+report('applies to (one card tapped)', (await page.locator('[data-applies]').innerText()).replace(/\n+/g, ' | '));
+await shot('3b-selected');
+await tapOn(page.locator('button[aria-pressed]', { hasText: /^\s*Eaten\s*$/ }).first());
+await sleep(300);
+await shot('3c-own-cause');
+await tapOn(page.locator('[data-applies] button', { hasText: 'Done' }));
+await sleep(400);
+for (const id of ids) report(`  card ${id}`, (await page.locator(`[data-choice="${id}"]`).innerText()).replace(/\n+/g, ' · '));
+report('footer', await footer());
 await tapOn(page.locator('footer button.btn-primary'));
 await page.waitForSelector('footer:has-text("saved to Google Sheets")', { timeout: 30000 });
 report('after save', await footer());
@@ -207,12 +219,20 @@ adb('shell', 'input', 'keyevent', '66');
 await sleep(800);
 await closeKeyboard();
 report('card', (await page.locator('section li').first().innerText()).replace(/\n/g, ' · '));
-// 7. The editor, from the card; close.
-await tapOn(page.locator('section li > button').first());
+// 7. The editor, from the card's ›; close.
+await tapOn(page.locator(`button[aria-label="Open ${ids[0]}'s details"]`));
 await sleep(800);
 report('editor', (await page.locator('[role=dialog] header').innerText()).replace(/\n/g, ' · '));
 await shot('10-editor');
 await tapOn(page.locator('[role=dialog] footer button.btn-primary'));
+// 7b. Today's history of Muertes (mine): the saves of this run, each cell before → after, with Undo.
+await tapOn(page.locator('button[aria-label="Deaths history"]'));
+await page.waitForSelector('[role=dialog] article', { timeout: 20000 });
+await sleep(1500);
+report('history', (await page.locator('[role=dialog] article header').allInnerTexts()).map(t => t.replace(/\n+/g, ' · ')));
+await shot('10b-history');
+await tapOn(page.locator('[role=dialog] button[aria-label="Close"]').first());
+await sleep(500);
 // 8. The table, then back to the cards: the card is still there.
 await tapOn(page.locator('button[aria-pressed]', { hasText: 'Table' }).or(page.locator('button[aria-label="Table"]')).first());
 await sleep(1500);

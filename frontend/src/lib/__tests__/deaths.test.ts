@@ -3,6 +3,8 @@ import {
   NOT_PRESERVED,
   bestRack,
   buildIndex,
+  cardCells,
+  choiceFor,
   daysAlive,
   deathCells,
   factsOf,
@@ -11,9 +13,14 @@ import {
   lookAlikes,
   preservationGaps,
   rankCauses,
+  setChoice,
+  sharedChoice,
+  keepOwn,
   suggest,
   usedSamples,
+  type DeathChoice,
   type Getter,
+  type OwnChoices,
 } from '../deaths'
 import type { CellValue, TableRow } from '../types'
 
@@ -231,5 +238,54 @@ describe('causes and racks', () => {
     expect(bestRack(racks, [row({ Research_purpose: 'F1/F2 mutation rate' })], 'Flash frozen')?.value).toBe('FS1')
     // No insectary rack in ethanol: still the insectary's (as Tubos does), never the collections' rack.
     expect(bestRack(racks, [row({})], 'Ethanol')?.value).toBe('FS3')
+  })
+})
+
+describe('each card its own date, cause and preservation', () => {
+  const all: DeathChoice = { date: '2026-09-30', cause: 'Unknown', preserved: false }
+  it('nothing selected: the panel sets every card (and their own values of that field go)', () => {
+    let state = { all, own: { B7A: { cause: 'Eaten' }, C8B: { cause: 'Spider', date: '2026-09-29' } } as OwnChoices }
+    state = setChoice(state.all, state.own, [], 'cause', 'Disappearance')
+    expect(state.all.cause).toBe('Disappearance')
+    expect(state.own).toEqual({ C8B: { date: '2026-09-29' } })
+    expect(choiceFor(state.all, state.own, 'B7A')).toEqual({ date: '2026-09-30', cause: 'Disappearance', preserved: false })
+    expect(choiceFor(state.all, state.own, 'C8B')).toEqual({ date: '2026-09-29', cause: 'Disappearance', preserved: false })
+  })
+  it('cards selected: only theirs change; the panel\'s own value is not kept as theirs', () => {
+    let state = { all, own: {} as OwnChoices }
+    state = setChoice(state.all, state.own, ['B7A'], 'cause', 'Eaten')
+    state = setChoice(state.all, state.own, ['B7A', 'D1C'], 'preserved', true)
+    expect(state.all).toEqual(all)
+    expect(state.own).toEqual({ B7A: { cause: 'Eaten', preserved: true }, D1C: { preserved: true } })
+    expect(choiceFor(state.all, state.own, 'C8B')).toEqual(all)
+    expect(sharedChoice(state.all, state.own, ['B7A', 'D1C'], 'preserved')).toBe(true)
+    expect(sharedChoice(state.all, state.own, ['B7A', 'D1C'], 'cause')).toBeUndefined()
+    expect(sharedChoice(state.all, state.own, [], 'cause')).toBeUndefined()
+    // Back to the panel's cause: no longer its own.
+    state = setChoice(state.all, state.own, ['B7A'], 'cause', 'Unknown')
+    expect(state.own.B7A).toEqual({ preserved: true })
+    expect(keepOwn(state.own, ['D1C'])).toEqual({ D1C: { preserved: true } })
+  })
+  it('Save writes each card\'s own values', () => {
+    const a = row({ Insectary_ID: 'B7A' })
+    const b = row({ Insectary_ID: 'C8B' })
+    const own: OwnChoices = { C8B: { cause: 'Killed_Preserved', preserved: true, date: '2026-09-29' } }
+    const cellsA = asObject(cardCells(a, saved, choiceFor(all, own, 'B7A'), { medium: 'Flash frozen' }))
+    expect(cellsA).toEqual({ Death_date: DAY, Death_cause: 'Unknown', ...NOT_PRESERVED })
+    const cellsB = asObject(
+      cardCells(b, saved, choiceFor(all, own, 'C8B'), { sample: { cam: ' cam1 ', tube: 'fs9' }, medium: 'Flash frozen' }),
+    )
+    expect(cellsB).toMatchObject({
+      Death_date: DAY - 1,
+      Death_cause: 'Killed_Preserved',
+      CAM_ID: 'CAM1',
+      Tube_1_id: 'FS9',
+      Tube_1_tissue: 'WHOLE_ORGANISM',
+      T1_Preservation_medium: 'Flash frozen',
+      Preservation_date: DAY - 1,
+    })
+    // Already recorded dead: no tube from here, only what is missing.
+    const dead = row({ Insectary_ID: 'E2E', Death_date: DAY - 5, Death_cause: 'Eaten' })
+    expect(cardCells(dead, saved, { ...all, preserved: true }, { sample: { cam: 'CAM2', tube: 'FS1' }, medium: 'Ethanol' })).toEqual([])
   })
 })
