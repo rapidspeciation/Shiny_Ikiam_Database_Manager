@@ -146,11 +146,6 @@ export function simpleSum(text) {
 }
 export const isSumField = (module, field) => !!SUM_FIELDS[module]?.has(field);
 
-// Formula cells that may be typed over, and only with a value different from what the
-// formula predicts: the species of an insectary butterfly when what emerged is not what
-// the clutch predicted. The formula is kept in history, so undo puts it back.
-export const TYPED_OVER_FORMULA = { Insectary_data: new Set(['SPECIES', 'Collection_location']) };
-
 export function validateValues(module, values, { allowFormula = false, normalize = true } = {}) {
   const mod = moduleMap.get(module);
   if (!mod) throw Object.assign(new Error('Hoja desconocida'), { status: 404, code: 'MODULE_NOT_FOUND' });

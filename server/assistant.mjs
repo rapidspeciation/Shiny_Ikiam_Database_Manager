@@ -15,7 +15,6 @@ import { KINDS, isNone, noteText } from './notebook.mjs';
 import { RECORD_TOOLS, compactRecord, countRecords, findRecords } from './records-tool.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
 import { newRowFormulaFields } from './premade.mjs';
-import { isPlaceholder, newRowPatternFields } from './formula-patterns.mjs';
 import { carryChecks, dropDoubt, setChecked, uncheckedDoubts, unfilledUnreadable, withoutUnchecked } from './doubts.mjs';
 import { KNOWLEDGE_TOOLS, createKnowledge, runKnowledgeTool } from './knowledge.mjs';
 import { HISTORY_TOOLS, HISTORY_TOOL_NAMES, runHistoryTool } from './history.mjs';
@@ -574,12 +573,8 @@ export function createAssistant({ store, config = {} }) {
     for (const [key, value] of Object.entries(values)) if (value?.formula && isSumField(sheet, key)) values[key] = value.formula;
     const formulas = createFormulaFields(sheet);
     const kept = key => isSumField(sheet, key) && values[key] !== null;
-    // Columns rows of this kind keep as formulas (server/formula-patterns.mjs): the save writes the
-    // formula there, over a placeholder NA; a real value typed there is the person's and stays.
-    const patterned = newRowPatternFields(store, sheet, values);
-    const leave = key => (formulas.has(key) && !kept(key)) || (patterned.has(key) && isPlaceholder(values[key]));
-    const dropped = Object.keys(values).filter(leave);
-    for (const key of Object.keys(values)) if (leave(key) || values[key] === null) delete values[key];
+    const dropped = Object.keys(values).filter(key => formulas.has(key) && !kept(key));
+    for (const key of Object.keys(values)) if ((formulas.has(key) && !kept(key)) || values[key] === null) delete values[key];
     if (!Object.keys(values).length) return { error: `${at}: the new row has no values` };
     const lists = listOptions(store, sheet);
     for (const [field, value] of Object.entries(values)) {

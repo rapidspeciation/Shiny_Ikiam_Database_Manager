@@ -241,7 +241,7 @@ export class GoogleSheets {
 /**
  * The Sheets API on local rows, for tests and offline mode. Cells keep what
  * Google keeps (userEnteredValue, effectiveValue, userEnteredFormat,
- * dataValidation). `evaluate(formula, { sheet, row, column, value })` gives the
+ * dataValidation). `evaluate(formula, { row, column, value })` gives the
  * effective value of a pasted formula (Google computes it; tests supply the
  * formulas they need). `protectedRanges` lists, per sheet, ranges the
  * credential may not edit, as Google reports them.
@@ -316,15 +316,7 @@ export class LocalSheets {
     for (const [key, value] of Object.entries(changes)) {
       const column = columns ? columns[key] : layout.columns.get(key);
       if (column === undefined) throw new Error(`Unknown field ${key}`);
-      const cell = asCell(value);
-      const formula = cell.userEnteredValue?.formulaValue;
-      if (formula) {
-        // What Google would compute, for the formulas this LocalSheets can work out.
-        const result = this.evaluate(formula, { sheet, row, column, value: (r, c) => effectiveOf(this.cell(sheet, r, c)) });
-        if (result !== undefined && result !== null)
-          cell.effectiveValue = typeof result === 'number' ? { numberValue: result } : { stringValue: String(result) };
-      }
-      target.cells[column] = cell;
+      target.cells[column] = asCell(value);
     }
     return { replies: Object.keys(changes).map(() => ({})) };
   }
@@ -361,7 +353,6 @@ export class LocalSheets {
         const formula = cell?.userEnteredValue?.formulaValue;
         if (!formula) continue;
         const value = this.evaluate(formula, {
-          sheet,
           row,
           column,
           value: (r, c) => effectiveOf(this.cell(sheet, r, c)),
@@ -480,42 +471,35 @@ function defaultEvaluate(formula, { row }) {
 }
 
 /**
- * Calls `fn({ colAbs, letters, rowAbs, digits })` for each cell reference of a
- * formula (A12, $A12, A$12, $A$12) and puts what it returns in its place.
- * Whole-column references (A:A), function names, text in quotes and quoted
- * sheet names are left alone.
- */
-function mapCellRefs(formula, fn) {
-  return formula.replace(CELL_REF, (all, quoted, colAbs, letters, rowAbs, digits, at) => {
-    if (quoted !== undefined) return all;
-    const before = formula[at - 1];
-    return before && /[\w.]/.test(before) ? all : fn({ colAbs, letters, rowAbs, digits });
-  });
-}
-const CELL_REF = /("[^"]*(?:"|$)|'[^']*(?:'|$))|(\$?)([A-Z]{1,3})(\$?)(\d+)(?![\w(])/g;
-
-/**
  * A formula pasted `dRows` rows and `dCols` columns away, as Sheets does:
  * relative references (A12, $A12, A$12) move, absolute parts ($A$1) and
  * whole-column references (A:A) stay. Text in quotes and quoted sheet names are left alone.
  */
 export function shiftFormula(formula, dRows, dCols = 0) {
-  return mapCellRefs(formula, ({ colAbs, letters, rowAbs, digits }) => {
-    const column = colAbs ? letters : columnLetter(Math.max(0, columnIndex(letters) + dCols));
-    const row = rowAbs ? digits : String(Math.max(1, Number(digits) + dRows));
-    return `${colAbs}${column}${rowAbs}${row}`;
-  });
-}
-
-/**
- * The formula of row `row` in a form that is the same on every row it was
- * copied down to (as R1C1 does): each relative row number becomes its offset
- * from the row, D3667 on row 3667 → D{+0}, A3666 → A{-1}.
- */
-export function relativeFormula(formula, row) {
-  return mapCellRefs(formula, ({ colAbs, letters, rowAbs, digits }) =>
-    rowAbs ? `${colAbs}${letters}${rowAbs}${digits}` : `${colAbs}${letters}{${Number(digits) - row >= 0 ? '+' : ''}${Number(digits) - row}}`,
-  );
+  let out = '';
+  for (let i = 0; i < formula.length; ) {
+    const ch = formula[i];
+    if (ch === '"' || ch === "'") {
+      const end = formula.indexOf(ch, i + 1);
+      const stop = end < 0 ? formula.length : end + 1;
+      out += formula.slice(i, stop);
+      i = stop;
+      continue;
+    }
+    const m = /^(\$?)([A-Z]{1,3})(\$?)(\d+)(?![\w(])/.exec(formula.slice(i));
+    const before = formula[i - 1];
+    if (m && !(before && /[\w.]/.test(before))) {
+      const [text, colAbs, letters, rowAbs, digits] = m;
+      const column = colAbs ? letters : columnLetter(Math.max(0, columnIndex(letters) + dCols));
+      const row = rowAbs ? digits : String(Math.max(1, Number(digits) + dRows));
+      out += `${colAbs}${column}${rowAbs}${row}`;
+      i += text.length;
+      continue;
+    }
+    out += ch;
+    i++;
+  }
+  return out;
 }
 function columnIndex(letters) {
   let n = 0;

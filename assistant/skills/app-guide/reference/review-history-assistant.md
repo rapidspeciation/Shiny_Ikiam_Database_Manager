@@ -80,8 +80,7 @@ and «Alertas» (`vista=sugerencias|resueltos|alertas`).
   insectario no coinciden, Pedigree sin decidir), each with «Seguro» /
   «Probable» / «Revisar», the row (link to Tablas), now → suggested («decidir»
   when a person must choose), the reason, «en Google Sheets» for formula cells,
-  and since when. «Fórmulas que faltan» is listed by sheet · column (· kind of
-  row) with its counts. Filters: certainty, source, «Hoja», search; «CSV» downloads
+  and since when. Filters: certainty, source, «Hoja», search; «CSV» downloads
   and «Copiar» copies the filtered list. Parameters: `fuente=<source id>`,
   `certeza=certain|likely|check`, `hoja=`, `q=`. To make the changes, ask the
   assistant for a proposal with the chosen ones.

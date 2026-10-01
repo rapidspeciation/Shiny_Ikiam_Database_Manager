@@ -49,9 +49,6 @@ Any sheet of the workbook as a spreadsheet (the old app's "Buscador").
 - «Añadir fila» (a new row at the top, marked «nueva»); «Crear filas
   preasignadas» (reviewer/admin: asks how many, max 500; copies the last
   pre-made row's formulas, dropdowns and, in Insectary_data, the next IDs).
-  A saved new row also gets the formulas its kind carries in the last year's
-  rows when the pre-made row lacks them (a Collected_Sent2Insectary row: the
-  Death/Preservation lookups and CAM_ID_insectary; any row: Data_entry_order).
 - «Rellenar» (= Ctrl+D), reload, download CSV, open the sheet in Google Sheets.
 - A banner warns when the sheet's header row changed in Google Sheets (a
   missing/duplicate column blocks reading and saving that sheet).

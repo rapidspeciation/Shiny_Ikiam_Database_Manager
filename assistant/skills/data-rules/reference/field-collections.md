@@ -33,18 +33,17 @@ SPECIES + Subspecies_Form, Identifier, ID_status, Sex (always definite: no
 `?`), Collection_location, Transect `NA`, Bait `NA`, Forest_stratum `NA`,
 Collection_date, Collection_time (or `NA`), Collector, Rainfall, Cloud_cover
 (`NA` when not noted), Flight_height `NA`, CAM_ID `NA`, Purpose `NA`.
-Death_date, Preservation_date, Preservation_medium, Preserved_dead_alive and
-CAM_ID_insectary are **formulas** reading the Insectary_data twin
-(`=XLOOKUP(D…, Insectary_data!A:A, Insectary_data!I:I, "")`; CAM_ID_insectary
-reads its CAM_ID, column P): the app writes them on the rows it creates; never
-type values there. So CAM_ID_insectary is blank while the butterfly lives, its
-CAM once preserved, `NA` if it died without being preserved. Rows typed without
-them (Aug–Sep 2026, CAM_ID_insectary typed `NA` or blank) are in Revisión →
-Sugerencias («Fórmulas que faltan»): PAS copies the formulas down. The rest
-stays **blank** until the butterfly dies in the insectary. Then: not preserved
-→ Tube_1_id `NA`, tissues `NOT_COLLECTED`, weight, Splitted_body and Location_*
-`NA`; preserved → Tube_1_id = the insectary tube, `WHOLE_ORGANISM`,
-Splitted_body `No`, Location_* `Ikiam`; CAM_ID stays `NA`.
+Death_date, Preservation_date, Preservation_medium and Preserved_dead_alive
+are **lookup formulas** from the Insectary_data twin
+(`=XLOOKUP(D…, Insectary_data!A:A, Insectary_data!I:I, "")`, every row up to
+Jul 2026): they give the right value, so keep them and never type over them.
+The Aug–Sep 2026 rows lack them (blank even where the twin has died): point it
+out; the formulas are copied down from the row above (PAS), not typed as
+values. The rest stays **blank** until the butterfly dies in the insectary.
+Then: not preserved → CAM_ID_insectary `NA`, Tube_1_id `NA`, tissues
+`NOT_COLLECTED`, weight, Splitted_body and Location_* `NA`; preserved →
+CAM_ID_insectary = the insectary CAM, Tube_1_id = the insectary tube,
+`WHOLE_ORGANISM`, Splitted_body `No`, Location_* `Ikiam`; CAM_ID stays `NA`.
 
 **Marked–released and released unmarked:** skill **monitoring**.
 
@@ -111,9 +110,8 @@ own tube run, the medium as in [samples-ids.md](samples-ids.md).
 
 ## Formula columns
 
-Data_entry_order, taxonomy, place, photo, rack, manifest and Sanger (STS)
-columns are formulas (`describe_sheet` lists them); a new row gets the formulas
-its kind carries, from the app. A Death/Preservation lookup keyed on an
+Taxonomy, place, photo, rack, manifest and Sanger (STS) columns are formulas
+(`describe_sheet` lists them). A Death/Preservation lookup keyed on an
 Insectary_ID `NA` or blank pulls another butterfly's data: point it out,
 never copy its values.
 

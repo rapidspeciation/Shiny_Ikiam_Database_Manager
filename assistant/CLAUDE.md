@@ -14,8 +14,7 @@ project and the team's web app **Ikiam Insectary DB**
   capture (a recapture is a row of its own; a butterfly taken alive to the
   insectary also has its Insectary_data row with the same Insectary_ID).
 - **Insectary_stocks**: clutches of eggs.
-- Many columns are formulas (grey in the app): never written; the app puts
-  them on the rows it creates.
+- Many columns are formulas (grey in the app): never written.
   `describe_sheet` gives a sheet's columns, formulas, allowed values and
   latest rows.
 
