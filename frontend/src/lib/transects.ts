@@ -95,3 +95,48 @@ export function distance(a: [number, number], b: [number, number]) {
   const [x2, y2] = project(b, lat0)
   return Math.hypot(x2 - x1, y2 - y1)
 }
+
+/** The trail as one line from the far (T4) end, each segment with its section and its start in metres along the trail. */
+const TRAIL = (() => {
+  const out: { a: [number, number]; b: [number, number]; section: number; start: number; length: number }[] = []
+  let along = 0
+  for (const s of SECTIONS)
+    for (let i = 1; i < s.path.length; i++) {
+      const length = distance(s.path[i - 1], s.path[i])
+      out.push({ a: s.path[i - 1], b: s.path[i], section: s.section, start: along, length })
+      along += length
+    }
+  return out
+})()
+/** Metres along the trail where each section after the first (T3, T2, T1) begins. */
+const BOUNDARIES = TRAIL.filter((seg, i) => i && seg.section !== TRAIL[i - 1].section).map(seg => seg.start)
+/** Length of the trail in metres. */
+export const TRAIL_LENGTH = TRAIL.reduce((sum, seg) => sum + seg.length, 0)
+
+export interface TrailPosition {
+  /** The nearest section (as nearestSection). */
+  section: number
+  /** Metres from the trail. */
+  distance: number
+  /** Metres along the trail from the far (T4) end. */
+  along: number
+  /** Metres along the trail to the nearest section boundary: how far a GPS error would have to move the point to change its section. */
+  margin: number
+}
+
+/** Where a point lies on the trail: its section, how far from the trail, and how far from the nearest section boundary. */
+export function trailPosition(lat: number, lon: number): TrailPosition {
+  const p = project([lat, lon], lat)
+  let best = { section: 0, distance: Infinity, along: 0 }
+  for (const seg of TRAIL) {
+    const a = project(seg.a, lat)
+    const b = project(seg.b, lat)
+    const [dx, dy] = [b[0] - a[0], b[1] - a[1]]
+    const length = dx * dx + dy * dy
+    const t = length ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / length)) : 0
+    const d = Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy)
+    if (d < best.distance) best = { section: seg.section, distance: d, along: seg.start + t * seg.length }
+  }
+  const margin = Math.min(...BOUNDARIES.map(b => Math.abs(best.along - b)))
+  return { ...best, margin }
+}

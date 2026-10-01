@@ -9,10 +9,12 @@ const SummaryPanel = defineAsyncComponent(() => import('../components/monitoring
 const MapPanel = defineAsyncComponent(() => import('../components/monitoring/MapPanel.vue'))
 const RecapturePanel = defineAsyncComponent(() => import('../components/monitoring/RecapturePanel.vue'))
 const DoubtsPanel = defineAsyncComponent(() => import('../components/monitoring/DoubtsPanel.vue'))
+const WikilocDataPanel = defineAsyncComponent(() => import('../components/monitoring/WikilocDataPanel.vue'))
 
 /**
  * Ikiam monthly monitoring: import a Wikiloc walk, the report tables, the map,
- * the recaptured individuals, and (for editors) the doubtful pairings of walk points with rows.
+ * the recaptured individuals, (for editors) the doubtful pairings of walk points with rows, and
+ * the Wikiloc data: what the app holds, downloads, and the corrections it suggests.
  */
 const ALL_PANELS = [
   { id: 'importar', label: 'Importar recorrido', short: 'Importar' },
@@ -20,6 +22,7 @@ const ALL_PANELS = [
   { id: 'mapa', label: 'Mapa', short: 'Mapa' },
   { id: 'recapturas', label: 'Recapturas', short: 'Recapturas' },
   { id: 'dudas', label: 'Dudas de emparejamiento', short: 'Dudas' },
+  { id: 'wikiloc', label: 'Datos de Wikiloc', short: 'Wikiloc' },
 ] as const
 const session = useSession()
 const PANELS = computed(() => ALL_PANELS.filter(p => p.id !== 'dudas' || session.canEdit))
@@ -54,6 +57,7 @@ const show = (id: string) => router.replace({ query: { ...route.query, vista: id
       <SummaryPanel v-else-if="panel === 'resumen'" />
       <RecapturePanel v-else-if="panel === 'recapturas'" />
       <DoubtsPanel v-else-if="panel === 'dudas'" />
+      <WikilocDataPanel v-else-if="panel === 'wikiloc'" />
       <MapPanel v-else />
     </div>
   </div>

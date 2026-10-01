@@ -197,4 +197,38 @@ export default {
   'La fecha de muerte (preservado ese día)': 'The death date (preserved that day)',
   'Killed_Preserved: preservado vivo': 'Killed_Preserved: preserved alive',
   'Lo habitual desde 2025': 'The usual since 2025',
+  // server/suggestions/wikiloc-transects.mjs: corrections from the Wikiloc points
+  'Transecto y hora desde Wikiloc': 'Transect and time from Wikiloc',
+  'Sección del transecto (1–4) calculada con la posición del punto de Wikiloc de cada captura de monitoreo, y la hora de la nota cuando la fila tiene otra.':
+    'Transect section (1–4) computed from the place of the Wikiloc point of each monitoring capture, and the note’s time when the row has another.',
+  'una persona': 'a person',
+  'hora, especie y sexo': 'time, species and sex',
+  empate: 'tie',
+  orden: 'order',
+  dudoso: 'doubtful',
+  '. La hora de la nota ({t}) no cabe entre los puntos vecinos ({a}–{b}): el punto pudo añadirse en otro lugar':
+    '. The note’s time ({t}) does not fit between the neighbouring points ({a}–{b}): the point may have been added elsewhere',
+  '. La hora de la nota ({t}) es anterior a la del punto previo ({a}): el punto pudo añadirse después, en otro lugar':
+    '. The note’s time ({t}) is before the previous point’s ({a}): the point may have been added later, elsewhere',
+  '. La hora de la nota ({t}) es posterior a la del punto siguiente ({b}): el punto pudo añadirse en otro lugar':
+    '. The note’s time ({t}) is after the next point’s ({b}): the point may have been added elsewhere',
+  'El punto está a {n} m del sendero: no se calcula el transecto': 'The point is {n} m from the trail: no transect is computed',
+  '. Todas las filas de ese recorrido numeran los transectos al revés': '. Every row of that walk numbers the transects the other way round',
+  'Punto de Wikiloc en T{s} ({d} m del sendero, {m} m del límite más cercano); emparejado por {how}{notes}':
+    'Wikiloc point in T{s} ({d} m from the trail, {m} m from the nearest boundary); paired by {how}{notes}',
+  'La fila dice T{c}; el punto de Wikiloc está en T{s} ({d} m del sendero, {m} m del límite más cercano); emparejado por {how}{notes}':
+    'The row says T{c}; the Wikiloc point is in T{s} ({d} m from the trail, {m} m from the nearest boundary); paired by {how}{notes}',
+  'La nota dice {t}, pero el punto está entre los de {a} y {b} del recorrido: parece {s} (hora equivocada)':
+    'The note says {t}, but the point lies between those of {a} and {b} in the walk: it looks like {s} (wrong hour)',
+  '; la hora de la nota sigue el orden del recorrido': '; the note’s time follows the walk’s order',
+  'La nota de Wikiloc dice {noted} y la fila {typed} (otra hora){order}': 'The Wikiloc note says {noted} and the row {typed} (another hour){order}',
+  'La nota de Wikiloc dice {noted} y la fila {typed}{order}': 'The Wikiloc note says {noted} and the row {typed}{order}',
+  'El punto {mark} es del recorrido de {walk}, pero la fila con esa marca ese día dice {who}':
+    'Point {mark} is from the walk of {walk}, but the row with that mark that day says {who}',
+  'El punto {mark} es del recorrido del {walk}, pero la fila con esa marca es del {day}':
+    'Point {mark} is from the walk of {walk}, but the row with that mark is from {day}',
+  'Punto de Wikiloc sin fila: emparejamiento dudoso, ver Dudas': 'Wikiloc point without a row: doubtful pairing, see Doubts',
+  'Punto de Wikiloc sin fila en la hoja': 'Wikiloc point without a sheet row',
+  'Fila de monitoreo sin punto en el recorrido de Wikiloc de ese día': 'Monitoring row without a point in that day’s Wikiloc walk',
+  '{a}{b}': '{a}{b}',
 } as Record<string, string>

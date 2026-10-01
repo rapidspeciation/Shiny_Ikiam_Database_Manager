@@ -480,4 +480,64 @@ export default {
   Seguir: 'Follow',
   'El importador de Wikiloc no responde; los enlaces quedan en cola y se procesarán cuando se restablezca.':
     'The Wikiloc importer is not responding; links stay queued until it recovers.',
+  // Monitoreo → Wikiloc (what the app holds, downloads, corrections)
+  'Datos de Wikiloc': 'Wikiloc data',
+  Wikiloc: 'Wikiloc',
+  'por revisar': 'waiting review',
+  'Por revisar': 'Waiting review',
+  'correcciones_wikiloc.csv': 'wikiloc_corrections.csv',
+  'Lo que la app guarda de Wikiloc, las descargas para el equipo y las correcciones que sugieren los puntos para la hoja. Solo lectura: la hoja se corrige en Tablas.':
+    'What the app holds from Wikiloc, the downloads for the team and the corrections the points suggest for the sheet. Read-only: the sheet is corrected in Tables.',
+  'Calcular de nuevo': 'Compute again',
+  'Comparando los puntos de Wikiloc con la hoja…': 'Comparing the Wikiloc points with the sheet…',
+  'Datos de Wikiloc en la app': 'Wikiloc data in the app',
+  '{stored} recorridos en el mapa y {waiting} por revisar, del {first} al {last}: {points} puntos ({linked} con su fila de la hoja) y {photos} fotos ({mb} MB).':
+    '{stored} walks on the map and {waiting} waiting review, from {first} to {last}: {points} points ({linked} with their sheet row) and {photos} photos ({mb} MB).',
+  'Las líneas que vienen de la página pública de Wikiloc no tienen horas GPS; solo las de un GPX subido a la app ({n}) las tienen.':
+    'Lines read from the public Wikiloc page have no GPS times; only those of a GPX uploaded to the app ({n}) have them.',
+  'Días con filas de monitoreo de esa persona pero sin recorrido en la app': 'Days with monitoring rows of that person but no walk in the app',
+  'Días sin recorrido': 'Days without walk',
+  Descargas: 'Downloads',
+  'Cada fila de monitoreo de Collection_data con todas sus columnas y, al final, la posición de su punto de Wikiloc':
+    'Every monitoring row of Collection_data with all its columns and, at the end, the place of its Wikiloc point',
+  'Filas de monitoreo (CSV)': 'Monitoring rows (CSV)',
+  'Cada punto de Wikiloc con su fila de la hoja': 'Every Wikiloc point with its sheet row',
+  'Puntos de todos los recorridos (CSV)': 'Points of all walks (CSV)',
+  'Las líneas GPS y los puntos de todos los recorridos': 'The GPS lines and points of all walks',
+  'Todos los recorridos (GPX)': 'All walks (GPX)',
+  'Un recorrido': 'One walk',
+  'Elige un recorrido': 'Choose a walk',
+  'Puntos (CSV)': 'Points (CSV)',
+  'Recorrido (GPX)': 'Walk (GPX)',
+  'Fechas como AAAA-MM-DD y horas como h:mm, para que las hojas de cálculo las lean bien. Las filas de monitoreo llevan al final Wikiloc_latitude, Wikiloc_longitude, Wikiloc_transect_section y la nota del punto.':
+    'Dates as YYYY-MM-DD and times as h:mm, so spreadsheets read them right. The monitoring rows end with Wikiloc_latitude, Wikiloc_longitude, Wikiloc_transect_section and the point’s note.',
+  'Correcciones sugeridas': 'Suggested corrections',
+  'El transecto se calcula con la posición de cada punto sobre las secciones T1–T4 del sendero. De los {checked} puntos cuya fila tiene transecto, {agree} coinciden; {filled} filas sin transecto se pueden llenar y {differ} filas dicen otra sección.':
+    'The transect is computed from where each point lies on the trail’s sections T1–T4. Of the {checked} points whose row has a transect, {agree} agree; {filled} rows without a transect can be filled and {differ} rows say another section.',
+  Certeza: 'Certainty',
+  Columna: 'Column',
+  Probable: 'Likely',
+  Verificar: 'Check',
+  'El punto está bien dentro de una sección y emparejado con su fila por marca, por una persona o por hora, especie y sexo':
+    'The point is well inside a section and paired with its row by mark, by a person, or by time, species and sex',
+  'El punto está cerca de un límite o lejos del sendero, o su emparejamiento no es seguro':
+    'The point is near a boundary or far from the trail, or its pairing is not sure',
+  'Mirar la foto y la nota antes de cambiar la hoja': 'Look at the photo and the note before changing the sheet',
+  'Las correcciones de la lista, como CSV': 'The corrections in the list, as CSV',
+  'No hay correcciones con esos filtros.': 'No corrections with those filters.',
+  Ahora: 'Now',
+  Sugerido: 'Suggested',
+  'Por qué': 'Why',
+  'Ver el día en el mapa': 'See the day on the map',
+  'Ver las {n}': 'Show all {n}',
+  'Otras diferencias': 'Other differences',
+  'Ninguna.': 'None.',
+  'Puntos lejos del sendero': 'Points far from the trail',
+  'Marca en una fila de otro día': 'Mark on a row of another day',
+  'Puntos de Wikiloc sin fila en la hoja': 'Wikiloc points without a sheet row',
+  'Filas sin punto en el recorrido de ese día': 'Rows without a point in that day’s walk',
+  'Días de monitoreo sin recorrido en la app': 'Monitoring days without a walk in the app',
+  'Días con filas de monitoreo pero sin recorrido de Wikiloc en la app (no se buscó o su título no dice «monitoreo»): sus transectos no se pueden calcular.':
+    'Days with monitoring rows but no Wikiloc walk in the app (not fetched, or its title does not say “monitoreo”): their transects cannot be computed.',
+  '{n} sin transecto': '{n} without transect',
 } as Record<string, string>

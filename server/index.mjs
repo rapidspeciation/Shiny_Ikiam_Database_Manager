@@ -33,6 +33,7 @@ import {
   linkCapture,
   storeReviewedWalk,
 } from './monitoring.mjs';
+import { monitoringRowsCsv, pointsCsv, walksGpx, wikilocCorrections } from './monitoring-export.mjs';
 import { idSuggestions, tableChanges, tablePayload, tableRevision } from './grid.mjs';
 import { extendPremadeRows } from './premade.mjs';
 import { createSheetHook } from './hooks.mjs';
@@ -739,6 +740,21 @@ export async function createApp(config = {}, options = {}) {
         return res.end(csv);
       }
       if (method === 'GET' && path === '/api/monitoring/tracks') return sendTagged(res, { tracks: listTracks(store, user) });
+      // Monitoreo → Wikiloc: what the app holds, the corrections its points suggest, and the downloads (anyone signed in).
+      if (method === 'GET' && path === '/api/monitoring/wikiloc-data') return json(res, 200, wikilocCorrections(store));
+      if (method === 'GET' && /^\/api\/monitoring\/export\/(rows\.csv|points\.csv|walks\.gpx)$/.test(path)) {
+        const kind = path.split('/')[4];
+        const walk = query.walk ? String(query.walk) : null;
+        const file =
+          kind === 'rows.csv' ? monitoringRowsCsv(store) : kind === 'points.csv' ? pointsCsv(store, walk) : walksGpx(store, walk);
+        res.writeHead(200, {
+          'content-type': file.type,
+          'content-disposition': `attachment; filename="${file.name}"`,
+          'cache-control': 'no-store',
+          'x-content-type-options': 'nosniff',
+        });
+        return res.end(file.body);
+      }
       if (method === 'POST' && path === '/api/monitoring/tracks') {
         requireEditor(user);
         requireId(body);

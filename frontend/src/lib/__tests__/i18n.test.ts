@@ -31,7 +31,8 @@ function keys(): string[] {
 }
 
 /**
- * Every template the server builds a text from (server/messages.mjs): literals
+ * Every template the server builds a text from (server/messages.mjs), in server/
+ * and its folders: literals
  * in msg(…) / tpl(…) (first argument) and msgn(…) (second and third).
  */
 function serverTemplates(): string[] {
@@ -40,7 +41,9 @@ function serverTemplates(): string[] {
   const str = String.raw`'((?:[^'\\\n]|\\.)*)'`
   const one = new RegExp(String.raw`(?<![\w$.])(?:msg|tpl)\(\s*` + str, 'g')
   const plural = new RegExp(String.raw`(?<![\w$.])msgn\([^,()]{1,80},\s*` + str + String.raw`\s*,\s*` + str, 'g')
-  for (const name of readdirSync(dir).filter(n => n.endsWith('.mjs'))) {
+  // Also the folders inside server/ (e.g. server/suggestions).
+  const names = readdirSync(dir, { recursive: true }).map(String).filter(n => n.endsWith('.mjs'))
+  for (const name of names) {
     const text = readFileSync(join(dir, name), 'utf8')
     for (const m of text.matchAll(one)) out.add(m[1])
     for (const m of text.matchAll(plural)) out.add(m[1]).add(m[2])
