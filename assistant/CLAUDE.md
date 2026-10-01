@@ -12,54 +12,49 @@ applied change lands in their sheet at once.
 
 ## The sheets
 
-- **Insectary_data**: one row per butterfly in the insectary. Key `Insectary_ID`
-  (e.g. `5VB`, `H79`, `2NX`: a digit then letters, or letter(s) then digits).
-  - `SPECIES` is a **formula** that predicts the species from the clutch
-    (`CLUTCH NUMBER` → `Insectary_stocks`). Type a species over it **only when
-    what emerged differs from the prediction** (e.g. the notebook says deceptus
-    and the formula gives intermedia). Never type the same value the formula gives.
-    For wild-caught butterflies the species is normally typed.
-  - `Wild_Reared`: `Reared` (it has a clutch) or `Wild-caught`.
-  - `Sex`: `male`, `female` or `NA`. `CLUTCH NUMBER`: a number, or text like
-    `831 (1)` / `702 (2)` for a second batch from the same couple.
-  - `Stock_of_origin`, `Intro2Insectary_date` (= emergence date), `Death_date`,
-    `Death_cause` (use the values `describe_sheet` lists: Unknown, Eaten, Spider,
-    Disappearance, Killed_Preserved, Deformed, Heat stroke, Other…).
-  - `CAM_ID` (`CAM078038`) and tubes `Tube_1_id`… (FluidX barcodes: 2 letters +
-    8 digits, e.g. `FS50851817`). Tube 1 is usually the wing clip; wing clips are
-    **flash frozen**.
-  - `Notes_Insectary_data`: free notes, each written as `d/m/yy INI: text`
-    (date written, initials of the person), several joined with ` | `.
-  - Many other columns are formulas (Pedigree, racks, manifests, photos,
-    coordinates). They cannot be written.
-- **Collection_data**: field collections and monitoring (`CAM_ID`, `FieldMark_ID`,
-  `Collector` like `FCH - Franz Chandi`, `Collection_location`, `Release_Collect`).
-- **Insectary_stocks**: clutches (`CLUTCH NUMBER`, species, date laid, eggs, larvae…).
+- **Insectary_data**: one row per insectary butterfly (reared, wild-caught,
+  and since Sep 2026 preserved eggs/larvae). Key `Insectary_ID` (`5VB`, `N4D`),
+  on pre-made rows. `SPECIES` is a **formula** from the clutch
+  (`CLUTCH NUMBER` → Insectary_stocks): type over it only when what emerged
+  differs from the prediction, never the same value. `Wild_Reared`, `Sex`,
+  `Intro2Insectary_date` (emergence or capture date), `Death_date`,
+  `Death_cause`, `CAM_ID` (`CAM078038`), tubes `Tube_1_id`… (FluidX: 2 letters
+  + 8 digits) with tissue and medium, `Notes_Insectary_data`.
+- **Collection_data**: field collections and monitoring, one row per
+  butterfly (`Release_Collect`, `FieldMark_ID`, `Collector` as its list value
+  `INI - Name`, `Collection_location`, weather).
+- **Insectary_stocks**: clutches (counts kept as sums `=12+15`).
+- Many columns are formulas (Pedigree, racks, manifests, photos, coordinates,
+  taxonomy): never written. `describe_sheet` gives a column's allowed values.
 
-Use `describe_sheet` when unsure of a column or its allowed values.
+## Data rules (what a senior knows)
+
+Before proposing new rows or corrections, and for "how do we record X", read
+the skill **data-rules** (`.claude/skills/data-rules/SKILL.md`) and its file
+for the case (templates per record kind, IDs, CAMs, tubes, clutches, crosses,
+notes, envelopes and cage cards). Always:
+
+- The paper is the primary record; the sheet lags it. Blank = not yet, `NA` =
+  does not apply: never fill a pending cell without a source.
+- A CAM comes from the right pool, at preservation or wing clip, unused in
+  every sheet and pending proposal (ask them to check the envelope box too).
+- An Insectary_ID belongs to its pre-made row: fix a wrong one by moving the
+  data, never by retyping the ID.
+- Correct species, sex, ID, CAM or tube in every sheet holding the butterfly,
+  with a note "from X to Y"; envelopes and photos are tasks for a person.
+- Media are `Flash frozen` (wing clips too) unless a note says why not. Notes
+  are in English. Where sources disagree (**Ask** in the skill), ask.
 
 ## Photos of notebook pages, envelopes and labels
 
-The person uploads the photo in this chat (one or several). Follow the skill
-**digitalizar-cuaderno** (`.claude/skills/digitalizar-cuaderno/SKILL.md`): it
-says how to recognise each notebook (Posturas, Emergidos, Muertes, CRISPR,
-envelopes/labels), how its lines are written and what to do with doubtful
-handwriting. In short:
-
-1. Transcribe every line of the page as written (doubtful cells with a
-   confidence and alternatives; unreadable ones null; never guess).
-2. Call `match_notebook` once per page: it finds each line's row (look-alike IDs
-   such as 600/6OO, the order of the rows), infers the year, expands CAM/tube
-   runs, keeps counts as sums (=12+15) and the SPECIES formula, checks lists and
-   IDs, and drafts **one proposal** for the page.
-3. Tell the person in 3–6 short lines what was found: cells to fill, differences
-   with the sheet, doubts with their alternatives, lines not in the sheet.
-4. The proposal is already beside the chat (Cambios propuestos). The person
-   applies it there with «Aplicar», or tells you "sí/está bien" and you call
-   `apply_proposal`. A correction ("la línea 5 es macho") is a new
-   `match_notebook` call with `replaceProposalId`: the same proposal changes
-   in place, keeping the cells the person corrected by hand (a different new
-   reading of one of those comes back in `conflicts`: tell the person).
+Follow the skill **digitalizar-cuaderno**
+(`.claude/skills/digitalizar-cuaderno/SKILL.md`): transcribe every line
+(doubtful cells with your best reading, a confidence and alternatives: they go
+into the proposal highlighted; unreadable ones null) → `match_notebook` once
+per page (one proposal, beside the chat) → a second reading that corrects the
+same proposal → 3–6 short lines to the person, naming the highlighted cells to
+check → apply only on their confirmation. A correction is a new
+`match_notebook` call with `replaceProposalId`.
 
 ## Checking the data
 
@@ -235,24 +230,17 @@ another browser tab). Both of you edit it; they see your changes at once.
 - Workflow for any correction: check (read or `check_data`) → `propose_changes`
   → corrections with `update_proposal` on the same proposal → the person
   confirms (in the table, or "sí" in the chat) → `apply_proposal`.
-- **Notes you add** (NOTES, Notes_Collection_data, Notes_Insectary_data…) are
-  written in the team's format `d/m/yy INI: text` (today, day first, and the
-  initials of the person you work for, e.g. `29/9/26 FCH: wing clip`) after the
-  existing note with ` | `, never over it. The tools do this: give only the new
-  text; `{"replace": "…"}` rewrites a whole note, only when the person asks.
-  Keep the prefix even if asked to shorten a note; say it is the team format.
-  A note holds only what the page or the person says: never your assumptions
-  ("fecha supuesta"), codes of other columns, or values that have their own
-  column (a wild butterfly's collector, time and place go in its
-  Collection_data row); your doubts go in the chat.
-- **Wild-caught butterflies go in both sheets**: a butterfly collected in the
-  field and brought to the insectary needs its Collection_data row
-  (Release_Collect `Collected_Sent2Insectary`, collector, place, date, time,
-  weather) and its Insectary_data row (Wild_Reared `Wild-caught`, the same
-  Insectary_ID, species, sex, Intro2Insectary_date) in the **same** proposal,
-  also from a notebook page and without waiting to be asked;
-  preserved ones (`Collected_Preserved`) need CAM_ID, tube and medium. If one
-  of the two sheets is missing a row the other has, add it.
+- **Notes you add** are in the team's format `d/m/yy INI: text` (today, the
+  initials of the person you work for), after the existing note with ` | `,
+  never over it. The tools add the prefix: give only the new text;
+  `{"replace": "…"}` only when the person asks. A note holds only what the page
+  or the person says: never your assumptions or doubts (they go in the chat),
+  codes of other columns, or values that have their own column.
+- **Wild-caught butterflies go in both sheets**, in the **same** proposal and
+  without waiting to be asked: Collection_data (`Collected_Sent2Insectary`,
+  collector, place, date, time, weather) and Insectary_data (`Wild-caught`, the
+  same Insectary_ID, species, sex, Intro2Insectary_date). If one sheet lacks
+  the row the other has, add it.
 - **Removing a change from a proposal is not emptying a cell**: to drop a
   proposed value use `update_proposal` with `null` for that cell; to really
   empty a cell of the sheet pass `{ "clear": true }` and say so to the person.
