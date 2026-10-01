@@ -76,8 +76,9 @@ Splitted_body `NA`. Rare (last Sep 2025): **Ask** AA when it is used.
 Ikiam, Casa de Lin (Lin's house) and Mariposario Ikiam together, the team
 stops preserving it there: further captures are marked and released (meeting
 of Nov 2023; the 2023 method says at most 30 per species). Count every
-`Collected_Preserved` row from those three places, whatever its Purpose
-(`count_records`). The team has not been checking the counts (H. euclea,
+`Collected_Preserved` row from those three places, whatever its Purpose, per
+species (`get_alerts` gives the counts, the day each species reached 30 and
+those close to it). The team has not been checking the counts (H. euclea,
 H. anchiala, P. florula, O. tigilla went past 30): when you propose a
 preserved capture of a species already at 30, or when asked what to do with
 one, say it should be marked and released.

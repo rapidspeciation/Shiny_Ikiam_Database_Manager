@@ -1,14 +1,30 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronLeft, ChevronRight, Download, RefreshCw, Search, SlidersHorizontal, Wand2, X } from 'lucide-vue-next'
+import {
+  BellRing,
+  CheckCheck,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Lightbulb,
+  ListChecks,
+  RefreshCw,
+  Search,
+  SlidersHorizontal,
+  Wand2,
+  X,
+} from 'lucide-vue-next'
 import ChoiceField from '../components/ChoiceField.vue'
 import DateField from '../components/DateField.vue'
 import IssueCard from '../components/review/IssueCard.vue'
 import PhotoViewer from '../components/review/PhotoViewer.vue'
+import SuggestionsPanel from '../components/review/SuggestionsPanel.vue'
+import SolvedPanel from '../components/review/SolvedPanel.vue'
+import AlertsPanel from '../components/review/AlertsPanel.vue'
 import { api } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
-import { STATUSES, groupLabel as labelOf, type Issue, type ReviewPage, type Verdict } from '../lib/review'
+import { STATUSES, groupLabel as labelOf, type AlertsData, type Issue, type ReviewPage, type Verdict } from '../lib/review'
 import { useSession } from '../stores/session'
 import { t, tn } from '../lib/i18n'
 
@@ -18,6 +34,9 @@ import { t, tn } from '../lib/i18n'
  * until someone asks T3 ("aplica las correcciones acordadas") or prepares the
  * proposal here; either way a person confirms it before anything is written.
  * The filters live in the address, so a view can be shared or linked (Tablas).
+ * Beside the problems: Sugerencias (corrections the app computes, read only),
+ * Resueltos (what the sheet no longer has) and Alertas (CAM ranges running out,
+ * the 30-preserved rule), each its own view (?vista=…).
  */
 const session = useSession()
 const route = useRoute()
@@ -25,6 +44,14 @@ const router = useRouter()
 const PAGE = 25
 
 const q = (key: string) => String(route.query[key] ?? '')
+/** '' (the problems), sugerencias, resueltos or alertas. */
+const view = ref(q('vista'))
+const VIEWS = [
+  { key: '', label: 'Problemas', icon: ListChecks },
+  { key: 'sugerencias', label: 'Sugerencias', icon: Lightbulb },
+  { key: 'resueltos', label: 'Resueltos', icon: CheckCheck },
+  { key: 'alertas', label: 'Alertas', icon: BellRing },
+]
 const kind = ref(q('tipo'))
 const sheet = ref(q('hoja'))
 const person = ref(q('persona'))
@@ -109,7 +136,7 @@ watch(offset, () => {
 })
 watch(filters, value => {
   const query = Object.fromEntries(Object.entries(value).filter(([, v]) => v))
-  if (route.path === '/revision') router.replace({ query })
+  if (route.path === '/revision' && !view.value) router.replace({ query })
 })
 // A link from elsewhere (Tablas → Revisión de datos) sets exactly its filters; the tab's own
 // address updates (above) give back the same values, so they change nothing.
@@ -120,6 +147,9 @@ watch(
     const set = (target: { value: string }, value: string) => {
       if (target.value !== value) target.value = value
     }
+    set(view, q('vista'))
+    // The other views keep their own filters in the address.
+    if (view.value) return
     set(kind, q('tipo'))
     set(sheet, q('hoja'))
     set(person, q('persona'))
@@ -131,7 +161,22 @@ watch(
     set(sort, q('orden') || 'recent')
   },
 )
-load()
+if (!view.value) load()
+// Back to the problems from another view: their filters start clear.
+watch(view, value => {
+  if (!value && !page.value) load()
+})
+function openView(key: string) {
+  if (key === view.value) return
+  view.value = key
+  router.replace({ query: key ? { vista: key } : {} })
+}
+// The alerts are counted on the tab (and shown in their view).
+const alertsData = ref<AlertsData | null>(null)
+api<AlertsData>('alerts')
+  .then(data => (alertsData.value = data))
+  .catch(e => notify(errorText(e), 'error'))
+const warnings = computed(() => alertsData.value?.alerts.filter(a => a.level === 'warn').length ?? 0)
 // On a phone, picking a kind or status goes back to the cards.
 watch([kind, status], () => (showFilters.value = false))
 
@@ -229,7 +274,27 @@ const filtered = computed(
 <template>
   <div class="flex h-full flex-col">
     <div v-if="!session.canEdit" class="p-6 text-sm text-stone-600">{{ $t('La revisión es para quienes editan la hoja.') }}</div>
-    <div v-else class="flex min-h-0 flex-1">
+    <nav v-else class="flex gap-1 overflow-x-auto border-b border-stone-200 bg-white px-2 pt-1.5" :aria-label="$t('Vistas')">
+      <button
+        v-for="v in VIEWS"
+        :key="v.key"
+        class="-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-1.5 text-sm whitespace-nowrap"
+        :class="view === v.key ? 'border-brand-700 font-medium text-brand-800' : 'border-transparent text-stone-600 hover:text-stone-900'"
+        @click="openView(v.key)"
+      >
+        <component :is="v.icon" :size="15" />
+        {{ $t(v.label) }}
+        <span
+          v-if="v.key === 'alertas' && warnings"
+          class="rounded-full bg-amber-500 px-1.5 text-[11px] leading-4 font-semibold text-white tabular-nums"
+          >{{ warnings }}</span
+        >
+      </button>
+    </nav>
+    <SuggestionsPanel v-if="session.canEdit && view === 'sugerencias'" />
+    <SolvedPanel v-else-if="session.canEdit && view === 'resueltos'" />
+    <AlertsPanel v-else-if="session.canEdit && view === 'alertas'" :data="alertsData" />
+    <div v-else-if="session.canEdit" class="flex min-h-0 flex-1">
       <!-- Sidebar: status, kinds and filters in the height the screen has to spare (on phones, behind «Filtros»). -->
       <aside
         class="w-60 shrink-0 flex-col overflow-y-auto border-r border-stone-200 bg-white text-sm"

@@ -40,8 +40,11 @@ function serverTemplates(): string[] {
   const str = String.raw`'((?:[^'\\\n]|\\.)*)'`
   const one = new RegExp(String.raw`(?<![\w$.])(?:msg|tpl)\(\s*` + str, 'g')
   const plural = new RegExp(String.raw`(?<![\w$.])msgn\([^,()]{1,80},\s*` + str + String.raw`\s*,\s*` + str, 'g')
-  for (const name of readdirSync(dir).filter(n => n.endsWith('.mjs'))) {
-    const text = readFileSync(join(dir, name), 'utf8')
+  // Including the folders of server/ (server/suggestions/).
+  const modules = (d: string): string[] =>
+    readdirSync(d).flatMap(n => (statSync(join(d, n)).isDirectory() ? modules(join(d, n)) : n.endsWith('.mjs') ? [join(d, n)] : []))
+  for (const path of modules(dir)) {
+    const text = readFileSync(path, 'utf8')
     for (const m of text.matchAll(one)) out.add(m[1])
     for (const m of text.matchAll(plural)) out.add(m[1]).add(m[2])
   }

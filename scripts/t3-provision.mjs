@@ -73,7 +73,7 @@ codes and values stay exactly as they are in the workbook.
 
 - The workbook is reached only through the MCP server \`ithomiini\`
   (search_records, find_records, count_records, get_record, describe_sheet, check_data,
-  list_agreed_fixes, queue_wikiloc, get_walk, match_notebook, propose_changes,
+  list_agreed_fixes, list_suggested_edits, get_alerts, queue_wikiloc, get_walk, match_notebook, propose_changes,
   update_proposal, get_proposal, apply_proposal, run_report, search_knowledge,
   list_documents, read_document, sync_documents, list_history,
   get_history_group, preview_undo, undo_edits).
@@ -107,6 +107,11 @@ codes and values stay exactly as they are in the workbook.
   → the person confirms → \`apply_proposal\` (see "Agreed corrections" below);
   \`queue_wikiloc\` + \`get_walk\` turn a Wikiloc monitoring walk into proposed
   Collection_data rows (see the sections below).
+- \`list_suggested_edits\` (read-only) lists the corrections the app computes,
+  each with a certainty (certain / likely / check) and its reason, as in
+  Revisión → Sugerencias; when the person wants some of them, one
+  \`propose_changes\` with those, then their confirmation. \`get_alerts\`: CAM
+  ranges of Lists running out and the 30-preserved rule per species.
 - **Historial** (every save, grouped by person, purpose and time):
   \`list_history\` finds the save someone got wrong; always give its \`url\`
   (opens the Historial tab at that save). Undo only after \`preview_undo\`

@@ -10,6 +10,7 @@
 import { allIssues, CHECK_KINDS } from './checks.mjs';
 import { MODEL_KINDS, TASK_KINDS } from './photo-checks.mjs';
 import { moduleMap } from './schema.mjs';
+import { firstSeen } from './findings.mjs';
 
 export const VERDICTS = ['accepted', 'rejected', 'other', 'pending', 'applied'];
 /** The tab's status of an issue, from its last verdict. */
@@ -265,9 +266,13 @@ export function reviewPage(store, query = {}) {
   }
   const size = Math.min(Math.max(Number(query.limit) || 25, 1), 200);
   const start = Math.max(Number(query.offset) || 0, 0);
-  const page = chosen.slice(start, start + size).map(i => ({
+  const slice = chosen.slice(start, start + size);
+  // Since when the checks find it (server/findings.mjs).
+  const seen = firstSeen(store, 'check', slice.map(i => i.id));
+  const page = slice.map(i => ({
     ...i,
     verdict: publicVerdict(verdicts.get(i.id)) ?? null,
+    ...(seen.has(i.id) && !i.resolved ? { firstSeen: seen.get(i.id) } : {}),
     ...(i.resolved ? {} : { table: sideBySide(store, i) }),
   }));
   return {

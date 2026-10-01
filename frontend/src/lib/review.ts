@@ -3,7 +3,7 @@
  * server/review.mjs) and the pure rules of its cards (crops, differing cells,
  * texts), kept apart from the components so they are tested without a browser.
  */
-import { tx, type Msg } from './i18n'
+import { intlLocale, tx, type Msg } from './i18n'
 
 export type Box = [number, number, number, number]
 export interface Photos {
@@ -76,6 +76,8 @@ export interface Issue {
   table?: SideBySide | null
   /** Applied and gone from the checks: shown from what was kept with the verdict. */
   resolved?: boolean
+  /** When the checks first found it (server/findings.mjs). */
+  firstSeen?: string
 }
 export interface ReviewPage {
   checkedAt: string
@@ -206,3 +208,168 @@ export function photoList(photos?: Partial<Photos>) {
 }
 
 export const percent = (n: number) => `${Math.round(n * 100)} %`
+
+/** An ISO day (2026-09-21) as people read it here: 21/09/2026. Other values as they are. */
+export const dayFirst = (value: unknown) =>
+  typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value.split('-').reverse().join('/') : value
+/** A cell for the suggestion and solved lists: dates day first, empty as a dash. */
+export const cellText = (value: unknown) => shown(dayFirst(value))
+/** A time the server stamped (ISO), as 21/09/2026 14:05 in the interface's locale (both day first). */
+export const stamp = (at: string | null | undefined, withTime = true) =>
+  at
+    ? new Date(at).toLocaleString(intlLocale(), {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        ...(withTime ? { hour: '2-digit', minute: '2-digit' } : {}),
+      })
+    : '—'
+/** The row in Tablas (its sheet, found by its label), as a link that can open in a new tab. */
+export const tablesLink = (sheet: string, label: string) =>
+  `#/tablas?${new URLSearchParams({ hoja: sheet, ...(label ? { buscar: label } : {}) })}`
+
+// Revisión → Sugerencias (server/suggestions/): read-only corrections with how sure they are.
+export type Certainty = 'certain' | 'likely' | 'check'
+export interface Suggestion {
+  key: string
+  source: string
+  sheet: string
+  row: number
+  recordId: string
+  label: string
+  field: string
+  current: unknown
+  /** null: a person has to decide the value. */
+  suggested: unknown
+  certainty: Certainty
+  reason: string
+  reasonMsg?: Msg
+  related?: IssueRef[]
+  group?: string
+  /** Done by hand in Google Sheets (a formula cell): the app's proposals cannot write it. */
+  manual?: boolean
+  firstSeen?: string
+}
+export interface SuggestionSource {
+  id: string
+  title: string
+  describe: string
+  counts: Record<Certainty | 'total', number>
+}
+export interface SuggestionPage {
+  computedAt: string
+  ms: number
+  total: number
+  offset: number
+  limit: number
+  sources: SuggestionSource[]
+  sheets: string[]
+  items: Suggestion[]
+}
+/** Certainties, surest first: the server's keys, the tab's words (Spanish keys of lib/i18n.ts) and colours. */
+export const CERTAINTIES: { key: Certainty; label: string; hint: string; tone: string }[] = [
+  { key: 'certain', label: 'Seguro', hint: 'Solo cambia la forma de escribirlo', tone: 'bg-emerald-100 text-emerald-900' },
+  { key: 'likely', label: 'Probable', hint: 'Evidencia fuerte; igual una persona lo mira', tone: 'bg-sky-100 text-sky-900' },
+  { key: 'check', label: 'Revisar', hint: 'Una pista: lo decide alguien que sepa', tone: 'bg-amber-100 text-amber-900' },
+]
+export const certaintyOf = (key: string) => CERTAINTIES.find(c => c.key === key) ?? CERTAINTIES[2]
+
+// Revisión → Resueltos (server/findings.mjs).
+export interface SolvedItem {
+  type: 'check' | 'suggestion'
+  key: string
+  kind: string
+  sheet: string | null
+  row: number | null
+  recordId: string | null
+  field: string | null
+  label: string | null
+  /** A problem: the cell's value then; a suggestion: { current, suggested, certainty }. */
+  value: unknown
+  text: string | null
+  textMsg?: Msg
+  firstSeen: string
+  solvedAt: string
+  solved: {
+    at?: string
+    actionId?: string
+    purpose?: string | null
+    user?: string | null
+    field?: string
+    before?: unknown
+    after?: unknown
+    recordId?: string
+    now?: unknown
+    rowGone?: boolean
+  }
+}
+export interface SolvedPage {
+  total: number
+  offset: number
+  limit: number
+  kinds: Record<string, number>
+  open: Record<string, number>
+  titles: { check: Record<string, string>; suggestion: Record<string, string> }
+  items: SolvedItem[]
+}
+
+// Revisión → Alertas (server/alerts.mjs).
+export interface CamRange {
+  first: string
+  last: string
+  size: number
+  used: number
+  highest: string | null
+  next: string | null
+  left: number
+  gaps: number
+  lastUsed: { cam: string; date: string } | null
+  active: boolean
+  level: 'ok' | 'low' | 'done'
+}
+export interface CamPool {
+  pool: string
+  fields: string[]
+  left: number
+  ranges: CamRange[]
+  fullRanges: number
+  current: string | null
+  level: 'ok' | 'low' | 'out'
+}
+export interface RuleRow {
+  sheet: string
+  row: number
+  recordId: string
+  label: string
+  date: string | null
+}
+export interface Alert {
+  id: string
+  level: 'warn' | 'info'
+  text: string
+  textMsg?: Msg
+  link?: string
+}
+export interface AlertsData {
+  computedAt: string
+  thresholds: { camLeft: number; camShare: number }
+  alerts: Alert[]
+  camPools: CamPool[]
+  preserveRule: {
+    limit: number
+    near: number
+    locations: string[]
+    reached: {
+      species: string
+      preserved: number
+      reachedOn: string | null
+      reachedRow: RuleRow
+      after: number
+      afterRows: RuleRow[]
+      lastPreserved: string | null
+      recent: boolean
+      recentAfter: number
+    }[]
+    close: { species: string; preserved: number; left: number; lastPreserved: string | null }[]
+  }
+}

@@ -123,7 +123,7 @@ const speciesList = computed(() =>
 
 // Recaptures and the 30 rule always look at the whole history, whatever the filters.
 const recaptures = computed(() => recaptureIds(allRows.value))
-// The 30 rule counts every preserved butterfly from Ikiam and Casa de Lin, whatever its purpose.
+// The 30 rule counts every preserved butterfly from Ikiam, Casa de Lin and Mariposario Ikiam, whatever its purpose.
 const rulePreserved = computed(() => preservedForRule(table.value?.rows || []))
 const species = computed(() => speciesStats(filtered.value, bySubspecies.value, recaptures.value))
 const allSpecies = ref(false)
@@ -340,7 +340,7 @@ const pct = (a: number, b: number) => (b ? `${Math.round((100 * a) / b)} %` : '�
         <p class="hint mb-2">
           {{
             $t(
-              'Regla del protocolo: con {n} individuos preservados de una especie de Ithomiini se pasa a marcar y liberar. Cuentan todos los preservados de Ikiam y Casa de Lin (monitoreo u otro propósito, todo el histórico); las demás columnas siguen los filtros.',
+              'Regla del protocolo: con {n} individuos preservados de una especie de Ithomiini se pasa a marcar y liberar. Cuentan todos los preservados de Ikiam, Casa de Lin y Mariposario Ikiam (monitoreo u otro propósito, todo el histórico); las demás columnas siguen los filtros.',
               { n: MARK_THRESHOLD },
             )
           }}

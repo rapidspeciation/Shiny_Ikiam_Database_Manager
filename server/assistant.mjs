@@ -4,6 +4,8 @@ import { createReports } from './reports.mjs';
 import { TYPED_OVER_FORMULA, uniqueIdIndex } from './batch.mjs';
 import { allIssues, checkData } from './checks.mjs';
 import { agreedFixes, markApplied } from './review.mjs';
+import { CERTAINTIES, suggestionPage } from './suggestions/index.mjs';
+import { alerts } from './alerts.mjs';
 import { tpl, withoutMsgs } from './messages.mjs';
 import { comparable, isSumField, labelFor, moduleMap, simpleSum, validateValues } from './schema.mjs';
 import { TUBE_FIELD, isIdValue, isUnique } from './verifications.mjs';
@@ -230,6 +232,35 @@ const TOOLS = [
           limit: { type: 'integer', description: '1 to 100, default 100' },
         },
       },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_suggested_edits',
+      description:
+        "Read-only: the corrections the app computes from the workbook (Revisión → Sugerencias), each with sheet, row, recordId, label, field, current, suggested, certainty (certain = only the spelling changes; likely = strong evidence, still shown to the person; check = a lead for someone who knows; suggested null = a person must decide) and reason (the evidence, Spanish). Sources (more may be added; the answer lists them with their description and counts): check_fixes (the checks' own fixes), spaces, formulas (missing XLOOKUP formulas in Collection_data), dates (impossible dates), tubes (a digit too few or too many), twins (Collection vs Insectary species/sex), pedigree (Pedigree left as 'YES or NO' on dead butterflies). manual = true: done by hand in Google Sheets (formula cells), propose_changes cannot write it: tell the person. Nothing here is applied by itself: when the person wants some of them, make ONE propose_changes with those (a note per row with the reason) and wait for their confirmation. Never propose 'check' suggestions or ones without a value unless the person decided them. Call without filters first to see the counts per source and certainty.",
+      parameters: {
+        type: 'object',
+        properties: {
+          source: { type: 'string', description: 'Only these sources (comma-separated), e.g. tubes,dates' },
+          certainty: { type: 'string', description: 'certain, likely, check (comma-separated)' },
+          sheet: { type: 'string', description: 'Only this sheet' },
+          recordId: { type: 'string', description: 'Only the suggestions for this row' },
+          q: { type: 'string', description: 'Text in the row label, the values or the reason' },
+          limit: { type: 'integer', description: '1 to 200, default 50' },
+          offset: { type: 'integer' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_alerts',
+      description:
+        'Read-only alerts for the team: CAM pools of the Lists sheet running out (camPools: per pool its ranges with size, used, highest, next free, left above the highest used, gaps, lastUsed; a range in use with fewer than 50 or 15 % left is an alert: ask PAS or AA for a new range) and the 30-preserved rule (preserveRule: Ithomiini species with 30 or more Collected_Preserved from Ikiam, Casa de Lin or Mariposario Ikiam, counted per species, with the day they reached 30 and the butterflies preserved after it, as information; close = species at 25–29). alerts = the list shown in the app (Spanish texts).',
+      parameters: { type: 'object', properties: {} },
     },
   },
   MATCH_NOTEBOOK_TOOL,
@@ -1450,6 +1481,21 @@ export function createAssistant({ store, config = {} }) {
     if (name === 'update_proposal') return updateProposal(args, context);
     if (name === 'get_proposal') return getProposal(args, context);
     if (name === 'list_agreed_fixes') return agreedFixes(store, { kind: args.kind ? clip(args.kind, 300) : undefined, limit: args.limit });
+    if (name === 'list_suggested_edits') {
+      const out = await suggestionPage(store, {
+        source: args.source ? clip(args.source, 300) : undefined,
+        certainty: args.certainty ? clip(args.certainty, 100) : undefined,
+        sheet: args.sheet ? clip(args.sheet, 100) : undefined,
+        recordId: args.recordId ? clip(args.recordId, 120) : undefined,
+        q: args.q ? clip(args.q, 100) : undefined,
+        limit: Math.min(Number(args.limit) || 50, 200),
+        offset: args.offset,
+      });
+      for (const s of out.items)
+        context.sources.set(s.recordId, { id: s.recordId, type: 'record', sheet: s.sheet, row: s.row, label: s.label });
+      return { ...withoutMsgs(out), certainties: CERTAINTIES };
+    }
+    if (name === 'get_alerts') return withoutMsgs(alerts(store));
     if (name === 'match_notebook') return matchNotebook(args, context);
     if (HISTORY_TOOL_NAMES.has(name)) return runHistoryTool(store, name, args, context, { publicUrl: config.publicUrl });
     if (name === 'apply_proposal') {

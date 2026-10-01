@@ -1152,9 +1152,11 @@ export function isMonitoringRow(row: TableRow, days?: Set<string>) {
  * Places whose preserved individuals count towards the 30-preserved rule. The
  * team counted every preserved butterfly from Ikiam and nearby Casa de Lin,
  * whatever its purpose: with that count every species had reached 30 when its
- * marking started (e.g. Oleria gunilla, 31 in July 2024).
+ * marking started (e.g. Oleria gunilla, 31 in July 2024). Mariposario Ikiam (a
+ * wild butterfly found in the campus butterfly garden) counts too, as in the
+ * alerts (server/alerts.mjs RULE_LOCATIONS).
  */
-export const RULE_LOCATIONS = ['Ikiam', 'Casa de Lin']
+export const RULE_LOCATIONS = ['Ikiam', 'Casa de Lin', 'Mariposario Ikiam']
 export const isRuleRow = (row: TableRow) =>
   row.observed && RULE_LOCATIONS.some(l => l.toLowerCase() === text(row.values.Collection_location).toLowerCase())
 

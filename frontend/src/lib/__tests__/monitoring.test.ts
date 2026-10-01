@@ -236,7 +236,7 @@ describe('marks and the 30 rule', () => {
     expect(markConflicts(rows).map(c => c.id)).toEqual(['B56'])
     expect(markHistories(rows).map(h => h.species)).toEqual(['Hyposcada illinissa'])
   })
-  it('counts preserved butterflies from Ikiam and Casa de Lin, whatever the purpose', () => {
+  it('counts preserved butterflies from Ikiam, Casa de Lin and Mariposario Ikiam, whatever the purpose', () => {
     const counts = preservedForRule([
       row({ SPECIES: 'Oleria gunilla', Release_Collect: 'Collected_Preserved' }),
       row({ SPECIES: 'Oleria gunilla', Release_Collect: 'Collected_Preserved', Purpose: 'Ikiam trapping inventory' }),
@@ -246,10 +246,11 @@ describe('marks and the 30 rule', () => {
         Collection_location: 'Casa de Lin',
         Purpose: 'NA',
       }),
+      row({ SPECIES: 'Oleria gunilla', Release_Collect: 'Collected_Preserved', Collection_location: 'Mariposario Ikiam' }),
       row({ SPECIES: 'Oleria gunilla', Release_Collect: 'Collected_Preserved', Collection_location: 'Apuya' }),
       row({ SPECIES: 'Oleria gunilla', Release_Collect: 'Mark_Released', FieldMark_ID: 'B1' }),
     ])
-    expect(counts.get('Oleria gunilla')).toBe(3)
+    expect(counts.get('Oleria gunilla')).toBe(4)
   })
 })
 

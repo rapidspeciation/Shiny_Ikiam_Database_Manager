@@ -17,6 +17,7 @@ import {
   photoUrl,
   problemText,
   shown,
+  stamp,
   type Issue,
   type Verdict,
 } from '../../lib/review'
@@ -128,6 +129,9 @@ async function toggleHistory() {
       <span v-else class="text-stone-500">{{ i.sheet }}</span>
       <span v-if="i.date" class="text-xs text-stone-500">{{ i.date }}</span>
       <span v-if="i.who?.length" class="truncate text-xs text-stone-500">{{ i.who.join(' · ') }}</span>
+      <span v-if="i.firstSeen" class="text-[11px] text-stone-400" :title="$t('Visto por primera vez')">{{
+        $t('desde {date}', { date: stamp(i.firstSeen, false) })
+      }}</span>
       <span
         v-if="i.verdict"
         class="ml-auto rounded px-1.5 py-0.5 text-xs font-medium"
