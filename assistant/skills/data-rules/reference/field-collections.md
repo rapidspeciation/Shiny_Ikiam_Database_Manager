@@ -71,9 +71,9 @@ copy that layout to local rows.
   name of Suchipakari; "Mariposario Ikiam" = found inside the insectary garden.
   Near-duplicate names exist ("Apuya Y " with a space, "Apuya 2.7km" / "Apuya km
   2.7"): use the one the recent rows use. A new place needs coordinates: ask.
-- **Collection_date** day first; `NA` only when truly unknown. For live
-  butterflies it equals Intro2Insectary_date (capture day, not the day caged,
-  when they differ).
+- **Collection_date** day first, the capture day; `NA` only when truly
+  unknown. A live butterfly's Intro2Insectary_date equals it (all 2026 rows),
+  even when it was caged a day or two later.
 - **Collection_time** `hh:mm` 24 h (trips 09:00–15:15; monitoring 09:00–11:30);
   `NA` when not noted. A time like 02:41 is a PM typed as AM: ask.
 - **Rainfall / Cloud_cover**: list values; codes and paper shorthand in
