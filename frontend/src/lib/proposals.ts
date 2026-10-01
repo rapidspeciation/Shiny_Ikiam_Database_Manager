@@ -94,6 +94,8 @@ export interface Proposal {
   newRowFormulas?: Record<string, string[]>
   applied: number[] | null
   changes: ProposalChange[]
+  /** A notebook page's proposal: its sheet, the page's columns in the page's order, and its key columns. */
+  notebook?: { sheet: string; columns: string[]; keys: string[] }
 }
 
 export const rowKey = (c: Pick<ProposalChange, 'key' | 'clientId' | 'recordId' | 'index'>) =>
@@ -192,7 +194,7 @@ export function unfilledUnreadable(p: Pick<Proposal, 'changes'>) {
  * columns the person added.
  */
 export function sheetGroups(
-  p: Pick<Proposal, 'changes' | 'fields'>,
+  p: Pick<Proposal, 'changes' | 'fields' | 'notebook'>,
   extra: Record<string, string[]> = {},
   order: (sheet: string) => string[] | undefined = () => undefined,
 ) {
@@ -202,11 +204,15 @@ export function sheetGroups(
     const used = new Set(
       changes.flatMap(c => [...Object.keys(c.values), ...Object.keys(c.personEdits ?? {}), ...Object.keys(c.unreadable ?? {})]),
     )
-    const columns = order(sheet)
-    const fields = columns ? columns.filter(f => used.has(f)) : p.fields.filter(f => used.has(f))
+    const added = new Set(extra[sheet] ?? [])
+    // A notebook page's columns first, in the page's order (the ID is the row's own column), so the
+    // person reads each row beside its line; even those with nothing to write (SPECIES, a formula).
+    const page = p.notebook?.sheet === sheet ? p.notebook.columns.filter(f => !p.notebook!.keys.includes(f) || used.has(f)) : []
+    // The rest, and the columns the person adds, at their place in the sheet.
+    const columns = order(sheet) ?? p.fields
+    const fields = [...page, ...columns.filter(f => (used.has(f) || added.has(f)) && !page.includes(f))]
     // Columns the sheet no longer lists still show.
-    for (const f of used) if (!fields.includes(f)) fields.push(f)
-    for (const f of extra[sheet] ?? []) if (!fields.includes(f)) fields.push(f)
+    for (const f of [...used, ...added]) if (!fields.includes(f)) fields.push(f)
     return { sheet, fields, changes }
   })
 }

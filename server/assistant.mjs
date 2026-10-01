@@ -1401,8 +1401,12 @@ export function createAssistant({ store, config = {} }) {
           sheets.filter(s => changes.some(c => c.create && c.sheet === s)).map(s => [s, locked(s, [...createFormulaFields(s)])]),
         )
       : {};
+    // A notebook page's proposal ("Cuaderno Emergidos (Insectary_data): …"): the table shows the page's columns in its order.
+    const reason = row?.reason ?? proposal.reason ?? '';
+    const kind = Object.values(KINDS).find(k => reason.startsWith(`Cuaderno ${k.label} (${k.sheet})`));
     return {
       ...proposal,
+      ...(kind ? { notebook: { sheet: kind.sheet, columns: kind.fields, keys: kind.keys } } : {}),
       status,
       revision: row?.revision ?? 1,
       updatedAt: row?.updated_at ?? null,
