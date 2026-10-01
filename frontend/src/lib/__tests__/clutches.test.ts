@@ -7,6 +7,7 @@ import {
   clutchState,
   countedToday,
   dayText,
+  effectLabel,
   formulaOf,
   hasClutch,
   nextBatch,
@@ -19,6 +20,7 @@ import {
   sameMating,
   termLabels,
   totalOf,
+  typedTotal,
   type CountField,
 } from '../clutches'
 import { formatSerial } from '../dates'
@@ -63,6 +65,26 @@ describe('counts kept as sums', () => {
     expect(countedToday([0], 5)).toEqual({ ok: true, terms: [5] })
     expect(countedToday([3, 5, -2], 0)).toEqual({ ok: true, terms: [3, 5, -2, -6] })
     expect(countedToday([4], -1)).toEqual({ ok: false, reason: 'empty' })
+  })
+  it('typing a new total over the total adds the difference to the sum, as "Counted today"', () => {
+    // =14+12+6 is 32: typing 30 appends −2, 35 appends +3, 32 changes nothing.
+    const sum = [14, 12, 6]
+    const down = typedTotal(sum, '30')
+    expect(down).toEqual({ ok: true, terms: [14, 12, 6, -2] })
+    expect(down.ok && formulaOf(down.terms)).toBe('=14+12+6-2')
+    expect(effectLabel(sum, down)).toBe('−2')
+    const up = typedTotal(sum, ' 35 ')
+    expect(up).toEqual({ ok: true, terms: [14, 12, 6, 3] })
+    expect(effectLabel(sum, up)).toBe('+3')
+    expect(typedTotal(sum, '32')).toEqual({ ok: false, reason: 'unchanged' })
+    expect(effectLabel(sum, typedTotal(sum, '32'))).toBe('')
+    expect(typedTotal(sum, '0')).toEqual({ ok: true, terms: [14, 12, 6, -32] })
+    // An empty count (or a lone 0) starts at the number typed.
+    expect(typedTotal([], '12')).toEqual({ ok: true, terms: [12] })
+    expect(effectLabel([], typedTotal([], '12'))).toBe('= 12')
+    expect(effectLabel([0], typedTotal([0], '4'))).toBe('= 4')
+    for (const bad of ['', '-2', '3.5', 'abc', '12345'])
+      expect(typedTotal(sum, bad), bad).toEqual({ ok: false, reason: 'empty' })
   })
   it('"remove last term" takes back yesterday\'s −3 when the 3 turn up again', () => {
     const yesterday = countedToday([3, 5, -2], 3)

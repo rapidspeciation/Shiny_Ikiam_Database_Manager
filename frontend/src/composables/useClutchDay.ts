@@ -3,7 +3,7 @@ import { api, requestId } from '../lib/api'
 import { MODULE, type DayChange } from '../lib/clutches'
 import { useTables } from '../stores/tables'
 
-/** A clutch marked as checked (server/clutches.mjs). */
+/** A clutch marked as checked (server/clutches.mjs): only in the app, for one day, seen by everyone. */
 export interface ClutchCheck {
   id: string
   recordId: string
@@ -20,8 +20,10 @@ export interface ClutchCheck {
 export interface ServerDayChange extends DayChange {
   actorIds: string[]
   at: string
+  /** The changes still standing (not undone) behind this before → after, to undo them. */
+  parts: { changeId: string; actionId: string; actor: string }[]
 }
-interface Day {
+export interface Day {
   day: string
   checks: ClutchCheck[]
   changes: ServerDayChange[]
@@ -34,9 +36,11 @@ export interface ClutchToday {
   changed: boolean
   /** Who checked or changed it today (names). */
   who: string[]
+  /** Who marked it as checked today (names): the marks only, kept in the app. */
+  checkedBy: string[]
 }
 const POLL_MS = 20_000
-const NONE: ClutchToday = { checks: [], changes: [], checked: false, changed: false, who: [] }
+const NONE: ClutchToday = { checks: [], changes: [], checked: false, changed: false, who: [], checkedBy: [] }
 
 /**
  * The clutches' sum formulas and last changes (followed when the sheet
@@ -104,7 +108,7 @@ export function useClutchDay() {
     const out = new Map<string, ClutchToday>()
     const get = (id: string) => {
       let v = out.get(id)
-      if (!v) out.set(id, (v = { checks: [], changes: [], checked: false, changed: false, who: [] }))
+      if (!v) out.set(id, (v = { checks: [], changes: [], checked: false, changed: false, who: [], checkedBy: [] }))
       return v
     }
     for (const c of day.value.checks) {
@@ -114,6 +118,7 @@ export function useClutchDay() {
       if (c.fields.length) v.changed = true
       const who = c.name || c.username || ''
       if (who && !v.who.includes(who)) v.who.push(who)
+      if (who && !v.checkedBy.includes(who)) v.checkedBy.push(who)
     }
     for (const c of day.value.changes) {
       const v = get(c.recordId)

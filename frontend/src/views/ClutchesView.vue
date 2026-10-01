@@ -2,10 +2,11 @@
 import ChoiceField from '../components/ChoiceField.vue'
 import DateField from '../components/DateField.vue'
 import { computed, ref } from 'vue'
-import { Plus } from 'lucide-vue-next'
+import { History, Plus } from 'lucide-vue-next'
 import SheetGrid from '../components/SheetGrid.vue'
 import EntryModeToggle from '../components/EntryModeToggle.vue'
 import ClutchesCards from '../components/clutches/ClutchesCards.vue'
+import ClutchDayPanel from '../components/clutches/ClutchDayPanel.vue'
 import { useEntryMode } from '../composables/useEntryMode'
 import { useSheet } from '../composables/useSheet'
 import { isBlank } from '../lib/cells'
@@ -18,9 +19,10 @@ import { t } from '../lib/i18n'
 
 /**
  * "Clutches": new clutches (eggs laid) and their follow-up in Insectary_stocks.
- * Two ways to work (useEntryMode): cards for the round on a phone or tablet
- * (components/clutches), or the table, where hatching and pupation are typed
- * straight into the clutch's row; the clutches still in progress come first.
+ * Two ways to work (useEntryMode): cards for the round (components/clutches,
+ * the default on every device), or the table, where hatching and pupation are
+ * typed straight into the clutch's row; the clutches still in progress come
+ * first. «Historial» shows the day's changes (to copy and to undo) over the table.
  */
 const MODULE = 'Insectary_stocks'
 const module = ref(MODULE)
@@ -33,6 +35,7 @@ const collectors = computed(() => listColumn('Abbr_name'))
 const form = persistentRef('clutches:form', { species: '', date: todayIso(), eggs: null as number | null, place: 'Insectary' })
 const number = ref('')
 const showAll = ref(false)
+const showHistory = ref(false)
 
 const rows = computed(() => table.value?.rows.filter(r => r.observed) || [])
 /** Clutch numbers are integers, sometimes with a batch suffix like "994(6)"; clutches added but not yet saved count too. */
@@ -134,7 +137,10 @@ const columns = computed(() =>
         <ChoiceField v-model="form.place" class="field-input" :options="['Insectary', 'Laboratory']" :freetext="false" />
       </label>
       <button class="btn-primary"><Plus :size="15" /> {{ $t('Nuevo clutch') }}</button>
-      <EntryModeToggle v-model="mode" class="ml-auto self-end" />
+      <button type="button" class="btn ml-auto self-end" :title="$t('Historial de Clutches')" @click="showHistory = true">
+        <History :size="15" /> {{ $t('Historial') }}
+      </button>
+      <EntryModeToggle v-model="mode" class="self-end" />
     </form>
     <p class="hint px-4 py-1">
       {{
@@ -165,5 +171,6 @@ const columns = computed(() =>
         "
       />
     </div>
+    <ClutchDayPanel v-if="showHistory" :collectors="collectors" @close="showHistory = false" />
   </div>
 </template>

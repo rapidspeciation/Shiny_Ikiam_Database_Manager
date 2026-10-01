@@ -1,16 +1,28 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { Delete, Undo2 } from 'lucide-vue-next'
-import { appendTerm, countedToday, countValue, readCount, removeLast, termLabels, totalOf, type CountResult } from '../../lib/clutches'
+import { computed, nextTick, ref } from 'vue'
+import { Check, Delete, PenLine, Undo2, X } from 'lucide-vue-next'
+import {
+  appendTerm,
+  countedToday,
+  countValue,
+  effectLabel,
+  readCount,
+  removeLast,
+  termLabels,
+  totalOf,
+  typedTotal,
+  type CountResult,
+} from '../../lib/clutches'
 import type { CellValue } from '../../lib/types'
 import { t } from '../../lib/i18n'
 
 /**
  * One count of a clutch kept as the notebook sums it (=3+5-2): its history as
- * chips and the total; +N (more hatched, pupated or emerged), −N (died or
- * missing), "Counted today: N" (the difference is added) and "remove the last
- * term" (yesterday's −3, when the 3 turn up again). Each step writes the
- * team's formula, never a plain total.
+ * chips and the total. Tapping the total and typing the new one is the main
+ * way (32 → 30 adds −2 to the sum, as "Counted today"); also +N (more hatched,
+ * pupated or emerged), −N (died or missing), "Counted today: N" and "remove
+ * the last term" (yesterday's −3, when the 3 turn up again). Each step writes
+ * the team's formula, never a plain total.
  */
 const props = defineProps<{
   field: string
@@ -62,6 +74,58 @@ const countedEffect = computed(() => {
   const added = r.terms.length > count.value.terms.length ? r.terms[r.terms.length - 1] : null
   return added === null ? `= ${n.value}` : count.value.terms.length ? (added < 0 ? `−${-added}` : `+${added}`) : `= ${added}`
 })
+// --- The total, tapped and typed over
+const typing = ref(false)
+const newTotal = ref('')
+const totalBox = ref<HTMLInputElement>()
+const typedResult = computed(() => typedTotal(count.value.terms, newTotal.value))
+/** What the typed total does, shown beside it: "32 → 30 · −2". */
+const typedEffect = computed(() => {
+  if (!newTotal.value.trim()) return ''
+  const r = typedResult.value
+  if (!r.ok) return r.reason === 'unchanged' ? t('Igual que el total: nada que añadir') : reasonText(r.reason)
+  const label = effectLabel(count.value.terms, r)
+  return count.value.terms.length ? `${total.value} → ${totalOf(r.terms)} · ${label}` : label
+})
+async function startTyping() {
+  if (!canWork.value) return
+  message.value = ''
+  newTotal.value = ''
+  typing.value = true
+  await nextTick()
+  totalBox.value?.focus()
+}
+function stopTyping() {
+  cancelling = false
+  typing.value = false
+  newTotal.value = ''
+}
+/** Enter or ✓: the difference goes into the sum; the same total just closes the box. */
+function applyTotal() {
+  if (!typing.value) return
+  const r = typedResult.value
+  if (!r.ok && r.reason === 'unchanged') return stopTyping()
+  if (!r.ok) {
+    message.value = reasonText(r.reason)
+    return
+  }
+  apply(r)
+  stopTyping()
+}
+/** Leaving the box keeps a valid new total (as a spreadsheet cell does); anything else is dropped. */
+/** ✕ pressed: its pointerdown comes before the box's blur, which then must not keep the total. */
+let cancelling = false
+const willCancel = () => (cancelling = true)
+function onTotalBlur() {
+  if (!typing.value) return
+  if (cancelling) {
+    cancelling = false
+    return stopTyping()
+  }
+  if (typedResult.value.ok) applyTotal()
+  else stopTyping()
+}
+
 function dropLast() {
   message.value = ''
   emit('set', countValue(removeLast(count.value.terms)))
@@ -74,14 +138,74 @@ function revert() {
 
 <template>
   <div>
-    <div class="flex items-baseline justify-between gap-2">
+    <div class="flex items-center justify-between gap-2">
       <span class="field-label mb-0 break-all">{{ field }}</span>
-      <span class="shrink-0 text-2xl font-semibold tabular-nums" :class="dirty ? 'text-amber-800' : 'text-stone-900'">
+      <!-- The total: tap it and type the new one (the difference goes into the sum). -->
+      <input
+        v-if="typing"
+        ref="totalBox"
+        v-model="newTotal"
+        class="h-12 w-24 shrink-0 rounded-lg border-2 border-brand-600 bg-white px-2 text-right text-2xl font-semibold tabular-nums focus:ring-2 focus:ring-brand-100 focus:outline-none"
+        type="text"
+        inputmode="numeric"
+        pattern="[0-9]*"
+        maxlength="4"
+        autocomplete="off"
+        enterkeyhint="done"
+        :placeholder="count.terms.length ? String(total) : ''"
+        :aria-label="$t('Total nuevo de {field}', { field })"
+        @input="message = ''"
+        @keydown.enter.prevent="applyTotal"
+        @keydown.esc.prevent.stop="stopTyping"
+        @blur="onTotalBlur"
+      />
+      <button
+        v-else-if="canWork"
+        type="button"
+        class="group -my-1 flex h-12 min-w-20 shrink-0 items-center justify-end gap-1.5 rounded-lg border border-dashed border-stone-300 bg-white px-2 tabular-nums hover:border-brand-600 hover:bg-brand-50 active:bg-brand-50"
+        :class="dirty ? 'text-amber-800' : 'text-stone-900'"
+        :aria-label="$t('Escribir el total de {field} (ahora {n})', { field, n: count.terms.length ? total : '—' })"
+        :title="$t('Toca para escribir el total contado: la diferencia se suma')"
+        @click="startTyping"
+      >
+        <PenLine :size="15" class="text-stone-400 group-hover:text-brand-700" />
+        <span class="text-2xl font-semibold">
+          <template v-if="count.na">NA</template>
+          <template v-else-if="count.terms.length">{{ total }}</template>
+          <template v-else>—</template>
+        </span>
+      </button>
+      <span v-else class="shrink-0 text-2xl font-semibold tabular-nums" :class="dirty ? 'text-amber-800' : 'text-stone-900'">
         <template v-if="count.na">NA</template>
         <template v-else-if="count.text">{{ count.text }}</template>
         <template v-else-if="count.terms.length">{{ total }}</template>
         <template v-else>—</template>
       </span>
+    </div>
+    <!-- Typing a total: what it adds, and ✓ / ✕ (they keep the focus, so the box is not left first). -->
+    <div v-if="typing" class="mt-1.5 flex items-center gap-2">
+      <p class="min-w-0 flex-1 text-sm tabular-nums" :class="typedResult.ok ? 'font-medium text-brand-800' : 'text-stone-600'" role="status">
+        {{ typedEffect || $t('Escribe el total contado hoy') }}
+      </p>
+      <button
+        type="button"
+        class="btn-primary h-11 shrink-0 px-4"
+        :disabled="!typedResult.ok"
+        @mousedown.prevent
+        @click="applyTotal"
+      >
+        <Check :size="18" /> {{ $t('Poner') }}
+      </button>
+      <button
+        type="button"
+        class="btn h-11 w-11 shrink-0 px-0"
+        :aria-label="$t('Cancelar')"
+        @pointerdown="willCancel"
+        @mousedown.prevent
+        @click="stopTyping"
+      >
+        <X :size="18" />
+      </button>
     </div>
     <!-- The history: each term a chip; the last one can be taken back. -->
     <div v-if="count.terms.length" class="mt-1 flex flex-wrap items-center gap-1" :aria-label="$t('Historia de la suma')">

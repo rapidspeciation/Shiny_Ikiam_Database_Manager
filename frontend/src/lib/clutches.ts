@@ -90,6 +90,28 @@ export function countedToday(terms: number[], counted: number): CountResult {
   if (terms.length === 1 && terms[0] === 0) return { ok: true, terms: [counted] }
   return { ok: true, terms: [...terms, diff] }
 }
+/**
+ * The new total typed over a count's total (tapping "32" and typing 30): the
+ * same as "Counted today", so the difference is added to the sum (32 → 30
+ * adds −2, 32 → 35 adds +3, the same total changes nothing). Up to four digits.
+ */
+export function typedTotal(terms: number[], typed: string): CountResult {
+  const text = typed.trim()
+  if (!/^\d{1,4}$/.test(text)) return { ok: false, reason: 'empty' }
+  return countedToday(terms, Number(text))
+}
+/**
+ * What a result does to the count, in short, for its button: the term added
+ * ("+3", "−2"), "= 5" when the count starts (or a lone 0 is replaced), "" when
+ * nothing would change or the number is not valid.
+ */
+export function effectLabel(terms: number[], result: CountResult): string {
+  if (!result.ok) return ''
+  const base = terms.length === 1 && terms[0] === 0 ? [] : terms
+  if (!base.length || result.terms.length <= base.length) return `= ${totalOf(result.terms)}`
+  const added = result.terms[result.terms.length - 1]
+  return added < 0 ? `−${-added}` : `+${added}`
+}
 /** Undoes the last term (yesterday's −3, when the 3 turn up again today). */
 export const removeLast = (terms: number[]) => terms.slice(0, -1)
 

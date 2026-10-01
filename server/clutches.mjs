@@ -4,6 +4,10 @@
 // fields its check changed (or none), so everyone sees which clutches were
 // checked today, by whom, and which changed. The changes themselves are written
 // to the sheet by the usual save (records/batch) and read back from the history.
+//
+// A check lives only in the app (this table): it is never written to Google
+// Sheets nor recorded as a save in the history, belongs to one day in Ecuador
+// (the next day starts with none) and is seen by everyone.
 
 import { randomUUID } from 'node:crypto';
 import { isSumField, moduleMap, simpleSum } from './schema.mjs';
@@ -75,7 +79,8 @@ const shape = r => ({
 /**
  * One day's checks and changes of clutches: the checks marked in the app, and
  * every change to Insectary_stocks that day (app, assistant or Google Sheets),
- * as each field's value before the first change and after the last.
+ * as each field's value before the first change and after the last, with the
+ * changes still standing (`parts`: change, save and person) to undo them.
  */
 export function clutchDay(store, query = {}) {
   const day = dayOf(query);
@@ -89,8 +94,9 @@ export function clutchDay(store, query = {}) {
   const [from, to] = dayRange(day);
   const rows = store.db
     .prepare(
-      `SELECT c.record_id, c.field, c.before_json, c.after_json, a.actor, a.created_at, u.username, u.display_name name,
-         r.values_json FROM changes c JOIN actions a ON a.id = c.action_id LEFT JOIN users u ON u.id = a.actor
+      `SELECT c.id change_id, c.record_id, c.field, c.before_json, c.after_json, a.id action_id, a.source, a.reverses, a.actor,
+         a.created_at, u.username, u.display_name name, r.values_json
+         FROM changes c JOIN actions a ON a.id = c.action_id LEFT JOIN users u ON u.id = a.actor
          LEFT JOIN records r ON r.id = c.record_id
        WHERE c.sheet = ? AND a.created_at >= ? AND a.created_at < ? AND a.status IN ('verified', 'observed')
        ORDER BY a.created_at, a.id`,
@@ -111,9 +117,15 @@ export function clutchDay(store, query = {}) {
         after: null,
         actors: [],
         at: r.created_at,
+        parts: [],
       };
       byKey.set(key, change);
     }
+    // The changes still standing, to undo them from the day's list: an undo takes back the ones it reverses.
+    if (r.source === 'undo' && r.reverses) {
+      const reversed = new Set(r.reverses.split(','));
+      change.parts = change.parts.filter(p => !reversed.has(p.actionId));
+    } else change.parts.push({ changeId: r.change_id, actionId: r.action_id, actor: r.actor });
     change.after = parse(r.after_json);
     change.at = r.created_at;
     const who = r.actor === 'unknown' ? 'Google Sheets' : (r.name ?? r.username ?? r.actor);

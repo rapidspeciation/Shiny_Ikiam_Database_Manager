@@ -19,13 +19,15 @@ Muertes on a phone (`deaths.mjs`) saves deaths and undoes them, so it refuses an
 (LOCAL_MODE, its own database). `adb reverse tcp:8796 tcp:8796` makes the phone's `localhost:8796` this
 PC's (a secure context, which `crypto.randomUUID` needs; `10.0.2.2` is not):
 `APP=http://localhost:8796/ CREDS=~/.cache/ithomiini-lab/credentials.json DB=/tmp/app.sqlite node tools/android-test/deaths.mjs A4E A3E A2E`
-(three living IDs of that copy). It closes the keyboard by leaving the box, not with the back key, which can
+(three living IDs of that copy; `ORIENT=landscape` turns the phone). It also selects a card (its own cause),
+opens a card's details with its ›, and opens the Deaths history. It closes the keyboard by leaving the box, not with the back key, which can
 leave the page.
 
 Clutches as cards (`clutches.mjs`) saves counts and notes and marks checks, so it too refuses any app
 but a local one: `adb reverse tcp:8797 tcp:8797`, then
 `APP=http://localhost:8797/ CREDS=~/.cache/ithomiini-lab/credentials.json node tools/android-test/clutches.mjs`
-(`ROTATION=1` with the phone on its side). It opens its own tab, and measures the keyboard right after
+(`ROTATION=1` with the phone on its side). It also types a new total over a count's total, opens and closes
+the calendar of «Correct» (tap outside, Cancel or ✕, Correct again) and undoes the clutch's changes from «Today». It opens its own tab, and measures the keyboard right after
 tapping a box: text sent with `adb shell input text` makes SwiftKey fold into its bar, as for a
 hardware keyboard. Two local apps on `localhost` share one session cookie (cookies ignore the port):
 signing in on one signs the other out.

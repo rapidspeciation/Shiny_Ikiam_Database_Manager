@@ -95,6 +95,10 @@ test('clutch checks: marked by editors, seen by everyone, with the day\'s change
   const again = await ana.call('/api/clutches/checks', 'POST', { requestId, recordId: c1013.id });
   assert.equal(again.status, 200);
   assert.equal(again.data.check.id, first.data.check.id);
+  // A check stays in the app: no save in the history, nothing written to the row (nor to Google Sheets).
+  assert.deepEqual((await ana.call('/api/history/groups')).data.groups, []);
+  const after1013 = (await ana.call('/api/records?module=Insectary_stocks')).data.records.find(r => r.id === c1013.id);
+  assert.deepEqual([after1013.values, after1013.version], [c1013.values, c1013.version]);
 
   // A change saved as usual (3 larvae counted today: =3+5-2 → =3+5-2-3), then its check.
   const saved = await beto.call('/api/records/batch', 'POST', {
@@ -123,8 +127,22 @@ test('clutch checks: marked by editors, seen by everyone, with the day\'s change
     [larvae.clutch, larvae.before, larvae.after, larvae.actors, larvae.isNew],
     ['1012', { formula: '=3+5-2' }, { formula: '=3+5-2-3' }, ['Beto Paz'], false],
   );
+  // Each change still standing, to undo it from the day's list.
+  assert.equal(larvae.parts.length, 1);
+  assert.equal(larvae.parts[0].actionId, saved.data.action.id);
+  assert.equal(larvae.parts[0].actor, larvae.actorIds[0]);
   assert.equal((await ana.call('/api/clutches/state')).data.last[c1012.id].name, 'Beto Paz');
   assert.equal((await ana.call('/api/clutches/state')).data.sums[c1012.id]['NUMBER OF LARVAE'], '=3+5-2-3');
+  // The day's list undoes a change (the Historial's preview and undo): it leaves the list, and its part goes.
+  const notes = day.changes.find(c => c.field === 'NOTES');
+  const preview = await beto.call('/api/history/preview', 'POST', { changeIds: notes.parts.map(p => p.changeId) });
+  assert.equal(preview.status, 200);
+  assert.equal(preview.data.eligible, true);
+  const undone = await beto.call('/api/history/undo', 'POST', { changeIds: notes.parts.map(p => p.changeId), requestId: randomUUID() });
+  assert.equal(undone.status, 200);
+  day = (await olga.call('/api/clutches/day')).data;
+  assert.equal(day.changes.find(c => c.field === 'NOTES'), undefined);
+  assert.equal(day.changes.find(c => c.field === 'NUMBER OF LARVAE').parts.length, 1);
   // Another day has nothing.
   assert.deepEqual((await olga.call('/api/clutches/day?day=2020-01-01')).data.checks, []);
   assert.equal((await olga.call('/api/clutches/day?day=yesterday')).status, 400);

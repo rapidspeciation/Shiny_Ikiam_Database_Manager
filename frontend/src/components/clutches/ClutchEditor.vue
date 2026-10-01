@@ -32,8 +32,8 @@ import { usePending } from '../../stores/pending'
 import { t } from '../../lib/i18n'
 
 /**
- * One clutch, to update during the round: each count's sum with +N / −N /
- * "Counted today" and its stage date, notes dated and initialled, the parents
+ * One clutch, to update during the round: each count's sum (tap the total and
+ * type the new one; or +N / −N / "Counted today") and its stage date, notes dated and initialled, the parents
  * (F1/F2) in NOTES, species, generation and room. Changes are pending edits
  * saved as any other (automatically, or with «Guardar»); «Revisado» saves and
  * marks the clutch as checked today, with the fields it changed. Full screen on
@@ -191,8 +191,8 @@ async function finish() {
 }
 const checkedLine = computed(() => {
   const s = status.value
-  if (!s?.checked) return ''
-  return t('Revisado hoy: {who}', { who: s.who.join(', ') || '—' })
+  if (!s?.checkedBy.length) return ''
+  return t('Revisado hoy por {who} · solo en la app', { who: s.checkedBy.join(', ') })
 })
 
 function go(step: number) {

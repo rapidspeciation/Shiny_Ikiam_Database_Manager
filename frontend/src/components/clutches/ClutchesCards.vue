@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Check, Plus, Search, X } from 'lucide-vue-next'
+import { Check, History, Plus, Search, X } from 'lucide-vue-next'
 import ClutchEditor from './ClutchEditor.vue'
 import NewClutch from './NewClutch.vue'
 import TodayChanges from './TodayChanges.vue'
@@ -231,6 +231,9 @@ const lastText = (row: TableRow) => {
   return t('Último cambio {when} · {who}', { when, who: last.actor === 'unknown' ? 'Google Sheets' : initialsFor(last.name || '') })
 }
 const unsavedRow = (row: TableRow) => !!pending.edits[row.id]
+/** "Checked today by FCH · only in the app": a check is never written to the sheet and ends with the day. */
+const checkedText = (row: TableRow) =>
+  t('Revisado hoy por {who} · solo en la app', { who: day.today(row.id).checkedBy.map(initialsFor).join(', ') || '—' })
 const listEl = ref<HTMLElement>()
 const rootEl = ref<HTMLElement>()
 watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 }))
@@ -257,9 +260,10 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
             class="h-11 border-l border-stone-300 px-3 font-medium whitespace-nowrap"
             :class="view === 'today' ? 'bg-brand-700 text-white' : 'bg-white text-stone-700'"
             :aria-selected="view === 'today'"
+            :title="$t('Cambios de hoy: para el cuaderno y para deshacer')"
             @click="view = 'today'"
           >
-            {{ $t('Hoy') }} <span class="tabular-nums opacity-80">{{ changedToday }}</span>
+            <History :size="15" class="-mt-0.5 inline" /> {{ $t('Hoy') }} <span class="tabular-nums opacity-80">{{ changedToday }}</span>
           </button>
         </div>
         <button v-if="canEdit" class="btn h-11 shrink-0 px-3" :aria-label="$t('Nuevo clutch')" @click="startNew">
@@ -327,8 +331,13 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                   <span class="ml-auto flex flex-wrap justify-end gap-1">
                     <span v-if="unsavedRow(item.row)" class="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900 ring-1 ring-amber-300">{{ $t('Sin guardar') }}</span>
                     <span v-if="day.today(item.row.id).changed" class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">{{ $t('Cambiado hoy') }}</span>
-                    <span v-if="day.today(item.row.id).checked" class="flex items-center gap-0.5 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-800">
-                      <Check :size="12" /> {{ day.today(item.row.id).who.map(initialsFor).join(', ') || $t('Revisado') }}
+                    <span
+                      v-if="day.today(item.row.id).checkedBy.length"
+                      class="flex items-center gap-0.5 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-800"
+                      :title="checkedText(item.row)"
+                      :aria-label="checkedText(item.row)"
+                    >
+                      <Check :size="12" /> {{ $t('Hoy') }} · {{ day.today(item.row.id).checkedBy.map(initialsFor).join(', ') }}
                     </span>
                   </span>
                 </span>
@@ -351,6 +360,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
               <div v-if="canEdit && !day.today(item.row.id).checked" class="border-t border-stone-100">
                 <button class="flex h-11 w-full items-center justify-center gap-1.5 text-sm font-medium text-brand-800 active:bg-brand-50" :disabled="marking === item.row.id" @click="markChecked(item.row)">
                   <Check :size="16" /> {{ $t('Revisado, sin cambios') }}
+                  <span class="text-xs font-normal text-stone-500">· {{ $t('solo en la app') }}</span>
                 </button>
               </div>
             </li>
@@ -395,7 +405,11 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
 
     <!-- A check marked from a card can be taken back for a moment. -->
     <div v-if="lastMark" class="fixed inset-x-3 bottom-20 z-30 mx-auto flex max-w-md items-center gap-2 rounded-xl bg-stone-800 px-4 py-2 text-sm text-white shadow-lg" role="status">
-      <Check :size="16" /> <span class="flex-1">{{ $t('Clutch {clutch} revisado, sin cambios', { clutch: lastMark.clutch }) }}</span>
+      <Check :size="16" />
+      <span class="flex-1">
+        {{ $t('Clutch {clutch} revisado, sin cambios', { clutch: lastMark.clutch }) }}
+        <span class="block text-xs opacity-80">{{ $t('Marca solo en la app, para hoy: no se escribe en la hoja.') }}</span>
+      </span>
       <button class="h-11 px-2 font-semibold underline" @click="undoMark">{{ $t('Deshacer') }}</button>
     </div>
 

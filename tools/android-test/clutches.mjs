@@ -132,6 +132,44 @@ await tapOn(larvae.locator('button', { hasText: 'hatched' }));
 await sleep(500);
 await closeKeyboard();
 report('after +1', (await larvae.innerText()).split('\n').slice(0, 9).join(' '));
+// 4b. The total tapped and typed over (the main way): the number pad, the difference shown, kept on leaving the box.
+const totalButton = larvae.locator('button[aria-label^="Type the total of"]');
+const now = Number(/now (\d+)/.exec((await totalButton.getAttribute('aria-label')) || '')?.[1] ?? 0);
+await tapOn(totalButton);
+await sleep(1500);
+report('total box focused (keyboard, box visible, footer visible, box above footer)', await inView());
+report('total box keyboard', await page.evaluate(() => document.activeElement?.getAttribute('inputmode')));
+await type(String(now + 3));
+report(`typed ${now + 3} over ${now}`, await larvae.locator('[role=status]').first().innerText().catch(() => '-'));
+await shot('4b-type-total');
+await closeKeyboard();
+await sleep(500);
+report('after leaving the box', (await larvae.innerText()).split('\n').slice(0, 9).join(' '));
+await shot('4c-total-set');
+// 4c. A stage date: «Correct» opens the calendar, which closes with a tap outside, Cancel, or a day.
+const correct = editor.locator('button', { hasText: 'Correct' }).first();
+if (await correct.count()) {
+  await tapOn(correct);
+  await sleep(800);
+  const calendar = page.locator('[role=dialog][aria-label=Calendar]');
+  report('calendar after Correct', await calendar.count());
+  await shot('4d-calendar');
+  const vw = await page.evaluate(() => [innerWidth, innerHeight]);
+  await tap(page, 10, vw[1] - 10);
+  await sleep(600);
+  report('calendar after a tap outside', await calendar.count());
+  await tapOn(editor.locator('button[aria-label="Pick from the calendar"]').first());
+  await sleep(600);
+  report('calendar from its button', await calendar.count());
+  // Cancel at its foot; on a phone on its side (short) the calendar has only ✕ at its top.
+  const cancel = calendar.locator('button', { hasText: 'Cancel' });
+  await tapOn((await cancel.count()) ? cancel : calendar.locator('button[aria-label=Close]'));
+  await sleep(600);
+  report('calendar after Cancel / ✕', await calendar.count());
+  await tapOn(editor.locator('button', { hasText: 'Close' }).first());
+  await sleep(400);
+  report('date boxes after Close (Correct pressed again)', await editor.locator('button[aria-label="Pick from the calendar"]').count());
+}
 // 5. A note typed with the keyboard.
 const note = editor.locator('textarea');
 await tapOn(note);
@@ -156,12 +194,29 @@ await tapOn(page.locator('[role=tab]', { hasText: 'Today' }));
 await sleep(1500);
 report('today', (await page.locator('main ul').first().innerText().catch(() => '')).replace(/\n/g, ' | '));
 await shot('7-today');
+// 7b. Undo a clutch's changes of the day: the Historial's preview, then confirm.
+const undoClutch = page.locator('[data-clutch] button', { hasText: /^\s*Undo\s*$/ }).first();
+if (await undoClutch.count()) {
+  await tapOn(undoClutch);
+  await page.waitForSelector('text=Undo in the sheet', { timeout: 20000 });
+  await sleep(500);
+  await shot('7b-undo-confirm');
+  await tapOn(page.locator('button', { hasText: 'Undo in the sheet' }));
+  await sleep(3000);
+  report('today after undo', (await page.locator('[data-clutch]').first().innerText().catch(() => '')).replace(/\n/g, ' | '));
+  await shot('7c-undone');
+}
 await tapOn(page.locator('[role=tab]', { hasText: 'In progress' }));
 await sleep(600);
 // 8. A card's "Checked, no change", then the new clutch form with the keyboard on the eggs.
-await tapOn(page.locator('ul > li button', { hasText: 'Checked, no change' }).first());
-await sleep(1200);
-await shot('8-checked');
+// (Every clutch changed today counts as checked: then there is no such button.)
+const checkButton = page.locator('ul > li button', { hasText: 'Checked, no change' }).first();
+if (await checkButton.count()) {
+  await tapOn(checkButton);
+  await sleep(1200);
+  report('check mark toast', (await page.locator('[role=status]').allInnerTexts()).join(' | ').replace(/\n/g, ' '));
+  await shot('8-checked');
+} else report('no clutch left to check', '');
 await tapOn(page.locator('button[aria-label="New clutch"]'));
 await sleep(800);
 await tapOn(page.locator('[role=dialog] input[inputmode=numeric]'));
