@@ -435,6 +435,92 @@ body.touch-bar-open main {
   outline: 1px dashed #34d399;
   outline-offset: -2px;
 }
+/* A doubtful reading of the assistant nobody reviewed yet: amber, a dashed amber edge and a "?" before it. */
+.proposal-sheet .tabulator-cell.is-doubtful,
+.legend.is-doubtful {
+  background: #fffbeb;
+  color: #78350f;
+  box-shadow: none;
+  outline: 2px dashed #f59e0b;
+  outline-offset: -3px;
+}
+.proposal-sheet .tabulator-cell .doubt-mark {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #f59e0b;
+  color: white;
+  font-weight: 700;
+  font-size: 10px;
+  line-height: 14px;
+}
+/* Not written on the notebook line (the page's room, a template, the note's words): italic. */
+.proposal-sheet .tabulator-cell.is-inferred,
+.legend.is-inferred {
+  font-style: italic;
+  font-weight: 400;
+}
+.legend.is-inferred {
+  color: #065f46;
+}
+/* The header's count of doubtful cells: a click goes to the next one. */
+.doubt-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px dashed #f59e0b;
+  border-radius: 4px;
+  background: #fffbeb;
+  padding: 1px 6px;
+  color: #92400e;
+  font-weight: 500;
+}
+.doubt-count:hover {
+  background: #fef3c7;
+}
+/* "Aplicar" with doubtful cells not reviewed: what to do with them. */
+.doubt-ask {
+  margin: 0 8px 8px;
+  border: 1px solid #fcd34d;
+  border-radius: 6px;
+  background: #fffbeb;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #78350f;
+}
+.cell-bar-notes .is-doubt b {
+  color: #b45309;
+}
+.cell-bar-notes .is-hint b {
+  color: #57534e;
+  font-style: italic;
+}
+/* A doubtful cell's other readings, to pick with a click. */
+.cell-bar-choices {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.cell-bar-choices b {
+  color: #b45309;
+}
+.cell-bar-choice {
+  border: 1px solid #fcd34d;
+  border-radius: 10px;
+  background: #fffbeb;
+  padding: 0 7px;
+  color: #78350f;
+  font-variant-numeric: tabular-nums;
+}
+.cell-bar-choice:hover:not(:disabled) {
+  background: #fde68a;
+}
+.cell-bar-choice:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
 .proposal-sheet .tabulator-cell .aside {
   color: #047857;
   opacity: 0.7;

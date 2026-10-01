@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { Check, Plus, Sparkles, X } from 'lucide-vue-next'
+import { Check, CircleHelp, Plus, Sparkles, X } from 'lucide-vue-next'
 import ProposalSheet, { type CellEdit } from './assistant/ProposalSheet.vue'
 import { api } from '../lib/api'
 import { displayValue } from '../lib/cells'
@@ -14,6 +14,7 @@ import {
   rowKey,
   rowsToWrite,
   sheetGroups,
+  uncheckedDoubts,
   withLocal,
   type LocalCell,
   type Proposal,
@@ -32,11 +33,14 @@ export type { Proposal, ProposalChange } from '../lib/proposals'
  * (the assistant sees them and does not overwrite them); what the assistant
  * changes meanwhile flashes. Selected cells go back to the sheet's value (the
  * assistant's kept aside, marked) or take the assistant's again; "Aplicar"
- * writes what the table shows (as does "aplica" in the chat).
+ * writes what the table shows (as does "aplica" in the chat). Doubtful cells
+ * (amber, "?") are counted at the top; "Aplicar" with some still unreviewed
+ * asks first: apply them anyway, only the sure cells, or go and review them.
  */
 const props = defineProps<{ proposal: Proposal; busy?: boolean }>()
 const emit = defineEmits<{
-  apply: [indexes: number[], revision: number | undefined]
+  /** doubtful: what to do with the unreviewed doubtful cells (the person chose it in the dialog). */
+  apply: [indexes: number[], revision: number | undefined, doubtful?: 'confirm' | 'skip']
   discard: []
   replace: [proposal: Proposal]
 }>()
@@ -48,8 +52,11 @@ const editable = computed(() => pending.value && session.canEdit)
 // ------------------------------------------------------------ the person's edits, saved to the proposal
 /** Typed and not yet saved (laid over the server's copy). */
 const local = ref(new Map<string, LocalCell>())
-const shown = computed(() => withLocal(props.proposal, local.value))
+/** Doubtful cells marked (or unmarked) as reviewed and not yet saved. */
+const localChecks = ref(new Map<string, boolean>())
+const shown = computed(() => withLocal(props.proposal, local.value, localChecks.value))
 const queue = new Map<string, CellEdit>()
+const checkQueue = new Map<string, { key: string; field: string; checked: boolean }>()
 let removes: string[] = []
 let adds: { sheet: string }[] = []
 /** What was sent lately: its echo from the server must not flash as the assistant's change. */
@@ -70,6 +77,16 @@ function onEdit(cells: CellEdit[]) {
   local.value = next
   later()
 }
+/** «Marcar revisadas»: shown at once, saved with the next edits. */
+function onCheck(cells: { key: string; field: string }[]) {
+  const next = new Map(localChecks.value)
+  for (const c of cells) {
+    next.set(cellId(c.key, c.field), true)
+    checkQueue.set(cellId(c.key, c.field), { ...c, checked: true })
+  }
+  localChecks.value = next
+  later(0)
+}
 function later(ms = 500) {
   window.clearTimeout(timer)
   timer = window.setTimeout(() => void save(), ms)
@@ -81,9 +98,11 @@ async function save(): Promise<void> {
     await running
     return save()
   }
-  if (!queue.size && !removes.length && !adds.length) return
+  if (!queue.size && !removes.length && !adds.length && !checkQueue.size) return
   const cells = [...queue.values()]
-  const body = { cells, remove: removes, add: adds }
+  const checks = [...checkQueue.values()]
+  const body = { cells, remove: removes, add: adds, check: checks }
+  checkQueue.clear()
   queue.clear()
   removes = []
   adds = []
@@ -99,6 +118,7 @@ async function save(): Promise<void> {
       const now = Date.now()
       for (const c of cells) sent.set(cellId(c.key, c.field), { value: c.value, at: now })
       dropSaved(cells)
+      dropChecks(checks)
       savedRevision = Math.max(savedRevision, out.proposal.revision ?? 0)
       emit('replace', out.proposal)
       for (const r of out.rejected.slice(0, 3)) {
@@ -119,11 +139,13 @@ async function save(): Promise<void> {
         // Kept, and tried again: nothing typed is lost.
         failed.value = true
         for (const c of cells) if (!queue.has(cellId(c.key, c.field))) queue.set(cellId(c.key, c.field), c)
+        for (const c of checks) if (!checkQueue.has(cellId(c.key, c.field))) checkQueue.set(cellId(c.key, c.field), c)
         removes.push(...body.remove)
         adds.push(...body.add)
         later(5000)
       } else {
         dropSaved(cells)
+        dropChecks(checks)
         notify(errorText(e), 'error')
       }
     } finally {
@@ -142,9 +164,15 @@ function dropSaved(cells: CellEdit[]) {
   }
   local.value = next
 }
+function dropChecks(checks: { key: string; field: string }[]) {
+  if (!checks.length) return
+  const next = new Map(localChecks.value)
+  for (const c of checks) if (!checkQueue.has(cellId(c.key, c.field))) next.delete(cellId(c.key, c.field))
+  localChecks.value = next
+}
 onBeforeUnmount(() => {
   // Leaving the page (or the panel) still saves what was typed.
-  if (queue.size || removes.length || adds.length) void save()
+  if (queue.size || removes.length || adds.length || checkQueue.size) void save()
 })
 
 function removeRow(key: string) {
@@ -211,11 +239,38 @@ function addColumn(sheet: string, event: Event) {
 
 /** The revision the last save of the person's edits produced (the list may not show it yet). */
 let savedRevision = 0
-async function apply() {
+/** Doubtful cells nobody reviewed yet (in the whole table, and in the rows "Aplicar" writes). */
+const doubtful = computed(() => uncheckedDoubts(shown.value))
+const doubtfulToWrite = computed(() => uncheckedDoubts(shown.value, chosen.value))
+/** The dialog "Aplicar" opens while doubtful cells are unreviewed. */
+const asking = ref(false)
+async function apply(how?: 'confirm' | 'skip') {
   // What was just typed goes into the proposal first.
   await save()
   await nextTick()
-  emit('apply', chosen.value, Math.max(props.proposal.revision ?? 1, savedRevision) || undefined)
+  if (!how && doubtfulToWrite.value.length) {
+    asking.value = true
+    return
+  }
+  asking.value = false
+  emit('apply', chosen.value, Math.max(props.proposal.revision ?? 1, savedRevision) || undefined, how)
+}
+/** The tables, to bring a doubtful cell into view. */
+const sheets = new Map<string, { focusCell: (key: string, field: string) => boolean }>()
+const sheetRef = (sheet: string) => (el: unknown) => {
+  if (el) sheets.set(sheet, el as { focusCell: (key: string, field: string) => boolean })
+  else sheets.delete(sheet)
+}
+/** Selects the next doubtful cell to review (after the one selected last, then from the top). */
+let lastReviewed = -1
+function reviewNext() {
+  asking.value = false
+  const list = doubtful.value
+  if (!list.length) return
+  lastReviewed = (lastReviewed + 1) % list.length
+  const next = list[lastReviewed]
+  const sheet = shown.value.changes.find(c => rowKey(c) === next.key)?.sheet
+  if (sheet) sheets.get(sheet)?.focusCell(next.key, next.field)
 }
 
 const show = (field: string, value: CellValue | undefined) =>
@@ -248,10 +303,21 @@ const statusText = computed(
       >
         <Sparkles :size="12" /> {{ flashText }}
       </span>
+      <button
+        v-if="pending && doubtful.length"
+        type="button"
+        class="doubt-count"
+        :title="$t('La IA no está segura de estas celdas: revisa cada una (edítala, elige otra lectura en la barra de arriba o márcala revisada). Clic: ir a la siguiente')"
+        @click="reviewNext"
+      >
+        <CircleHelp :size="12" />
+        {{ $tn(doubtful.length, '{n} celda dudosa por revisar', '{n} celdas dudosas por revisar') }}
+      </button>
     </p>
     <div v-for="g in groups" :key="g.sheet" class="border-b border-stone-100 last:border-b-0">
       <!-- The table and its bar, where ProposalSheet adds the buttons for the selected cells (Valor de la hoja / de la IA). -->
       <ProposalSheet
+        :ref="sheetRef(g.sheet)"
         :sheet="g.sheet"
         :changes="g.changes"
         :fields="g.fields"
@@ -262,6 +328,7 @@ const statusText = computed(
         :flash="flash"
         @edit="onEdit"
         @remove="removeRow"
+        @check="onCheck"
         @notice="m => notify(m)"
       >
         <template v-if="groups.length > 1 || editable" #default>
@@ -292,13 +359,25 @@ const statusText = computed(
             <span class="legend is-reverted" :title="$t('Vuelto al valor de la hoja: la sugerencia de la IA no se aplica')">{{
               $t('IA sin aplicar')
             }}</span>
+            <span
+              v-if="g.changes.some(c => c.doubts)"
+              class="legend is-doubtful"
+              :title="$t('La IA no está segura: revísala antes de aplicar')"
+              >{{ $t('dudosa') }}</span
+            >
+            <span
+              v-if="g.changes.some(c => c.inferred?.length)"
+              class="legend is-inferred"
+              :title="$t('No está escrito en la línea: sale de la página, de la nota o de lo que el equipo escribe siempre')"
+              >{{ $t('deducida') }}</span
+            >
           </span>
         </template>
       </ProposalSheet>
     </div>
     <div class="flex flex-wrap items-center gap-2 px-2 py-1.5">
       <template v-if="pending">
-        <button class="btn-primary bg-emerald-700 hover:bg-emerald-800" :disabled="busy || !chosen.length" @click="apply">
+        <button class="btn-primary bg-emerald-700 hover:bg-emerald-800" :disabled="busy || !chosen.length" @click="apply()">
           <Check :size="15" /> {{ $tn(chosen.length, 'Aplicar {n} fila', 'Aplicar {n} filas') }}
         </button>
         <button class="btn" :disabled="busy" @click="emit('discard')"><X :size="15" /> {{ $t('Descartar') }}</button>
@@ -319,6 +398,27 @@ const statusText = computed(
       <span v-else class="text-xs" :class="proposal.status === 'applied' ? 'text-brand-700' : 'text-amber-800'">
         {{ statusText }}
       </span>
+    </div>
+    <!-- "Aplicar" with doubtful cells nobody reviewed: the person decides what happens to them. -->
+    <div v-if="asking && pending" class="doubt-ask" role="alertdialog" :aria-label="$t('Celdas dudosas sin revisar')">
+      <p class="font-medium">
+        {{
+          $tn(
+            doubtfulToWrite.length,
+            '{n} celda dudosa sin revisar: ¿aplicarla como la leyó la IA?',
+            '{n} celdas dudosas sin revisar: ¿aplicarlas como las leyó la IA?',
+          )
+        }}
+      </p>
+      <p class="text-stone-600">
+        {{ $t('Revísalas en la tabla (bordes ámbar con «?»): edita, elige otra lectura en la barra de arriba o márcalas revisadas.') }}
+      </p>
+      <div class="mt-1.5 flex flex-wrap gap-2">
+        <button class="btn" :disabled="busy" @click="reviewNext"><CircleHelp :size="14" /> {{ $t('Revisarlas') }}</button>
+        <button class="btn" :disabled="busy" @click="apply('skip')">{{ $t('Aplicar sin las dudosas') }}</button>
+        <button class="btn" :disabled="busy" @click="apply('confirm')">{{ $t('Aplicar todo igualmente') }}</button>
+        <button class="btn" @click="asking = false"><X :size="14" /> {{ $t('Cancelar') }}</button>
+      </div>
     </div>
   </div>
 </template>

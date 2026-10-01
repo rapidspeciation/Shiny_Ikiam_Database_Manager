@@ -19,7 +19,7 @@ import {
 } from '../../lib/proposalChats'
 import { afterMove, seenChat, type T3Seen } from '../../lib/t3Bridge'
 import { useTables } from '../../stores/tables'
-import { intlLocale, tn } from '../../lib/i18n'
+import { intlLocale, t, tn } from '../../lib/i18n'
 
 /**
  * The assistant's proposed edits beside the T3 chat (at the right or below
@@ -168,21 +168,25 @@ onBeforeUnmount(() => {
   asking?.abort()
 })
 
-async function apply(proposal: Proposal, indexes: number[], at: number | undefined) {
+async function apply(proposal: Proposal, indexes: number[], at: number | undefined, doubtful?: 'confirm' | 'skip') {
   applying.value = proposal.id
   try {
     const out = await api<{ status: Proposal['status']; applied: number[] }>(`chat/proposals/${proposal.id}/apply`, {
       method: 'POST',
-      body: { requestId: requestId(), indexes, revision: at },
+      body: { requestId: requestId(), indexes, revision: at, ...(doubtful ? { doubtful } : {}) },
     })
     proposal.status = out.status
     proposal.applied = out.applied
     await Promise.all(Object.keys(tables.tables).map(sheet => tables.load(sheet, true)))
     notify(tn(out.applied.length, '{n} fila aplicada en Google Sheets', '{n} filas aplicadas en Google Sheets'), 'success')
   } catch (e) {
-    // Changed meanwhile by the assistant: still pending, to look at again.
-    if ((e as { code?: string }).code !== 'proposal_changed') proposal.status = 'needs_review'
-    notify(errorText(e), 'error')
+    // Changed meanwhile by the assistant, or doubtful cells to look at first: still pending.
+    const code = (e as { code?: string }).code
+    if (code === 'doubtful_unchecked') notify(t('Hay celdas dudosas sin revisar: revísalas o elige cómo aplicarlas'), 'error')
+    else {
+      if (code !== 'proposal_changed') proposal.status = 'needs_review'
+      notify(errorText(e), 'error')
+    }
   } finally {
     applying.value = null
   }
@@ -303,7 +307,7 @@ const origin = (p: Proposal) =>
           <ProposalGrid
             :proposal="p"
             :busy="applying === p.id"
-            @apply="(indexes, at) => apply(p, indexes, at)"
+            @apply="(indexes, at, doubtful) => apply(p, indexes, at, doubtful)"
             @discard="discard(p)"
             @replace="replace"
           />

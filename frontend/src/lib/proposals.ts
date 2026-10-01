@@ -1,5 +1,5 @@
 import type { CellValue } from './types'
-import { tn } from './i18n'
+import { tn, type Msg } from './i18n'
 
 /**
  * The assistant's proposed changes as the Asistente tab shows them: a live
@@ -11,6 +11,25 @@ export interface PersonEdit {
   ai?: CellValue
   by?: string
   at?: string
+}
+/**
+ * A cell the assistant read with a doubt (match_notebook): its value goes in,
+ * highlighted, with how sure the reading was, the other readings and why. It
+ * counts as reviewed once the person edits it, takes one of the other readings,
+ * keeps the sheet's value, or marks it checked.
+ */
+export interface Doubt {
+  confidence?: number
+  alternatives?: CellValue[]
+  reason?: string | null
+  /** The reason's descriptor, to show it in the chosen language (the reader's own words come without one). */
+  reasonMsg?: Msg
+  checked?: { by?: string; at?: string; how?: string }
+}
+/** Where a value the line does not write comes from (a template, a word of the note). */
+export interface Hint {
+  text: string
+  msg?: Msg
 }
 export interface ProposalChange {
   index: number
@@ -36,6 +55,13 @@ export interface ProposalChange {
   /** Cells the person typed in the table. */
   personEdits?: Record<string, PersonEdit>
   note?: string
+  /** Doubtful cells (match_notebook), by column. */
+  doubts?: Record<string, Doubt>
+  /** Columns the notebook line does not write: the page's room, a template, the note's words. */
+  inferred?: string[]
+  hints?: Record<string, Hint>
+  /** A notebook line shown only for context: never written. */
+  context?: boolean
 }
 export interface Proposal {
   id: string
@@ -70,20 +96,61 @@ const same = (a: CellValue | undefined, b: CellValue | undefined) => JSON.string
  * cell with nothing yet), `locked` (a formula).
  */
 export type CellKind = 'proposed' | 'person' | 'reverted' | 'sheet' | 'empty' | 'locked'
-export function cellOf(
-  change: ProposalChange,
-  field: string,
-  newRowFormulas: string[] = [],
-): { value: CellValue; kind: CellKind; was?: CellValue; ai?: CellValue; aiProposed: boolean } {
+export interface CellInfo {
+  value: CellValue
+  kind: CellKind
+  was?: CellValue
+  ai?: CellValue
+  aiProposed: boolean
+  /** The assistant's doubt about this cell, if it had one. */
+  doubt?: Doubt
+  /** A doubtful value of the assistant's nobody has reviewed yet (amber, dashed: check it before applying). */
+  doubtful: boolean
+  /** The value is not written on the notebook line (italic): where it comes from is in `hint`. */
+  inferred: boolean
+  hint?: Hint
+}
+export function cellOf(change: ProposalChange, field: string, newRowFormulas: string[] = []): CellInfo {
   const mark = change.personEdits?.[field]
   const was = change.create ? undefined : (change.current[field] ?? change.rowValues?.[field] ?? null)
   const ai = mark && 'ai' in mark ? mark.ai : undefined
   const aiProposed = !!mark && 'ai' in mark
-  if (field in change.values) return { value: change.values[field], kind: mark ? 'person' : 'proposed', was, ai, aiProposed }
-  if (mark) return { value: change.create ? null : (was ?? null), kind: aiProposed ? 'reverted' : 'person', was, ai, aiProposed }
+  const doubt = change.doubts?.[field]
+  const extra = { doubt, hint: change.hints?.[field] }
+  if (field in change.values) {
+    const kind: CellKind = mark ? 'person' : 'proposed'
+    return {
+      value: change.values[field],
+      kind,
+      was,
+      ai,
+      aiProposed,
+      ...extra,
+      doubtful: kind === 'proposed' && !!doubt && !doubt.checked,
+      inferred: kind === 'proposed' && !!change.inferred?.includes(field),
+    }
+  }
+  const quiet = { ...extra, doubtful: false, inferred: false }
+  if (mark) return { value: change.create ? null : (was ?? null), kind: aiProposed ? 'reverted' : 'person', was, ai, aiProposed, ...quiet }
   const locked = change.create ? newRowFormulas.includes(field) : !!change.formulas?.includes(field)
-  if (change.create) return { value: null, kind: locked ? 'locked' : 'empty', aiProposed }
-  return { value: was ?? null, kind: locked ? 'locked' : 'sheet', was, aiProposed }
+  if (change.create) return { value: null, kind: locked ? 'locked' : 'empty', aiProposed, ...quiet }
+  return { value: was ?? null, kind: locked ? 'locked' : 'sheet', was, aiProposed, ...quiet }
+}
+
+/**
+ * The doubtful cells "Aplicar" would write without anyone reviewing them, in
+ * the rows chosen (as rowKey + field, with the row's index): the same rule as
+ * the server's (server/doubts.mjs), so the dialog and the server agree.
+ */
+export function uncheckedDoubts(p: Pick<Proposal, 'changes'>, indexes?: number[]) {
+  const out: { key: string; field: string; index: number }[] = []
+  const chosen = indexes ? new Set(indexes) : null
+  for (const c of p.changes) {
+    if (c.context || (chosen && !chosen.has(c.index))) continue
+    for (const [field, doubt] of Object.entries(c.doubts ?? {}))
+      if (field in c.values && !doubt.checked && !c.personEdits?.[field]) out.push({ key: rowKey(c), field, index: c.index })
+  }
+  return out
 }
 
 /**
@@ -142,12 +209,22 @@ export interface LocalCell {
  * arriving from the assistant meanwhile must not undo what was just typed.
  * Marked as the server will mark them (reviseChanges in server/assistant.mjs).
  */
-export function withLocal(p: Proposal, local: Map<string, LocalCell>): Proposal {
-  if (!local.size) return p
+export function withLocal(p: Proposal, local: Map<string, LocalCell>, checks: Map<string, boolean> = new Map()): Proposal {
+  if (!local.size && !checks.size) return p
   return {
     ...p,
     changes: p.changes.map(c => {
       const key = rowKey(c)
+      // Doubtful cells marked checked (or unmarked) and not saved yet.
+      let doubts: Record<string, Doubt> | null = null
+      for (const [id, checked] of checks) {
+        const [k, field] = id.split('\u0000')
+        if (k !== key || !c.doubts?.[field]) continue
+        doubts ??= { ...c.doubts }
+        const { checked: _, ...rest } = doubts[field]
+        doubts[field] = checked ? { ...rest, checked: { how: 'table' } } : rest
+      }
+      if (doubts) c = { ...c, doubts }
       let values: Record<string, CellValue> | null = null
       let marks: Record<string, PersonEdit> | null = null
       for (const [id, cell] of local) {
@@ -177,7 +254,7 @@ export function withLocal(p: Proposal, local: Map<string, LocalCell>): Proposal 
 
 /** Rows to apply: those with something to write (a row whose every cell went back to the sheet is left out). */
 export function rowsToWrite(p: Pick<Proposal, 'changes'>): number[] {
-  return p.changes.filter(c => Object.keys(c.values).length).map(c => c.index)
+  return p.changes.filter(c => Object.keys(c.values).length && !c.context).map(c => c.index)
 }
 
 /** How many of the assistant's values the person set back to the sheet's (kept aside, not written). */
@@ -194,14 +271,17 @@ export function notApplied(p: Pick<Proposal, 'changes'>): number {
  * (the assistant's or the person's), and how many can take the assistant's
  * value again (set back, or typed over by the person).
  */
-export function selectionActions(cells: Pick<ReturnType<typeof cellOf>, 'kind' | 'aiProposed'>[]) {
+export function selectionActions(cells: Pick<CellInfo, 'kind' | 'aiProposed' | 'doubtful'>[]) {
   let sheet = 0
   let ai = 0
+  // Doubtful cells that «Marcar revisadas» would mark.
+  let check = 0
   for (const c of cells) {
     if (c.kind === 'proposed' || c.kind === 'person') sheet++
     if (c.aiProposed && (c.kind === 'reverted' || c.kind === 'person')) ai++
+    if (c.doubtful) check++
   }
-  return { sheet, ai }
+  return { sheet, ai, check }
 }
 
 /** "la IA cambió 3 celdas" */

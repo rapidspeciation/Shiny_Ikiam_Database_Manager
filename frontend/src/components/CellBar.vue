@@ -17,6 +17,8 @@ const props = defineProps<{ info: CellBarInfo | null }>()
 const emit = defineEmits<{
   /** Write `text` into the cell (then move as Enter or Tab would; null: the focus went elsewhere). */
   save: [target: CellBarInfo, text: string, move: Direction | 'here' | null]
+  /** One of the other readings offered (`choices`), picked: written into the cell. */
+  pick: [target: CellBarInfo, text: string]
   /** Back to the grid without a change. */
   back: [move: Direction | 'here']
 }>()
@@ -125,9 +127,25 @@ onBeforeUnmount(() => resize?.disconnect())
         @blur="finish(null)"
         @keydown="onKeydown"
       />
-      <p v-if="below.length" class="cell-bar-notes">
+      <p v-if="below.length || info?.choices?.length" class="cell-bar-notes">
         <span v-for="(note, i) in below" :key="i" :class="note.kind ? `is-${note.kind}` : ''">
           <b v-if="note.label">{{ note.label }}:</b> {{ note.text }}
+        </span>
+        <!-- A doubtful cell's other readings: a click writes one into the cell (the grid keeps its selection). -->
+        <span v-if="info?.choices?.length" class="cell-bar-choices">
+          <b>{{ $t('Otras lecturas') }}:</b>
+          <button
+            v-for="(choice, i) in info.choices"
+            :key="`c${i}`"
+            type="button"
+            class="cell-bar-choice"
+            :disabled="!info.editable"
+            :title="$t('Escribir {value} en la celda', { value: choice.label })"
+            @mousedown.prevent
+            @click="emit('pick', info, choice.text)"
+          >
+            {{ choice.label }}
+          </button>
         </span>
       </p>
     </div>
