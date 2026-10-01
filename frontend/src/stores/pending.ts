@@ -50,6 +50,8 @@ const itemKey = (item: BatchItemError) => `${item.id || item.clientId}:${item.fi
 export interface SaveResult {
   saved: number
   left: number
+  /** The save's entry in the Historial (what an Undo right after it reverts), when something was written. */
+  actionId?: string
 }
 
 /** Pause after the last edit before saving automatically. */
@@ -356,7 +358,12 @@ export const usePending = defineStore('pending', {
           for (const key of Object.keys(this.errors)) if (key.startsWith(`${c.clientId}:`)) delete this.errors[key]
       }
       try {
-        const result = await api<{ records: ServerRecord[]; skipped?: BatchItemError[]; created?: { clientId: string }[] }>(
+        const result = await api<{
+          records: ServerRecord[]
+          skipped?: BatchItemError[]
+          created?: { clientId: string }[]
+          action?: { id: string } | null
+        }>(
           'records/batch',
           { method: 'POST', body: { requestId: this.requestId, ...body } },
         )
@@ -395,7 +402,7 @@ export const usePending = defineStore('pending', {
         this.check()
         if (saved) this.lastSaved = { count: saved, at: new Date().toISOString() }
         this.revision++
-        return { saved, left: this.changeCount }
+        return { saved, left: this.changeCount, ...(result.action?.id ? { actionId: result.action.id } : {}) }
       } catch (e) {
         const code = e instanceof ApiError ? e.code : ''
         // Only an unclear outcome keeps the request ID for a safe retry.

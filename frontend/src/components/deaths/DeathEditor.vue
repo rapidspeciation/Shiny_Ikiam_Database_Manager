@@ -1,0 +1,275 @@
+<script setup lang="ts">
+import { computed, ref, watch } from 'vue'
+import { ChevronLeft, ChevronRight, Columns3, Loader2, X } from 'lucide-vue-next'
+import ChoiceField from '../ChoiceField.vue'
+import DateField from '../DateField.vue'
+import LifeBadge from './LifeBadge.vue'
+import { useKeyboard } from '../../composables/usePhone'
+import { displayValue, isBlank, normalizeInput } from '../../lib/cells'
+import { formatSerial, isoToSerial, serialFromIso, serialToIso, todayIso } from '../../lib/dates'
+import { KILLED, factsOf } from '../../lib/deaths'
+import { errorText } from '../../lib/notice'
+import type { CellValue, Field, TableRow } from '../../lib/types'
+import { usePending } from '../../stores/pending'
+import { t } from '../../lib/i18n'
+
+/**
+ * One butterfly's death, full screen on a phone: big boxes for the death date,
+ * cause and notes, and its CAM and first tube when it was preserved; every
+ * other column through «Todas las columnas» (the row drawer). Swipe or the
+ * arrows go through the list it was opened from. Each change is a pending edit,
+ * saved like any other (automatically, or with the save bar's button).
+ */
+const MODULE = 'Insectary_data'
+const props = defineProps<{
+  rows: TableRow[]
+  columns: Field[]
+  causes: string[]
+  options: Record<string, string[]>
+  canEdit: boolean
+}>()
+const index = defineModel<number>('index', { required: true })
+const emit = defineEmits<{ close: []; more: [row: TableRow] }>()
+
+const pending = usePending()
+const keyboard = useKeyboard()
+const message = ref('')
+const row = computed(() => props.rows[Math.min(index.value, props.rows.length - 1)])
+const today = computed(() => isoToSerial(todayIso()))
+const get = (field: string) => (row.value ? pending.value(row.value, field) : null)
+const facts = computed(() => (row.value ? factsOf(get, today.value) : null))
+const label = computed(() => String(row.value?.values.Insectary_ID ?? ''))
+const field = (key: string): Field => props.columns.find(c => c.key === key) ?? { key, label: key, type: 'text' }
+const editable = (key: string) => props.canEdit && !!row.value && !row.value.formulas.includes(key) && !field(key).readonly
+const dirty = (key: string) => !!row.value && pending.isDirty(row.value.id, key)
+const shown = (key: string) => displayValue(get(key), field(key))
+
+/** The preservation boxes show when the row has any, or the cause says it was preserved. */
+const PRESERVATION = ['CAM_ID', 'Tube_1_id', 'Tube_1_tissue', 'T1_Preservation_medium']
+const showPreservation = ref(false)
+watch(
+  row,
+  r => {
+    message.value = ''
+    showPreservation.value = !!r && (PRESERVATION.some(k => !isBlank(pending.value(r, k))) || pending.value(r, 'Death_cause') === KILLED)
+  },
+  { immediate: true },
+)
+
+function setValue(key: string, value: CellValue) {
+  if (!row.value || !editable(key)) return
+  message.value = ''
+  pending.setCell(MODULE, row.value, label.value, key, value)
+}
+function setText(key: string, text: string) {
+  const result = normalizeInput(text, field(key), MODULE)
+  if (!result.ok) {
+    message.value = result.message
+    return
+  }
+  setValue(key, result.value)
+}
+const deathIso = computed(() => {
+  const v = get('Death_date')
+  return typeof v === 'number' ? serialToIso(v) : ''
+})
+function setDeath(iso: string) {
+  if (!iso) return setValue('Death_date', null)
+  const serial = serialFromIso(iso)
+  if (serial === null) message.value = t('Fecha no válida: el año debe estar entre 1990 y 2099')
+  else setValue('Death_date', serial)
+}
+const yesterday = computed(() => serialToIso(today.value - 1))
+async function saveNow() {
+  try {
+    await pending.save('')
+  } catch (e) {
+    message.value = errorText(e)
+  }
+}
+
+function go(step: number) {
+  const next = index.value + step
+  if (next >= 0 && next < props.rows.length) index.value = next
+}
+// A sideways swipe moves to the next or previous butterfly (not while selecting text in a box).
+let start: { x: number; y: number } | null = null
+function touchStart(e: TouchEvent) {
+  const target = e.target as HTMLElement
+  start = target.closest('input, textarea, .choice-list') ? null : { x: e.touches[0].clientX, y: e.touches[0].clientY }
+}
+function touchEnd(e: TouchEvent) {
+  if (!start) return
+  const dx = e.changedTouches[0].clientX - start.x
+  const dy = e.changedTouches[0].clientY - start.y
+  start = null
+  if (Math.abs(dx) > 70 && Math.abs(dx) > 2 * Math.abs(dy)) go(dx < 0 ? 1 : -1)
+}
+/** The box being typed in stays above the keyboard. */
+function reveal(e: FocusEvent) {
+  const el = e.target as HTMLElement
+  if (!el.matches('input, textarea')) return
+  setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 350)
+}
+</script>
+
+<template>
+  <!-- Sized to what is visible, so the keyboard never hides the header or the buttons at the bottom. -->
+  <div
+    v-if="row && facts"
+    class="fixed inset-x-0 z-40 flex flex-col bg-white"
+    :style="{ top: `${keyboard.visibleTop.value}px`, height: `${keyboard.visibleBottom.value - keyboard.visibleTop.value}px` }"
+    role="dialog"
+    :aria-label="label"
+  >
+    <header class="flex items-center gap-1 border-b border-stone-200 px-1 py-1">
+      <button
+        class="grid h-11 w-11 place-items-center rounded-md text-stone-700 disabled:opacity-30"
+        :disabled="index === 0"
+        :aria-label="$t('Anterior')"
+        @click="go(-1)"
+      >
+        <ChevronLeft :size="24" />
+      </button>
+      <div class="min-w-0 flex-1 text-center">
+        <p class="text-xl leading-tight font-semibold">{{ label }}</p>
+        <p class="text-xs text-stone-500">{{ $t('{i} de {n}', { i: index + 1, n: rows.length }) }} · {{ $t('fila {row}', { row: row.row }) }}</p>
+      </div>
+      <button
+        class="grid h-11 w-11 place-items-center rounded-md text-stone-700 disabled:opacity-30"
+        :disabled="index >= rows.length - 1"
+        :aria-label="$t('Siguiente')"
+        @click="go(1)"
+      >
+        <ChevronRight :size="24" />
+      </button>
+      <button class="grid h-11 w-11 place-items-center rounded-md text-stone-700" :aria-label="$t('Cerrar')" @click="emit('close')">
+        <X :size="22" />
+      </button>
+    </header>
+    <p v-if="message" class="bg-red-50 px-4 py-2 text-sm text-red-800">{{ message }}</p>
+    <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-6" @touchstart.passive="touchStart" @touchend="touchEnd" @focusin="reveal">
+      <div class="flex items-start gap-2 py-3">
+        <div class="min-w-0 flex-1 text-sm">
+          <p class="font-medium">{{ facts.species || '—' }}</p>
+          <p class="text-stone-600">
+            {{ [facts.sex, facts.clutch && $t('clutch {c}', { c: facts.clutch })].filter(Boolean).join(' · ') }}
+          </p>
+          <p v-if="facts.entered !== null" class="text-stone-600">
+            {{ facts.wild ? $t('Capturada {date}', { date: formatSerial(facts.entered) }) : $t('Emergió {date}', { date: formatSerial(facts.entered) }) }}
+          </p>
+        </div>
+        <LifeBadge :facts="facts" />
+      </div>
+      <p v-if="!canEdit" class="mb-2 rounded bg-stone-100 px-3 py-2 text-sm text-stone-700">{{ $t('Solo lectura') }}</p>
+
+      <section class="border-t border-stone-100 py-3">
+        <span class="field-label">Death_date</span>
+        <DateField
+          :model-value="deathIso"
+          class="field-input h-12 text-base"
+          :class="{ 'is-dirty': dirty('Death_date') }"
+          :disabled="!editable('Death_date')"
+          @update:model-value="setDeath"
+        />
+        <div v-if="editable('Death_date')" class="mt-2 flex gap-2">
+          <button class="btn h-11 flex-1" @click="setDeath(todayIso())">{{ $t('Hoy') }}</button>
+          <button class="btn h-11 flex-1" @click="setDeath(yesterday)">{{ $t('Ayer') }}</button>
+        </div>
+      </section>
+
+      <section class="border-t border-stone-100 py-3">
+        <span class="field-label">Death_cause</span>
+        <div class="grid grid-cols-2 gap-2">
+          <button
+            v-for="c in causes"
+            :key="c"
+            class="min-h-12 rounded-lg border px-2 py-2 text-sm font-medium break-words"
+            :class="
+              shown('Death_cause') === c
+                ? 'border-brand-700 bg-brand-700 text-white'
+                : 'border-stone-300 bg-white text-stone-800 active:bg-stone-100'
+            "
+            :disabled="!editable('Death_cause')"
+            :aria-pressed="shown('Death_cause') === c"
+            @click="setValue('Death_cause', c)"
+          >
+            {{ c }}
+          </button>
+        </div>
+        <p v-if="shown('Death_cause') && !causes.includes(shown('Death_cause'))" class="mt-1 text-sm text-stone-600">
+          Death_cause: {{ shown('Death_cause') }}
+        </p>
+      </section>
+
+      <section class="border-t border-stone-100 py-3">
+        <label>
+          <span class="field-label">Notes_Insectary_data</span>
+          <textarea
+            class="field-input min-h-24 text-base"
+            :class="{ 'is-dirty': dirty('Notes_Insectary_data') }"
+            :value="shown('Notes_Insectary_data')"
+            :disabled="!editable('Notes_Insectary_data')"
+            rows="3"
+            @change="setText('Notes_Insectary_data', ($event.target as HTMLTextAreaElement).value)"
+          />
+        </label>
+      </section>
+
+      <section class="border-t border-stone-100 py-3">
+        <button
+          v-if="!showPreservation"
+          class="btn h-11 w-full"
+          @click="showPreservation = true"
+        >
+          {{ $t('Preservación: CAM y tubo') }}
+        </button>
+        <div v-else class="space-y-3">
+          <label v-for="key in ['CAM_ID', 'Tube_1_id']" :key="key" class="block">
+            <span class="field-label">{{ key }}</span>
+            <input
+              class="field-input h-12 text-base uppercase"
+              :class="{ 'is-dirty': dirty(key) }"
+              :value="shown(key)"
+              :disabled="!editable(key)"
+              autocapitalize="characters"
+              autocomplete="off"
+              spellcheck="false"
+              enterkeyhint="done"
+              @change="setText(key, ($event.target as HTMLInputElement).value.trim().toUpperCase())"
+            />
+          </label>
+          <label v-for="key in ['Tube_1_tissue', 'T1_Preservation_medium']" :key="key" class="block">
+            <span class="field-label">{{ key }}</span>
+            <ChoiceField
+              v-if="editable(key) && options[key]?.length"
+              class="field-input h-12 text-base"
+              :class="{ 'is-dirty': dirty(key) }"
+              :model-value="shown(key)"
+              :options="options[key]"
+              @update:model-value="setText(key, $event)"
+            />
+            <p v-else class="min-h-6 text-sm text-stone-600">{{ shown(key) || '—' }}</p>
+          </label>
+        </div>
+      </section>
+
+      <button class="btn h-11 w-full" @click="emit('more', row)">
+        <Columns3 :size="16" /> {{ $t('Todas las columnas') }}
+      </button>
+    </div>
+    <footer class="flex items-center gap-2 border-t border-stone-200 px-3 py-2">
+      <span class="min-w-0 flex-1 text-xs text-stone-600">
+        <template v-if="pending.saving"><Loader2 :size="12" class="inline animate-spin" /> {{ $t('Guardando…') }}</template>
+        <template v-else-if="pending.changeCount">{{
+          $tn(pending.changeCount, '{n} cambio por guardar', '{n} cambios por guardar')
+        }}</template>
+        <template v-else>{{ $t('Todo guardado en Google Sheets') }}</template>
+      </span>
+      <button v-if="pending.changeCount && !pending.saving" class="btn h-11" @click="saveNow">
+        {{ $t('Guardar ya') }}
+      </button>
+      <button class="btn-primary h-11 px-5" @click="emit('close')">{{ $t('Listo') }}</button>
+    </footer>
+  </div>
+</template>

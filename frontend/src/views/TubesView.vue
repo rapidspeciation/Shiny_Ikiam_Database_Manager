@@ -12,6 +12,7 @@ import { isBlank } from '../lib/cells'
 import { dayLabel, formatSerial, serialFromIso, todayIso } from '../lib/dates'
 import { errorText, notify } from '../lib/notice'
 import { persistentRef } from '../lib/persist'
+import { bestRack as pickRack, firstEmptySlot as emptySlot, placeholder } from '../lib/deaths'
 import { fillIfBlank, initialsOf, orderColumns, rowsById } from '../lib/rows'
 import type { CellValue, TableRow } from '../lib/types'
 import { usePending } from '../stores/pending'
@@ -178,17 +179,7 @@ const camChoices = computed(() =>
   })),
 )
 function bestRack() {
-  const crosses = rows.value.filter(r =>
-    /F1\/F2|WEST x EAST|cross|mutation/i.test(String(r.values.Research_purpose ?? '')),
-  ).length
-  const context = rows.value.length && crosses * 2 >= rows.value.length ? 'Cruces' : 'Insectario'
-  return (
-    tubeSuggestions.value.find(s => s.context === context && s.medium === medium.value) ||
-    // Flash frozen and ethanol tubes live in different racks, so the medium matters more than the kind of work.
-    insectaryRacks.value.find(s => s.medium === medium.value) ||
-    tubeSuggestions.value.find(s => s.context === context) ||
-    tubeSuggestions.value[0]
-  )
+  return pickRack(tubeSuggestions.value, rows.value, medium.value)
 }
 
 // The app keeps choosing the rack (as butterflies are loaded or the medium changes) until the person picks one.
@@ -264,9 +255,6 @@ function useNext() {
   else pickTube(issue.next)
   startIssue.value = null
 }
-
-/** A value the team writes for "nothing here yet", which a fill may replace. */
-const placeholder = (value: CellValue) => isBlank(value) || /^(NOT_COLLECTED|NOT_PROVIDED)$/.test(String(value).trim())
 
 /** Fills CAM IDs and the next empty tube slot of every loaded row, in order. */
 async function assign() {
@@ -368,15 +356,7 @@ function noteDate(serial: number) {
   return `${d.getUTCDate()}/${d.getUTCMonth() + 1}/${String(d.getUTCFullYear()).slice(2)}`
 }
 
-function firstEmptySlot(row: TableRow): number | null {
-  for (let slot = 1; slot <= 4; slot++)
-    if (isBlank(pending.value(row, `Tube_${slot}_id`))) {
-      // "NA" in an ID cell after a whole-organism tube means "no more tubes".
-      if (pending.value(row, `Tube_${slot}_id`) === 'NA' && slot > 1) return null
-      return slot
-    }
-  return null
-}
+const firstEmptySlot = (row: TableRow) => emptySlot(field => pending.value(row, field))
 async function sequence(kind: 'cam' | 'tube', start: string, count: number) {
   return api<Sequence>(`ids?kind=${kind}&start=${encodeURIComponent(start.trim().toUpperCase())}&count=${count}`)
 }

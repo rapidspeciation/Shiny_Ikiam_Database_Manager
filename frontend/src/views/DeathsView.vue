@@ -4,12 +4,15 @@ import DateField from '../components/DateField.vue'
 import { computed, ref } from 'vue'
 import { PenLine } from 'lucide-vue-next'
 import IdPicker from '../components/IdPicker.vue'
+import DeathsPhone from '../components/deaths/DeathsPhone.vue'
 import SheetGrid from '../components/SheetGrid.vue'
+import { usePhoneWidth } from '../composables/usePhone'
 import { useSheet } from '../composables/useSheet'
 import { isBlank } from '../lib/cells'
 import { dayLabel, formatSerial, serialFromIso, todayIso } from '../lib/dates'
 import { notify } from '../lib/notice'
 import { persistentRef } from '../lib/persist'
+import { deathCells } from '../lib/deaths'
 import { fillIfBlank, orderColumns, rowsById } from '../lib/rows'
 import { usePending } from '../stores/pending'
 import { t } from '../lib/i18n'
@@ -23,29 +26,8 @@ const MODULE = 'Insectary_data'
 const module = ref(MODULE)
 const pending = usePending()
 const { table, ready, options } = useSheet(module)
-
-/**
- * What the team writes for a butterfly that was not preserved (Unknown,
- * Disappearance, Eaten…), as in every such row of 2026: no CAM, no tubes,
- * media NOT_COLLECTED.
- */
-const NOT_PRESERVED: Record<string, string> = {
-  Preserved_Dead_Alive: 'NA',
-  CAM_ID: 'NA',
-  Tube_1_id: 'NA',
-  Tube_1_tissue: 'NA',
-  T1_Preservation_medium: 'NOT_COLLECTED',
-  Tube_2_id: 'NA',
-  Tube_2_tissue: 'NA',
-  T2_Preservation_medium: 'NOT_COLLECTED',
-  Tube_3_id: 'NA',
-  Tube_3_tissue: 'NA',
-  Tube_4_id: 'NA',
-  Tube_4_tissue: 'NA',
-  Preservation_medium: 'NOT_COLLECTED',
-  Preservation_date: 'NA',
-  Location_body: 'NA',
-}
+/** Phones get their own screen (cards, big buttons); the grids below are for wider screens. */
+const phone = usePhoneWidth()
 
 const picked = persistentRef<string[]>('deaths:picked', [])
 // Lists kept from when the IDs had to be loaded with a button.
@@ -121,23 +103,11 @@ function write() {
   if (!date.value) return notify(t('Elige la fecha de muerte'), 'error')
   const serial = serialFromIso(date.value)
   let filled = 0
+  // The same cells as the phone's "Save" (lib/deaths.ts), so both screens write a death alike.
   for (const row of chosenRows.value) {
     const label = String(row.values.Insectary_ID)
-    const set = (field: string, value: string | number) => {
-      if (fillIfBlank(MODULE, row, label, field, value)) filled++
-    }
-    if (serial !== null) set('Death_date', serial)
-    if (cause.value) set('Death_cause', cause.value)
-    // Not preserved: only rows without a CAM or tube yet (a preserved one keeps its IDs).
-    const why = pending.value(row, 'Death_cause')
-    if (
-      notPreserved.value &&
-      !isBlank(why) &&
-      why !== 'Killed_Preserved' &&
-      isBlank(pending.value(row, 'CAM_ID')) &&
-      isBlank(pending.value(row, 'Tube_1_id'))
-    )
-      for (const [field, value] of Object.entries(NOT_PRESERVED)) set(field, value)
+    for (const cell of deathCells(row, pending.value, { serial, cause: cause.value, notPreserved: notPreserved.value }))
+      if (fillIfBlank(MODULE, row, label, cell.field, cell.value, cell.overwrite)) filled++
   }
   pending.touch()
   notify(
@@ -149,7 +119,8 @@ function write() {
 </script>
 
 <template>
-  <div class="flex h-full flex-col">
+  <DeathsPhone v-if="phone" :table="table" :ready="ready" :options="options" />
+  <div v-else class="flex h-full flex-col">
     <div class="toolbar">
       <IdPicker v-model="picked" :options="ids" :loading="!ready" :warn="warn" label="Insectary IDs" />
       <label>
