@@ -10,13 +10,10 @@ export default {
   'Habilidades (skills)': 'Skills',
   'Subagentes (solo Claude)': 'Subagents (Claude only)',
   Herramientas: 'Tools',
-  'Apertura de cada espacio de T3': 'Opening of each T3 workspace',
   '{n} herramienta (MCP)': '{n} tool (MCP)',
   '{n} herramientas (MCP)': '{n} tools (MCP)',
-  'El resumen que cada chat del asistente (Claude o Codex) lee al empezar. Cada espacio de T3 lo recibe con la apertura (siguiente archivo).':
-    'The brief every assistant chat (Claude or Codex) reads when it starts. Each T3 workspace gets it with the opening (next file).',
-  'Así recibe cada persona el resumen en su espacio de T3: AGENTS.md (y CLAUDE.md, un enlace a él) con su nombre, el texto de AGENTS.md y las carpetas de su espacio. Aquí con una persona genérica.':
-    "How each person's T3 workspace gets the brief: AGENTS.md (and CLAUDE.md, a link to it) with their name, the text of AGENTS.md and their workspace's folders. Shown here with a generic person.",
+  'El resumen que cada chat del asistente (Claude o Codex) lee al empezar. Cada espacio de T3 lo recibe con el nombre de su persona; aquí, con una persona genérica.':
+    "The brief every assistant chat (Claude or Codex) reads when it starts. Each T3 workspace gets it with its person's name; shown here with a generic person.",
   'Una habilidad: el asistente la carga cuando la tarea coincide con su descripción. Claude Code la lee de .claude/skills y Codex de .agents/skills.':
     'A skill: the assistant loads it when the task matches its description. Claude Code reads it from .claude/skills and Codex from .agents/skills.',
   'Un archivo de referencia de la habilidad {skill}: el asistente lo lee cuando la habilidad lo indica.':

@@ -16,6 +16,7 @@ import {
   sumTerms,
   correctedTerms,
 } from '../server/notebook.mjs';
+import { MATCH_NOTEBOOK_TOOL } from '../server/notebook-tool.mjs';
 
 const d = text => parseDateText(text);
 /** A page in the shape the tests were written in ({raw, v, c, a, x}), through the tool's input check. */
@@ -28,12 +29,15 @@ const parseTranscription = text => {
   }).transcription;
 };
 
-test('the skill names every column of every notebook the tool matches', () => {
+test('the skill names every notebook the tool matches; the tool description names every column', () => {
   const skill = readFileSync(new URL('../assistant/skills/digitalizar-cuaderno/SKILL.md', import.meta.url), 'utf8');
   assert.match(skill, /^---\nname: digitalizar-cuaderno\ndescription: .+photo/m);
+  const { description } = MATCH_NOTEBOOK_TOOL.function;
   for (const [id, kind] of Object.entries(KINDS)) {
     assert.ok(skill.includes(`\`${id}\``), `kind ${id}`);
-    for (const field of kind.fields) assert.ok(skill.includes(`\`${field}\``), `${id}: ${field}`);
+    const line = description.split('\n').find(l => l.startsWith(`- ${id} (`));
+    assert.ok(line, `the description lists ${id}`);
+    for (const field of kind.fields) assert.ok(line.includes(field), `${id}: ${field}`);
   }
 });
 

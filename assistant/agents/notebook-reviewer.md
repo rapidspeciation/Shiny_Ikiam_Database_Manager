@@ -32,4 +32,4 @@ adversarially: you read the cells yourself first, blind, and only then compare.
      of order, counts on an "all died" / "no hatch" line);
    - whether the right-hand page is in step with the IDs.
 
-Do not change the proposal.
+Leave the proposal as it is: the main chat corrects it.

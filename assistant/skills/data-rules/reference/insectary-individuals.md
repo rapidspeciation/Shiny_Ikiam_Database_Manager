@@ -6,7 +6,8 @@
    column A, formulas in SPECIES, Collection_location, Pedigree, T2 medium,
    photos, racks, manifests). The ID is written on the wing (and in the
    Emergidos notebook) **before** the row is typed. The row belongs to its ID:
-   never retype an ID cell (see [samples-ids.md](samples-ids.md)).
+   a wrong ID is fixed by moving the data, not by retyping the ID cell
+   ([samples-ids.md](samples-ids.md)).
 2. **Emergence / entry**: type only `Wild_Reared`, `CLUTCH NUMBER`,
    `Stock_of_origin`, `Sex`, `Intro2Insectary_date` (and SPECIES only when it
    differs from the formula). Everything else stays **blank** while it lives.
@@ -14,7 +15,7 @@
 4. **Death** (the daily round): Death_date, Death_cause and, in the same edit,
    the whole not-preserved or preserved block below, and Research_purpose.
 5. **Later, by formula only**: racks, manifests, photos, STS columns,
-   CAM_ID_CollData. Never type them.
+   CAM_ID_CollData.
 
 Blank death/preservation cells on a living butterfly are pending, not errors;
 the typing lags (Emergidos about 5 weeks in Sep 2026, deaths about 2 days).
@@ -28,8 +29,8 @@ blank means it has not died yet.
   with a space in 2024–25, `994(6)` without in 2026).
 - `SPECIES` is a formula from the clutch. Keep it when the notebook's species
   is the clutch's; type over it only when what emerged differs (deceptus stock
-  emerging as intermedia is common; so is proceriformis → eurydice). Never type
-  the same value the formula gives. `match_notebook` does this.
+  emerging as intermedia is common; so is proceriformis → eurydice).
+  `match_notebook` does this.
 - `Stock_of_origin`: only for the *Mechanitis messenoides* stock lines:
   `messenoides`, `intermedia`, `deceptus` (lowercase) = the **clutch's**
   subspecies, even when the phenotype differs. Every other species and every
@@ -48,13 +49,13 @@ blank means it has not died yet.
   the trinomial, and a twin Collection_data row (`Collected_Sent2Insectary`,
   same Insectary_ID) in the same proposal. Collection_location is a formula
   from that twin: `ERROR!` there means the Collection row is missing.
-- **CRISPR controls that emerged**: `Reared`, CLUTCH NUMBER `NA` (never text
+- **CRISPR controls that emerged**: `Reared`, CLUTCH NUMBER `NA` (not text
   such as "CRISPR #159 control"), Stock_of_origin = the stock, SPECIES typed,
   note `Comes from CRISPR control #159`.
 - **Eggs or larvae found outside / in the field**: their clutch has SPECIES
   `NA` in Insectary_stocks; the adults carry the clutch and a typed SPECIES.
 - **The Panama STRI batch** (Heliconius, Insectary_ID `NA`, inserted mid-sheet
-  in Jun 2026, its own Lists batch): not insectary work; never match or edit it.
+  in Jun 2026, its own Lists batch): not insectary work; leave it as it is.
 
 ## Wing clip (alive)
 
@@ -73,11 +74,11 @@ Cause not `Killed_Preserved` and no CAM:
 | Column | Value |
 |---|---|
 | Preservation_date, CAM_ID, Tube_1–4_id | `NA` |
-| Tube_1–4_tissue | `NOT_COLLECTED` (Franz's decision, 1 Oct 2026: the intended method; Jun–Sep 2026 rows typed `NA` because it is quicker: leave those) |
+| Tube_1–4_tissue | `NOT_COLLECTED` (many 2026 rows have `NA`: they stay) |
 | T1_Preservation_medium, T2_Preservation_medium, Preservation_medium | `NOT_COLLECTED` |
 | Preserved_Dead_Alive, Location_body, Research_purpose | `NA` |
 
-The app's Muertes tab writes this block; the notebook tool checks it.
+The app's Muertes tab and `match_notebook` write this block.
 
 ## Death, preserved
 
@@ -119,7 +120,7 @@ instars of Sep 2026).
 |---|---|
 | Wild_Reared, CLUTCH NUMBER | `Reared`, the clutch (`994(3)`) |
 | Intro2Insectary_date | `NA` |
-| Sex | `NA` (decided; many Sep 2026 rows say `NOT_COLLECTED`) |
+| Sex | `NA` (rows with `NOT_COLLECTED` stay) |
 | LIFESTAGE (used only for this) | `Egg`, `1st instar larva` … `5th instar larva`, `Pre-pupa` |
 | Death_date | the preservation date |
 | Death_cause, Preserved_Dead_Alive | `Killed_Preserved` and `Alive`, or `Other` and `Dead` (found dead) |
@@ -132,14 +133,14 @@ subtraction in its count.
 
 ## Research_purpose and Pedigree
 
-- Research_purpose: the protocol and the project lead set it at emergence; the
-  2026 rows fill it only at death (all 364 living rows blank). Always fill it
-  at death. On living rows it is not settled — ask AA first.
+- Research_purpose: filled at death. Living butterflies have it blank,
+  except hybrids, which the Emergidos tab sets to `F1/F2 mutation rate`. To set
+  it on another living butterfly, ask AA.
 - Pedigree is a formula giving `YES or NO` for cross purposes; PAS and the
-  crosses team type `Yes`/`No` over it. Don't touch it; point out a leftover
-  `YES or NO` on a dead cross parent only when asked about pedigrees.
+  crosses team type `Yes`/`No` over it. A leftover `YES or NO` on a dead cross
+  parent is worth mentioning only when asked about pedigrees.
 
 ## Duplicates
 
-IDs used twice were resolved with a suffix (`5FF.2`, `1IJ.1`) and the note
-"ID duplicated". Never create such a row yourself; point the duplicate out.
+IDs used twice were resolved by the curators with a suffix (`5FF.2`, `1IJ.1`)
+and the note "ID duplicated". A new duplicate: point it out to the person.

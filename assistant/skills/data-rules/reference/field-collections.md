@@ -24,7 +24,7 @@ The kind is decided by `Release_Collect` first, then `Purpose`.
 |---|---|
 | CAM_ID, Tube_1_id | the next local wild CAM; its tube |
 | Tube_1_tissue | `WHOLE_ORGANISM` |
-| Tube_2–4 | `NA`; their tissues `NOT_COLLECTED` (Franz, 1 Oct 2026; older rows also `NA`) |
+| Tube_2–4 | `NA`; their tissues `NOT_COLLECTED` (older rows with `NA` stay) |
 | Preservation_medium | `Flash frozen` |
 | Preserved_dead_alive | `Alive`; `Dead` when found dead or dying, with a note "Preserved dead ~2h" |
 | Death_date = Preservation_date | the collection day (the next day if kept overnight; still `Alive`) |
@@ -43,12 +43,11 @@ The kind is decided by `Release_Collect` first, then `Purpose`.
   Cloud_cover (`NA` when not noted), Flight_height `NA`, CAM_ID `NA`, Purpose
   `NA`. The rest stays **blank** until the butterfly dies in the insectary.
 - **Lookup formulas**: Death_date, Preservation_date, Preservation_medium and
-  Preserved_dead_alive come from the Insectary_data twin
-  (`=XLOOKUP(D…, Insectary_data!A:A, Insectary_data!I:I, "")`, every row up to
-  Jul 2026): they give the right value, so keep them and never type over
-  them. The Aug–Sep 2026 rows lack them (blank even where the twin has died):
-  point it out; the formulas are copied down from the row above (PAS), not
-  typed as values.
+  Preserved_dead_alive come from the Insectary_data twin by formula
+  (`=XLOOKUP(D…, Insectary_data!A:A, Insectary_data!I:I, "")`): keep them; no
+  values are typed there. Rows from Aug 2026 lack these formulas (blank even
+  where the twin has died): point it out; PAS copies them down from the row
+  above.
 - **At death, not preserved**: CAM_ID_insectary `NA`, Tube_1_id `NA`, tissues
   `NOT_COLLECTED`, weight, Splitted_body and Location_* `NA`.
 - **At death, preserved**: CAM_ID_insectary = the insectary CAM, Tube_1_id =
@@ -59,19 +58,18 @@ The kind is decided by `Release_Collect` first, then `Purpose`.
 
 - **Marked and released, released unmarked**: skill **monitoring**.
 - **Expedition rows abroad** (Sanger layout: split bodies, DMSO/AllProtect,
-  Location "Sanger - TOL704 freezer") are entered by the expedition leads:
-  never copy that layout to local rows.
+  Location "Sanger - TOL704 freezer") are entered by the expedition leads;
+  local rows follow the templates above.
 - **Pheromone wild males** (Purpose `Pheromones`, all male): weight `NA`,
   their own tube run, the medium as in [samples-ids.md](samples-ids.md).
 
 ## Session values
 
-- **Collector / Identifier**: the exact Lists value `INI - Full name`
-  (`AA - …`, `PAS - …`, `ABV - …` **with its trailing space**, as the list has
-  it). Unknown: `NA - Missing data` (never plain `NA`). `CR` is two people in
-  Lists: always the full value, ask which. A new person must be added to Lists
-  first (strict dropdown). Collector is per row (who caught it); Identifier is
-  usually one person per trip; on monitoring Identifier = Collector.
+- **Collector / Identifier**: the list value `INI - Full name` (`AA - …`,
+  `PAS - …`). Unknown: `NA - Missing data`. `CR` is two people in the list:
+  ask which. A new person is added to the list first (PAS). Collector is per
+  row (who caught it); Identifier is usually one person per trip; on
+  monitoring Identifier = Collector.
 - **ID_status**: `COMPLETE` (with Identifier), `Complete_but_verify`,
   `Incomplete_genus_only` / tribe / family, `To_identify` (species blank, no
   Identifier; completed after the photos). Prefer an honest incomplete status
@@ -93,17 +91,16 @@ The kind is decided by `Release_Collect` first, then `Purpose`.
 
 ## Species and sex
 
-- `SPECIES` = binomial from Taxonomy_v18Jun25 (strict); a name not there shows
-  `NOT_FOUND` in Family: never type a family name ("Riodinidae") as SPECIES,
-  use `To_identify` / `Incomplete_*`.
+- `SPECIES` = a binomial of Taxonomy_v18Jun25; a name not there shows
+  `NOT_FOUND` in Family. A butterfly known only to family ("Riodinidae") gets
+  ID_status `To_identify` / `Incomplete_*`, not the family as SPECIES.
 - `Subspecies_Form` free text in the local vocabulary: deceptus, intermedia,
   messenoides; proceriformis, eurydice; salapia, derasa; janarilla; zaneka,
   menophilus; ida; matronalis; ecuadorina; lota; psamathe; tigilla…;
-  `(No subspecies described)` for monotypic species (capital N). No trailing
-  spaces; `messnoides` → messenoides.
-- `Sex` (strict): `female`, `male`, `female ?`, `male ?`, `NOT_COLLECTED`. `?`
-  only on preserved rows. Sexed by genitalia (Methona, Oleria tigilla…) → note
-  "Sexed by genitalia".
+  `(No subspecies described)` for monotypic species. No trailing spaces;
+  `messnoides` → messenoides.
+- `Sex`: `female ?` / `male ?` only on preserved rows. Sexed by genitalia
+  (Methona, Oleria tigilla…) → note "Sexed by genitalia".
 - Insectary_data writes the trinomial ("Mechanitis messenoides deceptus" =
   SPECIES + Subspecies_Form) with `female`/`male`/`NA`.
 
@@ -119,10 +116,10 @@ The kind is decided by `Release_Collect` first, then `Purpose`.
 
 ## Formula columns
 
-Taxonomy, place, photo, rack, manifest and Sanger (STS) columns are formulas
-(`describe_sheet` lists them). A Death/Preservation lookup keyed on an
-Insectary_ID `NA` or blank pulls another butterfly's data: point it out,
-never copy its values.
+Taxonomy, place, photo, rack, manifest and Sanger (STS) columns are formulas.
+A Death/Preservation lookup keyed on an Insectary_ID `NA` or blank pulls
+another butterfly's data: point it out; those values are not this
+butterfly's.
 
 ## Wild-caught twins
 

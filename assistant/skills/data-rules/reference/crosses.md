@@ -14,17 +14,16 @@ and cite the document and date): "Protocol for Controlled Crosses and Families"
   × ♂ proceriformis, east; "pro x wer" is the reverse direction, since Oct 2024).
 - A cross between a stock and a hybrid joins the parents with `VS` (Insectary
   species list: `Melinaea menophilus zaneka VS Melinaea menophilus zaneka x
-  menophilus`); slides write a capital `X`. Use the exact list value; if the
-  combination is not in the list, ask (PAS adds list values).
+  menophilus`); slides write a capital `X`. A combination not in the list:
+  ask (PAS adds list values).
 - Paper forms: `werxpro`, `werpro`, `proxwer`, `pol wer x procerifor`,
   `hibrido x hibrido`, `zaneka x hibrido`, a pedigree string
   `(zaneka) x (zaneka x menophilus)`.
 - M. polymnia werneri was renamed chimborazona, but the insectary list (Lists
   `Insectary_species`) still has only the werneri forms: insectary sheets use
   the list value (`Mechanitis polymnia werneri x proceriformis`). Field rows'
-  free-text Subspecies_Form already say `chimborazona`. Renaming the list is
-  PAS's. Whether `X` or `VS` is right in a backcross name is not settled —
-  ask PAS; use the list value meanwhile.
+  free-text Subspecies_Form already say `chimborazona`. Backcross names: the
+  list value too.
 
 ## Protocol steps the data should reflect
 
@@ -63,14 +62,15 @@ and cite the document and date): "Protocol for Controlled Crosses and Families"
 - **Melinaea_crosses** (pairs: start/finish, reason, eggs, hatch) and
   **Melinaea_eggs** (preserved eggs per clutch with mother, father, tube and a
   reason: fungus, shrivelled, no hatch) for Melinaea only.
-- Stocks_Matings, Hybrid_Attempts, Crosses_Lys_x_Pol: dormant; don't write.
+- Stocks_Matings, Hybrid_Attempts, Crosses_Lys_x_Pol are no longer used: new
+  data goes in the sheets above.
 
 ## Mating-table conventions
 
 - Start = day caged together; Finish = the last day the pair (or the female
   alone) stayed. Unknown or not observed = `NA`; `-` for the grandparents of
-  wild or pure-stock parents. PAS noted that `NA` in mating columns is
-  ambiguous (no mating vs not seen): say which when you know.
+  wild or pure-stock parents. `NA` in mating columns can mean no mating or
+  not observed: say which when you know.
 - Reasons for ending: "female dead", "male dead", "both dead", "no mating
   occur - male dead", time limit. Female and male death dates are separate.
 - The status of a parent in the 2026 tables: "wc (still alive)", "whole body",
@@ -89,7 +89,7 @@ and cite the document and date): "Protocol for Controlled Crosses and Families"
 - When the sheet lags, the death, CAM and tube of cross animals may exist only
   in this notebook.
 
-## Decided
+## Eggs and media
 
 - Eggs: as many as possible. The mother is preserved alive (flash frozen) when
   she stops laying or seems about to die, before she is eaten or disappears
@@ -97,13 +97,17 @@ and cite the document and date): "Protocol for Controlled Crosses and Families"
 - Media: flash frozen is preferred (F2 families included) unless a note says
   why not.
 
-## Protocols disagree (not settled — ask AA, citing both)
+## Where the protocols differ
+
+When one of these comes up, give both versions (document and date) and ask AA
+which applies:
 
 - A dead mated male's body: ethanol + wings in an envelope (polymnia,
   lys/pol) vs flash frozen (menophilus).
-- Female clip timing: right after mating (Jan 2024) vs after laying (all
-  later protocols): follow the later.
 - A non-laying female: back to stock vs 15-day quarantine.
 - Minimum F2 family: > 40 vs ≥ 50.
+
+Female clip timing differs too (right after mating in Jan 2024): follow the
+later protocols, after laying.
 
 Female and male maturity ages are protocol advice, not data fields.

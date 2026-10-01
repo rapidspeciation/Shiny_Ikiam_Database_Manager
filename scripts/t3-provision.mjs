@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Sets up a person's project in T3 Code (stock install, nothing patched):
-// a folder with the Ithomiini brief (AGENTS.md for Codex, CLAUDE.md a link to it for Claude),
+// a folder with the Ithomiini brief (assistant/AGENTS.md with the person's name filled in, server/brief.mjs;
+// AGENTS.md for Codex, CLAUDE.md a link to it for Claude),
 // the skills (every folder of assistant/skills, in .claude/skills and .agents/skills), the Claude Code
 // subagents (assistant/agents: notebook-reader, notebook-reviewer on Sonnet), a shell guard hook
 // (assistant/hooks: no command may name the secrets or the database), the app's tools over MCP
@@ -60,8 +61,8 @@ if (!arg) throw new Error('Usage: t3-provision.mjs <username> | --refresh-all');
 const db = new DatabaseSync(database, { timeout: 30000 });
 const userOf = username => db.prepare('SELECT * FROM users WHERE username = ? AND active = 1').get(username);
 
-/** The brief: who the person is, assistant/AGENTS.md, and this workspace's folders (server/brief.mjs). */
-const brief = user => composeBrief(user, { docs, source, releases: join(root, 'releases'), labUrl, root: release });
+/** The brief: assistant/AGENTS.md with the person and the docs folder filled in (server/brief.mjs). */
+const brief = user => composeBrief(user, { docs, source, labUrl, root: release });
 
 /** A new personal token for T3 (the previous one stops working). */
 function mintToken(user) {
@@ -169,7 +170,7 @@ function provision(user, { freshToken, addProject }) {
       if (labUrl && name === 'app-dev' && existsSync(skill)) {
         const text = readFileSync(skill, 'utf8');
         const end = text.indexOf('\n---\n', 4) + 5;
-        const note = `\n> **Lab copy.** These steps are for the live server. Here:\n>\n${labAppDev(labUrl, source).replace(/^- .*?but this/, 'This').replace(/^/gm, '> ')}\n`;
+        const note = `\n> **Lab copy.** The steps below are for the live server.\n>\n${labAppDev(labUrl, source).replace(/^/gm, '> ')}\n`;
         writeFileSync(skill, text.slice(0, end) + note + text.slice(end));
       }
     }

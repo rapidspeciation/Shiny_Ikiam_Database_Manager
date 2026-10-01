@@ -2,24 +2,18 @@
 
 ## Format
 
-- `d/m/yy INI: text`: the day the note is **written** (today) and the initials
-  of the person you work for (`29/9/26 FCH: Wing clip 27/9/26`). The event's
-  date goes inside the text ("preserved 14/9", "Wing clip d/m/yy"). This short
-  form is the preferred one and the most used (2026: nearly all insectary and
-  stocks notes; `21May26 PAS` is PAS's and KG's style in Collection_data).
-  Each app user has their own initials (the tools use them); collectors'
-  initials are the Lists `Abbreviation` column.
-- Several notes in one cell are joined with ` | `, newest last; an existing
-  note is never overwritten. The tools add the prefix and the joiner: give
-  only the new text (`{"replace": …}` only when the person asks to rewrite).
-- Other people's older notes use their own styles (`13-12-24 MJS:`,
-  `8 OCT 24 KG:`, `21May26 PAS …`, `16/9/2026 AA:`): leave them as they are.
-- **English.** The team types notes in English (99.8 % of insectary notes;
-  field and stocks notes too), translating the page faithfully ("3 pupas
-  muertas" → "3 pupae dead", "parece que están enfermas" → "larvae look sick"),
-  keeping IDs, codes, names and places as written. Always English, even when
-  the page is in Spanish; the owner note is "Butterflies of Oda/Esteban" (old
-  rows' "mariposas de …" stay).
+AGENTS.md gives the form (`d/m/yy INI: text`, joined with ` | `, in English).
+Besides:
+
+- The date is the day the note is **written**; the event's date goes inside
+  the text: `29/9/26 FCH: Wing clip 27/9/26`, "preserved 14/9".
+- Other people's older notes keep their own styles (`13-12-24 MJS:`,
+  `8 OCT 24 KG:`, `21May26 PAS …`, `16/9/2026 AA:`).
+- Collectors' initials are the `Abbreviation` column of the Lists sheet.
+- Translating: faithfully, keeping IDs, codes, names and places as written
+  ("3 pupas muertas" → "3 pupae dead", "parece que están enfermas" → "larvae
+  look sick"). The owner note is "Butterflies of Oda/Esteban" (old rows'
+  "mariposas de …" stay).
 
 ## Must be noted
 
@@ -43,7 +37,7 @@
   (TP-24-02)").
 - "Selected for REFERENCE GENOME".
 
-## Never in notes
+## Not in notes
 
 - A value that has its own column: death cause, medium ("ethanol", "flash
   frozen"), tube or CAM codes, research purpose ("pheromone"), a wild
@@ -53,9 +47,8 @@
   `Unknown - Only wings`, Heat stroke, Disappearance, Killed_Preserved,
   Unknown…).
   Notes like "Only found wings" or "Body eaten" are from before mid-2024,
-  when the list lacked those values; don't write them now.
-- Your own assumptions or doubts ("fecha supuesta", "29/6?", "~2/7"): those go
-  in your reply to the person.
+  when the list lacked those values.
+- A paper's doubt marks ("fecha supuesta", "29/6?", "~2/7").
 - A restatement of what the row already says, or of the existing note in
   another language.
 - "Monitoring Wikiloc ID: Mn" unless the person asks for it (the walk's point

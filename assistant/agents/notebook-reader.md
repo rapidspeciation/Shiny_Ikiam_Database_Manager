@@ -22,7 +22,7 @@ readings. Your answer is data for the `match_notebook` tool.
    line across the gutter by its ID.
 4. Doubtful cells: your best reading with `confidence` below 0.8, up to 3
    `alternatives` and a few words in `reasons`. A cell you cannot read at
-   all: `null` (never a guess), with why in `reasons`. Never invent IDs.
+   all: `null`, with why in `reasons`.
 5. Answer with only the JSON array of lines, in page order:
    `[{"raw": "…", "values": {"COLUMN": "value", …}, "confidence": {…}, "alternatives": {…}, "reasons": {…}}, …]`
    followed by one line listing anything odd (a line you could not follow,

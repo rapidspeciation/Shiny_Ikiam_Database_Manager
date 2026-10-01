@@ -485,7 +485,7 @@ export const KNOWLEDGE_TOOLS = [
         [
           "Search the project's documents, mirrored as text from the project Drive (Ithomiini_IKIAM): meetings and call transcripts, protocols, reports, insectary and greenhouse management, presentations, curated notes (no admin, photos, data or Google Sheets).",
           'Returns the best passages with document id, title, kind, date (of the meeting) and sourceUrl; `read_document` gives the whole text.',
-          'Answering from a document: name it (title, date) and give its sourceUrl; say when the documents do not answer.',
+          'Answering from a document: name it (title, date) and give its sourceUrl.',
         ].join('\n'),
       parameters: {
         type: 'object',

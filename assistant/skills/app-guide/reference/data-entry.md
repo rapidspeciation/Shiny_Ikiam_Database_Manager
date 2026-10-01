@@ -10,7 +10,7 @@ The tables behave like Google Sheets:
 
 - Type over a selected cell to replace it; double click, Enter or F2 edits in
   place; Enter/Tab save and move (Shift goes back). «Supr» (Delete) clears the
-  selection. Ctrl+D (or the «Rellenar» button in Tablas) copies the first
+  selection. Ctrl+D (or the «Rellenar» button in Buscador) copies the first
   selected row down the selection.
 - Paste ranges from Excel/Sheets; one value pasted over several selected cells
   fills them all.
@@ -25,7 +25,7 @@ The tables behave like Google Sheets:
   it has «Abrir en Google Sheets» (that exact row) and, in Insectary_data /
   Collection_data, «Corregir Insectary ID (…)» (moves a butterfly's data to
   the right pre-made row; «Ver cambios» first).
-- Column headers sort; the «filtrar» box under a header filters (Tablas).
+- Column headers sort; the «filtrar» box under a header filters (Buscador).
 - **Counts as sums** in Insectary_stocks (`NUMBER OF EGGS`, `NUMBER OF LARVAE`,
   `NUMBER OF PUPA`, `NUMBER OF ADULTS`): type `12+15`, `=12+15` or `27-5`; the
   app writes the formula `=12+15`. No other formulas are accepted.
@@ -37,9 +37,9 @@ The tables behave like Google Sheets:
 - Phones: tap selects, double tap edits, drag the circle to stretch the
   selection, and a bar at the bottom offers Copiar, Pegar, «Rellenar ↓», Borrar.
 
-## Tablas — `#/tablas`
+## Buscador — `#/tablas`
 
-Any sheet of the workbook as a spreadsheet (the old app's "Buscador").
+Any sheet of the workbook as a spreadsheet.
 
 - «Hoja»: choose the sheet (grouped: Insectario, Campo, Cruces, Experimentos,
   Muestras, Fotos, Referencia; row counts in grey).

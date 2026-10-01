@@ -5,18 +5,11 @@ every clutch laid in the insectary plus eggs and larvae brought from the field.
 A clutch is registered when a plant with eggs leaves a stock cage (about 8–10
 eggs; the plant is taped with date, species and egg count).
 
-## Columns
+## Formula columns
 
-- **Typed**: `CLUTCH NUMBER`, `Generation`, `SPECIES`, `DATE LAID `,
-  `NUMBER OF EGGS`, `INSECTARY OR LABORATORY`, `HATCHING DATE`,
-  `NUMBER OF LARVAE`, `PUPA DATE `, `NUMBER OF PUPA`, `EMERGENCE DATE `,
-  `NUMBER OF ADULTS `, `NUMBER OF PUPAE/LARVAE FOR DISECTIONS`, `NOTES` (some
-  headers end in a space; the tools handle it).
-- **Formulas, never typed**: `Earliest Emerge Date`,
-  `Number of Adults in Insectary_data`, `Species`, `HatchingTime`,
-  `Hatch2Pupa`, `Pupa2Adult`, `Eggs`.
-- New rows from clutch 989 lack the two Insectary_data formulas (the pre-made
-  block ran out): PAS copies them down; don't type values there.
+Rows from clutch 989 lack the two formulas that count from Insectary_data
+(`Earliest Emerge Date`, `Number of Adults in Insectary_data`; the pre-made
+block ran out): PAS copies them down; no values are typed there.
 
 ## Clutch numbers
 
@@ -25,8 +18,8 @@ eggs; the plant is taped with date, species and egg count).
 - All eggs of one mating share one number. New batches follow the current
   form (clutches 994–1012, Aug–Sep 2026): the first batch plain `N`, the next
   ones `N(k)` with no space: `994`, `994(2)` … `994(8)`; `1004`, `1004(2)`.
-- Older rows keep theirs (`831 (3)` with a space in 2024–25; `992(1)`): never
-  rewrite them; Insectary_data must match its clutch row exactly.
+- Older rows keep theirs (`831 (3)` with a space in 2024–25; `992(1)`).
+  Insectary_data writes the clutch exactly as its Insectary_stocks row does.
 - `(F1)` after the number (`994(F1)`) is the generation, not a batch;
   `994(3) F1` is batch 3 of an F1 clutch.
 - Old: a number ending in `W` (`446W`) = wild-parent stock (2023).
@@ -51,7 +44,7 @@ eggs; the plant is taped with date, species and egg count).
   DISECTIONS `NA`; a note such as "no hatch" / "All eggs turn black".
 - A stage that never came: its date `NA`; its count as written: a dash is
   `NA`, a written `0` stays `0` (rows with hatched larvae and no pupae hold
-  `0` more often than `NA`). Never normalise old rows.
+  `0` more often than `NA`).
 - DATE LAID `NA` = eggs found or brought in, or the date unknown.
 - `NUMBER OF PUPAE/LARVAE FOR DISECTIONS`: `NA` by default, else a sum
   (`=2+6`; words like "3 pupas; 1 larva" = 4). The dissection dates go in
@@ -65,16 +58,16 @@ eggs; the plant is taped with date, species and egg count).
   above the first line) marks clutches of students who use the insectary:
   `Insectary` plus the note "Butterflies of Oda" / "Butterflies of Esteban"
   (English; older rows say "mariposas de …": that counts as said, leave it).
-  What looks like `ins/lab` is `ins/oda`. The tool does this; never put the
-  code in NOTES.
+  What looks like `ins/lab` is `ins/oda`. `match_notebook` does this; the
+  code itself does not go in NOTES.
 
 ## Generation, species, parents
 
 - `Generation`: `F1`, `F2`, `Backcross` when the page says so (F1)/(F2)/(BC);
   a stock clutch is `NA`.
 - `SPECIES`: the **mother's** species, or the cross (hybrid names and `VS`
-  forms: [crosses.md](crosses.md)); an exact Lists value. A wrong stocks
-  species propagates to every sibling's SPECIES formula.
+  forms: [crosses.md](crosses.md)). A wrong stocks species propagates to
+  every sibling's SPECIES formula.
 - Eggs or larvae from the field or an unknown mother: SPECIES `NA` + a note
   of where and who ("eggs collected in Muyuna", "Brought from the field, in
   5th instar", "Wild M. mes. laid the eggs"); set the species once the adults
@@ -82,8 +75,7 @@ eggs; the plant is taped with date, species and egg count).
 - Parents live only in NOTES, female first: `U8A♀ + C8B♂` (older:
   `F1 clutch parents J7A + P5A`). Check both IDs and sexes in Insectary_data; a male
   first or two females is a misread or a swapped order: ask.
-- Host plant: no column (a meeting of Aug 2025 asked for it; never done);
-  note it when the page gives it.
+- Host plant: no column; note it when the page gives it.
 
 ## Emergence columns
 
@@ -91,8 +83,7 @@ eggs; the plant is taped with date, species and egg count).
   2025 (the formula columns took over) and again from the notebook in 2026.
 - The formula columns exist to cross-check the clutches notebook against
   Emergidos, so the typed values are a second, independent count: type what
-  the page writes. Whether they should be typed at all is not settled — ask
-  AA.
+  the page writes.
 - The typed adults may differ from the Insectary_data count (backlog,
   released adults): not an error.
 - Prepupa and pupa dates per individual are not typed anywhere.
@@ -112,5 +103,5 @@ eggs; the plant is taped with date, species and egg count).
 "All larvae died in 1st instar", "1 pupa dead", "Plant with ants", "Plant with
 fungi", "bad host plant", "larvae moved to another plant", "Larvae dissected
 for cell culture", "1 larva for life history", "female dead → clutch to
-stock", "10 butterflies release", "preserved 16/9". Before 2023 notes were
-undated; restating a count ("1 larva muerta") was not typed.
+stock", "10 butterflies release", "preserved 16/9". Notes before 2023 are
+undated.

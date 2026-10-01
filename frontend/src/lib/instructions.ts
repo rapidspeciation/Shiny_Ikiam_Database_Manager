@@ -27,7 +27,7 @@ export interface JsonSchema {
 export interface Entry {
   id: string
   group: 'brief' | 'skills' | 'agents' | 'tools'
-  kind: 'markdown' | 'code' | 'opening' | 'tools'
+  kind: 'markdown' | 'code' | 'tools'
   title: string
   skill?: string
   meta?: Record<string, string> | null

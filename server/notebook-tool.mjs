@@ -37,7 +37,7 @@ export const MATCH_NOTEBOOK_TOOL = {
       '- Unreadable cell: null (never leave it out), a reason, and any partial reading in alternatives; it shows empty for the person to fill and is never written empty.',
       '- A cell left empty on the page: leave its column out.',
       '',
-      "The server does the rest (don't do it yourself):",
+      'The server does the rest:',
       '- finds each row (look-alike IDs 0/O, 1/I, 5/S, row order) and infers the year;',
       '- completes list values; keeps the SPECIES formula unless what emerged differs;',
       '- writes notes as "d/m/yy INI: text" after the existing note;',
@@ -94,7 +94,7 @@ export const MATCH_NOTEBOOK_TOOL = {
         includeUnchanged: {
           type: 'boolean',
           description:
-            'Also show the lines already in the sheet (nothing to write) as grey context rows, so the table follows the whole page. Context rows are never written; never invent a change to make a line show.',
+            'Also show the lines already in the sheet (nothing to write) as grey context rows, so the table follows the whole page. Context rows are never written.',
         },
       },
       required: ['kind', 'lines'],

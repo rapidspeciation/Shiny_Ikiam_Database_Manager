@@ -10,13 +10,12 @@
 | since 30 Jun 2026 | letter + digit + series letter; the digit runs fastest, then the first letter; 260 per series | `A0A`…`Z9A`, `A0B`…; series E from 29 Sep 2026 |
 
 - The current series has **no Ñ**: `N9D` → `O0D`. The next ID is the next free
-  **pre-made row** (the app's «Próximo Insectary ID», Inicio); never compute
-  or create one. What follows `Z9` of the last series is for the team to
-  decide when it comes: ask, never invent a format.
-- Known leftovers, left as they are (not entry rules): the empty block
-  `A0E`–`A8E` at rows 13253–13261 duplicates the used `A0E`–`A8E` (rows
-  13512–13520): never use those empty rows; the Panama STRI rows with
-  Insectary_ID `NA` are not ours.
+  **pre-made row** (the app's «Siguiente Insectary ID», Inicio). What follows
+  `Z9` of the last series: the team decides when it comes; ask.
+- Known leftovers, left as they are: the empty block `A0E`–`A8E` at rows
+  13253–13261 repeats the used `A0E`–`A8E` (rows 13512–13520), so those empty
+  rows are not used; the Panama STRI rows with Insectary_ID `NA` are not
+  ours.
 - Read an ID by position (digit vs letter, `O`/`0`, `S`/`5`, `B`/`8`, `G`/`6`,
   `I`/`1`, `Z`/`2`; transposed letters `9MN`/`9NM`); `match_notebook` checks
   look-alikes against the sheet. Letter O is common: `6OO`, `5OS` (and `50S`
@@ -27,8 +26,8 @@
 - The field team reserves a run of IDs for live wild butterflies after the
   day's emergences are numbered: gaps in the emergence run are expected.
 - A wrong ID in the sheet is fixed by moving the data to the right pre-made row
-  (Tablas → row → «Corregir Insectary ID»), never by retyping the ID cell. True
-  duplicates were suffixed `.1`/`.2` by the curators.
+  (Buscador → row number → «Corregir Insectary ID»), not by retyping the ID
+  cell. True duplicates were suffixed `.1`/`.2` by the curators.
 
 ## CAM_ID
 
@@ -41,15 +40,16 @@
 - Pools (Lists validates them; PAS hands out ranges):
   - Collection_data, local team: the Ecuador wild block (CAM0795xx, then
     CAM079859–079999 in Sep 2026; about 65 left). Expeditions abroad use their
-    own block (CAM0776xx–0794xx): never take from it.
+    own block (CAM0776xx–0794xx), not for local rows.
   - Insectary_data: `InsectaryWild&Reared_CAMid`, block CAM078000–078499 (up to
     about CAM0783xx in Sep 2026).
   - CRISPR: CAM078500–078549 (older 075801–075850). Other pools exist (wing
     dissections, genome annotation): check Lists.
 - Next CAM = the last used **in that pool** + 1, skipping used ones. Before
   proposing one, check it is unused in **every** sheet and in pending
-  proposals (`search_records`): parallel runs by several people caused the
-  duplicates of Sep 2026. CAMs follow preservation order, not ID order.
+  proposals (`search_records`): when several people preserve on the same days,
+  the same CAM can be taken twice. CAMs follow preservation order, not ID
+  order.
 - When a pool is nearly empty (< 50), say so and ask PAS or AA (they hand out
   the ranges) for the next one.
 - Typical errors: an extra 0 (`CAM0770542` for `CAM077542`, often a whole
@@ -76,8 +76,8 @@
   on the label.
 - A 7-digit or 9-digit tube is a dropped or doubled digit (Sep 2026: `FS3886683`
   for `FS63886683`, `FS5848961` for `FS50848961`): suggest the form that
-  continues a known run, flagged; never "fix" it silently.
-- Tubes out of order against CAM order: point it out, don't reorder.
+  continues a known run, flagged as a suggestion.
+- Tubes out of order against CAM order: point it out; the order stays.
 - An envelope's tube may be in another tube column (a whole body in Tube_2
   with a clip in Tube_1): compare with all four tube columns before saying it
   matches.
@@ -94,12 +94,12 @@ Collection_data they are formulas looking the CAM up in the MEIER manifest
 ## Tissues (Lists ORGANISM_PART)
 
 - `WHOLE_ORGANISM` only when the whole body, legs included, is in one tube.
-- Wing clip: `**OTHER_SOMATIC_ANIMAL_TISSUE** | WING CLIP` exactly;
+- Wing clip: `**OTHER_SOMATIC_ANIMAL_TISSUE** | WING CLIP`;
   `NON-ANDROCONIA WING CLIP` only for pheromone samples.
 - Split bodies: `HEAD | ABDOMEN`, `THORAX`, `THORAX | LEG`, `LEG`… per tube;
   sperm work: `**OTHER_REPRODUCTIVE_ANIMAL_TISSUE** | SPERMATOPHORE`,
-  `SPERM_SEMINAL_FLUID`. Unused tube: ID `NA`, tissue `NOT_COLLECTED` (Franz, 1 Oct 2026; Jun–Sep 2026
-  rows have `NA`).
+  `SPERM_SEMINAL_FLUID`. Unused tube: ID `NA`, tissue `NOT_COLLECTED` (older
+  rows with `NA` stay).
 
 ## Preservation medium
 
@@ -109,19 +109,17 @@ Values: `Flash frozen`, `Ethanol`, `DMSO`, `NOT_COLLECTED`.
   shipper or −80 °C). Dead longer → `Ethanol` (or DMSO).
 - No shipper: −80 °C freezer; ethanol only when neither is available, **with a
   note saying why**. Field trips without a shipper: ethanol.
-- Wing clips: `Flash frozen` (team decision Sep 2026; an Aug 2024 meeting said
-  ethanol, superseded). Flash frozen is the general preference: since 2025
-  almost everything is; an ethanol row without a reason note: ask.
-- Pheromone males: `Flash frozen` (65 of 66 until 23 Sep 2026); the three of
-  29 Sep 2026 in Ethanol have no reason note. Not settled whether the protocol
-  changed — ask KG before following them.
+- Wing clips: `Flash frozen` (since Sep 2026; an Aug 2024 meeting had said
+  ethanol). Flash frozen is the general preference: since 2025 almost
+  everything is; an ethanol row without a reason note: ask.
+- Pheromone males: `Flash frozen`; ethanol only with the reason in a note (KG
+  knows the pheromone protocol).
 - Weekends: the freezer is not reachable, so butterflies are kept alive until
   Monday (many preservations on Mondays).
-- Not preserved: every medium `NOT_COLLECTED` (the meetings write "NOT
-  COLLECTED" with a space: type the list value).
+- Not preserved: every medium `NOT_COLLECTED`.
 - `Preserved_Dead_Alive` / `Preserved_dead_alive`: the condition **at
   preservation** (`Alive` when killed, `Dead` when found dead), not the current
-  status. Never infer that a butterfly is alive from a blank Death_date.
+  status.
 - Location_body / Location_*: `Ikiam` for local samples; `NA` when not
   preserved.
 

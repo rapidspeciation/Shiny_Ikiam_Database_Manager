@@ -7,8 +7,8 @@ description: The app's Historial tab — every save to the workbook (from the ap
 
 1. Find the save with `list_history` from what the person remembers (who,
    when, which tab, an ID or value).
-2. Go through its cells with them: `get_history_group`. Always give the
-   save's link.
+2. Go through its cells with them (`get_history_group`), with the save's
+   link.
 3. Undo: the person can do it themselves there, or you do it from the chat:
    `preview_undo` → show it and ask → `undo_edits` on their yes. Either way
    the undo is itself a save that can be undone.

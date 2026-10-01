@@ -12,9 +12,9 @@ gog --readonly --account jmithominii@gmail.com --client ithomiini <service> <com
 
 - Services: gmail (search/get), drive, docs, sheets, slides, calendar, forms,
   appscript (`gog <service> --help`).
-- Always `--readonly`: it blocks every change. Drop it only for a write the
-  person explicitly asked for (send an email, create an event, edit or share
-  a file), for that command only, after showing them the text.
+- `--readonly` blocks every change. For a write the person asked for (send
+  an email, create an event, edit or share a file), show them the text first,
+  then run that one command without `--readonly`.
 - Meeting notes, protocols, reports and presentations are quicker through the
-  document tools (`search_knowledge`); the workbook only through the
-  `ithomiini` tools.
+  document tools (`search_knowledge`); the workbook, through the `ithomiini`
+  tools.

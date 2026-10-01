@@ -700,7 +700,7 @@ export const HISTORY_TOOLS = [
           'The Historial: every save to the workbook, newest first, grouped by person, purpose and time (saves less than 30 minutes apart; typed in Google Sheets: 2 minutes).',
           '- Purpose: sheets = typed directly in Google Sheets, asistente = an applied proposal, deshacer = an undo.',
           '- Filter by user, purpose, sheet, dates and text (an identifier such as A0D or CAM079891, a field or a value).',
-          '- Each group has a summary, counts and `url`: always give the person that link. It opens the Historial tab at that save, where they can also undo it themselves (all of it, one save, one row or single cells).',
+          '- Each group has a summary, counts and `url`: give the person that link. It opens the Historial tab at that save, where they can also undo it themselves (all of it, one save, one row or single cells).',
         ].join('\n'),
       parameters: {
         type: 'object',
@@ -741,7 +741,7 @@ export const HISTORY_TOOLS = [
       description:
         [
           'What undoing would do, without writing: each cell with its value now and the value it goes back to, and conflicts (a cell edited again later: undo that later save first, or correct the cell with `propose_changes`; a row gone).',
-          'Pass a whole group, some of its saves, or single changes. Always show the result to the person in a few lines and ask before `undo_edits`.',
+          'Pass a whole group, some of its saves, or single changes. Show the result to the person in a few lines and ask before `undo_edits`.',
         ].join('\n'),
       parameters: { type: 'object', properties: selectionProps },
     },
@@ -751,7 +751,7 @@ export const HISTORY_TOOLS = [
     function: {
       name: 'undo_edits',
       description:
-        'Undo in Google Sheets what `preview_undo` showed, as the person you are talking with (their permissions). Only with confirmed: true AFTER their latest message explicitly approved this undo ("sí, deshazlo"). The undo is itself a save in the Historial and can be undone.',
+        'Undo in Google Sheets what `preview_undo` showed, as the person you are talking with (their permissions). Only with confirmed: true after their latest message explicitly approved this undo ("sí, deshazlo"). The undo is itself a save in the Historial and can be undone.',
       parameters: {
         type: 'object',
         properties: {

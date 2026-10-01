@@ -129,7 +129,7 @@ note, with the rows it could be (editors).
 
 - «Colector» filter; «Actualizar» re-matches and recomputes.
 - «La nota no coincide con su fila»: already paired, but note and sheet
-  disagree → «Sí es la fila N» (keeps the pairing; fix the sheet in Tablas if
+  disagree → «Sí es la fila N» (keeps the pairing; fix the sheet in Buscador if
   it is wrong).
 - «¿Qué fila es?»: pick one of «Filas de ese día que puede ser» ((propuesta)
   marks the app's guess) or «No es ninguna». «guardado sin fila» = stored on
@@ -156,6 +156,6 @@ What the app holds from Wikiloc, read-only, for anyone signed in.
 - «Correcciones sugeridas» (Transect_section from the GPS position,
   Collection_time out of the walk's order, a mark on another collector's row),
   with «Certeza» and the reason, as a CSV; nothing is written (the sheet is
-  corrected in Tablas, or ask the assistant for a proposal). «Otras
+  corrected in Buscador, or ask the assistant for a proposal). «Otras
   diferencias»: points far from the trail, points without a row, rows without
   a point.

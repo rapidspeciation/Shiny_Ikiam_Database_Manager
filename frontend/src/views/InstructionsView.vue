@@ -11,8 +11,8 @@ import ToolList from '../components/instructions/ToolList.vue'
 import { t, tn } from '../lib/i18n'
 
 /**
- * What the AI assistant is told, for anyone on the team: the brief (AGENTS.md),
- * the opening each T3 workspace adds, the skills with their reference files,
+ * What the AI assistant is told, for anyone on the team: the brief (AGENTS.md,
+ * as each T3 workspace gets it, with a generic person), the skills with their reference files,
  * the subagents and the MCP tools, each with its change history. Opened from
  * the Asistente bar; #/instrucciones?archivo=<path> opens one file.
  */
@@ -43,22 +43,15 @@ const groups = computed(() => [
   { key: 'tools', label: t('Herramientas'), icon: Wrench, items: entries.value.filter(e => e.group === 'tools') },
 ])
 const isMain = (e: Entry) => e.group !== 'skills' || e.id.endsWith(`/${e.skill}/SKILL.md`)
-const label = (e: Entry) =>
-  e.kind === 'opening'
-    ? t('Apertura de cada espacio de T3')
-    : e.kind === 'tools'
-      ? tn(e.tools?.length ?? 0, '{n} herramienta (MCP)', '{n} herramientas (MCP)')
-      : e.title
+const label = (e: Entry) => (e.kind === 'tools' ? tn(e.tools?.length ?? 0, '{n} herramienta (MCP)', '{n} herramientas (MCP)') : e.title)
 
 /** What each kind of file is, in one line above it. */
 const about = computed(() => {
   const e = entry.value
   if (!e) return ''
   if (e.id === 'assistant/AGENTS.md')
-    return t('El resumen que cada chat del asistente (Claude o Codex) lee al empezar. Cada espacio de T3 lo recibe con la apertura (siguiente archivo).')
-  if (e.kind === 'opening')
     return t(
-      'Así recibe cada persona el resumen en su espacio de T3: AGENTS.md (y CLAUDE.md, un enlace a él) con su nombre, el texto de AGENTS.md y las carpetas de su espacio. Aquí con una persona genérica.',
+      'El resumen que cada chat del asistente (Claude o Codex) lee al empezar. Cada espacio de T3 lo recibe con el nombre de su persona; aquí, con una persona genérica.',
     )
   if (e.group === 'skills')
     return isMain(e)
@@ -75,7 +68,7 @@ const linkTo = (href: string) => {
   return id ? entryHref(id) : null
 }
 const rendered = computed(() =>
-  entry.value?.kind === 'markdown' || entry.value?.kind === 'opening' ? renderMarkdown(entry.value.content ?? '', { link: linkTo }) : null,
+  entry.value?.kind === 'markdown' ? renderMarkdown(entry.value.content ?? '', { link: linkTo }) : null,
 )
 const toc = computed(() => {
   if (entry.value?.kind === 'tools') return (entry.value.tools ?? []).map(tool => ({ id: `tool-${tool.name}`, text: tool.name, level: 2 }))
@@ -174,7 +167,7 @@ watch(
             </button>
             <header class="border-b border-stone-200 pb-3">
               <h1 class="text-xl font-semibold text-stone-900">{{ label(entry) }}</h1>
-              <p v-if="entry.kind !== 'opening' && entry.kind !== 'tools'" class="mt-0.5 font-mono text-xs text-stone-500">
+              <p v-if="entry.kind !== 'tools'" class="mt-0.5 font-mono text-xs text-stone-500">
                 {{ entry.id }}
               </p>
               <p class="mt-2 text-sm text-stone-600">{{ about }}</p>
@@ -261,7 +254,7 @@ watch(
                     <DiffView
                       v-else
                       :diff="diffs[`${entry.id} ${c.commit}`] as string"
-                      :show-paths="entry.kind === 'tools' || entry.kind === 'opening'"
+                      :show-paths="entry.kind === 'tools'"
                     />
                   </div>
                 </li>

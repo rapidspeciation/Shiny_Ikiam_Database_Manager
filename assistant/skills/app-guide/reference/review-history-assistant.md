@@ -94,7 +94,7 @@ hoja» and «Fotos y sobres», with counts).
 - **Filters**: kind, «Hoja», «Colector o identificador», «Desde»/«Hasta»,
   search «Buscar CAM, ID, especie…», order «Más recientes primero» / «Más
   antiguas primero» / «Por tipo y hoja». 25 cards per page.
-- **A card**: the problem, the rows involved (a row link opens it in Tablas);
+- **A card**: the problem, the rows involved (a row link opens it in Buscador);
   for photo issues the envelope crop («girar»), photos, «Sobre dice» / «Hoja
   dice», CAM read, envelope text, earlier curation, AI prediction, strength
   (fuerte/media/baja/dudosa).
@@ -108,10 +108,8 @@ hoja» and «Fotos y sobres», with counts).
   Cambios propuestos, under «Fuera de los chats de T3»).
 - The download button exports the photo verdicts as training labels.
 
-Parameters (only non-default ones appear in the link): `tipo=<kind>` (repeat,
-cam_cross, list, insectary_link, link_mismatch, date_order, future_date,
-bad_date, missing_sample, mark_reuse, walk_doubt, photo_camid, photo_extra,
-envelope_sex, envelope_species, photo_missing, ai_species), `hoja=<sheet>`,
+Parameters (only non-default ones appear in the link): `tipo=<kind>` (the
+kinds of `check_data`, e.g. `envelope_sex`), `hoja=<sheet>`,
 `persona=<name>`, `desde=YYYY-MM-DD`, `hasta=YYYY-MM-DD`,
 `estado=accepted|other|rejected|applied|all` (default pending),
 `lote=<batch key>`, `q=<text>`, `orden=old|kind` (default recent). Example:
@@ -125,7 +123,7 @@ the assistant for a proposal with the chosen ones).
 - Grouped by source (Arreglos de los chequeos, Espacios de más, Fórmulas que
   faltan, Fechas imposibles, Tubos con un dígito de más o de menos, Colecta e
   insectario no coinciden, Pedigree sin decidir).
-- Each: «Seguro» / «Probable» / «Revisar», the row (link to Tablas), now →
+- Each: «Seguro» / «Probable» / «Revisar», the row (link to Buscador), now →
   suggested («decidir» when a person must choose), the reason, «en Google
   Sheets» for formula cells, and since when.
 - Filters: certainty, source, «Hoja», search; «CSV» downloads and «Copiar»
@@ -151,7 +149,7 @@ reached 30, the day, those preserved after; species close to it).
 - Login: `#/entrar` («Usuario», «Contraseña»); `?volver=<route>` returns
   there after login. The very first setup asks a «Código de configuración».
 - Invitations: an admin sends one from Usuarios; the email link
-  (`#/activar?t=…`, never share or invent tokens) lets the person choose
+  (`#/activar?t=…`) lets the person choose
   «Usuario» (3–64 letters, numbers, dots, dashes), «Nombre» and a password of
   6–16 characters.
 - Usuarios — `#/usuarios` (admin; user menu top right): invite by «Correo»,

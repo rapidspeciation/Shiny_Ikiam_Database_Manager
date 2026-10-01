@@ -37,7 +37,8 @@ test('the AI instructions page: every file in order, the live tool list, history
   const { status, data } = await call('/api/instructions');
   assert.equal(status, 200);
   const ids = data.entries.map(e => e.id);
-  assert.deepEqual(ids.slice(0, 2), ['assistant/AGENTS.md', 'opening']);
+  assert.equal(ids[0], 'assistant/AGENTS.md');
+  assert.equal(data.entries.filter(e => e.group === 'brief').length, 1, 'one brief');
   assert.equal(ids.at(-1), 'tools');
   assert.deepEqual([...new Set(data.entries.map(e => e.group))], ['brief', 'skills', 'agents', 'tools']);
   // Each skill: its SKILL.md first (titled by the skill), then its reference files.
@@ -51,14 +52,12 @@ test('the AI instructions page: every file in order, the live tool list, history
   assert.equal(reader.group, 'agents');
   assert.match(reader.meta.model, /^claude-/);
 
-  // The workspace opening: the brief as a workspace gets it, with a generic person.
-  const opening = data.entries.find(e => e.id === 'opening');
-  assert.match(opening.content, /You are working for \*\*‹person›\*\*/);
-  assert.match(opening.content, /## This workspace/);
+  // The brief as a workspace on the server gets it, with a generic person.
   const agents = data.entries[0].content;
-  assert.ok(opening.content.includes(agents.slice(agents.indexOf('\n') + 1).trim()), 'the opening wraps AGENTS.md');
-  for (const text of [agents, opening.content])
-    assert.doesNotMatch(text, /Bearer\s+\S{16,}|sk-[A-Za-z0-9_-]{16,}|PRIVATE KEY|client_secret|password\s*[:=]/i, 'no secrets');
+  assert.match(agents, /You work for \*\*‹person›\*\* \(app user `‹username›`\)/);
+  assert.ok(agents.includes('`/home/ubuntu/ithomiini/current/docs`'), 'the docs folder filled in');
+  assert.doesNotMatch(agents, /\{\{/);
+  assert.doesNotMatch(agents, /Bearer\s+\S{16,}|sk-[A-Za-z0-9_-]{16,}|PRIVATE KEY|client_secret|password\s*[:=]/i, 'no secrets');
 
   // The tools exactly as T3 Code's chats get them over MCP.
   const tools = data.entries.at(-1).tools;

@@ -1,7 +1,7 @@
 // The assistant's instructions as the team reads them in the app (#/instrucciones):
-// the brief (assistant/AGENTS.md), the opening each T3 workspace adds to it
-// (server/brief.mjs), the skills with their reference files, the Claude Code
-// subagents and the MCP tools, each with its change history from git.
+// the brief (assistant/AGENTS.md, filled in for a generic person as each T3
+// workspace gets it: server/brief.mjs), the skills with their reference files,
+// the Claude Code subagents and the MCP tools, each with its change history from git.
 //
 // History: a git checkout (the PC lab, a developer's copy) reads it from git,
 // again whenever HEAD moves. A release has no .git (scripts/deploy.sh ships a
@@ -12,7 +12,7 @@ import { execFile } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SERVER_PATHS, composeBrief } from './brief.mjs';
+import { GENERIC_PERSON, SERVER_PATHS, composeBrief } from './brief.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = join(here, '..');
@@ -51,15 +51,13 @@ export function frontMatter(text) {
 }
 
 /**
- * Every entry of the page, in its order: the brief and the workspace opening,
- * each skill (SKILL.md, then its other files), the subagents, the tools.
+ * Every entry of the page, in its order: the brief, each skill (SKILL.md, then its other files), the subagents, the tools.
  * `history` says what git follows for it: one path (with renames), paths, or line ranges.
  */
 export function instructionEntries(root = REPO_ROOT) {
   const rel = path => relative(root, path);
   const entries = [
     { id: 'assistant/AGENTS.md', group: 'brief', kind: 'markdown', title: 'AGENTS.md', history: { follow: 'assistant/AGENTS.md' } },
-    { id: 'opening', group: 'brief', kind: 'opening', title: 'T3 workspace', history: { paths: ['server/brief.mjs'] } },
   ];
   const skills = join(root, 'assistant', 'skills');
   for (const name of existsSync(skills) ? readdirSync(skills).sort() : []) {
@@ -180,10 +178,8 @@ export function createInstructions({ root = REPO_ROOT, tools = () => [], history
   }
 
   function content(entry) {
-    if (entry.kind === 'opening')
-      return {
-        content: composeBrief({ display_name: '‹person›', username: '‹username›' }, { ...SERVER_PATHS, root }),
-      };
+    // The brief as a workspace on the server gets it, for a generic person.
+    if (entry.id === 'assistant/AGENTS.md') return { meta: null, content: composeBrief(GENERIC_PERSON, { ...SERVER_PATHS, root }) };
     if (entry.kind === 'tools') return { tools: tools() };
     const text = readFileSync(join(root, entry.id), 'utf8');
     if (entry.kind !== 'markdown') return { content: text };

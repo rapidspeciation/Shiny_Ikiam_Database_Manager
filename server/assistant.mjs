@@ -130,12 +130,12 @@ const TOOLS = [
       name: 'check_data',
       description:
         [
-          "Scan the workbook (the app's copy: fast) for inconsistencies: the issues people judge in the Revisión tab (the fixes they accepted: `list_agreed_fixes`).",
-          '- Call without `kind` first for the counts, then by kind and sheet, paging with `offset`.',
-          '- Each issue: kind, sheet, row, recordId, label, field, value, problem (Spanish), related rows, and `fix` = {recordId, values} only when the right value is obvious: ready for `propose_changes` (one proposal per kind of fix, the problem as each row\'s note).',
-          '- No fix: never guess which of two disagreeing rows is right; show the person the rows and ask.',
-          '- Photo issues add cam, strength (fuerte/media/baja/dudosa: how often such a reading was right), curation (an earlier decision), photos, envelopeText, envelopeCamid, prediction.',
-          '- An issue with `task.text` is Drive work, never a sheet change.',
+          "Scan the workbook (the app's copy: fast) for inconsistencies: the issues people judge in the Revisión tab («Problemas»).",
+          '- Without `kind`: how many issues there are of each kind. Then ask for one kind or sheet, paging with `offset`.',
+          "- Each issue: kind, sheet, row, recordId, label, field, value, problem (Spanish), related (the other rows involved), and `fix` = {recordId, values} when the checks compute the right value (`list_suggested_edits` source `check_fixes` gives each fix its certainty).",
+          '- Without a fix, the rows disagree and the data alone do not say which is right: show the person the rows and the evidence.',
+          '- Photo issues add cam, strength (fuerte/media/baja/dudosa: how often such a reading was right), curation (an earlier decision), photos, envelopeText (what was read on the envelope in the photo), envelopeCamid, prediction.',
+          '- An issue with `task.text` is work on the photos in Drive, not a sheet change.',
         ].join('\n'),
       parameters: {
         type: 'object',
@@ -144,7 +144,7 @@ const TOOLS = [
           kind: {
             type: 'string',
             description:
-              'Comma-separated: repeat (a unique ID or a tube in two rows), cam_cross (one CAM on two butterflies across Collection_data and Insectary_data / Wing_tissue), list (outside a strict list), insectary_link (Collected_Sent2Insectary without its Insectary_data row, or the reverse), link_mismatch (the two rows of one butterfly disagree), date_order, future_date, bad_date (no date in a date column), missing_sample (preserved without CAM_ID or Tube_1_id), mark_reuse (a FieldMark_ID on two species), walk_doubt (a Wikiloc point stored without a row, its pairing doubtful: row = the likeliest or null, related = the candidates; a person pairs it in Monitoreo → Dudas, never propose_changes), photo_camid (envelope CAM ≠ photo file name: Drive task), photo_extra (another butterfly\'s photos in a CAM folder: Drive task), envelope_sex, envelope_species (ocr = {read, sheet}; group = the batch), photo_missing (preserved over 30 days, no photos), ai_species (the Wings Gallery model sees another species; a person decides)',
+              'Comma-separated: repeat (a unique ID or a tube in two rows), cam_cross (one CAM on two butterflies across Collection_data and Insectary_data / Wing_tissue), list (outside a strict list), insectary_link (Collected_Sent2Insectary without its Insectary_data row, or the reverse), link_mismatch (the two rows of one butterfly disagree), date_order, future_date, bad_date (no date in a date column), missing_sample (preserved without CAM_ID or Tube_1_id), mark_reuse (a FieldMark_ID on two species), walk_doubt (a Wikiloc point stored without a row, its pairing doubtful: row = the likeliest or null, related = the candidates; a person pairs it in Monitoreo → Dudas, not with propose_changes), photo_camid (envelope CAM ≠ photo file name: Drive task), photo_extra (another butterfly\'s photos in a CAM folder: Drive task), envelope_sex, envelope_species (ocr = {read, sheet}; group = the batch), photo_missing (preserved over 30 days, no photos), ai_species (the Wings Gallery model sees another species; a person decides)',
           },
           recordId: { type: 'string', description: 'Only the issues of this row' },
           limit: { type: 'integer', description: '1 to 200, default 50' },
@@ -250,10 +250,10 @@ const TOOLS = [
         [
           'The corrections people agreed on in the Revisión tab (accepted, or another value given):',
           '- fixes: {issueId, recordId, sheet, row, label, values, note, decidedBy}.',
-          '- tasks: Drive work on the specimen photos (renames, merges), not sheet changes: give them as a checklist.',
-          '- needsValue: accepted without a value: ask.',
-          '- stale: the data changed since the verdict.',
-          "Then ONE `propose_changes` with all the fixes (values merged per recordId, notes kept) and their issueIds, and wait for the person's confirmation before `apply_proposal`.",
+          '- tasks: Drive work on the specimen photos (renames, merges), not sheet changes.',
+          '- needsValue: accepted without a value: ask for it.',
+          '- stale: the row changed since the verdict.',
+          'To make them: one `propose_changes` with the fixes (values merged per recordId, notes kept) and their issueIds.',
         ].join('\n'),
       parameters: {
         type: 'object',
@@ -271,11 +271,11 @@ const TOOLS = [
       description:
         [
           'Read-only: the corrections the app computes from the workbook (Revisión → Sugerencias).',
-          '- Call without filters first: the answer lists the sources with their description and counts.',
+          '- Without filters, the answer also lists the sources with their description and counts.',
           '- Each suggestion: sheet, row, recordId, label, field, current, suggested (null = a person must decide), certainty, reason (the evidence, Spanish).',
           '- certainty: certain = only the spelling changes; likely = strong evidence; check = a lead for someone who knows.',
           '- manual: true = a formula cell, fixed by hand in Google Sheets (`propose_changes` cannot write it).',
-          "To make some of them: ONE `propose_changes` with those (the reason as each row's note), then the person's confirmation. Never propose `check` suggestions or ones without a value unless the person decided them.",
+          "To make some of them: one `propose_changes` with those (the reason as each row's note). `check` suggestions and those without a value are for the person to decide first.",
         ].join('\n'),
       parameters: {
         type: 'object',
@@ -336,7 +336,7 @@ const TOOLS = [
       name: 'update_proposal',
       description:
         [
-          "Revise a pending proposal in place (the person sees the table change live). When the person corrects something ('la especie es X', 'quita la fila 3', 'falta el colector'), update the SAME proposal; never make a new one.",
+          "Revise a pending proposal in place (the person sees the table change live). When the person corrects something ('la especie es X', 'quita la fila 3', 'falta el colector'), update the same proposal, not a new one.",
           "- rows: cells of rows already in it, by index. A value replaces yours; null drops your proposed change to that cell (an existing row keeps the sheet's value, a new row's cell stays empty) and never empties it; {\"clear\": true} empties the sheet's cell (only when the person wants it emptied; shown in red as vaciar).",
           '- rows[].checked: doubtful cells the person confirmed as they are (a new value in a doubtful cell also ends the doubt).',
           '- changes / newRows: more rows (a recordId already in it merges into its row). removeRows: indexes to take out.',

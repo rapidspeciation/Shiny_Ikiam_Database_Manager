@@ -1,6 +1,6 @@
 ---
 name: app-guide
-description: Guide to the "Ikiam Insectary DB" web app (https://ithomiini-ikiam.com) — every tab (Inicio, Tablas, Colecta, Monitoreo, Muertes, Tubos, Emergidos, Clutches, Historial, Asistente, Revisión, Usuarios), what each is for, who can use it, its controls and workflows, grid and date tips, which sheet it writes, and deep links with query parameters. Use it whenever the person asks how to do something in the app, where something is, why a button or tab is missing, or asks for a link.
+description: Guide to the "Ikiam Insectary DB" web app (https://ithomiini-ikiam.com) — every tab (Inicio, Buscador, Colecta, Monitoreo, Muertes, Tubos, Emergidos, Clutches, Historial, Asistente, Revisión, Usuarios), what each is for, who can use it, its controls and workflows, grid and date tips, which sheet it writes, and deep links with query parameters. Use it whenever the person asks how to do something in the app, where something is, why a button or tab is missing, or asks for a link.
 ---
 
 # App guide: Ikiam Insectary DB
@@ -12,9 +12,8 @@ into it (the «Google Sheet» button at the top right opens it).
   `https://ithomiini-ikiam.com/` + route, e.g.
   `https://ithomiini-ikiam.com/#/monitoreo?vista=dudas`.
 - **Labels**: the interface is in English by default and in Spanish with the
-  EN/ES button at the top. The labels here are the Spanish ones: quote them
-  exactly, in «»; to a person writing in English, name the control by its
-  meaning too.
+  EN/ES button at the top. The labels here are the Spanish ones, in «»; for a
+  person using the English interface, give the control's meaning too.
 
 ## Reference files
 
@@ -23,7 +22,7 @@ parameter):
 
 | File | Tabs |
 |---|---|
-| [reference/data-entry.md](reference/data-entry.md) | Tablas, Colecta, Muertes, Tubos, Emergidos, Clutches; grid, keyboard and date tips |
+| [reference/data-entry.md](reference/data-entry.md) | Buscador, Colecta, Muertes, Tubos, Emergidos, Clutches; grid, keyboard and date tips |
 | [reference/monitoreo.md](reference/monitoreo.md) | Monitoreo: Importar recorrido, Reporte, Mapa, Recapturas, Dudas de emparejamiento, Datos de Wikiloc |
 | [reference/review-history-assistant.md](reference/review-history-assistant.md) | Inicio, Asistente (T3 Code, Cambios propuestos, Instrucciones de la IA), Revisión, Usuarios, login and invitations, the save bar |
 
@@ -34,7 +33,7 @@ Historial: skill **historial**.
 | Tab | Route | For | Writes to |
 |---|---|---|---|
 | Inicio | `#/inicio` | summaries; for the team: last IDs used, next Insectary ID and clutch, upcoming hatch/pupa/emergence | — |
-| Tablas | `#/tablas?hoja=…&buscar=…` | any sheet as an editable spreadsheet | the chosen sheet |
+| Buscador | `#/tablas?hoja=…&buscar=…` | any sheet as an editable spreadsheet | the chosen sheet |
 | Colecta | `#/colecta` | a day of field collection in bulk | Collection_data (+ Insectary_data for live ones) |
 | Monitoreo | `#/monitoreo?vista=…` | Ikiam transects T1–T4: Wikiloc walks, report, map, recaptures, doubtful pairings | Collection_data, SamplingDay_data |
 | Muertes | `#/muertes` | death date and cause of insectary butterflies | Insectary_data |
@@ -77,14 +76,12 @@ Old links still work: `#/posturas` → Clutches, `#/cuaderno` → Asistente,
 
 1. **"¿Cómo hago…?"**: the steps (their labels, in «») and the direct link,
    e.g. «Tubos» → https://ithomiini-ikiam.com/#/tubos. Link to the exact view
-   when a parameter exists (a sheet and search in Tablas, a Revisión filter, a
-   Monitoreo sub-view, a map filter). Only the parameters in the reference
-   files work: never invent one.
+   when a parameter exists (a sheet and search in Buscador, a Revisión filter,
+   a Monitoreo sub-view, a map filter). The link parameters that exist are the
+   ones in the reference files.
 2. **"Pásame / registra estos datos"**: rather than telling them to type,
-   draft a proposal (fill everything certain; `describe_sheet` shows the
-   latest similar rows to copy shared values from). Cambios propuestos sits
-   right of or below the chat, or alone in its own browser tab at
-   `#/propuestas`, an editable grid like Google Sheets.
+   draft a proposal with everything certain (shared values can be copied from
+   the latest similar rows).
 3. **New IDs, CAMs, tubes and marks** are handed out by the tabs (Colecta,
    Emergidos, Tubos; Inicio shows the last used): point there when the person
    needs the next free ones.

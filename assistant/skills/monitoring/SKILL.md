@@ -24,8 +24,8 @@ keeps the GPS times.
 
 Check a mark first (`find_records` on FieldMark_ID). Then one new
 Collection_data row: the template of its fate (below) plus Collection_date,
-Collection_time, Transect_section, Collector and Identifier (the walker, as
-the Lists value), SPECIES / Subspecies_Form / Sex, Rainfall, Cloud_cover,
+Collection_time, Transect_section, Collector and Identifier (the walker),
+SPECIES / Subspecies_Form / Sex, Rainfall, Cloud_cover,
 Flight_height, and the mark (marked) or CAM and tube (preserved, only as
 given).
 
@@ -35,8 +35,8 @@ given).
   opportunistic catch at Ikiam has Purpose `NA`), Collection_location `Ikiam`,
   Identifier = Collector = the walker, Collection_time, Flight_height (m),
   Cloud_cover per row, Rainfall per day, Transect_section 1–4.
-- **Transect_section**: the walkers have left it blank since Apr 2026;
-  `get_walk` and the import take it from the point's GPS position, and
+- **Transect_section**: many rows since Apr 2026 have it blank. `get_walk`
+  and the import take it from the point's GPS position, and
   `list_suggested_edits` (source `wikiloc-transects`) suggests the missing
   ones.
 - **Which butterflies**: all Ithomiini **and** their tiger-pattern mimics
@@ -52,23 +52,16 @@ given).
 | Fate | Release_Collect | Values |
 |---|---|---|
 | Preserved | `Collected_Preserved` | the field-preserved template (skill `data-rules`, field collections) with FieldMark_ID `NA` and Death_date = Preservation_date = the walk day; the weight is measured later in the lab (leave it) |
-| Marked and released | `Mark_Released` | FieldMark_ID = the mark · CAM_ID, CAM_ID_insectary, Insectary_ID, Tube_1–4, Butterfly_weight, Death_date, Preservation_date, Location_Head…_wings `NA` · Preserved_dead_alive `NOT_PRESERVED` · Splitted_body `No` |
-| Released unmarked | `Released_Unmarked` | as marked, with FieldMark_ID `NA`. Rare (last used Sep 2025). Not settled when it applies — ask AA |
-
-Marked and released, tube tissues and Preservation_medium: they have switched
-back and forth between `NA`/`NOT_PRESERVED` and `NOT_COLLECTED` (by the same
-people); the app's import writes `NOT_COLLECTED`, like the Sep 2026 rows. Not
-settled — ask AA; until then follow the import and never mass-correct old
-rows.
+| Marked and released | `Mark_Released` | FieldMark_ID = the mark · CAM_ID, CAM_ID_insectary, Insectary_ID, Tube_1–4, Butterfly_weight, Death_date, Preservation_date, Location_Head…_wings `NA` · tube tissues and Preservation_medium `NOT_COLLECTED` (as the app's import writes them; older rows with `NA` or `NOT_PRESERVED` stay) · Preserved_dead_alive `NOT_PRESERVED` · Splitted_body `No` |
+| Released unmarked | `Released_Unmarked` | as marked, with FieldMark_ID `NA`. Rare (last used Sep 2025); ask AA when it applies |
 
 ## Marks
 
 - Written on the ventral right wing. Series: `M0`–`M99` (to Aug 2025), then
   `A1`–`A99`, then `B1`… (B73 on 26 Sep 2026). Next mark = the highest of the
   current series + 1; after 99, the next letter.
-- In Aug 2026 the numbering restarted at B40 by mistake, so B40–B59 each
-  belong to two butterflies: a mark alone is not unique; use mark + species +
-  sex.
+- In Aug 2026 the numbering went back to B40, so B40–B59 each belong to two
+  butterflies: a mark alone is not unique; use mark + species + sex.
 - A mark recorded on another species is a conflict (a mistyped mark or
   species), not a recapture: ask the walker.
 - In a waypoint note (`M1 Hyposcada illinissa ida hembra 9:20 0.5m NO id:
@@ -85,7 +78,7 @@ rows.
   has such rows since Aug 2025, and every recapture since Jul 2026 is one.
 - Before that, some recaptures were written only in the marking row's note
   (2024 to May 2026: "recatch&realease transect=4…", "Recapture …"). They stay
-  notes (decided Sep 2026); the app shows them in Monitoreo → Recapturas.
+  notes; the app shows them in Monitoreo → Recapturas.
 - A mark above the last one handed out is a new butterfly, even if the number
   was used long ago.
 
@@ -97,15 +90,10 @@ rows.
   captures there are marked and released.
 - `get_alerts` gives the counts, the day each species reached 30 and those
   close to it.
-- Several species went past 30 unnoticed: when you propose a preserved
-  capture of a species already at 30, or are asked what to do with one, say
-  it should be marked and released.
+- When you draft a preserved capture of a species already at 30, or are asked
+  what to do with one, say it should be marked and released.
 
 ## Weather codes
-
-List values: Rainfall `DY_(dry)`, `DZ_(drizzle)`, `WR_(weak_rain)`,
-`SR_(strong_rain)`, `NA`; Cloud_cover `S_(cloudless_sunny)`,
-`S&C_(sun_&_cloud_patches)`, `CL_(cloudy_light)`, `CD_(cloudy_dark)`, `NA`.
 
 | Written on paper / in Wikiloc | Column | Value |
 |---|---|---|

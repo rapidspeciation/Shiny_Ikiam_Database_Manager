@@ -16,8 +16,8 @@ marks and shorthand not listed there.
 - **Loose sheets**: when a notebook is away, emergences go on a sheet pasted in
   later; hand tables (ID | Species | Preserve date | CAM) come as photos too.
 - **Cage cards and whiteboards** are working aids: a whiteboard (pheromone
-  schedule, dissection tallies, "next CAM") is a task list, not a record;
-  never take IDs or CAMs from it without checking the sheet.
+  schedule, dissection tallies, "next CAM") is a task list, not a record:
+  check an ID or CAM from it against the sheet.
 - People also send phone photos of a laptop screen, and photos marked with
   red boxes, arrows or highlights on the cell in question.
 
@@ -34,7 +34,7 @@ marks and shorthand not listed there.
   `NA` (the stage never came). Before 2024 a dash could mean "not yet".
 - A line holding only a pre-written ID or number = unused slot: skip it.
 - Ticks (✓, `V`, `✓✓`) in the margin or after a clutch number mean the line
-  was already typed into the sheet: never transcribe the tick; the row should
+  was already typed into the sheet. The tick is not data; the row should
   exist, so compare (expect few changes) and say if it is missing.
 - Highlights: Emergidos, usually dead butterflies; Posturas, finished or dead
   clutches (green). Orange highlights have no known meaning: ask. A green

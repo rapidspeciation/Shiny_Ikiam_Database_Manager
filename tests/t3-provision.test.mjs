@@ -30,15 +30,17 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     run('ana');
     const workspace = join(shared, 't3-workspaces', 'ana');
     const brief = readFileSync(join(workspace, 'AGENTS.md'), 'utf8');
-    assert.match(brief, /working for \*\*Ana Pérez\*\*/);
-    // The brief is assistant/AGENTS.md with the person and the workspace's folders; the rest is in skills.
-    assert.ok(brief.includes(readFileSync(new URL('../assistant/AGENTS.md', import.meta.url), 'utf8').split('\n').slice(1).join('\n').trim()));
+    assert.match(brief, /You work for \*\*Ana Pérez\*\* \(app user `ana`\)/);
+    // The brief is assistant/AGENTS.md with the person and the docs folder filled in; the rest is in skills.
+    const docs = new URL('../docs', import.meta.url).pathname;
+    const template = readFileSync(new URL('../assistant/AGENTS.md', import.meta.url), 'utf8');
+    assert.equal(brief, template.replaceAll('{{person}}', 'Ana Pérez').replaceAll('{{username}}', 'ana').replaceAll('{{docs}}', docs.replace(/\/$/, '')));
+    assert.doesNotMatch(brief, /\{\{|Local test lab/);
     for (const skill of ['data-rules', 'digitalizar-cuaderno', 'monitoring', 'data-review', 'historial', 'google-account', 'app-guide', 'app-dev']) {
       assert.match(brief, new RegExp(`\\| \`${skill}\` \\|`), `the brief names the skill ${skill}`);
       const file = join(workspace, '.claude', 'skills', skill, 'SKILL.md');
       assert.match(readFileSync(file, 'utf8'), new RegExp(`^---\\nname: ${skill}\\ndescription: .+\\n---\\n`), `skill ${skill} installed`);
     }
-    assert.match(brief, /## This workspace/);
     // CLAUDE.md is a link to AGENTS.md: Claude Code and Codex read the same brief.
     assert.ok(lstatSync(join(workspace, 'CLAUDE.md')).isSymbolicLink());
     assert.equal(readlinkSync(join(workspace, 'CLAUDE.md')), 'AGENTS.md');
@@ -148,15 +150,23 @@ test('Another install (the local lab) sets the database, MCP address, workspaces
       ITHOMIINI_T3_WORKSPACES: workspaces,
       ITHOMIINI_SRC: '/work/ithomiini',
       ITHOMIINI_DENY_READ: `${lab}:/secret/answers/`,
+      ITHOMIINI_LAB_URL: 'http://127.0.0.1:8795/',
       T3_BIN: '/bin/true',
     };
     execFileSync(process.execPath, [script, 'lab'], { env, encoding: 'utf8' });
     const workspace = join(workspaces, 'lab');
     assert.equal(JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8')).mcpServers.ithomiini.url, 'http://127.0.0.1:8795/api/ai/mcp');
-    assert.match(readFileSync(join(workspace, 'AGENTS.md'), 'utf8'), /git checkout `\/work\/ithomiini`/);
+    // The lab's brief ends with the lab note, and app-dev opens with it: changes stay local.
+    const brief = readFileSync(join(workspace, 'AGENTS.md'), 'utf8');
+    assert.match(brief, /## Local test lab\n\nThis is the \*\*local test lab\*\*: the app at http:\/\/127\.0\.0\.1:8795\//);
+    assert.match(brief, /git checkout `\/work\/ithomiini`/);
+    const appDev = readFileSync(join(workspace, '.claude', 'skills', 'app-dev', 'SKILL.md'), 'utf8');
+    assert.match(appDev, /^---\nname: app-dev\n[\s\S]*?\n---\n\n> \*\*Lab copy\.\*\*[^\n]*\n>\n> This is the \*\*local test lab\*\*/);
+    assert.match(appDev, /> the checks, restart the lab app/);
     const deny = JSON.parse(readFileSync(join(workspace, '.claude', 'settings.json'), 'utf8')).permissions.deny;
     assert.ok(deny.includes(`Read(/${database}*)`));
     assert.ok(deny.includes(`Read(/${lab}/**)`) && deny.includes('Read(//secret/answers/**)'));
+    assert.ok(deny.includes('Bash(scripts/deploy.sh:*)'), 'the lab never deploys');
     assert.equal(db.prepare('SELECT count(*) n FROM ai_tokens WHERE revoked_at IS NULL').get().n, 1);
     db.close();
   } finally {

@@ -7,8 +7,8 @@ description: Digitize photos of the Ikiam insectary notebooks into the Ithomiini
 
 You read the handwriting; `match_notebook` finds each line's row, compares
 every cell with the sheet and drafts **one proposal per page** beside the
-chat. Send values **as written**: the tool converts them (its description
-says how). Never draft with `propose_changes` what `match_notebook` can match.
+chat. Send values **as written**: the tool converts them, and its
+description lists each notebook's columns.
 
 ## Workflow
 
@@ -40,8 +40,8 @@ says how). Never draft with `propose_changes` what `match_notebook` can match.
 6. **Corrections** ("la línea 5 es macho"): a few cells → `update_proposal`
    on the same proposal; many lines (a shifted block) → `match_notebook`
    again with the whole page corrected and `replaceProposalId`. Say what
-   changed. A page already proposed in this chat is re-matched the same way,
-   never proposed twice.
+   changed. A page already proposed in this chat is re-matched the same way
+   (one proposal per page).
 
 From the answer:
 
@@ -55,15 +55,14 @@ field envelopes): read the skill **data-rules** first.
 
 ## Doubtful and unreadable cells
 
-Propose everything readable; doubt is a highlight, never an omission.
+Propose everything readable; doubt is a highlight, not an omission.
 
 - **Not sure**: your best reading, with confidence, alternatives and a
   reason, as the tool describes. Use it for characters you cannot tell apart,
   not for whole columns: a value you can read, on a line you could follow, is
   sure. A clear value that looks wrong (a date out of stage order, adults >
   pupae) is sure: send it as written and point it out.
-- **Cannot read it at all**: mark it unreadable as the tool describes; never
-  guess a value.
+- **Cannot read it at all**: mark it unreadable as the tool describes.
 - **Look-alikes**: 0/O, 1/I/7, 5/S, 8/B, 2/Z, 6/G, 4/9, 3/8, `+`/1; ♀/♂
   written small. Before reading digits, compare this hand's 1 and 7 (and 3/8)
   on clear cells of the same page. Copy IDs as written (`600` for `6OO`;
@@ -75,7 +74,7 @@ Propose everything readable; doubt is a highlight, never an omission.
 
 - **Dates** day first, as written (`17/9`, `4-8`, `19-6-23`), without adding
   the year. `~2/7` and `29/6?` are that date, doubtful; `2/9+3/9` is the
-  first day; never copy those marks into the notes.
+  first day.
 - **Ditto marks** (`"`, `ll`, `||`, `〃`, a wavy line) and a brace `}` over
   lines: the value in **every** line they cover. A date written once for
   several lines applies to all. A ditto under a blank cell repeats the last
@@ -112,23 +111,22 @@ Propose everything readable; doubt is a highlight, never an omission.
     terms (`8⁺¹+4`) are part of the sum. A minus is part of the count
     (`27-5`: 27 larvae, 5 died).
   - Such a cell is **sure when its final total is clear**: a confidence only
-    if that total is unclear; never leave it out for being corrected.
+    if that total is unclear.
 - **Death causes**: `unk` = Unknown, `eaten` = Eaten, `spider` = Spider,
   `ants` = Ants, `disapp` = Disappearance, `deformed` = Deformed,
   `heat shock` = Heat stroke, `preserved` = Killed_Preserved, `only wings` =
   Unknown - Only wings. More paper words: data-rules
   `reference/insectary-individuals.md`.
-- **Notes** in English, as the team types them: translate faithfully ("3
-  pupas muertas" → "3 pupae dead"), keeping IDs, codes and names. Never a
-  restatement of a count or your doubts (those go in your reply). A place
-  written short is its list name (Cavernas, C.T.C → Cavernas Templo de
-  Ceremonia). More: data-rules `reference/notes.md`.
+- **Notes** in English: translate faithfully ("3 pupas muertas" → "3 pupae
+  dead"), keeping IDs, codes and names. A place written short is its list
+  name (Cavernas, C.T.C → Cavernas Templo de Ceremonia). More: data-rules
+  `reference/notes.md`.
 - **Right-hand-page notes** are written smaller and drift up half a line:
   give each note to the ID whose line its first word starts on; one note per
   clutch or butterfly; a bracket or arrow shares it between the lines it
   spans.
 
-## The notebooks (kind → sheet, columns)
+## The notebooks (kind → sheet)
 
 ### `stocks` — Posturas → Insectary_stocks
 
@@ -139,10 +137,7 @@ lines highlighted in colour are finished clutches.
 
 - `CLUTCH NUMBER`: `994`, `994(7)` = batch 7 of the same couple; `994(F1)` =
   generation F1, `994(3) F1` = batch 3 of an F1.
-- `SPECIES`, `DATE LAID`, `NUMBER OF EGGS`, `HATCHING DATE`,
-  `NUMBER OF LARVAE`, `PUPA DATE`, `NUMBER OF PUPA`, `EMERGENCE DATE`,
-  `NUMBER OF ADULTS`.
-- `INSECTARY OR LABORATORY` exactly as written: `ins`, `lab`, `ins/oda`,
+- `INSECTARY OR LABORATORY` as written: `ins`, `lab`, `ins/oda`,
   `ins/este`, `ins ESTEBAN` (what looks like `ins/lab` is `ins/oda`).
 - `NOTES`: parents female first: `U8A♀ + C8B♂`.
 - The dissections column, often a sum, is its own column.
@@ -157,13 +152,12 @@ Emerge date · Dead date · Notes*. The first `#` is a running count such as
 
 - `Insectary_ID`: the ID on the wing (digit + two letters like `5VB`, `6OO`,
   or letter, digit, letter like `N4D`).
-- `SPECIES`, `Sex`, `CLUTCH NUMBER` (`838`, `831(1)`).
 - `Stock_of_origin` as written (`interm.`, `messen.`). Only the *M.
   messenoides* stocks have one: every other line, and a dash, is `"NA"`;
   always send it.
-- `Intro2Insectary_date` (emerge date), `Death_date` (dead date),
-  `Death_cause`, `CAM_ID`, `Tube_1_id`, `Notes_Insectary_data` (as written,
-  column words included), `Wild_Reared`.
+- Emerge date → `Intro2Insectary_date`; dead date → `Death_date`. The notes
+  go to `Notes_Insectary_data` with their column words ("ethanol", "wc", a
+  CAM…): the tool moves those to their columns.
 - **A CRISPR control** ("CRISPR #159 control" in the clutch column):
   `CLUTCH NUMBER` `"NA"`, `Wild_Reared` `Reared`, the stock, note "Comes from CRISPR
   control #159".
@@ -176,7 +170,7 @@ Emerge date · Dead date · Notes*. The first `#` is a running count such as
   capture day). Collector, time, weather and place stay out of the notes:
   they go in the butterfly's Collection_data row, in the same proposal,
   unasked. Complete the rows the tool drafts (`wildWithoutCollection`) from
-  the page: `Collector` (the list value `PAS - …`), `Identifier`,
+  the page: `Collector` (`PAS - …`), `Identifier`,
   `Collection_location`, `Collection_time`, `Cloud_cover`, `Rainfall`,
   `Purpose` (`NA` when the page does not say). Paper codes: skill
   **monitoring** (weather) and data-rules `reference/field-collections.md`.
@@ -185,9 +179,8 @@ Emerge date · Dead date · Notes*. The first `#` is a running count such as
 
 ### `deaths` — Muertes → Insectary_data
 
-The daily round: *Date · ID · Species · Sex · Cause · CAM · Notes*. Columns:
-`Insectary_ID`, `SPECIES`, `Sex`, `Death_date`, `Death_cause`, `CAM_ID`,
-`Tube_1_id`, `Notes_Insectary_data` (as written, column words included).
+The daily round: *Date · ID · Species · Sex · Cause · CAM · Notes*. The notes
+go to `Notes_Insectary_data` with their column words, as in Emergidos.
 
 ### `labels` — Sobres y etiquetas → Insectary_data
 
@@ -195,16 +188,14 @@ The envelope or label of one sampled butterfly: a CAM, the species, the sex,
 "Reared ID: 1TG", a date, often a tube held beside it (read its printed
 code). One line per label; ignore the notebook behind it.
 
-- Columns: `Insectary_ID` (the Reared ID, exactly), `SPECIES`, `Sex`,
-  `CAM_ID`, `Tube_1_id`.
+- The Reared ID is the `Insectary_ID`.
 - A struck CAM with a new one beside it is the correction history: the last
   uncrossed value is the CAM (report the chain). `wing clip: 28/8/24` is a
   clip date, not a death.
 - Before saying the tube matches, look at the row with `get_record`: if the
   label's tube is in another tube column, or its tissue or medium disagrees
   (the envelope says wing clip, that tube is `WHOLE_ORGANISM`), say so as a
-  difference for the person to decide; don't propose tube changes on your
-  own.
+  difference for the person to decide.
 
 More: data-rules `reference/reading-paper.md`.
 
@@ -213,17 +204,14 @@ More: data-rules `reference/reading-paper.md`.
 One line per injected egg: *CRISPR · # Eggs · CRISPR date · Guide · Specie ·
 Hatch date · Pupa date · Emerge date · Mutant yes/no · CAM ID · Notes*.
 
-- `CRISPR_No.` (the experiment, e.g. 50), `Eggs_No.` (1, 2, 3…),
-  `CRISPR_date`.
+- `CRISPR_No.` is the experiment (e.g. 50), `Eggs_No.` the egg (1, 2, 3…).
 - `Guide` as written: `2B`, `2A-2D`, `No guide`.
-- `Stock_of_origin`: the "Specie" column, e.g. `Inter`.
-- `Hatch_date`, `Pupa_date`, `Emerge_date`, `Mutant` (Yes, No or Check),
-  `CAM_ID`, `Notes`.
+- The "Specie" column is `Stock_of_origin` (e.g. `Inter`).
 
 ## Crops
 
 One command cuts the photo for reading (Pillow). Its output goes to this
-chat's `work/<today>-<topic>/`, never a folder another chat may use.
+chat's own `work/<today>-<topic>/` folder.
 
 1. `python3 .claude/skills/digitalizar-cuaderno/crops.py PHOTO --out work/<today>-<topic>`
    writes `<photo>-overview.jpg`: the photo upright (EXIF) with rulers of
@@ -259,8 +247,9 @@ or one strip per page.
 - Several pages in one message: cut every page's strips, then start one
   `notebook-reader` subagent per page (`general-purpose` if that type is
   missing), **all in one message** (several Agent calls in the same reply,
-  `run_in_background: false`), each with its notebook kind, columns and strip
-  paths. Never give it your readings or the sheet's values.
+  `run_in_background: false`), each with its notebook kind, columns (from
+  the `match_notebook` description) and strip paths. The reading is blind:
+  none of your readings and none of the sheet's values.
 - Check each page's lines (stages in step) and call `match_notebook` per page
   as the answers arrive.
 - Without subagents (Codex): read the pages yourself, one after another.
@@ -285,10 +274,10 @@ is likely wrong:
 3. Start the `notebook-reviewer` subagents (`general-purpose` if missing)
    **all in one message** (`run_in_background: false`): one per block of
    lines, each with only its strips, the photo path (for `--zoom`), the
-   proposal id and the lines (by ID) and columns to read. **Never tell them
-   your readings** or quote values from the proposal (a reviewer told
-   "ins/lab" read "ins/lab" where the page says "ins/oda"). Without subagents
-   (Codex): re-read those cells yourself on zoomed crops.
+   proposal id and the lines (by ID) and columns to read. The reading is
+   blind: none of your readings and no values from the proposal (a reviewer
+   told "ins/lab" read "ins/lab" where the page says "ins/oda"). Without
+   subagents (Codex): re-read those cells yourself on zoomed crops.
 4. Where the photo settles a disagreement (look at a zoomed crop yourself),
    correct the same proposal with `update_proposal` (only the cells that
    change). Where it does not, the cell stays doubtful. In the summary say how

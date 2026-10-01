@@ -57,7 +57,8 @@ const IMPLIED_FIELDS = new Set(['Death_cause', 'CAM_ID', 'Tube_1_id', ...DEATH_E
 /**
  * The notebooks that can be digitized, and the sheet columns each one fills.
  * How each notebook looks and is written is explained to Claude in the skill
- * assistant/skills/digitalizar-cuaderno/SKILL.md (a test checks it names every column).
+ * assistant/skills/digitalizar-cuaderno/SKILL.md (a test checks it names every kind;
+ * the match_notebook description lists the columns).
  */
 export const KINDS = {
   stocks: {
