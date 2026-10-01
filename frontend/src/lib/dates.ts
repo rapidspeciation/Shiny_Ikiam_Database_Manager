@@ -113,3 +113,31 @@ function fromParts(y: number, m: number, d: number): number | null {
   if (new Date(ms).getUTCDate() !== d) return null
   return Math.round((ms - EPOCH) / DAY)
 }
+
+/** One day of a month's calendar: its ISO date, its day number, and whether it belongs to the month shown. */
+export interface CalendarDay {
+  iso: string
+  day: number
+  inMonth: boolean
+}
+/**
+ * The six weeks a month's calendar shows, Monday first (as calendars in
+ * Ecuador and Europe): the month's days with the end of the month before and
+ * the start of the next one around them. `month` is 1–12.
+ */
+export function calendarDays(year: number, month: number): CalendarDay[] {
+  const first = Date.UTC(year, month - 1, 1)
+  // getUTCDay: 0 Sunday … 6 Saturday → days back to Monday.
+  const back = (new Date(first).getUTCDay() + 6) % 7
+  const out: CalendarDay[] = []
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(first + (i - back) * DAY)
+    out.push({ iso: d.toISOString().slice(0, 10), day: d.getUTCDate(), inMonth: d.getUTCMonth() === month - 1 })
+  }
+  return out
+}
+/** The month before or after (`step` months away): { year, month } with month 1–12. */
+export function shiftMonth(year: number, month: number, step: number): { year: number; month: number } {
+  const index = year * 12 + (month - 1) + step
+  return { year: Math.floor(index / 12), month: (index % 12) + 1 }
+}
