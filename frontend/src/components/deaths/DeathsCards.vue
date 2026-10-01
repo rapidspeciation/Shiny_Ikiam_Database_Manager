@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRaw, watch } from 'vue'
-import { AlertTriangle, Check, CheckCircle2, ChevronRight, Circle, History, Loader2, Search, Undo2, X } from 'lucide-vue-next'
+import { AlertTriangle, Check, CheckCircle2, ChevronRight, Circle, History, Loader2, Search, StickyNote, Undo2, X } from 'lucide-vue-next'
 import DateField from '../DateField.vue'
 import EntryModeToggle from '../EntryModeToggle.vue'
 import RowDrawer from '../RowDrawer.vue'
@@ -13,7 +13,9 @@ import { useKeyboard, useMedia } from '../../composables/usePhone'
 import { api, requestId } from '../../lib/api'
 import { isBlank } from '../../lib/cells'
 import { dayLabel, formatSerial, isoToSerial, serialFromIso, serialToIso, todayIso } from '../../lib/dates'
+import { noteDay } from '../../lib/clutches'
 import {
+  DEATH_NOTE_PHRASES,
   KILLED,
   WHOLE,
   bestRack,
@@ -43,7 +45,7 @@ import {
 import { idTokens, resolveIds } from '../../lib/ids'
 import { errorText, notify } from '../../lib/notice'
 import { verificationsFor } from '../../lib/verifications'
-import { fillIfBlank } from '../../lib/rows'
+import { fillIfBlank, initialsOf } from '../../lib/rows'
 import type { CellValue, Table, TableRow } from '../../lib/types'
 import { usePending } from '../../stores/pending'
 import { useSession } from '../../stores/session'
@@ -55,10 +57,12 @@ import { t, tn, tx, type Msg } from '../../lib/i18n'
  * who picks «Tarjetas»): a search box that finds a butterfly by Insectary ID
  * (or CAM or tube) and says at once whether it is alive; the butterflies
  * chosen as cards; the death date, the cause as big buttons and preserved or
- * not (each one's CAM and tube right under «Preservada»); then one "Save"
- * that writes exactly what the table's «Escribir fecha y causa» writes
- * (lib/deaths.ts) and saves it, with an Undo. With no card selected the date,
- * cause and preservation apply to all cards; tapping cards selects them, and
+ * not (each one's CAM and tube right under «Preservada»), and a note (quick
+ * phrases or typed, in English) added to Notes_Insectary_data dated and
+ * signed as the team writes notes; then one "Save" that writes exactly what
+ * the table's «Escribir fecha y causa» writes, plus the note (lib/deaths.ts),
+ * and saves it, with an Undo. With no card selected the date, cause,
+ * preservation and note apply to all cards; tapping cards selects them, and
  * then they apply to those only (each card shows its own, and Save writes each
  * card's). The latest deaths below, by day; a card's › opens the full-screen
  * editor; «Historial» lists today's saves of Muertes, to undo one. On a wide
@@ -67,7 +71,13 @@ import { t, tn, tx, type Msg } from '../../lib/i18n'
  * shared with the table (useDeathsState).
  */
 const MODULE = 'Insectary_data'
-const props = defineProps<{ table: Table | undefined; ready: boolean; options: Record<string, string[]> }>()
+const props = defineProps<{
+  table: Table | undefined
+  ready: boolean
+  options: Record<string, string[]>
+  /** The Abbr_name list ("FCH - Franz Chandi"), for the initials that sign a note. */
+  collectors: string[]
+}>()
 const mode = defineModel<EntryMode>('mode', { required: true })
 
 const pending = usePending()
@@ -80,10 +90,13 @@ const roomy = useMedia('(min-width: 1024px)')
 /** A short screen (a phone sideways, ~300 px): what is typed comes before explanations. */
 const short = useMedia('(max-height: 520px)')
 
-const { picked, date, cause, preserved, medium, samples, suggested, own, selected } = useDeathsState()
+const { picked, date, cause, preserved, note, medium, samples, suggested, own, selected } = useDeathsState()
 const query = ref('')
 const recentCount = ref(30)
 const today = computed(() => isoToSerial(todayIso()))
+/** Who signs the notes added here ("1/10/26 FCH: …"), as in Clutches. */
+const initials = computed(() => initialsOf(session.user?.displayName || '', props.collectors, session.user?.username || ''))
+const notePrefix = computed(() => `${noteDay(today.value)} ${initials.value}:`)
 
 // --- The butterflies, indexed once per version of the sheet (13,500 rows: typing must stay instant).
 const index = computed(() => (props.table ? buildIndex(props.table.rows) : []))
@@ -197,7 +210,7 @@ const dateError = computed(() =>
 )
 // --- Each card its own: tap cards to select them; the panel then sets theirs only
 /** The panel's values: what every card gets unless it has its own. */
-const all = computed<DeathChoice>(() => ({ date: date.value, cause: cause.value, preserved: preserved.value }))
+const all = computed<DeathChoice>(() => ({ date: date.value, cause: cause.value, preserved: preserved.value, note: note.value }))
 const choiceOf = (row: TableRow) => choiceFor(all.value, own.value, idOf(row))
 const hasOwn = (row: TableRow, field: ChoiceField) => own.value[idOf(row)]?.[field] !== undefined
 /** The selected cards still chosen, in the cards' order. */
@@ -215,12 +228,13 @@ const doneSelecting = () => (selected.value = [])
 function shown<F extends ChoiceField>(field: F): DeathChoice[F] | undefined {
   return selectedIds.value.length ? sharedChoice(all.value, own.value, selectedIds.value, field) : all.value[field]
 }
-/** Sets a field for the selected cards, or (none selected) for all of them. */
-function setField<F extends ChoiceField>(field: F, value: DeathChoice[F]) {
-  const next = setChoice(all.value, own.value, selectedIds.value, field, value)
+/** Sets a field for the selected cards (or `ids`), or (none selected) for all of them. */
+function setField<F extends ChoiceField>(field: F, value: DeathChoice[F], ids = selectedIds.value) {
+  const next = setChoice(all.value, own.value, ids, field, value)
   if (next.all.date !== date.value) date.value = next.all.date
   if (next.all.cause !== cause.value) cause.value = next.all.cause
   if (next.all.preserved !== preserved.value) preserved.value = next.all.preserved
+  if (next.all.note !== note.value) note.value = next.all.note
   own.value = next.own
 }
 /** With nothing selected: the cards that keep their own value of a field ("B7A: Eaten"). */
@@ -235,6 +249,19 @@ function pickCause(c: string) {
   if (c === KILLED) setField('preserved', true)
 }
 const mediums = ['Flash frozen', 'Ethanol', 'DMSO']
+
+// --- The note: typed or quick phrases (English), added on Save after the notes there
+const shownNote = computed(() => shown('note') ?? '')
+/** A quick phrase goes after what is typed ("Head eaten; With fungi"). */
+function addPhrase(p: string) {
+  const text = shownNote.value.trim()
+  setField('note', text ? `${text}; ${p}` : p)
+}
+/** The note a card adds on Save, as it will be written ("1/10/26 FCH: Only wings found"); `own`: this card's only. */
+function noteOf(row: TableRow) {
+  const text = choiceOf(row).note.trim()
+  return text ? { text: `${notePrefix.value} ${text}`, own: hasOwn(row, 'note') } : null
+}
 
 /** Rows dying now (no death date yet): in "preserved" each gets its CAM and tube. */
 const dying = (row: TableRow) => lifeOf(get(row)).state !== 'dead'
@@ -321,10 +348,21 @@ function gapText(g: PreservationGap) {
 const plans = computed(() => {
   const out = new Map<string, DeathCell[]>()
   for (const row of cards.value)
-    out.set(row.id, cardCells(row, pending.value, choiceOf(row), { sample: samples[idOf(row)], medium: medium.value }))
+    out.set(
+      row.id,
+      cardCells(row, pending.value, choiceOf(row), {
+        sample: samples[idOf(row)],
+        medium: medium.value,
+        today: today.value,
+        initials: initials.value,
+      }),
+    )
   return out
 })
 const toSave = computed(() => cards.value.filter(r => plans.value.get(r.id)?.length))
+/** Already recorded dead and nothing of its death left to write (its note may still be added). */
+const registered = (row: TableRow) =>
+  factsFor(row).life.state === 'dead' && !(plans.value.get(row.id) || []).some(c => c.field !== 'Notes_Insectary_data')
 /** A card's plan in words: the date and cause, the CAM and tube, and how many NA / NOT_COLLECTED cells. */
 function planText(row: TableRow) {
   const cells = plans.value.get(row.id) || []
@@ -407,6 +445,7 @@ async function save() {
     picked.value = []
     cause.value = ''
     preserved.value = false
+    note.value = ''
     own.value = {}
     selected.value = []
     for (const id of ids) {
@@ -441,6 +480,7 @@ async function undo() {
     date.value = last.all.date
     cause.value = last.all.cause
     preserved.value = last.all.preserved
+    note.value = last.all.note ?? ''
     own.value = { ...own.value, ...keepOwn(last.own, last.ids) }
     lastSave.value = null
     notify(tn(last.count, '{n} muerte deshecha en Google Sheets', '{n} muertes deshechas en Google Sheets'), 'success')
@@ -481,6 +521,8 @@ function openEditor(list: 'cards' | 'recent', at: number) {
   const rows = list === 'cards' ? cards.value : recent.value
   editing.value = { list, ids: rows.map(r => r.id), index: at }
 }
+/** A card's note (its own or the panel's), shown and edited in the editor opened from the cards. */
+const cardNote = (row: TableRow) => choiceOf(row).note
 const drawerRow = ref<TableRow | null>(null)
 
 // --- The keyboard: the screen fits above it, and the box being typed in stays in view
@@ -602,10 +644,12 @@ const summary = computed(() => {
   const day = same('date')
   const why = same('cause')
   const kept = same('preserved')
+  const noted = cards.value.filter(noteOf).length
   const parts = [
     day === undefined ? t('varias fechas') : day ? dayLabel(day).split(' · ')[0] : '',
     why === undefined ? t('varias causas') : why,
     kept === undefined ? t('algunas preservadas') : kept ? t('preservadas') : t('sin preservar'),
+    noted ? (noted === cards.value.length ? t('con nota') : t('algunas con nota')) : '',
   ].filter(Boolean)
   return parts.join(' · ')
 })
@@ -753,14 +797,14 @@ const choice = (on: boolean) =>
         </p>
       </div>
 
-      <!-- The chosen butterflies: tap one (or several) to give it its own date, cause or preservation. -->
+      <!-- The chosen butterflies: tap one (or several) to give it its own date, cause, preservation or note. -->
       <section v-if="cards.length" class="px-3 pt-3">
         <div class="flex items-center justify-between gap-2">
           <h2 class="text-sm font-semibold text-stone-700">{{ $t('Elegidas ({n})', { n: cards.length }) }}</h2>
           <button class="h-11 px-2 text-sm text-stone-600 underline" @click="removeAll">{{ $t('Quitar todas') }}</button>
         </div>
         <p v-if="canEdit && cards.length > 1 && !selectedIds.length" class="mb-1.5 text-xs text-stone-500 short:hidden">
-          {{ $t('Toca una tarjeta para darle su propia fecha, causa o preservación.') }}
+          {{ $t('Toca una tarjeta para darle su propia fecha, causa, preservación o nota.') }}
         </p>
         <ul class="grid grid-cols-[repeat(auto-fill,minmax(17rem,1fr))] gap-2">
           <li
@@ -824,8 +868,8 @@ const choice = (on: boolean) =>
               class="rounded-b-xl border-t px-3 py-1.5 text-xs"
               :class="isSelected(row) ? 'border-brand-100' : 'border-stone-100'"
             >
-              <p v-if="!plans.get(row.id)?.length && factsFor(row).life.state === 'dead'" class="text-stone-500">
-                {{ $t('Ya registrada: no se cambiará') }}
+              <p v-if="registered(row)" class="text-stone-500">
+                {{ noteOf(row) ? $t('Ya registrada: solo se añade la nota') : $t('Ya registrada: no se cambiará') }}
               </p>
               <p v-else class="flex flex-wrap gap-1" :data-choice="idOf(row)">
                 <span
@@ -842,6 +886,16 @@ const choice = (on: boolean) =>
                   :title="chip.own ? $t('Solo de esta tarjeta') : undefined"
                   >{{ chip.text }}</span
                 >
+              </p>
+              <!-- The note Save adds, as it will be written (its own one in violet). -->
+              <p
+                v-if="noteOf(row)"
+                class="mt-1 flex items-start gap-1 rounded-md px-1.5 py-0.5 break-words"
+                :class="noteOf(row)!.own ? 'bg-violet-100 text-violet-900 ring-1 ring-violet-300' : 'bg-stone-100 text-stone-700'"
+                :title="noteOf(row)!.own ? $t('Solo de esta tarjeta') : undefined"
+                :data-note="idOf(row)"
+              >
+                <StickyNote :size="13" class="mt-px shrink-0" /><span class="min-w-0">{{ noteOf(row)!.text }}</span>
               </p>
             </div>
           </li>
@@ -1041,12 +1095,47 @@ const choice = (on: boolean) =>
               </p>
             </div>
           </div>
+          <!-- A note, in English: typed or quick phrases; Save adds it, dated and signed, after the notes there. -->
+          <div>
+            <h2 class="mb-1.5 text-sm font-semibold text-stone-700">{{ $t('Nota') }}</h2>
+            <div class="mb-2 flex flex-wrap gap-1.5">
+              <button
+                v-for="p in DEATH_NOTE_PHRASES"
+                :key="p"
+                type="button"
+                class="min-h-10 rounded-full border border-stone-300 bg-white px-3 text-sm active:bg-stone-100"
+                @click="addPhrase(p)"
+              >
+                {{ p }}
+              </button>
+            </div>
+            <label class="block">
+              <span class="sr-only">{{ $t('Nota') }}</span>
+              <textarea
+                :value="shownNote"
+                class="field-input min-h-20 text-base short:min-h-0"
+                :rows="short ? 1 : 2"
+                :placeholder="
+                  shown('note') === undefined
+                    ? $t('Notas distintas: lo que escribas será la de todas las seleccionadas')
+                    : $t('Nota, en inglés (p. ej. Only wings found)')
+                "
+                enterkeyhint="done"
+                data-note-input
+                @input="setField('note', ($event.target as HTMLTextAreaElement).value)"
+              />
+            </label>
+            <p class="mt-1 text-xs text-stone-500">
+              {{ $t('Al guardar se añade a Notes_Insectary_data, tras las notas que ya tiene: «{prefix} …»', { prefix: notePrefix }) }}
+            </p>
+            <p v-if="ownOf('note').length" class="mt-1 text-xs text-violet-800">{{ $t('Con nota propia: {ids}', { ids: ownOf('note').join(', ') }) }}</p>
+          </div>
           <p v-if="otherPending" class="text-xs text-amber-900">
             {{ $tn(otherPending, 'Se guardará también {n} cambio pendiente de otras filas.', 'Se guardarán también {n} cambios pendientes de otras filas.') }}
           </p>
         </section>
         <p v-else-if="wide && canEdit" class="px-4 py-6 text-sm text-stone-500">
-          {{ $t('Busca y añade mariposas: aquí eliges la fecha, la causa y si se preservan, y las guardas.') }}
+          {{ $t('Busca y añade mariposas: aquí eliges la fecha, la causa, si se preservan y una nota, y las guardas.') }}
         </p>
       </Teleport>
 
@@ -1151,6 +1240,9 @@ const choice = (on: boolean) =>
       :causes="causes"
       :options="options"
       :can-edit="canEdit"
+      :initials="initials"
+      :card-note="editing.list === 'cards' ? cardNote : undefined"
+      @note="(row: TableRow, text: string) => setField('note', text, [idOf(row)])"
       @close="editing = null"
       @more="drawerRow = $event"
     />

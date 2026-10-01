@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ChevronLeft, ChevronRight, Columns3, Loader2, X } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, Columns3, Loader2, StickyNote, X } from 'lucide-vue-next'
 import ChoiceField from '../ChoiceField.vue'
 import DateField from '../DateField.vue'
 import LifeBadge from './LifeBadge.vue'
 import { useKeyboard } from '../../composables/usePhone'
 import { displayValue, isBlank, normalizeInput } from '../../lib/cells'
+import { appendNote, noteDay, notesOf } from '../../lib/clutches'
 import { formatSerial, isoToSerial, serialFromIso, serialToIso, todayIso } from '../../lib/dates'
-import { KILLED, factsOf } from '../../lib/deaths'
+import { DEATH_NOTE_PHRASES, KILLED, NOTES, factsOf } from '../../lib/deaths'
 import { errorText } from '../../lib/notice'
 import type { CellValue, Field, TableRow } from '../../lib/types'
 import { usePending } from '../../stores/pending'
@@ -18,7 +19,11 @@ import { t } from '../../lib/i18n'
  * cause and notes, and its CAM and first tube when it was preserved; every
  * other column through «Todas las columnas» (the row drawer). Swipe or the
  * arrows go through the list it was opened from. Each change is a pending edit,
- * saved like any other (automatically, or with the save bar's button).
+ * saved like any other (automatically, or with the save bar's button). The
+ * notes as written, one by one; a new one is dated and signed ("1/10/26 FCH:
+ * …") and goes after them: opened from the cards it is the card's note, which
+ * the cards' Save adds (`cardNote`, changed through `note`); opened from the
+ * latest deaths, «Añadir nota» adds it at once as a pending edit.
  */
 const MODULE = 'Insectary_data'
 const props = defineProps<{
@@ -27,9 +32,13 @@ const props = defineProps<{
   causes: string[]
   options: Record<string, string[]>
   canEdit: boolean
+  /** Who signs a new note ("FCH"). */
+  initials: string
+  /** Opened from the cards: a card's note, added by the cards' Save. */
+  cardNote?: (row: TableRow) => string
 }>()
 const index = defineModel<number>('index', { required: true })
-const emit = defineEmits<{ close: []; more: [row: TableRow] }>()
+const emit = defineEmits<{ close: []; more: [row: TableRow]; note: [row: TableRow, text: string] }>()
 
 const pending = usePending()
 const keyboard = useKeyboard()
@@ -51,6 +60,8 @@ watch(
   row,
   r => {
     message.value = ''
+    typed.value = ''
+    editAll.value = false
     showPreservation.value = !!r && (PRESERVATION.some(k => !isBlank(pending.value(r, k))) || pending.value(r, 'Death_cause') === KILLED)
   },
   { immediate: true },
@@ -80,6 +91,29 @@ function setDeath(iso: string) {
   else setValue('Death_date', serial)
 }
 const yesterday = computed(() => serialToIso(today.value - 1))
+
+// --- Notes: the ones written, then a new one, dated and signed
+const notes = computed(() => notesOf(get(NOTES)))
+const notePrefix = computed(() => `${noteDay(today.value)} ${props.initials}:`)
+/** Opened from the latest deaths: the note being typed, added with «Añadir nota». */
+const typed = ref('')
+const newNote = computed(() => (props.cardNote && row.value ? props.cardNote(row.value) : typed.value))
+function setNote(text: string) {
+  if (props.cardNote && row.value) emit('note', row.value, text)
+  else typed.value = text
+}
+function addPhrase(p: string) {
+  const text = newNote.value.trim()
+  setNote(text ? `${text}; ${p}` : p)
+}
+function addNote() {
+  const text = typed.value.trim()
+  if (!text) return
+  setValue(NOTES, appendNote(get(NOTES), text, today.value, props.initials))
+  typed.value = ''
+}
+/** The whole cell as text, to correct a note already written. */
+const editAll = ref(false)
 async function saveNow() {
   try {
     await pending.save('')
@@ -205,17 +239,64 @@ function reveal(e: FocusEvent) {
       </section>
 
       <section class="border-t border-stone-100 py-3">
-        <label>
-          <span class="field-label">Notes_Insectary_data</span>
-          <textarea
-            class="field-input min-h-24 text-base"
-            :class="{ 'is-dirty': dirty('Notes_Insectary_data') }"
-            :value="shown('Notes_Insectary_data')"
-            :disabled="!editable('Notes_Insectary_data')"
-            rows="3"
-            @change="setText('Notes_Insectary_data', ($event.target as HTMLTextAreaElement).value)"
-          />
-        </label>
+        <span class="field-label">Notes_Insectary_data</span>
+        <ul v-if="notes.length" class="space-y-1">
+          <li
+            v-for="(n, i) in notes"
+            :key="i"
+            class="rounded-md px-2 py-1 text-sm break-words"
+            :class="dirty(NOTES) && i === notes.length - 1 ? 'bg-amber-50' : 'bg-stone-50'"
+          >
+            {{ n }}
+          </li>
+        </ul>
+        <p v-else class="text-sm text-stone-500">{{ $t('Sin notas') }}</p>
+        <template v-if="editable(NOTES)">
+          <div class="mt-2 flex flex-wrap gap-1.5">
+            <button
+              v-for="p in DEATH_NOTE_PHRASES"
+              :key="p"
+              type="button"
+              class="min-h-10 rounded-full border border-stone-300 bg-white px-3 text-sm active:bg-stone-100"
+              @click="addPhrase(p)"
+            >
+              {{ p }}
+            </button>
+          </div>
+          <label class="mt-2 block">
+            <span class="sr-only">{{ $t('Nota nueva') }}</span>
+            <textarea
+              :value="newNote"
+              class="field-input min-h-20 text-base"
+              rows="2"
+              :placeholder="$t('Nota, en inglés (p. ej. Only wings found)')"
+              enterkeyhint="done"
+              data-note-input
+              @input="setNote(($event.target as HTMLTextAreaElement).value)"
+            />
+          </label>
+          <p v-if="cardNote" class="mt-1 flex items-start gap-1 text-xs text-stone-500">
+            <StickyNote :size="13" class="mt-px shrink-0" />
+            <span>{{ $t('Se añade al guardar la muerte: «{prefix} …»', { prefix: notePrefix }) }}</span>
+          </p>
+          <div v-else class="mt-1 flex items-center gap-2">
+            <span class="min-w-0 flex-1 truncate text-xs text-stone-500">{{ $t('Se añade como «{prefix} …»', { prefix: notePrefix }) }}</span>
+            <button type="button" class="btn h-11 px-4" :disabled="!typed.trim()" @click="addNote">{{ $t('Añadir nota') }}</button>
+          </div>
+          <button v-if="!editAll" type="button" class="mt-1 h-11 text-sm text-stone-600 underline" @click="editAll = true">
+            {{ $t('Corregir las notas escritas') }}
+          </button>
+          <label v-else class="mt-2 block">
+            <span class="field-label">{{ $t('Todo el texto de Notes_Insectary_data') }}</span>
+            <textarea
+              class="field-input min-h-24 text-base"
+              :class="{ 'is-dirty': dirty(NOTES) }"
+              :value="shown(NOTES)"
+              rows="3"
+              @change="setText(NOTES, ($event.target as HTMLTextAreaElement).value)"
+            />
+          </label>
+        </template>
       </section>
 
       <section class="border-t border-stone-100 py-3">

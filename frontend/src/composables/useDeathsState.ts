@@ -6,8 +6,8 @@ import { persistentRef } from '../lib/persist'
 /**
  * What Muertes is registering, shared by its two modes (the cards and the
  * table, see useEntryMode): the butterflies chosen, the death date, the cause,
- * preserved or not, the medium and the CAM and tube typed for each. Switching
- * mode (or turning a phone) keeps all of it. The IDs, cause, preserved and the
+ * preserved or not, the note, the medium and the CAM and tube typed for each. Switching
+ * mode (or turning a phone) keeps all of it. The IDs, cause, preserved, note and the
  * cards' own values live as long as the browser tab (sessionStorage), the
  * medium in this browser.
  */
@@ -19,15 +19,17 @@ export interface DeathsState {
   cause: Ref<string>
   /** Preserved (CAM and tube for each) or not (the NA / NOT_COLLECTED block). */
   preserved: Ref<boolean>
+  /** A note added to Notes_Insectary_data on Save (the cards only), dated and initialled. */
+  note: Ref<string>
   medium: Ref<string>
   /** The CAM and tube typed (or suggested) for each butterfly, by Insectary ID. */
   samples: Record<string, { cam: string; tube: string }>
   /** What the app suggested, so a value the person typed is never replaced. */
   suggested: Record<string, { cam: string; tube: string }>
   /**
-   * The cards' own date, cause or preservation, by Insectary ID (the cards
-   * only: set with the card selected; the rest come from date, cause and
-   * preserved above, which apply to all).
+   * The cards' own date, cause, preservation or note, by Insectary ID (the
+   * cards only: set with the card selected; the rest come from date, cause,
+   * preserved and note above, which apply to all).
    */
   own: Ref<OwnChoices>
   /** The cards selected (tapped): what the panel sets while any is selected. */
@@ -102,6 +104,7 @@ export function createDeathsState(): DeathsState {
     date: ref(todayIso()),
     cause: persistentRef('deaths:cause', ''),
     preserved: persistentRef('deaths:preserved', false),
+    note: persistentRef('deaths:note', ''),
     medium: persistentRef('deaths:medium', 'Flash frozen', { lasting: true }),
     samples: reactive({}),
     suggested: reactive({}),

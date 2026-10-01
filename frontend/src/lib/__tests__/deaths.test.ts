@@ -11,6 +11,7 @@ import {
   hasGap,
   lifeOf,
   lookAlikes,
+  noteCell,
   preservationGaps,
   rankCauses,
   setChoice,
@@ -241,15 +242,15 @@ describe('causes and racks', () => {
   })
 })
 
-describe('each card its own date, cause and preservation', () => {
-  const all: DeathChoice = { date: '2026-09-30', cause: 'Unknown', preserved: false }
+describe('each card its own date, cause, preservation and note', () => {
+  const all: DeathChoice = { date: '2026-09-30', cause: 'Unknown', preserved: false, note: '' }
   it('nothing selected: the panel sets every card (and their own values of that field go)', () => {
     let state = { all, own: { B7A: { cause: 'Eaten' }, C8B: { cause: 'Spider', date: '2026-09-29' } } as OwnChoices }
     state = setChoice(state.all, state.own, [], 'cause', 'Disappearance')
     expect(state.all.cause).toBe('Disappearance')
     expect(state.own).toEqual({ C8B: { date: '2026-09-29' } })
-    expect(choiceFor(state.all, state.own, 'B7A')).toEqual({ date: '2026-09-30', cause: 'Disappearance', preserved: false })
-    expect(choiceFor(state.all, state.own, 'C8B')).toEqual({ date: '2026-09-29', cause: 'Disappearance', preserved: false })
+    expect(choiceFor(state.all, state.own, 'B7A')).toEqual({ date: '2026-09-30', cause: 'Disappearance', preserved: false, note: '' })
+    expect(choiceFor(state.all, state.own, 'C8B')).toEqual({ date: '2026-09-29', cause: 'Disappearance', preserved: false, note: '' })
   })
   it('cards selected: only theirs change; the panel\'s own value is not kept as theirs', () => {
     let state = { all, own: {} as OwnChoices }
@@ -270,10 +271,10 @@ describe('each card its own date, cause and preservation', () => {
     const a = row({ Insectary_ID: 'B7A' })
     const b = row({ Insectary_ID: 'C8B' })
     const own: OwnChoices = { C8B: { cause: 'Killed_Preserved', preserved: true, date: '2026-09-29' } }
-    const cellsA = asObject(cardCells(a, saved, choiceFor(all, own, 'B7A'), { medium: 'Flash frozen' }))
+    const cellsA = asObject(cardCells(a, saved, choiceFor(all, own, 'B7A'), { medium: 'Flash frozen', today: DAY }))
     expect(cellsA).toEqual({ Death_date: DAY, Death_cause: 'Unknown', ...NOT_PRESERVED })
     const cellsB = asObject(
-      cardCells(b, saved, choiceFor(all, own, 'C8B'), { sample: { cam: ' cam1 ', tube: 'fs9' }, medium: 'Flash frozen' }),
+      cardCells(b, saved, choiceFor(all, own, 'C8B'), { sample: { cam: ' cam1 ', tube: 'fs9' }, medium: 'Flash frozen', today: DAY }),
     )
     expect(cellsB).toMatchObject({
       Death_date: DAY - 1,
@@ -286,6 +287,35 @@ describe('each card its own date, cause and preservation', () => {
     })
     // Already recorded dead: no tube from here, only what is missing.
     const dead = row({ Insectary_ID: 'E2E', Death_date: DAY - 5, Death_cause: 'Eaten' })
-    expect(cardCells(dead, saved, { ...all, preserved: true }, { sample: { cam: 'CAM2', tube: 'FS1' }, medium: 'Ethanol' })).toEqual([])
+    expect(cardCells(dead, saved, { ...all, preserved: true }, { sample: { cam: 'CAM2', tube: 'FS1' }, medium: 'Ethanol', today: DAY })).toEqual([])
+  })
+  it('the note: added after the old ones, dated and initialled; own or for all; empty writes nothing', () => {
+    const a = row({ Insectary_ID: 'B7A', Notes_Insectary_data: '29/9/26 MJS: marked with lines in the abdomen' })
+    const b = row({ Insectary_ID: 'C8B', Notes_Insectary_data: null })
+    const dead = row({ Insectary_ID: 'E2E', Death_date: DAY - 5, Death_cause: 'Eaten', CAM_ID: 'CAM9', Tube_1_id: 'FS2', Notes_Insectary_data: 'NA' })
+    // For all cards (nothing selected).
+    let state = setChoice(all, {}, [], 'note', 'Only wings found')
+    const note = (r: TableRow, id: string) =>
+      asObject(cardCells(r, saved, choiceFor(state.all, state.own, id), { medium: 'Ethanol', today: DAY + 1, initials: 'FCH' }))
+        .Notes_Insectary_data
+    expect(note(a, 'B7A')).toBe('29/9/26 MJS: marked with lines in the abdomen | 1/10/26 FCH: Only wings found')
+    expect(note(b, 'C8B')).toBe('1/10/26 FCH: Only wings found')
+    // Already recorded dead: only the note is written ("NA" is no note to keep).
+    expect(cardCells(dead, saved, choiceFor(state.all, state.own, 'E2E'), { medium: 'Ethanol', today: DAY + 1, initials: 'FCH' })).toEqual([
+      { field: 'Notes_Insectary_data', value: '1/10/26 FCH: Only wings found', overwrite: true },
+    ])
+    // B7A selected: its own note; C8B keeps the panel's.
+    state = setChoice(state.all, state.own, ['B7A'], 'note', '  Head eaten ')
+    expect(state.own).toEqual({ B7A: { note: '  Head eaten ' } })
+    expect(note(a, 'B7A')).toBe('29/9/26 MJS: marked with lines in the abdomen | 1/10/26 FCH: Head eaten')
+    expect(note(b, 'C8B')).toBe('1/10/26 FCH: Only wings found')
+    // The panel's note emptied for all: B7A keeps nothing of its own either, and no note is written.
+    state = setChoice(state.all, state.own, [], 'note', '')
+    expect(state.own).toEqual({})
+    expect(note(a, 'B7A')).toBeUndefined()
+    expect(cardCells(dead, saved, choiceFor(state.all, state.own, 'E2E'), { medium: 'Ethanol', today: DAY + 1, initials: 'FCH' })).toEqual([])
+    // A blank note writes nothing; a formula cell is never written.
+    expect(noteCell(b, saved, '   ', DAY, 'FCH')).toBeNull()
+    expect(noteCell(row({ Notes_Insectary_data: 'x' }, { formulas: ['Notes_Insectary_data'] }), saved, 'Weak', DAY, 'FCH')).toBeNull()
   })
 })

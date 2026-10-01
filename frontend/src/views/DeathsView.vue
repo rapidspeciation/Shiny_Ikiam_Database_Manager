@@ -29,7 +29,9 @@ import { t } from '../lib/i18n'
 const MODULE = 'Insectary_data'
 const module = ref(MODULE)
 const pending = usePending()
-const { table, ready, options } = useSheet(module)
+const { table, ready, options, listColumn } = useSheet(module)
+/** People's initials for the notes they add ("FCH - Franz Chandi"). */
+const collectors = computed(() => listColumn('Abbr_name'))
 const { mode } = useEntryMode('deaths')
 
 // Deaths are usually entered the same day: today by default, with its weekday shown.
@@ -115,7 +117,7 @@ function write() {
 </script>
 
 <template>
-  <DeathsCards v-if="mode === 'cards'" v-model:mode="mode" :table="table" :ready="ready" :options="options" />
+  <DeathsCards v-if="mode === 'cards'" v-model:mode="mode" :table="table" :ready="ready" :options="options" :collectors="collectors" />
   <div v-else class="flex h-full flex-col">
     <div class="toolbar">
       <IdPicker v-model="picked" :options="ids" :loading="!ready" :warn="warn" label="Insectary IDs" />

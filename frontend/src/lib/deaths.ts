@@ -1,4 +1,5 @@
 import { isBlank } from './cells'
+import { appendNote } from './clutches'
 import { serialFromIso } from './dates'
 import type { CellValue, TableRow } from './types'
 
@@ -412,19 +413,21 @@ export function factsOf(get: (field: string) => CellValue, today: number): Facts
   }
 }
 
-// --- Each card its own date, cause and preservation
+// --- Each card its own date, cause, preservation and note
 
-/** What a death is registered with: the date (ISO), the cause, preserved or not. */
+/** What a death is registered with: the date (ISO), the cause, preserved or not, and a note to add. */
 export interface DeathChoice {
   date: string
   cause: string
   preserved: boolean
+  /** Text added to Notes_Insectary_data on Save ("d/m/yy INI: text", after the notes there); '' adds none. */
+  note: string
 }
 export type ChoiceField = keyof DeathChoice
 /** The values a card has of its own (set with the card selected), by Insectary ID; the rest come from the panel. */
 export type OwnChoices = Record<string, Partial<DeathChoice>>
 
-/** A card's date, cause and preservation: its own where it has them, else the panel's (for all cards). */
+/** A card's date, cause, preservation and note: its own where it has them, else the panel's (for all cards). */
 export function choiceFor(all: DeathChoice, own: OwnChoices, id: string): DeathChoice {
   const mine = own[id]
   return mine ? { ...all, ...mine } : all
@@ -477,17 +480,48 @@ export function keepOwn(own: OwnChoices, ids: string[]): OwnChoices {
   return Object.fromEntries(Object.entries(own).filter(([id]) => keep.has(id)))
 }
 
+/** Phrases the team writes in the notes of a death (English, as in the sheet): quick buttons. */
+export const DEATH_NOTE_PHRASES = [
+  'Only wings found',
+  'Eaten by something',
+  'Head eaten',
+  "Deformed wings, can't fly",
+  'Emerged incomplete',
+  'With fungi',
+  'Too dry to preserve',
+  'Preserved for pheromones',
+  'Preserved in ultrafridge at -80ºC',
+]
+
+export const NOTES = 'Notes_Insectary_data'
 /**
- * The cells "Save" writes for one card, with its own date, cause and
- * preservation (choiceFor): what the table's «Escribir fecha y causa» writes
- * (deathCells), plus, for a body preserved now, its CAM, tube (`sample`) and
- * the medium. A butterfly already recorded dead gets no tube here (Tubos does).
+ * The note a card adds on Save: Notes_Insectary_data with "d/m/yy INI: text"
+ * after what is there (" | "), never replacing it; null when the note is empty
+ * (or the cell is a formula).
+ */
+export function noteCell(row: TableRow, get: Getter, note: string, today: number, initials: string): DeathCell | null {
+  const text = note.trim()
+  if (!text || row.formulas.includes(NOTES)) return null
+  return { field: NOTES, value: appendNote(get(row, NOTES), text, today, initials), overwrite: true }
+}
+
+/**
+ * The cells "Save" writes for one card, with its own date, cause,
+ * preservation and note (choiceFor): what the table's «Escribir fecha y causa»
+ * writes (deathCells), plus, for a body preserved now, its CAM, tube (`sample`)
+ * and the medium; then the note, dated `today` and signed with `initials`.
+ * A butterfly already recorded dead gets no tube here (Tubos does), but its note.
  */
 export function cardCells(
   row: TableRow,
   get: Getter,
   choice: DeathChoice,
-  { sample, medium }: { sample?: { cam: string; tube: string }; medium: string },
+  {
+    sample,
+    medium,
+    today,
+    initials = '',
+  }: { sample?: { cam: string; tube: string }; medium: string; today: number; initials?: string },
 ): DeathCell[] {
   const serial = choice.date ? serialFromIso(choice.date) : null
   const dying = lifeOf(f => get(row, f)).state !== 'dead'
@@ -495,5 +529,7 @@ export function cardCells(
     choice.preserved && dying
       ? { cam: sample?.cam.trim().toUpperCase() || '', tube: sample?.tube.trim().toUpperCase() || '', medium }
       : undefined
-  return deathCells(row, get, { serial, cause: choice.cause, notPreserved: !choice.preserved, preserve })
+  const cells = deathCells(row, get, { serial, cause: choice.cause, notPreserved: !choice.preserved, preserve })
+  const note = noteCell(row, get, choice.note ?? '', today, initials)
+  return note ? [...cells, note] : cells
 }

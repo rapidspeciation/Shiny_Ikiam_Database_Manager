@@ -47,8 +47,8 @@ export default {
   Falta: 'Missing',
   'Sin sitio para otro tubo': 'No free tube slot',
   'Ya registradas como muertas, sin tubo aquí: {ids}': 'Already recorded dead, no tube here: {ids}',
-  'Busca y añade mariposas: aquí eliges la fecha, la causa y si se preservan, y las guardas.':
-    'Find and add butterflies: here you choose the date, the cause and whether they are preserved, and save them.',
+  'Busca y añade mariposas: aquí eliges la fecha, la causa, si se preservan y una nota, y las guardas.':
+    'Find and add butterflies: here you choose the date, the cause, whether they are preserved and a note, and save them.',
   'Registrar muertes': 'Record deaths',
   'Tubos de la gradilla {rack}': 'Tubes from the rack {rack}',
   'Últimas muertes registradas': 'Latest recorded deaths',
@@ -71,7 +71,7 @@ export default {
   'varias causas': 'several causes',
   'algunas preservadas': 'some preserved',
   'Historial de Muertes': 'Deaths history',
-  'Toca una tarjeta para darle su propia fecha, causa o preservación.': 'Tap a card to give it its own date, cause or preservation.',
+  'Toca una tarjeta para darle su propia fecha, causa, preservación o nota.': 'Tap a card to give it its own date, cause, preservation or note.',
   '{id} seleccionada: toca para quitarla de la selección': '{id} selected: tap to unselect it',
   'Seleccionar {id}': 'Select {id}',
   'Ver la ficha de {id}': "Open {id}'s details",
@@ -86,4 +86,17 @@ export default {
   'Unas preservadas y otras no: elige una opción para todas las seleccionadas': 'Some preserved and some not: choose one for all the selected ones',
   'Se aplica a la única tarjeta': 'Applies to the only card',
   'Se aplica a las {n} tarjetas': 'Applies to all {n} cards',
+  // The note (cards panel and editor)
+  'Notas distintas: lo que escribas será la de todas las seleccionadas': 'Different notes: what you type becomes the note of all the selected ones',
+  'Nota, en inglés (p. ej. Only wings found)': 'Note, in English (e.g. Only wings found)',
+  'Al guardar se añade a Notes_Insectary_data, tras las notas que ya tiene: «{prefix} …»':
+    'Save adds it to Notes_Insectary_data, after the notes already there: “{prefix} …”',
+  'Con nota propia: {ids}': 'With their own note: {ids}',
+  'Ya registrada: solo se añade la nota': 'Already recorded: only the note is added',
+  'con nota': 'with a note',
+  'algunas con nota': 'some with a note',
+  'Sin notas': 'No notes',
+  'Se añade al guardar la muerte: «{prefix} …»': 'Added when the death is saved: “{prefix} …”',
+  'Corregir las notas escritas': 'Correct the notes already written',
+  'Todo el texto de Notes_Insectary_data': 'The whole text of Notes_Insectary_data',
 }
