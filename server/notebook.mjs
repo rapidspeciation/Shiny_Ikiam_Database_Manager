@@ -5,6 +5,7 @@
 // (server/notebook-tool.mjs).
 
 import { isSumField, parseDateText, simpleSum } from './schema.mjs';
+import { msg } from './messages.mjs';
 
 /**
  * What the team types in Insectary_data for a butterfly that died and was not
@@ -240,6 +241,13 @@ const clip = (value, length) => String(value ?? '').slice(0, length);
  */
 export function checkTranscription({ kind, year = null, lines = [] }) {
   if (!KINDS[kind]) throw new Error(`Unknown notebook kind "${clip(kind, 40)}": use one of ${KIND_IDS.join(', ')}`);
+  // The lines sent as JSON text (some clients pass an array argument as a string).
+  if (typeof lines === 'string')
+    try {
+      lines = JSON.parse(lines);
+    } catch {
+      throw new Error('lines must be a list of lines (it came as text that is not JSON)');
+    }
   if (!Array.isArray(lines) || !lines.length) throw new Error('Give the lines of the page');
   const columns = columnsOf(KINDS[kind]);
   const fields = new Set(columns);
@@ -467,6 +475,20 @@ export function sameValue(field, sheet, notebook) {
 
 const DOUBT = 0.8;
 
+/**
+ * Why a cell is doubtful: a check's reason, the reader's own words, a value
+ * outside a list, or its confidence. { reason, reasonMsg? } (reasonMsg: the
+ * descriptor the interface translates; the reader's words go as they are).
+ */
+function doubtReason(check, said, unlisted, confidence) {
+  if (check?.reason) return { reason: check.reason, ...(check.reasonMsg ? { reasonMsg: check.reasonMsg } : {}) };
+  if (said) return { reason: said };
+  const m = unlisted
+    ? msg('«{value}» no está en la lista de {field}', { value: String(unlisted.value), field: unlisted.field })
+    : msg('Lectura dudosa (confianza {confidence})', { confidence: Math.round(confidence * 100) / 100 });
+  return { reason: m.text, reasonMsg: m.msg };
+}
+
 /** "d/m/yy INI: text", the form notes take in the workbook. */
 export function noteText(text, { today, initials }) {
   const [y, m, d] = String(today).split('-');
@@ -578,14 +600,16 @@ export function clutchRuns(texts, crossed, plausible = () => null) {
       const theirs = plausible(other.clutch, run.emerge);
       const swap = mine === false && theirs === true;
       if (!swap && (!sameDay || other.lines.length <= run.lines.length || (mine === true && theirs === false))) continue;
+      const why = swap
+        ? msg('Leído {read}, entre líneas del {other}: el {read} no tiene una puesta 20–90 días antes', { read: run.clutch, other: other.clutch })
+        : msg('Clutch {read} entre líneas del {other} (misma emergencia)', { read: run.clutch, other: other.clutch });
       for (const i of run.lines)
         out[i] = {
           value: swap ? other.clutch : run.clutch,
           alternatives: [swap ? run.clutch : other.clutch],
           confidence: swap ? 0.4 : 0.6,
-          reason: swap
-            ? `Leído ${run.clutch}, entre líneas del ${other.clutch}: el ${run.clutch} no tiene una puesta 20–90 días antes`
-            : `Clutch ${run.clutch} entre líneas del ${other.clutch} (misma emergencia)`,
+          reason: why.text,
+          reasonMsg: why.msg,
         };
       return;
     }
@@ -640,11 +664,16 @@ export function idChecks(texts, crossed) {
           .sort((a, b) => a.far - b.far || (b.o.startsWith('07') ? 1 : 0) - (a.o.startsWith('07') ? 1 : 0));
         const fits = ranked.filter(r => r.far <= 20);
         const best = fits[0]?.far <= 2 ? fits[0] : null;
+        const why =
+          p.digits.length < size
+            ? msg('{value} tiene {n} cifras (son {size}): ¿falta una?', { value: written, n: p.digits.length, size })
+            : msg('{value} tiene {n} cifras (son {size}): ¿una de más?', { value: written, n: p.digits.length, size });
         put({
           value: best ? `${p.prefix}${best.o}` : written,
           alternatives: [...(best ? [written] : []), ...fits.filter(r => r !== best).slice(0, 2).map(r => `${p.prefix}${r.o}`)],
           confidence: 0.3,
-          reason: `${written} tiene ${p.digits.length} cifras (son ${size}): ${p.digits.length < size ? '¿falta una?' : '¿una de más?'}`,
+          reason: why.text,
+          reasonMsg: why.msg,
         });
         return;
       }
@@ -655,11 +684,14 @@ export function idChecks(texts, crossed) {
       const n = Number(p.digits);
       if (!before || !after || Math.abs(after.n - before.n) > 20 || Math.min(Math.abs(n - before.n), Math.abs(n - after.n)) <= 50) return;
       const expected = before.n + (i - before.i);
+      const cam = n => `CAM${String(n).padStart(6, '0')}`;
+      const why = msg('Fuera de la serie de las líneas vecinas ({from} … {to})', { from: cam(before.n), to: cam(after.n) });
       put({
         value: written,
-        alternatives: expected < after.n || expected === after.n - (after.i - i) ? [`CAM${String(expected).padStart(6, '0')}`] : [],
+        alternatives: expected < after.n || expected === after.n - (after.i - i) ? [cam(expected)] : [],
         confidence: 0.5,
-        reason: `Fuera de la serie de las líneas vecinas (CAM${String(before.n).padStart(6, '0')} … CAM${String(after.n).padStart(6, '0')})`,
+        reason: why.text,
+        reasonMsg: why.msg,
       });
     });
   }
@@ -716,7 +748,7 @@ export function noteColumns(text, field = 'Notes_Insectary_data') {
  * give the medium, a wing clip, Research_purpose Pheromones and the cause.
  * `text`: the line's values as written (after noteColumns); `row`: the sheet
  * row's values; `death`/`intro`: the dates as serials (line or row), or null.
- * Returns { values: { field: value as the sheet stores it }, reasons: { field: why } }.
+ * Returns { values: { field: value as the sheet stores it }, reasons: { field: why, a msg() } }.
  */
 export function impliedValues({ text, row = {}, note = {}, death = null, intro = null }) {
   const values = {};
@@ -728,7 +760,7 @@ export function impliedValues({ text, row = {}, note = {}, death = null, intro =
   const said = [note.medium && `«${note.medium === 'Ethanol' ? 'ethanol' : 'flash frozen'}»`, note.wingClip && '«wc»', note.pheromone && '«pheromone»', note.preserved && '«preserved»', note.unknown && '«unk»']
     .filter(Boolean)
     .join(', ');
-  const fromNote = `De la nota: ${said}`;
+  const fromNote = msg('De la nota: {words}', { words: said });
   const written = String(text.Death_cause ?? row.Death_cause ?? '').trim();
   const sample = has('CAM_ID') || has('Tube_1_id');
   const died = death !== null || !isNone(written) || note.unknown;
@@ -737,26 +769,27 @@ export function impliedValues({ text, row = {}, note = {}, death = null, intro =
   let cause = isNone(written) ? null : written;
   if (!cause && note.unknown) set('Death_cause', (cause = 'Unknown'), fromNote);
   else if (!cause && death !== null && (note.preserved || note.pheromone || (sample && (note.medium || (intro !== null && death === intro)))))
-    set('Death_cause', (cause = 'Killed_Preserved'), note.preserved || note.pheromone || note.medium ? fromNote : 'Con CAM y muerta el día que emergió');
+    set('Death_cause', (cause = 'Killed_Preserved'), note.preserved || note.pheromone || note.medium ? fromNote : msg('Con CAM y muerta el día que emergió'));
   if (note.pheromone) set('Research_purpose', 'Pheromones', fromNote);
   const killed = /^killed/i.test(cause ?? '');
   const year = death ?? intro;
   const recent = year !== null && new Date(Date.UTC(1899, 11, 30) + year * 864e5).getUTCFullYear() >= 2025;
   const tube1 = has('Tube_1_id');
+  const usual = msg('Lo habitual desde 2025');
   if (died && !sample && !killed && cause) {
-    for (const [field, value] of Object.entries(NOT_PRESERVED)) set(field, value, 'Muerte sin preservar: como Muertes (NA / NOT_COLLECTED)');
+    for (const [field, value] of Object.entries(NOT_PRESERVED)) set(field, value, msg('Muerte sin preservar: como Muertes (NA / NOT_COLLECTED)'));
   } else if (sample && died && (killed || note.preserved || note.medium || note.tubes?.length)) {
-    const why = 'Individuo preservado: lo que el equipo escribe siempre';
-    if (death !== null) set('Preservation_date', death, 'La fecha de muerte (preservado ese día)');
-    if (killed) set('Preserved_Dead_Alive', 'Alive', 'Killed_Preserved: preservado vivo');
+    const why = msg('Individuo preservado: lo que el equipo escribe siempre');
+    if (death !== null) set('Preservation_date', death, msg('La fecha de muerte (preservado ese día)'));
+    if (killed) set('Preserved_Dead_Alive', 'Alive', msg('Killed_Preserved: preservado vivo'));
     set('Location_body', 'Ikiam', why);
     if (tube1) {
       set('Tube_1_tissue', note.wingClip ? WING_CLIP : 'WHOLE_ORGANISM', note.wingClip ? fromNote : why);
-      if (note.medium || recent) set('T1_Preservation_medium', note.medium ?? 'Flash frozen', note.medium ? fromNote : 'Lo habitual desde 2025');
+      if (note.medium || recent) set('T1_Preservation_medium', note.medium ?? 'Flash frozen', note.medium ? fromNote : usual);
     }
     if (has('Tube_2_id')) {
       set('Tube_2_tissue', 'WHOLE_ORGANISM', why);
-      if (note.medium || recent) set('T2_Preservation_medium', note.medium ?? 'Flash frozen', note.medium ? fromNote : 'Lo habitual desde 2025');
+      if (note.medium || recent) set('T2_Preservation_medium', note.medium ?? 'Flash frozen', note.medium ? fromNote : usual);
     } else if (!note.wingClip) {
       set('Tube_2_id', 'NA', why);
       set('Tube_2_tissue', 'NA', why);
@@ -766,7 +799,7 @@ export function impliedValues({ text, row = {}, note = {}, death = null, intro =
   } else if (tube1 && (note.wingClip || note.medium)) {
     // A wing clip taken from a living butterfly: its tube's tissue and medium.
     if (note.wingClip) set('Tube_1_tissue', WING_CLIP, fromNote);
-    if (note.medium || recent) set('T1_Preservation_medium', note.medium ?? 'Flash frozen', note.medium ? fromNote : 'Lo habitual desde 2025');
+    if (note.medium || recent) set('T1_Preservation_medium', note.medium ?? 'Flash frozen', note.medium ? fromNote : usual);
   }
   return { values, reasons };
 }
@@ -1038,7 +1071,7 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         else if (field === 'Wild_Reared' && !isNone(text['CLUTCH NUMBER'])) inferred = 'Reared';
         // A death's other columns (the not-preserved block, a preserved butterfly's), the note's words.
         else if (deathKind && IMPLIED_FIELDS.has(field) && impliedNow().values[field] !== undefined)
-          [inferred, hint] = [impliedNow().values[field], impliedNow().reasons[field]];
+          [inferred, hint] = [impliedNow().values[field], impliedNow().reasons[field] ?? null];
       }
       let source = check ? check.value : (inferred ?? text[field]);
       if (field === 'INSECTARY OR LABORATORY' && owner.doubt && !typed) confidence = Math.min(confidence, 0.5);
@@ -1080,7 +1113,10 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
       }
       // A shortened list value is completed when only one fits ("interme" → intermedia).
       const list = lookup.list?.(field);
+      // The reading as written when it is not in a non-strict list (false when it is, or there is none).
       let unlisted = false;
+      // The list values a reading outside the list could be ("salapia": the listed salapias), offered as its alternatives.
+      let guesses = [];
       if (list && typeof value === 'string' && !isNone(value) && !list.values.has(value)) {
         const key = textKey(value);
         const hits = [...list.values].filter(o => textKey(o).startsWith(key));
@@ -1101,12 +1137,19 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         else if (tail.length === 1) value = tail[0];
         else if (own) value = own;
         else if (!hits.length && words.length === 1) value = words[0];
-        else unlisted = true;
+        else {
+          unlisted = String(value);
+          guesses = [...new Set([...hits, ...words, ...tail])].slice(0, 3);
+          // The species' epithet alone ("salapia"): its nominate subspecies is the best reading, still to check.
+          const nominate = words.filter(o => textKey(o).endsWith(` ${key} ${key}`));
+          if (nominate.length === 1) [value, guesses] = [nominate[0], guesses.filter(o => o !== nominate[0])];
+        }
       }
       const alternatives = [
         ...(check?.alternatives ?? []),
         ...(line.a[field] ?? []),
         ...(field === 'INSECTARY OR LABORATORY' && owner.doubt ? ['lab'] : []),
+        ...guesses,
       ]
         .map(a => readValue(field, a, { year: pageYear, sheet: kind.sheet }).value)
         // A clutch as Insectary_stocks writes it ("685 (3)").
@@ -1122,11 +1165,7 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         // A doubtful reading (or a value outside a list that is not strict, a species name) goes into the
         // proposal highlighted, with its other readings, for the person to check before applying.
         doubt,
-        reason: doubt
-          ? (check?.reason ??
-            line.r?.[field] ??
-            (unlisted && !list?.strict ? `«${value}» no está en la lista de ${field}` : `Lectura dudosa (confianza ${Math.round(confidence * 100) / 100})`))
-          : null,
+        ...(doubt ? doubtReason(check, line.r?.[field], unlisted && !list?.strict ? { value: unlisted, field } : null, confidence) : { reason: null }),
         alternatives: [...new Set(alternatives)],
         edited: typed,
         include: false,
@@ -1135,9 +1174,9 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         inferred: inferred !== null,
         message:
           error ??
-          hint ??
+          hint?.text ??
           (unlisted && !list?.strict && !typed
-            ? `«${value}» no está en la lista de ${field}`
+            ? `«${unlisted}» no está en la lista de ${field}`
             : completed[i]?.[field]
               ? `Escrito «${completed[i][field]}»: sigue el número de la línea de arriba`
               : kind.keys.includes(field) && item.readAs && record
@@ -1229,6 +1268,7 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
       }
       // Doubtful cells go in too (highlighted, never left out); an unreadable one (null) stays out.
       cell.include = usable && ['fill', 'conflict', 'new'].includes(cell.status);
+      if (hint) cell.hintMsg = hint.msg;
       cells[field] = cell;
     }
     const changes = Object.values(cells).filter(c => c.include).length;
@@ -1300,9 +1340,11 @@ export function proposalRows(review) {
           // A note's other readings would be written with its date and initials: only the value's.
           alternatives: /^Notes|^NOTES$/.test(field) ? [] : cell.alternatives.slice(0, 3),
           reason: clip(cell.reason, 200),
+          ...(cell.reasonMsg ? { reasonMsg: cell.reasonMsg } : {}),
         };
       if (cell.inferred) inferred.push(field);
-      if (cell.message && !cell.doubt) hints[field] = clip(cell.message, 200);
+      // Where an implied value comes from (a template, the note's words), for the person.
+      if (cell.hintMsg && !cell.doubt) hints[field] = { text: clip(cell.message, 200), msg: cell.hintMsg };
     }
     const note = clip([`Línea ${line.n}: «${line.raw}»`, ...notes].join(' · '), 300);
     const meta = {

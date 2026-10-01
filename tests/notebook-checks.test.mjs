@@ -147,7 +147,8 @@ test('match_notebook fills the implied columns, keeps what the row has, and the 
   assert.equal(clip.cells.Research_purpose.value, 'Pheromones');
   const { changes } = proposalRows(review);
   assert.ok(changes[0].inferred.includes('Death_cause'));
-  assert.match(changes[0].hints.Location_body, /preservado/);
+  assert.match(changes[0].hints.Location_body.text, /preservado/);
+  assert.deepEqual(changes[0].hints.Location_body.msg, { key: 'Individuo preservado: lo que el equipo escribe siempre' });
   assert.ok(!('Notes_Insectary_data' in changes[2].values));
 });
 
@@ -220,6 +221,22 @@ test('CAMs and tubes that do not fit their run: a digit too many or dropped, or 
   const alone = idChecks([{ Tube_1_id: 'FS3886683' }], []);
   assert.equal(alone[0].Tube_1_id.value, 'FS3886683');
   assert.deepEqual(alone[0].Tube_1_id.alternatives, []);
+});
+
+test('a value outside a list goes in doubtful, with the listed values it could be; an epithet takes its nominate subspecies', () => {
+  const species = { strict: false, values: new Set(['Ithomia salapia salapia', 'Ithomia salapia derasa', 'Mechanitis lysimnia']) };
+  const review = buildReview({
+    transcription: page('emergence', [{ v: { Insectary_ID: '1AB', SPECIES: 'salapia' } }, { v: { Insectary_ID: '2AB', SPECIES: 'Ithomia' } }]),
+    today: '2026-09-30',
+    lookup: lookupOf([blank('1AB', 5), blank('2AB', 6)], { lookup: { list: field => (field === 'SPECIES' ? species : undefined) } }),
+  });
+  const [salapia, genus] = review.lines.map(l => l.cells.SPECIES);
+  assert.equal(salapia.value, 'Ithomia salapia salapia');
+  assert.ok(salapia.doubt && salapia.include);
+  assert.deepEqual(salapia.alternatives, ['Ithomia salapia derasa']);
+  assert.equal(salapia.reason, '«salapia» no está en la lista de SPECIES');
+  assert.equal(genus.value, 'Ithomia', 'no single reading: kept as written');
+  assert.deepEqual(genus.alternatives, ['Ithomia salapia salapia', 'Ithomia salapia derasa']);
 });
 
 test('an ID not in the sheet: did you mean the IDs one character away, nearest to its neighbours first', () => {

@@ -181,4 +181,20 @@ export default {
   'Hay {n} filas con {id} en Insectary_data': 'There are {n} rows with {id} in Insectary_data',
   '{id} no tiene fila preparada en Insectary_data': '{id} has no pre-made row in Insectary_data',
   '{id} no es un Insectary ID preasignado libre': '{id} is not a free pre-made Insectary ID',
+  // server/notebook.mjs: why a notebook cell is doubtful, and where an implied value comes from
+  'Lectura dudosa (confianza {confidence})': 'Doubtful reading (confidence {confidence})',
+  '«{value}» no está en la lista de {field}': '«{value}» is not in the list of {field}',
+  'Leído {read}, entre líneas del {other}: el {read} no tiene una puesta 20–90 días antes':
+    'Read {read}, among lines of {other}: {read} has no clutch laid 20–90 days before',
+  'Clutch {read} entre líneas del {other} (misma emergencia)': 'Clutch {read} among lines of {other} (same emergence)',
+  '{value} tiene {n} cifras (son {size}): ¿falta una?': '{value} has {n} digits ({size} expected): one missing?',
+  '{value} tiene {n} cifras (son {size}): ¿una de más?': '{value} has {n} digits ({size} expected): one too many?',
+  'Fuera de la serie de las líneas vecinas ({from} … {to})': 'Out of the run of the lines around it ({from} … {to})',
+  'De la nota: {words}': 'From the note: {words}',
+  'Con CAM y muerta el día que emergió': 'With a CAM and dead the day it emerged',
+  'Muerte sin preservar: como Muertes (NA / NOT_COLLECTED)': 'Death not preserved: as in Deaths (NA / NOT_COLLECTED)',
+  'Individuo preservado: lo que el equipo escribe siempre': 'Preserved: what the team always writes',
+  'La fecha de muerte (preservado ese día)': 'The death date (preserved that day)',
+  'Killed_Preserved: preservado vivo': 'Killed_Preserved: preserved alive',
+  'Lo habitual desde 2025': 'The usual since 2025',
 } as Record<string, string>

@@ -465,7 +465,12 @@ test('match_notebook matches a transcribed page and leaves one proposal beside T
     // The proposal keeps the doubt with the cell: its value, how sure, the alternatives and why.
     assert.equal(listed[0].changes[1].values.Sex, 'female');
     assert.deepEqual(listed[0].changes[1].doubts, {
-      Sex: { confidence: 0.5, alternatives: ['male'], reason: 'Lectura dudosa (confianza 0.5)' },
+      Sex: {
+        confidence: 0.5,
+        alternatives: ['male'],
+        reason: 'Lectura dudosa (confianza 0.5)',
+        reasonMsg: { key: 'Lectura dudosa (confianza {confidence})', vars: { confidence: 0.5 } },
+      },
     });
 
     // "Es macho": the page matched again replaces the proposal.
