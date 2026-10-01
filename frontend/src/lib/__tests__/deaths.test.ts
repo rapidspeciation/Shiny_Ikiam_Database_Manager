@@ -6,10 +6,13 @@ import {
   daysAlive,
   deathCells,
   factsOf,
+  hasGap,
   lifeOf,
   lookAlikes,
+  preservationGaps,
   rankCauses,
   suggest,
+  usedSamples,
   type Getter,
 } from '../deaths'
 import type { CellValue, TableRow } from '../types'
@@ -29,6 +32,18 @@ describe('what a death writes', () => {
     const cells = deathCells(r, saved, { serial: DAY, cause: 'Eaten', notPreserved: true })
     expect(asObject(cells)).toEqual({ Death_date: DAY, Death_cause: 'Eaten', ...NOT_PRESERVED })
     expect(cells.every(c => !c.overwrite)).toBe(true)
+    // Unused tubes: ID NA, tissue and medium NOT_COLLECTED (Franz, 1 Oct 2026), CAM NA.
+    const written = asObject(cells)
+    for (const n of [1, 2, 3, 4]) {
+      expect(written[`Tube_${n}_id`]).toBe('NA')
+      expect(written[`Tube_${n}_tissue`]).toBe('NOT_COLLECTED')
+    }
+    expect(written).toMatchObject({ CAM_ID: 'NA', T1_Preservation_medium: 'NOT_COLLECTED', T2_Preservation_medium: 'NOT_COLLECTED' })
+    // A tissue already typed NA (the habit until Sep 2026) takes NOT_COLLECTED; one with a value is kept.
+    const typed = row({ Insectary_ID: 'B8D', Tube_1_tissue: 'NA', Tube_2_tissue: 'WHOLE_ORGANISM' })
+    const again = asObject(deathCells(typed, saved, { serial: DAY, cause: 'Unknown', notPreserved: true }))
+    expect(again.Tube_1_tissue).toBe('NOT_COLLECTED')
+    expect('Tube_2_tissue' in again).toBe(false)
   })
   it('keeps what a row already has, never writes formula cells, and skips the block for Killed_Preserved', () => {
     const r = row(
@@ -103,6 +118,38 @@ describe('what a death writes', () => {
     expect(cells.Tube_1_id).toBeUndefined()
     expect(cells).toMatchObject({ Tube_2_id: 'FS2', Tube_2_tissue: 'WHOLE_ORGANISM', T2_Preservation_medium: 'Ethanol', Preserved_Dead_Alive: 'Dead' })
     expect(cells.Tube_3_id).toBe('NA')
+  })
+})
+
+describe('what a butterfly being preserved still lacks', () => {
+  it('a CAM and a tube each, no repeats, a free slot; a CAM it has is kept', () => {
+    const a = row({ Insectary_ID: 'G1D' })
+    const b = row({ Insectary_ID: 'G2D', CAM_ID: 'CAM070001', Tube_1_id: 'FS1', Tube_1_tissue: 'WING' })
+    const c = row({ Insectary_ID: 'G3D' })
+    const full = row({ Insectary_ID: 'G4D', CAM_ID: 'CAM2', Tube_1_id: 'FS2', Tube_2_id: 'NA' })
+    const gaps = preservationGaps([a, b, c, full], saved, {
+      G1D: { cam: 'cam078001', tube: 'FS9' },
+      G2D: { cam: '', tube: '' },
+      G3D: { cam: 'CAM078001 ', tube: '' },
+    })
+    expect(gaps.map(g => [g.id, g.slot, g.keepsCam, g.cam, g.tube])).toEqual([
+      ['G1D', 1, false, '', ''],
+      ['G2D', 2, true, '', 'missing'],
+      ['G3D', 1, false, 'repeated', 'missing'],
+      ['G4D', null, true, '', 'missing'],
+    ])
+    expect(gaps[2]).toMatchObject({ with: 'G1D', value: 'CAM078001' })
+    expect(gaps.map(hasGap)).toEqual([false, true, true, true])
+  })
+  it('a CAM or tube another butterfly has in the sheet is "repeated" (its own is fine)', () => {
+    const owner = row({ Insectary_ID: 'H1D', CAM_ID: 'CAM078500', Tube_1_id: 'FS90415999' })
+    const dying = row({ Insectary_ID: 'H2D' })
+    const used = usedSamples(buildIndex([owner, dying]))
+    expect(used.get('FS90415999')).toBe('H1D')
+    const [gap] = preservationGaps([dying], saved, { H2D: { cam: 'CAM078501', tube: 'fs90415999' } }, used)
+    expect(gap).toMatchObject({ cam: '', tube: 'repeated', with: 'H1D', value: 'FS90415999' })
+    const [free] = preservationGaps([dying], saved, { H2D: { cam: 'CAM078501', tube: 'FS90416001' } }, used)
+    expect(hasGap(free)).toBe(false)
   })
 })
 

@@ -97,22 +97,34 @@ No link parameters.
 
 ## Muertes — `#/muertes`
 
-Death date and cause of insectary butterflies (Insectary_data).
+Death date and cause of insectary butterflies (Insectary_data). Two modes,
+switched with «Tarjetas | Tabla» (kept per browser): cards by default on touch
+screens (phones either way up, tablets), the table on a PC. Both share the IDs
+chosen, the date, the cause and preserved or not, and write the same cells.
 
+**Tabla**:
 1. «Insectary IDs»: type an exact ID + Enter, pick from the list, paste a
    list (`N1D N2D, N3D`) or a range (`B0D-B9D`, pre-made order). Warns when an
    ID already died ("B9 ya murió el …": probably a mistyped ID).
 2. «Fecha de muerte» (today by default; weekday shown).
 3. «Causa por defecto» (Death_cause list: Unknown, Eaten, Spider,
    Disappearance, Killed_Preserved, Deformed, Heat stroke, Other…).
-4. «Sin preservar: CAM y tubos NA, medios NOT_COLLECTED» (on by default): for
-   causes other than Killed_Preserved and rows without CAM/tube, sets CAM,
-   tubes, tissues, Preservation_date, Location_body, Preserved_Dead_Alive to
-   `NA` and the media to `NOT_COLLECTED`.
+4. «Sin preservar: CAM y tubos NA, tejidos y medios NOT_COLLECTED» (on by
+   default): for causes other than Killed_Preserved and rows without CAM/tube,
+   sets CAM, tubes, Preservation_date, Location_body, Preserved_Dead_Alive to
+   `NA` and the tissues and media to `NOT_COLLECTED`.
 5. «Escribir fecha y causa (N)» fills only **empty** cells of the chosen rows;
    check the rows shown under «IDs elegidos» and let it save.
 
-Below: «Últimas N muertes registradas» («ver más»). No link parameters.
+Below: «Últimas N muertes registradas» («ver más»).
+
+**Tarjetas**: a search box (Insectary ID, CAM or tube; says alive or dead),
+the butterflies as cards, then «Fecha de muerte» (Hoy / Ayer / a date), the
+cause as buttons and «Sin preservar | Preservada». «Preservada» shows the
+medium and, right under it, each butterfly's CAM and tube (next free ones
+pre-filled; missing ones in amber). «Guardar N muertes» writes and saves at
+once, with «Deshacer». On a wide screen (tablet, phone sideways) the cards
+are on the left and the registering with Save on the right. No link parameters.
 
 ## Tubos — `#/tubos`
 

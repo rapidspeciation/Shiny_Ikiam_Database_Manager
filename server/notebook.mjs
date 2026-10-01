@@ -9,23 +9,25 @@ import { msg } from './messages.mjs';
 
 /**
  * What the team types in Insectary_data for a butterfly that died and was not
- * preserved (Unknown, Disappearance, Eaten…): the block DeathsView writes, plus
- * Research_purpose NA (insectary.md A8). Only empty cells take it.
+ * preserved (Unknown, Disappearance, Eaten…): the block Muertes writes
+ * (frontend/src/lib/deaths.ts), plus Research_purpose NA (insectary.md A8):
+ * tubes NA, their tissues and media NOT_COLLECTED (Franz, 1 Oct 2026). Only
+ * empty cells take it.
  */
 export const NOT_PRESERVED = {
   Research_purpose: 'NA',
   Preservation_date: 'NA',
   CAM_ID: 'NA',
   Tube_1_id: 'NA',
-  Tube_1_tissue: 'NA',
+  Tube_1_tissue: 'NOT_COLLECTED',
   T1_Preservation_medium: 'NOT_COLLECTED',
   Tube_2_id: 'NA',
-  Tube_2_tissue: 'NA',
+  Tube_2_tissue: 'NOT_COLLECTED',
   T2_Preservation_medium: 'NOT_COLLECTED',
   Tube_3_id: 'NA',
-  Tube_3_tissue: 'NA',
+  Tube_3_tissue: 'NOT_COLLECTED',
   Tube_4_id: 'NA',
-  Tube_4_tissue: 'NA',
+  Tube_4_tissue: 'NOT_COLLECTED',
   Preservation_medium: 'NOT_COLLECTED',
   Preserved_Dead_Alive: 'NA',
   Location_body: 'NA',
@@ -755,7 +757,8 @@ export function noteColumns(text, field = 'Notes_Insectary_data') {
  * empty cells (insectary.md A8, A9; ai-errors.md T3): a butterfly that died and
  * was not preserved takes the NA / NOT_COLLECTED block; a preserved one its
  * Preservation_date (= the death date), Preserved_Dead_Alive, Location_body
- * Ikiam, its tube's tissue and medium and the unused tubes NA; the note's words
+ * Ikiam, its tube's tissue and medium and the unused tubes NA (tissue and
+ * medium NOT_COLLECTED); the note's words
  * give the medium, a wing clip, Research_purpose Pheromones and the cause.
  * `text`: the line's values as written (after noteColumns); `row`: the sheet
  * row's values; `death`/`intro`: the dates as serials (line or row), or null.
@@ -803,10 +806,14 @@ export function impliedValues({ text, row = {}, note = {}, death = null, intro =
       if (note.medium || recent) set('T2_Preservation_medium', note.medium ?? 'Flash frozen', note.medium ? fromNote : usual);
     } else if (!note.wingClip) {
       set('Tube_2_id', 'NA', why);
-      set('Tube_2_tissue', 'NA', why);
+      set('Tube_2_tissue', 'NOT_COLLECTED', why);
       set('T2_Preservation_medium', 'NOT_COLLECTED', why);
     }
-    for (const field of ['Tube_3_id', 'Tube_3_tissue', 'Tube_4_id', 'Tube_4_tissue']) set(field, 'NA', why);
+    // Unused tubes: ID NA, tissue NOT_COLLECTED (Franz, 1 Oct 2026).
+    for (const n of [3, 4]) {
+      set(`Tube_${n}_id`, 'NA', why);
+      set(`Tube_${n}_tissue`, 'NOT_COLLECTED', why);
+    }
   } else if (tube1 && (note.wingClip || note.medium)) {
     // A wing clip taken from a living butterfly: its tube's tissue and medium.
     if (note.wingClip) set('Tube_1_tissue', WING_CLIP, fromNote);

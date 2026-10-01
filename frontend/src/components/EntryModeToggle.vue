@@ -2,29 +2,34 @@
 import { LayoutGrid, Table2 } from 'lucide-vue-next'
 import type { EntryMode } from '../composables/useEntryMode'
 
-/** The cards / table switch of a data-entry tab (see useEntryMode). */
+/** The cards / table switch of a data-entry tab (see useEntryMode). `compact`: icons only (a narrow phone). */
 const mode = defineModel<EntryMode>({ required: true })
+defineProps<{ compact?: boolean }>()
 </script>
 
 <template>
   <div class="inline-flex overflow-hidden rounded-md border border-stone-300 text-sm" role="group" :aria-label="$t('Vista')">
     <button
       type="button"
-      class="flex items-center gap-1 px-2.5 py-1.5"
+      class="flex items-center justify-center gap-1 px-2.5 py-1.5"
       :class="mode === 'cards' ? 'bg-brand-700 text-white' : 'bg-white text-stone-700 hover:bg-stone-50'"
       :aria-pressed="mode === 'cards'"
+      :aria-label="compact ? $t('Tarjetas') : undefined"
+      :title="compact ? $t('Tarjetas') : undefined"
       @click="mode = 'cards'"
     >
-      <LayoutGrid :size="15" /> {{ $t('Tarjetas') }}
+      <LayoutGrid :size="compact ? 18 : 15" /><template v-if="!compact"> {{ $t('Tarjetas') }}</template>
     </button>
     <button
       type="button"
-      class="flex items-center gap-1 border-l border-stone-300 px-2.5 py-1.5"
+      class="flex items-center justify-center gap-1 border-l border-stone-300 px-2.5 py-1.5"
       :class="mode === 'table' ? 'bg-brand-700 text-white' : 'bg-white text-stone-700 hover:bg-stone-50'"
       :aria-pressed="mode === 'table'"
+      :aria-label="compact ? $t('Tabla') : undefined"
+      :title="compact ? $t('Tabla') : undefined"
       @click="mode = 'table'"
     >
-      <Table2 :size="15" /> {{ $t('Tabla') }}
+      <Table2 :size="compact ? 18 : 15" /><template v-if="!compact"> {{ $t('Tabla') }}</template>
     </button>
   </div>
 </template>

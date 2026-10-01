@@ -13,22 +13,23 @@ export type Getter = (row: TableRow, field: string) => CellValue
 
 /**
  * What the team writes for a butterfly that was not preserved (Unknown,
- * Disappearance, Eaten…), as in every such row of 2026: no CAM, no tubes,
- * media NOT_COLLECTED.
+ * Disappearance, Eaten…): no CAM, no tubes (NA), their tissues and media
+ * NOT_COLLECTED (Franz, 1 Oct 2026: the intended method; NA in the tissues
+ * of 2026 was only quicker to type).
  */
 export const NOT_PRESERVED: Record<string, string> = {
   Preserved_Dead_Alive: 'NA',
   CAM_ID: 'NA',
   Tube_1_id: 'NA',
-  Tube_1_tissue: 'NA',
+  Tube_1_tissue: 'NOT_COLLECTED',
   T1_Preservation_medium: 'NOT_COLLECTED',
   Tube_2_id: 'NA',
-  Tube_2_tissue: 'NA',
+  Tube_2_tissue: 'NOT_COLLECTED',
   T2_Preservation_medium: 'NOT_COLLECTED',
   Tube_3_id: 'NA',
-  Tube_3_tissue: 'NA',
+  Tube_3_tissue: 'NOT_COLLECTED',
   Tube_4_id: 'NA',
-  Tube_4_tissue: 'NA',
+  Tube_4_tissue: 'NOT_COLLECTED',
   Preservation_medium: 'NOT_COLLECTED',
   Preservation_date: 'NA',
   Location_body: 'NA',
@@ -128,6 +129,55 @@ export function deathCells(
   return out
 }
 
+/** What a butterfly being preserved still lacks before Save: its CAM, its tube, a free tube slot, or a value another one has. */
+export interface PreservationGap {
+  id: string
+  /** The tube slot its body goes to (Tube_2 after a wing clip), null when the row has no room. */
+  slot: number | null
+  /** It has a CAM already (a wing clip): kept, nothing to type. */
+  keepsCam: boolean
+  cam: '' | 'missing' | 'repeated'
+  tube: '' | 'missing' | 'repeated'
+  /** The butterfly that has the same CAM or tube first ("repeated"). */
+  with?: string
+  /** The value repeated. */
+  value?: string
+}
+/** Whether a butterfly being preserved still lacks something (see preservationGaps). */
+export const hasGap = (g: PreservationGap) => g.slot === null || !!g.cam || !!g.tube
+/**
+ * Each butterfly being preserved and what it still lacks, in the order given
+ * (`samples`: the CAM and tube typed for each ID). A CAM or tube typed for two
+ * of them is "repeated" on the second, and so is one another butterfly has in
+ * the sheet already (`used`: search key → its Insectary ID, see usedSamples).
+ */
+export function preservationGaps(
+  rows: TableRow[],
+  get: Getter,
+  samples: Record<string, { cam: string; tube: string } | undefined>,
+  used: Map<string, string> = new Map(),
+): PreservationGap[] {
+  const seen = new Map(used)
+  return rows.map(row => {
+    const id = String(row.values.Insectary_ID ?? '')
+    const s = samples[id]
+    const keepsCam = !isBlank(get(row, 'CAM_ID'))
+    const gap: PreservationGap = { id, slot: firstEmptySlot(f => get(row, f)), keepsCam, cam: '', tube: '' }
+    const check = (kind: 'cam' | 'tube', value: string | undefined) => {
+      const v = searchKey(value ?? '')
+      if (!v) gap[kind] = 'missing'
+      else if (seen.has(v) && seen.get(v) !== id) {
+        gap[kind] = 'repeated'
+        gap.with ??= seen.get(v)
+        gap.value ??= v
+      } else seen.set(v, id)
+    }
+    if (!keepsCam) check('cam', s?.cam)
+    check('tube', s?.tube)
+    return gap
+  })
+}
+
 // --- Alive or dead
 
 export type LifeState = 'alive' | 'dead' | 'unknown'
@@ -194,6 +244,13 @@ export function buildIndex(rows: TableRow[]): Entry[] {
     }
     out.push({ row, id, key, samples, order: row.row })
   }
+  return out
+}
+
+/** Every CAM and tube the sheet's butterflies have (search key → Insectary ID), "NA" left out. */
+export function usedSamples(index: Entry[]): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const e of index) for (const s of e.samples) if (s !== 'NA' && !out.has(s)) out.set(s, e.id)
   return out
 }
 

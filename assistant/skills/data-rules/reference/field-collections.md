@@ -24,7 +24,7 @@ The kind is decided by `Release_Collect` first, then `Purpose`.
 |---|---|
 | CAM_ID, Tube_1_id | the next local wild CAM; its tube |
 | Tube_1_tissue | `WHOLE_ORGANISM` |
-| Tube_2–4 | `NA` (their tissues `NA` or `NOT_COLLECTED`) |
+| Tube_2–4 | `NA`; their tissues `NOT_COLLECTED` (Franz, 1 Oct 2026; older rows also `NA`) |
 | Preservation_medium | `Flash frozen` |
 | Preserved_dead_alive | `Alive`; `Dead` when found dead or dying, with a note "Preserved dead ~2h" |
 | Death_date = Preservation_date | the collection day (the next day if kept overnight; still `Alive`) |

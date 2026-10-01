@@ -98,7 +98,8 @@ Collection_data they are formulas looking the CAM up in the MEIER manifest
   `NON-ANDROCONIA WING CLIP` only for pheromone samples.
 - Split bodies: `HEAD | ABDOMEN`, `THORAX`, `THORAX | LEG`, `LEG`… per tube;
   sperm work: `**OTHER_REPRODUCTIVE_ANIMAL_TISSUE** | SPERMATOPHORE`,
-  `SPERM_SEMINAL_FLUID`. Unused tube: tissue `NA` (older rows `NOT_COLLECTED`).
+  `SPERM_SEMINAL_FLUID`. Unused tube: ID `NA`, tissue `NOT_COLLECTED` (Franz, 1 Oct 2026; Jun–Sep 2026
+  rows have `NA`).
 
 ## Preservation medium
 
