@@ -93,4 +93,5 @@ marks and shorthand not listed there.
 | derasa, travella, aquinia | Ithomia salapia forms (derasa is a list subspecies; aquinia uncertain: ask) |
 | lisymnia, lysymnia, Metonas, psmathe | misspellings of lysimnia, Methona, psamathe |
 | Muyuna, Cavernas, C.T.C, Narupa | places: use the Location_data name |
-| AB, NF (whiteboard codes), MS | not the sheet initials (ABV, NT); MS is ambiguous: ask |
+| AB, NF (whiteboard codes) | not the sheet initials (ABV, NT) |
+| MS on older pages and notes | María José Sánchez (MJS); later written MJS to tell her apart from Mónica Sánchez |
