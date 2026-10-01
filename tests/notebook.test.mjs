@@ -628,7 +628,8 @@ test('ins/este, ins/oda: the Insectary, and a note saying whose butterflies they
   assert.equal(g.cells['INSECTARY OR LABORATORY'].status, 'keep');
   assert.ok(!g.cells['INSECTARY OR LABORATORY'].include);
 
-  // "ins/lab" is a doubt between the rooms; a page of both rooms implies none.
+  // "ins/lab" is read as "ins/oda" (no "ins/lab" in the sheet): the room is sure, the note is the doubt;
+  // a page of both rooms implies none.
   const mixed = parseTranscription(
     JSON.stringify({
       kind: 'stocks',
@@ -640,8 +641,11 @@ test('ins/este, ins/oda: the Insectary, and a note saying whose butterflies they
     }),
   );
   const [x, , z] = buildReview({ transcription: mixed, today: '2026-09-30', lookup }).lines;
-  assert.ok(x.cells['INSECTARY OR LABORATORY'].doubt);
-  assert.deepEqual(x.cells['INSECTARY OR LABORATORY'].alternatives, ['Laboratory']);
+  assert.equal(x.cells['INSECTARY OR LABORATORY'].value, 'Insectary');
+  assert.ok(!x.cells['INSECTARY OR LABORATORY'].doubt);
+  assert.ok(x.cells.NOTES.doubt);
+  assert.match(x.cells.NOTES.write, /mariposas de Oda$/);
+  assert.match(x.cells.NOTES.reason, /ins\/oda/);
   assert.equal(z.cells['INSECTARY OR LABORATORY'].status, 'keep');
 });
 
@@ -724,4 +728,27 @@ test('match_notebook lists the wild-caught butterflies whose Collection_data row
   } finally {
     store.close();
   }
+});
+
+test('"994(F1)": the generation written after the clutch number goes to Generation; a batch "992(2)" stays', () => {
+  const rows = [
+    { id: 'g1', row: 30, version: 1, values: { 'CLUTCH NUMBER': 994 } },
+    { id: 'g2', row: 31, version: 1, values: { 'CLUTCH NUMBER': '992(2)' } },
+  ];
+  const lookup = { ...fakeLookup(rows), list: () => undefined };
+  const transcription = parseTranscription(
+    JSON.stringify({
+      kind: 'stocks',
+      year: 2026,
+      lines: [
+        { raw: '994(F1) lys', v: { 'CLUTCH NUMBER': '994(F1)', SPECIES: 'Mechanitis lysimnia' } },
+        { raw: '992(2) lys', v: { 'CLUTCH NUMBER': '992(2)', SPECIES: 'Mechanitis lysimnia' } },
+      ],
+    }),
+  );
+  const [a, b] = buildReview({ transcription, today: '2026-09-30', lookup }).lines;
+  assert.equal(a.status, 'match');
+  assert.equal(a.cells.Generation.value, 'F1');
+  assert.equal(b.status, 'match');
+  assert.equal(b.cells.Generation.value, 'NA', 'no "(F1)": the team types NA');
 });

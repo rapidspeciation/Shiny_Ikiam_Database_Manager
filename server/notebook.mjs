@@ -159,12 +159,20 @@ export const KIND_IDS = Object.keys(KINDS);
 export const columnsOf = kind => [...kind.fields, ...(kind.extra ?? [])];
 
 /** "Mechanitis lysimnia (F1)": the generation written with the species. */
+const CLUTCH_GENERATION = /^\s*(\d+\s*(?:\(\s*\d+\s*\))?)\s*\(\s*(F1|F2|BC|backcross)\s*\)\s*$/i;
+const generationName = g => (/^(bc|backcross)$/i.test(g) ? 'Backcross' : g.toUpperCase());
 const GENERATION = /\(\s*(F1|F2|BC|backcross)\s*\)|\s(F1|F2)\s*$/i;
 /**
  * A generation written after the species goes to the Generation column (F1,
  * F2, Backcross), unless the line gives Generation itself; the species loses it.
  */
 export function generationFromSpecies(text) {
+  // "994(F1)": the generation written after the clutch number (a batch, "992(2)", stays).
+  const clutch = typeof text['CLUTCH NUMBER'] === 'string' ? CLUTCH_GENERATION.exec(text['CLUTCH NUMBER']) : null;
+  if (clutch) {
+    text['CLUTCH NUMBER'] = clutch[1].trim();
+    if (isNone(text.Generation)) text.Generation = generationName(clutch[2]);
+  }
   const species = text.SPECIES;
   const m = typeof species === 'string' ? GENERATION.exec(species) : null;
   if (!m) return text;
@@ -172,7 +180,7 @@ export function generationFromSpecies(text) {
   const rest = species.replace(m[0], ' ').replace(/\s+/g, ' ').trim();
   if (rest) text.SPECIES = rest;
   else delete text.SPECIES;
-  if (isNone(text.Generation)) text.Generation = g === 'BC' || g === 'BACKCROSS' ? 'Backcross' : g;
+  if (isNone(text.Generation)) text.Generation = generationName(g);
   return text;
 }
 
@@ -205,7 +213,8 @@ const tidy = s =>
 /**
  * Whose butterflies a clutch line says (from its INSECTARY OR LABORATORY cell, or a code
  * copied into its notes): the column becomes "ins", the notes lose the code and the owner's
- * note is returned apart. "ins/lab" is a doubt between the two rooms. Changes `text` in place.
+ * note is returned apart. "ins/lab" is read as "ins/oda" (the sheet has no "ins/lab", and the
+ * codes look alike in the notebooks), a doubt on the note. Changes `text` in place.
  */
 export function insectaryOwner(text) {
   const out = { owner: null, doubt: false };
@@ -214,7 +223,7 @@ export function insectaryOwner(text) {
   if (code) {
     const word = code[1].toLowerCase();
     if (OWNERS[word]) [out.owner, text['INSECTARY OR LABORATORY']] = [OWNERS[word], 'ins'];
-    else if (/^lab/.test(word)) out.doubt = true;
+    else if (/^lab/.test(word)) [out.owner, out.doubt, text['INSECTARY OR LABORATORY']] = ['Oda', true, 'ins'];
   }
   if (typeof text.NOTES === 'string' && text.NOTES.trim()) {
     let note = text.NOTES;
@@ -1074,7 +1083,9 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
           [inferred, hint] = [impliedNow().values[field], impliedNow().reasons[field] ?? null];
       }
       let source = check ? check.value : (inferred ?? text[field]);
-      if (field === 'INSECTARY OR LABORATORY' && owner.doubt && !typed) confidence = Math.min(confidence, 0.5);
+      // "ins/lab" read as "ins/oda": the room is sure, whose butterflies they are is not.
+      const ownerGuess = field === 'NOTES' && owner.doubt && !typed;
+      if (ownerGuess) confidence = Math.min(confidence, 0.5);
       // The note says whose butterflies they are, unless the row's note already does.
       if (field === 'NOTES' && owner.owner && !typed) {
         const parts = [text.NOTES, ownerNote(owner.owner)].filter(p => !isNone(p));
@@ -1148,7 +1159,7 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
       const alternatives = [
         ...(check?.alternatives ?? []),
         ...(line.a[field] ?? []),
-        ...(field === 'INSECTARY OR LABORATORY' && owner.doubt ? ['lab'] : []),
+        ...(ownerGuess && !isNone(text.NOTES) ? [text.NOTES] : []),
         ...guesses,
       ]
         .map(a => readValue(field, a, { year: pageYear, sheet: kind.sheet }).value)
@@ -1165,7 +1176,7 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         // A doubtful reading (or a value outside a list that is not strict, a species name) goes into the
         // proposal highlighted, with its other readings, for the person to check before applying.
         doubt,
-        ...(doubt ? doubtReason(check, line.r?.[field], unlisted && !list?.strict ? { value: unlisted, field } : null, confidence) : { reason: null }),
+        ...(doubt ? doubtReason(check, line.r?.[field] ?? (ownerGuess ? 'read "ins/lab": most likely "ins/oda"' : undefined), unlisted && !list?.strict ? { value: unlisted, field } : null, confidence) : { reason: null }),
         alternatives: [...new Set(alternatives)],
         edited: typed,
         include: false,
