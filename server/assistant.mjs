@@ -271,7 +271,7 @@ const TOOLS = [
     function: {
       name: 'apply_proposal',
       description:
-        "Write a pending proposal to Google Sheets. Only call this when the person's latest message explicitly approves it (e.g. 'sí, aplícalo', 'está correcto'). It writes what the table shows: your values, the cells the person typed, and not the cells the person set back to the sheet value (a row left with nothing to write is skipped). Optionally only some rows, by their index. While doubtful cells (match_notebook's, amber in the table) are not checked it writes nothing and returns them (doubtful: index, label, field, value, alternatives, reason): ask the person about each. confirmDoubtful: true writes them as they are, only when the person said so after seeing them; skipDoubtful: true writes only the sure cells.",
+        "Write a pending proposal to Google Sheets. Only call this when the person's latest message explicitly approves it (e.g. 'sí, aplícalo', 'está correcto'). It writes what the table shows: your values, the cells the person typed, and not the cells the person set back to the sheet value (a row left with nothing to write is skipped). Optionally only some rows, by their index. While doubtful cells (match_notebook's, amber in the table) are not checked it writes nothing and returns them (doubtful: index, label, field, value, alternatives, reason): ask the person about each. confirmDoubtful: true writes them as they are, only when the person said so after seeing them; skipDoubtful: true writes only the sure cells. Unreadable cells still empty are never written (they stay as the sheet has them); the answer lists them (unreadable, unreadableNote): ask the person for those values.",
       parameters: {
         type: 'object',
         properties: {
@@ -347,7 +347,7 @@ const TOOLS = [
     function: {
       name: 'get_proposal',
       description:
-        "A proposal as the person sees it now: each row with its index, values (dates YYYY-MM-DD), note and personEdits (cells the person corrected by hand in the table, or set back to the sheet value with the table's «Valor de la hoja» button, with what you had proposed; those set back are not written) and doubtful (match_notebook's doubtful cells: alternatives, reason, checked). Read it when the person says they changed the table, before update_proposal on a proposal you did not just make, and before apply_proposal if they edited it.",
+        "A proposal as the person sees it now: each row with its index, values (dates YYYY-MM-DD), note and personEdits (cells the person corrected by hand in the table, or set back to the sheet value with the table's «Valor de la hoja» button, with what you had proposed; those set back are not written) doubtful (match_notebook's doubtful cells: alternatives, reason, checked) and unreadable (cells the AI could not read: reason, partial, filled; empty ones are never written). Read it when the person says they changed the table, before update_proposal on a proposal you did not just make, and before apply_proposal if they edited it.",
       parameters: { type: 'object', properties: { proposalId: { type: 'string' } }, required: ['proposalId'] },
     },
   },
