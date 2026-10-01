@@ -195,7 +195,7 @@ function write() {
     <div class="flex min-h-0 flex-1 flex-col">
       <p v-if="!ready" class="p-6 text-stone-500">{{ $t('Cargando {sheet}…', { sheet: 'Insectary_data' }) }}</p>
       <template v-else>
-        <section v-if="chosenRows.length" class="flex max-h-[45%] shrink-0 flex-col border-b-4 border-stone-200">
+        <section v-if="chosenRows.length" class="flex max-h-[55%] shrink-0 flex-col border-b-4 border-stone-200">
           <p class="hint px-4 py-1">
             <strong>{{ $t('IDs elegidos ({n})', { n: chosenRows.length }) }}</strong>
             <template v-if="toWrite.length">
@@ -216,7 +216,7 @@ function write() {
             :frozen="['Insectary_ID']"
             :header-filters="false"
             :newest-first="false"
-            :height="`${Math.min(chosenRows.length, 10) * 2.25 + 2.5}rem`"
+            :height="`${Math.min(chosenRows.length, 10) * 2.25 + 2.5 + 3}rem`"
             label-field="Insectary_ID"
             @notice="notify"
           />

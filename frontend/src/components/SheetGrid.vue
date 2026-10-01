@@ -544,7 +544,8 @@ function build() {
     data: buildData(),
     index: '__id',
     columns: columnDefs(),
-    height: props.height,
+    // The grid fills the box under the cell bar; `height` sizes the whole component (bar included).
+    height: '100%',
     layout: 'fitData',
     // Size changes are handled by watchSize, which ignores the tab being hidden and waits for open editors.
     autoResize: false,
