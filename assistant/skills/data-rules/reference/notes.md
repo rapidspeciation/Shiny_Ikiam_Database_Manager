@@ -58,9 +58,13 @@
 
 ## Standard phrases (keep the team's wording)
 
-Insectary_data: "Only found wings", "Body eaten", "Deformed wings, can not
-fly", "Emerged incomplete", "Preserved in ultrafridge at -80ºC", "Preserved in
-dryshipper", "F2 preserved for pheromons", "With white flower" / "Without white
+How it died goes in `Death_cause` (its list: Eaten, Spider, Ants, Deformed,
+Unknown - Only wings, Heat stroke, Disappearance, Killed_Preserved, Unknown…),
+not in the note. Notes like "Only found wings" or "Body eaten" are from before
+mid-2024, when the list lacked those values; don't write them now.
+
+Insectary_data: "Emerged incomplete", "Preserved in ultrafridge at -80ºC",
+"Preserved in dryshipper", "F2 preserved for pheromons", "With white flower" / "Without white
 flower" (pheromone treatment; paper CFB / SFB), "Larvae 4th instar",
 "prepupae", "Larvae founded dead, first instar", "Comes from CRISPR control
 #n", "Eggs found outside insectary on d/m/yy", "marked with lines in the
