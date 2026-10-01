@@ -128,6 +128,37 @@ export default {
   '{problem}: se guarda igual; corrígelo si es un error': '{problem}: saved anyway; correct it if it is a mistake',
   '{n} celdas de solo lectura no se modificaron': '{n} read-only cells were not changed',
   'Sin filas': 'No rows',
+  // Doubtful cells (match_notebook) and values the notebook line does not write
+  'Lectura dudosa': 'Doubtful reading',
+  'Dudosa: {reason}': 'Doubtful: {reason}',
+  'otras lecturas: {values}': 'other readings: {values}',
+  Dudosa: 'Doubtful',
+  Revisada: 'Checked',
+  '{reason} (por {who})': '{reason} (by {who})',
+  'No escrito en la línea': 'Not written on the line',
+  'Marcar revisadas': 'Mark as checked',
+  'Las celdas dudosas elegidas quedan como revisadas, con el valor que tienen':
+    'The selected doubtful cells are marked as checked, with the value they have',
+  'Elige celdas dudosas (bordes ámbar con «?»): las otras lecturas están en la barra de arriba':
+    'Select doubtful cells (amber edges with «?»): their other readings are in the bar above',
+  '{n} celda dudosa por revisar': '{n} doubtful cell to check',
+  '{n} celdas dudosas por revisar': '{n} doubtful cells to check',
+  'La IA no está segura de estas celdas: revisa cada una (edítala, elige otra lectura en la barra de arriba o márcala revisada). Clic: ir a la siguiente':
+    'The AI is not sure of these cells: check each one (edit it, pick another reading in the bar above, or mark it checked). Click: go to the next one',
+  'La IA no está segura: revísala antes de aplicar': 'The AI is not sure: check it before applying',
+  dudosa: 'doubtful',
+  'No está escrito en la línea: sale de la página, de la nota o de lo que el equipo escribe siempre':
+    'Not written on the line: it comes from the page, the note, or what the team always writes',
+  deducida: 'implied',
+  'Celdas dudosas sin revisar': 'Doubtful cells not checked',
+  '{n} celda dudosa sin revisar: ¿aplicarla como la leyó la IA?': '{n} doubtful cell not checked: apply it as the AI read it?',
+  '{n} celdas dudosas sin revisar: ¿aplicarlas como las leyó la IA?': '{n} doubtful cells not checked: apply them as the AI read them?',
+  'Revísalas en la tabla (bordes ámbar con «?»): edita, elige otra lectura en la barra de arriba o márcalas revisadas.':
+    'Check them in the table (amber edges with «?»): edit, pick another reading in the bar above, or mark them checked.',
+  Revisarlas: 'Check them',
+  'Aplicar sin las dudosas': 'Apply without the doubtful ones',
+  'Aplicar todo igualmente': 'Apply all anyway',
+  'Hay celdas dudosas sin revisar: revísalas o elige cómo aplicarlas': 'There are doubtful cells not checked: check them or choose how to apply them',
   'Copiado a {n} fila': 'Copied to {n} row',
   'Copiado a {n} filas': 'Copied to {n} rows',
 } as Record<string, string>

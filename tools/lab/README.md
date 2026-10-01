@@ -75,7 +75,21 @@ tools/lab/tailscale.sh          # open the lab to your other devices (tailnet on
     Case and spaces are ignored. Notes need to be 85% similar.
   - A blank truth cell that was left out of the proposal is right.
   - A filled truth cell that is missing from the proposal counts as missing.
-    This includes cells `match_notebook` held back as doubtful.
+  - Two scorings, side by side (`scoreCase` in `lib.mjs`):
+    - **legacy**, as every run before 1 Oct 2026 was scored, so the history
+      stays comparable: every truth cell counts, and a cell the proposal marks
+      doubtful (`change.doubts`) counts as left out, as `match_notebook` used
+      to leave those out. Notes by their words; a note without words is skipped.
+    - **new**: the case's `notOnPage` cells (truth not on the photo: death
+      dates from the Muertes round, tubes not on the page, terms added later)
+      are not counted; doubtful cells count by their value, and are reported
+      apart (flagged right, flagged wrong; "wrong unflagged" is a wrong value
+      nobody was warned about); a note of IDs only (the parent couple,
+      `U8A♀ + C8B♂`) is right when it names the same butterflies; notes
+      proposed where the sheet has none are counted (`extraNotes`, only in the
+      case's scored note columns). `errors.csv` lists the new scoring's errors.
+    Runs scored before both existed show only the legacy one in `--history`:
+    `--rescore <run>` adds the new one.
   - Only the thread's own proposals count: made or revised while it ran, or
     tagged with its run. An id in its tool results may be another run's
     proposal of the same rows (`overlaps`).
@@ -99,6 +113,14 @@ tools/lab/tailscale.sh          # open the lab to your other devices (tailnet on
 - Notes are compared without the `d/m/yy INI:` signatures the app adds. A note
   is right when it matches the whole note or one of its entries, since later
   entries in the sheet are not on the page.
+- `replay.mjs <run> --app <url> --token <token> --db <app.sqlite>` sends a
+  run's recorded `match_notebook`, `update_proposal` and `propose_changes`
+  calls (from the lab T3's database) again to an app running the current
+  server, and scores the result like the bench: it measures a change to the
+  tools without running the models again. Use a copy of the app (its own
+  database, e.g. a copy of `app/app.sqlite` with an `ai_tokens` row for `lab`,
+  and its own port), never the lab's running app. `update_proposal` indexes
+  are mapped to the same sheet rows in the new proposal.
 
 Stop with `tools/lab/app.sh --stop` and `tools/lab/t3.sh --stop`.
 
@@ -126,6 +148,9 @@ To add a case:
 3. Choose the scored columns with `fields`. By default every column is scored
    except the ID; list columns to leave out in `skip`. Cells calculated by a
    formula are never scored, but typed sums are.
+   Cells whose truth is not on the photo go in `notOnPage`, label → columns,
+   e.g. `"notOnPage": { "0VD": ["Death_date"], "958": ["NUMBER OF PUPA"] }`:
+   the new scoring leaves them out (the legacy one still counts them).
 4. Make sure people have checked those rows in the workbook. Then run
    `snapshot.sh` and restart `app.sh`, which rebuilds the seed with the new
    case's cells emptied.

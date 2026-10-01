@@ -150,6 +150,145 @@ function similarity(a, b) {
   return 1 - d[a.length][b.length] / Math.max(a.length, b.length, 1);
 }
 
+/** The words of a text (3+ letters, no accents, lower case), to compare notes loosely. */
+export function words(text) {
+  return new Set(
+    String(text ?? '')
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .match(/[a-z]{3,}/g) ?? [],
+  );
+}
+/** The butterfly IDs in a text (U8A, C8B, 9HO: letters and digits, 2 to 4), for notes with no words. */
+export function noteIds(text) {
+  return new Set(String(text ?? '').toUpperCase().match(/\b(?=[A-Z0-9]*\d)(?=[A-Z0-9]*[A-Z])[A-Z0-9]{2,4}\b/g) ?? []);
+}
+/** A proposal's note cell as text ({ replace } and { value } forms too), without the app's signatures. */
+const noteOf = cell => String((cell && typeof cell === 'object' ? (cell.replace ?? cell.value) : cell) ?? '');
+const SIGNATURE = /\d{1,2}\/\d{1,2}\/\d{2,4}\s+[A-Z]{1,4}:/g;
+
+/**
+ * A case's proposals scored against its ground truth (`rows`, from
+ * groundTruth), two ways:
+ *
+ * - legacy: as the bench always scored, comparable with the runs before
+ *   doubtful cells went into proposals. Every truth cell counts; a cell the
+ *   proposal marks doubtful (change.doubts) counts as left out, as the tool
+ *   used to leave it. Notes apart, by words; a note without words is skipped.
+ * - v2: cells whose truth is not on the photo (the case's `notOnPage`, label →
+ *   columns) are not counted; doubtful cells count by their value and are
+ *   counted apart (flagged right / flagged wrong; wrongUnflagged: wrong with no
+ *   flag); notes without words (a parent couple, "U8A♀ + C8B♂") are compared by
+ *   their IDs; a note proposed where the truth is blank is counted (extraNotes).
+ *
+ * `proposals`: [{ changes }] in the order they were made (later ones win).
+ * Returns { legacy, v2, errors, rowsProposed, rowsOutside }.
+ */
+export function scoreCase(kase, rows, proposals) {
+  const read = new Map(); // sheet row → { values, doubts }
+  let outside = 0;
+  for (const p of proposals)
+    for (const c of p.changes ?? []) {
+      if (c.context) continue;
+      const target = c.create ? rows.find(r => same(r.label, c.label, '')) : rows.find(r => r.row === c.row && c.sheet === kase.sheet);
+      if (!target) {
+        outside++;
+        continue;
+      }
+      const got = read.get(target.row) ?? { values: {}, doubts: {} };
+      Object.assign(got.values, c.values);
+      for (const field of Object.keys(c.values)) delete got.doubts[field];
+      Object.assign(got.doubts, Object.fromEntries(Object.entries(c.doubts ?? {}).filter(([f]) => f in c.values)));
+      read.set(target.row, got);
+    }
+  const skip = new Map(Object.entries(kase.notOnPage ?? {}).map(([label, fields]) => [String(label).toLowerCase(), new Set(fields)]));
+  const legacy = { correct: 0, total: 0, wrong: 0, missing: 0, filledCorrect: 0, filledTotal: 0, notesMatch: 0, notesTotal: 0 };
+  const v2 = {
+    correct: 0,
+    total: 0,
+    wrong: 0,
+    missing: 0,
+    notOnPage: 0,
+    flaggedRight: 0,
+    flaggedWrong: 0,
+    wrongUnflagged: 0,
+    notesMatch: 0,
+    notesTotal: 0,
+    extraNotes: 0,
+  };
+  const errors = [];
+  for (const r of rows) {
+    const got = read.get(r.row);
+    const off = skip.get(String(r.label).toLowerCase()) ?? new Set();
+    for (const [field, value] of Object.entries(r.values)) {
+      const proposed = got && Object.hasOwn(got.values, field) ? got.values[field] : undefined;
+      const flagged = !!got?.doubts?.[field];
+      const counted = !off.has(field);
+      if (!counted) v2.notOnPage++;
+      // Notes are scored apart: the sheet keeps each note's original date and author
+      // ("10/6/26 MJS: …"), which a photo does not show; only the words are compared.
+      if (/^notes?\b|^notes_/i.test(field)) {
+        const mine = noteOf(proposed).replace(SIGNATURE, ' ');
+        const truthWords = words(value);
+        const mineWords = words(mine);
+        const shared = [...mineWords].filter(w => truthWords.has(w)).length;
+        const byWords = mineWords.size > 0 && shared / mineWords.size >= 0.5;
+        if (truthWords.size) {
+          legacy.notesTotal++;
+          if (byWords && !flagged) legacy.notesMatch++;
+        }
+        if (!counted) continue;
+        // The truth's own signatures ("29/9/26 FCH:") are not on the page either: their initials are no word.
+        const truth = String(value ?? '').replace(SIGNATURE, ' ');
+        const truthIds = noteIds(truth);
+        const truthWords2 = words(truth);
+        if (truthWords2.size) {
+          const shared2 = [...mineWords].filter(w => truthWords2.has(w)).length;
+          v2.notesTotal++;
+          v2.notesMatch += mineWords.size > 0 && shared2 / mineWords.size >= 0.5;
+        } else if (truthIds.size) {
+          // A note of IDs only (the parent couple): right when it names the same butterflies.
+          v2.notesTotal++;
+          const mineIds = noteIds(mine);
+          v2.notesMatch += [...truthIds].every(id => mineIds.has(id));
+        } else if (norm(value, field) === '' && mine.trim()) v2.extraNotes++;
+        continue;
+      }
+      const has = norm(value, field) !== '';
+      const readValue = proposed?.formula ?? proposed;
+      const right = proposed !== undefined && same(readValue, value, field);
+      // Legacy: a doubtful cell was left out of the proposal.
+      legacy.total++;
+      legacy.filledTotal += has;
+      if (proposed === undefined || flagged) {
+        if (has) legacy.missing++;
+        else legacy.correct++;
+      } else if (right) {
+        legacy.correct++;
+        legacy.filledCorrect += has;
+      } else legacy.wrong++;
+      if (!counted) continue;
+      v2.total++;
+      if (proposed === undefined) {
+        if (has) {
+          v2.missing++;
+          errors.push({ row: r.label, field, read: null, truth: String(value), kind: 'missing' });
+        } else v2.correct++;
+      } else if (right) {
+        v2.correct++;
+        v2.flaggedRight += flagged;
+      } else {
+        v2.wrong++;
+        if (flagged) v2.flaggedWrong++;
+        else v2.wrongUnflagged++;
+        errors.push({ row: r.label, field, read: String(readValue), truth: String(value ?? ''), kind: flagged ? 'wrong (flagged)' : 'wrong' });
+      }
+    }
+  }
+  return { legacy, v2, errors, rowsProposed: read.size, rowsOutside: outside };
+}
+
 /** A note without the "d/m/yy INI:" signatures the app adds to each entry. */
 const unsigned = text => text.replace(/(^|\|)\s*\d{1,2}\/\d{1,2}\/\d{2,4}\s+[^\s:|]{1,12}:\s*/g, '$1').trim();
 

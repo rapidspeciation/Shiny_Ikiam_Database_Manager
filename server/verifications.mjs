@@ -575,3 +575,17 @@ export const blankOrNA = value =>
   value === null || value === undefined || /^\s*(|NA|N\/A)\s*$/i.test(String(value));
 /** IDs always hold a digit (CAM079895, FS90415305, N5D, 85Y); texts such as "not given" or NOT_COLLECTED may repeat. */
 export const isIdValue = value => !blankOrNA(value) && /\d/.test(String(value));
+
+/**
+ * The two rows of one wild-caught butterfly: its Insectary_data row and its
+ * Collection_data row (same Insectary_ID, or the Collection row's
+ * CAM_ID_insectary is the Insectary row's CAM). They hold the same tube on
+ * purpose (field.md R8.2), so a tube shared by them is no repeat.
+ */
+export function twinRows(insectary, collection) {
+  const upper = value => String(value ?? '').trim().toUpperCase();
+  const id = upper(insectary?.Insectary_ID);
+  if (isIdValue(id) && id === upper(collection?.Insectary_ID)) return true;
+  const cam = upper(insectary?.CAM_ID);
+  return isIdValue(cam) && cam === upper(collection?.CAM_ID_insectary);
+}

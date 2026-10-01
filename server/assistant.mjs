@@ -13,6 +13,7 @@ import { KINDS, isNone, noteText } from './notebook.mjs';
 import { RECORD_TOOLS, compactRecord, countRecords, findRecords } from './records-tool.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
 import { newRowFormulaFields } from './premade.mjs';
+import { carryChecks, dropDoubt, setChecked, uncheckedDoubts, withoutUnchecked } from './doubts.mjs';
 import { KNOWLEDGE_TOOLS, createKnowledge, runKnowledgeTool } from './knowledge.mjs';
 import { HISTORY_TOOLS, HISTORY_TOOL_NAMES, runHistoryTool } from './history.mjs';
 import { createT3Chats } from './t3chats.mjs';
@@ -239,10 +240,15 @@ const TOOLS = [
     function: {
       name: 'apply_proposal',
       description:
-        "Write a pending proposal to Google Sheets. Only call this when the person's latest message explicitly approves it (e.g. 'sí, aplícalo', 'está correcto'). It writes what the table shows: your values, the cells the person typed, and not the cells the person set back to the sheet value (a row left with nothing to write is skipped). Optionally only some rows, by their index.",
+        "Write a pending proposal to Google Sheets. Only call this when the person's latest message explicitly approves it (e.g. 'sí, aplícalo', 'está correcto'). It writes what the table shows: your values, the cells the person typed, and not the cells the person set back to the sheet value (a row left with nothing to write is skipped). Optionally only some rows, by their index. While doubtful cells (match_notebook's, amber in the table) are not checked it writes nothing and returns them (doubtful: index, label, field, value, alternatives, reason): ask the person about each. confirmDoubtful: true writes them as they are, only when the person said so after seeing them; skipDoubtful: true writes only the sure cells.",
       parameters: {
         type: 'object',
-        properties: { proposalId: { type: 'string' }, indexes: { type: 'array', items: { type: 'integer' } } },
+        properties: {
+          proposalId: { type: 'string' },
+          indexes: { type: 'array', items: { type: 'integer' } },
+          confirmDoubtful: { type: 'boolean', description: 'The person saw the unchecked doubtful cells and wants them written as they are' },
+          skipDoubtful: { type: 'boolean', description: 'Write only the sure cells; the unchecked doubtful ones are left out' },
+        },
         required: ['proposalId'],
       },
     },
@@ -252,7 +258,7 @@ const TOOLS = [
     function: {
       name: 'update_proposal',
       description:
-        `Revise a pending proposal in place (the person sees the table change live): when the person corrects something ('la especie es X', 'quita la fila 3', 'falta el colector'), update the SAME proposal instead of making a new one. rows = cells of rows already in it, by their index: a value replaces what you proposed there; null drops your proposed change to that cell (an existing row keeps the sheet's value, a new row's cell stays empty) and never empties a cell; {"clear": true} empties the sheet's cell (only when the person wants it emptied; the table shows it in red as vaciar). changes / newRows = more rows (a recordId already in it is merged into its row); removeRows = indexes to take out. Every value is checked as in propose_changes (nothing is saved if one fails). Notes columns: your text is added after the existing note with the "d/m/yy INI: " prefix ({"replace": "…"} rewrites the whole note, only when asked). Cells the person edited in the table are theirs: they come back as conflicts and are kept; tell the person, and set overridePersonEdits only when they ask you to replace them. Returns the proposal's rows with their index (a cell to be emptied shows as {"clear": true}; context rows of match_notebook are marked context and never written).`,
+        `Revise a pending proposal in place (the person sees the table change live): when the person corrects something ('la especie es X', 'quita la fila 3', 'falta el colector'), update the SAME proposal instead of making a new one. rows = cells of rows already in it, by their index: a value replaces what you proposed there; null drops your proposed change to that cell (an existing row keeps the sheet's value, a new row's cell stays empty) and never empties a cell; {"clear": true} empties the sheet's cell (only when the person wants it emptied; the table shows it in red as vaciar). changes / newRows = more rows (a recordId already in it is merged into its row); removeRows = indexes to take out. Every value is checked as in propose_changes (nothing is saved if one fails). Notes columns: your text is added after the existing note with the "d/m/yy INI: " prefix ({"replace": "…"} rewrites the whole note, only when asked). Cells the person edited in the table are theirs: they come back as conflicts and are kept; tell the person, and set overridePersonEdits only when they ask you to replace them. A new value in a doubtful cell makes it no longer doubtful; rows[].checked marks doubtful cells the person confirmed as they are. Returns the proposal's rows with their index (a cell to be emptied shows as {"clear": true}; context rows of match_notebook are marked context and never written; doubtful cells show under doubtful with checked).`,
       parameters: {
         type: 'object',
         properties: {
@@ -269,6 +275,11 @@ const TOOLS = [
                     'Column → new value; dates as YYYY-MM-DD, times as H:MM. null = drop your change to that cell (it does NOT empty it); {"clear": true} = empty the cell',
                 },
                 note: { type: 'string' },
+                checked: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: "Doubtful columns of this row the person confirmed in the chat as they are ('sí, es 843')",
+                },
               },
               required: ['index'],
             },
@@ -305,7 +316,7 @@ const TOOLS = [
     function: {
       name: 'get_proposal',
       description:
-        "A proposal as the person sees it now: each row with its index, values (dates YYYY-MM-DD), note and personEdits (cells the person corrected by hand in the table, or set back to the sheet value with the table's «Valor de la hoja» button, with what you had proposed; those set back are not written). Read it when the person says they changed the table, before update_proposal on a proposal you did not just make, and before apply_proposal if they edited it.",
+        "A proposal as the person sees it now: each row with its index, values (dates YYYY-MM-DD), note and personEdits (cells the person corrected by hand in the table, or set back to the sheet value with the table's «Valor de la hoja» button, with what you had proposed; those set back are not written) and doubtful (match_notebook's doubtful cells: alternatives, reason, checked). Read it when the person says they changed the table, before update_proposal on a proposal you did not just make, and before apply_proposal if they edited it.",
       parameters: { type: 'object', properties: { proposalId: { type: 'string' } }, required: ['proposalId'] },
     },
   },
@@ -883,9 +894,13 @@ export function createAssistant({ store, config = {} }) {
           else out.leftOut.push(field);
           if (drafted.error) continue;
         }
-        const next = drafted.change;
+        let next = drafted.change;
         const after = proposedOf(next, field);
         const marks = { ...next.personEdits };
+        // The assistant wrote another value in a doubtful cell (the person told it): no longer a doubt.
+        if (by === 'ai' && !same(after, current)) next = dropDoubt(next, field);
+        // The person took the assistant's reading again with its button: they looked at it.
+        if (by === 'person' && raw === AI_VALUE) next = setChecked(next, field, true, who, 'ai-value');
         if (by === 'ai') delete marks[field];
         else {
           const ai = mark ? mark.ai : current;
@@ -902,6 +917,13 @@ export function createAssistant({ store, config = {} }) {
         // A notebook line shown only for context becomes a real change once someone gives it a value.
         if (rows[i].context && Object.keys(rows[i].values).length) rows[i] = { ...rows[i], context: undefined };
       }
+    }
+
+    // Doubtful cells marked checked (or unchecked) in the table, or by the assistant on the person's word.
+    for (const op of ops.check ?? []) {
+      const i = find(op.ref);
+      if (i < 0 || !rows[i].doubts?.[op.field]) continue;
+      rows[i] = setChecked(rows[i], op.field, op.checked !== false, who, op.how ?? (by === 'ai' ? 'chat' : 'table'));
     }
 
     const removing = new Set();
@@ -973,6 +995,23 @@ export function createAssistant({ store, config = {} }) {
         Object.entries(c.values).map(([f, v]) => [f, v === null && !c.create ? { clear: true } : readable(c.sheet, f, v)]),
       ),
       ...(c.note ? { note: c.note } : {}),
+      // Doubtful cells (match_notebook): unchecked ones must be checked by the person before applying.
+      ...(c.doubts && Object.keys(c.doubts).some(f => f in c.values)
+        ? {
+            doubtful: Object.fromEntries(
+              Object.entries(c.doubts)
+                .filter(([f]) => f in c.values)
+                .map(([f, d]) => [
+                  f,
+                  {
+                    alternatives: (d.alternatives ?? []).map(a => readable(c.sheet, f, a)),
+                    ...(d.reason ? { reason: d.reason } : {}),
+                    checked: !!d.checked || !!c.personEdits?.[f],
+                  },
+                ]),
+            ),
+          }
+        : {}),
       ...(c.personEdits
         ? {
             personEdits: Object.fromEntries(
@@ -1026,6 +1065,12 @@ export function createAssistant({ store, config = {} }) {
       const ref = Number.isInteger(r?.index) ? r.index : -1;
       return { ref, values: own(ref, r?.values), note: r?.note };
     });
+    // Doubtful cells the person confirmed in the chat ("sí, es un 7").
+    const check = (Array.isArray(args.rows) ? args.rows : []).flatMap(r =>
+      Number.isInteger(r?.index) && Array.isArray(r.checked)
+        ? r.checked.filter(f => typeof f === 'string').map(field => ({ ref: r.index, field, checked: true, how: 'chat' }))
+        : [],
+    );
     const extra = assistantArgs({ changes: [], newRows: args.newRows }, context.user).args;
     const add = { changes: [], newRows: extra.newRows };
     // A row already in the proposal is revised, not added twice.
@@ -1035,9 +1080,9 @@ export function createAssistant({ store, config = {} }) {
       else add.changes.push(...assistantArgs({ changes: [c] }, context.user).args.changes);
     }
     const remove = (Array.isArray(args.removeRows) ? args.removeRows : []).filter(Number.isInteger);
-    if (!set.length && !remove.length && !add.changes.length && !add.newRows.length && !args.reason)
+    if (!set.length && !check.length && !remove.length && !add.changes.length && !add.newRows.length && !args.reason)
       return { error: 'Give rows, changes, newRows or removeRows' };
-    const out = reviseChanges(changes, { set, remove, add }, { by: 'ai', force: !!args.overridePersonEdits, user: context.user });
+    const out = reviseChanges(changes, { set, check, remove, add }, { by: 'ai', force: !!args.overridePersonEdits, user: context.user });
     if (out.rejected.length) return { error: 'Nothing was changed', problems: out.rejected.slice(0, 20) };
     const reason = args.reason ? clip(args.reason, 500) : null;
     const unchanged = json(out.changes) === json(changes) && !reason;
@@ -1067,10 +1112,12 @@ export function createAssistant({ store, config = {} }) {
     const sameRow = (a, b) =>
       a.create ? b.create && a.sheet === b.sheet && !!a.label && a.label === b.label : !b.create && a.recordId === b.recordId;
     // New rows keep their key, so the table keeps its ticks.
-    const rows = fresh.map(c => {
+    const keyed = fresh.map(c => {
       const before = c.create && old.find(o => sameRow(o, c));
       return before ? { ...c, clientId: before.clientId } : c;
     });
+    // Doubtful cells already checked stay checked while the new reading gives the same value.
+    const rows = carryChecks(old, keyed, sameRow, same);
     const conflicts = [];
     const set = [];
     for (const o of old) {
@@ -1096,7 +1143,7 @@ export function createAssistant({ store, config = {} }) {
   }
 
   /** Writes the chosen rows of a proposal as one save (undoable in Historial). */
-  async function applyProposal(proposal, user, { requestId, indexes, reason }) {
+  async function applyProposal(proposal, user, { requestId, indexes, reason, doubtful = null }) {
     if (proposal.status !== 'pending')
       throw Object.assign(new Error('Proposal has already been applied.'), { status: 409, code: 'proposal_used' });
     if (!EDITORS.includes(user.role))
@@ -1108,6 +1155,27 @@ export function createAssistant({ store, config = {} }) {
       Array.isArray(indexes) && indexes.length ? [...new Set(indexes.map(Number))].filter(i => all[i]) : all.map((_, i) => i)
     ).filter(i => Object.keys(all[i].values ?? {}).length && !all[i].context);
     if (!chosen.length) throw Object.assign(new Error('No rows selected.'), { status: 400, code: 'nothing_selected' });
+    // Doubtful cells nobody looked at: the person decides first (apply them anyway, or only the sure cells).
+    const unchecked = uncheckedDoubts(all, chosen);
+    if (unchecked.length && doubtful !== 'confirm' && doubtful !== 'skip')
+      throw Object.assign(new Error(`${unchecked.length} doubtful cells have not been checked.`), {
+        status: 409,
+        code: 'doubtful_unchecked',
+        details: { doubtful: unchecked },
+      });
+    const who = clip(user.displayName || user.username || owner(user), 80);
+    // Applied anyway: those cells count as confirmed by the person (kept with the proposal).
+    const kept =
+      doubtful === 'confirm'
+        ? all.map((c, i) =>
+            chosen.includes(i) ? unchecked.filter(u => u.index === i).reduce((row, u) => setChecked(row, u.field, true, who, 'apply'), c) : c,
+          )
+        : all;
+    const writes = chosen
+      .map(i => [i, doubtful === 'skip' ? withoutUnchecked(kept[i]) : kept[i]])
+      .filter(([, c]) => Object.keys(c.values ?? {}).length);
+    const written = writes.map(([i]) => i);
+    if (!writes.length) throw Object.assign(new Error('Only doubtful cells were left to write.'), { status: 400, code: 'nothing_selected' });
     const claimed = db
       .prepare("UPDATE ai_proposals SET status = 'applying' WHERE id = ? AND status = 'pending'")
       .run(proposal.id);
@@ -1116,19 +1184,25 @@ export function createAssistant({ store, config = {} }) {
     changed(proposal.owner_id);
     try {
       const result = await store.applyProposal(
-        chosen.map(i => all[i]),
+        writes.map(([, c]) => c),
         { user, requestId, reason: clip(reason || proposal.reason, 500) },
       );
       const status = ['verified', 'unchanged'].includes(result?.status) ? 'applied' : 'needs_review';
       const created = Object.fromEntries((result?.created ?? []).map(c => [c.clientId, c.recordId]));
       db.prepare(
-        'UPDATE ai_proposals SET status = ?, applied_at = ?, applied_json = ?, created_json = ? WHERE id = ?',
-      ).run(status, status === 'applied' ? now() : null, json(chosen), json(created), proposal.id);
+        'UPDATE ai_proposals SET status = ?, applied_at = ?, applied_json = ?, created_json = ?, changes_json = ? WHERE id = ?',
+      ).run(status, status === 'applied' ? now() : null, json(written), json(created), json(kept), proposal.id);
       // Agreed issues of the Revisión tab whose rows were written: now applied.
       const issueIds = parse(proposal.issues_json ?? 'null');
       if (status === 'applied' && issueIds?.length)
-        markApplied(store, issueIds, { recordIds: new Set(chosen.map(i => all[i].recordId)), proposalId: proposal.id, user });
-      return { proposalId: proposal.id, status, applied: chosen, result };
+        markApplied(store, issueIds, { recordIds: new Set(written.map(i => all[i].recordId)), proposalId: proposal.id, user });
+      return {
+        proposalId: proposal.id,
+        status,
+        applied: written,
+        result,
+        ...(unchecked.length ? { doubtful: { count: unchecked.length, how: doubtful } } : {}),
+      };
     } catch (cause) {
       db.prepare("UPDATE ai_proposals SET status = 'needs_review' WHERE id = ?").run(proposal.id);
       throw cause;
@@ -1388,10 +1462,31 @@ export function createAssistant({ store, config = {} }) {
           requestId: `ai-${randomUUID()}`,
           indexes: args.indexes,
           reason: tpl('Confirmado en el chat'),
+          doubtful: args.confirmDoubtful === true ? 'confirm' : args.skipDoubtful === true ? 'skip' : null,
         });
         context.applied.push(proposal.id);
-        return { status: out.status, rows: out.applied.length };
+        return { status: out.status, rows: out.applied.length, ...(out.doubtful ? { doubtful: out.doubtful } : {}) };
       } catch (e) {
+        // Nothing was written: the person has to look at the doubtful cells first.
+        if (e.code === 'doubtful_unchecked') {
+          const changes = parse(proposal.changes_json) ?? [];
+          const readable = (sheet, field, value) =>
+            moduleMap.get(sheet)?.fields.find(f => f.key === field)?.type === 'date' && typeof value === 'number' ? isoDate(value) : value;
+          return {
+            error: 'Not applied: doubtful cells not checked yet',
+            doubtful: e.details.doubtful.slice(0, 60).map(d => ({
+              index: d.index,
+              label: d.label,
+              field: d.field,
+              value: readable(d.sheet, d.field, d.value),
+              alternatives: d.alternatives.map(a => readable(d.sheet, d.field, a)),
+              ...(d.reason ? { reason: d.reason } : {}),
+            })),
+            count: e.details.doubtful.length,
+            rows: changes.length,
+            todo: 'Ask the person about these cells (value, alternatives, why). They check them in the table (edit, pick an alternative, or «Marcar revisadas»), or tell you: then update_proposal (the value they say, or rows[].checked for the ones they confirm) and apply again. Only when they explicitly say to apply them as they are: apply_proposal with confirmDoubtful; to write only the sure cells: skipDoubtful.',
+          };
+        }
         return { error: clip(e.message, 300), details: e.details?.items?.slice(0, 10) };
       }
     }
@@ -1692,6 +1787,13 @@ export function createAssistant({ store, config = {} }) {
       )
         return bad(400, 'invalid_cells', 'cells must be a list of { key, field, value, use? }.');
       const remove = Array.isArray(body.remove) ? body.remove.filter(k => typeof k === 'string').slice(0, 100) : [];
+      // «Marcar revisadas»: doubtful cells the person looked at and leaves as they are (or unmarks).
+      const check = Array.isArray(body.check)
+        ? body.check
+            .filter(c => typeof c?.key === 'string' && typeof c.field === 'string' && c.field.length <= 120)
+            .slice(0, 2000)
+            .map(c => ({ ref: c.key, field: c.field, checked: c.checked !== false }))
+        : [];
       const addEmpty = Array.isArray(body.add) ? body.add.filter(a => typeof a?.sheet === 'string').slice(0, 20) : [];
       const out = reviseChanges(
         parse(proposal.changes_json) ?? [],
@@ -1712,6 +1814,7 @@ export function createAssistant({ store, config = {} }) {
             },
             ...(c.before !== undefined && !c.use && scalar(c.before) ? { before: { [c.field]: c.before } } : {}),
           })),
+          check,
           remove,
           addEmpty,
         },
@@ -1805,7 +1908,8 @@ export function createAssistant({ store, config = {} }) {
       if (body.revision !== undefined && Number(body.revision) !== proposal.revision)
         return bad(409, 'proposal_changed', 'La propuesta cambió mientras la revisabas: mira la tabla y vuelve a aplicar.');
       try {
-        const out = await applyProposal(proposal, user, { requestId, indexes: body.indexes, reason: body.reason });
+        const doubtful = body.doubtful === 'confirm' || body.doubtful === 'skip' ? body.doubtful : null;
+        const out = await applyProposal(proposal, user, { requestId, indexes: body.indexes, reason: body.reason, doubtful });
         return { status: out.status === 'applied' ? 200 : 409, body: out };
       } catch (cause) {
         const current = (parse(proposal.changes_json) ?? []).map(change => {
@@ -1823,7 +1927,13 @@ export function createAssistant({ store, config = {} }) {
             error: {
               code: cause.code ?? 'apply_failed',
               message: clip(cause.message, 300),
-              details: { proposalId: proposal.id, status, current, items: cause.details?.items?.slice(0, 20) ?? [] },
+              details: {
+                proposalId: proposal.id,
+                status,
+                current,
+                items: cause.details?.items?.slice(0, 20) ?? [],
+                ...(cause.details?.doubtful ? { doubtful: cause.details.doubtful.length } : {}),
+              },
             },
           },
         };

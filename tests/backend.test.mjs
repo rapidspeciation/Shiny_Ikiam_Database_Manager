@@ -36,8 +36,23 @@ test('ID allocation crosses the historical boundary and uses observed records, n
   assert.equal(nextInsectaryId('A0N'), 'A1N');
   assert.equal(nextInsectaryId('A9N'), 'B0N');
   assert.equal(nextInsectaryId('N4D'), 'N5D');
-  assert.equal(nextInsectaryId('Z9N'), 'A0Ñ');
-  assert.equal(nextInsectaryId('9ZZ'), 'A0A');
+  // The sheet's series have no Ñ: N9A → O0A, and the series after N is O.
+  assert.equal(nextInsectaryId('N9A'), 'O0A');
+  assert.equal(nextInsectaryId('Z9N'), 'A0O');
+  // Real steps of the sheet: a new series after Z9 (rows 13,242–13,243 and 13,252–13,253), runs within one.
+  assert.equal(nextInsectaryId('Z9C'), 'A0D');
+  assert.equal(nextInsectaryId('Z9D'), 'A0E');
+  assert.equal(nextInsectaryId('V9A'), 'W0A');
+  assert.equal(nextInsectaryId('J6D'), 'J7D');
+  assert.equal(nextInsectaryId('a0e'), 'A1E', 'typed in lower case');
+  assert.equal(nextInsectaryId('Ñ0A'), 'N1A', 'an Ñ from an older app version reads as N');
+  // 2023–2026: digit + two letters, the digit fastest, then the last letter, then the middle one.
+  assert.equal(nextInsectaryId('9AZ'), '0BA');
+  assert.equal(nextInsectaryId('9FH'), '0FI');
+  assert.equal(nextInsectaryId('0KY'), '1KY');
+  assert.equal(nextInsectaryId('9ZZ'), 'A0A', 'then the current form began');
+  assert.equal(nextInsectaryId('M98'), 'A0A', '2022 IDs are not continued');
+  assert.throws(() => nextInsectaryId('Z9Z'), /exhausted/);
   const { store } = await fixture();
   assert.equal(store.suggestInsectaryId(), 'A1A');
   const placeholder = store.getRecordBySheetRow('Insectary_data', 3);

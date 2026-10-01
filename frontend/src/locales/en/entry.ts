@@ -455,4 +455,6 @@ export default {
   'Contenido de {column}': 'Content of {column}',
   'Contenido de la celda': 'Cell content',
   'Esa celda ya no se puede editar': 'That cell can no longer be edited',
+  'Otras lecturas': 'Other readings',
+  'Escribir {value} en la celda': 'Write {value} in the cell',
 } as Record<string, string>

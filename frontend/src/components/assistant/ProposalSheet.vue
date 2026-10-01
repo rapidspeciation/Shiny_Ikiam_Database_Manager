@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
-import { FileSpreadsheet, Sparkles } from 'lucide-vue-next'
+import { CheckCheck, FileSpreadsheet, Sparkles } from 'lucide-vue-next'
 import { displayValue, editText, normalizeInput } from '../../lib/cells'
 import {
   attachColumnFit,
@@ -29,11 +29,11 @@ import {
   type Direction,
 } from '../../lib/gridKit'
 import { parseBlock } from '../../lib/paste'
-import { ID_COLUMN, cellId, cellOf, rowKey, selectionActions, type ProposalChange } from '../../lib/proposals'
+import { ID_COLUMN, cellId, cellOf, rowKey, selectionActions, type CellInfo, type ProposalChange } from '../../lib/proposals'
 import { isSumField, sumTotal } from '../../lib/sums'
 import type { CellValue, Field } from '../../lib/types'
 import { listProblem, verificationsFor } from '../../lib/verifications'
-import { locale, t, tn } from '../../lib/i18n'
+import { locale, t, tn, tx } from '../../lib/i18n'
 import CellBar from '../CellBar.vue'
 
 /**
@@ -47,7 +47,11 @@ import CellBar from '../CellBar.vue'
  * aside, dashed, and not written) or take the assistant's value again. The ID
  * stays at the left and the column names at the top while scrolling (see
  * columns() and the table's maxHeight). Edits go out through `edit` (the
- * parent saves them to the proposal).
+ * parent saves them to the proposal). Cells the assistant read with a doubt are
+ * amber, dashed, with a "?" until someone reviews them: edits one, picks one
+ * of its other readings in the cell bar, or marks the selection checked
+ * (`check`). Values the notebook line does not write (a template, the note's
+ * words, the page's room) are in italics, and the bar says where they come from.
  */
 export interface CellEdit {
   key: string
@@ -75,6 +79,8 @@ const emit = defineEmits<{
   edit: [cells: CellEdit[]]
   remove: [key: string]
   notice: [message: string]
+  /** Doubtful cells the person reviewed and leaves as they are («Marcar revisadas»). */
+  check: [cells: { key: string; field: string }[]]
 }>()
 
 type Row = Record<string, CellValue> & {
@@ -140,10 +146,11 @@ function toRow(c: ProposalChange): Row {
   for (const f of props.fields) {
     const cell = cellOf(c, f, props.newRowFormulas)
     out[f] = cell.value
-    state += cell.kind[0] + (props.flash.has(cellId(key, f)) ? '*' : '')
+    state += cell.kind[0] + (cell.doubtful ? '?' : '') + (props.flash.has(cellId(key, f)) ? '*' : '')
   }
-  // Markers can change without the value (whose edit it is, a flash): part of the row's signature.
-  out.__state = state + JSON.stringify(c.personEdits ?? null) + (props.editable ? 'e' : '') + Object.keys(c.values).length
+  // Markers can change without the value (whose edit it is, a flash, a doubt checked): part of the row's signature.
+  out.__state =
+    state + JSON.stringify(c.personEdits ?? null) + JSON.stringify(c.doubts ?? null) + (props.editable ? 'e' : '') + Object.keys(c.values).length
   return out
 }
 
@@ -165,11 +172,15 @@ function formatter(field: string) {
     el.classList.toggle('is-invalid', !!problem)
     el.classList.toggle('is-flash', props.flash.has(cellId(row.__key, field)))
     el.classList.toggle('has-choices', canEditCell(row.__key, field) && hasChoices(field))
+    el.classList.toggle('is-doubtful', c.doubtful)
+    el.classList.toggle('is-inferred', c.inferred)
     const was = c.was === undefined ? '' : show(field, c.was) || t('vacío')
     const ai = show(field, c.ai) || t('vacío')
     const before = change.replaceFormula?.includes(field) ? 'Antes: {value} (fórmula)' : 'Antes: {value}'
     el.title = [
       problem,
+      c.doubtful ? doubtText(field, c) : '',
+      c.inferred && c.hint ? tx(c.hint.text, c.hint.msg) : '',
       c.kind === 'proposed' && !change.create ? t(before, { value: was }) : '',
       c.kind === 'person'
         ? [
@@ -202,7 +213,7 @@ function formatter(field: string) {
       box.append(aside)
       return box
     }
-    if (!changed || change.create || c.was === undefined || show(field, c.was) === text) return withTotal(field, c.value, text)
+    if (!changed || change.create || c.was === undefined || show(field, c.was) === text) return marked(c, withTotal(field, c.value, text))
     const box = document.createElement('span')
     // Emptied on purpose ({ clear: true } or the person deleted it): red, not a quiet "vacío".
     if (text) box.append(withTotal(field, c.value, text))
@@ -212,8 +223,27 @@ function formatter(field: string) {
     old.className = 'was'
     old.append(withTotal(field, c.was, show(field, c.was) || t('vacío')))
     box.append(' ', old)
-    return box
+    return marked(c, box)
   }
+}
+
+/** A doubtful cell's content after its "?" mark (the cell's dashed amber edge is its class). */
+function marked(c: CellInfo, content: Node): Node {
+  if (!c.doubtful) return content
+  const box = document.createElement('span')
+  const mark = document.createElement('span')
+  mark.className = 'doubt-mark'
+  mark.textContent = '?'
+  box.append(mark, content)
+  return box
+}
+/** Why a cell is doubtful and its other readings, in a line (the cell's tooltip). */
+function doubtText(field: string, c: CellInfo) {
+  const reason = c.doubt?.reason ? tx(c.doubt.reason, c.doubt.reasonMsg) : t('Lectura dudosa')
+  const others = (c.doubt?.alternatives ?? []).map(a => show(field, a) || t('vacío'))
+  return [t('Dudosa: {reason}', { reason }), others.length ? t('otras lecturas: {values}', { values: others.join(' / ') }) : '']
+    .filter(Boolean)
+    .join(' · ')
 }
 
 /** The row number; a row with nothing left to write (every cell back to the sheet's value) is struck through. */
@@ -236,7 +266,8 @@ function drawnText(change: ProposalChange, field: string) {
       : cell.was !== undefined && cell.kind !== 'sheet'
         ? ` ${textWithTotal(field, cell.was)}`
         : ''
-  return textWithTotal(field, cell.value) + beside
+  // The "?" of a doubtful cell takes about two letters.
+  return (cell.doubtful ? '?  ' : '') + textWithTotal(field, cell.value) + beside
 }
 
 function widthOf(field: string) {
@@ -345,7 +376,25 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
     notes.push({ label: t('Hoja'), text: editText$(field, c.was) || t('vacío'), kind: 'sheet' })
   if (c.aiProposed && (c.kind === 'person' || c.kind === 'reverted'))
     notes.push({ label: t('IA'), text: editText$(field, c.ai) || t('vacío'), kind: 'ai' })
+  // A doubt: why, and whether someone reviewed it; the other readings can be picked below.
+  if (c.doubt) {
+    const reason = c.doubt.reason ? tx(c.doubt.reason, c.doubt.reasonMsg) : t('Lectura dudosa')
+    if (c.doubtful) notes.push({ label: t('Dudosa'), text: reason, kind: 'doubt' })
+    else if (c.kind === 'proposed' || c.kind === 'person' || c.kind === 'reverted')
+      notes.push({
+        label: t('Revisada'),
+        text: c.doubt.checked?.by ? t('{reason} (por {who})', { reason, who: c.doubt.checked.by }) : reason,
+        kind: 'hint',
+      })
+  }
+  if (c.inferred && c.hint) notes.push({ label: t('No escrito en la línea'), text: tx(c.hint.text, c.hint.msg), kind: 'hint' })
   const editable = canEditCell(row.__key, field)
+  // The doubt's other readings (and the assistant's own value, once the person changed it).
+  const readings = c.doubt
+    ? [...(c.doubt.alternatives ?? []), ...(c.kind === 'person' && c.aiProposed ? [c.ai] : [])].filter(
+        (a, i, all) => a !== undefined && JSON.stringify(a) !== JSON.stringify(c.value) && all.findIndex(b => JSON.stringify(b) === JSON.stringify(a)) === i,
+      )
+    : []
   return {
     ...base,
     column: field,
@@ -354,6 +403,7 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
     multiline: longText(field) && !hasChoices(field),
     readonly: editable ? '' : c.kind === 'locked' ? t('Fórmula de la hoja: no se escribe') : '',
     notes,
+    choices: readings.map(a => ({ label: show(field, a as CellValue) || t('vacío'), text: editText$(field, a as CellValue) })),
   }
 }
 const showBar = () => (bar.value = table ? describe(selectedCell(table)) : null)
@@ -363,6 +413,8 @@ function saveFromBar(target: CellBarInfo, text: string, move: Direction | 'here'
   if (move) backToGrid(table, move)
   showBar()
 }
+/** Another reading picked in the bar: written as if typed (the person's value from then on, so reviewed). */
+const pickFromBar = (target: CellBarInfo, text: string) => saveFromBar(target, text, 'here')
 
 // ------------------------------------------------------------ edits
 let normalizing = false
@@ -403,7 +455,7 @@ function onCellEdited(cell: CellComponent) {
 
 // ------------------------------------------------------------ the sheet's value or the assistant's, for the selection
 /** What the buttons can do with the selected cells (counts, for their labels). */
-const actions = ref({ sheet: 0, ai: 0 })
+const actions = ref({ sheet: 0, ai: 0, check: 0 })
 function selected() {
   const out: { key: string; field: string; cell: NonNullable<ReturnType<typeof info>> }[] = []
   for (const range of table?.getRanges() ?? [])
@@ -416,8 +468,8 @@ function selected() {
   return out
 }
 function updateActions() {
-  const next = props.editable && table ? selectionActions(selected().map(s => s.cell)) : { sheet: 0, ai: 0 }
-  if (next.sheet !== actions.value.sheet || next.ai !== actions.value.ai) actions.value = next
+  const next = props.editable && table ? selectionActions(selected().map(s => s.cell)) : { sheet: 0, ai: 0, check: 0 }
+  if (next.sheet !== actions.value.sheet || next.ai !== actions.value.ai || next.check !== actions.value.check) actions.value = next
 }
 /**
  * "Valor de la hoja": the selected cells go back to what the sheet has (a new
@@ -434,6 +486,31 @@ function use(which: 'sheet' | 'ai') {
   }
   if (cells.length) emit('edit', cells)
 }
+/** «Marcar revisadas»: the selected doubtful cells were looked at and stay as they are. */
+function markChecked() {
+  const cells = selected()
+    .filter(s => s.cell.doubtful)
+    .map(({ key, field }) => ({ key, field }))
+  if (cells.length) emit('check', cells)
+}
+
+/** Selects a cell and brings it into view (the panel's "review" jumps to the first doubtful cell). */
+function focusCell(key: string, field: string) {
+  const row = table?.getRow(key)
+  const cell = row?.getCell(field)
+  if (!table || !row || !cell) return false
+  try {
+    ;(table as unknown as { addRange: (a: CellComponent, b: CellComponent) => void }).addRange(cell, cell)
+  } catch {
+    /* Range selection is off on touch screens. */
+  }
+  cell.getElement().scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  // Keys go where Tabulator listens for them (its rows), as after a click.
+  ;(table as unknown as { rowManager: { element: HTMLElement } }).rowManager.element.focus({ preventScroll: true })
+  showBar()
+  return true
+}
+defineExpose({ focusCell })
 
 /** The copied block as rows of { field: text }, from the first selected column on (as SheetGrid). */
 function pasteParser(text: string) {
@@ -645,11 +722,24 @@ watch(
         >
           <Sparkles :size="12" /> {{ $t('Valor de la IA') }}<template v-if="actions.ai > 1"> ({{ actions.ai }})</template>
         </button>
+        <button
+          class="proposal-use"
+          :disabled="!actions.check"
+          :title="
+            actions.check
+              ? $t('Las celdas dudosas elegidas quedan como revisadas, con el valor que tienen')
+              : $t('Elige celdas dudosas (bordes ámbar con «?»): las otras lecturas están en la barra de arriba')
+          "
+          @mousedown.prevent
+          @click="markChecked"
+        >
+          <CheckCheck :size="12" /> {{ $t('Marcar revisadas') }}<template v-if="actions.check > 1"> ({{ actions.check }})</template>
+        </button>
       </template>
       <slot name="end" />
     </div>
     <div class="sheet-grid proposal-sheet">
-      <CellBar :info="bar" @save="saveFromBar" @back="move => table && backToGrid(table, move)" />
+      <CellBar :info="bar" @save="saveFromBar" @pick="pickFromBar" @back="move => table && backToGrid(table, move)" />
       <!-- The grid's own box: the fill handle and the copied cells' border are placed in it, below the bar. -->
       <div class="relative">
         <div ref="host" tabindex="-1" />

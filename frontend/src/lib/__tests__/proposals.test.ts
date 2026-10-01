@@ -10,6 +10,7 @@ import {
   rowsToWrite,
   selectionActions,
   sheetGroups,
+  uncheckedDoubts,
   withLocal,
   type Proposal,
   type ProposalChange,
@@ -172,8 +173,45 @@ describe('the buttons for the selected cells', () => {
     )
     const cells = ['Sex', 'SPECIES', 'Flight_height', 'Collector', 'Tribe'].map(f => cellOf(row, f))
     // Sex (the AI's), SPECIES and Flight_height (typed) go back to the sheet; SPECIES and Collector (set back) take the AI's again.
-    expect(selectionActions(cells)).toEqual({ sheet: 3, ai: 2 })
-    expect(selectionActions([cellOf(row, 'Tribe')])).toEqual({ sheet: 0, ai: 0 })
+    expect(selectionActions(cells)).toEqual({ sheet: 3, ai: 2, check: 0 })
+    expect(selectionActions([cellOf(row, 'Tribe')])).toEqual({ sheet: 0, ai: 0, check: 0 })
+  })
+})
+
+describe('doubtful cells', () => {
+  const doubt = { confidence: 0.5, alternatives: [848], reason: 'Clutch 848 entre líneas del 843 (misma emergencia)' }
+  it('are the assistant values nobody reviewed: edited, set back or marked checked they are not', () => {
+    const row = edited(
+      'r1',
+      { 'CLUTCH NUMBER': 843, Sex: 'female', Death_date: 46000 },
+      {
+        doubts: { 'CLUTCH NUMBER': doubt, Sex: { confidence: 0.4 }, Death_date: { confidence: 0.5, checked: { by: 'AA' } }, Notes: { confidence: 0.3 } },
+        personEdits: { Sex: { ai: 'male' } },
+        inferred: ['Death_date'],
+        hints: { Death_date: { text: 'De la nota: «preserved»' } },
+      },
+    )
+    const clutch = cellOf(row, 'CLUTCH NUMBER')
+    expect(clutch.doubtful).toBe(true)
+    expect(clutch.doubt).toEqual(doubt)
+    expect(cellOf(row, 'Sex').doubtful).toBe(false)
+    expect(cellOf(row, 'Death_date')).toMatchObject({ doubtful: false, inferred: true, hint: { text: 'De la nota: «preserved»' } })
+    // «Marcar revisadas» counts only the unreviewed ones.
+    expect(selectionActions(['CLUTCH NUMBER', 'Sex', 'Death_date'].map(f => cellOf(row, f)))).toMatchObject({ check: 1 })
+    // The dialog and the server count the same cells; a doubt on a cell not written is none.
+    const p = proposal([row, edited('r2', { Sex: 'male' }, { index: 1, doubts: { Sex: { confidence: 0.2 } } })])
+    expect(uncheckedDoubts(p).map(d => [d.key, d.field])).toEqual([
+      ['r1', 'CLUTCH NUMBER'],
+      ['r2', 'Sex'],
+    ])
+    expect(uncheckedDoubts(p, [1]).map(d => d.key)).toEqual(['r2'])
+  })
+  it('marked checked in the table show so before the save comes back', () => {
+    const p = proposal([edited('r1', { 'CLUTCH NUMBER': 843 }, { doubts: { 'CLUTCH NUMBER': doubt } })])
+    const marked = withLocal(p, new Map(), new Map([[cellId('r1', 'CLUTCH NUMBER'), true]]))
+    expect(cellOf(marked.changes[0], 'CLUTCH NUMBER').doubtful).toBe(false)
+    expect(uncheckedDoubts(marked)).toEqual([])
+    expect(uncheckedDoubts(withLocal(marked, new Map(), new Map([[cellId('r1', 'CLUTCH NUMBER'), false]])))).toHaveLength(1)
   })
 })
 

@@ -15,7 +15,7 @@ import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, writeFileSy
 import { DatabaseSync } from 'node:sqlite';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { LAB, labPath, loadCases, loadSnapshot, groundTruth, norm, same, writePrivate, readJson } from './lib.mjs';
+import { LAB, labPath, loadCases, loadSnapshot, groundTruth, norm, scoreCase, writePrivate, readJson } from './lib.mjs';
 
 const PLAYWRIGHT = process.env.LAB_PLAYWRIGHT || join(homedir(), '.local/share/ithomiini-wikiloc/node_modules/playwright-core/index.mjs');
 const CHROMIUM = process.env.LAB_CHROMIUM || '/usr/bin/chromium';
@@ -261,18 +261,6 @@ function refreshTurns(threads) {
   return threads;
 }
 
-/** A run's threads scored against the latest snapshot. */
-/** The words of a text (3+ letters, no accents, lower case), to compare notes loosely. */
-function words(text) {
-  return new Set(
-    String(text ?? '')
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toLowerCase()
-      .match(/[a-z]{3,}/g) ?? [],
-  );
-}
-
 /** How many times the thread called each tool (image views, subagents, match_notebook…). */
 function toolCounts(db, threadId) {
   const counts = {};
@@ -289,6 +277,7 @@ function toolCounts(db, threadId) {
   return counts;
 }
 
+/** A run's threads scored against the latest snapshot (both scorings: see scoreCase in lib.mjs). */
 function score(run, cases) {
   const snapshot = loadSnapshot();
   const db = t3db();
@@ -325,51 +314,8 @@ function score(run, cases) {
       : [];
     out.proposals = proposals.map(p => ({ id: p.id, status: p.status, reason: p.reason }));
     if (proposals.some(p => p.status !== 'pending')) out.warning = 'A proposal was applied: restart tools/lab/app.sh before the next run';
-    const read = new Map(); // sheet row → values read
-    let outside = 0;
-    for (const p of proposals)
-      for (const c of JSON.parse(p.changes_json)) {
-        const target = c.create ? rows.find(r => same(r.label, c.label, '')) : rows.find(r => r.row === c.row && c.sheet === kase.sheet);
-        if (target) read.set(target.row, { ...read.get(target.row), ...c.values });
-        else outside++;
-      }
-    const n = { correct: 0, total: 0, wrong: 0, missing: 0, filledCorrect: 0, filledTotal: 0, notesMatch: 0, notesTotal: 0 };
-    const errors = [];
-    for (const r of rows) {
-      const got = read.get(r.row);
-      for (const [field, value] of Object.entries(r.values)) {
-        // Notes are scored apart: the sheet keeps each note's original date and author
-        // ("10/6/26 MJS: …"), which a photo does not show; only the words are compared.
-        if (/^notes?\b|^notes_/i.test(field)) {
-          const truthWords = words(value);
-          if (!truthWords.size) continue;
-          n.notesTotal++;
-          const cell = got && Object.hasOwn(got, field) ? got[field] : '';
-          const note = String((cell && typeof cell === 'object' ? (cell.replace ?? cell.value) : cell) ?? '');
-          const mine = words(note.replace(/\d{1,2}\/\d{1,2}\/\d{2,4}\s+[A-Z]{1,4}:/g, ' '));
-          const shared = [...mine].filter(w => truthWords.has(w)).length;
-          if (mine.size && shared / mine.size >= 0.5) n.notesMatch++;
-          continue;
-        }
-        n.total++;
-        const has = norm(value, field) !== '';
-        n.filledTotal += has;
-        const proposed = got && Object.hasOwn(got, field) ? got[field] : undefined;
-        const readValue = proposed?.formula ?? proposed;
-        if (proposed === undefined) {
-          if (has) {
-            n.missing++;
-            errors.push({ row: r.label, field, read: null, truth: String(value), kind: 'missing' });
-          } else n.correct++;
-        } else if (same(readValue, value, field)) {
-          n.correct++;
-          n.filledCorrect += has;
-        } else {
-          n.wrong++;
-          errors.push({ row: r.label, field, read: String(readValue), truth: String(value ?? ''), kind: 'wrong' });
-        }
-      }
-    }
+    const scored = scoreCase(kase, rows, proposals.map(p => ({ changes: JSON.parse(p.changes_json) })));
+    const { legacy: n, v2, errors, rowsProposed, rowsOutside: outside } = scored;
     const turns = s.turns ?? [];
     // Wall-clock time, first message to the last turn (turns started by background subagents
     // included); busySecs is the time the main model itself was working.
@@ -380,7 +326,7 @@ function score(run, cases) {
     const firstSecs = start && proposals.length ? Math.round((Math.min(...proposals.map(p => iso(p.created_at))) - start) / 1000) : null;
     const lastRevisionSecs = start && proposals.length ? Math.round((Math.max(...proposals.map(p => iso(p.updated_at ?? p.created_at))) - start) / 1000) : null;
     const tools = s.threadId ? toolCounts(db, s.threadId) : {};
-    scores.push({ ...out, ...n, rows: rows.length, rowsProposed: read.size, rowsOutside: outside, secs, busySecs, firstSecs, lastRevisionSecs, tools, errors, modelSelection: s.modelSelection ?? null });
+    scores.push({ ...out, ...n, v2, rows: rows.length, rowsProposed, rowsOutside: outside, secs, busySecs, firstSecs, lastRevisionSecs, tools, errors, modelSelection: s.modelSelection ?? null });
   }
   db.close();
   appDb.close();
@@ -391,22 +337,25 @@ function score(run, cases) {
 function report(run, scores) {
   const dir = labPath('results', run.runId);
   const sum = key => scores.filter(s => s.state !== 'not started').reduce((t, s) => t + (s[key] ?? 0), 0);
+  const sum2 = key => scores.filter(s => s.state !== 'not started').reduce((t, s) => t + (s.v2?.[key] ?? 0), 0);
   const csvCell = v => (/[",\n]/.test(String(v)) ? `"${String(v).replaceAll('"', '""')}"` : v);
+  // The errors of the new scoring (cells not on the photo left out; "wrong (flagged)": a doubtful cell, wrong).
   const csv = [['case', 'row', 'field', 'read', 'truth', 'kind'], ...scores.flatMap(s => s.errors.map(e => [s.case, e.row, e.field, e.read ?? '', e.truth, e.kind]))]
     .map(r => r.map(csvCell).join(','))
     .join('\n');
   const table = [
     `# ${run.runId}: ${run.model}${run.effort ? ' · ' + run.effort : ''}${run.variant ? ' · ' + run.variant : ''}`,
     '',
-    '| case | state | correct / cells | filled cells right | wrong | missing | rows found | first proposal | time | tools |',
-    '|---|---|---|---|---|---|---|---|---|---|',
+    '| case | state | correct / cells (legacy) | new scoring | flagged right / wrong | wrong unflagged | missing | rows found | first proposal | time | tools |',
+    '|---|---|---|---|---|---|---|---|---|---|---|',
     ...scores.map(
       s =>
-        `| ${s.case} | ${s.state} | ${s.correct}/${s.total} (${pct(s.correct, s.total)}) | ${s.filledCorrect}/${s.filledTotal} | ${s.wrong} | ${s.missing} | ${s.rowsProposed}/${s.rows}${s.rowsOutside ? ` +${s.rowsOutside}` : ''} | ${s.firstSecs ?? '–'} s | ${s.secs ? Math.round(s.secs) + ' s' : '–'} | ${Object.entries(s.tools ?? {}).map(([k, v]) => `${k} ${v}`).join(', ')} |`,
+        `| ${s.case} | ${s.state} | ${s.correct}/${s.total} (${pct(s.correct, s.total)}) | ${s.v2 ? `${s.v2.correct}/${s.v2.total} (${pct(s.v2.correct, s.v2.total)})` : '–'} | ${s.v2 ? `${s.v2.flaggedRight} / ${s.v2.flaggedWrong}` : '–'} | ${s.v2?.wrongUnflagged ?? s.wrong} | ${s.v2?.missing ?? s.missing} | ${s.rowsProposed}/${s.rows}${s.rowsOutside ? ` +${s.rowsOutside}` : ''} | ${s.firstSecs ?? '–'} s | ${s.secs ? Math.round(s.secs) + ' s' : '–'} | ${Object.entries(s.tools ?? {}).map(([k, v]) => `${k} ${v}`).join(', ')} |`,
     ),
     '',
     `Time: first proposal ${sum('firstSecs')} s, total ${Math.round(sum('secs'))} s (sums over the cases).`,
-    `All: ${sum('correct')}/${sum('total')} (${pct(sum('correct'), sum('total'))}); filled cells ${sum('filledCorrect')}/${sum('filledTotal')} (${pct(sum('filledCorrect'), sum('filledTotal'))}); notes (scored apart, words only) ${sum('notesMatch')}/${sum('notesTotal')}`,
+    `Legacy (as every earlier run; doubtful cells count as left out): ${sum('correct')}/${sum('total')} (${pct(sum('correct'), sum('total'))}); filled cells ${sum('filledCorrect')}/${sum('filledTotal')} (${pct(sum('filledCorrect'), sum('filledTotal'))}); notes (words only) ${sum('notesMatch')}/${sum('notesTotal')}`,
+    `New: ${sum2('correct')}/${sum2('total')} (${pct(sum2('correct'), sum2('total'))}), without ${sum2('notOnPage')} cells not on the photo; doubtful cells by their value: ${sum2('flaggedRight')} right, ${sum2('flaggedWrong')} wrong; ${sum2('wrongUnflagged')} wrong without a flag, ${sum2('missing')} missing; notes (words, or the IDs of a couple) ${sum2('notesMatch')}/${sum2('notesTotal')}, ${sum2('extraNotes')} notes where the sheet has none`,
   ].join('\n');
   writePrivate(join(dir, 'scores.json'), JSON.stringify(scores, null, 1));
   writePrivate(join(dir, 'errors.csv'), csv + '\n');
@@ -420,6 +369,7 @@ function report(run, scores) {
         runId: run.runId, at: run.startedAt, model: run.model, effort: s.effort, case: s.case, state: s.state,
         correct: s.correct, total: s.total, filledCorrect: s.filledCorrect, filledTotal: s.filledTotal,
         wrong: s.wrong, missing: s.missing, notesMatch: s.notesMatch, notesTotal: s.notesTotal, rowsOutside: s.rowsOutside, secs: s.secs, busySecs: s.busySecs, firstSecs: s.firstSecs, tools: s.tools, snapshot: taken, variant: run.variant ?? null,
+        v2: s.v2 ?? null,
       }),
     );
   writeFileSync(HISTORY, [...old, ...lines].join('\n') + '\n', { mode: 0o600 });
@@ -432,7 +382,7 @@ function pct(a, b) {
   return b ? `${Math.round((1000 * a) / b) / 10} %` : '–';
 }
 
-/** The results history, model × case: the latest run of each, correct/total and time. */
+/** The results history, model × case: the latest run of each, correct/total and time (legacy scoring; the new one in the last column). */
 function printHistory() {
   if (!existsSync(HISTORY)) return console.log('No results yet');
   const lines = readFileSync(HISTORY, 'utf8').trim().split('\n').map(l => JSON.parse(l));
@@ -441,14 +391,21 @@ function printHistory() {
   const caseIds = [...new Set(lines.map(l => l.case))].sort();
   const latest = new Map();
   for (const l of lines) latest.set(`${name(l)}\u0000${l.case}`, l);
-  console.log(`| model | ${caseIds.join(' | ')} | all |`);
-  console.log(`|---|${caseIds.map(() => '---').join('|')}|---|`);
+  console.log(`| model | ${caseIds.join(' | ')} | all | new scoring |`);
+  console.log(`|---|${caseIds.map(() => '---').join('|')}|---|---|`);
   for (const m of models) {
     const cells = caseIds.map(c => latest.get(`${m}\u0000${c}`));
     const ok = cells.reduce((t, l) => t + (l?.correct ?? 0), 0);
     const all = cells.reduce((t, l) => t + (l?.total ?? 0), 0);
+    // Runs scored before the new scoring have no v2: rescore them (--rescore <run>) to fill it.
+    const scored = cells.filter(l => l?.v2);
+    const ok2 = scored.reduce((t, l) => t + l.v2.correct, 0);
+    const all2 = scored.reduce((t, l) => t + l.v2.total, 0);
     const time = l => (l.secs ? ` ${l.firstSecs != null ? l.firstSecs + '/' : ''}${Math.round(l.secs)}s` : '');
-    console.log(`| ${m} | ${cells.map(l => (l ? `${l.correct}/${l.total}${time(l)}` : '')).join(' | ')} | ${pct(ok, all)} |`);
+    const partial = scored.length && scored.length < cells.filter(Boolean).length ? ' (some cases)' : '';
+    console.log(
+      `| ${m} | ${cells.map(l => (l ? `${l.correct}/${l.total}${time(l)}` : '')).join(' | ')} | ${pct(ok, all)} | ${scored.length ? pct(ok2, all2) + partial : '–'} |`,
+    );
   }
-  console.log(`\nTimes: first proposal/total, in seconds. ${lines.length} results in ${HISTORY}`);
+  console.log(`\nTimes: first proposal/total, in seconds. "all" is the legacy scoring, comparable across every run. ${lines.length} results in ${HISTORY}`);
 }

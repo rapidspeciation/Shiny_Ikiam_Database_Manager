@@ -967,11 +967,16 @@ function suggestionBox(
 
 // ------------------------------------------------------------ the cell bar (components/CellBar.vue)
 
-/** A line under the cell bar's text: the sheet's value, the assistant's, a sum's total. */
+/** A line under the cell bar's text: the sheet's value, the assistant's, a sum's total, a doubt, where a value comes from. */
 export interface CellBarNote {
   label?: string
   text: string
-  kind?: 'sheet' | 'ai' | 'total'
+  kind?: 'sheet' | 'ai' | 'total' | 'doubt' | 'hint'
+}
+/** Another reading of a doubtful cell, offered beside it: `text` is written into the cell as if typed. */
+export interface CellBarChoice {
+  label: string
+  text: string
 }
 /**
  * What the bar above a grid shows for the selected cell, as Google Sheets'
@@ -992,6 +997,8 @@ export interface CellBarInfo {
   /** Why a cell cannot be edited, when there is one to give (a formula, a column that does not apply). */
   readonly?: string
   notes?: CellBarNote[]
+  /** Other readings to pick with a click (a doubtful cell's alternatives). */
+  choices?: CellBarChoice[]
 }
 export type Direction = 'up' | 'down' | 'left' | 'right'
 
