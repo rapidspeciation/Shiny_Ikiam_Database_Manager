@@ -99,7 +99,7 @@ const TOOLS = [
     function: {
       name: 'describe_sheet',
       description:
-        'Columns of a sheet with their type, which ones are formulas, and the latest rows. Dropdown columns give `allowed`: the sheet\'s own list (from the Lists sheet; strict = the sheet refuses other values), whole when short, as count/first/last for long ID lists (CAM pools, tubes; get_alerts has the CAM pools\' next free and remaining). Other short columns give the values in use.',
+        'Columns of a sheet with their type, which ones are formulas, and the latest rows. Dropdown columns give `allowed`: the sheet\'s own list (from the Lists sheet; strict = the sheet refuses other values), whole when short; long ID lists (CAM pools, tubes) as their ranges of consecutive IDs, newest first (get_alerts has the CAM pools\' next free and remaining). Other short columns give the values in use.',
       parameters: {
         type: 'object',
         properties: { module: { type: 'string', description: `The sheet: ${[...moduleMap.keys()].join(', ')}` } },
@@ -601,8 +601,29 @@ export function createAssistant({ store, config = {} }) {
       const values = [...list.values];
       const head = { strict: list.strict, source: list.source };
       if (values.length <= 60) return { ...head, values };
-      const sorted = values.slice().sort((a, b) => String(a).localeCompare(String(b), 'en', { numeric: true }));
-      return { ...head, count: values.length, first: sorted[0], last: sorted.at(-1) };
+      // IDs like CAM079935: their consecutive runs (the pools), newest first; anything else apart.
+      const ids = values.map(v => /^([A-Z]{2,4})(\d{4,})$/.exec(String(v).trim())).filter(Boolean);
+      if (ids.length < values.length * 0.8)
+        return { ...head, count: values.length, examples: values.slice(0, 10) };
+      const width = new Map();
+      for (const m of ids) width.set(m[1], Math.max(width.get(m[1]) ?? 0, m[2].length));
+      const name = (prefix, n) => `${prefix}${String(n).padStart(width.get(prefix), '0')}`;
+      const sorted = ids.map(m => [m[1], Number(m[2])]).sort((a, b) => a[0].localeCompare(b[0]) || a[1] - b[1]);
+      const runs = [];
+      for (const [prefix, n] of sorted) {
+        const last = runs.at(-1);
+        if (last && last.prefix === prefix && n === last.to + 1) last.to = n;
+        else runs.push({ prefix, from: n, to: n });
+      }
+      const big = runs.filter(r => r.to - r.from >= 19).sort((a, b) => b.to - a.to);
+      return {
+        ...head,
+        count: values.length,
+        ranges: big.slice(0, 12).map(r => `${name(r.prefix, r.from)}–${name(r.prefix, r.to)}`),
+        ...(big.length > 12 ? { olderRanges: big.length - 12 } : {}),
+        ...(runs.length > big.length ? { looseIds: runs.length - big.length } : {}),
+        ...(values.length > ids.length ? { otherValues: values.filter(v => !/^[A-Z]{2,4}\d{4,}$/.test(String(v).trim())).slice(0, 5) } : {}),
+      };
     };
     return {
       sheet: mod.id,
