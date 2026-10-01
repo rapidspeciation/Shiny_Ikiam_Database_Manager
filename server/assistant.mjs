@@ -99,7 +99,7 @@ const TOOLS = [
     function: {
       name: 'describe_sheet',
       description:
-        'Columns of a sheet with their type, which ones are formulas, the values in use for short-list columns, and the latest rows.',
+        'Columns of a sheet with their type, which ones are formulas, and the latest rows. Dropdown columns give `allowed`: the sheet\'s own list (from the Lists sheet; strict = the sheet refuses other values), whole when short, as count/first/last for long ID lists (CAM pools, tubes; get_alerts has the CAM pools\' next free and remaining). Other short columns give the values in use.',
       parameters: {
         type: 'object',
         properties: { module: { type: 'string', description: `The sheet: ${[...moduleMap.keys()].join(', ')}` } },
@@ -592,15 +592,28 @@ export function createAssistant({ store, config = {} }) {
           options.set(key, seen);
         }
     }
+    // The sheet's own dropdown lists (from the Lists sheet): what a cell may hold. Long ID lists
+    // (CAM pools, tubes) are summarised: how many, the first and the last.
+    const lists = listOptions(store, mod.id);
+    const allowedOf = key => {
+      const list = lists[key];
+      if (!list) return null;
+      const values = [...list.values];
+      const head = { strict: list.strict, source: list.source };
+      if (values.length <= 60) return { ...head, values };
+      const sorted = values.slice().sort((a, b) => String(a).localeCompare(String(b), 'en', { numeric: true }));
+      return { ...head, count: values.length, first: sorted[0], last: sorted.at(-1) };
+    };
     return {
       sheet: mod.id,
       columns: mod.fields.map(f => {
         const seen = options.get(f.key);
+        const allowed = allowedOf(f.key);
         return {
           key: f.key,
           type: f.type,
           formula: (formulas.get(f.key) ?? 0) > recent.length / 2,
-          ...(seen && seen.size <= 30 ? { values: [...seen.keys()] } : {}),
+          ...(allowed ? { allowed } : seen && seen.size <= 30 ? { values: [...seen.keys()] } : {}),
         };
       }),
       latestRows: recent.slice(0, 3).map(r => compact(r)),

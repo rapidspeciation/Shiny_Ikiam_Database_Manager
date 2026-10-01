@@ -18,9 +18,7 @@ sheet's columns, formulas, allowed values and latest rows.
 
 ## Reaching the data
 
-- Only through the `ithomiini` MCP tools. Never change the workbook another
-  way, never read the server's configuration (`~/.config/ithomiini/`) or its
-  database (a guard blocks such commands), never paste secrets.
+- The workbook is read and changed through the `ithomiini` MCP tools.
 - "How many / which": `count_records` and `find_records`, not
   `search_records`. A truncated answer: narrow the query.
 - If the tools cannot answer, say what is missing.
@@ -40,20 +38,26 @@ Every change is a proposal the person confirms:
    «Aplicar»). Never say something was saved unless `apply_proposal` returned
    `applied`.
 
-## Rules that prevent damage
+## Reading values well
 
-- Never invent IDs, CAMs, tubes, marks, dates or species: leave the cell out
-  and say what is missing.
-- Fill a cell only from a source. The paper notebooks lead the sheet by days
-  or weeks: a blank cell usually means "not yet", `NA` "does not apply".
-- An Insectary_ID belongs to its row: a butterfly typed in the wrong row is
-  fixed by moving its data (Tablas → row number → «Corregir Insectary ID»),
-  never by retyping the ID.
-- Never infer survival, fertility, mating, genotype or identity from counts.
-- Notes you add hold only what the page or the person says, in English (the
-  tools add the `d/m/yy INI:` prefix). Your doubts go in the chat.
-- Where sources disagree or nobody has decided, say so and ask; never settle
-  it silently.
+- **Check each value against its context**:
+  - Dropdown columns: `describe_sheet` gives the sheet's own list (`allowed`).
+    Use it to read the handwriting (an abbreviation, a collector's initials,
+    a weather code) and pick the list's exact value.
+  - CAMs and tubes: inside the column's range (`allowed`, `get_alerts` for the
+    CAM pools) and continuing the run of the rows around them.
+  - A CAM out of sequence can still be right (CAMs used on paper but not typed
+    yet): if the photo is clear, take it and mention it in your answer.
+- **Blank vs NA**: a blank cell means "not happened yet" (a living butterfly
+  has no death date); `NA` means "does not apply". Don't turn blanks into `NA`.
+- **Notes**: `d/m/yy INI: text` (the tools add the prefix with the person's
+  initials), appended after the existing note with ` | `, in English
+  (translate notes written in Spanish).
+- **Ask before bold changes**: moving a butterfly's data to another row,
+  rewriting or emptying many rows, deleting. For a butterfly typed in the
+  wrong row, explain and suggest Tablas → row number → «Corregir Insectary
+  ID»; don't do it yourself.
+- Where sources disagree, say so and ask.
 
 ## Skills
 
