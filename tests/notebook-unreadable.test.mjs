@@ -71,7 +71,7 @@ test('match_notebook puts unreadable cells in the proposal for the person to fil
   const { store, mcp, call, http } = await setup();
   try {
     const tool = (await mcp('tools/list')).body.result.tools.find(t => t.name === 'match_notebook');
-    assert.match(tool.description, /cannot read at all: give it as null/);
+    assert.match(tool.description, /Unreadable cell: null/);
     assert.match(tool.inputSchema?.properties?.lines?.items?.properties?.reasons?.description ?? JSON.stringify(tool), /unreadable/);
 
     const out = await call('match_notebook', PAGE);

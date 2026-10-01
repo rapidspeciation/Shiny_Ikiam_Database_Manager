@@ -784,3 +784,15 @@ test('one CAM per individual: a wing-clipped butterfly that dies keeps its CAM; 
   assert.deepEqual(b.cells.CAM_ID.alternatives, ['CAM078301']);
   assert.match(b.cells.CAM_ID.reason, /one CAM per individual/);
 });
+
+test('a clutch line whose adults differ from the butterflies typed in Insectary_data says so (never corrects it)', () => {
+  const rows = [{ id: 'a1', row: 50, version: 1, values: { 'CLUTCH NUMBER': 990 } }];
+  const lookup = { ...fakeLookup(rows), list: () => undefined, adultsOfClutch: clutch => (String(clutch) === '990' ? 7 : null) };
+  const transcription = parseTranscription(
+    JSON.stringify({ kind: 'stocks', year: 2026, lines: [{ raw: '990 … 5+4', v: { 'CLUTCH NUMBER': '990', 'NUMBER OF ADULTS': '5+4' } }] }),
+  );
+  const review = buildReview({ transcription, today: '2026-09-30', lookup });
+  assert.deepEqual(review.lines[0].warnings, ['NUMBER OF ADULTS: the page says 9; Insectary_data has 7 butterflies of clutch 990']);
+  const [change] = proposalRows(review).changes;
+  assert.match(change.note, /Insectary_data has 7 butterflies of clutch 990/);
+});

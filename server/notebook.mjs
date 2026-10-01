@@ -894,6 +894,7 @@ function chooseRows(items) {
  *   find(values) → records matching the line's key columns (sheet rows),
  *   clutch(text) → the clutch number as written in Insectary_stocks, or null,
  *   speciesOfClutch(clutch) → the species the SPECIES formula gives for a clutch,
+ *   adultsOfClutch(clutch) → how many Insectary_data rows have that clutch (null: unknown),
  *   list(field) → { strict, values: Set } for dropdown columns,
  *   holder(field, value, recordId) → another row using this unique ID, or null,
  *   newRowFormulas: Set of columns that are formulas in a new row,
@@ -1317,6 +1318,17 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
     const changes = Object.values(cells).filter(c => c.include).length;
     const toFill = Object.values(cells).filter(c => c.toFill).length;
     const picked = usable && (picks[line.n] ?? changes > 0);
+    // The adults a clutch line counts against the butterflies of that clutch typed in Insectary_data
+    // (the two notebooks are filled apart): a difference is said, never corrected.
+    const warnings = [];
+    const adults = cells['NUMBER OF ADULTS']?.value ?? null;
+    const counted = adults === null || adults === 'NA' ? null : (sumTotal(adults) ?? (Number.isFinite(Number(adults)) ? Number(adults) : null));
+    const clutchHere = cells['CLUTCH NUMBER']?.value ?? record?.values?.['CLUTCH NUMBER'] ?? null;
+    if (usable && counted !== null && clutchHere !== null && lookup.adultsOfClutch) {
+      const typed = lookup.adultsOfClutch(clutchHere);
+      if (typed !== null && typed !== counted)
+        warnings.push(`NUMBER OF ADULTS: the page says ${counted}; Insectary_data has ${typed} butterflies of clutch ${clutchHere}`);
+    }
     return {
       n: line.n,
       y: line.y,
@@ -1334,6 +1346,7 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
       ...(toFill ? { toFill } : {}),
       picked: picked && changes > 0,
       ...(item.near?.length ? { near: item.near } : {}),
+      ...(warnings.length ? { warnings } : {}),
     };
   });
 
@@ -1410,7 +1423,7 @@ export function proposalRows(review) {
       // Where an implied value comes from (a template, the note's words), for the person.
       if (cell.hintMsg && !cell.doubt) hints[field] = { text: clip(cell.message, 200), msg: cell.hintMsg };
     }
-    const note = clip([`Línea ${line.n}: «${line.raw}»`, ...notes].join(' · '), 300);
+    const note = clip([`Línea ${line.n}: «${line.raw}»`, ...notes, ...(line.warnings ?? [])].join(' · '), 300);
     const unreadable = unreadableOf(line);
     const meta = {
       ...(Object.keys(doubts).length ? { doubts } : {}),

@@ -28,20 +28,13 @@ export const MATCH_NOTEBOOK_TOOL = {
   function: {
     name: 'match_notebook',
     description: [
-      'Match a transcribed notebook page (or envelopes/labels) with the sheet and draft ONE proposal from it, shown at once beside the chat (Cambios propuestos). Follow the digitalizar-cuaderno skill.',
-      'Give every line of the page, top to bottom, with the values as written (dates day/month as written, e.g. "17/9"; ditto marks already replaced by the value above; CAMs/tubes written short like "cam505" or "81" may stay short, they continue the one above; counts as written, e.g. "12+15"; a count corrected by crossing out: the first value, then each new one after "=", e.g. "31+4=1" or "12=9=4", kept as the team types it, =31+4-34).',
-      'The server finds each line\'s row (also through look-alike IDs 0/O, 1/I, 5/S and the order of the rows), infers the year, completes list values, keeps the SPECIES formula unless what emerged differs, and checks lists, IDs and tubes already used.',
-      'It returns the proposalId, year and yearSource (whether the page or the date inferred the year), counts, and per line: status (match = row found; new = a new row; missing = not in the sheet, with didYouMean = sheet IDs a character away; ambiguous = several rows could be it; duplicate = the same key on another line; nokey = no readable key; crossed = crossed out on the page), inProposal, rowError (the row was refused, with why) and the cells by group: fill (to write), differs (the sheet has another value: sheet vs notebook), doubtful, unreadable, implied (filled from what the page implies), kept (the sheet keeps its value, with why), notWritten (formula columns), problems. Tell the person about missing, ambiguous and rowError lines, and the differs.',
-      'Doubtful cells GO INTO the proposal with your best reading as the value, highlighted for the person with their alternatives and reason: give a confidence below 0.8, up to 3 alternatives and a short reason. Never leave a readable value out for being doubtful or implausible: flag it.',
-      'A cell you cannot read at all: give it as null (never guess a value, never leave the column out), say why in reasons (e.g. "smudged", "cut off by the photo edge") and, if part of it is legible, that partial reading in alternatives (e.g. "1?/9", "CAM0765??"). It shows in the table as an empty cell marked unreadable (its own colour, not the doubtful amber) for the person to fill by hand; it is never written unless someone gives a value (the person in the table, or you with update_proposal on their word), and applying leaves it as the sheet has it. A matched row whose only news is unreadable cells still shows; a line not found stays out. The answer lists them per line under unreadable ({ reason, partial, toFill }: toFill true = in the table to fill; false = not needed, the sheet already has a value or the column is a formula) and counts.unreadableToFill: tell the person which cells to fill. get_proposal and apply_proposal list the ones still empty (unreadable).',
-      'The server also flags (as doubtful, never silently): a clutch unlike the run of lines next to it (848 among 843s, judged by the laid dates), a CAM with 7 digits or far from the run around it, a tube with 7 or 9 digits (the value becomes the reading that continues the run, the written one an alternative).',
-      'apply_proposal refuses while doubtful cells are unchecked and lists them: ask the person about each; they check them in the table, or tell you, then call update_proposal rows[].checked (or the value they say) or apply_proposal with confirmDoubtful.',
-      'The proposal\'s rows follow the page\'s line order. With includeUnchanged the lines already in the sheet show too, as context rows that are never written (never fake a change to make a line show).',
-      'Notes are written as "d/m/yy INI: text" (today, the person\'s initials) after the note the cell already has, with " | ".',
-      'Posturas: a generation written with the species or the clutch number, e.g. "lys (F1)" or "994(F1)", goes to Generation (F1, F2, Backcross), none written is NA; the dissections column goes to NUMBER OF PUPAE/LARVAE FOR DISECTIONS (a count, sums kept like the other counts); a dash in a date or count is NA; give INSECTARY OR LABORATORY as written ("ins", "lab", "ins/oda", "ins/este"): "ins/<person>" becomes Insectary plus the note "Butterflies of <person>" ("ins/lab" is read as "ins/oda", the note marked doubtful), and a line without it takes the page\'s room; a sheet sum that already holds the page\'s terms and more is kept.',
-      'Emergidos: a line with a clutch is Wild_Reared Reared; give Wild_Reared "Wild-caught" for a wild butterfly (no clutch), and add its Collection_data row to the proposal (wildWithoutCollection lists the ones missing, with the row ready to complete).',
-      'Emergidos and Muertes: give the notes column as written; its words that belong in columns leave the note and fill only empty cells: "ethanol"/"flash frozen" → the tube\'s medium (T1_/T2_Preservation_medium), "wc" → Tube_1_tissue wing clip, "pheromone" → Research_purpose Pheromones, "preserved" → Death_cause Killed_Preserved, "unk" → Death_cause Unknown, a CAM → CAM_ID, a tube → Tube_1_id, or Tube_2_id when there is one already. A death not preserved (a cause other than Killed_Preserved, no CAM or tube) gets the NA / NOT_COLLECTED block, a preserved one Preservation_date = Death_date, Preserved_Dead_Alive Alive (Killed_Preserved), Location_body Ikiam, WHOLE_ORGANISM, Flash frozen (since 2025) and the unused tubes NA: these show as implied, and never replace a value the row has.',
-      `Columns per kind: ${KIND_IDS.map(id => `${id} (${KINDS[id].label}, ${KINDS[id].sheet}): ${columnsOf(KINDS[id]).join(', ')}${KINDS[id].aliases ? ` (also accepted: ${Object.entries(KINDS[id].aliases).map(([a, f]) => `${a} = ${f}`).join(', ')})` : ''}`).join('; ')}.`,
+      'Match a transcribed notebook page (or envelopes/labels) with the sheet and draft ONE proposal, shown at once beside the chat. Follow the digitalizar-cuaderno skill.',
+      'Give every line, top to bottom, with values as written: dates as written ("17/9"), ditto marks replaced by the value above, short CAMs/tubes ("cam505", "81") may stay short, counts as written ("12+15"; a corrected count as "12=9=4"), INSECTARY OR LABORATORY as written ("ins/oda"), notes columns as written.',
+      'The server does the rest; don\'t do it yourself: finds each row (look-alike IDs 0/O, 1/I, 5/S, row order), infers the year, completes list values, keeps the SPECIES formula unless what emerged differs, writes notes as "d/m/yy INI: text" after the existing note, turns owner codes, generations ("(F1)"), dashes and note words ("ethanol", "wc", a CAM…) into their columns, fills a death\'s template, and flags (as doubtful, never silently) clutches, CAMs and tubes that break the run around them. Implied values never replace a value the row has.',
+      'Doubtful cell: your best reading as the value, confidence < 0.8, up to 3 alternatives and a short reason; it goes in highlighted. Unreadable cell: null, a reason, and any partial reading in alternatives; it shows empty for the person to fill and is never written empty. Never leave a column out.',
+      'Answer: proposalId, year/yearSource, counts, and per line status (match, new, missing with didYouMean, ambiguous, duplicate, nokey, crossed), inProposal, rowError, warnings, and the cells by group (fill, differs, doubtful, unreadable, implied, kept, notWritten, problems). Tell the person about missing/ambiguous lines, rowError, differs and warnings (e.g. a clutch\'s adults unlike the butterflies typed in Insectary_data). A wild-caught butterfly without its Collection_data row is listed in wildWithoutCollection, drafted for you to complete.',
+      'includeUnchanged: lines already in the sheet show as context rows (never written).',
+      `Columns per kind (exact names): ${KIND_IDS.map(id => `${id} (${KINDS[id].label}, ${KINDS[id].sheet}): ${columnsOf(KINDS[id]).join(', ')}${KINDS[id].aliases ? ` (also accepted: ${Object.entries(KINDS[id].aliases).map(([a, f]) => `${a} = ${f}`).join(', ')})` : ''}`).join('; ')}.`,
     ].join(' '),
     parameters: {
       type: 'object',
@@ -165,6 +158,8 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
     let own, stocks;
     const mine = () => (own ??= keyIndex(sheet, keys));
     const clutches = () => (stocks ??= keyIndex('Insectary_stocks', ['CLUTCH NUMBER']));
+    let reared;
+    const butterflies = () => (reared ??= keyIndex('Insectary_data', ['CLUTCH NUMBER']));
     const record = id => {
       const r = store.getRecord(id);
       return r && { id: r.id, row: r.row, version: r.version, label: r.label, values: r.values, formulas: r.formulas };
@@ -172,6 +167,14 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
     return {
       find: values => (mine().get(values.map(clutchKey).join('|')) ?? []).map(h => record(h.id)).filter(Boolean),
       clutch: value => clutches().get(clutchKey(value))?.[0]?.value ?? null,
+      // Adults only: eggs and larvae preserved with their own row (LIFESTAGE) are not emergences.
+      adultsOfClutch: value =>
+        sheet === 'Insectary_stocks'
+          ? (butterflies().get(clutchKey(value)) ?? []).filter(h => {
+              const stage = store.getRecord(h.id)?.values?.LIFESTAGE;
+              return isNone(stage) || /adult/i.test(String(stage));
+            }).length
+          : null,
       speciesOfClutch: value => {
         const hit = clutches().get(clutchKey(value))?.[0];
         return hit ? (store.getRecord(hit.id)?.values?.SPECIES ?? null) : null;
@@ -406,6 +409,7 @@ export function matchSummary({ review, changes, ignored, wildWithoutCollection =
     Object.assign(out, group);
     if (l.near?.length) out.didYouMean = l.near.map(n => ({ id: n.value, row: n.row }));
     if (l.rowError) out.rowError = l.rowError;
+    if (l.warnings) out.warnings = l.warnings;
     out.inProposal = inProposal.has(l.n);
     if (context.has(l.n)) out.contextRow = true;
     return out;
