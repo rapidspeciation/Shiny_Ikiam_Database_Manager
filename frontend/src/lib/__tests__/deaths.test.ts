@@ -12,6 +12,7 @@ import {
   preservationGaps,
   rankCauses,
   suggest,
+  usedSamples,
   type Getter,
 } from '../deaths'
 import type { CellValue, TableRow } from '../types'
@@ -139,6 +140,16 @@ describe('what a butterfly being preserved still lacks', () => {
     ])
     expect(gaps[2]).toMatchObject({ with: 'G1D', value: 'CAM078001' })
     expect(gaps.map(hasGap)).toEqual([false, true, true, true])
+  })
+  it('a CAM or tube another butterfly has in the sheet is "repeated" (its own is fine)', () => {
+    const owner = row({ Insectary_ID: 'H1D', CAM_ID: 'CAM078500', Tube_1_id: 'FS90415999' })
+    const dying = row({ Insectary_ID: 'H2D' })
+    const used = usedSamples(buildIndex([owner, dying]))
+    expect(used.get('FS90415999')).toBe('H1D')
+    const [gap] = preservationGaps([dying], saved, { H2D: { cam: 'CAM078501', tube: 'fs90415999' } }, used)
+    expect(gap).toMatchObject({ cam: '', tube: 'repeated', with: 'H1D', value: 'FS90415999' })
+    const [free] = preservationGaps([dying], saved, { H2D: { cam: 'CAM078501', tube: 'FS90416001' } }, used)
+    expect(hasGap(free)).toBe(false)
   })
 })
 

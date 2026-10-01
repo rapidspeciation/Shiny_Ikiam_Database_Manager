@@ -23,6 +23,7 @@ import {
   lifeOf,
   lookAlikes,
   preservationGaps,
+  usedSamples,
   rankCauses,
   searchKey,
   suggest,
@@ -250,7 +251,9 @@ watch([toPreserve, camRun, tubeRun], () => {
   }
 })
 /** What each butterfly being preserved still lacks (CAM, tube, a free slot), shown in its row and above Save. */
-const gaps = computed(() => preservationGaps(toPreserve.value, pending.value, samples))
+/** The CAMs and tubes already in the sheet: one typed again is flagged before Save (the server would refuse it). */
+const used = computed(() => usedSamples(index.value))
+const gaps = computed(() => preservationGaps(toPreserve.value, pending.value, samples, used.value))
 const gapById = computed(() => new Map(gaps.value.map(g => [g.id, g])))
 const readyCount = computed(() => gaps.value.filter(g => !hasGap(g)).length)
 const isSuggested = (id: string, kind: 'cam' | 'tube') => !!samples[id]?.[kind] && samples[id]?.[kind] === suggested[id]?.[kind]

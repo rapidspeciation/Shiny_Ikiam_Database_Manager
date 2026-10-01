@@ -148,23 +148,25 @@ export const hasGap = (g: PreservationGap) => g.slot === null || !!g.cam || !!g.
 /**
  * Each butterfly being preserved and what it still lacks, in the order given
  * (`samples`: the CAM and tube typed for each ID). A CAM or tube typed for two
- * of them is "repeated" on the second.
+ * of them is "repeated" on the second, and so is one another butterfly has in
+ * the sheet already (`used`: search key → its Insectary ID, see usedSamples).
  */
 export function preservationGaps(
   rows: TableRow[],
   get: Getter,
   samples: Record<string, { cam: string; tube: string } | undefined>,
+  used: Map<string, string> = new Map(),
 ): PreservationGap[] {
-  const seen = new Map<string, string>()
+  const seen = new Map(used)
   return rows.map(row => {
     const id = String(row.values.Insectary_ID ?? '')
     const s = samples[id]
     const keepsCam = !isBlank(get(row, 'CAM_ID'))
     const gap: PreservationGap = { id, slot: firstEmptySlot(f => get(row, f)), keepsCam, cam: '', tube: '' }
     const check = (kind: 'cam' | 'tube', value: string | undefined) => {
-      const v = (value ?? '').trim().toUpperCase()
+      const v = searchKey(value ?? '')
       if (!v) gap[kind] = 'missing'
-      else if (seen.has(v)) {
+      else if (seen.has(v) && seen.get(v) !== id) {
         gap[kind] = 'repeated'
         gap.with ??= seen.get(v)
         gap.value ??= v
@@ -242,6 +244,13 @@ export function buildIndex(rows: TableRow[]): Entry[] {
     }
     out.push({ row, id, key, samples, order: row.row })
   }
+  return out
+}
+
+/** Every CAM and tube the sheet's butterflies have (search key → Insectary ID), "NA" left out. */
+export function usedSamples(index: Entry[]): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const e of index) for (const s of e.samples) if (s !== 'NA' && !out.has(s)) out.set(s, e.id)
   return out
 }
 

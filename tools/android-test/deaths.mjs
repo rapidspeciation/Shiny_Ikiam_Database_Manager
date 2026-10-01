@@ -35,6 +35,8 @@ const browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
 const page = browser.contexts()[0].pages().find(p => p.url().startsWith(APP)) || browser.contexts()[0].pages()[0];
 page.on('pageerror', e => console.log('page error:', e.message));
 if (!page.url().startsWith(APP)) await page.goto(APP);
+// Taps go to the tab on screen: this one (another test may have left its own in front).
+await page.bringToFront();
 const signed = await page.evaluate(async () => (await (await fetch('api/auth/session')).json()).user);
 if (!signed)
   await page.evaluate(
@@ -168,7 +170,9 @@ report('preserved: boxes in view without scrolling', await page.evaluate(() => {
   const r = row?.getBoundingClientRect();
   return !!r && r.top >= vv.offsetTop && r.bottom <= vv.offsetTop + vv.height;
 }));
-report('suggested CAM / tube', [await camBox.inputValue(), await tube.inputValue()]);
+await page.waitForFunction(sel => !!document.querySelector(sel)?.value, `[data-sample="${ids[0]}:tube"]`, { timeout: 20000 });
+const freeTube = await tube.inputValue();
+report('suggested CAM / tube', [await camBox.inputValue(), freeTube]);
 await shot('6-preserved');
 // The tube emptied: the card, the list and the Save bar say what is missing.
 await page.evaluate(sel => {
@@ -183,7 +187,8 @@ await shot('7-missing-tube');
 await tapOn(page.locator('footer button', { hasText: 'Tube missing' }));
 await sleep(1800);
 report('typing the tube (keyboard, visible height, field visible, save visible, field above save)', await inView());
-await type('FS90415999');
+// The next free tube, typed back (one another butterfly has would be flagged before Save).
+await type(freeTube);
 report('after typing (the keyboard shows its suggestions)', await inView());
 await sleep(500);
 report('after typing: footer', await footer());
