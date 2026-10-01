@@ -1,7 +1,7 @@
 // Header, navigation, shared buttons and messages.
 export default {
   Inicio: 'Home',
-  Tablas: 'Tables',
+  Buscador: 'Search',
   Colecta: 'Collecting',
   Monitoreo: 'Monitoring',
   Muertes: 'Deaths',

@@ -13,7 +13,7 @@ export const PURPOSES: Record<string, { label: string; tone: string }> = {
   emergidos: { label: 'Emergidos', tone: 'bg-amber-100 text-amber-800' },
   clutches: { label: 'Clutches', tone: 'bg-orange-100 text-orange-800' },
   tubos: { label: 'Tubos', tone: 'bg-sky-100 text-sky-800' },
-  tablas: { label: 'Tablas', tone: 'bg-indigo-100 text-indigo-800' },
+  tablas: { label: 'Buscador', tone: 'bg-indigo-100 text-indigo-800' },
   revision: { label: 'Revisión', tone: 'bg-violet-100 text-violet-800' },
   cambio_id: { label: 'Cambio de ID', tone: 'bg-fuchsia-100 text-fuchsia-800' },
   asistente: { label: 'Asistente', tone: 'bg-purple-100 text-purple-800' },
