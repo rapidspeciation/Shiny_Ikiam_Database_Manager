@@ -1,4 +1,4 @@
-// Muertes on a phone (components/deaths): search, cards, register, editor.
+// Muertes as cards (components/deaths): search, cards, register, editor.
 export default {
   Anterior: 'Previous',
   '{i} de {n}': '{i} of {n}',
@@ -39,8 +39,17 @@ export default {
   Preservación: 'Preservation',
   'Sin preservar': 'Not preserved',
   Preservada: 'Preserved',
-  'Cuerpo entero ({tissue}) en un tubo; el CAM y el tubo de cada una van en su tarjeta.':
-    'Whole body ({tissue}) in one tube; each card takes its CAM and tube.',
+  'Cuerpo entero ({tissue}) en un tubo: confirma o escribe el CAM y el tubo de cada una.':
+    'Whole body ({tissue}) in one tube: confirm or type the CAM and tube of each.',
+  Medio: 'Medium',
+  'CAM y tubo de cada una': 'CAM and tube of each',
+  '{ok} de {n} listas': '{ok} of {n} ready',
+  Falta: 'Missing',
+  'Sin sitio para otro tubo': 'No free tube slot',
+  'Ya registradas como muertas, sin tubo aquí: {ids}': 'Already recorded dead, no tube here: {ids}',
+  'Busca y añade mariposas: aquí eliges la fecha, la causa y si se preservan, y las guardas.':
+    'Find and add butterflies: here you choose the date, the cause and whether they are preserved, and save them.',
+  'Registrar muertes': 'Record deaths',
   'Tubos de la gradilla {rack}': 'Tubes from the rack {rack}',
   'Últimas muertes registradas': 'Latest recorded deaths',
   '+{n} celda': '+{n} cell',

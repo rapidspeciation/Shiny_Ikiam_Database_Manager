@@ -114,10 +114,12 @@ function reveal(e: FocusEvent) {
 </script>
 
 <template>
+  <!-- On a tablet or a PC: a centred sheet over the dimmed page (a tap outside closes it). -->
+  <div v-if="row && facts" class="fixed inset-0 z-40 hidden bg-stone-900/40 sm:block" aria-hidden="true" @click="emit('close')" />
   <!-- Sized to what is visible, so the keyboard never hides the header or the buttons at the bottom. -->
   <div
     v-if="row && facts"
-    class="fixed inset-x-0 z-40 flex flex-col bg-white"
+    class="fixed inset-x-0 z-40 flex flex-col bg-white sm:inset-x-auto sm:left-1/2 sm:w-[min(40rem,100%)] sm:-translate-x-1/2 sm:shadow-2xl"
     :style="{ top: `${keyboard.visibleTop.value}px`, height: `${keyboard.visibleBottom.value - keyboard.visibleTop.value}px` }"
     role="dialog"
     :aria-label="label"

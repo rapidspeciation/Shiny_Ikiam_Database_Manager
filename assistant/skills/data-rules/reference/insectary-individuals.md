@@ -73,7 +73,7 @@ Cause not `Killed_Preserved` and no CAM:
 | Column | Value |
 |---|---|
 | Preservation_date, CAM_ID, Tube_1–4_id | `NA` |
-| Tube_1–4_tissue | `NA` (Jun–Sep 2026: 317 of 332 rows; the bulk tool of 2025–26 wrote `NOT_COLLECTED`: leave those) |
+| Tube_1–4_tissue | `NOT_COLLECTED` (Franz's decision, 1 Oct 2026: the intended method; Jun–Sep 2026 rows typed `NA` because it is quicker: leave those) |
 | T1_Preservation_medium, T2_Preservation_medium, Preservation_medium | `NOT_COLLECTED` |
 | Preserved_Dead_Alive, Location_body, Research_purpose | `NA` |
 
@@ -83,7 +83,7 @@ The app's Muertes tab writes this block; the notebook tool checks it.
 
 Preservation_date = Death_date · CAM_ID (insectary pool) · Tube_1_id
 `WHOLE_ORGANISM` `Flash frozen` (Tube_2 if Tube_1 is a wing clip) · the other
-tubes and their tissues `NA`, their media `NOT_COLLECTED` · Preservation_medium
+tubes `NA`, their tissues and media `NOT_COLLECTED` · Preservation_medium
 (the whole-body column) = the medium used · Preserved_Dead_Alive `Alive` when
 killed (`Killed_Preserved`), `Dead` when found dead · Location_body `Ikiam` ·
 Research_purpose from the project (`F1/F2 mutation rate` for cross parents and

@@ -6,12 +6,17 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
  */
 export const PHONE_QUERY = '(max-width: 639.98px)'
 export function usePhoneWidth() {
-  const query = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(PHONE_QUERY) : null
-  const phone = ref(!!query?.matches)
-  const follow = (e: MediaQueryListEvent) => (phone.value = e.matches)
+  return useMedia(PHONE_QUERY)
+}
+
+/** Whether a media query matches, following the screen (turning, resizing). */
+export function useMedia(media: string) {
+  const query = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(media) : null
+  const matches = ref(!!query?.matches)
+  const follow = (e: MediaQueryListEvent) => (matches.value = e.matches)
   onMounted(() => query?.addEventListener('change', follow))
   onBeforeUnmount(() => query?.removeEventListener('change', follow))
-  return phone
+  return matches
 }
 
 /**

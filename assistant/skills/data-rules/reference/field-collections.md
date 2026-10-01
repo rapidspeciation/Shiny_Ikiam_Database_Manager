@@ -19,8 +19,8 @@ The kind is decided by `Release_Collect` first, then `Purpose`.
 ## Templates (current practice, Ecuador rows since Sep 2025)
 
 **Preserved in the field (local team):** CAM_ID (next local wild CAM) ·
-Tube_1_id · Tube_1_tissue `WHOLE_ORGANISM` · Tube_2–4 `NA` (their tissues `NA`
-or `NOT_COLLECTED`) · Preservation_medium `Flash frozen` · Preserved_dead_alive
+Tube_1_id · Tube_1_tissue `WHOLE_ORGANISM` · Tube_2–4 `NA` (their tissues
+`NOT_COLLECTED`: Franz, 1 Oct 2026; older rows also `NA`) · Preservation_medium `Flash frozen` · Preserved_dead_alive
 `Alive` (`Dead` when found dead/dying, with a note "Preserved dead ~2h") ·
 Death_date = Preservation_date = the collection day (next day if kept
 overnight; still `Alive`) · Splitted_body `No` · Location_Head, _Torax,

@@ -3,43 +3,37 @@ import ChoiceField from '../components/ChoiceField.vue'
 import DateField from '../components/DateField.vue'
 import { computed, ref } from 'vue'
 import { PenLine } from 'lucide-vue-next'
+import EntryModeToggle from '../components/EntryModeToggle.vue'
 import IdPicker from '../components/IdPicker.vue'
-import DeathsPhone from '../components/deaths/DeathsPhone.vue'
+import DeathsCards from '../components/deaths/DeathsCards.vue'
 import SheetGrid from '../components/SheetGrid.vue'
-import { usePhoneWidth } from '../composables/usePhone'
+import { useDeathsState } from '../composables/useDeathsState'
+import { useEntryMode } from '../composables/useEntryMode'
 import { useSheet } from '../composables/useSheet'
 import { isBlank } from '../lib/cells'
-import { dayLabel, formatSerial, serialFromIso, todayIso } from '../lib/dates'
+import { dayLabel, formatSerial, serialFromIso } from '../lib/dates'
 import { notify } from '../lib/notice'
-import { persistentRef } from '../lib/persist'
 import { deathCells } from '../lib/deaths'
 import { fillIfBlank, orderColumns, rowsById } from '../lib/rows'
 import { usePending } from '../stores/pending'
 import { t } from '../lib/i18n'
 
 /**
- * "Registrar Muertes": the IDs typed show their rows at once (to look at them),
- * and "Escribir" puts the death date and cause in those rows' empty cells.
- * The latest recorded deaths are a separate table below.
+ * "Registrar Muertes", as cards (touch screens: search, big buttons, one Save)
+ * or as the table (a PC): the IDs typed show their rows at once (to look at
+ * them), and "Escribir" puts the death date and cause in those rows' empty
+ * cells. The latest recorded deaths are a separate table below. Both modes
+ * share what is being registered (useDeathsState), so switching keeps it.
  */
 const MODULE = 'Insectary_data'
 const module = ref(MODULE)
 const pending = usePending()
 const { table, ready, options } = useSheet(module)
-/** Phones get their own screen (cards, big buttons); the grids below are for wider screens. */
-const phone = usePhoneWidth()
+const { mode } = useEntryMode('deaths')
 
-const picked = persistentRef<string[]>('deaths:picked', [])
-// Lists kept from when the IDs had to be loaded with a button.
-const oldLoaded = persistentRef<string[]>('deaths:loaded', [])
-if (oldLoaded.value.length) {
-  if (!picked.value.length) picked.value = oldLoaded.value
-  oldLoaded.value = []
-}
 // Deaths are usually entered the same day: today by default, with its weekday shown.
-const date = ref(todayIso())
-const cause = persistentRef('deaths:cause', '')
-const notPreserved = persistentRef('deaths:not-preserved', true)
+const { picked, date, cause, preserved } = useDeathsState()
+const notPreserved = computed({ get: () => !preserved.value, set: v => (preserved.value = !v) })
 const recentCount = ref(30)
 
 const ids = computed(() => {
@@ -103,7 +97,7 @@ function write() {
   if (!date.value) return notify(t('Elige la fecha de muerte'), 'error')
   const serial = serialFromIso(date.value)
   let filled = 0
-  // The same cells as the phone's "Save" (lib/deaths.ts), so both screens write a death alike.
+  // The same cells as the cards' "Save" (lib/deaths.ts), so both modes write a death alike.
   for (const row of chosenRows.value) {
     const label = String(row.values.Insectary_ID)
     for (const cell of deathCells(row, pending.value, { serial, cause: cause.value, notPreserved: notPreserved.value }))
@@ -119,7 +113,7 @@ function write() {
 </script>
 
 <template>
-  <DeathsPhone v-if="phone" :table="table" :ready="ready" :options="options" />
+  <DeathsCards v-if="mode === 'cards'" v-model:mode="mode" :table="table" :ready="ready" :options="options" />
   <div v-else class="flex h-full flex-col">
     <div class="toolbar">
       <IdPicker v-model="picked" :options="ids" :loading="!ready" :warn="warn" label="Insectary IDs" />
@@ -143,11 +137,11 @@ function write() {
         class="flex max-w-64 items-center gap-2 pb-1.5 text-xs"
         :title="
           $t(
-            'Para causas distintas de Killed_Preserved y filas sin CAM ni tubo: CAM, tubos, tejidos, Preservation_date, Location_body y Preserved_Dead_Alive en NA; medios en NOT_COLLECTED',
+            'Para causas distintas de Killed_Preserved y filas sin CAM ni tubo: CAM, tubos, Preservation_date, Location_body y Preserved_Dead_Alive en NA; tejidos y medios en NOT_COLLECTED. Sin marcar, solo fecha y causa: el CAM y el tubo van en Tubos o en las tarjetas.',
           )
         "
       >
-        <input v-model="notPreserved" type="checkbox" /> {{ $t('Sin preservar: CAM y tubos NA, medios NOT_COLLECTED') }}
+        <input v-model="notPreserved" type="checkbox" /> {{ $t('Sin preservar: CAM y tubos NA, tejidos y medios NOT_COLLECTED') }}
       </label>
       <button
         class="btn-primary"
@@ -162,6 +156,7 @@ function write() {
         <PenLine :size="15" /> {{ $t('Escribir fecha y causa')
         }}<template v-if="chosenRows.length"> ({{ chosenRows.length }})</template>
       </button>
+      <EntryModeToggle v-model="mode" class="ml-auto" />
     </div>
     <div class="flex min-h-0 flex-1 flex-col">
       <p v-if="!ready" class="p-6 text-stone-500">{{ $t('Cargando {sheet}…', { sheet: 'Insectary_data' }) }}</p>

@@ -263,9 +263,9 @@ export default {
   'Elige la fecha': 'Choose the date',
   'Causa por defecto': 'Default cause',
   'p. ej. {example}': 'e.g. {example}',
-  'Para causas distintas de Killed_Preserved y filas sin CAM ni tubo: CAM, tubos, tejidos, Preservation_date, Location_body y Preserved_Dead_Alive en NA; medios en NOT_COLLECTED':
-    'For causes other than Killed_Preserved and rows without a CAM or tube: CAM, tubes, tissues, Preservation_date, Location_body and Preserved_Dead_Alive set to NA; media set to NOT_COLLECTED',
-  'Sin preservar: CAM y tubos NA, medios NOT_COLLECTED': 'Not preserved: CAM and tubes NA, media NOT_COLLECTED',
+  'Para causas distintas de Killed_Preserved y filas sin CAM ni tubo: CAM, tubos, Preservation_date, Location_body y Preserved_Dead_Alive en NA; tejidos y medios en NOT_COLLECTED. Sin marcar, solo fecha y causa: el CAM y el tubo van en Tubos o en las tarjetas.':
+    'For causes other than Killed_Preserved and rows without a CAM or tube: CAM, tubes, Preservation_date, Location_body and Preserved_Dead_Alive set to NA; tissues and media set to NOT_COLLECTED. Unticked, only the date and cause: the CAM and tube go in Tubos or in the cards.',
+  'Sin preservar: CAM y tubos NA, tejidos y medios NOT_COLLECTED': 'Not preserved: CAM and tubes NA, tissues and media NOT_COLLECTED',
   'Escribe la fecha y la causa en las celdas vacías de los {n} IDs elegidos':
     'Writes the date and cause in the empty cells of the {n} chosen IDs',
   'Escribe primero los Insectary IDs': 'Type the Insectary IDs first',

@@ -82,17 +82,22 @@ test('a death line implies its other columns, only where the row is empty', () =
     Location_body: 'Ikiam',
     Tube_1_tissue: 'WHOLE_ORGANISM',
     T1_Preservation_medium: 'Ethanol',
+    // Unused tubes: ID NA, tissue NOT_COLLECTED (Franz, 1 Oct 2026).
     Tube_2_id: 'NA',
-    Tube_2_tissue: 'NA',
+    Tube_2_tissue: 'NOT_COLLECTED',
     T2_Preservation_medium: 'NOT_COLLECTED',
     Tube_3_id: 'NA',
-    Tube_3_tissue: 'NA',
+    Tube_3_tissue: 'NOT_COLLECTED',
     Tube_4_id: 'NA',
-    Tube_4_tissue: 'NA',
+    Tube_4_tissue: 'NOT_COLLECTED',
   });
-  // Died, not preserved: the block Muertes writes (with Research_purpose NA).
+  // Died, not preserved: the block Muertes writes (with Research_purpose NA): tubes NA, tissues and media NOT_COLLECTED.
   const lost = impliedValues({ text: { Death_date: '6/10', Death_cause: 'Unknown' }, death: d('2025-10-06') }).values;
   assert.deepEqual(lost, NOT_PRESERVED);
+  for (const n of [1, 2, 3, 4]) {
+    assert.equal(lost[`Tube_${n}_id`], 'NA');
+    assert.equal(lost[`Tube_${n}_tissue`], 'NOT_COLLECTED');
+  }
   // A wing clip at emergence (alive): its tube's tissue and medium; pheromones as the purpose.
   const clip = impliedValues({ text: { CAM_ID: 'CAM078054', Tube_1_id: 'FS90415634' }, note: { wingClip: true, pheromone: true }, intro: d('2025-08-11') }).values;
   assert.deepEqual(clip, { Research_purpose: 'Pheromones', Tube_1_tissue: WING_CLIP, T1_Preservation_medium: 'Flash frozen' });
@@ -138,8 +143,8 @@ test('match_notebook fills the implied columns, keeps what the row has, and the 
   assert.match(kept.cells.T1_Preservation_medium.message, /De la nota: «ethanol»/);
   assert.equal(kept.cells.Notes_Insectary_data.status, 'empty', 'the note was only the medium');
   assert.equal(lost.cells.T1_Preservation_medium.value, 'NOT_COLLECTED');
-  assert.equal(lost.cells.Tube_2_tissue.status, 'keep', 'NOT_COLLECTED already there: kept');
-  assert.equal(lost.cells.Tube_2_tissue.message, null);
+  assert.equal(lost.cells.Tube_2_tissue.status, 'same', 'NOT_COLLECTED already there: what the block writes');
+  assert.match(lost.cells.Tube_2_tissue.message, /Muerte sin preservar/);
   assert.equal(lost.cells.T2_Preservation_medium.status, 'same');
   assert.equal(clip.cells.CAM_ID.value, 'CAM078054', 'the CAM written in the note goes to its column');
   assert.equal(clip.cells.Tube_1_id.value, 'FS90415634');
