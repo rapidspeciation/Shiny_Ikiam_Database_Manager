@@ -458,4 +458,7 @@ export default {
   'Otras lecturas': 'Other readings',
   'Escribir {value} en la celda': 'Write {value} in the cell',
   'Completar {value} en la barra': 'Complete {value} in the bar',
+  // EntryModeToggle: a data-entry tab as cards (touch) or as the table.
+  Vista: 'View',
+  Tarjetas: 'Cards',
 } as Record<string, string>
