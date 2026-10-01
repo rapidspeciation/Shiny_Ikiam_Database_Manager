@@ -16,14 +16,14 @@ const kind = computed(() => {
 <template>
   <span
     v-if="kind === 'f'"
-    class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-pink-100 px-1 text-sm leading-none font-bold text-pink-700"
+    class="inline-flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full bg-pink-100 px-1 text-base leading-none font-bold text-pink-700"
     :title="sex ?? ''"
     :aria-label="sex ?? ''"
     >♀</span
   >
   <span
     v-else-if="kind === 'm'"
-    class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-sky-100 px-1 text-sm leading-none font-bold text-sky-700"
+    class="inline-flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full bg-sky-100 px-1 text-base leading-none font-bold text-sky-700"
     :title="sex ?? ''"
     :aria-label="sex ?? ''"
     >♂</span
