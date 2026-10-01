@@ -2,17 +2,17 @@
 import ChoiceField from '../components/ChoiceField.vue'
 import DateField from '../components/DateField.vue'
 import HistoryCard from '../components/history/HistoryCard.vue'
+import UndoDialog from '../components/history/UndoDialog.vue'
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { ArrowRight, ListChecks, RefreshCw, Search, SlidersHorizontal, Undo2, X } from 'lucide-vue-next'
-import { api, requestId } from '../lib/api'
-import { displayValue } from '../lib/cells'
+import { ListChecks, RefreshCw, Search, SlidersHorizontal, X } from 'lucide-vue-next'
+import { api } from '../lib/api'
+import { useUndo, type UndoBody } from '../composables/useUndo'
 import { PURPOSES, linkedSave } from '../lib/history'
 import { errorText, notify } from '../lib/notice'
-import type { HistoryGroup, UndoPreview, UndoPreviewItem } from '../lib/types'
+import type { HistoryGroup } from '../lib/types'
 import { useSession } from '../stores/session'
-import { useTables } from '../stores/tables'
-import { t, tn } from '../lib/i18n'
+import { t } from '../lib/i18n'
 
 /**
  * Historial: one card per save (a person's saves with one purpose, close in
@@ -21,7 +21,6 @@ import { t, tn } from '../lib/i18n'
  * #/historial?grupo=<id> (or ?accion=<id>) opens that save and scrolls to it.
  */
 const session = useSession()
-const tables = useTables()
 const route = useRoute()
 
 const PAGE = 20
@@ -124,67 +123,15 @@ watch(
   { immediate: true },
 )
 
-// --- Undo: always a preview first, then one confirmation.
-const undoing = ref<null | {
-  title: string
-  body: Record<string, string[]>
-  preview: UndoPreview
-  requestId: string
-  groupId: string
-}>(null)
-const reason = ref('')
-const busy = ref(false)
-const closeOnEscape = (e: KeyboardEvent) => e.key === 'Escape' && !busy.value && (undoing.value = null)
-window.addEventListener('keydown', closeOnEscape)
-onBeforeUnmount(() => window.removeEventListener('keydown', closeOnEscape))
-
-async function review(group: HistoryGroup, body: Record<string, string[]>, title: string) {
-  try {
-    const preview = await api<UndoPreview>('history/preview', { method: 'POST', body })
-    reason.value = ''
-    undoing.value = { title, body, preview, requestId: requestId(), groupId: group.id }
-  } catch (e) {
-    notify(errorText(e), 'error')
-  }
-}
-async function confirmUndo() {
-  const u = undoing.value
-  if (!u) return
-  busy.value = true
-  try {
-    const result = await api<{ action: { changes: { sheet: string }[] } | null }>('history/undo', {
-      method: 'POST',
-      body: { ...u.body, requestId: u.requestId, reason: reason.value || null },
-    })
-    const sheets = new Set(result.action?.changes.map(c => c.sheet) || [])
-    await Promise.all([...sheets].filter(s => tables.tables[s]).map(s => tables.load(s, true)))
-    notify(t('Cambios deshechos en Google Sheets'), 'success')
-    undoing.value = null
-    // The card stays in view with its changes marked as undone; the undo is a new card on top.
-    details.clear()
-    await load({ until: u.groupId })
-    if (pinned.value?.id === u.groupId) pinned.value = await loadDetail(u.groupId, true)
-    await Promise.all([...open].map(id => loadDetail(id).catch(() => open.delete(id))))
-  } catch (e) {
-    notify(errorText(e), 'error')
-  } finally {
-    busy.value = false
-  }
-}
-
-/** Why a change cannot be undone (Spanish, the keys of lib/i18n.ts: shown through t()). */
-const CONFLICT: Record<string, string> = {
-  later_field_edit: 'se cambió otra vez después',
-  missing_record: 'la fila ya no existe',
-  value_or_chain_changed: 'ya no tiene el valor guardado',
-}
-const fieldOf = (sheet: string | null | undefined, key: string) =>
-  sheet ? session.module(sheet)?.fields.find(f => f.key === key) : undefined
-const empty = (value: UndoPreviewItem['before']) => value === null || value === undefined || value === ''
-function show(item: UndoPreviewItem, value: UndoPreviewItem['before']) {
-  if (value && typeof value === 'object') return t('fórmula {formula}', { formula: value.formula })
-  return displayValue(value, fieldOf(item.sheet, item.field)) || t('vacío')
-}
+// --- Undo: always a preview first, then one confirmation (useUndo).
+const { undoing, reason, busy, review: reviewUndo, cancel: cancelUndo, confirm: confirmUndo } = useUndo(async u => {
+  // The card stays in view with its changes marked as undone; the undo is a new card on top.
+  details.clear()
+  await load({ until: u.groupId })
+  if (u.groupId && pinned.value?.id === u.groupId) pinned.value = await loadDetail(u.groupId, true)
+  await Promise.all([...open].map(id => loadDetail(id).catch(() => open.delete(id))))
+})
+const review = (group: HistoryGroup, body: UndoBody, title: string) => reviewUndo(body, title, group.id)
 
 async function recover() {
   try {
@@ -313,78 +260,6 @@ async function recover() {
       </div>
     </div>
 
-    <div
-      v-if="undoing"
-      class="fixed inset-0 z-40 grid place-items-center bg-black/40 p-2"
-      @click.self="!busy && (undoing = null)"
-    >
-      <section class="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-lg bg-white shadow-xl">
-        <header class="flex items-start gap-2 border-b border-stone-200 px-4 py-3">
-          <div class="min-w-0 flex-1">
-            <h2 class="text-lg font-semibold">
-              {{ $tn(undoing.preview.changes.length, 'Deshacer {n} cambio', 'Deshacer {n} cambios') }}
-            </h2>
-            <p class="hint break-words">{{ undoing.title }}</p>
-          </div>
-          <button class="btn-ghost" :disabled="busy" @click="undoing = null"><X :size="20" /></button>
-        </header>
-        <div class="flex-1 overflow-y-auto px-4 py-3 text-sm">
-          <div v-if="undoing.preview.conflicts.length" class="mb-3 rounded bg-red-50 px-3 py-2 text-red-800">
-            <p class="font-medium">
-              {{
-                $tn(
-                  undoing.preview.conflicts.length,
-                  '{n} cambio no se puede deshacer; no se escribe nada. Deshaz primero lo que se cambió después, elige otros cambios o corrígelo a mano.',
-                  '{n} cambios no se pueden deshacer; no se escribe nada. Deshaz primero lo que se cambió después, elige otros cambios o corrígelo a mano.',
-                )
-              }}
-            </p>
-            <ul class="mt-1 space-y-0.5">
-              <li v-for="c in undoing.preview.conflicts" :key="c.recordId + c.field">
-                <strong>{{ c.label || c.recordId }}</strong> · {{ c.field }}:
-                {{ CONFLICT[c.reason || ''] ? $t(CONFLICT[c.reason || '']) : c.reason }}
-                {{ $t('(ahora {value})', { value: show(c, c.before) }) }}
-              </li>
-            </ul>
-          </div>
-          <p class="hint mb-1">{{ $t('Cada celda vuelve al valor que tenía antes del guardado:') }}</p>
-          <ul class="divide-y divide-stone-100">
-            <li v-for="c in undoing.preview.changes" :key="c.recordId + c.field" class="py-1 sm:flex sm:items-start sm:gap-2">
-              <span class="block shrink-0 sm:w-56">
-                <strong>{{ c.label || c.recordId }}</strong>
-                <span class="ml-1.5 font-mono text-xs text-stone-600">{{ c.field }}</span>
-              </span>
-              <span class="flex min-w-0 flex-wrap items-center gap-1">
-                <span
-                  class="break-all"
-                  :class="
-                    empty(c.before)
-                      ? 'italic text-stone-400'
-                      : 'rounded bg-red-50 px-1 text-red-800 line-through decoration-red-300'
-                  "
-                  >{{ show(c, c.before) }}</span
-                >
-                <ArrowRight :size="12" class="shrink-0 text-stone-400" />
-                <span
-                  class="break-all"
-                  :class="empty(c.after) ? 'italic text-stone-400' : 'rounded bg-emerald-50 px-1 font-medium text-emerald-900'"
-                  >{{ show(c, c.after) }}</span
-                >
-              </span>
-            </li>
-          </ul>
-        </div>
-        <footer class="flex flex-wrap items-end gap-2 border-t border-stone-200 px-4 py-3">
-          <label class="min-w-48 flex-1">
-            <span class="field-label">{{ $t('Motivo (opcional)') }}</span>
-            <input v-model="reason" class="field-input" :placeholder="$t('p. ej. mariposas guardadas dos veces')" />
-          </label>
-          <button class="btn" :disabled="busy" @click="undoing = null">{{ $t('Cancelar') }}</button>
-          <button class="btn-primary" :disabled="busy || !undoing.preview.eligible" @click="confirmUndo">
-            <Undo2 :size="15" /> {{ busy ? $t('Deshaciendo…') : $t('Deshacer en la hoja') }}
-          </button>
-        </footer>
-      </section>
-    </div>
+    <UndoDialog v-if="undoing" v-model:reason="reason" :review="undoing" :busy="busy" @cancel="cancelUndo" @confirm="confirmUndo" />
   </div>
 </template>

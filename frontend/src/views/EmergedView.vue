@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TabHistoryButton from '../components/history/TabHistoryButton.vue'
 import ChoiceField from '../components/ChoiceField.vue'
 import DateField from '../components/DateField.vue'
 import { computed, ref, watch } from 'vue'
@@ -234,6 +235,7 @@ const recent = computed(() => {
         </button>
         <button class="btn" @click="prepare([null])"><Plus :size="15" /> {{ $t('Añadir una') }}</button>
       </div>
+      <TabHistoryButton class="ml-auto" purpose="emergidos" :title="$t('Historial de Emergidos')" />
     </div>
     <InsectaryIdsWarning class="mx-4 mt-2" :revision="table?.revision" @extended="loadFreeIds" />
     <p class="hint px-4 py-1">

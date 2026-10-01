@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TabHistoryButton from '../components/history/TabHistoryButton.vue'
 import ChoiceField from '../components/ChoiceField.vue'
 import DateField from '../components/DateField.vue'
 import { computed, onMounted, ref, watch } from 'vue'
@@ -374,6 +375,7 @@ function nextAfter(id: string) {
         <button class="btn-primary" @click="load(false)"><Download :size="15" /> {{ $t('Cargar') }}</button>
         <button class="btn" @click="load(true)"><Plus :size="15" /> {{ $t('Añadir a la tabla') }}</button>
       </div>
+      <TabHistoryButton class="ml-auto" purpose="tubos" :title="$t('Historial de Tubos')" />
     </div>
     <div class="toolbar">
       <label>

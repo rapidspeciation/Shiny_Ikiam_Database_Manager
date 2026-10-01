@@ -70,4 +70,11 @@ export default {
   '{n} cambios elegidos': '{n} changes chosen',
   'Deshacer {n} cambios elegidos': 'Undo {n} chosen changes',
   'Deshacer selección': 'Undo selection',
+  'Día anterior': 'Previous day',
+  'Día siguiente': 'Next day',
+  'cada guardado con sus celdas antes → después; deshacer pide confirmación y no escribe nada si la celda cambió después.': 'each save with its cells before → after; undo asks to confirm and writes nothing if a cell changed again since.',
+  'Ningún guardado tuyo este día.': 'No saves of yours this day.',
+  'Ningún guardado este día.': 'No saves this day.',
+  'Historial de Emergidos': 'Emerged history',
+  'Historial de Tubos': 'Tubes history',
 } as Record<string, string>

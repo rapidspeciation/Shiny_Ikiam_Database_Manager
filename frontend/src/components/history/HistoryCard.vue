@@ -35,6 +35,8 @@ const props = defineProps<{
   canEdit: boolean
   /** The text searched for: the cells it matches are marked. */
   search?: string
+  /** Big touch targets (a tab's own history, on a phone or tablet). */
+  touch?: boolean
 }>()
 const emit = defineEmits<{
   toggle: []
@@ -194,14 +196,21 @@ async function copyLink() {
       <div class="flex shrink-0 items-center gap-1" @click.stop>
         <button
           v-if="canEdit && group.undoable"
-          class="btn px-2 py-1 text-xs"
+          :class="touch ? 'btn h-11 px-3 text-sm' : 'btn px-2 py-1 text-xs'"
           :title="$t('Deshacer todos los cambios de este guardado (se revisa antes)')"
           @click="emit('undo', { groupIds: [group.id] }, $t('Deshacer todo: {summary}', { summary }))"
         >
-          <Undo2 :size="14" /> <span class="hidden sm:inline">{{ $t('Deshacer todo') }}</span>
+          <Undo2 :size="touch ? 16 : 14" /> <span :class="touch ? '' : 'hidden sm:inline'">{{ $t('Deshacer todo') }}</span>
         </button>
-        <button class="btn-ghost" :title="$t('Copiar el enlace a este guardado')" @click="copyLink"><Link2 :size="15" /></button>
-        <button class="btn-ghost" :title="open ? $t('Cerrar') : $t('Ver los cambios')" @click="emit('toggle')">
+        <button v-if="!touch" class="btn-ghost" :title="$t('Copiar el enlace a este guardado')" @click="copyLink"><Link2 :size="15" /></button>
+        <button
+          class="btn-ghost"
+          :class="{ 'h-11 w-11 justify-center': touch }"
+          :title="open ? $t('Cerrar') : $t('Ver los cambios')"
+          :aria-label="open ? $t('Cerrar') : $t('Ver los cambios')"
+          :aria-expanded="open"
+          @click="emit('toggle')"
+        >
           <ChevronDown :size="16" class="transition-transform" :class="{ 'rotate-180': open }" />
         </button>
       </div>
@@ -221,6 +230,7 @@ async function copyLink() {
           <button
             v-if="canUndo(action) && pending(action.changes).length"
             class="ml-auto inline-flex items-center gap-1 text-brand-700 hover:underline"
+            :class="{ 'min-h-11 px-1 text-sm': touch }"
             @click="
               emit(
                 'undo',
@@ -240,6 +250,7 @@ async function copyLink() {
             <button
               v-if="canUndo(action) && row.changes.length > 1 && pending(row.changes).length"
               class="ml-auto inline-flex items-center gap-1 text-brand-700 hover:underline"
+              :class="{ 'min-h-11 px-1 text-sm': touch }"
               @click="
                 emit('undo', { changeIds: pending(row.changes) }, $t('Deshacer los cambios de {label}', { label: row.label }))
               "
@@ -251,8 +262,10 @@ async function copyLink() {
             <li
               v-for="c in row.changes"
               :key="c.id"
-              class="grid grid-cols-[1.25rem_minmax(0,1fr)_auto] items-start gap-x-2 px-2 py-1"
+              class="grid gap-x-2 px-2 py-1"
               :class="{
+                'grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center': touch,
+                'grid-cols-[1.25rem_minmax(0,1fr)_auto] items-start': !touch,
                 'opacity-60': c.undone,
                 'bg-amber-50': picked.has(c.id),
                 'bg-yellow-50 ring-1 ring-yellow-300 ring-inset': found(c, row.label),
@@ -261,7 +274,7 @@ async function copyLink() {
               <input
                 v-if="canUndo(action, c)"
                 type="checkbox"
-                class="mt-1"
+                :class="touch ? 'size-5' : 'mt-1'"
                 :checked="picked.has(c.id)"
                 :aria-label="$t('Elegir {field} de {label}', { field: c.field, label: row.label })"
                 @change="togglePick(c.id)"
@@ -278,7 +291,9 @@ async function copyLink() {
               </div>
               <button
                 v-if="canUndo(action, c)"
-                class="btn-ghost p-1"
+                class="btn-ghost"
+                :class="touch ? 'h-11 w-11 justify-center' : 'p-1'"
+                :aria-label="$t('Deshacer solo {field}', { field: c.field })"
                 :title="$t('Deshacer solo {field}', { field: c.field })"
                 @click="
                   emit('undo', { changeIds: [c.id] }, $t('Deshacer {field} de {label}', { field: c.field, label: row.label }))
