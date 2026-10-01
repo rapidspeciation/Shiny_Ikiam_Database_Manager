@@ -98,7 +98,11 @@ const TOOLS = [
       name: 'describe_sheet',
       description:
         'Columns of a sheet with their type, which ones are formulas, the values in use for short-list columns, and the latest rows.',
-      parameters: { type: 'object', properties: { module: { type: 'string' } }, required: ['module'] },
+      parameters: {
+        type: 'object',
+        properties: { module: { type: 'string', description: `The sheet: ${[...moduleMap.keys()].join(', ')}` } },
+        required: ['module'],
+      },
     },
   },
   ...KNOWLEDGE_TOOLS,
