@@ -36,6 +36,7 @@ import {
 import { monitoringRowsCsv, pointsCsv, walksGpx, wikilocCorrections } from './monitoring-export.mjs';
 import { idSuggestions, tableChanges, tablePayload, tableRevision } from './grid.mjs';
 import { extendPremadeRows } from './premade.mjs';
+import { addClutchCheck, clutchDay, clutchState, removeClutchCheck } from './clutches.mjs';
 import { createSheetHook } from './hooks.mjs';
 import { createInvitations, mailerFromEnv } from './invitations.mjs';
 import { createPasswordResets } from './passwordReset.mjs';
@@ -582,6 +583,19 @@ export async function createApp(config = {}, options = {}) {
       if (method === 'GET' && path === '/api/table/changes')
         return json(res, 200, tableChanges(store, String(query.module || ''), query.since));
       if (method === 'GET' && path === '/api/ids') return json(res, 200, idSuggestions(store, query));
+      // Clutches (cards): the counts' sum formulas and last changes; the day's checks and changes; marking a check.
+      if (method === 'GET' && path === '/api/clutches/state') return sendTagged(res, clutchState(store));
+      if (method === 'GET' && path === '/api/clutches/day') return json(res, 200, clutchDay(store, query));
+      if (method === 'POST' && path === '/api/clutches/checks') {
+        requireEditor(user);
+        requireId(body);
+        const saved = addClutchCheck(store, body, user);
+        return json(res, saved.duplicate ? 200 : 201, { check: saved.check });
+      }
+      if (method === 'DELETE' && /^\/api\/clutches\/checks\/[^/]+$/.test(path)) {
+        requireEditor(user);
+        return json(res, 200, removeClutchCheck(store, decodePart(path.split('/')[4]), user));
+      }
       // More pre-made rows (formulas, formats, dropdowns; Insectary IDs) at the end of a sheet.
       if (method === 'POST' && /^\/api\/sheets\/[^/]+\/extend$/.test(path)) {
         requireReviewer(user);

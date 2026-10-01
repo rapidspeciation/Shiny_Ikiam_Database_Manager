@@ -5,7 +5,7 @@ const CACHE = 'ithomiini-v6'
 // What was shared to the installed app (a GPX file or a Wikiloc link), kept
 // until the Importar screen picks it up.
 const INBOX = 'ithomiini-share'
-const READS = /\/api\/(auth\/session|bootstrap|table|ids|monitoring\/tracks)(\?|$)/
+const READS = /\/api\/(auth\/session|bootstrap|table|ids|monitoring\/tracks|clutches\/(state|day))(\?|$)/
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(['./', './index.html'])))

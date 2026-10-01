@@ -8,6 +8,7 @@ import { headerLayout, sameLayout } from './columns.mjs';
 import { applyBatch } from './batch.mjs';
 import { initMonitoring } from './monitoring.mjs';
 import { initHistory } from './history.mjs';
+import { initClutches } from './clutches.mjs';
 import { SANDBOX_ID } from './workbook.mjs';
 
 const json = value => JSON.stringify(value);
@@ -54,6 +55,8 @@ export class Store {
     // The purpose of each save (Colecta, Muertes…), indexes and purposes of older saves (Historial).
     initHistory(this.db);
     initMonitoring(this.db);
+    // Clutches checked on phones and tablets (Clutches tab, cards).
+    initClutches(this.db);
     this.sheets = sheets || (config.localMode ? new LocalSheets(seed || {}) : new GoogleSheets(config));
     this.localMode = this.sheets instanceof LocalSheets;
     // scripts/switch-workbook.mjs opens the database while it still caches the other workbook.
