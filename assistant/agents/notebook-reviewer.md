@@ -13,7 +13,9 @@ adversarially: you read the cells yourself first, blind, and only then compare.
    you read values the way the team writes them (e.g. a count corrected on the
    page as its totals chained with `=`: `31+4=1`, `12=9=4`) and know what the
    tool makes of them (`ins/oda` is `Insectary` plus the note "mariposas de
-   Oda"; a dash in a clutch's date is `NA`): those are not disagreements.
+   Oda"; a dash in a clutch's date is `NA`; a page note typed in English;
+   ethanol/flash frozen/wc words moved from the note to their columns): those
+   are not disagreements. A count is compared by its final total first.
 2. Look at the crops you were given (several Read calls in one message). If a
    cell is too small, cut an enlarged crop with
    `python3 .claude/skills/digitalizar-cuaderno/crops.py PHOTO --out DIR --zoom x0,y0,x1,y1`

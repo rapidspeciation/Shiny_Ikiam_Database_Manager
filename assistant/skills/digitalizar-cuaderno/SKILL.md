@@ -45,13 +45,14 @@ is written until the person applies it.
    targeted second reading, its corrections applied to the same proposal
    (`update_proposal`, or `match_notebook` with `replaceProposalId`), so the
    table beside the chat improves while the person looks at it.
-5. **Then tell the person in 3–6 short lines, in their language (Spanish or English)**: which notebook and rows
-   (e.g. "Posturas, clutches 120–134"), how many cells to fill, the differences
-   with the sheet (sheet → notebook), what the second reading changed, the
-   doubtful readings with their alternatives, and the lines not found in the
-   sheet. End with: in *Cambios propuestos* they can set cells back to the
-   sheet value («Valor de la hoja») and press «Aplicar», or tell you "sí/está bien". Use a small table only when there are several
-   differences.
+5. **Then tell the person in 3–6 short lines, in their language**: which
+   notebook and rows (e.g. "Posturas, clutches 120–134"), how many cells to
+   fill, the differences with the sheet (sheet → notebook), what the second
+   reading changed, the highlighted doubtful cells to check (line, column,
+   alternatives) and the lines not found in the sheet. End with: in *Cambios
+   propuestos* they can set cells back to the sheet value («Valor de la hoja»)
+   and press «Aplicar», or tell you "sí/está bien". Use a small table only when
+   there are several differences.
 6. **Apply only on explicit confirmation**: when the person's latest message
    approves it ("sí", "aplícalo", "está bien"), call `apply_proposal` with the
    `proposalId` (optionally only some `indexes`). Never say something was saved
@@ -64,22 +65,32 @@ is written until the person applies it.
    `conflicts`: say so. Say what changed.
 
 Never guess to fill a gap, never invent IDs, CAMs, tubes or dates, and never
-propose with `propose_changes` what `match_notebook` can match.
+propose with `propose_changes` what `match_notebook` can match. The team's
+conventions beyond this page (record templates, IDs and CAM pools, envelopes,
+cage cards, crosses, notes) are in the skill **data-rules**
+(`.claude/skills/data-rules/SKILL.md`); read its file for the case when the
+page is not a plain notebook table.
 
 ## Doubtful handwriting
 
-Propose what is clear and mark the rest; do not stop to ask before proposing.
+Propose everything readable; doubt is a highlight, never an omission.
 
-- A cell you are not sure of: give your best reading in `values`, a `confidence`
-  below 0.8 and up to 3 `alternatives`. Use it for characters you cannot tell
-  apart, not for whole columns: a value you can read, on a line you could
-  follow, is sure. The tool leaves doubtful cells out of
-  the proposal and lists them; you ask about them in your reply.
-- A cell you cannot read at all: `null` (not a guess).
-- Look-alikes to consider: 0/O, 1/I/7, 5/S, 8/B, 2/Z, 6/G, 4/9, 3/8; ♀/♂ written
-  small. Butterfly IDs use the **letter O** in series like `6OO`, `1OP`, `5OR`,
-  and `5OS` (letter) and `50S` (zero) are two different butterflies: copy what is
-  written; the tool finds the right row among the look-alikes.
+- A cell you are not sure of: give your **best reading** in `values`, a
+  `confidence` below 0.8 and up to 3 `alternatives`. The tool puts it in the
+  proposal **highlighted as doubtful** with its alternatives; in your summary
+  name those cells so the person checks them. Use it for characters you cannot
+  tell apart, not for whole columns: a value you can read, on a line you could
+  follow, is sure.
+- A cell you cannot read at all: `null` (not a guess; it stays out).
+- A clear value that looks wrong (a date out of stage order, adults > pupae) is
+  not doubtful: send it as written and point it out; the team often keeps it.
+- Look-alikes to consider: 0/O, 1/I/7, 5/S, 8/B, 2/Z, 6/G, 4/9, 3/8, `+`/1;
+  ♀/♂ written small. Before reading digits, compare this hand's 1 and 7 (and
+  3/8) on clear cells of the same page. Copy IDs as written (`600` for `6OO`,
+  `5OS` vs `50S` are two butterflies): the tool reads IDs by position and finds
+  the row among look-alikes; it also flags a clutch number that differs from
+  its neighbour lines by one look-alike digit, and CAMs or tubes with an extra
+  or missing digit.
 - A crossed-out value in a date or text is not the value: the one written
   beside or above it is. Counts are different: see "Counts" below.
 
@@ -89,10 +100,14 @@ Give values **as written**; the tool converts them.
 
 - **Dates** day first, as written: `17/9`, `4-8`, `19-6-23`, `16/Oct/2024`. Do
   not add the year (the tool infers it from the sheet: laid in December, emerged
-  in January is handled). Give `year` only when the page shows it.
+  in January is handled). Give `year` only when the page shows it. `~2/7` and
+  `29/6?` are that date (doubtful); `2/9+3/9` is the first day; never copy them
+  into the notes.
 - **Ditto marks** (`"`, `ll`, `||`, `〃`, a wavy line down a column) and a brace
   `}` spanning lines: write the repeated value in **every** line it covers. A date
-  written once for several lines applies to all of them.
+  written once for several lines applies to all of them. A ditto under a blank
+  cell repeats the last value written above it; an arrow `↑`/`↗` under a note
+  repeats the note.
 - `—` or `-` alone means none: write `"NA"`. An empty cell: leave the column out.
 - **Sex**: ♀ = `female`, ♂ = `male`, `NA` when written so.
 - **Species**: the full name, from these abbreviations:
@@ -103,8 +118,8 @@ Give values **as written**; the tool converts them.
   `pol. e.`/`eurydice` = Mechanitis polymnia eurydice;
   `polymnia` alone = Mechanitis polymnia proceriformis (the usual polymnia
   stock: a sure reading, not a doubtful one);
-  `wer x pro` = Mechanitis polymnia werneri x proceriformis;
-  `pro x wer` = Mechanitis polymnia proceriformis x werneri;
+  `wer x pro`/`werpro` = Mechanitis polymnia werneri x proceriformis;
+  `pro x wer`/`proxwer` = Mechanitis polymnia proceriformis x werneri;
   `lysimnia`/`lys` = Mechanitis lysimnia;
   `zaneka` = Melinaea menophilus zaneka; `mothone` = Melinaea mothone;
   `hibrido`, `hibrido x hibrido`, `zaneka x hibrido`, `hibrido x zaneka` =
@@ -113,10 +128,9 @@ Give values **as written**; the tool converts them.
   Always give the species as written: the tool keeps the SPECIES formula of
   Insectary_data (predicted from the clutch) and only types over it when what
   emerged differs from the prediction.
-- **Counts** as written, sums included: `12+15`, `2+4=6+8=14`, `27-5`. The team
-  keeps Insectary_stocks counts as sums (one term per day or group); the tool
-  proposes them as the formula `=12+15`, keeping the terms. A minus is part of
-  the count: `27-5` means 27 larvae of which 5 died (23 alive), so send `27-5`.
+- **Counts** as written, sums included: `12+15`, `2+4=6+8=14`, `27-5` (27
+  larvae, 5 died: a minus is part of the count). The tool proposes the formula
+  `=12+15`, keeping the terms, as the team does.
 - **Counts corrected on the page** (a number crossed out and a new one written
   beside or above it, or a total after `=` that is not the sum): send the first
   value as written, then **each new total after `=`**, in the order written.
@@ -124,21 +138,29 @@ Give values **as written**; the tool converts them.
   subtraction (or addition), as the team types them:
   `31+4 = 1` → `31+4=1` (→ `=31+4-34`); `1̶2̶ 9̶ 4̶ 3̶ 2` → `12=9=4=3=2`
   (→ `=12-3-5-1-1`); `16+2̶ 1` (the 2 crossed out, 1 written) → `16+2=17`
-  (→ `=16+2-1`); `24-1 = 2̶3̶ = 18` → `24-1=23=18`. Never leave such a cell out
-  because it was corrected: the last total is clear, give it.
+  (→ `=16+2-1`); `24-1 = 2̶3̶ = 18` → `24-1=23=18`. A lone crossed-out term
+  stays and is subtracted: `23+3+1̶` → `23+3+1-1`. A second total written below
+  another is the final one. Small raised terms (`8⁺¹+4`) are part of the sum.
+  **Such a cell is sure when its final total is clear**: give the whole chain
+  and put a `confidence` only if the final total itself is unclear, never for
+  the middle terms. Never leave it out because it was corrected.
 - **CAMs** (`CAM` + 6 digits) and **tubes** (2 letters + 8 digits, e.g.
   `FS50851817`, often with `wc` = wing clip): a short number under a full one
   continues it (`cam505` or `72` under `CAM076671`; `81` under `FS50851380`). You
-  may write the short form as it is; the tool completes the run. Match notes to
-  lines by position or by the bracket that groups them.
+  may write the short form as it is; the tool completes the run.
 - **Death causes**: `unk` = Unknown, `eaten` = Eaten, `spider` = Spider,
   `ants`, `disapp` = Disappearance, `deformed` = Deformed, `heat shock` = Heat
   stroke, `preserved` = Killed_Preserved, `only wings` = Unknown - Only wings.
-- Anything else in the notes column (e.g. "pupa muerta", "abit deformed",
-  "emerged in cage of parents", "ethanol", "flash frozen") goes in the notes
-  column of the kind, as written. Only the page's own notes: never a code of
-  another column (`ins/este`), a value that has its column, or your doubts
-  (those go in your reply).
+- **Notes**: the page's own notes, **in English** as the team types them
+  (translate faithfully: "3 pupas muertas" → "3 pupae dead"; keep IDs, codes and
+  names), in the notes column of the kind. Never a code of another column
+  (`ins/este`), a value that has its column, a restatement of a count, or your
+  doubts (those go in your reply). A place written short is its list name
+  (Cavernas → Cavernas Templo de Ceremonia). What must and must never be noted:
+  data-rules `reference/notes.md`.
+- **Right-hand-page notes** are written smaller and drift up half a line: give
+  each note to the ID whose line its first word starts on; one note per clutch
+  or butterfly; a bracket or arrow shares it between the lines it spans.
 
 ## The notebooks (kind → sheet, columns)
 
@@ -151,50 +173,59 @@ written: `994`, or `994(7)` for another batch of the same couple), `SPECIES`,
 `DATE LAID`, `NUMBER OF EGGS`, `INSECTARY OR LABORATORY` (`Insectary` for
 `ins`, `Laboratory` for `lab`), `HATCHING DATE`, `NUMBER OF LARVAE`, `PUPA DATE`,
 `NUMBER OF PUPA`, `EMERGENCE DATE`, `NUMBER OF ADULTS`, `NOTES`. A clutch not in
-the sheet becomes a new row. A generation written after the species ("lysimnia
-(F1)", "(F2)", "(BC)") goes in `Generation` (F1, F2, Backcross; none written →
-the tool writes NA); the **dissections** column (larvae/pupae taken for
+the sheet becomes a new row. A generation written after the species or the
+clutch number ("lysimnia (F1)", `994(F1)`, "(F2)", "(BC)") goes in `Generation`
+(F1, F2, Backcross; none written → the tool writes NA): `994(F1)` is clutch 994,
+while `994(3) F1` is batch 3. The **dissections** column (larvae/pupae taken for
 dissection, often a sum like `2+6`) goes in `NUMBER OF PUPAE/LARVAE FOR
 DISECTIONS` as a sum. A dash in a date or count is `"NA"` (the stage never came).
 
 `INSECTARY OR LABORATORY`: give it **exactly as written** (`ins`, `lab`,
-`ins/oda`, `ins/este`, `ins ESTEBAN`, `in-Oda`). The tool writes `Insectary`
-(or `Laboratory`) and, for `ins/<person>`, adds the note "mariposas de Oda" /
-"mariposas de Esteban" (whose butterflies they are, the team's wording); never
-put the code or the owner in `NOTES` yourself. A line with nothing in that
-column takes the room the rest of the page says. When the sheet's sum already
-holds the page's terms and more (added later), the tool keeps it (`kept`).
+`ins/oda`, `ins/este`, `ins ESTEBAN`, `in-Oda`; what looks like `ins/lab` is
+`ins/oda`). The tool writes `Insectary` (or `Laboratory`) and, for
+`ins/<person>`, adds the note "mariposas de Oda" / "mariposas de Esteban";
+never put the code or the owner in `NOTES` yourself. A line with nothing in
+that column takes the room the rest of the page says. When the sheet's sum
+already holds the page's terms and more (added later), the tool keeps it
+(`kept`). Parents in NOTES female first (`U8A♀ + C8B♂`); failed clutches and
+other conventions: data-rules `reference/clutches.md`.
 
 **`emergence` — Emergidos → Insectary_data.** One line per butterfly. Headers
 like *# · ID · Species · Sex · # Clutch · Stock origin · Emerge date · Dead date ·
 Notes* (the first `#` is a running count such as 3096: ignore it; highlighted
 lines are usually dead butterflies). Columns: `Insectary_ID` (the ID written on
-the wing: a digit and two letters like `5VB`, `0NX`, `6OO`, or letters and
-digits like `H79`), `SPECIES`, `Sex`, `CLUTCH NUMBER` (`838`, `831(1)`, or the
-text as written such as `CRISPR #159 control`), `Stock_of_origin` (as written:
-`interm.`, `messen.`; the tool completes it from the list; a dash `—` or `-` is
-`"NA"`, which is what the sheet holds for "no stock": always send it, never leave
-the column out), `Intro2Insectary_date`
-(emerge date), `Death_date` (dead date), `Death_cause`, `CAM_ID`, `Tube_1_id`
-(the wing clip tube), `Notes_Insectary_data`, `Wild_Reared`. Only existing rows
-are changed. A line with a clutch is `Reared` (the tool fills it).
+the wing: a digit and two letters like `5VB`, `0NX`, `6OO`, or letter, digit,
+letter like `N4D`), `SPECIES`, `Sex`, `CLUTCH NUMBER` (`838`, `831(1)`),
+`Stock_of_origin` (as written: `interm.`, `messen.`; the tool completes it from
+the list; only the *M. messenoides* stocks have one, every other line is
+`"NA"`, and so is a dash: always send it, never leave the column out),
+`Intro2Insectary_date` (emerge date), `Death_date` (dead date), `Death_cause`,
+`CAM_ID`, `Tube_1_id`, `Notes_Insectary_data`, `Wild_Reared`. Only existing
+rows are changed. A line with a clutch is `Reared` (the tool fills it).
+A **CRISPR control** ("CRISPR #159 control" in the clutch column): `CLUTCH
+NUMBER` `"NA"`, `Wild_Reared` `Reared`, the stock, note "Comes from CRISPR
+control #159". Words in the notes (ethanol, flash frozen, wc, pheromone,
+preserved, unk, a second tube) are moved by the tool into their columns
+(`T1_Preservation_medium`, `Tube_1_tissue`, `Tube_2_id`, `Research_purpose`,
+`Death_cause`, `Preservation_date`): copy them as written. A butterfly in an
+"ethanol"/"flash frozen" bracket with a CAM was killed and preserved on its
+emerge date: that is its `Death_date` even when the cell is blank. The tool
+fills a death's not-preserved block (`NA`/`NOT_COLLECTED`); the templates are
+in data-rules `reference/insectary-individuals.md`.
 
 **Wild-caught butterflies** on this page (no clutch, "—"; the note gives the
-collector's initials, a time, the weather and a place, e.g. "PAS 12:15 N.C
-C.T.C"): give `Wild_Reared` `Wild-caught`, the species, sex and
-`Intro2Insectary_date` (the day they were caught), and keep the collector,
-time, weather and place **out of** `Notes_Insectary_data`: they go in the
-butterfly's **Collection_data row, in the same proposal**, without being asked
-(`wildWithoutCollection` in the answer lists the missing ones): add them with
-`update_proposal` `newRows`: `Release_Collect` `Collected_Sent2Insectary`, the
-same `Insectary_ID`, `SPECIES` (genus + species) and `Subspecies_Form`, `Sex`,
-`Collector` (the list value starting with the initials: `PAS - …`),
-`Collection_location` (a place abbreviation is the location whose initials
-match among recent collections: C.T.C = Cavernas Templo de Ceremonia),
-`Collection_date` (= the entry date), `Collection_time`, `Cloud_cover` (as in
-monitoring: NO = CD, NC = CL, parches = S&C, sol = S), `Rainfall` (`DY_(dry)`
-unless it says llovizna/lluvia). Ask in your summary what the page does not
-say (the identifier, a doubtful time).
+collector's initials, time, weather and place, e.g. "PAS 12:15 N.C C.T.C"):
+`Wild_Reared` `Wild-caught`, species, sex, `Intro2Insectary_date` (the capture
+day); the collector, time, weather and place stay **out of** the notes: they
+go in the butterfly's **Collection_data row, in the same proposal**, without
+being asked (`wildWithoutCollection` lists the missing ones): `update_proposal`
+`newRows` with `Release_Collect` `Collected_Sent2Insectary`, the same
+`Insectary_ID`, `SPECIES` (genus + species), `Subspecies_Form`, `Sex`,
+`Collector` (the list value `PAS - …`), `Collection_location` (C.T.C =
+Cavernas Templo de Ceremonia), `Collection_date`, `Collection_time`,
+`Cloud_cover`, `Rainfall`. Paper codes, place initials and the rest of the
+row: data-rules `reference/field-collections.md` and `reference/monitoring.md`.
+Ask in your summary what the page does not say (identifier, a doubtful time).
 
 **`deaths` — Muertes → Insectary_data.** The daily round of dead butterflies:
 *Date · ID · Species · Sex · Cause · CAM · Notes*. Columns: `Insectary_ID`,
@@ -205,7 +236,11 @@ say (the identifier, a doubtful time).
 sampled butterfly (not a table): a CAM, the species, the sex, "Reared ID: 1TG",
 a date, and often a tube held beside it (read its printed code). One line per
 label. Columns: `Insectary_ID` (the Reared ID, copied exactly), `SPECIES`,
-`Sex`, `CAM_ID`, `Tube_1_id`. Ignore the notebook behind the label.
+`Sex`, `CAM_ID`, `Tube_1_id`. Ignore the notebook behind the label. A struck
+CAM with a new one beside it is the correction history: the last uncrossed
+value is the CAM (report the chain); `wing clip: 28/8/24` is a clip date, not a
+death. Envelopes, cage cards and crosses-notebook lines: data-rules
+`reference/reading-paper.md` and `reference/crosses.md`.
 Before saying the tube matches, look at the butterfly's row with `get_record`:
 the sheet has four tubes (`Tube_1_id` … `Tube_4_id`), each with its tissue and
 medium. If the label's tube is in another tube column, or its tissue disagrees
@@ -232,7 +267,8 @@ yes/no · CAM ID · Notes*. Columns: `CRISPR_No.` (experiment, e.g. 50),
   "lines": [
     { "raw": "0VD messenoides ♀ CRISPR#159 control Messenoides 6/8",
       "values": { "Insectary_ID": "0VD", "SPECIES": "Mechanitis messenoides messenoides", "Sex": "female",
-                  "CLUTCH NUMBER": "CRISPR #159 control", "Stock_of_origin": "Messenoides", "Intro2Insectary_date": "6/8" } },
+                  "CLUTCH NUMBER": "NA", "Wild_Reared": "Reared", "Stock_of_origin": "Messenoides",
+                  "Intro2Insectary_date": "6/8", "Notes_Insectary_data": "Comes from CRISPR control #159" } },
     { "raw": "1VD intermedia ♂ 838 intermedia 6/8 8/8 unk",
       "values": { "Insectary_ID": "1VD", "SPECIES": "Mechanitis messenoides intermedia", "Sex": "male",
                   "CLUTCH NUMBER": "838", "Stock_of_origin": "intermedia", "Intro2Insectary_date": "6/8",
@@ -250,7 +286,8 @@ through a look-alike ID, e.g. read `600`, sheet `6OO`), `new` (new row),
 (several rows could be it), `duplicate` (the same ID twice on the page), `nokey`
 (no readable ID), `crossed`. Cells: `fill` (empty in the sheet), `differs`
 (`sheet` vs `notebook`: the notebook is the primary record, but point it out),
-`doubtful` (left out: ask), `problems` (e.g. a tube already used by another row,
+`doubtful` (in the proposal, highlighted with its alternatives: name it in your
+summary), `problems` (e.g. a tube already used by another row,
 a value outside a strict list), `notWritten` (a formula column), `unread`,
 `kept` (the sheet's value stays: its sum has the page's terms and more, or the
 line only implied a value; mention it only if it matters).
@@ -262,11 +299,9 @@ another chat): mention them, and if it is the same page pass their id as
 
 ## Several photos
 
-- Several pages in one message: one `match_notebook` call (and one proposal)
-  per page, then one short summary for all of them, page by page.
-- Envelopes/labels: all the labels of the message in one call.
-- A page already matched earlier in the conversation: re-match it with
-  `replaceProposalId` instead of making a second proposal.
+One `match_notebook` call (and proposal) per page, one call for all the labels
+of a message, then one short summary page by page. A page matched earlier in
+the conversation is re-matched with `replaceProposalId`, never proposed twice.
 
 ## Crops
 
@@ -300,10 +335,8 @@ or one strip per page; the tool is for tables.
 
 ## Several pages at once: reader subagents in parallel
 
-Read a single page yourself from its strips: in the lab, splitting one page
-across readers was slower (the readers, then merging their answers, took longer
-than reading it) and not more accurate. When the person sends several pages
-(several photos of tables) in one message:
+Read a single page yourself from its strips (splitting one page across readers
+was slower and not more accurate). When several pages come in one message:
 
 1. Cut the strips of every page (above).
 2. Start one reader per page — `subagent_type: "notebook-reader"` (a faster
@@ -345,8 +378,8 @@ what is likely to be wrong, not what is clearly fine:
    at a zoomed crop yourself), fix it with `update_proposal` (seconds: the rows
    by `index`, only the cells that change). Use `match_notebook` with the whole
    page and `replaceProposalId` only when many lines change (a shifted block):
-   writing the whole page again takes more than a minute. Where it does not, keep the cell doubtful (`confidence`) and
-   ask the person in the summary.
+   writing the whole page again takes more than a minute. Where it does not,
+   keep the cell doubtful (it stays highlighted) and name it in the summary.
 4. In the summary, say that a second reading was done, how many cells it
    checked and what it changed.
 

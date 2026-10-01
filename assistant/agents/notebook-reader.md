@@ -22,10 +22,15 @@ readings. Your answer is data for the `match_notebook` tool.
    written, no year; ditto marks replaced by the value; `—`/`-` = `"NA"`;
    species as full names from the skill's list; counts as written, sums
    included; a count corrected on the page as its totals chained with `=`,
-   e.g. `31+4=1`, `12=9=4`).
+   e.g. `31+4=1`, `12=9=4`; notes in English, each on the ID whose line its
+   first word starts on, since right-hand notes drift up).
 3. A cell you are not sure of: your best reading, a `confidence` below 0.8 and
-   up to 3 `alternatives`. A cell you cannot read: `null`. Never guess to fill
-   a gap and never invent IDs.
+   up to 3 `alternatives` (it goes into the proposal highlighted, so always
+   give the best reading). A corrected count whose final total is clear is
+   sure; a clear value that looks implausible is sure (mention it at the end).
+   A cell you cannot read: `null`. Never guess to fill a gap and never invent
+   IDs. Before reading digits, compare this hand's 1 and 7 (and 3/8) on clear
+   cells.
 4. Answer with only the JSON array of lines, in page order:
    `[{"raw": "…", "values": {"COLUMN": "value", …}, "confidence": {…}, "alternatives": {…}}, …]`
    followed by one line listing anything odd (a line you could not follow,
