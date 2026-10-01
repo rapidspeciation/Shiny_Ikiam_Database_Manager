@@ -15,6 +15,13 @@ node tools/android-test/doubletap.mjs species    # double tap a Colecta cell; lo
 node tools/android-test/flow.mjs                 # type with Gboard + Enter; ▾ list without keyboard
 ```
 
+Muertes on a phone (`deaths.mjs`) saves deaths and undoes them, so it refuses any app but a local one
+(LOCAL_MODE, its own database). `adb reverse tcp:8796 tcp:8796` makes the phone's `localhost:8796` this
+PC's (a secure context, which `crypto.randomUUID` needs; `10.0.2.2` is not):
+`APP=http://localhost:8796/ CREDS=~/.cache/ithomiini-lab/credentials.json DB=/tmp/app.sqlite node tools/android-test/deaths.mjs A4E A3E A2E`
+(three living IDs of that copy). It closes the keyboard by leaving the box, not with the back key, which can
+leave the page.
+
 The tests log in with the Wikiloc worker account (`~/.config/ithomiini-wikiloc/worker.json`)
 and use Playwright from `~/.local/share/ithomiini-wikiloc/node_modules`. The keyboard is judged
 by the page's visible height (Android's own flag can be stale). They add rows to the Colecta
