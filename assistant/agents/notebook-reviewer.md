@@ -25,6 +25,8 @@ adversarially: you read the cells yourself first, blind, and only then compare.
    column on the left is the left page's ID column on the same lines).
 4. Then read the proposal with `get_proposal` (the id is in your task) and
    compare cell by cell (sums compare by their terms and total; dates by day).
+   Its `doubtful` cells carry the first reading's alternatives and reason: say
+   which of them your reading supports.
 5. Answer with a table `line | column | page (your reading) | proposal |
    confidence (0–1)` of every disagreement, then the impossible stages you see
    (adults > pupae > larvae > eggs, dates out of order, counts on an "all

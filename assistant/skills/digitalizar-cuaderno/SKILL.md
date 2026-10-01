@@ -56,7 +56,12 @@ is written until the person applies it.
 6. **Apply only on explicit confirmation**: when the person's latest message
    approves it ("sí", "aplícalo", "está bien"), call `apply_proposal` with the
    `proposalId` (optionally only some `indexes`). Never say something was saved
-   unless it returned `applied`.
+   unless it returned `applied`. While doubtful cells are unchecked it writes
+   nothing and returns them (`doubtful`: index, label, field, value,
+   alternatives, reason): ask about each, then `update_proposal` with the value
+   they give or `rows[].checked: [columns]` for the ones they confirm, and apply
+   again. `confirmDoubtful: true` (write them as they are) only on their
+   explicit word; `skipDoubtful: true` writes only the sure cells.
 7. **Corrections** ("la línea 5 es macho", "el 3 es 8"): call `match_notebook`
    again with the whole page corrected (the corrected cell without confidence)
    and `replaceProposalId` = the page's pending proposal: the same table
@@ -76,21 +81,22 @@ page is not a plain notebook table.
 Propose everything readable; doubt is a highlight, never an omission.
 
 - A cell you are not sure of: give your **best reading** in `values`, a
-  `confidence` below 0.8 and up to 3 `alternatives`. The tool puts it in the
-  proposal **highlighted as doubtful** with its alternatives; in your summary
-  name those cells so the person checks them. Use it for characters you cannot
-  tell apart, not for whole columns: a value you can read, on a line you could
-  follow, is sure.
+  `confidence` below 0.8, up to 3 `alternatives` and a few words in `reasons`
+  ("1 or 7: this hand"). It goes into the proposal **highlighted** (amber, «?»)
+  with its alternatives and reason; in your summary name those cells so the
+  person checks them. Use it for characters you cannot tell apart, not for
+  whole columns: a value you can read, on a line you could follow, is sure.
 - A cell you cannot read at all: `null` (not a guess; it stays out).
 - A clear value that looks wrong (a date out of stage order, adults > pupae) is
   not doubtful: send it as written and point it out; the team often keeps it.
 - Look-alikes to consider: 0/O, 1/I/7, 5/S, 8/B, 2/Z, 6/G, 4/9, 3/8, `+`/1;
   ♀/♂ written small. Before reading digits, compare this hand's 1 and 7 (and
   3/8) on clear cells of the same page. Copy IDs as written (`600` for `6OO`,
-  `5OS` vs `50S` are two butterflies): the tool reads IDs by position and finds
-  the row among look-alikes; it also flags a clutch number that differs from
-  its neighbour lines by one look-alike digit, and CAMs or tubes with an extra
-  or missing digit.
+  `5OS` vs `50S` are two butterflies): the tool finds the row among look-alikes
+  (an ID not found comes back with `didYouMean`). It also marks as doubtful a
+  clutch unlike the run of lines around it (judged by the laid dates), a CAM
+  with 7 digits or far from its run, and a tube with 7 or 9 digits (the value
+  becomes the reading that continues the run, yours an alternative).
 - A crossed-out value in a date or text is not the value: the one written
   beside or above it is. Counts are different: see "Counts" below.
 
@@ -153,9 +159,10 @@ Give values **as written**; the tool converts them.
   stroke, `preserved` = Killed_Preserved, `only wings` = Unknown - Only wings.
 - **Notes**: the page's own notes, **in English** as the team types them
   (translate faithfully: "3 pupas muertas" → "3 pupae dead"; keep IDs, codes and
-  names), in the notes column of the kind. Never a code of another column
-  (`ins/este`), a value that has its column, a restatement of a count, or your
-  doubts (those go in your reply). A place written short is its list name
+  names), in the notes column of the kind. In Emergidos and Muertes leave the
+  column words in (ethanol, wc, pheromone, unk, CAMs, tubes): the tool moves
+  them. Never `ins/…` codes, a restatement of a count, or your doubts (those go
+  in your reply). A place written short is its list name
   (Cavernas → Cavernas Templo de Ceremonia). What must and must never be noted:
   data-rules `reference/notes.md`.
 - **Right-hand-page notes** are written smaller and drift up half a line: give
@@ -204,27 +211,30 @@ the list; only the *M. messenoides* stocks have one, every other line is
 rows are changed. A line with a clutch is `Reared` (the tool fills it).
 A **CRISPR control** ("CRISPR #159 control" in the clutch column): `CLUTCH
 NUMBER` `"NA"`, `Wild_Reared` `Reared`, the stock, note "Comes from CRISPR
-control #159". Words in the notes (ethanol, flash frozen, wc, pheromone,
-preserved, unk, a second tube) are moved by the tool into their columns
-(`T1_Preservation_medium`, `Tube_1_tissue`, `Tube_2_id`, `Research_purpose`,
-`Death_cause`, `Preservation_date`): copy them as written. A butterfly in an
-"ethanol"/"flash frozen" bracket with a CAM was killed and preserved on its
-emerge date: that is its `Death_date` even when the cell is blank. The tool
-fills a death's not-preserved block (`NA`/`NOT_COLLECTED`); the templates are
-in data-rules `reference/insectary-individuals.md`.
+control #159". **Notes as written** (here and in Muertes): the tool moves the
+column words out of the note into empty cells only, keeping the rest of the
+note: ethanol / flash frozen → the tube's medium, wc → wing-clip tissue,
+pheromone → `Research_purpose` Pheromones, preserved → Killed_Preserved, unk →
+Unknown, a CAM → `CAM_ID`, a tube → `Tube_1_id` (or `Tube_2_id`). A death then
+gets the not-preserved block (`NA`/`NOT_COLLECTED`) or the preserved template;
+these show as `implied`. A butterfly in an "ethanol"/"flash frozen" bracket
+with a CAM was killed and preserved on its emerge date: give that as its
+`Death_date` even when the cell is blank. Templates: data-rules
+`reference/insectary-individuals.md`.
 
 **Wild-caught butterflies** on this page (no clutch, "—"; the note gives the
 collector's initials, time, weather and place, e.g. "PAS 12:15 N.C C.T.C"):
 `Wild_Reared` `Wild-caught`, species, sex, `Intro2Insectary_date` (the capture
 day); the collector, time, weather and place stay **out of** the notes: they
 go in the butterfly's **Collection_data row, in the same proposal**, without
-being asked (`wildWithoutCollection` lists the missing ones): `update_proposal`
-`newRows` with `Release_Collect` `Collected_Sent2Insectary`, the same
-`Insectary_ID`, `SPECIES` (genus + species), `Subspecies_Form`, `Sex`,
-`Collector` (the list value `PAS - …`), `Collection_location` (C.T.C =
-Cavernas Templo de Ceremonia), `Collection_date`, `Collection_time`,
-`Cloud_cover`, `Rainfall`. Paper codes, place initials and the rest of the
-row: data-rules `reference/field-collections.md` and `reference/monitoring.md`.
+being asked. `wildWithoutCollection` = `{ ids, rows, todo }`: `rows` are those
+rows drafted with the live-capture template (Insectary_ID, species, sex,
+date): add them with `update_proposal` `newRows`, completed from the page —
+`Collector` (the list value `PAS - …`), `Identifier`, `Collection_location`
+(C.T.C = Cavernas Templo de Ceremonia), `Collection_time`, `Cloud_cover`,
+`Rainfall`, `Purpose` (`NA` when the page does not say); keep the template
+cells and leave death and preservation empty. Paper codes and place initials:
+data-rules `reference/field-collections.md` and `reference/monitoring.md`.
 Ask in your summary what the page does not say (identifier, a doubtful time).
 
 **`deaths` — Muertes → Insectary_data.** The daily round of dead butterflies:
@@ -273,7 +283,7 @@ yes/no · CAM ID · Notes*. Columns: `CRISPR_No.` (experiment, e.g. 50),
       "values": { "Insectary_ID": "1VD", "SPECIES": "Mechanitis messenoides intermedia", "Sex": "male",
                   "CLUTCH NUMBER": "838", "Stock_of_origin": "intermedia", "Intro2Insectary_date": "6/8",
                   "Death_date": "8/8", "Death_cause": "Unknown" },
-      "confidence": { "Sex": 0.6 }, "alternatives": { "Sex": ["female"] } }
+      "confidence": { "Sex": 0.6 }, "alternatives": { "Sex": ["female"] }, "reasons": { "Sex": "symbol smudged" } }
   ]
 }
 ```
@@ -284,15 +294,17 @@ Per line: `status` — `match` (row found; `message` says when it was found
 through a look-alike ID, e.g. read `600`, sheet `6OO`), `new` (new row),
 `missing` (the ID is not in the sheet: probably misread, say so), `ambiguous`
 (several rows could be it), `duplicate` (the same ID twice on the page), `nokey`
-(no readable ID), `crossed`. Cells: `fill` (empty in the sheet), `differs`
-(`sheet` vs `notebook`: the notebook is the primary record, but point it out),
-`doubtful` (in the proposal, highlighted with its alternatives: name it in your
-summary), `problems` (e.g. a tube already used by another row,
-a value outside a strict list), `notWritten` (a formula column), `unread`,
-`kept` (the sheet's value stays: its sum has the page's terms and more, or the
-line only implied a value; mention it only if it matters).
-`inProposal` tells whether the line is in the proposal; `rowError` why a line was
-left out. `year`/`yearSource` say which year the dates got. `overlaps` lists
+(no readable ID; `didYouMean` lists sheet IDs one character away), `crossed`.
+Cells: `fill` / `newRow` (empty in the sheet / a new row), `differs` (`sheet`
+vs `notebook`: the notebook is the primary record, but point it out),
+`doubtful` (`read`, `alternatives`, `confidence`, `reason`: in the proposal,
+highlighted; name them in your summary; `counts.doubtful` counts them),
+`implied` (written by the tool though the line does not say it: the page's
+room, a death's template, a note's words), `problems` (a tube used by another
+butterfly, a value outside a strict list), `notWritten` (a formula column),
+`unread`, `kept` (the sheet's value stays: its sum has the page's terms and
+more; mention it only if it matters). `inProposal` tells whether the line is
+in the proposal; `rowError` why a line was left out. `year`/`yearSource` say which year the dates got. `overlaps` lists
 other pending proposals touching the same rows (the same page matched in
 another chat): mention them, and if it is the same page pass their id as
 `replaceProposalId` next time.

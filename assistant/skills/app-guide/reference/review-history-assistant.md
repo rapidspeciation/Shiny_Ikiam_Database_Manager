@@ -68,8 +68,15 @@ workspace and the `ithomiini` tools; the app has no other chat.
   «nueva», «Motivo» per row. The person selects cells and presses «Valor de
   la hoja» (back to the sheet's value, or empty in a new row: the AI value
   stays aside, dashed and struck through, not written) or «Valor de la IA»
-  (the AI value again). «Aplicar N filas» writes what the table shows as one
-  save (undoable in Historial); a row with every cell set back is skipped;
+  (the AI value again). Cells the AI is unsure of are amber and dashed with a
+  «?» («N celdas dudosas por revisar» in the header; a click goes to the
+  next); the cell bar shows why and the other readings to pick. Editing,
+  picking a reading, «Valor de la hoja»/«de la IA» or «Marcar revisadas»
+  reviews them; values the line does not write are in italics. «Aplicar N
+  filas» writes what the table shows as one save (undoable in Historial);
+  with unreviewed doubtful cells it asks first («Revisarlas», «Aplicar sin
+  las dudosas», «Aplicar todo igualmente», «Cancelar»); a row with every cell
+  set back is skipped;
   «Descartar» drops it; "sí, aplícalo" in the chat does the same through
   `apply_proposal`. «Revisados hace poco (N)» keeps the last five. The panel
   can be placed right or bottom, or opened alone in its own browser tab at

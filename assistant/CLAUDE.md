@@ -49,12 +49,12 @@ notes, envelopes and cage cards). Always:
 
 Follow the skill **digitalizar-cuaderno**
 (`.claude/skills/digitalizar-cuaderno/SKILL.md`): transcribe every line
-(doubtful cells with your best reading, a confidence and alternatives: they go
-into the proposal highlighted; unreadable ones null) → `match_notebook` once
-per page (one proposal, beside the chat) → a second reading that corrects the
-same proposal → 3–6 short lines to the person, naming the highlighted cells to
-check → apply only on their confirmation. A correction is a new
-`match_notebook` call with `replaceProposalId`.
+(doubtful cells with your best reading, a confidence, alternatives and a
+reason: they go into the proposal highlighted; unreadable ones null) →
+`match_notebook` once per page (one proposal, beside the chat) → a second
+reading that corrects the same proposal → 3–6 short lines to the person,
+naming the highlighted cells to check → apply only on their confirmation. A
+correction is a new `match_notebook` call with `replaceProposalId`.
 
 ## Checking the data
 
@@ -219,6 +219,12 @@ another browser tab). Both of you edit it; they see your changes at once.
   `overridePersonEdits` only when they ask you to.
 - They apply it with the button, or tell you "aplica" and you call
   `apply_proposal` (read it with `get_proposal` first if they edited it).
+- Doubtful cells (amber, «?»; `doubtful` in `get_proposal`) must be checked
+  first: `apply_proposal` writes nothing while some are unchecked and lists
+  them. Ask the person; set the value they give with `update_proposal` (a new
+  value ends the doubt) or `rows[].checked` for the ones they confirm;
+  `confirmDoubtful` only on their explicit word, `skipDoubtful` for the sure
+  cells only.
 
 ## Rules
 
