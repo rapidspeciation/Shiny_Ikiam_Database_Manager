@@ -85,8 +85,8 @@ export default {
   'Individuos por día': 'Individuals per day',
   'Recapturas / individuos marcados en el periodo': 'Recaptures / individuals marked in the period',
   'Próxima marca': 'Next mark',
-  'Regla del protocolo: con {n} individuos preservados de una especie de Ithomiini se pasa a marcar y liberar. Cuentan todos los preservados de Ikiam y Casa de Lin (monitoreo u otro propósito, todo el histórico); las demás columnas siguen los filtros.':
-    'Protocol rule: once {n} individuals of an Ithomiini species are preserved, it is marked and released instead. Every preserved individual from Ikiam and Casa de Lin counts (monitoring or any other purpose, all time); the other columns follow the filters.',
+  'Regla del protocolo: con {n} individuos preservados de una especie de Ithomiini se pasa a marcar y liberar. Cuentan todos los preservados de Ikiam, Casa de Lin y Mariposario Ikiam (monitoreo u otro propósito, todo el histórico); las demás columnas siguen los filtros.':
+    'Protocol rule: once {n} individuals of an Ithomiini species are preserved, it is marked and released instead. Every preserved individual from Ikiam, Casa de Lin and Mariposario Ikiam counts (monitoring or any other purpose, all time); the other columns follow the filters.',
   'Regla de {n}': 'Rule of {n}',
   'Preserv.': 'Preserv.',
   'Recapt.': 'Recapt.',

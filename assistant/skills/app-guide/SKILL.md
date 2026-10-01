@@ -104,6 +104,8 @@ Which tool for which task:
 | Counts and reports | `run_report` (overview, counts, stages, crosses, samples, quality, weekly) |
 | Find data problems | `check_data` (same issues as Revisión) |
 | "Aplica las correcciones acordadas" | `list_agreed_fixes` → one `propose_changes` with `issueIds` |
+| Suggested edits (Revisión → Sugerencias) | `list_suggested_edits` (read-only) → only what the person picks → one `propose_changes` |
+| CAM ranges running out, the 30-preserved rule | `get_alerts` |
 | A Wikiloc monitoring walk | `queue_wikiloc` → `get_walk` → `propose_changes(newRows)` |
 | A notebook / envelope photo | skill `digitalizar-cuaderno` → `match_notebook` |
 | Project documents (Drive) | `search_knowledge`, `list_documents`, `read_document`, `sync_documents` |

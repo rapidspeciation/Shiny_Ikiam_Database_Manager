@@ -312,7 +312,7 @@ const captures = computed<ImportedCapture[]>(() => {
 
 /** New mark, recapture (same mark, species and sex) or reused ID, from the marks before the walk. */
 const roles = computed(() => (table.value ? walkMarkRoles(rows.value, date.value, captures.value) : []))
-// The 30-preserved rule counts every preserved butterfly from Ikiam and Casa de Lin.
+// The 30-preserved rule counts every preserved butterfly from Ikiam, Casa de Lin and Mariposario Ikiam.
 // Counted up to the day of the walk, so an old walk is judged by the count it had then.
 const preservedBySpecies = computed(() =>
   preservedForRule(table.value?.rows || [], /^\d{4}-\d{2}-\d{2}$/.test(date.value) ? isoToSerial(date.value) : undefined),

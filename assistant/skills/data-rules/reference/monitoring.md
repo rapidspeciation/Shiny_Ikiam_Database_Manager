@@ -70,8 +70,9 @@ Splitted_body `NA`. Rare; ask why when it appears.
 
 Once an Ithomiini species has 30 preserved individuals it is marked and
 released instead (meeting of Nov 2023; the 2023 method says at most 30 per
-species). Count every `Collected_Preserved` row from Ikiam and Casa de Lin,
-whatever its Purpose (`count_records`). The import warns; when you propose a
+species). Count every `Collected_Preserved` row from Ikiam, Casa de Lin and
+Mariposario Ikiam, whatever its Purpose, per species (`get_alerts` gives the
+counts, the day each species reached 30 and those close to it). The import warns; when you propose a
 preserved capture of a species already at 30, say so and ask whether it
 should have been marked. It is applied loosely (Hypothyris euclea, Hyposcada
 anchiala, Pseudoscada florula kept being preserved past 30): **Ask** whether it

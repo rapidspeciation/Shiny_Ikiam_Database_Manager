@@ -197,4 +197,83 @@ export default {
   'La fecha de muerte (preservado ese día)': 'The death date (preserved that day)',
   'Killed_Preserved: preservado vivo': 'Killed_Preserved: preserved alive',
   'Lo habitual desde 2025': 'The usual since 2025',
+
+  // server/suggestions/: Revisión → Sugerencias (titles, descriptions, reasons)
+  'Arreglos de los chequeos': 'Fixes from the checks',
+  'Los arreglos que la Revisión de datos ya calcula: un valor de lista escrito de otra forma (seguro), el CAM de la otra hoja en una columna copiada, un año escrito con uno de diferencia y una fecha escrita como texto (probables), y una fecha sacada del inicio de una nota (revisar).':
+    "The fixes the data review already computes: a list value written another way (certain), the other sheet's CAM in a copied column, a year typed one off and a date written as text (likely), and a date taken from the start of a note (check).",
+  '{problem} ({note})': '{problem} ({note})',
+  'Espacios de más': 'Extra spaces',
+  'Valores con espacios al inicio o al final que cambian lo que la hoja lee: « NA», un ID o un tubo con un espacio, o un valor de una lista que en la lista no lleva ese espacio. Las notas no se tocan. Seguro: solo se quitan los espacios.':
+    'Values with spaces at the start or end that change what the sheet reads: « NA», an ID or a tube with a space, or a list value the list has without that space. Notes are left alone. Certain: only the spaces go.',
+  '«{value}» lleva espacios que la hoja cuenta como parte del valor': '«{value}» has spaces the sheet counts as part of the value',
+  'Fórmulas que faltan': 'Missing formulas',
+  'Filas de Collection_data enviadas al insectario (Collected_Sent2Insectary) con Death_date, Preservation_date, Preservation_medium o Preserved_dead_alive vacíos donde las filas anteriores tienen la fórmula que los lee de Insectary_data. Seguro: copiar la fórmula de la fila de arriba; se muestra lo que daría hoy.':
+    'Collection_data rows sent to the insectary (Collected_Sent2Insectary) with Death_date, Preservation_date, Preservation_medium or Preserved_dead_alive empty where the rows before have the formula that reads them from Insectary_data. Certain: copy the formula down from the row above; what it would give today is shown.',
+  'falta la fórmula de la fila {from}; hoy daría vacío ({id} no tiene {target} en Insectary_data)':
+    'the formula of row {from} is missing; today it would give nothing ({id} has no {target} in Insectary_data)',
+  'falta la fórmula de la fila {from}; hoy daría {value} ({target} de {id} en Insectary_data)':
+    'the formula of row {from} is missing; today it would give {value} ({target} of {id} in Insectary_data)',
+  'Fechas imposibles': 'Impossible dates',
+  'Fechas que no son fechas, en el futuro o antes de 2009, cuando se puede leer la fecha que se quiso escribir: un año con un dígito cambiado (2926 por 2026), un mes en otro idioma («13-mrt-26») o un día sin año («9/30»). Se sugiere la lectura más cercana a las fechas de las filas de alrededor; probable si es la única a menos de 120 días de ellas.':
+    'Dates that are no date, in the future or before 2009, when the intended date can be read: a year with one digit changed (2926 for 2026), a month in another language («13-mrt-26») or a day without its year («9/30»). The reading closest to the dates of the rows around is suggested; likely when it is the only one within 120 days of them.',
+  'un dígito del año cambiado': 'one digit of the year changed',
+  'mes escrito en otro idioma': 'month written in another language',
+  'día sin año': 'day without its year',
+  '«{value}» es NA con un carácter de más': '«{value}» is NA with an extra character',
+  '{field} «{value}» no se puede leer como una fecha entre 2009 y hoy': '{field} «{value}» cannot be read as a date between 2009 and today',
+  '{field} «{value}»: {how}; no hay fechas cerca para comparar': '{field} «{value}»: {how}; no dates nearby to compare with',
+  '{field} «{value}»: {how}; las filas de alrededor tienen {near} ({others} lecturas más)':
+    '{field} «{value}»: {how}; the rows around have {near} ({others} more readings)',
+  'Tubos con un dígito de más o de menos': 'Tubes with a digit too many or too few',
+  'Tubos FluidX con un dígito menos (o más) que los demás de su prefijo, como FS3886683 por FS63886683. Se pone (o quita) el dígito donde el tubo queda junto a los tubos de la misma gradilla que ya están en el libro; las filas seguidas escritas el mismo día se corrigen juntas. Probable si una sola lectura toca la serie; si no, revisar la etiqueta.':
+    'FluidX tubes with one digit fewer (or more) than the others of their prefix, such as FS3886683 for FS63886683. The digit is put back (or taken out) where the tube lands next to tubes of the same rack already in the workbook; consecutive rows typed the same day are corrected together. Likely when a single reading touches the run; otherwise check the label.',
+  '{tube} tiene {n} dígitos (los {prefix} tienen {length}); {fixed} queda a {gap} de tubos ya usados':
+    '{tube} has {n} digits ({prefix} tubes have {length}); {fixed} is {gap} away from tubes in use',
+  '{tube} tiene {n} dígitos (los {prefix} tienen {length}); {fixed} queda a {gap} de tubos ya usados, y {others} lecturas más a menos de 30':
+    '{tube} has {n} digits ({prefix} tubes have {length}); {fixed} is {gap} away from tubes in use, and {others} more readings within 30',
+  '{tube} tiene {n} dígitos (los {prefix} tienen {length}); leídas juntas las {run} filas seguidas, {fixed} queda a {gap} de tubos ya usados':
+    '{tube} has {n} digits ({prefix} tubes have {length}); reading the {run} consecutive rows together, {fixed} is {gap} away from tubes in use',
+  '{tube} tiene {n} dígitos (los {prefix} tienen {length}); leídas juntas las {run} filas seguidas, {fixed} queda a {gap} de tubos ya usados, y {others} lecturas más a menos de 30':
+    '{tube} has {n} digits ({prefix} tubes have {length}); reading the {run} consecutive rows together, {fixed} is {gap} away from tubes in use, and {others} more readings within 30',
+  '{tube} tiene {n} dígitos (los {prefix} tienen {length}) y ninguna lectura queda junto a tubos ya usados':
+    '{tube} has {n} digits ({prefix} tubes have {length}) and no reading lands next to tubes in use',
+  'Especie o sexo distintos entre la fila de Collection_data y la de Insectary_data de la misma mariposa silvestre. Probable cuando un lado se corrigió después (historial) o el sobre de las fotos dice lo mismo que un lado; si no, revisar: se sugiere que Insectary_data siga a Collection_data. Se omiten los pares con fechas a más de 3 días (un ID viejo repetido: otra mariposa).':
+    'Species or sex differing between the Collection_data and Insectary_data rows of one wild butterfly. Likely when one side was corrected later (history) or the envelope in the photos agrees with one side; otherwise check: Insectary_data is suggested to follow Collection_data. Pairs whose dates are more than 3 days apart are left out (an old ID used twice: another butterfly).',
+  'Collection_data se corrigió el {date} ({who}): {before} → {after}': 'Collection_data was corrected on {date} ({who}): {before} → {after}',
+  'Insectary_data se corrigió el {date} ({who}): {before} → {after}': 'Insectary_data was corrected on {date} ({who}): {before} → {after}',
+  'el sobre de las fotos dice «{read}», como {sheet}': 'the envelope in the photos says «{read}», like {sheet}',
+  '{id}: {why}': '{id}: {why}',
+  '{id}: {sheet} fila {row} dice {value}; nada en el libro dice qué lado es el correcto (mirar el sobre)':
+    '{id}: {sheet} row {row} says {value}; nothing in the workbook says which side is right (look at the envelope)',
+  'Pedigree sin decidir': 'Pedigree not decided',
+  'Mariposas muertas o preservadas de Insectary_data con Pedigree «YES or NO» (la fórmula espera que alguien escriba Yes o No). Se sugiere lo que dice el libro: si está en F1/F2_MutationRate (mismo Insectary_ID y CAM), solo con su Insectary_ID, o si su clutch es F1, F2 o Backcross. La certeza sale de cómo se decidieron las filas ya decididas con la misma evidencia; sin evidencia no se sugiere valor. Lo deciden PAS y el equipo de cruces.':
+    'Dead or preserved butterflies of Insectary_data with Pedigree «YES or NO» (the formula waits for someone to type Yes or No). What the workbook shows is suggested: whether it is in F1/F2_MutationRate (same Insectary_ID and CAM), only with its Insectary_ID, or whether its clutch is F1, F2 or Backcross. The certainty comes from how the rows already decided with the same evidence were decided; without evidence no value is suggested. PAS and the crosses team decide it.',
+  'F1/F2_MutationRate fila {row} es esta mariposa ({id}, {cam})': 'F1/F2_MutationRate row {row} is this butterfly ({id}, {cam})',
+  'F1/F2_MutationRate fila {row} tiene su Insectary_ID {id}, con otro CAM ({cam})':
+    'F1/F2_MutationRate row {row} has its Insectary_ID {id}, with another CAM ({cam})',
+  'su clutch {clutch} es {generation} en Insectary_stocks': 'its clutch {clutch} is {generation} in Insectary_stocks',
+  'silvestre, no está en F1/F2_MutationRate': 'wild, not in F1/F2_MutationRate',
+  'no está en F1/F2_MutationRate; su clutch {clutch} es de stock (Generation NA)':
+    'not in F1/F2_MutationRate; its clutch {clutch} is a stock clutch (Generation NA)',
+  'no está en F1/F2_MutationRate y su clutch no tiene Generation en Insectary_stocks':
+    'not in F1/F2_MutationRate and its clutch has no Generation in Insectary_stocks',
+  '«{value}» es {right} escrito en otra forma': '«{value}» is {right} written another way',
+  '{why}; en las filas ya decididas con lo mismo, {value} en {k} de {n}': '{why}; in the rows already decided with the same, {value} in {k} of {n}',
+  '{why}; ninguna fila decidida con lo mismo': '{why}; no row decided with the same',
+
+  // server/alerts.mjs: Revisión → Alertas and Inicio
+  '{pool}: no quedan CAM en ningún rango. Pidan a PAS o AA un rango nuevo.': '{pool}: no CAMs left in any range. Ask PAS or AA for a new range.',
+  '{pool}: queda {n} CAM en {first}–{last} (último {cam}, {date}). Pidan a PAS o AA un rango nuevo.':
+    '{pool}: {n} CAM left in {first}–{last} (last {cam}, {date}). Ask PAS or AA for a new range.',
+  '{pool}: quedan {n} CAM en {first}–{last} (último {cam}, {date}). Pidan a PAS o AA un rango nuevo.':
+    '{pool}: {n} CAMs left in {first}–{last} (last {cam}, {date}). Ask PAS or AA for a new range.',
+  '{species} llegó a {limit} preservadas el {date}: desde ahora se marca y libera, no se preserva.':
+    '{species} reached {limit} preserved on {date}: from now on it is marked and released, not preserved.',
+  '{species}: {n} preservada en los últimos 60 días después de llegar a {limit} ({total} en total).':
+    '{species}: {n} preserved in the last 60 days after reaching {limit} ({total} in all).',
+  '{species}: {n} preservadas en los últimos 60 días después de llegar a {limit} ({total} en total).':
+    '{species}: {n} preserved in the last 60 days after reaching {limit} ({total} in all).',
+  '{species}: {preserved} preservadas, falta {n} para {limit}.': '{species}: {preserved} preserved, {n} more to {limit}.',
+  '{species}: {preserved} preservadas, faltan {n} para {limit}.': '{species}: {preserved} preserved, {n} more to {limit}.',
 } as Record<string, string>

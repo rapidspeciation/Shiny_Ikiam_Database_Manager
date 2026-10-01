@@ -41,8 +41,11 @@ import { createPasswordResets } from './passwordReset.mjs';
 import { createSummary } from './summary.mjs';
 import { applyIdChange, planIdChange } from './insectaryId.mjs';
 import { UNIQUE, TUBE_FIELD } from './verifications.mjs';
-import { checkData } from './checks.mjs';
+import { CHECK_KINDS, allIssues, checkData } from './checks.mjs';
 import { reviewPage, setVerdicts, trainingLabels, verdictHistory } from './review.mjs';
+import { allSuggestions, suggestionPage, suggestionSources, suggestionsCsv } from './suggestions/index.mjs';
+import { solvedFindings } from './findings.mjs';
+import { alerts } from './alerts.mjs';
 import { createPhotoService, photoCacheDir } from './photos.mjs';
 import { listOptions } from './verify.mjs';
 import { moduleMap, validateValues } from './schema.mjs';
@@ -608,6 +611,35 @@ export async function createApp(config = {}, options = {}) {
         requireEditor(user);
         return json(res, 200, setVerdicts(store, body, user));
       }
+      // Suggested edits (server/suggestions/): read-only, for people to look at and copy; nothing applies them.
+      if (method === 'GET' && path === '/api/suggested-edits') {
+        requireEditor(user);
+        return json(res, 200, await suggestionPage(store, query));
+      }
+      if (method === 'GET' && path === '/api/suggested-edits/csv') {
+        requireEditor(user);
+        // format=tsv: the same list to copy and paste into a sheet.
+        const tsv = query.format === 'tsv';
+        const csv = await suggestionsCsv(store, query, { tsv });
+        if (tsv)
+          return send(res, 200, csv, { 'content-type': 'text/tab-separated-values; charset=utf-8', 'cache-control': 'no-store' });
+        res.writeHead(200, {
+          'content-type': 'text/csv; charset=utf-8',
+          'content-disposition': `attachment; filename="suggested-edits-${new Date().toISOString().slice(0, 10)}.csv"`,
+          'cache-control': 'no-store',
+        });
+        return res.end(`\ufeff${csv}`);
+      }
+      // Problems and suggestions the sheet no longer has (server/findings.mjs), after looking again.
+      if (method === 'GET' && path === '/api/solved') {
+        requireEditor(user);
+        allIssues(store);
+        await allSuggestions(store);
+        const titles = { check: CHECK_KINDS, suggestion: Object.fromEntries(suggestionSources().map(s => [s.id, s.title])) };
+        return json(res, 200, { ...solvedFindings(store, query), titles });
+      }
+      // CAM pools running out and the 30-preserved rule (server/alerts.mjs): for the team (Inicio, Revisión).
+      if (method === 'GET' && path === '/api/alerts') return json(res, 200, alerts(store));
       // Verdicts on what models read from the photos, kept as training labels.
       if (method === 'GET' && path === '/api/review/labels') {
         requireEditor(user);

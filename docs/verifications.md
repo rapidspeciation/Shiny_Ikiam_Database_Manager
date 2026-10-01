@@ -73,3 +73,29 @@ species prediction against the recorded one (`ai_species`).
 It is shown in the **Revisión** tab (cards with the rows side by side, the photos and the envelope,
 and a verdict per card; Tablas → Revisión de datos opens it) and is the assistant's `check_data`
 tool (`GET /api/checks?sheet=&kind=&limit=&offset=`); the agreed fixes are `list_agreed_fixes`.
+
+### Suggested edits, solved problems and alerts
+
+**Sugerencias** (`server/suggestions/`, `GET /api/suggested-edits`, the assistant's
+`list_suggested_edits`) are corrections the app computes, each with a certainty
+(certain / likely / check) and its reason; nothing applies them (CSV and copy
+only), a person asks the assistant for an ordinary proposal from the ones they
+choose. Sources: the checks' own fixes (`check_fixes`), padded values
+(`spaces`), the Death/Preservation lookups missing on Collected_Sent2Insectary
+rows (`formulas`), impossible dates with a readable intended day (`dates`),
+tubes with a digit too few or too many next to their rack's run (`tubes`), the
+two rows of a wild butterfly disagreeing on species or sex (`twins`) and
+Pedigree left as "YES or NO" on dead butterflies (`pedigree`, its certainty
+measured on the rows already decided with the same evidence). The registry
+(`server/suggestions/index.mjs`) documents the interface a new source follows.
+
+**Resueltos** (`server/findings.mjs`, `GET /api/solved`): every issue and every
+suggestion is kept in the app's database under a stable key (kind:recordId:field)
+with when it was first seen; when the checks no longer find it, it is solved,
+with the time and the person of the last saved change of that cell (or row)
+from the history.
+
+**Alertas** (`server/alerts.mjs`, `GET /api/alerts`, the assistant's
+`get_alerts`): CAM ranges of the Lists pools in use with fewer than 50 (or 15 %)
+CAMs left above the highest used, and the 30-preserved rule per species
+(docs/monitoring.md).

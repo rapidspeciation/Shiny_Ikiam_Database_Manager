@@ -20,6 +20,7 @@ import { listOptions } from './verify.mjs';
 import { pendingPoints, tracksRevision } from './monitoring.mjs';
 import { photoContext, photoIndex, reviewData, reviewRevision } from './photodata.mjs';
 import { photoIssues } from './photo-checks.mjs';
+import { trackFindings } from './findings.mjs';
 
 /** Kinds of issue, in the order they are listed, with their Spanish names for the app. */
 export const CHECK_KINDS = {
@@ -45,8 +46,9 @@ export const CHECK_KINDS = {
 const KIND_ORDER = Object.keys(CHECK_KINDS);
 
 const EPOCH = Date.UTC(1899, 11, 30);
-const iso = serial => new Date(EPOCH + Math.round(serial) * 864e5).toISOString().slice(0, 10);
-const todaySerial = () => {
+export const iso = serial => new Date(EPOCH + Math.round(serial) * 864e5).toISOString().slice(0, 10);
+/** Today in Ecuador as a sheet date serial. */
+export const todaySerial = () => {
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(new Date());
   return Math.round((Date.parse(`${today}T00:00:00Z`) - EPOCH) / 864e5);
 };
@@ -78,12 +80,18 @@ const hasMark = value => !!text(value) && !/^(NA|N\/A|not given)$/i.test(text(va
  */
 const CAM_OWNERS = { Collection_data: 'CAM_ID', Insectary_data: 'CAM_ID', Wing_tissue: 'CAM_ID' };
 
-/** Loads every recorded row once; placeholders (pre-made rows) are kept apart. */
+/** The state of the local copy: changes whenever any row is written, synced or removed. */
+export function recordsStamp(store) {
+  const state = store.db.prepare('SELECT count(*) n, max(updated_at) u FROM records').get();
+  return `${state.n}:${state.u}`;
+}
+
+/** Loads every recorded row once, in sheet order; placeholders (pre-made rows) are kept apart. */
 function load(store) {
   const bySheet = new Map();
   const rows = store.db
     .prepare(
-      'SELECT id,sheet,row_num,observed,label,values_json,formulas_json FROM records WHERE missing=0 AND row_num>0 AND row_num<2000000000',
+      'SELECT id,sheet,row_num,observed,label,values_json,formulas_json FROM records WHERE missing=0 AND row_num>0 AND row_num<2000000000 ORDER BY sheet,row_num',
     )
     .all();
   for (const r of rows) {
@@ -103,14 +111,32 @@ function load(store) {
   return bySheet;
 }
 
-const ref = (row, field) => ({
+/**
+ * Every row of the local copy by sheet (read-only: shared), as load() gives
+ * them. The checks, the suggested edits (server/suggestions/) and the alerts
+ * (server/alerts.mjs) all read the whole copy when it changes: the rows are
+ * parsed once and kept a minute for the others, then let go (about 100k rows).
+ */
+let loaded = null;
+export function sheetRows(store) {
+  const stamp = recordsStamp(store);
+  if (loaded?.store === store && loaded.stamp === stamp) return loaded.sheets;
+  clearTimeout(loaded?.timer);
+  const sheets = load(store);
+  loaded = { store, stamp, sheets, timer: setTimeout(() => (loaded = null), 60_000) };
+  loaded.timer.unref?.();
+  return sheets;
+}
+
+export const ref = (row, field) => ({
   sheet: row.sheet,
   row: row.row,
   recordId: row.id,
   label: row.label,
   ...(field ? { field, value: shown(row.sheet, field, row.values[field]) } : {}),
 });
-function shown(sheet, field, value) {
+/** A cell as people read it: dates of date columns as YYYY-MM-DD. */
+export function shown(sheet, field, value) {
   const type = moduleMap.get(sheet)?.fields.find(f => f.key === field)?.type;
   return type === 'date' && isDate(value) ? iso(value) : (value ?? null);
 }
@@ -171,7 +197,7 @@ const loose = value =>
     .trim();
 
 function scan(store) {
-  const sheets = load(store);
+  const sheets = sheetRows(store);
   const issues = [];
   const seen = new Map();
   /** `problem` and `extra.fixNote`: a msg() (text and descriptor) or a plain text. */
@@ -609,16 +635,33 @@ function scan(store) {
 const cache = new WeakMap();
 /** Every issue, recomputed only when the local copy (or the day) changed. */
 export function allIssues(store) {
-  const state = store.db.prepare('SELECT count(*) n, max(updated_at) u FROM records').get();
   // The stored walks and the imported photo readings too (walk_doubt, the photo kinds).
-  const stamp = `${state.n}:${state.u}:${todaySerial()}:${tracksRevision(store)}:${reviewRevision(store.db)}`;
+  const stamp = `${recordsStamp(store)}:${todaySerial()}:${tracksRevision(store)}:${reviewRevision(store.db)}`;
   const hit = cache.get(store);
   if (hit?.stamp === stamp) return hit;
   const started = Date.now();
   const entry = { stamp, issues: scan(store), checkedAt: new Date().toISOString(), ms: Date.now() - started };
+  // First seen / solved (the Revisión tab's «Resueltos»): issues no longer found are solved.
+  trackFindings(store, 'check', entry.issues.map(checkFinding), { at: entry.checkedAt });
   cache.set(store, entry);
   return entry;
 }
+
+/** What the solved list keeps of an issue (server/findings.mjs). */
+const checkFinding = issue => ({
+  key: issue.id,
+  kind: issue.kind,
+  sheet: issue.sheet,
+  row: issue.row,
+  recordId: issue.recordId,
+  field: issue.field,
+  label: issue.label,
+  value: issue.value,
+  text: issue.problem,
+  textMsg: issue.problemMsg,
+  // The other rows involved: fixing one of them can solve it too (a repeated tube).
+  others: (issue.related ?? []).map(r => r.recordId).filter(Boolean),
+});
 
 /**
  * One page of issues, optionally only some kinds (comma-separated), one sheet,

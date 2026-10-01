@@ -16,6 +16,9 @@ The only page open without an account.
   Pupas por emerger, and late ones). Then the insectary now (Mariposas vivas,
   Clutches en curso, eggs/larvae/pupae, last 30 days), «Monitoreo en Ikiam»
   (link to the Reporte) and «Colectas».
+- Signed in, when there is something to say: «Alertas» (a CAM range running
+  out, a species that reached 30 preserved, species close to it), with «Ver
+  rangos de CAM y la regla de los 30» → `#/revision?vista=alertas`.
 
 ## The save bar and «Revisar»
 
@@ -92,7 +95,29 @@ workspace and the `ithomiini` tools; the app has no other chat.
 
 ## Revisión — `#/revision` (editors; last tab)
 
-Every inconsistency of the workbook and of the specimen photos as a card,
+Four views along the top: «Problemas» (below), «Sugerencias», «Resueltos»
+and «Alertas» (`vista=sugerencias|resueltos|alertas`).
+
+- «Sugerencias»: corrections the app computes, read only (no apply button):
+  grouped by source (Arreglos de los chequeos, Espacios de más, Fórmulas que
+  faltan, Fechas imposibles, Tubos con un dígito de más o de menos, Colecta e
+  insectario no coinciden, Pedigree sin decidir), each with «Seguro» /
+  «Probable» / «Revisar», the row (link to Tablas), now → suggested («decidir»
+  when a person must choose), the reason, «en Google Sheets» for formula cells,
+  and since when. Filters: certainty, source, «Hoja», search; «CSV» downloads
+  and «Copiar» copies the filtered list. Parameters: `fuente=<source id>`,
+  `certeza=certain|likely|check`, `hoja=`, `q=`. To make the changes, ask the
+  assistant for a proposal with the chosen ones.
+- «Resueltos»: problems and suggestions the sheet no longer has, newest first:
+  since when it was seen, when it was solved, who (or Google Sheets, or not in
+  the history), the change (before → after) and «ver en Historial».
+  Parameters: `tipo=check|suggestion`, `q=`.
+- «Alertas»: the alerts, «Rangos de CAM» (per pool of Lists: range, size,
+  used, highest, next, left, gaps, last use) and «Regla de los 30
+  preservados» (species that reached 30, the day, those preserved after;
+  species close to it).
+
+«Problemas»: every inconsistency of the workbook and of the specimen photos as a card,
 judged by people. Same kinds as `check_data` (sidebar groups «Datos de la
 hoja» and «Fotos y sobres», with counts).
 

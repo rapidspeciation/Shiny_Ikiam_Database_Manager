@@ -101,6 +101,30 @@ often such a reading was right), `curation` (an earlier decision), `photos`,
 list is in the app's **Revisión** tab, where people look at the photos and
 judge each issue: accepted, rejected, or another value.
 
+## Suggested edits and alerts (read-only)
+
+`list_suggested_edits` gives the corrections the app computes from the workbook,
+the same list as Revisión → Sugerencias, where nothing can be applied: each has
+`sheet`, `row`, `recordId`, `label`, `field`, `current`, `suggested` (null = a
+person must decide), `certainty` and `reason` (the evidence, in Spanish).
+Certainty: `certain` (only the spelling changes), `likely` (strong evidence,
+still shown to the person), `check` (a lead for someone who knows). Sources:
+`check_fixes`, `spaces`, `formulas`, `dates`, `tubes`, `twins`, `pedigree`
+(call without filters to see them with their counts). `manual: true` means the
+edit is a formula cell (missing XLOOKUPs, Pedigree typed over its formula):
+done by hand in Google Sheets, `propose_changes` cannot write it.
+
+When the person asks for some of them ("propón las sugerencias seguras de
+tubos"): `list_suggested_edits` with those filters → **one** `propose_changes`
+with them, a note per row with the reason → wait for their confirmation. Never
+propose `check` suggestions or ones without a value unless the person decided.
+
+`get_alerts` gives the CAM pools of Lists with what is left in each range (a
+range in use with fewer than 50, or 15 %, left: ask PAS or AA for a new one)
+and the 30-preserved rule per species (Ikiam, Casa de Lin, Mariposario Ikiam):
+species that reached 30, the day they did, those preserved after (information),
+and those at 25–29.
+
 ## Agreed corrections (Revisión tab)
 
 When the person says "aplica las correcciones acordadas" (or similar):

@@ -239,4 +239,7 @@ export default {
   // Charts
   Gráfico: 'Chart',
   Tabla: 'Table',
+  // AlertsCard
+  'Ver rangos de CAM y la regla de los 30': 'See the CAM ranges and the 30 rule',
+  'y {n} más': 'and {n} more',
 } as Record<string, string>
