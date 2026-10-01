@@ -18,8 +18,13 @@ and cite the document and date): "Protocol for Controlled Crosses and Families"
   combination is not in the list, ask (PAS adds list values).
 - Paper forms: `werxpro`, `werpro`, `proxwer`, `pol wer x procerifor`,
   `hibrido x hibrido`, `zaneka x hibrido`, a pedigree string
-  `(zaneka) x (zaneka x menophilus)`. "werneri" is now called chimborazona in
-  taxonomy, but the list and sheet keep werneri: **Ask** before renaming.
+  `(zaneka) x (zaneka x menophilus)`.
+- M. polymnia werneri was renamed chimborazona, but the insectary list (Lists
+  `Insectary_species`) still has only the werneri forms: insectary sheets use
+  the list value (`Mechanitis polymnia werneri x proceriformis`). Field rows'
+  free-text Subspecies_Form already say `chimborazona`. Renaming the list is
+  PAS's. Whether `X` or `VS` is right in a backcross name: **Ask** (PAS); use
+  the list value meanwhile.
 
 ## Protocol steps the data should reflect
 
@@ -38,9 +43,9 @@ and cite the document and date): "Protocol for Controlled Crosses and Families"
    Generation F1/F2/Backcross.
 5. A male with no tissue preserved: his F1s are not used for sampling (their
    purpose changes).
-6. Offspring: F1 larvae are preserved at the 4th instar per the protocol; in
-   Sep 2026 eggs and 3rd-instar larvae were preserved too (**Ask** AA whether
-   that is deliberate). Each gets an Insectary_ID and `LIFESTAGE`
+6. Offspring: F1 larvae are preserved at the 4th instar per the protocol;
+   eggs and younger larvae that look about to die are preserved early (the
+   eggs and 3rd instars of Sep 2026). Each gets an Insectary_ID and `LIFESTAGE`
    ([insectary-individuals.md](insectary-individuals.md)). Dead 1st–2nd
    instar larvae of families are preserved as well (dead and live siblings
    are wanted), tied to clutch, stage and date.
@@ -53,8 +58,8 @@ and cite the document and date): "Protocol for Controlled Crosses and Families"
 - **Insectary_stocks**: the clutch, with parents in NOTES.
 - **F1_F2_MutationRate**: one row per family/offspring with grandparents,
   parents and clutches (many formulas from Insectary_data). Its last rows are
-  from Sep 2025: the 2026 F1 crosses are only in stocks notes (**Ask** AA/PAS
-  who adds them).
+  from Sep 2025: the 2026 F1 crosses are added when the crosses notebook is
+  typed (until then they are only in stocks notes).
 - **Melinaea_crosses** (pairs: start/finish, reason, eggs, hatch) and
   **Melinaea_eggs** (preserved eggs per clutch with mother, father, tube and a
   reason: fungus, shrivelled, no hatch) for Melinaea only.
@@ -84,12 +89,19 @@ and cite the document and date): "Protocol for Controlled Crosses and Families"
 - When the sheet lags, the death, CAM and tube of cross animals may exist only
   in this notebook.
 
+## Decided
+
+- Eggs: as many as possible. The mother is preserved alive (flash frozen) when
+  she stops laying or seems about to die, before she is eaten or disappears
+  (the protocols' thresholds, > 10 to > 60 eggs, are not a cut-off).
+- Media: flash frozen is preferred (F2 families included) unless a note says
+  why not.
+
 ## Protocols disagree (ask, citing both)
 
-Egg threshold before the mother is frozen (> 10–20, > 15–25, > 50, > 60 by
-protocol) · dead mated male's body: ethanol + wings in an envelope (polymnia,
-lys/pol) vs flash frozen (menophilus) · F2 medium per family (flash frozen vs
-ethanol) · female clip timing (right after mating, Jan 2024, vs after laying,
-all later protocols: follow the later) · a non-laying female: back to stock vs
-15-day quarantine · minimum F2 family (> 40 vs ≥ 50). Female and male maturity
-ages are protocol advice, not data fields.
+Dead mated male's body: ethanol + wings in an envelope (polymnia, lys/pol) vs
+flash frozen (menophilus): **Ask** AA · female clip timing (right after
+mating, Jan 2024, vs after laying, all later protocols: follow the later) · a
+non-laying female: back to stock vs 15-day quarantine · minimum F2 family
+(> 40 vs ≥ 50). Female and male maturity ages are protocol advice, not data
+fields.

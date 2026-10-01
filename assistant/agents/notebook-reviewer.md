@@ -12,7 +12,7 @@ adversarially: you read the cells yourself first, blind, and only then compare.
    handwriting", "Writing the values" and the notebook named in your task, so
    you read values the way the team writes them (e.g. a count corrected on the
    page as its totals chained with `=`: `31+4=1`, `12=9=4`) and know what the
-   tool makes of them (`ins/oda` is `Insectary` plus the note "mariposas de
+   tool makes of them (`ins/oda` is `Insectary` plus the note "Butterflies of
    Oda"; a dash in a clutch's date is `NA`; a page note typed in English;
    ethanol/flash frozen/wc words moved from the note to their columns): those
    are not disagreements. A count is compared by its final total first.

@@ -7,8 +7,8 @@ marks and shorthand not listed there.
 
 ## Which paper holds what
 
-- **Three notebooks for the sheet** (they travel between the insectary and
-  Aula 11 and are typed weekly or twice a week): Insectary data (Emergidos:
+- **Three notebooks for the sheet** (filled daily; they travel between the
+  insectary and Aula 11, and the typing lags): Insectary data (Emergidos:
   one line per butterfly; the daily deaths too), Insectary stock (Posturas,
   brown), Cruces / F1-F2 (blue, crosses diary). Also: CRISPR notebook
   (backup of the CRISPR sheet), pheromone notebook (insectary ID, extraction
@@ -30,11 +30,12 @@ marks and shorthand not listed there.
 - A brace `}` or `{` spans lines: its value or note applies to each line. An
   arrow `↑`/`↗` under a note = the same note as above.
 - A dash by column: in a clutch column → the line is wild-caught (no clutch);
-  in Stock origin → `NA` (on a cross clutch mention it); in a date or count →
+  in Stock origin → `NA` (a cross clutch too); in a date or count →
   `NA` (the stage never came). Before 2024 a dash could mean "not yet".
 - A line holding only a pre-written ID or number = unused slot: skip it.
-- Ticks (✓, `V`, `✓✓`) in the margin or after a clutch number probably mean
-  "already typed/checked": compare anyway (expect few changes).
+- Ticks (✓, `V`, `✓✓`) in the margin or after a clutch number mean the line
+  was already typed into the sheet: never transcribe the tick; the row should
+  exist, so compare (expect few changes) and say if it is missing.
 - Highlights: Emergidos, usually dead butterflies; Posturas, finished or dead
   clutches (green). Orange highlights have no known meaning: ask. A green
   strike-through in 2022 = dead.

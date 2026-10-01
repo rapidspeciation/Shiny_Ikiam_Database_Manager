@@ -18,6 +18,8 @@
 
 Blank death/preservation cells on a living butterfly are pending, not errors;
 the typing lags (Emergidos about 5 weeks in Sep 2026, deaths about 2 days).
+A dead or disappeared butterfly gets `NA` in every cell that does not apply;
+blank means it has not died yet.
 
 ## Emergence values
 
@@ -33,7 +35,7 @@ the typing lags (Emergidos about 5 weeks in Sep 2026, deaths about 2 days).
   subspecies, even when the phenotype differs. Every other species and every
   wild-caught butterfly: `NA`. A missing stock breaks the phenotype summaries.
 - `Sex`: `female`, `male`; `NA` for an adult whose sex could not be seen
-  (deformed, only wings); `NOT_COLLECTED` for eggs and larvae.
+  (deformed, only wings) and for preserved eggs and larvae.
 - `Intro2Insectary_date`: the emergence date (reared) or the capture date
   (wild-caught; = its Collection_date). `NA` for preserved eggs/larvae.
 - A pupa that died ("pupa muerta", "didn't emerge"): emergence `NA`, Sex `NA`.
@@ -61,8 +63,9 @@ the typing lags (Emergidos about 5 weeks in Sep 2026, deaths about 2 days).
 `Flash frozen` · note `d/m/yy INI: Wing clip d/m/yy` (no date column yet).
 `NON-ANDROCONIA WING CLIP` is for pheromone samples only. Such rows can hold a
 CAM and a clip before the emergence data are typed: they are in use, not free.
-At death the body goes to **Tube_2** `WHOLE_ORGANISM` under the **same CAM**;
-never overwrite Tube_1.
+At death the body goes to the next free tube (**Tube_2**) `WHOLE_ORGANISM`
+under the **same CAM** (one CAM per individual: [samples-ids.md](samples-ids.md));
+never overwrite Tube_1, never a new CAM. `match_notebook` does this.
 
 ## Death, not preserved (≈ 88 % of deaths)
 
@@ -71,7 +74,7 @@ Cause not `Killed_Preserved` and no CAM:
 | Column | Value |
 |---|---|
 | Preservation_date, CAM_ID, Tube_1–4_id | `NA` |
-| Tube_1–4_tissue | `NA` (the bulk tool of 2025–26 wrote `NOT_COLLECTED`; both accepted) |
+| Tube_1–4_tissue | `NA` (Jun–Sep 2026: 317 of 332 rows; the bulk tool of 2025–26 wrote `NOT_COLLECTED`: leave those) |
 | T1_Preservation_medium, T2_Preservation_medium, Preservation_medium | `NOT_COLLECTED` |
 | Preserved_Dead_Alive, Location_body, Research_purpose | `NA` |
 
@@ -81,7 +84,8 @@ The app's Muertes tab writes this block; the notebook tool checks it.
 
 Preservation_date = Death_date · CAM_ID (insectary pool) · Tube_1_id
 `WHOLE_ORGANISM` `Flash frozen` (Tube_2 if Tube_1 is a wing clip) · the other
-tubes `NA`, their media `NOT_COLLECTED` · Preserved_Dead_Alive `Alive` when
+tubes and their tissues `NA`, their media `NOT_COLLECTED` · Preservation_medium
+(the whole-body column) = the medium used · Preserved_Dead_Alive `Alive` when
 killed (`Killed_Preserved`), `Dead` when found dead · Location_body `Ikiam` ·
 Research_purpose from the project (`F1/F2 mutation rate` for cross parents and
 offspring, `Pheromones` for pheromone males, `Sperm dissections`), else `NA`.
@@ -108,21 +112,25 @@ old habit of `Other` + note "Eaten" ended in 2024.
 ## Eggs and larvae preserved (since Sep 2026)
 
 F1 eggs, larvae and prepupae get an Insectary_ID from the pre-made sequence
-each: `Reared`, clutch (`994(3)`), Intro2Insectary_date `NA`, Sex
-`NOT_COLLECTED` (**Ask**: clutch 1004 used `NA`), `LIFESTAGE` = `Egg`,
+each: `Reared`, clutch (`994(3)`), Intro2Insectary_date `NA`, Sex `NA`
+(decided; many Sep 2026 rows say `NOT_COLLECTED`), `LIFESTAGE` = `Egg`,
 `1st instar larva` … `5th instar larva`, `Pre-pupa` (the column is used only for
 this), Death_date = preservation date, cause `Killed_Preserved` (`Alive`) or
 `Other` (found dead, `Dead`), CAM, one tube `WHOLE_ORGANISM` `Flash frozen`,
 Research_purpose `F1/F2 mutation rate`, note `d/m/yy INI: Larvae 4th instar`.
 The clutch's Insectary_stocks row gets the note "preserved d/m" and a
-subtraction in its count.
+subtraction in its count. The protocol preserves F1s at the 4th instar; eggs
+and younger larvae that look about to die are preserved early (hence the eggs
+and 3rd instars of Sep 2026).
 
 ## Research_purpose and Pedigree
 
-- Research_purpose is set at death/preservation in practice (the protocol
-  says at emergence: **Ask** before filling it on living rows). Values from
-  Lists (`F1/F2 mutation rate`, `Pheromones`, `Sperm dissections`,
-  `WEST x EAST polymnia crosses`, `Methona & Thitorea broods`…).
+- Research_purpose: the protocol and the project lead set it at emergence; the
+  2026 rows fill it only at death (all 364 living rows blank). Always fill it
+  at death; on living rows **Ask** (AA) first. Values: the `Research_purpose`
+  column of the Lists sheet (19 values, shared with Collection_data's
+  Purpose; check with `describe_sheet`), e.g. `F1/F2 mutation rate`,
+  `Pheromones`, `Sperm dissections`.
 - Pedigree is a formula giving `YES or NO` for cross purposes; PAS and the
   crosses team type `Yes`/`No` over it. Don't touch it; point out a leftover
   `YES or NO` on a dead cross parent only when asked about pedigrees.

@@ -13,10 +13,14 @@ practice first; old formats only where they help to read old pages.
 
 - The paper (notebook, envelope, cage card) is the primary record; the sheet
   lags it by days to weeks. A blank cell usually means "not yet", not an error.
-- `NA` = does not apply / was not recorded. Blank = not yet (filled at death,
+- `NA` = does not apply / was not recorded (a dead or disappeared butterfly
+  gets `NA` wherever a cell does not apply). Blank = not yet (filled at death,
   when the field envelope arrives, after photos). `NOT_COLLECTED` = a sample
-  that was not taken (preservation media, unused tubes, some tissues and sexes).
-  Type list values exactly (`NOT_COLLECTED`, never "NOT COLLECTED").
+  that was not taken (preservation media, some tissues). Type list values
+  exactly, trailing spaces included (`NOT_COLLECTED`, never "NOT COLLECTED").
+- Recent practice wins over old. Two people started in Sep 2026: where the
+  practice changed then, follow the one **before** them unless the change was
+  decided. Old rows that differ are left as they are (no mass corrections).
 - Never type a formula column (grey in the app; the tools say `notWritten`).
 - Never invent an ID, CAM, tube or date; take the next one from the right pool
   and check it is unused (see [reference/samples-ids.md](reference/samples-ids.md)).
@@ -24,8 +28,9 @@ practice first; old formats only where they help to read old pages.
   holds the butterfly (Collection_data and Insectary_data twins, experiment
   sheets) with a note "from X to Y"; relabelling envelopes and renaming photos
   are tasks for a person.
-- Where the sources disagree (marked **Ask** in the files), say what the
-  current practice is and ask; never settle it silently.
+- Where the sources disagree or nobody has decided (marked **Ask (who)** in
+  the files), say what the current practice is and ask; never settle it
+  silently.
 - `match_notebook`, `check_data`, `get_walk` and the app's tabs already apply
   many of these rules; the files say so where a tool does it, so don't redo it
   by hand.
@@ -48,8 +53,8 @@ Read the file of the case before proposing; for a notebook photo the skill
 
 ## Who knows what (sheet initials)
 
-PAS: the workbook's owner (CAM ranges, pre-made rows, columns and formulas,
-Pedigree, taxonomy). AO: notebook → sheet transfer since Sep 2026. AA: crosses
-and monitoring. ABV: field collections. KG: pheromones, photos, stock census.
+PAS: the workbook's owner (CAM ranges with AA, pre-made rows, columns and
+formulas, Pedigree, taxonomy). AO: notebook → sheet transfer since Sep 2026.
+AA: crosses, monitoring, the insectary protocols. ABV: field collections. KG: pheromones, photos, stock census.
 MJS: the previous curator (history of old rows). When you draft a question for
 the team, say who is likely to know.

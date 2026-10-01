@@ -4,7 +4,11 @@
 
 - `d/m/yy INI: text`: the day the note is **written** (today) and the initials
   of the person you work for (`29/9/26 FCH: Wing clip 27/9/26`). The event's
-  date goes inside the text ("preserved 14/9", "Wing clip d/m/yy").
+  date goes inside the text ("preserved 14/9", "Wing clip d/m/yy"). This short
+  form is the preferred one and the most used (2026: nearly all insectary and
+  stocks notes; `21May26 PAS` is PAS's and KG's style in Collection_data).
+  Each app user has their own initials (the tools use them); collectors'
+  initials are the Lists `Abbreviation` column.
 - Several notes in one cell are joined with ` | `, newest last; an existing
   note is never overwritten. The tools add the prefix and the joiner: give
   only the new text (`{"replace": …}` only when the person asks to rewrite).
@@ -13,9 +17,9 @@
 - **English.** The team types notes in English (99.8 % of insectary notes;
   field and stocks notes too), translating the page faithfully ("3 pupas
   muertas" → "3 pupae dead", "parece que están enfermas" → "larvae look sick"),
-  keeping IDs, codes, names and places as written. Exception: the owner note
-  "mariposas de Oda/Esteban" the tool writes. **Ask** if the person prefers the
-  page's Spanish.
+  keeping IDs, codes, names and places as written. Always English, even when
+  the page is in Spanish; the owner note is "Butterflies of Oda/Esteban" (old
+  rows' "mariposas de …" stay).
 
 ## Must be noted
 

@@ -153,7 +153,10 @@ Give values **as written**; the tool converts them.
 - **CAMs** (`CAM` + 6 digits) and **tubes** (2 letters + 8 digits, e.g.
   `FS50851817`, often with `wc` = wing clip): a short number under a full one
   continues it (`cam505` or `72` under `CAM076671`; `81` under `FS50851380`). You
-  may write the short form as it is; the tool completes the run.
+  may write the short form as it is; the tool completes the run. One CAM per
+  individual: a wing-clipped butterfly that dies keeps its CAM, and the new
+  tube goes to the next free `Tube_n_id` with its tissue and medium (the tool
+  does it); a different CAM read for a row that has one comes back doubtful.
 - **Death causes**: `unk` = Unknown, `eaten` = Eaten, `spider` = Spider,
   `ants`, `disapp` = Disappearance, `deformed` = Deformed, `heat shock` = Heat
   stroke, `preserved` = Killed_Preserved, `only wings` = Unknown - Only wings.
@@ -190,8 +193,9 @@ DISECTIONS` as a sum. A dash in a date or count is `"NA"` (the stage never came)
 `INSECTARY OR LABORATORY`: give it **exactly as written** (`ins`, `lab`,
 `ins/oda`, `ins/este`, `ins ESTEBAN`, `in-Oda`; what looks like `ins/lab` is
 `ins/oda`). The tool writes `Insectary` (or `Laboratory`) and, for
-`ins/<person>`, adds the note "mariposas de Oda" / "mariposas de Esteban";
-never put the code or the owner in `NOTES` yourself. A line with nothing in
+`ins/<person>`, adds the note "Butterflies of Oda" / "Butterflies of Esteban"
+(a row whose note already says "mariposas de …" keeps it); never put the code
+or the owner in `NOTES` yourself. A line with nothing in
 that column takes the room the rest of the page says. When the sheet's sum
 already holds the page's terms and more (added later), the tool keeps it
 (`kept`). Parents in NOTES female first (`U8A♀ + C8B♂`); failed clutches and
@@ -215,8 +219,9 @@ control #159". **Notes as written** (here and in Muertes): the tool moves the
 column words out of the note into empty cells only, keeping the rest of the
 note: ethanol / flash frozen → the tube's medium, wc → wing-clip tissue,
 pheromone → `Research_purpose` Pheromones, preserved → Killed_Preserved, unk →
-Unknown, a CAM → `CAM_ID`, a tube → `Tube_1_id` (or `Tube_2_id`). A death then
-gets the not-preserved block (`NA`/`NOT_COLLECTED`) or the preserved template;
+Unknown, a CAM → `CAM_ID`, a tube → `Tube_1_id` (or the next free
+`Tube_n_id` when Tube_1 holds a clip). A death then gets the not-preserved
+block (`NA`/`NOT_COLLECTED`) or the preserved template;
 these show as `implied`. A butterfly in an "ethanol"/"flash frozen" bracket
 with a CAM was killed and preserved on its emerge date: give that as its
 `Death_date` even when the cell is blank. Templates: data-rules

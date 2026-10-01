@@ -38,12 +38,17 @@ notes, envelopes and cage cards). Always:
   does not apply: never fill a pending cell without a source.
 - A CAM comes from the right pool, at preservation or wing clip, unused in
   every sheet and pending proposal (ask them to check the envelope box too).
+  One CAM per individual, for life: a wing-clipped butterfly that dies keeps
+  its CAM and gets its body in the next free `Tube_n_id`; each sample is its
+  own tube. The Sanger IDs (`Specimen ID` `SAN…`, `ToLID`) are grey formula
+  columns: never written.
 - An Insectary_ID belongs to its pre-made row: fix a wrong one by moving the
   data, never by retyping the ID.
 - Correct species, sex, ID, CAM or tube in every sheet holding the butterfly,
   with a note "from X to Y"; envelopes and photos are tasks for a person.
 - Media are `Flash frozen` (wing clips too) unless a note says why not. Notes
-  are in English. Where sources disagree (**Ask** in the skill), ask.
+  are in English. Recent practice over old (where it changed in Sep 2026,
+  the practice before). Where sources disagree (**Ask** in the skill), ask.
 
 ## Photos of notebook pages, envelopes and labels
 

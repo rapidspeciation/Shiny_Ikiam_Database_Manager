@@ -14,7 +14,7 @@ The kind is decided by `Release_Collect` first, then `Purpose`.
 | Preserved on a monitoring walk | `Collected_Preserved` | Purpose `Monitoring`, place `Ikiam`, FieldMark_ID `NA` |
 | Taken alive to the insectary | `Collected_Sent2Insectary` | an Insectary_ID (pre-made, written on the wing), **no CAM_ID**, a twin row in Insectary_data |
 | Marked and released | `Mark_Released` | FieldMark_ID (M/A/B series), Purpose `Monitoring`, CAM and tubes `NA` |
-| Released unmarked | `Released_Unmarked` | rare (last used Sep 2025): like marked, FieldMark_ID `NA` |
+| Released unmarked | `Released_Unmarked` | rare (last used Sep 2025; **Ask** AA when it applies): like marked, FieldMark_ID `NA` |
 
 A capture at Ikiam is monitoring only when Purpose is `Monitoring` (an
 opportunistic catch there has Purpose `NA`, Transect `NA`).
@@ -35,14 +35,18 @@ if not weighed, with the reason in a note) · Flight_height `NA` on trips.
 SPECIES + Subspecies_Form, Identifier, ID_status, Sex (always definite: no
 `?`), Collection_location, Transect `NA`, Bait `NA`, Forest_stratum `NA`,
 Collection_date, Collection_time (or `NA`), Collector, Rainfall, Cloud_cover
-(`NA` when not noted), Flight_height `NA`, CAM_ID `NA`. Everything about death
-and preservation stays **blank** until the butterfly dies in the insectary.
-Then: not preserved → CAM_ID_insectary `NA`, tubes `NA`, tissues
-`NOT_COLLECTED`, Preservation_date `NA`, medium `NOT_COLLECTED`, Location_*
-`NA`; preserved → CAM_ID_insectary = the insectary CAM, Tube_1_id = the
-insectary tube, `WHOLE_ORGANISM`, `Flash frozen`, Splitted_body `No`,
-Location_* `Ikiam`; CAM_ID stays `NA`. **Ask** (PAS): the older rows carry
-lookup formulas for these cells, the Aug–Sep 2026 rows are blank.
+(`NA` when not noted), Flight_height `NA`, CAM_ID `NA`, Purpose `NA`.
+Death_date, Preservation_date, Preservation_medium and Preserved_dead_alive
+are **lookup formulas** from the Insectary_data twin
+(`=XLOOKUP(D…, Insectary_data!A:A, Insectary_data!I:I, "")`, every row up to
+Jul 2026): they give the right value, so keep them and never type over them.
+The Aug–Sep 2026 rows lack them (blank even where the twin has died): point it
+out; the formulas are copied down from the row above (PAS), not typed as
+values. The rest stays **blank** until the butterfly dies in the insectary.
+Then: not preserved → CAM_ID_insectary `NA`, Tube_1_id `NA`, tissues
+`NOT_COLLECTED`, weight, Splitted_body and Location_* `NA`; preserved →
+CAM_ID_insectary = the insectary CAM, Tube_1_id = the insectary tube,
+`WHOLE_ORGANISM`, Splitted_body `No`, Location_* `Ikiam`; CAM_ID stays `NA`.
 
 **Marked–released and released:** see [monitoring.md](monitoring.md).
 
@@ -51,7 +55,8 @@ Location "Sanger - TOL704 freezer") are entered by the expedition leads: never
 copy that layout to local rows.
 
 **Pheromone wild males** (Purpose `Pheromones`, all male): weight `NA`,
-`Flash frozen`, their own tube run.
+`Flash frozen` (65 of 66 rows to 23 Sep 2026; the Ethanol rows of 29 Sep 2026
+have no reason: **Ask** KG whether the protocol changed), their own tube run.
 
 ## Session values
 
@@ -101,8 +106,8 @@ copy that layout to local rows.
 - CAMs: the **local** wild block (not the expeditions' block), next = last
   local + 1 in row order; tubes +1 in the same order. Rows are typed grouped by
   species, then fate, so CAM order is not capture-time order.
-- Large butterflies (Methona, Tithorea, Thyridia, Lycorea) go in the big-tube
-  rack, a separate run (**Ask** whether this is a rule).
+- Large butterflies (Methona, Tithorea, Thyridia, Lycorea) often go in bigger
+  tubes, but there is no size rule: take the tube on the label.
 - Live butterflies get the next free pre-made Insectary_IDs, consecutive
   within a trip (reserved for the field team after that day's emergences).
 - Details and pools: [samples-ids.md](samples-ids.md).
