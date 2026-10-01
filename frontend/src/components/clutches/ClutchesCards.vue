@@ -67,6 +67,13 @@ const wide = ref(!!wideQuery?.matches)
 const followWide = (e: MediaQueryListEvent) => (wide.value = e.matches)
 onMounted(() => wideQuery?.addEventListener('change', followWide))
 onBeforeUnmount(() => wideQuery?.removeEventListener('change', followWide))
+/** Tall enough to keep the search and filters on screen while the cards scroll (not a phone on its side). */
+const TALL = '(min-height: 600px)'
+const tallQuery = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(TALL) : null
+const tall = ref(!!tallQuery?.matches)
+const followTall = (e: MediaQueryListEvent) => (tall.value = e.matches)
+onMounted(() => tallQuery?.addEventListener('change', followTall))
+onBeforeUnmount(() => tallQuery?.removeEventListener('change', followTall))
 
 const view = persistentRef<'ongoing' | 'today'>('clutches:view', 'ongoing')
 const filter = persistentRef<'all' | 'todo' | 'changed'>('clutches:filter', 'all')
@@ -225,13 +232,15 @@ const lastText = (row: TableRow) => {
 }
 const unsavedRow = (row: TableRow) => !!pending.edits[row.id]
 const listEl = ref<HTMLElement>()
-watch(view, () => listEl.value?.scrollTo({ top: 0 }))
+const rootEl = ref<HTMLElement>()
+watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 }))
 </script>
 
 <template>
-  <div class="flex h-full flex-col bg-stone-50">
+  <!-- On a phone the controls scroll away with the cards (held at the top only when the screen is tall). -->
+  <div ref="rootEl" class="h-full bg-stone-50" :class="wide ? 'flex flex-col' : 'overflow-y-auto'">
     <!-- What is shown, the search and the filters. -->
-    <div class="shrink-0 border-b border-stone-200 bg-white px-3 pt-2 pb-2">
+    <div class="shrink-0 border-b border-stone-200 bg-white px-3 pt-2 pb-2" :class="{ 'sticky top-0 z-20': !wide && tall }">
       <div class="flex items-center gap-2">
         <div class="inline-flex overflow-hidden rounded-lg border border-stone-300 text-sm" role="tablist">
           <button
@@ -291,8 +300,8 @@ watch(view, () => listEl.value?.scrollTo({ top: 0 }))
       </template>
     </div>
 
-    <div class="flex min-h-0 flex-1">
-      <div ref="listEl" class="min-h-0 overflow-y-auto" :class="wide ? 'w-[360px] shrink-0 border-r border-stone-200 lg:w-[400px]' : 'flex-1'">
+    <div :class="wide ? 'flex min-h-0 flex-1' : ''">
+      <div ref="listEl" :class="wide ? 'min-h-0 w-[360px] shrink-0 overflow-y-auto border-r border-stone-200 lg:w-[400px]' : ''">
         <p v-if="!ready" class="p-6 text-stone-500">{{ $t('Cargando {sheet}…', { sheet: MODULE }) }}</p>
         <TodayChanges v-else-if="view === 'today'" :day="day" :initials="initials" @open="openRecord" />
         <template v-else>

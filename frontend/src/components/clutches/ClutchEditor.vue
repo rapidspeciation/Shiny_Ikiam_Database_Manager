@@ -107,6 +107,13 @@ function setValue(key: string, value: CellValue) {
   // Back to what the sheet has: no pending edit (a sum is compared as its formula).
   const back = (COUNTS as readonly string[]).includes(key) && norm(key, value) === norm(key, savedOf(key))
   pending.setCell(MODULE, r, label.value, key, back ? (r.values[key] ?? null) : value)
+  // The save checks each cell against what the person saw: for a sum, its formula (=3+5-2),
+  // which the server compares exactly (the total a formula shows can lag behind a save).
+  const edit = pending.edits[r.id]
+  if (edit && key in edit.before && formulas.value?.[key]) {
+    edit.before[key] = formulas.value[key]
+    pending.persist(false)
+  }
   touched.value = { ...touched.value, [key]: norm(key, value) }
 }
 
@@ -206,11 +213,26 @@ function reveal(e: FocusEvent) {
   measure()
   setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 350)
 }
-watch([keyboard.visibleBottom, keyboard.visibleTop], measure)
+/** The box being typed in, back in the middle of what is left once the keyboard has settled. */
+let settle: ReturnType<typeof setTimeout> | undefined
+watch([keyboard.visibleBottom, keyboard.visibleTop], () => {
+  measure()
+  clearTimeout(settle)
+  settle = setTimeout(() => {
+    const el = document.activeElement as HTMLElement | null
+    if (el && scroller.value?.contains(el) && el.matches('input, textarea')) el.scrollIntoView({ block: 'center' })
+  }, 150)
+})
 onMounted(measure)
 const sizes = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
 onMounted(() => root.value && sizes?.observe(root.value))
 onBeforeUnmount(() => sizes?.disconnect())
+/**
+ * A phone on its side with the keyboard up leaves a strip of a couple of hundred pixels:
+ * the header and the buttons at the bottom step aside for the box being typed in (and the
+ * count's own +, − and Counted next to it); they come back when the keyboard closes.
+ */
+const tight = computed(() => keyboard.open.value && keyboard.visibleBottom.value - keyboard.visibleTop.value < 360)
 const overlayStyle = computed(() =>
   props.docked ? undefined : { top: `${keyboard.visibleTop.value}px`, height: `${keyboard.visibleBottom.value - keyboard.visibleTop.value}px` },
 )
@@ -257,7 +279,7 @@ const endedText = (e: ClutchState['ended']) =>
     :role="docked ? 'region' : 'dialog'"
     :aria-label="$t('Clutch {clutch}', { clutch: label })"
   >
-    <header class="flex items-center gap-1 border-b border-stone-200 px-1 py-1">
+    <header v-show="!tight" class="flex items-center gap-1 border-b border-stone-200 px-1 py-1">
       <button class="grid h-11 w-11 place-items-center rounded-md text-stone-700 disabled:opacity-30" :disabled="index === 0" :aria-label="$t('Anterior')" @click="go(-1)">
         <ChevronLeft :size="24" />
       </button>
@@ -357,8 +379,9 @@ const endedText = (e: ClutchState['ended']) =>
             <span class="sr-only">{{ $t('Nota nueva') }}</span>
             <textarea
               v-model="noteText"
-              class="field-input min-h-20 text-base"
-              rows="2"
+              class="field-input text-base"
+              :class="tight ? 'min-h-0' : 'min-h-20'"
+              :rows="tight ? 1 : 2"
               :placeholder="$t('Nota nueva, en inglés (p. ej. 3 larvae dead)')"
               enterkeyhint="done"
             />
@@ -447,6 +470,7 @@ const endedText = (e: ClutchState['ended']) =>
       </div>
     </div>
     <footer
+      v-show="!tight"
       class="relative z-10 flex items-center gap-2 border-t border-stone-200 bg-white px-3 py-2"
       :class="docked ? '' : 'pb-[calc(0.5rem+env(safe-area-inset-bottom))]'"
       :style="lift ? { transform: `translateY(-${lift}px)` } : undefined"

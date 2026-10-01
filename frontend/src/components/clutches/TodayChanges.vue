@@ -64,7 +64,13 @@ const text = computed(() => {
   return unchanged.value.length ? `${out}\n\n${t('Revisados sin cambios')}: ${unchanged.value.map(u => u.clutch).join(', ')}` : out
 })
 const copied = ref(false)
+/** Without the clipboard (an old browser, no secure page) the text is shown to select and copy by hand. */
+const showText = ref(false)
 async function copy() {
+  if (!navigator.clipboard) {
+    showText.value = true
+    return
+  }
   try {
     await navigator.clipboard.writeText(text.value)
     copied.value = true
@@ -101,6 +107,14 @@ async function refresh() {
     <p class="mt-2 text-xs text-stone-600">
       {{ $t('Cambios de hoy ({day}) para copiar al cuaderno: antes → después.', { day: dayName }) }}
     </p>
+    <textarea
+      v-if="showText"
+      class="field-input mt-2 min-h-40 font-mono text-sm"
+      readonly
+      :value="text"
+      :aria-label="$t('Copiar como texto')"
+      @focus="($event.target as HTMLTextAreaElement).select()"
+    />
     <p v-if="unsaved" class="mt-1 text-xs text-amber-900">
       {{ $tn(unsaved, '{n} clutch con cambios sin guardar todavía.', '{n} clutches con cambios sin guardar todavía.') }}
     </p>

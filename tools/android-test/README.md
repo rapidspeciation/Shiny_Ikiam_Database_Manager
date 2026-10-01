@@ -22,6 +22,14 @@ PC's (a secure context, which `crypto.randomUUID` needs; `10.0.2.2` is not):
 (three living IDs of that copy). It closes the keyboard by leaving the box, not with the back key, which can
 leave the page.
 
+Clutches as cards (`clutches.mjs`) saves counts and notes and marks checks, so it too refuses any app
+but a local one: `adb reverse tcp:8797 tcp:8797`, then
+`APP=http://localhost:8797/ CREDS=~/.cache/ithomiini-lab/credentials.json node tools/android-test/clutches.mjs`
+(`ROTATION=1` with the phone on its side). It opens its own tab, and measures the keyboard right after
+tapping a box: text sent with `adb shell input text` makes SwiftKey fold into its bar, as for a
+hardware keyboard. Two local apps on `localhost` share one session cookie (cookies ignore the port):
+signing in on one signs the other out.
+
 The tests log in with the Wikiloc worker account (`~/.config/ithomiini-wikiloc/worker.json`)
 and use Playwright from `~/.local/share/ithomiini-wikiloc/node_modules`. The keyboard is judged
 by the page's visible height (Android's own flag can be stale). They add rows to the Colecta

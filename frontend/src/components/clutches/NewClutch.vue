@@ -141,9 +141,20 @@ async function create() {
     saving.value = false
   }
 }
+/** A phone on its side with the keyboard up: the header and the button step aside for the box typed in. */
+const tight = computed(() => keyboard.open.value && keyboard.visibleBottom.value - keyboard.visibleTop.value < 360)
 const overlayStyle = computed(() =>
   props.docked ? undefined : { top: `${keyboard.visibleTop.value}px`, height: `${keyboard.visibleBottom.value - keyboard.visibleTop.value}px` },
 )
+/** The box being typed in, back in the middle of what is left once the keyboard has settled. */
+let settle: ReturnType<typeof setTimeout> | undefined
+watch([keyboard.visibleBottom, keyboard.visibleTop], () => {
+  clearTimeout(settle)
+  settle = setTimeout(() => {
+    const el = document.activeElement as HTMLElement | null
+    if (el?.closest('[aria-label]') && el.matches('input, textarea')) el.scrollIntoView({ block: 'center' })
+  }, 150)
+})
 function reveal(e: FocusEvent) {
   const el = e.target as HTMLElement
   if (el.matches('input, textarea')) setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 350)
@@ -158,7 +169,7 @@ const generations = ['NA', 'F1', 'F2', 'Backcross']
     :role="docked ? 'region' : 'dialog'"
     :aria-label="$t('Nuevo clutch')"
   >
-    <header class="flex items-center gap-2 border-b border-stone-200 py-1 pr-1 pl-4">
+    <header v-show="!tight" class="flex items-center gap-2 border-b border-stone-200 py-1 pr-1 pl-4">
       <h2 class="min-w-0 flex-1 text-lg font-semibold">{{ $t('Nuevo clutch') }}</h2>
       <button class="grid h-11 w-11 place-items-center rounded-md text-stone-700" :aria-label="$t('Cerrar')" @click="emit('close')">
         <X :size="22" />
@@ -268,7 +279,7 @@ const generations = ['NA', 'F1', 'F2', 'Backcross']
         <textarea v-model="note" class="field-input min-h-16 text-base" rows="2" :placeholder="$t('Nota, en inglés (opcional)')" />
       </label>
     </div>
-    <footer class="border-t border-stone-200 bg-white px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
+    <footer v-show="!tight" class="border-t border-stone-200 bg-white px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
       <p class="mb-1.5 truncate text-xs" :class="message || blocker ? 'text-amber-900' : 'text-stone-600'">
         {{ message || blocker || [number, chosen, date && dayLabel(date).split(' · ')[0]].filter(Boolean).join(' · ') }}
       </p>
