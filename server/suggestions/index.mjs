@@ -60,10 +60,11 @@ import checkFixes from './check-fixes.mjs';
 import spaces from './spaces.mjs';
 import formulas from './formulas.mjs';
 import dates from './dates.mjs';
+import * as wikilocTransects from './wikiloc-transects.mjs';
 
 export const CERTAINTIES = ['certain', 'likely', 'check'];
 /** In the order they are listed. */
-const SOURCES = [checkFixes, spaces, formulas, dates, tubes, twins, pedigree];
+const SOURCES = [checkFixes, spaces, formulas, dates, tubes, twins, pedigree, wikilocTransects];
 
 /** Adds a source (see the header); its id must be new. */
 export function registerSource(source) {
