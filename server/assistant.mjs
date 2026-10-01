@@ -15,7 +15,7 @@ import { KINDS, isNone, noteText } from './notebook.mjs';
 import { RECORD_TOOLS, compactRecord, countRecords, findRecords } from './records-tool.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
 import { newRowFormulaFields } from './premade.mjs';
-import { carryChecks, dropDoubt, setChecked, uncheckedDoubts, withoutUnchecked } from './doubts.mjs';
+import { carryChecks, dropDoubt, setChecked, uncheckedDoubts, unfilledUnreadable, withoutUnchecked } from './doubts.mjs';
 import { KNOWLEDGE_TOOLS, createKnowledge, runKnowledgeTool } from './knowledge.mjs';
 import { HISTORY_TOOLS, HISTORY_TOOL_NAMES, runHistoryTool } from './history.mjs';
 import { createT3Chats } from './t3chats.mjs';
@@ -1043,6 +1043,21 @@ export function createAssistant({ store, config = {} }) {
             ),
           }
         : {}),
+      // Cells match_notebook could not read: the person fills them (filled: a value was given since).
+      ...(c.unreadable && Object.keys(c.unreadable).length
+        ? {
+            unreadable: Object.fromEntries(
+              Object.entries(c.unreadable).map(([f, u]) => [
+                f,
+                {
+                  ...(u?.reason ? { reason: u.reason } : {}),
+                  ...(u?.partial?.length ? { partial: u.partial } : {}),
+                  filled: f in c.values,
+                },
+              ]),
+            ),
+          }
+        : {}),
       ...(c.personEdits
         ? {
             personEdits: Object.fromEntries(
@@ -1185,14 +1200,20 @@ export function createAssistant({ store, config = {} }) {
     const chosen = (
       Array.isArray(indexes) && indexes.length ? [...new Set(indexes.map(Number))].filter(i => all[i]) : all.map((_, i) => i)
     ).filter(i => Object.keys(all[i].values ?? {}).length && !all[i].context);
-    if (!chosen.length) throw Object.assign(new Error('No rows selected.'), { status: 400, code: 'nothing_selected' });
+    // Unreadable cells still empty: never written (they stay as the sheet has them), listed in the answer.
+    const unreadable = unfilledUnreadable(all);
+    if (!chosen.length)
+      throw Object.assign(
+        new Error(unreadable.length ? 'Nothing to write yet: only unreadable cells, still empty.' : 'No rows selected.'),
+        { status: 400, code: 'nothing_selected', ...(unreadable.length ? { details: { unreadable } } : {}) },
+      );
     // Doubtful cells nobody looked at: the person decides first (apply them anyway, or only the sure cells).
     const unchecked = uncheckedDoubts(all, chosen);
     if (unchecked.length && doubtful !== 'confirm' && doubtful !== 'skip')
       throw Object.assign(new Error(`${unchecked.length} doubtful cells have not been checked.`), {
         status: 409,
         code: 'doubtful_unchecked',
-        details: { doubtful: unchecked },
+        details: { doubtful: unchecked, unreadable },
       });
     const who = clip(user.displayName || user.username || owner(user), 80);
     // Applied anyway: those cells count as confirmed by the person (kept with the proposal).
@@ -1233,6 +1254,7 @@ export function createAssistant({ store, config = {} }) {
         applied: written,
         result,
         ...(unchecked.length ? { doubtful: { count: unchecked.length, how: doubtful } } : {}),
+        ...(unreadable.length ? { unreadable } : {}),
       };
     } catch (cause) {
       db.prepare("UPDATE ai_proposals SET status = 'needs_review' WHERE id = ?").run(proposal.id);
@@ -1254,7 +1276,11 @@ export function createAssistant({ store, config = {} }) {
     const changes = (row?.changes_json && parse(row.changes_json)) || proposal.changes;
     const status = row?.status ?? proposal.status;
     const open = status === 'pending';
-    const fields = [...new Set(changes.flatMap(c => [...Object.keys(c.values), ...Object.keys(c.personEdits ?? {})]))];
+    const fields = [
+      ...new Set(
+        changes.flatMap(c => [...Object.keys(c.values), ...Object.keys(c.personEdits ?? {}), ...Object.keys(c.unreadable ?? {})]),
+      ),
+    ];
     const sheets = [...new Set(changes.map(c => c.sheet))];
     const typeOf = f =>
       sheets.map(s => moduleMap.get(s)?.fields.find(x => x.key === f)?.type).find(Boolean) ?? 'text';
@@ -1418,6 +1444,17 @@ export function createAssistant({ store, config = {} }) {
     return groups;
   }
 
+  /** Unreadable cells still empty, as apply_proposal reports them (the person is asked for their values). */
+  const unreadableList = cells =>
+    cells.slice(0, 60).map(u => ({
+      index: u.index,
+      label: u.label,
+      ...(u.row ? { row: u.row } : {}),
+      field: u.field,
+      ...(u.reason ? { reason: u.reason } : {}),
+      ...(u.partial?.length ? { partial: u.partial } : {}),
+    }));
+
   async function executeTool(name, args, context) {
     if (name === 'search_records') {
       const query = clip(args.query, 100).trim();
@@ -1511,8 +1548,25 @@ export function createAssistant({ store, config = {} }) {
           doubtful: args.confirmDoubtful === true ? 'confirm' : args.skipDoubtful === true ? 'skip' : null,
         });
         context.applied.push(proposal.id);
-        return { status: out.status, rows: out.applied.length, ...(out.doubtful ? { doubtful: out.doubtful } : {}) };
+        return {
+          status: out.status,
+          rows: out.applied.length,
+          ...(out.doubtful ? { doubtful: out.doubtful } : {}),
+          ...(out.unreadable
+            ? {
+                unreadable: unreadableList(out.unreadable),
+                unreadableNote:
+                  'These cells could not be read and nobody filled them: they were left as the sheet has them (empty). Ask the person for their values; they go in a new proposal.',
+              }
+            : {}),
+        };
       } catch (e) {
+        if (e.code === 'nothing_selected' && e.details?.unreadable)
+          return {
+            error: 'Not applied: nothing to write yet, only unreadable cells still empty',
+            unreadable: unreadableList(e.details.unreadable),
+            todo: 'Ask the person for the values of these cells (they type them in the table, or tell you: update_proposal), then apply again.',
+          };
         // Nothing was written: the person has to look at the doubtful cells first.
         if (e.code === 'doubtful_unchecked') {
           const changes = parse(proposal.changes_json) ?? [];
@@ -1530,6 +1584,12 @@ export function createAssistant({ store, config = {} }) {
             })),
             count: e.details.doubtful.length,
             rows: changes.length,
+            ...(e.details.unreadable?.length
+              ? {
+                  unreadable: unreadableList(e.details.unreadable),
+                  unreadableNote: 'Cells nobody could read, still empty: ask the person for them too; applying leaves them as the sheet has them.',
+                }
+              : {}),
             todo: 'Ask the person about these cells (value, alternatives, why). They check them in the table (edit, pick an alternative, or «Marcar revisadas»), or tell you: then update_proposal (the value they say, or rows[].checked for the ones they confirm) and apply again. Only when they explicitly say to apply them as they are: apply_proposal with confirmDoubtful; to write only the sure cells: skipDoubtful.',
           };
         }
@@ -1979,6 +2039,7 @@ export function createAssistant({ store, config = {} }) {
                 current,
                 items: cause.details?.items?.slice(0, 20) ?? [],
                 ...(cause.details?.doubtful ? { doubtful: cause.details.doubtful.length } : {}),
+                ...(cause.details?.unreadable?.length ? { unreadable: cause.details.unreadable.length } : {}),
               },
             },
           },

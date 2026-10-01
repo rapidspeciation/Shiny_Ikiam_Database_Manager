@@ -23,6 +23,20 @@ const emit = defineEmits<{
   back: [move: Direction | 'here']
 }>()
 
+/** A choice clicked: written into the cell, or (an unreadable cell's partial reading) put in the bar to complete. */
+function choose(info: CellBarInfo, choice: string) {
+  if (!info.choicesComplete) return emit('pick', info, choice)
+  const el = box.value
+  if (!el) return
+  el.focus()
+  editing = info
+  text.value = choice
+  nextTick(() => {
+    grow()
+    el.setSelectionRange(choice.length, choice.length)
+  })
+}
+
 const box = ref<HTMLTextAreaElement>()
 const text = ref('')
 /** The cell whose text is being changed in the bar: a click on another cell saves it here, not there. */
@@ -131,18 +145,23 @@ onBeforeUnmount(() => resize?.disconnect())
         <span v-for="(note, i) in below" :key="i" :class="note.kind ? `is-${note.kind}` : ''">
           <b v-if="note.label">{{ note.label }}:</b> {{ note.text }}
         </span>
-        <!-- A doubtful cell's other readings: a click writes one into the cell (the grid keeps its selection). -->
-        <span v-if="info?.choices?.length" class="cell-bar-choices">
-          <b>{{ $t('Otras lecturas') }}:</b>
+        <!-- A doubtful cell's other readings: a click writes one into the cell (the grid keeps its selection).
+             An unreadable cell's partial readings: a click puts one in the bar to complete. -->
+        <span v-if="info?.choices?.length" class="cell-bar-choices" :class="{ 'is-complete': info.choicesComplete }">
+          <b>{{ info.choicesLabel ?? $t('Otras lecturas') }}:</b>
           <button
             v-for="(choice, i) in info.choices"
             :key="`c${i}`"
             type="button"
             class="cell-bar-choice"
             :disabled="!info.editable"
-            :title="$t('Escribir {value} en la celda', { value: choice.label })"
+            :title="
+              info.choicesComplete
+                ? $t('Completar {value} en la barra', { value: choice.label })
+                : $t('Escribir {value} en la celda', { value: choice.label })
+            "
             @mousedown.prevent
-            @click="emit('pick', info, choice.text)"
+            @click="choose(info, choice.text)"
           >
             {{ choice.label }}
           </button>

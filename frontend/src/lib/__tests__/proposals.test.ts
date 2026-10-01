@@ -11,6 +11,7 @@ import {
   selectionActions,
   sheetGroups,
   uncheckedDoubts,
+  unfilledUnreadable,
   withLocal,
   type Proposal,
   type ProposalChange,
@@ -212,6 +213,42 @@ describe('doubtful cells', () => {
     expect(cellOf(marked.changes[0], 'CLUTCH NUMBER').doubtful).toBe(false)
     expect(uncheckedDoubts(marked)).toEqual([])
     expect(uncheckedDoubts(withLocal(marked, new Map(), new Map([[cellId('r1', 'CLUTCH NUMBER'), false]])))).toHaveLength(1)
+  })
+})
+
+describe('unreadable cells', () => {
+  const smudged = { reason: 'smudged', partial: ['1?/9'] }
+  it('show empty with their own kind until someone fills them, and are never written meanwhile', () => {
+    const row = edited('r1', {}, { current: { Death_date: null, Sex: 'female' }, unreadable: { Death_date: smudged } })
+    const cell = cellOf(row, 'Death_date')
+    expect(cell).toMatchObject({ kind: 'unreadable', value: null, unreadable: smudged, doubtful: false })
+    // Neither of the buttons applies to it, nor «Marcar revisadas».
+    expect(selectionActions([cell])).toEqual({ sheet: 0, ai: 0, check: 0 })
+    // A new row's unreadable cell is empty too.
+    expect(cellOf(created('c1', { Sex: 'male' }, { unreadable: { CAM_ID: {} } }), 'CAM_ID')).toMatchObject({ kind: 'unreadable', value: null })
+    // Its column shows even with nothing to write in it.
+    expect(sheetGroups(proposal([row]))[0].fields).toContain('Death_date')
+    const p = proposal([row, created('c1', { Sex: 'male' }, { index: 1, unreadable: { CAM_ID: {} } })])
+    expect(unfilledUnreadable(p).map(u => [u.key, u.field])).toEqual([
+      ['r1', 'Death_date'],
+      ['c1', 'CAM_ID'],
+    ])
+    // A row whose only cells are unreadable writes nothing yet.
+    expect(rowsToWrite(p)).toEqual([1])
+  })
+  it('typed by the person become theirs (written), and go back to unreadable when emptied', () => {
+    const p = proposal([edited('r1', {}, { current: { Death_date: null }, unreadable: { Death_date: smudged } })])
+    const typed = withLocal(p, new Map([[cellId('r1', 'Death_date'), { value: 46000 }]]))
+    expect(cellOf(typed.changes[0], 'Death_date')).toMatchObject({ kind: 'person', value: 46000, unreadable: smudged })
+    expect(unfilledUnreadable(typed)).toEqual([])
+    expect(rowsToWrite(typed)).toEqual([0])
+    const back = withLocal(typed, new Map([[cellId('r1', 'Death_date'), { value: null, use: 'sheet' }]]))
+    expect(cellOf(back.changes[0], 'Death_date').kind).toBe('unreadable')
+    expect(unfilledUnreadable(back)).toHaveLength(1)
+  })
+  it('in a context row (never written) do not count', () => {
+    const p = proposal([edited('r1', {}, { context: true, unreadable: { Sex: {} } })])
+    expect(unfilledUnreadable(p)).toEqual([])
   })
 })
 

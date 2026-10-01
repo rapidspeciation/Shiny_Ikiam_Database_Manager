@@ -457,4 +457,5 @@ export default {
   'Esa celda ya no se puede editar': 'That cell can no longer be edited',
   'Otras lecturas': 'Other readings',
   'Escribir {value} en la celda': 'Write {value} in the cell',
+  'Completar {value} en la barra': 'Complete {value} in the bar',
 } as Record<string, string>

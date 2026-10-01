@@ -455,6 +455,67 @@ body.touch-bar-open main {
   font-size: 10px;
   line-height: 14px;
 }
+/*
+ * A cell the assistant could not read at all, nobody filled yet: hatched red-grey with a red dotted edge
+ * and an "unreadable" tag (unlike the amber of a doubtful reading). Never written while empty.
+ */
+.proposal-sheet .tabulator-cell.is-unreadable,
+.legend.is-unreadable {
+  background: repeating-linear-gradient(135deg, #fff5f5 0 5px, #f5e9e9 5px 10px);
+  color: #7f1d1d;
+  box-shadow: none;
+  outline: 2px dotted #dc2626;
+  outline-offset: -3px;
+}
+.proposal-sheet .tabulator-cell .unread-mark {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: #b91c1c;
+  color: white;
+  font-weight: 600;
+  font-size: 10px;
+  line-height: 14px;
+  letter-spacing: 0.02em;
+}
+/* The header's count of unreadable cells to fill: a click goes to the next one. */
+.unread-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px dotted #dc2626;
+  border-radius: 4px;
+  background: #fef2f2;
+  padding: 1px 6px;
+  color: #991b1b;
+  font-weight: 500;
+}
+.unread-count:hover {
+  background: #fee2e2;
+}
+.doubt-ask.is-unread {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #7f1d1d;
+}
+.doubt-ask .unread-line {
+  margin-top: 4px;
+  color: #991b1b;
+}
+.cell-bar-notes .is-unreadable b {
+  color: #b91c1c;
+}
+.cell-bar-choices.is-complete b {
+  color: #b91c1c;
+}
+.cell-bar-choices.is-complete .cell-bar-choice {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #7f1d1d;
+}
+.cell-bar-choices.is-complete .cell-bar-choice:hover:not(:disabled) {
+  background: #fee2e2;
+}
 /* Not written on the notebook line (the page's room, a template, the note's words): italic. */
 .proposal-sheet .tabulator-cell.is-inferred,
 .legend.is-inferred {

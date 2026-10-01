@@ -971,7 +971,7 @@ function suggestionBox(
 export interface CellBarNote {
   label?: string
   text: string
-  kind?: 'sheet' | 'ai' | 'total' | 'doubt' | 'hint'
+  kind?: 'sheet' | 'ai' | 'total' | 'doubt' | 'hint' | 'unreadable'
 }
 /** Another reading of a doubtful cell, offered beside it: `text` is written into the cell as if typed. */
 export interface CellBarChoice {
@@ -999,6 +999,10 @@ export interface CellBarInfo {
   notes?: CellBarNote[]
   /** Other readings to pick with a click (a doubtful cell's alternatives). */
   choices?: CellBarChoice[]
+  /** The choices' label ("Other readings" when not given). */
+  choicesLabel?: string
+  /** A click puts the choice in the bar to complete (an unreadable cell's partial reading), instead of writing it. */
+  choicesComplete?: boolean
 }
 export type Direction = 'up' | 'down' | 'left' | 'right'
 

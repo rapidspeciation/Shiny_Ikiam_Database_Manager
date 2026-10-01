@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { Check, CircleHelp, Plus, Sparkles, X } from 'lucide-vue-next'
+import { Check, CircleHelp, Plus, Sparkles, SquarePen, X } from 'lucide-vue-next'
 import ProposalSheet, { type CellEdit } from './assistant/ProposalSheet.vue'
 import { api } from '../lib/api'
 import { displayValue } from '../lib/cells'
@@ -15,6 +15,7 @@ import {
   rowsToWrite,
   sheetGroups,
   uncheckedDoubts,
+  unfilledUnreadable,
   withLocal,
   type LocalCell,
   type Proposal,
@@ -36,6 +37,9 @@ export type { Proposal, ProposalChange } from '../lib/proposals'
  * writes what the table shows (as does "aplica" in the chat). Doubtful cells
  * (amber, "?") are counted at the top; "Aplicar" with some still unreviewed
  * asks first: apply them anyway, only the sure cells, or go and review them.
+ * Cells the assistant could not read (hatched red, "unreadable") are counted
+ * apart; they are never written until the person types them, and "Aplicar"
+ * says so before applying.
  */
 const props = defineProps<{ proposal: Proposal; busy?: boolean }>()
 const emit = defineEmits<{
@@ -242,13 +246,19 @@ let savedRevision = 0
 /** Doubtful cells nobody reviewed yet (in the whole table, and in the rows "Aplicar" writes). */
 const doubtful = computed(() => uncheckedDoubts(shown.value))
 const doubtfulToWrite = computed(() => uncheckedDoubts(shown.value, chosen.value))
-/** The dialog "Aplicar" opens while doubtful cells are unreviewed. */
+/** Unreadable cells nobody filled yet: applying leaves them as the sheet has them. */
+const unreadable = computed(() => unfilledUnreadable(shown.value))
+/** The dialog "Aplicar" opens while doubtful cells are unreviewed, or unreadable ones empty. */
 const asking = ref(false)
-async function apply(how?: 'confirm' | 'skip') {
+/**
+ * how: what to do with unreviewed doubtful cells; `leave`: the person saw the
+ * empty unreadable cells and applies anyway (they stay as the sheet has them).
+ */
+async function apply(how?: 'confirm' | 'skip', leave = false) {
   // What was just typed goes into the proposal first.
   await save()
   await nextTick()
-  if (!how && doubtfulToWrite.value.length) {
+  if ((!how && doubtfulToWrite.value.length) || (!how && !leave && unreadable.value.length)) {
     asking.value = true
     return
   }
@@ -261,14 +271,14 @@ const sheetRef = (sheet: string) => (el: unknown) => {
   if (el) sheets.set(sheet, el as { focusCell: (key: string, field: string) => boolean })
   else sheets.delete(sheet)
 }
-/** Selects the next doubtful cell to review (after the one selected last, then from the top). */
-let lastReviewed = -1
-function reviewNext() {
+/** Selects the next doubtful (or unreadable) cell to review (after the one selected last, then from the top). */
+const lastReviewed = { doubtful: -1, unreadable: -1 }
+function reviewNext(which: 'doubtful' | 'unreadable' = doubtful.value.length ? 'doubtful' : 'unreadable') {
   asking.value = false
-  const list = doubtful.value
+  const list = which === 'doubtful' ? doubtful.value : unreadable.value
   if (!list.length) return
-  lastReviewed = (lastReviewed + 1) % list.length
-  const next = list[lastReviewed]
+  lastReviewed[which] = (lastReviewed[which] + 1) % list.length
+  const next = list[lastReviewed[which]]
   const sheet = shown.value.changes.find(c => rowKey(c) === next.key)?.sheet
   if (sheet) sheets.get(sheet)?.focusCell(next.key, next.field)
 }
@@ -308,10 +318,20 @@ const statusText = computed(
         type="button"
         class="doubt-count"
         :title="$t('La IA no está segura de estas celdas: revisa cada una (edítala, elige otra lectura en la barra de arriba o márcala revisada). Clic: ir a la siguiente')"
-        @click="reviewNext"
+        @click="reviewNext('doubtful')"
       >
         <CircleHelp :size="12" />
         {{ $tn(doubtful.length, '{n} celda dudosa por revisar', '{n} celdas dudosas por revisar') }}
+      </button>
+      <button
+        v-if="pending && unreadable.length"
+        type="button"
+        class="unread-count"
+        :title="$t('La IA no pudo leer estas celdas: escribe su valor en la tabla (la barra de arriba dice por qué y lo que se leyó). Vacías no se escriben. Clic: ir a la siguiente')"
+        @click="reviewNext('unreadable')"
+      >
+        <SquarePen :size="12" />
+        {{ $tn(unreadable.length, '{n} celda ilegible por rellenar', '{n} celdas ilegibles por rellenar') }}
       </button>
     </p>
     <div v-for="g in groups" :key="g.sheet" class="border-b border-stone-100 last:border-b-0">
@@ -366,6 +386,12 @@ const statusText = computed(
               >{{ $t('dudosa') }}</span
             >
             <span
+              v-if="g.changes.some(c => c.unreadable)"
+              class="legend is-unreadable"
+              :title="$t('La IA no pudo leerla: escribe el valor; vacía no se escribe')"
+              >{{ $t('ilegible') }}</span
+            >
+            <span
               v-if="g.changes.some(c => c.inferred?.length)"
               class="legend is-inferred"
               :title="$t('No está escrito en la línea: sale de la página, de la nota o de lo que el equipo escribe siempre')"
@@ -399,24 +425,47 @@ const statusText = computed(
         {{ statusText }}
       </span>
     </div>
-    <!-- "Aplicar" with doubtful cells nobody reviewed: the person decides what happens to them. -->
-    <div v-if="asking && pending" class="doubt-ask" role="alertdialog" :aria-label="$t('Celdas dudosas sin revisar')">
-      <p class="font-medium">
+    <!-- "Aplicar" with doubtful cells nobody reviewed, or unreadable ones still empty: the person decides what happens to them. -->
+    <div
+      v-if="asking && pending"
+      class="doubt-ask"
+      :class="{ 'is-unread': !doubtfulToWrite.length }"
+      role="alertdialog"
+      :aria-label="doubtfulToWrite.length ? $t('Celdas dudosas sin revisar') : $t('Celdas ilegibles sin rellenar')"
+    >
+      <template v-if="doubtfulToWrite.length">
+        <p class="font-medium">
+          {{
+            $tn(
+              doubtfulToWrite.length,
+              '{n} celda dudosa sin revisar: ¿aplicarla como la leyó la IA?',
+              '{n} celdas dudosas sin revisar: ¿aplicarlas como las leyó la IA?',
+            )
+          }}
+        </p>
+        <p class="text-stone-600">
+          {{ $t('Revísalas en la tabla (bordes ámbar con «?»): edita, elige otra lectura en la barra de arriba o márcalas revisadas.') }}
+        </p>
+      </template>
+      <p v-if="unreadable.length" :class="doubtfulToWrite.length ? 'unread-line' : 'font-medium'">
         {{
           $tn(
-            doubtfulToWrite.length,
-            '{n} celda dudosa sin revisar: ¿aplicarla como la leyó la IA?',
-            '{n} celdas dudosas sin revisar: ¿aplicarlas como las leyó la IA?',
+            unreadable.length,
+            '{n} celda ilegible sigue vacía: al aplicar no se escribe (queda como está en la hoja).',
+            '{n} celdas ilegibles siguen vacías: al aplicar no se escriben (quedan como están en la hoja).',
           )
         }}
       </p>
-      <p class="text-stone-600">
-        {{ $t('Revísalas en la tabla (bordes ámbar con «?»): edita, elige otra lectura en la barra de arriba o márcalas revisadas.') }}
-      </p>
       <div class="mt-1.5 flex flex-wrap gap-2">
-        <button class="btn" :disabled="busy" @click="reviewNext"><CircleHelp :size="14" /> {{ $t('Revisarlas') }}</button>
-        <button class="btn" :disabled="busy" @click="apply('skip')">{{ $t('Aplicar sin las dudosas') }}</button>
-        <button class="btn" :disabled="busy" @click="apply('confirm')">{{ $t('Aplicar todo igualmente') }}</button>
+        <template v-if="doubtfulToWrite.length">
+          <button class="btn" :disabled="busy" @click="reviewNext('doubtful')"><CircleHelp :size="14" /> {{ $t('Revisarlas') }}</button>
+          <button class="btn" :disabled="busy" @click="apply('skip')">{{ $t('Aplicar sin las dudosas') }}</button>
+          <button class="btn" :disabled="busy" @click="apply('confirm')">{{ $t('Aplicar todo igualmente') }}</button>
+        </template>
+        <template v-else>
+          <button class="btn" :disabled="busy" @click="reviewNext('unreadable')"><SquarePen :size="14" /> {{ $t('Rellenarlas') }}</button>
+          <button class="btn" :disabled="busy || !chosen.length" @click="apply(undefined, true)">{{ $t('Aplicar sin ellas') }}</button>
+        </template>
         <button class="btn" @click="asking = false"><X :size="14" /> {{ $t('Cancelar') }}</button>
       </div>
     </div>

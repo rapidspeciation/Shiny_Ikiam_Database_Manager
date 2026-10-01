@@ -1292,12 +1292,30 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         const note = noteText(cell.value, { today, initials });
         cell.write = isNone(before) ? note : `${before} | ${note}`;
       }
-      // Doubtful cells go in too (highlighted, never left out); an unreadable one (null) stays out.
+      // Doubtful cells go in too (highlighted, never left out); an unreadable one (null) is never written.
       cell.include = usable && ['fill', 'conflict', 'new'].includes(cell.status);
+      // A cell the reader could not read (null): no value, why (the reader's words) and what of it was
+      // read (its "alternatives", as written). It goes into the proposal as a cell for the person to fill
+      // when the row has nothing there yet and the column is not a formula the sheet computes.
+      if (cell.status === 'unread') {
+        delete cell.reasonMsg;
+        Object.assign(cell, {
+          doubt: false,
+          reason: line.r?.[field] ?? null,
+          alternatives: [],
+          partial: line.a[field] ?? [],
+          toFill:
+            usable &&
+            !isKey &&
+            (!formulaHere || sumField) &&
+            (isNone(before) || (sumField && record?.formulas?.[field] === '=0')),
+        });
+      }
       if (hint) cell.hintMsg = hint.msg;
       cells[field] = cell;
     }
     const changes = Object.values(cells).filter(c => c.include).length;
+    const toFill = Object.values(cells).filter(c => c.toFill).length;
     const picked = usable && (picks[line.n] ?? changes > 0);
     return {
       n: line.n,
@@ -1312,6 +1330,8 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
       label: record?.label ?? item.keyValues.join(' '),
       cells,
       changes,
+      // Unreadable cells the person fills in the table.
+      ...(toFill ? { toFill } : {}),
       picked: picked && changes > 0,
       ...(item.near?.length ? { near: item.near } : {}),
     };
@@ -1333,11 +1353,29 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
       fills: count(c => c.include && c.status === 'fill'),
       conflicts: count(c => c.status === 'conflict'),
       doubts: count(c => c.doubt && c.include),
+      unreadable: count(c => c.toFill),
       errors: count(c => c.status === 'error') + out.filter(l => ['missing', 'ambiguous', 'duplicate', 'nokey'].includes(l.status)).length,
       created: out.filter(l => l.status === 'new' && l.changes).length,
       same: count(c => c.status === 'same'),
     },
   };
+}
+
+/**
+ * The cells of a line the reader could not read and the person fills in the
+ * proposal's table: { field: { reason?, partial? } } (reason: the reader's
+ * words; partial: what of it was read, as written), or undefined. Never written
+ * unless the person (or the assistant, on their word) gives a value.
+ */
+export function unreadableOf(line) {
+  const out = {};
+  for (const [field, cell] of Object.entries(line.cells))
+    if (cell.toFill)
+      out[field] = {
+        ...(cell.reason ? { reason: clip(cell.reason, 200) } : {}),
+        ...(cell.partial?.length ? { partial: cell.partial.slice(0, 3) } : {}),
+      };
+  return Object.keys(out).length ? out : undefined;
 }
 
 /**
@@ -1373,8 +1411,10 @@ export function proposalRows(review) {
       if (cell.hintMsg && !cell.doubt) hints[field] = { text: clip(cell.message, 200), msg: cell.hintMsg };
     }
     const note = clip([`Línea ${line.n}: «${line.raw}»`, ...notes].join(' · '), 300);
+    const unreadable = unreadableOf(line);
     const meta = {
       ...(Object.keys(doubts).length ? { doubts } : {}),
+      ...(unreadable ? { unreadable } : {}),
       ...(Object.keys(hints).length ? { hints } : {}),
       ...(inferred.length ? { inferred } : {}),
     };

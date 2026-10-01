@@ -26,6 +26,17 @@ export interface Doubt {
   reasonMsg?: Msg
   checked?: { by?: string; at?: string; how?: string }
 }
+/**
+ * A cell the assistant could not read at all (match_notebook's null): it has no
+ * value, so applying never writes it, until the person types one. `reason`: why
+ * (the reader's words, e.g. "smudged"); `partial`: what of it was read, as
+ * written (e.g. "1?/9"), to complete.
+ */
+export interface Unreadable {
+  reason?: string | null
+  reasonMsg?: Msg
+  partial?: string[]
+}
 /** Where a value the line does not write comes from (a template, a word of the note). */
 export interface Hint {
   text: string
@@ -57,6 +68,8 @@ export interface ProposalChange {
   note?: string
   /** Doubtful cells (match_notebook), by column. */
   doubts?: Record<string, Doubt>
+  /** Cells nobody could read (match_notebook), by column: empty until someone fills them. */
+  unreadable?: Record<string, Unreadable>
   /** Columns the notebook line does not write: the page's room, a template, the note's words. */
   inferred?: string[]
   hints?: Record<string, Hint>
@@ -93,9 +106,10 @@ const same = (a: CellValue | undefined, b: CellValue | undefined) => JSON.string
  * (typed by the person), `reverted` (the person set it back to the sheet's
  * value, or emptied a new row's cell: the assistant's value is kept aside, not
  * written), `sheet` (an existing row's value, unchanged), `empty` (a new row's
- * cell with nothing yet), `locked` (a formula).
+ * cell with nothing yet), `locked` (a formula), `unreadable` (the assistant
+ * could not read it and nobody filled it yet: not written).
  */
-export type CellKind = 'proposed' | 'person' | 'reverted' | 'sheet' | 'empty' | 'locked'
+export type CellKind = 'proposed' | 'person' | 'reverted' | 'sheet' | 'empty' | 'locked' | 'unreadable'
 export interface CellInfo {
   value: CellValue
   kind: CellKind
@@ -109,6 +123,8 @@ export interface CellInfo {
   /** The value is not written on the notebook line (italic): where it comes from is in `hint`. */
   inferred: boolean
   hint?: Hint
+  /** The assistant could not read this cell (still empty when `kind` is 'unreadable', filled otherwise). */
+  unreadable?: Unreadable
 }
 export function cellOf(change: ProposalChange, field: string, newRowFormulas: string[] = []): CellInfo {
   const mark = change.personEdits?.[field]
@@ -116,7 +132,8 @@ export function cellOf(change: ProposalChange, field: string, newRowFormulas: st
   const ai = mark && 'ai' in mark ? mark.ai : undefined
   const aiProposed = !!mark && 'ai' in mark
   const doubt = change.doubts?.[field]
-  const extra = { doubt, hint: change.hints?.[field] }
+  const unreadable = change.unreadable?.[field]
+  const extra = { doubt, hint: change.hints?.[field], ...(unreadable ? { unreadable } : {}) }
   if (field in change.values) {
     const kind: CellKind = mark ? 'person' : 'proposed'
     return {
@@ -131,6 +148,8 @@ export function cellOf(change: ProposalChange, field: string, newRowFormulas: st
     }
   }
   const quiet = { ...extra, doubtful: false, inferred: false }
+  // Nobody could read it and nobody filled it: shown empty (or with the sheet's value), never written.
+  if (unreadable && !mark) return { value: change.create ? null : (was ?? null), kind: 'unreadable', was, aiProposed, ...quiet }
   if (mark) return { value: change.create ? null : (was ?? null), kind: aiProposed ? 'reverted' : 'person', was, ai, aiProposed, ...quiet }
   const locked = change.create ? newRowFormulas.includes(field) : !!change.formulas?.includes(field)
   if (change.create) return { value: null, kind: locked ? 'locked' : 'empty', aiProposed, ...quiet }
@@ -154,6 +173,20 @@ export function uncheckedDoubts(p: Pick<Proposal, 'changes'>, indexes?: number[]
 }
 
 /**
+ * The unreadable cells still empty (as rowKey + field, with the row's index):
+ * the same rule as the server's (unfilledUnreadable in server/doubts.mjs).
+ * Applying leaves them as the sheet has them.
+ */
+export function unfilledUnreadable(p: Pick<Proposal, 'changes'>) {
+  const out: { key: string; field: string; index: number }[] = []
+  for (const c of p.changes) {
+    if (c.context) continue
+    for (const field of Object.keys(c.unreadable ?? {})) if (!(field in c.values)) out.push({ key: rowKey(c), field, index: c.index })
+  }
+  return out
+}
+
+/**
  * The proposal's rows split by sheet (one table each, with that sheet's
  * columns): the columns it changes, in the sheet's order when known, then the
  * columns the person added.
@@ -166,7 +199,9 @@ export function sheetGroups(
   const sheets = [...new Set(p.changes.map(c => c.sheet))]
   return sheets.map(sheet => {
     const changes = p.changes.filter(c => c.sheet === sheet)
-    const used = new Set(changes.flatMap(c => [...Object.keys(c.values), ...Object.keys(c.personEdits ?? {})]))
+    const used = new Set(
+      changes.flatMap(c => [...Object.keys(c.values), ...Object.keys(c.personEdits ?? {}), ...Object.keys(c.unreadable ?? {})]),
+    )
     const columns = order(sheet)
     const fields = columns ? columns.filter(f => used.has(f)) : p.fields.filter(f => used.has(f))
     // Columns the sheet no longer lists still show.

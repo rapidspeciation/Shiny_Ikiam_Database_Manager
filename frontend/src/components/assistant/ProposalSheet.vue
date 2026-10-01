@@ -52,6 +52,9 @@ import CellBar from '../CellBar.vue'
  * of its other readings in the cell bar, or marks the selection checked
  * (`check`). Values the notebook line does not write (a template, the note's
  * words, the page's room) are in italics, and the bar says where they come from.
+ * Cells the assistant could not read at all are hatched red with an
+ * "unreadable" tag, empty: the person types them (the bar gives why and what
+ * of it was read, to complete); left empty, applying does not write them.
  */
 export interface CellEdit {
   key: string
@@ -150,7 +153,12 @@ function toRow(c: ProposalChange): Row {
   }
   // Markers can change without the value (whose edit it is, a flash, a doubt checked): part of the row's signature.
   out.__state =
-    state + JSON.stringify(c.personEdits ?? null) + JSON.stringify(c.doubts ?? null) + (props.editable ? 'e' : '') + Object.keys(c.values).length
+    state +
+    JSON.stringify(c.personEdits ?? null) +
+    JSON.stringify(c.doubts ?? null) +
+    JSON.stringify(c.unreadable ?? null) +
+    (props.editable ? 'e' : '') +
+    Object.keys(c.values).length
   return out
 }
 
@@ -174,6 +182,7 @@ function formatter(field: string) {
     el.classList.toggle('has-choices', canEditCell(row.__key, field) && hasChoices(field))
     el.classList.toggle('is-doubtful', c.doubtful)
     el.classList.toggle('is-inferred', c.inferred)
+    el.classList.toggle('is-unreadable', c.kind === 'unreadable')
     const was = c.was === undefined ? '' : show(field, c.was) || t('vacío')
     const ai = show(field, c.ai) || t('vacío')
     const before = change.replaceFormula?.includes(field) ? 'Antes: {value} (fórmula)' : 'Antes: {value}'
@@ -198,11 +207,23 @@ function formatter(field: string) {
           ].join(' · ')
         : '',
       c.kind === 'locked' ? t('Fórmula de la hoja: no se escribe') : '',
+      c.kind === 'unreadable' ? unreadableText(c) : '',
+      c.unreadable && c.kind !== 'unreadable' ? t('Ilegible en el cuaderno; rellenada a mano') : '',
       c.kind === 'sheet' && props.editable ? t('Valor actual de la hoja; escribe para cambiarlo') : '',
     ]
       .filter(Boolean)
       .join('\n')
     const text = show(field, c.value)
+    // Nobody could read it: its tag, then the sheet's value if the row has one (it stays).
+    if (c.kind === 'unreadable') {
+      const box = document.createElement('span')
+      const mark = document.createElement('span')
+      mark.className = 'unread-mark'
+      mark.textContent = t('ilegible')
+      box.append(mark)
+      if (text) box.append(' ', withTotal(field, c.value, text))
+      return box
+    }
     // Set back to the sheet: its value, then the assistant's struck through (kept aside, not written).
     if (c.kind === 'reverted') {
       const box = document.createElement('span')
@@ -237,6 +258,18 @@ function marked(c: CellInfo, content: Node): Node {
   box.append(mark, content)
   return box
 }
+/** Why an unreadable cell could not be read and what of it was, in a line (the cell's tooltip). */
+function unreadableText(c: CellInfo) {
+  const reason = c.unreadable?.reason ? tx(c.unreadable.reason, c.unreadable.reasonMsg) : t('La IA no pudo leerla')
+  const partial = c.unreadable?.partial ?? []
+  return [
+    t('Ilegible: {reason}', { reason }),
+    partial.length ? t('leído en parte: {values}', { values: partial.join(' / ') }) : '',
+    props.editable ? t('escribe el valor; vacía no se escribe') : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
 /** Why a cell is doubtful and its other readings, in a line (the cell's tooltip). */
 function doubtText(field: string, c: CellInfo) {
   const reason = c.doubt?.reason ? tx(c.doubt.reason, c.doubt.reasonMsg) : t('Lectura dudosa')
@@ -250,7 +283,9 @@ function doubtText(field: string, c: CellInfo) {
 function rowFormatter(cell: CellComponent) {
   const row = cell.getData() as Row
   const change = byKey.get(row.__key)
-  const skipped = props.editable && !!change && !Object.keys(change.values).length
+  // (A row whose only cells are unreadable ones still to fill is not: it waits for them.)
+  const waiting = !!change && Object.keys(change.unreadable ?? {}).some(f => !(f in change.values))
+  const skipped = props.editable && !!change && !Object.keys(change.values).length && !waiting
   const el = cell.getElement()
   el.classList.toggle('is-skipped', skipped)
   el.title = skipped ? t('Esta fila no se escribe: no le queda ningún cambio') : ''
@@ -266,7 +301,8 @@ function drawnText(change: ProposalChange, field: string) {
       : cell.was !== undefined && cell.kind !== 'sheet'
         ? ` ${textWithTotal(field, cell.was)}`
         : ''
-  // The "?" of a doubtful cell takes about two letters.
+  // The "?" of a doubtful cell takes about two letters; an unreadable cell's tag about its word.
+  if (cell.kind === 'unreadable') return `${t('ilegible')}   ${textWithTotal(field, cell.value)}`
   return (cell.doubtful ? '?  ' : '') + textWithTotal(field, cell.value) + beside
 }
 
@@ -388,7 +424,16 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
       })
   }
   if (c.inferred && c.hint) notes.push({ label: t('No escrito en la línea'), text: tx(c.hint.text, c.hint.msg), kind: 'hint' })
+  // Unreadable: why, then (once filled) that it was filled by hand.
+  if (c.unreadable) {
+    const reason = c.unreadable.reason ? tx(c.unreadable.reason, c.unreadable.reasonMsg) : t('La IA no pudo leerla')
+    if (c.kind === 'unreadable')
+      notes.push({ label: t('Ilegible'), text: `${reason} · ${t('escribe el valor; vacía no se escribe')}`, kind: 'unreadable' })
+    else notes.push({ label: t('Ilegible en el cuaderno'), text: t('{reason} (rellenada a mano)', { reason }), kind: 'hint' })
+  }
   const editable = canEditCell(row.__key, field)
+  // What of an unreadable cell was read (as written): a click puts it in the bar to complete.
+  const partial = c.kind === 'unreadable' ? (c.unreadable?.partial ?? []) : []
   // The doubt's other readings (and the assistant's own value, once the person changed it).
   const readings = c.doubt
     ? [...(c.doubt.alternatives ?? []), ...(c.kind === 'person' && c.aiProposed ? [c.ai] : [])].filter(
@@ -403,7 +448,10 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
     multiline: longText(field) && !hasChoices(field),
     readonly: editable ? '' : c.kind === 'locked' ? t('Fórmula de la hoja: no se escribe') : '',
     notes,
-    choices: readings.map(a => ({ label: show(field, a as CellValue) || t('vacío'), text: editText$(field, a as CellValue) })),
+    choices: partial.length
+      ? partial.map(text => ({ label: text, text }))
+      : readings.map(a => ({ label: show(field, a as CellValue) || t('vacío'), text: editText$(field, a as CellValue) })),
+    ...(partial.length ? { choicesLabel: t('Leído en parte'), choicesComplete: true } : {}),
   }
 }
 const showBar = () => (bar.value = table ? describe(selectedCell(table)) : null)

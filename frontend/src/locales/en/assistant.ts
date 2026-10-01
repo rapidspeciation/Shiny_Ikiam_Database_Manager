@@ -159,6 +159,29 @@ export default {
   'Aplicar sin las dudosas': 'Apply without the doubtful ones',
   'Aplicar todo igualmente': 'Apply all anyway',
   'Hay celdas dudosas sin revisar: revísalas o elige cómo aplicarlas': 'There are doubtful cells not checked: check them or choose how to apply them',
+  // Unreadable cells (match_notebook's null): empty until the person types them
+  ilegible: 'unreadable',
+  Ilegible: 'Unreadable',
+  'Ilegible: {reason}': 'Unreadable: {reason}',
+  'Ilegible en el cuaderno': 'Unreadable in the notebook',
+  'Ilegible en el cuaderno; rellenada a mano': 'Unreadable in the notebook; filled by hand',
+  '{reason} (rellenada a mano)': '{reason} (filled by hand)',
+  'La IA no pudo leerla': 'The AI could not read it',
+  'leído en parte: {values}': 'partly read: {values}',
+  'Leído en parte': 'Partly read',
+  'escribe el valor; vacía no se escribe': 'type the value; left empty, it is not written',
+  'La IA no pudo leerla: escribe el valor; vacía no se escribe': 'The AI could not read it: type the value; left empty, it is not written',
+  '{n} celda ilegible por rellenar': '{n} unreadable cell to fill',
+  '{n} celdas ilegibles por rellenar': '{n} unreadable cells to fill',
+  'La IA no pudo leer estas celdas: escribe su valor en la tabla (la barra de arriba dice por qué y lo que se leyó). Vacías no se escriben. Clic: ir a la siguiente':
+    'The AI could not read these cells: type their values in the table (the bar above says why and what was read). Left empty, they are not written. Click: go to the next one',
+  'Celdas ilegibles sin rellenar': 'Unreadable cells not filled',
+  '{n} celda ilegible sigue vacía: al aplicar no se escribe (queda como está en la hoja).':
+    '{n} unreadable cell is still empty: applying does not write it (it stays as the sheet has it).',
+  '{n} celdas ilegibles siguen vacías: al aplicar no se escriben (quedan como están en la hoja).':
+    '{n} unreadable cells are still empty: applying does not write them (they stay as the sheet has them).',
+  Rellenarlas: 'Fill them',
+  'Aplicar sin ellas': 'Apply without them',
   'Copiado a {n} fila': 'Copied to {n} row',
   'Copiado a {n} filas': 'Copied to {n} rows',
 } as Record<string, string>

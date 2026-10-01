@@ -9,7 +9,7 @@ import { moduleMap } from './schema.mjs';
 import { newRowFormulaFields } from './premade.mjs';
 import { TUBE_FIELD, isIdValue, isUnique, twinRows } from './verifications.mjs';
 import { listOptions } from './verify.mjs';
-import { KINDS, KIND_IDS, buildReview, checkTranscription, clutchKey, columnsOf, nearIds, proposalRows, typeOf } from './notebook.mjs';
+import { KINDS, KIND_IDS, buildReview, checkTranscription, clutchKey, columnsOf, isNone, nearIds, proposalRows, typeOf, unreadableOf } from './notebook.mjs';
 
 const parse = (value, fallback) => {
   try {
@@ -31,8 +31,9 @@ export const MATCH_NOTEBOOK_TOOL = {
       'Match a transcribed notebook page (or envelopes/labels) with the sheet and draft ONE proposal from it, shown at once beside the chat (Cambios propuestos). Follow the digitalizar-cuaderno skill.',
       'Give every line of the page, top to bottom, with the values as written (dates day/month as written, e.g. "17/9"; ditto marks already replaced by the value above; CAMs/tubes written short like "cam505" or "81" may stay short, they continue the one above; counts as written, e.g. "12+15"; a count corrected by crossing out: the first value, then each new one after "=", e.g. "31+4=1" or "12=9=4", kept as the team types it, =31+4-34).',
       'The server finds each line\'s row (also through look-alike IDs 0/O, 1/I, 5/S and the order of the rows), infers the year, completes list values, keeps the SPECIES formula unless what emerged differs, and checks lists, IDs and tubes already used.',
-      'It returns per line: the row found, cells to fill, differences with the sheet, doubtful cells, implied cells, problems, didYouMean (sheet IDs one character away from an ID not found), and the proposalId.',
-      'Doubtful cells GO INTO the proposal with your best reading as the value, highlighted for the person with their alternatives and reason: give a confidence below 0.8, up to 3 alternatives and a short reason. Only a cell you cannot read at all (null) stays out. Never leave a readable value out for being doubtful or implausible: flag it.',
+      'It returns per line: the row found, cells to fill, differences with the sheet, doubtful cells, unreadable cells, implied cells, problems, didYouMean (sheet IDs one character away from an ID not found), and the proposalId.',
+      'Doubtful cells GO INTO the proposal with your best reading as the value, highlighted for the person with their alternatives and reason: give a confidence below 0.8, up to 3 alternatives and a short reason. Never leave a readable value out for being doubtful or implausible: flag it.',
+      'A cell you cannot read at all: give it as null (never guess a value, never leave the column out), say why in reasons (e.g. "smudged", "cut off by the photo edge") and, if part of it is legible, that partial reading in alternatives (e.g. "1?/9", "CAM0765??"). It shows in the table as an empty cell marked unreadable (its own colour, not the doubtful amber) for the person to fill by hand; it is never written unless someone gives a value (the person in the table, or you with update_proposal on their word), and applying leaves it as the sheet has it. A matched row whose only news is unreadable cells still shows; a line not found stays out. The answer lists them per line under unreadable ({ reason, partial, toFill }: toFill true = in the table to fill; false = not needed, the sheet already has a value or the column is a formula) and counts.unreadableToFill: tell the person which cells to fill. get_proposal and apply_proposal list the ones still empty (unreadable).',
       'The server also flags (as doubtful, never silently): a clutch unlike the run of lines next to it (848 among 843s, judged by the laid dates), a CAM with 7 digits or far from the run around it, a tube with 7 or 9 digits (the value becomes the reading that continues the run, the written one an alternative).',
       'apply_proposal refuses while doubtful cells are unchecked and lists them: ask the person about each; they check them in the table, or tell you, then call update_proposal rows[].checked (or the value they say) or apply_proposal with confirmDoubtful.',
       'The proposal\'s rows follow the page\'s line order. With includeUnchanged the lines already in the sheet show too, as context rows that are never written (never fake a change to make a line show).',
@@ -55,10 +56,20 @@ export const MATCH_NOTEBOOK_TOOL = {
             type: 'object',
             properties: {
               raw: { type: 'string', description: 'The line as written, short, keeping abbreviations and symbols' },
-              values: { type: 'object', description: 'Column → text as read. null = cannot read it' },
+              values: {
+                type: 'object',
+                description: 'Column → text as read. null = cannot read it at all: shown to the person as an unreadable cell to fill (give why in reasons)',
+              },
               confidence: { type: 'object', description: 'Column → 0..1, only for cells you are not sure of' },
-              alternatives: { type: 'object', description: 'Column → other possible readings (up to 3)' },
-              reasons: { type: 'object', description: 'Column → why the cell is doubtful, a few words the person reads (e.g. "1 or 7: this hand")' },
+              alternatives: {
+                type: 'object',
+                description: 'Column → other possible readings (up to 3); for an unreadable cell (null), the part that could be read, as written (e.g. "1?/9")',
+              },
+              reasons: {
+                type: 'object',
+                description:
+                  'Column → why the cell is doubtful or unreadable, a few words the person reads (e.g. "1 or 7: this hand", "smudged", "cut off by the photo edge")',
+              },
               crossedOut: { type: 'boolean', description: 'The line is crossed out or marked "no se usó el ID"' },
             },
             required: ['raw', 'values'],
@@ -239,8 +250,35 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
           ...(keep(row.doubts) ? { doubts: keep(row.doubts) } : {}),
           ...(keep(row.hints) ? { hints: keep(row.hints) } : {}),
           ...(inferred.length ? { inferred } : {}),
+          // Cells the reader could not read: never in `values`, for the person to fill.
+          ...(row.unreadable ? { unreadable: row.unreadable } : {}),
         })),
       );
+    }
+    // A matched line whose only news is cells nobody could read still shows: the person may fill them
+    // (the row writes nothing until they do). A line not found in the sheet stays out, as before.
+    {
+      const rowsShown = new Set(changes.map(c => c.recordId).filter(Boolean));
+      for (const line of review.lines) {
+        if (!line.toFill || line.status !== 'match' || line.rowError || changes.some(c => c.line === line.n)) continue;
+        const record = line.recordId && store.getRecord(line.recordId);
+        if (!record || record.missing || rowsShown.has(record.id)) continue;
+        rowsShown.add(record.id);
+        changes.push({
+          recordId: record.id,
+          sheet: record.sheet,
+          row: record.row,
+          label: record.label,
+          expectedVersion: record.version,
+          before: {},
+          values: {},
+          replaceFormula: [],
+          note: clip(`Línea ${line.n}: «${line.raw}»`, 300),
+          line: line.n,
+          unreadable: unreadableOf(line),
+        });
+      }
+      changes.sort((a, b) => a.line - b.line);
     }
     // includeUnchanged: every line found in the sheet shows, the ones with nothing to write as
     // read-only context rows (never written), so the table follows the whole page.
@@ -316,6 +354,8 @@ export function matchSummary({ review, changes, ignored, wildWithoutCollection =
     typeOf(field) === 'date' && typeof value === 'number' ? isoOf(value) : value === undefined ? null : value;
   const inProposal = new Set(changes.filter(c => !c.context).map(c => c.line));
   const context = new Set(changes.filter(c => c.context).map(c => c.line));
+  // Lines whose unreadable cells are in the table (also a row with nothing else to write).
+  const inTable = new Set(changes.filter(c => c.unreadable).map(c => c.line));
   const lines = review.lines.map(l => {
     const out = { n: l.n, raw: l.raw, status: l.status };
     if (l.row) Object.assign(out, { row: l.row, label: l.label });
@@ -324,7 +364,23 @@ export function matchSummary({ review, changes, ignored, wildWithoutCollection =
     for (const [field, cell] of Object.entries(l.cells)) {
       const put = (name, value) => ((group[name] ??= {})[field] = value);
       const notebook = show(field, cell.value);
-      if (cell.status === 'unread') put('unread', true);
+      // Could not be read: in the table for the person to fill (toFill), or not needed there
+      // (the sheet already has a value, or the column is a formula).
+      if (cell.status === 'unread')
+        put('unreadable', {
+          ...(cell.reason ? { reason: cell.reason } : {}),
+          ...(cell.partial?.length ? { partial: cell.partial } : {}),
+          ...(cell.toFill
+            ? { toFill: inTable.has(l.n) }
+            : {
+                toFill: false,
+                ...(!isNone(cell.before)
+                  ? { sheet: show(field, cell.before) }
+                  : ['match', 'new'].includes(l.status)
+                    ? { note: 'formula column: the sheet computes it' }
+                    : {}),
+              }),
+        });
       else if (cell.status === 'error') put('problems', cell.message);
       else if (cell.status === 'formula')
         put('notWritten', cell.message ?? 'formula column');
@@ -347,7 +403,6 @@ export function matchSummary({ review, changes, ignored, wildWithoutCollection =
       // The sheet's value stays (it holds the page's terms and more, or the page only implied one).
       else if (cell.status === 'keep' && cell.message) put('kept', { sheet: show(field, cell.before), notebook, note: cell.message });
     }
-    if (group.unread) group.unread = Object.keys(group.unread);
     Object.assign(out, group);
     if (l.near?.length) out.didYouMean = l.near.map(n => ({ id: n.value, row: n.row }));
     if (l.rowError) out.rowError = l.rowError;
@@ -368,6 +423,7 @@ export function matchSummary({ review, changes, ignored, wildWithoutCollection =
       cellsToFill: c.fills,
       differences: c.conflicts,
       doubtful: c.doubts,
+      ...(c.unreadable ? { unreadableToFill: c.unreadable } : {}),
       problems: c.errors,
       newRows: c.created,
       same: c.same,

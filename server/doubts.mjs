@@ -7,7 +7,42 @@
 // button, or marks it checked (checked = { by, at, how }). Applying asks first
 // while some are not (the table's dialog, apply_proposal's answer).
 
+//
+// Unreadable cells (match_notebook's null): change.unreadable = { field: {
+// reason?, partial? } }. They have no value (never in change.values), so
+// applying never writes them; the person fills one by typing a value (the
+// assistant, with update_proposal, on their word), and from then on it is
+// written like any other cell. Applying with some still empty leaves them as
+// the sheet has them; the table and apply_proposal's answer list them.
+
 const now = () => new Date().toISOString();
+
+/**
+ * The unreadable cells still empty (nobody gave them a value), in the rows
+ * `indexes` (every row when not given): { index, label, sheet, row, field,
+ * reason, partial }. Context rows are never written, so none of theirs count.
+ */
+export function unfilledUnreadable(changes, indexes = null) {
+  const out = [];
+  const rows = Array.isArray(indexes) && indexes.length ? indexes : changes.map((_, i) => i);
+  for (const index of rows) {
+    const change = changes[index];
+    if (!change || change.context) continue;
+    for (const [field, cell] of Object.entries(change.unreadable ?? {})) {
+      if (field in (change.values ?? {})) continue;
+      out.push({
+        index,
+        label: change.label,
+        sheet: change.sheet,
+        row: change.row ?? null,
+        field,
+        reason: cell?.reason ?? null,
+        partial: cell?.partial ?? [],
+      });
+    }
+  }
+  return out;
+}
 
 /** A doubtful cell the person has looked at: edited, or marked checked. */
 export const reviewed = (change, field) => !!change.doubts?.[field]?.checked || !!change.personEdits?.[field];
