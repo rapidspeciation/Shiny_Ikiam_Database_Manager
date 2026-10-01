@@ -31,8 +31,8 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     const workspace = join(shared, 't3-workspaces', 'ana');
     const brief = readFileSync(join(workspace, 'CLAUDE.md'), 'utf8');
     assert.match(brief, /working for \*\*Ana Pérez\*\*/);
-    // The brief is assistant/CLAUDE.md with the person and the workspace's folders; the rest is in skills.
-    assert.ok(brief.includes(readFileSync(new URL('../assistant/CLAUDE.md', import.meta.url), 'utf8').split('\n').slice(1).join('\n').trim()));
+    // The brief is assistant/AGENTS.md with the person and the workspace's folders; the rest is in skills.
+    assert.ok(brief.includes(readFileSync(new URL('../assistant/AGENTS.md', import.meta.url), 'utf8').split('\n').slice(1).join('\n').trim()));
     for (const skill of ['data-rules', 'digitalizar-cuaderno', 'monitoring', 'data-review', 'historial', 'google-account', 'app-guide', 'app-dev']) {
       assert.match(brief, new RegExp(`\\| \`${skill}\` \\|`), `the brief names the skill ${skill}`);
       const file = join(workspace, '.claude', 'skills', skill, 'SKILL.md');

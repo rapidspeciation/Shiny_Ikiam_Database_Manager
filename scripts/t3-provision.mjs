@@ -59,9 +59,9 @@ if (!arg) throw new Error('Usage: t3-provision.mjs <username> | --refresh-all');
 const db = new DatabaseSync(database, { timeout: 30000 });
 const userOf = username => db.prepare('SELECT * FROM users WHERE username = ? AND active = 1').get(username);
 
-/** The brief: who the person is, assistant/CLAUDE.md, and this workspace's folders. */
+/** The brief: who the person is, assistant/AGENTS.md, and this workspace's folders. */
 function brief(user) {
-  const base = readFileSync(join(release, 'assistant', 'CLAUDE.md'), 'utf8');
+  const base = readFileSync(join(release, 'assistant', 'AGENTS.md'), 'utf8');
   const body = base.slice(base.indexOf('\n') + 1).trimStart();
   return `# Ithomiini database assistant (T3 Code)
 
