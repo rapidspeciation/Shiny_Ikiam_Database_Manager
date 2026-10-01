@@ -617,11 +617,11 @@ test('ins/este, ins/oda: the Insectary, and a note saying whose butterflies they
   const review = buildReview({ transcription, today: '2026-09-30', initials: 'FCH', lookup });
   const [a, b, c, e, f, g] = review.lines;
   assert.equal(a.cells['INSECTARY OR LABORATORY'].value, 'Insectary');
-  assert.equal(a.cells.NOTES.write, '10/6/26 MJS: Some eggs with fungi | 30/9/26 FCH: eggs dry; mariposas de Esteban');
-  assert.equal(b.cells.NOTES.write, '30/9/26 FCH: mariposas de Esteban');
+  assert.equal(a.cells.NOTES.write, '10/6/26 MJS: Some eggs with fungi | 30/9/26 FCH: eggs dry; Butterflies of Esteban');
+  assert.equal(b.cells.NOTES.write, '30/9/26 FCH: Butterflies of Esteban');
   assert.equal(c.cells['INSECTARY OR LABORATORY'].status, 'same');
   assert.equal(c.cells.NOTES.status, 'same', 'the row already says it');
-  assert.equal(e.cells.NOTES.write, '30/9/26 FCH: mariposas de Esteban', 'said once, as the team says it');
+  assert.equal(e.cells.NOTES.write, '30/9/26 FCH: Butterflies of Esteban', 'said once, as the team says it');
   assert.equal(f.cells['INSECTARY OR LABORATORY'].value, 'Insectary');
   assert.ok(f.cells['INSECTARY OR LABORATORY'].include);
   // A row of another room keeps it: the page only implies the room.
@@ -644,7 +644,7 @@ test('ins/este, ins/oda: the Insectary, and a note saying whose butterflies they
   assert.equal(x.cells['INSECTARY OR LABORATORY'].value, 'Insectary');
   assert.ok(!x.cells['INSECTARY OR LABORATORY'].doubt);
   assert.ok(x.cells.NOTES.doubt);
-  assert.match(x.cells.NOTES.write, /mariposas de Oda$/);
+  assert.match(x.cells.NOTES.write, /Butterflies of Oda$/);
   assert.match(x.cells.NOTES.reason, /ins\/oda/);
   assert.equal(z.cells['INSECTARY OR LABORATORY'].status, 'keep');
 });
@@ -751,4 +751,36 @@ test('"994(F1)": the generation written after the clutch number goes to Generati
   assert.equal(a.cells.Generation.value, 'F1');
   assert.equal(b.status, 'match');
   assert.equal(b.cells.Generation.value, 'NA', 'no "(F1)": the team types NA');
+});
+
+test('one CAM per individual: a wing-clipped butterfly that dies keeps its CAM; its body goes to the next free tube', () => {
+  const rows = [
+    {
+      id: 'w1',
+      row: 40,
+      version: 1,
+      values: { Insectary_ID: '3KD', CAM_ID: 'CAM078300', Tube_1_id: 'FS50849100', Tube_1_tissue: 'OTHER_SOMATIC_ANIMAL_TISSUE' },
+    },
+    { id: 'w2', row: 41, version: 1, values: { Insectary_ID: '4KD', CAM_ID: 'CAM078301', Tube_1_id: 'FS50849101' } },
+  ];
+  const lookup = { ...fakeLookup(rows), list: () => undefined };
+  const transcription = parseTranscription(
+    JSON.stringify({
+      kind: 'deaths',
+      year: 2026,
+      lines: [
+        // The body's tube, written where the page has one tube column: Tube_2 (the clip is Tube_1).
+        { raw: '3KD 30/9 CAM078300 FS50849200', v: { Insectary_ID: '3KD', Death_date: '30/9', CAM_ID: 'CAM078300', Tube_1_id: 'FS50849200' } },
+        // Another CAM for a row that has one: a doubt, never a silent overwrite.
+        { raw: '4KD 30/9 CAM078399', v: { Insectary_ID: '4KD', Death_date: '30/9', CAM_ID: 'CAM078399' } },
+      ],
+    }),
+  );
+  const [a, b] = buildReview({ transcription, today: '2026-09-30', lookup }).lines;
+  assert.equal(a.cells.CAM_ID.status, 'same');
+  assert.equal(a.cells.Tube_2_id.value, 'FS50849200');
+  assert.notEqual(a.cells.Tube_1_id?.status, 'conflict');
+  assert.ok(b.cells.CAM_ID.doubt);
+  assert.deepEqual(b.cells.CAM_ID.alternatives, ['CAM078301']);
+  assert.match(b.cells.CAM_ID.reason, /one CAM per individual/);
 });

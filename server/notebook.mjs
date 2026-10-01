@@ -197,7 +197,9 @@ const sumTotal = value => sumParts(value)?.reduce((sum, term) => sum + term, 0) 
  * butterflies are that person's. The note says it as the team wrote it in the workbook.
  */
 const OWNERS = { oda: 'Oda', este: 'Esteban', esteban: 'Esteban' };
-export const ownerNote = name => `mariposas de ${name}`;
+export const ownerNote = name => `Butterflies of ${name}`;
+/** The note as it was written before notes switched to English (a row that says it already). */
+const ownerNoteEs = name => `mariposas de ${name}`;
 const OWNER_WORDS = Object.keys(OWNERS).join('|');
 // In a note: "ins/este", "in-Oda", "ins ESTEBAN" (a bare "in" needs its slash or dash).
 const OWNER_CODE = new RegExp(
@@ -1039,11 +1041,16 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
     const clutchText = text['CLUTCH NUMBER'];
     const cells = {};
     let lastDate = null;
-    // A tube from the note where the row already has a first one (a wing clip): the body's, Tube_2.
+    // A new tube where the row already has a first one (a wing clip): one CAM per individual, each
+    // sample its own tube, so it goes to the next free Tube_n (with the tissue and medium given for it).
     const said = notes[i] ?? {};
-    if (record && said.tubes?.includes(text.Tube_1_id) && isNone(text.Tube_2_id) && !('Tube_1_id' in edited)) {
-      const first = record.values?.Tube_1_id;
-      if (!isNone(first) && String(first).toUpperCase() !== text.Tube_1_id) [text.Tube_2_id, text.Tube_1_id] = [text.Tube_1_id, undefined];
+    const first = record?.values?.Tube_1_id;
+    if (deathKind && record && !isNone(text.Tube_1_id) && !isNone(first) && !('Tube_1_id' in edited) && String(first).toUpperCase() !== String(text.Tube_1_id).toUpperCase()) {
+      const free = [2, 3, 4].find(n => isNone(record.values?.[`Tube_${n}_id`]) && isNone(text[`Tube_${n}_id`]));
+      if (free) {
+        for (const [from, to] of [['Tube_1_id', `Tube_${free}_id`], ['Tube_1_tissue', `Tube_${free}_tissue`], ['T1_Preservation_medium', `T${free}_Preservation_medium`]])
+          if (!isNone(text[from])) [text[to], text[from]] = [text[from], undefined];
+      }
     }
     // What a death line implies in the other columns (computed once its dates are read).
     let implied = null;
@@ -1086,11 +1093,18 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
       // "ins/lab" read as "ins/oda": the room is sure, whose butterflies they are is not.
       const ownerGuess = field === 'NOTES' && owner.doubt && !typed;
       if (ownerGuess) confidence = Math.min(confidence, 0.5);
+      // One CAM per individual, for life: another CAM for a row that has one is a misreading or the wrong row.
+      const rowCam = field === 'CAM_ID' && record ? record.values?.CAM_ID : null;
+      const camClash =
+        !typed && /^CAM\d+$/i.test(String(rowCam ?? '')) && !isNone(text.CAM_ID) && String(text.CAM_ID).replace(/\s+/g, '').toUpperCase() !== String(rowCam).toUpperCase();
+      if (camClash) confidence = Math.min(confidence, 0.3);
       // The note says whose butterflies they are, unless the row's note already does.
       if (field === 'NOTES' && owner.owner && !typed) {
         const parts = [text.NOTES, ownerNote(owner.owner)].filter(p => !isNone(p));
-        const fresh = parts.filter(p => !textKey(record?.values?.NOTES ?? '').includes(textKey(p)));
-        source = fresh.length ? fresh.join('; ') : parts.at(-1);
+        const has = textKey(record?.values?.NOTES ?? '');
+        const said = p => has.includes(textKey(p)) || (p === ownerNote(owner.owner) && has.includes(textKey(ownerNoteEs(owner.owner))));
+        const fresh = parts.filter(p => !said(p));
+        source = fresh.length ? fresh.join('; ') : has.includes(textKey(parts.at(-1))) ? parts.at(-1) : ownerNoteEs(owner.owner);
       }
       // What the page only implies is already as the sheet stores it.
       const read = inferred !== null ? { value: inferred, yearWritten: true } : readValue(field, source, { year: pageYear, sheet: kind.sheet });
@@ -1160,6 +1174,7 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         ...(check?.alternatives ?? []),
         ...(line.a[field] ?? []),
         ...(ownerGuess && !isNone(text.NOTES) ? [text.NOTES] : []),
+        ...(camClash ? [rowCam] : []),
         ...guesses,
       ]
         .map(a => readValue(field, a, { year: pageYear, sheet: kind.sheet }).value)
@@ -1176,7 +1191,7 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         // A doubtful reading (or a value outside a list that is not strict, a species name) goes into the
         // proposal highlighted, with its other readings, for the person to check before applying.
         doubt,
-        ...(doubt ? doubtReason(check, line.r?.[field] ?? (ownerGuess ? 'read "ins/lab": most likely "ins/oda"' : undefined), unlisted && !list?.strict ? { value: unlisted, field } : null, confidence) : { reason: null }),
+        ...(doubt ? doubtReason(check, line.r?.[field] ?? (ownerGuess ? 'read "ins/lab": most likely "ins/oda"' : camClash ? `the row already has ${rowCam}: one CAM per individual (a new sample takes a new tube)` : undefined), unlisted && !list?.strict ? { value: unlisted, field } : null, confidence) : { reason: null }),
         alternatives: [...new Set(alternatives)],
         edited: typed,
         include: false,
