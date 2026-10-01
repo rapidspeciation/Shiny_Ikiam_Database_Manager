@@ -484,7 +484,7 @@ function scan(store) {
     }
   }
 
-  // ---- Preserved butterflies without their CAM or first tube (monitoring rows get them later, in Colecta or Tubos).
+  // ---- Preserved butterflies without their CAM or first tube (monitoring rows get them when typed, like the others).
   const preserved = [
     ['Collection_data', row => text(row.values.Release_Collect) === 'Collected_Preserved'],
     ['Insectary_data', row => isDate(row.values.Preservation_date)],

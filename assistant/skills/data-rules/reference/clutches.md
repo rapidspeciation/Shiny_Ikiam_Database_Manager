@@ -89,7 +89,7 @@ EMERGENCE DATE and NUMBER OF ADULTS were typed in 2022–24, not at all in 2025
 (the formula columns took over) and again from the notebook in 2026. The
 formula columns exist to cross-check the clutches notebook against Emergidos,
 so the typed values are a second, independent count: type what the page
-writes (**Ask** AA whether they should be typed at all); the typed adults may
+writes (whether they should be typed at all is not settled — ask AA); the typed adults may
 differ from the Insectary_data count (backlog, released adults): not an error.
 Prepupa and pupa dates per individual are not typed anywhere.
 

@@ -30,21 +30,14 @@
   (Tablas → row → «Corregir Insectary ID»), never by retyping the ID cell. True
   duplicates were suffixed `.1`/`.2` by the curators.
 
-## CAM_ID: one per individual, for life
+## CAM_ID
 
-- `CAM` + 6 digits. Assigned at **preservation or wing clip**, never at
-  emergence or to a butterfly taken alive to the insectary. An insectary
-  butterfly is known by its Insectary_ID until then; from its CAM on, the CAM
-  is its identifier (envelope, photos, Sanger).
-- The CAM names the **individual**; each sample (wing clip, whole body, head,
-  thorax, abdomen, legs, wings) is named by its **tube** barcode, all under that
-  one CAM. A wing-clipped butterfly that dies or is preserved **keeps its CAM**:
-  add the body (or what is left) in the next free `Tube_n_id` with its tissue
-  and medium (about 350 rows: clip in Tube_1, `WHOLE_ORGANISM` in Tube_2, one
-  `CAM_ID`). Never give a second CAM to a butterfly that has one: a different
-  CAM on a page for such a row is a misreading or the wrong row (ask).
-  `match_notebook` marks that CAM doubtful and moves a new tube to the next
-  free Tube_n with its tissue and medium.
+- `CAM` + 6 digits, one per individual. Assigned at **preservation or wing
+  clip**, never at emergence or to a butterfly taken alive to the insectary;
+  from then on the CAM is its identifier (envelope, photos, Sanger). Each
+  sample is named by its **tube**: a clipped butterfly's body goes in the next
+  free `Tube_n_id` under the same CAM (`match_notebook` does this), so a
+  different CAM read for a row that has one is a misreading or the wrong row.
 - Pools (Lists validates them; PAS hands out ranges):
   - Collection_data, local team: the Ecuador wild block (CAM0795xx, then
     CAM079859–079999 in Sep 2026; about 65 left). Expeditions abroad use their
@@ -55,9 +48,8 @@
     dissections, genome annotation): check Lists.
 - Next CAM = the last used **in that pool** + 1, skipping used ones. Before
   proposing one, check it is unused in **every** sheet and in pending
-  proposals (`search_records`), and tell the person to check the envelope box
-  too (parallel runs by several people caused the duplicates of Sep 2026). CAMs
-  follow preservation order, not ID order.
+  proposals (`search_records`): parallel runs by several people caused the
+  duplicates of Sep 2026. CAMs follow preservation order, not ID order.
 - When a pool is nearly empty (< 50), say so and ask PAS or AA (they hand out
   the ranges) for the next one.
 - Typical errors: an extra 0 (`CAM0770542` for `CAM077542`, often a whole
@@ -85,19 +77,18 @@
   for `FS63886683`, `FS5848961` for `FS50848961`): suggest the form that
   continues a known run, flagged; never "fix" it silently.
 - Tubes out of order against CAM order: point it out, don't reorder.
+- An envelope's tube may be in another tube column (a whole body in Tube_2
+  with a clip in Tube_1): compare with all four tube columns before saying it
+  matches.
 - Rack, manifest and location-at-Sanger columns are formulas (known only after
   the Sanger scan).
 
-## Sanger IDs (grey, never written)
+## Sanger IDs
 
-Samples shipped to the UK get two more IDs in the Sanger STS: `Specimen ID`
-(`SAN` + digits, one per individual, like the CAM) and `ToLID` (Tree of Life
-ID: species initials + number, `ilMecMess311`; usually one per individual).
-In Collection_data they are formulas looking up `COLLECTOR_SAMPLE_ID` (= the
-CAM) in the MEIER manifest; `Not in STS` until shipped. Never write or propose
-them; they come from the Sanger side.
-- The label's tube may be in another tube column (a whole body in Tube_2 with a
-  clip in Tube_1): compare with all four tube columns before saying it matches.
+Samples shipped to the UK get a `Specimen ID` (`SAN` + digits) and a `ToLID`
+(`ilMecMess311`) in the Sanger STS, one per individual, like the CAM. In
+Collection_data they are formulas looking the CAM up in the MEIER manifest
+(`Not in STS` until shipped).
 
 ## Tissues (Lists ORGANISM_PART)
 
@@ -120,8 +111,8 @@ Values: `Flash frozen`, `Ethanol`, `DMSO`, `NOT_COLLECTED`.
   ethanol, superseded). Flash frozen is the general preference: since 2025
   almost everything is; an ethanol row without a reason note: ask.
 - Pheromone males: `Flash frozen` (65 of 66 until 23 Sep 2026); the three of
-  29 Sep 2026 in Ethanol have no reason: **Ask** (KG) whether the protocol
-  changed before following them.
+  29 Sep 2026 in Ethanol have no reason note. Not settled whether the protocol
+  changed — ask KG before following them.
 - Weekends: the freezer is not reachable, so butterflies are kept alive until
   Monday (many preservations on Mondays).
 - Not preserved: every medium `NOT_COLLECTED` (the meetings write "NOT

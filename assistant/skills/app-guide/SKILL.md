@@ -1,6 +1,6 @@
 ---
 name: app-guide
-description: Guide to the "Ikiam Insectary DB" web app (https://ithomiini-ikiam.com) — every tab (Inicio, Tablas, Colecta, Monitoreo, Muertes, Tubos, Emergidos, Clutches, Historial, Asistente, Revisión, Usuarios), what each is for, who can use it, its controls and workflows, grid and date tips, which Google Sheet it writes, and deep links with query parameters. Use it whenever the person asks how to do something in the app, where something is, why a button or tab is missing, asks for a link, wants to find or undo a saved edit, or wants data entered (collections, monitoring captures, deaths, tubes, emerged adults, clutches) — then prefer drafting a proposal with the ithomiini tools and give the direct link.
+description: Guide to the "Ikiam Insectary DB" web app (https://ithomiini-ikiam.com) — every tab (Inicio, Tablas, Colecta, Monitoreo, Muertes, Tubos, Emergidos, Clutches, Historial, Asistente, Revisión, Usuarios), what each is for, who can use it, its controls and workflows, grid and date tips, which sheet it writes, and deep links with query parameters. Use it whenever the person asks how to do something in the app, where something is, why a button or tab is missing, or asks for a link.
 ---
 
 # App guide: Ikiam Insectary DB
@@ -16,10 +16,10 @@ Per-tab detail (step by step, every control, every link parameter):
 - [reference/data-entry.md](reference/data-entry.md): Tablas, Colecta, Muertes,
   Tubos, Emergidos, Clutches, and the grid/keyboard/date tips.
 - [reference/monitoreo.md](reference/monitoreo.md): Importar recorrido,
-  Reporte, Mapa, Recapturas, Dudas de emparejamiento.
+  Reporte, Mapa, Recapturas, Dudas de emparejamiento, Datos de Wikiloc.
 - [reference/review-history-assistant.md](reference/review-history-assistant.md):
-  Inicio, Historial, Asistente (T3 Code, Cambios propuestos),
-  Revisión, Usuarios, login and invitations, the save bar.
+  Inicio, Asistente (T3 Code, Cambios propuestos), Revisión, Usuarios, login
+  and invitations, the save bar. Historial: skill **historial**.
 
 Read the reference file of the tab before giving steps for it.
 
@@ -57,8 +57,6 @@ Old links still work: `#/posturas` → Clutches, `#/cuaderno` → Asistente,
 - **admin**: as reviewer, plus Usuarios (invite, roles, passwords), the
   «Actualizar T3» button and the recheck button in Historial.
 
-If someone "cannot see" a tab or button, check their role first.
-
 ## Saving (all tabs)
 
 Edits are pending cells until written. The bar at the bottom shows «N cambios
@@ -73,64 +71,16 @@ puede deshacer en Historial». Pending changes survive a reload on that device.
 ## Cómo ayudar
 
 1. **"¿Cómo hago…?"** Answer with the steps (their labels, in «») and the
-   direct link, e.g. «Tubos» → https://ithomiini-ikiam.com/#/tubos.
-   Link to the exact view when a parameter exists (a sheet and search in
-   Tablas, a Revisión filter, a Monitoreo sub-view, a map filter). Never
-   invent a parameter: only those in the reference files work.
-2. **"Pásame / registra estos datos"**: prefer a proposal over telling them to
-   type. Read what is there (`find_records`, `get_record`, `describe_sheet`
-   for columns, allowed values and the latest rows), fill everything that is
-   certain (copy the shared values from the latest similar rows), then
-   `propose_changes` (edits → `changes`, new rows → `newRows`, a note per row
-   saying where each value came from). The proposal appears at once in
-   Asistente → «Cambios propuestos» (a table with the changed cells in
-   green); say so in one line and list the doubts. The person applies it with
-   «Aplicar», or says "sí" and you call `apply_proposal`. When they correct
-   it, revise **the same** proposal with `update_proposal` (not a new one).
-   The panel can sit right or below the chat, or open in its own browser tab
-   at `#/propuestas`, where it is an editable Sheets-like grid.
-3. Never invent IDs (Insectary_ID, CAM, tubes, marks), dates or species: leave
-   the cell out and say what is missing, or point them to the tab that hands
-   out the next free ones (Colecta, Emergidos, Tubos; Inicio shows the last
-   used). Formula cells cannot be written (SPECIES in Insectary_data only
-   when what emerged differs from the prediction).
-
-Which tool for which task:
-
-| Task | Tools |
-|---|---|
-| Look up rows | `search_records` (free text), `find_records` (many exact IDs), `get_record` |
-| Columns, allowed values, latest rows | `describe_sheet` |
-| Counts and reports | `run_report` (overview, counts, stages, crosses, samples, quality, weekly) |
-| Find data problems | `check_data` (same issues as Revisión) |
-| "Aplica las correcciones acordadas" | `list_agreed_fixes` → one `propose_changes` with `issueIds` |
-| Suggested edits (Revisión → Sugerencias) | `list_suggested_edits` (read-only) → only what the person picks → one `propose_changes` |
-| CAM ranges running out, the 30-preserved rule | `get_alerts` |
-| A Wikiloc monitoring walk | `queue_wikiloc` → `get_walk` → `propose_changes(newRows)` |
-| A notebook / envelope photo | skill `digitalizar-cuaderno` → `match_notebook` |
-| Project documents (Drive) | `search_knowledge`, `list_documents`, `read_document`, `sync_documents` |
-| Find a saved edit | `list_history`, `get_history_group` → link `#/historial?grupo=<id>` or `#/historial?accion=<actionId>` |
-| Undo a saved edit | `preview_undo` → show what would change → **only after the person explicitly confirms** `undo_edits` |
-| Write | `propose_changes` / `update_proposal` → the person confirms → `apply_proposal` |
-
-Example flows:
-
-- **"Encuentra el error de ayer en Death_date y deshazlo"**: `list_history`
-  (sheet, field, dates) → the save that did it, with its link
-  (`https://ithomiini-ikiam.com/#/historial?accion=<actionId>` opens
-  Historial scrolled to it) → `preview_undo` → show before → after and any
-  conflict (a value changed later cannot be undone) → wait for "sí" →
-  `undo_edits`. Or let them press undo themselves in Historial.
-- **"Registra una captura de monitoreo"** (no Wikiloc link): Collection_data
-  new row with what `get_walk` would give: Purpose `Monitoring`,
-  Collection_location `Ikiam`, Collection_date, Collection_time,
-  Transect_section 1–4, Collector (as in the list, e.g. `FCH - Franz Chandi`),
-  SPECIES/Subspecies_Form/Sex, Rainfall/Cloud_cover codes, Flight_height;
-  marked: Release_Collect `Mark_Released` + FieldMark_ID (check the mark with
-  `find_records` on FieldMark_ID: same species and sex = recapture, another
-  species = conflict); preserved: `Collected_Preserved`, CAM and tube only if
-  given. Copy the NA/NOT_COLLECTED columns from a recent monitoring row of
-  `describe_sheet`. Show it with `propose_changes`. With a Wikiloc link use
-  `queue_wikiloc`/`get_walk` instead.
-- **"¿Dónde veo las recapturas de B39?"**: `#/monitoreo?vista=recapturas`
-  (search «B39») or the map with `individuo=B39|<Genus species>`.
+   direct link, e.g. «Tubos» → https://ithomiini-ikiam.com/#/tubos. Link to
+   the exact view when a parameter exists (a sheet and search in Tablas, a
+   Revisión filter, a Monitoreo sub-view, a map filter). Never invent a
+   parameter: only those in the reference files work.
+2. **"Pásame / registra estos datos"**: rather than telling them to type,
+   draft a proposal (fill everything certain; `describe_sheet` shows the
+   latest similar rows to copy shared values from). Cambios propuestos sits
+   right of or below the chat, or alone in its own browser tab at
+   `#/propuestas`, an editable grid like Google Sheets.
+3. New IDs, CAMs, tubes and marks are handed out by the tabs (Colecta,
+   Emergidos, Tubos; Inicio shows the last used): point there when the person
+   needs the next free ones.
+4. "Cannot see a tab or button": check their role (above) first.

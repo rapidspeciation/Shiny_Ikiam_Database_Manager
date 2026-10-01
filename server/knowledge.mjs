@@ -482,7 +482,7 @@ export const KNOWLEDGE_TOOLS = [
     function: {
       name: 'search_knowledge',
       description:
-        "Search the project's documents: meeting notes, protocols, reports and presentations from the project Drive (Ithomiini_IKIAM) and the curated notes. Returns the best passages (snippet) with the document id, title, kind, date (day of the meeting) and sourceUrl (the Drive link: cite it when you answer from a document). Use read_document for the whole text.",
+        "Search the project's documents, mirrored as text from the project Drive (Ithomiini_IKIAM): meetings and call transcripts, protocols, reports, insectary and greenhouse management, presentations, and the curated notes (no admin, photos, data or Google Sheets). Returns the best passages with the document id, title, kind, date (of the meeting) and sourceUrl. Answering from a document: name it (title, date) and give its sourceUrl; say when the documents do not answer. read_document gives the whole text.",
       parameters: {
         type: 'object',
         properties: {
@@ -504,7 +504,7 @@ export const KNOWLEDGE_TOOLS = [
     function: {
       name: 'read_document',
       description:
-        'Read a document found with search_knowledge or list_documents (id, Drive id or Drive link). Returns up to max characters from offset; nextOffset continues it.',
+        'Read a document found with search_knowledge or list_documents (id, Drive id or Drive link). Returns up to max characters from offset; nextOffset continues it. A PDF may have no text: give its link.',
       parameters: {
         type: 'object',
         properties: {

@@ -30,11 +30,15 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     run('ana');
     const workspace = join(shared, 't3-workspaces', 'ana');
     const brief = readFileSync(join(workspace, 'CLAUDE.md'), 'utf8');
-    assert.match(brief, /working for\n\*\*Ana Pérez\*\*/);
-    assert.match(brief, /match_notebook/);
-    assert.match(brief, /## Photos of notebook pages/);
-    assert.match(brief, /## Historial: finding and undoing a save/);
-    assert.match(brief, /list_history/);
+    assert.match(brief, /working for \*\*Ana Pérez\*\*/);
+    // The brief is assistant/CLAUDE.md with the person and the workspace's folders; the rest is in skills.
+    assert.ok(brief.includes(readFileSync(new URL('../assistant/CLAUDE.md', import.meta.url), 'utf8').split('\n').slice(1).join('\n').trim()));
+    for (const skill of ['data-rules', 'digitalizar-cuaderno', 'monitoring', 'data-review', 'historial', 'google-account', 'app-guide', 'app-dev']) {
+      assert.match(brief, new RegExp(`\\| \`${skill}\` \\|`), `the brief names the skill ${skill}`);
+      const file = join(workspace, '.claude', 'skills', skill, 'SKILL.md');
+      assert.match(readFileSync(file, 'utf8'), new RegExp(`^---\\nname: ${skill}\\ndescription: .+\\n---\\n`), `skill ${skill} installed`);
+    }
+    assert.match(brief, /## This workspace/);
     assert.equal(readFileSync(join(workspace, 'AGENTS.md'), 'utf8'), brief);
     assert.match(readFileSync(join(workspace, '.claude', 'skills', 'digitalizar-cuaderno', 'SKILL.md'), 'utf8'), /name: digitalizar-cuaderno/);
     // Every folder of assistant/skills is installed, with its reference files; the brief points to the app guide.

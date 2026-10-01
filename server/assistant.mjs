@@ -53,7 +53,7 @@ const parse = value => {
  * "d/m/yy INI: " form after what the cell holds; { replace } rewrites it.
  */
 const VALUES_DOC =
-  'Column → value; dates as YYYY-MM-DD, times as H:MM. null (or leaving the column out) = no change there; {"clear": true} = empty the cell; in a notes column your text is added after the existing note ({"replace": "…"} rewrites it).';
+  'Column → value; dates YYYY-MM-DD, times H:MM. null (or leaving the column out) = no change; {"clear": true} = empty the cell; notes: only the new text ({"replace": "…"} rewrites the note).';
 const VALUES_RULES =
   'Values: null never empties a cell (it means no change); to empty one give {"clear": true}, only when the person wants it emptied. Notes columns (NOTES, Notes, Notes_…): give only the new text; it is written as "d/m/yy INI: text" (today, the person\'s initials) after the existing note with " | ", never over it, unless you give {"replace": "the whole note"} because the person asked to rewrite it.';
 /**
@@ -123,7 +123,7 @@ const TOOLS = [
     function: {
       name: 'check_data',
       description:
-        'Scan the workbook for inconsistencies: repeated IDs/tubes, a CAM given to two butterflies, values outside strict dropdown lists, Collection_data rows sent to the insectary without a filled Insectary_data row (and wild insectary butterflies without a collection row), species/sex/CAM mismatches between the two rows of one butterfly, deaths or preservations dated before collection or entry, future dates, preserved rows without CAM or Tube_1_id, field marks used for two species, and Wikiloc monitoring points stored on the map without a row because their pairing was doubtful (walk_doubt: row/recordId is the likeliest row or null, value the note, walk = {date, collector, trackId}; they are paired by a person in Monitoreo → Dudas, never with propose_changes). From the specimen photos: photo_camid (the envelope in the photo shows another CAM than the file name: a Drive rename, task), photo_extra (photos of another butterfly in a CAM folder: task), envelope_sex / envelope_species (the envelope says another sex/species than the sheet; ocr = what was read), photo_missing (preserved without photos in Photo_links), ai_species (the Wings Gallery model sees another species; ai = {predicted, confidence}). Photo issues carry cam, strength (fuerte/media/baja/dudosa), curation (earlier decision), photos, envelopeText, envelopeCamid, prediction; tasks carry task.text and are never sheet changes. People judge issues in the Revisión tab; use list_agreed_fixes for the fixes they accepted. Each issue has sheet, row, recordId, field, value, problem and, when the right value is obvious, fix = {recordId, values} ready for propose_changes. Paginated; filter by sheet and kind (comma-separated). Call without kind first to see the counts.',
+        "Scan the workbook (the app's copy: fast) for inconsistencies, the same issues people judge in the Revisión tab (the fixes they accepted: list_agreed_fixes). Each issue has kind, sheet, row, recordId, label, field, value, problem (Spanish), related rows and, only when the right value is obvious, fix = {recordId, values} ready for propose_changes (one proposal per kind of fix, the problem as each row's note). Without a fix, never guess which of two disagreeing rows is right: show the person the rows and ask. Photo issues add cam, strength (fuerte/media/baja/dudosa: how often such a reading was right), curation (an earlier decision), photos, envelopeText, envelopeCamid, prediction; an issue with task.text is Drive work, never a sheet change. Call without kind first for the counts, then by kind and sheet, paging with offset.",
       parameters: {
         type: 'object',
         properties: {
@@ -131,7 +131,7 @@ const TOOLS = [
           kind: {
             type: 'string',
             description:
-              'repeat, cam_cross, list, insectary_link, link_mismatch, date_order, future_date, bad_date, missing_sample, mark_reuse, walk_doubt, photo_camid, photo_extra, envelope_sex, envelope_species, photo_missing, ai_species (comma-separated)',
+              'Comma-separated: repeat (a unique ID or a tube in two rows), cam_cross (one CAM on two butterflies across Collection_data and Insectary_data / Wing_tissue), list (outside a strict list), insectary_link (Collected_Sent2Insectary without its Insectary_data row, or the reverse), link_mismatch (the two rows of one butterfly disagree), date_order, future_date, bad_date (no date in a date column), missing_sample (preserved without CAM_ID or Tube_1_id), mark_reuse (a FieldMark_ID on two species), walk_doubt (a Wikiloc point stored without a row, its pairing doubtful: row = the likeliest or null, related = the candidates; a person pairs it in Monitoreo → Dudas, never propose_changes), photo_camid (envelope CAM ≠ photo file name: Drive task), photo_extra (another butterfly\'s photos in a CAM folder: Drive task), envelope_sex, envelope_species (ocr = {read, sheet}; group = the batch), photo_missing (preserved over 30 days, no photos), ai_species (the Wings Gallery model sees another species; a person decides)',
           },
           recordId: { type: 'string', description: 'Only the issues of this row' },
           limit: { type: 'integer', description: '1 to 200, default 50' },
@@ -145,7 +145,7 @@ const TOOLS = [
     function: {
       name: 'queue_wikiloc',
       description:
-        'Queue a Wikiloc monitoring walk (trail URL) to be read by the home computer (the server cannot open Wikiloc). If the walk was already read it returns its walkId at once. Then call get_walk.',
+        "Queue a Wikiloc monitoring walk (trail URL) for the app server's Wikiloc importer, which reads the public trail page, usually within a minute or two. If the walk was already read it returns its walkId at once. Then call get_walk.",
       parameters: {
         type: 'object',
         properties: {
@@ -161,7 +161,7 @@ const TOOLS = [
     function: {
       name: 'get_walk',
       description:
-        'A Wikiloc walk read from its page: every point with the parsed note (species matched to the sheet and Taxonomy, subspecies, sex, time, height, weather codes, mark, transect section), whether it is already in Collection_data, the review checks of Monitoreo (recapture, mark used for another species, 30-preserved rule, missing parts), and newRows: Collection_data values for the points not in the sheet yet, ready for propose_changes. While the walk is still being read it returns its queue status. Give date or collector when the walk lacks them.',
+        'A Wikiloc walk read from its public page (no GPS times): every point with its parsed note (species, subspecies, sex, time, height, weather, mark, transect section from the GPS position), inSheet (already in Collection_data), the Monitoreo checks (recapture, mark on another species, 30-preserved rule, missing parts), and newRows: the points not in the sheet as Collection_data rows in the app\'s import template, for ONE propose_changes. Preserved points come without CAM_ID and Tube_1_id: ask for them (envelope, tube label) or leave them out and say so. While the walk is being read: its queue status; call again a minute later. problems says the day or collector is unknown: ask, then pass date / collector. Once applied, the person puts the walk on the map in Monitoreo → Importar («Pasar al mapa … ya registrados en la hoja»).',
       parameters: {
         type: 'object',
         properties: {
@@ -178,7 +178,7 @@ const TOOLS = [
     function: {
       name: 'propose_changes',
       description:
-        'Draft edits to existing rows (changes) and/or new rows (newRows, e.g. from get_walk). They appear to the person as a table with the changed cells highlighted and are only written when the person confirms. Formula cells cannot be changed, except SPECIES in Insectary_data when what emerged differs from the formula prediction. Give a short note per row saying where the value comes from. Use one proposal per task (e.g. one per walk or per kind of fix). ' +
+        'Draft edits to existing rows (changes) and/or new rows (newRows). The person sees them at once as a table beside the chat; nothing is written until they confirm. Formula cells cannot be changed, except SPECIES in Insectary_data when what emerged differs from the formula prediction. A short note per row says where the values come from. One proposal per task (e.g. per walk or per kind of fix). ' +
         VALUES_RULES,
       parameters: {
         type: 'object',
@@ -224,7 +224,7 @@ const TOOLS = [
     function: {
       name: 'list_agreed_fixes',
       description:
-        'The corrections people agreed on in the Revisión tab (verdict accepted, or another value they gave), ready to propose: fixes = {issueId, recordId, sheet, row, label, values, note, decidedBy} for propose_changes; tasks = work that is no sheet change (Drive renames and merges of specimen photos) to explain as a checklist; needsValue = accepted without a value (ask); stale = the data changed since the verdict. When the person says "aplica las correcciones acordadas": call this, make ONE propose_changes with all fixes (merge values per recordId, keep notes) and issueIds, tell them what it changes and list the tasks, and wait for their confirmation before apply_proposal. Never apply on your own.',
+        'The corrections people agreed on in the Revisión tab (accepted, or another value given): fixes = {issueId, recordId, sheet, row, label, values, note, decidedBy}; tasks = Drive work on the specimen photos (renames, merges), not sheet changes: give them as a checklist; needsValue = accepted without a value (ask); stale = the data changed since the verdict. Then ONE propose_changes with all the fixes (values merged per recordId, notes kept) and their issueIds, and wait for the person\'s confirmation before apply_proposal.',
       parameters: {
         type: 'object',
         properties: {
@@ -239,7 +239,7 @@ const TOOLS = [
     function: {
       name: 'list_suggested_edits',
       description:
-        "Read-only: the corrections the app computes from the workbook (Revisión → Sugerencias), each with sheet, row, recordId, label, field, current, suggested, certainty (certain = only the spelling changes; likely = strong evidence, still shown to the person; check = a lead for someone who knows; suggested null = a person must decide) and reason (the evidence, Spanish). Sources (more may be added; the answer lists them with their description and counts): check_fixes (the checks' own fixes), spaces, formulas (missing XLOOKUP formulas in Collection_data), dates (impossible dates), tubes (a digit too few or too many), twins (Collection vs Insectary species/sex), pedigree (Pedigree left as 'YES or NO' on dead butterflies), wikiloc-transects (monitoring Transect_section and Collection_time from the Wikiloc walks' GPS points). manual = true: done by hand in Google Sheets (formula cells), propose_changes cannot write it: tell the person. Nothing here is applied by itself: when the person wants some of them, make ONE propose_changes with those (a note per row with the reason) and wait for their confirmation. Never propose 'check' suggestions or ones without a value unless the person decided them. Call without filters first to see the counts per source and certainty.",
+        "Read-only: the corrections the app computes from the workbook (Revisión → Sugerencias). Each has sheet, row, recordId, label, field, current, suggested (null = a person must decide), certainty (certain = only the spelling changes; likely = strong evidence; check = a lead for someone who knows) and reason (the evidence, Spanish). manual = true: a formula cell, fixed by hand in Google Sheets (propose_changes cannot write it). Call without filters first: the answer lists the sources with their description and the counts. When the person wants some of them: ONE propose_changes with those (the reason as each row's note), then their confirmation. Never propose 'check' suggestions or ones without a value unless the person decided them.",
       parameters: {
         type: 'object',
         properties: {
@@ -259,7 +259,7 @@ const TOOLS = [
     function: {
       name: 'get_alerts',
       description:
-        'Read-only alerts for the team: CAM pools of the Lists sheet running out (camPools: per pool its ranges with size, used, highest, next free, left above the highest used, gaps, lastUsed; a range in use with fewer than 50 or 15 % left is an alert: ask PAS or AA for a new range) and the 30-preserved rule (preserveRule: Ithomiini species with 30 or more Collected_Preserved from Ikiam, Casa de Lin or Mariposario Ikiam, counted per species, with the day they reached 30 and the butterflies preserved after it, as information; close = species at 25–29). alerts = the list shown in the app (Spanish texts).',
+        'Read-only alerts: camPools = the CAM pools of the Lists sheet, per range its size, used, highest, next free, left above the highest used, gaps and last use (a range in use with fewer than 50 or 15 % left is an alert; PAS or AA hand out new ranges); preserveRule = the 30-preserved rule: Ithomiini species with 30 or more Collected_Preserved from Ikiam, Casa de Lin or Mariposario Ikiam, the day each reached 30 and those preserved after it; close = species at 25–29. alerts = the texts shown in the app (Spanish).',
       parameters: { type: 'object', properties: {} },
     },
   },

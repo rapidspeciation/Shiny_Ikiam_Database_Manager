@@ -1,10 +1,10 @@
 // A Wikiloc monitoring walk as preliminary Collection_data rows, for the
-// assistant. The server cannot open Wikiloc (Cloudflare), so a link is queued
-// for the worker on a home computer (server/monitoring.mjs, tools/wikiloc);
-// once the walk arrives, its points are read and checked with the same code as
-// Monitoreo → Importar recorrido (frontend/src/lib/monitoring.ts, loaded here
-// with Node's type stripping), and the rows not yet in the sheet are returned
-// ready for propose_changes. Nothing is written here.
+// assistant. A link is queued for the server's Wikiloc importer (Camoufox,
+// tools/wikiloc, jobs in server/monitoring.mjs); once the walk arrives, its
+// points are read and checked with the same code as Monitoreo → Importar
+// recorrido (frontend/src/lib/monitoring.ts, loaded here with Node's type
+// stripping), and the rows not yet in the sheet are returned ready for
+// propose_changes. Nothing is written here.
 
 import { moduleMap, parseDateText } from './schema.mjs';
 import { listOptions } from './verify.mjs';
@@ -96,8 +96,8 @@ export function queueWalk(store, { url, refresh = false }, user) {
     url: found.url,
     workerOnline: online,
     next: online
-      ? 'The home computer reads it in a minute or two; then call get_walk with the url.'
-      : 'The home computer that reads Wikiloc is offline: the link waits in the queue (Monitoreo → Importar shows it). Tell the person.',
+      ? 'The Wikiloc importer reads it, usually within a minute or two; then call get_walk with the url.'
+      : 'The Wikiloc importer is not responding: the link waits in the queue (Monitoreo → Importar shows it). Tell the person.',
   };
 }
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Sets up a person's project in T3 Code (stock install, nothing patched):
 // a folder with the Ithomiini brief for Claude/Codex (CLAUDE.md, AGENTS.md),
-// the skills (every folder of assistant/skills: digitalizar-cuaderno, app-guide), the Claude Code
+// the skills (every folder of assistant/skills), the Claude Code
 // subagents (assistant/agents: notebook-reader, notebook-reviewer on Sonnet), a shell guard hook
 // (assistant/hooks: no command may name the secrets or the database), the app's tools over MCP
 // with a personal token (.mcp.json for Claude, .codex/config.toml for Codex), and `t3 project add`. Run on the server:
@@ -59,99 +59,36 @@ if (!arg) throw new Error('Usage: t3-provision.mjs <username> | --refresh-all');
 const db = new DatabaseSync(database, { timeout: 30000 });
 const userOf = username => db.prepare('SELECT * FROM users WHERE username = ? AND active = 1').get(username);
 
-/** The brief: the app assistant's CLAUDE.md, with the T3-specific opening. */
+/** The brief: who the person is, assistant/CLAUDE.md, and this workspace's folders. */
 function brief(user) {
   const base = readFileSync(join(release, 'assistant', 'CLAUDE.md'), 'utf8');
-  const sheets = base.slice(base.indexOf('## The sheets'));
+  const body = base.slice(base.indexOf('\n') + 1).trimStart();
   return `# Ithomiini database assistant (T3 Code)
 
-You help the Ikiam insectary team (Tena, Ecuador) keep their Google Sheets
-workbook of Ithomiini butterflies correct. You are working for
-**${user.display_name}** (app user \`${user.username}\`). Reply in the
-language the person writes in (Spanish or English); sheet names, column names,
-codes and values stay exactly as they are in the workbook.
+You are working for **${user.display_name}** (app user \`${user.username}\`).
 
-- The workbook is reached only through the MCP server \`ithomiini\`
-  (search_records, find_records, count_records, get_record, describe_sheet, check_data,
-  list_agreed_fixes, list_suggested_edits, get_alerts, queue_wikiloc, get_walk, match_notebook, propose_changes,
-  update_proposal, get_proposal, apply_proposal, run_report, search_knowledge,
-  list_documents, read_document, sync_documents, list_history,
-  get_history_group, preview_undo, undo_edits).
-  Never edit the workbook any other way. The workbook is the team's real working workbook.
-  "How many / which" questions: \`count_records\` (\`groupBy\`) and \`find_records\` with
-  \`filters\`, \`near\` (\`{location: "Ikiam", km: 15}\`), \`fields\` and \`limit\`, not
-  \`search_records\`; narrow a truncated answer, never parse saved output or the database.
-- Project documents (meeting notes, protocols, reports, presentations of the
-  project Drive, mirrored as text): \`search_knowledge\`, \`list_documents\`
-  (e.g. the last meeting) and \`read_document\`. The mirror is refreshed only
-  on request: \`sync_documents\` when a document is new or was edited. Cite the document's title,
-  date and Drive link (\`sourceUrl\`) when you answer from it.
-- Proposed edits (and new rows) appear in the app at once, beside this chat:
-  **Asistente → Cambios propuestos**, a table with the changed cells in green.
-  The person reviews them there and applies them with ✓; apply with
-  \`apply_proposal\` only when they explicitly approve in the chat. The workflow
-  is always: check → propose → the person confirms. The table is live: when
-  the person corrects something, revise the **same** proposal with
-  \`update_proposal\` (they see it change); cells they typed in the table are
-  theirs (\`get_proposal\` → personEdits; conflicts are reported, never overwrite
-  them unless asked).
-- **Photos** of notebook pages, envelopes or labels (attached to this chat):
-  use the skill \`digitalizar-cuaderno\` (\`.claude/skills/digitalizar-cuaderno/SKILL.md\`;
-  read that file if skills are not available): transcribe → \`match_notebook\`
-  (one proposal per page, shown beside the chat) → a short summary → apply only
-  on confirmation.
-- \`check_data\` finds inconsistencies across the workbook with ready fixes
-  (also from the specimen photos: envelope vs sheet, the gallery AI); people
-  judge them in the app's **Revisión** tab. "Aplica las correcciones
-  acordadas" → \`list_agreed_fixes\` → one \`propose_changes\` (with issueIds)
-  → the person confirms → \`apply_proposal\` (see "Agreed corrections" below);
-  \`queue_wikiloc\` + \`get_walk\` turn a Wikiloc monitoring walk into proposed
-  Collection_data rows (see the sections below).
-- \`list_suggested_edits\` (read-only) lists the corrections the app computes,
-  each with a certainty (certain / likely / check) and its reason, as in
-  Revisión → Sugerencias; when the person wants some of them, one
-  \`propose_changes\` with those, then their confirmation. \`get_alerts\`: CAM
-  ranges of Lists running out and the 30-preserved rule per species.
-- **Historial** (every save, grouped by person, purpose and time):
-  \`list_history\` finds the save someone got wrong; always give its \`url\`
-  (opens the Historial tab at that save). Undo only after \`preview_undo\`
-  and the person's explicit yes: \`undo_edits\` with \`confirmed: true\`
-  (see "Historial" below).
-- Project documentation (protocols, audit, monitoring, column map) is in
-  \`${docs}\`.
-- This folder is your working folder: keep downloads and generated files in
-  \`work/<date>-<topic>/\` here (several chats share it; don't reuse names).
-${labUrl ? labAppDev() : `- **Changing the app itself** (screens, grids, tools, texts): use the skill
-  \`app-dev\` — the source is the git checkout \`${source}\`
-  (build, test, commit, push, \`scripts/deploy.sh\`). Never edit the built
-  files in \`${join(root, 'releases')}\` or \`current\`.`}
-- Notebook photos: propose first (\`match_notebook\` right after the first
-  reading, and say it is being checked), then run the skill's targeted second
-  reading (all subagents started in one message, so they run in parallel) and
-  correct the same proposal; several pages at once are read by subagents in parallel.
-- The project's Google account (jmithominii@gmail.com) is available with gog:
-  \`set -a; . ~/.config/ithomiini/gog.env; set +a; gog --readonly --account jmithominii@gmail.com --client ithomiini <command>\`
-  (gmail search/get, drive, docs, sheets, slides, calendar, forms, appscript;
-  \`gog <service> --help\`). Always use \`--readonly\` (it blocks every
-  change) unless the person explicitly asks for a write; then drop it only
-  for that command: **send email, create events, edit or share files only
-  when the person explicitly asks**, and show them the text first. Prefer
-  the document tools above for Drive documents already mirrored.
+${body.trimEnd()}
 
-${sheets}`;
+## This workspace
+
+- Project documentation (data-entry audit, monitoring, workbook schema,
+  meetings, operations): \`${docs}\`.
+- Keep downloads and generated files in \`work/<date>-<topic>/\` here (several
+  chats share this folder; don't reuse names).
+${labUrl ? labAppDev() : `- Changing the app: skill \`app-dev\`. The source is the git checkout \`${source}\`;
+  never edit the built files in \`${join(root, 'releases')}\` or \`current\`.`}
+`;
 }
 
 /** The lab's rule for changing the app: local only (brief bullet and the top of the app-dev skill). */
 function labAppDev() {
-  return `- **Changing the app itself** (screens, grids, tools, texts): this is the
-  **local test lab**, not the live app. The app at ${labUrl} runs offline on a
-  copy of the workbook (saves never reach Google Sheets). Use the skill
-  \`app-dev\` with its lab steps: change the source in \`${source}\`, run the
-  checks, restart the lab app (\`tools/lab/app.sh --stop && setsid -f tools/lab/app.sh --bg\`
-  from the source folder, about a minute; it rebuilds the page and reloads the
-  copy of the data), ask the person to reload ${labUrl}, and commit on the
-  current branch. **Never \`git push\` or run \`scripts/deploy.sh\`** (it would
-  change the live app) unless the person explicitly asks.`;
+  return `- Changing the app: skill \`app-dev\`, but this is the **local test lab**:
+  the app at ${labUrl} runs offline on a copy of the workbook (saves never
+  reach Google Sheets). Change the source in the git checkout \`${source}\`, run
+  the checks, restart the lab app (\`tools/lab/app.sh --stop && setsid -f tools/lab/app.sh --bg\`
+  from the source folder, about a minute), ask the person to reload ${labUrl},
+  and commit on the current branch. **Never \`git push\` or run
+  \`scripts/deploy.sh\`** unless the person explicitly asks.`;
 }
 
 /** A new personal token for T3 (the previous one stops working). */
@@ -258,7 +195,7 @@ function provision(user, { freshToken, addProject }) {
       if (labUrl && name === 'app-dev' && existsSync(skill)) {
         const text = readFileSync(skill, 'utf8');
         const end = text.indexOf('\n---\n', 4) + 5;
-        const note = `\n> **Lab copy.** These steps are for the live server. Here:\n>\n${labAppDev().replace(/^- /, '').replace(/^/gm, '> ')}\n`;
+        const note = `\n> **Lab copy.** These steps are for the live server. Here:\n>\n${labAppDev().replace(/^- .*?but this/, 'This').replace(/^/gm, '> ')}\n`;
         writeFileSync(skill, text.slice(0, end) + note + text.slice(end));
       }
     }

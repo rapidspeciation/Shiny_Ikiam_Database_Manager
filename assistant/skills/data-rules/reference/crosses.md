@@ -23,8 +23,8 @@ and cite the document and date): "Protocol for Controlled Crosses and Families"
   `Insectary_species`) still has only the werneri forms: insectary sheets use
   the list value (`Mechanitis polymnia werneri x proceriformis`). Field rows'
   free-text Subspecies_Form already say `chimborazona`. Renaming the list is
-  PAS's. Whether `X` or `VS` is right in a backcross name: **Ask** (PAS); use
-  the list value meanwhile.
+  PAS's. Whether `X` or `VS` is right in a backcross name is not settled —
+  ask PAS; use the list value meanwhile.
 
 ## Protocol steps the data should reflect
 
@@ -97,10 +97,10 @@ and cite the document and date): "Protocol for Controlled Crosses and Families"
 - Media: flash frozen is preferred (F2 families included) unless a note says
   why not.
 
-## Protocols disagree (ask, citing both)
+## Protocols disagree (not settled — ask AA, citing both)
 
 Dead mated male's body: ethanol + wings in an envelope (polymnia, lys/pol) vs
-flash frozen (menophilus): **Ask** AA · female clip timing (right after
+flash frozen (menophilus) · female clip timing (right after
 mating, Jan 2024, vs after laying, all later protocols: follow the later) · a
 non-laying female: back to stock vs 15-day quarantine · minimum F2 family
 (> 40 vs ≥ 50). Female and male maturity ages are protocol advice, not data

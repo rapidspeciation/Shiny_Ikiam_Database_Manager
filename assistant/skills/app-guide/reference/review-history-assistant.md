@@ -1,4 +1,4 @@
-# Inicio, Historial, Asistente, Revisión, accounts
+# Inicio, Asistente, Revisión, accounts
 
 Base URL: `https://ithomiini-ikiam.com/`.
 
@@ -31,29 +31,7 @@ Signing out keeps unsaved changes on that device for next time.
 
 ## Historial — `#/historial`
 
-Every write to the workbook, newest first: from the app, edits detected in
-Google Sheets itself, undos, the assistant and imports.
-
-- Filters: «Buscar (ID, campo, valor o nota)» (e.g. `N4D`, `Death_date`,
-  `FS0001`), «Persona», «Origen» (Aplicación, Google Sheets, Deshacer,
-  Asistente, Importación), «Hoja», «Desde», «Hasta» → «Buscar»; «Cargar más».
-- Each save is grouped (who, when, origin, rows, the note, status: Guardado,
-  Detectado = made in Google Sheets, En curso, Sin confirmar, No guardado;
-  «deshecho» when already undone). Open it to see each cell: sheet and row,
-  label, column, old value struck through → new value.
-- **Undo** (editors): select the saves (only «Guardado» ones), untick single
-  cells if needed → «Deshacer selección» → a preview «Deshacer N cambios»
-  (a cell changed again afterwards is a conflict: take it out or fix by hand)
-  → «Motivo (opcional)» → «Deshacer en la hoja». The undo is itself a save
-  (origin Deshacer) and can be undone.
-- Admins: a recheck button re-verifies writes left «Sin confirmar».
-
-Deep links: `#/historial?grupo=<groupId>` opens and scrolls to one group of
-saves, `#/historial?accion=<actionId>` to one save. Get the ids with
-`list_history` / `get_history_group`; `preview_undo` shows what an undo
-would write and its conflicts; `undo_edits` undoes, **only after the person
-explicitly confirms** (same as `apply_proposal`). Example:
-`https://ithomiini-ikiam.com/#/historial?accion=<actionId>`.
+Every save, with selective undo: skill **historial**.
 
 ## Asistente — `#/asistente`
 
@@ -80,17 +58,15 @@ workspace and the `ithomiini` tools; the app has no other chat.
   with unreviewed doubtful cells it asks first («Revisarlas», «Aplicar sin
   las dudosas», «Aplicar todo igualmente», «Cancelar»); a row with every cell
   set back is skipped;
-  «Descartar» drops it; "sí, aplícalo" in the chat does the same through
-  `apply_proposal`. «Revisados hace poco (N)» keeps the last five. The panel
+  «Descartar» drops it. «Revisados hace poco (N)» keeps the last five. The panel
   can be placed right or bottom, or opened alone in its own browser tab at
   `#/propuestas`; there it is an editable Sheets-like grid (the person can
-  correct a cell before applying). When the person asks for a change to a
-  proposal, revise it with `update_proposal`. It shows the proposals of the
+  correct a cell before applying). It shows the proposals of the
   chat open in T3 beside it («Este chat: …»; a new chat not sent yet has none;
   «Último chat: …» when T3 does not say which is open), and «Cambios
   propuestos (N)» counts those; a selector above the tables picks another
-  chat with proposals, «Fuera de los chats de T3» (Revisión, and the app's
-  former simple chat) or «Todos los chats»; «N propuestas más en otros chats»
+  chat with proposals, «Fuera de los chats de T3» (e.g. prepared in Revisión)
+  or «Todos los chats»; «N propuestas más en otros chats»
   shows all of them. Opening another chat in T3 follows it again.
 
 ## Revisión — `#/revision` (editors; last tab)
@@ -134,8 +110,8 @@ hoja» and «Fotos y sobres», with counts).
   N», e.g. a day of envelopes) can be judged together or shown alone («ver
   solo el lote»).
 - When fixes are accepted a green bar says «N arreglos aceptados listos para
-  aplicar» (and Drive tasks): ask T3 «aplica las correcciones acordadas»
-  (`list_agreed_fixes` → one `propose_changes` with `issueIds`) or press
+  aplicar» (and Drive tasks): ask the assistant «aplica las correcciones
+  acordadas» or press
   «Preparar propuesta aquí» (then confirm in Asistente → Cambios propuestos,
   under «Fuera de los chats de T3»).
 - The download button exports the photo verdicts as training labels.

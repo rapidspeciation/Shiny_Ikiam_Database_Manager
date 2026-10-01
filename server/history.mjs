@@ -696,7 +696,7 @@ export const HISTORY_TOOLS = [
     function: {
       name: 'list_history',
       description:
-        'The Historial: saves grouped by person, purpose (colecta, monitoreo, muertes, emergidos, clutches, tubos, tablas, revision, cambio_id, asistente, deshacer, sheets = edits made directly in Google Sheets, importacion) and time, newest first. Use it to find the save where someone made a mistake: filter by user, purpose, sheet, dates and text (an identifier such as A0D or CAM079891, a field or a value). Each group has a summary, counts and `url`: ALWAYS give the person that link, it opens the Historial tab scrolled to that save.',
+        'The Historial: every save to the workbook, grouped by person, purpose and time (saves less than 30 minutes apart; typed in Google Sheets: 2 minutes), newest first. Purpose sheets = typed directly in Google Sheets, asistente = an applied proposal, deshacer = an undo. Filter by user, purpose, sheet, dates and text (an identifier such as A0D or CAM079891, a field or a value). Each group has a summary, counts and `url`: always give the person that link (it opens the Historial tab at that save, where they can also undo it themselves: all of it, one save, one row or single cells).',
       parameters: {
         type: 'object',
         properties: {
@@ -734,7 +734,7 @@ export const HISTORY_TOOLS = [
     function: {
       name: 'preview_undo',
       description:
-        'What undoing would do, without writing: each cell with its value now and the value it goes back to, and conflicts (a cell edited again later, a row gone). Pass a whole group, some of its saves, or single changes. Always show this to the person and ask before undo_edits.',
+        'What undoing would do, without writing: each cell with its value now and the value it goes back to, and conflicts (a cell edited again later: undo that later save first, or correct the cell with propose_changes; a row gone). Pass a whole group, some of its saves, or single changes. Always show this to the person in a few lines and ask before undo_edits.',
       parameters: { type: 'object', properties: selectionProps },
     },
   },

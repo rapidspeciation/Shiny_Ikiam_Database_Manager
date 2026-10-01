@@ -407,7 +407,7 @@ export const RECORD_TOOLS = [
     function: {
       name: 'find_records',
       description:
-        'Rows of one sheet: by exact identifiers (field + values, e.g. the Insectary_IDs read from a notebook page; identifiers not found come back in missing) and/or by column filters and distance to a place (near). Each row has values = every non-empty cell, formula cells with their computed value (dates as YYYY-MM-DD), and formulas = the formula text of counts typed as sums (e.g. =16+2-1), or of every formula column you ask for in fields; formulaColumns lists the formula columns. Ask only the columns you need (fields) and use limit/offset to page: the answer is kept under a size budget and says "Truncated: N more rows" when cut, then narrow the query. For "how many" use count_records. Never read the database or the server\'s files instead.',
+        'Rows of one sheet: by exact identifiers (field + values, e.g. the Insectary_IDs read from a notebook page; identifiers not found come back in missing) and/or by column filters and distance to a place (near). Each row has values = every non-empty cell, formula cells with their computed value (dates as YYYY-MM-DD), and formulas = the formula text of counts typed as sums (e.g. =16+2-1), or of every formula column you ask for in fields; formulaColumns lists the formula columns. Ask only the columns you need (fields) and page with limit/offset: the answer says "Truncated: N more rows" when cut; then narrow the query. For "how many" use count_records.',
       parameters: {
         type: 'object',
         properties: {

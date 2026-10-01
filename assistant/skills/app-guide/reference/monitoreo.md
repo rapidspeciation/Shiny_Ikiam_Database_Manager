@@ -11,6 +11,7 @@ only. Sub-views, chosen with `vista` (default `resumen`):
 | `mapa` | «Mapa» | anyone signed in |
 | `recapturas` | «Recapturas» | anyone signed in |
 | `dudas` | «Dudas de emparejamiento» | editor, reviewer, admin (hidden otherwise) |
+| `wikiloc` | «Datos de Wikiloc» | anyone signed in (read-only) |
 
 Changing sub-view keeps the other parameters but drops `individuo`.
 
@@ -22,8 +23,9 @@ track and points are kept for the map.
 
 1. Get the walk, one of:
    - Paste the trail link in «Pega el enlace de una ruta de Wikiloc» →
-     «Traer». A computer at home reads Wikiloc (status «activo» / «sin señal
-     (…)»); if it is off the link waits in the queue. «Trabajos (N)» shows the
+     «Traer». The app server's «Importador de Wikiloc» reads the public page,
+     usually within a minute or two (status «activo» / «sin señal (…)»; while
+     it does not respond, links wait in the queue). «Trabajos (N)» shows the
      jobs.
    - «Buscar nuevos»: checks the «Perfiles seguidos (N)» for new walks whose
      title contains the profile's pattern (e.g. "monitor"), assigned to that
@@ -37,7 +39,7 @@ track and points are kept for the map.
 3. Check «Fecha» and «Recolector» (from the followed profile, the GPX author
    or the title; «¿XX? (el último usado)» only offers the last one). A walk
    read from the public page has no GPS times, so SamplingDay_data is not
-   completed; from a GPX, the day's SamplingDay_data row gets its start/end
+   completed; from a GPX (which keeps them), the day's SamplingDay_data row gets its start/end
    time (or a new row), and a wrong Date there offers «Corregir su Date a …».
 4. The review table lists each point (Foto, Punto, Especie, Sexo, Hora,
    Altura, Clima, Marca, Revisión) with a tick to include it. «Revisión»
@@ -58,9 +60,9 @@ track and points are kept for the map.
    al mapa N ya registrados en la hoja» (walks whose rows are already typed:
    stores them on the map, adds no rows; doubtful pairings go to Dudas).
 
-The assistant does the same with `queue_wikiloc` → `get_walk` →
-`propose_changes(newRows)`; after the proposal is applied the walk goes on the
-map with «Pasar al mapa … ya registrados en la hoja».
+The assistant can draft the same rows from a link (skill **monitoring**);
+once they are applied, «Pasar al mapa … ya registrados en la hoja» stores the
+walk on the map.
 
 ## Reporte — `?vista=resumen`
 
@@ -141,3 +143,20 @@ note, with the rows it could be (editors).
 These are the `walk_doubt` issues of `check_data`: the assistant can say which
 rows fit and draft the question for the collector, but a person pairs them
 here. Link: `https://ithomiini-ikiam.com/#/monitoreo?vista=dudas`.
+
+## Datos de Wikiloc — `?vista=wikiloc`
+
+What the app holds from Wikiloc, read-only, for anyone signed in.
+
+- Per collector: walks on the map and waiting for review, points (and how
+  many have their row), photos, first and last walk, and the monitoring days
+  with rows but no walk in the app («Días sin recorrido»).
+- «Descargas»: «Filas de monitoreo (CSV)» (every monitoring row with its
+  Wikiloc point's coordinates, section and note), «Puntos (CSV)» and
+  «Recorrido (GPX)», for one walk or all.
+- «Correcciones sugeridas» (Transect_section from the GPS position,
+  Collection_time out of the walk's order, a mark on another collector's row),
+  with «Certeza» and the reason, as a CSV; nothing is written (the sheet is
+  corrected in Tablas, or ask the assistant for a proposal). «Otras
+  diferencias»: points far from the trail, points without a row, rows without
+  a point.

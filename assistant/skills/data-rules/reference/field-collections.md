@@ -1,8 +1,8 @@
 # Field collections (Collection_data)
 
-One row per butterfly caught (or seen and released). Monitoring walks are in
-[monitoring.md](monitoring.md); the insectary side of live butterflies in
-[insectary-individuals.md](insectary-individuals.md).
+One row per capture (a monitoring recapture is a row of its own). Monitoring
+walks, marks and recaptures: skill **monitoring**; the insectary side of live
+butterflies: [insectary-individuals.md](insectary-individuals.md).
 
 ## Record kinds
 
@@ -14,10 +14,7 @@ The kind is decided by `Release_Collect` first, then `Purpose`.
 | Preserved on a monitoring walk | `Collected_Preserved` | Purpose `Monitoring`, place `Ikiam`, FieldMark_ID `NA` |
 | Taken alive to the insectary | `Collected_Sent2Insectary` | an Insectary_ID (pre-made, written on the wing), **no CAM_ID**, a twin row in Insectary_data |
 | Marked and released | `Mark_Released` | FieldMark_ID (M/A/B series), Purpose `Monitoring`, CAM and tubes `NA` |
-| Released unmarked | `Released_Unmarked` | rare (last used Sep 2025; **Ask** AA when it applies): like marked, FieldMark_ID `NA` |
-
-A capture at Ikiam is monitoring only when Purpose is `Monitoring` (an
-opportunistic catch there has Purpose `NA`, Transect `NA`).
+| Released unmarked | `Released_Unmarked` | rare (last used Sep 2025): like marked, FieldMark_ID `NA`. Not settled when it applies — ask AA |
 
 ## Templates (current practice, Ecuador rows since Sep 2025)
 
@@ -48,15 +45,14 @@ Then: not preserved → CAM_ID_insectary `NA`, Tube_1_id `NA`, tissues
 CAM_ID_insectary = the insectary CAM, Tube_1_id = the insectary tube,
 `WHOLE_ORGANISM`, Splitted_body `No`, Location_* `Ikiam`; CAM_ID stays `NA`.
 
-**Marked–released and released:** see [monitoring.md](monitoring.md).
+**Marked–released and released unmarked:** skill **monitoring**.
 
 **Expedition rows abroad** (Sanger layout: split bodies, DMSO/AllProtect,
 Location "Sanger - TOL704 freezer") are entered by the expedition leads: never
 copy that layout to local rows.
 
-**Pheromone wild males** (Purpose `Pheromones`, all male): weight `NA`,
-`Flash frozen` (65 of 66 rows to 23 Sep 2026; the Ethanol rows of 29 Sep 2026
-have no reason: **Ask** KG whether the protocol changed), their own tube run.
+**Pheromone wild males** (Purpose `Pheromones`, all male): weight `NA`, their
+own tube run, the medium as in [samples-ids.md](samples-ids.md).
 
 ## Session values
 
@@ -81,8 +77,8 @@ have no reason: **Ask** KG whether the protocol changed), their own tube run.
   even when it was caged a day or two later.
 - **Collection_time** `hh:mm` 24 h (trips 09:00–15:15; monitoring 09:00–11:30);
   `NA` when not noted. A time like 02:41 is a PM typed as AM: ask.
-- **Rainfall / Cloud_cover**: list values; codes and paper shorthand in
-  [monitoring.md](monitoring.md). Rain is per day, cloud per row.
+- **Rainfall / Cloud_cover**: list values; codes and paper shorthand in the
+  skill **monitoring**. Rain is per day, cloud per row.
 - **Flight_height** in metres with a decimal point (0–3 typical); >5 is cm.
 
 ## Species and sex
@@ -112,16 +108,12 @@ have no reason: **Ask** KG whether the protocol changed), their own tube run.
   within a trip (reserved for the field team after that day's emergences).
 - Details and pools: [samples-ids.md](samples-ids.md).
 
-## Formula columns (never type)
+## Formula columns
 
-Family, Subfamily, Tribe, Genus, Country, Side_Andes, Photo_dorsal/ventral,
-Tube_*_rack, Tube_*_manifest, COLLECTOR_SAMPLE_ID, Specimen ID, ToLID,
-TAXON_ID, COMMON_NAME, COLLECTED_BY…, IDENTIFIED_BY…, DATE_OF_COLLECTION,
-COLLECTION_LOCATION, DECIMAL_LATITUDE/LONGITUDE, HABITAT, ELEVATION,
-DATE_OF_PRESERVATION, Data_entry_order (where the formula exists), and on
-older live-butterfly rows the Death/Preservation lookups from Insectary_data.
-A lookup keyed on an Insectary_ID `NA` or blank pulls another butterfly's
-data: point it out, never copy its values.
+Taxonomy, place, photo, rack, manifest and Sanger (STS) columns are formulas
+(`describe_sheet` lists them). A Death/Preservation lookup keyed on an
+Insectary_ID `NA` or blank pulls another butterfly's data: point it out,
+never copy its values.
 
 ## Wild-caught twins
 

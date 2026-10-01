@@ -63,9 +63,8 @@ blank means it has not died yet.
 `Flash frozen` · note `d/m/yy INI: Wing clip d/m/yy` (no date column yet).
 `NON-ANDROCONIA WING CLIP` is for pheromone samples only. Such rows can hold a
 CAM and a clip before the emergence data are typed: they are in use, not free.
-At death the body goes to the next free tube (**Tube_2**) `WHOLE_ORGANISM`
-under the **same CAM** (one CAM per individual: [samples-ids.md](samples-ids.md));
-never overwrite Tube_1, never a new CAM. `match_notebook` does this.
+At death the body goes to the next free tube (Tube_2) `WHOLE_ORGANISM` under
+the same CAM; `match_notebook` does this.
 
 ## Death, not preserved (≈ 88 % of deaths)
 
@@ -127,10 +126,7 @@ and 3rd instars of Sep 2026).
 
 - Research_purpose: the protocol and the project lead set it at emergence; the
   2026 rows fill it only at death (all 364 living rows blank). Always fill it
-  at death; on living rows **Ask** (AA) first. Values: the `Research_purpose`
-  column of the Lists sheet (19 values, shared with Collection_data's
-  Purpose; check with `describe_sheet`), e.g. `F1/F2 mutation rate`,
-  `Pheromones`, `Sperm dissections`.
+  at death. On living rows it is not settled — ask AA first.
 - Pedigree is a formula giving `YES or NO` for cross purposes; PAS and the
   crosses team type `Yes`/`No` over it. Don't touch it; point out a leftover
   `YES or NO` on a dead cross parent only when asked about pedigrees.
