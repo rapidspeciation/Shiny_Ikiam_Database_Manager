@@ -9,7 +9,20 @@ import { moduleMap } from './schema.mjs';
 import { newRowFormulaFields } from './premade.mjs';
 import { TUBE_FIELD, isIdValue, isUnique, twinRows } from './verifications.mjs';
 import { listOptions } from './verify.mjs';
-import { KINDS, KIND_IDS, buildReview, checkTranscription, clutchKey, columnsOf, isNone, nearIds, proposalRows, typeOf, unreadableOf } from './notebook.mjs';
+import {
+  KINDS,
+  KIND_IDS,
+  buildReview,
+  checkTranscription,
+  clutchKey,
+  columnsOf,
+  isNone,
+  nearIds,
+  proposalRows,
+  sameErrorRows,
+  typeOf,
+  unreadableOf,
+} from './notebook.mjs';
 
 const parse = (value, fallback) => {
   try {
@@ -47,6 +60,7 @@ export const MATCH_NOTEBOOK_TOOL = {
       '',
       'Answer: proposalId, year/yearSource, counts, and per line its status (match, new, missing with didYouMean, ambiguous, duplicate, nokey, crossed), inProposal, rowError, warnings and the cells by group (fill, differs, doubtful, unreadable, implied, kept, notWritten, problems).',
       "- Tell the person about missing/ambiguous lines, rowError, differs and warnings (e.g. a clutch's adults unlike the butterflies typed in Insectary_data).",
+      '- sameErrorNearby: rows near the page, not on its photo, whose ID in the same column has the typing slip a line of the page corrects (a digit missing or extra, two swapped, prefix, zeros). Those with inProposal are in the proposal after the page\'s rows, as doubtful cells; alreadyIn names another pending proposal that writes them.',
       '- wildWithoutCollection: wild-caught butterflies without their Collection_data row, drafted for you to complete.',
       '',
       'Columns per kind (exact names):',
@@ -266,6 +280,71 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
   }
 
   /**
+   * The same typing slip in the rows around the page: each sure correction the page makes of an ID
+   * (FS5848994 → FS50848994) read on the same column of the rows near it that are not on the photo
+   * (sameErrorRows). A row whose cell another pending proposal of this person already writes is
+   * listed with that proposal, not proposed again.
+   */
+  function sameErrorNearby(review, kind, user, replacing) {
+    const fixes = review.lines.flatMap(l =>
+      !l.recordId || l.crossed || l.row === null
+        ? []
+        : Object.entries(l.cells)
+            .filter(
+              ([field, c]) =>
+                c.status === 'conflict' && c.include && !c.doubt && isUnique(kind.sheet, field) && !kind.keys.includes(field) && isIdValue(c.before) && isIdValue(c.value),
+            )
+            .map(([field, c]) => ({ field, line: l.n, row: l.row, wrong: String(c.before), right: String(c.value) })),
+    );
+    if (!fixes.length) return [];
+    const onPage = new Set(review.lines.map(l => l.recordId).filter(Boolean));
+    const [lo, hi] = [Math.min(...fixes.map(f => f.row)) - 300, Math.max(...fixes.map(f => f.row)) + 300];
+    const column = db.prepare(
+      'SELECT id, row_num, label, json_extract(values_json, ?) v, json_extract(formulas_json, ?) f FROM records WHERE sheet = ? AND missing = 0 AND row_num BETWEEN ? AND ?',
+    );
+    const rows = [];
+    for (const field of new Set(fixes.map(f => f.field))) {
+      const path = `$."${field.replaceAll('"', '')}"`;
+      for (const r of column.all(path, path, kind.sheet, lo, hi))
+        if (!onPage.has(r.id) && !r.f && isIdValue(r.v)) rows.push({ recordId: r.id, row: r.row_num, label: r.label, field, value: r.v });
+    }
+    const unique = usedIds();
+    const scope = field => (TUBE_FIELD.test(field) ? 'tube' : `${kind.sheet}:${field}`);
+    const families = new Map();
+    const familyCount = (field, family) => {
+      if (!families.has(scope(field))) {
+        const count = new Map();
+        const start = `${scope(field)}\u0000`;
+        for (const key of unique.keys()) {
+          if (!key.startsWith(start)) continue;
+          const m = /^([A-Z]*)(\d+)$/i.exec(key.slice(start.length));
+          const family = m && `${m[1].toUpperCase()}:${m[2].length}`;
+          if (family) count.set(family, (count.get(family) ?? 0) + 1);
+        }
+        families.set(scope(field), count);
+      }
+      return families.get(scope(field)).get(family) ?? 0;
+    };
+    const found = sameErrorRows({ fixes, rows, taken: (field, value) => unique.has(`${scope(field)}\u0000${value}`), familyCount });
+    if (!found.length) return [];
+    // Cells another pending proposal of this person already writes.
+    const pending = new Map();
+    try {
+      for (const p of db
+        .prepare("SELECT id, changes_json FROM ai_proposals WHERE owner_id = ? AND status = 'pending' AND id != ?")
+        .all(String(user?.id ?? user?.username ?? ''), String(replacing ?? '')))
+        for (const c of parse(p.changes_json, []))
+          if (c.recordId && !c.context) for (const field of Object.keys(c.values ?? {})) pending.set(`${c.recordId}\u0000${field}`, p.id);
+    } catch {
+      // No proposals table (a sheet without the assistant): nothing pending.
+    }
+    return found.map(f => {
+      const elsewhere = pending.get(`${f.recordId}\u0000${f.field}`);
+      return elsewhere ? { ...f, alreadyIn: elsewhere } : f;
+    });
+  }
+
+  /**
    * The page matched with its sheet: the review (every line and cell) and the
    * proposal's rows, each checked as the save will check it (a bad row is left
    * out and reported, the rest still go).
@@ -392,6 +471,32 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
       }
       changes.sort((a, b) => a.line - b.line);
     }
+    // The page's slip in the rows around it (not on the photo): after the page's rows, as doubtful
+    // cells the person checks, each saying which line of the page it follows.
+    const sameError = sameErrorNearby(review, kind, user, args.replaceProposalId);
+    {
+      const rowsShown = new Set(changes.map(c => c.recordId).filter(Boolean));
+      const byRow = new Map();
+      for (const f of sameError) if (!f.alreadyIn && !rowsShown.has(f.recordId)) byRow.set(f.recordId, [...(byRow.get(f.recordId) ?? []), f]);
+      for (const [recordId, cells] of [...byRow].slice(0, 60)) {
+        const note = clip(
+          `Mismo error que en la página, no está en esta foto: ${cells.map(f => `${f.field} ${f.value} → ${f.suggested} (como la línea ${f.line})`).join(' · ')}`,
+          300,
+        );
+        const out = draftChanges({ changes: [{ recordId, values: Object.fromEntries(cells.map(f => [f.field, f.suggested])), note }] }, ids);
+        if (out.error) continue;
+        for (const f of cells) f.inProposal = true;
+        changes.push(
+          ...out.changes.map(c => ({
+            ...c,
+            sameErrorAs: cells[0].line,
+            doubts: Object.fromEntries(
+              cells.map(f => [f.field, { confidence: 0.6, alternatives: [f.value], reason: clip(f.reason.text, 200), reasonMsg: f.reason.msg }]),
+            ),
+          })),
+        );
+      }
+    }
     // A wild-caught butterfly also needs its Collection_data row (same Insectary_ID).
     const wildWithoutCollection = [];
     if (kind.sheet === 'Insectary_data') {
@@ -444,7 +549,7 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
         ...(l.near?.length ? { near: l.near.slice(0, 3).map(n => ({ value: n.value, row: n.row })) } : {}),
       })),
     };
-    return { review, changes, ignored, wildWithoutCollection, page };
+    return { review, changes, ignored, wildWithoutCollection, page, sameError };
   }
 
   /** The species Insectary_data's SPECIES formula gives for a clutch (its Insectary_stocks row), or null. */
@@ -457,11 +562,12 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
 }
 
 /** What the tool tells Claude about the matched page: per line only what matters (not the equal cells). */
-export function matchSummary({ review, changes, ignored, wildWithoutCollection = [] }, proposalId) {
+export function matchSummary({ review, changes, ignored, wildWithoutCollection = [], sameError = [] }, proposalId) {
   const show = (field, value) =>
     typeOf(field) === 'date' && typeof value === 'number' ? isoOf(value) : value === undefined ? null : value;
   // A row the save refused shows with its reason (rowError) but writes nothing: not in the proposal.
-  const inProposal = new Set(changes.filter(c => !c.context && !c.rowError).map(c => c.line));
+  // (Rows near the page with its slip have no line: they are in sameErrorNearby.)
+  const inProposal = new Set(changes.filter(c => !c.context && !c.rowError && !c.sameErrorAs).map(c => c.line));
   const context = new Set(changes.filter(c => c.context).map(c => c.line));
   // Lines whose unreadable cells are in the table (also a row with nothing else to write).
   const inTable = new Set(changes.filter(c => c.unreadable).map(c => c.line));
@@ -547,6 +653,20 @@ export function matchSummary({ review, changes, ignored, wildWithoutCollection =
             rows: wildWithoutCollection.map(w => w.row),
             todo: 'Wild-caught without a Collection_data row: add these rows to this proposal with update_proposal newRows, completed from the page (Collector, Identifier, Collection_location, Collection_time, Rainfall, Cloud_cover, Purpose; NA when the page does not say). The template cells are as the team types a live capture: keep them; leave the death and preservation columns empty.',
           },
+        }
+      : {}),
+    ...(sameError.length
+      ? {
+          sameErrorNearby: sameError.map(f => ({
+            row: f.row,
+            id: f.label,
+            field: f.field,
+            value: f.value,
+            suggested: f.suggested,
+            reason: f.reason.text,
+            inProposal: Boolean(f.inProposal),
+            ...(f.alreadyIn ? { alreadyIn: f.alreadyIn } : {}),
+          })),
         }
       : {}),
     lines,

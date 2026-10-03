@@ -67,8 +67,6 @@ test('which requests and answers get it', () => {
 function runBridge({ framed = true, path = '/', appOrigin = APP } = {}) {
   const posts = [];
   const listeners = {};
-  const opened = [];
-  const timers = [];
   // Copied out of the script's context (its objects have another Object.prototype).
   const parent = { postMessage: (data, origin) => posts.push({ data: JSON.parse(JSON.stringify(data)), origin }) };
   const window = {
@@ -96,10 +94,6 @@ function runBridge({ framed = true, path = '/', appOrigin = APP } = {}) {
         Object.assign(this, { type, ...init });
       }
     },
-    URL,
-    open: (url, target) => opened.push({ url, target }),
-    setTimeout: fn => timers.push(fn),
-    clearTimeout: () => timers.splice(0),
     setInterval: () => 0,
     queueMicrotask: fn => fn(),
   };
@@ -107,7 +101,7 @@ function runBridge({ framed = true, path = '/', appOrigin = APP } = {}) {
   window.parent = framed ? parent : window;
   vm.runInNewContext(bridgeScript, window);
   const say = (name, event) => (listeners[name] ?? []).forEach(fn => fn(event));
-  return { posts, window, parent, say, opened, timers };
+  return { posts, window, parent, say, listeners };
 }
 
 test('the script tells the app (only) which chat the frame shows', () => {
@@ -145,8 +139,8 @@ test('the script tells the app (only) which chat the frame shows', () => {
   assert.deepEqual(runBridge({ appOrigin: '' }).posts, []);
 });
 
-test('links both ways: the app opens a chat in T3; a link to the Asistente tab goes to the app', () => {
-  const { posts, window, parent, say, opened, timers } = runBridge({ path: '/' });
+test('the app opens a chat in T3; links clicked in T3 are left to T3 (a new tab)', () => {
+  const { posts, window, parent, say, listeners } = runBridge({ path: '/' });
   const pops = [];
   window.addEventListener('popstate', e => pops.push(e));
   // The app asks for a chat: T3's router gets it as a move forward.
@@ -157,39 +151,14 @@ test('links both ways: the app opens a chat in T3; a link to the Asistente tab g
   assert.equal(posts.at(-1).data.threadId, A);
   // Not a chat, or from elsewhere: nothing.
   say('message', { origin: APP, source: parent, data: { type: 'ithomiini-t3-open', path: '/settings' } });
-  say('message', { origin: 'https://evil.example', source: parent, data: { type: 'ithomiini-t3-open', path: `/${ENV}/${ENV}` } });
+  say('message', {
+    origin: 'https://evil.example',
+    source: parent,
+    data: { type: 'ithomiini-t3-open', path: `/${ENV}/${ENV}` },
+  });
   assert.equal(window.location.pathname, `/${ENV}/${A}`);
-
-  const click = (href, over = {}) => {
-    const event = {
-      button: 0,
-      defaultPrevented: false,
-      target: { closest: () => ({ href }) },
-      preventDefault() {
-        this.defaultPrevented = true;
-      },
-      stopPropagation() {},
-      ...over,
-    };
-    say('document:click', event);
-    return event;
-  };
-  // A proposal's link: passed to the app, not followed; the app answers, so no new tab.
-  const link = `${APP}/#/asistente?propuesta=${A}`;
-  assert.equal(click(link).defaultPrevented, true);
-  assert.deepEqual(posts.at(-1).data, { type: 'ithomiini-t3-link', v: 1, hash: `#/asistente?propuesta=${A}` });
-  say('message', { origin: APP, source: parent, data: { type: 'ithomiini-t3-link-ok' } });
-  assert.equal(timers.length, 0);
-  // No answer (an app without it): opened in a new tab after all.
-  click(link);
-  timers.forEach(fn => fn());
-  assert.deepEqual(opened, [{ url: link, target: '_blank' }]);
-  // Other links, and a link opened on purpose in a new tab, as T3 handles them.
-  const sent = posts.length;
-  assert.equal(click(`${APP}/#/historial?grupo=1`).defaultPrevented, false);
-  assert.equal(click('https://other.example/#/asistente').defaultPrevented, false);
-  assert.equal(click(link, { ctrlKey: true }).defaultPrevented, false);
-  assert.equal(posts.length, sent);
+  // No click handler: a link to the app's Asistente tab opens as T3 opens it.
+  assert.equal(listeners['document:click'], undefined);
 });
 
 /** A tiny T3: a page, a compressed script, an API echo, a page with its own CSP, and a websocket that echoes. */

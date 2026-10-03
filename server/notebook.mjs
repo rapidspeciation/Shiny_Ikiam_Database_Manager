@@ -1066,6 +1066,183 @@ export function nearIds(read, ids) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// The same typing slip in the rows around a page. A value typed wrong once is
+// often typed wrong the same way in the rows typed with it (FS5848961 …
+// FS5848999 for FS50848961 …, a whole day without a 0): when the page corrects
+// such a slip, the same column of the rows near the page (not on the photo) is
+// read with the same correction.
+
+const ID_PARTS = /^([A-Z]*)(\d+)$/i;
+/** Letters as A and digits as 9: the form of an ID (FS50848961 → AA99999999). */
+const shapeOf = value => String(value).replace(/[A-Z]/gi, 'A').replace(/\d/g, '9');
+/** An ID's family: its letters and how many digits (FS + 8); null for other values. */
+const familyOf = value => {
+  const m = ID_PARTS.exec(String(value));
+  return m ? `${m[1].toUpperCase()}:${m[2].length}` : null;
+};
+
+/**
+ * How a sheet value differs from the page's by one typing slip, or null: a
+ * character missing or one too many (doubled when it repeats its neighbour), two
+ * neighbours swapped, other letters before the same number (prefix), leading
+ * zeros (padding). Only for IDs with digits.
+ */
+export function typingSlip(wrong, right) {
+  const [a, b] = [String(wrong ?? '').trim(), String(right ?? '').trim()];
+  if (!a || !b || a === b || !/\d/.test(a) || !/\d/.test(b) || /\s/.test(a + b)) return null;
+  const [pa, pb] = [ID_PARTS.exec(a), ID_PARTS.exec(b)];
+  if (pa && pb && pa[2] === pb[2]) return { kind: 'prefix', from: pa[1], to: pb[1] };
+  if (pa && pb && pa[1] === pb[1] && pa[2].replace(/^0+/, '') === pb[2].replace(/^0+/, ''))
+    return { kind: 'padding', letters: pa[1], from: pa[2].length, to: pb[2].length };
+  if (b.length === a.length + 1)
+    for (let i = 0; i <= a.length; i++)
+      if (`${a.slice(0, i)}${b[i]}${a.slice(i)}` === b) return { kind: 'missing', at: i, char: b[i], anchor: a.slice(0, i), length: a.length };
+  if (a.length === b.length + 1)
+    for (let i = 0; i < a.length; i++)
+      if (a.slice(0, i) + a.slice(i + 1) === b)
+        return { kind: a[i] === a[i - 1] || a[i] === a[i + 1] ? 'doubled' : 'extra', at: i, char: a[i], anchor: a.slice(0, i), length: a.length };
+  if (a.length === b.length) {
+    const diff = [...a].map((_, i) => i).filter(i => a[i] !== b[i]);
+    if (diff.length === 2 && diff[1] === diff[0] + 1 && a[diff[0]] === b[diff[1]] && a[diff[1]] === b[diff[0]])
+      return { kind: 'swap', at: diff[0], anchor: a.slice(0, diff[0] + 2), length: a.length };
+  }
+  return null;
+}
+
+/** A slip that leaves the ID in another form (a digit missing or extra, other letters): the same ID typed wrong. */
+export const formSlip = (wrong, right) => Boolean(typingSlip(wrong, right)) && shapeOf(String(wrong).trim()) !== shapeOf(String(right).trim());
+
+/** Another value with the same slip, corrected the same way; null when it does not have it. */
+export function applySlip(slip, value) {
+  const v = String(value ?? '').trim();
+  const m = ID_PARTS.exec(v);
+  switch (slip.kind) {
+    case 'prefix':
+      return m && m[1] === slip.from ? `${slip.to}${m[2]}` : null;
+    case 'padding':
+      if (!m || m[1] !== slip.letters || m[2].length !== slip.from) return null;
+      if (slip.to > slip.from) return `${slip.letters}${'0'.repeat(slip.to - slip.from)}${m[2]}`;
+      return /^0+$/.test(m[2].slice(0, slip.from - slip.to)) ? `${slip.letters}${m[2].slice(slip.from - slip.to)}` : null;
+    case 'missing':
+      return v.length === slip.length && v.startsWith(slip.anchor) ? `${v.slice(0, slip.at)}${slip.char}${v.slice(slip.at)}` : null;
+    case 'extra':
+    case 'doubled':
+      return v.length === slip.length && v.startsWith(slip.anchor) && v[slip.at] === slip.char ? v.slice(0, slip.at) + v.slice(slip.at + 1) : null;
+    case 'swap':
+      return v.length === slip.length && v.startsWith(slip.anchor) ? `${v.slice(0, slip.at)}${v[slip.at + 1]}${v[slip.at]}${v.slice(slip.at + 2)}` : null;
+  }
+  return null;
+}
+
+/** The slip in a few words, for the person. */
+const slipWords = slip =>
+  ({
+    missing: () => msg('falta un {char}', { char: slip.char }),
+    extra: () => msg('un {char} de más', { char: slip.char }),
+    doubled: () => msg('un {char} repetido', { char: slip.char }),
+    swap: () => msg('dos cifras cambiadas de sitio'),
+    prefix: () => msg('{from} en vez de {to}', { from: slip.from || '—', to: slip.to || '—' }),
+    padding: () => msg('ceros a la izquierda'),
+  })[slip.kind]();
+
+/** How far a number is from the closest of a list (Infinity for an empty one). */
+const gapTo = (numbers, n) => numbers.reduce((best, x) => Math.min(best, Math.abs(x - n)), Infinity);
+const numberOf = value => Number(ID_PARTS.exec(String(value))?.[2] ?? NaN);
+
+/**
+ * The rows near a page whose column has the same slip a page line corrects.
+ * fixes: [{ field, line, row, wrong, right }], the page's sure corrections;
+ * rows: [{ recordId, row, label, field, value }], the column in the rows around
+ * the page (not on it, no formula there). Only rows within `window` rows of the
+ * page, or `chain` rows of another row found; each correction:
+ * - keeps the ID's form the page gives (FS + 8 digits);
+ * - is used nowhere else (`taken(field, value)`) nor twice here;
+ * - joins the run of the column (within `near` of its numbers or the page's);
+ * - fixes a value that looks wrong: a form rare in the workbook
+ *   (`familyCount(field, family)`, under 5% of the right one), or a number out of
+ *   the run when the form is the same (a swap).
+ * Returns [{ recordId, row, label, field, value, suggested, line, slip, reason (msg) }].
+ */
+export function sameErrorRows({ fixes, rows, taken = () => false, familyCount = () => 0, window = 50, chain = 5, near = 30 }) {
+  const slips = fixes
+    .map(f => ({ ...f, wrong: String(f.wrong).trim(), right: String(f.right).trim() }))
+    .map(f => ({ ...f, slip: typingSlip(f.wrong, f.right) }))
+    .filter(f => f.slip);
+  if (!slips.length) return [];
+  const pageRows = fixes.map(f => f.row);
+  const proposed = new Set(slips.map(f => `${f.field}\u0000${f.right}`));
+  const rare = new Map();
+  const isRare = (field, wrong, right) => {
+    const key = `${field}\u0000${familyOf(wrong)}\u0000${familyOf(right)}`;
+    if (!rare.has(key)) {
+      const [w, r] = [familyCount(field, familyOf(wrong)), familyCount(field, familyOf(right))];
+      rare.set(key, r > 0 && w < r * 0.05);
+    }
+    return rare.get(key);
+  };
+  // Each row's reading by every slip of its column: one correction, the same for all.
+  const candidates = [];
+  for (const r of rows) {
+    const value = String(r.value ?? '').trim();
+    const own = slips.filter(f => f.field === r.field && shapeOf(value) === shapeOf(f.wrong));
+    const readings = own
+      .map(f => ({ fix: f, suggested: applySlip(f.slip, value) }))
+      .filter(x => x.suggested && x.suggested !== value)
+      .sort((x, y) => Math.abs(x.fix.row - r.row) - Math.abs(y.fix.row - r.row));
+    if (!readings.length || new Set(readings.map(x => x.suggested)).size > 1) continue;
+    const { fix, suggested } = readings[0];
+    if (shapeOf(suggested) !== shapeOf(fix.right)) continue;
+    candidates.push({ ...r, value, suggested, fix });
+  }
+  const odd = new Set(candidates.map(c => c.recordId + c.field));
+  // The column's run: the numbers of the right form in the rows around and on the page.
+  const run = new Map();
+  for (const f of slips) (run.get(f.field) ?? run.set(f.field, []).get(f.field)).push(numberOf(f.right));
+  for (const r of rows)
+    if (!odd.has(r.recordId + r.field) && slips.some(f => f.field === r.field && familyOf(r.value) === familyOf(f.right)))
+      (run.get(r.field) ?? run.set(r.field, []).get(r.field)).push(numberOf(r.value));
+  const out = [];
+  const used = new Set(proposed);
+  const reached = row => Math.min(...pageRows.map(p => Math.abs(p - row))) <= window || out.some(o => Math.abs(o.row - row) <= chain);
+  const sure = c => {
+    const key = `${c.field}\u0000${c.suggested}`;
+    if (used.has(key) || taken(c.field, c.suggested)) return false;
+    const numbers = run.get(c.field) ?? [];
+    if (!(gapTo(numbers, numberOf(c.suggested)) <= near)) return false;
+    return familyOf(c.value) === familyOf(c.suggested) ? !(gapTo(numbers, numberOf(c.value)) <= near) : isRare(c.field, c.value, c.suggested);
+  };
+  // Nearest the page first: a run typed with the slip is followed beyond the window, row by row.
+  const left = candidates.sort((a, b) => Math.min(...pageRows.map(p => Math.abs(p - a.row))) - Math.min(...pageRows.map(p => Math.abs(p - b.row))));
+  for (let found = true; found; ) {
+    found = false;
+    for (const [i, c] of left.entries()) {
+      if (!c || !reached(c.row) || !sure(c)) continue;
+      left[i] = null;
+      found = true;
+      used.add(`${c.field}\u0000${c.suggested}`);
+      run.get(c.field).push(numberOf(c.suggested));
+      out.push({
+        recordId: c.recordId,
+        row: c.row,
+        label: c.label,
+        field: c.field,
+        value: c.value,
+        suggested: c.suggested,
+        line: c.fix.line,
+        slip: c.fix.slip.kind,
+        reason: msg('Mismo error que la línea {line} de la página ({wrong} → {right}: {what}); esta fila no está en la foto', {
+          line: c.fix.line,
+          wrong: c.fix.wrong,
+          right: c.fix.right,
+          what: slipWords(c.fix.slip),
+        }),
+      });
+    }
+  }
+  return out.sort((a, b) => a.row - b.row || a.field.localeCompare(b.field));
+}
+
 /** How many of a line's cells the sheet row already has (a date counts by day and month). */
 function agreement(kind, record, text, year) {
   let same = 0;
@@ -1303,9 +1480,18 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
     let lastDate = null;
     // A new tube where the row already has a first one (a wing clip): one CAM per individual, each
     // sample its own tube, so it goes to the next free Tube_n (with the tissue and medium given for it).
+    // The first tube typed with a slip (FS5848967 for FS50848967) is that tube, corrected.
     const said = notes[i] ?? {};
     const first = record?.values?.Tube_1_id;
-    if (deathKind && record && !isNone(text.Tube_1_id) && !isNone(first) && !('Tube_1_id' in edited) && String(first).toUpperCase() !== String(text.Tube_1_id).toUpperCase()) {
+    if (
+      deathKind &&
+      record &&
+      !isNone(text.Tube_1_id) &&
+      !isNone(first) &&
+      !('Tube_1_id' in edited) &&
+      String(first).toUpperCase() !== String(text.Tube_1_id).toUpperCase() &&
+      !formSlip(first, text.Tube_1_id)
+    ) {
       const free = [2, 3, 4].find(n => isNone(record.values?.[`Tube_${n}_id`]) && isNone(text[`Tube_${n}_id`]));
       if (free) {
         for (const [from, to] of [['Tube_1_id', `Tube_${free}_id`], ['Tube_1_tissue', `Tube_${free}_tissue`], ['T1_Preservation_medium', `T${free}_Preservation_medium`]])
