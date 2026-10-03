@@ -929,7 +929,9 @@ export async function createApp(config = {}, options = {}) {
         requireAdmin(user);
         return json(res, 201, await resets.adminLink(resetLink[1], user));
       }
-      if (method === 'GET' && path === '/api/t3/status') return json(res, 200, { url: config.t3?.url ?? null });
+      // environmentId: T3's chats are at <url>/<environmentId>/<threadId> (links that open a chat in the frame).
+      if (method === 'GET' && path === '/api/t3/status')
+        return json(res, 200, { url: config.t3?.url ?? null, environmentId: t3EnvironmentId(config.t3) });
       // What the assistant is told (any signed-in person): every file, the tools, each one's history.
       if (method === 'GET' && path === '/api/instructions') return json(res, 200, await instructions.list());
       if (method === 'GET' && path === '/api/instructions/diff') {
@@ -999,7 +1001,10 @@ export async function createApp(config = {}, options = {}) {
         return json(res, 200, { path, createdAt: now() });
       }
       if (assistant) {
-        const answer = await assistant.handle({ method, path, body, user, query });
+        // The page asking (lib/api.ts): Cambios propuestos skips the list it already has after its own edits.
+        const page = String(req.headers['x-ithomiini-page'] ?? '').slice(0, 64) || null;
+        const answer = await assistant.handle({ method, path, body, user, query, page });
+        if (answer?.tagged) return sendTagged(res, answer.body);
         if (answer) return json(res, answer.status || 200, answer.body, answer.headers);
       }
       throw fail('NOT_FOUND', 'Route not found', 404);
@@ -1057,6 +1062,22 @@ export async function createApp(config = {}, options = {}) {
       store.close();
     },
   };
+}
+
+/** The id of T3's environment (its chats' addresses start with it), read once it exists. */
+const t3Environments = new Map();
+function t3EnvironmentId(t3) {
+  if (!t3?.home) return null;
+  if (t3Environments.has(t3.home)) return t3Environments.get(t3.home);
+  let id = null;
+  try {
+    id = readFileSync(join(t3.home, 'userdata', 'environment-id'), 'utf8').trim();
+  } catch {
+    return null;
+  }
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
+  t3Environments.set(t3.home, id);
+  return id;
 }
 
 /**

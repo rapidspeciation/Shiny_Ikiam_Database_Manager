@@ -67,12 +67,16 @@ test('which requests and answers get it', () => {
 function runBridge({ framed = true, path = '/', appOrigin = APP } = {}) {
   const posts = [];
   const listeners = {};
+  const opened = [];
+  const timers = [];
   // Copied out of the script's context (its objects have another Object.prototype).
   const parent = { postMessage: (data, origin) => posts.push({ data: JSON.parse(JSON.stringify(data)), origin }) };
   const window = {
-    location: { pathname: path },
+    location: { pathname: path, href: `https://t3.example.org${path}` },
     history: {
-      pushState(_s, _t, url) {
+      state: null,
+      pushState(state, _t, url) {
+        window.history.state = state;
         window.location.pathname = url;
       },
       replaceState(_s, _t, url) {
@@ -83,9 +87,19 @@ function runBridge({ framed = true, path = '/', appOrigin = APP } = {}) {
       currentScript: { dataset: { appOrigin } },
       visibilityState: 'visible',
       hasFocus: () => true,
-      addEventListener() {},
+      addEventListener: (name, fn) => (listeners[`document:${name}`] ??= []).push(fn),
     },
     addEventListener: (name, fn) => (listeners[name] ??= []).push(fn),
+    dispatchEvent: event => (listeners[event.type] ?? []).forEach(fn => fn(event)),
+    PopStateEvent: class {
+      constructor(type, init) {
+        Object.assign(this, { type, ...init });
+      }
+    },
+    URL,
+    open: (url, target) => opened.push({ url, target }),
+    setTimeout: fn => timers.push(fn),
+    clearTimeout: () => timers.splice(0),
     setInterval: () => 0,
     queueMicrotask: fn => fn(),
   };
@@ -93,7 +107,7 @@ function runBridge({ framed = true, path = '/', appOrigin = APP } = {}) {
   window.parent = framed ? parent : window;
   vm.runInNewContext(bridgeScript, window);
   const say = (name, event) => (listeners[name] ?? []).forEach(fn => fn(event));
-  return { posts, window, parent, say };
+  return { posts, window, parent, say, opened, timers };
 }
 
 test('the script tells the app (only) which chat the frame shows', () => {
@@ -129,6 +143,53 @@ test('the script tells the app (only) which chat the frame shows', () => {
   // A T3 tab of its own (not in a frame), or no app origin: silent.
   assert.deepEqual(runBridge({ framed: false }).posts, []);
   assert.deepEqual(runBridge({ appOrigin: '' }).posts, []);
+});
+
+test('links both ways: the app opens a chat in T3; a link to the Asistente tab goes to the app', () => {
+  const { posts, window, parent, say, opened, timers } = runBridge({ path: '/' });
+  const pops = [];
+  window.addEventListener('popstate', e => pops.push(e));
+  // The app asks for a chat: T3's router gets it as a move forward.
+  say('message', { origin: APP, source: parent, data: { type: 'ithomiini-t3-open', path: `/${ENV}/${A}` } });
+  assert.equal(window.location.pathname, `/${ENV}/${A}`);
+  assert.equal(window.history.state.__TSR_index, 1);
+  assert.equal(pops.length, 1);
+  assert.equal(posts.at(-1).data.threadId, A);
+  // Not a chat, or from elsewhere: nothing.
+  say('message', { origin: APP, source: parent, data: { type: 'ithomiini-t3-open', path: '/settings' } });
+  say('message', { origin: 'https://evil.example', source: parent, data: { type: 'ithomiini-t3-open', path: `/${ENV}/${ENV}` } });
+  assert.equal(window.location.pathname, `/${ENV}/${A}`);
+
+  const click = (href, over = {}) => {
+    const event = {
+      button: 0,
+      defaultPrevented: false,
+      target: { closest: () => ({ href }) },
+      preventDefault() {
+        this.defaultPrevented = true;
+      },
+      stopPropagation() {},
+      ...over,
+    };
+    say('document:click', event);
+    return event;
+  };
+  // A proposal's link: passed to the app, not followed; the app answers, so no new tab.
+  const link = `${APP}/#/asistente?propuesta=${A}`;
+  assert.equal(click(link).defaultPrevented, true);
+  assert.deepEqual(posts.at(-1).data, { type: 'ithomiini-t3-link', v: 1, hash: `#/asistente?propuesta=${A}` });
+  say('message', { origin: APP, source: parent, data: { type: 'ithomiini-t3-link-ok' } });
+  assert.equal(timers.length, 0);
+  // No answer (an app without it): opened in a new tab after all.
+  click(link);
+  timers.forEach(fn => fn());
+  assert.deepEqual(opened, [{ url: link, target: '_blank' }]);
+  // Other links, and a link opened on purpose in a new tab, as T3 handles them.
+  const sent = posts.length;
+  assert.equal(click(`${APP}/#/historial?grupo=1`).defaultPrevented, false);
+  assert.equal(click('https://other.example/#/asistente').defaultPrevented, false);
+  assert.equal(click(link, { ctrlKey: true }).defaultPrevented, false);
+  assert.equal(posts.length, sent);
 });
 
 /** A tiny T3: a page, a compressed script, an API echo, a page with its own CSP, and a websocket that echoes. */

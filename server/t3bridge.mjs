@@ -5,6 +5,11 @@
 // the chat on screen ({ type: 'ithomiini-t3', path, environmentId, threadId,
 // draftId, visible, focused }) to the app's origin only, on every navigation and
 // when the app says hello. A T3 page open in its own browser tab sends nothing.
+// Both ways, for links: the app asks it to open a chat ({ type: 'ithomiini-t3-open',
+// path }, in T3's own router, no reload), and a click in T3 on a link to the app's
+// Asistente tab (a proposal the assistant gives) goes to the app's page instead of
+// a new tab ({ type: 'ithomiini-t3-link', hash }); without the app's answer the
+// link opens in a new tab as before.
 // - Production (Caddy): requests to T3's host reach this app only for page loads
 //   and /__ithomiini/bridge.js (deploy/Caddyfile.fragment); T3's API, assets and
 //   websockets go from Caddy straight to T3, and so does everything if the app is down.
@@ -63,10 +68,48 @@ function bridge() {
   for (const event of ['popstate', 'hashchange', 'focus', 'blur']) addEventListener(event, () => send());
   document.addEventListener('visibilitychange', () => send());
   if (window.navigation && navigation.addEventListener) navigation.addEventListener('navigatesuccess', () => send());
-  // The app asks again when its panel starts listening (the frame loaded before it).
+  // A link the app opened (#/asistente?chat=…): T3's router moves to the chat as after a back/forward.
+  const open = path => {
+    if (!CHAT.test(path) || location.pathname === path) return;
+    const index = (history.state && history.state.__TSR_index) || 0;
+    const key = Math.random().toString(36).slice(2, 10);
+    history.pushState({ __TSR_index: index + 1, key, __TSR_key: key }, '', path);
+    dispatchEvent(new PopStateEvent('popstate', { state: history.state }));
+  };
+  let unanswered;
   addEventListener('message', e => {
-    if (e.origin === app && e.source === window.parent && e.data && e.data.type === 'ithomiini-t3-hello') send(true);
+    if (e.origin !== app || e.source !== window.parent || !e.data) return;
+    // The app asks again when its panel starts listening (the frame loaded before it).
+    if (e.data.type === 'ithomiini-t3-hello') send(true);
+    if (e.data.type === 'ithomiini-t3-open' && typeof e.data.path === 'string') open(e.data.path);
+    if (e.data.type === 'ithomiini-t3-link-ok') clearTimeout(unanswered);
   });
+  // A link to the app's Asistente tab: shown beside this frame, not in a new tab.
+  document.addEventListener(
+    'click',
+    e => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+      if (!a) return;
+      let url;
+      try {
+        url = new URL(a.href, location.href);
+      } catch {
+        return;
+      }
+      if (url.origin !== app || !/^#\/asistente(?:[?/]|$)/.test(url.hash)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      clearTimeout(unanswered);
+      unanswered = setTimeout(() => window.open(url.href, '_blank', 'noopener'), 400);
+      try {
+        window.parent.postMessage({ type: 'ithomiini-t3-link', v: 1, hash: url.hash.slice(0, 1000) }, app);
+      } catch {
+        /* the fallback opens it */
+      }
+    },
+    true,
+  );
   // In case a later T3 moves some other way.
   setInterval(() => send(), 1000);
   send(true);

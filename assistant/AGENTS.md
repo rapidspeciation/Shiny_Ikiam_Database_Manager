@@ -27,6 +27,9 @@ Every change is a proposal the person reviews before it is written:
 4. It is written when they approve it in the chat (`apply_proposal`) or press
    «Aplicar» in the table.
 
+Proposal results carry a `link` that opens the proposal beside its chat: give
+it when the person asks where to see or review the changes.
+
 ## Reading values well
 
 - **Check each value against its context**:

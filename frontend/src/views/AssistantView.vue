@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ArrowUpCircle, BookOpen, ExternalLink, ListChecks, RefreshCw } from 'lucide-vue-next'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { api } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
 import { useSession } from '../stores/session'
@@ -9,7 +9,7 @@ import T3Frame from '../components/T3Frame.vue'
 import ProposalsLive from '../components/assistant/ProposalsLive.vue'
 import { persistentRef } from '../lib/persist'
 import { panelShare } from '../lib/proposals'
-import type { T3Seen } from '../lib/t3Bridge'
+import { assistantLink, type T3Seen } from '../lib/t3Bridge'
 import { t, tn } from '../lib/i18n'
 
 /**
@@ -17,8 +17,9 @@ import { t, tn } from '../lib/i18n'
  * address) with the changes it proposes beside it (Cambios propuestos), to
  * review, correct and apply in the sheet.
  */
-/** T3's address (null: T3 is not configured on this server), once asked for. */
+/** T3's address (null: T3 is not configured on this server), once asked for, and its chats' environment. */
 const t3Url = ref<string | null>(null)
+const t3Environment = ref<string | null>(null)
 const loaded = ref(false)
 // Proposals (from T3 Code or any conversation) beside T3, or under it on phones; see ProposalsLive.
 // Closed at first (T3 gets the whole width); a new proposal opens it, and the button toggles it.
@@ -76,6 +77,41 @@ function arrived() {
 const t3Frame = ref<InstanceType<typeof T3Frame>>()
 /** The chat T3's frame shows (its bridge), followed by Cambios propuestos. */
 const t3Seen = ref<T3Seen | null>(null)
+
+// ------------------------------------------------------------ links (#/asistente?propuesta=…&chat=…&fila=…)
+// The assistant gives them for a proposal (server/assistant.mjs, proposalLink): the chat in T3's
+// frame and the proposal beside it. Read once, then taken off the address so the same link works again.
+const route = useRoute()
+const router = useRouter()
+/** The chat the frame is asked to open, and the proposal (and row) the panel is asked to show. */
+const openChat = ref<{ thread: string } | null>(null)
+const focus = ref<{ id: string; row: string | null } | null>(null)
+watch(
+  () => route.query,
+  async query => {
+    if (route.path !== '/asistente') return
+    const link = assistantLink(query)
+    if (!link) return
+    void router.replace({ path: '/asistente' })
+    if (link.chat) openChat.value = { thread: link.chat }
+    if (!link.proposal) return
+    focus.value = { id: link.proposal, row: link.row }
+    panel.value = true
+    full.value = false
+    if (link.chat) return
+    // Only the proposal: its chat, as the list says it.
+    try {
+      const out = await api<{ proposals: { id: string; chat: string | null }[] }>(
+        `chat/proposals?${new URLSearchParams({ only: link.proposal, all: '1' })}`,
+      )
+      const chat = out.proposals.find(p => p.id === link.proposal)?.chat
+      if (chat) openChat.value = { thread: chat }
+    } catch {
+      /* the panel still shows it */
+    }
+  },
+  { immediate: true },
+)
 
 // ------------------------------------------------------------ updating T3 (admins)
 interface T3Version {
@@ -137,7 +173,9 @@ async function updateT3() {
 
 onMounted(async () => {
   try {
-    t3Url.value = (await api<{ url: string | null }>('t3/status')).url
+    const status = await api<{ url: string | null; environmentId?: string | null }>('t3/status')
+    t3Url.value = status.url
+    t3Environment.value = status.environmentId ?? null
   } catch (e) {
     notify(errorText(e), 'error')
   } finally {
@@ -214,6 +252,8 @@ onMounted(async () => {
       <T3Frame
         ref="t3Frame"
         :url="t3Url"
+        :environment-id="t3Environment"
+        :open="openChat"
         class="min-h-0 min-w-0 flex-1"
         :class="{ 'pointer-events-none': dragging !== null, hidden: panel && full }"
         @seen="value => (t3Seen = value)"
@@ -241,6 +281,7 @@ onMounted(async () => {
         :layout="layout"
         :full="full"
         :t3="t3Seen"
+        :focus="focus"
         class="border-stone-300"
         :class="
           full

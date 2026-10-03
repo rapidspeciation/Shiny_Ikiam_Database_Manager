@@ -43,6 +43,8 @@ export function listQuery(o: {
   seen?: string
   only?: string
   revision: string
+  /** The chats and titles the page holds (the server's stamp): with the revision, an unchanged list is not sent again. */
+  stamp?: string
   wait?: boolean
 }) {
   const q = new URLSearchParams({ all: '1', chat: o.chosen })
@@ -51,6 +53,7 @@ export function listQuery(o: {
   if (o.seen) q.set('seen', o.seen)
   if (o.wait !== false) q.set('wait', '1')
   q.set('revision', o.revision)
+  if (o.revision && o.stamp) q.set('stamp', o.stamp)
   return `chat/proposals?${q}`
 }
 
