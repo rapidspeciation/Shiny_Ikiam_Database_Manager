@@ -209,6 +209,14 @@ export default {
   'La página cambia el término {n} de la suma de la hoja ({sheet}); los términos nuevos se escriben al final':
     "The page changes term {n} of the sheet's sum ({sheet}); new terms are written at the end",
   '{why} (pasado de una foto del cuaderno el {date})': '{why} (typed from a notebook photo on {date})',
+  'Mismo error que la línea {line} de la página ({wrong} → {right}: {what}); esta fila no está en la foto':
+    'Same error as line {line} of the page ({wrong} → {right}: {what}); this row is not on the photo',
+  'falta un {char}': 'a {char} missing',
+  'un {char} de más': 'an extra {char}',
+  'un {char} repetido': 'a doubled {char}',
+  'dos cifras cambiadas de sitio': 'two digits swapped',
+  '{from} en vez de {to}': '{from} instead of {to}',
+  'ceros a la izquierda': 'leading zeros',
   'El clutch {clutch} es {species}: el stock es su subespecie; la página dice «{read}»':
     'Clutch {clutch} is {species}: the stock is its subspecies; the page says «{read}»',
   'Causa escrita «{written}»: Unknown': 'Cause written «{written}»: Unknown',

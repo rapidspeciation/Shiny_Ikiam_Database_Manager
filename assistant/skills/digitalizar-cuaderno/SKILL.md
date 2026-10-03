@@ -50,6 +50,12 @@ From the answer:
   `ambiguous` and `duplicate` lines go in your summary.
 - `overlaps` = the same rows in another pending proposal: if it is the same
   page, pass its id as `replaceProposalId` next time.
+- A correction that looks like a typing slip (a digit missing, two swapped,
+  another prefix) was often repeated in the rows typed with it: look at the
+  same column in the rows around the page. The tool adds those it finds
+  (`sameErrorNearby`) after the page's rows, as doubtful cells; propose
+  others you see the same way, and say in the summary how many rows off the
+  photo have it and where.
 
 Pages that are not a plain notebook table (cage cards, crosses notebook,
 field envelopes): read the skill **data-rules** first.
