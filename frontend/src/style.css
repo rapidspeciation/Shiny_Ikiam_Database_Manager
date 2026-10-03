@@ -470,6 +470,36 @@ body.touch-bar-open main {
   outline: 2px dotted #dc2626;
   outline-offset: -3px;
 }
+/* The CAM or tube a preserved butterfly would be left without: amber, a solid amber edge and a "missing" tag. */
+.proposal-sheet .tabulator-cell.is-warned {
+  background: #fffbeb;
+  color: #78350f;
+  box-shadow: none;
+  outline: 2px solid #f59e0b;
+  outline-offset: -3px;
+}
+.proposal-sheet .tabulator-cell .warn-mark {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: #d97706;
+  color: white;
+  font-weight: 600;
+  font-size: 10px;
+  line-height: 14px;
+}
+/* The header's count of rows that leave a preserved butterfly without CAM or tube. */
+.warn-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid #f59e0b;
+  border-radius: 4px;
+  background: #fffbeb;
+  padding: 1px 6px;
+  color: #92400e;
+  font-weight: 500;
+}
 .proposal-sheet .tabulator-cell .unread-mark {
   display: inline-block;
   padding: 0 5px;

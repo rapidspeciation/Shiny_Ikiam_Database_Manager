@@ -21,6 +21,7 @@ import { pendingPoints, tracksRevision } from './monitoring.mjs';
 import { photoContext, photoIndex, reviewData, reviewRevision } from './photodata.mjs';
 import { photoIssues } from './photo-checks.mjs';
 import { trackFindings } from './findings.mjs';
+import { askFor, sampleGap } from './preserved.mjs';
 
 /** Kinds of issue, in the order they are listed, with their Spanish names for the app. */
 export const CHECK_KINDS = {
@@ -33,6 +34,7 @@ export const CHECK_KINDS = {
   future_date: 'Fecha en el futuro',
   bad_date: 'Fecha que no es una fecha',
   missing_sample: 'Preservada sin CAM o tubo',
+  preserved_na: 'Causa preservada, celdas sin preservar',
   mark_reuse: 'Marca usada en dos especies',
   walk_doubt: 'Punto de Wikiloc sin emparejar',
   // From the photos (server/photo-checks.mjs).
@@ -485,22 +487,45 @@ function scan(store) {
   }
 
   // ---- Preserved butterflies without their CAM or first tube (monitoring rows get them when typed, like the others).
-  const preserved = [
-    ['Collection_data', row => text(row.values.Release_Collect) === 'Collected_Preserved'],
-    ['Insectary_data', row => isDate(row.values.Preservation_date)],
-  ];
-  for (const [sheet, isPreserved] of preserved)
-    for (const row of observed(sheet)) {
-      if (!isPreserved(row)) continue;
-      if (!isIdValue(row.values.CAM_ID) && !row.formulas.CAM_ID)
-        add('missing_sample', row, 'CAM_ID', msg('Preservada sin CAM_ID'));
-      if (
-        !isIdValue(row.values.Tube_1_id) &&
-        !row.formulas.Tube_1_id &&
-        text(row.values.Tube_1_tissue).toUpperCase() !== 'NOT_COLLECTED'
-      )
-        add('missing_sample', row, 'Tube_1_id', msg('Preservada sin Tube_1_id'));
-    }
+  for (const row of collection) {
+    if (text(row.values.Release_Collect) !== 'Collected_Preserved') continue;
+    if (!isIdValue(row.values.CAM_ID) && !row.formulas.CAM_ID)
+      add('missing_sample', row, 'CAM_ID', msg('Preservada sin CAM_ID'));
+    if (
+      !isIdValue(row.values.Tube_1_id) &&
+      !row.formulas.Tube_1_id &&
+      text(row.values.Tube_1_tissue).toUpperCase() !== 'NOT_COLLECTED'
+    )
+      add('missing_sample', row, 'Tube_1_id', msg('Preservada sin Tube_1_id'));
+  }
+  // Insectary rows: preserved by their preservation cells, and whom to ask (server/preserved.mjs).
+  for (const row of insectary) {
+    const gap = sampleGap(row.values, row.formulas);
+    if (!gap) continue;
+    const ask = askFor(store.db, row);
+    const vars = { why: gap.why, ...(ask.length ? { who: ask } : {}) };
+    if (gap.kind === 'preserved_na')
+      add(
+        'preserved_na',
+        row,
+        'Death_cause',
+        ask.length
+          ? msg('Death_cause dice preservada ({why}), pero CAM_ID y los tubos dicen NA (no preservada); pregunta a {who}', vars)
+          : msg('Death_cause dice preservada ({why}), pero CAM_ID y los tubos dicen NA (no preservada)', vars),
+        { ask, related: [ref(row, 'CAM_ID'), ref(row, 'Tube_1_id')] },
+      );
+    else
+      for (const field of gap.missing)
+        add(
+          'missing_sample',
+          row,
+          field,
+          ask.length
+            ? msg('Preservada ({why}) sin {field}; pregunta a {who}', { ...vars, field })
+            : msg('Preservada ({why}) sin {field}', { ...vars, field }),
+          { ask },
+        );
+  }
 
   // ---- A field mark on two species: an ID given twice, or a wrong species (docs/monitoring.md).
   const marks = new Map();

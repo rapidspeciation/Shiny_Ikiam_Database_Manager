@@ -52,6 +52,7 @@ export default {
   'Registrar muertes': 'Record deaths',
   'Tubos de la gradilla {rack}': 'Tubes from the rack {rack}',
   'Últimas muertes registradas': 'Latest recorded deaths',
+  'Sin CAM/tubo': 'No CAM/tube',
   '+{n} celda': '+{n} cell',
   '+{n} celdas': '+{n} cells',
   '{n} muerte guardada en Google Sheets': '{n} death saved to Google Sheets',

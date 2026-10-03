@@ -17,11 +17,18 @@
 // instead. Species that reached 30 recently and species close to it (25+) are
 // alerts; butterflies preserved after their species had 30 are listed as
 // information, not as errors.
+//
+// Preserved without CAM or tube (server/preserved.mjs): an insectary butterfly
+// whose cells say it was preserved, without its CAM_ID or Tube_1_id (or with
+// Killed_Preserved but NA in them). The ones that died in the last 180 days
+// are alerts, naming whom to ask (the initials in its notes, the app user who
+// wrote its death); the notice goes once the cells are filled.
 
 import { msg, msgn } from './messages.mjs';
 import { iso, recordsStamp, sheetRows, todaySerial } from './checks.mjs';
 import { moduleMap } from './schema.mjs';
 import { LISTS } from './verifications.mjs';
+import { askFor, sampleGap } from './preserved.mjs';
 
 export const CAM_LOW_LEFT = 50;
 export const CAM_LOW_SHARE = 0.15;
@@ -31,6 +38,8 @@ export const RULE_LOCATIONS = ['Ikiam', 'Casa de Lin', 'Mariposario Ikiam'];
 /** How long a species that reached 30 (or a range in use) stays news. */
 const RECENT_DAYS = 60;
 const ACTIVE_DAYS = 365;
+/** How long a butterfly preserved without CAM or tube stays an alert (older ones are in Revisión). */
+export const SAMPLE_DAYS = 180;
 
 const text = value => (value === null || value === undefined ? '' : String(value).trim());
 const isDate = value => typeof value === 'number' && Number.isFinite(value) && value > 0;
@@ -201,9 +210,40 @@ function preserveRule(sheets, today) {
   return { limit: PRESERVE_LIMIT, near: PRESERVE_NEAR, locations: RULE_LOCATIONS, reached, close: near };
 }
 
+/**
+ * Every insectary butterfly preserved without its CAM or tube, newest death
+ * first: { recordId, sheet, row, id, species, date (of death, else of
+ * preservation; YYYY-MM-DD), kind (missing_sample / preserved_na), missing,
+ * ask (whom to ask: [] when nobody is known) }.
+ */
+export function missingSamples(store, sheets) {
+  const out = [];
+  for (const row of sheets.get('Insectary_data') ?? []) {
+    if (!row.observed) continue;
+    const gap = sampleGap(row.values, row.formulas);
+    if (!gap) continue;
+    const day = [row.values.Death_date, row.values.Preservation_date].find(isDate) ?? null;
+    out.push({
+      recordId: row.id,
+      sheet: row.sheet,
+      row: row.row,
+      id: text(row.values.Insectary_ID) || row.label,
+      species: text(row.values.SPECIES),
+      date: day ? iso(day) : null,
+      day,
+      kind: gap.kind,
+      missing: gap.missing,
+      ask: askFor(store.db, row),
+    });
+  }
+  return out.sort((a, b) => (b.day ?? 0) - (a.day ?? 0) || b.row - a.row).map(({ day, ...s }) => s);
+}
+
 const LINK = '#/revision?vista=alertas';
+/** A row opened in the Buscador. */
+const rowLink = (sheet, search) => `#/tablas?${new URLSearchParams({ hoja: sheet, buscar: search })}`;
 /** The alerts as a list, most urgent first: { id, level (warn / info), text, textMsg, link }. */
-function alertList(cams, rule) {
+function alertList(cams, rule, samples, today) {
   const out = [];
   const add = (id, level, m, link) => out.push({ id, level, text: m.text, textMsg: m.msg, link });
   const day = date => (date ? date.split('-').reverse().join('/') : '—');
@@ -235,6 +275,19 @@ function alertList(cams, rule) {
       }),
       LINK,
     );
+  const since = iso(today - SAMPLE_DAYS);
+  for (const s of samples.filter(s => s.date && s.date >= since)) {
+    const vars = { id: s.id, species: s.species || '—', date: day(s.date), ...(s.ask.length ? { who: s.ask } : {}) };
+    const m =
+      s.kind === 'preserved_na'
+        ? s.ask.length
+          ? msg('{id} ({species}): Death_cause Killed_Preserved el {date}, pero CAM_ID y los tubos dicen NA — pregunta a {who}', vars)
+          : msg('{id} ({species}): Death_cause Killed_Preserved el {date}, pero CAM_ID y los tubos dicen NA', vars)
+        : s.ask.length
+          ? msg('{id} ({species}) preservada el {date} sin CAM/tubo — pregunta a {who}', vars)
+          : msg('{id} ({species}) preservada el {date} sin CAM/tubo', vars);
+    add(`sample:${s.recordId}`, 'warn', m, rowLink(s.sheet, s.id));
+  }
   for (const s of rule.reached.filter(s => s.recentAfter))
     add(
       `thirty-after:${s.species}`,
@@ -272,13 +325,15 @@ export function alerts(store) {
   const sheets = sheetRows(store);
   const cams = camAlerts(sheets, today);
   const rule = preserveRule(sheets, today);
+  const samples = missingSamples(store, sheets);
   const value = {
     computedAt: new Date().toISOString(),
     ms: Date.now() - started,
     thresholds: { camLeft: CAM_LOW_LEFT, camShare: CAM_LOW_SHARE },
-    alerts: alertList(cams, rule),
+    alerts: alertList(cams, rule, samples, today),
     camPools: cams,
     preserveRule: rule,
+    missingSamples: samples,
   };
   cache.set(store, { stamp, value });
   return value;

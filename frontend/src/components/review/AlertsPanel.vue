@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { AlertTriangle, Info } from 'lucide-vue-next'
+import { AlertTriangle, ExternalLink, Info } from 'lucide-vue-next'
 import { dayFirst, tablesLink, type AlertsData } from '../../lib/review'
 import { tx } from '../../lib/i18n'
 
@@ -9,10 +9,16 @@ import { tx } from '../../lib/i18n'
  * The CAM pools of the Lists sheet with what is left in each range, so a new
  * range is asked for before one runs out; and the 30-preserved rule, per
  * species: which reached 30 (mark and release from then on), which are close,
- * and which were preserved after 30, as information.
+ * and which were preserved after 30, as information. And «Preguntar al
+ * equipo»: insectary butterflies preserved without their CAM or tube, with
+ * whom to ask (the initials in their notes, the app user who wrote the death)
+ * and a button to open the row; each goes once its cells are filled.
  */
 const props = defineProps<{ data: AlertsData | null }>()
 const rule = computed(() => props.data?.preserveRule)
+const samples = computed(() => props.data?.missingSamples ?? [])
+/** An alert about one row opens it in the Buscador (the others point to this view). */
+const rowLink = (link?: string) => (link?.startsWith('#/tablas') ? link : null)
 const percentLeft = (left: number, size: number) => `${Math.round((100 * left) / size)} %`
 const levelTone: Record<string, string> = {
   low: 'bg-amber-50 text-amber-950',
@@ -39,6 +45,37 @@ const levelTone: Record<string, string> = {
               <AlertTriangle v-if="a.level === 'warn'" :size="15" class="mt-0.5 shrink-0 text-amber-700" />
               <Info v-else :size="15" class="mt-0.5 shrink-0 text-stone-500" />
               <span>{{ tx(a.text, a.textMsg) }}</span>
+              <a
+                v-if="rowLink(a.link)"
+                :href="rowLink(a.link)!"
+                class="ml-auto flex shrink-0 items-center gap-0.5 text-brand-700 hover:underline"
+                ><ExternalLink :size="13" /> {{ $t('Abrir fila') }}</a
+              >
+            </li>
+          </ul>
+        </section>
+
+        <section v-if="samples.length" class="rounded-lg border border-stone-300 bg-white p-3 shadow-sm">
+          <h2 class="font-semibold">{{ $t('Preguntar al equipo') }}</h2>
+          <p class="hint mb-2">
+            {{
+              $t(
+                'Mariposas del insectario preservadas (según Death_cause, Preserved_Dead_Alive, un tubo WHOLE_ORGANISM o Preservation_medium) sin CAM_ID o Tube_1_id, o con Killed_Preserved y NA en ellas. Se sugiere a quién preguntar: las iniciales de sus notas y quien escribió la muerte en la app. Desaparecen al rellenar las celdas.',
+              )
+            }}
+          </p>
+          <ul class="divide-y divide-stone-100 text-sm">
+            <li v-for="s in samples" :key="s.recordId" class="flex flex-wrap items-center gap-x-2 gap-y-0.5 py-1">
+              <strong class="w-12">{{ s.id }}</strong>
+              <span class="italic">{{ s.species || '—' }}</span>
+              <span class="text-xs text-stone-500">{{ dayFirst(s.date) ?? '—' }}</span>
+              <span class="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900">{{
+                s.kind === 'preserved_na' ? $t('Killed_Preserved con NA') : $t('sin {fields}', { fields: s.missing.join(', ') })
+              }}</span>
+              <span class="text-xs text-stone-600">{{
+                s.ask.length ? $t('preguntar a {who}', { who: s.ask.join(', ') }) : $t('sin nombre en la fila')
+              }}</span>
+              <a :href="tablesLink(s.sheet, s.id)" class="btn ml-auto px-2 py-0.5 text-xs"><ExternalLink :size="13" /> {{ $t('Abrir fila') }}</a>
             </li>
           </ul>
         </section>

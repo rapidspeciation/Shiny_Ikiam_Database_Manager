@@ -46,6 +46,7 @@ import {
 import { idTokens, resolveIds } from '../../lib/ids'
 import { errorText, notify } from '../../lib/notice'
 import { verificationsFor } from '../../lib/verifications'
+import type { AlertsData, MissingSample } from '../../lib/review'
 import { fillIfBlank, initialsOf } from '../../lib/rows'
 import type { CellValue, Table, TableRow } from '../../lib/types'
 import { usePending } from '../../stores/pending'
@@ -492,6 +493,24 @@ async function undo() {
   }
 }
 
+// --- Preserved without CAM or tube (server/alerts.mjs, kept by the server): an amber chip on its card and line.
+const noSample = ref(new Map<string, MissingSample>())
+onMounted(async () => {
+  try {
+    const data = await api<AlertsData>('alerts')
+    noSample.value = new Map((data.missingSamples ?? []).map(s => [s.recordId, s]))
+  } catch {
+    /* The cards work without it. */
+  }
+})
+/** Listed, and a cell it lacked still holds no ID (a CAM or tube typed here takes the chip away at once). */
+const sampleGap = (row: TableRow) => {
+  const s = noSample.value.get(row.id)
+  return s && s.missing.some(f => !/\d/.test(String(pending.value(row, f) ?? ''))) ? s : null
+}
+const sampleTitle = (s: MissingSample) =>
+  [t('Preservada sin CAM o tubo'), s.ask.length ? t('preguntar a {who}', { who: s.ask.join(', ') }) : ''].filter(Boolean).join(' · ')
+
 // --- Latest deaths, by day
 const recent = computed(() => {
   if (!props.table) return []
@@ -829,6 +848,12 @@ const choice = (on: boolean) =>
                 />
                 <span class="text-xl font-semibold">{{ row.values.Insectary_ID }}</span>
                 <LifeBadge :facts="factsFor(row)" />
+                <span
+                  v-if="sampleGap(row)"
+                  class="rounded-md bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-900"
+                  :title="sampleTitle(sampleGap(row)!)"
+                  >{{ $t('Sin CAM/tubo') }}</span
+                >
               </span>
               <span class="mt-0.5 block text-sm">{{ factsFor(row).species || '—' }}</span>
               <span class="flex items-center gap-1.5 text-xs text-stone-600"><SexBadge :sex="factsFor(row).sex" />{{ line(factsFor(row)) }}</span>
@@ -1155,7 +1180,13 @@ const choice = (on: boolean) =>
                     {{ cellText(row.values.SPECIES) }} <SexBadge :sex="cellText(row.values.Sex)" />
                   </span>
                 </span>
-                <span v-if="!isBlank(row.values.CAM_ID)" class="shrink-0 text-xs text-brand-700">{{ row.values.CAM_ID }}</span>
+                <span
+                  v-if="sampleGap(row)"
+                  class="shrink-0 rounded-md bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-900"
+                  :title="sampleTitle(sampleGap(row)!)"
+                  >{{ $t('Sin CAM/tubo') }}</span
+                >
+                <span v-else-if="!isBlank(row.values.CAM_ID)" class="shrink-0 text-xs text-brand-700">{{ row.values.CAM_ID }}</span>
               </button>
             </li>
           </ul>

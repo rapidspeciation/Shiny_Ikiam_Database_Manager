@@ -6,6 +6,9 @@ import { LocalSheets } from '../server/sheets.mjs';
 import { allIssues, checkData } from '../server/checks.mjs';
 import { createAssistant } from '../server/assistant.mjs';
 import { linkCapture, saveTrack } from '../server/monitoring.mjs';
+import { alerts } from '../server/alerts.mjs';
+import { asCell, moduleMap } from '../server/schema.mjs';
+import { noteInitials, proposalSampleWarnings, sampleGap } from '../server/preserved.mjs';
 
 const EPOCH = Date.UTC(1899, 11, 30);
 const serial = iso => Math.round((Date.parse(`${iso}T00:00:00Z`) - EPOCH) / 864e5);
@@ -152,6 +155,7 @@ test('check_data finds each kind of inconsistency, with the row, the value and t
     future_date: 1,
     bad_date: 1,
     missing_sample: 3,
+    preserved_na: 0,
     mark_reuse: 1,
     walk_doubt: 0,
     photo_camid: 0,
@@ -349,5 +353,215 @@ test('a tube listed in another sheet for the same butterfly is a reference, not 
   const repeats = allIssues(store).issues.filter(i => i.kind === 'repeat').map(i => i.value);
   assert.ok(!repeats.includes('FD30881820'));
   assert.ok(repeats.includes('FD30881999'));
+  store.close();
+});
+
+/** A seed row from field values, some cells as formulas ({ field: [formula, value] }). */
+const seedRow = (sheet, row, values, formulas = {}) => {
+  const cells = [];
+  for (const f of moduleMap.get(sheet).fields) {
+    if (f.key in formulas) cells[f.column] = formulaCell(...formulas[f.key]);
+    else if (f.key in values) cells[f.column] = asCell(values[f.key]);
+  }
+  return { row, cells };
+};
+async function preservedFixture() {
+  const insectary = (row, values, formulas) =>
+    seedRow('Insectary_data', row, { SPECIES: 'Mechanitis lysimnia', Sex: 'male', ...values }, formulas);
+  const sheets = new LocalSheets({
+    Insectary_data: [
+      // Killed for pheromones and preserved: no CAM, no tube (it came through a proposal).
+      insectary(2, {
+        Insectary_ID: 'D5D',
+        Death_date: today - 10,
+        Death_cause: 'Killed_Preserved',
+        Preserved_Dead_Alive: 'Alive',
+        Notes_Insectary_data: '1/10/26 FCH: Pheromones. Killed / preserved',
+      }),
+      // Wings only: its CAM, and Tube NA on purpose.
+      insectary(3, {
+        Insectary_ID: 'W1W',
+        Death_date: today - 300,
+        Death_cause: 'Unknown',
+        Preserved_Dead_Alive: 'Dead',
+        CAM_ID: 'CAM000100',
+        Tube_1_id: 'NA',
+      }),
+      // Its body was lost: nothing left to number.
+      insectary(4, {
+        Insectary_ID: 'L1L',
+        Death_date: today - 30,
+        Preserved_Dead_Alive: 'Dead',
+        Tube_1_tissue: 'WHOLE_ORGANISM',
+        Location_body: 'Lost',
+      }),
+      // Not preserved: NA and NOT_COLLECTED.
+      insectary(5, {
+        Insectary_ID: 'N1N',
+        Death_date: today - 15,
+        Death_cause: 'Unknown',
+        Preserved_Dead_Alive: 'NA',
+        CAM_ID: 'NA',
+        Tube_1_id: 'NA',
+        Tube_1_tissue: 'NOT_COLLECTED',
+        Preservation_medium: 'NOT_COLLECTED',
+      }),
+      // Died; its cause is written later, in the app.
+      insectary(6, {
+        Insectary_ID: 'K1K',
+        Death_date: today - 20,
+        Death_cause: 'Unknown',
+        Preserved_Dead_Alive: 'NA',
+        CAM_ID: 'NA',
+        Tube_1_id: 'NA',
+      }),
+      // A tube still to find, long ago.
+      insectary(7, {
+        Insectary_ID: 'B1B',
+        Death_date: today - 400,
+        Preserved_Dead_Alive: 'Dead',
+        CAM_ID: 'CAM000101',
+        Tube_1_id: 'BUSCAR ',
+        Tube_1_tissue: 'WHOLE_ORGANISM',
+        Notes_Insectary_data: '13-12-24 MJS: Individual preserved, put the tube inside the shipper before registering it',
+      }),
+      // The CAM is a formula: the sheet's business.
+      insectary(
+        8,
+        { Insectary_ID: 'F1F', Death_date: today - 40, Preserved_Dead_Alive: 'Alive', Preservation_medium: 'Flash frozen', Tube_1_id: 'NA' },
+        { CAM_ID: ['=IF(TRUE,"BUSCAR")', 'BUSCAR'] },
+      ),
+      // Only a preservation date: not enough to say it was preserved.
+      insectary(9, { Insectary_ID: 'P1P', Death_date: today - 100, Preservation_date: today - 100 }),
+      // Alive.
+      insectary(10, { Insectary_ID: 'A1A', Intro2Insectary_date: today - 5 }),
+    ],
+  });
+  const store = new Store({ localMode: true }, { sheets });
+  await store.sync({ sheets: ['Insectary_data'] });
+  store.db
+    .prepare(
+      "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u1','ana','Ana','editor','s','h',1,'2026-01-01')",
+    )
+    .run();
+  return store;
+}
+const ana = { id: 'u1', username: 'ana', displayName: 'Ana', role: 'editor' };
+const dayFirst = serial => isoOf(serial).split('-').reverse().join('/');
+
+test('missing_sample and preserved_na: an insectary butterfly preserved by its cells, without CAM or tube, and whom to ask', async () => {
+  const store = await preservedFixture();
+  const K1K = store.getRecordBySheetRow('Insectary_data', 6);
+  await store.applyProposal([{ recordId: K1K.id, values: { Death_cause: 'Killed_Preserved' } }], { user: ana, requestId: randomUUID() });
+
+  const out = checkData(store, { kind: 'missing_sample,preserved_na', limit: 50 });
+  sameTexts(out.issues);
+  assert.deepEqual(out.issues.map(i => `${i.kind} ${i.label} ${i.field}`).sort(), [
+    'missing_sample B1B Tube_1_id',
+    'missing_sample D5D CAM_ID',
+    'missing_sample D5D Tube_1_id',
+    'preserved_na K1K Death_cause',
+  ]);
+  const d5d = find(out, 'missing_sample', 'Insectary_data', 2, 'CAM_ID');
+  assert.equal(d5d.problem, 'Preservada (Death_cause Killed_Preserved, Preserved_Dead_Alive Alive) sin CAM_ID; pregunta a FCH');
+  assert.deepEqual(d5d.ask, ['FCH']);
+  // Whoever wrote the death in the app is named too.
+  const k1k = find(out, 'preserved_na', 'Insectary_data', 6);
+  assert.deepEqual(k1k.ask, ['Ana']);
+  assert.match(k1k.problem, /CAM_ID y los tubos dicen NA \(no preservada\); pregunta a Ana$/);
+  assert.deepEqual(find(out, 'missing_sample', 'Insectary_data', 7).ask, ['MJS']);
+
+  // Alerts: the recent ones, with whom to ask and a link to the row; the full list apart.
+  const data = alerts(store);
+  assert.deepEqual(
+    data.missingSamples.map(s => [s.id, s.kind, s.missing, s.ask]),
+    [
+      ['D5D', 'missing_sample', ['CAM_ID', 'Tube_1_id'], ['FCH']],
+      ['K1K', 'preserved_na', ['CAM_ID', 'Tube_1_id'], ['Ana']],
+      ['B1B', 'missing_sample', ['Tube_1_id'], ['MJS']],
+    ],
+  );
+  const D5D = store.getRecordBySheetRow('Insectary_data', 2);
+  const alert = data.alerts.find(a => a.id === `sample:${D5D.id}`);
+  assert.equal(alert.level, 'warn');
+  assert.equal(alert.text, `D5D (Mechanitis lysimnia) preservada el ${dayFirst(today - 10)} sin CAM/tubo — pregunta a FCH`);
+  assert.equal(alert.textMsg.key, '{id} ({species}) preservada el {date} sin CAM/tubo — pregunta a {who}');
+  assert.equal(alert.link, '#/tablas?hoja=Insectary_data&buscar=D5D');
+  assert.match(data.alerts.find(a => a.id === `sample:${K1K.id}`).text, /^K1K .*Killed_Preserved.*NA — pregunta a Ana$/);
+  // Older than 180 days: in the list, not an alert.
+  assert.ok(!data.alerts.some(a => a.text.startsWith('B1B')));
+
+  // Filled: the notice goes.
+  await store.applyProposal(
+    [{ recordId: D5D.id, values: { CAM_ID: 'CAM000103', Tube_1_id: 'FS00000103', Tube_1_tissue: 'WHOLE_ORGANISM' } }],
+    { user: ana, requestId: randomUUID() },
+  );
+  assert.ok(!alerts(store).alerts.some(a => a.id === `sample:${D5D.id}`));
+  assert.equal(checkData(store, { kind: 'missing_sample' }).total, 1);
+  store.close();
+});
+
+test('sampleGap: what counts as preserved, and what counts as missing', () => {
+  const gap = values => sampleGap(values)?.kind ?? null;
+  assert.equal(gap({ Death_cause: 'Killed_Preserved', CAM_ID: 'CAM000001', Tube_1_id: 'FS00000001' }), null);
+  assert.equal(gap({ Preserved_Dead_Alive: 'Dead', CAM_ID: 'CAM000001', Tube_1_id: '' }), 'missing_sample');
+  assert.equal(gap({ Tube_2_tissue: 'WHOLE_ORGANISM', CAM_ID: 'CAM000001', Tube_1_tissue: 'NOT_COLLECTED' }), null);
+  assert.equal(gap({ Preservation_medium: 'Ethanol', CAM_ID: '', Tube_1_id: 'NA' }), 'missing_sample');
+  assert.equal(gap({ Preservation_medium: 'NOT_COLLECTED', Preservation_date: 46000 }), null);
+  // Killed_Preserved with NA everywhere: the cause and the cells disagree; with a tube, it is the wings-only kind.
+  assert.equal(gap({ Death_cause: 'Killed_Preserved', CAM_ID: 'NA', Tube_1_id: 'NA' }), 'preserved_na');
+  assert.equal(gap({ Death_cause: 'Killed_Preserved', CAM_ID: 'NA', Tube_1_id: 'NA', Tube_2_id: 'FS00000002' }), null);
+  // Notes never decide it; they only say whom to ask.
+  assert.equal(gap({ Notes_Insectary_data: '1/10/26 FCH: Killed / preserved' }), null);
+  assert.deepEqual(noteInitials({ Notes_Insectary_data: '9/10/23 AA: Emerge failed | 1/10/26 FCH: Killed', Other: '2/2/26 ZZ: x' }), [
+    'FCH',
+    'AA',
+  ]);
+});
+
+test('a proposal that would leave a butterfly preserved without CAM or tube marks those cells before it is applied', async () => {
+  const store = await preservedFixture();
+  const A1A = store.getRecordBySheetRow('Insectary_data', 10);
+  const killed = {
+    sheet: 'Insectary_data',
+    recordId: A1A.id,
+    values: { Death_date: today, Death_cause: 'Killed_Preserved', Preserved_Dead_Alive: 'Alive' },
+  };
+  assert.deepEqual(Object.keys(proposalSampleWarnings(killed, A1A)), ['CAM_ID', 'Tube_1_id']);
+  assert.equal(proposalSampleWarnings(killed, A1A).CAM_ID.text, 'Preservada sin CAM_ID: pregunta a quien la preservó');
+  const filled = { ...killed, values: { ...killed.values, CAM_ID: 'CAM000104', Tube_1_id: 'FS00000104' } };
+  assert.equal(proposalSampleWarnings(filled, A1A), null);
+  // A note on an old row with a gap: that gap is Revisión's, not this proposal's.
+  const B1B = store.getRecordBySheetRow('Insectary_data', 7);
+  assert.equal(proposalSampleWarnings({ sheet: 'Insectary_data', recordId: B1B.id, values: { Notes_Insectary_data: 'x' } }, B1B), null);
+  assert.ok(proposalSampleWarnings({ sheet: 'Insectary_data', create: true, values: { Death_cause: 'Killed_Preserved' } }, null));
+
+  // Through the assistant: its answer says so, and the table shows those cells, marked.
+  const assistant = createAssistant({ store, config: {} });
+  const token = 'token-for-ana';
+  store.db
+    .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
+    .run(createHash('sha256').update(token).digest('hex'), 'u1');
+  const out = await assistant.mcp(
+    { authorization: `Bearer ${token}` },
+    {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'propose_changes',
+        arguments: {
+          reason: 'A1A killed for pheromones',
+          changes: [{ recordId: A1A.id, values: { Death_date: isoOf(today), Death_cause: 'Killed_Preserved', Preserved_Dead_Alive: 'Alive' } }],
+        },
+      },
+    },
+  );
+  const proposed = JSON.parse(out.body.result.content[0].text);
+  assert.deepEqual(proposed.preservedWithoutSample, [{ index: 0, label: 'A1A', missing: ['CAM_ID', 'Tube_1_id'] }]);
+  const listed = await assistant.handle({ method: 'GET', path: '/api/chat/proposals', user: ana, query: {} });
+  const view = listed.body.proposals.find(p => p.id === proposed.proposalId);
+  assert.deepEqual(Object.keys(view.changes[0].warnings), ['CAM_ID', 'Tube_1_id']);
+  assert.ok(view.fields.includes('CAM_ID') && view.fields.includes('Tube_1_id'));
   store.close();
 });

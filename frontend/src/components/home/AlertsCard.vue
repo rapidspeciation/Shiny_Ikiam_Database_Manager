@@ -9,7 +9,8 @@ import { useSession } from '../../stores/session'
 
 /**
  * Inicio: the team's alerts (server/alerts.mjs): a CAM range running out, a
- * species that reached 30 preserved, species close to it. Hidden when there is
+ * species that reached 30 preserved, species close to it, a butterfly preserved
+ * without CAM or tube (its text opens the row). Hidden when there is
  * nothing to say; the details are in Revisión → Alertas.
  */
 const session = useSession()
@@ -45,7 +46,8 @@ const alerts = computed(() => data.value?.alerts ?? [])
       >
         <AlertTriangle v-if="a.level === 'warn'" :size="15" class="mt-0.5 shrink-0 text-amber-700" />
         <Info v-else :size="15" class="mt-0.5 shrink-0 text-stone-500" />
-        <span>{{ tx(a.text, a.textMsg) }}</span>
+        <a v-if="a.link?.startsWith('#/tablas')" :href="a.link" class="hover:underline">{{ tx(a.text, a.textMsg) }}</a>
+        <span v-else>{{ tx(a.text, a.textMsg) }}</span>
       </li>
     </ul>
     <p v-if="alerts.length > SHOWN" class="mt-1 text-xs text-stone-500">

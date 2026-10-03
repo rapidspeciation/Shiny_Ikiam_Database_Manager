@@ -15,6 +15,7 @@ import { KINDS, isNone, noteText } from './notebook.mjs';
 import { RECORD_TOOLS, compactRecord, countRecords, findRecords } from './records-tool.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
 import { insectaryIdRow, newRowFormulaFields } from './premade.mjs';
+import { proposalSampleWarnings } from './preserved.mjs';
 import { carryChecks, dropDoubt, setChecked, uncheckedDoubts, unfilledUnreadable, withoutUnchecked } from './doubts.mjs';
 import { KNOWLEDGE_TOOLS, createKnowledge, runKnowledgeTool } from './knowledge.mjs';
 import { HISTORY_TOOLS, HISTORY_TOOL_NAMES, runHistoryTool } from './history.mjs';
@@ -144,7 +145,7 @@ const TOOLS = [
           kind: {
             type: 'string',
             description:
-              'Comma-separated: repeat (a unique ID or a tube in two rows), cam_cross (one CAM on two butterflies across Collection_data and Insectary_data / Wing_tissue), list (outside a strict list), insectary_link (Collected_Sent2Insectary without its Insectary_data row, or the reverse), link_mismatch (the two rows of one butterfly disagree), date_order, future_date, bad_date (no date in a date column), missing_sample (preserved without CAM_ID or Tube_1_id), mark_reuse (a FieldMark_ID on two species), walk_doubt (a Wikiloc point stored without a row, its pairing doubtful: row = the likeliest or null, related = the candidates; a person pairs it in Monitoreo → Dudas, not with propose_changes), photo_camid (envelope CAM ≠ photo file name: Drive task), photo_extra (another butterfly\'s photos in a CAM folder: Drive task), envelope_sex, envelope_species (ocr = {read, sheet}; group = the batch), photo_missing (preserved over 30 days, no photos), ai_species (the Wings Gallery model sees another species; a person decides)',
+              'Comma-separated: repeat (a unique ID or a tube in two rows), cam_cross (one CAM on two butterflies across Collection_data and Insectary_data / Wing_tissue), list (outside a strict list), insectary_link (Collected_Sent2Insectary without its Insectary_data row, or the reverse), link_mismatch (the two rows of one butterfly disagree), date_order, future_date, bad_date (no date in a date column), missing_sample (preserved without CAM_ID or Tube_1_id; ask = initials in its notes and the app user who wrote its death, the people to ask), preserved_na (Death_cause Killed_Preserved but CAM_ID NA and no tube: the cause and the preservation cells disagree), mark_reuse (a FieldMark_ID on two species), walk_doubt (a Wikiloc point stored without a row, its pairing doubtful: row = the likeliest or null, related = the candidates; a person pairs it in Monitoreo → Dudas, not with propose_changes), photo_camid (envelope CAM ≠ photo file name: Drive task), photo_extra (another butterfly\'s photos in a CAM folder: Drive task), envelope_sex, envelope_species (ocr = {read, sheet}; group = the batch), photo_missing (preserved over 30 days, no photos), ai_species (the Wings Gallery model sees another species; a person decides)',
           },
           recordId: { type: 'string', description: 'Only the issues of this row' },
           limit: { type: 'integer', description: '1 to 200, default 50' },
@@ -301,6 +302,7 @@ const TOOLS = [
           'Read-only alerts (`alerts`: the texts the app shows, in Spanish).',
           '- camPools: the CAM pools of the Lists sheet; per range its size, used, highest, next free, left above the highest used, gaps and last use. A range in use with fewer than 50 or 15 % left is an alert (PAS or AA hand out new ranges).',
           '- preserveRule: the 30-preserved rule: Ithomiini species with 30 or more Collected_Preserved from Ikiam, Casa de Lin or Mariposario Ikiam, the day each reached 30 and those preserved after it; close = species at 25–29.',
+          '- missingSamples: insectary butterflies preserved (by their preservation cells) without CAM_ID or Tube_1_id, or Killed_Preserved with NA in them (kind preserved_na); ask = whom to ask (initials in the notes, the app user who wrote the death). Those that died in the last 180 days are alerts.',
         ].join('\n'),
       parameters: { type: 'object', properties: {} },
     },
@@ -908,10 +910,21 @@ export function createAssistant({ store, config = {} }) {
     const issueIds = Array.isArray(args.issueIds) ? args.issueIds.slice(0, 500).map(i => clip(i, 200)) : [];
     const { id } = saveProposal(changes, args.reason, context, issueIds);
     const dropped = [...new Set(changes.flatMap(c => c.dropped ?? []))];
+    const noSample = changes.flatMap((c, index) => {
+      const warned = proposalSampleWarnings(c, c.create ? null : store.getRecord(c.recordId));
+      return warned ? [{ index, label: c.label, missing: Object.keys(warned) }] : [];
+    });
     return {
       proposalId: id,
       rows: changes.length,
       status: 'waiting for the person to confirm',
+      ...(noSample.length
+        ? {
+            preservedWithoutSample: noSample,
+            preservedWithoutSampleNote:
+              'These rows leave a preserved butterfly without its CAM_ID or Tube_1_id; the table marks those cells. Ask the person for them (or who preserved it).',
+          }
+        : {}),
       ...(dropped.length ? { leftOut: `Formula columns left out of the new rows: ${dropped.join(', ')}` } : {}),
       ...(ignored.length ? { noChange: ignored.slice(0, 50), noChangeNote: 'null means no change: these cells keep the sheet value. To empty one give {"clear": true}.' } : {}),
       // Row indexes for update_proposal (new rows first, then edits of existing rows).
@@ -1386,9 +1399,16 @@ export function createAssistant({ store, config = {} }) {
     const changes = (row?.changes_json && parse(row.changes_json)) || proposal.changes;
     const status = row?.status ?? proposal.status;
     const open = status === 'pending';
+    // A butterfly the row would leave preserved without CAM or tube: those cells are marked (and shown) until filled.
+    const warned = changes.map(c => (open ? proposalSampleWarnings(c, c.create ? null : store.getRecord(c.recordId)) : null));
     const fields = [
       ...new Set(
-        changes.flatMap(c => [...Object.keys(c.values), ...Object.keys(c.personEdits ?? {}), ...Object.keys(c.unreadable ?? {})]),
+        changes.flatMap((c, i) => [
+          ...Object.keys(c.values),
+          ...Object.keys(c.personEdits ?? {}),
+          ...Object.keys(c.unreadable ?? {}),
+          ...Object.keys(warned[i] ?? {}),
+        ]),
       ),
     ];
     const sheets = [...new Set(changes.map(c => c.sheet))];
@@ -1418,6 +1438,7 @@ export function createAssistant({ store, config = {} }) {
         const record = recordId ? store.getRecord(recordId) : null;
         return {
           ...change,
+          ...(warned[index] ? { warnings: warned[index] } : {}),
           key: rowKey(change),
           recordId,
           index,
