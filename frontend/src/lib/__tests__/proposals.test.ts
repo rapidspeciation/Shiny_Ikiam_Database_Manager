@@ -8,6 +8,7 @@ import {
   notApplied,
   panelShare,
   rowsToWrite,
+  sampleWarnings,
   selectionActions,
   sheetGroups,
   uncheckedDoubts,
@@ -245,6 +246,21 @@ describe('unreadable cells', () => {
     const back = withLocal(typed, new Map([[cellId('r1', 'Death_date'), { value: null, use: 'sheet' }]]))
     expect(cellOf(back.changes[0], 'Death_date').kind).toBe('unreadable')
     expect(unfilledUnreadable(back)).toHaveLength(1)
+  })
+  it('a preserved butterfly left without CAM or tube: those cells are marked and shown, and counted per row', () => {
+    const why = { text: 'Preservada sin CAM_ID: pregunta a quien la preservó' }
+    const row = edited(
+      'r1',
+      { Death_cause: 'Killed_Preserved' },
+      { sheet: 'Insectary_data', current: { Death_cause: null }, warnings: { CAM_ID: why, Tube_1_id: why } },
+    )
+    expect(cellOf(row, 'CAM_ID')).toMatchObject({ kind: 'sheet', value: null, warning: why })
+    expect(cellOf(row, 'Death_cause').warning).toBeUndefined()
+    expect(sheetGroups(proposal([row]))[0].fields).toEqual(expect.arrayContaining(['CAM_ID', 'Tube_1_id']))
+    expect(sampleWarnings(proposal([row])).map(w => [w.key, w.field])).toEqual([
+      ['r1', 'CAM_ID'],
+      ['r1', 'Tube_1_id'],
+    ])
   })
   it('in a context row (never written) do not count', () => {
     const p = proposal([edited('r1', {}, { context: true, unreadable: { Sex: {} } })])

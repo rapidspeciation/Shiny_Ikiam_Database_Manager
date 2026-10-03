@@ -73,6 +73,11 @@ export interface ProposalChange {
   /** Columns the notebook line does not write: the page's room, a template, the note's words. */
   inferred?: string[]
   hints?: Record<string, Hint>
+  /**
+   * Cells the row would leave empty on a butterfly preserved without its CAM or
+   * tube (server/preserved.mjs), with why: marked until someone fills them.
+   */
+  warnings?: Record<string, Hint>
   /** A notebook line shown only for context: never written. */
   context?: boolean
 }
@@ -125,6 +130,8 @@ export interface CellInfo {
   hint?: Hint
   /** The assistant could not read this cell (still empty when `kind` is 'unreadable', filled otherwise). */
   unreadable?: Unreadable
+  /** A preserved butterfly would be left without this cell (its CAM or tube): ask for it before applying. */
+  warning?: Hint
 }
 export function cellOf(change: ProposalChange, field: string, newRowFormulas: string[] = []): CellInfo {
   const mark = change.personEdits?.[field]
@@ -133,7 +140,8 @@ export function cellOf(change: ProposalChange, field: string, newRowFormulas: st
   const aiProposed = !!mark && 'ai' in mark
   const doubt = change.doubts?.[field]
   const unreadable = change.unreadable?.[field]
-  const extra = { doubt, hint: change.hints?.[field], ...(unreadable ? { unreadable } : {}) }
+  const warning = change.warnings?.[field]
+  const extra = { doubt, hint: change.hints?.[field], ...(unreadable ? { unreadable } : {}), ...(warning ? { warning } : {}) }
   if (field in change.values) {
     const kind: CellKind = mark ? 'person' : 'proposed'
     return {
@@ -172,6 +180,14 @@ export function uncheckedDoubts(p: Pick<Proposal, 'changes'>, indexes?: number[]
   return out
 }
 
+/** The cells marked as missing on a preserved butterfly (its CAM or tube), as rowKey + field, with the row's index. */
+export function sampleWarnings(p: Pick<Proposal, 'changes'>) {
+  const out: { key: string; field: string; index: number }[] = []
+  for (const c of p.changes)
+    if (!c.context) for (const field of Object.keys(c.warnings ?? {})) out.push({ key: rowKey(c), field, index: c.index })
+  return out
+}
+
 /**
  * The unreadable cells still empty (as rowKey + field, with the row's index):
  * the same rule as the server's (unfilledUnreadable in server/doubts.mjs).
@@ -200,7 +216,12 @@ export function sheetGroups(
   return sheets.map(sheet => {
     const changes = p.changes.filter(c => c.sheet === sheet)
     const used = new Set(
-      changes.flatMap(c => [...Object.keys(c.values), ...Object.keys(c.personEdits ?? {}), ...Object.keys(c.unreadable ?? {})]),
+      changes.flatMap(c => [
+        ...Object.keys(c.values),
+        ...Object.keys(c.personEdits ?? {}),
+        ...Object.keys(c.unreadable ?? {}),
+        ...Object.keys(c.warnings ?? {}),
+      ]),
     )
     const columns = order(sheet)
     const fields = columns ? columns.filter(f => used.has(f)) : p.fields.filter(f => used.has(f))

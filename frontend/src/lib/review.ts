@@ -350,6 +350,19 @@ export interface Alert {
   textMsg?: Msg
   link?: string
 }
+/** An insectary butterfly preserved without its CAM or tube (server/preserved.mjs), and whom to ask. */
+export interface MissingSample {
+  recordId: string
+  sheet: string
+  row: number
+  id: string
+  species: string
+  /** Of death (else of preservation), YYYY-MM-DD. */
+  date: string | null
+  kind: 'missing_sample' | 'preserved_na'
+  missing: string[]
+  ask: string[]
+}
 export interface AlertsData {
   computedAt: string
   thresholds: { camLeft: number; camShare: number }
@@ -372,4 +385,5 @@ export interface AlertsData {
     }[]
     close: { species: string; preserved: number; left: number; lastPreserved: string | null }[]
   }
+  missingSamples?: MissingSample[]
 }

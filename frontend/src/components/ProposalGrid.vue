@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { Check, CircleHelp, Plus, Sparkles, SquarePen, X } from 'lucide-vue-next'
+import { AlertTriangle, Check, CircleHelp, Plus, Sparkles, SquarePen, X } from 'lucide-vue-next'
 import ProposalSheet, { type CellEdit } from './assistant/ProposalSheet.vue'
 import { api } from '../lib/api'
 import { displayValue } from '../lib/cells'
@@ -14,6 +14,7 @@ import {
   rowKey,
   rowsToWrite,
   sheetGroups,
+  sampleWarnings,
   uncheckedDoubts,
   unfilledUnreadable,
   withLocal,
@@ -246,6 +247,8 @@ let savedRevision = 0
 /** Doubtful cells nobody reviewed yet (in the whole table, and in the rows "Aplicar" writes). */
 const doubtful = computed(() => uncheckedDoubts(shown.value))
 const doubtfulToWrite = computed(() => uncheckedDoubts(shown.value, chosen.value))
+/** The CAM or tube a preserved butterfly would be left without: marked in the table until filled. */
+const noSample = computed(() => sampleWarnings(shown.value))
 /** Unreadable cells nobody filled yet: applying leaves them as the sheet has them. */
 const unreadable = computed(() => unfilledUnreadable(shown.value))
 /** The dialog "Aplicar" opens while doubtful cells are unreviewed, or unreadable ones empty. */
@@ -333,6 +336,14 @@ const statusText = computed(
         <SquarePen :size="12" />
         {{ $tn(unreadable.length, '{n} celda ilegible por rellenar', '{n} celdas ilegibles por rellenar') }}
       </button>
+      <span
+        v-if="pending && noSample.length"
+        class="warn-count"
+        :title="$t('Estas filas dejan una mariposa preservada sin CAM_ID o Tube_1_id (celdas en ámbar): pregunta a quien la preservó y escríbelos aquí')"
+      >
+        <AlertTriangle :size="12" />
+        {{ $tn(new Set(noSample.map(w => w.key)).size, '{n} preservada sin CAM o tubo', '{n} preservadas sin CAM o tubo') }}
+      </span>
     </p>
     <div v-for="g in groups" :key="g.sheet" class="border-b border-stone-100 last:border-b-0">
       <!-- The table and its bar, where ProposalSheet adds the buttons for the selected cells (Valor de la hoja / de la IA). -->

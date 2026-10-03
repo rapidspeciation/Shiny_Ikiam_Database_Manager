@@ -80,6 +80,15 @@ export default {
   '{field} es {date}, después de hoy': '{field} is {date}, after today',
   'Preservada sin CAM_ID': 'Preserved without CAM_ID',
   'Preservada sin Tube_1_id': 'Preserved without Tube_1_id',
+  'Preservada ({why}) sin {field}': 'Preserved ({why}) without {field}',
+  'Preservada ({why}) sin {field}; pregunta a {who}': 'Preserved ({why}) without {field}; ask {who}',
+  'Death_cause dice preservada ({why}), pero CAM_ID y los tubos dicen NA (no preservada)':
+    'Death_cause says preserved ({why}), but CAM_ID and the tubes say NA (not preserved)',
+  'Death_cause dice preservada ({why}), pero CAM_ID y los tubos dicen NA (no preservada); pregunta a {who}':
+    'Death_cause says preserved ({why}), but CAM_ID and the tubes say NA (not preserved); ask {who}',
+  'Preservada sin {field}: pregunta a quien la preservó': 'Preserved without {field}: ask who preserved it',
+  'Death_cause dice Killed_Preserved, pero {field} es NA: pregunta a quien la preservó':
+    'Death_cause says Killed_Preserved, but {field} is NA: ask who preserved it',
   '{mark} ya se usó para {species} (fila {row}, {date}); aquí es {here}':
     '{mark} was already used for {species} (row {row}, {date}); here it is {here}',
   '{mark} ya se usó para {species} (fila {row}); aquí es {here}':
@@ -276,6 +285,12 @@ export default {
     '{species}: {n} preserved in the last 60 days after reaching {limit} ({total} in all).',
   '{species}: {preserved} preservadas, falta {n} para {limit}.': '{species}: {preserved} preserved, {n} more to {limit}.',
   '{species}: {preserved} preservadas, faltan {n} para {limit}.': '{species}: {preserved} preserved, {n} more to {limit}.',
+  '{id} ({species}) preservada el {date} sin CAM/tubo — pregunta a {who}': '{id} ({species}) preserved on {date} without CAM/tube — ask {who}',
+  '{id} ({species}) preservada el {date} sin CAM/tubo': '{id} ({species}) preserved on {date} without CAM/tube',
+  '{id} ({species}): Death_cause Killed_Preserved el {date}, pero CAM_ID y los tubos dicen NA — pregunta a {who}':
+    '{id} ({species}): Death_cause Killed_Preserved on {date}, but CAM_ID and the tubes say NA — ask {who}',
+  '{id} ({species}): Death_cause Killed_Preserved el {date}, pero CAM_ID y los tubos dicen NA':
+    '{id} ({species}): Death_cause Killed_Preserved on {date}, but CAM_ID and the tubes say NA',
   // server/suggestions/wikiloc-transects.mjs: corrections from the Wikiloc points
   'Transecto y hora desde Wikiloc': 'Transect and time from Wikiloc',
   'Sección del transecto (1–4) calculada con la posición del punto de Wikiloc de cada captura de monitoreo, y la hora de la nota cuando la fila tiene otra.':

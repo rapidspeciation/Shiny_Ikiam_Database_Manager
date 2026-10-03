@@ -55,6 +55,8 @@ import CellBar from '../CellBar.vue'
  * Cells the assistant could not read at all are hatched red with an
  * "unreadable" tag, empty: the person types them (the bar gives why and what
  * of it was read, to complete); left empty, applying does not write them.
+ * The CAM or tube a preserved butterfly would be left without (server/preserved.mjs)
+ * are amber with a "missing" tag until someone fills them.
  */
 export interface CellEdit {
   key: string
@@ -157,6 +159,7 @@ function toRow(c: ProposalChange): Row {
     JSON.stringify(c.personEdits ?? null) +
     JSON.stringify(c.doubts ?? null) +
     JSON.stringify(c.unreadable ?? null) +
+    JSON.stringify(c.warnings ?? null) +
     (props.editable ? 'e' : '') +
     Object.keys(c.values).length
   return out
@@ -183,11 +186,13 @@ function formatter(field: string) {
     el.classList.toggle('is-doubtful', c.doubtful)
     el.classList.toggle('is-inferred', c.inferred)
     el.classList.toggle('is-unreadable', c.kind === 'unreadable')
+    el.classList.toggle('is-warned', !!c.warning)
     const was = c.was === undefined ? '' : show(field, c.was) || t('vacío')
     const ai = show(field, c.ai) || t('vacío')
     const before = change.replaceFormula?.includes(field) ? 'Antes: {value} (fórmula)' : 'Antes: {value}'
     el.title = [
       problem,
+      c.warning ? tx(c.warning.text, c.warning.msg) : '',
       c.doubtful ? doubtText(field, c) : '',
       c.inferred && c.hint ? tx(c.hint.text, c.hint.msg) : '',
       c.kind === 'proposed' && !change.create ? t(before, { value: was }) : '',
@@ -214,6 +219,16 @@ function formatter(field: string) {
       .filter(Boolean)
       .join('\n')
     const text = show(field, c.value)
+    // A preserved butterfly would be left without it: an amber "missing" tag, then what the cell holds.
+    if (c.warning && c.kind !== 'unreadable') {
+      const box = document.createElement('span')
+      const mark = document.createElement('span')
+      mark.className = 'warn-mark'
+      mark.textContent = t('falta')
+      box.append(mark)
+      if (text) box.append(' ', withTotal(field, c.value, text))
+      return box
+    }
     // Nobody could read it: its tag, then the sheet's value if the row has one (it stays).
     if (c.kind === 'unreadable') {
       const box = document.createElement('span')
@@ -303,6 +318,7 @@ function drawnText(change: ProposalChange, field: string) {
         : ''
   // The "?" of a doubtful cell takes about two letters; an unreadable cell's tag about its word.
   if (cell.kind === 'unreadable') return `${t('ilegible')}   ${textWithTotal(field, cell.value)}`
+  if (cell.warning) return `${t('falta')}   ${textWithTotal(field, cell.value)}`
   return (cell.doubtful ? '?  ' : '') + textWithTotal(field, cell.value) + beside
 }
 
@@ -407,6 +423,7 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
   const notes: CellBarNote[] = []
   const total = totalOf(field, c.value)
   if (total !== null) notes.push({ text: `= ${total}`, kind: 'total' })
+  if (c.warning) notes.push({ label: t('Falta'), text: tx(c.warning.text, c.warning.msg), kind: 'doubt' })
   // What the sheet has now (an existing row), and what the assistant proposed when the person changed it.
   if (!change.create && (c.kind === 'proposed' || c.kind === 'person'))
     notes.push({ label: t('Hoja'), text: editText$(field, c.was) || t('vacío'), kind: 'sheet' })
