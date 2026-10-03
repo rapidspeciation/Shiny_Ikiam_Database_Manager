@@ -13,7 +13,8 @@ import { t } from '../../lib/i18n'
 /**
  * A clutch's parents and NOTES, near the top of its editor. The parents live
  * in NOTES for now ("U8A♀ + C8B♂", older "F1 clutch parents J7A + P5A"): shown
- * as ♀ mother and ♂ father, and changing them rewrites that part of the note
+ * as ♀ mother and ♂ father (only family clutches have them: without parents the
+ * part is one line with «Escribir padres»), and changing them rewrites that part of the note
  * in the standard form (or adds it as a new dated note). The notes are listed
  * one by one; a new one is dated and signed and goes after them (" | ", never
  * replacing them), and «Corregir las notas» edits the cell's whole text. Every
@@ -124,14 +125,14 @@ watch(
 <template>
   <div>
     <!-- Parents, read from NOTES: ♀ mother and ♂ father. -->
-    <section class="py-3" :aria-label="$t('Padres')">
-      <div class="mb-1 flex items-center gap-2">
-        <span class="field-label mb-0 flex-1">{{ $t('Padres (en NOTES)') }}</span>
-        <button v-if="editable && !pickingParents" type="button" class="btn h-11 px-3" @click="openParents">
+    <section v-if="written || pickingParents || editable" class="py-3" :aria-label="$t('Padres')">
+      <div class="flex items-center gap-2" :class="{ 'mb-1': written || pickingParents }">
+        <span class="field-label mb-0 flex-1">{{ written || pickingParents ? $t('Padres (en NOTES)') : $t('Padres') }}</span>
+        <button v-if="editable && !pickingParents" type="button" :class="written ? 'btn h-11 px-3' : 'flex h-11 items-center gap-1 px-1 text-sm text-stone-600 underline'" @click="openParents">
           <PencilLine :size="16" /> {{ written ? $t('Corregir padres') : $t('Escribir padres') }}
         </button>
       </div>
-      <div v-if="!pickingParents" class="grid grid-cols-2 gap-2">
+      <div v-if="!pickingParents && written" class="grid grid-cols-2 gap-2">
         <button
           v-for="p in [
             { sex: 'female', name: $t('Madre'), id: written?.female ?? '' },
@@ -149,7 +150,7 @@ watch(
           <span v-if="p.id && about(p.id)" class="w-full truncate text-xs text-stone-500">{{ about(p.id) }}</span>
         </button>
       </div>
-      <div v-else class="rounded-lg border border-stone-200 p-2">
+      <div v-else-if="pickingParents" class="rounded-lg border border-stone-200 p-2">
         <ParentsPicker v-model:female="female" v-model:male="male" :parents="parents" :species="species" />
         <p v-if="parentsPreview" class="mt-2 text-xs text-stone-600">
           {{ written ? $t('NOTES quedará así:') : $t('Se añade a NOTES:') }}
