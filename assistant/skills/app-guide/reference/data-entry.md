@@ -34,8 +34,8 @@ The tables behave like Google Sheets:
   years 1990–2099 only. Dates show as `14-Aug-25`. The date boxes above the
   grids (Colecta, Muertes, Tubos, Emergidos, Clutches, Historial, Revisión)
   also take `hoy` and `ayer`, and show the weekday ("sábado 27-Sep-26 · ayer").
-- Phones: tap selects, double tap edits, drag the circle to stretch the
-  selection, and a bar at the bottom offers Copiar, Pegar, «Rellenar ↓», Borrar.
+- Phones: tap selects, a second tap on the selected cell edits, drag the
+  circle to stretch the selection, and a bar at the bottom offers Copiar, Pegar, «Rellenar ↓», Borrar.
 
 ## Buscador — `#/tablas`
 

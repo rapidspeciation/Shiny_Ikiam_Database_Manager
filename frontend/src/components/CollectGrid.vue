@@ -390,7 +390,8 @@ onMounted(() => {
       return false
     },
     clipboardPasteAction: () => [],
-    columnDefaults: { headerSort: false },
+    // Widths change from the header's borders only (see gridKit): a finger on the rows scrolls.
+    columnDefaults: { headerSort: false, resizable: 'header' },
   } as unknown as ConstructorParameters<typeof Tabulator>[1])
   table.on('tableBuilt', () => {
     built = true

@@ -177,7 +177,7 @@ const headerNotice = computed(() => {
       }}</template>
       <template v-else>{{
         $t(
-          'Escribe sobre una celda o haz doble clic para editar · pega rangos desde Excel o Sheets · Ctrl+D rellena hacia abajo · las celdas grises son fórmulas · clic en el número de fila para ver la fila completa.',
+          'Escribe sobre una celda, o pulsa Enter o doble clic para editarla · pega rangos desde Excel o Sheets · Ctrl+D rellena hacia abajo · las celdas grises son fórmulas · clic en el número de fila para ver la fila completa.',
         )
       }}</template>
     </p>
