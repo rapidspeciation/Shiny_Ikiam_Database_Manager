@@ -33,7 +33,7 @@ Historial: skill **historial**.
 | Tab | Route | For | Writes to |
 |---|---|---|---|
 | Inicio | `#/inicio` | summaries; for the team: last IDs used, next Insectary ID and clutch, upcoming hatch/pupa/emergence | — |
-| Buscador | `#/tablas?hoja=…&buscar=…` | any sheet as an editable spreadsheet | the chosen sheet |
+| Buscador | `#/tablas?buscar=…&hoja=…`, `#/tablas?hoja=…&fila=…` | a text in every sheet, each match among its neighbouring rows; any sheet as an editable spreadsheet | the sheet edited |
 | Colecta | `#/colecta` | a day of field collection in bulk | Collection_data (+ Insectary_data for live ones) |
 | Monitoreo | `#/monitoreo?vista=…` | Ikiam transects T1–T4: Wikiloc walks, report, map, recaptures, doubtful pairings | Collection_data, SamplingDay_data |
 | Muertes | `#/muertes` | death date and cause of insectary butterflies | Insectary_data |

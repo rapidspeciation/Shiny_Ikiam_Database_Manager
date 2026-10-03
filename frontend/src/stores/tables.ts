@@ -25,7 +25,8 @@ export function toRow(record: ServerRecord): TableRow {
   }
 }
 
-type WireRow = { id: string; row: number; version: number; observed: boolean; v: TableRow['values'][string][]; f: number[] }
+/** A row as the server sends it: values in column order, formula cells by column index. */
+export type WireRow = { id: string; row: number; version: number; observed: boolean; v: TableRow['values'][string][]; f: number[] }
 
 /** GET /api/table sends rows as arrays in column order to keep the payload small. */
 interface TableWire {
@@ -46,7 +47,7 @@ interface TableDelta {
   removed: string[]
 }
 
-function rowFromWire(keys: string[], r: WireRow): TableRow {
+export function rowFromWire(keys: string[], r: WireRow): TableRow {
   const values: TableRow['values'] = {}
   keys.forEach((key, i) => {
     // Duplicate header names keep the first column's value.
