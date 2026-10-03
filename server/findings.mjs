@@ -38,7 +38,7 @@ function solvingChange(db, finding, since) {
   const query = db.prepare(
     `SELECT a.id, a.actor, a.purpose, a.created_at, c.field, c.before_json, c.after_json
      FROM changes c JOIN actions a ON a.id = c.action_id
-     WHERE c.record_id = ? AND a.created_at >= ? AND a.status != 'failed'
+     WHERE c.record_id = ? AND c.moved = 0 AND a.created_at >= ? AND a.status != 'failed'
      ORDER BY (c.field = ?) DESC, a.created_at DESC LIMIT 1`,
   );
   for (const recordId of [finding.record_id, ...(parse(finding.extra_json)?.others ?? [])]) {

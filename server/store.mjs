@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync, chmodSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { modules, moduleMap, labelFor, validateValues, comparable, nextInsectaryId, makeSourceUrl } from './schema.mjs';
-import { GoogleSheets, LocalSheets, rowKey, rowValues } from './sheets.mjs';
+import { GoogleSheets, LocalSheets, formulaRowShift, rowKey, rowValues } from './sheets.mjs';
 import { headerLayout, sameLayout } from './columns.mjs';
 import { applyBatch } from './batch.mjs';
 import { initMonitoring } from './monitoring.mjs';
@@ -292,13 +292,14 @@ export class Store {
       args.push(purpose);
     }
     if (recordId) {
-      clauses.push('EXISTS(SELECT 1 FROM changes c WHERE c.action_id=a.id AND c.record_id=?)');
+      // Formulas a sync logged only because the row moved (changes.moved) are no change of the row.
+      clauses.push('EXISTS(SELECT 1 FROM changes c WHERE c.action_id=a.id AND c.record_id=? AND c.moved=0)');
       args.push(recordId);
     }
     if (q) {
       const like = `%${String(q).replace(/[\\%_]/g, m => '\\' + m)}%`;
       clauses.push(`(a.reason LIKE ? ESCAPE '\\' OR EXISTS(SELECT 1 FROM changes c LEFT JOIN records r ON r.id=c.record_id
-        WHERE c.action_id=a.id AND (r.label LIKE ? ESCAPE '\\' OR c.field LIKE ? ESCAPE '\\' OR c.before_json LIKE ? ESCAPE '\\' OR c.after_json LIKE ? ESCAPE '\\')))`);
+        WHERE c.action_id=a.id AND c.moved=0 AND (r.label LIKE ? ESCAPE '\\' OR c.field LIKE ? ESCAPE '\\' OR c.before_json LIKE ? ESCAPE '\\' OR c.after_json LIKE ? ESCAPE '\\')))`);
       args.push(like, like, like, like, like);
     }
     if (actor) {
@@ -314,7 +315,7 @@ export class Store {
       args.push(status);
     }
     if (sheet) {
-      clauses.push('EXISTS(SELECT 1 FROM changes c WHERE c.action_id=a.id AND c.sheet=?)');
+      clauses.push('EXISTS(SELECT 1 FROM changes c WHERE c.action_id=a.id AND c.sheet=? AND c.moved=0)');
       args.push(sheet);
     }
     if (from) {
@@ -579,6 +580,9 @@ export class Store {
               if (found && found.row_num !== item.row) moved++;
               if (previous) {
                 const diffs = [];
+                // Rows inserted or deleted above move this row's formulas with it: not an edit for the Historial.
+                const shift = found.row_num !== item.row ? item.row - found.row_num : 0;
+                let shifted = 0;
                 for (const field of mod.fields) {
                   if (!layout.columns.has(field.key)) continue;
                   const before = previous.formulas[field.key]
@@ -587,11 +591,15 @@ export class Store {
                   const after = item.formulas[field.key]
                     ? { formula: item.formulas[field.key] }
                     : item.values[field.key];
-                  if (comparable(before) !== comparable(after)) diffs.push({ field: field.key, before, after });
+                  if (comparable(before) === comparable(after)) continue;
+                  if (shift && before?.formula && formulaRowShift(before.formula, after?.formula) === shift) shifted++;
+                  else diffs.push({ field: field.key, before, after });
                 }
-                if (diffs.length) {
+                if (diffs.length || shifted) {
                   record.version++;
                   record.updatedAt = now();
+                }
+                if (diffs.length) {
                   changed++;
                   cells += diffs.length;
                   if (history) this.recordExternalChanges(record, diffs);
