@@ -90,7 +90,13 @@ test('match_notebook puts unreadable cells in the proposal for the person to fil
 
     // The table: the cells have no value, their reason and partial reading go with them.
     const listed = (await http('GET', '/api/chat/proposals')).body.proposals[0];
-    assert.deepEqual(listed.changes.map(c => c.label), ['5VB', '8VD']);
+    // The whole page shows: the rows to write, then the line already in the sheet and the one not found.
+    assert.deepEqual(listed.changes.map(c => [c.label, c.index >= 0, c.page?.status ?? null]), [
+      ['5VB', true, null],
+      ['8VD', true, null],
+      ['9VD', false, 'match'],
+      ['7ZZ', false, 'missing'],
+    ]);
     const [first, second] = listed.changes;
     assert.ok(!('CAM_ID' in first.values));
     assert.deepEqual(first.unreadable, { CAM_ID: { reason: 'cut off by the photo edge', partial: ['CAM0765??'] } });

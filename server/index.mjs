@@ -999,7 +999,12 @@ export async function createApp(config = {}, options = {}) {
         return json(res, 200, { path, createdAt: now() });
       }
       if (assistant) {
-        const answer = await assistant.handle({ method, path, body, user, query });
+        const answer = await assistant.handle({ method, path, body, user, query, headers: req.headers });
+        // Bytes (a proposal's notebook photo), or JSON.
+        if (answer && 'raw' in answer) {
+          res.writeHead(answer.status || 200, answer.headers);
+          return res.end(answer.raw ?? undefined);
+        }
         if (answer) return json(res, answer.status || 200, answer.body, answer.headers);
       }
       throw fail('NOT_FOUND', 'Route not found', 404);

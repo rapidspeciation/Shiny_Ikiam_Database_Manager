@@ -1,5 +1,5 @@
 import type { CellValue } from './types'
-import { tn, type Msg } from './i18n'
+import { t, tn, type Msg } from './i18n'
 
 /**
  * The assistant's proposed changes as the Asistente tab shows them: a live
@@ -42,6 +42,29 @@ export interface Hint {
   text: string
   msg?: Msg
 }
+/**
+ * Where a row is on the notebook page (match_notebook): its photo (0 = the
+ * first) and line. A line without a row of its own also gives the line as
+ * written and its state: `match` (in the sheet, nothing to write), `missing`
+ * (not found), `crossed`, `ambiguous`, `duplicate`, `nokey`, `new`; `error`:
+ * why the save would refuse it; `near`: IDs it may be.
+ */
+export interface PageLine {
+  photo: number
+  line: number
+  raw?: string
+  status?: string
+  error?: string
+  message?: string
+  near?: { value: CellValue; row: number | null }[]
+}
+/** The notebook page a proposal was read from: its notebook, the sheet, its columns in the page's order, how many photos. */
+export interface ProposalPage {
+  kind: string
+  sheet: string
+  columns: string[]
+  photos: number
+}
 export interface ProposalChange {
   index: number
   /** Stable while the proposal is revised: a new row's clientId, an edited row's recordId. */
@@ -54,11 +77,10 @@ export interface ProposalChange {
   label: string
   create?: boolean
   clientId?: string
-  before: Record<string, CellValue>
   values: Record<string, CellValue>
-  /** The sheet's values of the changed columns (existing rows). */
-  current: Record<string, CellValue>
-  /** The rest of an existing row (pending proposals), for columns added to the table. */
+  /** The sheet's values of the changed columns (existing rows of a proposal no longer pending). */
+  current?: Record<string, CellValue>
+  /** An existing row's values (pending proposals): its changed columns and the rest, for columns added to the table. */
   rowValues?: Record<string, CellValue>
   /** Formula columns of an existing row: not editable. */
   formulas?: string[]
@@ -75,6 +97,12 @@ export interface ProposalChange {
   hints?: Record<string, Hint>
   /** A notebook line shown only for context: never written. */
   context?: boolean
+  /** A page line with no sheet row (not found, crossed out): shown as written, never written. */
+  placeholder?: boolean
+  /** What a formula column will give once the row is written (SPECIES from its clutch): shown, never written. */
+  formulaGives?: Record<string, CellValue>
+  /** Its place on the notebook page. */
+  page?: PageLine
 }
 export interface Proposal {
   id: string
@@ -92,8 +120,83 @@ export interface Proposal {
   types: Record<string, string>
   /** Formula columns of the pre-made rows new rows go into, per sheet. */
   newRowFormulas?: Record<string, string[]>
+  /** An existing row's formula columns, per sheet (a row's own `formulas` when they differ). */
+  sheetFormulas?: Record<string, string[]>
+  /** The cells' hints, once (the server sends a row's hints as indexes into it; see expandProposal). */
+  hintTable?: { text?: string; msg?: Msg }[]
+  /** A notebook page's proposal: the page. */
+  page?: ProposalPage
   applied: number[] | null
   changes: ProposalChange[]
+}
+
+/**
+ * A proposal as the server sends it (lean, for slow connections) made whole
+ * for the table: each row's hints from the proposal's table, its formula
+ * columns from its sheet's. Already whole: returned as it is.
+ */
+export function expandProposal(p: Proposal): Proposal {
+  if (!p.hintTable && !p.sheetFormulas) return p
+  return {
+    ...p,
+    changes: p.changes.map(c => {
+      const hints = c.hints as Record<string, Hint | number> | undefined
+      const out = { ...c }
+      if (hints)
+        out.hints = Object.fromEntries(
+          Object.entries(hints).map(([f, h]) => {
+            const entry = typeof h === 'number' ? p.hintTable?.[h] : h
+            return [f, { text: entry?.text ?? '', ...(entry?.msg ? { msg: entry.msg } : {}) }]
+          }),
+        )
+      if (!c.formulas && !c.create && !c.placeholder && p.sheetFormulas?.[c.sheet]) out.formulas = p.sheetFormulas[c.sheet]
+      return out
+    }),
+  }
+}
+
+/** A row the person only reads (never written): a page line as the sheet has it, or as written. A line the save refused can be corrected. */
+export const readOnlyRow = (c: Pick<ProposalChange, 'context' | 'placeholder' | 'page' | 'recordId'>) =>
+  !!c.placeholder || (!!c.context && !(c.page?.error && c.recordId))
+/** A page line shown without a row of its own in the proposal (nothing to take out). */
+export const pageOnly = (c: Pick<ProposalChange, 'index'>) => c.index < 0
+
+/** What a page line that writes nothing says in the Nota column: the line as written and why. */
+export function pageNote(c: Pick<ProposalChange, 'page' | 'context' | 'note'>): string {
+  const p = c.page
+  if (!p || (!c.context && !p.error)) return c.note ?? ''
+  const near = (p.near ?? []).map(n => (n.row ? t('{id} (fila {row})', { id: String(n.value), row: n.row }) : String(n.value))).join(', ')
+  const why = p.error
+    ? t('No se puede escribir: {error}', { error: t(p.error) })
+    : (
+        {
+          match: t('Ya está así en la hoja'),
+          missing: near ? t('No está en la hoja; ¿quisiste decir {ids}?', { ids: near }) : t('No está en la hoja: ¿está bien leído?'),
+          crossed: t('Tachada en el cuaderno: no se usa'),
+          ambiguous: t('Varias filas de la hoja podrían ser esta'),
+          duplicate: t('El mismo ID está en otra línea de la página'),
+          nokey: t('Sin ID legible'),
+        } as Record<string, string>
+      )[p.status ?? ''] ?? ''
+  const line = p.raw !== undefined ? t('Línea {n}: «{raw}»', { n: p.line, raw: p.raw }) : ''
+  // A context row from match_notebook already says the line (and why) in its note.
+  return c.note ? [c.note, p.error ? why : ''].filter(Boolean).join(' · ') : [line, why].filter(Boolean).join(' · ')
+}
+
+/** A page's photos as their headers say them: the lines on each, how many write something, how many are as the sheet has them. */
+export function photoSummaries(changes: Pick<ProposalChange, 'page' | 'context' | 'placeholder'>[]) {
+  const out = new Map<number, { photo: number; from: number; to: number; change: number; same: number; other: number }>()
+  for (const c of changes) {
+    if (!c.page) continue
+    const s = out.get(c.page.photo) ?? { photo: c.page.photo, from: c.page.line, to: c.page.line, change: 0, same: 0, other: 0 }
+    s.from = Math.min(s.from, c.page.line)
+    s.to = Math.max(s.to, c.page.line)
+    if (c.placeholder || c.page.error) s.other++
+    else if (c.context) s.same++
+    else s.change++
+    out.set(c.page.photo, s)
+  }
+  return [...out.values()].sort((a, b) => a.photo - b.photo)
 }
 
 export const rowKey = (c: Pick<ProposalChange, 'key' | 'clientId' | 'recordId' | 'index'>) =>
@@ -125,10 +228,12 @@ export interface CellInfo {
   hint?: Hint
   /** The assistant could not read this cell (still empty when `kind` is 'unreadable', filled otherwise). */
   unreadable?: Unreadable
+  /** The value is what the sheet's formula will give (SPECIES from the clutch): shown grey, never written. */
+  fromFormula?: boolean
 }
 export function cellOf(change: ProposalChange, field: string, newRowFormulas: string[] = []): CellInfo {
   const mark = change.personEdits?.[field]
-  const was = change.create ? undefined : (change.current[field] ?? change.rowValues?.[field] ?? null)
+  const was = change.create ? undefined : (change.current?.[field] ?? change.rowValues?.[field] ?? null)
   const ai = mark && 'ai' in mark ? mark.ai : undefined
   const aiProposed = !!mark && 'ai' in mark
   const doubt = change.doubts?.[field]
@@ -152,8 +257,11 @@ export function cellOf(change: ProposalChange, field: string, newRowFormulas: st
   if (unreadable && !mark) return { value: change.create ? null : (was ?? null), kind: 'unreadable', was, aiProposed, ...quiet }
   if (mark) return { value: change.create ? null : (was ?? null), kind: aiProposed ? 'reverted' : 'person', was, ai, aiProposed, ...quiet }
   const locked = change.create ? newRowFormulas.includes(field) : !!change.formulas?.includes(field)
-  if (change.create) return { value: null, kind: locked ? 'locked' : 'empty', aiProposed, ...quiet }
-  return { value: was ?? null, kind: locked ? 'locked' : 'sheet', was, aiProposed, ...quiet }
+  // What the formula will give once the row is written, in place of the sheet's (blank or older) value.
+  const gives = change.formulaGives?.[field]
+  const formula = gives !== undefined && gives !== null && gives !== '' ? { value: gives, fromFormula: true } : null
+  if (change.create) return { value: null, kind: locked ? 'locked' : 'empty', aiProposed, ...quiet, ...formula }
+  return { value: was ?? null, kind: locked ? 'locked' : 'sheet', was, aiProposed, ...quiet, ...formula }
 }
 
 /**
@@ -186,13 +294,19 @@ export function unfilledUnreadable(p: Pick<Proposal, 'changes'>) {
   return out
 }
 
+/** Values a template fills (no news): a column holding only these is folded away. */
+const TEMPLATE_VALUE = new Set(['NA', 'NOT_COLLECTED'])
+
 /**
  * The proposal's rows split by sheet (one table each, with that sheet's
  * columns): the columns it changes, in the sheet's order when known, then the
- * columns the person added.
+ * columns the person added. A notebook page's sheet follows the notebook: its
+ * columns in the page's order, then the implied ones, then the rest; columns
+ * holding only a template's NA / NOT_COLLECTED go last, listed in `template`
+ * (the table can fold them).
  */
 export function sheetGroups(
-  p: Pick<Proposal, 'changes' | 'fields'>,
+  p: Pick<Proposal, 'changes' | 'fields' | 'page'>,
   extra: Record<string, string[]> = {},
   order: (sheet: string) => string[] | undefined = () => undefined,
 ) {
@@ -203,11 +317,25 @@ export function sheetGroups(
       changes.flatMap(c => [...Object.keys(c.values), ...Object.keys(c.personEdits ?? {}), ...Object.keys(c.unreadable ?? {})]),
     )
     const columns = order(sheet)
-    const fields = columns ? columns.filter(f => used.has(f)) : p.fields.filter(f => used.has(f))
+    const sorted = columns ? columns.filter(f => used.has(f)) : p.fields.filter(f => used.has(f))
     // Columns the sheet no longer lists still show.
-    for (const f of used) if (!fields.includes(f)) fields.push(f)
-    for (const f of extra[sheet] ?? []) if (!fields.includes(f)) fields.push(f)
-    return { sheet, fields, changes }
+    for (const f of used) if (!sorted.includes(f)) sorted.push(f)
+    const added = (extra[sheet] ?? []).filter(f => !sorted.includes(f))
+    if (p.page?.sheet !== sheet) return { sheet, fields: [...sorted, ...added], changes, template: [] as string[] }
+    const notebook = p.page.columns.filter(f => used.has(f))
+    const template = sorted.filter(
+      f =>
+        !notebook.includes(f) &&
+        changes.every(c => {
+          if (c.personEdits?.[f] || c.unreadable?.[f] || c.doubts?.[f]) return false
+          const v = c.values[f]
+          return v === undefined || (typeof v === 'string' && TEMPLATE_VALUE.has(v))
+        }),
+    )
+    const implied = new Set(changes.flatMap(c => c.inferred ?? []))
+    const rest = sorted.filter(f => !notebook.includes(f) && !template.includes(f))
+    const fields = [...notebook, ...rest.filter(f => implied.has(f)), ...rest.filter(f => !implied.has(f)), ...added, ...template]
+    return { sheet, fields, changes, template }
   })
 }
 

@@ -111,7 +111,8 @@ test('update_proposal revises the same proposal: cells, rows added and removed, 
     assert.equal(updated.rows[0].values.Collection_date, '2026-09-26');
     // The new rows' formula columns and the edited row's are known to the table.
     assert.deepEqual(shown.newRowFormulas.Collection_data, ['Tribe']);
-    assert.ok(Array.isArray(shown.changes[1].formulas));
+    // (A sheet's formula columns are sent once; a row lists its own only when they differ.)
+    assert.ok(Array.isArray(shown.changes[1].formulas ?? shown.sheetFormulas?.[shown.changes[1].sheet]));
     assert.equal(shown.changes[1].rowValues.CAM_ID, 'CAM000001');
 
     // A value the sheet's list refuses: nothing changes.

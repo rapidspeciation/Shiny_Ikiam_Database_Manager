@@ -30,7 +30,8 @@ description lists each notebook's columns.
    `includeUnchanged: true` (the table then follows the whole page), and
    `year` only if the page shows it. All the envelopes/labels of a message are
    one call (`kind: "labels"`). Don't look the rows up first: the tool does
-   it.
+   it. Pass `photo` (the attachment's file name) and `rotate` (the turn you
+   gave crops.py) so the page shows upright beside its table.
 4. **Second reading, only when needed** (see "Verification").
 5. **Tell the person in 3–6 short lines**: which notebook and rows
    ("Posturas, clutches 120–134"), how many cells it fills, the differences

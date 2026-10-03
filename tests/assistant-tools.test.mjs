@@ -89,7 +89,7 @@ test('null in a proposal is no change, only {clear:true} empties a cell; the tab
     assert.deepEqual(dropped.rows[0].values, { 'HATCHING DATE': { clear: true } });
     [shown] = await list();
     assert.deepEqual(shown.changes[0].values, { 'HATCHING DATE': null }, 'the table gets null: the cell to empty');
-    assert.equal(shown.changes[0].current['HATCHING DATE'], d('2026-09-05'));
+    assert.equal(shown.changes[0].rowValues['HATCHING DATE'], d('2026-09-05'));
     const read = await call('get_proposal', { proposalId: proposed.proposalId });
     assert.deepEqual(read.rows[0].values, { 'HATCHING DATE': { clear: true } });
 
@@ -199,7 +199,9 @@ test('match_notebook: rows in the page order, context rows for lines already in 
   try {
     const plain = await call('match_notebook', PAGE);
     let [shown] = await list();
-    assert.deepEqual(shown.changes.map(c => c.line), [1, 3], 'the new row of line 3 comes after line 1');
+    assert.deepEqual(shown.changes.map(c => c.line), [1, 2, 3], 'the new row of line 3 comes after line 1');
+    // Line 2, already in the sheet, shows too (as the sheet has it, never written).
+    assert.deepEqual([shown.changes[1].index < 0, shown.changes[1].context, shown.changes[1].page.status], [true, true, 'match']);
     assert.equal(plain.counts.rowsInProposal, 2);
     await call('match_notebook', { ...PAGE, replaceProposalId: plain.proposalId, includeUnchanged: true }).then(out => {
       assert.equal(out.proposalId, plain.proposalId);
@@ -391,7 +393,7 @@ test('a T3 chat finds rows and drafts edits; only the rows the person chose are 
     const [proposal] = await list();
     assert.deepEqual(proposal.fields.slice(0, 2), ['SPECIES', 'CLUTCH NUMBER']);
     assert.deepEqual(proposal.changes[0].replaceFormula, ['SPECIES']);
-    assert.equal(proposal.changes[1].current['CLUTCH NUMBER'], 843);
+    assert.equal(proposal.changes[1].rowValues['CLUTCH NUMBER'], 843);
     // "Está correcto, aplica solo la fila del clutch".
     const applied = await call('apply_proposal', { proposalId: out.proposalId, indexes: [1] });
     assert.equal(applied.status, 'applied');
