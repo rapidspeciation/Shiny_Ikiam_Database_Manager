@@ -700,7 +700,8 @@ function placeQuick() {
     key,
     field,
     left: Math.max(0, r.left - origin.left),
-    top: above ? r.top - origin.top - 4 : r.bottom - origin.top + 5,
+    // (Clear of the round handle a finger drags, on a touch screen.)
+    top: above ? r.top - origin.top - 4 : r.bottom - origin.top + (touch ? 16 : 5),
     above,
     choices: (c.doubt?.alternatives ?? [])
       .filter(
@@ -1095,6 +1096,7 @@ watch(
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
+  width: max-content;
   max-width: calc(100% - 8px);
   border: 1px solid #fcd34d;
   border-radius: 6px;

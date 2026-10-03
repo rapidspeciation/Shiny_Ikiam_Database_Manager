@@ -17,6 +17,7 @@ import {
   photoSummaries,
   rowKey,
   rowsToWrite,
+  sameAsFormula,
   sheetGroups,
   sampleWarnings,
   uncheckedDoubts,
@@ -210,15 +211,19 @@ watch(
   (next, prev) => {
     const now = Date.now()
     for (const [id, s] of sent) if (now - s.at > 30000) sent.delete(id)
-    const valueOf = (id: string) => {
+    /** What the cell holds now; a value the person sent that is the formula's own (left to it) counts as kept. */
+    const isMine = (id: string, mine: CellValue) => {
       const [key, field] = id.split('\u0000')
       const c = next.changes.find(x => rowKey(x) === key)
-      return c && field in c.values ? c.values[field] : undefined
+      const now = c && field in c.values ? c.values[field] : undefined
+      const gives = c?.formulaGives?.[field]
+      if (now === undefined && gives !== undefined && gives !== null && sameAsFormula(mine, gives)) return true
+      return JSON.stringify(mine ?? null) === JSON.stringify(now ?? null)
     }
     const cells = changedCells(prev, next).filter(id => {
       if (local.value.has(id)) return false
       const mine = sent.get(id)
-      return !mine || JSON.stringify(mine.value ?? null) !== JSON.stringify(valueOf(id) ?? null)
+      return !mine || !isMine(id, mine.value)
     })
     if (!cells.length) return
     flash.value = new Set(cells)
