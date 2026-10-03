@@ -56,7 +56,7 @@ export function clutchState(store) {
   for (const r of store.db
     .prepare(
       `SELECT c.record_id, max(a.created_at) at, a.actor, u.display_name name FROM changes c JOIN actions a ON a.id = c.action_id
-       LEFT JOIN users u ON u.id = a.actor WHERE c.sheet = ? AND a.status IN ('verified', 'observed') GROUP BY c.record_id`,
+       LEFT JOIN users u ON u.id = a.actor WHERE c.sheet = ? AND c.moved = 0 AND a.status IN ('verified', 'observed') GROUP BY c.record_id`,
     )
     .all(SHEET))
     last[r.record_id] = { at: r.at, actor: r.actor, name: r.name ?? null };
@@ -98,7 +98,7 @@ export function clutchDay(store, query = {}) {
          a.created_at, u.username, u.display_name name, r.values_json
          FROM changes c JOIN actions a ON a.id = c.action_id LEFT JOIN users u ON u.id = a.actor
          LEFT JOIN records r ON r.id = c.record_id
-       WHERE c.sheet = ? AND a.created_at >= ? AND a.created_at < ? AND a.status IN ('verified', 'observed')
+       WHERE c.sheet = ? AND c.moved = 0 AND a.created_at >= ? AND a.created_at < ? AND a.status IN ('verified', 'observed')
        ORDER BY a.created_at, a.id`,
     )
     .all(SHEET, from, to);

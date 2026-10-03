@@ -7,10 +7,16 @@
 // 2 minutes for changes read from Google Sheets, so each sync is its own group).
 // A group's id is the id of its oldest action, so it does not change as the
 // person keeps saving; any action id of a group finds the group.
+//
+// Syncs used to log the formulas of every row that moved in the sheet (rows
+// inserted above shift their references: =M12963 → =M12972). The sync no longer
+// does; those older cells stay in the database, marked changes.moved, and are
+// left out here.
 
 import { randomUUID } from 'node:crypto';
 import { msg, msgn, tpl } from './messages.mjs';
 import { moduleMap } from './schema.mjs';
+import { formulaRowShift } from './sheets.mjs';
 
 /** Purpose → label shown to people (Spanish, like the rest of the app). */
 export const PURPOSES = {
@@ -91,19 +97,49 @@ const parse = value => {
     return null;
   }
 };
+/** SQL: the change `c` is not one of those formulas moved with their row (changes.moved). */
+const unmoved = c => `${c}.moved = 0`;
 const fail = (code, message, status = 400, details) => Object.assign(new Error(message), { code, status, details });
 
-/** Adds the purpose column (older databases), the indexes the Historial needs, and purposes for older saves. */
+/**
+ * Adds the purpose and moved columns (older databases), the indexes the
+ * Historial needs, and purposes for older saves.
+ */
 export function initHistory(db) {
   const has = db
     .prepare('PRAGMA table_info(actions)')
     .all()
     .some(c => c.name === 'purpose');
   if (!has) db.exec('ALTER TABLE actions ADD COLUMN purpose TEXT');
+  const moved = db
+    .prepare('PRAGMA table_info(changes)')
+    .all()
+    .some(c => c.name === 'moved');
+  if (!moved) {
+    db.exec('ALTER TABLE changes ADD COLUMN moved INTEGER NOT NULL DEFAULT 0');
+    markMovedFormulas(db);
+  }
   db.exec(`CREATE INDEX IF NOT EXISTS changes_action ON changes(action_id);
     CREATE INDEX IF NOT EXISTS actions_created ON actions(created_at, id);
     CREATE INDEX IF NOT EXISTS actions_key ON actions(actor, purpose, created_at, id);`);
   backfillPurposes(db);
+}
+
+/**
+ * Marks (changes.moved = 1) the formulas syncs logged only because their row
+ * moved: the same formula with every relative row reference shifted by one
+ * amount (formulaRowShift). Returns how many.
+ */
+export function markMovedFormulas(db) {
+  db.function('formula_moved', { deterministic: true }, (before, after) =>
+    formulaRowShift(parse(before)?.formula, parse(after)?.formula) ? 1 : 0,
+  );
+  return db
+    .prepare(
+      `UPDATE changes SET moved = 1 WHERE moved = 0 AND before_json LIKE '{"formula"%' AND after_json LIKE '{"formula"%'
+         AND action_id IN (SELECT id FROM actions WHERE source = 'sheet_reconciliation') AND formula_moved(before_json, after_json)`,
+    )
+    .run().changes;
 }
 
 /** Infers and stores the purpose of every save that has none (once; later saves record theirs). */
@@ -167,13 +203,13 @@ function matchingActions(db, { sheet, text, recordId }) {
   if (!sheet && !text && !recordId) return null;
   if (!text && !recordId) {
     // Only a sheet: most saves match, so each one is checked when its group comes up (by index).
-    const touches = db.prepare('SELECT 1 FROM changes WHERE action_id = ? AND sheet = ? LIMIT 1');
+    const touches = db.prepare(`SELECT 1 FROM changes c WHERE action_id = ? AND sheet = ? AND ${unmoved('c')} LIMIT 1`);
     const known = new Map();
     return {
       has: id => known.get(id) ?? known.set(id, !!touches.get(id, String(sheet))).get(id),
     };
   }
-  const clauses = [];
+  const clauses = [unmoved('c')];
   const args = [];
   if (sheet) {
     clauses.push('sheet = ?');
@@ -191,7 +227,7 @@ function matchingActions(db, { sheet, text, recordId }) {
     );
     args.push(like, like, like, like);
   }
-  const ids = new Set(db.prepare(`SELECT action_id FROM changes WHERE ${clauses.join(' AND ')}`).all(...args).map(r => r.action_id));
+  const ids = new Set(db.prepare(`SELECT action_id FROM changes c WHERE ${clauses.join(' AND ')}`).all(...args).map(r => r.action_id));
   // A note of the save (its reason) matches too.
   if (text && !sheet && !recordId)
     for (const r of db.prepare("SELECT id FROM actions WHERE reason LIKE ? ESCAPE '\\'").all(likeText(text))) ids.add(r.id);
@@ -278,8 +314,13 @@ export function historyGroups(store, query = {}) {
   const out = [];
   let seen = 0;
   let more = false;
-  for (const group of scanGroups(db, { actors, purpose, stopBefore: Number.isNaN(from) ? undefined : from })) {
-    if (matches && !group.actions.some(a => matches.has(a.id))) continue;
+  for (const scanned of scanGroups(db, { actors, purpose, stopBefore: Number.isNaN(from) ? undefined : from })) {
+    if (matches && !scanned.actions.some(a => matches.has(a.id))) continue;
+    const group = withoutMoves(db, scanned);
+    if (!group) {
+      if (!found && scanned.actions.some(a => a.id === until)) found = true;
+      continue;
+    }
     if ((query.from || query.to) && !group.actions.some(inRange)) continue;
     if (seen++ < offset) continue;
     if (out.length >= limit && found) {
@@ -292,14 +333,17 @@ export function historyGroups(store, query = {}) {
       break;
     }
     out.push(group);
-    if (!found && group.actions.some(a => a.id === until)) found = true;
+    if (!found && scanned.actions.some(a => a.id === until)) found = true;
   }
   const groups = describeGroups(store, out, matches);
   return { groups, offset, limit, next: more ? offset + out.length : null, ...(until ? { found } : {}) };
 }
 
-/** The group holding a group or action id: the run of saves by that person and purpose around it. */
-export function findGroup(db, id) {
+/**
+ * The group holding a group or action id: the run of saves by that person and
+ * purpose around it. `single`: only that save.
+ */
+export function findGroup(db, id, { single = false } = {}) {
   const action = db.prepare('SELECT id, actor, purpose, source, status, reason, created_at FROM actions WHERE id = ?').get(String(id ?? ''));
   if (!action) return null;
   const gap = gapFor(action.purpose);
@@ -311,6 +355,8 @@ export function findGroup(db, id) {
     `SELECT id, source, status, reason, created_at FROM actions WHERE actor = ? AND purpose IS ? AND (created_at < ? OR (created_at = ? AND id < ?)) ORDER BY created_at DESC, id DESC`,
   );
   const actions = [pick(action)];
+  const key = `${action.actor}\u0000${action.purpose}`;
+  if (single) return { key, actor: action.actor, purpose: action.purpose, actions, single: true };
   let last = Date.parse(action.created_at);
   for (const r of newer.iterate(action.actor, action.purpose, action.created_at, action.created_at, action.id)) {
     const t = Date.parse(r.created_at);
@@ -326,13 +372,31 @@ export function findGroup(db, id) {
     last = t;
   }
   return {
-    key: `${action.actor}\u0000${action.purpose}`,
+    key,
     actor: action.actor,
     purpose: action.purpose,
     actions,
     newestT: Date.parse(actions[0].createdAt),
     oldestT: Date.parse(actions.at(-1).createdAt),
   };
+}
+
+/**
+ * A sync's group without the saves that only moved formulas with their rows
+ * (null when that was all of it); it keeps the id of the whole group.
+ */
+function withoutMoves(db, group) {
+  if (group.purpose !== 'sheets') return group;
+  const ids = group.actions.map(a => a.id);
+  const kept = new Set();
+  for (const part of chunks(ids))
+    for (const r of db
+      .prepare(`SELECT DISTINCT action_id FROM changes c WHERE action_id IN (${marks(part)}) AND ${unmoved('c')}`)
+      .all(...part))
+      kept.add(r.action_id);
+  if (kept.size === ids.length) return group;
+  if (!kept.size) return null;
+  return { ...group, id: group.id ?? ids.at(-1), actions: group.actions.filter(a => kept.has(a.id)) };
 }
 
 /** Identifier columns of every sheet (Insectary_ID, CAM_ID, CLUTCH NUMBER…), for labels of rows that no longer have them. */
@@ -405,6 +469,8 @@ function describeGroups(store, groups, matches = null) {
     const actionIds = group.actions.map(a => a.id);
     const written = group.actions.filter(a => a.status !== 'failed').map(a => a.id);
     const key = marks(written);
+    // Formulas moved with their rows are left out.
+    const keep = ` AND ${unmoved('c')}`;
     const statement =
       perRecord.get(written.length) ??
       perRecord
@@ -414,14 +480,14 @@ function describeGroups(store, groups, matches = null) {
             ? db.prepare(
                 `SELECT c.record_id, min(c.sheet) sheet, min(c.row_num) row_num, r.label, count(*) cells, min(c.rowid) first,
                    max(CASE WHEN c.field IN (${IDENTITY_SQL}) THEN coalesce(nullif(c.after_json, 'null'), c.before_json) END) identity
-                 FROM changes c LEFT JOIN records r ON r.id = c.record_id WHERE c.action_id IN (${key}) GROUP BY c.record_id ORDER BY first`,
+                 FROM changes c LEFT JOIN records r ON r.id = c.record_id WHERE c.action_id IN (${key})${keep} GROUP BY c.record_id ORDER BY first`,
               )
             : null,
         )
         .get(written.length);
     const rows = statement ? statement.all(...written) : [];
     const fields = written.length
-      ? db.prepare(`SELECT DISTINCT field FROM changes WHERE action_id IN (${key})`).all(...written).map(r => r.field)
+      ? db.prepare(`SELECT DISTINCT field FROM changes c WHERE action_id IN (${key})${keep}`).all(...written).map(r => r.field)
       : [];
     const newRows = new Set(written.flatMap(id => [...(created.get(id) ?? [])]));
     const labels = rows.map(r => rowLabel(r.label, r.sheet, r.row_num, parse(r.identity)));
@@ -431,12 +497,12 @@ function describeGroups(store, groups, matches = null) {
     // Cells of confirmed saves, and how many of them a later undo put back.
     const undoableIds = undoable.map(a => a.id);
     const undoableCells = undoableIds.length
-      ? db.prepare(`SELECT count(*) n FROM changes WHERE action_id IN (${marks(undoableIds)})`).get(...undoableIds).n
+      ? db.prepare(`SELECT count(*) n FROM changes c WHERE action_id IN (${marks(undoableIds)})${keep}`).get(...undoableIds).n
       : 0;
     let undoneCells = 0;
     for (const a of undoable.filter(a => undone.has(a.id))) {
       const cells = undone.get(a.id).cells;
-      for (const c of db.prepare('SELECT record_id, field FROM changes WHERE action_id = ?').all(a.id))
+      for (const c of db.prepare(`SELECT record_id, field FROM changes c WHERE action_id = ?${keep}`).all(a.id))
         if (cells.has(`${c.record_id}\u0000${c.field}`)) undoneCells++;
     }
     const counts = {
@@ -445,7 +511,7 @@ function describeGroups(store, groups, matches = null) {
       newRows: rows.filter(r => newRows.has(r.record_id)).length,
       cells: rows.reduce((n, r) => n + r.cells, 0),
     };
-    const id = actionIds.at(-1);
+    const id = group.id ?? actionIds.at(-1);
     const summary = summaryMessage({ purpose: group.purpose, ...counts, labels });
     return {
       id,
@@ -467,7 +533,7 @@ function describeGroups(store, groups, matches = null) {
       undoable: undoableCells > undoneCells,
       actionIds,
       ...(matches ? { matched: actionIds.filter(a => matches.has(a)) } : {}),
-      link: `#/historial?grupo=${id}`,
+      link: group.single ? `#/historial?accion=${id}` : `#/historial?grupo=${id}`,
     };
   });
 }
@@ -538,11 +604,17 @@ export function summaryMessage({ purpose, rows = 0, newRows = 0, labels = [] }) 
 }
 export const summaryText = group => summaryMessage(group).text;
 
-/** One group with its saves and every change (sheet, row, record label, field, before → after). */
-export function historyGroup(store, id) {
+/**
+ * One group with its saves and every change (sheet, row, record label, field,
+ * before → after). `single`: only the save with this id.
+ */
+export function historyGroup(store, id, { single = false } = {}) {
   const db = store.db;
-  const group = findGroup(db, id);
-  if (!group) throw fail('GROUP_NOT_FOUND', 'No se encontró ese guardado en el historial', 404);
+  const found = findGroup(db, id, { single });
+  if (!found) throw fail('GROUP_NOT_FOUND', 'No se encontró ese guardado en el historial', 404);
+  // A sync that only moved formulas: its oldest save, with no changes.
+  const oldest = found.actions.at(-1);
+  const group = withoutMoves(db, found) ?? { ...found, id: oldest.id, actions: [oldest], movedOnly: true };
   const [summary] = describeGroups(store, [group]);
   const ids = group.actions.map(a => a.id);
   const undone = undoneIndex(db, ids);
@@ -552,7 +624,8 @@ export function historyGroup(store, id) {
     for (const c of db
       .prepare(
         `SELECT c.id, c.action_id, c.record_id, c.sheet, c.row_num, c.field, c.before_json, c.after_json, r.label
-         FROM changes c LEFT JOIN records r ON r.id = c.record_id WHERE c.action_id IN (${marks(part)}) ORDER BY c.rowid`,
+         FROM changes c LEFT JOIN records r ON r.id = c.record_id WHERE c.action_id IN (${marks(part)}) AND ${unmoved('c')}
+         ORDER BY c.rowid`,
       )
       .all(...part)) {
       const list = changes.get(c.action_id) ?? changes.set(c.action_id, []).get(c.action_id);
@@ -588,6 +661,7 @@ export function historyGroup(store, id) {
   );
   return {
     ...summary,
+    ...(group.movedOnly ? { movedOnly: true } : {}),
     actions: group.actions.map(a => ({
       id: a.id,
       createdAt: a.createdAt,
@@ -630,11 +704,18 @@ export function undoSelection(store, { groupIds, actionIds, changeIds } = {}) {
   const undone = undoneIndex(db, ids);
   const wanted = picked ? new Set(picked) : null;
   const changes = [];
+  const holding = new Set();
+  // Formulas a sync logged only because their row moved are not undone with their save: their old references are wrong now.
   for (const part of chunks(ids))
-    for (const c of db.prepare(`SELECT id, action_id, record_id, field FROM changes WHERE action_id IN (${marks(part)}) ORDER BY rowid`).all(...part))
-      if ((!wanted || wanted.has(c.id)) && !undone.get(c.action_id)?.cells.has(`${c.record_id}\u0000${c.field}`)) changes.push(c.id);
+    for (const c of db
+      .prepare(`SELECT id, action_id, record_id, field, moved FROM changes c WHERE action_id IN (${marks(part)}) ORDER BY rowid`)
+      .all(...part))
+      if ((wanted ? wanted.has(c.id) : !c.moved) && !undone.get(c.action_id)?.cells.has(`${c.record_id}\u0000${c.field}`)) {
+        changes.push(c.id);
+        holding.add(c.action_id);
+      }
   if (!changes.length) throw fail('NOTHING_TO_UNDO', 'Esos cambios ya están deshechos', 409);
-  return { actionIds: ids, changeIds: changes };
+  return { actionIds: ids.filter(id => holding.has(id)), changeIds: changes };
 }
 
 /** Previews an undo of groups, saves or changes (history/preview). */
@@ -669,6 +750,146 @@ export function describePreview(store, preview) {
   return { ...preview, changes: preview.changes.map(item), conflicts: preview.conflicts.map(item) };
 }
 
+const ROW = 'SELECT id, sheet, row_num, label, missing FROM records';
+const SORT = 'ORDER BY missing, sheet, row_num';
+
+/**
+ * The rows a name points to, best first: rows labelled so, rows with it in an
+ * identifier column, rows gone from the sheet, the same ignoring case, rows that
+ * had it as identifier before. `rows`: the first of these that finds any; `others`: the rest.
+ */
+function rowsNamed(db, name) {
+  const value = String(name ?? '').trim();
+  if (!value) return { rows: [], others: [] };
+  // One pass over the records (a scan): labels in any case, and identifier values.
+  const found = db
+    .prepare(
+      `${ROW} r WHERE label = ? COLLATE NOCASE
+         OR (identity_json LIKE ? ESCAPE '\\' AND EXISTS (SELECT 1 FROM json_each(r.identity_json) j WHERE CAST(j.value AS TEXT) = ?)) ${SORT}`,
+    )
+    .all(value, likeText(value), value);
+  const byLabel = found.filter(r => r.label === value);
+  const byIdentity = found.filter(r => r.label !== value && r.label.toLowerCase() !== value.toLowerCase());
+  const anyCase = found.filter(r => r.label !== value && r.label.toLowerCase() === value.toLowerCase());
+  const live = list => list.filter(r => !r.missing);
+  const formerly = [];
+  const known = new Set(found.map(r => r.id));
+  const values = [JSON.stringify(value), ...(/^\d+$/.test(value) ? [value] : [])];
+  const past = db
+    .prepare(
+      `SELECT DISTINCT record_id FROM changes WHERE field IN (${IDENTITY_SQL}) AND (before_json IN (${marks(values)}) OR after_json IN (${marks(values)}))`,
+    )
+    .all(...values, ...values)
+    .map(r => r.record_id)
+    .filter(id => !known.has(id));
+  for (const id of past) {
+    const r = db.prepare(`${ROW} WHERE id = ?`).get(id);
+    if (r) formerly.push({ ...r, formerly: value });
+  }
+  const tiers = [
+    live(byLabel),
+    live(byIdentity),
+    [...byLabel, ...byIdentity].filter(r => r.missing),
+    anyCase,
+    formerly,
+  ];
+  const rows = tiers.find(t => t.length) ?? [];
+  const chosen = new Set(rows.map(r => r.id));
+  const others = [...new Map(tiers.flat().filter(r => !chosen.has(r.id)).map(r => [r.id, r])).values()];
+  return { rows, others };
+}
+
+/**
+ * Every change to one row, oldest first, one entry per save (formulas moved
+ * with their row left out). The row: `recordId`, or `id` (a label or
+ * identifier; several rows with it: { rows } to pick from). Filters: fields,
+ * from/to (YYYY-MM-DD, days in Ecuador); pages of `limit` saves.
+ */
+export function recordHistory(store, query = {}) {
+  const db = store.db;
+  const brief = r => ({
+    recordId: r.id,
+    sheet: r.sheet,
+    row: r.row_num,
+    label: r.label,
+    ...(r.missing ? { deleted: true } : {}),
+    ...(r.formerly ? { formerly: r.formerly } : {}),
+  });
+  let record;
+  let others = [];
+  if (query.recordId) {
+    const id = String(query.recordId);
+    record =
+      db.prepare(`${ROW} WHERE id = ?`).get(id) ??
+      db.prepare('SELECT record_id id, sheet, row_num, NULL label, 1 missing FROM changes WHERE record_id = ? ORDER BY rowid DESC LIMIT 1').get(id);
+  } else {
+    const named = rowsNamed(db, query.id);
+    if (named.rows.length > 1) return { rows: named.rows.map(brief), others: named.others.slice(0, 10).map(brief) };
+    [record] = named.rows;
+    others = named.others;
+  }
+  if (!record) throw fail('RECORD_NOT_FOUND', `No row found for ${String(query.recordId ?? query.id ?? '').slice(0, 80)}`, 404);
+  const clauses = ['c.record_id = ?', unmoved('c')];
+  const args = [record.id];
+  const fields = (Array.isArray(query.fields) ? query.fields : query.fields ? [query.fields] : []).map(String).filter(Boolean);
+  if (fields.length) {
+    clauses.push(`c.field IN (${marks(fields)})`);
+    args.push(...fields);
+  }
+  const from = query.from ? dayStart(query.from) : NaN;
+  const to = query.to ? dayEnd(query.to) : NaN;
+  if (!Number.isNaN(from)) {
+    clauses.push('a.created_at >= ?');
+    args.push(new Date(from).toISOString());
+  }
+  if (!Number.isNaN(to)) {
+    clauses.push('a.created_at <= ?');
+    args.push(new Date(to).toISOString());
+  }
+  const rows = db
+    .prepare(
+      `SELECT c.action_id, c.sheet, c.field, c.before_json, c.after_json, a.created_at, a.actor, a.purpose, a.source, a.status, a.reason
+       FROM changes c JOIN actions a ON a.id = c.action_id WHERE ${clauses.join(' AND ')} ORDER BY a.created_at, a.id, c.rowid`,
+    )
+    .all(...args);
+  const saves = [];
+  for (const r of rows) {
+    if (saves.at(-1)?.actionId !== r.action_id)
+      saves.push({
+        actionId: r.action_id,
+        createdAt: r.created_at,
+        actor: r.actor,
+        purpose: r.purpose,
+        source: r.source,
+        status: r.status,
+        reason: r.reason,
+        cells: [],
+      });
+    saves.at(-1).cells.push({ sheet: r.sheet, field: r.field, before: parse(r.before_json), after: parse(r.after_json) });
+  }
+  const limit = Math.min(Math.max(Number(query.limit) || 100, 1), 500);
+  const offset = Math.max(Number(query.offset) || 0, 0);
+  const page = saves.slice(offset, offset + limit);
+  const ids = page.map(s => s.actionId);
+  const people = names(db, page.map(s => s.actor));
+  const undone = undoneIndex(db, ids);
+  const created = createdRows(db, ids);
+  for (const save of page) {
+    save.actorName = save.actor === 'unknown' ? null : (people.get(save.actor) ?? null);
+    for (const c of save.cells) {
+      if (created.get(save.actionId)?.has(record.id)) c.isNew = true;
+      if (undone.get(save.actionId)?.cells.has(`${record.id}\u0000${c.field}`)) c.undone = true;
+    }
+  }
+  return {
+    row: brief(record),
+    saves: page,
+    total: saves.length,
+    next: offset + limit < saves.length ? offset + limit : null,
+    ...(others.length ? { others: others.slice(0, 10).map(brief) } : {}),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // The assistant's tools (Chat and T3 Code through MCP).
 
@@ -699,7 +920,7 @@ export const HISTORY_TOOLS = [
         [
           'The Historial: every save to the workbook, newest first, grouped by person, purpose and time (saves less than 30 minutes apart; typed in Google Sheets: 2 minutes).',
           '- Purpose: sheets = typed directly in Google Sheets, asistente = an applied proposal, deshacer = an undo.',
-          '- Filter by user, purpose, sheet, dates and text (an identifier such as A0D or CAM079891, a field or a value).',
+          '- Filter by user, purpose, sheet, dates and text (an identifier such as A0D or CAM079891, a field or a value). With a filter, `matched` lists the saves (action ids) of a group that match.',
           '- Each group has a summary, counts and `url`: give the person that link. It opens the Historial tab at that save, where they can also undo it themselves (all of it, one save, one row or single cells).',
         ].join('\n'),
       parameters: {
@@ -723,14 +944,46 @@ export const HISTORY_TOOLS = [
     function: {
       name: 'get_history_group',
       description:
-        'One save of the Historial (a group id, or any action id inside it) with every change: sheet, row, record label, field, before → after, and whether it was already undone. Give the person its `url`.',
+        [
+          'A group of the Historial (`id`: a group id, or any action id inside it), or one save alone (`actionId`), with its changes: sheet, row, record label, field, before → after, and whether it was already undone. Give the person its `url`.',
+          '- recordId, field and text keep only the changes that match; `cells` counts them.',
+          '- Up to maxChanges changes per answer; `next` is the offset of the rest.',
+        ].join('\n'),
       parameters: {
         type: 'object',
         properties: {
           id: { type: 'string' },
+          actionId: { type: 'string', description: 'Only this save, not its whole group' },
+          recordId: { type: 'string' },
+          field: { type: 'string', description: 'Column name' },
+          text: { type: 'string', description: 'Label, field or value' },
           maxChanges: { type: 'integer', description: 'Default 300' },
+          offset: { type: 'integer' },
         },
-        required: ['id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'record_history',
+      description:
+        [
+          'Every change to one row, oldest first: when, who, why, each field before → after, and a link to each save.',
+          '- `id`: a label or identifier (Insectary_ID, CAM_ID, clutch number…). When several rows have it, they are listed with their recordId instead.',
+          '- `others`: further rows with that name (another sheet, gone from the sheet, or formerly so named).',
+        ].join('\n'),
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'A0D, CAM079891, 1014…' },
+          recordId: { type: 'string' },
+          fields: { type: 'array', items: { type: 'string' }, description: 'Only these columns' },
+          from: { type: 'string', description: 'YYYY-MM-DD (day in Ecuador)' },
+          to: { type: 'string', description: 'YYYY-MM-DD (inclusive)' },
+          limit: { type: 'integer', description: 'Saves per answer, default 100' },
+          offset: { type: 'integer' },
+        },
       },
     },
   },
@@ -787,8 +1040,18 @@ export async function runHistoryTool(store, name, args = {}, context = {}, { pub
     reasons: g.reasons,
     undone: g.undone,
     undoable: g.undoable,
+    // The saves of a long group that match the filters (all of them: left out).
+    ...(g.matched && g.matched.length < g.counts.actions
+      ? { matched: g.matched.slice(0, 20), ...(g.matched.length > 20 ? { matchedCount: g.matched.length } : {}) }
+      : {}),
     url: url(g.link),
   });
+  /** A value as the assistant reads it. */
+  const shown = (sheet, field, value) => {
+    const v = readable(sheet, field, value);
+    if (v === null || v === undefined || v === '') return '(empty)';
+    return typeof v === 'object' ? JSON.stringify(v) : String(v);
+  };
   try {
     if (name === 'list_history') {
       const out = historyGroups(store, {
@@ -805,11 +1068,30 @@ export async function runHistoryTool(store, name, args = {}, context = {}, { pub
       return { groups: out.groups.map(brief), next: out.next };
     }
     if (name === 'get_history_group') {
-      const group = historyGroup(store, String(args.id ?? ''));
+      const group = args.actionId
+        ? historyGroup(store, String(args.actionId), { single: true })
+        : historyGroup(store, String(args.id ?? ''));
       const max = Math.min(Math.max(Number(args.maxChanges) || 300, 1), 2000);
-      let left = max;
-      const actions = group.actions.map(a => {
-        const changes = a.changes.slice(0, Math.max(left, 0)).map(c => ({
+      const offset = Math.max(Number(args.offset) || 0, 0);
+      const text = args.text ? String(args.text).toLowerCase() : '';
+      const field = args.field ? String(args.field).toLowerCase() : '';
+      const filtered = !!(args.recordId || field || text);
+      const words = c =>
+        [c.label, c.field, readable(c.sheet, c.field, c.before), readable(c.sheet, c.field, c.after)].map(v =>
+          (v && typeof v === 'object' ? JSON.stringify(v) : String(v ?? '')).toLowerCase(),
+        );
+      const keep = c =>
+        (!args.recordId || c.recordId === String(args.recordId)) &&
+        (!field || c.field.toLowerCase() === field) &&
+        (!text || words(c).some(w => w.includes(text)));
+      // Changes are counted across the saves; this answer holds those from `offset` to offset + max.
+      let index = 0;
+      const actions = [];
+      for (const a of group.actions) {
+        const matching = filtered ? a.changes.filter(keep) : a.changes;
+        const first = index;
+        index += matching.length;
+        const changes = matching.slice(Math.max(offset - first, 0), Math.max(offset + max - first, 0)).map(c => ({
           id: c.id,
           label: c.label,
           sheet: c.sheet,
@@ -820,10 +1102,52 @@ export async function runHistoryTool(store, name, args = {}, context = {}, { pub
           ...(c.isNew ? { newRow: true } : {}),
           ...(c.undone ? { undone: true } : {}),
         }));
-        left -= changes.length;
-        return { id: a.id, at: local(a.createdAt), status: a.status, reason: a.reason, undone: !!a.reversedBy, changes, total: a.changes.length };
+        if (!changes.length && (matching.length || filtered || offset)) continue;
+        actions.push({
+          id: a.id,
+          at: local(a.createdAt),
+          status: a.status,
+          reason: a.reason,
+          undone: !!a.reversedBy,
+          changes,
+          total: a.changes.length,
+        });
+      }
+      return {
+        ...brief(group),
+        ...(group.movedOnly ? { note: 'Rows inserted or deleted above moved these rows: their formulas followed, nothing was edited.' } : {}),
+        actions,
+        cells: index,
+        next: offset + max < index ? offset + max : null,
+      };
+    }
+    if (name === 'record_history') {
+      const out = recordHistory(store, {
+        id: args.id,
+        recordId: args.recordId,
+        fields: args.fields,
+        from: args.from,
+        to: args.to,
+        limit: args.limit,
+        offset: args.offset,
       });
-      return { ...brief(group), actions, ...(left < 0 || group.counts.cells > max ? { truncated: true } : {}) };
+      if (out.rows) return { rows: out.rows, ...(out.others.length ? { others: out.others } : {}) };
+      const flags = c => `${c.isNew ? ' (new row)' : ''}${c.undone ? ' (undone later)' : ''}`;
+      return {
+        row: out.row,
+        saves: out.saves.map(s => ({
+          at: local(s.createdAt),
+          who: s.actorName ?? s.actor,
+          purpose: PURPOSES[s.purpose] ?? s.purpose,
+          ...(s.reason ? { reason: s.reason } : {}),
+          ...(UNDOABLE.has(s.status) ? {} : { status: s.status }),
+          cells: s.cells.map(c => `${c.field}: ${shown(c.sheet, c.field, c.before)} → ${shown(c.sheet, c.field, c.after)}${flags(c)}`),
+          url: url(`#/historial?accion=${s.actionId}`),
+        })),
+        total: out.total,
+        next: out.next,
+        ...(out.others ? { others: out.others } : {}),
+      };
     }
     if (name === 'preview_undo' || name === 'undo_edits') {
       const selection = {

@@ -1,17 +1,20 @@
 ---
 name: historial
-description: The app's Historial tab — every save to the workbook (from the app's tabs, typed directly in Google Sheets, the assistant, undos, imports), grouped by person, purpose and time, with selective undo. Use it when the person asks who changed something or when, made a mistake when saving ("me equivoqué al guardar…", "¿quién cambió el sexo de 5VB?"), wants a save found, linked or undone, or asks how to undo in the app.
+description: The app's Historial tab — every save to the workbook (from the app's tabs, typed directly in Google Sheets, the assistant, undos, imports), grouped by person, purpose and time, with selective undo. Use it when the person asks who changed something or when, or for the history of a butterfly, clutch or row, made a mistake when saving ("me equivoqué al guardar…", "¿quién cambió el sexo de 5VB?"), wants a save found, linked or undone, or asks how to undo in the app.
 ---
 
 # Historial: finding and undoing a save
 
-1. Find the save with `list_history` from what the person remembers (who,
-   when, which tab, an ID or value).
-2. Go through its cells with them (`get_history_group`), with the save's
-   link.
-3. Undo: the person can do it themselves there, or you do it from the chat:
-   `preview_undo` → show it and ask → `undo_edits` on their yes. Either way
-   the undo is itself a save that can be undone.
+- The history of one butterfly, clutch or row ("¿qué cambios ha tenido
+  D5D?", "¿quién cambió el sexo de 5VB?"): `record_history`.
+- Otherwise:
+  1. Find the save with `list_history` from what the person remembers (who,
+     when, which tab, an ID or value).
+  2. Go through its cells with them (`get_history_group`), with the save's
+     link.
+- Undo: the person can do it themselves at the save's link, or you do it
+  from the chat: `preview_undo` → show it and ask → `undo_edits` on their
+  yes. Either way the undo is itself a save that can be undone.
 
 ## The tab (`https://ithomiini-ikiam.com/#/historial`)
 

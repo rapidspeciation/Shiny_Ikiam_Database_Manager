@@ -80,7 +80,7 @@ export const suggestionSources = () => [...SOURCES];
 function historyReader(db) {
   const query = db.prepare(
     `SELECT a.actor, a.purpose, a.created_at, c.before_json, c.after_json FROM changes c JOIN actions a ON a.id = c.action_id
-     WHERE c.record_id = ? AND c.field = ? AND a.status != 'failed' ORDER BY a.created_at DESC LIMIT 1`,
+     WHERE c.record_id = ? AND c.field = ? AND c.moved = 0 AND a.status != 'failed' ORDER BY a.created_at DESC LIMIT 1`,
   );
   const users = db.prepare('SELECT display_name FROM users WHERE id = ?');
   const parse = text => (text === null || text === undefined ? null : JSON.parse(text));

@@ -55,7 +55,8 @@ run of tubes), show:
     and Insectary_data, same Insectary_ID): when they disagree on species or
     sex, the suggestion of source `twins` says which side was corrected later
     or matches the envelope;
-  - who changed the cell and when (`list_history` with the row's recordId);
+  - who changed the cell and when (`record_history` with the row's recordId
+    and the field);
   - the paper: ask for a photo of the notebook page or the envelope;
 - the options, with the one the evidence favours.
 

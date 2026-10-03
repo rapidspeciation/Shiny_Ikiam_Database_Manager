@@ -476,6 +476,38 @@ function defaultEvaluate(formula, { row }) {
  * whole-column references (A:A) stay. Text in quotes and quoted sheet names are left alone.
  */
 export function shiftFormula(formula, dRows, dCols = 0) {
+  return mapReferences(formula, ({ colAbs, letters, rowAbs, digits }) => {
+    const column = colAbs ? letters : columnLetter(Math.max(0, columnIndex(letters) + dCols));
+    const row = rowAbs ? digits : String(Math.max(1, Number(digits) + dRows));
+    return `${colAbs}${column}${rowAbs}${row}`;
+  });
+}
+
+/**
+ * How many rows `after` is `before` moved by (shiftFormula), or 0 when it is
+ * not such a move: what a formula becomes when rows are inserted or deleted above it.
+ */
+export function formulaRowShift(before, after) {
+  if (typeof before !== 'string' || typeof after !== 'string' || before === after) return 0;
+  // Only digits may differ: most pairs end here.
+  if (before.replace(/\d+/g, '') !== after.replace(/\d+/g, '')) return 0;
+  const firstRow = formula => {
+    let row = null;
+    mapReferences(formula, ({ rowAbs, digits, text }) => {
+      if (row === null && !rowAbs) row = Number(digits);
+      return text;
+    });
+    return row;
+  };
+  const from = firstRow(before);
+  const to = firstRow(after);
+  if (from === null || to === null || from === to) return 0;
+  return shiftFormula(before, to - from) === after ? to - from : 0;
+}
+
+const REFERENCE = /(\$?)([A-Z]{1,3})(\$?)(\d+)(?![\w(])/y;
+/** Rewrites each cell reference of a formula outside quotes with `replace({ text, colAbs, letters, rowAbs, digits })`. */
+function mapReferences(formula, replace) {
   let out = '';
   for (let i = 0; i < formula.length; ) {
     const ch = formula[i];
@@ -486,13 +518,12 @@ export function shiftFormula(formula, dRows, dCols = 0) {
       i = stop;
       continue;
     }
-    const m = /^(\$?)([A-Z]{1,3})(\$?)(\d+)(?![\w(])/.exec(formula.slice(i));
+    REFERENCE.lastIndex = i;
+    const m = REFERENCE.exec(formula);
     const before = formula[i - 1];
     if (m && !(before && /[\w.]/.test(before))) {
       const [text, colAbs, letters, rowAbs, digits] = m;
-      const column = colAbs ? letters : columnLetter(Math.max(0, columnIndex(letters) + dCols));
-      const row = rowAbs ? digits : String(Math.max(1, Number(digits) + dRows));
-      out += `${colAbs}${column}${rowAbs}${row}`;
+      out += replace({ text, colAbs, letters, rowAbs, digits });
       i += text.length;
       continue;
     }

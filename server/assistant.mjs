@@ -1828,7 +1828,10 @@ export function createAssistant({ store, config = {} }) {
       // An answer cut in the middle is no JSON at all: say so instead, so the query is narrowed.
       let text = json(out);
       if (text.length > 200000) {
-        out = { error: `The answer was too long (${text.length} characters). Narrow the query: filters, fields, limit, or count_records for counts.` };
+        const narrow = HISTORY_TOOL_NAMES.has(String(body.params?.name ?? ''))
+          ? 'recordId, field(s), text or dates, or a smaller maxChanges or limit (`next` gives the rest)'
+          : 'filters, fields, limit, or count_records for counts';
+        out = { error: `The answer was too long (${text.length} characters). Narrow the query: ${narrow}.` };
         text = json(out);
       }
       return result({ content: [{ type: 'text', text }], isError: Boolean(out?.error) });
