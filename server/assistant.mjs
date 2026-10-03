@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { createReports } from './reports.mjs';
-import { TYPED_OVER_FORMULA, uniqueIdIndex } from './batch.mjs';
+import { TYPED_OVER_FORMULA, sameAsFormula, uniqueIdIndex } from './batch.mjs';
 import { allIssues, checkData } from './checks.mjs';
 import { agreedFixes, markApplied } from './review.mjs';
 import { CERTAINTIES, suggestionPage } from './suggestions/index.mjs';
@@ -694,6 +694,21 @@ export function createAssistant({ store, config = {} }) {
   }
 
   /**
+   * What a formula column will give once a row's `values` are written (`record`:
+   * the existing row, null for a new one): SPECIES follows the clutch the row
+   * takes. Undefined when the column is no formula there or it cannot be told.
+   */
+  function formulaWillGive(sheet, field, values, record) {
+    const formula = record ? !!record.formulas?.[field] : createFormulaFields(sheet).has(field);
+    if (!formula || !TYPED_OVER_FORMULA[sheet]?.has(field)) return undefined;
+    const clutch = values['CLUTCH NUMBER'];
+    const moved = clutch !== undefined && comparable(clutch) !== comparable(record?.values?.['CLUTCH NUMBER'] ?? null);
+    if (field === 'SPECIES' && sheet === 'Insectary_data' && (moved || !record))
+      return isNone(clutch) ? undefined : (notebooks.speciesOfClutch(clutch) ?? undefined);
+    return record && !moved ? (record.values?.[field] ?? null) : undefined;
+  }
+
+  /**
    * A new row for a proposal, checked now as the save will check it (strict lists,
    * IDs already used), so the assistant can correct it before the person sees it.
    */
@@ -809,8 +824,12 @@ export function createAssistant({ store, config = {} }) {
         if (old.formulas?.[key]) {
           if (!TYPED_OVER_FORMULA[old.sheet]?.has(key))
             return { error: `${old.label}: ${key} is calculated by a formula and cannot be changed` };
-          if (comparable(old.values?.[key] ?? null) === comparable(values[key]))
-            return { error: `${old.label}: the ${key} formula already gives ${values[key]}; leave it` };
+          // What the formula gives (from the clutch the row will have) is left to it.
+          const gives = formulaWillGive(old.sheet, key, values, old);
+          if (gives !== undefined && sameAsFormula(gives, values[key])) {
+            delete values[key];
+            continue;
+          }
           replaceFormula.push(key);
         }
         before[key] = old.values?.[key] ?? null;
@@ -1094,7 +1113,10 @@ export function createAssistant({ store, config = {} }) {
           continue;
         }
         const drafted = redraftRow(setCell(row, field, value), i, rows.filter((_, j) => j !== i), used);
-        if (drafted.error || drafted.dropped.includes(field)) {
+        // The species the new row's formula will give: left to the formula, nothing to say.
+        const toFormula =
+          !drafted.error && row.create && value !== DROP && sameAsFormula(formulaWillGive(row.sheet, field, drafted.change.values, null) ?? null, value);
+        if (drafted.error || (drafted.dropped.includes(field) && !toFormula)) {
           const message = drafted.error ?? `${field} is a formula in the new row; it is left empty`;
           if (drafted.error || by === 'person') out.rejected.push({ ...where(i), field, message });
           else out.leftOut.push(field);
@@ -1532,11 +1554,19 @@ export function createAssistant({ store, config = {} }) {
         );
         view.formulas = locked(change.sheet, Object.keys(record?.formulas ?? {}));
       } else if (!change.create) view.current = Object.fromEntries(fields.map(f => [f, shownValue(record, f)]));
+      // Also beside a species typed over it, so the table can tell when the person types the formula's own.
       const clutch = change.values['CLUTCH NUMBER'];
-      if (change.sheet === 'Insectary_data' && !('SPECIES' in change.values) && !isNone(clutch)) {
+      const typed = 'SPECIES' in change.values;
+      if (change.sheet === 'Insectary_data' && (typed || !isNone(clutch))) {
         const formula = change.create ? createFormulaFields(change.sheet).has('SPECIES') : !!record?.formulas?.SPECIES;
-        const gives = formula ? (speciesOf(clutch) ?? formulaGives?.SPECIES ?? null) : null;
-        if (!isNone(gives) && comparable(gives) !== comparable(change.create ? null : shownValue(record, 'SPECIES')))
+        const gives = !formula
+          ? null
+          : !isNone(clutch)
+            ? (speciesOf(clutch) ?? formulaGives?.SPECIES ?? null)
+            : change.create
+              ? null
+              : shownValue(record, 'SPECIES');
+        if (!isNone(gives) && (typed || comparable(gives) !== comparable(change.create ? null : shownValue(record, 'SPECIES'))))
           view.formulaGives = { SPECIES: gives };
       }
       return view;

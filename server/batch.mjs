@@ -27,10 +27,15 @@ export const MAX_BATCH = 500;
 // Formula cells that may be typed over, and only with a value different from what the
 // formula predicts: the species of an insectary butterfly when what emerged is not what
 // the clutch predicted. The formula is kept in history, so undo puts it back.
+// A value the formula already gives is not written: the formula stays.
 export const TYPED_OVER_FORMULA = { Insectary_data: new Set(['SPECIES', 'Collection_location']) };
 
+/** The same text as a formula gives, whatever the spacing or capitals ("mechanitis  m. intermedia " is not, "Mechanitis M. intermedia" is). */
+const formulaText = value => String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+export const sameAsFormula = (a, b) => formulaText(a) === formulaText(b);
+
 /** What the SPECIES formula of an insectary row will give: the species of its clutch in Insectary_stocks. */
-function predictedSpecies(store, sheet, field, values) {
+export function predictedSpecies(store, sheet, field, values) {
   if (sheet !== 'Insectary_data' || field !== 'SPECIES' || values['CLUTCH NUMBER'] == null) return undefined;
   return store.db
     .prepare(
@@ -457,6 +462,15 @@ class Plan {
     const before = rowValues(record.sheet, liveRow, layout);
     const changes = [];
     for (const [field, after] of Object.entries(target.clean)) {
+      // What the formula gives once this edit is in (its clutch may change with it): left to the formula.
+      if (before.formulas[field] && TYPED_OVER_FORMULA[record.sheet]?.has(field) && this.source !== 'undo') {
+        const clutch = target.clean['CLUTCH NUMBER'];
+        const moved = clutch !== undefined && comparable(clutch) !== comparable(before.values['CLUTCH NUMBER'] ?? null);
+        const predicted = moved
+          ? predictedSpecies(this.store, record.sheet, field, { ...before.values, ...target.clean })
+          : (before.values[field] ?? null);
+        if (predicted !== undefined && sameAsFormula(predicted, after)) continue;
+      }
       const replacing = !!before.formulas[field] && target.replaceFormula.has(field);
       // A count kept as a sum (=12+15) may be rewritten; any other formula stays the sheet's.
       const sumCell = isSumField(record.sheet, field) && !!simpleSum(before.formulas[field]);
@@ -464,10 +478,6 @@ class Plan {
         return this.conflict(target, 'FORMULA_CELL', msg('{field} se calcula con una fórmula de la hoja', { field }), { field });
       if (replacing) {
         const predicted = before.values[field] ?? null;
-        if (comparable(predicted) === comparable(after))
-          return this.conflict(target, 'MATCHES_FORMULA', msg('{field} ya da {value}; no hace falta escribirlo', { field, value: after }), {
-            field,
-          });
         if (
           target.expected &&
           Object.hasOwn(target.expected, field) &&
@@ -553,6 +563,13 @@ class Plan {
       const changes = [];
       for (const [field, after] of Object.entries(target.clean)) {
         if (comparable(before.values[field] ?? null) === comparable(after)) continue;
+        // The species the clutch gives: the new row's formula will show it once the clutch is in.
+        if (
+          before.formulas[field] &&
+          TYPED_OVER_FORMULA[target.sheet]?.has(field) &&
+          sameAsFormula(predictedSpecies(this.store, target.sheet, field, target.clean) ?? before.values[field], after)
+        )
+          continue;
         if (before.formulas[field]) {
           // A pre-made row's count kept as a sum takes the notebook's sum.
           if (isSumField(target.sheet, field) && simpleSum(before.formulas[field])) {
@@ -562,9 +579,6 @@ class Plan {
           }
           // e.g. a butterfly of another subspecies than its clutch predicts.
           if (target.replaceFormula.has(field)) {
-            // The new row's formula has no clutch to work from yet, so compare with the clutch's species.
-            if (comparable(predictedSpecies(this.store, target.sheet, field, target.clean)) === comparable(after))
-              continue;
             changes.push({ field, before: { formula: before.formulas[field] }, after });
             continue;
           }

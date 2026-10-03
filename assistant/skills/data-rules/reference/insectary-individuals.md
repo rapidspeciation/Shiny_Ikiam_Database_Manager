@@ -27,9 +27,10 @@ blank means it has not died yet.
 - `Wild_Reared`: `Reared` (it has a clutch) or `Wild-caught`.
 - `CLUTCH NUMBER`: exactly as the Insectary_stocks row writes it (`831 (3)`
   with a space in 2024–25, `994(6)` without in 2026).
-- `SPECIES` is a formula from the clutch. Keep it when the notebook's species
-  is the clutch's; type over it only when what emerged differs (deceptus stock
-  emerging as intermedia is common; so is proceriformis → eurydice).
+- `SPECIES` stays the formula from the clutch unless what emerged differs
+  (deceptus stock emerging as intermedia is common; so is proceriformis →
+  eurydice); only then is the emerged species typed over it. A proposed
+  species equal to the clutch's is left to the formula, not written.
   `match_notebook` does this.
 - `Stock_of_origin`: only for the *Mechanitis messenoides* stock lines:
   `messenoides`, `intermedia`, `deceptus` (lowercase) = the **clutch's**

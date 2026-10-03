@@ -30,20 +30,16 @@ test('the species formula is typed over only when what emerged differs, and undo
   await assert.rejects(applyBatch(store, edit({ SPECIES: 'Mechanitis messenoides deceptus' }), user), e =>
     e.details.items.some(i => i.code === 'FORMULA_CELL'),
   );
-  // Typing what the formula already predicts is refused: the formula stays.
-  await assert.rejects(
-    applyBatch(
-      store,
-      {
-        requestId: randomUUID(),
-        edits: [
-          { id: record.id, values: { SPECIES: 'Mechanitis messenoides intermedia' }, replaceFormula: ['SPECIES'] },
-        ],
-      },
-      user,
-    ),
-    e => e.details.items.some(i => i.code === 'MATCHES_FORMULA'),
+  // Typing what the formula already predicts writes nothing: the formula stays.
+  const same = await applyBatch(
+    store,
+    {
+      requestId: randomUUID(),
+      edits: [{ id: record.id, values: { SPECIES: 'Mechanitis messenoides intermedia' }, replaceFormula: ['SPECIES'] }],
+    },
+    user,
   );
+  assert.equal(same.status, 'unchanged');
   // Only listed fields may be replaced.
   await assert.rejects(
     applyBatch(
