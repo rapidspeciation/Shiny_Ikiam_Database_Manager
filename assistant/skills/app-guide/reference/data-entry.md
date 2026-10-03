@@ -144,8 +144,41 @@ are on the left and the registering with Save on the right. No link parameters.
 
 ## Tubos — `#/tubos`
 
-CAM IDs and tubes for insectary butterflies (Insectary_data), and labels.
+CAM IDs and tubes for insectary butterflies (Insectary_data), and labels. Two
+modes, «Tarjetas | Tabla» (kept per browser; cards by default). Both share the
+butterflies chosen, the tissue, medium and dates, and write the same cells.
 
+**Tarjetas**:
+1. Search box (Insectary ID, CAM or tube; paste a list or a range `Z8D-A2E`).
+   One card per butterfly, in the order added: tubes are handed out in that
+   order. ✕ removes a card, › opens the whole row.
+2. Options (on a phone folded into one line above the cards, «Cambiar»; on a
+   wide screen the right column), for all cards or the selected ones (tap a
+   card's name; its own values show in violet):
+   - «Qué va en el tubo»: «Cuerpo entero» (`WHOLE_ORGANISM`; also
+     Preservation_date, Death_date, Death_cause Killed_Preserved,
+     Preserved_Dead_Alive, Location_body Ikiam where empty), «Corte de ala»
+     (WING CLIP; the note `d/m/yy INI: Wing clip d/m/yy`), «Por partes» (one
+     tube per tissue, «Otro tubo»), «No preservada» (CAM and tubes `NA`,
+     tissues and media `NOT_COLLECTED`; rows without CAM or tube only).
+   - The date (Hoy / Ayer / a date; amber when older than yesterday), the
+     medium, «Tubos sin usar: ID NA, tejido y medio NOT_COLLECTED» (bodies).
+   - «Tubos desde … · CAM desde …»: the rack the app picked and the next free
+     CAM; «Cambiar» to pick another rack or type the first tube or CAM.
+3. Each card: its CAM (kept when it has one) and tube boxes (letters `FS` in a
+   menu, digits on the number pad), filled with the next free ones (grey,
+   «siguiente libre», skipping IDs used in any sheet). A tube typed or
+   scanned makes the next cards follow from it. Enter goes to the next card's
+   tube. «Escanear» (Chrome on Android) reads tube codes with the camera, card
+   after card.
+4. Checked before Save: two letters + 8 digits (`FS9041542` offers «Usar
+   FS90415421»; «Así está en la etiqueta» keeps an odd one), the same ID on
+   two cards, an ID used in any sheet or in another unsaved change, no free
+   tube column, a missing date.
+5. «Guardar N mariposas» writes and saves at once, with «Deshacer» and
+   «Imprimir etiquetas» (Code128: tube, ID · CAM, tissue).
+
+**Tabla**:
 1. «Insectary IDs» (as in Muertes; warns when a butterfly already has CAM and
    tube or died more than 7 days ago) → «Cargar» (replace the table) or
    «Añadir a la tabla». The tissue follows the rows: mostly dead →
@@ -163,8 +196,7 @@ CAM IDs and tubes for insectary butterflies (Insectary_data), and labels.
 4. «Asignar IDs»: consecutive CAMs to rows without one and the next tube into
    each row's first empty tube slot. If the start is already used it stops and
    offers «Usar el siguiente libre: …».
-5. «Imprimir etiquetas»: Code128 labels (tube, ID · CAM, tissue).
-   «Vaciar tabla» clears the loaded rows.
+5. «Imprimir etiquetas»; «Vaciar tabla» clears the loaded rows.
 
 No link parameters.
 

@@ -7,7 +7,11 @@ import { Download, Plus, Printer, Wand2 } from 'lucide-vue-next'
 import IdPicker from '../components/IdPicker.vue'
 import SheetGrid from '../components/SheetGrid.vue'
 import TubeLabels from '../components/TubeLabels.vue'
+import EntryModeToggle from '../components/EntryModeToggle.vue'
+import TubesCards from '../components/tubes/TubesCards.vue'
+import { useEntryMode } from '../composables/useEntryMode'
 import { useSheet } from '../composables/useSheet'
+import { useTubesState } from '../composables/useTubesState'
 import { api } from '../lib/api'
 import { isBlank } from '../lib/cells'
 import { dayLabel, formatSerial, serialFromIso, todayIso } from '../lib/dates'
@@ -21,8 +25,11 @@ import { useSession } from '../stores/session'
 import { t, tx, type Msg } from '../lib/i18n'
 
 /**
- * "Registrar Tubos": choose butterflies, then assign consecutive CAM IDs and
- * tube IDs with a default tissue, medium and preservation date.
+ * "Registrar Tubos", as cards (the default: components/tubes/TubesCards.vue,
+ * one card per butterfly with its CAM and tube boxes) or as the table: choose
+ * butterflies, then assign consecutive CAM IDs and tube IDs with a default
+ * tissue, medium and preservation date. Both modes share what is being
+ * registered (useTubesState).
  */
 const MODULE = 'Insectary_data'
 const WHOLE = 'WHOLE_ORGANISM'
@@ -30,7 +37,7 @@ const WING_CLIP = '**OTHER_SOMATIC_ANIMAL_TISSUE** | WING CLIP'
 const module = ref(MODULE)
 const pending = usePending()
 const session = useSession()
-const { table, ready, options } = useSheet(module)
+const { table, ready, options, listColumn } = useSheet(module)
 
 interface Suggestion {
   value: string
@@ -52,16 +59,22 @@ const camSuggestions = ref<Suggestion[]>([])
 const tubeSuggestions = ref<Suggestion[]>([])
 
 const picked = persistentRef<string[]>('tubes:picked', [])
-const loaded = persistentRef<string[]>('tubes:loaded', [])
-const camStart = persistentRef('tubes:cam', '')
-const tubeStart = persistentRef('tubes:tube', '')
-const tissue = persistentRef('tubes:tissue', WHOLE)
-const medium = persistentRef('tubes:medium', 'Flash frozen')
-// The last dates used are kept on this device (not reset to today in a new tab), with the weekday shown.
-const presDate = persistentRef('tubes:date', '', { lasting: true })
-const clipDate = persistentRef('tubes:clip-date', '', { lasting: true })
-const initialsTyped = persistentRef('tubes:initials', '', { lasting: true })
-const autofillNa = persistentRef('tubes:na', true)
+// Shared with the cards (useTubesState): the loaded rows are the cards; the last dates used are kept
+// on this device (not reset to today in a new tab), with the weekday shown.
+const {
+  picked: loaded,
+  camStart,
+  tubeStart,
+  tissue,
+  medium,
+  presDate,
+  clipDate,
+  initials: initialsTyped,
+  closeRest: autofillNa,
+  rackChosen,
+} = useTubesState()
+const { mode } = useEntryMode('tubes')
+const collectors = computed(() => listColumn('Abbr_name'))
 /** A starting CAM or tube that is already used, and the next free one to offer. */
 const startIssue = ref<{ kind: 'cam' | 'tube'; text: string; next?: string } | null>(null)
 watch([camStart, tubeStart], () => (startIssue.value = null))
@@ -184,7 +197,6 @@ function bestRack() {
 }
 
 // The app keeps choosing the rack (as butterflies are loaded or the medium changes) until the person picks one.
-const rackChosen = ref(false)
 watch([() => rows.value.length, medium], () => {
   if (!rackChosen.value && tubeSuggestions.value.some(t => t.value === tubeStart.value))
     tubeStart.value = bestRack()?.value || tubeStart.value
@@ -368,7 +380,8 @@ function nextAfter(id: string) {
 </script>
 
 <template>
-  <div class="flex h-full flex-col">
+  <TubesCards v-if="mode === 'cards'" v-model:mode="mode" :table="table" :ready="ready" :options="options" :collectors="collectors" />
+  <div v-else class="flex h-full flex-col">
     <div class="toolbar">
       <IdPicker v-model="picked" :options="ids" :loading="!ready" :warn="warn" label="Insectary IDs" />
       <div class="flex gap-2">
@@ -376,6 +389,7 @@ function nextAfter(id: string) {
         <button class="btn" @click="load(true)"><Plus :size="15" /> {{ $t('Añadir a la tabla') }}</button>
       </div>
       <TabHistoryButton class="ml-auto" purpose="tubos" :title="$t('Historial de Tubos')" />
+      <EntryModeToggle v-model="mode" />
     </div>
     <div class="toolbar">
       <label>

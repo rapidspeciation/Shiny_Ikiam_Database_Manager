@@ -362,18 +362,29 @@ export interface RackSuggestion {
   value: string
   medium?: string
   context?: string
+  /** The newest preservation day of its run (a serial date), when known. */
+  date?: number | null
 }
+/** A rack whose last tube is this many days older than another insectary rack's is no longer in use. */
+const STALE_RACK_DAYS = 14
 /**
  * The rack for a dead body, as Tubos picks it: the crosses' rack when most of
  * the butterflies belong to crosses, else the insectary's, in the medium chosen
- * (flash frozen and ethanol tubes live in different racks).
+ * (flash frozen and ethanol tubes live in different racks); but when that rack's
+ * last tube is weeks older than the other insectary rack's, the one in use.
  */
 export function bestRack<T extends RackSuggestion>(racks: T[], rows: TableRow[], medium: string): T | undefined {
   const crosses = rows.filter(r => /F1\/F2|WEST x EAST|cross|mutation/i.test(String(r.values.Research_purpose ?? ''))).length
   const context = rows.length && crosses * 2 >= rows.length ? 'Cruces' : 'Insectario'
   const insectary = racks.filter(s => s.context === 'Cruces' || s.context === 'Insectario')
+  // The team often fills one rack for crosses and insectary alike (Sep–Oct 2026): a context's own rack
+  // left weeks behind gives way to the insectary rack in use.
+  const own = racks.find(s => s.context === context && s.medium === medium)
+  const newest = insectary.filter(s => s.medium === medium).sort((a, b) => (b.date ?? -Infinity) - (a.date ?? -Infinity))[0]
+  if (own && newest && typeof own.date === 'number' && typeof newest.date === 'number' && newest.date - own.date > STALE_RACK_DAYS)
+    return newest
   return (
-    racks.find(s => s.context === context && s.medium === medium) ||
+    own ||
     insectary.find(s => s.medium === medium) ||
     racks.find(s => s.context === context) ||
     racks[0]
