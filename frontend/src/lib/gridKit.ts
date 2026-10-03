@@ -1,4 +1,4 @@
-import { EditModule, KeybindingsModule, SelectRangeModule } from 'tabulator-tables'
+import { EditModule, KeybindingsModule, ResizeColumnsModule, SelectRangeModule } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent, Tabulator } from 'tabulator-tables'
 import { complete, pickChoice } from './paste'
 import { t, tn } from './i18n'
@@ -537,7 +537,7 @@ export function attachCopyMarker(table: Tabulator, container: HTMLElement, notic
 
 /**
  * Phones and tablets, as Google Sheets on a phone: tap a cell to select it,
- * double-tap it (or "Editar") to edit; drag the round handle on the
+ * tap it again (or "Editar") to edit; drag the round handle on the
  * selection's corner to stretch it over more cells; a bar offers Copiar,
  * Pegar, Rellenar ↓ and Borrar for the selection. One finger elsewhere scrolls.
  */
@@ -700,10 +700,12 @@ export function attachTouchSheet(
     handle.addEventListener('pointercancel', up)
   })
 
-  // A double tap edits the cell (one tap selects it, as in Google Sheets).
-  let lastTap: { cell: CellComponent; at: number } | null = null
+  // A tap on the cell already selected edits it (the first tap selects it, as in Google Sheets);
+  // so does a double tap. The selection is read as the finger comes down, before the tap selects.
+  let selectedBefore: CellComponent | null = null
   const remember = () => {
     lastTouch = Date.now()
+    selectedBefore = touchedSheet === container ? activeCell(table) : null
     if (touchedSheet !== container) {
       touchedSheet = container
       // After the tap is over: shown now, the bar could take the tap's own click.
@@ -713,13 +715,16 @@ export function attachTouchSheet(
   container.addEventListener('pointerdown', remember, true)
   const onOtherSheet = () => place()
   window.addEventListener('touch-sheet', onOtherSheet)
-  table.on('cellClick', (_e: UIEvent, cell: CellComponent) => {
-    const now = Date.now()
-    const double =
-      lastTap && now - lastTap.at < 450 && lastTap.cell.getRow() === cell.getRow() && lastTap.cell.getField() === cell.getField()
-    lastTap = double ? null : { cell, at: now }
+  table.on('cellClick', (e: UIEvent, cell: CellComponent) => {
+    const again = selectedBefore?.getRow() === cell.getRow() && selectedBefore.getField() === cell.getField()
+    selectedBefore = null
+    if (!again || !canEdit(cell.getRow(), cell.getField())) return
+    const el = cell.getElement()
+    if (el.classList.contains('tabulator-editing')) return
+    // The ▾ arrow of a list cell opens only its list (openList), without the keyboard.
+    if (el.classList.contains('has-choices') && e instanceof MouseEvent && e.clientX >= el.getBoundingClientRect().right - 22) return
     // Deferred: opened during the tap's own click, the editor would close as the grid takes the focus.
-    if (double && canEdit(cell.getRow(), cell.getField())) setTimeout(() => cell.edit(true), 30)
+    setTimeout(() => cell.edit(true), 30)
   })
 
   const later = () => requestAnimationFrame(place)
@@ -754,7 +759,7 @@ let arrowCell: CellComponent | null = null
 
 /**
  * The ▾ arrow opens a cell's list. On a touch screen it opens only the list to
- * tap from, without the keyboard (a double tap edits with the keyboard).
+ * tap from, without the keyboard (a second tap on the selected cell edits with the keyboard).
  */
 export function openList(cell: CellComponent) {
   arrowCell = touchScreen ? cell : null
@@ -894,8 +899,8 @@ type EditorFn = (
  * Editing a cell with a list of choices. Computers: Tabulator's list, filtered
  * as you type. Phones (checked on a real Android phone in the emulator):
  * Tabulator's list did not focus its box, so the keyboard never came, and it
- * closes on the window resize the keyboard fires as it opens. So a double tap
- * gives a plain text box with the phone's own suggestions above the keyboard,
+ * closes on the window resize the keyboard fires as it opens. So a tap on the
+ * selected cell gives a plain text box with the phone's own suggestions above the keyboard,
  * and the ▾ arrow gives the list alone (tap to choose, no keyboard).
  */
 export function choiceEditor(values: (cell: CellComponent) => Choices, freetext = true): Partial<ColumnDefinition> {
@@ -1097,6 +1102,124 @@ export function backToGrid(table: Tabulator, move: Direction | 'here') {
   const inner = table as unknown as SelectInner
   inner.rowManager.element.focus({ preventScroll: true })
   if (move !== 'here') inner.modules.selectRange?.navigate(false, false, move)
+}
+
+// ------------------------------------------------------------ widening a column
+
+/**
+ * Widening a column by dragging its border in the header. Every grid asks for
+ * the header's border only (columnDefaults resizable: 'header'): a finger
+ * swiping across the rows started on a cell's border and changed that column's
+ * width instead of scrolling. On top of Tabulator's drag:
+ * - With a mouse, the pointer at the right edge of the grid (or of the screen)
+ *   scrolls the grid on and keeps widening the column, so a column can grow
+ *   wider than the room left on screen in one drag.
+ * - With a finger, the border is held still a moment first (it turns green),
+ *   then dragged: a swipe that starts on it scrolls as anywhere else.
+ */
+type InnerResize = {
+  table: { rowManager: { element: HTMLElement }; options: { resizableColumnGuide?: boolean } }
+  startX: number
+  resize: (e: MouseEvent | TouchEvent | { clientX: number }, column: unknown) => void
+  _mouseDown: (e: MouseEvent | TouchEvent | PlainDown, column: unknown, handle: HTMLElement) => void
+  /** While a mouse drags a border: the grid's rows, whose right edge the border stops at. */
+  widening?: HTMLElement | null
+}
+type PlainDown = { clientX: number; stopPropagation: () => void }
+/** How close to the edge (px) the pointer starts the scrolling, and how long (ms) a finger holds the border. */
+const RESIZE_EDGE = 24
+const RESIZE_HOLD = 350
+/** The right edge of what shows of the grid's rows (not their scrollbar), within the screen. */
+const visibleRight = (holder: HTMLElement) =>
+  Math.min(holder.getBoundingClientRect().left + holder.clientWidth, window.innerWidth)
+{
+  const resize = ResizeColumnsModule.prototype as unknown as InnerResize
+  const original = resize._mouseDown
+  resize._mouseDown = function (this: InnerResize, e, column, handle) {
+    if (typeof TouchEvent !== 'undefined' && e instanceof TouchEvent) return holdToResize(this, e, column, handle, original)
+    original.call(this, e, column, handle)
+    if (e instanceof MouseEvent && !this.table.options.resizableColumnGuide) widenPastEdge(this, e, column)
+  }
+  // The border stays in sight at the grid's right edge however far right the pointer goes (the grid scrolls on).
+  const resizeTo = resize.resize
+  resize.resize = function (this: InnerResize, e, column) {
+    const right = this.widening ? visibleRight(this.widening) - 3 : Infinity
+    const x = 'clientX' in e ? e.clientX : undefined
+    resizeTo.call(this, x !== undefined && x > right ? { clientX: right } : e, column)
+  }
+}
+
+function widenPastEdge(resize: InnerResize, down: MouseEvent, column: unknown) {
+  const holder = resize.table.rowManager.element
+  resize.widening = holder
+  let x = down.clientX
+  // Only once dragged: pressing a border that is already by the edge (a double click to fit it) leaves it alone.
+  let dragged = false
+  let frame = 0
+  const step = () => {
+    const edge = visibleRight(holder) - RESIZE_EDGE
+    if (dragged && x > edge) {
+      // Faster the closer to (or past) the edge; the column grows by what the grid scrolls,
+      // so its border stays at the edge.
+      const by = Math.round(2 + 10 * Math.min(1, (x - edge) / RESIZE_EDGE))
+      resize.startX -= by
+      resize.resize({ clientX: x }, column)
+      holder.scrollLeft += by
+    }
+    frame = requestAnimationFrame(step)
+  }
+  const move = (e: MouseEvent) => {
+    x = e.clientX
+    dragged ||= Math.abs(x - down.clientX) > 3
+  }
+  const up = () => {
+    cancelAnimationFrame(frame)
+    resize.widening = null
+    document.removeEventListener('mousemove', move, true)
+    window.removeEventListener('mouseup', up, true)
+  }
+  document.addEventListener('mousemove', move, true)
+  window.addEventListener('mouseup', up, true)
+  frame = requestAnimationFrame(step)
+}
+
+function holdToResize(
+  resize: InnerResize,
+  start: TouchEvent,
+  column: unknown,
+  handle: HTMLElement,
+  original: InnerResize['_mouseDown'],
+) {
+  const touch = start.touches[0]
+  if (!touch) return
+  const { clientX, clientY } = touch
+  let held = false
+  const timer = window.setTimeout(() => {
+    held = true
+    handle.classList.add('is-resizing')
+    navigator.vibrate?.(10)
+    // Tabulator's drag from here on (it follows the finger's moves on the border).
+    original.call(resize, { clientX, stopPropagation: () => {} }, column, handle)
+  }, RESIZE_HOLD)
+  const move = (e: TouchEvent) => {
+    // Held: the finger widens the column and nothing scrolls. Not yet: moving is a swipe.
+    if (held) {
+      if (e.cancelable) e.preventDefault()
+      return
+    }
+    const now = e.touches[0]
+    if (now && Math.hypot(now.clientX - clientX, now.clientY - clientY) > 8) end()
+  }
+  const end = () => {
+    window.clearTimeout(timer)
+    handle.classList.remove('is-resizing')
+    handle.removeEventListener('touchmove', move)
+    handle.removeEventListener('touchend', end)
+    handle.removeEventListener('touchcancel', end)
+  }
+  handle.addEventListener('touchmove', move, { passive: false })
+  handle.addEventListener('touchend', end)
+  handle.addEventListener('touchcancel', end)
 }
 
 // ------------------------------------------------------------ fitting a column to its content

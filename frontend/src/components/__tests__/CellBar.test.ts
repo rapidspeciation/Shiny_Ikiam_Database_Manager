@@ -122,6 +122,20 @@ describe('the cell bar', () => {
     expect(box.parentElement!.querySelector('.cell-bar-notes')!.textContent).toContain('Hoja: dead pupa')
     expect(box.parentElement!.querySelector('.cell-bar-notes')!.textContent).toContain('IA: pupa muerta')
   })
+  it('keeps its one line whatever cell is selected; with the focus, all of it shows over the grid', async () => {
+    const { box, info } = await mount(note)
+    const bar = box.closest('.cell-bar')!
+    expect(bar.classList.contains('is-open')).toBe(false)
+    info.value = { ...note, text: 'a much longer note\nover\nseveral\nlines' }
+    await nextTick()
+    expect(bar.classList.contains('is-open')).toBe(false)
+    box.focus()
+    await nextTick()
+    expect(bar.classList.contains('is-open')).toBe(true)
+    box.blur()
+    await nextTick()
+    expect(bar.classList.contains('is-open')).toBe(false)
+  })
   it('waits for a cell when none is selected', async () => {
     const { box } = await mount(null)
     expect(box.disabled).toBe(true)

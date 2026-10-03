@@ -692,7 +692,8 @@ onMounted(() => {
     clipboardCopyRowRange: 'range',
     clipboardPasteParser: pasteParser,
     clipboardPasteAction: pasteRange,
-    columnDefaults: { headerSort: false },
+    // Widths change from the header's borders only (see gridKit): a finger on the rows scrolls.
+    columnDefaults: { headerSort: false, resizable: 'header' },
   } as unknown as ConstructorParameters<typeof Tabulator>[1])
   table.on('tableBuilt', () => {
     built = true
@@ -804,7 +805,7 @@ watch(
       <slot name="end" />
     </div>
     <div class="sheet-grid proposal-sheet">
-      <CellBar :info="bar" @save="saveFromBar" @pick="pickFromBar" @back="move => table && backToGrid(table, move)" />
+      <CellBar :info="bar" notes-line @save="saveFromBar" @pick="pickFromBar" @back="move => table && backToGrid(table, move)" />
       <!-- The grid's own box: the fill handle and the copied cells' border are placed in it, below the bar. -->
       <div class="relative">
         <div ref="host" tabindex="-1" />

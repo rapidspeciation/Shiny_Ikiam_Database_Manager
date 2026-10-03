@@ -564,7 +564,8 @@ function build() {
     clipboardCopyRowRange: 'range',
     clipboardPasteParser: pasteParser,
     clipboardPasteAction: pasteRange,
-    columnDefaults: { headerSortTristate: true },
+    // Widths change from the header's borders only (see gridKit): a finger on the rows scrolls.
+    columnDefaults: { headerSortTristate: true, resizable: 'header' },
     rowFormatter: (row: RowComponent) => {
       row.getElement().classList.toggle('is-highlight', props.highlight.includes((row.getData() as GridRow).__id))
     },

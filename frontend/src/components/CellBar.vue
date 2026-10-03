@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Lock } from 'lucide-vue-next'
+import { ChevronDown, Lock } from 'lucide-vue-next'
 import { barKey, type CellBarInfo, type Direction } from '../lib/gridKit'
 
 /**
@@ -12,8 +12,14 @@ import { barKey, type CellBarInfo, type Direction } from '../lib/gridKit'
  * notes column. The grid writes the text as if typed in the cell (`save`),
  * so it is checked, recorded and saved the same way. Lines under the text show
  * the sheet's or the assistant's value, or a sum's total (`notes`).
+ *
+ * The bar keeps one height whatever cell is selected (one line of text, and
+ * one of notes with `notesLine`): it grew with each cell's text, so the grid
+ * under it moved as cells were clicked, and the second click of a double click
+ * landed on another row. The rest shows over the grid while the bar has the
+ * focus, or after a moment under the pointer (the ⌄ says there is more).
  */
-const props = defineProps<{ info: CellBarInfo | null }>()
+const props = defineProps<{ info: CellBarInfo | null; notesLine?: boolean }>()
 const emit = defineEmits<{
   /** Write `text` into the cell (then move as Enter or Tab would; null: the focus went elsewhere). */
   save: [target: CellBarInfo, text: string, move: Direction | 'here' | null]
@@ -46,6 +52,22 @@ const touch = typeof window !== 'undefined' && window.matchMedia?.('(pointer: co
 const LINE = 18
 const PADDING = 6
 const MAX_LINES = touch ? 3 : 5
+/** The bar's whole text and notes are shown, over the grid: it has the focus, or the pointer rests on it. */
+const focused = ref(false)
+const hovered = ref(false)
+const open = computed(() => focused.value || hovered.value)
+/** Some of the text or notes is cut off while the bar keeps its one line. */
+const clipped = ref(false)
+let hoverTimer: number | undefined
+function onEnter() {
+  window.clearTimeout(hoverTimer)
+  hoverTimer = window.setTimeout(() => (hovered.value = clipped.value), 300)
+}
+function onLeave() {
+  window.clearTimeout(hoverTimer)
+  hovered.value = false
+}
+watch(open, () => nextTick(grow))
 const below = computed(() => props.info?.notes?.filter(n => n.kind !== 'total') ?? [])
 const totals = computed(() => props.info?.notes?.filter(n => n.kind === 'total') ?? [])
 
@@ -62,20 +84,30 @@ watch(
   { immediate: true },
 )
 
-/** As tall as its text, up to MAX_LINES lines, then it scrolls. */
+/** One line; open, as tall as its text up to MAX_LINES lines, then it scrolls. */
 function grow() {
   const el = box.value
-  // Not while hidden (a tab kept in the background): measured then, it would change size on coming back,
-  // and the grid under it would be redrawn for nothing.
+  // Not while hidden (a tab kept in the background): nothing to measure.
   if (!el?.clientWidth) return
   // The box's height includes its border (box-sizing), its scrollHeight does not.
   const border = el.offsetHeight - el.clientHeight
   el.style.height = 'auto'
-  el.style.height = `${Math.min(el.scrollHeight, MAX_LINES * LINE + PADDING) + border}px`
+  const full = el.scrollHeight
+  el.style.height = `${Math.min(full, (open.value ? MAX_LINES : 1) * LINE + PADDING) + border}px`
+  // (The text box sits over the grid, so measuring it no longer moves anything.)
+  const line = root.value?.clientHeight ?? 0
+  clipped.value = full > LINE + PADDING + 1 || (!!line && (body.value?.scrollHeight ?? 0) > line + 1)
 }
+const root = ref<HTMLElement>()
+const body = ref<HTMLElement>()
 
 function onFocus() {
+  focused.value = true
   editing = props.info?.editable ? props.info : null
+}
+function onBlur() {
+  focused.value = false
+  finish(null)
 }
 
 function onKeydown(event: KeyboardEvent) {
@@ -113,65 +145,88 @@ onMounted(() => {
   resize = new ResizeObserver(() => grow())
   resize.observe(box.value)
 })
-onBeforeUnmount(() => resize?.disconnect())
+onBeforeUnmount(() => {
+  resize?.disconnect()
+  window.clearTimeout(hoverTimer)
+})
 </script>
 
 <template>
-  <div class="cell-bar" data-cell-bar>
-    <span class="cell-bar-where" :title="info ? `${info.column} · ${info.row}` : ''">
-      <template v-if="info"
-        ><b>{{ info.column }}</b
-        ><template v-if="info.row"> · {{ info.row }}</template></template
+  <div
+    ref="root"
+    class="cell-bar"
+    :class="{ 'has-notes-line': notesLine, 'is-open': open && (clipped || focused) }"
+    data-cell-bar
+    @mouseenter="onEnter"
+    @mouseleave="onLeave"
+  >
+    <div ref="body" class="cell-bar-body">
+      <span class="cell-bar-where" :title="info ? `${info.column} · ${info.row}` : ''">
+        <template v-if="info"
+          ><b>{{ info.column }}</b
+          ><template v-if="info.row"> · {{ info.row }}</template></template
+        >
+      </span>
+      <div class="min-w-0 flex-1">
+        <textarea
+          ref="box"
+          v-model="text"
+          rows="1"
+          spellcheck="false"
+          class="cell-bar-text"
+          :class="{ 'is-readonly': info && !info.editable }"
+          :readonly="!info?.editable"
+          :disabled="!info"
+          :placeholder="info ? '' : $t('Selecciona una celda para ver todo su texto')"
+          :aria-label="info ? $t('Contenido de {column}', { column: info.column }) : $t('Contenido de la celda')"
+          @input="grow"
+          @focus="onFocus"
+          @blur="onBlur"
+          @keydown="onKeydown"
+        />
+        <p v-if="below.length || info?.choices?.length" class="cell-bar-notes">
+          <span v-for="(note, i) in below" :key="i" :class="note.kind ? `is-${note.kind}` : ''">
+            <b v-if="note.label">{{ note.label }}:</b> {{ note.text }}
+          </span>
+          <!-- A doubtful cell's other readings: a click writes one into the cell (the grid keeps its selection).
+               An unreadable cell's partial readings: a click puts one in the bar to complete. -->
+          <span v-if="info?.choices?.length" class="cell-bar-choices" :class="{ 'is-complete': info.choicesComplete }">
+            <b>{{ info.choicesLabel ?? $t('Otras lecturas') }}:</b>
+            <button
+              v-for="(choice, i) in info.choices"
+              :key="`c${i}`"
+              type="button"
+              class="cell-bar-choice"
+              :disabled="!info.editable"
+              :title="
+                info.choicesComplete
+                  ? $t('Completar {value} en la barra', { value: choice.label })
+                  : $t('Escribir {value} en la celda', { value: choice.label })
+              "
+              @mousedown.prevent
+              @click="choose(info, choice.text)"
+            >
+              {{ choice.label }}
+            </button>
+          </span>
+        </p>
+      </div>
+      <!-- A sum's total beside it, as in the cell: the bar stays one line tall. -->
+      <span v-for="(note, i) in totals" :key="`t${i}`" class="cell-bar-total">{{ note.text }}</span>
+      <span v-if="info && !info.editable" class="cell-bar-lock" :title="info.readonly || $t('Solo lectura')">
+        <Lock :size="12" />
+      </span>
+      <!-- More text or notes than the bar's line: a click shows all of it (as does resting the pointer on the bar). -->
+      <button
+        v-if="clipped && !open"
+        type="button"
+        class="cell-bar-more"
+        :title="$t('Ver todo el texto')"
+        @mousedown.prevent
+        @click="box?.focus()"
       >
-    </span>
-    <div class="min-w-0 flex-1">
-      <textarea
-        ref="box"
-        v-model="text"
-        rows="1"
-        spellcheck="false"
-        class="cell-bar-text"
-        :class="{ 'is-readonly': info && !info.editable }"
-        :readonly="!info?.editable"
-        :disabled="!info"
-        :placeholder="info ? '' : $t('Selecciona una celda para ver todo su texto')"
-        :aria-label="info ? $t('Contenido de {column}', { column: info.column }) : $t('Contenido de la celda')"
-        @input="grow"
-        @focus="onFocus"
-        @blur="finish(null)"
-        @keydown="onKeydown"
-      />
-      <p v-if="below.length || info?.choices?.length" class="cell-bar-notes">
-        <span v-for="(note, i) in below" :key="i" :class="note.kind ? `is-${note.kind}` : ''">
-          <b v-if="note.label">{{ note.label }}:</b> {{ note.text }}
-        </span>
-        <!-- A doubtful cell's other readings: a click writes one into the cell (the grid keeps its selection).
-             An unreadable cell's partial readings: a click puts one in the bar to complete. -->
-        <span v-if="info?.choices?.length" class="cell-bar-choices" :class="{ 'is-complete': info.choicesComplete }">
-          <b>{{ info.choicesLabel ?? $t('Otras lecturas') }}:</b>
-          <button
-            v-for="(choice, i) in info.choices"
-            :key="`c${i}`"
-            type="button"
-            class="cell-bar-choice"
-            :disabled="!info.editable"
-            :title="
-              info.choicesComplete
-                ? $t('Completar {value} en la barra', { value: choice.label })
-                : $t('Escribir {value} en la celda', { value: choice.label })
-            "
-            @mousedown.prevent
-            @click="choose(info, choice.text)"
-          >
-            {{ choice.label }}
-          </button>
-        </span>
-      </p>
+        <ChevronDown :size="14" />
+      </button>
     </div>
-    <!-- A sum's total beside it, as in the cell: the bar stays one line tall. -->
-    <span v-for="(note, i) in totals" :key="`t${i}`" class="cell-bar-total">{{ note.text }}</span>
-    <span v-if="info && !info.editable" class="cell-bar-lock" :title="info.readonly || $t('Solo lectura')">
-      <Lock :size="12" />
-    </span>
   </div>
 </template>
