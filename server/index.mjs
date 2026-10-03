@@ -37,7 +37,18 @@ import { monitoringRowsCsv, pointsCsv, walksGpx, wikilocCorrections } from './mo
 import { idSuggestions, tableChanges, tablePayload, tableRevision } from './grid.mjs';
 import { searchAll, searchRange } from './search.mjs';
 import { extendPremadeRows } from './premade.mjs';
-import { addClutchCheck, clutchDay, clutchState, removeClutchCheck } from './clutches.mjs';
+import {
+  addClutchCheck,
+  addClutchEvent,
+  clutchDay,
+  clutchEvents,
+  clutchState,
+  notebookChanges,
+  removeClutchCheck,
+  removeClutchEvent,
+  setClutchSettings,
+  setNotebookUpTo,
+} from './clutches.mjs';
 import { createSheetHook } from './hooks.mjs';
 import { createInvitations, mailerFromEnv } from './invitations.mjs';
 import { createPasswordResets } from './passwordReset.mjs';
@@ -601,6 +612,24 @@ export async function createApp(config = {}, options = {}) {
       if (method === 'DELETE' && /^\/api\/clutches\/checks\/[^/]+$/.test(path)) {
         requireEditor(user);
         return json(res, 200, removeClutchCheck(store, decodePart(path.split('/')[4]), user));
+      }
+      // App-only events (hatched, died, disappeared, preserved), the team's setting, the notebook's list.
+      if (method === 'GET' && path === '/api/clutches/events') return json(res, 200, clutchEvents(store, query));
+      if (method === 'POST' && path === '/api/clutches/events') {
+        requireEditor(user);
+        requireId(body);
+        const saved = addClutchEvent(store, body, user);
+        return json(res, saved.duplicate ? 200 : 201, { event: saved.event });
+      }
+      if (method === 'DELETE' && /^\/api\/clutches\/events\/[^/]+$/.test(path)) {
+        requireEditor(user);
+        return json(res, 200, removeClutchEvent(store, decodePart(path.split('/')[4]), user));
+      }
+      if (method === 'PUT' && path === '/api/clutches/settings') return json(res, 200, setClutchSettings(store, body, user));
+      if (method === 'GET' && path === '/api/clutches/notebook') return json(res, 200, notebookChanges(store, query));
+      if (method === 'PUT' && path === '/api/clutches/notebook/up-to') {
+        requireEditor(user);
+        return json(res, 200, setNotebookUpTo(store, body, user));
       }
       // More pre-made rows (formulas, formats, dropdowns; Insectary IDs) at the end of a sheet.
       if (method === 'POST' && /^\/api\/sheets\/[^/]+\/extend$/.test(path)) {

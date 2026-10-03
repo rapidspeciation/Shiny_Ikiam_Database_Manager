@@ -166,4 +166,30 @@ test('clutch checks: marked by editors, seen by everyone, with the day\'s change
   assert.equal((await ana.call(`/api/clutches/checks/${mine}`, 'DELETE', {})).status, 404);
   assert.deepEqual((await olga.call('/api/clutches/day')).data.checks.map(c => c.clutch), ['1012']);
   assert.equal((await admin.call(`/api/clutches/checks/${checked.data.check.id}`, 'DELETE', {})).status, 200);
+
+  // "Checked, needs verification", with its reason.
+  const verify = await ana.call('/api/clutches/checks', 'POST', { requestId: randomUUID(), recordId: c1013.id, state: 'verify', note: 'Count unsure' });
+  assert.deepEqual([verify.status, verify.data.check.state, verify.data.check.note], [201, 'verify', 'Count unsure']);
+
+  // Events: recorded by editors, seen by everyone; the setting only by an admin; the notebook's list for everyone.
+  const died = { requestId: randomUUID(), recordId: c1012.id, stage: 'larva', kind: 'died', count: 2 };
+  assert.equal((await olga.call('/api/clutches/events', 'POST', died)).status, 403);
+  const event = await beto.call('/api/clutches/events', 'POST', died);
+  assert.deepEqual([event.status, event.data.event.kind, event.data.event.name], [201, 'died', 'Beto Paz']);
+  assert.equal((await beto.call('/api/clutches/events', 'POST', died)).status, 200);
+  const events = (await olga.call(`/api/clutches/events?recordId=${c1012.id}`)).data;
+  assert.deepEqual([events.events.length, events.tally.larva.died, events.settings.subtractPreserved], [1, 2, true]);
+  assert.equal((await olga.call('/api/clutches/day')).data.events.length, 1);
+  assert.equal((await ana.call(`/api/clutches/events/${event.data.event.id}`, 'DELETE', {})).status, 403);
+  assert.equal((await beto.call('/api/clutches/settings', 'PUT', { subtractPreserved: false })).status, 403);
+  assert.equal((await admin.call('/api/clutches/settings', 'PUT', { subtractPreserved: false })).status, 200);
+  assert.equal((await ana.call('/api/clutches/state')).data.settings.subtractPreserved, false);
+  const notebook = (await olga.call('/api/clutches/notebook')).data;
+  assert.deepEqual(
+    notebook.clutches.map(c => [c.clutch, c.lines.map(l => l.field), c.events.length]),
+    [['1012', ['NUMBER OF LARVAE'], 1]],
+  );
+  assert.equal((await olga.call('/api/clutches/notebook/up-to', 'PUT', { at: new Date().toISOString() })).status, 403);
+  assert.equal((await ana.call('/api/clutches/notebook/up-to', 'PUT', { at: new Date().toISOString() })).status, 200);
+  assert.equal((await olga.call('/api/clutches/notebook')).data.upTo.name, 'Ana Torres');
 });
