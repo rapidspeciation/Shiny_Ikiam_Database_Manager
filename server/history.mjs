@@ -15,7 +15,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { msg, msgn, tpl } from './messages.mjs';
-import { moduleMap } from './schema.mjs';
+import { comparable, moduleMap } from './schema.mjs';
 import { formulaRowShift } from './sheets.mjs';
 
 /** Purpose → label shown to people (Spanish, like the rest of the app). */
@@ -887,6 +887,246 @@ export function recordHistory(store, query = {}) {
     total: saves.length,
     next: offset + limit < saves.length ? offset + limit : null,
     ...(others.length ? { others: others.slice(0, 10).map(brief) } : {}),
+  };
+}
+
+/** Saves of one person, purpose and source less than this apart show as one edit in a cell's history. */
+export const EDIT_GAP = 10 * MINUTE;
+
+/**
+ * When the change log starts: the first save, and the first edit read from
+ * Google Sheets (edits typed there before it are not known).
+ */
+function logStart(db) {
+  const first = db.prepare('SELECT created_at t FROM actions ORDER BY created_at LIMIT 1').get();
+  const sheets = db.prepare("SELECT created_at t FROM actions WHERE source = 'sheet_reconciliation' ORDER BY created_at LIMIT 1").get();
+  return { since: first?.t ?? null, sheetsSince: sheets?.t ?? null };
+}
+
+/**
+ * The history of one cell (`field`) or of its whole row (no field), oldest
+ * first, as edits: a person's saves with one purpose less than EDIT_GAP apart
+ * are one edit, each cell with its value before the first and after the last
+ * (`edits`: how many times it changed in between). Saves not written (failed)
+ * stay apart. `first`/`last`: the edit's oldest and newest save ids.
+ */
+export function cellHistory(store, { recordId, field } = {}) {
+  if (!recordId) throw fail('RECORD_NOT_FOUND', 'Falta la fila', 400);
+  const fields = field ? [String(field)] : [];
+  const out = recordHistory(store, { recordId: String(recordId), fields, limit: 500 });
+  const edits = [];
+  for (const save of out.saves) {
+    const last = edits.at(-1);
+    const joins =
+      last &&
+      last.actor === save.actor &&
+      last.purpose === save.purpose &&
+      last.source === save.source &&
+      last.status !== 'failed' &&
+      save.status !== 'failed' &&
+      Date.parse(save.createdAt) - Date.parse(last.end) < EDIT_GAP;
+    const edit = joins
+      ? last
+      : {
+          first: save.actionId,
+          last: save.actionId,
+          actionIds: [],
+          start: save.createdAt,
+          end: save.createdAt,
+          actor: save.actor,
+          actorName: save.actorName,
+          purpose: save.purpose,
+          source: save.source,
+          status: save.status,
+          reasons: [],
+          cells: [],
+        };
+    if (!joins) edits.push(edit);
+    edit.actionIds.push(save.actionId);
+    edit.last = save.actionId;
+    edit.end = save.createdAt;
+    edit.status = save.status;
+    if (save.reason && !edit.reasons.includes(save.reason)) edit.reasons.push(save.reason);
+    for (const c of save.cells) {
+      const cell = edit.cells.find(x => x.field === c.field);
+      if (!cell) {
+        edit.cells.push({ field: c.field, before: c.before, after: c.after, edits: 1, ...(c.isNew ? { isNew: true } : {}), ...(c.undone ? { undone: true } : {}) });
+        continue;
+      }
+      cell.after = c.after;
+      cell.edits++;
+      if (c.isNew) cell.isNew = true;
+      // Undone when its last change was put back.
+      if (c.undone) cell.undone = true;
+      else delete cell.undone;
+    }
+  }
+  return {
+    row: out.row,
+    field: field ? String(field) : null,
+    edits: edits.map(e => ({ ...e, link: `#/historial?grupo=${e.last}` })),
+    saves: out.total,
+    // More than 500 saves: the oldest are shown.
+    more: out.next !== null,
+    ...logStart(store.db),
+  };
+}
+
+/** Rows of a sheet shown as they were at one moment, at most. */
+const AS_OF_ROWS = 200;
+const isFormula = value => !!value && typeof value === 'object' && 'formula' in value;
+function int(value, fallback, min, max) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const n = Math.trunc(Number(value));
+  return Number.isFinite(n) ? Math.min(Math.max(n, min), max) : fallback;
+}
+
+/**
+ * Rows of a sheet as they were at one moment: just before (or after, `side`)
+ * the save `action`, or at the time `at`. Each cell gets back the value it had
+ * then by undoing every later change, newest first (the same as taking the
+ * value before the first later change). Rows a later save created come back
+ * empty (`absent`); rows that are empty pre-made rows now and were then are
+ * left out. The window: rows `from`..`to`, or `row` ± `context` (15).
+ *
+ * A formula cell that had the same formula then shows today's value; one that
+ * had another formula shows that formula's text. Formulas moved with their row
+ * by a sync are not undone. What the log does not hold is not known: edits
+ * typed in Google Sheets before `sheetsSince`, the order of edits made between
+ * two readings of the sheet, and rows typed into the sheet (not through the
+ * app), which show as they are now.
+ *
+ * `changed`: per row, the cells that differ from now, with their value now.
+ * `touched`: per row, the cells the save itself changed.
+ */
+export function sheetAsOf(store, query = {}) {
+  const db = store.db;
+  const mod = moduleMap.get(String(query.module || ''));
+  if (!mod) throw fail('MODULE_NOT_FOUND', 'Hoja desconocida', 404);
+  let cutoff;
+  let args;
+  let action = null;
+  let at;
+  const side = query.side === 'after' ? 'after' : 'before';
+  if (query.action) {
+    const found = findGroup(db, String(query.action), { single: true });
+    if (!found) throw fail('GROUP_NOT_FOUND', 'No se encontró ese guardado en el historial', 404);
+    [action] = describeGroups(store, [found]);
+    at = found.actions[0].createdAt;
+    const last = db.prepare('SELECT max(rowid) n FROM changes WHERE action_id = ?').get(found.actions[0].id).n ?? 0;
+    // Saves at the same moment are ordered by their changes (as undo orders them).
+    const later = '(a.created_at > ? OR (a.created_at = ? AND c.rowid > ?))';
+    cutoff = side === 'before' ? `(c.action_id = ? OR ${later})` : `(c.action_id <> ? AND ${later})`;
+    args = [found.actions[0].id, at, at, last];
+  } else {
+    const t = Date.parse(String(query.at ?? ''));
+    if (Number.isNaN(t)) throw fail('INVALID_MOMENT', 'Momento no válido');
+    at = new Date(t).toISOString();
+    cutoff = 'a.created_at > ?';
+    args = [at];
+  }
+  const row = int(query.row, NaN, 0, 2_000_000_000);
+  const context = int(query.context, 15, 0, 100);
+  let from = int(query.from, NaN, 0, 2_000_000_000);
+  let to = int(query.to, NaN, 0, 2_000_000_000);
+  if (Number.isNaN(from) || Number.isNaN(to)) {
+    if (Number.isNaN(row)) throw fail('INVALID_RANGE', 'Rango de filas no válido');
+    [from, to] = [Math.max(0, row - context), row + context];
+  }
+  if (to < from) throw fail('INVALID_RANGE', 'Rango de filas no válido');
+  const records = db
+    .prepare(
+      `SELECT id, row_num, version, observed, values_json, formulas_json FROM records
+       WHERE sheet = ? AND missing = 0 AND row_num > ? AND row_num < 2000000000 AND row_num BETWEEN ? AND ? ORDER BY row_num LIMIT ?`,
+    )
+    .all(mod.id, mod.headerRow, from, to, AS_OF_ROWS);
+  // The value each cell had then: the one before its first later change.
+  const then = new Map();
+  const laterActions = new Map();
+  const touched = {};
+  for (const part of chunks(records.map(r => r.id)))
+    for (const c of db
+      .prepare(
+        `SELECT c.record_id, c.field, c.before_json, c.action_id FROM changes c JOIN actions a ON a.id = c.action_id
+         WHERE c.record_id IN (${marks(part)}) AND a.status <> 'failed' AND ${unmoved('c')} AND ${cutoff}
+         ORDER BY a.created_at, c.rowid`,
+      )
+      .all(...part, ...args)) {
+      const cells = then.get(c.record_id) ?? then.set(c.record_id, new Map()).get(c.record_id);
+      if (!cells.has(c.field)) cells.set(c.field, parse(c.before_json));
+      const ids = laterActions.get(c.record_id) ?? laterActions.set(c.record_id, new Set()).get(c.record_id);
+      ids.add(c.action_id);
+    }
+  if (action)
+    for (const part of chunks(records.map(r => r.id)))
+      for (const c of db
+        .prepare(`SELECT record_id, field FROM changes c WHERE action_id = ? AND record_id IN (${marks(part)}) AND ${unmoved('c')}`)
+        .all(action.id, ...part))
+        (touched[c.record_id] ??= []).push(c.field);
+  // Rows a later save created (or inserted) were not there yet.
+  const later = [...new Set([...laterActions.values()].flatMap(s => [...s]))];
+  const created = createdRows(db, later);
+  for (const part of chunks(later))
+    for (const r of db.prepare(`SELECT action_id, record_id FROM inserted_rows WHERE action_id IN (${marks(part)})`).all(...part))
+      (created.get(r.action_id) ?? created.set(r.action_id, new Set()).get(r.action_id)).add(r.record_id);
+  const keys = mod.fields.map(f => f.key);
+  const rows = [];
+  const changed = {};
+  const absent = [];
+  for (const r of records) {
+    const cells = then.get(r.id);
+    if (!r.observed && !cells) continue;
+    const values = JSON.parse(r.values_json);
+    const formulas = JSON.parse(r.formulas_json);
+    if ([...(laterActions.get(r.id) ?? [])].some(id => created.get(id)?.has(r.id))) absent.push(r.id);
+    for (const [field, before] of cells ?? []) {
+      const now = formulas[field] ? { formula: formulas[field] } : (values[field] ?? null);
+      if (comparable(before) === comparable(now)) continue;
+      (changed[r.id] ??= {})[field] = now;
+      if (isFormula(before)) {
+        values[field] = before.formula;
+        formulas[field] = before.formula;
+      } else {
+        values[field] = before ?? null;
+        delete formulas[field];
+      }
+    }
+    rows.push({
+      id: r.id,
+      row: r.row_num,
+      version: r.version,
+      observed: Boolean(r.observed),
+      v: keys.map(k => values[k] ?? null),
+      f: keys.flatMap((k, i) => (formulas[k] ? [i] : [])),
+    });
+  }
+  const bounds = db
+    .prepare('SELECT min(row_num) a, max(row_num) b FROM records WHERE sheet = ? AND missing = 0 AND row_num > ? AND row_num < 2000000000')
+    .get(mod.id, mod.headerRow);
+  return {
+    module: mod.id,
+    from,
+    to: records.length === AS_OF_ROWS ? records.at(-1).row_num : to,
+    first: bounds.a ?? null,
+    last: bounds.b ?? null,
+    at,
+    side,
+    action: action && {
+      id: action.id,
+      actor: action.actor,
+      actorName: action.actorName,
+      purpose: action.purpose,
+      createdAt: at,
+      reasons: action.reasons,
+      summary: action.summary,
+      summaryMsg: action.summaryMsg,
+      link: `#/historial?grupo=${action.id}`,
+    },
+    rows,
+    changed,
+    touched,
+    absent,
+    ...logStart(db),
   };
 }
 

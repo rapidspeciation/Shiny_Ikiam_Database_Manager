@@ -227,6 +227,8 @@ onBeforeUnmount(() => {
       >
         <ChevronDown :size="14" />
       </button>
+      <!-- The grid's own actions on the selected cell (the Buscador: its history). -->
+      <slot name="actions" />
     </div>
   </div>
 </template>

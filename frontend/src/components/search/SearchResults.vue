@@ -4,6 +4,7 @@ import { RefreshCw } from 'lucide-vue-next'
 import SearchSection from './SearchSection.vue'
 import { errorText } from '../../lib/notice'
 import { MIN_QUERY, searchSheets, type SearchReply } from '../../lib/search'
+import type { HistoryTarget } from '../../lib/history'
 import { useTables } from '../../stores/tables'
 
 /**
@@ -12,7 +13,7 @@ import { useTables } from '../../stores/tables'
  * above, or named by a link) comes first.
  */
 const props = defineProps<{ query: string; pin: string }>()
-const emit = defineEmits<{ open: [module: string, row: number] }>()
+const emit = defineEmits<{ open: [module: string, row: number]; history: [target: HistoryTarget] }>()
 
 const reply = shallowRef<SearchReply | null>(null)
 const searching = ref(false)
@@ -111,6 +112,7 @@ function jump(module: string) {
         :query="reply.query"
         :pinned="s.module === pin"
         @open="(module, row) => emit('open', module, row)"
+        @history="target => emit('history', target)"
       />
     </template>
   </div>

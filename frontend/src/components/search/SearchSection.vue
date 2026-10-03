@@ -6,6 +6,7 @@ import { buildOptions } from '../../lib/options'
 import { notify, errorText } from '../../lib/notice'
 import { type Loaded, STEP, mergeRows, rangeFor, sheetRows, stepMatch, type SearchSheet } from '../../lib/search'
 import type { Field, Table, TableRow } from '../../lib/types'
+import type { HistoryTarget } from '../../lib/history'
 import { rowFromWire, toRow, useTables } from '../../stores/tables'
 import { useSession } from '../../stores/session'
 
@@ -16,7 +17,7 @@ import { useSession } from '../../stores/session'
  * other matches, as Ctrl+F does.
  */
 const props = defineProps<{ result: SearchSheet; query: string; pinned?: boolean }>()
-const emit = defineEmits<{ open: [module: string, row: number] }>()
+const emit = defineEmits<{ open: [module: string, row: number]; history: [target: HistoryTarget] }>()
 
 const session = useSession()
 const tables = useTables()
@@ -152,7 +153,8 @@ onBeforeUnmount(stop)
 
 <template>
   <section ref="root" class="rounded-lg border border-stone-200 bg-white">
-    <header class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
+    <!-- On a phone: the name and the ↑ ↓ buttons on one line, what matched under them. -->
+    <header class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 max-sm:gap-x-2 max-sm:py-1.5">
       <button
         type="button"
         class="flex min-w-0 items-center gap-1.5 text-left font-semibold text-stone-800"
@@ -162,7 +164,7 @@ onBeforeUnmount(stop)
         <component :is="open ? ChevronDown : ChevronRight" :size="16" class="flex-none text-stone-500" />
         <span class="truncate">{{ module }}</span>
       </button>
-      <span class="text-sm text-stone-600">
+      <span class="text-sm text-stone-600 max-sm:order-last max-sm:w-full max-sm:text-xs">
         {{ $tn(result.total, '{n} coincidencia', '{n} coincidencias') }}
         <template v-if="result.idExact"> · {{ $tn(result.idExact, '{n} ID exacto', '{n} IDs exactos') }}</template>
         <template v-else-if="result.exact"> · {{ $tn(result.exact, '{n} celda exacta', '{n} celdas exactas') }}</template>
@@ -180,13 +182,13 @@ onBeforeUnmount(stop)
         >
           <ChevronUp :size="15" />
         </button>
-        <span class="min-w-24 text-center text-sm text-stone-600 tabular-nums">
+        <span class="min-w-24 text-center text-sm text-stone-600 tabular-nums max-sm:min-w-12">
           {{
             result.truncated
               ? $t('{at} de {shown} ({total} en total)', { at: position || '–', shown: result.matches.length, total: result.total })
               : $t('{at} de {shown}', { at: position || '–', shown: result.matches.length })
           }}
-          · {{ $t('fila {row}', { row: current }) }}
+          <span class="max-sm:hidden">· {{ $t('fila {row}', { row: current }) }}</span>
         </span>
         <button
           type="button"
@@ -219,8 +221,10 @@ onBeforeUnmount(stop)
         :mark="query"
         :focus-row="focusId"
         :height="GRID_HEIGHT"
+        cell-history
         @notice="notify"
         @edge="onEdge"
+        @history="target => emit('history', target)"
       />
     </div>
   </section>

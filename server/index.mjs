@@ -9,7 +9,7 @@ import { backup } from 'node:sqlite';
 import { gzipSync } from 'node:zlib';
 import { Store } from './store.mjs';
 import { applyBatch } from './batch.mjs';
-import { historyGroup, historyGroups, previewEdits, undoEdits } from './history.mjs';
+import { cellHistory, historyGroup, historyGroups, previewEdits, sheetAsOf, undoEdits } from './history.mjs';
 import {
   addProfile,
   attachWalkPhotos,
@@ -709,6 +709,9 @@ export async function createApp(config = {}, options = {}) {
       if (method === 'GET' && path === '/api/history/groups') return json(res, 200, historyGroups(store, query));
       if (method === 'GET' && /^\/api\/history\/groups\/[^/]+$/.test(path))
         return json(res, 200, { group: historyGroup(store, decodePart(path.split('/')[4])) });
+      // A cell's (or row's) edits, oldest first; a window of a sheet as it was before or after a save (the Buscador).
+      if (method === 'GET' && path === '/api/history/cell') return json(res, 200, cellHistory(store, query));
+      if (method === 'GET' && path === '/api/history/as-of') return json(res, 200, sheetAsOf(store, query));
       // Undo whole groups (groupIds), saves (actionIds) or single changes (changeIds).
       if (method === 'POST' && path === '/api/history/preview') return json(res, 200, previewEdits(store, body));
       if (method === 'POST' && path === '/api/history/undo') return json(res, 200, await undoEdits(store, body, user));

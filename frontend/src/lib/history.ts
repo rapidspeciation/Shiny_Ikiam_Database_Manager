@@ -1,5 +1,7 @@
-import type { HistoryChange } from './types'
-import { t } from './i18n'
+import type { CellValue, HistoryChange } from './types'
+import type { WireRow } from '../stores/tables'
+import { api } from './api'
+import { t, type Msg } from './i18n'
 
 /**
  * The purposes of saves (server/history.mjs PURPOSES): the tab or flow a save
@@ -75,6 +77,22 @@ export function formatWhen(iso: string): string {
   return `${day} ${time}`
 }
 
+/** "02/10/26 14:05", in Ecuador's time, day first (the Buscador's history and past views). */
+export function formatMoment(iso: string): string {
+  if (Number.isNaN(Date.parse(iso))) return ''
+  const parts = Object.fromEntries(clock.formatToParts(new Date(iso)).map(p => [p.type, p.value]))
+  const two = (v: string) => v.padStart(2, '0')
+  return `${two(parts.day)}/${two(parts.month)}/${String(parts.year).slice(-2)} ${parts.hour}:${parts.minute}`
+}
+
+/** "02/10/26 14:05–14:12", or "01/10/26 23:58 – 02/10/26 00:04" across midnight. */
+export function momentRange(start: string, end: string): string {
+  const a = formatMoment(start)
+  const b = formatMoment(end)
+  if (a === b) return a
+  return a.slice(0, 8) === b.slice(0, 8) ? `${a}–${b.slice(9)}` : `${a} – ${b}`
+}
+
 /** "28-Sep-26 14:05–14:32", or "27-Sep-26 23:50 – 28-Sep-26 00:10" across midnight. */
 export function timeRange(start: string, end: string): string {
   if (Number.isNaN(Date.parse(start)) || Number.isNaN(Date.parse(end))) return ''
@@ -121,4 +139,106 @@ export function linkedSave(query: Record<string, unknown>): string | null {
   const pick = (v: unknown) => (Array.isArray(v) ? v[0] : v)
   const id = pick(query.grupo) ?? pick(query.accion)
   return typeof id === 'string' && id.trim() ? id.trim() : null
+}
+
+// --- A cell's history and the sheet as it was (server/history.mjs cellHistory, sheetAsOf).
+
+/** A value as the log keeps it: a formula cell as its formula. */
+export type Stored = CellValue | { formula: string }
+
+/** The cell (or whole row: field null) whose history is asked for in a grid. */
+export interface HistoryTarget {
+  module: string
+  recordId: string
+  field: string | null
+  row: number | null
+  label: string
+}
+
+/** One edit of a cell or row: a person's saves with one purpose less than 10 minutes apart. */
+export interface CellEdit {
+  /** Its oldest and newest saves. */
+  first: string
+  last: string
+  actionIds: string[]
+  start: string
+  end: string
+  actor: string
+  actorName: string | null
+  purpose: string
+  source: string
+  status: string
+  reasons: string[]
+  /** Each cell before the first save and after the last; `edits`: how many saves changed it. */
+  cells: { field: string; before: Stored; after: Stored; edits: number; isNew?: boolean; undone?: boolean }[]
+  /** The save in the Historial. */
+  link: string
+}
+
+export interface CellHistory {
+  row: { recordId: string; sheet: string; row: number; label: string; deleted?: boolean }
+  field: string | null
+  edits: CellEdit[]
+  saves: number
+  more: boolean
+  /** The first save the app logged, and the first edit it read from Google Sheets. */
+  since: string | null
+  sheetsSince: string | null
+}
+
+/** A cell's history (`field`), or its whole row's. */
+export function loadCellHistory(recordId: string, field?: string | null, signal?: AbortSignal) {
+  const query = new URLSearchParams({ recordId, ...(field ? { field } : {}) })
+  return api<CellHistory>(`history/cell?${query}`, { signal })
+}
+
+export type AsOfSide = 'before' | 'after'
+
+/** Rows of a sheet as they were just before (or after) a save. */
+export interface AsOf {
+  module: string
+  from: number
+  to: number
+  first: number | null
+  last: number | null
+  at: string
+  side: AsOfSide
+  action: {
+    id: string
+    actor: string
+    actorName: string | null
+    purpose: string
+    createdAt: string
+    reasons: string[]
+    summary: string
+    summaryMsg?: Msg
+    link: string
+  } | null
+  rows: WireRow[]
+  /** Per row id, the cells that differ from now, with their value now. */
+  changed: Record<string, Record<string, Stored>>
+  /** Per row id, the cells the save itself changed. */
+  touched: Record<string, string[]>
+  /** Rows a later save created: empty then. */
+  absent: string[]
+  since: string | null
+  sheetsSince: string | null
+}
+
+export function loadAsOf(module: string, action: string, side: AsOfSide, row: number, signal?: AbortSignal) {
+  const query = new URLSearchParams({ module, action, side, row: String(row), context: '15' })
+  return api<AsOf>(`history/as-of?${query}`, { signal })
+}
+
+/** The moment a past view opens at for an edit: before its first save, or after its last. */
+export const editMoment = (edit: CellEdit, side: AsOfSide) => ({ action: side === 'before' ? edit.first : edit.last, side })
+
+/**
+ * From a view at save `action` (one of `edits`), the previous or next edit,
+ * on the same side; null at either end or when the save is not one of them.
+ */
+export function stepEdit(edits: CellEdit[], action: string, side: AsOfSide, dir: 1 | -1): { action: string; side: AsOfSide } | null {
+  const index = edits.findIndex(e => e.actionIds.includes(action))
+  const next = index < 0 ? undefined : edits[index + dir]
+  return next ? editMoment(next, side) : null
 }

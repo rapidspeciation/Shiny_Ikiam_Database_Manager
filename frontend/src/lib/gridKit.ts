@@ -546,7 +546,19 @@ let touchedSheet: HTMLElement | null = null
 export function attachTouchSheet(
   table: Tabulator,
   container: HTMLElement,
-  { canEdit, notice }: { canEdit: CanEdit; notice: Notice },
+  {
+    canEdit,
+    notice,
+    extra = [],
+    readonly = false,
+  }: {
+    canEdit: CanEdit
+    notice: Notice
+    /** More buttons after the usual ones (label: the Spanish key), e.g. a cell's history in the Buscador. */
+    extra?: { label: string; action: (cell: CellComponent | null) => void }[]
+    /** A grid nobody edits (a sheet as it was): only Copiar and the extra buttons. */
+    readonly?: boolean
+  },
 ) {
   const handle = document.createElement('div')
   handle.className = 'fill-handle is-touch'
@@ -575,19 +587,22 @@ export function attachTouchSheet(
   let shownAt = 0
   table.on('clipboardCopied', (plain: string) => (copied = plain))
   button('Copiar', () => table.copyToClipboard('range'))
-  button('Pegar', async () => {
-    const text = (await navigator.clipboard?.readText?.().catch(() => '')) || copied
-    if (!text) return notice(t('No hay nada copiado todavía'))
-    const data = new DataTransfer()
-    data.setData('text/plain', text)
-    table.element.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
-  })
-  button('Rellenar ↓', () => fillDown(table, canEdit, notice))
-  button('Borrar', () => clearRange(table, canEdit))
-  button('Editar', () => {
-    const cell = activeCell(table)
-    if (cell && canEdit(cell.getRow(), cell.getField())) cell.edit(true)
-  })
+  if (!readonly) {
+    button('Pegar', async () => {
+      const text = (await navigator.clipboard?.readText?.().catch(() => '')) || copied
+      if (!text) return notice(t('No hay nada copiado todavía'))
+      const data = new DataTransfer()
+      data.setData('text/plain', text)
+      table.element.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+    })
+    button('Rellenar ↓', () => fillDown(table, canEdit, notice))
+    button('Borrar', () => clearRange(table, canEdit))
+    button('Editar', () => {
+      const cell = activeCell(table)
+      if (cell && canEdit(cell.getRow(), cell.getField())) cell.edit(true)
+    })
+  }
+  for (const b of extra) button(b.label, () => b.action(activeCell(table)))
   container.appendChild(bar)
 
   // While the bar shows, the page keeps room for it at the bottom, so no row stays hidden under it.
@@ -727,6 +742,10 @@ export function attachTouchSheet(
     setTimeout(() => cell.edit(true), 30)
   })
 
+  // A grid hidden (another view over it, its tab left) takes its bar and the room kept for it along; shown again, they come back.
+  const shown = new ResizeObserver(() => (container.offsetWidth ? touchedSheet === container && place() : hide()))
+  shown.observe(container)
+
   const later = () => requestAnimationFrame(place)
   for (const event of [
     'rangeAdded',
@@ -743,6 +762,7 @@ export function attachTouchSheet(
     destroy: () => {
       container.removeEventListener('pointerdown', remember, true)
       window.removeEventListener('touch-sheet', onOtherSheet)
+      shown.disconnect()
       window.clearTimeout(waiting)
       if (touchedSheet === container) {
         touchedSheet = null

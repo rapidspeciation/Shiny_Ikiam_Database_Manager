@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import {
   ArrowRight,
+  Eye,
   Binoculars,
   Bot,
   Bug,
@@ -247,6 +249,15 @@ async function copyLink() {
             <strong class="text-sm text-stone-900">{{ row.label }}</strong>
             <span>{{ $t('{sheet} fila {row}', { sheet: row.sheet, row: row.row }) }}</span>
             <span v-if="row.isNew" class="rounded bg-emerald-100 px-1.5 text-emerald-800">{{ $t('fila nueva') }}</span>
+            <!-- The sheet around this row as it was just before this save, in the Buscador. -->
+            <RouterLink
+              :to="{ path: '/tablas', query: { hoja: row.sheet, fila: String(row.row), antes: action.id, campo: row.changes[0]?.field } }"
+              class="inline-flex items-center gap-1 text-brand-700 hover:underline"
+              :class="{ 'min-h-11 px-1 text-sm': touch }"
+              :title="$t('Ver la hoja como estaba justo antes de este guardado')"
+            >
+              <Eye :size="12" /> {{ $t('Hoja antes') }}
+            </RouterLink>
             <button
               v-if="canUndo(action) && row.changes.length > 1 && pending(row.changes).length"
               class="ml-auto inline-flex items-center gap-1 text-brand-700 hover:underline"
