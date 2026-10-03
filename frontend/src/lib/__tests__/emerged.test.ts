@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { readCount } from '../clutches'
+import { clutchSettings } from '../clutchSettings'
 import { isoToSerial } from '../dates'
 import {
   dayDoubt,
@@ -180,6 +181,30 @@ describe("the clutch's row", () => {
       { field: 'NUMBER OF EGGS', value: '=12-1', before: '=12' },
       { field: 'NOTES', value: '3/10/26 FCH: 2 larvae and 1 egg preserved 2/10', before: null },
     ])
+  })
+  it("preserved ones kept counted when the team's setting says so; those found dead are taken off always", () => {
+    const young = [
+      draft({ kind: 'young', stage: '3rd instar larva' }),
+      draft({ key: 'k2', kind: 'young', stage: '4th instar larva', foundDead: true }),
+      draft({ key: 'k3', kind: 'young', stage: 'Egg' }),
+    ]
+    const keep = stockPlan(tallies(young)[0], f => readCount(counts[f] ?? null), f => counts[f] ?? null, {
+      today: isoToSerial('2026-10-03'),
+      initials: 'FCH',
+      subtractPreserved: false,
+    })
+    expect(keep.cells).toEqual([
+      { field: 'NUMBER OF LARVAE', value: '=9+3-1', before: '=9+3' },
+      { field: 'NOTES', value: '3/10/26 FCH: 2 larvae and 1 egg preserved 2/10', before: null },
+    ])
+    // The team's setting (Clutches' settings) is what a save follows when not told.
+    clutchSettings.subtractPreserved = false
+    try {
+      expect(plan([draft({ kind: 'young', stage: 'Egg' })]).cells.map(c => c.field)).toEqual(['NOTES'])
+    } finally {
+      clutchSettings.subtractPreserved = true
+    }
+    expect(plan([draft({ kind: 'young', stage: 'Egg' })]).cells.map(c => c.field)).toEqual(['NUMBER OF EGGS', 'NOTES'])
   })
   it('a count that would go below 0 is left as it is', () => {
     const p = stockPlan(tallies([draft({ kind: 'young', stage: 'Egg' })])[0], () => readCount(null), () => null, { today: 1, initials: 'X' })

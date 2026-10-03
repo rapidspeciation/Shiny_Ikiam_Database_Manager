@@ -7,12 +7,20 @@ import {
   countValue,
   effectLabel,
   formulaOf,
+  gainOf,
+  hasLosses,
+  lossTakesOff,
+  LOSSES,
+  parseIds,
   readCount,
   removeLast,
   termLabels,
   totalOf,
   typedTotal,
   type CountResult,
+  type EventKind,
+  type Loss,
+  type Stage,
 } from '../../lib/clutches'
 import type { CellValue } from '../../lib/types'
 import { t } from '../../lib/i18n'
@@ -21,9 +29,12 @@ import { t } from '../../lib/i18n'
  * One count of a clutch kept as the notebook sums it (=3+5-2): its history as
  * chips and the total. Tapping the total and typing the new one is the main
  * way (32 → 30 adds −2 to the sum, as "Counted today"); also +N (more hatched,
- * pupated or emerged), −N (died or missing), "Counted today: N" and "remove
- * the last term" (yesterday's −3, when the 3 turn up again). Each step writes
- * the team's formula, never a plain total.
+ * pupated or emerged), −N (died, disappeared or preserved: it asks which),
+ * "Counted today: N" and "remove the last term" (yesterday's −3, when the 3
+ * turn up again). Each step writes the team's formula, never a plain total.
+ * What happened is recorded apart, only in the app (`event`): a + as hatched
+ * (pupated…), a − as the person says; preserved ones stay in the count when
+ * the team keeps them counted (`subtractPreserved` false).
  */
 const props = defineProps<{
   field: string
@@ -39,8 +50,16 @@ const props = defineProps<{
   more: string
   /** The count as it was before today's changes (undefined: not changed today). */
   startOfDay?: CellValue
+  /** The stage this count follows (none for the dissections: no events). */
+  stage?: Stage | null
+  /** The team's setting: preserved ones taken off the count (true) or kept in it. */
+  subtractPreserved?: boolean
 }>()
-const emit = defineEmits<{ set: [value: CellValue] }>()
+const emit = defineEmits<{
+  set: [value: CellValue]
+  event: [event: { key: string; kind: EventKind; count: number; ids: string[] }]
+  unevent: [key: string]
+}>()
 
 const count = computed(() => readCount(props.value))
 const total = computed(() => totalOf(count.value.terms))
@@ -59,17 +78,107 @@ const reasonText = (reason: 'empty' | 'negative' | 'first' | 'unchanged') =>
         : t('Igual que el total: nada que añadir')
 /**
  * Every change made here, to take it back exactly (the earlier formula, not a
- * −N or +N added to it): Undo steps back one change at a time.
+ * −N or +N added to it): Undo steps back one change at a time, and takes back
+ * the event it recorded (`event`: its key); a step that only recorded an event
+ * (preserved larvae kept counted) leaves the count alone (`only`).
  */
-const steps = ref<CellValue[]>([])
+interface Step {
+  value: CellValue
+  event?: string
+  only?: boolean
+}
+const steps = ref<Step[]>([])
 function setCount(value: CellValue) {
-  steps.value.push(props.value)
+  steps.value.push({ value: props.value })
   emit('set', value)
 }
 function undoStep() {
-  if (!steps.value.length) return
+  const step = steps.value.pop()
+  if (!step) return
   message.value = ''
-  emit('set', steps.value.pop() as CellValue)
+  asking.value = null
+  if (step.event) emit('unevent', step.event)
+  if (!step.only) emit('set', step.value)
+}
+/** Takes back every event recorded here (the count goes back as a whole). */
+function forgetEvents() {
+  for (const s of steps.value)
+    if (s.event) {
+      emit('unevent', s.event)
+      s.event = undefined
+    }
+  asking.value = null
+}
+
+// --- What happened, told apart (only in the app): died, disappeared or preserved; hatched…
+const lossy = computed(() => hasLosses(props.stage ?? null))
+const subtract = computed(() => props.subtractPreserved !== false)
+let keys = 0
+function record(kind: EventKind, n: number, ids: string[] = []) {
+  const key = `${props.field}:${Date.now()}:${++keys}`
+  emit('event', { key, kind, count: n, ids })
+  return key
+}
+/**
+ * The question after a −N or a new total: what happened to them. `before`:
+ * the −N button, applied once answered; `after`: the total already changed,
+ * the answer only says why (a recount is no event).
+ */
+const asking = ref<{ n: number; mode: 'before' | 'after'; gain: boolean } | null>(null)
+const choosingIds = ref(false)
+const idsText = ref('')
+function ask(n: number, mode: 'before' | 'after', gain = false) {
+  asking.value = { n, mode, gain }
+  choosingIds.value = false
+  idsText.value = ''
+}
+/** After a count changed by typing or Counted: asks what the difference was (eggs, larvae, pupae). */
+function askAfter(before: number[], after: number[]) {
+  if (!props.stage) return
+  const diff = totalOf(after) - totalOf(before)
+  if (diff < 0 && lossy.value) ask(-diff, 'after')
+  else if (diff > 0 && before.length) ask(diff, 'after', true)
+}
+function choose(kind: EventKind) {
+  const a = asking.value
+  if (!a) return
+  if (kind === 'preserved' && !choosingIds.value) {
+    choosingIds.value = true
+    return
+  }
+  const ids = kind === 'preserved' ? parseIds(idsText.value) : []
+  if (ids.length > a.n) {
+    message.value = t('Más IDs que el número ({n})', { n: a.n })
+    return
+  }
+  message.value = ''
+  const takesOff = a.gain || lossTakesOff(kind as Loss, subtract.value)
+  if (a.mode === 'before') {
+    if (takesOff) {
+      const r = appendTerm(count.value.terms, -a.n)
+      if (!r.ok) {
+        message.value = reasonText(r.reason)
+        return
+      }
+      setCount(countValue(r.terms))
+      steps.value[steps.value.length - 1].event = record(kind, a.n, ids)
+    } else steps.value.push({ value: props.value, event: record(kind, a.n, ids), only: true })
+  } else {
+    const last = steps.value[steps.value.length - 1]
+    if (!takesOff && last && !last.event) {
+      // Preserved, and the team keeps them counted: the count goes back to what it was.
+      emit('set', last.value)
+      last.only = true
+    }
+    if (last && !last.event) last.event = record(kind, a.n, ids)
+  }
+  asking.value = null
+  choosingIds.value = false
+}
+const lossWord: Record<Loss, () => string> = {
+  died: () => t('Murieron'),
+  disappeared: () => t('Desaparecieron'),
+  preserved: () => t('Se preservaron'),
 }
 const same = (a: CellValue | undefined, b: CellValue | undefined) => String(a ?? '').replace(/\s+/g, '') === String(b ?? '').replace(/\s+/g, '')
 /** Today's changes to this count, taken back at once: the formula it had this morning. */
@@ -80,6 +189,7 @@ const startText = computed(() => {
 })
 function backToMorning() {
   message.value = ''
+  forgetEvents()
   setCount(props.startOfDay ?? null)
 }
 function apply(result: CountResult) {
@@ -119,9 +229,31 @@ function applyFormula() {
   message.value = ''
   setCount(r.value)
 }
-const plus = () => (n.value === null ? (message.value = reasonText('empty')) : apply(appendTerm(count.value.terms, n.value)))
-const minus = () => (n.value === null ? (message.value = reasonText('empty')) : apply(appendTerm(count.value.terms, -n.value)))
-const counted = () => (n.value === null ? (message.value = reasonText('empty')) : apply(countedToday(count.value.terms, n.value)))
+/** +N: more hatched, pupated or emerged; recorded as such. */
+function plus() {
+  if (n.value === null) return (message.value = reasonText('empty'))
+  const added = n.value
+  const before = steps.value.length
+  apply(appendTerm(count.value.terms, added))
+  if (props.stage && steps.value.length > before) steps.value[steps.value.length - 1].event = record(gainOf(props.stage), added)
+}
+/** −N: for eggs, larvae and pupae it asks first what happened to them. */
+function minus() {
+  if (n.value === null) return (message.value = reasonText('empty'))
+  if (!lossy.value) return apply(appendTerm(count.value.terms, -n.value))
+  const r = appendTerm(count.value.terms, -n.value)
+  if (!r.ok) return (message.value = reasonText(r.reason))
+  message.value = ''
+  ask(n.value, 'before')
+  typed.value = ''
+}
+function counted() {
+  if (n.value === null) return (message.value = reasonText('empty'))
+  const before = count.value.terms
+  const r = countedToday(before, n.value)
+  apply(r)
+  if (r.ok) askAfter(before, r.terms)
+}
 /** What "Counted" would add, shown on its button. */
 const countedEffect = computed(() => {
   if (n.value === null) return ''
@@ -165,8 +297,10 @@ function applyTotal() {
     message.value = reasonText(r.reason)
     return
   }
+  const before = count.value.terms
   apply(r)
   stopTyping()
+  if (r.ok) askAfter(before, r.terms)
 }
 /** Leaving the box keeps a valid new total (as a spreadsheet cell does); anything else is dropped. */
 /** ✕ pressed: its pointerdown comes before the box's blur, which then must not keep the total. */
@@ -205,6 +339,7 @@ function dropLast() {
 }
 function revert() {
   message.value = ''
+  forgetEvents()
   setCount(props.saved)
 }
 </script>
@@ -341,12 +476,58 @@ function revert() {
       </button>
       <button type="button" class="count-btn border-red-300 text-red-800" :aria-label="$t('Restar {n}', { n: typed })" @click="minus">
         <span class="text-lg leading-none font-semibold">−{{ n ?? '' }}</span>
-        <span class="text-[11px] leading-tight">{{ $t('murieron / faltan') }}</span>
+        <span class="text-[11px] leading-tight">{{ lossy ? $t('murieron, faltan…') : $t('murieron / faltan') }}</span>
       </button>
       <button type="button" class="count-btn border-stone-400 text-stone-800" @click="counted">
         <span class="text-sm leading-none font-semibold">{{ n === null ? $t('Contados') : $t('Contados: {n}', { n }) }}</span>
         <span class="text-[11px] leading-tight">{{ countedEffect || $t('hoy') }}</span>
       </button>
+    </div>
+    <!-- What happened to them: recorded apart, only in the app (the sheet keeps its sum). -->
+    <div v-if="asking && canWork" class="mt-2 rounded-lg border border-stone-300 bg-stone-50 p-2" role="group" :aria-label="$t('¿Qué pasó?')">
+      <p class="text-sm font-medium">
+        <span class="tabular-nums">{{ asking.gain ? '+' : '−' }}{{ asking.n }}</span> ·
+        {{ asking.gain ? $t('¿Qué fue?') : $t('¿Qué pasó?') }}
+        <span class="text-xs font-normal text-stone-500">{{ $t('solo en la app') }}</span>
+      </p>
+      <div v-if="!choosingIds" class="mt-1.5 grid gap-1.5" :class="asking.gain ? 'grid-cols-2' : 'grid-cols-2 min-[420px]:grid-cols-4'">
+        <template v-if="asking.gain">
+          <button type="button" class="btn h-11 justify-center border-brand-600 text-brand-800" @click="choose(gainOf(stage!))">{{ more }}</button>
+        </template>
+        <template v-else>
+          <button v-for="k in LOSSES" :key="k" type="button" class="btn h-11 justify-center" :class="k === 'preserved' ? 'border-sky-500 text-sky-900' : 'border-red-300 text-red-800'" @click="choose(k)">
+            {{ lossWord[k]() }}
+          </button>
+        </template>
+        <button type="button" class="btn h-11 justify-center text-stone-600" @click="asking = null">
+          {{ asking.mode === 'before' ? $t('Cancelar') : $t('Solo recuento') }}
+        </button>
+      </div>
+      <div v-else class="mt-1.5">
+        <label class="block text-xs text-stone-600" :for="`ids-${field}`">{{ $t('IDs de Insectary (si los tienen, opcional)') }}</label>
+        <div class="mt-1 flex gap-2">
+          <input
+            :id="`ids-${field}`"
+            v-model="idsText"
+            class="field-input h-11 min-w-0 flex-1 uppercase"
+            type="text"
+            autocomplete="off"
+            autocapitalize="characters"
+            spellcheck="false"
+            enterkeyhint="done"
+            placeholder="H0E H1E"
+            @keydown.enter.prevent="choose('preserved')"
+          />
+          <button type="button" class="btn-primary h-11 shrink-0 px-4" @click="choose('preserved')"><Check :size="18" /> {{ $t('Poner') }}</button>
+        </div>
+        <p class="mt-1 text-xs text-stone-600">
+          {{
+            subtract
+              ? $t('Se restan de {field}, como dice el ajuste del equipo.', { field })
+              : $t('Se quedan en {field}, como dice el ajuste del equipo.', { field })
+          }}
+        </p>
+      </div>
     </div>
     <!-- The whole formula, typed as in the sheet (=2+3+5-10). -->
     <div v-if="editingFormula" class="mt-2 flex flex-wrap items-center gap-2">

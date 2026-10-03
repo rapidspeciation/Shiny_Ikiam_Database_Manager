@@ -1,5 +1,6 @@
 import { isBlank } from './cells'
 import { appendNote, appendTerm, countValue, noteDay, totalOf, type Count } from './clutches'
+import { clutchSettings } from './clutchSettings'
 import { serialFromIso } from './dates'
 import { deathCells, KILLED } from './deaths'
 import type { CellValue, TableRow } from './types'
@@ -11,7 +12,8 @@ import type { CellValue, TableRow } from './types'
  * the day it emerged (deformed, dead, killed and preserved), or an egg or
  * larva preserved; and what the clutch's row in Insectary_stocks gets (the
  * adults as one more term of NUMBER OF ADULTS, the first emergence date, the
- * larvae or eggs preserved taken off their count, with a note). Shared by the
+ * larvae or eggs preserved taken off their count as the team's setting says,
+ * with a note). Shared by the
  * cards and their tests; nothing here touches the store.
  */
 export const MODULE = 'Insectary_data'
@@ -261,6 +263,9 @@ export interface ClutchTally {
   adults: [number, number][]
   eggs: number
   larvae: number
+  /** Of those, the ones found dead (preserved, but a death: always taken off the count). */
+  eggsDead: number
+  larvaeDead: number
   /** The days eggs or larvae were preserved (serials). */
   preservedOn: number[]
 }
@@ -271,11 +276,16 @@ export function tallies(drafts: Draft[]): ClutchTally[] {
     const serial = serialFromIso(d.date)
     if (serial === null) continue
     let t = out.get(d.clutch)
-    if (!t) out.set(d.clutch, (t = { clutch: d.clutch, adults: [], eggs: 0, larvae: 0, preservedOn: [], byDay: new Map() }))
+    if (!t) out.set(d.clutch, (t = { clutch: d.clutch, adults: [], eggs: 0, larvae: 0, eggsDead: 0, larvaeDead: 0, preservedOn: [], byDay: new Map() }))
     if (d.kind === 'adult') t.byDay.set(serial, (t.byDay.get(serial) ?? 0) + 1)
     else {
-      if (d.stage === 'Egg') t.eggs++
-      else t.larvae++
+      if (d.stage === 'Egg') {
+        t.eggs++
+        if (d.foundDead) t.eggsDead++
+      } else {
+        t.larvae++
+        if (d.foundDead) t.larvaeDead++
+      }
       if (!t.preservedOn.includes(serial)) t.preservedOn.push(serial)
     }
   }
@@ -296,16 +306,18 @@ export interface StockPlan {
 /**
  * What the clutch's row gets for a save's cards: each emergence day's adults
  * as one more term of NUMBER OF ADULTS (=2+2 → =2+2+3), EMERGENCE DATE when
- * empty (the first day); eggs and larvae preserved taken off NUMBER OF EGGS /
- * NUMBER OF LARVAE (−3) and said in NOTES ("3 larvae preserved 2/10"), as
- * the team does. `count(field)`: a count as the person sees it; `value(field)`:
- * the cell as the sheet has it (a sum as its formula).
+ * empty (the first day); eggs and larvae preserved said in NOTES ("3 larvae
+ * preserved 2/10") and taken off NUMBER OF EGGS / NUMBER OF LARVAE (−3) as
+ * the team's setting says (`subtractPreserved`, Clutches' settings: yes by
+ * default); those found dead are a death, taken off always. `count(field)`: a
+ * count as the person sees it; `value(field)`: the cell as the sheet has it
+ * (a sum as its formula).
  */
 export function stockPlan(
   tally: ClutchTally,
   count: (field: string) => Count,
   value: (field: string) => CellValue,
-  { today, initials }: { today: number; initials: string },
+  { today, initials, subtractPreserved = clutchSettings.subtractPreserved }: { today: number; initials: string; subtractPreserved?: boolean },
 ): StockPlan {
   const cells: StockCell[] = []
   const skipped: string[] = []
@@ -332,12 +344,14 @@ export function stockPlan(
     if (isBlank(value('EMERGENCE DATE'))) cells.push({ field: 'EMERGENCE DATE', value: first, before: value('EMERGENCE DATE') })
   }
   const parts: string[] = []
+  // Taken off the count: all of them, or (preserved ones kept counted) only those found dead.
+  const off = (all: number, dead: number) => (subtractPreserved ? all : dead)
   if (tally.larvae) {
-    addTerms('NUMBER OF LARVAE', [-tally.larvae])
+    if (off(tally.larvae, tally.larvaeDead ?? 0)) addTerms('NUMBER OF LARVAE', [-off(tally.larvae, tally.larvaeDead ?? 0)])
     parts.push(`${tally.larvae} ${tally.larvae === 1 ? 'larva' : 'larvae'}`)
   }
   if (tally.eggs) {
-    addTerms('NUMBER OF EGGS', [-tally.eggs])
+    if (off(tally.eggs, tally.eggsDead ?? 0)) addTerms('NUMBER OF EGGS', [-off(tally.eggs, tally.eggsDead ?? 0)])
     parts.push(`${tally.eggs} ${tally.eggs === 1 ? 'egg' : 'eggs'}`)
   }
   if (parts.length) {

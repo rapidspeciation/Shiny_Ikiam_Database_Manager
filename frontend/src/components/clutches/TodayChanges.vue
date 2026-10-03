@@ -4,6 +4,8 @@ import { Check, ChevronLeft, ChevronRight, Copy, Info, RefreshCw, Undo2 } from '
 import DateField from '../DateField.vue'
 import UndoDialog from '../history/UndoDialog.vue'
 import type { ClutchDay, Day, ServerDayChange } from '../../composables/useClutchDay'
+import type { ClutchEvent } from '../../lib/clutches'
+import { eventLine } from './eventWords'
 import { useUndo } from '../../composables/useUndo'
 import { api } from '../../lib/api'
 import { changeText, dayText, MODULE, noteDay } from '../../lib/clutches'
@@ -55,14 +57,27 @@ const partsOf = (changes: ServerDayChange[]) =>
   changes.flatMap(c => (c.parts ?? []).filter(p => !onlyMine.value || p.actor === me.value).map(p => p.changeId))
 
 const groups = computed(() => {
-  const out = new Map<string, { recordId: string; clutch: string; species: string; isNew: boolean; who: string[]; at: string; changes: ServerDayChange[] }>()
+  const out = new Map<
+    string,
+    { recordId: string; clutch: string; species: string; isNew: boolean; who: string[]; at: string; changes: ServerDayChange[]; events: ClutchEvent[] }
+  >()
   for (const c of data.value.changes) {
     if (onlyMine.value && !c.actorIds.includes(me.value)) continue
     let g = out.get(c.recordId)
-    if (!g) out.set(c.recordId, (g = { recordId: c.recordId, clutch: c.clutch, species: c.species, isNew: c.isNew, who: [], at: c.at, changes: [] }))
+    if (!g) out.set(c.recordId, (g = { recordId: c.recordId, clutch: c.clutch, species: c.species, isNew: c.isNew, who: [], at: c.at, changes: [], events: [] }))
     g.changes.push(c)
     if (c.at > g.at) g.at = c.at
     for (const w of c.actors) if (!g.who.includes(w)) g.who.push(w)
+  }
+  // The day's app-only events (died, disappeared, preserved…), with the clutch's changes.
+  for (const e of data.value.events ?? []) {
+    if (onlyMine.value && e.actor !== me.value) continue
+    let g = out.get(e.recordId)
+    if (!g) out.set(e.recordId, (g = { recordId: e.recordId, clutch: e.clutch ?? '', species: '', isNew: false, who: [], at: e.createdAt, changes: [], events: [] }))
+    g.events.push(e)
+    if (e.createdAt > g.at) g.at = e.createdAt
+    const who = e.name || e.username || ''
+    if (who && !g.who.includes(who)) g.who.push(who)
   }
   // In the notebook's order: by clutch number.
   return [...out.values()].sort((a, b) => a.clutch.localeCompare(b.clutch, 'en', { numeric: true }))
@@ -88,7 +103,12 @@ const text = computed(() => {
   const title = onlyMine.value ? `Clutches ${dayName.value} ${props.initials}` : `Clutches ${dayName.value}`
   const out = dayText(
     title,
-    groups.value.map(g => ({ clutch: g.isNew ? `${g.clutch} (${t('nuevo')})` : g.clutch, species: g.species, changes: g.changes })),
+    groups.value.map(g => ({
+      clutch: g.isNew ? `${g.clutch} (${t('nuevo')})` : g.clutch,
+      species: g.species,
+      changes: g.changes,
+      events: g.events.map(eventLine),
+    })),
     formatSerial,
     t('quitado'),
   )
@@ -209,6 +229,10 @@ function undoField(g: (typeof groups.value)[number], c: ServerDayChange) {
             >
               <Undo2 :size="16" />
             </button>
+          </li>
+          <li v-for="e in g.events" :key="e.id" class="bg-sky-50/60 py-1.5 pr-1 pl-3 text-sm leading-snug">
+            <span class="block text-[11px] font-medium tracking-wide text-stone-500">{{ $t('Evento (solo en la app)') }}</span>
+            <span class="block break-words tabular-nums">{{ eventLine(e) }}</span>
           </li>
         </ul>
         <p v-if="!onlyMine" class="px-3 pb-2 text-xs text-stone-500">{{ g.who.join(', ') }}</p>

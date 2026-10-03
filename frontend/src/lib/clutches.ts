@@ -456,10 +456,10 @@ export function changeText(
   }
   return `${show(before)} → ${show(after)}`
 }
-/** The day's changes as plain text, one clutch per line, to copy into the paper notebook. */
+/** The day's changes as plain text, one clutch per line, to copy into the paper notebook (with its events, already worded). */
 export function dayText(
   title: string,
-  clutches: { clutch: string; species: string; changes: Pick<DayChange, 'field' | 'before' | 'after'>[] }[],
+  clutches: { clutch: string; species: string; changes: Pick<DayChange, 'field' | 'before' | 'after'>[]; events?: string[] }[],
   formatDate: (serial: number) => string,
   removedWord = 'removed',
 ): string {
@@ -468,6 +468,155 @@ export function dayText(
     lines.push('')
     lines.push(c.species ? `${c.clutch} · ${c.species}` : c.clutch)
     for (const ch of c.changes) lines.push(`  ${ch.field}: ${changeText(ch, formatDate, removedWord)}`)
+    for (const e of c.events ?? []) lines.push(`  ${e}`)
+  }
+  return lines.join('\n')
+}
+
+// --- Daily review marks (only in the app): checked, or checked but someone should look again
+
+export type ReviewState = 'none' | 'checked' | 'verify'
+/** A clutch's marks of the day: the latest one says where it stands. */
+export function reviewState(checks: { state?: string; createdAt: string }[]): ReviewState {
+  if (!checks.length) return 'none'
+  const latest = [...checks].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).at(-1)!
+  return latest.state === 'verify' ? 'verify' : 'checked'
+}
+/** Why a clutch needs someone to look again, in English as the notes: quick buttons. */
+export const VERIFY_REASONS = ["Couldn't find all larvae", 'Count unsure', 'Larvae on another plant', 'Check the plant', 'Pupae to count']
+/** The order that brings what is left to do first: to verify, then not looked at yet, then checked. */
+export const REVIEW_ORDER: Record<ReviewState, number> = { verify: 0, none: 1, checked: 2 }
+
+// --- Events the paper cannot hold (only in the app): hatched, died, disappeared, preserved
+
+export type EventKind = 'laid' | 'hatched' | 'pupated' | 'emerged' | 'died' | 'disappeared' | 'preserved'
+export type Loss = 'died' | 'disappeared' | 'preserved'
+/** What can happen to each stage (server/clutches.mjs EVENT_KINDS): its gain first, then the losses. */
+export const EVENT_KINDS: Record<Stage, EventKind[]> = {
+  egg: ['laid', 'died', 'disappeared', 'preserved'],
+  larva: ['hatched', 'died', 'disappeared', 'preserved'],
+  pupa: ['pupated', 'died', 'disappeared', 'preserved'],
+  adult: ['emerged'],
+}
+export const LOSSES: Loss[] = ['died', 'disappeared', 'preserved']
+/** The stage a count belongs to (none for the dissections). */
+export const stageOfCount = (field: string): Stage | null => STAGES.find(s => s.count === field)?.stage ?? null
+/** The stage's gain: hatched for larvae, pupated for pupae… */
+export const gainOf = (stage: Stage): EventKind => EVENT_KINDS[stage][0]
+/** A stage whose losses can be told apart (eggs, larvae, pupae: adults leave the clutch for Insectary_data). */
+export const hasLosses = (stage: Stage | null): stage is Stage => !!stage && EVENT_KINDS[stage].length > 1
+
+export interface ClutchEvent {
+  id: string
+  recordId: string
+  clutch: string | null
+  /** The day it happened (ISO). */
+  day: string
+  stage: Stage
+  kind: EventKind
+  count: number
+  ids: string[]
+  note: string | null
+  actor: string
+  username: string | null
+  name: string | null
+  actionId: string | null
+  createdAt: string
+}
+/** An egg or larva of the clutch registered one by one in Insectary_data (Emergidos). */
+export interface YoungRow {
+  id: string
+  clutch: string
+  stage: Stage
+  lifestage: string
+  kind: 'preserved' | 'died'
+  day: string | null
+}
+export interface StageTally {
+  gained: number
+  died: number
+  disappeared: number
+  preserved: number
+}
+export type ClutchTallies = Partial<Record<Stage, StageTally>>
+
+/** Insectary IDs typed in one box ("h0e, H1E h2e") → ["H0E", "H1E", "H2E"]; what is not an ID is left out. */
+export function parseIds(text: string): string[] {
+  const out: string[] = []
+  for (const raw of text.toUpperCase().split(/[\s,;]+/)) if (/^[A-Z0-9]{2,8}(\.\d{1,2})?$/.test(raw) && !out.includes(raw)) out.push(raw)
+  return out
+}
+
+/**
+ * The two numbers the team debates, from the sheet's count and the preserved
+ * ones the app knows of. "Alive in the cage": the larvae there now (hatched −
+ * died − disappeared − preserved). "Survived": alive plus preserved (they were
+ * alive when taken). Which one NUMBER OF LARVAE holds depends on the team's
+ * setting: preserved taken off it (it holds the alive ones) or kept in it (it
+ * holds the survivors).
+ */
+export function aliveAndSurvived(sheetTotal: number, preserved: number, subtractPreserved: boolean): { alive: number; survived: number } {
+  const alive = Math.max(0, subtractPreserved ? sheetTotal : sheetTotal - preserved)
+  return { alive, survived: alive + preserved }
+}
+
+/** Whether a loss is taken off the count: always, except preserved ones when the team keeps them counted. */
+export const lossTakesOff = (kind: Loss, subtractPreserved: boolean) => kind !== 'preserved' || subtractPreserved
+
+/** An event in short: "+4 hatched", "−2 preserved (M0E, N9E)". `word` names the kind in the person's language. */
+export function eventText(
+  e: Pick<ClutchEvent, 'kind' | 'count' | 'ids' | 'note' | 'stage'>,
+  word: (e: Pick<ClutchEvent, 'kind' | 'stage' | 'count'>) => string,
+): string {
+  const gain = EVENT_KINDS[e.stage]?.[0] === e.kind
+  const ids = e.ids.length ? ` (${e.ids.join(', ')})` : ''
+  const note = e.note ? ` · ${e.note}` : ''
+  return `${gain ? '+' : '−'}${e.count} ${word(e)}${ids}${note}`
+}
+
+// --- The notebook's list: what the app changed since the notebook was brought up to date
+
+export interface NotebookLine {
+  field: string
+  before: DayChange['before']
+  after: DayChange['after']
+  actors: string[]
+  sources: string[]
+  firstAt: string
+  at: string
+}
+export interface NotebookClutch {
+  recordId: string
+  clutch: string
+  species: string
+  isNew: boolean
+  lines: NotebookLine[]
+  events: ClutchEvent[]
+}
+/**
+ * The notebook's list as plain text to copy by hand: one block per clutch in
+ * the notebook's order, each field's change (the terms added for a count) with
+ * who and when, then the app-only events.
+ */
+export function notebookText(
+  title: string,
+  clutches: NotebookClutch[],
+  opts: {
+    formatDate: (serial: number) => string
+    when: (iso: string) => string
+    who: (name: string) => string
+    event: (e: ClutchEvent) => string
+    removedWord?: string
+    newWord?: string
+  },
+): string {
+  const lines = [title]
+  for (const c of clutches) {
+    lines.push('')
+    lines.push([c.isNew ? `${c.clutch} (${opts.newWord ?? 'new'})` : c.clutch, c.species].filter(Boolean).join(' · '))
+    for (const l of c.lines)
+      lines.push(`  ${l.field}: ${changeText(l, opts.formatDate, opts.removedWord)}  [${l.actors.map(opts.who).join(', ')} ${opts.when(l.at)}]`)
+    for (const e of c.events) lines.push(`  ${opts.event(e)}  [${opts.who(e.name || e.username || '')} ${opts.when(e.createdAt)}]`)
   }
   return lines.join('\n')
 }

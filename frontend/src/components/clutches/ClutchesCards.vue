@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Check, History, Plus, Search, X } from 'lucide-vue-next'
+import { AlertTriangle, ArrowDownUp, BookOpen, Check, History, Plus, Search, Settings, X } from 'lucide-vue-next'
 import ClutchEditor from './ClutchEditor.vue'
+import ClutchSettings from './ClutchSettings.vue'
 import NewClutch from './NewClutch.vue'
+import NotebookChanges from './NotebookChanges.vue'
 import SexBadge from '../SexBadge.vue'
 import TodayChanges from './TodayChanges.vue'
 import EntryModeToggle from '../EntryModeToggle.vue'
@@ -19,13 +21,16 @@ import {
   hasClutch,
   parentsOf,
   readCount,
+  REVIEW_ORDER,
   termsText,
   totalOf,
   undatedTail,
+  VERIFY_REASONS,
   type ClutchState,
   type CountField,
 } from '../../lib/clutches'
 import { formatSerial, isoToSerial, todayIso } from '../../lib/dates'
+import { errorText, notify } from '../../lib/notice'
 import { persistentRef } from '../../lib/persist'
 import { initialsOf } from '../../lib/rows'
 import type { Table, TableRow } from '../../lib/types'
@@ -76,8 +81,11 @@ const followTall = (e: MediaQueryListEvent) => (tall.value = e.matches)
 onMounted(() => tallQuery?.addEventListener('change', followTall))
 onBeforeUnmount(() => tallQuery?.removeEventListener('change', followTall))
 
-const view = persistentRef<'ongoing' | 'today'>('clutches:view', 'ongoing')
-const filter = persistentRef<'all' | 'todo' | 'changed'>('clutches:filter', 'all')
+const view = persistentRef<'ongoing' | 'today' | 'notebook'>('clutches:view', 'ongoing')
+const filter = persistentRef<'all' | 'todo' | 'verify' | 'changed'>('clutches:filter', 'all')
+/** What is left to do first: to verify, then not reviewed yet, then checked. */
+const pendingFirst = persistentRef('clutches:pending-first', false)
+const showSettings = ref(false)
 const query = ref('')
 
 // --- Every clutch with what a card shows, read as the person sees it (pending edits included)
@@ -129,15 +137,31 @@ const listed = computed(() => {
     const contains = items.value.filter(i => !i.number.toLowerCase().startsWith(q) && i.search.includes(q))
     return [...starts.reverse(), ...contains.reverse()].slice(0, 60)
   }
-  if (filter.value === 'todo') return ongoing.value.filter(i => !day.today(i.row.id).checked)
-  if (filter.value === 'changed') return ongoing.value.filter(i => day.today(i.row.id).changed)
-  return ongoing.value
+  const review = (i: Item) => day.today(i.row.id).review
+  const shown =
+    filter.value === 'todo'
+      ? ongoing.value.filter(i => review(i) === 'none')
+      : filter.value === 'verify'
+        ? ongoing.value.filter(i => review(i) === 'verify')
+        : filter.value === 'changed'
+          ? ongoing.value.filter(i => day.today(i.row.id).changed)
+          : ongoing.value
+  // The sort is stable: within each group the sheet's order stays.
+  return pendingFirst.value ? [...shown].sort((a, b) => REVIEW_ORDER[review(a)] - REVIEW_ORDER[review(b)]) : shown
 })
-const counts = computed(() => ({
-  all: ongoing.value.length,
-  todo: ongoing.value.filter(i => !day.today(i.row.id).checked).length,
-  changed: ongoing.value.filter(i => day.today(i.row.id).changed).length,
-}))
+const counts = computed(() => {
+  const reviews = ongoing.value.map(i => day.today(i.row.id).review)
+  return {
+    all: ongoing.value.length,
+    todo: reviews.filter(r => r === 'none').length,
+    verify: reviews.filter(r => r === 'verify').length,
+    checked: reviews.filter(r => r === 'checked').length,
+    changed: ongoing.value.filter(i => day.today(i.row.id).changed).length,
+  }
+})
+const FILTERS = ['all', 'todo', 'verify', 'changed'] as const
+const filterName = (f: (typeof FILTERS)[number]) =>
+  f === 'all' ? t('Todos') : f === 'todo' ? t('Sin revisar hoy') : f === 'verify' ? t('Por verificar') : t('Cambiados hoy')
 const changedToday = computed(() => new Set(day.day.value.changes.map(c => c.recordId)).size)
 
 // --- The editor: over the list on a phone, beside it on a tablet
@@ -157,20 +181,31 @@ function openRecord(id: string) {
 }
 const drawerRow = ref<TableRow | null>(null)
 
-// --- Mark as checked from a card
+// --- Mark as checked (or to verify, with why) from a card
 const marking = ref<string | null>(null)
-const lastMark = ref<{ id: string; clutch: string } | null>(null)
-async function markChecked(row: TableRow) {
+const lastMark = ref<{ id: string; clutch: string; state: 'checked' | 'verify' } | null>(null)
+/** The card whose "needs verification" reason is being typed. */
+const verifyFor = ref<string | null>(null)
+const verifyNote = ref('')
+async function markChecked(row: TableRow, state: 'checked' | 'verify' = 'checked', note = '') {
   marking.value = row.id
   try {
-    const check = await day.markChecked(row.id, [])
-    lastMark.value = { id: check.id, clutch: String(row.values['CLUTCH NUMBER'] ?? '') }
+    const check = await day.markChecked(row.id, [], null, { state, note })
+    verifyFor.value = null
+    verifyNote.value = ''
+    lastMark.value = { id: check.id, clutch: String(row.values['CLUTCH NUMBER'] ?? ''), state }
     setTimeout(() => {
       if (lastMark.value?.id === check.id) lastMark.value = null
     }, 6000)
+  } catch (e) {
+    notify(errorText(e), 'error')
   } finally {
     marking.value = null
   }
+}
+function askVerify(row: TableRow) {
+  verifyFor.value = verifyFor.value === row.id ? null : row.id
+  verifyNote.value = ''
 }
 async function undoMark() {
   const m = lastMark.value
@@ -236,6 +271,15 @@ const unsavedRow = (row: TableRow) => !!pending.edits[row.id]
 /** "Checked today by FCH · only in the app": a check is never written to the sheet and ends with the day. */
 const checkedText = (row: TableRow) =>
   t('Revisado hoy por {who} · solo en la app', { who: day.today(row.id).checkedBy.map(initialsFor).join(', ') || '—' })
+/** Who marked it to verify (the latest mark), and why. */
+const verifyBy = (row: TableRow) => {
+  const latest = day.today(row.id).latest
+  return latest ? initialsFor(latest.name || latest.username || '') : ''
+}
+const verifyText = (row: TableRow) => {
+  const note = day.today(row.id).latest?.note
+  return note ? t('Por verificar ({who}): {note}', { who: verifyBy(row), note }) : t('Por verificar ({who})', { who: verifyBy(row) })
+}
 const listEl = ref<HTMLElement>()
 const rootEl = ref<HTMLElement>()
 watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 }))
@@ -265,7 +309,18 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
             :title="$t('Cambios de hoy: para el cuaderno y para deshacer')"
             @click="view = 'today'"
           >
-            <History :size="15" class="-mt-0.5 inline" /> {{ $t('Hoy') }} <span class="tabular-nums opacity-80">{{ changedToday }}</span>
+            <History :size="15" class="-mt-0.5 inline" /> <span :class="{ 'sr-only': phone }">{{ $t('Hoy') }}</span>
+            <span class="tabular-nums opacity-80">{{ changedToday }}</span>
+          </button>
+          <button
+            role="tab"
+            class="h-11 border-l border-stone-300 px-3 font-medium whitespace-nowrap"
+            :class="view === 'notebook' ? 'bg-brand-700 text-white' : 'bg-white text-stone-700'"
+            :aria-selected="view === 'notebook'"
+            :title="$t('Para el cuaderno: lo cambiado en la app desde que se puso al día')"
+            @click="view = 'notebook'"
+          >
+            <BookOpen :size="15" class="-mt-0.5 inline" /> <span :class="{ 'sr-only': phone }">{{ $t('Cuaderno') }}</span>
           </button>
         </div>
         <button v-if="canEdit" class="btn h-11 shrink-0 px-3" :aria-label="$t('Nuevo clutch')" @click="startNew">
@@ -292,17 +347,50 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
         </div>
         <div v-if="!query" class="mt-2 flex gap-1.5 overflow-x-auto text-sm">
           <button
-            v-for="f in (['all', 'todo', 'changed'] as const)"
+            v-for="f in FILTERS"
             :key="f"
             class="h-9 shrink-0 rounded-full border px-3"
-            :class="filter === f ? 'border-brand-700 bg-brand-50 font-medium text-brand-800' : 'border-stone-300 bg-white text-stone-700'"
+            :class="
+              filter === f
+                ? f === 'verify'
+                  ? 'border-orange-500 bg-orange-50 font-medium text-orange-900'
+                  : 'border-brand-700 bg-brand-50 font-medium text-brand-800'
+                : 'border-stone-300 bg-white text-stone-700'
+            "
             :aria-pressed="filter === f"
             @click="filter = f"
           >
-            {{ f === 'all' ? $t('Todos') : f === 'todo' ? $t('Sin revisar hoy') : $t('Cambiados hoy') }}
+            <AlertTriangle v-if="f === 'verify'" :size="13" class="-mt-0.5 inline text-orange-700" />
+            {{ filterName(f) }}
             <span class="tabular-nums opacity-70">{{ counts[f] }}</span>
           </button>
+          <button
+            class="flex h-9 shrink-0 items-center gap-1 rounded-full border px-3"
+            :class="pendingFirst ? 'border-brand-700 bg-brand-50 font-medium text-brand-800' : 'border-stone-300 bg-white text-stone-700'"
+            :aria-pressed="pendingFirst"
+            :title="$t('Primero los por verificar, luego los sin revisar')"
+            @click="pendingFirst = !pendingFirst"
+          >
+            <ArrowDownUp :size="13" /> {{ $t('Pendientes primero') }}
+          </button>
+          <button
+            class="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-stone-300 bg-white text-stone-600"
+            :aria-label="$t('Ajustes de Clutches')"
+            :title="$t('Ajustes de Clutches')"
+            @click="showSettings = true"
+          >
+            <Settings :size="15" />
+          </button>
         </div>
+        <!-- Today's review: every clutch starts unreviewed each day (marks only in the app). -->
+        <p v-if="!query && counts.all" class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-stone-600" role="status">
+          <span class="font-medium text-stone-700">{{ $t('Revisión de hoy') }}:</span>
+          <span class="tabular-nums"><Check :size="12" class="-mt-0.5 inline text-brand-700" /> {{ $t('{n} revisados', { n: counts.checked }) }}</span>
+          <span class="tabular-nums" :class="counts.verify ? 'font-medium text-orange-800' : ''">
+            <AlertTriangle :size="12" class="-mt-0.5 inline" /> {{ $t('{n} por verificar', { n: counts.verify }) }}
+          </span>
+          <span class="tabular-nums">{{ $t('{n} sin revisar', { n: counts.todo }) }}</span>
+        </p>
       </template>
     </div>
 
@@ -310,17 +398,27 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
       <div ref="listEl" :class="wide ? 'min-h-0 w-[360px] shrink-0 overflow-y-auto border-r border-stone-200 lg:w-[400px]' : ''">
         <p v-if="!ready" class="p-6 text-stone-500">{{ $t('Cargando {sheet}…', { sheet: MODULE }) }}</p>
         <TodayChanges v-else-if="view === 'today'" :day="day" :initials="initials" @open="openRecord" />
+        <NotebookChanges v-else-if="view === 'notebook'" :initials-for="initialsFor" @open="openRecord" />
         <template v-else>
           <p v-if="query && !listed.length" class="p-6 text-center text-sm text-stone-500">{{ $t('Ningún clutch con «{q}»', { q: query }) }}</p>
           <p v-else-if="!listed.length" class="p-6 text-center text-sm text-stone-500">
-            {{ filter === 'todo' ? $t('Todos los clutches en curso están revisados hoy.') : $t('Ningún clutch aquí.') }}
+            {{
+              filter === 'todo'
+                ? $t('Todos los clutches en curso están revisados hoy.')
+                : filter === 'verify'
+                  ? $t('Ningún clutch por verificar.')
+                  : $t('Ningún clutch aquí.')
+            }}
           </p>
           <ul class="space-y-2 p-3">
             <li
               v-for="(item, i) in listed"
               :key="item.row.id"
               class="overflow-hidden rounded-xl border bg-white shadow-sm"
-              :class="selectedId === item.row.id && wide ? 'border-brand-600 ring-2 ring-brand-100' : 'border-stone-200'"
+              :class="[
+                selectedId === item.row.id && wide ? 'border-brand-600 ring-2 ring-brand-100' : 'border-stone-200',
+                day.today(item.row.id).review === 'verify' ? 'border-l-4 border-l-orange-400' : day.today(item.row.id).review === 'checked' ? 'border-l-4 border-l-brand-600' : '',
+              ]"
             >
               <button class="block w-full px-3 pt-2 pb-1.5 text-left active:bg-stone-50" @click="open(i)">
                 <span class="flex flex-wrap items-center gap-1.5">
@@ -334,12 +432,20 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                     <span v-if="unsavedRow(item.row)" class="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900 ring-1 ring-amber-300">{{ $t('Sin guardar') }}</span>
                     <span v-if="day.today(item.row.id).changed" class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">{{ $t('Cambiado hoy') }}</span>
                     <span
-                      v-if="day.today(item.row.id).checkedBy.length"
+                      v-if="day.today(item.row.id).review === 'verify'"
+                      class="flex items-center gap-0.5 rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-900 ring-1 ring-orange-300"
+                      :title="verifyText(item.row)"
+                      :aria-label="verifyText(item.row)"
+                    >
+                      <AlertTriangle :size="12" /> {{ $t('Verificar') }} · {{ verifyBy(item.row) }}
+                    </span>
+                    <span
+                      v-else-if="day.today(item.row.id).review === 'checked'"
                       class="flex items-center gap-0.5 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-800"
                       :title="checkedText(item.row)"
                       :aria-label="checkedText(item.row)"
                     >
-                      <Check :size="12" /> {{ $t('Hoy') }} · {{ day.today(item.row.id).checkedBy.map(initialsFor).join(', ') }}
+                      <Check :size="12" /> {{ day.today(item.row.id).checkedBy.map(initialsFor).join(', ') }}
                     </span>
                   </span>
                 </span>
@@ -363,13 +469,65 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                   </span>
                 </span>
                 <span v-if="lastText(item.row)" class="mt-1 block truncate text-[11px] text-stone-500">{{ lastText(item.row) }}</span>
+                <span
+                  v-if="day.today(item.row.id).review === 'verify' && day.today(item.row.id).latest?.note"
+                  class="mt-1 block rounded-md bg-orange-50 px-2 py-1 text-xs text-orange-950"
+                >
+                  <AlertTriangle :size="12" class="-mt-0.5 inline" /> {{ day.today(item.row.id).latest?.note }}
+                </span>
               </button>
-              <div v-if="canEdit && !day.today(item.row.id).checked" class="border-t border-stone-100">
-                <button class="flex h-11 w-full items-center justify-center gap-1.5 text-sm font-medium text-brand-800 active:bg-brand-50" :disabled="marking === item.row.id" @click="markChecked(item.row)">
-                  <Check :size="16" /> {{ $t('Revisado, sin cambios') }}
-                  <span class="text-xs font-normal text-stone-500">· {{ $t('solo en la app') }}</span>
+              <!-- Today's mark: checked (no change), or checked but someone should look again. -->
+              <div v-if="canEdit && day.today(item.row.id).review !== 'checked'" class="flex border-t border-stone-100">
+                <button
+                  class="flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 text-sm font-medium text-brand-800 active:bg-brand-50"
+                  :disabled="marking === item.row.id"
+                  @click="markChecked(item.row)"
+                >
+                  <Check :size="16" />
+                  {{ day.today(item.row.id).review === 'verify' ? $t('Verificado') : $t('Revisado, sin cambios') }}
+                  <span class="hidden text-xs font-normal text-stone-500 min-[400px]:inline">· {{ $t('solo en la app') }}</span>
+                </button>
+                <button
+                  v-if="day.today(item.row.id).review === 'none'"
+                  class="flex h-11 shrink-0 items-center gap-1 border-l border-stone-100 px-3 text-sm font-medium text-orange-800 active:bg-orange-50"
+                  :aria-expanded="verifyFor === item.row.id"
+                  :title="$t('Revisado, pero hay que verificar')"
+                  @click="askVerify(item.row)"
+                >
+                  <AlertTriangle :size="16" /> {{ $t('Verificar…') }}
                 </button>
               </div>
+              <form
+                v-if="verifyFor === item.row.id"
+                class="border-t border-orange-200 bg-orange-50 px-3 py-2"
+                @submit.prevent="markChecked(item.row, 'verify', verifyNote)"
+              >
+                <label class="block text-sm font-medium text-orange-950" :for="`verify-${item.row.id}`">{{ $t('¿Qué hay que verificar? (opcional)') }}</label>
+                <div class="mt-1 flex flex-wrap gap-1.5">
+                  <button
+                    v-for="r in VERIFY_REASONS"
+                    :key="r"
+                    type="button"
+                    class="min-h-9 rounded-full border border-orange-300 bg-white px-3 text-sm text-orange-950"
+                    @click="verifyNote = r"
+                  >
+                    {{ r }}
+                  </button>
+                </div>
+                <div class="mt-1.5 flex gap-2">
+                  <input
+                    :id="`verify-${item.row.id}`"
+                    v-model="verifyNote"
+                    class="field-input h-11 min-w-0 flex-1"
+                    maxlength="200"
+                    autocomplete="off"
+                    enterkeyhint="done"
+                  />
+                  <button class="h-11 shrink-0 rounded-lg border border-orange-400 bg-orange-100 px-3 text-sm font-semibold text-orange-950" :disabled="marking === item.row.id">
+                    {{ $t('Marcar') }}
+                  </button>
+                </div>
+              </form>
             </li>
           </ul>
         </template>
@@ -400,6 +558,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
             :state="stateOf"
             :can-edit="canEdit"
             :initials="initials"
+            :initials-for="initialsFor"
             @close="editing = null"
             @more="drawerRow = $event"
           />
@@ -412,9 +571,13 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
 
     <!-- A check marked from a card can be taken back for a moment. -->
     <div v-if="lastMark" class="fixed inset-x-3 bottom-20 z-30 mx-auto flex max-w-md items-center gap-2 rounded-xl bg-stone-800 px-4 py-2 text-sm text-white shadow-lg" role="status">
-      <Check :size="16" />
+      <AlertTriangle v-if="lastMark.state === 'verify'" :size="16" /><Check v-else :size="16" />
       <span class="flex-1">
-        {{ $t('Clutch {clutch} revisado, sin cambios', { clutch: lastMark.clutch }) }}
+        {{
+          lastMark.state === 'verify'
+            ? $t('Clutch {clutch} marcado por verificar', { clutch: lastMark.clutch })
+            : $t('Clutch {clutch} revisado, sin cambios', { clutch: lastMark.clutch })
+        }}
         <span class="block text-xs opacity-80">{{ $t('Marca solo en la app, para hoy: no se escribe en la hoja.') }}</span>
       </span>
       <button class="h-11 px-2 font-semibold underline" @click="undoMark">{{ $t('Deshacer') }}</button>
@@ -443,10 +606,12 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
         :state="stateOf"
         :can-edit="canEdit"
         :initials="initials"
+        :initials-for="initialsFor"
         @close="editing = null"
         @more="drawerRow = $event"
       />
     </template>
+    <ClutchSettings v-if="showSettings" @close="showSettings = false" />
     <RowDrawer
       v-if="drawerRow && table"
       :module="MODULE"

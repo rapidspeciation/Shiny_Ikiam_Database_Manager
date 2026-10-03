@@ -1,15 +1,29 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Check, ChevronLeft, ChevronRight, Columns3, Loader2, X } from 'lucide-vue-next'
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, Columns3, Loader2, X } from 'lucide-vue-next'
 import ChoiceField from '../ChoiceField.vue'
 import CountEditor from './CountEditor.vue'
+import ClutchTimeline from './ClutchTimeline.vue'
 import DateRow from './DateRow.vue'
 import ClutchNotes from './ClutchNotes.vue'
 import { useKeyboard } from '../../composables/usePhone'
 import { useParents } from '../../composables/useParents'
 import type { ClutchDay } from '../../composables/useClutchDay'
 import { isBlank } from '../../lib/cells'
-import { COUNTS, MODULE, STAGES, countCell, formulaOf, lockedFormula, readCount, type ClutchState } from '../../lib/clutches'
+import {
+  COUNTS,
+  MODULE,
+  STAGES,
+  countCell,
+  formulaOf,
+  lockedFormula,
+  readCount,
+  totalOf,
+  VERIFY_REASONS,
+  type ClutchState,
+  type EventKind,
+  type Stage,
+} from '../../lib/clutches'
 import { isoToSerial, todayIso } from '../../lib/dates'
 import { errorText, notify } from '../../lib/notice'
 import type { CellValue, Field, TableRow } from '../../lib/types'
@@ -33,6 +47,8 @@ const props = defineProps<{
   state: (row: TableRow) => ClutchState
   canEdit: boolean
   initials: string
+  /** A person's initials from their name (FCH), for the marks and events. */
+  initialsFor?: (name: string) => string
   docked?: boolean
 }>()
 const index = defineModel<number>('index', { required: true })
@@ -121,7 +137,7 @@ const finishing = ref(false)
 const waitIdle = async () => {
   for (let i = 0; i < 300 && pending.saving; i++) await new Promise(r => setTimeout(r, 100))
 }
-async function finish() {
+async function finish(state: 'checked' | 'verify' = 'checked', note = '') {
   const r = row.value
   if (!r || finishing.value) return
   finishing.value = true
@@ -139,11 +155,17 @@ async function finish() {
         return
       }
     }
-    await props.day.markChecked(r.id, fields, actionId)
+    await props.day.markChecked(r.id, fields, actionId, { state, note })
     touched.value = {}
+    verifying.value = false
+    verifyNote.value = ''
     opened.value = { id: r.id, values: Object.fromEntries(props.columns.map(c => [c.key, norm(c.key, current(c.key))])) }
     notify(
-      fields.length ? t('Clutch {clutch} guardado y revisado', { clutch: label.value }) : t('Clutch {clutch} revisado, sin cambios', { clutch: label.value }),
+      state === 'verify'
+        ? t('Clutch {clutch} marcado por verificar', { clutch: label.value })
+        : fields.length
+          ? t('Clutch {clutch} guardado y revisado', { clutch: label.value })
+          : t('Clutch {clutch} revisado, sin cambios', { clutch: label.value }),
       'success',
     )
     if (!props.docked) emit('close')
@@ -153,10 +175,54 @@ async function finish() {
     finishing.value = false
   }
 }
+/** "Checked, needs verification": with a short reason, so someone else looks again. */
+const verifying = ref(false)
+const verifyNote = ref('')
+const who = (name: string) => (props.initialsFor ? props.initialsFor(name) : name)
 const checkedLine = computed(() => {
   const s = status.value
-  if (!s?.checkedBy.length) return ''
-  return t('Revisado hoy por {who} · solo en la app', { who: s.checkedBy.join(', ') })
+  if (!s?.latest) return ''
+  const by = who(s.latest.name || s.latest.username || '')
+  if (s.review === 'verify')
+    return s.latest.note ? t('Por verificar ({who}): {note}', { who: by, note: s.latest.note }) : t('Por verificar ({who})', { who: by })
+  return t('Revisado hoy por {who} · solo en la app', { who: s.checkedBy.map(who).join(', ') })
+})
+
+// --- Events (only in the app): what a count's change was, recorded as the person says
+/** The event behind each step of the counts (CountEditor's key → the server's id, once saved). */
+const posted = new Map<string, Promise<string | null>>()
+function recordEvent(stage: Stage, e: { key: string; kind: EventKind; count: number; ids: string[] }) {
+  const r = row.value
+  if (!r) return
+  posted.set(
+    e.key,
+    props.day
+      .addEvent({ recordId: r.id, stage, kind: e.kind, count: e.count, ids: e.ids })
+      .then(ev => ev.id)
+      .catch(err => {
+        message.value = errorText(err)
+        return null
+      }),
+  )
+}
+async function dropEvent(key: string) {
+  const id = await posted.get(key)
+  posted.delete(key)
+  if (!id) return
+  try {
+    await props.day.removeEvent(id)
+  } catch (err) {
+    message.value = errorText(err)
+  }
+}
+/** The sheet's totals as the person sees them, for the timeline's numbers. */
+const stageTotals = computed(() => {
+  const out: Partial<Record<Stage, number | null>> = {}
+  for (const s of STAGES) {
+    const c = readCount(countOf(s.count))
+    out[s.stage] = c.terms.length ? totalOf(c.terms) : null
+  }
+  return out
 })
 
 function go(step: number) {
@@ -213,6 +279,8 @@ watch(
     const r = row.value
     touched.value = {}
     message.value = ''
+    verifying.value = false
+    verifyNote.value = ''
     opened.value = r ? { id: r.id, values: Object.fromEntries(props.columns.map(c => [c.key, norm(c.key, current(c.key))])) } : null
     nextTick(() => scroller.value?.scrollTo({ top: 0 }))
   },
@@ -277,7 +345,13 @@ const endedText = (e: ClutchState['ended']) =>
       <div class="flex flex-wrap items-center gap-1.5 pt-3 text-xs">
         <span v-if="clutchState?.stage" class="rounded-full bg-stone-100 px-2 py-0.5 font-medium text-stone-700">{{ stageName[clutchState.stage]() }}</span>
         <span v-if="clutchState?.ended" class="rounded-full bg-stone-200 px-2 py-0.5 text-stone-700">{{ $t('Terminado: {why}', { why: endedText(clutchState.ended) }) }}</span>
-        <span v-if="checkedLine" class="flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-800"><Check :size="12" /> {{ checkedLine }}</span>
+        <span
+          v-if="checkedLine"
+          class="flex items-center gap-1 rounded-full px-2 py-0.5 font-medium"
+          :class="status?.review === 'verify' ? 'bg-orange-100 text-orange-900 ring-1 ring-orange-300' : 'bg-brand-50 text-brand-800'"
+        >
+          <AlertTriangle v-if="status?.review === 'verify'" :size="12" /><Check v-else :size="12" /> {{ checkedLine }}
+        </span>
         <span v-if="status?.changed" class="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-900">{{ $t('Cambiado hoy') }}</span>
         <span class="text-stone-500">{{ get('INSECTARY OR LABORATORY') || '' }}</span>
       </div>
@@ -312,7 +386,11 @@ const endedText = (e: ClutchState['ended']) =>
           :locked="lockedFormula(row, s.count, formulas)"
           :more="MORE[s.count]()"
           :start-of-day="startOfDay(s.count)"
+          :stage="s.stage"
+          :subtract-preserved="day.settings.subtractPreserved"
           @set="setValue(s.count, $event)"
+          @event="recordEvent(s.stage, $event)"
+          @unevent="dropEvent"
         >
           <DateRow
             v-if="s.date && has(s.date)"
@@ -327,6 +405,8 @@ const endedText = (e: ClutchState['ended']) =>
           />
         </CountEditor>
       </section>
+      <!-- Hatched, died, disappeared, preserved: day by day, only in the app. -->
+      <ClutchTimeline :record-id="row.id" :day="day" :totals="stageTotals" :can-edit="canEdit" :initials="who" />
       <section class="border-b border-stone-100 py-3">
         <CountEditor
           :key="`${row.id}:dissections`"
@@ -398,6 +478,38 @@ const endedText = (e: ClutchState['ended']) =>
       </button>
       </div>
     </div>
+    <!-- Checked, but someone should look again: why, in a few words. -->
+    <div
+      v-if="verifying && canEdit"
+      v-show="!tight"
+      class="relative z-10 border-t border-orange-200 bg-orange-50 px-3 py-2"
+      :style="lift ? { transform: `translateY(-${lift}px)` } : undefined"
+    >
+      <label class="block text-sm font-medium text-orange-950" for="clutch-verify-note">{{ $t('¿Qué hay que verificar? (opcional)') }}</label>
+      <div class="mt-1 flex flex-wrap gap-1.5">
+        <button
+          v-for="r in VERIFY_REASONS"
+          :key="r"
+          type="button"
+          class="min-h-9 rounded-full border border-orange-300 bg-white px-3 text-sm text-orange-950"
+          @click="verifyNote = r"
+        >
+          {{ r }}
+        </button>
+      </div>
+      <div class="mt-1.5 flex gap-2">
+        <input
+          id="clutch-verify-note"
+          v-model="verifyNote"
+          class="field-input h-11 min-w-0 flex-1"
+          maxlength="200"
+          autocomplete="off"
+          enterkeyhint="done"
+          @keydown.enter.prevent="finish('verify', verifyNote)"
+        />
+        <button type="button" class="btn h-11 w-11 shrink-0 justify-center px-0" :aria-label="$t('Cancelar')" @click="verifying = false"><X :size="18" /></button>
+      </div>
+    </div>
     <footer
       v-show="!tight"
       class="relative z-10 flex items-center gap-2 border-t border-stone-200 bg-white px-3 py-2"
@@ -411,10 +523,31 @@ const endedText = (e: ClutchState['ended']) =>
         <template v-else-if="checkedLine">{{ checkedLine }}</template>
         <template v-else>{{ $t('Sin cambios') }}</template>
       </span>
-      <button v-if="canEdit" class="btn-primary h-12 px-4 text-base" :disabled="finishing" @click="finish">
-        <Loader2 v-if="finishing" :size="18" class="animate-spin" /><Check v-else :size="18" />
-        {{ changedFields.length || rowPending ? $t('Guardar y revisado') : $t('Revisado, sin cambios') }}
-      </button>
+      <template v-if="canEdit">
+        <button
+          v-if="verifying"
+          class="h-12 shrink-0 rounded-lg border border-orange-400 bg-orange-100 px-3 text-sm font-semibold text-orange-950"
+          :disabled="finishing"
+          @click="finish('verify', verifyNote)"
+        >
+          <AlertTriangle :size="16" class="-mt-0.5 inline" /> {{ $t('Marcar por verificar') }}
+        </button>
+        <template v-else>
+          <button
+            class="grid h-12 w-12 shrink-0 place-items-center rounded-lg border border-orange-300 text-orange-800 active:bg-orange-50"
+            :aria-label="$t('Revisado, pero hay que verificar')"
+            :title="$t('Revisado, pero hay que verificar')"
+            :disabled="finishing"
+            @click="verifying = true"
+          >
+            <AlertTriangle :size="18" />
+          </button>
+          <button class="btn-primary h-12 px-4 text-base" :disabled="finishing" @click="finish()">
+            <Loader2 v-if="finishing" :size="18" class="animate-spin" /><Check v-else :size="18" />
+            {{ changedFields.length || rowPending ? $t('Guardar y revisado') : $t('Revisado, sin cambios') }}
+          </button>
+        </template>
+      </template>
       <button v-else class="btn h-12 px-4" @click="emit('close')">{{ $t('Cerrar') }}</button>
     </footer>
   </div>

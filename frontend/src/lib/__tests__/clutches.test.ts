@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  aliveAndSurvived,
   appendNote,
   appendTerm,
   changeText,
@@ -9,17 +10,26 @@ import {
   countedToday,
   dayText,
   effectLabel,
+  eventText,
   formulaOf,
+  gainOf,
   hasClutch,
+  hasLosses,
+  lossTakesOff,
   nextBatch,
   nextClutch,
+  notebookText,
   noteParts,
   notesOf,
   parentsOf,
   parentsText,
+  parseIds,
   readCount,
   removeLast,
+  REVIEW_ORDER,
+  reviewState,
   sameMating,
+  stageOfCount,
   termLabels,
   totalOf,
   typedTotal,
@@ -272,5 +282,105 @@ describe("the day's changes as text for the notebook", () => {
       formatSerial,
     )
     expect(text).toBe('Clutches 1/10/26\n\n1012(2) · Mechanitis lysimnia\n  NUMBER OF EGGS: +4 (17 → 21) · =17+4')
+  })
+})
+
+describe('daily review marks', () => {
+  it('the latest mark of the day counts; to verify comes first', () => {
+    expect(reviewState([])).toBe('none')
+    expect(reviewState([{ state: 'verify', createdAt: '2026-10-02T15:00:00Z' }])).toBe('verify')
+    expect(
+      reviewState([
+        { state: 'checked', createdAt: '2026-10-02T16:00:00Z' },
+        { state: 'verify', createdAt: '2026-10-02T15:00:00Z' },
+      ]),
+    ).toBe('checked')
+    const order = (['checked', 'none', 'verify'] as const).slice().sort((a, b) => REVIEW_ORDER[a] - REVIEW_ORDER[b])
+    expect(order).toEqual(['verify', 'none', 'checked'])
+  })
+})
+
+describe('events and the preserved-larvae convention', () => {
+  it('alive in the cage and survived, under either convention', () => {
+    // 20 larvae in the sheet, 3 preserved recorded.
+    expect(aliveAndSurvived(20, 3, true)).toEqual({ alive: 20, survived: 23 })
+    expect(aliveAndSurvived(20, 3, false)).toEqual({ alive: 17, survived: 20 })
+    expect(aliveAndSurvived(2, 5, false)).toEqual({ alive: 0, survived: 5 })
+  })
+  it('only preserved ones kept counted stay in the count', () => {
+    expect(lossTakesOff('died', false)).toBe(true)
+    expect(lossTakesOff('disappeared', false)).toBe(true)
+    expect(lossTakesOff('preserved', false)).toBe(false)
+    expect(lossTakesOff('preserved', true)).toBe(true)
+  })
+  it('stages, gains and losses', () => {
+    expect(stageOfCount('NUMBER OF LARVAE')).toBe('larva')
+    expect(stageOfCount('NUMBER OF PUPAE/LARVAE FOR DISECTIONS')).toBe(null)
+    expect(gainOf('larva')).toBe('hatched')
+    expect(gainOf('pupa')).toBe('pupated')
+    expect(hasLosses('larva')).toBe(true)
+    expect(hasLosses('adult')).toBe(false)
+    expect(hasLosses(null)).toBe(false)
+  })
+  it('Insectary IDs typed in one box', () => {
+    expect(parseIds('h0e, H1E  h2e;H1E w0b.1 x')).toEqual(['H0E', 'H1E', 'H2E', 'W0B.1'])
+    expect(parseIds('')).toEqual([])
+  })
+  it('an event in short', () => {
+    const word = (e: { kind: string }) => e.kind
+    expect(eventText({ stage: 'larva', kind: 'hatched', count: 4, ids: [], note: null }, word)).toBe('+4 hatched')
+    expect(eventText({ stage: 'larva', kind: 'preserved', count: 2, ids: ['M0E', 'N9E'], note: 'life history' }, word)).toBe(
+      '−2 preserved (M0E, N9E) · life history',
+    )
+  })
+})
+
+describe("the notebook's list as text", () => {
+  it('each clutch with its changes, who and when, then its events', () => {
+    const text = notebookText(
+      'Clutches',
+      [
+        {
+          recordId: 'r1',
+          clutch: '1012',
+          species: 'Mechanitis lysimnia',
+          isNew: false,
+          lines: [
+            {
+              field: 'NUMBER OF LARVAE',
+              before: { formula: '=12' },
+              after: { formula: '=12+3' },
+              actors: ['Ana Pérez'],
+              sources: ['app'],
+              firstAt: '2026-10-02T15:00:00Z',
+              at: '2026-10-02T15:00:00Z',
+            },
+          ],
+          events: [
+            {
+              id: 'e1',
+              recordId: 'r1',
+              clutch: '1012',
+              day: '2026-10-02',
+              stage: 'larva',
+              kind: 'died',
+              count: 1,
+              ids: [],
+              note: null,
+              actor: 'u',
+              username: 'bob',
+              name: 'Bob Díaz',
+              actionId: null,
+              createdAt: '2026-10-02T16:00:00Z',
+            },
+          ],
+        },
+      ],
+      { formatDate: formatSerial, when: () => '2/10 10:00', who: n => (n === 'Ana Pérez' ? 'AP' : 'BD'), event: e => `−${e.count} died` },
+    )
+    expect(text).toBe('Clutches\n\n1012 · Mechanitis lysimnia\n  NUMBER OF LARVAE: +3 (12 → 15) · =12+3  [AP 2/10 10:00]\n  −1 died  [BD 2/10 10:00]')
+  })
+  it("the day's text lists the events too", () => {
+    expect(dayText('Day', [{ clutch: '999', species: '', changes: [], events: ['Larvae: −1 died'] }], formatSerial)).toBe('Day\n\n999\n  Larvae: −1 died')
   })
 })
