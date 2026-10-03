@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { AlertTriangle, Check, CircleHelp, Columns3, ListFilter, Plus, Sparkles, SquarePen, X } from 'lucide-vue-next'
+import { AlertTriangle, ArrowRight, Check, CircleHelp, Columns3, ListFilter, Plus, Sparkles, SquarePen, X } from 'lucide-vue-next'
 import ProposalSheet, { type CellEdit } from './assistant/ProposalSheet.vue'
 import { api } from '../lib/api'
 import { displayValue } from '../lib/cells'
@@ -8,9 +8,11 @@ import { errorText, notify } from '../lib/notice'
 import { persistentRef } from '../lib/persist'
 import {
   cellId,
+  cellOrder,
   changedCells,
   changedText,
   expandProposal,
+  nextCell,
   notApplied,
   photoSummaries,
   rowKey,
@@ -38,7 +40,8 @@ export type { Proposal, ProposalChange } from '../lib/proposals'
  * changes meanwhile flashes. Selected cells go back to the sheet's value (the
  * assistant's kept aside, marked) or take the assistant's again; "Aplicar"
  * writes what the table shows (as does "aplica" in the chat). Doubtful cells
- * (amber, "?") are counted at the top; "Aplicar" with some still unreviewed
+ * (amber, "?") are counted at the top (a click, or Ctrl+Enter in the table,
+ * goes to the next one); "Aplicar" with some still unreviewed
  * asks first: apply them anyway, only the sure cells, or go and review them.
  * Cells the assistant could not read (hatched red, "unreadable") are counted
  * apart; they are never written until the person types them, and "Aplicar"
@@ -315,17 +318,22 @@ const sheetRef = (sheet: string) => (el: unknown) => {
   if (el) sheets.set(sheet, el as { focusCell: (key: string, field: string) => boolean })
   else sheets.delete(sheet)
 }
-/** Selects the next doubtful (or unreadable) cell to review (after the one selected last, then from the top). */
-const lastReviewed = { doubtful: -1, unreadable: -1 }
-function reviewNext(which: 'doubtful' | 'unreadable' = doubtful.value.length ? 'doubtful' : 'unreadable') {
+/** The tables' cells in the order shown, to go from one cell to review to the next. */
+const order = computed(() => cellOrder(tables.value.map(g => ({ keys: g.rows.map(rowKey), fields: g.columns }))))
+/** The cell gone to last, to go on from. */
+let lastReviewed: { key: string; field: string } | null = null
+/** Selects the doubtful (or unreadable) cell after `from` in the tables' order (after the last, the first). */
+function reviewNext(which: 'doubtful' | 'unreadable' = doubtful.value.length ? 'doubtful' : 'unreadable', from = lastReviewed) {
   asking.value = false
-  const list = which === 'doubtful' ? doubtful.value : unreadable.value
-  if (!list.length) return
-  lastReviewed[which] = (lastReviewed[which] + 1) % list.length
-  const next = list[lastReviewed[which]]
+  const next = nextCell(which === 'doubtful' ? doubtful.value : unreadable.value, order.value, from)
+  if (!next) return
+  lastReviewed = next
   const sheet = shown.value.changes.find(c => rowKey(c) === next.key)?.sheet
   if (sheet) sheets.get(sheet)?.focusCell(next.key, next.field)
 }
+
+/** The key that checks a doubtful cell and goes on (ProposalSheet). */
+const reviewKey = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘ Enter' : 'Ctrl+Enter'
 
 const show = (field: string, value: CellValue | undefined) =>
   displayValue(value, { key: field, type: (props.proposal.types[field] ?? 'text') as 'text' })
@@ -361,11 +369,12 @@ const statusText = computed(
         v-if="pending && doubtful.length"
         type="button"
         class="doubt-count"
-        :title="$t('La IA no está segura de estas celdas: revisa cada una (edítala, elige otra lectura en la barra de arriba o márcala revisada). Clic: ir a la siguiente')"
+        :title="$t('La IA no está segura de estas celdas: en cada una, «Correcta» u otra lectura junto a la celda, o edítala ({key} en la tabla: correcta y siguiente). Clic: ir a la siguiente', { key: reviewKey })"
         @click="reviewNext('doubtful')"
       >
         <CircleHelp :size="12" />
         {{ $tn(doubtful.length, '{n} celda dudosa por revisar', '{n} celdas dudosas por revisar') }}
+        <span class="font-semibold">· {{ $t('siguiente') }}</span><ArrowRight :size="12" />
       </button>
       <button
         v-if="pending && unreadable.length"
@@ -436,6 +445,7 @@ const statusText = computed(
         @edit="onEdit"
         @remove="removeRow"
         @check="onCheck"
+        @next="from => reviewNext('doubtful', from)"
         @notice="m => notify(m)"
       >
         <template v-if="groups.length > 1 || editable || g.template.length || g.quiet" #default>
@@ -571,7 +581,7 @@ const statusText = computed(
           }}
         </p>
         <p class="text-stone-600">
-          {{ $t('Revísalas en la tabla (bordes ámbar con «?»): edita, elige otra lectura en la barra de arriba o márcalas revisadas.') }}
+          {{ $t('Revísalas en la tabla (bordes ámbar con «?»): «Correcta» u otra lectura junto a cada una, o edítala.') }}
         </p>
       </template>
       <p v-if="unreadable.length" :class="doubtfulToWrite.length ? 'unread-line' : 'font-medium'">

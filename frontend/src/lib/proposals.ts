@@ -1,5 +1,5 @@
 import type { CellValue } from './types'
-import { t, tn, type Msg } from './i18n'
+import { t, tn, tx, type Msg } from './i18n'
 
 /**
  * The assistant's proposed changes as the Asistente tab shows them: a live
@@ -263,13 +263,84 @@ export function cellOf(change: ProposalChange, field: string, newRowFormulas: st
   const quiet = { ...extra, doubtful: false, inferred: false }
   // Nobody could read it and nobody filled it: shown empty (or with the sheet's value), never written.
   if (unreadable && !mark) return { value: change.create ? null : (was ?? null), kind: 'unreadable', was, aiProposed, ...quiet }
-  if (mark) return { value: change.create ? null : (was ?? null), kind: aiProposed ? 'reverted' : 'person', was, ai, aiProposed, ...quiet }
-  const locked = change.create ? newRowFormulas.includes(field) : !!change.formulas?.includes(field)
   // What the formula will give once the row is written, in place of the sheet's (blank or older) value.
   const gives = change.formulaGives?.[field]
   const formula = gives !== undefined && gives !== null && gives !== '' ? { value: gives, fromFormula: true } : null
+  if (mark)
+    return { value: change.create ? null : (was ?? null), kind: aiProposed ? 'reverted' : 'person', was, ai, aiProposed, ...quiet, ...formula }
+  const locked = change.create ? newRowFormulas.includes(field) : !!change.formulas?.includes(field)
   if (change.create) return { value: null, kind: locked ? 'locked' : 'empty', aiProposed, ...quiet, ...formula }
   return { value: was ?? null, kind: locked ? 'locked' : 'sheet', was, aiProposed, ...quiet, ...formula }
+}
+
+/** The same text as a formula gives, whatever the spacing or capitals (as sameAsFormula in server/batch.mjs). */
+export const sameAsFormula = (a: CellValue | undefined, b: CellValue | undefined) => {
+  const text = (v: CellValue | undefined) => String(v ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
+  return text(a) === text(b)
+}
+
+/**
+ * What the assistant says about a cell, as the bar under the table's cell bar
+ * shows it and the cell's tooltip leads with: a preserved butterfly left
+ * without it, a doubtful reading (or one reviewed), where a value the line does
+ * not write comes from, why a cell was unreadable. A cell with any gets a
+ * corner mark in the table.
+ */
+export interface CellComment {
+  label: string
+  text: string
+  kind: 'doubt' | 'hint' | 'unreadable'
+}
+export function cellComments(c: CellInfo): CellComment[] {
+  const out: CellComment[] = []
+  if (c.warning) out.push({ label: t('Falta'), text: tx(c.warning.text, c.warning.msg), kind: 'doubt' })
+  if (c.doubt) {
+    const reason = c.doubt.reason ? tx(c.doubt.reason, c.doubt.reasonMsg) : t('Lectura dudosa')
+    if (c.doubtful) out.push({ label: t('Dudosa'), text: reason, kind: 'doubt' })
+    else if (c.kind === 'proposed' || c.kind === 'person' || c.kind === 'reverted')
+      out.push({
+        label: t('Revisada'),
+        text: c.doubt.checked?.by ? t('{reason} (por {who})', { reason, who: c.doubt.checked.by }) : reason,
+        kind: 'hint',
+      })
+  }
+  if (c.hint && c.kind === 'proposed') out.push({ label: t('No escrito en la línea'), text: tx(c.hint.text, c.hint.msg), kind: 'hint' })
+  if (c.unreadable) {
+    const reason = c.unreadable.reason ? tx(c.unreadable.reason, c.unreadable.reasonMsg) : t('La IA no pudo leerla')
+    if (c.kind === 'unreadable') out.push({ label: t('Ilegible'), text: reason, kind: 'unreadable' })
+    else out.push({ label: t('Ilegible en el cuaderno'), text: t('{reason} (rellenada a mano)', { reason }), kind: 'hint' })
+  }
+  return out
+}
+
+/**
+ * The cells of the tables in the order they are shown (table by table, row by
+ * row, column by column), as a position to sort by; a cell not shown goes last.
+ */
+export function cellOrder(tables: { keys: string[]; fields: string[] }[]) {
+  const at = new Map<string, number>()
+  let n = 0
+  for (const { keys, fields } of tables) for (const key of keys) for (const field of fields) at.set(cellId(key, field), n++)
+  return (key: string, field: string) => at.get(cellId(key, field)) ?? Number.MAX_SAFE_INTEGER
+}
+
+/**
+ * The cell to review after `from` (a doubtful or unreadable one, as listed by
+ * uncheckedDoubts or unfilledUnreadable), in the tables' order: the next one
+ * after it, else the first again; without `from`, the first. `from` itself (it
+ * may still be listed while its check is saved) is never the next one.
+ */
+export function nextCell<T extends { key: string; field: string }>(
+  cells: T[],
+  position: (key: string, field: string) => number,
+  from?: { key: string; field: string } | null,
+): T | null {
+  const others = from ? cells.filter(c => c.key !== from.key || c.field !== from.field) : cells
+  if (!others.length) return null
+  const sorted = [...others].sort((a, b) => position(a.key, a.field) - position(b.key, b.field))
+  if (!from) return sorted[0]
+  const here = position(from.key, from.field)
+  return sorted.find(c => position(c.key, c.field) > here) ?? sorted[0]
 }
 
 /**
@@ -418,10 +489,13 @@ export function withLocal(p: Proposal, local: Map<string, LocalCell>, checks: Ma
         marks ??= { ...c.personEdits }
         // What the assistant proposed there stays with the person's mark.
         const mark: PersonEdit = marks[field] ?? (field in c.values ? { ai: c.values[field] } : {})
+        // The species the formula gives, typed: left to the formula, as the server will leave it.
+        const gives = c.formulaGives?.[field]
+        const toFormula = !cell.use && gives !== undefined && gives !== null && gives !== '' && sameAsFormula(cell.value, gives)
         if (cell.use === 'ai') {
           values[field] = cell.value
           delete marks[field]
-        } else if (cell.use === 'sheet' || (cell.value === null && c.create)) {
+        } else if (cell.use === 'sheet' || (cell.value === null && c.create) || toFormula) {
           delete values[field]
           if ('ai' in mark) marks[field] = mark
           else delete marks[field]

@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
-import { CheckCheck, FileSpreadsheet, Sparkles } from 'lucide-vue-next'
+import { Check, CheckCheck, FileSpreadsheet, Sparkles } from 'lucide-vue-next'
 import { displayValue, editText, normalizeInput } from '../../lib/cells'
 import {
+  activeCell,
   attachColumnFit,
   attachCopyMarker,
   attachFillHandle,
@@ -32,19 +33,21 @@ import { parseBlock } from '../../lib/paste'
 import {
   ID_COLUMN,
   cellId,
+  cellComments,
   cellOf,
   pageNote,
   pageOnly,
   readOnlyRow,
   rowKey,
   selectionActions,
+  type CellComment,
   type CellInfo,
   type ProposalChange,
 } from '../../lib/proposals'
 import { isSumField, sumTotal } from '../../lib/sums'
 import type { CellValue, Field } from '../../lib/types'
 import { listProblem, verificationsFor } from '../../lib/verifications'
-import { locale, t, tn, tx } from '../../lib/i18n'
+import { locale, t, tn } from '../../lib/i18n'
 import CellBar from '../CellBar.vue'
 
 /**
@@ -60,9 +63,13 @@ import CellBar from '../CellBar.vue'
  * columns() and the table's maxHeight). Edits go out through `edit` (the
  * parent saves them to the proposal). Cells the assistant read with a doubt are
  * amber, dashed, with a "?" until someone reviews them: edits one, picks one
- * of its other readings in the cell bar, or marks the selection checked
- * (`check`). Values the notebook line does not write (a template, the note's
- * words, the page's room) are in italics, and the bar says where they come from.
+ * of its other readings beside it (or in the cell bar), takes it as correct
+ * there or with Ctrl+Enter (then on to the next, `next`), or marks the
+ * selection checked (`check`). Values the notebook line does not write (a
+ * template, the note's words, the page's room) are in italics. What the
+ * assistant says about a cell (a doubt, where a value comes from, why it was
+ * unreadable) gives it a corner mark: its tooltip and the bar say it. Its note
+ * on the row is the "Nota IA" column beside the ID.
  * Cells the assistant could not read at all are hatched red with an
  * "unreadable" tag, empty: the person types them (the bar gives why and what
  * of it was read, to complete); left empty, applying does not write them.
@@ -102,6 +109,8 @@ const emit = defineEmits<{
   notice: [message: string]
   /** Doubtful cells the person reviewed and leaves as they are («Marcar revisadas»). */
   check: [cells: { key: string; field: string }[]]
+  /** On to the doubtful cell after this one (null: from the top), in any of the proposal's tables. */
+  next: [from: { key: string; field: string } | null]
 }>()
 
 type Row = Record<string, CellValue> & {
@@ -192,120 +201,150 @@ function toRow(c: ProposalChange): Row {
   return out
 }
 
-/** The cell as the table shows it: the value, and in an existing row the sheet's value struck through. */
+/**
+ * The cell as the table shows it: the value, and in an existing row the sheet's
+ * value struck through; a corner mark when the assistant says something about it
+ * (its tooltip, and the bar when selected, say what).
+ */
 function formatter(field: string) {
   return (cell: CellComponent) => {
     const row = cell.getData() as Row
     const el = cell.getElement()
     const c = info(row.__key, field)
     if (!c) return ''
-    const change = byKey.get(row.__key)!
-    const changed = c.kind === 'proposed' || c.kind === 'person'
-    const problem = changed ? listProblem(rules.value, field, c.value) : null
-    el.classList.toggle('is-proposed', c.kind === 'proposed')
-    el.classList.toggle('is-person', c.kind === 'person')
-    el.classList.toggle('is-reverted', c.kind === 'reverted')
-    el.classList.toggle('is-sheet', c.kind === 'sheet')
-    el.classList.toggle('is-formula', c.kind === 'locked')
-    el.classList.toggle('is-invalid', !!problem)
-    el.classList.toggle('is-flash', props.flash.has(cellId(row.__key, field)))
-    el.classList.toggle('has-choices', canEditCell(row.__key, field) && hasChoices(field))
-    el.classList.toggle('is-doubtful', c.doubtful)
-    el.classList.toggle('is-inferred', c.inferred)
-    el.classList.toggle('is-unreadable', c.kind === 'unreadable')
-    el.classList.toggle('is-warned', !!c.warning)
-    el.classList.toggle('is-formula-gives', !!c.fromFormula)
-    const was = c.was === undefined ? '' : show(field, c.was) || t('vacío')
-    const ai = show(field, c.ai) || t('vacío')
-    const before = change.replaceFormula?.includes(field) ? 'Antes: {value} (fórmula)' : 'Antes: {value}'
-    el.title = [
-      problem,
-      c.warning ? tx(c.warning.text, c.warning.msg) : '',
-      c.doubtful ? doubtText(field, c) : '',
-      c.inferred && c.hint ? tx(c.hint.text, c.hint.msg) : '',
-      c.kind === 'proposed' && !change.create ? t(before, { value: was }) : '',
-      c.kind === 'person'
-        ? [
-            t('Editado por ti'),
-            c.aiProposed ? t('la IA proponía: {value}', { value: ai }) : '',
-            change.create ? '' : t('en la hoja: {value}', { value: was }),
-          ]
-            .filter(Boolean)
-            .join(' · ')
-        : '',
-      c.kind === 'reverted'
-        ? [
-            change.create ? t('Vacía: no se escribe') : t('Valor de la hoja: no cambia'),
-            t('la IA proponía: {value}', { value: ai }),
-          ].join(' · ')
-        : '',
-      c.kind === 'locked' ? t('Fórmula de la hoja: no se escribe') : '',
-      c.fromFormula ? t('Lo dará la fórmula de la hoja (del clutch): no se escribe') : '',
-      c.kind === 'unreadable' ? unreadableText(c) : '',
-      c.unreadable && c.kind !== 'unreadable' ? t('Ilegible en el cuaderno; rellenada a mano') : '',
-      c.kind === 'sheet' && !c.fromFormula && canEditCell(row.__key, field) ? t('Valor actual de la hoja; escribe para cambiarlo') : '',
-      readOnlyRow(change) ? t('Línea de la página que no escribe nada: solo para seguirla') : '',
-    ]
-      .filter(Boolean)
-      .join('\n')
-    const text = show(field, c.value)
-    // A preserved butterfly would be left without it: an amber "missing" tag, then what the cell holds.
-    if (c.warning && c.kind !== 'unreadable') {
-      const box = document.createElement('span')
-      const mark = document.createElement('span')
-      mark.className = 'warn-mark'
-      mark.textContent = t('falta')
-      box.append(mark)
-      if (text) box.append(' ', withTotal(field, c.value, text))
-      return box
+    const comments = cellComments(c)
+    el.classList.toggle('has-comment', comments.length > 0)
+    const content = drawn(cell, field, c, comments)
+    if (!comments.length) return content
+    const box = document.createElement('span')
+    const mark = document.createElement('span')
+    mark.className = 'comment-mark'
+    mark.setAttribute('aria-hidden', 'true')
+    box.append(content, mark)
+    return box
+  }
+}
+/** The cell's content, its look (classes) and its tooltip, which leads with the assistant's `comments`. */
+function drawn(cell: CellComponent, field: string, c: CellInfo, comments: CellComment[]): Node {
+  const row = cell.getData() as Row
+  const el = cell.getElement()
+  const change = byKey.get(row.__key)!
+  const changed = c.kind === 'proposed' || c.kind === 'person'
+  const problem = changed ? listProblem(rules.value, field, c.value) : null
+  el.classList.toggle('is-proposed', c.kind === 'proposed')
+  el.classList.toggle('is-person', c.kind === 'person')
+  el.classList.toggle('is-reverted', c.kind === 'reverted')
+  el.classList.toggle('is-sheet', c.kind === 'sheet')
+  el.classList.toggle('is-formula', c.kind === 'locked')
+  el.classList.toggle('is-invalid', !!problem)
+  el.classList.toggle('is-flash', props.flash.has(cellId(row.__key, field)))
+  el.classList.toggle('has-choices', canEditCell(row.__key, field) && hasChoices(field))
+  el.classList.toggle('is-doubtful', c.doubtful)
+  el.classList.toggle('is-inferred', c.inferred)
+  el.classList.toggle('is-unreadable', c.kind === 'unreadable')
+  el.classList.toggle('is-warned', !!c.warning)
+  el.classList.toggle('is-formula-gives', !!c.fromFormula)
+  const was = c.was === undefined ? '' : show(field, c.was) || t('vacío')
+  const ai = show(field, c.ai) || t('vacío')
+  const before = change.replaceFormula?.includes(field) ? 'Antes: {value} (fórmula)' : 'Antes: {value}'
+  // What the assistant says about it first, then what the cell is.
+  el.title = [
+    ...comments.map(n => `${n.label}: ${n.text}`),
+    c.doubtful && c.doubt?.alternatives?.length
+      ? t('otras lecturas: {values}', { values: c.doubt.alternatives.map(a => show(field, a) || t('vacío')).join(' / ') })
+      : '',
+    c.kind === 'unreadable' && c.unreadable?.partial?.length
+      ? t('leído en parte: {values}', { values: c.unreadable.partial.join(' / ') })
+      : '',
+    problem,
+    c.kind === 'proposed' && !change.create ? t(before, { value: was }) : '',
+    c.kind === 'person'
+      ? [
+          t('Editado por ti'),
+          c.aiProposed ? t('la IA proponía: {value}', { value: ai }) : '',
+          change.create ? '' : t('en la hoja: {value}', { value: was }),
+        ]
+          .filter(Boolean)
+          .join(' · ')
+      : '',
+    c.kind === 'reverted'
+      ? [
+          change.create ? t('Vacía: no se escribe') : t('Valor de la hoja: no cambia'),
+          t('la IA proponía: {value}', { value: ai }),
+        ].join(' · ')
+      : '',
+    c.kind === 'locked' ? t('Fórmula de la hoja: no se escribe') : '',
+    c.fromFormula ? t('Lo dará la fórmula de la hoja (del clutch): no se escribe') : '',
+    c.kind === 'unreadable' && props.editable ? t('escribe el valor; vacía no se escribe') : '',
+    c.kind === 'sheet' && !c.fromFormula && canEditCell(row.__key, field) ? t('Valor actual de la hoja; escribe para cambiarlo') : '',
+    readOnlyRow(change) ? t('Línea de la página que no escribe nada: solo para seguirla') : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
+  const text = show(field, c.value)
+  // A preserved butterfly would be left without it: an amber "missing" tag, then what the cell holds.
+  if (c.warning && c.kind !== 'unreadable') {
+    const box = document.createElement('span')
+    const mark = document.createElement('span')
+    mark.className = 'warn-mark'
+    mark.textContent = t('falta')
+    box.append(mark)
+    if (text) box.append(' ', withTotal(field, c.value, text))
+    return box
+  }
+  // Nobody could read it: its tag, then the sheet's value if the row has one (it stays).
+  if (c.kind === 'unreadable') {
+    const box = document.createElement('span')
+    const mark = document.createElement('span')
+    mark.className = 'unread-mark'
+    mark.textContent = t('ilegible')
+    box.append(mark)
+    if (text) box.append(' ', withTotal(field, c.value, text))
+    return box
+  }
+  // What the formula will give (grey, tagged): then the sheet's older value, struck through, if it had one.
+  if (c.fromFormula) {
+    const box = document.createElement('span')
+    const mark = document.createElement('span')
+    mark.className = 'formula-mark'
+    mark.textContent = t('fórmula')
+    box.append(withTotal(field, c.value, text), ' ', mark)
+    if (c.was !== undefined && c.was !== null && c.was !== '' && show(field, c.was) !== text) {
+      const old = document.createElement('s')
+      old.className = 'was'
+      old.textContent = show(field, c.was)
+      box.append(' ', old)
     }
-    // Nobody could read it: its tag, then the sheet's value if the row has one (it stays).
-    if (c.kind === 'unreadable') {
-      const box = document.createElement('span')
-      const mark = document.createElement('span')
-      mark.className = 'unread-mark'
-      mark.textContent = t('ilegible')
-      box.append(mark)
-      if (text) box.append(' ', withTotal(field, c.value, text))
-      return box
-    }
-    // What the formula will give (grey, tagged): then the sheet's older value, struck through, if it had one.
-    if (c.fromFormula) {
-      const box = document.createElement('span')
-      const mark = document.createElement('span')
-      mark.className = 'formula-mark'
-      mark.textContent = t('fórmula')
-      box.append(withTotal(field, c.value, text), ' ', mark)
-      if (c.was !== undefined && c.was !== null && c.was !== '' && show(field, c.was) !== text) {
-        const old = document.createElement('s')
-        old.className = 'was'
-        old.textContent = show(field, c.was)
-        box.append(' ', old)
-      }
-      return box
-    }
-    // Set back to the sheet: its value, then the assistant's struck through (kept aside, not written).
+    // The assistant's species set aside for the formula's: struck through, not written.
     if (c.kind === 'reverted') {
-      const box = document.createElement('span')
-      if (text) box.append(withTotal(field, c.value, text), ' ')
       const aside = document.createElement('s')
       aside.className = 'aside'
       aside.append(withTotal(field, c.ai, ai))
-      box.append(aside)
-      return box
+      box.append(' ', aside)
     }
-    if (!changed || change.create || c.was === undefined || show(field, c.was) === text) return marked(c, withTotal(field, c.value, text))
-    const box = document.createElement('span')
-    // Emptied on purpose ({ clear: true } or the person deleted it): red, not a quiet "vacío".
-    if (text) box.append(withTotal(field, c.value, text))
-    else box.textContent = t('vaciar')
-    box.classList.toggle('is-clear', !text)
-    const old = document.createElement('s')
-    old.className = 'was'
-    old.append(withTotal(field, c.was, show(field, c.was) || t('vacío')))
-    box.append(' ', old)
-    return marked(c, box)
+    return box
   }
+  // Set back to the sheet: its value, then the assistant's struck through (kept aside, not written).
+  if (c.kind === 'reverted') {
+    const box = document.createElement('span')
+    if (text) box.append(withTotal(field, c.value, text), ' ')
+    const aside = document.createElement('s')
+    aside.className = 'aside'
+    aside.append(withTotal(field, c.ai, ai))
+    box.append(aside)
+    return box
+  }
+  if (!changed || change.create || c.was === undefined || show(field, c.was) === text) return marked(c, withTotal(field, c.value, text))
+  const box = document.createElement('span')
+  // Emptied on purpose ({ clear: true } or the person deleted it): red, not a quiet "vacío".
+  if (text) box.append(withTotal(field, c.value, text))
+  else box.textContent = t('vaciar')
+  box.classList.toggle('is-clear', !text)
+  const old = document.createElement('s')
+  old.className = 'was'
+  old.append(withTotal(field, c.was, show(field, c.was) || t('vacío')))
+  box.append(' ', old)
+  return marked(c, box)
 }
 
 /** A doubtful cell's content after its "?" mark (the cell's dashed amber edge is its class). */
@@ -318,27 +357,6 @@ function marked(c: CellInfo, content: Node): Node {
   box.append(mark, content)
   return box
 }
-/** Why an unreadable cell could not be read and what of it was, in a line (the cell's tooltip). */
-function unreadableText(c: CellInfo) {
-  const reason = c.unreadable?.reason ? tx(c.unreadable.reason, c.unreadable.reasonMsg) : t('La IA no pudo leerla')
-  const partial = c.unreadable?.partial ?? []
-  return [
-    t('Ilegible: {reason}', { reason }),
-    partial.length ? t('leído en parte: {values}', { values: partial.join(' / ') }) : '',
-    props.editable ? t('escribe el valor; vacía no se escribe') : '',
-  ]
-    .filter(Boolean)
-    .join(' · ')
-}
-/** Why a cell is doubtful and its other readings, in a line (the cell's tooltip). */
-function doubtText(field: string, c: CellInfo) {
-  const reason = c.doubt?.reason ? tx(c.doubt.reason, c.doubt.reasonMsg) : t('Lectura dudosa')
-  const others = (c.doubt?.alternatives ?? []).map(a => show(field, a) || t('vacío'))
-  return [t('Dudosa: {reason}', { reason }), others.length ? t('otras lecturas: {values}', { values: others.join(' / ') }) : '']
-    .filter(Boolean)
-    .join(' · ')
-}
-
 /** The row number; a row with nothing left to write (every cell back to the sheet's value) is struck through. */
 function rowFormatter(cell: CellComponent) {
   const row = cell.getData() as Row
@@ -365,7 +383,8 @@ function drawnText(change: ProposalChange, field: string) {
   // The "?" of a doubtful cell takes about two letters; an unreadable cell's tag about its word.
   if (cell.kind === 'unreadable') return `${t('ilegible')}   ${textWithTotal(field, cell.value)}`
   if (cell.warning) return `${t('falta')}   ${textWithTotal(field, cell.value)}`
-  if (cell.fromFormula) return `${textWithTotal(field, cell.value)}  ${t('fórmula')}  ${cell.was ? textWithTotal(field, cell.was) : ''}`
+  if (cell.fromFormula)
+    return `${textWithTotal(field, cell.value)}  ${t('fórmula')}  ${cell.was ? textWithTotal(field, cell.was) : ''}${cell.kind === 'reverted' ? ` ${textWithTotal(field, cell.ai)}` : ''}`
   return (cell.doubtful ? '?  ' : '') + textWithTotal(field, cell.value) + beside
 }
 
@@ -385,8 +404,6 @@ function columns(): ColumnDefinition[] {
     frozen: true,
     headerSort: false,
     cssClass: 'proposal-label',
-    // The row's note (where its values come from) also on the ID, as the Nota column is at the far right.
-    tooltip: (_e: MouseEvent, cell: CellComponent) => (cell.getData() as Row).__note,
   } as ColumnDefinition
   if (!wide) cols.push(id)
   if (props.applied)
@@ -422,6 +439,22 @@ function columns(): ColumnDefinition[] {
       headerTooltip: severalPhotos() ? t('Foto · línea del cuaderno') : t('Línea del cuaderno'),
     })
   if (wide) cols.push(id)
+  // The assistant's note on the row (where its values come from, what a line says), beside its ID:
+  // cut short, whole under the pointer and in the bar when selected.
+  cols.push({
+    title: t('Nota IA'),
+    field: '__note',
+    headerSort: false,
+    width: 150,
+    minWidth: 70,
+    cssClass: 'proposal-note',
+    headerTooltip: t('Nota de la IA sobre la fila: de dónde salen sus valores'),
+    formatter: (cell: CellComponent) => {
+      const note = String(cell.getValue() ?? '')
+      cell.getElement().title = note
+      return note
+    },
+  } as ColumnDefinition)
   for (const field of props.fields) {
     const choices = hasChoices(field)
     cols.push({
@@ -440,14 +473,6 @@ function columns(): ColumnDefinition[] {
           textEditor(value => editText(value as CellValue, { key: field, type: typeOf(field) }))),
     } as ColumnDefinition)
   }
-  cols.push({
-    title: t('Nota'),
-    field: '__note',
-    headerSort: false,
-    width: 260,
-    cssClass: 'proposal-note',
-    formatter: 'plaintext',
-  })
   if (props.editable)
     cols.push({
       title: '',
@@ -490,7 +515,7 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
   const field = cell.getField()
   const base = { index: row.__key, field, row: row.__label, editable: false, multiline: false }
   // The row's own columns: its note (where the values come from), its ID and row number.
-  if (field === '__note') return { ...base, column: t('Nota'), text: row.__note }
+  if (field === '__note') return { ...base, column: t('Nota IA'), text: row.__note }
   if (field === '__label') return { ...base, column: 'ID', text: row.__label }
   if (field === '__row') return { ...base, column: t('Fila'), text: row.__row }
   if (field === '__line') return { ...base, column: t('Línea'), text: row.__line }
@@ -500,33 +525,18 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
   const notes: CellBarNote[] = []
   const total = totalOf(field, c.value)
   if (total !== null) notes.push({ text: `= ${total}`, kind: 'total' })
-  if (c.warning) notes.push({ label: t('Falta'), text: tx(c.warning.text, c.warning.msg), kind: 'doubt' })
+  const editable = canEditCell(row.__key, field)
+  // What the assistant says about it (as the cell's tooltip): a doubt, where it comes from, why unreadable.
+  for (const n of cellComments(c))
+    notes.push(
+      n.kind === 'unreadable' && editable ? { ...n, text: `${n.text} · ${t('escribe el valor; vacía no se escribe')}` } : n,
+    )
   // What the sheet has now (an existing row), and what the assistant proposed when the person changed it.
   if (!change.create && (c.kind === 'proposed' || c.kind === 'person'))
     notes.push({ label: t('Hoja'), text: editText$(field, c.was) || t('vacío'), kind: 'sheet' })
   if (c.aiProposed && (c.kind === 'person' || c.kind === 'reverted'))
     notes.push({ label: t('IA'), text: editText$(field, c.ai) || t('vacío'), kind: 'ai' })
-  // A doubt: why, and whether someone reviewed it; the other readings can be picked below.
-  if (c.doubt) {
-    const reason = c.doubt.reason ? tx(c.doubt.reason, c.doubt.reasonMsg) : t('Lectura dudosa')
-    if (c.doubtful) notes.push({ label: t('Dudosa'), text: reason, kind: 'doubt' })
-    else if (c.kind === 'proposed' || c.kind === 'person' || c.kind === 'reverted')
-      notes.push({
-        label: t('Revisada'),
-        text: c.doubt.checked?.by ? t('{reason} (por {who})', { reason, who: c.doubt.checked.by }) : reason,
-        kind: 'hint',
-      })
-  }
-  if (c.inferred && c.hint) notes.push({ label: t('No escrito en la línea'), text: tx(c.hint.text, c.hint.msg), kind: 'hint' })
   if (c.fromFormula) notes.push({ label: t('Fórmula'), text: t('La hoja lo calculará del clutch: no se escribe'), kind: 'hint' })
-  // Unreadable: why, then (once filled) that it was filled by hand.
-  if (c.unreadable) {
-    const reason = c.unreadable.reason ? tx(c.unreadable.reason, c.unreadable.reasonMsg) : t('La IA no pudo leerla')
-    if (c.kind === 'unreadable')
-      notes.push({ label: t('Ilegible'), text: `${reason} · ${t('escribe el valor; vacía no se escribe')}`, kind: 'unreadable' })
-    else notes.push({ label: t('Ilegible en el cuaderno'), text: t('{reason} (rellenada a mano)', { reason }), kind: 'hint' })
-  }
-  const editable = canEditCell(row.__key, field)
   // What of an unreadable cell was read (as written): a click puts it in the bar to complete.
   const partial = c.kind === 'unreadable' ? (c.unreadable?.partial ?? []) : []
   // The doubt's other readings (and the assistant's own value, once the person changed it).
@@ -556,6 +566,8 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
   }
 }
 const showBar = () => (bar.value = table ? describe(selectedCell(table)) : null)
+/** The bar and the doubtful cell's choices follow the selection (once per frame). */
+let follow: (() => void) | null = null
 function saveFromBar(target: CellBarInfo, text: string, move: Direction | 'here' | null) {
   if (!table) return
   if (!setFromBar(table, target, text, canEdit)) emit('notice', t('Esa celda ya no se puede editar'))
@@ -645,6 +657,84 @@ function markChecked() {
     .filter(s => s.cell.doubtful)
     .map(({ key, field }) => ({ key, field }))
   if (cells.length) emit('check', cells)
+}
+
+// ------------------------------------------------------------ a doubtful cell, checked where it is
+/**
+ * The selected doubtful cell's choices, beside it: «Correcta» keeps the
+ * assistant's reading (checked), another reading writes it (the person's value,
+ * so checked too); either goes on to the next doubtful cell (`next`), as does
+ * Ctrl+Enter (⌘+Enter) on the grid. Big enough for a finger on a phone.
+ */
+const quick = ref<{
+  key: string
+  field: string
+  left: number
+  top: number
+  above: boolean
+  choices: { label: string; text: string }[]
+} | null>(null)
+const quickBox = ref<HTMLDivElement>()
+const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
+const reviewKey = mac ? '⌘ Enter' : 'Ctrl+Enter'
+function placeQuick() {
+  quick.value = null
+  if (!table || !props.editable || busy()) return
+  const cell = activeCell(table)
+  if (!cell) return
+  const key = (cell.getData() as Row).__key
+  const field = cell.getField()
+  const c = fieldSet.value.has(field) ? info(key, field) : null
+  if (!c?.doubtful || !canEditCell(key, field)) return
+  const el = cell.getElement()
+  const container = host.value?.parentElement
+  const view = host.value?.querySelector('.tabulator-tableholder')?.getBoundingClientRect()
+  if (!container || !view || !el.isConnected) return
+  const r = el.getBoundingClientRect()
+  // Scrolled out of the grid's view: nothing to point at.
+  if (r.bottom < view.top || r.top > view.bottom || r.right < view.left || r.left > view.right) return
+  const origin = container.getBoundingClientRect()
+  // Under the cell, or over it near the grid's bottom edge.
+  const above = r.bottom + 44 > view.bottom && r.top - 44 > view.top
+  quick.value = {
+    key,
+    field,
+    left: Math.max(0, r.left - origin.left),
+    top: above ? r.top - origin.top - 4 : r.bottom - origin.top + 5,
+    above,
+    choices: (c.doubt?.alternatives ?? [])
+      .filter(
+        (a, i, all) =>
+          JSON.stringify(a) !== JSON.stringify(c.value) && all.findIndex(b => JSON.stringify(b) === JSON.stringify(a)) === i,
+      )
+      .map(a => ({ label: show(field, a) || t('vacío'), text: editText$(field, a) })),
+  }
+  // Kept inside the grid's box at its right edge.
+  nextTick(() => {
+    const box = quickBox.value
+    if (box && quick.value) quick.value.left = Math.max(0, Math.min(quick.value.left, container.clientWidth - box.offsetWidth - 4))
+  })
+}
+function confirmQuick(key: string, field: string) {
+  emit('check', [{ key, field }])
+  emit('next', { key, field })
+}
+function pickQuick(key: string, field: string, text: string) {
+  if (!table || !setFromBar(table, { index: key, field }, text, canEdit)) return emit('notice', t('Esa celda ya no se puede editar'))
+  emit('next', { key, field })
+}
+/** Ctrl+Enter (⌘+Enter) on the grid: the selected doubtful cell is correct, on to the next; elsewhere, to the next doubtful cell. */
+function onReviewKey(event: KeyboardEvent) {
+  if (!(event.ctrlKey || event.metaKey) || event.key !== 'Enter' || event.shiftKey || event.altKey || !table || !props.editable) return
+  if ((event.target as HTMLElement).closest('input, textarea, select, .tabulator-editing')) return
+  event.preventDefault()
+  // Before the grid's own Enter (which opens the editor).
+  event.stopImmediatePropagation()
+  const cell = activeCell(table)
+  const key = cell ? (cell.getData() as Row).__key : null
+  const field = cell?.getField() ?? ''
+  if (key && fieldSet.value.has(field) && info(key, field)?.doubtful && canEditCell(key, field)) confirmQuick(key, field)
+  else emit('next', key ? { key, field } : null)
 }
 
 /** Selects a cell and brings it into view (the panel's "review" jumps to the first doubtful cell). */
@@ -749,6 +839,8 @@ function sync() {
   shownOrder = order
   shown = new Map(rows.map(r => [r.__key, JSON.stringify(r)]))
   updateActions()
+  // A cell checked or edited meanwhile: its choices go (or move with the rows).
+  follow?.()
 }
 
 const onKeydown = spreadsheetKeys(
@@ -820,7 +912,14 @@ onMounted(() => {
       return fieldSet.value.has(field) && change ? drawnText(change, field) : String(data[field] ?? '')
     },
   })
-  followSelection(table, showBar)
+  follow = followSelection(table, () => {
+    showBar()
+    placeQuick()
+  })
+  for (const event of ['scrollVertical', 'scrollHorizontal', 'columnResized'] as const) table.on(event as 'renderComplete', follow)
+  table.on('cellEditing', () => (quick.value = null))
+  table.on('cellEditCancelled', follow)
+  host.value.addEventListener('keydown', onReviewKey, true)
   host.value.addEventListener('keydown', onKeydown)
   host.value.addEventListener('keydown', onEditingKey, true)
   sizeWatch = watchSize(() => table, host.value)
@@ -841,6 +940,7 @@ onBeforeUnmount(() => {
   fit?.destroy()
   sizeWatch?.disconnect()
   shownWatch?.disconnect()
+  host.value?.removeEventListener('keydown', onReviewKey, true)
   host.value?.removeEventListener('keydown', onKeydown)
   host.value?.removeEventListener('keydown', onEditingKey, true)
   table?.destroy()
@@ -890,7 +990,7 @@ watch(
           :title="
             actions.check
               ? $t('Las celdas dudosas elegidas quedan como revisadas, con el valor que tienen')
-              : $t('Elige celdas dudosas (bordes ámbar con «?»): las otras lecturas están en la barra de arriba')
+              : $t('Elige celdas dudosas (bordes ámbar con «?»): sus otras lecturas salen junto a la celda')
           "
           @mousedown.prevent
           @click="markChecked"
@@ -905,6 +1005,38 @@ watch(
       <!-- The grid's own box: the fill handle and the copied cells' border are placed in it, below the bar. -->
       <div class="relative">
         <div ref="host" tabindex="-1" />
+        <!-- The selected doubtful cell's choices, beside it (the grid keeps the selection and the keys). -->
+        <div
+          v-if="quick"
+          ref="quickBox"
+          class="doubt-quick"
+          :class="{ 'is-above': quick.above }"
+          :style="{ left: `${quick.left}px`, top: `${quick.top}px` }"
+          role="group"
+          :aria-label="$t('Revisar la celda dudosa')"
+          @pointerdown.prevent
+          @mousedown.prevent
+        >
+          <button
+            type="button"
+            class="doubt-quick-ok"
+            :title="$t('La lectura de la IA es correcta: queda revisada y pasa a la siguiente dudosa ({key})', { key: reviewKey })"
+            @click="confirmQuick(quick.key, quick.field)"
+          >
+            <Check :size="13" /> {{ $t('Correcta') }}
+          </button>
+          <button
+            v-for="(choice, i) in quick.choices"
+            :key="i"
+            type="button"
+            class="doubt-quick-choice"
+            :title="$t('Escribir {value} en la celda y pasar a la siguiente dudosa', { value: choice.label })"
+            @click="pickQuick(quick.key, quick.field, choice.text)"
+          >
+            {{ choice.label }}
+          </button>
+          <kbd v-if="!touch" class="doubt-quick-key">{{ reviewKey }}</kbd>
+        </div>
       </div>
     </div>
   </div>
@@ -937,6 +1069,79 @@ watch(
 .legend.is-formula-gives {
   color: #78716c;
   font-style: italic;
+}
+/* The assistant says something about the cell (hover, or select it to read it in the bar): a corner, as a comment in Google Sheets. */
+.proposal-sheet .tabulator-cell.has-comment {
+  position: relative;
+}
+.proposal-sheet .tabulator-cell .comment-mark {
+  position: absolute;
+  top: 0;
+  right: 0;
+  border-style: solid;
+  border-width: 0 7px 7px 0;
+  border-color: transparent #ea8600 transparent transparent;
+  pointer-events: none;
+}
+/* Beside the red corner of a value outside the list. */
+.proposal-sheet .tabulator-cell.is-invalid .comment-mark {
+  right: 8px;
+}
+/* The selected doubtful cell's choices, under it (over it near the grid's bottom). */
+.proposal-sheet .doubt-quick {
+  position: absolute;
+  z-index: 30;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100% - 8px);
+  border: 1px solid #fcd34d;
+  border-radius: 6px;
+  background: #fffbeb;
+  padding: 3px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.15);
+  font-size: 12px;
+  color: #78350f;
+}
+.proposal-sheet .doubt-quick.is-above {
+  transform: translateY(-100%);
+}
+.proposal-sheet .doubt-quick button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 24px;
+  border: 1px solid #fcd34d;
+  border-radius: 4px;
+  background: white;
+  padding: 0 8px;
+  font-variant-numeric: tabular-nums;
+}
+.proposal-sheet .doubt-quick button:hover {
+  background: #fde68a;
+}
+.proposal-sheet .doubt-quick .doubt-quick-ok {
+  border-color: #6ee7b7;
+  background: #ecfdf5;
+  color: #065f46;
+  font-weight: 600;
+}
+.proposal-sheet .doubt-quick .doubt-quick-ok:hover {
+  background: #d1fae5;
+}
+.proposal-sheet .doubt-quick-key {
+  padding: 0 4px;
+  color: #a16207;
+  font-family: inherit;
+  font-size: 10px;
+}
+@media (pointer: coarse) {
+  .proposal-sheet .doubt-quick button {
+    min-height: 36px;
+    padding: 0 12px;
+    font-size: 14px;
+  }
 }
 .proposal-sheet .tabulator-cell .formula-mark {
   display: inline-block;

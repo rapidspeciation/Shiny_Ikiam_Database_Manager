@@ -140,12 +140,20 @@ export default {
   'Marcar revisadas': 'Mark as checked',
   'Las celdas dudosas elegidas quedan como revisadas, con el valor que tienen':
     'The selected doubtful cells are marked as checked, with the value they have',
-  'Elige celdas dudosas (bordes ámbar con «?»): las otras lecturas están en la barra de arriba':
-    'Select doubtful cells (amber edges with «?»): their other readings are in the bar above',
+  'Elige celdas dudosas (bordes ámbar con «?»): sus otras lecturas salen junto a la celda':
+    'Select doubtful cells (amber edges with «?»): their other readings show beside the cell',
   '{n} celda dudosa por revisar': '{n} doubtful cell to check',
   '{n} celdas dudosas por revisar': '{n} doubtful cells to check',
-  'La IA no está segura de estas celdas: revisa cada una (edítala, elige otra lectura en la barra de arriba o márcala revisada). Clic: ir a la siguiente':
-    'The AI is not sure of these cells: check each one (edit it, pick another reading in the bar above, or mark it checked). Click: go to the next one',
+  'La IA no está segura de estas celdas: en cada una, «Correcta» u otra lectura junto a la celda, o edítala ({key} en la tabla: correcta y siguiente). Clic: ir a la siguiente':
+    'The AI is not sure of these cells: on each, «Correct» or another reading beside the cell, or edit it ({key} in the table: correct and next). Click: go to the next one',
+  siguiente: 'next',
+  'Revisar la celda dudosa': 'Check the doubtful cell',
+  Correcta: 'Correct',
+  'La lectura de la IA es correcta: queda revisada y pasa a la siguiente dudosa ({key})':
+    "The AI's reading is correct: it is marked checked and the next doubtful cell is selected ({key})",
+  'Escribir {value} en la celda y pasar a la siguiente dudosa': 'Write {value} in the cell and go on to the next doubtful cell',
+  'Nota IA': 'AI note',
+  'Nota de la IA sobre la fila: de dónde salen sus valores': "The AI's note on the row: where its values come from",
   'La IA no está segura: revísala antes de aplicar': 'The AI is not sure: check it before applying',
   dudosa: 'doubtful',
   'No está escrito en la línea: sale de la página, de la nota o de lo que el equipo escribe siempre':
@@ -154,8 +162,8 @@ export default {
   'Celdas dudosas sin revisar': 'Doubtful cells not checked',
   '{n} celda dudosa sin revisar: ¿aplicarla como la leyó la IA?': '{n} doubtful cell not checked: apply it as the AI read it?',
   '{n} celdas dudosas sin revisar: ¿aplicarlas como las leyó la IA?': '{n} doubtful cells not checked: apply them as the AI read them?',
-  'Revísalas en la tabla (bordes ámbar con «?»): edita, elige otra lectura en la barra de arriba o márcalas revisadas.':
-    'Check them in the table (amber edges with «?»): edit, pick another reading in the bar above, or mark them checked.',
+  'Revísalas en la tabla (bordes ámbar con «?»): «Correcta» u otra lectura junto a cada una, o edítala.':
+    'Check them in the table (amber edges with «?»): «Correct» or another reading beside each one, or edit it.',
   Revisarlas: 'Check them',
   'Aplicar sin las dudosas': 'Apply without the doubtful ones',
   'Aplicar todo igualmente': 'Apply all anyway',

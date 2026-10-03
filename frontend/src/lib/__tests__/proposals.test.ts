@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   ID_COLUMN,
+  cellComments,
   cellId,
   cellOf,
+  cellOrder,
   changedCells,
   changedText,
   expandProposal,
+  nextCell,
   notApplied,
   pageNote,
   panelShare,
@@ -210,6 +213,58 @@ describe('doubtful cells', () => {
     ])
     expect(uncheckedDoubts(p, [1]).map(d => d.key)).toEqual(['r2'])
   })
+  it("say why beside the cell (a corner mark): the doubt's reason, a hint, a warning, why unreadable", () => {
+    const row = edited(
+      'r1',
+      { 'CLUTCH NUMBER': 843, Death_date: 46000, Sex: 'male', Notes: 'x' },
+      {
+        doubts: { 'CLUTCH NUMBER': doubt, Sex: { confidence: 0.5, checked: { by: 'AA' } } },
+        inferred: ['Death_date'],
+        hints: { Death_date: { text: 'De la nota: «preserved»' } },
+        warnings: { CAM_ID: { text: 'Preservada sin CAM' } },
+        unreadable: { Tube_1_id: { reason: 'manchado', partial: ['FS1?'] } },
+      },
+    )
+    const said = (f: string) => cellComments(cellOf(row, f)).map(n => [n.label, n.text, n.kind])
+    expect(said('CLUTCH NUMBER')).toEqual([['Dudosa', doubt.reason, 'doubt']])
+    expect(said('Sex')).toEqual([['Revisada', 'Lectura dudosa (por AA)', 'hint']])
+    expect(said('Death_date')).toEqual([['No escrito en la línea', 'De la nota: «preserved»', 'hint']])
+    expect(said('CAM_ID')).toEqual([['Falta', 'Preservada sin CAM', 'doubt']])
+    expect(said('Tube_1_id')).toEqual([['Ilegible', 'manchado', 'unreadable']])
+    // Nothing said: no mark.
+    expect(said('Notes')).toEqual([])
+    // A hint is about the assistant's value: once the person typed over it, it is not shown.
+    const typed = { ...row, personEdits: { Death_date: { ai: 46000 } } }
+    expect(cellComments(cellOf(typed, 'Death_date'))).toEqual([])
+    // Filled by hand, an unreadable cell still says why it was.
+    const filled = { ...row, values: { ...row.values, Tube_1_id: 'FS12' }, personEdits: { Tube_1_id: {} } }
+    expect(cellComments(cellOf(filled, 'Tube_1_id'))).toEqual([
+      { label: 'Ilegible en el cuaderno', text: 'manchado (rellenada a mano)', kind: 'hint' },
+    ])
+  })
+  it('go one after another in the order the tables show them, the first again after the last', () => {
+    const order = cellOrder([
+      { keys: ['a', 'b'], fields: ['Sex', 'CLUTCH NUMBER'] },
+      { keys: ['c'], fields: ['SPECIES'] },
+    ])
+    const cells = [
+      { key: 'c', field: 'SPECIES' },
+      { key: 'b', field: 'Sex' },
+      { key: 'a', field: 'CLUTCH NUMBER' },
+      { key: 'gone', field: 'Sex' },
+    ]
+    expect(nextCell(cells, order)).toEqual({ key: 'a', field: 'CLUTCH NUMBER' })
+    expect(nextCell(cells, order, { key: 'a', field: 'CLUTCH NUMBER' })).toEqual({ key: 'b', field: 'Sex' })
+    // From a cell no longer doubtful (just checked): the one after where it is.
+    expect(nextCell(cells, order, { key: 'a', field: 'Sex' })).toEqual({ key: 'a', field: 'CLUTCH NUMBER' })
+    expect(nextCell(cells, order, { key: 'b', field: 'CLUTCH NUMBER' })).toEqual({ key: 'c', field: 'SPECIES' })
+    // A cell not shown goes last; after the last, the first again.
+    expect(nextCell(cells, order, { key: 'c', field: 'SPECIES' })).toEqual({ key: 'gone', field: 'Sex' })
+    expect(nextCell(cells, order, { key: 'gone', field: 'Sex' })).toEqual({ key: 'a', field: 'CLUTCH NUMBER' })
+    // The cell just checked (still listed until saved) is never the next; alone, there is none.
+    expect(nextCell([{ key: 'a', field: 'Sex' }], order, { key: 'a', field: 'Sex' })).toBeNull()
+    expect(nextCell([], order)).toBeNull()
+  })
   it('marked checked in the table show so before the save comes back', () => {
     const p = proposal([edited('r1', { 'CLUTCH NUMBER': 843 }, { doubts: { 'CLUTCH NUMBER': doubt } })])
     const marked = withLocal(p, new Map(), new Map([[cellId('r1', 'CLUTCH NUMBER'), true]]))
@@ -314,6 +369,26 @@ describe("a notebook page's proposal", () => {
     const typed = { ...row, values: { ...row.values, SPECIES: 'Mechanitis polymnia' }, personEdits: { SPECIES: {} } }
     expect(cellOf(typed, 'SPECIES')).toMatchObject({ value: 'Mechanitis polymnia', kind: 'person' })
     expect(cellOf(typed, 'SPECIES').fromFormula).toBeUndefined()
+  })
+  it("typing the species the formula gives leaves it to the formula (not a change), the assistant's other one aside", () => {
+    const row = edited(
+      'r1',
+      { 'CLUTCH NUMBER': 838, SPECIES: 'Mechanitis messenoides deceptus' },
+      { sheet: 'Insectary_data', rowValues: {}, current: undefined, formulaGives: { SPECIES: 'Mechanitis messenoides intermedia' } },
+    )
+    const p = proposal([row])
+    expect(cellOf(p.changes[0], 'SPECIES')).toMatchObject({ kind: 'proposed', value: 'Mechanitis messenoides deceptus' })
+    const typed = withLocal(p, new Map([[cellId('r1', 'SPECIES'), { value: ' mechanitis messenoides  intermedia' }]]))
+    expect(typed.changes[0].values).toEqual({ 'CLUTCH NUMBER': 838 })
+    expect(cellOf(typed.changes[0], 'SPECIES')).toMatchObject({
+      kind: 'reverted',
+      value: 'Mechanitis messenoides intermedia',
+      fromFormula: true,
+      ai: 'Mechanitis messenoides deceptus',
+    })
+    // Another species is the person's, written over the formula.
+    const other = withLocal(p, new Map([[cellId('r1', 'SPECIES'), { value: 'Mechanitis polymnia' }]]))
+    expect(cellOf(other.changes[0], 'SPECIES')).toMatchObject({ kind: 'person', value: 'Mechanitis polymnia' })
   })
   it('makes the lean proposal whole: hints from its table, formula columns from its sheet', () => {
     const lean = {
