@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { AlertTriangle, Check, ChevronRight, History, Loader2, Plus, Undo2, X } from 'lucide-vue-next'
 import DateField from '../DateField.vue'
 import EntryModeToggle from '../EntryModeToggle.vue'
@@ -9,6 +9,7 @@ import SexBadge from '../SexBadge.vue'
 import TabHistory from '../history/TabHistory.vue'
 import ClutchPicker from './ClutchPicker.vue'
 import DraftCard from './DraftCard.vue'
+import YoungPanel, { type Rack } from './YoungPanel.vue'
 import { useClutchDay } from '../../composables/useClutchDay'
 import { heldIds, useEmergedState } from '../../composables/useEmergedState'
 import type { EntryMode } from '../../composables/useEntryMode'
@@ -17,10 +18,11 @@ import { api, ApiError, requestId } from '../../lib/api'
 import { isBlank } from '../../lib/cells'
 import { countCell, readCount, totalOf, type Count } from '../../lib/clutches'
 import { dayFirst, dayLabel, formatSerial, isoToSerial, serialFromIso, serialToIso, todayIso } from '../../lib/dates'
-import { bestRack, buildIndex, searchKey, usedSamples, type RackSuggestion } from '../../lib/deaths'
+import { bestRack, buildIndex, searchKey, usedSamples } from '../../lib/deaths'
 import {
   CROSS_PURPOSE,
-  DEFAULT_STAGE,
+  LIFESTAGES,
+  MAIN_STAGES,
   MODULE,
   STOCKS,
   dayDoubt,
@@ -33,12 +35,20 @@ import {
   siblingSpecies,
   skippedIds,
   stockPlan,
+  setYoung,
+  sharedYoung,
   tallies,
+  youngSamples,
+  youngStarts,
+  youngValue,
+  YOUNG_BATCH,
   type Draft,
   type Kind,
   type Sex,
   type StockPlan,
+  type YoungField,
 } from '../../lib/emerged'
+import { localRun, normalizeId, problemsOf as tubeProblems, type Problem as TubeProblem } from '../../lib/tubes'
 import { errorText, notify } from '../../lib/notice'
 import { initialsOf } from '../../lib/rows'
 import type { CellValue, Table, TableRow } from '../../lib/types'
@@ -71,7 +81,7 @@ const mode = defineModel<EntryMode>('mode', { required: true })
 const session = useSession()
 const tables = useTables()
 const state = useEmergedState()
-const { date, clutch, drafts, skipStock, medium, freeIds, inOrder, rowOf, idsLoaded } = state
+const { date, clutch, drafts, skipStock, medium, young, selected, freeIds, inOrder, rowOf, idsLoaded } = state
 const day = useClutchDay()
 const keyboard = useKeyboard()
 const roomy = useMedia('(min-width: 1024px)')
@@ -166,7 +176,7 @@ const fresh = ref<string[]>([])
 let freshTimer: ReturnType<typeof setTimeout> | undefined
 onBeforeUnmount(() => clearTimeout(freshTimer))
 
-function add(kind: Kind, sex: Sex, count = 1) {
+function add(kind: Kind, sex: Sex, count = 1, young: { stage: string; foundDead: boolean } = { stage: '', foundDead: false }) {
   if (!clutch.value) return notify(t('Elige el clutch'))
   if (dateError.value || !date.value) return notify(dateError.value || t('Elige el día'), 'error')
   if (!idsLoaded.value) return notify(t('Cargando los Insectary IDs libres…'))
@@ -186,8 +196,8 @@ function add(kind: Kind, sex: Sex, count = 1) {
       sex: kind === 'young' ? 'NA' : sex,
       fate: 'alive',
       species: '',
-      stage: kind === 'young' ? DEFAULT_STAGE : '',
-      foundDead: false,
+      stage: kind === 'young' ? young.stage : '',
+      foundDead: kind === 'young' && young.foundDead,
       note: '',
       cam: '',
       tube: '',
@@ -199,6 +209,38 @@ function add(kind: Kind, sex: Sex, count = 1) {
   fresh.value = added.map(d => d.key)
   clearTimeout(freshTimer)
   freshTimer = setTimeout(() => (fresh.value = []), 1200)
+  // Eggs and larvae are listed in order under the batch panel: the first one added comes into view.
+  if (kind === 'young')
+    nextTick(() => document.querySelector(`[data-key="${added[0].key}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }))
+}
+/** «+ N larvae»: N cards with consecutive Insectary IDs, CAMs and tubes, of one stage, alive or found dead. */
+const larvae = ref<{ open: boolean; count: number | null; moreStages: boolean }>({ open: false, count: 1, moreStages: false })
+const larvaCount = computed(() => Math.max(1, Math.min(60, Math.floor(larvae.value.count ?? 1))))
+const larvaIds = computed(() => {
+  if (!idsLoaded.value) return []
+  const out: string[] = []
+  for (let i = 0; i < larvaCount.value; i++) {
+    const id = nextId(inOrder.value, freeIds.value[0] ?? '', [...held.value, ...out])
+    if (!id) break
+    out.push(id)
+  }
+  return out
+})
+const larvaStages = computed(() =>
+  larvae.value.moreStages ? LIFESTAGES : LIFESTAGES.filter(s => MAIN_STAGES.includes(s) || s === young.value.stage),
+)
+const STAGE_NAME: Record<string, () => string> = {
+  Egg: () => t('Huevo'),
+  '1st instar larva': () => 'L1',
+  '2nd instar larva': () => 'L2',
+  '3rd instar larva': () => t('3.er estadio'),
+  '4th instar larva': () => t('4.º estadio'),
+  '5th instar larva': () => 'L5',
+  'Pre-pupa': () => 'Pre-pupa',
+}
+function addLarvae() {
+  add('young', 'NA', larvaCount.value, { stage: young.value.stage, foundDead: young.value.foundDead })
+  larvae.value = { ...larvae.value, open: false, count: 1 }
 }
 const many = ref<{ open: boolean; female: number | null; male: number | null; none: number | null }>({ open: false, female: null, male: null, none: null })
 function addMany() {
@@ -218,13 +260,19 @@ function remove(key: string) {
   drafts.value = drafts.value.filter(d => d.key !== key)
 }
 function removeClutch(c: string) {
-  drafts.value = drafts.value.filter(d => d.clutch !== c)
+  drafts.value = drafts.value.filter(d => d.clutch !== c || d.kind === 'young')
+}
+function removeYoung() {
+  drafts.value = drafts.value.filter(d => d.kind !== 'young')
 }
 
-/** The cards by clutch: the chosen clutch first (its newest card on top, under the buttons), then the others. */
+/**
+ * The adults' cards by clutch: the chosen clutch first (its newest card on top, under the buttons), then
+ * the others. Eggs and larvae are listed apart, in the order added, under their batch panel.
+ */
 const sections = computed(() => {
   const by = new Map<string, Draft[]>()
-  for (const d of drafts.value) by.set(d.clutch, [...(by.get(d.clutch) ?? []), d])
+  for (const d of drafts.value) if (d.kind === 'adult') by.set(d.clutch, [...(by.get(d.clutch) ?? []), d])
   const order = [...by.keys()].sort((a, b) => (a === clutch.value ? -1 : b === clutch.value ? 1 : 0))
   return order.map(c => ({ clutch: c, cards: [...by.get(c)!].reverse() }))
 })
@@ -234,30 +282,36 @@ const index = computed(() => (props.table ? buildIndex(props.table.rows) : []))
 const usedSampleIds = computed(() => usedSamples(index.value))
 const usedIds = computed(() => new Set(index.value.map(e => e.key)))
 const freeSet = computed(() => new Set(freeIds.value.map(id => id.toUpperCase())))
-/** Cards whose CAM or tube was suggested once: a box the person empties stays empty. */
+/** The next free CAM and the racks in use (the next free tube of each), as Tubos offers them. */
+const camFirst = ref('')
+const racks = ref<Rack[]>([])
+let asking: Promise<void> | null = null
+function loadSuggestions() {
+  return (asking ??= Promise.all([api<{ suggestions: { value: string }[] }>('ids?kind=cam'), api<{ suggestions: Rack[] }>('ids?kind=tube')])
+    .then(([cam, tube]) => {
+      camFirst.value = cam.suggestions[0]?.value || ''
+      racks.value = tube.suggestions
+    })
+    .catch(e => notify(errorText(e), 'error'))
+    .finally(() => (asking = null)))
+}
+
+/** Adults killed and preserved: their CAM and tube once suggested (a box the person empties stays empty). */
 const suggested = new Set<string>()
-let camStart = ''
-let racks: (RackSuggestion & { label: string })[] = []
 async function suggestSamples() {
-  const want = drafts.value.filter(d => preserving(d) && !suggested.has(d.key) && (!d.cam || !d.tube))
+  const want = drafts.value.filter(d => d.kind === 'adult' && preserving(d) && !suggested.has(d.key) && (!d.cam || !d.tube))
   if (!want.length) return
   try {
-    if (!camStart || !racks.length) {
-      const [cam, tube] = await Promise.all([
-        api<{ suggestions: { value: string }[] }>('ids?kind=cam'),
-        api<{ suggestions: (RackSuggestion & { label: string })[] }>('ids?kind=tube'),
-      ])
-      camStart = cam.suggestions[0]?.value || ''
-      racks = tube.suggestions
-    }
-    // Eggs, larvae and cross offspring go to the crosses' rack (lib/deaths bestRack).
-    const rows = want.map(d => ({ values: { Research_purpose: d.kind === 'young' ? CROSS_PURPOSE : '' } }) as unknown as TableRow)
-    const rack = bestRack(racks, rows, medium.value)
+    if (!camFirst.value || !racks.value.length) await loadSuggestions()
+    // Cross offspring go to the crosses' rack (lib/deaths bestRack).
+    const rows = want.map(() => ({ values: { Research_purpose: '' } }) as unknown as TableRow)
+    const rack = bestRack(racks.value, rows, medium.value)
     const count = drafts.value.filter(preserving).length + 4
     const run = (kind: string, start: string) =>
       api<{ sequence: string[] }>(`ids?kind=${kind}&start=${encodeURIComponent(start)}&count=${count}`).then(r => r.sequence)
-    const [cams, tubes] = await Promise.all([camStart ? run('cam', camStart) : [], rack ? run('tube', rack.value) : []])
-    const taken = (field: 'cam' | 'tube', v: string) => drafts.value.some(d => searchKey(d[field]) === searchKey(v))
+    const [cams, tubes] = await Promise.all([camFirst.value ? run('cam', camFirst.value) : [], rack ? run('tube', rack.value) : []])
+    // Never one another card holds (an egg or larva's handed out too).
+    const taken = (field: 'cam' | 'tube', v: string) => drafts.value.some(d => searchKey(sampleOf(d)[field]) === searchKey(v))
     let list = drafts.value
     for (const w of want) {
       const d = list.find(x => x.key === w.key)
@@ -273,7 +327,241 @@ async function suggestSamples() {
     notify(errorText(e), 'error')
   }
 }
-watch(() => drafts.value.filter(d => preserving(d) && (!d.cam || !d.tube)).map(d => d.key).join(), () => void suggestSamples(), { immediate: true })
+watch(
+  () => drafts.value.filter(d => d.kind === 'adult' && preserving(d) && (!d.cam || !d.tube)).map(d => d.key).join(),
+  () => void suggestSamples(),
+  { immediate: true },
+)
+
+// --- Eggs and larvae: the batch (medium, rack, first CAM, purpose) and each card's CAM and tube, consecutive
+const youngCards = computed(() => drafts.value.filter(d => d.kind === 'young'))
+// Cards kept from before the batch panel: their CAM and tube count as typed.
+if (drafts.value.some(d => d.kind === 'young' && (d.cam || d.tube)))
+  drafts.value = drafts.value.map(d =>
+    d.kind === 'young' && (d.cam || d.tube)
+      ? { ...d, typedCam: d.typedCam ?? (d.cam || undefined), typedTube: d.typedTube ?? (d.tube || undefined), cam: '', tube: '' }
+      : d,
+  )
+watch(
+  () => youngCards.value.length > 0,
+  some => void (some && (!camFirst.value || !racks.value.length) && loadSuggestions()),
+  { immediate: true },
+)
+/**
+ * The crosses' rack in a medium (eggs and larvae are F1s: lib/deaths bestRack); none when no rack holds
+ * tubes in that medium yet (the first tube is then typed in the panel, never one of another medium's rack).
+ */
+const CROSS_ROWS = [{ values: { Research_purpose: CROSS_PURPOSE } } as unknown as TableRow]
+const rackFor = (m: string) =>
+  bestRack(
+    racks.value.filter(r => r.medium === m),
+    CROSS_ROWS,
+    m,
+  )?.value ?? ''
+const startsOf = (d: Pick<Draft, 'own'>) => youngStarts(d, young.value, { camFirst: camFirst.value, rackFor })
+/** The runs of free IDs: the server's (skipping IDs used anywhere), counted up here until they arrive. */
+const runs = reactive(new Map<string, string[]>())
+const asked = new Set<string>()
+function run(start: string, count: number): string[] {
+  const used = (id: string) => usedSampleIds.value.has(id)
+  const have = runs.get(start)?.filter(id => !used(id))
+  if (have && have.length >= count) return have
+  const want = Math.ceil(count / 20) * 20
+  const key = `${start}:${want}`
+  if (!asked.has(key)) {
+    asked.add(key)
+    api<{ sequence: string[] }>(`ids?kind=${start.startsWith('CAM') ? 'cam' : 'tube'}&start=${encodeURIComponent(start)}&count=${want}`)
+      .then(r => runs.set(start, r.sequence))
+      .catch(() => {})
+  }
+  return localRun(start, count, used)
+}
+/** The CAMs and tubes of adults preserved on the cards: never handed to an egg or larva. */
+const adultSamples = computed(() => {
+  const out = new Set<string>()
+  for (const d of drafts.value) if (d.kind === 'adult' && preserving(d)) for (const v of [d.cam, d.tube]) if (v.trim()) out.add(normalizeId(v))
+  return out
+})
+const youngAssigned = computed(() =>
+  youngSamples(
+    youngCards.value.map(d => ({ key: d.key, ...startsOf(d), typedCam: d.typedCam, typedTube: d.typedTube })),
+    { run, taken: adultSamples.value },
+  ),
+)
+/** A card's CAM and tube: an egg or larva's handed out or typed, an adult's as typed. */
+function sampleOf(d: Draft): { cam: string; tube: string } {
+  if (d.kind !== 'young') return { cam: d.cam, tube: d.tube }
+  const a = youngAssigned.value[d.key]
+  return { cam: a?.cam.value ?? '', tube: a?.tube.value ?? '' }
+}
+// After a save the next free ones moved on, and the saved rows hold their CAMs and tubes.
+watch(
+  () => tables.versions[MODULE],
+  () => {
+    runs.clear()
+    asked.clear()
+    serverUsed.clear()
+    if (drafts.value.some(preserving)) void loadSuggestions()
+  },
+)
+
+const youngClutches = computed(() => new Set(youngCards.value.map(d => d.clutch)).size)
+// The batch panel: for all the eggs and larvae, or for the selected cards only.
+const selectedCards = computed(() => youngCards.value.filter(d => selected.value.includes(d.key)))
+watch(youngCards, cards => {
+  const keys = new Set(cards.map(d => d.key))
+  if (selected.value.some(k => !keys.has(k))) selected.value = selected.value.filter(k => keys.has(k))
+})
+function toggleSelect(key: string) {
+  selected.value = selected.value.includes(key) ? selected.value.filter(k => k !== key) : [...selected.value, key]
+}
+function setBatch(field: YoungField, value: string) {
+  const next = setYoung(drafts.value, young.value, selectedCards.value.map(d => d.key), field, value)
+  drafts.value = next.drafts
+  young.value = next.batch
+}
+const panelShown = computed(() => {
+  const cards: Pick<Draft, 'own'>[] = selectedCards.value.length ? selectedCards.value : [{ own: undefined }]
+  const same = (f: (d: Pick<Draft, 'own'>) => string) => (cards.every(d => f(d) === f(cards[0])) ? f(cards[0]) : undefined)
+  return {
+    medium: sharedYoung(cards, young.value, 'medium'),
+    purpose: sharedYoung(cards, young.value, 'purpose'),
+    tube: same(d => startsOf(d).tube),
+    cam: same(d => startsOf(d).cam),
+  }
+})
+const panelChosen = computed(() => {
+  const cards = selectedCards.value
+  if (!cards.length) return { tube: !!young.value.tubeStart, cam: !!young.value.camStart }
+  return { tube: cards.every(d => !!d.own?.tubeFrom), cam: cards.every(d => !!d.own?.camFrom) }
+})
+const ownIds = computed(() => {
+  const of = (field: YoungField) => (selectedCards.value.length ? [] : youngCards.value.filter(d => d.own?.[field] !== undefined).map(d => d.id))
+  return { medium: of('medium'), purpose: of('purpose'), camFrom: of('camFrom'), tubeFrom: of('tubeFrom') }
+})
+const purposes = computed(() => [...new Set([CROSS_PURPOSE, ...(props.options.Research_purpose || [])])].filter(p => p && p !== 'NA'))
+/** What a card takes from the batch, in short: its medium and purpose when not the usual ones, or its own. */
+function chipsOf(d: Draft) {
+  const out: { text: string; own: boolean }[] = []
+  const m = youngValue(d, young.value, 'medium')
+  const purpose = youngValue(d, young.value, 'purpose')
+  if (m !== YOUNG_BATCH.medium || d.own?.medium) out.push({ text: m, own: !!d.own?.medium })
+  if (purpose !== CROSS_PURPOSE || d.own?.purpose) out.push({ text: purpose, own: !!d.own?.purpose })
+  if (d.own?.tubeFrom) out.push({ text: t('tubos desde {tube}', { tube: d.own.tubeFrom }), own: true })
+  if (d.own?.camFrom) out.push({ text: t('CAM desde {cam}', { cam: d.own.camFrom }), own: true })
+  return out
+}
+
+// Checks of the eggs' and larvae's CAMs and tubes: the form, repeats, and IDs used anywhere (the server knows the other sheets).
+const serverUsed = reactive(new Map<string, string | null>())
+let checkTimer: ReturnType<typeof setTimeout> | undefined
+onBeforeUnmount(() => clearTimeout(checkTimer))
+const toCheck = computed(() => {
+  const cams = new Set<string>()
+  const tubes = new Set<string>()
+  for (const a of Object.values(youngAssigned.value)) {
+    if (a.cam.value && !usedSampleIds.value.has(a.cam.value) && !serverUsed.has(a.cam.value)) cams.add(a.cam.value)
+    if (a.tube.value && !usedSampleIds.value.has(a.tube.value) && !serverUsed.has(a.tube.value)) tubes.add(a.tube.value)
+  }
+  return { cams: [...cams], tubes: [...tubes] }
+})
+watch(toCheck, ({ cams, tubes }) => {
+  clearTimeout(checkTimer)
+  if (!cams.length && !tubes.length) return
+  checkTimer = setTimeout(async () => {
+    const ask = async (kind: string, values: string[]) => {
+      if (!values.length) return
+      const r = await api<{ used: Record<string, { sheet: string; row: number; label: string | null }> }>(
+        `ids?kind=${kind}&check=${encodeURIComponent(values.join(','))}`,
+      )
+      for (const v of values) {
+        const h = r.used[v]
+        serverUsed.set(v, h ? t('{sheet} fila {row}{label}', { sheet: h.sheet, row: h.row, label: h.label ? ` (${h.label})` : '' }) : null)
+      }
+    }
+    try {
+      await Promise.all([ask('cam', cams), ask('tube', tubes)])
+    } catch {
+      /* Save checks again on the server. */
+    }
+  }, 400)
+})
+const usedSample = {
+  has: (v: string) => usedSampleIds.value.has(v) || !!serverUsed.get(v),
+  get: (v: string) => (usedSampleIds.value.has(v) ? `Insectary_data · ${usedSampleIds.value.get(v)}` : (serverUsed.get(v) ?? undefined)),
+}
+const accepted = computed(() => new Set(young.value.accepted ?? []))
+function accept(value: string) {
+  if (!accepted.value.has(value)) young.value = { ...young.value, accepted: [...accepted.value, value] }
+}
+/** What is wrong with each egg or larva's CAM and tube (lib/tubes problemsOf), the adults preserved counted for repeats. */
+const sampleProblems = computed(() => {
+  const near = [camFirst.value, ...racks.value.map(r => r.value)]
+  for (const a of Object.values(youngAssigned.value)) near.push(a.cam.value, a.tube.value)
+  const cards = drafts.value.filter(preserving).map(d => {
+    const s = sampleOf(d)
+    return {
+      id: d.key,
+      choice: { kind: 'whole' as const, parts: [], medium: '', date: d.date, closeRest: true },
+      free: 4,
+      needsCam: true,
+      assigned: { cam: { value: normalizeId(s.cam), auto: false }, tubes: [{ value: normalizeId(s.tube), auto: false }] },
+    }
+  })
+  return tubeProblems(cards, { used: usedSample, accepted: accepted.value, near: near.filter(Boolean) })
+})
+const idOfKey = (key: string) => drafts.value.find(d => d.key === key)?.id || '—'
+function sampleText(p: TubeProblem, id: string): string {
+  switch (p.kind) {
+    case 'missing':
+      return p.field === 'cam' ? t('Falta el CAM') : t('Falta el tubo')
+    case 'repeated':
+      return t('{value} está en {a} y en {b}', { value: p.value, a: idOfKey(p.with), b: id })
+    case 'used':
+      return t('{value} ya está usado: {where}', { value: p.value, where: p.where })
+    case 'form': {
+      const f = p.form
+      if (f.problem === 'cam') return t('{value} es un CAM, no un tubo', { value: p.value })
+      if (f.problem === 'tube') return t('{value} es un tubo, no un CAM', { value: p.value })
+      if (f.problem === 'digits')
+        return p.field === 'cam'
+          ? t('{value}: un CAM lleva 6 dígitos', { value: p.value })
+          : t('{value}: un tubo lleva 2 letras y 8 dígitos', { value: p.value })
+      return p.field === 'cam'
+        ? t('{value} no parece un CAM (CAM y 6 dígitos)', { value: p.value })
+        : t('{value} no parece un tubo (2 letras y 8 dígitos)', { value: p.value })
+    }
+    default:
+      return ''
+  }
+}
+/** The CAM and tube boxes of an egg or larva card: values, how each looks, the fixes offered. */
+function sampleView(d: Draft) {
+  const a = youngAssigned.value[d.key]
+  if (!a) return undefined
+  const list = sampleProblems.value.get(d.key) ?? []
+  const at = (field: 'cam' | 'tube') => list.filter(p => 'field' in p && p.field === (field === 'cam' ? 'cam' : 0))
+  const state = (field: 'cam' | 'tube') => {
+    const ps = at(field)
+    return !ps.length ? ('' as const) : ps.some(p => p.kind !== 'missing') ? ('bad' as const) : ('missing' as const)
+  }
+  const form = (field: 'cam' | 'tube') => at(field).find(p => p.kind === 'form')
+  const fix = (field: 'cam' | 'tube') => {
+    const p = form(field)
+    return p?.kind === 'form' ? (p.form.fix ?? '') : ''
+  }
+  const canAccept = (field: 'cam' | 'tube') => {
+    const p = form(field)
+    return p?.kind === 'form' && (p.form.problem === 'digits' || p.form.problem === 'format')
+  }
+  return {
+    cam: a.cam,
+    tube: a.tube,
+    state: { cam: state('cam'), tube: state('tube') },
+    fix: { cam: fix('cam'), tube: fix('tube') },
+    canAccept: { cam: canAccept('cam'), tube: canAccept('tube') },
+  }
+}
 
 // --- What is wrong with each card
 const refused = ref<Record<string, string>>({})
@@ -292,13 +580,20 @@ function problemsOf(d: Draft): string[] {
   }
   if (!speciesOfClutch(d.clutch) && !d.species) out.push(t('El clutch no tiene especie: elige qué emergió'))
   if (serialFromIso(d.date) === null) out.push(t('Fecha no válida: el año debe estar entre 1990 y 2099'))
-  if (preserving(d)) {
+  if (d.kind === 'young') {
+    const id = d.id.trim().toUpperCase() || '—'
+    for (const p of sampleProblems.value.get(d.key) ?? []) {
+      const text = sampleText(p, id)
+      if (text && !out.includes(text)) out.push(text)
+    }
+  } else if (preserving(d)) {
     for (const field of ['cam', 'tube'] as const) {
       const v = searchKey(d[field])
       const name = field === 'cam' ? 'CAM' : t('tubo')
       if (!v) out.push(field === 'cam' ? t('Falta el CAM') : t('Falta el tubo'))
       else if (usedSampleIds.value.has(v)) out.push(t('{value} ya está en {id}', { value: v, id: usedSampleIds.value.get(v)! }))
-      else if (drafts.value.some(o => o.key !== d.key && preserving(o) && searchKey(o[field]) === v)) out.push(t('{name} {value} repetido en otra tarjeta', { name, value: v }))
+      else if (drafts.value.some(o => o.key !== d.key && preserving(o) && searchKey(sampleOf(o)[field]) === v))
+        out.push(t('{name} {value} repetido en otra tarjeta', { name, value: v }))
     }
   }
   if (refused.value[d.key]) out.push(refused.value[d.key])
@@ -394,14 +689,16 @@ async function save() {
   const list = [...drafts.value].sort((a, b) => (rowOf.value.get(a.id) ?? 0) - (rowOf.value.get(b.id) ?? 0))
   const creates = list.map(d => {
     const row = stockOf(d.clutch)
-    const values = draftValues(d, {
+    // An egg or larva: the CAM and tube on its card, its medium and purpose (its own or the batch's).
+    const values = draftValues(d.kind === 'young' ? { ...d, ...sampleOf(d) } : d, {
       clutchValue: row?.values['CLUTCH NUMBER'] ?? d.clutch,
       clutchSpecies: speciesOfClutch(d.clutch),
       generation: String(row?.values.Generation ?? ''),
       formulas: props.createFormulas,
       today: today.value,
       initials: initials.value,
-      medium: medium.value,
+      medium: d.kind === 'young' ? youngValue(d, young.value, 'medium') : medium.value,
+      purpose: d.kind === 'young' ? youngValue(d, young.value, 'purpose') : undefined,
     })
     return { clientId: d.key, module: MODULE, values, replaceFormula: values.SPECIES ? ['SPECIES'] : [] }
   })
@@ -425,6 +722,7 @@ async function save() {
     lastSave.value = result.action?.id ? { actionId: result.action.id, drafts: list, ids: list.map(d => d.id), count: list.length } : null
     drafts.value = []
     skipStock.value = []
+    selected.value = []
     for (const d of list) suggested.delete(d.key)
     if (!result.action?.id) notify(tn(list.length, '{n} emergido guardado en Google Sheets', '{n} emergidos guardados en Google Sheets'), 'success')
     scroller.value?.scrollTo({ top: 0 })
@@ -613,10 +911,89 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
               <div class="mt-2 grid grid-cols-3 gap-2">
                 <button class="btn h-11 justify-center px-1 text-sm" :disabled="!next" :title="$t('Sexo no visible (NA)')" @click="add('adult', 'NA')"><Plus :size="15" /> {{ $t('Sin sexo') }}</button>
                 <button class="btn h-11 justify-center px-1 text-sm" :aria-expanded="many.open" @click="many.open = !many.open">{{ $t('Varios…') }}</button>
-                <button class="btn h-11 justify-center px-1 text-sm" :disabled="!next" :title="$t('Huevo o larva preservado (Sex NOT_COLLECTED, LIFESTAGE)')" @click="add('young', 'NA')">
-                  <Plus :size="15" /> {{ $t('Larva') }}
+                <button
+                  class="btn h-11 justify-center px-1 text-sm"
+                  :class="{ 'border-violet-400 bg-violet-50 text-violet-900': larvae.open }"
+                  :disabled="!next"
+                  :aria-expanded="larvae.open"
+                  :title="$t('Huevo o larva preservado (Sex NOT_COLLECTED, LIFESTAGE)')"
+                  @click="larvae.open = !larvae.open"
+                >
+                  <Plus :size="15" /> {{ $t('Larvas…') }}
                 </button>
               </div>
+              <!-- «+ N larvae»: preserved from the clutch, each with its Insectary ID, CAM and tube. -->
+              <form v-if="larvae.open" class="mt-2 space-y-2 rounded-lg border border-violet-200 bg-violet-50/60 p-2" @submit.prevent="addLarvae">
+                <div class="flex items-center gap-2">
+                  <span class="min-w-0 flex-1 text-sm font-medium text-violet-950">{{ $t('Larvas preservadas') }}</span>
+                  <span class="flex items-stretch overflow-hidden rounded-lg border border-stone-300 bg-white">
+                    <button type="button" class="h-11 w-11 text-xl active:bg-stone-100" :aria-label="$t('Una menos')" @click="larvae.count = Math.max(1, larvaCount - 1)">−</button>
+                    <input
+                      v-model.number="larvae.count"
+                      type="number"
+                      inputmode="numeric"
+                      min="1"
+                      max="60"
+                      class="h-11 w-14 border-x border-stone-300 text-center text-lg font-semibold tabular-nums outline-none"
+                      :aria-label="$t('Cuántas')"
+                    />
+                    <button type="button" class="h-11 w-11 text-xl active:bg-stone-100" :aria-label="$t('Una más')" @click="larvae.count = Math.min(60, larvaCount + 1)">+</button>
+                  </span>
+                </div>
+                <div class="flex flex-wrap gap-1" role="group" aria-label="LIFESTAGE">
+                  <button
+                    v-for="st in larvaStages"
+                    :key="st"
+                    type="button"
+                    class="min-h-11 rounded-lg border px-2 font-medium"
+                    :class="[
+                      young.stage === st ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white text-stone-800 active:bg-stone-100',
+                      MAIN_STAGES.includes(st) ? 'min-w-16 flex-1 text-base' : 'min-w-11 text-sm',
+                    ]"
+                    :aria-pressed="young.stage === st"
+                    :title="st"
+                    @click="young = { ...young, stage: st }"
+                  >
+                    {{ STAGE_NAME[st]() }}
+                  </button>
+                  <button
+                    type="button"
+                    class="min-h-11 rounded-lg border border-dashed border-stone-300 px-2 text-sm text-stone-700"
+                    :aria-expanded="larvae.moreStages"
+                    @click="larvae.moreStages = !larvae.moreStages"
+                  >
+                    {{ larvae.moreStages ? $t('Menos') : $t('Otro estadio') }}
+                  </button>
+                </div>
+                <div class="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    class="min-h-11 rounded-lg border text-sm font-medium"
+                    :class="!young.foundDead ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white text-stone-800'"
+                    :aria-pressed="!young.foundDead"
+                    @click="young = { ...young, foundDead: false }"
+                  >
+                    {{ $t('Vivas, preservadas') }}
+                  </button>
+                  <button
+                    type="button"
+                    class="min-h-11 rounded-lg border text-sm font-medium"
+                    :class="young.foundDead ? 'border-amber-700 bg-amber-700 text-white' : 'border-stone-300 bg-white text-stone-800'"
+                    :aria-pressed="young.foundDead"
+                    @click="young = { ...young, foundDead: true }"
+                  >
+                    {{ $t('Encontradas muertas') }}
+                  </button>
+                </div>
+                <button class="btn-primary flex h-12 w-full flex-col justify-center text-base leading-tight" :disabled="!larvaIds.length">
+                  <span>{{ $tn(larvaCount, 'Añadir {n} larva', 'Añadir {n} larvas') }}</span>
+                  <span v-if="larvaIds.length" class="text-xs font-normal opacity-90">{{ larvaIds.length > 1 ? `${larvaIds[0]}–${larvaIds.at(-1)}` : larvaIds[0] }}</span>
+                </button>
+                <p v-if="larvaIds.length && larvaIds.length < larvaCount" class="flex items-start gap-1.5 text-sm text-amber-900">
+                  <AlertTriangle :size="15" class="mt-0.5 shrink-0" />
+                  {{ $t('Solo hay {n} filas preasignadas libres desde {id}: crea más filas preasignadas en Insectary_data', { n: larvaIds.length, id: larvaIds[0] }) }}
+                </p>
+              </form>
               <form v-if="many.open" class="mt-2 grid grid-cols-[1fr_1fr_1fr_auto] items-end gap-2 rounded-lg border border-stone-200 bg-stone-50 p-2" @submit.prevent="addMany">
                 <label><span class="field-label">♀ {{ $t('Hembras') }}</span><input v-model.number="many.female" type="number" inputmode="numeric" min="0" max="60" class="field-input h-11 text-base" /></label>
                 <label><span class="field-label">♂ {{ $t('Machos') }}</span><input v-model.number="many.male" type="number" inputmode="numeric" min="0" max="60" class="field-input h-11 text-base" /></label>
@@ -660,6 +1037,53 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
               :fresh="fresh.includes(d.key)"
               @update="update(d.key, $event)"
               @remove="remove(d.key)"
+            />
+          </ul>
+        </section>
+
+        <!-- Eggs and larvae preserved, in the order added (their CAMs and tubes run on), under their batch panel. -->
+        <section v-if="youngCards.length" class="px-3 pt-4" data-young>
+          <div class="mb-1.5 flex items-center gap-2">
+            <h2 class="text-sm font-semibold text-stone-700">
+              {{ $tn(youngCards.length, '{n} huevo o larva preservado', '{n} huevos o larvas preservados') }}
+            </h2>
+            <button v-if="canEdit" class="ml-auto h-10 px-2 text-sm text-stone-600 underline" @click="removeYoung">{{ $t('Quitar todas') }}</button>
+          </div>
+          <YoungPanel
+            v-if="canEdit"
+            class="mb-2"
+            :shown="panelShown"
+            :chosen="panelChosen"
+            :selected="selected"
+            :own="ownIds"
+            :racks="racks"
+            :cam-first="camFirst"
+            :purposes="purposes"
+            :start-open="roomy"
+            @set="setBatch"
+            @done="selected = []"
+          />
+          <ul class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,20rem),1fr))] items-start gap-2">
+            <DraftCard
+              v-for="d in youngCards"
+              :key="d.key"
+              :draft="d"
+              :clutch-species="speciesOfClutch(d.clutch)"
+              :siblings="siblingsOf(d.clutch)"
+              :all-species="knownList"
+              :problems="problems.get(d.key) || []"
+              :hint="hintOf(d)"
+              :day="date"
+              :can-edit="canEdit"
+              :fresh="fresh.includes(d.key)"
+              :sample="sampleView(d)"
+              :selected="selected.includes(d.key)"
+              :show-clutch="d.clutch !== clutch || youngClutches > 1"
+              :chips="chipsOf(d)"
+              @update="update(d.key, $event)"
+              @remove="remove(d.key)"
+              @select="toggleSelect(d.key)"
+              @accept="accept"
             />
           </ul>
         </section>

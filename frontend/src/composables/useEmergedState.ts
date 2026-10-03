@@ -1,7 +1,7 @@
 import { computed, ref, watch, type Ref } from 'vue'
 import { api } from '../lib/api'
 import { todayIso } from '../lib/dates'
-import type { Draft } from '../lib/emerged'
+import { YOUNG_BATCH, type Draft, type YoungBatch } from '../lib/emerged'
 import { errorText, notify } from '../lib/notice'
 import { persistentRef } from '../lib/persist'
 import { usePending } from '../stores/pending'
@@ -24,6 +24,10 @@ export interface EmergedState {
   skipStock: Ref<string[]>
   /** The medium of preserved bodies. */
   medium: Ref<string>
+  /** The eggs and larvae being preserved: their medium, rack, first CAM, purpose, and what «+ N larvae» adds. */
+  young: Ref<YoungBatch>
+  /** Egg and larva cards selected (keys): the batch panel sets its values for them only. */
+  selected: Ref<string[]>
   /** Free pre-made IDs: after the last row used first, then earlier empty rows. */
   freeIds: Ref<string[]>
   /** The same IDs in sheet order (a run of cards follows it: H0B → H1B → H2B). */
@@ -80,12 +84,21 @@ function create(): EmergedState {
     drafts: persistentRef<Draft[]>('emerged:drafts', [], { lasting: true }),
     skipStock: persistentRef<string[]>('emerged:skip-stock', []),
     medium: persistentRef('emerged:medium', 'Flash frozen', { lasting: true }),
+    young: youngBatch(),
+    selected: persistentRef<string[]>('emerged:selected', []),
     freeIds,
     inOrder,
     rowOf,
     idsLoaded,
     loadFreeIds,
   }
+}
+
+/** The batch kept in this browser, with any field added since filled from the defaults. */
+function youngBatch() {
+  const batch = persistentRef<YoungBatch>('emerged:young', { ...YOUNG_BATCH }, { lasting: true })
+  batch.value = { ...YOUNG_BATCH, ...batch.value }
+  return batch
 }
 
 let shared: EmergedState | null = null
