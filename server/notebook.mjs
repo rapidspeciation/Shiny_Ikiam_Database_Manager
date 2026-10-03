@@ -253,7 +253,7 @@ const clip = (value, length) => String(value ?? '').slice(0, length);
  * the doubtful cells and their other readings. Unknown columns are dropped and
  * reported; a cell with alternatives but no confidence counts as doubtful.
  */
-export function checkTranscription({ kind, year = null, lines = [] }) {
+export function checkTranscription({ kind, year = null, lines = [], spans = [] }) {
   if (!KINDS[kind]) throw new Error(`Unknown notebook kind "${clip(kind, 40)}": use one of ${KIND_IDS.join(', ')}`);
   // The lines sent as JSON text (some clients pass an array argument as a string).
   if (typeof lines === 'string')
@@ -319,6 +319,24 @@ export function checkTranscription({ kind, year = null, lines = [] }) {
       ...(Object.keys(r).length ? { r } : {}),
     };
   });
+  // Braces and dittos given once: { field, value, from, to } fills the lines from one key to the
+  // other (both included) that do not give that column.
+  if (typeof spans === 'string')
+    try {
+      spans = JSON.parse(spans);
+    } catch {
+      throw new Error('spans must be a list of { field, value, from, to }');
+    }
+  const key = KINDS[kind].keys[0];
+  for (const [k, span] of (Array.isArray(spans) ? spans : []).slice(0, 60).entries()) {
+    const field = fields.has(span?.field) ? span.field : names.get(String(span?.field ?? '').trim().toLowerCase());
+    if (!field) throw new Error(`spans[${k}]: unknown column "${clip(span?.field, 60)}"`);
+    const at = id => out.findIndex(l => !isNone(l.v[key]) && clutchKey(l.v[key]) === clutchKey(id));
+    const [from, to] = [at(span.from), at(span.to)];
+    if (from < 0 || to < 0) throw new Error(`spans[${k}]: ${from < 0 ? clip(span.from, 20) : clip(span.to, 20)} is not the ${key} of a line`);
+    for (let i = Math.min(from, to); i <= Math.max(from, to); i++)
+      if (!(field in out[i].v) && !out[i].crossed) out[i].v[field] = span.value === null || span.value === undefined ? null : clip(span.value, 300).trim();
+  }
   const y = Number(year);
   return {
     transcription: {
@@ -578,14 +596,92 @@ export function lookAlikes(kind, keyValues) {
 // Checks of a line against the lines around it. They make doubts (the value
 // goes in highlighted, with the other readings), never silent changes.
 
-/** Digits one hand writes alike: 848 for 843, 17 for 11, 6 for 5. */
-const LOOK_DIGITS = new Set(['38', '17', '56', '08', '68', '49', '27', '06', '35', '89', '09'].flatMap(p => [p, p[1] + p[0]]));
+/** Digits one hand writes alike: 848 for 843, 17 for 11, 6 for 5, 14 for 11, 12 for 11, 13 for 17. */
+const LOOK_DIGITS = new Set(['38', '17', '14', '12', '37', '56', '08', '68', '49', '27', '06', '35', '89', '09'].flatMap(p => [p, p[1] + p[0]]));
 /** Two texts of one length that differ in one character, a digit one hand writes like the other. */
 const oneLookAlike = (a, b) => {
   if (a.length !== b.length || a === b) return false;
   const diff = [...a].map((ch, i) => [ch, b[i]]).filter(([x, y]) => x !== y);
   return diff.length === 1 && LOOK_DIGITS.has(diff[0].join(''));
 };
+/**
+ * How two numbers as written differ by one stroke: a digit this hand writes like
+ * another (13 and 17), or a 1 added or dropped (15 and 5). Returns the two
+ * readings of the digit (['3', '7'], ['1', ''] for a 1 more in `a`), or null.
+ */
+export function digitSlip(a, b) {
+  [a, b] = [String(a), String(b)];
+  if (a === b || !/^\d+$/.test(a) || !/^\d+$/.test(b)) return null;
+  if (a.length === b.length) {
+    const diff = [...a].map((ch, i) => [ch, b[i]]).filter(([x, y]) => x !== y);
+    return diff.length === 1 && LOOK_DIGITS.has(diff[0].join('')) ? diff[0] : null;
+  }
+  const [long, short] = a.length > b.length ? [a, b] : [b, a];
+  if (long.length !== short.length + 1) return null;
+  for (let k = 0; k < long.length; k++)
+    if (long[k] === '1' && long.slice(0, k) + long.slice(k + 1) === short) return a.length > b.length ? ['1', ''] : ['', '1'];
+  return null;
+}
+const dayMonth = serial => {
+  const d = new Date(SERIAL_EPOCH + serial * 864e5);
+  return { year: d.getUTCFullYear(), month: String(d.getUTCMonth() + 1), day: String(d.getUTCDate()) };
+};
+/**
+ * A sheet value and a page reading that differ by one look-alike digit (or a 1
+ * more or less): a sum term by term, a date by its day or its month, a count, a
+ * clutch, CAM or tube number. Returns the two digits ([sheet's, page's]) or null.
+ */
+export function lookAlikeValues(field, sheet, page) {
+  if (isNone(sheet) || isNone(page)) return null;
+  const type = typeOf(field);
+  if (type === 'date') {
+    if (typeof sheet !== 'number' || typeof page !== 'number') return null;
+    const [a, b] = [dayMonth(sheet), dayMonth(page)];
+    if (a.year !== b.year) return null;
+    if (a.month === b.month) return digitSlip(a.day, b.day);
+    return a.day === b.day ? digitSlip(a.month, b.month) : null;
+  }
+  if (type === 'number') {
+    const terms = v => sumParts(v) ?? (Number.isFinite(Number(v)) ? [Number(v)] : null);
+    const [x, y] = [terms(sheet), terms(page)];
+    if (!x || !y) return null;
+    if (x.length === y.length) {
+      const diff = x.map((t, k) => [t, y[k]]).filter(([s, p]) => s !== p);
+      if (diff.length !== 1 || Math.sign(diff[0][0]) !== Math.sign(diff[0][1])) return null;
+      return digitSlip(Math.abs(diff[0][0]), Math.abs(diff[0][1]));
+    }
+    // A term "1" more or less (=15+1 and =15), the others in the same order.
+    const [long, short] = x.length > y.length ? [x, y] : [y, x];
+    if (long.length !== short.length + 1) return null;
+    for (let k = 0; k < long.length; k++)
+      if (Math.abs(long[k]) === 1 && [...long.slice(0, k), ...long.slice(k + 1)].every((t, j) => t === short[j]))
+        return x.length > y.length ? ['+1', ''] : ['', '+1'];
+    return null;
+  }
+  if (field === 'CLUTCH NUMBER' || field === 'CAM_ID' || /^Tube_\d_id$/.test(field)) {
+    const parts = v => /^([A-Z]*)\s*(\d+)(.*)$/i.exec(String(v).trim());
+    const [x, y] = [parts(sheet), parts(page)];
+    if (!x || !y || x[1].toUpperCase() !== y[1].toUpperCase() || clutchKey(x[3]) !== clutchKey(y[3]) || x[2].length !== y[2].length) return null;
+    return digitSlip(x[2], y[2]);
+  }
+  return null;
+}
+
+/**
+ * Whether a species as written ("salapia", "pol. p.", "Mechanitis lysimnia") names
+ * the full one: each written word starts a word of it, in order.
+ */
+export function speciesFits(written, full) {
+  const words = textKey(written).replace(/\./g, ' ').split(/\s+/).filter(Boolean);
+  const names = textKey(full).split(/\s+/);
+  if (!words.length || !names.length) return false;
+  let at = 0;
+  for (const word of words) {
+    while (at < names.length && !names[at].startsWith(word)) at++;
+    if (at++ >= names.length) return false;
+  }
+  return true;
+}
 
 /**
  * A run of Emergidos lines read with a clutch that looks like the run next to
@@ -593,9 +689,12 @@ const oneLookAlike = (a, b) => {
  * clutch could not give butterflies emerging then, gets the other clutch as an
  * alternative. `plausible(clutch, emergeText)`: true when the clutch was laid 20
  * to 90 days before, false when it has no laid date or is not in the sheet, null
- * when it cannot tell. Returns { [line index]: { value, alternatives, confidence, reason } }.
+ * when it cannot tell. `speciesOf(clutch)`: the clutch's species, when known: a
+ * run whose written species is its clutch's and not the other's stays as read,
+ * with no doubt; one whose species is the other clutch's takes it.
+ * Returns { [line index]: { value, alternatives, confidence, reason } }.
  */
-export function clutchRuns(texts, crossed, plausible = () => null) {
+export function clutchRuns(texts, crossed, plausible = () => null, speciesOf = () => null) {
   const runs = [];
   texts.forEach((text, i) => {
     const clutch = crossed[i] || isNone(text['CLUTCH NUMBER']) ? null : String(text['CLUTCH NUMBER']).trim();
@@ -606,17 +705,30 @@ export function clutchRuns(texts, crossed, plausible = () => null) {
     } else if (clutch) runs.push({ clutch, key: clutchKey(clutch), end: i, lines: [i], emerge: String(text.Intro2Insectary_date ?? '').trim() });
   });
   const out = {};
+  // Whether the species written on a run's lines is a clutch's: true, false, or null (not written, unknown, mixed).
+  const fits = (run, clutch) => {
+    const species = speciesOf(clutch);
+    const written = run.lines.map(i => texts[i].SPECIES).filter(w => !isNone(w));
+    if (isNone(species) || !written.length) return null;
+    const hits = written.filter(w => speciesFits(w, species)).length;
+    return hits === written.length ? true : hits === 0 ? false : null;
+  };
   runs.forEach((run, k) => {
     const near = [runs[k - 1], runs[k + 1]].filter(o => o && oneLookAlike(run.key, o.key));
     for (const other of near.sort((a, b) => b.lines.length - a.lines.length)) {
+      const [ownSpecies, otherSpecies] = [fits(run, run.clutch), fits(run, other.clutch)];
+      if (ownSpecies === true && otherSpecies === false) continue;
       const sameDay = run.emerge && run.emerge === other.emerge;
-      const mine = plausible(run.clutch, run.emerge);
-      const theirs = plausible(other.clutch, run.emerge);
+      const mine = ownSpecies === false && otherSpecies === true ? false : plausible(run.clutch, run.emerge);
+      const theirs = ownSpecies === false && otherSpecies === true ? true : plausible(other.clutch, run.emerge);
       const swap = mine === false && theirs === true;
       if (!swap && (!sameDay || other.lines.length <= run.lines.length || (mine === true && theirs === false))) continue;
-      const why = swap
-        ? msg('Leído {read}, entre líneas del {other}: el {read} no tiene una puesta 20–90 días antes', { read: run.clutch, other: other.clutch })
-        : msg('Clutch {read} entre líneas del {other} (misma emergencia)', { read: run.clutch, other: other.clutch });
+      const why =
+        ownSpecies === false && otherSpecies === true
+          ? msg('Leído {read}, entre líneas del {other}: la especie escrita es la del {other}', { read: run.clutch, other: other.clutch })
+          : swap
+            ? msg('Leído {read}, entre líneas del {other}: el {read} no tiene una puesta 20–90 días antes', { read: run.clutch, other: other.clutch })
+            : msg('Clutch {read} entre líneas del {other} (misma emergencia)', { read: run.clutch, other: other.clutch });
       for (const i of run.lines)
         out[i] = {
           value: swap ? other.clutch : run.clutch,
@@ -629,6 +741,100 @@ export function clutchRuns(texts, crossed, plausible = () => null) {
     }
   });
   return out;
+}
+
+/** Words of a reading that say it is unsure: «dudoso», «¿19/9?», «26/9?», «entre S0D y S2D», «es de L9B». */
+const UNSURE =
+  /\b(?:dudos[oa]s?|doubtful|not sure|unsure|unclear|ilegible|illegible|no (?:es )?segur[oa]|podr[ií]a ser|could be|might be)\b|¿[^?¿]{1,30}\?|[^\s()«»¿?]+\?(?=[\s),;]|$)|\b(?:entre|between)\s+[A-Z]\d[A-Z]\s+(?:y|and)\s+[A-Z]\d[A-Z]\b|\b(?:es de|son de|belongs? to|is from)\s+(?:la línea de\s+)?[A-Z]\d[A-Z]\b/gi;
+/** A column named in a remark ("sexo dudoso", "fecha entre…"): the fields it may mean, best first. */
+const NAMED = [
+  [/\bsex[oa]?\b|♀|♂/i, ['Sex']],
+  [/muerte|death|†/i, ['Death_date']],
+  [/emerg/i, ['Intro2Insectary_date', 'EMERGENCE DATE']],
+  [/\bcausa\b|\bcause\b/i, ['Death_cause']],
+  [/\bnotas?\b|\bnotes?\b|flecha|arrow/i, ['Notes_Insectary_data', 'NOTES', 'Notes']],
+  [/\bclutch\b|\bpuesta\b/i, ['CLUTCH NUMBER']],
+  [/\bespecie\b|\bspecies\b/i, ['SPECIES']],
+  [/\bcam\b/i, ['CAM_ID']],
+  [/\btub[oe]s?\b/i, ['Tube_1_id', 'Tube_2_id']],
+];
+const NOTE_FIELD = /^Notes|^NOTES$/;
+
+/**
+ * Doubts the reader wrote in a line's raw text instead of on its cells («26/9 (¿28/9?)»,
+ * «(sexo dudoso: ♂ o ♀)», «(fecha entre S0B y S1B, dudosa)», «podría ser de U2B»): each goes
+ * to the cell it is about (a column it names, else the value written just before it), with
+ * the dates or sexes it gives as alternatives and its words as the reason. A remark inside
+ * the page's own note is the page's. Returns { cells: { field: check }, unplaced: [remarks] }.
+ */
+export function rawDoubts(raw, text, keys = []) {
+  const out = { cells: {}, unplaced: [] };
+  const s = String(raw ?? '');
+  const fields = Object.keys(text).filter(f => !keys.includes(f) && typeof text[f] === 'string' && text[f].trim());
+  const where = (f, before) => {
+    const options = [text[f].trim(), ...(f === 'Sex' ? [{ female: '♀', male: '♂' }[text[f].trim().toLowerCase()]].filter(Boolean) : [])];
+    return Math.max(-1, ...options.map(o => s.lastIndexOf(o, before)));
+  };
+  const seen = new Set();
+  const notes = fields.filter(f => NOTE_FIELD.test(f)).map(f => [s.indexOf(text[f].trim()), text[f].trim().length]).filter(([at]) => at >= 0);
+  for (const m of s.matchAll(UNSURE)) {
+    // The remark: its parenthesis, else the clause it sits in.
+    const open = s.lastIndexOf('(', m.index);
+    const inParens = open >= 0 && s.indexOf(')', open) >= m.index + m[0].length && s.lastIndexOf(')', m.index) < open;
+    const start = inParens ? open : Math.max(0, ...[' — ', ' - ', ';', ','].map(sep => s.lastIndexOf(sep, m.index) + sep.length).filter(at => at <= m.index));
+    const token = /\?$/.test(m[0]) && !m[0].startsWith('¿');
+    const remark = (inParens ? s.slice(open + 1, s.indexOf(')', open)) : token ? m[0] : s.slice(start, m.index + m[0].length)).trim();
+    if (notes.some(([at, length]) => m.index >= at && m.index < at + length) || seen.has(remark)) continue;
+    seen.add(remark);
+    const named = NAMED.find(([pattern]) => pattern.test(remark))?.[1].filter(f => fields.includes(f)) ?? [];
+    let targets = named.slice(0, 1);
+    if (!targets.length && /\b(?:fecha|date)\b/i.test(remark))
+      targets = fields.filter(f => typeOf(f) === 'date').sort((a, b) => where(b, s.length) - where(a, s.length)).slice(0, 1);
+    // Which line a death belongs to ("entre S0D y S2D", "es de L9B"): the death's cells of this line.
+    // (Nothing of a death on this line: the remark explains its absence.)
+    const placement = /entre|between|\bes de\b|\bson de\b|belongs?|is from|podr[ií]a ser|could be|might be/i.test(remark);
+    if (!targets.length && placement) {
+      targets = fields.filter(f => f === 'Death_date' || f === 'Death_cause' || (NOTE_FIELD.test(f) && fields.includes('Death_date')));
+      if (!targets.length) continue;
+    }
+    // A value written inside the remark («21/9 unk» … dudoso, ¿19/9?).
+    if (!targets.length) targets = fields.filter(f => !NOTE_FIELD.test(f) && remark.includes(text[f].trim())).slice(-1);
+    if (!targets.length) {
+      // The value written just before the remark (a token ending in "?" is the value itself); a digit, of a number or date.
+      const before = token ? m.index : start;
+      const numeric = /d[ií]gito|digit|n[uú]mero|number/i.test(remark);
+      targets = fields
+        .filter(f => !NOTE_FIELD.test(f) && (!numeric || /\d/.test(text[f])))
+        .map(f => [f, where(f, before)])
+        .filter(([, at]) => at >= 0)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 1)
+        .map(([f]) => f);
+    }
+    if (!targets.length) {
+      out.unplaced.push(remark);
+      continue;
+    }
+    for (const field of targets) mark(field, remark);
+  }
+  return out;
+
+  function mark(field, remark) {
+    const value = text[field].trim();
+    const alternatives =
+      typeOf(field) === 'date'
+        ? [...remark.matchAll(/\b\d{1,2}\s*\/\s*\d{1,2}(?:\s*\/\s*\d{2,4})?\b/g)].map(d => d[0].replace(/\s+/g, '')).filter(d => d !== value)
+        : field === 'Sex'
+          ? [...new Set([...remark.matchAll(/♀|♂|\b(?:female|male)\b/gi)].map(x => ({ '♀': 'female', '♂': 'male' })[x[0]] ?? x[0].toLowerCase()))].filter(x => x !== value.toLowerCase())
+          : [];
+    const had = out.cells[field];
+    out.cells[field] = {
+      value,
+      alternatives: [...new Set([...(had?.alternatives ?? []), ...alternatives])].slice(0, 3),
+      confidence: 0.5,
+      reason: clip(had ? `${had.reason}; ${remark}` : remark, 160),
+    };
+  }
 }
 
 /** The number of a CAM or tube as written: { prefix, digits } ("CAM", "0770540"; "FS", "5848961"), or null. */
@@ -740,6 +946,10 @@ export function noteColumns(text, field = 'Notes_Insectary_data') {
   // "preserved" is a column's word only when nothing but IDs and media follow it ("preserved in
   // ultrafridge at -80ºC" stays a note).
   if (/\bpreserv|preservad|killed/i.test(note)) out.preserved = true;
+  // An egg or larva (its own row since Sep 2026: "preserved alive 3rd instar"), not a pupa; found dead.
+  // Both words stay in the note.
+  if (/instar|\blarva[es]?\b|\blarvas\b|pre-?pupa|\beggs?\b|\bhuevos?\b/i.test(note) && !/(?<!pre-?)pupa/i.test(note)) out.larva = true;
+  if (/\b(?:dead|muert[oa]s?)\b/i.test(note)) out.dead = true;
   take(/\b(?:killed\s*(?:[&y+]|and)\s*)?(?:preserv\w*|preservad[oa]s?)\.?(?=[\s,;|(){}\[\]-]*$)/gi, () => {});
   // What is left once the column words are out: brackets, joining words and punctuation are not a note.
   const rest = note
@@ -772,18 +982,26 @@ export function impliedValues({ text, row = {}, note = {}, death = null, intro =
   const set = (field, value, reason) => {
     if (values[field] === undefined && isNone(text[field])) [values[field], reasons[field]] = [value, reason];
   };
+  const larva = isLarva(note, row);
   const said = [note.medium && `«${note.medium === 'Ethanol' ? 'ethanol' : 'flash frozen'}»`, note.wingClip && '«wc»', note.pheromone && '«pheromone»', note.preserved && '«preserved»', note.unknown && '«unk»']
     .filter(Boolean)
     .join(', ');
   const fromNote = msg('De la nota: {words}', { words: said });
+  const fromDead = msg('De la nota: {words}', { words: '«dead»' });
   const written = String(text.Death_cause ?? row.Death_cause ?? '').trim();
   const sample = has('CAM_ID') || has('Tube_1_id');
   const died = death !== null || !isNone(written) || note.unknown;
   // The cause the line does not write: "unk" is Unknown; preserved, for pheromones, or a CAM on the
   // day it emerged is Killed_Preserved (a same-day death with a CAM is a butterfly killed to keep).
   let cause = isNone(written) ? null : written;
+  // "N/A" written as the cause of a death: not known.
+  const naCause = typeof text.Death_cause === 'string' && text.Death_cause.trim() !== '' && isNone(text.Death_cause);
   if (!cause && note.unknown) set('Death_cause', (cause = 'Unknown'), fromNote);
-  else if (!cause && death !== null && (note.preserved || note.pheromone || (sample && (note.medium || (intro !== null && death === intro)))))
+  else if (!cause && naCause && death !== null) set('Death_cause', (cause = 'Unknown'), msg('Causa escrita «{written}»: Unknown', { written: text.Death_cause.trim() }));
+  // An egg or larva found dead and preserved: Other (a preserved one, alive, is Killed_Preserved).
+  else if (!cause && death !== null && larva && note.dead && (sample || note.preserved || note.medium))
+    set('Death_cause', (cause = 'Other'), msg('Larva o huevo encontrado muerto y preservado'));
+  else if (!cause && death !== null && !note.dead && (note.preserved || note.pheromone || (sample && (note.medium || (intro !== null && death === intro)))))
     set('Death_cause', (cause = 'Killed_Preserved'), note.preserved || note.pheromone || note.medium ? fromNote : msg('Con CAM y muerta el día que emergió'));
   if (note.pheromone) set('Research_purpose', 'Pheromones', fromNote);
   const killed = /^killed/i.test(cause ?? '');
@@ -791,21 +1009,29 @@ export function impliedValues({ text, row = {}, note = {}, death = null, intro =
   const recent = year !== null && new Date(Date.UTC(1899, 11, 30) + year * 864e5).getUTCFullYear() >= 2025;
   const tube1 = has('Tube_1_id');
   const usual = msg('Lo habitual desde 2025');
-  if (died && !sample && !killed && cause) {
+  const preservedWords = note.preserved || note.medium || note.pheromone;
+  // A death without a sample (no CAM, no tube) and no word of preserving: the not-preserved block,
+  // also while its cause is still to be written.
+  if (died && !sample && !killed && !preservedWords && (cause || death !== null)) {
     for (const [field, value] of Object.entries(NOT_PRESERVED)) set(field, value, msg('Muerte sin preservar: como Muertes (NA / NOT_COLLECTED)'));
-  } else if (sample && died && (killed || note.preserved || note.medium || note.tubes?.length)) {
+  } else if (sample && died && (killed || note.preserved || note.medium || note.tubes?.length || larva)) {
     const why = msg('Individuo preservado: lo que el equipo escribe siempre');
     if (death !== null) set('Preservation_date', death, msg('La fecha de muerte (preservado ese día)'));
     if (killed) set('Preserved_Dead_Alive', 'Alive', msg('Killed_Preserved: preservado vivo'));
+    else if (note.dead) set('Preserved_Dead_Alive', 'Dead', fromDead);
     set('Location_body', 'Ikiam', why);
+    // Eggs and larvae: every one is flash frozen, for the F1/F2 mutation rate project.
+    const larvaWhy = msg('Huevo o larva preservado: lo que el equipo escribe');
+    if (larva && !note.pheromone) set('Research_purpose', 'F1/F2 mutation rate', larvaWhy);
     if (tube1) {
       set('Tube_1_tissue', note.wingClip ? WING_CLIP : 'WHOLE_ORGANISM', note.wingClip ? fromNote : why);
-      if (note.medium || recent) set('T1_Preservation_medium', note.medium ?? 'Flash frozen', note.medium ? fromNote : usual);
+      if (note.medium || recent || larva) set('T1_Preservation_medium', note.medium ?? 'Flash frozen', note.medium ? fromNote : larva ? larvaWhy : usual);
     }
     if (has('Tube_2_id')) {
       set('Tube_2_tissue', 'WHOLE_ORGANISM', why);
       if (note.medium || recent) set('T2_Preservation_medium', note.medium ?? 'Flash frozen', note.medium ? fromNote : usual);
-    } else if (!note.wingClip) {
+    } else {
+      // The unused tubes, a clipped butterfly's second one too: ID NA, tissue and medium NOT_COLLECTED.
       set('Tube_2_id', 'NA', why);
       set('Tube_2_tissue', 'NOT_COLLECTED', why);
       set('T2_Preservation_medium', 'NOT_COLLECTED', why);
@@ -822,6 +1048,9 @@ export function impliedValues({ text, row = {}, note = {}, death = null, intro =
   }
   return { values, reasons };
 }
+
+/** A preserved egg or larva (not an adult): the note says it ("3rd instar"), or the row's LIFESTAGE does. */
+export const isLarva = (note = {}, row = {}) => Boolean(note.larva) || /larva|egg|pupa/i.test(String(row.LIFESTAGE ?? ''));
 
 /** Existing IDs that differ from one read by a character or two swapped (9NM for 9MN): "did you mean". */
 export function nearIds(read, ids) {
@@ -950,10 +1179,28 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
     }
     return said;
   });
+  // A line of a preserved egg or larva: its note or row says so, and it has a sample or a word of preserving.
+  const preservedLarva = (i, record) => {
+    const said = notes[i] ?? {};
+    const row = record?.values ?? {};
+    const sample = [texts[i].CAM_ID, texts[i].Tube_1_id, row.CAM_ID, row.Tube_1_id].some(v => !isNone(v));
+    return isLarva(said, row) && (sample || said.preserved || said.medium);
+  };
   const completed = completeRuns(texts);
   const crossedLines = transcription.lines.map(line => line.crossed);
   // CAMs with a digit too many, tubes with one dropped, CAMs out of the page's run.
   const checks = idChecks(texts, crossedLines);
+  // Doubts written in a line's text, not on its cells: on the cells they are about (or said, when no cell fits).
+  const unplaced = {};
+  transcription.lines.forEach((line, i) => {
+    if (line.crossed) return;
+    const found = rawDoubts(line.raw, texts[i], kind.keys);
+    for (const [field, check] of Object.entries(found.cells)) {
+      if (checks[i]?.[field] || (line.c[field] ?? 1) < DOUBT || field in (edits[line.n] ?? {})) continue;
+      (checks[i] ??= {})[field] = check;
+    }
+    if (found.unplaced.length) unplaced[i] = found.unplaced;
+  });
   const lines = transcription.lines.map((line, i) => {
     const edited = edits[line.n] ?? {};
     const text = texts[i];
@@ -986,7 +1233,11 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
       const day = serialOf(emerge);
       return day === null ? true : day - laid >= 20 && day - laid <= 90;
     };
-    for (const [i, check] of Object.entries(clutchRuns(texts, crossedLines, plausible))) {
+    const speciesOf = clutch => {
+      const value = readValue('CLUTCH NUMBER', clutch, {}).value;
+      return lookup.speciesOfClutch?.(lookup.clutch?.(value) ?? value) ?? null;
+    };
+    for (const [i, check] of Object.entries(clutchRuns(texts, crossedLines, plausible, speciesOf))) {
       if (edits[transcription.lines[i].n]?.['CLUTCH NUMBER'] !== undefined) continue;
       (checks[i] ??= {})['CLUTCH NUMBER'] = check;
       // The species the formula will give follows the clutch the row gets.
@@ -1094,6 +1345,9 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         else if (field === 'Generation' && kind.sheet === 'Insectary_stocks' && !isNone(text.SPECIES)) inferred = 'NA';
         // A butterfly with a clutch was reared.
         else if (field === 'Wild_Reared' && !isNone(text['CLUTCH NUMBER'])) inferred = 'Reared';
+        // A preserved egg or larva: no sex recorded (Sanger's NOT_COLLECTED), no emergence.
+        else if (deathKind && (field === 'Sex' || field === 'Intro2Insectary_date') && preservedLarva(i, record))
+          [inferred, hint] = [field === 'Sex' ? 'NOT_COLLECTED' : 'NA', msg('Huevo o larva preservado: lo que el equipo escribe')];
         // A death's other columns (the not-preserved block, a preserved butterfly's), the note's words.
         else if (deathKind && IMPLIED_FIELDS.has(field) && impliedNow().values[field] !== undefined)
           [inferred, hint] = [impliedNow().values[field], impliedNow().reasons[field] ?? null];
@@ -1179,7 +1433,24 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
           if (nominate.length === 1) [value, guesses] = [nominate[0], guesses.filter(o => o !== nominate[0])];
         }
       }
+      // Stock_of_origin is the clutch's subspecies (Mechanitis messenoides X → X), even when what
+      // emerged looks otherwise: another one on the page ("messen." on a deceptus clutch, often the
+      // species read as the stock) goes in as the clutch's, doubtful, with the page's to pick.
+      let stock = null;
+      if (field === 'Stock_of_origin' && kind.sheet === 'Insectary_data' && !typed && typeof value === 'string' && !isNone(value) && !isNone(clutchText)) {
+        const clutch = lookup.clutch?.(readValue('CLUTCH NUMBER', clutchText, {}).value) ?? clutchText;
+        const species = lookup.speciesOfClutch?.(clutch);
+        const sub = /^mechanitis messenoides ([a-z]+)$/.exec(textKey(species ?? ''))?.[1];
+        const listed = sub && (list ? [...list.values].find(o => textKey(o) === sub) : sub);
+        if (listed && textKey(value) !== sub) {
+          const why = msg('El clutch {clutch} es {species}: el stock es su subespecie; la página dice «{read}»', { clutch, species, read: String(text[field]) });
+          stock = { reason: why.text, reasonMsg: why.msg, read: value };
+          [value, unlisted, guesses] = [listed, false, []];
+          confidence = Math.min(confidence, 0.5);
+        }
+      }
       const alternatives = [
+        ...(stock ? [stock.read] : []),
         ...(check?.alternatives ?? []),
         ...(line.a[field] ?? []),
         ...(ownerGuess && !isNone(text.NOTES) ? [text.NOTES] : []),
@@ -1200,7 +1471,7 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         // A doubtful reading (or a value outside a list that is not strict, a species name) goes into the
         // proposal highlighted, with its other readings, for the person to check before applying.
         doubt,
-        ...(doubt ? doubtReason(check, line.r?.[field] ?? (ownerGuess ? 'read "ins/lab": most likely "ins/oda"' : camClash ? `the row already has ${rowCam}: one CAM per individual (a new sample takes a new tube)` : undefined), unlisted && !list?.strict ? { value: unlisted, field } : null, confidence) : { reason: null }),
+        ...(doubt ? doubtReason(check ?? stock, line.r?.[field] ?? (ownerGuess ? 'read "ins/lab": most likely "ins/oda"' : camClash ? `the row already has ${rowCam}: one CAM per individual (a new sample takes a new tube)` : undefined), unlisted && !list?.strict ? { value: unlisted, field } : null, confidence) : { reason: null }),
         alternatives: [...new Set(alternatives)],
         edited: typed,
         include: false,
@@ -1263,6 +1534,40 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         // The sheet already has the page's terms and more (added after the page was written).
         else if (sheetTerms && pageTerms.length < sheetTerms.length && pageTerms.every((t, k) => t === sheetTerms[k]))
           Object.assign(cell, { status: 'keep', message: `La hoja tiene ${before}: los términos del cuaderno y más; se deja` });
+      }
+      // The sheet's value was often typed by a person from this same page: a disagreement by one
+      // look-alike digit (=15+1 and =15+7, 13/9 and 17/9), or a page that rewrites a term the sheet's
+      // sum already has (new terms go at the end), is a doubt with the sheet's value to pick.
+      if (cell.status === 'conflict' && !typed && inferred === null && cell.value !== null) {
+        const slip = lookAlikeValues(field, before, cell.value);
+        let why = null;
+        let other = before;
+        if (slip) {
+          const [x, y] = slip;
+          why =
+            x && y
+              ? msg('La hoja tiene {sheet}: {a} y {b} se parecen en esta letra', { sheet: show(field, before), a: x, b: y })
+              : msg('La hoja tiene {sheet}: un 1 de más o de menos', { sheet: show(field, before) });
+        } else if (sumField) {
+          const [x, y] = [sumParts(before), sumParts(cell.value)];
+          const at = x?.length > 1 && y ? x.findIndex((t, k) => k < y.length && t !== y[k]) : -1;
+          if (at >= 0) {
+            why = msg('La página cambia el término {n} de la suma de la hoja ({sheet}); los términos nuevos se escriben al final', { n: at + 1, sheet: before });
+            if (y.length > x.length) other = formulaOf([...x, ...y.slice(x.length)]);
+          }
+        }
+        if (why) {
+          // Said when the sheet's value came from a notebook photo matched before (the same page, maybe).
+          const last = record ? lookup.lastWrite?.(record.id, field) : null;
+          if (last?.notebook) why = msg('{why} (pasado de una foto del cuaderno el {date})', { why, date: last.date });
+          const own = !line.r?.[field] && !check;
+          Object.assign(cell, {
+            doubt: true,
+            confidence: Math.min(cell.confidence, 0.5),
+            ...(own || !cell.reason ? { reason: why.text, reasonMsg: why.msg } : {}),
+          });
+          if (!cell.alternatives.some(a => sameValue(field, a, other))) cell.alternatives.push(other);
+        }
       }
       const formula = record?.formulas?.[field];
       // What the page only implies never goes over a formula (T2_Preservation_medium often is one).
@@ -1329,6 +1634,7 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
     // The adults a clutch line counts against the butterflies of that clutch typed in Insectary_data
     // (the two notebooks are filled apart): a difference is said, never corrected.
     const warnings = [];
+    if (unplaced[i]) warnings.push(`The reading says «${unplaced[i].join('», «')}» but no cell is marked doubtful: mark the cells it is about`);
     const adults = cells['NUMBER OF ADULTS']?.value ?? null;
     const counted = adults === null || adults === 'NA' ? null : (sumTotal(adults) ?? (Number.isFinite(Number(adults)) ? Number(adults) : null));
     const clutchHere = cells['CLUTCH NUMBER']?.value ?? record?.values?.['CLUTCH NUMBER'] ?? null;
@@ -1336,6 +1642,20 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
       const typed = lookup.adultsOfClutch(clutchHere);
       if (typed !== null && typed !== counted)
         warnings.push(`NUMBER OF ADULTS: the page says ${counted}; Insectary_data has ${typed} butterflies of clutch ${clutchHere}`);
+    }
+    // The stages count down (eggs ≥ larvae ≥ pupae ≥ adults): a stage the page writes with more than
+    // the one before is said (it happens, larvae found later; often it is a misread count).
+    if (usable && kind.sheet === 'Insectary_stocks') {
+      let earlier = null;
+      for (const field of ['NUMBER OF EGGS', 'NUMBER OF LARVAE', 'NUMBER OF PUPA', 'NUMBER OF ADULTS']) {
+        const cell = cells[field];
+        const v = cell ? (cell.include ? cell.value : (cell.before ?? cell.value)) : null;
+        const n = isNone(v) ? null : (sumTotal(v) ?? (Number.isFinite(Number(v)) ? Number(v) : null));
+        if (n === null) continue;
+        if (earlier && n > earlier.n && (cell.include || cells[earlier.field].include))
+          warnings.push(`${field} (${n}) is more than ${earlier.field} (${earlier.n}): check both readings`);
+        earlier = { field, n };
+      }
     }
     return {
       n: line.n,

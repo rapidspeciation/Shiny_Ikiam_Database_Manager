@@ -782,7 +782,7 @@ export function createAssistant({ store, config = {} }) {
         typeof raw !== 'object' ||
         Array.isArray(raw) ||
         !Object.keys(raw).length ||
-        Object.keys(raw).length > 20
+        Object.keys(raw).length > 80
       )
         return { error: `Invalid values for ${old.label}` };
       let values;

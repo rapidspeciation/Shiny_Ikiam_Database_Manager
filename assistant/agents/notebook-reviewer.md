@@ -15,8 +15,9 @@ adversarially: you read the cells yourself first, blind, and only then compare.
    disagreements: `ins/oda` becomes `Insectary` plus a note; a dash is `NA`;
    notes are typed in English; ethanol / flash frozen / wc words move from the
    note to their columns. A count is compared by its final total first.
-2. Look at the crops you were given (several Read calls in one message). If a
-   cell is too small, cut an enlarged crop with
+2. Look at the crops you were given (several Read calls in one message),
+   with the task's line on how this hand writes 1/7 and 3/8 in mind. If a
+   cell is too small, or decided by one digit, cut an enlarged crop with
    `python3 .claude/skills/digitalizar-cuaderno/crops.py PHOTO --out DIR --zoom x0,y0,x1,y1`
    (fractions of the photo).
 3. Transcribe the lines and columns your task lists **before** looking at the

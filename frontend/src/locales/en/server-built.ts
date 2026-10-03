@@ -206,6 +206,17 @@ export default {
   'La fecha de muerte (preservado ese día)': 'The death date (preserved that day)',
   'Killed_Preserved: preservado vivo': 'Killed_Preserved: preserved alive',
   'Lo habitual desde 2025': 'The usual since 2025',
+  'Leído {read}, entre líneas del {other}: la especie escrita es la del {other}': 'Read {read}, among lines of {other}: the species written is that of {other}',
+  'La hoja tiene {sheet}: {a} y {b} se parecen en esta letra': 'The sheet has {sheet}: {a} and {b} look alike in this hand',
+  'La hoja tiene {sheet}: un 1 de más o de menos': 'The sheet has {sheet}: a 1 more or less',
+  'La página cambia el término {n} de la suma de la hoja ({sheet}); los términos nuevos se escriben al final':
+    "The page changes term {n} of the sheet's sum ({sheet}); new terms are written at the end",
+  '{why} (pasado de una foto del cuaderno el {date})': '{why} (typed from a notebook photo on {date})',
+  'El clutch {clutch} es {species}: el stock es su subespecie; la página dice «{read}»':
+    'Clutch {clutch} is {species}: the stock is its subspecies; the page says «{read}»',
+  'Causa escrita «{written}»: Unknown': 'Cause written «{written}»: Unknown',
+  'Larva o huevo encontrado muerto y preservado': 'Egg or larva found dead and preserved',
+  'Huevo o larva preservado: lo que el equipo escribe': 'Preserved egg or larva: what the team writes',
 
   // server/suggestions/: Revisión → Sugerencias (titles, descriptions, reasons)
   'Arreglos de los chequeos': 'Fixes from the checks',

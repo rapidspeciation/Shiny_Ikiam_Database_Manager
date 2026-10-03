@@ -36,7 +36,7 @@ blank means it has not died yet.
   subspecies, even when the phenotype differs. Every other species and every
   wild-caught butterfly: `NA`. A missing stock breaks the phenotype summaries.
 - `Sex`: `female`, `male`; `NA` for an adult whose sex could not be seen
-  (deformed, only wings) and for preserved eggs and larvae.
+  (deformed, only wings); `NOT_COLLECTED` for preserved eggs and larvae.
 - `Intro2Insectary_date`: the emergence date (reared) or the capture date
   (wild-caught; = its Collection_date). `NA` for preserved eggs/larvae.
 - A pupa that died ("pupa muerta", "didn't emerge"): emergence `NA`, Sex `NA`.
@@ -99,8 +99,9 @@ described in the note; in 2026 also a larva or egg found dead). Paper words:
 unk → Unknown; eaten / body eaten → Eaten; spider, "founded by spider" (= found)
 → Spider; ants; mantis → Other + note; deformed; heat or thermal shock → Heat
 stroke; disapp / desaparecido / escaped → Disappearance; preserved / killed →
-Killed_Preserved; only wings → Unknown - Only wings. Use the cause itself; the
-old habit of `Other` + note "Eaten" ended in 2024.
+Killed_Preserved; only wings → Unknown - Only wings; N/A on a dead butterfly →
+Unknown. Use the cause itself; the old habit of `Other` + note "Eaten" ended
+in 2024.
 
 - **Disappearance** is a cage-count outcome: butterflies no longer seen are
   closed in bulk with the sweep day as Death_date (not a real death date). For
@@ -120,7 +121,7 @@ instars of Sep 2026).
 |---|---|
 | Wild_Reared, CLUTCH NUMBER | `Reared`, the clutch (`994(3)`) |
 | Intro2Insectary_date | `NA` |
-| Sex | `NA` (rows with `NOT_COLLECTED` stay) |
+| Sex | `NOT_COLLECTED` (Sanger's category for a sex not recorded) |
 | LIFESTAGE (used only for this) | `Egg`, `1st instar larva` … `5th instar larva`, `Pre-pupa` |
 | Death_date | the preservation date |
 | Death_cause, Preserved_Dead_Alive | `Killed_Preserved` and `Alive`, or `Other` and `Dead` (found dead) |
@@ -142,5 +143,8 @@ subtraction in its count.
 
 ## Duplicates
 
-IDs used twice were resolved by the curators with a suffix (`5FF.2`, `1IJ.1`)
-and the note "ID duplicated". A new duplicate: point it out to the person.
+The same ID written on two butterflies: the first one keeps the plain ID
+(`W0B`), the second becomes `W0B.1`, a third `W0B.2`, with the note "ID
+duplicated". Rows follow the order of data entry (dates continuous): the
+suffixed rows are new rows placed after the series where the ID was reused, in
+the notebook's order. Point a new duplicate out to the person.
