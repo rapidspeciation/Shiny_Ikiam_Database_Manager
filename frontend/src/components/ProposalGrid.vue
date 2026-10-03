@@ -260,15 +260,26 @@ function photosOf(changes: ProposalChange[]) {
     if (!summaries.some(s => s.photo === n)) summaries.push({ photo: n, from: 0, to: 0, change: 0, same: 0, other: 0 })
   return summaries.sort((a, b) => a.photo - b.photo)
 }
-/** Each sheet's table as shown: its rows ("solo cambios"), its columns (the template folded), its page's photos. */
+/**
+ * Each sheet's table as shown: its rows ("solo cambios"), its columns (the
+ * template folded), its page's photos. The rows around the page with the same
+ * error (not on the photo) go in a table of their own under the page's.
+ */
 const tables = computed(() =>
-  groups.value.map(g => ({
-    ...g,
-    rows: rowsOf(g.changes),
-    columns: columnsOf(g),
-    quiet: quietRows(g.changes),
-    photos: page.value?.sheet === g.sheet ? photosOf(g.changes) : [],
-  })),
+  groups.value.flatMap(g => {
+    const near = g.changes.filter(c => c.sameErrorAs !== undefined)
+    const own = near.length ? g.changes.filter(c => c.sameErrorAs === undefined) : g.changes
+    const table = {
+      ...g,
+      id: g.sheet,
+      near: false,
+      rows: rowsOf(own),
+      columns: columnsOf(g),
+      quiet: quietRows(own),
+      photos: page.value?.sheet === g.sheet ? photosOf(own) : [],
+    }
+    return near.length ? [table, { ...table, id: `${g.sheet}:near`, near: true, rows: near, quiet: 0, photos: [] }] : [table]
+  }),
 )
 const photoUrl = (n: number, size: 'thumb' | 'view') => `api/proposals/${props.proposal.id}/photos/${n}?size=${size}`
 /** A thumbnail that would not load (an old proposal's photo gone): hidden. */
@@ -314,9 +325,9 @@ async function apply(how?: 'confirm' | 'skip', leave = false) {
 }
 /** The tables, to bring a doubtful cell into view. */
 const sheets = new Map<string, { focusCell: (key: string, field: string) => boolean }>()
-const sheetRef = (sheet: string) => (el: unknown) => {
-  if (el) sheets.set(sheet, el as { focusCell: (key: string, field: string) => boolean })
-  else sheets.delete(sheet)
+const sheetRef = (id: string) => (el: unknown) => {
+  if (el) sheets.set(id, el as { focusCell: (key: string, field: string) => boolean })
+  else sheets.delete(id)
 }
 /** The tables' cells in the order shown, to go from one cell to review to the next. */
 const order = computed(() => cellOrder(tables.value.map(g => ({ keys: g.rows.map(rowKey), fields: g.columns }))))
@@ -328,8 +339,8 @@ function reviewNext(which: 'doubtful' | 'unreadable' = doubtful.value.length ? '
   const next = nextCell(which === 'doubtful' ? doubtful.value : unreadable.value, order.value, from)
   if (!next) return
   lastReviewed = next
-  const sheet = shown.value.changes.find(c => rowKey(c) === next.key)?.sheet
-  if (sheet) sheets.get(sheet)?.focusCell(next.key, next.field)
+  const id = tables.value.find(g => g.rows.some(c => rowKey(c) === next.key))?.id
+  if (id) sheets.get(id)?.focusCell(next.key, next.field)
 }
 
 /** The key that checks a doubtful cell and goes on (ProposalSheet). */
@@ -395,7 +406,16 @@ const statusText = computed(
         {{ $tn(new Set(noSample.map(w => w.key)).size, '{n} preservada sin CAM o tubo', '{n} preservadas sin CAM o tubo') }}
       </span>
     </p>
-    <div v-for="g in tables" :key="g.sheet" class="border-b border-stone-100 last:border-b-0">
+    <div v-for="g in tables" :key="g.id" class="border-b border-stone-100 last:border-b-0">
+      <!-- Rows off the photo where the page's error repeats: their own table, each row's note says which line it follows. -->
+      <p
+        v-if="g.near"
+        class="flex items-center gap-1 px-2 pt-1.5 text-[11px] font-medium text-amber-900"
+        :title="$t('Filas cerca de la página con el mismo error de tecleo que una de sus líneas; no están en la foto. Revisa cada celda dudosa')"
+      >
+        <AlertTriangle :size="12" />
+        {{ $tn(g.rows.length, 'Mismo error cerca (no en la foto) · {n} fila', 'Mismo error cerca (no en la foto) · {n} filas') }}
+      </p>
       <!-- A notebook page: per photo, its thumbnail (opens upright in a new tab) and how its lines compare with the sheet. -->
       <div v-if="page && g.photos.length" class="flex flex-wrap gap-2 px-2 pt-1.5">
         <div
@@ -433,7 +453,7 @@ const statusText = computed(
       </div>
       <!-- The table and its bar, where ProposalSheet adds the buttons for the selected cells (Valor de la hoja / de la IA). -->
       <ProposalSheet
-        :ref="sheetRef(g.sheet)"
+        :ref="sheetRef(g.id)"
         :sheet="g.sheet"
         :changes="g.rows"
         :fields="g.columns"
@@ -448,7 +468,7 @@ const statusText = computed(
         @next="from => reviewNext('doubtful', from)"
         @notice="m => notify(m)"
       >
-        <template v-if="groups.length > 1 || editable || g.template.length || g.quiet" #default>
+        <template v-if="!g.near && (groups.length > 1 || editable || g.template.length || g.quiet)" #default>
           <span v-if="groups.length > 1" class="font-medium text-stone-700">{{ g.sheet }}</span>
           <label
             v-if="g.quiet"
@@ -490,7 +510,7 @@ const statusText = computed(
             <option v-for="f in addable(g.sheet, g.fields)" :key="f" :value="f">{{ f }}</option>
           </select>
         </template>
-        <template v-if="editable" #end>
+        <template v-if="editable && !g.near" #end>
           <span class="ml-auto flex items-center gap-2">
             <span class="legend is-proposed" :title="$t('Valor de la IA: se escribe al aplicar')">{{ $t('IA') }}</span>
             <span class="legend is-person" :title="$t('Escrito por ti: se escribe al aplicar')">{{ $t('tú') }}</span>

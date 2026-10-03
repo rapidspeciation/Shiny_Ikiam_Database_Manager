@@ -108,6 +108,8 @@ export interface ProposalChange {
   formulaGives?: Record<string, CellValue>
   /** Its place on the notebook page. */
   page?: PageLine
+  /** A row off the photo with the same error as this line of the page (match_notebook): shown apart, after the page. */
+  sameErrorAs?: number
 }
 export interface Proposal {
   id: string

@@ -153,6 +153,10 @@ export default {
     "The AI's reading is correct: it is marked checked and the next doubtful cell is selected ({key})",
   'Escribir {value} en la celda y pasar a la siguiente dudosa': 'Write {value} in the cell and go on to the next doubtful cell',
   'Nota IA': 'AI note',
+  'Mismo error cerca (no en la foto) · {n} fila': 'Same error nearby (not on the photo) · {n} row',
+  'Mismo error cerca (no en la foto) · {n} filas': 'Same error nearby (not on the photo) · {n} rows',
+  'Filas cerca de la página con el mismo error de tecleo que una de sus líneas; no están en la foto. Revisa cada celda dudosa':
+    'Rows near the page with the same typing error as one of its lines; they are not on the photo. Check each doubtful cell',
   'Nota de la IA sobre la fila: de dónde salen sus valores': "The AI's note on the row: where its values come from",
   'La IA no está segura: revísala antes de aplicar': 'The AI is not sure: check it before applying',
   dudosa: 'doubtful',
