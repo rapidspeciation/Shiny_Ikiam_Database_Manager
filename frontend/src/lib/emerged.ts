@@ -3,6 +3,7 @@ import { appendNote, appendTerm, countValue, noteDay, totalOf, type Count } from
 import { clutchSettings } from './clutchSettings'
 import { serialFromIso } from './dates'
 import { deathCells, KILLED } from './deaths'
+import { assign, normalizeId } from './tubes'
 import type { CellValue, TableRow } from './types'
 
 /**
@@ -51,6 +52,11 @@ export interface Draft {
   note: string
   cam: string
   tube: string
+  /** An egg or larva: its CAM and tube as typed (undefined follows the suggestion, '' is a box emptied on purpose). */
+  typedCam?: string
+  typedTube?: string
+  /** An egg or larva: what it has of its own instead of the batch's (YoungBatch). */
+  own?: YoungOwn
 }
 
 /** LIFESTAGE values, as the sheet writes them (used only for eggs and larvae). */
@@ -177,6 +183,8 @@ export interface RowContext {
   initials: string
   /** The medium of a preserved body (Flash frozen by default). */
   medium: string
+  /** Research_purpose of an egg or larva (F1/F2 mutation rate when not given). */
+  purpose?: string
 }
 
 /** The note a card adds by default: an egg or larva preserved, as the team writes it ("Preserved alive 3rd instar"). */
@@ -216,7 +224,7 @@ export function draftValues(d: Draft, ctx: RowContext): Record<string, CellValue
     values.Sex = 'NOT_COLLECTED'
     values.Intro2Insectary_date = 'NA'
     values.LIFESTAGE = d.stage || DEFAULT_STAGE
-    values.Research_purpose = CROSS_PURPOSE
+    values.Research_purpose = ctx.purpose?.trim() || CROSS_PURPOSE
     death = {
       serial,
       cause: d.foundDead ? 'Other' : KILLED,
@@ -253,6 +261,156 @@ export function draftValues(d: Draft, ctx: RowContext): Record<string, CellValue
 export const preserving = (d: Pick<Draft, 'kind' | 'fate'>) => d.kind === 'young' || d.fate === 'preserved'
 /** An adult that emerged (counted in NUMBER OF ADULTS), whatever became of it. */
 export const isAdult = (d: Pick<Draft, 'kind'>) => d.kind === 'adult'
+
+// --- Eggs and larvae preserved: the batch's medium, rack, first CAM and purpose; each card's CAM and tube
+
+/** The media a body can be preserved in: flash frozen in the dry shipper; ethanol when it fails. */
+export const MEDIUMS = ['Flash frozen', 'Ethanol', 'DMSO']
+/** The stages offered first: the protocol preserves F1 larvae at the 3rd or 4th instar. */
+export const MAIN_STAGES = ['3rd instar larva', '4th instar larva']
+
+/** What an egg or larva card has of its own instead of the batch's (set with it selected). */
+export interface YoungOwn {
+  medium?: string
+  purpose?: string
+  /** The first CAM of its run (its own CAM series). */
+  camFrom?: string
+  /** The first tube of its run (another rack: an ethanol one, or the next rack when one runs out). */
+  tubeFrom?: string
+}
+export type YoungField = keyof YoungOwn
+
+/** The batch of eggs and larvae being preserved: what every card takes unless it has its own. */
+export interface YoungBatch {
+  medium: string
+  purpose: string
+  /** The first CAM ('' = the next free one). */
+  camStart: string
+  /** The first tube of a rack chosen or typed ('' = the app's rack for the medium). */
+  tubeStart: string
+  /** What «+ N larvae» adds. */
+  stage: string
+  foundDead: boolean
+  /** CAMs and tubes of an odd form kept as written on their labels. */
+  accepted?: string[]
+}
+export const YOUNG_BATCH: YoungBatch = {
+  medium: 'Flash frozen',
+  purpose: CROSS_PURPOSE,
+  camStart: '',
+  tubeStart: '',
+  stage: DEFAULT_STAGE,
+  foundDead: false,
+}
+const BATCH_FIELD = { medium: 'medium', purpose: 'purpose', camFrom: 'camStart', tubeFrom: 'tubeStart' } as const
+
+/** A card's value of a field: its own, else the batch's. */
+export const youngValue = (d: Pick<Draft, 'own'>, batch: YoungBatch, field: YoungField): string =>
+  d.own?.[field] ?? batch[BATCH_FIELD[field]]
+
+/** The value these cards share for a field, or undefined when they differ. */
+export function sharedYoung(cards: Pick<Draft, 'own'>[], batch: YoungBatch, field: YoungField): string | undefined {
+  if (!cards.length) return undefined
+  const first = youngValue(cards[0], batch, field)
+  return cards.every(d => youngValue(d, batch, field) === first) ? first : undefined
+}
+
+/**
+ * One value set in the batch panel: for the selected cards only (their own
+ * value; dropped when it is the batch's), or with none selected for the whole
+ * batch (no card keeps its own value of that field). A new medium for the
+ * whole batch drops the rack chosen for the old one: the tubes then come from
+ * the app's rack for that medium (flash frozen and ethanol tubes live in
+ * different racks).
+ */
+export function setYoung(
+  drafts: Draft[],
+  batch: YoungBatch,
+  selected: string[],
+  field: YoungField,
+  value: string,
+): { drafts: Draft[]; batch: YoungBatch } {
+  const key = BATCH_FIELD[field]
+  const run = field === 'camFrom' || field === 'tubeFrom'
+  const v = run ? normalizeId(value) : value
+  const without = (d: Draft): Draft => {
+    if (d.own?.[field] === undefined) return d
+    const { [field]: _dropped, ...rest } = d.own
+    return { ...d, own: Object.keys(rest).length ? rest : undefined }
+  }
+  if (!selected.length) {
+    const next = { ...batch, [key]: v }
+    if (field === 'medium' && v !== batch.medium) next.tubeStart = ''
+    return { drafts: drafts.map(d => (d.kind === 'young' ? without(d) : d)), batch: next }
+  }
+  const chosen = new Set(selected)
+  return {
+    batch,
+    drafts: drafts.map(d => {
+      if (d.kind !== 'young' || !chosen.has(d.key)) return d
+      if (run ? !v : v === batch[key]) return without(d)
+      return { ...d, own: { ...d.own, [field]: v } }
+    }),
+  }
+}
+
+/**
+ * Where a card's CAM and tube runs start: its own first CAM, else the batch's,
+ * else the next free one (`camFirst`); its own first tube, else the batch's
+ * rack when the card is in the batch's medium, else the app's rack for its
+ * medium (`rackFor`: the crosses' rack in that medium, lib/deaths bestRack).
+ */
+export function youngStarts(
+  d: Pick<Draft, 'own'>,
+  batch: YoungBatch,
+  { camFirst, rackFor }: { camFirst: string; rackFor: (medium: string) => string },
+): { cam: string; tube: string } {
+  const medium = youngValue(d, batch, 'medium')
+  const cam = d.own?.camFrom || batch.camStart || camFirst
+  const tube = d.own?.tubeFrom || (batch.tubeStart && medium === batch.medium ? batch.tubeStart : rackFor(medium))
+  return { cam: normalizeId(cam), tube: normalizeId(tube) }
+}
+
+export interface Sample {
+  value: string
+  /** Handed out by the app (the next free one), not typed. */
+  auto: boolean
+}
+/**
+ * Each egg or larva card's CAM and tube, in the cards' order. Cards drawing
+ * from the same run (the same first CAM, the same rack) take its next free IDs
+ * one after another; a CAM or tube typed on a card stays, and the next cards
+ * of its run go on from it (the rack is there). `run(start, count)` gives free
+ * IDs from `start`; IDs typed on any card or in `taken` (other cards' CAMs and
+ * tubes) are never handed out.
+ */
+export function youngSamples(
+  cards: { key: string; cam: string; tube: string; typedCam?: string; typedTube?: string }[],
+  { run, taken = new Set<string>() }: { run: (start: string, count: number) => string[]; taken?: Set<string> },
+): Record<string, { cam: Sample; tube: Sample }> {
+  const reserved = new Set(taken)
+  for (const c of cards) {
+    if (c.typedCam) reserved.add(normalizeId(c.typedCam))
+    if (c.typedTube) reserved.add(normalizeId(c.typedTube))
+  }
+  const out: Record<string, { cam: Sample; tube: Sample }> = {}
+  for (const c of cards) out[c.key] = { cam: { value: '', auto: true }, tube: { value: '', auto: true } }
+  for (const kind of ['cam', 'tube'] as const) {
+    const runs = new Map<string, typeof cards>()
+    for (const c of cards) runs.set(c[kind], [...(runs.get(c[kind]) ?? []), c])
+    for (const [start, list] of runs) {
+      const needs = list.map(c => ({ id: c.key, cam: kind === 'cam', tubes: kind === 'tube' ? 1 : 0 }))
+      const typed = Object.fromEntries(list.map(c => [c.key, kind === 'cam' ? { cam: c.typedCam } : { tubes: [c.typedTube] }]))
+      const got = assign(needs, typed, { camStart: kind === 'cam' ? start : '', tubeStart: kind === 'tube' ? start : '', run, taken: reserved })
+      for (const c of list) {
+        const sample = kind === 'cam' ? got[c.key].cam! : got[c.key].tubes[0]
+        out[c.key][kind] = sample
+        if (sample.value) reserved.add(sample.value)
+      }
+    }
+  }
+  return out
+}
 
 // --- The clutch's row in Insectary_stocks
 

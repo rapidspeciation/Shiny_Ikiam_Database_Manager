@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { AlertTriangle, Pencil, StickyNote, X } from 'lucide-vue-next'
+import { AlertTriangle, Check, Pencil, StickyNote, X } from 'lucide-vue-next'
 import ChoiceField from '../ChoiceField.vue'
-import { EMERGED_NOTE_PHRASES, LIFESTAGES, preserving, speciesOf, type Draft, type Fate, type Sex } from '../../lib/emerged'
+import SampleBoxes from './SampleBoxes.vue'
+import { EMERGED_NOTE_PHRASES, LIFESTAGES, MAIN_STAGES, preserving, speciesOf, type Draft, type Fate, type Sample, type Sex } from '../../lib/emerged'
 import { dayFirst } from '../../lib/dates'
 import { t } from '../../lib/i18n'
 
@@ -29,8 +30,22 @@ const props = defineProps<{
   canEdit: boolean
   /** Just added: lit for a moment. */
   fresh?: boolean
+  /** An egg or larva: its CAM and tube (the next free ones or typed), how each box looks, fixes. */
+  sample?: {
+    cam: Sample
+    tube: Sample
+    state: Record<'cam' | 'tube', '' | 'missing' | 'bad'>
+    fix: Record<'cam' | 'tube', string>
+    canAccept: Record<'cam' | 'tube', boolean>
+  }
+  /** An egg or larva selected: the batch panel sets its values for the selected only. */
+  selected?: boolean
+  /** An egg or larva: its clutch shown (the cards of several clutches are listed together). */
+  showClutch?: boolean
+  /** An egg or larva: what it takes from the batch, short (its own values marked). */
+  chips?: { text: string; own: boolean }[]
 }>()
-const emit = defineEmits<{ update: [patch: Partial<Draft>]; remove: [] }>()
+const emit = defineEmits<{ update: [patch: Partial<Draft>]; remove: []; select: []; accept: [value: string] }>()
 
 const editingId = ref(false)
 const idText = ref('')
@@ -69,6 +84,14 @@ const STAGE_SHORT: Record<string, string> = {
   'Pre-pupa': 'Pre-pupa',
 }
 
+/** The other stages (eggs, younger larvae, 5th instar, prepupae) open on demand; a card in one of them shows it. */
+const showStages = ref(false)
+const stagesShown = computed(() =>
+  showStages.value ? LIFESTAGES : LIFESTAGES.filter(s => MAIN_STAGES.includes(s) || s === props.draft.stage),
+)
+const typed = (field: 'cam' | 'tube', value: string | undefined) =>
+  emit('update', field === 'cam' ? { typedCam: value } : { typedTube: value })
+
 const species = computed(() => speciesOf(props.draft, props.clutchSpecies))
 /** What emerged is not the clutch's species (typed over the formula). */
 const own = computed(() => !!props.draft.species && props.draft.species !== props.clutchSpecies)
@@ -92,6 +115,7 @@ const otherDay = computed(() => props.draft.date !== props.day)
     class="relative flex flex-col rounded-xl border-2 bg-white shadow-sm transition-shadow duration-700"
     :class="[problems.length ? 'border-amber-400' : 'border-stone-200', fresh ? 'shadow-[0_0_0_4px_var(--color-brand-100)]' : '']"
     :data-draft="draft.id"
+    :data-key="draft.key"
   >
     <div class="flex items-center gap-1.5 px-2 pt-2">
       <!-- The ID on the wing: tap to change it. -->
@@ -136,7 +160,23 @@ const otherDay = computed(() => props.draft.date !== props.day)
           {{ s.label }}
         </button>
       </span>
-      <span v-else class="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-900">{{ $t('Huevo o larva') }}</span>
+      <template v-else>
+        <button
+          v-if="canEdit"
+          class="grid h-11 w-11 shrink-0 place-items-center rounded-lg active:bg-stone-100"
+          :aria-pressed="!!selected"
+          :aria-label="$t('Seleccionar {id}', { id: draft.id })"
+          :title="$t('Seleccionar: el panel de preservación cambia solo las seleccionadas')"
+          @click="emit('select')"
+        >
+          <span class="grid size-6 place-items-center rounded-md border-2" :class="selected ? 'border-violet-700 bg-violet-700 text-white' : 'border-stone-400 bg-white'">
+            <Check v-if="selected" :size="16" />
+          </span>
+        </button>
+        <span class="min-w-0 truncate rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-900">
+          {{ draft.stage === 'Egg' ? $t('Huevo') : $t('Larva') }}<template v-if="showClutch"> · {{ draft.clutch }}</template>
+        </span>
+      </template>
       <span class="ml-auto flex shrink-0">
         <button
           class="grid h-11 w-11 place-items-center rounded-lg active:bg-stone-100"
@@ -210,16 +250,24 @@ const otherDay = computed(() => props.draft.date !== props.day)
     <template v-else>
       <div class="mt-2 flex flex-wrap gap-1 px-2" role="group" aria-label="LIFESTAGE">
         <button
-          v-for="s in LIFESTAGES"
+          v-for="s in stagesShown"
           :key="s"
-          class="min-h-10 min-w-11 rounded-lg border px-2 text-sm font-medium"
-          :class="choice(draft.stage === s)"
+          class="min-h-11 rounded-lg border px-2 font-medium"
+          :class="[choice(draft.stage === s), MAIN_STAGES.includes(s) ? 'min-w-16 flex-1 text-base' : 'min-w-11 text-sm']"
           :aria-pressed="draft.stage === s"
           :title="s"
           :disabled="!canEdit"
           @click="emit('update', { stage: s })"
         >
-          {{ STAGE_SHORT[s] }}
+          {{ MAIN_STAGES.includes(s) ? $t(s === '3rd instar larva' ? '3.er estadio' : '4.º estadio') : STAGE_SHORT[s] }}
+        </button>
+        <button
+          v-if="canEdit"
+          class="min-h-11 rounded-lg border border-dashed border-stone-300 px-2 text-sm text-stone-700 active:bg-stone-100"
+          :aria-expanded="showStages"
+          @click="showStages = !showStages"
+        >
+          {{ showStages ? $t('Menos') : $t('Otro estadio') }}
         </button>
       </div>
       <div class="mt-1.5 grid grid-cols-2 gap-1.5 px-2">
@@ -233,7 +281,30 @@ const otherDay = computed(() => props.draft.date !== props.day)
     </template>
 
     <!-- A preserved body: its CAM and tube (the next free ones, or what the envelope says). -->
-    <div v-if="preserving(draft)" class="mt-1.5 grid grid-cols-2 gap-1.5 px-2">
+    <SampleBoxes
+      v-if="draft.kind === 'young' && sample"
+      :draft-key="draft.key"
+      :id="draft.id"
+      :cam="sample.cam"
+      :tube="sample.tube"
+      :state="sample.state"
+      :fix="sample.fix"
+      :can-accept="sample.canAccept"
+      :can-edit="canEdit"
+      @type="typed"
+      @accept="emit('accept', $event)"
+    />
+    <p v-if="chips?.length" class="mt-1.5 flex flex-wrap gap-1 px-2 text-xs">
+      <span
+        v-for="chip in chips"
+        :key="chip.text"
+        class="rounded-md px-1.5 py-0.5 font-medium"
+        :class="chip.own ? 'bg-violet-100 text-violet-900 ring-1 ring-violet-300' : 'bg-stone-100 text-stone-700'"
+        :title="chip.own ? $t('Solo de esta tarjeta') : undefined"
+        >{{ chip.text }}</span
+      >
+    </p>
+    <div v-if="preserving(draft) && draft.kind === 'adult'" class="mt-1.5 grid grid-cols-2 gap-1.5 px-2">
       <label class="min-w-0">
         <span class="field-label">CAM_ID</span>
         <input
