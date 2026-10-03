@@ -1,5 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { misfit, summarize, type Draft } from '../collect'
+import {
+  addPhrase,
+  isEmptyDraft,
+  misfit,
+  parseWeight,
+  rankByRecency,
+  searchSpecies,
+  signNote,
+  speciesEntries,
+  speciesTotals,
+  summarize,
+  weatherLabel,
+  type Draft,
+} from '../collect'
 import { weekdayOf } from '../dates'
 import { complete, pickChoice } from '../paste'
 
@@ -85,5 +98,96 @@ describe('list choices with brackets', () => {
     expect(pickChoice('(no', subspecies)).toBe('(no subspecies described)')
     expect(complete('(no subspecies described)', subspecies)).toBe('(no subspecies described)')
     expect(complete('x(y', subspecies)).toBe('x(y')
+  })
+})
+
+describe('Colecta cards', () => {
+  const draft = (over: Partial<Draft>): Draft => ({
+    key: Math.random().toString(),
+    location: 'Cavernas Templo de Ceremonia',
+    species: '',
+    subspecies: '',
+    sex: '',
+    fate: 'insectario',
+    time: '',
+    purpose: '',
+    notes: '',
+    insectaryId: 'A8E',
+    cam: '',
+    tube: '',
+    medium: '',
+    collector: 'PAS - Patricio Salazar',
+    identifier: 'AA - Someone',
+    rainfall: 'DY_(dry)',
+    cloud: '',
+    ...over,
+  })
+  it('a card is empty until something is chosen in it (its ID is the app\'s)', () => {
+    expect(isEmptyDraft(draft({}))).toBe(true)
+    expect(isEmptyDraft(draft({ sex: 'male' }))).toBe(false)
+  })
+  it('places and species come latest first, NA and blanks left out', () => {
+    expect(rankByRecency(['Ikiam', 'Apuya Y', 'NA', null, 'Ikiam', 'Cavernas', ''])).toEqual(['Cavernas', 'Ikiam', 'Apuya Y'])
+    expect(rankByRecency(['a', 'b', 'c'], { window: 2 })).toEqual(['c', 'b'])
+  })
+  it('totals per species and form, by sex and fate, without empty cards', () => {
+    const totals = speciesTotals([
+      draft({ species: 'Mechanitis messenoides', subspecies: 'deceptus', sex: 'female' }),
+      draft({ species: 'Mechanitis messenoides', subspecies: 'deceptus', sex: 'male', fate: 'preservada' }),
+      draft({ species: 'Ithomia salapia', sex: 'male ?', fate: 'preservada' }),
+      draft({}),
+    ])
+    expect(totals.map(s => [s.species, s.total, s.female, s.male, s.insectario, s.preservada])).toEqual([
+      ['Mechanitis messenoides deceptus', 2, 1, 1, 1, 1],
+      ['Ithomia salapia', 1, 0, 1, 0, 1],
+    ])
+  })
+  it('quick phrases go after the note, once', () => {
+    expect(addPhrase('', 'Sexed by genitalia')).toBe('Sexed by genitalia')
+    expect(addPhrase('Worn', 'Recapture')).toBe('Worn; Recapture')
+    expect(addPhrase('Worn; Recapture', 'Recapture')).toBe('Worn; Recapture')
+  })
+  it('weights in grams: comma or point, g, NA; milligrams or text refused', () => {
+    expect(parseWeight('0,152')).toBe(0.152)
+    expect(parseWeight('.15 g')).toBe(0.15)
+    expect(parseWeight('0.12345')).toBe(0.123)
+    expect(parseWeight('NA')).toBe('')
+    expect(parseWeight('152')).toBeNull()
+    expect(parseWeight('CAM079916')).toBeNull()
+    expect(misfit('weight', '0.2')).toBeNull()
+    expect(misfit('weight', 'heavy')).toMatch(/peso/)
+  })
+  it('notes are dated and signed as the team writes them, unless already signed', () => {
+    expect(signNote('Sexed by genitalia', '3/10/26', 'FCH')).toBe('3/10/26 FCH: Sexed by genitalia')
+    expect(signNote('29/09/2026 AA: Sexed by genitalia', '3/10/26', 'FCH')).toBe('29/09/2026 AA: Sexed by genitalia')
+    expect(signNote('22Ago26 PAS Preserved dead ~4h', '3/10/26', 'FCH')).toBe('22Ago26 PAS Preserved dead ~4h')
+    expect(signNote('  ', '3/10/26', 'FCH')).toBe('')
+  })
+  it('weather codes read as words', () => {
+    expect(weatherLabel('S&C_(sun_&_cloud_patches)')).toEqual({ code: 'S&C', words: 'sun & cloud patches' })
+    expect(weatherLabel('NA')).toEqual({ code: 'NA', words: '' })
+  })
+  it("species search: this list's first, forms with their species, the notebook's shorthand", () => {
+    const forms: Record<string, string[]> = { 'Mechanitis messenoides': ['deceptus', 'intermedia'], 'Mechanitis polymnia': ['eurydice'] }
+    const entries = speciesEntries(
+      ['Ithomia salapia', 'Mechanitis messenoides', 'Mechanitis polymnia', 'Methona confusa'],
+      s => forms[s] || [],
+      [draft({ species: 'Methona confusa' })],
+    )
+    expect(entries.slice(0, 4).map(e => e.label)).toEqual([
+      'Methona confusa',
+      'Ithomia salapia',
+      'Mechanitis messenoides',
+      'Mechanitis messenoides deceptus',
+    ])
+    expect(searchSpecies(entries, 'deceptus').map(e => [e.species, e.form])).toEqual([['Mechanitis messenoides', 'deceptus']])
+    expect(searchSpecies(entries, 'pol. eury').map(e => e.label)).toEqual(['Mechanitis polymnia eurydice'])
+    expect(searchSpecies(entries, 'mech mess').map(e => e.label)).toEqual([
+      'Mechanitis messenoides',
+      'Mechanitis messenoides deceptus',
+      'Mechanitis messenoides intermedia',
+    ])
+    expect(searchSpecies(entries, 'methona confusa')[0].label).toBe('Methona confusa')
+    expect(searchSpecies(entries, '').length).toBe(entries.length)
   })
 })

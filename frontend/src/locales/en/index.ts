@@ -5,6 +5,7 @@
 import account from './account'
 import assistant from './assistant'
 import clutches from './clutches'
+import collect from './collect'
 import common from './common'
 import deaths from './deaths'
 import entry from './entry'
@@ -22,6 +23,7 @@ export const en: Record<string, string> = Object.assign(
   entry,
   deaths,
   clutches,
+  collect,
   monitoring,
   home,
   review,

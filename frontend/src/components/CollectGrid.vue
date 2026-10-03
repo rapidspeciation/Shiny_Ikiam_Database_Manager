@@ -86,6 +86,8 @@ const toRow = (d: Draft): Row => ({
   cam: d.cam,
   tube: d.tube,
   medium: d.medium,
+  weight: d.weight ?? '',
+  deadAlive: d.deadAlive ?? '',
   collector: d.collector,
   identifier: d.identifier,
   rainfall: d.rainfall,
@@ -188,6 +190,11 @@ function columns(): ColumnDefinition[] {
       190,
       choices(() => props.mediums),
     ),
+    text('weight', 130),
+    text('deadAlive', 170, {
+      cssClass: 'has-choices',
+      ...choiceEditor(() => ['Alive', 'Dead']),
+    }),
     text(
       'purpose',
       150,

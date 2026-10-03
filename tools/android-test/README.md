@@ -32,6 +32,12 @@ tapping a box: text sent with `adb shell input text` makes SwiftKey fold into it
 hardware keyboard. Two local apps on `localhost` share one session cookie (cookies ignore the port):
 signing in on one signs the other out.
 
+Colecta as cards (`collect.mjs`) saves a collecting day and undoes it, so it too refuses any app but a
+local one: `adb reverse tcp:8811 tcp:8811`, then
+`APP=http://localhost:8811/ CREDS=~/.cache/ithomiini-lab/credentials.json node tools/android-test/collect.mjs`.
+It fills the day with taps, adds a butterfly from a species chip, types its time, adds «another like this»
+as preserved with its weight, finds a third with the notebook's shorthand («mech mess»), saves and undoes.
+
 The tests log in with the Wikiloc worker account (`~/.config/ithomiini-wikiloc/worker.json`)
 and use Playwright from `~/.local/share/ithomiini-wikiloc/node_modules`. The keyboard is judged
 by the page's visible height (Android's own flag can be stale). They add rows to the Colecta
