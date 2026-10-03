@@ -20,6 +20,10 @@ export interface T3Seen {
 }
 
 export const HELLO = { type: 'ithomiini-t3-hello' }
+/** The answer to a link the bridge passed on (without it, the bridge opens the link in a new tab). */
+export const LINK_OK = { type: 'ithomiini-t3-link-ok' }
+/** Asks the bridge to open a chat (its path) in T3's own router. */
+export const openChat = (path: string) => ({ type: 'ithomiini-t3-open', path })
 /** How long after the frame loaded the bridge has to answer before the app stops waiting for it. */
 export const BRIDGE_WAIT_MS = 4000
 
@@ -71,4 +75,45 @@ export function seenChat(seen: T3Seen | null | undefined): string | undefined {
 /** A chat picked by hand stays until the frame moves to another chat (its first report is not a move). */
 export function afterMove(chosen: string, before: string | undefined, now: string | undefined) {
   return before !== undefined && now !== before ? 'auto' : chosen
+}
+
+/**
+ * A link to the Asistente tab clicked inside T3 (a proposal the assistant gave),
+ * as the bridge passes it on: the app's route to open (/asistente?…), from this
+ * frame's bridge only; null for anything else.
+ */
+export function bridgeLink(
+  event: { source: unknown; origin: string; data: unknown },
+  frame: Window | null | undefined,
+  t3Origin: string,
+): string | null {
+  if (!frame || !t3Origin || event.source !== frame || event.origin !== t3Origin) return null
+  const d = event.data as Record<string, unknown> | null
+  if (!d || typeof d !== 'object' || d.type !== 'ithomiini-t3-link' || d.v !== 1 || typeof d.hash !== 'string') return null
+  return /^#\/asistente(?:[?/]|$)/.test(d.hash) ? d.hash.slice(1) : null
+}
+
+/** A T3 chat's path (/<environmentId>/<threadId>); null without both ids. */
+export function chatPath(environmentId: string | null | undefined, threadId: string | null | undefined) {
+  const env = idOrNull(environmentId)
+  const thread = idOrNull(threadId)
+  return env && thread ? `/${env}/${thread}` : null
+}
+
+/** A link into the Asistente tab (#/asistente?propuesta=…&chat=…&fila=…): what it opens. */
+export interface AssistantLink {
+  proposal: string | null
+  chat: string | null
+  /** The row to select in the proposal's table (its key or label). */
+  row: string | null
+}
+const first = (value: unknown) => {
+  const one = Array.isArray(value) ? value[0] : value
+  return typeof one === 'string' ? one : ''
+}
+export function assistantLink(query: Record<string, unknown>): AssistantLink | null {
+  const proposal = idOrNull(first(query.propuesta))
+  const chat = idOrNull(first(query.chat))
+  const row = first(query.fila).slice(0, 200) || null
+  return proposal || chat ? { proposal, chat, row } : null
 }

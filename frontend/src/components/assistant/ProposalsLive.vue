@@ -1,8 +1,19 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import {
+  computed,
+  defineAsyncComponent,
+  h,
+  nextTick,
+  onActivated,
+  onBeforeUnmount,
+  onDeactivated,
+  onMounted,
+  ref,
+  watch,
+} from 'vue'
 import { useRouter } from 'vue-router'
 import { ExternalLink, ListChecks, Maximize2, Minimize2, PanelBottom, PanelRight, X } from 'lucide-vue-next'
-import ProposalGrid, { type Proposal } from '../ProposalGrid.vue'
+import type { Proposal } from '../../lib/proposals'
 import WhenSeen from './WhenSeen.vue'
 import { api, requestId } from '../../lib/api'
 import { errorText, notify } from '../../lib/notice'
@@ -20,6 +31,20 @@ import {
 import { afterMove, seenChat, type T3Seen } from '../../lib/t3Bridge'
 import { useTables } from '../../stores/tables'
 import { intlLocale, t, tn } from '../../lib/i18n'
+
+// The tables (Tabulator) load apart, so the Asistente tab and T3 start without waiting for them.
+const ProposalGrid = defineAsyncComponent({
+  loader: () => import('../ProposalGrid.vue'),
+  loadingComponent: {
+    render: () =>
+      h(
+        'p',
+        { class: 'mt-2 rounded-md border border-stone-200 bg-white px-3 py-6 text-sm text-stone-500' },
+        t('Cargando la tabla…'),
+      ),
+  },
+  delay: 150,
+})
 
 /**
  * The assistant's proposed edits beside the T3 chat (at the right or below
@@ -43,14 +68,18 @@ const props = withDefaults(
     only?: string
     /** What the T3 frame beside it shows (T3Frame). */
     t3?: T3Seen | null
+    /** A proposal a link asks for (#/asistente?propuesta=…): its chat's list, scrolled to it. */
+    focus?: { id: string } | null
   }>(),
-  { layout: 'right', full: false, only: '', t3: null },
+  { layout: 'right', full: false, only: '', t3: null, focus: null },
 )
 const emit = defineEmits<{ count: [n: number]; fresh: []; close: []; layout: [value: 'right' | 'bottom']; full: [] }>()
 const tables = useTables()
 const router = useRouter()
 const proposals = ref<Proposal[]>([])
 const revision = ref('')
+/** The chats and titles the list came with, as the server sums them up (it answers "unchanged" while they hold). */
+const stamp = ref('')
 const connected = ref(false)
 const applying = ref<string | null>(null)
 /** Proposals that just arrived, outlined for a few seconds. */
@@ -105,6 +134,19 @@ function replace(next: Proposal) {
 let stopped = false
 /** Aborts the waiting request when the person picks another chat, so the list changes at once. */
 let asking: AbortController | null = null
+// Another tab of the app on screen (this view kept alive): no asking meanwhile; back here, it asks
+// at once with the revision it holds (answered at once if anything changed).
+let active = true
+let resume: (() => void) | null = null
+onDeactivated(() => {
+  active = false
+  asking?.abort()
+})
+onActivated(() => {
+  active = true
+  resume?.()
+  resume = null
+})
 function choose(value: string) {
   chosen.value = value === tracked.value?.chat ? 'auto' : value
   asking?.abort()
@@ -129,21 +171,31 @@ async function follow() {
   let first = true
   let asked = ''
   while (!stopped) {
+    if (!active) await new Promise<void>(go => (resume = go))
     if (document.visibilityState !== 'visible') await visible()
     const ask = (asking = new AbortController())
     const wanted = props.only || `${chosen.value} ${seen.value ?? ''}`
     try {
-      const out = await api<{ revision: string; scope: ChatScope; follow: ChatScope; chats: ChatEntry[]; proposals: Proposal[] }>(
+      const out = await api<
+        | { revision: string; stamp: string; scope: ChatScope; follow: ChatScope; chats: ChatEntry[]; proposals: Proposal[] }
+        | { unchanged: true; revision: string; stamp: string }
+      >(
         listQuery({
           chosen: chosen.value,
           follow: tracked.value,
           seen: seen.value,
           only: props.only,
           revision: asked === wanted ? revision.value : '',
+          stamp: stamp.value,
         }),
         { signal: ask.signal },
       )
       connected.value = true
+      // Nothing new but this page's own edits (it has those): the list stays as it is.
+      if ('unchanged' in out) {
+        revision.value = out.revision
+        continue
+      }
       // Another chat's list: its proposals are not new arrivals.
       const moved = !scope.value || out.scope.chat !== scope.value.chat
       receive(out.proposals, first || moved)
@@ -152,6 +204,7 @@ async function follow() {
       tracked.value = out.follow
       chats.value = out.chats
       revision.value = out.revision
+      stamp.value = out.stamp ?? ''
       asked = wanted
       first = false
     } catch {
@@ -167,6 +220,49 @@ onBeforeUnmount(() => {
   stopped = true
   asking?.abort()
 })
+
+// ------------------------------------------------------------ a proposal a link asks for
+/** The proposal to bring into view once it is in the list (its chat chosen if it is not). */
+const focusing = ref<string | null>(null)
+const listBox = ref<HTMLElement>()
+let lookedUp = ''
+async function bring() {
+  const id = focusing.value
+  if (!id) return
+  const found = proposals.value.find(p => p.id === id)
+  if (!found) {
+    if (lookedUp === id || props.only || !connected.value) return
+    lookedUp = id
+    try {
+      const out = await api<{ proposals: { id: string; chat?: string | null }[] }>(
+        `chat/proposals?${new URLSearchParams({ only: id, all: '1' })}`,
+      )
+      const it = out.proposals.find(p => p.id === id)
+      if (it && focusing.value === id) choose(it.chat || 'app')
+    } catch {
+      /* stays on the list shown */
+    }
+    return
+  }
+  focusing.value = null
+  lookedUp = ''
+  if (!open(found)) showReviewed.value = true
+  arrived.value = new Set([...arrived.value, id])
+  setTimeout(() => (arrived.value = new Set([...arrived.value].filter(other => other !== id))), 4000)
+  await nextTick()
+  listBox.value?.querySelector(`[data-proposal="${id}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+}
+watch(
+  () => props.focus,
+  value => {
+    if (!value) return
+    focusing.value = value.id
+    lookedUp = ''
+    void bring()
+  },
+  { immediate: true },
+)
+watch([proposals, connected], () => void bring())
 
 async function apply(proposal: Proposal, indexes: number[], at: number | undefined, doubtful?: 'confirm' | 'skip') {
   applying.value = proposal.id
@@ -281,7 +377,7 @@ const origin = (p: Proposal) =>
       </button>
     </div>
     <!-- A size container: each table is at most its height (ProposalSheet), so its column names stay in sight. -->
-    <div class="min-h-0 flex-1 overflow-y-auto px-3 pb-3 [container-type:size]" data-lazy-root>
+    <div ref="listBox" class="min-h-0 flex-1 overflow-y-auto px-3 pb-3 [container-type:size]" data-lazy-root>
       <p v-if="!pending.length" class="py-4 text-sm text-stone-500">
         <template v-if="only && !mine.length">{{ $t('Esta propuesta ya no está en la lista.') }}</template>
         <template v-else>
@@ -299,6 +395,7 @@ const origin = (p: Proposal) =>
       <div
         v-for="p in pending"
         :key="p.id"
+        :data-proposal="p.id"
         class="rounded-md transition-shadow duration-700"
         :class="{ 'ring-2 ring-emerald-400': arrived.has(p.id) }"
       >
@@ -313,12 +410,23 @@ const origin = (p: Proposal) =>
           />
         </WhenSeen>
       </div>
-      <details v-if="reviewed.length" class="mt-3" @toggle="showReviewed = ($event.target as HTMLDetailsElement).open">
+      <details
+        v-if="reviewed.length"
+        class="mt-3"
+        :open="showReviewed"
+        @toggle="showReviewed = ($event.target as HTMLDetailsElement).open"
+      >
         <summary class="cursor-pointer text-xs text-stone-600">
           {{ $t('Revisados hace poco ({n})', { n: reviewed.length }) }}
         </summary>
         <!-- Their tables are only built when opened. -->
-        <div v-for="p in showReviewed ? reviewed : []" :key="p.id">
+        <div
+          v-for="p in showReviewed ? reviewed : []"
+          :key="p.id"
+          :data-proposal="p.id"
+          class="rounded-md transition-shadow duration-700"
+          :class="{ 'ring-2 ring-emerald-400': arrived.has(p.id) }"
+        >
           <p class="mt-2 px-1 text-[11px] text-stone-500">{{ origin(p) }}</p>
           <WhenSeen :height="cardHeight(p.changes.length)"><ProposalGrid :proposal="p" /></WhenSeen>
         </div>

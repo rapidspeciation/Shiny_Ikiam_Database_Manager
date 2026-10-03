@@ -28,6 +28,7 @@ export default {
   'Arrastra para cambiar el tamaño': 'Drag to resize',
   // ProposalsView, ProposalsLive
   'Cambios propuestos': 'Proposed changes',
+  'Cargando la tabla…': 'Loading the table…',
   'Volver al Asistente': 'Back to the Assistant',
   '{n} por revisar': '{n} to review',
   'nada por revisar': 'nothing to review',

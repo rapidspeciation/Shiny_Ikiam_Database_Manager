@@ -41,7 +41,7 @@ Historial: skill **historial**.
 | Emergidos | `#/emergidos` | new adults of a clutch into pre-made rows | Insectary_data |
 | Clutches | `#/clutches` | new clutches and their follow-up | Insectary_stocks |
 | Historial | `#/historial` | every saved change; selective undo | (undo writes back) |
-| Asistente | `#/asistente` | T3 Code (this assistant), Cambios propuestos; «Instrucciones de la IA» (`#/instrucciones`) | via proposals |
+| Asistente | `#/asistente?propuesta=…&chat=…` | T3 Code (this assistant), Cambios propuestos (a proposal's `link` opens it beside its chat); «Instrucciones de la IA» (`#/instrucciones`) | via proposals |
 | Revisión | `#/revision?…` | data problems as cards to judge | verdicts (app); fixes via a proposal |
 | Usuarios | `#/usuarios` | accounts and invitations (admin; user menu) | — |
 

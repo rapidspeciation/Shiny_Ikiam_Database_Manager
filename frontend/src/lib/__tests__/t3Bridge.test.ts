@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { afterMove, bridgeMessage, originOf, seenChat, type T3View } from '../t3Bridge'
+import { afterMove, assistantLink, bridgeLink, bridgeMessage, chatPath, originOf, seenChat, type T3View } from '../t3Bridge'
 
 const T3 = 'https://t3.example.org'
 const ENV = '4e6c4765-8cfa-4adc-b761-3c3bae2ae7e0'
@@ -66,5 +66,32 @@ describe('the T3 bridge', () => {
     expect(afterMove('b', A, 'draft')).toBe('auto')
     expect(afterMove('all', 'draft', A)).toBe('auto')
     expect(afterMove('auto', A, 'none')).toBe('auto')
+  })
+
+  it('links: to the Asistente tab from inside T3, to a chat, from the address', () => {
+    const link = (hash: unknown, over: Record<string, unknown> = {}) => ({
+      source: frame,
+      origin: T3,
+      data: { type: 'ithomiini-t3-link', v: 1, hash, ...over },
+    })
+    expect(bridgeLink(link(`#/asistente?propuesta=${A}`), frame, T3)).toBe(`/asistente?propuesta=${A}`)
+    expect(bridgeLink(link('#/asistente'), frame, T3)).toBe('/asistente')
+    // Only the Asistente tab, only this frame's bridge.
+    expect(bridgeLink(link('#/usuarios'), frame, T3)).toBeNull()
+    expect(bridgeLink(link('#/asistentes'), frame, T3)).toBeNull()
+    expect(bridgeLink({ ...link('#/asistente'), origin: 'https://evil.example' }, frame, T3)).toBeNull()
+    expect(bridgeLink({ ...link('#/asistente'), source: {} }, frame, T3)).toBeNull()
+    expect(bridgeLink(link(42), frame, T3)).toBeNull()
+    expect(chatPath(ENV, A)).toBe(`/${ENV}/${A}`)
+    expect(chatPath(null, A)).toBeNull()
+    expect(chatPath(ENV, '../x')).toBeNull()
+    expect(assistantLink({ propuesta: A, chat: A.toUpperCase(), fila: 'CAM0123' })).toEqual({
+      proposal: A,
+      chat: A,
+      row: 'CAM0123',
+    })
+    expect(assistantLink({ chat: A })).toEqual({ proposal: null, chat: A, row: null })
+    expect(assistantLink({ propuesta: 'nope' })).toBeNull()
+    expect(assistantLink({ grupo: 'x' })).toBeNull()
   })
 })

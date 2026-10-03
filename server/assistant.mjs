@@ -817,8 +817,21 @@ export function createAssistant({ store, config = {} }) {
     const proposal = { id, changes, reason: clip(reason, 500), status: 'pending' };
     context.proposals.push(proposal);
     changed(owner(context.user));
-    return proposal;
+    return { ...proposal, chat: chat?.id ?? null };
   }
+
+  /**
+   * The app's address that opens a proposal in the Asistente tab, beside its T3
+   * chat (AssistantView reads propuesta/chat; without chat it finds the chat).
+   */
+  function proposalLink(id, chat = null) {
+    const q = new URLSearchParams({ propuesta: id });
+    if (chat) q.set('chat', chat);
+    const base = String(config.publicUrl || '').replace(/\/+$/, '');
+    return `${base ? `${base}/` : ''}#/asistente?${q}`;
+  }
+  /** The chat a proposal is shown with: its T3 chat, else the chat of this call when T3 knows it. */
+  const chatOf = (proposal, context) => proposal?.t3_thread || (context?.t3 ? (chatOfCall(context)?.id ?? null) : null);
 
   const initialsCache = new Map();
   const initialsOf = user => {
@@ -906,10 +919,11 @@ export function createAssistant({ store, config = {} }) {
     if (drafted.error) return drafted;
     const { changes } = drafted;
     const issueIds = Array.isArray(args.issueIds) ? args.issueIds.slice(0, 500).map(i => clip(i, 200)) : [];
-    const { id } = saveProposal(changes, args.reason, context, issueIds);
+    const { id, chat } = saveProposal(changes, args.reason, context, issueIds);
     const dropped = [...new Set(changes.flatMap(c => c.dropped ?? []))];
     return {
       proposalId: id,
+      link: proposalLink(id, chat),
       rows: changes.length,
       status: 'waiting for the person to confirm',
       ...(dropped.length ? { leftOut: `Formula columns left out of the new rows: ${dropped.join(', ')}` } : {}),
@@ -1098,14 +1112,17 @@ export function createAssistant({ store, config = {} }) {
     return { changes: rows, ...out };
   }
 
-  /** Saves a revised proposal (only while pending): its revision goes up and the Asistente tab follows it at once. */
-  function saveRevision(proposal, changes, by, reason = null) {
+  /**
+   * Saves a revised proposal (only while pending): its revision goes up and the
+   * Asistente tab follows it at once (`page`: the page whose edit it is, which has it already).
+   */
+  function saveRevision(proposal, changes, by, reason = null, page = null) {
     const row = db
       .prepare(
         "UPDATE ai_proposals SET changes_json = ?, reason = coalesce(?, reason), revision = revision + 1, updated_at = ?, last_by = ? WHERE id = ? AND status = 'pending' RETURNING revision",
       )
       .get(json(changes), reason, now(), by, proposal.id);
-    if (row) changed(proposal.owner_id);
+    if (row) changed(proposal.owner_id, page);
     return row?.revision ?? null;
   }
 
@@ -1195,6 +1212,7 @@ export function createAssistant({ store, config = {} }) {
     if (!proposal) return { error: 'Proposal not found' };
     return {
       proposalId: proposal.id,
+      link: proposalLink(proposal.id, chatOf(proposal, context)),
       status: proposal.status,
       revision: proposal.revision,
       reason: proposal.reason,
@@ -1246,6 +1264,7 @@ export function createAssistant({ store, config = {} }) {
     if (revision === null) return { error: 'The proposal is no longer pending' };
     return {
       proposalId: proposal.id,
+      link: proposalLink(proposal.id, chatOf(proposal, context)),
       revision,
       ...(unchanged ? { unchanged: true } : {}),
       rows: proposalTable(out.changes),
@@ -1452,28 +1471,46 @@ export function createAssistant({ store, config = {} }) {
   /*
    * Live list of proposals for the Asistente tab: a revision per person that
    * changes whenever one of their proposals is added, applied or discarded, and
-   * requests that wait (long polling) until it changes.
+   * requests that wait (long polling) until it changes. A change made by a
+   * page's own edit in the table (`page`, sent by lib/api.ts) does not wake that
+   * page: the edit's answer brought it the proposal already.
    */
   const boot = randomUUID().slice(0, 8);
   const revisions = new Map();
   const waiters = new Map();
+  /** Per person, the page whose own edit each recent revision was (null: anyone else's change). */
+  const editors = new Map();
   const revisionOf = ownerId => `${boot}.${revisions.get(ownerId) ?? 0}`;
-  function changed(ownerId) {
-    revisions.set(ownerId, (revisions.get(ownerId) ?? 0) + 1);
-    for (const wake of waiters.get(ownerId) ?? []) wake();
-    waiters.delete(ownerId);
+  function changed(ownerId, page = null) {
+    const n = (revisions.get(ownerId) ?? 0) + 1;
+    revisions.set(ownerId, n);
+    const by = editors.get(ownerId) ?? editors.set(ownerId, new Map()).get(ownerId);
+    by.set(n, page);
+    if (by.size > 50) by.delete(by.keys().next().value);
+    for (const wake of [...(waiters.get(ownerId) ?? [])]) if (!page || wake.page !== page) wake();
+  }
+  /** Whether a page holding revision `seen` has the list as it is: nothing changed since but its own edits. */
+  function caughtUp(ownerId, seen, page) {
+    if (seen === revisionOf(ownerId)) return true;
+    const [from, to] = [Number(String(seen).slice(boot.length + 1)), revisions.get(ownerId) ?? 0];
+    const by = editors.get(ownerId);
+    if (!page || !by || !String(seen).startsWith(`${boot}.`) || !Number.isInteger(from) || from > to || to - from > 50) return false;
+    for (let n = from + 1; n <= to; n++) if (by.get(n) !== page) return false;
+    return true;
   }
   /** Waits for a change of the person's proposals, or until `moved()` says the chat to show changed (checked every 2 s). */
-  function waitForChange(ownerId, seen, ms, moved = null) {
-    if (seen !== revisionOf(ownerId)) return Promise.resolve();
+  function waitForChange(ownerId, seen, ms, moved = null, page = null) {
+    if (!caughtUp(ownerId, seen, page)) return Promise.resolve();
     return new Promise(resolve => {
       const list = waiters.get(ownerId) ?? waiters.set(ownerId, new Set()).get(ownerId);
       const wake = () => {
         clearTimeout(timer);
         clearInterval(watch);
         list.delete(wake);
+        if (!list.size && waiters.get(ownerId) === list) waiters.delete(ownerId);
         resolve();
       };
+      wake.page = page;
       const timer = setTimeout(wake, ms);
       const watch = moved ? setInterval(() => moved() && wake(), 2000) : undefined;
       list.add(wake);
@@ -1880,7 +1917,8 @@ export function createAssistant({ store, config = {} }) {
       // The corrected page takes the place of its proposal (same id): the table beside the chat changes in place.
       const carried = carryPersonEdits(parse(replaced.changes_json) ?? [], matched.changes, context.user);
       conflicts = carried.conflicts;
-      if (saveRevision(replaced, carried.changes, 'ai', reason) !== null) proposal = { id: replaced.id };
+      if (saveRevision(replaced, carried.changes, 'ai', reason) !== null)
+        proposal = { id: replaced.id, chat: chatOf(replaced, context) };
     } else if (editor && replaced) {
       db.prepare("UPDATE ai_proposals SET status = 'discarded' WHERE id = ? AND status = 'pending'").run(replaced.id);
       changed(owner(context.user));
@@ -1888,6 +1926,7 @@ export function createAssistant({ store, config = {} }) {
     if (editor && writes && !proposal) proposal = saveProposal(matched.changes, reason, context);
     return {
       ...matchSummary(matched, proposal?.id),
+      ...(proposal ? { link: proposalLink(proposal.id, proposal.chat) } : {}),
       ...(replaced ? { replaced: replaced.id } : {}),
       ...(conflicts.length
         ? {
@@ -1900,7 +1939,7 @@ export function createAssistant({ store, config = {} }) {
     };
   }
 
-  async function handle({ method, path, body = {}, user, query = {} }) {
+  async function handle({ method, path, body = {}, user, query = {}, page = null }) {
     if (!/^\/api\/(chat|reports|knowledge|ai)(?:\/|$)/.test(path)) return null;
     if (!user || !owner(user)) return bad(401, 'unauthorized', 'Sign in to use the assistant.');
     if (path === '/api/reports') return reports.handle({ method, path, query, user });
@@ -1932,12 +1971,14 @@ export function createAssistant({ store, config = {} }) {
       // wait=1 with the revision the page holds: answer when a proposal is added, applied or
       // discarded (or after 20 s), so the Asistente tab shows edits as the assistant drafts them;
       // with T3, also when another chat is opened there (a page whose frame says so asks again itself).
+      const held = String(query.revision ?? '');
       if (query.wait)
         await waitForChange(
           me,
-          String(query.revision ?? ''),
-          20000,
+          held,
+          config.proposalWaitMs ?? 20000,
           t3 && !query.only && !seen ? () => followed(user, chatGroups(me)).chat !== follow : null,
+          page,
         );
       linkByToolUse(me);
       void linkByResult(me).catch(e => console.error('Proposals by chat:', e.message));
@@ -1975,16 +2016,21 @@ export function createAssistant({ store, config = {} }) {
       const chats = [...groups.values()]
         .sort((a, b) => (a.at < b.at ? 1 : -1))
         .map(g => ({ id: g.id, title: titleOf(g.id), pending: g.pending }));
-      return {
-        status: 200,
-        body: {
-          revision,
-          scope: { ...scope, title: titleOf(scope.chat) },
-          follow: { ...followNow, title: titleOf(followNow.chat) },
-          chats,
-          proposals: rows.map(r => listedView(r, titles)),
-        },
+      const head = {
+        scope: { ...scope, title: titleOf(scope.chat) },
+        follow: { ...followNow, title: titleOf(followNow.chat) },
+        chats,
       };
+      // stamp: the chats and titles the page shows besides the proposals. Still the page's, and no
+      // change but its own edits: it keeps its list (a long poll that ran out says only that).
+      const stamp = createHash('sha1')
+        .update(json([head, rows.map(r => [r.t3_thread, titles.get(r.t3_thread)?.title ?? null])]))
+        .digest('base64url')
+        .slice(0, 12);
+      if (query.wait && held && caughtUp(me, held, page) && query.stamp === stamp)
+        return { status: 200, body: { unchanged: true, revision, stamp } };
+      // The first request of a page (no revision held): tagged, so a reload with nothing new is a 304.
+      return { status: 200, tagged: !held, body: { revision, stamp, ...head, proposals: rows.map(r => listedView(r, titles)) } };
     }
     // A cell edited by the person in the table (Asistente → Cambios propuestos), checked as a save checks it.
     const editMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/edit$/.exec(path);
@@ -2043,7 +2089,7 @@ export function createAssistant({ store, config = {} }) {
         { by: 'person', user },
       );
       if (out.changes.length > 100) return bad(409, 'too_many_rows', 'Una propuesta tiene como máximo 100 filas.');
-      if (json(out.changes) !== proposal.changes_json && saveRevision(proposal, out.changes, 'person') === null)
+      if (json(out.changes) !== proposal.changes_json && saveRevision(proposal, out.changes, 'person', null, page) === null)
         return bad(409, 'proposal_used', 'La propuesta ya no está pendiente.');
       return {
         status: 200,

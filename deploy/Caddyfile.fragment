@@ -11,6 +11,12 @@ ithomiini-ikiam.com {
 # (lb_policy first, a failed dial remembered for fail_duration): T3 without the bridge,
 # and the Asistente guesses the open chat as before.
 t3.ithomiini-ikiam.com {
+	# T3's built files carry a content hash in their names (a new T3 version, new names): kept by the
+	# browser instead of asked again on every load (T3 sends no-cache). Deferred, so it replaces T3's header.
+	header /assets/* {
+		Cache-Control "public, max-age=31536000, immutable"
+		defer
+	}
 	@page {
 		method GET
 		header Accept *text/html*

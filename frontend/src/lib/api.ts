@@ -26,13 +26,16 @@ export function setCsrf(token: string | null) {
   csrf = token
 }
 
+/** This page load: Cambios propuestos does not fetch again a list its own edits changed (server/assistant.mjs). */
+export const pageId = `${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 12)}`
+
 /** Requests are relative to the page, so the app works under any base path. */
 export async function api<T>(
   path: string,
   options: { method?: string; body?: unknown; signal?: AbortSignal } = {},
 ): Promise<T> {
   const method = options.method || 'GET'
-  const headers: Record<string, string> = {}
+  const headers: Record<string, string> = { 'x-ithomiini-page': pageId }
   if (options.body !== undefined) headers['content-type'] = 'application/json'
   if (method !== 'GET' && csrf) headers['x-csrf-token'] = csrf
   let response: Response
