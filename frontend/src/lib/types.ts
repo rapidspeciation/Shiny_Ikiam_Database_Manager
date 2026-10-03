@@ -169,6 +169,8 @@ export interface UndoPreviewItem {
 export interface UndoPreview {
   changes: UndoPreviewItem[]
   conflicts: UndoPreviewItem[]
+  /** Rows the undone save inserted (a suffixed Insectary ID, W2B.2): the undo deletes them. */
+  rowDeletes?: { recordId: string; sheet: string; row: number | null; label: string | null }[]
   eligible: boolean
   selection: { actionIds: string[]; changeIds: string[] }
 }

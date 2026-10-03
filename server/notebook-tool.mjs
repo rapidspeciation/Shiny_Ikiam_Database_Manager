@@ -221,7 +221,7 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
     const butterflies = () => (reared ??= keyIndex('Insectary_data', ['CLUTCH NUMBER']));
     const record = id => {
       const r = store.getRecord(id);
-      return r && { id: r.id, row: r.row, version: r.version, label: r.label, values: r.values, formulas: r.formulas };
+      return r && { id: r.id, row: r.row, version: r.version, label: r.label, values: r.values, formulas: r.formulas, observed: r.observed };
     };
     return {
       find: values => (mine().get(values.map(clutchKey).join('|')) ?? []).map(h => record(h.id)).filter(Boolean),

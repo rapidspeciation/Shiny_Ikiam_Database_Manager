@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { createReports } from './reports.mjs';
-import { TYPED_OVER_FORMULA, sameAsFormula, uniqueIdIndex } from './batch.mjs';
+import { TYPED_OVER_FORMULA, renamesWithSuffix, sameAsFormula, uniqueIdIndex } from './batch.mjs';
 import { allIssues, checkData } from './checks.mjs';
 import { agreedFixes, markApplied } from './review.mjs';
 import { CERTAINTIES, suggestionPage } from './suggestions/index.mjs';
@@ -14,7 +14,7 @@ import { queueWalk, walkDraft } from './walks.mjs';
 import { KINDS, isNone, noteText } from './notebook.mjs';
 import { RECORD_TOOLS, compactRecord, countRecords, findRecords } from './records-tool.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
-import { insectaryIdRow, newRowFormulaFields } from './premade.mjs';
+import { duplicateIdRow, insectaryIdRow, newRowFormulaFields } from './premade.mjs';
 import { proposalSampleWarnings } from './preserved.mjs';
 import { carryChecks, dropDoubt, setChecked, uncheckedDoubts, unfilledUnreadable, withoutUnchecked } from './doubts.mjs';
 import { decide, editedInSheet, forget, lastEdit, resolveSheetEdits, sheetChangesOf, shownValue, takenRow, takenRows } from './sheet-edits.mjs';
@@ -205,8 +205,8 @@ const TOOLS = [
         [
           'Draft edits to existing rows (`changes`) and/or new rows (`newRows`). The person sees them at once as a table beside the chat; nothing is written until they confirm.',
           '- One proposal per task (e.g. per walk or per kind of fix), with a short note per row saying where the values come from.',
-          "- Formula cells cannot be changed, except SPECIES in Insectary_data when what emerged differs from the formula's prediction.",
-          "- A new Insectary_data row takes its Insectary_ID (the one on the wing or notebook): the row whose ID formula gives it is filled, and the pre-made rows are extended up to it when they run out.",
+          "- Formula cells cannot be changed, except SPECIES in Insectary_data when what emerged differs from the formula's prediction, and an Insectary_ID given to two butterflies: the row's own ID with a suffix (W2B → W2B.1).",
+          "- A new Insectary_data row takes its Insectary_ID (the one on the wing or notebook): the row whose ID formula gives it is filled, and the pre-made rows are extended up to it when they run out. The second butterfly of a repeated ID gets a suffixed ID (W2B.2): its row is inserted directly below that ID's rows when applied (undoing the save deletes it).",
           VALUES_RULES,
         ].join('\n'),
       parameters: {
@@ -760,8 +760,13 @@ export function createAssistant({ store, config = {} }) {
     }
     if (sheet === 'Insectary_data' && values.Insectary_ID !== undefined) {
       values.Insectary_ID = String(values.Insectary_ID).trim().toUpperCase();
-      if (!insectaryIdRow(store, values.Insectary_ID))
-        return { error: `${at}: ${values.Insectary_ID} is not a free Insectary ID (an empty pre-made row's, or one the ID series reaches next)` };
+      // A suffixed ID (W2B.2): the second butterfly given an ID, in a row inserted below that ID's rows.
+      const duplicate = duplicateIdRow(store, values.Insectary_ID);
+      if (duplicate?.problem) return { error: `${at}: ${DUPLICATE_PROBLEMS[duplicate.problem](duplicate)}` };
+      if (!duplicate && !insectaryIdRow(store, values.Insectary_ID))
+        return {
+          error: `${at}: ${values.Insectary_ID} is not a free Insectary ID (an empty pre-made row's, one the ID series reaches next, or a suffixed one like W2B.2 for a second butterfly with an ID already used)`,
+        };
     }
     const identity = moduleMap.get(sheet).identityFields.map(key => values[key]).find(isIdValue);
     const time = Object.entries(raw).find(([key]) => TIME_FIELD.test(key))?.[1];
@@ -788,6 +793,14 @@ export function createAssistant({ store, config = {} }) {
       .filter(([field, value]) => isUnique(sheet, field) && isIdValue(value))
       .map(([field, value]) => [field, value, `${TUBE_FIELD.test(field) ? 'tube' : `${sheet}:${field}`}\u0000${String(value).trim()}`]);
 
+  /** Why a suffixed Insectary ID cannot get its row (premade.mjs duplicateIdRow). */
+  const DUPLICATE_PROBLEMS = {
+    used: d => `${d.id} is already used in Insectary_data row ${d.rows.join(', ')}`,
+    no_base: d => `${d.base} is not in Insectary_data: a suffixed ID (${d.id}) is for a second butterfly with an ID already used`,
+    empty_base: d => `the row of ${d.base} is still empty: the butterfly goes in it, without a suffix`,
+    repeated: d => `${d.value} is in more than one row (${d.rows.join(', ')}): fix that before adding ${d.id}`,
+  };
+
   const idsFor = () => {
     let index;
     return { proposed: new Set(), used: () => (index ??= uniqueIdIndex(store)) };
@@ -798,6 +811,7 @@ export function createAssistant({ store, config = {} }) {
    * `ids` is shared when a page is checked one row at a time (IDs repeated between rows).
    */
   function draftChanges(args, ids = idsFor()) {
+    const idsUsed = () => ids.used();
     const edits = Array.isArray(args.changes) ? args.changes : [];
     const creates = Array.isArray(args.newRows) ? args.newRows : [];
     if (!edits.length && !creates.length) return { error: 'Provide changes to existing rows or newRows' };
@@ -837,7 +851,17 @@ export function createAssistant({ store, config = {} }) {
           continue;
         }
         if (old.formulas?.[key]) {
-          if (!TYPED_OVER_FORMULA[old.sheet]?.has(key))
+          // Two butterflies with one ID: this row's ID gets a suffix (W2B → W2B.1), typed over its formula.
+          const rename = old.sheet === 'Insectary_data' && key === 'Insectary_ID';
+          if (rename) {
+            values[key] = String(values[key] ?? '').trim().toUpperCase();
+            if (!renamesWithSuffix(old.values?.[key], values[key]))
+              return {
+                error: `${old.label}: Insectary_ID is calculated by a formula; it only takes a suffix (${old.values?.[key]}.1) to tell apart two butterflies with that ID`,
+              };
+            const holder = idsUsed().get(`Insectary_data:Insectary_ID\u0000${values[key]}`)?.[0];
+            if (holder) return { error: `${old.label}: ${values[key]} is already used in ${holder.sheet} row ${holder.row}` };
+          } else if (!TYPED_OVER_FORMULA[old.sheet]?.has(key))
             return { error: `${old.label}: ${key} is calculated by a formula and cannot be changed` };
           // What the formula gives (from the clutch the row will have) is left to it.
           const gives = formulaWillGive(old.sheet, key, values, old);
@@ -1675,7 +1699,24 @@ export function createAssistant({ store, config = {} }) {
     const created = parse(row?.created_json ?? 'null') ?? {};
     const locked = (sheet, keys) => keys.filter(f => !TYPED_OVER_FORMULA[sheet]?.has(f) && !isSumField(sheet, f));
     const page = parse(row?.page_json ?? 'null');
-    const rows = pageRows(changes, page);
+    // A notebook page's rows follow the page; any other proposal's, the sheet (with the rows between them for context).
+    const rows = page?.lines?.length ? pageRows(changes, page) : inSheetOrder(changes, created, open);
+    // A notebook page's proposal (its page, or a reason "Cuaderno Emergidos (Insectary_data): …"): the table
+    // shows the notebook's columns first, in the order it writes them.
+    const reason = row?.reason ?? proposal.reason ?? '';
+    const kindId = page?.lines?.length
+      ? page.kind
+      : Object.keys(KINDS).find(k => reason.startsWith(`Cuaderno ${KINDS[k].label} (${KINDS[k].sheet})`));
+    const notebook =
+      kindId && (KINDS[kindId] || page?.lines?.length)
+        ? {
+            kind: kindId,
+            sheet: page?.lines?.length ? page.sheet : KINDS[kindId].sheet,
+            columns: KINDS[kindId]?.fields ?? [],
+            keys: KINDS[kindId]?.keys ?? [],
+            photos: page?.lines?.length ? (page.photos ?? []).length : 0,
+          }
+        : null;
     const sheets = [...new Set(rows.map(r => r.change.sheet))];
     const typeOf = f =>
       sheets.map(s => moduleMap.get(s)?.fields.find(x => x.key === f)?.type).find(Boolean) ?? 'text';
@@ -1761,7 +1802,7 @@ export function createAssistant({ store, config = {} }) {
     // The sheet's rows as the table shows them (the list keeps a proposal whose revision and rows are as they were).
     const sheetStamp = open
       ? createHash('sha1')
-          .update(json(out.map((c, i) => [versions[i], c.sheetChanged ?? null, c.rowTaken ?? null])))
+          .update(json(out.map((c, i) => [versions[i], c.row ?? null, c.sheetChanged ?? null, c.rowTaken ?? null])))
           .digest('base64url')
           .slice(0, 12)
       : undefined;
@@ -1780,19 +1821,72 @@ export function createAssistant({ store, config = {} }) {
       newRowFormulas,
       ...(Object.keys(sheetFormulas).length ? { sheetFormulas } : {}),
       ...(hintTable.length ? { hintTable } : {}),
-      ...(page?.lines?.length
-        ? {
-            page: {
-              kind: page.kind,
-              sheet: page.sheet,
-              // The notebook's columns, in the order it writes them.
-              columns: KINDS[page.kind]?.fields ?? [],
-              photos: (page.photos ?? []).length,
-            },
-          }
-        : {}),
+      ...(notebook ? { page: notebook } : {}),
       changes: out,
     };
+  }
+
+  /** At most this many rows of the sheet the proposal leaves alone are shown between its rows. */
+  const GAP_ROWS = 400;
+  /**
+   * A proposal's rows (without a notebook page) as the sheet has them, as
+   * { change, index, line } (pageRows' form), so the person reads the table
+   * beside the sheet: its existing rows take the places they had, by row number
+   * (new rows stay where they were), and, while pending, the sheet's rows between
+   * two of them that it does not change come in as context rows (`gap`: never
+   * written, not editable; index < 0, as a page line without a row).
+   */
+  function inSheetOrder(changes, created, open) {
+    const rows = changes.map((change, index) => {
+      const recordId = change.create ? (created[change.clientId] ?? null) : change.recordId;
+      const at = (recordId ? store.getRecord(recordId)?.row : null) ?? change.row ?? null;
+      return { change, index, line: null, at };
+    });
+    const sorted = new Map();
+    for (const sheet of new Set(rows.map(r => r.change.sheet)))
+      sorted.set(
+        sheet,
+        rows.filter(r => r.change.sheet === sheet && r.at != null).sort((a, b) => a.at - b.at || a.index - b.index),
+      );
+    const taken = new Map();
+    let room = GAP_ROWS;
+    let gaps = 0;
+    const out = [];
+    for (const slot of rows) {
+      if (slot.at == null) {
+        out.push(slot);
+        continue;
+      }
+      const sheet = slot.change.sheet;
+      const list = sorted.get(sheet);
+      const i = taken.get(sheet) ?? 0;
+      taken.set(sheet, i + 1);
+      const r = list[i];
+      const prev = list[i - 1];
+      if (open && prev && r.at - prev.at - 1 <= room)
+        for (let n = prev.at + 1; n < r.at; n++) {
+          const record = store.getRecordBySheetRow(sheet, n);
+          if (!record || record.missing) continue;
+          room--;
+          out.push({
+            index: -++gaps,
+            line: null,
+            change: {
+              key: `gap:${record.id}`,
+              context: true,
+              gap: true,
+              recordId: record.id,
+              sheet,
+              row: record.row,
+              label: record.label || '',
+              values: {},
+              note: '',
+            },
+          });
+        }
+      out.push(r);
+    }
+    return out.map(({ at, ...r }) => r);
   }
 
   /**
@@ -2219,7 +2313,12 @@ export function createAssistant({ store, config = {} }) {
             todo: 'Ask the person about these cells (value, alternatives, why). They check them in the table (edit, pick an alternative, or «Marcar revisadas»), or tell you: then update_proposal (the value they say, or rows[].checked for the ones they confirm) and apply again. Only when they explicitly say to apply them as they are: apply_proposal with confirmDoubtful; to write only the sure cells: skipDoubtful.',
           };
         }
-        return { error: clip(e.message, 300), details: e.details?.items?.slice(0, 10) };
+        // Google's own reason for a rejected save (a protected range, a bad request) helps fix it.
+        return {
+          error: clip(e.message, 300),
+          details: e.details?.items?.slice(0, 10),
+          ...(e.details?.cause ? { cause: clip(e.details.cause, 300) } : {}),
+        };
       }
     }
     return { error: 'Unknown tool' };

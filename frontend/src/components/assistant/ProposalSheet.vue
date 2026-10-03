@@ -173,6 +173,11 @@ const canEditCell = (key: string, field: string) => {
   const change = byKey.get(key)
   return props.editable && !!change && !readOnlyRow(change) && fieldSet.value.has(field) && info(key, field)?.kind !== 'locked'
 }
+/** Why a row is only to read: a page line that writes nothing, or a sheet row between the proposal's rows. */
+const readOnlyText = (change: ProposalChange) =>
+  change.gap
+    ? t('Fila de la hoja que la propuesta no cambia: se muestra para leer en orden')
+    : t('Línea de la página que no escribe nada: solo para seguirla')
 /** The rows come from a notebook page: a "Línea" column (photo and line, when the page has several photos). */
 const paged = () => props.changes.some(c => c.page)
 const severalPhotos = () => new Set(props.changes.map(c => c.page?.photo ?? 0)).size > 1
@@ -303,7 +308,7 @@ function drawn(cell: CellComponent, field: string, c: CellInfo, comments: CellCo
     c.fromFormula ? t('Lo dará la fórmula de la hoja (del clutch): no se escribe') : '',
     c.kind === 'unreadable' && props.editable ? t('escribe el valor; vacía no se escribe') : '',
     c.kind === 'sheet' && !c.fromFormula && canEditCell(row.__key, field) ? t('Valor actual de la hoja; escribe para cambiarlo') : '',
-    readOnlyRow(change) ? t('Línea de la página que no escribe nada: solo para seguirla') : '',
+    readOnlyRow(change) ? readOnlyText(change) : '',
   ]
     .filter(Boolean)
     .join('\n')
@@ -423,11 +428,13 @@ function rowFormatter(cell: CellComponent) {
   const skipped = props.editable && !!change && !change.context && !writtenFields(change).length && !waiting
   const el = cell.getElement()
   el.classList.toggle('is-skipped', skipped)
-  el.title = !skipped
-    ? ''
-    : change?.rowTaken
-      ? t('Esta fila no se escribe: su fila sin usar ya se usó en la hoja')
-      : t('Esta fila no se escribe: no le queda ningún cambio')
+  el.title = change?.gap
+    ? readOnlyText(change)
+    : !skipped
+      ? ''
+      : change?.rowTaken
+        ? t('Esta fila no se escribe: su fila sin usar ya se usó en la hoja')
+        : t('Esta fila no se escribe: no le queda ningún cambio')
   return row.__row
 }
 
@@ -621,7 +628,7 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
       : c.kind === 'locked'
         ? t('Fórmula de la hoja: no se escribe')
         : readOnlyRow(change)
-          ? t('Línea de la página que no escribe nada: solo para seguirla')
+          ? readOnlyText(change)
           : '',
     notes,
     choices: partial.length

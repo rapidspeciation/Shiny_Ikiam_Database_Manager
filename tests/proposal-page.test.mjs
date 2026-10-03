@@ -161,7 +161,7 @@ test("a page's proposal shows every line in the notebook's order, with its photo
     assert.ok(out.proposalId, JSON.stringify(out));
     assert.deepEqual(out.photoNotShown, [`${OTHER}-bbbb.jpg`, '../../etc/passwd']);
     let [p] = await proposals();
-    assert.deepEqual(p.page, { kind: 'emergence', sheet: 'Insectary_data', columns: p.page.columns, photos: 2 });
+    assert.deepEqual(p.page, { kind: 'emergence', sheet: 'Insectary_data', columns: p.page.columns, keys: ['Insectary_ID'], photos: 2 });
     assert.deepEqual(p.page.columns.slice(0, 4), ['Insectary_ID', 'SPECIES', 'Sex', 'CLUTCH NUMBER']);
     // Photo 0's lines (1, 3, 4, 5), then photo 1's (2).
     assert.deepEqual(

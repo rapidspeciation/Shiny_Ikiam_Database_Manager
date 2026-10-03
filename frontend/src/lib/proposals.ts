@@ -85,11 +85,16 @@ export interface RowTaken {
   by?: string
   at?: string
 }
-/** The notebook page a proposal was read from: its notebook, the sheet, its columns in the page's order, how many photos. */
+/**
+ * The notebook page a proposal was read from: its notebook, the sheet, its
+ * columns in the page's order, its key columns (the row's own ID), how many
+ * photos (0 when only the proposal's reason names the notebook).
+ */
 export interface ProposalPage {
   kind: string
   sheet: string
   columns: string[]
+  keys: string[]
   photos: number
 }
 export interface ProposalChange {
@@ -141,6 +146,11 @@ export interface ProposalChange {
   sheetChanged?: Record<string, SheetEdit>
   /** A new row whose pre-made row was used meanwhile. */
   rowTaken?: RowTaken
+  /**
+   * A context row that is a row of the sheet between the proposal's rows (a
+   * proposal without a notebook page, shown in sheet order): never written nor editable.
+   */
+  gap?: boolean
 }
 export interface Proposal {
   id: string
@@ -533,9 +543,9 @@ const TEMPLATE_VALUE = new Set(['NA', 'NOT_COLLECTED'])
 
 /**
  * The proposal's rows split by sheet (one table each, with that sheet's
- * columns): the columns it changes, in the sheet's order when known, then the
- * columns the person added. A notebook page's sheet follows the notebook: its
- * columns in the page's order, then the implied ones, then the rest; columns
+ * columns): the columns it changes and those the person added, in the sheet's
+ * order when known. A notebook page's sheet follows the notebook: its columns
+ * in the page's order, then the implied ones, then the rest; columns
  * holding only a template's NA / NOT_COLLECTED go last, listed in `template`
  * (the table can fold them).
  */
@@ -555,15 +565,19 @@ export function sheetGroups(
         ...Object.keys(c.warnings ?? {}),
       ]),
     )
-    const columns = order(sheet)
-    const sorted = columns ? columns.filter(f => used.has(f)) : p.fields.filter(f => used.has(f))
+    const added = new Set(extra[sheet] ?? [])
+    // The columns it changes and those the person adds, at their place in the sheet.
+    const sorted = (order(sheet) ?? p.fields).filter(f => used.has(f) || added.has(f))
     // Columns the sheet no longer lists still show.
-    for (const f of used) if (!sorted.includes(f)) sorted.push(f)
-    const added = (extra[sheet] ?? []).filter(f => !sorted.includes(f))
-    if (p.page?.sheet !== sheet) return { sheet, fields: [...sorted, ...added], changes, template: [] as string[] }
-    const notebook = p.page.columns.filter(f => used.has(f))
+    for (const f of [...used, ...added]) if (!sorted.includes(f)) sorted.push(f)
+    if (p.page?.sheet !== sheet) return { sheet, fields: sorted, changes, template: [] as string[] }
+    // A notebook page's columns first, in the page's order (the ID is the row's own column), so the
+    // person reads each row beside its line; even those with nothing to write (SPECIES, a formula).
+    const keys = p.page.keys ?? []
+    const notebook = p.page.columns.filter(f => !keys.includes(f) || used.has(f))
     const template = sorted.filter(
       f =>
+        used.has(f) &&
         !notebook.includes(f) &&
         changes.every(c => {
           if (c.personEdits?.[f] || c.unreadable?.[f] || c.doubts?.[f]) return false
@@ -573,7 +587,7 @@ export function sheetGroups(
     )
     const implied = new Set(changes.flatMap(c => c.inferred ?? []))
     const rest = sorted.filter(f => !notebook.includes(f) && !template.includes(f))
-    const fields = [...notebook, ...rest.filter(f => implied.has(f)), ...rest.filter(f => !implied.has(f)), ...added, ...template]
+    const fields = [...notebook, ...rest.filter(f => implied.has(f)), ...rest.filter(f => !implied.has(f)), ...template]
     return { sheet, fields, changes, template }
   })
 }

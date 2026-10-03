@@ -118,6 +118,42 @@ export function insectaryIdRow(store, id) {
   return null;
 }
 
+/** `W2B.2` → { base: 'W2B', n: 2 }: an Insectary ID written on two butterflies, told apart by a suffix. Null otherwise. */
+export function suffixedId(id) {
+  const m = /^([A-Z0-9]+)\.([1-9]\d*)$/.exec(String(id ?? '').trim().toUpperCase());
+  return m ? { id: `${m[1]}.${m[2]}`, base: m[1], n: Number(m[2]) } : null;
+}
+
+/**
+ * Where a new Insectary_data row with a suffixed ID (`W2B.2`: the same ID written on
+ * a second butterfly) goes, as the curators do it: a row inserted directly below the
+ * last row of that ID's group (`W2B`, `W2B.1`, `W2B.2`…), never a pre-made row at
+ * the end (a typed ID there would break the ID formula of every pre-made row after
+ * it). Returns null when `id` has no suffix; { problem, … } when it cannot go
+ * (`used`, `no_base`, `empty_base`, `repeated` with `rows`); else
+ * { id, base, anchor: { id: record id, row, value: its Insectary ID } }.
+ */
+export function duplicateIdRow(store, id) {
+  const parsed = suffixedId(id);
+  if (!parsed) return null;
+  const { base } = parsed;
+  const group = store.db
+    .prepare(
+      "SELECT id, row_num r, observed, upper(trim(json_extract(values_json,'$.Insectary_ID'))) v FROM records WHERE sheet='Insectary_data' AND missing=0 AND row_num>0 AND row_num<2000000000 AND (upper(trim(json_extract(values_json,'$.Insectary_ID')))=? OR upper(trim(json_extract(values_json,'$.Insectary_ID'))) LIKE ?) ORDER BY row_num",
+    )
+    .all(base, `${base}.%`)
+    .filter(r => r.v === base || suffixedId(r.v)?.base === base);
+  if (group.some(r => r.v === parsed.id)) return { ...parsed, problem: 'used', rows: group.filter(r => r.v === parsed.id).map(r => r.r) };
+  if (!group.length) return { ...parsed, problem: 'no_base' };
+  // An ID of the group held by two rows: which one the new row follows is unclear.
+  const repeated = group.find((r, i) => group.findIndex(o => o.v === r.v) !== i);
+  if (repeated) return { ...parsed, problem: 'repeated', value: repeated.v, rows: group.filter(r => r.v === repeated.v).map(r => r.r) };
+  // An empty pre-made row: the butterfly goes into it, no suffix needed.
+  if (!group.some(r => r.observed)) return { ...parsed, problem: 'empty_base', rows: group.map(r => r.r) };
+  const last = group.at(-1);
+  return { ...parsed, anchor: { id: last.id, row: last.r, value: last.v } };
+}
+
 /** The endpoint's entry: `count` more pre-made rows at the end of `sheet`, in the write queue. */
 export function extendPremadeRows(store, sheet, count, user) {
   return store.runExclusive(() => extendRows(store, sheet, count, { actor: user?.id || user?.username || 'app' }));

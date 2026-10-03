@@ -282,6 +282,55 @@ test('IDs read with 0 for O find the pre-made rows in step with the page, not an
   assert.equal(alone.lines[0].row, 50);
 });
 
+test('a row with the ID as read wins over older look-alikes, even an empty pre-made one; a suffixed ID is read as it is', () => {
+  const blankRow = (id, row) => ({ id: `r${row}`, row, version: 1, values: { Insectary_ID: id } });
+  const used = (id, row, extra = {}) => ({ id: `old${row}`, row, version: 1, values: { Insectary_ID: id, Sex: 'female', 'CLUTCH NUMBER': 364, ...extra } });
+  const rows = [
+    // The current round, pre-made and empty: G3C… (and the W2B group, W2B.1 made by the curators).
+    blankRow('G3C', 200),
+    blankRow('G4C', 201),
+    blankRow('O1B', 202),
+    blankRow('Z4C', 203),
+    blankRow('W2B', 204),
+    blankRow('S2D', 205),
+    used('W2B.1', 206),
+    // Old butterflies whose IDs look the same (6/G, 0/O, 2/Z, 8/B, 5/S), in consecutive rows like the page.
+    used('63C', 30),
+    used('64C', 31),
+    used('01B', 32),
+    used('24C', 33),
+    used('W28', 34),
+    used('52D', 35),
+    used('W28.1', 36),
+  ];
+  const lookup = { ...fakeLookup(rows), list: () => undefined, holder: () => null };
+  const lines = ['G3C', 'G4C', 'O1B', 'Z4C', 'W2B', 'S2D', 'W2B.1'].map(id => ({ raw: `${id} ♀`, v: { Insectary_ID: id, Sex: 'female' } }));
+  const review = buildReview({
+    transcription: parseTranscription(JSON.stringify({ kind: 'emergence', lines })),
+    today: '2026-09-28',
+    lookup,
+  });
+  assert.deepEqual(
+    review.lines.map(l => [l.status, l.row, l.message]),
+    [
+      ['match', 200, ''],
+      ['match', 201, ''],
+      ['match', 202, ''],
+      ['match', 203, ''],
+      ['match', 204, ''],
+      ['match', 205, ''],
+      ['match', 206, ''],
+    ],
+  );
+  // Not in the sheet at all: a suffixed ID is not "fixed" to a look-alike (W28.1).
+  const missing = buildReview({
+    transcription: parseTranscription(JSON.stringify({ kind: 'emergence', lines: [{ raw: 'W2B.2', v: { Insectary_ID: 'W2B.2' } }] })),
+    today: '2026-09-28',
+    lookup: { ...lookup, find: ([key]) => (key === 'W2B.2' ? [] : lookup.find([key])) },
+  });
+  assert.equal(missing.lines[0].status, 'missing');
+});
+
 test('a full species name in Stock_of_origin takes the list value; a wild butterfly gets its species typed', () => {
   const rows = [{ id: 'w1', row: 5, version: 1, values: { Insectary_ID: '7VC', SPECIES: null, Stock_of_origin: null } }];
   const lookup = fakeLookup(rows, { formulas: { w1: { SPECIES: '=X' } } });
@@ -474,7 +523,7 @@ test('match_notebook matches a transcribed page and leaves one proposal beside T
       message: '7ZZ no está en Insectary_data: ¿está bien leído?',
     });
     assert.ok(listed[0].changes[4].placeholder && listed[0].changes[4].context && listed[0].changes[4].index < 0);
-    assert.deepEqual(listed[0].page, { kind: 'emergence', sheet: 'Insectary_data', columns: KINDS.emergence.fields, photos: 0 });
+    assert.deepEqual(listed[0].page, { kind: 'emergence', sheet: 'Insectary_data', columns: KINDS.emergence.fields, keys: KINDS.emergence.keys, photos: 0 });
     assert.deepEqual(listed[0].changes[0].replaceFormula, ['SPECIES']);
     // The proposal keeps the doubt with the cell: its value, how sure, the alternatives and why.
     assert.equal(listed[0].changes[1].values.Sex, 'female');

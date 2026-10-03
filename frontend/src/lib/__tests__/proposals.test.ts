@@ -113,6 +113,25 @@ describe('the tables of a proposal', () => {
   })
 })
 
+describe('a notebook page\'s table', () => {
+  it('shows the page\'s columns first in the page\'s order, then the rest and the added ones at their place in the sheet', () => {
+    const p = {
+      ...proposal([edited('r1', { Death_date: '2026-10-01', Sex: 'NA', CAM_ID: 'CAM078318', Wild_Reared: 'Reared' }, { sheet: 'Insectary_data' })]),
+      // A proposal whose reason names the notebook (no page saved): its columns, no photos.
+      page: {
+        kind: 'emergence',
+        sheet: 'Insectary_data',
+        columns: ['Insectary_ID', 'SPECIES', 'Sex', 'CLUTCH NUMBER', 'Death_date', 'CAM_ID'],
+        keys: ['Insectary_ID'],
+        photos: 0,
+      },
+    }
+    const order = () => ['Insectary_ID', 'Wild_Reared', 'CLUTCH NUMBER', 'SPECIES', 'Sex', 'Death_date', 'LIFESTAGE', 'CAM_ID', 'Location_body']
+    const [g] = sheetGroups(p, { Insectary_data: ['Location_body', 'LIFESTAGE'] }, order)
+    expect(g.fields).toEqual(['SPECIES', 'Sex', 'CLUTCH NUMBER', 'Death_date', 'CAM_ID', 'Wild_Reared', 'LIFESTAGE', 'Location_body'])
+  })
+})
+
 describe('what the assistant changed', () => {
   it('lists the cells whose value changed between two revisions, and every cell of a new row', () => {
     const before = proposal([created('c1', { SPECIES: 'Oleria gunilla', Sex: 'male' }), edited('r1', { Sex: 'female' })])
@@ -419,11 +438,18 @@ describe("a notebook page's proposal", () => {
         ),
         line(2),
       ]),
-      page: { kind: 'emergence', sheet: 'Insectary_data', columns: ['Insectary_ID', 'SPECIES', 'Sex', 'Death_date', 'Death_cause'], photos: 1 },
+      page: {
+        kind: 'emergence',
+        sheet: 'Insectary_data',
+        columns: ['Insectary_ID', 'SPECIES', 'Sex', 'Death_date', 'Death_cause'],
+        keys: ['Insectary_ID'],
+        photos: 1,
+      },
     }
     const sheetOrder = ['Insectary_ID', 'Notes', 'Tube_2_tissue', 'Tube_2_id', 'Wild_Reared', 'Death_cause', 'Death_date', 'Sex']
     const [g] = sheetGroups(p, {}, () => sheetOrder)
-    expect(g.fields).toEqual(['Sex', 'Death_date', 'Death_cause', 'Wild_Reared', 'Notes', 'Tube_2_tissue', 'Tube_2_id'])
+    // SPECIES, a page column with nothing to write, still shows (the sheet's species beside the ID).
+    expect(g.fields).toEqual(['SPECIES', 'Sex', 'Death_date', 'Death_cause', 'Wild_Reared', 'Notes', 'Tube_2_tissue', 'Tube_2_id'])
     expect(g.template).toEqual(['Tube_2_tissue', 'Tube_2_id'])
   })
   it('says why a line writes nothing, keeps it read-only, and counts each photo', () => {

@@ -679,7 +679,11 @@ const statusText = computed(
             <span
               v-if="g.changes.some(c => c.context && !c.page?.error)"
               class="legend is-context"
-              :title="$t('Línea de la página que no escribe nada: solo para seguirla')"
+              :title="
+                g.changes.some(c => c.context && !c.gap)
+                  ? $t('Línea de la página que no escribe nada: solo para seguirla')
+                  : $t('Fila de la hoja que la propuesta no cambia: se muestra para leer en orden')
+              "
               >{{ $t('sin cambios') }}</span
             >
             <span

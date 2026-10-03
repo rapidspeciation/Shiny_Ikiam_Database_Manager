@@ -128,6 +128,8 @@ export default {
     "Select cells with an AI suggestion you changed or set back",
   Nota: 'Note',
   'Quitar esta fila de la propuesta': 'Remove this row from the proposal',
+  'Fila de la hoja que la propuesta no cambia: se muestra para leer en orden':
+    'A row of the sheet the proposal does not change: shown so the table reads in order',
   '{problem}: se guarda igual; corrígelo si es un error': '{problem}: saved anyway; correct it if it is a mistake',
   '{n} celdas de solo lectura no se modificaron': '{n} read-only cells were not changed',
   'Sin filas': 'No rows',

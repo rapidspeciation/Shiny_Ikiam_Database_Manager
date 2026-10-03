@@ -154,6 +154,22 @@ export default {
   '{field} se calcula con una fórmula en la fila nueva': '{field} is computed by a formula in the new row',
   'La fila sin usar de {id} ya no está libre; recarga y elige otro ID':
     'The unused row of {id} is no longer free; reload and choose another ID',
+  // An Insectary ID on two butterflies (W2B.1, W2B.2)
+  'El Insectary ID {id} se calcula con una fórmula: solo se cambia añadiéndole un sufijo ({id}.1)':
+    'The Insectary ID {id} is computed by a formula: it only changes by adding a suffix ({id}.1)',
+  '{base} no está en Insectary_data: {id} es para una segunda mariposa con el ID {base}':
+    '{base} is not in Insectary_data: {id} is for a second butterfly with the ID {base}',
+  'La fila de {base} está sin usar: la mariposa va en ella, sin sufijo':
+    'The row of {base} is unused: the butterfly goes in it, without a suffix',
+  '{value} está en más de una fila ({rows}): corrígelo antes de añadir {id}':
+    '{value} is in more than one row ({rows}): fix that before adding {id}',
+  'Las filas nuevas de {base} se guardan de una en una': 'New rows of {base} are saved one at a time',
+  'La fila {row} ya no es {id} en Google Sheets; recarga y vuelve a intentarlo':
+    'Row {row} is no longer {id} in Google Sheets; reload and try again',
+  'Debajo de {id} (fila {row}) hay otra fila de {base} en Google Sheets; recarga y vuelve a intentarlo':
+    'Below {id} (row {row}) there is another row of {base} in Google Sheets; reload and try again',
+  'La fila {label} tiene datos que no puso ese guardado ({field}); no se borra':
+    'Row {label} holds data that save did not write ({field}); it is not deleted',
   '{value} ya está usado en {sheet} fila {row}': '{value} is already used in {sheet} row {row}',
   '{value} ya está usado en {sheet} fila {row} ({label})': '{value} is already used in {sheet} row {row} ({label})',
   '{value} está dos veces en este guardado': '{value} is twice in this save',
