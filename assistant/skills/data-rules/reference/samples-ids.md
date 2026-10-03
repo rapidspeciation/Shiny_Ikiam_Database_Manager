@@ -27,7 +27,8 @@
   day's emergences are numbered: gaps in the emergence run are expected.
 - A wrong ID in the sheet is fixed by moving the data to the right pre-made row
   (Buscador → row number → «Corregir Insectary ID»), not by retyping the ID
-  cell. True duplicates were suffixed `.1`/`.2` by the curators.
+  cell. An ID written on two butterflies: the second is `ID.1`, a third
+  `ID.2` ([insectary-individuals.md](insectary-individuals.md), Duplicates).
 
 ## CAM_ID
 
