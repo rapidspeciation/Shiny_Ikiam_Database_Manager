@@ -239,6 +239,13 @@ describe('causes and racks', () => {
     expect(bestRack(racks, [row({ Research_purpose: 'F1/F2 mutation rate' })], 'Flash frozen')?.value).toBe('FS1')
     // No insectary rack in ethanol: still the insectary's (as Tubos does), never the collections' rack.
     expect(bestRack(racks, [row({})], 'Ethanol')?.value).toBe('FS3')
+    // The insectary's own rack weeks behind the crosses' one: the rack in use (one rack for both, Oct 2026).
+    const dated = [
+      { value: 'FS90415493', medium: 'Flash frozen', context: 'Cruces', date: 46297 },
+      { value: 'FS63714724', medium: 'Flash frozen', context: 'Insectario', date: 46226 },
+    ]
+    expect(bestRack(dated, [row({})], 'Flash frozen')?.value).toBe('FS90415493')
+    expect(bestRack([{ ...dated[0], date: 46230 }, dated[1]], [row({})], 'Flash frozen')?.value).toBe('FS63714724')
   })
 })
 

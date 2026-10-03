@@ -79,3 +79,22 @@ test('ID suggestions are kept until a sheet they read changes', async () => {
   assert.equal(idSuggestions(store, { kind: 'tube' }).suggestions[0].value, 'FS50849035');
   store.close();
 });
+
+test('check says which typed CAMs and tubes are used already, and where', async () => {
+  const sheets = new LocalSheets({
+    Insectary_data: [
+      { row: 2, values: { Insectary_ID: 'A0A', SPECIES: 'Mechanitis polymnia', CAM_ID: 'CAM078300', Tube_1_id: 'FS90415400' } },
+    ],
+    Collection_data: [{ row: 5, values: { CAM_ID: 'CAM079900', SPECIES: 'Oleria onega', Tube_1_id: 'FS90415401' } }],
+  });
+  const store = new Store({ localMode: true }, { sheets });
+  await store.sync({ sheets: ['Insectary_data', 'Collection_data'] });
+  const tubes = idSuggestions(store, { kind: 'tube', check: 'fs90415400, FS90415401,FS90415402' });
+  assert.deepEqual(Object.keys(tubes.used).sort(), ['FS90415400', 'FS90415401']);
+  assert.equal(tubes.used.FS90415401.sheet, 'Collection_data');
+  assert.equal(tubes.used.FS90415400.label, 'A0A');
+  const cams = idSuggestions(store, { kind: 'cam', check: 'CAM079900,CAM078301' });
+  assert.deepEqual(Object.keys(cams.used), ['CAM079900']);
+  assert.deepEqual(idSuggestions(store, { kind: 'tube', check: '' }).used, {});
+  store.close();
+});

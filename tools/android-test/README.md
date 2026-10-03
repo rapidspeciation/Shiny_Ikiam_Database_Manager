@@ -43,6 +43,11 @@ and use Playwright from `~/.local/share/ithomiini-wikiloc/node_modules`. The key
 by the page's visible height (Android's own flag can be stale). They add rows to the Colecta
 list of that account and empty it at the end; nothing is saved to the workbook.
 
+Tubos as cards (`tubes.mjs`) pastes a range, types a tube on one card with the number pad and checks that
+Enter goes to the next card's tube with its suggestion selected; it never saves:
+`adb reverse tcp:8847 tcp:8847`, then
+`APP=http://localhost:8847/ CREDS=~/.cache/ithomiini-lab/credentials.json node tools/android-test/tubes.mjs Z8D-A2E Z9D A0E`.
+
 SwiftKey (the keyboard the team uses) can replace Gboard: download its APK, check the signer is
 TouchType Limited (`build-tools/35.0.0/apksigner verify --print-certs`), then
 `adb install -r swiftkey.apk` and `adb shell ime set com.touchtype.swiftkey/com.touchtype.KeyboardService`.

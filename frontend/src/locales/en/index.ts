@@ -17,6 +17,7 @@ import monitoring from './monitoring'
 import review from './review'
 import server from './server'
 import serverBuilt from './server-built'
+import tubes from './tubes'
 
 export const en: Record<string, string> = Object.assign(
   {},
@@ -24,6 +25,7 @@ export const en: Record<string, string> = Object.assign(
   entry,
   deaths,
   emerged,
+  tubes,
   clutches,
   collect,
   monitoring,

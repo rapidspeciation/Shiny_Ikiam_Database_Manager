@@ -108,8 +108,10 @@ function rowsOf(store, sheet) {
  *  - cam: the number after each consecutive run of CAM IDs, newest runs first;
  *  - tube: the number after each run of tube IDs, per prefix and preservation medium.
  * With `start`, returns `count` consecutive unused IDs beginning at `start`.
+ * With `check` (cam or tube; IDs separated by commas), says which of them are
+ * used already and where (the Tubos cards check typed and scanned tubes).
  */
-export function idSuggestions(store, { kind, start, count } = {}) {
+export function idSuggestions(store, { kind, start, count, check } = {}) {
   const sheets = ID_SHEETS[kind]?.();
   if (!sheets) return computeIds(store, { kind, start, count });
   // Reading every row of these sheets takes up to a second (tube IDs): the answer is kept
@@ -117,9 +119,9 @@ export function idSuggestions(store, { kind, start, count } = {}) {
   const stamp = sheets.map(sheet => tableRevision(store, sheet)).join('|');
   let cache = idCache.get(store);
   if (cache?.stamp !== stamp) idCache.set(store, (cache = { stamp, answers: new Map() }));
-  const key = `${kind}\u0000${start ?? ''}\u0000${count ?? ''}`;
+  const key = `${kind}\u0000${start ?? ''}\u0000${count ?? ''}\u0000${check ?? ''}`;
   if (!cache.answers.has(key)) {
-    const answer = computeIds(store, { kind, start, count });
+    const answer = computeIds(store, { kind, start, count, check });
     if (cache.answers.size >= 200) cache.answers.clear();
     cache.answers.set(key, answer);
   }
@@ -137,8 +139,9 @@ const ID_SHEETS = {
       .map(mod => mod.id),
 };
 
-function computeIds(store, { kind, start, count } = {}) {
+function computeIds(store, { kind, start, count, check } = {}) {
   const n = Math.min(Math.max(Number(count) || 20, 1), 500);
+  if (check !== undefined && (kind === 'cam' || kind === 'tube')) return usedAmong(kind === 'cam' ? usedCamIds(store) : usedTubeIds(store), check);
   // Every free pre-made row can be offered (earlier empty rows included).
   if (kind === 'insectary') return insectaryIds(store, start, Math.min(Math.max(Number(count) || 20, 1), 5000));
   if (kind === 'cam') return start ? fromStart(start, n, usedCamIds(store)) : camSuggestions(store);
@@ -225,6 +228,12 @@ function sequence(start, count, used) {
     if (!used.has(id)) out.push(id);
   }
   return out;
+}
+
+/** Which of the IDs in `check` ("FS1,FS2", at most 200) are used, each with the first row holding it. */
+function usedAmong(used, check) {
+  const values = [...new Set(String(check).split(',').map(v => v.trim().toUpperCase()).filter(Boolean))].slice(0, 200);
+  return { used: Object.fromEntries(values.filter(v => used.has(v)).map(v => [v, used.get(v)])) };
 }
 
 /** Where a used ID is: the first row holding it (sheet, row, the row's label). */
