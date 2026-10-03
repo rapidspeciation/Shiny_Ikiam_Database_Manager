@@ -70,11 +70,6 @@ Propose everything readable; doubt is a highlight, not an omission.
   sure. A clear value that looks wrong (a date out of stage order, adults >
   pupae) is sure: send it as written and point it out.
 - **Cannot read it at all**: mark it unreadable as the tool describes.
-- **On the cell**: the table highlights cells, so a doubt goes on the cell it
-  is about, with its other readings (`¿19/9?` → alternative `19/9`); one
-  about which line a value belongs to goes on that value, its `reasons`
-  naming the other line ("may be S2D's"). Words in `raw` reach the person
-  only as the line's text.
 - **Look-alikes**: 0/O, 1/I/7, 1/4, 1/2, 3/7, 2/7, 5/S, 8/B, 2/Z, 6/G, 4/9,
   3/8, `+`/1; ♀/♂ written small. Before reading digits, compare this hand's 1
   and 7 (and 3/8) on clear cells of the same page, zoomed. Copy IDs as
@@ -88,14 +83,16 @@ Propose everything readable; doubt is a highlight, not an omission.
 - **Dates** day first, as written (`17/9`, `4-8`, `19-6-23`), without adding
   the year. `~2/7` and `29/6?` are that date, doubtful; `2/9+3/9` is the
   first day.
-- **Braces and dittos first** (`"`, `ll`, `||`, `〃`, a wavy line, a brace
-  `}`): before filling lines, list each run per column: its value and its
-  first and last ID. The run is where the brace's ends are; its value can sit
-  mid-span. Then give the value to every line of the run, or once in the
-  tool's `spans`. A date written once for several lines applies to all; a
-  capture day written once in a bracketed note over wild lines is each
-  line's `Intro2Insectary_date`. A ditto under a blank cell repeats the last
-  value written above; an arrow `↑`/`↗` under a note repeats the note.
+- **Values written once for several lines**: when consecutive lines share a
+  value, the team often writes it once and marks the lines it covers with a
+  brace `}` (or ditto marks: `"`, `ll`, `||`, `〃`, a wavy line). The value is
+  often written midway along the brace; the brace's two ends mark the first
+  and last line. Note each brace's first and last ID before filling the
+  lines, then give its value to every line it covers (or once, in the tool's
+  `spans`). A date written once for several lines applies to all; a capture
+  day written once in a bracketed note over wild lines is each line's
+  `Intro2Insectary_date`. A ditto under a blank cell repeats the last value
+  written above; an arrow `↑`/`↗` under a note repeats the note.
 - **Dashes and blanks**: `—` or `-` alone is `"NA"`; an empty cell: leave the
   column out.
 - **Sex**: ♀ = `female`, ♂ = `male`, `NA` when written so.
@@ -138,10 +135,11 @@ Propose everything readable; doubt is a highlight, not an omission.
   dead"), keeping IDs, codes and names. A place written short is its list
   name (Cavernas, C.T.C → Cavernas Templo de Ceremonia). More: data-rules
   `reference/notes.md`.
-- **Which line a value is on**: in the Emergidos notebooks, dead dates and
-  notes are often written low, on the ruling under their line: they belong to
-  the line above that ruling. One note per clutch or butterfly; a bracket or
-  arrow shares it between the lines it spans.
+- **Which line a value is on**: notebook pages curve like any open book, so
+  a value can look as if it sits on the line above or below its own. Follow
+  the page's printed horizontal lines to the ID they start from; a straight
+  line across the photo can land on the wrong row. One note per clutch or
+  butterfly; a bracket or arrow shares it between the lines it spans.
 
 ## The notebooks (kind → sheet)
 
