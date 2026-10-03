@@ -16,6 +16,7 @@ async function fixture() {
       { row: 7, values: { Insectary_ID: 'H4B' } }, // empty, but its ID has two pre-made rows
       { row: 8, values: { Insectary_ID: 'H4B' } },
       { row: 9, values: { Insectary_ID: 'H5B' } },
+      { row: 15, values: { Insectary_ID: 'H6B', Sex: 'NA', Notes_Insectary_data: 'we skipt this ID' } }, // skipped on purpose: not free
       { row: 10, values: { Insectary_ID: 'M9D' } }, // an empty row of the current round
       { row: 11, values: { Insectary_ID: 'N1D', SPECIES: 'Ithomia salapia', Sex: 'male' } }, // the last row used
       { row: 12, values: { Insectary_ID: 'N2D' } },

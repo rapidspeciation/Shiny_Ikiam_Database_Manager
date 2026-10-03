@@ -96,10 +96,15 @@ export function tableRevision(store, module) {
 function rowsOf(store, sheet) {
   return store.db
     .prepare(
-      'SELECT row_num,observed,values_json FROM records WHERE sheet=? AND missing=0 AND row_num>0 ORDER BY row_num',
+      'SELECT row_num,observed,values_json,formulas_json FROM records WHERE sheet=? AND missing=0 AND row_num>0 ORDER BY row_num',
     )
     .all(sheet)
-    .map(r => ({ row: r.row_num, observed: Boolean(r.observed), values: JSON.parse(r.values_json) }));
+    .map(r => ({
+      row: r.row_num,
+      observed: Boolean(r.observed),
+      values: JSON.parse(r.values_json),
+      formulas: JSON.parse(r.formulas_json || '{}') || {},
+    }));
 }
 
 /**
@@ -155,7 +160,9 @@ function computeIds(store, { kind, start, count, check } = {}) {
  * butterfly. The team mostly goes on after the last row used, but also fills
  * earlier empty rows (backlogs, emergences typed later: H0B–H2B, L8D…), so
  * those count too, after the ones at the end. An ID is free when its row is
- * empty and no row of any sheet names it; an ID with two pre-made rows is left out.
+ * empty (nothing typed besides its formulas: a row of NA with a note "we skipt
+ * this ID" is not) and no row of any sheet names it; an ID with two pre-made
+ * rows is left out.
  * `tail` is how many come after the last row used (the usual suggestion).
  */
 function insectaryIds(store, start, count) {
@@ -168,9 +175,13 @@ function insectaryIds(store, start, count) {
   const copies = new Map();
   for (const r of rows) copies.set(norm(r.values.Insectary_ID), (copies.get(norm(r.values.Insectary_ID)) || 0) + 1);
   const lastObserved = rows.reduce((max, r) => (r.observed ? Math.max(max, r.row) : max), 0);
+  const typedIn = r =>
+    Object.entries(r.values).some(
+      ([field, value]) => field !== 'Insectary_ID' && !r.formulas[field] && String(value ?? '').trim() !== '',
+    );
   const free = rows.filter(r => {
     const id = norm(r.values.Insectary_ID);
-    return !r.observed && id && !blank(id) && !used.has(id) && copies.get(id) === 1;
+    return !r.observed && id && !blank(id) && !used.has(id) && copies.get(id) === 1 && !typedIn(r);
   });
   const tail = free.filter(r => r.row > lastObserved);
   // Earlier rows: the newest round first (D before C before B), in sheet order. IDs of older
