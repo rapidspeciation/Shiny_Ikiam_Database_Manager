@@ -768,6 +768,21 @@ export async function createApp(config = {}, options = {}) {
         requireEditor(user);
         return json(res, 200, await store.sync({ force: true }));
       }
+      // LOCAL_MODE only (the lab, tests): someone types in the sheet, as in Google Sheets. With hook: false the
+      // app is not told (as before the next sync); otherwise the row is read as the sheet's edit trigger has it read.
+      if (method === 'POST' && path === '/api/local/sheet-edit') {
+        requireAdmin(user);
+        if (!store.localMode) throw fail('NOT_FOUND', 'Only in LOCAL_MODE', 404);
+        const sheet = String(body.sheet ?? '');
+        const row = Number(body.row);
+        if (!moduleMap.has(sheet) || !Number.isInteger(row) || row <= moduleMap.get(sheet).headerRow || !body.values || typeof body.values !== 'object')
+          throw fail('INVALID_VALUES', 'Give sheet, row and values');
+        await store.sheets.externalEdit(sheet, row, body.values);
+        if (body.hook === false) return json(res, 200, { edited: true, read: false });
+        const out = await store.refreshRows(sheet, [row]);
+        if (out.needsSync) await store.sync({ sheets: [sheet] });
+        return json(res, 200, { edited: true, read: true });
+      }
       if (method === 'POST' && path === '/api/import/preview') {
         requireEditor(user);
         return json(res, 200, previewImport(store, body, user));

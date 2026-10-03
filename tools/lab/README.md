@@ -27,6 +27,7 @@ node tools/lab/bench.mjs gpt-6.1-sol medium --cases stocks-0929
 node tools/lab/bench.mjs --history               # model × case, the latest run of each
 node tools/lab/timeline.mjs <run> [case]         # where a thread's time went
 tools/lab/tailscale.sh          # open the lab to your other devices (tailnet only); --off to close it
+node tools/lab/sheet-edit.mjs Insectary_data 5012 Sex=female   # someone types in the lab's sheet (--no-hook: the app is not told)
 ```
 
 - `tailscale.sh` serves the app (port 8509) and its T3 (port 8510) on this

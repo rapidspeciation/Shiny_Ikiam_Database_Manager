@@ -244,4 +244,53 @@ export default {
   'sin cambios': 'no change',
   'La hoja no aceptaría esta línea: su nota dice por qué': 'The sheet would not take this line: its note says why',
   rechazada: 'refused',
+  // Cells edited in the sheet after the proposal (ProposalSheet, ProposalGrid, ProposalsLive, lib/proposals)
+  'la app': 'the app',
+  'Editada en la hoja': 'Edited in the sheet',
+  'Se leyó {read} al proponer; la hoja tiene ahora {now} ({who})': 'Read {read} when proposed; the sheet now has {now} ({who})',
+  'editada otra vez después de elegir: elige de nuevo': 'edited again after you chose: choose again',
+  'se escribe el valor de la propuesta encima (eligió {who})': "the proposal's value is written over it (chosen by {who})",
+  'se escribe el valor de la propuesta encima': "the proposal's value is written over it",
+  'se mantiene el de la hoja': "the sheet's value is kept",
+  '{row} {field}: leído {read}, ahora {now}': '{row} {field}: read {read}, now {now}',
+  '{row}: su fila sin usar {n} ya se usó en la hoja': '{row}: its unused row {n} is already in use in the sheet',
+  'La hoja cambió después de tu propuesta {id} ({reason}): {cells}. Vuelve a mirar esas celdas (la foto, get_proposal) y actualiza la propuesta.':
+    'The sheet changed after your proposal {id} ({reason}): {cells}. Look at those cells again (the photo, get_proposal) and update the proposal.',
+  'Su fila sin usar ({row}) ya se usó en la hoja: esta fila no se escribe':
+    'Its unused row ({row}) is already in use in the sheet: this row is not written',
+  'Se mantiene el valor de la hoja; la propuesta decía: {value}': "The sheet's value is kept; the proposal had: {value}",
+  'Elige junto a la celda: el valor de la hoja o el de la propuesta': "Choose beside the cell: the sheet's value or the proposal's",
+  'Esta fila no se escribe: su fila sin usar ya se usó en la hoja': 'This row is not written: its unused row is already in use in the sheet',
+  Propuesta: 'Proposal',
+  'Celda editada en la hoja': 'Cell edited in the sheet',
+  'No se escribe esta celda: queda {value}, como en la hoja': 'This cell is not written: it stays {value}, as in the sheet',
+  'Mantener el de la hoja': "Keep the sheet's",
+  'Se escribe {value} encima de lo que tiene la hoja': '{value} is written over what the sheet has',
+  'Usar el de la propuesta': "Use the proposal's",
+  'Enviado al chat del asistente': "Sent to the assistant's chat",
+  'El asistente está respondiendo: el mensaje se copió para pegarlo en su chat cuando termine':
+    'The assistant is answering: the message was copied, to paste in its chat when it finishes',
+  'Mensaje copiado: pégalo en el chat del asistente': "Message copied: paste it in the assistant's chat",
+  'Copia este mensaje y pégalo en el chat del asistente': "Copy this message and paste it in the assistant's chat",
+  'Alguien editó estas celdas en la hoja después de la propuesta. Junto a cada una: mantener el valor de la hoja o usar el de la propuesta. Clic: ir a la siguiente':
+    "Someone edited these cells in the sheet after the proposal. Beside each one: keep the sheet's value or use the proposal's. Click: go to the next one",
+  '{n} celda se editó en la hoja después de esta propuesta': '{n} cell was edited in the sheet after this proposal',
+  '{n} celdas se editaron en la hoja después de esta propuesta': '{n} cells were edited in the sheet after this proposal',
+  'se mantienen los valores de la hoja': "keeping the sheet's values",
+  'se escriben los de la propuesta encima': "the proposal's are written over them",
+  '{n} con el valor de la propuesta': "{n} with the proposal's value",
+  revisar: 'review',
+  '{n} fila nueva sin escribir: su fila sin usar ya se usó en la hoja': '{n} new row not written: its unused row is already in use in the sheet',
+  '{n} filas nuevas sin escribir: su fila sin usar ya se usó en la hoja': '{n} new rows not written: their unused rows are already in use in the sheet',
+  'Le dice al asistente qué celdas cambió la hoja, para que las vuelva a mirar y corrija la propuesta (en su chat, o copiado para pegarlo)':
+    'Tells the assistant which cells the sheet changed, so it looks at them again and fixes the proposal (in its chat, or copied to paste)',
+  'Avisar al asistente': 'Tell the assistant',
+  'Editada en la hoja después de la propuesta: se mantiene el valor de la hoja salvo que elijas el de la propuesta':
+    "Edited in the sheet after the proposal: the sheet's value is kept unless you choose the proposal's",
+  'editada en la hoja': 'edited in the sheet',
+  '{n} cambio se dejó como está en la hoja': '{n} change was left as the sheet has it',
+  '{n} cambios se dejaron como están en la hoja': '{n} changes were left as the sheet has them',
+  'Alguien volvió a editar en la hoja celdas que ya habías elegido: elige de nuevo (en violeta)':
+    'Someone edited again in the sheet cells you had already chosen for: choose again (in violet)',
+  'Las celdas que cambiaron en la hoja salen en violeta.': 'The cells that changed in the sheet show in violet.',
 } as Record<string, string>

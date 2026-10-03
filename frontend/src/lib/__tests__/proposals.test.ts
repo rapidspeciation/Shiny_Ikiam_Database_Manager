@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { locale } from '../i18n'
 import {
   ID_COLUMN,
   cellComments,
@@ -17,7 +18,9 @@ import {
   rowsToWrite,
   sampleWarnings,
   selectionActions,
+  sheetEdits,
   sheetGroups,
+  tellText,
   uncheckedDoubts,
   unfilledUnreadable,
   withLocal,
@@ -439,5 +442,68 @@ describe("a notebook page's proposal", () => {
       { photo: 0, from: 1, to: 3, change: 1, same: 2, other: 0 },
       { photo: 1, from: 4, to: 5, change: 0, same: 0, other: 2 },
     ])
+  })
+})
+
+describe('cells edited in the sheet after the proposal', () => {
+  const was = locale.value
+  beforeAll(() => (locale.value = 'en'))
+  afterAll(() => (locale.value = was))
+  const sexEdited = { read: 'male', now: 'NA', source: 'sheets' as const, at: '2026-10-02T19:05:00.000Z' }
+  it("keep the sheet's value by default, the proposal's set aside and not written", () => {
+    const c = edited('r1', { Sex: 'female', SPECIES: 'Oleria onega' }, { sheetChanged: { Sex: sexEdited } })
+    const cell = cellOf(c, 'Sex')
+    expect([cell.kind, cell.value, cell.proposalValue, cell.doubtful]).toEqual(['kept', 'NA', 'female', false])
+    // Its comment says what was read, what the sheet has now, who and when (Ecuador's time), and what applying does.
+    const [comment] = cellComments(cell)
+    expect(comment.kind).toBe('edited')
+    expect(comment.text).toContain('male')
+    expect(comment.text).toContain('NA')
+    expect(comment.text).toContain('Google Sheets, 2/10/26 14:05')
+    expect(comment.text).toContain("the sheet's value is kept")
+    // The row still writes its other cell; a row with only kept cells writes nothing.
+    expect(rowsToWrite(proposal([c, edited('r2', { Sex: 'female' }, { sheetChanged: { Sex: sexEdited } })]))).toEqual([0])
+    // The other cells are as before.
+    expect(cellOf(c, 'SPECIES').kind).toBe('proposed')
+  })
+  it("chosen for the proposal: its value is written over the sheet's new one; edited again, kept until chosen again", () => {
+    const over = edited('r1', { Sex: 'female' }, { sheetChanged: { Sex: { ...sexEdited, use: 'proposal', decidedBy: 'Franz' } } })
+    const cell = cellOf(over, 'Sex')
+    expect([cell.kind, cell.value, cell.was]).toEqual(['proposed', 'female', 'NA'])
+    expect(cell.sheetEdit?.use).toBe('proposal')
+    expect(cellComments(cell)[0].text).toContain('chosen by Franz')
+    expect(rowsToWrite(proposal([over]))).toEqual([0])
+    const again = edited('r1', { Sex: 'female' }, { sheetChanged: { Sex: { ...sexEdited, now: 'unknown', again: true } } })
+    expect(cellOf(again, 'Sex').kind).toBe('kept')
+    expect(cellComments(cellOf(again, 'Sex'))[0].text).toContain('choose again')
+  })
+  it("a choice or a value typed there shows at once, before the save comes back; 'sheet' drops the cell", () => {
+    const p = proposal([edited('r1', { Sex: 'female' }, { sheetChanged: { Sex: sexEdited } })])
+    const chosen = withLocal(p, new Map(), new Map(), new Map([[cellId('r1', 'Sex'), 'proposal']]))
+    expect(cellOf(chosen.changes[0], 'Sex').kind).toBe('proposed')
+    const typed = withLocal(p, new Map([[cellId('r1', 'Sex'), { value: 'male' }]]))
+    expect(cellOf(typed.changes[0], 'Sex')).toMatchObject({ kind: 'person', value: 'male', was: 'NA' })
+    const back = withLocal(chosen, new Map(), new Map(), new Map([[cellId('r1', 'Sex'), 'sheet']]))
+    expect(cellOf(back.changes[0], 'Sex').kind).toBe('kept')
+  })
+  it('a doubtful reading kept from the sheet is not asked about (it is not written)', () => {
+    const c = edited('r1', { Sex: 'female' }, { sheetChanged: { Sex: sexEdited }, doubts: { Sex: { alternatives: ['male'] } } })
+    expect(cellOf(c, 'Sex').doubtful).toBe(false)
+    expect(uncheckedDoubts(proposal([c]))).toEqual([])
+  })
+  it('are listed for the banner with the new rows whose pre-made row was used, and told to the assistant', () => {
+    const p = proposal([
+      edited('r1', { Sex: 'female' }, { label: 'A1A', sheetChanged: { Sex: sexEdited } }),
+      created('n1', { Insectary_ID: 'B2D' }, { label: 'B2D', sheet: 'Insectary_data', rowTaken: { row: 40 } }),
+    ])
+    expect(sheetEdits(p).map(e => [e.key, e.field])).toEqual([
+      ['r1', 'Sex'],
+      ['n1', null],
+    ])
+    expect(rowsToWrite(p)).toEqual([])
+    const text = tellText(p, (_f, v) => String(v ?? ''))
+    expect(text).toContain('p1')
+    expect(text).toContain('A1A Sex: read male, now NA')
+    expect(text).toContain('B2D: its unused row 40')
   })
 })

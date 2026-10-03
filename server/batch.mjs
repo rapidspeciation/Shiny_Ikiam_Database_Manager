@@ -46,6 +46,25 @@ export function predictedSpecies(store, sheet, field, values) {
 
 const blank = value => value === null || value === undefined || /^\s*(|NA|N\/A)\s*$/i.test(String(value));
 const cellValue = (values, formulas, field) => (formulas[field] ? { formula: formulas[field] } : values[field]);
+
+/**
+ * Whether a sheet cell (`current`: { values, formulas } of its row) still holds
+ * what an edit expects there (`expected`: what was read when it was drafted), as
+ * the save checks it: a formula typed over (`replacing`) by the value it gives, a
+ * count kept as a sum by its text (=12+15) or the number it shows (27), any other
+ * cell by its value or formula.
+ */
+export function cellHolds(sheet, field, expected, current, replacing = false) {
+  const values = current?.values ?? {};
+  const formulas = current?.formulas ?? {};
+  if (replacing) return comparable(expected) === comparable(values[field] ?? null);
+  const actual = cellValue(values, formulas, field);
+  const sumCell = isSumField(sheet, field) && !!simpleSum(formulas[field]);
+  let want = expected;
+  if (sumCell && typeof want === 'string' && simpleSum(want)) want = { formula: simpleSum(want) };
+  if (sumCell && typeof want === 'number' && comparable(want) === comparable(values[field] ?? null)) want = actual;
+  return comparable(actual ?? null) === comparable(want ?? null);
+}
 /** `message`: a text, or a msg() when it has values in it (its descriptor goes to the app, server/messages.mjs). */
 const fail = (code, message, status = 400, details) => msgError(message, { code, status, details });
 
@@ -478,11 +497,7 @@ class Plan {
         return this.conflict(target, 'FORMULA_CELL', msg('{field} se calcula con una fórmula de la hoja', { field }), { field });
       if (replacing) {
         const predicted = before.values[field] ?? null;
-        if (
-          target.expected &&
-          Object.hasOwn(target.expected, field) &&
-          comparable(target.expected[field]) !== comparable(predicted)
-        )
+        if (target.expected && Object.hasOwn(target.expected, field) && !cellHolds(record.sheet, field, target.expected[field], before, true))
           return this.conflict(target, 'EXTERNAL_CONFLICT', msg('Otra persona cambió {field} en la hoja', { field }), {
             field,
             expected: target.expected[field],
@@ -492,18 +507,14 @@ class Plan {
         continue;
       }
       const actual = cellValue(before.values, before.formulas, field);
-      let expected =
+      // The sum a person saw may be sent as its text ("=12+15") or as the number it shows (27): cellHolds.
+      const expected =
         target.expected && Object.hasOwn(target.expected, field)
           ? target.expected[field]
           : cellValue(record.values, record.formulas, field);
-      // The sum a person saw may be sent as its text ("=12+15").
-      if (sumCell && typeof expected === 'string' && simpleSum(expected)) expected = { formula: simpleSum(expected) };
-      // …or as the number it shows (27).
-      if (sumCell && typeof expected === 'number' && comparable(expected) === comparable(before.values[field] ?? null))
-        expected = cellValue(before.values, before.formulas, field);
       // Typing the text a cell already holds (e.g. "944" stored as text) is not a change.
       if (typeof actual === 'string' && target.raw[field] === actual) continue;
-      if (comparable(actual) !== comparable(expected ?? null))
+      if (!cellHolds(record.sheet, field, expected, before))
         this.conflict(target, 'EXTERNAL_CONFLICT', msg('Otra persona cambió {field} en la hoja', { field }), {
           field,
           expected: expected ?? null,

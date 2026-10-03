@@ -72,6 +72,14 @@ pop-out opens the one for what the panel shows):
   header says «N celdas dudosas por revisar» (a click goes to the next) and
   the cell bar shows why and the other readings to pick. Editing, picking a
   reading, «Valor de la hoja» / «de la IA» or «Marcar revisadas» reviews them.
+- **Edited in the sheet after the proposal** (someone typed in Google Sheets
+  or the app meanwhile): violet with a «hoja» tag, the sheet's value kept and
+  the proposal's struck through; the cell's comment says what was read, what
+  the sheet has now, who and when. Beside the cell: «Mantener el de la hoja»
+  or «Usar el de la propuesta» (typing a value there also writes it). A
+  banner counts them («revisar →» goes to the next) and «Avisar al
+  asistente» sends the AI the list (into its chat, or copied to paste). A new
+  row whose unused row was taken meanwhile is violet and not written.
 - **«Aplicar N filas»** writes what the table shows as one save (undoable in
   Historial); a row with every cell set back is skipped. With unreviewed
   doubtful cells it asks first («Revisarlas», «Aplicar sin las dudosas»,
