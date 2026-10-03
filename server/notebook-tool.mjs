@@ -31,7 +31,7 @@ export const MATCH_NOTEBOOK_TOOL = {
       'Match a transcribed notebook page (or envelopes/labels) with the sheet and draft ONE proposal, shown at once beside the chat. Follow the digitalizar-cuaderno skill.',
       '',
       'Send every line, top to bottom, values as written:',
-      '- dates as written ("17/9"); ditto marks replaced by the value above; short CAMs/tubes ("cam505", "81") may stay short;',
+      '- dates as written ("17/9"); ditto marks replaced by the value above (a brace or ditto over many lines can go once in spans); short CAMs/tubes ("cam505", "81") may stay short;',
       '- counts as written ("12+15"; a corrected count as "12=9=4"); INSECTARY OR LABORATORY ("ins/oda") and notes columns as written.',
       '- Doubtful cell: your best reading as the value, confidence < 0.8, up to 3 alternatives and a short reason; it is highlighted.',
       '- Unreadable cell: null (never leave it out), a reason, and any partial reading in alternatives; it shows empty for the person to fill and is never written empty.',
@@ -85,6 +85,21 @@ export const MATCH_NOTEBOOK_TOOL = {
               crossedOut: { type: 'boolean', description: 'The line is crossed out or marked "no se usó el ID"' },
             },
             required: ['raw', 'values'],
+          },
+        },
+        spans: {
+          type: 'array',
+          description:
+            'A value a brace or ditto marks give to a run of lines, once: the column, the value, and the first and last line by their key (Insectary_ID, CLUTCH NUMBER…). Fills the lines between (both included) that leave that column out.',
+          items: {
+            type: 'object',
+            properties: {
+              field: { type: 'string' },
+              value: { type: 'string' },
+              from: { type: 'string', description: 'Key of the first line the brace covers' },
+              to: { type: 'string', description: 'Key of the last line the brace covers' },
+            },
+            required: ['field', 'value', 'from', 'to'],
           },
         },
         replaceProposalId: {
@@ -172,6 +187,7 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
   const usedIds = () => remembered('ids', 30000, () => newIds().used());
   const initials = user => remembered(`ini:${user.id ?? user.username}`, 600000, () => initialsFor(user));
 
+  let lastWriteQuery;
   function lookupFor(sheet, keys) {
     const lists = listsOf(sheet);
     let own, stocks;
@@ -227,6 +243,15 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
       },
       newRowFormulas: newRowFormulas(sheet),
       typedOverFormula: new Set(sheet === 'Insectary_data' ? ['SPECIES'] : []),
+      // Who wrote a cell last: an applied notebook proposal (notebook: true) or anything else, and the day (d/m/yy).
+      lastWrite: (recordId, field) => {
+        const row = (lastWriteQuery ??= db.prepare(
+          "SELECT a.source, a.reason, a.created_at FROM changes c JOIN actions a ON a.id = c.action_id WHERE c.record_id = ? AND c.field = ? AND a.status IN ('verified', 'observed') ORDER BY a.created_at DESC LIMIT 1",
+        )).get(recordId, field);
+        if (!row) return null;
+        const [y, m, d] = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(new Date(row.created_at)).split('-');
+        return { notebook: row.source === 'ai_approved' && /^Cuaderno /.test(row.reason ?? ''), date: `${Number(d)}/${Number(m)}/${y.slice(2)}` };
+      },
     };
   }
 
@@ -236,7 +261,7 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
    * out and reported, the rest still go).
    */
   function match(args, user) {
-    const { transcription, ignored } = checkTranscription({ kind: args.kind, year: args.year, lines: args.lines });
+    const { transcription, ignored } = checkTranscription({ kind: args.kind, year: args.year, lines: args.lines, spans: args.spans });
     const kind = KINDS[transcription.kind];
     const review = buildReview({
       transcription,
@@ -276,6 +301,30 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
           ...(row.unreadable ? { unreadable: row.unreadable } : {}),
         })),
       );
+    }
+    // A line the save would refuse (rowError) shows as its row with the reason and nothing to write,
+    // so the person sees it beside the page (never as a line already in the sheet).
+    {
+      const rowsShown = new Set(changes.map(c => c.recordId).filter(Boolean));
+      for (const line of review.lines) {
+        if (!line.rowError || !line.recordId || changes.some(c => c.line === line.n)) continue;
+        const record = store.getRecord(line.recordId);
+        if (!record || record.missing || rowsShown.has(record.id)) continue;
+        rowsShown.add(record.id);
+        changes.push({
+          recordId: record.id,
+          sheet: record.sheet,
+          row: record.row,
+          label: record.label,
+          expectedVersion: record.version,
+          before: {},
+          values: {},
+          replaceFormula: [],
+          note: clip(`Línea ${line.n}: «${line.raw}» · No se puede escribir: ${line.rowError}`, 300),
+          line: line.n,
+          rowError: line.rowError,
+        });
+      }
     }
     // A matched line whose only news is cells nobody could read still shows: the person may fill them
     // (the row writes nothing until they do). A line not found in the sheet stays out, as before.
@@ -374,7 +423,8 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
 export function matchSummary({ review, changes, ignored, wildWithoutCollection = [] }, proposalId) {
   const show = (field, value) =>
     typeOf(field) === 'date' && typeof value === 'number' ? isoOf(value) : value === undefined ? null : value;
-  const inProposal = new Set(changes.filter(c => !c.context).map(c => c.line));
+  // A row the save refused shows with its reason (rowError) but writes nothing: not in the proposal.
+  const inProposal = new Set(changes.filter(c => !c.context && !c.rowError).map(c => c.line));
   const context = new Set(changes.filter(c => c.context).map(c => c.line));
   // Lines whose unreadable cells are in the table (also a row with nothing else to write).
   const inTable = new Set(changes.filter(c => c.unreadable).map(c => c.line));
