@@ -166,7 +166,6 @@ export default {
   'Ningún clutch por verificar.': 'No clutch to verify.',
   Verificado: 'Verified',
   'Verificar…': 'Verify…',
-  Verificar: 'Verify',
   Marcar: 'Mark',
   // Events the paper cannot hold (only in the app)
   'Eventos (solo en la app)': 'Events (only in the app)',
@@ -185,6 +184,7 @@ export default {
   'vivas en la jaula': 'alive in the cage',
   'sobrevivieron (vivas + preservadas)': 'survived (alive + preserved)',
   'en la hoja': 'in the sheet',
+  'registrado en la app': 'recorded in the app',
   murieron: 'died',
   desaparecieron: 'disappeared',
   'se preservaron': 'preserved',

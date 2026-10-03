@@ -172,7 +172,7 @@ const isDefault = computed(() => !list.value?.upTo || !fromIso.value || Math.abs
         <span class="field-label">{{ $t('Desde') }}</span>
         <span class="flex gap-1">
           <DateField v-model="fromDate" class="field-input h-11 w-36 text-base" />
-          <input v-model="fromTime" type="time" class="field-input h-11 w-28 text-base" :aria-label="$t('Hora')" />
+          <input v-model="fromTime" type="time" class="field-input h-11 w-36 text-base" :aria-label="$t('Hora')" />
         </span>
       </label>
       <button class="btn h-11 px-3" :aria-label="$t('Actualizar')" :disabled="loading" @click="load"><RefreshCw :size="16" :class="{ 'animate-spin': loading }" /></button>

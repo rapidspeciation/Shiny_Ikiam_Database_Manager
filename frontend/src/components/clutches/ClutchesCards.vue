@@ -437,7 +437,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                       :title="verifyText(item.row)"
                       :aria-label="verifyText(item.row)"
                     >
-                      <AlertTriangle :size="12" /> {{ $t('Verificar') }} · {{ verifyBy(item.row) }}
+                      <AlertTriangle :size="12" /> {{ $t('Por verificar') }} · {{ verifyBy(item.row) }}
                     </span>
                     <span
                       v-else-if="day.today(item.row.id).review === 'checked'"

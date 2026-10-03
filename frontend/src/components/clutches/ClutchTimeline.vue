@@ -115,8 +115,17 @@ const explain = ref(false)
           </div>
         </div>
         <p class="mt-1 text-xs text-stone-600 tabular-nums">
-          <span v-if="s.tally.gained">+{{ s.tally.gained }} {{ s.stage === 'larva' ? $t('eclosionaron') : s.stage === 'pupa' ? $t('pupas nuevas') : $t('puestos') }} · </span>
-          −{{ s.tally.died }} {{ $t('murieron') }} · −{{ s.tally.disappeared }} {{ $t('desaparecieron') }} · {{ s.tally.preserved }} {{ $t('se preservaron') }}
+          {{
+            [
+              s.tally.gained ? `+${s.tally.gained} ${s.stage === 'larva' ? $t('eclosionaron') : $t('pupas nuevas')}` : '',
+              s.tally.died ? `−${s.tally.died} ${$t('murieron')}` : '',
+              s.tally.disappeared ? `−${s.tally.disappeared} ${$t('desaparecieron')}` : '',
+              s.tally.preserved ? `${s.tally.preserved} ${$t('se preservaron')}` : '',
+            ]
+              .filter(Boolean)
+              .join(' · ')
+          }}
+          <span class="text-stone-500">· {{ $t('registrado en la app') }}</span>
         </p>
       </li>
     </ul>
