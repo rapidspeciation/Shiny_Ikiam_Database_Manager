@@ -8,6 +8,7 @@ import clutches from './clutches'
 import collect from './collect'
 import common from './common'
 import deaths from './deaths'
+import emerged from './emerged'
 import entry from './entry'
 import history from './history'
 import home from './home'
@@ -22,6 +23,7 @@ export const en: Record<string, string> = Object.assign(
   common,
   entry,
   deaths,
+  emerged,
   clutches,
   collect,
   monitoring,

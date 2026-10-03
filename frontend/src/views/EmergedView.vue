@@ -2,15 +2,18 @@
 import TabHistoryButton from '../components/history/TabHistoryButton.vue'
 import ChoiceField from '../components/ChoiceField.vue'
 import DateField from '../components/DateField.vue'
+import EntryModeToggle from '../components/EntryModeToggle.vue'
+import EmergedCards from '../components/emerged/EmergedCards.vue'
 import { computed, ref, watch } from 'vue'
-import { Rows3, Plus } from 'lucide-vue-next'
+import { LayoutGrid, Rows3, Plus } from 'lucide-vue-next'
 import SheetGrid from '../components/SheetGrid.vue'
 import InsectaryIdsWarning from '../components/InsectaryIdsWarning.vue'
+import { heldIds, useEmergedState } from '../composables/useEmergedState'
+import { useEntryMode } from '../composables/useEntryMode'
 import { useSheet } from '../composables/useSheet'
-import { api } from '../lib/api'
-import { isoToSerial, todayIso } from '../lib/dates'
-import { errorText, notify } from '../lib/notice'
-import { persistentRef } from '../lib/persist'
+import { isoToSerial } from '../lib/dates'
+import { knownSpecies, siblingSpecies, stockOrigin, isHybrid, CROSS_PURPOSE } from '../lib/emerged'
+import { notify } from '../lib/notice'
 import { orderColumns } from '../lib/rows'
 import type { CellValue } from '../lib/types'
 import { usePending } from '../stores/pending'
@@ -21,76 +24,58 @@ import { t } from '../lib/i18n'
  * pre-filled rows of Insectary_data. SPECIES is a formula there that predicts
  * the species from the clutch; each butterfly shows that prediction and can be
  * changed to another subspecies of the same species when that is what emerged.
+ * Two ways to work (useEntryMode): cards (components/emerged, the default on
+ * every device: a card per butterfly, one Save that also counts the adults in
+ * the clutch's row) or this table, where a batch of rows is prepared and typed
+ * in the grid. Both share the day, the clutch and the free IDs (useEmergedState).
  */
 const MODULE = 'Insectary_data'
-const STOCK_ORIGINS = ['deceptus', 'messenoides', 'intermedia']
 const module = ref(MODULE)
 const pending = usePending()
-const { table, ready, stocks, options, creates, createFormulas, clutches } = useSheet(module)
-
-const clutch = persistentRef('emerged:clutch', '')
+const { table, ready, stocks, options, creates, createFormulas, clutches, listColumn } = useSheet(module)
+const { mode } = useEntryMode('emerged')
+/** People's initials for the notes the cards add ("FCH - Franz Chandi"). */
+const collectors = computed(() => listColumn('Abbr_name'))
+const state = useEmergedState()
+const clutch = state.clutch
+const introDate = state.date
 // Counts and the first ID are for one batch: kept from an earlier day they sent a
 // batch to an old empty row (A0D, row 13243) with an extra "sin sexo" butterfly.
 const females = ref(0)
 const males = ref(0)
 const unknown = ref(0)
 const startId = ref('')
-const introDate = persistentRef('emerged:date', todayIso())
+/** The cards not saved yet hold their IDs: the table never gives them to another row. */
+const held = computed(() => new Set(heldIds(state.drafts.value)))
 /** Free pre-made IDs: those after the last row used first (the suggestion), then earlier empty rows. */
-const freeIds = ref<string[]>([])
+const freeIds = computed(() => state.freeIds.value.filter(id => !held.value.has(id.toUpperCase())))
 /** The same IDs in sheet order, which a batch follows from its first ID (H0B → H1B → H2B). */
-const inOrder = ref<string[]>([])
+const inOrder = computed(() => state.inOrder.value.filter(id => !held.value.has(id.toUpperCase())))
 /** Sheet row of each free pre-made ID. */
-const rowOf = ref(new Map<string, number>())
-const idsLoaded = ref(false)
+const rowOf = state.rowOf
+const idsLoaded = state.idsLoaded
 const recentCount = ref(15)
-
-async function loadFreeIds() {
-  try {
-    const result = await api<{ sequence: string[]; rows: { value: string; row: number }[] }>('ids?kind=insectary&count=5000')
-    const used = new Set(pending.creates.filter(c => c.module === MODULE).map(c => String(c.values.Insectary_ID)))
-    freeIds.value = result.sequence.filter(id => !used.has(id))
-    inOrder.value = [...result.rows]
-      .sort((a, b) => a.row - b.row)
-      .map(r => r.value)
-      .filter(id => !used.has(id))
-    rowOf.value = new Map(result.rows.map(r => [r.value, r.row]))
-    if (!startId.value || !freeIds.value.includes(startId.value)) startId.value = freeIds.value[0] || ''
-    idsLoaded.value = true
-  } catch (e) {
-    notify(errorText(e), 'error')
-  }
-}
-watch(() => table.value?.revision, loadFreeIds, { immediate: true })
+watch(freeIds, ids => {
+  if (!startId.value || !ids.includes(startId.value)) startId.value = ids[0] || ''
+}, { immediate: true })
+const loadFreeIds = () => state.loadFreeIds()
 
 /** Species recorded for the clutch in Insectary_stocks (what the SPECIES formula will show). */
 const species = computed(() => {
-  const row = stocks.value?.rows.find(r => String(r.values['CLUTCH NUMBER']) === clutch.value)
-  return row ? String(row.values.SPECIES || '') : ''
+  const row = stocks.value?.rows.find(r => String(r.values['CLUTCH NUMBER']).trim() === clutch.value)
+  return row ? knownSpecies(row.values.SPECIES) : ''
 })
 
 /** Other subspecies of the clutch's species: what may emerge instead (e.g. eurydice from a proceriformis clutch). */
-const siblings = computed(() => {
-  const words = species.value.trim().split(/\s+/)
-  if (words.length < 2 || !table.value) return species.value ? [species.value] : []
-  const stem = words.slice(0, 2).join(' ').toLowerCase()
-  const hybrid = / x |\bVS\b/i.test(species.value)
-  const seen = new Set([species.value])
-  for (const row of table.value.rows) {
-    const value = String(row.values.SPECIES ?? '')
-    if (value.toLowerCase().startsWith(stem + ' ') && (hybrid || !/ x |\bVS\b/i.test(value))) seen.add(value)
-  }
-  return [...seen].sort()
-})
+const siblings = computed(() =>
+  siblingSpecies(species.value, (table.value?.rows || []).map(r => String(r.values.SPECIES ?? ''))),
+)
 const gridOptions = computed(() => ({ ...options.value, SPECIES: siblings.value }))
 
 /** Same rules as the Shiny app's apply_row_core_defaults, without the formula columns (the sheet fills those). */
 function defaultsFor(speciesName: string): Record<string, CellValue> {
-  const values: Record<string, CellValue> = { Wild_Reared: 'Reared' }
-  const words = speciesName.trim().split(/\s+/)
-  const origin = words.slice(0, 2).join(' ').toLowerCase() === 'mechanitis messenoides' ? words[2]?.toLowerCase() : ''
-  values.Stock_of_origin = origin && STOCK_ORIGINS.includes(origin) ? origin : 'NA'
-  if (/ x /i.test(speciesName)) values.Research_purpose = 'F1/F2 mutation rate'
+  const values: Record<string, CellValue> = { Wild_Reared: 'Reared', Stock_of_origin: stockOrigin(speciesName) }
+  if (isHybrid(speciesName)) values.Research_purpose = CROSS_PURPOSE
   for (const field of createFormulas.value) if (field !== 'SPECIES') delete values[field]
   return values
 }
@@ -125,9 +110,7 @@ function prepare(sexes: (string | null)[]) {
       ...defaultsFor(species.value),
     }),
   )
-  freeIds.value = freeIds.value.filter(id => !ids.includes(id))
-  inOrder.value = inOrder.value.filter(id => !ids.includes(id))
-  startId.value = freeIds.value[0] || ''
+  startId.value = freeIds.value.find(id => !ids.includes(id)) || ''
   females.value = males.value = unknown.value = 0
   pending.touch()
   notify(
@@ -186,7 +169,17 @@ const recent = computed(() => {
 </script>
 
 <template>
-  <div class="flex h-full flex-col">
+  <EmergedCards
+    v-if="mode === 'cards'"
+    v-model:mode="mode"
+    :table="table"
+    :stocks="stocks"
+    :ready="ready"
+    :options="options"
+    :collectors="collectors"
+    :create-formulas="createFormulas"
+  />
+  <div v-else class="flex h-full flex-col">
     <div class="toolbar">
       <label class="min-w-40">
         <span class="field-label">CLUTCH NUMBER</span>
@@ -235,8 +228,18 @@ const recent = computed(() => {
         </button>
         <button class="btn" @click="prepare([null])"><Plus :size="15" /> {{ $t('Añadir una') }}</button>
       </div>
-      <TabHistoryButton class="ml-auto" purpose="emergidos" :title="$t('Historial de Emergidos')" />
+      <TabHistoryButton class="ml-auto self-end" purpose="emergidos" :title="$t('Historial de Emergidos')" />
+      <EntryModeToggle v-model="mode" class="self-end" />
     </div>
+    <!-- Cards not saved yet hold their IDs; they are saved from the cards (with the clutch's count). -->
+    <p v-if="state.drafts.value.length" class="mx-4 mt-2 flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+      {{
+        $tn(state.drafts.value.length, '{n} emergido en tarjetas sin guardar ({ids}).', '{n} emergidos en tarjetas sin guardar ({ids}).', {
+          ids: heldIds(state.drafts.value).join(', '),
+        })
+      }}
+      <button class="btn h-9" @click="mode = 'cards'"><LayoutGrid :size="15" /> {{ $t('Ver las tarjetas') }}</button>
+    </p>
     <InsectaryIdsWarning class="mx-4 mt-2" :revision="table?.revision" @extended="loadFreeIds" />
     <p class="hint px-4 py-1">
       <template v-if="clutch"
