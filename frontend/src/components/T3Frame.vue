@@ -1,20 +1,8 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import { api } from '../lib/api'
 import { errorText } from '../lib/notice'
-import {
-  BRIDGE_WAIT_MS,
-  HELLO,
-  LINK_OK,
-  bridgeLink,
-  bridgeMessage,
-  chatPath,
-  openChat,
-  originOf,
-  type T3Seen,
-  type T3View,
-} from '../lib/t3Bridge'
+import { BRIDGE_WAIT_MS, HELLO, bridgeMessage, chatPath, openChat, originOf, type T3Seen, type T3View } from '../lib/t3Bridge'
 import { useSession } from '../stores/session'
 
 /**
@@ -26,7 +14,7 @@ import { useSession } from '../stores/session'
  * follows it). Only this frame's messages count, not another T3 tab's.
  * A link to a chat (`open`, from #/asistente?chat=…) moves the frame to it: in
  * T3's own router when the bridge is there, else by loading the chat's address.
- * Links to the Asistente tab clicked inside T3 open here (the bridge passes them on).
+ * Lives for the whole session (T3Host): never taken out of the page, which would reload it.
  */
 const props = defineProps<{
   url: string
@@ -37,7 +25,6 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ seen: [value: T3Seen] }>()
 const session = useSession()
-const router = useRouter()
 const src = ref('')
 const problem = ref('')
 const frame = ref<HTMLIFrameElement>()
@@ -49,6 +36,7 @@ let silentPage = false
 /** A chat to move to once the frame can (signing in first, or loading). */
 let pending: string | null = null
 let fallback: ReturnType<typeof setTimeout> | undefined
+let settle: ReturnType<typeof setTimeout> | undefined
 
 const addressOf = (thread: string) => `${props.url.replace(/\/+$/, '')}${chatPath(props.environmentId, thread)}`
 
@@ -75,16 +63,24 @@ watch(
   { immediate: true },
 )
 
+/**
+ * After a sign-in the frame's address is still the used sign-in link: once T3 has moved on
+ * and stays put a moment, it becomes the page T3 shows. The same address with an empty `#`
+ * only moves within the page: T3 is not loaded again.
+ */
+function forgetSignIn(path: string) {
+  clearTimeout(settle)
+  if (!src.value.includes('/pair') || path === '/pair') return
+  settle = setTimeout(() => {
+    if (view?.path === path && src.value.includes('/pair')) src.value = `${t3Origin}${path}#`
+  }, 1500)
+}
 function hear(event: MessageEvent) {
-  const link = bridgeLink(event, frame.value?.contentWindow, t3Origin)
-  if (link) {
-    frame.value?.contentWindow?.postMessage(LINK_OK, t3Origin)
-    return void router.push(link)
-  }
   const now = bridgeMessage(event, frame.value?.contentWindow, t3Origin)
   if (!now) return
   clearTimeout(silent)
   view = now
+  forgetSignIn(now.path)
   // Still on T3's sign-in page: moved once it has gone to T3 itself.
   if (pending && now.path !== '/pair') {
     const thread = pending
@@ -117,6 +113,7 @@ onBeforeUnmount(() => {
   removeEventListener('message', hear)
   clearTimeout(silent)
   clearTimeout(fallback)
+  clearTimeout(settle)
 })
 const key = `t3:paired:${session.user?.username}`
 const DAYS_29 = 29 * 24 * 60 * 60 * 1000

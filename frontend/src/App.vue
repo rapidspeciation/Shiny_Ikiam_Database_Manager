@@ -1,16 +1,19 @@
 <script setup lang="ts">
-import { onMounted, watch } from 'vue'
+import { defineAsyncComponent, onMounted, watch } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
 import AppHeader from './components/AppHeader.vue'
 import SaveBar from './components/SaveBar.vue'
 import LoginView from './views/LoginView.vue'
 import { accountPaths, openPaths } from './router'
 import { notice } from './lib/notice'
+import { t3Host } from './lib/t3Host'
 import { updateAvailable } from './lib/updates'
 import { usePending } from './stores/pending'
 import { useSession } from './stores/session'
 import { useTables } from './stores/tables'
 
+// Loaded with the Asistente tab, not before.
+const T3Host = defineAsyncComponent(() => import('./components/T3Host.vue'))
 const session = useSession()
 const route = useRoute()
 const pending = usePending()
@@ -36,6 +39,8 @@ watch(
   <div v-else-if="!session.ready" class="grid h-full place-items-center text-stone-500">{{ $t('Cargando…') }}</div>
   <LoginView v-else-if="!session.user && !openPaths.has(route.path)" />
   <div v-else class="flex h-full flex-col">
+    <!-- T3 Code, loaded once the Asistente tab was opened and kept for the session (it would reload in the tab). -->
+    <T3Host v-if="session.user && t3Host.url" :key="session.user.username" />
     <AppHeader v-if="!route.meta.bare" />
     <!-- Tabs stay alive while another one is open: going back to Tablas does not rebuild a 13k-row grid. -->
     <main class="min-h-0 flex-1">

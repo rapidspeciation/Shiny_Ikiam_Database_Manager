@@ -1,25 +1,26 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { ArrowUpCircle, BookOpen, ExternalLink, ListChecks, RefreshCw } from 'lucide-vue-next'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { api } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
 import { useSession } from '../stores/session'
-import T3Frame from '../components/T3Frame.vue'
 import ProposalsLive from '../components/assistant/ProposalsLive.vue'
 import { persistentRef } from '../lib/persist'
 import { panelShare } from '../lib/proposals'
-import { assistantLink, type T3Seen } from '../lib/t3Bridge'
+import { assistantLink } from '../lib/t3Bridge'
+import { t3Host } from '../lib/t3Host'
 import { t, tn } from '../lib/i18n'
 
 /**
  * The assistant: T3 Code (the team's chats with Claude or Codex, on its own
  * address) with the changes it proposes beside it (Cambios propuestos), to
- * review, correct and apply in the sheet.
+ * review, correct and apply in the sheet. T3's frame is not in this view: it
+ * lives for the whole session over the place kept for it here (lib/t3Host.ts),
+ * so leaving the tab and coming back does not load T3 again.
  */
-/** T3's address (null: T3 is not configured on this server), once asked for, and its chats' environment. */
-const t3Url = ref<string | null>(null)
-const t3Environment = ref<string | null>(null)
+/** T3's address (null: T3 is not configured on this server), once asked for. */
+const t3Url = computed(() => t3Host.url)
 const loaded = ref(false)
 // Proposals (from T3 Code or any conversation) beside T3, or under it on phones; see ProposalsLive.
 // Closed at first (T3 gets the whole width); a new proposal opens it, and the button toggles it.
@@ -74,17 +75,33 @@ function arrived() {
   panel.value = true
   setTimeout(() => (fresh.value = false), 4000)
 }
-const t3Frame = ref<InstanceType<typeof T3Frame>>()
-/** The chat T3's frame shows (its bridge), followed by Cambios propuestos. */
-const t3Seen = ref<T3Seen | null>(null)
+/** Where T3's frame goes; the frame covers it while this tab is on screen. */
+const slot = ref<HTMLElement>()
+let onScreen = false
+onActivated(() => {
+  onScreen = true
+  t3Host.slot = slot.value ?? null
+})
+onDeactivated(() => {
+  onScreen = false
+  t3Host.slot = null
+})
+watch(slot, el => {
+  if (onScreen) t3Host.slot = el ?? null
+})
+watch(dragging, now => (t3Host.passThrough = now !== null))
+const reconnectT3 = () => t3Host.reconnects++
+onBeforeUnmount(() => {
+  // Signed out: the next session starts without T3 until it opens this tab.
+  Object.assign(t3Host, { url: null, environmentId: null, slot: null, open: null, passThrough: false })
+})
 
 // ------------------------------------------------------------ links (#/asistente?propuesta=…&chat=…&fila=…)
 // The assistant gives them for a proposal (server/assistant.mjs, proposalLink): the chat in T3's
 // frame and the proposal beside it. Read once, then taken off the address so the same link works again.
 const route = useRoute()
 const router = useRouter()
-/** The chat the frame is asked to open, and the proposal (and row) the panel is asked to show. */
-const openChat = ref<{ thread: string } | null>(null)
+/** The proposal (and row) the panel is asked to show; the chat goes to the frame (t3Host.open). */
 const focus = ref<{ id: string; row: string | null } | null>(null)
 watch(
   () => route.query,
@@ -93,7 +110,7 @@ watch(
     const link = assistantLink(query)
     if (!link) return
     void router.replace({ path: '/asistente' })
-    if (link.chat) openChat.value = { thread: link.chat }
+    if (link.chat) t3Host.open = { thread: link.chat }
     if (!link.proposal) return
     focus.value = { id: link.proposal, row: link.row }
     panel.value = true
@@ -105,7 +122,7 @@ watch(
         `chat/proposals?${new URLSearchParams({ only: link.proposal, all: '1' })}`,
       )
       const chat = out.proposals.find(p => p.id === link.proposal)?.chat
-      if (chat) openChat.value = { thread: chat }
+      if (chat) t3Host.open = { thread: chat }
     } catch {
       /* the panel still shows it */
     }
@@ -158,7 +175,7 @@ async function updateT3() {
       const now = t3Version.value
       if (now && !now.updating && now.current !== from) {
         notify(t('T3 actualizado a {version}', { version: now.current }), 'success')
-        t3Frame.value?.connect(true)
+        reconnectT3()
         return
       }
       if (now && !now.updating && i > 2) break
@@ -174,8 +191,8 @@ async function updateT3() {
 onMounted(async () => {
   try {
     const status = await api<{ url: string | null; environmentId?: string | null }>('t3/status')
-    t3Url.value = status.url
-    t3Environment.value = status.environmentId ?? null
+    t3Host.environmentId = status.environmentId ?? null
+    t3Host.url = status.url
   } catch (e) {
     notify(errorText(e), 'error')
   } finally {
@@ -234,7 +251,7 @@ onMounted(async () => {
         >T3 {{ t3Version.current }}<template v-if="t3Version.latest"> · {{ $t('al día') }}</template></span
       >
       <template v-if="t3Url">
-        <button class="btn-ghost" :title="$t('Volver a conectar T3')" @click="t3Frame?.connect(true)">
+        <button class="btn-ghost" :title="$t('Volver a conectar T3')" @click="reconnectT3">
           <RefreshCw :size="13" />
         </button>
         <a class="btn-ghost" :href="t3Url" target="_blank" rel="noopener" :title="$t('Abrir T3 en otra pestaña')"
@@ -249,15 +266,8 @@ onMounted(async () => {
       :class="{ 'md:flex-row': layout === 'right', 'select-none': dragging !== null }"
       :style="{ '--share': `${share}%` }"
     >
-      <T3Frame
-        ref="t3Frame"
-        :url="t3Url"
-        :environment-id="t3Environment"
-        :open="openChat"
-        class="min-h-0 min-w-0 flex-1"
-        :class="{ 'pointer-events-none': dragging !== null, hidden: panel && full }"
-        @seen="value => (t3Seen = value)"
-      />
+      <!-- T3's place: its frame (T3Host) sits over it. -->
+      <div ref="slot" class="min-h-0 min-w-0 flex-1" :class="{ hidden: panel && full }" />
       <!-- The divider: drag it (or use the arrow keys) to give the panel more or less room. -->
       <div
         v-show="panel && !full"
@@ -280,7 +290,7 @@ onMounted(async () => {
         v-show="panel"
         :layout="layout"
         :full="full"
-        :t3="t3Seen"
+        :t3="t3Host.seen"
         :focus="focus"
         class="border-stone-300"
         :class="
