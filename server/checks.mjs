@@ -21,7 +21,7 @@ import { pendingPoints, tracksRevision } from './monitoring.mjs';
 import { photoContext, photoIndex, reviewData, reviewRevision } from './photodata.mjs';
 import { photoIssues } from './photo-checks.mjs';
 import { trackFindings } from './findings.mjs';
-import { askFor, sampleGap } from './preserved.mjs';
+import { sampleGap } from './preserved.mjs';
 
 /** Kinds of issue, in the order they are listed, with their Spanish names for the app. */
 export const CHECK_KINDS = {
@@ -498,21 +498,18 @@ function scan(store) {
     )
       add('missing_sample', row, 'Tube_1_id', msg('Preservada sin Tube_1_id'));
   }
-  // Insectary rows: preserved by their preservation cells, and whom to ask (server/preserved.mjs).
+  // Insectary rows: preserved by their preservation cells (server/preserved.mjs).
   for (const row of insectary) {
     const gap = sampleGap(row.values, row.formulas);
     if (!gap) continue;
-    const ask = askFor(store.db, row);
-    const vars = { why: gap.why, ...(ask.length ? { who: ask } : {}) };
+    const vars = { why: gap.why };
     if (gap.kind === 'preserved_na')
       add(
         'preserved_na',
         row,
         'Death_cause',
-        ask.length
-          ? msg('Death_cause dice preservada ({why}), pero CAM_ID y los tubos dicen NA (no preservada); pregunta a {who}', vars)
-          : msg('Death_cause dice preservada ({why}), pero CAM_ID y los tubos dicen NA (no preservada)', vars),
-        { ask, related: [ref(row, 'CAM_ID'), ref(row, 'Tube_1_id')] },
+        msg('Death_cause dice preservada ({why}), pero CAM_ID y los tubos dicen NA (no preservada)', vars),
+        { related: [ref(row, 'CAM_ID'), ref(row, 'Tube_1_id')] },
       );
     else
       for (const field of gap.missing)
@@ -520,10 +517,7 @@ function scan(store) {
           'missing_sample',
           row,
           field,
-          ask.length
-            ? msg('Preservada ({why}) sin {field}; pregunta a {who}', { ...vars, field })
-            : msg('Preservada ({why}) sin {field}', { ...vars, field }),
-          { ask },
+          msg('Preservada ({why}) sin {field}', { ...vars, field }),
         );
   }
 

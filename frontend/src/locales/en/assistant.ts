@@ -164,8 +164,8 @@ export default {
   falta: 'missing',
   '{n} preservada sin CAM o tubo': '{n} preserved without CAM or tube',
   '{n} preservadas sin CAM o tubo': '{n} preserved without CAM or tube',
-  'Estas filas dejan una mariposa preservada sin CAM_ID o Tube_1_id (celdas en ámbar): pregunta a quien la preservó y escríbelos aquí':
-    'These rows leave a preserved butterfly without CAM_ID or Tube_1_id (amber cells): ask who preserved it and type them here',
+  'Estas filas dejan una mariposa preservada sin CAM_ID o Tube_1_id (celdas en ámbar): pregunta al equipo y escríbelos aquí':
+    'These rows leave a preserved butterfly without CAM_ID or Tube_1_id (amber cells): ask the team and type them here',
   // Unreadable cells (match_notebook's null): empty until the person types them
   ilegible: 'unreadable',
   Ilegible: 'Unreadable',

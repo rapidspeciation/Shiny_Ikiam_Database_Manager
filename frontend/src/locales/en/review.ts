@@ -188,12 +188,11 @@ export default {
   'faltan {n}': '{n} to go',
   'Abrir fila': 'Open row',
   'Preguntar al equipo': 'Ask the team',
-  'Mariposas del insectario preservadas (según Death_cause, Preserved_Dead_Alive, un tubo WHOLE_ORGANISM o Preservation_medium) sin CAM_ID o Tube_1_id, o con Killed_Preserved y NA en ellas. Se sugiere a quién preguntar: las iniciales de sus notas y quien escribió la muerte en la app. Desaparecen al rellenar las celdas.':
-    'Insectary butterflies preserved (by Death_cause, Preserved_Dead_Alive, a WHOLE_ORGANISM tube or Preservation_medium) without CAM_ID or Tube_1_id, or with Killed_Preserved and NA in them. Whom to ask: the initials in their notes and whoever wrote the death in the app. Each goes once its cells are filled.',
+  'Mariposas del insectario preservadas (según Death_cause, Preserved_Dead_Alive, un tubo WHOLE_ORGANISM o Preservation_medium) sin CAM_ID o Tube_1_id, o con Killed_Preserved y NA en ellas. Pregunta al equipo por ellas. Desaparecen al rellenar las celdas.':
+    'Insectary butterflies preserved (by Death_cause, Preserved_Dead_Alive, a WHOLE_ORGANISM tube or Preservation_medium) without CAM_ID or Tube_1_id, or with Killed_Preserved and NA in them. Ask the team about them. Each goes once its cells are filled.',
   'Killed_Preserved con NA': 'Killed_Preserved with NA',
   'sin {fields}': 'no {fields}',
-  'preguntar a {who}': 'ask {who}',
-  'sin nombre en la fila': 'no name on the row',
+  'pregunta al equipo': 'ask the team',
   // PhotoViewer, CropImage
   'Abrir en Google Drive': 'Open in Google Drive',
   'Cerrar (Esc)': 'Close (Esc)',

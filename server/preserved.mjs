@@ -6,7 +6,7 @@
 // on purpose (wings only: a CAM and Tube NA; Tube_1_tissue NOT_COLLECTED).
 // An empty cell or a word ("BUSCAR") is missing. Formula cells are the
 // sheet's business, and a body whose Location_body says Lost has nothing left
-// to number. Notes do not decide anything here: they only say whom to ask.
+// to number. Notes do not decide anything here.
 //
 // Shared by Revisión (server/checks.mjs, kinds missing_sample and
 // preserved_na), the alerts (server/alerts.mjs) and the proposals table
@@ -23,7 +23,7 @@ export const KILLED = 'Killed_Preserved';
 export const PRESERVED_STATES = ['Alive', 'Dead'];
 export const PRESERVED_MEDIA = ['Flash frozen', 'Ethanol', 'DMSO'];
 export const WHOLE = 'WHOLE_ORGANISM';
-/** The cells a death writes: who wrote them is whom to ask. */
+/** The cells a death writes. */
 export const DEATH_FIELDS = ['Death_date', 'Death_cause', 'Preserved_Dead_Alive'];
 
 /** The cells that say an Insectary_data row was preserved, as "column value" ([] when none does). */
@@ -65,43 +65,6 @@ export function sampleGap(values, formulas = {}) {
   return null;
 }
 
-/** "1/10/26 FCH: …", "13-12-24 MJS: …": the initials that signed a note. */
-const SIGNED = /\b\d{1,2}\s*[/.-]\s*\d{1,2}\s*[/.-]\s*\d{2,4}\s+([A-ZÑ]{2,4})\s*:/g;
-/** The initials that signed the row's notes, newest (last written) first. */
-export function noteInitials(values) {
-  const found = [];
-  for (const [field, value] of Object.entries(values))
-    if (/notes?/i.test(field)) for (const m of text(value).matchAll(SIGNED)) found.push(m[1]);
-  return [...new Set(found.reverse())];
-}
-
-/** The app user who last wrote the row's death cells (Historial), or null; sheet syncs name nobody. */
-export function deathWriter(db, recordId) {
-  if (!recordId) return null;
-  const marks = DEATH_FIELDS.map(() => '?').join(',');
-  try {
-    return (
-      db
-        .prepare(
-          `SELECT u.display_name name FROM changes c JOIN actions a ON a.id = c.action_id JOIN users u ON u.id = a.actor
-           WHERE c.record_id = ? AND c.field IN (${marks}) ORDER BY a.created_at DESC LIMIT 1`,
-        )
-        .get(recordId, ...DEATH_FIELDS)?.name ?? null
-    );
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Whom to ask about a row: the initials signing its notes, then the app user
- * who wrote its death; nobody else is guessed. [] when neither is known.
- */
-export function askFor(db, row) {
-  const user = deathWriter(db, row.id);
-  return [...new Set([...noteInitials(row.values), ...(user ? [user] : [])])];
-}
-
 /** Cells whose writing can make a butterfly preserved, or give it its CAM or tube. */
 const SAMPLE_FIELDS = new Set([
   ...DEATH_FIELDS,
@@ -132,8 +95,8 @@ export function proposalSampleWarnings(change, record) {
     gap.missing.map(field => [
       field,
       gap.kind === 'preserved_na'
-        ? msg('Death_cause dice Killed_Preserved, pero {field} es NA: pregunta a quien la preservó', { field })
-        : msg('Preservada sin {field}: pregunta a quien la preservó', { field }),
+        ? msg('Death_cause dice Killed_Preserved, pero {field} es NA: pregunta al equipo', { field })
+        : msg('Preservada sin {field}: pregunta al equipo', { field }),
     ]),
   );
 }

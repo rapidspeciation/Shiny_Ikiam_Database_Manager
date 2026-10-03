@@ -361,7 +361,6 @@ export interface MissingSample {
   date: string | null
   kind: 'missing_sample' | 'preserved_na'
   missing: string[]
-  ask: string[]
 }
 export interface AlertsData {
   computedAt: string

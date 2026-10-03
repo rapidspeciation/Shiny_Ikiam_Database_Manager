@@ -10,9 +10,8 @@ import { tx } from '../../lib/i18n'
  * range is asked for before one runs out; and the 30-preserved rule, per
  * species: which reached 30 (mark and release from then on), which are close,
  * and which were preserved after 30, as information. And «Preguntar al
- * equipo»: insectary butterflies preserved without their CAM or tube, with
- * whom to ask (the initials in their notes, the app user who wrote the death)
- * and a button to open the row; each goes once its cells are filled.
+ * equipo»: insectary butterflies preserved without their CAM or tube, with a
+ * button to open the row; each goes once its cells are filled.
  */
 const props = defineProps<{ data: AlertsData | null }>()
 const rule = computed(() => props.data?.preserveRule)
@@ -60,7 +59,7 @@ const levelTone: Record<string, string> = {
           <p class="hint mb-2">
             {{
               $t(
-                'Mariposas del insectario preservadas (según Death_cause, Preserved_Dead_Alive, un tubo WHOLE_ORGANISM o Preservation_medium) sin CAM_ID o Tube_1_id, o con Killed_Preserved y NA en ellas. Se sugiere a quién preguntar: las iniciales de sus notas y quien escribió la muerte en la app. Desaparecen al rellenar las celdas.',
+                'Mariposas del insectario preservadas (según Death_cause, Preserved_Dead_Alive, un tubo WHOLE_ORGANISM o Preservation_medium) sin CAM_ID o Tube_1_id, o con Killed_Preserved y NA en ellas. Pregunta al equipo por ellas. Desaparecen al rellenar las celdas.',
               )
             }}
           </p>
@@ -71,9 +70,6 @@ const levelTone: Record<string, string> = {
               <span class="text-xs text-stone-500">{{ dayFirst(s.date) ?? '—' }}</span>
               <span class="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900">{{
                 s.kind === 'preserved_na' ? $t('Killed_Preserved con NA') : $t('sin {fields}', { fields: s.missing.join(', ') })
-              }}</span>
-              <span class="text-xs text-stone-600">{{
-                s.ask.length ? $t('preguntar a {who}', { who: s.ask.join(', ') }) : $t('sin nombre en la fila')
               }}</span>
               <a :href="tablesLink(s.sheet, s.id)" class="btn ml-auto px-2 py-0.5 text-xs"><ExternalLink :size="13" /> {{ $t('Abrir fila') }}</a>
             </li>

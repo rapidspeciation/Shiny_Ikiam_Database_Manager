@@ -509,7 +509,7 @@ const sampleGap = (row: TableRow) => {
   return s && s.missing.some(f => !/\d/.test(String(pending.value(row, f) ?? ''))) ? s : null
 }
 const sampleTitle = (s: MissingSample) =>
-  [t('Preservada sin CAM o tubo'), s.ask.length ? t('preguntar a {who}', { who: s.ask.join(', ') }) : ''].filter(Boolean).join(' · ')
+  `${t('Preservada sin CAM o tubo')} · ${t('pregunta al equipo')}`
 
 // --- Latest deaths, by day
 const recent = computed(() => {

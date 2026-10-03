@@ -21,14 +21,13 @@
 // Preserved without CAM or tube (server/preserved.mjs): an insectary butterfly
 // whose cells say it was preserved, without its CAM_ID or Tube_1_id (or with
 // Killed_Preserved but NA in them). The ones that died in the last 180 days
-// are alerts, naming whom to ask (the initials in its notes, the app user who
-// wrote its death); the notice goes once the cells are filled.
+// are alerts, to ask the team; the notice goes once the cells are filled.
 
 import { msg, msgn } from './messages.mjs';
 import { iso, recordsStamp, sheetRows, todaySerial } from './checks.mjs';
 import { moduleMap } from './schema.mjs';
 import { LISTS } from './verifications.mjs';
-import { askFor, sampleGap } from './preserved.mjs';
+import { sampleGap } from './preserved.mjs';
 
 export const CAM_LOW_LEFT = 50;
 export const CAM_LOW_SHARE = 0.15;
@@ -213,8 +212,7 @@ function preserveRule(sheets, today) {
 /**
  * Every insectary butterfly preserved without its CAM or tube, newest death
  * first: { recordId, sheet, row, id, species, date (of death, else of
- * preservation; YYYY-MM-DD), kind (missing_sample / preserved_na), missing,
- * ask (whom to ask: [] when nobody is known) }.
+ * preservation; YYYY-MM-DD), kind (missing_sample / preserved_na), missing }.
  */
 export function missingSamples(store, sheets) {
   const out = [];
@@ -233,7 +231,6 @@ export function missingSamples(store, sheets) {
       day,
       kind: gap.kind,
       missing: gap.missing,
-      ask: askFor(store.db, row),
     });
   }
   return out.sort((a, b) => (b.day ?? 0) - (a.day ?? 0) || b.row - a.row).map(({ day, ...s }) => s);
@@ -277,15 +274,11 @@ function alertList(cams, rule, samples, today) {
     );
   const since = iso(today - SAMPLE_DAYS);
   for (const s of samples.filter(s => s.date && s.date >= since)) {
-    const vars = { id: s.id, species: s.species || '—', date: day(s.date), ...(s.ask.length ? { who: s.ask } : {}) };
+    const vars = { id: s.id, species: s.species || '—', date: day(s.date) };
     const m =
       s.kind === 'preserved_na'
-        ? s.ask.length
-          ? msg('{id} ({species}): Death_cause Killed_Preserved el {date}, pero CAM_ID y los tubos dicen NA — pregunta a {who}', vars)
-          : msg('{id} ({species}): Death_cause Killed_Preserved el {date}, pero CAM_ID y los tubos dicen NA', vars)
-        : s.ask.length
-          ? msg('{id} ({species}) preservada el {date} sin CAM/tubo — pregunta a {who}', vars)
-          : msg('{id} ({species}) preservada el {date} sin CAM/tubo', vars);
+        ? msg('{id} ({species}): Death_cause Killed_Preserved el {date}, pero CAM_ID y los tubos dicen NA — pregunta al equipo', vars)
+        : msg('{id} ({species}) preservada el {date} sin CAM/tubo — pregunta al equipo', vars);
     add(`sample:${s.recordId}`, 'warn', m, rowLink(s.sheet, s.id));
   }
   for (const s of rule.reached.filter(s => s.recentAfter))

@@ -8,7 +8,7 @@ import { createAssistant } from '../server/assistant.mjs';
 import { linkCapture, saveTrack } from '../server/monitoring.mjs';
 import { alerts } from '../server/alerts.mjs';
 import { asCell, moduleMap } from '../server/schema.mjs';
-import { noteInitials, proposalSampleWarnings, sampleGap } from '../server/preserved.mjs';
+import { proposalSampleWarnings, sampleGap } from '../server/preserved.mjs';
 
 const EPOCH = Date.UTC(1899, 11, 30);
 const serial = iso => Math.round((Date.parse(`${iso}T00:00:00Z`) - EPOCH) / 864e5);
@@ -449,7 +449,7 @@ async function preservedFixture() {
 const ana = { id: 'u1', username: 'ana', displayName: 'Ana', role: 'editor' };
 const dayFirst = serial => isoOf(serial).split('-').reverse().join('/');
 
-test('missing_sample and preserved_na: an insectary butterfly preserved by its cells, without CAM or tube, and whom to ask', async () => {
+test('missing_sample and preserved_na: an insectary butterfly preserved by its cells, without CAM or tube, and the team is asked', async () => {
   const store = await preservedFixture();
   const K1K = store.getRecordBySheetRow('Insectary_data', 6);
   await store.applyProposal([{ recordId: K1K.id, values: { Death_cause: 'Killed_Preserved' } }], { user: ana, requestId: randomUUID() });
@@ -463,31 +463,29 @@ test('missing_sample and preserved_na: an insectary butterfly preserved by its c
     'preserved_na K1K Death_cause',
   ]);
   const d5d = find(out, 'missing_sample', 'Insectary_data', 2, 'CAM_ID');
-  assert.equal(d5d.problem, 'Preservada (Death_cause Killed_Preserved, Preserved_Dead_Alive Alive) sin CAM_ID; pregunta a FCH');
-  assert.deepEqual(d5d.ask, ['FCH']);
-  // Whoever wrote the death in the app is named too.
+  assert.equal(d5d.problem, 'Preservada (Death_cause Killed_Preserved, Preserved_Dead_Alive Alive) sin CAM_ID');
+  // Nobody is named: the issue says what is missing, not whom to ask.
+  assert.equal(d5d.ask, undefined);
   const k1k = find(out, 'preserved_na', 'Insectary_data', 6);
-  assert.deepEqual(k1k.ask, ['Ana']);
-  assert.match(k1k.problem, /CAM_ID y los tubos dicen NA \(no preservada\); pregunta a Ana$/);
-  assert.deepEqual(find(out, 'missing_sample', 'Insectary_data', 7).ask, ['MJS']);
+  assert.match(k1k.problem, /CAM_ID y los tubos dicen NA \(no preservada\)$/);
 
-  // Alerts: the recent ones, with whom to ask and a link to the row; the full list apart.
+  // Alerts: the recent ones, asking the team, with a link to the row; the full list apart.
   const data = alerts(store);
   assert.deepEqual(
-    data.missingSamples.map(s => [s.id, s.kind, s.missing, s.ask]),
+    data.missingSamples.map(s => [s.id, s.kind, s.missing]),
     [
-      ['D5D', 'missing_sample', ['CAM_ID', 'Tube_1_id'], ['FCH']],
-      ['K1K', 'preserved_na', ['CAM_ID', 'Tube_1_id'], ['Ana']],
-      ['B1B', 'missing_sample', ['Tube_1_id'], ['MJS']],
+      ['D5D', 'missing_sample', ['CAM_ID', 'Tube_1_id']],
+      ['K1K', 'preserved_na', ['CAM_ID', 'Tube_1_id']],
+      ['B1B', 'missing_sample', ['Tube_1_id']],
     ],
   );
   const D5D = store.getRecordBySheetRow('Insectary_data', 2);
   const alert = data.alerts.find(a => a.id === `sample:${D5D.id}`);
   assert.equal(alert.level, 'warn');
-  assert.equal(alert.text, `D5D (Mechanitis lysimnia) preservada el ${dayFirst(today - 10)} sin CAM/tubo — pregunta a FCH`);
-  assert.equal(alert.textMsg.key, '{id} ({species}) preservada el {date} sin CAM/tubo — pregunta a {who}');
+  assert.equal(alert.text, `D5D (Mechanitis lysimnia) preservada el ${dayFirst(today - 10)} sin CAM/tubo — pregunta al equipo`);
+  assert.equal(alert.textMsg.key, '{id} ({species}) preservada el {date} sin CAM/tubo — pregunta al equipo');
   assert.equal(alert.link, '#/tablas?hoja=Insectary_data&buscar=D5D');
-  assert.match(data.alerts.find(a => a.id === `sample:${K1K.id}`).text, /^K1K .*Killed_Preserved.*NA — pregunta a Ana$/);
+  assert.match(data.alerts.find(a => a.id === `sample:${K1K.id}`).text, /^K1K .*Killed_Preserved.*NA — pregunta al equipo$/);
   // Older than 180 days: in the list, not an alert.
   assert.ok(!data.alerts.some(a => a.text.startsWith('B1B')));
 
@@ -511,12 +509,8 @@ test('sampleGap: what counts as preserved, and what counts as missing', () => {
   // Killed_Preserved with NA everywhere: the cause and the cells disagree; with a tube, it is the wings-only kind.
   assert.equal(gap({ Death_cause: 'Killed_Preserved', CAM_ID: 'NA', Tube_1_id: 'NA' }), 'preserved_na');
   assert.equal(gap({ Death_cause: 'Killed_Preserved', CAM_ID: 'NA', Tube_1_id: 'NA', Tube_2_id: 'FS00000002' }), null);
-  // Notes never decide it; they only say whom to ask.
+  // Notes never decide it.
   assert.equal(gap({ Notes_Insectary_data: '1/10/26 FCH: Killed / preserved' }), null);
-  assert.deepEqual(noteInitials({ Notes_Insectary_data: '9/10/23 AA: Emerge failed | 1/10/26 FCH: Killed', Other: '2/2/26 ZZ: x' }), [
-    'FCH',
-    'AA',
-  ]);
 });
 
 test('a proposal that would leave a butterfly preserved without CAM or tube marks those cells before it is applied', async () => {
@@ -528,7 +522,7 @@ test('a proposal that would leave a butterfly preserved without CAM or tube mark
     values: { Death_date: today, Death_cause: 'Killed_Preserved', Preserved_Dead_Alive: 'Alive' },
   };
   assert.deepEqual(Object.keys(proposalSampleWarnings(killed, A1A)), ['CAM_ID', 'Tube_1_id']);
-  assert.equal(proposalSampleWarnings(killed, A1A).CAM_ID.text, 'Preservada sin CAM_ID: pregunta a quien la preservó');
+  assert.equal(proposalSampleWarnings(killed, A1A).CAM_ID.text, 'Preservada sin CAM_ID: pregunta al equipo');
   const filled = { ...killed, values: { ...killed.values, CAM_ID: 'CAM000104', Tube_1_id: 'FS00000104' } };
   assert.equal(proposalSampleWarnings(filled, A1A), null);
   // A note on an old row with a gap: that gap is Revisión's, not this proposal's.

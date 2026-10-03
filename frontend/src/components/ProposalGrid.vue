@@ -380,7 +380,7 @@ const statusText = computed(
       <span
         v-if="pending && noSample.length"
         class="warn-count"
-        :title="$t('Estas filas dejan una mariposa preservada sin CAM_ID o Tube_1_id (celdas en ámbar): pregunta a quien la preservó y escríbelos aquí')"
+        :title="$t('Estas filas dejan una mariposa preservada sin CAM_ID o Tube_1_id (celdas en ámbar): pregunta al equipo y escríbelos aquí')"
       >
         <AlertTriangle :size="12" />
         {{ $tn(new Set(noSample.map(w => w.key)).size, '{n} preservada sin CAM o tubo', '{n} preservadas sin CAM o tubo') }}
