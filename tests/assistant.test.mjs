@@ -169,18 +169,12 @@ test('proposal stores before, after and version, then uses validated apply hook 
     reason: 'Requested correction',
   });
   const proposal = await listed(alice, proposalId);
-  const { recordId, expectedVersion, before, values, label, current } = proposal.changes[0];
-  assert.deepEqual(
-    { recordId, expectedVersion, before, values, label, current },
-    {
-      recordId: 'r-1',
-      expectedVersion: 3,
-      before: { Research_purpose: '' },
-      values: { Research_purpose: 'Review' },
-      label: 'A0A',
-      current: { Research_purpose: '' },
-    },
-  );
+  const { recordId, values, label } = proposal.changes[0];
+  assert.deepEqual({ recordId, values, label }, { recordId: 'r-1', values: { Research_purpose: 'Review' }, label: 'A0A' });
+  // Kept with the proposal (the save checks them), not sent to the table.
+  const [stored] = JSON.parse(db.prepare('SELECT changes_json FROM ai_proposals WHERE id = ?').get(proposalId).changes_json);
+  assert.deepEqual([stored.expectedVersion, stored.before], [3, { Research_purpose: '' }]);
+  assert.ok(!('before' in proposal.changes[0]) && !('expectedVersion' in proposal.changes[0]) && !('current' in proposal.changes[0]));
   const apply = (user, body = {}) =>
     assistant.handle({ method: 'POST', path: `/api/chat/proposals/${proposalId}/apply`, body, user });
   assert.equal((await apply(bob)).status, 404);

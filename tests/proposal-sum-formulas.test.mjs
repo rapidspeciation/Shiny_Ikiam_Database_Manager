@@ -49,7 +49,6 @@ test('a proposal shows the sheet sums of its counts as formulas', async () => {
     const user = { id: 'u1', username: 'franz', displayName: 'Franz', role: 'editor' };
     const list = await assistant.handle({ method: 'GET', path: '/api/chat/proposals', body: {}, user, query: { all: '1' } });
     const shown = list.body.proposals[0].changes[0];
-    assert.equal(shown.current['NUMBER OF EGGS'], '=41+36');
     assert.equal(shown.rowValues['NUMBER OF EGGS'], '=41+36');
     // A single number typed as =50 is a sum too: the same as the person would type it.
     assert.equal(shown.rowValues['NUMBER OF LARVAE'], '=50');

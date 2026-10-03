@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { AlertTriangle, Check, CircleHelp, Plus, Sparkles, SquarePen, X } from 'lucide-vue-next'
+import { AlertTriangle, Check, CircleHelp, Columns3, ListFilter, Plus, Sparkles, SquarePen, X } from 'lucide-vue-next'
 import ProposalSheet, { type CellEdit } from './assistant/ProposalSheet.vue'
 import { api } from '../lib/api'
 import { displayValue } from '../lib/cells'
@@ -10,7 +10,9 @@ import {
   cellId,
   changedCells,
   changedText,
+  expandProposal,
   notApplied,
+  photoSummaries,
   rowKey,
   rowsToWrite,
   sheetGroups,
@@ -41,6 +43,11 @@ export type { Proposal, ProposalChange } from '../lib/proposals'
  * Cells the assistant could not read (hatched red, "unreadable") are counted
  * apart; they are never written until the person types them, and "Aplicar"
  * says so before applying.
+ * A notebook page's proposal follows the page: a header per photo (its
+ * thumbnail, which opens it upright in a new tab, and how many of its lines
+ * change), every line in the notebook's order ("solo cambios" hides the lines
+ * that write nothing), the notebook's columns first and the template's NA /
+ * NOT_COLLECTED columns folded.
  */
 const props = defineProps<{ proposal: Proposal; busy?: boolean }>()
 const emit = defineEmits<{
@@ -59,7 +66,9 @@ const editable = computed(() => pending.value && session.canEdit)
 const local = ref(new Map<string, LocalCell>())
 /** Doubtful cells marked (or unmarked) as reviewed and not yet saved. */
 const localChecks = ref(new Map<string, boolean>())
-const shown = computed(() => withLocal(props.proposal, local.value, localChecks.value))
+/** The proposal as the server sends it (lean) made whole for the table. */
+const full = computed(() => expandProposal(props.proposal))
+const shown = computed(() => withLocal(full.value, local.value, localChecks.value))
 const queue = new Map<string, CellEdit>()
 const checkQueue = new Map<string, { key: string; field: string; checked: boolean }>()
 let removes: string[] = []
@@ -229,6 +238,38 @@ const setAside = computed(() => notApplied(shown.value))
 const extra = persistentRef<Record<string, string[]>>(`proposal-columns:${props.proposal.id}`, {})
 const fieldsOf = (sheet: string) => session.module(sheet)?.fields
 const groups = computed(() => sheetGroups(shown.value, extra.value, sheet => fieldsOf(sheet)?.map(f => f.key)))
+
+// ------------------------------------------------------------ a notebook page
+/** "Solo cambios": the page's lines that write nothing hidden (a line to look at, not found or refused, stays). */
+const changesOnly = persistentRef('proposal-changes-only', false)
+const lookAt = (c: ProposalChange) => !!c.page?.error || (!!c.placeholder && c.page?.status !== 'crossed')
+const rowsOf = (changes: ProposalChange[]) => (changesOnly.value ? changes.filter(c => !c.context || lookAt(c)) : changes)
+const quietRows = (changes: ProposalChange[]) => changes.filter(c => c.context && !lookAt(c)).length
+/** The template's columns (only NA / NOT_COLLECTED), folded unless opened. */
+const templatesOpen = ref(false)
+const columnsOf = (g: { fields: string[]; template: string[] }) =>
+  templatesOpen.value ? g.fields : g.fields.filter(f => !g.template.includes(f))
+const page = computed(() => props.proposal.page)
+/** Per photo of the page: its lines, how many change, how many are as the sheet has them. */
+function photosOf(changes: ProposalChange[]) {
+  const summaries = photoSummaries(changes)
+  for (let n = 0; n < (page.value?.photos ?? 0); n++)
+    if (!summaries.some(s => s.photo === n)) summaries.push({ photo: n, from: 0, to: 0, change: 0, same: 0, other: 0 })
+  return summaries.sort((a, b) => a.photo - b.photo)
+}
+/** Each sheet's table as shown: its rows ("solo cambios"), its columns (the template folded), its page's photos. */
+const tables = computed(() =>
+  groups.value.map(g => ({
+    ...g,
+    rows: rowsOf(g.changes),
+    columns: columnsOf(g),
+    quiet: quietRows(g.changes),
+    photos: page.value?.sheet === g.sheet ? photosOf(g.changes) : [],
+  })),
+)
+const photoUrl = (n: number, size: 'thumb' | 'view') => `api/proposals/${props.proposal.id}/photos/${n}?size=${size}`
+/** A thumbnail that would not load (an old proposal's photo gone): hidden. */
+const brokenPhotos = ref(new Set<number>())
 const typesOf = (sheet: string) => ({
   ...Object.fromEntries((fieldsOf(sheet) ?? []).map(f => [f.key, f.type])),
   ...props.proposal.types,
@@ -345,13 +386,48 @@ const statusText = computed(
         {{ $tn(new Set(noSample.map(w => w.key)).size, '{n} preservada sin CAM o tubo', '{n} preservadas sin CAM o tubo') }}
       </span>
     </p>
-    <div v-for="g in groups" :key="g.sheet" class="border-b border-stone-100 last:border-b-0">
+    <div v-for="g in tables" :key="g.sheet" class="border-b border-stone-100 last:border-b-0">
+      <!-- A notebook page: per photo, its thumbnail (opens upright in a new tab) and how its lines compare with the sheet. -->
+      <div v-if="page && g.photos.length" class="flex flex-wrap gap-2 px-2 pt-1.5">
+        <div
+          v-for="p in g.photos"
+          :key="p.photo"
+          class="flex items-center gap-2 rounded border border-stone-200 bg-stone-50 py-1 pr-2 pl-1 text-[11px] text-stone-600"
+        >
+          <a
+            v-if="p.photo < page.photos && !brokenPhotos.has(p.photo)"
+            :href="photoUrl(p.photo, 'view')"
+            target="_blank"
+            rel="noopener"
+            class="shrink-0"
+            :title="$t('Abrir la foto en una pestaña nueva')"
+          >
+            <img
+              :src="photoUrl(p.photo, 'thumb')"
+              :alt="$t('Foto {n} del cuaderno', { n: p.photo + 1 })"
+              class="h-14 w-auto max-w-24 rounded border border-stone-300 bg-white object-contain"
+              loading="lazy"
+              @error="brokenPhotos = new Set([...brokenPhotos, p.photo])"
+            />
+          </a>
+          <span>
+            <b v-if="g.photos.length > 1" class="font-medium text-stone-700"
+              >{{ $t('Foto {n}', { n: p.photo + 1 }) }} ·
+            </b>
+            <template v-if="p.to"
+              >{{ $t('Líneas {from}–{to}', { from: p.from, to: p.to }) }} ·
+              {{ $tn(p.change, '{n} cambia', '{n} cambian') }} · {{ $tn(p.same, '{n} igual', '{n} iguales') }}
+              <template v-if="p.other"> · {{ $tn(p.other, '{n} sin escribir', '{n} sin escribir') }}</template>
+            </template>
+          </span>
+        </div>
+      </div>
       <!-- The table and its bar, where ProposalSheet adds the buttons for the selected cells (Valor de la hoja / de la IA). -->
       <ProposalSheet
         :ref="sheetRef(g.sheet)"
         :sheet="g.sheet"
-        :changes="g.changes"
-        :fields="g.fields"
+        :changes="g.rows"
+        :fields="g.columns"
         :types="typesOf(g.sheet)"
         :new-row-formulas="proposal.newRowFormulas?.[g.sheet] ?? []"
         :editable="editable"
@@ -362,8 +438,30 @@ const statusText = computed(
         @check="onCheck"
         @notice="m => notify(m)"
       >
-        <template v-if="groups.length > 1 || editable" #default>
+        <template v-if="groups.length > 1 || editable || g.template.length || g.quiet" #default>
           <span v-if="groups.length > 1" class="font-medium text-stone-700">{{ g.sheet }}</span>
+          <label
+            v-if="g.quiet"
+            class="flex cursor-pointer items-center gap-1"
+            :title="$t('Oculta las líneas de la página que no escriben nada (iguales a la hoja o tachadas)')"
+          >
+            <input v-model="changesOnly" type="checkbox" class="h-3 w-3" />
+            <ListFilter :size="12" /> {{ $t('Solo cambios') }}
+          </label>
+          <button
+            v-if="g.template.length"
+            type="button"
+            class="flex items-center gap-0.5 hover:text-stone-800"
+            :title="$t('Columnas que solo llevan NA o NOT_COLLECTED de la plantilla: se escriben igual, aunque estén plegadas')"
+            @click="templatesOpen = !templatesOpen"
+          >
+            <Columns3 :size="12" />
+            {{
+              templatesOpen
+                ? $t('Plegar la plantilla')
+                : $tn(g.template.length, '+{n} columna de plantilla', '+{n} columnas de plantilla')
+            }}
+          </button>
           <button
             v-if="editable && g.changes.some(c => c.create)"
             class="flex items-center gap-0.5 hover:text-emerald-800"
@@ -407,6 +505,24 @@ const statusText = computed(
               class="legend is-inferred"
               :title="$t('No está escrito en la línea: sale de la página, de la nota o de lo que el equipo escribe siempre')"
               >{{ $t('deducida') }}</span
+            >
+            <span
+              v-if="g.changes.some(c => c.formulaGives)"
+              class="legend is-formula-gives"
+              :title="$t('Lo dará la fórmula de la hoja (del clutch): no se escribe')"
+              >{{ $t('fórmula') }}</span
+            >
+            <span
+              v-if="g.changes.some(c => c.context && !c.page?.error)"
+              class="legend is-context"
+              :title="$t('Línea de la página que no escribe nada: solo para seguirla')"
+              >{{ $t('sin cambios') }}</span
+            >
+            <span
+              v-if="g.changes.some(c => c.page?.error)"
+              class="legend is-line-error"
+              :title="$t('La hoja no aceptaría esta línea: su nota dice por qué')"
+              >{{ $t('rechazada') }}</span
             >
           </span>
         </template>

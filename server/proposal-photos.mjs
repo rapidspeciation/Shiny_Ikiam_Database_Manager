@@ -1,0 +1,133 @@
+// The notebook photos a proposal was read from (match_notebook's `photo` and
+// `rotate`), shown beside its table: a small upright copy for the page's
+// header and a larger one to open in a new tab. The photos are T3 Code chat
+// attachments (<T3 home>/userdata/attachments/<threadId>-<uuid>.jpg); only a
+// file of that folder whose name starts with the proposal's chat is served.
+//
+// WhatsApp photos carry no EXIF orientation (a page taken sideways stays
+// sideways), so the turn comes from the reader (clockwise, as crops.py's
+// --rotate). The copies are made by Pillow (python3, as the reader's crops.py;
+// the server has no image library of its own) and kept as files next to the
+// specimen photos' cache; without Pillow the photo is served as it is.
+
+import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, join, sep } from 'node:path';
+
+/** Longest side of each copy, in pixels. */
+export const PHOTO_SIZES = { thumb: 240, view: 1600 };
+const NAME = /^[\w-][\w.-]{0,199}\.(?:jpe?g|png|webp)$/i;
+const MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
+
+export const attachmentsDir = home => join(home, 'userdata', 'attachments');
+
+/** A turn as the reader gives it: 0, 90, 180 or 270 (clockwise). */
+export const rightAngle = value => {
+  const n = Math.round(Number(value) / 90);
+  return Number.isFinite(n) ? (((n * 90) % 360) + 360) % 360 : 0;
+};
+
+/**
+ * The attachment a photo argument names (its file name, or the path the chat
+ * gives: only the name counts), or null: it must be a file directly in the T3
+ * attachments folder (links followed), and, when the chat is known, one of
+ * that chat's (its name starts with the thread id).
+ */
+export function attachmentFile(home, value, thread = null) {
+  if (!home || typeof value !== 'string' || !value.trim()) return null;
+  const name = basename(value.trim().replaceAll('\\', '/'));
+  if (!NAME.test(name)) return null;
+  if (thread && !name.startsWith(`${thread}-`)) return null;
+  try {
+    const dir = realpathSync(attachmentsDir(home));
+    const path = realpathSync(join(dir, name));
+    if (!path.startsWith(dir + sep) || path.slice(dir.length + 1).includes(sep) || !statSync(path).isFile()) return null;
+    return { name, path };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The photos of a match_notebook call: `photo` a name or a list, `rotate` a
+ * turn or a list (one per photo; one turn for all). Returns { photos, refused }.
+ */
+export function photosOf(home, args, thread = null) {
+  const names = (Array.isArray(args.photo) ? args.photo : args.photo ? [args.photo] : []).slice(0, 12);
+  const turns = Array.isArray(args.rotate) ? args.rotate : names.map(() => args.rotate);
+  const photos = [];
+  const refused = [];
+  names.forEach((value, i) => {
+    const file = attachmentFile(home, value, thread);
+    if (file) photos.push({ file: file.name, rotate: rightAngle(turns[i] ?? 0) });
+    else refused.push(String(value).slice(0, 200));
+  });
+  return { photos, refused };
+}
+
+const SCRIPT = `
+import sys
+from PIL import Image, ImageOps
+src, out, turn, size = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+im = ImageOps.exif_transpose(Image.open(src))
+if turn:
+    im = im.rotate(-turn, expand=True)
+im.thumbnail((size, size))
+im.convert('RGB').save(out, 'JPEG', quality=82, optimize=True)
+`;
+
+/**
+ * Upright copies of attachments. dir: where they are kept (null: in memory,
+ * the last few). python: the interpreter with Pillow.
+ */
+export function createPhotoCopies({ dir = null, python = 'python3', timeoutMs = 30000 } = {}) {
+  if (dir) mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const memory = new Map();
+  const inFlight = new Map();
+  const run = (src, out, rotate, size) =>
+    new Promise(resolve =>
+      execFile(python, ['-c', SCRIPT, src, out, String(rotate), String(size)], { timeout: timeoutMs }, error => resolve(!error)),
+    );
+  /** { data, mime, etag, upright }: the copy, or the photo itself when no copy can be made. */
+  async function get(path, rotate, size) {
+    const stat = statSync(path);
+    const key = createHash('sha256').update(`${path}\u0000${stat.size}\u0000${stat.mtimeMs}\u0000${rotate}\u0000${size}`).digest('hex').slice(0, 32);
+    const etag = `"${key}"`;
+    const file = dir ? join(dir, `${key}.jpg`) : null;
+    try {
+      if (file) return { data: readFileSync(file), mime: 'image/jpeg', etag, upright: true };
+    } catch {
+      /* not made yet */
+    }
+    if (memory.has(key)) return memory.get(key);
+    if (!inFlight.has(key))
+      inFlight.set(
+        key,
+        (async () => {
+          const out = file ?? join(tmpdir(), `ithomiini-photo-${key}.jpg`);
+          const made = await run(path, `${out}.part`, rotate, size);
+          let copy = null;
+          if (made)
+            try {
+              const data = readFileSync(`${out}.part`);
+              if (file) writeFileSync(file, data, { mode: 0o600 });
+              copy = { data, mime: 'image/jpeg', etag, upright: true };
+            } catch {
+              copy = null;
+            }
+          rmSync(`${out}.part`, { force: true });
+          // Without Pillow: the photo as it is (sideways if it was taken so).
+          copy ??= { data: readFileSync(path), mime: MIME[path.split('.').pop().toLowerCase()] ?? 'image/jpeg', etag: `"${key}-0"`, upright: false };
+          if (!file || !copy.upright) {
+            memory.set(key, copy);
+            while (memory.size > 40) memory.delete(memory.keys().next().value);
+          }
+          return copy;
+        })().finally(() => inFlight.delete(key)),
+      );
+    return inFlight.get(key);
+  }
+  return { get };
+}

@@ -1003,8 +1003,13 @@ export async function createApp(config = {}, options = {}) {
       if (assistant) {
         // The page asking (lib/api.ts): Cambios propuestos skips the list it already has after its own edits.
         const page = String(req.headers['x-ithomiini-page'] ?? '').slice(0, 64) || null;
-        const answer = await assistant.handle({ method, path, body, user, query, page });
+        const answer = await assistant.handle({ method, path, body, user, query, page, headers: req.headers });
         if (answer?.tagged) return sendTagged(res, answer.body);
+        // Bytes (a proposal's notebook photo), or JSON.
+        if (answer && 'raw' in answer) {
+          res.writeHead(answer.status || 200, answer.headers);
+          return res.end(answer.raw ?? undefined);
+        }
         if (answer) return json(res, answer.status || 200, answer.body, answer.headers);
       }
       throw fail('NOT_FOUND', 'Route not found', 404);

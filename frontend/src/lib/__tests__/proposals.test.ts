@@ -5,8 +5,12 @@ import {
   cellOf,
   changedCells,
   changedText,
+  expandProposal,
   notApplied,
+  pageNote,
   panelShare,
+  photoSummaries,
+  readOnlyRow,
   rowsToWrite,
   sampleWarnings,
   selectionActions,
@@ -27,7 +31,6 @@ const created = (key: string, values: ProposalChange['values'], extra: Partial<P
   row: null,
   label: '',
   create: true,
-  before: {},
   values,
   current: {},
   ...extra,
@@ -39,7 +42,6 @@ const edited = (key: string, values: ProposalChange['values'], extra: Partial<Pr
   sheet: 'Collection_data',
   row: 12,
   label: 'CAM000001',
-  before: { Sex: 'male' },
   values,
   current: { Sex: 'male' },
   rowValues: { Sex: 'male', SPECIES: 'Oleria gunilla', Tribe: 'Ithomiini' },
@@ -295,5 +297,72 @@ describe('the panel beside T3', () => {
   it('does not offer long lists for identifier columns', () => {
     expect(['CAM_ID', 'Tube_1_id', 'FieldMark_ID', 'Insectary_ID'].every(f => ID_COLUMN.test(f))).toBe(true)
     expect(['SPECIES', 'Sex', 'Collector', 'CLUTCH NUMBER', 'Identifier', 'ID_status'].some(f => ID_COLUMN.test(f))).toBe(false)
+  })
+})
+
+describe("a notebook page's proposal", () => {
+  const line = (n: number, extra: Partial<ProposalChange> = {}): ProposalChange => ({
+    ...edited(`r${n}`, {}, { sheet: 'Insectary_data', label: `${n}AB`, index: -n, context: true }),
+    page: { photo: 0, line: n, raw: `${n}AB ♀`, status: 'match' },
+    ...extra,
+  })
+  it("shows what the SPECIES formula will give, grey and never written, where the sheet's cell is blank", () => {
+    const row = edited('r1', { 'CLUTCH NUMBER': 838 }, { sheet: 'Insectary_data', rowValues: {}, current: undefined, formulaGives: { SPECIES: 'Mechanitis lysimnia' } })
+    expect(cellOf(row, 'SPECIES')).toMatchObject({ value: 'Mechanitis lysimnia', kind: 'sheet', fromFormula: true, was: null })
+    expect(proposal([row]).changes[0].values).toEqual({ 'CLUTCH NUMBER': 838 })
+    // Typed by the person: theirs, not the formula's.
+    const typed = { ...row, values: { ...row.values, SPECIES: 'Mechanitis polymnia' }, personEdits: { SPECIES: {} } }
+    expect(cellOf(typed, 'SPECIES')).toMatchObject({ value: 'Mechanitis polymnia', kind: 'person' })
+    expect(cellOf(typed, 'SPECIES').fromFormula).toBeUndefined()
+  })
+  it('makes the lean proposal whole: hints from its table, formula columns from its sheet', () => {
+    const lean = {
+      ...proposal([
+        edited('r1', { Tube_2_id: 'NA' }, { formulas: undefined, hints: { Tube_2_id: 0 } as never }),
+        edited('r2', {}, { formulas: ['Tribe', 'Genus'] }),
+      ]),
+      hintTable: [{ msg: { key: 'Individuo preservado: lo que el equipo escribe siempre' } }],
+      sheetFormulas: { Collection_data: ['Tribe'] },
+    }
+    const whole = expandProposal(lean)
+    expect(whole.changes[0].hints).toEqual({ Tube_2_id: { text: '', msg: { key: 'Individuo preservado: lo que el equipo escribe siempre' } } })
+    expect(whole.changes[0].formulas).toEqual(['Tribe'])
+    expect(whole.changes[1].formulas).toEqual(['Tribe', 'Genus'])
+    const plain = proposal([])
+    expect(expandProposal(plain)).toBe(plain)
+  })
+  it("orders the columns as the notebook, then the implied ones, then the template's last (to fold)", () => {
+    const p = {
+      ...proposal([
+        edited(
+          'r1',
+          { Death_date: 46000, Death_cause: 'Unknown', Wild_Reared: 'Reared', Tube_2_id: 'NA', Tube_2_tissue: 'NOT_COLLECTED', Sex: 'male', Notes: 'x' },
+          { sheet: 'Insectary_data', inferred: ['Wild_Reared', 'Tube_2_id', 'Tube_2_tissue'] },
+        ),
+        line(2),
+      ]),
+      page: { kind: 'emergence', sheet: 'Insectary_data', columns: ['Insectary_ID', 'SPECIES', 'Sex', 'Death_date', 'Death_cause'], photos: 1 },
+    }
+    const sheetOrder = ['Insectary_ID', 'Notes', 'Tube_2_tissue', 'Tube_2_id', 'Wild_Reared', 'Death_cause', 'Death_date', 'Sex']
+    const [g] = sheetGroups(p, {}, () => sheetOrder)
+    expect(g.fields).toEqual(['Sex', 'Death_date', 'Death_cause', 'Wild_Reared', 'Notes', 'Tube_2_tissue', 'Tube_2_id'])
+    expect(g.template).toEqual(['Tube_2_tissue', 'Tube_2_id'])
+  })
+  it('says why a line writes nothing, keeps it read-only, and counts each photo', () => {
+    expect(pageNote(line(2))).toBe('Línea 2: «2AB ♀» · Ya está así en la hoja')
+    const missing = line(4, {
+      placeholder: true,
+      recordId: null,
+      page: { photo: 1, line: 4, raw: '4AB', status: 'missing', near: [{ value: '4AD', row: 9 }] },
+    })
+    expect(pageNote(missing)).toBe('Línea 4: «4AB» · No está en la hoja; ¿quisiste decir 4AD (fila 9)?')
+    const refused = line(5, { page: { photo: 1, line: 5, raw: '5AB', status: 'match', error: 'Tube_1_id FD1 ya está en Insectary_data fila 9' } })
+    expect(pageNote(refused)).toBe('Línea 5: «5AB» · No se puede escribir: Tube_1_id FD1 ya está en Insectary_data fila 9')
+    expect([line(2), missing, refused, edited('r1', { Sex: 'female' })].map(readOnlyRow)).toEqual([true, true, false, false])
+    const written = edited('r1', { Sex: 'female' }, { page: { photo: 0, line: 1 } })
+    expect(photoSummaries([written, line(2), line(3), missing, refused])).toEqual([
+      { photo: 0, from: 1, to: 3, change: 1, same: 2, other: 0 },
+      { photo: 1, from: 4, to: 5, change: 0, same: 0, other: 2 },
+    ])
   })
 })

@@ -29,7 +29,18 @@ import {
   type Direction,
 } from '../../lib/gridKit'
 import { parseBlock } from '../../lib/paste'
-import { ID_COLUMN, cellId, cellOf, rowKey, selectionActions, type CellInfo, type ProposalChange } from '../../lib/proposals'
+import {
+  ID_COLUMN,
+  cellId,
+  cellOf,
+  pageNote,
+  pageOnly,
+  readOnlyRow,
+  rowKey,
+  selectionActions,
+  type CellInfo,
+  type ProposalChange,
+} from '../../lib/proposals'
 import { isSumField, sumTotal } from '../../lib/sums'
 import type { CellValue, Field } from '../../lib/types'
 import { listProblem, verificationsFor } from '../../lib/verifications'
@@ -57,6 +68,11 @@ import CellBar from '../CellBar.vue'
  * of it was read, to complete); left empty, applying does not write them.
  * The CAM or tube a preserved butterfly would be left without (server/preserved.mjs)
  * are amber with a "missing" tag until someone fills them.
+ * A notebook page's lines that write nothing are grey and read-only (as the
+ * sheet has them, or as written when the sheet has no such row; a line the
+ * save refused is red, with why); a "Línea" column gives each row's line.
+ * What the SPECIES formula will give (from the clutch) shows grey, in
+ * italics, tagged "fórmula": it is never written.
  */
 export interface CellEdit {
   key: string
@@ -94,6 +110,7 @@ type Row = Record<string, CellValue> & {
   __row: string
   __label: string
   __note: string
+  __line: string
   __state: string
 }
 
@@ -131,8 +148,14 @@ function info(key: string, field: string) {
   const change = byKey.get(key)
   return change ? cellOf(change, field, props.newRowFormulas) : null
 }
-const canEditCell = (key: string, field: string) =>
-  props.editable && fieldSet.value.has(field) && !!info(key, field) && info(key, field)!.kind !== 'locked'
+const canEditCell = (key: string, field: string) => {
+  const change = byKey.get(key)
+  return props.editable && !!change && !readOnlyRow(change) && fieldSet.value.has(field) && info(key, field)?.kind !== 'locked'
+}
+/** The rows come from a notebook page: a "Línea" column (photo and line, when the page has several photos). */
+const paged = () => props.changes.some(c => c.page)
+const severalPhotos = () => new Set(props.changes.map(c => c.page?.photo ?? 0)).size > 1
+const lineText = (c: ProposalChange) => (!c.page ? '' : severalPhotos() ? `${c.page.photo + 1}·${c.page.line}` : String(c.page.line))
 const canEdit: CanEdit = (row, field) => canEditCell((row.getData() as Row).__key, field)
 /** A list to pick from: the sheet's dropdown, except for identifiers (typed or pasted). */
 const choicesOf = (field: string) => (ID_COLUMN.test(field) ? null : rules.value?.lists[field]?.values)
@@ -143,15 +166,17 @@ function toRow(c: ProposalChange): Row {
   const out = {
     __key: key,
     __done: props.applied?.includes(c.index) ? '✓' : '',
-    __row: c.row ? String(c.row) : t('nueva'),
+    // A page line with no sheet row: no row number (it is not a new row either).
+    __row: c.row ? String(c.row) : c.placeholder ? '—' : t('nueva'),
     __label: c.label,
-    __note: c.note ?? '',
+    __note: pageNote(c),
+    __line: lineText(c),
   } as Row
   let state = ''
   for (const f of props.fields) {
     const cell = cellOf(c, f, props.newRowFormulas)
     out[f] = cell.value
-    state += cell.kind[0] + (cell.doubtful ? '?' : '') + (props.flash.has(cellId(key, f)) ? '*' : '')
+    state += cell.kind[0] + (cell.doubtful ? '?' : '') + (cell.fromFormula ? 'f' : '') + (props.flash.has(cellId(key, f)) ? '*' : '')
   }
   // Markers can change without the value (whose edit it is, a flash, a doubt checked): part of the row's signature.
   out.__state =
@@ -161,6 +186,8 @@ function toRow(c: ProposalChange): Row {
     JSON.stringify(c.unreadable ?? null) +
     JSON.stringify(c.warnings ?? null) +
     (props.editable ? 'e' : '') +
+    (c.context ? 'c' : '') +
+    (c.page?.error ? 'x' : '') +
     Object.keys(c.values).length
   return out
 }
@@ -187,6 +214,7 @@ function formatter(field: string) {
     el.classList.toggle('is-inferred', c.inferred)
     el.classList.toggle('is-unreadable', c.kind === 'unreadable')
     el.classList.toggle('is-warned', !!c.warning)
+    el.classList.toggle('is-formula-gives', !!c.fromFormula)
     const was = c.was === undefined ? '' : show(field, c.was) || t('vacío')
     const ai = show(field, c.ai) || t('vacío')
     const before = change.replaceFormula?.includes(field) ? 'Antes: {value} (fórmula)' : 'Antes: {value}'
@@ -212,9 +240,11 @@ function formatter(field: string) {
           ].join(' · ')
         : '',
       c.kind === 'locked' ? t('Fórmula de la hoja: no se escribe') : '',
+      c.fromFormula ? t('Lo dará la fórmula de la hoja (del clutch): no se escribe') : '',
       c.kind === 'unreadable' ? unreadableText(c) : '',
       c.unreadable && c.kind !== 'unreadable' ? t('Ilegible en el cuaderno; rellenada a mano') : '',
-      c.kind === 'sheet' && props.editable ? t('Valor actual de la hoja; escribe para cambiarlo') : '',
+      c.kind === 'sheet' && !c.fromFormula && canEditCell(row.__key, field) ? t('Valor actual de la hoja; escribe para cambiarlo') : '',
+      readOnlyRow(change) ? t('Línea de la página que no escribe nada: solo para seguirla') : '',
     ]
       .filter(Boolean)
       .join('\n')
@@ -237,6 +267,21 @@ function formatter(field: string) {
       mark.textContent = t('ilegible')
       box.append(mark)
       if (text) box.append(' ', withTotal(field, c.value, text))
+      return box
+    }
+    // What the formula will give (grey, tagged): then the sheet's older value, struck through, if it had one.
+    if (c.fromFormula) {
+      const box = document.createElement('span')
+      const mark = document.createElement('span')
+      mark.className = 'formula-mark'
+      mark.textContent = t('fórmula')
+      box.append(withTotal(field, c.value, text), ' ', mark)
+      if (c.was !== undefined && c.was !== null && c.was !== '' && show(field, c.was) !== text) {
+        const old = document.createElement('s')
+        old.className = 'was'
+        old.textContent = show(field, c.was)
+        box.append(' ', old)
+      }
       return box
     }
     // Set back to the sheet: its value, then the assistant's struck through (kept aside, not written).
@@ -300,7 +345,8 @@ function rowFormatter(cell: CellComponent) {
   const change = byKey.get(row.__key)
   // (A row whose only cells are unreadable ones still to fill is not: it waits for them.)
   const waiting = !!change && Object.keys(change.unreadable ?? {}).some(f => !(f in change.values))
-  const skipped = props.editable && !!change && !Object.keys(change.values).length && !waiting
+  // (A page line that writes nothing is grey already: it was never to be written.)
+  const skipped = props.editable && !!change && !change.context && !Object.keys(change.values).length && !waiting
   const el = cell.getElement()
   el.classList.toggle('is-skipped', skipped)
   el.title = skipped ? t('Esta fila no se escribe: no le queda ningún cambio') : ''
@@ -319,6 +365,7 @@ function drawnText(change: ProposalChange, field: string) {
   // The "?" of a doubtful cell takes about two letters; an unreadable cell's tag about its word.
   if (cell.kind === 'unreadable') return `${t('ilegible')}   ${textWithTotal(field, cell.value)}`
   if (cell.warning) return `${t('falta')}   ${textWithTotal(field, cell.value)}`
+  if (cell.fromFormula) return `${textWithTotal(field, cell.value)}  ${t('fórmula')}  ${cell.was ? textWithTotal(field, cell.was) : ''}`
   return (cell.doubtful ? '?  ' : '') + textWithTotal(field, cell.value) + beside
 }
 
@@ -362,6 +409,18 @@ function columns(): ColumnDefinition[] {
     headerSort: false,
     formatter: rowFormatter as never,
   })
+  // The notebook line, to follow the page row by row.
+  if (paged())
+    cols.push({
+      title: t('Línea'),
+      field: '__line',
+      width: severalPhotos() ? 58 : 50,
+      frozen: wide,
+      hozAlign: 'right',
+      cssClass: 'row-number',
+      headerSort: false,
+      headerTooltip: severalPhotos() ? t('Foto · línea del cuaderno') : t('Línea del cuaderno'),
+    })
   if (wide) cols.push(id)
   for (const field of props.fields) {
     const choices = hasChoices(field)
@@ -397,11 +456,28 @@ function columns(): ColumnDefinition[] {
       hozAlign: 'center',
       headerSort: false,
       cssClass: 'row-remove',
-      formatter: () => '✕',
-      tooltip: t('Quitar esta fila de la propuesta'),
-      cellClick: (_e, cell) => emit('remove', (cell.getData() as Row).__key),
+      // A page line with no row of its own has nothing to take out.
+      formatter: (cell: CellComponent) => (removable((cell.getData() as Row).__key) ? '✕' : ''),
+      tooltip: (_e: MouseEvent, cell: CellComponent) =>
+        removable((cell.getData() as Row).__key) ? t('Quitar esta fila de la propuesta') : '',
+      cellClick: (_e: UIEvent, cell: CellComponent) => {
+        const key = (cell.getData() as Row).__key
+        if (removable(key)) emit('remove', key)
+      },
     } as ColumnDefinition)
   return cols
+}
+const removable = (key: string) => {
+  const change = byKey.get(key)
+  return !!change && !pageOnly(change)
+}
+/** A page line's row: grey when it writes nothing, red when the save refused it. */
+function rowLook(row: RowComponent) {
+  const change = byKey.get((row.getData() as Row).__key)
+  const el = row.getElement()
+  el.classList.toggle('is-context-row', !!change?.context && !change.page?.error)
+  el.classList.toggle('is-placeholder-row', !!change?.placeholder)
+  el.classList.toggle('is-error-row', !!change?.page?.error)
 }
 
 // ------------------------------------------------------------ the cell bar
@@ -417,6 +493,7 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
   if (field === '__note') return { ...base, column: t('Nota'), text: row.__note }
   if (field === '__label') return { ...base, column: 'ID', text: row.__label }
   if (field === '__row') return { ...base, column: t('Fila'), text: row.__row }
+  if (field === '__line') return { ...base, column: t('Línea'), text: row.__line }
   const c = fieldSet.value.has(field) ? info(row.__key, field) : null
   const change = byKey.get(row.__key)
   if (!c || !change) return null
@@ -441,6 +518,7 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
       })
   }
   if (c.inferred && c.hint) notes.push({ label: t('No escrito en la línea'), text: tx(c.hint.text, c.hint.msg), kind: 'hint' })
+  if (c.fromFormula) notes.push({ label: t('Fórmula'), text: t('La hoja lo calculará del clutch: no se escribe'), kind: 'hint' })
   // Unreadable: why, then (once filled) that it was filled by hand.
   if (c.unreadable) {
     const reason = c.unreadable.reason ? tx(c.unreadable.reason, c.unreadable.reasonMsg) : t('La IA no pudo leerla')
@@ -463,7 +541,13 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
     text: editText$(field, c.value),
     editable,
     multiline: longText(field) && !hasChoices(field),
-    readonly: editable ? '' : c.kind === 'locked' ? t('Fórmula de la hoja: no se escribe') : '',
+    readonly: editable
+      ? ''
+      : c.kind === 'locked'
+        ? t('Fórmula de la hoja: no se escribe')
+        : readOnlyRow(change)
+          ? t('Línea de la página que no escribe nada: solo para seguirla')
+          : '',
     notes,
     choices: partial.length
       ? partial.map(text => ({ label: text, text }))
@@ -513,7 +597,11 @@ function onCellEdited(cell: CellComponent) {
   const list = rules.value?.lists[field]
   const problem = list && listProblem(rules.value, field, result.value)
   if (problem) emit('notice', list.strict ? problem : t('{problem}: se guarda igual; corrígelo si es un error', { problem }))
-  outgoing.push({ key: row.__key, field, value: result.value, before })
+  // `before` tells the server what change the person typed over (to say when the assistant changed it
+  // meanwhile): the sheet's value, or what the formula will give, is no change of anyone's.
+  const was = info(row.__key, field)
+  const over = was?.kind === 'proposed' || was?.kind === 'person' ? before : null
+  outgoing.push({ key: row.__key, field, value: result.value, before: over })
   // A paste or a fill sets many cells at once: they go out together.
   if (outgoing.length === 1) queueMicrotask(send)
 }
@@ -624,7 +712,14 @@ let retry: number | undefined
 const busy = () => !!host.value?.querySelector('.tabulator-editing') || typingPending()
 const layoutKey = () =>
   // The language is part of it: the column titles and tooltips are in it.
-  [props.fields.join('|'), props.editable, props.applied ? 1 : 0, rules.value ? 1 : 0, locale.value].join('\n')
+  [
+    props.fields.join('|'),
+    props.editable,
+    props.applied ? 1 : 0,
+    rules.value ? 1 : 0,
+    locale.value,
+    paged() ? (severalPhotos() ? 'pp' : 'p') : '',
+  ].join('\n')
 function sync() {
   if (!table || !built) return
   if (busy()) {
@@ -694,6 +789,7 @@ onMounted(() => {
     clipboardPasteAction: pasteRange,
     // Widths change from the header's borders only (see gridKit): a finger on the rows scrolls.
     columnDefaults: { headerSort: false, resizable: 'header' },
+    rowFormatter: rowLook,
   } as unknown as ConstructorParameters<typeof Tabulator>[1])
   table.on('tableBuilt', () => {
     built = true
@@ -813,3 +909,43 @@ watch(
     </div>
   </div>
 </template>
+
+<style>
+/* A notebook page's lines that write nothing: grey (as the sheet has them), or as written (no such row). */
+.proposal-sheet .tabulator-row.is-context-row .tabulator-cell,
+.legend.is-context {
+  background: #fafaf9;
+  color: #a8a29e;
+}
+.proposal-sheet .tabulator-row.is-placeholder-row .tabulator-cell {
+  background: #fafaf9;
+  color: #a8a29e;
+  font-style: italic;
+}
+.proposal-sheet .tabulator-row.is-placeholder-row .tabulator-cell.proposal-note,
+.proposal-sheet .tabulator-row.is-context-row .tabulator-cell.proposal-note {
+  color: #78716c;
+}
+/* A line the save refused: red, with why in its note. */
+.proposal-sheet .tabulator-row.is-error-row .tabulator-cell,
+.legend.is-line-error {
+  background: #fef2f2;
+  color: #991b1b;
+}
+/* What the sheet's formula will give (SPECIES from the clutch): grey, in italics, tagged; never written. */
+.proposal-sheet .tabulator-cell.is-formula-gives,
+.legend.is-formula-gives {
+  color: #78716c;
+  font-style: italic;
+}
+.proposal-sheet .tabulator-cell .formula-mark {
+  display: inline-block;
+  padding: 0 4px;
+  border: 1px solid #d6d3d1;
+  border-radius: 3px;
+  color: #78716c;
+  font-size: 10px;
+  font-style: normal;
+  line-height: 13px;
+}
+</style>

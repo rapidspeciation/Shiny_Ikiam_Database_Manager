@@ -464,7 +464,17 @@ test('match_notebook matches a transcribed page and leaves one proposal beside T
     assert.equal(listed[0].id, out.proposalId);
     assert.equal(listed[0].source, 'T3 Code');
     assert.match(listed[0].reason, /Cuaderno Emergidos \(Insectary_data\): emergidos 5VB–6OO/);
-    assert.deepEqual(listed[0].changes.map(c => c.line), [1, 2, 3, 4]);
+    // Every line of the page, in its order: line 5 (not in the sheet) as written, never written.
+    assert.deepEqual(listed[0].changes.map(c => c.line), [1, 2, 3, 4, 5]);
+    assert.deepEqual(listed[0].changes[4].page, {
+      photo: 0,
+      line: 5,
+      raw: '7ZZ ♀',
+      status: 'missing',
+      message: '7ZZ no está en Insectary_data: ¿está bien leído?',
+    });
+    assert.ok(listed[0].changes[4].placeholder && listed[0].changes[4].context && listed[0].changes[4].index < 0);
+    assert.deepEqual(listed[0].page, { kind: 'emergence', sheet: 'Insectary_data', columns: KINDS.emergence.fields, photos: 0 });
     assert.deepEqual(listed[0].changes[0].replaceFormula, ['SPECIES']);
     // The proposal keeps the doubt with the cell: its value, how sure, the alternatives and why.
     assert.equal(listed[0].changes[1].values.Sex, 'female');

@@ -72,13 +72,13 @@ export const KINDS = {
       'SPECIES',
       'DATE LAID',
       'NUMBER OF EGGS',
-      'INSECTARY OR LABORATORY',
       'HATCHING DATE',
       'NUMBER OF LARVAE',
       'PUPA DATE',
       'NUMBER OF PUPA',
       'EMERGENCE DATE',
       'NUMBER OF ADULTS',
+      'INSECTARY OR LABORATORY',
       'NOTES',
     ],
     // Also read (not named in the skill yet): the generation, from "(F1)" after the species or
@@ -1509,6 +1509,9 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         cell.status = sameValue(field, predicted, cell.value) ? 'same' : isNone(predicted) ? 'fill' : 'conflict';
         if (cell.status !== 'same')
           cell.message ??= `La fórmula da «${predicted ?? 'vacío'}»; se escribirá encima`;
+        // The page's species is what the formula will give once the clutch is written (the sheet shows
+        // another or none yet): the table shows it, never writes it.
+        else if (!sameValue(field, before, predicted)) cell.formulaGives = predicted;
       } else if (cell.value === 'NA' && (before === null || before === undefined || before === '')) cell.status = 'fill';
       else if (sameValue(field, before, cell.value)) cell.status = 'same';
       // A count still at the new row's =0 is not filled in yet.
@@ -1735,7 +1738,10 @@ export function proposalRows(review) {
     const doubts = {};
     const hints = {};
     const inferred = [];
+    // What a formula column will give, not written (SPECIES from the clutch the row takes).
+    let formulaGives;
     for (const [field, cell] of Object.entries(line.cells)) {
+      if (cell.formulaGives !== undefined && !cell.include) (formulaGives ??= {})[field] = cell.formulaGives;
       if (!cell.include) continue;
       values[field] = cell.write ?? cell.value;
       if (cell.status === 'conflict') notes.push(`${field}: hoja ${show(field, cell.before)} → cuaderno ${show(field, cell.value)}`);
@@ -1758,6 +1764,7 @@ export function proposalRows(review) {
       ...(unreadable ? { unreadable } : {}),
       ...(Object.keys(hints).length ? { hints } : {}),
       ...(inferred.length ? { inferred } : {}),
+      ...(formulaGives ? { formulaGives } : {}),
     };
     if (line.status === 'new') newRows.push({ sheet: review.sheet, values, note, line: line.n, ...meta });
     else changes.push({ recordId: line.recordId, values, note, line: line.n, ...meta });

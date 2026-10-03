@@ -83,6 +83,7 @@ export const MATCH_NOTEBOOK_TOOL = {
                   'Column → why the cell is doubtful or unreadable, a few words the person reads (e.g. "1 or 7: this hand", "smudged", "cut off by the photo edge")',
               },
               crossedOut: { type: 'boolean', description: 'The line is crossed out or marked "no se usó el ID"' },
+              photo: { type: 'integer', description: 'With several photos: which one the line is on (0 = the first)' },
             },
             required: ['raw', 'values'],
           },
@@ -101,6 +102,15 @@ export const MATCH_NOTEBOOK_TOOL = {
             },
             required: ['field', 'value', 'from', 'to'],
           },
+        },
+        photo: {
+          description:
+            'The photo of the page: the file name of the attachment (from "[Attached image … saved at …]" in the chat), or a list of them when the lines come from several photos. Shown beside the proposal.',
+          anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
+        },
+        rotate: {
+          description: 'Clockwise turn that makes the photo upright (0, 90, 180, 270), as given to crops.py; a list for several photos',
+          anyOf: [{ type: 'integer', enum: [0, 90, 180, 270] }, { type: 'array', items: { type: 'integer', enum: [0, 90, 180, 270] } }],
         },
         replaceProposalId: {
           type: 'string',
@@ -290,6 +300,8 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
         return Object.keys(kept).length ? kept : undefined;
       };
       const inferred = (row.inferred ?? []).filter(f => f in (out.changes[0]?.values ?? {}));
+      // What a formula column will give (not written): only for cells the row leaves to the formula.
+      const gives = Object.entries(row.formulaGives ?? {}).filter(([f]) => !(f in (out.changes[0]?.values ?? {})));
       changes.push(
         ...out.changes.map(c => ({
           ...c,
@@ -297,6 +309,7 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
           ...(keep(row.doubts) ? { doubts: keep(row.doubts) } : {}),
           ...(keep(row.hints) ? { hints: keep(row.hints) } : {}),
           ...(inferred.length ? { inferred } : {}),
+          ...(gives.length ? { formulaGives: Object.fromEntries(gives) } : {}),
           // Cells the reader could not read: never in `values`, for the person to fill.
           ...(row.unreadable ? { unreadable: row.unreadable } : {}),
         })),
@@ -413,10 +426,34 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
         });
       }
     }
-    return { review, changes, ignored, wildWithoutCollection };
+    // The whole page, kept with the proposal: its table shows every line in the notebook's order
+    // (lines with nothing to write, not found or crossed out too), each on its photo.
+    const sent = typeof args.lines === 'string' ? parse(args.lines, []) : Array.isArray(args.lines) ? args.lines : [];
+    const page = {
+      kind: transcription.kind,
+      sheet: kind.sheet,
+      lines: review.lines.map((l, i) => ({
+        n: l.n,
+        raw: l.raw,
+        id: clip(l.label ?? '', 80),
+        photo: Number.isInteger(sent[i]?.photo) && sent[i].photo >= 0 ? sent[i].photo : 0,
+        status: l.status,
+        ...(l.recordId ? { recordId: l.recordId } : {}),
+        ...(l.rowError ? { error: l.rowError } : {}),
+        ...(l.message ? { message: clip(l.message, 300) } : {}),
+        ...(l.near?.length ? { near: l.near.slice(0, 3).map(n => ({ value: n.value, row: n.row })) } : {}),
+      })),
+    };
+    return { review, changes, ignored, wildWithoutCollection, page };
   }
 
-  return { match };
+  /** The species Insectary_data's SPECIES formula gives for a clutch (its Insectary_stocks row), or null. */
+  function speciesOfClutch(value) {
+    const hit = keyIndex('Insectary_stocks', ['CLUTCH NUMBER']).get(clutchKey(value))?.[0];
+    return hit ? (store.getRecord(hit.id)?.values?.SPECIES ?? null) : null;
+  }
+
+  return { match, speciesOfClutch };
 }
 
 /** What the tool tells Claude about the matched page: per line only what matters (not the equal cells). */

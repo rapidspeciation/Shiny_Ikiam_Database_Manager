@@ -20,6 +20,8 @@ import { carryChecks, dropDoubt, setChecked, uncheckedDoubts, unfilledUnreadable
 import { KNOWLEDGE_TOOLS, createKnowledge, runKnowledgeTool } from './knowledge.mjs';
 import { HISTORY_TOOLS, HISTORY_TOOL_NAMES, runHistoryTool } from './history.mjs';
 import { createT3Chats } from './t3chats.mjs';
+import { photoCacheDir } from './photos.mjs';
+import { PHOTO_SIZES, attachmentFile, attachmentsDir, createPhotoCopies, photosOf } from './proposal-photos.mjs';
 
 const bad = (status, code, message) => ({ status, body: { error: { code, message } } });
 const now = () => new Date().toISOString();
@@ -478,6 +480,9 @@ function init(db) {
   if (!has('ai_proposals', 't3_thread')) db.exec('ALTER TABLE ai_proposals ADD COLUMN t3_thread TEXT');
   if (!has('ai_proposals', 't3_title')) db.exec('ALTER TABLE ai_proposals ADD COLUMN t3_title TEXT');
   if (!has('ai_proposals', 't3_tool_use')) db.exec('ALTER TABLE ai_proposals ADD COLUMN t3_tool_use TEXT');
+  // A notebook page's proposal (match_notebook): the page's lines, its notebook and its photos, so its
+  // table shows every line in the notebook's order beside the photo.
+  if (!has('ai_proposals', 'page_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN page_json TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS ai_proposals_owner_status ON ai_proposals(owner_id, status, created_at)');
   // Personal tokens for agents outside the app (T3 Code projects) to use the same tools.
   db.exec(`CREATE TABLE IF NOT EXISTS ai_tokens (
@@ -1446,6 +1451,17 @@ export function createAssistant({ store, config = {} }) {
    * A pending one also gives what the table needs to edit it: every current value
    * of the edited rows (columns can be added), their formula columns, and those
    * of the pre-made rows new rows go into.
+   *
+   * A notebook page's proposal shows the whole page, in the notebook's order
+   * (photo, then line): the lines with nothing to write as grey context rows
+   * (never written), lines not found or crossed out as a placeholder with the
+   * line as written, a line the save would refuse with its reason. Rows added
+   * later take the line of the same ID, or go after the page.
+   *
+   * Sent lean (slow connections): an edited row's values once (rowValues while
+   * pending, `current` after), a sheet's formula columns once (`sheetFormulas`;
+   * a row lists its own only when they differ), the cells' hints once
+   * (`hintTable`; a row gives their index).
    */
   function proposalView(proposal, row) {
     const changes = (row?.changes_json && parse(row.changes_json)) || proposal.changes;
@@ -1463,16 +1479,77 @@ export function createAssistant({ store, config = {} }) {
         ]),
       ),
     ];
-    const sheets = [...new Set(changes.map(c => c.sheet))];
-    const typeOf = f =>
-      sheets.map(s => moduleMap.get(s)?.fields.find(x => x.key === f)?.type).find(Boolean) ?? 'text';
     const created = parse(row?.created_json ?? 'null') ?? {};
     const locked = (sheet, keys) => keys.filter(f => !TYPED_OVER_FORMULA[sheet]?.has(f) && !isSumField(sheet, f));
+    const page = parse(row?.page_json ?? 'null');
+    const rows = pageRows(changes, page);
+    const sheets = [...new Set(rows.map(r => r.change.sheet))];
+    const typeOf = f =>
+      sheets.map(s => moduleMap.get(s)?.fields.find(x => x.key === f)?.type).find(Boolean) ?? 'text';
     const newRowFormulas = open
       ? Object.fromEntries(
           sheets.filter(s => changes.some(c => c.create && c.sheet === s)).map(s => [s, locked(s, [...createFormulaFields(s)])]),
         )
       : {};
+    // What the SPECIES formula gives once the row has its clutch (shown, never written).
+    const species = new Map();
+    const speciesOf = clutch => {
+      const key = String(clutch);
+      if (!species.has(key)) species.set(key, notebooks.speciesOfClutch(clutch));
+      return species.get(key);
+    };
+    const hintTable = [];
+    const hintIndex = new Map();
+    const hintOf = h => {
+      const lean = h?.msg ? { msg: h.msg } : { text: clip(h?.text, 300) };
+      const key = json(lean);
+      if (!hintIndex.has(key)) hintIndex.set(key, hintTable.push(lean) - 1);
+      return hintIndex.get(key);
+    };
+    const out = rows.map(({ change, index, line }) => {
+      const recordId = change.create ? (created[change.clientId] ?? null) : change.recordId;
+      const record = recordId ? store.getRecord(recordId) : null;
+      // Not needed by the table: what the sheet had when it was drafted, the version the save checks.
+      const { before, expectedVersion, hints, formulaGives, ...rest } = change;
+      const view = {
+        ...rest,
+        key: change.key ?? rowKey(change),
+        recordId,
+        index,
+        row: record?.row ?? change.row,
+        label: change.label || record?.label || '',
+        ...(index >= 0 && warned[index] ? { warnings: warned[index] } : {}),
+      };
+      if (hints && Object.keys(hints).length) view.hints = Object.fromEntries(Object.entries(hints).map(([f, h]) => [f, hintOf(h)]));
+      if (line) view.page = pageLine(line, index < 0 || !!change.context);
+      if (change.placeholder) return view;
+      // The rest of the row, for columns the person adds to the table (and its formula columns).
+      if (open && !change.create) {
+        view.rowValues = Object.fromEntries(
+          Object.keys(record?.values ?? {})
+            .map(f => [f, shownValue(record, f)])
+            .filter(([, v]) => v !== null && v !== ''),
+        );
+        view.formulas = locked(change.sheet, Object.keys(record?.formulas ?? {}));
+      } else if (!change.create) view.current = Object.fromEntries(fields.map(f => [f, shownValue(record, f)]));
+      const clutch = change.values['CLUTCH NUMBER'];
+      if (change.sheet === 'Insectary_data' && !('SPECIES' in change.values) && !isNone(clutch)) {
+        const formula = change.create ? createFormulaFields(change.sheet).has('SPECIES') : !!record?.formulas?.SPECIES;
+        const gives = formula ? (speciesOf(clutch) ?? formulaGives?.SPECIES ?? null) : null;
+        if (!isNone(gives) && comparable(gives) !== comparable(change.create ? null : shownValue(record, 'SPECIES')))
+          view.formulaGives = { SPECIES: gives };
+      }
+      return view;
+    });
+    // A sheet's formula columns once: a row lists its own only when they differ.
+    const sheetFormulas = {};
+    for (const sheet of sheets) {
+      const counts = new Map();
+      for (const c of out) if (c.sheet === sheet && c.formulas) counts.set(json(c.formulas), (counts.get(json(c.formulas)) ?? 0) + 1);
+      const common = [...counts].sort((a, b) => b[1] - a[1])[0]?.[0];
+      if (common) sheetFormulas[sheet] = parse(common);
+    }
+    for (const c of out) if (c.formulas && json(c.formulas) === json(sheetFormulas[c.sheet] ?? null)) delete c.formulas;
     return {
       ...proposal,
       status,
@@ -1485,31 +1562,123 @@ export function createAssistant({ store, config = {} }) {
       fields,
       types: Object.fromEntries(fields.map(f => [f, typeOf(f)])),
       newRowFormulas,
-      changes: changes.map((change, index) => {
-        const recordId = change.create ? (created[change.clientId] ?? null) : change.recordId;
-        const record = recordId ? store.getRecord(recordId) : null;
-        return {
-          ...change,
-          ...(warned[index] ? { warnings: warned[index] } : {}),
-          key: rowKey(change),
-          recordId,
-          index,
-          row: record?.row ?? change.row,
-          label: change.label || record?.label || '',
-          current: change.create ? {} : Object.fromEntries(fields.map(f => [f, shownValue(record, f)])),
-          // The rest of the row, for columns the person adds to the table.
-          ...(open && !change.create
-            ? {
-                rowValues: Object.fromEntries(
-                  Object.keys(record?.values ?? {})
-                    .map(f => [f, shownValue(record, f)])
-                    .filter(([, v]) => v !== null && v !== ''),
-                ),
-                formulas: locked(change.sheet, Object.keys(record?.formulas ?? {})),
-              }
-            : {}),
-        };
-      }),
+      ...(Object.keys(sheetFormulas).length ? { sheetFormulas } : {}),
+      ...(hintTable.length ? { hintTable } : {}),
+      ...(page?.lines?.length
+        ? {
+            page: {
+              kind: page.kind,
+              sheet: page.sheet,
+              // The notebook's columns, in the order it writes them.
+              columns: KINDS[page.kind]?.fields ?? [],
+              photos: (page.photos ?? []).length,
+            },
+          }
+        : {}),
+      changes: out,
+    };
+  }
+
+  /**
+   * A proposal's rows with the page they were read from: { change, index, line }
+   * in the page's order, plus a row for each line without one (index < 0): the
+   * sheet's row as it is (context), or the line as written (placeholder).
+   */
+  function pageRows(changes, page) {
+    const rows = changes.map((change, index) => ({ change, index, line: null }));
+    if (!page?.lines?.length) return rows;
+    const idKey = v => String(v ?? '').replace(/\s+/g, '').toUpperCase();
+    const lineOf = new Map(page.lines.map(l => [l.n, l]));
+    const byRecord = new Map(page.lines.filter(l => l.recordId).map(l => [l.recordId, l]));
+    const byId = new Map(page.lines.filter(l => l.id).map(l => [idKey(l.id), l]));
+    for (const r of rows) {
+      const c = r.change;
+      r.line =
+        (c.sheet === page.sheet && Number.isInteger(c.line) ? lineOf.get(c.line) : null) ??
+        (c.recordId ? byRecord.get(c.recordId) : null) ??
+        (c.label ? byId.get(idKey(c.label)) : null) ??
+        null;
+    }
+    const covered = new Set(rows.filter(r => r.line && r.change.sheet === page.sheet).map(r => r.line.n));
+    const keys = new Set(changes.map(rowKey));
+    let synthetic = 0;
+    for (const l of page.lines) {
+      if (covered.has(l.n)) continue;
+      const record = l.recordId && !keys.has(l.recordId) ? store.getRecord(l.recordId) : null;
+      const live = record && !record.missing && record.sheet === page.sheet;
+      if (live) keys.add(record.id);
+      rows.push({
+        index: -++synthetic,
+        line: l,
+        change: live
+          ? { context: true, recordId: record.id, sheet: record.sheet, row: record.row, label: record.label, values: {}, note: '', line: l.n }
+          : {
+              context: true,
+              placeholder: true,
+              key: `line:${l.photo ?? 0}:${l.n}`,
+              recordId: null,
+              sheet: page.sheet,
+              row: null,
+              label: l.id ?? '',
+              values: {},
+              note: '',
+              line: l.n,
+            },
+      });
+    }
+    const at = r => (r.line ? [0, r.line.photo ?? 0, r.line.n, r.change.sheet === page.sheet ? 0 : 1, r.index] : [1, 0, 0, 0, r.index]);
+    return rows.sort((a, b) => {
+      const [x, y] = [at(a), at(b)];
+      return x.map((v, i) => v - y[i]).find(d => d !== 0) ?? 0;
+    });
+  }
+
+  /**
+   * The rows of a proposal plus the page lines shown as the sheet has them that
+   * the person typed in (`keys`): such a line becomes a row of the proposal
+   * (context until it has a value), as a context row from match_notebook.
+   */
+  function withPageRows(changes, page, keys) {
+    if (!page?.lines?.length) return changes;
+    const known = new Set(changes.map(rowKey));
+    const out = [...changes];
+    for (const key of new Set(keys)) {
+      if (known.has(key)) continue;
+      const line = page.lines.find(l => l.recordId === key);
+      const record = line && store.getRecord(key);
+      if (!record || record.missing || record.sheet !== page.sheet) continue;
+      known.add(key);
+      out.push({
+        context: true,
+        recordId: record.id,
+        sheet: record.sheet,
+        row: record.row,
+        label: record.label,
+        expectedVersion: record.version,
+        before: {},
+        values: {},
+        replaceFormula: [],
+        note: clip(`Línea ${line.n}: «${line.raw}»`, 300),
+        line: line.n,
+      });
+    }
+    return out;
+  }
+
+  /** Where a row is on the page; `alone`: a line without a row of its own (as written, with its state). */
+  function pageLine(line, alone) {
+    return {
+      photo: line.photo ?? 0,
+      line: line.n,
+      ...(alone
+        ? {
+            raw: line.raw,
+            status: line.status,
+            ...(line.error ? { error: line.error } : {}),
+            ...(line.message ? { message: line.message } : {}),
+            ...(line.near ? { near: line.near } : {}),
+          }
+        : {}),
     };
   }
 
@@ -1981,9 +2150,26 @@ export function createAssistant({ store, config = {} }) {
       changed(owner(context.user));
     }
     if (editor && writes && !proposal) proposal = saveProposal(matched.changes, reason, context);
+    // The page and its photos (attachments of this chat), kept with the proposal: its table follows
+    // the whole page, beside the photo. A page matched again without photos keeps the ones it had.
+    let refused = [];
+    if (proposal) {
+      const stored = db.prepare('SELECT t3_thread, page_json FROM ai_proposals WHERE id = ?').get(proposal.id);
+      const chat = stored?.t3_thread || (context.t3 ? chatOfCall(context)?.id : null) || null;
+      const given = photosOf(config.t3?.home, args, chat);
+      refused = given.refused;
+      const photos = args.photo ? given.photos : (parse(stored?.page_json ?? 'null')?.photos ?? []);
+      db.prepare('UPDATE ai_proposals SET page_json = ? WHERE id = ?').run(json({ ...matched.page, photos }), proposal.id);
+    }
     return {
       ...matchSummary(matched, proposal?.id),
       ...(proposal ? { link: proposalLink(proposal.id, proposal.chat) } : {}),
+      ...(refused.length
+        ? {
+            photoNotShown: refused,
+            photoNote: 'Give `photo` as the file name of this chat\'s attachment, from "[Attached image … saved at …]"',
+          }
+        : {}),
       ...(replaced ? { replaced: replaced.id } : {}),
       ...(conflicts.length
         ? {
@@ -1996,9 +2182,44 @@ export function createAssistant({ store, config = {} }) {
     };
   }
 
-  async function handle({ method, path, body = {}, user, query = {}, page = null }) {
-    if (!/^\/api\/(chat|reports|knowledge|ai)(?:\/|$)/.test(path)) return null;
+  let photoCopies = null;
+  /**
+   * GET /api/proposals/:id/photos/:n?size=thumb|view: a photo of a notebook
+   * page's proposal, upright (`raw` bytes for index.mjs). Only the person's own
+   * proposals, and only an attachment of the T3 chat the proposal comes from.
+   */
+  async function proposalPhoto(id, n, user, query, headers = {}) {
+    const find = () => ownProposal(id, user);
+    let proposal = find();
+    // A proposal whose chat is not linked yet (T3 records the call a moment later).
+    if (proposal && !proposal.t3_thread) {
+      linkByToolUse(owner(user));
+      proposal = find();
+    }
+    const photo = proposal ? parse(proposal.page_json ?? 'null')?.photos?.[n] : null;
+    const file = photo && proposal.t3_thread ? attachmentFile(config.t3?.home, photo.file, proposal.t3_thread) : null;
+    if (!file) return bad(404, 'not_found', 'Photo not found.');
+    photoCopies ??= createPhotoCopies({
+      dir: (() => {
+        const base = config.photoCacheDir || photoCacheDir({}, db.location?.() ?? null);
+        return base ? `${base}/proposals` : null;
+      })(),
+    });
+    const copy = await photoCopies.get(file.path, photo.rotate ?? 0, PHOTO_SIZES[query.size] ?? PHOTO_SIZES.thumb);
+    const cache = { etag: copy.etag, 'cache-control': 'private, max-age=86400' };
+    if (headers['if-none-match'] === copy.etag) return { status: 304, raw: null, headers: cache };
+    return {
+      status: 200,
+      raw: copy.data,
+      headers: { ...cache, 'content-type': copy.mime, 'x-content-type-options': 'nosniff', 'content-security-policy': 'sandbox; default-src none' },
+    };
+  }
+
+  async function handle({ method, path, body = {}, user, query = {}, page = null, headers = {} }) {
+    if (!/^\/api\/(chat|reports|knowledge|ai|proposals)(?:\/|$)/.test(path)) return null;
     if (!user || !owner(user)) return bad(401, 'unauthorized', 'Sign in to use the assistant.');
+    const photoMatch = /^\/api\/proposals\/([0-9a-f-]{36})\/photos\/(\d{1,2})$/.exec(path);
+    if (photoMatch && method === 'GET') return proposalPhoto(photoMatch[1], Number(photoMatch[2]), user, query, headers);
     if (path === '/api/reports') return reports.handle({ method, path, query, user });
 
     if (path === '/api/knowledge' && method === 'GET') {
@@ -2121,7 +2342,7 @@ export function createAssistant({ store, config = {} }) {
         : [];
       const addEmpty = Array.isArray(body.add) ? body.add.filter(a => typeof a?.sheet === 'string').slice(0, 20) : [];
       const out = reviseChanges(
-        parse(proposal.changes_json) ?? [],
+        withPageRows(parse(proposal.changes_json) ?? [], parse(proposal.page_json ?? 'null'), cells.map(c => c.key)),
         {
           // use: the buttons for the selected cells, "Valor de la hoja" (back to the sheet's value,
           // the assistant's kept aside) and "Valor de la IA" (the assistant's value again).
