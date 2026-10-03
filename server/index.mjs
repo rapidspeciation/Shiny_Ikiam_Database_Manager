@@ -1117,7 +1117,16 @@ function serveStatic(req, res, path, base, frameSrc = '') {
   const found = existsSync(target) && statSync(target).isFile();
   // A missing script or style (a page opened before a deploy asks for the old build's files) is a 404,
   // not the page itself: served as HTML it broke the page instead of letting it reload.
-  if (!found && /^assets\//.test(clean)) throw fail('NOT_FOUND', 'File not found', 404);
+  if (!found && /(^|\/)assets\//.test(clean)) throw fail('NOT_FOUND', 'File not found', 404);
+  // A page's address typed without its # (…/propuestas/<id>), or the base without its slash: the page
+  // loads its files relative to its address, so it is sent to the app's own (#/propuestas/<id>).
+  const { pathname, search } = new URL(req.url, 'http://localhost');
+  const home = base === '/' ? '/' : `${base}/`;
+  const page = !found && clean && !/\.\w+$/.test(clean) ? `#/${encodeURI(clean.replace(/\/+$/, ''))}` : '';
+  if (page || (base !== '/' && pathname === base)) {
+    res.writeHead(302, { location: page ? `${home}${page}${search}` : `${home}${search}` });
+    return res.end();
+  }
   const file = found ? target : join(webRoot, 'index.html');
   if (!existsSync(file)) throw fail('NOT_FOUND', 'Frontend is not built', 404);
   res.writeHead(200, {

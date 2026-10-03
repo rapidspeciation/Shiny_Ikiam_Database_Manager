@@ -53,8 +53,14 @@ workspace and the `ithomiini` tools; the app has no other chat.
 ### Cambios propuestos
 
 Beside T3 (below it on phones); placed right or bottom, or alone in its own
-browser tab at `#/propuestas`, an editable Sheets-like grid where the person
-can correct a cell before applying.
+browser tab, an editable Sheets-like grid where the person can correct a cell
+before applying. The own-tab pages (any device, no T3 needed; the header's
+pop-out opens the one for what the panel shows):
+
+- `#/propuestas/<id>`: that proposal alone (a proposal's `link`; each card's
+  link icons open or copy it).
+- `#/propuestas?chat=<thread>`: one chat's proposals (`chat=app`: outside T3
+  chats, `chat=all`: all); `#/propuestas`: the chat open in T3.
 
 - **Each proposal** is a table like the sheet: «Fila», the changed cells in
   green with the old value struck through, new rows marked «nueva», «Motivo»

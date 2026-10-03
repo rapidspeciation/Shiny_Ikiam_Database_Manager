@@ -41,10 +41,12 @@ export default {
   'Panel debajo': 'Panel below',
   'Volver a ver el chat': 'Back to the chat',
   'Pantalla completa': 'Full screen',
-  'Abrir en otra pestaña (p. ej. en otra pantalla, con el chat en esta)':
-    'Open in another tab (e.g. on another screen, with the chat on this one)',
+  'Abrir en otra pestaña (p. ej. en otra pantalla): estas propuestas, aunque aquí cambies de chat':
+    'Open in another tab (e.g. on another screen): these proposals, even if you switch chats here',
   'Abrir en otra pestaña': 'Open in another tab',
-  'Esta propuesta ya no está en la lista.': 'This proposal is no longer in the list.',
+  'Abrir esta propuesta sola en otra pestaña': 'Open this proposal on its own in another tab',
+  'Copiar el enlace de esta propuesta': 'Copy the link to this proposal',
+  'No se encontró esta propuesta en tu cuenta.': 'This proposal was not found in your account.',
   'Cuando el asistente proponga cambios en la hoja aparecerán aquí al momento, con las celdas cambiadas en verde. Puedes corregirlas en la tabla como en Colecta o pedírselo al asistente (la tabla cambia en vivo); luego pulsa Aplicar, o dile «sí, aplícalo» en el chat.':
     'When the assistant proposes changes to the sheet they appear here at once, with the changed cells in green. You can correct them in the table as in Collecting or ask the assistant (the table changes live); then press Apply, or tell it «yes, apply it» in the chat.',
   'Revisados hace poco ({n})': 'Reviewed recently ({n})',

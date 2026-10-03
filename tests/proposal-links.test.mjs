@@ -10,7 +10,7 @@ import { parseDateText } from '../server/schema.mjs';
 import { createAssistant } from '../server/assistant.mjs';
 import { createApp } from '../server/index.mjs';
 
-// Links that open a proposal beside its chat (#/asistente?propuesta=…&chat=…), and the live list of
+// Links to a proposal (its own page #/propuestas/<id>; beside its chat #/asistente?propuesta=…&chat=…), and the live list of
 // Cambios propuestos sending nothing again when nothing changed but the page's own edits.
 
 const SEED = {
@@ -50,41 +50,92 @@ async function setup(config = {}) {
   return { store, call, http, stock };
 }
 
-test('proposal results carry a link that opens the proposal beside its chat', async () => {
+test('proposal results carry a link to the proposal on its own page, and one beside its chat', async () => {
   const { store, call, stock } = await setup({ publicUrl: 'https://ithomiini-ikiam.com/' });
+  const own = id => `https://ithomiini-ikiam.com/#/propuestas/${id}`;
   try {
     const made = await call('propose_changes', {
       reason: 'Insectario',
       changes: [{ recordId: stock(2).id, values: { 'INSECTARY OR LABORATORY': 'Laboratory' } }],
     });
-    assert.equal(made.link, `https://ithomiini-ikiam.com/#/asistente?propuesta=${made.proposalId}`);
-    // Once the proposal is known to be a T3 chat's, its links name the chat too.
+    assert.equal(made.link, own(made.proposalId));
+    assert.equal(made.assistantLink, `https://ithomiini-ikiam.com/#/asistente?propuesta=${made.proposalId}`);
+    // Once the proposal is known to be a T3 chat's, the Asistente link names the chat too; its own page stays.
     store.db.prepare('UPDATE ai_proposals SET t3_thread = ? WHERE id = ?').run(THREAD, made.proposalId);
     const chatLink = `https://ithomiini-ikiam.com/#/asistente?propuesta=${made.proposalId}&chat=${THREAD}`;
-    assert.equal((await call('get_proposal', { proposalId: made.proposalId })).link, chatLink);
+    const read = await call('get_proposal', { proposalId: made.proposalId });
+    assert.deepEqual([read.link, read.assistantLink], [own(made.proposalId), chatLink]);
     const revised = await call('update_proposal', { proposalId: made.proposalId, rows: [{ index: 0, values: { NOTES: 'ok' } }] });
-    assert.equal(revised.link, chatLink, JSON.stringify(revised));
-    // A notebook page matched: its proposal's link; matched again in place: the same proposal and chat.
+    assert.deepEqual([revised.link, revised.assistantLink], [own(made.proposalId), chatLink], JSON.stringify(revised));
+    // A notebook page matched: its proposal's links; matched again in place: the same proposal and chat.
     const page = {
       kind: 'stocks',
       year: 2026,
       lines: [{ raw: '901 larvas sanas', values: { 'CLUTCH NUMBER': '901', NOTES: 'larvas sanas' } }],
     };
     const matched = await call('match_notebook', page);
-    assert.equal(matched.link, `https://ithomiini-ikiam.com/#/asistente?propuesta=${matched.proposalId}`, JSON.stringify(matched));
+    assert.equal(matched.link, own(matched.proposalId), JSON.stringify(matched));
     store.db.prepare('UPDATE ai_proposals SET t3_thread = ? WHERE id = ?').run(THREAD, matched.proposalId);
     const again = await call('match_notebook', { ...page, replaceProposalId: matched.proposalId });
-    assert.equal(again.link, `https://ithomiini-ikiam.com/#/asistente?propuesta=${matched.proposalId}&chat=${THREAD}`);
+    assert.equal(again.link, own(matched.proposalId));
+    assert.equal(again.assistantLink, `https://ithomiini-ikiam.com/#/asistente?propuesta=${matched.proposalId}&chat=${THREAD}`);
+    // Without a known chat: every chat's pending proposals, each with its links.
+    const listed = await call('list_proposals', {});
+    assert.equal(listed.chatLink, undefined);
+    assert.deepEqual(
+      listed.proposals.map(p => [p.proposalId, p.status, p.link]).sort(),
+      [made, matched].map(p => [p.proposalId, 'pending', own(p.proposalId)]).sort(),
+    );
   } finally {
     store.close?.();
   }
-  // Without the app's address: the link within the app.
+  // Without the app's address: the links within the app.
   const plain = await setup();
   const made = await plain.call('propose_changes', {
     reason: 'x',
     changes: [{ recordId: plain.stock(3).id, values: { 'INSECTARY OR LABORATORY': 'Laboratory' } }],
   });
-  assert.equal(made.link, `#/asistente?propuesta=${made.proposalId}`);
+  assert.equal(made.link, `#/propuestas/${made.proposalId}`);
+  assert.equal(made.assistantLink, `#/asistente?propuesta=${made.proposalId}`);
+  plain.store.close?.();
+});
+
+test("list_proposals from a T3 chat: that chat's proposals, pending and reviewed, and the page with them all", async () => {
+  const OTHER = '0f1e2d3c-4b5a-4968-8776-655443322110';
+  let calling = THREAD;
+  // T3 Code's chats as the assistant reads them: the calls come from `calling`.
+  const t3Chats = {
+    available: true,
+    threads: ids => new Map(ids.map(id => [id, { title: 'Cuaderno' }])),
+    threadOfToolUse: () => calling,
+    onlyRunning: () => calling,
+    open: () => null,
+    chatsOf: () => [],
+    findProposals: async () => new Map(),
+  };
+  const { store, call, http, stock } = await setup({ publicUrl: 'https://ithomiini-ikiam.com', t3Chats });
+  try {
+    const first = await call('propose_changes', { reason: 'a', changes: [{ recordId: stock(2).id, values: { NOTES: 'uno' } }] });
+    const second = await call('propose_changes', { reason: 'b', changes: [{ recordId: stock(3).id, values: { NOTES: 'dos' } }] });
+    calling = OTHER;
+    const elsewhere = await call('propose_changes', { reason: 'c', changes: [{ recordId: stock(2).id, values: { NOTES: 'tres' } }] });
+    assert.equal((await http('POST', `/api/chat/proposals/${first.proposalId}/discard`)).status, 200);
+    calling = THREAD;
+    const listed = await call('list_proposals', {});
+    assert.equal(listed.chat, THREAD);
+    assert.equal(listed.chatLink, `https://ithomiini-ikiam.com/#/propuestas?chat=${THREAD}`);
+    assert.deepEqual(
+      listed.proposals.map(p => [p.proposalId, p.status, p.rows, p.link]),
+      [
+        [second.proposalId, 'pending', 1, `https://ithomiini-ikiam.com/#/propuestas/${second.proposalId}`],
+        [first.proposalId, 'discarded', 1, `https://ithomiini-ikiam.com/#/propuestas/${first.proposalId}`],
+      ],
+    );
+    const all = await call('list_proposals', { allChats: true });
+    assert.deepEqual(all.proposals.map(p => p.proposalId).sort(), [second.proposalId, elsewhere.proposalId].sort());
+  } finally {
+    store.close?.();
+  }
 });
 
 test('the live list: "unchanged" when nothing changed but this page\'s own edits', async () => {
@@ -130,7 +181,7 @@ test('the live list: "unchanged" when nothing changed but this page\'s own edits
   assert.equal((await list('A', held)).body.proposals.length, 1);
 });
 
-test('the app: T3 status names its environment, and the first list answers 304 when unchanged', async () => {
+test('the app: T3 status names its environment, the first list answers 304 when unchanged, a page address without its # is redirected', async () => {
   const home = mkdtempSync(join(tmpdir(), 'ithomiini-t3-'));
   mkdirSync(join(home, 'userdata'));
   const ENV = '4e6c4765-8cfa-4adc-b761-3c3bae2ae7e0';
@@ -167,6 +218,16 @@ test('the app: T3 status names its environment, and the first list answers 304 w
     assert.ok(etag);
     assert.deepEqual((await first.json()).proposals, []);
     assert.equal((await fetch(path, { headers: { cookie, 'if-none-match': etag } })).status, 304);
+    // A page's address typed without its #: sent to the app's own (its files load relative to it).
+    const site = `http://127.0.0.1:${address.port}`;
+    const to = async url => {
+      const out = await fetch(`${site}${url}`, { redirect: 'manual' });
+      return [out.status, out.headers.get('location')];
+    };
+    assert.deepEqual(await to(`/ithomiini/propuestas/${THREAD}`), [302, `/ithomiini/#/propuestas/${THREAD}`]);
+    assert.deepEqual(await to(`/ithomiini/propuestas?chat=${THREAD}`), [302, `/ithomiini/#/propuestas?chat=${THREAD}`]);
+    assert.deepEqual(await to('/ithomiini'), [302, '/ithomiini/']);
+    assert.equal((await to('/ithomiini/propuestas/assets/index-abc.js'))[0], 404);
   } finally {
     await app.close();
     rmSync(home, { recursive: true, force: true });

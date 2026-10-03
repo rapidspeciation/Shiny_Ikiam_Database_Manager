@@ -58,9 +58,14 @@ export function listQuery(o: {
 }
 
 const titled = (title: string | null) => title || t('chat sin título')
+/** A T3 chat's id (not 'auto', 'draft', 'app' or 'all'). */
+const isThread = (chat: string) => !!chat && !['auto', 'draft', 'app', 'all'].includes(chat)
 
-/** The selector's options: following T3, each chat with pending proposals, those outside T3 chats, all. */
-export function chatOptions(follow: ChatScope | null, chats: ChatEntry[]): { value: string; label: string }[] {
+/**
+ * The selector's options: following T3, each chat with pending proposals, those outside T3 chats, all.
+ * `fixed`: the chat a page is fixed to (#/propuestas?chat=…), listed even with nothing pending.
+ */
+export function chatOptions(follow: ChatScope | null, chats: ChatEntry[], fixed?: ChatScope | null): { value: string; label: string }[] {
   const out: { value: string; label: string }[] = []
   if (follow && follow.how !== 'all')
     out.push({
@@ -70,6 +75,8 @@ export function chatOptions(follow: ChatScope | null, chats: ChatEntry[]): { val
           ? t('Este chat: {title}', { title: follow.chat === 'draft' ? t('chat nuevo') : titled(follow.title) })
           : t('Último chat: {title}', { title: titled(follow.title) }),
     })
+  if (fixed && isThread(fixed.chat) && !chats.some(c => c.id === fixed.chat))
+    out.push({ value: fixed.chat, label: titled(fixed.title) })
   for (const c of chats) {
     if (c.id === 'app') continue
     out.push({ value: c.id, label: `${titled(c.title)} (${c.pending})` })
@@ -88,6 +95,20 @@ export const hasChats = (follow: ChatScope | null, chats: ChatEntry[]) =>
 export function elsewhere(scope: ChatScope | null, chats: ChatEntry[]) {
   if (!scope || scope.chat === 'all') return 0
   return chats.filter(c => c.id !== scope.chat).reduce((n, c) => n + c.pending, 0)
+}
+
+/** The page with one proposal on its own (#/propuestas/<id>), whatever chat is open elsewhere. */
+export const proposalPage = (id: string) => `/propuestas/${encodeURIComponent(id)}`
+
+/**
+ * The page fixed to what a panel shows: its one proposal, or the chat shown
+ * (#/propuestas?chat=…: a T3 chat, those outside T3 or all); a new chat in T3
+ * has no id yet, so its page follows the chat open in T3 (#/propuestas).
+ */
+export function pagePath(only: string, scope: ChatScope | null) {
+  if (only) return proposalPage(only)
+  const chat = scope?.chat ?? ''
+  return chat && chat !== 'draft' ? `/propuestas?${new URLSearchParams({ chat })}` : '/propuestas'
 }
 
 /** A proposal's room before its table is built (title, table of `rows` rows, buttons), in px. */

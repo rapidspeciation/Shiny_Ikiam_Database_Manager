@@ -315,6 +315,18 @@ const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'list_proposals',
+      description:
+        "This chat's proposals, newest first (pending, then the last reviewed), each with its status, reason, rows and `link`; `chatLink` shows them all on one page. allChats: every chat's pending proposals.",
+      parameters: {
+        type: 'object',
+        properties: { allChats: { type: 'boolean' } },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'apply_proposal',
       description:
         [
@@ -879,16 +891,23 @@ export function createAssistant({ store, config = {} }) {
     return { ...proposal, chat: chat?.id ?? null };
   }
 
+  /** The app's address of a page (`#/…`): absolute with the app's public address. */
+  const appUrl = hash => {
+    const base = String(config.publicUrl || '').replace(/\/+$/, '');
+    return `${base ? `${base}/` : ''}#/${hash}`;
+  };
   /**
-   * The app's address that opens a proposal in the Asistente tab, beside its T3
-   * chat (AssistantView reads propuesta/chat; without chat it finds the chat).
+   * The links of a proposal: `link`, a page with that proposal alone (#/propuestas/<id>, any
+   * device, no T3 needed); `assistantLink`, the Asistente tab with it beside its T3 chat
+   * (AssistantView reads propuesta/chat; without chat it finds the chat).
    */
   function proposalLink(id, chat = null) {
     const q = new URLSearchParams({ propuesta: id });
     if (chat) q.set('chat', chat);
-    const base = String(config.publicUrl || '').replace(/\/+$/, '');
-    return `${base ? `${base}/` : ''}#/asistente?${q}`;
+    return { link: appUrl(`propuestas/${encodeURIComponent(id)}`), assistantLink: appUrl(`asistente?${q}`) };
   }
+  /** The page with every proposal of a T3 chat (#/propuestas?chat=<thread>). */
+  const chatProposalsLink = chat => appUrl(`propuestas?${new URLSearchParams({ chat })}`);
   /** The chat a proposal is shown with: its T3 chat, else the chat of this call when T3 knows it. */
   const chatOf = (proposal, context) => proposal?.t3_thread || (context?.t3 ? (chatOfCall(context)?.id ?? null) : null);
 
@@ -986,7 +1005,7 @@ export function createAssistant({ store, config = {} }) {
     });
     return {
       proposalId: id,
-      link: proposalLink(id, chat),
+      ...proposalLink(id, chat),
       rows: changes.length,
       status: 'waiting for the person to confirm',
       ...(noSample.length
@@ -1285,12 +1304,35 @@ export function createAssistant({ store, config = {} }) {
     if (!proposal) return { error: 'Proposal not found' };
     return {
       proposalId: proposal.id,
-      link: proposalLink(proposal.id, chatOf(proposal, context)),
+      ...proposalLink(proposal.id, chatOf(proposal, context)),
       status: proposal.status,
       revision: proposal.revision,
       reason: proposal.reason,
       lastChangedBy: proposal.last_by ?? 'ai',
       rows: proposalTable(parse(proposal.changes_json) ?? []),
+    };
+  }
+
+  /** list_proposals: the proposals of the chat calling (all chats' pending ones when it is not known, or asked). */
+  function listProposals(args, context) {
+    const chat = !args.allChats && context.t3 ? (chatOfCall(context)?.id ?? null) : null;
+    const select = `SELECT id, status, reason, changes_json, created_at, t3_thread FROM ai_proposals WHERE owner_id = ?${chat ? ' AND t3_thread = ?' : ''}`;
+    const params = [owner(context.user), ...(chat ? [chat] : [])];
+    const order = 'ORDER BY created_at DESC, rowid DESC';
+    const rows = [
+      ...db.prepare(`${select} AND status IN ('pending', 'applying') ${order} LIMIT 50`).all(...params),
+      ...(chat ? db.prepare(`${select} AND status NOT IN ('pending', 'applying') ${order} LIMIT 10`).all(...params) : []),
+    ];
+    return {
+      ...(chat ? { chat, chatLink: chatProposalsLink(chat) } : { chat: 'all chats (pending only)' }),
+      proposals: rows.map(r => ({
+        proposalId: r.id,
+        status: r.status,
+        reason: r.reason,
+        rows: (parse(r.changes_json) ?? []).length,
+        createdAt: r.created_at,
+        ...proposalLink(r.id, r.t3_thread),
+      })),
     };
   }
 
@@ -1337,7 +1379,7 @@ export function createAssistant({ store, config = {} }) {
     if (revision === null) return { error: 'The proposal is no longer pending' };
     return {
       proposalId: proposal.id,
-      link: proposalLink(proposal.id, chatOf(proposal, context)),
+      ...proposalLink(proposal.id, chatOf(proposal, context)),
       revision,
       ...(unchanged ? { unchanged: true } : {}),
       rows: proposalTable(out.changes),
@@ -1930,6 +1972,7 @@ export function createAssistant({ store, config = {} }) {
     if (name === 'propose_changes') return proposeChanges(args, context);
     if (name === 'update_proposal') return updateProposal(args, context);
     if (name === 'get_proposal') return getProposal(args, context);
+    if (name === 'list_proposals') return listProposals(args, context);
     if (name === 'list_agreed_fixes') return agreedFixes(store, { kind: args.kind ? clip(args.kind, 300) : undefined, limit: args.limit });
     if (name === 'list_suggested_edits') {
       const out = await suggestionPage(store, {
@@ -2193,7 +2236,7 @@ export function createAssistant({ store, config = {} }) {
     }
     return {
       ...matchSummary(matched, proposal?.id),
-      ...(proposal ? { link: proposalLink(proposal.id, proposal.chat) } : {}),
+      ...(proposal ? proposalLink(proposal.id, proposal.chat) : {}),
       ...(refused.length
         ? {
             photoNotShown: refused,
