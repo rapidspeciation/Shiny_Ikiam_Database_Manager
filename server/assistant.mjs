@@ -361,12 +361,21 @@ const TOOLS = [
           '- changes / newRows: more rows (a recordId already in it merges into its row). removeRows: indexes to take out.',
           '- Every value is checked as in `propose_changes`; if one fails, nothing is saved. Notes: as in `propose_changes`.',
           '- Cells the person edited in the table are theirs: they come back as conflicts and are kept. Tell the person; set `overridePersonEdits` only when they ask you to replace them.',
+          "- photo / rotate: the page's photo(s) shown beside the table, as in match_notebook (alone, or with other changes).",
           'Returns the rows with their index (a cell to be emptied shows as {"clear": true}; match_notebook\'s context rows are marked context and never written; doubtful cells show under doubtful with checked).',
         ].join('\n'),
       parameters: {
         type: 'object',
         properties: {
           proposalId: { type: 'string' },
+          photo: {
+            description: 'The attachment file name(s) of the page\'s photo(s) (from "[Attached image … saved at …]" in this chat); replaces the ones it has',
+            anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
+          },
+          rotate: {
+            description: 'Clockwise turn that makes each photo upright (0, 90, 180, 270), as given to crops.py; a list for several photos',
+            anyOf: [{ type: 'integer', enum: [0, 90, 180, 270] }, { type: 'array', items: { type: 'integer', enum: [0, 90, 180, 270] } }],
+          },
           rows: {
             type: 'array',
             items: {
@@ -1474,12 +1483,21 @@ export function createAssistant({ store, config = {} }) {
       else add.changes.push(...assistantArgs({ changes: [c] }, context.user).args.changes);
     }
     const remove = (Array.isArray(args.removeRows) ? args.removeRows : []).filter(Number.isInteger);
-    if (!set.length && !check.length && !remove.length && !add.changes.length && !add.newRows.length && !args.reason)
-      return { error: 'Give rows, changes, newRows or removeRows' };
+    // The page's photos (attachments of this chat), for a proposal made without them.
+    const chat = proposal.t3_thread || (context.t3 ? chatOfCall(context)?.id : null) || null;
+    const given = args.photo ? photosOf(config.t3?.home, args, chat) : null;
+    if (given && !given.photos.length)
+      return { error: 'No photo of this chat by that name', photoNote: 'Give `photo` as the file name of this chat\'s attachment, from "[Attached image … saved at …]"' };
+    if (!set.length && !check.length && !remove.length && !add.changes.length && !add.newRows.length && !args.reason && !given)
+      return { error: 'Give rows, changes, newRows, removeRows or photo' };
     const out = reviseChanges(changes, { set, check, remove, add }, { by: 'ai', force: !!args.overridePersonEdits, user: context.user });
     if (out.rejected.length) return { error: 'Nothing was changed', problems: out.rejected.slice(0, 20) };
     const reason = args.reason ? clip(args.reason, 500) : null;
-    const unchanged = json(out.changes) === json(changes) && !reason;
+    if (given) {
+      const page = parse(proposal.page_json ?? 'null') ?? {};
+      db.prepare('UPDATE ai_proposals SET page_json = ? WHERE id = ?').run(json({ ...page, photos: given.photos }), proposal.id);
+    }
+    const unchanged = json(out.changes) === json(changes) && !reason && !given;
     const revision = unchanged ? proposal.revision : saveRevision(proposal, out.changes, 'ai', reason);
     if (revision === null) return { error: 'The proposal is no longer pending' };
     return {
@@ -1487,6 +1505,7 @@ export function createAssistant({ store, config = {} }) {
       ...proposalLink(proposal.id, chatOf(proposal, context)),
       revision,
       ...(unchanged ? { unchanged: true } : {}),
+      ...(given ? { photos: given.photos.length, ...(given.refused.length ? { photoNotShown: given.refused } : {}) } : {}),
       rows: proposalTable(out.changes, proposal),
       ...(out.leftOut.length ? { leftOut: `Formula columns left out of the new rows: ${out.leftOut.join(', ')}` } : {}),
       ...(out.conflicts.length
@@ -1707,14 +1726,16 @@ export function createAssistant({ store, config = {} }) {
     const kindId = page?.lines?.length
       ? page.kind
       : Object.keys(KINDS).find(k => reason.startsWith(`Cuaderno ${KINDS[k].label} (${KINDS[k].sheet})`));
+    // Photos also on a proposal made before pages were kept (given later with update_proposal).
+    const photoCount = (page?.photos ?? []).length;
     const notebook =
-      kindId && (KINDS[kindId] || page?.lines?.length)
+      (kindId && (KINDS[kindId] || page?.lines?.length)) || photoCount
         ? {
-            kind: kindId,
-            sheet: page?.lines?.length ? page.sheet : KINDS[kindId].sheet,
+            kind: kindId ?? '',
+            sheet: page?.lines?.length ? page.sheet : (KINDS[kindId]?.sheet ?? changes[0]?.sheet ?? null),
             columns: KINDS[kindId]?.fields ?? [],
             keys: KINDS[kindId]?.keys ?? [],
-            photos: page?.lines?.length ? (page.photos ?? []).length : 0,
+            photos: photoCount,
           }
         : null;
     const sheets = [...new Set(rows.map(r => r.change.sheet))];

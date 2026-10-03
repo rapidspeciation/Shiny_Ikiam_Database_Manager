@@ -281,3 +281,33 @@ test('the proposal goes lean: hints once, formula columns once per sheet, no dra
     close();
   }
 });
+
+test('a proposal made before pages were kept gets its photo later with update_proposal', async () => {
+  const { store, call, get, proposals, close } = await setup();
+  try {
+    const row = store.getRecordBySheetRow('Insectary_data', 3);
+    const out = await call('propose_changes', {
+      reason: 'Cuaderno Emergidos (Insectary_data): emergidos 8VD',
+      changes: [{ recordId: row.id, values: { Sex: 'male' } }],
+    });
+    let [p] = await proposals();
+    assert.equal(p.page?.photos ?? 0, 0);
+
+    // Another chat's photo, or none by that name: refused, nothing changes.
+    const refused = await call('update_proposal', { proposalId: out.proposalId, photo: `${OTHER}-bbbb.jpg` });
+    assert.match(refused.error, /No photo of this chat/);
+
+    const done = await call('update_proposal', { proposalId: out.proposalId, photo: `${THREAD}-aaaa.jpg`, rotate: 90 });
+    assert.equal(done.photos, 1);
+    assert.equal(done.revision, 2, 'the table refreshes');
+    [p] = await proposals();
+    assert.equal(p.page.photos, 1);
+    assert.equal(p.page.sheet, 'Insectary_data');
+    assert.equal(p.changes[0].values.Sex, 'male', 'its rows as they were');
+    const thumb = await get(`/api/proposals/${out.proposalId}/photos/0`);
+    assert.equal(thumb.status, 200);
+    if (!thumb.raw.equals(JPEG)) assert.deepEqual(jpegSize(thumb.raw), [2, 4], 'turned 90° clockwise');
+  } finally {
+    close();
+  }
+});
