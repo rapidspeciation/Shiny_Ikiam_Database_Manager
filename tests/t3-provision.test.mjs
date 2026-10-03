@@ -59,6 +59,8 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     const settings = JSON.parse(readFileSync(join(workspace, '.claude', 'settings.json'), 'utf8'));
     assert.deepEqual(settings.permissions.allow, ['mcp__ithomiini', 'Skill']);
     assert.ok(settings.permissions.deny.includes(`Read(/${join(home, '.config', 'ithomiini')}/**)`));
+    // The claude.ai account's connectors (Claude Docs…) are not loaded in the chats.
+    assert.equal(settings.env.ENABLE_CLAUDEAI_MCP_SERVERS, 'false');
     assert.ok(JSON.parse(readFileSync(join(home, '.claude.json'), 'utf8')).projects[workspace].hasTrustDialogAccepted);
     // Shell commands naming the secrets or the database are stopped by the guard hook; gog.env may be sourced.
     const [hook] = settings.hooks.PreToolUse;

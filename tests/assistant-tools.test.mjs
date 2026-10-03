@@ -298,11 +298,16 @@ test('find_records: filters, distance to a place, computed values with their for
     assert.ok(near.found[1].distanceKm > 5 && near.found[1].distanceKm < 15, String(near.found[1].distanceKm));
     assert.equal(near.near.centre.name, 'Ikiam');
     assert.equal(near.near.rowsWithoutPlace, 1, 'the row without a place is counted apart');
-    // Only the columns asked for; a formula column with its computed value and its formula.
+    // Only the columns asked for; a formula column with its computed value, its formula text when asked.
     assert.deepEqual(Object.keys(near.found[0].values).sort(), ['CAM_ID', 'Collection_location', 'DECIMAL_LATITUDE']);
     assert.equal(near.found[0].values.DECIMAL_LATITUDE, IKIAM.lat);
-    assert.equal(near.found[0].formulas.DECIMAL_LATITUDE, LOOKUP);
+    assert.ok(!near.found[0].formulas);
     assert.deepEqual(near.formulaColumns, ['DECIMAL_LATITUDE']);
+    // The sheet once for all rows: each row is its id, row and values.
+    assert.equal(near.sheet, 'Collection_data');
+    assert.deepEqual(Object.keys(near.found[0]).sort(), ['distanceKm', 'id', 'row', 'values']);
+    const withText = await call('find_records', { module: 'Collection_data', filters: { CAM_ID: 'CAM000001' }, fields: ['DECIMAL_LATITUDE'], formulas: true });
+    assert.equal(withText.found[0].formulas.DECIMAL_LATITUDE, LOOKUP);
 
     // By identifier, as before: a count typed as a sum shows its value and its terms.
     const byId = await call('find_records', { module: 'Insectary_stocks', field: 'CLUTCH NUMBER', values: ['900', '999'] });
@@ -344,7 +349,7 @@ test('count_records counts by filters, place and groups', async () => {
   const { store, call, mcp } = await setup(PLACES, PLACE_FORMULAS);
   try {
     const tools = (await mcp('tools/list')).body.result.tools;
-    assert.ok(tools.some(t => t.name === 'count_records'));
+    assert.match(tools.find(t => t.name === 'count_records').description, /text column as groupBy.*each distinct text once with its count/);
     const total = await call('count_records', { sheet: 'Collection_data', filters: { Preservation_medium: 'Flash frozen' } });
     assert.equal(total.total, 5);
     const bySpecies = await call('count_records', { sheet: 'Collection_data', groupBy: 'SPECIES', near: { location: 'Ikiam', km: 15 } });
@@ -357,6 +362,48 @@ test('count_records counts by filters, place and groups', async () => {
     assert.deepEqual(byYear.groups.find(g => g['Collection_date:year'] === '2026' && g.Preservation_medium === 'Flash frozen').n, 2);
     assert.ok(byYear.groups.some(g => g['Collection_date:year'] === '(empty)'));
     assert.match((await call('count_records', { sheet: 'Collection_data', groupBy: 'SPECIES:year' })).error, /only date columns/);
+  } finally {
+    store.close();
+  }
+});
+
+test('Claude Code loads the reading and proposal tools with the chat; describe_sheet shows filled rows and samples free text', async () => {
+  const note = i => `${i}/5/23 MJS: The presence of spermatozoa was confirmed under the microscope, bundle count ${i}`;
+  const filled = Array.from({ length: 6 }, (_, i) => ({
+    row: i + 2,
+    values: { SPECIES: 'M. lysimnia', Father_CAMid: `CAM07814${i}`, Father_Split_tube: 'No', Notes: note(i + 1) },
+  }));
+  // Pre-made rows below the filled ones: a lookup formula and the dropdown's default.
+  const premade = [8, 9, 10].map(row => ({ row, values: { Father_Split_tube: 'No' } }));
+  const lookup = '=IFERROR(XLOOKUP(B2,Collection_data!A:A,Collection_data!B:B),"")';
+  const { store, mcp, call } = await setup(
+    { Sperm_dissections: [...filled, ...premade] },
+    [...filled, ...premade].map(r => ['Sperm_dissections', r.row, 'T_Sperm', lookup, '']),
+  );
+  try {
+    const tools = (await mcp('tools/list')).body.result.tools;
+    const loaded = tools.filter(t => t._meta?.['anthropic/alwaysLoad'] === true).map(t => t.name);
+    assert.deepEqual(loaded.sort(), [
+      'count_records',
+      'describe_sheet',
+      'find_records',
+      'get_record',
+      'propose_changes',
+      'search_knowledge',
+      'search_records',
+      'update_proposal',
+    ]);
+
+    const sheet = await call('describe_sheet', { module: 'Sperm_dissections' });
+    assert.deepEqual(sheet.latestRows.map(r => r.row), [7, 6, 5], 'the pre-made rows are left out');
+    assert.deepEqual(Object.keys(sheet.latestRows[0]).sort(), ['id', 'row', 'values']);
+    assert.equal(sheet.columns.find(c => c.key === 'T_Sperm').formula, true);
+    assert.equal(sheet.columns.find(c => c.key === 'SPECIES').formula, undefined);
+    assert.deepEqual(sheet.columns.find(c => c.key === 'Father_Split_tube').values, ['No']);
+    const notes = sheet.columns.find(c => c.key === 'Notes');
+    assert.equal(notes.distinct, 6);
+    assert.equal(notes.examples.length, 3);
+    assert.ok(!notes.values);
   } finally {
     store.close();
   }

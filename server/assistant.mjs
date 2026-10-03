@@ -90,7 +90,7 @@ const TOOLS = [
     function: {
       name: 'get_record',
       description:
-        'One row by app ID: its sheet row, version, every non-empty value (formula cells with their computed value) and `formulas` (the formula text of each formula cell).',
+        'One row by app ID: its sheet and row, every non-empty value (formula cells with their computed value) and `formulas` (the formula text of each formula cell).',
       parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
     },
   },
@@ -99,7 +99,7 @@ const TOOLS = [
     function: {
       name: 'describe_sheet',
       description:
-        'Columns of a sheet with their type, which ones are formulas, and the latest rows. Dropdown columns give `allowed`: the sheet\'s own list (from the Lists sheet; strict = the sheet refuses other values), whole when short; long ID lists (CAM pools, tubes) as their ranges of consecutive IDs, newest first (get_alerts has the CAM pools\' next free and remaining). Other short columns give the values in use.',
+        'Columns of a sheet with their type, `formula: true` on formula columns, and the latest filled rows. Dropdown columns give `allowed`: the sheet\'s own list (from the Lists sheet; strict = the sheet refuses other values), whole when short; long ID lists (CAM pools, tubes) as their ranges of consecutive IDs, newest first (get_alerts has the CAM pools\' next free and remaining). Other columns with few values give the values in use; free text (notes) a few `examples` and the `distinct` count.',
       parameters: {
         type: 'object',
         properties: { module: { type: 'string', description: `The sheet: ${[...moduleMap.keys()].join(', ')}` } },
@@ -414,9 +414,29 @@ const TOOLS = [
   },
 ];
 
+/**
+ * The tools most chats use (reading rows, the documents, drafting and revising a proposal):
+ * Claude Code loads them with the chat instead of behind its tool search, a round trip saved.
+ */
+const ALWAYS_LOADED = new Set([
+  'search_records',
+  'find_records',
+  'count_records',
+  'get_record',
+  'describe_sheet',
+  'search_knowledge',
+  'propose_changes',
+  'update_proposal',
+]);
+
 /** The tools as MCP's tools/list gives them to T3 Code's chats (and the app's AI instructions page shows them). */
 export const mcpTools = () =>
-  TOOLS.map(t => ({ name: t.function.name, description: t.function.description, inputSchema: t.function.parameters }));
+  TOOLS.map(t => ({
+    name: t.function.name,
+    description: t.function.description,
+    inputSchema: t.function.parameters,
+    ...(ALWAYS_LOADED.has(t.function.name) ? { _meta: { 'anthropic/alwaysLoad': true } } : {}),
+  }));
 
 function init(db) {
   db.exec(`CREATE TABLE IF NOT EXISTS ai_threads (
@@ -626,6 +646,16 @@ export function createAssistant({ store, config = {} }) {
         ...(values.length > ids.length ? { otherValues: values.filter(v => !/^[A-Z]{2,4}\d{4,}$/.test(String(v).trim())).slice(0, 5) } : {}),
       };
     };
+    // The values in use, or for free text (notes) the most used few and how many there are.
+    const inUse = seen => {
+      const values = [...seen.keys()];
+      if (values.join('').length <= 300) return { values };
+      const examples = [...seen].sort((a, b) => b[1] - a[1]).slice(0, 3);
+      return { distinct: values.length, examples: examples.map(([v]) => (v.length > 100 ? `${v.slice(0, 100)}…` : v)) };
+    };
+    // Typed cells: the pre-made rows hold only formulas, in some sheets also one default (Father_Split_tube "No").
+    const typed = record =>
+      Object.entries(record.values ?? {}).filter(([key, value]) => !record.formulas?.[key] && value !== null && value !== '').length;
     return {
       sheet: mod.id,
       columns: mod.fields.map(f => {
@@ -634,11 +664,14 @@ export function createAssistant({ store, config = {} }) {
         return {
           key: f.key,
           type: f.type,
-          formula: (formulas.get(f.key) ?? 0) > recent.length / 2,
-          ...(allowed ? { allowed } : seen && seen.size <= 30 ? { values: [...seen.keys()] } : {}),
+          ...((formulas.get(f.key) ?? 0) > recent.length / 2 ? { formula: true } : {}),
+          ...(allowed ? { allowed } : seen && seen.size <= 30 ? inUse(seen) : {}),
         };
       }),
-      latestRows: recent.slice(0, 3).map(r => compact(r)),
+      latestRows: recent
+        .filter(r => typed(r) >= 2)
+        .slice(0, 3)
+        .map(r => compact(r, { formulaColumns: false, inSheet: true })),
     };
   }
 

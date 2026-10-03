@@ -22,13 +22,14 @@ const textKey = value =>
     .trim();
 
 /**
- * A row as the assistant sees it: every non-empty value (formula cells with
- * their computed value; dates as YYYY-MM-DD) and `formulas` = the formula text
- * of arithmetic formulas (=16+2-1), or of every formula cell with allFormulas.
- * `fields` keeps only those columns. formulaColumns: false leaves the list of
- * formula columns out (find_records gives it once for all rows).
+ * A row as the assistant sees it: its app ID, sheet row, every non-empty value
+ * (formula cells with their computed value; dates as YYYY-MM-DD) and `formulas`
+ * = the formula text of arithmetic formulas (=16+2-1), or of every formula cell
+ * with allFormulas. `fields` keeps only those columns. formulaColumns: false
+ * leaves the list of formula columns out and inSheet: true the sheet (find_records
+ * and describe_sheet give them once for all rows).
  */
-export function compactRecord(record, { fields = null, allFormulas = false, formulaColumns = true } = {}) {
+export function compactRecord(record, { fields = null, allFormulas = false, formulaColumns = true, inSheet = false } = {}) {
   const mod = moduleMap.get(record.sheet);
   const dates = new Set(mod?.fields.filter(f => f.type === 'date').map(f => f.key));
   const values = {},
@@ -43,10 +44,8 @@ export function compactRecord(record, { fields = null, allFormulas = false, form
   }
   return {
     id: record.id,
-    sheet: record.sheet,
+    ...(inSheet ? {} : { sheet: record.sheet }),
     row: record.row,
-    label: record.label,
-    version: record.version,
     values,
     ...(Object.keys(formulas).length ? { formulas } : {}),
     ...(formulaColumns ? { formulaColumns: Object.keys(record.formulas ?? {}) } : {}),
@@ -320,7 +319,7 @@ export function findRecords(db, args, { budget = FIND_BUDGET } = {}) {
     const { distance } = item;
     const record = withFormulas(db, item.record);
     const row = {
-      ...compactRecord(record, { fields, allFormulas: !!fields, formulaColumns: false }),
+      ...compactRecord(record, { fields, allFormulas: args.formulas === true, formulaColumns: false, inSheet: true }),
       ...(distance !== undefined ? { distanceKm: distance } : {}),
     };
     const length = JSON.stringify(row).length + 1;
@@ -409,7 +408,7 @@ export const RECORD_TOOLS = [
       description:
         [
           'Rows of one sheet, by exact identifiers (`field` + `values`, e.g. the Insectary_IDs of a notebook page; identifiers not found come back in `missing`) and/or by column `filters` and distance to a place (`near`).',
-          '- Each row: values = every non-empty cell (formula cells with their computed value; dates YYYY-MM-DD) and formulas = the formula text of counts typed as sums (=16+2-1), or of every formula column you ask for in `fields`. formulaColumns lists the formula columns.',
+          '- Each row: id, row, values = every non-empty cell (formula cells with their computed value; dates YYYY-MM-DD) and formulas = the formula text of counts typed as sums (=16+2-1), or of every formula cell with `formulas: true`. formulaColumns lists the formula columns.',
           '- Ask only the columns you need (`fields`) and page with limit/offset. A cut answer says "Truncated: N more rows": narrow the query.',
           '- "How many": `count_records`.',
         ].join('\n'),
@@ -425,7 +424,8 @@ export const RECORD_TOOLS = [
             description: NEAR_DOC,
             properties: { location: { type: 'string' }, lat: { type: 'number' }, lon: { type: 'number' }, km: { type: 'number' } },
           },
-          fields: { type: 'array', items: { type: 'string' }, description: 'Only these columns in each row (their formula text included)' },
+          fields: { type: 'array', items: { type: 'string' }, description: 'Only these columns in each row' },
+          formulas: { type: 'boolean', description: 'Also the formula text of every formula cell returned' },
           limit: { type: 'integer', description: 'Rows to return, 1 to 500 (default 150 with values, 50 otherwise)' },
           offset: { type: 'integer', description: 'Rows to skip, to page through a long answer' },
         },
@@ -437,8 +437,10 @@ export const RECORD_TOOLS = [
     type: 'function',
     function: {
       name: 'count_records',
-      description:
+      description: [
         'Count the rows of one sheet matching `filters` and/or `near` (as in `find_records`), in total and per group (`groupBy`: up to 3 columns; a date column as "Collection_date:year" or ":month"). Empty cells group as "(empty)". Pre-made rows that only hold formulas are not counted.',
+        '- A text column as groupBy (e.g. Notes) gives each distinct text once with its count: a quick way to read and classify notes.',
+      ].join('\n'),
       parameters: {
         type: 'object',
         properties: {
