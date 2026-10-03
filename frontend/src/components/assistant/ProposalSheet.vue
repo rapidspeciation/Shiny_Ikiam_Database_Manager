@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
-import { Check, CheckCheck, FileSpreadsheet, Sparkles } from 'lucide-vue-next'
+import { Check, CheckCheck, FileSpreadsheet, Sparkles, Table2 } from 'lucide-vue-next'
 import { displayValue, editText, normalizeInput } from '../../lib/cells'
 import {
   activeCell,
@@ -35,11 +35,15 @@ import {
   cellId,
   cellComments,
   cellOf,
+  editedBy,
+  keptOver,
   pageNote,
   pageOnly,
   readOnlyRow,
   rowKey,
   selectionActions,
+  whenText,
+  writtenFields,
   type CellComment,
   type CellInfo,
   type ProposalChange,
@@ -80,6 +84,12 @@ import CellBar from '../CellBar.vue'
  * save refused is red, with why); a "Línea" column gives each row's line.
  * What the SPECIES formula will give (from the clutch) shows grey, in
  * italics, tagged "fórmula": it is never written.
+ * A cell someone edited in the sheet after the proposal read it is violet,
+ * tagged "hoja": the sheet's value stays (the proposal's struck through after
+ * it) unless the person chose the proposal's; its comment says what was read
+ * and what the sheet has now, by whom and when, and the buttons beside it
+ * (`sheet`) keep the sheet's value or use the proposal's. A new row whose
+ * pre-made row was used meanwhile is violet too, and is not written.
  */
 export interface CellEdit {
   key: string
@@ -109,8 +119,10 @@ const emit = defineEmits<{
   notice: [message: string]
   /** Doubtful cells the person reviewed and leaves as they are («Marcar revisadas»). */
   check: [cells: { key: string; field: string }[]]
-  /** On to the doubtful cell after this one (null: from the top), in any of the proposal's tables. */
-  next: [from: { key: string; field: string } | null]
+  /** On to the doubtful cell (or the cell edited in the sheet) after this one (null: from the top), in any of the proposal's tables. */
+  next: [from: { key: string; field: string } | null, which?: 'doubtful' | 'sheet']
+  /** Cells edited in the sheet: the sheet's value kept, or the proposal's written over it. */
+  sheet: [cells: { key: string; field: string; use: 'sheet' | 'proposal' }[]]
 }>()
 
 type Row = Record<string, CellValue> & {
@@ -178,7 +190,12 @@ function toRow(c: ProposalChange): Row {
     // A page line with no sheet row: no row number (it is not a new row either).
     __row: c.row ? String(c.row) : c.placeholder ? '—' : t('nueva'),
     __label: c.label,
-    __note: pageNote(c),
+    // A new row whose pre-made row someone used meanwhile: why it is not written, then its note.
+    __note: c.rowTaken
+      ? [t('Su fila sin usar ({row}) ya se usó en la hoja: esta fila no se escribe', { row: c.rowTaken.row }), pageNote(c)]
+          .filter(Boolean)
+          .join(' · ')
+      : pageNote(c),
     __line: lineText(c),
   } as Row
   let state = ''
@@ -194,6 +211,8 @@ function toRow(c: ProposalChange): Row {
     JSON.stringify(c.doubts ?? null) +
     JSON.stringify(c.unreadable ?? null) +
     JSON.stringify(c.warnings ?? null) +
+    JSON.stringify(c.sheetChanged ?? null) +
+    JSON.stringify(c.rowTaken ?? null) +
     (props.editable ? 'e' : '') +
     (c.context ? 'c' : '') +
     (c.page?.error ? 'x' : '') +
@@ -212,7 +231,7 @@ function formatter(field: string) {
     const el = cell.getElement()
     const c = info(row.__key, field)
     if (!c) return ''
-    const comments = cellComments(c)
+    const comments = cellComments(c, v => show(field, v))
     el.classList.toggle('has-comment', comments.length > 0)
     const content = drawn(cell, field, c, comments)
     if (!comments.length) return content
@@ -244,6 +263,9 @@ function drawn(cell: CellComponent, field: string, c: CellInfo, comments: CellCo
   el.classList.toggle('is-unreadable', c.kind === 'unreadable')
   el.classList.toggle('is-warned', !!c.warning)
   el.classList.toggle('is-formula-gives', !!c.fromFormula)
+  el.classList.toggle('is-sheet-edit', !!c.sheetEdit)
+  el.classList.toggle('is-kept', c.kind === 'kept')
+  el.classList.toggle('is-again', !!c.sheetEdit?.again)
   const was = c.was === undefined ? '' : show(field, c.was) || t('vacío')
   const ai = show(field, c.ai) || t('vacío')
   const before = change.replaceFormula?.includes(field) ? 'Antes: {value} (fórmula)' : 'Antes: {value}'
@@ -273,6 +295,10 @@ function drawn(cell: CellComponent, field: string, c: CellInfo, comments: CellCo
           t('la IA proponía: {value}', { value: ai }),
         ].join(' · ')
       : '',
+    c.kind === 'kept'
+      ? t('Se mantiene el valor de la hoja; la propuesta decía: {value}', { value: show(field, c.proposalValue) || t('vacío') })
+      : '',
+    c.sheetEdit && props.editable ? t('Elige junto a la celda: el valor de la hoja o el de la propuesta') : '',
     c.kind === 'locked' ? t('Fórmula de la hoja: no se escribe') : '',
     c.fromFormula ? t('Lo dará la fórmula de la hoja (del clutch): no se escribe') : '',
     c.kind === 'unreadable' && props.editable ? t('escribe el valor; vacía no se escribe') : '',
@@ -282,6 +308,8 @@ function drawn(cell: CellComponent, field: string, c: CellInfo, comments: CellCo
     .filter(Boolean)
     .join('\n')
   const text = show(field, c.value)
+  // Edited in the sheet after the proposal: a "sheet" tag, then the cell as it is written.
+  if (c.sheetEdit) return sheetTagged(field, c, text)
   // A preserved butterfly would be left without it: an amber "missing" tag, then what the cell holds.
   if (c.warning && c.kind !== 'unreadable') {
     const box = document.createElement('span')
@@ -347,6 +375,34 @@ function drawn(cell: CellComponent, field: string, c: CellInfo, comments: CellCo
   return marked(c, box)
 }
 
+/**
+ * A cell edited in the sheet since the proposal read it: its "hoja" tag, then the
+ * sheet's value with the proposal's struck through (kept), or the proposal's
+ * with the sheet's struck through (written over it).
+ */
+function sheetTagged(field: string, c: CellInfo, text: string): Node {
+  const box = document.createElement('span')
+  const mark = document.createElement('span')
+  mark.className = 'sheet-mark'
+  mark.textContent = t('hoja')
+  box.append(mark, ' ')
+  if (c.kind === 'kept') {
+    if (text) box.append(withTotal(field, c.value, text), ' ')
+    const aside = document.createElement('s')
+    aside.className = 'aside'
+    aside.append(withTotal(field, c.proposalValue, show(field, c.proposalValue) || t('vacío')))
+    box.append(aside)
+    return box
+  }
+  if (text) box.append(withTotal(field, c.value, text))
+  else box.append(t('vaciar'))
+  const old = document.createElement('s')
+  old.className = 'was'
+  old.append(withTotal(field, c.was, show(field, c.was) || t('vacío')))
+  box.append(' ', old)
+  return box
+}
+
 /** A doubtful cell's content after its "?" mark (the cell's dashed amber edge is its class). */
 function marked(c: CellInfo, content: Node): Node {
   if (!c.doubtful) return content
@@ -364,10 +420,14 @@ function rowFormatter(cell: CellComponent) {
   // (A row whose only cells are unreadable ones still to fill is not: it waits for them.)
   const waiting = !!change && Object.keys(change.unreadable ?? {}).some(f => !(f in change.values))
   // (A page line that writes nothing is grey already: it was never to be written.)
-  const skipped = props.editable && !!change && !change.context && !Object.keys(change.values).length && !waiting
+  const skipped = props.editable && !!change && !change.context && !writtenFields(change).length && !waiting
   const el = cell.getElement()
   el.classList.toggle('is-skipped', skipped)
-  el.title = skipped ? t('Esta fila no se escribe: no le queda ningún cambio') : ''
+  el.title = !skipped
+    ? ''
+    : change?.rowTaken
+      ? t('Esta fila no se escribe: su fila sin usar ya se usó en la hoja')
+      : t('Esta fila no se escribe: no le queda ningún cambio')
   return row.__row
 }
 
@@ -381,6 +441,8 @@ function drawnText(change: ProposalChange, field: string) {
         ? ` ${textWithTotal(field, cell.was)}`
         : ''
   // The "?" of a doubtful cell takes about two letters; an unreadable cell's tag about its word.
+  if (cell.kind === 'kept') return `${t('hoja')}   ${textWithTotal(field, cell.value)} ${textWithTotal(field, cell.proposalValue)}`
+  if (cell.sheetEdit) return `${t('hoja')}   ${textWithTotal(field, cell.value)} ${textWithTotal(field, cell.was)}`
   if (cell.kind === 'unreadable') return `${t('ilegible')}   ${textWithTotal(field, cell.value)}`
   if (cell.warning) return `${t('falta')}   ${textWithTotal(field, cell.value)}`
   if (cell.fromFormula)
@@ -503,6 +565,7 @@ function rowLook(row: RowComponent) {
   el.classList.toggle('is-context-row', !!change?.context && !change.page?.error)
   el.classList.toggle('is-placeholder-row', !!change?.placeholder)
   el.classList.toggle('is-error-row', !!change?.page?.error)
+  el.classList.toggle('is-taken-row', !!change?.rowTaken)
 }
 
 // ------------------------------------------------------------ the cell bar
@@ -527,7 +590,7 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
   if (total !== null) notes.push({ text: `= ${total}`, kind: 'total' })
   const editable = canEditCell(row.__key, field)
   // What the assistant says about it (as the cell's tooltip): a doubt, where it comes from, why unreadable.
-  for (const n of cellComments(c))
+  for (const n of cellComments(c, v => show(field, v)))
     notes.push(
       n.kind === 'unreadable' && editable ? { ...n, text: `${n.text} · ${t('escribe el valor; vacía no se escribe')}` } : n,
     )
@@ -536,6 +599,8 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
     notes.push({ label: t('Hoja'), text: editText$(field, c.was) || t('vacío'), kind: 'sheet' })
   if (c.aiProposed && (c.kind === 'person' || c.kind === 'reverted'))
     notes.push({ label: t('IA'), text: editText$(field, c.ai) || t('vacío'), kind: 'ai' })
+  // Edited in the sheet: the proposal's value, set aside while the sheet's stays.
+  if (c.kind === 'kept') notes.push({ label: t('Propuesta'), text: editText$(field, c.proposalValue) || t('vacío'), kind: 'ai' })
   if (c.fromFormula) notes.push({ label: t('Fórmula'), text: t('La hoja lo calculará del clutch: no se escribe'), kind: 'hint' })
   // What of an unreadable cell was read (as written): a click puts it in the bar to complete.
   const partial = c.kind === 'unreadable' ? (c.unreadable?.partial ?? []) : []
@@ -673,10 +738,14 @@ const quick = ref<{
   top: number
   above: boolean
   choices: { label: string; text: string }[]
+  /** A cell edited in the sheet: the sheet's value or the proposal's (`use`: the one it has now). */
+  sheet?: { use: 'sheet' | 'proposal'; now: string; proposal: string; who: string }
 } | null>(null)
 const quickBox = ref<HTMLDivElement>()
 const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 const reviewKey = mac ? '⌘ Enter' : 'Ctrl+Enter'
+/** The cell edited in the sheet just chosen for: its choices stay away until another cell is selected. */
+let chosenHere: string | null = null
 function placeQuick() {
   quick.value = null
   if (!table || !props.editable || busy()) return
@@ -684,8 +753,10 @@ function placeQuick() {
   if (!cell) return
   const key = (cell.getData() as Row).__key
   const field = cell.getField()
+  if (chosenHere === cellId(key, field)) return
+  chosenHere = null
   const c = fieldSet.value.has(field) ? info(key, field) : null
-  if (!c?.doubtful || !canEditCell(key, field)) return
+  if (!(c?.doubtful || c?.sheetEdit) || !canEditCell(key, field)) return
   const el = cell.getElement()
   const container = host.value?.parentElement
   const view = host.value?.querySelector('.tabulator-tableholder')?.getBoundingClientRect()
@@ -703,18 +774,37 @@ function placeQuick() {
     // (Clear of the round handle a finger drags, on a touch screen.)
     top: above ? r.top - origin.top - 4 : r.bottom - origin.top + (touch ? 16 : 5),
     above,
-    choices: (c.doubt?.alternatives ?? [])
-      .filter(
-        (a, i, all) =>
-          JSON.stringify(a) !== JSON.stringify(c.value) && all.findIndex(b => JSON.stringify(b) === JSON.stringify(a)) === i,
-      )
-      .map(a => ({ label: show(field, a) || t('vacío'), text: editText$(field, a) })),
+    choices: c.sheetEdit
+      ? []
+      : (c.doubt?.alternatives ?? [])
+          .filter(
+            (a, i, all) =>
+              JSON.stringify(a) !== JSON.stringify(c.value) && all.findIndex(b => JSON.stringify(b) === JSON.stringify(a)) === i,
+          )
+          .map(a => ({ label: show(field, a) || t('vacío'), text: editText$(field, a) })),
+    ...(c.sheetEdit
+      ? {
+          sheet: {
+            use: keptOver(c.sheetEdit) ? 'proposal' : 'sheet',
+            now: show(field, c.sheetEdit.now) || t('vacío'),
+            proposal: show(field, c.kind === 'kept' ? c.proposalValue : c.value) || t('vacío'),
+            who: [editedBy(c.sheetEdit), whenText(c.sheetEdit.at)].filter(Boolean).join(', '),
+          },
+        }
+      : {}),
   }
   // Kept inside the grid's box at its right edge.
   nextTick(() => {
     const box = quickBox.value
     if (box && quick.value) quick.value.left = Math.max(0, Math.min(quick.value.left, container.clientWidth - box.offsetWidth - 4))
   })
+}
+/** The sheet's value kept, or the proposal's written over it; then on to the next cell edited in the sheet. */
+function chooseQuick(key: string, field: string, use: 'sheet' | 'proposal') {
+  chosenHere = cellId(key, field)
+  quick.value = null
+  emit('sheet', [{ key, field, use }])
+  emit('next', { key, field }, 'sheet')
 }
 function confirmQuick(key: string, field: string) {
   emit('check', [{ key, field }])
@@ -919,6 +1009,12 @@ onMounted(() => {
   })
   for (const event of ['scrollVertical', 'scrollHorizontal', 'columnResized'] as const) table.on(event as 'renderComplete', follow)
   table.on('cellEditing', () => (quick.value = null))
+  // The cell just chosen for, clicked again: its choices come back (to change the choice).
+  table.on('cellClick', (_event: UIEvent, cell: CellComponent) => {
+    if (chosenHere !== cellId((cell.getData() as Row).__key, cell.getField())) return
+    chosenHere = null
+    placeQuick()
+  })
   table.on('cellEditCancelled', follow)
   host.value.addEventListener('keydown', onReviewKey, true)
   host.value.addEventListener('keydown', onKeydown)
@@ -1011,14 +1107,39 @@ watch(
           v-if="quick"
           ref="quickBox"
           class="doubt-quick"
-          :class="{ 'is-above': quick.above }"
+          :class="{ 'is-above': quick.above, 'is-sheet': !!quick.sheet }"
           :style="{ left: `${quick.left}px`, top: `${quick.top}px` }"
           role="group"
-          :aria-label="$t('Revisar la celda dudosa')"
+          :aria-label="quick.sheet ? $t('Celda editada en la hoja') : $t('Revisar la celda dudosa')"
           @pointerdown.prevent
           @mousedown.prevent
         >
+          <!-- Edited in the sheet after the proposal: keep the sheet's value, or write the proposal's over it. -->
+          <template v-if="quick.sheet">
+            <span class="sheet-quick-what">{{ $t('Editada en la hoja') }} · {{ quick.sheet.who }}</span>
+            <button
+              type="button"
+              class="sheet-quick-choice"
+              :class="{ 'is-chosen': quick.sheet.use === 'sheet' }"
+              :aria-pressed="quick.sheet.use === 'sheet'"
+              :title="$t('No se escribe esta celda: queda {value}, como en la hoja', { value: quick.sheet.now })"
+              @click="chooseQuick(quick.key, quick.field, 'sheet')"
+            >
+              <Table2 :size="13" /> {{ $t('Mantener el de la hoja') }} <b>{{ quick.sheet.now }}</b>
+            </button>
+            <button
+              type="button"
+              class="sheet-quick-choice"
+              :class="{ 'is-chosen': quick.sheet.use === 'proposal' }"
+              :aria-pressed="quick.sheet.use === 'proposal'"
+              :title="$t('Se escribe {value} encima de lo que tiene la hoja', { value: quick.sheet.proposal })"
+              @click="chooseQuick(quick.key, quick.field, 'proposal')"
+            >
+              <Sparkles :size="13" /> {{ $t('Usar el de la propuesta') }} <b>{{ quick.sheet.proposal }}</b>
+            </button>
+          </template>
           <button
+            v-if="!quick.sheet"
             type="button"
             class="doubt-quick-ok"
             :title="$t('La lectura de la IA es correcta: queda revisada y pasa a la siguiente dudosa ({key})', { key: reviewKey })"
@@ -1036,7 +1157,7 @@ watch(
           >
             {{ choice.label }}
           </button>
-          <kbd v-if="!touch" class="doubt-quick-key">{{ reviewKey }}</kbd>
+          <kbd v-if="!touch && !quick.sheet" class="doubt-quick-key">{{ reviewKey }}</kbd>
         </div>
       </div>
     </div>

@@ -219,6 +219,27 @@ export function createT3Chats({ home, now = Date.now } = {}) {
   }
 
   /**
+   * A chat as a message sent to it needs it: its project, its modes, and whether
+   * it is answering now (busy). null when T3 does not know it (or it is gone).
+   */
+  function session(threadId) {
+    const row = query(
+      `SELECT t.project_id, t.runtime_mode, t.interaction_mode, s.status, s.active_turn_id
+       FROM projection_threads t LEFT JOIN projection_thread_sessions s ON s.thread_id = t.thread_id
+       WHERE t.thread_id = ? AND t.deleted_at IS NULL AND t.archived_at IS NULL`,
+      [threadId],
+      false,
+    );
+    if (!row) return null;
+    return {
+      projectId: row.project_id,
+      runtimeMode: row.runtime_mode,
+      interactionMode: row.interaction_mode,
+      busy: !!row.active_turn_id || row.status === 'running' || row.status === 'starting',
+    };
+  }
+
+  /**
    * The chats whose tool results name these proposals (the call that drafted
    * each one comes first): proposals made before they were linked, or whose
    * call T3 had not recorded yet. Reads chat by chat, letting other requests
@@ -283,6 +304,7 @@ export function createT3Chats({ home, now = Date.now } = {}) {
     chatsOf,
     threadOfToolUse,
     onlyRunning,
+    session,
     findProposals,
     open,
     close() {

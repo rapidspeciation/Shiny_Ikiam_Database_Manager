@@ -109,11 +109,17 @@ watch(
 const pageLink = computed(() => router.resolve(props.only ? `/propuestas/${props.only}` : '/propuestas').href)
 
 function receive(next: Proposal[], first: boolean) {
-  // An unchanged proposal keeps its object, so its table is not redrawn.
+  // An unchanged proposal keeps its object, so its table is not redrawn (its sheet rows edited count as a change).
   const before = new Map(proposals.value.map(p => [p.id, p]))
   const kept = next.map(p => {
     const old = before.get(p.id)
-    return old && old.revision === p.revision && old.status === p.status && old.applied?.length === p.applied?.length ? old : p
+    return old &&
+      old.revision === p.revision &&
+      old.status === p.status &&
+      old.applied?.length === p.applied?.length &&
+      old.sheetStamp === p.sheetStamp
+      ? old
+      : p
   })
   const fresh = first ? [] : next.filter(p => open(p) && !before.has(p.id)).map(p => p.id)
   proposals.value = kept
@@ -267,21 +273,42 @@ watch([proposals, connected], () => void bring())
 async function apply(proposal: Proposal, indexes: number[], at: number | undefined, doubtful?: 'confirm' | 'skip') {
   applying.value = proposal.id
   try {
-    const out = await api<{ status: Proposal['status']; applied: number[] }>(`chat/proposals/${proposal.id}/apply`, {
-      method: 'POST',
-      body: { requestId: requestId(), indexes, revision: at, ...(doubtful ? { doubtful } : {}) },
-    })
+    const out = await api<{ status: Proposal['status']; applied: number[]; keptFromSheet?: unknown[] }>(
+      `chat/proposals/${proposal.id}/apply`,
+      {
+        method: 'POST',
+        body: { requestId: requestId(), indexes, revision: at, ...(doubtful ? { doubtful } : {}) },
+      },
+    )
     proposal.status = out.status
     proposal.applied = out.applied
     await Promise.all(Object.keys(tables.tables).map(sheet => tables.load(sheet, true)))
-    notify(tn(out.applied.length, '{n} fila aplicada en Google Sheets', '{n} filas aplicadas en Google Sheets'), 'success')
+    const applied = tn(out.applied.length, '{n} fila aplicada en Google Sheets', '{n} filas aplicadas en Google Sheets')
+    // Cells (or new rows) edited in the sheet meanwhile, left as the sheet has them.
+    const kept = out.keptFromSheet?.length ?? 0
+    notify(
+      kept
+        ? `${applied} · ${tn(kept, '{n} cambio se dejó como está en la hoja', '{n} cambios se dejaron como están en la hoja')}`
+        : applied,
+      'success',
+    )
   } catch (e) {
     // Changed meanwhile by the assistant, or doubtful cells to look at first: still pending.
     const code = (e as { code?: string }).code
+    // What the server left it as: refused as a whole (nothing written), it is still pending.
+    const status = ((e as { details?: { status?: Proposal['status'] } }).details?.status ?? null) as Proposal['status'] | null
     if (code === 'doubtful_unchecked') notify(t('Hay celdas dudosas sin revisar: revísalas o elige cómo aplicarlas'), 'error')
+    else if (code === 'sheet_changed_again')
+      notify(t('Alguien volvió a editar en la hoja celdas que ya habías elegido: elige de nuevo (en violeta)'), 'error')
     else {
-      if (code !== 'proposal_changed') proposal.status = 'needs_review'
-      notify(errorText(e), 'error')
+      if (status) proposal.status = status
+      else if (code !== 'proposal_changed') proposal.status = 'needs_review'
+      notify(
+        code === 'BATCH_CONFLICT' && status === 'pending'
+          ? `${errorText(e)} · ${t('Las celdas que cambiaron en la hoja salen en violeta.')}`
+          : errorText(e),
+        'error',
+      )
     }
   } finally {
     applying.value = null

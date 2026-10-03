@@ -980,7 +980,7 @@ function suggestionBox(
 export interface CellBarNote {
   label?: string
   text: string
-  kind?: 'sheet' | 'ai' | 'total' | 'doubt' | 'hint' | 'unreadable'
+  kind?: 'sheet' | 'ai' | 'total' | 'doubt' | 'hint' | 'unreadable' | 'edited'
 }
 /** Another reading of a doubtful cell, offered beside it: `text` is written into the cell as if typed. */
 export interface CellBarChoice {

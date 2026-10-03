@@ -17,6 +17,8 @@ import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './note
 import { insectaryIdRow, newRowFormulaFields } from './premade.mjs';
 import { proposalSampleWarnings } from './preserved.mjs';
 import { carryChecks, dropDoubt, setChecked, uncheckedDoubts, unfilledUnreadable, withoutUnchecked } from './doubts.mjs';
+import { decide, editedInSheet, forget, lastEdit, resolveSheetEdits, sheetChangesOf, shownValue, takenRow, takenRows } from './sheet-edits.mjs';
+import { tellChat } from './t3tell.mjs';
 import { KNOWLEDGE_TOOLS, createKnowledge, runKnowledgeTool } from './knowledge.mjs';
 import { HISTORY_TOOLS, HISTORY_TOOL_NAMES, runHistoryTool } from './history.mjs';
 import { createT3Chats } from './t3chats.mjs';
@@ -411,6 +413,7 @@ const TOOLS = [
           "- personEdits: cells the person corrected in the table, or set back to the sheet's value with «Valor de la hoja» (not written), each with what you had proposed.",
           "- doubtful: match_notebook's doubtful cells (alternatives, reason, checked).",
           '- unreadable: cells the AI could not read (reason, partial, filled; empty ones are never written).',
+          "- sheetChanged: cells someone edited in the sheet after you read them (read, now, by, applying). Applying keeps the sheet's value unless the person chose yours; re-check them against the photo, then update_proposal: a value you give there goes over the sheet's new one, null keeps it.",
           'Read it when the person says they changed the table, before `update_proposal` on a proposal you did not just make, and before `apply_proposal` if they edited it.',
         ].join('\n'),
       parameters: { type: 'object', properties: { proposalId: { type: 'string' } }, required: ['proposalId'] },
@@ -1050,12 +1053,22 @@ export function createAssistant({ store, config = {} }) {
     return { ...change, values };
   }
 
-  /** One row checked again as propose_changes checks it: { change, dropped } or { error }. */
-  function redraftRow(change, index, others, used) {
+  /**
+   * One row checked again as propose_changes checks it: { change, dropped } or { error }.
+   * An existing row keeps what the sheet had when each cell was read (`before`): only
+   * `fresh`, the cell the assistant sets now, is read again, so a cell edited in the
+   * sheet meanwhile stays told apart (server/sheet-edits.mjs).
+   */
+  function redraftRow(change, index, others, used, fresh = null) {
     const personEdits = change.personEdits && Object.keys(change.personEdits).length ? change.personEdits : undefined;
-    const keep = fresh => ({ ...change, ...fresh, personEdits });
+    const keep = next => ({ ...change, ...next, personEdits });
+    const read = drafted => {
+      const out = { ...drafted };
+      for (const [f, v] of Object.entries(change.before ?? {})) if (f !== fresh) out[f] = v;
+      return out;
+    };
     if (!Object.keys(change.values).length)
-      return { change: keep(change.create ? { values: {} } : { values: {}, before: {}, replaceFormula: [] }), dropped: [] };
+      return { change: keep(change.create ? { values: {} } : { values: {}, before: read({}), replaceFormula: [] }), dropped: [] };
     if (change.create) {
       const proposed = new Set(others.filter(c => c.create).flatMap(c => uniqueKeys(c.sheet, c.values).map(k => k[2])));
       const out = proposedRow({ sheet: change.sheet, values: change.values, note: change.note }, index, { proposed, used }, change.clientId);
@@ -1071,15 +1084,18 @@ export function createAssistant({ store, config = {} }) {
     }
     const out = draftChanges({ changes: [{ recordId: change.recordId, values: change.values, note: change.note }] });
     if (out.error === 'Every proposed value is already in the sheet')
-      return { change: keep({ values: {}, before: {}, replaceFormula: [] }), dropped: [] };
+      return { change: keep({ values: {}, before: read({}), replaceFormula: [] }), dropped: [] };
     if (out.error) return { error: out.error };
-    return { change: keep(out.changes[0]), dropped: [] };
+    return { change: keep({ ...out.changes[0], before: read(out.changes[0].before) }), dropped: [] };
   }
 
   /**
    * Revises a proposal's rows. `by`: 'ai' or 'person'. ops: set [{ ref (index or
    * key), values, note, before }], remove [ref], add { changes, newRows } (the
-   * assistant's new rows), addEmpty [{ sheet }] (an empty new row the person fills).
+   * assistant's new rows), addEmpty [{ sheet }] (an empty new row the person fills),
+   * sheet [{ ref, field, use }] (the person's choice on a cell edited in the sheet:
+   * 'sheet' or 'proposal'; a value they type there chooses the proposal's, theirs;
+   * a value the assistant sets there is read again against the sheet).
    * Each cell is checked as it is set: a refused cell keeps its value (for the
    * assistant the caller refuses the whole revision).
    */
@@ -1112,7 +1128,7 @@ export function createAssistant({ store, config = {} }) {
             out.conflicts.push({ ...where(i), field, person: current ?? null, yours: value === DROP ? 'no change' : value });
           continue;
         }
-        const drafted = redraftRow(setCell(row, field, value), i, rows.filter((_, j) => j !== i), used);
+        const drafted = redraftRow(setCell(row, field, value), i, rows.filter((_, j) => j !== i), used, by === 'ai' ? field : null);
         // The species the new row's formula will give: left to the formula, nothing to say.
         const toFormula =
           !drafted.error && row.create && value !== DROP && sameAsFormula(formulaWillGive(row.sheet, field, drafted.change.values, null) ?? null, value);
@@ -1129,6 +1145,12 @@ export function createAssistant({ store, config = {} }) {
         if (by === 'ai' && !same(after, current)) next = dropDoubt(next, field);
         // The person took the assistant's reading again with its button: they looked at it.
         if (by === 'person' && raw === AI_VALUE) next = setChecked(next, field, true, who, 'ai-value');
+        // A cell edited in the sheet since it was read: what the person writes there goes over it.
+        if (after === undefined || by === 'ai') next = forget(next, field);
+        else if (!next.create) {
+          const record = store.getRecord(next.recordId);
+          next = editedInSheet(next, record, field) ? decide(next, record, field, 'proposal', who) : forget(next, field);
+        }
         if (by === 'ai') delete marks[field];
         else {
           const ai = mark ? mark.ai : current;
@@ -1145,6 +1167,15 @@ export function createAssistant({ store, config = {} }) {
         // A notebook line shown only for context becomes a real change once someone gives it a value.
         if (rows[i].context && Object.keys(rows[i].values).length) rows[i] = { ...rows[i], context: undefined };
       }
+    }
+
+    // Cells edited in the sheet since they were read: the sheet's value kept, or the proposal's written over it.
+    for (const op of ops.sheet ?? []) {
+      const i = find(op.ref);
+      const row = rows[i];
+      if (i < 0 || row.create || !(op.field in row.values) || !['sheet', 'proposal'].includes(op.use)) continue;
+      const record = store.getRecord(row.recordId);
+      if (editedInSheet(row, record, op.field)) rows[i] = decide(row, record, op.field, op.use, who);
     }
 
     // Doubtful cells marked checked (or unchecked) in the table, or by the assistant on the person's word.
@@ -1211,10 +1242,59 @@ export function createAssistant({ store, config = {} }) {
     chat: r.t3_thread || null,
   });
 
+  /**
+   * What the sheet did to a pending proposal's row since it was drafted (`since`):
+   * its cells edited there (server/sheet-edits.mjs) with who and when, and for a
+   * new row, its pre-made row taken (`inUse`: takenRows of its proposal). Empty
+   * for a row the sheet left alone.
+   */
+  function sheetState(change, since, inUse = null) {
+    if (change.create) {
+      const taken = takenRow(store, change, inUse);
+      return taken ? { rowTaken: { row: taken.row, label: taken.label, ...lastEdit(db, taken.recordId, 'Insectary_ID', since) } } : {};
+    }
+    const edited = sheetChangesOf(change, store.getRecord(change.recordId));
+    if (!Object.keys(edited).length) return {};
+    return {
+      sheetChanged: Object.fromEntries(
+        Object.entries(edited).map(([field, cell]) => [field, { ...cell, ...lastEdit(db, change.recordId, field, since) }]),
+      ),
+    };
+  }
+
   /** The rows of a proposal as the assistant reads them: index, values with readable dates, the person's edits. */
-  function proposalTable(changes) {
+  function proposalTable(changes, proposal = null) {
     const readable = (sheet, field, value) =>
       moduleMap.get(sheet)?.fields.find(f => f.key === field)?.type === 'date' && typeof value === 'number' ? isoDate(value) : value;
+    const open = proposal?.status === 'pending';
+    const inUse = open ? takenRows(store, changes) : new Map();
+    // Cells edited in the sheet since they were read, as the table shows them: what applying does with each.
+    const sheetOf = c => {
+      const state = open && !c.context ? sheetState(c, proposal.created_at, inUse) : {};
+      return {
+        ...(state.sheetChanged
+          ? {
+              sheetChanged: Object.fromEntries(
+                Object.entries(state.sheetChanged).map(([f, e]) => [
+                  f,
+                  {
+                    read: readable(c.sheet, f, e.read),
+                    now: readable(c.sheet, f, e.now),
+                    ...(e.by ? { by: e.by } : e.source ? { by: e.source === 'app' ? 'app' : 'Google Sheets' } : {}),
+                    ...(e.at ? { at: e.at } : {}),
+                    applying: e.again
+                      ? 'edited again after the person chose: not applied until they look'
+                      : e.use === 'proposal'
+                        ? 'yours, over the sheet (the person chose)'
+                        : "keeps the sheet's",
+                  },
+                ]),
+              ),
+            }
+          : {}),
+        ...(state.rowTaken ? { rowTaken: `row ${state.rowTaken.row} is in use now (${state.rowTaken.label}): this new row is left out` } : {}),
+      };
+    };
     return changes.map((c, index) => ({
       index,
       sheet: c.sheet,
@@ -1277,6 +1357,7 @@ export function createAssistant({ store, config = {} }) {
             ),
           }
         : {}),
+      ...sheetOf(c),
     }));
   }
 
@@ -1290,7 +1371,7 @@ export function createAssistant({ store, config = {} }) {
       revision: proposal.revision,
       reason: proposal.reason,
       lastChangedBy: proposal.last_by ?? 'ai',
-      rows: proposalTable(parse(proposal.changes_json) ?? []),
+      rows: proposalTable(parse(proposal.changes_json) ?? [], proposal),
     };
   }
 
@@ -1340,7 +1421,7 @@ export function createAssistant({ store, config = {} }) {
       link: proposalLink(proposal.id, chatOf(proposal, context)),
       revision,
       ...(unchanged ? { unchanged: true } : {}),
-      rows: proposalTable(out.changes),
+      rows: proposalTable(out.changes, proposal),
       ...(out.leftOut.length ? { leftOut: `Formula columns left out of the new rows: ${out.leftOut.join(', ')}` } : {}),
       ...(out.conflicts.length
         ? {
@@ -1390,7 +1471,12 @@ export function createAssistant({ store, config = {} }) {
     return { changes: out.changes, conflicts };
   }
 
-  /** Writes the chosen rows of a proposal as one save (undoable in Historial). */
+  /**
+   * Writes the chosen rows of a proposal as one save (undoable in Historial).
+   * Cells edited in the sheet since they were read keep the sheet's value unless
+   * the person chose the proposal's (server/sheet-edits.mjs): listed in the
+   * answer as `keptFromSheet`. One edited again after the person chose stops it.
+   */
   async function applyProposal(proposal, user, { requestId, indexes, reason, doubtful = null }) {
     if (proposal.status !== 'pending')
       throw Object.assign(new Error('Proposal has already been applied.'), { status: 409, code: 'proposal_used' });
@@ -1399,18 +1485,37 @@ export function createAssistant({ store, config = {} }) {
     const all = parse(proposal.changes_json) ?? [];
     // A row left without values (the person emptied it in the table) has nothing to write, and a
     // notebook line shown only for context (match_notebook includeUnchanged) is never written.
-    const chosen = (
+    const picked = (
       Array.isArray(indexes) && indexes.length ? [...new Set(indexes.map(Number))].filter(i => all[i]) : all.map((_, i) => i)
     ).filter(i => Object.keys(all[i].values ?? {}).length && !all[i].context);
+    // The sheet's edits since the proposal was read: kept (left out), or written over as the person chose.
+    const sheet = resolveSheetEdits(store, picked.map(i => [i, all[i]]));
+    if (sheet.again.length)
+      throw Object.assign(new Error(`${sheet.again.length} cells were edited in the sheet again after you chose; look at them first.`), {
+        status: 409,
+        code: 'sheet_changed_again',
+        details: { again: sheet.again },
+      });
+    const resolved = new Map(sheet.writes);
+    // As written: the rows with the sheet's edits resolved (the rest of the proposal as it is).
+    const effective = all.map((c, i) => resolved.get(i) ?? c);
+    const chosen = picked.filter(i => resolved.has(i) && Object.keys(resolved.get(i).values ?? {}).length);
     // Unreadable cells still empty: never written (they stay as the sheet has them), listed in the answer.
     const unreadable = unfilledUnreadable(all);
+    const keptFromSheet = sheet.kept.length ? { keptFromSheet: sheet.kept } : {};
     if (!chosen.length)
       throw Object.assign(
-        new Error(unreadable.length ? 'Nothing to write yet: only unreadable cells, still empty.' : 'No rows selected.'),
-        { status: 400, code: 'nothing_selected', ...(unreadable.length ? { details: { unreadable } } : {}) },
+        new Error(
+          sheet.kept.length
+            ? 'Nothing to write: the sheet was edited in every cell chosen, and its values are kept.'
+            : unreadable.length
+              ? 'Nothing to write yet: only unreadable cells, still empty.'
+              : 'No rows selected.',
+        ),
+        { status: 400, code: 'nothing_selected', details: { ...(unreadable.length ? { unreadable } : {}), ...keptFromSheet } },
       );
     // Doubtful cells nobody looked at: the person decides first (apply them anyway, or only the sure cells).
-    const unchecked = uncheckedDoubts(all, chosen);
+    const unchecked = uncheckedDoubts(effective, chosen);
     if (unchecked.length && doubtful !== 'confirm' && doubtful !== 'skip')
       throw Object.assign(new Error(`${unchecked.length} doubtful cells have not been checked.`), {
         status: 409,
@@ -1419,14 +1524,16 @@ export function createAssistant({ store, config = {} }) {
       });
     const who = clip(user.displayName || user.username || owner(user), 80);
     // Applied anyway: those cells count as confirmed by the person (kept with the proposal).
-    const kept =
+    const confirm = rows =>
       doubtful === 'confirm'
-        ? all.map((c, i) =>
+        ? rows.map((c, i) =>
             chosen.includes(i) ? unchecked.filter(u => u.index === i).reduce((row, u) => setChecked(row, u.field, true, who, 'apply'), c) : c,
           )
-        : all;
+        : rows;
+    const kept = confirm(all);
+    const ready = confirm(effective);
     const writes = chosen
-      .map(i => [i, doubtful === 'skip' ? withoutUnchecked(kept[i]) : kept[i]])
+      .map(i => [i, doubtful === 'skip' ? withoutUnchecked(ready[i]) : ready[i]])
       .filter(([, c]) => Object.keys(c.values ?? {}).length);
     const written = writes.map(([i]) => i);
     if (!writes.length) throw Object.assign(new Error('Only doubtful cells were left to write.'), { status: 400, code: 'nothing_selected' });
@@ -1457,13 +1564,35 @@ export function createAssistant({ store, config = {} }) {
         result,
         ...(unchecked.length ? { doubtful: { count: unchecked.length, how: doubtful } } : {}),
         ...(unreadable.length ? { unreadable } : {}),
+        ...keptFromSheet,
       };
     } catch (cause) {
-      db.prepare("UPDATE ai_proposals SET status = 'needs_review' WHERE id = ?").run(proposal.id);
+      // The save refused it as a whole (nothing was written): still pending, to look at and apply again.
+      // A cell someone changed in the sheet the app had not read yet is read now, so the table shows it.
+      const refused = cause?.code === 'BATCH_CONFLICT';
+      db.prepare('UPDATE ai_proposals SET status = ? WHERE id = ?').run(refused ? 'pending' : 'needs_review', proposal.id);
+      if (refused) await readAgain(cause.details?.items ?? []);
       throw cause;
     } finally {
       changed(proposal.owner_id);
     }
+  }
+
+  /** The rows of a refused save where someone else changed a cell: read from the sheet again (as the sheet hook does). */
+  async function readAgain(items) {
+    const bySheet = new Map();
+    for (const item of items) {
+      if (item.code !== 'EXTERNAL_CONFLICT' || !item.id) continue;
+      const record = store.getRecord(item.id);
+      if (record && !record.missing && record.row > 0) bySheet.set(record.sheet, [...(bySheet.get(record.sheet) ?? []), record.row]);
+    }
+    for (const [sheet, rows] of bySheet)
+      try {
+        const out = await store.refreshRows?.(sheet, rows);
+        if (out?.needsSync) await store.sync({ sheets: [sheet] });
+      } catch (e) {
+        console.error('Proposal rows read again:', e.message);
+      }
   }
 
   /**
@@ -1528,11 +1657,16 @@ export function createAssistant({ store, config = {} }) {
       if (!hintIndex.has(key)) hintIndex.set(key, hintTable.push(lean) - 1);
       return hintIndex.get(key);
     };
+    // The rows in use holding the Insectary IDs of its new rows (taken meanwhile), read once.
+    const inUse = open ? takenRows(store, changes) : new Map();
+    /** The version of each row's sheet row as read now (the list's stamp of the sheet). */
+    const versions = [];
     const out = rows.map(({ change, index, line }) => {
       const recordId = change.create ? (created[change.clientId] ?? null) : change.recordId;
       const record = recordId ? store.getRecord(recordId) : null;
+      versions.push(record?.version ?? null);
       // Not needed by the table: what the sheet had when it was drafted, the version the save checks.
-      const { before, expectedVersion, hints, formulaGives, ...rest } = change;
+      const { before, expectedVersion, hints, formulaGives, sheetEdits, ...rest } = change;
       const view = {
         ...rest,
         key: change.key ?? rowKey(change),
@@ -1545,6 +1679,8 @@ export function createAssistant({ store, config = {} }) {
       if (hints && Object.keys(hints).length) view.hints = Object.fromEntries(Object.entries(hints).map(([f, h]) => [f, hintOf(h)]));
       if (line) view.page = pageLine(line, index < 0 || !!change.context);
       if (change.placeholder) return view;
+      // Cells edited in the sheet since they were read (or the pre-made row taken): told apart in the table.
+      if (open && !change.context) Object.assign(view, sheetState(change, row?.created_at, inUse));
       // The rest of the row, for columns the person adds to the table (and its formula columns).
       if (open && !change.create) {
         view.rowValues = Object.fromEntries(
@@ -1580,9 +1716,17 @@ export function createAssistant({ store, config = {} }) {
       if (common) sheetFormulas[sheet] = parse(common);
     }
     for (const c of out) if (c.formulas && json(c.formulas) === json(sheetFormulas[c.sheet] ?? null)) delete c.formulas;
+    // The sheet's rows as the table shows them (the list keeps a proposal whose revision and rows are as they were).
+    const sheetStamp = open
+      ? createHash('sha1')
+          .update(json(out.map((c, i) => [versions[i], c.sheetChanged ?? null, c.rowTaken ?? null])))
+          .digest('base64url')
+          .slice(0, 12)
+      : undefined;
     return {
       ...proposal,
       status,
+      ...(sheetStamp ? { sheetStamp } : {}),
       revision: row?.revision ?? 1,
       updatedAt: row?.updated_at ?? null,
       lastBy: row?.last_by ?? null,
@@ -1712,15 +1856,6 @@ export function createAssistant({ store, config = {} }) {
     };
   }
 
-  /**
-   * A sheet cell as the review table shows it: a count kept as a sum shows its
-   * formula (=23+8+4+3), as the person types it, not the total it computes to.
-   */
-  function shownValue(record, field) {
-    const sum = record && isSumField(record.sheet, field) ? simpleSum(record.formulas?.[field]) : null;
-    return sum ?? record?.values?.[field] ?? null;
-  }
-
   /*
    * Live list of proposals for the Asistente tab: a revision per person that
    * changes whenever one of their proposals is added, applied or discarded, and
@@ -1742,6 +1877,25 @@ export function createAssistant({ store, config = {} }) {
     if (by.size > 50) by.delete(by.keys().next().value);
     for (const wake of [...(waiters.get(ownerId) ?? [])]) if (!page || wake.page !== page) wake();
   }
+  // A row of a pending proposal saved to the local copy (edited in the sheet and read by a sync or the sheet
+  // hook, or saved from the app): its owner's list changes, so the table shows the sheet's edits at once.
+  store.watchRecords?.(rows => {
+    const ids = new Set(rows.map(r => r.id));
+    const insectary = rows.some(r => r.sheet === 'Insectary_data');
+    let pending = [];
+    try {
+      pending = db.prepare("SELECT owner_id, changes_json FROM ai_proposals WHERE status = 'pending'").all();
+    } catch {
+      return; // the database is closing
+    }
+    const owners = new Set();
+    for (const p of pending) {
+      if (owners.has(p.owner_id)) continue;
+      const touches = c => (c.recordId && ids.has(c.recordId)) || (insectary && c.create && c.sheet === 'Insectary_data' && !!c.values?.Insectary_ID);
+      if ((parse(p.changes_json) ?? []).some(touches)) owners.add(p.owner_id);
+    }
+    for (const ownerId of owners) changed(ownerId);
+  });
   /** Whether a page holding revision `seen` has the list as it is: nothing changed since but its own edits. */
   function caughtUp(ownerId, seen, page) {
     if (seen === revisionOf(ownerId)) return true;
@@ -1857,6 +2011,15 @@ export function createAssistant({ store, config = {} }) {
     return groups;
   }
 
+  /** Cells of a proposal edited in the sheet, as apply_proposal reports them (a row whose pre-made row was taken: rowTaken). */
+  const sheetList = cells =>
+    cells.slice(0, 60).map(c => ({
+      index: c.index,
+      label: c.label,
+      ...(c.row ? { row: c.row } : {}),
+      ...(c.field ? { field: c.field, read: c.read, now: c.now } : { rowTaken: c.rowTaken?.row ?? true }),
+    }));
+
   /** Unreadable cells still empty, as apply_proposal reports them (the person is asked for their values). */
   const unreadableList = cells =>
     cells.slice(0, 60).map(u => ({
@@ -1964,6 +2127,7 @@ export function createAssistant({ store, config = {} }) {
         return {
           status: out.status,
           rows: out.applied.length,
+          ...(out.keptFromSheet ? { keptFromSheet: sheetList(out.keptFromSheet) } : {}),
           ...(out.doubtful ? { doubtful: out.doubtful } : {}),
           ...(out.unreadable
             ? {
@@ -1974,6 +2138,12 @@ export function createAssistant({ store, config = {} }) {
             : {}),
         };
       } catch (e) {
+        if (e.code === 'sheet_changed_again')
+          return {
+            error: 'Not applied: cells edited in the sheet again after the person chose',
+            cells: sheetList(e.details.again),
+            todo: 'The person chooses again in the table (the sheet\'s value or yours), or you re-check them and update_proposal.',
+          };
         if (e.code === 'nothing_selected' && e.details?.unreadable)
           return {
             error: 'Not applied: nothing to write yet, only unreadable cells still empty',
@@ -2362,6 +2532,13 @@ export function createAssistant({ store, config = {} }) {
         )
       )
         return bad(400, 'invalid_cells', 'cells must be a list of { key, field, value, use? }.');
+      // Cells edited in the sheet since the proposal read them: keep the sheet's value, or write the proposal's over it.
+      const sheet = Array.isArray(body.sheet)
+        ? body.sheet
+            .filter(c => typeof c?.key === 'string' && typeof c.field === 'string' && c.field.length <= 120 && ['sheet', 'proposal'].includes(c.use))
+            .slice(0, 2000)
+            .map(c => ({ ref: c.key, field: c.field, use: c.use }))
+        : [];
       const remove = Array.isArray(body.remove) ? body.remove.filter(k => typeof k === 'string').slice(0, 100) : [];
       // «Marcar revisadas»: doubtful cells the person looked at and leaves as they are (or unmarks).
       const check = Array.isArray(body.check)
@@ -2391,6 +2568,7 @@ export function createAssistant({ store, config = {} }) {
             ...(c.before !== undefined && !c.use && scalar(c.before) ? { before: { [c.field]: c.before } } : {}),
           })),
           check,
+          sheet,
           remove,
           addEmpty,
         },
@@ -2458,6 +2636,25 @@ export function createAssistant({ store, config = {} }) {
       insertMessage(threadId, 'assistant', 'Correcciones acordadas en Revisión', [], [], context.proposals);
       return { status: 201, body: { ...out, fixes: agreed.fixes.length, tasks: agreed.tasks.length } };
     }
+    // "Tell the assistant": the person's message about a proposal into the T3 chat it comes from, when the app
+    // can send it there (server/t3tell.mjs); otherwise the page copies it for them to paste.
+    const tellMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/tell$/.exec(path);
+    if (tellMatch && method === 'POST') {
+      if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot edit proposals.');
+      const proposal = ownProposal(tellMatch[1], user);
+      if (!proposal) return bad(404, 'not_found', 'Proposal not found.');
+      const text = typeof body.text === 'string' ? body.text.trim() : '';
+      if (!text || text.length > 4000) return bad(400, 'invalid_text', 'text must be 1 to 4000 characters.');
+      const out = await tellChat({
+        t3: config.t3,
+        chats: t3,
+        threadId: proposal.t3_thread || null,
+        username: user.username,
+        text,
+        ...(config.t3Fetch ? { fetchImpl: config.t3Fetch } : {}),
+      });
+      return { status: 200, body: { ...out, chat: proposal.t3_thread || null } };
+    }
     const discardMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/discard$/.exec(path);
     if (discardMatch && method === 'POST') {
       const done = db
@@ -2509,6 +2706,8 @@ export function createAssistant({ store, config = {} }) {
                 current,
                 items: cause.details?.items?.slice(0, 20) ?? [],
                 ...(cause.details?.doubtful ? { doubtful: cause.details.doubtful.length } : {}),
+                ...(cause.details?.again ? { again: cause.details.again } : {}),
+                ...(cause.details?.keptFromSheet ? { keptFromSheet: cause.details.keptFromSheet } : {}),
                 ...(cause.details?.unreadable?.length ? { unreadable: cause.details.unreadable.length } : {}),
               },
             },

@@ -58,6 +58,33 @@ export interface PageLine {
   message?: string
   near?: { value: CellValue; row: number | null }[]
 }
+/**
+ * A cell edited in the sheet after the assistant read it (server/sheet-edits.mjs):
+ * what was read then and what the sheet has now, who changed it (a person in the
+ * app, or the sheet as the app saw it: 'sheets', its edit trigger; 'sync', a
+ * read) and when. The sheet's value is kept unless the person chose the
+ * proposal's (`use`), a choice that holds while the sheet keeps `now`; `again`:
+ * edited again after they chose (applying waits for a new choice).
+ */
+export interface SheetEdit {
+  read: CellValue
+  now: CellValue
+  source?: 'app' | 'sheets' | 'sync'
+  by?: string
+  at?: string
+  use?: 'sheet' | 'proposal'
+  decidedBy?: string | null
+  decidedAt?: string | null
+  again?: boolean
+}
+/** A new row whose pre-made row (its Insectary ID) someone used meanwhile: left out when applying. */
+export interface RowTaken {
+  row: number
+  label?: string
+  source?: 'app' | 'sheets' | 'sync'
+  by?: string
+  at?: string
+}
 /** The notebook page a proposal was read from: its notebook, the sheet, its columns in the page's order, how many photos. */
 export interface ProposalPage {
   kind: string
@@ -110,6 +137,10 @@ export interface ProposalChange {
   page?: PageLine
   /** A row off the photo with the same error as this line of the page (match_notebook): shown apart, after the page. */
   sameErrorAs?: number
+  /** Cells edited in the sheet since they were read, by column (pending proposals). */
+  sheetChanged?: Record<string, SheetEdit>
+  /** A new row whose pre-made row was used meanwhile. */
+  rowTaken?: RowTaken
 }
 export interface Proposal {
   id: string
@@ -133,6 +164,8 @@ export interface Proposal {
   hintTable?: { text?: string; msg?: Msg }[]
   /** A notebook page's proposal: the page. */
   page?: ProposalPage
+  /** Changes when the sheet's rows of a pending proposal change (an edit in the sheet): the list redraws it. */
+  sheetStamp?: string
   applied: number[] | null
   changes: ProposalChange[]
 }
@@ -217,9 +250,11 @@ const same = (a: CellValue | undefined, b: CellValue | undefined) => JSON.string
  * value, or emptied a new row's cell: the assistant's value is kept aside, not
  * written), `sheet` (an existing row's value, unchanged), `empty` (a new row's
  * cell with nothing yet), `locked` (a formula), `unreadable` (the assistant
- * could not read it and nobody filled it yet: not written).
+ * could not read it and nobody filled it yet: not written), `kept` (edited in
+ * the sheet after the proposal: the sheet's value stays, the proposal's is
+ * set aside, not written).
  */
-export type CellKind = 'proposed' | 'person' | 'reverted' | 'sheet' | 'empty' | 'locked' | 'unreadable'
+export type CellKind = 'proposed' | 'person' | 'reverted' | 'sheet' | 'empty' | 'locked' | 'unreadable' | 'kept'
 export interface CellInfo {
   value: CellValue
   kind: CellKind
@@ -239,6 +274,10 @@ export interface CellInfo {
   warning?: Hint
   /** The value is what the sheet's formula will give (SPECIES from the clutch): shown grey, never written. */
   fromFormula?: boolean
+  /** Edited in the sheet since the proposal read it (violet): kept from the sheet, or the proposal's written over it. */
+  sheetEdit?: SheetEdit
+  /** A `kept` cell's value in the proposal (set aside, not written). */
+  proposalValue?: CellValue
 }
 export function cellOf(change: ProposalChange, field: string, newRowFormulas: string[] = []): CellInfo {
   const mark = change.personEdits?.[field]
@@ -249,15 +288,32 @@ export function cellOf(change: ProposalChange, field: string, newRowFormulas: st
   const unreadable = change.unreadable?.[field]
   const warning = change.warnings?.[field]
   const extra = { doubt, hint: change.hints?.[field], ...(unreadable ? { unreadable } : {}), ...(warning ? { warning } : {}) }
+  const sheetEdit = !change.create && field in change.values ? change.sheetChanged?.[field] : undefined
+  // Edited in the sheet since it was read, and nobody chose the proposal's: the sheet's value stays.
+  if (sheetEdit && !keptOver(sheetEdit))
+    return {
+      value: sheetEdit.now,
+      kind: 'kept',
+      was: sheetEdit.now,
+      ai,
+      aiProposed,
+      ...extra,
+      sheetEdit,
+      proposalValue: change.values[field],
+      doubtful: false,
+      inferred: false,
+    }
   if (field in change.values) {
     const kind: CellKind = mark ? 'person' : 'proposed'
     return {
       value: change.values[field],
       kind,
-      was,
+      // Written over what the sheet has now.
+      was: sheetEdit ? sheetEdit.now : was,
       ai,
       aiProposed,
       ...extra,
+      ...(sheetEdit ? { sheetEdit } : {}),
       doubtful: kind === 'proposed' && !!doubt && !doubt.checked,
       inferred: kind === 'proposed' && !!change.inferred?.includes(field),
     }
@@ -275,6 +331,37 @@ export function cellOf(change: ProposalChange, field: string, newRowFormulas: st
   return { value: was ?? null, kind: locked ? 'locked' : 'sheet', was, aiProposed, ...quiet, ...formula }
 }
 
+/** The person chose to write the proposal's value over the sheet's edit (and nobody edited it again since). */
+export const keptOver = (e: SheetEdit) => e.use === 'proposal' && !e.again
+/** The cells of a row the save writes: those with a value, but the ones edited in the sheet whose value stays. */
+export function writtenFields(c: Pick<ProposalChange, 'values' | 'sheetChanged' | 'rowTaken'>): string[] {
+  if (c.rowTaken) return []
+  return Object.keys(c.values).filter(f => !c.sheetChanged?.[f] || keptOver(c.sheetChanged[f]))
+}
+
+/** When something was done, day first, in Ecuador's time: 2/10/26 14:05. */
+export function whenText(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const at = new Date(iso)
+  if (Number.isNaN(at.getTime())) return ''
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Guayaquil',
+      year: '2-digit',
+      month: 'numeric',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    })
+      .formatToParts(at)
+      .map(p => [p.type, p.value]),
+  )
+  return `${Number(parts.day)}/${Number(parts.month)}/${parts.year} ${parts.hour}:${parts.minute}`
+}
+/** Who edited a cell (or a row) in the sheet: the person of the app, else the sheet itself. */
+export const editedBy = (e: Pick<SheetEdit, 'by' | 'source'>) => e.by || (e.source === 'app' ? t('la app') : 'Google Sheets')
+
 /** The same text as a formula gives, whatever the spacing or capitals (as sameAsFormula in server/batch.mjs). */
 export const sameAsFormula = (a: CellValue | undefined, b: CellValue | undefined) => {
   const text = (v: CellValue | undefined) => String(v ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
@@ -291,10 +378,29 @@ export const sameAsFormula = (a: CellValue | undefined, b: CellValue | undefined
 export interface CellComment {
   label: string
   text: string
-  kind: 'doubt' | 'hint' | 'unreadable'
+  kind: 'doubt' | 'hint' | 'unreadable' | 'edited'
 }
-export function cellComments(c: CellInfo): CellComment[] {
+/** `show`: a cell value as the table writes it (dates day first). */
+export function cellComments(c: CellInfo, show: (value: CellValue | undefined) => string = v => String(v ?? '')): CellComment[] {
   const out: CellComment[] = []
+  // Edited in the sheet after the proposal: what was read, what the sheet has, and what applying does.
+  if (c.sheetEdit) {
+    const e = c.sheetEdit
+    const who = [editedBy(e), whenText(e.at)].filter(Boolean).join(', ')
+    const read = t('Se leyó {read} al proponer; la hoja tiene ahora {now} ({who})', {
+      read: show(e.read) || t('vacío'),
+      now: show(e.now) || t('vacío'),
+      who,
+    })
+    const then = e.again
+      ? t('editada otra vez después de elegir: elige de nuevo')
+      : keptOver(e)
+        ? e.decidedBy
+          ? t('se escribe el valor de la propuesta encima (eligió {who})', { who: e.decidedBy })
+          : t('se escribe el valor de la propuesta encima')
+        : t('se mantiene el de la hoja')
+    out.push({ label: t('Editada en la hoja'), text: `${read} · ${then}`, kind: 'edited' })
+  }
   if (c.warning) out.push({ label: t('Falta'), text: tx(c.warning.text, c.warning.msg), kind: 'doubt' })
   if (c.doubt) {
     const reason = c.doubt.reason ? tx(c.doubt.reason, c.doubt.reasonMsg) : t('Lectura dudosa')
@@ -355,10 +461,49 @@ export function uncheckedDoubts(p: Pick<Proposal, 'changes'>, indexes?: number[]
   const chosen = indexes ? new Set(indexes) : null
   for (const c of p.changes) {
     if (c.context || (chosen && !chosen.has(c.index))) continue
+    const written = new Set(writtenFields(c))
     for (const [field, doubt] of Object.entries(c.doubts ?? {}))
-      if (field in c.values && !doubt.checked && !c.personEdits?.[field]) out.push({ key: rowKey(c), field, index: c.index })
+      if (written.has(field) && !doubt.checked && !c.personEdits?.[field]) out.push({ key: rowKey(c), field, index: c.index })
   }
   return out
+}
+
+/**
+ * The cells edited in the sheet since the proposal read them (as rowKey + field,
+ * with the row's index and what applying does), and the new rows whose pre-made
+ * row was used meanwhile (field null).
+ */
+export function sheetEdits(p: Pick<Proposal, 'changes'>) {
+  const out: { key: string; field: string | null; index: number; label: string; edit?: SheetEdit; taken?: RowTaken }[] = []
+  for (const c of p.changes) {
+    if (c.context) continue
+    if (c.rowTaken) out.push({ key: rowKey(c), field: null, index: c.index, label: c.label, taken: c.rowTaken })
+    for (const [field, edit] of Object.entries(c.sheetChanged ?? {}))
+      if (field in c.values) out.push({ key: rowKey(c), field, index: c.index, label: c.label, edit })
+  }
+  return out
+}
+
+/**
+ * What the person tells the assistant about the cells edited in the sheet since
+ * its proposal (pasted, or sent to its chat): which, what it read and what the
+ * sheet has now, to look at them again and update the proposal.
+ */
+export function tellText(p: Pick<Proposal, 'id' | 'reason' | 'changes'>, show: (field: string, value: CellValue | undefined) => string) {
+  const cells = sheetEdits(p).map(e =>
+    e.field && e.edit
+      ? t('{row} {field}: leído {read}, ahora {now}', {
+          row: e.label,
+          field: e.field,
+          read: show(e.field, e.edit.read) || t('vacío'),
+          now: show(e.field, e.edit.now) || t('vacío'),
+        })
+      : t('{row}: su fila sin usar {n} ya se usó en la hoja', { row: e.label, n: e.taken?.row ?? '' }),
+  )
+  return t(
+    'La hoja cambió después de tu propuesta {id} ({reason}): {cells}. Vuelve a mirar esas celdas (la foto, get_proposal) y actualiza la propuesta.',
+    { id: p.id, reason: p.reason, cells: cells.join('; ') },
+  )
 }
 
 /** The cells marked as missing on a preserved butterfly (its CAM or tube), as rowKey + field, with the row's index. */
@@ -466,12 +611,31 @@ export interface LocalCell {
  * arriving from the assistant meanwhile must not undo what was just typed.
  * Marked as the server will mark them (reviseChanges in server/assistant.mjs).
  */
-export function withLocal(p: Proposal, local: Map<string, LocalCell>, checks: Map<string, boolean> = new Map()): Proposal {
-  if (!local.size && !checks.size) return p
+export function withLocal(
+  p: Proposal,
+  local: Map<string, LocalCell>,
+  checks: Map<string, boolean> = new Map(),
+  /** Choices on cells edited in the sheet not saved yet. */
+  choices: Map<string, 'sheet' | 'proposal'> = new Map(),
+): Proposal {
+  if (!local.size && !checks.size && !choices.size) return p
   return {
     ...p,
     changes: p.changes.map(c => {
       const key = rowKey(c)
+      // The sheet's value kept, or the proposal's written over it; a value typed there is the proposal's.
+      const chosen = [
+        ...[...choices].map(([id, use]) => [...id.split('\u0000'), use]),
+        ...[...local].filter(([, cell]) => cell.use !== 'sheet').map(([id]) => [...id.split('\u0000'), 'proposal']),
+      ].filter(([k, field]) => k === key && c.sheetChanged?.[field])
+      if (chosen.length) {
+        const edited = { ...c.sheetChanged }
+        for (const [, field, use] of chosen) {
+          const { again: _, ...rest } = edited[field]
+          edited[field] = { ...rest, use: use as 'sheet' | 'proposal' }
+        }
+        c = { ...c, sheetChanged: edited }
+      }
       // Doubtful cells marked checked (or unmarked) and not saved yet.
       let doubts: Record<string, Doubt> | null = null
       for (const [id, checked] of checks) {
@@ -514,7 +678,7 @@ export function withLocal(p: Proposal, local: Map<string, LocalCell>, checks: Ma
 
 /** Rows to apply: those with something to write (a row whose every cell went back to the sheet is left out). */
 export function rowsToWrite(p: Pick<Proposal, 'changes'>): number[] {
-  return p.changes.filter(c => Object.keys(c.values).length && !c.context).map(c => c.index)
+  return p.changes.filter(c => writtenFields(c).length && !c.context).map(c => c.index)
 }
 
 /** How many of the assistant's values the person set back to the sheet's (kept aside, not written). */

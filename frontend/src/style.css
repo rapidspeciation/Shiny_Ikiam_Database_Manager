@@ -599,6 +599,114 @@ body.touch-bar-open main {
 .cell-bar-choices.is-complete .cell-bar-choice:hover:not(:disabled) {
   background: #fee2e2;
 }
+/*
+ * Edited in the sheet after the proposal read it: violet, with a "sheet" tag. Kept from the sheet: the
+ * proposal's value struck through after the sheet's; edited again after the person chose: a dashed edge.
+ */
+.proposal-sheet .tabulator-cell.is-sheet-edit,
+.legend.is-sheet-edit {
+  background: #f5f3ff;
+  color: #4c1d95;
+  box-shadow: none;
+  outline: 2px solid #8b5cf6;
+  outline-offset: -3px;
+}
+.proposal-sheet .tabulator-cell.is-sheet-edit.is-again {
+  outline-style: dashed;
+  background: #ede9fe;
+}
+.proposal-sheet .tabulator-cell.is-kept .aside {
+  color: #6d28d9;
+}
+.proposal-sheet .tabulator-cell .sheet-mark {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: #7c3aed;
+  color: white;
+  font-weight: 600;
+  font-size: 10px;
+  font-style: normal;
+  line-height: 14px;
+}
+.cell-bar-notes .is-edited b {
+  color: #6d28d9;
+}
+/* A new row whose pre-made row someone used meanwhile: violet, not written. */
+.proposal-sheet .tabulator-row.is-taken-row .tabulator-cell {
+  background: repeating-linear-gradient(135deg, #faf5ff 0 6px, #f3e8ff 6px 12px);
+  color: #6b21a8;
+}
+/* The banner of a proposal whose cells were edited in the sheet: to the next one, and telling the assistant. */
+.sheet-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  border-bottom: 1px solid #ddd6fe;
+  background: #f5f3ff;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: #5b21b6;
+}
+.sheet-banner-go {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+  text-align: left;
+}
+.sheet-banner-go:hover {
+  text-decoration: underline;
+}
+.sheet-banner-tell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  min-height: 24px;
+  border: 1px solid #a78bfa;
+  border-radius: 4px;
+  background: white;
+  padding: 0 8px;
+  color: #5b21b6;
+  font-weight: 500;
+}
+.sheet-banner-tell:hover:not(:disabled) {
+  background: #ede9fe;
+}
+.sheet-banner-tell:disabled {
+  opacity: 0.6;
+}
+/* The choices beside a cell edited in the sheet (the doubtful cell's box, violet). */
+.proposal-sheet .doubt-quick.is-sheet {
+  border-color: #c4b5fd;
+  background: #f5f3ff;
+  color: #4c1d95;
+}
+.proposal-sheet .doubt-quick.is-sheet .sheet-quick-what {
+  padding: 0 4px;
+  font-size: 11px;
+  color: #6d28d9;
+}
+.proposal-sheet .doubt-quick.is-sheet button {
+  border-color: #c4b5fd;
+}
+.proposal-sheet .doubt-quick.is-sheet button:hover {
+  background: #ede9fe;
+}
+.proposal-sheet .doubt-quick.is-sheet button.is-chosen {
+  border-color: #7c3aed;
+  background: #7c3aed;
+  color: white;
+}
+@media (pointer: coarse) {
+  .sheet-banner-tell {
+    min-height: 36px;
+    padding: 0 12px;
+    font-size: 13px;
+  }
+}
 /* Not written on the notebook line (the page's room, a template, the note's words): italic. */
 .proposal-sheet .tabulator-cell.is-inferred,
 .legend.is-inferred {

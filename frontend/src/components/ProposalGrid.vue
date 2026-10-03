@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { AlertTriangle, ArrowRight, Check, CircleHelp, Columns3, ListFilter, Plus, Sparkles, SquarePen, X } from 'lucide-vue-next'
+import { AlertTriangle, ArrowRight, Check, CircleHelp, Columns3, ListFilter, Plus, Send, Sparkles, SquarePen, Table2, X } from 'lucide-vue-next'
 import ProposalSheet, { type CellEdit } from './assistant/ProposalSheet.vue'
 import { api } from '../lib/api'
 import { displayValue } from '../lib/cells'
@@ -18,13 +18,16 @@ import {
   rowKey,
   rowsToWrite,
   sameAsFormula,
+  sheetEdits,
   sheetGroups,
   sampleWarnings,
+  tellText,
   uncheckedDoubts,
   unfilledUnreadable,
   withLocal,
   type LocalCell,
   type Proposal,
+  type SheetEdit,
   type ProposalChange,
 } from '../lib/proposals'
 import type { CellValue } from '../lib/types'
@@ -52,6 +55,11 @@ export type { Proposal, ProposalChange } from '../lib/proposals'
  * change), every line in the notebook's order ("solo cambios" hides the lines
  * that write nothing), the notebook's columns first and the template's NA /
  * NOT_COLLECTED columns folded.
+ * Cells someone edited in the sheet after the proposal (violet, "hoja") keep
+ * the sheet's value unless the person chooses the proposal's beside the cell;
+ * a banner counts them (a click goes to the next one), and «Avisar al
+ * asistente» sends the assistant which ones, to look at them again: into its T3
+ * chat when the app can, else copied to paste there.
  */
 const props = defineProps<{ proposal: Proposal; busy?: boolean }>()
 const emit = defineEmits<{
@@ -70,11 +78,14 @@ const editable = computed(() => pending.value && session.canEdit)
 const local = ref(new Map<string, LocalCell>())
 /** Doubtful cells marked (or unmarked) as reviewed and not yet saved. */
 const localChecks = ref(new Map<string, boolean>())
+/** Cells edited in the sheet: the sheet's value kept or the proposal's chosen, not yet saved. */
+const localChoices = ref(new Map<string, 'sheet' | 'proposal'>())
 /** The proposal as the server sends it (lean) made whole for the table. */
 const full = computed(() => expandProposal(props.proposal))
-const shown = computed(() => withLocal(full.value, local.value, localChecks.value))
+const shown = computed(() => withLocal(full.value, local.value, localChecks.value, localChoices.value))
 const queue = new Map<string, CellEdit>()
 const checkQueue = new Map<string, { key: string; field: string; checked: boolean }>()
+const choiceQueue = new Map<string, { key: string; field: string; use: 'sheet' | 'proposal' }>()
 let removes: string[] = []
 let adds: { sheet: string }[] = []
 /** What was sent lately: its echo from the server must not flash as the assistant's change. */
@@ -105,6 +116,16 @@ function onCheck(cells: { key: string; field: string }[]) {
   localChecks.value = next
   later(0)
 }
+/** A cell edited in the sheet: the sheet's value kept, or the proposal's written over it (shown at once, saved now). */
+function onSheet(cells: { key: string; field: string; use: 'sheet' | 'proposal' }[]) {
+  const next = new Map(localChoices.value)
+  for (const c of cells) {
+    next.set(cellId(c.key, c.field), c.use)
+    choiceQueue.set(cellId(c.key, c.field), c)
+  }
+  localChoices.value = next
+  later(0)
+}
 function later(ms = 500) {
   window.clearTimeout(timer)
   timer = window.setTimeout(() => void save(), ms)
@@ -116,11 +137,13 @@ async function save(): Promise<void> {
     await running
     return save()
   }
-  if (!queue.size && !removes.length && !adds.length && !checkQueue.size) return
+  if (!queue.size && !removes.length && !adds.length && !checkQueue.size && !choiceQueue.size) return
   const cells = [...queue.values()]
   const checks = [...checkQueue.values()]
-  const body = { cells, remove: removes, add: adds, check: checks }
+  const choices = [...choiceQueue.values()]
+  const body = { cells, remove: removes, add: adds, check: checks, sheet: choices }
   checkQueue.clear()
+  choiceQueue.clear()
   queue.clear()
   removes = []
   adds = []
@@ -137,6 +160,7 @@ async function save(): Promise<void> {
       for (const c of cells) sent.set(cellId(c.key, c.field), { value: c.value, at: now })
       dropSaved(cells)
       dropChecks(checks)
+      dropChoices(choices)
       savedRevision = Math.max(savedRevision, out.proposal.revision ?? 0)
       emit('replace', out.proposal)
       for (const r of out.rejected.slice(0, 3)) {
@@ -158,12 +182,14 @@ async function save(): Promise<void> {
         failed.value = true
         for (const c of cells) if (!queue.has(cellId(c.key, c.field))) queue.set(cellId(c.key, c.field), c)
         for (const c of checks) if (!checkQueue.has(cellId(c.key, c.field))) checkQueue.set(cellId(c.key, c.field), c)
+        for (const c of choices) if (!choiceQueue.has(cellId(c.key, c.field))) choiceQueue.set(cellId(c.key, c.field), c)
         removes.push(...body.remove)
         adds.push(...body.add)
         later(5000)
       } else {
         dropSaved(cells)
         dropChecks(checks)
+        dropChoices(choices)
         notify(errorText(e), 'error')
       }
     } finally {
@@ -188,9 +214,15 @@ function dropChecks(checks: { key: string; field: string }[]) {
   for (const c of checks) if (!checkQueue.has(cellId(c.key, c.field))) next.delete(cellId(c.key, c.field))
   localChecks.value = next
 }
+function dropChoices(choices: { key: string; field: string }[]) {
+  if (!choices.length) return
+  const next = new Map(localChoices.value)
+  for (const c of choices) if (!choiceQueue.has(cellId(c.key, c.field))) next.delete(cellId(c.key, c.field))
+  localChoices.value = next
+}
 onBeforeUnmount(() => {
   // Leaving the page (or the panel) still saves what was typed.
-  if (queue.size || removes.length || adds.length || checkQueue.size) void save()
+  if (queue.size || removes.length || adds.length || checkQueue.size || choiceQueue.size) void save()
 })
 
 function removeRow(key: string) {
@@ -311,6 +343,13 @@ const doubtfulToWrite = computed(() => uncheckedDoubts(shown.value, chosen.value
 const noSample = computed(() => sampleWarnings(shown.value))
 /** Unreadable cells nobody filled yet: applying leaves them as the sheet has them. */
 const unreadable = computed(() => unfilledUnreadable(shown.value))
+/** Cells edited in the sheet since the proposal (and new rows whose pre-made row was used): the banner's. */
+const edited = computed(() => sheetEdits(shown.value))
+const editedCells = computed(
+  () => edited.value.filter(e => e.field && e.edit) as { key: string; field: string; index: number; edit: SheetEdit }[],
+)
+const overwritten = computed(() => editedCells.value.filter(e => e.edit.use === 'proposal' && !e.edit.again).length)
+const takenRows = computed(() => edited.value.filter(e => e.taken).length)
 /** The dialog "Aplicar" opens while doubtful cells are unreviewed, or unreadable ones empty. */
 const asking = ref(false)
 /**
@@ -326,7 +365,9 @@ async function apply(how?: 'confirm' | 'skip', leave = false) {
     return
   }
   asking.value = false
-  emit('apply', chosen.value, Math.max(props.proposal.revision ?? 1, savedRevision) || undefined, how)
+  // With the rows whose cells the sheet keeps (nothing of theirs is written): the answer says what stayed.
+  const rows = [...new Set([...chosen.value, ...edited.value.map(e => e.index)])].filter(i => i >= 0)
+  emit('apply', rows, Math.max(props.proposal.revision ?? 1, savedRevision) || undefined, how)
 }
 /** The tables, to bring a doubtful cell into view. */
 const sheets = new Map<string, { focusCell: (key: string, field: string) => boolean }>()
@@ -338,14 +379,52 @@ const sheetRef = (id: string) => (el: unknown) => {
 const order = computed(() => cellOrder(tables.value.map(g => ({ keys: g.rows.map(rowKey), fields: g.columns }))))
 /** The cell gone to last, to go on from. */
 let lastReviewed: { key: string; field: string } | null = null
-/** Selects the doubtful (or unreadable) cell after `from` in the tables' order (after the last, the first). */
-function reviewNext(which: 'doubtful' | 'unreadable' = doubtful.value.length ? 'doubtful' : 'unreadable', from = lastReviewed) {
+/** Selects the doubtful (unreadable, edited in the sheet) cell after `from` in the tables' order (after the last, the first). */
+function reviewNext(
+  which: 'doubtful' | 'unreadable' | 'sheet' = doubtful.value.length ? 'doubtful' : 'unreadable',
+  from = lastReviewed,
+  /** After a choice beside a cell edited in the sheet: only those nobody chose for yet (none left: it stays). */
+  open = false,
+) {
   asking.value = false
-  const next = nextCell(which === 'doubtful' ? doubtful.value : unreadable.value, order.value, from)
+  // Cells edited in the sheet: those still to choose for first, then all of them again.
+  const undecided = editedCells.value.filter(e => !e.edit.use || e.edit.again)
+  const edits = undecided.length || open ? undecided : editedCells.value
+  const cells = which === 'doubtful' ? doubtful.value : which === 'sheet' ? edits : unreadable.value
+  const next = nextCell(cells, order.value, from)
   if (!next) return
   lastReviewed = next
   const id = tables.value.find(g => g.rows.some(c => rowKey(c) === next.key))?.id
   if (id) sheets.get(id)?.focusCell(next.key, next.field)
+}
+
+/**
+ * «Avisar al asistente»: which cells the sheet changed since its proposal, to look
+ * at them again and update it. Sent into the proposal's T3 chat when the app can
+ * (it is idle, and the app reaches T3), else copied to paste there.
+ */
+const telling = ref(false)
+async function tell() {
+  const text = tellText(shown.value, show)
+  telling.value = true
+  try {
+    const out = await api<{ sent: boolean; reason?: string }>(`chat/proposals/${props.proposal.id}/tell`, { method: 'POST', body: { text } })
+    if (out.sent) return notify(t('Enviado al chat del asistente'), 'success')
+    await copy(text, out.reason === 'busy' ? t('El asistente está respondiendo: el mensaje se copió para pegarlo en su chat cuando termine') : '')
+  } catch {
+    await copy(text, '')
+  } finally {
+    telling.value = false
+  }
+}
+async function copy(text: string, why: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+    notify(why || t('Mensaje copiado: pégalo en el chat del asistente'))
+  } catch {
+    // No clipboard here (an address without https): the text to copy by hand.
+    window.prompt(t('Copia este mensaje y pégalo en el chat del asistente'), text)
+  }
 }
 
 /** The key that checks a doubtful cell and goes on (ProposalSheet). */
@@ -411,6 +490,49 @@ const statusText = computed(
         {{ $tn(new Set(noSample.map(w => w.key)).size, '{n} preservada sin CAM o tubo', '{n} preservadas sin CAM o tubo') }}
       </span>
     </p>
+    <!-- Edited in the sheet after this proposal: how many, what applying does, to the next one; and telling the assistant. -->
+    <div v-if="pending && edited.length" class="sheet-banner" role="status">
+      <button
+        v-if="editedCells.length"
+        type="button"
+        class="sheet-banner-go"
+        :title="$t('Alguien editó estas celdas en la hoja después de la propuesta. Junto a cada una: mantener el valor de la hoja o usar el de la propuesta. Clic: ir a la siguiente')"
+        @click="reviewNext('sheet')"
+      >
+        <Table2 :size="13" class="shrink-0" />
+        {{
+          $tn(
+            editedCells.length,
+            '{n} celda se editó en la hoja después de esta propuesta',
+            '{n} celdas se editaron en la hoja después de esta propuesta',
+          )
+        }}
+        ·
+        <template v-if="!overwritten">{{ $t('se mantienen los valores de la hoja') }}</template>
+        <template v-else-if="overwritten === editedCells.length">{{ $t('se escriben los de la propuesta encima') }}</template>
+        <template v-else>{{ $tn(overwritten, '{n} con el valor de la propuesta', '{n} con el valor de la propuesta') }}</template>
+        · <span class="font-semibold">{{ $t('revisar') }}</span><ArrowRight :size="12" />
+      </button>
+      <span v-if="takenRows">
+        {{
+          $tn(
+            takenRows,
+            '{n} fila nueva sin escribir: su fila sin usar ya se usó en la hoja',
+            '{n} filas nuevas sin escribir: su fila sin usar ya se usó en la hoja',
+          )
+        }}
+      </span>
+      <button
+        v-if="editable"
+        type="button"
+        class="sheet-banner-tell"
+        :disabled="telling"
+        :title="$t('Le dice al asistente qué celdas cambió la hoja, para que las vuelva a mirar y corrija la propuesta (en su chat, o copiado para pegarlo)')"
+        @click="tell"
+      >
+        <Send :size="12" /> {{ $t('Avisar al asistente') }}
+      </button>
+    </div>
     <div v-for="g in tables" :key="g.id" class="border-b border-stone-100 last:border-b-0">
       <!-- Rows off the photo where the page's error repeats: their own table, each row's note says which line it follows. -->
       <p
@@ -470,7 +592,8 @@ const statusText = computed(
         @edit="onEdit"
         @remove="removeRow"
         @check="onCheck"
-        @next="from => reviewNext('doubtful', from)"
+        @sheet="onSheet"
+        @next="(from, which) => reviewNext(which ?? 'doubtful', from, which === 'sheet')"
         @notice="m => notify(m)"
       >
         <template v-if="!g.near && (groups.length > 1 || editable || g.template.length || g.quiet)" #default>
@@ -540,6 +663,12 @@ const statusText = computed(
               class="legend is-inferred"
               :title="$t('No está escrito en la línea: sale de la página, de la nota o de lo que el equipo escribe siempre')"
               >{{ $t('deducida') }}</span
+            >
+            <span
+              v-if="g.changes.some(c => c.sheetChanged || c.rowTaken)"
+              class="legend is-sheet-edit"
+              :title="$t('Editada en la hoja después de la propuesta: se mantiene el valor de la hoja salvo que elijas el de la propuesta')"
+              >{{ $t('editada en la hoja') }}</span
             >
             <span
               v-if="g.changes.some(c => c.formulaGives)"

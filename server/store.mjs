@@ -377,7 +377,34 @@ export class Store {
     const row = this.db.prepare('SELECT * FROM actions WHERE request_id=?').get(requestId);
     return row ? { action: this.action(row), status: row.status, ...(parse(row.result_json) || {}) } : null;
   }
+  /**
+   * Calls `fn` with the rows saved to the local copy (a sync, the sheet hook, a
+   * save of the app), as [{ id, sheet }], once per turn of the event loop.
+   * Returns the call that stops it.
+   */
+  watchRecords(fn) {
+    this.recordWatchers ??= new Set();
+    this.recordWatchers.add(fn);
+    return () => this.recordWatchers.delete(fn);
+  }
   persistRecord(record) {
+    if (this.recordWatchers?.size) {
+      if (!this.touched) {
+        this.touched = new Map();
+        setImmediate(() => {
+          const rows = [...this.touched.values()];
+          this.touched = null;
+          for (const fn of this.recordWatchers) {
+            try {
+              fn(rows);
+            } catch (e) {
+              console.error('Record watcher:', e.message);
+            }
+          }
+        });
+      }
+      this.touched.set(record.id, { id: record.id, sheet: record.sheet });
+    }
     this.db
       .prepare(
         `INSERT INTO records(id,sheet,row_num,values_json,formulas_json,identity_json,label,version,updated_at,missing,observed) VALUES(?,?,?,?,?,?,?,?,?,?,?)
@@ -683,7 +710,8 @@ export class Store {
       stored.observed === (this.hasObservation(sheet, read.values, read.formulas) ? 1 : 0)
     );
   }
-  recordExternalChanges(record, diffs) {
+  /** `via`: how the app saw them, 'sync' (a sheet read) or 'hook' (the sheet's edit trigger). */
+  recordExternalChanges(record, diffs, via = 'sync') {
     const id = randomUUID(),
       created = now();
     this.db
@@ -699,7 +727,7 @@ export class Store {
         'observed',
         'Snapshot comparison; intermediate edits and editor unknown',
         null,
-        null,
+        json({ via }),
         'sheets',
       );
     for (const d of diffs)
@@ -792,7 +820,7 @@ export class Store {
             updatedAt: now(),
             missing: false,
           };
-          this.recordExternalChanges(record, diffs);
+          this.recordExternalChanges(record, diffs, 'hook');
           this.persistRecord(record);
           changed++;
         }
