@@ -99,8 +99,9 @@ described in the note; in 2026 also a larva or egg found dead). Paper words:
 unk → Unknown; eaten / body eaten → Eaten; spider, "founded by spider" (= found)
 → Spider; ants; mantis → Other + note; deformed; heat or thermal shock → Heat
 stroke; disapp / desaparecido / escaped → Disappearance; preserved / killed →
-Killed_Preserved; only wings → Unknown - Only wings. Use the cause itself; the
-old habit of `Other` + note "Eaten" ended in 2024.
+Killed_Preserved; only wings → Unknown - Only wings; N/A on a dead butterfly →
+Unknown. Use the cause itself; the old habit of `Other` + note "Eaten" ended
+in 2024.
 
 - **Disappearance** is a cage-count outcome: butterflies no longer seen are
   closed in bulk with the sweep day as Death_date (not a real death date). For

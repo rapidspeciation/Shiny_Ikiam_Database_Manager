@@ -63,10 +63,16 @@ Propose everything readable; doubt is a highlight, not an omission.
   sure. A clear value that looks wrong (a date out of stage order, adults >
   pupae) is sure: send it as written and point it out.
 - **Cannot read it at all**: mark it unreadable as the tool describes.
-- **Look-alikes**: 0/O, 1/I/7, 5/S, 8/B, 2/Z, 6/G, 4/9, 3/8, `+`/1; ♀/♂
-  written small. Before reading digits, compare this hand's 1 and 7 (and 3/8)
-  on clear cells of the same page. Copy IDs as written (`600` for `6OO`;
-  `5OS` and `50S` are two butterflies): the tool looks among look-alikes.
+- **On the cell**: the table highlights cells, so a doubt goes on the cell it
+  is about, with its other readings (`¿19/9?` → alternative `19/9`); one
+  about which line a value belongs to goes on that value, its `reasons`
+  naming the other line ("may be S2D's"). Words in `raw` reach the person
+  only as the line's text.
+- **Look-alikes**: 0/O, 1/I/7, 1/4, 1/2, 3/7, 2/7, 5/S, 8/B, 2/Z, 6/G, 4/9,
+  3/8, `+`/1; ♀/♂ written small. Before reading digits, compare this hand's 1
+  and 7 (and 3/8) on clear cells of the same page, zoomed. Copy IDs as
+  written (`600` for `6OO`; `5OS` and `50S` are two butterflies): the tool
+  looks among look-alikes.
 - **Crossed out**: a crossed-out date or text is not the value: the one
   beside or above it is. Counts are different (below).
 
@@ -75,9 +81,13 @@ Propose everything readable; doubt is a highlight, not an omission.
 - **Dates** day first, as written (`17/9`, `4-8`, `19-6-23`), without adding
   the year. `~2/7` and `29/6?` are that date, doubtful; `2/9+3/9` is the
   first day.
-- **Ditto marks** (`"`, `ll`, `||`, `〃`, a wavy line) and a brace `}` over
-  lines: the value in **every** line they cover. A date written once for
-  several lines applies to all. A ditto under a blank cell repeats the last
+- **Braces and dittos first** (`"`, `ll`, `||`, `〃`, a wavy line, a brace
+  `}`): before filling lines, list each run per column: its value and its
+  first and last ID. The run is where the brace's ends are; its value can sit
+  mid-span. Then give the value to every line of the run, or once in the
+  tool's `spans`. A date written once for several lines applies to all; a
+  capture day written once in a bracketed note over wild lines is each
+  line's `Intro2Insectary_date`. A ditto under a blank cell repeats the last
   value written above; an arrow `↑`/`↗` under a note repeats the note.
 - **Dashes and blanks**: `—` or `-` alone is `"NA"`; an empty cell: leave the
   column out.
@@ -115,16 +125,16 @@ Propose everything readable; doubt is a highlight, not an omission.
 - **Death causes**: `unk` = Unknown, `eaten` = Eaten, `spider` = Spider,
   `ants` = Ants, `disapp` = Disappearance, `deformed` = Deformed,
   `heat shock` = Heat stroke, `preserved` = Killed_Preserved, `only wings` =
-  Unknown - Only wings. More paper words: data-rules
-  `reference/insectary-individuals.md`.
+  Unknown - Only wings, `N/A` on a dead butterfly = Unknown. More paper
+  words: data-rules `reference/insectary-individuals.md`.
 - **Notes** in English: translate faithfully ("3 pupas muertas" → "3 pupae
   dead"), keeping IDs, codes and names. A place written short is its list
   name (Cavernas, C.T.C → Cavernas Templo de Ceremonia). More: data-rules
   `reference/notes.md`.
-- **Right-hand-page notes** are written smaller and drift up half a line:
-  give each note to the ID whose line its first word starts on; one note per
-  clutch or butterfly; a bracket or arrow shares it between the lines it
-  spans.
+- **Which line a value is on**: in the Emergidos notebooks, dead dates and
+  notes are often written low, on the ruling under their line: they belong to
+  the line above that ruling. One note per clutch or butterfly; a bracket or
+  arrow shares it between the lines it spans.
 
 ## The notebooks (kind → sheet)
 
@@ -248,8 +258,10 @@ or one strip per page.
   `notebook-reader` subagent per page (`general-purpose` if that type is
   missing), **all in one message** (several Agent calls in the same reply,
   `run_in_background: false`), each with its notebook kind, columns (from
-  the `match_notebook` description) and strip paths. The reading is blind:
-  none of your readings and none of the sheet's values.
+  the `match_notebook` description), the photo path (for `--zoom`) and strip
+  paths. The reading is blind: none of your readings and none of the sheet's
+  values. Each answer ends with a line on how this hand writes 1/7 and 3/8:
+  keep it for the reviewers.
 - Check each page's lines (stages in step) and call `match_notebook` per page
   as the answers arrive.
 - Without subagents (Codex): read the pages yourself, one after another.
@@ -257,11 +269,13 @@ or one strip per page.
 ## Verification: a second reading only when needed
 
 Skip it when the photo is clear and nothing is doubtful: no doubtful or
-unreadable cells, no `problems`, plausible lines. Otherwise re-read only what
-is likely wrong:
+unreadable cells, no `differs`, no `problems`, plausible lines. Otherwise
+re-read only what is likely wrong:
 
 1. **The cells to re-read**:
    - doubtful and unreadable cells and `problems`;
+   - `differs` cells: the sheet's value was often typed from this same page,
+     so each is re-read on a zoomed crop;
    - cells that fail plausibility (adults ≤ pupae ≤ larvae ≤ eggs; laid ≤
      hatch ≤ pupa ≤ emergence; counts on an "all died" / "no hatch" line; a
      line without `ins`/`lab` among lines that have it);
@@ -274,10 +288,11 @@ is likely wrong:
 3. Start the `notebook-reviewer` subagents (`general-purpose` if missing)
    **all in one message** (`run_in_background: false`): one per block of
    lines, each with only its strips, the photo path (for `--zoom`), the
-   proposal id and the lines (by ID) and columns to read. The reading is
-   blind: none of your readings and no values from the proposal (a reviewer
-   told "ins/lab" read "ins/lab" where the page says "ins/oda"). Without
-   subagents (Codex): re-read those cells yourself on zoomed crops.
+   proposal id, the lines (by ID) and columns to read, and the line on how
+   this hand writes 1/7 and 3/8. The reading is blind: none of your
+   readings and no values from the proposal (a reviewer told "ins/lab" read
+   "ins/lab" where the page says "ins/oda"). Without subagents (Codex):
+   re-read those cells yourself on zoomed crops.
 4. Where the photo settles a disagreement (look at a zoomed crop yourself),
    correct the same proposal with `update_proposal` (only the cells that
    change). Where it does not, the cell stays doubtful. In the summary say how
