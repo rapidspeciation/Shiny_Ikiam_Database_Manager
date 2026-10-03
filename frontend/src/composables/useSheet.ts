@@ -1,4 +1,4 @@
-import { computed, type Ref, watch } from 'vue'
+import { computed, type Ref, ref, watch } from 'vue'
 import { buildOptions, listColumn } from '../lib/options'
 import { errorText, notify } from '../lib/notice'
 import { usePending } from '../stores/pending'
@@ -9,9 +9,10 @@ const USES_STOCKS = new Set(['Insectary_data', 'Collection_data', 'Melinaea_eggs
 
 /**
  * Loads one sheet plus the reference sheets used for its dropdowns, and keeps
- * the options and pending new rows for it in sync.
+ * the options and pending new rows for it in sync. With `active`, the sheet is
+ * read only while it is true (the Buscador shows search results meanwhile).
  */
-export function useSheet(module: Ref<string>) {
+export function useSheet(module: Ref<string>, active: Ref<boolean> = ref(true)) {
   const tables = useTables()
   const pending = usePending()
 
@@ -81,7 +82,7 @@ export function useSheet(module: Ref<string>) {
     return rows.slice(last + 1).find(r => !r.observed)?.formulas || []
   })
 
-  watch(module, () => load(), { immediate: true })
+  watch([module, active], () => active.value && load(), { immediate: true })
 
   return {
     table,

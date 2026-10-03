@@ -35,6 +35,7 @@ import {
 } from './monitoring.mjs';
 import { monitoringRowsCsv, pointsCsv, walksGpx, wikilocCorrections } from './monitoring-export.mjs';
 import { idSuggestions, tableChanges, tablePayload, tableRevision } from './grid.mjs';
+import { searchAll, searchRange } from './search.mjs';
 import { extendPremadeRows } from './premade.mjs';
 import { addClutchCheck, clutchDay, clutchState, removeClutchCheck } from './clutches.mjs';
 import { createSheetHook } from './hooks.mjs';
@@ -584,6 +585,9 @@ export async function createApp(config = {}, options = {}) {
       }
       if (method === 'GET' && path === '/api/table/changes')
         return json(res, 200, tableChanges(store, String(query.module || ''), query.since));
+      // The Buscador: a text in every sheet, with the rows around each sheet's match; more rows by range.
+      if (method === 'GET' && path === '/api/search') return json(res, 200, searchAll(store, query));
+      if (method === 'GET' && path === '/api/search/rows') return json(res, 200, searchRange(store, query));
       if (method === 'GET' && path === '/api/ids') return json(res, 200, idSuggestions(store, query));
       // Clutches (cards): the counts' sum formulas and last changes; the day's checks and changes; marking a check.
       if (method === 'GET' && path === '/api/clutches/state') return sendTagged(res, clutchState(store));

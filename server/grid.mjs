@@ -38,7 +38,7 @@ export function tablePayload(store, module) {
 }
 
 /** One row as an array of values in column order, plus the indexes of formula cells. */
-function wireRow(keys, r) {
+export function wireRow(keys, r) {
   const values = JSON.parse(r.values_json);
   const formulas = JSON.parse(r.formulas_json);
   return {

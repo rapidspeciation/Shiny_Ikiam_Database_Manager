@@ -16,6 +16,8 @@ export default {
   // server/grid.mjs, server/index.mjs, server/schema.mjs
   'El ID inicial debe ser como CAM078277 o FS00001234': 'The first ID must look like CAM078277 or FS00001234',
   'Hoja desconocida': 'Unknown sheet',
+  // server/search.mjs
+  'Rango de filas no válido': 'Invalid range of rows',
   'Los valores deben ser un objeto': 'The values must be an object',
   // server/history.mjs
   'No se encontró ese guardado en el historial': 'That save was not found in the history',

@@ -39,22 +39,38 @@ The tables behave like Google Sheets:
 
 ## Buscador — `#/tablas`
 
-Any sheet of the workbook as a spreadsheet.
+A text searched in every sheet, as Google Sheets' Ctrl+F, or any sheet whole
+as a spreadsheet.
 
-- «Hoja»: choose the sheet (grouped: Insectario, Campo, Cruces, Experimentos,
-  Muestras, Fotos, Referencia; row counts in grey).
-- «Buscar en todas las columnas»: ID, CAM, tube, species…
-- «Filas vacías preasignadas»: also show the pre-made empty rows.
-- «Revisión de datos» → the Revisión tab filtered to this sheet.
-- «Añadir fila» (a new row at the top, marked «nueva»); «Crear filas
-  preasignadas» (reviewer/admin: asks how many, max 500; copies the last
-  pre-made row's formulas, dropdowns and, in Insectary_data, the next IDs).
-- «Rellenar» (= Ctrl+D), reload, download CSV, open the sheet in Google Sheets.
+- «Buscar en todas las hojas»: any part of any cell, upper or lower case
+  (Insectary ID, CAM, tube, clutch, species, a word of a note; dates as shown,
+  `14-Aug-25`). The results list each sheet with the text, best first: the
+  sheet where it is the row's ID (Insectary_data for an Insectary ID), then
+  sheets where it fills a whole cell, then the rest. «Hoja primero» puts a
+  sheet at the top.
+- Each sheet shows the rows around its newest match (the one where it is an
+  ID, when there is one), editable as in the whole sheet; the cells with the
+  text are green and the match row is marked. Scrolling up or down loads more
+  rows of that sheet, so neighbouring rows with the same mistake show up
+  (tubes typed FS5… for FS50…). ↑ ↓ go to the other matches ("3 de 17").
+- «Hoja completa» opens that sheet whole at the match row; «Resultados de
+  «…»» goes back to the results.
+- With the box empty: «Hoja» (grouped: Insectario, Campo, Cruces,
+  Experimentos, Muestras, Fotos, Referencia; row counts in grey), «Filas
+  vacías preasignadas» (also show the pre-made empty rows), «Revisión de
+  datos» (the Revisión tab filtered to this sheet), «Añadir fila» (a new row
+  at the top, marked «nueva»), «Crear filas preasignadas» (reviewer/admin:
+  asks how many, max 500; copies the last pre-made row's formulas, dropdowns
+  and, in Insectary_data, the next IDs), «Rellenar» (= Ctrl+D), reload,
+  download CSV, open the sheet in Google Sheets.
 - A banner warns when the sheet's header row changed in Google Sheets (a
   missing/duplicate column blocks reading and saving that sheet).
 
-Links: `#/tablas?hoja=<sheet>&buscar=<text>`, e.g.
-`https://ithomiini-ikiam.com/#/tablas?hoja=Insectary_data&buscar=N4D`.
+Links: `#/tablas?buscar=<text>` searches every sheet (with `&hoja=<sheet>`
+that sheet comes first); `#/tablas?hoja=<sheet>&fila=<row>` opens a sheet at
+a row. E.g.
+`https://ithomiini-ikiam.com/#/tablas?hoja=Insectary_data&buscar=N4D`,
+`https://ithomiini-ikiam.com/#/tablas?hoja=Collection_data&fila=8215`.
 Sheet names are exact (`Insectary_data`, `Collection_data`,
 `Insectary_stocks`, `SamplingDay_data`, `Wing_tissue`, `Photo_links`,
 `Lists`, `Taxonomy_v18Jun25`, `CRISPR`, `Melinaea_crosses`, …; the full list

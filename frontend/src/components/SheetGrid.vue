@@ -61,6 +61,10 @@ const props = withDefaults(
     createFormulas?: string[]
     /** Row ids to highlight, e.g. the IDs a person just loaded. */
     highlight?: string[]
+    /** Text searched: the cells showing it are marked (the Buscador). */
+    mark?: string
+    /** Row id brought into view and marked, e.g. a search match or a row opened from a link. */
+    focusRow?: string | null
   }>(),
   {
     creates: () => [],
@@ -73,9 +77,17 @@ const props = withDefaults(
     rowOptions: () => ({}),
     createFormulas: () => [],
     highlight: () => [],
+    mark: '',
+    focusRow: null,
   },
 )
-const emit = defineEmits<{ notice: [message: string]; removeCreate: [clientId: string]; select: [id: string | null] }>()
+const emit = defineEmits<{
+  notice: [message: string]
+  removeCreate: [clientId: string]
+  select: [id: string | null]
+  /** Scrolled near the first or last row shown, for views that load more rows then (the Buscador). */
+  edge: [side: 'top' | 'bottom']
+}>()
 
 type GridRow = Record<string, CellValue> & { __id: string; __row: number | null; __new: string | null }
 
@@ -292,8 +304,12 @@ function decorate(cell: CellComponent) {
   el.classList.toggle('is-repeated', !!check.repeated)
   el.classList.toggle('is-invalid', !!check.invalid)
   el.classList.toggle('has-choices', hasChoices(field) && canEdit(data, field))
+  const mark = markText()
+  el.classList.toggle('is-match', !!mark && displayValue(cell.getValue(), fieldIndex.get(field)).toLowerCase().includes(mark))
   el.title = error || check.repeated || check.invalid || (formula ? t('Fórmula de la hoja (solo lectura)') : '')
 }
+
+const markText = () => (props.mark || '').trim().toLowerCase()
 
 function formatter(cell: CellComponent) {
   decorate(cell)
@@ -567,7 +583,9 @@ function build() {
     // Widths change from the header's borders only (see gridKit): a finger on the rows scrolls.
     columnDefaults: { headerSortTristate: true, resizable: 'header' },
     rowFormatter: (row: RowComponent) => {
-      row.getElement().classList.toggle('is-highlight', props.highlight.includes((row.getData() as GridRow).__id))
+      const id = (row.getData() as GridRow).__id
+      row.getElement().classList.toggle('is-highlight', props.highlight.includes(id))
+      row.getElement().classList.toggle('is-focus', id === props.focusRow)
     },
     // A custom paste action is supported at runtime but missing from the type definitions.
   } as unknown as ConstructorParameters<typeof Tabulator>[1])
@@ -616,10 +634,106 @@ function build() {
   })
   table.on('tableBuilt', () => {
     built = true
+    focusPending = !!props.focusRow
     if (refreshWhenBuilt) refresh()
-    else applySearch()
+    else {
+      applySearch()
+      showFocus()
+    }
+  })
+  table.on('scrollVertical', (top: number) => {
+    const box = holder()
+    if (!box) return
+    const near = 4 * 28
+    if (top < near) emit('edge', 'top')
+    else if (box.scrollHeight - top - box.clientHeight < near) emit('edge', 'bottom')
   })
 }
+
+const holder = () => host.value?.querySelector<HTMLElement>('.tabulator-tableholder') ?? null
+
+/**
+ * Rows about to be added (the Buscador loading while scrolling): the selected
+ * cell stays selected and, for rows added above the ones on screen, the row at
+ * the top stays where it is, instead of the view jumping by the rows added.
+ */
+let anchor: { id: string; offset: number } | null = null
+let keepSelected = false
+function keepView(above: boolean) {
+  keepSelected = true
+  if (!above) return
+  const box = holder()
+  const row = table?.getRows('visible')[0]
+  if (!box || !row) return
+  anchor = { id: (row.getData() as GridRow).__id, offset: row.getElement().getBoundingClientRect().top - box.getBoundingClientRect().top }
+}
+function restoreView() {
+  const kept = anchor
+  anchor = null
+  const box = holder()
+  if (!kept || !box || !table?.getRow(kept.id)) return
+  // At the top first, then moved by where it was (a row half out of view stays half out).
+  table
+    .scrollToRow(kept.id, 'top', true)
+    .then(() => {
+      const row = table?.getRow(kept.id)
+      if (row) box.scrollTop += row.getElement().getBoundingClientRect().top - box.getBoundingClientRect().top - kept.offset
+    })
+    .catch(() => {})
+}
+
+/** Selects one cell (as a click would, without taking the keyboard's focus); not on touch screens' grids that refuse it. */
+function selectCell(cell: CellComponent) {
+  try {
+    ;(table as unknown as { addRange: (a: CellComponent, b: CellComponent) => void }).addRange(cell, cell)
+  } catch {
+    /* no range selection */
+  }
+}
+
+/**
+ * The focused row brought into view (centred) once it is in the grid, its cell
+ * showing the searched text selected, so the bar above shows that cell.
+ */
+let focusPending = false
+function showFocus() {
+  const id = props.focusRow
+  const row = id && table && built ? table.getRow(id) : null
+  if (!focusPending || !table || !row) return
+  focusPending = false
+  table.scrollToRow(row, 'center', false).catch(() => {})
+  const mark = markText()
+  const data = row.getData() as GridRow
+  const found = mark ? props.columns.find(f => displayValue(data[f.key], f).toLowerCase().includes(mark))?.key : undefined
+  const key = found || props.frozen[0] || props.columns[0]?.key
+  if (!key) return
+  selectCell(row.getCell(key))
+  // A match in a column off to the right (a tube, a note) is brought into view too.
+  if (found && !props.frozen.includes(found)) table.scrollToColumn(found, 'middle', false).catch(() => {})
+}
+
+/** The selected cell, put back after the rows are drawn again (Tabulator goes back to the first cell). */
+function keptSelection() {
+  const cell = table && built ? selectedCell(table) : null
+  const id = cell ? (cell.getData() as GridRow).__id : null
+  const key = cell?.getField()
+  return () => {
+    const row = id && key && table ? table.getRow(id) : null
+    if (row && fieldIndex.has(key!)) selectCell(row.getCell(key!))
+  }
+}
+watch(
+  () => props.focusRow,
+  (now, before) => {
+    for (const id of [before, now]) {
+      // Tabulator answers false for a row it does not have.
+      const row = id && table ? table.getRow(id) : null
+      if (row) row.getElement().classList.toggle('is-focus', id === now)
+    }
+    focusPending = !!now
+    showFocus()
+  },
+)
 
 /** Redraw all rows from the stores, keeping scroll position and filters. */
 let active = true
@@ -641,12 +755,22 @@ function refresh() {
     refreshAfterEdit = true
     return
   }
+  const reselect = keepSelected ? keptSelection() : null
+  keepSelected = false
   if (!updateChanged())
     table.replaceData(buildData()).then(() => {
       applySearch()
       showHighlight()
+      restoreView()
+      reselect?.()
+      showFocus()
     })
-  else showHighlight()
+  else {
+    // Nothing was added above (or the rows were only updated): the view stays as it is.
+    anchor = null
+    showHighlight()
+    showFocus()
+  }
 }
 
 /** Newly highlighted rows (IDs just loaded) are scrolled into view once drawn. */
@@ -712,7 +836,12 @@ watch([rules, repeated, () => JSON.stringify(pending.problems), () => JSON.strin
   if (table && built) for (const row of table.getRows('visible')) decorateRow(row)
 })
 
-defineExpose({ refresh, fillDown })
+// Cells showing the searched text are marked again when it changes.
+watch(markText, () => {
+  if (table && built) for (const row of table.getRows('visible')) decorateRow(row)
+})
+
+defineExpose({ refresh, fillDown, keepView })
 </script>
 
 <template>
