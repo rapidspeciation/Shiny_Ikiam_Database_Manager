@@ -63,6 +63,11 @@ run of tubes), show:
 The person decides; add each decision to the same proposal
 (`update_proposal`) and apply when they say so.
 
+A value corrected for a typing slip (a digit missing, two swapped, another
+prefix) is often wrong the same way in the rows typed with it: check the same
+column in the rows around, and propose those as a separate group, saying
+which correction they follow.
+
 ### Not sheet changes
 
 | Issue | Where it is solved |
