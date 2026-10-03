@@ -35,6 +35,8 @@ import { useTables } from '../stores/tables'
 import { listProblem, repeats, verificationsFor } from '../lib/verifications'
 import RowDrawer from './RowDrawer.vue'
 import CellBar from './CellBar.vue'
+import { History } from 'lucide-vue-next'
+import type { HistoryTarget, Stored } from '../lib/history'
 import { locale, t, tn } from '../lib/i18n'
 
 /**
@@ -65,6 +67,18 @@ const props = withDefaults(
     mark?: string
     /** Row id brought into view and marked, e.g. a search match or a row opened from a link. */
     focusRow?: string | null
+    /** The focused row's cell selected (when no searched text marks one), e.g. the cell a past view steps through. */
+    focusField?: string | null
+    /** Nothing can be edited (a sheet as it was): no editors, no row drawer, only Copiar on touch screens. */
+    readonly?: boolean
+    /** A sheet as it was: per row id, the cells that differ from now, with their value now (marked, "Ahora: …"). */
+    compare?: Record<string, Record<string, Stored>>
+    /** Per row id, cells outlined: those the save looked at changed. */
+    touched?: Record<string, string[]>
+    /** Row ids greyed: not created yet at the moment shown. */
+    absent?: string[]
+    /** A "Historial" action for the selected cell (cell bar, right click, touch bar): emits `history`. */
+    cellHistory?: boolean
   }>(),
   {
     creates: () => [],
@@ -79,6 +93,12 @@ const props = withDefaults(
     highlight: () => [],
     mark: '',
     focusRow: null,
+    focusField: null,
+    readonly: false,
+    compare: () => ({}),
+    touched: () => ({}),
+    absent: () => [],
+    cellHistory: false,
   },
 )
 const emit = defineEmits<{
@@ -87,6 +107,8 @@ const emit = defineEmits<{
   select: [id: string | null]
   /** Scrolled near the first or last row shown, for views that load more rows then (the Buscador). */
   edge: [side: 'top' | 'bottom']
+  /** The history of a cell (or, field null, of its whole row) was asked for. */
+  history: [target: HistoryTarget]
 }>()
 
 type GridRow = Record<string, CellValue> & { __id: string; __row: number | null; __new: string | null }
@@ -118,6 +140,7 @@ function isFormula(data: GridRow, field: string) {
 function canEdit(data: GridRow, field: string) {
   const def = fieldIndex.get(field)
   return (
+    !props.readonly &&
     session.canEdit &&
     !!def &&
     !def.readonly &&
@@ -306,7 +329,23 @@ function decorate(cell: CellComponent) {
   el.classList.toggle('has-choices', hasChoices(field) && canEdit(data, field))
   const mark = markText()
   el.classList.toggle('is-match', !!mark && displayValue(cell.getValue(), fieldIndex.get(field)).toLowerCase().includes(mark))
-  el.title = error || check.repeated || check.invalid || (formula ? t('Fórmula de la hoja (solo lectura)') : '')
+  // A sheet as it was: the cells that differ from now, and those the save changed.
+  const now = props.compare[data.__id]
+  const then = !!now && field in now
+  el.classList.toggle('is-then', then)
+  el.classList.toggle('is-touched', !!props.touched[data.__id]?.includes(field))
+  el.title =
+    (then ? t('Ahora: {value}', { value: shownStored(now[field], field) }) : '') ||
+    error ||
+    check.repeated ||
+    check.invalid ||
+    (formula ? t('Fórmula de la hoja (solo lectura)') : '')
+}
+
+/** A value as the log keeps it, as the grid shows it ("vacío" when empty, a formula as its text). */
+function shownStored(value: Stored | undefined, field: string) {
+  if (value && typeof value === 'object') return t('fórmula {formula}', { formula: value.formula })
+  return displayValue(value ?? null, fieldIndex.get(field)) || t('vacío')
 }
 
 const markText = () => (props.mark || '').trim().toLowerCase()
@@ -365,8 +404,10 @@ function columnDefs(): ColumnDefinition[] {
     formatter: rowNumberFormatter as never,
     cssClass: 'row-number',
     cellClick: (_e, cell) => {
-      drawerId.value = (cell.getData() as GridRow).__id
+      // A sheet as it was has no row to open: the drawer edits the row as it is now.
+      if (!props.readonly) drawerId.value = (cell.getData() as GridRow).__id
     },
+    ...historyMenu(),
   }
   return [
     rowColumn,
@@ -395,8 +436,30 @@ function columnDefs(): ColumnDefinition[] {
         : {}),
       sorter: field.type === 'number' || field.type === 'date' ? mixedSorter : 'string',
       ...editorFor(field),
+      ...historyMenu(),
     })) as ColumnDefinition[]),
   ]
+}
+
+/** A cell's history, asked for from the bar, the touch bar or a right click; new rows have none yet. */
+function askHistory(id: string | undefined, field: string | null) {
+  const r = id ? rowIndex.get(id) : undefined
+  if (!r) return notice(t('Una fila nueva no tiene historial todavía'))
+  emit('history', { module: props.module, recordId: r.id, field: field === '__row' ? null : field, row: r.row, label: labelOf(r.values) })
+}
+const historyOfCell = (cell: CellComponent | null, wholeRow = false) =>
+  cell && askHistory((cell.getData() as GridRow).__id, wholeRow ? null : cell.getField())
+
+/** Right click on a cell (computers): copy, and the cell's or row's history. */
+function historyMenu(): Partial<ColumnDefinition> {
+  if (!props.cellHistory || touchDevice) return {}
+  return {
+    contextMenu: [
+      { label: () => t('Copiar'), action: () => table?.copyToClipboard('range') },
+      { label: () => t('Historial de esta celda'), action: (_e: unknown, cell: CellComponent) => historyOfCell(cell) },
+      { label: () => t('Historial de toda la fila'), action: (_e: unknown, cell: CellComponent) => historyOfCell(cell, true) },
+    ],
+  } as unknown as Partial<ColumnDefinition>
 }
 
 function mixedSorter(a: CellValue, b: CellValue) {
@@ -519,6 +582,11 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
   if (!def) return null
   const editable = canEdit(data, key)
   const total = isSumField(props.module, key) ? sumTotal(data[key]) : null
+  const now = props.compare[data.__id]
+  const notes: CellBarInfo['notes'] = []
+  if (total !== null) notes.push({ text: `= ${total}`, kind: 'total' })
+  if (now && key in now) notes.push({ label: t('Ahora'), text: shownStored(now[key], key), kind: 'edited' })
+  else if (props.absent.includes(data.__id)) notes.push({ text: t('Esta fila todavía no existía'), kind: 'hint' })
   return {
     index: data.__id,
     field: key,
@@ -527,8 +595,14 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
     text: editText(data[key], def),
     editable,
     multiline: longText(key) && !hasChoices(key),
-    readonly: editable ? '' : isFormula(data, key) ? t('Fórmula de la hoja (solo lectura)') : t('Solo lectura'),
-    notes: total === null ? [] : [{ text: `= ${total}`, kind: 'total' }],
+    readonly: editable
+      ? ''
+      : props.readonly
+        ? t('Cómo estaba la hoja (solo lectura)')
+        : isFormula(data, key)
+          ? t('Fórmula de la hoja (solo lectura)')
+          : t('Solo lectura'),
+    notes,
   }
 }
 const showBar = () => (bar.value = table ? describe(selectedCell(table)) : null)
@@ -586,6 +660,7 @@ function build() {
       const id = (row.getData() as GridRow).__id
       row.getElement().classList.toggle('is-highlight', props.highlight.includes(id))
       row.getElement().classList.toggle('is-focus', id === props.focusRow)
+      row.getElement().classList.toggle('is-absent', props.absent.includes(id))
     },
     // A custom paste action is supported at runtime but missing from the type definitions.
   } as unknown as ConstructorParameters<typeof Tabulator>[1])
@@ -603,7 +678,12 @@ function build() {
   fill = !container
     ? null
     : touchDevice
-      ? attachTouchSheet(table, container, { canEdit: editableCell, notice })
+      ? attachTouchSheet(table, container, {
+          canEdit: editableCell,
+          notice,
+          readonly: props.readonly,
+          extra: props.cellHistory ? [{ label: 'Historial', action: cell => historyOfCell(cell) }] : [],
+        })
       : attachFillHandle(table, container, {
           canEdit: editableCell,
           onFilled: rows => notice(tn(rows, 'Copiado a {n} fila', 'Copiado a {n} filas')),
@@ -704,7 +784,9 @@ function showFocus() {
   table.scrollToRow(row, 'center', false).catch(() => {})
   const mark = markText()
   const data = row.getData() as GridRow
-  const found = mark ? props.columns.find(f => displayValue(data[f.key], f).toLowerCase().includes(mark))?.key : undefined
+  const found =
+    (mark ? props.columns.find(f => displayValue(data[f.key], f).toLowerCase().includes(mark))?.key : undefined) ??
+    (props.focusField && fieldIndex.has(props.focusField) ? props.focusField : undefined)
   const key = found || props.frozen[0] || props.columns[0]?.key
   if (!key) return
   selectCell(row.getCell(key))
@@ -846,7 +928,20 @@ defineExpose({ refresh, fillDown, keepView })
 
 <template>
   <div class="sheet-grid flex flex-col" :style="{ height }">
-    <CellBar :info="bar" @save="saveFromBar" @back="move => table && backToGrid(table, move)" />
+    <CellBar :info="bar" @save="saveFromBar" @back="move => table && backToGrid(table, move)">
+      <template v-if="cellHistory" #actions>
+        <button
+          type="button"
+          class="cell-bar-action"
+          :disabled="!bar || !rowIndex.has(bar.index)"
+          :title="$t('Historial de esta celda: cada cambio, quién y cuándo')"
+          @mousedown.prevent
+          @click="bar && askHistory(bar.index, bar.field)"
+        >
+          <History :size="14" /> <span class="max-sm:hidden">{{ $t('Historial') }}</span>
+        </button>
+      </template>
+    </CellBar>
     <!-- The grid's own box: the fill handle and the copied cells' border are placed in it, so they move with the grid. -->
     <div class="relative min-h-0 flex-1">
       <div ref="host" class="h-full" tabindex="-1" />

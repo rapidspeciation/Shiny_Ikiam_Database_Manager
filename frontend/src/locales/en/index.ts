@@ -13,6 +13,7 @@ import home from './home'
 import instructions from './instructions'
 import monitoring from './monitoring'
 import review from './review'
+import search from './search'
 import server from './server'
 import serverBuilt from './server-built'
 
@@ -26,6 +27,7 @@ export const en: Record<string, string> = Object.assign(
   home,
   review,
   history,
+  search,
   assistant,
   instructions,
   account,

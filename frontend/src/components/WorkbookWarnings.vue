@@ -7,11 +7,14 @@ defineProps<{ sheet?: string }>()
 </script>
 
 <template>
-  <details class="border-t border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-950">
+  <details class="border-t border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-950 max-sm:px-3 max-sm:py-1.5">
+    <!-- One line on a phone (cut short), so the grid keeps the screen. -->
     <summary class="flex cursor-pointer items-center gap-1.5 font-medium">
-      <TriangleAlert :size="14" />
-      {{ $t('Avisos del libro de Google Sheets ({n}) — fórmulas por corregir en la hoja', { n: WORKBOOK_WARNINGS.length }) }}
-      <template v-if="sheet && WORKBOOK_WARNINGS.some(w => w.sheet === sheet)">{{ $t('· incluye {sheet}', { sheet }) }}</template>
+      <TriangleAlert :size="14" class="flex-none" />
+      <span class="min-w-0 max-sm:truncate">
+        {{ $t('Avisos del libro de Google Sheets ({n}) — fórmulas por corregir en la hoja', { n: WORKBOOK_WARNINGS.length }) }}
+        <template v-if="sheet && WORKBOOK_WARNINGS.some(w => w.sheet === sheet)">{{ $t('· incluye {sheet}', { sheet }) }}</template>
+      </span>
     </summary>
     <ul class="mt-1.5 max-h-48 space-y-1 overflow-y-auto">
       <li v-for="(w, i) in WORKBOOK_WARNINGS" :key="i" :class="{ 'font-semibold': w.sheet === sheet }">
