@@ -174,6 +174,12 @@ export interface Proposal {
   hintTable?: { text?: string; msg?: Msg }[]
   /** A notebook page's proposal: the page. */
   page?: ProposalPage
+  /**
+   * The columns each sheet's table shows whatever the proposal changes, in order
+   * (reviewColumns in server/notebook.mjs); `keys`: the row's own ID, shown in the
+   * table's ID column (its own column only when the proposal changes it).
+   */
+  shownColumns?: Record<string, { fields: string[]; keys: string[] }>
   /** Changes when the sheet's rows of a pending proposal change (an edit in the sheet): the list redraws it. */
   sheetStamp?: string
   applied: number[] | null
@@ -543,14 +549,19 @@ const TEMPLATE_VALUE = new Set(['NA', 'NOT_COLLECTED'])
 
 /**
  * The proposal's rows split by sheet (one table each, with that sheet's
- * columns): the columns it changes and those the person added, in the sheet's
- * order when known. A notebook page's sheet follows the notebook: its columns
- * in the page's order, then the implied ones, then the rest; columns
- * holding only a template's NA / NOT_COLLECTED go last, listed in `template`
- * (the table can fold them).
+ * columns). A sheet with columns always shown (`shownColumns`: for
+ * Insectary_data the notebook's, then the sheet's others up to
+ * Notes_Insectary_data) has those first, unchanged ones too, so the person
+ * reads each row whole; then the columns it changes and those the person
+ * added beyond them, in the sheet's order when known. Without such columns,
+ * only the changed and added ones, and a notebook page's sheet follows the
+ * notebook: its columns in the page's order, then the implied ones, then the
+ * rest. On a notebook page, changed columns beyond those shown
+ * that hold only a template's NA / NOT_COLLECTED go last, listed in
+ * `template` (the table can fold them).
  */
 export function sheetGroups(
-  p: Pick<Proposal, 'changes' | 'fields' | 'page'>,
+  p: Pick<Proposal, 'changes' | 'fields' | 'page' | 'shownColumns'>,
   extra: Record<string, string[]> = {},
   order: (sheet: string) => string[] | undefined = () => undefined,
 ) {
@@ -570,13 +581,16 @@ export function sheetGroups(
     const sorted = (order(sheet) ?? p.fields).filter(f => used.has(f) || added.has(f))
     // Columns the sheet no longer lists still show.
     for (const f of [...used, ...added]) if (!sorted.includes(f)) sorted.push(f)
-    if (p.page?.sheet !== sheet) return { sheet, fields: sorted, changes, template: [] as string[] }
-    // A notebook page's columns first, in the page's order (the ID is the row's own column), so the
-    // person reads each row beside its line; even those with nothing to write (SPECIES, a formula).
-    const keys = p.page.keys ?? []
-    const notebook = p.page.columns.filter(f => !keys.includes(f) || used.has(f))
+    const base = p.shownColumns?.[sheet]
+    const paged = p.page?.sheet === sheet
+    if (!base && !paged) return { sheet, fields: sorted, changes, template: [] as string[] }
+    // The columns always shown first (a notebook page's in the page's order, the ID being the row's own
+    // column), so the person reads each row beside its line; even those with nothing to write (SPECIES, a formula).
+    const keys = base?.keys ?? p.page?.keys ?? []
+    const notebook = (base?.fields ?? p.page?.columns ?? []).filter(f => !keys.includes(f) || used.has(f))
     const template = sorted.filter(
       f =>
+        paged &&
         used.has(f) &&
         !notebook.includes(f) &&
         changes.every(c => {

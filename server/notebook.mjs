@@ -161,6 +161,29 @@ export const KIND_IDS = Object.keys(KINDS);
 /** Every column a notebook fills: the skill's ones, then the extra ones. */
 export const columnsOf = kind => [...kind.fields, ...(kind.extra ?? [])];
 
+/** In a sheet no notebook fills, the columns that tell its rows apart besides its IDs: species, CAM, first tube. */
+const KEY_COLUMN = /^(SPECIES|Species|CAM_ID|Tube_1_id|Tube_ID)$/;
+/**
+ * The columns the review table (Cambios propuestos) shows for a sheet's rows
+ * whatever a proposal changes, so a wrong row shows (its species, CAM, tubes):
+ * for a sheet a notebook fills, that notebook's columns in its order (a page's
+ * own notebook, else the sheet's fullest one: Emergidos for Insectary_data),
+ * then the sheet's other columns in its order up to the last one any of its
+ * notebooks writes (Notes_Insectary_data, column AF). `keys`: the row's own ID,
+ * which the table's ID column already shows. In other sheets, their identity
+ * columns, species, CAM and first tube. The table adds the columns the
+ * proposal changes after these (sheetGroups in frontend/src/lib/proposals.ts).
+ */
+export function reviewColumns(sheet, sheetFields, identity = [], kindId = null) {
+  const kinds = Object.values(KINDS).filter(k => k.sheet === sheet);
+  if (!kinds.length) return { fields: [...new Set(sheetFields.filter(f => identity.includes(f) || KEY_COLUMN.test(f)))], keys: [] };
+  const kind = KINDS[kindId]?.sheet === sheet ? KINDS[kindId] : kinds.reduce((a, b) => (b.fields.length > a.fields.length ? b : a));
+  const at = new Map(sheetFields.map((f, i) => [f, i]));
+  const end = Math.max(...kinds.flatMap(columnsOf).map(f => at.get(f) ?? -1));
+  const first = kind.fields.filter(f => at.has(f));
+  return { fields: [...new Set([...first, ...sheetFields.slice(0, end + 1)])], keys: kind.keys };
+}
+
 /** "Mechanitis lysimnia (F1)": the generation written with the species. */
 const CLUTCH_GENERATION = /^\s*(\d+\s*(?:\(\s*\d+\s*\))?)\s*\(\s*(F1|F2|BC|backcross)\s*\)\s*$/i;
 const generationName = g => (/^(bc|backcross)$/i.test(g) ? 'Backcross' : g.toUpperCase());

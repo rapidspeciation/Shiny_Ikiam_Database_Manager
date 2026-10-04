@@ -19,6 +19,7 @@ import {
   openList,
   selectedCell,
   setFromBar,
+  spread,
   spreadsheetKeys,
   textEditor,
   tileToSelection,
@@ -457,9 +458,18 @@ function drawnText(change: ProposalChange, field: string) {
   return (cell.doubtful ? '?  ' : '') + textWithTotal(field, cell.value) + beside
 }
 
-function widthOf(field: string) {
+/**
+ * The rows a column's width is measured on: every row that writes something, and
+ * up to 100 of the others (page lines, the sheet's rows in between) spread over
+ * the table, so hundreds of rows by some thirty columns are still sized at once.
+ */
+function measured() {
+  const others = props.changes.filter(c => c.context)
+  return others.length <= 100 ? props.changes : [...props.changes.filter(c => !c.context), ...spread(others, 100)]
+}
+function widthOf(field: string, rows = measured()) {
   let chars = field.length + 2
-  for (const c of props.changes) chars = Math.max(chars, drawnText(c, field).length)
+  for (const c of rows) chars = Math.max(chars, drawnText(c, field).length)
   return Math.max(70, Math.min(260, Math.round(chars * 7.2 + 28)))
 }
 
@@ -524,12 +534,13 @@ function columns(): ColumnDefinition[] {
       return note
     },
   } as ColumnDefinition)
+  const rows = measured()
   for (const field of props.fields) {
     const choices = hasChoices(field)
     cols.push({
       title: field,
       field,
-      width: widthOf(field),
+      width: widthOf(field, rows),
       minWidth: 70,
       headerSort: false,
       formatter: formatter(field) as never,

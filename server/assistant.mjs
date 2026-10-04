@@ -11,7 +11,7 @@ import { comparable, isSumField, labelFor, moduleMap, simpleSum, validateValues 
 import { TUBE_FIELD, isIdValue, isUnique } from './verifications.mjs';
 import { listOptions, listProblem } from './verify.mjs';
 import { queueWalk, walkDraft } from './walks.mjs';
-import { KINDS, isNone, noteText } from './notebook.mjs';
+import { KINDS, isNone, noteText, reviewColumns } from './notebook.mjs';
 import { RECORD_TOOLS, compactRecord, countRecords, findRecords } from './records-tool.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
 import { duplicateIdRow, insectaryIdRow, newRowFormulaFields } from './premade.mjs';
@@ -1700,7 +1700,9 @@ export function createAssistant({ store, config = {} }) {
 
   /**
    * A proposal as the review table shows it: each row with the current values of
-   * the changed columns. New rows have no current values (and, once written, their row).
+   * the changed columns, and of the columns its sheet's table always shows
+   * (`shownColumns`, see reviewColumns in server/notebook.mjs). New rows have no
+   * current values (and, once written, their row).
    * `row` is its ai_proposals row: its rows as last revised, revision, status.
    * A pending one also gives what the table needs to edit it: every current value
    * of the edited rows (columns can be added), their formula columns, and those
@@ -1757,6 +1759,14 @@ export function createAssistant({ store, config = {} }) {
           }
         : null;
     const sheets = [...new Set(rows.map(r => r.change.sheet))];
+    // The columns each sheet's table shows whatever the proposal changes (a notebook's, the rest up to its notes).
+    const shownColumns = Object.fromEntries(
+      sheets.map(s => {
+        const mod = moduleMap.get(s);
+        const kind = notebook?.sheet === s ? notebook.kind : null;
+        return [s, reviewColumns(s, mod?.fields.map(f => f.key) ?? [], mod?.identityFields ?? [], kind)];
+      }),
+    );
     const typeOf = f =>
       sheets.map(s => moduleMap.get(s)?.fields.find(x => x.key === f)?.type).find(Boolean) ?? 'text';
     const newRowFormulas = open
@@ -1811,7 +1821,14 @@ export function createAssistant({ store, config = {} }) {
             .filter(([, v]) => v !== null && v !== ''),
         );
         view.formulas = locked(change.sheet, Object.keys(record?.formulas ?? {}));
-      } else if (!change.create) view.current = Object.fromEntries(fields.map(f => [f, shownValue(record, f)]));
+      } else if (!change.create) {
+        // The changed columns, and the non-empty ones of those the table always shows.
+        const shown = (shownColumns[change.sheet]?.fields ?? []).filter(f => !fields.includes(f));
+        view.current = Object.fromEntries([
+          ...fields.map(f => [f, shownValue(record, f)]),
+          ...shown.map(f => [f, shownValue(record, f)]).filter(([, v]) => v !== null && v !== ''),
+        ]);
+      }
       // Also beside a species typed over it, so the table can tell when the person types the formula's own.
       const clutch = change.values['CLUTCH NUMBER'];
       const typed = 'SPECIES' in change.values;
@@ -1858,6 +1875,7 @@ export function createAssistant({ store, config = {} }) {
       fields,
       types: Object.fromEntries(fields.map(f => [f, typeOf(f)])),
       newRowFormulas,
+      shownColumns,
       ...(Object.keys(sheetFormulas).length ? { sheetFormulas } : {}),
       ...(hintTable.length ? { hintTable } : {}),
       ...(notebook ? { page: notebook } : {}),
