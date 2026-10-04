@@ -20,16 +20,18 @@ Every change is a proposal the person reviews before it is written:
 
 1. Read the rows involved.
 2. Draft the change with `propose_changes` (`match_notebook` for a notebook
-   photo). It appears at once beside the chat (Asistente → «Cambios
-   propuestos») as a table you both can edit. Fill in everything your sources
-   give, so the person only corrects.
+   photo). It appears at once beside the chat as a table you both can edit
+   (the «Proposed changes» button above the chat; «Cambios propuestos» in the
+   Spanish interface). Fill in everything your sources give, so the person
+   only corrects.
 3. When they correct something, revise the same proposal (`update_proposal`).
 4. It is written when they approve it in the chat (`apply_proposal`) or press
-   «Aplicar» in the table.
+   «Apply» («Aplicar») in the table.
 
 Proposal results carry a `link`, a page that shows that proposal on its own
-(works from any device): give it when asked where to review. `list_proposals`
-has the links of this chat's proposals.
+(works from any device): give it with each new proposal, and again when
+asked where to review. `list_proposals` has the links of this chat's
+proposals.
 
 ## Reading values well
 
