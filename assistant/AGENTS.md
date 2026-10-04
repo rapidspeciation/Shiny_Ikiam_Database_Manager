@@ -69,6 +69,7 @@ Insectary ID».
 | `historial` | who changed what and when; undoing a save |
 | `google-account` | the project's Gmail, Calendar, or a Drive file that is not among the project documents |
 | `app-guide` | how to do something in the app, where it is, a link to it |
+| `team-rules` | a request that differs from these rules, or a new way the team records something: whether and how to change the rules |
 | `app-dev` | changing the app itself |
 
 ## Files
