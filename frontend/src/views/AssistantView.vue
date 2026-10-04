@@ -262,6 +262,18 @@ onMounted(async () => {
   <div class="flex h-full flex-col">
     <!-- One slim bar, so T3 keeps nearly the whole screen. -->
     <div v-if="loaded" class="flex items-center gap-1 border-b border-stone-200 bg-stone-100 px-2 py-0.5 text-sm">
+      <!-- Someone else's chat on screen: short here, the rest on hover. -->
+      <span
+        v-if="t3Url && chatOwner"
+        class="min-w-0 truncate rounded bg-amber-100 px-2 py-0.5 text-amber-900"
+        role="status"
+        :title="
+          $t('Lo que la IA escriba o guarde en este chat va a nombre de {name}. Lo que apliques desde Cambios propuestos se guarda a tu nombre.', {
+            name: chatOwner,
+          })
+        "
+        >{{ $t('Chat de {name}: la IA cree que eres {name}', { name: chatOwner }) }}</span
+      >
       <!-- What the assistant is told (brief, skills, tools) and how it changed; anyone signed in can read it. -->
       <RouterLink
         to="/instrucciones"
@@ -325,13 +337,6 @@ onMounted(async () => {
         /></a>
       </template>
     </div>
-    <p v-if="t3Url && chatOwner" class="border-b border-amber-200 bg-amber-50 px-3 py-1 text-sm text-amber-900" role="status">
-      {{
-        $t('Chat de {name}: aquí la IA cree que eres {name}, y lo que escriba o guarde va a su nombre. Lo que apliques desde Cambios propuestos se guarda a tu nombre.', {
-          name: chatOwner,
-        })
-      }}
-    </p>
     <div
       v-if="t3Url"
       ref="split"

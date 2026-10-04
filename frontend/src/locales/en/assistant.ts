@@ -16,8 +16,9 @@ export default {
   'Mostrar los cambios propuestos': 'Show the proposed changes',
   'Cambios propuestos ({n})': 'Proposed changes ({n})',
   Enlace: 'Link',
-  'Chat de {name}: aquí la IA cree que eres {name}, y lo que escriba o guarde va a su nombre. Lo que apliques desde Cambios propuestos se guarda a tu nombre.':
-    "{name}'s chat: here the AI thinks you are {name}, and what it writes or saves goes under that name. What you apply from Proposed changes is saved under yours.",
+  'Chat de {name}: la IA cree que eres {name}': "{name}'s chat: the AI thinks you are {name}",
+  'Lo que la IA escriba o guarde en este chat va a nombre de {name}. Lo que apliques desde Cambios propuestos se guarda a tu nombre.':
+    'What the AI writes or saves in this chat goes under {name}. What you apply from Proposed changes is saved under your name.',
   'Copiar un enlace a este chat para otra persona del equipo': 'Copy a link to this chat for someone else on the team',
   'Abre un chat para copiar su enlace': 'Open a chat to copy its link',
   'Enlace a este chat copiado: quien lo abra ve el chat (solo quien lo empezó debería seguirlo).':
