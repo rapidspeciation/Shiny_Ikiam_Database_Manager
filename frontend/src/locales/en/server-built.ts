@@ -182,6 +182,15 @@ export default {
   '{sheet} no tiene filas con fórmulas que copiar': '{sheet} has no rows with formulas to copy',
   'En {sheet} hay filas escritas sin fórmulas después de la última fila preasignada ({template}), hasta la {last}; revísalas en Google Sheets':
     'In {sheet} there are rows written without formulas after the last pre-made row ({template}), up to {last}; check them in Google Sheets',
+  'En Insectary_data hay filas escritas sin Insectary ID después del último ID (fila {row}): {rows}; revísalas en Google Sheets':
+    'In Insectary_data there are rows written without an Insectary ID after the last ID (row {row}): {rows}; check them in Google Sheets',
+  'El último Insectary ID está ahora en la fila {row} de Google Sheets; vuelve a intentarlo en un minuto':
+    'The last Insectary ID is now in row {row} in Google Sheets; try again in a minute',
+  'Quedan {n} filas al final de Insectary_data y hacen falta {count}: pide a PAS que añada filas':
+    '{n} rows are left at the end of Insectary_data and {count} are needed: ask PAS to add rows',
+  'No hay una fórmula de Insectary ID encima de la fila {row}': 'There is no Insectary ID formula above row {row}',
+  'Google Sheets no deja a la cuenta de la app insertar la fila de {id}: pide a PAS que inserte la fila; no se guardó nada':
+    'Google Sheets does not let the app’s account insert the row of {id}: ask PAS to insert the row; nothing was saved',
   // Checks after making pre-made rows (server/premade.mjs)
   '{problem} ({n} filas)': '{problem} ({n} rows)',
   'Falta la fórmula en {column}': 'The formula is missing in {column}',
@@ -195,8 +204,6 @@ export default {
   'Fila {row}: el Insectary ID {id} ya existe': 'Row {row}: the Insectary ID {id} already exists',
   'La fila {row} no tiene un Insectary ID de la serie ({id})': 'Row {row} has no Insectary ID of the series ({id})',
   'La fila {row} no tiene un Insectary ID de la serie (vacío)': 'Row {row} has no Insectary ID of the series (empty)',
-  'La serie de Insectary IDs llega a {id} y su fórmula no indica la ronda':
-    'The Insectary ID series reaches {id} and its formula does not give the round',
   'La serie de Insectary IDs llega a {id}: no hay más rondas': 'The Insectary ID series reaches {id}: there are no more rounds',
   'La ronda {letter} de Insectary IDs ya está usada': 'The round {letter} of Insectary IDs is already used',
   '{id} no está registrado en Insectary_data': '{id} is not recorded in Insectary_data',

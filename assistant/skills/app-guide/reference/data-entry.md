@@ -60,8 +60,9 @@ as a spreadsheet.
   vacías preasignadas» (also show the pre-made empty rows), «Revisión de
   datos» (the Revisión tab filtered to this sheet), «Añadir fila» (a new row
   at the top, marked «nueva»), «Crear filas preasignadas» (reviewer/admin:
-  asks how many, max 500; copies the last pre-made row's formulas, dropdowns
-  and, in Insectary_data, the next IDs), «Rellenar» (= Ctrl+D), reload,
+  asks how many, max 500; copies the last pre-made row's formulas and
+  dropdowns; in Insectary_data it writes the next IDs into the rows after the
+  last ID, and when no rows are left PAS adds them), «Rellenar» (= Ctrl+D), reload,
   download CSV, open the sheet in Google Sheets.
 - A banner warns when the sheet's header row changed in Google Sheets (a
   missing/duplicate column blocks reading and saving that sheet).

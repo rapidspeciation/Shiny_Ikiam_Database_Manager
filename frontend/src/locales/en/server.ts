@@ -28,6 +28,12 @@ export default {
   // server/insectaryId.mjs
   'Escribe el Insectary ID actual y el correcto': 'Enter the current Insectary ID and the correct one',
   'El ID nuevo es igual al actual': 'The new ID is the same as the current one',
+  // server/premade.mjs
+  'No quedan filas con fórmulas al final de Insectary_data: pide a PAS que añada filas':
+    'No rows with formulas are left at the end of Insectary_data: ask PAS to add rows',
+  'Insectary_data no tiene Insectary IDs que continuar': 'Insectary_data has no Insectary IDs to continue',
+  'La columna Insectary_ID está protegida para la cuenta de la app: pide a PAS que escriba los IDs':
+    'The Insectary_ID column is protected for the app’s account: ask PAS to write the IDs',
   // server/knowledge.mjs, server/t3admin.mjs
   'No se pudo iniciar la sincronización con Drive': 'The sync with Drive could not be started',
   'No se pudo iniciar la actualización de T3': 'The T3 update could not be started',

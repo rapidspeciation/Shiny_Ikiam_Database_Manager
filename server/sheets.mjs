@@ -352,7 +352,7 @@ export class LocalSheets {
       } else if (request.insertDimension) this.moveRows(request.insertDimension.range, 1);
       else if (request.deleteDimension) this.moveRows(request.deleteDimension.range, -1);
       else if (request.copyPaste) this.copyPaste(request.copyPaste, pasted);
-      else if (request.updateCells) this.updateCells(request.updateCells);
+      else if (request.updateCells) this.updateCells(request.updateCells, pasted);
       else throw new Error(`LocalSheets cannot apply ${Object.keys(request)[0]}`);
     }
     // Formula results, in sheet order so a formula reading the row above sees its new value.
@@ -380,7 +380,12 @@ export class LocalSheets {
   touched(request) {
     const range = request.copyPaste?.destination || request.updateCells?.range;
     if (range) return [this.sheetById(range.sheetId), range];
-    if (request.appendDimension) return [this.sheetById(request.appendDimension.sheetId), null];
+    // Rows added at the end: refused, as Google does, while a protected range the credential cannot edit reaches them.
+    if (request.appendDimension) {
+      const sheet = this.sheetById(request.appendDimension.sheetId);
+      const count = this.rowCount(sheet);
+      return [sheet, { startRowIndex: count, endRowIndex: count + request.appendDimension.length }];
+    }
     const rows = request.insertDimension?.range || request.deleteDimension?.range;
     if (rows) return [this.sheetById(rows.sheetId), { startRowIndex: rows.startIndex, endRowIndex: rows.endIndex }];
     return [null, null];
@@ -467,9 +472,12 @@ export class LocalSheets {
       if (formula) marks.add(`${r + 1}:${c}`);
     }
   }
-  updateCells({ range, rows, fields }) {
+  /** `pasted`: where the formulas written are marked, so batchUpdate works out their values. */
+  updateCells({ range, rows, fields }, pasted = new Map()) {
     const sheet = this.sheetById(range.sheetId);
     const keys = fields.split(',').map(f => f.trim().split('.')[0]);
+    const marks = pasted.get(sheet) || new Set();
+    pasted.set(sheet, marks);
     for (let r = range.startRowIndex; r < range.endRowIndex; r++)
       for (let c = range.startColumnIndex; c < range.endColumnIndex; c++) {
         const given = rows?.[r - range.startRowIndex]?.values?.[c - range.startColumnIndex] || {};
@@ -482,6 +490,7 @@ export class LocalSheets {
             delete cell.effectiveValue;
             if (given.userEnteredValue && !('formulaValue' in given.userEnteredValue))
               cell.effectiveValue = structuredClone(given.userEnteredValue);
+            if (given.userEnteredValue?.formulaValue) marks.add(`${r + 1}:${c}`);
           }
         }
         target.cells[c] = cell;
@@ -493,13 +502,41 @@ const effectiveOf = cell => {
   const v = cell?.effectiveValue;
   return v?.stringValue ?? v?.numberValue ?? v?.boolValue ?? null;
 };
-/** The formulas LocalSheets can work out on its own: ="text", =number and =ROW(). */
-function defaultEvaluate(formula, { row }) {
+/** The formulas LocalSheets can work out on its own: ="text", =number, =ROW() and Insectary_data's ID formulas. */
+function defaultEvaluate(formula, { row, value }) {
   let m;
   if ((m = /^="([^"]*)"$/.exec(formula))) return m[1];
   if ((m = /^=(-?\d+(?:\.\d+)?)$/.exec(formula))) return Number(m[1]);
   if (/^=ROW\(\)$/i.test(formula)) return row;
-  return undefined;
+  return insectaryIdValue(formula, value);
+}
+
+// Insectary_data's ID formula: the ID in the cell it names (the row above) plus one. The
+// older form writes its round letter ("0E"), so after Z9E it gives "[0E"; the newer one
+// (LET) takes the round from the ID above and goes on from Z9F to A0G.
+const ID_IF =
+  /^=IF\(MID\((\$?[A-Z]+\$?\d+),2,1\)="9",CHAR\(CODE\(LEFT\(\1,1\)\)\+1\)&"0([A-Z])",LEFT\(\1,1\)&\(MID\(\1,2,1\)\+1\)&"\2"\)$/;
+const ID_LET =
+  /^=LET\(p,LEFT\((\$?[A-Z]+\$?\d+),3\),l,LEFT\(p,1\),n,VALUE\(MID\(p,2,1\)\),s,RIGHT\(p,1\),IF\(n<9,l&\(n\+1\)&s,IF\(l<>"Z",CHAR\(CODE\(l\)\+1\)&"0"&s,"A0"&CHAR\(CODE\(s\)\+1\)\)\)\)$/;
+
+/** What Sheets shows for an Insectary ID formula (`value(row, column)`: a cell's value); undefined for other formulas. */
+export function insectaryIdValue(formula, value) {
+  const compact = String(formula).replace(/\s+/g, '');
+  const m = ID_IF.exec(compact) || ID_LET.exec(compact);
+  if (!m) return undefined;
+  const ref = /^\$?([A-Z]+)\$?(\d+)$/.exec(m[1]);
+  const above = String(value?.(Number(ref[2]), columnIndex(ref[1])) ?? '');
+  const after = letter => String.fromCharCode(letter.charCodeAt(0) + 1);
+  if (m[2]) {
+    const digit = above.slice(1, 2);
+    if (digit === '9') return `${after(above)}0${m[2]}`;
+    return /^\d?$/.test(digit) ? `${above.slice(0, 1)}${Number(digit) + 1}${m[2]}` : '#VALUE!';
+  }
+  const p = above.slice(0, 3);
+  const [l = '', digit = ''] = p;
+  if (!l || !/^\d?$/.test(digit)) return '#VALUE!';
+  if (Number(digit) < 9) return `${l}${Number(digit) + 1}${p.slice(-1)}`;
+  return l !== 'Z' ? `${after(l)}0${p.slice(-1)}` : `A0${after(p.slice(-1))}`;
 }
 
 /**
@@ -604,6 +641,13 @@ function sheetBefore(formula, bang) {
   }
   return /[\w.]+$/.exec(formula.slice(0, bang))?.[0] ?? null;
 }
+
+/**
+ * Whether Google refused a write for the sheet's protection: an account that cannot
+ * edit a protected range may not add or insert rows that it reaches.
+ */
+export const protectionRefused = e =>
+  e?.status === 403 || (e?.status === 400 && /protected|permission/i.test(String(e?.message ?? '')));
 
 /** Rows a batch inserts minus rows it deletes in `sheet`. */
 const netRows = (writes, sheet) => writes.filter(w => w.sheet === sheet).reduce((n, w) => n + (w.insert ? 1 : w.deleteRow ? -1 : 0), 0);

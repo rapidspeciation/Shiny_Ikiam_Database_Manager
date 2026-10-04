@@ -8,7 +8,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { comparable, isSumField, labelFor, moduleMap, simpleSum, validateValues } from './schema.mjs';
-import { hasDateFormat, hasTimeFormat, rowKey, rowValues } from './sheets.mjs';
+import { hasDateFormat, hasTimeFormat, protectionRefused, rowKey, rowValues } from './sheets.mjs';
 import { describeProblems, headerLayout, sameLayout } from './columns.mjs';
 import { duplicateIdRow, ensurePremadeRows, insectaryIdRow, suffixedId } from './premade.mjs';
 import { cleanPurpose, inferPurpose } from './history.mjs';
@@ -212,6 +212,17 @@ export async function applyBatch(store, body, user, { source = 'app', reverses =
         if (!rejected) scheduleRecovery(store);
         // Rows may have been inserted or deleted: the next sync compares the whole sheet.
         if (!rejected) for (const sheet of plan.structuralSheets()) store.sheetDigests.delete(sheet);
+        // The app's account may not insert rows where protected columns reach them: PAS does.
+        const inserted = plan.writes.filter(w => w.insert);
+        if (rejected && inserted.length && protectionRefused(e))
+          throw fail(
+            'ROWS_PROTECTED',
+            msg('Google Sheets no deja a la cuenta de la app insertar la fila de {id}: pide a PAS que inserte la fila; no se guardó nada', {
+              id: inserted.map(w => w.changes.Insectary_ID ?? `${w.sheet} ${w.insert.at}`),
+            }),
+            409,
+            { actionId },
+          );
         throw fail(
           rejected ? 'WRITE_REJECTED' : 'WRITE_UNCERTAIN',
           rejected

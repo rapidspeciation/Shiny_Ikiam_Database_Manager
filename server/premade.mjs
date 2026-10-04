@@ -1,13 +1,18 @@
 // Pre-made rows: empty rows at the end of a sheet that already hold its
-// formulas, formats and dropdowns (in Insectary_data also the next Insectary
-// IDs). The team makes them in Google Sheets by dragging the last one down.
-// When they run out the app makes more the same way, with a copyPaste of the
-// last pre-made row, so a new row is never a bare row without formulas.
+// formulas, formats and dropdowns. The team makes them in Google Sheets by
+// dragging the last one down. When they run out the app makes more the same
+// way, with a copyPaste of the last pre-made row, so a new row is never a bare
+// row without formulas.
+// In Insectary_data the pre-made rows are the rows with an Insectary ID: its
+// other formulas are filled down thousands of rows further, so more pre-made
+// rows means the ID formula going on into the rows below the last ID. Rows are
+// added only when none are left, and the app's account cannot add them there
+// (protected columns): PAS does.
 
 import { randomUUID } from 'node:crypto';
 import { labelFor, moduleMap } from './schema.mjs';
 import { columnLetter, describeProblems, headerLayout, headerText } from './columns.mjs';
-import { rowKey, rowValues, shiftFormula } from './sheets.mjs';
+import { protectionRefused, rowKey, rowValues, shiftFormula } from './sheets.mjs';
 import { msg, msgError } from './messages.mjs';
 
 export const MAX_EXTEND = 500;
@@ -44,6 +49,28 @@ function tail(store, sheet) {
   return { formulaRow: q("AND formulas_json<>'{}'"), observedRow: q('AND observed=1'), lastRow: q('') };
 }
 
+/** The last Insectary_data row with an Insectary ID in the app's copy: the end of its pre-made rows. */
+function lastIdRow(store) {
+  return (
+    store.db
+      .prepare(
+        "SELECT max(row_num) n FROM records WHERE sheet='Insectary_data' AND missing=0 AND row_num<2000000000 AND trim(coalesce(json_extract(values_json,'$.Insectary_ID'),''))<>''",
+      )
+      .get().n || 0
+  );
+}
+
+/** Refused for Google's protection: the rows cannot be added by the app, nothing was written. */
+function noRowsLeft(left, count) {
+  return left > 0
+    ? fail(
+        'NO_ROWS_LEFT',
+        msg('Quedan {n} filas al final de Insectary_data y hacen falta {count}: pide a PAS que añada filas', { n: left, count }),
+        409,
+      )
+    : fail('NO_ROWS_LEFT', 'No quedan filas con fórmulas al final de Insectary_data: pide a PAS que añada filas', 409);
+}
+
 /**
  * Fields that are formulas in the row a new record will take: the next unused
  * pre-made row, or, when they have run out, the last row holding formulas (the
@@ -66,28 +93,31 @@ export function newRowFormulaFields(store, sheet) {
 
 /**
  * Before a save writes new rows at the end of sheets (`needs`: [{ sheet, lastRow }]),
- * makes pre-made rows where the save would go past them, as many as it needs (in
- * blocks of at most MAX_EXTEND). Only sheets kept with pre-made rows (formulas at
- * or after the last used row) get them; a sheet typed without formulas keeps
- * getting plain rows. Runs inside the write queue.
+ * makes pre-made rows where the save would go past them (in blocks of at most
+ * MAX_EXTEND): in Insectary_data the next IDs up to the row the save needs, in
+ * other sheets a block of AUTO_BLOCK rows at least. Only sheets kept with pre-made
+ * rows (formulas at or after the last used row) get them; a sheet typed without
+ * formulas keeps getting plain rows. Runs inside the write queue.
  */
 export async function ensurePremadeRows(store, needs) {
   for (const { sheet, lastRow } of needs) {
+    const byId = sheet === 'Insectary_data';
     for (;;) {
       const { formulaRow, observedRow } = tail(store, sheet);
-      if (!formulaRow || formulaRow < observedRow || lastRow <= formulaRow) break;
+      const premadeEnd = byId ? lastIdRow(store) : formulaRow;
+      if (!formulaRow || !premadeEnd || (!byId && formulaRow < observedRow) || lastRow <= premadeEnd) break;
+      const count = byId ? lastRow - premadeEnd : Math.max(AUTO_BLOCK, lastRow - formulaRow);
       try {
-        await extendRows(store, sheet, Math.min(MAX_EXTEND, Math.max(AUTO_BLOCK, lastRow - formulaRow)), {
-          actor: 'auto',
-        });
+        await extendRows(store, sheet, Math.min(MAX_EXTEND, count), { actor: 'auto' });
       } catch (e) {
+        if (e.code === 'NO_ROWS_LEFT') throw e;
         throw fail(
           'PREMADE_FAILED',
           `No se pudieron preparar filas nuevas en ${sheet} (con sus fórmulas y listas); no se guardó nada: ${e.message}`,
           e.status && e.status < 500 ? 409 : 503,
         );
       }
-      if (tail(store, sheet).formulaRow <= formulaRow) break;
+      if ((byId ? lastIdRow(store) : tail(store, sheet).formulaRow) <= premadeEnd) break;
     }
   }
 }
@@ -114,6 +144,7 @@ export function insectaryIdRow(store, id) {
     )
     .get();
   let next = String(last?.id ?? '').trim().toUpperCase();
+  next = suffixedId(next)?.base ?? next;
   for (let step = 1; (next = nextInSeries(next)); step++) if (next === id) return { row: last.r + step, ahead: true };
   return null;
 }
@@ -154,21 +185,27 @@ export function duplicateIdRow(store, id) {
   return { ...parsed, anchor: { id: last.id, row: last.r, value: last.v } };
 }
 
-/** The endpoint's entry: `count` more pre-made rows at the end of `sheet`, in the write queue. */
+/** The endpoint's entry: `count` more pre-made rows in `sheet`, in the write queue. */
 export function extendPremadeRows(store, sheet, count, user) {
   return store.runExclusive(() => extendRows(store, sheet, count, { actor: user?.id || user?.username || 'app' }));
 }
 
 /**
- * Appends `count` pre-made rows after the last row holding formulas (T):
+ * Makes `count` more pre-made rows. In most sheets they are appended after the
+ * last row holding formulas (T):
  *  1. appendDimension when the grid is too short;
  *  2. copyPaste of row T over the new rows (formulas, whose relative references
  *     move with the row, number formats and data validation);
  *  3. the constants row T held (when it is already used) are cleared;
- *  4. a column whose fill-down stopped before T (Insectary_data's ID column in
- *     the test workbook ends at the last used row) is continued from its last
- *     formula, over the empty pre-made rows too, so the ID series has no gap; a
- *     formula typed over in a used row T is taken from the rows just above.
+ *  4. a column whose fill-down stopped before T is continued from its last
+ *     formula, over the empty pre-made rows too; a formula typed over in a used
+ *     row T is taken from the rows just above.
+ * In Insectary_data they are the `count` rows after the last row with an
+ * Insectary ID, rows that mostly exist already with the other formulas: each gets
+ * its ID (the formula of the ID above, moved to it; a new round's first ID typed),
+ * and only rows without formulas get the copy of row T (2–3). Rows are appended
+ * only past the grid's last row; when Google refuses them (protected columns),
+ * nothing is written and PAS is asked to add rows (NO_ROWS_LEFT).
  * Protected ranges the credential cannot edit are left out, and reported so the
  * owner completes them. The rows are then read back and checked.
  * Must run inside the store's write queue.
@@ -181,9 +218,12 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
     throw fail('INVALID_COUNT', msg('Indica entre 1 y {n} filas', { n: MAX_EXTEND }));
   const known = tail(store, sheet);
   if (!known.formulaRow) throw fail('NO_TEMPLATE', msg('{sheet} no tiene filas con fórmulas que copiar', { sheet }), 409);
+  const byId = sheet === 'Insectary_data';
+  const idRow = byId ? lastIdRow(store) : 0;
+  if (byId && !idRow) throw fail('ID_SERIES', 'Insectary_data no tiene Insectary IDs que continuar', 409);
   const info = await store.sheets.sheetInfo(sheet);
-  const first = Math.max(mod.headerRow + 1, known.formulaRow - LOOKBACK);
-  const last = Math.min(info.rowCount, Math.max(known.formulaRow, known.lastRow) + count + 5);
+  const first = Math.max(mod.headerRow + 1, (byId ? idRow : known.formulaRow) - LOOKBACK);
+  const last = Math.min(info.rowCount, (byId ? idRow : Math.max(known.formulaRow, known.lastRow)) + count + 5);
   const read = await store.sheets.readRows([
     { sheet, rows: [mod.headerRow, ...Array.from({ length: Math.max(0, last - first + 1) }, (_, i) => first + i)] },
   ]);
@@ -196,11 +236,13 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
     );
   const cellsAt = row => read.get(rowKey(sheet, row))?.cells || [];
   const kindAt = (row, column) => kind(cellsAt(row)[column]);
+  const idColumn = byId ? layout.columns.get('Insectary_ID') : undefined;
 
-  // The live end of the sheet: last formula row, last used row, last row with anything.
+  // The live end of the sheet: last formula row, last used row, last row with anything, last ID.
   let template = 0,
     lastUsed = 0,
     lastContent = 0,
+    liveIdRow = 0,
     width = info.columnCount;
   for (let row = first; row <= last; row++) {
     const kinds = cellsAt(row).map(kind);
@@ -208,9 +250,33 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
     if (kinds.includes('F')) template = row;
     if (kinds.includes('c')) lastUsed = row;
     if (kinds.some(k => k !== '.')) lastContent = row;
+    if (byId && text(cellsAt(row)[idColumn])) liveIdRow = row;
   }
   if (!template) throw fail('NO_TEMPLATE', msg('{sheet} no tiene filas con fórmulas que copiar', { sheet }), 409);
-  if (lastContent > template)
+  if (byId && liveIdRow !== idRow)
+    throw fail(
+      'SHEET_CHANGED',
+      msg('El último Insectary ID está ahora en la fila {row} de Google Sheets; vuelve a intentarlo en un minuto', {
+        row: liveIdRow,
+      }),
+      409,
+    );
+  const start = (byId ? idRow : template) + 1;
+  const end = start + count - 1;
+  if (byId) {
+    // A row below the last ID with something typed in it was used without an ID: it does not get one unseen.
+    const typed = [];
+    for (let row = start; row <= Math.min(end, last); row++) if (cellsAt(row).some(c => kind(c) === 'c')) typed.push(row);
+    if (typed.length)
+      throw fail(
+        'BARE_ROWS',
+        msg(
+          'En Insectary_data hay filas escritas sin Insectary ID después del último ID (fila {row}): {rows}; revísalas en Google Sheets',
+          { row: idRow, rows: typed.slice(0, 10).map(String) },
+        ),
+        409,
+      );
+  } else if (lastContent > template)
     throw fail(
       'BARE_ROWS',
       msg(
@@ -219,13 +285,18 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
       ),
       409,
     );
-  const start = template + 1;
-  const end = template + count;
+  // The rows that get a copy of row T: all the new rows, in Insectary_data those without formulas.
+  const pasted = [];
+  for (let row = start; row <= end; row++) if (!byId || !cellsAt(row).some(c => kind(c) === 'F')) pasted.push(row);
+  const pastedRuns = runs(pasted);
+  const added = Math.max(0, end - info.rowCount);
 
   // Columns whose formula has to come from another row than the template.
   const clear = [];
   const fills = [];
   for (let column = 0; column < width; column++) {
+    // Insectary IDs are written row by row (below).
+    if (column === idColumn) continue;
     const k = kindAt(template, column);
     if (k === 'F') continue;
     if (k === 'c') {
@@ -236,6 +307,8 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
       if (source >= floor) fills.push({ column, source, from: start });
       continue;
     }
+    // Insectary_data's rows filled down are not completed: only its new IDs are written there.
+    if (byId) continue;
     // A filled-down formula (three rows at least) that stopped at or after the last used row.
     let source = template - 1;
     while (source >= first && kindAt(source, column) !== 'F') source--;
@@ -269,71 +342,72 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
   const fillFrom = Math.min(start, ...fills.map(f => f.from));
   const lockedColumns = new Set();
   for (let column = 0; column < width; column++) if (isLocked(column, fillFrom, end)) lockedColumns.add(column);
+  if (byId && lockedColumns.has(idColumn))
+    throw fail('ID_LOCKED', 'La columna Insectary_ID está protegida para la cuenta de la app: pide a PAS que escriba los IDs', 409);
 
-  // Insectary_data's ID formula adds one to the ID above and keeps the round letter, so
-  // after Z9D it would give "[0D". A new round starts as the team starts one: its first ID
-  // typed (A0E, or the one after the IDs of that round already in the sheet), then the
-  // formula with the new letter.
-  const idColumn = sheet === 'Insectary_data' ? layout.columns.get('Insectary_ID') : undefined;
+  // Insectary IDs go on from the last one with the formula of the nearest ID cell that holds
+  // one (a new round's first ID is typed): planIds.
   let ids = null;
-  if (idColumn !== undefined && !lockedColumns.has(idColumn)) {
-    const fill =
-      kind(cellsAt(template)[idColumn]) === 'F'
-        ? { source: template, from: start }
-        : fills.find(f => f.column === idColumn);
-    if (fill)
-      ids = planIds({
-        previous: text(cellsAt(fill.from - 1)[idColumn]),
-        source: fill.source,
-        formula: cellsAt(fill.source)[idColumn].userEnteredValue.formulaValue,
-        from: fill.from,
-        end,
-        existing: new Set(
-          store.db
-            .prepare(
-              "SELECT upper(trim(json_extract(values_json,'$.Insectary_ID'))) id FROM records WHERE sheet=? AND missing=0 AND row_num<?",
-            )
-            .all(sheet, fill.from)
-            .map(r => r.id)
-            .filter(Boolean),
-        ),
-      });
-    if (ids?.problem) throw fail('ID_SERIES', ids.problem, 409);
+  if (byId) {
+    let source = idRow;
+    while (source >= first && kindAt(source, idColumn) !== 'F') source--;
+    ids =
+      source < first
+        ? { problem: msg('No hay una fórmula de Insectary ID encima de la fila {row}', { row: start }) }
+        : planIds({
+            previous: text(cellsAt(idRow)[idColumn]),
+            source,
+            formula: cellsAt(source)[idColumn].userEnteredValue.formulaValue,
+            from: start,
+            end,
+            existing: new Set(
+              store.db
+                .prepare(
+                  "SELECT upper(trim(json_extract(values_json,'$.Insectary_ID'))) id FROM records WHERE sheet=? AND missing=0 AND row_num<?",
+                )
+                .all(sheet, start)
+                .map(r => r.id)
+                .filter(Boolean),
+            ),
+          });
+    if (ids.problem) throw fail('ID_SERIES', ids.problem, 409);
   }
 
   const { sheetId } = info;
   const requests = [];
-  if (end > info.rowCount)
-    requests.push({ appendDimension: { sheetId, dimension: 'ROWS', length: end - info.rowCount } });
-  for (const [c0, c1] of segments(width, lockedColumns))
-    requests.push({
-      copyPaste: {
-        source: range(sheetId, template, template, c0, c1),
-        destination: range(sheetId, start, end, c0, c1),
-        pasteType: 'PASTE_NORMAL',
-        pasteOrientation: 'NORMAL',
-      },
-    });
-  for (const column of clear.filter(c => !lockedColumns.has(c)))
-    requests.push({
-      updateCells: { range: range(sheetId, start, end, column, column + 1), fields: 'userEnteredValue' },
-    });
+  if (added) requests.push({ appendDimension: { sheetId, dimension: 'ROWS', length: added } });
+  for (const [r0, r1] of pastedRuns) {
+    for (const [c0, c1] of segments(width, lockedColumns))
+      requests.push({
+        copyPaste: {
+          source: range(sheetId, template, template, c0, c1),
+          destination: range(sheetId, r0, r1, c0, c1),
+          pasteType: 'PASTE_NORMAL',
+          pasteOrientation: 'NORMAL',
+        },
+      });
+    for (const column of clear.filter(c => !lockedColumns.has(c)))
+      requests.push({
+        updateCells: { range: range(sheetId, r0, r1, column, column + 1), fields: 'userEnteredValue' },
+      });
+  }
   for (const f of fills.filter(f => !lockedColumns.has(f.column)))
-    requests.push({
-      copyPaste: {
-        source: range(sheetId, f.source, f.source, f.column, f.column + 1),
-        destination: range(sheetId, f.from, end, f.column, f.column + 1),
-        pasteType: 'PASTE_FORMULA',
-        pasteOrientation: 'NORMAL',
-      },
-    });
-  // From the first new round on, each ID cell is written: the round's first ID, then its formula.
-  if (ids?.written.length)
+    for (const [r0, r1] of f.from >= start ? pastedRuns : [[f.from, end]])
+      requests.push({
+        copyPaste: {
+          source: range(sheetId, f.source, f.source, f.column, f.column + 1),
+          destination: range(sheetId, r0, r1, f.column, f.column + 1),
+          pasteType: 'PASTE_FORMULA',
+          pasteOrientation: 'NORMAL',
+        },
+      });
+  // Each ID cell: the formula moved to its row, or a new round's first ID.
+  if (ids)
     requests.push({
       updateCells: {
-        range: range(sheetId, ids.written[0].row, end, idColumn, idColumn + 1),
-        rows: ids.written.map(w => ({
-          values: [{ userEnteredValue: w.formula ? { formulaValue: w.formula } : { stringValue: w.id } }],
+        range: range(sheetId, start, end, idColumn, idColumn + 1),
+        rows: ids.cells.map(c => ({
+          values: [{ userEnteredValue: c.formula ? { formulaValue: c.formula } : { stringValue: c.id } }],
         })),
         fields: 'userEnteredValue',
       },
@@ -341,7 +415,13 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
 
   store.startWrite([sheet]);
   try {
-    await store.sheets.batchUpdate(requests);
+    try {
+      await store.sheets.batchUpdate(requests);
+    } catch (e) {
+      // Google applies a batchUpdate whole or not at all: refused, nothing was written.
+      if (byId && added && protectionRefused(e)) throw noRowsLeft(info.rowCount - idRow, count);
+      throw e;
+    }
     store.sheets.gridRows?.set(sheet, Math.max(info.rowCount, end));
   } finally {
     store.endWrite([sheet]);
@@ -349,7 +429,7 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
 
   // Read back and check what a pre-made row must have.
   const checkFrom = Math.min(template, fillFrom);
-  const grid = await store.sheets.readGrid(sheet, checkFrom, end);
+  const grid = await store.sheets.readGrid(sheet, checkFrom, Math.max(template, end));
   const at = row => grid[row - checkFrom]?.cells || [];
   const templateCells = at(template);
   const problems = [];
@@ -365,33 +445,33 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
     const title = headerText(headerCells[column]);
     return title ? `${columnLetter(column)} (${title})` : columnLetter(column);
   };
-  const formulaColumns = new Map(); // column → first row that must hold a formula
-  for (let column = 0; column < width; column++) {
-    if (lockedColumns.has(column)) continue;
-    if (kind(templateCells[column]) === 'F') formulaColumns.set(column, start);
-  }
-  for (const f of fills) if (!lockedColumns.has(f.column)) formulaColumns.set(f.column, f.from);
-  const checks = { formulas: true, validation: true, formats: true, ids: null };
+  const span = (from, to) => Array.from({ length: Math.max(0, to - from + 1) }, (_, i) => from + i);
   // The first ID of a new round is typed, not a formula.
-  const typedId = row => ids?.written.some(w => w.row === row && !w.formula);
-  for (const [column, from] of formulaColumns) {
-    let bad = 0;
-    for (let row = from; row <= end; row++)
-      if (kind(at(row)[column]) !== 'F' && !(column === idColumn && typedId(row))) bad++;
+  const typedId = row => ids?.cells.some(c => c.row === row && !c.formula);
+  const formulaRows = new Map(); // column → the rows that must hold a formula
+  for (let column = 0; column < width; column++) {
+    if (lockedColumns.has(column) || column === idColumn) continue;
+    if (kind(templateCells[column]) === 'F') formulaRows.set(column, pasted);
+  }
+  for (const f of fills) if (!lockedColumns.has(f.column)) formulaRows.set(f.column, f.from >= start ? pasted : span(f.from, end));
+  if (ids) formulaRows.set(idColumn, span(start, end).filter(row => !typedId(row)));
+  const checks = { formulas: true, validation: true, formats: true, ids: null };
+  for (const [column, rows] of formulaRows) {
+    const bad = rows.filter(row => kind(at(row)[column]) !== 'F').length;
     if (bad) {
       checks.formulas = false;
       note(msg('Falta la fórmula en {column}', { column: name(column) }), bad);
     }
   }
   for (let column = 0; column < width; column++) {
-    if (lockedColumns.has(column)) continue;
+    if (lockedColumns.has(column) || column === idColumn) continue;
     const want = templateCells[column];
     let constants = 0,
       validation = 0,
       format = 0;
-    for (let row = start; row <= end; row++) {
+    for (const row of pasted) {
       const cell = at(row)[column];
-      if (kind(cell) === 'c' && !(column === idColumn && typedId(row))) constants++;
+      if (kind(cell) === 'c') constants++;
       if (JSON.stringify(cell?.dataValidation ?? null) !== JSON.stringify(want?.dataValidation ?? null)) validation++;
       if (
         JSON.stringify(cell?.userEnteredFormat?.numberFormat ?? null) !==
@@ -447,8 +527,8 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
   // The app's copy takes the rows as they are now.
   const now = new Date().toISOString();
   let touched = 0;
-  for (let row = fillFrom; row <= end; row++) {
-    if (row <= template && !fills.some(f => f.from <= row && !lockedColumns.has(f.column))) continue;
+  for (let row = byId ? start : fillFrom; row <= end; row++) {
+    if (!byId && row <= template && !fills.some(f => f.from <= row && !lockedColumns.has(f.column))) continue;
     const previous = store.getRecordBySheetRow(sheet, row);
     const kept = store.keepUnavailable(sheet, rowValues(sheet, { row, cells: at(row) }, layout), previous, layout);
     if (
@@ -479,14 +559,17 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
   const result = {
     sheet,
     template,
-    added: { from: start, to: end, count },
+    // Rows appended to the sheet; in Insectary_data only past the grid's last row.
+    added: byId ? (added ? { from: end - added + 1, to: end, count: added } : null) : { from: start, to: end, count },
+    // Insectary_data: the rows that got the next IDs.
+    filled: byId ? { from: start, to: end, count } : null,
     completed: completed.length
       ? { from: Math.min(...completed.map(f => f.from)), to: template, columns: completed.map(f => name(f.column)) }
       : null,
     firstId,
     lastId,
     ids: idCount,
-    newRounds: ids?.written.filter(w => !w.formula).map(w => ({ row: w.row, id: w.id })) ?? [],
+    newRounds: ids?.cells.filter(c => !c.formula).map(({ row, id }) => ({ row, id })) ?? [],
     checks,
     ok: !problems.length,
     problems: problems.slice(0, 20),
@@ -510,6 +593,16 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
     .prepare('INSERT INTO audit(id,kind,detail_json,created_at) VALUES(?,?,?,?)')
     .run(randomUUID(), 'premade_rows', JSON.stringify({ actor, ...result, protectedRanges: undefined }), now);
   return result;
+}
+
+/** Row numbers (ascending) grouped into [first, last] runs. */
+function runs(rows) {
+  const out = [];
+  for (const row of rows) {
+    if (out.length && out.at(-1)[1] === row - 1) out.at(-1)[1] = row;
+    else out.push([row, row]);
+  }
+  return out;
 }
 
 /** [c0, c1) runs of columns 0…width−1 that are not locked. */
@@ -541,50 +634,51 @@ const seriesIndex = id => (id.charCodeAt(0) - 65) * 10 + Number(id[1]);
 const seriesId = (index, round) => `${String.fromCharCode(65 + Math.floor(index / 10))}${index % 10}${round}`;
 
 /**
- * The Insectary IDs rows `from`–`end` will get: the formula of row `source`
- * continues `previous` (…Z9D); a new round starts with its first free ID typed
- * (after any of that round already in `existing`) and the same formula with the
- * new round letter. Returns { from, expected: [id per row], written: [{ row, id,
- * formula? }] for the rows from the first new round on, existing } or { problem }.
+ * The Insectary IDs rows `from`–`end` will get, going on from `previous` (the ID
+ * above; W2B.1 counts as W2B, as the formula reads it) with the formula of row
+ * `source` moved to each row. After Z9 a new round starts with its first free ID
+ * typed (after any of that round already in `existing`), and the formula goes on
+ * from it: the older form, which writes its round letter ("0D"), with the new
+ * letter; the newer one (LET) reads the round from the ID above. Returns { from,
+ * expected: [id per row], cells: [{ row, id, formula }, or { row, id } typed], existing }
+ * or { problem }.
  */
 export function planIds({ previous, source, formula, from, end, existing }) {
   const expected = [];
-  const written = [];
-  const round = /"0([A-Z])"/.exec(formula)?.[1];
+  const cells = [];
   let id = String(previous ?? '').trim().toUpperCase();
+  id = suffixedId(id)?.base ?? id;
   if (!/^[A-Z]\d[A-Z]$/.test(id))
     return {
       problem: id
         ? msg('La fila {row} no tiene un Insectary ID de la serie ({id})', { row: from - 1, id })
         : msg('La fila {row} no tiene un Insectary ID de la serie (vacío)', { row: from - 1 }),
     };
-  let letter = round;
+  let round = /"0([A-Z])"/.exec(formula)?.[1];
+  const withRound = letter => {
+    if (!round || round === letter) return;
+    formula = formula.replaceAll(`"0${round}"`, `"0${letter}"`).replaceAll(`"${round}"`, `"${letter}"`);
+    round = letter;
+  };
+  // A formula of an earlier round above a new round's first ID: it goes on with that round.
+  withRound(id[2]);
   for (let row = from; row <= end; row++) {
     const next = nextInSeries(id);
-    if (next) id = next;
-    else {
+    if (next) {
+      id = next;
+      cells.push({ row, id, formula: shiftFormula(formula, row - source) });
+    } else {
       // Z9 reached: the next round, from the first ID not used yet in it.
-      if (!round) return { problem: msg('La serie de Insectary IDs llega a {id} y su fórmula no indica la ronda', { id }) };
-      letter = String.fromCharCode(id.charCodeAt(2) + 1);
+      const letter = String.fromCharCode(id.charCodeAt(2) + 1);
       if (letter > 'Z') return { problem: msg('La serie de Insectary IDs llega a {id}: no hay más rondas', { id }) };
       const taken = [...existing].filter(x => x.length === 3 && x[2] === letter && /^[A-Z]\d$/.test(x.slice(0, 2)));
       const first = taken.length ? Math.max(...taken.map(seriesIndex)) + 1 : 0;
       if (first > seriesIndex('Z9A')) return { problem: msg('La ronda {letter} de Insectary IDs ya está usada', { letter }) };
       id = seriesId(first, letter);
-      written.push({ row, id });
-      expected.push(id);
-      continue;
+      cells.push({ row, id });
+      withRound(letter);
     }
-    if (written.length)
-      written.push({
-        row,
-        id,
-        // The formula of `source`, moved to this row, with the round's letter.
-        formula: shiftFormula(formula, row - source)
-          .replaceAll(`"0${round}"`, `"0${letter}"`)
-          .replaceAll(`"${round}"`, `"${letter}"`),
-      });
     expected.push(id);
   }
-  return { from, expected, written, existing };
+  return { from, expected, cells, existing };
 }

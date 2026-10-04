@@ -154,9 +154,13 @@ export default {
   'Indica entre 1 y 500 filas': 'Enter between 1 and 500 rows',
   'Las columnas protegidas {columns} debe completarlas el dueño de la hoja.':
     'The protected columns {columns} must be filled in by the sheet’s owner.',
+  '¿Cuántos Insectary IDs más? Se escriben en las filas que siguen al último ID de {sheet} (máximo 500)':
+    'How many more Insectary IDs? They go into the rows after the last ID of {sheet} (500 at most)',
   'Filas {from}–{to} creadas en {sheet}{ids}.': 'Rows {from}–{to} created in {sheet}{ids}.',
+  'Insectary IDs{ids} escritos en las filas {from}–{to} de {sheet}.': 'Insectary IDs{ids} written into rows {from}–{to} of {sheet}.',
   'Revisa: {problems}': 'Check: {problems}',
   'Copias de la última fila preasignada': 'Copies of the last pre-made row',
+  'Los siguientes Insectary IDs, en las filas que siguen al último ID': 'The next Insectary IDs, in the rows after the last ID',
   'Creando…': 'Creating…',
   'Crear filas preasignadas': 'Create pre-made rows',
   'Avisa a un administrador para que cree más.': 'Ask an administrator to create more.',
