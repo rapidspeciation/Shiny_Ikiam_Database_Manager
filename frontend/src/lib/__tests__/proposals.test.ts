@@ -132,6 +132,66 @@ describe('a notebook page\'s table', () => {
   })
 })
 
+describe('the columns a table always shows', () => {
+  // Insectary_data as reviewColumns gives it (shortened): the notebook's columns, then the sheet's others up to the notes.
+  const shownColumns = {
+    Insectary_data: {
+      fields: ['Insectary_ID', 'SPECIES', 'Sex', 'CLUTCH NUMBER', 'CAM_ID', 'Tube_1_id', 'Notes_Insectary_data', 'Wild_Reared', 'LIFESTAGE'],
+      keys: ['Insectary_ID'],
+    },
+    Collection_data: { fields: ['CAM_ID', 'SPECIES'], keys: [] },
+  }
+  const order = (sheet: string) =>
+    sheet === 'Insectary_data'
+      ? ['Insectary_ID', 'Wild_Reared', 'CLUTCH NUMBER', 'SPECIES', 'Sex', 'LIFESTAGE', 'CAM_ID', 'Tube_1_id', 'Notes_Insectary_data', 'Tube_1_rack', 'Tube_2_rack']
+      : ['CAM_ID', 'SPECIES', 'Sex', 'Collector']
+  it('shows every one of them even when the proposal changes only one column, then the changed and added ones beyond them', () => {
+    // Sex set to NOT_COLLECTED on many rows: the species, CAM and tube show beside it to spot a wrong row.
+    const p = proposal([edited('r1', { Sex: 'NOT_COLLECTED', Tube_2_rack: 'R2' }, { sheet: 'Insectary_data' })], { shownColumns })
+    const [g] = sheetGroups(p, { Insectary_data: ['Tube_1_rack'] }, order)
+    // The Insectary ID is in the table's ID column; the rest in the notebook's order, then the sheet's.
+    expect(g.fields).toEqual([
+      'SPECIES',
+      'Sex',
+      'CLUTCH NUMBER',
+      'CAM_ID',
+      'Tube_1_id',
+      'Notes_Insectary_data',
+      'Wild_Reared',
+      'LIFESTAGE',
+      'Tube_1_rack',
+      'Tube_2_rack',
+    ])
+    // Unchanged cells are the sheet's, grey.
+    expect(cellOf(g.changes[0], 'CAM_ID').kind).toBe('sheet')
+    expect(g.template).toEqual([])
+  })
+  it("shows the row's own ID as a column when the proposal changes it, and a sheet's identifying columns", () => {
+    const p = proposal(
+      [
+        edited('r1', { Insectary_ID: '5AB' }, { sheet: 'Insectary_data' }),
+        edited('r2', { Collector: 'Franz' }),
+      ],
+      { shownColumns },
+    )
+    const [insectary, collection] = sheetGroups(p, {}, order)
+    expect(insectary.fields[0]).toBe('Insectary_ID')
+    expect(collection.fields).toEqual(['CAM_ID', 'SPECIES', 'Collector'])
+  })
+  it("on a notebook page, folds only the template's columns beyond those always shown", () => {
+    const p = proposal(
+      [edited('r1', { Sex: 'male', LIFESTAGE: 'NA', Tube_2_rack: 'NA' }, { sheet: 'Insectary_data', inferred: ['LIFESTAGE', 'Tube_2_rack'] })],
+      {
+        shownColumns,
+        page: { kind: 'emergence', sheet: 'Insectary_data', columns: ['Insectary_ID', 'SPECIES', 'Sex'], keys: ['Insectary_ID'], photos: 1 },
+      },
+    )
+    const [g] = sheetGroups(p, {}, order)
+    expect(g.fields.slice(-2)).toEqual(['LIFESTAGE', 'Tube_2_rack'])
+    expect(g.template).toEqual(['Tube_2_rack'])
+  })
+})
+
 describe('what the assistant changed', () => {
   it('lists the cells whose value changed between two revisions, and every cell of a new row', () => {
     const before = proposal([created('c1', { SPECIES: 'Oleria gunilla', Sex: 'male' }), edited('r1', { Sex: 'female' })])

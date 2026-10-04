@@ -55,6 +55,11 @@ export type { Proposal, ProposalChange } from '../lib/proposals'
  * change), every line in the notebook's order ("solo cambios" hides the lines
  * that write nothing), the notebook's columns first and the template's NA /
  * NOT_COLLECTED columns folded.
+ * Each table shows its rows whole enough to spot a wrong one, whatever the
+ * proposal changes: in Insectary_data the notebook's columns, then the sheet's
+ * others up to Notes_Insectary_data (unchanged cells grey, as the sheet has
+ * them); in a sheet no notebook fills, its IDs, species, CAM and first tube
+ * (sheetGroups, and reviewColumns in server/notebook.mjs).
  * Cells someone edited in the sheet after the proposal (violet, "hoja") keep
  * the sheet's value unless the person chooses the proposal's beside the cell;
  * a banner counts them (a click goes to the next one), and «Avisar al

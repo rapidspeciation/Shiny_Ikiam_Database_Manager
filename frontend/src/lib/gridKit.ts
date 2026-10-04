@@ -42,21 +42,39 @@ export function scrollDelta(start: number, end: number, from: number, to: number
  * alone. Every grid gets this, as the key codes above.
  */
 type InnerColumn = { getElement: () => HTMLElement; getWidth: () => number; visible: boolean }
+type RangePos = { row: number; col: number }
+/** Where a range starts (its anchor) and ends (the corner Shift+arrows move). */
+export type RangeEnds = { start: RangePos; end: RangePos; setStart: (row: number, col: number) => void }
 type InnerRange = {
   table: Tabulator & {
     rowManager: { element: HTMLElement }
     columnManager: { getElement: () => HTMLElement }
-    modules: { frozenColumns?: { leftColumns: InnerColumn[]; rightColumns: InnerColumn[] } }
+    modules: { frozenColumns?: { leftColumns: InnerColumn[]; rightColumns: InnerColumn[] }; edit?: { currentCell: unknown } }
   }
-  activeRange?: { end: { row: number; col: number } }
+  activeRange?: RangeEnds
+  ranges: unknown[]
+  selecting: string
   getRowByRangePos: (position: number) => { getElement: () => HTMLElement } | undefined
   getColumnByRangePos: (position: number) => InnerColumn | undefined
   navigate: (jump: boolean, expand: boolean, dir: string) => boolean
+}
+/**
+ * An arrow without Shift after stretching a range of cells goes on from the
+ * corner that was moving, as in Google Sheets: five rows selected down, Down
+ * goes to the row under the fifth (Tabulator went on from the first cell).
+ * The range is first folded onto that corner. A whole row or column picked
+ * by its header goes on from its first cell, as before.
+ */
+export function fromMovingEnd(range: RangeEnds | undefined, expand: boolean, selecting: string) {
+  if (!range || expand || selecting !== 'cell') return
+  if (range.start.row !== range.end.row || range.start.col !== range.end.col) range.setStart(range.end.row, range.end.col)
 }
 {
   const range = SelectRangeModule.prototype as unknown as InnerRange
   const original = range.navigate
   range.navigate = function (this: InnerRange, jump: boolean, expand: boolean, dir: string) {
+    // (Never while a cell is being edited, nor with several ranges: Tabulator keeps the active one's first cell.)
+    if (!this.table.modules.edit?.currentCell && this.ranges.length <= 1) fromMovingEnd(this.activeRange, expand, this.selecting)
     const moved = original.call(this, jump, expand, dir)
     if (moved) keepInSight(this)
     return moved
@@ -185,6 +203,25 @@ export function clearRange(table: Tabulator, canEdit: CanEdit) {
   for (const cell of range.getCells().flat() as CellComponent[]) if (canEdit(cell.getRow(), cell.getField())) cell.setValue(null)
 }
 
+/** A cut is being copied: the copied cells' border and notice (attachCopyMarker) say so. */
+let cutting = false
+/**
+ * Cut (Ctrl+X): the selection is copied as Ctrl+C copies it, then its editable
+ * cells are cleared as Supr clears them; read-only cells are only copied.
+ */
+export function cutRange(table: Tabulator, canEdit: CanEdit) {
+  type Inner = { modules: { clipboard?: { copy: (range: unknown, internal: boolean) => void } } }
+  const clipboard = (table as unknown as Inner).modules.clipboard
+  if (!clipboard || !table.getRanges()[0]) return
+  cutting = true
+  try {
+    clipboard.copy(false, true)
+  } finally {
+    cutting = false
+  }
+  clearRange(table, canEdit)
+}
+
 // Keys typed while a cell's editor is still opening are kept and given to it,
 // so a fast typist does not lose the first letters. An Enter or Tab pressed
 // meanwhile waits for them too, then saves and moves on.
@@ -210,7 +247,8 @@ function giveText(tries = 0) {
 
 /**
  * Spreadsheet keys: typing on a selected cell replaces its content; Enter or
- * F2 edits it in place; Ctrl+D fills down; Supr clears the selection.
+ * F2 edits it in place; Ctrl+D fills down; Supr clears the selection; Ctrl+X
+ * cuts it.
  * `whyNot` explains a cell that cannot be typed in, when there is a reason to give.
  */
 export function spreadsheetKeys(
@@ -249,6 +287,9 @@ export function spreadsheetKeys(
     } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') {
       event.preventDefault()
       fillDown(t, canEdit, notice)
+    } else if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'x') {
+      event.preventDefault()
+      cutRange(t, canEdit)
     } else if (event.key === 'Delete') {
       event.preventDefault()
       clearRange(t, canEdit)
@@ -508,8 +549,17 @@ export function attachCopyMarker(table: Tabulator, container: HTMLElement, notic
   }
   table.on('clipboardCopied', () => {
     cells = (table.getRanges()[0]?.getCells().flat() as CellComponent[] | undefined) ?? null
-    place()
     const n = cells?.length ?? 0
+    // Cut: the cells are emptied at once, so no border is left around them.
+    if (cutting) {
+      clear()
+      if (n)
+        notice(
+          tn(n, 'Cortado: {n} celda. Selecciona dónde pegar y pulsa Ctrl+V', 'Cortado: {n} celdas. Selecciona dónde pegar y pulsa Ctrl+V'),
+        )
+      return
+    }
+    place()
     if (n)
       notice(
         tn(

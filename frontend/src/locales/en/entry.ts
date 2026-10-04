@@ -48,6 +48,8 @@ export default {
   'Arrastra hacia abajo para copiar': 'Drag down to copy',
   'Copiado: {n} celda. Selecciona dónde pegar y pulsa Ctrl+V': 'Copied: {n} cell. Select where to paste and press Ctrl+V',
   'Copiado: {n} celdas. Selecciona dónde pegar y pulsa Ctrl+V': 'Copied: {n} cells. Select where to paste and press Ctrl+V',
+  'Cortado: {n} celda. Selecciona dónde pegar y pulsa Ctrl+V': 'Cut: {n} cell. Select where to paste and press Ctrl+V',
+  'Cortado: {n} celdas. Selecciona dónde pegar y pulsa Ctrl+V': 'Cut: {n} cells. Select where to paste and press Ctrl+V',
   'Arrastra para ampliar la selección': 'Drag to extend the selection',
   'No hay nada copiado todavía': 'Nothing copied yet',
   Copiar: 'Copy',
