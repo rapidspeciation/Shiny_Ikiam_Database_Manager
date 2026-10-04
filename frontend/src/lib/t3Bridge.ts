@@ -84,7 +84,7 @@ export function chatPath(environmentId: string | null | undefined, threadId: str
 
 /**
  * A T3 address with the person's own project for the bridge (?ithomiini-project=…, before any
- * #, e.g. the sign-in link's #token): it lists only that project's chats, first time per browser.
+ * #, e.g. the sign-in link's #token): T3 opens listing only that project's chats.
  */
 export function ownProject(address: string, projectKey: string) {
   const hash = address.indexOf('#')

@@ -140,7 +140,7 @@ test('the script tells the app (only) which chat the frame shows', () => {
   assert.deepEqual(runBridge({ appOrigin: '' }).posts, []);
 });
 
-test("the frame opens on the person's own project: T3's list filtered to it, once per person and browser", () => {
+test("the frame opens on the person's own project: T3's list filtered to it, each time the app opens T3", () => {
   const items = new Map();
   const storage = { getItem: k => (items.has(k) ? items.get(k) : null), setItem: (k, v) => items.set(k, String(v)) };
   const ui = () => JSON.parse(items.get('t3code:ui-state:v1'));
@@ -151,11 +151,11 @@ test("the frame opens on the person's own project: T3's list filtered to it, onc
   const first = runBridge({ path: '/pair', search: `?ithomiini-project=${encodeURIComponent(ana)}`, hash: '#token=abc', storage });
   assert.equal(first.window.location.pathname, '/pair#token=abc');
   assert.deepEqual(ui(), { projectOrder: [ana, ben], threadLastVisitedAtById: { x: '2026-10-01' }, sidebarProjectScopeKey: ana });
-  // The person then picks «All projects» in T3: kept the next times the frame opens.
-  items.set('t3code:ui-state:v1', JSON.stringify({ ...ui(), sidebarProjectScopeKey: null }));
+  // The person then picks another project or «All projects» in T3: back to their own the next time.
+  items.set('t3code:ui-state:v1', JSON.stringify({ ...ui(), sidebarProjectScopeKey: ben }));
   const again = runBridge({ path: '/', search: `?x=1&ithomiini-project=${encodeURIComponent(ana)}`, storage });
   assert.equal(again.window.location.pathname, '/?x=1');
-  assert.equal(ui().sidebarProjectScopeKey, null);
+  assert.equal(ui().sidebarProjectScopeKey, ana);
   // Another person signs in to the app in this browser: their own project.
   runBridge({ path: '/', search: `?ithomiini-project=${encodeURIComponent(ben)}`, storage });
   assert.deepEqual([ui().sidebarProjectScopeKey, ui().projectOrder], [ben, [ben, ana]]);

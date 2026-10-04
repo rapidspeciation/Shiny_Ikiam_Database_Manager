@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
-import { ArrowUpCircle, BookOpen, ExternalLink, ListChecks, RefreshCw } from 'lucide-vue-next'
+import { ArrowUpCircle, BookOpen, ExternalLink, Link2, ListChecks, RefreshCw } from 'lucide-vue-next'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { api } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
@@ -8,7 +8,7 @@ import { useSession } from '../stores/session'
 import ProposalsLive from '../components/assistant/ProposalsLive.vue'
 import { persistentRef } from '../lib/persist'
 import { panelShare } from '../lib/proposals'
-import { assistantLink } from '../lib/t3Bridge'
+import { assistantLink, seenChat } from '../lib/t3Bridge'
 import { t3Host } from '../lib/t3Host'
 import { t, tn } from '../lib/i18n'
 
@@ -98,18 +98,28 @@ onBeforeUnmount(() => {
 
 // ------------------------------------------------------------ links (#/asistente?propuesta=…&chat=…&fila=…)
 // The assistant gives them for a proposal (server/assistant.mjs, proposalLink): the chat in T3's
-// frame and the proposal beside it. Read once, then taken off the address so the same link works again.
+// frame and the proposal beside it. The proposal is read once, then taken off the address so the
+// same link works again; the chat stays: the address always names the chat on screen (below).
 const route = useRoute()
 const router = useRouter()
+/** The chat T3's frame shows (its bridge says so); undefined: none, or not known. */
+const chatOnScreen = computed(() => {
+  const chat = seenChat(t3Host.seen)
+  return chat && chat !== 'draft' && chat !== 'none' ? chat : undefined
+})
 /** The proposal (and row) the panel is asked to show; the chat goes to the frame (t3Host.open). */
 const focus = ref<{ id: string; row: string | null } | null>(null)
+/** The chat last asked for by the address: the address naming it again is not a new link. */
+let asked: string | undefined
 watch(
   () => route.query,
   async query => {
     if (route.path !== '/asistente') return
     const link = assistantLink(query)
     if (!link) return
-    void router.replace({ path: '/asistente' })
+    if (!link.proposal && link.chat && (link.chat === chatOnScreen.value || link.chat === asked)) return
+    asked = link.chat ?? undefined
+    void router.replace({ path: '/asistente', query: link.chat ? { chat: link.chat } : {} })
     if (link.chat) t3Host.open = { thread: link.chat }
     if (!link.proposal) return
     focus.value = { id: link.proposal, row: link.row }
@@ -129,6 +139,29 @@ watch(
   },
   { immediate: true },
 )
+
+// The address names the chat on screen (#/asistente?chat=…): a reload, a bookmark or a link
+// copied from the address bar opens it again. Replaced, not added: Back leaves the tab.
+watch(
+  [chatOnScreen, () => route.path],
+  ([chat, path]) => {
+    if (path !== '/asistente' || !chat || route.query.chat === chat || route.query.propuesta) return
+    asked = chat
+    void router.replace({ path: '/asistente', query: { chat } })
+  },
+)
+
+/** A link to the chat on screen, for someone else on the team (it opens in their Asistente tab). */
+async function copyChatLink() {
+  if (!chatOnScreen.value) return
+  const link = `${location.origin}${location.pathname}#/asistente?chat=${chatOnScreen.value}`
+  try {
+    await navigator.clipboard.writeText(link)
+    notify(t('Enlace a este chat copiado: quien lo abra ve el chat (solo quien lo empezó debería seguirlo).'), 'success')
+  } catch {
+    notify(`${t('Copia el enlace a este chat:')}\n${link}`, 'info')
+  }
+}
 
 // ------------------------------------------------------------ updating T3 (admins)
 interface T3Version {
@@ -228,6 +261,15 @@ onMounted(async () => {
         @click="panel = !panel"
       >
         <ListChecks :size="14" /> {{ $t('Cambios propuestos ({n})', { n: waiting }) }}
+      </button>
+      <button
+        v-if="t3Url"
+        class="flex items-center gap-1 rounded px-2 py-0.5 text-stone-500 hover:bg-stone-200 hover:text-stone-800 disabled:opacity-40 disabled:hover:bg-transparent"
+        :disabled="!chatOnScreen"
+        :title="chatOnScreen ? $t('Copiar un enlace a este chat para otra persona del equipo') : $t('Abre un chat para copiar su enlace')"
+        @click="copyChatLink"
+      >
+        <Link2 :size="14" /> <span class="hidden sm:inline">{{ $t('Enlace') }}</span>
       </button>
       <button
         v-if="t3Url && (t3Version?.updateAvailable || t3Updating)"

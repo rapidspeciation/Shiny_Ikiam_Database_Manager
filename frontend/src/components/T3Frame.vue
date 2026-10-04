@@ -20,7 +20,7 @@ const props = defineProps<{
   url: string
   /** T3's environment (chats are /<environmentId>/<threadId>); null: links to chats are not followed. */
   environmentId?: string | null
-  /** The person's own T3 project: the bridge opens T3 with only its chats listed (once per person and browser). */
+  /** The person's own T3 project: the bridge opens T3 with only its chats listed. */
   projectKey?: string | null
   /**
    * The chat to open first: the person's latest in their own project. T3's own start page opens a new

@@ -15,6 +15,12 @@ export default {
   'Ocultar los cambios propuestos': 'Hide the proposed changes',
   'Mostrar los cambios propuestos': 'Show the proposed changes',
   'Cambios propuestos ({n})': 'Proposed changes ({n})',
+  Enlace: 'Link',
+  'Copiar un enlace a este chat para otra persona del equipo': 'Copy a link to this chat for someone else on the team',
+  'Abre un chat para copiar su enlace': 'Open a chat to copy its link',
+  'Enlace a este chat copiado: quien lo abra ve el chat (solo quien lo empezó debería seguirlo).':
+    'Link to this chat copied: whoever opens it sees the chat (only whoever started it should continue it).',
+  'Copia el enlace a este chat:': 'Copy the link to this chat:',
   'Hay una versión nueva de T3 Code ({latest}); tienes la {current}':
     'There is a new version of T3 Code ({latest}); you have {current}',
   'Actualizando T3…': 'Updating T3…',
