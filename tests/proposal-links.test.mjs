@@ -210,6 +210,9 @@ test('the app: T3 status names its environment, the first list answers 304 when 
     assert.deepEqual(await (await fetch(`${api}/t3/status`, { headers: { cookie } })).json(), {
       url: 'https://t3.example.org',
       environmentId: ENV,
+      // T3 has no state here (no projects): no own project to open on.
+      projectKey: null,
+      chat: null,
     });
     const path = `${api}/chat/proposals?all=1&chat=auto&wait=1&revision=`;
     const first = await fetch(path, { headers: { cookie } });

@@ -13,6 +13,10 @@ export const t3Host = reactive({
   /** T3's address (null: not asked yet, or T3 is not configured), and its chats' environment. */
   url: null as string | null,
   environmentId: null as string | null,
+  /** The person's own T3 project (server/t3projects.mjs): the frame opens with only its chats listed. */
+  projectKey: null as string | null,
+  /** The chat the frame opens on: the person's latest in their own project (server/t3projects.mjs). */
+  start: null as string | null,
   /** The place the frame covers (null: the Asistente tab is not on screen). */
   slot: null as HTMLElement | null,
   /** A chat to show (a new object each time a link asks for it). */

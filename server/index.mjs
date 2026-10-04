@@ -1,5 +1,6 @@
 import { t3Admin } from './t3admin.mjs';
 import { createT3Bridge } from './t3bridge.mjs';
+import { chatStarter, createT3Projects, projectKey, provisioner } from './t3projects.mjs';
 import http from 'node:http';
 import { readFileSync, statSync, createReadStream, existsSync, chmodSync } from 'node:fs';
 import { join, resolve, extname, dirname } from 'node:path';
@@ -212,6 +213,9 @@ export function configFromEnv(env = process.env) {
           home: env.ITHOMIINI_T3_HOME || '/home/ubuntu/.t3',
           // The lab: all of T3 through this app on 127.0.0.1:<port>, its pages with the bridge (server/t3bridge.mjs).
           proxyPort: Number(env.ITHOMIINI_T3_PROXY_PORT) || null,
+          // How a person's own T3 project is made the first time they open the Asistente tab
+          // (server/t3projects.mjs): 'systemd' on the live server, 'direct' in the lab, 'off'.
+          provision: env.ITHOMIINI_T3_PROVISION || 'systemd',
         }
       : null,
     aiApiKey: env.AI_API_KEY || env.OPENAI_API_KEY,
@@ -357,6 +361,12 @@ export async function createApp(config = {}, options = {}) {
     const { createAssistant } = await import(assistantFile.href);
     assistant = createAssistant({ store, config });
   }
+  // Each person's own T3 project, made when missing (server/t3projects.mjs).
+  const t3Projects = createT3Projects({
+    chats: assistant?.t3 ?? null,
+    provision: provisioner(config.t3?.provision),
+    startChat: chatStarter(config.t3 ?? {}),
+  });
   const loginLimiter = new LoginLimiter();
   const tableCache = new Map();
   const sheetHook = createSheetHook(store, { secret: config.sheetHookSecret });
@@ -981,8 +991,17 @@ export async function createApp(config = {}, options = {}) {
         return json(res, 201, await resets.adminLink(resetLink[1], user));
       }
       // environmentId: T3's chats are at <url>/<environmentId>/<threadId> (links that open a chat in the frame).
-      if (method === 'GET' && path === '/api/t3/status')
-        return json(res, 200, { url: config.t3?.url ?? null, environmentId: t3EnvironmentId(config.t3) });
+      // projectKey and chat: the person's own T3 project (made the first time) and the chat of it the frame opens on.
+      if (method === 'GET' && path === '/api/t3/status') {
+        const environmentId = t3EnvironmentId(config.t3);
+        const own = config.t3 && ['editor', 'reviewer', 'admin'].includes(user.role) ? await t3Projects.ensure(user) : null;
+        return json(res, 200, {
+          url: config.t3?.url ?? null,
+          environmentId,
+          projectKey: projectKey(environmentId, own?.project?.root),
+          chat: own?.chat ?? null,
+        });
+      }
       // What the assistant is told (any signed-in person): every file, the tools, each one's history.
       if (method === 'GET' && path === '/api/instructions') return json(res, 200, await instructions.list());
       if (method === 'GET' && path === '/api/instructions/diff') {

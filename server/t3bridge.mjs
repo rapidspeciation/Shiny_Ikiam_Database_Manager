@@ -24,6 +24,34 @@ function bridge() {
   if (window.parent === window) return;
   const app = document.currentScript && document.currentScript.dataset.appOrigin;
   if (!app) return;
+  // The person's own project (?ithomiini-project=<T3 project key>, server/t3projects.mjs): before T3
+  // starts, its saved list state is set to show only that project, first among them (a new chat goes
+  // there). Once per person in this browser: their own choice («All projects») is kept afterwards.
+  const search = location.search || '';
+  const asked = /[?&]ithomiini-project=([^&#]*)/.exec(search);
+  const own = asked ? decodeURIComponent(asked[1]) : '';
+  if (asked) {
+    const rest = search.replace(/([?&])ithomiini-project=[^&#]*&?/, '$1').replace(/[?&]$/, '');
+    history.replaceState(history.state, '', location.pathname + rest + (location.hash || ''));
+  }
+  if (own) {
+    try {
+      if (localStorage.getItem('ithomiini:project') !== own) {
+        const KEY = 't3code:ui-state:v1';
+        let ui = {};
+        try {
+          ui = JSON.parse(localStorage.getItem(KEY) || '{}') || {};
+        } catch {
+          /* T3 starts it again */
+        }
+        const order = Array.isArray(ui.projectOrder) ? ui.projectOrder.filter(key => key !== own) : [];
+        localStorage.setItem(KEY, JSON.stringify({ ...ui, sidebarProjectScopeKey: own, projectOrder: [own, ...order] }));
+        localStorage.setItem('ithomiini:project', own);
+      }
+    } catch {
+      /* no storage: T3 as it was */
+    }
+  }
   const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
   // A chat is /<environmentId>/<threadId>; a new chat is /draft/<draftId> until its first message.
   const CHAT = new RegExp(`^/(${UUID})/(${UUID})(?:/|$)`, 'i');

@@ -41,12 +41,15 @@ stop() {
 }
 # The admin's T3 workspace from this checkout: `lab` the first time (token, T3 project),
 # --refresh-all afterwards (brief, skills and subagents rewritten, token kept).
-provision() {
-  T3CODE_HOME="$T3HOME" ITHOMIINI_SHARED="$LAB/app" DATABASE_PATH="$LAB/app/app.sqlite" \
-    ITHOMIINI_MCP_URL="$URL/api/ai/mcp" ITHOMIINI_T3_WORKSPACES="$T3HOME/workspaces" \
-    ITHOMIINI_SRC="$HERE" ITHOMIINI_LAB_URL="$PUBLIC_URL" ITHOMIINI_DOCS="$HERE/docs" ITHOMIINI_DENY_READ="$LAB:$HOME/.cache/ithomiini-test" \
-    T3_BIN="${T3_BIN:-$HOME/.local/bin/t3}" node "$HERE/scripts/t3-provision.mjs" "$1"
-}
+# The same settings reach the app: it makes the T3 project of anyone else who opens the
+# Asistente tab (ITHOMIINI_T3_PROVISION=direct, server/t3projects.mjs).
+env_provision=(
+  T3CODE_HOME="$T3HOME" ITHOMIINI_SHARED="$LAB/app" DATABASE_PATH="$LAB/app/app.sqlite"
+  ITHOMIINI_MCP_URL="$URL/api/ai/mcp" ITHOMIINI_T3_WORKSPACES="$T3HOME/workspaces"
+  ITHOMIINI_SRC="$HERE" ITHOMIINI_LAB_URL="$PUBLIC_URL" ITHOMIINI_DOCS="$HERE/docs" ITHOMIINI_DENY_READ="$LAB:$HOME/.cache/ithomiini-test"
+  T3_BIN="${T3_BIN:-$HOME/.local/bin/t3}"
+)
+provision() { env "${env_provision[@]}" node "$HERE/scripts/t3-provision.mjs" "$1"; }
 [ "${1:-}" = "--stop" ] && { stop; exit 0; }
 [ "${1:-}" = "--refresh" ] && { provision --refresh-all; exit 0; }
 [ -f "$LAB/snapshot.json" ] || { echo "No snapshot: run tools/lab/snapshot.sh first" >&2; exit 1; }
@@ -87,6 +90,8 @@ env_app=(
   ITHOMIINI_T3_PROXY_PORT="$T3PROXY"
   ITHOMIINI_T3_ADMIN_TOKEN_FILE="$LAB/t3-admin-token"
   ITHOMIINI_T3_HOME="$T3HOME"
+  ITHOMIINI_T3_PROVISION=direct
+  "${env_provision[@]}"
   NODE_OPTIONS=--max-old-space-size=8192
 )
 # No Google credentials, keys or mail settings reach the lab app.

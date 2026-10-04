@@ -2975,5 +2975,5 @@ export function createAssistant({ store, config = {} }) {
     }
     return bad(404, 'not_found', 'Assistant route not found.');
   }
-  return { handle, mcp, tools: mcpTools };
+  return { handle, mcp, tools: mcpTools, t3 };
 }

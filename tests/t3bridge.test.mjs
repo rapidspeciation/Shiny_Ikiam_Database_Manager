@@ -64,13 +64,13 @@ test('which requests and answers get it', () => {
 });
 
 /** Runs the bridge in a fake T3 page: its posts, and a way to navigate and to say hello. */
-function runBridge({ framed = true, path = '/', appOrigin = APP } = {}) {
+function runBridge({ framed = true, path = '/', appOrigin = APP, search = '', hash = '', storage = null } = {}) {
   const posts = [];
   const listeners = {};
   // Copied out of the script's context (its objects have another Object.prototype).
   const parent = { postMessage: (data, origin) => posts.push({ data: JSON.parse(JSON.stringify(data)), origin }) };
   const window = {
-    location: { pathname: path, href: `https://t3.example.org${path}` },
+    location: { pathname: path, search, hash, href: `https://t3.example.org${path}${search}${hash}` },
     history: {
       state: null,
       pushState(state, _t, url) {
@@ -81,6 +81,7 @@ function runBridge({ framed = true, path = '/', appOrigin = APP } = {}) {
         window.location.pathname = url;
       },
     },
+    ...(storage ? { localStorage: storage } : {}),
     document: {
       currentScript: { dataset: { appOrigin } },
       visibilityState: 'visible',
@@ -137,6 +138,31 @@ test('the script tells the app (only) which chat the frame shows', () => {
   // A T3 tab of its own (not in a frame), or no app origin: silent.
   assert.deepEqual(runBridge({ framed: false }).posts, []);
   assert.deepEqual(runBridge({ appOrigin: '' }).posts, []);
+});
+
+test("the frame opens on the person's own project: T3's list filtered to it, once per person and browser", () => {
+  const items = new Map();
+  const storage = { getItem: k => (items.has(k) ? items.get(k) : null), setItem: (k, v) => items.set(k, String(v)) };
+  const ui = () => JSON.parse(items.get('t3code:ui-state:v1'));
+  const ana = `${ENV}:/w/ana`;
+  const ben = `${ENV}:/w/ben`;
+  items.set('t3code:ui-state:v1', JSON.stringify({ projectOrder: [ben, ana], threadLastVisitedAtById: { x: '2026-10-01' } }));
+  // The sign-in link: the project goes out of the address (T3 never sees it), its #token stays.
+  const first = runBridge({ path: '/pair', search: `?ithomiini-project=${encodeURIComponent(ana)}`, hash: '#token=abc', storage });
+  assert.equal(first.window.location.pathname, '/pair#token=abc');
+  assert.deepEqual(ui(), { projectOrder: [ana, ben], threadLastVisitedAtById: { x: '2026-10-01' }, sidebarProjectScopeKey: ana });
+  // The person then picks «All projects» in T3: kept the next times the frame opens.
+  items.set('t3code:ui-state:v1', JSON.stringify({ ...ui(), sidebarProjectScopeKey: null }));
+  const again = runBridge({ path: '/', search: `?x=1&ithomiini-project=${encodeURIComponent(ana)}`, storage });
+  assert.equal(again.window.location.pathname, '/?x=1');
+  assert.equal(ui().sidebarProjectScopeKey, null);
+  // Another person signs in to the app in this browser: their own project.
+  runBridge({ path: '/', search: `?ithomiini-project=${encodeURIComponent(ben)}`, storage });
+  assert.deepEqual([ui().sidebarProjectScopeKey, ui().projectOrder], [ben, [ben, ana]]);
+  // Outside the app's frame nothing is touched.
+  items.clear();
+  runBridge({ framed: false, search: `?ithomiini-project=${encodeURIComponent(ana)}`, storage });
+  assert.equal(items.size, 0);
 });
 
 test('the app opens a chat in T3; links clicked in T3 are left to T3 (a new tab)', () => {

@@ -1,0 +1,15 @@
+# A person's own T3 Code project (scripts/t3-provision.mjs <username>), started by the
+# app the first time they open the Asistente tab without one (server/t3projects.mjs).
+# Outside the app's sandbox: it writes the workspace, Claude's and Codex's trust
+# settings and T3's project list (`t3 project add`), as an admin running it by hand would.
+[Unit]
+Description=Ithomiini: T3 Code project for app user %i
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ubuntu/ithomiini/current
+EnvironmentFile=/home/ubuntu/.config/ithomiini/service.env
+Environment=T3CODE_HOME=/home/ubuntu/.t3
+ExecStart=/home/ubuntu/.local/share/tiputini-runtime/node-v24.18.0-linux-arm64/bin/node scripts/t3-provision.mjs %i
+TimeoutStartSec=120
+UMask=0077

@@ -2,7 +2,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api } from '../lib/api'
 import { errorText } from '../lib/notice'
-import { BRIDGE_WAIT_MS, HELLO, bridgeMessage, chatPath, openChat, originOf, type T3Seen, type T3View } from '../lib/t3Bridge'
+import { BRIDGE_WAIT_MS, HELLO, bridgeMessage, chatPath, openChat, originOf, ownProject, type T3Seen, type T3View } from '../lib/t3Bridge'
 import { useSession } from '../stores/session'
 
 /**
@@ -20,6 +20,13 @@ const props = defineProps<{
   url: string
   /** T3's environment (chats are /<environmentId>/<threadId>); null: links to chats are not followed. */
   environmentId?: string | null
+  /** The person's own T3 project: the bridge opens T3 with only its chats listed (once per person and browser). */
+  projectKey?: string | null
+  /**
+   * The chat to open first: the person's latest in their own project. T3's own start page opens a new
+   * chat in whichever project anyone used last, and a new chat goes to the project of the one on screen.
+   */
+  start?: string | null
   /** A chat to show (a new object each time a link asks for it). */
   open?: { thread: string } | null
 }>()
@@ -38,7 +45,9 @@ let pending: string | null = null
 let fallback: ReturnType<typeof setTimeout> | undefined
 let settle: ReturnType<typeof setTimeout> | undefined
 
-const addressOf = (thread: string) => `${props.url.replace(/\/+$/, '')}${chatPath(props.environmentId, thread)}`
+/** A T3 address that also tells the bridge the person's own project (it takes it out before T3 reads it). */
+const withProject = (address: string) => (props.projectKey ? ownProject(address, props.projectKey) : address)
+const addressOf = (thread: string) => withProject(`${props.url.replace(/\/+$/, '')}${chatPath(props.environmentId, thread)}`)
 
 /** Moves the frame to a chat: in T3's router via the bridge, by its address if that does not get there. */
 function go(thread: string) {
@@ -120,17 +129,19 @@ const DAYS_29 = 29 * 24 * 60 * 60 * 1000
 
 async function connect(force = false) {
   problem.value = ''
+  // The first time only: a sign-in again (after a T3 update) stays where the person was.
+  if (!src.value && !pending && props.start && chatPath(props.environmentId, props.start)) pending = props.start
   const paired = Number(localStorage.getItem(key) || 0)
   if (!force && Date.now() - paired < DAYS_29) {
     // A chat asked for before the frame first loaded: straight to it.
-    src.value = pending ? addressOf(pending) : props.url
+    src.value = pending ? addressOf(pending) : withProject(props.url)
     pending = null
     return
   }
   try {
     const { url } = await api<{ url: string }>('t3/pair', { method: 'POST', body: {} })
     localStorage.setItem(key, String(Date.now()))
-    src.value = url
+    src.value = withProject(url)
   } catch (e) {
     problem.value = errorText(e)
   }

@@ -82,6 +82,16 @@ export function chatPath(environmentId: string | null | undefined, threadId: str
   return env && thread ? `/${env}/${thread}` : null
 }
 
+/**
+ * A T3 address with the person's own project for the bridge (?ithomiini-project=…, before any
+ * #, e.g. the sign-in link's #token): it lists only that project's chats, first time per browser.
+ */
+export function ownProject(address: string, projectKey: string) {
+  const hash = address.indexOf('#')
+  const [base, rest] = hash < 0 ? [address, ''] : [address.slice(0, hash), address.slice(hash)]
+  return `${base}${base.includes('?') ? '&' : '?'}ithomiini-project=${encodeURIComponent(projectKey)}${rest}`
+}
+
 /** A link into the Asistente tab (#/asistente?propuesta=…&chat=…&fila=…): what it opens. */
 export interface AssistantLink {
   proposal: string | null

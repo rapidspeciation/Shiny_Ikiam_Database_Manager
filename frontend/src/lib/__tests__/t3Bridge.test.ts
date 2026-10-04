@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { afterMove, assistantLink, bridgeMessage, chatPath, originOf, seenChat, type T3View } from '../t3Bridge'
+import { afterMove, assistantLink, bridgeMessage, chatPath, originOf, ownProject, seenChat, type T3View } from '../t3Bridge'
 
 const T3 = 'https://t3.example.org'
 const ENV = '4e6c4765-8cfa-4adc-b761-3c3bae2ae7e0'
@@ -80,5 +80,13 @@ describe('the T3 bridge', () => {
     expect(assistantLink({ chat: A })).toEqual({ proposal: null, chat: A, row: null })
     expect(assistantLink({ propuesta: 'nope' })).toBeNull()
     expect(assistantLink({ grupo: 'x' })).toBeNull()
+  })
+
+  it("addresses carry the person's own project before any #", () => {
+    const key = `${ENV}:/w/ana`
+    const tagged = `ithomiini-project=${encodeURIComponent(key)}`
+    expect(ownProject(`${T3}/pair#token=a+b`, key)).toBe(`${T3}/pair?${tagged}#token=a+b`)
+    expect(ownProject(`${T3}/${ENV}/${A}`, key)).toBe(`${T3}/${ENV}/${A}?${tagged}`)
+    expect(ownProject(`${T3}/?x=1`, key)).toBe(`${T3}/?x=1&${tagged}`)
   })
 })

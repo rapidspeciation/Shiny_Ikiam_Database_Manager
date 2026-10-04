@@ -93,7 +93,7 @@ watch(dragging, now => (t3Host.passThrough = now !== null))
 const reconnectT3 = () => t3Host.reconnects++
 onBeforeUnmount(() => {
   // Signed out: the next session starts without T3 until it opens this tab.
-  Object.assign(t3Host, { url: null, environmentId: null, slot: null, open: null, passThrough: false })
+  Object.assign(t3Host, { url: null, environmentId: null, projectKey: null, start: null, slot: null, open: null, passThrough: false })
 })
 
 // ------------------------------------------------------------ links (#/asistente?propuesta=…&chat=…&fila=…)
@@ -190,8 +190,12 @@ async function updateT3() {
 
 onMounted(async () => {
   try {
-    const status = await api<{ url: string | null; environmentId?: string | null }>('t3/status')
+    const status = await api<{ url: string | null; environmentId?: string | null; projectKey?: string | null; chat?: string | null }>(
+      't3/status',
+    )
     t3Host.environmentId = status.environmentId ?? null
+    t3Host.projectKey = status.projectKey ?? null
+    t3Host.start = status.chat ?? null
     t3Host.url = status.url
   } catch (e) {
     notify(errorText(e), 'error')

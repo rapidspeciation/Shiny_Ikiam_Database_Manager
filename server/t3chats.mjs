@@ -144,17 +144,25 @@ export function createT3Chats({ home, now = Date.now } = {}) {
   }
 
   let projects = { at: 0, byUser: new Map() };
-  /** The T3 projects of a person (their workspace folder is their username). */
-  function projectsOf(username) {
+  /** The person's T3 projects as { id, root } (their workspace folder is their username). */
+  function ownProjects(username) {
     if (now() - projects.at > 60_000) {
       const byUser = new Map();
       for (const p of query('SELECT project_id, workspace_root FROM projection_projects WHERE deleted_at IS NULL', [])) {
-        const name = basename(String(p.workspace_root ?? '').replace(/\/+$/, ''));
-        byUser.set(name, [...(byUser.get(name) ?? []), p.project_id]);
+        const root = String(p.workspace_root ?? '').replace(/\/+$/, '');
+        const name = basename(root);
+        byUser.set(name, [...(byUser.get(name) ?? []), { id: p.project_id, root }]);
       }
       projects = { at: now(), byUser };
     }
     return projects.byUser.get(String(username ?? '')) ?? [];
+  }
+  /** The T3 projects of a person, by id. */
+  const projectsOf = username => ownProjects(username).map(p => p.id);
+  /** The person's own project ({ id, root }), or null; `fresh` reads T3 again (a project just made). */
+  function projectOf(username, { fresh = false } = {}) {
+    if (fresh) projects = { at: 0, byUser: new Map() };
+    return ownProjects(username)[0] ?? null;
   }
 
   /** Threads by id: title, project, when the person last wrote in it. */
@@ -300,6 +308,7 @@ export function createT3Chats({ home, now = Date.now } = {}) {
       return !!state();
     },
     projectsOf,
+    projectOf,
     threads,
     chatsOf,
     threadOfToolUse,
