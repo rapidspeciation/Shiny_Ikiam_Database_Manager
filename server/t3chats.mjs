@@ -165,6 +165,17 @@ export function createT3Chats({ home, now = Date.now } = {}) {
     return ownProjects(username)[0] ?? null;
   }
 
+  /** Whose a chat is: the username of its project's workspace folder (null: not a person's project, or no such chat). */
+  function ownerOf(threadId) {
+    const row = query(
+      `SELECT p.workspace_root FROM projection_threads t JOIN projection_projects p ON p.project_id = t.project_id
+       WHERE t.thread_id = ? AND p.deleted_at IS NULL`,
+      [String(threadId ?? '')],
+      false,
+    );
+    return row ? basename(String(row.workspace_root ?? '').replace(/\/+$/, '')) || null : null;
+  }
+
   /** Threads by id: title, project, when the person last wrote in it. */
   function threads(ids) {
     const list = [...new Set(ids.filter(Boolean))];
@@ -309,6 +320,7 @@ export function createT3Chats({ home, now = Date.now } = {}) {
     },
     projectsOf,
     projectOf,
+    ownerOf,
     threads,
     chatsOf,
     threadOfToolUse,

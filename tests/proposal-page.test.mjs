@@ -194,11 +194,27 @@ test("a page's proposal shows every line in the notebook's order, with its photo
     assert.equal((await get(`/api/proposals/${out.proposalId}/photos/0`, undefined, {}, { 'if-none-match': thumb.headers.etag })).status, 304);
     assert.equal((await get(`/api/proposals/${out.proposalId}/photos/1`, undefined, { size: 'view' })).status, 200);
     assert.equal((await get(`/api/proposals/${out.proposalId}/photos/2`)).status, 404);
-    assert.equal((await get(`/api/proposals/${out.proposalId}/photos/0`, ana)).status, 404, "another person's proposal");
+    // Someone else on the team who finishes the chat sees them too; someone who only looks does not.
+    assert.equal((await get(`/api/proposals/${out.proposalId}/photos/0`, ana)).status, 200, "another editor, the chat handed over");
+    assert.equal((await get(`/api/proposals/${out.proposalId}/photos/0`, { ...ana, role: 'observer' })).status, 404, 'an observer');
     // The proposal said to come from another chat: its photos are not that chat's.
     store.db.prepare('UPDATE ai_proposals SET t3_thread = ? WHERE id = ?').run(OTHER, out.proposalId);
     assert.equal((await get(`/api/proposals/${out.proposalId}/photos/0`)).status, 404);
     store.db.prepare('UPDATE ai_proposals SET t3_thread = ? WHERE id = ?').run(THREAD, out.proposalId);
+
+    // Franz's chat handed to Ana (open in her T3 frame, or asked for): its proposals are in her table, live,
+    // and she can edit them; her own list (no chat) does not take them in.
+    const listed = async query => (await get('/api/chat/proposals', ana, query)).body;
+    const onScreen = await listed({ chat: 'auto', seen: THREAD });
+    assert.deepEqual(onScreen.proposals.map(x => x.id), [out.proposalId]);
+    assert.deepEqual((await listed({ chat: THREAD })).proposals.map(x => x.id), [out.proposalId]);
+    assert.deepEqual((await listed({ only: out.proposalId })).proposals.map(x => x.id), [out.proposalId]);
+    assert.deepEqual((await listed({})).proposals, []);
+    // Her page follows Franz's revision: a change by the assistant there wakes it.
+    assert.equal(onScreen.revision, (await get('/api/chat/proposals', undefined, { chat: THREAD })).body.revision);
+    const edited = await http('POST', `/api/chat/proposals/${out.proposalId}/edit`, { cells: [] }, ana);
+    assert.equal(edited.status, 200, JSON.stringify(edited.body));
+    assert.equal((await http('POST', `/api/chat/proposals/${out.proposalId}/edit`, { cells: [] }, { ...ana, role: 'observer' })).status, 403);
 
     // A clutch changed later (update_proposal): the formula's species follows it.
     const index = p.changes.find(c => c.label === '2AB').index;

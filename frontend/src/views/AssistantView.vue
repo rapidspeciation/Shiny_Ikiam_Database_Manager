@@ -151,6 +151,26 @@ watch(
   },
 )
 
+/**
+ * Whose the chat on screen is, when it is someone else's (a link, or their project picked in T3's list):
+ * there the assistant's tools act for that person, so the bar says so. null: the person's own (or not known).
+ */
+const chatOwner = ref<string | null>(null)
+watch(
+  chatOnScreen,
+  async chat => {
+    chatOwner.value = null
+    if (!chat) return
+    try {
+      const out = await api<{ mine: boolean; owner: string | null }>(`t3/chat-owner?chat=${chat}`)
+      if (chatOnScreen.value === chat) chatOwner.value = out.mine ? null : out.owner
+    } catch {
+      /* no banner */
+    }
+  },
+  { immediate: true },
+)
+
 /** A link to the chat on screen, for someone else on the team (it opens in their Asistente tab). */
 async function copyChatLink() {
   if (!chatOnScreen.value) return
@@ -305,6 +325,13 @@ onMounted(async () => {
         /></a>
       </template>
     </div>
+    <p v-if="t3Url && chatOwner" class="border-b border-amber-200 bg-amber-50 px-3 py-1 text-sm text-amber-900" role="status">
+      {{
+        $t('Chat de {name}: aquí la IA cree que eres {name}, y lo que escriba o guarde va a su nombre. Lo que apliques desde Cambios propuestos se guarda a tu nombre.', {
+          name: chatOwner,
+        })
+      }}
+    </p>
     <div
       v-if="t3Url"
       ref="split"

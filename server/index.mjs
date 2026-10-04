@@ -1002,6 +1002,12 @@ export async function createApp(config = {}, options = {}) {
           chat: own?.chat ?? null,
         });
       }
+      // Whose the chat on screen is (its T3 project's person): another's, and the Asistente tab says the AI takes you for them there.
+      if (method === 'GET' && path === '/api/t3/chat-owner') {
+        const username = assistant?.t3?.ownerOf(String(query.chat ?? '')) ?? null;
+        const found = username ? store.db.prepare('SELECT display_name FROM users WHERE username = ?').get(username) : null;
+        return json(res, 200, { mine: !username || username === user.username, owner: found?.display_name ?? null });
+      }
       // What the assistant is told (any signed-in person): every file, the tools, each one's history.
       if (method === 'GET' && path === '/api/instructions') return json(res, 200, await instructions.list());
       if (method === 'GET' && path === '/api/instructions/diff') {

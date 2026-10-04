@@ -1284,6 +1284,24 @@ export function createAssistant({ store, config = {} }) {
 
   const ownProposal = (id, user) =>
     db.prepare('SELECT * FROM ai_proposals WHERE id = ? AND owner_id = ?').get(String(id ?? ''), owner(user));
+  /**
+   * Any person's proposal, for the app's table (Cambios propuestos): whoever has its chat on screen
+   * can review, edit and apply it (a chat handed to someone else to finish). The assistant's own
+   * tools still reach only the proposals of the person they act for.
+   */
+  const anyProposal = id => db.prepare('SELECT * FROM ai_proposals WHERE id = ?').get(String(id ?? ''));
+  /** A proposal the person may see in the table: their own, or anyone's for those who may edit proposals. */
+  const teamProposal = (id, user) => {
+    const found = anyProposal(id);
+    return found && (found.owner_id === owner(user) || EDITORS.includes(user.role)) ? found : undefined;
+  };
+  /** Whose proposals a T3 chat holds (or will): its proposals' owner, else the owner of the chat's T3 project. */
+  function ownerOfChat(threadId) {
+    const made = db.prepare('SELECT owner_id FROM ai_proposals WHERE t3_thread = ? LIMIT 1').get(threadId);
+    if (made) return made.owner_id;
+    const username = t3?.ownerOf?.(threadId);
+    return username ? (db.prepare('SELECT id FROM users WHERE username = ?').get(username)?.id ?? null) : null;
+  }
   const ownProposalListed = id =>
     db.prepare('SELECT p.*, t.title FROM ai_proposals p JOIN ai_threads t ON t.id = p.thread_id WHERE p.id = ?').get(id);
   /** A proposal as Cambios propuestos lists it (with the conversation it comes from: its T3 chat, if known). */
@@ -2025,7 +2043,9 @@ export function createAssistant({ store, config = {} }) {
   const waiters = new Map();
   /** Per person, the page whose own edit each recent revision was (null: anyone else's change). */
   const editors = new Map();
-  const revisionOf = ownerId => `${boot}.${revisions.get(ownerId) ?? 0}`;
+  /** A page's revision names whose list it is: a page that moves to another person's chat starts again. */
+  const tagOf = ownerId => createHash('sha1').update(String(ownerId)).digest('base64url').slice(0, 6);
+  const revisionOf = ownerId => `${boot}.${tagOf(ownerId)}.${revisions.get(ownerId) ?? 0}`;
   function changed(ownerId, page = null) {
     const n = (revisions.get(ownerId) ?? 0) + 1;
     revisions.set(ownerId, n);
@@ -2056,9 +2076,10 @@ export function createAssistant({ store, config = {} }) {
   /** Whether a page holding revision `seen` has the list as it is: nothing changed since but its own edits. */
   function caughtUp(ownerId, seen, page) {
     if (seen === revisionOf(ownerId)) return true;
-    const [from, to] = [Number(String(seen).slice(boot.length + 1)), revisions.get(ownerId) ?? 0];
+    const prefix = `${boot}.${tagOf(ownerId)}.`;
+    const [from, to] = [Number(String(seen).slice(prefix.length)), revisions.get(ownerId) ?? 0];
     const by = editors.get(ownerId);
-    if (!page || !by || !String(seen).startsWith(`${boot}.`) || !Number.isInteger(from) || from > to || to - from > 50) return false;
+    if (!page || !by || !String(seen).startsWith(prefix) || !Number.isInteger(from) || from > to || to - from > 50) return false;
     for (let n = from + 1; n <= to; n++) if (by.get(n) !== page) return false;
     return true;
   }
@@ -2548,15 +2569,17 @@ export function createAssistant({ store, config = {} }) {
   let photoCopies = null;
   /**
    * GET /api/proposals/:id/photos/:n?size=thumb|view: a photo of a notebook
-   * page's proposal, upright (`raw` bytes for index.mjs). Only the person's own
-   * proposals, and only an attachment of the T3 chat the proposal comes from.
+   * page's proposal, upright (`raw` bytes for index.mjs). For its owner and for
+   * anyone who may edit proposals (a chat handed over), and only an attachment
+   * of the T3 chat the proposal comes from.
    */
   async function proposalPhoto(id, n, user, query, headers = {}) {
-    const find = () => ownProposal(id, user);
+    // Its owner, or anyone on the team who may edit proposals (a chat handed over to finish).
+    const find = () => teamProposal(id, user);
     let proposal = find();
     // A proposal whose chat is not linked yet (T3 records the call a moment later).
     if (proposal && !proposal.t3_thread) {
-      linkByToolUse(owner(user));
+      linkByToolUse(proposal.owner_id);
       proposal = find();
     }
     const photo = proposal ? parse(proposal.page_json ?? 'null')?.photos?.[n] : null;
@@ -2613,21 +2636,28 @@ export function createAssistant({ store, config = {} }) {
       // discarded (or after 20 s), so the Asistente tab shows edits as the assistant drafts them;
       // with T3, also when another chat is opened there (a page whose frame says so asks again itself).
       const held = String(query.revision ?? '');
+      // Another person's chat on screen (or asked for), or another person's proposal: its proposals, live.
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+      const thread = query.only ? null : asked === 'auto' ? (UUID_RE.test(seen ?? '') ? seen : null) : UUID_RE.test(asked) ? asked : null;
+      const team = EDITORS.includes(user.role);
+      const of = !team ? me : query.only ? (anyProposal(query.only)?.owner_id ?? me) : thread ? (ownerOfChat(thread) ?? me) : me;
       if (query.wait)
         await waitForChange(
-          me,
+          of,
           held,
           config.proposalWaitMs ?? 20000,
           t3 && !query.only && !seen ? () => followed(user, chatGroups(me)).chat !== follow : null,
           page,
         );
-      linkByToolUse(me);
-      void linkByResult(me).catch(e => console.error('Proposals by chat:', e.message));
-      const revision = revisionOf(me);
+      linkByToolUse(of);
+      void linkByResult(of).catch(e => console.error('Proposals by chat:', e.message));
+      const revision = revisionOf(of);
       const groups = chatGroups(me);
       const followNow = followed(user, groups, seen);
       const scope = query.only ? { chat: 'all', how: 'only' } : asked === 'auto' ? followNow : { chat: asked, how: 'chosen' };
-      const select = `SELECT p.*, t.title FROM ai_proposals p JOIN ai_threads t ON t.id = p.thread_id WHERE p.owner_id = ?`;
+      // One chat (or one proposal): whoever's it is; otherwise the person's own.
+      const anyone = team && (!!query.only || (scope.chat !== 'all' && scope.chat !== 'app' && scope.chat !== 'draft'));
+      const select = `SELECT p.*, t.title FROM ai_proposals p JOIN ai_threads t ON t.id = p.thread_id WHERE ${anyone ? '1 = 1' : 'p.owner_id = ?'}`;
       // A new chat in T3 (a draft): no proposals yet.
       const where = query.only
         ? ' AND p.id = ?'
@@ -2638,7 +2668,7 @@ export function createAssistant({ store, config = {} }) {
             : scope.chat === 'draft'
               ? ' AND 0'
               : ' AND p.t3_thread = ?';
-      const args = [me, ...(query.only ? [String(query.only)] : ['all', 'app', 'draft'].includes(scope.chat) ? [] : [scope.chat])];
+      const args = [...(anyone ? [] : [me]), ...(query.only ? [String(query.only)] : ['all', 'app', 'draft'].includes(scope.chat) ? [] : [scope.chat])];
       const order = 'ORDER BY p.created_at DESC, p.rowid DESC';
       // all=1: the pending ones and the last few reviewed (the panel shows five), not every old proposal on each change.
       const rows = [
@@ -2668,7 +2698,7 @@ export function createAssistant({ store, config = {} }) {
         .update(json([head, rows.map(r => [r.t3_thread, titles.get(r.t3_thread)?.title ?? null])]))
         .digest('base64url')
         .slice(0, 12);
-      if (query.wait && held && caughtUp(me, held, page) && query.stamp === stamp)
+      if (query.wait && held && caughtUp(of, held, page) && query.stamp === stamp)
         return { status: 200, body: { unchanged: true, revision, stamp } };
       // The first request of a page (no revision held): tagged, so a reload with nothing new is a 304.
       return { status: 200, tagged: !held, body: { revision, stamp, ...head, proposals: rows.map(r => listedView(r, titles)) } };
@@ -2677,7 +2707,7 @@ export function createAssistant({ store, config = {} }) {
     const editMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/edit$/.exec(path);
     if (editMatch && method === 'POST') {
       if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot edit proposals.');
-      const proposal = ownProposal(editMatch[1], user);
+      const proposal = teamProposal(editMatch[1], user);
       if (!proposal) return bad(404, 'not_found', 'Proposal not found.');
       if (proposal.status !== 'pending') return bad(409, 'proposal_used', 'La propuesta ya no está pendiente.');
       const cells = body.cells ?? [];
@@ -2804,15 +2834,17 @@ export function createAssistant({ store, config = {} }) {
     const tellMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/tell$/.exec(path);
     if (tellMatch && method === 'POST') {
       if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot edit proposals.');
-      const proposal = ownProposal(tellMatch[1], user);
+      const proposal = teamProposal(tellMatch[1], user);
       if (!proposal) return bad(404, 'not_found', 'Proposal not found.');
+      // Into the chat of whoever's proposal it is (a chat handed over: the message goes there as typed in it).
+      const author = db.prepare('SELECT username FROM users WHERE id = ?').get(proposal.owner_id)?.username ?? user.username;
       const text = typeof body.text === 'string' ? body.text.trim() : '';
       if (!text || text.length > 4000) return bad(400, 'invalid_text', 'text must be 1 to 4000 characters.');
       const out = await tellChat({
         t3: config.t3,
         chats: t3,
         threadId: proposal.t3_thread || null,
-        username: user.username,
+        username: author,
         text,
         ...(config.t3Fetch ? { fetchImpl: config.t3Fetch } : {}),
       });
@@ -2820,19 +2852,19 @@ export function createAssistant({ store, config = {} }) {
     }
     const discardMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/discard$/.exec(path);
     if (discardMatch && method === 'POST') {
+      const proposal = teamProposal(discardMatch[1], user);
+      if (!proposal) return bad(404, 'not_found', 'Proposal not found.');
       const done = db
-        .prepare("UPDATE ai_proposals SET status = 'discarded' WHERE id = ? AND owner_id = ? AND status = 'pending'")
-        .run(discardMatch[1], owner(user));
-      if (done.changes) changed(owner(user));
+        .prepare("UPDATE ai_proposals SET status = 'discarded' WHERE id = ? AND status = 'pending'")
+        .run(discardMatch[1]);
+      if (done.changes) changed(proposal.owner_id);
       return done.changes
         ? { status: 200, body: { proposalId: discardMatch[1], status: 'discarded' } }
         : bad(409, 'proposal_used', 'Proposal is no longer pending.');
     }
     const proposalMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/apply$/.exec(path);
     if (proposalMatch && method === 'POST') {
-      const proposal = db
-        .prepare('SELECT * FROM ai_proposals WHERE id = ? AND owner_id = ?')
-        .get(proposalMatch[1], owner(user));
+      const proposal = teamProposal(proposalMatch[1], user);
       if (!proposal) return bad(404, 'not_found', 'Proposal not found.');
       if (proposal.status !== 'pending') return bad(409, 'proposal_used', 'Proposal has already been applied.');
       const requestId = typeof body.requestId === 'string' ? body.requestId : '';

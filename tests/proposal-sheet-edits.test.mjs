@@ -355,3 +355,26 @@ test("“Tell the assistant” sends to the proposal's own T3 chat when it is id
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("someone else on the team finishes a handed-over chat: applies its proposal as themselves", async () => {
+  const f = await fixture(insectary());
+  try {
+    const a1 = f.store.getRecordBySheetRow('Insectary_data', 2);
+    const { proposalId } = await f.call('propose_changes', {
+      reason: 'Página 12',
+      changes: [{ recordId: a1.id, values: { Notes_Insectary_data: 'ala rota' } }],
+    });
+    const ana = { id: 'u2', username: 'ana', displayName: 'Ana', role: 'editor' };
+    const as = who => (action, body) => f.assistant.handle({ method: 'POST', path: `/api/chat/proposals/${proposalId}/${action}`, body, user: who });
+    // Someone who only looks can't.
+    assert.equal((await as({ ...ana, role: 'observer' })('apply', { requestId: 'apply-observer-1' })).status, 404);
+    const out = await as(ana)('apply', { requestId: 'apply-ana-12345' });
+    assert.equal(out.status, 200, JSON.stringify(out.body));
+    // The note was written by the assistant for Franz (Franz's chat); the save is Ana's.
+    assert.match(f.store.getRecord(a1.id).values.Notes_Insectary_data, /^\d+\/\d+\/\d+ F: ala rota$/);
+    const actor = f.store.db.prepare("SELECT actor FROM actions WHERE request_id LIKE '%apply-ana-12345%' OR actor = 'u2' LIMIT 1").get()?.actor;
+    assert.equal(actor, 'u2');
+  } finally {
+    f.close();
+  }
+});
