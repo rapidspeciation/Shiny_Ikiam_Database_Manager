@@ -122,13 +122,12 @@ export function createFormulaReader(store) {
     return out;
   }
 
-  function rowGives({ sheet, record, values, all = false, force = [], ctx = session() }) {
+  function rowGives({ sheet, record, values, all = false, ctx = session() }) {
     const gives = {};
     const fallback = [];
     if (!record) return { gives, fallback };
     const formulas = Object.fromEntries(Object.entries(record.formulas ?? {}).filter(([f]) => !(f in values)));
-    // `force`: formulas the proposal writes: evaluated, and those reading them too.
-    const changed = new Set([...Object.keys(values), ...force]);
+    const changed = new Set(Object.keys(values));
     // Whether a formula column depends on what the proposal writes (through the row's other formulas too).
     const reached = new Map();
     const reaches = (field, seen = new Set()) => {
@@ -172,7 +171,7 @@ export function createFormulaReader(store) {
     for (const field of Object.keys(record.formulas ?? {})) {
       // A formula typed over by the proposal (SPECIES): what it would have given, to tell them apart.
       const typed = field in values;
-      if (!typed && !all && !force.includes(field) && !reaches(field)) continue;
+      if (!typed && !all && !reaches(field)) continue;
       try {
         gives[field] = shownResult(typed ? evaluateFormula(record.formulas[field], record.row, cellReader) : own(field));
       } catch (e) {

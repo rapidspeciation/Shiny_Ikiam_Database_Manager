@@ -696,12 +696,6 @@ const statusText = computed(
               >{{ $t('editada en la hoja') }}</span
             >
             <span
-              v-if="g.changes.some(c => c.formulaCells?.length)"
-              class="legend is-formula-write"
-              :title="$t('La propuesta cambia la fórmula de la celda: se ve lo que dará; la fórmula, al pasar el ratón y en la barra')"
-              >{{ $t('cambia la fórmula') }}</span
-            >
-            <span
               v-if="g.changes.some(c => c.formulaGives || c.formulaFallback || c.formulas?.length)"
               class="legend is-formula-gives"
               :title="$t('Calculado por la fórmula de la hoja con los valores propuestos: no se escribe')"

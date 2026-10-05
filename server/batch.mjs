@@ -8,7 +8,6 @@
 
 import { randomUUID } from 'node:crypto';
 import { comparable, isSumField, labelFor, moduleMap, simpleSum, validateValues } from './schema.mjs';
-import { FORMULA_ROWS, isFormulaValue, sameCell } from './formula-write.mjs';
 import { hasDateFormat, hasTimeFormat, protectionRefused, rowKey, rowValues } from './sheets.mjs';
 import { describeProblems, headerLayout, sameLayout } from './columns.mjs';
 import { duplicateIdRow, ensurePremadeRows, insectaryIdRow, suffixedId } from './premade.mjs';
@@ -75,7 +74,7 @@ export function cellHolds(sheet, field, expected, current, replacing = false) {
   let want = expected;
   if (sumCell && typeof want === 'string' && simpleSum(want)) want = { formula: simpleSum(want) };
   if (sumCell && typeof want === 'number' && comparable(want) === comparable(values[field] ?? null)) want = actual;
-  return sameCell(actual ?? null, want ?? null);
+  return comparable(actual ?? null) === comparable(want ?? null);
 }
 /** `message`: a text, or a msg() when it has values in it (its descriptor goes to the app, server/messages.mjs). */
 const fail = (code, message, status = 400, details) => msgError(message, { code, status, details });
@@ -120,10 +119,8 @@ export async function applyBatch(store, body, user, { source = 'app', reverses =
   const creates = Array.isArray(body.creates) ? body.creates : [];
   // Rows a save inserted, deleted when it is undone (Store.undo): only an undo deletes rows.
   const deletes = source === 'undo' && Array.isArray(body.deletes) ? body.deletes : [];
-  // A proposal that only writes formulas (and its undo) may take more rows (server/formula-write.mjs).
-  const cap = source === 'ai_approved' || source === 'undo' ? FORMULA_ROWS : MAX_BATCH;
-  if (edits.length + creates.length + deletes.length > cap)
-    throw fail('BATCH_TOO_LARGE', msg('Guarda como máximo {n} filas a la vez', { n: cap }));
+  if (edits.length + creates.length + deletes.length > MAX_BATCH)
+    throw fail('BATCH_TOO_LARGE', msg('Guarda como máximo {n} filas a la vez', { n: MAX_BATCH }));
 
   // The app is stopping (a deploy): saves in progress finish, new ones wait for the new process.
   if (store.draining) throw fail('SHUTTING_DOWN', 'La app se está reiniciando; vuelve a guardar en un minuto', 503);
@@ -340,8 +337,7 @@ class Plan {
   validate(target, module, values) {
     try {
       return validateValues(module, values, {
-        // The assistant's proposals write formulas given as {"formula"} (a plain "=..." stays text).
-        allowFormula: this.source === 'undo' || this.source === 'ai_approved',
+        allowFormula: this.source === 'undo',
         normalize: this.source !== 'undo',
       });
     } catch (e) {
@@ -615,9 +611,7 @@ class Plan {
       const replacing = !!before.formulas[field] && target.replaceFormula.has(field);
       // A count kept as a sum (=12+15) may be rewritten; any other formula stays the sheet's.
       const sumCell = isSumField(record.sheet, field) && !!simpleSum(before.formulas[field]);
-      // A formula written over a formula (a proposal's {"formula"}) is checked and written as any value.
-      const formulaWrite = this.source === 'ai_approved' && isFormulaValue(after) && !isSumField(record.sheet, field);
-      if (before.formulas[field] && this.source !== 'undo' && !replacing && !sumCell && !formulaWrite)
+      if (before.formulas[field] && this.source !== 'undo' && !replacing && !sumCell)
         return this.conflict(target, 'FORMULA_CELL', msg('{field} se calcula con una fórmula de la hoja', { field }), { field });
       if (replacing) {
         const predicted = before.values[field] ?? null;
@@ -652,7 +646,7 @@ class Plan {
           expected: expected ?? null,
           actual: actual ?? null,
         });
-      else if (!sameCell(actual, after)) changes.push({ field, before: actual ?? null, after });
+      else if (comparable(actual) !== comparable(after)) changes.push({ field, before: actual ?? null, after });
     }
     this.addWrite(target, liveRow, before, changes);
   }
@@ -1035,8 +1029,9 @@ class Plan {
       }
       const previous = target.record || this.store.getRecordBySheetRow(target.sheet, target.row);
       const now = this.store.keepUnavailable(target.sheet, rowValues(target.sheet, liveRow, layout), previous, layout);
-      // A formula as Google keeps it may differ in spacing or the case of names.
-      const matches = target.changes.every(c => sameCell(cellValue(now.values, now.formulas, c.field), c.after));
+      const matches = target.changes.every(
+        c => comparable(cellValue(now.values, now.formulas, c.field)) === comparable(c.after),
+      );
       if (!matches) return null;
       const record = {
         id: target.record?.id || target.recordId,

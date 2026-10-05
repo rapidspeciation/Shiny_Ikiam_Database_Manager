@@ -14,7 +14,6 @@ import { queueWalk, walkDraft } from './walks.mjs';
 import { KINDS, isNone, noteText, reviewColumns } from './notebook.mjs';
 import { HIDDEN_COLUMNS, isNotWritten, notWrittenWhy } from './proposal-columns.mjs';
 import { createFormulaReader, sameResult } from './formula-gives.mjs';
-import { FORMULA_ROWS, checkFormula, isFormulaValue, sameFormula, withRow } from './formula-write.mjs';
 import { FILTERS_DOC, FIND_BUDGET, RECORD_TOOLS, compactRecord, countRecords, findRecords, pickRows, resolveRows, selectRecords } from './records-tool.mjs';
 import { RESULT_BUDGET, fitList, fitResult } from './tool-budget.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
@@ -47,9 +46,6 @@ const PROPOSAL_ROWS = 500;
 const tooManyRows = n => `At most ${PROPOSAL_ROWS} rows per proposal (here ${n}): put the rest in another proposal.`;
 /** Rows a `bulk` call may pick before those already holding its values are left out. */
 const BULK_PICKED = 4 * PROPOSAL_ROWS;
-/** Rows one proposal may take: more when it only writes formulas (one column's formula down the sheet). */
-const rowCap = changes =>
-  changes.length && changes.every(c => !c.create && Object.keys(c.values).every(f => c.formulaCells?.includes(f))) ? FORMULA_ROWS : PROPOSAL_ROWS;
 const narrower = () =>
   `One proposal takes at most ${PROPOSAL_ROWS} rows: narrow the filters (count_records says how many match, e.g. per month), or make another proposal for the rest.`;
 const isoDate = serial => new Date(Date.UTC(1899, 11, 30) + serial * 864e5).toISOString().slice(0, 10);
@@ -79,7 +75,7 @@ const parse = value => {
  * "d/m/yy INI: " form after what the cell holds; { replace } rewrites it.
  */
 const VALUES_DOC =
-  'Column → value, also in newRows and bulk set: dates YYYY-MM-DD, times H:MM; null or leaving the column out = no change; {"clear": true} empties the cell (in a new row both leave it empty); a plain "=..." is text.';
+  'Column → value, also in newRows and bulk set: dates YYYY-MM-DD, times H:MM; null or leaving the column out = no change; {"clear": true} empties the cell (in a new row both leave it empty).';
 const VALUES_RULES = [
   '- null = no change, never an empty cell; {"clear": true} only when the person wants it emptied.',
   '- Notes (NOTES, Notes_…): only the new text; it goes after the existing note as "d/m/yy INI: text". {"replace": "…"} rewrites it, only when asked.',
@@ -244,8 +240,7 @@ const TOOLS = [
           'Draft edits to existing rows (`changes`) and/or new rows (`newRows`), shown at once as a table beside the chat; nothing is written until the person confirms.',
           '- One proposal per task (a walk, a kind of fix), with a short note per row on where its values come from.',
           '- A row: its `recordId`, or `sheet` + `id`, its ID in the sheet (W2B, CAM079891, a clutch number).',
-          "- Formula cells take no typed value, but SPECIES when what emerged differs and a suffix on a repeated Insectary_ID (W2B.1).",
-          `- {"formula": "=..."} ({row}: its row). Down a column: bulk rows {from,to}, onlyWhereFormula/replacesFormula; ≤${FORMULA_ROWS} rows.`,
+          "- Formula cells cannot be changed, except Insectary_data's SPECIES when what emerged differs from the formula, and an Insectary_ID given to two butterflies: a suffix on the row's own ID (W2B → W2B.1).",
           "- A new Insectary_data row names its Insectary_ID and fills the pre-made row of that ID; a second butterfly of a used ID takes a suffix (W2B.2), its row inserted below that ID's rows.",
           `- Up to ${PROPOSAL_ROWS} rows per proposal; \`bulk\` gives the same values to many existing rows.`,
           VALUES_RULES,
@@ -278,15 +273,13 @@ const TOOLS = [
           bulk: {
             type: 'array',
             description:
-              'Rows of one sheet by `filters` (as in find_records) and/or `recordIds`, or `rows`, each given `set`, e.g. {"sheet": "Insectary_data", "filters": {"Sex": {"empty": true}}, "set": {"Sex": "NOT_COLLECTED"}}. Rows already holding the values are left out.',
+              'Rows of one sheet by `filters` (as in find_records) and/or `recordIds`, each given `set`, e.g. {"sheet": "Insectary_data", "filters": {"Sex": {"empty": true}}, "set": {"Sex": "NOT_COLLECTED"}}. Rows already holding the values are left out.',
             items: {
               type: 'object',
               properties: {
                 sheet: { type: 'string' },
                 filters: { type: 'object' },
                 recordIds: { type: 'array', items: { type: 'string' } },
-                onlyWhereFormula: { type: 'boolean' },
-                replacesFormula: { type: 'string' },
                 set: { type: 'object' },
                 note: { type: 'string' },
               },
@@ -843,8 +836,6 @@ export function createAssistant({ store, config = {} }) {
     const raw = candidate.values;
     if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !Object.keys(raw).length || Object.keys(raw).length > 80)
       return { error: `${at}: invalid values` };
-    const formula = Object.keys(raw).find(key => isFormulaValue(raw[key]) && !isSumField(sheet, key));
-    if (formula) return { error: `${at}: ${formula}: a new row keeps its pre-made row's formulas; write a formula in an existing row (changes or bulk)` };
     let values;
     try {
       values = validateValues(sheet, withSheetTimes(raw));
@@ -947,41 +938,17 @@ export function createAssistant({ store, config = {} }) {
         Object.keys(raw).length > 80
       )
         return { error: `Invalid values for ${old.label}` };
-      // Formulas written as such ({"formula": "=..."}, `{row}` this row's number): checked apart.
-      const formulas = {};
-      for (const [key, value] of Object.entries(raw))
-        if (isFormulaValue(value) && !isSumField(old.sheet, key)) {
-          const checked = checkFormula(old.sheet, value, old.row, store.layouts?.get(old.sheet));
-          if (checked.error) return { error: `${old.label}: ${key}: ${checked.error}` };
-          formulas[key] = checked.formula;
-        }
       let values;
       try {
-        values = {
-          ...validateValues(old.sheet, Object.fromEntries(Object.entries(raw).filter(([key]) => !(key in formulas)))),
-          ...Object.fromEntries(Object.entries(formulas).map(([key, formula]) => [key, { formula }])),
-        };
+        values = validateValues(old.sheet, raw);
       } catch (e) {
         return { error: `${old.label}: ${e.message}` };
       }
       const before = {},
-        replaceFormula = [],
-        formulaCells = [];
+        replaceFormula = [];
       const unwritten = Object.keys(values).find(key => isNotWritten(old.sheet, key));
       if (unwritten) return { error: `${old.label}: ${notWrittenWhy(old.sheet, unwritten)}` };
       for (const key of Object.keys(values)) {
-        if (key in formulas) {
-          // The same formula already there: nothing to write. Else it goes over the cell's formula or value.
-          if (old.formulas?.[key] && sameFormula(old.formulas[key], formulas[key])) {
-            delete values[key];
-            continue;
-          }
-          before[key] = old.formulas?.[key] ? { formula: old.formulas[key] } : (old.values?.[key] ?? null);
-          // Kept in the proposal as its text, marked: written as a formula (see formulaCells).
-          values[key] = formulas[key];
-          formulaCells.push(key);
-          continue;
-        }
         // A count kept as a sum is shown and written as its formula text (=12+15), over the old sum.
         const sum = isSumField(old.sheet, key) ? simpleSum(old.formulas?.[key]) : null;
         if (values[key]?.formula && isSumField(old.sheet, key)) values[key] = values[key].formula;
@@ -1012,8 +979,7 @@ export function createAssistant({ store, config = {} }) {
         }
         before[key] = old.values?.[key] ?? null;
       }
-      if (!Object.keys(values).length) continue;
-      if (Object.keys(values).every(key => !formulaCells.includes(key) && comparable(before[key]) === comparable(values[key]))) continue;
+      if (Object.keys(values).every(key => comparable(before[key]) === comparable(values[key]))) continue;
       changes.push({
         recordId: old.id,
         sheet: old.sheet,
@@ -1023,7 +989,6 @@ export function createAssistant({ store, config = {} }) {
         before,
         values,
         replaceFormula,
-        ...(formulaCells.length ? { formulaCells } : {}),
         note: clip(candidate.note, 300),
       });
     }
@@ -1215,43 +1180,18 @@ export function createAssistant({ store, config = {} }) {
         return { error: `${at}: set must be column → value` };
       if (Object.values(group.set).every(v => v === null || v === undefined || v === ''))
         return { error: `${at}: every value in set is null, and null means no change. To empty a cell give {"clear": true}.` };
-      const rows = groupRows(group);
+      const rows = pickRows(store, group);
       if (rows.error) return { error: `${at}: ${rows.error}` };
       const named = sheetNames(rows.mod.id, group.set, `${at}: set`);
       if (named.error) return named;
       const set = named.values;
-      // A formula bulk: only the rows whose cell holds a formula (onlyWhereFormula), or this one (replacesFormula).
-      const formulaFields = Object.keys(set).filter(f => isFormulaValue(set[f]) && !isSumField(rows.mod.id, f));
-      if ((group.onlyWhereFormula || group.replacesFormula !== undefined) && !formulaFields.length)
-        return { error: `${at}: onlyWhereFormula and replacesFormula go with a {"formula": "=..."} in set` };
-      if (group.replacesFormula !== undefined && typeof group.replacesFormula !== 'string')
-        return { error: `${at}: replacesFormula is the old formula's text, with {row} for the row's number` };
-      if (formulaFields.length) {
-        // Checked once, on the first row, before the rows are drafted one by one.
-        const first = rows.rows[0]?.record ?? (rows.rows[0] && store.getRecord(rows.rows[0].id));
-        for (const f of formulaFields) {
-          const checked = checkFormula(rows.mod.id, set[f], first?.row ?? 2, store.layouts?.get(rows.mod.id));
-          if (checked.error) return { error: `${at}: set.${f}: ${checked.error}` };
-        }
-        if (group.onlyWhereFormula || group.replacesFormula !== undefined) {
-          rows.rows = rows.rows.filter(r => {
-            const formulas = store.getRecord(r.id)?.formulas ?? {};
-            const row = store.getRecord(r.id)?.row;
-            return formulaFields.every(f =>
-              group.replacesFormula !== undefined ? !!formulas[f] && sameFormula(formulas[f], withRow(group.replacesFormula, row)) : !!formulas[f],
-            );
-          });
-        }
-      }
       const unwritten = Object.keys(set).find(f => isNotWritten(rows.mod.id, f));
       if (unwritten) return { error: `${at}: ${notWrittenWhy(rows.mod.id, unwritten)}` };
       picked += rows.rows.length;
       if (picked > BULK_PICKED) return { error: `${at}: ${picked} rows picked. ${narrower()}` };
       // The values as the sheet will take them ({"clear": true} empties, a note is text), checked once.
       const plain = Object.fromEntries(
-        Object.entries(set)
-          .filter(([f]) => !formulaFields.includes(f))
-          .map(([f, v]) => [f, v && typeof v === 'object' && !Array.isArray(v) ? ('replace' in v ? v.replace : null) : v]),
+        Object.entries(set).map(([f, v]) => [f, v && typeof v === 'object' && !Array.isArray(v) ? ('replace' in v ? v.replace : null) : v]),
       );
       try {
         validateValues(rows.mod.id, withSheetTimes(plain));
@@ -1277,30 +1217,6 @@ export function createAssistant({ store, config = {} }) {
       out.push({ sheet: rows.mod.id, ids: new Set(rows.rows.map(r => r.id)), matched: rows.rows.length, missing: rows.missing });
     }
     return { changes, groups: out };
-  }
-
-  /**
-   * A bulk group's rows: pickRows (recordIds and/or filters, the rows in use), or `rows: { from, to }`,
-   * the sheet's rows in that range, the empty pre-made ones too (filters, if given, apply to them).
-   */
-  function groupRows(group) {
-    if (group.rows === undefined) return pickRows(store, group);
-    const from = Number(group.rows?.from),
-      to = Number(group.rows?.to);
-    const mod = moduleMap.get(String(group.sheet ?? ''));
-    if (!mod) return { error: `Unknown sheet ${clip(group.sheet, 60)}` };
-    if (!Number.isInteger(from) || !Number.isInteger(to) || from <= mod.headerRow || to < from)
-      return { error: `rows: give { from, to }, sheet row numbers below the header (row ${mod.headerRow})` };
-    if (to - from + 1 > BULK_PICKED) return { error: `rows: at most ${BULK_PICKED} rows (${from}–${to} is ${to - from + 1}). ${narrower()}` };
-    const ids = db
-      .prepare('SELECT id FROM records WHERE sheet = ? AND missing = 0 AND row_num BETWEEN ? AND ? ORDER BY row_num')
-      .all(mod.id, from, to)
-      .map(r => r.id);
-    if (group.recordIds !== undefined) return { error: 'rows: give rows or recordIds, not both' };
-    if (!ids.length) return { mod, rows: [], missing: [] };
-    const filters = group.filters && typeof group.filters === 'object' && Object.keys(group.filters).length ? group.filters : null;
-    if (!filters) return { mod, rows: ids.map(id => ({ id })), missing: [] };
-    return pickRows(store, { sheet: mod.id, recordIds: ids, filters });
   }
 
   /**
@@ -1351,10 +1267,7 @@ export function createAssistant({ store, config = {} }) {
     const drafted = draftChanges(args, idsFor(), bulk ? Infinity : PROPOSAL_ROWS);
     if (drafted.error) return drafted;
     const { changes } = drafted;
-    if (changes.length > rowCap(changes))
-      return {
-        error: `${changes.length} rows to change. ${rowCap(changes) > PROPOSAL_ROWS ? `A proposal that only writes formulas takes at most ${FORMULA_ROWS} rows: split the rows (bulk rows: { from, to }).` : narrower()}`,
-      };
+    if (changes.length > PROPOSAL_ROWS) return { error: `${changes.length} rows to change. ${narrower()}` };
     const view = readView(input.view, [...new Set(changes.map(c => c.sheet))]);
     if (view?.error) return view;
     const issueIds = Array.isArray(args.issueIds) ? args.issueIds.slice(0, 500).map(i => clip(i, 200)) : [];
@@ -1420,16 +1333,6 @@ export function createAssistant({ store, config = {} }) {
   /** A cell of a row set (not yet checked). In an existing row, the sheet's own value means no change there. */
   function setCell(change, field, value) {
     const values = { ...change.values };
-    // A cell written as a formula: {"formula"} given, or its text edited still starting with "=".
-    const formula = isFormulaValue(value) || (typeof value === 'string' && value.trim().startsWith('=') && !!change.formulaCells?.includes(field));
-    const cells = (change.formulaCells ?? []).filter(f => f !== field);
-    if (formula) {
-      values[field] = withRow(isFormulaValue(value) ? value.formula : value, change.row).trim();
-      return { ...change, values, formulaCells: [...cells, field] };
-    }
-    change = { ...change };
-    if (cells.length) change.formulaCells = cells;
-    else delete change.formulaCells;
     // The assistant dropped its change: the cell goes back to the sheet's value (or empty, in a new row).
     if (value === DROP) {
       delete values[field];
@@ -1476,15 +1379,11 @@ export function createAssistant({ store, config = {} }) {
         !!fresh.values.SPECIES || moduleMap.get(change.sheet).identityFields.some(key => isIdValue(fresh.values[key]));
       return { change: { ...keep(fresh), ...(named || !change.label ? {} : { label: change.label }), dropped: undefined }, dropped };
     }
-    // Its formula cells go back as formulas ({"formula"}), the rest as they are.
-    const given = Object.fromEntries(
-      Object.entries(change.values).map(([f, v]) => [f, change.formulaCells?.includes(f) ? { formula: v } : v]),
-    );
-    const out = draftChanges({ changes: [{ recordId: change.recordId, values: given, note: change.note }] });
+    const out = draftChanges({ changes: [{ recordId: change.recordId, values: change.values, note: change.note }] });
     if (out.error === 'Every proposed value is already in the sheet')
-      return { change: keep({ values: {}, before: read({}), replaceFormula: [], formulaCells: undefined }), dropped: [] };
+      return { change: keep({ values: {}, before: read({}), replaceFormula: [] }), dropped: [] };
     if (out.error) return { error: out.error };
-    return { change: keep({ formulaCells: undefined, ...out.changes[0], before: read(out.changes[0].before) }), dropped: [] };
+    return { change: keep({ ...out.changes[0], before: read(out.changes[0].before) }), dropped: [] };
   }
 
   /**
@@ -1609,7 +1508,7 @@ export function createAssistant({ store, config = {} }) {
       if (!moduleMap.has(sheet)) continue;
       rows.push({ create: true, sheet, clientId: randomUUID(), recordId: null, row: null, label: '', before: {}, values: {}, replaceFormula: [], note: '' });
     }
-    if (rows.length > rowCap(rows)) out.rejected.push({ message: tooManyRows(rows.length) });
+    if (rows.length > PROPOSAL_ROWS) out.rejected.push({ message: tooManyRows(rows.length) });
     out.leftOut = [...new Set(out.leftOut)];
     return { changes: rows, ...out };
   }
@@ -2330,12 +2229,7 @@ export function createAssistant({ store, config = {} }) {
     changed(proposal.owner_id);
     try {
       const result = await store.applyProposal(
-        // A formula cell's text is written as a formula; any other "=..." stays text.
-        writes.map(([, c]) =>
-          c.formulaCells?.length
-            ? { ...c, values: Object.fromEntries(Object.entries(c.values).map(([f, v]) => [f, c.formulaCells.includes(f) ? { formula: v } : v])) }
-            : c,
-        ),
+        writes.map(([, c]) => c),
         { user, requestId, reason: clip(reason || proposal.reason, 500) },
       );
       const status = ['verified', 'unchanged'].includes(result?.status) ? 'applied' : 'needs_review';
@@ -2402,28 +2296,15 @@ export function createAssistant({ store, config = {} }) {
 
   /** What the formula cells of a proposal row will give ({ gives, fallback }, server/formula-gives.mjs). */
   function rowFormulaGives(change, target, session) {
-    if (!target || (!Object.keys(target.formulas ?? {}).length && !change.formulaCells?.length)) return { gives: {}, fallback: [] };
+    if (!target?.formulas || !Object.keys(target.formulas).length) return { gives: {}, fallback: [] };
     // A new row writes into its pre-made row: its ID formula stays, the rest is the proposal's.
-    // The formulas the proposal writes (formulaCells) are the row's from now on, evaluated with the rest.
-    const written = Object.fromEntries((change.formulaCells ?? []).map(f => [f, change.values[f]]));
-    const formulas = {
-      ...(change.create && change.sheet === 'Insectary_data'
+    const formulas =
+      change.create && change.sheet === 'Insectary_data'
         ? Object.fromEntries(Object.entries(target.formulas).filter(([f]) => f !== 'Insectary_ID'))
-        : target.formulas),
-      ...written,
-    };
-    const values = Object.fromEntries(
-      Object.entries(change.values ?? {}).filter(([f]) => !(change.create && f === 'Insectary_ID') && !(f in written)),
-    );
+        : target.formulas;
+    const values = Object.fromEntries(Object.entries(change.values ?? {}).filter(([f]) => !(change.create && f === 'Insectary_ID')));
     try {
-      return formulaReader.rowGives({
-        sheet: change.sheet,
-        record: { ...target, formulas },
-        values,
-        all: !!change.create,
-        force: Object.keys(written),
-        ctx: session,
-      });
+      return formulaReader.rowGives({ sheet: change.sheet, record: { ...target, formulas }, values, all: !!change.create, ctx: session });
     } catch (e) {
       console.error('Formula gives:', e.message);
       return { gives: {}, fallback: [] };
@@ -2545,11 +2426,6 @@ export function createAssistant({ store, config = {} }) {
         label: change.label || record?.label || '',
         ...(index >= 0 && warned[index] ? { warnings: warned[index] } : {}),
       };
-      // A formula the row's cell holds and the proposal replaces: shown with the new one.
-      if (change.formulaCells?.length) {
-        const old = Object.fromEntries(change.formulaCells.filter(f => before?.[f]?.formula).map(f => [f, before[f].formula]));
-        if (Object.keys(old).length) view.oldFormulas = old;
-      }
       if (hints && Object.keys(hints).length) view.hints = Object.fromEntries(Object.entries(hints).map(([f, h]) => [f, hintOf(h)]));
       if (line) view.page = pageLine(line, index < 0 || !!change.context);
       // Before the previous line of its photo in the sheet: the notebook goes the other way here.
@@ -2580,9 +2456,7 @@ export function createAssistant({ store, config = {} }) {
         const target = change.create ? premadeRecordOf(change) : record;
         const { gives, fallback } = rowFormulaGives(change, target, formulaSession);
         const shown = Object.entries(gives).filter(([f, v]) =>
-          change.formulaCells?.includes(f)
-            ? true
-            : f in change.values
+          f in change.values
             ? TYPED_OVER_FORMULA[change.sheet]?.has(f) && !isNone(v)
             : change.create
               ? v !== null && v !== ''
@@ -3668,8 +3542,8 @@ export function createAssistant({ store, config = {} }) {
         },
         { by: 'person', user },
       );
-      if (out.changes.length > rowCap(out.changes)) {
-        const m = msg('Una propuesta tiene como máximo {n} filas', { n: rowCap(out.changes) });
+      if (out.changes.length > PROPOSAL_ROWS) {
+        const m = msg('Una propuesta tiene como máximo {n} filas', { n: PROPOSAL_ROWS });
         return { status: 409, body: { error: { code: 'too_many_rows', message: m.text, messageMsg: m.msg } } };
       }
       if (json(out.changes) !== proposal.changes_json && saveRevision(proposal, out.changes, 'person', null, page) === null)
