@@ -12,7 +12,7 @@ import {
   watch,
 } from 'vue'
 import { useRouter } from 'vue-router'
-import { ExternalLink, Link, ListChecks, Maximize2, Minimize2, PanelBottom, PanelRight, X } from 'lucide-vue-next'
+import { ExternalLink, Image as ImageIcon, Link, ListChecks, Maximize2, Minimize2, PanelBottom, PanelRight, X } from 'lucide-vue-next'
 import type { Proposal } from '../../lib/proposals'
 import WhenSeen from './WhenSeen.vue'
 import { api, requestId } from '../../lib/api'
@@ -47,6 +47,8 @@ const ProposalGrid = defineAsyncComponent({
   },
   delay: 150,
 })
+/** «Revisar con la foto»: a proposal's table with its notebook photo (pan and zoom load apart too). */
+const PhotoReview = defineAsyncComponent(() => import('./PhotoReview.vue'))
 /** A table of rows the assistant shows (show_rows): read-only, also with Tabulator. */
 const RowsTable = defineAsyncComponent({
   loader: () => import('./RowsTable.vue'),
@@ -75,6 +77,9 @@ const RowsTable = defineAsyncComponent({
  * The tables of rows the assistant shows to read (show_rows) come in the same
  * list, marked as such (RowsTable): nothing to apply, they count as nothing to
  * review, and «Cerrar» takes them out.
+ * «Revisar con la foto» (a notebook page's proposal with its photos) opens its
+ * table with the photo over the whole browser tab (PhotoReview); its card in
+ * the list waits meanwhile.
  */
 const props = withDefaults(
   defineProps<{
@@ -90,8 +95,10 @@ const props = withDefaults(
     t3?: T3Seen | null
     /** A proposal a link asks for (#/asistente?propuesta=…): its chat's list, scrolled to it. */
     focus?: { id: string } | null
+    /** On its own page: open with its photo (#/propuestas/<id>?foto=1). */
+    photo?: boolean
   }>(),
-  { layout: 'right', full: false, only: '', chat: '', t3: null, focus: null },
+  { layout: 'right', full: false, only: '', chat: '', t3: null, focus: null, photo: false },
 )
 const emit = defineEmits<{
   count: [n: number]
@@ -101,6 +108,8 @@ const emit = defineEmits<{
   full: []
   /** On its own page: the chat picked in the selector ('' = follow T3), for the page's address. */
   chat: [value: string]
+  /** On its own page: «Revisar con la foto» opened or closed, for the page's address. */
+  photo: [open: boolean]
 }>()
 const tables = useTables()
 const router = useRouter()
@@ -221,6 +230,8 @@ let resume: (() => void) | null = null
 onDeactivated(() => {
   active = false
   asking?.abort()
+  // Another tab of the app: the photo over the whole tab goes too.
+  if (props.layout !== 'page') reviewing.value = null
 })
 onActivated(() => {
   active = true
@@ -417,6 +428,38 @@ async function discard(proposal: Proposal) {
     notify(errorText(e), 'error')
   }
 }
+// ------------------------------------------------------------ review with the photo
+/** The proposal reviewed with its photo (over the whole tab), and the photo shown. */
+const reviewing = ref<{ id: string; photo: number } | null>(null)
+const reviewed$ = computed(() => (reviewing.value ? (proposals.value.find(p => p.id === reviewing.value!.id) ?? null) : null))
+const photosOf = (p: Proposal) => (isTable(p) ? 0 : (p.page?.photos ?? 0))
+function review(p: Proposal, photo = 0) {
+  reviewing.value = { id: p.id, photo }
+  if (props.layout === 'page') emit('photo', true)
+}
+function endReview() {
+  const id = reviewing.value?.id
+  reviewing.value = null
+  if (props.layout === 'page') emit('photo', false)
+  // Back at its card in the list.
+  if (id) void nextTick(() => listBox.value?.querySelector(`[data-proposal="${id}"]`)?.scrollIntoView({ block: 'nearest' }))
+}
+// A page opened with ?foto=1: its proposal with its photo once it arrives.
+watch(
+  [() => props.photo, mine],
+  () => {
+    if (!props.photo || !props.only || reviewing.value) return
+    const p = mine.value.find(x => x.id === props.only)
+    if (p && photosOf(p)) reviewing.value = { id: p.id, photo: 0 }
+  },
+  { immediate: true },
+)
+watch(
+  () => props.photo,
+  open => {
+    if (!open && reviewing.value && props.layout === 'page') reviewing.value = null
+  },
+)
 const origin = (p: Proposal) =>
   [mixed.value ? p.source : '', p.createdAt ? new Date(p.createdAt).toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' }) : '']
     .filter(Boolean)
@@ -523,9 +566,19 @@ const origin = (p: Proposal) =>
       >
         <div class="mt-2 flex items-center gap-1 px-1 text-[11px] text-stone-500">
           <span class="min-w-0 truncate">{{ origin(p) }}</span>
+          <button
+            v-if="photosOf(p)"
+            type="button"
+            class="ml-auto flex shrink-0 items-center gap-1 rounded border border-stone-300 bg-white px-1.5 py-0.5 text-stone-700 hover:border-emerald-600 hover:text-emerald-800"
+            :title="$t('La tabla y la foto del cuaderno juntas, en esta pestaña: la foto se acerca, se mueve y se gira')"
+            @click="review(p)"
+          >
+            <ImageIcon :size="12" /> {{ $t('Revisar con la foto') }}
+          </button>
           <a
             v-if="only !== p.id"
-            class="ml-auto shrink-0 rounded p-1 hover:bg-stone-200 hover:text-stone-800"
+            class="shrink-0 rounded p-1 hover:bg-stone-200 hover:text-stone-800"
+            :class="{ 'ml-auto': !photosOf(p) }"
             :href="proposalLink(p.id)"
             target="_blank"
             rel="noopener"
@@ -536,7 +589,7 @@ const origin = (p: Proposal) =>
           </a>
           <button
             class="shrink-0 rounded p-1 hover:bg-stone-200 hover:text-stone-800"
-            :class="{ 'ml-auto': only === p.id }"
+            :class="{ 'ml-auto': only === p.id && !photosOf(p) }"
             :title="isTable(p) ? $t('Copiar el enlace de esta tabla') : $t('Copiar el enlace de esta propuesta')"
             :aria-label="isTable(p) ? $t('Copiar el enlace de esta tabla') : $t('Copiar el enlace de esta propuesta')"
             @click="copyLink(p.id)"
@@ -544,7 +597,15 @@ const origin = (p: Proposal) =>
             <Link :size="12" />
           </button>
         </div>
-        <WhenSeen :height="heightOf(p)">
+        <!-- Open with its photo over the tab: its table is there meanwhile. -->
+        <p
+          v-if="reviewing?.id === p.id"
+          class="mt-2 flex items-center gap-2 rounded-md border border-stone-300 bg-white px-3 py-3 text-xs text-stone-600"
+        >
+          <ImageIcon :size="14" class="text-emerald-700" /> {{ $t('Abierta con la foto') }}
+          <button type="button" class="btn ml-auto" @click="endReview">{{ $t('Volver a la lista') }}</button>
+        </p>
+        <WhenSeen v-else :height="heightOf(p)">
           <RowsTable v-if="isTable(p)" :table="p" @close="discard(p)" />
           <ProposalGrid
             v-else
@@ -553,6 +614,7 @@ const origin = (p: Proposal) =>
             @apply="(indexes, at, doubtful) => apply(p, indexes, at, doubtful)"
             @discard="discard(p)"
             @replace="replace"
+            @photo="n => review(p, n)"
           />
         </WhenSeen>
       </div>
@@ -574,9 +636,22 @@ const origin = (p: Proposal) =>
           :class="{ 'ring-2 ring-emerald-400': arrived.has(p.id) }"
         >
           <p class="mt-2 px-1 text-[11px] text-stone-500">{{ origin(p) }}</p>
-          <WhenSeen :height="heightOf(p)"><ProposalGrid :proposal="p" /></WhenSeen>
+          <WhenSeen :height="heightOf(p)"><ProposalGrid :proposal="p" @photo="n => review(p, n)" /></WhenSeen>
         </div>
       </details>
     </div>
+    <Teleport to="body">
+      <PhotoReview
+        v-if="reviewing && reviewed$"
+        :proposal="reviewed$"
+        :busy="applying === reviewed$.id"
+        :photo="reviewing.photo"
+        @update:photo="n => reviewing && (reviewing = { ...reviewing, photo: n })"
+        @close="endReview"
+        @apply="(indexes, at, doubtful) => reviewed$ && apply(reviewed$, indexes, at, doubtful)"
+        @discard="reviewed$ && discard(reviewed$)"
+        @replace="replace"
+      />
+    </Teleport>
   </aside>
 </template>

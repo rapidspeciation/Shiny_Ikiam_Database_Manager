@@ -125,6 +125,8 @@ const emit = defineEmits<{
   next: [from: { key: string; field: string } | null, which?: 'doubtful' | 'sheet']
   /** Cells edited in the sheet: the sheet's value kept, or the proposal's written over it. */
   sheet: [cells: { key: string; field: string; use: 'sheet' | 'proposal' }[]]
+  /** The row of the selected cell (its key), when it changes: «Revisar con la foto» shows its photo. */
+  select: [key: string]
 }>()
 
 type Row = Record<string, CellValue> & {
@@ -677,7 +679,14 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
     ...(partial.length ? { choicesLabel: t('Leído en parte'), choicesComplete: true } : {}),
   }
 }
-const showBar = () => (bar.value = table ? describe(selectedCell(table)) : null)
+let selectedKey = ''
+function showBar() {
+  const cell = table ? selectedCell(table) : null
+  bar.value = describe(cell)
+  const key = cell ? String((cell.getData() as Row).__key ?? '') : ''
+  if (key && key !== selectedKey) emit('select', key)
+  selectedKey = key
+}
 /** The bar and the doubtful cell's choices follow the selection (once per frame). */
 let follow: (() => void) | null = null
 function saveFromBar(target: CellBarInfo, text: string, move: Direction | 'here' | null) {
@@ -1144,6 +1153,7 @@ watch(
       </template>
       <slot name="end" />
     </div>
+    <slot name="panel" />
     <div class="sheet-grid proposal-sheet">
       <CellBar :info="bar" notes-line @save="saveFromBar" @pick="pickFromBar" @back="move => table && backToGrid(table, move)" />
       <!-- The grid's own box: the fill handle and the copied cells' border are placed in it, below the bar. -->

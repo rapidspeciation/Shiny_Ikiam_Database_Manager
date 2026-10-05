@@ -1,7 +1,23 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { AlertTriangle, ArrowRight, Check, CircleHelp, Columns3, ListFilter, Plus, Send, Sparkles, SquarePen, Table2, X } from 'lucide-vue-next'
+import {
+  AlertTriangle,
+  ArrowRight,
+  Check,
+  CircleHelp,
+  Clock,
+  Columns3,
+  ListFilter,
+  Plus,
+  Send,
+  Settings2,
+  Sparkles,
+  SquarePen,
+  Table2,
+  X,
+} from 'lucide-vue-next'
 import ProposalSheet, { type CellEdit } from './assistant/ProposalSheet.vue'
+import ColumnChooser from './assistant/ColumnChooser.vue'
 import { api } from '../lib/api'
 import { displayValue } from '../lib/cells'
 import { errorText, notify } from '../lib/notice'
@@ -32,7 +48,9 @@ import {
   type ProposalChange,
 } from '../lib/proposals'
 import type { CellValue } from '../lib/types'
+import { columnChoices, orderColumns, viewFor, type ColumnView } from '../lib/proposalColumns'
 import { useSession } from '../stores/session'
+import { useLive } from '../stores/live'
 import { t } from '../lib/i18n'
 
 export type { Proposal, ProposalChange } from '../lib/proposals'
@@ -67,15 +85,30 @@ export type { Proposal, ProposalChange } from '../lib/proposals'
  * a banner counts them (a click goes to the next one), and «Avisar al
  * asistente» sends the assistant which ones, to look at them again: into its T3
  * chat when the app can, else copied to paste there.
+ * The columns go as the person chooses on the card (lib/proposalColumns): the
+ * sheet's order, the notebook's (a notebook page's proposal), or their own
+ * (ordered and hidden in ColumnChooser), remembered per person.
+ * «Aplicar» while Google Sheets does not answer as usual asks first: the save
+ * then waits in the app (status queued) and the card says so until written.
  */
-const props = defineProps<{ proposal: Proposal; busy?: boolean }>()
+const props = defineProps<{
+  proposal: Proposal
+  busy?: boolean
+  /** Shown beside its photo (PhotoReview): its thumbnails pick the photo there. */
+  reviewing?: boolean
+}>()
 const emit = defineEmits<{
   /** doubtful: what to do with the unreviewed doubtful cells (the person chose it in the dialog). */
   apply: [indexes: number[], revision: number | undefined, doubtful?: 'confirm' | 'skip']
   discard: []
   replace: [proposal: Proposal]
+  /** A photo's thumbnail clicked: shown with the table (PhotoReview). */
+  photo: [n: number]
+  /** The row selected in the table: its photo and line on the page (null: not on the photos). */
+  row: [photo: number | null, line: number | null]
 }>()
 const session = useSession()
+const live = useLive()
 
 const pending = computed(() => props.proposal.status === 'pending')
 /** A notebook page whose lines go another way in the sheet (within a photo): said above the table, rows marked ↕. */
@@ -300,9 +333,80 @@ const rowsOf = (changes: ProposalChange[]) => (changesOnly.value ? changes.filte
 const quietRows = (changes: ProposalChange[]) => changes.filter(c => c.context && !lookAt(c)).length
 /** The template's columns (only NA / NOT_COLLECTED), folded unless opened. */
 const templatesOpen = ref(false)
-const columnsOf = (g: { fields: string[]; template: string[] }) =>
-  templatesOpen.value ? g.fields : g.fields.filter(f => !g.template.includes(f))
+const columnsOf = (g: { template: string[] }, fields: string[]) =>
+  templatesOpen.value ? fields : fields.filter(f => !g.template.includes(f))
 const page = computed(() => props.proposal.page)
+
+// ------------------------------------------------------------ the columns' order: the sheet's, the notebook's, the person's
+const choices = computed(() => columnChoices(session.user?.username ?? ''))
+/** The notebook's columns of a sheet's table (a notebook page's proposal), in the page's order. */
+const notebookOf = (sheet: string) => (page.value?.sheet === sheet ? (page.value.columns ?? []) : [])
+const hasNotebook = computed(() => groups.value.some(g => notebookOf(g.sheet).length > 0))
+const view = computed(() => viewFor(choices.value.view, hasNotebook.value))
+const views = computed(() =>
+  (
+    [
+      ['sheet', t('Hoja'), t('Todas las columnas en el orden de la hoja, como en Google Sheets')],
+      ['notebook', t('Cuaderno'), t('Las columnas del cuaderno primero, en su orden de izquierda a derecha; luego las demás')],
+      ['custom', t('Personal'), t('Tu propio orden y columnas ocultas (se guardan para ti en este navegador)')],
+    ] as [ColumnView, string, string][]
+  ).filter(([v]) => v !== 'notebook' || hasNotebook.value),
+)
+const sheetOrder = (sheet: string) => fieldsOf(sheet)?.map(f => f.key) ?? []
+/** Columns where the proposal writes or marks something: shown in every view, even hidden by the person. */
+const marked = (changes: ProposalChange[]) =>
+  new Set(
+    changes
+      .filter(c => !c.context || c.page?.error)
+      .flatMap(c => [
+        ...Object.keys(c.values),
+        ...Object.keys(c.personEdits ?? {}),
+        ...Object.keys(c.unreadable ?? {}),
+        ...Object.keys(c.warnings ?? {}),
+        ...Object.keys(c.doubts ?? {}),
+        ...Object.keys(c.sheetChanged ?? {}),
+      ]),
+  )
+/** A sheet's columns in the view chosen (before the template's are folded). */
+function viewColumns(g: { sheet: string; fields: string[]; changes: ProposalChange[] }, as: ColumnView = view.value) {
+  return orderColumns(as, g.fields, {
+    sheetOrder: sheetOrder(g.sheet),
+    notebook: notebookOf(g.sheet),
+    implied: g.changes.flatMap(c => c.inferred ?? []),
+    custom: as === 'custom' ? choices.value.custom(g.sheet) : null,
+    keep: marked(g.changes),
+  })
+}
+function setView(v: ColumnView) {
+  choices.value.setView(v)
+  if (v !== 'custom') choosing.value = null
+}
+/** The sheet whose own columns are being chosen (ColumnChooser open). */
+const choosing = ref<string | null>(null)
+function openChooser(sheet: string) {
+  if (view.value !== 'custom') choices.value.setView('custom')
+  choosing.value = choosing.value === sheet ? null : sheet
+}
+/** The person's columns for the chooser: shown (in order), the others that can be shown, those always shown. */
+function chooserOf(g: { sheet: string; fields: string[]; changes: ProposalChange[] }) {
+  const shown = viewColumns(g, 'custom')
+  const kept = marked(g.changes)
+  const others = orderColumns('sheet', [...new Set([...g.fields, ...addable(g.sheet, shown)])], { sheetOrder: sheetOrder(g.sheet) }).filter(
+    f => !shown.includes(f),
+  )
+  return { shown, others, kept: shown.filter(f => kept.has(f)) }
+}
+function customOrder(g: { sheet: string; fields: string[]; changes: ProposalChange[] }, list: string[]) {
+  choices.value.setCustom(g.sheet, { order: list, hidden: choices.value.custom(g.sheet)?.hidden ?? [] })
+}
+function customToggle(g: { sheet: string; fields: string[]; changes: ProposalChange[] }, field: string, on: boolean) {
+  const shown = viewColumns(g, 'custom')
+  const hidden = new Set(choices.value.custom(g.sheet)?.hidden ?? [])
+  if (on) hidden.delete(field)
+  else hidden.add(field)
+  const order = on ? [...shown.filter(f => f !== field), field] : shown.filter(f => f !== field)
+  choices.value.setCustom(g.sheet, { order, hidden: [...hidden] })
+}
 /** Per photo of the page: its lines, how many change, how many are as the sheet has them. */
 function photosOf(changes: ProposalChange[]) {
   const summaries = photoSummaries(changes)
@@ -324,7 +428,7 @@ const tables = computed(() =>
       id: g.sheet,
       near: false,
       rows: rowsOf(own),
-      columns: columnsOf(g),
+      columns: columnsOf(g, viewColumns(g)),
       quiet: quietRows(own),
       photos: page.value?.sheet === g.sheet ? photosOf(own) : [],
     }
@@ -346,7 +450,10 @@ const addable = (sheet: string, fields: string[]) => {
 }
 function addColumn(sheet: string, event: Event) {
   const select = event.target as HTMLSelectElement
-  if (select.value) extra.value = { ...extra.value, [sheet]: [...(extra.value[sheet] ?? []), select.value] }
+  const group = groups.value.find(g => g.sheet === sheet)
+  // In the person's own view it joins their columns of the sheet (every proposal); else this table's.
+  if (select.value && view.value === 'custom' && group) customToggle(group, select.value, true)
+  else if (select.value) extra.value = { ...extra.value, [sheet]: [...(extra.value[sheet] ?? []), select.value] }
   select.value = ''
 }
 
@@ -368,11 +475,14 @@ const overwritten = computed(() => editedCells.value.filter(e => e.edit.use === 
 const takenRows = computed(() => edited.value.filter(e => e.taken).length)
 /** The dialog "Aplicar" opens while doubtful cells are unreviewed, or unreadable ones empty. */
 const asking = ref(false)
+/** «Aplicar» while Google Sheets is busy or slow: what was being applied, until the person confirms. */
+const waitAsk = ref<{ how?: 'confirm' | 'skip'; leave: boolean } | null>(null)
 /**
  * how: what to do with unreviewed doubtful cells; `leave`: the person saw the
- * empty unreadable cells and applies anyway (they stay as the sheet has them).
+ * empty unreadable cells and applies anyway (they stay as the sheet has them);
+ * `waiting`: they agreed to keep the save in the app while Google does not answer.
  */
-async function apply(how?: 'confirm' | 'skip', leave = false) {
+async function apply(how?: 'confirm' | 'skip', leave = false, waiting = false) {
   // What was just typed goes into the proposal first.
   await save()
   await nextTick()
@@ -381,6 +491,12 @@ async function apply(how?: 'confirm' | 'skip', leave = false) {
     return
   }
   asking.value = false
+  // Google recalculating (server/workbook-health.mjs): the save would wait in the app; said first.
+  if (live.busy && !waiting) {
+    waitAsk.value = { how, leave }
+    return
+  }
+  waitAsk.value = null
   // With the rows whose cells the sheet keeps (nothing of theirs is written): the answer says what stayed.
   const rows = [...new Set([...chosen.value, ...edited.value.map(e => e.index)])].filter(i => i >= 0)
   emit('apply', rows, Math.max(props.proposal.revision ?? 1, savedRevision) || undefined, how)
@@ -450,6 +566,17 @@ const show = (field: string, value: CellValue | undefined) =>
   displayValue(value, { key: field, type: (props.proposal.types[field] ?? 'text') as 'text' })
 const created = computed(() => props.proposal.changes.filter(c => c.create).length)
 const personCells = computed(() => shown.value.changes.reduce((n, c) => n + Object.keys(c.personEdits ?? {}).length, 0))
+/** The row selected in a table: its photo and line, for the photo beside it. */
+function onSelect(key: string) {
+  const c = shown.value.changes.find(x => rowKey(x) === key)
+  emit('row', c?.page ? c.page.photo : null, c?.page ? c.page.line : null)
+}
+/** A thumbnail: beside the table in the same tab («Revisar con la foto»); Ctrl/⌘ or the middle button, a new tab. */
+function openPhoto(n: number, e: MouseEvent) {
+  if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return
+  e.preventDefault()
+  emit('photo', n)
+}
 const statusText = computed(
   () =>
     ({
@@ -582,7 +709,8 @@ const statusText = computed(
             target="_blank"
             rel="noopener"
             class="shrink-0"
-            :title="$t('Abrir la foto en una pestaña nueva')"
+            :title="reviewing ? $t('Ver esta foto') : $t('Revisar con esta foto (Ctrl+clic: en una pestaña nueva)')"
+            @click="openPhoto(p.photo, $event)"
           >
             <img
               :src="photoUrl(p.photo, 'thumb')"
@@ -621,9 +749,35 @@ const statusText = computed(
         @sheet="onSheet"
         @next="(from, which) => reviewNext(which ?? 'doubtful', from, which === 'sheet')"
         @notice="m => notify(m)"
+        @select="onSelect"
       >
-        <template v-if="!g.near && (groups.length > 1 || editable || g.template.length || g.quiet)" #default>
+        <template v-if="!g.near" #default>
           <span v-if="groups.length > 1" class="font-medium text-stone-700">{{ g.sheet }}</span>
+          <!-- The columns' order: the sheet's, the notebook's, the person's own (remembered for them). -->
+          <span class="view-switch" role="group" :aria-label="$t('Orden de las columnas')">
+            <button
+              v-for="[v, label, tip] in views"
+              :key="v"
+              type="button"
+              :class="{ 'is-on': view === v }"
+              :aria-pressed="view === v"
+              :title="tip"
+              @click="setView(v)"
+            >
+              {{ label }}
+            </button>
+          </span>
+          <button
+            v-if="view === 'custom'"
+            type="button"
+            class="flex items-center gap-0.5 hover:text-stone-800"
+            :class="{ 'text-emerald-800': choosing === g.sheet }"
+            :title="$t('Elegir y ordenar tus columnas')"
+            :aria-expanded="choosing === g.sheet"
+            @click="openChooser(g.sheet)"
+          >
+            <Settings2 :size="12" /> {{ $t('Columnas…') }}
+          </button>
           <label
             v-if="g.quiet"
             class="flex cursor-pointer items-center gap-1"
@@ -655,14 +809,24 @@ const statusText = computed(
             <Plus :size="12" /> {{ $t('Fila') }}
           </button>
           <select
-            v-if="editable && addable(g.sheet, g.fields).length"
+            v-if="editable && addable(g.sheet, [...g.fields, ...g.columns]).length"
             class="rounded border border-stone-200 bg-white px-1 py-0.5 text-[11px]"
             :aria-label="$t('Añadir columna')"
             @change="addColumn(g.sheet, $event)"
           >
             <option value="">{{ $t('+ Columna…') }}</option>
-            <option v-for="f in addable(g.sheet, g.fields)" :key="f" :value="f">{{ f }}</option>
+            <option v-for="f in addable(g.sheet, [...g.fields, ...g.columns])" :key="f" :value="f">{{ f }}</option>
           </select>
+        </template>
+        <template v-if="!g.near && view === 'custom' && choosing === g.sheet" #panel>
+          <ColumnChooser
+            :sheet="g.sheet"
+            v-bind="chooserOf(g)"
+            @order="list => customOrder(g, list)"
+            @toggle="(f, on) => customToggle(g, f, on)"
+            @reset="choices.setCustom(g.sheet, null)"
+            @close="choosing = null"
+          />
         </template>
         <template v-if="editable && !g.near" #end>
           <span class="ml-auto flex items-center gap-2">
@@ -742,9 +906,32 @@ const statusText = computed(
           {{ $t('Corrige en la tabla o díselo al asistente; también puedes responder «sí, aplícalo» en el chat.') }}
         </span>
       </template>
-      <span v-else class="text-xs" :class="proposal.status === 'applied' ? 'text-brand-700' : 'text-amber-800'">
+      <span
+        v-else
+        class="flex items-center gap-1 text-xs"
+        :class="proposal.status === 'applied' ? 'text-brand-700' : 'text-amber-800'"
+        :role="proposal.status === 'queued' ? 'status' : undefined"
+      >
+        <Clock v-if="proposal.status === 'queued'" :size="13" class="shrink-0" />
         {{ statusText }}
       </span>
+    </div>
+    <!-- "Aplicar" while Google Sheets does not answer as usual: the changes wait in the app until it does. -->
+    <div v-if="waitAsk && pending" class="doubt-ask" role="alertdialog" :aria-label="$t('Google Sheets no responde')">
+      <p class="flex items-start gap-1.5 font-medium">
+        <Clock :size="14" class="mt-0.5 shrink-0" />
+        {{
+          $t(
+            'Google Sheets no está respondiendo como siempre (está recalculando). Los cambios se guardarán en la app y se escribirán cuando responda. ¿Aplicar ahora y guardarlos aquí?',
+          )
+        }}
+      </p>
+      <div class="mt-1.5 flex flex-wrap gap-2">
+        <button class="btn" :disabled="busy" @click="apply(waitAsk.how, waitAsk.leave, true)">
+          <Check :size="14" /> {{ $t('Aplicar y guardarlos aquí') }}
+        </button>
+        <button class="btn" @click="waitAsk = null"><X :size="14" /> {{ $t('Cancelar') }}</button>
+      </div>
     </div>
     <!-- "Aplicar" with doubtful cells nobody reviewed, or unreadable ones still empty: the person decides what happens to them. -->
     <div
