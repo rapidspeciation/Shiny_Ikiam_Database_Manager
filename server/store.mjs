@@ -99,6 +99,7 @@ export class Store {
     };
   }
   close() {
+    this.closed = true;
     this.sheets.health?.stop();
     this.outbox.stop();
     for (const wake of this.liveWaiters) wake();

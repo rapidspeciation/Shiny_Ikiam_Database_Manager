@@ -619,6 +619,8 @@ export async function createApp(config = {}, options = {}) {
       // wait=1 with the revision the page holds: answers when something changes, or after 25 s.
       if (method === 'GET' && path === '/api/pulse') {
         if (query.wait && query.revision) await store.waitLive(String(query.revision), config.pulseWaitMs ?? 25_000);
+        // The app stopped while the page waited: it asks the next process.
+        if (store.closed) return json(res, 503, { error: { code: 'SHUTTING_DOWN', message: 'La app se está reiniciando; vuelve a guardar en un minuto' } });
         const mine = store.db
           .prepare("SELECT id, status, kind, ref, updated_at FROM outbox WHERE actor = ? AND (status IN ('queued','writing') OR updated_at > ?) ORDER BY rowid")
           .all(user.id, new Date(Date.now() - 10 * 60_000).toISOString());

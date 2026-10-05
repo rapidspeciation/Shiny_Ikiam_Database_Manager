@@ -43,9 +43,20 @@ const DATE = /date|_date$/i
 const shown = (field: string, value: string) => (DATE.test(field) && /^\d{5}(\.\d+)?$/.test(value) ? formatSerial(Number(value)) : value)
 
 async function undo(items: StagedItem[]) {
+  // What was saved together (Emergidos: the butterflies and their clutch's count) is undone together.
+  const ids = new Set(items.map(i => i.id))
+  const entries = [...new Set(items.map(i => i.entryId))]
+  const together = live.items.filter(i => entries.includes(i.entryId) && !ids.has(i.id))
+  if (together.length) {
+    const labels = [...new Set(together.map(i => i.label || i.sheet))].join(', ')
+    if (!confirm(t('Se guardó junto con {labels}: se deshace todo junto. ¿Seguir?', { labels }))) return
+  }
   try {
-    for (const item of items)
-      await api(`staged/items/${encodeURIComponent(item.id)}`, { method: 'DELETE', body: {} })
+    if (together.length)
+      for (const entry of entries) await api(`staged/entries/${encodeURIComponent(entry)}`, { method: 'DELETE', body: {} })
+    else
+      for (const item of items)
+        await api(`staged/items/${encodeURIComponent(item.id)}`, { method: 'DELETE', body: {} })
     await live.refresh()
     await live.loadStaged()
     notify(tn(items.length, 'Cambio deshecho (no llegó a Google Sheets)', 'Cambios deshechos (no llegaron a Google Sheets)'))

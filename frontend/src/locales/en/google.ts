@@ -6,6 +6,10 @@ export default {
     'The Google Sheet is busy (recalculating): saves are kept here and written when it answers; {n} waiting',
   'Google Sheets responde lento (está recalculando la hoja): los guardados se conservan aquí y se escriben en orden; {n} esperando':
     'The Google Sheet is slow (recalculating): saves are kept here and written in order; {n} waiting',
+  'Google Sheets no responde (está recalculando la hoja): los guardados se conservan aquí y se escriben cuando responda':
+    'The Google Sheet is busy (recalculating): saves are kept here and written when it answers',
+  'Google Sheets responde lento (está recalculando la hoja): los guardados se conservan aquí y se escriben en orden':
+    'The Google Sheet is slow (recalculating): saves are kept here and written in order',
   'Escribiendo en Google Sheets {n} guardado que esperaba': 'Writing {n} save that was waiting to the Google Sheet',
   'Escribiendo en Google Sheets {n} guardados que esperaban': 'Writing {n} saves that were waiting to the Google Sheet',
   'simulado (laboratorio)': 'simulated (lab)',
@@ -36,6 +40,7 @@ export default {
   'No se guardó': 'Not saved',
   Ver: 'Show',
   'Guardar en Google Sheets': 'Save to Google Sheets',
+  'Se guardó junto con {labels}: se deshace todo junto. ¿Seguir?': 'It was saved together with {labels}: it is all undone together. Continue?',
   'Cambio deshecho (no llegó a Google Sheets)': 'Change undone (it never reached Google Sheets)',
   'Cambios deshechos (no llegaron a Google Sheets)': 'Changes undone (they never reached Google Sheets)',
   'Guardado en Google Sheets; {n} fila necesita revisión (marcada en rojo)': 'Saved to Google Sheets; {n} row needs review (marked in red)',

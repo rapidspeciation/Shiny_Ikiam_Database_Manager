@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { api } from '../lib/api'
 import { changeCount, type StagedClaim, type StagedItem } from '../lib/staged'
+import { useTables } from './tables'
 
 /** Whether Google answers (server/workbook-health.mjs): ok, slow, or busy (503, no answer). */
 export interface WorkbookState {
@@ -66,6 +67,10 @@ export const useLive = defineStore('live', {
     async loadStaged() {
       try {
         const out = await api<{ items: StagedItem[]; claims: StagedClaim[] }>('staged')
+        // Entries written to Google Sheets leave: the sheet's rows that now hold them come first, so they never vanish in between.
+        const gone = new Set(this.items.filter(i => !out.items.some(o => o.id === i.id)).map(i => i.sheet))
+        const tables = useTables()
+        await Promise.all([...gone].filter(sheet => tables.tables[sheet]).map(sheet => tables.refresh(sheet).catch(() => {})))
         this.items = out.items
         this.claims = out.claims
         this.stagedLoaded = true

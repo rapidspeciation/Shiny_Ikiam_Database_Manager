@@ -450,7 +450,8 @@ export class Staged {
       });
       if (!item) return { status: 'empty', ...this.summary() };
     }
-    const settled = (await outbox.wait(item.id, waitMs)) ?? item;
+    // While Google is busy nothing is written: the answer says so at once (the entries show as being written).
+    const settled = (await outbox.wait(item.id, this.store.sheets.health?.state === 'busy' ? 0 : waitMs)) ?? item;
     return { ...outbox.view(settled), status: settled.status, ...this.summary() };
   }
   /** The entries as one save: new rows, and each sheet row's cells (expected: what the sheet held before the first entry). */

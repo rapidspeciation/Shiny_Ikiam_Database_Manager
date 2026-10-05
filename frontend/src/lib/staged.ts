@@ -198,20 +198,24 @@ export function googleNotice(state: 'ok' | 'slow' | 'busy', waiting: number): { 
   if (state === 'busy')
     return {
       kind: 'busy',
-      text: tn(
-        waiting,
-        'Google Sheets no responde (está recalculando la hoja): los guardados se conservan aquí y se escriben cuando responda; {n} esperando',
-        'Google Sheets no responde (está recalculando la hoja): los guardados se conservan aquí y se escriben cuando responda; {n} esperando',
-      ),
+      text: waiting
+        ? tn(
+            waiting,
+            'Google Sheets no responde (está recalculando la hoja): los guardados se conservan aquí y se escriben cuando responda; {n} esperando',
+            'Google Sheets no responde (está recalculando la hoja): los guardados se conservan aquí y se escriben cuando responda; {n} esperando',
+          )
+        : t('Google Sheets no responde (está recalculando la hoja): los guardados se conservan aquí y se escriben cuando responda'),
     }
   if (state === 'slow')
     return {
       kind: 'slow',
-      text: tn(
-        waiting,
-        'Google Sheets responde lento (está recalculando la hoja): los guardados se conservan aquí y se escriben en orden; {n} esperando',
-        'Google Sheets responde lento (está recalculando la hoja): los guardados se conservan aquí y se escriben en orden; {n} esperando',
-      ),
+      text: waiting
+        ? tn(
+            waiting,
+            'Google Sheets responde lento (está recalculando la hoja): los guardados se conservan aquí y se escriben en orden; {n} esperando',
+            'Google Sheets responde lento (está recalculando la hoja): los guardados se conservan aquí y se escriben en orden; {n} esperando',
+          )
+        : t('Google Sheets responde lento (está recalculando la hoja): los guardados se conservan aquí y se escriben en orden'),
     }
   if (waiting)
     return {
