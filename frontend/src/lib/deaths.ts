@@ -32,7 +32,6 @@ export const NOT_PRESERVED: Record<string, string> = {
   Tube_3_tissue: 'NOT_COLLECTED',
   Tube_4_id: 'NA',
   Tube_4_tissue: 'NOT_COLLECTED',
-  Preservation_medium: 'NOT_COLLECTED',
   Preservation_date: 'NA',
   Location_body: 'NA',
 }
@@ -111,7 +110,6 @@ export function deathCells(
       }
       if (isBlank(why)) put('Death_cause', KILLED)
       put('Preserved_Dead_Alive', isBlank(why) || why === KILLED ? 'Alive' : 'Dead')
-      put('Preservation_medium', 'NOT_COLLECTED')
       put('Location_body', 'Ikiam')
       for (let next = slot + 1; next <= 4; next++) {
         set(`Tube_${next}_id`, 'NA')

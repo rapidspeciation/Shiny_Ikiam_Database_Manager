@@ -12,6 +12,8 @@ import { TUBE_FIELD, isIdValue, isUnique } from './verifications.mjs';
 import { listOptions, listProblem } from './verify.mjs';
 import { queueWalk, walkDraft } from './walks.mjs';
 import { KINDS, isNone, noteText, reviewColumns } from './notebook.mjs';
+import { HIDDEN_COLUMNS, isNotWritten, notWrittenWhy } from './proposal-columns.mjs';
+import { createFormulaReader, sameResult } from './formula-gives.mjs';
 import { FILTERS_DOC, FIND_BUDGET, RECORD_TOOLS, compactRecord, countRecords, findRecords, pickRows, resolveRows, selectRecords } from './records-tool.mjs';
 import { RESULT_BUDGET, fitList, fitResult } from './tool-budget.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
@@ -19,6 +21,7 @@ import { duplicateIdRow, insectaryIdPlaces, insectaryIdRow, newRowFormulaFields 
 import { BETWEEN_ROWS, VIEW_PARAM, VIEW_UPDATE, readView, showBetween, viewColumns } from './proposal-view.mjs';
 import { proposalSampleWarnings } from './preserved.mjs';
 import { issuesByRecord, lookAt, rowIssues } from './look-at.mjs';
+import { compareWithSheet, currentRecord } from './needs-review.mjs';
 import { carryChecks, dropDoubt, setChecked, uncheckedDoubts, unfilledUnreadable, withoutUnchecked } from './doubts.mjs';
 import { decide, editedInSheet, forget, lastEdit, resolveSheetEdits, sheetChangesOf, shownValue, takenRow, takenRows } from './sheet-edits.mjs';
 import { tellChat } from './t3tell.mjs';
@@ -574,6 +577,8 @@ function init(db) {
   // How the assistant asked its proposal's table to be shown (the `view` of propose_changes): the
   // columns first or only, and the sheet's rows between its rows or not.
   if (!has('ai_proposals', 'view_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN view_json TEXT');
+  // A proposal in needs_review compared with the sheet after a sync (server/needs-review.mjs).
+  if (!has('ai_proposals', 'check_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN check_json TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS ai_proposals_owner_status ON ai_proposals(owner_id, status, created_at)');
   // Personal tokens for agents outside the app (T3 Code projects) to use the same tools.
   db.exec(`CREATE TABLE IF NOT EXISTS ai_tokens (
@@ -665,6 +670,8 @@ export function createAssistant({ store, config = {} }) {
   const ai = providerConfig(config);
   const reports = createReports({ store, config });
   const knowledge = createKnowledge(config);
+  // What a proposal's formula cells will give once applied (server/formula-gives.mjs).
+  const formulaReader = createFormulaReader(store);
   // The sheets' copy that `query` reads (server/replica.mjs), where the app keeps one.
   const sheetsCopy = config.sheetsCopyPath ? createSheetsCopy({ store, path: config.sheetsCopyPath, ...config.sheetsCopy }) : null;
   const queries = sheetsCopy ? createQueryRunner({ path: sheetsCopy.path, ...config.sheetsQuery }) : null;
@@ -840,6 +847,8 @@ export function createAssistant({ store, config = {} }) {
     } catch (e) {
       return { error: `${at}: ${e.message}` };
     }
+    const unwritten = Object.keys(values).find(key => isNotWritten(sheet, key));
+    if (unwritten) return { error: `${at}: ${notWrittenWhy(sheet, unwritten)}` };
     // A count kept as a sum (=12+15) goes into the new row over its pre-made formula; other formulas stay.
     for (const [key, value] of Object.entries(values)) if (value?.formula && isSumField(sheet, key)) values[key] = value.formula;
     const formulas = createFormulaFields(sheet);
@@ -942,6 +951,8 @@ export function createAssistant({ store, config = {} }) {
       }
       const before = {},
         replaceFormula = [];
+      const unwritten = Object.keys(values).find(key => isNotWritten(old.sheet, key));
+      if (unwritten) return { error: `${old.label}: ${notWrittenWhy(old.sheet, unwritten)}` };
       for (const key of Object.keys(values)) {
         // A count kept as a sum is shown and written as its formula text (=12+15), over the old sum.
         const sum = isSumField(old.sheet, key) ? simpleSum(old.formulas?.[key]) : null;
@@ -1179,6 +1190,8 @@ export function createAssistant({ store, config = {} }) {
       const named = sheetNames(rows.mod.id, group.set, `${at}: set`);
       if (named.error) return named;
       const set = named.values;
+      const unwritten = Object.keys(set).find(f => isNotWritten(rows.mod.id, f));
+      if (unwritten) return { error: `${at}: ${notWrittenWhy(rows.mod.id, unwritten)}` };
       picked += rows.rows.length;
       if (picked > BULK_PICKED) return { error: `${at}: ${picked} rows picked. ${narrower()}` };
       // The values as the sheet will take them ({"clear": true} empties, a note is text), checked once.
@@ -1727,6 +1740,21 @@ export function createAssistant({ store, config = {} }) {
     };
   }
 
+  /** A needs_review check as get_proposal gives it: few cells one by one, many as their rows and columns. */
+  function sheetCheckOf(check) {
+    const differ = check?.differ ?? [];
+    if (differ.length <= 20) return check;
+    const rows = new Map();
+    for (const d of differ) {
+      const key = `${d.index}`;
+      if (!rows.has(key)) rows.set(key, { index: d.index, label: d.label, row: d.row, fields: [], sheetEmpty: true });
+      const r = rows.get(key);
+      r.fields.push(d.field);
+      if (d.sheet !== null && d.sheet !== '') r.sheetEmpty = false;
+    }
+    return { at: check.at, matched: check.matched, differing: check.count ?? differ.length, rows: [...rows.values()] };
+  }
+
   /**
    * get_proposal: its state and the rows that wait for a look (attentionRows), each row's
    * label by index; `full`: every row as the table shows it, from row `offset` on, as many
@@ -1745,6 +1773,8 @@ export function createAssistant({ store, config = {} }) {
       revision: proposal.revision,
       reason: proposal.reason,
       lastChangedBy: proposal.last_by ?? 'ai',
+      // needs_review: what the sheet holds of it, as compared after the last sync.
+      ...(proposal.status === 'needs_review' && proposal.check_json ? { sheetCheck: sheetCheckOf(parse(proposal.check_json)) } : {}),
     };
     if (args.full === true) {
       const from = Math.min(Math.max(Number(args.offset) || 0, 0), table.length);
@@ -2168,7 +2198,12 @@ export function createAssistant({ store, config = {} }) {
       throw Object.assign(new Error('Proposal has already been applied.'), { status: 409, code: 'proposal_used' });
     if (!EDITORS.includes(user.role))
       throw Object.assign(new Error('Your role cannot apply changes.'), { status: 403, code: 'forbidden' });
-    const all = parse(proposal.changes_json) ?? [];
+    // A row whose record a sync replaced (same sheet row and label, a new record): applied to that one.
+    const all = (parse(proposal.changes_json) ?? []).map(c => {
+      if (c.create || c.context || !c.recordId) return c;
+      const record = currentRecord(store, c);
+      return record && record.id !== c.recordId ? { ...c, recordId: record.id } : c;
+    });
     // A row left without values (the person emptied it in the table) has nothing to write, and a
     // notebook line shown only for context (match_notebook includeUnchanged) is never written.
     const picked = (
@@ -2223,6 +2258,9 @@ export function createAssistant({ store, config = {} }) {
       .filter(([, c]) => Object.keys(c.values ?? {}).length);
     const written = writes.map(([i]) => i);
     if (!writes.length) throw Object.assign(new Error('Only doubtful cells were left to write.'), { status: 400, code: 'nothing_selected' });
+    // The app is stopping (a deploy): the proposal stays pending, to apply in a minute.
+    if (store.draining)
+      throw Object.assign(new Error('The app is restarting; apply it again in a minute.'), { status: 503, code: 'shutting_down' });
     const claimed = db
       .prepare("UPDATE ai_proposals SET status = 'applying' WHERE id = ? AND status = 'pending'")
       .run(proposal.id);
@@ -2279,6 +2317,38 @@ export function createAssistant({ store, config = {} }) {
       } catch (e) {
         console.error('Proposal rows read again:', e.message);
       }
+  }
+
+  /**
+   * The sheet row a new row goes into, whose formulas it keeps: its Insectary ID's pre-made row in
+   * Insectary_data, else the sheet's next pre-made row. Null when there is none yet.
+   */
+  function premadeRecordOf(change) {
+    if (change.sheet === 'Insectary_data') {
+      const place = change.values?.Insectary_ID ? insectaryIdRow(store, change.values.Insectary_ID) : null;
+      return place && !place.ahead ? store.getRecordBySheetRow('Insectary_data', place.row) : null;
+    }
+    const next = db
+      .prepare('SELECT id FROM records WHERE sheet=? AND missing=0 AND observed=0 AND row_num>? AND row_num<2000000000 ORDER BY row_num LIMIT 1')
+      .get(change.sheet, moduleMap.get(change.sheet)?.headerRow ?? 1);
+    return next ? store.getRecord(next.id) : null;
+  }
+
+  /** What the formula cells of a proposal row will give ({ gives, fallback }, server/formula-gives.mjs). */
+  function rowFormulaGives(change, target, session) {
+    if (!target?.formulas || !Object.keys(target.formulas).length) return { gives: {}, fallback: [] };
+    // A new row writes into its pre-made row: its ID formula stays, the rest is the proposal's.
+    const formulas =
+      change.create && change.sheet === 'Insectary_data'
+        ? Object.fromEntries(Object.entries(target.formulas).filter(([f]) => f !== 'Insectary_ID'))
+        : target.formulas;
+    const values = Object.fromEntries(Object.entries(change.values ?? {}).filter(([f]) => !(change.create && f === 'Insectary_ID')));
+    try {
+      return formulaReader.rowGives({ sheet: change.sheet, record: { ...target, formulas }, values, all: !!change.create, ctx: session });
+    } catch (e) {
+      console.error('Formula gives:', e.message);
+      return { gives: {}, fallback: [] };
+    }
   }
 
   /**
@@ -2362,7 +2432,9 @@ export function createAssistant({ store, config = {} }) {
       sheets.map(s => {
         const mod = moduleMap.get(s);
         const kind = notebook?.sheet === s ? notebook.kind : null;
-        return [s, viewColumns(s, reviewColumns(s, mod?.fields.map(f => f.key) ?? [], mod?.identityFields ?? [], kind), view)];
+        const hidden = [...(HIDDEN_COLUMNS[s] ?? [])];
+        const shown = viewColumns(s, reviewColumns(s, mod?.fields.map(f => f.key) ?? [], mod?.identityFields ?? [], kind), view);
+        return [s, hidden.length ? { ...shown, hidden } : shown];
       }),
     );
     const typeOf = f =>
@@ -2372,13 +2444,8 @@ export function createAssistant({ store, config = {} }) {
           sheets.filter(s => changes.some(c => c.create && c.sheet === s)).map(s => [s, locked(s, [...createFormulaFields(s)])]),
         )
       : {};
-    // What the SPECIES formula gives once the row has its clutch (shown, never written).
-    const species = new Map();
-    const speciesOf = clutch => {
-      const key = String(clutch);
-      if (!species.has(key)) species.set(key, notebooks.speciesOfClutch(clutch));
-      return species.get(key);
-    };
+    // What the row's formula cells will give once its values are written (shown, never written).
+    const formulaSession = formulaReader.session();
     const hintTable = [];
     const hintIndex = new Map();
     const hintOf = h => {
@@ -2433,20 +2500,21 @@ export function createAssistant({ store, config = {} }) {
           ...shown.map(f => [f, shownValue(record, f)]).filter(([, v]) => v !== null && v !== ''),
         ]);
       }
-      // Also beside a species typed over it, so the table can tell when the person types the formula's own.
-      const clutch = change.values['CLUTCH NUMBER'];
-      const typed = 'SPECIES' in change.values;
-      if (change.sheet === 'Insectary_data' && (typed || !isNone(clutch))) {
-        const formula = change.create ? createFormulaFields(change.sheet).has('SPECIES') : !!record?.formulas?.SPECIES;
-        const gives = !formula
-          ? null
-          : !isNone(clutch)
-            ? (speciesOf(clutch) ?? formulaGives?.SPECIES ?? null)
+      // The row's formula cells its values reach, with what they will give (a new row: all of its pre-made
+      // row's); beside a species typed over its formula too, so the table can tell when the person types the
+      // formula's own. Those that cannot be evaluated keep the sheet's value, marked (formulaFallback).
+      if (!change.context && !change.gap) {
+        const target = change.create ? premadeRecordOf(change) : record;
+        const { gives, fallback } = rowFormulaGives(change, target, formulaSession);
+        const shown = Object.entries(gives).filter(([f, v]) =>
+          f in change.values
+            ? TYPED_OVER_FORMULA[change.sheet]?.has(f) && !isNone(v)
             : change.create
-              ? null
-              : shownValue(record, 'SPECIES');
-        if (!isNone(gives) && (typed || comparable(gives) !== comparable(change.create ? null : shownValue(record, 'SPECIES'))))
-          view.formulaGives = { SPECIES: gives };
+              ? v !== null && v !== ''
+              : !sameResult(v, shownValue(record, f)),
+        );
+        if (shown.length) view.formulaGives = Object.fromEntries(shown);
+        if (fallback.length) view.formulaFallback = fallback;
       }
       return view;
     });
@@ -3771,13 +3839,52 @@ export function createAssistant({ store, config = {} }) {
     }
     return bad(404, 'not_found', 'Assistant route not found.');
   }
+  /**
+   * After each sync that read the sheets: the proposals in needs_review compared with them.
+   * All their cells in the sheet: applied (written after all, or by hand); else the cells
+   * that differ are kept (check_json) for get_proposal and the table.
+   */
+  function checkNeedsReview() {
+    const rows = db.prepare("SELECT * FROM ai_proposals WHERE status = 'needs_review'").all();
+    const out = { applied: [], differ: [] };
+    for (const p of rows) {
+      const changes = parse(p.changes_json) ?? [];
+      const { cells, differ } = compareWithSheet(store, changes, parse(p.created_json ?? 'null') ?? {});
+      if (!cells) continue;
+      const at = now();
+      if (!differ.length) {
+        const written = changes.map((c, i) => (!c.context && Object.keys(c.values ?? {}).length ? i : -1)).filter(i => i >= 0);
+        db.prepare(
+          "UPDATE ai_proposals SET status = 'applied', applied_at = ?, applied_json = ?, check_json = ? WHERE id = ? AND status = 'needs_review'",
+        ).run(at, json(written), json({ at, matched: cells, differ: [] }), p.id);
+        out.applied.push(p.id);
+        console.log(`Proposal ${p.id}: every cell (${cells}) is in the sheet; marked applied`);
+      } else {
+        db.prepare('UPDATE ai_proposals SET check_json = ? WHERE id = ?').run(json({ at, matched: cells - differ.length, differ: differ.slice(0, 200), count: differ.length }), p.id);
+        out.differ.push(p.id);
+      }
+      changed(p.owner_id);
+    }
+    return out;
+  }
+  const stopWatching = store.watchSyncs?.(status => {
+    if (status?.state === 'error') return;
+    try {
+      checkNeedsReview();
+    } catch (e) {
+      console.error('needs_review check:', e.message);
+    }
+  });
+
   return {
     handle,
     mcp,
     tools: mcpTools,
     t3,
     sheetsCopy,
+    checkNeedsReview,
     close() {
+      stopWatching?.();
       sheetsCopy?.close();
       queries?.close();
     },

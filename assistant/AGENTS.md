@@ -33,6 +33,16 @@ Every change is a proposal the person reviews before it is written:
 4. It is written when they approve it in the chat (`apply_proposal`) or press
    «Apply» («Aplicar») in the table.
 
+**When Google does not answer** (503, a save or read that times out, a sync
+failing), the workbook is usually recalculating. Do not apply again or
+deploy: ask the person to open the sheet in the browser, check the
+recalculation bar, and wait for it to finish.
+
+**A proposal left in `needs_review` or `applying`** after a timeout or a
+restart may have been written. Before applying it again or drafting it anew,
+compare its cells with the sheet's current values (`find_records`): if they
+all match, it was written; say so and leave it.
+
 Proposal results carry a `link`, a page that shows that proposal on its own
 (works from any device): give it with each new proposal, and again when
 asked where to review. `list_proposals` has the links of this chat's

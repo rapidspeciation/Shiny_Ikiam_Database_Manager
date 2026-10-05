@@ -291,7 +291,10 @@ test('the proposal goes lean: hints once, formula columns once per sheet, no dra
       // The template's hints: an index into the proposal's table, the same for both rows.
       for (const i of Object.values(c.hints ?? {})) assert.ok(p.hintTable[i]);
     }
-    assert.deepEqual(rows[0].hints, rows[1].hints);
+    // (5VB has its emerge date: LIFESTAGE Adult besides; 3AB has none.)
+    const template = c => Object.fromEntries(Object.entries(c.hints).filter(([f]) => f !== 'LIFESTAGE'));
+    assert.deepEqual(template(rows[0]), template(rows[1]));
+    assert.deepEqual(rows.map(c => [c.label, c.values.LIFESTAGE ?? null]).sort(), [['3AB', null], ['5VB', 'Adult']]);
     assert.ok(Object.keys(rows[0].hints).length > 3, 'a death fills its template');
     assert.equal(new Set(p.hintTable.map(h => JSON.stringify(h))).size, p.hintTable.length, 'each hint once');
     assert.ok(p.hintTable.every(h => h.msg && !h.text), 'the descriptor only (the interface words it)');

@@ -139,8 +139,14 @@ export interface ProposalChange {
   context?: boolean
   /** A page line with no sheet row (not found, crossed out): shown as written, never written. */
   placeholder?: boolean
-  /** What a formula column will give once the row is written (SPECIES from its clutch): shown, never written. */
+  /**
+   * What the row's formula cells will give once it is written, those that
+   * differ from what the sheet shows now (server/formula-gives.mjs; an error as
+   * its code, #N/A): shown, never written.
+   */
   formulaGives?: Record<string, CellValue>
+  /** Formula cells the proposal reaches that could not be calculated here: the sheet's value is shown, marked. */
+  formulaFallback?: string[]
   /** Its place on the notebook page. */
   page?: PageLine
   /** A row off the photo with the same error as this line of the page (match_notebook): shown apart, after the page. */
@@ -196,9 +202,10 @@ export interface Proposal {
   /**
    * The columns each sheet's table shows whatever the proposal changes, in order
    * (reviewColumns in server/notebook.mjs); `keys`: the row's own ID, shown in the
-   * table's ID column (its own column only when the proposal changes it).
+   * table's ID column (its own column only when the proposal changes it);
+   * `hidden`: columns never shown, not even added (server/proposal-columns.mjs).
    */
-  shownColumns?: Record<string, { fields: string[]; keys: string[] }>
+  shownColumns?: Record<string, { fields: string[]; keys: string[]; hidden?: string[] }>
   /** Changes when the sheet's rows of a pending proposal change (an edit in the sheet): the list redraws it. */
   sheetStamp?: string
   /** The rows are listed in the sheet's order: a notebook page's lines that go another way there. */
@@ -325,8 +332,10 @@ export interface CellInfo {
   warning?: Hint
   /** What the data checks say about the sheet's value of this cell (a tube with a digit missing…). */
   checks?: Hint[]
-  /** The value is what the sheet's formula will give (SPECIES from the clutch): shown grey, never written. */
+  /** The value is what the sheet's formula will give once applied (SPECIES from the clutch): shown grey, never written. */
   fromFormula?: boolean
+  /** A formula cell that could not be calculated here: the sheet's current value, marked as such. */
+  formulaFallback?: boolean
   /** Edited in the sheet since the proposal read it (violet): kept from the sheet, or the proposal's written over it. */
   sheetEdit?: SheetEdit
   /** A `kept` cell's value in the proposal (set aside, not written). */
@@ -383,13 +392,23 @@ export function cellOf(change: ProposalChange, field: string, newRowFormulas: st
   if (unreadable && !mark) return { value: change.create ? null : (was ?? null), kind: 'unreadable', was, aiProposed, ...quiet }
   // What the formula will give once the row is written, in place of the sheet's (blank or older) value.
   const gives = change.formulaGives?.[field]
-  const formula = gives !== undefined && gives !== null && gives !== '' ? { value: gives, fromFormula: true } : null
+  const fallback = !!change.formulaFallback?.includes(field)
+  const formula =
+    gives !== undefined && (gives !== null && gives !== '' ? true : !change.create && !(field in change.values))
+      ? { value: gives ?? null, fromFormula: true }
+      : fallback
+        ? { formulaFallback: true }
+        : null
   if (mark)
     return { value: change.create ? null : (was ?? null), kind: aiProposed ? 'reverted' : 'person', was, ai, aiProposed, ...quiet, ...formula }
   const locked = change.create ? newRowFormulas.includes(field) : !!change.formulas?.includes(field)
   if (change.create) return { value: null, kind: locked ? 'locked' : 'empty', aiProposed, ...quiet, ...formula }
   return { value: was ?? null, kind: locked ? 'locked' : 'sheet', was, aiProposed, ...quiet, ...formula }
 }
+
+/** A formula's error as the sheet shows it (#N/A, #REF!…): the cell is marked so the person sees the problem. */
+export const isFormulaError = (v: CellValue | undefined) =>
+  typeof v === 'string' && /^#(N\/A|REF!|VALUE!|DIV\/0!|NAME\?|NUM!|NULL!|ERROR!)$/.test(v)
 
 /** The person chose to write the proposal's value over the sheet's edit (and nobody edited it again since). */
 export const keptOver = (e: SheetEdit) => e.use === 'proposal' && !e.again

@@ -6,6 +6,11 @@ import { columnLetter, headerLayout } from './columns.mjs';
 
 const api = 'https://sheets.googleapis.com/v4/spreadsheets';
 
+/** How long a request to Google may take: a read (retried), a write, a token. */
+export const READ_TIMEOUT_MS = 90_000;
+export const WRITE_TIMEOUT_MS = 120_000;
+const TOKEN_TIMEOUT_MS = 30_000;
+
 export class GoogleSheets {
   constructor(config = {}) {
     this.spreadsheetId = checkWorkbookId(config.spreadsheetId || REAL_ID);
@@ -29,6 +34,7 @@ export class GoogleSheets {
     const c = this.credentials;
     const response = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
+      signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS),
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         client_id: c.client_id,
@@ -50,14 +56,25 @@ export class GoogleSheets {
     for (let attempt = 0; attempt < (method === 'GET' ? 5 : 1); attempt++) {
       if (method === 'GET') await this.readSlot(background);
       this.requestCount++;
-      const response = await fetch(`${api}/${this.spreadsheetId}${path}`, {
-        ...fetchOptions,
-        headers: {
-          authorization: `Bearer ${await this.accessToken()}`,
-          'content-type': 'application/json',
-          ...fetchOptions.headers,
-        },
-      });
+      const authorization = `Bearer ${await this.accessToken()}`;
+      let response;
+      try {
+        // A request Google does not answer is given up (a read is tried again): a hung request
+        // would otherwise hold the write queue, the syncs and a deploy's restart for ever.
+        response = await fetch(`${api}/${this.spreadsheetId}${path}`, {
+          ...fetchOptions,
+          signal: AbortSignal.timeout(method === 'GET' ? READ_TIMEOUT_MS : WRITE_TIMEOUT_MS),
+          headers: { authorization, 'content-type': 'application/json', ...fetchOptions.headers },
+        });
+      } catch (e) {
+        if (e?.name !== 'TimeoutError') throw e;
+        if (method === 'GET' && attempt < 4) continue;
+        // A write that timed out may have landed: the save is left unconfirmed and checked again.
+        throw Object.assign(new Error(`Google Sheets did not answer in ${method === 'GET' ? READ_TIMEOUT_MS / 1000 : WRITE_TIMEOUT_MS / 1000} s`), {
+          status: 504,
+          timeout: true,
+        });
+      }
       if (response.ok) return text ? response.text() : response.json();
       if (method === 'GET' && [429, 503].includes(response.status) && attempt < 4) {
         const delay = Math.max(Number(response.headers.get('retry-after') || 0) * 1000, 1000 * 2 ** attempt);
@@ -85,6 +102,7 @@ export class GoogleSheets {
       `https://www.googleapis.com/drive/v3/files/${this.spreadsheetId}?fields=id,version,modifiedTime`,
       {
         headers: { authorization: `Bearer ${await this.accessToken()}` },
+        signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS),
       },
     );
     if (response.status === 403) return null; // Sheets-only credentials cannot use Drive metadata.

@@ -495,7 +495,7 @@ test('match_notebook matches a transcribed page and leaves one proposal beside T
     assert.equal(out.counts.doubtful, 1);
     // A butterfly with a clutch was reared.
     assert.deepEqual(line(2).fill, { Intro2Insectary_date: '2025-08-08' });
-    assert.deepEqual(line(2).implied, { Wild_Reared: 'Reared' }, 'not written on the line: implied');
+    assert.deepEqual(line(2).implied, { Wild_Reared: 'Reared', LIFESTAGE: 'Adult' }, 'not written on the line: implied (an entry date: an adult)');
     // Dates as ISO; the tube already filed as this butterfly's Tube_2_id.
     assert.deepEqual(line(3).fill, { Intro2Insectary_date: '2025-08-08', Death_date: '2025-08-09', Death_cause: 'Unknown' });
     assert.match(line(3).problems.Tube_1_id, /ya está en Insectary_data fila 4/);
@@ -898,4 +898,34 @@ test('match_notebook asks for the year of a page of old dates that does not say 
   } finally {
     store.close();
   }
+});
+
+test('a date in Intro2Insectary_date makes an adult: LIFESTAGE Adult implied, never over a stage the row has', () => {
+  const rows = [
+    { id: 'e1', row: 30, version: 1, values: { Insectary_ID: 'Y5D' } },
+    { id: 'e2', row: 31, version: 1, values: { Insectary_ID: 'Y6D', LIFESTAGE: '3rd instar larva' } },
+    { id: 'e3', row: 32, version: 1, values: { Insectary_ID: 'Y7D' } },
+    { id: 'e4', row: 33, version: 1, values: { Insectary_ID: 'Y8D', Intro2Insectary_date: 46290 } },
+    { id: 'e5', row: 34, version: 1, values: { Insectary_ID: 'Y9D', Wild_Reared: 'Wild-caught' } },
+  ];
+  const lookup = fakeLookup(rows, { clutches: { 997: { written: 997, species: 'Mechanitis lysimnia' } } });
+  const transcription = parseTranscription(
+    JSON.stringify({
+      kind: 'emergence',
+      lines: [
+        { raw: 'Y5D ♀ 997 4/10', v: { Insectary_ID: 'Y5D', Sex: 'female', 'CLUTCH NUMBER': '997', Intro2Insectary_date: '4/10' } },
+        { raw: 'Y6D ♀ 997 4/10', v: { Insectary_ID: 'Y6D', Sex: 'female', 'CLUTCH NUMBER': '997', Intro2Insectary_date: '4/10' } },
+        { raw: 'Y7D ♀ 997', v: { Insectary_ID: 'Y7D', Sex: 'female', 'CLUTCH NUMBER': '997' } },
+        { raw: 'Y8D ♂ 997', v: { Insectary_ID: 'Y8D', Sex: 'male', 'CLUTCH NUMBER': '997' } },
+        { raw: 'Y9D ♂ wild 3/10', v: { Insectary_ID: 'Y9D', Sex: 'male', Wild_Reared: 'Wild-caught', Intro2Insectary_date: '3/10' } },
+      ],
+    }),
+  );
+  const [dated, larva, undated, inRow, wild] = buildReview({ transcription, year: 2026, today: '2026-10-05', lookup }).lines;
+  assert.equal(dated.cells.LIFESTAGE.value, 'Adult');
+  assert.ok(dated.cells.LIFESTAGE.inferred);
+  assert.notEqual(larva.cells.LIFESTAGE?.status, 'fill', 'the row has a stage: kept (Revisión points it out)');
+  assert.ok(!undated.cells.LIFESTAGE || undated.cells.LIFESTAGE.status !== 'fill', 'no date: nothing implied');
+  assert.equal(inRow.cells.LIFESTAGE.value, 'Adult', "the row's own entry date");
+  assert.equal(wild.cells.LIFESTAGE.value, 'Adult', 'wild-caught too');
 });

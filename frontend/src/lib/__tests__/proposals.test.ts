@@ -9,6 +9,7 @@ import {
   changedCells,
   changedText,
   expandProposal,
+  isFormulaError,
   nextCell,
   notApplied,
   orderText,
@@ -460,6 +461,29 @@ describe("a notebook page's proposal", () => {
     const typed = { ...row, values: { ...row.values, SPECIES: 'Mechanitis polymnia' }, personEdits: { SPECIES: {} } }
     expect(cellOf(typed, 'SPECIES')).toMatchObject({ value: 'Mechanitis polymnia', kind: 'person' })
     expect(cellOf(typed, 'SPECIES').fromFormula).toBeUndefined()
+  })
+  it('every formula cell the proposal reaches shows what it will give (an error too), or the sheet\'s value marked when it cannot be calculated', () => {
+    const row = edited(
+      'r1',
+      { Wild_Reared: 'Reared', Tube_2_tissue: 'NOT_COLLECTED' },
+      {
+        sheet: 'Insectary_data',
+        rowValues: { Collection_location: 'NOT_COLLECTED', Pedigree: 'NA', Photo_dorsal: 'NA' },
+        current: undefined,
+        formulas: ['Collection_location', 'Pedigree', 'T2_Preservation_medium', 'Photo_dorsal'],
+        formulaGives: { Collection_location: 'Mariposario Ikiam', T2_Preservation_medium: '#N/A' },
+        formulaFallback: ['Photo_dorsal'],
+      },
+    )
+    expect(cellOf(row, 'Collection_location')).toMatchObject({ value: 'Mariposario Ikiam', kind: 'locked', fromFormula: true, was: 'NOT_COLLECTED' })
+    expect(cellOf(row, 'T2_Preservation_medium')).toMatchObject({ value: '#N/A', fromFormula: true })
+    expect(isFormulaError(cellOf(row, 'T2_Preservation_medium').value)).toBe(true)
+    expect(isFormulaError('NA')).toBe(false)
+    // Unchanged by the proposal: the sheet's value, a formula all the same.
+    expect(cellOf(row, 'Pedigree')).toMatchObject({ value: 'NA', kind: 'locked' })
+    expect(cellOf(row, 'Photo_dorsal')).toMatchObject({ value: 'NA', kind: 'locked', formulaFallback: true })
+    // Never written.
+    expect(proposal([row]).changes[0].values).toEqual({ Wild_Reared: 'Reared', Tube_2_tissue: 'NOT_COLLECTED' })
   })
   it("typing the species the formula gives leaves it to the formula (not a change), the assistant's other one aside", () => {
     const row = edited(

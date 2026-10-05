@@ -12,6 +12,7 @@ export default {
   'Fecha que no es una fecha': 'Date that is not a date',
   'Preservada sin CAM o tubo': 'Preserved without CAM or tube',
   'Causa preservada, celdas sin preservar': 'Cause says preserved, cells say not preserved',
+  'Con fecha de entrada y etapa de huevo, larva o pupa': 'Entry date with an egg, larva or pupa stage',
   'Marca usada en dos especies': 'Mark used on two species',
   'Punto de Wikiloc sin emparejar': 'Unmatched Wikiloc point',
   'Sobre con otro CAM que la foto': 'Envelope with a different CAM than the photo',

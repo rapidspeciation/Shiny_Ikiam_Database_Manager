@@ -62,6 +62,8 @@ export class Store {
     this.localMode = this.sheets instanceof LocalSheets;
     // scripts/switch-workbook.mjs opens the database while it still caches the other workbook.
     if (!switching) this.checkWorkbook();
+    // A workbook switch reads another workbook: a row there is not the same butterfly as the old copy's.
+    this.switching = switching;
     this.queue = Promise.resolve();
     this.syncPromise = null;
     this.writeEpoch = new Map();
@@ -512,6 +514,13 @@ export class Store {
     } finally {
       this.syncPromise = null;
     }
+    // Saves whose outcome is unknown (a write cut off, Google not answering) are checked again
+    // after every sync that read the sheets, not only at startup.
+    if (status?.state !== 'error' && this.unconfirmedCount() && !this.recovering) {
+      this.recovering = this.runExclusive(() => this.recoverPending())
+        .catch(e => console.error('Recovery:', e.message))
+        .finally(() => (this.recovering = null));
+    }
     for (const fn of this.syncWatchers ?? []) {
       try {
         fn(status);
@@ -631,9 +640,13 @@ export class Store {
             for (const item of current) {
               if (matched.has(item)) continue;
               const atRow = byRow.get(item.row);
-              // A row keeps its record when edited in place, unless its identifier changed.
-              if (atRow && !seen.has(atRow.id) && !Object.keys(parse(atRow.identity_json) || {}).length)
-                claim(item, atRow);
+              // A row keeps its record when edited in place, unless its identifier changed: one that only
+              // gained identifiers (a CAM_ID typed on a row known by its Insectary_ID) is the same row.
+              const had = atRow ? parse(atRow.identity_json) || {} : {};
+              const ids = this.identity(sheet, item.values);
+              // (Not in a workbook switch: the other workbook's row is another butterfly.)
+              const grew = !this.switching && Object.keys(had).length && Object.entries(had).every(([k, v]) => comparable(ids[k]) === comparable(v));
+              if (atRow && !seen.has(atRow.id) && (!Object.keys(had).length || grew)) claim(item, atRow);
             }
             // Parked row numbers go below every number already used, so repeated syncs never collide.
             let displaced =
@@ -983,6 +996,10 @@ export class Store {
     this.db
       .prepare('INSERT INTO audit(id,kind,detail_json,created_at) VALUES(?,?,?,?)')
       .run(randomUUID(), 'action_status', json({ actionId: id, status }), now());
+  }
+  /** Saves not confirmed yet (being written, or their outcome unknown). */
+  unconfirmedCount() {
+    return this.db.prepare("SELECT count(*) n FROM actions WHERE status IN ('pending','uncertain')").get().n;
   }
   /**
    * Re-reads the cells of writes whose outcome is unknown. If Google holds the

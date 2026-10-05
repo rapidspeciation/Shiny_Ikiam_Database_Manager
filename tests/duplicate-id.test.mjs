@@ -350,7 +350,8 @@ test('match_notebook: a suffixed ID is its own key, and a death line with all it
     const proposal = await call('get_proposal', { proposalId: out.proposalId, full: true });
     assert.equal(proposal.rows.length, 2);
     const death = proposal.rows.find(r => r.label === 'W3B');
-    assert.ok(Object.keys(death.values).length >= 18, JSON.stringify(death));
+    assert.ok(Object.keys(death.values).length >= 17, JSON.stringify(death));
+    assert.ok(!('Preservation_medium' in death.values), 'deprecated: never written');
     assert.equal(death.values.Tube_4_tissue, 'NOT_COLLECTED');
     assert.equal(at(5).values.Insectary_ID, 'W2B.1');
   } finally {
@@ -382,8 +383,8 @@ test('a proposal row for an existing record takes as many values as a new row (a
       Tube_3_tissue: 'NOT_COLLECTED',
       Tube_4_id: 'NA',
       Tube_4_tissue: 'NOT_COLLECTED',
-      Preservation_medium: 'Ethanol',
       Stock_of_origin: 'NA',
+      LIFESTAGE: 'Adult',
     };
     assert.ok(Object.keys(values).length > 20);
     const out = await call('propose_changes', { reason: 'Muertes', changes: [{ recordId: at(5).id, values }] });

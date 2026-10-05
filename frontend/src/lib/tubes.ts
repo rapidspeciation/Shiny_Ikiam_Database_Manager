@@ -124,7 +124,7 @@ export const untouched = (get: (field: string) => CellValue) => isBlank(get('CAM
  *   its tissue and medium in the row's free tube columns, then what Tubos and
  *   Muertes write for a preserved body (Preservation_date and Death_date,
  *   Death_cause Killed_Preserved if empty, Preserved_Dead_Alive,
- *   Preservation_medium NOT_COLLECTED, Location_body Ikiam) and, with
+ *   Location_body Ikiam; not Preservation_medium, deprecated) and, with
  *   `closeRest`, the tube columns left as NA / NOT_COLLECTED;
  * - a wing clip: the CAM, the tube, its tissue and medium, and the note
  *   "d/m/yy INI: Wing clip d/m/yy" (the clip's day: there is no column for it);
@@ -185,7 +185,6 @@ export function tubeCells(
   }
   if (isBlank(why)) put('Death_cause', KILLED)
   put('Preserved_Dead_Alive', isBlank(why) || why === KILLED ? 'Alive' : 'Dead')
-  put('Preservation_medium', 'NOT_COLLECTED')
   put('Location_body', 'Ikiam')
   if (choice.closeRest)
     for (let next = last + 1; next <= 4; next++) {

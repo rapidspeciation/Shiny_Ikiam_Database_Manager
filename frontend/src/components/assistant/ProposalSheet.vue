@@ -37,6 +37,7 @@ import {
   cellComments,
   cellOf,
   editedBy,
+  isFormulaError,
   keptOver,
   pageNote,
   pageOnly,
@@ -262,7 +263,10 @@ function drawn(cell: CellComponent, field: string, c: CellInfo, comments: CellCo
   el.classList.toggle('is-person', c.kind === 'person')
   el.classList.toggle('is-reverted', c.kind === 'reverted')
   el.classList.toggle('is-sheet', c.kind === 'sheet')
-  el.classList.toggle('is-formula', c.kind === 'locked')
+  // A formula cell, as it is or with what it will give once applied: the sheet's formula grey, never written.
+  el.classList.toggle('is-formula', c.kind === 'locked' || !!c.fromFormula || !!c.formulaFallback)
+  el.classList.toggle('is-formula-error', (c.kind === 'locked' || !!c.fromFormula) && isFormulaError(c.value))
+  el.classList.toggle('is-formula-stale', !!c.formulaFallback && !c.fromFormula)
   el.classList.toggle('is-invalid', !!problem)
   el.classList.toggle('is-flash', props.flash.has(cellId(row.__key, field)))
   el.classList.toggle('has-choices', canEditCell(row.__key, field) && hasChoices(field))
@@ -307,8 +311,16 @@ function drawn(cell: CellComponent, field: string, c: CellInfo, comments: CellCo
       ? t('Se mantiene el valor de la hoja; la propuesta decía: {value}', { value: show(field, c.proposalValue) || t('vacío') })
       : '',
     c.sheetEdit && props.editable ? t('Elige junto a la celda: el valor de la hoja o el de la propuesta') : '',
-    c.kind === 'locked' ? t('Fórmula de la hoja: no se escribe') : '',
-    c.fromFormula ? t('Lo dará la fórmula de la hoja (del clutch): no se escribe') : '',
+    (c.kind === 'locked' || c.fromFormula) && isFormulaError(c.value)
+      ? t('La fórmula de la hoja da un error con estos valores: revísalo antes de aplicar')
+      : '',
+    c.fromFormula
+      ? t('Calculado por la fórmula de la hoja con los valores propuestos: no se escribe')
+      : c.formulaFallback
+        ? t('No se pudo calcular aquí: es el valor actual de la hoja, que la fórmula puede cambiar al aplicar')
+        : c.kind === 'locked'
+          ? t('Calculado por la fórmula de la hoja: no se escribe')
+          : '',
     c.kind === 'unreadable' && props.editable ? t('escribe el valor; vacía no se escribe') : '',
     c.kind === 'sheet' && !c.fromFormula && canEditCell(row.__key, field) ? t('Valor actual de la hoja; escribe para cambiarlo') : '',
     readOnlyRow(change) ? readOnlyText(change) : '',
@@ -633,7 +645,10 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
     notes.push({ label: t('IA'), text: editText$(field, c.ai) || t('vacío'), kind: 'ai' })
   // Edited in the sheet: the proposal's value, set aside while the sheet's stays.
   if (c.kind === 'kept') notes.push({ label: t('Propuesta'), text: editText$(field, c.proposalValue) || t('vacío'), kind: 'ai' })
-  if (c.fromFormula) notes.push({ label: t('Fórmula'), text: t('La hoja lo calculará del clutch: no se escribe'), kind: 'hint' })
+  if (c.fromFormula)
+    notes.push({ label: t('Fórmula'), text: t('Calculado por la fórmula de la hoja con los valores propuestos: no se escribe'), kind: 'hint' })
+  else if (c.formulaFallback)
+    notes.push({ label: t('Fórmula'), text: t('No se pudo calcular aquí: es el valor actual de la hoja, que la fórmula puede cambiar al aplicar'), kind: 'hint' })
   // What of an unreadable cell was read (as written): a click puts it in the bar to complete.
   const partial = c.kind === 'unreadable' ? (c.unreadable?.partial ?? []) : []
   // The doubt's other readings (and the assistant's own value, once the person changed it).
@@ -651,7 +666,7 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
     readonly: editable
       ? ''
       : c.kind === 'locked'
-        ? t('Fórmula de la hoja: no se escribe')
+        ? t('Calculado por la fórmula de la hoja: no se escribe')
         : readOnlyRow(change)
           ? readOnlyText(change)
           : '',
@@ -1218,11 +1233,21 @@ watch(
   background: #fef2f2;
   color: #991b1b;
 }
-/* What the sheet's formula will give (SPECIES from the clutch): grey, in italics, tagged; never written. */
+/* A formula cell (grey, as in every grid), and what it will give once applied (tagged): never written. */
 .proposal-sheet .tabulator-cell.is-formula-gives,
 .legend.is-formula-gives {
-  color: #78716c;
+  color: #57534e;
+  background: #f3f4f1;
   font-style: italic;
+}
+/* The formula gives an error with the proposed values (#N/A): red, the only colour for errors. */
+.proposal-sheet .tabulator-cell.is-formula-error {
+  color: #b91c1c;
+  background: #fef2f2;
+}
+/* A formula that could not be calculated here: the sheet's value, underlined dotted. */
+.proposal-sheet .tabulator-cell.is-formula-stale {
+  text-decoration: underline dotted #a8a29e;
 }
 /* The assistant says something about the cell (hover, or select it to read it in the bar): a corner, as a comment in Google Sheets. */
 .proposal-sheet .tabulator-cell.has-comment {

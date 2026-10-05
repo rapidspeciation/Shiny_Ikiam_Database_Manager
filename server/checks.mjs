@@ -36,6 +36,7 @@ export const CHECK_KINDS = {
   bad_date: 'Fecha que no es una fecha',
   missing_sample: 'Preservada sin CAM o tubo',
   preserved_na: 'Causa preservada, celdas sin preservar',
+  stage_adult: 'Con fecha de entrada y etapa de huevo, larva o pupa',
   mark_reuse: 'Marca usada en dos especies',
   walk_doubt: 'Punto de Wikiloc sin emparejar',
   // From the photos (server/photo-checks.mjs).
@@ -56,6 +57,8 @@ export const todaySerial = () => {
   return Math.round((Date.parse(`${today}T00:00:00Z`) - EPOCH) / 864e5);
 };
 const text = value => (value === null || value === undefined ? '' : String(value).trim());
+/** An egg's, larva's, pre-pupa's or pupa's LIFESTAGE (Egg, 3rd instar larva, Pre-pupa, Pupa day 4). */
+export const YOUNG_STAGE = /egg|larva|instar|pupa/i;
 const isDate = value => typeof value === 'number' && Number.isFinite(value) && value > 0;
 const binomial = value =>
   text(value)
@@ -583,6 +586,23 @@ function scan(store) {
           field,
           msg('Preservada ({why}) sin {field}', { ...vars, field }),
         );
+  }
+
+  // ---- A row with a date in Intro2Insectary_date is an adult (team rule, 5 Oct 2026): an egg, larva,
+  // pre-pupa or pupa LIFESTAGE beside it is one of the two wrong. An empty LIFESTAGE is not flagged.
+  for (const row of insectary) {
+    const stage = text(row.values.LIFESTAGE);
+    if (!isDate(row.values.Intro2Insectary_date) || !YOUNG_STAGE.test(stage)) continue;
+    add(
+      'stage_adult',
+      row,
+      'LIFESTAGE',
+      msg('LIFESTAGE es {stage}, pero Intro2Insectary_date tiene una fecha ({date}): con fecha de entrada es Adult', {
+        stage,
+        date: iso(row.values.Intro2Insectary_date),
+      }),
+      { related: [ref(row, 'Intro2Insectary_date')] },
+    );
   }
 
   // ---- A field mark on two species: an ID given twice, or a wrong species (docs/monitoring.md).

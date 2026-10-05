@@ -90,7 +90,7 @@ describe('Insectary IDs', () => {
 })
 
 describe('the row a card writes', () => {
-  it('an adult alive: the emergence values only, SPECIES left to the formula', () => {
+  it('an adult alive: the emergence values only (LIFESTAGE Adult with its date), SPECIES left to the formula', () => {
     expect(draftValues(draft(), ctx())).toEqual({
       Insectary_ID: 'E4E',
       Wild_Reared: 'Reared',
@@ -98,6 +98,7 @@ describe('the row a card writes', () => {
       Stock_of_origin: 'deceptus',
       Sex: 'female',
       Intro2Insectary_date: DAY,
+      LIFESTAGE: 'Adult',
     })
   })
   it('another subspecies is typed over the formula; the stock stays the clutch subspecies', () => {

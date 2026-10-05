@@ -10,6 +10,7 @@ export default {
   'El intento anterior aún se está confirmando; vuelve a intentarlo en un momento':
     'The previous attempt is still being confirmed; try again in a moment',
   'No hay nada que guardar': 'There is nothing to save',
+  'La app se está reiniciando; vuelve a guardar en un minuto': 'The app is restarting; save again in a minute',
   'No se pudo confirmar la escritura en Google Sheets': 'The write to Google Sheets could not be confirmed',
   'No se pudo verificar la escritura en Google Sheets': 'The write to Google Sheets could not be verified',
   'Algunos cambios necesitan revisión; no se guardó nada': 'Some changes need review; nothing was saved',
