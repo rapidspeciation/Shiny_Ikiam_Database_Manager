@@ -57,6 +57,18 @@ proposals.
 - **Sources that disagree** (the page, the sheet, the envelope): show both and
   ask.
 
+## The rows a rule may miss
+
+A change made by a rule ("every larva with Sex `NA`") reaches only the rows
+whose columns say so. The same case is often written another way: a larva
+recorded only in the notes with LIFESTAGE empty, a date typed as text, a
+misspelt species, the same slip in the rows around. Before proposing, look for
+those with `query` (e.g. notes with `fold(...) LIKE '%instar%'` where
+LIFESTAGE is empty) and show them apart (a second proposal, or `show_rows`)
+as "these may be the same case", for the person to decide, with the fix for
+the column that let them slip. Something odd you see on the way, even if
+nobody asked, gets one line in your answer.
+
 ## Bold changes: ask first
 
 Moving a butterfly's data to another row, rewriting or emptying many rows, or
