@@ -85,13 +85,14 @@ Every line, top to bottom, with its values as written:
 - a cell empty on the page: its column left out.
 
 The tool finds each row (look-alike IDs 0/O, 1/I, 5/S, row order), completes
-list values, keeps the SPECIES formula unless what emerged differs, writes
-notes as `d/m/yy INI: text` after the existing note, turns owner codes,
-generations (`(F1)`), dashes and note words (`ethanol`, `wc`, a CAM…) into
-their columns, fills a death's template, and flags as doubtful the clutches,
-CAMs and tubes that break the run around them. Implied values never replace
-a value the row has. With `includeUnchanged`, lines already in the sheet show
-as grey context rows, never written.
+list values, keeps the SPECIES formula unless what emerged differs or it gives
+nothing for the clutch (then the page's species is written), writes notes as
+`d/m/yy INI: text` after the existing note, turns owner codes, generations
+(`(F1)`), dashes and note words (`ethanol`, `wc`, a CAM…) into their columns,
+fills a death's template, and flags as doubtful the clutches, CAMs and tubes
+that break the run around them. Implied values never replace a value the row
+has. With `includeUnchanged`, lines already in the sheet show as grey context
+rows, never written.
 
 **The year**: `year` only when the page shows it (a header, a sticky note, a
 full date). Without it the tool takes the year the sheet has for the same
