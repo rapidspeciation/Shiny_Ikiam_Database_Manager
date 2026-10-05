@@ -2474,7 +2474,10 @@ export function createAssistant({ store, config = {} }) {
     const places = insectaryIdPlaces(store, rows.filter(r => unwritten(r.change)).map(r => idOf(r.change)));
     const placeOf = c => {
       const recordId = c.create ? (created[c.clientId] ?? null) : c.recordId;
-      const row = (recordId ? store.getRecord(recordId)?.row : null) ?? (c.create || c.placeholder ? null : c.row);
+      // A row no longer in the sheet (deleted, or the sheet read again without it) has no place: after the others.
+      const record = recordId ? store.getRecord(recordId) : null;
+      if (record && (record.missing || !(record.row > 0))) return null;
+      const row = record?.row ?? (c.create || c.placeholder ? null : c.row);
       if (row != null) return row;
       const place = unwritten(c) ? places.get(idOf(c)) : null;
       return place ? place.row + (place.below ? 0.5 : 0) : null;
