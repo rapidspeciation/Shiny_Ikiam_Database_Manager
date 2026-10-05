@@ -12,6 +12,7 @@ import {
   clutchRuns,
   digitSlip,
   impliedValues,
+  lifeStage,
   lookAlikeValues,
   proposalRows,
   rawDoubts,
@@ -192,6 +193,52 @@ test('death templates: unused tubes on every preserved or dead row; preserved la
   assert.equal(adult.cells.Sex.value, 'female', 'an adult keeps its sex');
   assert.equal(adult.cells.Death_cause.value, 'Unknown');
   assert.equal(adult.cells.Tube_2_tissue.value, 'NOT_COLLECTED');
+});
+
+test("a preserved egg's or larva's LIFESTAGE comes from its note when the note names one stage", () => {
+  assert.deepEqual(lifeStage('Preserved alive 3rd instar'), { value: '3rd instar larva', words: '3rd instar' });
+  assert.equal(lifeStage('4th instar larva, flash frozen').value, '4th instar larva');
+  assert.equal(lifeStage('instar 2').value, '2nd instar larva');
+  assert.equal(lifeStage('tercer estadio').value, '3rd instar larva');
+  assert.equal(lifeStage('eggs preserved').value, 'Egg');
+  assert.equal(lifeStage('huevo').value, 'Egg');
+  assert.equal(lifeStage('pre-pupa').value, 'Pre-pupa');
+  assert.equal(lifeStage('prepupa dead').value, 'Pre-pupa');
+  for (const vague of ['larva', 'larvas preserved', 'eggs and 3rd instar', '3rd and 4th instar', '13rd instar', 'pupa'])
+    assert.equal(lifeStage(vague), null, vague);
+
+  const rows = [blank('K1E', 10), blank('K2E', 11), blank('K3E', 12), blank('K4E', 13, { LIFESTAGE: '5th instar larva' }), blank('K5E', 14)];
+  const line = (id, note, extra = {}) => ({
+    v: { Insectary_ID: id, 'CLUTCH NUMBER': '1006', Death_date: '2/10', Tube_1_id: `FS9041547${id[1]}`, Notes_Insectary_data: note, ...extra },
+  });
+  const review = buildReview({
+    transcription: page('emergence', [
+      line('K1E', 'Preserved alive 4th instar'),
+      line('K2E', 'eggs preserved'),
+      // "larva" alone: no stage to write.
+      line('K3E', 'larva preserved'),
+      // The row already says another stage: it is kept.
+      line('K4E', 'preserved 3rd instar'),
+      // An adult with a word of a stage in its note is no larva.
+      line('K5E', 'pupa malformed 3rd instar?', { Sex: 'female' }),
+    ]),
+    year: 2026,
+    today: '2026-10-02',
+    lookup: lookupOf(rows),
+  });
+  const [fourth, egg, vague, kept, adult] = review.lines.map(l => l.cells.LIFESTAGE);
+  assert.equal(fourth.value, '4th instar larva');
+  assert.ok(fourth.inferred && fourth.include);
+  assert.equal(fourth.message, 'De la nota: «4th instar»');
+  assert.equal(egg.value, 'Egg');
+  assert.ok(egg.include);
+  assert.equal(vague.value, null);
+  assert.ok(!vague.include);
+  assert.equal(kept.status, 'keep');
+  assert.ok(!kept.include);
+  assert.ok(!adult.include);
+  // The note keeps its words.
+  assert.equal(review.lines[0].cells.Notes_Insectary_data.value, 'Preserved alive 4th instar');
 });
 
 test('doubts written in a line instead of on its cells go to the cells they are about', () => {
