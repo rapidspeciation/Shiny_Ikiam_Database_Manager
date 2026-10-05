@@ -1729,6 +1729,21 @@ export function createAssistant({ store, config = {} }) {
     };
   }
 
+  /** A needs_review check as get_proposal gives it: few cells one by one, many as their rows and columns. */
+  function sheetCheckOf(check) {
+    const differ = check?.differ ?? [];
+    if (differ.length <= 20) return check;
+    const rows = new Map();
+    for (const d of differ) {
+      const key = `${d.index}`;
+      if (!rows.has(key)) rows.set(key, { index: d.index, label: d.label, row: d.row, fields: [], sheetEmpty: true });
+      const r = rows.get(key);
+      r.fields.push(d.field);
+      if (d.sheet !== null && d.sheet !== '') r.sheetEmpty = false;
+    }
+    return { at: check.at, matched: check.matched, differing: check.count ?? differ.length, rows: [...rows.values()] };
+  }
+
   /**
    * get_proposal: its state and the rows that wait for a look (attentionRows), each row's
    * label by index; `full`: every row as the table shows it, from row `offset` on, as many
@@ -1748,7 +1763,7 @@ export function createAssistant({ store, config = {} }) {
       reason: proposal.reason,
       lastChangedBy: proposal.last_by ?? 'ai',
       // needs_review: what the sheet holds of it, as compared after the last sync.
-      ...(proposal.status === 'needs_review' && proposal.check_json ? { sheetCheck: parse(proposal.check_json) } : {}),
+      ...(proposal.status === 'needs_review' && proposal.check_json ? { sheetCheck: sheetCheckOf(parse(proposal.check_json)) } : {}),
     };
     if (args.full === true) {
       const from = Math.min(Math.max(Number(args.offset) || 0, 0), table.length);
