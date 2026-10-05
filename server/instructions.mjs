@@ -24,7 +24,7 @@ export const HISTORY_FILE = join(here, 'instructions-history.json');
  */
 export const TOOL_RANGES = [
   ['server/assistant.mjs', '/^const VALUES_DOC/', '/^\\];/'],
-  ['server/records-tool.mjs', '/^const FILTERS_DOC/', '/^\\];/'],
+  ['server/records-tool.mjs', '/^export const FILTERS_DOC/', '/^\\];/'],
   ['server/notebook-tool.mjs', '/^export const MATCH_NOTEBOOK_TOOL/', '/^};/'],
   ['server/history.mjs', '/^const selectionProps/', '/^\\];/'],
   ['server/knowledge.mjs', '/^export const KNOWLEDGE_TOOLS/', '/^\\];/'],
