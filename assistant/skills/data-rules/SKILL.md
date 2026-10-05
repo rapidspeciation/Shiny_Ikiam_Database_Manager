@@ -30,7 +30,7 @@ Read the file of the case before drafting; for a notebook photo the skill
 | Clutches in Insectary_stocks: numbers and batches, counts as sums, dashes, NA and 0, failed clutches, owners, generation, parents | [reference/clutches.md](reference/clutches.md) |
 | Crosses, families, pedigree: notation, protocol steps, which sheet | [reference/crosses.md](reference/crosses.md) |
 | Insectary IDs, CAMs, tubes and racks, tissues, preservation media, correcting an ID | [reference/samples-ids.md](reference/samples-ids.md) |
-| Notes: what must and must not go in them, standard phrases | [reference/notes.md](reference/notes.md) |
+| Notes: what must and must not go in them, how to write them, paper shorthand | [reference/notes.md](reference/notes.md) |
 | Reading paper: ditto marks, braces, dashes, ticks, highlights, envelopes, cage cards, whiteboards, shorthand | [reference/reading-paper.md](reference/reading-paper.md) |
 | Monitoring walks, marks, recaptures, the 30-preserved rule, weather codes, SamplingDay_data | skill **monitoring** |
 

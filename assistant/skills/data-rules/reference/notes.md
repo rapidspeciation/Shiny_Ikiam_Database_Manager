@@ -10,9 +10,9 @@ Besides:
 - Other people's older notes keep their own styles (`13-12-24 MJS:`,
   `8 OCT 24 KG:`, `21May26 PAS …`, `16/9/2026 AA:`).
 - Collectors' initials are the `Abbreviation` column of the Lists sheet.
-- Translating: faithfully, keeping IDs, codes, names and places as written
-  ("3 pupas muertas" → "3 pupae dead", "parece que están enfermas" → "larvae
-  look sick"). The owner note is "Butterflies of Oda/Esteban" (old rows'
+- Translating: the same meaning in clear English, keeping IDs, codes, names
+  and places as written ("3 pupas muertas" → "3 pupae dead", "parece que
+  están enfermas" → "larvae look sick"); see "Writing a note" below. The owner note is "Butterflies of Oda/Esteban" (old rows'
   "mariposas de …" stay).
 
 ## Must be noted
@@ -54,11 +54,26 @@ Besides:
 - "Monitoring Wikiloc ID: Mn" unless the person asks for it (the walk's point
   number, not a mark).
 
-## Standard phrases (keep the team's wording)
+## Writing a note
 
-| Sheet | Phrases |
+Notes on paper are often written in English as a second language. A note you
+write, from a notebook photo, an envelope or the person's words, is clear and
+correct English with the same meaning:
+
+- Fix the grammar and spelling of what is on paper ("Larvae founded dead,
+  first instar" → "Larvae found dead, first instar"; "pheromons" →
+  "pheromones"), without adding, dropping or guessing information.
+- Keep IDs, codes, names, places and numbers exactly as written.
+- When the meaning is unclear, keep the paper's words and say what is unclear
+  (a doubtful cell, or a question to the person) rather than choosing one
+  reading.
+- Older notes already in the sheet stay as they are.
+
+Paper shorthand and what it means:
+
+| Paper | Meaning |
 |---|---|
-| Insectary_data | "Emerged incomplete", "Preserved in ultrafridge at -80ºC", "Preserved in dryshipper", "F2 preserved for pheromons", "With white flower" / "Without white flower" (pheromone treatment; paper CFB / SFB), "Larvae 4th instar", "prepupae", "Larvae founded dead, first instar", "Comes from CRISPR control #n", "Eggs found outside insectary on d/m/yy", "marked with lines in the abdomen", "hair pencils cut", "emerged in cage of parents" |
-| Insectary_stocks | [clutches.md](clutches.md) ("Some eggs with fungi", "no hatch", "female dead → clutch to stock", "U8A♀ + C8B♂") |
-| Collection_data | "Preserved dead ~2h", "Sexed by genitalia", "Recapture", "The scale's battery ran out, so the individual could not be weighed", "Butterfly sent to insectary for live photos", a trap point ("Trap: A7_S") |
-| SamplingDay_data | rain, fallen trees, people on the trail, "No butterflies collected" |
+| CFB / SFB | with / without white flower (pheromone treatment) |
+| Trap A7_S | the trap point, written as "Trap: A7_S" |
+
+Clutch notes: [clutches.md](clutches.md).

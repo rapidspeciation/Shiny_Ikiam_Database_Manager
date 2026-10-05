@@ -52,8 +52,9 @@ proposals.
   living butterfly has no death date); `NA` means it does not apply or was not
   recorded; `NOT_COLLECTED` is a sample that was not taken. Blanks stay blank.
 - **Notes**: `d/m/yy INI: text`, with today's date and the person's initials
-  (the tools add both), after the existing note, joined with ` | `. In
-  English: translate notes written in Spanish.
+  (the tools add both), after the existing note, joined with ` | `. In clear,
+  correct English with the paper's meaning: translate notes written in
+  Spanish, and correct the English of those written in English.
 - **Sources that disagree** (the page, the sheet, the envelope): show both and
   ask.
 

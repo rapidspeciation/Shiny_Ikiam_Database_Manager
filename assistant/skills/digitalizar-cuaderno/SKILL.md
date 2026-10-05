@@ -170,8 +170,9 @@ Propose everything readable; doubt is a highlight, not an omission.
   `heat shock` = Heat stroke, `preserved` = Killed_Preserved, `only wings` =
   Unknown - Only wings, `N/A` on a dead butterfly = Unknown. More paper
   words: data-rules `reference/insectary-individuals.md`.
-- **Notes** in English: translate faithfully ("3 pupas muertas" → "3 pupae
-  dead"), keeping IDs, codes and names. A place written short is its list
+- **Notes** in clear, correct English with the same meaning: translate
+  Spanish ("3 pupas muertas" → "3 pupae dead") and correct the English
+  ("founded dead" → "found dead"), keeping IDs, codes and names. A place written short is its list
   name (Cavernas, C.T.C → Cavernas Templo de Ceremonia). More: data-rules
   `reference/notes.md`.
 - **Which line a value is on**: notebook pages curve like any open book, so
