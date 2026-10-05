@@ -26,6 +26,7 @@ import { sampleGap } from './preserved.mjs';
 /** Kinds of issue, in the order they are listed, with their Spanish names for the app. */
 export const CHECK_KINDS = {
   repeat: 'ID o tubo repetido',
+  id_format: 'ID con un dígito de más o de menos',
   cam_cross: 'CAM de dos mariposas',
   list: 'Fuera de la lista de la hoja',
   insectary_link: 'Colecta sin insectario (o al revés)',
@@ -81,6 +82,58 @@ const hasMark = value => !!text(value) && !/^(NA|N\/A|not given)$/i.test(text(va
  * recorded here, so their CAMs are expected to repeat these.
  */
 const CAM_OWNERS = { Collection_data: 'CAM_ID', Insectary_data: 'CAM_ID', Wing_tissue: 'CAM_ID' };
+
+/** Columns that hold IDs: CAM_ID, Tube_1_id, Tube_4_id_LEGS, Rack_ID, Tube/Well ID, Father_CAMid… */
+export const ID_COLUMN = /(?:^|[^a-z])id(?:$|[^a-z])|camid$/i;
+/** An ID of a series: letters, then digits (FS63714625, CAM072038). */
+const ID_SHAPE = /^([A-Za-z]+)(\d+)$/;
+/**
+ * A series (the IDs of a column with one prefix) is checked once it has `min`
+ * IDs and `share` of them have the same number of digits, at least `digits`:
+ * barcodes and CAMs, not counters (T7 before T10), nor mixed series.
+ */
+export const ID_SERIES = { min: 50, share: 0.95, digits: 4 };
+/** Tubes and CAMs are one series across the workbook (FS tubes in every sheet); other IDs, per column. */
+const idSeries = (sheet, field) => (/^tube/i.test(field) ? 'tube' : /cam/i.test(field) ? 'cam' : `${sheet}:${field}`);
+
+/**
+ * Typed IDs with more or fewer digits than the rest of their series: a digit
+ * missed or doubled when typing (FS5848961 among FS + 8 digits). Each as
+ * { row, field, prefix, digits, expected, tube }.
+ */
+function idShapeOutliers(sheets) {
+  const series = new Map();
+  for (const [sheet, rows] of sheets) {
+    const fields = moduleMap
+      .get(sheet)
+      .fields.map(f => f.key)
+      .filter(k => ID_COLUMN.test(k));
+    if (!fields.length) continue;
+    for (const row of rows) {
+      if (!row.observed) continue;
+      for (const field of fields) {
+        const value = row.values[field];
+        if (typeof value !== 'string' || row.formulas[field]) continue;
+        const m = ID_SHAPE.exec(value.trim());
+        if (!m) continue;
+        const prefix = m[1].toUpperCase();
+        const group = idSeries(sheet, field);
+        const key = `${group}\u0000${prefix}`;
+        const s = series.get(key) || series.set(key, { prefix, tube: group === 'tube', lengths: new Map(), cells: [] }).get(key);
+        s.lengths.set(m[2].length, (s.lengths.get(m[2].length) || 0) + 1);
+        s.cells.push({ row, field, digits: m[2].length });
+      }
+    }
+  }
+  const out = [];
+  for (const s of series.values()) {
+    if (s.cells.length < ID_SERIES.min) continue;
+    const [expected, count] = [...s.lengths].sort((a, b) => b[1] - a[1])[0];
+    if (expected < ID_SERIES.digits || count === s.cells.length || count < ID_SERIES.share * s.cells.length) continue;
+    for (const c of s.cells) if (c.digits !== expected) out.push({ ...c, prefix: s.prefix, expected, tube: s.tube });
+  }
+  return out;
+}
 
 /** The state of the local copy: changes whenever any row is written, synced or removed. */
 export function recordsStamp(store) {
@@ -268,6 +321,17 @@ function scan(store) {
       );
     }
   }
+
+  // ---- IDs with a digit more or less than the rest of their series (no fix: the tube or envelope says which).
+  for (const { row, field, prefix, expected, digits, tube } of idShapeOutliers(sheets))
+    add(
+      'id_format',
+      row,
+      field,
+      tube
+        ? msg('Los tubos {prefix} tienen {expected} dígitos; este tiene {digits}', { prefix, expected, digits })
+        : msg('Los {prefix} de {field} tienen {expected} dígitos; este tiene {digits}', { prefix, field, expected, digits }),
+    );
 
   // ---- A CAM given to two butterflies in different sheets (the same butterfly in Collection and Insectary is fine).
   const cams = new Map();
@@ -652,10 +716,11 @@ function scan(store) {
 }
 
 const cache = new WeakMap();
+// The stored walks and the imported photo readings too (walk_doubt, the photo kinds).
+const issuesStamp = store => `${recordsStamp(store)}:${todaySerial()}:${tracksRevision(store)}:${reviewRevision(store.db)}`;
 /** Every issue, recomputed only when the local copy (or the day) changed. */
 export function allIssues(store) {
-  // The stored walks and the imported photo readings too (walk_doubt, the photo kinds).
-  const stamp = `${recordsStamp(store)}:${todaySerial()}:${tracksRevision(store)}:${reviewRevision(store.db)}`;
+  const stamp = issuesStamp(store);
   const hit = cache.get(store);
   if (hit?.stamp === stamp) return hit;
   const started = Date.now();
@@ -664,6 +729,28 @@ export function allIssues(store) {
   trackFindings(store, 'check', entry.issues.map(checkFinding), { at: entry.checkedAt });
   cache.set(store, entry);
   return entry;
+}
+
+const scheduled = new WeakSet();
+/**
+ * The issues when they are up to date, else null, and they are found right after
+ * (for the next call): for pages polled often, which never wait for a whole scan.
+ */
+export function readyIssues(store) {
+  const hit = cache.get(store);
+  if (hit?.stamp === issuesStamp(store)) return hit;
+  if (!scheduled.has(store)) {
+    scheduled.add(store);
+    setImmediate(() => {
+      scheduled.delete(store);
+      try {
+        allIssues(store);
+      } catch {
+        // A store closed meanwhile: nothing to find.
+      }
+    }).unref();
+  }
+  return null;
 }
 
 /** What the solved list keeps of an issue (server/findings.mjs). */

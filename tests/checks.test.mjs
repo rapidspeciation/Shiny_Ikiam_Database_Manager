@@ -147,6 +147,7 @@ test('check_data finds each kind of inconsistency, with the row, the value and t
   sameTexts(out.issues);
   assert.deepEqual(out.counts, {
     repeat: 2,
+    id_format: 0,
     cam_cross: 2,
     list: 1,
     insectary_link: 4,
