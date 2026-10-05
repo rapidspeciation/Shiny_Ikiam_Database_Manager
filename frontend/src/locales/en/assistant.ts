@@ -331,4 +331,45 @@ export default {
     'The rows go in the sheet\'s order. These lines of one photo are the other way round in the sheet (marked ↕ in «Row»): check the ID was read right',
   'En el cuaderno va después de la línea {line} ({id}), pero en la hoja va antes':
     'In the notebook it comes after line {line} ({id}), but in the sheet before it',
+  // The columns' order on a proposal's card (ProposalGrid, ColumnChooser)
+  'Todas las columnas en el orden de la hoja, como en Google Sheets': "Every column in the sheet's order, as in Google Sheets",
+  'Las columnas del cuaderno primero, en su orden de izquierda a derecha; luego las demás':
+    "The notebook's columns first, in its order from left to right; then the others",
+  Personal: 'Custom',
+  'Tu propio orden y columnas ocultas (se guardan para ti en este navegador)': 'Your own order and hidden columns (kept for you in this browser)',
+  'Orden de las columnas': 'Column order',
+  'Elegir y ordenar tus columnas': 'Choose and order your columns',
+  'Columnas…': 'Columns…',
+  'Columnas de {sheet}': 'Columns of {sheet}',
+  'Arrastra ⋮⋮ para ordenarlas; desmarca para ocultarlas. Se guardan para ti en este navegador.':
+    'Drag ⋮⋮ to order them; untick to hide them. They are kept for you in this browser.',
+  'Volver al orden de la hoja, sin columnas ocultas': "Back to the sheet's order, with no hidden columns",
+  Restablecer: 'Reset',
+  'Arrastrar para mover {field}': 'Drag to move {field}',
+  'Esta propuesta escribe o marca algo en esta columna: siempre se muestra': 'This proposal writes or marks something in this column: it always shows',
+  'Mover a la izquierda': 'Move left',
+  'Mover a la derecha': 'Move right',
+  'Ocultas u otras de la hoja': "Hidden, or the sheet's others",
+  // Applying while Google Sheets is busy (ProposalGrid)
+  'Google Sheets no responde': 'Google Sheets is not answering',
+  'Google Sheets no está respondiendo como siempre (está recalculando). Los cambios se guardarán en la app y se escribirán cuando responda. ¿Aplicar ahora y guardarlos aquí?':
+    'Google Sheets is not answering as usual (recalculating). The changes will be kept in the app and written when it answers. Apply now and keep them here?',
+  'Aplicar y guardarlos aquí': 'Apply and keep them here',
+  // Review with the photo (ProposalsLive, PhotoReview, PhotoViewer)
+  'Ver esta foto': 'Show this photo',
+  'Revisar con esta foto (Ctrl+clic: en una pestaña nueva)': 'Review with this photo (Ctrl+click: in a new tab)',
+  'Revisar con la foto': 'Review with photo',
+  'La tabla y la foto del cuaderno juntas, en esta pestaña: la foto se acerca, se mueve y se gira':
+    "The table and the notebook's photo together, in this tab: the photo zooms, moves and turns",
+  'Abierta con la foto': 'Open with its photo',
+  'Volver a la lista': 'Back to the list',
+  'La foto debajo de la tabla': 'The photo below the table',
+  'La foto al lado de la tabla': 'The photo beside the table',
+  'Arrastra para repartir el espacio entre la tabla y la foto': 'Drag to share the space between the table and the photo',
+  Alejar: 'Zoom out',
+  Acercar: 'Zoom in',
+  'Girar a la izquierda': 'Turn left',
+  'Girar a la derecha': 'Turn right',
+  'Ver la foto entera': 'Show the whole photo',
+  'No se pudo cargar la foto.': 'The photo could not be loaded.',
 } as Record<string, string>

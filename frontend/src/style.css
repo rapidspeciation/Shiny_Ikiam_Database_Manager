@@ -826,6 +826,30 @@ body.touch-bar-open main {
 .doubt-count:hover {
   background: #fef3c7;
 }
+/* Cambios propuestos: the columns' order (the sheet's, the notebook's, the person's own). */
+.view-switch {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid #d6d3d1;
+  border-radius: 4px;
+  background: white;
+}
+.view-switch button {
+  padding: 1px 7px;
+  color: #57534e;
+}
+.view-switch button + button {
+  border-left: 1px solid #d6d3d1;
+}
+.view-switch button:hover {
+  background: #f5f5f4;
+  color: #1c1917;
+}
+.view-switch button.is-on {
+  background: #ecfdf5;
+  color: #065f46;
+  font-weight: 500;
+}
 /* "Aplicar" with doubtful cells not reviewed: what to do with them. */
 .doubt-ask {
   margin: 0 8px 8px;
