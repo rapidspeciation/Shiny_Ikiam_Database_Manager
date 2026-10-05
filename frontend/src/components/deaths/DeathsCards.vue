@@ -1,9 +1,23 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRaw, watch } from 'vue'
-import { AlertTriangle, Check, CheckCircle2, ChevronRight, Circle, History, Loader2, Search, StickyNote, Undo2, X } from 'lucide-vue-next'
+import {
+  AlertTriangle,
+  Check,
+  CheckCircle2,
+  ChevronRight,
+  Circle,
+  History,
+  Loader2,
+  Search,
+  StickyNote,
+  Undo2,
+  X,
+} from 'lucide-vue-next'
 import DateField from '../DateField.vue'
 import EntryModeToggle from '../EntryModeToggle.vue'
 import RowDrawer from '../RowDrawer.vue'
+import IdFilters from '../IdFilters.vue'
+import IdSuggestion from '../IdSuggestion.vue'
 import DeathEditor from './DeathEditor.vue'
 import SexBadge from '../SexBadge.vue'
 import LifeBadge from './LifeBadge.vue'
@@ -42,7 +56,10 @@ import {
   type Facts,
   type PreservationGap,
   type RackSuggestion,
+  type Suggestion,
 } from '../../lib/deaths'
+import { isPattern, matchIds, type SexFilter } from '../../lib/idMatch'
+import { useLookAlikes } from '../../composables/useLookAlikes'
 import { idTokens, resolveIds } from '../../lib/ids'
 import { errorText, notify } from '../../lib/notice'
 import { verificationsFor } from '../../lib/verifications'
@@ -116,18 +133,54 @@ const isAlive = (entry: Entry) =>
 const factsFor = (row: TableRow): Facts => factsOf(get(row), today.value)
 const idOf = (row: TableRow) => String(row.values.Insectary_ID)
 
-const chosen = computed(() =>
-  picked.value.map(id => byKey.value.get(searchKey(id))?.row).filter((r): r is TableRow => !!r),
-)
+const chosen = computed(() => picked.value.map(id => byKey.value.get(searchKey(id))?.row).filter((r): r is TableRow => !!r))
 /** Newest first: the card just added shows right under the search box. */
 const cards = computed(() => [...chosen.value].reverse())
 
 // --- Search
 const searchInput = ref<HTMLInputElement>()
 const focused = ref(false)
-const suggestions = computed(() =>
-  query.value.trim() ? suggest(index.value, query.value, { alive: isAlive, skip: new Set(picked.value) }) : [],
-)
+/** What is seen on the butterfly in hand (IdFilters): ranks the IDs that fit what was typed. */
+const sexFilter = ref<SexFilter>('')
+const speciesFilter = ref('')
+const lookAlikeTable = useLookAlikes()
+/** Species of the butterflies alive, most first: the species filter's list. */
+const aliveSpecies = computed(() => {
+  const counts = new Map<string, number>()
+  for (const e of index.value) {
+    if (!aliveSaved.value.has(e.row.id)) continue
+    const s = String(e.row.values.SPECIES ?? '').trim()
+    if (s && !/^(NA|null)$/i.test(s)) counts.set(s, (counts.get(s) ?? 0) + 1)
+  }
+  return [...counts].sort((a, b) => b[1] - a[1]).map(([species, alive]) => ({ species, alive }))
+})
+/**
+ * IDs that fit what was typed (lib/idMatch.ts: `*` or `?` for a character that
+ * cannot be read, `[BD]` for one of two, look-alikes such as 6/8), then the
+ * butterflies whose CAM or tube starts with it, or whose ID contains it.
+ */
+const suggestions = computed<Suggestion[]>(() => {
+  const q = query.value.trim()
+  if (!q) return []
+  const skip = new Set(picked.value)
+  const out: Suggestion[] = matchIds(index.value, q, {
+    alive: isAlive,
+    speciesOf: e => pending.value(e.row, 'SPECIES'),
+    sexOf: e => pending.value(e.row, 'Sex'),
+    species: speciesFilter.value,
+    sex: sexFilter.value,
+    skip: e => skip.has(e.id),
+    table: lookAlikeTable.value,
+  }).map(m => ({ entry: m.item, match: { at: m.at, greyed: !m.alive || !m.sameSpecies } }))
+  if (!isPattern(q))
+    for (const s of suggest(index.value, q, { alive: isAlive, skip })) {
+      if (out.some(o => o.entry.id === s.entry.id)) continue
+      // A CAM or tube typed whole comes first.
+      if (s.via === searchKey(q)) out.unshift(s)
+      else out.push(s)
+    }
+  return out.slice(0, 8)
+})
 /** What was typed that is no ID, with IDs that look like it ("did you mean"). */
 const missing = ref<string[]>([])
 const typedMissing = computed(() => {
@@ -162,6 +215,8 @@ function enter() {
   const top = suggestions.value[0]
   if (exact) choose(exact.id)
   else if (top && top.via === searchKey(text)) choose(top.entry.id)
+  // A pattern (A?B, A[16]B): the best of the IDs it fits.
+  else if (top && isPattern(text)) choose(top.entry.id)
   else missing.value = [text]
 }
 function addTokens(tokens: string[]) {
@@ -271,7 +326,9 @@ const toPreserve = computed(() => cards.value.filter(r => choiceOf(r).preserved 
 /** Already recorded dead: "preserved" does not give them a tube here (Tubos does). */
 const notToPreserve = computed(() => cards.value.filter(r => choiceOf(r).preserved && !dying(r)))
 /** The medium and the CAM and tube boxes show while any card is preserved, or the panel says «Preservada». */
-const showPreservation = computed(() => shown('preserved') === true || toPreserve.value.length > 0 || notToPreserve.value.length > 0)
+const showPreservation = computed(
+  () => shown('preserved') === true || toPreserve.value.length > 0 || notToPreserve.value.length > 0,
+)
 const sampleOf = (id: string) => (samples[id] ??= { cam: '', tube: '' })
 
 // The next free CAM IDs and tubes (server/grid.mjs idSuggestions), asked for only when preserving.
@@ -387,9 +444,14 @@ const blocker = computed<{ text: string; gap?: string }>(() => {
   const name = (rows: TableRow[]) => (rows.length < cards.value.length ? rows.map(idOf).join(', ') : '')
   const badDate = cards.value.filter(r => choiceOf(r).date && serialFromIso(choiceOf(r).date) === null)
   if (badDate.length)
-    return { text: name(badDate) ? `${idOf(badDate[0])}: ${t('Fecha no válida: el año debe estar entre 1990 y 2099')}` : t('Fecha no válida: el año debe estar entre 1990 y 2099') }
+    return {
+      text: name(badDate)
+        ? `${idOf(badDate[0])}: ${t('Fecha no válida: el año debe estar entre 1990 y 2099')}`
+        : t('Fecha no válida: el año debe estar entre 1990 y 2099'),
+    }
   const noDate = cards.value.filter(r => !choiceOf(r).date)
-  if (noDate.length) return { text: name(noDate) ? t('Falta la fecha de {ids}', { ids: name(noDate) }) : t('Elige la fecha de muerte') }
+  if (noDate.length)
+    return { text: name(noDate) ? t('Falta la fecha de {ids}', { ids: name(noDate) }) : t('Elige la fecha de muerte') }
   const noCause = cards.value.filter(r => !choiceOf(r).cause && dying(r))
   if (noCause.length) return { text: name(noCause) ? t('Falta la causa de {ids}', { ids: name(noCause) }) : t('Elige la causa') }
   const first = gaps.value.find(hasGap)
@@ -454,7 +516,8 @@ async function save() {
       delete samples[id]
       delete suggested[id]
     }
-    if (!result.actionId) notify(tn(rows.length, '{n} muerte guardada en Google Sheets', '{n} muertes guardadas en Google Sheets'), 'success')
+    if (!result.actionId)
+      notify(tn(rows.length, '{n} muerte guardada en Google Sheets', '{n} muertes guardadas en Google Sheets'), 'success')
     // Back to the top: the search for the next ones, and today's deaths in the list.
     scroller.value?.scrollTo({ top: 0 })
     aside.value?.scrollTo({ top: 0 })
@@ -508,8 +571,7 @@ const sampleGap = (row: TableRow) => {
   const s = noSample.value.get(row.id)
   return s && s.missing.some(f => !/\d/.test(String(pending.value(row, f) ?? ''))) ? s : null
 }
-const sampleTitle = (s: MissingSample) =>
-  `${t('Preservada sin CAM o tubo')} · ${t('pregunta al equipo')}`
+const sampleTitle = (s: MissingSample) => `${t('Preservada sin CAM o tubo')} · ${t('pregunta al equipo')}`
 
 // --- Latest deaths, by day
 const recent = computed(() => {
@@ -679,7 +741,11 @@ function chipsOf(row: TableRow) {
   const s = samples[idOf(row)]
   const preserving = c.preserved && dying(row)
   return [
-    { field: 'date' as const, text: c.date ? (serialFromIso(c.date) !== null ? formatSerial(isoToSerial(c.date)) : c.date) : t('sin fecha'), missing: !c.date },
+    {
+      field: 'date' as const,
+      text: c.date ? (serialFromIso(c.date) !== null ? formatSerial(isoToSerial(c.date)) : c.date) : t('sin fecha'),
+      missing: !c.date,
+    },
     { field: 'cause' as const, text: c.cause || t('sin causa'), missing: !c.cause && dying(row) },
     {
       field: 'preserved' as const,
@@ -698,7 +764,9 @@ const line = (f: Facts) =>
   [
     f.clutch && t('clutch {c}', { c: f.clutch }),
     f.entered !== null &&
-      (f.wild ? t('Capturada {date}', { date: formatSerial(f.entered) }) : t('Emergió {date}', { date: formatSerial(f.entered) })),
+      (f.wild
+        ? t('Capturada {date}', { date: formatSerial(f.entered) })
+        : t('Emergió {date}', { date: formatSerial(f.entered) })),
   ]
     .filter(Boolean)
     .join(' · ')
@@ -714,47 +782,57 @@ const choice = (on: boolean) =>
     ref="root"
     class="flex h-full bg-stone-50"
     :class="[wide ? 'flex-row' : 'flex-col', fitted ? 'fixed inset-x-0 z-30' : '']"
-    :style="fitted ? { top: `${keyboard.visibleTop.value}px`, height: `${keyboard.visibleBottom.value - keyboard.visibleTop.value}px` } : undefined"
+    :style="
+      fitted
+        ? { top: `${keyboard.visibleTop.value}px`, height: `${keyboard.visibleBottom.value - keyboard.visibleTop.value}px` }
+        : undefined
+    "
     @focusin="onFocusIn"
   >
-    <div
-      ref="scroller"
-      data-scroll
-      class="min-h-0 min-w-0 flex-1 overflow-y-auto"
-    >
+    <div ref="scroller" data-scroll class="min-h-0 min-w-0 flex-1 overflow-y-auto">
       <!-- The search stays at the top while the cards scroll. -->
       <div ref="searchBar" class="sticky top-0 z-20 border-b border-stone-200 bg-white px-3 pt-3 pb-2 short:pt-1.5 short:pb-1.5">
         <div class="flex items-start gap-2">
           <div class="relative min-w-0 flex-1">
-            <Search :size="20" class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-stone-400" />
-            <input
-              ref="searchInput"
-              v-model="query"
-              class="h-13 w-full rounded-xl border border-stone-300 bg-white pr-12 pl-10 text-lg font-medium uppercase placeholder:text-base placeholder:font-normal placeholder:normal-case focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none short:h-11"
-              :placeholder="$t('Insectary ID, CAM o tubo')"
-              :aria-label="$t('Buscar una mariposa por Insectary ID, CAM o tubo')"
-              type="text"
-              inputmode="text"
-              autocapitalize="characters"
-              autocomplete="off"
-              autocorrect="off"
-              spellcheck="false"
-              enterkeyhint="go"
-              @focus="focused = true"
-              @blur="focused = false"
-              @input="missing = []"
-              @keydown.enter.prevent="enter"
-              @paste="onPaste"
+            <div class="relative">
+              <Search :size="20" class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-stone-400" />
+              <input
+                ref="searchInput"
+                v-model="query"
+                class="h-13 w-full rounded-xl border border-stone-300 bg-white pr-12 pl-10 text-lg font-medium uppercase placeholder:text-base placeholder:font-normal placeholder:normal-case focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none short:h-11"
+                :placeholder="$t('Insectary ID, CAM o tubo (A?B, A[16]B)')"
+                :aria-label="$t('Buscar una mariposa por Insectary ID, CAM o tubo')"
+                type="text"
+                inputmode="text"
+                autocapitalize="characters"
+                autocomplete="off"
+                autocorrect="off"
+                spellcheck="false"
+                enterkeyhint="go"
+                @focus="focused = true"
+                @blur="focused = false"
+                @input="missing = []"
+                @keydown.enter.prevent="enter"
+                @paste="onPaste"
+              />
+              <button
+                v-if="query"
+                class="absolute top-1/2 right-1 grid h-11 w-11 -translate-y-1/2 place-items-center text-stone-500"
+                :aria-label="$t('Borrar búsqueda')"
+                @mousedown.prevent
+                @click="query = ''"
+              >
+                <X :size="20" />
+              </button>
+            </div>
+            <!-- What is seen on the butterfly ranks the IDs offered (only while typing: the bar stays small otherwise). -->
+            <IdFilters
+              v-if="focused || query"
+              v-model:sex="sexFilter"
+              v-model:species="speciesFilter"
+              :species-list="aliveSpecies"
+              class="mt-2 short:hidden"
             />
-            <button
-              v-if="query"
-              class="absolute top-1/2 right-1 grid h-11 w-11 -translate-y-1/2 place-items-center text-stone-500"
-              :aria-label="$t('Borrar búsqueda')"
-              @mousedown.prevent
-              @click="query = ''"
-            >
-              <X :size="20" />
-            </button>
             <!-- Suggestions: tapping one adds its card and keeps the keyboard for the next ID. -->
             <ul
               v-if="focused && suggestions.length"
@@ -769,13 +847,13 @@ const choice = (on: boolean) =>
                   @mousedown.prevent
                   @click="choose(s.entry.id)"
                 >
-                  <span class="w-16 shrink-0 text-lg font-semibold">{{ s.entry.id }}</span>
-                  <span class="min-w-0 flex-1">
-                    <span class="block truncate text-sm">{{ factsFor(s.entry.row).species || '—' }}</span>
-                    <span class="flex items-center gap-1.5 truncate text-xs text-stone-500"><SexBadge :sex="factsFor(s.entry.row).sex" />{{ line(factsFor(s.entry.row)) }}</span>
-                    <span v-if="s.via" class="block truncate text-xs text-brand-700">{{ s.via }}</span>
-                  </span>
-                  <LifeBadge :facts="factsFor(s.entry.row)" />
+                  <IdSuggestion
+                    :id="s.entry.id"
+                    :facts="factsFor(s.entry.row)"
+                    :at="s.match?.at"
+                    :via="s.via"
+                    :greyed="s.match?.greyed"
+                  />
                 </button>
               </li>
             </ul>
@@ -793,7 +871,9 @@ const choice = (on: boolean) =>
           </button>
         </div>
         <p v-if="!ready" class="mt-1.5 text-sm text-stone-500">{{ $t('Cargando {sheet}…', { sheet: MODULE }) }}</p>
-        <p v-else-if="alreadyChosen" class="mt-1.5 text-sm text-stone-600">{{ $t('{id} ya está en las tarjetas', { id: alreadyChosen }) }}</p>
+        <p v-else-if="alreadyChosen" class="mt-1.5 text-sm text-stone-600">
+          {{ $t('{id} ya está en las tarjetas', { id: alreadyChosen }) }}
+        </p>
         <div v-else-if="typedMissing || missing.length" class="mt-1.5 text-sm">
           <p class="text-red-700">
             {{ $t('No encontrado: {ids}', { ids: typedMissing ? typedMissing.typed.toUpperCase() : missing.join(', ') }) }}
@@ -835,7 +915,13 @@ const choice = (on: boolean) =>
             <button
               class="block w-full flex-1 rounded-t-xl px-3 pt-2.5 pr-24 pb-2 text-left"
               :aria-pressed="canEdit ? isSelected(row) : undefined"
-              :aria-label="canEdit ? (isSelected(row) ? $t('{id} seleccionada: toca para quitarla de la selección', { id: idOf(row) }) : $t('Seleccionar {id}', { id: idOf(row) })) : undefined"
+              :aria-label="
+                canEdit
+                  ? isSelected(row)
+                    ? $t('{id} seleccionada: toca para quitarla de la selección', { id: idOf(row) })
+                    : $t('Seleccionar {id}', { id: idOf(row) })
+                  : undefined
+              "
               @click="canEdit ? toggleSelect(row) : openEditor('cards', i)"
             >
               <span class="flex flex-wrap items-center gap-2">
@@ -856,8 +942,12 @@ const choice = (on: boolean) =>
                 >
               </span>
               <span class="mt-0.5 block text-sm">{{ factsFor(row).species || '—' }}</span>
-              <span class="flex items-center gap-1.5 text-xs text-stone-600"><SexBadge :sex="factsFor(row).sex" />{{ line(factsFor(row)) }}</span>
-              <span v-if="factsFor(row).life.cause" class="block text-xs text-stone-700">Death_cause: {{ factsFor(row).life.cause }}</span>
+              <span class="flex items-center gap-1.5 text-xs text-stone-600"
+                ><SexBadge :sex="factsFor(row).sex" />{{ line(factsFor(row)) }}</span
+              >
+              <span v-if="factsFor(row).life.cause" class="block text-xs text-stone-700"
+                >Death_cause: {{ factsFor(row).life.cause }}</span
+              >
               <span v-if="factsFor(row).notes" class="block truncate text-xs text-stone-500">{{ factsFor(row).notes }}</span>
             </button>
             <div class="absolute top-1 right-1 flex">
@@ -933,7 +1023,9 @@ const choice = (on: boolean) =>
           <!-- What the choices below change: the selected cards, or all of them. -->
           <div
             class="sticky top-0 z-10 -mx-3 flex min-h-12 items-center gap-2 border-y px-3 py-1.5"
-            :class="selectedIds.length ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-200 bg-stone-100 text-stone-800'"
+            :class="
+              selectedIds.length ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-200 bg-stone-100 text-stone-800'
+            "
             role="status"
             data-applies
           >
@@ -943,7 +1035,9 @@ const choice = (on: boolean) =>
                   ? $t('Se aplica a {ids}', { ids: selectedIds.join(', ') })
                   : $tn(cards.length, 'Se aplica a la única tarjeta', 'Se aplica a las {n} tarjetas')
               }}</span>
-              <span v-if="selectedIds.length" class="block text-xs opacity-90">{{ $t('Solo a las seleccionadas; las demás siguen igual.') }}</span>
+              <span v-if="selectedIds.length" class="block text-xs opacity-90">{{
+                $t('Solo a las seleccionadas; las demás siguen igual.')
+              }}</span>
             </p>
             <button
               v-if="selectedIds.length"
@@ -966,12 +1060,20 @@ const choice = (on: boolean) =>
               >
                 {{ d.name }}
               </button>
-              <DateField :model-value="shownDate" class="field-input h-12 text-base" @update:model-value="setField('date', $event)" />
+              <DateField
+                :model-value="shownDate"
+                class="field-input h-12 text-base"
+                @update:model-value="setField('date', $event)"
+              />
             </div>
             <p v-if="dateError" class="mt-1 text-sm text-red-700">{{ dateError }}</p>
             <p v-else-if="shownDate" class="mt-1 text-sm text-stone-600">{{ dayLabel(shownDate) }}</p>
-            <p v-else-if="shown('date') === undefined" class="mt-1 text-sm text-stone-600">{{ $t('Fechas distintas: elige una para todas las seleccionadas') }}</p>
-            <p v-if="ownOf('date').length" class="mt-1 text-xs text-violet-800">{{ $t('Con fecha propia: {ids}', { ids: ownOf('date').join(', ') }) }}</p>
+            <p v-else-if="shown('date') === undefined" class="mt-1 text-sm text-stone-600">
+              {{ $t('Fechas distintas: elige una para todas las seleccionadas') }}
+            </p>
+            <p v-if="ownOf('date').length" class="mt-1 text-xs text-violet-800">
+              {{ $t('Con fecha propia: {ids}', { ids: ownOf('date').join(', ') }) }}
+            </p>
           </div>
           <div>
             <h2 class="mb-1.5 text-sm font-semibold text-stone-700">Death_cause</h2>
@@ -987,8 +1089,12 @@ const choice = (on: boolean) =>
                 {{ c }}
               </button>
             </div>
-            <p v-if="shown('cause') === undefined" class="mt-1 text-sm text-stone-600">{{ $t('Causas distintas: elige una para todas las seleccionadas') }}</p>
-            <p v-if="ownOf('cause').length" class="mt-1 text-xs text-violet-800">{{ $t('Con causa propia: {ids}', { ids: ownOf('cause').join(', ') }) }}</p>
+            <p v-if="shown('cause') === undefined" class="mt-1 text-sm text-stone-600">
+              {{ $t('Causas distintas: elige una para todas las seleccionadas') }}
+            </p>
+            <p v-if="ownOf('cause').length" class="mt-1 text-xs text-violet-800">
+              {{ $t('Con causa propia: {ids}', { ids: ownOf('cause').join(', ') }) }}
+            </p>
           </div>
           <div>
             <h2 class="mb-1.5 text-sm font-semibold text-stone-700">{{ $t('Preservación') }}</h2>
@@ -1027,7 +1133,9 @@ const choice = (on: boolean) =>
               :class="flash ? 'border-brand-600 shadow-[0_0_0_4px_var(--color-brand-100)]' : 'border-stone-200'"
             >
               <p class="text-sm text-stone-600 short:hidden">
-                {{ $t('Cuerpo entero ({tissue}) en un tubo: confirma o escribe el CAM y el tubo de cada una.', { tissue: WHOLE }) }}
+                {{
+                  $t('Cuerpo entero ({tissue}) en un tubo: confirma o escribe el CAM y el tubo de cada una.', { tissue: WHOLE })
+                }}
               </p>
               <span class="field-label mt-3 short:mt-0">{{ $t('Medio') }}</span>
               <div class="grid grid-cols-3 gap-2">
@@ -1042,7 +1150,9 @@ const choice = (on: boolean) =>
                   {{ m }}
                 </button>
               </div>
-              <p v-if="rack" class="mt-1 text-xs text-stone-500">{{ $t('Tubos de la gradilla {rack}', { rack: tx(rack.label, rack.labelMsg) }) }}</p>
+              <p v-if="rack" class="mt-1 text-xs text-stone-500">
+                {{ $t('Tubos de la gradilla {rack}', { rack: tx(rack.label, rack.labelMsg) }) }}
+              </p>
 
               <div v-if="toPreserve.length" class="mt-3 flex items-baseline justify-between gap-2">
                 <span class="text-sm font-semibold text-stone-700">{{ $t('CAM y tubo de cada una') }}</span>
@@ -1151,12 +1261,24 @@ const choice = (on: boolean) =>
               />
             </label>
             <p class="mt-1 text-xs text-stone-500">
-              {{ $t('Al guardar se añade a Notes_Insectary_data, tras las notas que ya tiene: «{prefix} …»', { prefix: notePrefix }) }}
+              {{
+                $t('Al guardar se añade a Notes_Insectary_data, tras las notas que ya tiene: «{prefix} …»', {
+                  prefix: notePrefix,
+                })
+              }}
             </p>
-            <p v-if="ownOf('note').length" class="mt-1 text-xs text-violet-800">{{ $t('Con nota propia: {ids}', { ids: ownOf('note').join(', ') }) }}</p>
+            <p v-if="ownOf('note').length" class="mt-1 text-xs text-violet-800">
+              {{ $t('Con nota propia: {ids}', { ids: ownOf('note').join(', ') }) }}
+            </p>
           </div>
           <p v-if="otherPending" class="text-xs text-amber-900">
-            {{ $tn(otherPending, 'Se guardará también {n} cambio pendiente de otras filas.', 'Se guardarán también {n} cambios pendientes de otras filas.') }}
+            {{
+              $tn(
+                otherPending,
+                'Se guardará también {n} cambio pendiente de otras filas.',
+                'Se guardarán también {n} cambios pendientes de otras filas.',
+              )
+            }}
           </p>
         </section>
         <p v-else-if="wide && canEdit" class="px-4 py-6 text-sm text-stone-500">
@@ -1172,7 +1294,10 @@ const choice = (on: boolean) =>
           <h3 class="mt-3 mb-1 text-xs font-semibold tracking-wide text-stone-500 uppercase">{{ group.label }}</h3>
           <ul class="divide-y divide-stone-100 overflow-hidden rounded-xl border border-stone-200 bg-white">
             <li v-for="{ row, at } in group.rows" :key="row.id">
-              <button class="flex min-h-12 w-full items-center gap-3 px-3 py-1.5 text-left active:bg-stone-50" @click="openEditor('recent', at)">
+              <button
+                class="flex min-h-12 w-full items-center gap-3 px-3 py-1.5 text-left active:bg-stone-50"
+                @click="openEditor('recent', at)"
+              >
                 <span class="w-14 shrink-0 font-semibold">{{ row.values.Insectary_ID }}</span>
                 <span class="min-w-0 flex-1">
                   <span class="block truncate text-sm">{{ cellText(row.values.Death_cause) || '—' }}</span>
@@ -1186,7 +1311,9 @@ const choice = (on: boolean) =>
                   :title="sampleTitle(sampleGap(row)!)"
                   >{{ $t('Sin CAM/tubo') }}</span
                 >
-                <span v-else-if="!isBlank(row.values.CAM_ID)" class="shrink-0 text-xs text-brand-700">{{ row.values.CAM_ID }}</span>
+                <span v-else-if="!isBlank(row.values.CAM_ID)" class="shrink-0 text-xs text-brand-700">{{
+                  row.values.CAM_ID
+                }}</span>
               </button>
             </li>
           </ul>
@@ -1203,12 +1330,7 @@ const choice = (on: boolean) =>
       class="flex min-h-0 w-[min(30rem,46%)] shrink-0 flex-col border-l border-stone-200 bg-stone-50"
       :aria-label="$t('Registrar muertes')"
     >
-      <div
-        id="deaths-register"
-        ref="aside"
-        data-scroll
-        class="min-h-0 flex-1 overflow-y-auto"
-      />
+      <div id="deaths-register" ref="aside" data-scroll class="min-h-0 flex-1 overflow-y-auto" />
       <div id="deaths-save" />
     </aside>
 
@@ -1245,7 +1367,10 @@ const choice = (on: boolean) =>
           </button>
           <p
             v-else
-            :class="[blocker.text ? 'text-amber-900' : 'text-stone-600', wide ? 'line-clamp-2 min-w-0 flex-1 text-sm' : 'mb-1.5 truncate text-xs']"
+            :class="[
+              blocker.text ? 'text-amber-900' : 'text-stone-600',
+              wide ? 'line-clamp-2 min-w-0 flex-1 text-sm' : 'mb-1.5 truncate text-xs',
+            ]"
           >
             {{ blocker.text || summary }}
           </p>

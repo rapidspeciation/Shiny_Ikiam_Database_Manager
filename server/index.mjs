@@ -57,6 +57,7 @@ import {
   censusDetail,
   censusOverview,
   finishCensus,
+  learnedLookAlikes,
   removeMark,
   reopenCensus,
   setCensusNotebook,
@@ -728,6 +729,7 @@ export async function createApp(config = {}, options = {}) {
         requireId(body);
         return json(res, 200, startCensus(store, body, user));
       }
+      if (method === 'GET' && path === '/api/census/lookalikes') return json(res, 200, { pairs: learnedLookAlikes(store) });
       if (path.startsWith('/api/census/')) {
         const [, , , censusId, part, markId, extra] = path.split('/');
         const id = decodePart(censusId ?? '');

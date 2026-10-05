@@ -260,6 +260,8 @@ export interface Suggestion {
   entry: Entry
   /** Found by its CAM or tube: which one. */
   via?: string
+  /** Found by the ID matcher (lib/idMatch.ts): positions read as a look-alike, and whether it is out of what was looked for. */
+  match?: { at: number[]; greyed: boolean }
 }
 /**
  * The butterflies matching what is typed, best first: the exact ID while

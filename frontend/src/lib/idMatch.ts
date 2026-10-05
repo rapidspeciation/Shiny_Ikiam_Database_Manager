@@ -148,10 +148,16 @@ export interface IdMatch<T extends Matchable> {
 export type SexFilter = '' | 'female' | 'male' | 'unknown'
 /** The sex as the filter names it: female, male, or unknown (NA, empty, a doubt). */
 export function sexOf(value: unknown): Exclude<SexFilter, ''> {
-  const s = String(value ?? '').trim().toLowerCase()
+  const s = String(value ?? '')
+    .trim()
+    .toLowerCase()
   return s === 'female' ? 'female' : s === 'male' ? 'male' : 'unknown'
 }
-const speciesKey = (v: unknown) => String(v ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
+const speciesKey = (v: unknown) =>
+  String(v ?? '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
 
 export interface MatchOptions<T> {
   /** Alive now (asked only of the matches). */

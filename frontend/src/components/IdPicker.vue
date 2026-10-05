@@ -2,12 +2,16 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { X } from 'lucide-vue-next'
 import { idTokens, resolveIds } from '../lib/ids'
+import { idItems, matchIds } from '../lib/idMatch'
+import { useLookAlikes } from '../composables/useLookAlikes'
 import { t } from '../lib/i18n'
 
 /**
  * Multi-select for identifiers. Type an ID and press Enter to add it (only an
  * exact ID: "B9" does not pick B9D), pick from the list, or paste a list
  * ("N1D N2D, N3D") or a range ("B0D-B9D", in the sheet's pre-made order).
+ * The list also offers IDs a worn wing may hide (lib/idMatch.ts): `A?B` for an
+ * unreadable character, `A[16]B` for one of two, and look-alikes (A6B → A8B).
  */
 const props = withDefaults(
   defineProps<{
@@ -51,15 +55,19 @@ const hint = ref('')
 /** IDs pasted before the sheet arrived. */
 const waiting = ref<string[]>([])
 const sheetOrder = computed(() => [...props.options].reverse())
+const items = computed(() => idItems(props.options))
+const lookAlikes = useLookAlikes()
 const matches = computed(() => {
   const q = text.value.trim().toUpperCase()
   const chosen = new Set(props.modelValue)
   const free = props.options.filter(o => !chosen.has(o))
   if (!q) return free.slice(0, 60)
-  // IDs that start with what was typed come first.
+  // IDs that start with what was typed come first; then wildcards, alternatives and look-alikes.
   const starts = free.filter(o => o.toUpperCase().startsWith(q))
   const within = free.filter(o => !o.toUpperCase().startsWith(q) && o.toUpperCase().includes(q))
-  return [...starts, ...within].slice(0, 60)
+  const listed = new Set([...starts, ...within])
+  const alike = matchIds(items.value, q, { skip: x => chosen.has(x.id) || listed.has(x.id), table: lookAlikes.value, limit: 20 })
+  return [...starts, ...within, ...alike.map(m => m.item.id)].slice(0, 60)
 })
 const warnings = computed(() => (props.warn ? props.modelValue.map(id => props.warn!(id)).filter(Boolean) : []))
 
