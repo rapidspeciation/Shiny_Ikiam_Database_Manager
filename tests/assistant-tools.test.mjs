@@ -393,6 +393,7 @@ test('Claude Code loads the reading and proposal tools with the chat; describe_s
       'propose_changes',
       'search_knowledge',
       'search_records',
+      'show_rows',
       'update_proposal',
     ]);
 

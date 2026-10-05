@@ -232,7 +232,7 @@ function compileNear(db, mod, near) {
  * The rows matching a query: identifiers (field + values), filters and near.
  * Returns { mod, rows: [{ record, distance }], missing } or { error }.
  */
-function select(db, args) {
+export function selectRecords(db, args) {
   const mod = moduleMap.get(String(args.module ?? args.sheet ?? ''));
   if (!mod) return { error: `Unknown sheet ${clip(args.module ?? args.sheet, 60)}` };
   const filter = compileFilters(mod, args.filters);
@@ -298,7 +298,7 @@ function select(db, args) {
 
 /** find_records: the rows, only some columns if asked, within the size budget. */
 export function findRecords(db, args, { budget = FIND_BUDGET } = {}) {
-  const selected = select(db, args);
+  const selected = selectRecords(db, args);
   if (selected.error) return selected;
   const { mod, rows, missing } = selected;
   let fields = null;
@@ -361,7 +361,7 @@ function groupValue(field, part, value) {
 
 /** count_records: how many rows match, and per group (groupBy up to 3 columns). */
 export function countRecords(db, args) {
-  const selected = select(db, { ...args, module: args.sheet ?? args.module, field: undefined, values: undefined, filters: args.filters ?? {} });
+  const selected = selectRecords(db, { ...args, module: args.sheet ?? args.module, field: undefined, values: undefined, filters: args.filters ?? {} });
   if (selected.error) return selected;
   const { mod, rows } = selected;
   const groupBy = args.groupBy === undefined || args.groupBy === null ? [] : Array.isArray(args.groupBy) ? args.groupBy : [args.groupBy];
@@ -395,7 +395,7 @@ export function countRecords(db, args) {
   };
 }
 
-const FILTERS_DOC =
+export const FILTERS_DOC =
   'Column → condition, all must hold: a value (equal; text ignores case and accents; dates YYYY-MM-DD), a list (any of), {"contains": "text"}, {"not": value or list}, {"empty": true|false}, {"from": …, "to": …} (dates or numbers, inclusive). Formula columns are filtered on their computed value. E.g. {"SPECIES": "Oleria onega", "Preservation_medium": "Flash frozen"}';
 const NEAR_DOC =
   'Only rows within km of a place: {"location": a Collection_location of Location_data, e.g. "Ikiam"} or {"lat": -0.95, "lon": -77.87}, plus "km". A row is placed by its DECIMAL_LATITUDE/DECIMAL_LONGITUDE, else by its Collection_location in Location_data; rows without a place are left out and counted (rowsWithoutPlace).';

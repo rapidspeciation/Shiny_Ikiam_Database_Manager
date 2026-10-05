@@ -47,6 +47,19 @@ const ProposalGrid = defineAsyncComponent({
   },
   delay: 150,
 })
+/** A table of rows the assistant shows (show_rows): read-only, also with Tabulator. */
+const RowsTable = defineAsyncComponent({
+  loader: () => import('./RowsTable.vue'),
+  loadingComponent: {
+    render: () =>
+      h(
+        'p',
+        { class: 'mt-2 rounded-md border border-stone-200 bg-white px-3 py-6 text-sm text-stone-500' },
+        t('Cargando la tabla…'),
+      ),
+  },
+  delay: 150,
+})
 
 /**
  * The assistant's proposed edits beside the T3 chat (at the right or below
@@ -59,6 +72,9 @@ const ProposalGrid = defineAsyncComponent({
  * bridge says which, lib/t3Bridge; without it, or on its own browser tab, the
  * server guesses from T3, see server/t3chats.mjs), or of the chat picked in its
  * selector, or all; each table is only built when it comes into view (WhenSeen).
+ * The tables of rows the assistant shows to read (show_rows) come in the same
+ * list, marked as such (RowsTable): nothing to apply, they count as nothing to
+ * review, and «Cerrar» takes them out.
  */
 const props = withDefaults(
   defineProps<{
@@ -109,12 +125,16 @@ const others = computed(() => elsewhere(scope.value, chats.value))
 /** The time only, when the list is one chat's; with the chat's title when it mixes chats. */
 const mixed = computed(() => !scope.value || scope.value.chat === 'all' || scope.value.chat === 'app')
 
-const open = (p: Proposal) => p.status === 'pending' || p.status === 'applying'
+const isTable = (p: Proposal) => p.kind === 'table'
+const open = (p: Proposal) => p.status === 'pending' || p.status === 'applying' || p.status === 'shown'
 const mine = computed(() => (props.only ? proposals.value.filter(p => p.id === props.only) : proposals.value))
-const pending = computed(() => mine.value.filter(open))
-const reviewed = computed(() => (props.only ? [] : mine.value.filter(p => !open(p)).slice(0, 5)))
-/** The tables shown first: the pending ones; on a proposal's own page, that proposal whatever its state. */
-const cards = computed(() => (props.only ? mine.value : pending.value))
+/** The proposals to review (a table shown is only to read). */
+const pending = computed(() => mine.value.filter(p => open(p) && !isTable(p)))
+const reviewed = computed(() => (props.only ? [] : mine.value.filter(p => !open(p) && !isTable(p)).slice(0, 5)))
+/** The tables shown first: the pending ones and the tables of rows; on a proposal's own page, that proposal whatever its state. */
+const cards = computed(() => (props.only ? mine.value : mine.value.filter(open)))
+/** A card's room before its table is built. */
+const heightOf = (p: Proposal) => cardHeight(isTable(p) ? (p.rows?.length ?? 0) : p.changes.length)
 watch(
   () => pending.value.length,
   n => emit('count', n),
@@ -352,10 +372,11 @@ async function apply(proposal: Proposal, indexes: number[], at: number | undefin
     applying.value = null
   }
 }
+/** «Descartar» a proposal, or «Cerrar» a table of rows. */
 async function discard(proposal: Proposal) {
   try {
     await api(`chat/proposals/${proposal.id}/discard`, { method: 'POST', body: {} })
-    proposal.status = 'discarded'
+    proposal.status = isTable(proposal) ? 'closed' : 'discarded'
   } catch (e) {
     notify(errorText(e), 'error')
   }
@@ -472,23 +493,25 @@ const origin = (p: Proposal) =>
             :href="proposalLink(p.id)"
             target="_blank"
             rel="noopener"
-            :title="$t('Abrir esta propuesta sola en otra pestaña')"
-            :aria-label="$t('Abrir esta propuesta sola en otra pestaña')"
+            :title="isTable(p) ? $t('Abrir esta tabla sola en otra pestaña') : $t('Abrir esta propuesta sola en otra pestaña')"
+            :aria-label="isTable(p) ? $t('Abrir esta tabla sola en otra pestaña') : $t('Abrir esta propuesta sola en otra pestaña')"
           >
             <ExternalLink :size="12" />
           </a>
           <button
             class="shrink-0 rounded p-1 hover:bg-stone-200 hover:text-stone-800"
             :class="{ 'ml-auto': only === p.id }"
-            :title="$t('Copiar el enlace de esta propuesta')"
-            :aria-label="$t('Copiar el enlace de esta propuesta')"
+            :title="isTable(p) ? $t('Copiar el enlace de esta tabla') : $t('Copiar el enlace de esta propuesta')"
+            :aria-label="isTable(p) ? $t('Copiar el enlace de esta tabla') : $t('Copiar el enlace de esta propuesta')"
             @click="copyLink(p.id)"
           >
             <Link :size="12" />
           </button>
         </div>
-        <WhenSeen :height="cardHeight(p.changes.length)">
+        <WhenSeen :height="heightOf(p)">
+          <RowsTable v-if="isTable(p)" :table="p" @close="discard(p)" />
           <ProposalGrid
+            v-else
             :proposal="p"
             :busy="applying === p.id"
             @apply="(indexes, at, doubtful) => apply(p, indexes, at, doubtful)"
@@ -515,7 +538,7 @@ const origin = (p: Proposal) =>
           :class="{ 'ring-2 ring-emerald-400': arrived.has(p.id) }"
         >
           <p class="mt-2 px-1 text-[11px] text-stone-500">{{ origin(p) }}</p>
-          <WhenSeen :height="cardHeight(p.changes.length)"><ProposalGrid :proposal="p" /></WhenSeen>
+          <WhenSeen :height="heightOf(p)"><ProposalGrid :proposal="p" /></WhenSeen>
         </div>
       </details>
     </div>

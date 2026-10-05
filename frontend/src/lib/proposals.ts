@@ -1,4 +1,5 @@
 import type { CellValue } from './types'
+import type { TableRow } from './rowsTable'
 import { t, tn, tx, type Msg } from './i18n'
 
 /**
@@ -154,8 +155,14 @@ export interface ProposalChange {
 }
 export interface Proposal {
   id: string
+  /** For a table (show_rows): its title. */
   reason: string
-  status: 'pending' | 'applying' | 'applied' | 'needs_review' | 'discarded'
+  /** A table of rows the assistant shows (show_rows) is 'shown', then 'closed': never pending, never applied. */
+  status: 'pending' | 'applying' | 'applied' | 'needs_review' | 'discarded' | 'shown' | 'closed'
+  /** 'table': rows of the sheet to read (lib/rowsTable), not changes. */
+  kind?: 'table'
+  /** A table's rows, with the sheet's current values of its columns (`fields`). */
+  rows?: TableRow[]
   sheets?: string[]
   /** The conversation it comes from (T3 Code, Revisión de datos, a chat). */
   source?: string
