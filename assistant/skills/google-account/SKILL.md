@@ -15,6 +15,6 @@ gog --readonly --account jmithominii@gmail.com --client ithomiini <service> <com
 - `--readonly` blocks every change. For a write the person asked for (send
   an email, create an event, edit or share a file), show them the text first,
   then run that one command without `--readonly`.
-- Meeting notes, protocols, reports and presentations are quicker through the
-  document tools (`search_knowledge`); the workbook, through the `ithomiini`
-  tools.
+- Meeting notes, protocols, reports and presentations are quicker in the
+  project documents' folder (brief, "Files"); the workbook, through the
+  `ithomiini` tools.

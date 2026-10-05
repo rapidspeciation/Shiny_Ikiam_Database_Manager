@@ -55,6 +55,8 @@ const labUrl = process.env.ITHOMIINI_LAB_URL || '';
 // The docs of the release that is live (`current`), so the path survives the next release.
 const liveDocs = join(root, 'current', 'docs');
 const docs = process.env.ITHOMIINI_DOCS || (existsSync(liveDocs) ? liveDocs : join(release, 'docs'));
+// The project's Drive documents as Markdown (the app's KNOWLEDGE_DIR, kept by scripts/drive-sync.mjs).
+const knowledge = process.env.ITHOMIINI_KNOWLEDGE || join(shared, 'knowledge');
 
 const arg = process.argv[2];
 if (!arg) throw new Error('Usage: t3-provision.mjs <username> | --refresh-all');
@@ -62,7 +64,7 @@ const db = new DatabaseSync(database, { timeout: 30000 });
 const userOf = username => db.prepare('SELECT * FROM users WHERE username = ? AND active = 1').get(username);
 
 /** The brief: assistant/AGENTS.md with the person and the docs folder filled in (server/brief.mjs). */
-const brief = user => composeBrief(user, { docs, source, labUrl, root: release });
+const brief = user => composeBrief(user, { docs, knowledge, source, labUrl, root: release });
 
 /** A new personal token for T3 (the previous one stops working). */
 function mintToken(user) {

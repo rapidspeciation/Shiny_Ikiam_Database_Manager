@@ -475,71 +475,18 @@ export function createKnowledge(config = {}) {
   return { search, read, list, get, index, sync };
 }
 
-/** The document tools of the assistant (T3 Code through MCP). */
+/**
+ * The document tool of the assistant (T3 Code through MCP). The documents themselves are Markdown
+ * files the chats read and search with their own file tools (assistant/AGENTS.md, "Files"); the
+ * readers below (search_knowledge, read_document, list_documents) still answer chats that loaded them.
+ */
 export const KNOWLEDGE_TOOLS = [
-  {
-    type: 'function',
-    function: {
-      name: 'search_knowledge',
-      description:
-        [
-          "Search the project's documents, mirrored from the project Drive: meetings and transcripts, protocols, reports, insectary and greenhouse management, presentations, notes (no data sheets).",
-          'Returns the best passages with id, title, kind, date and sourceUrl; `read_document` gives the whole text. Answering from one: name it (title, date) and give its sourceUrl.',
-        ].join('\n'),
-      parameters: {
-        type: 'object',
-        properties: {
-          query: { type: 'string', description: 'Words (Spanish or English)' },
-          kind: { type: 'string', description: 'meeting, protocol, presentation, report, document, transcript (comma-separated)' },
-          from: { type: 'string', description: 'Dated from YYYY-MM-DD' },
-          to: { type: 'string', description: 'Dated to YYYY-MM-DD' },
-          limit: { type: 'integer', description: '1 to 20, default 8' },
-        },
-        required: ['query'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'read_document',
-      description:
-        'Read a document found with search_knowledge or list_documents (id, Drive id or Drive link). Returns up to max characters from offset; nextOffset continues it. A PDF may have no text: give its link.',
-      parameters: {
-        type: 'object',
-        properties: {
-          id: { type: 'string' },
-          offset: { type: 'integer', description: 'Character to start at (e.g. a passage offset), default 0' },
-          max: { type: 'integer', description: 'Characters to return, up to 20000, default 8000' },
-        },
-        required: ['id'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'list_documents',
-      description:
-        'List the project documents newest first (meeting date, or last edit), e.g. kind "meeting" limit 1 for the last meeting. Also gives counts per kind.',
-      parameters: {
-        type: 'object',
-        properties: {
-          kind: { type: 'string', description: 'meeting, protocol, presentation, report, document, transcript (comma-separated)' },
-          from: { type: 'string', description: 'YYYY-MM-DD' },
-          to: { type: 'string', description: 'YYYY-MM-DD' },
-          query: { type: 'string', description: 'Words that must be in the title' },
-          limit: { type: 'integer', description: '1 to 100, default 20' },
-        },
-      },
-    },
-  },
   {
     type: 'function',
     function: {
       name: 'sync_documents',
       description:
-        'Bring the project documents up to date with Google Drive now (read-only; only changed files are read again). The mirror does not refresh on its own: use this when someone says a document is new or edited, or asks to update the documents. Takes seconds, up to about 2 minutes.',
+        "Bring the project documents' folder up to date with Google Drive now (read-only; only changed files are read again). The copy does not refresh on its own: use this when someone says a document is new or edited, or asks to update the documents. Takes seconds, up to about 2 minutes.",
       parameters: { type: 'object', properties: {} },
     },
   },

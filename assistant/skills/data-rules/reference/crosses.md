@@ -1,7 +1,7 @@
 # Crosses, families, pedigree
 
-Protocols in Drive (answer "what does the protocol say" with `search_knowledge`
-and cite the document and date): "Protocol for Controlled Crosses and Families"
+Protocols in Drive (answer "what does the protocol say" from the project
+documents' folder, citing the document and date): "Protocol for Controlled Crosses and Families"
 (M. polymnia; M. menophilus; polymnia × lysimnia F1, revised Jul–Aug 2026), the
 2023 lys/pol crosses protocol, the F2 hybrid tissue protocol (2024).
 

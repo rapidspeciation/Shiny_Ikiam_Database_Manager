@@ -502,7 +502,6 @@ const ALWAYS_LOADED = new Set([
   'count_records',
   'get_record',
   'describe_sheet',
-  'search_knowledge',
   'propose_changes',
   'update_proposal',
   'show_rows',

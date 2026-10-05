@@ -78,6 +78,11 @@ Insectary ID».
 
 - Project documentation (data-entry audit, monitoring, workbook schema,
   meetings, operations): `{{docs}}`.
+- The project's Drive documents (meeting notes and transcripts, protocols,
+  reports, presentations), one Markdown file each, in Spanish or English:
+  `{{knowledge}}` and its subfolders. Each starts with its `title:` and
+  `sourceUrl:`; search them with grep, and when answering from one, name it
+  (title, date) and give its link. `sync_documents` refreshes them from Drive.
 - Downloads and generated files: `work/<date>-<topic>/` in this folder.
   Several chats share it: use a new folder name.
 

@@ -34,7 +34,14 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     // The brief is assistant/AGENTS.md with the person and the docs folder filled in; the rest is in skills.
     const docs = new URL('../docs', import.meta.url).pathname;
     const template = readFileSync(new URL('../assistant/AGENTS.md', import.meta.url), 'utf8');
-    assert.equal(brief, template.replaceAll('{{person}}', 'Ana Pérez').replaceAll('{{username}}', 'ana').replaceAll('{{docs}}', docs.replace(/\/$/, '')));
+    assert.equal(
+      brief,
+      template
+        .replaceAll('{{person}}', 'Ana Pérez')
+        .replaceAll('{{username}}', 'ana')
+        .replaceAll('{{docs}}', docs.replace(/\/$/, ''))
+        .replaceAll('{{knowledge}}', join(shared, 'knowledge')),
+    );
     assert.doesNotMatch(brief, /\{\{|Local test lab/);
     for (const skill of ['data-rules', 'digitalizar-cuaderno', 'monitoring', 'data-review', 'historial', 'google-account', 'app-guide', 'app-dev']) {
       assert.match(brief, new RegExp(`\\| \`${skill}\` \\|`), `the brief names the skill ${skill}`);

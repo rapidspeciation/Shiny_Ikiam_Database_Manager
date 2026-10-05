@@ -47,6 +47,7 @@ env_provision=(
   T3CODE_HOME="$T3HOME" ITHOMIINI_SHARED="$LAB/app" DATABASE_PATH="$LAB/app/app.sqlite"
   ITHOMIINI_MCP_URL="$URL/api/ai/mcp" ITHOMIINI_T3_WORKSPACES="$T3HOME/workspaces"
   ITHOMIINI_SRC="$HERE" ITHOMIINI_LAB_URL="$PUBLIC_URL" ITHOMIINI_DOCS="$HERE/docs" ITHOMIINI_DENY_READ="$LAB:$HOME/.cache/ithomiini-test"
+  ITHOMIINI_KNOWLEDGE="$LAB/app/knowledge"
   T3_BIN="${T3_BIN:-$HOME/.local/bin/t3}"
 )
 provision() { env "${env_provision[@]}" node "$HERE/scripts/t3-provision.mjs" "$1"; }

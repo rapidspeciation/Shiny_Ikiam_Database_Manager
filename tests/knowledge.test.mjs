@@ -164,7 +164,10 @@ test('the document tools reach T3 Code and Claude through MCP, and /api/knowledg
     );
     const mcp = (method, params) => assistant.mcp({ authorization: `Bearer ${token}` }, { jsonrpc: '2.0', id: 1, method, params });
     const tools = (await mcp('tools/list')).body.result.tools.map(t => t.name);
-    assert.ok(['search_knowledge', 'read_document', 'list_documents'].every(n => tools.includes(n)));
+    // The chats read the documents' folder with their own file tools: only the sync is listed; the readers
+    // still answer a chat that loaded them before.
+    assert.ok(tools.includes('sync_documents'));
+    assert.ok(!['search_knowledge', 'read_document', 'list_documents'].some(n => tools.includes(n)));
     const call = async (name, args) => JSON.parse((await mcp('tools/call', { name, arguments: args })).body.result.content[0].text);
     const last = await call('list_documents', { kind: 'meeting', limit: 1 });
     assert.equal(last.documents[0].title, '137 Meeting-10/09/2026');
