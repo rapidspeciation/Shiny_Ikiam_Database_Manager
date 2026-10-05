@@ -103,6 +103,18 @@ Medium rules and ethanol exceptions: [samples-ids.md](samples-ids.md).
 - CAM_ID_CollData: `NA` for a reared butterfly (it has no Collection_data
   row).
 
+## LIFESTAGE
+
+The butterfly's stage when its row is filled:
+
+- `Adult`: a row with a date in Intro2Insectary_date, the day it emerged in
+  the insectary or the day a wild-caught butterfly was brought in.
+- A preserved egg, larva or pupa: its stage (`Egg`, `3rd instar larva`,
+  `Pre-pupa`, `Pupa day 3`…), with Intro2Insectary_date `NA` (see "Eggs,
+  larvae and pupae preserved").
+
+Older rows with LIFESTAGE empty stay as they are.
+
 ## Death causes
 
 `Unknown`, `Eaten`, `Spider`, `Ants`, `Disappearance`, `Killed_Preserved`,
@@ -122,7 +134,7 @@ in 2024.
 - Weekend deaths are dated the day they were found (often Monday).
 - Partial remains: wings and legs are still preserved; cause from the note.
 
-## Eggs and larvae preserved (since Sep 2026)
+## Eggs, larvae and pupae preserved (since Sep 2026)
 
 F1 eggs, larvae and prepupae get an Insectary_ID each, from the pre-made
 sequence. The protocol preserves F1s at the 4th instar; eggs and younger
@@ -134,7 +146,7 @@ instars of Sep 2026).
 | Wild_Reared, CLUTCH NUMBER | `Reared`, the clutch (`994(3)`) |
 | Intro2Insectary_date | `NA` |
 | Sex | `NOT_COLLECTED` (Sanger's category for a sex not recorded) |
-| LIFESTAGE (used only for this) | `Egg`, `1st instar larva` … `5th instar larva`, `Pre-pupa` |
+| LIFESTAGE | the stage when preserved: `Egg`, `1st instar larva` … `5th instar larva`, `Pre-pupa`, `Pupa day 1` … `Pupa day 12` |
 | Death_date | the preservation date |
 | Death_cause, Preserved_Dead_Alive | `Killed_Preserved` and `Alive`, or `Other` and `Dead` (found dead) |
 | CAM_ID, Tube_1 | a CAM; one tube `WHOLE_ORGANISM` `Flash frozen` |
