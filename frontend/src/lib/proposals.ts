@@ -133,6 +133,8 @@ export interface ProposalChange {
    * tube (server/preserved.mjs), with why: marked until someone fills them.
    */
   warnings?: Record<string, Hint>
+  /** What the data checks (Revisión) say about the sheet's value of a cell, by column. */
+  checks?: Record<string, Hint[]>
   /** A notebook line shown only for context: never written. */
   context?: boolean
   /** A page line with no sheet row (not found, crossed out): shown as written, never written. */
@@ -227,6 +229,17 @@ export function expandProposal(p: Proposal): Proposal {
             return [f, { text: entry?.text ?? '', ...(entry?.msg ? { msg: entry.msg } : {}) }]
           }),
         )
+      const checks = c.checks as Record<string, (Hint | number)[]> | undefined
+      if (checks)
+        out.checks = Object.fromEntries(
+          Object.entries(checks).map(([f, list]) => [
+            f,
+            list.map(h => {
+              const entry = typeof h === 'number' ? p.hintTable?.[h] : h
+              return { text: entry?.text ?? '', ...(entry?.msg ? { msg: entry.msg } : {}) }
+            }),
+          ]),
+        )
       if (!c.formulas && !c.create && !c.placeholder && p.sheetFormulas?.[c.sheet]) out.formulas = p.sheetFormulas[c.sheet]
       return out
     }),
@@ -310,6 +323,8 @@ export interface CellInfo {
   unreadable?: Unreadable
   /** A preserved butterfly would be left without this cell (its CAM or tube): ask for it before applying. */
   warning?: Hint
+  /** What the data checks say about the sheet's value of this cell (a tube with a digit missing…). */
+  checks?: Hint[]
   /** The value is what the sheet's formula will give (SPECIES from the clutch): shown grey, never written. */
   fromFormula?: boolean
   /** Edited in the sheet since the proposal read it (violet): kept from the sheet, or the proposal's written over it. */
@@ -325,7 +340,14 @@ export function cellOf(change: ProposalChange, field: string, newRowFormulas: st
   const doubt = change.doubts?.[field]
   const unreadable = change.unreadable?.[field]
   const warning = change.warnings?.[field]
-  const extra = { doubt, hint: change.hints?.[field], ...(unreadable ? { unreadable } : {}), ...(warning ? { warning } : {}) }
+  const checks = change.checks?.[field]
+  const extra = {
+    doubt,
+    hint: change.hints?.[field],
+    ...(unreadable ? { unreadable } : {}),
+    ...(warning ? { warning } : {}),
+    ...(checks?.length ? { checks } : {}),
+  }
   const sheetEdit = !change.create && field in change.values ? change.sheetChanged?.[field] : undefined
   // Edited in the sheet since it was read, and nobody chose the proposal's: the sheet's value stays.
   if (sheetEdit && !keptOver(sheetEdit))
@@ -440,6 +462,9 @@ export function cellComments(c: CellInfo, show: (value: CellValue | undefined) =
     out.push({ label: t('Editada en la hoja'), text: `${read} · ${then}`, kind: 'edited' })
   }
   if (c.warning) out.push({ label: t('Falta'), text: tx(c.warning.text, c.warning.msg), kind: 'doubt' })
+  // The checks are about the sheet's value: said while the cell keeps it.
+  if (['sheet', 'locked', 'kept', 'reverted'].includes(c.kind))
+    for (const h of c.checks ?? []) out.push({ label: t('Revisión'), text: tx(h.text, h.msg), kind: 'doubt' })
   if (c.doubt) {
     const reason = c.doubt.reason ? tx(c.doubt.reason, c.doubt.reasonMsg) : t('Lectura dudosa')
     if (c.doubtful) out.push({ label: t('Dudosa'), text: reason, kind: 'doubt' })

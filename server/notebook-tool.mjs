@@ -48,7 +48,7 @@ export const MATCH_NOTEBOOK_TOOL = {
       '- Doubtful cell: your best reading, confidence < 0.8, up to 3 alternatives and a reason. Unreadable cell: null (never left out), a reason, any partial reading in alternatives.',
       `- \`year\` only when the page shows it. Without it: the year the sheet has for the same dates, or the current year when the page's dates are from the last ${RECENT_DAYS} days; otherwise nothing is proposed and the answer asks for \`year\`.`,
       "- The server finds each row (look-alike IDs), completes list values and notes, and flags what breaks a run; nothing is written until the person applies it. The table lists the rows in the sheet's order, each with its photo and line.",
-      'Answer: proposalId, year/yearSource, counts, and per line its status, the cells by group and warnings.',
+      'Answer: proposalId, year/yearSource, counts, per line its status, the cells by group and warnings, and `lookAt` as in propose_changes.',
       '',
       'Columns per kind (exact names):',
       ...KIND_IDS.map(
