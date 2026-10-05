@@ -6,6 +6,22 @@
 import { cellHolds } from './batch.mjs';
 
 /**
+ * A proposal row's record as the sheet has it now: its own, or, when that one is gone (a sync
+ * that made the row a new record), the record at the same sheet row with the same label (its
+ * Insectary_ID, CAM…). Null when neither.
+ */
+export function currentRecord(store, change, created = {}) {
+  const recordId = change.create ? created[change.clientId] : change.recordId;
+  const own = recordId ? store.getRecord(recordId) : null;
+  if (own && !own.missing) return own;
+  const row = own?.row > 0 ? own.row : change.row;
+  if (!(row > 0)) return null;
+  const there = store.getRecordBySheetRow(change.sheet, row);
+  const label = String(change.label || own?.label || '').trim().toUpperCase();
+  return there && !there.missing && label && String(there.label ?? '').trim().toUpperCase() === label ? there : null;
+}
+
+/**
  * The cells of a proposal's rows that the sheet does not hold: [{ index, label, row,
  * field, proposal, sheet }]. `created`: clientId → recordId of its new rows written.
  * Rows only shown (context) or without values are not looked at; a new row not written
@@ -16,8 +32,7 @@ export function compareWithSheet(store, changes, created = {}) {
   let cells = 0;
   changes.forEach((c, index) => {
     if (c.context || c.placeholder || !Object.keys(c.values ?? {}).length) return;
-    const recordId = c.create ? created[c.clientId] : c.recordId;
-    const record = recordId ? store.getRecord(recordId) : null;
+    const record = currentRecord(store, c, created);
     for (const [field, value] of Object.entries(c.values)) {
       cells++;
       const now = record && !record.missing ? record : null;

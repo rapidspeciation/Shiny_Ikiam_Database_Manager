@@ -59,3 +59,42 @@ test('needs_review: applied when the sheet holds every cell, else the cells that
     store.close();
   }
 });
+
+test('a row typed in the sheet keeps its record when it only gains identifiers (a CAM_ID on a pre-made row)', async () => {
+  const sheets = new LocalSheets({ Insectary_data: [{ row: 2, values: { Insectary_ID: 'P4E' } }, { row: 3, values: { Insectary_ID: 'P5E' } }] });
+  const store = new Store({ localMode: true }, { sheets });
+  try {
+    await store.sync({ sheets: ['Insectary_data'] });
+    const before = store.getRecordBySheetRow('Insectary_data', 2).id;
+    const fields = moduleMap.get('Insectary_data').fields;
+    const at = key => fields.find(f => f.key === key).column;
+    const row = sheets.rows.get('Insectary_data').find(r => r.row === 2);
+    row.cells[at('CAM_ID')] = { userEnteredValue: { stringValue: 'CAM078405' } };
+    row.cells[at('Sex')] = { userEnteredValue: { stringValue: 'male' } };
+    await store.sync({ sheets: ['Insectary_data'], force: true });
+    const after = store.getRecordBySheetRow('Insectary_data', 2);
+    assert.equal(after.id, before, 'the same record');
+    assert.equal(after.values.CAM_ID, 'CAM078405');
+    // Another ID typed over it is another butterfly: a new record.
+    row.cells[at('Insectary_ID')] = { userEnteredValue: { stringValue: 'Z9Z' } };
+    await store.sync({ sheets: ['Insectary_data'], force: true });
+    assert.notEqual(store.getRecordBySheetRow('Insectary_data', 2).id, before);
+  } finally {
+    store.close();
+  }
+});
+
+test('needs_review and apply find a row whose record a sync replaced, by its sheet row and label', async () => {
+  const { currentRecord } = await import('../server/needs-review.mjs');
+  const sheets = new LocalSheets({ Insectary_data: [{ row: 2, values: { Insectary_ID: 'P4E', Sex: 'male' } }] });
+  const store = new Store({ localMode: true }, { sheets });
+  try {
+    await store.sync({ sheets: ['Insectary_data'] });
+    const now = store.getRecordBySheetRow('Insectary_data', 2);
+    const change = { sheet: 'Insectary_data', recordId: 'gone-record', row: 2, label: 'P4E', values: { Sex: 'male' } };
+    assert.equal(currentRecord(store, change)?.id, now.id);
+    assert.equal(currentRecord(store, { ...change, label: 'P5E' }), null, 'another butterfly at that row');
+  } finally {
+    store.close();
+  }
+});

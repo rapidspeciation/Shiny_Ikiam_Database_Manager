@@ -20,7 +20,7 @@ import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './note
 import { duplicateIdRow, insectaryIdPlaces, insectaryIdRow, newRowFormulaFields } from './premade.mjs';
 import { BETWEEN_ROWS, VIEW_PARAM, VIEW_UPDATE, readView, showBetween, viewColumns } from './proposal-view.mjs';
 import { proposalSampleWarnings } from './preserved.mjs';
-import { compareWithSheet } from './needs-review.mjs';
+import { compareWithSheet, currentRecord } from './needs-review.mjs';
 import { carryChecks, dropDoubt, setChecked, uncheckedDoubts, unfilledUnreadable, withoutUnchecked } from './doubts.mjs';
 import { decide, editedInSheet, forget, lastEdit, resolveSheetEdits, sheetChangesOf, shownValue, takenRow, takenRows } from './sheet-edits.mjs';
 import { tellChat } from './t3tell.mjs';
@@ -2183,7 +2183,12 @@ export function createAssistant({ store, config = {} }) {
       throw Object.assign(new Error('Proposal has already been applied.'), { status: 409, code: 'proposal_used' });
     if (!EDITORS.includes(user.role))
       throw Object.assign(new Error('Your role cannot apply changes.'), { status: 403, code: 'forbidden' });
-    const all = parse(proposal.changes_json) ?? [];
+    // A row whose record a sync replaced (same sheet row and label, a new record): applied to that one.
+    const all = (parse(proposal.changes_json) ?? []).map(c => {
+      if (c.create || c.context || !c.recordId) return c;
+      const record = currentRecord(store, c);
+      return record && record.id !== c.recordId ? { ...c, recordId: record.id } : c;
+    });
     // A row left without values (the person emptied it in the table) has nothing to write, and a
     // notebook line shown only for context (match_notebook includeUnchanged) is never written.
     const picked = (
