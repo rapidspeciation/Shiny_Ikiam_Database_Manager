@@ -3272,7 +3272,8 @@ export function createAssistant({ store, config = {} }) {
           status: out.status,
           ...(out.status === 'queued'
             ? {
-                queued: 'Google Sheets is not answering now (the workbook recalculates after edits): the save is kept in the app and written automatically, in order, when Google answers. Cambios propuestos shows it as waiting for Google. Do not apply it again, deploy or restart.',
+                queued:
+                  'Applied and kept in the app: Google Sheets is slow or not answering now (the workbook recalculates for minutes after edits), so these changes are written automatically, in order, as soon as Google answers. Cambios propuestos shows the proposal as «waiting for Google Sheets» until then. Tell the person; nothing more is needed from them or from you.',
                 workbook: out.workbook,
               }
             : {}),
@@ -3294,6 +3295,13 @@ export function createAssistant({ store, config = {} }) {
             cells: sheetList(e.details.again),
             todo: 'The person chooses again in the table (the sheet\'s value or yours), or you re-check them and update_proposal.',
           };
+        // Sent, but Google did not confirm it in time: the app reads those cells again and settles the save itself.
+        if (e.code === 'WRITE_UNCERTAIN')
+          return withGoogle({
+            status: 'unconfirmed',
+            unconfirmed:
+              'Sent to Google Sheets, which did not confirm it in time (the workbook is probably recalculating). The app reads those cells again on its own and Historial shows the save once settled; the proposal shows needs_review meanwhile. Tell the person; once Google answers, compare its cells with the sheet (find_records) before applying it again.',
+          });
         if (e.code === 'nothing_selected' && e.details?.unreadable)
           return {
             error: 'Not applied: nothing to write yet, only unreadable cells still empty',

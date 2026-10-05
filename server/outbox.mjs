@@ -26,6 +26,8 @@ const json = value => JSON.stringify(value);
 const now = () => new Date().toISOString();
 /** A write still running after this long makes later saves wait in the outbox instead of behind it. */
 export const HELD_WRITE_MS = 10_000;
+/** How often a save waiting behind another looks whether that one is held too long. */
+export const LOOK_EVERY_MS = 1_000;
 /** How often the outbox looks again on its own (Google may answer without anyone saving). */
 export const DRAIN_EVERY_MS = 30_000;
 const SETTLED = new Set(['done', 'conflict', 'failed']);
@@ -52,6 +54,9 @@ export class Outbox {
     this.running = null;
     this.again = false;
     this.timer = null;
+    // Tests set them shorter (config.heldWriteMs).
+    this.heldMs = store.config?.heldWriteMs ?? HELD_WRITE_MS;
+    this.lookEveryMs = Math.max(10, Math.min(LOOK_EVERY_MS, Math.floor(this.heldMs / 4)));
   }
   get health() {
     return this.store.sheets?.health ?? null;
@@ -70,7 +75,7 @@ export class Outbox {
     if (store.draining) return true;
     if (this.health && this.health.state !== 'ok') return true;
     if (this.waiting()) return true;
-    if (!waiting && store.writesInFlight && Date.now() - (store.writeStartedAt ?? 0) > HELD_WRITE_MS) return true;
+    if (!waiting && store.writesInFlight && Date.now() - (store.writeStartedAt ?? 0) > this.heldMs) return true;
     return false;
   }
   byRequest(requestId) {
