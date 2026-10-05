@@ -12,7 +12,8 @@ EnvironmentFile=-/home/ubuntu/.config/ithomiini/gog.env
 ExecStart=/home/ubuntu/.local/share/tiputini-runtime/node-v24.18.0-linux-arm64/bin/node server/index.mjs
 Restart=on-failure
 RestartSec=5
-TimeoutStopSec=30
+# Long enough for a save in progress to finish (server/index.mjs drains for up to 100 s).
+TimeoutStopSec=130
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true

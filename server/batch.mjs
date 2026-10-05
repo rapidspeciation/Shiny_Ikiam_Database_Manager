@@ -122,7 +122,17 @@ export async function applyBatch(store, body, user, { source = 'app', reverses =
   if (edits.length + creates.length + deletes.length > MAX_BATCH)
     throw fail('BATCH_TOO_LARGE', msg('Guarda como máximo {n} filas a la vez', { n: MAX_BATCH }));
 
+  // The app is stopping (a deploy): saves in progress finish, new ones wait for the new process.
+  if (store.draining) throw fail('SHUTTING_DOWN', 'La app se está reiniciando; vuelve a guardar en un minuto', 503);
   return store.runExclusive(async () => {
+    store.writesInFlight = (store.writesInFlight ?? 0) + 1;
+    try {
+      return await writeBatchNow();
+    } finally {
+      store.writesInFlight--;
+    }
+  });
+  async function writeBatchNow() {
     // A retried request returns the original outcome instead of writing twice.
     const prior = store.actionByRequest(body.requestId);
     if (prior) {
@@ -258,7 +268,7 @@ export async function applyBatch(store, body, user, { source = 'app', reverses =
     } finally {
       store.endWrite(sheets);
     }
-  });
+  }
 }
 
 function planFor(store, source, { edits, creates, deletes = [] }) {

@@ -2218,6 +2218,9 @@ export function createAssistant({ store, config = {} }) {
       .filter(([, c]) => Object.keys(c.values ?? {}).length);
     const written = writes.map(([i]) => i);
     if (!writes.length) throw Object.assign(new Error('Only doubtful cells were left to write.'), { status: 400, code: 'nothing_selected' });
+    // The app is stopping (a deploy): the proposal stays pending, to apply in a minute.
+    if (store.draining)
+      throw Object.assign(new Error('The app is restarting; apply it again in a minute.'), { status: 503, code: 'shutting_down' });
     const claimed = db
       .prepare("UPDATE ai_proposals SET status = 'applying' WHERE id = ? AND status = 'pending'")
       .run(proposal.id);

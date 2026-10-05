@@ -413,7 +413,8 @@ export async function createApp(config = {}, options = {}) {
       const url = new URL(req.url, 'http://localhost'),
         path = routePath(req.url, config.basePath),
         method = req.method;
-      if (method === 'GET' && path === '/health') return json(res, 200, { status: 'ok', sync: store.syncStatus.state });
+      // `writing`: what a restart would cut (scripts/deploy.sh waits for it to be all 0).
+      if (method === 'GET' && path === '/health') return json(res, 200, { status: 'ok', sync: store.syncStatus.state, writing: writingNow() });
       // Shares are normally caught by the service worker; if it was not active yet,
       // open the import screen and let the person share again.
       if (method === 'POST' && path === '/share-target') {
@@ -1120,6 +1121,30 @@ export async function createApp(config = {}, options = {}) {
       });
     }
   });
+  /** Proposals being applied, saves being written and saves whose outcome is still unknown; whether the app is stopping. */
+  const writingNow = () => {
+    let applying = 0;
+    try {
+      applying = store.db.prepare("SELECT count(*) n FROM ai_proposals WHERE status = 'applying'").get().n;
+    } catch {
+      /* No assistant tables (tests). */
+    }
+    return { applying, inFlight: store.writesInFlight ?? 0, unconfirmed: store.unconfirmedCount(), draining: !!store.draining };
+  };
+  /**
+   * Before the process stops (a deploy, a restart): no new saves or applies, and those in
+   * progress finish (up to `ms`), so none is cut off between Google and the app's copy.
+   */
+  const drain = async (ms = 100_000) => {
+    store.draining = true;
+    const until = Date.now() + ms;
+    for (;;) {
+      const w = writingNow();
+      if (!w.applying && !w.inFlight) return true;
+      if (Date.now() > until) return false;
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
+  };
   const ready = options.skipInitialSync
     ? Promise.resolve(store.syncStatus)
     : new Promise(resolve => setImmediate(resolve))
@@ -1141,6 +1166,8 @@ export async function createApp(config = {}, options = {}) {
     server,
     store,
     ready,
+    drain,
+    writingNow,
     listen: async (port = config.port, host = config.host) => {
       if (t3Bridge && config.t3.proxyPort && !t3Proxy)
         t3Proxy = await t3Bridge.listen(config.t3.proxyPort).then(
@@ -1648,6 +1675,21 @@ function addAttachment(store, body, user) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const app = await createApp(configFromEnv());
+  // systemd stops the app with SIGTERM (deploy/ithomiini.service gives it TimeoutStopSec): saves
+  // in progress finish first, new ones are refused with "restarting".
+  let stopping = false;
+  const stop = async signal => {
+    if (stopping) return;
+    stopping = true;
+    const before = app.writingNow();
+    if (before.applying || before.inFlight) console.log(`${signal}: waiting for saves in progress`, JSON.stringify(before));
+    const drained = await app.drain();
+    if (!drained) console.error(`${signal}: saves still in progress after the wait; stopping anyway`, JSON.stringify(app.writingNow()));
+    await Promise.race([app.close().catch(e => console.error('Close:', e.message)), new Promise(resolve => setTimeout(resolve, 5000))]);
+    process.exit(0);
+  };
+  process.once('SIGTERM', () => stop('SIGTERM'));
+  process.once('SIGINT', () => stop('SIGINT'));
   const address = await app.listen();
   console.log(
     `Ithomiini app listening on ${address.address}:${address.port}${app.store.config.basePath || '/ithomiini'}`,

@@ -512,6 +512,13 @@ export class Store {
     } finally {
       this.syncPromise = null;
     }
+    // Saves whose outcome is unknown (a write cut off, Google not answering) are checked again
+    // after every sync that read the sheets, not only at startup.
+    if (status?.state !== 'error' && this.unconfirmedCount() && !this.recovering) {
+      this.recovering = this.runExclusive(() => this.recoverPending())
+        .catch(e => console.error('Recovery:', e.message))
+        .finally(() => (this.recovering = null));
+    }
     for (const fn of this.syncWatchers ?? []) {
       try {
         fn(status);
@@ -983,6 +990,10 @@ export class Store {
     this.db
       .prepare('INSERT INTO audit(id,kind,detail_json,created_at) VALUES(?,?,?,?)')
       .run(randomUUID(), 'action_status', json({ actionId: id, status }), now());
+  }
+  /** Saves not confirmed yet (being written, or their outcome unknown). */
+  unconfirmedCount() {
+    return this.db.prepare("SELECT count(*) n FROM actions WHERE status IN ('pending','uncertain')").get().n;
   }
   /**
    * Re-reads the cells of writes whose outcome is unknown. If Google holds the
