@@ -1788,11 +1788,14 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
       else if (!record) cell.status = 'empty';
       else if (field === 'SPECIES' && record.formulas?.SPECIES) {
         // The formula predicts the species from the clutch: type one only when what emerged
-        // differs, from the clutch the row will have (the page may correct it).
+        // differs, or the formula gives nothing (a clutch not in Insectary_stocks yet), from the
+        // clutch the row will have (the page may correct it).
         const nextClutch = readValue('CLUTCH NUMBER', clutchText, { year: pageYear }).value;
         const predicted =
           nextClutch !== null && !sameValue('CLUTCH NUMBER', record.values?.['CLUTCH NUMBER'], nextClutch)
-            ? (lookup.speciesOfClutch?.(lookup.clutch?.(nextClutch) ?? nextClutch) ?? before)
+            ? lookup.speciesOfClutch
+              ? (lookup.speciesOfClutch(lookup.clutch?.(nextClutch) ?? nextClutch) ?? null)
+              : before
             : before;
         cell.formula = true;
         // A formula that gives nothing (a wild butterfly, no clutch) is filled with the typed species.

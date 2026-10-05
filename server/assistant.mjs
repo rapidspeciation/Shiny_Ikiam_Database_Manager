@@ -13,7 +13,7 @@ import { listOptions, listProblem } from './verify.mjs';
 import { queueWalk, walkDraft } from './walks.mjs';
 import { KINDS, isNone, noteText, reviewColumns } from './notebook.mjs';
 import { HIDDEN_COLUMNS, isNotWritten, notWrittenWhy } from './proposal-columns.mjs';
-import { createFormulaReader, sameResult } from './formula-gives.mjs';
+import { createFormulaReader, isFormulaError, sameResult } from './formula-gives.mjs';
 import { FILTERS_DOC, FIND_BUDGET, RECORD_TOOLS, compactRecord, countRecords, findRecords, pickRows, resolveRows, selectRecords } from './records-tool.mjs';
 import { RESULT_BUDGET, fitList, fitResult } from './tool-budget.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
@@ -243,7 +243,7 @@ const TOOLS = [
           'Draft edits to existing rows (`changes`) and/or new rows (`newRows`), shown at once as a table beside the chat; nothing is written until the person confirms.',
           '- One proposal per task (a walk, a kind of fix), with a short note per row on where its values come from.',
           '- A row: its `recordId`, or `sheet` + `id`, its ID in the sheet (W2B, CAM079891, a clutch number).',
-          "- Formula cells cannot be changed, except Insectary_data's SPECIES when what emerged differs from the formula, and an Insectary_ID given to two butterflies: a suffix on the row's own ID (W2B → W2B.1).",
+          "- Formula cells cannot be changed, except Insectary_data's SPECIES when its formula gives another one or none, and an Insectary_ID given to two butterflies: a suffix on the row's own ID (W2B → W2B.1).",
           "- A new Insectary_data row names its Insectary_ID and fills the pre-made row of that ID; a second butterfly of a used ID takes a suffix (W2B.2), its row inserted below that ID's rows.",
           `- Up to ${PROPOSAL_ROWS} rows per proposal; \`bulk\` gives the same values to many existing rows.`,
           '- lookAt: rows of the proposal worth a look (checks, notes); tell the person what matters before they apply.',
@@ -824,6 +824,13 @@ export function createAssistant({ store, config = {} }) {
   function formulaWillGive(sheet, field, values, record) {
     const formula = record ? !!record.formulas?.[field] : createFormulaFields(sheet).has(field);
     if (!formula || !TYPED_OVER_FORMULA[sheet]?.has(field)) return undefined;
+    // The row's own formula, worked out with the row's values (server/formula-gives.mjs): nothing or an
+    // error (a clutch not in Insectary_stocks yet) is null, so a value typed there is written.
+    const target = record ?? premadeRecordOf({ create: true, sheet, values });
+    if (target?.formulas?.[field]) {
+      const { gives, fallback } = rowFormulaGives({ create: !record, sheet, values: { ...values, [field]: values[field] ?? null } }, target);
+      if (!fallback.includes(field) && field in gives) return isNone(gives[field]) || isFormulaError(gives[field]) ? null : gives[field];
+    }
     const clutch = values['CLUTCH NUMBER'];
     const moved = clutch !== undefined && comparable(clutch) !== comparable(record?.values?.['CLUTCH NUMBER'] ?? null);
     if (field === 'SPECIES' && sheet === 'Insectary_data' && (moved || !record))
@@ -1331,7 +1338,10 @@ export function createAssistant({ store, config = {} }) {
       return warned ? [{ index, label: c.label, missing: Object.keys(warned) }] : [];
     });
     // What the rows hold that the person should hear about (the preview shows few of them).
-    const look = lookAt(store, changes, { told: noSample.flatMap(n => n.missing.map(field => ({ index: n.index, field }))) });
+    const look = lookAt(store, changes, {
+      told: noSample.flatMap(n => n.missing.map(field => ({ index: n.index, field }))),
+      formulaEmpty: speciesLeftEmpty(changes),
+    });
     // Row indexes for update_proposal (new rows first, then edits of existing rows). A long
     // proposal: a bulk call's preview, or where to read them.
     const listed = changes.length <= (bulk ? 30 : 100);
@@ -1373,7 +1383,8 @@ export function createAssistant({ store, config = {} }) {
    * the suggestion aside, and applying writes only `values` (a row left without
    * any is not written).
    */
-  const rowKey = change => change.clientId ?? change.recordId;
+  // `key`: kept by a row whose record a sync replaced (withCurrentRecord), so the table finds it as before.
+  const rowKey = change => change.key ?? change.clientId ?? change.recordId;
   const proposedOf = (change, field) => (field in change.values ? change.values[field] : undefined);
   const same = (a, b) => comparable(a) === comparable(b);
   /** A value as the save will store it (dates as serials, times as day fractions), to compare it. */
@@ -1435,11 +1446,14 @@ export function createAssistant({ store, config = {} }) {
         !!fresh.values.SPECIES || moduleMap.get(change.sheet).identityFields.some(key => isIdValue(fresh.values[key]));
       return { change: { ...keep(fresh), ...(named || !change.label ? {} : { label: change.label }), dropped: undefined }, dropped };
     }
-    const out = draftChanges({ changes: [{ recordId: change.recordId, values: change.values, note: change.note }] });
+    // Drafted on the row's record as the sheet has it now (one a sync replaced: the new one), under its key.
+    const current = withCurrentRecord(change);
+    const out = draftChanges({ changes: [{ recordId: current.recordId, values: change.values, note: change.note }] });
     if (out.error === 'Every proposed value is already in the sheet')
       return { change: keep({ values: {}, before: read({}), replaceFormula: [] }), dropped: [] };
     if (out.error) return { error: out.error };
-    return { change: keep({ ...out.changes[0], before: read(out.changes[0].before) }), dropped: [] };
+    const key = current.key ? { key: current.key } : {};
+    return { change: keep({ ...out.changes[0], ...key, before: read(out.changes[0].before) }), dropped: [] };
   }
 
   /**
@@ -1630,13 +1644,24 @@ export function createAssistant({ store, config = {} }) {
       const taken = takenRow(store, change, inUse);
       return taken ? { rowTaken: { row: taken.row, label: taken.label, ...lastEdit(db, taken.recordId, 'Insectary_ID', since) } } : {};
     }
-    const edited = sheetChangesOf(change, store.getRecord(change.recordId));
+    const record = currentRecord(store, change);
+    const edited = sheetChangesOf(change, record);
     if (!Object.keys(edited).length) return {};
     return {
       sheetChanged: Object.fromEntries(
-        Object.entries(edited).map(([field, cell]) => [field, { ...cell, ...lastEdit(db, change.recordId, field, since) }]),
+        Object.entries(edited).map(([field, cell]) => [field, { ...cell, ...lastEdit(db, record.id, field, since) }]),
       ),
     };
+  }
+
+  /**
+   * A proposal row as the sheet has its record now: a row whose record a sync replaced (the
+   * same sheet row and label, a new record) reads that one. Its key stays the one it was made with.
+   */
+  function withCurrentRecord(change, created = {}) {
+    if (change.create || change.placeholder || !change.recordId) return change;
+    const record = currentRecord(store, change, created);
+    return record && record.id !== change.recordId ? { ...change, key: change.key ?? rowKey(change), recordId: record.id } : change;
   }
 
   /** The rows of a proposal as the assistant reads them: index, values with readable dates, the person's edits. */
@@ -1740,8 +1765,32 @@ export function createAssistant({ store, config = {} }) {
 
   /** { lookAt } about a proposal's rows (`only`: these indexes), or nothing when there is nothing to say. */
   function lookAtRows(changes, only = null) {
-    const look = lookAt(store, changes, { only });
+    const look = lookAt(store, changes, { only, formulaEmpty: speciesLeftEmpty(changes, only) });
     return look ? { lookAt: look } : {};
+  }
+
+  /**
+   * Insectary_data rows with a clutch whose SPECIES formula will give nothing (the clutch is not in
+   * Insectary_stocks yet, or has no species there) and that write no species: [{ index, field, clutch }].
+   */
+  function speciesLeftEmpty(changes, only = null) {
+    const session = formulaReader.session();
+    const out = [];
+    changes.forEach((c, index) => {
+      if (only && !only.has(index)) return;
+      if (c.sheet !== 'Insectary_data' || c.context || c.placeholder || c.gap || 'SPECIES' in (c.values ?? {})) return;
+      // An existing row only when the proposal gives it its clutch (an old gap is Revisión's).
+      if (!c.create && !('CLUTCH NUMBER' in (c.values ?? {}))) return;
+      const record = c.create ? null : currentRecord(store, c);
+      const clutch = c.values?.['CLUTCH NUMBER'] ?? record?.values?.['CLUTCH NUMBER'];
+      if (isNone(clutch)) return;
+      const target = c.create ? premadeRecordOf(c) : record;
+      if (!target?.formulas?.SPECIES) return;
+      const { gives, fallback } = rowFormulaGives(c, target, session);
+      if (fallback.includes('SPECIES') || !('SPECIES' in gives) || !(isNone(gives.SPECIES) || isFormulaError(gives.SPECIES))) return;
+      out.push({ index, field: 'SPECIES', clutch });
+    });
+    return out;
   }
 
   /**
@@ -2419,7 +2468,13 @@ export function createAssistant({ store, config = {} }) {
   function premadeRecordOf(change) {
     if (change.sheet === 'Insectary_data') {
       const place = change.values?.Insectary_ID ? insectaryIdRow(store, change.values.Insectary_ID) : null;
-      return place && !place.ahead ? store.getRecordBySheetRow('Insectary_data', place.row) : null;
+      if (place && !place.ahead) return store.getRecordBySheetRow('Insectary_data', place.row);
+      // Past the pre-made rows (made when it is applied, as the last one): the last row's formulas, without its values.
+      const last = db
+        .prepare("SELECT id FROM records WHERE sheet='Insectary_data' AND missing=0 AND row_num<2000000000 ORDER BY row_num DESC LIMIT 1")
+        .get();
+      const template = last ? store.getRecord(last.id) : null;
+      return template?.formulas && Object.keys(template.formulas).length ? { ...template, values: {} } : null;
     }
     const next = db
       .prepare('SELECT id FROM records WHERE sheet=? AND missing=0 AND observed=0 AND row_num>? AND row_num<2000000000 ORDER BY row_num LIMIT 1')
@@ -2428,8 +2483,11 @@ export function createAssistant({ store, config = {} }) {
   }
 
   /** What the formula cells of a proposal row will give ({ gives, fallback }, server/formula-gives.mjs). */
-  function rowFormulaGives(change, target, session) {
+  function rowFormulaGives(change, target, session = formulaReader.session()) {
     if (!target?.formulas || !Object.keys(target.formulas).length) return { gives: {}, fallback: [] };
+    // A record no longer at a sheet row (a sync moved it aside): its formulas cannot be read there.
+    const header = moduleMap.get(change.sheet)?.headerRow ?? 1;
+    if (!(target.row > header && target.row < 2_000_000_000)) return { gives: {}, fallback: Object.keys(target.formulas) };
     // A new row writes into its pre-made row: its ID formula stays, the rest is the proposal's.
     const formulas =
       change.create && change.sheet === 'Insectary_data'
@@ -2466,7 +2524,9 @@ export function createAssistant({ store, config = {} }) {
    * (`hintTable`; a row gives their index).
    */
   function proposalView(proposal, row) {
-    const changes = (row?.changes_json && parse(row.changes_json)) || proposal.changes;
+    const created = parse(row?.created_json ?? 'null') ?? {};
+    // Each row as the sheet has its record now (one a sync replaced: the record at its row with its label).
+    const changes = ((row?.changes_json && parse(row.changes_json)) || proposal.changes).map(c => withCurrentRecord(c, created));
     const status = row?.status ?? proposal.status;
     const open = status === 'pending';
     // A butterfly the row would leave preserved without CAM or tube: those cells are marked (and shown) until filled.
@@ -2488,7 +2548,6 @@ export function createAssistant({ store, config = {} }) {
         ]),
       ),
     ];
-    const created = parse(row?.created_json ?? 'null') ?? {};
     const locked = (sheet, keys) => keys.filter(f => !TYPED_OVER_FORMULA[sheet]?.has(f) && !isSumField(sheet, f));
     const page = parse(row?.page_json ?? 'null');
     const view = parse(row?.view_json ?? 'null');
