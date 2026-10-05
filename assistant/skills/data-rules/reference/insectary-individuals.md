@@ -100,12 +100,8 @@ Medium rules and ethanol exceptions: [samples-ids.md](samples-ids.md).
   Ikiam), Pedigree, T2_Preservation_medium (from Tube_2_tissue: `NA` → `NA`,
   `NOT_COLLECTED` → `NOT_COLLECTED`), Photo_dorsal and Photo_ventral (from
   CAM_ID; `NA` when the CAM is `NA`).
-
-## LIFESTAGE
-
-A row with a date in Intro2Insectary_date (emerged, or brought in from the
-field) is `Adult`. Preserved eggs and larvae have their stage (below). Older
-rows with LIFESTAGE empty stay as they are.
+- CAM_ID_CollData: `NA` for a reared butterfly (it has no Collection_data
+  row).
 
 ## Death causes
 
@@ -138,7 +134,7 @@ instars of Sep 2026).
 | Wild_Reared, CLUTCH NUMBER | `Reared`, the clutch (`994(3)`) |
 | Intro2Insectary_date | `NA` |
 | Sex | `NOT_COLLECTED` (Sanger's category for a sex not recorded) |
-| LIFESTAGE | `Egg`, `1st instar larva` … `5th instar larva`, `Pre-pupa` |
+| LIFESTAGE (used only for this) | `Egg`, `1st instar larva` … `5th instar larva`, `Pre-pupa` |
 | Death_date | the preservation date |
 | Death_cause, Preserved_Dead_Alive | `Killed_Preserved` and `Alive`, or `Other` and `Dead` (found dead) |
 | CAM_ID, Tube_1 | a CAM; one tube `WHOLE_ORGANISM` `Flash frozen` |
