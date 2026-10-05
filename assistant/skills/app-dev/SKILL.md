@@ -48,7 +48,9 @@ description: Change the web app itself (Ikiam Insectary DB): its screens, grids,
    and `git push`.
 5. Deploy: first check that no proposal is being applied (`list_proposals`,
    status `applying`) and tell the person the app restarts for about a
-   minute; an apply caught by the restart is left unconfirmed. Then
+   minute; an apply caught by the restart is left unconfirmed (saves made
+   during the restart, and those waiting for Google, are kept and written by
+   the new process). Then
    `scripts/deploy.sh`. It builds, tests, makes a new release,
    restarts the app (about a minute; T3 chats keep running) and refreshes the
    T3 workspaces; it stops if your commit is not on GitHub.

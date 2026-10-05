@@ -23,7 +23,7 @@ export const QUERY_TOOL = {
     description: [
       'Read-only SQLite on a copy of the sheets (refreshed within a minute of a save): counts, ranges, comparisons across sheets, cell histories.',
       '- A table per sheet, its rows in use (<sheet>_all: also the empty pre-made rows); "CLUTCH NUMBER": names with spaces or signs quoted; _row: sheet row; _id: recordId; dates YYYY-MM-DD.',
-      '- _tables; _columns (sheet, column, type, list); history (at, sheet, row, id_label, record_id, field, before, after, who, source, reason).',
+      '- _tables; _columns (sheet, column, type, list); history (at, sheet, row, id_label, record_id, field, before, after, who, source, reason); staged: entries not in the sheet yet.',
       '- fold(text): lowercase, no accents; km(lat1, lon1, lat2, lon2).',
     ].join('\n'),
     parameters: {

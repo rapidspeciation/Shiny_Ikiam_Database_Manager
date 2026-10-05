@@ -18,6 +18,7 @@ import { FILTERS_DOC, FIND_BUDGET, RECORD_TOOLS, compactRecord, countRecords, fi
 import { RESULT_BUDGET, fitList, fitResult } from './tool-budget.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
 import { duplicateIdRow, insectaryIdPlaces, insectaryIdRow, newRowFormulaFields } from './premade.mjs';
+import { claimHolder, claimsOf } from './claims.mjs';
 import { BETWEEN_ROWS, VIEW_PARAM, VIEW_UPDATE, readView, showBetween, viewColumns } from './proposal-view.mjs';
 import { proposalSampleWarnings } from './preserved.mjs';
 import { issuesByRecord, lookAt, rowIssues } from './look-at.mjs';
@@ -867,6 +868,8 @@ export function createAssistant({ store, config = {} }) {
       if (ids.proposed.has(key)) return { error: `${at}: ${value} appears twice in this proposal` };
       ids.proposed.add(key);
     }
+    const held = heldByEntry(sheet, values);
+    if (held) return { error: `${at}: ${held}` };
     if (sheet === 'Insectary_data' && values.Insectary_ID !== undefined) {
       values.Insectary_ID = String(values.Insectary_ID).trim().toUpperCase();
       // A suffixed ID (W2B.2): the second butterfly given an ID, in a row inserted below that ID's rows.
@@ -894,6 +897,48 @@ export function createAssistant({ store, config = {} }) {
         ...(dropped.length ? { dropped } : {}),
       },
     };
+  }
+
+  /**
+   * A tool's answer with what it should know about Google: the workbook not answering normally
+   * (saves wait in the app, server/outbox.mjs), and Emergidos/Clutches entries kept in the app
+   * (server/staged.mjs; the `staged` table of `query`). Unchanged when all is normal.
+   */
+  function withGoogle(out) {
+    if (!out || typeof out !== 'object' || Array.isArray(out) || !store.googleState) return out;
+    const { workbook, outbox, staged } = store.googleState();
+    const kept = staged.staged + staged.sent;
+    return {
+      ...out,
+      ...(workbook.state !== 'ok' || outbox.waiting
+        ? {
+            google: {
+              workbook: workbook.state,
+              since: workbook.since,
+              waitingSaves: outbox.waiting,
+              note: 'Google Sheets is not answering normally (the workbook recalculates for minutes after edits). Saves and applied proposals are kept in the app and written in order when it answers: do not apply again, deploy or restart meanwhile.',
+            },
+          }
+        : {}),
+      ...(kept
+        ? {
+            staged: `${kept} Emergidos/Clutches changes are kept in the app, not in the sheet yet (query: table staged). Their Insectary IDs, CAMs, tubes and clutch numbers are taken.`,
+          }
+        : {}),
+    };
+  }
+
+  /**
+   * An identifier of these values (Insectary ID, CAM, tube, clutch number) held by an Emergidos or
+   * Clutches entry not in the sheet yet, or a save waiting for Google (server/claims.mjs): why, or null.
+   */
+  function heldByEntry(sheet, values) {
+    for (const c of claimsOf(sheet, values)) {
+      const holder = claimHolder(db, c.kind, c.value);
+      if (holder)
+        return `${c.value} is held by ${holder.name}'s entry in the app, not in the sheet yet (Emergidos/Clutches, or a save waiting for Google): use another ${c.kind === 'insectary' ? 'Insectary ID (the next free one)' : c.kind}, or ask the person`;
+    }
+    return null;
   }
 
   /** The IDs of a new row that must not be used elsewhere: [field, value, key] (tubes across the workbook). */
@@ -953,6 +998,9 @@ export function createAssistant({ store, config = {} }) {
         replaceFormula = [];
       const unwritten = Object.keys(values).find(key => isNotWritten(old.sheet, key));
       if (unwritten) return { error: `${old.label}: ${notWrittenWhy(old.sheet, unwritten)}` };
+      // A pre-made row someone is registering in Emergidos (kept in the app, not in the sheet yet), or an ID they hold.
+      const held = heldByEntry(old.sheet, { ...values, ...(old.sheet === 'Insectary_data' && old.observed === false ? { Insectary_ID: old.values?.Insectary_ID } : {}) });
+      if (held) return { error: `${old.label}: ${held}` };
       for (const key of Object.keys(values)) {
         // A count kept as a sum is shown and written as its formula text (=12+15), over the old sum.
         const sum = isSumField(old.sheet, key) ? simpleSum(old.formulas?.[key]) : null;
@@ -1802,8 +1850,8 @@ export function createAssistant({ store, config = {} }) {
     const params = [owner(context.user), ...(chat ? [chat] : [])];
     const order = 'ORDER BY created_at DESC, rowid DESC';
     const rows = [
-      ...db.prepare(`${select} AND status IN ('pending', 'applying', 'shown') ${order} LIMIT 50`).all(...params),
-      ...(chat ? db.prepare(`${select} AND status NOT IN ('pending', 'applying', 'shown') ${order} LIMIT 10`).all(...params) : []),
+      ...db.prepare(`${select} AND status IN ('pending', 'applying', 'queued', 'shown') ${order} LIMIT 50`).all(...params),
+      ...(chat ? db.prepare(`${select} AND status NOT IN ('pending', 'applying', 'queued', 'shown') ${order} LIMIT 10`).all(...params) : []),
     ];
     return {
       ...(chat ? { chat, chatLink: chatProposalsLink(chat) } : { chat: 'all chats (pending only)' }),
@@ -2194,6 +2242,11 @@ export function createAssistant({ store, config = {} }) {
    */
   async function applyProposal(proposal, user, { requestId, indexes, reason, doubtful = null }) {
     if (isTable(proposal)) throw Object.assign(new Error(NOT_A_PROPOSAL), { status: 409, code: 'read_only_table' });
+    if (proposal.status === 'queued')
+      throw Object.assign(new Error('Proposal is already waiting for Google: it is written when Google answers.'), {
+        status: 409,
+        code: 'proposal_used',
+      });
     if (proposal.status !== 'pending')
       throw Object.assign(new Error('Proposal has already been applied.'), { status: 409, code: 'proposal_used' });
     if (!EDITORS.includes(user.role))
@@ -2258,9 +2311,6 @@ export function createAssistant({ store, config = {} }) {
       .filter(([, c]) => Object.keys(c.values ?? {}).length);
     const written = writes.map(([i]) => i);
     if (!writes.length) throw Object.assign(new Error('Only doubtful cells were left to write.'), { status: 400, code: 'nothing_selected' });
-    // The app is stopping (a deploy): the proposal stays pending, to apply in a minute.
-    if (store.draining)
-      throw Object.assign(new Error('The app is restarting; apply it again in a minute.'), { status: 503, code: 'shutting_down' });
     const claimed = db
       .prepare("UPDATE ai_proposals SET status = 'applying' WHERE id = ? AND status = 'pending'")
       .run(proposal.id);
@@ -2268,11 +2318,14 @@ export function createAssistant({ store, config = {} }) {
       throw Object.assign(new Error('Proposal is already being applied.'), { status: 409, code: 'proposal_used' });
     changed(proposal.owner_id);
     try {
+      // While Google does not answer (the workbook recalculating, a restart) the save waits in the
+      // app (server/outbox.mjs): the proposal is `queued`, and applied once the save is written.
       const result = await store.applyProposal(
         writes.map(([, c]) => c),
-        { user, requestId, reason: clip(reason || proposal.reason, 500) },
+        { user, requestId, reason: clip(reason || proposal.reason, 500), outbox: { kind: 'proposal', ref: proposal.id } },
       );
-      const status = ['verified', 'unchanged'].includes(result?.status) ? 'applied' : 'needs_review';
+      const status =
+        result?.status === 'queued' ? 'queued' : ['verified', 'unchanged'].includes(result?.status) ? 'applied' : 'needs_review';
       const created = Object.fromEntries((result?.created ?? []).map(c => [c.clientId, c.recordId]));
       db.prepare(
         'UPDATE ai_proposals SET status = ?, applied_at = ?, applied_json = ?, created_json = ?, changes_json = ? WHERE id = ?',
@@ -2286,6 +2339,7 @@ export function createAssistant({ store, config = {} }) {
         status,
         applied: written,
         result,
+        ...(status === 'queued' ? { outboxId: result.outboxId, workbook: result.workbook } : {}),
         ...(unchecked.length ? { doubtful: { count: unchecked.length, how: doubtful } } : {}),
         ...(unreadable.length ? { unreadable } : {}),
         ...keptFromSheet,
@@ -2301,6 +2355,45 @@ export function createAssistant({ store, config = {} }) {
       changed(proposal.owner_id);
     }
   }
+
+  /**
+   * A queued proposal's save settled (server/outbox.mjs): written (applied), refused as a whole
+   * (pending again, its cells read again), or Google refused it (needs_review).
+   */
+  function queuedSettled(item) {
+    const proposal = db.prepare("SELECT * FROM ai_proposals WHERE id = ? AND status = 'queued'").get(item.ref);
+    if (!proposal) return;
+    if (item.status === 'done') {
+      const result = parse(item.result_json) ?? {};
+      const created = Object.fromEntries((result.created ?? []).map(c => [c.clientId, c.recordId]));
+      db.prepare("UPDATE ai_proposals SET status = 'applied', applied_at = ?, created_json = ? WHERE id = ?").run(now(), json(created), proposal.id);
+      const issueIds = parse(proposal.issues_json ?? 'null');
+      const changes = parse(proposal.changes_json) ?? [];
+      const written = parse(proposal.applied_json) ?? [];
+      const user = parse(item.user_json);
+      if (issueIds?.length && user)
+        markApplied(store, issueIds, { recordIds: new Set(written.map(i => changes[i]?.recordId).filter(Boolean)), proposalId: proposal.id, user });
+    } else {
+      const refused = item.status === 'conflict';
+      db.prepare('UPDATE ai_proposals SET status = ? WHERE id = ?').run(refused ? 'pending' : 'needs_review', proposal.id);
+      if (refused) void readAgain(parse(item.error_json)?.details?.items ?? []).catch(() => {});
+    }
+    changed(proposal.owner_id);
+  }
+  store.outbox?.watch(item => {
+    if (item.kind === 'proposal') queuedSettled(item);
+  });
+  // Settled while this was not listening (a restart): settled once the assistant is set up.
+  setImmediate(() => {
+    try {
+      for (const p of db.prepare("SELECT id FROM ai_proposals WHERE status = 'queued'").all()) {
+        const item = db.prepare("SELECT * FROM outbox WHERE kind = 'proposal' AND ref = ? ORDER BY rowid DESC LIMIT 1").get(p.id);
+        if (item && ['done', 'conflict', 'failed'].includes(item.status)) queuedSettled(item);
+      }
+    } catch {
+      /* The database is closing (tests). */
+    }
+  });
 
   /** The rows of a refused save where someone else changed a cell: read from the sheet again (as the sheet hook does). */
   async function readAgain(items) {
@@ -2941,7 +3034,7 @@ export function createAssistant({ store, config = {} }) {
   function chatGroups(ownerId) {
     const rows = db
       .prepare(
-        "SELECT t3_thread, t3_title, status, coalesce(updated_at, created_at) at FROM ai_proposals WHERE owner_id = ? AND status IN ('pending', 'applying', 'shown')",
+        "SELECT t3_thread, t3_title, status, coalesce(updated_at, created_at) at FROM ai_proposals WHERE owner_id = ? AND status IN ('pending', 'applying', 'queued', 'shown')",
       )
       .all(ownerId);
     const groups = new Map();
@@ -3079,7 +3172,7 @@ export function createAssistant({ store, config = {} }) {
         date: args.date ? clip(args.date, 10) : undefined,
         collector: args.collector ? clip(args.collector, 120) : undefined,
       });
-    if (name === 'propose_changes') return proposeChanges(args, context);
+    if (name === 'propose_changes') return withGoogle(await proposeChanges(args, context));
     if (name === 'update_proposal') return updateProposal(args, context);
     if (name === 'get_proposal') return getProposal(args, context);
     if (name === 'list_proposals') return listProposals(args, context);
@@ -3100,7 +3193,7 @@ export function createAssistant({ store, config = {} }) {
       return { ...withoutMsgs(out), certainties: CERTAINTIES };
     }
     if (name === 'get_alerts') return withoutMsgs(alerts(store));
-    if (name === 'match_notebook') return matchNotebook(args, context);
+    if (name === 'match_notebook') return withGoogle(await matchNotebook(args, context));
     if (HISTORY_TOOL_NAMES.has(name)) return runHistoryTool(store, name, args, context, { publicUrl: config.publicUrl });
     if (name === 'apply_proposal') {
       const proposal = db
@@ -3116,8 +3209,14 @@ export function createAssistant({ store, config = {} }) {
           doubtful: args.confirmDoubtful === true ? 'confirm' : args.skipDoubtful === true ? 'skip' : null,
         });
         context.applied.push(proposal.id);
-        return {
+        return withGoogle({
           status: out.status,
+          ...(out.status === 'queued'
+            ? {
+                queued: 'Google Sheets is not answering now (the workbook recalculates after edits): the save is kept in the app and written automatically, in order, when Google answers. Cambios propuestos shows it as waiting for Google. Do not apply it again, deploy or restart.',
+                workbook: out.workbook,
+              }
+            : {}),
           rows: out.applied.length,
           ...(out.keptFromSheet ? { keptFromSheet: sheetList(out.keptFromSheet) } : {}),
           ...(out.doubtful ? { doubtful: out.doubtful } : {}),
@@ -3128,7 +3227,7 @@ export function createAssistant({ store, config = {} }) {
                   'These cells could not be read and nobody filled them: they were left as the sheet has them (empty). Ask the person for their values; they go in a new proposal.',
               }
             : {}),
-        };
+        });
       } catch (e) {
         if (e.code === 'sheet_changed_again')
           return {
@@ -3493,11 +3592,11 @@ export function createAssistant({ store, config = {} }) {
       // all=1: the pending ones and the last few reviewed (the panel shows five), not every old proposal on each change.
       // Tables shown (show_rows) go with the pending ones; a closed one only on its own page.
       const rows = [
-        ...db.prepare(`${select}${where} AND p.status IN ('pending', 'applying', 'shown') ${order} LIMIT 200`).all(...args),
+        ...db.prepare(`${select}${where} AND p.status IN ('pending', 'applying', 'queued', 'shown') ${order} LIMIT 200`).all(...args),
         ...(query.all
           ? db
               .prepare(
-                `${select}${where} AND p.status NOT IN ('pending', 'applying', 'shown'${query.only ? '' : ", 'closed'"}) ${order} LIMIT ?`,
+                `${select}${where} AND p.status NOT IN ('pending', 'applying', 'queued', 'shown'${query.only ? '' : ", 'closed'"}) ${order} LIMIT ?`,
               )
               .all(...args, Math.min(Number(query.reviewed) || 5, 50))
           : []),
@@ -3698,6 +3797,7 @@ export function createAssistant({ store, config = {} }) {
       const proposal = teamProposal(proposalMatch[1], user);
       if (!proposal) return bad(404, 'not_found', 'Proposal not found.');
       if (isTable(proposal)) return bad(409, 'read_only_table', 'Una tabla del asistente solo se lee.');
+      if (proposal.status === 'queued') return bad(409, 'proposal_used', 'Proposal is already waiting for Google: it is written when Google answers.');
       if (proposal.status !== 'pending') return bad(409, 'proposal_used', 'Proposal has already been applied.');
       const requestId = typeof body.requestId === 'string' ? body.requestId : '';
       if (requestId.length < 8 || requestId.length > 120)
@@ -3710,7 +3810,8 @@ export function createAssistant({ store, config = {} }) {
       try {
         const doubtful = body.doubtful === 'confirm' || body.doubtful === 'skip' ? body.doubtful : null;
         const out = await applyProposal(proposal, user, { requestId, indexes: body.indexes, reason: body.reason, doubtful });
-        return { status: out.status === 'applied' ? 200 : 409, body: out };
+        // queued: Google does not answer; the save waits in the app and is written when it does (server/outbox.mjs).
+        return { status: out.status === 'applied' || out.status === 'queued' ? 200 : 409, body: out };
       } catch (cause) {
         const current = (parse(proposal.changes_json) ?? []).map(change => {
           const record = store.getRecord(change.recordId);

@@ -19,6 +19,9 @@
 // - `history`: every cell saved (by the app or edited in Google Sheets and read by
 //   a sync), people by their display names, without the formulas syncs logged
 //   only because their row moved.
+// - `staged`: the Emergidos and Clutches entries kept in the app, not in the sheet
+//   yet (server/staged.mjs), a row per cell: who, when, the tab, a new row or an
+//   edit, the sheet's row (none for a new row), the value and the sheet's before.
 // Nothing else of the app's database (people's accounts, sessions, settings, the
 // assistant's chats) is copied.
 //
@@ -38,7 +41,7 @@ import { listOptions } from './verify.mjs';
 import { PURPOSES } from './history.mjs';
 
 /** Changes when the copy's layout does: a new version rebuilds it. */
-const LAYOUT = 1;
+const LAYOUT = 2;
 export const COPY_FILE = 'sheets.sqlite';
 /** The copy beside a database file (none for an in-memory database). */
 export const copyBeside = databasePath => (!databasePath || databasePath === ':memory:' ? null : join(dirname(databasePath), COPY_FILE));
@@ -165,7 +168,8 @@ export function sourceState(db) {
   const actions = db.prepare("SELECT count(*) n, max(created_at) u, total(status IN ('verified','observed')) d FROM actions").get();
   const changes = db.prepare('SELECT count(*) n, max(rowid) m FROM changes').get();
   const people = db.prepare("SELECT count(*) n, group_concat(id || ':' || display_name, ',') p FROM users").get();
-  const all = [`v${LAYOUT}`, ...sheets, `a${actions.n}-${actions.u}-${actions.d}`, `c${changes.n}-${changes.m}`, `p${people.n}-${people.p}`];
+  const staged = hasTable(db, 'staged') ? db.prepare('SELECT count(*) n, max(updated_at) u, total(length(values_json)) l FROM staged').get() : { n: 0 };
+  const all = [`v${LAYOUT}`, ...sheets, `a${actions.n}-${actions.u}-${actions.d}`, `c${changes.n}-${changes.m}`, `p${people.n}-${people.p}`, `s${staged.n}-${staged.u}-${staged.l}`];
   return createHash('sha1').update(all.join('|')).digest('base64url');
 }
 
@@ -222,6 +226,7 @@ export function buildCopy(source, out, { now = () => new Date() } = {}) {
       }
       copy.exec('CREATE INDEX _columns_sheet ON _columns(sheet)');
       changeCount = copyHistory(source, copy, kinds);
+      copyStaged(source, copy, kinds);
     } finally {
       if (!inSource) source.exec('COMMIT');
     }
@@ -240,6 +245,45 @@ export function buildCopy(source, out, { now = () => new Date() } = {}) {
     if (copy.isOpen) copy.close();
     rmSync(temp, { force: true });
     throw e;
+  }
+}
+
+const hasTable = (db, name) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name);
+
+/** The copy's `staged` table: the entries kept in the app, a row per cell. */
+function copyStaged(source, copy, kinds) {
+  copy.exec(`CREATE TABLE staged(at TEXT, who TEXT, tab TEXT, kind TEXT, sheet TEXT, row INTEGER, id_label TEXT, record_id TEXT,
+    field TEXT, value, before, status TEXT)`);
+  if (!hasTable(source, 'staged')) return;
+  const insert = copy.prepare('INSERT INTO staged VALUES (?,?,?,?,?,?,?,?,?,?,?,?)');
+  const shown = (sheet, field, v) => {
+    if (v && typeof v === 'object' && 'formula' in v) return v.formula;
+    const kind = kinds.get(sheet)?.get(field) ?? 'text';
+    return cell(kind === 'id' ? 'text' : kind, v);
+  };
+  for (const s of source
+    .prepare(
+      `SELECT s.*, u.display_name who, r.row_num FROM staged s LEFT JOIN users u ON u.id = s.actor LEFT JOIN records r ON r.id = s.record_id
+       WHERE s.status IN ('staged', 'sent') ORDER BY s.rowid`,
+    )
+    .all()) {
+    const values = JSON.parse(s.values_json || '{}');
+    const base = JSON.parse(s.base_json || '{}');
+    for (const [field, value] of Object.entries(values))
+      insert.run(
+        s.updated_at,
+        s.who ?? s.actor,
+        PURPOSES[s.purpose] ?? s.purpose,
+        s.kind === 'create' ? 'new row' : 'edit',
+        s.sheet,
+        s.kind === 'create' ? null : (s.row_num ?? null),
+        s.label,
+        s.kind === 'create' ? `staged:${s.client_id}` : s.record_id,
+        field,
+        shown(s.sheet, field, value),
+        s.kind === 'create' ? null : shown(s.sheet, field, base[field] ?? null),
+        s.status === 'sent' ? 'being written' : 'staged',
+      );
   }
 }
 
@@ -416,6 +460,12 @@ export function createSheetsCopy({ store, path, delayMs = 30_000, startMs = 3_00
   });
   // After every sync (also one that read nothing new: a rebuild put off during it); unchanged sources are skipped.
   const unwatchSyncs = store.watchSyncs?.(() => schedule(0));
+  // Emergidos and Clutches entries kept in the app (the `staged` table): within delayMs too.
+  const unwatchLive = store.watchLive?.(kind => {
+    if (kind !== 'staged') return;
+    changed = true;
+    schedule(delayMs);
+  });
   schedule(startMs);
 
   return {
@@ -428,6 +478,7 @@ export function createSheetsCopy({ store, path, delayMs = 30_000, startMs = 3_00
       clearTimeout(timer);
       unwatchRecords?.();
       unwatchSyncs?.();
+      unwatchLive?.();
       child?.kill();
     },
   };
