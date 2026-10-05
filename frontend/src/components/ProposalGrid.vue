@@ -444,7 +444,7 @@ const typesOf = (sheet: string) => ({
 })
 /** Columns that can still be added to a sheet's table. */
 const addable = (sheet: string, fields: string[]) => {
-  // Deprecated columns are never shown (server/proposal-columns.mjs).
+  // Columns beyond the ones the team handles (after Notes_Insectary_data) are never offered (server/proposal-columns.mjs).
   const hidden = props.proposal.shownColumns?.[sheet]?.hidden ?? []
   return (fieldsOf(sheet) ?? []).filter(f => !f.readonly && !f.unavailable && !fields.includes(f.key) && !hidden.includes(f.key)).map(f => f.key)
 }
