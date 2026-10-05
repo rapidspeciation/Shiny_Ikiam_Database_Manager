@@ -86,11 +86,14 @@ test('null in a proposal is no change, only {clear:true} empties a cell; the tab
       rows: [{ index: 0, values: { 'NUMBER OF EGGS': null, 'HATCHING DATE': { clear: true } } }],
     });
     assert.equal(dropped.revision, 2, JSON.stringify(dropped));
-    assert.deepEqual(dropped.rows[0].values, { 'HATCHING DATE': { clear: true } });
+    // Only what changed comes back: the row revised, and how many rows the proposal has.
+    assert.equal(dropped.rows, 1);
+    assert.deepEqual(dropped.changed.map(r => r.index), [0]);
+    assert.deepEqual(dropped.changed[0].values, { 'HATCHING DATE': { clear: true } });
     [shown] = await list();
     assert.deepEqual(shown.changes[0].values, { 'HATCHING DATE': null }, 'the table gets null: the cell to empty');
     assert.equal(shown.changes[0].rowValues['HATCHING DATE'], d('2026-09-05'));
-    const read = await call('get_proposal', { proposalId: proposed.proposalId });
+    const read = await call('get_proposal', { proposalId: proposed.proposalId, full: true });
     assert.deepEqual(read.rows[0].values, { 'HATCHING DATE': { clear: true } });
 
     // A change merged through `changes` follows the same rule.
@@ -98,7 +101,7 @@ test('null in a proposal is no change, only {clear:true} empties a cell; the tab
       proposalId: proposed.proposalId,
       changes: [{ recordId: stock(2).id, values: { 'HATCHING DATE': null, 'NUMBER OF LARVAE': '10' } }],
     });
-    assert.deepEqual(merged.rows[0].values, { 'NUMBER OF LARVAE': 10 }, 'null took back the clear');
+    assert.deepEqual(merged.changed[0].values, { 'NUMBER OF LARVAE': 10 }, 'null took back the clear');
     await call('update_proposal', { proposalId: proposed.proposalId, rows: [{ index: 0, values: { 'HATCHING DATE': { clear: true } } }] });
 
     const applied = await call('apply_proposal', { proposalId: proposed.proposalId });
@@ -133,12 +136,15 @@ test('notes the assistant adds keep the "d/m/yy INI:" form and go after the exis
     // Revised: the new text replaces the assistant's own addition, the old note stays; the full
     // value sent back as it was read is not appended twice; {replace} rewrites it only when asked.
     let out = await call('update_proposal', { proposalId: proposed.proposalId, rows: [{ index: 1, values: { NOTES: 'larvas sanas' } }] });
-    const index = out.rows.find(r => r.label === '900').index;
-    assert.equal(out.rows[index].values.NOTES, `15/7/26 MJS: some eggs dry | ${dated('larvas sanas')}`);
-    out = await call('update_proposal', { proposalId: proposed.proposalId, rows: [{ index, values: { NOTES: out.rows[index].values.NOTES } }] });
-    assert.equal(out.rows[index].values.NOTES, `15/7/26 MJS: some eggs dry | ${dated('larvas sanas')}`);
+    const [revised] = out.changed;
+    const { index } = revised;
+    assert.equal(revised.label, '900');
+    assert.equal(revised.values.NOTES, `15/7/26 MJS: some eggs dry | ${dated('larvas sanas')}`);
+    out = await call('update_proposal', { proposalId: proposed.proposalId, rows: [{ index, values: { NOTES: revised.values.NOTES } }] });
+    assert.equal(out.unchanged, true, 'the note sent back as it was read is not appended twice');
+    assert.deepEqual(out.changed, []);
     out = await call('update_proposal', { proposalId: proposed.proposalId, rows: [{ index, values: { NOTES: { replace: 'some eggs dry' } } }] });
-    assert.equal(out.rows[index].values.NOTES, 'some eggs dry');
+    assert.equal(out.changed[0].values.NOTES, 'some eggs dry');
     [shown] = await list();
     assert.equal(shown.changes[index].values.NOTES, 'some eggs dry');
   } finally {
@@ -295,21 +301,26 @@ test('find_records: filters, distance to a place, computed values with their for
       near: { location: 'ikiam', km: 15 },
       fields: ['CAM_ID', 'Collection_location', 'DECIMAL_LATITUDE'],
     });
-    assert.deepEqual(near.found.map(r => r.values.CAM_ID), ['CAM000001', 'CAM000005']);
-    assert.equal(near.found[0].distanceKm, 0);
-    assert.ok(near.found[1].distanceKm > 5 && near.found[1].distanceKm < 15, String(near.found[1].distanceKm));
+    // With fields, a table: id, row, label, the columns asked for, and the distance.
+    assert.deepEqual(near.columns, ['id', 'row', 'label', 'CAM_ID', 'Collection_location', 'DECIMAL_LATITUDE', 'distanceKm']);
+    const cell = (answer, i, column) => answer.rows[i][answer.columns.indexOf(column)];
+    assert.deepEqual(near.rows.map((_, i) => cell(near, i, 'CAM_ID')), ['CAM000001', 'CAM000005']);
+    assert.equal(cell(near, 0, 'distanceKm'), 0);
+    assert.ok(cell(near, 1, 'distanceKm') > 5 && cell(near, 1, 'distanceKm') < 15, String(cell(near, 1, 'distanceKm')));
     assert.equal(near.near.centre.name, 'Ikiam');
     assert.equal(near.near.rowsWithoutPlace, 1, 'the row without a place is counted apart');
-    // Only the columns asked for; a formula column with its computed value, its formula text when asked.
-    assert.deepEqual(Object.keys(near.found[0].values).sort(), ['CAM_ID', 'Collection_location', 'DECIMAL_LATITUDE']);
-    assert.equal(near.found[0].values.DECIMAL_LATITUDE, IKIAM.lat);
-    assert.ok(!near.found[0].formulas);
+    // A formula column with its computed value, its formula text when asked.
+    assert.equal(cell(near, 0, 'DECIMAL_LATITUDE'), IKIAM.lat);
+    assert.ok(!near.formulas);
     assert.deepEqual(near.formulaColumns, ['DECIMAL_LATITUDE']);
-    // The sheet once for all rows: each row is its id, row and values.
     assert.equal(near.sheet, 'Collection_data');
-    assert.deepEqual(Object.keys(near.found[0]).sort(), ['distanceKm', 'id', 'row', 'values']);
+    assert.ok(!('found' in near));
+    // Column names as the person says them: case, spaces and accents aside.
+    const loose = await call('find_records', { module: 'Collection_data', filters: { 'cam id': 'CAM000001' }, fields: ['decimal latitude'] });
+    assert.deepEqual(loose.columns, ['id', 'row', 'label', 'DECIMAL_LATITUDE']);
+    assert.equal(loose.rows.length, 1);
     const withText = await call('find_records', { module: 'Collection_data', filters: { CAM_ID: 'CAM000001' }, fields: ['DECIMAL_LATITUDE'], formulas: true });
-    assert.equal(withText.found[0].formulas.DECIMAL_LATITUDE, LOOKUP);
+    assert.equal(withText.formulas[withText.rows[0][0]].DECIMAL_LATITUDE, LOOKUP);
 
     // By identifier, as before: a count typed as a sum shows its value and its terms.
     const byId = await call('find_records', { module: 'Insectary_stocks', field: 'CLUTCH NUMBER', values: ['900', '999'] });
@@ -325,22 +336,24 @@ test('find_records: filters, distance to a place, computed values with their for
     const page = await call('find_records', { module: 'Collection_data', filters: { SPECIES: 'Oleria onega' }, limit: 2 });
     assert.equal(page.total, 5);
     assert.equal(page.returned, 2);
-    assert.match(page.truncated, /3 more rows not shown.*offset=2/);
+    assert.equal(page.truncated, true);
+    assert.match(page.next, /3 more rows not shown.*offset=2/);
     const cut = findRecords(store.db, { module: 'Collection_data', filters: { SPECIES: { contains: 'oleria' } } }, { budget: 400 });
     assert.ok(cut.returned < cut.total);
-    assert.match(cut.truncated, /size limit.*Narrow with filters/);
+    assert.equal(cut.truncated, true);
+    assert.match(cut.next, /size limit.*offset=.*narrow with filters/);
     // Date ranges, lists and "not".
     const dates = await call('find_records', {
       module: 'Collection_data',
       filters: { Collection_date: { from: '2026-01-01', to: '2026-04-30' }, Preservation_medium: { not: 'Ethanol' } },
       fields: ['CAM_ID'],
     });
-    assert.deepEqual(dates.found.map(r => r.values.CAM_ID), ['CAM000002', 'CAM000004']);
+    assert.deepEqual(dates.rows.map(r => r[3]), ['CAM000002', 'CAM000004']);
 
     // Mistakes are explained.
     assert.match((await call('find_records', { module: 'Collection_data', near: { location: 'Mordor', km: 5 } })).error, /No single Collection_location/);
     assert.match((await call('find_records', { module: 'Collection_data', near: { location: 'iki', km: 5 } })).error, /did you mean: Ikiam, Mariposario Ikiam/);
-    assert.match((await call('find_records', { module: 'Collection_data', filters: { Especie: 'x' } })).error, /Unknown column Especie/);
+    assert.match((await call('find_records', { module: 'Collection_data', filters: { Especie: 'x' } })).error, /Unknown column Especie in Collection_data; did you mean SPECIES/);
     assert.match((await call('find_records', { module: 'Insectary_stocks', near: { location: 'Ikiam', km: 5 } })).error, /no coordinates/);
   } finally {
     store.close();
@@ -397,9 +410,16 @@ test('Claude Code loads the reading and proposal tools with the chat; describe_s
       'update_proposal',
     ]);
 
-    const sheet = await call('describe_sheet', { module: 'Sperm_dissections' });
+    // The latest filled rows only when asked.
+    assert.ok(!('latestRows' in (await call('describe_sheet', { module: 'Sperm_dissections' }))));
+    const sheet = await call('describe_sheet', { module: 'Sperm_dissections', latestRows: 3 });
     assert.deepEqual(sheet.latestRows.map(r => r.row), [7, 6, 5], 'the pre-made rows are left out');
     assert.deepEqual(Object.keys(sheet.latestRows[0]).sort(), ['id', 'row', 'values']);
+    // Only some columns, named loosely.
+    const some = await call('describe_sheet', { module: 'Sperm_dissections', columns: ['father split tube', 'notes'], latestRows: 1 });
+    assert.deepEqual(some.columns.map(c => c.key), ['Father_Split_tube', 'Notes']);
+    assert.deepEqual(Object.keys(some.latestRows[0].values).sort(), ['Father_Split_tube', 'Notes']);
+    assert.match((await call('describe_sheet', { module: 'Sperm_dissections', columns: ['Fathr_CAMid'] })).error, /did you mean Father_CAMid/);
     assert.equal(sheet.columns.find(c => c.key === 'T_Sperm').formula, true);
     assert.equal(sheet.columns.find(c => c.key === 'SPECIES').formula, undefined);
     assert.deepEqual(sheet.columns.find(c => c.key === 'Father_Split_tube').values, ['No']);

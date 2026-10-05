@@ -105,7 +105,7 @@ test('match_notebook puts unreadable cells in the proposal for the person to fil
     assert.ok(listed.fields.includes('CAM_ID') && listed.fields.includes('Sex'), 'their columns show');
 
     const table = await call('get_proposal', { proposalId: out.proposalId });
-    assert.deepEqual(table.rows[1].unreadable, { Sex: { reason: 'smudged', filled: false } });
+    assert.deepEqual(table.attention.find(r => r.index === 1).unreadable, { Sex: { reason: 'smudged', filled: false } });
 
     // The person types the sex in the table: from then on it is written like any other cell.
     const typed = await http('POST', `/api/chat/proposals/${out.proposalId}/edit`, { cells: [{ key: second.key, field: 'Sex', value: 'male' }] });
@@ -146,7 +146,7 @@ test('a proposal of unreadable cells only writes nothing until someone fills the
 
     // The person tells the assistant: its value fills the cell.
     const updated = await call('update_proposal', { proposalId: out.proposalId, rows: [{ index: 0, values: { Sex: 'female' } }] });
-    assert.deepEqual(updated.rows[0].unreadable, { Sex: { reason: 'smudged', filled: true } });
+    assert.deepEqual(updated.changed[0].unreadable, { Sex: { reason: 'smudged', filled: true } });
     const applied = await call('apply_proposal', { proposalId: out.proposalId });
     assert.equal(applied.status, 'applied', JSON.stringify(applied));
     assert.ok(!applied.unreadable);

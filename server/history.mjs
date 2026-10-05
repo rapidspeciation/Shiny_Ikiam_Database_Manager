@@ -17,6 +17,7 @@ import { randomUUID } from 'node:crypto';
 import { msg, msgn, tpl } from './messages.mjs';
 import { comparable, moduleMap } from './schema.mjs';
 import { formulaRowShift } from './sheets.mjs';
+import { RESULT_BUDGET, fitList } from './tool-budget.mjs';
 
 /** Purpose → label shown to people (Spanish, like the rest of the app). */
 export const PURPOSES = {
@@ -1135,9 +1136,12 @@ export function sheetAsOf(store, query = {}) {
 
 const DAY = 864e5;
 const EPOCH = Date.UTC(1899, 11, 30);
-/** Dates of date columns as YYYY-MM-DD, formulas as their text. */
-function readable(sheet, field, value) {
-  if (value && typeof value === 'object' && 'formula' in value) return `fórmula ${value.formula}`;
+/**
+ * Dates of date columns as YYYY-MM-DD, formulas as their text (`formulas`) or as
+ * "(formula)": a sync logs a row's lookup formulas whole, kilobytes a row.
+ */
+function readable(sheet, field, value, formulas = true) {
+  if (value && typeof value === 'object' && 'formula' in value) return formulas ? `fórmula ${value.formula}` : '(formula)';
   const type = moduleMap.get(sheet)?.fields.find(f => f.key === field)?.type;
   if (type === 'date' && typeof value === 'number') return new Date(EPOCH + Math.round(value) * DAY).toISOString().slice(0, 10);
   return value;
@@ -1276,8 +1280,11 @@ export async function runHistoryTool(store, name, args = {}, context = {}, { pub
     summary: g.summary,
     counts: g.counts,
     sheets: g.sheets,
-    fields: g.fields,
-    reasons: g.reasons,
+    // A sync of many rows touches many columns and gives many reasons: the first ones.
+    fields: g.fields?.slice(0, 30),
+    ...(g.fields?.length > 30 ? { fieldsCount: g.fields.length } : {}),
+    reasons: g.reasons?.slice(0, 10),
+    ...(g.reasons?.length > 10 ? { reasonsCount: g.reasons.length } : {}),
     undone: g.undone,
     undoable: g.undoable,
     // The saves of a long group that match the filters (all of them: left out).
@@ -1286,9 +1293,11 @@ export async function runHistoryTool(store, name, args = {}, context = {}, { pub
       : {}),
     url: url(g.link),
   });
+  // Formula texts only when asked: a sync logs whole lookup formulas.
+  const formulas = args.formulas === true;
   /** A value as the assistant reads it. */
   const shown = (sheet, field, value) => {
-    const v = readable(sheet, field, value);
+    const v = readable(sheet, field, value, formulas);
     if (v === null || v === undefined || v === '') return '(empty)';
     return typeof v === 'object' ? JSON.stringify(v) : String(v);
   };
@@ -1305,13 +1314,16 @@ export async function runHistoryTool(store, name, args = {}, context = {}, { pub
         limit: Math.min(Number(args.limit) || 10, 30),
         offset: args.offset,
       });
-      return { groups: out.groups.map(brief), next: out.next };
+      const start = Math.max(Number(args.offset) || 0, 0);
+      return fitList({ groups: out.groups.map(brief), next: out.next }, 'groups', RESULT_BUDGET - 300, kept =>
+        kept < out.groups.length ? { truncated: true, next: start + kept } : {},
+      ).out;
     }
     if (name === 'get_history_group') {
       const group = args.actionId
         ? historyGroup(store, String(args.actionId), { single: true })
         : historyGroup(store, String(args.id ?? ''));
-      const max = Math.min(Math.max(Number(args.maxChanges) || 300, 1), 2000);
+      const asked = Math.min(Math.max(Number(args.maxChanges) || 150, 1), 2000);
       const offset = Math.max(Number(args.offset) || 0, 0);
       const text = args.text ? String(args.text).toLowerCase() : '';
       const field = args.field ? String(args.field).toLowerCase() : '';
@@ -1324,42 +1336,67 @@ export async function runHistoryTool(store, name, args = {}, context = {}, { pub
         (!args.recordId || c.recordId === String(args.recordId)) &&
         (!field || c.field.toLowerCase() === field) &&
         (!text || words(c).some(w => w.includes(text)));
-      // Changes are counted across the saves; this answer holds those from `offset` to offset + max.
-      let index = 0;
-      const actions = [];
-      for (const a of group.actions) {
-        const matching = filtered ? a.changes.filter(keep) : a.changes;
-        const first = index;
-        index += matching.length;
-        const changes = matching.slice(Math.max(offset - first, 0), Math.max(offset + max - first, 0)).map(c => ({
-          id: c.id,
-          label: c.label,
-          sheet: c.sheet,
-          row: c.row,
-          field: c.field,
-          before: readable(c.sheet, c.field, c.before),
-          after: readable(c.sheet, c.field, c.after),
-          ...(c.isNew ? { newRow: true } : {}),
-          ...(c.undone ? { undone: true } : {}),
-        }));
-        if (!changes.length && (matching.length || filtered || offset)) continue;
-        actions.push({
-          id: a.id,
-          at: local(a.createdAt),
-          status: a.status,
-          reason: a.reason,
-          undone: !!a.reversedBy,
-          changes,
-          total: a.changes.length,
+      const matching = group.actions.map(a => (filtered ? a.changes.filter(keep) : a.changes));
+      const cells = matching.reduce((n, list) => n + list.length, 0);
+      // Changes are counted across the saves; an answer holds those from `offset` to offset + max.
+      const answer = max => {
+        let index = 0;
+        let quiet = 0;
+        const actions = [];
+        group.actions.forEach((a, k) => {
+          const first = index;
+          index += matching[k].length;
+          const changes = matching[k].slice(Math.max(offset - first, 0), Math.max(offset + max - first, 0)).map(c => ({
+            id: c.id,
+            label: c.label,
+            sheet: c.sheet,
+            row: c.row,
+            field: c.field,
+            before: readable(c.sheet, c.field, c.before, formulas),
+            after: readable(c.sheet, c.field, c.after, formulas),
+            ...(c.isNew ? { newRow: true } : {}),
+            ...(c.undone ? { undone: true } : {}),
+          }));
+          if (!changes.length) {
+            // A save with nothing to show (its formulas only moved with their rows): counted, not listed.
+            if (!matching[k].length && !filtered && !offset) quiet++;
+            return;
+          }
+          actions.push({
+            id: a.id,
+            at: local(a.createdAt),
+            status: a.status,
+            ...(a.reason ? { reason: a.reason } : {}),
+            undone: !!a.reversedBy,
+            changes,
+            total: a.changes.length,
+          });
         });
-      }
-      return {
-        ...brief(group),
-        ...(group.movedOnly ? { note: 'Rows inserted or deleted above moved these rows: their formulas followed, nothing was edited.' } : {}),
-        actions,
-        cells: index,
-        next: offset + max < index ? offset + max : null,
+        const next = offset + max < cells ? offset + max : null;
+        return {
+          ...brief(group),
+          ...(group.movedOnly ? { note: 'Rows inserted or deleted above moved these rows: their formulas followed, nothing was edited.' } : {}),
+          actions,
+          ...(quiet ? { savesWithoutChanges: quiet } : {}),
+          cells,
+          next,
+          ...(max < asked && next !== null ? { truncated: true } : {}),
+        };
       };
+      // As many changes as fit in one answer (`next` is the offset of the rest).
+      const fits = max => JSON.stringify(answer(max)).length <= RESULT_BUDGET - 300;
+      let max = asked;
+      if (!fits(max)) {
+        let low = 1,
+          high = max - 1;
+        while (low < high) {
+          const mid = Math.ceil((low + high) / 2);
+          if (fits(mid)) low = mid;
+          else high = mid - 1;
+        }
+        max = low;
+      }
+      return answer(max);
     }
     if (name === 'record_history') {
       const out = recordHistory(store, {
@@ -1373,7 +1410,7 @@ export async function runHistoryTool(store, name, args = {}, context = {}, { pub
       });
       if (out.rows) return { rows: out.rows, ...(out.others.length ? { others: out.others } : {}) };
       const flags = c => `${c.isNew ? ' (new row)' : ''}${c.undone ? ' (undone later)' : ''}`;
-      return {
+      const view = {
         row: out.row,
         saves: out.saves.map(s => ({
           at: local(s.createdAt),
@@ -1388,6 +1425,16 @@ export async function runHistoryTool(store, name, args = {}, context = {}, { pub
         next: out.next,
         ...(out.others ? { others: out.others } : {}),
       };
+      // As many saves as fit in one answer: `next` is the offset of the rest. A save too long
+      // alone (a sync of a whole row's formulas, asked with formulas) shows its first cells.
+      const start = Math.max(Number(args.offset) || 0, 0);
+      const budget = RESULT_BUDGET - 300;
+      const fitted = fitList(view, 'saves', budget, kept => (kept < view.saves.length ? { truncated: true, next: start + kept } : {}));
+      if (fitted.kept || !view.saves.length) return fitted.out;
+      const [first] = view.saves;
+      const room = budget - JSON.stringify({ ...view, saves: [{ ...first, cells: [] }], truncated: true, next: start + 1 }).length - 100;
+      const one = fitList(first, 'cells', room, kept => ({ moreCells: `${first.cells.length - kept} more cells of this save not shown: ask for some fields` }));
+      return { ...view, saves: [one.out], truncated: true, next: view.saves.length > 1 || out.next !== null ? start + 1 : null };
     }
     if (name === 'preview_undo' || name === 'undo_edits') {
       const selection = {

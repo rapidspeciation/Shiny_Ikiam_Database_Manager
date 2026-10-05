@@ -89,6 +89,72 @@ export const moduleMap = new Map(modules.map(m => [m.id, m]));
 export function fieldFor(module, key) {
   return moduleMap.get(module)?.fields.find(f => f.key === key);
 }
+/** A column name compared loosely: case, accents, spaces, underscores and dots aside ("pupa date" = "PUPA DATE"). */
+const looseName = name =>
+  String(name ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[\s_.]+/g, '');
+/** Edits (insert, delete, change a character) from one name to another. */
+function editDistance(a, b) {
+  let row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j++) next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    row = next;
+  }
+  return row[b.length];
+}
+/**
+ * A column of a sheet as the assistant names it: the exact name, else the one
+ * column it names loosely (case, accents, spaces and underscores aside).
+ * { key } or { error } naming the nearest columns.
+ */
+export function columnOf(module, name) {
+  const mod = typeof module === 'string' ? moduleMap.get(module) : module;
+  const text = String(name ?? '');
+  if (!mod) return { error: `Unknown sheet ${String(typeof module === 'string' ? module : '').slice(0, 60)}` };
+  if (mod.fields.some(f => f.key === text)) return { key: text };
+  const keys = [...new Set(mod.fields.map(f => f.key))];
+  const loose = looseName(text);
+  const same = keys.filter(k => looseName(k) === loose);
+  if (same.length === 1) return { key: same[0] };
+  const near = (same.length ? same : keys)
+    .map(k => {
+      const other = looseName(k);
+      const part = loose.length >= 3 && (other.includes(loose) || loose.includes(other));
+      return { k, d: part ? 0.5 : editDistance(loose, other) / Math.max(loose.length, other.length, 1) };
+    })
+    .filter(x => same.length || x.d <= 0.5)
+    .sort((a, b) => a.d - b.d)
+    .slice(0, 5)
+    .map(x => x.k);
+  return {
+    error: `Unknown column ${text.slice(0, 60)} in ${mod.id}${near.length ? `; did you mean ${near.join(', ')}?` : '; describe_sheet lists its columns'}`,
+  };
+}
+/** Several columns (columnOf): { keys } in the order given, or the first { error }. */
+export function columnKeys(module, names) {
+  const keys = [];
+  for (const name of names) {
+    const out = columnOf(module, name);
+    if (out.error) return out;
+    keys.push(out.key);
+  }
+  return { keys };
+}
+/** A values object with its columns named as the sheet names them (columnOf): { values } or { error }. */
+export function withColumnNames(module, values) {
+  if (!values || typeof values !== 'object' || Array.isArray(values)) return { values };
+  const out = {};
+  for (const [name, value] of Object.entries(values)) {
+    const found = columnOf(module, name);
+    if (found.error) return found;
+    out[found.key] = value;
+  }
+  return { values: out };
+}
 export function labelFor(module, values) {
   const mod = moduleMap.get(module);
   // Always text: a number (a clutch 1014) stored in the TEXT label column became "1014.0".

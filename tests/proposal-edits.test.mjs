@@ -107,8 +107,15 @@ test('update_proposal revises the same proposal: cells, rows added and removed, 
     assert.deepEqual(shown.changes.slice(0, 2).map(c => c.key), [keys[0], keys[2]]);
     assert.equal(shown.changes[0].values.SPECIES, 'Hypothyris anastasia');
     assert.equal(shown.changes[0].values.Collection_time, (9 * 60 + 5) / 1440);
-    assert.deepEqual(updated.rows.map(r => r.index), [0, 1, 2]);
-    assert.equal(updated.rows[0].values.Collection_date, '2026-09-26');
+    // The answer holds only what changed: the revised row and the new one; the removed row by its old
+    // index, and every row's label by its new index (the rows after it moved up).
+    assert.equal(updated.rows, 3);
+    assert.deepEqual(updated.changed.map(r => [r.index, r.note]), [[0, 'M1 corregido'], [2, 'M3']]);
+    assert.equal(updated.changed[0].values.Collection_date, '2026-09-26');
+    assert.deepEqual(updated.removed.map(r => r.index), [1]);
+    assert.equal(updated.labels.length, 3);
+    const full = await call('get_proposal', { proposalId: proposed.proposalId, full: true });
+    assert.deepEqual(full.rows.map(r => r.index), [0, 1, 2]);
     // The new rows' formula columns and the edited row's are known to the table.
     assert.deepEqual(shown.newRowFormulas.Collection_data, ['Tribe']);
     // (A sheet's formula columns are sent once; a row lists its own only when they differ.)
@@ -131,8 +138,18 @@ test('update_proposal revises the same proposal: cells, rows added and removed, 
       proposalId: proposed.proposalId,
       changes: [{ recordId: record2(store).id, values: { CAM_ID: 'CAM000009' } }],
     });
-    assert.equal(merged.rows.length, 3);
-    assert.deepEqual(merged.rows[1].values, { Sex: 'female', CAM_ID: 'CAM000009' });
+    assert.equal(merged.rows, 3);
+    assert.deepEqual(merged.changed.map(r => r.index), [1]);
+    assert.deepEqual(merged.changed[0].values, { Sex: 'female', CAM_ID: 'CAM000009' });
+    // A row named by its ID in the sheet (CAM000001 is that row's CAM_ID), not its recordId.
+    const byId = await call('update_proposal', { proposalId: proposed.proposalId, rows: [{ id: 'CAM000001', values: { Flight_height: 3 } }] });
+    assert.deepEqual(byId.changed.map(r => [r.index, r.values.Flight_height]), [[1, 3]]);
+    const notThere = await call('update_proposal', { proposalId: proposed.proposalId, rows: [{ id: 'ZZZ9', values: { Sex: 'male' } }] });
+    assert.match(notThere.problems[0], /^rows\[0\]: ZZZ9 is not a row of this proposal/);
+    // The whole table only when asked.
+    const whole = await call('update_proposal', { proposalId: proposed.proposalId, rows: [{ index: 1, values: { Flight_height: 4 } }], full: true });
+    assert.deepEqual(whole.rows.map(r => r.index), [0, 1, 2]);
+    assert.equal(whole.rows[1].values.Flight_height, 4);
   } finally {
     store.close();
   }
@@ -179,9 +196,16 @@ test('the person edits cells in the table: checked, marked, kept from the assist
 
     // The assistant reads the person's edits…
     const read = await call('get_proposal', { proposalId });
-    assert.deepEqual(read.rows[0].personEdits.SPECIES, { value: 'Hypothyris anastasia', youProposed: 'Oleria gunilla' });
-    assert.deepEqual(read.rows[0].personEdits.Collection_date, { value: '2026-09-27', youProposed: '2026-09-26' });
+    // In short: the rows that need a look, each row's label by index.
+    assert.equal(read.rows, 2);
+    assert.equal(read.labels.length, 2);
+    assert.deepEqual(read.attention.map(r => r.index), [0, 1]);
+    assert.deepEqual(read.attention[0].personEdits.SPECIES, { value: 'Hypothyris anastasia', youProposed: 'Oleria gunilla' });
+    assert.deepEqual(read.attention[0].personEdits.Collection_date, { value: '2026-09-27', youProposed: '2026-09-26' });
+    assert.ok(!('values' in read.attention[0]));
     assert.equal(read.lastChangedBy, 'person');
+    const whole = await call('get_proposal', { proposalId, full: true });
+    assert.equal(whole.rows[0].values.SPECIES, 'Hypothyris anastasia');
     // …and cannot overwrite them without being told: a conflict, the person's value stays.
     const clash = await call('update_proposal', {
       proposalId,
@@ -192,12 +216,12 @@ test('the person edits cells in the table: checked, marked, kept from the assist
       { field: clash.conflicts[0].field, person: clash.conflicts[0].person, yours: clash.conflicts[0].yours },
       { field: 'SPECIES', person: 'Hypothyris anastasia', yours: 'Oleria gunilla' },
     );
-    assert.equal(clash.rows[0].values.SPECIES, 'Hypothyris anastasia');
-    assert.equal(clash.rows[0].values.Collection_time, 10 / 24, 'the other cell is updated');
+    assert.equal(clash.changed[0].values.SPECIES, 'Hypothyris anastasia');
+    assert.equal(clash.changed[0].values.Collection_time, 10 / 24, 'the other cell is updated');
     // Removing a row the person edited is a conflict too.
     const keep = await call('update_proposal', { proposalId, removeRows: [1] });
     assert.equal(keep.conflicts[0].index, 1);
-    assert.equal(keep.rows.length, 2);
+    assert.equal(keep.rows, 2);
     // Told to: the assistant's value replaces the person's, and the mark goes.
     const forced = await call('update_proposal', {
       proposalId,
@@ -205,8 +229,8 @@ test('the person edits cells in the table: checked, marked, kept from the assist
       overridePersonEdits: true,
     });
     assert.ok(!forced.conflicts);
-    assert.equal(forced.rows[0].values.SPECIES, 'Oleria gunilla');
-    assert.ok(!('SPECIES' in forced.rows[0].personEdits));
+    assert.equal(forced.changed[0].values.SPECIES, 'Oleria gunilla');
+    assert.ok(!('SPECIES' in forced.changed[0].personEdits));
 
     // The person types over a cell the assistant changed meanwhile: theirs wins, and they are told.
     const over = await edit([{ key: created.key, field: 'Collection_time', value: 0.4, before: 10 / 24 - 0.01 }]);
@@ -302,11 +326,13 @@ test('"Valor de la hoja" and "Valor de la IA": cells set back are kept aside and
 
     // The assistant reads them, and cannot put its value back unless told to.
     const read = await call('get_proposal', { proposalId });
-    assert.deepEqual(read.rows[2].personEdits.Sex, { value: 'no change (keep the sheet value)', youProposed: 'female' });
-    assert.deepEqual(read.rows[1].personEdits.Sex, { value: 'left empty (not written)', youProposed: 'male' });
+    const look = index => read.attention.find(r => r.index === index);
+    assert.deepEqual(look(2).personEdits.Sex, { value: 'no change (keep the sheet value)', youProposed: 'female' });
+    assert.deepEqual(look(1).personEdits.Sex, { value: 'left empty (not written)', youProposed: 'male' });
     const clash = await call('update_proposal', { proposalId, rows: [{ index: 2, values: { Sex: 'female' } }] });
     assert.equal(clash.conflicts[0].field, 'Sex');
-    assert.ok(!('Sex' in clash.rows[2].values));
+    assert.equal(clash.unchanged, true);
+    assert.deepEqual(clash.changed, []);
 
     // A cell typed over, then back to the sheet (a new row's: empty), then the assistant's value again.
     out = await edit([{ key: kept.key, field: 'Sex', value: 'male' }]);

@@ -142,8 +142,8 @@ test('bulk and row limits: mistakes are said before any row is drafted', async (
   try {
     const bulk = (group, extra = {}) => call('propose_changes', { reason: 'x', bulk: [{ sheet: 'Insectary_data', ...group }], ...extra });
     assert.match((await bulk({ filters: { LIFESTAGE: { empty: false } }, set: { Sex: 'hembra' } })).error, /^bulk\[0\]: Sex: «hembra» no está en la lista/);
-    assert.match((await bulk({ filters: { Especie: 'x' }, set: { Sex: 'NA' } })).error, /^bulk\[0\]: Unknown column Especie/);
-    assert.match((await bulk({ filters: { LIFESTAGE: { empty: false } }, set: { Sexo: 'NA' } })).error, /^bulk\[0\]: Sexo no se puede editar/);
+    assert.match((await bulk({ filters: { Especie: 'x' }, set: { Sex: 'NA' } })).error, /^bulk\[0\]: filters: Unknown column Especie in Insectary_data; did you mean SPECIES\?/);
+    assert.match((await bulk({ filters: { LIFESTAGE: { empty: false } }, set: { Sexo: 'NA' } })).error, /^bulk\[0\]: set: Unknown column Sexo in Insectary_data; did you mean Sex\?/);
     assert.match((await bulk({ set: { Sex: 'NA' } })).error, /Give recordIds and\/or filters/);
     assert.match((await bulk({ filters: { LIFESTAGE: { empty: false } }, set: { Sex: null } })).error, /null means no change/);
     // More than 500 rows in one call.
@@ -173,7 +173,8 @@ test('find_records stays small: rows cut at the size budget, idsOnly for long li
     const all = await call('find_records', { module: 'Insectary_data', filters: { SPECIES: 'Mechanitis lysimnia' }, limit: 500 });
     assert.equal(all.total, 130);
     assert.ok(all.returned < 130);
-    assert.match(all.truncated, /size limit.*idsOnly.*offset=/);
+    assert.equal(all.truncated, true);
+    assert.match(all.next, /size limit.*offset=.*idsOnly/);
     assert.ok(JSON.stringify(all).length < 40000, String(JSON.stringify(all).length));
 
     const ids = await call('find_records', { module: 'Insectary_data', filters: { SPECIES: 'Mechanitis lysimnia' }, idsOnly: true });
@@ -185,7 +186,8 @@ test('find_records stays small: rows cut at the size budget, idsOnly for long li
 
     const search = await call('search_records', { query: 'hongos' });
     assert.ok(search.records.length >= 1 && search.records.length < 12);
-    assert.match(search.truncated, /more rows not shown \(size limit\): use find_records/);
+    assert.equal(search.truncated, true);
+    assert.match(search.next, /more rows not shown \(size limit\): use find_records/);
     assert.ok(JSON.stringify(search).length < 40000);
   } finally {
     store.close();

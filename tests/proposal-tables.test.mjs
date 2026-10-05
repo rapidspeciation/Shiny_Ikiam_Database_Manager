@@ -241,7 +241,7 @@ test('show_rows: at most 500 rows, one sheet, known columns, and rows to show', 
       recordIds: [f.row(2).id],
       columns: ['Nope'],
     });
-    assert.match(columns.error, /Unknown columns in Sperm_dissections: Nope/);
+    assert.match(columns.error, /Unknown column Nope in Sperm_dissections; did you mean Notes\?/);
     assert.match((await f.call('show_rows', { title: 'x', sheet: 'Sperm_dissections' })).error, /Give the rows/);
     assert.match((await f.call('show_rows', { sheet: 'Sperm_dissections', recordIds: [f.row(2).id] })).error, /title/);
     const none = await f.call('show_rows', {

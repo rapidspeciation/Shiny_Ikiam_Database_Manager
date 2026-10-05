@@ -74,8 +74,9 @@ test('a cell edited in the sheet after the proposal is told apart, and its value
     assert.equal(row.sheetChanged.Sex.use, undefined);
     // The assistant reads it too.
     const got = await f.call('get_proposal', { proposalId });
-    assert.equal(got.rows[0].sheetChanged.Sex.now, 'NA');
-    assert.match(got.rows[0].sheetChanged.Sex.applying, /keeps the sheet/);
+    assert.equal(got.attention[0].index, 0);
+    assert.equal(got.attention[0].sheetChanged.Sex.now, 'NA');
+    assert.match(got.attention[0].sheetChanged.Sex.applying, /keeps the sheet/);
 
     const out = await f.apply(proposalId);
     assert.equal(out.status, 200, JSON.stringify(out.body));
@@ -144,7 +145,7 @@ test('a value the person types in such a cell is a choice; the assistant setting
     // Set again by the assistant after it looked: a fresh proposal for that cell, over what the sheet has now.
     const updated = await f.call('update_proposal', { proposalId, rows: [{ index: 1, values: { Sex: 'female' } }] });
     assert.ok(!updated.error, JSON.stringify(updated));
-    assert.equal(updated.rows[1].sheetChanged, undefined);
+    assert.equal(updated.changed.find(r => r.index === 1).sheetChanged, undefined);
     const shown = (await f.listed(proposalId)).changes.find(c => c.recordId === a2.id);
     assert.equal(shown.sheetChanged, undefined);
     // An edit of another cell of the row does not hide the sheet's edit (what was read stays).

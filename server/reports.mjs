@@ -1,3 +1,6 @@
+import { cachedRows } from './records-tool.mjs';
+import { makeSourceUrl } from './schema.mjs';
+
 const MAX_ROWS = 100000;
 const PAGE_SIZE = 500;
 
@@ -54,7 +57,22 @@ function moduleName(module) {
   return typeof module === 'string' ? module : (module.sheet ?? module.id);
 }
 
+/**
+ * The rows a report reads, the most recently changed first. From the parsed rows
+ * the assistant's tools share (server/records-tool.mjs): a report of 20k rows read
+ * by pages of 500 took a second or more.
+ */
 async function collect(store, module) {
+  if (store.db) {
+    try {
+      const records = cachedRows(store, module)
+        .filter(r => r.observed)
+        .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : b.row - a.row));
+      return { records, total: records.length, truncated: false };
+    } catch {
+      /* A test store may not expose the core records table: read it by pages. */
+    }
+  }
   const records = [];
   let total = 0;
   for (let offset = 0; offset < MAX_ROWS; offset += PAGE_SIZE) {
@@ -303,6 +321,10 @@ export function createReports({ store }) {
         },
       );
     }
+    // Rows read from the shared copy carry no link: made for the sources shown.
+    output.sources = output.sources.map(s =>
+      s.sourceUrl !== undefined ? s : { ...s, sourceUrl: store.localMode || !store.sheets ? null : makeSourceUrl(s.sheet, s.row, store.sheets.spreadsheetId) },
+    );
     output.truncated = data.truncated;
     if (data.truncated)
       output.method += ` The first ${records.length} of ${data.total} indexed rows were examined; this report is incomplete.`;

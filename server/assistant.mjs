@@ -7,12 +7,13 @@ import { agreedFixes, markApplied } from './review.mjs';
 import { CERTAINTIES, suggestionPage } from './suggestions/index.mjs';
 import { alerts } from './alerts.mjs';
 import { tpl, withoutMsgs } from './messages.mjs';
-import { comparable, isSumField, labelFor, moduleMap, simpleSum, validateValues } from './schema.mjs';
+import { columnKeys, columnOf, comparable, isSumField, labelFor, moduleMap, simpleSum, validateValues, withColumnNames } from './schema.mjs';
 import { TUBE_FIELD, isIdValue, isUnique } from './verifications.mjs';
 import { listOptions, listProblem } from './verify.mjs';
 import { queueWalk, walkDraft } from './walks.mjs';
 import { KINDS, isNone, noteText, reviewColumns } from './notebook.mjs';
-import { FILTERS_DOC, FIND_BUDGET, RECORD_TOOLS, compactRecord, countRecords, findRecords, pickRows, selectRecords } from './records-tool.mjs';
+import { FILTERS_DOC, FIND_BUDGET, RECORD_TOOLS, compactRecord, countRecords, findRecords, pickRows, resolveRows, selectRecords } from './records-tool.mjs';
+import { RESULT_BUDGET, fitList, fitResult } from './tool-budget.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
 import { duplicateIdRow, insectaryIdRow, newRowFormulaFields } from './premade.mjs';
 import { proposalSampleWarnings } from './preserved.mjs';
@@ -691,9 +692,9 @@ export function createAssistant({ store, config = {} }) {
 
   /** find_records (server/records-tool.mjs): the rows it returns can be cited. */
   function findRows(args, context) {
-    const out = findRecords(db, args);
-    for (const row of out.found ?? []) {
-      const record = store.getRecord(row.id);
+    const out = findRecords(store, args);
+    for (const row of out.found ?? out.rows ?? []) {
+      const record = store.getRecord(Array.isArray(row) ? row[0] : row.id);
       if (!record) continue;
       context.records.set(record.id, record);
       context.sources.set(record.id, recordSource(record));
@@ -701,9 +702,18 @@ export function createAssistant({ store, config = {} }) {
     return out;
   }
 
+  /** describe_sheet: the sheet's columns (only `columns` when given) and, when asked, its `latestRows` filled rows. */
   function describeSheet(args) {
-    const mod = moduleMap.get(String(args.module ?? ''));
-    if (!mod) return { error: `Unknown sheet ${clip(args.module, 60)}` };
+    const mod = moduleMap.get(String(args.module ?? args.sheet ?? ''));
+    if (!mod) return { error: `Unknown sheet ${clip(args.module ?? args.sheet, 60)}` };
+    let only = null;
+    if (args.columns !== undefined) {
+      const asked = Array.isArray(args.columns) ? args.columns : [args.columns];
+      const named = columnKeys(mod, asked.map(String));
+      if (named.error) return { error: `columns: ${named.error}` };
+      only = new Set(named.keys);
+    }
+    const latest = Math.min(Math.max(Math.trunc(Number(args.latestRows) || 0), 0), 10);
     const recent = db
       .prepare(
         'SELECT id FROM records WHERE sheet = ? AND missing = 0 AND observed = 1 AND row_num > 0 ORDER BY row_num DESC LIMIT 1500',
@@ -764,23 +774,35 @@ export function createAssistant({ store, config = {} }) {
     // Typed cells: the pre-made rows hold only formulas, in some sheets also one default (Father_Split_tube "No").
     const typed = record =>
       Object.entries(record.values ?? {}).filter(([key, value]) => !record.formulas?.[key] && value !== null && value !== '').length;
-    return {
+    const out = {
       sheet: mod.id,
-      columns: mod.fields.map(f => {
-        const seen = options.get(f.key);
-        const allowed = allowedOf(f.key);
-        return {
-          key: f.key,
-          type: f.type,
-          ...((formulas.get(f.key) ?? 0) > recent.length / 2 ? { formula: true } : {}),
-          ...(allowed ? { allowed } : seen && seen.size <= 30 ? inUse(seen) : {}),
-        };
-      }),
-      latestRows: recent
-        .filter(r => typed(r) >= 2)
-        .slice(0, 3)
-        .map(r => compact(r, { formulaColumns: false, inSheet: true })),
+      columns: mod.fields
+        .filter(f => !only || only.has(f.key))
+        .map(f => {
+          const seen = options.get(f.key);
+          const allowed = allowedOf(f.key);
+          return {
+            key: f.key,
+            type: f.type,
+            ...((formulas.get(f.key) ?? 0) > recent.length / 2 ? { formula: true } : {}),
+            ...(allowed ? { allowed } : seen && seen.size <= 30 ? inUse(seen) : {}),
+          };
+        }),
+      ...(latest
+        ? {
+            latestRows: recent
+              .filter(r => typed(r) >= 2)
+              .slice(0, latest)
+              .map(r => compact(r, { formulaColumns: false, inSheet: true, fields: only })),
+          }
+        : {}),
     };
+    // Within one answer: the columns' lists cut first (a sheet of long dropdown lists).
+    const more = kept =>
+      kept < out.columns.length
+        ? { truncated: true, next: `Columns from ${out.columns[kept].key} on not shown: ask for them with columns` }
+        : {};
+    return fitList(out, 'columns', RESULT_BUDGET - 500, more).out;
   }
 
   /**
@@ -1078,22 +1100,58 @@ export function createAssistant({ store, config = {} }) {
     return { values, ignored };
   }
 
-  /** propose_changes' arguments with the assistant's values read as fromAssistant says. */
+  /** Values with each column named as the sheet names it ("sex" → Sex, "pupa date" → PUPA DATE): { values } or { error }. */
+  function sheetNames(sheet, values, at) {
+    if (!moduleMap.has(sheet)) return { values };
+    const out = withColumnNames(sheet, values);
+    return out.error ? { error: `${at}: ${out.error}` } : out;
+  }
+
+  /**
+   * Rows the assistant names by what the sheet shows ({sheet, id: "W2B"}, a bare ID, {sheet, key})
+   * with their app recordId: { changes } or { error } saying which row and what to give instead.
+   */
+  function withRecordIds(list, what = 'changes') {
+    const changes = Array.isArray(list) ? list : [];
+    if (!changes.length) return { changes };
+    const refs = changes.map(c =>
+      c && typeof c === 'object' && c.recordId === undefined && (c.id !== undefined || c.key !== undefined)
+        ? { sheet: c.sheet, id: c.id, key: c.key }
+        : { recordId: c?.recordId, sheet: c?.sheet },
+    );
+    const { ids, problems } = resolveRows(store, refs);
+    if (problems.length) return { error: problems.slice(0, 5).map(p => `${what}[${p.index}]: ${p.error}`).join(' ') };
+    return {
+      changes: changes.map((c, i) => {
+        const named = { ...c, recordId: ids[i] };
+        delete named.id;
+        delete named.key;
+        return named;
+      }),
+    };
+  }
+
+  /** propose_changes' arguments with the assistant's values read as fromAssistant says (and the columns as the sheet names them). */
   function assistantArgs(args, user) {
     const ignored = [];
     const changes = [];
-    for (const change of Array.isArray(args.changes) ? args.changes : []) {
+    for (const [i, change] of (Array.isArray(args.changes) ? args.changes : []).entries()) {
       const record = store.getRecord(String(change?.recordId ?? ''));
-      const out = fromAssistant(record && !record.missing ? record : null, change?.values, user);
+      const live = record && !record.missing ? record : null;
+      const given = live ? sheetNames(live.sheet, change?.values, `changes[${i}] (${live.label})`) : { values: change?.values };
+      if (given.error) return given;
+      const out = fromAssistant(live, given.values, user);
       ignored.push(...out.ignored.map(field => `${record?.label ?? clip(change?.recordId, 60)}: ${field}`));
       // Only nulls: nothing to change in that row.
       if (out.ignored.length && out.values && !Object.keys(out.values).length) continue;
       changes.push({ ...change, values: out.values });
     }
-    const newRows = (Array.isArray(args.newRows) ? args.newRows : []).map(row => ({
-      ...row,
-      values: fromAssistant(null, row?.values, user).values,
-    }));
+    const newRows = [];
+    for (const [i, row] of (Array.isArray(args.newRows) ? args.newRows : []).entries()) {
+      const given = sheetNames(String(row?.sheet ?? ''), row?.values, `newRows[${i}]`);
+      if (given.error) return given;
+      newRows.push({ ...row, values: fromAssistant(null, given.values, user).values });
+    }
     return { args: { ...args, changes, newRows }, ignored };
   }
 
@@ -1119,13 +1177,15 @@ export function createAssistant({ store, config = {} }) {
     for (const [i, group] of groups.entries()) {
       const at = `bulk[${i}]`;
       if (!group || typeof group !== 'object' || Array.isArray(group)) return { error: `${at}: give sheet, filters and/or recordIds, and set` };
-      const set = group.set;
-      if (!set || typeof set !== 'object' || Array.isArray(set) || !Object.keys(set).length || Object.keys(set).length > 80)
+      if (!group.set || typeof group.set !== 'object' || Array.isArray(group.set) || !Object.keys(group.set).length || Object.keys(group.set).length > 80)
         return { error: `${at}: set must be column → value` };
-      if (Object.values(set).every(v => v === null || v === undefined || v === ''))
+      if (Object.values(group.set).every(v => v === null || v === undefined || v === ''))
         return { error: `${at}: every value in set is null, and null means no change. To empty a cell give {"clear": true}.` };
-      const rows = pickRows(db, group);
+      const rows = pickRows(store, group);
       if (rows.error) return { error: `${at}: ${rows.error}` };
+      const named = sheetNames(rows.mod.id, group.set, `${at}: set`);
+      if (named.error) return named;
+      const set = named.values;
       picked += rows.rows.length;
       if (picked > BULK_ROWS)
         return {
@@ -1193,10 +1253,17 @@ export function createAssistant({ store, config = {} }) {
    */
   function proposeChanges(input, context, { literal = false } = {}) {
     if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot propose edits' };
+    if (!literal && Array.isArray(input.changes) && input.changes.length) {
+      const named = withRecordIds(input.changes);
+      if (named.error) return named;
+      input = { ...input, changes: named.changes };
+    }
     const bulk = !literal && input.bulk !== undefined && input.bulk !== null ? bulkChanges(input) : null;
     if (bulk?.error) return bulk;
     const given = bulk ? { ...input, changes: bulk.changes } : input;
-    const { args, ignored } = literal ? { args: given, ignored: [] } : assistantArgs(given, context.user);
+    const read = literal ? { args: given, ignored: [] } : assistantArgs(given, context.user);
+    if (read.error) return read;
+    const { args, ignored } = read;
     if (ignored.length && !args.changes.length && !args.newRows.length)
       return { error: 'Every value was null, and null means no change. To empty a cell give {"clear": true}.' };
     const drafted = draftChanges(args, idsFor(), bulk ? Infinity : PROPOSAL_ROWS);
@@ -1619,18 +1686,83 @@ export function createAssistant({ store, config = {} }) {
     }));
   }
 
+  /**
+   * The rows of a proposal's table that wait for a look: cells the person edited, doubtful
+   * cells not checked (with the value proposed), unreadable cells still empty, cells edited
+   * in the sheet since, a new row whose pre-made row was taken.
+   */
+  function attentionRows(table) {
+    return table.flatMap(v => {
+      const doubtful = Object.entries(v.doubtful ?? {}).filter(([, d]) => !d.checked);
+      const unreadable = Object.entries(v.unreadable ?? {}).filter(([, u]) => !u.filled);
+      const need = {
+        ...(v.personEdits ? { personEdits: v.personEdits } : {}),
+        ...(doubtful.length ? { doubtful: Object.fromEntries(doubtful.map(([f, d]) => [f, { value: v.values[f], ...d }])) } : {}),
+        ...(unreadable.length ? { unreadable: Object.fromEntries(unreadable) } : {}),
+        ...(v.sheetChanged ? { sheetChanged: v.sheetChanged } : {}),
+        ...(v.rowTaken ? { rowTaken: v.rowTaken } : {}),
+      };
+      return Object.keys(need).length ? [{ index: v.index, label: v.label, ...need }] : [];
+    });
+  }
+
+  /**
+   * What a revision changed, as update_proposal answers it: the rows whose view changed (as
+   * get_proposal full shows them), the rows taken out (their old index) and then every row's
+   * label by its new index, how many rows there are and how many doubtful cells wait unchecked.
+   */
+  function revisedRows(old, fresh, table, proposal) {
+    const plain = view => {
+      const rest = { ...view };
+      delete rest.index;
+      return json(rest);
+    };
+    const before = new Map(proposalTable(old, proposal).map((v, i) => [rowKey(old[i]), plain(v)]));
+    const kept = new Set(fresh.map(rowKey));
+    const changed = table.filter((v, i) => before.get(rowKey(fresh[i])) !== plain(v));
+    const removed = old.flatMap((c, i) => (kept.has(rowKey(c)) ? [] : [{ index: i, label: c.label }]));
+    const doubtful = uncheckedDoubts(fresh).length;
+    return {
+      rows: fresh.length,
+      changed,
+      ...(removed.length ? { removed, labels: fresh.map(c => c.label) } : {}),
+      ...(doubtful ? { doubtfulUnchecked: doubtful } : {}),
+    };
+  }
+
+  /**
+   * get_proposal: its state and the rows that wait for a look (attentionRows), each row's
+   * label by index; `full`: every row as the table shows it, from row `offset` on, as many
+   * as fit in one answer.
+   */
   function getProposal(args, context) {
     const proposal = ownProposal(args.proposalId, context.user);
     if (!proposal) return { error: 'Proposal not found' };
     if (isTable(proposal)) return { error: NOT_A_PROPOSAL };
-    return {
+    const changes = parse(proposal.changes_json) ?? [];
+    const table = proposalTable(changes, proposal);
+    const head = {
       proposalId: proposal.id,
       ...proposalLink(proposal.id, chatOf(proposal, context)),
       status: proposal.status,
       revision: proposal.revision,
       reason: proposal.reason,
       lastChangedBy: proposal.last_by ?? 'ai',
-      rows: proposalTable(parse(proposal.changes_json) ?? [], proposal),
+    };
+    if (args.full === true) {
+      const from = Math.min(Math.max(Number(args.offset) || 0, 0), table.length);
+      const rest = table.slice(from);
+      const more = shown => (shown < rest.length ? { truncated: true, next: `Rows ${from + shown}–${table.length - 1} not shown: get_proposal with full: true and offset: ${from + shown}` } : {});
+      return fitList({ ...head, total: table.length, rows: rest }, 'rows', RESULT_BUDGET - 500, more).out;
+    }
+    const contextRows = changes.filter(c => c.context).length;
+    const attention = attentionRows(table);
+    return {
+      ...head,
+      rows: table.length,
+      labels: table.map(v => v.label),
+      ...(contextRows ? { contextRows } : {}),
+      attention,
     };
   }
 
@@ -1674,16 +1806,16 @@ export function createAssistant({ store, config = {} }) {
     const ids = new Set();
     const missing = [];
     const recordIds = Array.isArray(args.recordIds) ? args.recordIds.slice(0, 2000) : [];
-    for (const raw of recordIds) {
-      const id = clip(raw, 120);
-      const record = store.getRecord(id);
-      if (!record || record.missing) missing.push(id);
-      else if (record.sheet !== sheet) return { error: `Row ${id} is in ${record.sheet}, not ${sheet}: one sheet per table` };
-      else ids.add(record.id);
+    // App recordIds, or the rows' IDs in the sheet (W2B).
+    const named = resolveRows(store, recordIds, { sheet });
+    for (const p of named.problems) {
+      if (p.kind === 'missing') missing.push(clip(typeof p.ref === 'object' ? JSON.stringify(p.ref) : p.ref, 120));
+      else return { error: / is in \S+, not \S+$/.test(p.error) ? `${p.error}: one sheet per table` : p.error };
     }
+    for (const id of named.ids) if (id) ids.add(id);
     const query = args.filters !== undefined || args.field !== undefined || args.values !== undefined;
     if (query) {
-      const out = selectRecords(db, { module: sheet, field: args.field, values: args.values, filters: args.filters });
+      const out = selectRecords(store, { module: sheet, field: args.field, values: args.values, filters: args.filters });
       if (out.error) return { error: out.error };
       for (const { record } of out.rows) ids.add(record.id);
       missing.push(...(out.missing ?? []));
@@ -1704,10 +1836,9 @@ export function createAssistant({ store, config = {} }) {
     const known = new Set(mod.fields.map(f => f.key));
     if (args.columns !== undefined) {
       if (!Array.isArray(args.columns) || !args.columns.length) return { error: 'columns must be a list of columns' };
-      const unknown = args.columns.filter(c => !known.has(c));
-      if (unknown.length)
-        return { error: `Unknown columns in ${mod.id}: ${unknown.slice(0, 10).join(', ')}; see describe_sheet` };
-      return { columns: [...new Set([...args.columns, ...noted])].slice(0, 80) };
+      const named = columnKeys(mod, args.columns);
+      if (named.error) return { error: `columns: ${named.error}` };
+      return { columns: [...new Set([...named.keys, ...noted])].slice(0, 80) };
     }
     const keys = [...new Set(mod.fields.map(f => f.key))];
     const idColumns = mod.identityFields.length ? mod.identityFields : keys.filter(k => ID_LIKE.test(k));
@@ -1717,7 +1848,7 @@ export function createAssistant({ store, config = {} }) {
       for (const k of keys) if (!filled.has(k) && !isNone(values[k])) filled.add(k);
     }
     const filtered =
-      args.filters && typeof args.filters === 'object' ? Object.keys(args.filters).filter(k => known.has(k)) : [];
+      args.filters && typeof args.filters === 'object' ? Object.keys(args.filters).map(k => columnOf(mod, k).key).filter(k => known.has(k)) : [];
     const first = [...idColumns.filter(k => filled.has(k)), ...filtered, ...noted];
     const rest = keys.filter(k => filled.has(k) && !first.includes(k));
     return { columns: [...new Set([...first, ...rest])].slice(0, Math.max(TABLE_COLUMNS, new Set(first).size)) };
@@ -1729,15 +1860,21 @@ export function createAssistant({ store, config = {} }) {
    */
   function tableNotes(list, ids, mod) {
     const rows = new Set(ids);
-    const known = new Set(mod.fields.map(f => f.key));
     const notes = {};
     const skipped = [];
-    for (const n of (Array.isArray(list) ? list : []).slice(0, 2000)) {
-      const id = clip(n?.recordId, 120);
+    const given = (Array.isArray(list) ? list : []).slice(0, 2000);
+    // A note's row by its recordId or its ID in the sheet (W2B).
+    const named = resolveRows(
+      store,
+      given.map(n => clip(n?.recordId ?? n?.id, 120)),
+      { sheet: mod.id },
+    ).ids;
+    for (const [i, n] of given.entries()) {
+      const id = named[i] ?? clip(n?.recordId ?? n?.id, 120);
       const text = typeof n?.text === 'string' ? clip(n.text.trim(), 500) : '';
-      const field = typeof n?.field === 'string' && n.field ? clip(n.field, 120) : null;
-      if (!rows.has(id) || (field && !known.has(field))) {
-        if (id) skipped.push(field && rows.has(id) ? `${id} ${field}` : id);
+      const field = typeof n?.field === 'string' && n.field ? (columnOf(mod, clip(n.field, 120)).key ?? null) : null;
+      if (!rows.has(id) || (n?.field && !field)) {
+        if (id) skipped.push(n?.field && rows.has(id) ? `${id} ${clip(n.field, 120)}` : id);
         continue;
       }
       const at = (notes[id] ??= {});
@@ -1870,31 +2007,73 @@ export function createAssistant({ store, config = {} }) {
     if (proposal.status !== 'pending')
       return { error: `The proposal is ${proposal.status}; draft a new one with propose_changes` };
     const changes = parse(proposal.changes_json) ?? [];
-    // The assistant's values: null takes back its change to a cell, { clear: true } empties it, notes are added.
-    const own = (i, values) => {
-      const row = changes[i];
-      const record = row && !row.create ? store.getRecord(row.recordId) : null;
-      return fromAssistant(record, values, context.user, { keepDrops: true }).values;
+    const problems = [];
+    // A row of the proposal by its index, or by its recordId, ID or label (W2B).
+    const rowIndex = (r, at) => {
+      if (Number.isInteger(r?.index)) return r.index;
+      const name = r?.recordId ?? r?.id;
+      if (name === undefined || name === null || String(name).trim() === '') {
+        problems.push(`${at}: give the row's index (or its ID)`);
+        return -1;
+      }
+      const text = String(name).trim().toLowerCase();
+      let i = changes.findIndex(c => c.recordId === String(name));
+      if (i < 0) {
+        const named = changes.flatMap((c, j) => (String(c.label ?? '').trim().toLowerCase() === text ? [j] : []));
+        if (named.length > 1) {
+          problems.push(`${at}: ${clip(name, 60)} names rows ${named.join(', ')} of the proposal; give the index`);
+          return -1;
+        }
+        i = named[0] ?? -1;
+      }
+      if (i < 0) {
+        const { ids } = resolveRows(store, [r.recordId !== undefined ? { recordId: r.recordId } : { id: r.id, sheet: r.sheet }]);
+        if (ids[0]) i = changes.findIndex(c => c.recordId === ids[0]);
+      }
+      if (i < 0) problems.push(`${at}: ${clip(name, 60)} is not a row of this proposal; give its index, or add it with changes`);
+      return i;
     };
-    const set = (Array.isArray(args.rows) ? args.rows : []).map(r => {
-      const ref = Number.isInteger(r?.index) ? r.index : -1;
-      return { ref, values: own(ref, r?.values), note: r?.note };
+    // The assistant's values: null takes back its change to a cell, { clear: true } empties it, notes are added.
+    const own = (i, values, at) => {
+      const row = changes[i];
+      const named = row ? sheetNames(row.sheet, values, at) : { values };
+      if (named.error) problems.push(named.error);
+      const record = row && !row.create ? store.getRecord(row.recordId) : null;
+      return fromAssistant(record, named.values ?? {}, context.user, { keepDrops: true }).values;
+    };
+    const rowArgs = Array.isArray(args.rows) ? args.rows : [];
+    const set = rowArgs.map((r, k) => {
+      const ref = rowIndex(r, `rows[${k}]`);
+      return { ref, values: own(ref, r?.values, `rows[${k}]`), note: r?.note };
     });
     // Doubtful cells the person confirmed in the chat ("sí, es un 7").
-    const check = (Array.isArray(args.rows) ? args.rows : []).flatMap(r =>
-      Number.isInteger(r?.index) && Array.isArray(r.checked)
-        ? r.checked.filter(f => typeof f === 'string').map(field => ({ ref: r.index, field, checked: true, how: 'chat' }))
-        : [],
-    );
-    const extra = assistantArgs({ changes: [], newRows: args.newRows }, context.user).args;
-    const add = { changes: [], newRows: extra.newRows };
+    const check = rowArgs.flatMap((r, k) => {
+      const ref = set[k].ref;
+      if (ref < 0 || !Array.isArray(r?.checked)) return [];
+      return r.checked
+        .filter(f => typeof f === 'string')
+        .map(field => ({ ref, field: changes[ref] ? (columnOf(changes[ref].sheet, field).key ?? field) : field, checked: true, how: 'chat' }));
+    });
+    const listed = withRecordIds(args.changes);
+    if (listed.error) return listed;
+    const extra = assistantArgs({ changes: [], newRows: args.newRows }, context.user);
+    if (extra.error) return extra;
+    const add = { changes: [], newRows: extra.args.newRows };
     // A row already in the proposal is revised, not added twice.
-    for (const c of Array.isArray(args.changes) ? args.changes : []) {
-      const i = changes.findIndex(r => !r.create && r.recordId === String(c?.recordId ?? ''));
-      if (i >= 0) set.push({ ref: i, values: own(i, c.values), note: c.note });
-      else add.changes.push(...assistantArgs({ changes: [c] }, context.user).args.changes);
+    for (const [k, c] of listed.changes.entries()) {
+      const i = changes.findIndex(r => !r.create && r.recordId === c.recordId);
+      if (i >= 0) set.push({ ref: i, values: own(i, c.values, `changes[${k}]`), note: c.note });
+      else {
+        const more = assistantArgs({ changes: [c] }, context.user);
+        if (more.error) return more;
+        add.changes.push(...more.args.changes);
+      }
     }
-    const remove = (Array.isArray(args.removeRows) ? args.removeRows : []).filter(Number.isInteger);
+    // Rows to take out, by index or ID.
+    const remove = (Array.isArray(args.removeRows) ? args.removeRows : [])
+      .map((r, k) => (Number.isInteger(r) ? r : typeof r === 'string' ? rowIndex({ id: r }, `removeRows[${k}]`) : -1))
+      .filter(i => i >= 0);
+    if (problems.length) return { error: 'Nothing was changed', problems: problems.slice(0, 20) };
     // The page's photos (attachments of this chat), for a proposal made without them.
     const chat = proposal.t3_thread || (context.t3 ? chatOfCall(context)?.id : null) || null;
     const given = args.photo ? photosOf(config.t3?.home, args, chat) : null;
@@ -1912,13 +2091,14 @@ export function createAssistant({ store, config = {} }) {
     const unchanged = json(out.changes) === json(changes) && !reason && !given;
     const revision = unchanged ? proposal.revision : saveRevision(proposal, out.changes, 'ai', reason);
     if (revision === null) return { error: 'The proposal is no longer pending' };
+    const table = proposalTable(out.changes, proposal);
     return {
       proposalId: proposal.id,
       ...proposalLink(proposal.id, chatOf(proposal, context)),
       revision,
       ...(unchanged ? { unchanged: true } : {}),
       ...(given ? { photos: given.photos.length, ...(given.refused.length ? { photoNotShown: given.refused } : {}) } : {}),
-      rows: proposalTable(out.changes, proposal),
+      ...(args.full === true ? { rows: table } : revisedRows(changes, out.changes, table, proposal)),
       ...(out.leftOut.length ? { leftOut: `Formula columns left out of the new rows: ${out.leftOut.join(', ')}` } : {}),
       ...(out.conflicts.length
         ? {
@@ -2652,14 +2832,19 @@ export function createAssistant({ store, config = {} }) {
       return {
         records,
         total: page.total,
-        ...(cut ? { truncated: `${cut} more rows not shown (size limit): use find_records with filters and fields.` } : {}),
+        ...(cut ? { truncated: true, next: `${cut} more rows not shown (size limit): use find_records with filters and fields.` } : {}),
       };
     }
     if (name === 'find_records') return findRows(args, context);
     if (name === 'count_records') return countRecords(db, args);
     if (name === 'describe_sheet') return describeSheet(args);
     if (name === 'get_record') {
-      const record = store.getRecord(clip(args.id, 120));
+      // Its app recordId, or its ID in the sheet (W2B, a clutch number), in `sheet` when given.
+      const named = resolveRows(store, [args.key !== undefined ? { sheet: args.sheet, key: args.key } : clip(args.id ?? args.recordId, 120)], {
+        sheet: args.sheet ? clip(args.sheet, 100) : null,
+      });
+      if (named.problems.length) return { error: named.problems[0].error };
+      const record = store.getRecord(named.ids[0]);
       if (!record) return { error: 'Record not found' };
       context.records.set(record.id, record);
       context.sources.set(record.id, recordSource(record));
@@ -2671,9 +2856,12 @@ export function createAssistant({ store, config = {} }) {
       const response = await reports.build({ kind: args.kind, module: args.module, field: args.field });
       if (response.status !== 200) return response.body;
       for (const item of response.body.sources) context.sources.set(item.id, { ...item, type: 'record' });
-      const result = { ...response.body, sources: response.body.sources.slice(0, 30) };
+      // The chart's series repeats the rows: the model reads the rows.
+      const result = { ...response.body, series: undefined, sources: response.body.sources.slice(0, 30) };
       context.results.push(result);
-      return result;
+      const more = kept =>
+        kept < result.rows.length ? { truncated: true, next: `${result.rows.length - kept} more rows not shown: count_records with filters and groupBy gives them in parts` } : {};
+      return fitList(result, 'rows', RESULT_BUDGET - 500, more).out;
     }
     if (name === 'check_data') {
       const out = checkData(store, {
@@ -2683,9 +2871,16 @@ export function createAssistant({ store, config = {} }) {
         limit: Math.min(Number(args.limit) || 50, 200),
         offset: args.offset,
       });
-      for (const issue of out.issues.filter(i => i.recordId))
+      // The kinds explained only in an answer that is not about some of them.
+      const page = { ...out, ...(args.kind ? { kinds: undefined } : {}), issues: withoutMsgs(out.issues) };
+      const more = kept =>
+        kept < out.issues.length || out.offset + out.issues.length < out.total
+          ? { truncated: true, next: `Issues from ${out.offset + kept} on not shown${kept < out.issues.length ? ' (size limit)' : ''}: check_data with offset: ${out.offset + kept}, or one kind or sheet` }
+          : {};
+      const fitted = fitList({ ...page, ...more(page.issues.length) }, 'issues', RESULT_BUDGET - 500, more);
+      for (const issue of fitted.out.issues.filter(i => i.recordId))
         context.sources.set(issue.recordId, { id: issue.recordId, type: 'record', sheet: issue.sheet, row: issue.row, label: issue.label });
-      return { ...out, issues: withoutMsgs(out.issues) };
+      return fitted.out;
     }
     if (name === 'queue_wikiloc') {
       if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot queue walks' };
@@ -2901,16 +3096,14 @@ export function createAssistant({ store, config = {} }) {
           review: 'The person reviews it in the app: Asistente → Cambios propuestos, or tells you to apply it.',
         };
       }
-      // An answer cut in the middle is no JSON at all: say so instead, so the query is narrowed.
-      let text = json(out);
-      if (text.length > 200000) {
-        const narrow = HISTORY_TOOL_NAMES.has(String(body.params?.name ?? ''))
-          ? 'recordId, field(s), text or dates, or a smaller maxChanges or limit (`next` gives the rest)'
-          : 'filters, fields, limit, or count_records for counts';
-        out = { error: `The answer was too long (${text.length} characters). Narrow the query: ${narrow}.` };
-        text = json(out);
-      }
-      return result({ content: [{ type: 'text', text }], isError: Boolean(out?.error) });
+      // Within one answer's size (server/tool-budget.mjs): the tools cut their own lists where they
+      // can say how to go on; anything still too long loses the end of its longest lists, and says so.
+      out = fitResult(out, {
+        narrow: HISTORY_TOOL_NAMES.has(String(body.params?.name ?? ''))
+          ? 'narrow it with recordId, field(s), text or dates, or a smaller maxChanges or limit'
+          : 'ask for less (filters, fewer columns, a smaller limit) or page with offset',
+      });
+      return result({ content: [{ type: 'text', text: json(out) }], isError: Boolean(out?.error) });
     }
     return { status: 200, body: { jsonrpc: '2.0', id, error: { code: -32601, message: 'Method not found' } } };
   }

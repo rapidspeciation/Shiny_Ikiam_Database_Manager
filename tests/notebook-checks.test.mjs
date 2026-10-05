@@ -358,7 +358,12 @@ test('doubtful cells go into the proposal; apply waits until the person checks t
     assert.match(refused.error, /doubtful cells not checked/);
     assert.deepEqual(refused.doubtful, [{ index: 0, label: '2VD', field: 'Sex', value: 'female', alternatives: ['male'], reason: 'the symbol is smudged' }]);
     const table = await call('get_proposal', { proposalId: out.proposalId });
-    assert.deepEqual(table.rows[0].doubtful, { Sex: { alternatives: ['male'], reason: 'the symbol is smudged', checked: false } });
+    // The unchecked doubt is what needs a look, with the value proposed.
+    assert.deepEqual(table.attention, [
+      { index: 0, label: '2VD', doubtful: { Sex: { value: 'female', alternatives: ['male'], reason: 'the symbol is smudged', checked: false } } },
+    ]);
+    const full = await call('get_proposal', { proposalId: out.proposalId, full: true });
+    assert.deepEqual(full.rows[0].doubtful, { Sex: { alternatives: ['male'], reason: 'the symbol is smudged', checked: false } });
 
     // The table's apply asks too (409), and the person marks the cell checked there.
     const asked = await http('POST', `/api/chat/proposals/${out.proposalId}/apply`, { requestId: 'req-doubt-1' });
@@ -387,7 +392,9 @@ test('the person confirms doubtful cells in the chat, or applies only the sure o
     const first = await call('match_notebook', { kind: 'emergence', year: 2025, lines });
     // "Sí, es macho": checked through update_proposal.
     const updated = await call('update_proposal', { proposalId: first.proposalId, rows: [{ index: 0, checked: ['Sex'] }] });
-    assert.equal(updated.rows[0].doubtful.Sex.checked, true);
+    assert.equal(updated.changed[0].doubtful.Sex.checked, true);
+    assert.ok(!updated.doubtfulUnchecked, 'no doubt left to check');
+    assert.deepEqual((await call('get_proposal', { proposalId: first.proposalId })).attention, []);
     assert.equal((await call('apply_proposal', { proposalId: first.proposalId })).status, 'applied');
     assert.equal(store.getRecordBySheetRow('Insectary_data', 3).values.Sex, 'male');
 
