@@ -126,6 +126,35 @@ node tools/lab/sheet-edit.mjs Insectary_data 5012 Sex=female   # someone types i
 
 Stop with `tools/lab/app.sh --stop` and `tools/lab/t3.sh --stop`.
 
+## A busy workbook (Google not answering)
+
+After an edit to Insectary_data the team's workbook recalculates for minutes,
+and meanwhile Google answers slowly, with 503, or not at all. The lab's sheets
+can answer the same way, to see what the app does then: the banner everyone
+gets, saves kept in the app and written when Google answers, the assistant's
+`apply_proposal` answering `queued`, and the Emergidos / Clutches entries
+going to Google Sheets with «Guardar en Google Sheets».
+
+```sh
+node tools/lab/busy.mjs 10                     # 10 minutes of 503 on every request
+node tools/lab/busy.mjs 10 hang --probe 15     # no answer (each request given up after 3 s); asked again every 15 s
+node tools/lab/busy.mjs 10 slow --delay 25     # answers after 25 s: "slow" (over 20 s)
+node tools/lab/busy.mjs 0                      # answers again: what waited is written, in order
+LOCAL_BUSY=unavailable:10 tools/lab/app.sh --bg   # start the app with the workbook busy for 10 minutes
+```
+
+- The state is asked again every minute while it is not ok (`--probe`
+  changes that; `GOOGLE_PROBE_SECONDS` at start). Ending it with `busy.mjs 0`
+  asks at once. `curl -s http://127.0.0.1:8795/health` shows
+  `google`: the workbook's state, the saves waiting and the entries kept in the app.
+- What to try: with the workbook busy, edit a cell in Buscador (it stays
+  amber with stripes, «N esperando a Google Sheets» in the save bar); in
+  Emergidos add butterflies on two devices (each gets its own IDs, the other's
+  show «en la app · name»); press «Guardar en Google Sheets»: the entries show
+  as being written and go once `busy.mjs 0` ends it. Edit the same cell in the
+  sheet meanwhile (`sheet-edit.mjs … --no-hook`) to see a waiting save refused
+  and shown in red instead of overwriting.
+
 ## Cases
 
 `cases.json` in the lab folder:

@@ -288,3 +288,22 @@ test("the assistant's query copy has the entries kept in the app, a row per cell
     store.close();
   }
 });
+
+test('the Emergidos cards are kept all or nothing: one butterfly refused keeps every card and count back', async () => {
+  const { store } = await fixture();
+  try {
+    await stage(store, luis, { creates: [emerged('A2E')] });
+    const body = {
+      requestId: randomUUID(),
+      purpose: 'emergidos',
+      partial: false,
+      creates: [emerged('A1E'), emerged('A2E')],
+      edits: [{ id: clutchId(store, 990), values: { 'NUMBER OF ADULTS': '=2' }, expected: { 'NUMBER OF ADULTS': null } }],
+    };
+    await assert.rejects(store.staged.stage(body, ana), e => e.code === 'BATCH_CONFLICT' && e.details.items[0].code === 'CLAIMED');
+    assert.equal(store.staged.list().items.length, 1, "only Luis's");
+    assert.equal(idSuggestions(store, { kind: 'insectary', count: 1 }).sequence[0], 'A1E', 'A1E was not taken');
+  } finally {
+    store.close();
+  }
+});
