@@ -139,7 +139,7 @@ function byRows(a: Proposal, b: Proposal) {
   const [x, y] = [where(a), where(b)]
   return x.sheet.localeCompare(y.sheet) || x.row - y.row || String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? ''))
 }
-const open = (p: Proposal) => p.status === 'pending' || p.status === 'applying' || p.status === 'shown'
+const open = (p: Proposal) => p.status === 'pending' || p.status === 'applying' || p.status === 'queued' || p.status === 'shown'
 const mine = computed(() => (props.only ? proposals.value.filter(p => p.id === props.only) : proposals.value))
 /** The proposals to review (a table shown is only to read), in the sheet's order: see byRows. */
 const pending = computed(() => mine.value.filter(p => open(p) && !isTable(p)).sort(byRows))
@@ -372,6 +372,9 @@ async function apply(proposal: Proposal, indexes: number[], at: number | undefin
     proposal.applied = out.applied
     proposal.digest = undefined
     await Promise.all(Object.keys(tables.tables).map(sheet => tables.load(sheet, true)))
+    // Google is not answering: the save waits in the app and is written on its own (server/outbox.mjs).
+    if (out.status === 'queued')
+      return notify(tn(out.applied.length, 'Google Sheets no responde: {n} fila espera y se escribirá sola', 'Google Sheets no responde: {n} filas esperan y se escribirán solas'))
     const applied = tn(out.applied.length, '{n} fila aplicada en Google Sheets', '{n} filas aplicadas en Google Sheets')
     // Cells (or new rows) edited in the sheet meanwhile, left as the sheet has them.
     const kept = out.keptFromSheet?.length ?? 0

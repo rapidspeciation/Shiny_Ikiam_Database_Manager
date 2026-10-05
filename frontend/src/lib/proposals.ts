@@ -176,7 +176,8 @@ export interface Proposal {
   /** For a table (show_rows): its title. */
   reason: string
   /** A table of rows the assistant shows (show_rows) is 'shown', then 'closed': never pending, never applied. */
-  status: 'pending' | 'applying' | 'applied' | 'needs_review' | 'discarded' | 'shown' | 'closed'
+  /** queued: applied while Google did not answer; its save waits in the app and is written when it does. */
+  status: 'pending' | 'applying' | 'queued' | 'applied' | 'needs_review' | 'discarded' | 'shown' | 'closed'
   /** 'table': rows of the sheet to read (lib/rowsTable), not changes. */
   kind?: 'table'
   /** A table's rows, with the sheet's current values of its columns (`fields`). */

@@ -457,6 +457,7 @@ const statusText = computed(
       needs_review: t('No se pudo aplicar: revisa las filas en la hoja'),
       discarded: t('Descartado'),
       applying: t('Aplicando…'),
+      queued: t('Esperando a Google Sheets: se escribe solo cuando responda'),
     })[props.proposal.status as string] ?? '',
 )
 </script>

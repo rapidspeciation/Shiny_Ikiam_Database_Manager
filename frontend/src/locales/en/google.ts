@@ -54,6 +54,10 @@ export default {
     "{n} change from Emergidos and Clutches, the whole team's, is written at once. If Google Sheets is busy, it waits in the app and is written on its own.",
   'Se escriben {n} cambios de Emergidos y Clutches, de todo el equipo, en una sola vez. Si Google Sheets está ocupado, esperan en la app y se escriben solos.':
     "{n} changes from Emergidos and Clutches, the whole team's, are written at once. If Google Sheets is busy, they wait in the app and are written on their own.",
+  // Proposals (components/ProposalGrid.vue, assistant/ProposalsLive.vue)
+  'Esperando a Google Sheets: se escribe solo cuando responda': 'Waiting for Google Sheets: it is written on its own when it answers',
+  'Google Sheets no responde: {n} fila espera y se escribirá sola': 'Google Sheets is not answering: {n} row waits and will be written on its own',
+  'Google Sheets no responde: {n} filas esperan y se escribirán solas': 'Google Sheets is not answering: {n} rows wait and will be written on their own',
   // Emergidos and Clutches
   'Clutch {clutch} guardado en la app y revisado': 'Clutch {clutch} saved in the app and checked',
   escribiéndose: 'being written',
