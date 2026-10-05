@@ -20,6 +20,7 @@ import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './note
 import { duplicateIdRow, insectaryIdPlaces, insectaryIdRow, newRowFormulaFields } from './premade.mjs';
 import { BETWEEN_ROWS, VIEW_PARAM, VIEW_UPDATE, readView, showBetween, viewColumns } from './proposal-view.mjs';
 import { proposalSampleWarnings } from './preserved.mjs';
+import { compareWithSheet } from './needs-review.mjs';
 import { carryChecks, dropDoubt, setChecked, uncheckedDoubts, unfilledUnreadable, withoutUnchecked } from './doubts.mjs';
 import { decide, editedInSheet, forget, lastEdit, resolveSheetEdits, sheetChangesOf, shownValue, takenRow, takenRows } from './sheet-edits.mjs';
 import { tellChat } from './t3tell.mjs';
@@ -574,6 +575,8 @@ function init(db) {
   // How the assistant asked its proposal's table to be shown (the `view` of propose_changes): the
   // columns first or only, and the sheet's rows between its rows or not.
   if (!has('ai_proposals', 'view_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN view_json TEXT');
+  // A proposal in needs_review compared with the sheet after a sync (server/needs-review.mjs).
+  if (!has('ai_proposals', 'check_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN check_json TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS ai_proposals_owner_status ON ai_proposals(owner_id, status, created_at)');
   // Personal tokens for agents outside the app (T3 Code projects) to use the same tools.
   db.exec(`CREATE TABLE IF NOT EXISTS ai_tokens (
@@ -1744,6 +1747,8 @@ export function createAssistant({ store, config = {} }) {
       revision: proposal.revision,
       reason: proposal.reason,
       lastChangedBy: proposal.last_by ?? 'ai',
+      // needs_review: what the sheet holds of it, as compared after the last sync.
+      ...(proposal.status === 'needs_review' && proposal.check_json ? { sheetCheck: parse(proposal.check_json) } : {}),
     };
     if (args.full === true) {
       const from = Math.min(Math.max(Number(args.offset) || 0, 0), table.length);
@@ -3786,13 +3791,52 @@ export function createAssistant({ store, config = {} }) {
     }
     return bad(404, 'not_found', 'Assistant route not found.');
   }
+  /**
+   * After each sync that read the sheets: the proposals in needs_review compared with them.
+   * All their cells in the sheet: applied (written after all, or by hand); else the cells
+   * that differ are kept (check_json) for get_proposal and the table.
+   */
+  function checkNeedsReview() {
+    const rows = db.prepare("SELECT * FROM ai_proposals WHERE status = 'needs_review'").all();
+    const out = { applied: [], differ: [] };
+    for (const p of rows) {
+      const changes = parse(p.changes_json) ?? [];
+      const { cells, differ } = compareWithSheet(store, changes, parse(p.created_json ?? 'null') ?? {});
+      if (!cells) continue;
+      const at = now();
+      if (!differ.length) {
+        const written = changes.map((c, i) => (!c.context && Object.keys(c.values ?? {}).length ? i : -1)).filter(i => i >= 0);
+        db.prepare(
+          "UPDATE ai_proposals SET status = 'applied', applied_at = ?, applied_json = ?, check_json = ? WHERE id = ? AND status = 'needs_review'",
+        ).run(at, json(written), json({ at, matched: cells, differ: [] }), p.id);
+        out.applied.push(p.id);
+        console.log(`Proposal ${p.id}: every cell (${cells}) is in the sheet; marked applied`);
+      } else {
+        db.prepare('UPDATE ai_proposals SET check_json = ? WHERE id = ?').run(json({ at, matched: cells - differ.length, differ: differ.slice(0, 200), count: differ.length }), p.id);
+        out.differ.push(p.id);
+      }
+      changed(p.owner_id);
+    }
+    return out;
+  }
+  const stopWatching = store.watchSyncs?.(status => {
+    if (status?.state === 'error') return;
+    try {
+      checkNeedsReview();
+    } catch (e) {
+      console.error('needs_review check:', e.message);
+    }
+  });
+
   return {
     handle,
     mcp,
     tools: mcpTools,
     t3,
     sheetsCopy,
+    checkNeedsReview,
     close() {
+      stopWatching?.();
       sheetsCopy?.close();
       queries?.close();
     },
