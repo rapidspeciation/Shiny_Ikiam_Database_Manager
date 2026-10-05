@@ -5,12 +5,14 @@ import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-ta
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
 import { Check, CheckCheck, FileSpreadsheet, Sparkles, Table2 } from 'lucide-vue-next'
 import { displayValue, editText, normalizeInput } from '../../lib/cells'
+import { copyText } from '../../lib/clipboard'
 import {
   activeCell,
   attachColumnFit,
   attachCopyMarker,
   attachFillHandle,
   attachTouchSheet,
+  plainCopy,
   backToGrid,
   choiceEditor,
   editingKeys,
@@ -570,8 +572,6 @@ function columns(): ColumnDefinition[] {
       minWidth: 70,
       headerSort: false,
       formatter: formatter(field) as never,
-      // Copied as shown (dates 14-Aug-25, times 9:05), without the struck-through old value.
-      formatterClipboard: ((cell: CellComponent) => show(field, cell.getValue())) as never,
       editable: (cell: CellComponent) => canEditCell((cell.getData() as Row).__key, field),
       ...(choices
         ? choiceEditor(() => [...(choicesOf(field) ?? [])])
@@ -981,6 +981,17 @@ function sync() {
   follow?.()
 }
 
+/** A cell as copied: its value as shown (a formula's too), dates as 2026-10-04 (lib/clipboard). */
+function copyCell(cell: CellComponent) {
+  const field = cell.getField()
+  return fieldSet.value.has(field) ? copyText(cell.getValue(), { key: field, type: typeOf(field) }) : String(cell.getValue() ?? '')
+}
+/** A formula cell of the sheet (grey in the grid): the copy notice counts them. */
+function formulaCell(cell: CellComponent) {
+  const c = fieldSet.value.has(cell.getField()) ? info((cell.getData() as Row).__key, cell.getField()) : null
+  return !!c && (c.kind === 'locked' || !!c.fromFormula || !!c.formulaFallback)
+}
+
 const onKeydown = spreadsheetKeys(
   () => table,
   canEdit,
@@ -1013,8 +1024,8 @@ onMounted(() => {
     selectableRangeClearCells: false,
     editTriggerEvent: 'dblclick',
     clipboard: true,
-    clipboardCopyConfig: { columnHeaders: false, rowHeaders: false, formatCells: true },
-    clipboardCopyRowRange: 'range',
+    // Copied as plain text, without the struck-through old value (lib/clipboard).
+    ...plainCopy(() => table, copyCell),
     clipboardPasteParser: pasteParser,
     clipboardPasteAction: pasteRange,
     // Widths change from the header's borders only (see gridKit): a finger on the rows scrolls.
@@ -1043,7 +1054,7 @@ onMounted(() => {
         canEdit,
         onFilled: rows => notice(tn(rows, 'Copiado a {n} fila', 'Copiado a {n} filas')),
       })
-  copied = attachCopyMarker(table, container, notice)
+  copied = attachCopyMarker(table, container, notice, formulaCell)
   fit = attachColumnFit(table, host.value, {
     text: (data, field) => {
       const change = byKey.get(String(data.__key))

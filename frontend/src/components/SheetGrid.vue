@@ -4,12 +4,14 @@ import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
 import { displayValue, editText, normalizeInput } from '../lib/cells'
+import { copyText } from '../lib/clipboard'
 import { isSumField, sumTotal } from '../lib/sums'
 import {
   attachColumnFit,
   attachCopyMarker,
   attachFillHandle,
   attachTouchSheet,
+  plainCopy,
   backToGrid,
   fillDown as fillDownRange,
   choiceEditor,
@@ -670,8 +672,8 @@ function build() {
     selectableRangeClearCells: false,
     editTriggerEvent: 'dblclick',
     clipboard: true,
-    clipboardCopyConfig: { columnHeaders: false, rowHeaders: false, formatCells: true },
-    clipboardCopyRowRange: 'range',
+    // Copied as plain text: dates as 2026-10-04, formulas as their values (lib/clipboard).
+    ...plainCopy(() => table, cell => copyText(cell.getValue(), fieldIndex.get(cell.getField()))),
     clipboardPasteParser: pasteParser,
     clipboardPasteAction: pasteRange,
     // Widths change from the header's borders only (see gridKit): a finger on the rows scrolls.
@@ -709,7 +711,10 @@ function build() {
           onFilled: rows => notice(tn(rows, 'Copiado a {n} fila', 'Copiado a {n} filas')),
         })
   copied?.destroy()
-  copied = host.value.parentElement ? attachCopyMarker(table, host.value.parentElement, notice) : null
+  // Counts kept as sums (=12+15) are copied as such: pasted, they stay sums, so the notice does not count them.
+  const formulaCell = (cell: CellComponent) =>
+    isFormula(cell.getData() as GridRow, cell.getField()) && !isSumField(props.module, cell.getField())
+  copied = host.value.parentElement ? attachCopyMarker(table, host.value.parentElement, notice, formulaCell) : null
   // Double-clicking a column's right border fits it to the text shown (the rows on screen and a sample).
   fit?.destroy()
   fit = attachColumnFit(table, host.value, {

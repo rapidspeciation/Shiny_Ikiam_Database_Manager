@@ -48,6 +48,10 @@ export default {
   'Arrastra hacia abajo para copiar': 'Drag down to copy',
   'Copiado: {n} celda. Selecciona dónde pegar y pulsa Ctrl+V': 'Copied: {n} cell. Select where to paste and press Ctrl+V',
   'Copiado: {n} celdas. Selecciona dónde pegar y pulsa Ctrl+V': 'Copied: {n} cells. Select where to paste and press Ctrl+V',
+  'Incluye {n} celda con fórmula: pegada en Google Sheets, su valor reemplaza la fórmula':
+    '{n} formula cell included: pasted in Google Sheets, its value replaces the formula',
+  'Incluye {n} celdas con fórmula: pegadas en Google Sheets, sus valores reemplazan las fórmulas':
+    '{n} formula cells included: pasted in Google Sheets, their values replace the formulas',
   'Cortado: {n} celda. Selecciona dónde pegar y pulsa Ctrl+V': 'Cut: {n} cell. Select where to paste and press Ctrl+V',
   'Cortado: {n} celdas. Selecciona dónde pegar y pulsa Ctrl+V': 'Cut: {n} cells. Select where to paste and press Ctrl+V',
   'Arrastra para ampliar la selección': 'Drag to extend the selection',

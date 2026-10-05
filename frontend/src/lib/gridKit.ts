@@ -1,6 +1,7 @@
 import { EditModule, KeybindingsModule, ResizeColumnsModule, SelectRangeModule } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent, Tabulator } from 'tabulator-tables'
 import { complete, pickChoice } from './paste'
+import { toTsv } from './clipboard'
 import { t, tn } from './i18n'
 
 /**
@@ -519,10 +520,38 @@ export function tileToSelection(block: string[][], rows: number, columns: number
 }
 
 /**
- * The copied cells get a moving dashed border (as in Google Sheets) until Esc
- * or until a cell is edited, and a short notice says how many were copied.
+ * A grid's copy options (Ctrl+C, Ctrl+X, «Copiar»): the selection goes on the
+ * clipboard as plain text only, its cells as tab-separated rows (toTsv), each
+ * as `text` gives it, with no formatting: a plain Ctrl+V in Google Sheets pastes
+ * values, not the grid's colours.
  */
-export function attachCopyMarker(table: Tabulator, container: HTMLElement, notice: Notice) {
+export function plainCopy(table: () => Tabulator | null, text: (cell: CellComponent) => string) {
+  return {
+    // Cells are not formatted for the copy: their text comes from `text`.
+    clipboardCopyConfig: { columnHeaders: false, rowHeaders: false, formatCells: false },
+    clipboardCopyRowRange: 'range',
+    clipboardCopyStyled: false,
+    // Tabulator sets text/html only when given some.
+    clipboardCopyFormatter: (type: 'plain' | 'html', output: string) => {
+      if (type === 'html') return ''
+      const cells = table()?.getRanges()[0]?.getCells() as CellComponent[][] | undefined
+      return cells?.length ? toTsv(cells.map(row => row.filter(cell => cell.getField()).map(text))) : output
+    },
+  }
+}
+
+/**
+ * The copied cells get a moving dashed border (as in Google Sheets) until Esc
+ * or until a cell is edited, and a short notice says how many were copied, and
+ * how many of them are formulas (`isFormula`): a block pasted in Google Sheets
+ * writes over every cell it covers, formulas too.
+ */
+export function attachCopyMarker(
+  table: Tabulator,
+  container: HTMLElement,
+  notice: Notice,
+  isFormula?: (cell: CellComponent) => boolean,
+) {
   const box = document.createElement('div')
   box.className = 'copy-box'
   container.appendChild(box)
@@ -560,14 +589,19 @@ export function attachCopyMarker(table: Tabulator, container: HTMLElement, notic
       return
     }
     place()
-    if (n)
-      notice(
-        tn(
-          n,
-          'Copiado: {n} celda. Selecciona dónde pegar y pulsa Ctrl+V',
-          'Copiado: {n} celdas. Selecciona dónde pegar y pulsa Ctrl+V',
-        ),
-      )
+    if (!n) return
+    const copiedText = tn(
+      n,
+      'Copiado: {n} celda. Selecciona dónde pegar y pulsa Ctrl+V',
+      'Copiado: {n} celdas. Selecciona dónde pegar y pulsa Ctrl+V',
+    )
+    const formulas = isFormula ? cells!.filter(isFormula).length : 0
+    const formulaText = tn(
+      formulas,
+      'Incluye {n} celda con fórmula: pegada en Google Sheets, su valor reemplaza la fórmula',
+      'Incluye {n} celdas con fórmula: pegadas en Google Sheets, sus valores reemplazan las fórmulas',
+    )
+    notice(formulas ? `${copiedText} · ${formulaText}` : copiedText)
   })
   table.on('cellEditing', clear)
   const later = () => requestAnimationFrame(place)

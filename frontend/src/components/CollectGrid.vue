@@ -9,6 +9,7 @@ import {
   attachCopyMarker,
   attachFillHandle,
   attachTouchSheet,
+  plainCopy,
   backToGrid,
   choiceEditor,
   followSelection,
@@ -26,6 +27,7 @@ import {
   type Direction,
 } from '../lib/gridKit'
 import { complete, parseBlock, stepId } from '../lib/paste'
+import { toTsv } from '../lib/clipboard'
 import { locale, t, tn } from '../lib/i18n'
 import CellBar from './CellBar.vue'
 
@@ -145,6 +147,10 @@ const display = (field: Column, text?: (value: unknown) => string) => (cell: Cel
     (field === 'cam' && off ? t('Escribe o pega un CAM para pasarla a Collected_Preserved') : '')
   return off ? '' : text ? text(cell.getValue()) : String(cell.getValue() ?? '')
 }
+
+/** A cell as copied: as the list shows it. */
+const copyCell = (cell: CellComponent) =>
+  cell.getField() === '__remove' ? '' : shownText(draftOf(cell.getRow()), cell.getField() as Column, cell.getValue())
 
 function columns(): ColumnDefinition[] {
   const text = (field: Column, width: number, extra: Partial<ColumnDefinition> = {}) => ({
@@ -376,9 +382,8 @@ onMounted(() => {
     selectableRangeClearCells: false,
     editTriggerEvent: 'dblclick',
     clipboard: true,
-    // Copied as shown (♀, Al insectario), which reads well in a spreadsheet and pastes back the same.
-    clipboardCopyConfig: { columnHeaders: false, rowHeaders: false, formatCells: true },
-    clipboardCopyRowRange: 'range',
+    // Copied as shown (♀, Al insectario), as plain text: reads well in a spreadsheet and pastes back the same.
+    ...plainCopy(() => table, copyCell),
     // Pasting goes through the list (it spreads blocks and adds rows); a single value goes to the cell.
     clipboardPasteParser: (text: string) => {
       const range = table?.getRanges()[0]
@@ -393,7 +398,7 @@ onMounted(() => {
       if (block.length === 1 && block[0].length === 1) {
         if (canEdit(cell.getRow(), field))
           emit('edit', props.drafts[index].key, field, completed(field, block[0][0], cell.getData() as Row))
-      } else props.paste(block.map(line => line.join('\t')).join('\n'), index, field)
+      } else props.paste(toTsv(block), index, field)
       return false
     },
     clipboardPasteAction: () => [],

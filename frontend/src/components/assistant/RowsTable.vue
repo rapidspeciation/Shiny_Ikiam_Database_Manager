@@ -5,9 +5,11 @@ import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-ta
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
 import { Eye, Table2, X } from 'lucide-vue-next'
 import { displayValue } from '../../lib/cells'
+import { copyText } from '../../lib/clipboard'
 import {
   attachColumnFit,
   attachCopyMarker,
+  plainCopy,
   backToGrid,
   followSelection,
   selectedCell,
@@ -126,10 +128,13 @@ function columns(): ColumnDefinition[] {
       maxInitialWidth: 260,
       sorter,
       formatter: formatter(field) as never,
-      // Copied as shown (dates 14-Aug-25, times 9:05).
-      formatterClipboard: ((cell: CellComponent) => show(field, cell.getValue())) as never,
     } as ColumnDefinition)
   return cols
+}
+/** A cell as copied: dates as 2026-10-04, the rest as shown (lib/clipboard). */
+function copyCell(cell: CellComponent) {
+  const field = cell.getField()
+  return field.startsWith('__') ? String(cell.getValue() ?? '') : copyText(cell.getValue(), { key: field, type: typeOf(field) })
 }
 function rowLook(row: RowComponent) {
   const r = byKey.get((row.getData() as GridRow).__key)
@@ -200,8 +205,8 @@ onMounted(() => {
     selectableRangeRows: true,
     selectableRangeClearCells: false,
     clipboard: 'copy',
-    clipboardCopyConfig: { columnHeaders: false, rowHeaders: false, formatCells: true },
-    clipboardCopyRowRange: 'range',
+    // Copied as plain text: dates as 2026-10-04, the rest as shown (lib/clipboard).
+    ...plainCopy(() => grid, copyCell),
     // A click on a column's name sorts it (again: the other way, then as the assistant gave it).
     columnDefaults: { headerSort: true, headerSortTristate: true, resizable: 'header' },
     rowFormatter: rowLook,

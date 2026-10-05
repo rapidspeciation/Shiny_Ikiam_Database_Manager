@@ -8,7 +8,42 @@
 export function parseBlock(text: string): string[][] | null {
   const clean = text.replace(/\r\n?/g, '\n').replace(/\n$/, '')
   if (!clean.includes('\t') && !clean.includes('\n')) return null
-  return clean.split('\n').map(line => line.split('\t').map(cell => cell.trim()))
+  return splitCells(clean).map(line => line.map(cell => cell.trim()))
+}
+
+/**
+ * Lines by new lines, cells by tabs. A cell between quotes (as spreadsheets copy
+ * one with a new line or a tab in it) is read to its closing quote, "" inside
+ * as one quote; a quote not closed before a tab, a new line or the end is text.
+ */
+function splitCells(text: string): string[][] {
+  const rows: string[][] = [[]]
+  let i = 0
+  for (;;) {
+    const close = text[i] === '"' ? closingQuote(text, i) : -1
+    let end = close + 1
+    if (close >= 0) rows.at(-1)!.push(text.slice(i + 1, close).replace(/""/g, '"'))
+    else {
+      end = i
+      while (end < text.length && text[end] !== '\t' && text[end] !== '\n') end++
+      rows.at(-1)!.push(text.slice(i, end))
+    }
+    if (end >= text.length) return rows
+    if (text[end] === '\n') rows.push([])
+    i = end + 1
+  }
+}
+
+function closingQuote(text: string, start: number): number {
+  for (let i = start + 1; i < text.length; i++) {
+    if (text[i] !== '"') continue
+    if (text[i + 1] === '"') {
+      i++
+      continue
+    }
+    return i + 1 === text.length || text[i + 1] === '\t' || text[i + 1] === '\n' ? i : -1
+  }
+  return -1
 }
 
 /** The one fate or sex whose names begin with what was typed ("he" → hembra → female), if only one does. */
