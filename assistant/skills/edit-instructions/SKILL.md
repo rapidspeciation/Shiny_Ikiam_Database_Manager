@@ -1,6 +1,6 @@
 ---
-name: team-rules
-description: Update the assistant's own rules (this folder's AGENTS.md and skills) when the team changes how it records something or settles something new. Use when the person asks for a value or a way of recording that differs from what the rules say (e.g. the rules say Sex `NA` and they ask for `NOT_COLLECTED`), says "from now on…", "we decided…", "that's not how we do it", or corrects the same thing twice. Covers asking whether it is a lasting rule, where the rule lives, and how to write it so a new chat applies it.
+name: edit-instructions
+description: Edit the assistant's own instructions (AGENTS.md and the skills, shown in the app as «AI instructions») when the team changes how it records something or settles something new. Use when the person asks for a value or a way of recording that differs from what the rules say (e.g. the rules say Sex `NA` and they ask for `NOT_COLLECTED`), says "from now on…", "we decided…", "that's not how we do it", or corrects the same thing twice. Covers asking whether it is a lasting rule, where the rule lives, and how to write it so a new chat applies it.
 ---
 
 # Changing the team's rules

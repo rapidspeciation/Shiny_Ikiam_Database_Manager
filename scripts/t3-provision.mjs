@@ -163,8 +163,22 @@ function provision(user, { freshToken, addProject }) {
 
   // The release's skills replace the workspace's copies (a removed file goes too):
   // .claude/skills for Claude Code, .agents/skills for Codex (its project skills folder).
+  // A skill an earlier release installed and this one no longer has (renamed, removed) goes as
+  // well; skills of the workspace's own (made in a chat) stay. The installed names are kept in
+  // .claude/t3-skills.json.
   const skills = join(release, 'assistant', 'skills');
-  for (const name of existsSync(skills) ? readdirSync(skills) : []) {
+  const names = existsSync(skills) ? readdirSync(skills) : [];
+  const installedFile = join(workspace, '.claude', 't3-skills.json');
+  let installed = [];
+  try {
+    installed = JSON.parse(readFileSync(installedFile, 'utf8'));
+  } catch {
+    /* none recorded yet */
+  }
+  for (const old of installed.filter(n => !names.includes(n) && /^[\w.-]+$/.test(n)))
+    for (const folder of ['.claude', '.agents']) rmSync(join(workspace, folder, 'skills', old), { recursive: true, force: true });
+  writeFileSync(installedFile, JSON.stringify(names));
+  for (const name of names) {
     for (const folder of ['.claude', '.agents']) {
       const target = join(workspace, folder, 'skills', name);
       rmSync(target, { recursive: true, force: true });

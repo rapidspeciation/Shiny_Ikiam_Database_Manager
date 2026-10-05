@@ -111,8 +111,14 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     writeFileSync(join(workspace, 'AGENTS.md'), 'outdated');
     rmSync(join(workspace, 'CLAUDE.md'));
     writeFileSync(join(workspace, 'CLAUDE.md'), 'a copy from before the link');
+    // A skill an earlier release installed and this one renamed, and a skill made in a chat.
+    const installed = JSON.parse(readFileSync(join(workspace, '.claude', 't3-skills.json'), 'utf8'));
+    writeFileSync(join(workspace, '.claude', 't3-skills.json'), JSON.stringify([...installed, 'old-name']));
+    for (const name of ['old-name', 'my-own']) mkdirSync(join(workspace, '.claude', 'skills', name), { recursive: true });
 
     const out = run('--refresh-all');
+    assert.ok(!existsSync(join(workspace, '.claude', 'skills', 'old-name')), 'a skill the release no longer has goes');
+    assert.ok(existsSync(join(workspace, '.claude', 'skills', 'my-own')), "the workspace's own skill stays");
     assert.match(out, /Refreshed: Ithomiini · Ana Pérez/);
     assert.match(out, /Skipped old: no active user/);
     assert.equal(readFileSync(join(workspace, 'AGENTS.md'), 'utf8'), brief);
