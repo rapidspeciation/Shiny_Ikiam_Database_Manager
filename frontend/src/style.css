@@ -608,6 +608,16 @@ body.touch-bar-open main {
   line-height: 14px;
 }
 /* The header's count of rows that leave a preserved butterfly without CAM or tube. */
+.order-notice {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 1px solid #fde68a;
+  background: #fffbeb;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: #92400e;
+}
 .warn-count {
   display: inline-flex;
   align-items: center;
@@ -850,6 +860,12 @@ body.touch-bar-open main {
 .proposal-sheet .tabulator-cell.row-number.is-skipped {
   color: #a8a29e;
   text-decoration: line-through;
+}
+/* A notebook line that goes another way in the sheet than on the page. */
+.proposal-sheet .tabulator-cell.row-number.is-out-of-order {
+  color: #92400e;
+  background: #fef3c7;
+  font-weight: 600;
 }
 /* Valor de la hoja / Valor de la IA, for the selected cells. */
 .proposal-use {

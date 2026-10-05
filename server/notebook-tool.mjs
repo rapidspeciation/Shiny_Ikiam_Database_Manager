@@ -6,6 +6,7 @@
 // beside the chat. Nothing is written until they apply it.
 
 import { moduleMap } from './schema.mjs';
+import { VIEW_PARAM } from './proposal-view.mjs';
 import { newRowFormulaFields } from './premade.mjs';
 import { TUBE_FIELD, isIdValue, isUnique, twinRows } from './verifications.mjs';
 import { listOptions } from './verify.mjs';
@@ -46,7 +47,7 @@ export const MATCH_NOTEBOOK_TOOL = {
       '- Every line, top to bottom, values as written (dates "17/9", counts "12+15"); a cell empty on the page: its column left out.',
       '- Doubtful cell: your best reading, confidence < 0.8, up to 3 alternatives and a reason. Unreadable cell: null (never left out), a reason, any partial reading in alternatives.',
       `- \`year\` only when the page shows it. Without it: the year the sheet has for the same dates, or the current year when the page's dates are from the last ${RECENT_DAYS} days; otherwise nothing is proposed and the answer asks for \`year\`.`,
-      '- The server finds each row (look-alike IDs), completes list values and notes, and flags what breaks a run; nothing is written until the person applies it.',
+      "- The server finds each row (look-alike IDs), completes list values and notes, and flags what breaks a run; nothing is written until the person applies it. The table lists the rows in the sheet's order, each with its photo and line.",
       'Answer: proposalId, year/yearSource, counts, and per line its status, the cells by group and warnings.',
       '',
       'Columns per kind (exact names):',
@@ -121,6 +122,7 @@ export const MATCH_NOTEBOOK_TOOL = {
           description:
             'Also show the lines already in the sheet (nothing to write) as grey context rows, so the table follows the whole page. Context rows are never written.',
         },
+        view: VIEW_PARAM,
       },
       required: ['kind', 'lines'],
     },
@@ -522,7 +524,7 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
         });
       }
     }
-    // The whole page, kept with the proposal: its table shows every line in the notebook's order
+    // The whole page, kept with the proposal: its table shows every line (in the sheet's order)
     // (lines with nothing to write, not found or crossed out too), each on its photo.
     const sent = typeof args.lines === 'string' ? parse(args.lines, []) : Array.isArray(args.lines) ? args.lines : [];
     const page = {

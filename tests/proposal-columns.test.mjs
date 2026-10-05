@@ -97,3 +97,58 @@ test('a proposal changing one column sends the columns to show, and the sheet va
     store.close?.();
   }
 });
+
+test("the assistant's view: its columns first, or only them (and the changed ones); a column the sheets lack is said", async () => {
+  const sheets = new LocalSheets({
+    Insectary_data: [2, 3].map(row => ({
+      row,
+      values: { Insectary_ID: `K${row}B`, SPECIES: 'Oleria onega', Sex: 'NA', CAM_ID: `CAM07900${row}`, Tube_1_id: `FS0${row}` },
+    })),
+  });
+  const store = new Store({ localMode: true }, { sheets });
+  try {
+    await store.sync({ sheets: ['Insectary_data'] });
+    const assistant = createAssistant({ store, config: {} });
+    store.db
+      .prepare(
+        "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u1','franz','Franz','editor','s','h',1,'2026-01-01')",
+      )
+      .run();
+    store.db
+      .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
+      .run(createHash('sha256').update('franz-token').digest('hex'), 'u1');
+    const call = async (name, args) =>
+      JSON.parse(
+        (await assistant.mcp({ authorization: 'Bearer franz-token' }, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }))
+          .body.result.content[0].text,
+      );
+    const user = { id: 'u1', username: 'franz', displayName: 'Franz', role: 'editor' };
+    const shownOf = async id =>
+      (await assistant.handle({ method: 'GET', path: '/api/chat/proposals', body: {}, user, query: { all: '1' } })).body.proposals.find(p => p.id === id)
+        .shownColumns.Insectary_data;
+    const at = row => store.getRecordBySheetRow('Insectary_data', row).id;
+    const changes = [2, 3].map(row => ({ recordId: at(row), values: { Sex: 'NOT_COLLECTED' } }));
+
+    // Named loosely, as people write them; in that order, before the sheet's standard ones.
+    const first = await call('propose_changes', { reason: 'Sexo', changes, view: { columns: ['tube 1 id', 'cam id'] } });
+    assert.ok(!first.error, first.error);
+    const standard = columnsOf('Insectary_data');
+    const shown = await shownOf(first.proposalId);
+    assert.deepEqual(shown.fields.slice(0, 2), ['Tube_1_id', 'CAM_ID']);
+    assert.deepEqual([...shown.fields].sort(), [...standard.fields].sort());
+    assert.deepEqual(shown.keys, standard.keys);
+    // Only them (the table adds the changed ones after them).
+    await call('update_proposal', { proposalId: first.proposalId, view: { onlyColumns: true } });
+    assert.deepEqual(await shownOf(first.proposalId), { fields: ['Tube_1_id', 'CAM_ID'], keys: standard.keys });
+    // Back to the standard set.
+    await call('update_proposal', { proposalId: first.proposalId, view: { columns: null, onlyColumns: null } });
+    assert.deepEqual(await shownOf(first.proposalId), standard);
+
+    const wrong = await call('propose_changes', { reason: 'x', changes, view: { columns: ['Sexo'] } });
+    assert.match(wrong.error, /^view\.columns: Unknown column Sexo in Insectary_data; did you mean Sex/);
+    assert.match((await call('propose_changes', { reason: 'x', changes, view: { between: 'yes' } })).error, /^view\.between: true or false/);
+    assert.match((await call('update_proposal', { proposalId: first.proposalId, view: { rows: 3 } })).problems[0], /^view: unknown key rows/);
+  } finally {
+    store.close?.();
+  }
+});

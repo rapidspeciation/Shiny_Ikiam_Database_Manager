@@ -149,6 +149,48 @@ export function insectaryIdRow(store, id) {
   return null;
 }
 
+/**
+ * Where rows named by these Insectary IDs stand or will stand in Insectary_data,
+ * to put a proposal's rows in the sheet's order (one read of the sheet for them
+ * all): ID → { row } for the row holding it (the first, if several), { row,
+ * ahead: true } past the pre-made rows (as insectaryIdRow), { row, below: true }
+ * for a suffixed ID (W2B.2: its row goes below that row, the last of its ID's
+ * group). IDs without a place are left out.
+ */
+export function insectaryIdPlaces(store, ids) {
+  const wanted = [...new Set(ids.map(id => String(id ?? '').trim().toUpperCase()).filter(Boolean))];
+  const out = new Map();
+  if (!wanted.length) return out;
+  const rows = store.db
+    .prepare(
+      "SELECT row_num r, upper(trim(json_extract(values_json,'$.Insectary_ID'))) v FROM records WHERE sheet='Insectary_data' AND missing=0 AND row_num>0 AND row_num<2000000000 AND trim(coalesce(json_extract(values_json,'$.Insectary_ID'),''))<>'' ORDER BY row_num",
+    )
+    .all();
+  const first = new Map();
+  const lastOfBase = new Map();
+  for (const { r, v } of rows) {
+    if (!first.has(v)) first.set(v, r);
+    lastOfBase.set(suffixedId(v)?.base ?? v, r);
+  }
+  const last = rows.at(-1);
+  let ahead = null;
+  for (const id of wanted) {
+    const suffixed = suffixedId(id);
+    if (first.has(id)) out.set(id, { row: first.get(id) });
+    else if (suffixed) {
+      if (lastOfBase.has(suffixed.base)) out.set(id, { row: lastOfBase.get(suffixed.base), below: true });
+    } else if (last) {
+      if (!ahead) {
+        ahead = new Map();
+        let next = suffixedId(last.v)?.base ?? last.v;
+        for (let step = 1; (next = nextInSeries(next)); step++) ahead.set(next, last.r + step);
+      }
+      if (ahead.has(id)) out.set(id, { row: ahead.get(id), ahead: true });
+    }
+  }
+  return out;
+}
+
 /** `W2B.2` → { base: 'W2B', n: 2 }: an Insectary ID written on two butterflies, told apart by a suffix. Null otherwise. */
 export function suffixedId(id) {
   const m = /^([A-Z0-9]+)\.([1-9]\d*)$/.exec(String(id ?? '').trim().toUpperCase());

@@ -152,6 +152,16 @@ export interface ProposalChange {
    * proposal without a notebook page, shown in sheet order): never written nor editable.
    */
   gap?: boolean
+  /** A notebook line that comes before this line of its photo in the sheet, though after it on the page. */
+  outOfOrder?: { line: number; id: string }
+}
+/** A notebook page's line whose sheet row goes another way than the page (within its photo). */
+export interface OrderNote {
+  photo: number
+  line: number
+  id: string
+  /** The line before it on the page, which comes after it in the sheet. */
+  after: { line: number; id: string }
 }
 export interface Proposal {
   id: string
@@ -189,6 +199,11 @@ export interface Proposal {
   shownColumns?: Record<string, { fields: string[]; keys: string[] }>
   /** Changes when the sheet's rows of a pending proposal change (an edit in the sheet): the list redraws it. */
   sheetStamp?: string
+  /** The rows are listed in the sheet's order: a notebook page's lines that go another way there. */
+  outOfOrder?: OrderNote[]
+  /** A hash of it as the server sent it: the list asks again with it and gets only { id, digest, same } while it holds. */
+  digest?: string
+  same?: boolean
   applied: number[] | null
   changes: ProposalChange[]
 }
@@ -746,6 +761,28 @@ export function selectionActions(cells: Pick<CellInfo, 'kind' | 'aiProposed' | '
 /** "la IA cambió 3 celdas" */
 export function changedText(n: number) {
   return tn(n, 'La IA cambió {n} celda', 'La IA cambió {n} celdas')
+}
+
+/**
+ * The notice of a page whose lines go another way in the sheet: up to three
+ * cases ("línea 7 (A4E) después de la línea 6 (X9C)"), then how many more;
+ * with several photos each line says its photo.
+ */
+export function orderText(notes: OrderNote[], severalPhotos: boolean, shown = 3): string {
+  const line = (photo: number, n: number, id: string) => {
+    const name = id ? `${n} (${id})` : String(n)
+    return severalPhotos ? t('foto {photo}, línea {line}', { photo: photo + 1, line: name }) : t('línea {line}', { line: name })
+  }
+  const cases = notes
+    .slice(0, shown)
+    .map(o =>
+      t('{line} va después de {after} en el cuaderno, pero antes en la hoja', {
+        line: line(o.photo, o.line, o.id),
+        after: line(o.photo, o.after.line, o.after.id),
+      }),
+    )
+  const more = notes.length > shown ? ` ${t('y {n} más', { n: notes.length - shown })}` : ''
+  return `${t('El orden no es el del cuaderno')}: ${cases.join('; ')}${more}`
 }
 
 /** The panel's share of the screen while dragging its divider: kept between 20 % and 80 %. */

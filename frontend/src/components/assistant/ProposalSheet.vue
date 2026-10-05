@@ -219,6 +219,7 @@ function toRow(c: ProposalChange): Row {
     JSON.stringify(c.warnings ?? null) +
     JSON.stringify(c.sheetChanged ?? null) +
     JSON.stringify(c.rowTaken ?? null) +
+    JSON.stringify(c.outOfOrder ?? null) +
     (props.editable ? 'e' : '') +
     (c.context ? 'c' : '') +
     (c.page?.error ? 'x' : '') +
@@ -429,14 +430,25 @@ function rowFormatter(cell: CellComponent) {
   const skipped = props.editable && !!change && !change.context && !writtenFields(change).length && !waiting
   const el = cell.getElement()
   el.classList.toggle('is-skipped', skipped)
-  el.title = change?.gap
-    ? readOnlyText(change)
-    : !skipped
-      ? ''
-      : change?.rowTaken
-        ? t('Esta fila no se escribe: su fila sin usar ya se usó en la hoja')
-        : t('Esta fila no se escribe: no le queda ningún cambio')
-  return row.__row
+  // A page line that comes before the previous line of its photo in the sheet: marked, with which line.
+  const after = change?.outOfOrder
+  el.classList.toggle('is-out-of-order', !!after)
+  const why = after
+    ? t('En el cuaderno va después de la línea {line} ({id}), pero en la hoja va antes', { line: after.line, id: after.id })
+    : ''
+  el.title = [
+    change?.gap
+      ? readOnlyText(change)
+      : !skipped
+        ? ''
+        : change?.rowTaken
+          ? t('Esta fila no se escribe: su fila sin usar ya se usó en la hoja')
+          : t('Esta fila no se escribe: no le queda ningún cambio'),
+    why,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+  return after ? `↕ ${row.__row}` : row.__row
 }
 
 /** A cell as drawn, as text: its value, then the sheet's value struck through or the assistant's set aside. */
@@ -459,13 +471,14 @@ function drawnText(change: ProposalChange, field: string) {
 }
 
 /**
- * The rows a column's width is measured on: every row that writes something, and
- * up to 100 of the others (page lines, the sheet's rows in between) spread over
- * the table, so hundreds of rows by some thirty columns are still sized at once.
+ * The rows a column's width is measured on: up to 200 of those that write
+ * something and up to 100 of the others (page lines, the sheet's rows in
+ * between), each spread over the table, so hundreds of rows by some thirty
+ * columns are still sized at once.
  */
 function measured() {
-  const others = props.changes.filter(c => c.context)
-  return others.length <= 100 ? props.changes : [...props.changes.filter(c => !c.context), ...spread(others, 100)]
+  if (props.changes.length <= 200) return props.changes
+  return [...spread(props.changes.filter(c => !c.context), 200), ...spread(props.changes.filter(c => c.context), 100)]
 }
 function widthOf(field: string, rows = measured()) {
   let chars = field.length + 2

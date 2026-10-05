@@ -14,6 +14,7 @@ import {
   expandProposal,
   nextCell,
   notApplied,
+  orderText,
   photoSummaries,
   rowKey,
   rowsToWrite,
@@ -52,7 +53,8 @@ export type { Proposal, ProposalChange } from '../lib/proposals'
  * says so before applying.
  * A notebook page's proposal follows the page: a header per photo (its
  * thumbnail, which opens it upright in a new tab, and how many of its lines
- * change), every line in the notebook's order ("solo cambios" hides the lines
+ * change), every line in the sheet's order with its photo and line, lines a
+ * photo has the other way round in the sheet told and marked ↕ ("solo cambios" hides the lines
  * that write nothing), the notebook's columns first and the template's NA /
  * NOT_COLLECTED columns folded.
  * Each table shows its rows whole enough to spot a wrong one, whatever the
@@ -76,6 +78,12 @@ const emit = defineEmits<{
 const session = useSession()
 
 const pending = computed(() => props.proposal.status === 'pending')
+/** A notebook page whose lines go another way in the sheet (within a photo): said above the table, rows marked ↕. */
+const orderNotice = computed(() => {
+  const notes = props.proposal.outOfOrder ?? []
+  const photos = new Set(props.proposal.changes.flatMap(c => (c.page ? [c.page.photo] : [])))
+  return notes.length ? orderText(notes, photos.size > 1) : ''
+})
 const editable = computed(() => pending.value && session.canEdit)
 
 // ------------------------------------------------------------ the person's edits, saved to the proposal
@@ -494,6 +502,15 @@ const statusText = computed(
         <AlertTriangle :size="12" />
         {{ $tn(new Set(noSample.map(w => w.key)).size, '{n} preservada sin CAM o tubo', '{n} preservadas sin CAM o tubo') }}
       </span>
+    </p>
+    <!-- The rows go in the sheet's order: lines of a photo the sheet has the other way round (an ID misread?). -->
+    <p
+      v-if="pending && orderNotice"
+      class="order-notice"
+      role="status"
+      :title="$t('Las filas van en el orden de la hoja. Estas líneas de una misma foto están al revés en la hoja (marcadas con ↕ en «Fila»): revisa que el ID esté bien leído')"
+    >
+      <AlertTriangle :size="12" class="shrink-0" /> {{ orderNotice }}
     </p>
     <!-- Edited in the sheet after this proposal: how many, what applying does, to the next one; and telling the assistant. -->
     <div v-if="pending && edited.length" class="sheet-banner" role="status">

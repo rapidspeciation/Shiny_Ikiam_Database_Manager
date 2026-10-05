@@ -11,6 +11,7 @@ import {
   expandProposal,
   nextCell,
   notApplied,
+  orderText,
   pageNote,
   panelShare,
   photoSummaries,
@@ -591,5 +592,29 @@ describe('cells edited in the sheet after the proposal', () => {
     expect(text).toContain('p1')
     expect(text).toContain('A1A Sex: read male, now NA')
     expect(text).toContain('B2D: its unused row 40')
+  })
+})
+
+describe("a notebook page in the sheet's order", () => {
+  const was = locale.value
+  beforeAll(() => (locale.value = 'en'))
+  afterAll(() => (locale.value = was))
+  const note = (photo: number, line: number, id: string, after: number, afterId: string) => ({ photo, line, id, after: { line: after, id: afterId } })
+  it('says which lines of a photo the sheet has the other way round, three at most', () => {
+    expect(orderText([note(0, 7, 'A4E', 6, 'X9C')], false)).toBe(
+      "The order is not the notebook's: line 7 (A4E) comes after line 6 (X9C) in the notebook, but before it in the sheet",
+    )
+    const many = [note(0, 2, 'A1E', 1, 'A2E'), note(1, 5, 'B1E', 4, 'B2E'), note(1, 8, '', 7, 'B5E'), note(2, 3, 'C1E', 2, 'C3E')]
+    const text = orderText(many, true)
+    expect(text).toContain('photo 2, line 5 (B1E) comes after photo 2, line 4 (B2E)')
+    expect(text).toContain('photo 2, line 8 comes after')
+    expect(text).not.toContain('C1E')
+    expect(text.endsWith('and 1 more')).toBe(true)
+  })
+  it("the assistant's columns only: those first, then the changed ones", () => {
+    const p = proposal([edited('r1', { Sex: 'female' }, { sheet: 'Insectary_data' })], {
+      shownColumns: { Insectary_data: { fields: ['CAM_ID', 'Tube_1_id'], keys: ['Insectary_ID'] } },
+    })
+    expect(sheetGroups(p)[0].fields).toEqual(['CAM_ID', 'Tube_1_id', 'Sex'])
   })
 })
