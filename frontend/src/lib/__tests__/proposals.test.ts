@@ -325,6 +325,14 @@ describe('doubtful cells', () => {
       { label: 'Ilegible en el cuaderno', text: 'manchado (rellenada a mano)', kind: 'hint' },
     ])
   })
+  it("say what the data checks find in the sheet's value, while the cell keeps it", () => {
+    const tube = { text: 'Los tubos FS tienen 8 dígitos; este tiene 7' }
+    const row = edited('r1', { Sex: 'NOT_COLLECTED' }, { rowValues: { Sex: 'male', Tube_1_id: 'FS5848961' }, checks: { Tube_1_id: [tube] } })
+    expect(cellComments(cellOf(row, 'Tube_1_id'))).toEqual([{ label: 'Revisión', text: tube.text, kind: 'doubt' }])
+    // The proposal (or the person) writes another value there: it is about the old one.
+    const fixed = { ...row, values: { ...row.values, Tube_1_id: 'FS58489610' } }
+    expect(cellComments(cellOf(fixed, 'Tube_1_id'))).toEqual([])
+  })
   it('go one after another in the order the tables show them, the first again after the last', () => {
     const order = cellOrder([
       { keys: ['a', 'b'], fields: ['Sex', 'CLUTCH NUMBER'] },
@@ -476,7 +484,7 @@ describe("a notebook page's proposal", () => {
   it('makes the lean proposal whole: hints from its table, formula columns from its sheet', () => {
     const lean = {
       ...proposal([
-        edited('r1', { Tube_2_id: 'NA' }, { formulas: undefined, hints: { Tube_2_id: 0 } as never }),
+        edited('r1', { Tube_2_id: 'NA' }, { formulas: undefined, hints: { Tube_2_id: 0 } as never, checks: { Tube_1_id: [0] } as never }),
         edited('r2', {}, { formulas: ['Tribe', 'Genus'] }),
       ]),
       hintTable: [{ msg: { key: 'Individuo preservado: lo que el equipo escribe siempre' } }],
@@ -484,6 +492,7 @@ describe("a notebook page's proposal", () => {
     }
     const whole = expandProposal(lean)
     expect(whole.changes[0].hints).toEqual({ Tube_2_id: { text: '', msg: { key: 'Individuo preservado: lo que el equipo escribe siempre' } } })
+    expect(whole.changes[0].checks).toEqual({ Tube_1_id: [whole.changes[0].hints!.Tube_2_id] })
     expect(whole.changes[0].formulas).toEqual(['Tribe'])
     expect(whole.changes[1].formulas).toEqual(['Tribe', 'Genus'])
     const plain = proposal([])

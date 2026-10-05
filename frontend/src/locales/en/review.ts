@@ -2,6 +2,7 @@
 export default {
   // Kinds of issue as the server names them (server/checks.mjs CHECK_KINDS).
   'ID o tubo repetido': 'Repeated ID or tube',
+  'ID con un dígito de más o de menos': 'ID with a digit too many or too few',
   'CAM de dos mariposas': 'CAM of two butterflies',
   'Fuera de la lista de la hoja': "Not in the sheet's list",
   'Colecta sin insectario (o al revés)': 'Collecting without insectary (or the other way round)',

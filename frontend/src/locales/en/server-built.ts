@@ -78,6 +78,9 @@ export default {
     '{label} was preserved ({later}) before it entered the insectary ({earlier})',
   '{label} se preservó ({later}) antes de morir ({earlier})': '{label} was preserved ({later}) before it died ({earlier})',
   '{field} es {date}, después de hoy': '{field} is {date}, after today',
+  'Los tubos {prefix} tienen {expected} dígitos; este tiene {digits}': '{prefix} tubes have {expected} digits; this one has {digits}',
+  'Los {prefix} de {field} tienen {expected} dígitos; este tiene {digits}':
+    '{prefix} IDs in {field} have {expected} digits; this one has {digits}',
   'Preservada sin CAM_ID': 'Preserved without CAM_ID',
   'Preservada sin Tube_1_id': 'Preserved without Tube_1_id',
   'Preservada ({why}) sin {field}': 'Preserved ({why}) without {field}',

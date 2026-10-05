@@ -18,6 +18,7 @@ import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './note
 import { duplicateIdRow, insectaryIdPlaces, insectaryIdRow, newRowFormulaFields } from './premade.mjs';
 import { BETWEEN_ROWS, VIEW_PARAM, VIEW_UPDATE, readView, showBetween, viewColumns } from './proposal-view.mjs';
 import { proposalSampleWarnings } from './preserved.mjs';
+import { issuesByRecord, lookAt, rowIssues } from './look-at.mjs';
 import { carryChecks, dropDoubt, setChecked, uncheckedDoubts, unfilledUnreadable, withoutUnchecked } from './doubts.mjs';
 import { decide, editedInSheet, forget, lastEdit, resolveSheetEdits, sheetChangesOf, shownValue, takenRow, takenRows } from './sheet-edits.mjs';
 import { tellChat } from './t3tell.mjs';
@@ -181,7 +182,7 @@ const TOOLS = [
           kind: {
             type: 'string',
             description:
-              'Comma-separated: repeat (a unique ID or a tube in two rows), cam_cross (one CAM on two butterflies across Collection_data and Insectary_data / Wing_tissue), list (outside a strict list), insectary_link (Collected_Sent2Insectary without its Insectary_data row, or the reverse), link_mismatch (the two rows of one butterfly disagree), date_order, future_date, bad_date (no date in a date column), missing_sample (preserved without CAM_ID or Tube_1_id), preserved_na (Death_cause Killed_Preserved but CAM_ID NA and no tube: the cause and the preservation cells disagree), mark_reuse (a FieldMark_ID on two species), walk_doubt (a Wikiloc point stored without a row, its pairing doubtful: row = the likeliest or null, related = the candidates; a person pairs it in Monitoreo → Dudas, not with propose_changes), photo_camid (envelope CAM ≠ photo file name: Drive task), photo_extra (another butterfly\'s photos in a CAM folder: Drive task), envelope_sex, envelope_species (ocr = {read, sheet}; group = the batch), photo_missing (preserved over 30 days, no photos), ai_species (the Wings Gallery model sees another species; a person decides)',
+              'Comma-separated: repeat (a unique ID or a tube in two rows), id_format (an ID with a digit more or less than its series, e.g. FS + 7 digits among FS + 8), cam_cross (one CAM on two butterflies across Collection_data and Insectary_data / Wing_tissue), list (outside a strict list), insectary_link (Collected_Sent2Insectary without its Insectary_data row, or the reverse), link_mismatch (the two rows of one butterfly disagree), date_order, future_date, bad_date (no date in a date column), missing_sample (preserved without CAM_ID or Tube_1_id), preserved_na (Death_cause Killed_Preserved but CAM_ID NA and no tube: the cause and the preservation cells disagree), mark_reuse (a FieldMark_ID on two species), walk_doubt (a Wikiloc point stored without a row, its pairing doubtful: row = the likeliest or null, related = the candidates; a person pairs it in Monitoreo → Dudas, not with propose_changes), photo_camid (envelope CAM ≠ photo file name: Drive task), photo_extra (another butterfly\'s photos in a CAM folder: Drive task), envelope_sex, envelope_species (ocr = {read, sheet}; group = the batch), photo_missing (preserved over 30 days, no photos), ai_species (the Wings Gallery model sees another species; a person decides)',
           },
           recordId: { type: 'string', description: 'Only the issues of this row' },
           limit: { type: 'integer', description: '1 to 200, default 50' },
@@ -241,6 +242,7 @@ const TOOLS = [
           "- Formula cells cannot be changed, except Insectary_data's SPECIES when what emerged differs from the formula, and an Insectary_ID given to two butterflies: a suffix on the row's own ID (W2B → W2B.1).",
           "- A new Insectary_data row names its Insectary_ID and fills the pre-made row of that ID; a second butterfly of a used ID takes a suffix (W2B.2), its row inserted below that ID's rows.",
           `- Up to ${PROPOSAL_ROWS} rows per proposal; \`bulk\` gives the same values to many existing rows.`,
+          '- lookAt: rows of the proposal worth a look (checks, notes); tell the person what matters before they apply.',
           VALUES_RULES,
         ].join('\n'),
       parameters: {
@@ -443,7 +445,7 @@ const TOOLS = [
           '- changes / newRows: more rows, as in propose_changes. removeRows: indexes or IDs. If a value fails its checks, nothing is saved.',
           '- Cells the person edited are theirs: kept, and returned as conflicts; `overridePersonEdits` only when they ask.',
           "- photo / rotate: the page's photos, as in match_notebook.",
-          'Returns `changed` (those rows as get_proposal full shows them), `removed`, the row count; `full: true`: every row.',
+          'Returns `changed` (those rows as get_proposal full shows them), their `lookAt`, `removed`, the row count; `full: true`: every row.',
         ].join('\n'),
       parameters: {
         type: 'object',
@@ -487,7 +489,7 @@ const TOOLS = [
           "- doubtful: match_notebook's doubtful cells not checked yet (value, alternatives, reason);",
           '- unreadable: cells nobody could read, still empty (never written empty);',
           "- sheetChanged: cells edited in the sheet after you read them (read, now, by, applying). Applying keeps the sheet's value unless the person chose yours; re-check them, then update_proposal: your value goes over the sheet's, null keeps it. rowTaken: a new row's pre-made row is in use now.",
-          "A notebook page's lines that go another way in the sheet than on the page come as `orderDiffers`.",
+          "A notebook page's lines that go another way in the sheet than on the page come as `orderDiffers`; `lookAt` as in propose_changes.",
           '`full: true`: every row with its index, values (dates YYYY-MM-DD), note and these marks (`offset` continues a long one).',
           'Read it when the person says they changed the table, before update_proposal on a proposal you did not just make, and before apply_proposal if they edited it.',
         ].join('\n'),
@@ -1267,6 +1269,8 @@ export function createAssistant({ store, config = {} }) {
       const warned = proposalSampleWarnings(c, c.create ? null : store.getRecord(c.recordId));
       return warned ? [{ index, label: c.label, missing: Object.keys(warned) }] : [];
     });
+    // What the rows hold that the person should hear about (the preview shows few of them).
+    const look = lookAt(store, changes, { told: noSample.flatMap(n => n.missing.map(field => ({ index: n.index, field }))) });
     // Row indexes for update_proposal (new rows first, then edits of existing rows). A long
     // proposal: a bulk call's preview, or where to read them.
     const listed = changes.length <= (bulk ? 30 : 100);
@@ -1283,6 +1287,7 @@ export function createAssistant({ store, config = {} }) {
               'These rows leave a preserved butterfly without its CAM_ID or Tube_1_id; the table marks those cells. Ask the person for them.',
           }
         : {}),
+      ...(look ? { lookAt: look } : {}),
       ...(dropped.length ? { leftOut: `Formula columns left out of the new rows: ${dropped.join(', ')}` } : {}),
       ...(ignored.length ? { noChange: ignored.slice(0, 50), noChangeNote: 'null means no change: these cells keep the sheet value. To empty one give {"clear": true}.' } : {}),
       ...(listed
@@ -1672,6 +1677,12 @@ export function createAssistant({ store, config = {} }) {
     }));
   }
 
+  /** { lookAt } about a proposal's rows (`only`: these indexes), or nothing when there is nothing to say. */
+  function lookAtRows(changes, only = null) {
+    const look = lookAt(store, changes, { only });
+    return look ? { lookAt: look } : {};
+  }
+
   /**
    * The rows of a proposal's table that wait for a look: cells the person edited, doubtful
    * cells not checked (with the value proposed), unreadable cells still empty, cells edited
@@ -1749,6 +1760,7 @@ export function createAssistant({ store, config = {} }) {
       labels: table.map(v => v.label),
       ...(contextRows ? { contextRows } : {}),
       attention,
+      ...(proposal.status === 'pending' ? lookAtRows(changes) : {}),
       ...orderDiffers(proposal),
     };
   }
@@ -2085,13 +2097,16 @@ export function createAssistant({ store, config = {} }) {
     const revision = unchanged ? proposal.revision : saveRevision(proposal, out.changes, 'ai', reason);
     if (revision === null) return { error: 'The proposal is no longer pending' };
     const table = proposalTable(out.changes, proposal);
+    const revised = args.full === true ? { rows: table } : revisedRows(changes, out.changes, table, proposal);
     return {
       proposalId: proposal.id,
       ...proposalLink(proposal.id, chatOf(proposal, context)),
       revision,
       ...(unchanged ? { unchanged: true } : {}),
       ...(given ? { photos: given.photos.length, ...(given.refused.length ? { photoNotShown: given.refused } : {}) } : {}),
-      ...(args.full === true ? { rows: table } : revisedRows(changes, out.changes, table, proposal)),
+      ...revised,
+      // About the rows this revision changed (every row, with full).
+      ...(unchanged ? {} : lookAtRows(out.changes, revised.changed && new Set(revised.changed.map(v => v.index)))),
       ...(out.leftOut.length ? { leftOut: `Formula columns left out of the new rows: ${out.leftOut.join(', ')}` } : {}),
       ...(out.conflicts.length
         ? {
@@ -2293,6 +2308,12 @@ export function createAssistant({ store, config = {} }) {
     const open = status === 'pending';
     // A butterfly the row would leave preserved without CAM or tube: those cells are marked (and shown) until filled.
     const warned = changes.map(c => (open ? proposalSampleWarnings(c, c.create ? null : store.getRecord(c.recordId)) : null));
+    // What the checks (Revisión) say about its rows' cells, once they are found (never waited for here).
+    const issues = open ? issuesByRecord(store, { ready: true }) : null;
+    const checked = changes.map(c => {
+      const found = Object.entries(rowIssues(issues, c)).filter(([f]) => !!moduleMap.get(c.sheet)?.fields.some(x => x.key === f));
+      return found.length ? Object.fromEntries(found) : null;
+    });
     const fields = [
       ...new Set(
         changes.flatMap((c, i) => [
@@ -2300,6 +2321,7 @@ export function createAssistant({ store, config = {} }) {
           ...Object.keys(c.personEdits ?? {}),
           ...Object.keys(c.unreadable ?? {}),
           ...Object.keys(warned[i] ?? {}),
+          ...Object.keys(checked[i] ?? {}),
         ]),
       ),
     ];
@@ -2385,6 +2407,10 @@ export function createAssistant({ store, config = {} }) {
         ...(index >= 0 && warned[index] ? { warnings: warned[index] } : {}),
       };
       if (hints && Object.keys(hints).length) view.hints = Object.fromEntries(Object.entries(hints).map(([f, h]) => [f, hintOf(h)]));
+      if (index >= 0 && checked[index])
+        view.checks = Object.fromEntries(
+          Object.entries(checked[index]).map(([f, list]) => [f, list.map(i => hintOf({ text: i.problem, msg: i.problemMsg }))]),
+        );
       if (line) view.page = pageLine(line, index < 0 || !!change.context);
       // Before the previous line of its photo in the sheet: the notebook goes the other way here.
       if (after) view.outOfOrder = after;
@@ -3267,9 +3293,11 @@ export function createAssistant({ store, config = {} }) {
       const photos = args.photo ? given.photos : (parse(stored?.page_json ?? 'null')?.photos ?? []);
       db.prepare('UPDATE ai_proposals SET page_json = ? WHERE id = ?').run(json({ ...matched.page, photos }), proposal.id);
     }
-    const order = proposal ? orderDiffers(db.prepare('SELECT * FROM ai_proposals WHERE id = ?').get(proposal.id)) : {};
+    const stored = proposal ? db.prepare('SELECT * FROM ai_proposals WHERE id = ?').get(proposal.id) : null;
+    const order = stored ? orderDiffers(stored) : {};
     return {
       ...matchSummary(matched, proposal?.id),
+      ...lookAtRows(stored ? (parse(stored.changes_json) ?? []) : matched.changes),
       ...(proposal ? proposalLink(proposal.id, proposal.chat) : {}),
       ...(refused.length
         ? {
