@@ -83,4 +83,6 @@ Insectary ID».
 
 ## Answers
 
-Short; small tables for row-by-row comparisons.
+Short; small tables for row-by-row comparisons. When the answer is about
+many rows, open them beside the chat with `show_rows` and keep the text to
+what they mean.
