@@ -137,6 +137,8 @@ export const KINDS = {
     keys: ['Insectary_ID'],
     newRows: false,
     fields: ['Insectary_ID', 'SPECIES', 'Sex', 'CAM_ID', 'Tube_1_id'],
+    // A row with its entry date and no stage: Adult (implied, from the row).
+    extra: ['LIFESTAGE'],
   },
   crispr: {
     label: 'CRISPR',
@@ -1598,6 +1600,14 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
                   : serialOf(null, record?.values?.Intro2Insectary_date),
             })
           : { values: {}, reasons: {} });
+    /** The line's Intro2Insectary_date as read so far (a serial), else the row's; null when neither is a date. */
+    const entryDate = () => {
+      const read = cells.Intro2Insectary_date?.value;
+      if (typeof read === 'number') return read;
+      if (read !== undefined && read !== null) return null;
+      const own = record?.values?.Intro2Insectary_date;
+      return typeof own === 'number' && own > 0 ? own : null;
+    };
     for (const field of columnsOf(kind)) {
       const typed = field in edited;
       const unreadable = line.v[field] === null && field in line.v;
@@ -1621,6 +1631,9 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         // Its stage, when the note names one ("3rd instar", "eggs", "pre-pupa").
         else if (deathKind && field === 'LIFESTAGE' && notes[i]?.stage && preservedLarva(i, record))
           [inferred, hint] = [notes[i].stage.value, msg('De la nota: {words}', { words: `«${notes[i].stage.words}»` })];
+        // A date in Intro2Insectary_date (read now or in the row): an adult, reared or wild-caught (team rule, 5 Oct 2026).
+        else if (field === 'LIFESTAGE' && kind.sheet === 'Insectary_data' && entryDate() !== null && !preservedLarva(i, record))
+          [inferred, hint] = ['Adult', msg('Con fecha de entrada en Intro2Insectary_date: adulto')];
         // A death's other columns (the not-preserved block, a preserved butterfly's), the note's words.
         else if (deathKind && IMPLIED_FIELDS.has(field) && impliedNow().values[field] !== undefined)
           [inferred, hint] = [impliedNow().values[field], impliedNow().reasons[field] ?? null];

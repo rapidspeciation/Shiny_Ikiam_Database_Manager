@@ -4,6 +4,7 @@ import { api, requestId } from '../lib/api'
 import { isBlank } from '../lib/cells'
 import { isoToSerial, todayIso } from '../lib/dates'
 import { noteDay } from '../lib/clutches'
+import { ADULT } from '../lib/emerged'
 import { initialsOf } from '../lib/rows'
 import { errorText, notify } from '../lib/notice'
 import { listColumn } from '../lib/options'
@@ -679,6 +680,8 @@ export function useCollect() {
     Sex: insectarySex(d.sex),
     Collection_location: d.location,
     Intro2Insectary_date: serial(header.value.date),
+    // Brought in as an adult: with a date there, LIFESTAGE Adult (team rule, 5 Oct 2026).
+    ...(serial(header.value.date) !== null ? { LIFESTAGE: ADULT } : {}),
   })
 
   // --- Save (one save for the whole list), then Undo

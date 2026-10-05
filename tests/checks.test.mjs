@@ -156,6 +156,7 @@ test('check_data finds each kind of inconsistency, with the row, the value and t
     bad_date: 1,
     missing_sample: 3,
     preserved_na: 0,
+    stage_adult: 0,
     mark_reuse: 1,
     walk_doubt: 0,
     photo_camid: 0,
@@ -558,4 +559,28 @@ test('a proposal that would leave a butterfly preserved without CAM or tube mark
   assert.deepEqual(Object.keys(view.changes[0].warnings), ['CAM_ID', 'Tube_1_id']);
   assert.ok(view.fields.includes('CAM_ID') && view.fields.includes('Tube_1_id'));
   store.close();
+});
+
+test('stage_adult: a date in Intro2Insectary_date with an egg, larva or pupa stage; an empty stage or an Adult is not flagged', async () => {
+  const day = serial('2026-10-04');
+  const sheets = new LocalSheets({
+    Insectary_data: [
+      { row: 2, values: { Insectary_ID: 'A1A', Intro2Insectary_date: day, LIFESTAGE: '3rd instar larva' } },
+      { row: 3, values: { Insectary_ID: 'A2A', Intro2Insectary_date: day, LIFESTAGE: 'Pupa day 4' } },
+      { row: 4, values: { Insectary_ID: 'A3A', Intro2Insectary_date: day, LIFESTAGE: 'Egg' } },
+      { row: 5, values: { Insectary_ID: 'A4A', Intro2Insectary_date: day } },
+      { row: 6, values: { Insectary_ID: 'A5A', Intro2Insectary_date: day, LIFESTAGE: 'Adult' } },
+      { row: 7, values: { Insectary_ID: 'A6A', Intro2Insectary_date: 'NA', LIFESTAGE: 'Pre-pupa' } },
+    ],
+  });
+  const store = new Store({ localMode: true }, { sheets });
+  try {
+    await store.sync({ sheets: ['Insectary_data'] });
+    const out = checkData(store, { kind: 'stage_adult', limit: 50 });
+    sameTexts(out.issues);
+    assert.deepEqual(out.issues.map(i => `${i.label} ${i.field}`).sort(), ['A1A LIFESTAGE', 'A2A LIFESTAGE', 'A3A LIFESTAGE']);
+    assert.match(out.issues.find(i => i.label === 'A2A').problem, /Pupa day 4.*2026-10-04/);
+  } finally {
+    store.close();
+  }
 });

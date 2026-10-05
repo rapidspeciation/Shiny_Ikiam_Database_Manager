@@ -59,6 +59,8 @@ export interface Draft {
   own?: YoungOwn
 }
 
+/** LIFESTAGE of a butterfly with a date in Intro2Insectary_date (emerged or brought in). */
+export const ADULT = 'Adult'
 /** LIFESTAGE values, as the sheet writes them (used only for eggs and larvae). */
 export const LIFESTAGES = ['Egg', '1st instar larva', '2nd instar larva', '3rd instar larva', '4th instar larva', '5th instar larva', 'Pre-pupa']
 /** The protocol preserves F1 larvae at the 4th instar. */
@@ -196,7 +198,7 @@ export function youngNote(stage: string, foundDead: boolean): string {
 /**
  * The values of the new Insectary_data row for a card. An emergence:
  * Reared, the clutch, Stock_of_origin (the clutch's subspecies for the
- * messenoides stock, else NA), Sex, Intro2Insectary_date; SPECIES only when
+ * messenoides stock, else NA), Sex, Intro2Insectary_date, LIFESTAGE Adult; SPECIES only when
  * what emerged differs from the clutch (else the formula stays); a hybrid
  * gets Research_purpose F1/F2 mutation rate. Deformed or dead on its
  * emergence day: that day as Death_date, Deformed or Unknown, and the
@@ -235,6 +237,8 @@ export function draftValues(d: Draft, ctx: RowContext): Record<string, CellValue
   } else {
     values.Sex = d.sex
     values.Intro2Insectary_date = serial
+    // An entry date: an adult (team rule, 5 Oct 2026).
+    if (serial !== null) values.LIFESTAGE = ADULT
     if (d.fate === 'alive') {
       if (hybrid) values.Research_purpose = CROSS_PURPOSE
     } else if (d.fate === 'preserved') {

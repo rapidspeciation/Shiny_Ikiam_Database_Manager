@@ -81,6 +81,9 @@ export default {
   'Preservada sin CAM_ID': 'Preserved without CAM_ID',
   'Preservada sin Tube_1_id': 'Preserved without Tube_1_id',
   'Preservada ({why}) sin {field}': 'Preserved ({why}) without {field}',
+  'Con fecha de entrada en Intro2Insectary_date: adulto': 'A date in Intro2Insectary_date: an adult',
+  'LIFESTAGE es {stage}, pero Intro2Insectary_date tiene una fecha ({date}): con fecha de entrada es Adult':
+    'LIFESTAGE is {stage}, but Intro2Insectary_date has a date ({date}): with an entry date it is Adult',
   'Death_cause dice preservada ({why}), pero CAM_ID y los tubos dicen NA (no preservada)':
     'Death_cause says preserved ({why}), but CAM_ID and the tubes say NA (not preserved)',
   'Preservada sin {field}: pregunta al equipo': 'Preserved without {field}: ask the team',

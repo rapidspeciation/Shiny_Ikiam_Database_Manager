@@ -12,7 +12,7 @@ import { heldIds, useEmergedState } from '../composables/useEmergedState'
 import { useEntryMode } from '../composables/useEntryMode'
 import { useSheet } from '../composables/useSheet'
 import { isoToSerial } from '../lib/dates'
-import { knownSpecies, siblingSpecies, stockOrigin, isHybrid, CROSS_PURPOSE } from '../lib/emerged'
+import { knownSpecies, siblingSpecies, stockOrigin, isHybrid, ADULT, CROSS_PURPOSE } from '../lib/emerged'
 import { notify } from '../lib/notice'
 import { orderColumns } from '../lib/rows'
 import type { CellValue } from '../lib/types'
@@ -107,6 +107,8 @@ function prepare(sexes: (string | null)[]) {
       SPECIES: species.value || null,
       Sex: sexes[i],
       Intro2Insectary_date: introDate.value ? isoToSerial(introDate.value) : null,
+      // An entry date: an adult (team rule, 5 Oct 2026).
+      ...(introDate.value ? { LIFESTAGE: ADULT } : {}),
       ...defaultsFor(species.value),
     }),
   )
