@@ -29,6 +29,7 @@ import {
 } from '../lib/gridKit'
 import { parseBlock } from '../lib/paste'
 import type { CellValue, Field, TableRow } from '../lib/types'
+import type { StagedMark } from '../lib/staged'
 import { type PendingCreate, usePending } from '../stores/pending'
 import { useSession } from '../stores/session'
 import { useTables } from '../stores/tables'
@@ -79,6 +80,8 @@ const props = withDefaults(
     absent?: string[]
     /** A "Historial" action for the selected cell (cell bar, right click, touch bar): emits `history`. */
     cellHistory?: boolean
+    /** Per row id, cells of entries kept in the app, not in Google Sheets yet (lib/staged.ts overlayTable). */
+    staged?: Record<string, StagedMark>
   }>(),
   {
     creates: () => [],
@@ -99,6 +102,7 @@ const props = withDefaults(
     touched: () => ({}),
     absent: () => [],
     cellHistory: false,
+    staged: () => ({}),
   },
 )
 const emit = defineEmits<{
@@ -322,7 +326,13 @@ function decorate(cell: CellComponent) {
   const check = formula ? {} : checkTitle(field, cell.getValue(), data)
   el.classList.toggle('is-formula', formula)
   el.classList.toggle('is-locked', !formula && !canEdit(data, field))
-  el.classList.toggle('is-dirty', !data.__new && pending.isDirty(data.__id, field))
+  const dirty = !data.__new && pending.isDirty(data.__id, field)
+  el.classList.toggle('is-dirty', dirty)
+  // Kept in the app for everyone, not in Google Sheets yet; sent and waiting for Google.
+  const kept = props.staged[data.__id]
+  const staged = !dirty && !!kept && (kept.create || kept.fields.includes(field))
+  el.classList.toggle('is-staged', staged)
+  el.classList.toggle('is-queued', dirty && pending.isQueued(data.__id, field))
   el.classList.toggle('is-error', !!error)
   el.classList.toggle('is-repeated', !!check.repeated)
   el.classList.toggle('is-invalid', !!check.invalid)
@@ -337,8 +347,15 @@ function decorate(cell: CellComponent) {
   el.title =
     (then ? t('Ahora: {value}', { value: shownStored(now[field], field) }) : '') ||
     error ||
+    (staged && kept?.error ? t(kept.error) : '') ||
     check.repeated ||
     check.invalid ||
+    (staged
+      ? kept!.sent
+        ? t('Escribiéndose en Google Sheets · {who}', { who: kept!.who.join(', ') })
+        : t('Aún no en Google Sheets · {who}', { who: kept!.who.join(', ') })
+      : '') ||
+    (dirty && pending.isQueued(data.__id, field) ? t('Esperando a que Google Sheets responda; se escribe solo') : '') ||
     (formula ? t('Fórmula de la hoja (solo lectura)') : '')
 }
 
@@ -369,6 +386,9 @@ function rowNumberFormatter(cell: CellComponent) {
   const data = cell.getData() as GridRow
   const el = cell.getElement()
   el.classList.toggle('is-new', !!data.__new)
+  const kept = props.staged[data.__id]
+  el.classList.toggle('is-staged', !data.__new && !!kept?.create)
+  el.title = kept?.create ? t('Fila nueva aún no en Google Sheets · {who}', { who: kept.who.join(', ') }) : ''
   const text = data.__new ? t('nueva') : String(data.__row)
   return document.createTextNode(text)
 }
@@ -917,6 +937,14 @@ watch([rules, repeated, () => JSON.stringify(pending.problems), () => JSON.strin
   // Only the rows on screen are drawn; repainting them is enough (a full redraw re-measures the layout).
   if (table && built) for (const row of table.getRows('visible')) decorateRow(row)
 })
+
+// Entries kept in the app (everyone's) come and go, or start being written: their cells are marked again.
+watch(
+  () => JSON.stringify(props.staged),
+  () => {
+    if (table && built) for (const row of table.getRows('visible')) decorateRow(row)
+  },
+)
 
 // Cells showing the searched text are marked again when it changes.
 watch(markText, () => {

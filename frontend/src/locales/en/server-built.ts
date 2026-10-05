@@ -8,6 +8,13 @@ export default {
   'Sin cambios guardados': 'No saved changes',
   '{new} y {edited}': '{new} and {edited}',
   '{n} fila nueva': '{n} new row',
+  // server/batch.mjs, server/staged.mjs: identifiers held by entries kept in the app
+  '{value} ya lo tiene {name} en cambios aún no guardados en Google Sheets': '{value} is taken by {name} in changes not saved to Google Sheets yet',
+  '{value} ya lo tiene {name} en cambios aún no guardados en Google Sheets; el siguiente libre es {next}':
+    '{value} is taken by {name} in changes not saved to Google Sheets yet; the next free one is {next}',
+  'Otra persona cambió {field} en esa fila sin guardar': 'Someone else changed {field} in that unsaved row',
+  '{name} cambió después la misma celda de {label}: deshaz primero ese cambio': '{name} changed the same cell of {label} later: undo that change first',
+  'Registrado en la app por {people}': 'Entered in the app by {people}',
   '{n} filas nuevas': '{n} new rows',
   '{n} editada': '{n} edited',
   '{n} editadas': '{n} edited',

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { Save, Eye, Undo2, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-vue-next'
+import { Save, Eye, Undo2, AlertTriangle, CheckCircle2, Clock, Loader2 } from 'lucide-vue-next'
 import ReviewDialog from './ReviewDialog.vue'
 import { usePending } from '../stores/pending'
 import { errorText, notify } from '../lib/notice'
@@ -21,11 +21,20 @@ const waitingRows = computed(() => pending.creates.filter(c => c.manual).length)
 
 async function save(reason = '') {
   try {
-    const { saved } = await pending.save(reason)
+    const { saved, staged, queued } = await pending.save(reason)
     const left = errorCount.value
     if (!left) reviewing.value = false
     const why = issues.value[0]
-    if (saved && !left)
+    if (queued)
+      notify(
+        tn(queued, 'Google Sheets no responde: {n} cambio espera y se escribirá solo', 'Google Sheets no responde: {n} cambios esperan y se escribirán solos'),
+      )
+    if (staged && !saved && !left)
+      notify(
+        tn(staged, '{n} cambio guardado en la app; falta «Guardar en Google Sheets»', '{n} cambios guardados en la app; falta «Guardar en Google Sheets»'),
+        'success',
+      )
+    else if (saved && !left)
       notify(tn(saved, '{n} cambio guardado en Google Sheets', '{n} cambios guardados en Google Sheets'), 'success')
     else if (saved)
       notify(
@@ -109,6 +118,15 @@ function discard() {
       <span class="truncate font-normal">{{ issues[0] }}</span>
     </button>
     <span v-if="!online" class="rounded bg-stone-700 px-2 py-0.5 text-xs text-white">{{ $t('Sin conexión') }}</span>
+    <!-- Sent, and kept by the server until Google answers (server/outbox.mjs): written on their own. -->
+    <span
+      v-if="pending.queuedCount"
+      class="flex items-center gap-1 text-xs font-medium text-amber-900"
+      :title="$t('Google Sheets no responde (recalcula la hoja); se escriben solos, en orden, cuando responda')"
+    >
+      <Clock :size="13" />
+      {{ $tn(pending.queuedCount, '{n} esperando a Google Sheets', '{n} esperando a Google Sheets') }}
+    </span>
     <span v-if="pending.autoSave && waitingRows" class="text-xs text-amber-900">
       {{
         $tn(
@@ -148,13 +166,20 @@ function discard() {
     role="status"
   >
     <CheckCircle2 :size="14" />
-    {{
+    <template v-if="pending.lastSaved!.where === 'app'">{{
+      $tn(
+        pending.lastSaved!.count,
+        'Guardado en la app ({n} cambio), visible para todo el equipo · aún no en Google Sheets',
+        'Guardado en la app ({n} cambios), visible para todo el equipo · aún no en Google Sheets',
+      )
+    }}</template>
+    <template v-else>{{
       $tn(
         pending.lastSaved!.count,
         'Guardado en Google Sheets ({n} cambio) · se puede deshacer en Historial',
         'Guardado en Google Sheets ({n} cambios) · se puede deshacer en Historial',
       )
-    }}
+    }}</template>
   </div>
   <ReviewDialog v-if="reviewing" @close="reviewing = false" @save="save" />
 </template>

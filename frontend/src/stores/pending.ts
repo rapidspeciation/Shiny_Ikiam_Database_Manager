@@ -5,6 +5,7 @@ import { t } from '../lib/i18n'
 import { type CheckSheet, localProblems } from '../lib/saveChecks'
 import type { CellValue, TableRow } from '../lib/types'
 import { verificationsFor } from '../lib/verifications'
+import { useLive } from './live'
 import { useSession } from './session'
 import { type ServerRecord, useTables } from './tables'
 
@@ -52,6 +53,33 @@ export interface SaveResult {
   left: number
   /** The save's entry in the Historial (what an Undo right after it reverts), when something was written. */
   actionId?: string
+  /** Emergidos and Clutches changes kept in the app (server/staged.mjs), and their entry (to undo it). */
+  staged?: number
+  stagedEntry?: string
+  /** Changes kept in the app until Google answers (server/outbox.mjs). */
+  queued?: number
+}
+
+/** The tabs whose changes are kept in the app until «Guardar en Google Sheets» (server/staged.mjs). */
+export const STAGED_PURPOSES = new Set(['emergidos', 'clutches'])
+/** A change kept in the app rather than written: typed in one of those tabs, or to a row entered there. */
+export const isStaged = (purpose: string | undefined, rowId = '') => STAGED_PURPOSES.has(purpose ?? '') || rowId.startsWith('staged:')
+
+/** Changes sent and kept by the server until Google answers (server/outbox.mjs), by outbox id. */
+interface QueuedSave {
+  edits: PendingEdit[]
+  creates: PendingCreate[]
+  at: string
+}
+/** What the server answered for a set of changes (records/batch, staged, an outbox item settled). */
+interface SaveAnswer {
+  status?: string
+  records?: ServerRecord[]
+  skipped?: BatchItemError[]
+  created?: { clientId: string; recordId?: string }[]
+  action?: { id: string } | null
+  entryId?: string | null
+  outboxId?: string
 }
 
 /** Pause after the last edit before saving automatically. */
@@ -81,11 +109,17 @@ export const usePending = defineStore('pending', {
      */
     requestId: null as string | null,
     requestBody: null as string | null,
+    /** The same for the changes kept in the app (Emergidos, Clutches: POST /api/staged). */
+    stagedId: null as string | null,
+    stagedBody: null as string | null,
+    /** Changes the server keeps until Google answers, by outbox id: still shown as pending, not sent again. */
+    queued: {} as Record<string, QueuedSave>,
     /** Bumped on every cell change, so checks such as repeated IDs follow typing. */
     edited: 0,
     /** Bumped whenever changes happen outside a grid's own editing (save, discard, bulk fills). */
     revision: 0,
-    lastSaved: null as { count: number; at: string } | null,
+    /** The last save: written to Google Sheets, or kept in the app (Emergidos, Clutches) for «Guardar en Google Sheets». */
+    lastSaved: null as { count: number; at: string; where?: 'sheet' | 'app' } | null,
     /** Save automatically a moment after the last change (per person, remembered on this device). */
     autoSave: true,
     /** Why automatic saving is waiting (offline, conflict to review…), if it is: Spanish, shown through $t. */
@@ -94,6 +128,18 @@ export const usePending = defineStore('pending', {
   getters: {
     changeCount: s => Object.values(s.edits).reduce((n, e) => n + Object.keys(e.values).length, 0) + s.creates.length,
     rowCount: s => Object.keys(s.edits).length + s.creates.length,
+    /** Cells and new rows sent and waiting for Google ("rowId:field", a new row's clientId). */
+    queuedKeys(s): Set<string> {
+      const out = new Set<string>()
+      for (const q of Object.values(s.queued)) {
+        for (const e of q.edits) for (const field of Object.keys(e.values)) out.add(`${e.id}:${field}`)
+        for (const c of q.creates) out.add(c.clientId)
+      }
+      return out
+    },
+    queuedCount(): number {
+      return this.queuedKeys.size
+    },
     /**
      * Pending cells that are not being saved, with the reason (server refusals and the app's checks),
      * in the interface language (reasons are kept in Spanish, the key of their English).
@@ -156,6 +202,9 @@ export const usePending = defineStore('pending', {
       this.problems = {}
       this.requestId = null
       this.requestBody = null
+      this.stagedId = null
+      this.stagedBody = null
+      this.queued = {}
       this.autoSave = localStorage.getItem(`${this.storageKey()}:auto`) !== '0'
       this.autoBlocked = ''
       try {
@@ -165,6 +214,9 @@ export const usePending = defineStore('pending', {
           this.creates = saved.creates || []
           this.requestId = saved.requestId || null
           this.requestBody = saved.requestBody || null
+          this.stagedId = saved.stagedId || null
+          this.stagedBody = saved.stagedBody || null
+          this.queued = saved.queued || {}
         }
       } catch {
         /* ignore unreadable drafts */
@@ -180,17 +232,30 @@ export const usePending = defineStore('pending', {
       this.problems = {}
       this.requestId = null
       this.requestBody = null
+      this.stagedId = null
+      this.stagedBody = null
+      this.queued = {}
       this.revision++
     },
     persist(changed = true) {
       if (changed) {
         this.requestId = null
         this.requestBody = null
+        this.stagedId = null
+        this.stagedBody = null
         this.edited++
       }
       localStorage.setItem(
         this.storageKey(),
-        JSON.stringify({ edits: this.edits, creates: this.creates, requestId: this.requestId, requestBody: this.requestBody }),
+        JSON.stringify({
+          edits: this.edits,
+          creates: this.creates,
+          requestId: this.requestId,
+          requestBody: this.requestBody,
+          stagedId: this.stagedId,
+          stagedBody: this.stagedBody,
+          queued: this.queued,
+        }),
       )
       if (changed) {
         this.autoBlocked = ''
@@ -287,12 +352,19 @@ export const usePending = defineStore('pending', {
     touch() {
       this.revision++
     },
+    /** A cell (or a new row: field omitted) sent and waiting for Google. */
+    isQueued(id: string, field?: string) {
+      return this.queuedKeys.has(field === undefined ? id : `${id}:${field}`)
+    },
     /**
      * Sends every pending change that can be saved; the others stay pending and
      * red with the reason. Cells failing the app's checks are never sent; cells
      * the server refused before are sent again unless `retryRefused` is false
      * (automatic saving waits until they are edited). The server saves what it
      * can and lists what it left out (records/batch with `partial`).
+     * Changes typed in Emergidos and Clutches are kept in the app for everyone
+     * (POST /api/staged) until «Guardar en Google Sheets»; a save Google cannot
+     * take now is kept by the server and written when it answers (`queued`).
      */
     async save(reason: string, { retryRefused = true, auto = false } = {}): Promise<SaveResult> {
       if (this.saving || !this.changeCount) return { saved: 0, left: 0 }
@@ -301,10 +373,13 @@ export const usePending = defineStore('pending', {
       const heldRow = (id: string) =>
         Object.keys(this.problems).some(k => k.startsWith(`${id}:`)) ||
         (!retryRefused && Object.keys(this.errors).some(k => k.startsWith(`${id}:`)))
+      // Waiting for Google already: not sent again (a change made to it meanwhile goes once it is written).
+      const queued = this.queuedKeys
+      const busyRow = (id: string) => [...queued].some(k => k.startsWith(`${id}:`))
       // Snapshot what is sent: people may keep editing while the save runs.
       // (JSON copy: the store's objects are reactive proxies and plain JSON data.)
       const edits = (JSON.parse(JSON.stringify(Object.values(this.edits))) as PendingEdit[])
-        .filter(e => !held(`${e.id}:*`))
+        .filter(e => !held(`${e.id}:*`) && !busyRow(e.id))
         .map(e => {
           for (const field of Object.keys(e.values))
             if (held(`${e.id}:${field}`)) {
@@ -316,11 +391,52 @@ export const usePending = defineStore('pending', {
         .filter(e => Object.keys(e.values).length)
       // A new row goes whole or not at all.
       const creates = (JSON.parse(JSON.stringify(this.creates)) as PendingCreate[]).filter(
-        c => !heldRow(c.clientId) && !(auto && c.manual),
+        c => !heldRow(c.clientId) && !(auto && c.manual) && !queued.has(c.clientId),
       )
       if (!edits.length && !creates.length) return { saved: 0, left: this.changeCount }
+      const groups = [
+        {
+          staged: true,
+          edits: edits.filter(e => isStaged(e.purpose, e.id)),
+          creates: creates.filter(c => isStaged(c.purpose)),
+        },
+        {
+          staged: false,
+          edits: edits.filter(e => !isStaged(e.purpose, e.id)),
+          creates: creates.filter(c => !isStaged(c.purpose)),
+        },
+      ].filter(g => g.edits.length || g.creates.length)
+      this.saving = true
+      this.persist(false)
+      const out: SaveResult = { saved: 0, left: 0 }
+      let failure: unknown = null
+      try {
+        for (const group of groups) {
+          try {
+            const r = await this.send(group, reason)
+            out.saved += r.saved
+            if (r.staged) out.staged = (out.staged ?? 0) + r.staged
+            if (r.queued) out.queued = (out.queued ?? 0) + r.queued
+            if (r.actionId) out.actionId ??= r.actionId
+            if (r.stagedEntry) out.stagedEntry ??= r.stagedEntry
+          } catch (e) {
+            failure ??= e
+          }
+        }
+      } finally {
+        this.saving = false
+      }
+      out.left = this.changeCount
+      if (failure) throw failure
+      return out
+    },
+    /** One request: the changes of the staged tabs (POST /api/staged) or the others (records/batch). */
+    async send(group: { staged: boolean; edits: PendingEdit[]; creates: PendingCreate[] }, reason: string): Promise<SaveResult> {
+      const { edits, creates } = group
       // The tab most of these changes were typed in: the save's purpose in the Historial.
-      const purpose = mainPurpose([...edits.map(e => e.purpose), ...creates.map(c => c.purpose)]) ?? currentPurpose()
+      const purpose =
+        mainPurpose([...edits.map(e => e.purpose), ...creates.map(c => c.purpose)]) ??
+        (group.staged ? (currentPurpose() && STAGED_PURPOSES.has(currentPurpose()!) ? currentPurpose() : 'emergidos') : currentPurpose())
       const body = {
         reason: reason || null,
         ...(purpose ? { purpose } : {}),
@@ -340,85 +456,136 @@ export const usePending = defineStore('pending', {
         })),
       }
       const fingerprint = JSON.stringify(body)
-      if (!this.requestId || this.requestBody !== fingerprint) {
-        this.requestId = requestId()
-        this.requestBody = fingerprint
+      let id: string
+      if (group.staged) {
+        if (!this.stagedId || this.stagedBody !== fingerprint) [this.stagedId, this.stagedBody] = [requestId(), fingerprint]
+        id = this.stagedId
+      } else {
+        if (!this.requestId || this.requestBody !== fingerprint) [this.requestId, this.requestBody] = [requestId(), fingerprint]
+        id = this.requestId
       }
-      this.saving = true
       this.persist(false)
-      /** The answer replaces earlier refusals of what was sent. */
-      const clearSentErrors = () => {
-        // Refusals that named no row (e.g. the sheet's columns changed) are answered again by this save.
-        for (const key of Object.keys(this.errors)) if (/^(null|undefined)?:/.test(key)) delete this.errors[key]
-        for (const e of edits) {
-          delete this.errors[`${e.id}:*`]
-          for (const field of Object.keys(e.values)) delete this.errors[`${e.id}:${field}`]
-        }
-        for (const c of creates)
-          for (const key of Object.keys(this.errors)) if (key.startsWith(`${c.clientId}:`)) delete this.errors[key]
+      const forget = () => {
+        if (group.staged) [this.stagedId, this.stagedBody] = [null, null]
+        else [this.requestId, this.requestBody] = [null, null]
       }
       try {
-        const result = await api<{
-          records: ServerRecord[]
-          skipped?: BatchItemError[]
-          created?: { clientId: string }[]
-          action?: { id: string } | null
-        }>(
-          'records/batch',
-          { method: 'POST', body: { requestId: this.requestId, ...body } },
-        )
-        useTables().merge(result.records)
-        const skipped = new Set((result.skipped || []).map(itemKey))
-        clearSentErrors()
-        learnItems(result.skipped)
-        for (const item of result.skipped || []) this.errors[itemKey(item)] = item.message
-        // Remove only what was saved and has not been changed again since.
-        let saved = 0
-        for (const sent of edits) {
-          const current = this.edits[sent.id]
-          for (const [field, value] of Object.entries(sent.values)) {
-            if (skipped.has(`${sent.id}:${field}`) || skipped.has(`${sent.id}:*`)) continue
-            saved++
-            if (current && current.values[field] === value) {
-              delete current.values[field]
-              delete current.before[field]
-            }
-          }
-          if (current && !Object.keys(current.values).length) delete this.edits[sent.id]
+        const result = await api<SaveAnswer>(group.staged ? 'staged' : 'records/batch', {
+          method: 'POST',
+          body: { requestId: id, ...body },
+        })
+        forget()
+        // Google is not answering: the server keeps them and writes them when it does (resolveQueued).
+        if (result.status === 'queued' && result.outboxId) {
+          this.queued[result.outboxId] = { edits, creates, at: new Date().toISOString() }
+          this.persist(false)
+          this.revision++
+          return { saved: 0, left: this.changeCount, queued: edits.reduce((n, e) => n + Object.keys(e.values).length, 0) + creates.length }
         }
-        // New rows are written together or left out together (server/batch.mjs).
-        const written = new Set((result.created || []).map(c => c.clientId))
-        for (const c of creates)
-          if (!written.has(c.clientId) && ![...skipped].some(k => k.startsWith(`${c.clientId}:`)))
-            this.errors[`${c.clientId}:*`] = 'No se guardó: otra fila nueva de este guardado necesita revisión'
-        const sentCreates = new Map(creates.map(c => [c.clientId, JSON.stringify(c.values)]))
-        saved += written.size
-        this.creates = this.creates.filter(
-          c => !written.has(c.clientId) || sentCreates.get(c.clientId) !== JSON.stringify(c.values),
-        )
-        this.requestId = null
-        this.requestBody = null
-        this.persist(false)
-        this.check()
-        if (saved) this.lastSaved = { count: saved, at: new Date().toISOString() }
-        this.revision++
-        return { saved, left: this.changeCount, ...(result.action?.id ? { actionId: result.action.id } : {}) }
+        // The entries everyone sees come with them, so the cells never show the sheet's old value in between.
+        if (group.staged) await useLive().loadStaged()
+        const saved = this.settle(result, edits, creates, group.staged ? 'app' : 'sheet')
+        return {
+          saved: group.staged ? 0 : saved,
+          left: this.changeCount,
+          ...(group.staged ? { staged: saved, ...(result.entryId ? { stagedEntry: result.entryId } : {}) } : {}),
+          ...(result.action?.id ? { actionId: result.action.id } : {}),
+        }
       } catch (e) {
         const code = e instanceof ApiError ? e.code : ''
         // Only an unclear outcome keeps the request ID for a safe retry.
         if (!['WRITE_UNCERTAIN', 'OFFLINE', 'SERVER_ERROR'].includes(code)) {
-          this.requestId = null
-          this.requestBody = null
+          forget()
           this.persist(false)
         }
         if (e instanceof ApiError && Array.isArray((e.details as { items?: unknown })?.items)) {
-          clearSentErrors()
+          this.clearSentErrors(edits, creates)
           for (const item of (e.details as { items: BatchItemError[] }).items) this.errors[itemKey(item)] = item.message
           this.revision++
         }
         throw e
-      } finally {
-        this.saving = false
+      }
+    },
+    /** The answer replaces earlier refusals of what was sent. */
+    clearSentErrors(edits: PendingEdit[], creates: PendingCreate[]) {
+      // Refusals that named no row (e.g. the sheet's columns changed) are answered again by this save.
+      for (const key of Object.keys(this.errors)) if (/^(null|undefined)?:/.test(key)) delete this.errors[key]
+      for (const e of edits) {
+        delete this.errors[`${e.id}:*`]
+        for (const field of Object.keys(e.values)) delete this.errors[`${e.id}:${field}`]
+      }
+      for (const c of creates)
+        for (const key of Object.keys(this.errors)) if (key.startsWith(`${c.clientId}:`)) delete this.errors[key]
+    },
+    /**
+     * What was saved (written, or kept in the app) leaves the pending changes, unless it was
+     * changed again meanwhile; what was left out stays, red with why. Returns how many were saved.
+     */
+    settle(result: SaveAnswer, edits: PendingEdit[], creates: PendingCreate[], where: 'sheet' | 'app' = 'sheet'): number {
+      useTables().merge(result.records ?? [])
+      const skipped = new Set((result.skipped || []).map(itemKey))
+      this.clearSentErrors(edits, creates)
+      learnItems(result.skipped)
+      for (const item of result.skipped || []) this.errors[itemKey(item)] = item.message
+      // Remove only what was saved and has not been changed again since.
+      let saved = 0
+      for (const sent of edits) {
+        const current = this.edits[sent.id]
+        for (const [field, value] of Object.entries(sent.values)) {
+          if (skipped.has(`${sent.id}:${field}`) || skipped.has(`${sent.id}:*`)) continue
+          saved++
+          if (current && current.values[field] === value) {
+            delete current.values[field]
+            delete current.before[field]
+          } else if (current && field in current.values) current.before[field] = value // changed again: the next save expects what was saved
+        }
+        if (current && !Object.keys(current.values).length) delete this.edits[sent.id]
+      }
+      // New rows are written together or left out together (server/batch.mjs).
+      const written = new Set((result.created || []).map(c => c.clientId))
+      for (const c of creates)
+        if (!written.has(c.clientId) && ![...skipped].some(k => k.startsWith(`${c.clientId}:`)))
+          this.errors[`${c.clientId}:*`] = 'No se guardó: otra fila nueva de este guardado necesita revisión'
+      const sentCreates = new Map(creates.map(c => [c.clientId, JSON.stringify(c.values)]))
+      saved += written.size
+      this.creates = this.creates.filter(c => !written.has(c.clientId) || sentCreates.get(c.clientId) !== JSON.stringify(c.values))
+      this.persist(false)
+      this.check()
+      if (saved) this.lastSaved = { count: saved, at: new Date().toISOString(), where }
+      this.revision++
+      return saved
+    },
+    /**
+     * Saves kept by the server until Google answered (server/outbox.mjs): once written, they
+     * leave the pending changes as a save does; refused, their cells stay, red with why.
+     */
+    async resolveQueued() {
+      for (const [id, q] of Object.entries(this.queued)) {
+        let answer: SaveAnswer & { outbox?: { status: string }; error?: { message: string; details?: { items?: BatchItemError[] } } }
+        try {
+          answer = await api(`outbox/${encodeURIComponent(id)}`)
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 404) {
+            delete this.queued[id]
+            this.persist(false)
+          }
+          continue
+        }
+        const status = answer.outbox?.status
+        if (!status || status === 'queued' || status === 'writing') continue
+        delete this.queued[id]
+        if (status === 'done') {
+          this.settle(answer, q.edits, q.creates)
+          continue
+        }
+        const items = answer.error?.details?.items ?? []
+        learnItems(items)
+        this.clearSentErrors(q.edits, q.creates)
+        for (const item of items) this.errors[itemKey(item)] = item.message
+        if (!items.length)
+          for (const e of q.edits) this.errors[`${e.id}:*`] = answer.error?.message || 'No se guardó'
+        this.persist(false)
+        this.revision++
       }
     },
   },

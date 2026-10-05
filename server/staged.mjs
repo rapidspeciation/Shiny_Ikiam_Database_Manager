@@ -261,6 +261,12 @@ export class Staged {
     // A refusal of a row entered here is said on that row (staged:<clientId>).
     for (const s of checked.skipped)
       skipped.push(s.clientId && againIds.has(s.clientId) ? { ...s, id: `staged:${s.clientId}`, clientId: null } : this.explain(s));
+    // All or nothing (the Emergidos cards: the butterflies and their clutches' counts go together).
+    const whole = body.partial === false;
+    const refuse = () => {
+      throw fail('BATCH_CONFLICT', 'Algunos cambios necesitan revisión; no se guardó nada', 409, { items: skipped });
+    };
+    if (whole && skipped.length) refuse();
     const plan = checked.plan;
     const entryId = randomUUID();
     const at = now();
@@ -316,12 +322,14 @@ export class Staged {
             this.db.exec('ROLLBACK TO row');
             this.db.exec('RELEASE row');
             skipped.push(this.claimedItem(redo ? { id: `staged:${target.clientId}` } : { clientId: target.clientId }, refused[0]));
+            if (whole) break;
             continue;
           }
           this.db.exec('RELEASE row');
           if (!redo) created.push({ clientId: target.clientId, recordId: `staged:${target.clientId}` });
           stored.push(id);
         }
+        if (whole && skipped.length) refuse();
         this.db.exec('COMMIT');
       } catch (e) {
         this.db.exec('ROLLBACK');

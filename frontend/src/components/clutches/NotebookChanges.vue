@@ -223,6 +223,7 @@ const isDefault = computed(() => !list.value?.upTo || !fromIso.value || Math.abs
             </span>
             <span class="block text-[15px] break-words tabular-nums">{{ changeText(l, formatSerial, $t('quitado')) }}</span>
             <span v-if="l.sources.includes('assistant')" class="text-[11px] text-violet-700">{{ $t('por el asistente') }}</span>
+            <span v-if="l.staged" class="ml-1 text-[11px] text-amber-800">{{ $t('en la app, aún no en Google Sheets') }}</span>
           </li>
           <li v-for="e in c.events" :key="e.id" class="flex items-baseline gap-2 bg-sky-50/60 px-3 py-1 text-sm">
             <span class="min-w-0 flex-1 break-words tabular-nums">{{ eventLine(e) }}</span>

@@ -52,7 +52,7 @@ interface Suggestion {
 /** GET ids?kind=…&start=: the IDs from `start`, and where `start` is used if it is. */
 interface Sequence {
   sequence: string[]
-  startUsed?: { value: string; sheet: string; row: number; label: string | null }
+  startUsed?: { value: string; sheet: string; row: number; label: string | null; claimedBy?: string }
   nextFree?: string
 }
 const camSuggestions = ref<Suggestion[]>([])
@@ -241,7 +241,9 @@ function pendingHolder(field: RegExp, value: string) {
 /** Says why a starting ID cannot be used (and offers the next free one) instead of starting from another. */
 function checkStart(kind: 'cam' | 'tube', start: string, result: Sequence | null) {
   const holder = result?.startUsed
-  const text = holder
+  const text = holder?.claimedBy
+    ? t('{value} ya lo tiene {name} en la app (aún no en Google Sheets)', { value: holder.value, name: holder.claimedBy })
+    : holder
     ? t('{value} ya está usado en {sheet} fila {row}{label}', {
         value: holder.value,
         sheet: holder.sheet,

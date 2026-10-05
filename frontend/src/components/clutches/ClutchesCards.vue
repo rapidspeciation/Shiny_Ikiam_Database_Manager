@@ -34,6 +34,7 @@ import { errorText, notify } from '../../lib/notice'
 import { persistentRef } from '../../lib/persist'
 import { initialsOf } from '../../lib/rows'
 import type { Table, TableRow } from '../../lib/types'
+import type { StagedMark } from '../../lib/staged'
 import { usePending } from '../../stores/pending'
 import { useSession } from '../../stores/session'
 import { t } from '../../lib/i18n'
@@ -53,8 +54,12 @@ const props = defineProps<{
   species: string[]
   collectors: string[]
   createFormulas: string[]
+  /** Clutches with entries kept in the app, not in Google Sheets yet (everyone's: lib/staged.ts). */
+  stagedMarks?: Record<string, StagedMark>
 }>()
 const mode = defineModel<EntryMode>('mode', { required: true })
+/** A clutch entered here and not in the sheet yet: no row to mark as checked until it is written. */
+const inApp = (row: TableRow) => row.id.startsWith('staged:')
 
 const pending = usePending()
 const session = useSession()
@@ -232,7 +237,7 @@ async function created(clutch: string) {
   const row = rows.value.find(r => String(r.values['CLUTCH NUMBER'] ?? '') === clutch)
   if (row) {
     try {
-      await day.markChecked(row.id, ['CLUTCH NUMBER'])
+      if (!inApp(row)) await day.markChecked(row.id, ['CLUTCH NUMBER'])
     } catch {
       /* the clutch is saved; the check can be marked from its card */
     }
@@ -430,6 +435,12 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                   <span v-if="item.state.ended" class="rounded-full bg-stone-200 px-2 py-0.5 text-xs text-stone-600">{{ $t('Terminado') }}</span>
                   <span class="ml-auto flex flex-wrap justify-end gap-1">
                     <span v-if="unsavedRow(item.row)" class="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900 ring-1 ring-amber-300">{{ $t('Sin guardar') }}</span>
+                    <span
+                      v-if="stagedMarks?.[item.row.id]"
+                      class="rounded-full border border-dashed border-amber-500 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900"
+                      :title="$t('Aún no en Google Sheets · {who}', { who: stagedMarks[item.row.id].who.join(', ') })"
+                      >{{ stagedMarks[item.row.id].sent ? $t('escribiéndose') : $t('en la app') }} · {{ stagedMarks[item.row.id].who.map(initialsFor).join(', ') }}</span
+                    >
                     <span v-if="day.today(item.row.id).changed" class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">{{ $t('Cambiado hoy') }}</span>
                     <span
                       v-if="day.today(item.row.id).review === 'verify'"
@@ -477,7 +488,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                 </span>
               </button>
               <!-- Today's mark: checked (no change), or checked but someone should look again. -->
-              <div v-if="canEdit && day.today(item.row.id).review !== 'checked'" class="flex border-t border-stone-100">
+              <div v-if="canEdit && !inApp(item.row) && day.today(item.row.id).review !== 'checked'" class="flex border-t border-stone-100">
                 <button
                   class="flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 text-sm font-medium text-brand-800 active:bg-brand-50"
                   :disabled="marking === item.row.id"

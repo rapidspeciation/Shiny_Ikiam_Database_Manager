@@ -5,12 +5,22 @@ import { ExternalLink, LogIn, LogOut, Users, ChevronDown } from 'lucide-vue-next
 import { tabs } from '../router'
 import { useSession } from '../stores/session'
 import { usePending } from '../stores/pending'
+import { useLive } from '../stores/live'
+import { changeCount } from '../lib/staged'
 import { notify } from '../lib/notice'
 import { locale, t } from '../lib/i18n'
 
 const session = useSession()
 const pending = usePending()
+const live = useLive()
 const menu = ref(false)
+/** Emergidos and Clutches: their changes kept in the app, waiting for «Guardar en Google Sheets». */
+const PURPOSE: Record<string, string> = { '/emergidos': 'emergidos', '/clutches': 'clutches' }
+const waiting = computed(() => {
+  const out: Record<string, number> = {}
+  for (const [path, purpose] of Object.entries(PURPOSE)) out[path] = changeCount(live.items.filter(i => i.purpose === purpose))
+  return out
+})
 const route = useRoute()
 /** Without an account only the open pages are listed; Revisión only for people who edit. */
 const shown = computed(() =>
@@ -50,6 +60,12 @@ async function logout() {
           active-class="!border-white !text-white"
         >
           {{ $t(tab.label) }}
+          <span
+            v-if="waiting[tab.path]"
+            class="ml-1 rounded-full bg-amber-300 px-1.5 text-xs font-semibold text-amber-950"
+            :title="$tn(waiting[tab.path], '{n} cambio en la app, aún no en Google Sheets', '{n} cambios en la app, aún no en Google Sheets')"
+            >{{ waiting[tab.path] }}</span
+          >
         </RouterLink>
       </nav>
       <span

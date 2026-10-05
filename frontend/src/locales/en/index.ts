@@ -10,6 +10,7 @@ import common from './common'
 import deaths from './deaths'
 import emerged from './emerged'
 import entry from './entry'
+import google from './google'
 import history from './history'
 import home from './home'
 import instructions from './instructions'
@@ -26,6 +27,7 @@ export const en: Record<string, string> = Object.assign(
   entry,
   deaths,
   emerged,
+  google,
   tubes,
   clutches,
   collect,

@@ -7,6 +7,7 @@ import SheetGrid from '../components/SheetGrid.vue'
 import EntryModeToggle from '../components/EntryModeToggle.vue'
 import ClutchesCards from '../components/clutches/ClutchesCards.vue'
 import ClutchDayPanel from '../components/clutches/ClutchDayPanel.vue'
+import StagedBar from '../components/StagedBar.vue'
 import { useEntryMode } from '../composables/useEntryMode'
 import { useSheet } from '../composables/useSheet'
 import { isBlank } from '../lib/cells'
@@ -28,7 +29,8 @@ import { t } from '../lib/i18n'
 const MODULE = 'Insectary_stocks'
 const module = ref(MODULE)
 const pending = usePending()
-const { table, ready, options, creates, createFormulas, listColumn } = useSheet(module)
+// Everyone's Emergidos and Clutches entries kept in the app show on top of the sheet (lib/staged.ts).
+const { table, ready, options, creates, createFormulas, listColumn, marks } = useSheet(module, ref(true), { staged: true })
 const { mode } = useEntryMode('clutches')
 /** People's initials for the notes they add ("FCH - Franz Chandi"). */
 const collectors = computed(() => listColumn('Abbr_name'))
@@ -68,7 +70,7 @@ function addClutch() {
   pending.touch()
   number.value = ''
   form.value.eggs = null
-  notify(t('Clutch {clutch} añadido', { clutch }))
+  notify(t('Clutch {clutch} añadido en la app (aún no en Google Sheets)', { clutch }))
 }
 
 /** In progress: laid in the last 60 days and not yet emerged. */
@@ -101,6 +103,10 @@ const columns = computed(() =>
 </script>
 
 <template>
+  <div class="flex h-full flex-col">
+    <!-- Saves of Emergidos and Clutches wait in the app for «Guardar en Google Sheets» (components/StagedBar). -->
+    <StagedBar />
+    <div class="min-h-0 flex-1">
   <ClutchesCards
     v-if="mode === 'cards'"
     v-model:mode="mode"
@@ -110,6 +116,7 @@ const columns = computed(() =>
     :species="speciesList"
     :collectors="collectors"
     :create-formulas="createFormulas"
+    :staged-marks="marks"
   />
   <div v-else class="flex h-full flex-col">
     <form class="toolbar" @submit.prevent="addClutch">
@@ -159,6 +166,7 @@ const columns = computed(() =>
         :frozen="['CLUTCH NUMBER']"
         :create-formulas="createFormulas"
         label-field="CLUTCH NUMBER"
+        :staged="marks"
         @notice="notify"
         @remove-create="
           id => {
@@ -169,5 +177,7 @@ const columns = computed(() =>
       />
     </div>
     <ClutchDayPanel v-if="showHistory" :collectors="collectors" @close="showHistory = false" />
+  </div>
+    </div>
   </div>
 </template>

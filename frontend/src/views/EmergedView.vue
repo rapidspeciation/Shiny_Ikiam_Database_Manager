@@ -8,6 +8,7 @@ import { computed, ref, watch } from 'vue'
 import { LayoutGrid, Rows3, Plus } from 'lucide-vue-next'
 import SheetGrid from '../components/SheetGrid.vue'
 import InsectaryIdsWarning from '../components/InsectaryIdsWarning.vue'
+import StagedBar from '../components/StagedBar.vue'
 import { heldIds, useEmergedState } from '../composables/useEmergedState'
 import { useEntryMode } from '../composables/useEntryMode'
 import { useSheet } from '../composables/useSheet'
@@ -32,7 +33,8 @@ import { t } from '../lib/i18n'
 const MODULE = 'Insectary_data'
 const module = ref(MODULE)
 const pending = usePending()
-const { table, ready, stocks, options, creates, createFormulas, clutches, listColumn } = useSheet(module)
+// Everyone's Emergidos and Clutches entries kept in the app show on top of the sheet (lib/staged.ts).
+const { table, ready, stocks, options, creates, createFormulas, clutches, listColumn, marks } = useSheet(module, ref(true), { staged: true })
 const { mode } = useEntryMode('emerged')
 /** People's initials for the notes the cards add ("FCH - Franz Chandi"). */
 const collectors = computed(() => listColumn('Abbr_name'))
@@ -171,6 +173,10 @@ const recent = computed(() => {
 </script>
 
 <template>
+  <div class="flex h-full flex-col">
+  <!-- Saves of Emergidos and Clutches wait in the app for «Guardar en Google Sheets» (components/StagedBar). -->
+  <StagedBar />
+  <div class="min-h-0 flex-1">
   <EmergedCards
     v-if="mode === 'cards'"
     v-model:mode="mode"
@@ -180,6 +186,7 @@ const recent = computed(() => {
     :options="options"
     :collectors="collectors"
     :create-formulas="createFormulas"
+    :staged-marks="marks"
   />
   <div v-else class="flex h-full flex-col">
     <div class="toolbar">
@@ -292,6 +299,7 @@ const recent = computed(() => {
         :locked-fields="['Collection_location']"
         :create-formulas="createFormulas.filter(f => f !== 'Insectary_ID' && f !== 'SPECIES')"
         label-field="Insectary_ID"
+        :staged="marks"
         @notice="notify"
         @remove-create="
           id => {
@@ -302,5 +310,7 @@ const recent = computed(() => {
         "
       />
     </div>
+  </div>
+  </div>
   </div>
 </template>

@@ -145,17 +145,21 @@ async function finish(state: 'checked' | 'verify' = 'checked', note = '') {
   try {
     const fields = changedFields.value
     let actionId: string | undefined
+    let stagedEntry: string | undefined
     if (pending.edits[r.id]) {
       await waitIdle()
+      // Kept in the app for everyone until «Guardar en Google Sheets» (server/staged.mjs).
       const result = await pending.save('')
       actionId = result.actionId
+      stagedEntry = result.stagedEntry
       const refused = Object.entries(pending.issues).find(([k]) => k.startsWith(`${r.id}:`))
       if (refused) {
         message.value = t('No se guardó {ids}: {reason}', { ids: label.value, reason: refused[1] })
         return
       }
     }
-    await props.day.markChecked(r.id, fields, actionId, { state, note })
+    // A clutch entered here and not in the sheet yet has no row to mark: it is marked once written.
+    if (!r.id.startsWith('staged:')) await props.day.markChecked(r.id, fields, actionId, { state, note, stagedEntry })
     touched.value = {}
     verifying.value = false
     verifyNote.value = ''
@@ -164,7 +168,7 @@ async function finish(state: 'checked' | 'verify' = 'checked', note = '') {
       state === 'verify'
         ? t('Clutch {clutch} marcado por verificar', { clutch: label.value })
         : fields.length
-          ? t('Clutch {clutch} guardado y revisado', { clutch: label.value })
+          ? t('Clutch {clutch} guardado en la app y revisado', { clutch: label.value })
           : t('Clutch {clutch} revisado, sin cambios', { clutch: label.value }),
       'success',
     )

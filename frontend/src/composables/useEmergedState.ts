@@ -4,6 +4,7 @@ import { todayIso } from '../lib/dates'
 import { YOUNG_BATCH, type Draft, type YoungBatch } from '../lib/emerged'
 import { errorText, notify } from '../lib/notice'
 import { persistentRef } from '../lib/persist'
+import { useLive } from '../stores/live'
 import { usePending } from '../stores/pending'
 import { useTables } from '../stores/tables'
 
@@ -71,6 +72,12 @@ function create(): EmergedState {
   }
   const tables = useTables()
   watch(() => tables.versions[MODULE], () => void loadFreeIds())
+  // An ID someone takes or frees in an entry kept in the app (server/claims.mjs): the free ones change for everyone.
+  const live = useLive()
+  watch(
+    () => live.claims.filter(c => c.kind === 'insectary').map(c => c.value).join(),
+    () => void loadFreeIds(),
+  )
   // The new rows typed in the table take their IDs out of the free ones at once.
   watch(
     () => pending.creates.filter(c => c.module === MODULE).length,

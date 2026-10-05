@@ -217,7 +217,13 @@ function undoField(g: (typeof groups.value)[number], c: ServerDayChange) {
         <ul class="divide-y divide-stone-100 border-t border-stone-100">
           <li v-for="c in g.changes" :key="c.field" class="flex items-center gap-1 py-1 pr-1 pl-3 leading-snug">
             <span class="min-w-0 flex-1">
-              <span class="block text-[11px] font-medium tracking-wide text-stone-500">{{ c.field }}</span>
+              <span class="block text-[11px] font-medium tracking-wide text-stone-500"
+                >{{ c.field }}
+                <!-- Kept in the app, not in Google Sheets yet: undone from the bar above the tab. -->
+                <span v-if="c.staged" class="ml-1 rounded border border-dashed border-amber-500 bg-amber-50 px-1 font-normal text-amber-900">{{
+                  $t('en la app, aún no en Google Sheets')
+                }}</span></span
+              >
               <span class="block text-[15px] break-words tabular-nums">{{ changeText(c, formatSerial, $t('quitado')) }}</span>
             </span>
             <button

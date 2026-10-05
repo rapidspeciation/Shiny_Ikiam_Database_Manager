@@ -52,6 +52,8 @@ import { localRun, normalizeId, problemsOf as tubeProblems, type Problem as Tube
 import { errorText, notify } from '../../lib/notice'
 import { initialsOf } from '../../lib/rows'
 import type { CellValue, Table, TableRow } from '../../lib/types'
+import { claimHolder, usedWhere, type StagedMark, type UsedHolder } from '../../lib/staged'
+import { useLive } from '../../stores/live'
 import { useSession } from '../../stores/session'
 import { type ServerRecord, useTables } from '../../stores/tables'
 import { t, tn } from '../../lib/i18n'
@@ -75,11 +77,14 @@ const props = defineProps<{
   options: Record<string, string[]>
   collectors: string[]
   createFormulas: string[]
+  /** Rows of entries kept in the app, not in Google Sheets yet (everyone's: lib/staged.ts). */
+  stagedMarks?: Record<string, StagedMark>
 }>()
 const mode = defineModel<EntryMode>('mode', { required: true })
 
 const session = useSession()
 const tables = useTables()
+const live = useLive()
 const state = useEmergedState()
 const { date, clutch, drafts, skipStock, medium, young, selected, freeIds, inOrder, rowOf, idsLoaded } = state
 const day = useClutchDay()
@@ -394,9 +399,10 @@ function sampleOf(d: Draft): { cam: string; tube: string } {
   const a = youngAssigned.value[d.key]
   return { cam: a?.cam.value ?? '', tube: a?.tube.value ?? '' }
 }
-// After a save the next free ones moved on, and the saved rows hold their CAMs and tubes.
+// After a save the next free ones moved on, and the saved rows hold their CAMs and tubes; so do
+// everyone's entries kept in the app (their CAMs and tubes are claimed: server/claims.mjs).
 watch(
-  () => tables.versions[MODULE],
+  () => [tables.versions[MODULE], live.claims.map(c => `${c.kind}:${c.value}`).join()],
   () => {
     runs.clear()
     asked.clear()
@@ -471,12 +477,12 @@ watch(toCheck, ({ cams, tubes }) => {
   checkTimer = setTimeout(async () => {
     const ask = async (kind: string, values: string[]) => {
       if (!values.length) return
-      const r = await api<{ used: Record<string, { sheet: string; row: number; label: string | null }> }>(
+      const r = await api<{ used: Record<string, UsedHolder> }>(
         `ids?kind=${kind}&check=${encodeURIComponent(values.join(','))}`,
       )
       for (const v of values) {
         const h = r.used[v]
-        serverUsed.set(v, h ? t('{sheet} fila {row}{label}', { sheet: h.sheet, row: h.row, label: h.label ? ` (${h.label})` : '' }) : null)
+        serverUsed.set(v, h ? usedWhere(h) : null)
       }
     }
     try {
@@ -571,9 +577,13 @@ const ID_PROBLEM: Record<string, (id: string) => string> = {
   used: id => t('{id} ya es una mariposa de Insectary_data', { id }),
   'not-free': id => t('{id} no es una fila preasignada libre de Insectary_data', { id }),
 }
+/** An identifier someone else holds in an entry kept in the app (A4E — Ana). */
+const heldBy = (kind: 'insectary' | 'cam' | 'tube', value: string) => claimHolder(live.claims, kind, value)
 function problemsOf(d: Draft): string[] {
   const out: string[] = []
-  if (idsLoaded.value) {
+  const claim = heldBy('insectary', d.id)
+  if (claim) out.push(t('{id} ya lo tiene {name} en la app (aún no en Google Sheets)', { id: claim.value, name: claim.actorName }))
+  else if (idsLoaded.value) {
     const others = drafts.value.filter(o => o.key !== d.key).map(o => o.id)
     const p = idProblem(d.id, others, freeSet.value, usedIds.value)
     if (p) out.push(ID_PROBLEM[p](d.id.trim().toUpperCase()))
@@ -590,7 +600,9 @@ function problemsOf(d: Draft): string[] {
     for (const field of ['cam', 'tube'] as const) {
       const v = searchKey(d[field])
       const name = field === 'cam' ? 'CAM' : t('tubo')
+      const holder = v ? heldBy(field, v) : null
       if (!v) out.push(field === 'cam' ? t('Falta el CAM') : t('Falta el tubo'))
+      else if (holder) out.push(t('{value} ya lo tiene {name} en la app (aún no en Google Sheets)', { value: v, name: holder.actorName }))
       else if (usedSampleIds.value.has(v)) out.push(t('{value} ya está en {id}', { value: v, id: usedSampleIds.value.get(v)! }))
       else if (drafts.value.some(o => o.key !== d.key && preserving(o) && searchKey(sampleOf(o)[field]) === v))
         out.push(t('{name} {value} repetido en otra tarjeta', { name, value: v }))
@@ -678,7 +690,8 @@ const summary = computed(() => {
 })
 const saving = ref(false)
 const undoing = ref(false)
-const lastSave = ref<null | { actionId: string; drafts: Draft[]; ids: string[]; count: number }>(null)
+/** The last save of the cards: kept in the app (its entry, to undo it) until «Guardar en Google Sheets». */
+const lastSave = ref<null | { entryId: string; drafts: Draft[]; ids: string[]; count: number }>(null)
 /** Kept until the server answers for sure, so a retry after an unclear outcome never writes twice. */
 let pendingRequest: { id: string; body: string } | null = null
 
@@ -709,22 +722,25 @@ async function save() {
       values: Object.fromEntries(l.plan!.cells.map(c => [c.field, c.value])),
       expected: Object.fromEntries(l.plan!.cells.map(c => [c.field, c.before])),
     }))
-  const body = { reason: null, purpose: 'emergidos', creates, edits }
+  // Kept in the app for everyone (server/staged.mjs), all or nothing: the butterflies and their clutches' counts
+  // together. Their IDs, CAMs and tubes are claimed at once; «Guardar en Google Sheets» writes them.
+  const body = { reason: null, purpose: 'emergidos', partial: false, creates, edits }
   const fingerprint = JSON.stringify(body)
   if (!pendingRequest || pendingRequest.body !== fingerprint) pendingRequest = { id: requestId(), body: fingerprint }
   try {
-    const result = await api<{ records: ServerRecord[]; action?: { id: string } | null }>('records/batch', {
+    const result = await api<{ entryId: string | null }>('staged', {
       method: 'POST',
       body: { requestId: pendingRequest.id, ...body },
     })
     pendingRequest = null
-    tables.merge(result.records)
-    lastSave.value = result.action?.id ? { actionId: result.action.id, drafts: list, ids: list.map(d => d.id), count: list.length } : null
+    // The entries everyone sees, with these: the cards leave as their rows appear.
+    await live.loadStaged()
+    lastSave.value = result.entryId ? { entryId: result.entryId, drafts: list, ids: list.map(d => d.id), count: list.length } : null
     drafts.value = []
     skipStock.value = []
     selected.value = []
     for (const d of list) suggested.delete(d.key)
-    if (!result.action?.id) notify(tn(list.length, '{n} emergido guardado en Google Sheets', '{n} emergidos guardados en Google Sheets'), 'success')
+    if (!result.entryId) notify(tn(list.length, '{n} emergido guardado en la app', '{n} emergidos guardados en la app'), 'success')
     scroller.value?.scrollTo({ top: 0 })
   } catch (e) {
     if (!(e instanceof ApiError) || !['WRITE_UNCERTAIN', 'OFFLINE', 'SERVER_ERROR'].includes(e.code)) pendingRequest = null
@@ -747,17 +763,14 @@ async function undo() {
   if (!last || undoing.value) return
   undoing.value = true
   try {
-    const result = await api<{ records?: ServerRecord[] }>('history/undo', {
-      method: 'POST',
-      body: { actionIds: [last.actionId], requestId: requestId(), reason: null },
-    })
-    if (result.records?.length) tables.merge(result.records)
-    else await Promise.all([tables.load(MODULE, true), tables.load(STOCKS, true)])
+    // Not in Google Sheets yet: the entry is taken back (its IDs, CAMs and tubes freed).
+    await api(`staged/entries/${encodeURIComponent(last.entryId)}`, { method: 'DELETE', body: {} })
+    await live.loadStaged()
     // The cards come back, to correct and save again.
     const have = new Set(drafts.value.map(d => d.key))
     drafts.value = [...last.drafts.filter(d => !have.has(d.key)), ...drafts.value]
     lastSave.value = null
-    notify(tn(last.count, '{n} emergido deshecho en Google Sheets', '{n} emergidos deshechos en Google Sheets'), 'success')
+    notify(tn(last.count, '{n} emergido deshecho', '{n} emergidos deshechos'), 'success')
   } catch (e) {
     notify(errorText(e), 'error')
   } finally {
@@ -1124,6 +1137,13 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
                     <span class="block truncate text-sm">{{ text(row.values.SPECIES) || speciesOfClutch(text(row.values['CLUTCH NUMBER'])) || '—' }}</span>
                     <span class="block truncate text-xs text-stone-500">{{ $t('clutch {c}', { c: text(row.values['CLUTCH NUMBER']) }) }}<template v-if="!isBlank(row.values.Death_cause)"> · {{ text(row.values.Death_cause) }}</template></span>
                   </span>
+                  <!-- Kept in the app, not in Google Sheets yet (everyone sees it, with who entered it). -->
+                  <span
+                    v-if="stagedMarks?.[row.id]"
+                    class="shrink-0 rounded border border-dashed border-amber-500 bg-amber-50 px-1.5 text-xs text-amber-900"
+                    :title="$t('Aún no en Google Sheets · {who}', { who: stagedMarks[row.id].who.join(', ') })"
+                    >{{ stagedMarks[row.id].sent ? $t('escribiéndose') : $t('en la app') }} · {{ stagedMarks[row.id].who.join(', ') }}</span
+                  >
                 </button>
               </li>
             </ul>
@@ -1142,7 +1162,7 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
       <div v-if="lastSave && !drafts.length" class="flex items-center gap-2" role="status">
         <Check :size="22" class="shrink-0 text-brand-700" />
         <p class="min-w-0 flex-1 text-sm">
-          <span class="font-medium">{{ $tn(lastSave.count, '{n} emergido guardado en Google Sheets', '{n} emergidos guardados en Google Sheets') }}</span>
+          <span class="font-medium">{{ $tn(lastSave.count, '{n} emergido guardado en la app (aún no en Google Sheets)', '{n} emergidos guardados en la app (aún no en Google Sheets)') }}</span>
           <span class="block truncate text-xs text-stone-500">{{ lastSave.ids.join(', ') }}</span>
         </p>
         <button class="btn h-12 px-4 text-base" :disabled="undoing" @click="undo">

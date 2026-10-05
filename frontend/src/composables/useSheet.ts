@@ -1,6 +1,8 @@
 import { computed, type Ref, ref, watch } from 'vue'
 import { buildOptions, listColumn } from '../lib/options'
 import { errorText, notify } from '../lib/notice'
+import { overlayTable } from '../lib/staged'
+import { useLive } from '../stores/live'
 import { usePending } from '../stores/pending'
 import { useTables } from '../stores/tables'
 
@@ -11,10 +13,14 @@ const USES_STOCKS = new Set(['Insectary_data', 'Collection_data', 'Melinaea_eggs
  * Loads one sheet plus the reference sheets used for its dropdowns, and keeps
  * the options and pending new rows for it in sync. With `active`, the sheet is
  * read only while it is true (the Buscador shows search results meanwhile).
+ * With `staged` (Emergidos, Clutches), the sheet and the clutches carry
+ * everyone's entries kept in the app (lib/staged.ts): `marks` and `sums` say
+ * which cells are not in Google Sheets yet, and the counts' sums they hold.
  */
-export function useSheet(module: Ref<string>, active: Ref<boolean> = ref(true)) {
+export function useSheet(module: Ref<string>, active: Ref<boolean> = ref(true), { staged = false } = {}) {
   const tables = useTables()
   const pending = usePending()
+  const live = useLive()
 
   // Saved rows are merged into the cached table in place, so each version gets a
   // fresh wrapper object; otherwise Vue would see "the same table" and not update.
@@ -23,9 +29,18 @@ export function useSheet(module: Ref<string>, active: Ref<boolean> = ref(true)) 
     const t = tables.tables[name]
     return t ? { ...t } : undefined
   }
-  const table = computed(() => snapshot(module.value))
+  const own = computed(() => (staged ? overlayTable(snapshot(module.value), live.items) : null))
+  const ownStocks = computed(() =>
+    staged && module.value !== 'Insectary_stocks' ? overlayTable(snapshot('Insectary_stocks'), live.items) : null,
+  )
+  const table = computed(() => (own.value ? own.value.table : snapshot(module.value)))
   const lists = computed(() => snapshot('Lists'))
-  const stocks = computed(() => snapshot('Insectary_stocks'))
+  const stocks = computed(() =>
+    module.value === 'Insectary_stocks' && own.value ? own.value.table : ownStocks.value ? ownStocks.value.table : snapshot('Insectary_stocks'),
+  )
+  /** Cells of the entries kept in the app, per row id (both sheets), and the sums they hold. */
+  const marks = computed(() => ({ ...(ownStocks.value?.marks ?? {}), ...(own.value?.marks ?? {}) }))
+  const sums = computed(() => ({ ...(ownStocks.value?.sums ?? {}), ...(own.value?.sums ?? {}) }))
   const loading = computed(() => !!tables.loading[module.value])
   /**
    * The sheet and the sheets its dropdowns come from have arrived (or failed).
@@ -95,6 +110,8 @@ export function useSheet(module: Ref<string>, active: Ref<boolean> = ref(true)) 
     createFormulas,
     clutches,
     load,
+    marks,
+    sums,
     listColumn: (name: string) => listColumn(lists.value, name),
   }
 }

@@ -410,6 +410,8 @@ export interface DayChange {
   after: CellValue | { formula: string }
   actors: string[]
   isNew: boolean
+  /** Kept in the app (Emergidos, Clutches), not in Google Sheets yet (server/staged.mjs). */
+  staged?: boolean
 }
 const plain = (v: DayChange['before']): CellValue => (v && typeof v === 'object' ? v.formula : v)
 /** A count's value in a change: "=12+13 (25)". */
@@ -582,6 +584,8 @@ export interface NotebookLine {
   after: DayChange['after']
   actors: string[]
   sources: string[]
+  /** Kept in the app, not in Google Sheets yet (server/staged.mjs). */
+  staged?: boolean
   firstAt: string
   at: string
 }

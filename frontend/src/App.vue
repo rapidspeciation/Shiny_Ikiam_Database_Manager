@@ -2,12 +2,14 @@
 import { defineAsyncComponent, onMounted, watch } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
 import AppHeader from './components/AppHeader.vue'
+import GoogleBanner from './components/GoogleBanner.vue'
 import SaveBar from './components/SaveBar.vue'
 import LoginView from './views/LoginView.vue'
 import { accountPaths, openPaths } from './router'
 import { notice } from './lib/notice'
 import { t3Host } from './lib/t3Host'
 import { updateAvailable } from './lib/updates'
+import { useLive } from './stores/live'
 import { usePending } from './stores/pending'
 import { useSession } from './stores/session'
 import { useTables } from './stores/tables'
@@ -18,6 +20,7 @@ const session = useSession()
 const route = useRoute()
 const pending = usePending()
 const tables = useTables()
+const live = useLive()
 
 onMounted(() => session.init())
 const reload = () => window.location.reload()
@@ -26,9 +29,18 @@ watch(
   (name, before) => {
     // Visitors get reduced copies of a few sheets: signing in or out starts afresh.
     if (name !== before) tables.$reset()
-    if (!name) return
+    if (!name) return live.stop()
     pending.restore()
     tables.follow()
+    // The workbook's state, saves waiting for Google, everyone's Emergidos and Clutches entries (stores/live.ts).
+    live.start()
+  },
+)
+// A change there may be one of this device's saves that waited for Google, now written (or refused).
+watch(
+  () => live.ticks,
+  () => {
+    if (Object.keys(pending.queued).length) void pending.resolveQueued()
   },
 )
 </script>
@@ -42,6 +54,7 @@ watch(
     <!-- T3 Code, loaded once the Asistente tab was opened and kept for the session (it would reload in the tab). -->
     <T3Host v-if="session.user && t3Host.url" :key="session.user.username" />
     <AppHeader v-if="!route.meta.bare" />
+    <GoogleBanner v-if="session.user" />
     <!-- Tabs stay alive while another one is open: going back to Tablas does not rebuild a 13k-row grid. -->
     <main class="min-h-0 flex-1">
       <RouterView v-slot="{ Component }">

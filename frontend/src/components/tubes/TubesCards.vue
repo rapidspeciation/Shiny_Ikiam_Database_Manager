@@ -82,6 +82,7 @@ import {
 import type { Table, TableRow } from '../../lib/types'
 import { verificationsFor } from '../../lib/verifications'
 import { usePending } from '../../stores/pending'
+import { usedWhere, type UsedHolder } from '../../lib/staged'
 import { useSession } from '../../stores/session'
 import { type ServerRecord, useTables } from '../../stores/tables'
 import { t, tn, tx, type Msg } from '../../lib/i18n'
@@ -456,12 +457,12 @@ watch(toCheck, ({ cams, tubes }) => {
   checkTimer = setTimeout(async () => {
     const ask = async (kind: string, values: string[]) => {
       if (!values.length) return
-      const r = await api<{ used: Record<string, { sheet: string; row: number; label: string | null }> }>(
+      const r = await api<{ used: Record<string, UsedHolder> }>(
         `ids?kind=${kind}&check=${encodeURIComponent(values.join(','))}`,
       )
       for (const v of values) {
         const h = r.used[v]
-        serverUsed.set(v, h ? t('{sheet} fila {row}{label}', { sheet: h.sheet, row: h.row, label: h.label ? ` (${h.label})` : '' }) : null)
+        serverUsed.set(v, h ? usedWhere(h) : null)
       }
     }
     try {

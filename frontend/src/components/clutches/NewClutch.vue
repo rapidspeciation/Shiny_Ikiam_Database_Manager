@@ -221,7 +221,7 @@ async function create() {
       message.value = t('No se guardó {ids}: {reason}', { ids: clutch, reason: refused })
       return
     }
-    notify(t('Clutch {clutch} añadido', { clutch }), 'success')
+    notify(t('Clutch {clutch} añadido en la app (aún no en Google Sheets)', { clutch }), 'success')
     emit('created', clutch)
   } catch (e) {
     message.value = errorText(e)

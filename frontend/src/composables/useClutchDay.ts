@@ -2,6 +2,8 @@ import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, 
 import { api, requestId } from '../lib/api'
 import { MODULE, reviewState, type ClutchEvent, type ClutchTallies, type DayChange, type EventKind, type ReviewState, type Stage } from '../lib/clutches'
 import { applyClutchSettings, clutchSettings } from '../lib/clutchSettings'
+import { overlaySums, overlayTable } from '../lib/staged'
+import { useLive } from '../stores/live'
 import { useTables } from '../stores/tables'
 
 /** A clutch marked as checked (server/clutches.mjs): only in the app, for one day, seen by everyone. */
@@ -19,6 +21,8 @@ export interface ClutchCheck {
   state: 'checked' | 'verify'
   note: string | null
   actionId: string | null
+  /** The entry kept in the app it went with, until that is written to Google Sheets. */
+  stagedEntry?: string | null
   createdAt: string
 }
 export interface ServerDayChange extends DayChange {
@@ -61,7 +65,13 @@ const NONE: ClutchToday = { checks: [], changes: [], events: [], checked: false,
  */
 export function useClutchDay() {
   const tables = useTables()
-  const sums = ref<Record<string, Record<string, string>>>({})
+  const live = useLive()
+  const sheetSums = ref<Record<string, Record<string, string>>>({})
+  /** The counts' sums as the sheet has them, with everyone's entries kept in the app on top (lib/staged.ts). */
+  const sums = computed(() => {
+    void tables.versions[MODULE]
+    return overlaySums(sheetSums.value, overlayTable(tables.tables[MODULE], live.items).sums)
+  })
   const last = ref<Record<string, { at: string; actor: string; name: string | null }>>({})
   const tallies = ref<Record<string, ClutchTallies>>({})
   const day = ref<Day>({ day: '', checks: [], changes: [], events: [] })
@@ -73,7 +83,7 @@ export function useClutchDay() {
       const state = await api<{ sums: typeof sums.value; last: typeof last.value; tallies?: typeof tallies.value; settings?: { subtractPreserved: boolean } }>(
         'clutches/state',
       )
-      sums.value = state.sums
+      sheetSums.value = state.sums
       last.value = state.last
       tallies.value = state.tallies ?? {}
       applyClutchSettings(state.settings)
@@ -96,6 +106,11 @@ export function useClutchDay() {
       void loadState()
       void loadDay()
     },
+  )
+  // Someone's entries kept in the app came or went (or were written): the day's list has them.
+  watch(
+    () => live.items.filter(i => i.sheet === MODULE).map(i => `${i.id}:${i.status}:${i.updatedAt}`).join(),
+    () => void loadDay(),
   )
   let timer: ReturnType<typeof setInterval> | undefined
   /** The tab is on screen (tabs stay alive in the background: no asking then). */
@@ -161,11 +176,19 @@ export function useClutchDay() {
     recordId: string,
     fields: string[] = [],
     actionId?: string | null,
-    { state = 'checked', note = '' }: { state?: 'checked' | 'verify'; note?: string } = {},
+    { state = 'checked', note = '', stagedEntry = null }: { state?: 'checked' | 'verify'; note?: string; stagedEntry?: string | null } = {},
   ) {
     const { check } = await api<{ check: ClutchCheck }>('clutches/checks', {
       method: 'POST',
-      body: { requestId: requestId(), recordId, fields, state, ...(note.trim() ? { note: note.trim() } : {}), ...(actionId ? { actionId } : {}) },
+      body: {
+        requestId: requestId(),
+        recordId,
+        fields,
+        state,
+        ...(note.trim() ? { note: note.trim() } : {}),
+        ...(actionId ? { actionId } : {}),
+        ...(stagedEntry ? { stagedEntry } : {}),
+      },
     })
     day.value = { ...day.value, checks: [...day.value.checks.filter(c => c.id !== check.id), check] }
     return check
