@@ -42,6 +42,7 @@ describe('what a card writes', () => {
       Death_date: DAY,
       Death_cause: 'Killed_Preserved',
       Preserved_Dead_Alive: 'Alive',
+      Preservation_medium: 'NOT_COLLECTED',
       Location_body: 'Ikiam',
       Tube_2_id: 'NA',
       Tube_2_tissue: 'NOT_COLLECTED',

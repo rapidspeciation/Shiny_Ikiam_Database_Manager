@@ -5,7 +5,7 @@ import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { createAssistant } from '../server/assistant.mjs';
 import { KINDS, NOT_PRESERVED, columnsOf as columnsOfKind, reviewColumns } from '../server/notebook.mjs';
-import { DEFAULT_COLUMNS, isHiddenColumn, isNotWritten } from '../server/proposal-columns.mjs';
+import { DEFAULT_COLUMNS, HIDDEN_COLUMNS, isHiddenColumn, isNotWritten } from '../server/proposal-columns.mjs';
 import { moduleMap } from '../server/schema.mjs';
 
 // The review table shows each row whole enough to spot a wrong one, whatever the proposal changes:
@@ -16,23 +16,26 @@ const columnsOf = (sheet, kind = null) => {
   return reviewColumns(sheet, mod.fields.map(f => f.key), mod.identityFields, kind);
 };
 
-test('Insectary_data: its default columns (server/proposal-columns.mjs), whatever the notebook; Preservation_medium and the photos never', () => {
+test('Insectary_data: every column up to Notes_Insectary_data (AF) in the sheet\'s order, whatever the notebook; the ones after it never', () => {
   const sheet = moduleMap.get('Insectary_data').fields.map(f => f.key);
+  const notes = sheet.indexOf('Notes_Insectary_data');
+  assert.equal(notes, 31, 'column AF');
   const { fields, keys } = columnsOf('Insectary_data');
   assert.deepEqual(fields, DEFAULT_COLUMNS.Insectary_data);
-  assert.equal(fields[0], 'Insectary_ID');
-  assert.equal(fields.at(-1), 'Notes_Insectary_data');
-  for (const f of ['Preservation_medium', 'Photo_dorsal', 'Photo_ventral']) assert.ok(!fields.includes(f), f);
-  // Every default column is one of the sheet's, in the sheet's own order.
-  assert.deepEqual(fields, sheet.filter(f => fields.includes(f)));
+  assert.deepEqual(fields, sheet.slice(0, notes + 1));
+  // Preservation_medium is shown (and written: NOT_COLLECTED in the templates); the photos shown, left to their formula.
+  for (const f of ['Preservation_medium', 'Pedigree', 'Photo_dorsal', 'Photo_ventral']) assert.ok(fields.includes(f), f);
   assert.deepEqual(keys, ['Insectary_ID']);
   for (const kind of ['deaths', 'emergence', 'labels']) assert.deepEqual(columnsOf('Insectary_data', kind), { fields, keys });
-  assert.ok(isHiddenColumn('Insectary_data', 'Preservation_medium'));
-  for (const f of ['Preservation_medium', 'Photo_dorsal', 'Photo_ventral']) assert.ok(isNotWritten('Insectary_data', f), f);
-  assert.ok(!isNotWritten('Collection_data', 'Preservation_medium'), 'only Insectary_data');
-  // The notebooks' templates no longer imply it.
-  assert.ok(!('Preservation_medium' in NOT_PRESERVED));
-  for (const kind of Object.values(KINDS)) assert.ok(!columnsOfKind(kind).includes('Preservation_medium'), kind.label);
+  // The columns after AF belong to another workflow: not shown, not written.
+  for (const f of sheet.slice(notes + 1)) assert.ok(isHiddenColumn('Insectary_data', f) && isNotWritten('Insectary_data', f), f);
+  for (const f of fields) assert.ok(!isHiddenColumn('Insectary_data', f), f);
+  assert.ok(!isNotWritten('Insectary_data', 'Preservation_medium'));
+  for (const f of ['Photo_dorsal', 'Photo_ventral']) assert.ok(isNotWritten('Insectary_data', f), f);
+  assert.ok(!isNotWritten('Collection_data', 'Tube_1_rack'), 'only Insectary_data');
+  // The notebooks' templates imply it: NOT_COLLECTED.
+  assert.equal(NOT_PRESERVED.Preservation_medium, 'NOT_COLLECTED');
+  for (const kind of [KINDS.emergence, KINDS.deaths]) assert.ok(columnsOfKind(kind).includes('Preservation_medium'), kind.label);
 });
 
 test('other sheets: a notebook\'s columns up to its notes, else the identifying ones', () => {
@@ -83,7 +86,7 @@ test('a proposal changing one column sends the columns to show, and the sheet va
       (await assistant.handle({ method: 'GET', path: '/api/chat/proposals', body: {}, user, query: { all: '1' } })).body.proposals[0];
     const pending = await list();
     assert.deepEqual(pending.fields, ['Sex']);
-    assert.deepEqual(pending.shownColumns.Insectary_data, { ...columnsOf('Insectary_data'), hidden: ['Preservation_medium'] });
+    assert.deepEqual(pending.shownColumns.Insectary_data, { ...columnsOf('Insectary_data'), hidden: [...HIDDEN_COLUMNS.Insectary_data] });
     assert.equal(pending.changes[0].rowValues.CAM_ID, 'CAM079002');
     await assistant.handle({ method: 'POST', path: `/api/chat/proposals/${pending.id}/discard`, body: {}, user, query: {} });
     // Reviewed: the sheet's values of the changed column and of the shown ones that hold something.
@@ -130,7 +133,7 @@ test("the assistant's view: its columns first, or only them (and the changed one
       const { hidden, ...shown } = (
         await assistant.handle({ method: 'GET', path: '/api/chat/proposals', body: {}, user, query: { all: '1' } })
       ).body.proposals.find(p => p.id === id).shownColumns.Insectary_data;
-      assert.deepEqual(hidden, ['Preservation_medium']);
+      assert.deepEqual(hidden, [...HIDDEN_COLUMNS.Insectary_data]);
       return shown;
     };
     const at = row => store.getRecordBySheetRow('Insectary_data', row).id;
@@ -156,13 +159,20 @@ test("the assistant's view: its columns first, or only them (and the changed one
     assert.match((await call('propose_changes', { reason: 'x', changes, view: { between: 'yes' } })).error, /^view\.between: true or false/);
     assert.match((await call('update_proposal', { proposalId: first.proposalId, view: { rows: 3 } })).problems[0], /^view: unknown key rows/);
     // Deprecated: never shown, never written; the photos are left to their formula.
-    assert.match((await call('propose_changes', { reason: 'x', changes, view: { columns: ['Preservation_medium'] } })).error, /deprecated/);
-    const medium = await call('propose_changes', { reason: 'x', changes: [{ recordId: at(2), values: { Preservation_medium: 'NOT_COLLECTED' } }] });
-    assert.match(medium.error, /Preservation_medium is deprecated in Insectary_data and is not written/);
+    // The columns after Notes_Insectary_data: another workflow's, never shown or written; the photos are left to their formula.
+    assert.match(
+      (await call('propose_changes', { reason: 'x', changes, view: { columns: ['Tube_1_rack'] } })).error,
+      /^view\.columns: Tube_1_rack is not shown in proposals of Insectary_data: its columns end at Notes_Insectary_data/,
+    );
+    const rack = await call('propose_changes', { reason: 'x', changes: [{ recordId: at(2), values: { COLLECTED_BY: 'PAS' } }] });
+    assert.match(rack.error, /COLLECTED_BY is not written in proposals of Insectary_data/);
     const photo = await call('propose_changes', { reason: 'x', changes: [{ recordId: at(2), values: { Photo_dorsal: 'x' } }] });
     assert.match(photo.error, /Photo_dorsal is left to its formula/);
-    const bulk = await call('propose_changes', { reason: 'x', bulk: { sheet: 'Insectary_data', recordIds: [at(2)], set: { Preservation_medium: 'NA' } } });
-    assert.match(bulk.error, /deprecated/);
+    const bulk = await call('propose_changes', { reason: 'x', bulk: { sheet: 'Insectary_data', recordIds: [at(2)], set: { IDENTIFIED_BY: 'PAS' } } });
+    assert.match(bulk.error, /IDENTIFIED_BY is not written/);
+    // Preservation_medium is shown and written.
+    const medium = await call('propose_changes', { reason: 'x', changes: [{ recordId: at(2), values: { Preservation_medium: 'NOT_COLLECTED' } }], view: { columns: ['Preservation_medium'] } });
+    assert.ok(medium.proposalId, JSON.stringify(medium));
   } finally {
     store.close?.();
   }

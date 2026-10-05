@@ -12,9 +12,8 @@ import { DEFAULT_COLUMNS, isHiddenColumn } from './proposal-columns.mjs';
  * What the team types in Insectary_data for a butterfly that died and was not
  * preserved (Unknown, Disappearance, Eaten…): the block Muertes writes
  * (frontend/src/lib/deaths.ts), plus Research_purpose NA (insectary.md A8):
- * tubes NA, their tissues and media NOT_COLLECTED (Franz, 1 Oct 2026). Only
- * empty cells take it. Not Preservation_medium: deprecated, never written
- * (server/proposal-columns.mjs).
+ * tubes NA, their tissues and media NOT_COLLECTED (Franz, 1 Oct 2026), and
+ * Preservation_medium NOT_COLLECTED. Only empty cells take it.
  */
 export const NOT_PRESERVED = {
   Research_purpose: 'NA',
@@ -30,6 +29,7 @@ export const NOT_PRESERVED = {
   Tube_3_tissue: 'NOT_COLLECTED',
   Tube_4_id: 'NA',
   Tube_4_tissue: 'NOT_COLLECTED',
+  Preservation_medium: 'NOT_COLLECTED',
   Preserved_Dead_Alive: 'NA',
   Location_body: 'NA',
 };
@@ -48,6 +48,7 @@ const DEATH_EXTRA = [
   'Tube_3_tissue',
   'Tube_4_id',
   'Tube_4_tissue',
+  'Preservation_medium',
   'Preserved_Dead_Alive',
   'Location_body',
 ];
@@ -169,7 +170,8 @@ const KEY_COLUMN = /^(SPECIES|Species|CAM_ID|Tube_1_id|Tube_ID)$/;
 /**
  * The columns the review table (Cambios propuestos) shows for a sheet's rows
  * whatever a proposal changes, so a wrong row shows (its species, CAM, tubes):
- * a sheet's DEFAULT_COLUMNS (server/proposal-columns.mjs: Insectary_data), else
+ * a sheet's DEFAULT_COLUMNS (server/proposal-columns.mjs: Insectary_data, every
+ * column up to Notes_Insectary_data in the sheet's order), else
  * for a sheet a notebook fills, that notebook's columns in its order (a page's
  * own notebook, else the sheet's fullest one: Emergidos for Insectary_data),
  * then the sheet's other columns in its order up to the last one any of its
@@ -1080,6 +1082,8 @@ export function impliedValues({ text, row = {}, note = {}, death = null, intro =
     if (killed) set('Preserved_Dead_Alive', 'Alive', msg('Killed_Preserved: preservado vivo'));
     else if (note.dead) set('Preserved_Dead_Alive', 'Dead', fromDead);
     set('Location_body', 'Ikiam', why);
+    // Each tube has its own medium (T1_/T2_Preservation_medium); this column stays NOT_COLLECTED.
+    set('Preservation_medium', 'NOT_COLLECTED', why);
     // Eggs and larvae: every one is flash frozen, for the F1/F2 mutation rate project.
     const larvaWhy = msg('Huevo o larva preservado: lo que el equipo escribe');
     if (larva && !note.pheromone) set('Research_purpose', 'F1/F2 mutation rate', larvaWhy);

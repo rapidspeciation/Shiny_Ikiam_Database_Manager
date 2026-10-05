@@ -80,6 +80,8 @@ test('a death line implies its other columns, only where the row is empty', () =
     Preservation_date: died,
     Preserved_Dead_Alive: 'Alive',
     Location_body: 'Ikiam',
+    // Each tube's medium has its own column; this one says NOT_COLLECTED, as the rows the team writes.
+    Preservation_medium: 'NOT_COLLECTED',
     Tube_1_tissue: 'WHOLE_ORGANISM',
     T1_Preservation_medium: 'Ethanol',
     // Unused tubes: ID NA, tissue NOT_COLLECTED (Franz, 1 Oct 2026).
@@ -94,6 +96,7 @@ test('a death line implies its other columns, only where the row is empty', () =
   // Died, not preserved: the block Muertes writes (with Research_purpose NA): tubes NA, tissues and media NOT_COLLECTED.
   const lost = impliedValues({ text: { Death_date: '6/10', Death_cause: 'Unknown' }, death: d('2025-10-06') }).values;
   assert.deepEqual(lost, NOT_PRESERVED);
+  assert.equal(lost.Preservation_medium, 'NOT_COLLECTED');
   for (const n of [1, 2, 3, 4]) {
     assert.equal(lost[`Tube_${n}_id`], 'NA');
     assert.equal(lost[`Tube_${n}_tissue`], 'NOT_COLLECTED');

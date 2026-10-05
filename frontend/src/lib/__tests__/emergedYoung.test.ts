@@ -136,6 +136,7 @@ describe('the row of a larva', () => {
       Tube_1_id: 'FA00001000',
       Tube_1_tissue: 'WHOLE_ORGANISM',
       T1_Preservation_medium: 'Ethanol',
+      Preservation_medium: 'NOT_COLLECTED',
       Tube_2_id: 'NA',
       Tube_2_tissue: 'NOT_COLLECTED',
       Tube_3_id: 'NA',
