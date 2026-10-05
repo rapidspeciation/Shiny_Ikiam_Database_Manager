@@ -145,6 +145,10 @@ export interface ProposalChange {
   formulaGives?: Record<string, CellValue>
   /** Formula cells the proposal reaches that could not be calculated here: the sheet's value is shown, marked. */
   formulaFallback?: string[]
+  /** Cells the proposal writes as a formula (their value is the formula's text); the rest of its "=..." are text. */
+  formulaCells?: string[]
+  /** The formula those cells hold now, which the proposal replaces. */
+  oldFormulas?: Record<string, string>
   /** Its place on the notebook page. */
   page?: PageLine
   /** A row off the photo with the same error as this line of the page (match_notebook): shown apart, after the page. */
@@ -321,6 +325,10 @@ export interface CellInfo {
   fromFormula?: boolean
   /** A formula cell that could not be calculated here: the sheet's current value, marked as such. */
   formulaFallback?: boolean
+  /** The proposal writes a formula here (`value` its text): `computed` is what it will give, `oldFormula` the one it replaces. */
+  formulaWrite?: boolean
+  computed?: CellValue
+  oldFormula?: string
   /** Edited in the sheet since the proposal read it (violet): kept from the sheet, or the proposal's written over it. */
   sheetEdit?: SheetEdit
   /** A `kept` cell's value in the proposal (set aside, not written). */
@@ -352,7 +360,15 @@ export function cellOf(change: ProposalChange, field: string, newRowFormulas: st
     }
   if (field in change.values) {
     const kind: CellKind = mark ? 'person' : 'proposed'
+    const write = change.formulaCells?.includes(field)
+      ? {
+          formulaWrite: true,
+          ...(change.formulaGives && field in change.formulaGives ? { computed: change.formulaGives[field] } : {}),
+          ...(change.oldFormulas?.[field] ? { oldFormula: change.oldFormulas[field] } : {}),
+        }
+      : {}
     return {
+      ...write,
       value: change.values[field],
       kind,
       // Written over what the sheet has now.
