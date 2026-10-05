@@ -10,8 +10,12 @@ const isoDate = serial => new Date(Date.UTC(1899, 11, 30) + serial * 864e5).toIS
 const clip = (value, length) => String(value ?? '').slice(0, length);
 /** A formula that is only arithmetic on typed numbers (a count kept as =16+2-1): its text is worth showing. */
 const ARITHMETIC = /^=[\d\s+\-*/().]+$/;
-/** Characters of rows one find_records answer holds (the MCP answer itself is cut at 200k). */
-export const FIND_BUDGET = 60000;
+/**
+ * Characters of rows one find_records (or search_records) answer holds: the whole answer stays
+ * near 40 kB of JSON, well inside what an MCP client takes in one tool result (Claude Code's
+ * default is 25k tokens; JSON of IDs and codes runs at 2–3 characters a token).
+ */
+export const FIND_BUDGET = 32000;
 const empty = value => value === null || value === undefined || value === '';
 const textKey = value =>
   String(value ?? '')
@@ -296,20 +300,49 @@ function select(db, args) {
   };
 }
 
-/** find_records: the rows, only some columns if asked, within the size budget. */
+/**
+ * The rows of one sheet a bulk change picks (propose_changes' `bulk`): `recordIds`
+ * and/or `filters` (as find_records), all must hold. { mod, rows, missing } (ids
+ * not in the sheet) or { error }.
+ */
+export function pickRows(db, { sheet, recordIds, filters }) {
+  const mod = moduleMap.get(String(sheet ?? ''));
+  if (!mod) return { error: `Unknown sheet ${clip(sheet, 60)}` };
+  if (recordIds !== undefined && !Array.isArray(recordIds)) return { error: 'recordIds must be a list of row ids' };
+  const ids = recordIds ? [...new Set(recordIds.map(id => String(id ?? '').trim()).filter(Boolean))] : [];
+  const filtered = filters && typeof filters === 'object' && Object.keys(filters).length;
+  if (!ids.length && !filtered) return { error: 'Give recordIds and/or filters' };
+  const filter = compileFilters(mod, filters);
+  if (filter.error) return filter;
+  let rows;
+  const missing = [];
+  if (ids.length) {
+    const byId = db.prepare('SELECT id, sheet, row_num, label, version, values_json FROM records WHERE id = ? AND missing = 0 AND row_num > 0');
+    rows = [];
+    for (const id of ids) {
+      const r = byId.get(id);
+      if (!r || r.sheet !== mod.id) missing.push(id);
+      else rows.push({ id: r.id, sheet: mod.id, row: r.row_num, label: r.label, version: r.version, values: JSON.parse(r.values_json) });
+    }
+  } else rows = sheetRows(db, mod);
+  return { mod, rows: rows.filter(r => filter.test(r.values)), missing };
+}
+
+/** find_records: the rows, only some columns if asked (or only their ids), within the size budget. */
 export function findRecords(db, args, { budget = FIND_BUDGET } = {}) {
   const selected = select(db, args);
   if (selected.error) return selected;
   const { mod, rows, missing } = selected;
+  const idsOnly = args.idsOnly === true;
   let fields = null;
-  if (args.fields !== undefined) {
+  if (args.fields !== undefined && !idsOnly) {
     if (!Array.isArray(args.fields) || !args.fields.length) return { error: 'fields must be a list of columns' };
     const unknown = args.fields.filter(f => !mod.fields.some(x => x.key === f));
     if (unknown.length) return { error: `Unknown columns in fields: ${unknown.slice(0, 10).join(', ')}` };
     fields = new Set(args.fields);
   }
   const identifiers = Array.isArray(args.values) && args.values.length;
-  const limit = Math.min(Math.max(Number(args.limit) || (identifiers ? 150 : 50), 1), 500);
+  const limit = Math.min(Math.max(Number(args.limit) || (idsOnly ? 300 : identifiers ? 150 : 50), 1), 500);
   const offset = Math.max(Number(args.offset) || 0, 0);
   const found = [];
   const formulaColumns = new Set();
@@ -317,9 +350,11 @@ export function findRecords(db, args, { budget = FIND_BUDGET } = {}) {
     cut = false;
   for (const item of rows.slice(offset, offset + limit)) {
     const { distance } = item;
-    const record = withFormulas(db, item.record);
+    const record = idsOnly ? item.record : withFormulas(db, item.record);
     const row = {
-      ...compactRecord(record, { fields, allFormulas: args.formulas === true, formulaColumns: false, inSheet: true }),
+      ...(idsOnly
+        ? { id: record.id, row: record.row, label: record.label }
+        : compactRecord(record, { fields, allFormulas: args.formulas === true, formulaColumns: false, inSheet: true })),
       ...(distance !== undefined ? { distanceKm: distance } : {}),
     };
     const length = JSON.stringify(row).length + 1;
@@ -339,11 +374,11 @@ export function findRecords(db, args, { budget = FIND_BUDGET } = {}) {
     ...(offset ? { offset } : {}),
     found,
     ...(missing ? { missing } : {}),
-    formulaColumns: [...formulaColumns],
+    ...(idsOnly ? {} : { formulaColumns: [...formulaColumns] }),
     ...(selected.near ? { near: selected.near } : {}),
     ...(more > 0
       ? {
-          truncated: `Truncated: ${more} more row${more === 1 ? '' : 's'} not shown${cut ? ' (size limit)' : ''}. Narrow with filters, ask only the columns you need (fields), use count_records for counts, or page with offset=${offset + found.length}.`,
+          truncated: `Truncated: ${more} more row${more === 1 ? '' : 's'} not shown${cut ? ' (size limit)' : ''}. Narrow with filters, ask only the columns you need (fields) or only the ids (idsOnly), use count_records for counts, or page with offset=${offset + found.length}.`,
         }
       : {}),
   };
@@ -395,7 +430,7 @@ export function countRecords(db, args) {
   };
 }
 
-const FILTERS_DOC =
+export const FILTERS_DOC =
   'Column → condition, all must hold: a value (equal; text ignores case and accents; dates YYYY-MM-DD), a list (any of), {"contains": "text"}, {"not": value or list}, {"empty": true|false}, {"from": …, "to": …} (dates or numbers, inclusive). Formula columns are filtered on their computed value. E.g. {"SPECIES": "Oleria onega", "Preservation_medium": "Flash frozen"}';
 const NEAR_DOC =
   'Only rows within km of a place: {"location": a Collection_location of Location_data, e.g. "Ikiam"} or {"lat": -0.95, "lon": -77.87}, plus "km". A row is placed by its DECIMAL_LATITUDE/DECIMAL_LONGITUDE, else by its Collection_location in Location_data; rows without a place are left out and counted (rowsWithoutPlace).';
@@ -409,7 +444,8 @@ export const RECORD_TOOLS = [
         [
           'Rows of one sheet, by exact identifiers (`field` + `values`, e.g. the Insectary_IDs of a notebook page; identifiers not found come back in `missing`) and/or by column `filters` and distance to a place (`near`).',
           '- Each row: id, row, values = every non-empty cell (formula cells with their computed value; dates YYYY-MM-DD) and formulas = the formula text of counts typed as sums (=16+2-1), or of every formula cell with `formulas: true`. formulaColumns lists the formula columns.',
-          '- Ask only the columns you need (`fields`) and page with limit/offset. A cut answer says "Truncated: N more rows": narrow the query.',
+          '- Ask only the columns you need (`fields`) and page with limit/offset. A cut answer says "Truncated: N more rows": narrow the query or page.',
+          '- `idsOnly`: each row as id, row and label only (300 rows by default), e.g. to list rows. The same values for many rows: `propose_changes` `bulk` picks them by these filters itself.',
           '- "How many": `count_records`.',
         ].join('\n'),
       parameters: {
@@ -425,6 +461,7 @@ export const RECORD_TOOLS = [
             properties: { location: { type: 'string' }, lat: { type: 'number' }, lon: { type: 'number' }, km: { type: 'number' } },
           },
           fields: { type: 'array', items: { type: 'string' }, description: 'Only these columns in each row' },
+          idsOnly: { type: 'boolean', description: 'Only id, row and label of each row' },
           formulas: { type: 'boolean', description: 'Also the formula text of every formula cell returned' },
           limit: { type: 'integer', description: 'Rows to return, 1 to 500 (default 150 with values, 50 otherwise)' },
           offset: { type: 'integer', description: 'Rows to skip, to page through a long answer' },

@@ -12,7 +12,7 @@ import { TUBE_FIELD, isIdValue, isUnique } from './verifications.mjs';
 import { listOptions, listProblem } from './verify.mjs';
 import { queueWalk, walkDraft } from './walks.mjs';
 import { KINDS, isNone, noteText, reviewColumns } from './notebook.mjs';
-import { RECORD_TOOLS, compactRecord, countRecords, findRecords } from './records-tool.mjs';
+import { FILTERS_DOC, FIND_BUDGET, RECORD_TOOLS, compactRecord, countRecords, findRecords, pickRows } from './records-tool.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
 import { duplicateIdRow, insectaryIdRow, newRowFormulaFields } from './premade.mjs';
 import { proposalSampleWarnings } from './preserved.mjs';
@@ -31,6 +31,16 @@ const clip = (value, length = 1200) => String(value ?? '').slice(0, length);
 const owner = user => String(user?.id ?? user?.username ?? '');
 const json = value => JSON.stringify(value);
 const EDITORS = ['editor', 'reviewer', 'admin'];
+/**
+ * Rows of one proposal at most: its view sends every edited row's current values on each
+ * revision, and get_proposal lists them all. A `bulk` call may pick more: it is split into
+ * proposals of up to this many rows.
+ */
+const PROPOSAL_ROWS = 100;
+/** Rows one propose_changes `bulk` call may pick (in proposals of PROPOSAL_ROWS). */
+const BULK_ROWS = 500;
+const tooManyRows = n =>
+  `At most ${PROPOSAL_ROWS} rows per proposal (here ${n}): put the rest in another proposal (propose_changes; its \`bulk\` gives the same values to many rows and splits them itself).`;
 const isoDate = serial => new Date(Date.UTC(1899, 11, 30) + serial * 864e5).toISOString().slice(0, 10);
 const TIME_FIELD = /(^|_)time$/i;
 /** "9:20" in a time column becomes the day fraction Sheets stores (the grids show it as 9:20). */
@@ -207,6 +217,7 @@ const TOOLS = [
           '- One proposal per task (e.g. per walk or per kind of fix), with a short note per row saying where the values come from.',
           "- Formula cells cannot be changed, except SPECIES in Insectary_data when what emerged differs from the formula's prediction, and an Insectary_ID given to two butterflies: the row's own ID with a suffix (W2B → W2B.1).",
           "- A new Insectary_data row takes its Insectary_ID (the one on the wing or notebook): the row whose ID formula gives it is filled, and the pre-made rows are extended up to it when they run out. The second butterfly of a repeated ID gets a suffixed ID (W2B.2): its row is inserted directly below that ID's rows when applied (undoing the save deletes it).",
+          `- At most ${PROPOSAL_ROWS} rows per proposal. \`bulk\` gives the same values to many existing rows without listing them (up to ${BULK_ROWS} in one call); over ${PROPOSAL_ROWS} rows it makes several proposals and returns each one's link.`,
           VALUES_RULES,
         ].join('\n'),
       parameters: {
@@ -234,6 +245,22 @@ const TOOLS = [
                 note: { type: 'string' },
               },
               required: ['sheet', 'values'],
+            },
+          },
+          bulk: {
+            type: 'array',
+            description:
+              'The same values for many existing rows: each group picks the rows of one sheet by `filters` and/or `recordIds` and gives each of them `set`. E.g. {"sheet": "Insectary_data", "filters": {"LIFESTAGE": {"empty": false}, "Sex": {"empty": true}}, "set": {"Sex": "NOT_COLLECTED"}}. Rows that already hold the values are left out; a row also in `changes` keeps the values given there. The answer says how many rows each group matched and shows a few.',
+            items: {
+              type: 'object',
+              properties: {
+                sheet: { type: 'string' },
+                filters: { type: 'object', description: `As in find_records. ${FILTERS_DOC}` },
+                recordIds: { type: 'array', items: { type: 'string' }, description: 'These rows (with filters: those of them that match)' },
+                set: { type: 'object', description: VALUES_DOC },
+                note: { type: 'string', description: "Each row's note: where the values come from" },
+              },
+              required: ['sheet', 'set'],
             },
           },
           reason: { type: 'string' },
@@ -819,12 +846,12 @@ export function createAssistant({ store, config = {} }) {
    * The checked rows of a proposal (as the save will check them), or { error }.
    * `ids` is shared when a page is checked one row at a time (IDs repeated between rows).
    */
-  function draftChanges(args, ids = idsFor()) {
+  function draftChanges(args, ids = idsFor(), maxRows = PROPOSAL_ROWS) {
     const idsUsed = () => ids.used();
     const edits = Array.isArray(args.changes) ? args.changes : [];
     const creates = Array.isArray(args.newRows) ? args.newRows : [];
     if (!edits.length && !creates.length) return { error: 'Provide changes to existing rows or newRows' };
-    if (edits.length + creates.length > 100) return { error: 'Provide at most 100 rows per proposal' };
+    if (edits.length + creates.length > maxRows) return { error: tooManyRows(edits.length + creates.length) };
     const changes = [];
     for (const [i, candidate] of creates.entries()) {
       const out = proposedRow(candidate, i, ids);
@@ -1021,29 +1048,141 @@ export function createAssistant({ store, config = {} }) {
   }
 
   /**
+   * propose_changes' `bulk`: the same values for many existing rows, each group
+   * picking the rows of one sheet by recordIds and/or filters (records-tool
+   * pickRows), turned into ordinary changes ({ recordId, values, note }) after
+   * the rows listed in `changes`. A row already listed (or in an earlier group)
+   * takes only the columns it does not give yet. The values are checked once per
+   * group (columns, strict lists) before the rows are drafted one by one.
+   * Returns { changes, groups: [{ sheet, ids, matched, missing }] } or { error }.
+   */
+  function bulkChanges(input) {
+    const groups = Array.isArray(input.bulk) ? input.bulk : [input.bulk];
+    if (groups.length > 10) return { error: 'bulk takes up to 10 groups' };
+    const listed = Array.isArray(input.changes) ? input.changes : [];
+    const newRows = Array.isArray(input.newRows) ? input.newRows : [];
+    if (listed.length + newRows.length > PROPOSAL_ROWS) return { error: tooManyRows(listed.length + newRows.length) };
+    const changes = listed.map(c => ({ ...c }));
+    const byId = new Map(changes.map(c => [String(c?.recordId ?? ''), c]));
+    const out = [];
+    let picked = 0;
+    for (const [i, group] of groups.entries()) {
+      const at = `bulk[${i}]`;
+      if (!group || typeof group !== 'object' || Array.isArray(group)) return { error: `${at}: give sheet, filters and/or recordIds, and set` };
+      const set = group.set;
+      if (!set || typeof set !== 'object' || Array.isArray(set) || !Object.keys(set).length || Object.keys(set).length > 80)
+        return { error: `${at}: set must be column → value` };
+      if (Object.values(set).every(v => v === null || v === undefined || v === ''))
+        return { error: `${at}: every value in set is null, and null means no change. To empty a cell give {"clear": true}.` };
+      const rows = pickRows(db, group);
+      if (rows.error) return { error: `${at}: ${rows.error}` };
+      picked += rows.rows.length;
+      if (picked > BULK_ROWS)
+        return {
+          error: `${at}: ${picked} rows picked; one call takes at most ${BULK_ROWS}. Narrow the filters (count_records says how many match, e.g. per month), or make another call for the rest.`,
+        };
+      // The values as the sheet will take them ({"clear": true} empties, a note is text), checked once.
+      const plain = Object.fromEntries(
+        Object.entries(set).map(([f, v]) => [f, v && typeof v === 'object' && !Array.isArray(v) ? ('replace' in v ? v.replace : null) : v]),
+      );
+      try {
+        validateValues(rows.mod.id, withSheetTimes(plain));
+      } catch (e) {
+        return { error: `${at}: ${e.message}` };
+      }
+      const lists = listOptions(store, rows.mod.id);
+      for (const [field, value] of Object.entries(plain)) {
+        const problem = lists[field]?.strict && listProblem(lists, field, value);
+        if (problem) return { error: `${at}: ${problem}` };
+      }
+      for (const row of rows.rows) {
+        const known = byId.get(row.id);
+        if (known) {
+          known.values = { ...set, ...(known.values && typeof known.values === 'object' ? known.values : {}) };
+          known.note ||= group.note;
+          continue;
+        }
+        const change = { recordId: row.id, values: set, note: group.note };
+        changes.push(change);
+        byId.set(row.id, change);
+      }
+      out.push({ sheet: rows.mod.id, ids: new Set(rows.rows.map(r => r.id)), matched: rows.rows.length, missing: rows.missing });
+    }
+    return { changes, groups: out };
+  }
+
+  /**
+   * What a bulk call picked, per group: the rows matched, those left out because they
+   * already hold the values, ids not in the sheet, and a few rows as they will change.
+   */
+  function bulkSummary(groups, changes) {
+    const readable = (sheet, values) =>
+      Object.fromEntries(
+        Object.entries(values ?? {}).map(([f, v]) => [
+          f,
+          moduleMap.get(sheet)?.fields.find(x => x.key === f)?.type === 'date' && typeof v === 'number' ? isoDate(v) : v,
+        ]),
+      );
+    return groups.map(g => {
+      const mine = changes.filter(c => g.ids.has(c.recordId));
+      return {
+        sheet: g.sheet,
+        matched: g.matched,
+        changed: mine.length,
+        ...(g.matched > mine.length ? { alreadySet: g.matched - mine.length } : {}),
+        ...(g.missing.length ? { notInSheet: g.missing.slice(0, 20) } : {}),
+        preview: mine.slice(0, 5).map(c => ({ row: c.row, label: c.label, before: readable(c.sheet, c.before), after: readable(c.sheet, c.values) })),
+      };
+    });
+  }
+
+  /**
    * propose_changes as the assistant calls it; `literal` for fixes built by the
-   * app (the Revisión tab), whose values are taken as they are.
+   * app (the Revisión tab), whose values are taken as they are. A `bulk` call
+   * over PROPOSAL_ROWS rows becomes several proposals, "(1/3)" after the reason.
    */
   function proposeChanges(input, context, { literal = false } = {}) {
     if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot propose edits' };
-    const { args, ignored } = literal ? { args: input, ignored: [] } : assistantArgs(input, context.user);
+    const bulk = !literal && input.bulk !== undefined && input.bulk !== null ? bulkChanges(input) : null;
+    if (bulk?.error) return bulk;
+    const given = bulk ? { ...input, changes: bulk.changes } : input;
+    const { args, ignored } = literal ? { args: given, ignored: [] } : assistantArgs(given, context.user);
     if (ignored.length && !args.changes.length && !args.newRows.length)
       return { error: 'Every value was null, and null means no change. To empty a cell give {"clear": true}.' };
-    const drafted = draftChanges(args);
+    const drafted = draftChanges(args, idsFor(), bulk ? Infinity : PROPOSAL_ROWS);
     if (drafted.error) return drafted;
     const { changes } = drafted;
     const issueIds = Array.isArray(args.issueIds) ? args.issueIds.slice(0, 500).map(i => clip(i, 200)) : [];
-    const { id, chat } = saveProposal(changes, args.reason, context, issueIds);
+    // Even parts of up to PROPOSAL_ROWS rows (115 rows: 58 and 57); each part's issues are marked as its rows are written.
+    const count = Math.ceil(changes.length / PROPOSAL_ROWS);
+    const size = Math.ceil(changes.length / count);
+    const saved = Array.from({ length: count }, (_, k) => changes.slice(k * size, (k + 1) * size)).map((part, k) => ({
+      ...saveProposal(part, count > 1 ? `${clip(args.reason, 480)} (${k + 1}/${count})` : args.reason, context, issueIds),
+      part,
+    }));
     const dropped = [...new Set(changes.flatMap(c => c.dropped ?? []))];
-    const noSample = changes.flatMap((c, index) => {
-      const warned = proposalSampleWarnings(c, c.create ? null : store.getRecord(c.recordId));
-      return warned ? [{ index, label: c.label, missing: Object.keys(warned) }] : [];
-    });
+    const noSample = saved.flatMap(({ id, part }) =>
+      part.flatMap((c, index) => {
+        const warned = proposalSampleWarnings(c, c.create ? null : store.getRecord(c.recordId));
+        return warned ? [{ ...(count > 1 ? { proposalId: id } : {}), index, label: c.label, missing: Object.keys(warned) }] : [];
+      }),
+    );
+    // Row indexes for update_proposal (new rows first, then edits of existing rows). A long bulk
+    // proposal gives its preview instead (get_proposal lists every row).
+    const table = part =>
+      !bulk || changes.length <= 30
+        ? { table: part.map((c, index) => ({ index, sheet: c.sheet, label: c.label, ...(c.create ? { create: true } : { row: c.row }) })) }
+        : {};
     return {
-      proposalId: id,
-      ...proposalLink(id, chat),
+      ...(count > 1
+        ? {
+            proposals: saved.map(({ id, chat, part }) => ({ proposalId: id, ...proposalLink(id, chat), rows: part.length })),
+            split: `${changes.length} rows: ${count} proposals of up to ${PROPOSAL_ROWS} rows. The person reviews and applies each one.`,
+          }
+        : { proposalId: saved[0].id, ...proposalLink(saved[0].id, saved[0].chat) }),
       rows: changes.length,
       status: 'waiting for the person to confirm',
+      ...(bulk ? { bulk: bulkSummary(bulk.groups, changes) } : {}),
       ...(noSample.length
         ? {
             preservedWithoutSample: noSample,
@@ -1053,8 +1192,7 @@ export function createAssistant({ store, config = {} }) {
         : {}),
       ...(dropped.length ? { leftOut: `Formula columns left out of the new rows: ${dropped.join(', ')}` } : {}),
       ...(ignored.length ? { noChange: ignored.slice(0, 50), noChangeNote: 'null means no change: these cells keep the sheet value. To empty one give {"clear": true}.' } : {}),
-      // Row indexes for update_proposal (new rows first, then edits of existing rows).
-      table: changes.map((c, index) => ({ index, sheet: c.sheet, label: c.label, ...(c.create ? { create: true } : { row: c.row }) })),
+      ...(count === 1 ? table(changes) : {}),
     };
   }
 
@@ -1263,7 +1401,7 @@ export function createAssistant({ store, config = {} }) {
       if (!moduleMap.has(sheet)) continue;
       rows.push({ create: true, sheet, clientId: randomUUID(), recordId: null, row: null, label: '', before: {}, values: {}, replaceFormula: [], note: '' });
     }
-    if (rows.length > 100) out.rejected.push({ message: 'At most 100 rows per proposal' });
+    if (rows.length > PROPOSAL_ROWS) out.rejected.push({ message: tooManyRows(rows.length) });
     out.leftOut = [...new Set(out.leftOut)];
     return { changes: rows, ...out };
   }
@@ -2237,11 +2375,23 @@ export function createAssistant({ store, config = {} }) {
         limit: 12,
         offset: 0,
       });
+      // Within find_records' size budget (a Collection_data row with its lookups is a few kB).
+      const records = [];
+      let size = 0;
       for (const record of page.records ?? []) {
+        const row = compact(record);
+        size += json(row).length + 1;
+        if (size > FIND_BUDGET && records.length) break;
+        records.push(row);
         context.records.set(record.id, record);
         context.sources.set(record.id, recordSource(record));
       }
-      return { records: (page.records ?? []).map(r => compact(r)), total: page.total };
+      const cut = (page.records?.length ?? 0) - records.length;
+      return {
+        records,
+        total: page.total,
+        ...(cut ? { truncated: `${cut} more rows not shown (size limit): use find_records with filters and fields.` } : {}),
+      };
     }
     if (name === 'find_records') return findRows(args, context);
     if (name === 'count_records') return countRecords(db, args);
@@ -2785,7 +2935,7 @@ export function createAssistant({ store, config = {} }) {
         },
         { by: 'person', user },
       );
-      if (out.changes.length > 100) return bad(409, 'too_many_rows', 'Una propuesta tiene como máximo 100 filas.');
+      if (out.changes.length > PROPOSAL_ROWS) return bad(409, 'too_many_rows', `Una propuesta tiene como máximo ${PROPOSAL_ROWS} filas.`);
       if (json(out.changes) !== proposal.changes_json && saveRevision(proposal, out.changes, 'person', null, page) === null)
         return bad(409, 'proposal_used', 'La propuesta ya no está pendiente.');
       return {

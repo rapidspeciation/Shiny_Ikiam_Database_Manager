@@ -110,8 +110,9 @@ export const KINDS = {
       'Notes_Insectary_data',
     ],
     // Reared when the line gives a clutch; Wild-caught when Claude says so (no clutch, a collector's note).
-    // The death and preservation columns come from the notes' words and the templates (impliedValues).
-    extra: ['Wild_Reared', ...DEATH_EXTRA],
+    // The death and preservation columns come from the notes' words and the templates (impliedValues);
+    // a preserved egg's or larva's stage from its note.
+    extra: ['Wild_Reared', 'LIFESTAGE', ...DEATH_EXTRA],
   },
   deaths: {
     label: 'Muertes',
@@ -128,7 +129,7 @@ export const KINDS = {
       'Tube_1_id',
       'Notes_Insectary_data',
     ],
-    extra: DEATH_EXTRA,
+    extra: ['LIFESTAGE', ...DEATH_EXTRA],
   },
   labels: {
     label: 'Sobres y etiquetas',
@@ -942,13 +943,40 @@ export function idChecks(texts, crossed) {
   return out;
 }
 
+const ORDINALS = { first: 1, second: 2, third: 3, fourth: 4, fifth: 5, primer: 1, primero: 1, segundo: 2, tercer: 3, tercero: 3, cuarto: 4, quinto: 5 };
+const ORDINAL_SUFFIX = ['', 'st', 'nd', 'rd', 'th', 'th'];
+/**
+ * The LIFESTAGE (as its list writes it) an egg's or larva's note names: "3rd instar",
+ * "instar 4", "tercer estadio" → "3rd instar larva"; "egg(s)", "huevo(s)" → Egg;
+ * "pre-pupa" → Pre-pupa. { value, words } when it names one stage only; a bare
+ * "larva" or two stages give null.
+ */
+export function lifeStage(text) {
+  const note = String(text ?? '');
+  const found = new Map();
+  const add = (value, words) => found.has(value) || found.set(value, words.trim());
+  const instar = (n, words) => add(`${n}${ORDINAL_SUFFIX[n]} instar larva`, words);
+  for (const m of note.matchAll(/\b([1-5])\s*(?:st|nd|rd|th|er|ro|do|to|[°ºª])?\s*(?:instar|estadio)\b/gi)) instar(Number(m[1]), m[0]);
+  for (const m of note.matchAll(/\b(?:instar|estadio)\s*([1-5])\b/gi)) instar(Number(m[1]), m[0]);
+  for (const m of note.matchAll(/\b(first|second|third|fourth|fifth|primer|primero|segundo|tercer|tercero|cuarto|quinto)\s+(?:instar|estadio)\b/gi))
+    instar(ORDINALS[m[1].toLowerCase()], m[0]);
+  // Beside an instar, another ordinal is another stage ("3rd and 4th instar").
+  if (found.size) for (const m of note.matchAll(/\b([1-5])(?:st|nd|rd|th)\b/gi)) instar(Number(m[1]), m[0]);
+  for (const m of note.matchAll(/\bpre[\s-]?pupa[es]?\b/gi)) add('Pre-pupa', m[0]);
+  for (const m of note.matchAll(/\b(?:eggs?|huevos?)\b/gi)) add('Egg', m[0]);
+  if (found.size !== 1) return null;
+  const [[value, words]] = found;
+  return { value, words };
+}
+
 /**
  * Words of an Emergidos or Muertes note that belong in columns (ai-errors.md
  * R11): "ethanol" / "flash frozen" (the tube's medium), "wc" (a wing clip),
  * "pheromone" (killed for pheromones), "preserved", "unk" (cause unknown), and
  * CAMs and tubes. They leave the note (the rest stays, and a note left empty is
  * not written) and are returned: { medium, wingClip, pheromone, preserved,
- * unknown, cams, tubes }. Changes `text` in place.
+ * unknown, larva, stage (lifeStage: an egg's or larva's, the words stay in the
+ * note), dead, cams, tubes }. Changes `text` in place.
  */
 export function noteColumns(text, field = 'Notes_Insectary_data') {
   const out = { cams: [], tubes: [] };
@@ -973,6 +1001,8 @@ export function noteColumns(text, field = 'Notes_Insectary_data') {
   // An egg or larva (its own row since Sep 2026: "preserved alive 3rd instar"), not a pupa; found dead.
   // Both words stay in the note.
   if (/instar|\blarva[es]?\b|\blarvas\b|pre-?pupa|\beggs?\b|\bhuevos?\b/i.test(note) && !/(?<!pre-?)pupa/i.test(note)) out.larva = true;
+  const stage = out.larva ? lifeStage(note) : null;
+  if (stage) out.stage = stage;
   if (/\b(?:dead|muert[oa]s?)\b/i.test(note)) out.dead = true;
   take(/\b(?:killed\s*(?:[&y+]|and)\s*)?(?:preserv\w*|preservad[oa]s?)\.?(?=[\s,;|(){}\[\]-]*$)/gi, () => {});
   // What is left once the column words are out: brackets, joining words and punctuation are not a note.
@@ -1570,6 +1600,9 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         // A preserved egg or larva: no sex recorded (Sanger's NOT_COLLECTED), no emergence.
         else if (deathKind && (field === 'Sex' || field === 'Intro2Insectary_date') && preservedLarva(i, record))
           [inferred, hint] = [field === 'Sex' ? 'NOT_COLLECTED' : 'NA', msg('Huevo o larva preservado: lo que el equipo escribe')];
+        // Its stage, when the note names one ("3rd instar", "eggs", "pre-pupa").
+        else if (deathKind && field === 'LIFESTAGE' && notes[i]?.stage && preservedLarva(i, record))
+          [inferred, hint] = [notes[i].stage.value, msg('De la nota: {words}', { words: `«${notes[i].stage.words}»` })];
         // A death's other columns (the not-preserved block, a preserved butterfly's), the note's words.
         else if (deathKind && IMPLIED_FIELDS.has(field) && impliedNow().values[field] !== undefined)
           [inferred, hint] = [impliedNow().values[field], impliedNow().reasons[field] ?? null];
