@@ -126,13 +126,31 @@ const others = computed(() => elsewhere(scope.value, chats.value))
 const mixed = computed(() => !scope.value || scope.value.chat === 'all' || scope.value.chat === 'app')
 
 const isTable = (p: Proposal) => p.kind === 'table'
+/**
+ * Proposals from the oldest rows of the sheet to the newest, so they are reviewed and applied in the
+ * sheet's order: by sheet, then the first existing row each one changes (one with only new rows after
+ * them), then the older proposal first.
+ */
+function byRows(a: Proposal, b: Proposal) {
+  const where = (p: Proposal) => {
+    const rows = p.changes.map(c => c.row ?? 0).filter(r => r > 0)
+    return { sheet: p.changes[0]?.sheet ?? '', row: rows.length ? Math.min(...rows) : Infinity }
+  }
+  const [x, y] = [where(a), where(b)]
+  return x.sheet.localeCompare(y.sheet) || x.row - y.row || String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? ''))
+}
 const open = (p: Proposal) => p.status === 'pending' || p.status === 'applying' || p.status === 'shown'
 const mine = computed(() => (props.only ? proposals.value.filter(p => p.id === props.only) : proposals.value))
-/** The proposals to review (a table shown is only to read). */
-const pending = computed(() => mine.value.filter(p => open(p) && !isTable(p)))
+/** The proposals to review (a table shown is only to read), in the sheet's order: see byRows. */
+const pending = computed(() => mine.value.filter(p => open(p) && !isTable(p)).sort(byRows))
 const reviewed = computed(() => (props.only ? [] : mine.value.filter(p => !open(p) && !isTable(p)).slice(0, 5)))
-/** The tables shown first: the pending ones and the tables of rows; on a proposal's own page, that proposal whatever its state. */
-const cards = computed(() => (props.only ? mine.value : mine.value.filter(open)))
+/**
+ * The cards shown: the tables of rows the assistant opened (newest first, as answers), then the proposals
+ * to review in the sheet's order; on a proposal's own page, that proposal whatever its state.
+ */
+const cards = computed(() =>
+  props.only ? mine.value : [...mine.value.filter(p => open(p) && isTable(p)), ...pending.value],
+)
 /** A card's room before its table is built. */
 const heightOf = (p: Proposal) => cardHeight(isTable(p) ? (p.rows?.length ?? 0) : p.changes.length)
 watch(
