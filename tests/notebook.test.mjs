@@ -859,3 +859,43 @@ test('a clutch line whose adults differ from the butterflies typed in Insectary_
   const [change] = proposalRows(review).changes;
   assert.match(change.note, /Insectary_data has 7 butterflies of clutch 990/);
 });
+
+test("a page's year: written, the sheet's for the same dates, the current one for recent days, else asked", () => {
+  const rows = [{ id: 'r1', row: 2, version: 1, values: { Insectary_ID: '5VB', Intro2Insectary_date: d('2025-08-04') } }];
+  const lookup = fakeLookup(rows);
+  const page = (dates, year) =>
+    parseTranscription(
+      JSON.stringify({
+        kind: 'emergence',
+        year,
+        lines: dates.map((date, i) => ({ raw: `${i}`, v: { Insectary_ID: i ? `Q${i}Q` : '5VB', Intro2Insectary_date: date } })),
+      }),
+    );
+  // The sheet already has 4/8 for that row, in 2025: the same date, that year.
+  const sheet = buildReview({ transcription: page(['4/8']), today: '2026-10-04', lookup });
+  assert.deepEqual([sheet.year, sheet.yearSource, sheet.yearNeeded], [2025, 'inferred', undefined]);
+  // Dates of the last weeks (August and September read in early October): this year.
+  const recent = buildReview({ transcription: page(['9/8', '17/9']), today: '2026-10-04', lookup });
+  assert.deepEqual([recent.year, recent.yearSource, recent.yearNeeded], [2026, 'current', undefined]);
+  // Months back (March, or December of last year) and not in the sheet: the person is asked.
+  const old = buildReview({ transcription: page(['9/8', '15/3', '20/12']), today: '2026-10-04', lookup });
+  assert.deepEqual(old.yearNeeded, ['15/3', '20/12']);
+  // Written on the page: no question.
+  assert.equal(buildReview({ transcription: page(['9/8', '15/3'], 2024), today: '2026-10-04', lookup }).yearNeeded, undefined);
+});
+
+test('match_notebook asks for the year of a page of old dates that does not say it, and proposes nothing', async () => {
+  const { store, call } = await setup();
+  try {
+    const old = new Date(Date.now() - 200 * 864e5);
+    const lines = [{ raw: '8VD ♀', values: { Insectary_ID: '8VD', Sex: 'female', Intro2Insectary_date: `${old.getUTCDate()}/${old.getUTCMonth() + 1}` } }];
+    const asked = await call('match_notebook', { kind: 'emergence', lines });
+    assert.match(asked.error, /^Which year is this page\?.*call again with `year`\. Nothing was proposed\./);
+    assert.equal(store.db.prepare("SELECT count(*) n FROM ai_proposals WHERE status = 'pending'").get().n, 0);
+    const given = await call('match_notebook', { kind: 'emergence', year: old.getUTCFullYear(), lines });
+    assert.ok(given.proposalId, JSON.stringify(given));
+    assert.equal(given.yearSource, 'page');
+  } finally {
+    store.close();
+  }
+});

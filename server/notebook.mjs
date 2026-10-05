@@ -552,29 +552,27 @@ export function noteText(text, { today, initials }) {
 }
 
 /**
- * The page's year when it is not written on a date: the one of the matching
- * sheet dates with the same day and month, else the commonest year among the
- * matched rows' dates in the page's columns, else the current year.
+ * The page's year when it is not written on a date: the year of the matching
+ * rows' sheet dates with the same day and month as the page's, or null.
  */
-function inferYear(lines, dateFields, fallback) {
-  const exact = new Map(),
-    near = new Map();
-  const add = (map, year) => map.set(year, (map.get(year) ?? 0) + 1);
+function inferYear(lines, dateFields) {
+  const exact = new Map();
   for (const line of lines) {
     const record = line.record;
     if (!record) continue;
     for (const field of dateFields) {
       const sheet = record.values?.[field];
       if (typeof sheet !== 'number') continue;
-      add(near, serialYear(sheet));
       const m = /^(\d{1,2})\s*[/.\-]\s*(\d{1,2})$/.exec(String(line.text[field] ?? '').trim());
       if (m && serialDayMonth(sheet) === `${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`)
-        add(exact, serialYear(sheet));
+        exact.set(serialYear(sheet), (exact.get(serialYear(sheet)) ?? 0) + 1);
     }
   }
-  const best = map => [...map].sort((a, b) => b[1] - a[1])[0]?.[0];
-  return best(exact) ?? best(near) ?? fallback;
+  return [...exact].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 }
+
+/** Days back a page's dates may go to be read in the current year when nothing gives the year. */
+export const RECENT_DAYS = 120;
 
 /**
  * CAMs and tubes written as runs: "cam505" or "72" under CAM076671 continue its
@@ -1461,8 +1459,22 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
     return { line, edited, text, keyValues, candidates, record: null };
   });
   chooseRows(lines);
-  const pageYear = year ?? transcription.year ?? inferYear(lines, dateFields, currentYear);
-  const yearSource = year ? 'person' : transcription.year ? 'page' : 'inferred';
+  // The year: the person's, the page's, the sheet's for the same dates; else the current year,
+  // only for a page of recent days (a date read in it falls in the last RECENT_DAYS days).
+  const inferred = year || transcription.year ? null : inferYear(lines, dateFields);
+  const pageYear = year ?? transcription.year ?? inferred ?? currentYear;
+  const yearSource = year ? 'person' : transcription.year ? 'page' : inferred ? 'inferred' : 'current';
+  const yearNeeded = [];
+  if (yearSource === 'current')
+    for (const l of lines) {
+      if (l.line.crossed) continue;
+      for (const field of dateFields) {
+        const read = readDate(l.text[field], currentYear);
+        if (!read || read.yearWritten) continue;
+        const serial = read.serial > todaySerial + 7 ? readDate(l.text[field], currentYear - 1).serial : read.serial;
+        if (serial < todaySerial - RECENT_DAYS) yearNeeded.push(String(l.text[field]).trim());
+      }
+    }
   const serialOf = (text, fallback) => (isNone(text) ? (typeof fallback === 'number' ? fallback : null) : (readDate(text, pageYear)?.serial ?? null));
 
   // A clutch read unlike the run next to it (848 among 843s), judged by the laid dates in Insectary_stocks.
@@ -1944,6 +1956,7 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
     fields: columnsOf(kind),
     year: pageYear,
     yearSource,
+    ...(yearNeeded.length ? { yearNeeded: [...new Set(yearNeeded)].slice(0, 6) } : {}),
     rotate: transcription.rotate,
     lines: out,
     counts: {

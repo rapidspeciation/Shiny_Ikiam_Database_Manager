@@ -12,6 +12,7 @@ import { listOptions } from './verify.mjs';
 import {
   KINDS,
   KIND_IDS,
+  RECENT_DAYS,
   buildReview,
   checkTranscription,
   clutchKey,
@@ -358,6 +359,11 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
       initials: initials(user),
       lookup: lookupFor(kind.sheet, kind.keys),
     });
+    // Dates without their year, not from the last months and not in the sheet: the person says the year.
+    if (review.yearNeeded)
+      throw new Error(
+        `Which year is this page? Its year is not written, and its dates (${review.yearNeeded.join(', ')}) are not in these rows of the sheet nor from the last ${RECENT_DAYS} days. Ask the person, then call again with \`year\`. Nothing was proposed.`,
+      );
     const rows = proposalRows(review);
     const ids = newIds();
     const changes = [];
