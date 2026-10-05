@@ -36,7 +36,7 @@ import { chmodSync, existsSync, renameSync, rmSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
-import { modules } from './schema.mjs';
+import { moduleMap, modules } from './schema.mjs';
 import { listOptions } from './verify.mjs';
 import { PURPOSES } from './history.mjs';
 
@@ -258,6 +258,8 @@ function copyStaged(source, copy, kinds) {
   const insert = copy.prepare('INSERT INTO staged VALUES (?,?,?,?,?,?,?,?,?,?,?,?)');
   const shown = (sheet, field, v) => {
     if (v && typeof v === 'object' && 'formula' in v) return v.formula;
+    // A date as a date, even in a column the copy could not tell (no dates in it yet).
+    if (typeof v === 'number' && SERIAL(v) && moduleMap.get(sheet)?.fields.find(f => f.key === field)?.type === 'date') return isoOfSerial(v);
     const kind = kinds.get(sheet)?.get(field) ?? 'text';
     return cell(kind === 'id' ? 'text' : kind, v);
   };

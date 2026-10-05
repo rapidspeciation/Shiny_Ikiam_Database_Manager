@@ -10,6 +10,11 @@ import { idSuggestions } from '../server/grid.mjs';
 import { clutchDay, notebookChanges } from '../server/clutches.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { Store } from '../server/store.mjs';
+import { buildCopy } from '../server/replica.mjs';
+import { DatabaseSync } from 'node:sqlite';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const ana = { id: 'ana', username: 'ana', displayName: 'Ana', role: 'editor' };
 const luis = { id: 'luis', username: 'luis', displayName: 'Luis', role: 'editor' };
@@ -255,6 +260,30 @@ test('a row entered here can be changed or undone before it is saved; undoing fr
     await store.staged.remove({ entryId: item.entryId }, luis);
     assert.equal(store.staged.list().items.length, 1);
     assert.equal(idSuggestions(store, { kind: 'insectary', count: 1 }).sequence[0], 'A1E', 'free again');
+  } finally {
+    store.close();
+  }
+});
+
+test("the assistant's query copy has the entries kept in the app, a row per cell", async () => {
+  const { store } = await fixture();
+  const dir = mkdtempSync(join(tmpdir(), 'staged-copy-'));
+  try {
+    await stage(store, ana, { creates: [emerged('A1E')] });
+    const out = join(dir, 'sheets.sqlite');
+    buildCopy(store.db, out);
+    const copy = new DatabaseSync(out, { readOnly: true });
+    const rows = copy
+      .prepare("SELECT who, tab, kind, sheet, id_label, field, value, status FROM staged WHERE field IN ('Insectary_ID', 'Intro2Insectary_date') ORDER BY field")
+      .all();
+    copy.close();
+    assert.deepEqual(
+      rows.map(r => ({ ...r })),
+      [
+        { who: 'Ana', tab: 'Emergidos', kind: 'new row', sheet: 'Insectary_data', id_label: 'A1E', field: 'Insectary_ID', value: 'A1E', status: 'staged' },
+        { who: 'Ana', tab: 'Emergidos', kind: 'new row', sheet: 'Insectary_data', id_label: 'A1E', field: 'Intro2Insectary_date', value: '2026-10-05', status: 'staged' },
+      ],
+    );
   } finally {
     store.close();
   }
