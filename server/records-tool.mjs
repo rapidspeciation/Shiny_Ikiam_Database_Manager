@@ -236,7 +236,7 @@ function compileNear(db, mod, near) {
  * The rows matching a query: identifiers (field + values), filters and near.
  * Returns { mod, rows: [{ record, distance }], missing } or { error }.
  */
-function select(db, args) {
+export function selectRecords(db, args) {
   const mod = moduleMap.get(String(args.module ?? args.sheet ?? ''));
   if (!mod) return { error: `Unknown sheet ${clip(args.module ?? args.sheet, 60)}` };
   const filter = compileFilters(mod, args.filters);
@@ -330,7 +330,7 @@ export function pickRows(db, { sheet, recordIds, filters }) {
 
 /** find_records: the rows, only some columns if asked (or only their ids), within the size budget. */
 export function findRecords(db, args, { budget = FIND_BUDGET } = {}) {
-  const selected = select(db, args);
+  const selected = selectRecords(db, args);
   if (selected.error) return selected;
   const { mod, rows, missing } = selected;
   const idsOnly = args.idsOnly === true;
@@ -396,7 +396,7 @@ function groupValue(field, part, value) {
 
 /** count_records: how many rows match, and per group (groupBy up to 3 columns). */
 export function countRecords(db, args) {
-  const selected = select(db, { ...args, module: args.sheet ?? args.module, field: undefined, values: undefined, filters: args.filters ?? {} });
+  const selected = selectRecords(db, { ...args, module: args.sheet ?? args.module, field: undefined, values: undefined, filters: args.filters ?? {} });
   if (selected.error) return selected;
   const { mod, rows } = selected;
   const groupBy = args.groupBy === undefined || args.groupBy === null ? [] : Array.isArray(args.groupBy) ? args.groupBy : [args.groupBy];

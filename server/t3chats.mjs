@@ -17,7 +17,8 @@ const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 /** The chat a T3 page shows: /<environment>/<threadId> (a new chat not sent yet is /draft/<id>). */
 const THREAD_PATH = new RegExp(`^/${UUID}/(${UUID})(?:[/?#]|$)`);
 const TRACE_PATH = '"url.path":"/api/observability/v1/traces"';
-const PROPOSAL_ID = new RegExp(`proposalId\\\\?"\\s*:\\s*\\\\?"(${UUID})`, 'g');
+/** A proposal's id in a tool result, or a table's (show_rows), which is listed and linked the same way. */
+const PROPOSAL_ID = new RegExp(`(?:proposalId|tableId)\\\\?"\\s*:\\s*\\\\?"(${UUID})`, 'g');
 /** How long a page's last report counts as "open now" (it reports every ~3 s). */
 const OPEN_MS = 20_000;
 /**
@@ -273,7 +274,7 @@ export function createT3Chats({ home, now = Date.now } = {}) {
       await new Promise(resolve => setImmediate(resolve));
       const rows = query(
         `SELECT created_at, payload_json FROM projection_thread_activities
-         WHERE thread_id = ? AND created_at >= ? AND kind = 'tool.completed' AND payload_json LIKE '%proposalId%'`,
+         WHERE thread_id = ? AND created_at >= ? AND kind = 'tool.completed' AND (payload_json LIKE '%proposalId%' OR payload_json LIKE '%tableId%')`,
         [thread, since],
       );
       for (const r of rows)

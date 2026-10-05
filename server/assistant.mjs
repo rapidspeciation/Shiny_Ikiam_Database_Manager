@@ -12,7 +12,7 @@ import { TUBE_FIELD, isIdValue, isUnique } from './verifications.mjs';
 import { listOptions, listProblem } from './verify.mjs';
 import { queueWalk, walkDraft } from './walks.mjs';
 import { KINDS, isNone, noteText, reviewColumns } from './notebook.mjs';
-import { FILTERS_DOC, FIND_BUDGET, RECORD_TOOLS, compactRecord, countRecords, findRecords, pickRows } from './records-tool.mjs';
+import { FILTERS_DOC, FIND_BUDGET, RECORD_TOOLS, compactRecord, countRecords, findRecords, pickRows, selectRecords } from './records-tool.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
 import { duplicateIdRow, insectaryIdRow, newRowFormulaFields } from './premade.mjs';
 import { proposalSampleWarnings } from './preserved.mjs';
@@ -84,6 +84,11 @@ const NOTE_FIELD = /^notes?(?:_|$)/i;
 /** A note already in the team's form: "29/9/26 FCH:", "16/06/2023 AA:", "23Ago26 PAS". */
 const NOTE_PREFIX = /^\s*(?:\d{1,2}\s*[/.-]\s*\d{1,2}\s*[/.-]\s*\d{2,4}|\d{1,2}\s*[A-Za-z]{3}\s*\d{2,4})\s+[A-ZÑ]{2,4}\b/;
 const ecuadorDay = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(new Date());
+/** Rows a table shown with show_rows holds at most, and the columns it shows when the assistant names none. */
+const TABLE_ROWS = 500;
+const TABLE_COLUMNS = 20;
+/** A sheet's ID columns when the app names none for it (Sperm_dissections: Father_CAMid, Mother_CAMid). */
+const ID_LIKE = /(?:^|_)ID$|CAM_?id$/i;
 
 const TOOLS = [
   {
@@ -344,9 +349,50 @@ const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'show_rows',
+      description:
+        [
+          "Show the person rows of one sheet as a table beside the chat (Asistente → «Cambios propuestos»): read-only, always with the sheet's current values, sortable. When an answer is about many rows (a species' dissections, a clutch's butterflies, the rows an issue involves), show them there and keep the text to what they mean.",
+          `- Rows: \`recordIds\` and/or \`filters\` or \`field\` + \`values\` as in \`find_records\`; up to ${TABLE_ROWS}.`,
+          '- `columns`: the ones that matter for the question, in your order. Without them: the ID columns, then the filled ones.',
+          '- `notes`: your comments, on a row (beside its ID) or on a cell (`field`: a corner mark, read on hover); `highlight` marks that row or cell.',
+          '- `tableId`: change a table already shown, in place (what you leave out stays).',
+          'Returns `link` (the table on its own page) and `assistantLink` (beside its chat).',
+        ].join('\n'),
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'What the table shows, e.g. "Spermatophore dissections: M. polymnia and M. lysimnia"' },
+          sheet: { type: 'string', description: 'e.g. Sperm_dissections, Insectary_data' },
+          recordIds: { type: 'array', items: { type: 'string' }, description: 'App IDs of rows (from find_records, get_record, check_data…)' },
+          field: { type: 'string', description: 'Column the identifiers in `values` are in, e.g. Insectary_ID' },
+          values: { type: 'array', items: { type: 'string' } },
+          filters: { type: 'object', description: FILTERS_DOC },
+          columns: { type: 'array', items: { type: 'string' } },
+          notes: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                recordId: { type: 'string' },
+                field: { type: 'string', description: 'A column: the note is on that cell' },
+                text: { type: 'string' },
+                highlight: { type: 'boolean' },
+              },
+              required: ['recordId'],
+            },
+          },
+          tableId: { type: 'string' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'list_proposals',
       description:
-        "This chat's proposals, newest first (pending, then the last reviewed), each with its status, reason, rows and `link`; `chatLink` shows them all on one page. allChats: every chat's pending proposals.",
+        "This chat's proposals and tables (show_rows), newest first (pending or shown, then the last reviewed or closed), each with its status, reason, rows and `link`; `chatLink` shows them all on one page. allChats: every chat's pending proposals and tables shown.",
       parameters: {
         type: 'object',
         properties: { allChats: { type: 'boolean' } },
@@ -482,6 +528,7 @@ const ALWAYS_LOADED = new Set([
   'search_knowledge',
   'propose_changes',
   'update_proposal',
+  'show_rows',
 ]);
 
 /** The tools as MCP's tools/list gives them to T3 Code's chats (and the app's AI instructions page shows them). */
@@ -534,6 +581,9 @@ function init(db) {
   // A notebook page's proposal (match_notebook): the page's lines, its notebook and its photos, so its
   // table shows every line in the notebook's order beside the photo.
   if (!has('ai_proposals', 'page_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN page_json TEXT');
+  // A table of sheet rows the assistant shows the person (show_rows): its sheet, rows, columns and
+  // notes. It is listed with the proposals but never written: status 'shown', then 'closed'.
+  if (!has('ai_proposals', 'table_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN table_json TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS ai_proposals_owner_status ON ai_proposals(owner_id, status, created_at)');
   // Personal tokens for agents outside the app (T3 Code projects) to use the same tools.
   db.exec(`CREATE TABLE IF NOT EXISTS ai_tokens (
@@ -1444,7 +1494,7 @@ export function createAssistant({ store, config = {} }) {
     db.prepare('SELECT p.*, t.title FROM ai_proposals p JOIN ai_threads t ON t.id = p.thread_id WHERE p.id = ?').get(id);
   /** A proposal as Cambios propuestos lists it (with the conversation it comes from: its T3 chat, if known). */
   const listedView = (r, titles = new Map()) => ({
-    ...proposalView({ id: r.id, changes: [], reason: r.reason, status: r.status }, r),
+    ...(isTable(r) ? tableView(r) : proposalView({ id: r.id, changes: [], reason: r.reason, status: r.status }, r)),
     createdAt: r.created_at,
     source: (r.t3_thread && (titles.get(r.t3_thread)?.title ?? r.t3_title)) || r.title,
     chat: r.t3_thread || null,
@@ -1572,6 +1622,7 @@ export function createAssistant({ store, config = {} }) {
   function getProposal(args, context) {
     const proposal = ownProposal(args.proposalId, context.user);
     if (!proposal) return { error: 'Proposal not found' };
+    if (isTable(proposal)) return { error: NOT_A_PROPOSAL };
     return {
       proposalId: proposal.id,
       ...proposalLink(proposal.id, chatOf(proposal, context)),
@@ -1586,23 +1637,227 @@ export function createAssistant({ store, config = {} }) {
   /** list_proposals: the proposals of the chat calling (all chats' pending ones when it is not known, or asked). */
   function listProposals(args, context) {
     const chat = !args.allChats && context.t3 ? (chatOfCall(context)?.id ?? null) : null;
-    const select = `SELECT id, status, reason, changes_json, created_at, t3_thread FROM ai_proposals WHERE owner_id = ?${chat ? ' AND t3_thread = ?' : ''}`;
+    const select = `SELECT id, status, reason, changes_json, table_json, created_at, t3_thread FROM ai_proposals WHERE owner_id = ?${chat ? ' AND t3_thread = ?' : ''}`;
     const params = [owner(context.user), ...(chat ? [chat] : [])];
     const order = 'ORDER BY created_at DESC, rowid DESC';
     const rows = [
-      ...db.prepare(`${select} AND status IN ('pending', 'applying') ${order} LIMIT 50`).all(...params),
-      ...(chat ? db.prepare(`${select} AND status NOT IN ('pending', 'applying') ${order} LIMIT 10`).all(...params) : []),
+      ...db.prepare(`${select} AND status IN ('pending', 'applying', 'shown') ${order} LIMIT 50`).all(...params),
+      ...(chat ? db.prepare(`${select} AND status NOT IN ('pending', 'applying', 'shown') ${order} LIMIT 10`).all(...params) : []),
     ];
     return {
       ...(chat ? { chat, chatLink: chatProposalsLink(chat) } : { chat: 'all chats (pending only)' }),
       proposals: rows.map(r => ({
-        proposalId: r.id,
+        ...(r.table_json ? { tableId: r.id, kind: 'table (show_rows)' } : { proposalId: r.id }),
         status: r.status,
         reason: r.reason,
-        rows: (parse(r.changes_json) ?? []).length,
+        rows: r.table_json ? (parse(r.table_json)?.rows ?? []).length : (parse(r.changes_json) ?? []).length,
         createdAt: r.created_at,
         ...proposalLink(r.id, r.t3_thread),
       })),
+    };
+  }
+
+  // ------------------------------------------------------------ tables of rows (show_rows)
+  /*
+   * A table the assistant shows the person beside the chat: rows of one sheet,
+   * the columns it chose and its notes. Kept as a row of ai_proposals (so it
+   * is listed, linked to its T3 chat and followed live like a proposal) with
+   * `table_json` and no changes; its status is 'shown', then 'closed', never
+   * 'pending', so nothing can apply it. It keeps the rows' IDs, not their
+   * values: the panel reads them from the sheet's copy each time.
+   */
+  const isTable = proposal => !!proposal?.table_json;
+  const NOT_A_PROPOSAL = 'That is a table shown with show_rows: it changes nothing. Draft changes with propose_changes.';
+
+  /** The rows a show_rows call names, in sheet order: { ids, missing } or { error }. */
+  function tableRows(sheet, args) {
+    const ids = new Set();
+    const missing = [];
+    const recordIds = Array.isArray(args.recordIds) ? args.recordIds.slice(0, 2000) : [];
+    for (const raw of recordIds) {
+      const id = clip(raw, 120);
+      const record = store.getRecord(id);
+      if (!record || record.missing) missing.push(id);
+      else if (record.sheet !== sheet) return { error: `Row ${id} is in ${record.sheet}, not ${sheet}: one sheet per table` };
+      else ids.add(record.id);
+    }
+    const query = args.filters !== undefined || args.field !== undefined || args.values !== undefined;
+    if (query) {
+      const out = selectRecords(db, { module: sheet, field: args.field, values: args.values, filters: args.filters });
+      if (out.error) return { error: out.error };
+      for (const { record } of out.rows) ids.add(record.id);
+      missing.push(...(out.missing ?? []));
+    }
+    if (!recordIds.length && !query) return { error: 'Give the rows: recordIds, filters, or field + values' };
+    if (ids.size > TABLE_ROWS)
+      return {
+        error: `${ids.size} rows match; a table holds at most ${TABLE_ROWS}. Narrow the filters (a species, a period), or show it in parts.`,
+      };
+    if (!ids.size)
+      return { error: `No rows found${missing.length ? ` (not found: ${missing.slice(0, 20).join(', ')})` : ''}` };
+    const rowOf = id => store.getRecord(id)?.row ?? Infinity;
+    return { ids: [...ids].sort((a, b) => rowOf(a) - rowOf(b)), missing };
+  }
+
+  /** The columns of a table: the ones asked (checked), else the ID columns and then the filled ones. */
+  function tableColumns(mod, ids, args, noted) {
+    const known = new Set(mod.fields.map(f => f.key));
+    if (args.columns !== undefined) {
+      if (!Array.isArray(args.columns) || !args.columns.length) return { error: 'columns must be a list of columns' };
+      const unknown = args.columns.filter(c => !known.has(c));
+      if (unknown.length)
+        return { error: `Unknown columns in ${mod.id}: ${unknown.slice(0, 10).join(', ')}; see describe_sheet` };
+      return { columns: [...new Set([...args.columns, ...noted])].slice(0, 80) };
+    }
+    const keys = [...new Set(mod.fields.map(f => f.key))];
+    const idColumns = mod.identityFields.length ? mod.identityFields : keys.filter(k => ID_LIKE.test(k));
+    const filled = new Set();
+    for (const id of ids) {
+      const values = store.getRecord(id)?.values ?? {};
+      for (const k of keys) if (!filled.has(k) && !isNone(values[k])) filled.add(k);
+    }
+    const filtered =
+      args.filters && typeof args.filters === 'object' ? Object.keys(args.filters).filter(k => known.has(k)) : [];
+    const first = [...idColumns.filter(k => filled.has(k)), ...filtered, ...noted];
+    const rest = keys.filter(k => filled.has(k) && !first.includes(k));
+    return { columns: [...new Set([...first, ...rest])].slice(0, Math.max(TABLE_COLUMNS, new Set(first).size)) };
+  }
+
+  /**
+   * The assistant's notes, by row: { note, cells: field → text, highlight, marked: [fields] };
+   * `skipped`: notes on rows not in the table or on columns the sheet does not have.
+   */
+  function tableNotes(list, ids, mod) {
+    const rows = new Set(ids);
+    const known = new Set(mod.fields.map(f => f.key));
+    const notes = {};
+    const skipped = [];
+    for (const n of (Array.isArray(list) ? list : []).slice(0, 2000)) {
+      const id = clip(n?.recordId, 120);
+      const text = typeof n?.text === 'string' ? clip(n.text.trim(), 500) : '';
+      const field = typeof n?.field === 'string' && n.field ? clip(n.field, 120) : null;
+      if (!rows.has(id) || (field && !known.has(field))) {
+        if (id) skipped.push(field && rows.has(id) ? `${id} ${field}` : id);
+        continue;
+      }
+      const at = (notes[id] ??= {});
+      if (field) {
+        if (text) at.cells = { ...at.cells, [field]: text };
+        if (n.highlight === true) at.marked = [...new Set([...(at.marked ?? []), field])];
+      } else {
+        if (text) at.note = at.note ? `${at.note} · ${text}` : text;
+        if (n.highlight === true) at.highlight = true;
+      }
+      if (!Object.keys(at).length) delete notes[id];
+    }
+    return { notes, skipped: [...new Set(skipped)] };
+  }
+
+  /** show_rows: a read-only table of rows beside the chat, new or (tableId) changed in place. */
+  function showRows(args, context) {
+    const old = args.tableId ? ownProposal(args.tableId, context.user) : null;
+    if (args.tableId && !isTable(old)) return { error: 'Table not found (tableId comes from an earlier show_rows)' };
+    const before = old ? (parse(old.table_json) ?? {}) : {};
+    const sheet = String(args.sheet ?? before.sheet ?? '');
+    const mod = moduleMap.get(sheet);
+    if (!mod) return { error: `Unknown sheet ${clip(sheet, 60)}` };
+    const title = clip(String(args.title ?? old?.reason ?? '').trim(), 300);
+    if (!title) return { error: 'Give the table a title' };
+    const rowsAsked = ['recordIds', 'filters', 'field', 'values'].some(k => args[k] !== undefined);
+    if (old && sheet !== before.sheet && !rowsAsked) return { error: 'Another sheet: give its rows too' };
+    const picked = rowsAsked || !old ? tableRows(sheet, args) : { ids: before.rows ?? [], missing: [] };
+    if (picked.error) return picked;
+    const { ids } = picked;
+    const { notes, skipped } =
+      args.notes !== undefined || !old ? tableNotes(args.notes, ids, mod) : { notes: before.notes ?? {}, skipped: [] };
+    // A note on a cell of a column the table lacks brings that column in.
+    const noted = [...new Set(Object.values(notes).flatMap(n => [...Object.keys(n.cells ?? {}), ...(n.marked ?? [])]))];
+    const keep = old && args.columns === undefined && sheet === before.sheet;
+    const shown = keep
+      ? { columns: [...new Set([...(before.columns ?? []), ...noted])] }
+      : tableColumns(mod, ids, args, noted);
+    if (shown.error) return shown;
+    const labels = Object.fromEntries(ids.map(id => [id, store.getRecord(id)?.label ?? before.labels?.[id] ?? '']));
+    const table = { sheet, columns: shown.columns, rows: ids, labels, notes };
+    let id, chat;
+    if (old) {
+      db.prepare(
+        `UPDATE ai_proposals SET table_json = ?, reason = ?, status = 'shown', revision = revision + 1, updated_at = ?,
+         last_by = 'ai' WHERE id = ?`,
+      ).run(json(table), title, now(), old.id);
+      id = old.id;
+      chat = chatOf(old, context);
+    } else {
+      id = randomUUID();
+      const found = context.t3 ? chatOfCall(context) : null;
+      chat = found?.id ?? null;
+      const at = now();
+      db.prepare(
+        `INSERT INTO ai_proposals (id,thread_id,owner_id,changes_json,reason,status,created_at,updated_at,last_by,
+         t3_thread,t3_title,t3_tool_use,table_json) VALUES (?,?,?,'[]',?,'shown',?,?,'ai',?,?,?,?)`,
+      ).run(id, context.threadId, owner(context.user), title, at, at, chat, found?.title ?? null, context.t3?.toolUseId ?? null, json(table));
+    }
+    changed(owner(context.user));
+    return {
+      tableId: id,
+      ...proposalLink(id, chat),
+      status: 'shown to the person beside the chat',
+      sheet,
+      rows: ids.length,
+      columns: shown.columns,
+      ...(picked.missing.length ? { notFound: picked.missing.slice(0, 50) } : {}),
+      ...(skipped.length
+        ? { notesNotShown: skipped.slice(0, 20), notesNote: 'These rows or columns are not in the table: their notes were left out.' }
+        : {}),
+    };
+  }
+
+  /**
+   * A table as the panel shows it: each row with the current values of its
+   * columns (formula cells computed), its note and the notes on its cells; a
+   * row gone from the sheet stays, empty and marked. `sheetStamp` changes when
+   * any of its rows changes, so the panel redraws it.
+   */
+  function tableView(r) {
+    const spec = parse(r.table_json) ?? {};
+    const mod = moduleMap.get(spec.sheet);
+    const columns = spec.columns ?? [];
+    const versions = [];
+    const rows = (spec.rows ?? []).map(id => {
+      const record = store.getRecord(id);
+      const live = !!record && !record.missing;
+      versions.push(live ? [record.version, record.row] : null);
+      const n = spec.notes?.[id] ?? {};
+      return {
+        key: id,
+        recordId: id,
+        row: live ? record.row : null,
+        label: (live && record.label) || spec.labels?.[id] || '',
+        values: live ? Object.fromEntries(columns.map(f => [f, record.values?.[f] ?? null])) : {},
+        ...(live ? {} : { missing: true }),
+        ...(n.note ? { note: n.note } : {}),
+        ...(n.cells ? { cells: n.cells } : {}),
+        ...(n.highlight ? { highlight: true } : {}),
+        ...(n.marked?.length ? { marked: n.marked } : {}),
+      };
+    });
+    rows.sort((a, b) => (a.row ?? Infinity) - (b.row ?? Infinity));
+    return {
+      id: r.id,
+      kind: 'table',
+      reason: r.reason ?? '',
+      status: r.status,
+      sheets: [spec.sheet],
+      fields: columns,
+      types: Object.fromEntries(columns.map(f => [f, mod?.fields.find(x => x.key === f)?.type ?? 'text'])),
+      revision: r.revision ?? 1,
+      updatedAt: r.updated_at ?? null,
+      lastBy: r.last_by ?? null,
+      appliedAt: null,
+      applied: null,
+      sheetStamp: createHash('sha1').update(json(versions)).digest('base64url').slice(0, 12),
+      changes: [],
+      rows,
     };
   }
 
@@ -1611,6 +1866,7 @@ export function createAssistant({ store, config = {} }) {
     if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot propose edits' };
     const proposal = ownProposal(args.proposalId, context.user);
     if (!proposal) return { error: 'Proposal not found' };
+    if (isTable(proposal)) return { error: NOT_A_PROPOSAL };
     if (proposal.status !== 'pending')
       return { error: `The proposal is ${proposal.status}; draft a new one with propose_changes` };
     const changes = parse(proposal.changes_json) ?? [];
@@ -1719,6 +1975,7 @@ export function createAssistant({ store, config = {} }) {
    * answer as `keptFromSheet`. One edited again after the person chose stops it.
    */
   async function applyProposal(proposal, user, { requestId, indexes, reason, doubtful = null }) {
+    if (isTable(proposal)) throw Object.assign(new Error(NOT_A_PROPOSAL), { status: 409, code: 'read_only_table' });
     if (proposal.status !== 'pending')
       throw Object.assign(new Error('Proposal has already been applied.'), { status: 409, code: 'proposal_used' });
     if (!EDITORS.includes(user.role))
@@ -2210,20 +2467,25 @@ export function createAssistant({ store, config = {} }) {
     if (by.size > 50) by.delete(by.keys().next().value);
     for (const wake of [...(waiters.get(ownerId) ?? [])]) if (!page || wake.page !== page) wake();
   }
-  // A row of a pending proposal saved to the local copy (edited in the sheet and read by a sync or the sheet
-  // hook, or saved from the app): its owner's list changes, so the table shows the sheet's edits at once.
+  // A row of a pending proposal (or of a table shown) saved to the local copy (edited in the sheet and read by a
+  // sync or the sheet hook, or saved from the app): its owner's list changes, so the table shows the sheet's edits at once.
   store.watchRecords?.(rows => {
     const ids = new Set(rows.map(r => r.id));
     const insectary = rows.some(r => r.sheet === 'Insectary_data');
     let pending = [];
     try {
-      pending = db.prepare("SELECT owner_id, changes_json FROM ai_proposals WHERE status = 'pending'").all();
+      pending = db.prepare("SELECT owner_id, changes_json, table_json FROM ai_proposals WHERE status IN ('pending', 'shown')").all();
     } catch {
       return; // the database is closing
     }
     const owners = new Set();
     for (const p of pending) {
       if (owners.has(p.owner_id)) continue;
+      // A table shown (show_rows): one of its rows.
+      if (p.table_json) {
+        if ((parse(p.table_json)?.rows ?? []).some(id => ids.has(id))) owners.add(p.owner_id);
+        continue;
+      }
       const touches = c => (c.recordId && ids.has(c.recordId)) || (insectary && c.create && c.sheet === 'Insectary_data' && !!c.values?.Insectary_ID);
       if ((parse(p.changes_json) ?? []).some(touches)) owners.add(p.owner_id);
     }
@@ -2328,18 +2590,18 @@ export function createAssistant({ store, config = {} }) {
     if (!best || (best.chat === 'app' && !latest && groups.size === 1)) return { chat: 'all', how: 'all' };
     return { chat: best.chat, how: 'recent' };
   }
-  /** The chats with pending proposals (the panel's chat selector), most recently changed first. */
+  /** The chats with pending proposals or tables shown (the panel's chat selector), most recently changed first. */
   function chatGroups(ownerId) {
     const rows = db
       .prepare(
-        "SELECT t3_thread, t3_title, coalesce(updated_at, created_at) at FROM ai_proposals WHERE owner_id = ? AND status IN ('pending', 'applying')",
+        "SELECT t3_thread, t3_title, status, coalesce(updated_at, created_at) at FROM ai_proposals WHERE owner_id = ? AND status IN ('pending', 'applying', 'shown')",
       )
       .all(ownerId);
     const groups = new Map();
     for (const r of rows) {
       const id = r.t3_thread || 'app';
       const g = groups.get(id) ?? groups.set(id, { id, title: r.t3_title ?? null, pending: 0, at: '' }).get(id);
-      g.pending++;
+      if (r.status !== 'shown') g.pending++;
       if (r.at > g.at) g.at = r.at;
     }
     return groups;
@@ -2440,6 +2702,7 @@ export function createAssistant({ store, config = {} }) {
     if (name === 'update_proposal') return updateProposal(args, context);
     if (name === 'get_proposal') return getProposal(args, context);
     if (name === 'list_proposals') return listProposals(args, context);
+    if (name === 'show_rows') return showRows(args, context);
     if (name === 'list_agreed_fixes') return agreedFixes(store, { kind: args.kind ? clip(args.kind, 300) : undefined, limit: args.limit });
     if (name === 'list_suggested_edits') {
       const out = await suggestionPage(store, {
@@ -2463,6 +2726,7 @@ export function createAssistant({ store, config = {} }) {
         .prepare('SELECT * FROM ai_proposals WHERE id = ? AND thread_id = ?')
         .get(String(args.proposalId ?? ''), context.threadId);
       if (!proposal) return { error: 'Proposal not found in this conversation' };
+      if (isTable(proposal)) return { error: NOT_A_PROPOSAL };
       try {
         const out = await applyProposal(proposal, context.user, {
           requestId: `ai-${randomUUID()}`,
@@ -2839,11 +3103,14 @@ export function createAssistant({ store, config = {} }) {
       const args = [...(anyone ? [] : [me]), ...(query.only ? [String(query.only)] : ['all', 'app', 'draft'].includes(scope.chat) ? [] : [scope.chat])];
       const order = 'ORDER BY p.created_at DESC, p.rowid DESC';
       // all=1: the pending ones and the last few reviewed (the panel shows five), not every old proposal on each change.
+      // Tables shown (show_rows) go with the pending ones; a closed one only on its own page.
       const rows = [
-        ...db.prepare(`${select}${where} AND p.status IN ('pending', 'applying') ${order} LIMIT 200`).all(...args),
+        ...db.prepare(`${select}${where} AND p.status IN ('pending', 'applying', 'shown') ${order} LIMIT 200`).all(...args),
         ...(query.all
           ? db
-              .prepare(`${select}${where} AND p.status NOT IN ('pending', 'applying') ${order} LIMIT ?`)
+              .prepare(
+                `${select}${where} AND p.status NOT IN ('pending', 'applying', 'shown'${query.only ? '' : ", 'closed'"}) ${order} LIMIT ?`,
+              )
               .all(...args, Math.min(Number(query.reviewed) || 5, 50))
           : []),
       ];
@@ -2877,6 +3144,7 @@ export function createAssistant({ store, config = {} }) {
       if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot edit proposals.');
       const proposal = teamProposal(editMatch[1], user);
       if (!proposal) return bad(404, 'not_found', 'Proposal not found.');
+      if (isTable(proposal)) return bad(409, 'read_only_table', 'Una tabla del asistente solo se lee.');
       if (proposal.status !== 'pending') return bad(409, 'proposal_used', 'La propuesta ya no está pendiente.');
       const cells = body.cells ?? [];
       const scalar = v => v === null || ['string', 'number', 'boolean'].includes(typeof v);
@@ -3022,18 +3290,19 @@ export function createAssistant({ store, config = {} }) {
     if (discardMatch && method === 'POST') {
       const proposal = teamProposal(discardMatch[1], user);
       if (!proposal) return bad(404, 'not_found', 'Proposal not found.');
-      const done = db
-        .prepare("UPDATE ai_proposals SET status = 'discarded' WHERE id = ? AND status = 'pending'")
-        .run(discardMatch[1]);
+      // A table shown (show_rows) is closed; a proposal, discarded.
+      const [from, to] = isTable(proposal) ? ['shown', 'closed'] : ['pending', 'discarded'];
+      const done = db.prepare('UPDATE ai_proposals SET status = ? WHERE id = ? AND status = ?').run(to, discardMatch[1], from);
       if (done.changes) changed(proposal.owner_id);
       return done.changes
-        ? { status: 200, body: { proposalId: discardMatch[1], status: 'discarded' } }
+        ? { status: 200, body: { proposalId: discardMatch[1], status: to } }
         : bad(409, 'proposal_used', 'Proposal is no longer pending.');
     }
     const proposalMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/apply$/.exec(path);
     if (proposalMatch && method === 'POST') {
       const proposal = teamProposal(proposalMatch[1], user);
       if (!proposal) return bad(404, 'not_found', 'Proposal not found.');
+      if (isTable(proposal)) return bad(409, 'read_only_table', 'Una tabla del asistente solo se lee.');
       if (proposal.status !== 'pending') return bad(409, 'proposal_used', 'Proposal has already been applied.');
       const requestId = typeof body.requestId === 'string' ? body.requestId : '';
       if (requestId.length < 8 || requestId.length > 120)

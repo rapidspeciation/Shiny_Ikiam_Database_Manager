@@ -304,4 +304,18 @@ export default {
   'Alguien volvió a editar en la hoja celdas que ya habías elegido: elige de nuevo (en violeta)':
     'Someone edited again in the sheet cells you had already chosen for: choose again (in violet)',
   'Las celdas que cambiaron en la hoja salen en violeta.': 'The cells that changed in the sheet show in violet.',
+  // RowsTable (a table of rows the assistant shows, show_rows)
+  'El asistente muestra estas filas con los valores actuales de la hoja: no cambia nada':
+    "The assistant shows these rows with the sheet's current values: it changes nothing",
+  'solo lectura': 'read-only',
+  '{n} ya no está en la hoja': '{n} is no longer in the sheet',
+  '{n} ya no están en la hoja': '{n} are no longer in the sheet',
+  'Quitar esta tabla del panel (su enlace la sigue abriendo)': 'Take this table out of the panel (its link still opens it)',
+  Cerrada: 'Closed',
+  'IA: {text}': 'AI: {text}',
+  'Esta fila ya no está en la hoja': 'This row is no longer in the sheet',
+  'Nota de la IA sobre la fila': "The AI's note on the row",
+  'Tabla del asistente: solo para leer': "The assistant's table: only to read",
+  'Abrir esta tabla sola en otra pestaña': 'Open this table on its own in another tab',
+  'Copiar el enlace de esta tabla': "Copy this table's link",
 } as Record<string, string>
