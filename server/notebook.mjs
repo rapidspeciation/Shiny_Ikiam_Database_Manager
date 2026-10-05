@@ -6,13 +6,15 @@
 
 import { isSumField, parseDateText, simpleSum } from './schema.mjs';
 import { msg } from './messages.mjs';
+import { DEFAULT_COLUMNS, isHiddenColumn } from './proposal-columns.mjs';
 
 /**
  * What the team types in Insectary_data for a butterfly that died and was not
  * preserved (Unknown, Disappearance, Eaten…): the block Muertes writes
  * (frontend/src/lib/deaths.ts), plus Research_purpose NA (insectary.md A8):
  * tubes NA, their tissues and media NOT_COLLECTED (Franz, 1 Oct 2026). Only
- * empty cells take it.
+ * empty cells take it. Not Preservation_medium: deprecated, never written
+ * (server/proposal-columns.mjs).
  */
 export const NOT_PRESERVED = {
   Research_purpose: 'NA',
@@ -28,7 +30,6 @@ export const NOT_PRESERVED = {
   Tube_3_tissue: 'NOT_COLLECTED',
   Tube_4_id: 'NA',
   Tube_4_tissue: 'NOT_COLLECTED',
-  Preservation_medium: 'NOT_COLLECTED',
   Preserved_Dead_Alive: 'NA',
   Location_body: 'NA',
 };
@@ -47,7 +48,6 @@ const DEATH_EXTRA = [
   'Tube_3_tissue',
   'Tube_4_id',
   'Tube_4_tissue',
-  'Preservation_medium',
   'Preserved_Dead_Alive',
   'Location_body',
 ];
@@ -167,6 +167,7 @@ const KEY_COLUMN = /^(SPECIES|Species|CAM_ID|Tube_1_id|Tube_ID)$/;
 /**
  * The columns the review table (Cambios propuestos) shows for a sheet's rows
  * whatever a proposal changes, so a wrong row shows (its species, CAM, tubes):
+ * a sheet's DEFAULT_COLUMNS (server/proposal-columns.mjs: Insectary_data), else
  * for a sheet a notebook fills, that notebook's columns in its order (a page's
  * own notebook, else the sheet's fullest one: Emergidos for Insectary_data),
  * then the sheet's other columns in its order up to the last one any of its
@@ -176,6 +177,11 @@ const KEY_COLUMN = /^(SPECIES|Species|CAM_ID|Tube_1_id|Tube_ID)$/;
  * proposal changes after these (sheetGroups in frontend/src/lib/proposals.ts).
  */
 export function reviewColumns(sheet, sheetFields, identity = [], kindId = null) {
+  // A sheet with its own default columns (server/proposal-columns.mjs): those, whatever the notebook.
+  if (DEFAULT_COLUMNS[sheet]) {
+    const keys = Object.values(KINDS).find(k => k.sheet === sheet)?.keys ?? [];
+    return { fields: DEFAULT_COLUMNS[sheet].filter(f => sheetFields.includes(f) && !isHiddenColumn(sheet, f)), keys };
+  }
   const kinds = Object.values(KINDS).filter(k => k.sheet === sheet);
   if (!kinds.length) return { fields: [...new Set(sheetFields.filter(f => identity.includes(f) || KEY_COLUMN.test(f)))], keys: [] };
   const kind = KINDS[kindId]?.sheet === sheet ? KINDS[kindId] : kinds.reduce((a, b) => (b.fields.length > a.fields.length ? b : a));

@@ -72,7 +72,6 @@ const SAMPLE_FIELDS = new Set([
   'Tube_1_id',
   'Tube_1_tissue',
   'Tube_2_tissue',
-  'Preservation_medium',
   'Location_body',
 ]);
 /**

@@ -98,7 +98,6 @@ describe('what a death writes', () => {
       T1_Preservation_medium: 'Flash frozen',
       Preservation_date: DAY,
       Preserved_Dead_Alive: 'Alive',
-      Preservation_medium: 'NOT_COLLECTED',
       Location_body: 'Ikiam',
       Tube_2_id: 'NA',
       Tube_2_tissue: 'NOT_COLLECTED',

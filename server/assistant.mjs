@@ -12,6 +12,8 @@ import { TUBE_FIELD, isIdValue, isUnique } from './verifications.mjs';
 import { listOptions, listProblem } from './verify.mjs';
 import { queueWalk, walkDraft } from './walks.mjs';
 import { KINDS, isNone, noteText, reviewColumns } from './notebook.mjs';
+import { HIDDEN_COLUMNS, isNotWritten, notWrittenWhy } from './proposal-columns.mjs';
+import { createFormulaReader, sameResult } from './formula-gives.mjs';
 import { FILTERS_DOC, FIND_BUDGET, RECORD_TOOLS, compactRecord, countRecords, findRecords, pickRows, resolveRows, selectRecords } from './records-tool.mjs';
 import { RESULT_BUDGET, fitList, fitResult } from './tool-budget.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
@@ -663,6 +665,8 @@ export function createAssistant({ store, config = {} }) {
   const ai = providerConfig(config);
   const reports = createReports({ store, config });
   const knowledge = createKnowledge(config);
+  // What a proposal's formula cells will give once applied (server/formula-gives.mjs).
+  const formulaReader = createFormulaReader(store);
   // The sheets' copy that `query` reads (server/replica.mjs), where the app keeps one.
   const sheetsCopy = config.sheetsCopyPath ? createSheetsCopy({ store, path: config.sheetsCopyPath, ...config.sheetsCopy }) : null;
   const queries = sheetsCopy ? createQueryRunner({ path: sheetsCopy.path, ...config.sheetsQuery }) : null;
@@ -838,6 +842,8 @@ export function createAssistant({ store, config = {} }) {
     } catch (e) {
       return { error: `${at}: ${e.message}` };
     }
+    const unwritten = Object.keys(values).find(key => isNotWritten(sheet, key));
+    if (unwritten) return { error: `${at}: ${notWrittenWhy(sheet, unwritten)}` };
     // A count kept as a sum (=12+15) goes into the new row over its pre-made formula; other formulas stay.
     for (const [key, value] of Object.entries(values)) if (value?.formula && isSumField(sheet, key)) values[key] = value.formula;
     const formulas = createFormulaFields(sheet);
@@ -940,6 +946,8 @@ export function createAssistant({ store, config = {} }) {
       }
       const before = {},
         replaceFormula = [];
+      const unwritten = Object.keys(values).find(key => isNotWritten(old.sheet, key));
+      if (unwritten) return { error: `${old.label}: ${notWrittenWhy(old.sheet, unwritten)}` };
       for (const key of Object.keys(values)) {
         // A count kept as a sum is shown and written as its formula text (=12+15), over the old sum.
         const sum = isSumField(old.sheet, key) ? simpleSum(old.formulas?.[key]) : null;
@@ -1177,6 +1185,8 @@ export function createAssistant({ store, config = {} }) {
       const named = sheetNames(rows.mod.id, group.set, `${at}: set`);
       if (named.error) return named;
       const set = named.values;
+      const unwritten = Object.keys(set).find(f => isNotWritten(rows.mod.id, f));
+      if (unwritten) return { error: `${at}: ${notWrittenWhy(rows.mod.id, unwritten)}` };
       picked += rows.rows.length;
       if (picked > BULK_PICKED) return { error: `${at}: ${picked} rows picked. ${narrower()}` };
       // The values as the sheet will take them ({"clear": true} empties, a note is text), checked once.
@@ -2267,6 +2277,38 @@ export function createAssistant({ store, config = {} }) {
   }
 
   /**
+   * The sheet row a new row goes into, whose formulas it keeps: its Insectary ID's pre-made row in
+   * Insectary_data, else the sheet's next pre-made row. Null when there is none yet.
+   */
+  function premadeRecordOf(change) {
+    if (change.sheet === 'Insectary_data') {
+      const place = change.values?.Insectary_ID ? insectaryIdRow(store, change.values.Insectary_ID) : null;
+      return place && !place.ahead ? store.getRecordBySheetRow('Insectary_data', place.row) : null;
+    }
+    const next = db
+      .prepare('SELECT id FROM records WHERE sheet=? AND missing=0 AND observed=0 AND row_num>? AND row_num<2000000000 ORDER BY row_num LIMIT 1')
+      .get(change.sheet, moduleMap.get(change.sheet)?.headerRow ?? 1);
+    return next ? store.getRecord(next.id) : null;
+  }
+
+  /** What the formula cells of a proposal row will give ({ gives, fallback }, server/formula-gives.mjs). */
+  function rowFormulaGives(change, target, session) {
+    if (!target?.formulas || !Object.keys(target.formulas).length) return { gives: {}, fallback: [] };
+    // A new row writes into its pre-made row: its ID formula stays, the rest is the proposal's.
+    const formulas =
+      change.create && change.sheet === 'Insectary_data'
+        ? Object.fromEntries(Object.entries(target.formulas).filter(([f]) => f !== 'Insectary_ID'))
+        : target.formulas;
+    const values = Object.fromEntries(Object.entries(change.values ?? {}).filter(([f]) => !(change.create && f === 'Insectary_ID')));
+    try {
+      return formulaReader.rowGives({ sheet: change.sheet, record: { ...target, formulas }, values, all: !!change.create, ctx: session });
+    } catch (e) {
+      console.error('Formula gives:', e.message);
+      return { gives: {}, fallback: [] };
+    }
+  }
+
+  /**
    * A proposal as the review table shows it: each row with the current values of
    * the changed columns, and of the columns its sheet's table always shows
    * (`shownColumns`, see reviewColumns in server/notebook.mjs). New rows have no
@@ -2340,7 +2382,9 @@ export function createAssistant({ store, config = {} }) {
       sheets.map(s => {
         const mod = moduleMap.get(s);
         const kind = notebook?.sheet === s ? notebook.kind : null;
-        return [s, viewColumns(s, reviewColumns(s, mod?.fields.map(f => f.key) ?? [], mod?.identityFields ?? [], kind), view)];
+        const hidden = [...(HIDDEN_COLUMNS[s] ?? [])];
+        const shown = viewColumns(s, reviewColumns(s, mod?.fields.map(f => f.key) ?? [], mod?.identityFields ?? [], kind), view);
+        return [s, hidden.length ? { ...shown, hidden } : shown];
       }),
     );
     const typeOf = f =>
@@ -2350,13 +2394,8 @@ export function createAssistant({ store, config = {} }) {
           sheets.filter(s => changes.some(c => c.create && c.sheet === s)).map(s => [s, locked(s, [...createFormulaFields(s)])]),
         )
       : {};
-    // What the SPECIES formula gives once the row has its clutch (shown, never written).
-    const species = new Map();
-    const speciesOf = clutch => {
-      const key = String(clutch);
-      if (!species.has(key)) species.set(key, notebooks.speciesOfClutch(clutch));
-      return species.get(key);
-    };
+    // What the row's formula cells will give once its values are written (shown, never written).
+    const formulaSession = formulaReader.session();
     const hintTable = [];
     const hintIndex = new Map();
     const hintOf = h => {
@@ -2407,20 +2446,21 @@ export function createAssistant({ store, config = {} }) {
           ...shown.map(f => [f, shownValue(record, f)]).filter(([, v]) => v !== null && v !== ''),
         ]);
       }
-      // Also beside a species typed over it, so the table can tell when the person types the formula's own.
-      const clutch = change.values['CLUTCH NUMBER'];
-      const typed = 'SPECIES' in change.values;
-      if (change.sheet === 'Insectary_data' && (typed || !isNone(clutch))) {
-        const formula = change.create ? createFormulaFields(change.sheet).has('SPECIES') : !!record?.formulas?.SPECIES;
-        const gives = !formula
-          ? null
-          : !isNone(clutch)
-            ? (speciesOf(clutch) ?? formulaGives?.SPECIES ?? null)
+      // The row's formula cells its values reach, with what they will give (a new row: all of its pre-made
+      // row's); beside a species typed over its formula too, so the table can tell when the person types the
+      // formula's own. Those that cannot be evaluated keep the sheet's value, marked (formulaFallback).
+      if (!change.context && !change.gap) {
+        const target = change.create ? premadeRecordOf(change) : record;
+        const { gives, fallback } = rowFormulaGives(change, target, formulaSession);
+        const shown = Object.entries(gives).filter(([f, v]) =>
+          f in change.values
+            ? TYPED_OVER_FORMULA[change.sheet]?.has(f) && !isNone(v)
             : change.create
-              ? null
-              : shownValue(record, 'SPECIES');
-        if (!isNone(gives) && (typed || comparable(gives) !== comparable(change.create ? null : shownValue(record, 'SPECIES'))))
-          view.formulaGives = { SPECIES: gives };
+              ? v !== null && v !== ''
+              : !sameResult(v, shownValue(record, f)),
+        );
+        if (shown.length) view.formulaGives = Object.fromEntries(shown);
+        if (fallback.length) view.formulaFallback = fallback;
       }
       return view;
     });

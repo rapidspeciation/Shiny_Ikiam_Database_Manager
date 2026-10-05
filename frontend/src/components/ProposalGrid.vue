@@ -339,8 +339,11 @@ const typesOf = (sheet: string) => ({
   ...props.proposal.types,
 })
 /** Columns that can still be added to a sheet's table. */
-const addable = (sheet: string, fields: string[]) =>
-  (fieldsOf(sheet) ?? []).filter(f => !f.readonly && !f.unavailable && !fields.includes(f.key)).map(f => f.key)
+const addable = (sheet: string, fields: string[]) => {
+  // Deprecated columns are never shown (server/proposal-columns.mjs).
+  const hidden = props.proposal.shownColumns?.[sheet]?.hidden ?? []
+  return (fieldsOf(sheet) ?? []).filter(f => !f.readonly && !f.unavailable && !fields.includes(f.key) && !hidden.includes(f.key)).map(f => f.key)
+}
 function addColumn(sheet: string, event: Event) {
   const select = event.target as HTMLSelectElement
   if (select.value) extra.value = { ...extra.value, [sheet]: [...(extra.value[sheet] ?? []), select.value] }
@@ -693,9 +696,9 @@ const statusText = computed(
               >{{ $t('editada en la hoja') }}</span
             >
             <span
-              v-if="g.changes.some(c => c.formulaGives)"
+              v-if="g.changes.some(c => c.formulaGives || c.formulaFallback || c.formulas?.length)"
               class="legend is-formula-gives"
-              :title="$t('Lo dará la fórmula de la hoja (del clutch): no se escribe')"
+              :title="$t('Calculado por la fórmula de la hoja con los valores propuestos: no se escribe')"
               >{{ $t('fórmula') }}</span
             >
             <span

@@ -120,7 +120,7 @@ export default {
   'Editado por ti': 'Edited by you',
   'la IA proponía: {value}': 'the AI proposed: {value}',
   'en la hoja: {value}': 'in the sheet: {value}',
-  'Fórmula de la hoja: no se escribe': 'Sheet formula: not written',
+  'Calculado por la fórmula de la hoja: no se escribe': "Calculated by the sheet's formula: not written",
   'Valor actual de la hoja; escribe para cambiarlo': "The sheet's current value; type to change it",
   'Vacía: no se escribe': 'Empty: not written',
   'Valor de la hoja: no cambia': "The sheet's value: not changed",
@@ -227,11 +227,15 @@ export default {
   'El mismo ID está en otra línea de la página': 'The same ID is on another line of the page',
   'Sin ID legible': 'No readable ID',
   'Línea {n}: «{raw}»': 'Line {n}: «{raw}»',
-  'Lo dará la fórmula de la hoja (del clutch): no se escribe': "The sheet's formula will give it (from the clutch): not written",
+  'Calculado por la fórmula de la hoja con los valores propuestos: no se escribe':
+    "Calculated by the sheet's formula with the proposed values: not written",
+  'No se pudo calcular aquí: es el valor actual de la hoja, que la fórmula puede cambiar al aplicar':
+    "Could not be calculated here: this is the sheet's current value, which the formula may change once applied",
+  'La fórmula de la hoja da un error con estos valores: revísalo antes de aplicar':
+    "The sheet's formula gives an error with these values: check it before applying",
   'Línea de la página que no escribe nada: solo para seguirla': 'A line of the page that writes nothing: shown to follow the page',
   fórmula: 'formula',
   Fórmula: 'Formula',
-  'La hoja lo calculará del clutch: no se escribe': 'The sheet will compute it from the clutch: not written',
   Línea: 'Line',
   'Foto · línea del cuaderno': 'Photo · notebook line',
   'Línea del cuaderno': 'Notebook line',
