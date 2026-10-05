@@ -188,6 +188,9 @@ export function createFormulaReader(store) {
 /** A value of the proposal as the sheet will hold it (a count kept as a sum: its total is not needed here). */
 const plain = v => (v && typeof v === 'object' ? null : v === '' ? null : v);
 
+/** A formula's error as a cell shows it (#N/A, #REF!…). */
+export const isFormulaError = v => typeof v === 'string' && /^#(N\/A|REF!|VALUE!|DIV\/0!|NAME\?|NUM!|NULL!|ERROR!)$/.test(v);
+
 /** Whether a formula's result is what the cell shows already (blank and empty text alike, 5 and "5" alike). */
 export function sameResult(a, b) {
   const norm = v => (v === null || v === undefined || v === '' ? '' : typeof v === 'number' ? String(v) : String(v).trim());

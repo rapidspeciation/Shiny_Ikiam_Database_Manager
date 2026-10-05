@@ -117,7 +117,8 @@ export function duplicateProblem(found) {
  * slow (server/workbook-health.mjs), while earlier saves wait (the outbox), or
  * while the app restarts, it is kept in the app's database and written in order
  * when the workbook answers (server/outbox.mjs); the answer is then
- * { status: 'queued', outboxId }. `outbox`: { kind, ref, claimOwners } of the
+ * { status: 'queued', outboxId }. A save waiting its turn behind another is kept
+ * there too as soon as that one is held too long or Google stops answering. `outbox`: { kind, ref, claimOwners } of the
  * queued item (an applied proposal, the staged entries). `fromOutbox`: the
  * outbox writing it now (the claims of `claimOwners` are its own).
  */
@@ -147,7 +148,12 @@ export async function applyBatch(
   }
   // The app is stopping (a deploy): saves in progress finish, new ones wait for the new process.
   if (store.draining) throw fail('SHUTTING_DOWN', 'La app se está reiniciando; vuelve a guardar en un minuto', 503);
-  return store.runExclusive(async () => {
+  // `started`: its turn came; `kept`: kept in the outbox while it waited for it (below), so its turn does nothing.
+  let started = false;
+  let kept = false;
+  const turn = store.runExclusive(async () => {
+    started = true;
+    if (kept) return null;
     // Google stopped answering while this save waited for the one before it.
     if (!fromOutbox && store.outbox?.shouldQueue({ waiting: true })) return queue();
     store.writesInFlight = (store.writesInFlight ?? 0) + 1;
@@ -161,6 +167,32 @@ export async function applyBatch(
     } finally {
       store.writesInFlight--;
     }
+  });
+  if (fromOutbox || !store.outbox) return turn;
+  // While it waits for the save before it: kept in the outbox once that one is held too long
+  // (or Google stops answering), instead of waiting for it.
+  return new Promise((resolve, reject) => {
+    const look = setInterval(() => {
+      if (started || !store.outbox.shouldQueue()) return;
+      clearInterval(look);
+      kept = true;
+      try {
+        resolve(queue());
+      } catch (e) {
+        reject(e);
+      }
+    }, store.outbox.lookEveryMs);
+    look.unref?.();
+    turn.then(
+      out => {
+        clearInterval(look);
+        if (!kept) resolve(out);
+      },
+      e => {
+        clearInterval(look);
+        if (!kept) reject(e);
+      },
+    );
   });
   async function writeBatchNow() {
     // A retried request returns the original outcome instead of writing twice.

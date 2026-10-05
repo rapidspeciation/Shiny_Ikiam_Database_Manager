@@ -121,6 +121,7 @@ const columns = computed(() =>
         'Tube_3_tissue',
         'Tube_4_id',
         'Tube_4_tissue',
+        'Preservation_medium',
         'Location_body',
       ])
     : [],
@@ -319,7 +320,7 @@ async function assign() {
       }
       if (tissue.value === WHOLE) {
         // As the team records a whole body (2,349 of 2,386 rows): the other tubes NA / NOT_COLLECTED,
-        // T1 holds the medium (Preservation_medium is deprecated: not written).
+        // T1 holds the medium and Preservation_medium says NOT_COLLECTED.
         const cause = pending.value(row, 'Death_cause')
         if (date !== null) {
           put('Preservation_date', date)
@@ -327,7 +328,8 @@ async function assign() {
         }
         if (isBlank(cause)) put('Death_cause', 'Killed_Preserved')
         put('Preserved_Dead_Alive', isBlank(cause) || cause === 'Killed_Preserved' ? 'Alive' : 'Dead')
-          put('Location_body', 'Ikiam')
+        put('Preservation_medium', 'NOT_COLLECTED')
+        put('Location_body', 'Ikiam')
         if (autofillNa.value)
           for (let next = slot + 1; next <= 4; next++) {
             set(`Tube_${next}_id`, 'NA')

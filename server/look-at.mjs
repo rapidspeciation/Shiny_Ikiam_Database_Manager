@@ -7,7 +7,9 @@
 // - notes: what the sheet's notes say on them, clipped;
 // - gaps: in a long proposal, an ID column (or SPECIES) empty in a row where
 //   nearly every other row of its sheet has one (what the checks already say,
-//   and the cells a preserved butterfly lacks, are not said twice).
+//   and the cells a preserved butterfly lacks, are not said twice);
+// - formulaEmpty: rows whose SPECIES formula will give nothing for their clutch
+//   (worked out by the caller, server/assistant.mjs) and that write no species.
 // Rows that say the same come as one item; each list is capped, with how to see the rest.
 
 import { allIssues, ID_COLUMN, readyIssues } from './checks.mjs';
@@ -76,9 +78,10 @@ function grouped() {
 /**
  * The lookAt block of a proposal's rows (`changes` as saved), or null when there
  * is nothing to say. `only`: the indexes to look at (the rows a revision changed);
- * `told`: [{ index, field }] already said in the answer (preservedWithoutSample).
+ * `told`: [{ index, field }] already said in the answer (preservedWithoutSample);
+ * `formulaEmpty`: [{ index, field, clutch }] formula cells that will give nothing.
  */
-export function lookAt(store, changes, { only = null, told = [] } = {}) {
+export function lookAt(store, changes, { only = null, told = [], formulaEmpty = [] } = {}) {
   const rows = changes.map((change, index) => ({ change, index })).filter(r => !r.change.placeholder && (!only || only.has(r.index)));
   if (!rows.length) return null;
   const several = new Set(rows.map(r => r.change.sheet)).size > 1;
@@ -137,12 +140,30 @@ export function lookAt(store, changes, { only = null, told = [] } = {}) {
     }
   }
 
+  // A formula that gives nothing for the row's clutch: its value comes from the notebook.
+  const empty = grouped();
+  for (const { index: i, field, clutch } of formulaEmpty) {
+    const c = changes[i];
+    if (!c || (only && !only.has(i))) continue;
+    empty.add(
+      [c.sheet, field, text(clutch)].join('\u0000'),
+      {
+        ...where(c),
+        field,
+        clutch,
+        problem: `Its formula gives nothing for clutch ${text(clutch)} (not in Insectary_stocks yet, or without ${field} there): write ${field} from the notebook`,
+      },
+      name(c, i),
+    );
+  }
+
   const out = {};
   let rest = false;
   for (const [key, list] of [
     ['issues', issues.list()],
     ['notes', notes.list()],
     ['gaps', gaps.list()],
+    ['formulaEmpty', empty.list()],
   ]) {
     if (!list.length) continue;
     out[key] = list.slice(0, LOOK_ITEMS);

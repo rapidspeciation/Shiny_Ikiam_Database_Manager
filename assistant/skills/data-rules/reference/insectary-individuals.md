@@ -10,7 +10,8 @@
    ([samples-ids.md](samples-ids.md)).
 2. **Emergence / entry**: type only `Wild_Reared`, `CLUTCH NUMBER`,
    `Stock_of_origin`, `Sex`, `Intro2Insectary_date` (and SPECIES only when it
-   differs from the formula). Everything else stays **blank** while it lives.
+   differs from the formula or the formula gives nothing). Everything else
+   stays **blank** while it lives.
 3. **Wing clip** (cross, pheromone and F2 parents only), while alive.
 4. **Death** (the daily round): Death_date, Death_cause and, in the same edit,
    the whole not-preserved or preserved block below, and Research_purpose.
@@ -29,9 +30,11 @@ blank means it has not died yet.
   with a space in 2024–25, `994(6)` without in 2026).
 - `SPECIES` stays the formula from the clutch unless what emerged differs
   (deceptus stock emerging as intermedia is common; so is proceriformis →
-  eurydice); only then is the emerged species typed over it. A proposed
-  species equal to the clutch's is left to the formula, not written.
-  `match_notebook` does this.
+  eurydice) or the formula gives nothing (the clutch is not in
+  Insectary_stocks yet, or has no species there); then the species from the
+  notebook is typed over it. A proposed species equal to the clutch's is left
+  to the formula, not written. `match_notebook` does this, and `lookAt`
+  (`formulaEmpty`) names the rows still left without one.
 - `Stock_of_origin`: only for the *Mechanitis messenoides* stock lines:
   `messenoides`, `intermedia`, `deceptus` (lowercase) = the **clutch's**
   subspecies, even when the phenotype differs. Every other species and every
@@ -76,7 +79,7 @@ Cause not `Killed_Preserved` and no CAM:
 |---|---|
 | Preservation_date, CAM_ID, Tube_1–4_id | `NA` |
 | Tube_1–4_tissue | `NOT_COLLECTED` (many 2026 rows have `NA`: they stay) |
-| T1_Preservation_medium | `NOT_COLLECTED` |
+| T1_Preservation_medium, Preservation_medium | `NOT_COLLECTED` |
 | Preserved_Dead_Alive, Location_body, Research_purpose | `NA` |
 
 The app's Muertes tab and `match_notebook` write this block.
@@ -85,17 +88,22 @@ The app's Muertes tab and `match_notebook` write this block.
 
 Preservation_date = Death_date · CAM_ID (insectary pool) · Tube_1_id
 `WHOLE_ORGANISM` `Flash frozen` (Tube_2 if Tube_1 is a wing clip) · the other
-tubes `NA` and their tissues `NOT_COLLECTED` · Preserved_Dead_Alive `Alive` when
-killed (`Killed_Preserved`), `Dead` when found dead · Location_body `Ikiam` ·
-Research_purpose from the project (`F1/F2 mutation rate` for cross parents and
-offspring, `Pheromones` for pheromone males, `Sperm dissections`), else `NA`.
+tubes `NA` and their tissues `NOT_COLLECTED` · Preservation_medium
+`NOT_COLLECTED` (each tube's medium is in T1_/T2_Preservation_medium) ·
+Preserved_Dead_Alive `Alive` when killed (`Killed_Preserved`), `Dead` when
+found dead · Location_body `Ikiam` · Research_purpose from the project
+(`F1/F2 mutation rate` for cross parents and offspring, `Pheromones` for
+pheromone males, `Sperm dissections`), else `NA`.
 Medium rules and ethanol exceptions: [samples-ids.md](samples-ids.md).
 
 ## Columns left to the sheet
 
-- `Preservation_medium` is deprecated: not written and not shown in
-  proposals; older rows keep their values. Each tube's medium goes in
-  T1_/T2_Preservation_medium.
+- `Preservation_medium`: `NOT_COLLECTED` on new preserved and dead rows unless
+  something else is stated; older rows keep their media (`Flash frozen`,
+  `Ethanol`).
+- The columns after Notes_Insectary_data (racks, manifests, the collection
+  and identification block) belong to another workflow: proposals do not show
+  or write them.
 - Formula columns, not written: Collection_location (`Reared` → Mariposario
   Ikiam), Pedigree, T2_Preservation_medium (from Tube_2_tissue: `NA` → `NA`,
   `NOT_COLLECTED` → `NOT_COLLECTED`), Photo_dorsal and Photo_ventral (from
@@ -150,6 +158,7 @@ instars of Sep 2026).
 | Death_date | the preservation date |
 | Death_cause, Preserved_Dead_Alive | `Killed_Preserved` and `Alive`, or `Other` and `Dead` (found dead) |
 | CAM_ID, Tube_1 | a CAM; one tube `WHOLE_ORGANISM` `Flash frozen` |
+| Preservation_medium | `NOT_COLLECTED` |
 | Research_purpose | `F1/F2 mutation rate` |
 | Note | `d/m/yy INI: Larvae 4th instar` |
 

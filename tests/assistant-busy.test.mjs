@@ -7,8 +7,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { createAssistant } from '../server/assistant.mjs';
+import { applyBatch } from '../server/batch.mjs';
 
-async function fixture() {
+async function fixture(config = {}) {
   const sheets = new LocalSheets(
     {
       Insectary_data: [
@@ -19,7 +20,7 @@ async function fixture() {
     },
     { health: { probeMs: 20 } },
   );
-  const store = new Store({ localMode: true }, { sheets });
+  const store = new Store({ localMode: true, ...config }, { sheets });
   await store.sync({ sheets: ['Insectary_data'] });
   const assistant = createAssistant({ store, config: {} });
   for (const [id, name] of [['u1', 'Franz'], ['u2', 'Ana']])
@@ -51,7 +52,7 @@ test('apply_proposal while the workbook is busy: queued, said so, then applied w
     await sheets.probe().catch(() => {});
     const out = await call('apply_proposal', { proposalId });
     assert.equal(out.status, 'queued');
-    assert.match(out.queued, /written automatically/);
+    assert.match(out.queued, /kept in the app.*written automatically, in order, as soon as Google answers/);
     assert.equal(out.google.workbook, 'busy');
     assert.equal((await call('get_proposal', { proposalId })).status, 'queued');
     // Applying again does not write twice.
@@ -60,6 +61,41 @@ test('apply_proposal while the workbook is busy: queued, said so, then applied w
     await sheets.health.runProbe();
     await until(() => store.db.prepare('SELECT status FROM ai_proposals WHERE id = ?').get(proposalId).status === 'applied');
     assert.equal(store.getRecordBySheetRow('Insectary_data', 2).values.Sex, 'male');
+  } finally {
+    assistant.close();
+    store.close();
+  }
+});
+
+test('apply_proposal behind a save Google holds too long: queued at once, not left waiting; the app\'s Apply too', async () => {
+  const { store, sheets, assistant, call } = await fixture({ heldWriteMs: 80 });
+  try {
+    const at = row => store.getRecordBySheetRow('Insectary_data', row).id;
+    const { proposalId } = await call('propose_changes', { reason: 'Sexo', changes: [{ recordId: at(3), values: { Sex: 'male' } }] });
+    const other = await call('propose_changes', { reason: 'Sexo', changes: [{ recordId: at(4), values: { Sex: 'female' } }] });
+    const write = sheets.writeBatch.bind(sheets);
+    let release;
+    const held = new Promise(resolve => (release = resolve));
+    sheets.writeBatch = async w => (await held, write(w));
+    const user = { id: 'u2', username: 'ana', displayName: 'Ana', role: 'editor' };
+    const first = applyBatch(store, { requestId: randomUUID(), edits: [{ id: at(2), values: { Sex: 'male' } }] }, user);
+    await until(() => store.writesInFlight === 1);
+    const out = await call('apply_proposal', { proposalId });
+    assert.equal(out.status, 'queued');
+    assert.match(out.queued, /Tell the person/);
+    assert.equal(out.google.waitingSaves, 1);
+    // The table's «Aplicar»: the same.
+    const franz = { id: 'u1', username: 'franz', displayName: 'Franz', role: 'editor' };
+    const button = await assistant.handle({ method: 'POST', path: `/api/chat/proposals/${other.proposalId}/apply`, body: { requestId: randomUUID() }, user: franz, query: {} });
+    assert.equal(button.status, 200, JSON.stringify(button.body));
+    assert.equal(button.body.status, 'queued');
+    release();
+    await first;
+    await until(() =>
+      [proposalId, other.proposalId].every(id => store.db.prepare('SELECT status FROM ai_proposals WHERE id = ?').get(id).status === 'applied'),
+    );
+    assert.equal(store.getRecordBySheetRow('Insectary_data', 3).values.Sex, 'male');
+    assert.equal(store.getRecordBySheetRow('Insectary_data', 4).values.Sex, 'female');
   } finally {
     assistant.close();
     store.close();

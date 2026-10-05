@@ -33,13 +33,14 @@ Every change is a proposal the person reviews before it is written:
 4. It is written when they approve it in the chat (`apply_proposal`) or press
    «Apply» («Aplicar») in the table.
 
-**When Google does not answer**, the workbook is usually recalculating (it
-takes minutes after edits to Insectary_data). The app then shows a banner and
-keeps saves waiting: `apply_proposal` answers `queued`, the proposal shows
-«waiting for Google», and it is written on its own, in order, when Google
-answers. Tool results carry `google` with the workbook's state while it lasts.
-Do not apply again or deploy meanwhile; tell the person it will be written
-and that they can watch the recalculation bar in the sheet.
+**When Google is slow or does not answer**, the workbook is usually
+recalculating (it takes minutes after edits to Insectary_data). The app then
+shows a banner and keeps saves in the app: `apply_proposal` answers `queued`,
+the proposal shows «waiting for Google», and it is written on its own, in
+order, when Google answers. Tool results carry `google` with the workbook's
+state while it lasts. Tell the person it will be written (they can watch the
+recalculation bar in the sheet); nothing needs applying again, and a restart
+keeps those saves.
 
 **A proposal left in `needs_review` or `applying`** after a timeout or a
 restart may have been written. Before applying it again or drafting it anew,

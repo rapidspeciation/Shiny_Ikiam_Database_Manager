@@ -125,6 +125,33 @@ test('saves that waited are written in order, one batch per person and tab', asy
   }
 });
 
+test('a save waiting behind a write held too long is kept in the outbox at once, and written after it', async () => {
+  const { store, sheets } = await fixture({ heldWriteMs: 80 });
+  try {
+    // Google takes its time with the first write (the workbook answering, but slowly): its state stays ok.
+    const write = sheets.writeBatch.bind(sheets);
+    let release;
+    const held = new Promise(resolve => (release = resolve));
+    sheets.writeBatch = async w => (await held, write(w));
+    const first = save(store, ana, [{ id: idAt(store, 2), values: { Sex: 'female' }, expected: { Sex: 'male' } }]);
+    await until(() => store.writesInFlight === 1);
+    const asked = Date.now();
+    const second = await save(store, luis, [{ id: idAt(store, 3), values: { Sex: 'female' }, expected: { Sex: 'male' } }]);
+    assert.equal(second.status, 'queued', 'not left waiting behind the held write');
+    assert.ok(Date.now() - asked < 2000, `${Date.now() - asked} ms`);
+    assert.equal(store.googleState().workbook.state, 'ok');
+    assert.equal(store.outbox.get(second.outboxId).status, 'queued');
+    release();
+    assert.equal((await first).status, 'verified');
+    await until(() => store.outbox.get(second.outboxId).status === 'done');
+    assert.equal(sexIn(sheets, 3), 'female');
+    // Written once: the save that waited for its turn does nothing when the turn comes.
+    assert.equal(store.db.prepare("SELECT count(*) n FROM actions WHERE actor = 'luis'").get().n, 1);
+  } finally {
+    store.close();
+  }
+});
+
 test('a cell changed in the sheet while the save waited is refused and reported, not overwritten', async () => {
   const { store, sheets } = await fixture();
   try {

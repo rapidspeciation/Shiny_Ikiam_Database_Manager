@@ -5,7 +5,7 @@
 // cambios, + Columna…) work on top of it.
 
 import { columnOf } from './schema.mjs';
-import { isHiddenColumn } from './proposal-columns.mjs';
+import { hiddenWhy, isHiddenColumn } from './proposal-columns.mjs';
 
 const clip = (value, length) => String(value ?? '').slice(0, length);
 
@@ -50,8 +50,9 @@ export function readView(given, sheets, old = null) {
       const found = sheets.map(sheet => columnOf(sheet, name));
       const hit = found.find(f => f.key);
       if (!hit) return { error: `view.columns: ${found[0]?.error ?? `Unknown column ${clip(name, 60)}`}` };
-      // A deprecated column is never shown (server/proposal-columns.mjs).
-      if (sheets.some(sheet => isHiddenColumn(sheet, hit.key))) return { error: `view.columns: ${hit.key} is deprecated and not shown` };
+      // A column the sheet's proposals never show (server/proposal-columns.mjs).
+      const hiddenIn = sheets.find(sheet => isHiddenColumn(sheet, hit.key));
+      if (hiddenIn) return { error: `view.columns: ${hiddenWhy(hiddenIn, hit.key)}` };
       if (!keys.includes(hit.key)) keys.push(hit.key);
     }
     out.columns = keys;
