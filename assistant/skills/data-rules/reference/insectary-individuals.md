@@ -76,7 +76,7 @@ Cause not `Killed_Preserved` and no CAM:
 |---|---|
 | Preservation_date, CAM_ID, Tube_1–4_id | `NA` |
 | Tube_1–4_tissue | `NOT_COLLECTED` (many 2026 rows have `NA`: they stay) |
-| T1_Preservation_medium, T2_Preservation_medium, Preservation_medium | `NOT_COLLECTED` |
+| T1_Preservation_medium | `NOT_COLLECTED` |
 | Preserved_Dead_Alive, Location_body, Research_purpose | `NA` |
 
 The app's Muertes tab and `match_notebook` write this block.
@@ -85,12 +85,27 @@ The app's Muertes tab and `match_notebook` write this block.
 
 Preservation_date = Death_date · CAM_ID (insectary pool) · Tube_1_id
 `WHOLE_ORGANISM` `Flash frozen` (Tube_2 if Tube_1 is a wing clip) · the other
-tubes `NA`, their tissues and media `NOT_COLLECTED` · Preservation_medium
-(the whole-body column) = the medium used · Preserved_Dead_Alive `Alive` when
+tubes `NA` and their tissues `NOT_COLLECTED` · Preserved_Dead_Alive `Alive` when
 killed (`Killed_Preserved`), `Dead` when found dead · Location_body `Ikiam` ·
 Research_purpose from the project (`F1/F2 mutation rate` for cross parents and
 offspring, `Pheromones` for pheromone males, `Sperm dissections`), else `NA`.
 Medium rules and ethanol exceptions: [samples-ids.md](samples-ids.md).
+
+## Columns left to the sheet
+
+- `Preservation_medium` is deprecated: not written and not shown in
+  proposals; older rows keep their values. Each tube's medium goes in
+  T1_/T2_Preservation_medium.
+- Formula columns, not written: Collection_location (`Reared` → Mariposario
+  Ikiam), Pedigree, T2_Preservation_medium (from Tube_2_tissue: `NA` → `NA`,
+  `NOT_COLLECTED` → `NOT_COLLECTED`), Photo_dorsal and Photo_ventral (from
+  CAM_ID; `NA` when the CAM is `NA`).
+
+## LIFESTAGE
+
+A row with a date in Intro2Insectary_date (emerged, or brought in from the
+field) is `Adult`. Preserved eggs and larvae have their stage (below). Older
+rows with LIFESTAGE empty stay as they are.
 
 ## Death causes
 
@@ -123,7 +138,7 @@ instars of Sep 2026).
 | Wild_Reared, CLUTCH NUMBER | `Reared`, the clutch (`994(3)`) |
 | Intro2Insectary_date | `NA` |
 | Sex | `NOT_COLLECTED` (Sanger's category for a sex not recorded) |
-| LIFESTAGE (used only for this) | `Egg`, `1st instar larva` … `5th instar larva`, `Pre-pupa` |
+| LIFESTAGE | `Egg`, `1st instar larva` … `5th instar larva`, `Pre-pupa` |
 | Death_date | the preservation date |
 | Death_cause, Preserved_Dead_Alive | `Killed_Preserved` and `Alive`, or `Other` and `Dead` (found dead) |
 | CAM_ID, Tube_1 | a CAM; one tube `WHOLE_ORGANISM` `Flash frozen` |

@@ -46,7 +46,10 @@ description: Change the web app itself (Ikiam Insectary DB): its screens, grids,
    `npm test`. All must pass; add a test for new logic.
 4. `git add` the files you changed, `git commit -m "<what and why, in one line>"`
    and `git push`.
-5. Deploy: `scripts/deploy.sh`. It builds, tests, makes a new release,
+5. Deploy: first check that no proposal is being applied (`list_proposals`,
+   status `applying`) and tell the person the app restarts for about a
+   minute; an apply caught by the restart is left unconfirmed. Then
+   `scripts/deploy.sh`. It builds, tests, makes a new release,
    restarts the app (about a minute; T3 chats keep running) and refreshes the
    T3 workspaces; it stops if your commit is not on GitHub.
 6. Verify: `curl -s https://ithomiini-ikiam.com/version.json` shows the new
