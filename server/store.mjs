@@ -10,6 +10,9 @@ import { initMonitoring } from './monitoring.mjs';
 import { initHistory } from './history.mjs';
 import { initClutches } from './clutches.mjs';
 import { SANDBOX_ID } from './workbook.mjs';
+import { initClaims } from './claims.mjs';
+import { initOutbox, Outbox } from './outbox.mjs';
+import { initStaged, Staged } from './staged.mjs';
 
 const json = value => JSON.stringify(value);
 const parse = value => (value ? JSON.parse(value) : null);
@@ -58,8 +61,23 @@ export class Store {
     initMonitoring(this.db);
     // Clutches checked on phones and tablets (Clutches tab, cards).
     initClutches(this.db);
-    this.sheets = sheets || (config.localMode ? new LocalSheets(seed || {}) : new GoogleSheets(config));
+    // Identifiers held by changes not in the sheet yet, saves waiting for Google, Emergidos and Clutches entries.
+    initClaims(this.db);
+    initOutbox(this.db);
+    initStaged(this.db);
+    this.sheets = sheets || (config.localMode ? new LocalSheets(seed || {}, { health: config.health }) : new GoogleSheets(config));
     this.localMode = this.sheets instanceof LocalSheets;
+    // What open pages follow (GET /api/pulse): the workbook's state, the outbox, the staged entries.
+    this.boot = randomUUID().slice(0, 8);
+    this.liveCount = 0;
+    this.liveWaiters = new Set();
+    this.outbox = new Outbox(this);
+    this.staged = new Staged(this);
+    // The workbook answers again (or only slowly): the waiting saves are written.
+    this.sheets.health?.onChange(state => {
+      this.bumpLive('workbook');
+      if (state !== 'busy') this.outbox.kick();
+    });
     // scripts/switch-workbook.mjs opens the database while it still caches the other workbook.
     if (!switching) this.checkWorkbook();
     // A workbook switch reads another workbook: a row there is not the same butterfly as the old copy's.
@@ -81,7 +99,53 @@ export class Store {
     };
   }
   close() {
+    this.sheets.health?.stop();
+    this.outbox.stop();
+    for (const wake of this.liveWaiters) wake();
     this.db.close();
+  }
+  /** Something open pages show changed (the workbook's state, the outbox, the staged entries): they are told. */
+  bumpLive(kind = null) {
+    this.liveCount++;
+    for (const wake of [...this.liveWaiters]) wake();
+    for (const fn of this.liveWatchers ?? []) {
+      try {
+        fn(kind);
+      } catch (e) {
+        console.error('Live watcher:', e.message);
+      }
+    }
+  }
+  /** Calls `fn(kind)` ('workbook', 'outbox', 'staged') when that changes. Returns the call that stops it. */
+  watchLive(fn) {
+    this.liveWatchers ??= new Set();
+    this.liveWatchers.add(fn);
+    return () => this.liveWatchers.delete(fn);
+  }
+  liveRevision() {
+    return `${this.boot}.${this.liveCount}`;
+  }
+  /** Resolves when the live revision is no longer `seen`, or after `ms`. */
+  waitLive(seen, ms = 25_000) {
+    if (seen !== this.liveRevision()) return Promise.resolve();
+    return new Promise(resolve => {
+      const wake = () => {
+        clearTimeout(timer);
+        this.liveWaiters.delete(wake);
+        resolve();
+      };
+      const timer = setTimeout(wake, ms);
+      this.liveWaiters.add(wake);
+    });
+  }
+  /** What the app's banner and /health say about Google: the workbook's state, saves waiting, entries kept in the app. */
+  googleState() {
+    return {
+      workbook: this.sheets.health?.snapshot() ?? { state: 'ok' },
+      outbox: { waiting: this.outbox.waiting() },
+      staged: this.staged.count(),
+      ...(this.localMode && this.sheets.busyState?.() ? { simulated: this.sheets.busyState() } : {}),
+    };
   }
   /** The workbook this database caches (settings.workbookId). */
   cachedWorkbook() {
@@ -1223,7 +1287,7 @@ export class Store {
     return applyBatch(this, { requestId, reason, edits, deletes }, user, { source: 'undo', reverses: actionIds.join(',') });
   }
   /** Applies reviewed AI proposals (edits and new rows) as one action. */
-  async applyProposal(changes, { user, requestId, reason } = {}) {
+  async applyProposal(changes, { user, requestId, reason, outbox = null } = {}) {
     if (!Array.isArray(changes) || !changes.length) throw error('INVALID_PROPOSAL', 'No proposed changes');
     return applyBatch(
       this,
@@ -1243,7 +1307,7 @@ export class Store {
         creates: changes.filter(c => c.create).map(c => ({ module: c.sheet, clientId: c.clientId, values: c.values })),
       },
       user,
-      { source: 'ai_approved' },
+      { source: 'ai_approved', outbox },
     );
   }
   getAttachment(id) {

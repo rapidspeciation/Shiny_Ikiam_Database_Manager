@@ -14,7 +14,7 @@ import { SANDBOX_ID } from '../server/workbook.mjs';
 
 const user = { id: 'editor-1', username: 'editor', role: 'editor' };
 
-test('stopping: saves in progress finish, new ones are refused, /health says what is being written', async () => {
+test('stopping: saves in progress finish, new ones wait for the next process, /health says what is being written', async () => {
   const app = await createApp(
     { databasePath: ':memory:', localMode: true, secureCookies: false, syncIntervalMs: 0 },
     { seed: { Collection_data: [{ row: 2, values: { CAM_ID: 'CAM000001', Sex: 'male' } }] } },
@@ -33,10 +33,9 @@ test('stopping: saves in progress finish, new ones are refused, /health says wha
     assert.deepEqual(app.writingNow(), { applying: 0, inFlight: 1, unconfirmed: 1, draining: false });
 
     const drained = app.drain(5000);
-    await assert.rejects(
-      applyBatch(store, { requestId: randomUUID(), edits: [{ id, values: { Sex: 'NA' } }] }, user),
-      e => e.code === 'SHUTTING_DOWN',
-    );
+    // A save made now is kept in the database for the next process (server/outbox.mjs), not written by this one.
+    const kept = await applyBatch(store, { requestId: randomUUID(), edits: [{ id, values: { Sex: 'NA' } }] }, user);
+    assert.equal(kept.status, 'queued');
     let done = false;
     drained.then(() => (done = true));
     await new Promise(resolve => setTimeout(resolve, 300));

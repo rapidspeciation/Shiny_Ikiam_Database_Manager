@@ -212,6 +212,10 @@ export function configFromEnv(env = process.env) {
     // The Google Sheets workbook (WORKBOOK_ID, the team's workbook by default).
     spreadsheetId: workbook.id,
     syncIntervalMs: Number(env.SYNC_INTERVAL_MS || 300000),
+    // How often a workbook that does not answer is asked again (server/workbook-health.mjs).
+    health: env.GOOGLE_PROBE_SECONDS ? { probeMs: Number(env.GOOGLE_PROBE_SECONDS) * 1000 } : undefined,
+    // LOCAL_MODE (the lab): start with the sheets answering as a recalculating workbook, "mode:minutes" (tools/lab/README.md).
+    localBusy: env.LOCAL_BUSY || null,
     sheetHookSecret: env.SHEET_HOOK_SECRET,
     // The app's address for links the assistant gives (e.g. to a save in the Historial).
     publicUrl: (env.APP_PUBLIC_URL || env.APP_ORIGIN || '').replace(/\/+$/, ''),
@@ -370,6 +374,10 @@ export async function createApp(config = {}, options = {}) {
     seed = seed.sheets || seed;
   }
   const store = options.store || new Store(config, { sheets: options.sheets, seed });
+  if (config.localBusy && store.localMode && store.sheets.simulateBusy) {
+    const [mode, minutes] = String(config.localBusy).split(':');
+    store.sheets.simulateBusy({ mode: mode || 'unavailable', minutes: Number(minutes) || 5 });
+  }
   // The sheets' copy for the assistant's `query`: beside the database file the store opened (none in memory).
   if (given.sheetsCopyPath === undefined) config.sheetsCopyPath = copyBeside(store.db.location?.() ?? null);
   const assistantFile = new URL('./assistant.mjs', import.meta.url);
@@ -414,7 +422,9 @@ export async function createApp(config = {}, options = {}) {
         path = routePath(req.url, config.basePath),
         method = req.method;
       // `writing`: what a restart would cut (scripts/deploy.sh waits for it to be all 0).
-      if (method === 'GET' && path === '/health') return json(res, 200, { status: 'ok', sync: store.syncStatus.state, writing: writingNow() });
+      // `google`: whether the workbook answers (ok, slow, busy), saves waiting for it, entries kept in the app.
+      if (method === 'GET' && path === '/health')
+        return json(res, 200, { status: 'ok', sync: store.syncStatus.state, writing: writingNow(), google: store.googleState() });
       // Shares are normally caught by the service worker; if it was not active yet,
       // open the import screen and let the person share again.
       if (method === 'POST' && path === '/share-target') {
@@ -604,6 +614,44 @@ export async function createApp(config = {}, options = {}) {
         requireEditor(user);
         requireId(body);
         return json(res, 200, await applyBatch(store, body, user, { source: 'app' }));
+      }
+      // What open pages follow: the workbook's state, the saves waiting for it, the entries kept in the app.
+      // wait=1 with the revision the page holds: answers when something changes, or after 25 s.
+      if (method === 'GET' && path === '/api/pulse') {
+        if (query.wait && query.revision) await store.waitLive(String(query.revision), config.pulseWaitMs ?? 25_000);
+        const mine = store.db
+          .prepare("SELECT id, status, kind, ref, updated_at FROM outbox WHERE actor = ? AND (status IN ('queued','writing') OR updated_at > ?) ORDER BY rowid")
+          .all(user.id, new Date(Date.now() - 10 * 60_000).toISOString());
+        return json(res, 200, { revision: store.liveRevision(), ...store.googleState(), mine });
+      }
+      // Emergidos and Clutches entries kept in the app (everyone's), taken back, saved to Google Sheets.
+      if (method === 'GET' && path === '/api/staged') return json(res, 200, store.staged.list());
+      if (method === 'POST' && path === '/api/staged') {
+        requireEditor(user);
+        return json(res, 200, await store.staged.stage(body, user));
+      }
+      if (method === 'POST' && path === '/api/staged/flush') {
+        requireEditor(user);
+        requireId(body);
+        return json(res, 200, await store.staged.flush(body, user, { waitMs: config.flushWaitMs ?? 20_000 }));
+      }
+      if (method === 'DELETE' && /^\/api\/staged\/(items|entries)\/[^/]+$/.test(path)) {
+        requireEditor(user);
+        const [, , , what, id] = path.split('/');
+        return json(res, 200, await store.staged.remove(what === 'items' ? { itemId: decodePart(id) } : { entryId: decodePart(id) }, user));
+      }
+      // Saves waiting for Google: the list (the banner), and one save's outcome (its page asks until it is settled).
+      if (method === 'GET' && path === '/api/outbox') return json(res, 200, store.outbox.list({ settled: query.settled }));
+      if (method === 'GET' && /^\/api\/outbox\/[^/]+$/.test(path)) {
+        const item = store.outbox.get(decodePart(path.split('/')[3]));
+        if (!item) throw fail('NOT_FOUND', 'Not found', 404);
+        if (item.actor !== user.id) return json(res, 200, store.outbox.view(item));
+        try {
+          return json(res, 200, store.outbox.answer(item, user));
+        } catch (e) {
+          // A refused save: its reasons, as the save would have answered.
+          return json(res, 200, { ...store.outbox.view(item), status: item.status, error: { code: e.code, message: e.message, ...(e.messageMsg ? { messageMsg: e.messageMsg } : {}), details: e.details } });
+        }
       }
       if (method === 'GET' && path === '/api/table') {
         // Whole sheets are cached compressed until the local copy changes.
@@ -842,6 +890,21 @@ export async function createApp(config = {}, options = {}) {
         const out = await store.refreshRows(sheet, [row]);
         if (out.needsSync) await store.sync({ sheets: [sheet] });
         return json(res, 200, { edited: true, read: true });
+      }
+      // LOCAL_MODE only (the lab, tests): the sheets answer as Google's do while the team's workbook recalculates
+      // (tools/lab/busy.mjs): `mode` unavailable (503), hang (no answer) or slow, for `minutes` (0 ends it).
+      if (method === 'POST' && path === '/api/local/busy') {
+        requireAdmin(user);
+        if (!store.localMode || !store.sheets.simulateBusy) throw fail('NOT_FOUND', 'Only in LOCAL_MODE', 404);
+        const minutes = Number(body.minutes ?? 5);
+        if (!Number.isFinite(minutes) || minutes < 0 || minutes > 120) throw fail('INVALID_VALUES', 'minutes: 0 to 120');
+        const health = store.sheets.health;
+        if (body.probeSeconds !== undefined) health.probeMs = Math.max(1, Number(body.probeSeconds) || 60) * 1000;
+        const simulated = store.sheets.simulateBusy({ minutes, mode: body.mode ?? 'unavailable', delayMs: body.delayMs ?? 3000 });
+        // Told at once, as the first request after an edit would find it; ended: asked at once.
+        if (minutes > 0) await store.sheets.probe().catch(() => {});
+        else await health.runProbe();
+        return json(res, 200, { simulated, ...store.googleState() });
       }
       if (method === 'POST' && path === '/api/import/preview') {
         requireEditor(user);
@@ -1153,13 +1216,17 @@ export async function createApp(config = {}, options = {}) {
         .catch(e => {
           console.error('Initial sync failed:', e.message);
           return store.syncStatus;
-        });
+        })
+        .finally(() => store.outbox.kick());
+  // Saves kept while Google did not answer (before a restart too): written once it does.
+  store.outbox.start(config.outboxCheckMs ?? undefined);
   const interval =
     config.syncIntervalMs > 0
-      ? setInterval(
-          () => store.sync().catch(e => console.error('Scheduled sync failed:', e.message)),
-          config.syncIntervalMs,
-        )
+      ? setInterval(() => {
+          // A busy workbook is asked once a minute (server/workbook-health.mjs), not read whole.
+          if (store.sheets.health?.state === 'busy') return;
+          store.sync().catch(e => console.error('Scheduled sync failed:', e.message));
+        }, config.syncIntervalMs)
       : null;
   interval?.unref();
   return {

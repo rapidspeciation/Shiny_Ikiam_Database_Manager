@@ -3,12 +3,15 @@ import { createHash } from 'node:crypto';
 import { moduleMap, asCell, entered } from './schema.mjs';
 import { REAL_ID, checkWorkbookId } from './workbook.mjs';
 import { columnLetter, headerLayout } from './columns.mjs';
+import { WorkbookHealth } from './workbook-health.mjs';
 
 const api = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 /** How long a request to Google may take: a read (retried), a write, a token. */
 export const READ_TIMEOUT_MS = 90_000;
 export const WRITE_TIMEOUT_MS = 120_000;
+/** A read a save waits for (its rows, the probe): given up sooner, once, so a busy workbook queues the save. */
+export const FAST_READ_TIMEOUT_MS = 30_000;
 const TOKEN_TIMEOUT_MS = 30_000;
 
 export class GoogleSheets {
@@ -28,6 +31,8 @@ export class GoogleSheets {
     this.readTimes = [];
     // Requests sent to the Sheets API (reported with each sync).
     this.requestCount = 0;
+    // Whether the workbook answers (ok, slow, busy), from every request's outcome.
+    this.health = new WorkbookHealth({ probe: () => this.probe(), ...config.health });
   }
   async accessToken() {
     if (this.token && this.token.expires > Date.now() + 60_000) return this.token.value;
@@ -48,35 +53,44 @@ export class GoogleSheets {
     this.token = { value: body.access_token, expires: Date.now() + body.expires_in * 1000 };
     return this.token.value;
   }
-  /** A Sheets API request; `text: true` returns the body unparsed. */
+  /**
+   * A Sheets API request; `text: true` returns the body unparsed. `failFast`: a read a save
+   * or the probe waits for, tried once with a shorter timeout (a busy workbook: the save is
+   * queued instead, server/outbox.mjs). Each outcome tells the workbook's health.
+   */
   async request(path, options = {}) {
-    const { background = false, text = false, ...fetchOptions } = options;
+    const { background = false, text = false, failFast = false, ...fetchOptions } = options;
     const method = fetchOptions.method || 'GET';
     if (this.readOnly && method !== 'GET') throw new Error('This Google Sheets connection is read-only');
-    for (let attempt = 0; attempt < (method === 'GET' ? 5 : 1); attempt++) {
+    const attempts = method === 'GET' && !failFast ? 5 : 1;
+    const timeoutMs = method !== 'GET' ? WRITE_TIMEOUT_MS : failFast ? FAST_READ_TIMEOUT_MS : READ_TIMEOUT_MS;
+    for (let attempt = 0; attempt < attempts; attempt++) {
       if (method === 'GET') await this.readSlot(background);
       this.requestCount++;
       const authorization = `Bearer ${await this.accessToken()}`;
       let response;
+      const started = Date.now();
       try {
         // A request Google does not answer is given up (a read is tried again): a hung request
         // would otherwise hold the write queue, the syncs and a deploy's restart for ever.
         response = await fetch(`${api}/${this.spreadsheetId}${path}`, {
           ...fetchOptions,
-          signal: AbortSignal.timeout(method === 'GET' ? READ_TIMEOUT_MS : WRITE_TIMEOUT_MS),
+          signal: AbortSignal.timeout(timeoutMs),
           headers: { authorization, 'content-type': 'application/json', ...fetchOptions.headers },
         });
       } catch (e) {
         if (e?.name !== 'TimeoutError') throw e;
-        if (method === 'GET' && attempt < 4) continue;
+        this.health.record({ ms: Date.now() - started, timeout: true, background });
+        if (attempt < attempts - 1) continue;
         // A write that timed out may have landed: the save is left unconfirmed and checked again.
-        throw Object.assign(new Error(`Google Sheets did not answer in ${method === 'GET' ? READ_TIMEOUT_MS / 1000 : WRITE_TIMEOUT_MS / 1000} s`), {
+        throw Object.assign(new Error(`Google Sheets did not answer in ${timeoutMs / 1000} s`), {
           status: 504,
           timeout: true,
         });
       }
+      this.health.record({ ms: Date.now() - started, status: response.status, background });
       if (response.ok) return text ? response.text() : response.json();
-      if (method === 'GET' && [429, 503].includes(response.status) && attempt < 4) {
+      if (method === 'GET' && [429, 503].includes(response.status) && attempt < attempts - 1) {
         const delay = Math.max(Number(response.headers.get('retry-after') || 0) * 1000, 1000 * 2 ** attempt);
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
@@ -86,6 +100,14 @@ export class GoogleSheets {
         status: response.status,
       });
     }
+  }
+  /** One cell of the workbook, read once: whether it answers (the WorkbookHealth probe). */
+  async probe() {
+    const params = new URLSearchParams({
+      ranges: `${quoteTitle('Insectary_data')}!A1`,
+      fields: 'sheets(data(rowData(values(effectiveValue))))',
+    });
+    return this.request(`?${params}`, { failFast: true });
   }
   async readSlot(background = false) {
     const windowMs = 60_000,
@@ -172,7 +194,7 @@ export class GoogleSheets {
    * by rowKey(sheet, row). Rows beyond the data come back with no cells.
    * Callers read the header row too, to map the cells to fields.
    */
-  async readRows(targets) {
+  async readRows(targets, { failFast = false } = {}) {
     const ranges = [];
     for (const { sheet, rows } of targets) {
       if (!moduleMap.has(sheet)) throw new Error(`Unknown sheet: ${sheet}`);
@@ -189,7 +211,7 @@ export class GoogleSheets {
         'sheets(properties(title,gridProperties(rowCount)),data(startRow,rowData(values(userEnteredValue,effectiveValue,userEnteredFormat(numberFormat)))))',
     });
     for (const range of ranges) params.append('ranges', range.a1);
-    const result = await this.request(`?${params}`);
+    const result = await this.request(`?${params}`, { failFast });
     for (const sheet of result.sheets || []) {
       const title = sheet.properties?.title;
       const rowCount = sheet.properties?.gridProperties?.rowCount;
@@ -269,12 +291,15 @@ export class GoogleSheets {
  * credential may not edit, as Google reports them.
  */
 export class LocalSheets {
-  constructor(seed = {}, { evaluate, protectedRanges, spreadsheetId = REAL_ID } = {}) {
+  constructor(seed = {}, { evaluate, protectedRanges, spreadsheetId = REAL_ID, health } = {}) {
     this.rows = new Map();
     this.gridRows = new Map();
     this.spreadsheetId = spreadsheetId;
     this.evaluate = evaluate || defaultEvaluate;
     this.protectedRanges = protectedRanges || {};
+    // As GoogleSheets: whether "the workbook" answers. simulateBusy makes it not answer (the lab, tests).
+    this.health = new WorkbookHealth({ probe: () => this.probe(), ...health });
+    this.busy = null;
     for (const [sheet, rows] of Object.entries(seed)) {
       const normalized = rows.map((r, i) => normalizeSeedRow(r, i + 1, sheet));
       const mod = moduleMap.get(sheet);
@@ -282,7 +307,42 @@ export class LocalSheets {
       this.rows.set(sheet, normalized);
     }
   }
+  /**
+   * Makes the requests of the next `minutes` behave as Google's while the team's workbook
+   * recalculates: `mode` "unavailable" (503 at once), "hang" (no answer: given up after
+   * `delayMs`) or "slow" (answers after `delayMs`). `minutes` 0 ends it. Typing in the
+   * sheet (externalEdit) still works, as it does in Google Sheets.
+   */
+  simulateBusy({ minutes = 5, mode = 'unavailable', delayMs = 3000 } = {}) {
+    if (!['unavailable', 'hang', 'slow'].includes(mode)) throw new Error(`Unknown busy mode ${mode}`);
+    this.busy = minutes > 0 ? { until: Date.now() + minutes * 60_000, mode, delayMs: Math.max(0, Number(delayMs) || 0) } : null;
+    return this.busyState();
+  }
+  busyState() {
+    return this.busy && Date.now() < this.busy.until ? { ...this.busy, until: new Date(this.busy.until).toISOString() } : null;
+  }
+  /** What every request meets first: the simulated busy workbook, if any; reported to `health` as Google's answers are. */
+  async gate(background = false) {
+    const busy = this.busy && Date.now() < this.busy.until ? this.busy : null;
+    const started = Date.now();
+    if (!busy) return this.health.record({ ms: 0, background });
+    if (busy.delayMs) await new Promise(resolve => setTimeout(resolve, busy.delayMs));
+    const ms = Date.now() - started;
+    if (busy.mode === 'slow') return this.health.record({ ms, background });
+    if (busy.mode === 'hang') {
+      this.health.record({ ms, timeout: true, background });
+      throw Object.assign(new Error(`Google Sheets did not answer in ${Math.round(ms / 1000)} s (simulated)`), { status: 504, timeout: true });
+    }
+    this.health.record({ ms, status: 503, background });
+    throw Object.assign(new Error('Google Sheets 503: The service is currently unavailable (simulated: the workbook is recalculating)'), {
+      status: 503,
+    });
+  }
+  async probe() {
+    await this.gate();
+  }
   async readSheet(sheet) {
+    await this.gate(true);
     const rows = structuredClone(this.rows.get(sheet) || []);
     return withDigest(rows, createHash('sha256').update(JSON.stringify(rows)).digest('base64'));
   }
@@ -290,12 +350,14 @@ export class LocalSheets {
     return structuredClone((this.rows.get(sheet) || []).find(r => r.row === row) || { row, cells: [] });
   }
   async readRows(targets) {
+    await this.gate();
     const out = new Map();
     for (const { sheet, rows } of targets)
       for (const row of rows) out.set(rowKey(sheet, row), await this.readRow(sheet, row));
     return out;
   }
   async readGrid(sheet, start, end) {
+    await this.gate();
     const out = [];
     for (let row = start; row <= end; row++) out.push(await this.readRow(sheet, row));
     return out;
@@ -304,6 +366,7 @@ export class LocalSheets {
     return Math.max(this.gridRows.get(sheet) || 0, ...(this.rows.get(sheet) || []).map(r => r.row), 0);
   }
   async sheetInfo(sheet) {
+    await this.gate();
     const mod = moduleMap.get(sheet);
     const sheetId = mod?.sheetId ?? 0;
     return {
@@ -317,6 +380,7 @@ export class LocalSheets {
     };
   }
   async writeBatch(writes) {
+    await this.gate();
     if (this.failNextWrite) {
       const failure = this.failNextWrite;
       this.failNextWrite = null;
@@ -355,6 +419,7 @@ export class LocalSheets {
    * Google: a request touching a protected range the credential cannot edit fails the batch.
    */
   async batchUpdate(requests) {
+    await this.gate();
     for (const request of requests) {
       const [sheet, rect] = this.touched(request);
       if (rect && this.isProtected(sheet, rect))

@@ -39,6 +39,10 @@ export function initClutches(db) {
   // A check that still needs verification, and why (older databases).
   if (!columns.has('state')) db.exec("ALTER TABLE clutch_checks ADD COLUMN state TEXT NOT NULL DEFAULT 'checked'");
   if (!columns.has('note')) db.exec('ALTER TABLE clutch_checks ADD COLUMN note TEXT');
+  // The entry kept in the app a check or event went with (server/staged.mjs), until it is written.
+  if (!columns.has('staged_entry')) db.exec('ALTER TABLE clutch_checks ADD COLUMN staged_entry TEXT');
+  if (!new Set(db.prepare('PRAGMA table_info(clutch_events)').all().map(c => c.name)).has('staged_entry'))
+    db.exec('ALTER TABLE clutch_events ADD COLUMN staged_entry TEXT');
 }
 
 /** Check states: looked at and fine, or looked at and someone should look again. */
@@ -133,14 +137,26 @@ const stageOfLife = lifestage => {
  */
 function youngRows(store, clutch = null) {
   const out = [];
-  for (const r of store.db
-    .prepare(
-      `SELECT json_extract(values_json, '$."CLUTCH NUMBER"') clutch, json_extract(values_json, '$.LIFESTAGE') lifestage,
+  // The eggs and larvae entered in Emergidos and kept in the app (server/staged.mjs) count as well.
+  const staged = (store.staged?.ofSheet('Insectary_data').creates ?? []).map(item => ({
+    clutch: item.values['CLUTCH NUMBER'] ?? null,
+    lifestage: item.values.LIFESTAGE ?? null,
+    id: item.values.Insectary_ID ?? null,
+    death: item.values.Death_date ?? null,
+    preserved: item.values.Preservation_date ?? null,
+    cause: item.values.Death_cause ?? null,
+  }));
+  for (const r of [
+    ...store.db
+      .prepare(
+        `SELECT json_extract(values_json, '$."CLUTCH NUMBER"') clutch, json_extract(values_json, '$.LIFESTAGE') lifestage,
          json_extract(values_json, '$.Insectary_ID') id, json_extract(values_json, '$.Death_date') death,
          json_extract(values_json, '$.Preservation_date') preserved, json_extract(values_json, '$.Death_cause') cause
        FROM records WHERE sheet = 'Insectary_data' AND missing = 0 AND json_extract(values_json, '$.LIFESTAGE') IS NOT NULL`,
-    )
-    .all()) {
+      )
+      .all(),
+    ...staged.filter(r => r.lifestage !== null),
+  ]) {
     const stage = stageOfLife(r.lifestage);
     const number = clutchText(r.clutch);
     if (!stage || !number || !r.id || (clutch !== null && number !== clutch)) continue;
@@ -199,6 +215,7 @@ const shape = r => ({
   state: r.state ?? 'checked',
   note: r.note ?? null,
   actionId: r.action_id,
+  stagedEntry: r.staged_entry ?? null,
   createdAt: r.created_at,
 });
 const shapeEvent = r => ({
@@ -215,6 +232,7 @@ const shapeEvent = r => ({
   username: r.username ?? null,
   name: r.name ?? null,
   actionId: r.action_id,
+  stagedEntry: r.staged_entry ?? null,
   createdAt: r.created_at,
 });
 const EVENT_SELECT = 'SELECT e.*, u.username, u.display_name name FROM clutch_events e LEFT JOIN users u ON u.id = e.actor';
@@ -281,7 +299,67 @@ export function clutchDay(store, query = {}) {
   // A new clutch: its number was written that day.
   const created = new Set(changes.filter(c => c.field === 'CLUTCH NUMBER' && c.before === null).map(c => c.recordId));
   for (const c of changes) c.isNew = created.has(c.recordId);
+  // Entries kept in the app, not in the sheet yet (server/staged.mjs): listed too, marked, without undo (undone in the tab).
+  for (const line of stagedLines(store, from, to)) changes.push({ ...line, actorIds: line.actorIds, parts: [] });
   return { day, checks, changes, events };
+}
+
+/**
+ * The Clutches entries kept in the app (server/staged.mjs) entered between `from` and `to`,
+ * as the day's and the notebook's lists show changes: per clutch and field, before (the
+ * sheet's) → after, who and when, `staged: true`; a new clutch's every cell (`isNew`).
+ */
+function stagedLines(store, from, to) {
+  if (!store.staged) return [];
+  const { edits, creates } = store.staged.ofSheet(SHEET);
+  const out = [];
+  const within = at => at >= from && at < to;
+  const valuesOf = store.db.prepare('SELECT values_json FROM records WHERE id = ?');
+  for (const [recordId, list] of edits) {
+    const values = parse(valuesOf.get(recordId)?.values_json) || {};
+    const byField = new Map();
+    for (const e of list) {
+      if (!within(e.item.updatedAt) && !within(e.item.createdAt)) continue;
+      const line = byField.get(e.field) ?? {
+        recordId,
+        clutch: clutchText(values['CLUTCH NUMBER']),
+        species: clutchText(values.SPECIES),
+        field: e.field,
+        before: e.before,
+        after: null,
+        actors: [],
+        actorIds: [],
+        at: e.at,
+        isNew: false,
+        staged: true,
+      };
+      line.after = e.after;
+      line.at = e.at;
+      if (!line.actors.includes(e.actor)) line.actors.push(e.actor);
+      if (!line.actorIds.includes(e.item.actor)) line.actorIds.push(e.item.actor);
+      byField.set(e.field, line);
+    }
+    out.push(...[...byField.values()].filter(l => JSON.stringify(l.before ?? null) !== JSON.stringify(l.after ?? null)));
+  }
+  for (const item of creates) {
+    if (!within(item.createdAt) && !within(item.updatedAt)) continue;
+    for (const [field, after] of Object.entries(item.values))
+      if (after !== null && after !== '')
+        out.push({
+          recordId: item.rowId,
+          clutch: clutchText(item.values['CLUTCH NUMBER']),
+          species: clutchText(item.values.SPECIES),
+          field,
+          before: null,
+          after,
+          actors: [item.actorName],
+          actorIds: [item.actor],
+          at: item.updatedAt,
+          isNew: true,
+          staged: true,
+        });
+  }
+  return out;
 }
 
 /**
@@ -308,11 +386,22 @@ export function addClutchCheck(store, body, user) {
   const id = randomUUID();
   store.db
     .prepare(
-      'INSERT INTO clutch_checks(id,request_id,record_id,clutch,day,actor,fields_json,action_id,created_at,state,note) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+      'INSERT INTO clutch_checks(id,request_id,record_id,clutch,day,actor,fields_json,action_id,created_at,state,note,staged_entry) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
     )
-    .run(id, body.requestId, record.id, clutch, ecuadorDay(), user.id, JSON.stringify([...new Set(fields)]), actionId, new Date().toISOString(), state, note);
+    .run(id, body.requestId, record.id, clutch, ecuadorDay(), user.id, JSON.stringify([...new Set(fields)]), actionId, new Date().toISOString(), state, note, stagedEntryOf(store, body));
   const row = store.db.prepare('SELECT k.*, u.username, u.display_name name FROM clutch_checks k LEFT JOIN users u ON u.id = k.actor WHERE k.id = ?').get(id);
   return { check: shape(row), duplicate: false };
+}
+
+/**
+ * The entry kept in the app (server/staged.mjs) a check or event went with, when its
+ * changes are not in the sheet yet: its save becomes the check's once written.
+ */
+function stagedEntryOf(store, body) {
+  if (!body.stagedEntry) return null;
+  const entry = String(body.stagedEntry);
+  if (!store.db.prepare('SELECT 1 FROM staged WHERE entry_id = ?').get(entry)) return null;
+  return entry;
 }
 
 /** A short reason or note: trimmed, up to 200 characters, or none. */
@@ -380,9 +469,9 @@ export function addClutchEvent(store, body, user) {
   const id = randomUUID();
   store.db
     .prepare(
-      'INSERT INTO clutch_events(id,request_id,record_id,clutch,day,stage,kind,count,ids_json,note,actor,action_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      'INSERT INTO clutch_events(id,request_id,record_id,clutch,day,stage,kind,count,ids_json,note,actor,action_id,created_at,staged_entry) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
     )
-    .run(id, body.requestId, record.id, clutchText(values['CLUTCH NUMBER']) || null, day, body.stage, body.kind, count, JSON.stringify(ids), note, user.id, actionId, new Date().toISOString());
+    .run(id, body.requestId, record.id, clutchText(values['CLUTCH NUMBER']) || null, day, body.stage, body.kind, count, JSON.stringify(ids), note, user.id, actionId, new Date().toISOString(), stagedEntryOf(store, body));
   return { event: shapeEvent(store.db.prepare(`${EVENT_SELECT} WHERE e.id = ?`).get(id)), duplicate: false };
 }
 
@@ -564,6 +653,12 @@ export function notebookChanges(store, query = {}) {
     if (!line.sources.includes(source)) line.sources.push(source);
   }
   const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  // Entries kept in the app (not in the sheet yet): made through the app, so they go in the notebook too, marked.
+  for (const line of stagedLines(store, from, to)) {
+    if (FORMULA_COLUMNS.has(line.field)) continue;
+    const c = clutches.get(line.recordId) ?? clutchOf(line.recordId, JSON.stringify({ 'CLUTCH NUMBER': line.clutch, SPECIES: line.species }));
+    c.lines.push({ field: line.field, before: line.before, after: line.after, actors: line.actors, sources: ['app'], firstAt: line.at, at: line.at, staged: true });
+  }
   for (const c of clutches.values()) {
     c.lines = c.lines.filter(l => !same(l.before, l.after)).sort((a, b) => (order.get(a.field) ?? 99) - (order.get(b.field) ?? 99) || a.firstAt.localeCompare(b.firstAt));
     // A new clutch: its number was written then.

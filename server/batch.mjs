@@ -15,6 +15,8 @@ import { cleanPurpose, inferPurpose } from './history.mjs';
 import { TUBE_FIELD, UNIQUE, isIdValue, isUnique, twinRows } from './verifications.mjs';
 import { listOptions, listProblemMsg } from './verify.mjs';
 import { msg, msgError, textFields } from './messages.mjs';
+import { claimIndex, claimKind, claimValue } from './claims.mjs';
+import { busyError } from './workbook-health.mjs';
 
 /** Where a write came from. Chosen by the server, never by the client. */
 export const SOURCES = new Set(['app', 'undo', 'ai_approved', 'import']);
@@ -110,8 +112,21 @@ export function duplicateProblem(found) {
 /**
  * `purpose`: the flow a save belongs to (history.mjs PURPOSES). A save from the
  * app may declare its tab in `body.purpose`; otherwise it is inferred from what it changes.
+ *
+ * A save never waits for a workbook that does not answer: while Google is busy or
+ * slow (server/workbook-health.mjs), while earlier saves wait (the outbox), or
+ * while the app restarts, it is kept in the app's database and written in order
+ * when the workbook answers (server/outbox.mjs); the answer is then
+ * { status: 'queued', outboxId }. `outbox`: { kind, ref, claimOwners } of the
+ * queued item (an applied proposal, the staged entries). `fromOutbox`: the
+ * outbox writing it now (the claims of `claimOwners` are its own).
  */
-export async function applyBatch(store, body, user, { source = 'app', reverses = null, purpose = null } = {}) {
+export async function applyBatch(
+  store,
+  body,
+  user,
+  { source = 'app', reverses = null, purpose = null, outbox = null, fromOutbox = null } = {},
+) {
   store.validateRole(user);
   store.requireRequestId(body.requestId);
   if (!SOURCES.has(source)) throw fail('INVALID_SOURCE', 'Origen de escritura desconocido');
@@ -122,12 +137,27 @@ export async function applyBatch(store, body, user, { source = 'app', reverses =
   if (edits.length + creates.length + deletes.length > MAX_BATCH)
     throw fail('BATCH_TOO_LARGE', msg('Guarda como máximo {n} filas a la vez', { n: MAX_BATCH }));
 
+  const declared = source === 'app' ? purpose || cleanPurpose(body.purpose) : null;
+  const queue = () => store.outbox.enqueue({ body, user, source, purpose: declared, reverses, ...(outbox ?? {}) });
+  if (!fromOutbox && store.outbox) {
+    // A retried request: what became of it in the outbox.
+    const queued = store.outbox.byRequest(body.requestId);
+    if (queued) return store.outbox.answer(queued, user);
+    if (store.outbox.shouldQueue()) return queue();
+  }
   // The app is stopping (a deploy): saves in progress finish, new ones wait for the new process.
   if (store.draining) throw fail('SHUTTING_DOWN', 'La app se está reiniciando; vuelve a guardar en un minuto', 503);
   return store.runExclusive(async () => {
+    // Google stopped answering while this save waited for the one before it.
+    if (!fromOutbox && store.outbox?.shouldQueue({ waiting: true })) return queue();
     store.writesInFlight = (store.writesInFlight ?? 0) + 1;
+    store.writeStartedAt = Date.now();
     try {
       return await writeBatchNow();
+    } catch (e) {
+      // Nothing was written yet (the rows were being read): the save waits for the workbook instead.
+      if (!fromOutbox && store.outbox && busyError(e) && !e.code) return queue();
+      throw e;
     } finally {
       store.writesInFlight--;
     }
@@ -160,34 +190,34 @@ export async function applyBatch(store, body, user, { source = 'app', reverses =
     const partial = body.partial === true && source === 'app';
     const skipped = [];
     let input = { edits, creates, deletes };
-    let plan = planFor(store, source, input);
+    let plan = planFor(store, source, input, { claimOwners: fromOutbox });
     for (let round = 0; partial && plan.conflicts.length && round < 5; round++) {
       const rest = withoutConflicts(input, plan.conflicts);
       if (!rest) break;
       skipped.push(...plan.conflicts);
       input = rest;
-      plan = planFor(store, source, input);
+      plan = planFor(store, source, input, { claimOwners: fromOutbox });
     }
     throwIfConflicts(plan, skipped);
     // New rows past the sheet's pre-made rows would be bare (no formulas, no dropdowns):
     // make more pre-made rows first, as the team would by dragging the last one down.
     await ensurePremadeRows(store, plan.newRowNeeds());
 
-    const live = await store.sheets.readRows(plan.readTargets());
+    const live = await store.sheets.readRows(plan.readTargets(), { failFast: true });
     await plan.resolve(live);
     for (let round = 0; partial && plan.conflicts.length && round < 5; round++) {
       const rest = withoutConflicts(input, plan.conflicts);
       if (!rest) break;
       skipped.push(...plan.conflicts);
       input = rest;
-      plan = planFor(store, source, input);
+      plan = planFor(store, source, input, { claimOwners: fromOutbox });
       if (plan.conflicts.length) continue;
       // The smaller batch touches the same rows or fewer; read any row not read yet.
       const missing = plan
         .readTargets()
         .map(({ sheet, rows }) => ({ sheet, rows: rows.filter(row => !live.has(rowKey(sheet, row))) }))
         .filter(t => t.rows.length);
-      if (missing.length) for (const [key, row] of await store.sheets.readRows(missing)) live.set(key, row);
+      if (missing.length) for (const [key, row] of await store.sheets.readRows(missing, { failFast: true })) live.set(key, row);
       await plan.resolve(live);
     }
     throwIfConflicts(plan, skipped);
@@ -197,7 +227,6 @@ export async function applyBatch(store, body, user, { source = 'app', reverses =
     if (!plan.writes.length)
       return { status: 'unchanged', action: null, actions: [], records: [], created: [], skipped };
 
-    const declared = source === 'app' ? purpose || cleanPurpose(body.purpose) : null;
     const actionId = beginAction(
       store,
       {
@@ -246,7 +275,7 @@ export async function applyBatch(store, body, user, { source = 'app', reverses =
       plan.moveStoredRows();
       let check;
       try {
-        check = await store.sheets.readRows(plan.writeTargets());
+        check = await store.sheets.readRows(plan.writeTargets(), { failFast: true });
       } catch {
         store.finishAction(actionId, 'uncertain', null);
         scheduleRecovery(store);
@@ -271,12 +300,40 @@ export async function applyBatch(store, body, user, { source = 'app', reverses =
   }
 }
 
-function planFor(store, source, { edits, creates, deletes = [] }) {
-  const plan = new Plan(store, source);
+/**
+ * `claimOwners`: the claims (server/claims.mjs) this save may use, its own;
+ * `staging`: checked against the app's copy for Emergidos and Clutches entries
+ * kept in the app (server/staged.mjs), not written now.
+ */
+function planFor(store, source, { edits, creates, deletes = [] }, { claimOwners = null, staging = false } = {}) {
+  const plan = new Plan(store, source, { claimOwners, staging });
   plan.addEdits(edits);
   plan.addCreates(creates);
   plan.addDeletes(deletes);
   return plan;
+}
+
+/**
+ * The checks of a save (the same as applyBatch's) against rows given instead
+ * of Google's: `live` maps rowKey(sheet, row) to a row as Google returns it
+ * (cells by column), for every row asked. What can't be saved is left out and
+ * returned in `skipped`, a new row alone (not every new row, as a save does).
+ * Used when Emergidos and Clutches entries are kept in the app (server/staged.mjs).
+ */
+export async function checkAgainst(store, input, { live, claimOwners = null, source = 'app' }) {
+  const skipped = [];
+  let current = { edits: input.edits ?? [], creates: input.creates ?? [] };
+  for (let round = 0; round < 8; round++) {
+    const plan = planFor(store, source, current, { claimOwners, staging: true });
+    if (!plan.conflicts.length) await plan.resolve(live);
+    if (!plan.conflicts.length) return { plan, input: current, skipped };
+    const rest = withoutConflicts(current, plan.conflicts, { createsAlone: true });
+    if (!rest) return { plan: null, input: { edits: [], creates: [] }, skipped: [...skipped, ...plan.conflicts] };
+    skipped.push(...plan.conflicts);
+    current = rest;
+    if (!current.edits.length && !current.creates.length) return { plan: null, input: current, skipped };
+  }
+  return { plan: null, input: { edits: [], creates: [] }, skipped };
 }
 
 function throwIfConflicts(plan, skipped) {
@@ -293,8 +350,14 @@ function throwIfConflicts(plan, skipped) {
  * and Insectary_data rows). Null when a conflict belongs to no single change
  * (e.g. the sheet's columns changed).
  */
-export function withoutConflicts({ edits, creates }, conflicts) {
+export function withoutConflicts({ edits, creates }, conflicts, { createsAlone = false } = {}) {
   if (conflicts.some(c => !c.id && !c.clientId)) return null;
+  // Checking entries kept in the app (checkAgainst): only the new rows refused are left out.
+  if (createsAlone) {
+    const refused = new Set(conflicts.filter(c => c.clientId).map(c => c.clientId));
+    const rest = withoutConflicts({ edits, creates: [] }, conflicts.filter(c => !c.clientId));
+    return rest && { edits: rest.edits, creates: creates.filter((c, i) => !refused.has(c?.clientId || `new-${i}`)) };
+  }
   const rows = new Set(conflicts.filter(c => c.id && !c.field).map(c => c.id));
   const fields = new Set(conflicts.filter(c => c.id && c.field).map(c => `${c.id}\u0000${c.field}`));
   const keptEdits = [];
@@ -310,9 +373,11 @@ export function withoutConflicts({ edits, creates }, conflicts) {
 
 /** Collects, validates and resolves the rows a batch touches. */
 class Plan {
-  constructor(store, source) {
+  constructor(store, source, { claimOwners = null, staging = false } = {}) {
     this.store = store;
     this.source = source;
+    this.claimOwners = new Set(claimOwners ?? []);
+    this.staging = staging;
     this.conflicts = [];
     /** One entry per affected row: { sheet, row, record, clean, expected, clientId?, candidates? } */
     this.targets = [];
@@ -388,7 +453,7 @@ class Plan {
           "SELECT 1 FROM actions a WHERE a.status IN ('pending','uncertain') AND EXISTS(SELECT 1 FROM changes c WHERE c.action_id=a.id AND c.sheet=?) LIMIT 1",
         )
         .get(create.module);
-      if (unsettled)
+      if (unsettled && !this.staging)
         return this.conflict(
           target,
           'WRITE_UNCERTAIN',
@@ -398,6 +463,8 @@ class Plan {
         );
       target.clean = this.validate(target, create.module, create.values);
       if (!target.clean) return;
+      // An ID, CAM, tube or clutch number someone holds in a change not in the sheet yet (server/claims.mjs).
+      if (this.claimed(target, Object.entries(target.clean))) return;
       if (!Object.values(target.clean).some(v => !blank(v)))
         return this.conflict(target, 'INVALID_VALUES', 'Una fila nueva necesita al menos un valor');
       // The same ID on a second butterfly (W2B.2): a row inserted below its group, not a pre-made row.
@@ -564,7 +631,44 @@ class Plan {
       written.add(key);
     }
     this.checkUniqueIds();
+    this.checkClaims();
     this.checkLists();
+  }
+
+  /**
+   * Refuses an identifier held by a change not in the sheet yet (an Emergidos or
+   * Clutches entry kept in the app, a save waiting for Google: server/claims.mjs)
+   * unless this save is that change. Undo puts back what was there.
+   */
+  checkClaims() {
+    if (this.source === 'undo') return;
+    for (const t of this.targets) {
+      // New rows were looked at when added (addCreates); typing into a pre-made row takes its ID too.
+      if (!t.record) continue;
+      const cells = (t.changes || []).map(c => [c.field, c.after]);
+      if (!t.record.observed && t.sheet === 'Insectary_data' && t.changes?.length) cells.push(['Insectary_ID', t.record.values?.Insectary_ID]);
+      this.claimed(t, cells);
+    }
+  }
+  /** Conflicts for `cells` ([field, value]) of target `t` held by another change not in the sheet yet; whether any was. */
+  claimed(t, cells) {
+    if (this.source === 'undo') return false;
+    let found = false;
+    for (const [field, value] of cells) {
+      const kind = claimKind(t.sheet, field);
+      if (!kind || !isIdValue(value) || typeof value === 'object') continue;
+      this.claimIndex ??= claimIndex(this.store.db);
+      const holder = this.claimIndex.get(`${kind}\u0000${claimValue(value)}`);
+      if (!holder || this.claimOwners.has(holder.owner)) continue;
+      found = true;
+      this.conflict(
+        t,
+        'CLAIMED',
+        msg('{value} ya lo tiene {name} en cambios aún no guardados en Google Sheets', { value: claimValue(value), name: holder.name }),
+        { field, value, holder: { name: holder.name, owner: holder.owner } },
+      );
+    }
+    return found;
   }
 
   async resolveEdit(target, live) {
@@ -652,6 +756,8 @@ class Plan {
   }
 
   async findMovedRow(record, identity) {
+    // Checked against the app's copy (staging): the row is where the copy has it.
+    if (this.staging) return null;
     this.movedCache ??= new Map();
     if (!this.movedCache.has(record.sheet))
       this.movedCache.set(record.sheet, await this.store.sheets.readSheet(record.sheet));

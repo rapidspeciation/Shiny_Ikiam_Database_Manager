@@ -4,6 +4,7 @@
 import { REFERENCES } from './insectaryId.mjs';
 import { moduleMap } from './schema.mjs';
 import { msg, msgError, tpl } from './messages.mjs';
+import { claimedValues } from './claims.mjs';
 
 const blank = value => value === null || value === undefined || /^\s*(|NA|N\/A)\s*$/i.test(String(value));
 const fail = (code, message, status = 400) => msgError(message, { code, status });
@@ -121,7 +122,8 @@ export function idSuggestions(store, { kind, start, count, check } = {}) {
   if (!sheets) return computeIds(store, { kind, start, count });
   // Reading every row of these sheets takes up to a second (tube IDs): the answer is kept
   // until one of the sheets it reads changes.
-  const stamp = sheets.map(sheet => tableRevision(store, sheet)).join('|');
+  // Identifiers held by entries not in the sheet yet (server/claims.mjs) count as used too.
+  const stamp = [...sheets.map(sheet => tableRevision(store, sheet)), claimStamp(store)].join('|');
   let cache = idCache.get(store);
   if (cache?.stamp !== stamp) idCache.set(store, (cache = { stamp, answers: new Map() }));
   const key = `${kind}\u0000${start ?? ''}\u0000${count ?? ''}\u0000${check ?? ''}`;
@@ -134,6 +136,17 @@ export function idSuggestions(store, { kind, start, count, check } = {}) {
 }
 
 const idCache = new WeakMap();
+/** Changes whenever a claim is taken or released. */
+function claimStamp(store) {
+  try {
+    const r = store.db.prepare('SELECT count(*) n, max(created_at) at, group_concat(value) v FROM claims').get();
+    return `${r.n}-${r.at}-${r.v?.length ?? 0}`;
+  } catch {
+    return '';
+  }
+}
+/** Where a claimed identifier is: an entry of `name` not in the sheet yet. */
+const claimedHolder = holder => ({ sheet: null, row: null, label: null, claimedBy: holder.name });
 /** The sheets each kind of suggestion reads. */
 const ID_SHEETS = {
   insectary: () => ['Insectary_data', ...Object.keys(REFERENCES).filter(sheet => moduleMap.has(sheet))],
@@ -172,6 +185,9 @@ function insectaryIds(store, start, count) {
   for (const [sheet, fields] of Object.entries(REFERENCES))
     for (const r of moduleMap.has(sheet) ? rowsOf(store, sheet) : [])
       for (const field of fields) if (!blank(r.values[field])) used.add(norm(r.values[field]));
+  // Held by an Emergidos entry (or a save waiting for Google) of anyone: never offered again.
+  const claimed = claimedValues(store.db, 'insectary');
+  for (const id of claimed.keys()) used.add(id);
   const copies = new Map();
   for (const r of rows) copies.set(norm(r.values.Insectary_ID), (copies.get(norm(r.values.Insectary_ID)) || 0) + 1);
   const lastObserved = rows.reduce((max, r) => (r.observed ? Math.max(max, r.row) : max), 0);
@@ -263,6 +279,7 @@ function usedCamIds(store) {
         const value = String(r.values[key] ?? '').trim();
         if (!blank(value) && !used.has(value)) used.set(value, holderOf(sheet, r));
       }
+  for (const [value, holder] of claimedValues(store.db, 'cam')) if (!used.has(value)) used.set(value, claimedHolder(holder));
   return used;
 }
 
@@ -284,6 +301,7 @@ function usedTubeIds(store) {
         if (BARCODE.test(value) && !used.has(value)) used.set(value, holderOf(mod.id, r));
       }
   }
+  for (const [value, holder] of claimedValues(store.db, 'tube')) if (!used.has(value)) used.set(value, claimedHolder(holder));
   return used;
 }
 
