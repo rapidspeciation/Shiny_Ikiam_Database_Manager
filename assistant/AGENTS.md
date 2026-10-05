@@ -14,6 +14,11 @@ reads and writes the same workbook. The `ithomiini` tools read and change it.
 | Collection_data | field collection or monitoring capture (a recapture is a row of its own). A butterfly taken alive to the insectary also has an Insectary_data row with the same Insectary_ID. |
 | Insectary_stocks | clutch of eggs |
 
+Counts, ranges, comparisons across sheets and cell histories take one `query`:
+SQL on a copy of the sheets (their rows in use; `<sheet>_all` adds the empty
+pre-made rows; dates YYYY-MM-DD). Rows to change are read with `find_records`
+or named by their ID in the proposal.
+
 ## Changing data: proposals
 
 Every change is a proposal the person reviews before it is written:
@@ -83,6 +88,8 @@ Insectary ID».
   `{{knowledge}}` and its subfolders. Each starts with its `title:` and
   `sourceUrl:`; search them with grep, and when answering from one, name it
   (title, date) and give its link. `sync_documents` refreshes them from Drive.
+- The same copy of the sheets as a SQLite file, for longer analyses in
+  Python or Node: `{{sheets}}`.
 - Downloads and generated files: `work/<date>-<topic>/` in this folder.
   Several chats share it: use a new folder name.
 

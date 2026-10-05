@@ -9,6 +9,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { backup } from 'node:sqlite';
 import { brotliCompressSync, constants as zlib, gzipSync } from 'node:zlib';
 import { Store } from './store.mjs';
+import { copyBeside } from './replica.mjs';
 import { applyBatch } from './batch.mjs';
 import { cellHistory, historyGroup, historyGroups, previewEdits, sheetAsOf, undoEdits } from './history.mjs';
 import {
@@ -201,6 +202,8 @@ export function configFromEnv(env = process.env) {
     port: Number(env.APP_PORT || 8794),
     basePath: normalizeBase(env.APP_BASE_PATH || '/ithomiini'),
     databasePath: env.DATABASE_PATH || join(here, '../.local/app.sqlite'),
+    // The sheets' copy the assistant's `query` reads (server/replica.mjs); beside the database by default.
+    sheetsCopyPath: env.SHEETS_COPY_PATH || undefined,
     googleCredentialsFile: env.GOOGLE_CREDENTIALS_FILE,
     setupToken: env.SETUP_TOKEN,
     localMode: env.LOCAL_MODE === '1',
@@ -357,6 +360,7 @@ function csvEscape(value) {
 }
 
 export async function createApp(config = {}, options = {}) {
+  const given = config;
   config = { ...configFromEnv({}), ...config };
   config.basePath = normalizeBase(config.basePath || '/ithomiini');
   config.spreadsheetId = checkWorkbookId(config.spreadsheetId || REAL_ID);
@@ -366,6 +370,8 @@ export async function createApp(config = {}, options = {}) {
     seed = seed.sheets || seed;
   }
   const store = options.store || new Store(config, { sheets: options.sheets, seed });
+  // The sheets' copy for the assistant's `query`: beside the database file the store opened (none in memory).
+  if (given.sheetsCopyPath === undefined) config.sheetsCopyPath = copyBeside(store.db.location?.() ?? null);
   const assistantFile = new URL('./assistant.mjs', import.meta.url);
   let assistant = null;
   if (existsSync(fileURLToPath(assistantFile))) {
@@ -1150,6 +1156,7 @@ export async function createApp(config = {}, options = {}) {
         await new Promise(resolve => t3Proxy.close(resolve));
       }
       t3Bridge?.close();
+      assistant?.close?.();
       await new Promise(resolve => server.close(resolve));
       store.close();
     },

@@ -40,7 +40,8 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
         .replaceAll('{{person}}', 'Ana Pérez')
         .replaceAll('{{username}}', 'ana')
         .replaceAll('{{docs}}', docs.replace(/\/$/, ''))
-        .replaceAll('{{knowledge}}', join(shared, 'knowledge')),
+        .replaceAll('{{knowledge}}', join(shared, 'knowledge'))
+        .replaceAll('{{sheets}}', join(shared, 'sheets.sqlite')),
     );
     assert.doesNotMatch(brief, /\{\{|Local test lab/);
     for (const skill of ['data-rules', 'digitalizar-cuaderno', 'monitoring', 'data-review', 'historial', 'google-account', 'app-guide', 'app-dev']) {
@@ -169,6 +170,8 @@ test('Another install (the local lab) sets the database, MCP address, workspaces
     const brief = readFileSync(join(workspace, 'AGENTS.md'), 'utf8');
     assert.match(brief, /## Local test lab\n\nThis is the \*\*local test lab\*\*: the app at http:\/\/127\.0\.0\.1:8795\//);
     assert.match(brief, /git checkout `\/work\/ithomiini`/);
+    // The sheets' copy that `query` reads, beside the lab's database.
+    assert.ok(brief.includes(`\`${join(lab, 'sheets.sqlite')}\``));
     const appDev = readFileSync(join(workspace, '.claude', 'skills', 'app-dev', 'SKILL.md'), 'utf8');
     assert.match(appDev, /^---\nname: app-dev\n[\s\S]*?\n---\n\n> \*\*Lab copy\.\*\*[^\n]*\n>\n> This is the \*\*local test lab\*\*/);
     assert.match(appDev, /> the checks, restart the lab app/);

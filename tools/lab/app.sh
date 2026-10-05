@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The lab's copy of the app, from this checkout: LOCAL_MODE=1 (an in-memory copy of
 # the workbook seeded from the snapshot; nothing ever reaches Google Sheets), its own
-# database in the lab folder, port 8795, and the lab T3 (tools/lab/t3.sh) in the
+# database in the lab folder (and beside it sheets.sqlite, the sheets' copy the assistant's
+# `query` reads: server/replica.mjs), port 8795, and the lab T3 (tools/lab/t3.sh) in the
 # Asistente tab, through the app's T3 proxy on port 3776 (its pages carry the
 # bridge that tells Cambios propuestos which chat is open; server/t3bridge.mjs). Every start re-seeds the sheets from the snapshot
 # ($LAB/snapshot.json; with LAB_SEED=bench from $LAB/seed.json, the snapshot with the

@@ -23,6 +23,8 @@ import { decide, editedInSheet, forget, lastEdit, resolveSheetEdits, sheetChange
 import { tellChat } from './t3tell.mjs';
 import { KNOWLEDGE_TOOLS, createKnowledge, runKnowledgeTool } from './knowledge.mjs';
 import { HISTORY_TOOLS, HISTORY_TOOL_NAMES, runHistoryTool } from './history.mjs';
+import { QUERY_HINT, QUERY_TOOL, createQueryRunner, formatRows, sqlProblem } from './query-tool.mjs';
+import { createSheetsCopy } from './replica.mjs';
 import { createT3Chats } from './t3chats.mjs';
 import { photoCacheDir } from './photos.mjs';
 import { PHOTO_SIZES, attachmentFile, attachmentsDir, createPhotoCopies, photosOf } from './proposal-photos.mjs';
@@ -108,6 +110,7 @@ const TOOLS = [
     },
   },
   ...RECORD_TOOLS,
+  QUERY_TOOL,
   {
     type: 'function',
     function: {
@@ -505,6 +508,7 @@ const ALWAYS_LOADED = new Set([
   'search_records',
   'find_records',
   'count_records',
+  'query',
   'get_record',
   'describe_sheet',
   'propose_changes',
@@ -659,6 +663,9 @@ export function createAssistant({ store, config = {} }) {
   const ai = providerConfig(config);
   const reports = createReports({ store, config });
   const knowledge = createKnowledge(config);
+  // The sheets' copy that `query` reads (server/replica.mjs), where the app keeps one.
+  const sheetsCopy = config.sheetsCopyPath ? createSheetsCopy({ store, path: config.sheetsCopyPath, ...config.sheetsCopy }) : null;
+  const queries = sheetsCopy ? createQueryRunner({ path: sheetsCopy.path, ...config.sheetsQuery }) : null;
   // The chats of T3 Code (its state and trace log, read-only): which one made a proposal, which one is open.
   const t3 = config.t3Chats ?? (config.t3?.home ? createT3Chats({ home: config.t3.home }) : null);
   /** A note in the person's conversation (T3 Code, Revisión de datos) of the proposals made there. */
@@ -2873,7 +2880,26 @@ export function createAssistant({ store, config = {} }) {
       ...(u.partial?.length ? { partial: u.partial } : {}),
     }));
 
+  /** query: one read-only statement on the sheets' copy, its rows as text (server/query-tool.mjs). */
+  async function queryCopy(args) {
+    if (!queries) return { error: 'There is no copy of the sheets on this server: use find_records and count_records.' };
+    const sql = String(args.sql ?? '');
+    const problem = sqlProblem(sql);
+    if (problem) return { error: problem, hint: QUERY_HINT };
+    let out = await queries.run(sql, args.limit);
+    if (out.missing) {
+      // The first copy is still being made (a few seconds).
+      await sheetsCopy.rebuild();
+      out = await queries.run(sql, args.limit);
+    }
+    if (out.timeout)
+      return { error: out.error, hint: 'Narrow it: filter on an ID column (they are indexed) or a sheet, join fewer tables, or count instead of listing.' };
+    if (out.error) return { error: `SQLite: ${out.error}`, ...(out.near ? { near: out.near } : {}), hint: QUERY_HINT };
+    return formatRows(out, { limit: args.limit, pending: sheetsCopy.status().pending });
+  }
+
   async function executeTool(name, args, context) {
+    if (name === 'query') return queryCopy(args);
     if (name === 'search_records') {
       const query = clip(args.query, 100).trim();
       if (!query) return { error: 'Search query required' };
@@ -3169,7 +3195,8 @@ export function createAssistant({ store, config = {} }) {
           ? 'narrow it with recordId, field(s), text or dates, or a smaller maxChanges or limit'
           : 'ask for less (filters, fewer columns, a smaller limit) or page with offset',
       });
-      return result({ content: [{ type: 'text', text: json(out) }], isError: Boolean(out?.error) });
+      // `query` answers in text lines (its rows), the other tools in JSON.
+      return result({ content: [{ type: 'text', text: typeof out === 'string' ? out : json(out) }], isError: Boolean(out?.error) });
     }
     return { status: 200, body: { jsonrpc: '2.0', id, error: { code: -32601, message: 'Method not found' } } };
   }
@@ -3716,5 +3743,15 @@ export function createAssistant({ store, config = {} }) {
     }
     return bad(404, 'not_found', 'Assistant route not found.');
   }
-  return { handle, mcp, tools: mcpTools, t3 };
+  return {
+    handle,
+    mcp,
+    tools: mcpTools,
+    t3,
+    sheetsCopy,
+    close() {
+      sheetsCopy?.close();
+      queries?.close();
+    },
+  };
 }

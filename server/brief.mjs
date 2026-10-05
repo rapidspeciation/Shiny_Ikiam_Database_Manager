@@ -1,7 +1,8 @@
 // The brief a T3 Code workspace gets (AGENTS.md, and CLAUDE.md pointing to it):
 // assistant/AGENTS.md with its placeholders filled in: the person
-// ({{person}}, {{username}}), the project documentation's folder ({{docs}}) and the
-// folder of the project's Drive documents ({{knowledge}}).
+// ({{person}}, {{username}}), the project documentation's folder ({{docs}}), the
+// folder of the project's Drive documents ({{knowledge}}) and the sheets' copy
+// that `query` reads ({{sheets}}, server/replica.mjs).
 // In the local test lab a short note about the lab follows. Written by
 // scripts/t3-provision.mjs; shown in the app's "AI instructions" page
 // (server/instructions.mjs) with a generic person.
@@ -16,6 +17,7 @@ const release = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const SERVER_PATHS = {
   docs: '/home/ubuntu/ithomiini/current/docs',
   knowledge: '/home/ubuntu/ithomiini/shared/knowledge',
+  sheets: '/home/ubuntu/ithomiini/shared/sheets.sqlite',
   source: '/home/ubuntu/ithomiini/src',
   releases: '/home/ubuntu/ithomiini/releases',
 };
@@ -36,15 +38,19 @@ unless the person explicitly asks.`;
 
 /**
  * The workspace's brief. `user`: { display_name, username }; `docs`: the
- * project documentation's folder; `knowledge`: the Drive documents' folder; `source` and `labUrl`: the local lab's
- * checkout and address (the lab note); `root`: where assistant/AGENTS.md is.
+ * project documentation's folder; `knowledge`: the Drive documents' folder; `sheets`: the sheets' copy;
+ * `source` and `labUrl`: the local lab's checkout and address (the lab note); `root`: where assistant/AGENTS.md is.
  */
-export function composeBrief(user, { docs, knowledge = SERVER_PATHS.knowledge, source, labUrl = '', root = release } = SERVER_PATHS) {
+export function composeBrief(
+  user,
+  { docs, knowledge = SERVER_PATHS.knowledge, sheets = SERVER_PATHS.sheets, source, labUrl = '', root = release } = SERVER_PATHS,
+) {
   const brief = readFileSync(join(root, 'assistant', 'AGENTS.md'), 'utf8')
     .replaceAll('{{person}}', user.display_name)
     .replaceAll('{{username}}', user.username)
     .replaceAll('{{docs}}', docs)
     .replaceAll('{{knowledge}}', knowledge)
+    .replaceAll('{{sheets}}', sheets)
     .trimEnd();
   return labUrl ? `${brief}\n\n## Local test lab\n\n${labAppDev(labUrl, source)}\n` : `${brief}\n`;
 }

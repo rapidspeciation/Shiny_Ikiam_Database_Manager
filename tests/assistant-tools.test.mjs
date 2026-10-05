@@ -404,6 +404,7 @@ test('Claude Code loads the reading and proposal tools with the chat; describe_s
       'find_records',
       'get_record',
       'propose_changes',
+      'query',
       'search_records',
       'show_rows',
       'update_proposal',

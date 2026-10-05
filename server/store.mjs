@@ -506,11 +506,26 @@ export class Store {
     if (this.syncPromise) return this.syncPromise;
     const run = this.performSync({ sheets, force, history });
     this.syncPromise = run;
+    let status;
     try {
-      return await run;
+      status = await run;
     } finally {
       this.syncPromise = null;
     }
+    for (const fn of this.syncWatchers ?? []) {
+      try {
+        fn(status);
+      } catch (e) {
+        console.error('Sync watcher:', e.message);
+      }
+    }
+    return status;
+  }
+  /** Calls `fn` with the status of each sync that ends (store.sync). Returns the call that stops it. */
+  watchSyncs(fn) {
+    this.syncWatchers ??= new Set();
+    this.syncWatchers.add(fn);
+    return () => this.syncWatchers.delete(fn);
   }
   async performSync({ sheets, force, history = true }) {
     const full = sheets.length === modules.length;

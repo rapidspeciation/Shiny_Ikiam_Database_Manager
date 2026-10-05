@@ -28,6 +28,7 @@ export const TOOL_RANGES = [
   ['server/notebook-tool.mjs', '/^export const MATCH_NOTEBOOK_TOOL/', '/^};/'],
   ['server/history.mjs', '/^const selectionProps/', '/^\\];/'],
   ['server/knowledge.mjs', '/^export const KNOWLEDGE_TOOLS/', '/^\\];/'],
+  ['server/query-tool.mjs', '/^export const QUERY_TOOL/', '/^};/'],
 ];
 /** Characters of one commit's diff kept (a whole-file rewrite stays readable, not endless). */
 const DIFF_LIMIT = 150_000;

@@ -10,7 +10,7 @@
 //   node scripts/t3-provision.mjs --refresh-all  after a release (scripts/deploy.sh):
 //     every existing workspace gets the new brief, skills and subagents and keeps its token.
 // The server's paths are the defaults; another install (the local test lab, tools/lab) sets them:
-//   ITHOMIINI_SHARED (shared folder), DATABASE_PATH, ITHOMIINI_MCP_URL (or ITHOMIINI_SERVICE_ENV),
+//   ITHOMIINI_SHARED (shared folder), DATABASE_PATH (and SHEETS_COPY_PATH, else beside it), ITHOMIINI_MCP_URL (or ITHOMIINI_SERVICE_ENV),
 //   ITHOMIINI_T3_WORKSPACES (default <shared>/t3-workspaces), ITHOMIINI_SRC (the source checkout
 //   the brief names), ITHOMIINI_CONFIG_DIR (the service's secrets), ITHOMIINI_DOCS, T3_BIN, and
 //   ITHOMIINI_DENY_READ (more folders Claude threads may not read, separated by ":"), and
@@ -57,6 +57,8 @@ const liveDocs = join(root, 'current', 'docs');
 const docs = process.env.ITHOMIINI_DOCS || (existsSync(liveDocs) ? liveDocs : join(release, 'docs'));
 // The project's Drive documents as Markdown (the app's KNOWLEDGE_DIR, kept by scripts/drive-sync.mjs).
 const knowledge = process.env.ITHOMIINI_KNOWLEDGE || join(shared, 'knowledge');
+// The sheets' copy the assistant's `query` reads, beside the database (server/replica.mjs).
+const sheets = process.env.SHEETS_COPY_PATH || join(dirname(database), 'sheets.sqlite');
 
 const arg = process.argv[2];
 if (!arg) throw new Error('Usage: t3-provision.mjs <username> | --refresh-all');
@@ -64,7 +66,7 @@ const db = new DatabaseSync(database, { timeout: 30000 });
 const userOf = username => db.prepare('SELECT * FROM users WHERE username = ? AND active = 1').get(username);
 
 /** The brief: assistant/AGENTS.md with the person and the docs folder filled in (server/brief.mjs). */
-const brief = user => composeBrief(user, { docs, knowledge, source, labUrl, root: release });
+const brief = user => composeBrief(user, { docs, knowledge, sheets, source, labUrl, root: release });
 
 /** A new personal token for T3 (the previous one stops working). */
 function mintToken(user) {
