@@ -40,6 +40,8 @@ const INSECTARY = {
     { row: 3, values: { Insectary_ID: 'W2B', SPECIES: 'Mechanitis lysimnia', Sex: 'male' } },
     { row: 4, values: { Insectary_ID: 'X1X', SPECIES: 'Oleria onega' } },
     { row: 5, values: { Insectary_ID: 'X1X', SPECIES: 'Oleria onega' } },
+    // The IDs come round again: an empty pre-made row with the ID of a filled one.
+    { row: 6, values: { Insectary_ID: '4OO' } },
   ],
   // The same wild butterfly in Collection_data, with its Insectary_ID.
   Collection_data: [{ row: 2, values: { CAM_ID: 'CAM000001', Insectary_ID: 'W2B', SPECIES: 'Mechanitis lysimnia' } }],
@@ -108,7 +110,7 @@ test('rows by their ID: a bare ID, {sheet, id}, a key; the first ID column wins 
     // The production mistake: an Insectary_ID given as recordId now names its row.
     const proposed = await call('propose_changes', { reason: 'x', changes: [{ recordId: '4OO', values: { sex: 'male' } }] });
     assert.ok(proposed.proposalId, JSON.stringify(proposed));
-    assert.deepEqual(proposed.table.map(r => [r.label, r.row]), [['4OO', 2]]);
+    assert.deepEqual(proposed.table.map(r => [r.label, r.row]), [['4OO', 2]], 'the filled row, not the empty pre-made one');
     // {sheet, id} and a values key named loosely; an ambiguous ID is refused with what to give.
     const more = await call('update_proposal', { proposalId: proposed.proposalId, changes: [{ sheet: 'Insectary_data', id: 'W2B', values: { SEX: 'female' } }] });
     assert.deepEqual(more.changed.map(r => [r.index, r.label, r.values]), [[1, 'W2B', { Sex: 'female' }]]);

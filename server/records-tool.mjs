@@ -145,13 +145,13 @@ function rowsWithIds(source, values, sheet = null) {
     for (const r of cachedRows(source, mod))
       mod.identityFields.forEach((field, i) => {
         const key = idKey(r.values[field]);
-        if (wanted.has(key)) add(key, { id: r.id, sheet: mod.id, row: r.row, label: r.label, primary: i === 0 });
+        if (wanted.has(key)) add(key, { id: r.id, sheet: mod.id, row: r.row, label: r.label, primary: i === 0, observed: r.observed });
       });
     return out;
   }
   const rows = dbOf(source)
     .prepare(
-      `SELECT r.id, r.sheet, r.row_num, r.label, j.key field, lower(trim(CAST(j.value AS TEXT))) v
+      `SELECT r.id, r.sheet, r.row_num, r.label, r.observed, j.key field, lower(trim(CAST(j.value AS TEXT))) v
        FROM records r, json_each(r.identity_json) j
        WHERE r.missing = 0 AND r.row_num > 0 AND r.row_num < 2000000000
          AND lower(trim(CAST(j.value AS TEXT))) IN (SELECT value FROM json_each(?))
@@ -161,12 +161,12 @@ function rowsWithIds(source, values, sheet = null) {
   for (const r of rows) {
     const mod = moduleMap.get(r.sheet);
     if (!mod || r.row_num <= mod.headerRow) continue;
-    add(r.v, { id: r.id, sheet: r.sheet, row: r.row_num, label: r.label, primary: mod.identityFields[0] === r.field });
+    add(r.v, { id: r.id, sheet: r.sheet, row: r.row_num, label: r.label, primary: mod.identityFields[0] === r.field, observed: !!r.observed });
   }
   return out;
 }
 
-const rowName = h => `${h.sheet} row ${h.row} (${h.label}, recordId ${h.id})`;
+const rowName = h => `${h.sheet} row ${h.row} (${h.observed ? h.label : `${h.label}, an empty pre-made row`}, recordId ${h.id})`;
 
 /**
  * The rows a tool names: each by its app recordId, or as the sheet shows it:
@@ -174,7 +174,8 @@ const rowName = h => `${h.sheet} row ${h.row} (${h.label}, recordId ${h.id})`;
  * columns ({ sheet, key: { column: value } }). `sheet`: the sheet the rows are
  * in when the tool knows it (bulk, show_rows). A bare ID found in several
  * sheets is the row whose first ID column holds it (W2B: Insectary_data, not
- * the Collection_data row of the same butterfly). Returns { ids } (in the order
+ * the Collection_data row of the same butterfly); of a filled row and an empty
+ * pre-made row with one ID, the filled one. Returns { ids } (in the order
  * given; null where a ref fails) and problems [{ index, ref, error }], each
  * error saying what to give instead.
  */
@@ -196,7 +197,8 @@ export function resolveRows(source, refs, { sheet = null } = {}) {
       const columns = columnKeys(inSheet, Object.keys(ref.key));
       if (columns.error) return fail(index, ref, columns.error);
       const wanted = Object.values(ref.key).map(idKey);
-      const hits = cachedRows(source, inSheet).filter(r => columns.keys.every((k, i) => idKey(r.values[k]) === wanted[i]));
+      let hits = cachedRows(source, inSheet).filter(r => columns.keys.every((k, i) => idKey(r.values[k]) === wanted[i]));
+      if (hits.length > 1 && hits.filter(r => r.observed).length === 1) hits = hits.filter(r => r.observed);
       const shown = clip(JSON.stringify(ref.key), 120);
       if (hits.length === 1) ids[index] = hits[0].id;
       else if (!hits.length) fail(index, ref, `No row of ${inSheet} with ${shown}; look it up with find_records`, 'missing');
@@ -225,7 +227,9 @@ export function resolveRows(source, refs, { sheet = null } = {}) {
     for (const { index, ref, value } of items) {
       const hits = found.get(idKey(value)) ?? [];
       const primary = hits.filter(h => h.primary);
-      const pick = primary.length === 1 ? primary : hits;
+      let pick = primary.length ? primary : hits;
+      // The IDs come round again: a filled row over an empty pre-made row of the same ID.
+      if (pick.length > 1 && pick.filter(h => h.observed).length === 1) pick = pick.filter(h => h.observed);
       if (pick.length === 1) ids[index] = pick[0].id;
       else if (!pick.length)
         fail(
