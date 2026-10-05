@@ -40,6 +40,10 @@ describe('proposals by T3 chat', () => {
     // The stamp goes with a revision only (a first request has neither).
     expect(listQuery({ chosen: 'auto', follow: null, revision: 'x.3', stamp: 's1' })).toContain('stamp=s1')
     expect(listQuery({ chosen: 'auto', follow: null, revision: '', stamp: 's1' })).not.toContain('stamp')
+    // The proposals the page holds, by their digests: those unchanged come back without their rows.
+    const have = listQuery({ chosen: 'auto', follow: null, revision: 'x.3', have: ['d1', 'd2'] })
+    expect(new URLSearchParams(have.split('?')[1]).get('have')).toBe('d1,d2')
+    expect(listQuery({ chosen: 'auto', follow: null, revision: 'x.3', have: [] })).not.toContain('have')
   })
 
   it('the selector: the chat T3 shows, each chat with its count, those outside T3, all', () => {

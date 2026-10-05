@@ -46,6 +46,8 @@ export function listQuery(o: {
   /** The chats and titles the page holds (the server's stamp): with the revision, an unchanged list is not sent again. */
   stamp?: string
   wait?: boolean
+  /** The digests of the proposals the page holds: those still the same come back as { id, digest, same }. */
+  have?: string[]
 }) {
   const q = new URLSearchParams({ all: '1', chat: o.chosen })
   if (o.only) q.set('only', o.only)
@@ -54,6 +56,7 @@ export function listQuery(o: {
   if (o.wait !== false) q.set('wait', '1')
   q.set('revision', o.revision)
   if (o.revision && o.stamp) q.set('stamp', o.stamp)
+  if (o.have?.length) q.set('have', o.have.join(','))
   return `chat/proposals?${q}`
 }
 

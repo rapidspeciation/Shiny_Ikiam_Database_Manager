@@ -139,8 +139,9 @@ export default {
   Patas: 'Legs',
   'Medio sin indicar': 'Medium not given',
 
-  // Errors with values (server/batch.mjs, schema.mjs, verify.mjs, premade.mjs, insectaryId.mjs, grid.mjs)
+  // Errors with values (server/batch.mjs, schema.mjs, verify.mjs, premade.mjs, insectaryId.mjs, grid.mjs, assistant.mjs)
   'Guarda como máximo {n} filas a la vez': 'Save at most {n} rows at a time',
+  'Una propuesta tiene como máximo {n} filas': 'A proposal has at most {n} rows',
   'Un guardado anterior en {sheet} aún se está confirmando; vuelve a intentarlo en un minuto':
     'An earlier save in {sheet} is still being confirmed; try again in a minute',
   'Insectary_ID {id} ya está registrado': 'Insectary_ID {id} is already recorded',

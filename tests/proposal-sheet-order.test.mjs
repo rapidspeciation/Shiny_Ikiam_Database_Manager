@@ -4,49 +4,62 @@ import { createHash } from 'node:crypto';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { createAssistant } from '../server/assistant.mjs';
+import { FEW_BETWEEN, showBetween } from '../server/proposal-view.mjs';
 
 // The review table reads like the sheet: rows by row number, and the sheet's rows between them that the
-// proposal leaves alone shown greyed for context (never written), so nothing is hidden in between.
+// proposal leaves alone shown greyed for context (never written), so nothing is hidden in between. A
+// notebook page's lines too, whatever order its photos came in; lines the sheet has the other way round
+// within a photo are told.
 
-test('a pending proposal shows its rows in sheet order, with the rows in between for context', async () => {
-  const sheets = new LocalSheets({
-    Insectary_data: [2, 3, 4, 5, 6].map(row => ({ row, values: { Insectary_ID: `K${row}B`, Sex: 'NA' } })),
-  });
+async function setup(rows) {
+  const sheets = new LocalSheets({ Insectary_data: rows });
   const store = new Store({ localMode: true }, { sheets });
-  try {
-    await store.sync({ sheets: ['Insectary_data'] });
-    const assistant = createAssistant({ store, config: {} });
-    store.db
-      .prepare(
-        "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u1','franz','Franz','editor','s','h',1,'2026-01-01')",
-      )
-      .run();
-    store.db
-      .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
-      .run(createHash('sha256').update('franz-token').digest('hex'), 'u1');
-    const at = row => store.getRecordBySheetRow('Insectary_data', row).id;
+  await store.sync({ sheets: ['Insectary_data'] });
+  const assistant = createAssistant({ store, config: {} });
+  store.db
+    .prepare(
+      "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u1','franz','Franz','editor','s','h',1,'2026-01-01')",
+    )
+    .run();
+  store.db
+    .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
+    .run(createHash('sha256').update('franz-token').digest('hex'), 'u1');
+  const call = async (name, args) => {
     const out = await assistant.mcp(
       { authorization: 'Bearer franz-token' },
-      {
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'tools/call',
-        params: {
-          name: 'propose_changes',
-          arguments: {
-            reason: 'Emergidos',
-            changes: [
-              { recordId: at(6), values: { Sex: 'female' } },
-              { recordId: at(3), values: { Sex: 'male' } },
-            ],
-          },
-        },
-      },
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } },
     );
-    assert.ok(!out.body.result.isError, out.body.result.content[0].text);
-    const user = { id: 'u1', username: 'franz', displayName: 'Franz', role: 'editor' };
-    const list = await assistant.handle({ method: 'GET', path: '/api/chat/proposals', body: {}, user, query: { all: '1' } });
-    const shown = list.body.proposals[0].changes;
+    return JSON.parse(out.body.result.content[0].text);
+  };
+  const user = { id: 'u1', username: 'franz', displayName: 'Franz', role: 'editor' };
+  const list = async (query = {}) =>
+    (
+      await assistant.handle({
+        method: 'GET',
+        path: '/api/chat/proposals',
+        body: {},
+        user,
+        query: { all: '1', ...query },
+      })
+    ).body;
+  const at = row => store.getRecordBySheetRow('Insectary_data', row).id;
+  return { store, call, list, at };
+}
+
+test('a pending proposal shows its rows in sheet order, with the rows in between for context', async () => {
+  const { store, call, list, at } = await setup(
+    [2, 3, 4, 5, 6].map(row => ({ row, values: { Insectary_ID: `K${row}B`, Sex: 'NA' } })),
+  );
+  try {
+    const out = await call('propose_changes', {
+      reason: 'Emergidos',
+      changes: [
+        { recordId: at(6), values: { Sex: 'female' } },
+        { recordId: at(3), values: { Sex: 'male' } },
+      ],
+    });
+    assert.ok(!out.error, out.error);
+    const shown = (await list()).proposals[0].changes;
     assert.deepEqual(
       shown.map(c => [c.row, !!c.gap]),
       [
@@ -66,6 +79,165 @@ test('a pending proposal shows its rows in sheet order, with the rows in between
       shown.filter(c => !c.gap).map(c => c.index),
       [1, 0],
     );
+  } finally {
+    store.close?.();
+  }
+});
+
+test('the rows in between: shown when few by default, as the view says otherwise', async () => {
+  const { store, call, list, at } = await setup(
+    Array.from({ length: 80 }, (_, i) => ({
+      row: i + 2,
+      values: { Insectary_ID: `${String.fromCharCode(65 + Math.floor(i / 10))}${i % 10}B`, Sex: 'NA' },
+    })),
+  );
+  try {
+    assert.equal(showBetween(null, { paged: false, between: FEW_BETWEEN, rows: 2 }), true);
+    assert.equal(showBetween(null, { paged: false, between: FEW_BETWEEN + 1, rows: 2 }), false);
+    assert.equal(showBetween(null, { paged: false, between: 60, rows: 60 }), true, 'no more than the rows changed');
+    assert.equal(showBetween(null, { paged: true, between: 1, rows: 2 }), false, 'not on a notebook page');
+    assert.equal(showBetween({ between: true }, { paged: true, between: 400, rows: 2 }), true);
+
+    // Rows 2 and 70: 67 rows between two changed rows, too many by default.
+    const far = await call('propose_changes', {
+      reason: 'Lejos',
+      changes: [2, 70].map(row => ({ recordId: at(row), values: { Sex: 'male' } })),
+    });
+    const rowsOf = async id => (await list()).proposals.find(p => p.id === id).changes;
+    assert.deepEqual(
+      (await rowsOf(far.proposalId)).map(c => c.row),
+      [2, 70],
+    );
+    // Asked for: they come in.
+    let revised = await call('update_proposal', { proposalId: far.proposalId, view: { between: true } });
+    assert.ok(!revised.error, revised.error);
+    assert.equal(revised.unchanged, undefined, 'a new view is a new revision');
+    assert.equal((await rowsOf(far.proposalId)).length, 69);
+    // null drops it: the default again.
+    revised = await call('update_proposal', { proposalId: far.proposalId, view: { between: null } });
+    assert.equal((await rowsOf(far.proposalId)).length, 2);
+
+    // Few rows between: shown by default, left out when the view says so.
+    const near = await call('propose_changes', {
+      reason: 'Cerca',
+      changes: [10, 14].map(row => ({ recordId: at(row), values: { Sex: 'female' } })),
+      view: { between: false },
+    });
+    assert.deepEqual(
+      (await rowsOf(near.proposalId)).map(c => c.row),
+      [10, 14],
+    );
+    await call('update_proposal', { proposalId: near.proposalId, view: { between: null } });
+    assert.deepEqual(
+      (await rowsOf(near.proposalId)).map(c => c.row),
+      [10, 11, 12, 13, 14],
+    );
+  } finally {
+    store.close?.();
+  }
+});
+
+test('a new Insectary_data row takes the place of the row it will be written to', async () => {
+  // A1E–A5E in rows 2–6; A6E is the next ID of the series: row 7, past the last row.
+  const { store, call, list, at } = await setup(
+    [1, 2, 3, 4, 5].map(n => ({ row: n + 1, values: { Insectary_ID: `A${n}E`, SPECIES: 'Oleria onega', Sex: 'NA' } })),
+  );
+  try {
+    const out = await call('propose_changes', {
+      reason: 'Emergidos',
+      newRows: [{ sheet: 'Insectary_data', values: { Insectary_ID: 'A6E', Sex: 'female' } }],
+      changes: [
+        { recordId: at(5), values: { Sex: 'male' } },
+        { recordId: at(2), values: { Sex: 'male' } },
+      ],
+      view: { between: false },
+    });
+    assert.ok(!out.error, out.error);
+    const shown = (await list()).proposals[0].changes;
+    assert.deepEqual(
+      shown.map(c => [c.label, c.index]),
+      [
+        ['A1E', 2],
+        ['A4E', 1],
+        ['A6E', 0],
+      ],
+    );
+  } finally {
+    store.close?.();
+  }
+});
+
+test("a notebook page in the sheet's order, its photos in any order; lines a photo has the other way round are told", async () => {
+  const { store, call, list } = await setup(
+    [1, 2, 3, 4, 5, 6, 7].map(n => ({ row: n + 1, values: { Insectary_ID: `A${n}E`, SPECIES: 'Oleria onega' } })),
+  );
+  try {
+    const out = await call('match_notebook', {
+      kind: 'emergence',
+      year: 2026,
+      lines: [
+        // Photo 0 (sent first): A3E, A5E, then A4E, which the sheet has before A5E.
+        { raw: 'A3E ♀', values: { Insectary_ID: 'A3E', Sex: 'female' } },
+        { raw: 'A5E ♂', values: { Insectary_ID: 'A5E', Sex: 'male' } },
+        { raw: 'A4E ♀', values: { Insectary_ID: 'A4E', Sex: 'female' } },
+        // Photo 1: A6E, then A1E (back in the sheet); between the photos the order does not count.
+        { raw: 'A6E ♂', values: { Insectary_ID: 'A6E', Sex: 'male' }, photo: 1 },
+        { raw: 'A1E ♂', values: { Insectary_ID: 'A1E', Sex: 'male' }, photo: 1 },
+      ],
+    });
+    assert.ok(out.proposalId, JSON.stringify(out));
+    const told = [
+      { photo: 0, line: 3, id: 'A4E', after: { line: 2, id: 'A5E' } },
+      { photo: 1, line: 5, id: 'A1E', after: { line: 4, id: 'A6E' } },
+    ];
+    // The assistant is told (match_notebook, get_proposal), to check the IDs or tell the person.
+    assert.deepEqual(out.orderDiffers, told);
+    assert.match(out.orderNote, /comes after `after` on the page but before it in the sheet/);
+    assert.deepEqual((await call('get_proposal', { proposalId: out.proposalId })).orderDiffers, told);
+
+    const [p] = (await list()).proposals;
+    assert.deepEqual(
+      p.changes.map(c => [c.row, c.label, c.page.photo, c.page.line]),
+      [
+        [2, 'A1E', 1, 5],
+        [4, 'A3E', 0, 1],
+        [5, 'A4E', 0, 3],
+        [6, 'A5E', 0, 2],
+        [7, 'A6E', 1, 4],
+      ],
+      'by row, each with its photo and line (no rows in between on a page)',
+    );
+    assert.deepEqual(p.outOfOrder, told);
+    // The rows told are marked in the table.
+    assert.deepEqual(
+      p.changes.filter(c => c.outOfOrder).map(c => [c.label, c.outOfOrder]),
+      [
+        ['A1E', { line: 4, id: 'A6E' }],
+        ['A4E', { line: 2, id: 'A5E' }],
+      ],
+    );
+
+    // The page with the rows between, as the view asks (A2E, row 3).
+    await call('match_notebook', {
+      kind: 'emergence',
+      year: 2026,
+      replaceProposalId: out.proposalId,
+      view: { between: true },
+      lines: [
+        { raw: 'A1E ♂', values: { Insectary_ID: 'A1E', Sex: 'male' } },
+        { raw: 'A3E ♀', values: { Insectary_ID: 'A3E', Sex: 'female' } },
+      ],
+    });
+    const [again] = (await list()).proposals;
+    assert.deepEqual(
+      again.changes.map(c => [c.row, !!c.gap]),
+      [
+        [2, false],
+        [3, true],
+        [4, false],
+      ],
+    );
+    assert.equal(again.outOfOrder, undefined, 'in step with the sheet');
   } finally {
     store.close?.();
   }

@@ -171,18 +171,29 @@ async function copyLink(id: string) {
   }
 }
 
+/** The page lost a proposal the server says it holds: the next request asks for the whole list. */
+let whole = false
+/** The digests of the proposals held as the server sent them (one changed here meanwhile is asked for again). */
+const held = () => (whole ? [] : proposals.value.flatMap(p => (p.digest ? [p.digest] : [])))
 function receive(next: Proposal[], first: boolean) {
-  // An unchanged proposal keeps its object, so its table is not redrawn (its sheet rows edited count as a change).
+  // An unchanged proposal keeps its object, so its table is not redrawn (its sheet rows edited count as a change);
+  // one the page holds as it is comes as { id, digest, same } (a long proposal is not sent again).
   const before = new Map(proposals.value.map(p => [p.id, p]))
-  const kept = next.map(p => {
+  whole = false
+  const kept = next.flatMap((p): Proposal[] => {
     const old = before.get(p.id)
+    if (p.same) {
+      if (old && old.digest === p.digest) return [old]
+      whole = true
+      return []
+    }
     return old &&
       old.revision === p.revision &&
       old.status === p.status &&
       old.applied?.length === p.applied?.length &&
       old.sheetStamp === p.sheetStamp
-      ? old
-      : p
+      ? [Object.assign(old, { digest: p.digest })]
+      : [p]
   })
   const fresh = first ? [] : next.filter(p => open(p) && !before.has(p.id)).map(p => p.id)
   proposals.value = kept
@@ -267,8 +278,9 @@ async function follow() {
           follow: tracked.value,
           seen: seen.value,
           only: props.only,
-          revision: asked === wanted ? revision.value : '',
+          revision: asked === wanted && !whole ? revision.value : '',
           stamp: stamp.value,
+          have: held(),
         }),
         { signal: ask.signal },
       )
@@ -358,6 +370,7 @@ async function apply(proposal: Proposal, indexes: number[], at: number | undefin
     )
     proposal.status = out.status
     proposal.applied = out.applied
+    proposal.digest = undefined
     await Promise.all(Object.keys(tables.tables).map(sheet => tables.load(sheet, true)))
     const applied = tn(out.applied.length, '{n} fila aplicada en Google Sheets', '{n} filas aplicadas en Google Sheets')
     // Cells (or new rows) edited in the sheet meanwhile, left as the sheet has them.
@@ -377,6 +390,7 @@ async function apply(proposal: Proposal, indexes: number[], at: number | undefin
     else if (code === 'sheet_changed_again')
       notify(t('Alguien volvió a editar en la hoja celdas que ya habías elegido: elige de nuevo (en violeta)'), 'error')
     else {
+      proposal.digest = undefined
       if (status) proposal.status = status
       else if (code !== 'proposal_changed') proposal.status = 'needs_review'
       notify(
@@ -395,6 +409,7 @@ async function discard(proposal: Proposal) {
   try {
     await api(`chat/proposals/${proposal.id}/discard`, { method: 'POST', body: {} })
     proposal.status = isTable(proposal) ? 'closed' : 'discarded'
+    proposal.digest = undefined
   } catch (e) {
     notify(errorText(e), 'error')
   }

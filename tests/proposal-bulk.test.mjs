@@ -7,7 +7,7 @@ import { createAssistant } from '../server/assistant.mjs';
 import { FIND_BUDGET, findRecords } from '../server/records-tool.mjs';
 import { noteText } from '../server/notebook.mjs';
 
-// The same values for many rows (propose_changes' bulk), the row limit of a proposal, and
+// The same values for many rows (propose_changes' bulk), the row limit of a proposal (500), and
 // row queries that stay small enough for an MCP client.
 
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(new Date());
@@ -52,10 +52,10 @@ async function setup(seed = { Insectary_data: LARVAE }) {
     const p = store.db.prepare('SELECT * FROM ai_proposals WHERE id = ?').get(id);
     return { ...p, changes: JSON.parse(p.changes_json) };
   };
-  return { store, call, row, saved };
+  return { store, assistant, call, row, saved };
 }
 
-test('bulk: the same values for the rows a filter picks, split into proposals of up to 100 rows', async () => {
+test('bulk: the same values for the rows a filter picks, in one proposal of up to 500 rows', async () => {
   const { store, call, row, saved } = await setup();
   try {
     const out = await call('propose_changes', {
@@ -70,31 +70,28 @@ test('bulk: the same values for the rows a filter picks, split into proposals of
       ],
     });
     assert.ok(!out.error, out.error);
-    // 115 rows: two even proposals, each with its link.
+    // 115 rows: one proposal with its link, the bulk preview instead of a long table.
     assert.equal(out.rows, 115);
-    assert.deepEqual(out.proposals.map(p => p.rows), [58, 57]);
-    assert.ok(out.proposals.every(p => p.link.includes(p.proposalId)));
-    assert.match(out.split, /115 rows: 2 proposals of up to 100 rows/);
-    assert.ok(!out.proposalId && !out.table, 'no single proposal, no long table');
+    assert.ok(out.link.includes(out.proposalId));
+    assert.ok(!out.proposals && !out.split && !out.table, 'not split, no long table');
     const [summary] = out.bulk;
     assert.equal(summary.matched, 115);
     assert.equal(summary.changed, 115);
     assert.equal(summary.preview.length, 5);
     assert.deepEqual(summary.preview[0], { row: 7, label: summary.preview[0].label, before: { Sex: null }, after: { Sex: 'NOT_COLLECTED' } });
 
-    const [first, second] = out.proposals.map(p => saved(p.proposalId));
-    assert.equal(first.reason, 'Larvas preservadas: Sex NOT_COLLECTED (1/2)');
-    assert.equal(second.reason, 'Larvas preservadas: Sex NOT_COLLECTED (2/2)');
+    const proposal = saved(out.proposalId);
+    assert.equal(proposal.reason, 'Larvas preservadas: Sex NOT_COLLECTED');
+    assert.equal(proposal.changes.length, 115);
     // Ordinary rows: what the sheet had and the row's version, checked when applied.
-    const change = first.changes[0];
+    const change = proposal.changes[0];
     assert.deepEqual([change.recordId, change.before, change.values, change.note], [row(7).id, { Sex: null }, { Sex: 'NOT_COLLECTED' }, 'Larva preservada: sin sexo']);
     assert.equal(change.expectedVersion, row(7).version);
-    assert.ok(!second.changes.some(c => first.changes.some(f => f.recordId === c.recordId)));
 
-    const applied = await call('apply_proposal', { proposalId: first.id });
-    assert.equal(applied.rows, 58);
+    const applied = await call('apply_proposal', { proposalId: out.proposalId });
+    assert.equal(applied.rows, 115);
     assert.equal(row(7).values.Sex, 'NOT_COLLECTED');
-    assert.equal(row(121).values.Sex ?? null, null, 'the second part waits for its own review');
+    assert.equal(row(121).values.Sex, 'NOT_COLLECTED');
     assert.equal(row(123).values.Sex, 'female', 'adults are not picked');
   } finally {
     store.close();
@@ -146,17 +143,64 @@ test('bulk and row limits: mistakes are said before any row is drafted', async (
     assert.match((await bulk({ filters: { LIFESTAGE: { empty: false } }, set: { Sexo: 'NA' } })).error, /^bulk\[0\]: set: Unknown column Sexo in Insectary_data; did you mean Sex\?/);
     assert.match((await bulk({ set: { Sex: 'NA' } })).error, /Give recordIds and\/or filters/);
     assert.match((await bulk({ filters: { LIFESTAGE: { empty: false } }, set: { Sex: null } })).error, /null means no change/);
-    // More than 500 rows in one call.
-    const all = { sheet: 'Insectary_data', filters: { SPECIES: 'Mechanitis lysimnia' }, set: { Sex: 'NA' } };
-    const many = await call('propose_changes', { reason: 'x', bulk: [all, all, all, all] });
-    assert.match(many.error, /^bulk\[3\]: 520 rows picked; one call takes at most 500\. Narrow the filters/);
-    // Rows listed one by one: at most 100, and the answer says what to do.
-    const listed = Array.from({ length: 101 }, (_, i) => ({ recordId: row(i + 2).id, values: { Sex: 'NA' } }));
-    const tooMany = await call('propose_changes', { reason: 'x', changes: listed });
-    assert.match(tooMany.error, /^At most 100 rows per proposal \(here 101\).*`bulk`/);
-    const hundred = await call('propose_changes', { reason: 'x', changes: listed.slice(0, 100) });
-    assert.equal(hundred.rows, 100);
+    // Rows listed one by one: at most 500, and the answer says what to do.
+    const listed = Array.from({ length: 130 }, (_, i) => ({ recordId: row(i + 2).id, values: { Sex: 'NA' } }));
+    const all = await call('propose_changes', { reason: 'x', changes: listed });
+    assert.equal(all.rows, 130);
+    assert.match(all.table, /get_proposal with full: true/, 'a long proposal says where its indexes are');
     assert.equal(store.db.prepare("SELECT count(*) n FROM ai_proposals WHERE status = 'pending'").get().n, 1);
+    // Several groups picking the same rows count them once.
+    const same = { sheet: 'Insectary_data', filters: { SPECIES: 'Mechanitis lysimnia' }, set: { Sex: 'NA' } };
+    assert.equal((await call('propose_changes', { reason: 'x', bulk: [same, same, same, same] })).rows, 130);
+  } finally {
+    store.close();
+  }
+});
+
+test('more than 500 rows: one proposal takes them only after those already holding the values are left out', async () => {
+  const rows = Array.from({ length: 560 }, (_, i) => ({
+    row: i + 2,
+    values: { Insectary_ID: `R${i}E`, SPECIES: 'Oleria onega', ...(i < 100 ? { Sex: 'NOT_COLLECTED' } : {}) },
+  }));
+  const { store, call, row } = await setup({ Insectary_data: rows });
+  try {
+    const tooMany = await call('propose_changes', { reason: 'x', changes: rows.slice(0, 501).map(r => ({ recordId: row(r.row).id, values: { Sex: 'NA' } })) });
+    assert.match(tooMany.error, /^At most 500 rows per proposal \(here 501\)/);
+    const bulk = set => call('propose_changes', { reason: 'x', bulk: [{ sheet: 'Insectary_data', filters: { SPECIES: 'Oleria onega' }, set }] });
+    assert.match((await bulk({ Sex: 'NA' })).error, /^560 rows to change\. One proposal takes at most 500 rows: narrow the filters/);
+    // 100 rows already say NOT_COLLECTED: 460 to change.
+    const out = await bulk({ Sex: 'NOT_COLLECTED' });
+    assert.ok(!out.error, out.error);
+    assert.deepEqual([out.rows, out.bulk[0].matched, out.bulk[0].alreadySet], [460, 560, 100]);
+  } finally {
+    store.close();
+  }
+});
+
+test('a 500-row proposal goes to the page once: then, while it holds, only its digest', async () => {
+  const rows = Array.from({ length: 520 }, (_, i) => ({ row: i + 2, values: { Insectary_ID: `R${i}E`, SPECIES: 'Oleria onega', CAM_ID: `CAM0${79000 + i}` } }));
+  const { store, assistant, call, row } = await setup({ Insectary_data: rows });
+  try {
+    const out = await call('propose_changes', {
+      reason: 'Sexo',
+      changes: rows.slice(0, 500).map(r => ({ recordId: row(r.row).id, values: { Sex: 'NA' } })),
+    });
+    assert.equal(out.rows, 500);
+    const user = { id: 'u-franz', username: 'franz', displayName: 'Franz Chandi', role: 'editor' };
+    const list = async query =>
+      (await assistant.handle({ method: 'GET', path: '/api/chat/proposals', body: {}, user, query: { all: '1', ...query } })).body;
+    const first = await list();
+    const [p] = first.proposals;
+    assert.equal(p.changes.length, 500, 'every row; none between (they are all changed)');
+    assert.match(p.digest, /^[\w-]{12}$/);
+    const again = await list({ have: p.digest });
+    assert.deepEqual(again.proposals, [{ id: p.id, digest: p.digest, same: true }]);
+    assert.ok(JSON.stringify(again).length < 1000);
+    // Changed: sent whole again, with another digest.
+    await call('update_proposal', { proposalId: p.id, rows: [{ index: 0, values: { Sex: 'female' } }] });
+    const changed = (await list({ have: p.digest })).proposals[0];
+    assert.equal(changed.changes.length, 500);
+    assert.notEqual(changed.digest, p.digest);
   } finally {
     store.close();
   }

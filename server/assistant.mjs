@@ -6,7 +6,7 @@ import { allIssues, checkData } from './checks.mjs';
 import { agreedFixes, markApplied } from './review.mjs';
 import { CERTAINTIES, suggestionPage } from './suggestions/index.mjs';
 import { alerts } from './alerts.mjs';
-import { tpl, withoutMsgs } from './messages.mjs';
+import { msg, tpl, withoutMsgs } from './messages.mjs';
 import { columnKeys, columnOf, comparable, isSumField, labelFor, moduleMap, simpleSum, validateValues, withColumnNames } from './schema.mjs';
 import { TUBE_FIELD, isIdValue, isUnique } from './verifications.mjs';
 import { listOptions, listProblem } from './verify.mjs';
@@ -15,7 +15,8 @@ import { KINDS, isNone, noteText, reviewColumns } from './notebook.mjs';
 import { FILTERS_DOC, FIND_BUDGET, RECORD_TOOLS, compactRecord, countRecords, findRecords, pickRows, resolveRows, selectRecords } from './records-tool.mjs';
 import { RESULT_BUDGET, fitList, fitResult } from './tool-budget.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
-import { duplicateIdRow, insectaryIdRow, newRowFormulaFields } from './premade.mjs';
+import { duplicateIdRow, insectaryIdPlaces, insectaryIdRow, newRowFormulaFields } from './premade.mjs';
+import { BETWEEN_ROWS, VIEW_PARAM, VIEW_UPDATE, readView, showBetween, viewColumns } from './proposal-view.mjs';
 import { proposalSampleWarnings } from './preserved.mjs';
 import { carryChecks, dropDoubt, setChecked, uncheckedDoubts, unfilledUnreadable, withoutUnchecked } from './doubts.mjs';
 import { decide, editedInSheet, forget, lastEdit, resolveSheetEdits, sheetChangesOf, shownValue, takenRow, takenRows } from './sheet-edits.mjs';
@@ -33,15 +34,16 @@ const owner = user => String(user?.id ?? user?.username ?? '');
 const json = value => JSON.stringify(value);
 const EDITORS = ['editor', 'reviewer', 'admin'];
 /**
- * Rows of one proposal at most: its view sends every edited row's current values on each
- * revision, and get_proposal lists them all. A `bulk` call may pick more: it is split into
- * proposals of up to this many rows.
+ * Rows of one proposal at most (as one save takes at most, server/batch.mjs MAX_BATCH): its
+ * table is reviewed and applied as a whole, and get_proposal lists them all. A `bulk` call
+ * picks up to as many.
  */
-const PROPOSAL_ROWS = 100;
-/** Rows one propose_changes `bulk` call may pick (in proposals of PROPOSAL_ROWS). */
-const BULK_ROWS = 500;
-const tooManyRows = n =>
-  `At most ${PROPOSAL_ROWS} rows per proposal (here ${n}): put the rest in another proposal (propose_changes; its \`bulk\` gives the same values to many rows and splits them itself).`;
+const PROPOSAL_ROWS = 500;
+const tooManyRows = n => `At most ${PROPOSAL_ROWS} rows per proposal (here ${n}): put the rest in another proposal.`;
+/** Rows a `bulk` call may pick before those already holding its values are left out. */
+const BULK_PICKED = 4 * PROPOSAL_ROWS;
+const narrower = () =>
+  `One proposal takes at most ${PROPOSAL_ROWS} rows: narrow the filters (count_records says how many match, e.g. per month), or make another proposal for the rest.`;
 const isoDate = serial => new Date(Date.UTC(1899, 11, 30) + serial * 864e5).toISOString().slice(0, 10);
 const TIME_FIELD = /(^|_)time$/i;
 /** "9:20" in a time column becomes the day fraction Sheets stores (the grids show it as 9:20). */
@@ -235,7 +237,7 @@ const TOOLS = [
           '- A row: its `recordId`, or `sheet` + `id`, its ID in the sheet (W2B, CAM079891, a clutch number).',
           "- Formula cells cannot be changed, except Insectary_data's SPECIES when what emerged differs from the formula, and an Insectary_ID given to two butterflies: a suffix on the row's own ID (W2B → W2B.1).",
           "- A new Insectary_data row names its Insectary_ID and fills the pre-made row of that ID; a second butterfly of a used ID takes a suffix (W2B.2), its row inserted below that ID's rows.",
-          `- Up to ${PROPOSAL_ROWS} rows per proposal; \`bulk\` gives the same values to up to ${BULK_ROWS} existing rows (in proposals of ${PROPOSAL_ROWS}).`,
+          `- Up to ${PROPOSAL_ROWS} rows per proposal; \`bulk\` gives the same values to many existing rows.`,
           VALUES_RULES,
         ].join('\n'),
       parameters: {
@@ -285,6 +287,7 @@ const TOOLS = [
             items: { type: 'string' },
             description: 'Of the list_agreed_fixes fixes in it (marked applied in Revisión with it)',
           },
+          view: VIEW_PARAM,
         },
         required: ['reason'],
       },
@@ -463,6 +466,7 @@ const TOOLS = [
           removeRows: { type: 'array', items: { anyOf: [{ type: 'integer' }, { type: 'string' }] } },
           reason: { type: 'string', description: 'A new title, only if the subject changed' },
           overridePersonEdits: { type: 'boolean' },
+          view: VIEW_UPDATE,
           full: { type: 'boolean' },
         },
         required: ['proposalId'],
@@ -480,6 +484,7 @@ const TOOLS = [
           "- doubtful: match_notebook's doubtful cells not checked yet (value, alternatives, reason);",
           '- unreadable: cells nobody could read, still empty (never written empty);',
           "- sheetChanged: cells edited in the sheet after you read them (read, now, by, applying). Applying keeps the sheet's value unless the person chose yours; re-check them, then update_proposal: your value goes over the sheet's, null keeps it. rowTaken: a new row's pre-made row is in use now.",
+          "A notebook page's lines that go another way in the sheet than on the page come as `orderDiffers`.",
           '`full: true`: every row with its index, values (dates YYYY-MM-DD), note and these marks (`offset` continues a long one).',
           'Read it when the person says they changed the table, before update_proposal on a proposal you did not just make, and before apply_proposal if they edited it.',
         ].join('\n'),
@@ -560,6 +565,9 @@ function init(db) {
   // A table of sheet rows the assistant shows the person (show_rows): its sheet, rows, columns and
   // notes. It is listed with the proposals but never written: status 'shown', then 'closed'.
   if (!has('ai_proposals', 'table_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN table_json TEXT');
+  // How the assistant asked its proposal's table to be shown (the `view` of propose_changes): the
+  // columns first or only, and the sheet's rows between its rows or not.
+  if (!has('ai_proposals', 'view_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN view_json TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS ai_proposals_owner_status ON ai_proposals(owner_id, status, created_at)');
   // Personal tokens for agents outside the app (T3 Code projects) to use the same tools.
   db.exec(`CREATE TABLE IF NOT EXISTS ai_tokens (
@@ -974,12 +982,12 @@ export function createAssistant({ store, config = {} }) {
   }
 
   /** A drafted proposal saved for review: it shows at once in Cambios propuestos (and the chat). */
-  function saveProposal(changes, reason, context, issueIds = []) {
+  function saveProposal(changes, reason, context, issueIds = [], view = null) {
     const id = randomUUID();
     const time = now();
     const chat = context.t3 ? chatOfCall(context) : null;
     db.prepare(
-      'INSERT INTO ai_proposals (id,thread_id,owner_id,changes_json,reason,status,created_at,issues_json,updated_at,last_by,t3_thread,t3_title,t3_tool_use) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      'INSERT INTO ai_proposals (id,thread_id,owner_id,changes_json,reason,status,created_at,issues_json,updated_at,last_by,t3_thread,t3_title,t3_tool_use,view_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
     ).run(
       id,
       context.threadId,
@@ -994,6 +1002,7 @@ export function createAssistant({ store, config = {} }) {
       chat?.id ?? null,
       chat?.title ?? null,
       context.t3?.toolUseId ?? null,
+      view ? json(view) : null,
     );
     const proposal = { id, changes, reason: clip(reason, 500), status: 'pending' };
     context.proposals.push(proposal);
@@ -1162,10 +1171,7 @@ export function createAssistant({ store, config = {} }) {
       if (named.error) return named;
       const set = named.values;
       picked += rows.rows.length;
-      if (picked > BULK_ROWS)
-        return {
-          error: `${at}: ${picked} rows picked; one call takes at most ${BULK_ROWS}. Narrow the filters (count_records says how many match, e.g. per month), or make another call for the rest.`,
-        };
+      if (picked > BULK_PICKED) return { error: `${at}: ${picked} rows picked. ${narrower()}` };
       // The values as the sheet will take them ({"clear": true} empties, a note is text), checked once.
       const plain = Object.fromEntries(
         Object.entries(set).map(([f, v]) => [f, v && typeof v === 'object' && !Array.isArray(v) ? ('replace' in v ? v.replace : null) : v]),
@@ -1223,8 +1229,7 @@ export function createAssistant({ store, config = {} }) {
 
   /**
    * propose_changes as the assistant calls it; `literal` for fixes built by the
-   * app (the Revisión tab), whose values are taken as they are. A `bulk` call
-   * over PROPOSAL_ROWS rows becomes several proposals, "(1/3)" after the reason.
+   * app (the Revisión tab), whose values are taken as they are.
    */
   function proposeChanges(input, context, { literal = false } = {}) {
     if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot propose edits' };
@@ -1241,37 +1246,26 @@ export function createAssistant({ store, config = {} }) {
     const { args, ignored } = read;
     if (ignored.length && !args.changes.length && !args.newRows.length)
       return { error: 'Every value was null, and null means no change. To empty a cell give {"clear": true}.' };
+    // A bulk call's rows are counted once those already holding its values are left out.
     const drafted = draftChanges(args, idsFor(), bulk ? Infinity : PROPOSAL_ROWS);
     if (drafted.error) return drafted;
     const { changes } = drafted;
+    if (changes.length > PROPOSAL_ROWS) return { error: `${changes.length} rows to change. ${narrower()}` };
+    const view = readView(input.view, [...new Set(changes.map(c => c.sheet))]);
+    if (view?.error) return view;
     const issueIds = Array.isArray(args.issueIds) ? args.issueIds.slice(0, 500).map(i => clip(i, 200)) : [];
-    // Even parts of up to PROPOSAL_ROWS rows (115 rows: 58 and 57); each part's issues are marked as its rows are written.
-    const count = Math.ceil(changes.length / PROPOSAL_ROWS);
-    const size = Math.ceil(changes.length / count);
-    const saved = Array.from({ length: count }, (_, k) => changes.slice(k * size, (k + 1) * size)).map((part, k) => ({
-      ...saveProposal(part, count > 1 ? `${clip(args.reason, 480)} (${k + 1}/${count})` : args.reason, context, issueIds),
-      part,
-    }));
+    const saved = saveProposal(changes, args.reason, context, issueIds, view);
     const dropped = [...new Set(changes.flatMap(c => c.dropped ?? []))];
-    const noSample = saved.flatMap(({ id, part }) =>
-      part.flatMap((c, index) => {
-        const warned = proposalSampleWarnings(c, c.create ? null : store.getRecord(c.recordId));
-        return warned ? [{ ...(count > 1 ? { proposalId: id } : {}), index, label: c.label, missing: Object.keys(warned) }] : [];
-      }),
-    );
-    // Row indexes for update_proposal (new rows first, then edits of existing rows). A long bulk
-    // proposal gives its preview instead (get_proposal lists every row).
-    const table = part =>
-      !bulk || changes.length <= 30
-        ? { table: part.map((c, index) => ({ index, sheet: c.sheet, label: c.label, ...(c.create ? { create: true } : { row: c.row }) })) }
-        : {};
+    const noSample = changes.flatMap((c, index) => {
+      const warned = proposalSampleWarnings(c, c.create ? null : store.getRecord(c.recordId));
+      return warned ? [{ index, label: c.label, missing: Object.keys(warned) }] : [];
+    });
+    // Row indexes for update_proposal (new rows first, then edits of existing rows). A long
+    // proposal: a bulk call's preview, or where to read them.
+    const listed = changes.length <= (bulk ? 30 : 100);
     return {
-      ...(count > 1
-        ? {
-            proposals: saved.map(({ id, chat, part }) => ({ proposalId: id, ...proposalLink(id, chat), rows: part.length })),
-            split: `${changes.length} rows: ${count} proposals of up to ${PROPOSAL_ROWS} rows. The person reviews and applies each one.`,
-          }
-        : { proposalId: saved[0].id, ...proposalLink(saved[0].id, saved[0].chat) }),
+      proposalId: saved.id,
+      ...proposalLink(saved.id, saved.chat),
       rows: changes.length,
       status: 'waiting for the person to confirm',
       ...(bulk ? { bulk: bulkSummary(bulk.groups, changes) } : {}),
@@ -1284,7 +1278,11 @@ export function createAssistant({ store, config = {} }) {
         : {}),
       ...(dropped.length ? { leftOut: `Formula columns left out of the new rows: ${dropped.join(', ')}` } : {}),
       ...(ignored.length ? { noChange: ignored.slice(0, 50), noChangeNote: 'null means no change: these cells keep the sheet value. To empty one give {"clear": true}.' } : {}),
-      ...(count === 1 ? table(changes) : {}),
+      ...(listed
+        ? { table: changes.map((c, index) => ({ index, sheet: c.sheet, label: c.label, ...(c.create ? { create: true } : { row: c.row }) })) }
+        : bulk
+          ? {}
+          : { table: 'get_proposal with full: true lists every row with its index' }),
     };
   }
 
@@ -1534,13 +1532,19 @@ export function createAssistant({ store, config = {} }) {
   }
   const ownProposalListed = id =>
     db.prepare('SELECT p.*, t.title FROM ai_proposals p JOIN ai_threads t ON t.id = p.thread_id WHERE p.id = ?').get(id);
-  /** A proposal as Cambios propuestos lists it (with the conversation it comes from: its T3 chat, if known). */
-  const listedView = (r, titles = new Map()) => ({
-    ...(isTable(r) ? tableView(r) : proposalView({ id: r.id, changes: [], reason: r.reason, status: r.status }, r)),
-    createdAt: r.created_at,
-    source: (r.t3_thread && (titles.get(r.t3_thread)?.title ?? r.t3_title)) || r.title,
-    chat: r.t3_thread || null,
-  });
+  /**
+   * A proposal as Cambios propuestos lists it (with the conversation it comes from: its T3 chat, if
+   * known), and a digest of it all: a page that holds it already gets only { id, digest, same: true }.
+   */
+  const listedView = (r, titles = new Map()) => {
+    const view = {
+      ...(isTable(r) ? tableView(r) : proposalView({ id: r.id, changes: [], reason: r.reason, status: r.status }, r)),
+      createdAt: r.created_at,
+      source: (r.t3_thread && (titles.get(r.t3_thread)?.title ?? r.t3_title)) || r.title,
+      chat: r.t3_thread || null,
+    };
+    return { ...view, digest: createHash('sha1').update(json(view)).digest('base64url').slice(0, 12) };
+  };
 
   /**
    * What the sheet did to a pending proposal's row since it was drafted (`since`):
@@ -1738,6 +1742,7 @@ export function createAssistant({ store, config = {} }) {
       labels: table.map(v => v.label),
       ...(contextRows ? { contextRows } : {}),
       attention,
+      ...orderDiffers(proposal),
     };
   }
 
@@ -2054,16 +2059,22 @@ export function createAssistant({ store, config = {} }) {
     const given = args.photo ? photosOf(config.t3?.home, args, chat) : null;
     if (given && !given.photos.length)
       return { error: 'No photo of this chat by that name', photoNote: 'Give `photo` as the file name of this chat\'s attachment, from "[Attached image … saved at …]"' };
-    if (!set.length && !check.length && !remove.length && !add.changes.length && !add.newRows.length && !args.reason && !given)
-      return { error: 'Give rows, changes, newRows, removeRows or photo' };
+    const viewGiven = args.view !== undefined && args.view !== null;
+    if (!set.length && !check.length && !remove.length && !add.changes.length && !add.newRows.length && !args.reason && !given && !viewGiven)
+      return { error: 'Give rows, changes, newRows, removeRows, photo or view' };
     const out = reviseChanges(changes, { set, check, remove, add }, { by: 'ai', force: !!args.overridePersonEdits, user: context.user });
     if (out.rejected.length) return { error: 'Nothing was changed', problems: out.rejected.slice(0, 20) };
+    const oldView = parse(proposal.view_json ?? 'null');
+    const view = viewGiven ? readView(args.view, [...new Set(out.changes.map(c => c.sheet))], oldView) : oldView;
+    if (view?.error) return { error: 'Nothing was changed', problems: [view.error] };
     const reason = args.reason ? clip(args.reason, 500) : null;
     if (given) {
       const page = parse(proposal.page_json ?? 'null') ?? {};
       db.prepare('UPDATE ai_proposals SET page_json = ? WHERE id = ?').run(json({ ...page, photos: given.photos }), proposal.id);
     }
-    const unchanged = json(out.changes) === json(changes) && !reason && !given;
+    const viewChanged = json(view) !== json(oldView);
+    if (viewChanged) db.prepare('UPDATE ai_proposals SET view_json = ? WHERE id = ?').run(view ? json(view) : null, proposal.id);
+    const unchanged = json(out.changes) === json(changes) && !reason && !given && !viewChanged;
     const revision = unchanged ? proposal.revision : saveRevision(proposal, out.changes, 'ai', reason);
     if (revision === null) return { error: 'The proposal is no longer pending' };
     const table = proposalTable(out.changes, proposal);
@@ -2258,11 +2269,11 @@ export function createAssistant({ store, config = {} }) {
    * of the edited rows (columns can be added), their formula columns, and those
    * of the pre-made rows new rows go into.
    *
-   * A notebook page's proposal shows the whole page, in the notebook's order
-   * (photo, then line): the lines with nothing to write as grey context rows
+   * Its rows go in the sheet's order (inSheetOrder). A notebook page's proposal
+   * shows the whole page: the lines with nothing to write as grey context rows
    * (never written), lines not found or crossed out as a placeholder with the
-   * line as written, a line the save would refuse with its reason. Rows added
-   * later take the line of the same ID, or go after the page.
+   * line as written, a line the save would refuse with its reason; each row
+   * with its photo and line. Rows added later take the line of the same ID.
    *
    * Sent lean (slow connections): an edited row's values once (rowValues while
    * pending, `current` after), a sheet's formula columns once (`sheetFormulas`;
@@ -2288,8 +2299,15 @@ export function createAssistant({ store, config = {} }) {
     const created = parse(row?.created_json ?? 'null') ?? {};
     const locked = (sheet, keys) => keys.filter(f => !TYPED_OVER_FORMULA[sheet]?.has(f) && !isSumField(sheet, f));
     const page = parse(row?.page_json ?? 'null');
-    // A notebook page's rows follow the page; any other proposal's, the sheet (with the rows between them for context).
-    const rows = page?.lines?.length ? pageRows(changes, page) : inSheetOrder(changes, created, open);
+    const view = parse(row?.view_json ?? 'null');
+    // In the sheet's order, a notebook page's lines too (its photos come in any order); the rows between them for context.
+    const paged = page?.lines?.length ? page : null;
+    const { rows, outOfOrder } = inSheetOrder(paged ? pageRows(changes, page) : changes.map((change, index) => ({ change, index, line: null })), {
+      created,
+      open,
+      page: paged,
+      view,
+    });
     // A notebook page's proposal (its page, or a reason "Cuaderno Emergidos (Insectary_data): …"): the table
     // shows the notebook's columns first, in the order it writes them.
     const reason = row?.reason ?? proposal.reason ?? '';
@@ -2309,12 +2327,13 @@ export function createAssistant({ store, config = {} }) {
           }
         : null;
     const sheets = [...new Set(rows.map(r => r.change.sheet))];
-    // The columns each sheet's table shows whatever the proposal changes (a notebook's, the rest up to its notes).
+    // The columns each sheet's table shows whatever the proposal changes (a notebook's, the rest up to its
+    // notes), or those the assistant's view names first (or only).
     const shownColumns = Object.fromEntries(
       sheets.map(s => {
         const mod = moduleMap.get(s);
         const kind = notebook?.sheet === s ? notebook.kind : null;
-        return [s, reviewColumns(s, mod?.fields.map(f => f.key) ?? [], mod?.identityFields ?? [], kind)];
+        return [s, viewColumns(s, reviewColumns(s, mod?.fields.map(f => f.key) ?? [], mod?.identityFields ?? [], kind), view)];
       }),
     );
     const typeOf = f =>
@@ -2343,7 +2362,7 @@ export function createAssistant({ store, config = {} }) {
     const inUse = open ? takenRows(store, changes) : new Map();
     /** The version of each row's sheet row as read now (the list's stamp of the sheet). */
     const versions = [];
-    const out = rows.map(({ change, index, line }) => {
+    const out = rows.map(({ change, index, line, outOfOrder: after }) => {
       const recordId = change.create ? (created[change.clientId] ?? null) : change.recordId;
       const record = recordId ? store.getRecord(recordId) : null;
       versions.push(record?.version ?? null);
@@ -2360,6 +2379,8 @@ export function createAssistant({ store, config = {} }) {
       };
       if (hints && Object.keys(hints).length) view.hints = Object.fromEntries(Object.entries(hints).map(([f, h]) => [f, hintOf(h)]));
       if (line) view.page = pageLine(line, index < 0 || !!change.context);
+      // Before the previous line of its photo in the sheet: the notebook goes the other way here.
+      if (after) view.outOfOrder = after;
       if (change.placeholder) return view;
       // Cells edited in the sheet since they were read (or the pre-made row taken): told apart in the table.
       if (open && !change.context) Object.assign(view, sheetState(change, row?.created_at, inUse));
@@ -2429,77 +2450,148 @@ export function createAssistant({ store, config = {} }) {
       ...(Object.keys(sheetFormulas).length ? { sheetFormulas } : {}),
       ...(hintTable.length ? { hintTable } : {}),
       ...(notebook ? { page: notebook } : {}),
+      ...(outOfOrder.length ? { outOfOrder: outOfOrder.map(({ key, ...o }) => o) } : {}),
       changes: out,
     };
   }
 
-  /** At most this many rows of the sheet the proposal leaves alone are shown between its rows. */
-  const GAP_ROWS = 400;
   /**
-   * A proposal's rows (without a notebook page) as the sheet has them, as
-   * { change, index, line } (pageRows' form), so the person reads the table
-   * beside the sheet: its existing rows take the places they had, by row number
-   * (new rows stay where they were), and, while pending, the sheet's rows between
-   * two of them that it does not change come in as context rows (`gap`: never
-   * written, not editable; index < 0, as a page line without a row).
+   * A proposal's rows ({ change, index, line }, from pageRows for a notebook
+   * page) as the sheet has them, so the person reads the table beside the sheet
+   * and from its oldest rows to the newest, whatever order a page's photos came
+   * in: by sheet (a page's first), then by row number; a new Insectary_data row
+   * where it will be written (the pre-made row of its ID, or below its ID's rows
+   * for a suffixed one), as a page line not found; rows without a place after
+   * them (a page's in ID order). While pending, the sheet's rows between two of
+   * them that it leaves alone come in as context rows (`gap`: never written, not
+   * editable; index < 0, as a page line without a row), as the view says (by
+   * default when they are few, and not on a notebook page: see proposal-view.mjs).
    */
-  function inSheetOrder(changes, created, open) {
-    const rows = changes.map((change, index) => {
-      const recordId = change.create ? (created[change.clientId] ?? null) : change.recordId;
-      const at = (recordId ? store.getRecord(recordId)?.row : null) ?? change.row ?? null;
-      return { change, index, line: null, at };
-    });
-    const sorted = new Map();
-    for (const sheet of new Set(rows.map(r => r.change.sheet)))
-      sorted.set(
-        sheet,
-        rows.filter(r => r.change.sheet === sheet && r.at != null).sort((a, b) => a.at - b.at || a.index - b.index),
+  function inSheetOrder(rows, { created, open, page = null, view = null }) {
+    // Where each row stands: its sheet row; a new Insectary_data row (or a page line not found), where its ID goes.
+    const idOf = c => String((c.create ? c.values?.Insectary_ID : c.label) ?? '').trim().toUpperCase();
+    const unwritten = c => c.sheet === 'Insectary_data' && (c.create ? !created[c.clientId] : c.placeholder);
+    const places = insectaryIdPlaces(store, rows.filter(r => unwritten(r.change)).map(r => idOf(r.change)));
+    const placeOf = c => {
+      const recordId = c.create ? (created[c.clientId] ?? null) : c.recordId;
+      const row = (recordId ? store.getRecord(recordId)?.row : null) ?? (c.create || c.placeholder ? null : c.row);
+      if (row != null) return row;
+      const place = unwritten(c) ? places.get(idOf(c)) : null;
+      return place ? place.row + (place.below ? 0.5 : 0) : null;
+    };
+    const placed = rows.map((r, order) => ({ ...r, order, at: placeOf(r.change) }));
+    const byPlace = (a, b) =>
+      (a.at ?? 0) - (b.at ?? 0) || (a.line?.photo ?? 0) - (b.line?.photo ?? 0) || (a.line?.n ?? 0) - (b.line?.n ?? 0) || a.order - b.order;
+    let sorted;
+    if (page) {
+      // A page: by sheet (its own first), then by row; the rows without a place after them, in ID order; the
+      // rows off the page with the same slip as a line (sameErrorAs, a table of their own) last.
+      const sheets = [...new Set([page.sheet, ...rows.map(r => r.change.sheet)])];
+      const ids = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+      const near = r => (r.change.sameErrorAs !== undefined ? 1 : 0);
+      sorted = [...placed].sort(
+        (a, b) =>
+          near(a) - near(b) ||
+          sheets.indexOf(a.change.sheet) - sheets.indexOf(b.change.sheet) ||
+          (a.at == null) - (b.at == null) ||
+          (a.at == null ? ids.compare(String(a.change.label ?? ''), String(b.change.label ?? '')) : 0) ||
+          byPlace(a, b),
       );
-    const taken = new Map();
-    let room = GAP_ROWS;
-    let gaps = 0;
-    const out = [];
-    for (const slot of rows) {
-      if (slot.at == null) {
-        out.push(slot);
-        continue;
-      }
-      const sheet = slot.change.sheet;
-      const list = sorted.get(sheet);
-      const i = taken.get(sheet) ?? 0;
-      taken.set(sheet, i + 1);
-      const r = list[i];
-      const prev = list[i - 1];
-      if (open && prev && r.at - prev.at - 1 <= room)
-        for (let n = prev.at + 1; n < r.at; n++) {
-          const record = store.getRecordBySheetRow(sheet, n);
-          if (!record || record.missing) continue;
-          room--;
-          out.push({
-            index: -++gaps,
-            line: null,
-            change: {
-              key: `gap:${record.id}`,
-              context: true,
-              gap: true,
-              recordId: record.id,
-              sheet,
-              row: record.row,
-              label: record.label || '',
-              values: {},
-              note: '',
-            },
-          });
-        }
-      out.push(r);
+    } else {
+      // Any other proposal: its rows with a place take, sheet by sheet, the places such rows have in its list,
+      // by row number; the others (new rows without one) stay where they are.
+      const queues = new Map();
+      for (const r of placed) if (r.at != null) queues.set(r.change.sheet, [...(queues.get(r.change.sheet) ?? []), r]);
+      for (const list of queues.values()) list.sort(byPlace);
+      sorted = placed.map(r => (r.at == null ? r : queues.get(r.change.sheet).shift()));
     }
-    return out.map(({ at, ...r }) => r);
+    // The sheet's rows between two of them with a place in the same sheet (before the second), counted first.
+    const last = new Map();
+    const pairs = sorted.flatMap((r, i) => {
+      if (r.at == null) return [];
+      const prev = last.get(r.change.sheet);
+      last.set(r.change.sheet, r);
+      return prev ? [[i, Math.floor(prev.at) + 1, Math.ceil(r.at) - 1]] : [];
+    });
+    const between = pairs.reduce((n, [, from, to]) => n + Math.max(0, to - from + 1), 0);
+    const writes = sorted.filter(r => r.index >= 0 && !r.change.context).length;
+    const outOfOrder = page ? pageOrder(placed, page) : [];
+    const out = sorted.map(({ at, order, ...r }) => r);
+    if (!open || !between || !showBetween(view, { paged: !!page, between, rows: writes })) return { rows: out, outOfOrder };
+    const shown = new Set(out.map(r => r.change.recordId).filter(Boolean));
+    const at = new Map(pairs.map(([i, from, to]) => [i, [from, to]]));
+    let room = BETWEEN_ROWS;
+    let next = Math.min(0, ...out.map(r => r.index));
+    const withGaps = out.flatMap((r, i) => {
+      const gap = at.get(i);
+      if (!gap || gap[1] - gap[0] + 1 > room) return [r];
+      const rows = [];
+      for (let n = gap[0]; n <= gap[1]; n++) {
+        const record = store.getRecordBySheetRow(r.change.sheet, n);
+        if (!record || record.missing || shown.has(record.id)) continue;
+        room--;
+        rows.push({
+          index: --next,
+          line: null,
+          change: {
+            key: `gap:${record.id}`,
+            context: true,
+            gap: true,
+            recordId: record.id,
+            sheet: r.change.sheet,
+            row: record.row,
+            label: record.label || '',
+            values: {},
+            note: '',
+          },
+        });
+      }
+      return [...rows, r];
+    });
+    return { rows: withGaps, outOfOrder };
+  }
+
+  /** A notebook page's proposal: its lines whose sheet rows go another way than the page (pageOrder), for the tools. */
+  function orderDiffers(proposal) {
+    const page = parse(proposal?.page_json ?? 'null');
+    if (!page?.lines?.length) return {};
+    const created = parse(proposal.created_json ?? 'null') ?? {};
+    const { outOfOrder } = inSheetOrder(pageRows(parse(proposal.changes_json) ?? [], page), { created, open: false, page });
+    return outOfOrder.length
+      ? {
+          orderDiffers: outOfOrder.map(({ key, ...o }) => o),
+          orderNote:
+            "Within a photo, each of these lines comes after `after` on the page but before it in the sheet (the table marks them): an ID may be misread, or the page was written out of order. Check them and tell the person.",
+        }
+      : {};
   }
 
   /**
-   * A proposal's rows with the page they were read from: { change, index, line }
-   * in the page's order, plus a row for each line without one (index < 0): the
-   * sheet's row as it is (context), or the line as written (placeholder).
+   * The page's lines whose sheet rows go another way than the notebook: within
+   * each photo (the photos come in any order), walking its lines top to bottom,
+   * a line whose row (a new row's, where it will be written) comes before the
+   * previous line's. Lines without a sheet row (not found, crossed out) are
+   * skipped. Each as { photo, line, id, key, after: { line, id } }; the row is
+   * marked too (`outOfOrder` on its { change, index, line }).
+   */
+  function pageOrder(placed, page) {
+    const lines = placed
+      .filter(r => r.line && r.at != null && !r.change.placeholder && r.change.sheet === page.sheet && r.change.sameErrorAs === undefined)
+      .sort((a, b) => (a.line.photo ?? 0) - (b.line.photo ?? 0) || a.line.n - b.line.n);
+    const out = [];
+    for (const [i, r] of lines.entries()) {
+      const prev = lines[i - 1];
+      if (!prev || (prev.line.photo ?? 0) !== (r.line.photo ?? 0) || r.at >= prev.at) continue;
+      r.outOfOrder = { line: prev.line.n, id: prev.change.label || prev.line.id || '' };
+      out.push({ photo: r.line.photo ?? 0, line: r.line.n, id: r.change.label || r.line.id || '', key: r.change.key ?? rowKey(r.change), after: r.outOfOrder });
+    }
+    return out;
+  }
+
+  /**
+   * A proposal's rows with the page they were read from: { change, index, line },
+   * plus a row for each line without one (index < 0): the sheet's row as it is
+   * (context), or the line as written (placeholder). inSheetOrder sorts them.
    */
   function pageRows(changes, page) {
     const rows = changes.map((change, index) => ({ change, index, line: null }));
@@ -2543,11 +2635,7 @@ export function createAssistant({ store, config = {} }) {
             },
       });
     }
-    const at = r => (r.line ? [0, r.line.photo ?? 0, r.line.n, r.change.sheet === page.sheet ? 0 : 1, r.index] : [1, 0, 0, 0, r.index]);
-    return rows.sort((a, b) => {
-      const [x, y] = [at(a), at(b)];
-      return x.map((v, i) => v - y[i]).find(d => d !== 0) ?? 0;
-    });
+    return rows;
   }
 
   /**
@@ -3121,19 +3209,23 @@ export function createAssistant({ store, config = {} }) {
           .map(p => ({ proposalId: p.id, reason: p.reason, rows: p.rows.slice(0, 10), count: p.rows.length }))
       : [];
     const reason = `Cuaderno ${KINDS[review.kind].label} (${review.sheet})${args.title ? `: ${clip(args.title, 120)}` : ''}`;
+    const sheets = [...new Set([review.sheet, ...matched.changes.map(c => c.sheet)])];
+    const view = readView(args.view, sheets, replaced ? parse(replaced.view_json ?? 'null') : null);
+    if (view?.error) return { error: `${view.error}. Nothing was proposed.` };
     let proposal = null;
     let conflicts = [];
     if (editor && replaced && writes) {
       // The corrected page takes the place of its proposal (same id): the table beside the chat changes in place.
       const carried = carryPersonEdits(parse(replaced.changes_json) ?? [], matched.changes, context.user);
       conflicts = carried.conflicts;
+      db.prepare('UPDATE ai_proposals SET view_json = ? WHERE id = ?').run(view ? json(view) : null, replaced.id);
       if (saveRevision(replaced, carried.changes, 'ai', reason) !== null)
         proposal = { id: replaced.id, chat: chatOf(replaced, context) };
     } else if (editor && replaced) {
       db.prepare("UPDATE ai_proposals SET status = 'discarded' WHERE id = ? AND status = 'pending'").run(replaced.id);
       changed(owner(context.user));
     }
-    if (editor && writes && !proposal) proposal = saveProposal(matched.changes, reason, context);
+    if (editor && writes && !proposal) proposal = saveProposal(matched.changes, reason, context, [], view);
     // The page and its photos (attachments of this chat), kept with the proposal: its table follows
     // the whole page, beside the photo. A page matched again without photos keeps the ones it had.
     let refused = [];
@@ -3145,6 +3237,7 @@ export function createAssistant({ store, config = {} }) {
       const photos = args.photo ? given.photos : (parse(stored?.page_json ?? 'null')?.photos ?? []);
       db.prepare('UPDATE ai_proposals SET page_json = ? WHERE id = ?').run(json({ ...matched.page, photos }), proposal.id);
     }
+    const order = proposal ? orderDiffers(db.prepare('SELECT * FROM ai_proposals WHERE id = ?').get(proposal.id)) : {};
     return {
       ...matchSummary(matched, proposal?.id),
       ...(proposal ? proposalLink(proposal.id, proposal.chat) : {}),
@@ -3162,6 +3255,7 @@ export function createAssistant({ store, config = {} }) {
           }
         : {}),
       ...(overlaps.length ? { overlaps } : {}),
+      ...order,
       ...(!editor ? { note: 'This person can only read the workbook: nothing was proposed' } : {}),
     };
   }
@@ -3303,8 +3397,12 @@ export function createAssistant({ store, config = {} }) {
         .slice(0, 12);
       if (query.wait && held && caughtUp(of, held, page) && query.stamp === stamp)
         return { status: 200, body: { unchanged: true, revision, stamp } };
+      // The proposals the page holds as they are now (their digests, `have`) are not sent again: a long
+      // proposal (hundreds of rows) goes once, then only when it changes.
+      const have = new Set(String(query.have ?? '').split(',').slice(0, 400).filter(d => d.length === 12));
+      const proposals = rows.map(r => listedView(r, titles)).map(p => (have.has(p.digest) ? { id: p.id, digest: p.digest, same: true } : p));
       // The first request of a page (no revision held): tagged, so a reload with nothing new is a 304.
-      return { status: 200, tagged: !held, body: { revision, stamp, ...head, proposals: rows.map(r => listedView(r, titles)) } };
+      return { status: 200, tagged: !held, body: { revision, stamp, ...head, proposals } };
     }
     // A cell edited by the person in the table (Asistente → Cambios propuestos), checked as a save checks it.
     const editMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/edit$/.exec(path);
@@ -3371,7 +3469,10 @@ export function createAssistant({ store, config = {} }) {
         },
         { by: 'person', user },
       );
-      if (out.changes.length > PROPOSAL_ROWS) return bad(409, 'too_many_rows', `Una propuesta tiene como máximo ${PROPOSAL_ROWS} filas.`);
+      if (out.changes.length > PROPOSAL_ROWS) {
+        const m = msg('Una propuesta tiene como máximo {n} filas', { n: PROPOSAL_ROWS });
+        return { status: 409, body: { error: { code: 'too_many_rows', message: m.text, messageMsg: m.msg } } };
+      }
       if (json(out.changes) !== proposal.changes_json && saveRevision(proposal, out.changes, 'person', null, page) === null)
         return bad(409, 'proposal_used', 'La propuesta ya no está pendiente.');
       return {

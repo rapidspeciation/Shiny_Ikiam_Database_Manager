@@ -318,4 +318,13 @@ export default {
   'Tabla del asistente: solo para leer': "The assistant's table: only to read",
   'Abrir esta tabla sola en otra pestaña': 'Open this table on its own in another tab',
   'Copiar el enlace de esta tabla': "Copy this table's link",
+  // A notebook page in the sheet's order: lines of a photo the sheet has the other way round
+  'El orden no es el del cuaderno': "The order is not the notebook's",
+  '{line} va después de {after} en el cuaderno, pero antes en la hoja': '{line} comes after {after} in the notebook, but before it in the sheet',
+  'línea {line}': 'line {line}',
+  'foto {photo}, línea {line}': 'photo {photo}, line {line}',
+  'Las filas van en el orden de la hoja. Estas líneas de una misma foto están al revés en la hoja (marcadas con ↕ en «Fila»): revisa que el ID esté bien leído':
+    'The rows go in the sheet\'s order. These lines of one photo are the other way round in the sheet (marked ↕ in «Row»): check the ID was read right',
+  'En el cuaderno va después de la línea {line} ({id}), pero en la hoja va antes':
+    'In the notebook it comes after line {line} ({id}), but in the sheet before it',
 } as Record<string, string>

@@ -150,7 +150,7 @@ test('a photo is an attachment of the proposal chat, directly in the T3 attachme
   }
 });
 
-test("a page's proposal shows every line in the notebook's order, with its photo, and what the SPECIES formula will give", async () => {
+test("a page's proposal shows every line in the sheet's order, with its photo, and what the SPECIES formula will give", async () => {
   const { store, call, http, get, proposals, close, ana } = await setup();
   try {
     const out = await call('match_notebook', {
@@ -163,18 +163,21 @@ test("a page's proposal shows every line in the notebook's order, with its photo
     let [p] = await proposals();
     assert.deepEqual(p.page, { kind: 'emergence', sheet: 'Insectary_data', columns: p.page.columns, keys: ['Insectary_ID'], photos: 2 });
     assert.deepEqual(p.page.columns.slice(0, 4), ['Insectary_ID', 'SPECIES', 'Sex', 'CLUTCH NUMBER']);
-    // Photo 0's lines (1, 3, 4, 5), then photo 1's (2).
+    // In the sheet's order (the photos come in any order): rows 2, 3 (photo 1's line) and 4; 4AB where its ID
+    // will go (after the last ID, 3AB); 7ZZ, not in the ID series ahead, after them.
     assert.deepEqual(
       p.changes.map(c => [c.page.photo, c.page.line, c.label, c.index >= 0 ? 'row' : c.placeholder ? 'as written' : 'sheet', c.page.status ?? '']),
       [
         [0, 1, '5VB', 'row', ''],
-        [0, 3, '2AB', 'row', ''],
-        [0, 4, '7ZZ', 'as written', 'missing'],
-        [0, 5, '4AB', 'as written', 'crossed'],
         [1, 2, '8VD', 'sheet', 'match'],
+        [0, 3, '2AB', 'row', ''],
+        [0, 5, '4AB', 'as written', 'crossed'],
+        [0, 4, '7ZZ', 'as written', 'missing'],
       ],
     );
-    const [, premade, missing, crossed, same] = p.changes;
+    // Within each photo the sheet goes as the page does: nothing to warn about.
+    assert.equal(p.outOfOrder, undefined);
+    const [, same, premade, crossed, missing] = p.changes;
     assert.deepEqual([missing.page.raw, crossed.page.raw], ['7ZZ ♀', '4AB tachado']);
     assert.ok(missing.context && same.context && !same.placeholder, 'never written');
     assert.equal(same.rowValues['CLUTCH NUMBER'], 848, 'the sheet row as it is');
@@ -222,7 +225,7 @@ test("a page's proposal shows every line in the notebook's order, with its photo
     [p] = await proposals();
     assert.deepEqual(p.changes.find(c => c.label === '2AB').formulaGives, { SPECIES: 'Mechanitis messenoides messenoides' });
 
-    // A row added later takes the line of its ID; one not on the page goes after it.
+    // A row added later takes the line of its ID; one not on the page goes at its row too.
     const rowOf = id => store.getRecordBySheetRow('Insectary_data', { '8VD': 3, '3AB': 5 }[id]);
     await call('update_proposal', {
       proposalId: out.proposalId,
@@ -236,11 +239,11 @@ test("a page's proposal shows every line in the notebook's order, with its photo
       p.changes.map(c => [c.label, c.page?.line ?? null, c.index >= 0]),
       [
         ['5VB', 1, true],
-        ['2AB', 3, true],
-        ['7ZZ', 4, false],
-        ['4AB', 5, false],
         ['8VD', 2, true],
+        ['2AB', 3, true],
         ['3AB', null, true],
+        ['4AB', 5, false],
+        ['7ZZ', 4, false],
       ],
     );
 
