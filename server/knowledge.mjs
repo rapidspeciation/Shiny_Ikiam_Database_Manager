@@ -483,21 +483,17 @@ export const KNOWLEDGE_TOOLS = [
       name: 'search_knowledge',
       description:
         [
-          "Search the project's documents, mirrored as text from the project Drive (Ithomiini_IKIAM): meetings and call transcripts, protocols, reports, insectary and greenhouse management, presentations, curated notes (no admin, photos, data or Google Sheets).",
-          'Returns the best passages with document id, title, kind, date (of the meeting) and sourceUrl; `read_document` gives the whole text.',
-          'Answering from a document: name it (title, date) and give its sourceUrl.',
+          "Search the project's documents, mirrored from the project Drive: meetings and transcripts, protocols, reports, insectary and greenhouse management, presentations, notes (no data sheets).",
+          'Returns the best passages with id, title, kind, date and sourceUrl; `read_document` gives the whole text. Answering from one: name it (title, date) and give its sourceUrl.',
         ].join('\n'),
       parameters: {
         type: 'object',
         properties: {
-          query: { type: 'string', description: 'Words to look for (Spanish or English; accents do not matter)' },
-          kind: {
-            type: 'string',
-            description: 'Only these kinds (comma-separated): meeting, protocol, presentation, report, document, transcript',
-          },
-          from: { type: 'string', description: 'Only documents dated on or after this day (YYYY-MM-DD)' },
-          to: { type: 'string', description: 'Only documents dated on or before this day (YYYY-MM-DD)' },
-          limit: { type: 'integer', description: '1 to 20 passages, default 8' },
+          query: { type: 'string', description: 'Words (Spanish or English)' },
+          kind: { type: 'string', description: 'meeting, protocol, presentation, report, document, transcript (comma-separated)' },
+          from: { type: 'string', description: 'Dated from YYYY-MM-DD' },
+          to: { type: 'string', description: 'Dated to YYYY-MM-DD' },
+          limit: { type: 'integer', description: '1 to 20, default 8' },
         },
         required: ['query'],
       },

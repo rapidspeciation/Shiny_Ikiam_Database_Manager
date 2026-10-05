@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { columnOf } from '../server/schema.mjs';
-import { createAssistant } from '../server/assistant.mjs';
+import { createAssistant, mcpTools } from '../server/assistant.mjs';
 import { applyBatch } from '../server/batch.mjs';
 import { runHistoryTool } from '../server/history.mjs';
-import { findRecords, resolveRows } from '../server/records-tool.mjs';
+import { FILTERS_DOC, findRecords, resolveRows } from '../server/records-tool.mjs';
 import { RESULT_BUDGET, fitResult } from '../server/tool-budget.mjs';
 
 // Tool answers within one size, rows named by their ID in the sheet, and column names as people
@@ -62,6 +63,23 @@ test('fitResult: an answer over the budget keeps the start of its longest lists 
   assert.match(nested.next, /group\.changes: the first \d+ of 900/);
   // Nothing to cut: an error that says how to ask for less.
   assert.match(fitResult({ text: 'x'.repeat(RESULT_BUDGET + 10) }, { narrow: 'ask for one field' }).error, /too long.*ask for one field/);
+});
+
+test('the tool list: the long texts once, the tools loaded with every chat kept small', () => {
+  const tools = mcpTools();
+  const text = JSON.stringify(tools);
+  const times = part => text.split(part).length - 1;
+  assert.equal(times(JSON.stringify(FILTERS_DOC).slice(1, -1)), 1, 'the filters explained once (find_records)');
+  assert.equal(times('{\\"clear\\": true} empties the cell'), 1, 'the values explained once (propose_changes)');
+  const always = tools.filter(t => t._meta?.['anthropic/alwaysLoad']);
+  assert.ok(JSON.stringify(always).length < 11000, String(JSON.stringify(always).length));
+  // The notebook procedure is in the digitalizar-cuaderno skill; the tool keeps the columns.
+  const notebook = tools.find(t => t.name === 'match_notebook').description;
+  assert.ok(notebook.length < 4500, String(notebook.length));
+  assert.match(notebook, /digitalizar-cuaderno skill/);
+  const skill = readFileSync(new URL('../assistant/skills/digitalizar-cuaderno/SKILL.md', import.meta.url), 'utf8');
+  assert.match(skill, /## What `match_notebook` takes/);
+  assert.match(skill, /\*\*The year\*\*/);
 });
 
 test('column names as people write them: one column, or the nearest ones named', () => {

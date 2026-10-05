@@ -28,7 +28,7 @@ description lists each notebook's columns.
      re-align it.
 3. **Propose at once**: one `match_notebook` per page with
    `includeUnchanged: true` (the table then follows the whole page), and
-   `year` only if the page shows it. All the envelopes/labels of a message are
+   `year` only if the page shows it (see "The year" below). All the envelopes/labels of a message are
    one call (`kind: "labels"`). Don't look the rows up first: the tool does
    it. Pass `photo` (the attachment's file name) and `rotate` (the turn you
    gave crops.py) so the page shows upright beside its table.
@@ -44,10 +44,15 @@ description lists each notebook's columns.
    changed. A page already proposed in this chat is re-matched the same way
    (one proposal per page).
 
-From the answer:
+From the answer (`proposalId`, `year`/`yearSource`, counts, and per line its
+status: match, new, missing, ambiguous, duplicate, nokey, crossed; then
+`inProposal`, `rowError`, `warnings` and the cells by group: fill, differs,
+doubtful, unreadable, implied, kept, notWritten, problems):
 
 - `missing` (an ID not in the sheet: probably misread; see `didYouMean`),
-  `ambiguous` and `duplicate` lines go in your summary.
+  `ambiguous` and `duplicate` lines go in your summary, with `rowError`,
+  `differs` and `warnings` (e.g. a clutch's adults unlike the butterflies
+  typed in Insectary_data).
 - `overlaps` = the same rows in another pending proposal: if it is the same
   page, pass its id as `replaceProposalId` next time.
 - A correction that looks like a typing slip (a digit missing, two swapped,
@@ -55,21 +60,55 @@ From the answer:
   same column in the rows around the page. The tool adds those it finds
   (`sameErrorNearby`) after the page's rows, as doubtful cells; propose
   others you see the same way, and say in the summary how many rows off the
-  photo have it and where.
+  photo have it and where. Those with `inProposal` are in the proposal;
+  `alreadyIn` names another pending proposal that writes them.
+- `wildWithoutCollection`: wild-caught butterflies without their
+  Collection_data row, drafted for you to complete.
 
 Pages that are not a plain notebook table (cage cards, crosses notebook,
 field envelopes): read the skill **data-rules** first.
+
+## What `match_notebook` takes
+
+Every line, top to bottom, with its values as written:
+
+- dates as written (`17/9`); ditto marks replaced by the value above (a brace
+  or ditto over many lines can go once in `spans`); short CAMs and tubes
+  (`cam505`, `81`) may stay short;
+- counts as written (`12+15`; a corrected count as `12=9=4`); INSECTARY OR
+  LABORATORY (`ins/oda`) and the notes columns as written;
+- a doubtful cell: your best reading as the value, confidence below 0.8, up
+  to 3 alternatives and a short reason; it is highlighted;
+- an unreadable cell: null (never left out), a reason, and any partial
+  reading in alternatives; it shows empty for the person to fill and is
+  never written empty;
+- a cell empty on the page: its column left out.
+
+The tool finds each row (look-alike IDs 0/O, 1/I, 5/S, row order), completes
+list values, keeps the SPECIES formula unless what emerged differs, writes
+notes as `d/m/yy INI: text` after the existing note, turns owner codes,
+generations (`(F1)`), dashes and note words (`ethanol`, `wc`, a CAM…) into
+their columns, fills a death's template, and flags as doubtful the clutches,
+CAMs and tubes that break the run around them. Implied values never replace
+a value the row has. With `includeUnchanged`, lines already in the sheet show
+as grey context rows, never written.
+
+**The year**: `year` only when the page shows it (a header, a sticky note, a
+full date). Without it the tool takes the year the sheet has for the same
+dates in those rows, or the current year when the page's dates are from the
+last 120 days. Otherwise it proposes nothing and asks for the year: ask the
+person, then call again with `year`.
 
 ## Doubtful and unreadable cells
 
 Propose everything readable; doubt is a highlight, not an omission.
 
 - **Not sure**: your best reading, with confidence, alternatives and a
-  reason, as the tool describes. Use it for characters you cannot tell apart,
+  reason, as above. Use it for characters you cannot tell apart,
   not for whole columns: a value you can read, on a line you could follow, is
   sure. A clear value that looks wrong (a date out of stage order, adults >
   pupae) is sure: send it as written and point it out.
-- **Cannot read it at all**: mark it unreadable as the tool describes.
+- **Cannot read it at all**: mark it unreadable as above.
 - **Look-alikes**: 0/O, 1/I/7, 1/4, 1/2, 3/7, 2/7, 5/S, 8/B, 2/Z, 6/G, 4/9,
   3/8, `+`/1; ♀/♂ written small. Before reading digits, compare this hand's 1
   and 7 (and 3/8) on clear cells of the same page, zoomed. Copy IDs as

@@ -612,9 +612,9 @@ export function countRecords(db, args) {
 }
 
 export const FILTERS_DOC =
-  'Column → condition, all must hold: a value (equal; text ignores case and accents; dates YYYY-MM-DD), a list (any of), {"contains": "text"}, {"not": value or list}, {"empty": true|false}, {"from": …, "to": …} (dates or numbers, inclusive). Formula columns are filtered on their computed value. E.g. {"SPECIES": "Oleria onega", "Preservation_medium": "Flash frozen"}';
+  'Column → condition, all must hold: a value (equal; text ignores case and accents; dates YYYY-MM-DD), a list (any of), {"contains": "text"}, {"not": value or list}, {"empty": true|false}, {"from", "to"} (dates or numbers, inclusive). Formula columns by their computed value. E.g. {"SPECIES": "Oleria onega", "Sex": "female"}';
 const NEAR_DOC =
-  'Only rows within km of a place: {"location": a Collection_location of Location_data, e.g. "Ikiam"} or {"lat": -0.95, "lon": -77.87}, plus "km". A row is placed by its DECIMAL_LATITUDE/DECIMAL_LONGITUDE, else by its Collection_location in Location_data; rows without a place are left out and counted (rowsWithoutPlace).';
+  'Rows within km of a place: {"location": a Collection_location of Location_data, e.g. "Ikiam"} or {"lat", "lon"}, plus "km". A row is placed by DECIMAL_LATITUDE/LONGITUDE, else its Collection_location; rows without a place are counted apart (rowsWithoutPlace).';
 
 export const RECORD_TOOLS = [
   {
@@ -623,29 +623,29 @@ export const RECORD_TOOLS = [
       name: 'find_records',
       description:
         [
-          'Rows of one sheet, by exact identifiers (`field` + `values`, e.g. the Insectary_IDs of a notebook page; identifiers not found come back in `missing`) and/or by column `filters` and distance to a place (`near`).',
-          '- Each row: id, row, values = every non-empty cell (formula cells with their computed value; dates YYYY-MM-DD) and formulas = the formula text of counts typed as sums (=16+2-1), or of every formula cell with `formulas: true`. formulaColumns lists the formula columns.',
-          '- Ask only the columns you need (`fields`) and page with limit/offset. A cut answer says "Truncated: N more rows": narrow the query or page.',
-          '- `idsOnly`: each row as id, row and label only (300 rows by default), e.g. to list rows. The same values for many rows: `propose_changes` `bulk` picks them by these filters itself.',
-          '- "How many": `count_records`.',
+          'Rows of one sheet by identifiers (`field` + `values`; those not found come back in `missing`), `filters` and/or `near`.',
+          '- Each row: id, row, values (non-empty cells; formulas computed; dates YYYY-MM-DD), `formulas`: the text of counts typed as sums (=16+2-1), of all with `formulas: true`.',
+          '- `fields`: a table instead: `columns` (id, row, label, the fields) and `rows` (lists of values, null = empty).',
+          '- `idsOnly`: id, row and label per row (300 by default). Counts: count_records.',
+          '- A long answer ends with `truncated` and `next` (page with offset, or narrow it).',
         ].join('\n'),
       parameters: {
         type: 'object',
         properties: {
-          module: { type: 'string', description: 'Sheet, e.g. Insectary_data, Collection_data, Insectary_stocks (sheet also accepted)' },
-          field: { type: 'string', description: 'Column the identifiers are in, e.g. Insectary_ID, CAM_ID, CLUTCH NUMBER' },
-          values: { type: 'array', items: { type: 'string' }, description: 'Identifiers to look up (up to 500)' },
+          module: { type: 'string', description: 'The sheet, e.g. Insectary_data' },
+          field: { type: 'string', description: 'Column of the identifiers, e.g. Insectary_ID, CAM_ID, CLUTCH NUMBER' },
+          values: { type: 'array', items: { type: 'string' }, description: 'Up to 500 identifiers' },
           filters: { type: 'object', description: FILTERS_DOC },
           near: {
             type: 'object',
             description: NEAR_DOC,
             properties: { location: { type: 'string' }, lat: { type: 'number' }, lon: { type: 'number' }, km: { type: 'number' } },
           },
-          fields: { type: 'array', items: { type: 'string' }, description: 'Only these columns in each row' },
-          idsOnly: { type: 'boolean', description: 'Only id, row and label of each row' },
-          formulas: { type: 'boolean', description: 'Also the formula text of every formula cell returned' },
-          limit: { type: 'integer', description: 'Rows to return, 1 to 500 (default 150 with values, 50 otherwise)' },
-          offset: { type: 'integer', description: 'Rows to skip, to page through a long answer' },
+          fields: { type: 'array', items: { type: 'string' } },
+          idsOnly: { type: 'boolean' },
+          formulas: { type: 'boolean' },
+          limit: { type: 'integer', description: '1 to 500 (default 150 with values, else 50)' },
+          offset: { type: 'integer' },
         },
         required: ['module'],
       },
@@ -656,21 +656,17 @@ export const RECORD_TOOLS = [
     function: {
       name: 'count_records',
       description: [
-        'Count the rows of one sheet matching `filters` and/or `near` (as in `find_records`), in total and per group (`groupBy`: up to 3 columns; a date column as "Collection_date:year" or ":month"). Empty cells group as "(empty)". Pre-made rows that only hold formulas are not counted.',
+        'Count the rows of one sheet matching `filters` and/or `near` (as in find_records), in total and per group (`groupBy`: up to 3 columns; a date column as "Collection_date:year" or ":month"; empty cells as "(empty)"). Pre-made rows are not counted.',
         '- A text column as groupBy (e.g. Notes) gives each distinct text once with its count: a quick way to read and classify notes.',
       ].join('\n'),
       parameters: {
         type: 'object',
         properties: {
-          sheet: { type: 'string', description: 'e.g. Collection_data' },
-          filters: { type: 'object', description: FILTERS_DOC },
-          near: {
-            type: 'object',
-            description: NEAR_DOC,
-            properties: { location: { type: 'string' }, lat: { type: 'number' }, lon: { type: 'number' }, km: { type: 'number' } },
-          },
+          sheet: { type: 'string' },
+          filters: { type: 'object', description: 'As in find_records' },
+          near: { type: 'object', description: 'As in find_records' },
           groupBy: {
-            description: 'A column or a list of up to 3, e.g. "SPECIES" or ["SPECIES", "Sex"]',
+            description: 'e.g. "SPECIES" or ["SPECIES", "Sex"]',
             anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
           },
         },

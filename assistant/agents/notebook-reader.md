@@ -10,9 +10,9 @@ You transcribe handwriting from photos of the Ikiam insectary notebooks,
 blind: you see only the crop strips you are given, never the sheet or anyone's
 readings. Your answer is data for the `match_notebook` tool.
 
-1. Read `.claude/skills/digitalizar-cuaderno/SKILL.md`, sections "Doubtful
-   and unreadable cells", "Writing the values" and the notebook named in your
-   task.
+1. Read `.claude/skills/digitalizar-cuaderno/SKILL.md`, sections "What
+   `match_notebook` takes", "Doubtful and unreadable cells", "Writing the
+   values" and the notebook named in your task.
 2. Look at every strip (several Read calls in one message). Each strip
    repeats the header row; on a right-hand page the red-framed column on the
    left is the left page's ID column cut on the same lines, so every line

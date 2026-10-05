@@ -1191,7 +1191,8 @@ export const HISTORY_TOOLS = [
         [
           'A group of the Historial (`id`: a group id, or any action id inside it), or one save alone (`actionId`), with its changes: sheet, row, record label, field, before → after, and whether it was already undone. Give the person its `url`.',
           '- recordId, field and text keep only the changes that match; `cells` counts them.',
-          '- Up to maxChanges changes per answer; `next` is the offset of the rest.',
+          '- Formula cells read "(formula)" (`formulas: true` gives their text); saves with nothing to show are counted in savesWithoutChanges.',
+          '- Up to maxChanges changes per answer, fewer when they are long; `next` is the offset of the rest.',
         ].join('\n'),
       parameters: {
         type: 'object',
@@ -1201,7 +1202,8 @@ export const HISTORY_TOOLS = [
           recordId: { type: 'string' },
           field: { type: 'string', description: 'Column name' },
           text: { type: 'string', description: 'Label, field or value' },
-          maxChanges: { type: 'integer', description: 'Default 300' },
+          maxChanges: { type: 'integer', description: 'Default 150' },
+          formulas: { type: 'boolean' },
           offset: { type: 'integer' },
         },
       },
@@ -1216,6 +1218,7 @@ export const HISTORY_TOOLS = [
           'Every change to one row, oldest first: when, who, why, each field before → after, and a link to each save.',
           '- `id`: a label or identifier (Insectary_ID, CAM_ID, clutch number…). When several rows have it, they are listed with their recordId instead.',
           '- `others`: further rows with that name (another sheet, gone from the sheet, or formerly so named).',
+          '- Formula cells read "(formula)" unless `formulas: true`. A long history comes in parts: `next` is the offset of the rest.',
         ].join('\n'),
       parameters: {
         type: 'object',
@@ -1226,6 +1229,7 @@ export const HISTORY_TOOLS = [
           from: { type: 'string', description: 'YYYY-MM-DD (day in Ecuador)' },
           to: { type: 'string', description: 'YYYY-MM-DD (inclusive)' },
           limit: { type: 'integer', description: 'Saves per answer, default 100' },
+          formulas: { type: 'boolean' },
           offset: { type: 'integer' },
         },
       },

@@ -69,10 +69,10 @@ const parse = value => {
  * "d/m/yy INI: " form after what the cell holds; { replace } rewrites it.
  */
 const VALUES_DOC =
-  'Column → value; dates YYYY-MM-DD, times H:MM. null (or leaving the column out) = no change; {"clear": true} = empty the cell; notes: only the new text ({"replace": "…"} rewrites the note).';
+  'Column → value, also in newRows and bulk set: dates YYYY-MM-DD, times H:MM; null or leaving the column out = no change; {"clear": true} empties the cell (in a new row both leave it empty).';
 const VALUES_RULES = [
-  '- Values: null (or leaving the column out) = no change, never an empty cell. {"clear": true} empties a cell: only when the person wants it emptied.',
-  '- Notes columns (NOTES, Notes, Notes_…): give only the new text. It is written as "d/m/yy INI: text" (today, the person\'s initials) after the existing note with " | ", never over it. {"replace": "the whole note"} rewrites it: only when the person asked.',
+  '- null = no change, never an empty cell; {"clear": true} only when the person wants it emptied.',
+  '- Notes (NOTES, Notes_…): only the new text; it goes after the existing note as "d/m/yy INI: text". {"replace": "…"} rewrites it, only when asked.',
 ].join('\n');
 /**
  * A value the assistant dropped (null in update_proposal), or a cell the person
@@ -111,8 +111,15 @@ const TOOLS = [
     function: {
       name: 'get_record',
       description:
-        'One row by app ID: its sheet and row, every non-empty value (formula cells with their computed value) and `formulas` (the formula text of each formula cell).',
-      parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+        'One row: its sheet and row, every non-empty value (formula cells computed) and `formulas` (the text of each formula cell).',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'recordId, or the ID in the sheet (W2B, CAM079891, a clutch)' },
+          sheet: { type: 'string' },
+        },
+        required: ['id'],
+      },
     },
   },
   {
@@ -120,10 +127,14 @@ const TOOLS = [
     function: {
       name: 'describe_sheet',
       description:
-        'Columns of a sheet with their type, `formula: true` on formula columns, and the latest filled rows. Dropdown columns give `allowed`: the sheet\'s own list (from the Lists sheet; strict = the sheet refuses other values), whole when short; long ID lists (CAM pools, tubes) as their ranges of consecutive IDs, newest first (get_alerts has the CAM pools\' next free and remaining). Other columns with few values give the values in use; free text (notes) a few `examples` and the `distinct` count.',
+        "A sheet's columns: type, `formula: true`, and for dropdown columns `allowed`: the sheet's list (from Lists; strict = other values refused), long ID lists (CAM pools, tubes) as ranges of consecutive IDs, newest first. Other columns with few values give the values in use; free text a few `examples` and the `distinct` count.",
       parameters: {
         type: 'object',
-        properties: { module: { type: 'string', description: `The sheet: ${[...moduleMap.keys()].join(', ')}` } },
+        properties: {
+          module: { type: 'string', description: 'The sheet, e.g. Insectary_data' },
+          columns: { type: 'array', items: { type: 'string' }, description: 'Only these columns' },
+          latestRows: { type: 'integer', description: 'Also the latest n filled rows (up to 10)' },
+        },
         required: ['module'],
       },
     },
@@ -219,11 +230,12 @@ const TOOLS = [
       name: 'propose_changes',
       description:
         [
-          'Draft edits to existing rows (`changes`) and/or new rows (`newRows`). The person sees them at once as a table beside the chat; nothing is written until they confirm.',
-          '- One proposal per task (e.g. per walk or per kind of fix), with a short note per row saying where the values come from.',
-          "- Formula cells cannot be changed, except SPECIES in Insectary_data when what emerged differs from the formula's prediction, and an Insectary_ID given to two butterflies: the row's own ID with a suffix (W2B → W2B.1).",
-          "- A new Insectary_data row takes its Insectary_ID (the one on the wing or notebook): the row whose ID formula gives it is filled, and the pre-made rows are extended up to it when they run out. The second butterfly of a repeated ID gets a suffixed ID (W2B.2): its row is inserted directly below that ID's rows when applied (undoing the save deletes it).",
-          `- At most ${PROPOSAL_ROWS} rows per proposal. \`bulk\` gives the same values to many existing rows without listing them (up to ${BULK_ROWS} in one call); over ${PROPOSAL_ROWS} rows it makes several proposals and returns each one's link.`,
+          'Draft edits to existing rows (`changes`) and/or new rows (`newRows`), shown at once as a table beside the chat; nothing is written until the person confirms.',
+          '- One proposal per task (a walk, a kind of fix), with a short note per row on where its values come from.',
+          '- A row: its `recordId`, or `sheet` + `id`, its ID in the sheet (W2B, CAM079891, a clutch number).',
+          "- Formula cells cannot be changed, except Insectary_data's SPECIES when what emerged differs from the formula, and an Insectary_ID given to two butterflies: a suffix on the row's own ID (W2B → W2B.1).",
+          "- A new Insectary_data row names its Insectary_ID and fills the pre-made row of that ID; a second butterfly of a used ID takes a suffix (W2B.2), its row inserted below that ID's rows.",
+          `- Up to ${PROPOSAL_ROWS} rows per proposal; \`bulk\` gives the same values to up to ${BULK_ROWS} existing rows (in proposals of ${PROPOSAL_ROWS}).`,
           VALUES_RULES,
         ].join('\n'),
       parameters: {
@@ -235,36 +247,34 @@ const TOOLS = [
               type: 'object',
               properties: {
                 recordId: { type: 'string' },
+                sheet: { type: 'string' },
+                id: { type: 'string' },
                 values: { type: 'object', description: VALUES_DOC },
                 note: { type: 'string' },
               },
-              required: ['recordId', 'values'],
+              required: ['values'],
             },
           },
           newRows: {
             type: 'array',
             items: {
               type: 'object',
-              properties: {
-                sheet: { type: 'string' },
-                values: { type: 'object', description: `${VALUES_DOC} In a new row, null and {"clear": true} just leave the cell empty.` },
-                note: { type: 'string' },
-              },
+              properties: { sheet: { type: 'string' }, values: { type: 'object' }, note: { type: 'string' } },
               required: ['sheet', 'values'],
             },
           },
           bulk: {
             type: 'array',
             description:
-              'The same values for many existing rows: each group picks the rows of one sheet by `filters` and/or `recordIds` and gives each of them `set`. E.g. {"sheet": "Insectary_data", "filters": {"LIFESTAGE": {"empty": false}, "Sex": {"empty": true}}, "set": {"Sex": "NOT_COLLECTED"}}. Rows that already hold the values are left out; a row also in `changes` keeps the values given there. The answer says how many rows each group matched and shows a few.',
+              'Rows of one sheet by `filters` (as in find_records) and/or `recordIds`, each given `set`, e.g. {"sheet": "Insectary_data", "filters": {"Sex": {"empty": true}}, "set": {"Sex": "NOT_COLLECTED"}}. Rows already holding the values are left out.',
             items: {
               type: 'object',
               properties: {
                 sheet: { type: 'string' },
-                filters: { type: 'object', description: `As in find_records. ${FILTERS_DOC}` },
-                recordIds: { type: 'array', items: { type: 'string' }, description: 'These rows (with filters: those of them that match)' },
-                set: { type: 'object', description: VALUES_DOC },
-                note: { type: 'string', description: "Each row's note: where the values come from" },
+                filters: { type: 'object' },
+                recordIds: { type: 'array', items: { type: 'string' } },
+                set: { type: 'object' },
+                note: { type: 'string' },
               },
               required: ['sheet', 'set'],
             },
@@ -273,8 +283,7 @@ const TOOLS = [
           issueIds: {
             type: 'array',
             items: { type: 'string' },
-            description:
-              'The issueId of every fix from list_agreed_fixes used in this proposal: once the person applies it, those issues show as applied in the Revisión tab',
+            description: 'Of the list_agreed_fixes fixes in it (marked applied in Revisión with it)',
           },
         },
         required: ['reason'],
@@ -353,33 +362,27 @@ const TOOLS = [
       name: 'show_rows',
       description:
         [
-          "Show the person rows of one sheet as a table beside the chat (Asistente → «Cambios propuestos»): read-only, always with the sheet's current values, sortable. When an answer is about many rows (a species' dissections, a clutch's butterflies, the rows an issue involves), show them there and keep the text to what they mean.",
-          `- Rows: \`recordIds\` and/or \`filters\` or \`field\` + \`values\` as in \`find_records\`; up to ${TABLE_ROWS}.`,
-          '- `columns`: the ones that matter for the question, in your order. Without them: the ID columns, then the filled ones.',
-          '- `notes`: your comments, on a row (beside its ID) or on a cell (`field`: a corner mark, read on hover); `highlight` marks that row or cell.',
-          '- `tableId`: change a table already shown, in place (what you leave out stays).',
-          'Returns `link` (the table on its own page) and `assistantLink` (beside its chat).',
+          "Show the person rows of one sheet as a read-only table beside the chat (current values). When an answer is about many rows (a clutch's butterflies, an issue's rows), show them there and keep the text to what they mean.",
+          `- Rows: \`recordIds\` (or IDs) and/or \`filters\` or \`field\` + \`values\` as in find_records; up to ${TABLE_ROWS}.`,
+          '- `columns`: the ones that matter, in order (default: ID columns, then filled ones). `notes`: comments on a row or a cell (`field`); `highlight` marks it.',
+          '- `tableId`: change a shown table in place (what you leave out stays).',
+          'Returns `link` (the table alone) and `assistantLink` (beside its chat).',
         ].join('\n'),
       parameters: {
         type: 'object',
         properties: {
-          title: { type: 'string', description: 'What the table shows, e.g. "Spermatophore dissections: M. polymnia and M. lysimnia"' },
-          sheet: { type: 'string', description: 'e.g. Sperm_dissections, Insectary_data' },
-          recordIds: { type: 'array', items: { type: 'string' }, description: 'App IDs of rows (from find_records, get_record, check_data…)' },
-          field: { type: 'string', description: 'Column the identifiers in `values` are in, e.g. Insectary_ID' },
+          title: { type: 'string', description: 'e.g. "Dissections of M. lysimnia"' },
+          sheet: { type: 'string' },
+          recordIds: { type: 'array', items: { type: 'string' } },
+          field: { type: 'string' },
           values: { type: 'array', items: { type: 'string' } },
-          filters: { type: 'object', description: FILTERS_DOC },
+          filters: { type: 'object' },
           columns: { type: 'array', items: { type: 'string' } },
           notes: {
             type: 'array',
             items: {
               type: 'object',
-              properties: {
-                recordId: { type: 'string' },
-                field: { type: 'string', description: 'A column: the note is on that cell' },
-                text: { type: 'string' },
-                highlight: { type: 'boolean' },
-              },
+              properties: { recordId: { type: 'string' }, field: { type: 'string' }, text: { type: 'string' }, highlight: { type: 'boolean' } },
               required: ['recordId'],
             },
           },
@@ -429,70 +432,38 @@ const TOOLS = [
       name: 'update_proposal',
       description:
         [
-          "Revise a pending proposal in place (the person sees the table change live). When the person corrects something ('la especie es X', 'quita la fila 3', 'falta el colector'), update the same proposal, not a new one.",
-          "- rows: cells of rows already in it, by index. A value replaces yours; null drops your proposed change to that cell (an existing row keeps the sheet's value, a new row's cell stays empty) and never empties it; {\"clear\": true} empties the sheet's cell (only when the person wants it emptied; shown in red as vaciar).",
-          '- rows[].checked: doubtful cells the person confirmed as they are (a new value in a doubtful cell also ends the doubt).',
-          '- changes / newRows: more rows (a recordId already in it merges into its row). removeRows: indexes to take out.',
-          '- Every value is checked as in `propose_changes`; if one fails, nothing is saved. Notes: as in `propose_changes`.',
-          '- Cells the person edited in the table are theirs: they come back as conflicts and are kept. Tell the person; set `overridePersonEdits` only when they ask you to replace them.',
-          "- photo / rotate: the page's photo(s) shown beside the table, as in match_notebook (alone, or with other changes).",
-          'Returns the rows with their index (a cell to be emptied shows as {"clear": true}; match_notebook\'s context rows are marked context and never written; doubtful cells show under doubtful with checked).',
+          'Revise a pending proposal in place (the person sees it change): when the person corrects something, update the same proposal.',
+          '- rows: cells of its rows, by `index` or `id` (e.g. "W2B"). A value replaces yours; null drops your proposed change to that cell, never empties it; {"clear": true} empties it. `checked`: doubtful cells the person confirmed.',
+          '- changes / newRows: more rows, as in propose_changes. removeRows: indexes or IDs. If a value fails its checks, nothing is saved.',
+          '- Cells the person edited are theirs: kept, and returned as conflicts; `overridePersonEdits` only when they ask.',
+          "- photo / rotate: the page's photos, as in match_notebook.",
+          'Returns `changed` (those rows as get_proposal full shows them), `removed`, the row count; `full: true`: every row.',
         ].join('\n'),
       parameters: {
         type: 'object',
         properties: {
           proposalId: { type: 'string' },
-          photo: {
-            description: 'The attachment file name(s) of the page\'s photo(s) (from "[Attached image … saved at …]" in this chat); replaces the ones it has',
-            anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
-          },
-          rotate: {
-            description: 'Clockwise turn that makes each photo upright (0, 90, 180, 270), as given to crops.py; a list for several photos',
-            anyOf: [{ type: 'integer', enum: [0, 90, 180, 270] }, { type: 'array', items: { type: 'integer', enum: [0, 90, 180, 270] } }],
-          },
+          photo: { description: 'As in match_notebook' },
+          rotate: { description: 'As in match_notebook' },
           rows: {
             type: 'array',
             items: {
               type: 'object',
               properties: {
-                index: { type: 'integer', description: 'The row index in the proposal (propose_changes / get_proposal)' },
-                values: {
-                  type: 'object',
-                  description:
-                    'Column → new value; dates as YYYY-MM-DD, times as H:MM. null = drop your change to that cell (it does NOT empty it); {"clear": true} = empty the cell',
-                },
+                index: { type: 'integer' },
+                id: { type: 'string' },
+                values: { type: 'object' },
                 note: { type: 'string' },
-                checked: {
-                  type: 'array',
-                  items: { type: 'string' },
-                  description: "Doubtful columns of this row the person confirmed in the chat as they are ('sí, es 843')",
-                },
+                checked: { type: 'array', items: { type: 'string' } },
               },
-              required: ['index'],
             },
           },
-          changes: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: { recordId: { type: 'string' }, values: { type: 'object', description: VALUES_DOC }, note: { type: 'string' } },
-              required: ['recordId', 'values'],
-            },
-          },
-          newRows: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: { sheet: { type: 'string' }, values: { type: 'object' }, note: { type: 'string' } },
-              required: ['sheet', 'values'],
-            },
-          },
-          removeRows: { type: 'array', items: { type: 'integer' } },
-          reason: { type: 'string', description: 'A new title for the proposal, only if its subject changed' },
-          overridePersonEdits: {
-            type: 'boolean',
-            description: 'Replace cells the person edited by hand; only when the person asked for it',
-          },
+          changes: { type: 'array', items: { type: 'object' } },
+          newRows: { type: 'array', items: { type: 'object' } },
+          removeRows: { type: 'array', items: { anyOf: [{ type: 'integer' }, { type: 'string' }] } },
+          reason: { type: 'string', description: 'A new title, only if the subject changed' },
+          overridePersonEdits: { type: 'boolean' },
+          full: { type: 'boolean' },
         },
         required: ['proposalId'],
       },
@@ -504,14 +475,19 @@ const TOOLS = [
       name: 'get_proposal',
       description:
         [
-          'A proposal as the person sees it now: each row with its index, values (dates YYYY-MM-DD) and note, plus:',
-          "- personEdits: cells the person corrected in the table, or set back to the sheet's value with «Valor de la hoja» (not written), each with what you had proposed.",
-          "- doubtful: match_notebook's doubtful cells (alternatives, reason, checked).",
-          '- unreadable: cells the AI could not read (reason, partial, filled; empty ones are never written).',
-          "- sheetChanged: cells someone edited in the sheet after you read them (read, now, by, applying). Applying keeps the sheet's value unless the person chose yours; re-check them against the photo, then update_proposal: a value you give there goes over the sheet's new one, null keeps it.",
-          'Read it when the person says they changed the table, before `update_proposal` on a proposal you did not just make, and before `apply_proposal` if they edited it.',
+          "A proposal as the person sees it now: status, revision, each row's label by index (`labels`) and `attention`, the rows that need a look:",
+          "- personEdits: cells the person corrected in the table, or set back to the sheet's value («Valor de la hoja», not written), each with what you had proposed;",
+          "- doubtful: match_notebook's doubtful cells not checked yet (value, alternatives, reason);",
+          '- unreadable: cells nobody could read, still empty (never written empty);',
+          "- sheetChanged: cells edited in the sheet after you read them (read, now, by, applying). Applying keeps the sheet's value unless the person chose yours; re-check them, then update_proposal: your value goes over the sheet's, null keeps it. rowTaken: a new row's pre-made row is in use now.",
+          '`full: true`: every row with its index, values (dates YYYY-MM-DD), note and these marks (`offset` continues a long one).',
+          'Read it when the person says they changed the table, before update_proposal on a proposal you did not just make, and before apply_proposal if they edited it.',
         ].join('\n'),
-      parameters: { type: 'object', properties: { proposalId: { type: 'string' } }, required: ['proposalId'] },
+      parameters: {
+        type: 'object',
+        properties: { proposalId: { type: 'string' }, full: { type: 'boolean' }, offset: { type: 'integer' } },
+        required: ['proposalId'],
+      },
     },
   },
 ];
@@ -705,7 +681,7 @@ export function createAssistant({ store, config = {} }) {
   /** describe_sheet: the sheet's columns (only `columns` when given) and, when asked, its `latestRows` filled rows. */
   function describeSheet(args) {
     const mod = moduleMap.get(String(args.module ?? args.sheet ?? ''));
-    if (!mod) return { error: `Unknown sheet ${clip(args.module ?? args.sheet, 60)}` };
+    if (!mod) return { error: `Unknown sheet ${clip(args.module ?? args.sheet, 60)}; the sheets: ${[...moduleMap.keys()].join(', ')}` };
     let only = null;
     if (args.columns !== undefined) {
       const asked = Array.isArray(args.columns) ? args.columns : [args.columns];
