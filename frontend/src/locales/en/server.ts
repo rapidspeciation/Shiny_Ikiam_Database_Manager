@@ -38,4 +38,18 @@ export default {
   // server/knowledge.mjs, server/t3admin.mjs
   'No se pudo iniciar la sincronización con Drive': 'The sync with Drive could not be started',
   'No se pudo iniciar la actualización de T3': 'The T3 update could not be started',
+  // server/census.mjs
+  'Ese censo no existe': 'That census does not exist',
+  'Ese censo ya terminó': 'That census has already finished',
+  'Ese censo no está terminado': 'That census is not finished',
+  'Elige la especie del censo': 'Choose the census species',
+  'Fecha no válida': 'Invalid date',
+  'Marca no válida': 'Invalid mark',
+  'Duda no válida': 'Invalid doubt',
+  'Escribe el ID que se leyó': 'Type the ID that was read',
+  'Esa mariposa no está en Insectary_data': 'That butterfly is not in Insectary_data',
+  'Esa marca ya no está': 'That mark is no longer there',
+  'El censo cambió mientras lo revisabas: revísalo otra vez': 'The census changed while you were reviewing it: review it again',
+  'Las desapariciones ya están en Google Sheets: corrígelas en Muertes o deshazlas en Historial':
+    'The disappearances are already in Google Sheets: correct them in Deaths or undo them in History',
 } as Record<string, string>

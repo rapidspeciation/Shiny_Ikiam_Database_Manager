@@ -26,6 +26,7 @@ export const PURPOSES = {
   muertes: 'Muertes',
   emergidos: 'Emergidos',
   clutches: 'Clutches',
+  censo: 'Censo',
   tubos: 'Tubos',
   tablas: 'Tablas',
   revision: 'Revisión',
@@ -37,7 +38,7 @@ export const PURPOSES = {
 };
 
 /** Purposes a client may declare for its own save (the tab it was made in). */
-export const CLIENT_PURPOSES = new Set(['colecta', 'monitoreo', 'muertes', 'emergidos', 'clutches', 'tubos', 'tablas', 'revision']);
+export const CLIENT_PURPOSES = new Set(['colecta', 'monitoreo', 'muertes', 'emergidos', 'clutches', 'censo', 'tubos', 'tablas', 'revision']);
 export const cleanPurpose = value => (CLIENT_PURPOSES.has(value) ? value : null);
 
 const MINUTE = 60_000;
@@ -575,6 +576,7 @@ const NEW_NOUN = {
 };
 const EDIT_NOUN = {
   muertes: [tpl('{n} muerte registrada'), tpl('{n} muertes registradas')],
+  censo: [tpl('{n} desaparecida en un censo'), tpl('{n} desaparecidas en un censo')],
   tubos: [tpl('{n} mariposa con tubos o CAM'), tpl('{n} mariposas con tubos o CAM')],
   clutches: [tpl('{n} clutch actualizado'), tpl('{n} clutches actualizados')],
   sheets: [tpl('{n} fila cambiada en Google Sheets'), tpl('{n} filas cambiadas en Google Sheets')],

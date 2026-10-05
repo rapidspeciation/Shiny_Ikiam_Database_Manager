@@ -29,6 +29,11 @@ export default {
   '{n} clutch nuevo': '{n} new clutch',
   '{n} clutches nuevos': '{n} new clutches',
   '{n} muerte registrada': '{n} death recorded',
+  '{n} desaparecida en un censo': '{n} disappeared in a census',
+  '{n} desaparecidas en un censo': '{n} disappeared in a census',
+  '{id} ya está marcada como vista': '{id} is already marked as seen',
+  '{id}: solo la fecha del censo, Disappearance y las celdas de una muerte sin preservar':
+    '{id}: only the census date, Disappearance and the cells of a death not preserved',
   '{n} muertes registradas': '{n} deaths recorded',
   '{n} mariposa con tubos o CAM': '{n} butterfly with tubes or CAM',
   '{n} mariposas con tubos o CAM': '{n} butterflies with tubes or CAM',

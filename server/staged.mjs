@@ -1,4 +1,4 @@
-// Emergidos and Clutches entries kept in the app until someone saves them to
+// Emergidos and Clutches entries (and a census's disappearances, server/census.mjs) kept in the app until someone saves them to
 // Google Sheets. Every save to Insectary_data makes the team's workbook
 // recalculate for minutes (5 Oct 2026), and four people work in the insectary at
 // once: what they enter in those two tabs is checked as a save is (IDs, CAMs,
@@ -20,6 +20,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { checkAgainst } from './batch.mjs';
+import { censusEntriesUndone } from './census.mjs';
 import { claimsOf, releaseClaims, takeClaims } from './claims.mjs';
 import { idSuggestions } from './grid.mjs';
 import { asCell, comparable, labelFor, moduleMap } from './schema.mjs';
@@ -404,6 +405,9 @@ export class Staged {
           releaseClaims(this.db, `staged:${item.id}`);
           this.db.prepare('DELETE FROM staged WHERE id = ?').run(item.id);
         }
+        // A census whose disappearances are all undone is open again (server/census.mjs).
+        const emptied = [...new Set(items.map(i => i.entry_id))].filter(e => !this.db.prepare('SELECT 1 FROM staged WHERE entry_id = ?').get(e));
+        censusEntriesUndone(this.store, emptied);
         this.db.exec('COMMIT');
       } catch (e) {
         this.db.exec('ROLLBACK');
@@ -538,9 +542,9 @@ export class Staged {
         const left = whole ? values : Object.fromEntries(Object.entries(values).filter(([field]) => own.some(r => r.field === field)));
         back(item, reason(own[0]), left);
       }
-      // The clutches marked as checked with these entries: their save is this one now.
+      // The clutches marked as checked and the censuses finished with these entries: their save is this one now.
       if (result.actionId && entries.size)
-        for (const table of ['clutch_checks', 'clutch_events'])
+        for (const table of ['clutch_checks', 'clutch_events', 'censuses'])
           this.db
             .prepare(`UPDATE ${table} SET action_id = ? WHERE staged_entry IN (${[...entries].map(() => '?').join(',')}) AND action_id IS NULL`)
             .run(result.actionId, ...entries);

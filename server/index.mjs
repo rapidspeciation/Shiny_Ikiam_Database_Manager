@@ -51,6 +51,18 @@ import {
   setClutchSettings,
   setNotebookUpTo,
 } from './clutches.mjs';
+import {
+  addMark,
+  cancelCensus,
+  censusDetail,
+  censusOverview,
+  finishCensus,
+  removeMark,
+  reopenCensus,
+  setCensusNotebook,
+  startCensus,
+  updateMark,
+} from './census.mjs';
 import { createSheetHook } from './hooks.mjs';
 import { createInvitations, mailerFromEnv } from './invitations.mjs';
 import { createPasswordResets } from './passwordReset.mjs';
@@ -624,7 +636,7 @@ export async function createApp(config = {}, options = {}) {
         const mine = store.db
           .prepare("SELECT id, status, kind, ref, updated_at FROM outbox WHERE actor = ? AND (status IN ('queued','writing') OR updated_at > ?) ORDER BY rowid")
           .all(user.id, new Date(Date.now() - 10 * 60_000).toISOString());
-        return json(res, 200, { revision: store.liveRevision(), ...store.googleState(), mine });
+        return json(res, 200, { revision: store.liveRevision(), ...store.googleState(), mine, census: store.censusStamp ?? 0 });
       }
       // Emergidos and Clutches entries kept in the app (everyone's), taken back, saved to Google Sheets.
       if (method === 'GET' && path === '/api/staged') return json(res, 200, store.staged.list());
@@ -708,6 +720,35 @@ export async function createApp(config = {}, options = {}) {
       if (method === 'PUT' && path === '/api/clutches/notebook/up-to') {
         requireEditor(user);
         return json(res, 200, setNotebookUpTo(store, body, user));
+      }
+      // Censuses (Censo tab): start or join, everyone's marks, finish (disappearances kept in the app), history.
+      if (method === 'GET' && path === '/api/census') return json(res, 200, censusOverview(store, query));
+      if (method === 'POST' && path === '/api/census') {
+        requireEditor(user);
+        requireId(body);
+        return json(res, 200, startCensus(store, body, user));
+      }
+      if (path.startsWith('/api/census/')) {
+        const [, , , censusId, part, markId, extra] = path.split('/');
+        const id = decodePart(censusId ?? '');
+        if (method === 'GET' && !part) return json(res, 200, censusDetail(store, id));
+        if (method !== 'GET' && extra === undefined) {
+          requireEditor(user);
+          if (method === 'POST' && part === 'marks' && !markId) {
+            requireId(body);
+            const out = addMark(store, id, body, user);
+            return json(res, out.duplicate || out.already ? 200 : 201, out);
+          }
+          if (method === 'PATCH' && part === 'marks' && markId) return json(res, 200, updateMark(store, id, decodePart(markId), body, user));
+          if (method === 'DELETE' && part === 'marks' && markId) return json(res, 200, removeMark(store, id, decodePart(markId), user));
+          if (method === 'POST' && part === 'finish' && !markId) {
+            requireId(body);
+            return json(res, 200, await finishCensus(store, id, body, user));
+          }
+          if (method === 'POST' && part === 'reopen' && !markId) return json(res, 200, await reopenCensus(store, id, user));
+          if (method === 'POST' && part === 'cancel' && !markId) return json(res, 200, cancelCensus(store, id, user));
+          if (method === 'PUT' && part === 'notebook' && !markId) return json(res, 200, setCensusNotebook(store, id, body, user));
+        }
       }
       // More pre-made rows (formulas, formats, dropdowns; Insectary IDs) at the end of a sheet.
       if (method === 'POST' && /^\/api\/sheets\/[^/]+\/extend$/.test(path)) {
