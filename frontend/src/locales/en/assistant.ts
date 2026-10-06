@@ -311,6 +311,8 @@ export default {
   'sin cambios': 'no change',
   'La hoja no aceptaría esta línea: su nota dice por qué': 'The sheet would not take this line: its note says why',
   rechazada: 'refused',
+  'Fila marcada por la IA para que la mires': 'Row marked by the AI for you to look at',
+  marcada: 'marked',
   // Cells edited in the sheet after the proposal (ProposalSheet, ProposalGrid, ProposalsLive, lib/proposals)
   'la app': 'the app',
   'Editada en la hoja': 'Edited in the sheet',

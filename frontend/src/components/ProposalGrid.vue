@@ -966,6 +966,12 @@ const statusText = computed(
               :title="$t('La hoja no aceptaría esta línea: su nota dice por qué')"
               >{{ $t('rechazada') }}</span
             >
+            <span
+              v-if="g.changes.some(c => c.highlight)"
+              class="legend is-marked"
+              :title="$t('Fila marcada por la IA para que la mires')"
+              >{{ $t('marcada') }}</span
+            >
           </span>
         </template>
       </ProposalSheet>

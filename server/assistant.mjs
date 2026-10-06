@@ -294,6 +294,7 @@ const TOOLS = [
                 id: { type: 'string' },
                 values: { type: 'object', description: VALUES_DOC },
                 note: { type: 'string' },
+                highlight: { type: 'boolean' },
               },
               required: ['values'],
             },
@@ -302,7 +303,7 @@ const TOOLS = [
             type: 'array',
             items: {
               type: 'object',
-              properties: { sheet: { type: 'string' }, values: { type: 'object' }, note: { type: 'string' } },
+              properties: { sheet: { type: 'string' }, values: { type: 'object' }, note: { type: 'string' }, highlight: { type: 'boolean' } },
               required: ['sheet', 'values'],
             },
           },
@@ -504,6 +505,7 @@ const TOOLS = [
           '- changes / newRows: more rows, as in propose_changes. removeRows: indexes or IDs. If a value fails its checks, nothing is saved.',
           '- Cells the person edited are theirs: kept, and returned as conflicts; `overridePersonEdits` only when they ask.',
           "- photo / rotate: the page's photos, as in match_notebook.",
+          '- `highlight` (rows, changes, newRows; propose_changes too): marks the row, as in show_rows; false unmarks.',
           'Returns `changed` (those rows as get_proposal full shows them; rows given the same cells as one `sameChange`), their `lookAt`, `removed`, the row count; `full: true`: every row.',
         ].join('\n'),
       parameters: {
@@ -521,6 +523,7 @@ const TOOLS = [
                 id: { type: 'string' },
                 values: { type: 'object' },
                 note: { type: 'string' },
+                highlight: { type: 'boolean' },
                 checked: { type: 'array', items: { type: 'string' } },
               },
             },
@@ -976,6 +979,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         values,
         replaceFormula: [],
         note: clip(candidate.note, 300),
+        ...(candidate.highlight === true ? { highlight: true } : {}),
         ...(dropped.length ? { dropped } : {}),
       },
     };
@@ -1151,6 +1155,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         replaceFormula,
         ...(formulaCells.length ? { formulaCells } : {}),
         note: clip(candidate.note, 300),
+        ...(candidate.highlight === true ? { highlight: true } : {}),
       });
     }
     if (!changes.length) return { error: 'Every proposed value is already in the sheet' };
@@ -1719,6 +1724,11 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         continue;
       }
       if (typeof op.note === 'string' && by === 'ai') rows[i] = { ...rows[i], note: clip(op.note, 300) };
+      // The assistant's mark on the row (yellow, as in show_rows tables); false takes it off.
+      if (typeof op.highlight === 'boolean' && by === 'ai') {
+        const { highlight: _, ...rest } = rows[i];
+        rows[i] = op.highlight ? { ...rest, highlight: true } : rest;
+      }
       const values = op.values && typeof op.values === 'object' && !Array.isArray(op.values) ? op.values : {};
       for (const [field, raw] of Object.entries(values)) {
         const row = rows[i];
@@ -2044,6 +2054,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         Object.entries(c.values).map(([f, v]) => [f, v === null && !c.create ? { clear: true } : readable(c.sheet, f, v)]),
       ),
       ...(c.note ? { note: c.note } : {}),
+      ...(c.highlight ? { highlight: true } : {}),
       // Doubtful cells (match_notebook): unchecked ones must be checked by the person before applying.
       ...(c.doubts && Object.keys(c.doubts).some(f => f in c.values)
         ? {
@@ -2580,7 +2591,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     const rowArgs = Array.isArray(args.rows) ? args.rows : [];
     const set = rowArgs.map((r, k) => {
       const ref = rowIndex(r, `rows[${k}]`);
-      return { ref, values: own(ref, r?.values, `rows[${k}]`), note: r?.note };
+      return { ref, values: own(ref, r?.values, `rows[${k}]`), note: r?.note, highlight: r?.highlight };
     });
     // Doubtful cells the person confirmed in the chat ("sí, es un 7").
     const check = rowArgs.flatMap((r, k) => {
@@ -2598,7 +2609,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     // A row already in the proposal is revised, not added twice.
     for (const [k, c] of listed.changes.entries()) {
       const i = changes.findIndex(r => !r.create && r.recordId === c.recordId);
-      if (i >= 0) set.push({ ref: i, values: own(i, c.values, `changes[${k}]`), note: c.note });
+      if (i >= 0) set.push({ ref: i, values: own(i, c.values, `changes[${k}]`), note: c.note, highlight: c.highlight });
       else {
         const more = assistantArgs({ changes: [c] }, context.user);
         if (more.error) return more;
