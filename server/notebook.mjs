@@ -1036,7 +1036,8 @@ export function noteColumns(text, field = 'Notes_Insectary_data') {
  * `text`: the line's values as written (after noteColumns); `row`: the sheet
  * row's values; `death`/`intro`: the dates as serials (line or row), or null.
  * Returns { values: { field: value as the sheet stores it }, reasons: { field: why, a msg() },
- * doubts: { field: true } for a value the person is to check (Unknown for a cause not written) }.
+ * doubts: { field: true } for a value the person is to check (Unknown for a cause not written, a
+ * preserved adult's project), alternatives: { field: [other values] } }.
  */
 export function impliedValues({ text, row = {}, note = {}, death = null, intro = null }) {
   const values = {};
@@ -1069,6 +1070,7 @@ export function impliedValues({ text, row = {}, note = {}, death = null, intro =
     set('Death_cause', (cause = 'Killed_Preserved'), note.preserved || note.pheromone || note.medium ? fromNote : msg('Con CAM y muerta el día que emergió'));
   // A death date and no cause anywhere: Unknown, a value of the list, for the person to check.
   const doubts = {};
+  const alternatives = {};
   if (!cause && death !== null) {
     set('Death_cause', (cause = 'Unknown'), msg('Sin causa escrita; Unknown por defecto'));
     doubts.Death_cause = true;
@@ -1089,12 +1091,20 @@ export function impliedValues({ text, row = {}, note = {}, death = null, intro =
     if (death !== null) set('Preservation_date', death, msg('La fecha de muerte (preservado ese día)'));
     if (killed) set('Preserved_Dead_Alive', 'Alive', msg('Killed_Preserved: preservado vivo'));
     else if (note.dead) set('Preserved_Dead_Alive', 'Dead', fromDead);
+    // Another cause (Unknown, Heat stroke…): it died before it was preserved.
+    else if (cause) set('Preserved_Dead_Alive', 'Dead', msg('Causa {cause}: murió antes de preservarse', { cause }));
     set('Location_body', 'Ikiam', why);
     // Each tube has its own medium (T1_/T2_Preservation_medium); this column stays NOT_COLLECTED.
     set('Preservation_medium', 'NOT_COLLECTED', why);
     // Eggs and larvae: every one is flash frozen, for the F1/F2 mutation rate project.
     const larvaWhy = msg('Huevo o larva preservado: lo que el equipo escribe');
     if (larva && !note.pheromone) set('Research_purpose', 'F1/F2 mutation rate', larvaWhy);
+    // A preserved adult's project: F1/F2 mutation rate most often (127 of 174 since 2025), to check.
+    else if (isNone(text.Research_purpose) && blankCell(row.Research_purpose) && values.Research_purpose === undefined) {
+      set('Research_purpose', 'F1/F2 mutation rate', msg('Adulto preservado: F1/F2 mutation rate lo más común; Pheromones, Sperm dissections o NA según el proyecto'));
+      doubts.Research_purpose = true;
+      alternatives.Research_purpose = ['Pheromones', 'Sperm dissections'];
+    }
     if (tube1) {
       set('Tube_1_tissue', note.wingClip ? WING_CLIP : 'WHOLE_ORGANISM', note.wingClip ? fromNote : why);
       if (note.medium || recent || larva) set('T1_Preservation_medium', note.medium ?? 'Flash frozen', note.medium ? fromNote : larva ? larvaWhy : usual);
@@ -1118,11 +1128,61 @@ export function impliedValues({ text, row = {}, note = {}, death = null, intro =
     if (note.wingClip) set('Tube_1_tissue', WING_CLIP, fromNote);
     if (note.medium || recent) set('T1_Preservation_medium', note.medium ?? 'Flash frozen', note.medium ? fromNote : usual);
   }
-  return { values, reasons, doubts };
+  return { values, reasons, doubts, alternatives };
 }
 
 /** A preserved egg or larva (not an adult): the note says it ("3rd instar"), or the row's LIFESTAGE does. */
 export const isLarva = (note = {}, row = {}) => Boolean(note.larva) || /larva|egg|pupa/i.test(String(row.LIFESTAGE ?? ''));
+
+/** A cell with nothing typed in it (an NA is a value). */
+const blankCell = value => value === null || value === undefined || String(value).trim() === '';
+
+/** The Mechanitis messenoides stocks (Stock_of_origin's values besides NA). */
+const STOCKS = ['messenoides', 'deceptus', 'intermedia'];
+
+/**
+ * What the team types in an Emergidos column the line leaves empty (or writes a
+ * dash in), from the sheet's rows since 2025: a wild-caught butterfly has
+ * CLUTCH NUMBER NA (565 of 566) and Stock_of_origin NA (564 of 565); a CRISPR
+ * control is Reared (17 of 17); a reared butterfly's stock is its clutch's
+ * Mechanitis messenoides subspecies (1004 of 1074), NA for other species (2098
+ * of 2111). Without a clutch, a butterfly of another species has stock NA (27
+ * of 27), a messenoides one half the time (24 of 48, every CRISPR control since
+ * Jul 2025 carries it): NA, doubtful, its subspecies to pick.
+ * `ctx`: { text, row, cells (the line's cells so far), lookup, raw }.
+ * Returns { value, reason: a msg(), doubt?, alternatives? } or null.
+ */
+export function emergenceDefault(field, { text, row = {}, cells = {}, lookup = {}, raw = '' }) {
+  const wild = /wild/i.test(String((isNone(text.Wild_Reared) ? row.Wild_Reared : text.Wild_Reared) ?? ''));
+  if (field === 'Wild_Reared' && /\bcrispr\b/i.test(`${raw} ${text.Notes_Insectary_data ?? ''} ${row.Notes_Insectary_data ?? ''}`))
+    return { value: 'Reared', reason: msg('Control CRISPR: criada') };
+  if (field === 'CLUTCH NUMBER' && wild) return { value: 'NA', reason: msg('Capturada en el campo: sin clutch (NA)') };
+  if (field !== 'Stock_of_origin') return null;
+  if (wild) return { value: 'NA', reason: msg('Capturada en el campo: sin stock (NA)') };
+  const list = lookup.list?.('Stock_of_origin');
+  const listed = sub => (list ? [...list.values].find(o => textKey(o) === sub) : sub);
+  const read = cells['CLUTCH NUMBER']?.value;
+  const clutch = read === undefined || read === null ? row['CLUTCH NUMBER'] : read;
+  if (isNone(clutch)) {
+    // CLUTCH NUMBER NA (written, a dash, implied or in the row); empty is not known yet.
+    if (String(clutch ?? '').trim().toUpperCase() !== 'NA') return null;
+    const species = [cells.SPECIES?.value, text.SPECIES, row.SPECIES].map(textKey);
+    const sub = species.map(s => /^mechanitis messenoides ([a-z]+)$/.exec(s)?.[1] ?? STOCKS.find(st => s.split(' ').includes(st))).find(Boolean);
+    if (!sub) return { value: 'NA', reason: msg('Sin clutch: sin stock (NA)') };
+    return {
+      value: 'NA',
+      reason: msg('Sin clutch: NA por defecto; la mitad de las messenoides sin clutch (controles CRISPR) llevan su stock'),
+      doubt: true,
+      alternatives: [listed(sub) ?? sub],
+    };
+  }
+  const species = lookup.speciesOfClutch?.(lookup.clutch?.(clutch) ?? clutch);
+  if (isNone(species)) return null;
+  const sub = /^mechanitis messenoides ([a-z]+)$/.exec(textKey(species))?.[1];
+  if (sub && listed(sub)) return { value: listed(sub), reason: msg('El clutch {clutch} es {species}: el stock es su subespecie', { clutch, species }) };
+  if (sub) return null;
+  return { value: 'NA', reason: msg('El clutch {clutch} es {species}: sin stock (NA)', { clutch, species }) };
+}
 
 /** A line that writes something besides its key. */
 const hasData = (kind, text) => columnsOf(kind).some(f => !kind.keys.includes(f) && !isNone(text[f]));
@@ -1666,12 +1726,19 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
       let inferred = null;
       let hint = null;
       let guessed = null;
+      let fallback = null;
+      // The other values a default for the person to check could be (a messenoides stock, a project).
+      let extraAlternatives = [];
       if (usable && !typed && !unreadable && isNone(text[field])) {
         if (field === 'INSECTARY OR LABORATORY' && pageRoom) inferred = pageRoom;
         // "(F1)" not written after the species: no generation (the team types NA).
         else if (field === 'Generation' && kind.sheet === 'Insectary_stocks' && !isNone(text.SPECIES)) inferred = 'NA';
         // A butterfly with a clutch was reared.
         else if (field === 'Wild_Reared' && !isNone(text['CLUTCH NUMBER'])) inferred = 'Reared';
+        // What the team types where the page says nothing: a wild one's clutch and stock NA, a clutch's
+        // stock, a CRISPR control reared; NA for a messenoides without a clutch is doubtful.
+        else if (kind.sheet === 'Insectary_data' && blankCell(record?.values?.[field]) && (fallback = emergenceDefault(field, { text, row: record?.values ?? {}, cells, lookup, raw: line.raw })))
+          [inferred, hint, extraAlternatives] = [fallback.value, fallback.reason, fallback.alternatives ?? []];
         // A preserved egg or larva: no sex recorded (Sanger's NOT_COLLECTED), no emergence.
         else if (deathKind && (field === 'Sex' || field === 'Intro2Insectary_date') && preservedLarva(i, record))
           [inferred, hint] = [field === 'Sex' ? 'NOT_COLLECTED' : 'NA', msg('Huevo o larva preservado: lo que el equipo escribe')];
@@ -1684,12 +1751,12 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         // A death's other columns (the not-preserved block, a preserved butterfly's), the note's words.
         else if (deathKind && IMPLIED_FIELDS.has(field) && impliedNow().values[field] !== undefined) {
           [inferred, hint] = [impliedNow().values[field], impliedNow().reasons[field] ?? null];
+          extraAlternatives = impliedNow().alternatives?.[field] ?? [];
           // A default for the person to check (Unknown for a cause not written): doubtful, its reason the hint's.
-          if (impliedNow().doubts?.[field] && hint) {
-            guessed = { reason: hint.text, reasonMsg: hint.msg };
-            confidence = Math.min(confidence, 0.5);
-          }
+          if (impliedNow().doubts?.[field] && hint) guessed = { reason: hint.text, reasonMsg: hint.msg };
         }
+        if (fallback?.doubt && hint) guessed = { reason: hint.text, reasonMsg: hint.msg };
+        if (guessed) confidence = Math.min(confidence, 0.5);
       }
       let source = check ? check.value : (inferred ?? text[field]);
       // "ins/lab" read as "ins/oda": the room is sure, whose butterflies they are is not.
@@ -1790,6 +1857,7 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
       }
       const alternatives = [
         ...(stock ? [stock.read] : []),
+        ...extraAlternatives,
         ...(check?.alternatives ?? []),
         ...(line.a[field] ?? []),
         ...(ownerGuess && !isNone(text.NOTES) ? [text.NOTES] : []),

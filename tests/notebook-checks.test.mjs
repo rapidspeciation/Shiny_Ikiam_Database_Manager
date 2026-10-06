@@ -82,6 +82,8 @@ test('a death line implies its other columns, only where the row is empty', () =
     Location_body: 'Ikiam',
     // Each tube's medium has its own column; this one says NOT_COLLECTED, as the rows the team writes.
     Preservation_medium: 'NOT_COLLECTED',
+    // A preserved adult's project: the most common one, for the person to check.
+    Research_purpose: 'F1/F2 mutation rate',
     Tube_1_tissue: 'WHOLE_ORGANISM',
     T1_Preservation_medium: 'Ethanol',
     // Unused tubes: ID NA, tissue NOT_COLLECTED (Franz, 1 Oct 2026).
@@ -115,7 +117,7 @@ test('a death line implies its other columns, only where the row is empty', () =
   assert.equal(body.Tube_2_tissue, 'WHOLE_ORGANISM');
   assert.equal(body.T2_Preservation_medium, 'Flash frozen');
   assert.equal(body.Preservation_date, d('2025-08-07'));
-  assert.ok(!('Preserved_Dead_Alive' in body), 'found dead or alive is not said');
+  assert.equal(body.Preserved_Dead_Alive, 'Dead', 'a cause other than Killed_Preserved: it died before it was preserved');
   // Nothing written about a death: nothing implied.
   assert.deepEqual(impliedValues({ text: { Sex: 'male' } }).values, {});
 });
@@ -189,6 +191,116 @@ test('a death date without a cause: Unknown, doubtful; a cause on the page or in
     reasonMsg: { key: 'Sin causa escrita; Unknown por defecto' },
   });
   assert.ok(!changes.find(c => c.recordId === 'r12')?.values.Death_cause);
+});
+
+test('Emergidos cells the page leaves empty or dashed take what the team types; a written stock or the sheet value stays', () => {
+  const rows = [
+    blank('Q8B', 20),
+    blank('R0B', 21),
+    blank('R4B', 22),
+    blank('S1B', 23),
+    blank('S2B', 24),
+    blank('S3B', 25),
+    blank('S4B', 26),
+    blank('S5B', 27, { Stock_of_origin: 'intermedia' }),
+    blank('S6B', 28, { Stock_of_origin: 'NA' }),
+  ];
+  const clutches = { 975: { species: 'Mechanitis messenoides deceptus' }, 980: { species: 'Mechanitis lysimnia' } };
+  const review = buildReview({
+    transcription: page('emergence', [
+      // CRISPR controls: CLUTCH NUMBER and Stock Origin dashed, or the stock not read at all.
+      {
+        raw: 'Q8B deceptus ♂ - CRISPR control 25/08',
+        v: { Insectary_ID: 'Q8B', SPECIES: 'deceptus', Sex: 'male', 'CLUTCH NUMBER': '-', Stock_of_origin: '-', Intro2Insectary_date: '25/08', Notes_Insectary_data: 'CRISPR control' },
+      },
+      { raw: 'R0B deceptus ♀ - CRISPR control 25/08', v: { Insectary_ID: 'R0B', SPECIES: 'deceptus', Sex: 'female', 'CLUTCH NUMBER': 'NA', Intro2Insectary_date: '25/08' } },
+      // A stock written on the line wins.
+      { raw: 'R4B messenoides ♂ - messenoides CRISPR control', v: { Insectary_ID: 'R4B', 'CLUTCH NUMBER': '-', Stock_of_origin: 'messenoides', Intro2Insectary_date: '25/08' } },
+      // Wild-caught: no clutch, no stock.
+      { raw: 'S1B lysimnia ♀ wild 25/08', v: { Insectary_ID: 'S1B', SPECIES: 'Mechanitis lysimnia', Wild_Reared: 'Wild-caught', Intro2Insectary_date: '25/08' } },
+      // Clutches: a messenoides one gives its subspecies, another species NA; no clutch on a lysimnia: NA.
+      { raw: 'S2B ♂ 975 25/08', v: { Insectary_ID: 'S2B', 'CLUTCH NUMBER': '975', Intro2Insectary_date: '25/08' } },
+      { raw: 'S3B ♂ 980 25/08', v: { Insectary_ID: 'S3B', 'CLUTCH NUMBER': '980', Stock_of_origin: '—', Intro2Insectary_date: '25/08' } },
+      { raw: 'S4B lysimnia ♂ - 25/08', v: { Insectary_ID: 'S4B', SPECIES: 'Mechanitis lysimnia', 'CLUTCH NUMBER': 'NA', Intro2Insectary_date: '25/08' } },
+      // The sheet already holds a stock: untouched.
+      { raw: 'S5B ♂ 975 25/08', v: { Insectary_ID: 'S5B', 'CLUTCH NUMBER': '975', Intro2Insectary_date: '25/08' } },
+      { raw: 'S6B deceptus ♂ - 25/08', v: { Insectary_ID: 'S6B', SPECIES: 'deceptus', 'CLUTCH NUMBER': 'NA', Intro2Insectary_date: '25/08' } },
+    ]),
+    year: 2026,
+    today: '2026-10-06',
+    initials: 'FCH',
+    lookup: lookupOf(rows, {
+      clutches,
+      lookup: {
+        speciesOfClutch: c => clutches[String(c)]?.species ?? null,
+        list: f => (f === 'Stock_of_origin' ? { strict: false, values: new Set(['deceptus', 'messenoides', 'intermedia', 'NA']) } : undefined),
+      },
+    }),
+  });
+  const [q8b, r0b, r4b, wild, mess, lys, noClutch, held, heldNA] = review.lines.map(l => l.cells);
+  // The CRISPR controls: Reared; stock NA, to check (half the messenoides without a clutch carry their stock).
+  for (const cells of [q8b, r0b]) {
+    assert.equal(cells['CLUTCH NUMBER'].value, 'NA');
+    assert.equal(cells.Stock_of_origin.value, 'NA');
+    assert.ok(cells.Stock_of_origin.include && cells.Stock_of_origin.inferred && cells.Stock_of_origin.doubt);
+    assert.deepEqual(cells.Stock_of_origin.alternatives, ['deceptus']);
+    assert.match(cells.Stock_of_origin.reason, /^Sin clutch: NA por defecto/);
+    assert.equal(cells.Wild_Reared.value, 'Reared');
+    assert.ok(cells.Wild_Reared.inferred && !cells.Wild_Reared.doubt);
+  }
+  assert.equal(r4b.Stock_of_origin.value, 'messenoides');
+  assert.ok(!r4b.Stock_of_origin.inferred && !r4b.Stock_of_origin.doubt);
+  assert.equal(wild['CLUTCH NUMBER'].value, 'NA');
+  assert.equal(wild.Stock_of_origin.value, 'NA');
+  assert.ok(wild['CLUTCH NUMBER'].inferred && wild.Stock_of_origin.inferred && !wild.Stock_of_origin.doubt && wild.Stock_of_origin.include);
+  assert.equal(mess.Stock_of_origin.value, 'deceptus');
+  assert.equal(mess.Stock_of_origin.message, 'El clutch 975 es Mechanitis messenoides deceptus: el stock es su subespecie');
+  assert.equal(lys.Stock_of_origin.value, 'NA');
+  assert.ok(lys.Stock_of_origin.inferred && !lys.Stock_of_origin.doubt);
+  assert.equal(noClutch.Stock_of_origin.value, 'NA');
+  assert.ok(!noClutch.Stock_of_origin.doubt);
+  for (const cells of [mess, lys, noClutch]) assert.ok(cells.Stock_of_origin.include);
+  // What the sheet holds stays, with no doubt to check.
+  assert.ok(!held.Stock_of_origin.include && !held.Stock_of_origin.doubt, "the sheet's stock is untouched");
+  assert.ok(!heldNA.Stock_of_origin.include && !heldNA.Stock_of_origin.doubt);
+  const { changes } = proposalRows(review);
+  assert.deepEqual(changes[0].doubts.Stock_of_origin, {
+    confidence: 0.5,
+    alternatives: ['deceptus'],
+    reason: 'Sin clutch: NA por defecto; la mitad de las messenoides sin clutch (controles CRISPR) llevan su stock',
+    reasonMsg: { key: 'Sin clutch: NA por defecto; la mitad de las messenoides sin clutch (controles CRISPR) llevan su stock' },
+  });
+  // A person's edit wins over the default.
+  const edited = buildReview({
+    transcription: page('emergence', [{ raw: 'Q8B deceptus ♂ - CRISPR control 25/08', v: { Insectary_ID: 'Q8B', SPECIES: 'deceptus', 'CLUTCH NUMBER': 'NA', Intro2Insectary_date: '25/08' } }]),
+    edits: { 1: { Stock_of_origin: 'deceptus' } },
+    year: 2026,
+    today: '2026-10-06',
+    lookup: lookupOf(rows),
+  });
+  assert.equal(edited.lines[0].cells.Stock_of_origin.value, 'deceptus');
+  assert.ok(!edited.lines[0].cells.Stock_of_origin.inferred);
+});
+
+test("a preserved adult's project: F1/F2 mutation rate, doubtful; a cause other than Killed_Preserved: found dead", () => {
+  const out = impliedValues({
+    text: { CAM_ID: 'CAM078500', Tube_1_id: 'FS50849100', Death_cause: 'Heat stroke' },
+    note: { medium: 'Flash frozen' },
+    death: d('2026-09-30'),
+  });
+  assert.equal(out.values.Research_purpose, 'F1/F2 mutation rate');
+  assert.equal(out.doubts.Research_purpose, true);
+  assert.deepEqual(out.alternatives.Research_purpose, ['Pheromones', 'Sperm dissections']);
+  assert.equal(out.values.Preserved_Dead_Alive, 'Dead');
+  assert.ok(!out.doubts.Preserved_Dead_Alive);
+  // A project in the sheet or a pheromone male: no default.
+  const held = impliedValues({
+    text: { CAM_ID: 'CAM078500', Tube_1_id: 'FS50849100', Death_cause: 'Killed_Preserved' },
+    row: { Research_purpose: 'Sperm dissections' },
+    death: d('2026-09-30'),
+  });
+  assert.equal(held.values.Research_purpose, undefined);
+  assert.equal(impliedValues({ text: { CAM_ID: 'CAM078500', Tube_1_id: 'FS1', Death_cause: 'Killed_Preserved' }, note: { pheromone: true }, death: d('2026-09-30') }).values.Research_purpose, 'Pheromones');
 });
 
 test('a clutch read unlike the run next to it (848 among 843s) is flagged, and taken from the run when it cannot be', () => {

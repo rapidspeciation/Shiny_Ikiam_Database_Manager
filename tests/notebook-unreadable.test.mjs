@@ -17,9 +17,9 @@ async function setup() {
   const sheets = new LocalSheets({
     Insectary_stocks: [{ row: 2, values: { 'CLUTCH NUMBER': 848, SPECIES: 'Mechanitis messenoides messenoides' } }],
     Insectary_data: [
-      { row: 2, values: { Insectary_ID: '5VB', 'CLUTCH NUMBER': 848, Wild_Reared: 'Reared', Sex: 'female', Intro2Insectary_date: d('2025-08-04') } },
-      { row: 3, values: { Insectary_ID: '8VD', 'CLUTCH NUMBER': 848, Wild_Reared: 'Reared' } },
-      { row: 4, values: { Insectary_ID: '9VD', 'CLUTCH NUMBER': 848, Wild_Reared: 'Reared', Sex: 'male' } },
+      { row: 2, values: { Insectary_ID: '5VB', 'CLUTCH NUMBER': 848, Wild_Reared: 'Reared', Stock_of_origin: 'messenoides', Sex: 'female', Intro2Insectary_date: d('2025-08-04') } },
+      { row: 3, values: { Insectary_ID: '8VD', 'CLUTCH NUMBER': 848, Wild_Reared: 'Reared', Stock_of_origin: 'messenoides' } },
+      { row: 4, values: { Insectary_ID: '9VD', 'CLUTCH NUMBER': 848, Wild_Reared: 'Reared', Stock_of_origin: 'messenoides', Sex: 'male' } },
     ],
   });
   for (const row of [2, 3, 4])

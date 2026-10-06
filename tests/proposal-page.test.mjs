@@ -50,7 +50,7 @@ async function setup() {
     ],
     Insectary_data: [
       { row: 2, values: { Insectary_ID: '5VB', 'CLUTCH NUMBER': 838, Sex: 'female', Intro2Insectary_date: d('2025-08-04') } },
-      { row: 3, values: { Insectary_ID: '8VD', 'CLUTCH NUMBER': 848, Wild_Reared: 'Reared' } },
+      { row: 3, values: { Insectary_ID: '8VD', 'CLUTCH NUMBER': 848, Wild_Reared: 'Reared', Stock_of_origin: 'messenoides' } },
       // A pre-made row: only its ID, its SPECIES formula gives nothing yet.
       { row: 4, values: { Insectary_ID: '2AB' } },
       { row: 5, values: { Insectary_ID: '3AB', 'CLUTCH NUMBER': 848 } },

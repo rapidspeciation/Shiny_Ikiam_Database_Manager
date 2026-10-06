@@ -38,7 +38,9 @@ blank means it has not died yet.
 - `Stock_of_origin`: only for the *Mechanitis messenoides* stock lines:
   `messenoides`, `intermedia`, `deceptus` (lowercase) = the **clutch's**
   subspecies, even when the phenotype differs. Every other species and every
-  wild-caught butterfly: `NA`. A missing stock breaks the phenotype summaries.
+  wild-caught butterfly: `NA`. A missing stock breaks the phenotype summaries,
+  so a page that leaves the stock empty or dashed still gets one: the clutch's
+  subspecies, else `NA` (`match_notebook` fills it).
 - `Sex`: `female`, `male`; `NA` for an adult whose sex could not be seen
   (deformed, only wings); `NOT_COLLECTED` for preserved eggs and larvae.
 - `Intro2Insectary_date`: the emergence date (reared) or the capture date
@@ -54,8 +56,9 @@ blank means it has not died yet.
   same Insectary_ID) in the same proposal. Collection_location is a formula
   from that twin: `ERROR!` there means the Collection row is missing.
 - **CRISPR controls that emerged**: `Reared`, CLUTCH NUMBER `NA` (not text
-  such as "CRISPR #159 control"), Stock_of_origin = the stock, SPECIES typed,
-  note `Comes from CRISPR control #159`.
+  such as "CRISPR #159 control"), Stock_of_origin = the stock written on the
+  page, else `NA` for the person to confirm (about half of the rows carry the
+  stock), SPECIES typed, note `Comes from CRISPR control #159`.
 - **Eggs or larvae found outside / in the field**: their clutch has SPECIES
   `NA` in Insectary_stocks; the adults carry the clutch and a typed SPECIES.
 - **The Panama STRI batch** (Heliconius, Insectary_ID `NA`, inserted mid-sheet
@@ -90,10 +93,11 @@ Preservation_date = Death_date · CAM_ID (insectary pool) · Tube_1_id
 `WHOLE_ORGANISM` `Flash frozen` (Tube_2 if Tube_1 is a wing clip) · the other
 tubes `NA` and their tissues `NOT_COLLECTED` · Preservation_medium
 `NOT_COLLECTED` (each tube's medium is in T1_/T2_Preservation_medium) ·
-Preserved_Dead_Alive `Alive` when killed (`Killed_Preserved`), `Dead` when
-found dead · Location_body `Ikiam` · Research_purpose from the project
+Preserved_Dead_Alive `Alive` when killed (`Killed_Preserved`), `Dead` for any
+other cause · Location_body `Ikiam` · Research_purpose from the project
 (`F1/F2 mutation rate` for cross parents and offspring, `Pheromones` for
-pheromone males, `Sperm dissections`), else `NA`.
+pheromone males, `Sperm dissections`), else `NA`; when the page does not say
+the project, `F1/F2 mutation rate` (the most common) for the person to confirm.
 Medium rules and ethanol exceptions: [samples-ids.md](samples-ids.md).
 
 ## Columns left to the sheet

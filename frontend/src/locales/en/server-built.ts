@@ -267,6 +267,17 @@ export default {
   'Sin causa escrita; Unknown por defecto': 'No cause written; Unknown by default',
   'Larva o huevo encontrado muerto y preservado': 'Egg or larva found dead and preserved',
   'Huevo o larva preservado: lo que el equipo escribe': 'Preserved egg or larva: what the team writes',
+  'El clutch {clutch} es {species}: el stock es su subespecie': 'Clutch {clutch} is {species}: the stock is its subspecies',
+  'El clutch {clutch} es {species}: sin stock (NA)': 'Clutch {clutch} is {species}: no stock (NA)',
+  'Capturada en el campo: sin clutch (NA)': 'Wild-caught: no clutch (NA)',
+  'Capturada en el campo: sin stock (NA)': 'Wild-caught: no stock (NA)',
+  'Sin clutch: sin stock (NA)': 'No clutch: no stock (NA)',
+  'Sin clutch: NA por defecto; la mitad de las messenoides sin clutch (controles CRISPR) llevan su stock':
+    'No clutch: NA by default; half the messenoides without a clutch (CRISPR controls) carry their stock',
+  'Control CRISPR: criada': 'CRISPR control: reared',
+  'Causa {cause}: murió antes de preservarse': 'Cause {cause}: it died before it was preserved',
+  'Adulto preservado: F1/F2 mutation rate lo más común; Pheromones, Sperm dissections o NA según el proyecto':
+    'Preserved adult: F1/F2 mutation rate is the most common; Pheromones, Sperm dissections or NA by project',
 
   // server/suggestions/: Revisión → Sugerencias (titles, descriptions, reasons)
   'Arreglos de los chequeos': 'Fixes from the checks',

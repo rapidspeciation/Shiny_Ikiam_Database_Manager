@@ -238,8 +238,8 @@ test('each line is compared with its row: fills, conflicts, doubts, formulas and
   assert.deepEqual(
     changes.map(ch => [ch.recordId, ch.line, Object.keys(ch.values).sort()]),
     [
-      // A death date and no cause: Unknown, doubtful.
-      ['r2', 2, ['CAM_ID', 'Death_cause', 'Death_date', 'Sex']],
+      // A death date and no cause: Unknown, doubtful. A lysimnia clutch: no stock (NA).
+      ['r2', 2, ['CAM_ID', 'Death_cause', 'Death_date', 'Sex', 'Stock_of_origin']],
       // The species outside the list goes in as a doubt (the sex outside its strict list cannot).
       ['r3', 5, ['SPECIES']],
     ],
@@ -545,7 +545,11 @@ test('match_notebook matches a transcribed page and leaves one proposal beside T
     assert.equal(out.counts.doubtful, 1);
     // A butterfly with a clutch was reared.
     assert.deepEqual(line(2).fill, { Intro2Insectary_date: '2025-08-08' });
-    assert.deepEqual(line(2).implied, { Wild_Reared: 'Reared', LIFESTAGE: 'Adult' }, 'not written on the line: implied (an entry date: an adult)');
+    assert.deepEqual(
+      line(2).implied,
+      { Stock_of_origin: 'messenoides', Wild_Reared: 'Reared', LIFESTAGE: 'Adult' },
+      "not written on the line: implied (the clutch's subspecies; an entry date: an adult)",
+    );
     // Dates as ISO; the tube already filed as this butterfly's Tube_2_id.
     assert.deepEqual(line(3).fill, { Intro2Insectary_date: '2025-08-08', Death_date: '2025-08-09', Death_cause: 'Unknown' });
     assert.match(line(3).problems.Tube_1_id, /ya está en Insectary_data fila 4/);
