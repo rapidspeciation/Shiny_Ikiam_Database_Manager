@@ -61,7 +61,7 @@ function resize(down: PointerEvent) {
 }
 
 const photos = computed(() => props.proposal.page?.photos ?? 0)
-const url = (n: number, size: 'thumb' | 'view') => `api/proposals/${props.proposal.id}/photos/${n}?size=${size}`
+const url = (n: number, size: 'thumb' | 'view') => `api/proposals/${props.proposal.id}/photos/${n}?size=${size}${props.proposal.page?.photoKey ? `&v=${props.proposal.page.photoKey}` : ''}`
 /** The line of the row selected in the table (on the photo shown). */
 const line = ref<number | null>(null)
 function onRow(photo: number | null, at: number | null) {

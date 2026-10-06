@@ -2374,7 +2374,9 @@ export function createAssistant({ store, config = {} }) {
     const mod = moduleMap.get(spec.sheet);
     const columns = spec.columns ?? [];
     const versions = [];
-    const photos = (parse(r.page_json ?? 'null')?.photos ?? []).length;
+    const shot = parse(r.page_json ?? 'null')?.photos ?? [];
+    const photos = shot.length;
+    const photoKey = photos ? createHash('sha1').update(json(shot)).digest('base64url').slice(0, 8) : null;
     const rows = (spec.rows ?? []).map(id => {
       const record = store.getRecord(id);
       const live = !!record && !record.missing;
@@ -2413,7 +2415,7 @@ export function createAssistant({ store, config = {} }) {
       applied: null,
       sheetStamp: createHash('sha1').update(json(versions)).digest('base64url').slice(0, 12),
       // The notebook photos it was read from: reviewed beside them as a page's proposal is.
-      ...(photos ? { page: { kind: '', sheet: spec.sheet, columns: [], keys: [], photos } } : {}),
+      ...(photos ? { page: { kind: '', sheet: spec.sheet, columns: [], keys: [], photos, photoKey } } : {}),
       changes: [],
       rows,
     };
@@ -2921,6 +2923,8 @@ export function createAssistant({ store, config = {} }) {
       : Object.keys(KINDS).find(k => reason.startsWith(`Cuaderno ${KINDS[k].label} (${KINDS[k].sheet})`));
     // Photos also on a proposal made before pages were kept (given later with update_proposal).
     const photoCount = (page?.photos ?? []).length;
+    // A short tag of which photos, in the photos' addresses: other photos at the same place show at once.
+    const photoKey = photoCount ? createHash('sha1').update(json(page.photos)).digest('base64url').slice(0, 8) : null;
     const notebook =
       (kindId && (KINDS[kindId] || page?.lines?.length)) || photoCount
         ? {
@@ -2929,6 +2933,7 @@ export function createAssistant({ store, config = {} }) {
             columns: KINDS[kindId]?.fields ?? [],
             keys: KINDS[kindId]?.keys ?? [],
             photos: photoCount,
+            ...(photoKey ? { photoKey } : {}),
           }
         : null;
     const sheets = [...new Set(rows.map(r => r.change.sheet))];

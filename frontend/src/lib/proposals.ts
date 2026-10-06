@@ -97,6 +97,8 @@ export interface ProposalPage {
   columns: string[]
   keys: string[]
   photos: number
+  /** Which photos (a short tag): in their addresses, so other photos at the same place show at once. */
+  photoKey?: string
 }
 export interface ProposalChange {
   index: number

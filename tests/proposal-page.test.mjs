@@ -164,7 +164,8 @@ test("a page's proposal shows every line in the sheet's order, with its photo, a
     assert.ok(out.proposalId, JSON.stringify(out));
     assert.deepEqual(out.photoNotShown, [`${THREAD}-none.jpg`, '../../etc/passwd']);
     let [p] = await proposals();
-    assert.deepEqual(p.page, { kind: 'emergence', sheet: 'Insectary_data', columns: p.page.columns, keys: ['Insectary_ID'], photos: 2 });
+    assert.deepEqual(p.page, { kind: 'emergence', sheet: 'Insectary_data', columns: p.page.columns, keys: ['Insectary_ID'], photos: 2, photoKey: p.page.photoKey });
+    assert.match(p.page.photoKey, /^[\w-]{8}$/, 'which photos, in their addresses');
     assert.deepEqual(p.page.columns.slice(0, 4), ['Insectary_ID', 'SPECIES', 'Sex', 'CLUTCH NUMBER']);
     // In the sheet's order (the photos come in any order): rows 2, 3 (photo 1's line) and 4; 4AB where its ID
     // will go (after the last ID, 3AB); 7ZZ, not in the ID series ahead, after them.

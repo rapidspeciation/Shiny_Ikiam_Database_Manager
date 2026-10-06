@@ -462,7 +462,7 @@ const tables = computed(() =>
       : [table]
   }),
 )
-const photoUrl = (n: number, size: 'thumb' | 'view') => `api/proposals/${props.proposal.id}/photos/${n}?size=${size}`
+const photoUrl = (n: number, size: 'thumb' | 'view') => `api/proposals/${props.proposal.id}/photos/${n}?size=${size}${props.proposal.page?.photoKey ? `&v=${props.proposal.page.photoKey}` : ''}`
 /** A thumbnail that would not load (an old proposal's photo gone): hidden. */
 const brokenPhotos = ref(new Set<number>())
 const typesOf = (sheet: string) => ({
