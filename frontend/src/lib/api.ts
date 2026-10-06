@@ -25,6 +25,8 @@ let csrf: string | null = null
 export function setCsrf(token: string | null) {
   csrf = token
 }
+/** The session's token, for requests not made through api() (a photo's chunks, sent with their progress). */
+export const csrfToken = () => csrf
 
 /** This page load: Cambios propuestos does not fetch again a list its own edits changed (server/assistant.mjs). */
 export const pageId = `${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 12)}`

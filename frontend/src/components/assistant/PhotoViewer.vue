@@ -10,7 +10,8 @@ import { t } from '../../lib/i18n'
  * finger), turned a quarter at a time, and set back to the whole photo. The
  * proposal's other photos are its thumbnails above; the row selected in the
  * table brings its photo and says its line. Pan and zoom are @panzoom/panzoom,
- * as in the team's wings gallery.
+ * as in the team's wings gallery. Also the clutches' photos (Clutches tab),
+ * with their own names for the photos (`alt`).
  */
 const props = defineProps<{
   /** The photos' addresses, by size. */
@@ -20,7 +21,10 @@ const props = defineProps<{
   photo: number
   /** The line of the row selected in the table, on the photo shown. */
   line?: number | null
+  /** What each photo is called (its alt text): «Foto n del cuaderno» by default. */
+  alt?: (n: number) => string
 }>()
+const altOf = (n: number) => (props.alt ? props.alt(n) : t('Foto {n} del cuaderno', { n: n + 1 }))
 const emit = defineEmits<{ 'update:photo': [n: number] }>()
 
 const box = ref<HTMLDivElement>()
@@ -112,11 +116,11 @@ onBeforeUnmount(() => {
           type="button"
           class="shrink-0 rounded border-2 bg-white"
           :class="n - 1 === photo ? 'border-emerald-400' : 'border-transparent opacity-70 hover:opacity-100'"
-          :title="$t('Foto {n} del cuaderno', { n })"
+          :title="altOf(n - 1)"
           :aria-pressed="n - 1 === photo"
           @click="emit('update:photo', n - 1)"
         >
-          <img :src="url(n - 1, 'thumb')" :alt="$t('Foto {n} del cuaderno', { n })" class="h-9 w-auto max-w-16 object-contain" />
+          <img :src="url(n - 1, 'thumb')" :alt="altOf(n - 1)" class="h-9 w-auto max-w-16 object-contain" />
         </button>
       </div>
       <span class="px-1 text-stone-300">{{ where }}</span>
@@ -153,7 +157,7 @@ onBeforeUnmount(() => {
             ref="img"
             :key="photo"
             :src="url(photo, 'view')"
-            :alt="$t('Foto {n} del cuaderno', { n: photo + 1 })"
+            :alt="altOf(photo)"
             class="absolute top-1/2 left-1/2 max-w-none select-none"
             :style="{
               ...(fit?.image ?? { maxWidth: '100%', maxHeight: '100%' }),
