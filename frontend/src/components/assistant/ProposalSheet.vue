@@ -104,9 +104,11 @@ import CellBar from '../CellBar.vue'
  * of it was read, to complete); left empty, applying does not write them.
  * The CAM or tube a preserved butterfly would be left without (server/preserved.mjs)
  * are amber with a "missing" tag until someone fills them.
- * A notebook page's lines that write nothing are grey and read-only (as the
- * sheet has them, or as written when the sheet has no such row; a line the
- * save refused is red, with why); a "Línea" column gives each row's line.
+ * A notebook page's lines that write nothing are grey (as the sheet has them,
+ * or as written when the sheet has no such row, read-only; a line the save
+ * refused is red, with why); a "Línea" column gives each row's line. A value
+ * typed, pasted or moved into a line as the sheet has it makes it a row of the
+ * proposal, in its place (the server's; grey again once undone).
  * What the SPECIES formula will give (from the clutch) shows grey, in
  * italics, tagged "fórmula": it is never written.
  * A cell someone edited in the sheet after the proposal read it is violet,

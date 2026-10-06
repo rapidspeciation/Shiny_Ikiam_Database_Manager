@@ -72,6 +72,24 @@ describe('planMove', () => {
     expect(move(rows, 1, 1, [], 'down')).toEqual({ ok: false, why: 'nothing' })
   })
 
+  it('moves a death from L4C onto the page line L3C shown as the sheet has it; not onto a sheet row in between', () => {
+    const page = (line: number) => ({ page: { photo: 0, line, raw: `L${line + 2}C`, status: 'match' } })
+    const l3 = row('L3C', {}, { Sex: 'female' }, { context: true, index: -1, ...page(1) })
+    const l4 = row('L4C', { Death_date: 46300, Death_cause: 'Unknown', CAM_ID: 'NA' }, {}, page(2))
+    const out = plan(move([l3, l4], 1, 1, ['Death_date'], 'up'))
+    expect(byCell(out)).toEqual({
+      'L3C Death_date': 46300,
+      'L3C Death_cause': 'Unknown',
+      'L3C CAM_ID': 'NA',
+      'L4C Death_date': 'sheet',
+      'L4C Death_cause': 'sheet',
+      'L4C CAM_ID': 'sheet',
+    })
+    expect(out.to).toEqual(['L3C'])
+    const between = row('L3C', {}, {}, { context: true, gap: true, index: -1 })
+    expect(move([between, l4], 1, 1, ['Death_date'], 'up')).toEqual({ ok: false, why: 'readonly', label: 'L3C' })
+  })
+
   it('a death moves whole: date, cause, its template where the sheet has none, and its note', () => {
     const death = {
       Death_date: 46300,

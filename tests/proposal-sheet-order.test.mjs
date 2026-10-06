@@ -345,3 +345,100 @@ test("a marker's sheet rows, opened from the table: by row range, up to PEEK_ROW
     store.close?.();
   }
 });
+
+test("a page line shown as the sheet has it takes the person's edits in place (a death moved onto it), and goes back to context when undone", async () => {
+  const { store, assistant, call, list, at } = await setup([2, 3, 4].map(row => ({ row, values: { Insectary_ID: `L${row}C`, Sex: 'female' } })));
+  const user = { id: 'u1', username: 'franz', displayName: 'Franz', role: 'editor' };
+  const edit = (id, cells) => assistant.handle({ method: 'POST', path: `/api/chat/proposals/${id}/edit`, body: { cells }, user, query: {} });
+  try {
+    // The death of L3C read on L4C's line.
+    const out = await call('match_notebook', {
+      kind: 'deaths',
+      year: 2026,
+      lines: [
+        { raw: 'L3C', values: { Insectary_ID: 'L3C' } },
+        { raw: 'L4C 2/10 unk', values: { Insectary_ID: 'L4C', Death_date: '2/10', Death_cause: 'Unknown' } },
+      ],
+    });
+    assert.ok(out.proposalId, JSON.stringify(out));
+    let [p] = (await list()).proposals;
+    const l3 = p.changes.find(c => c.label === 'L3C');
+    const l4 = p.changes.find(c => c.label === 'L4C');
+    assert.deepEqual([l3.context, l3.index < 0, l3.key], [true, true, at(3)]);
+    const moved = Object.keys(l4.values);
+    assert.ok(moved.includes('Death_date') && moved.includes('CAM_ID'), moved.join());
+
+    // Moved up as the table moves it: L3C typed, L4C back to the sheet's values.
+    const done = await edit(out.proposalId, [
+      ...moved.map(field => ({ key: l3.key, field, value: l4.values[field], before: null })),
+      ...moved.map(field => ({ key: l4.key, field, value: null, before: l4.values[field], use: 'sheet' })),
+    ]);
+    assert.equal(done.status, 200, JSON.stringify(done.body));
+    assert.deepEqual(done.body.rejected, []);
+    [p] = (await list()).proposals;
+    const now = p.changes.find(c => c.key === l3.key);
+    assert.ok(!now.context && now.index >= 0, 'a row of the proposal now');
+    assert.equal(now.recordId, at(3));
+    assert.deepEqual([now.row, now.page?.line, now.page?.photo], [3, 1, 0], 'same row, same line of the page');
+    assert.equal(now.values.Death_date, l4.values.Death_date);
+    assert.deepEqual(
+      p.changes.map(c => [c.row, c.label, c.page?.line ?? null, !!c.context]),
+      [
+        [3, 'L3C', 1, false],
+        [4, 'L4C', 2, false],
+      ],
+      'in its place in the sheet and on the page',
+    );
+    assert.deepEqual(p.changes.find(c => c.label === 'L4C').values, {});
+
+    // Undone: L3C has nothing proposed again and is the page's line as the sheet has it, as before.
+    await edit(out.proposalId, [
+      ...moved.map(field => ({ key: l3.key, field, value: null, before: l4.values[field], use: 'sheet' })),
+      ...moved.map(field => ({ key: l4.key, field, value: l4.values[field], before: null })),
+    ]);
+    [p] = (await list()).proposals;
+    const back = p.changes.find(c => c.key === l3.key);
+    assert.deepEqual([back.context, back.values, back.personEdits, back.page?.line], [true, {}, undefined, 1]);
+    assert.equal(p.changes.find(c => c.label === 'L4C').values.Death_date, l4.values.Death_date);
+    // Applying writes L4C only.
+    const applied = await call('apply_proposal', { proposalId: out.proposalId });
+    assert.equal(applied.rows, 1, JSON.stringify(applied));
+    assert.equal(store.getRecordBySheetRow('Insectary_data', 3).values.Death_date ?? null, null);
+  } finally {
+    store.close?.();
+  }
+});
+
+test('typing into a page line shown as the sheet has it makes it a change; the sheet rows between rows of other proposals stay read-only', async () => {
+  const { store, assistant, call, list, at } = await setup([2, 3, 4, 5].map(row => ({ row, values: { Insectary_ID: `M${row}C`, Sex: 'NA' } })));
+  const user = { id: 'u1', username: 'franz', displayName: 'Franz', role: 'editor' };
+  const edit = (id, cells) => assistant.handle({ method: 'POST', path: `/api/chat/proposals/${id}/edit`, body: { cells }, user, query: {} });
+  try {
+    const page = await call('match_notebook', {
+      kind: 'deaths',
+      year: 2026,
+      lines: [
+        { raw: 'M2C', values: { Insectary_ID: 'M2C' } },
+        { raw: 'M3C 2/10 unk', values: { Insectary_ID: 'M3C', Death_date: '2/10', Death_cause: 'Unknown' } },
+      ],
+    });
+    const typed = await edit(page.proposalId, [{ key: at(2), field: 'Sex', value: 'male', before: null }]);
+    assert.deepEqual(typed.body.rejected, []);
+    const row = typed.body.proposal.changes.find(c => c.key === at(2));
+    assert.deepEqual([!!row.context, row.values, row.page?.line, row.row], [false, { Sex: 'male' }, 1, 2]);
+
+    // A proposal without a page: the sheet's rows between its rows are only to read.
+    const plain = await call('propose_changes', {
+      reason: 'Sexos',
+      changes: [2, 5].map(r => ({ recordId: at(r), values: { Sex: 'female' } })),
+    });
+    const p = (await list()).proposals.find(x => x.id === plain.proposalId);
+    const gap = p.changes.find(c => c.gap);
+    assert.ok(gap, 'a row in between is shown');
+    const refused = await edit(plain.proposalId, [{ key: gap.key, field: 'Sex', value: 'male', before: null }]);
+    assert.equal(refused.body.rejected.length, 1);
+    assert.ok(!refused.body.proposal.changes.some(c => c.key === gap.key && !c.context));
+  } finally {
+    store.close?.();
+  }
+});

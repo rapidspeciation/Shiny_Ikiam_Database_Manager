@@ -281,9 +281,14 @@ export function expandProposal(p: Proposal): Proposal {
   }
 }
 
-/** A row the person only reads (never written): a page line as the sheet has it, or as written. A line the save refused can be corrected. */
-export const readOnlyRow = (c: Pick<ProposalChange, 'context' | 'placeholder' | 'page' | 'recordId'>) =>
-  !!c.placeholder || (!!c.context && !(c.page?.error && c.recordId))
+/**
+ * A row the person only reads (never written): a page line as written (no sheet
+ * row), a sheet row shown between the proposal's rows or opened under a slim
+ * row. A page line as the sheet has it can be typed in: the server makes it a
+ * row of the proposal (a death read on the line beside it goes there).
+ */
+export const readOnlyRow = (c: Pick<ProposalChange, 'context' | 'placeholder' | 'page' | 'recordId' | 'gap'>) =>
+  !!c.placeholder || (!!c.context && (!c.recordId || !c.page || !!c.gap))
 /** A page line shown without a row of its own in the proposal (nothing to take out). */
 export const pageOnly = (c: Pick<ProposalChange, 'index'>) => c.index < 0
 

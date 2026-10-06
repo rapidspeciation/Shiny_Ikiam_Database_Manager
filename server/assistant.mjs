@@ -1768,8 +1768,13 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
           else marks[field] = { ...(ai === undefined ? {} : { ai }), by: who, at: now() };
         }
         rows[i] = { ...next, personEdits: Object.keys(marks).length ? marks : undefined };
-        // A notebook line shown only for context becomes a real change once someone gives it a value.
-        if (rows[i].context && Object.keys(rows[i].values).length) rows[i] = { ...rows[i], context: undefined };
+        // A notebook line shown only for context becomes a real change once someone gives it a value
+        // (in place: same record and line); left with nothing again (an undo), it is shown for context again.
+        if (rows[i].context && Object.keys(rows[i].values).length) rows[i] = { ...rows[i], context: undefined, fromContext: true };
+        else if (rows[i].fromContext && !Object.keys(rows[i].values).length && !rows[i].personEdits) {
+          const { fromContext: _, ...rest } = rows[i];
+          rows[i] = { ...rest, context: true };
+        }
       }
     }
 

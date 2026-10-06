@@ -605,7 +605,7 @@ describe("a notebook page's proposal", () => {
     expect(g.fields).toEqual(['SPECIES', 'Sex', 'Death_date', 'Death_cause', 'Wild_Reared', 'Notes', 'Tube_2_tissue', 'Tube_2_id'])
     expect(g.template).toEqual(['Tube_2_tissue', 'Tube_2_id'])
   })
-  it('says why a line writes nothing, keeps it read-only, and counts each photo', () => {
+  it('says why a line writes nothing, lets the sheet’s row of a line be typed in, and counts each photo', () => {
     expect(pageNote(line(2))).toBe('Línea 2: «2AB ♀» · Ya está así en la hoja')
     const missing = line(4, {
       placeholder: true,
@@ -615,7 +615,10 @@ describe("a notebook page's proposal", () => {
     expect(pageNote(missing)).toBe('Línea 4: «4AB» · No está en la hoja; ¿quisiste decir 4AD (fila 9)?')
     const refused = line(5, { page: { photo: 1, line: 5, raw: '5AB', status: 'match', error: 'Tube_1_id FD1 ya está en Insectary_data fila 9' } })
     expect(pageNote(refused)).toBe('Línea 5: «5AB» · No se puede escribir: Tube_1_id FD1 ya está en Insectary_data fila 9')
-    expect([line(2), missing, refused, edited('r1', { Sex: 'female' })].map(readOnlyRow)).toEqual([true, true, false, false])
+    expect([line(2), missing, refused, edited('r1', { Sex: 'female' })].map(readOnlyRow)).toEqual([false, true, false, false])
+    // The sheet's rows between the proposal's rows (no page line) and those opened under a slim row: only to read.
+    const between = edited('r7', {}, { index: -7, context: true, gap: true })
+    expect([between, { ...line(2), gap: true }, { ...line(2), page: undefined }].map(readOnlyRow)).toEqual([true, true, true])
     const written = edited('r1', { Sex: 'female' }, { page: { photo: 0, line: 1 } })
     expect(photoSummaries([written, line(2), line(3), missing, refused])).toEqual([
       { photo: 0, from: 1, to: 3, change: 1, same: 2, other: 0 },

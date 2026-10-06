@@ -10,7 +10,8 @@ import type { CellValue } from './types'
  * other end of the selection, so nothing is lost, and a cell with nothing
  * proposed takes the sheet's value of its own row. The rows go as the table
  * shows them (sheet or notebook order), past the slim rows between them; a
- * row that cannot be edited stops the move.
+ * row that cannot be edited stops the move (a page line as the sheet has it
+ * can: the cells moved there make it a row of the proposal).
  * A death (Death_date or Death_cause in Insectary_data) moves whole: its date
  * and cause, the columns its template fills (lib/deaths DEATH_COLUMNS), which
  * only go where the row's sheet cell is empty, NA or NOT_COLLECTED (as the
