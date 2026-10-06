@@ -17,7 +17,7 @@ import { createFormulaReader, isFormulaError, sameResult } from './formula-gives
 import { FILTERS_DOC, FIND_BUDGET, RECORD_TOOLS, compactRecord, countRecords, findRecords, pickRows, resolveRows, selectRecords } from './records-tool.mjs';
 import { RESULT_BUDGET, fitList, fitResult } from './tool-budget.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
-import { duplicateIdRow, insectaryIdPlaces, insectaryIdRow, newRowFormulaFields } from './premade.mjs';
+import { duplicateIdRow, insectaryBaseRows, insectaryIdPlaces, insectaryIdRow, newRowFormulaFields, suffixedId } from './premade.mjs';
 import { claimHolder, claimsOf } from './claims.mjs';
 import { BETWEEN_ROWS, VIEW_PARAM, VIEW_UPDATE, readView, showBetween, viewColumns } from './proposal-view.mjs';
 import { proposalSampleWarnings } from './preserved.mjs';
@@ -2610,7 +2610,7 @@ export function createAssistant({ store, config = {} }) {
     const inUse = open ? takenRows(store, changes) : new Map();
     /** The version of each row's sheet row as read now (the list's stamp of the sheet). */
     const versions = [];
-    const out = rows.map(({ change, index, line, outOfOrder: after }) => {
+    const out = rows.map(({ change, index, line, outOfOrder: after, place }) => {
       const recordId = change.create ? (created[change.clientId] ?? null) : change.recordId;
       const record = recordId ? store.getRecord(recordId) : null;
       versions.push(record?.version ?? null);
@@ -2631,6 +2631,8 @@ export function createAssistant({ store, config = {} }) {
           Object.entries(checked[index]).map(([f, list]) => [f, list.map(i => hintOf({ text: i.problem, msg: i.problemMsg }))]),
         );
       if (line) view.page = pageLine(line, index < 0 || !!change.context);
+      // A row not written yet: where it will go in the sheet (x.5: inserted below row x).
+      if (view.row == null && place != null) view.place = place;
       // Before the previous line of its photo in the sheet: the notebook goes the other way here.
       if (after) view.outOfOrder = after;
       if (change.placeholder) return view;
@@ -2670,6 +2672,7 @@ export function createAssistant({ store, config = {} }) {
       }
       return view;
     });
+    repeatsOf(out);
     // A sheet's formula columns once: a row lists its own only when they differ.
     const sheetFormulas = {};
     for (const sheet of sheets) {
@@ -2772,7 +2775,8 @@ export function createAssistant({ store, config = {} }) {
     const between = pairs.reduce((n, [, from, to]) => n + Math.max(0, to - from + 1), 0);
     const writes = sorted.filter(r => r.index >= 0 && !r.change.context).length;
     const outOfOrder = page ? pageOrder(placed, page) : [];
-    const out = sorted.map(({ at, order, ...r }) => r);
+    // (A row without its sheet row yet keeps where it goes: the table tells the rows that are not continuous.)
+    const out = sorted.map(({ at, order, ...r }) => (at != null && r.change.row == null ? { ...r, place: at } : r));
     if (!open || !between || !showBetween(view, { paged: !!page, between, rows: writes })) return { rows: out, outOfOrder };
     const shown = new Set(out.map(r => r.change.recordId).filter(Boolean));
     const at = new Map(pairs.map(([i, from, to]) => [i, [from, to]]));
@@ -2805,6 +2809,34 @@ export function createAssistant({ store, config = {} }) {
       return [...rows, r];
     });
     return { rows: withGaps, outOfOrder };
+  }
+
+  /**
+   * The table's Insectary_data rows whose ID is a repeat (A0E.1: the same ID
+   * written on a second butterfly), marked `repeatOf`: { id: its base ID, row of
+   * that ID and whether it is still an empty pre-made row, above: the ID of the
+   * sheet row just above the repeat }, so the table can say why its row is not
+   * with the series.
+   */
+  function repeatsOf(rows) {
+    const idOf = v => String(v.label || (v.create ? v.values?.Insectary_ID : '') || '').trim();
+    const repeats = rows.filter(v => v.sheet === 'Insectary_data' && !v.gap && suffixedId(idOf(v)));
+    if (!repeats.length) return;
+    const bases = insectaryBaseRows(
+      store,
+      repeats.map(v => suffixedId(idOf(v)).base),
+    );
+    for (const v of repeats) {
+      const base = suffixedId(idOf(v)).base;
+      const found = bases.get(base);
+      const at = v.row ?? v.place ?? null;
+      const above = at == null ? null : store.getRecordBySheetRow('Insectary_data', Number.isInteger(at) ? at - 1 : Math.floor(at));
+      v.repeatOf = {
+        id: base,
+        ...(found ? { row: found.row, ...(found.empty ? { empty: true } : {}) } : {}),
+        ...(above && !above.missing && above.label ? { above: above.label } : {}),
+      };
+    }
   }
 
   /** A notebook page's proposal: its lines whose sheet rows go another way than the page (pageOrder), for the tools. */
@@ -2856,12 +2888,19 @@ export function createAssistant({ store, config = {} }) {
     const lineOf = new Map(page.lines.map(l => [l.n, l]));
     const byRecord = new Map(page.lines.filter(l => l.recordId).map(l => [l.recordId, l]));
     const byId = new Map(page.lines.filter(l => l.id).map(l => [idKey(l.id), l]));
+    // A row added by hand for a repeated ID (A3E.1, the line read A3E) takes its base ID's line.
+    const baseKey = v => {
+      const parsed = suffixedId(idKey(v));
+      return parsed ? parsed.base : null;
+    };
     for (const r of rows) {
       const c = r.change;
+      const id = c.label || (c.create ? c.values?.Insectary_ID : '') || '';
       r.line =
         (c.sheet === page.sheet && Number.isInteger(c.line) ? lineOf.get(c.line) : null) ??
         (c.recordId ? byRecord.get(c.recordId) : null) ??
-        (c.label ? byId.get(idKey(c.label)) : null) ??
+        (id ? byId.get(idKey(id)) : null) ??
+        (id && c.sheet === page.sheet && c.sameErrorAs === undefined && baseKey(id) ? byId.get(baseKey(id)) : null) ??
         null;
     }
     const covered = new Set(rows.filter(r => r.line && r.change.sheet === page.sheet).map(r => r.line.n));

@@ -242,3 +242,59 @@ test("a notebook page in the sheet's order, its photos in any order; lines a pho
     store.close?.();
   }
 });
+
+test('repeated IDs: a line finds the repeat (A0E.1) over its empty pre-made row; rows added by hand take their base line; the table is told', async () => {
+  // A0E–A2E pre-made and empty high up; the butterflies were typed as repeats after Z9D.
+  const used = (id, row) => ({ row, values: { Insectary_ID: id, Sex: 'female', 'CLUTCH NUMBER': 800 + row } });
+  const { store, call, list, at } = await setup([
+    { row: 2, values: { Insectary_ID: 'A0E' } },
+    { row: 3, values: { Insectary_ID: 'A1E' } },
+    { row: 4, values: { Insectary_ID: 'A2E' } },
+    used('Z8D', 5),
+    used('Z9D', 6),
+    used('A0E.1', 7),
+    used('A1E.1', 8),
+    used('A2E.1', 9),
+  ]);
+  try {
+    const out = await call('match_notebook', {
+      kind: 'deaths',
+      year: 2026,
+      lines: [
+        { raw: 'Z9D 2/10', values: { Insectary_ID: 'Z9D', Death_date: '2/10' } },
+        { raw: 'A0E 2/10', values: { Insectary_ID: 'A0E', Death_date: '2/10' } },
+        { raw: 'A1E 3/10', values: { Insectary_ID: 'A1E', Death_date: '3/10' } },
+        // Only its ID on the page: nothing tells it is the repeat, it stays with its row.
+        { raw: 'A2E', values: { Insectary_ID: 'A2E' } },
+      ],
+    });
+    assert.ok(out.proposalId, JSON.stringify(out));
+    let [p] = (await list()).proposals;
+    assert.deepEqual(
+      p.changes.map(c => [c.row, c.label, c.page?.line ?? null, !!c.context]),
+      [
+        [4, 'A2E', 4, true],
+        [6, 'Z9D', 1, false],
+        [7, 'A0E.1', 2, false],
+        [8, 'A1E.1', 3, false],
+      ],
+    );
+    const repeat = p.changes.find(c => c.label === 'A0E.1');
+    assert.deepEqual(repeat.repeatOf, { id: 'A0E', row: 2, empty: true, above: 'Z9D' });
+    assert.deepEqual(p.changes.find(c => c.label === 'A1E.1').repeatOf, { id: 'A1E', row: 3, empty: true, above: 'A0E.1' });
+    assert.equal(p.changes.find(c => c.label === 'Z9D').repeatOf, undefined);
+
+    // A death added by hand for A2E.1: it takes the line of A2E (its base), in its place on the page.
+    const added = await call('update_proposal', {
+      proposalId: out.proposalId,
+      changes: [{ recordId: at(9), values: { Death_date: '2026-10-04' } }],
+    });
+    assert.ok(!added.error, added.error);
+    [p] = (await list()).proposals;
+    const hand = p.changes.find(c => c.label === 'A2E.1');
+    assert.deepEqual(hand.page && [hand.page.photo, hand.page.line], [0, 4]);
+    assert.ok(!p.changes.some(c => c.label === 'A2E'), "the line's own row gives way to the change made for it");
+  } finally {
+    store.close?.();
+  }
+});

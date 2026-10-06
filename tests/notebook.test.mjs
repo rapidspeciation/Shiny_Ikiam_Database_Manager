@@ -115,6 +115,10 @@ function fakeLookup(rows, { formulas = {}, clutches = {}, newRows = new Set() } 
       rows
         .filter(r => String(r.values.Insectary_ID ?? r.values['CLUTCH NUMBER']).toLowerCase() === String(key).toLowerCase())
         .map(r => ({ ...r, formulas: formulas[r.id] ?? {}, label: r.id })),
+    repeats: ([key]) =>
+      rows
+        .filter(r => new RegExp(`^${String(key).replace(/[^\w]/g, '')}\\.\\d+$`, 'i').test(String(r.values.Insectary_ID ?? '')))
+        .map(r => ({ ...r, formulas: formulas[r.id] ?? {}, label: r.id })),
     clutch: value => clutches[String(value).replace(/\s/g, '')]?.written ?? null,
     speciesOfClutch: value => clutches[String(value).replace(/\s/g, '')]?.species ?? null,
     list: field =>
@@ -329,6 +333,23 @@ test('a row with the ID as read wins over older look-alikes, even an empty pre-m
     lookup: { ...lookup, find: ([key]) => (key === 'W2B.2' ? [] : lookup.find([key])) },
   });
   assert.equal(missing.lines[0].status, 'missing');
+  // Without W2B.1 on the page, a line W2B with data is the butterfly typed as W2B.1, not the empty pre-made W2B.
+  const alone = buildReview({
+    transcription: parseTranscription(JSON.stringify({ kind: 'emergence', lines: [{ raw: 'W2B ♀', v: { Insectary_ID: 'W2B', Sex: 'female' } }] })),
+    today: '2026-09-28',
+    lookup,
+  });
+  assert.deepEqual(
+    alone.lines.map(l => [l.status, l.row, l.message]),
+    [['match', 206, 'Leído «W2B»; en la hoja es W2B.1']],
+  );
+  // Only its ID written: nothing says which, it keeps its own row.
+  const bare = buildReview({
+    transcription: parseTranscription(JSON.stringify({ kind: 'emergence', lines: [{ raw: 'W2B', v: { Insectary_ID: 'W2B' } }] })),
+    today: '2026-09-28',
+    lookup,
+  });
+  assert.equal(bare.lines[0].row, 204);
 });
 
 test('a full species name in Stock_of_origin takes the list value; a wild butterfly gets its species typed', () => {
