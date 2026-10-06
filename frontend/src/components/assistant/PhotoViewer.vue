@@ -45,14 +45,18 @@ const where = computed(() =>
     .join(' · '),
 )
 
-/** The photo fitted whole in the pane, turned: the stage is its turned box, the image centred in it. */
+/**
+ * The photo fitted whole in the pane, turned, centred in the stage. The stage
+ * fills the pane: panzoom finds the point under the mouse as if its element
+ * started at the pane's corner, so a smaller, centred stage zoomed off to one side.
+ */
 const fit = computed(() => {
   const { w, h } = natural.value
   if (!w || !h || !size.value.w || !size.value.h) return null
   const sideways = turn.value % 2 === 1
   const [bw, bh] = sideways ? [h, w] : [w, h]
   const s = Math.min(size.value.w / bw, size.value.h / bh)
-  return { stage: { width: `${bw * s}px`, height: `${bh * s}px` }, image: { width: `${w * s}px`, height: `${h * s}px` } }
+  return { width: `${w * s}px`, height: `${h * s}px` }
 })
 
 function reset(animate = true) {
@@ -64,10 +68,25 @@ function rotate(by: 1 | -1) {
   turns.value = { ...turns.value, [props.photo]: (turn.value + by + 4) % 4 }
   void nextTick(() => reset(false))
 }
+const MIN_SCALE = 0.5
+const MAX_SCALE = 12
+/**
+ * Wheel or touchpad: zoom by how far it scrolled, towards the mouse. Panzoom's
+ * own wheel zoom takes a whole step per event, and a smooth wheel or a touchpad
+ * sends many small ones, so a little scroll zoomed a lot. A mouse notch (about
+ * 100 px) is about 1.2 times; one event never more than 1.5 times.
+ */
 const onWheel = (e: WheelEvent) => {
   e.preventDefault()
-  pz?.zoomWithWheel(e)
+  if (!pz) return
+  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? (box.value?.clientHeight ?? 800) : 1
+  const delta = (e.deltaY === 0 && e.deltaX ? e.deltaX : e.deltaY) * unit
+  const factor = Math.exp(Math.max(-200, Math.min(200, -delta)) * 0.002)
+  const to = Math.max(MIN_SCALE, Math.min(MAX_SCALE, pz.getScale() * factor))
+  if (to !== pz.getScale()) pz.zoomToPoint(to, e, { animate: false })
 }
+/** Double-click: closer, towards the point clicked. */
+const onDblclick = (e: MouseEvent) => pz?.zoomToPoint(Math.min(MAX_SCALE, pz.getScale() * 1.5), e, { animate: true })
 function onLoad() {
   failed.value = false
   if (img.value) natural.value = { w: img.value.naturalWidth, h: img.value.naturalHeight }
@@ -86,8 +105,8 @@ let watcher: ResizeObserver | null = null
 onMounted(() => {
   if (!stage.value || !box.value) return
   pz = Panzoom(stage.value, {
-    maxScale: 12,
-    minScale: 0.5,
+    maxScale: MAX_SCALE,
+    minScale: MIN_SCALE,
     step: 0.4,
     canvas: true,
     cursor: 'grab',
@@ -150,24 +169,22 @@ onBeforeUnmount(() => {
       </span>
     </div>
     <!-- Wheel or pinch: zoom; drag: move; double-click: closer. -->
-    <div ref="box" class="relative min-h-0 flex-1 overflow-hidden" @dblclick="zoomIn">
-      <div class="flex h-full w-full items-center justify-center">
-        <div ref="stage" class="relative shrink-0" :style="fit?.stage ?? { width: '100%', height: '100%' }">
-          <img
-            ref="img"
-            :key="photo"
-            :src="url(photo, 'view')"
-            :alt="altOf(photo)"
-            class="absolute top-1/2 left-1/2 max-w-none select-none"
-            :style="{
-              ...(fit?.image ?? { maxWidth: '100%', maxHeight: '100%' }),
-              transform: `translate(-50%, -50%) rotate(${turn * 90}deg)`,
-            }"
-            draggable="false"
-            @load="onLoad"
-            @error="failed = true"
-          />
-        </div>
+    <div ref="box" class="relative min-h-0 flex-1 overflow-hidden" @dblclick="onDblclick">
+      <div ref="stage" class="relative h-full w-full">
+        <img
+          ref="img"
+          :key="photo"
+          :src="url(photo, 'view')"
+          :alt="altOf(photo)"
+          class="absolute top-1/2 left-1/2 max-w-none select-none"
+          :style="{
+            ...(fit ?? { maxWidth: '100%', maxHeight: '100%' }),
+            transform: `translate(-50%, -50%) rotate(${turn * 90}deg)`,
+          }"
+          draggable="false"
+          @load="onLoad"
+          @error="failed = true"
+        />
       </div>
       <p v-if="failed" class="absolute inset-x-0 top-1/3 text-center text-sm text-stone-300">
         {{ $t('No se pudo cargar la foto.') }}
