@@ -361,8 +361,8 @@ export default {
   '↑ {n} filas atrás en la hoja': '↑ {n} rows back in the sheet',
   'La línea siguiente del cuaderno está más arriba en la hoja (fila {to}), antes que la línea anterior (fila {from})':
     "The notebook's next line is higher up in the sheet (row {to}), before the previous line (row {from})",
-  'No está en la foto · {n} fila': 'Not on the photo · {n} row',
-  'No están en la foto · {n} filas': 'Not on the photo · {n} rows',
+  'Sin línea en la foto · {n} fila, debajo': 'No line on the photo · {n} row below',
+  'Sin línea en la foto · {n} filas, debajo': 'No line on the photo · {n} rows below',
   // A slim row opened with a click: the sheet's rows it stands for, read only (lib/proposalRows)
   'Clic: ver las primeras {n} de estas filas de la hoja, solo para leer': 'Click: see the first {n} of these sheet rows, read only',
   'Clic: ver estas filas de la hoja, solo para leer': 'Click: see these sheet rows, read only',
@@ -370,8 +370,8 @@ export default {
   'no se pudo leer · reintentar': 'could not read · retry',
   '{n} ya en la tabla': '{n} already in the table',
   'Clic: ocultar estas filas de la hoja': 'Click: hide these sheet rows',
-  'Filas sin línea en las fotos de la página: añadidas a mano o encontradas fuera de la página':
-    "Rows with no line on the page's photos: added by hand or found off the page",
+  'Las filas de abajo están en la tabla sin una línea de la foto: añadidas a mano o encontradas fuera de la página':
+    'The rows below are in the table without a line of the photo: added by hand or found off the page',
   'no en la foto': 'not on the photo',
   'Esta fila no está en las fotos de la página: añadida a mano o encontrada fuera de la página':
     "This row is not on the page's photos: added by hand or found off the page",

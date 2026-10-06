@@ -159,8 +159,8 @@ export function markerText(m: Marker): { text: string; title: string } {
           }),
         }
   return {
-    text: tn(m.count, 'No está en la foto · {n} fila', 'No están en la foto · {n} filas'),
-    title: t('Filas sin línea en las fotos de la página: añadidas a mano o encontradas fuera de la página'),
+    text: tn(m.count, 'Sin línea en la foto · {n} fila, debajo', 'Sin línea en la foto · {n} filas, debajo'),
+    title: t('Las filas de abajo están en la tabla sin una línea de la foto: añadidas a mano o encontradas fuera de la página'),
   }
 }
 

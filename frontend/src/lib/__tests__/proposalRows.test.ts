@@ -197,7 +197,7 @@ describe('the rows in the notebook order', () => {
     expect(apart.map(c => c.label)).toEqual(['K9Z'])
     const laid = layRows(changes, 'notebook', true)
     expect(shape(laid)).toEqual(['A1E', 'A2E', 'A3E', 'jump 36', 'A3E.1', 'jump -28', 'B1E', 'apart 1', 'K9Z'])
-    expect(markerText(laid.at(-2)!.marker!).text).toBe('No está en la foto · 1 fila')
+    expect(markerText(laid.at(-2)!.marker!).text).toBe('Sin línea en la foto · 1 fila, debajo')
   })
 
   it('a table without a page keeps the sheet order', () => {

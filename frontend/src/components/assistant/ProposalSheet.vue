@@ -748,6 +748,7 @@ function rowLook(row: RowComponent) {
   const change = byKey.get(data.__key)
   const el = row.getElement()
   el.classList.toggle('is-marker-row', !!data.__marker)
+  el.classList.toggle('is-marker-heading', data.__marker === 'apart')
   const m = data.__marker ? (JSON.parse(data.__state) as MarkerState) : null
   el.classList.toggle('is-peekable', !!m && peekable(m))
   el.classList.toggle('is-context-row', !!change?.context && !change.page?.error)
@@ -1621,6 +1622,21 @@ watch(
 }
 .proposal-sheet .marker-action.is-error {
   color: #b91c1c;
+}
+/* «Sin línea en la foto»: a heading over the rows below it (they are in the table), not a gap: no tear. */
+.proposal-sheet .tabulator-row.is-marker-row.is-marker-heading::before,
+.proposal-sheet .tabulator-row.is-marker-row.is-marker-heading::after {
+  display: none;
+}
+.proposal-sheet .tabulator-row.is-marker-row.is-marker-heading,
+.proposal-sheet .tabulator-row.is-marker-row.is-marker-heading .tabulator-cell {
+  background: #f5f5f4;
+  cursor: default;
+}
+.proposal-sheet .tabulator-row.is-marker-row.is-marker-heading .tabulator-cell {
+  padding-top: 3px;
+  padding-bottom: 3px;
+  border-top: 1px solid #d6d3d1;
 }
 /* Its text runs over the empty cells beside it, and stays at the left while scrolling. */
 .proposal-sheet .tabulator-row.is-marker-row .tabulator-cell.is-marker-cell {
