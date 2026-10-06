@@ -9,7 +9,7 @@ import { serialToIso } from '../frontend/src/lib/dates.ts';
 import { formatMinutes } from '../frontend/src/lib/monitoring.ts';
 import { MAX_SECTION_DISTANCE } from '../frontend/src/lib/transects.ts';
 import { moduleMap } from './schema.mjs';
-import { analyse } from './suggestions/wikiloc-transects.mjs';
+import { analyse, analyseState } from './suggestions/wikiloc-transects.mjs';
 
 const fail = (code, message, status = 400) => Object.assign(new Error(message), { code, status });
 const clean = v => (v === null || v === undefined ? '' : String(v).trim());
@@ -255,8 +255,47 @@ export function wikilocInventory(store) {
   };
 }
 
-/** The corrections the Wikiloc points suggest, the other discrepancies and the inventory (Monitoreo → Wikiloc). */
+/**
+ * The corrections the Wikiloc points suggest, the other discrepancies and the inventory (Monitoreo
+ * → Wikiloc), here in this thread. The app's requests ask freshCorrections (in the Revisión worker
+ * thread, server/checks-host.mjs, which reads the same points for the suggested edits).
+ */
 export function wikilocCorrections(store) {
   const { suggestions, discrepancies, daysWithoutWalk, counts } = analyse(store);
   return { counts, suggestions, discrepancies, daysWithoutWalk, inventory: wikilocInventory(store) };
+}
+
+/** The state of what the corrections read: the points and rows (analyseState), the photos, the profiles. */
+export function correctionsStamp(store) {
+  const photos = store.db.prepare('SELECT count(*) n, coalesce(sum(length(data)),0) bytes FROM monitoring_photos').get();
+  const profiles = store.db.prepare('SELECT name, collector, last_checked FROM wikiloc_profiles ORDER BY created_at').all();
+  return `${analyseState(store)}:${photos.n}:${photos.bytes}:${JSON.stringify(profiles)}`;
+}
+/** The corrections with the state they were computed from: { stamp, value } (the worker's answer). */
+export function correctionsEntry(store) {
+  const stamp = correctionsStamp(store);
+  const started = Date.now();
+  return { stamp, value: wikilocCorrections(store), ms: Date.now() - started };
+}
+const kept = new WeakMap();
+/** Corrections computed in the worker: the cached answer while what they read is as it was. */
+export function keepCorrections(store, entry) {
+  if (entry.stamp === correctionsStamp(store)) kept.set(store, entry);
+  return entry;
+}
+/** The kept corrections when they are still up to date, else null. */
+export function cachedCorrections(store) {
+  const hit = kept.get(store);
+  return hit?.stamp === correctionsStamp(store) ? hit : null;
+}
+/** Who computes the corrections for the app's requests (server/checks-host.mjs: a worker thread), by store. */
+const runners = new WeakMap();
+export function useCorrectionsRunner(store, runner) {
+  if (runner) runners.set(store, runner);
+  else runners.delete(store);
+}
+/** The corrections as of now (wikilocCorrections), computed in the worker where there is one. A promise. */
+export async function freshCorrections(store) {
+  const runner = runners.get(store);
+  return runner ? (await runner.fresh()).value : wikilocCorrections(store);
 }

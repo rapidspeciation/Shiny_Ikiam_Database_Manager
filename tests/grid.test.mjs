@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
-import { idSuggestions } from '../server/grid.mjs';
+import { idSuggestions, tablePayload, tableRevision, tableText } from '../server/grid.mjs';
 
 test('tube suggestions follow each rack in use: by kind of work and medium', async () => {
   const ins = (row, id, purpose, medium, tube, date) => ({
@@ -96,5 +96,49 @@ test('check says which typed CAMs and tubes are used already, and where', async 
   const cams = idSuggestions(store, { kind: 'cam', check: 'CAM079900,CAM078301' });
   assert.deepEqual(Object.keys(cams.used), ['CAM079900']);
   assert.deepEqual(idSuggestions(store, { kind: 'tube', check: '' }).used, {});
+  store.close();
+});
+
+test("after a save only what it touched is read again: the grid's sheet and the IDs give what whole rows give", async () => {
+  const sheets = new LocalSheets({
+    Insectary_data: [
+      { row: 2, values: { Insectary_ID: 'A0A', SPECIES: 'Mechanitis polymnia', CAM_ID: 'CAM000010', Tube_1_id: 'FS50849033', Sex: 'female' } },
+      { row: 3, values: { Insectary_ID: 'A1A', SPECIES: 'Mechanitis polymnia', CAM_ID: 'CAM000011', Tube_1_id: 'FS50849034' } },
+    ],
+    Collection_data: [{ row: 2, values: { CAM_ID: 'CAM079900', SPECIES: 'Oleria onega', Tube_1_id: 'FS90415401' } }],
+  });
+  const store = new Store({ localMode: true }, { sheets });
+  await store.sync({ sheets: ['Insectary_data', 'Collection_data'] });
+  const whole = module => JSON.stringify({ ...tablePayload(store, module), revision: tableRevision(store, module) });
+  const text = module => tableText(store, module, tableRevision(store, module));
+  assert.equal(text('Insectary_data'), whole('Insectary_data'));
+  assert.equal(text('Collection_data'), whole('Collection_data'));
+  const tube = () => idSuggestions(store, { kind: 'tube' }).suggestions.find(s => s.context === 'Insectario').value;
+  assert.equal(tube(), 'FS50849035');
+
+  // A save in Insectary_data: its changed row is read again, not the others nor Collection_data.
+  await sheets.externalEdit('Insectary_data', 3, { Tube_1_id: 'FS50849035', Sex: 'male' });
+  await store.sync({ sheets: ['Insectary_data'] });
+  const expected = [whole('Insectary_data'), whole('Collection_data')];
+  const reads = [];
+  const prepare = store.db.prepare.bind(store.db);
+  store.db.prepare = sql => {
+    const statement = prepare(sql);
+    if (!/values_json/.test(sql)) return statement;
+    const run = key => (...args) => (reads.push([sql, args]), statement[key](...args));
+    return { get: run('get'), all: run('all') };
+  };
+  assert.deepEqual([text('Insectary_data'), text('Collection_data')], expected);
+  assert.equal(tube(), 'FS50849036');
+  store.db.prepare = prepare;
+  // The grid's text and the IDs' columns: each read the one row that changed, nothing of Collection_data.
+  const changed = store.getRecordBySheetRow('Insectary_data', 3).id;
+  assert.deepEqual(
+    reads.map(([sql, args]) => [/json_extract/.test(sql) ? 'columns' : 'row', args.at(-1)]),
+    [
+      ['row', changed],
+      ['columns', changed],
+    ],
+  );
   store.close();
 });

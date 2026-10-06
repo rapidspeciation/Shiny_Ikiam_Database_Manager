@@ -308,12 +308,21 @@ function alertList(cams, rule, samples, today) {
 }
 
 const cache = new WeakMap();
-/** Everything the alerts know, computed again only when the local copy or the day changed. */
+export const alertsStamp = store => `${recordsStamp(store)}:${todaySerial()}`;
+/**
+ * Everything the alerts know, computed again only when the local copy or the day changed, here
+ * in this thread. The app's requests ask freshAlerts instead (in the Revisión worker thread,
+ * server/checks-host.mjs); this is for the workers, the tests and the assistant's workers.
+ */
 export function alerts(store) {
+  return alertsEntry(store).value;
+}
+/** The alerts with the state of the copy they were computed from: { stamp, value }. */
+export function alertsEntry(store) {
   const today = todaySerial();
-  const stamp = `${recordsStamp(store)}:${today}`;
+  const stamp = alertsStamp(store);
   const hit = cache.get(store);
-  if (hit?.stamp === stamp) return hit.value;
+  if (hit?.stamp === stamp) return hit;
   const started = Date.now();
   const sheets = sheetRows(store);
   const cams = camAlerts(sheets, today);
@@ -328,6 +337,30 @@ export function alerts(store) {
     preserveRule: rule,
     missingSamples: samples,
   };
-  cache.set(store, { stamp, value });
-  return value;
+  return keepAlerts(store, { stamp, value });
+}
+/** Alerts computed in the worker ({ stamp, value }): the cached answer while the copy is as they were computed. */
+export function keepAlerts(store, entry) {
+  if (entry.stamp === alertsStamp(store)) cache.set(store, entry);
+  return entry;
+}
+/** The kept alerts when they are still up to date, else null: { stamp, value }. */
+export function cachedAlerts(store) {
+  const hit = cache.get(store);
+  return hit?.stamp === alertsStamp(store) ? hit : null;
+}
+
+/** Who computes the alerts for the app's requests (server/checks-host.mjs: a worker thread), by store. */
+const runners = new WeakMap();
+export function useAlertsRunner(store, runner) {
+  if (runner) runners.set(store, runner);
+  else runners.delete(store);
+}
+/**
+ * The alerts as of now, for the app's requests: the kept ones when nothing changed since, else
+ * computed after this call (in the Revisión worker, where there is one). A promise.
+ */
+export async function freshAlerts(store) {
+  const runner = runners.get(store);
+  return (runner ? await runner.fresh() : alertsEntry(store)).value;
 }

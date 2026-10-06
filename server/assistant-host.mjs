@@ -13,7 +13,7 @@
 // No worker (the work in the app's thread): an in-memory database (tests), ASSISTANT_WORKER=0, or
 // a configuration that cannot be handed to a thread.
 import { createAssistant } from './assistant.mjs';
-import { workerMode, workerSlot } from './worker-slot.mjs';
+import { layoutsFeed, workerMode, workerSlot } from './worker-slot.mjs';
 
 /** Tools that run in the app's thread. */
 export const MAIN_TOOLS = new Set([
@@ -50,20 +50,19 @@ export function createAssistantHost({
     };
   }
   const cloned = structuredClone(config);
-  // Each sheet's columns as the workers last got them (a key of its layout), so only changes are sent.
-  const sentLayouts = new Map();
-  const layoutKey = layout => JSON.stringify({ ...layout, columns: [...(layout?.columns ?? [])] });
-  const data = () => {
-    for (const [sheet, layout] of store.layouts ?? []) sentLayouts.set(sheet, layoutKey(layout));
-    return {
-      path: decided.path,
-      localMode: !!store.localMode,
-      spreadsheetId: store.sheets?.spreadsheetId ?? null,
-      layouts: [...(store.layouts ?? [])],
-      google: store.googleState?.() ?? null,
-      config: cloned,
-    };
-  };
+  // What the workers read of the app's memory: the sheets' columns after each sync (only changes are sent).
+  const layouts = layoutsFeed(store, changed => {
+    tools.post({ type: 'layouts', layouts: changed });
+    views.post({ type: 'layouts', layouts: changed });
+  });
+  const data = () => ({
+    path: decided.path,
+    localMode: !!store.localMode,
+    spreadsheetId: store.sheets?.spreadsheetId ?? null,
+    layouts: layouts.current(),
+    google: store.googleState?.() ?? null,
+    config: cloned,
+  });
   const onMessage = m => {
     if (m?.type === 'changed') main.notifyChanged(m.ownerId, m.page ?? null);
   };
@@ -86,19 +85,7 @@ export function createAssistantHost({
     list: (rows, titles, have) => views.call({ type: 'views', rows, titles: [...titles], have: [...have] }),
   });
 
-  // What the workers read of the app's memory: the sheets' columns after each sync, how Google answers.
-  const stopSyncs = store.watchSyncs?.(() => {
-    const changed = [];
-    for (const [sheet, layout] of store.layouts ?? []) {
-      const key = layoutKey(layout);
-      if (sentLayouts.get(sheet) === key) continue;
-      sentLayouts.set(sheet, key);
-      changed.push([sheet, layout]);
-    }
-    if (!changed.length) return;
-    tools.post({ type: 'layouts', layouts: changed });
-    views.post({ type: 'layouts', layouts: changed });
-  });
+  // And how Google answers.
   let googleQueued = false;
   const stopLive = store.watchLive?.(() => {
     if (googleQueued || (!tools.alive && !views.alive)) return;
@@ -133,7 +120,7 @@ export function createAssistantHost({
       }
     },
     close() {
-      stopSyncs?.();
+      layouts.stop();
       stopLive?.();
       tools.close();
       views.close();

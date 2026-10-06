@@ -745,36 +745,71 @@ function naturalHistory(store) {
 const NATURE_SHEETS = ['Collection_data', 'SamplingDay_data', 'Insectary_stocks', 'Insectary_data'];
 const TEAM_SHEETS = [...NATURE_SHEETS, 'CRISPR', 'Melinaea_crosses', 'F1/F2_MutationRate', 'Stocks_Matings', 'Crosses_Lys_x_Pol'];
 
-export function createSummary(store) {
-  const cache = new Map();
-  function cached(key, sheets, build) {
-    const revision = `${todaySerial()}:${sheets.map(s => tableRevision(store, s)).join(',')}`;
-    const hit = cache.get(key);
-    if (hit?.revision === revision) return hit.value;
-    const value = build();
-    cache.set(key, { revision, value });
-    return value;
-  }
-  return {
-    /** Natural history for everyone; `team` only for signed-in people. */
-    build({ signedIn }) {
-      const today = todaySerial();
-      const nature = cached('nature', NATURE_SHEETS, () => naturalHistory(store));
-      const team = signedIn
-        ? cached('team', TEAM_SHEETS, () => {
-            const collection = rowsOf(store, 'Collection_data');
-            return {
-              latestIds: latestIds(store),
-              insectary: insectary(store, today),
-              upcoming: upcoming(rowsOf(store, 'Insectary_stocks'), today),
-              monitoring: monitoring(collection, rowsOf(store, 'SamplingDay_data'), today),
-              collections: collections(collection, today),
-              crispr: crispr(rowsOf(store, 'CRISPR')),
-              crosses: crosses(store),
-            };
-          })
-        : null;
-      return { generatedAt: new Date().toISOString(), today: iso(today), nature, team };
-    },
-  };
+const caches = new WeakMap();
+function cached(store, key, sheets, build) {
+  const cache = caches.get(store) ?? caches.set(store, new Map()).get(store);
+  const revision = `${todaySerial()}:${sheets.map(s => tableRevision(store, s)).join(',')}`;
+  const hit = cache.get(key);
+  if (hit?.revision === revision) return hit.value;
+  const value = build();
+  cache.set(key, { revision, value });
+  return value;
+}
+
+/**
+ * Natural history for everyone; `team` only for signed-in people. Each part is computed again
+ * only when a sheet it reads (or the day) changed, here in this thread: the app's requests ask
+ * freshSummary (in the Revisión worker thread, server/checks-host.mjs).
+ */
+export function summaryHere(store, { signedIn }) {
+  const today = todaySerial();
+  const nature = cached(store, 'nature', NATURE_SHEETS, () => naturalHistory(store));
+  const team = signedIn
+    ? cached(store, 'team', TEAM_SHEETS, () => {
+        const collection = rowsOf(store, 'Collection_data');
+        return {
+          latestIds: latestIds(store),
+          insectary: insectary(store, today),
+          upcoming: upcoming(rowsOf(store, 'Insectary_stocks'), today),
+          monitoring: monitoring(collection, rowsOf(store, 'SamplingDay_data'), today),
+          collections: collections(collection, today),
+          crispr: crispr(rowsOf(store, 'CRISPR')),
+          crosses: crosses(store),
+        };
+      })
+    : null;
+  return { generatedAt: new Date().toISOString(), today: iso(today), nature, team };
+}
+
+/** The state of the sheets the summaries read, and the day. */
+export const summaryStamp = store => `${todaySerial()}:${TEAM_SHEETS.map(s => tableRevision(store, s)).join(',')}`;
+/** Both parts with the state they were computed from: { stamp, today, nature, team } (the worker's answer). */
+export function summaryEntry(store) {
+  const stamp = summaryStamp(store);
+  const { today, nature, team } = summaryHere(store, { signedIn: true });
+  return { stamp, today, nature, team };
+}
+const kept = new WeakMap();
+/** A summary computed in the worker: the cached answer while the sheets are as it was computed from. */
+export function keepSummary(store, entry) {
+  if (entry.stamp === summaryStamp(store)) kept.set(store, entry);
+  return entry;
+}
+/** The kept summary when it is still up to date, else null. */
+export function cachedSummary(store) {
+  const hit = kept.get(store);
+  return hit?.stamp === summaryStamp(store) ? hit : null;
+}
+/** Who computes the summaries for the app's requests (server/checks-host.mjs: a worker thread), by store. */
+const runners = new WeakMap();
+export function useSummaryRunner(store, runner) {
+  if (runner) runners.set(store, runner);
+  else runners.delete(store);
+}
+/** The home page's summaries as of now (summaryHere), computed in the worker where there is one. A promise. */
+export async function freshSummary(store, { signedIn }) {
+  const runner = runners.get(store);
+  if (!runner) return summaryHere(store, { signedIn });
+  const { today, nature, team } = await runner.fresh();
+  return { generatedAt: new Date().toISOString(), today, nature, team: signedIn ? team : null };
 }
