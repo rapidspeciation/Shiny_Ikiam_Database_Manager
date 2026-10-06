@@ -51,6 +51,8 @@ export interface Settings {
   sheetUrl: string | null
   localMode?: boolean
   basePath: string
+  /** Emergidos and Clutches keep their changes in the app until «Guardar en Google Sheets»; false: saved straight to the sheet (no Censo tab). */
+  stagedSaving?: boolean
 }
 
 export interface SyncStatus {

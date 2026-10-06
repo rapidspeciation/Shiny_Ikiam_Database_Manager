@@ -28,7 +28,12 @@ const waiting = computed(() => {
 const route = useRoute()
 /** Without an account only the open pages are listed; Revisión only for people who edit. */
 const shown = computed(() =>
-  session.user ? tabs.filter(t => !('editors' in t && t.editors) || session.canEdit) : tabs.filter(t => 'open' in t && t.open),
+  session.user
+    ? tabs
+        .filter(t => !('editors' in t && t.editors) || session.canEdit)
+        // Censo keeps its disappearances in the app: shown only where those tabs save there.
+        .filter(t => !('staged' in t && t.staged) || session.settings?.stagedSaving !== false)
+    : tabs.filter(t => 'open' in t && t.open),
 )
 
 async function logout() {

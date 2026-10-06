@@ -8,6 +8,7 @@ import { verificationsFor } from '../lib/verifications'
 import { useLive } from './live'
 import { useSession } from './session'
 import { type ServerRecord, useTables } from './tables'
+import { stagedSaving } from '../lib/stagedSwitch'
 
 /** Unsaved changes to an existing sheet row. */
 export interface PendingEdit {
@@ -63,7 +64,8 @@ export interface SaveResult {
 /** The tabs whose changes are kept in the app until «Guardar en Google Sheets» (server/staged.mjs). */
 export const STAGED_PURPOSES = new Set(['emergidos', 'clutches'])
 /** A change kept in the app rather than written: typed in one of those tabs, or to a row entered there. */
-export const isStaged = (purpose: string | undefined, rowId = '') => STAGED_PURPOSES.has(purpose ?? '') || rowId.startsWith('staged:')
+export const isStaged = (purpose: string | undefined, rowId = '') =>
+  rowId.startsWith('staged:') || (stagedSaving() && STAGED_PURPOSES.has(purpose ?? ''))
 
 /** Changes sent and kept by the server until Google answers (server/outbox.mjs), by outbox id. */
 interface QueuedSave {

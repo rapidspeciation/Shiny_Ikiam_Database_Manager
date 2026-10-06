@@ -11,7 +11,7 @@ export const tabs = [
   { path: '/tubos', name: 'tubes', label: 'Tubos', component: () => import('./views/TubesView.vue') },
   { path: '/emergidos', name: 'emerged', label: 'Emergidos', component: () => import('./views/EmergedView.vue') },
   { path: '/clutches', name: 'clutches', label: 'Clutches', component: () => import('./views/ClutchesView.vue') },
-  { path: '/censo', name: 'census', label: 'Censo', component: () => import('./views/CensusView.vue') },
+  { path: '/censo', name: 'census', label: 'Censo', staged: true, component: () => import('./views/CensusView.vue') },
   { path: '/historial', name: 'history', label: 'Historial', component: () => import('./views/HistoryView.vue') },
   { path: '/asistente', name: 'assistant', label: 'Asistente', component: () => import('./views/AssistantView.vue') },
   // Not a daily task: last.

@@ -221,6 +221,9 @@ export function configFromEnv(env = process.env) {
     googleCredentialsFile: env.GOOGLE_CREDENTIALS_FILE,
     setupToken: env.SETUP_TOKEN,
     localMode: env.LOCAL_MODE === '1',
+    // Emergidos and Clutches keep their changes in the app until «Guardar en Google Sheets» (server/staged.mjs),
+    // and the Censo tab (which needs that) is shown; STAGED_SAVING=0 saves those tabs straight to the sheet, as before.
+    stagedSaving: env.STAGED_SAVING !== '0',
     seedFile: env.SEED_FILE,
     secureCookies: env.SECURE_COOKIES !== '0',
     // The Google Sheets workbook (WORKBOOK_ID, the team's workbook by default).
@@ -606,6 +609,7 @@ export async function createApp(config = {}, options = {}) {
             sheetUrl: store.localMode ? null : workbookUrl(store.sheets.spreadsheetId),
             localMode: store.localMode,
             basePath: config.basePath,
+            stagedSaving: config.stagedSaving !== false,
           },
         });
       if (method === 'GET' && path === '/api/records')

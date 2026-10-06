@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { api, setCsrf } from '../lib/api'
 import type { Module, Settings, SyncStatus, User } from '../lib/types'
+import { setStagedSaving } from '../lib/stagedSwitch'
 
 interface Bootstrap {
   user: User
@@ -42,6 +43,7 @@ export const useSession = defineStore('session', {
       this.user = data.user
       this.modules = data.modules
       this.settings = data.settings
+      setStagedSaving(data.settings?.stagedSaving !== false)
       this.sync = data.sync
     },
     async login(username: string, password: string) {
