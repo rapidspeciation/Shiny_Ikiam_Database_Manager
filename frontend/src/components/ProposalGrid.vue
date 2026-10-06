@@ -165,12 +165,12 @@ function onEdit(cells: CellEdit[]) {
   local.value = next
   later()
 }
-/** «Marcar revisadas»: shown at once, saved with the next edits. */
-function onCheck(cells: { key: string; field: string }[]) {
+/** «Marcar revisadas» (or an undo of it, `checked: false`): shown at once, saved with the next edits. */
+function onCheck(cells: { key: string; field: string; checked?: boolean }[]) {
   const next = new Map(localChecks.value)
-  for (const c of cells) {
-    next.set(cellId(c.key, c.field), true)
-    checkQueue.set(cellId(c.key, c.field), { ...c, checked: true })
+  for (const { key, field, checked = true } of cells) {
+    next.set(cellId(key, field), checked)
+    checkQueue.set(cellId(key, field), { key, field, checked })
   }
   localChecks.value = next
   later(0)
@@ -802,6 +802,7 @@ const statusText = computed(
         :editable="editable"
         :applied="proposal.status === 'applied' ? (proposal.applied ?? []) : null"
         :flash="flash"
+        :history-key="`${proposal.id}:${g.id}`"
         @edit="onEdit"
         @remove="removeRow"
         @check="onCheck"

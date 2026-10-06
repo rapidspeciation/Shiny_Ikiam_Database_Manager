@@ -151,6 +151,30 @@ export default {
   '{reason} (por {who})': '{reason} (by {who})',
   'No escrito en la línea': 'Not written on the line',
   'Marcar revisadas': 'Mark as checked',
+  // Undo / redo in the proposal's table
+  Deshacer: 'Undo',
+  Rehacer: 'Redo',
+  'Deshacer tu último cambio en la tabla ({key})': 'Undo your last change in the table ({key})',
+  'Rehacer lo deshecho ({key})': 'Redo what was undone ({key})',
+  'Deshecho, salvo {n} celda que la IA cambió después: queda como la dejó':
+    'Undone, except {n} cell the AI changed afterwards: it stays as the AI left it',
+  'Deshecho, salvo {n} celdas que la IA cambió después: quedan como las dejó':
+    'Undone, except {n} cells the AI changed afterwards: they stay as the AI left them',
+  'No se deshizo: la IA cambió esa celda después y queda como la dejó':
+    'Not undone: the AI changed that cell afterwards, so it stays as the AI left it',
+  'No se deshizo: la IA cambió esas {n} celdas después y quedan como las dejó':
+    'Not undone: the AI changed those {n} cells afterwards, so they stay as the AI left them',
+  'Rehecho, salvo {n} celda que la IA cambió después: queda como la dejó':
+    'Redone, except {n} cell the AI changed afterwards: it stays as the AI left it',
+  'Rehecho, salvo {n} celdas que la IA cambió después: quedan como las dejó':
+    'Redone, except {n} cells the AI changed afterwards: they stay as the AI left them',
+  'No se rehízo: la IA cambió esa celda después y queda como la dejó':
+    'Not redone: the AI changed that cell afterwards, so it stays as the AI left it',
+  'No se rehízo: la IA cambió esas {n} celdas después y quedan como las dejó':
+    'Not redone: the AI changed those {n} cells afterwards, so they stay as the AI left them',
+  '{n} celda quedó como está: su fila ya no está en la propuesta': '{n} cell was left as it is: its row is no longer in the proposal',
+  '{n} celdas quedaron como están: su fila ya no está en la propuesta':
+    '{n} cells were left as they are: their row is no longer in the proposal',
   'Las celdas dudosas elegidas quedan como revisadas, con el valor que tienen':
     'The selected doubtful cells are marked as checked, with the value they have',
   'Elige celdas dudosas (bordes ámbar con «?»): sus otras lecturas salen junto a la celda':

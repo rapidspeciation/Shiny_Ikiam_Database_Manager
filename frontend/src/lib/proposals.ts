@@ -812,7 +812,9 @@ export function withLocal(
           else delete marks[field]
         } else {
           values[field] = cell.value
-          marks[field] = mark
+          // Typed back to what the assistant proposed (an undo too): the assistant's again, as the server marks it.
+          if ('ai' in mark && same(cell.value, mark.ai)) delete marks[field]
+          else marks[field] = mark
         }
       }
       if (!values) return c

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { KeybindingsModule, TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent } from 'tabulator-tables'
-import { spreadsheetKeys, tabulatorKeyCode } from '../gridKit'
+import { attachPendingCut, cutCellId, spreadsheetKeys, tabulatorKeyCode } from '../gridKit'
 
 const keyCode = (key: string, legacy = 0) =>
   (KeybindingsModule.prototype as unknown as { getKeyCode: (e: Partial<KeyboardEvent>) => number }).getKeyCode({ key, keyCode: legacy })
@@ -140,6 +140,86 @@ describe('cutting cells (Ctrl+X)', () => {
       [null, 'b3'],
       ['a4', 'b4'],
     ])
+    g.done()
+  })
+})
+
+describe('a cut kept until it is pasted (attachPendingCut)', () => {
+  /** The browser's copy command, as jsdom has none: the grid's copy event with a clipboard to write to. */
+  function clipboard(table: Tabulator) {
+    const out = { text: '' }
+    const exec = document.execCommand
+    document.execCommand = (command: string) => {
+      const event = new Event(command, { bubbles: true, cancelable: true })
+      const setData = (type: string, text: string) => type === 'text/plain' && (out.text = text)
+      Object.defineProperty(event, 'clipboardData', { value: { setData } })
+      table.element.dispatchEvent(event)
+      return true
+    }
+    return { out, restore: () => (document.execCommand = exec) }
+  }
+  const values = (g: Awaited<ReturnType<typeof grid>>) => g.table.getData().slice(0, 4).map(r => [r.A, r.B])
+
+  it('only marks the cells on Ctrl+X; the paste moves them in one go, keeping the read-only ones', async () => {
+    const g = await grid()
+    const clip = clipboard(g.table)
+    const canEdit = (_row: unknown, field: string) => field === 'A'
+    const cuts = attachPendingCut(g.table, g.host, canEdit)
+    const keys = spreadsheetKeys(() => g.table, canEdit, () => {}, undefined, { cut: () => cuts.start() })
+    g.host.addEventListener('keydown', keys)
+    await g.select(g.cell(2, 'A'), g.cell(3, 'B'))
+    g.press('x', { ctrlKey: true })
+    expect(clip.out.text).toBe('a2\tb2\na3\tb3')
+    // Nothing emptied yet.
+    expect(values(g)).toEqual([
+      ['a1', 'b1'],
+      ['a2', 'b2'],
+      ['a3', 'b3'],
+      ['a4', 'b4'],
+    ])
+    expect(cuts.pending?.cells.map(c => `${c.field}${c.row}`)).toEqual(['A2', 'B2', 'A3', 'B3'])
+    // Another text pasted (copied elsewhere since): not this cut.
+    expect(cuts.take('something else')).toBeNull()
+    // The same text, as a system may give it back (CRLF, a last line end): the cut.
+    const cut = cuts.take('a2\tb2\r\na3\tb3\r\n')!
+    expect(cut).toBe(cuts.pending)
+    // Pasted one row up (A1:B2): the cells written there stay, the rest of the cut is emptied (B only copied).
+    g.cell(1, 'A').setValue('a2')
+    g.cell(2, 'A').setValue('a3')
+    cuts.finish(cut, new Set([cutCellId(1, 'A'), cutCellId(1, 'B'), cutCellId(2, 'A'), cutCellId(2, 'B')]))
+    expect(values(g)).toEqual([
+      ['a2', 'b1'],
+      ['a3', 'b2'],
+      [null, 'b3'],
+      ['a4', 'b4'],
+    ])
+    // Done: pasting again copies.
+    expect(cuts.pending).toBeNull()
+    clip.restore()
+    cuts.destroy()
+    g.done()
+  })
+
+  it('is left as it was by Esc, a new copy, or editing a cell', async () => {
+    const g = await grid()
+    const clip = clipboard(g.table)
+    const cuts = attachPendingCut(g.table, g.host, () => true)
+    await g.select(g.cell(2, 'A'))
+    cuts.start()
+    expect(cuts.pending?.text).toBe('a2')
+    g.press('Escape')
+    expect(cuts.pending).toBeNull()
+    // Ctrl+C after Ctrl+X: the copy is what the clipboard holds, the cut cells untouched.
+    cuts.start()
+    g.table.copyToClipboard('range')
+    expect(cuts.pending).toBeNull()
+    expect(clip.out.text).toBe('a2')
+    cuts.start()
+    g.cell(4, 'A').edit(true)
+    expect(cuts.pending).toBeNull()
+    expect(values(g)[1]).toEqual(['a2', 'b2'])
+    clip.restore()
+    cuts.destroy()
     g.done()
   })
 })
