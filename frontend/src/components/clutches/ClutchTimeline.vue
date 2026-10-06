@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { Camera, Info, Loader2, RotateCcw, Trash2, X } from 'lucide-vue-next'
 import ClutchPhotoAdd from './ClutchPhotoAdd.vue'
 import ClutchPhotoViewer from './ClutchPhotoViewer.vue'
 import type { ClutchDay } from '../../composables/useClutchDay'
+import type { ClutchRecordState } from '../../composables/useClutchRecord'
 import { usePhotoUploads } from '../../composables/usePhotoUploads'
-import { api } from '../../lib/api'
 import { photoUrl, type ClutchPhoto } from '../../lib/clutchPhotos'
-import type { ClutchEvent, ClutchTallies, Expected, Stage, StageTally, YoungRow } from '../../lib/clutches'
+import type { ClutchEvent, Expected, Stage, StageTally, YoungRow } from '../../lib/clutches'
 import { dayLabel, formatSerial, isoToSerial, todayIso } from '../../lib/dates'
 import { errorText, notify } from '../../lib/notice'
 import { useSession } from '../../stores/session'
@@ -32,31 +32,12 @@ const props = defineProps<{
   /** Photos can be added (a clutch already in the sheet). */
   canPhoto: boolean
   initials: (name: string) => string
+  /** The clutch's events, Emergidos' rows and photos (useClutchRecord, loaded by the editor). */
+  record: ClutchRecordState
 }>()
-const emit = defineEmits<{ loaded: [events: ClutchEvent[]] }>()
 const session = useSession()
 const uploads = usePhotoUploads()
-
-const data = ref<{ events: ClutchEvent[]; young: YoungRow[]; photos?: ClutchPhoto[]; tally: ClutchTallies } | null>(null)
-async function load() {
-  const id = props.recordId
-  try {
-    const out = await api<{ events: ClutchEvent[]; young: YoungRow[]; photos?: ClutchPhoto[]; tally: ClutchTallies }>(
-      `clutches/events?recordId=${encodeURIComponent(id)}`,
-    )
-    if (id === props.recordId) {
-      data.value = out
-      emit('loaded', out.events)
-    }
-  } catch {
-    /* offline: keep what was shown */
-  }
-}
-watch(
-  () => [props.recordId, props.day.eventsVersion.value, props.day.day.value.events?.length, props.day.day.value.photos?.length, uploads.stored.value],
-  load,
-  { immediate: true },
-)
+const data = computed(() => props.record.data.value)
 
 const subtract = computed(() => props.day.settings.subtractPreserved)
 const tally = (stage: Stage): StageTally => data.value?.tally[stage] ?? { gained: 0, died: 0, disappeared: 0, preserved: 0 }
@@ -102,9 +83,7 @@ const adding = ref<{ day: string; eventId: string | null } | null>(null)
 const eventsOf = (day: string) => (data.value?.events ?? []).filter(e => e.day === day)
 const viewing = ref<number | null>(null)
 const open = (p: ClutchPhoto) => (viewing.value = photos.value.findIndex(x => x.id === p.id))
-function removed(id: string) {
-  if (data.value) data.value = { ...data.value, photos: (data.value.photos ?? []).filter(p => p.id !== id) }
-}
+const removed = (id: string) => props.record.photoRemoved(id)
 const progress = (u: (typeof sending.value)[number]) => (u.total ? Math.round((u.sent / u.total) * 100) : 0)
 </script>
 

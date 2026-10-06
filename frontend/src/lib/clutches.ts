@@ -879,3 +879,80 @@ export function notebookText(
   }
   return lines.join('\n')
 }
+
+// --- A count's chips in the editor: struck out to take them from the sum, today's told apart, linked to their events
+
+/** The sum's terms: the chips not struck out (`struck`: indexes into `base`). */
+export const struckTerms = (base: number[], struck: number[]) => base.filter((_, i) => !struck.includes(i))
+
+/**
+ * A chip tapped: struck out of the sum (it stays in place, crossed out), or put
+ * back if it was. Refused when the sum would start with a loss or go below 0.
+ */
+export function toggleStrike(
+  base: number[],
+  struck: number[],
+  index: number,
+): { ok: true; struck: number[]; terms: number[] } | { ok: false; reason: 'first' | 'negative' } {
+  if (index < 0 || index >= base.length) return { ok: true, struck, terms: struckTerms(base, struck) }
+  const next = struck.includes(index) ? struck.filter(i => i !== index) : [...struck, index].sort((a, b) => a - b)
+  const terms = struckTerms(base, next)
+  if (terms.length && terms[0] < 0) return { ok: false, reason: 'first' }
+  if (totalOf(terms) < 0) return { ok: false, reason: 'negative' }
+  return { ok: true, struck: next, terms }
+}
+
+/**
+ * The chips once the count changed (a +N added, Undo, another person's edit):
+ * the struck ones stay while the sum is still the same, or the same with terms
+ * added after it; any other change starts the chips again from the new sum.
+ */
+export function rebaseChips(base: number[], struck: number[], terms: number[]): { base: number[]; struck: number[] } {
+  const now = struckTerms(base, struck)
+  if (now.length <= terms.length && now.every((t, i) => t === terms[i])) return { base: [...base, ...terms.slice(now.length)], struck }
+  return { base: [...terms], struck: [] }
+}
+
+/**
+ * How a count changed today: the terms of this morning's sum still at its start
+ * (`kept`: the chips before it are from earlier days), the terms added today and
+ * those of the morning no longer there.
+ */
+export function todaySplit(morning: number[], now: number[]): { kept: number; added: number[]; removed: number[] } {
+  let kept = 0
+  while (kept < morning.length && kept < now.length && morning[kept] === now[kept]) kept++
+  return { kept, added: now.slice(kept), removed: morning.slice(kept) }
+}
+
+/**
+ * The event behind each chip of a stage's count (its id, or null): a + is that
+ * stage's gain of the same number (5 hatched for +5), a − a death or
+ * disappearance (or preserved ones, when the team takes them off) of that many.
+ * Matched from the newest chip and the newest event back, each event once; a
+ * recount has none.
+ */
+export function chipEvents(
+  terms: number[],
+  events: Pick<ClutchEvent, 'id' | 'kind' | 'count' | 'stage' | 'day' | 'createdAt'>[],
+  stage: Stage,
+  subtractPreserved: boolean,
+): (string | null)[] {
+  const signed = (e: (typeof events)[number]) =>
+    e.kind === gainOf(stage)
+      ? e.count
+      : e.kind === 'died' || e.kind === 'disappeared' || (e.kind === 'preserved' && subtractPreserved)
+        ? -e.count
+        : null
+  const pool = events
+    .filter(e => e.stage === stage && signed(e) !== null)
+    .sort((a, b) => b.day.localeCompare(a.day) || b.createdAt.localeCompare(a.createdAt))
+  const used = new Set<string>()
+  const out: (string | null)[] = terms.map(() => null)
+  for (let i = terms.length - 1; i >= 0; i--) {
+    const e = pool.find(x => !used.has(x.id) && signed(x) === terms[i])
+    if (!e) continue
+    used.add(e.id)
+    out[i] = e.id
+  }
+  return out
+}
