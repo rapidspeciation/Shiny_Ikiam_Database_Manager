@@ -111,17 +111,14 @@ export const MATCH_NOTEBOOK_TOOL = {
           },
         },
         photo: {
-          description: "The page's photo, or a list: the attachment's file name (from \"[Attached image … saved at …]\"; an older chat's photo: its name in the T3 attachments folder, starting with that chat's id)",
+          description: "The page's photo, or a list: the attachment's file name (from \"[Attached image … saved at …]\", or another chat's)",
           anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
         },
         rotate: {
           description: 'Clockwise turn that makes it upright, as given to crops.py; a list for several photos',
           anyOf: [{ type: 'integer', enum: [0, 90, 180, 270] }, { type: 'array', items: { type: 'integer', enum: [0, 90, 180, 270] } }],
         },
-        replaceProposalId: {
-          type: 'string',
-          description: "This page's pending proposal, replaced by a corrected reading (keeping the person's edits); one from another chat moves to this one",
-        },
+        replaceProposalId: { type: 'string', description: "This page's pending proposal (any chat's), replaced by a corrected reading" },
         includeUnchanged: { type: 'boolean', description: 'Lines already in the sheet as grey context rows (never written)' },
         view: VIEW_UPDATE,
       },
