@@ -16,10 +16,16 @@ import { SANDBOX_ID } from './workbook.mjs';
 import { initClaims } from './claims.mjs';
 import { initOutbox, Outbox } from './outbox.mjs';
 import { initStaged, Staged } from './staged.mjs';
+import { turns } from './event-loop.mjs';
 
 const json = value => JSON.stringify(value);
 const parse = value => (value ? JSON.parse(value) : null);
 const now = () => new Date().toISOString();
+/** Saves a record (Store.persistRecord): a new one, or the same id with all its fields. */
+const UPSERT_RECORD = `INSERT INTO records(id,sheet,row_num,values_json,formulas_json,identity_json,label,version,updated_at,missing,observed) VALUES(?,?,?,?,?,?,?,?,?,?,?)
+  ON CONFLICT(id) DO UPDATE SET row_num=excluded.row_num,values_json=excluded.values_json,formulas_json=excluded.formulas_json,identity_json=excluded.identity_json,label=excluded.label,version=excluded.version,updated_at=excluded.updated_at,missing=excluded.missing,observed=excluded.observed`;
+/** Rows a sync writes to the local copy in one transaction at most (Store.reconcile). */
+const WRITE_ROWS = 1000;
 const error = (code, message, status = 400, details) => Object.assign(new Error(message), { code, status, details });
 
 /**
@@ -125,6 +131,21 @@ export class Store {
       source: this.localMode ? 'local' : 'google',
       spreadsheetId: this.sheets.spreadsheetId,
     };
+  }
+  /**
+   * Runs `fn` (synchronous, inside the caller's transaction) without the triggers that count rows
+   * inserted into and updated in records one by one (initCopyVersion): any trigger makes each row's
+   * write several times slower (20,000 rows: 1.1 s instead of 0.2 s). The count moves once instead.
+   * They are back before the transaction ends, so no other connection ever misses them.
+   */
+  rowsUncounted(fn) {
+    for (const event of ['insert', 'update']) this.db.exec(`DROP TRIGGER IF EXISTS copy_records_${event}`);
+    try {
+      return fn();
+    } finally {
+      this.db.exec('UPDATE copy_version SET n = n + 1 WHERE id = 1');
+      initCopyVersion(this.db);
+    }
   }
   /** A statement prepared once for this database (reads asked thousands of times per proposal). */
   statement(sql) {
@@ -552,26 +573,26 @@ export class Store {
     }
     for (const record of records) this.touched.set(record.id, { id: record.id, sheet: record.sheet });
   }
-  persistRecord(record) {
+  /** `args`: recordArgs(record), when the caller made them already. */
+  persistRecord(record, args = this.recordArgs(record)) {
     this.touchRecords([record]);
-    this.db
-      .prepare(
-        `INSERT INTO records(id,sheet,row_num,values_json,formulas_json,identity_json,label,version,updated_at,missing,observed) VALUES(?,?,?,?,?,?,?,?,?,?,?)
-      ON CONFLICT(id) DO UPDATE SET row_num=excluded.row_num,values_json=excluded.values_json,formulas_json=excluded.formulas_json,identity_json=excluded.identity_json,label=excluded.label,version=excluded.version,updated_at=excluded.updated_at,missing=excluded.missing,observed=excluded.observed`,
-      )
-      .run(
-        record.id,
-        record.sheet,
-        record.row,
-        json(record.values),
-        json(record.formulas),
-        json(this.identity(record.sheet, record.values)),
-        record.label,
-        record.version,
-        record.updatedAt,
-        record.missing ? 1 : 0,
-        this.hasObservation(record.sheet, record.values, record.formulas) ? 1 : 0,
-      );
+    this.statement(UPSERT_RECORD).run(...args);
+  }
+  /** The values persistRecord writes for `record` (UPSERT_RECORD's parameters). */
+  recordArgs(record) {
+    return [
+      record.id,
+      record.sheet,
+      record.row,
+      json(record.values),
+      json(record.formulas),
+      json(this.identity(record.sheet, record.values)),
+      record.label,
+      record.version,
+      record.updatedAt,
+      record.missing ? 1 : 0,
+      this.hasObservation(record.sheet, record.values, record.formulas) ? 1 : 0,
+    ];
   }
   identity(sheet, values) {
     const mod = moduleMap.get(sheet);
@@ -678,12 +699,6 @@ export class Store {
           skipped++;
           continue;
         }
-        // Only the columns present are compared: a missing column keeps its last known values.
-        const view = record =>
-          layout.missing.length
-            ? json(Object.fromEntries(Object.entries(record.values).filter(([k]) => layout.columns.has(k)))) +
-              json(Object.fromEntries(Object.entries(record.formulas).filter(([k]) => layout.columns.has(k))))
-            : json(record.values) + json(record.formulas);
         await this.runExclusive(async () => {
           if (epoch !== (this.writeEpoch.get(sheet) || 0)) {
             skipped++;
@@ -697,138 +712,12 @@ export class Store {
             sheetsUnchanged++;
             return;
           }
-          const current = rows
-            .filter(r => r.row > mod.headerRow)
-            .map(r => ({ row: r.row, ...rowValues(sheet, r, layout) }))
-            .filter(r => Object.values(r.values).some(v => v !== null && v !== '') || Object.keys(r.formulas).length);
-          this.db.exec('BEGIN IMMEDIATE');
-          try {
-            const old = this.db.prepare('SELECT * FROM records WHERE sheet=? AND missing=0').all(sheet);
-            const byRow = new Map(old.map(r => [r.row_num, r]));
-            const byIdentity = new Map();
-            for (const r of old) {
-              const key = this.fingerprint(sheet, parse(r.values_json));
-              if (key !== '{}') byIdentity.set(key, [...(byIdentity.get(key) || []), r]);
-            }
-            // Rows without identifier columns are matched by identical content
-            // first, so inserting a row in the Sheet does not relabel every row below it.
-            const byContent = new Map();
-            for (const r of old) {
-              if (Object.keys(parse(r.identity_json) || {}).length) continue;
-              const key = view({ values: parse(r.values_json), formulas: parse(r.formulas_json) });
-              byContent.set(key, [...(byContent.get(key) || []), r]);
-            }
-            // Match in two passes so a row inserted above does not take the identity of
-            // the row that used to be there: first exact matches (identifiers, or identical
-            // content for sheets without identifiers), then row numbers for what is left.
-            const seen = new Set();
-            const matched = new Map();
-            const claim = (item, record) => {
-              matched.set(item, record);
-              seen.add(record.id);
-            };
-            for (const item of current) {
-              const identity = this.fingerprint(sheet, item.values);
-              if (identity === '{}') {
-                const same = (byContent.get(view(item)) || []).filter(
-                  o => !seen.has(o.id),
-                );
-                if (same.length === 1) claim(item, same[0]);
-                continue;
-              }
-              const atRow = byRow.get(item.row);
-              if (atRow && !seen.has(atRow.id) && this.fingerprint(sheet, parse(atRow.values_json)) === identity) {
-                claim(item, atRow);
-                continue;
-              }
-              const candidates = (byIdentity.get(identity) || []).filter(o => !seen.has(o.id));
-              if (candidates.length === 1) claim(item, candidates[0]);
-            }
-            for (const item of current) {
-              if (matched.has(item)) continue;
-              const atRow = byRow.get(item.row);
-              // A row keeps its record when edited in place, unless its identifier changed: one that only
-              // gained identifiers (a CAM_ID typed on a row known by its Insectary_ID) is the same row.
-              const had = atRow ? parse(atRow.identity_json) || {} : {};
-              const ids = this.identity(sheet, item.values);
-              // (Not in a workbook switch: the other workbook's row is another butterfly.)
-              const grew = !this.switching && Object.keys(had).length && Object.entries(had).every(([k, v]) => comparable(ids[k]) === comparable(v));
-              if (atRow && !seen.has(atRow.id) && (!Object.keys(had).length || grew)) claim(item, atRow);
-            }
-            // Parked row numbers go below every number already used, so repeated syncs never collide.
-            let displaced =
-              Math.min(0, this.db.prepare('SELECT min(row_num) n FROM records WHERE sheet=?').get(sheet).n ?? 0) - 1;
-            for (const read of current) {
-              const found = matched.get(read) || null;
-              // Most rows are as stored: nothing to compare or write.
-              if (found && found.row_num === read.row && !layout.missing.length && this.storedAs(found, sheet, read)) {
-                seen.add(found.id);
-                continue;
-              }
-              const previous = found && this.hydrate(found);
-              const item = this.keepUnavailable(sheet, read, previous, layout);
-              const record = {
-                id: found?.id || randomUUID(),
-                sheet,
-                row: item.row,
-                values: item.values,
-                formulas: item.formulas,
-                label: labelFor(sheet, item.values),
-                version: previous?.version || 1,
-                // A moved row counts as updated so open pages pick up its new row number.
-                updatedAt: found && found.row_num !== item.row ? now() : previous?.updatedAt || now(),
-                missing: false,
-              };
-              if (found && found.row_num !== item.row) moved++;
-              if (previous) {
-                const diffs = [];
-                // Rows inserted or deleted above move this row's formulas with it: not an edit for the Historial.
-                const shift = found.row_num !== item.row ? item.row - found.row_num : 0;
-                let shifted = 0;
-                for (const field of mod.fields) {
-                  if (!layout.columns.has(field.key)) continue;
-                  const before = previous.formulas[field.key]
-                    ? { formula: previous.formulas[field.key] }
-                    : previous.values[field.key];
-                  const after = item.formulas[field.key]
-                    ? { formula: item.formulas[field.key] }
-                    : item.values[field.key];
-                  if (comparable(before) === comparable(after)) continue;
-                  if (shift && before?.formula && formulaRowShift(before.formula, after?.formula) === shift) shifted++;
-                  else diffs.push({ field: field.key, before, after });
-                }
-                if (diffs.length || shifted) {
-                  record.version++;
-                  record.updatedAt = now();
-                }
-                if (diffs.length) {
-                  changed++;
-                  cells += diffs.length;
-                  if (history) this.recordExternalChanges(record, diffs);
-                }
-              } else added++;
-              // A moved row may currently be occupied by a different old record. Shift that old mapping aside first.
-              if (found && found.row_num !== item.row)
-                this.db.prepare('UPDATE records SET row_num=? WHERE id=?').run(displaced--, found.id);
-              const occupant = this.db
-                .prepare('SELECT id FROM records WHERE sheet=? AND row_num=? AND id<>?')
-                .get(sheet, item.row, record.id);
-              if (occupant) this.db.prepare('UPDATE records SET row_num=? WHERE id=?').run(displaced--, occupant.id);
-              this.persistRecord(record);
-              seen.add(record.id);
-            }
-            for (const prior of old)
-              if (!seen.has(prior.id)) {
-                this.db
-                  .prepare('UPDATE records SET missing=1,row_num=?,updated_at=? WHERE id=?')
-                  .run(displaced--, now(), prior.id);
-                missing++;
-              }
-            this.db.exec('COMMIT');
-          } catch (e) {
-            this.db.exec('ROLLBACK');
-            throw e;
-          }
+          const counts = await this.reconcile(sheet, rows, layout, { history });
+          added += counts.added;
+          changed += counts.changed;
+          moved += counts.moved;
+          missing += counts.missing;
+          cells += counts.cells;
           if (rows.digest) this.sheetDigests.set(sheet, { digest: rows.digest, revision: this.sheetRevision(sheet) });
         });
         const counts = { added, changed, moved, missing, cells };
@@ -866,6 +755,231 @@ export class Store {
       throw e;
     }
   }
+  /**
+   * Brings the local copy of `sheet` to the rows of a whole-sheet read (`layout`: its header's
+   * column map). Returns the counts { added, changed, moved, missing, cells }. Runs in the
+   * write queue (runExclusive), so no save changes the sheet's rows meanwhile. A big sheet
+   * takes seconds to compare: the reading and comparing give the other requests a turn every
+   * few ms, and the rows that differ are written at the end, in transactions of up to WRITE_ROWS
+   * rows (nothing else may write while one is open, so they never wait for a turn).
+   */
+  async reconcile(sheet, rows, layout, { history = true } = {}) {
+    const mod = moduleMap.get(sheet);
+    const turn = turns();
+    let added = 0,
+      changed = 0,
+      moved = 0,
+      missing = 0,
+      cells = 0;
+    // Only the columns present are compared: a missing column keeps its last known values.
+    const partial = layout.missing.length > 0;
+    const present = object => Object.fromEntries(Object.entries(object).filter(([k]) => layout.columns.has(k)));
+
+    // The rows read, below the header and not empty; per row (same index), its identifiers as
+    // stored (fingerprint) and, when every column is there, its values and formulas as stored.
+    const current = [],
+      keys = [],
+      valuesJson = [],
+      formulasJson = [];
+    for (const r of rows) {
+      if (turn.due()) await turn();
+      if (r.row <= mod.headerRow) continue;
+      const read = { row: r.row, ...rowValues(sheet, r, layout) };
+      if (!Object.values(read.values).some(v => v !== null && v !== '') && !Object.keys(read.formulas).length) continue;
+      current.push(read);
+      keys.push(this.fingerprint(sheet, read.values));
+      if (!partial) {
+        valuesJson.push(json(read.values));
+        formulasJson.push(json(read.formulas));
+      }
+    }
+    const view = i =>
+      partial ? json(present(current[i].values)) + json(present(current[i].formulas)) : valuesJson[i] + formulasJson[i];
+
+    // The local copy's rows of the sheet, a page at a time.
+    const old = [];
+    const page = this.statement('SELECT * FROM records WHERE sheet=? AND missing=0 AND row_num>? ORDER BY row_num LIMIT 2000');
+    for (let after = -Infinity; ; ) {
+      const more = page.all(sheet, after);
+      old.push(...more);
+      if (more.length < 2000) break;
+      after = more.at(-1).row_num;
+      if (turn.due()) await turn();
+    }
+    const byRow = new Map(old.map(r => [r.row_num, r]));
+    // Each stored row's identifiers (fingerprint of its values), and the rows by them.
+    const oldKeys = new Map();
+    const byIdentity = new Map();
+    // Rows without identifier columns are matched by identical content
+    // first, so inserting a row in the Sheet does not relabel every row below it.
+    const byContent = new Map();
+    const add = (map, key, r) => {
+      const list = map.get(key);
+      if (list) list.push(r);
+      else map.set(key, [r]);
+    };
+    for (const r of old) {
+      if (turn.due()) await turn();
+      const key = this.fingerprint(sheet, parse(r.values_json));
+      oldKeys.set(r.id, key);
+      if (key !== '{}') add(byIdentity, key, r);
+      if (Object.keys(parse(r.identity_json) || {}).length) continue;
+      // values_json and formulas_json are what json() wrote: the same text as json() of them parsed.
+      const content = partial
+        ? json(present(parse(r.values_json))) + json(present(parse(r.formulas_json)))
+        : r.values_json + r.formulas_json;
+      add(byContent, content, r);
+    }
+    // Match in two passes so a row inserted above does not take the identity of
+    // the row that used to be there: first exact matches (identifiers, or identical
+    // content for sheets without identifiers), then row numbers for what is left.
+    const seen = new Set();
+    const matched = new Map();
+    const claim = (item, record) => {
+      matched.set(item, record);
+      seen.add(record.id);
+    };
+    // The one stored row of `list` not matched yet; null when none or several.
+    const onlyFree = list => {
+      let free = null;
+      for (const o of list ?? []) {
+        if (seen.has(o.id)) continue;
+        if (free) return null;
+        free = o;
+      }
+      return free;
+    };
+    for (let i = 0; i < current.length; i++) {
+      if (turn.due()) await turn();
+      const item = current[i];
+      const identity = keys[i];
+      if (identity === '{}') {
+        const same = onlyFree(byContent.get(view(i)));
+        if (same) claim(item, same);
+        continue;
+      }
+      const atRow = byRow.get(item.row);
+      if (atRow && !seen.has(atRow.id) && oldKeys.get(atRow.id) === identity) {
+        claim(item, atRow);
+        continue;
+      }
+      const candidate = onlyFree(byIdentity.get(identity));
+      if (candidate) claim(item, candidate);
+    }
+    for (const item of current) {
+      if (turn.due()) await turn();
+      if (matched.has(item)) continue;
+      const atRow = byRow.get(item.row);
+      // A row keeps its record when edited in place, unless its identifier changed: one that only
+      // gained identifiers (a CAM_ID typed on a row known by its Insectary_ID) is the same row.
+      const had = atRow ? parse(atRow.identity_json) || {} : {};
+      const ids = this.identity(sheet, item.values);
+      // (Not in a workbook switch: the other workbook's row is another butterfly.)
+      const grew = !this.switching && Object.keys(had).length && Object.entries(had).every(([k, v]) => comparable(ids[k]) === comparable(v));
+      if (atRow && !seen.has(atRow.id) && (!Object.keys(had).length || grew)) claim(item, atRow);
+    }
+
+    // What to write: the rows that differ from the stored ones, compared here and written below.
+    const writes = [];
+    for (let i = 0; i < current.length; i++) {
+      if (turn.due()) await turn();
+      const read = current[i];
+      const found = matched.get(read) || null;
+      // Most rows are as stored: nothing to compare or write (storedAs, with the texts made above).
+      if (
+        found &&
+        found.row_num === read.row &&
+        !partial &&
+        found.values_json === valuesJson[i] &&
+        found.formulas_json === formulasJson[i] &&
+        found.label === labelFor(sheet, read.values) &&
+        found.identity_json === keys[i] &&
+        found.observed === (this.hasObservation(sheet, read.values, read.formulas) ? 1 : 0)
+      )
+        continue;
+      const previous = found && this.hydrate(found);
+      const item = this.keepUnavailable(sheet, read, previous, layout);
+      const record = {
+        id: found?.id || randomUUID(),
+        sheet,
+        row: item.row,
+        values: item.values,
+        formulas: item.formulas,
+        label: labelFor(sheet, item.values),
+        version: previous?.version || 1,
+        // A moved row counts as updated so open pages pick up its new row number.
+        updatedAt: found && found.row_num !== item.row ? now() : previous?.updatedAt || now(),
+        missing: false,
+      };
+      if (found && found.row_num !== item.row) moved++;
+      const diffs = [];
+      if (previous) {
+        // Rows inserted or deleted above move this row's formulas with it: not an edit for the Historial.
+        const shift = found.row_num !== item.row ? item.row - found.row_num : 0;
+        let shifted = 0;
+        for (const field of mod.fields) {
+          if (!layout.columns.has(field.key)) continue;
+          const before = previous.formulas[field.key] ? { formula: previous.formulas[field.key] } : previous.values[field.key];
+          const after = item.formulas[field.key] ? { formula: item.formulas[field.key] } : item.values[field.key];
+          if (comparable(before) === comparable(after)) continue;
+          if (shift && before?.formula && formulaRowShift(before.formula, after?.formula) === shift) shifted++;
+          else diffs.push({ field: field.key, before, after });
+        }
+        if (diffs.length || shifted) {
+          record.version++;
+          record.updatedAt = now();
+        }
+        if (diffs.length) {
+          changed++;
+          cells += diffs.length;
+        }
+      } else added++;
+      writes.push({ found, record, args: this.recordArgs(record), diffs: history ? diffs : [] });
+    }
+    const gone = old.filter(prior => !seen.has(prior.id));
+    if (!writes.length && !gone.length) return { added, changed, moved, missing, cells };
+
+    // Rows that move are written in the order that frees their new row first: from the bottom up when
+    // rows went down (a row inserted above them), else from the top. A row still taken (by a row that
+    // moves later) is parked below every number used, so no two rows ever share one.
+    const down = writes.reduce((n, w) => n + (w.found ? Math.sign(w.record.row - w.found.row_num) : 0), 0) > 0;
+    const order = down ? writes.toReversed() : writes;
+    const park = this.statement('UPDATE records SET row_num=? WHERE id=?');
+    const occupantAt = this.statement('SELECT id FROM records WHERE sheet=? AND row_num=? AND id<>?');
+    const markMissing = this.statement('UPDATE records SET missing=1,row_num=?,updated_at=? WHERE id=?');
+    // Parked row numbers go below every number already used, so repeated syncs never collide.
+    let displaced = Math.min(0, this.statement('SELECT min(row_num) n FROM records WHERE sheet=?').get(sheet).n ?? 0) - 1;
+    // Up to WRITE_ROWS rows per transaction, each row with its history: more (every row of a big sheet
+    // moved by a row inserted at its top) are written in several, with a turn for the others between them.
+    const index = new Map(writes.map((w, i) => [w, i]));
+    for (let from = 0; from === 0 || from < order.length; from += WRITE_ROWS) {
+      if (from) await turn();
+      const part = order.slice(from, from + WRITE_ROWS);
+      this.db.exec('BEGIN IMMEDIATE');
+      try {
+        this.rowsUncounted(() => {
+          // The history in the sheet's order.
+          for (const { record, diffs } of part.toSorted((a, b) => index.get(a) - index.get(b)))
+            if (diffs.length) this.recordExternalChanges(record, diffs);
+          if (!from)
+            for (const prior of gone) {
+              markMissing.run(displaced--, now(), prior.id);
+              missing++;
+            }
+          for (const { record, args } of part) {
+            const occupant = occupantAt.get(sheet, record.row, record.id);
+            if (occupant) park.run(displaced--, occupant.id);
+            this.persistRecord(record, args);
+          }
+        });
+        this.db.exec('COMMIT');
+      } catch (e) {
+        this.db.exec('ROLLBACK');
+        throw e;
+      }
+    }
+    return { added, changed, moved, missing, cells };
+  }
   /** Fingerprint of a sheet's local copy (grid.mjs tableRevision): changes with every write to its rows. */
   sheetRevision(sheet) {
     const r = this.db
@@ -875,42 +989,28 @@ export class Store {
       .get(sheet);
     return `${r.n}-${r.u}-${r.v}-${r.r}`;
   }
-  /** True when a stored row already holds exactly what reconciling it with `read` would write. */
-  storedAs(stored, sheet, read) {
-    return (
-      stored.values_json === json(read.values) &&
-      stored.formulas_json === json(read.formulas) &&
-      stored.label === labelFor(sheet, read.values) &&
-      stored.identity_json === json(this.identity(sheet, read.values)) &&
-      stored.observed === (this.hasObservation(sheet, read.values, read.formulas) ? 1 : 0)
-    );
-  }
   /** `via`: how the app saw them, 'sync' (a sheet read) or 'hook' (the sheet's edit trigger). */
   recordExternalChanges(record, diffs, via = 'sync') {
     const id = randomUUID(),
       created = now();
-    this.db
-      .prepare(
-        'INSERT INTO actions(id,request_id,actor,source,created_at,status,reason,reverses,result_json,purpose) VALUES(?,?,?,?,?,?,?,?,?,?)',
-      )
-      .run(
-        id,
-        null,
-        'unknown',
-        'sheet_reconciliation',
-        created,
-        'observed',
-        'Snapshot comparison; intermediate edits and editor unknown',
-        null,
-        json({ via }),
-        'sheets',
-      );
-    for (const d of diffs)
-      this.db
-        .prepare(
-          'INSERT INTO changes(id,action_id,record_id,sheet,row_num,field,before_json,after_json) VALUES(?,?,?,?,?,?,?,?)',
-        )
-        .run(randomUUID(), id, record.id, record.sheet, record.row, d.field, json(d.before), json(d.after));
+    this.statement(
+      'INSERT INTO actions(id,request_id,actor,source,created_at,status,reason,reverses,result_json,purpose) VALUES(?,?,?,?,?,?,?,?,?,?)',
+    ).run(
+      id,
+      null,
+      'unknown',
+      'sheet_reconciliation',
+      created,
+      'observed',
+      'Snapshot comparison; intermediate edits and editor unknown',
+      null,
+      json({ via }),
+      'sheets',
+    );
+    const change = this.statement(
+      'INSERT INTO changes(id,action_id,record_id,sheet,row_num,field,before_json,after_json) VALUES(?,?,?,?,?,?,?,?)',
+    );
+    for (const d of diffs) change.run(randomUUID(), id, record.id, record.sheet, record.row, d.field, json(d.before ?? null), json(d.after ?? null));
   }
   /**
    * Re-reads a few rows after someone edited them directly in Google Sheets

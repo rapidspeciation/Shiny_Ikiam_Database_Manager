@@ -48,3 +48,17 @@ export function watchEventLoop({ sampleMs = SAMPLE_MS, windowMs = WINDOW_MS } = 
     stop: () => clearInterval(timer),
   };
 }
+
+/**
+ * For a long loop on the server: `if (turn.due()) await turn()` gives the other
+ * requests a turn once the loop has worked `ms` since the last one.
+ */
+export function turns(ms = 20) {
+  let since = performance.now();
+  const turn = async () => {
+    await new Promise(resolve => setImmediate(resolve));
+    since = performance.now();
+  };
+  turn.due = () => performance.now() - since >= ms;
+  return turn;
+}

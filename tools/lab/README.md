@@ -168,6 +168,17 @@ node tools/lab/worker-load.mjs       # the whole app on a database file, ASSISTA
                                      # someone checks clutches every 100 ms; their p50/p99 and the app's lag
 ```
 
+A whole-workbook sync (at every start and periodically) compares its rows a
+slice at a time and writes them in transactions of up to 1,000 rows, so it
+never holds up a request for long either. To measure it with the lab's snapshot
+served as Google answers (after a restart, a periodic sync, every row of
+Insectary_data moved by a row inserted at its top):
+
+```sh
+node tools/lab/sync-load.mjs                       # each step's time, longest block, p99 lag, a person's waits
+node tools/lab/sync-load.mjs --profile /tmp/prof   # also a CPU profile of each step
+```
+
 ## Cases
 
 `cases.json` in the lab folder:
