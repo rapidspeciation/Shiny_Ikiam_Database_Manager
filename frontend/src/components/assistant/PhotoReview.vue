@@ -107,6 +107,7 @@ onBeforeUnmount(() => {
           @click="layout = 'below'"
         >
           <PanelBottom :size="15" />
+          <span class="text-xs">{{ $t('Foto debajo') }}</span>
         </button>
         <button
           type="button"
@@ -117,6 +118,7 @@ onBeforeUnmount(() => {
           @click="layout = 'beside'"
         >
           <PanelRight :size="15" />
+          <span class="text-xs">{{ $t('Foto al lado') }}</span>
         </button>
       </span>
       <button type="button" class="btn-ghost max-md:ml-auto" :title="$t('Cerrar (Esc)')" :aria-label="$t('Cerrar')" @click="emit('close')">

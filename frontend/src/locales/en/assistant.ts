@@ -427,6 +427,8 @@ export default {
   'Abierta con la foto': 'Open with its photo',
   'Volver a la lista': 'Back to the list',
   'La foto debajo de la tabla': 'The photo below the table',
+  'Foto debajo': 'Photo below',
+  'Foto al lado': 'Photo beside',
   'La foto al lado de la tabla': 'The photo beside the table',
   'Arrastra para repartir el espacio entre la tabla y la foto': 'Drag to share the space between the table and the photo',
   Alejar: 'Zoom out',
