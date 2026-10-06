@@ -513,6 +513,8 @@ export function readValue(field, text, { year, sheet = null }) {
     return { value: m ? `CAM${m[1].padStart(6, '0')}` : s.toUpperCase() };
   }
   if (/^Tube_\d_id$/.test(field) || field === 'Insectary_ID') return { value: s.replace(/\s+/g, '').toUpperCase() };
+  // The notebook's shorthand for a cause not known («unk», «unk.», «desconocida», «?»): the list's Unknown.
+  if (field === 'Death_cause' && /^(?:unk\.?|unknown|desc(?:onocid[oa])?\.?|\?)$/i.test(s)) return { value: 'Unknown' };
   return { value: s };
 }
 

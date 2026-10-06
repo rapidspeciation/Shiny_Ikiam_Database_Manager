@@ -193,6 +193,21 @@ test('a death date without a cause: Unknown, doubtful; a cause on the page or in
   assert.ok(!changes.find(c => c.recordId === 'r12')?.values.Death_cause);
 });
 
+test('«unk» written as the cause is Unknown, not a doubtful value outside the list', () => {
+  for (const written of ['unk', 'Unk.', 'desconocida', '?']) {
+    const review = buildReview({
+      transcription: page('deaths', [{ v: { Insectary_ID: 'R6B', Death_date: '22/9', Death_cause: written } }]),
+      year: 2026,
+      today: '2026-10-06',
+      initials: 'FCH',
+      lookup: lookupOf([blank('R6B', 10)]),
+    });
+    const cause = review.lines[0].cells.Death_cause;
+    assert.equal(cause.value, 'Unknown', written);
+    assert.ok(!cause.doubt, written);
+  }
+});
+
 test('Emergidos cells the page leaves empty or dashed take what the team types; a written stock or the sheet value stays', () => {
   const rows = [
     blank('Q8B', 20),
