@@ -14,7 +14,7 @@ import { TUBE_FIELD, isIdValue, isUnique } from './verifications.mjs';
 import { listOptions, listProblem } from './verify.mjs';
 import { queueWalk, walkDraft } from './walks.mjs';
 import { KINDS, isNone, noteText, reviewColumns } from './notebook.mjs';
-import { HIDDEN_COLUMNS, isNotWritten, notWrittenWhy } from './proposal-columns.mjs';
+import { HIDDEN_COLUMNS, NOTEBOOK_COLUMNS, isNotWritten, notWrittenWhy } from './proposal-columns.mjs';
 import { createFormulaReader, isFormulaError, sameResult } from './formula-gives.mjs';
 import { FORMULA_ROWS, checkFormula, isFormulaValue, sameFormula, withRow } from './formula-write.mjs';
 import { FILTERS_DOC, FIND_BUDGET, RECORD_TOOLS, compactRecord, countRecords, findRecords, pickRows, resolveRows, selectRecords } from './records-tool.mjs';
@@ -36,7 +36,7 @@ import { QUERY_HINT, QUERY_TOOL, createQueryRunner, formatRows, sqlProblem } fro
 import { createSheetsCopy } from './replica.mjs';
 import { createT3Chats } from './t3chats.mjs';
 import { photoCacheDir } from './photos.mjs';
-import { PHOTO_SIZES, attachmentFile, attachmentsDir, createPhotoCopies, photosOf } from './proposal-photos.mjs';
+import { PHOTO_SIZES, attachmentFile, attachmentsDir, createPhotoCopies, photoPage, photosOf } from './proposal-photos.mjs';
 
 const bad = (status, code, message) => ({ status, body: { error: { code, message } } });
 const now = () => new Date().toISOString();
@@ -120,7 +120,7 @@ const NOTE_PREFIX = /^\s*(?:\d{1,2}\s*[/.-]\s*\d{1,2}\s*[/.-]\s*\d{2,4}|\d{1,2}\
 const ecuadorDay = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(new Date());
 /** How to name a notebook photo (match_notebook, update_proposal, show_rows). */
 const PHOTO_NOTE =
-  'Give `photo` as the attachment\'s file name: from "[Attached image … saved at …]", or an older chat\'s in the T3 attachments folder (its name starts with that chat\'s id)';
+  'Give `photo` as the attachment\'s file name (or {name, note}): from "[Attached image … saved at …]", or an older chat\'s in the T3 attachments folder (its name starts with that chat\'s id)';
 /** Rows a table shown with show_rows holds at most, and the columns it shows when the assistant names none. */
 const TABLE_ROWS = 500;
 const TABLE_COLUMNS = 20;
@@ -447,7 +447,7 @@ const TOOLS = [
               required: ['recordId'],
             },
           },
-          photo: { type: 'array', items: { type: 'string' } },
+          photo: { type: 'array' },
           rotate: { type: 'array', items: { type: 'integer' } },
           tableId: { type: 'string' },
         },
@@ -2301,9 +2301,10 @@ export function createAssistant({ store, config = {} }) {
     // them, so the table can be read beside them; a table changed without photos keeps the ones it had.
     // An empty list takes them out.
     const photoGiven = args.photo !== undefined && args.photo !== null && args.photo !== '';
-    const given = photoGiven ? photosOf(config.t3?.home, args) : { photos: [], refused: [] };
+    const kept = parse(old?.page_json ?? 'null')?.photos ?? [];
+    const given = photoGiven ? photosOf(config.t3?.home, args, kept) : { photos: [], refused: [] };
     if (given.refused.length && !given.photos.length) return { error: 'No photo by that name', photoNote: PHOTO_NOTE };
-    const photos = photoGiven ? given.photos : (parse(old?.page_json ?? 'null')?.photos ?? []);
+    const photos = photoGiven ? given.photos : kept;
     const { notes, skipped, offPhoto: unnamed } =
       args.notes !== undefined || !old
         ? tableNotes(args.notes, ids, mod, photos)
@@ -2374,9 +2375,7 @@ export function createAssistant({ store, config = {} }) {
     const mod = moduleMap.get(spec.sheet);
     const columns = spec.columns ?? [];
     const versions = [];
-    const shot = parse(r.page_json ?? 'null')?.photos ?? [];
-    const photos = shot.length;
-    const photoKey = photos ? createHash('sha1').update(json(shot)).digest('base64url').slice(0, 8) : null;
+    const { photos, ...about } = photoPage(parse(r.page_json ?? 'null')?.photos);
     const rows = (spec.rows ?? []).map(id => {
       const record = store.getRecord(id);
       const live = !!record && !record.missing;
@@ -2415,7 +2414,7 @@ export function createAssistant({ store, config = {} }) {
       applied: null,
       sheetStamp: createHash('sha1').update(json(versions)).digest('base64url').slice(0, 12),
       // The notebook photos it was read from: reviewed beside them as a page's proposal is.
-      ...(photos ? { page: { kind: '', sheet: spec.sheet, columns: [], keys: [], photos, photoKey } } : {}),
+      ...(photos ? { page: { kind: '', sheet: spec.sheet, columns: [], keys: [], photos, ...about } } : {}),
       changes: [],
       rows,
     };
@@ -2498,7 +2497,7 @@ export function createAssistant({ store, config = {} }) {
       .filter(i => i >= 0);
     if (problems.length) return { error: 'Nothing was changed', problems: problems.slice(0, 20) };
     // The page's photos (T3 attachments, this chat's or an older one's), for a proposal made without them.
-    const given = args.photo ? photosOf(config.t3?.home, args) : null;
+    const given = args.photo ? photosOf(config.t3?.home, args, parse(proposal.page_json ?? 'null')?.photos) : null;
     if (given && !given.photos.length) return { error: 'No photo by that name', photoNote: PHOTO_NOTE };
     const viewGiven = args.view !== undefined && args.view !== null;
     if (!set.length && !check.length && !remove.length && !add.changes.length && !add.newRows.length && !args.reason && !given && !viewGiven)
@@ -2922,9 +2921,8 @@ export function createAssistant({ store, config = {} }) {
       ? page.kind
       : Object.keys(KINDS).find(k => reason.startsWith(`Cuaderno ${KINDS[k].label} (${KINDS[k].sheet})`));
     // Photos also on a proposal made before pages were kept (given later with update_proposal).
-    const photoCount = (page?.photos ?? []).length;
-    // A short tag of which photos, in the photos' addresses: other photos at the same place show at once.
-    const photoKey = photoCount ? createHash('sha1').update(json(page.photos)).digest('base64url').slice(0, 8) : null;
+    // A short tag of which photos, in the photos' addresses (other photos at the same place show at once), and their notes.
+    const { photos: photoCount, photoKey, photoNotes } = photoPage(page?.photos);
     const notebook =
       (kindId && (KINDS[kindId] || page?.lines?.length)) || photoCount
         ? {
@@ -2934,18 +2932,20 @@ export function createAssistant({ store, config = {} }) {
             keys: KINDS[kindId]?.keys ?? [],
             photos: photoCount,
             ...(photoKey ? { photoKey } : {}),
+            ...(photoNotes ? { photoNotes } : {}),
           }
         : null;
     const sheets = [...new Set(rows.map(r => r.change.sheet))];
     // The columns each sheet's table shows whatever the proposal changes (a notebook's, the rest up to its
-    // notes), or those the assistant's view names first (or only).
+    // notes), or those the assistant's view names first (or only); the Notebook view's columns of a sheet
+    // without a notebook page (Collection_data).
     const shownColumns = Object.fromEntries(
       sheets.map(s => {
         const mod = moduleMap.get(s);
         const kind = notebook?.sheet === s ? notebook.kind : null;
         const hidden = [...(HIDDEN_COLUMNS[s] ?? [])];
         const shown = viewColumns(s, reviewColumns(s, mod?.fields.map(f => f.key) ?? [], mod?.identityFields ?? [], kind), view);
-        return [s, hidden.length ? { ...shown, hidden } : shown];
+        return [s, { ...shown, ...(hidden.length ? { hidden } : {}), ...(NOTEBOOK_COLUMNS[s] ? { notebook: NOTEBOOK_COLUMNS[s] } : {}) }];
       }),
     );
     const typeOf = f =>
@@ -3960,9 +3960,10 @@ export function createAssistant({ store, config = {} }) {
     let refused = [];
     if (proposal) {
       const stored = db.prepare('SELECT t3_thread, page_json FROM ai_proposals WHERE id = ?').get(proposal.id);
-      const given = photosOf(config.t3?.home, args);
+      const kept = parse(stored?.page_json ?? 'null')?.photos ?? [];
+      const given = photosOf(config.t3?.home, args, kept);
       refused = given.refused;
-      const photos = args.photo ? given.photos : (parse(stored?.page_json ?? 'null')?.photos ?? []);
+      const photos = args.photo ? given.photos : kept;
       db.prepare('UPDATE ai_proposals SET page_json = ? WHERE id = ?').run(json({ ...matched.page, photos }), proposal.id);
     }
     const stored = proposal ? db.prepare('SELECT * FROM ai_proposals WHERE id = ?').get(proposal.id) : null;

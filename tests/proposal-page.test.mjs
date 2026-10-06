@@ -400,3 +400,59 @@ test("show_rows read from notebook photos: any chat's attachments kept with the 
     close();
   }
 });
+
+test('a photo with a note on why it is there: kept with it, sent with the page, in the photos\' tag', async () => {
+  const { store, home, call, proposals, close } = await setup();
+  try {
+    const own = `${THREAD}-aaaa.jpg`;
+    const older = `${OTHER}-bbbb.jpg`;
+    // A name or { name, note }; the note in one line, at most 80 characters; a name given again alone keeps its note.
+    const long = `the repeated IDs   (29 Sep page)\n${'x'.repeat(100)}`;
+    const read = photosOf(home, { photo: [{ name: own, note: long }, older, { name: 'none.jpg', note: 'x' }], rotate: [90, 0, 0] });
+    assert.deepEqual(read.refused, ['none.jpg']);
+    assert.equal(read.photos[0].note.length, 80);
+    assert.match(read.photos[0].note, /^the repeated IDs \(29 Sep page\) x+$/);
+    assert.deepEqual(read.photos[1], { file: older, rotate: 0 });
+    assert.deepEqual(photosOf(home, { photo: [own] }, read.photos).photos, [{ file: own, rotate: 0, note: read.photos[0].note }]);
+    assert.deepEqual(photosOf(home, { photo: { name: own, note: '' } }, read.photos).photos, [{ file: own, rotate: 0 }], 'an empty note takes it out');
+
+    // match_notebook: the notes go with the page, in the photos' order ('' for a photo without one).
+    const out = await call('match_notebook', { ...PAGE, photo: [{ name: own, note: 'this page (emergidos 5VB–3AB)' }, older] });
+    assert.ok(out.proposalId, JSON.stringify(out));
+    let [p] = await proposals();
+    assert.equal(p.page.photos, 2);
+    assert.deepEqual(p.page.photoNotes, ['this page (emergidos 5VB–3AB)', '']);
+    const before = p.page.photoKey;
+    // update_proposal: a new caption gives a new tag.
+    await call('update_proposal', { proposalId: out.proposalId, photo: [{ name: own, note: 'this page' }, { name: older, note: 'old IDs (21 Sep page)' }] });
+    [p] = await proposals();
+    assert.deepEqual(p.page.photoNotes, ['this page', 'old IDs (21 Sep page)']);
+    assert.notEqual(p.page.photoKey, before);
+    // Read again with plain names (a reader's file): the notes stay.
+    await call('match_notebook', { ...PAGE, photo: [own, older], replaceProposalId: out.proposalId });
+    [p] = await proposals();
+    assert.deepEqual(p.page.photoNotes, ['this page', 'old IDs (21 Sep page)']);
+    // Plain names alone: no notes sent.
+    const plain = await call('propose_changes', {
+      reason: 'Cuaderno Emergidos (Insectary_data): 8VD',
+      changes: [{ recordId: store.getRecordBySheetRow('Insectary_data', 3).id, values: { Sex: 'male' } }],
+    });
+    await call('update_proposal', { proposalId: plain.proposalId, photo: own });
+    const q = (await proposals()).find(x => x.id === plain.proposalId);
+    assert.equal(q.page.photos, 1);
+    assert.equal(q.page.photoNotes, undefined);
+
+    // show_rows: the same.
+    const table = await call('show_rows', { title: 'Repeated IDs', sheet: 'Insectary_data', recordIds: ['5VB'], photo: [{ name: older, note: 'old IDs (21 Sep page)' }] });
+    assert.equal(table.photos, 1);
+    let t = (await proposals()).find(x => x.id === table.tableId);
+    assert.deepEqual(t.page.photoNotes, ['old IDs (21 Sep page)']);
+    const tag = t.page.photoKey;
+    await call('show_rows', { tableId: table.tableId, photo: [{ name: older, note: 'first use of 5VB' }] });
+    t = (await proposals()).find(x => x.id === table.tableId);
+    assert.deepEqual(t.page.photoNotes, ['first use of 5VB']);
+    assert.notEqual(t.page.photoKey, tag);
+  } finally {
+    close();
+  }
+});

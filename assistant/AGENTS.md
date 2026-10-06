@@ -33,6 +33,11 @@ Every change is a proposal the person reviews before it is written:
 4. It is written when they approve it in the chat (`apply_proposal`) or press
    «Apply» («Aplicar») in the table.
 
+Attach to a proposal or a `show_rows` table the photos that help check it
+(`photo`): the page it was read from, the earlier page where an ID was first
+used. Give each a few words on why it is there, e.g. `{"name": "<file>",
+"note": "old IDs (21 Sep page)"}`; the person sees them above the table.
+
 When Google is slow, `apply_proposal` answers `queued`: the changes are kept
 in the app and written on their own when it answers, so nothing needs applying
 again.

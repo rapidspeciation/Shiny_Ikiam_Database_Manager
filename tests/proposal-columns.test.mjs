@@ -5,7 +5,7 @@ import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { createAssistant } from '../server/assistant.mjs';
 import { KINDS, NOT_PRESERVED, columnsOf as columnsOfKind, reviewColumns } from '../server/notebook.mjs';
-import { DEFAULT_COLUMNS, HIDDEN_COLUMNS, isHiddenColumn, isNotWritten } from '../server/proposal-columns.mjs';
+import { DEFAULT_COLUMNS, HIDDEN_COLUMNS, NOTEBOOK_COLUMNS, isHiddenColumn, isNotWritten } from '../server/proposal-columns.mjs';
 import { moduleMap } from '../server/schema.mjs';
 
 // The review table shows each row whole enough to spot a wrong one, whatever the proposal changes:
@@ -32,17 +32,35 @@ test('Insectary_data: every column up to Notes_Insectary_data (AF) in the sheet\
   for (const f of fields) assert.ok(!isHiddenColumn('Insectary_data', f), f);
   assert.ok(!isNotWritten('Insectary_data', 'Preservation_medium'));
   for (const f of ['Photo_dorsal', 'Photo_ventral']) assert.ok(isNotWritten('Insectary_data', f), f);
-  assert.ok(!isNotWritten('Collection_data', 'Tube_1_rack'), 'only Insectary_data');
+  assert.ok(!isNotWritten('Collection_data', 'Photo_dorsal'), 'the photos left to their formula only in Insectary_data');
   // The notebooks' templates imply it: NOT_COLLECTED.
   assert.equal(NOT_PRESERVED.Preservation_medium, 'NOT_COLLECTED');
   for (const kind of [KINDS.emergence, KINDS.deaths]) assert.ok(columnsOfKind(kind).includes('Preservation_medium'), kind.label);
+});
+
+test('Collection_data: every column up to Notes_Collection_data in the sheet\'s order; the racks, manifests and STS/ToL block never; its Notebook view\'s columns', () => {
+  const sheet = moduleMap.get('Collection_data').fields.map(f => f.key);
+  const notes = sheet.indexOf('Notes_Collection_data');
+  const { fields, keys } = columnsOf('Collection_data');
+  assert.deepEqual(fields, sheet.slice(0, notes + 1));
+  assert.deepEqual(fields, DEFAULT_COLUMNS.Collection_data);
+  assert.deepEqual(keys, []);
+  const after = sheet.slice(notes + 1);
+  for (const f of ['Tube_1_rack', 'Tube_4_manifest', 'COLLECTOR_SAMPLE_ID', 'ToLID', 'COLLECTED_BY', 'Select_TEMP']) assert.ok(after.includes(f), f);
+  for (const f of after) assert.ok(isHiddenColumn('Collection_data', f) && isNotWritten('Collection_data', f), f);
+  for (const f of fields) assert.ok(!isHiddenColumn('Collection_data', f) && !isNotWritten('Collection_data', f), f);
+  // What a wild-caught butterfly is written down with, every one a column the table shows.
+  assert.deepEqual(NOTEBOOK_COLUMNS.Collection_data.slice(0, 4), ['Insectary_ID', 'SPECIES', 'Subspecies_Form', 'Sex']);
+  assert.equal(NOTEBOOK_COLUMNS.Collection_data.at(-1), 'Notes_Collection_data');
+  for (const f of NOTEBOOK_COLUMNS.Collection_data) assert.ok(fields.includes(f), f);
+  assert.ok(!NOTEBOOK_COLUMNS.Insectary_data && !NOTEBOOK_COLUMNS.Insectary_stocks);
 });
 
 test('other sheets: a notebook\'s columns up to its notes, else the identifying ones', () => {
   const stocks = columnsOf('Insectary_stocks');
   assert.deepEqual(stocks.fields.slice(0, KINDS.stocks.fields.length), KINDS.stocks.fields);
   assert.ok(stocks.fields.includes('Generation') && !stocks.fields.includes('HatchingTime'), stocks.fields.join());
-  assert.deepEqual(columnsOf('Collection_data'), { fields: ['FieldMark_ID', 'Insectary_ID', 'CAM_ID', 'Tube_1_id', 'SPECIES'], keys: [] });
+  assert.ok(!HIDDEN_COLUMNS.Insectary_stocks);
 });
 
 test('a proposal changing one column sends the columns to show, and the sheet values of a reviewed one', async () => {
@@ -173,6 +191,58 @@ test("the assistant's view: its columns first, or only them (and the changed one
     // Preservation_medium is shown and written.
     const medium = await call('propose_changes', { reason: 'x', changes: [{ recordId: at(2), values: { Preservation_medium: 'NOT_COLLECTED' } }], view: { columns: ['Preservation_medium'] } });
     assert.ok(medium.proposalId, JSON.stringify(medium));
+  } finally {
+    store.close?.();
+  }
+});
+
+test('a Collection_data proposal: its columns up to its notes, the ones after hidden and not written, the Notebook view\'s columns', async () => {
+  const sheets = new LocalSheets({
+    Collection_data: [{ row: 2, values: { CAM_ID: 'CAM079010', Insectary_ID: 'NA', SPECIES: 'Oleria onega', Sex: 'male', Tube_1_id: 'FS10' } }],
+    Insectary_data: [{ row: 2, values: { Insectary_ID: 'K2B', SPECIES: 'Oleria onega', Sex: 'NA' } }],
+  });
+  const store = new Store({ localMode: true }, { sheets });
+  try {
+    await store.sync({ sheets: ['Collection_data', 'Insectary_data'] });
+    const assistant = createAssistant({ store, config: {} });
+    store.db
+      .prepare(
+        "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u1','franz','Franz','editor','s','h',1,'2026-01-01')",
+      )
+      .run();
+    store.db
+      .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
+      .run(createHash('sha256').update('franz-token').digest('hex'), 'u1');
+    const call = async (name, args) =>
+      JSON.parse(
+        (await assistant.mcp({ authorization: 'Bearer franz-token' }, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }))
+          .body.result.content[0].text,
+      );
+    const user = { id: 'u1', username: 'franz', displayName: 'Franz', role: 'editor' };
+    const cam = store.getRecordBySheetRow('Collection_data', 2).id;
+    const k2b = store.getRecordBySheetRow('Insectary_data', 2).id;
+    const out = await call('propose_changes', {
+      reason: 'Sexo',
+      changes: [
+        { recordId: cam, values: { Sex: 'female' } },
+        { recordId: k2b, values: { Sex: 'female' } },
+      ],
+    });
+    assert.ok(out.proposalId, JSON.stringify(out));
+    const { shownColumns } = (await assistant.handle({ method: 'GET', path: '/api/chat/proposals', body: {}, user, query: { all: '1' } })).body
+      .proposals[0];
+    assert.deepEqual(shownColumns.Collection_data, {
+      ...columnsOf('Collection_data'),
+      hidden: [...HIDDEN_COLUMNS.Collection_data],
+      notebook: NOTEBOOK_COLUMNS.Collection_data,
+    });
+    // Insectary_data as before: no Notebook view's columns without its page.
+    assert.deepEqual(shownColumns.Insectary_data, { ...columnsOf('Insectary_data'), hidden: [...HIDDEN_COLUMNS.Insectary_data] });
+    // The columns after Notes_Collection_data: not written, not shown.
+    const rack = await call('propose_changes', { reason: 'x', changes: [{ recordId: cam, values: { Tube_1_rack: 'R1' } }] });
+    assert.match(rack.error, /Tube_1_rack is not written in proposals of Collection_data: its columns end at Notes_Collection_data/);
+    const tol = await call('propose_changes', { reason: 'x', changes: [{ recordId: cam, values: { Sex: 'NA' } }], view: { columns: ['ToLID'] } });
+    assert.match(tol.error, /^view\.columns: ToLID is not shown in proposals of Collection_data/);
   } finally {
     store.close?.();
   }

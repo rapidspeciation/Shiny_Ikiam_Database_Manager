@@ -1,8 +1,9 @@
 // Which columns the proposals («Cambios propuestos») show and which the
 // assistant's tools may write, per sheet: one place for the table
 // (reviewColumns in server/notebook.mjs, readView in server/proposal-view.mjs,
-// the "+ Columna…" list) and for the tools (propose_changes, update_proposal,
-// match_notebook in server/assistant.mjs and server/notebook*.mjs).
+// the "+ Columna…" list, the Notebook column view) and for the tools
+// (propose_changes, update_proposal, match_notebook in server/assistant.mjs and
+// server/notebook*.mjs).
 
 import { moduleMap } from './schema.mjs';
 
@@ -21,10 +22,12 @@ const after = (sheet, last) => {
  * The columns every proposal of the sheet shows, in this order, whatever it
  * changes (the table adds the changed ones after them; the assistant's `view`
  * may put others first). Insectary_data: every column up to and including
- * Notes_Insectary_data (column AF), in the sheet's order.
+ * Notes_Insectary_data (column AF), in the sheet's order; Collection_data: up
+ * to and including Notes_Collection_data.
  */
 export const DEFAULT_COLUMNS = {
   Insectary_data: upTo('Insectary_data', 'Notes_Insectary_data'),
+  Collection_data: upTo('Collection_data', 'Notes_Collection_data'),
 };
 
 /**
@@ -32,9 +35,37 @@ export const DEFAULT_COLUMNS = {
  * view, not in the table's "+ Columna…" list) and never written by the tools.
  * - Insectary_data after Notes_Insectary_data (racks, manifests, the
  *   collection and identification block): another workflow's columns.
+ * - Collection_data after Notes_Collection_data (racks, manifests, the STS/ToL
+ *   block from COLLECTOR_SAMPLE_ID to Select_TEMP): the same.
  */
 export const HIDDEN_COLUMNS = {
   Insectary_data: new Set(after('Insectary_data', 'Notes_Insectary_data')),
+  Collection_data: new Set(after('Collection_data', 'Notes_Collection_data')),
+};
+
+/**
+ * The Notebook column view of a sheet with no notebook page in the proposal:
+ * its columns first, in this order. Collection_data: what a wild-caught
+ * butterfly is written down with. (A notebook page's own columns come with its
+ * page: KINDS in server/notebook.mjs.)
+ */
+export const NOTEBOOK_COLUMNS = {
+  Collection_data: [
+    'Insectary_ID',
+    'SPECIES',
+    'Subspecies_Form',
+    'Sex',
+    'Collection_date',
+    'Collection_time',
+    'Collector',
+    'Collection_location',
+    'Cloud_cover',
+    'Rainfall',
+    'Identifier',
+    'CAM_ID',
+    'Tube_1_id',
+    'Notes_Collection_data',
+  ],
 };
 
 /**

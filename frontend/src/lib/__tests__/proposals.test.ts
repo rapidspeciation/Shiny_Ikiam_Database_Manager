@@ -12,6 +12,7 @@ import {
   isFormulaError,
   nextCell,
   notApplied,
+  notebookColumns,
   orderText,
   pageNote,
   panelShare,
@@ -29,6 +30,7 @@ import {
   type Proposal,
   type ProposalChange,
 } from '../proposals'
+import { orderColumns } from '../proposalColumns'
 
 const created = (key: string, values: ProposalChange['values'], extra: Partial<ProposalChange> = {}): ProposalChange => ({
   index: 0,
@@ -191,6 +193,28 @@ describe('the columns a table always shows', () => {
     const [g] = sheetGroups(p, {}, order)
     expect(g.fields.slice(-2)).toEqual(['LIFESTAGE', 'Tube_2_rack'])
     expect(g.template).toEqual(['Tube_2_rack'])
+  })
+  it("gives Collection_data a Notebook view without a page: a wild-caught butterfly's columns first", () => {
+    const columns = {
+      ...shownColumns,
+      Collection_data: { fields: ['CAM_ID', 'SPECIES', 'Sex', 'Collector'], keys: [], notebook: ['SPECIES', 'Sex', 'Collector', 'CAM_ID'] },
+    }
+    const p = proposal([edited('r1', { Sex: 'female' }), edited('r2', { Sex: 'female' }, { sheet: 'Insectary_data' })], { shownColumns: columns })
+    expect(notebookColumns(p, 'Collection_data')).toEqual(['SPECIES', 'Sex', 'Collector', 'CAM_ID'])
+    expect(notebookColumns(p, 'Insectary_data')).toEqual([])
+    const [collection] = sheetGroups(p, {}, order)
+    expect(orderColumns('sheet', collection.fields, { sheetOrder: order('Collection_data') })).toEqual(['CAM_ID', 'SPECIES', 'Sex', 'Collector'])
+    expect(orderColumns('notebook', collection.fields, { sheetOrder: order('Collection_data'), notebook: notebookColumns(p, 'Collection_data') })).toEqual([
+      'SPECIES',
+      'Sex',
+      'Collector',
+      'CAM_ID',
+    ])
+    // A notebook page of the sheet: its own columns.
+    const paged = { ...p, page: { kind: '', sheet: 'Collection_data', columns: ['CAM_ID', 'Sex'], keys: [], photos: 1 } }
+    expect(notebookColumns(paged, 'Collection_data')).toEqual(['CAM_ID', 'Sex'])
+    // Photos only (a table of rows read from a photo): the sheet's own list still.
+    expect(notebookColumns({ ...paged, page: { ...paged.page, columns: [] } }, 'Collection_data')).toEqual(['SPECIES', 'Sex', 'Collector', 'CAM_ID'])
   })
 })
 

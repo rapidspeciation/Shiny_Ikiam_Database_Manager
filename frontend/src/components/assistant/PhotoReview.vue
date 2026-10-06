@@ -149,7 +149,7 @@ onBeforeUnmount(() => {
         @pointerdown="resize"
       />
       <div class="min-h-0 min-w-0 flex-1">
-        <PhotoViewer :url="url" :count="photos" :photo="photo" :line="line" @update:photo="pick" />
+        <PhotoViewer :url="url" :count="photos" :photo="photo" :line="line" :notes="proposal.page?.photoNotes" @update:photo="pick" />
       </div>
     </div>
   </div>

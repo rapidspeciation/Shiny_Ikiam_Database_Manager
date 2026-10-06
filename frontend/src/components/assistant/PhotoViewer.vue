@@ -9,9 +9,10 @@ import { t } from '../../lib/i18n'
  * with the wheel, a pinch or the buttons, moved by dragging (a mouse or a
  * finger), turned a quarter at a time, and set back to the whole photo. The
  * proposal's other photos are its thumbnails above; the row selected in the
- * table brings its photo and says its line. Pan and zoom are @panzoom/panzoom,
- * as in the team's wings gallery. Also the clutches' photos (Clutches tab),
- * with their own names for the photos (`alt`).
+ * table brings its photo and says its line; a photo's note (why it is there)
+ * goes in its thumbnail's tooltip and beside «Foto n». Pan and zoom are
+ * @panzoom/panzoom, as in the team's wings gallery. Also the clutches' photos
+ * (Clutches tab), with their own names for the photos (`alt`).
  */
 const props = defineProps<{
   /** The photos' addresses, by size. */
@@ -23,8 +24,11 @@ const props = defineProps<{
   line?: number | null
   /** What each photo is called (its alt text): «Foto n del cuaderno» by default. */
   alt?: (n: number) => string
+  /** A few words on why each photo is there (the assistant's), in the photos' order. */
+  notes?: string[]
 }>()
 const altOf = (n: number) => (props.alt ? props.alt(n) : t('Foto {n} del cuaderno', { n: n + 1 }))
+const noteOf = (n: number) => props.notes?.[n] ?? ''
 const emit = defineEmits<{ 'update:photo': [n: number] }>()
 
 const box = ref<HTMLDivElement>()
@@ -38,9 +42,13 @@ const size = ref({ w: 0, h: 0 })
 const failed = ref(false)
 const scale = ref(1)
 let pz: PanzoomObject | null = null
-/** The photo shown (when there are several) and the selected row's line on it. */
+/** The photo shown (when there are several, or it has a note) with its note, and the selected row's line on it. */
 const where = computed(() =>
-  [props.count > 1 ? t('Foto {n}', { n: props.photo + 1 }) : '', props.line ? t('Línea {n}', { n: props.line }) : '']
+  [
+    props.count > 1 || noteOf(props.photo) ? t('Foto {n}', { n: props.photo + 1 }) : '',
+    noteOf(props.photo),
+    props.line ? t('Línea {n}', { n: props.line }) : '',
+  ]
     .filter(Boolean)
     .join(' · '),
 )
@@ -155,7 +163,7 @@ onBeforeUnmount(() => {
           type="button"
           class="shrink-0 rounded border-2 bg-white"
           :class="n - 1 === photo ? 'border-emerald-400' : 'border-transparent opacity-70 hover:opacity-100'"
-          :title="altOf(n - 1)"
+          :title="[altOf(n - 1), noteOf(n - 1)].filter(Boolean).join(' · ')"
           :aria-pressed="n - 1 === photo"
           @click="emit('update:photo', n - 1)"
         >
