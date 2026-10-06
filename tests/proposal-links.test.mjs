@@ -133,6 +133,17 @@ test("list_proposals from a T3 chat: that chat's proposals, pending and reviewed
     );
     const all = await call('list_proposals', { allChats: true });
     assert.deepEqual(all.proposals.map(p => p.proposalId).sort(), [second.proposalId, elsewhere.proposalId].sort());
+
+    // A page this chat left pending, read again from another chat: it moves there, with its id, out of this one.
+    const page = { kind: 'stocks', year: 2026, lines: [{ raw: '902 larvas sanas', values: { 'CLUTCH NUMBER': '902', NOTES: 'larvas sanas' } }] };
+    const left = await call('match_notebook', page);
+    assert.ok(left.proposalId, JSON.stringify(left));
+    calling = OTHER;
+    const gathered = await call('match_notebook', { ...page, replaceProposalId: left.proposalId });
+    assert.equal(gathered.proposalId, left.proposalId);
+    assert.ok((await call('list_proposals', {})).proposals.some(p => p.proposalId === left.proposalId), 'in the chat that read it again');
+    calling = THREAD;
+    assert.ok(!(await call('list_proposals', {})).proposals.some(p => p.proposalId === left.proposalId), 'no longer in the old one');
   } finally {
     store.close?.();
   }

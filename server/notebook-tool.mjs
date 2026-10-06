@@ -118,7 +118,10 @@ export const MATCH_NOTEBOOK_TOOL = {
           description: 'Clockwise turn that makes it upright, as given to crops.py; a list for several photos',
           anyOf: [{ type: 'integer', enum: [0, 90, 180, 270] }, { type: 'array', items: { type: 'integer', enum: [0, 90, 180, 270] } }],
         },
-        replaceProposalId: { type: 'string', description: "This page's pending proposal, replaced by a corrected reading" },
+        replaceProposalId: {
+          type: 'string',
+          description: "This page's pending proposal, replaced by a corrected reading (keeping the person's edits); one from another chat moves to this one",
+        },
         includeUnchanged: { type: 'boolean', description: 'Lines already in the sheet as grey context rows (never written)' },
         view: VIEW_UPDATE,
       },

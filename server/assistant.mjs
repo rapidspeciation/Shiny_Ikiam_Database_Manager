@@ -3872,6 +3872,13 @@ export function createAssistant({ store, config = {} }) {
       const carried = carryPersonEdits(parse(replaced.changes_json) ?? [], matched.changes, context.user);
       conflicts = carried.conflicts;
       db.prepare('UPDATE ai_proposals SET view_json = ? WHERE id = ?').run(view ? json(view) : null, replaced.id);
+      // A page an older chat left pending, read again in a new one, moves to the chat that read it again
+      // (several chats' pages gathered for one review).
+      const here = context.t3 ? chatOfCall(context) : null;
+      if (here && here.id !== replaced.t3_thread) {
+        db.prepare('UPDATE ai_proposals SET t3_thread = ?, t3_title = ? WHERE id = ?').run(here.id, here.title, replaced.id);
+        replaced.t3_thread = here.id;
+      }
       if (saveRevision(replaced, carried.changes, 'ai', reason) !== null)
         proposal = { id: replaced.id, chat: chatOf(replaced, context) };
     } else if (editor && replaced) {
