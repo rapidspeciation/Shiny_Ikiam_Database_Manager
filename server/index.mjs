@@ -71,7 +71,8 @@ import { createPasswordResets } from './passwordReset.mjs';
 import { createSummary } from './summary.mjs';
 import { applyIdChange, planIdChange } from './insectaryId.mjs';
 import { UNIQUE, TUBE_FIELD } from './verifications.mjs';
-import { CHECK_KINDS, allIssues, checkData } from './checks.mjs';
+import { CHECK_KINDS, checkData, freshIssues } from './checks.mjs';
+import { createChecksHost } from './checks-host.mjs';
 import { reviewPage, setVerdicts, trainingLabels, verdictHistory } from './review.mjs';
 import { allSuggestions, suggestionPage, suggestionSources, suggestionsCsv } from './suggestions/index.mjs';
 import { solvedFindings } from './findings.mjs';
@@ -424,6 +425,8 @@ export async function createApp(config = {}, options = {}) {
     const { createAssistantHost } = await import(new URL('./assistant-host.mjs', import.meta.url).href);
     assistant = createAssistantHost({ store, config });
   }
+  // The Revisión checks' whole scan in a worker thread where it can (server/checks-host.mjs).
+  const checks = createChecksHost({ store, config });
   // Each person's own T3 project, made when missing (server/t3projects.mjs).
   const t3Projects = createT3Projects({
     chats: assistant?.t3 ?? null,
@@ -468,6 +471,7 @@ export async function createApp(config = {}, options = {}) {
       // `google`: whether the workbook answers (ok, slow, busy), saves waiting for it, entries kept in the app.
       // `eventLoop`: over the last minute, how late the server got to what was waiting (p99 and the longest).
       // `assistant`: where the AI's tool calls run (worker, inline, degraded), how many now, how often a worker was replaced.
+      // `checks`: where the Revisión checks run, how many scans and the last one's time.
       if (method === 'GET' && path === '/health')
         return json(res, 200, {
           status: 'ok',
@@ -476,6 +480,7 @@ export async function createApp(config = {}, options = {}) {
           google: store.googleState(),
           eventLoop: eventLoop.stats(),
           ...(assistant?.status ? { assistant: assistant.status() } : {}),
+          checks: checks.status(),
         });
       // Shares are normally caught by the service worker; if it was not active yet,
       // open the import screen and let the person share again.
@@ -860,11 +865,11 @@ export async function createApp(config = {}, options = {}) {
         return sendTagged(res, { module, unique, lists });
       }
       // Revisión de datos: inconsistencies across the workbook (the assistant's check_data tool).
-      if (method === 'GET' && path === '/api/checks') return json(res, 200, checkData(store, query));
+      if (method === 'GET' && path === '/api/checks') return json(res, 200, checkData(store, query, await freshIssues(store)));
       // The Revisión tab: the same issues with people's verdicts, and the specimen photos they show.
       if (method === 'GET' && path === '/api/review') {
         requireEditor(user);
-        return json(res, 200, reviewPage(store, query));
+        return json(res, 200, reviewPage(store, query, await freshIssues(store)));
       }
       if (method === 'GET' && path === '/api/review/verdicts') {
         requireEditor(user);
@@ -872,7 +877,7 @@ export async function createApp(config = {}, options = {}) {
       }
       if (method === 'POST' && path === '/api/review/verdicts') {
         requireEditor(user);
-        return json(res, 200, setVerdicts(store, body, user));
+        return json(res, 200, setVerdicts(store, body, user, await freshIssues(store)));
       }
       // Suggested edits (server/suggestions/): read-only, for people to look at and copy; nothing applies them.
       if (method === 'GET' && path === '/api/suggested-edits') {
@@ -896,7 +901,7 @@ export async function createApp(config = {}, options = {}) {
       // Problems and suggestions the sheet no longer has (server/findings.mjs), after looking again.
       if (method === 'GET' && path === '/api/solved') {
         requireEditor(user);
-        allIssues(store);
+        await freshIssues(store);
         await allSuggestions(store);
         const titles = { check: CHECK_KINDS, suggestion: Object.fromEntries(suggestionSources().map(s => [s.id, s.title])) };
         return json(res, 200, { ...solvedFindings(store, query), titles });
@@ -1359,6 +1364,11 @@ export async function createApp(config = {}, options = {}) {
           return store.syncStatus;
         })
         .finally(() => store.outbox.kick());
+  // After a restart the first Revisión page finds the issues scanned already (in the worker: nobody waits for it).
+  if (checks.mode === 'worker')
+    ready.then(() => {
+      if (!store.closed) freshIssues(store).catch(e => store.closed || e.code === 'WORKER_CLOSED' || console.error('Checks:', e.message));
+    });
   // Saves kept while Google did not answer (before a restart too): written once it does.
   store.outbox.start(config.outboxCheckMs ?? undefined);
   const interval =
@@ -1393,6 +1403,7 @@ export async function createApp(config = {}, options = {}) {
       }
       t3Bridge?.close();
       assistant?.close?.();
+      checks.close();
       await new Promise(resolve => server.close(resolve));
       store.close();
     },

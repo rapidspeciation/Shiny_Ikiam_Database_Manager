@@ -90,14 +90,15 @@ function snapshot(issue) {
 /**
  * Records one verdict for each issue (or each issue of a batch). Only issues
  * listed now can be judged; `applied` is for tasks done by hand (Drive), the
- * sheet fixes get it when their proposal is written.
+ * sheet fixes get it when their proposal is written. `found`: the issues as
+ * of now (freshIssues), else they are found here.
  */
-export function setVerdicts(store, body, user) {
+export function setVerdicts(store, body, user, found = null) {
   const db = store.db;
   initVerdicts(db);
   const verdict = String(body.verdict ?? '');
   if (!VERDICTS.includes(verdict)) throw fail('INVALID_VERDICT', `verdict must be one of ${VERDICTS.join(', ')}`);
-  const { issues } = allIssues(store);
+  const { issues } = found ?? allIssues(store);
   const byId = new Map(issues.map(i => [i.id, i]));
   const chosen = body.group
     ? issues.filter(i => i.group?.key === String(body.group))
@@ -204,11 +205,12 @@ function sideBySide(store, issue) {
  * One page of the tab: the issues after the filters (kind, sheet, person,
  * date range, status, batch, text), with their verdict and rows side by side;
  * counts per kind and status; and how many accepted fixes wait to be applied.
+ * `found`: the issues as of now (freshIssues), else they are found here.
  */
-export function reviewPage(store, query = {}) {
+export function reviewPage(store, query = {}, found = null) {
   const db = store.db;
   const verdicts = latestVerdicts(db);
-  const { issues, checkedAt } = allIssues(store);
+  const { issues, checkedAt } = found ?? allIssues(store);
   const kinds = String(query.kind ?? '')
     .split(',')
     .map(k => k.trim())
@@ -325,10 +327,11 @@ function agreedChange(issue, v) {
  * Accepted issues ready to be proposed (list_agreed_fixes): sheet fixes with
  * their issue ids, and tasks that are no sheet change (Drive renames and merges)
  * as a checklist. Issues accepted but gone from the checks are counted apart.
+ * `found`: the issues as of now (freshIssues), else they are found here.
  */
-export function agreedFixes(store, { kind, limit = 100 } = {}) {
+export function agreedFixes(store, { kind, limit = 100 } = {}, found = null) {
   const verdicts = latestVerdicts(store.db);
-  const { issues } = allIssues(store);
+  const { issues } = found ?? allIssues(store);
   const kinds = kind
     ? String(kind)
         .split(',')

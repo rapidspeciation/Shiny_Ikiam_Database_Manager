@@ -4,7 +4,7 @@ import { basename, dirname, join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { createReports } from './reports.mjs';
 import { MAX_BATCH, TYPED_OVER_FORMULA, renamesWithSuffix, sameAsFormula, uniqueIdIndex } from './batch.mjs';
-import { allIssues, checkData } from './checks.mjs';
+import { checkData, freshIssues } from './checks.mjs';
 import { agreedFixes, markApplied } from './review.mjs';
 import { CERTAINTIES, allSuggestions, suggestionPage } from './suggestions/index.mjs';
 import { formulaGroup } from './suggestions/formulas.mjs';
@@ -1521,9 +1521,10 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
 
   /**
    * propose_changes as the assistant calls it; `literal` for fixes built by the
-   * app (the Revisión tab), whose values are taken as they are.
+   * app (the Revisión tab), whose values are taken as they are; `found`: the
+   * checks' scan the caller holds (freshIssues), for the rows' lookAt.
    */
-  function proposeChanges(input, context, { literal = false } = {}) {
+  function proposeChanges(input, context, { literal = false, found = null } = {}) {
     if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot propose edits' };
     if (!literal && Array.isArray(input.changes) && input.changes.length) {
       const named = withRecordIds(input.changes);
@@ -1559,6 +1560,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     const look = lookAt(store, changes, {
       told: noSample.flatMap(n => n.missing.map(field => ({ index: n.index, field }))),
       formulaEmpty: speciesLeftEmpty(changes),
+      found,
     });
     // Formulas not the column's usual one, or looking up whole columns: said with how many rows.
     const formulaNoted = formulaNotesSummary(changes);
@@ -3793,13 +3795,17 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       return fitList(result, 'rows', RESULT_BUDGET - 500, more).out;
     }
     if (name === 'check_data') {
-      const out = checkData(store, {
-        sheet: args.sheet ? clip(args.sheet, 100) : undefined,
-        kind: args.kind ? clip(args.kind, 300) : undefined,
-        recordId: args.recordId ? clip(args.recordId, 120) : undefined,
-        limit: Math.min(Number(args.limit) || 50, 200),
-        offset: args.offset,
-      });
+      const out = checkData(
+        store,
+        {
+          sheet: args.sheet ? clip(args.sheet, 100) : undefined,
+          kind: args.kind ? clip(args.kind, 300) : undefined,
+          recordId: args.recordId ? clip(args.recordId, 120) : undefined,
+          limit: Math.min(Number(args.limit) || 50, 200),
+          offset: args.offset,
+        },
+        await freshIssues(store),
+      );
       // The kinds explained only in an answer that is not about some of them.
       const page = { ...out, ...(args.kind ? { kinds: undefined } : {}), issues: withoutMsgs(out.issues) };
       const more = kept =>
@@ -3832,7 +3838,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (name === 'get_proposal') return getProposal(args, context);
     if (name === 'list_proposals') return listProposals(args, context);
     if (name === 'show_rows') return showRows(args, context);
-    if (name === 'list_agreed_fixes') return agreedFixes(store, { kind: args.kind ? clip(args.kind, 300) : undefined, limit: args.limit });
+    if (name === 'list_agreed_fixes')
+      return agreedFixes(store, { kind: args.kind ? clip(args.kind, 300) : undefined, limit: args.limit }, await freshIssues(store));
     if (name === 'list_suggested_edits') {
       const out = await suggestionPage(store, {
         source: args.source ? clip(args.source, 300) : undefined,
@@ -4405,7 +4412,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         return bad(400, 'invalid_ids', 'Choose 1 to 100 issues.');
       const wanted = new Set(body.ids.map(String));
       const merged = new Map();
-      for (const issue of allIssues(store).issues) {
+      const found = await freshIssues(store);
+      for (const issue of found.issues) {
         if (!wanted.has(issue.id) || !issue.fix) continue;
         const change = merged.get(issue.fix.recordId) ?? { recordId: issue.fix.recordId, values: {}, notes: [] };
         Object.assign(change.values, issue.fix.values);
@@ -4421,7 +4429,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
           changes: [...merged.values()].map(c => ({ recordId: c.recordId, values: c.values, note: c.notes.join(' · ') })),
         },
         context,
-        { literal: true },
+        { literal: true, found },
       );
       if (out.error) return bad(409, 'invalid_fix', out.error);
       insertMessage(threadId, 'assistant', 'Arreglos propuestos desde Revisión de datos', [], [], context.proposals);
@@ -4429,7 +4437,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     }
     // "Preparar propuesta" in the Revisión tab: every agreed fix as one proposal to confirm.
     if (path === '/api/chat/proposals/from-review' && method === 'POST') {
-      const agreed = agreedFixes(store, { kind: body.kind ? clip(body.kind, 300) : undefined, limit: 100 });
+      const found = await freshIssues(store);
+      const agreed = agreedFixes(store, { kind: body.kind ? clip(body.kind, 300) : undefined, limit: 100 }, found);
       if (!agreed.fixes.length) return bad(409, 'no_fixes', 'No accepted fixes are waiting.');
       const merged = new Map();
       for (const f of agreed.fixes) {
@@ -4447,7 +4456,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
           issueIds: agreed.fixes.map(f => f.issueId),
         },
         context,
-        { literal: true },
+        { literal: true, found },
       );
       if (out.error) return bad(409, 'invalid_fix', out.error);
       insertMessage(threadId, 'assistant', 'Correcciones acordadas en Revisión', [], [], context.proposals);

@@ -24,7 +24,7 @@
 //               (observed = false: an empty pre-made row)
 //   observed(sheet)   the rows of a sheet with data
 //   byId        Map recordId → row
-//   issues()    the checks' issues (server/checks.mjs), computed on first call
+//   issues()    the checks' issues (server/checks.mjs)
 //   today       today as a sheet date serial (Ecuador); iso(serial) → 'YYYY-MM-DD'
 //   shown(sheet, field, value)   a cell as people read it (dates as YYYY-MM-DD)
 //   ref(row, field)   { sheet, row, recordId, label, field, value } for `related`
@@ -53,7 +53,7 @@
 // the shape a source must give.
 
 import { textFields } from '../messages.mjs';
-import { allIssues, iso, recordsStamp, ref, sheetRows, shown, todaySerial } from '../checks.mjs';
+import { freshIssues, iso, recordsStamp, ref, sheetRows, shown, todaySerial } from '../checks.mjs';
 import { firstSeen, trackFindings } from '../findings.mjs';
 import pedigree from './pedigree.mjs';
 import twins from './twins.mjs';
@@ -101,16 +101,17 @@ function historyReader(db) {
 
 const cache = new WeakMap();
 async function compute(store) {
+  // The checks' issues (Revisión), found in their worker thread where there is one.
+  const { issues } = await freshIssues(store);
   const sheets = sheetRows(store);
   const byId = new Map();
   for (const rows of sheets.values()) for (const r of rows) byId.set(r.id, r);
-  let issues = null;
   const ctx = {
     store,
     sheets,
     observed: sheet => (sheets.get(sheet) || []).filter(r => r.observed),
     byId,
-    issues: () => (issues ??= allIssues(store).issues),
+    issues: () => issues,
     today: todaySerial(),
     iso,
     shown,

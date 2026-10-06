@@ -179,6 +179,16 @@ node tools/lab/sync-load.mjs                       # each step's time, longest b
 node tools/lab/sync-load.mjs --profile /tmp/prof   # also a CPU profile of each step
 ```
 
+The Revisión checks scan the whole copy (a second or two) in their own worker
+thread (`server/checks-host.mjs`); the app keeps the last result while the copy
+is unchanged. To measure it on a copy of the lab app's database, in the app's
+thread and then in the worker (a page after a restart, after a change, pages
+asking while someone saves every 100 ms), and to compare the two results:
+
+```sh
+node tools/lab/checks-load.mjs                     # each step's time, longest block, p99 lag, a person's waits
+```
+
 ## Cases
 
 `cases.json` in the lab folder:
