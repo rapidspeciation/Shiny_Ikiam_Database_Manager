@@ -40,7 +40,10 @@ export type StagedValue = CellValue | { formula: string }
 export interface StagedClaim {
   kind: 'insectary' | 'cam' | 'tube' | 'clutch'
   value: string
-  itemId: string
+  /** The entry holding it, or null for a card's hold (server/holds.mjs). */
+  itemId: string | null
+  /** The card of Emergidos holding this Insectary ID from its tap (its key). */
+  hold?: string
   actor: string
   actorName: string
 }

@@ -50,6 +50,8 @@ test('a tap holds its ID: the next tap and everyone else get the next one', asyn
     const a = card();
     assert.deepEqual(holdId(store, { key: a, value: 'a1e' }, ana), { held: true, value: 'A1E' });
     assert.deepEqual(free(store), ['A2E', 'A3E', 'A4E']);
+    // Its row is still told apart, for the card holding it to keep its place in the order.
+    assert.deepEqual(idSuggestions(store, { kind: 'insectary', count: 10 }).held, [{ value: 'A1E', row: 3 }]);
     // The same card asking again (a retry): still held, nothing changes.
     assert.deepEqual(holdId(store, { key: a, value: 'A1E' }, ana), { held: true, value: 'A1E' });
     // Someone else's tap on the same ID: refused, with who and the next free one.

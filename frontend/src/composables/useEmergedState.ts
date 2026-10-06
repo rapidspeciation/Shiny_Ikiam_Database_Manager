@@ -47,20 +47,26 @@ function create(): EmergedState {
   const inOrder = ref<string[]>([])
   const rowOf = ref(new Map<string, number>())
   const idsLoaded = ref(false)
+  const drafts = persistentRef<Draft[]>('emerged:drafts', [], { lasting: true })
   let asking: Promise<void> | null = null
   async function loadFreeIds() {
     if (asking) return asking
     asking = (async () => {
       try {
-        const result = await api<{ sequence: string[]; rows: { value: string; row: number }[] }>('ids?kind=insectary&count=5000')
+        const result = await api<{ sequence: string[]; rows: { value: string; row: number }[]; held?: { value: string; row: number }[] }>(
+          'ids?kind=insectary&count=5000',
+        )
         // Rows added in the table and not saved yet hold their IDs too.
         const used = new Set(pending.creates.filter(c => c.module === MODULE).map(c => String(c.values.Insectary_ID).toUpperCase()))
         freeIds.value = result.sequence.filter(id => !used.has(id.toUpperCase()))
-        inOrder.value = [...result.rows]
+        // The IDs the cards hold (server/holds.mjs) keep their place in the order: the next card follows them (H0B → H1B).
+        const mine = new Set(drafts.value.map(d => d.id.trim().toUpperCase()))
+        const rows = [...result.rows, ...(result.held ?? []).filter(r => mine.has(r.value.toUpperCase()))]
+        inOrder.value = rows
           .sort((a, b) => a.row - b.row)
           .map(r => r.value)
           .filter(id => !used.has(id.toUpperCase()))
-        rowOf.value = new Map(result.rows.map(r => [r.value.toUpperCase(), r.row]))
+        rowOf.value = new Map(rows.map(r => [r.value.toUpperCase(), r.row]))
         idsLoaded.value = true
       } catch (e) {
         notify(errorText(e), 'error')
@@ -88,7 +94,7 @@ function create(): EmergedState {
     // The same keys the table used before (the clutch and day survive the update).
     date: persistentRef('emerged:date', todayIso()),
     clutch: persistentRef('emerged:clutch', ''),
-    drafts: persistentRef<Draft[]>('emerged:drafts', [], { lasting: true }),
+    drafts,
     skipStock: persistentRef<string[]>('emerged:skip-stock', []),
     medium: persistentRef('emerged:medium', 'Flash frozen', { lasting: true }),
     young: youngBatch(),

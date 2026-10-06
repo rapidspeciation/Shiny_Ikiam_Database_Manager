@@ -123,4 +123,17 @@ export default {
   'Ver las tarjetas': 'See the cards',
   '{n} emergido en tarjetas sin guardar ({ids}).': '{n} emerged butterfly on cards, not saved ({ids}).',
   '{n} emergidos en tarjetas sin guardar ({ids}).': '{n} emerged butterflies on cards, not saved ({ids}).',
+  // Quick taps: each one butterfly (or larva), its ID held at once (lib/holds.ts)
+  'Añadir una hembra: {id}': 'Add a female: {id}',
+  'Añadir un macho: {id}': 'Add a male: {id}',
+  'sin IDs libres': 'no free IDs',
+  Último: 'Last',
+  'escríbelo en el ala': 'write it on the wing',
+  '{n} de este clutch hoy': '{n} from this clutch today',
+  '✕ deshace': '✕ undoes',
+  'Reservando el ID…': 'Holding the ID…',
+  'Sin conexión: el ID se reserva al volver la señal': 'No connection: the ID is held when the signal is back',
+  'Este ID no quedó reservado': 'This ID is not held',
+  'ID reservado para esta mariposa': 'ID held for this butterfly',
+  '{from} ya lo tiene {name}: esta mariposa es {id}': '{name} already has {from}: this butterfly is {id}',
 }
