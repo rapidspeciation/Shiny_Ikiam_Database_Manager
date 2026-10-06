@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
@@ -52,7 +52,22 @@ import {
   type CellInfo,
   type ProposalChange,
 } from '../../lib/proposals'
-import { baseRowKey, markerText, offPhoto, repeatChip, type Laid, type Marker } from '../../lib/proposalRows'
+import {
+  baseRowKey,
+  hiddenRange,
+  markerKey,
+  markerText,
+  offPhoto,
+  peekText,
+  repeatChip,
+  withPeeks,
+  type Laid,
+  type Marker,
+  type Peek,
+  type PeekState,
+  type SheetRows,
+} from '../../lib/proposalRows'
+import { errorText } from '../../lib/notice'
 import { isSumField, sumTotal } from '../../lib/sums'
 import type { CellValue, Field } from '../../lib/types'
 import { listProblem, verificationsFor } from '../../lib/verifications'
@@ -99,7 +114,10 @@ import CellBar from '../CellBar.vue'
  * where they are not continuous in the sheet (or, in the notebook's order, how
  * far the next line's row jumps), and which rows are not on the photo. A
  * repeated ID (A0E.1) has a chip «repeat of A0E (row …)», which goes to that
- * row when the table shows it.
+ * row when the table shows it. A click on a slim row that stands for sheet
+ * rows the table does not show (`loadRows`) opens them under it, grey and to
+ * read only (up to PEEK_ROWS, then a slim row for the rest); another click
+ * folds them.
  */
 export interface CellEdit {
   key: string
@@ -126,6 +144,8 @@ const props = defineProps<{
   laid?: Laid[]
   /** The rows go as the notebook has them (no ↕ marks: the jumps say it). */
   notebookOrder?: boolean
+  /** The sheet's rows `from`–`to` as they are now, for a slim row opened with a click (none: they do not open). */
+  loadRows?: (from: number, to: number) => Promise<SheetRows>
 }>()
 const emit = defineEmits<{
   edit: [cells: CellEdit[]]
@@ -250,9 +270,21 @@ function toRow(c: ProposalChange): Row {
 
 /** A slim row between the rows: its text in the first column that stays at the left. */
 const markerField = () => (wide ? '__row' : '__label')
-function markerRow(m: Marker, next: string): Row {
-  return { __key: `mark:${m.kind}:${next}`, __marker: m.kind, __done: '', __row: '', __label: '', __note: '', __line: '', __state: JSON.stringify(m) } as Row
+type MarkerState = Marker & { peek?: PeekState }
+function markerRow(m: Marker, next: string, peek?: PeekState): Row {
+  return {
+    __key: `mark:${markerKey(m)}:${next}`,
+    __marker: m.kind,
+    __done: '',
+    __row: '',
+    __label: '',
+    __note: '',
+    __line: '',
+    __state: JSON.stringify({ ...m, ...(peek ? { peek } : {}) }),
+  } as Row
 }
+/** A slim row a click opens: it stands for sheet rows the table does not show, and they can be read. */
+const peekable = (m: Marker) => !!props.loadRows && !!hiddenRange(m)
 /** A marker row's cell: its text (it overflows the columns beside it), the rest empty. */
 function markerCell(cell: CellComponent): Node | string {
   const row = cell.getData() as Row
@@ -260,13 +292,21 @@ function markerCell(cell: CellComponent): Node | string {
   const here = cell.getField() === markerField()
   el.classList.toggle('is-marker-cell', here)
   if (!here) return ''
-  const m = JSON.parse(row.__state) as Marker
+  const m = JSON.parse(row.__state) as MarkerState
   const { text, title } = markerText(m)
-  el.title = title
+  const peek = peekable(m) ? peekText(m, m.peek) : null
+  el.title = [title, peek?.title].filter(Boolean).join('\n')
   const box = document.createElement('span')
   box.className = `marker-text is-${m.kind}${m.kind === 'jump' ? (m.by > 0 ? '-down' : '-up') : ''}`
   box.textContent = text
-  return box
+  if (!peek?.action) return box
+  // Opened (or on its way): «hide», and how many of its rows the table shows already.
+  const both = document.createElement('span')
+  const action = document.createElement('span')
+  action.className = `marker-action is-${m.peek?.state ?? 'closed'}`
+  action.textContent = peek.action
+  both.append(box, ' ', action)
+  return both
 }
 
 /** The ID, with a repeat's chip («repeat of A0E (row …)»: a click goes to that row when the table shows it). */
@@ -708,10 +748,42 @@ function rowLook(row: RowComponent) {
   const change = byKey.get(data.__key)
   const el = row.getElement()
   el.classList.toggle('is-marker-row', !!data.__marker)
+  const m = data.__marker ? (JSON.parse(data.__state) as MarkerState) : null
+  el.classList.toggle('is-peekable', !!m && peekable(m))
   el.classList.toggle('is-context-row', !!change?.context && !change.page?.error)
   el.classList.toggle('is-placeholder-row', !!change?.placeholder)
   el.classList.toggle('is-error-row', !!change?.page?.error)
   el.classList.toggle('is-taken-row', !!change?.rowTaken)
+}
+
+// ------------------------------------------------------------ a slim row opened
+/** The slim rows opened (by markerKey): their sheet rows, read from the server. */
+const peeks = shallowRef(new Map<string, Peek>())
+/** The last ask of each slim row: a fold or a newer click makes an older answer late. */
+const peekAsks = new Map<string, number>()
+let peekAsked = 0
+function setPeek(key: string, peek: Peek | null) {
+  const next = new Map(peeks.value)
+  if (peek) next.set(key, peek)
+  else next.delete(key)
+  peeks.value = next
+}
+/** A click on a slim row: its sheet rows open under it (read now), or fold if open. */
+async function togglePeek(m: Marker) {
+  const range = hiddenRange(m)
+  if (!range || !props.loadRows) return
+  const key = markerKey(m)
+  const ask = ++peekAsked
+  peekAsks.set(key, ask)
+  const now = peeks.value.get(key)
+  if (now && now.state !== 'error') return setPeek(key, null)
+  setPeek(key, { state: 'loading' })
+  try {
+    const rows = await props.loadRows(range.from, range.to)
+    if (peekAsks.get(key) === ask) setPeek(key, { state: 'open', rows })
+  } catch (e) {
+    if (peekAsks.get(key) === ask) setPeek(key, { state: 'error', message: errorText(e) })
+  }
 }
 
 // ------------------------------------------------------------ the cell bar
@@ -1070,12 +1142,13 @@ function sync() {
     return
   }
   stale = false
-  byKey = new Map(props.changes.map(c => [rowKey(c), c]))
-  const laid = props.laid ?? props.changes.map(change => ({ change }))
+  // The slim rows opened, with their sheet rows under them.
+  const laid = withPeeks(props.laid ?? props.changes.map(change => ({ change })), peeks.value, props.sheet)
+  byKey = new Map(laid.flatMap(item => (item.change ? [[rowKey(item.change), item.change] as const] : [])))
   const rows = laid.map((item, i) => {
     if (item.change) return toRow(item.change)
     const next = laid.slice(i + 1).find(x => x.change)?.change
-    return markerRow(item.marker, next ? rowKey(next) : 'end')
+    return markerRow(item.marker, next ? rowKey(next) : 'end', item.peek)
   })
   const layout = layoutKey()
   if (layout !== shownColumns) {
@@ -1185,6 +1258,11 @@ onMounted(() => {
   })
   for (const event of ['scrollVertical', 'scrollHorizontal', 'columnResized'] as const) table.on(event as 'renderComplete', follow)
   table.on('cellEditing', () => (quick.value = null))
+  // A slim row that stands for sheet rows not shown: they open under it, or fold.
+  table.on('cellClick', (_event: UIEvent, cell: CellComponent) => {
+    const data = cell.getData() as Row
+    if (data.__marker) void togglePeek(JSON.parse(data.__state) as Marker)
+  })
   // The cell just chosen for, clicked again: its choices come back (to change the choice).
   table.on('cellClick', (_event: UIEvent, cell: CellComponent) => {
     if (chosenHere !== cellId((cell.getData() as Row).__key, cell.getField())) return
@@ -1220,7 +1298,17 @@ onBeforeUnmount(() => {
   table = null
 })
 watch(
-  () => [props.changes, props.laid, props.fields, props.flash, props.editable, props.applied, rules.value, locale.value],
+  () => [
+    props.changes,
+    props.laid,
+    peeks.value,
+    props.fields,
+    props.flash,
+    props.editable,
+    props.applied,
+    rules.value,
+    locale.value,
+  ],
   sync,
 )
 </script>
@@ -1507,6 +1595,32 @@ watch(
 .proposal-sheet .tabulator-row.is-marker-row::after {
   bottom: 0;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='6'%3E%3Cpath d='M0 6L6 0.5L12 6Z' fill='white'/%3E%3Cpath d='M0 6L6 0.5L12 6' fill='none' stroke='%23a8a29e' stroke-width='0.8'/%3E%3C/svg%3E");
+}
+/* One that stands for sheet rows not shown: a click opens them under it (the tear stays). */
+.proposal-sheet .tabulator-row.is-marker-row.is-peekable,
+.proposal-sheet .tabulator-row.is-marker-row.is-peekable .tabulator-cell {
+  cursor: pointer;
+}
+.proposal-sheet .tabulator-row.is-marker-row.is-peekable:hover,
+.proposal-sheet .tabulator-row.is-marker-row.is-peekable:hover .tabulator-cell {
+  background: #d6d3d1;
+}
+.proposal-sheet .tabulator-row.is-marker-row.is-peekable:hover .marker-text:not(.is-jump-down) {
+  color: #44403c;
+}
+.proposal-sheet .marker-action {
+  color: #57534e;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.proposal-sheet .marker-action.is-open {
+  padding: 0 5px;
+  border: 1px solid #a8a29e;
+  border-radius: 3px;
+  background: #fafaf9;
+}
+.proposal-sheet .marker-action.is-error {
+  color: #b91c1c;
 }
 /* Its text runs over the empty cells beside it, and stays at the left while scrolling. */
 .proposal-sheet .tabulator-row.is-marker-row .tabulator-cell.is-marker-cell {

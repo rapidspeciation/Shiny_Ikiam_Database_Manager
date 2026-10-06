@@ -23,7 +23,7 @@ import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary, withLinesFile
 import { duplicateIdRow, insectaryBaseRows, insectaryIdPlaces, insectaryIdRow, newRowFormulaFields, suffixedId } from './premade.mjs';
 import { formulaNotes, isPlaceholder, newRowPatternFields } from './formula-patterns.mjs';
 import { claimHolder, claimsOf } from './claims.mjs';
-import { BETWEEN_ROWS, VIEW_PARAM, VIEW_UPDATE, readView, showBetween, viewColumns } from './proposal-view.mjs';
+import { BETWEEN_ROWS, PEEK_ROWS, VIEW_PARAM, VIEW_UPDATE, readView, showBetween, viewColumns } from './proposal-view.mjs';
 import { proposalSampleWarnings } from './preserved.mjs';
 import { issuesByRecord, lookAt, rowIssues } from './look-at.mjs';
 import { compareWithSheet, currentRecord } from './needs-review.mjs';
@@ -3181,6 +3181,46 @@ export function createAssistant({ store, config = {} }) {
   }
 
   /**
+   * The sheet's rows `from`–`to` of one of the proposal's sheets, as they are
+   * now, for the table to show where a marker stands for rows it does not show
+   * (read-only, never written): each with its row, ID and the values the table
+   * can show (shownValue, the hidden columns left out), up to PEEK_ROWS of them;
+   * `rest` gives the rows after those when there are more.
+   */
+  function sheetRows(proposal, query) {
+    const sheet = String(query.sheet ?? '');
+    const from = Number(query.from);
+    const to = Number(query.to);
+    if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < from)
+      return bad(400, 'invalid_range', 'from and to: rows, from <= to.');
+    const table = parse(proposal.table_json ?? 'null');
+    const sheets = new Set([
+      ...(parse(proposal.changes_json) ?? []).map(c => c.sheet),
+      table?.sheet,
+      parse(proposal.page_json ?? 'null')?.sheet,
+    ]);
+    if (!sheets.has(sheet) || !moduleMap.has(sheet)) return bad(404, 'not_found', 'The proposal has no such sheet.');
+    // A show_rows table may name a column the proposals leave out: it shows it.
+    const named = new Set(table?.columns ?? []);
+    const hidden = f => HIDDEN_COLUMNS[sheet]?.has(f) && !named.has(f);
+    const last = Math.min(to, from + PEEK_ROWS - 1);
+    const rows = [];
+    for (let n = from; n <= last; n++) {
+      const record = store.getRecordBySheetRow(sheet, n);
+      if (!record || record.missing) continue;
+      const values = Object.fromEntries(
+        Object.keys(record.values ?? {})
+          .filter(f => !hidden(f))
+          .map(f => [f, shownValue(record, f)])
+          .filter(([, v]) => v !== null && v !== ''),
+      );
+      rows.push({ recordId: record.id, row: record.row, label: record.label || '', values });
+    }
+    const rest = last < to ? { rest: { from: last + 1, to } } : {};
+    return { status: 200, body: { sheet, from, to: last, rows, ...rest } };
+  }
+
+  /**
    * The table's Insectary_data rows whose ID is a repeat (A0E.1: the same ID
    * written on a second butterfly), marked `repeatOf`: { id: its base ID, row of
    * that ID and whether it is still an empty pre-made row, above: the ID of the
@@ -4210,6 +4250,13 @@ export function createAssistant({ store, config = {} }) {
         status: 200,
         body: { proposal: listedView(ownProposalListed(proposal.id)), rejected: out.rejected, overrode: out.overrode },
       };
+    }
+    // The sheet's rows a marker of the table stands for, opened with a click: whoever may see the proposal.
+    const rowsMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/rows$/.exec(path);
+    if (rowsMatch && method === 'GET') {
+      const proposal = teamProposal(rowsMatch[1], user);
+      if (!proposal) return bad(404, 'not_found', 'Proposal not found.');
+      return sheetRows(proposal, query);
     }
     // The obvious fixes of chosen issues as one proposal to confirm (the old Tablas → Revisión de datos list; kept for links and tools).
     if (path === '/api/chat/proposals/from-checks' && method === 'POST') {

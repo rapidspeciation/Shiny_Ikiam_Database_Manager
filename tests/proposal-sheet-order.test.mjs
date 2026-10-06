@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { createAssistant } from '../server/assistant.mjs';
-import { FEW_BETWEEN, showBetween } from '../server/proposal-view.mjs';
+import { FEW_BETWEEN, PEEK_ROWS, showBetween } from '../server/proposal-view.mjs';
 
 // The review table reads like the sheet: rows by row number, and the sheet's rows between them that the
 // proposal leaves alone shown greyed for context (never written), so nothing is hidden in between. A
@@ -43,7 +43,7 @@ async function setup(rows) {
       })
     ).body;
   const at = row => store.getRecordBySheetRow('Insectary_data', row).id;
-  return { store, call, list, at };
+  return { store, assistant, call, list, at };
 }
 
 test('a pending proposal shows its rows in sheet order, with the rows in between for context', async () => {
@@ -294,6 +294,53 @@ test('repeated IDs: a line finds the repeat (A0E.1) over its empty pre-made row;
     const hand = p.changes.find(c => c.label === 'A2E.1');
     assert.deepEqual(hand.page && [hand.page.photo, hand.page.line], [0, 4]);
     assert.ok(!p.changes.some(c => c.label === 'A2E'), "the line's own row gives way to the change made for it");
+  } finally {
+    store.close?.();
+  }
+});
+
+test("a marker's sheet rows, opened from the table: by row range, up to PEEK_ROWS, for whoever may see the proposal", async () => {
+  const { store, assistant, call, at } = await setup(
+    Array.from({ length: 119 }, (_, i) => ({
+      row: i + 2,
+      values: { Insectary_ID: `R${i + 2}`, Sex: 'NA', Tube_1_rack: 'A1' },
+    })),
+  );
+  const rows = (user, id, query) => assistant.handle({ method: 'GET', path: `/api/chat/proposals/${id}/rows`, user, query });
+  try {
+    const out = await call('propose_changes', {
+      reason: 'Lejos',
+      changes: [2, 120].map(row => ({ recordId: at(row), values: { Sex: 'male' } })),
+    });
+    assert.ok(!out.error, out.error);
+    const franz = { id: 'u1', username: 'franz', role: 'editor' };
+    const got = await rows(franz, out.proposalId, { sheet: 'Insectary_data', from: '3', to: '119' });
+    assert.equal(got.status, 200);
+    assert.equal(got.body.rows.length, PEEK_ROWS);
+    assert.deepEqual([got.body.rows[0].row, got.body.rows.at(-1).row], [3, 2 + PEEK_ROWS]);
+    assert.deepEqual(got.body.rest, { from: 3 + PEEK_ROWS, to: 119 });
+    const first = got.body.rows[0];
+    assert.equal(first.label, 'R3');
+    assert.equal(first.recordId, at(3));
+    assert.equal(first.values.Sex, 'NA');
+    assert.ok(!('Tube_1_rack' in first.values), 'the columns proposals never show stay out');
+    // A short range: all of it, nothing more.
+    const few = await rows(franz, out.proposalId, { sheet: 'Insectary_data', from: '10', to: '12' });
+    assert.deepEqual(
+      few.body.rows.map(r => r.row),
+      [10, 11, 12],
+    );
+    assert.equal(few.body.rest, undefined);
+    // Another editor may (a chat handed over); a viewer who does not own it may not.
+    const ana = { id: 'u2', username: 'ana', role: 'editor' };
+    assert.equal((await rows(ana, out.proposalId, { sheet: 'Insectary_data', from: '10', to: '12' })).status, 200);
+    const vera = { id: 'u3', username: 'vera', role: 'viewer' };
+    assert.equal((await rows(vera, out.proposalId, { sheet: 'Insectary_data', from: '10', to: '12' })).status, 404);
+    // Only the proposal's sheets, and a range that reads as one.
+    assert.equal((await rows(franz, out.proposalId, { sheet: 'Collection_data', from: '3', to: '5' })).status, 404);
+    assert.equal((await rows(franz, out.proposalId, { sheet: 'Insectary_data', from: '9', to: '5' })).status, 400);
+    assert.equal((await rows(franz, out.proposalId, { sheet: 'Insectary_data', from: 'x', to: '5' })).status, 400);
+    assert.equal((await rows(null, out.proposalId, { sheet: 'Insectary_data', from: '3', to: '5' })).status, 401);
   } finally {
     store.close?.();
   }

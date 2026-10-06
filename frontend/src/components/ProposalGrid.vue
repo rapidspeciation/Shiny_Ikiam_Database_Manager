@@ -50,7 +50,7 @@ import {
 } from '../lib/proposals'
 import type { CellValue } from '../lib/types'
 import { columnChoices, orderColumns, viewFor, type ColumnView } from '../lib/proposalColumns'
-import { layRows, repeatSummary, shownRows, unexplained, type RowOrder } from '../lib/proposalRows'
+import { layRows, repeatSummary, shownRows, unexplained, type RowOrder, type SheetRows } from '../lib/proposalRows'
 import { useSession } from '../stores/session'
 import { useLive } from '../stores/live'
 import { t } from '../lib/i18n'
@@ -465,6 +465,9 @@ const tables = computed(() =>
       : [table]
   }),
 )
+/** A sheet's rows `from`–`to` as they are now: a slim row of its table opened with a click. */
+const sheetRows = (sheet: string) => (from: number, to: number) =>
+  api<SheetRows>(`chat/proposals/${props.proposal.id}/rows?sheet=${encodeURIComponent(sheet)}&from=${from}&to=${to}`)
 /** The assistant's few words on why a photo is there ('' for none). */
 const photoNote = (n: number) => page.value?.photoNotes?.[n] ?? ''
 const photoUrl = (n: number, size: 'thumb' | 'view') => `api/proposals/${props.proposal.id}/photos/${n}?size=${size}${props.proposal.page?.photoKey ? `&v=${props.proposal.page.photoKey}` : ''}`
@@ -792,6 +795,7 @@ const statusText = computed(
         :changes="g.rows"
         :laid="g.laid"
         :notebook-order="g.paged && rowOrder === 'notebook'"
+        :load-rows="sheetRows(g.sheet)"
         :fields="g.columns"
         :types="typesOf(g.sheet)"
         :new-row-formulas="proposal.newRowFormulas?.[g.sheet] ?? []"

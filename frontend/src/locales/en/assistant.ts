@@ -363,6 +363,13 @@ export default {
     "The notebook's next line is higher up in the sheet (row {to}), before the previous line (row {from})",
   'No está en la foto · {n} fila': 'Not on the photo · {n} row',
   'No están en la foto · {n} filas': 'Not on the photo · {n} rows',
+  // A slim row opened with a click: the sheet's rows it stands for, read only (lib/proposalRows)
+  'Clic: ver las primeras {n} de estas filas de la hoja, solo para leer': 'Click: see the first {n} of these sheet rows, read only',
+  'Clic: ver estas filas de la hoja, solo para leer': 'Click: see these sheet rows, read only',
+  'cargando…': 'loading…',
+  'no se pudo leer · reintentar': 'could not read · retry',
+  '{n} ya en la tabla': '{n} already in the table',
+  'Clic: ocultar estas filas de la hoja': 'Click: hide these sheet rows',
   'Filas sin línea en las fotos de la página: añadidas a mano o encontradas fuera de la página':
     "Rows with no line on the page's photos: added by hand or found off the page",
   'no en la foto': 'not on the photo',
