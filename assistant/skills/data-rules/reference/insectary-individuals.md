@@ -136,7 +136,8 @@ Unknown. Use the cause itself; the old habit of `Other` + note "Eaten" ended
 in 2024.
 
 - **Disappearance** is a cage-count outcome: butterflies no longer seen are
-  closed in bulk with the sweep day as Death_date (not a real death date). For
+  closed in bulk with the sweep day as Death_date (not a real death date) and
+  the note "Disappeared in census" (the Censo tab writes both). For
   a single named butterfly, ask who handled it last (it may have been taken for
   an experiment).
 - Weekend deaths are dated the day they were found (often Monday).
