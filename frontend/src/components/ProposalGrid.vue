@@ -669,7 +669,7 @@ const statusText = computed(
         <span
           v-if="repeatNotice"
           class="block"
-          :title="$t('El mismo ID se escribió en dos mariposas: la repetida va en su propia fila (con .1, .2…) después de la serie, no en la fila sin usar de su ID')"
+          :title="$t('El mismo ID se escribió en dos mariposas: la repetida va en su propia fila (con .1, .2…) después de la serie, no en la fila de su ID')"
           >{{ repeatNotice }}</span
         >
         <span

@@ -139,7 +139,7 @@ describe('repeated IDs', () => {
       },
     ])
     expect(repeatSummary(page)).toBe(
-      'A0E.1–A8E.1 son repeticiones: sus filas son 13522–13530, después de Z9D, no con las filas sin usar de A0E–A8E (13263–13271, vacías)',
+      'A0E.1–A8E.1 son repeticiones: sus filas son 13522–13530, después de Z9D, no con las filas de A0E–A8E (13263–13271, aún vacías)',
     )
   })
 
@@ -164,7 +164,7 @@ describe('repeated IDs', () => {
       .filter(c => c.repeatOf)
       .map(repeatChip)
     expect(chip?.text).toBe('repite A0E (fila 13263)')
-    expect(chip?.title).toMatch(/La fila de A0E es la 13263: sin usar, vacía/)
+    expect(chip?.title).toMatch(/La fila de A0E es la 13263, aún vacía/)
     expect(repeatChip(row('A1E', 2))).toBeNull()
   })
 })

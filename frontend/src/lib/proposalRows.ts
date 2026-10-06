@@ -214,7 +214,7 @@ export function repeatRuns(changes: ProposalChange[]): RepeatRun[] {
 
 const span = (list: string[]) => (list.length > 1 ? `${list[0]}–${list.at(-1)}` : (list[0] ?? ''))
 
-/** A run in plain words: «A0E.1–A8E.1 are repeats: their rows are 13522–13530, after Z9D, not with the pre-made A0E–A8E (13263–13271, empty)». */
+/** A run in plain words: «A0E.1–A8E.1 are repeats: their rows are 13522–13530, after Z9D, not with A0E–A8E (13263–13271, still empty)». */
 export function repeatText(run: RepeatRun): string {
   const n = run.ids.length
   const head = tn(n, '{ids} es una repetición', '{ids} son repeticiones', { ids: span(run.ids) })
@@ -224,7 +224,7 @@ export function repeatText(run: RepeatRun): string {
   const notWith = !run.baseRows
     ? t('no con {bases}', { bases })
     : run.empty
-      ? tn(n, 'no con la fila sin usar de {bases} ({rows}, vacía)', 'no con las filas sin usar de {bases} ({rows}, vacías)', {
+      ? tn(n, 'no con la fila de {bases} ({rows}, aún vacía)', 'no con las filas de {bases} ({rows}, aún vacías)', {
           bases,
           rows: range(...run.baseRows),
         })
@@ -256,7 +256,7 @@ export function repeatChip(c: ProposalChange): { text: string; title: string } |
       t('El mismo ID ({id}) se escribió en dos mariposas: la repetida va en su propia fila, después de la serie, no en la fila de {id}', {
         id: r.id,
       }),
-      r.row ? (r.empty ? t('La fila de {id} es la {row}: sin usar, vacía', { id: r.id, row: r.row }) : t('La fila de {id} es la {row}', { id: r.id, row: r.row })) : '',
+      r.row ? (r.empty ? t('La fila de {id} es la {row}, aún vacía', { id: r.id, row: r.row }) : t('La fila de {id} es la {row}', { id: r.id, row: r.row })) : '',
     ]
       .filter(Boolean)
       .join('. '),

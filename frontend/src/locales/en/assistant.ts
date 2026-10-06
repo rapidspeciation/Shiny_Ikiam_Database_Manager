@@ -375,18 +375,18 @@ export default {
   'sus filas son {rows}': 'their rows are {rows}',
   'después de {id}': 'after {id}',
   'no con {bases}': 'not with {bases}',
-  'no con la fila sin usar de {bases} ({rows}, vacía)': 'not with the pre-made {bases} ({rows}, empty)',
-  'no con las filas sin usar de {bases} ({rows}, vacías)': 'not with the pre-made {bases} ({rows}, empty)',
+  'no con la fila de {bases} ({rows}, aún vacía)': 'not with {bases} ({rows}, still empty)',
+  'no con las filas de {bases} ({rows}, aún vacías)': 'not with {bases} ({rows}, still empty)',
   'no con {bases} ({rows})': 'not with {bases} ({rows})',
   'repite {id} (fila {row})': 'repeat of {id} (row {row})',
   'repite {id}': 'repeat of {id}',
   'El mismo ID ({id}) se escribió en dos mariposas: la repetida va en su propia fila, después de la serie, no en la fila de {id}':
     'The same ID ({id}) was written on two butterflies: the repeat goes in its own row, after the series, not in the row of {id}',
-  'La fila de {id} es la {row}: sin usar, vacía': 'The row of {id} is {row}: pre-made, empty',
+  'La fila de {id} es la {row}, aún vacía': 'The row of {id} is {row}, still empty',
   'La fila de {id} es la {row}': 'The row of {id} is {row}',
   'Clic: ir a esa fila': 'Click: go to that row',
-  'El mismo ID se escribió en dos mariposas: la repetida va en su propia fila (con .1, .2…) después de la serie, no en la fila sin usar de su ID':
-    'The same ID was written on two butterflies: the repeat goes in its own row (with .1, .2…) after the series, not in the pre-made row of its ID',
+  'El mismo ID se escribió en dos mariposas: la repetida va en su propia fila (con .1, .2…) después de la serie, no en la fila de su ID':
+    'The same ID was written on two butterflies: the repeat goes in its own row (with .1, .2…) after the series, not in the row of its ID',
   // The columns' order on a proposal's card (ProposalGrid, ColumnChooser)
   'Todas las columnas en el orden de la hoja, como en Google Sheets': "Every column in the sheet's order, as in Google Sheets",
   'Las columnas del cuaderno primero, en su orden de izquierda a derecha; luego las demás':
