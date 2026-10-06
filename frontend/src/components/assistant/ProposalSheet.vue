@@ -222,6 +222,7 @@ function toRow(c: ProposalChange): Row {
     JSON.stringify(c.doubts ?? null) +
     JSON.stringify(c.unreadable ?? null) +
     JSON.stringify(c.warnings ?? null) +
+    JSON.stringify(c.formulaNotes ?? null) +
     JSON.stringify(c.checks ?? null) +
     JSON.stringify(c.sheetChanged ?? null) +
     JSON.stringify(c.rowTaken ?? null) +

@@ -214,12 +214,9 @@ test('each source suggests what the workbook shows, with an honest certainty and
   const twin = one(items, 'twins', 'Insectary_data', 69, 'Sex');
   assert.deepEqual([twin.current, twin.suggested, twin.certainty], ['male', 'female', 'check']);
 
-  // The lookups missing on Collection row 3: the formula of row 2, and what it gives today.
-  const formula = one(items, 'formulas', 'Collection_data', 3, 'Preservation_medium');
-  assert.equal(formula.suggested, '=XLOOKUP(D3, Insectary_data!A:A, Insectary_data!AA:AA,"")');
-  assert.equal(formula.certainty, 'certain');
-  assert.equal(formula.manual, true);
-  assert.match(formula.reason, /Flash frozen/);
+  // Two rows with the lookups are too few to call them the team's formula (tests/formula-patterns.test.mjs
+  // has the rows that are).
+  assert.equal(one(items, 'formulas', 'Collection_data', 3, 'Preservation_medium'), undefined);
   store.close();
 });
 
@@ -237,13 +234,12 @@ test('the page filters by source, certainty and sheet, counts each, and the CSV 
   assert.equal(paged.items.length, 2);
   await assert.rejects(suggestionPage(store, { source: 'nonsense' }), { code: 'INVALID_SOURCE' });
   await assert.rejects(suggestionPage(store, { certainty: 'maybe' }), { code: 'INVALID_CERTAINTY' });
-  const csv = await suggestionsCsv(store, { source: 'formulas' });
+  const csv = await suggestionsCsv(store, { source: 'pedigree' });
   const lines = csv.trim().split('\r\n');
   assert.equal(lines[0], 'source,certainty,sheet,row,label,field,current,suggested,manual,reason,recordId');
-  assert.equal(lines.length, 5);
-  // The formula has commas and quotes: quoted as CSV.
-  assert.ok(lines[1].includes('"=XLOOKUP(D3, Insectary_data!A:A, Insectary_data!I:I,"""")"'));
-  const tsv = await suggestionsCsv(store, { source: 'formulas' }, { tsv: true });
+  assert.equal(lines.length, 4);
+  // A formula's commas and quotes are quoted as CSV, and the formulas are counted by group: tests/formula-patterns.test.mjs.
+  const tsv = await suggestionsCsv(store, { source: 'pedigree' }, { tsv: true });
   assert.equal(tsv.trim().split('\r\n')[1].split('\t').length, 11);
   store.close();
 });

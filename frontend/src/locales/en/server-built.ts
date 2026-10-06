@@ -275,12 +275,17 @@ export default {
     'Values with spaces at the start or end that change what the sheet reads: « NA», an ID or a tube with a space, or a list value the list has without that space. Notes are left alone. Certain: only the spaces go.',
   '«{value}» lleva espacios que la hoja cuenta como parte del valor': '«{value}» has spaces the sheet counts as part of the value',
   'Fórmulas que faltan': 'Missing formulas',
-  'Filas de Collection_data enviadas al insectario (Collected_Sent2Insectary) con Death_date, Preservation_date, Preservation_medium o Preserved_dead_alive vacíos donde las filas anteriores tienen la fórmula que los lee de Insectary_data. Seguro: copiar la fórmula de la fila de arriba; se muestra lo que daría hoy.':
-    'Collection_data rows sent to the insectary (Collected_Sent2Insectary) with Death_date, Preservation_date, Preservation_medium or Preserved_dead_alive empty where the rows before have the formula that reads them from Insectary_data. Certain: copy the formula down from the row above; what it would give today is shown.',
-  'falta la fórmula de la fila {from}; hoy daría vacío ({id} no tiene {target} en Insectary_data)':
-    'the formula of row {from} is missing; today it would give nothing ({id} has no {target} in Insectary_data)',
-  'falta la fórmula de la fila {from}; hoy daría {value} ({target} de {id} en Insectary_data)':
-    'the formula of row {from} is missing; today it would give {value} ({target} of {id} in Insectary_data)',
+  'Celdas sin la fórmula que el equipo copia hacia abajo en su columna: en el último año casi todas las filas del mismo tipo la tienen (p. ej. las búsquedas de Death_date y Preservation_* en las filas Collected_Sent2Insectary, Data_entry_order, la emergencia de los clutches en Insectary_stocks). Se muestra la fórmula para esa fila y lo que daría hoy. Seguro: la celda está vacía y la columna casi siempre tiene la fórmula; probable: un NA escrito que la fórmula cambiaría; revisar: lo demás. El asistente puede proponerlas, una columna por propuesta, para revisarlas y aplicarlas; las filas nuevas que crea la app ya las llevan.':
+    'Cells without the formula the team copies down their column: in the last year nearly every row of the same kind has it (e.g. the Death_date and Preservation_* lookups of Collected_Sent2Insectary rows, Data_entry_order, the clutch emergence lookups of Insectary_stocks). The formula for that row and what it would give today are shown. Certain: the cell is empty and the column nearly always has the formula; likely: a typed NA the formula would change; check: the rest. The assistant can propose them, one column per proposal, to review and apply; new rows the app creates already get them.',
+  '{n} de {total} filas{kind} del último año tienen esta fórmula (la última, fila {example}); lo que daría no se calcula aquí':
+    '{n} of {total}{kind} rows from the last year have this formula (the latest, row {example}); what it would give is not worked out here',
+  '{n} de {total} filas{kind} del último año tienen esta fórmula (la última, fila {example}); hoy daría {value}':
+    '{n} of {total}{kind} rows from the last year have this formula (the latest, row {example}); today it would give {value}',
+  // server/assistant.mjs: a formula a proposal writes, compared with its column's (server/formula-patterns.mjs)
+  'No es la fórmula de la columna: {n} de {rows} filas{kind} del último año tienen {usual}':
+    "Not the column's formula: {n} of {rows}{kind} rows from the last year have {usual}",
+  'Busca en columnas enteras (A:A) en cada fila: un rango fijo es más ligero, y las columnas leídas de la misma fila se encuentran una vez (MATCH en una columna, INDEX en las demás)':
+    'Looks up whole columns (A:A) on every row: a fixed range is lighter, and columns read from the same row are found once (MATCH in one column, INDEX in the others)',
   'Fechas imposibles': 'Impossible dates',
   'Fechas que no son fechas, en el futuro o antes de 2009, cuando se puede leer la fecha que se quiso escribir: un año con un dígito cambiado (2926 por 2026), un mes en otro idioma («13-mrt-26») o un día sin año («9/30»). Se sugiere la lectura más cercana a las fechas de las filas de alrededor; probable si es la única a menos de 120 días de ellas.':
     'Dates that are no date, in the future or before 2009, when the intended date can be read: a year with one digit changed (2926 for 2026), a month in another language («13-mrt-26») or a day without its year («9/30»). The reading closest to the dates of the rows around is suggested; likely when it is the only one within 120 days of them.',

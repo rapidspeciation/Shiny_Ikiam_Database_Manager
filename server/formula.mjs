@@ -2,11 +2,14 @@
 // so a proposal can show what a formula cell will give once its row takes the
 // proposed values (server/formula-gives.mjs). It knows the shapes found in the
 // sheets' formula columns: IF, IFS, AND/OR/NOT, comparisons, &, arithmetic,
-// XLOOKUP and INDEX/MATCH (exact) against other sheets, COUNTIF, ISERROR,
+// XLOOKUP, VLOOKUP and INDEX/MATCH (exact) against other sheets, COUNTIF, ISERROR,
 // IFERROR, IFNA, ISTEXT, ISBLANK, HYPERLINK (its label), text functions (LEFT,
-// MID, RIGHT, LEN, FIND, UPPER, LOWER, TRIM, CHAR, CODE), DATE, TRUE/FALSE.
-// Anything else (an approximate MATCH, TEXT with a format, an unknown function
-// or column) throws Unsupported: the caller then keeps the sheet's own value.
+// MID, RIGHT, LEN, FIND, SEARCH, UPPER, LOWER, TRIM, CHAR, CODE, CONCAT,
+// REGEXMATCH, REGEXREPLACE), TEXT of a date, DATE, ROW, ROUND, ABS, VALUE, TRUE/FALSE.
+// Anything else (an approximate MATCH, TEXT with a number format, an unknown
+// function or column) throws Unsupported: the caller then keeps the sheet's own
+// value. Formulas as the Sheets API gives them: English names, commas (a ";" is
+// read as a comma too).
 //
 // Pure: the cells are read through a context { cell(sheet, col, row),
 // find(sheet, col, value, r1, r2), count(sheet, col, value, r1, r2) } where
@@ -456,7 +459,10 @@ function call(name, args, own, ctx) {
       return Math.round((ms - Date.UTC(1899, 11, 30)) / 864e5);
     }
     case 'XLOOKUP': {
-      need(3, 4);
+      need(3, 6);
+      // Exact match (0) searched from the first row (1), the defaults: the only ones worked out.
+      if (args.length > 4 && toNumber(arg(4)) !== 0) throw new Unsupported('XLOOKUP with another match mode');
+      if (args.length > 5 && toNumber(arg(5)) !== 1) throw new Unsupported('XLOOKUP with another search mode');
       const key = arg(0);
       const look = rangeArg(args[1], own, ctx);
       const result = rangeArg(args[2], own, ctx);
@@ -467,6 +473,65 @@ function call(name, args, own, ctx) {
         throw NA;
       }
       return ctx.cell(result.sheet, result.c1, result.r1 + (at - look.r1));
+    }
+    case 'VLOOKUP': {
+      need(4);
+      if (toBool(arg(3)) !== false) throw new Unsupported('VLOOKUP without exact match');
+      const key = arg(0);
+      const range = rangeArg(args[1], own, ctx);
+      const n = toNumber(arg(2));
+      if (n < 1 || range.c1 + n - 1 > range.c2) throw REF;
+      const at = findIn({ ...range, c2: range.c1 }, key, ctx);
+      if (at === null) throw NA;
+      return ctx.cell(range.sheet, range.c1 + n - 1, at);
+    }
+    case 'ROW': {
+      need(0, 1);
+      if (!args.length) return own;
+      const node = args[0];
+      if (node.t === 'ref' && node.row) return rowOf(node.row, own);
+      if (node.t === 'range') return bounds(node, own).r1;
+      throw new Unsupported('ROW of a whole column');
+    }
+    case 'TEXT': {
+      need(2);
+      const v = arg(0);
+      const format = toText(arg(1));
+      if (typeof v !== 'number') return toText(v);
+      const out = dateText(v, format);
+      if (out === undefined) throw new Unsupported(`TEXT with the format ${format}`);
+      return out;
+    }
+    case 'CONCAT':
+      need(2);
+      return toText(arg(0)) + toText(arg(1));
+    case 'ROUND': {
+      need(1, 2);
+      const f = 10 ** (args.length > 1 ? toNumber(arg(1)) : 0);
+      return Math.round(toNumber(arg(0)) * f) / f;
+    }
+    case 'ABS':
+      need(1);
+      return Math.abs(toNumber(arg(0)));
+    case 'VALUE':
+      need(1);
+      return toNumber(arg(0));
+    case 'SEARCH': {
+      need(2, 3);
+      const at = toText(arg(1)).toLowerCase().indexOf(toText(arg(0)).toLowerCase(), (args.length > 2 ? toNumber(arg(2)) : 1) - 1);
+      if (at < 0) throw VALUE;
+      return at + 1;
+    }
+    case 'REGEXMATCH':
+    case 'REGEXREPLACE': {
+      need(name === 'REGEXMATCH' ? 2 : 3);
+      let pattern;
+      try {
+        pattern = new RegExp(toText(arg(1)), name === 'REGEXREPLACE' ? 'g' : '');
+      } catch {
+        throw new Unsupported(`${name} with this expression`);
+      }
+      return name === 'REGEXMATCH' ? pattern.test(toText(arg(0))) : toText(arg(0)).replace(pattern, toText(arg(2)));
     }
     case 'MATCH': {
       need(2, 3);
@@ -497,5 +562,22 @@ function call(name, args, own, ctx) {
   }
   throw new Unsupported(`function ${name}`);
 }
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** TEXT(serial, format) for date formats (dd-mmm-yy, yyyy-mm-dd, d/m/yyyy…); undefined for any other format. */
+function dateText(serial, format) {
+  if (!/^(?:yyyy|yy|mmm|mm|m|dd|d|[-/ .])+$/i.test(format)) return undefined;
+  const d = new Date(Date.UTC(1899, 11, 30) + Math.floor(serial) * 864e5);
+  const parts = {
+    yyyy: String(d.getUTCFullYear()),
+    yy: String(d.getUTCFullYear()).slice(-2),
+    mmm: MONTHS[d.getUTCMonth()],
+    mm: String(d.getUTCMonth() + 1).padStart(2, '0'),
+    m: String(d.getUTCMonth() + 1),
+    dd: String(d.getUTCDate()).padStart(2, '0'),
+    d: String(d.getUTCDate()),
+  };
+  return format.replace(/yyyy|yy|mmm|mm|m|dd|d/gi, t => parts[t.toLowerCase()]);
+}
+
 /** A formula's value as a cell shows it: errors as their code (#N/A), blank as null. */
 export const shownResult = v => (isError(v) ? v.code : v === '' || v === undefined ? null : v);

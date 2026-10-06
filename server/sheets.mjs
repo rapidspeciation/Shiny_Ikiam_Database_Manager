@@ -308,7 +308,7 @@ export class GoogleSheets {
 /**
  * The Sheets API on local rows, for tests and offline mode. Cells keep what
  * Google keeps (userEnteredValue, effectiveValue, userEnteredFormat,
- * dataValidation). `evaluate(formula, { row, column, value })` gives the
+ * dataValidation). `evaluate(formula, { sheet, row, column, value })` gives the
  * effective value of a pasted formula (Google computes it; tests supply the
  * formulas they need). `protectedRanges` lists, per sheet, ranges the
  * credential may not edit, as Google reports them.
@@ -429,7 +429,15 @@ export class LocalSheets {
     for (const [key, value] of Object.entries(changes)) {
       const column = columns ? columns[key] : layout.columns.get(key);
       if (column === undefined) throw new Error(`Unknown field ${key}`);
-      target.cells[column] = asCell(value);
+      const cell = asCell(value);
+      const formula = cell.userEnteredValue?.formulaValue;
+      if (formula) {
+        // What Google would compute, for the formulas this LocalSheets can work out.
+        const result = this.evaluate(formula, { sheet, row, column, value: (r, c) => effectiveOf(this.cell(sheet, r, c)) });
+        if (result !== undefined && result !== null)
+          cell.effectiveValue = typeof result === 'number' ? { numberValue: result } : { stringValue: String(result) };
+      }
+      target.cells[column] = cell;
     }
     return { replies: Object.keys(changes).map(() => ({})) };
   }
@@ -469,6 +477,7 @@ export class LocalSheets {
         const formula = cell?.userEnteredValue?.formulaValue;
         if (!formula) continue;
         const value = this.evaluate(formula, {
+          sheet,
           row,
           column,
           value: (r, c) => effectiveOf(this.cell(sheet, r, c)),

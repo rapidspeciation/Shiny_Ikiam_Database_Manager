@@ -4,7 +4,8 @@ import { createReports } from './reports.mjs';
 import { MAX_BATCH, TYPED_OVER_FORMULA, renamesWithSuffix, sameAsFormula, uniqueIdIndex } from './batch.mjs';
 import { allIssues, checkData } from './checks.mjs';
 import { agreedFixes, markApplied } from './review.mjs';
-import { CERTAINTIES, suggestionPage } from './suggestions/index.mjs';
+import { CERTAINTIES, allSuggestions, suggestionPage } from './suggestions/index.mjs';
+import { formulaGroup } from './suggestions/formulas.mjs';
 import { alerts } from './alerts.mjs';
 import { msg, tpl, withoutMsgs } from './messages.mjs';
 import { columnKeys, columnOf, comparable, isSumField, labelFor, moduleMap, simpleSum, validateValues, withColumnNames } from './schema.mjs';
@@ -19,6 +20,7 @@ import { FILTERS_DOC, FIND_BUDGET, RECORD_TOOLS, compactRecord, countRecords, fi
 import { RESULT_BUDGET, fitList, fitResult } from './tool-budget.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
 import { duplicateIdRow, insectaryIdPlaces, insectaryIdRow, newRowFormulaFields } from './premade.mjs';
+import { formulaNotes, isPlaceholder, newRowPatternFields } from './formula-patterns.mjs';
 import { claimHolder, claimsOf } from './claims.mjs';
 import { BETWEEN_ROWS, VIEW_PARAM, VIEW_UPDATE, readView, showBetween, viewColumns } from './proposal-view.mjs';
 import { proposalSampleWarnings } from './preserved.mjs';
@@ -67,6 +69,21 @@ const withSheetTimes = values =>
           return [key, m ? (Number(m[1]) * 60 + Number(m[2])) / 1440 : value];
         }),
       );
+/** A formula note (formula-patterns.mjs formulaNotes) for the assistant, on row `row`. */
+const formulaNoteText = (note, row) =>
+  note.code === 'usual'
+    ? `Not the column's usual formula: ${note.n} of ${note.rows}${note.kind ? ` ${note.kind}` : ''} rows of the last year hold ${note.usual} (as on row ${row}). The table shows both.`
+    : "Looks up whole columns (A:A) on every row: a fixed range (Insectary_data!$A$2:$A$30000) is lighter, and columns read from the same row are found once (MATCH in one column, INDEX in the others).";
+/** A formula note for the table (Spanish, with its descriptor). */
+const formulaNoteMsg = note =>
+  note.code === 'usual'
+    ? msg('No es la fórmula de la columna: {n} de {rows} filas{kind} del último año tienen {usual}', {
+        n: note.n,
+        rows: note.rows,
+        kind: note.kind ? ` ${note.kind}` : '',
+        usual: note.usual,
+      })
+    : msg('Busca en columnas enteras (A:A) en cada fila: un rango fijo es más ligero, y las columnas leídas de la misma fila se encuentran una vez (MATCH en una columna, INDEX en las demás)');
 const parse = value => {
   try {
     return JSON.parse(value);
@@ -290,12 +307,22 @@ const TOOLS = [
                 filters: { type: 'object' },
                 recordIds: { type: 'array', items: { type: 'string' } },
                 rows: { type: 'object', description: '{from, to}: sheet row numbers, pre-made rows too' },
-                onlyWhereFormula: { type: 'boolean', description: 'Only cells holding a formula' },
+                onlyWhereFormula: { type: 'boolean' },
                 replacesFormula: { type: 'string', description: 'Only cells holding this formula ({row})' },
                 set: { type: 'object' },
                 note: { type: 'string' },
               },
               required: ['sheet', 'set'],
+            },
+          },
+          missingFormulas: {
+            type: 'array',
+            description:
+              "«Fórmulas que faltan» groups (list_suggested_edits `group`: sheet · column · kind) whose cells get the column's formula: certain and likely ones, or `certainty`.",
+            items: {
+              type: 'object',
+              properties: { sheet: { type: 'string' }, column: { type: 'string' }, kind: { type: 'string' }, certainty: { type: 'string' } },
+              required: ['sheet', 'column'],
             },
           },
           reason: { type: 'string' },
@@ -342,7 +369,8 @@ const TOOLS = [
           '- Without filters, the answer also lists the sources with their description and counts.',
           '- Each suggestion: sheet, row, recordId, label, field, current, suggested (null = a person must decide), certainty, reason (the evidence, Spanish).',
           '- certainty: certain = only the spelling changes; likely = strong evidence; check = a lead for someone who knows.',
-          '- manual: true = a formula cell, fixed by hand in Google Sheets (`propose_changes` cannot write it).',
+          '- manual: true = fixed by hand in Google Sheets (`propose_changes` cannot write it).',
+          '- formula: true = `suggested` is a formula, written as {"formula": …}; a whole group at once: `propose_changes` missingFormulas.',
           "To make some of them: one `propose_changes` with those (the reason as each row's note). `check` suggestions and those without a value are for the person to decide first.",
         ].join('\n'),
       parameters: {
@@ -871,8 +899,12 @@ export function createAssistant({ store, config = {} }) {
     for (const [key, value] of Object.entries(values)) if (value?.formula && isSumField(sheet, key)) values[key] = value.formula;
     const formulas = createFormulaFields(sheet);
     const kept = key => isSumField(sheet, key) && values[key] !== null;
-    const dropped = Object.keys(values).filter(key => formulas.has(key) && !kept(key));
-    for (const key of Object.keys(values)) if ((formulas.has(key) && !kept(key)) || values[key] === null) delete values[key];
+    // Columns rows of this kind keep as formulas (server/formula-patterns.mjs): the save writes the
+    // formula there, over a placeholder NA; a real value typed there is the person's and stays.
+    const patterned = newRowPatternFields(store, sheet, values);
+    const leave = key => (formulas.has(key) && !kept(key)) || (patterned.has(key) && isPlaceholder(values[key]));
+    const dropped = Object.keys(values).filter(leave);
+    for (const key of Object.keys(values)) if (leave(key) || values[key] === null) delete values[key];
     if (!Object.keys(values).length) return { error: `${at}: the new row has no values` };
     const lists = listOptions(store, sheet);
     for (const [field, value] of Object.entries(values)) {
@@ -1389,6 +1421,71 @@ export function createAssistant({ store, config = {} }) {
     });
   }
 
+  /** What to tell about the formulas a row of a proposal writes (formula-patterns.mjs formulaNotes), by column. */
+  function formulaNotesOf(change) {
+    if (!change.formulaCells?.length || change.create || !change.row) return {};
+    const values = { ...(store.getRecord(change.recordId)?.values ?? {}), ...change.values };
+    const out = {};
+    for (const field of change.formulaCells) {
+      const notes = formulaNotes(store, change.sheet, field, change.values[field], change.row, values);
+      if (notes.length) out[field] = notes;
+    }
+    return out;
+  }
+  /** The formula notes of a proposal's rows, for the assistant: one line per column and kind of note, with how many rows. */
+  function formulaNotesSummary(changes) {
+    const seen = new Map();
+    for (const change of changes)
+      for (const [field, notes] of Object.entries(formulaNotesOf(change)))
+        for (const note of notes) {
+          const key = `${change.sheet}\u0000${field}\u0000${note.code}`;
+          const entry = seen.get(key) ?? seen.set(key, { sheet: change.sheet, column: field, rows: 0, note: formulaNoteText(note, change.row) }).get(key);
+          entry.rows++;
+        }
+    return [...seen.values()];
+  }
+
+  /**
+   * propose_changes' missingFormulas: the cells «Fórmulas que faltan» lists for
+   * each group (sheet · column · kind) become changes writing the column's
+   * formula, added to `changes`; at most FORMULA_ROWS rows (`left`: how many wait
+   * for another proposal, once this one is applied).
+   */
+  async function missingFormulaChanges(input) {
+    const wanted = input.missingFormulas;
+    if (!Array.isArray(wanted) || !wanted.length || wanted.length > 20)
+      return { error: 'missingFormulas: 1 to 20 groups, each {sheet, column, kind?}' };
+    const { items } = await allSuggestions(store);
+    const listed = items.filter(s => s.source === 'formulas');
+    const byRow = new Map();
+    let left = 0;
+    for (const [i, w] of wanted.entries()) {
+      const at = `missingFormulas[${i}]`;
+      const column = columnOf(String(w?.sheet ?? ''), w?.column);
+      if (column.error) return { error: `${at}: ${column.error}` };
+      const sheet = String(w.sheet);
+      const group = formulaGroup(sheet, column.key, w.kind ? clip(w.kind, 80) : null);
+      const certainties = w.certainty ? String(w.certainty).split(',').map(c => c.trim()) : ['certain', 'likely'];
+      const bad = certainties.find(c => !CERTAINTIES.includes(c));
+      if (bad) return { error: `${at}: certainty is ${CERTAINTIES.join(', ')}` };
+      const found = listed.filter(s => s.group === group && certainties.includes(s.certainty));
+      if (!found.length) {
+        const groups = [...new Set(listed.filter(s => s.sheet === sheet).map(s => s.group))];
+        return { error: `${at}: no missing formulas in ${group} (${certainties.join(', ')}). ${groups.length ? `Groups of ${sheet}: ${groups.join('; ')}` : `None listed in ${sheet}.`}` };
+      }
+      for (const s of found) {
+        const row = byRow.get(s.recordId);
+        if (!row && byRow.size >= FORMULA_ROWS) {
+          left++;
+          continue;
+        }
+        if (row) row.values[s.field] = { formula: s.suggested };
+        else byRow.set(s.recordId, { recordId: s.recordId, values: { [s.field]: { formula: s.suggested } }, note: clip(s.reason, 300) });
+      }
+    }
+    return { args: { ...input, missingFormulas: undefined, changes: [...(input.changes ?? []), ...byRow.values()] }, left };
+  }
+
   /**
    * propose_changes as the assistant calls it; `literal` for fixes built by the
    * app (the Revisión tab), whose values are taken as they are.
@@ -1430,6 +1527,8 @@ export function createAssistant({ store, config = {} }) {
       told: noSample.flatMap(n => n.missing.map(field => ({ index: n.index, field }))),
       formulaEmpty: speciesLeftEmpty(changes),
     });
+    // Formulas not the column's usual one, or looking up whole columns: said with how many rows.
+    const formulaNoted = formulaNotesSummary(changes);
     // Row indexes for update_proposal (new rows first, then edits of existing rows). A long
     // proposal: a bulk call's preview, or where to read them.
     const listed = changes.length <= (bulk ? 30 : 100);
@@ -1447,6 +1546,7 @@ export function createAssistant({ store, config = {} }) {
           }
         : {}),
       ...(look ? { lookAt: look } : {}),
+      ...(formulaNoted.length ? { formulaNotes: formulaNoted } : {}),
       ...(dropped.length ? { leftOut: `Formula columns left out of the new rows: ${dropped.join(', ')}` } : {}),
       ...(ignored.length ? { noChange: ignored.slice(0, 50), noChangeNote: 'null means no change: these cells keep the sheet value. To empty one give {"clear": true}.' } : {}),
       ...(listed
@@ -2790,6 +2890,9 @@ export function createAssistant({ store, config = {} }) {
       if (change.formulaCells?.length) {
         const old = Object.fromEntries(change.formulaCells.filter(f => before?.[f]?.formula).map(f => [f, before[f].formula]));
         if (Object.keys(old).length) view.oldFormulas = old;
+        const notes = formulaNotesOf(change);
+        if (Object.keys(notes).length)
+          view.formulaNotes = Object.fromEntries(Object.entries(notes).map(([f, list]) => [f, list.map(formulaNoteMsg)]));
       }
       if (hints && Object.keys(hints).length) view.hints = Object.fromEntries(Object.entries(hints).map(([f, h]) => [f, hintOf(h)]));
       if (index >= 0 && checked[index])
@@ -3399,7 +3502,12 @@ export function createAssistant({ store, config = {} }) {
         date: args.date ? clip(args.date, 10) : undefined,
         collector: args.collector ? clip(args.collector, 120) : undefined,
       });
-    if (name === 'propose_changes') return withGoogle(await proposeChanges(args, context));
+    if (name === 'propose_changes') {
+      const missing = args.missingFormulas ? await missingFormulaChanges(args) : null;
+      if (missing?.error) return missing;
+      const out = await proposeChanges(missing ? missing.args : args, context);
+      return withGoogle(missing?.left && !out.error ? { ...out, missingFormulasLeft: missing.left } : out);
+    }
     if (name === 'update_proposal') return updateProposal(args, context);
     if (name === 'get_proposal') return getProposal(args, context);
     if (name === 'list_proposals') return listProposals(args, context);

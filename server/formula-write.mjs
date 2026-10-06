@@ -3,8 +3,16 @@
 // `{row}` in the text is the row's own number, so one bulk gives every row its
 // formula. Checked before proposing (it starts with "=", its brackets and quotes
 // close, it parses, its same-row references are columns of the sheet), written as
-// a formula (userEnteredValue.formulaValue: as typed in Sheets), kept in history
-// as formula text, so an undo puts back the formula or value it replaced.
+// a formula (userEnteredValue.formulaValue), kept in history as formula text, so
+// an undo puts back the formula or value it replaced.
+//
+// The Sheets API reads and writes cell formulas in English with commas
+// (=IF(A2="","",XLOOKUP(…))) whatever the workbook's language: every formula the
+// app reads from the team's Spanish workbook comes that way, and Sheets shows
+// them in Spanish to people (SI, BUSCARX). A Spanish name or a ";" between
+// arguments is refused with the English form. Functions that make Sheets
+// recalculate the whole workbook after every edit (INDIRECT, OFFSET, NOW,
+// TODAY, RAND, RANDBETWEEN) are refused too, with what to use instead.
 
 import { moduleMap } from './schema.mjs';
 import { parseFormula, relativeFormula } from './formula.mjs';
@@ -29,6 +37,90 @@ export const sameFormula = (a, b) => formulaKey(a) === formulaKey(b);
 export function sameCell(a, b) {
   if (isFormulaValue(a) && isFormulaValue(b)) return sameFormula(a.formula, b.formula);
   return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+}
+
+/** The function names of a formula, upper case, outside text in quotes. */
+export function functionNames(text) {
+  const outside = String(text ?? '')
+    .split('"')
+    .filter((_, i) => !(i % 2))
+    .join('"');
+  return [...outside.matchAll(/(?<![A-Za-z0-9_.$!'])([A-Za-zÁÉÍÓÚÑáéíóúñ][A-Za-z0-9_.ÁÉÍÓÚÑáéíóúñ]*)\s*\(/g)].map(m => m[1].toUpperCase());
+}
+
+/** Spanish function names (as Sheets shows them in Spanish) → the English ones the API takes. */
+export const SPANISH_NAMES = {
+  SI: 'IF',
+  'SI.CONJUNTO': 'IFS',
+  'SI.ERROR': 'IFERROR',
+  'SI.ND': 'IFNA',
+  Y: 'AND',
+  O: 'OR',
+  NO: 'NOT',
+  BUSCARX: 'XLOOKUP',
+  BUSCARV: 'VLOOKUP',
+  COINCIDIR: 'MATCH',
+  COINCIDIRX: 'XMATCH',
+  INDICE: 'INDEX',
+  ÍNDICE: 'INDEX',
+  'CONTAR.SI': 'COUNTIF',
+  'CONTAR.SI.CONJUNTO': 'COUNTIFS',
+  CONTAR: 'COUNT',
+  SUMA: 'SUM',
+  PROMEDIO: 'AVERAGE',
+  ESERROR: 'ISERROR',
+  ESBLANCO: 'ISBLANK',
+  ESTEXTO: 'ISTEXT',
+  ESNUMERO: 'ISNUMBER',
+  ESNÚMERO: 'ISNUMBER',
+  HIPERVINCULO: 'HYPERLINK',
+  HIPERVÍNCULO: 'HYPERLINK',
+  IZQUIERDA: 'LEFT',
+  DERECHA: 'RIGHT',
+  EXTRAE: 'MID',
+  LARGO: 'LEN',
+  ENCONTRAR: 'FIND',
+  HALLAR: 'SEARCH',
+  MAYUSC: 'UPPER',
+  MINUSC: 'LOWER',
+  ESPACIOS: 'TRIM',
+  CONCATENAR: 'CONCATENATE',
+  TEXTO: 'TEXT',
+  FECHA: 'DATE',
+  FILA: 'ROW',
+  CARACTER: 'CHAR',
+  CODIGO: 'CODE',
+  REDONDEAR: 'ROUND',
+  VALOR: 'VALUE',
+  INDIRECTO: 'INDIRECT',
+  DESREF: 'OFFSET',
+  AHORA: 'NOW',
+  HOY: 'TODAY',
+  ALEATORIO: 'RAND',
+  'ALEATORIO.ENTRE': 'RANDBETWEEN',
+};
+
+/** Volatile functions: Sheets recalculates every cell that uses them after any edit to the workbook. */
+export const VOLATILE = {
+  INDIRECT: 'a fixed range (Insectary_data!$A$2:$A$30000) or INDEX over one',
+  OFFSET: 'a fixed range, or INDEX(range, n) for a cell in it',
+  NOW: 'the date or time typed as a value',
+  TODAY: 'the date typed as a value',
+  RAND: 'a number typed as a value',
+  RANDBETWEEN: 'a number typed as a value',
+};
+/** The volatile functions a formula uses (English names, its Spanish ones included). */
+export const volatileIn = text => [...new Set(functionNames(text).map(n => SPANISH_NAMES[n] ?? n))].filter(n => n in VOLATILE);
+
+const LOOKUPS = new Set(['XLOOKUP', 'VLOOKUP', 'HLOOKUP', 'MATCH', 'XMATCH', 'INDEX', 'COUNTIF', 'COUNTIFS', 'SUMIF', 'SUMIFS', 'FILTER']);
+/** How many lookups of a formula read whole columns (Insectary_data!A:A): each row of the column searches the whole sheet. */
+export function wholeColumnLookups(text) {
+  if (!functionNames(text).some(n => LOOKUPS.has(n))) return 0;
+  const outside = String(text ?? '')
+    .split('"')
+    .filter((_, i) => !(i % 2))
+    .join('"');
+  return [...outside.matchAll(/(?<![A-Za-z0-9_$])\$?[A-Za-z]{1,3}:\$?[A-Za-z]{1,3}(?![A-Za-z0-9_(])/g)].length;
 }
 
 /** The highest column (zero-based) of a sheet, by its live header when known. */
@@ -58,6 +150,19 @@ export function checkFormula(sheet, given, row, layout = null) {
     }
   }
   if (depth) return { error: `${depth} "(" not closed in ${clip(text)}` };
+  // As the Sheets API takes it: English names, commas.
+  const spanish = [...new Set(functionNames(text))].filter(n => SPANISH_NAMES[n]);
+  if (spanish.length)
+    return {
+      error: `the Sheets API takes function names in English: ${spanish.map(n => `${SPANISH_NAMES[n]} for ${n}`).join(', ')} (${clip(text)})`,
+    };
+  if (text.split('"').some((part, i) => !(i % 2) && part.includes(';')))
+    return { error: `the Sheets API takes commas between arguments, not ";" (${clip(text)})` };
+  const volatile = volatileIn(text);
+  if (volatile.length)
+    return {
+      error: `${volatile.join(', ')} make${volatile.length > 1 ? '' : 's'} Sheets recalculate the whole workbook after every edit: use ${volatile.map(n => VOLATILE[n]).join('; ')} (${clip(text)})`,
+    };
   let tree;
   try {
     tree = parseFormula(relativeFormula(text, row));

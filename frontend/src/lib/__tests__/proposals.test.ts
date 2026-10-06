@@ -507,6 +507,19 @@ describe("a notebook page's proposal", () => {
       oldFormula: '=IFS(U9="","",U9="NA","NA")',
     })
   })
+  it("a formula that is not its column's usual one is said beside the cell, with the usual one", () => {
+    const note = {
+      text: 'No es la fórmula de la columna: 30 de 36 filas del último año tienen =XLOOKUP(D43,Insectary_data!A:A,Insectary_data!I:I,"")',
+    }
+    const row = edited(
+      'r1',
+      { Death_date: '=XLOOKUP(D43,Insectary_data!A:A,Insectary_data!M:M,"")' },
+      { sheet: 'Collection_data', rowValues: {}, current: undefined, formulaCells: ['Death_date'], formulaNotes: { Death_date: [note] } },
+    )
+    const cell = cellOf(row, 'Death_date')
+    expect(cell.formulaNotes).toEqual([note])
+    expect(cellComments(cell)).toContainEqual({ label: 'Fórmula', text: note.text, kind: 'doubt' })
+  })
   it("typing the species the formula gives leaves it to the formula (not a change), the assistant's other one aside", () => {
     const row = edited(
       'r1',

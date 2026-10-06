@@ -246,8 +246,10 @@ export interface Suggestion {
   reasonMsg?: Msg
   related?: IssueRef[]
   group?: string
-  /** Done by hand in Google Sheets (a formula cell): the app's proposals cannot write it. */
+  /** Done by hand in Google Sheets (a formula cell typed over): the app's proposals cannot write it. */
   manual?: boolean
+  /** `suggested` is a formula, which a proposal of the assistant writes as such. */
+  formula?: boolean
   firstSeen?: string
 }
 export interface SuggestionSource {
@@ -255,6 +257,8 @@ export interface SuggestionSource {
   title: string
   describe: string
   counts: Record<Certainty | 'total', number>
+  /** Listed group by group (sheet · column) with a heading and its counts. */
+  byGroup?: boolean
 }
 export interface SuggestionPage {
   computedAt: string
@@ -264,6 +268,8 @@ export interface SuggestionPage {
   limit: number
   sources: SuggestionSource[]
   sheets: string[]
+  /** Per group of a source listed by group (sheet · column): how many, by certainty. */
+  groups?: Record<string, Record<Certainty | 'total', number>>
   items: Suggestion[]
 }
 /** Certainties, surest first: the server's keys, the tab's words (Spanish keys of lib/i18n.ts) and colours. */

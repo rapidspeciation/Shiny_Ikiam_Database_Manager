@@ -151,6 +151,8 @@ export interface ProposalChange {
   formulaCells?: string[]
   /** The formula those cells hold now, which the proposal replaces. */
   oldFormulas?: Record<string, string>
+  /** What to know about a formula the proposal writes: not the column's usual one, lookups over whole columns. */
+  formulaNotes?: Record<string, Hint[]>
   /** Its place on the notebook page. */
   page?: PageLine
   /** A row off the photo with the same error as this line of the page (match_notebook): shown apart, after the page. */
@@ -345,6 +347,7 @@ export interface CellInfo {
   formulaWrite?: boolean
   computed?: CellValue
   oldFormula?: string
+  formulaNotes?: Hint[]
   /** Edited in the sheet since the proposal read it (violet): kept from the sheet, or the proposal's written over it. */
   sheetEdit?: SheetEdit
   /** A `kept` cell's value in the proposal (set aside, not written). */
@@ -388,6 +391,7 @@ export function cellOf(change: ProposalChange, field: string, newRowFormulas: st
           formulaWrite: true,
           ...(change.formulaGives && field in change.formulaGives ? { computed: change.formulaGives[field] } : {}),
           ...(change.oldFormulas?.[field] ? { oldFormula: change.oldFormulas[field] } : {}),
+          ...(change.formulaNotes?.[field]?.length ? { formulaNotes: change.formulaNotes[field] } : {}),
         }
       : {}
     return {
@@ -498,6 +502,7 @@ export function cellComments(c: CellInfo, show: (value: CellValue | undefined) =
     out.push({ label: t('Editada en la hoja'), text: `${read} · ${then}`, kind: 'edited' })
   }
   if (c.warning) out.push({ label: t('Falta'), text: tx(c.warning.text, c.warning.msg), kind: 'doubt' })
+  for (const h of c.formulaNotes ?? []) out.push({ label: t('Fórmula'), text: tx(h.text, h.msg), kind: 'doubt' })
   // The checks are about the sheet's value: said while the cell keeps it.
   if (['sheet', 'locked', 'kept', 'reverted'].includes(c.kind))
     for (const h of c.checks ?? []) out.push({ label: t('Revisión'), text: tx(h.text, h.msg), kind: 'doubt' })

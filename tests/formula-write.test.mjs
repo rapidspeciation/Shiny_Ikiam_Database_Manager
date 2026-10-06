@@ -24,6 +24,16 @@ test('a formula is checked before it is proposed', () => {
   assert.match(checkFormula('Insectary_data', { formula: '=IF(U2="x),1,2)' }, 2).error, /quote/);
   assert.match(checkFormula('Insectary_data', { formula: '=IF(ZZ2="",1,2)' }, 2).error, /column ZZ is not one of Insectary_data's columns/);
   assert.match(checkFormula('Insectary_data', { formula: '=IF(U2=,,)+' }, 2).error, /does not read/);
+  // As the Sheets API takes formulas, whatever the workbook's language: English names, commas.
+  assert.match(
+    checkFormula('Insectary_data', { formula: '=SI(U2="","",BUSCARX(A2,Collection_data!D:D,Collection_data!E:E,"NA"))' }, 2).error,
+    /English: IF for SI, XLOOKUP for BUSCARX/,
+  );
+  assert.match(checkFormula('Insectary_data', { formula: '=IF(U2="";"";1)' }, 2).error, /commas between arguments/);
+  assert.ok(checkFormula('Insectary_data', { formula: '=IF(U2="a;b","SI(",1)' }, 2).formula, 'text in quotes is not looked at');
+  // Volatile functions: refused, with what to use instead.
+  assert.match(checkFormula('Insectary_data', { formula: '=INDIRECT("A"&ROW())' }, 2).error, /INDIRECT makes Sheets recalculate the whole workbook after every edit: use a fixed range/);
+  assert.match(checkFormula('Insectary_data', { formula: '=IF(U2="",TODAY(),OFFSET(A2,1,0))' }, 2).error, /TODAY, OFFSET make Sheets recalculate .*the date typed as a value; a fixed range/);
   // Another sheet's columns are not checked against this one's.
   assert.ok(checkFormula('Insectary_data', { formula: '=XLOOKUP(A2,Lists!ZZ:ZZ,Lists!A:A)' }, 2).formula);
   // Google may change the spacing and the case of names: the same formula.
@@ -107,6 +117,8 @@ test('one row: a formula over a typed value, a plain "=..." stays text, mistakes
   try {
     const bad = await call('propose_changes', { reason: 'x', changes: [{ recordId: record(4).id, values: { T2_Preservation_medium: { formula: '=IFS(U4="",""' } } }] });
     assert.match(bad.error, /not closed/);
+    const volatile = await call('propose_changes', { reason: 'x', changes: [{ recordId: record(4).id, values: { T2_Preservation_medium: { formula: '=OFFSET(U{row},0,0)' } } }] });
+    assert.match(volatile.error, /T2_Preservation_medium: OFFSET makes Sheets recalculate the whole workbook/);
     const ok = await call('propose_changes', { reason: 'x', changes: [{ recordId: record(4).id, values: { T2_Preservation_medium: { formula: NEW } } }] });
     assert.ok(ok.proposalId, JSON.stringify(ok));
     // The same formula already there: nothing to write.

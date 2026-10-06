@@ -93,7 +93,22 @@ test('lookups, text functions, errors and references', () => {
   assert.equal(ev('=1+2*3-4/2&"!"'), '5!');
   assert.equal(ev('=AND(B9<>"",NOT(B9="NA"))'), true);
   assert.equal(ev('=Z9=""'), true, 'a blank cell equals ""');
-  assert.throws(() => evaluateFormula('=TEXT(A9,"dd")', 9, ctx), Unsupported);
+  // TEXT of a date (Insectary_stocks' Earliest Emerge Date); a number format is not worked out.
+  assert.equal(ev('=TEXT(DATE(2026,10,5),"dd-mmm-yy")'), '05-Oct-26');
+  assert.equal(ev('=TEXT(A9,"dd")'), 'N4D', 'TEXT of a text is the text');
+  assert.throws(() => evaluateFormula('=TEXT(5,"0.00")', 9, ctx), Unsupported);
+  // VLOOKUP (exact), ROW, XLOOKUP with its default modes written out, CONCAT, ROUND, SEARCH, REGEXMATCH.
+  assert.equal(ev('=VLOOKUP("CAM1d.JPG",Photo_links!B:E,4,FALSE)'), 'https://drive/x');
+  assert.equal(ev('=VLOOKUP("none",Photo_links!B:E,4,FALSE)'), '#N/A');
+  assert.throws(() => evaluateFormula('=VLOOKUP("x",Photo_links!B:E,4,TRUE)', 9, ctx), Unsupported);
+  assert.equal(ev('=ROW()'), 9);
+  assert.equal(ev('=ROW(A3)'), 3);
+  assert.equal(ev('=XLOOKUP(A9,Collection_data!D:D,Collection_data!Z:Z,"",0,1)'), 'Cavernas');
+  assert.throws(() => evaluateFormula('=XLOOKUP(A9,Collection_data!D:D,Collection_data!Z:Z,"",0,-1)', 9, ctx), Unsupported);
+  assert.equal(ev('=CONCAT(A9,"x")'), 'N4Dx');
+  assert.equal(ev('=ROUND(2.345,2)'), 2.35);
+  assert.equal(ev('=SEARCH("d",A9)'), 3);
+  assert.equal(ev('=REGEXMATCH(P9,"^CAM\\d")'), true);
   assert.throws(() => evaluateFormula('=IF(A9,', 9, ctx), Unsupported);
   assert.ok(evaluateFormula('=1/0', 9, ctx) instanceof FormulaError);
 });

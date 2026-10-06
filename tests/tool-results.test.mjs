@@ -74,7 +74,8 @@ test('the tool list: the long texts once, the tools loaded with every chat kept 
   assert.equal(times(JSON.stringify(FILTERS_DOC).slice(1, -1)), 1, 'the filters explained once (find_records)');
   assert.equal(times('{\\"clear\\": true} empties the cell'), 1, 'the values explained once (propose_changes)');
   const always = tools.filter(t => t._meta?.['anthropic/alwaysLoad']);
-  assert.ok(JSON.stringify(always).length < 11800, String(JSON.stringify(always).length));
+  // Formulas in proposals (propose_changes: {"formula"}, bulk rows, missingFormulas) took some 750 of it.
+  assert.ok(JSON.stringify(always).length < 12200, String(JSON.stringify(always).length));
   // The notebook procedure is in the digitalizar-cuaderno skill; the tool keeps the columns.
   const notebook = tools.find(t => t.name === 'match_notebook').description;
   assert.ok(notebook.length < 4500, String(notebook.length));

@@ -13,6 +13,7 @@
 //     revision(store) { return '…' },  // optional: changes when data outside the
 //                                      //   sheets it reads changes (stored walks…)
 //     async suggest(ctx) { return [suggestion, …] },
+//     byGroup?: true,                  // listed group by group (sheet and column), with counts
 //   }
 //
 // and ctx is
@@ -39,7 +40,8 @@
 //                   a person still looks) | 'check' (a lead, needs someone who knows)
 //     reason,       msg() from server/messages.mjs (or plain Spanish): the evidence
 //     related?,     [ref(row, field)] other rows that show it (server/checks.mjs ref)
-//     group?,       suggestions that go together (the two cells of one species)
+//     group?,       suggestions that go together (the two cells of one species; a
+//                   byGroup source's heading, e.g. "Collection_data · Death_date")
 //     manual?       true: made by hand in Google Sheets (a formula, or typing over one),
 //                   which the app's proposals cannot write
 //   }
@@ -217,15 +219,27 @@ export async function suggestionPage(store, query = {}, { all = false } = {}) {
     counts[s.source][s.certainty]++;
     counts[s.source].total++;
   }
+  // A source listed by group (byGroup) keeps each group together: sheet and column, then certainty.
+  const byGroup = new Set(SOURCES.filter(s => s.byGroup).map(s => s.id));
+  const groupOrder = (a, b) => (byGroup.has(a.source) ? String(a.group ?? '').localeCompare(String(b.group ?? '')) : 0);
   const chosen = base
     .filter(s => (!sources.length || sources.includes(s.source)) && (!certainties.length || certainties.includes(s.certainty)))
     .sort(
       (a, b) =>
         SOURCES.findIndex(x => x.id === a.source) - SOURCES.findIndex(x => x.id === b.source) ||
+        groupOrder(a, b) ||
         ORDER[a.certainty] - ORDER[b.certainty] ||
         a.sheet.localeCompare(b.sheet) ||
         (b.row ?? 0) - (a.row ?? 0),
     );
+  // How many of the filtered suggestions each group has, with its certainties.
+  const groups = {};
+  for (const s of chosen) {
+    if (!byGroup.has(s.source) || !s.group) continue;
+    const g = (groups[s.group] ??= { total: 0, certain: 0, likely: 0, check: 0 });
+    g.total++;
+    g[s.certainty]++;
+  }
   const size = all ? chosen.length : Math.min(Math.max(Number(query.limit) || 50, 1), 500);
   const start = all ? 0 : Math.max(Number(query.offset) || 0, 0);
   const page = chosen.slice(start, start + size);
@@ -237,7 +251,8 @@ export async function suggestionPage(store, query = {}, { all = false } = {}) {
     total: chosen.length,
     offset: start,
     limit: size,
-    sources: SOURCES.map(s => ({ id: s.id, title: s.title, describe: s.describe, counts: counts[s.id] })),
+    sources: SOURCES.map(s => ({ id: s.id, title: s.title, describe: s.describe, counts: counts[s.id], ...(s.byGroup ? { byGroup: true } : {}) })),
+    groups,
     sheets: [...new Set(items.map(s => s.sheet))].sort(),
     items: seen.size ? page.map(s => (seen.has(s.key) ? { ...s, firstSeen: seen.get(s.key) } : s)) : page,
   };

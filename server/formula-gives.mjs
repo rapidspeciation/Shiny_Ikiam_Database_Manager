@@ -186,6 +186,75 @@ export function createFormulaReader(store) {
   return { rowGives, session };
 }
 
+/**
+ * Formulas worked out over rows already read (server/checks.mjs sheetRows():
+ * Map sheet → [{ row, values }]), each sheet's columns by `columnsOf(sheet)`
+ * (Map field → index) and `headerRow(sheet)`. `gives(formula, sheet, row)` →
+ * what the cell would show (an error as its code, blank as null), or undefined
+ * when it is not worked out here. `overlay` (Map "sheet\0row\0column" → value)
+ * is read first: what formulas not written yet would give, so a formula reading
+ * the row above (Data_entry_order) sees it.
+ */
+export function rowsReader(sheets, { columnsOf, headerRow }) {
+  const overlay = new Map();
+  const fields = new Map();
+  const byRow = new Map();
+  const indexes = new Map();
+  const fieldsOf = sheet => {
+    if (!fields.has(sheet)) {
+      const out = [];
+      for (const [field, column] of columnsOf(sheet) ?? []) out[column] ??= field;
+      fields.set(sheet, out);
+    }
+    return fields.get(sheet);
+  };
+  const rowsOf = sheet => {
+    if (!byRow.has(sheet)) byRow.set(sheet, new Map((sheets.get(sheet) ?? []).map(r => [r.row, r])));
+    return byRow.get(sheet);
+  };
+  function cell(sheet, col, row) {
+    const key = `${sheet}\u0000${row}\u0000${col}`;
+    if (overlay.has(key)) return overlay.get(key);
+    if (!sheets.has(sheet)) throw new Unsupported(`sheet ${sheet}`);
+    const field = fieldsOf(sheet)[col];
+    if (field === undefined) throw new Unsupported(`column ${col + 1} of ${sheet}`);
+    if (row === headerRow(sheet)) return field;
+    const value = rowsOf(sheet).get(row)?.values[field];
+    return value === undefined || value === '' ? null : value;
+  }
+  /** The rows of a column by lookup key, in order (the header row too). */
+  function index(sheet, col) {
+    const key = `${sheet}\u0000${col}`;
+    if (!indexes.has(key)) {
+      const map = new Map();
+      const add = (k, row) => k && (map.get(k) ?? map.set(k, []).get(k)).push(row);
+      add(lookupKey(cell(sheet, col, headerRow(sheet))), headerRow(sheet));
+      for (const r of sheets.get(sheet) ?? []) if (r.row !== headerRow(sheet)) add(lookupKey(cell(sheet, col, r.row)), r.row);
+      for (const list of map.values()) list.sort((a, b) => a - b);
+      indexes.set(key, map);
+    }
+    return indexes.get(key);
+  }
+  const within = (sheet, col, value, r1, r2) => (index(sheet, col).get(lookupKey(value)) ?? []).filter(r => r >= r1 && r <= r2);
+  const contextOf = own => ({
+    cell: (sheet, col, row) => cell(sheet ?? own, col, row),
+    find: (sheet, col, value, r1, r2) => (lookupKey(value) ? (within(sheet ?? own, col, value, r1, r2)[0] ?? null) : null),
+    count: (sheet, col, value, r1, r2) => (lookupKey(value) ? within(sheet ?? own, col, value, r1, r2).length : 0),
+  });
+  return {
+    overlay,
+    cell,
+    gives(formula, sheet, row) {
+      try {
+        return shownResult(evaluateFormula(formula, row, contextOf(sheet)));
+      } catch (e) {
+        if (e instanceof Unsupported) return undefined;
+        throw e;
+      }
+    },
+  };
+}
+
 /** A value of the proposal as the sheet will hold it (a count kept as a sum: its total is not needed here). */
 const plain = v => (v && typeof v === 'object' ? null : v === '' ? null : v);
 

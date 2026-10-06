@@ -149,6 +149,7 @@ export default {
   'Es una fórmula: se hace a mano en Google Sheets; las propuestas del asistente no la escriben':
     "It is a formula: done by hand in Google Sheets; the assistant's proposals do not write it",
   'en Google Sheets': 'in Google Sheets',
+  'Una fórmula: el asistente puede proponerla, con las demás de su grupo': 'A formula: the assistant can propose it, with the rest of its group',
   '{n} sugerencia copiada: pégala en una hoja': '{n} suggestion copied: paste it into a sheet',
   '{n} sugerencias copiadas: pégalas en una hoja': '{n} suggestions copied: paste them into a sheet',
   // SolvedPanel

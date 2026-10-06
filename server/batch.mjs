@@ -7,11 +7,12 @@
 // one read, one write, one verification read.
 
 import { randomUUID } from 'node:crypto';
-import { comparable, isSumField, labelFor, moduleMap, simpleSum, validateValues } from './schema.mjs';
+import { TYPED_OVER_FORMULA, comparable, isSumField, labelFor, moduleMap, simpleSum, validateValues } from './schema.mjs';
 import { isFormulaValue, sameCell } from './formula-write.mjs';
 import { hasDateFormat, hasTimeFormat, protectionRefused, rowKey, rowValues } from './sheets.mjs';
 import { describeProblems, headerLayout, sameLayout } from './columns.mjs';
 import { duplicateIdRow, ensurePremadeRows, insectaryIdRow, suffixedId } from './premade.mjs';
+import { isPlaceholder, newRowFormulas } from './formula-patterns.mjs';
 import { cleanPurpose, inferPurpose } from './history.mjs';
 import { TUBE_FIELD, UNIQUE, isIdValue, isUnique, twinRows } from './verifications.mjs';
 import { listOptions, listProblemMsg } from './verify.mjs';
@@ -27,11 +28,9 @@ export const MAX_BATCH = 500;
 // Identifiers that must not repeat (server/verifications.mjs, as in the Google
 // Sheet's conditional formats). Tube IDs are unique across the whole workbook.
 
-// Formula cells that may be typed over, and only with a value different from what the
-// formula predicts: the species of an insectary butterfly when what emerged is not what
-// the clutch predicted. The formula is kept in history, so undo puts it back.
-// A value the formula already gives is not written: the formula stays.
-export const TYPED_OVER_FORMULA = { Insectary_data: new Set(['SPECIES', 'Collection_location']) };
+// Formula cells that may be typed over (server/schema.mjs). A value the formula already
+// gives is not written: the formula stays.
+export { TYPED_OVER_FORMULA };
 
 /** The same text as a formula gives, whatever the spacing or capitals ("mechanitis  m. intermedia " is not, "Mechanitis M. intermedia" is). */
 const formulaText = value => String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
@@ -869,6 +868,21 @@ class Plan {
         if (after !== null && after !== '') changes.push({ field, before: before.values[field] ?? null, after });
       }
       if (!changes.length) return this.conflict(target, 'INVALID_VALUES', 'La fila nueva no tiene nada que guardar');
+      // The formulas rows of this kind keep (server/formula-patterns.mjs: the Collected_Sent2Insectary
+      // lookups, CAM_ID_insectary, Data_entry_order…), moved to this row, where the pre-made row has
+      // none and nothing but a placeholder (NA) was typed: new rows do not widen the gap.
+      if (this.source !== 'undo') {
+        const layout = this.layouts.get(target.sheet);
+        const fills = newRowFormulas(this.store, target.sheet, row, { ...before.values, ...target.clean });
+        for (const [field, formula] of Object.entries(fills)) {
+          const typed = target.clean[field];
+          if (before.formulas[field] || !layout.columns.has(field) || !blank(before.values[field])) continue;
+          if (typed !== undefined && typed !== null && typed !== '' && !isPlaceholder(typed)) continue;
+          const at = changes.findIndex(c => c.field === field);
+          if (at >= 0) changes.splice(at, 1);
+          changes.push({ field, before: before.values[field] ?? null, after: { formula } });
+        }
+      }
       return this.addWrite(target, liveRow, before, changes);
     }
     this.conflict(
@@ -1078,6 +1092,8 @@ class Plan {
     const bySheet = new Map();
     for (const t of this.targets)
       for (const c of t.changes || []) {
+        // A formula's value is the sheet's to give.
+        if (c.after && typeof c.after === 'object') continue;
         const options = bySheet.get(t.sheet) ?? bySheet.set(t.sheet, listOptions(this.store, t.sheet)).get(t.sheet);
         if (!options[c.field]?.strict) continue;
         const problem = listProblemMsg(options, c.field, c.after);
