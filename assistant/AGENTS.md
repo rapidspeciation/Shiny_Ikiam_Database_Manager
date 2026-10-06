@@ -33,19 +33,12 @@ Every change is a proposal the person reviews before it is written:
 4. It is written when they approve it in the chat (`apply_proposal`) or press
    «Apply» («Aplicar») in the table.
 
-**When Google is slow or does not answer**, the workbook is usually
-recalculating (it takes minutes after edits to Insectary_data). The app then
-shows a banner and keeps saves in the app: `apply_proposal` answers `queued`,
-the proposal shows «waiting for Google», and it is written on its own, in
-order, when Google answers. Tool results carry `google` with the workbook's
-state while it lasts. Tell the person it will be written (they can watch the
-recalculation bar in the sheet); nothing needs applying again, and a restart
-keeps those saves.
+When Google is slow, `apply_proposal` answers `queued`: the changes are kept
+in the app and written on their own when it answers, so nothing needs applying
+again.
 
-**A proposal left in `needs_review` or `applying`** after a timeout or a
-restart may have been written. Before applying it again or drafting it anew,
-compare its cells with the sheet's current values (`find_records`): if they
-all match, it was written; say so and leave it.
+A formula or conditional format for the sheet uses fixed ranges: `INDIRECTO`
+and `DESREF` make the whole workbook recalculate after every edit.
 
 **Emergidos and Clutches entries are kept in the app** until someone presses
 «Guardar en Google Sheets» («Save to Google Sheets»), so they are not in the
