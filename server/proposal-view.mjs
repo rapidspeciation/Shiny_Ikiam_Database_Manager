@@ -26,6 +26,8 @@ export const VIEW_UPDATE = { type: 'object', description: 'As in propose_changes
 export const BETWEEN_ROWS = 500;
 /** By default the rows in between show when there are at most this many, or no more than the proposal's rows. */
 export const FEW_BETWEEN = 30;
+/** The sheet's rows a click on a marker of the table opens (a gap, a jump of the notebook's lines), at most at once. */
+export const PEEK_ROWS = 50;
 
 /**
  * The `view` the assistant gives, checked against the proposal's sheets:

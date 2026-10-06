@@ -1,6 +1,7 @@
 import type { OrderNote, ProposalChange } from './proposals'
 import type { RowOrder } from './proposalColumns'
 import { t, tn } from './i18n'
+import type { CellValue } from './types'
 
 /**
  * The rows of a proposal's table as laid out, between the sheet and the
@@ -38,7 +39,10 @@ export type Marker =
   | { kind: 'jump'; by: number; from: number; to: number }
   /** Notebook order: the rows not on the photo follow. */
   | { kind: 'apart'; count: number }
-export type Laid = { change: ProposalChange; marker?: undefined } | { marker: Marker; change?: undefined }
+export type Laid =
+  | { change: ProposalChange; marker?: undefined }
+  /** `peek`: the sheet's rows it stands for, opened with a click (withPeeks). */
+  | { marker: Marker; change?: undefined; peek?: PeekState }
 
 /**
  * A page's rows as the notebook has them: by photo and line; a row without a
@@ -157,6 +161,117 @@ export function markerText(m: Marker): { text: string; title: string } {
   return {
     text: tn(m.count, 'No está en la foto · {n} fila', 'No están en la foto · {n} filas'),
     title: t('Filas sin línea en las fotos de la página: añadidas a mano o encontradas fuera de la página'),
+  }
+}
+
+// ------------------------------------------------------------ the sheet's rows a marker stands for
+
+/** At most this many of the sheet's rows open at once under a marker (PEEK_ROWS in server/proposal-view.mjs). */
+export const PEEK_ROWS = 50
+
+/**
+ * The sheet's rows a marker stands for and the table does not show: a gap's,
+ * and those a jump down of the notebook's lines goes over; null for the others
+ * (a jump back goes over rows the table shows above it).
+ */
+export function hiddenRange(m: Marker): { from: number; to: number } | null {
+  if (m.kind === 'gap') return { from: m.from, to: m.to }
+  if (m.kind !== 'jump' || m.by <= 0) return null
+  const from = Math.floor(m.from) + 1
+  const to = Math.ceil(m.to) - 1
+  return to >= from ? { from, to } : null
+}
+/** A marker's own name, the same in either order of the rows. */
+export const markerKey = (m: Marker) => (m.kind === 'apart' ? 'apart' : `${m.kind}:${m.from}:${m.to}`)
+
+/** A sheet row as GET chat/proposals/:id/rows sends it: its values as the sheet has them now. */
+export interface SheetRow {
+  recordId: string
+  row: number
+  label: string
+  values: Record<string, CellValue>
+}
+/** The rows asked for (up to PEEK_ROWS); `rest`: the rows after them, when there were more. */
+export interface SheetRows {
+  sheet: string
+  from: number
+  to: number
+  rows: SheetRow[]
+  rest?: { from: number; to: number }
+}
+/** A marker opened: its rows on their way, shown, or not read. */
+export type Peek = { state: 'loading' } | { state: 'error'; message: string } | { state: 'open'; rows: SheetRows }
+/** What the marker's row says of it: opened, and how many of its rows the table shows elsewhere. */
+export type PeekState = { state: 'loading' | 'error' | 'open'; inTable?: number; message?: string }
+
+/** A sheet row shown under its marker: grey, to read only, never written (as the rows in between the server sends). */
+export function peekChange(sheet: string, r: SheetRow): ProposalChange {
+  return {
+    index: -1,
+    key: `peek:${r.recordId}`,
+    recordId: r.recordId,
+    sheet,
+    row: r.row,
+    label: r.label,
+    values: {},
+    rowValues: r.values,
+    context: true,
+    gap: true,
+    note: '',
+  }
+}
+
+/**
+ * The laid rows with the markers opened (`peeks`, by markerKey) followed by
+ * their sheet rows, those the table does not show already (they are counted
+ * on the marker); past PEEK_ROWS, a marker for the rest, which opens the same way.
+ */
+export function withPeeks(laid: Laid[], peeks: ReadonlyMap<string, Peek>, sheet: string): Laid[] {
+  if (!peeks.size) return laid
+  const seen = new Set(laid.flatMap(item => (item.change?.recordId ? [item.change.recordId] : [])))
+  const out: Laid[] = []
+  const add = (marker: Marker) => {
+    const peek = peeks.get(markerKey(marker))
+    if (!peek || !hiddenRange(marker)) return void out.push({ marker })
+    if (peek.state === 'loading') return void out.push({ marker, peek: { state: 'loading' } })
+    if (peek.state === 'error') return void out.push({ marker, peek: { state: 'error', message: peek.message } })
+    const rows = peek.rows.rows.filter(r => !seen.has(r.recordId))
+    const inTable = peek.rows.rows.length - rows.length
+    out.push({ marker, peek: { state: 'open', ...(inTable ? { inTable } : {}) } })
+    for (const r of rows) {
+      seen.add(r.recordId)
+      out.push({ change: peekChange(sheet, r) })
+    }
+    const rest = peek.rows.rest
+    const paged = marker.kind === 'gap' && marker.paged
+    if (rest) add({ kind: 'gap', count: rest.to - rest.from + 1, from: rest.from, to: rest.to, paged })
+  }
+  for (const item of laid) {
+    if (item.marker) add(item.marker)
+    else out.push(item)
+  }
+  return out
+}
+
+/** What a marker says besides its text: that a click opens or folds its rows, or that they are coming. */
+export function peekText(m: Marker, peek?: PeekState): { action: string; title: string } {
+  const range = hiddenRange(m)
+  if (!range) return { action: '', title: '' }
+  const count = range.to - range.from + 1
+  if (!peek)
+    return {
+      action: '',
+      title:
+        count > PEEK_ROWS
+          ? t('Clic: ver las primeras {n} de estas filas de la hoja, solo para leer', { n: PEEK_ROWS })
+          : t('Clic: ver estas filas de la hoja, solo para leer'),
+    }
+  if (peek.state === 'loading') return { action: t('cargando…'), title: '' }
+  if (peek.state === 'error')
+    return { action: t('no se pudo leer · reintentar'), title: peek.message ?? '' }
+  return {
+    action: [peek.inTable ? t('{n} ya en la tabla', { n: peek.inTable }) : '', t('ocultar')].filter(Boolean).join(' · '),
+    title: t('Clic: ocultar estas filas de la hoja'),
   }
 }
 

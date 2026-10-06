@@ -1,7 +1,25 @@
 import { describe, expect, it } from 'vitest'
 import type { OrderNote, ProposalChange } from '../proposals'
 import { rowKey } from '../proposals'
-import { baseOf, layRows, markerText, notebookOrder, repeatChip, repeatRuns, repeatSummary, shownRows, unexplained, type Laid } from '../proposalRows'
+import {
+  PEEK_ROWS,
+  baseOf,
+  hiddenRange,
+  layRows,
+  markerKey,
+  markerText,
+  notebookOrder,
+  peekText,
+  repeatChip,
+  repeatRuns,
+  repeatSummary,
+  shownRows,
+  unexplained,
+  withPeeks,
+  type Laid,
+  type Peek,
+  type SheetRows,
+} from '../proposalRows'
 import { readRowOrder, writeRowOrder, type KeptStorage } from '../proposalColumns'
 
 /** A row of the table: its ID, sheet row and page line (photo 0). */
@@ -77,6 +95,75 @@ describe('the rows in the sheet order', () => {
     const all = [row('A1E', 2, 1), row('A2E', 3, 2, { context: true }), row('A3E', 4, 3), row('K1B', 90, 4)]
     const shown = new Set([all[0], all[2], all[3]].map(rowKey))
     expect(shape(shownRows(layRows(all, 'sheet', true), shown, rowKey))).toEqual(['A1E', 'A3E', 'gap 85 5-89', 'K1B'])
+  })
+})
+
+/** The sheet rows from–to as the server sends them (row n: ID S<n>). */
+function sheetRows(from: number, to: number, total = to): SheetRows {
+  const rows = Array.from({ length: to - from + 1 }, (_, i) => ({
+    recordId: `r:S${from + i}`,
+    row: from + i,
+    label: `S${from + i}`,
+    values: { Sex: 'NA' },
+  }))
+  return { sheet: 'Insectary_data', from, to, rows, ...(total > to ? { rest: { from: to + 1, to: total } } : {}) }
+}
+
+describe('a slim row opened: the sheet rows it stands for', () => {
+  it('a gap and a jump down stand for rows not shown; a jump back and «not on the photo» do not', () => {
+    expect(hiddenRange({ kind: 'gap', count: 8, from: 12878, to: 12885, paged: true })).toEqual({ from: 12878, to: 12885 })
+    expect(hiddenRange({ kind: 'jump', by: 10, from: 100, to: 110 })).toEqual({ from: 101, to: 109 })
+    // A new row to go below row 101 (101.5): the jump goes over row 101.
+    expect(hiddenRange({ kind: 'jump', by: 2, from: 100, to: 101.5 })).toEqual({ from: 101, to: 101 })
+    expect(hiddenRange({ kind: 'jump', by: -258, from: 13530, to: 13272 })).toBeNull()
+    expect(hiddenRange({ kind: 'apart', count: 3 })).toBeNull()
+  })
+
+  it('opened, its rows follow it, grey and read-only; closed or loading, only the marker', () => {
+    const laid = layRows([row('A1E', 2), row('K5B', 8)], 'sheet', false)
+    const gap = laid[1].marker!
+    expect(withPeeks(laid, new Map(), 'Insectary_data')).toBe(laid)
+    const loading = withPeeks(laid, new Map<string, Peek>([[markerKey(gap), { state: 'loading' }]]), 'Insectary_data')
+    expect(shape(loading)).toEqual(['A1E', 'gap 5 3-7', 'K5B'])
+    expect(loading[1].marker && loading[1].peek).toEqual({ state: 'loading' })
+    const opened = new Map<string, Peek>([[markerKey(gap), { state: 'open', rows: sheetRows(3, 7) }]])
+    const open = withPeeks(laid, opened, 'Insectary_data')
+    expect(shape(open)).toEqual(['A1E', 'gap 5 3-7', 'S3', 'S4', 'S5', 'S6', 'S7', 'K5B'])
+    const first = open[2].change!
+    expect(first).toMatchObject({ context: true, gap: true, row: 3, values: {}, rowValues: { Sex: 'NA' }, index: -1 })
+    expect(rowKey(first)).toBe('peek:r:S3')
+    expect(peekText(gap, open[1].marker ? open[1].peek : undefined).action).toBe('ocultar')
+  })
+
+  it('past the cap, a slim row for the rest, which opens the same way', () => {
+    const laid = layRows([row('A1E', 2), row('K5B', 200)], 'sheet', false)
+    const gap = laid[1].marker!
+    const first = sheetRows(3, 2 + PEEK_ROWS, 199)
+    const peeks = new Map<string, Peek>([[markerKey(gap), { state: 'open', rows: first }]])
+    let out = withPeeks(laid, peeks, 'Insectary_data')
+    expect(out).toHaveLength(2 + 1 + PEEK_ROWS + 1)
+    const rest = out.at(-2)!.marker!
+    expect(rest).toEqual({ kind: 'gap', count: 199 - PEEK_ROWS - 2, from: 3 + PEEK_ROWS, to: 199, paged: false })
+    expect(peekText(gap).title).toBe(`Clic: ver las primeras ${PEEK_ROWS} de estas filas de la hoja, solo para leer`)
+    peeks.set(markerKey(rest), { state: 'open', rows: sheetRows(3 + PEEK_ROWS, 2 + 2 * PEEK_ROWS, 199) })
+    out = withPeeks(laid, peeks, 'Insectary_data')
+    expect(out.filter(i => i.change?.gap)).toHaveLength(2 * PEEK_ROWS)
+  })
+
+  it('in the notebook order: rows the table shows elsewhere are not shown twice, and counted', () => {
+    // Lines A1E (row 2), A9E (row 10), then A5E (row 6) back up: the jump down goes over A5E's row.
+    const changes = [row('A1E', 2, 1), row('A9E', 10, 2), row('A5E', 6, 3)]
+    const laid = layRows(changes, 'notebook', true)
+    expect(shape(laid)).toEqual(['A1E', 'jump 8', 'A9E', 'jump -4', 'A5E'])
+    const jump = laid[1].marker!
+    const rows = sheetRows(3, 9)
+    rows.rows[3] = { recordId: 'r:A5E', row: 6, label: 'A5E', values: {} }
+    const out = withPeeks(laid, new Map<string, Peek>([[markerKey(jump), { state: 'open', rows }]]), 'Insectary_data')
+    expect(shape(out)).toEqual(['A1E', 'jump 8', 'S3', 'S4', 'S5', 'S7', 'S8', 'S9', 'A9E', 'jump -4', 'A5E'])
+    expect(out[1].marker && out[1].peek).toEqual({ state: 'open', inTable: 1 })
+    expect(peekText(jump, { state: 'open', inTable: 1 }).action).toBe('1 ya en la tabla · ocultar')
+    // A jump back opens nothing.
+    expect(peekText(laid[3].marker!).title).toBe('')
   })
 })
 
