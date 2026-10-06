@@ -21,6 +21,7 @@ import {
   hasClutch,
   outlook,
   parentsOf,
+  preservedApart,
   readCount,
   REVIEW_ORDER,
   termsText,
@@ -30,6 +31,7 @@ import {
   stageDurations,
   type ClutchState,
   type CountField,
+  type Stage,
 } from '../../lib/clutches'
 import { formatSerial, isoToSerial, todayIso } from '../../lib/dates'
 import { errorText, notify } from '../../lib/notice'
@@ -39,7 +41,7 @@ import type { Table, TableRow } from '../../lib/types'
 import type { StagedMark } from '../../lib/staged'
 import { usePending } from '../../stores/pending'
 import { useSession } from '../../stores/session'
-import { t } from '../../lib/i18n'
+import { t, tn } from '../../lib/i18n'
 
 /**
  * Clutches on a phone or tablet, for the daily round: the clutches still going
@@ -165,6 +167,12 @@ function aheadText(item: Item): { count: string; next: string; due: boolean } {
     next: next ? `${next[0]} ≈ ${formatSerial(next[1] as number)}` : '',
     due: !!next && (next[1] as number) <= today.value,
   }
+}
+/** A stage's preserved ones kept counted, as the card says them beside its count ('' when none apart). */
+function preservedText(item: Item, stage: Stage) {
+  const n = preservedApart(day.tallies.value[item.row.id], stage, day.settings.subtractPreserved)
+  if (!n) return ''
+  return stage === 'egg' ? tn(n, '{n} preservado', '{n} preservados') : tn(n, '{n} preservada', '{n} preservadas')
 }
 /** The cards listed, each line worked out once. */
 const aheads = computed(() => new Map(listed.value.map(i => [i.row.id, aheadText(i)])))
@@ -518,6 +526,13 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                       {{ item.counts[s.count].na ? 'NA' : item.counts[s.count].text ? '?' : item.counts[s.count].terms.length ? totalOf(item.counts[s.count].terms) : '—' }}
                     </span>
                     <span v-if="item.counts[s.count].terms.length > 1" class="block truncate text-[11px] leading-tight text-stone-500 tabular-nums">{{ termsText(item.counts[s.count].terms) }}</span>
+                    <!-- Preserved ones kept counted: not in the sum (only in the app and NOTES). -->
+                    <span
+                      v-if="preservedText(item, s.stage)"
+                      class="block truncate text-[11px] leading-tight font-medium text-violet-700 tabular-nums"
+                      :title="$t('No se resta de {field}: no está en el cuaderno ni en la suma de la hoja; queda en la app y en NOTES.', { field: s.count })"
+                      >{{ preservedText(item, s.stage) }}</span
+                    >
                   </span>
                 </span>
                 <!-- What to count today, and the next stage's date expected. -->

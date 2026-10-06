@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chipEvents, rebaseChips, struckTerms, todaySplit, toggleStrike, type ClutchEvent } from '../clutches'
+import { chipEvents, preservedApart, rebaseChips, struckTerms, todaySplit, toggleStrike, type ClutchEvent } from '../clutches'
 
 describe("a count's chips: tap one to strike it out of the sum, tap again to put it back", () => {
   const base = [2, 3, 9, 1, 8, 23]
@@ -74,5 +74,27 @@ describe('the event behind each chip (for its photos)', () => {
 
   it("another stage's events are not this count's", () => {
     expect(chipEvents([5], [{ ...ev('e', 'pupated', 5, '2026-10-02'), stage: 'pupa' }], 'larva', false)).toEqual([null])
+  })
+})
+
+describe('preserved ones kept counted: shown apart from the sum', () => {
+  const tallies = {
+    larva: { gained: 20, died: 2, disappeared: 0, preserved: 3 },
+    egg: { gained: 0, died: 0, disappeared: 0, preserved: 1 },
+  }
+
+  it("the team keeps them counted: the stage's preserved ones, beside its sum", () => {
+    expect(preservedApart(tallies, 'larva', false)).toBe(3)
+    expect(preservedApart(tallies, 'egg', false)).toBe(1)
+  })
+
+  it('the team takes them off: they are a − in the sum, nothing apart', () => {
+    expect(preservedApart(tallies, 'larva', true)).toBe(0)
+  })
+
+  it('none preserved, no events, or no stage (the dissections): nothing apart', () => {
+    expect(preservedApart(tallies, 'pupa', false)).toBe(0)
+    expect(preservedApart(undefined, 'larva', false)).toBe(0)
+    expect(preservedApart(tallies, null, false)).toBe(0)
   })
 })

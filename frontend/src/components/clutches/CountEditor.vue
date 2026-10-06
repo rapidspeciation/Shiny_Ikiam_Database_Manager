@@ -31,7 +31,7 @@ import type { ClutchPhoto } from '../../lib/clutchPhotos'
 import { dayFirst, isoToSerial, serialToIso } from '../../lib/dates'
 import { LIFESTAGES, MAIN_STAGES } from '../../lib/emerged'
 import type { CellValue } from '../../lib/types'
-import { t } from '../../lib/i18n'
+import { t, tn } from '../../lib/i18n'
 
 /**
  * One count of a clutch kept as the notebook sums it (=3+5-2): its history as
@@ -69,6 +69,8 @@ const props = defineProps<{
   stage?: Stage | null
   /** The team's setting: preserved ones taken off the count (true) or kept in it. */
   subtractPreserved?: boolean
+  /** Preserved ones kept counted (lib/clutches.ts preservedApart): shown beside the sum, apart from it. */
+  preserved?: number
   /** Today (a date serial): the day events happen unless another is chosen. */
   today?: number
   /** The note an event adds to NOTES ("5/10/26 FCH: 5 larvae died"), '' when NOTES cannot be written. */
@@ -190,6 +192,17 @@ const chipEvent = computed(() =>
   props.stage && props.events?.length ? chipEvents(chips.value.base, props.events, props.stage, props.subtractPreserved !== false) : [],
 )
 const eventById = computed(() => new Map((props.events ?? []).map(e => [e.id, e])))
+/** The preserved ones beside the sum: how many, and why they are not in it (a tap shows it, for phones). */
+const preservedShown = computed(() => props.preserved ?? 0)
+const preservedLabel = computed(() =>
+  props.stage === 'egg'
+    ? tn(preservedShown.value, '{n} preservado', '{n} preservados')
+    : tn(preservedShown.value, '{n} preservada', '{n} preservadas'),
+)
+const preservedWhy = computed(() =>
+  t('No se resta de {field}: no está en el cuaderno ni en la suma de la hoja; queda en la app y en NOTES.', { field: props.field }),
+)
+const explainPreserved = ref(false)
 const photosOf = (id: string | null) => (id ? (props.photos ?? []).filter(p => p.eventId === id).length : 0)
 
 // --- What happened, told apart (only in the app): died, disappeared or preserved; hatched…
@@ -558,7 +571,7 @@ function onTotalBlur() {
       </button>
     </div>
     <!-- The history: each term a chip, earlier days' then today's; a tap strikes it out of the sum (another, back in). -->
-    <div v-if="chips.base.length" class="mt-2 flex flex-wrap items-center gap-1.5" :aria-label="$t('Historia de la suma')">
+    <div v-if="chips.base.length || preservedShown" class="mt-2 flex flex-wrap items-center gap-1.5" :aria-label="$t('Historia de la suma')">
       <template v-for="(label, i) in chipLabels" :key="i">
         <span v-if="i === firstToday && i < chips.base.length" class="text-[11px] font-semibold tracking-wide text-amber-800 uppercase">{{ $t('hoy') }}</span>
         <span
@@ -597,8 +610,21 @@ function onTotalBlur() {
           </button>
         </span>
       </template>
-      <span class="text-sm text-stone-500 tabular-nums">= {{ total }}</span>
+      <span v-if="chips.base.length" class="text-sm text-stone-500 tabular-nums">= {{ total }}</span>
+      <!-- Preserved ones the team keeps counted: beside the sum, not in it (only in the app and NOTES). -->
+      <button
+        v-if="preservedShown"
+        type="button"
+        class="ml-1 flex min-h-9 items-center gap-1.5 rounded-lg border border-dashed border-violet-400 bg-white px-2 text-sm font-medium text-violet-800 tabular-nums active:bg-violet-50"
+        :title="preservedWhy"
+        :aria-expanded="explainPreserved"
+        @click="explainPreserved = !explainPreserved"
+      >
+        {{ preservedLabel }}
+        <span class="rounded bg-violet-100 px-1 text-[10px] font-semibold tracking-wide text-violet-700 uppercase">{{ $t('solo en la app') }}</span>
+      </button>
     </div>
+    <p v-if="preservedShown && explainPreserved" class="mt-1 text-xs text-violet-800">{{ preservedWhy }}</p>
     <p v-if="chips.struck.length && canWork" class="mt-1 text-xs text-stone-600">{{ $t('Tachado = fuera de la suma. Tócalo otra vez para devolverlo.') }}</p>
     <p v-else-if="chips.base.length > 1 && canWork && !dirty" class="mt-1 text-xs text-stone-500">{{ $t('Toca un número para quitarlo de la suma.') }}</p>
     <p v-if="locked" class="mt-1 text-xs text-stone-500">{{ $t('Fórmula de la hoja (solo lectura)') }}</p>

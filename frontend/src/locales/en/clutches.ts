@@ -329,6 +329,13 @@ export default {
   'Añadir foto a {term}': 'Add a photo to {term}',
   'Tachado = fuera de la suma. Tócalo otra vez para devolverlo.': 'Struck out = not in the sum. Tap it again to put it back.',
   'Toca un número para quitarlo de la suma.': 'Tap a number to take it out of the sum.',
+  // Preserved ones the team keeps counted: beside the sum, not in it
+  '{n} preservado': '{n} preserved',
+  '{n} preservados': '{n} preserved',
+  '{n} preservada': '{n} preserved',
+  '{n} preservadas': '{n} preserved',
+  'No se resta de {field}: no está en el cuaderno ni en la suma de la hoja; queda en la app y en NOTES.':
+    "Not subtracted from {field}: not in the notebook or the sheet's sum; kept in the app and in NOTES.",
   'Restar: murieron, desaparecieron o se preservaron': 'Subtract: died, disappeared or preserved',
   '¿qué pasó?': 'what happened?',
   Restar: 'Subtract',

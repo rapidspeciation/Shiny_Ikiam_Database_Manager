@@ -29,6 +29,7 @@ import {
   notesOf,
   noteParts,
   outlook,
+  preservedApart,
   parentsOf,
   readCount,
   totalOf,
@@ -293,6 +294,9 @@ const record = useClutchRecord(computed(() => row.value?.id ?? ''), props.day)
 const recordEvents = computed<ClutchEvent[]>(() => record.data.value?.events ?? [])
 const recordPhotos = computed<ClutchPhoto[]>(() => record.data.value?.photos ?? [])
 const gains = computed(() => latestGains(recordEvents.value))
+/** A stage's preserved ones kept counted, shown beside its sum (none when the team takes them off). */
+const preservedOf = (stage: Stage) =>
+  preservedApart(row.value ? props.day.tallies.value[row.value.id] : undefined, stage, props.day.settings.subtractPreserved)
 const speciesName = computed(() => (isBlank(get('SPECIES')) ? '' : String(get('SPECIES'))))
 const days = computed(() => props.durations.of(speciesName.value))
 const view = computed(() =>
@@ -572,6 +576,7 @@ const endedText = (e: ClutchState['ended']) =>
           :start-of-day="startOfDay(s.count)"
           :stage="s.stage"
           :subtract-preserved="day.settings.subtractPreserved"
+          :preserved="preservedOf(s.stage)"
           :today="today"
           :note-for="e => noteFor(s.stage, e)"
           :can-register="canEdit && inSheet"

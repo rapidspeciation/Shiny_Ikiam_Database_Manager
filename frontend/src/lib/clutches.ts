@@ -565,6 +565,17 @@ export function parseIds(text: string): string[] {
 /** Whether a loss is taken off the count: always, except preserved ones when the team keeps them counted. */
 export const lossTakesOff = (kind: Loss, subtractPreserved: boolean) => kind !== 'preserved' || subtractPreserved
 
+/**
+ * The preserved ones of a stage shown beside its count, apart from the sum:
+ * those the team keeps counted (not taken off NUMBER OF LARVAE, so neither the
+ * notebook nor the sheet's sum shows them; the app and NOTES do). 0 when the
+ * team takes them off (they are a − in the sum then) or there are none.
+ */
+export function preservedApart(tallies: ClutchTallies | undefined, stage: Stage | null | undefined, subtractPreserved: boolean): number {
+  if (subtractPreserved || !stage) return 0
+  return Math.max(0, tallies?.[stage]?.preserved ?? 0)
+}
+
 // --- The note an event writes in NOTES (English, as the sheet's notes)
 
 const NOUN: Record<Stage, [string, string]> = { egg: ['egg', 'eggs'], larva: ['larva', 'larvae'], pupa: ['pupa', 'pupae'], adult: ['adult', 'adults'] }
