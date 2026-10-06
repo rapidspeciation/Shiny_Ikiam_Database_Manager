@@ -50,7 +50,7 @@ export function normalizeInput(raw: unknown, field: Pick<Field, 'type' | 'key'>,
   if (field.type === 'date') {
     const serial = parseDateInput(text)
     return serial === null
-      ? { ok: false, message: t('Fecha no válida en {field}: use 14-Aug-25 o 2025-08-14', { field: field.key }) }
+      ? { ok: false, message: t('Fecha no válida en {field}: escribe 27/9, 27-sep o 27/9/26', { field: field.key }) }
       : { ok: true, value: serial }
   }
   const time = TIME_FIELD.test(field.key) ? /^(\d{1,2}):(\d{2})$/.exec(text) : null

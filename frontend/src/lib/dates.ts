@@ -75,34 +75,58 @@ export function todayIso(): string {
 
 /**
  * Parses what a person types into a date cell: 14-Aug-25, 14/08/2025,
- * 140825, 2025-08-14 or a serial number. Returns a serial, or null if unreadable.
+ * 140825, 2025-08-14 or a serial number, and without the year as the notebook
+ * writes it: 27/9, 27-9, 27.9, 27-sep, 27 sept, 27sep, 27 de septiembre. A date
+ * without its year is the latest one that is not more than two months ahead
+ * (27/12 typed in January is last December). Returns a serial, or null.
  */
-export function parseDateInput(text: string): number | null {
-  const serial = readDate(text)
+export function parseDateInput(text: string, today = todayIso()): number | null {
+  const serial = readDate(text, today)
   return serial !== null && inDateRange(serial) ? serial : null
 }
 
-function readDate(text: string): number | null {
-  const s = text.trim()
+function readDate(text: string, today: string): number | null {
+  const s = text.trim().toLowerCase().replace(/\s+de\s+/g, ' ')
   if (!s) return null
   if (/^\d{4,5}(\.\d+)?$/.test(s)) return Math.round(Number(s))
   let m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s)
   if (m) return fromParts(+m[1], +m[2], +m[3])
-  m = /^(\d{1,2})[-/ ]([A-Za-z]{3})[a-z]*[-/ ](\d{2}|\d{4})$/.exec(s)
+  // A month by name, English or Spanish, short or whole: 27-sep-26, 27 septiembre 2026, 27sep.
+  m = /^(\d{1,2})[-/. ]?([a-zñ]{3,10})\.?(?:[-/. ]?(\d{2}|\d{4}))?$/.exec(s)
   if (m) {
-    const month = MONTHS.findIndex(x => x.toLowerCase() === m![2].toLowerCase()) + 1 || spanishMonth(m[2])
-    return month ? fromParts(fullYear(+m[3]), month, +m[1]) : null
+    const month = monthByName(m[2])
+    if (!month) return null
+    return m[3] ? fromParts(fullYear(+m[3]), month, +m[1]) : withoutYear(month, +m[1], today)
   }
   m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/.exec(s)
   if (m) return fromParts(fullYear(+m[3]), +m[2], +m[1])
+  // Day and month only, as the notebook writes it: 27/9, 27-9, 27.9, 27 9.
+  m = /^(\d{1,2})[/.\- ](\d{1,2})$/.exec(s)
+  if (m) return withoutYear(+m[2], +m[1], today)
   // Digits only, day first (a phone's number pad has no "/"): 280926 or 28092026.
   m = /^(\d{2})(\d{2})(\d{2}|\d{4})$/.exec(s)
   if (m) return fromParts(fullYear(+m[3]), +m[2], +m[1])
   return null
 }
 
-function spanishMonth(abbr: string): number {
-  return ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'].indexOf(abbr.toLowerCase()) + 1
+/** A day and month without the year: this year's, unless that is more than two months ahead (then last year's). */
+function withoutYear(month: number, day: number, today: string): number | null {
+  const year = Number(today.slice(0, 4))
+  const serial = fromParts(year, month, day)
+  const now = serialFromIso(today)
+  if (serial !== null && now !== null && serial - now > 61) return fromParts(year - 1, month, day)
+  return serial
+}
+
+/** A month by its English or Spanish name or its first three letters (sep, sept, septiembre, ago, august). */
+function monthByName(name: string): number {
+  const english = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december']
+  const spanish = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+  const found = [english, spanish, ['', '', '', '', '', '', '', '', 'setiembre']].map(list =>
+    list.findIndex(full => full && (full === name || (name.length >= 3 && full.startsWith(name)))),
+  )
+  const at = found.find(i => i >= 0)
+  return at === undefined ? 0 : at + 1
 }
 function fullYear(y: number) {
   return y < 100 ? 2000 + y : y

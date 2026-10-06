@@ -9,7 +9,7 @@ export default {
   'en {n} días': 'in {n} days',
   'fecha no válida': 'invalid date',
   'Las fórmulas solo se editan en Google Sheets': 'Formulas can only be edited in Google Sheets',
-  'Fecha no válida en {field}: use 14-Aug-25 o 2025-08-14': 'Invalid date in {field}: use 14-Aug-25 or 2025-08-14',
+  'Fecha no válida en {field}: escribe 27/9, 27-sep o 27/9/26': 'Invalid date in {field}: type 27/9, 27-sep or 27/9/26',
   'Sin conexión. Los cambios siguen guardados en este dispositivo.':
     'No connection. Your changes are still saved on this device.',
   'Algunos cambios necesitan revisión; no se guardó nada.': 'Some changes need review; nothing was saved.',
