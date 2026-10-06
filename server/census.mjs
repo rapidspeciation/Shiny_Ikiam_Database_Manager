@@ -63,6 +63,16 @@ const text = v => (blank(v) ? '' : String(v).trim());
 const upper = v => text(v).toUpperCase();
 /** Species compared as people write them: case and spacing aside. */
 export const speciesKey = v => text(v).replace(/\s+/g, ' ').toLowerCase();
+/** The species without its subspecies (Mechanitis polymnia proceriformis → Mechanitis polymnia): what a census is of. */
+export const binomial = v => text(v).split(/\s+/).slice(0, 2).join(' ');
+/**
+ * A butterfly's species within the census's: as many words as the census names (a census of
+ * «Mechanitis polymnia» takes every subspecies; one named to the subspecies, only that one).
+ */
+export function inTaxon(want, value) {
+  const words = speciesKey(want).split(' ').filter(Boolean);
+  return words.length > 0 && speciesKey(value).split(' ').slice(0, words.length).join(' ') === words.join(' ');
+}
 /** The sheet's serial day of an ISO date (2026-10-05 → 46300). */
 export const serialOf = day => Math.round((Date.parse(`${day}T00:00:00Z`) - Date.UTC(1899, 11, 30)) / 86_400_000);
 /** Alive: no death date and no cause ("NA" in Death_date says neither, so not alive). */
@@ -109,7 +119,7 @@ function entryOf(recordId, row, values, species, staged = false) {
  * entries kept in the app on top.
  */
 export function aliveButterflies(store, { species = null } = {}) {
-  const want = species === null ? null : speciesKey(species);
+  const want = species === null ? null : species;
   const staged = store.staged.ofSheet(SHEET);
   const out = [];
   const rows = store.db
@@ -123,7 +133,7 @@ export function aliveButterflies(store, { species = null } = {}) {
     const values = parse(r.values_json) ?? {};
     for (const change of staged.edits.get(r.id) ?? []) values[change.field] = change.after;
     if (blank(values.Insectary_ID) || !isAlive(values)) continue;
-    if (want !== null && speciesKey(values.SPECIES) !== want) continue;
+    if (want !== null && !inTaxon(want, values.SPECIES)) continue;
     out.push(entryOf(r.id, r.row_num, values, values.SPECIES));
   }
   // Emerged and not yet in the sheet: its species is its clutch's (the sheet's formula gives it once written).
@@ -142,7 +152,7 @@ export function aliveButterflies(store, { species = null } = {}) {
       const values = item.values ?? {};
       if (blank(values.Insectary_ID) || !isAlive(values)) continue;
       const kind = text(values.SPECIES) || text(clutchSpecies.get(text(values['CLUTCH NUMBER'])));
-      if (want !== null && speciesKey(kind) !== want) continue;
+      if (want !== null && !inTaxon(want, kind)) continue;
       const row = premade.get(SHEET, upper(values.Insectary_ID))?.row_num ?? null;
       out.push(entryOf(item.rowId, row, values, kind, true));
     }
@@ -150,17 +160,27 @@ export function aliveButterflies(store, { species = null } = {}) {
   return out.sort((a, b) => (a.row ?? Infinity) - (b.row ?? Infinity));
 }
 
-/** Species alive in the insectary now, most butterflies first: what a census can be started for. */
+/**
+ * Species alive in the insectary now, most butterflies first: what a census can be started for. A
+ * census is of a species, its subspecies together (they share a cage); each comes with its subspecies' counts.
+ */
 export function aliveSpecies(store) {
   const counts = new Map();
   for (const b of aliveButterflies(store)) {
     if (!b.species || /^(NA|null)$/i.test(b.species)) continue;
-    const key = speciesKey(b.species);
-    const seen = counts.get(key) ?? { species: b.species, alive: 0 };
+    const name = binomial(b.species);
+    const key = speciesKey(name);
+    const seen = counts.get(key) ?? { species: name, alive: 0, subspecies: new Map() };
     seen.alive++;
+    const sub = speciesKey(b.species);
+    const part = seen.subspecies.get(sub) ?? { species: b.species.replace(/\s+/g, ' ').trim(), alive: 0 };
+    part.alive++;
+    seen.subspecies.set(sub, part);
     counts.set(key, seen);
   }
-  return [...counts.values()].sort((a, b) => b.alive - a.alive || a.species.localeCompare(b.species));
+  return [...counts.values()]
+    .map(s => ({ ...s, subspecies: [...s.subspecies.values()].sort((a, b) => b.alive - a.alive) }))
+    .sort((a, b) => b.alive - a.alive || a.species.localeCompare(b.species));
 }
 
 function shapeMark(m, names) {
@@ -210,7 +230,6 @@ function summaryOf(store, c, names, roster = null) {
   const result = parse(c.result_json);
   const count = kind => marks.filter(m => m.kind === kind).length;
   const seen = marks.filter(m => m.kind === 'seen');
-  const own = speciesKey(c.species);
   const markOf = markFinder(marks);
   const listed = result ? result.roster : roster;
   // Seen of the list (a butterfly recorded dead and seen alive is a finding, not one of the list).
@@ -218,7 +237,7 @@ function summaryOf(store, c, names, roster = null) {
     ? result
       ? listed.filter(b => b.status === 'seen').length
       : listed.filter(b => markOf(b)?.kind === 'seen').length
-    : seen.filter(m => speciesKey(m.species) === own).length;
+    : seen.filter(m => inTaxon(c.species, m.species)).length;
   const listedIds = new Set((listed ?? []).map(b => b.recordId));
   return {
     id: c.id,
@@ -238,9 +257,9 @@ function summaryOf(store, c, names, roster = null) {
       seen: seenListed,
       excluded: count('excluded'),
       disappeared: result ? result.roster.filter(b => b.status === 'disappeared').length : 0,
-      otherSpecies: seen.filter(m => speciesKey(m.species) !== own).length,
+      otherSpecies: seen.filter(m => !inTaxon(c.species, m.species)).length,
       // Seen, of the species, but not on the list: recorded dead (or a repeated ID); to look at.
-      offList: listed ? seen.filter(m => speciesKey(m.species) === own && !listedIds.has(m.record_id) && !listed.some(b => markOf(b) === m)).length : 0,
+      offList: listed ? seen.filter(m => inTaxon(c.species, m.species) && !listedIds.has(m.record_id) && !listed.some(b => markOf(b) === m)).length : 0,
       unknown: count('unknown'),
       doubts: seen.filter(m => m.doubt).length,
     },

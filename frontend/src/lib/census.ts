@@ -86,7 +86,7 @@ export interface CensusDetail {
   stamp: number
 }
 export interface CensusOverview {
-  species: { species: string; alive: number }[]
+  species: { species: string; alive: number; subspecies?: { species: string; alive: number }[] }[]
   open: CensusSummary[]
   history: CensusSummary[]
   stamp: number
@@ -97,7 +97,14 @@ const speciesKey = (v: unknown) =>
     .trim()
     .replace(/\s+/g, ' ')
     .toLowerCase()
-export const sameSpecies = (a: unknown, b: unknown) => speciesKey(a) === speciesKey(b)
+/**
+ * A butterfly's species (`b`) within the census's (`a`), to as many words as the census names: a census of
+ * «Mechanitis polymnia» takes every subspecies; one named to the subspecies, only that one.
+ */
+export function sameSpecies(a: unknown, b: unknown) {
+  const words = speciesKey(a).split(' ').filter(Boolean)
+  return words.length > 0 && speciesKey(b).split(' ').slice(0, words.length).join(' ') === words.join(' ')
+}
 
 /** The mark of a butterfly of the list: by its row; one marked while it was in the app (staged:…) by its ID. */
 export function markFinder(marks: CensusMark[]): (b: { recordId: string; id: string }) => CensusMark | null {

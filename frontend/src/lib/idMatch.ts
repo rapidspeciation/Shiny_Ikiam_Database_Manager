@@ -203,7 +203,8 @@ export function matchIds<T extends Matchable>(items: T[], typed: string, opts: M
       tier,
       at: fit.at,
       alive,
-      sameSpecies: !species || speciesKey(opts.speciesOf?.(item)) === species,
+      // To as many words as given: «Mechanitis polymnia» takes every subspecies, a full name only that one.
+      sameSpecies: !species || speciesKey(opts.speciesOf?.(item)).split(' ').slice(0, species.split(' ').length).join(' ') === species,
       sameSex: !sex || sexOf(opts.sexOf?.(item)) === sex,
       score: tier + (alive ? 0 : (opts.deadStep ?? DEAD_STEP)),
     })

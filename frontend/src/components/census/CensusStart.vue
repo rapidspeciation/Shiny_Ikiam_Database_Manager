@@ -117,6 +117,11 @@ const choice = (on: boolean) =>
             <span class="min-w-0 flex-1">
               <span class="block text-xs text-stone-500 italic">{{ genus(s.species) }}</span>
               <span class="block text-base leading-tight font-medium italic">{{ short(s.species) }}</span>
+              <span v-if="(s.subspecies?.length ?? 0) > 1" class="block text-xs leading-snug text-stone-500">
+                <template v-for="(sub, i) in s.subspecies" :key="sub.species"
+                  >{{ i ? ' · ' : '' }}<i>{{ sub.species.split(' ').slice(2).join(' ') || '—' }}</i> {{ sub.alive }}</template
+                >
+              </span>
             </span>
             <Loader2 v-if="busy === s.species" :size="18" class="shrink-0 animate-spin text-brand-700" />
             <span v-else class="shrink-0 rounded-full bg-brand-50 px-2 py-0.5 text-sm font-semibold text-brand-800">{{

@@ -114,10 +114,14 @@ test('alive in the insectary: no death date and no cause, typed rows only, entri
       { sex: a3.sex, wild: a3.wild, entered: a3.entered, row: a3.row },
       { sex: 'male', wild: true, entered: 46290, row: 4 },
     );
+    // A census is of a species (its subspecies share a cage), with each subspecies' count.
     assert.deepEqual(aliveSpecies(store), [
-      { species: POLY, alive: 4 },
-      { species: LYS, alive: 1 },
+      { species: 'Mechanitis polymnia', alive: 4, subspecies: [{ species: POLY, alive: 4 }] },
+      { species: 'Mechanitis lysimnia', alive: 1, subspecies: [{ species: LYS, alive: 1 }] },
     ]);
+    // A census of the species takes its subspecies; one named to the subspecies, only that one.
+    assert.equal(aliveButterflies(store, { species: 'Mechanitis polymnia' }).length, 4);
+    assert.equal(aliveButterflies(store, { species: 'Mechanitis polymnia eurydice' }).length, 0);
     // Emerged in Emergidos (kept in the app): alive, of its clutch's species, in its pre-made row.
     await store.staged.stage(
       {
