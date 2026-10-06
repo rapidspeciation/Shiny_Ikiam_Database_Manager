@@ -235,6 +235,19 @@ Clutches (eggs laid) and their follow-up in Insectary_stocks.
 3. The grid shows clutches laid in the last 60 days not yet emerged; «ver los
    últimos 150» shows more.
 
+On phones the tab shows cards (the default). Each card shows what to count
+today and the next date expected (hatching, pupation, emergence, from the
+species' usual days). In a clutch:
+
+- −N asks whether they died, disappeared or were preserved; «Pasó» chooses
+  the day (today, yesterday, another).
+- Every event adds its dated, signed note to NOTES, shown before saving.
+- Preserved larvae can be registered in Insectary_data at once: «Registrar N
+  en Insectary_data» opens Emergidos' cards, with their IDs, CAMs and tubes.
+- «Foto de hoy» or the camera next to an event adds photos. They stay in the
+  app and do not go to the sheet.
+- «Marcar como revisado» marks the clutch as checked for today.
+
 Link: `#/clutches` (no parameters).
 
 ## Censo — `#/censo`

@@ -42,9 +42,8 @@ documents' folder, citing the document and date): "Protocol for Controlled Cross
    Generation F1/F2/Backcross.
 5. A male with no tissue preserved: his F1s are not used for sampling (their
    purpose changes).
-6. Offspring: F1 larvae are preserved at the 4th instar per the protocol;
-   eggs and younger larvae that look about to die are preserved early (the
-   eggs and 3rd instars of Sep 2026). Each gets an Insectary_ID and `LIFESTAGE`
+6. Offspring: F1 larvae are preserved at the 3rd instar (since Oct 2026; the
+   4th before); eggs and larvae that look about to die are preserved early. Each gets an Insectary_ID and `LIFESTAGE`
    ([insectary-individuals.md](insectary-individuals.md)). Dead 1st–2nd
    instar larvae of families are preserved as well (dead and live siblings
    are wanted), tied to clutch, stage and date.

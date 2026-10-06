@@ -29,6 +29,14 @@ block ran out): PAS copies them down; no values are typed there.
 - One term per day, plant or group: `=12+15`. Single values too: `=12`.
 - A minus is a loss: `=27-5` (27 larvae, 5 died). A total corrected later
   becomes a subtraction: `=31+4-34`.
+- NUMBER OF LARVAE holds the larvae used (team convention since Oct 2026):
+  those that died or disappeared are subtracted, preserved ones and those that
+  pupated are not (20 larvae, 10 preserved, 5 pupated, 5 died → `=20-5`).
+  Older rows also subtracted the pupated and preserved ones; they stay.
+- The sheet keeps one date per stage, the first. Each day's counts go in
+  NOTES, one dated note per event: `5/10/26 FCH: 3 larvae hatched`,
+  `… 5 larvae died`, `… 2 larvae disappeared`, `… 3 pupated`,
+  `… 7 eggs laid on 4/10/26` (the day it happened, when not the day written).
 - `match_notebook` writes them; send the terms.
 - Larvae > eggs (larvae found later), pupae > larvae and adults > pupae all
   happen: soft checks, never errors by themselves.

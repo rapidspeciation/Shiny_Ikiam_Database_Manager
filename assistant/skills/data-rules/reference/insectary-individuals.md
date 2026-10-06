@@ -145,9 +145,11 @@ in 2024.
 ## Eggs, larvae and pupae preserved (since Sep 2026)
 
 F1 eggs, larvae and prepupae get an Insectary_ID each, from the pre-made
-sequence. The protocol preserves F1s at the 4th instar; eggs and younger
-larvae that look about to die are preserved early (hence the eggs and 3rd
-instars of Sep 2026).
+sequence. F1 larvae are preserved at the 3rd instar (since Oct 2026; the
+4th until Sep 2026); eggs and larvae that look about to die are preserved
+early. The notebook (Emergidos) writes them as a run of tube IDs with
+"Preserved alive · Flash frozen · Larvae · 3rd instar", or per line
+"lysimnia egg → preserved → FS50849027 → CAM078279".
 
 | Column | Value |
 |---|---|
@@ -160,10 +162,12 @@ instars of Sep 2026).
 | CAM_ID, Tube_1 | a CAM; one tube `WHOLE_ORGANISM` `Flash frozen` |
 | Preservation_medium | `NOT_COLLECTED` |
 | Research_purpose | `F1/F2 mutation rate` |
-| Note | `d/m/yy INI: Larvae 4th instar` |
+| Note | `d/m/yy INI: Preserved alive 3rd instar` |
 
-The clutch's Insectary_stocks row gets the note "preserved d/m" and a
-subtraction in its count.
+The clutch's Insectary_stocks row gets a dated note per group, with the IDs:
+`d/m/yy INI: 2 larvae preserved as 3rd instar (R0C, R1C)`. Its NUMBER OF
+LARVAE keeps them: since Oct 2026 the count holds the larvae used, and only
+those that died or disappeared are subtracted ([clutches.md](clutches.md)).
 
 ## Research_purpose and Pedigree
 
