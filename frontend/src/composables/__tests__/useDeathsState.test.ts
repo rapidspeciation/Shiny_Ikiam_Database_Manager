@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { nextTick } from 'vue'
-import { createDeathsState, migrateDeathKeys, useDeathsState } from '../useDeathsState'
+import { createDeathsState, migrateDeathKeys, migrateGroupKeys, useDeathsState } from '../useDeathsState'
 
 const put = (storage: Storage, key: string, value: unknown) => storage.setItem(`ithomiini:${key}`, JSON.stringify(value))
 const got = (storage: Storage, key: string) => {
@@ -49,30 +49,53 @@ describe('the IDs and choices Muertes keeps', () => {
     migrateDeathKeys()
     expect(got(sessionStorage, 'deaths:ids')).toEqual(['D1D', 'D2D'])
   })
+  it('turns the group and the unfinished ones of 1–6 Oct into cards, each with its own values', () => {
+    put(sessionStorage, 'deaths:ids', ['A1D', 'A2D'])
+    put(sessionStorage, 'deaths:unfinished', ['B5E'])
+    put(sessionStorage, 'deaths:cause', 'Eaten')
+    put(sessionStorage, 'deaths:preserved', false)
+    put(sessionStorage, 'deaths:own', { A2D: { cause: 'Spider' }, B5E: { preserved: true, note: 'Head eaten' } })
+    migrateGroupKeys()
+    const cards = got(sessionStorage, 'deaths:cards') as { id: string; choice: { cause: string; preserved: boolean; note: string } }[]
+    expect(cards.map(c => [c.id, c.choice.cause, c.choice.preserved, c.choice.note])).toEqual([
+      ['A1D', 'Eaten', false, ''],
+      ['A2D', 'Spider', false, ''],
+      ['B5E', 'Eaten', true, 'Head eaten'],
+    ])
+    expect(got(sessionStorage, 'deaths:defaults')).toEqual({ cause: 'Eaten', preserved: false, note: '' })
+    for (const key of ['deaths:ids', 'deaths:unfinished', 'deaths:own', 'deaths:cause', 'deaths:preserved'])
+      expect(got(sessionStorage, key), key).toBeUndefined()
+  })
   it('starts empty, today, not preserved, Flash frozen', () => {
     const s = createDeathsState()
-    expect(s.picked.value).toEqual([])
-    expect(s.date.value).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-    expect(s.cause.value).toBe('')
-    expect(s.preserved.value).toBe(false)
+    expect(s.cards.value).toEqual([])
+    expect(s.focus.value).toBeNull()
+    expect(s.defaults.value.date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(s.defaults.value.cause).toBe('')
+    expect(s.defaults.value.preserved).toBe(false)
     expect(s.medium.value).toBe('Flash frozen')
   })
-  it('is one state for both modes: what the cards choose, the table sees, and it survives a reload', async () => {
+  it('is one state for both modes: the table\'s IDs and values are the cards\', and they survive a reload', async () => {
     const cards = useDeathsState()
     const table = useDeathsState()
     expect(table).toBe(cards)
-    cards.picked.value = ['E1D', 'E2D']
     cards.cause.value = 'Unknown'
     cards.preserved.value = true
     cards.date.value = '2026-09-30'
+    table.picked.value = ['E1D', 'E2D']
     cards.samples.E1D = { cam: 'CAM078001', tube: 'FS1' }
-    expect(table.picked.value).toEqual(['E1D', 'E2D'])
-    expect(table.date.value).toBe('2026-09-30')
+    expect(cards.cards.value.map(c => [c.id, c.choice.cause, c.choice.date])).toEqual([
+      ['E1D', 'Unknown', '2026-09-30'],
+      ['E2D', 'Unknown', '2026-09-30'],
+    ])
+    expect(table.defaults.value).toEqual({ date: '2026-09-30', cause: 'Unknown', preserved: true, note: '' })
     expect(table.samples.E1D.tube).toBe('FS1')
     await nextTick()
     const reloaded = createDeathsState()
     expect(reloaded.picked.value).toEqual(['E1D', 'E2D'])
     expect(reloaded.cause.value).toBe('Unknown')
     expect(reloaded.preserved.value).toBe(true)
+    // The date starts at today again.
+    expect(reloaded.date.value).not.toBe('2026-09-30')
   })
 })

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import ChoiceField from '../components/ChoiceField.vue'
 import DateField from '../components/DateField.vue'
-import { computed, ref } from 'vue'
+import { computed, ref, type WritableComputedRef } from 'vue'
 import { History, PenLine } from 'lucide-vue-next'
 import EntryModeToggle from '../components/EntryModeToggle.vue'
 import IdPicker from '../components/IdPicker.vue'
@@ -14,17 +14,20 @@ import { useSheet } from '../composables/useSheet'
 import { isBlank } from '../lib/cells'
 import { dayLabel, formatSerial, serialFromIso } from '../lib/dates'
 import { notify } from '../lib/notice'
-import { deathCells } from '../lib/deaths'
+import { deathCells, type ChoiceField as DeathField, type DeathChoice } from '../lib/deaths'
+import { applyToAll, cardOf } from '../lib/deathsCart'
 import { fillIfBlank, orderColumns, rowsById } from '../lib/rows'
 import { usePending } from '../stores/pending'
 import { t } from '../lib/i18n'
 
 /**
- * "Registrar Muertes", as cards (the default on every device: search, big
- * buttons, one Save) or as the table: the IDs typed show their rows at once (to look at
- * them), and "Escribir" puts the death date and cause in those rows' empty
- * cells. The latest recorded deaths are a separate table below. Both modes
- * share what is being registered (useDeathsState), so switching keeps it.
+ * "Registrar Muertes", as cards (the default on every device: search,
+ * «Seleccionadas», big buttons; components/deaths/DeathsCards.vue) or as the
+ * table: the IDs typed show their rows at once (to look at them), and
+ * "Escribir" puts each one's death date and cause in its empty cells. The
+ * latest recorded deaths are a separate table below. Both modes share what is
+ * being registered (useDeathsState): the IDs are the cards', and a date, cause
+ * or preservation chosen here applies to all of them and to the next ones.
  */
 const MODULE = 'Insectary_data'
 const module = ref(MODULE)
@@ -35,7 +38,20 @@ const collectors = computed(() => listColumn('Abbr_name'))
 const { mode } = useEntryMode('deaths')
 
 // Deaths are usually entered the same day: today by default, with its weekday shown.
-const { picked, date, cause, preserved } = useDeathsState()
+const state = useDeathsState()
+const { picked, cards, defaults } = state
+/** A value chosen in the table: every ID chosen gets it, and so do the next ones. */
+const everywhere = <F extends DeathField>(field: F, own: WritableComputedRef<DeathChoice[F]>) =>
+  computed<DeathChoice[F]>({
+    get: () => own.value,
+    set: v => {
+      own.value = v
+      cards.value = applyToAll(cards.value, field, v)
+    },
+  })
+const date = everywhere('date', state.date)
+const cause = everywhere('cause', state.cause)
+const preserved = everywhere('preserved', state.preserved)
 const notPreserved = computed({ get: () => !preserved.value, set: v => (preserved.value = !v) })
 const recentCount = ref(30)
 const showHistory = ref(false)
@@ -99,12 +115,14 @@ function write() {
   if (!table.value || !chosenRows.value.length) return notify(t('Escribe al menos un Insectary ID'))
   if (dateError.value) return notify(dateError.value, 'error')
   if (!date.value) return notify(t('Elige la fecha de muerte'), 'error')
-  const serial = serialFromIso(date.value)
   let filled = 0
-  // The same cells as the cards' "Save" (lib/deaths.ts), so both modes write a death alike.
+  // The same cells as the cards' «Añadir a muertes» (lib/deaths.ts), so both modes write a death alike,
+  // each with its own date, cause and preservation (from the cards, or what was chosen here).
   for (const row of chosenRows.value) {
     const label = String(row.values.Insectary_ID)
-    for (const cell of deathCells(row, pending.value, { serial, cause: cause.value, notPreserved: notPreserved.value }))
+    const own = cardOf(cards.value, label)?.choice ?? defaults.value
+    const serial = own.date ? serialFromIso(own.date) : null
+    for (const cell of deathCells(row, pending.value, { serial, cause: own.cause, notPreserved: !own.preserved }))
       if (fillIfBlank(MODULE, row, label, cell.field, cell.value, cell.overwrite)) filled++
   }
   pending.touch()

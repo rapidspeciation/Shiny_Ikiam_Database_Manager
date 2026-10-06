@@ -433,7 +433,7 @@ export function factsOf(get: (field: string) => CellValue, today: number): Facts
   }
 }
 
-// --- Each card its own date, cause, preservation and note
+// --- The death a card is recorded with
 
 /** What a death is registered with: the date (ISO), the cause, preserved or not, and a note to add. */
 export interface DeathChoice {
@@ -444,61 +444,6 @@ export interface DeathChoice {
   note: string
 }
 export type ChoiceField = keyof DeathChoice
-/** The values a card has of its own (a note typed in its editor, an unfinished one's choices), by Insectary ID; the rest come from the panel. */
-export type OwnChoices = Record<string, Partial<DeathChoice>>
-
-/** A card's date, cause, preservation and note: its own where it has them, else the panel's (for all cards). */
-export function choiceFor(all: DeathChoice, own: OwnChoices, id: string): DeathChoice {
-  const mine = own[id]
-  return mine ? { ...all, ...mine } : all
-}
-
-/**
- * One value chosen in the panel. With cards selected it is theirs only (their
- * own value; the same as the panel's is not kept as their own); with none
- * selected it is every card's: the panel's value, and no card keeps its own
- * value of that field. Returns the new panel values and own values (the old
- * ones are not changed).
- */
-export function setChoice<F extends ChoiceField>(
-  all: DeathChoice,
-  own: OwnChoices,
-  selected: string[],
-  field: F,
-  value: DeathChoice[F],
-): { all: DeathChoice; own: OwnChoices } {
-  const out: OwnChoices = {}
-  const put = (id: string, mine: Partial<DeathChoice>) => {
-    if (Object.keys(mine).length) out[id] = mine
-  }
-  if (!selected.length) {
-    for (const [id, mine] of Object.entries(own)) {
-      const { [field]: _dropped, ...rest } = mine
-      put(id, rest)
-    }
-    return { all: { ...all, [field]: value }, own: out }
-  }
-  const chosen = new Set(selected)
-  for (const [id, mine] of Object.entries(own)) if (!chosen.has(id)) put(id, mine)
-  for (const id of selected) {
-    const { [field]: _old, ...rest } = own[id] ?? {}
-    put(id, all[field] === value ? rest : { ...rest, [field]: value })
-  }
-  return { all, own: out }
-}
-
-/** The value these cards share for a field, or undefined when they differ (none: undefined). */
-export function sharedChoice<F extends ChoiceField>(all: DeathChoice, own: OwnChoices, ids: string[], field: F): DeathChoice[F] | undefined {
-  if (!ids.length) return undefined
-  const first = choiceFor(all, own, ids[0])[field]
-  return ids.every(id => choiceFor(all, own, id)[field] === first) ? first : undefined
-}
-
-/** Own values of cards no longer chosen are forgotten. */
-export function keepOwn(own: OwnChoices, ids: string[]): OwnChoices {
-  const keep = new Set(ids)
-  return Object.fromEntries(Object.entries(own).filter(([id]) => keep.has(id)))
-}
 
 /** Phrases the team writes in the notes of a death (English, as in the sheet): quick buttons. */
 export const DEATH_NOTE_PHRASES = [
@@ -526,8 +471,8 @@ export function noteCell(row: TableRow, get: Getter, note: string, today: number
 }
 
 /**
- * The cells "Save" writes for one card, with its own date, cause,
- * preservation and note (choiceFor): what the table's «Escribir fecha y causa»
+ * The cells recording a card's death writes, with its own date, cause,
+ * preservation and note: what the table's «Escribir fecha y causa»
  * writes (deathCells), plus, for a body preserved now, its CAM, tube (`sample`)
  * and the medium; then the note, dated `today` and signed with `initials`.
  * A butterfly already recorded dead gets no tube here (Tubos does), but its note.
@@ -554,54 +499,6 @@ export function cardCells(
   return note ? [...cells, note] : cells
 }
 
-// --- Choosing: one butterfly at a time, or several as an explicit group
-
-/** What is chosen: the Insectary IDs (one, unless `several`), and whether taps build a group. */
-export interface Picking {
-  picked: string[]
-  several: boolean
-}
-/** A new choice, and the IDs it leaves behind whose registering is kept (setAside). */
-export interface PickResult extends Picking {
-  left: string[]
-}
-const sameId = (a: string, b: string) => searchKey(a) === searchKey(b)
-
-/**
- * One ID chosen (a suggestion, Enter, «¿Quisiste decir?»). One at a time it
- * replaces the butterfly there (left behind); in several, or with `add`
- * (Ctrl or Shift click, a long press), it joins the group, and leaves it when
- * already in (nothing left behind: taking it out drops what it had).
- */
-export function pickOne(p: Picking, id: string, add = false): PickResult {
-  const has = p.picked.some(x => sameId(x, id))
-  if (p.several || add) {
-    if (!has) return { picked: [...p.picked, id], several: true, left: [] }
-    return p.several ? { picked: p.picked.filter(x => !sameId(x, id)), several: true, left: [] } : { ...p, left: [] }
-  }
-  if (has && p.picked.length === 1) return { ...p, left: [] }
-  return { picked: [id], several: false, left: p.picked.filter(x => !sameId(x, id)) }
-}
-
-/**
- * Several IDs at once (a range B0D-B9D, a list pasted): they become the group
- * (after the ones already in it, in several), and the butterfly there one at a
- * time is left behind unless it is one of them. A single ID is pickOne.
- */
-export function pickMany(p: Picking, ids: string[]): PickResult {
-  if (!ids.length) return { ...p, left: [] }
-  if (ids.length === 1) return pickOne(p, ids[0])
-  const picked = p.several ? [...p.picked] : []
-  for (const id of ids) if (!picked.some(x => sameId(x, id))) picked.push(id)
-  const left = p.several ? [] : p.picked.filter(x => !picked.some(y => sameId(x, y)))
-  return { picked, several: true, left }
-}
-
-/** «Seleccionar varias»: the butterfly there starts the group. */
-export const startSeveral = (p: Picking): Picking => ({ picked: p.picked, several: true })
-/** Leaving several («Una a una», «Vaciar»): back to one at a time, keeping a group of one, else with none chosen. */
-export const endSeveral = (p: Picking): Picking => ({ picked: p.picked.length === 1 ? p.picked : [], several: false })
-
 /** Why a butterfly's death cannot be written yet: '' when it can. */
 export type Lack = '' | 'date' | 'bad-date' | 'cause' | 'sample'
 export function lackOf(choice: DeathChoice, dying: boolean, gap?: PreservationGap): Lack {
@@ -610,25 +507,4 @@ export function lackOf(choice: DeathChoice, dying: boolean, gap?: PreservationGa
   if (dying && !choice.cause) return 'cause'
   if (gap && hasGap(gap)) return 'sample'
   return ''
-}
-
-/**
- * What becomes of butterflies no longer chosen, one at a time: nothing when
- * nothing was registered for them (looked up to see if alive); else those with
- * all they need go to the pending changes (saved like any edit) and the rest
- * wait as unfinished, with what they lack.
- */
-export function setAside(
-  ids: string[],
-  touched: boolean,
-  lack: (id: string) => Lack,
-): { pending: string[]; unfinished: { id: string; lack: Exclude<Lack, ''> }[] } {
-  const out = { pending: [] as string[], unfinished: [] as { id: string; lack: Exclude<Lack, ''> }[] }
-  if (!touched) return out
-  for (const id of ids) {
-    const why = lack(id)
-    if (why) out.unfinished.push({ id, lack: why })
-    else out.pending.push(id)
-  }
-  return out
 }

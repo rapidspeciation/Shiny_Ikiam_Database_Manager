@@ -2,16 +2,17 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRaw, watch } from 'vue'
 import {
   AlertTriangle,
-  Check,
   CheckCircle2,
-  ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Circle,
+  Columns3,
   History,
   ListChecks,
   Loader2,
+  Plus,
   Search,
   StickyNote,
-  Undo2,
   X,
 } from 'lucide-vue-next'
 import DateField from '../DateField.vue'
@@ -19,88 +20,95 @@ import EntryModeToggle from '../EntryModeToggle.vue'
 import RowDrawer from '../RowDrawer.vue'
 import IdFilters from '../IdFilters.vue'
 import IdSuggestion from '../IdSuggestion.vue'
-import DeathEditor from './DeathEditor.vue'
 import SexBadge from '../SexBadge.vue'
 import LifeBadge from './LifeBadge.vue'
+import DeathsRecorded, { type RecordedItem } from './DeathsRecorded.vue'
 import TabHistory from '../history/TabHistory.vue'
+import UndoDialog from '../history/UndoDialog.vue'
 import { useDeathsState } from '../../composables/useDeathsState'
 import type { EntryMode } from '../../composables/useEntryMode'
 import { useKeyboard, useMedia } from '../../composables/usePhone'
-import { api, requestId } from '../../lib/api'
+import { useUndo } from '../../composables/useUndo'
+import { api } from '../../lib/api'
 import { isBlank } from '../../lib/cells'
-import { dayLabel, formatSerial, isoToSerial, serialFromIso, serialToIso, todayIso } from '../../lib/dates'
 import { noteDay } from '../../lib/clutches'
+import { dayLabel, formatSerial, isoToSerial, serialFromIso, serialToIso, todayIso } from '../../lib/dates'
 import {
+  DEATH_COLUMNS,
   DEATH_NOTE_PHRASES,
   KILLED,
+  NOTES,
   WHOLE,
   bestRack,
   buildIndex,
-  endSeveral,
-  lackOf,
-  pickMany,
-  pickOne,
-  setAside,
-  startSeveral,
   cardCells,
-  choiceFor,
   factsOf,
   hasGap,
+  lackOf,
   lifeOf,
   lookAlikes,
+  noteCell,
   preservationGaps,
-  usedSamples,
   rankCauses,
   searchKey,
-  setChoice,
-  sharedChoice,
-  keepOwn,
   suggest,
+  usedSamples,
   type ChoiceField,
   type DeathCell,
   type DeathChoice,
   type Entry,
   type Facts,
   type Lack,
-  type OwnChoices,
-  type PickResult,
   type PreservationGap,
   type RackSuggestion,
   type Suggestion,
 } from '../../lib/deaths'
+import {
+  addCards,
+  applyToAll,
+  differing,
+  focusAfterPick,
+  hasCard,
+  readOrder,
+  recordedOn,
+  removeCards,
+  setCardField,
+  DEFAULT_ORDER,
+  type DeathCard,
+  type HistoryAction,
+  type RecordedOrder,
+} from '../../lib/deathsCart'
 import { isPattern, matchIds, type SexFilter } from '../../lib/idMatch'
 import { useLookAlikes } from '../../composables/useLookAlikes'
 import { idTokens, resolveIds } from '../../lib/ids'
 import { errorText, notify } from '../../lib/notice'
+import { persistentRef } from '../../lib/persist'
 import { verificationsFor } from '../../lib/verifications'
 import type { AlertsData, MissingSample } from '../../lib/review'
 import { fillIfBlank, initialsOf } from '../../lib/rows'
 import type { CellValue, Table, TableRow } from '../../lib/types'
-import { usePending } from '../../stores/pending'
+import { usePending, type SaveResult } from '../../stores/pending'
 import { useSession } from '../../stores/session'
-import { type ServerRecord, useTables } from '../../stores/tables'
+import { useTables } from '../../stores/tables'
 import { t, tn, tx, type Msg } from '../../lib/i18n'
 
 /**
- * Muertes as cards, for a thumb in the insectary (phones, tablets, or anyone
- * who picks «Tarjetas»): a search box that finds a butterfly by Insectary ID
- * (or CAM or tube) and says at once whether it is alive; the butterflies
- * chosen as cards; the death date, the cause as big buttons and preserved or
- * not (each one's CAM and tube right under «Preservada»), and a note (quick
- * phrases or typed, in English) added to Notes_Insectary_data dated and
- * signed as the team writes notes; then one "Save" that writes exactly what
- * the table's «Escribir fecha y causa» writes, plus the note (lib/deaths.ts),
- * and saves it, with an Undo. One butterfly at a time: choosing another
- * replaces it, and what was registered for the one there goes to the pending
- * changes (saved like any edit) or, lacking something, waits as unfinished.
- * «Seleccionar varias» (or a range, a list pasted, Ctrl/Shift-click or a long
- * press on a suggestion) builds a group instead, which the choices apply to
- * as a whole; Save, «Vaciar» or «Una a una» end it. The latest deaths below,
- * by day, the ones still to save first; a card opens the full-screen editor;
- * «Historial» lists today's saves of Muertes, to undo one. On a wide
- * screen (a tablet, a phone held sideways) the search and cards take the left
- * and the registering, with Save, a column on the right. What is chosen is
- * shared with the table (useDeathsState).
+ * Muertes as cards, in two levels like a shopping cart. A search box finds a
+ * butterfly by Insectary ID (or CAM or tube; worn wings with A?B, A[16]B and
+ * look-alikes) and says at once whether it is alive; Enter or a tap puts it
+ * in «Seleccionadas», with the panel's values for the next butterflies (date,
+ * cause, preservation, note: choose Heat stroke once, then pick ten IDs). A
+ * card tapped opens in the panel, which then changes that card only. Each
+ * card's «Añadir a muertes» (or «Añadir todas», Ctrl+Enter) records its death
+ * as before (lib/deaths.ts cardCells: the NA / NOT_COLLECTED block or the
+ * preserved body's CAM and tube, the note dated and signed) and saves it;
+ * × takes it out, nothing saved. «Registradas hoy» lists the deaths saved
+ * from Muertes today (the history), sorted to copy into the notebook: one
+ * tapped opens in the panel to correct it, «Deshacer» undoes its death
+ * through the history's undo. One butterfly picked alone is shown in the panel
+ * at once (one at a time); «Seleccionar varias» adds each ID tapped without that.
+ * On a wide screen the panel is the right column, always there; on a phone it
+ * folds into one line above the cards, with the button at the foot.
  */
 const MODULE = 'Insectary_data'
 const props = defineProps<{
@@ -121,14 +129,16 @@ const wide = useMedia('(min-width: 700px)')
 const roomy = useMedia('(min-width: 1024px)')
 /** A short screen (a phone sideways, ~300 px): what is typed comes before explanations. */
 const short = useMedia('(max-height: 520px)')
+/** A finger rather than a mouse: the keyboard closes after a pick, nothing is focused by itself. */
+const touch = useMedia('(pointer: coarse)')
 
-const { picked, several, touched, unfinished, date, cause, preserved, note, medium, samples, suggested, own } = useDeathsState()
+const { defaults, cards: scratch, focus, several, medium, samples, suggested } = useDeathsState()
 const query = ref('')
-const recentCount = ref(30)
 const today = computed(() => isoToSerial(todayIso()))
 /** Who signs the notes added here ("1/10/26 FCH: …"), as in Clutches. */
 const initials = computed(() => initialsOf(session.user?.displayName || '', props.collectors, session.user?.username || ''))
 const notePrefix = computed(() => `${noteDay(today.value)} ${initials.value}:`)
+const canEdit = computed(() => session.canEdit)
 
 // --- The butterflies, indexed once per version of the sheet (13,500 rows: typing must stay instant).
 const index = computed(() => (props.table ? buildIndex(props.table.rows) : []))
@@ -145,11 +155,46 @@ const isAlive = (entry: Entry) =>
   toRaw(pending.edits)[entry.row.id] ? lifeOf(get(entry.row)).state === 'alive' : aliveSaved.value.has(entry.row.id)
 const factsFor = (row: TableRow): Facts => factsOf(get(row), today.value)
 const idOf = (row: TableRow) => String(row.values.Insectary_ID)
+const sameId = (a: string, b: string) => searchKey(a) === searchKey(b)
 const rowById = computed(() => new Map((props.table?.rows || []).map(r => [r.id, r])))
+const cellText = (v: CellValue) => (isBlank(v) ? '' : String(v))
 
-const chosen = computed(() => picked.value.map(id => byKey.value.get(searchKey(id))?.row).filter((r): r is TableRow => !!r))
-/** Newest first: the card just added shows right under the search box. */
-const cards = computed(() => [...chosen.value].reverse())
+// --- «Seleccionadas»: each butterfly with its own death values
+/** The cards with their rows, newest first: the one just picked shows right under the search box. */
+const cardRows = computed(() => {
+  const out: TableRow[] = []
+  for (const card of scratch.value) {
+    const row = byKey.value.get(searchKey(card.id))?.row
+    if (row) out.push(row)
+  }
+  return out.reverse()
+})
+const choices = computed(() => new Map(scratch.value.map(c => [searchKey(c.id), c.choice])))
+const choiceOf = (row: TableRow): DeathChoice => choices.value.get(searchKey(idOf(row))) ?? defaults.value
+// IDs no longer in the sheet (renamed, a row deleted) leave the list once it has loaded.
+watch(
+  () => props.ready && index.value.length > 0,
+  loaded => {
+    if (!loaded) return
+    const gone = scratch.value.filter(c => !byKey.value.has(searchKey(c.id))).map(c => c.id)
+    if (!gone.length) return
+    scratch.value = removeCards(scratch.value, gone)
+    notify(t('No encontrado: {ids}', { ids: gone.join(', ') }), 'info')
+  },
+  { immediate: true },
+)
+
+/** The card the panel shows, or none (the values for the next butterflies). */
+const focusRow = computed(() => (focus.value ? (cardRows.value.find(r => sameId(idOf(r), focus.value!)) ?? null) : null))
+watch(scratch, list => {
+  if (focus.value && !hasCard(list, focus.value)) focus.value = null
+})
+/** A death of «Registradas hoy» open in the panel to correct it (its row id). */
+const editingId = ref<string | null>(null)
+const editingRow = computed(() => (editingId.value ? (rowById.value.get(editingId.value) ?? null) : null))
+const panelMode = computed<'defaults' | 'card' | 'recorded'>(() =>
+  editingRow.value ? 'recorded' : focusRow.value ? 'card' : 'defaults',
+)
 
 // --- Search
 const searchInput = ref<HTMLInputElement>()
@@ -202,14 +247,28 @@ const typedMissing = computed(() => {
 })
 const missingAlike = computed(() => (missing.value.length ? lookAlikes(missing.value[0], known.value) : []))
 
-const isPicked = (id: string) => picked.value.some(p => searchKey(p) === searchKey(id))
-/** Chooses one ID: one at a time it replaces the butterfly there; in several (or `add`) it joins the group or leaves it. */
-function choose(id: string, add = false) {
-  apply(pickOne({ picked: picked.value, several: several.value }, id, add))
+const isPicked = (id: string) => hasCard(scratch.value, id)
+/**
+ * IDs into «Seleccionadas», each with the panel's values; the panel then shows
+ * the one picked alone (one at a time), else the values for the next ones.
+ */
+function pick(ids: string[], add = false) {
+  if (!ids.length) return
+  const before = scratch.value
+  const after = addCards(before, ids, defaults.value).cards
+  scratch.value = after
+  focus.value = focusAfterPick(before, after, ids, several.value || add)
+  if (focus.value) editingId.value = null
+  cleared.value = null
+}
+/** One ID chosen (a suggestion, Enter, «¿Quisiste decir?»); in several a tap on one there takes it out. */
+function choose(id: string, add = false, tapped = false) {
+  if (tapped && several.value && isPicked(id)) remove(id)
+  else pick([id], add)
   query.value = ''
   missing.value = []
-  // One at a time: the keyboard closes on the butterfly and its death; in several it stays for the next ID.
-  if (!several.value) searchInput.value?.blur()
+  // On a phone the keyboard closes on the butterfly and its death; in several it stays for the next ID.
+  if (touch.value && !several.value && !add) searchInput.value?.blur()
 }
 /** Enter: the exact ID (or CAM/tube), several IDs, or a range in the sheet's pre-made order (B0D-B9D). */
 function enter() {
@@ -219,21 +278,19 @@ function enter() {
   if (tokens.length > 1 || tokens[0]?.includes('-')) return addTokens(tokens)
   const exact = byKey.value.get(searchKey(text))
   const top = suggestions.value[0]
-  // Enter never takes one out of the group (a tap on its suggestion does).
-  if (exact && several.value && isPicked(exact.id)) return
   if (exact) choose(exact.id)
   else if (top && top.via === searchKey(text)) choose(top.entry.id)
   // A pattern (A?B, A[16]B): the best of the IDs it fits.
   else if (top && isPattern(text)) choose(top.entry.id)
   else missing.value = [text]
 }
-/** Several IDs or a range: they become the group (or join it). */
+/** Several IDs or a range: all into «Seleccionadas». */
 function addTokens(tokens: string[]) {
   const { found, missing: none } = resolveIds(
     tokens,
     index.value.map(e => e.id),
   )
-  apply(pickMany({ picked: picked.value, several: several.value }, found))
+  pick(found)
   missing.value = none
   query.value = ''
 }
@@ -244,7 +301,7 @@ function onPaste(event: ClipboardEvent) {
     addTokens(tokens)
   }
 }
-/** A suggestion: Ctrl, Cmd or Shift adds it to the group; so does a long press on a touch screen. */
+/** A suggestion: Ctrl, Cmd or Shift adds it beside the others; so does a long press on a touch screen. */
 let pressTimer: ReturnType<typeof setTimeout> | undefined
 let longPressed = false
 function pressStart(event: PointerEvent, id: string) {
@@ -263,156 +320,57 @@ function tapSuggestion(event: MouseEvent, id: string) {
     longPressed = false
     return
   }
-  choose(id, event.ctrlKey || event.metaKey || event.shiftKey)
+  choose(id, event.ctrlKey || event.metaKey || event.shiftKey, true)
 }
 onBeforeUnmount(pressEnd)
-
-/** A card's ×: it leaves, and what was chosen for it with it (it was never saved). */
-function remove(id: string) {
-  picked.value = picked.value.filter(p => searchKey(p) !== searchKey(id))
-  own.value = keepOwn(own.value, [...picked.value, ...unfinished.value])
-  if (!picked.value.length) {
-    several.value = false
-    resetChoices()
+function searchKeys(event: KeyboardEvent) {
+  if (event.key === 'Escape' && query.value) {
+    event.stopPropagation()
+    query.value = ''
+    missing.value = []
   }
 }
 
-// --- One at a time, or several
-/** The panel back to a fresh butterfly: no cause, note or preservation, and today unless `keepDate` (the medium stays). */
-function resetChoices(keepDate = false) {
-  if (!keepDate) date.value = todayIso()
-  cause.value = ''
-  preserved.value = false
-  note.value = ''
-  touched.value = false
+/** A card's ×: it leaves «Seleccionadas», with what was chosen for it (nothing was saved). */
+function remove(id: string) {
+  scratch.value = removeCards(scratch.value, [id])
+  delete samples[id]
+  delete suggested[id]
+  delete refusals.value[id]
 }
-/** «Vaciar» with something registered: the group and its choices, to bring back with «Deshacer». */
-const cleared = ref<null | { picked: string[]; all: DeathChoice; own: OwnChoices }>(null)
-/** The new choice; the butterflies it leaves keep what was registered for them (keepLeft). */
-function apply(r: PickResult) {
-  const replaced = r.left.length > 0
-  if (replaced) keepLeft(r.left)
-  picked.value = r.picked
-  several.value = r.several
-  // Back to an unfinished one, alone: its choices come back to the panel.
-  const back = !r.several && r.picked.length === 1 ? unfinished.value.find(u => searchKey(u) === searchKey(r.picked[0])) : undefined
-  if (back) {
-    const mine = own.value[back] ?? {}
-    date.value = mine.date ?? date.value
-    cause.value = mine.cause ?? ''
-    preserved.value = mine.preserved ?? false
-    note.value = mine.note ?? ''
-    touched.value = true
-    const { [back]: _gone, ...rest } = own.value
-    own.value = rest
-  } else if (replaced || !r.picked.length) resetChoices()
-  unfinished.value = unfinished.value.filter(u => !isPicked(u))
-  own.value = keepOwn(own.value, [...picked.value, ...unfinished.value])
-  lastSave.value = null
+/** «Vaciar»: every card out, to bring back with «Deshacer». */
+const cleared = ref<DeathCard[] | null>(null)
+function clearAll() {
+  cleared.value = scratch.value
+  scratch.value = []
+  focus.value = null
+}
+function undoClear() {
+  if (!cleared.value) return
+  scratch.value = addCards(cleared.value, scratch.value.map(c => c.id), defaults.value).cards
   cleared.value = null
 }
-/**
- * The butterflies another ID replaced: with a death registered and all it
- * needs, its cells go to the pending changes, saved like any other edit (the
- * save bar); lacking something, it waits as unfinished with its choices.
- */
-function keepLeft(ids: string[]) {
-  const rows = ids.map(id => byKey.value.get(searchKey(id))?.row).filter((r): r is TableRow => !!r)
-  const rowOf = (id: string) => rows.find(r => idOf(r) === id)!
-  const { pending: ready, unfinished: waiting } = setAside(rows.map(idOf), touched.value, id =>
-    lackOf(choiceOf(rowOf(id)), dying(rowOf(id)), gapById.value.get(id)),
-  )
-  const kept: string[] = []
-  for (const id of ready) {
-    const row = rowOf(id)
-    const cells = plans.value.get(row.id) || []
-    for (const c of cells) fillIfBlank(MODULE, row, id, c.field, c.value, c.overwrite)
-    if (cells.length) kept.push(id)
-    delete samples[id]
-    delete suggested[id]
-  }
-  if (kept.length) pending.touch()
-  if (waiting.length) {
-    const later: OwnChoices = {}
-    for (const { id } of waiting) later[id] = { ...choiceOf(rowOf(id)) }
-    own.value = { ...own.value, ...later }
-    unfinished.value = [...unfinished.value.filter(u => !waiting.some(w => w.id === u)), ...waiting.map(w => w.id)]
-  }
-  const parts = [
-    kept.length ? t('{ids}: muerte en los cambios por guardar', { ids: kept.join(', ') }) : '',
-    waiting.length
-      ? t('{ids} sin terminar ({lack}): tócala arriba para seguir', {
-          ids: waiting.map(w => w.id).join(', '),
-          lack: lackText(waiting[0].lack),
-        })
-      : '',
-  ].filter(Boolean)
-  if (parts.length) notify(parts.join(' · '), waiting.length ? 'info' : 'success')
-}
-const lackText = (lack: Lack) =>
-  ({
-    '': '',
-    date: t('falta la fecha'),
-    'bad-date': t('fecha no válida'),
-    cause: t('falta la causa'),
-    sample: t('falta el CAM o el tubo'),
-  })[lack]
-/** The unfinished ones, with what each lacks: a tap takes it up again, × drops it. */
-const unfinishedRows = computed(() =>
-  unfinished.value
-    .map(id => byKey.value.get(searchKey(id))?.row)
-    .filter((r): r is TableRow => !!r)
-    .map(row => ({ row, lack: lackOf(choiceOf(row), dying(row)) || 'sample' })),
-)
-/** An unfinished one taken up again: alone (its choices back in the panel), or into the group with them as its own. */
-const resume = (id: string) => choose(id)
-function dropUnfinished(id: string) {
-  unfinished.value = unfinished.value.filter(u => u !== id)
-  own.value = keepOwn(own.value, [...picked.value, ...unfinished.value])
-}
-/** «Seleccionar varias»: the butterfly there (if any) starts the group, and the search is ready for the next. */
+/** «Seleccionar varias»: each ID tapped joins (or leaves) without opening it; the search is ready for the next. */
 function enterSeveral() {
-  several.value = startSeveral({ picked: picked.value, several: several.value }).several
+  several.value = true
+  focus.value = null
   cleared.value = null
   searchInput.value?.focus()
 }
-/** «Vaciar» / «Una a una»: back to one at a time; a group's choices can come back with «Deshacer». */
-function leaveSeveral() {
-  const next = endSeveral({ picked: picked.value, several: several.value })
-  if (!next.picked.length && picked.value.length && touched.value)
-    cleared.value = { picked: [...picked.value], all: { ...all.value }, own: JSON.parse(JSON.stringify(own.value)) }
-  picked.value = next.picked
-  several.value = false
-  if (!next.picked.length) {
-    resetChoices()
-    scroller.value?.scrollTo({ top: 0 })
-  }
-  own.value = keepOwn(own.value, [...picked.value, ...unfinished.value])
+const leaveSeveral = () => (several.value = false)
+/** A card tapped: the panel shows it (and changes it only); tapped again, back to the values for the next ones. */
+function toggleFocus(row: TableRow) {
+  editingId.value = null
+  focus.value = focus.value && sameId(focus.value, idOf(row)) ? null : idOf(row)
+  if (focus.value) revealPanel()
 }
-function undoClear() {
-  const c = cleared.value
-  if (!c) return
-  picked.value = c.picked
-  several.value = c.picked.length > 1
-  date.value = c.all.date
-  cause.value = c.all.cause
-  preserved.value = c.all.preserved
-  note.value = c.all.note
-  own.value = { ...own.value, ...c.own }
-  touched.value = true
-  cleared.value = null
+/** Back to the values for the next butterflies. */
+function closePanel() {
+  focus.value = null
+  editingId.value = null
 }
-// Several chosen elsewhere (the table, an undo) make a group here.
-watch(
-  () => picked.value.length,
-  n => {
-    if (n > 1) several.value = true
-  },
-  { immediate: true },
-)
 
-// --- Register: date, cause, preserved or not
-const canEdit = computed(() => session.canEdit)
+// --- The panel: the values for the next butterflies, one card's, or a recorded death being corrected
 /**
  * The cause buttons: the sheet's own dropdown list for Death_cause (its data
  * validation), most used first; until it arrives, the values the column uses.
@@ -426,70 +384,83 @@ const quickDates = computed(() => [
   { iso: todayIso(), name: t('Hoy') },
   { iso: serialToIso(today.value - 1), name: t('Ayer') },
 ])
+/** A recorded death being corrected: its date and cause as the sheet has them, and a note to add. */
+const draft = ref<DeathChoice>({ date: '', cause: '', preserved: false, note: '' })
+const shown = computed<DeathChoice>(() =>
+  panelMode.value === 'recorded' ? draft.value : panelMode.value === 'card' ? choiceOf(focusRow.value!) : defaults.value,
+)
+const shownDate = computed(() => shown.value.date)
 const dateError = computed(() =>
   shownDate.value && serialFromIso(shownDate.value) === null ? t('Fecha no válida: el año debe estar entre 1990 y 2099') : '',
 )
-// --- Each card its own: tap cards to select them; the panel then sets theirs only
-/** The panel's values: what every card gets unless it has its own. */
-const all = computed<DeathChoice>(() => ({ date: date.value, cause: cause.value, preserved: preserved.value, note: note.value }))
-const choiceOf = (row: TableRow) => choiceFor(all.value, own.value, idOf(row))
-const hasOwn = (row: TableRow, field: ChoiceField) => own.value[idOf(row)]?.[field] !== undefined
-/** What the panel shows for a field: the one butterfly's (its own value too), or the group's. */
-function shown<F extends ChoiceField>(field: F): DeathChoice[F] | undefined {
-  return !several.value && cards.value.length === 1 ? choiceOf(cards.value[0])[field] : all.value[field]
+/** A value chosen in the panel: the card's, the death's being corrected, or the next butterflies'. */
+function setField<F extends ChoiceField>(field: F, value: DeathChoice[F]) {
+  if (panelMode.value === 'recorded') draft.value = { ...draft.value, [field]: value }
+  else if (panelMode.value === 'card') scratch.value = setCardField(scratch.value, idOf(focusRow.value!), field, value)
+  else defaults.value = { ...defaults.value, [field]: value }
 }
-/** Sets a field for the butterfly or the whole group (`ids`: those only, from a card's editor). */
-function setField<F extends ChoiceField>(field: F, value: DeathChoice[F], ids: string[] = []) {
-  const next = setChoice(all.value, own.value, ids, field, value)
-  if (next.all.date !== date.value) date.value = next.all.date
-  if (next.all.cause !== cause.value) cause.value = next.all.cause
-  if (next.all.preserved !== preserved.value) preserved.value = next.all.preserved
-  if (next.all.note !== note.value) note.value = next.all.note
-  own.value = next.own
-  touched.value = true
-}
-/** In a group: the cards that keep their own value of a field ("B7A: Eaten"). */
-function ownOf(field: ChoiceField) {
-  if (!several.value) return []
-  return cards.value.filter(r => hasOwn(r, field)).map(idOf)
-}
-const shownDate = computed(() => shown('date') ?? '')
 function pickCause(c: string) {
   setField('cause', c)
   // Killed to be preserved: the body goes in a tube.
-  if (c === KILLED) setField('preserved', true)
+  if (c === KILLED && panelMode.value !== 'recorded') setField('preserved', true)
+}
+/** The values for the next ones, while cards have another: «Aplicar también a las N seleccionadas». */
+const spread = (field: ChoiceField) => (panelMode.value === 'defaults' ? differing(scratch.value, defaults.value, field) : [])
+function spreadField(field: ChoiceField) {
+  scratch.value = applyToAll(scratch.value, field, defaults.value[field])
 }
 const mediums = ['Flash frozen', 'Ethanol', 'DMSO']
-
-// --- The note: typed or quick phrases (English), added on Save after the notes there
-const shownNote = computed(() => shown('note') ?? '')
 /** A quick phrase goes after what is typed ("Head eaten; With fungi"). */
 function addPhrase(p: string) {
-  const text = shownNote.value.trim()
+  const text = shown.value.note.trim()
   setField('note', text ? `${text}; ${p}` : p)
 }
-/** The note a card adds on Save, as it will be written ("1/10/26 FCH: Only wings found"); `own`: this card's only. */
+/** The note a card adds, as it will be written ("1/10/26 FCH: Only wings found"). */
 function noteOf(row: TableRow) {
   const text = choiceOf(row).note.trim()
-  return text ? { text: `${notePrefix.value} ${text}`, own: hasOwn(row, 'note') } : null
+  return text ? `${notePrefix.value} ${text}` : ''
+}
+const panelSummary = computed(() => {
+  const c = defaults.value
+  return [
+    c.date ? dayLabel(c.date).split(' · ')[0] : t('sin fecha'),
+    c.cause || t('sin causa'),
+    c.preserved ? t('Preservada') : t('Sin preservar'),
+    c.note.trim() ? t('con nota') : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
+})
+/** On a phone the values for the next ones fold into one line («Cambiar»); a card or a death opened unfolds them. */
+const panelOpen = persistentRef('deaths:panel-open', false)
+const unfolded = computed(() => wide.value || panelOpen.value || panelMode.value !== 'defaults')
+const panel = ref<HTMLElement>()
+function revealPanel() {
+  if (wide.value) return nextTick(() => aside.value?.scrollTo({ top: 0, behavior: 'smooth' }))
+  nextTick(() => panel.value?.scrollIntoView({ block: 'start', behavior: 'smooth' }))
 }
 
-/** Rows dying now (no death date yet): in "preserved" each gets its CAM and tube. */
+// --- Preserved: each card's CAM and tube
+/** Rows dying now (no death date yet): preserved, each gets its CAM and tube. */
 const dying = (row: TableRow) => lifeOf(get(row)).state !== 'dead'
-const toPreserve = computed(() => cards.value.filter(r => choiceOf(r).preserved && dying(r)))
+const toPreserve = computed(() => cardRows.value.filter(r => choiceOf(r).preserved && dying(r)))
 /** Already recorded dead: "preserved" does not give them a tube here (Tubos does). */
-const notToPreserve = computed(() => cards.value.filter(r => choiceOf(r).preserved && !dying(r)))
-/** The medium and the CAM and tube boxes show while any card is preserved, or the panel says «Preservada». */
-const showPreservation = computed(
-  () => shown('preserved') === true || toPreserve.value.length > 0 || notToPreserve.value.length > 0,
+const notToPreserve = computed(() => cardRows.value.filter(r => choiceOf(r).preserved && !dying(r)))
+/** The CAM and tube boxes in the panel: the card's, or every card's being preserved (for «Añadir todas»). */
+const panelPreserve = computed(() =>
+  panelMode.value === 'card' ? toPreserve.value.filter(r => r === focusRow.value) : panelMode.value === 'defaults' ? toPreserve.value : [],
 )
+const panelNotPreserve = computed(() =>
+  panelMode.value === 'card' ? notToPreserve.value.filter(r => r === focusRow.value) : panelMode.value === 'defaults' ? notToPreserve.value : [],
+)
+const showPreservation = computed(() => panelMode.value !== 'recorded' && (shown.value.preserved || panelPreserve.value.length > 0))
 const sampleOf = (id: string) => (samples[id] ??= { cam: '', tube: '' })
 
 // The next free CAM IDs and tubes (server/grid.mjs idSuggestions), asked for only when preserving.
 const camRun = ref<string[]>([])
 const tubeRun = ref<string[]>([])
 const racks = ref<(RackSuggestion & { label: string; labelMsg?: Msg })[]>([])
-const rack = computed(() => bestRack(racks.value, chosen.value, medium.value))
+const rack = computed(() => bestRack(racks.value, cardRows.value, medium.value))
 let camStart = ''
 async function loadSampleIds() {
   if (!toPreserve.value.length) return
@@ -543,13 +514,13 @@ watch([toPreserve, camRun, tubeRun], () => {
     }
   }
 })
-/** What each butterfly being preserved still lacks (CAM, tube, a free slot), shown in its row and above Save. */
-/** The CAMs and tubes already in the sheet: one typed again is flagged before Save (the server would refuse it). */
+/** The CAMs and tubes already in the sheet: one typed again is flagged before recording (the server would refuse it). */
 const used = computed(() => usedSamples(index.value))
+/** What each butterfly being preserved still lacks (CAM, tube, a free slot), shown on its card and in the panel. */
 const gaps = computed(() => preservationGaps(toPreserve.value, pending.value, samples, used.value))
 const gapById = computed(() => new Map(gaps.value.map(g => [g.id, g])))
-const readyCount = computed(() => gaps.value.filter(g => !hasGap(g)).length)
 const isSuggested = (id: string, kind: 'cam' | 'tube') => !!samples[id]?.[kind] && samples[id]?.[kind] === suggested[id]?.[kind]
+const panelReady = computed(() => panelPreserve.value.filter(r => !hasGap(gapById.value.get(idOf(r))!)).length)
 function gapText(g: PreservationGap) {
   if (g.slot === null) return t('{id} no tiene sitio para otro tubo', { id: g.id })
   if (g.cam === 'missing') return t('Falta el CAM de {id}', { id: g.id })
@@ -557,10 +528,11 @@ function gapText(g: PreservationGap) {
   return t('{value} está en {a} y en {b}', { value: g.value ?? '', a: g.with ?? '', b: g.id })
 }
 
-/** The cells "Save" would write in each chosen row (the same as the table's «Escribir fecha y causa»). */
+// --- What recording each card writes, and what it still lacks
+/** The cells recording each card writes (the same as the table's «Escribir fecha y causa», plus CAM, tube and note). */
 const plans = computed(() => {
   const out = new Map<string, DeathCell[]>()
-  for (const row of cards.value)
+  for (const row of cardRows.value)
     out.set(
       row.id,
       cardCells(row, pending.value, choiceOf(row), {
@@ -572,144 +544,258 @@ const plans = computed(() => {
     )
   return out
 })
-const toSave = computed(() => cards.value.filter(r => plans.value.get(r.id)?.length))
+type CardLack = Lack | 'nothing'
+/** Why a card cannot be recorded yet ('' when it can); 'nothing': already dead and nothing new to write. */
+const lackFor = (row: TableRow): CardLack =>
+  lackOf(choiceOf(row), dying(row), gapById.value.get(idOf(row))) || ((plans.value.get(row.id) || []).length ? '' : 'nothing')
+const lackText = (lack: CardLack, row?: TableRow) => {
+  if (lack === 'sample' && row) {
+    const g = gapById.value.get(idOf(row))
+    if (g) return gapText(g)
+  }
+  return {
+    '': '',
+    date: t('Elige la fecha de muerte'),
+    'bad-date': t('Fecha no válida: el año debe estar entre 1990 y 2099'),
+    cause: t('Elige la causa'),
+    sample: t('falta el CAM o el tubo'),
+    nothing: t('Ya registrada: no se cambiará'),
+  }[lack]
+}
+const readyRows = computed(() => cardRows.value.filter(r => !lackFor(r)))
+const notReady = computed(() => cardRows.value.filter(r => lackFor(r)))
 /** Already recorded dead and nothing of its death left to write (its note may still be added). */
 const registered = (row: TableRow) =>
-  factsFor(row).life.state === 'dead' && !(plans.value.get(row.id) || []).some(c => c.field !== 'Notes_Insectary_data')
-/** A card's plan in words: the date and cause, the CAM and tube, and how many NA / NOT_COLLECTED cells. */
-function planText(row: TableRow) {
-  const cells = plans.value.get(row.id) || []
-  if (!cells.length) return ''
-  const main: string[] = []
-  let rest = 0
-  for (const c of cells) {
-    if (c.field === 'Death_date' && typeof c.value === 'number') main.push(formatSerial(c.value))
-    else if ((['Death_cause', 'CAM_ID'].includes(c.field) || /^Tube_\d_id$/.test(c.field)) && !isBlank(c.value))
-      main.push(String(c.value))
-    else rest++
-  }
-  return rest ? `${main.join(' · ')} ${tn(rest, '+{n} celda', '+{n} celdas')}` : main.join(' · ')
+  factsFor(row).life.state === 'dead' && !(plans.value.get(row.id) || []).some(c => c.field !== NOTES)
+/** A card's date, cause and preservation, as chips. */
+function chipsOf(row: TableRow) {
+  const c = choiceOf(row)
+  const s = samples[idOf(row)]
+  const preserving = c.preserved && dying(row)
+  return [
+    {
+      field: 'date',
+      text: c.date ? (serialFromIso(c.date) !== null ? formatSerial(isoToSerial(c.date)) : c.date) : t('sin fecha'),
+      missing: !c.date,
+    },
+    { field: 'cause', text: c.cause || t('sin causa'), missing: !c.cause && dying(row) },
+    {
+      field: 'preserved',
+      text: preserving
+        ? [t('Preservada'), s?.cam.trim().toUpperCase(), s?.tube.trim().toUpperCase()].filter(Boolean).join(' · ')
+        : c.preserved
+          ? t('Preservada')
+          : t('Sin preservar'),
+      missing: false,
+    },
+  ]
 }
-
-/** Why "Save" cannot run yet (shown above the button: there is no hover on a phone); `gap` takes you to it. */
-const blocker = computed<{ text: string; gap?: string }>(() => {
-  if (!chosen.value.length) return { text: t('Añade al menos una mariposa') }
-  // Each card's own date and cause; "of B7A" only when some cards have theirs.
-  const name = (rows: TableRow[]) => (rows.length < cards.value.length ? rows.map(idOf).join(', ') : '')
-  const badDate = cards.value.filter(r => choiceOf(r).date && serialFromIso(choiceOf(r).date) === null)
-  if (badDate.length)
-    return {
-      text: name(badDate)
-        ? `${idOf(badDate[0])}: ${t('Fecha no válida: el año debe estar entre 1990 y 2099')}`
-        : t('Fecha no válida: el año debe estar entre 1990 y 2099'),
-    }
-  const noDate = cards.value.filter(r => !choiceOf(r).date)
-  if (noDate.length)
-    return { text: name(noDate) ? t('Falta la fecha de {ids}', { ids: name(noDate) }) : t('Elige la fecha de muerte') }
-  const noCause = cards.value.filter(r => !choiceOf(r).cause && dying(r))
-  if (noCause.length) return { text: name(noCause) ? t('Falta la causa de {ids}', { ids: name(noCause) }) : t('Elige la causa') }
-  const first = gaps.value.find(hasGap)
-  if (first) {
-    const more = gaps.value.filter(hasGap).length - 1
-    const text = gapText(first)
-    return { text: more ? `${text} ${tn(more, '(y {n} más)', '(y {n} más)')}` : text, gap: first.id }
-  }
-  if (!toSave.value.length) return { text: t('Nada que escribir: esas filas ya tienen fecha y causa') }
-  return { text: '' }
-})
 /** Pending changes of other rows, which go to the sheet in the same save. */
 const otherPending = computed(() => {
-  const mine = new Set(chosen.value.map(r => r.id))
+  const mine = new Set(cardRows.value.map(r => r.id))
   let n = pending.creates.length
   for (const e of Object.values(pending.edits)) if (!mine.has(e.id)) n += Object.keys(e.values).length
   return n
 })
 
-// --- Save, then Undo
+// --- Recording: «Añadir a muertes», «Añadir todas»
 const saving = ref(false)
-const lastSave = ref<null | { actionId: string; ids: string[]; count: number; all: DeathChoice; own: typeof own.value }>(null)
-const undoing = ref(false)
+/** The cards being recorded now (their buttons turn). */
+const recording = ref<string[]>([])
+/** Why the sheet did not take a card's death, by Insectary ID: shown on the card, which stays to be corrected. */
+const refusals = ref<Record<string, string>>({})
 const waitIdle = async () => {
   for (let i = 0; i < 300 && pending.saving; i++) await new Promise(r => setTimeout(r, 100))
 }
-async function save() {
-  if (blocker.value.text || saving.value) return
+const issueOf = (row: TableRow) => Object.entries(pending.issues).find(([k]) => k.startsWith(`${row.id}:`))?.[1]
+/**
+ * Writes each card's cells and saves them, as Muertes always saved a death
+ * (the pending changes' save: the same history, the outbox when Google is
+ * busy). Those saved leave «Seleccionadas» for «Registradas hoy»; one the
+ * sheet refuses gets its cells back and stays, with the reason. A save whose
+ * outcome is unclear leaves its cells among the changes to save («Por guardar»).
+ */
+async function record(rows: TableRow[]) {
+  const go = rows.filter(r => !lackFor(r))
+  if (!go.length || saving.value) return
   saving.value = true
-  const rows = toSave.value
-  const ids = rows.map(idOf)
-  const choices = { all: { ...all.value }, own: JSON.parse(JSON.stringify(own.value)) as typeof own.value }
+  recording.value = go.map(idOf)
+  const written = new Map<string, DeathCell[]>()
   try {
-    for (const row of rows)
-      for (const c of plans.value.get(row.id) || []) fillIfBlank(MODULE, row, idOf(row), c.field, c.value, c.overwrite)
-    pending.touch()
-    // An automatic save already running would leave these cells for later (and give no Undo).
-    await waitIdle()
-    const result = await pending.save('')
-    const refused = rows.filter(r => Object.keys(pending.issues).some(k => k.startsWith(`${r.id}:`)))
-    if (refused.length) {
-      notify(
-        t('No se guardó {ids}: {reason}', {
-          ids: refused.map(idOf).join(', '),
-          reason: Object.values(pending.issues)[0] ?? '',
-        }),
-        'error',
-      )
-      picked.value = picked.value.filter(id => refused.some(r => idOf(r) === id))
-      several.value = picked.value.length > 1
-      own.value = keepOwn(own.value, [...picked.value, ...unfinished.value])
-      return
+    for (const row of go) {
+      const cells = plans.value.get(row.id) || []
+      for (const c of cells) fillIfBlank(MODULE, row, idOf(row), c.field, c.value, c.overwrite)
+      written.set(row.id, cells)
+      delete refusals.value[idOf(row)]
     }
-    lastSave.value = result.actionId ? { actionId: result.actionId, ids, count: rows.length, ...choices } : null
-    // Saved: back to one at a time, so the next ID chosen is not added to this group.
-    picked.value = []
-    several.value = false
-    // The date stays for the next ones (often the same day's deaths).
-    resetChoices(true)
-    own.value = keepOwn(own.value, unfinished.value)
-    for (const id of ids) {
+    pending.touch()
+    // An automatic save already running would leave these cells for later.
+    await waitIdle()
+    let result: SaveResult | null = null
+    let failure: unknown = null
+    try {
+      result = await pending.save('')
+    } catch (e) {
+      failure = e
+    }
+    const refused = go.filter(r => issueOf(r) !== undefined)
+    for (const row of refused) {
+      refusals.value = { ...refusals.value, [idOf(row)]: issueOf(row) ?? '' }
+      for (const c of written.get(row.id) || [])
+        if (pending.isDirty(row.id, c.field) && pending.value(row, c.field) === c.value)
+          pending.setCell(MODULE, row, idOf(row), c.field, row.values[c.field] ?? null)
+    }
+    const done = go.filter(r => !refused.includes(r)).map(idOf)
+    scratch.value = removeCards(scratch.value, done)
+    for (const id of done) {
       delete samples[id]
       delete suggested[id]
     }
-    if (!result.actionId)
-      notify(tn(rows.length, '{n} muerte guardada en Google Sheets', '{n} muertes guardadas en Google Sheets'), 'success')
-    // Back to the top: the search for the next ones, and today's deaths in the list.
-    scroller.value?.scrollTo({ top: 0 })
-    aside.value?.scrollTo({ top: 0 })
+    if (refused.length)
+      notify(t('No se guardó {ids}: {reason}', { ids: refused.map(idOf).join(', '), reason: issueOf(refused[0]) ?? refusals.value[idOf(refused[0])] }), 'error')
+    else if (failure) notify(errorText(failure), 'error')
+    else if (done.length && result?.queued)
+      notify(tn(done.length, '{n} muerte esperando a Google Sheets: se escribe cuando responda', '{n} muertes esperando a Google Sheets: se escriben cuando responda'))
+    else if (done.length)
+      notify(tn(done.length, '{n} muerte guardada en Google Sheets', '{n} muertes guardadas en Google Sheets') + ` · ${done.join(', ')}`, 'success')
+    loadRecorded()
+    if (!touch.value) searchInput.value?.focus()
+  } finally {
+    saving.value = false
+    recording.value = []
+  }
+}
+
+// --- «Registradas hoy»: today's saves of Muertes, from the history
+const actions = ref<HistoryAction[]>([])
+const loadingRecorded = ref(false)
+let asked = 0
+async function loadRecorded() {
+  const ask = ++asked
+  loadingRecorded.value = true
+  try {
+    // A day around today in UTC; recordedOn keeps today's in Ecuador.
+    const day = today.value
+    const q = new URLSearchParams({ purpose: 'muertes', from: serialToIso(day - 1), to: serialToIso(day + 1), limit: '500' })
+    const data = await api<{ actions: HistoryAction[] }>(`history?${q}`)
+    if (ask === asked) actions.value = data.actions
+  } catch {
+    /* The list stays as it was until the next look. */
+  } finally {
+    if (ask === asked) loadingRecorded.value = false
+  }
+}
+onMounted(loadRecorded)
+// Someone else's save (the sheet changes): the list follows a moment later.
+let reloadTimer: ReturnType<typeof setTimeout> | undefined
+watch(
+  () => tables.versions[MODULE],
+  () => {
+    clearTimeout(reloadTimer)
+    reloadTimer = setTimeout(loadRecorded, 1500)
+  },
+)
+onBeforeUnmount(() => clearTimeout(reloadTimer))
+const mineOnly = persistentRef('deaths:recorded-mine', false, { lasting: true })
+const storedOrder = persistentRef<RecordedOrder>('deaths:recorded-order', DEFAULT_ORDER, { lasting: true })
+const order = computed<RecordedOrder>({ get: () => readOrder(storedOrder.value), set: v => (storedOrder.value = v) })
+const recorded = computed<RecordedItem[]>(() => {
+  const me = session.user?.id
+  const out: RecordedItem[] = []
+  const seen = new Set<string>()
+  // Not in Google Sheets yet (refused, waiting for Google, or typed in the table): first.
+  for (const e of Object.values(pending.edits)) {
+    if (e.module !== MODULE || !('Death_date' in e.values || 'Death_cause' in e.values)) continue
+    const row = rowById.value.get(e.id)
+    if (!row) continue
+    seen.add(row.id)
+    const queued = pending.isQueued(row.id, 'Death_date') || pending.isQueued(row.id, 'Death_cause')
+    out.push({ row, status: queued ? 'queued' : 'pending', others: [], changeIds: [] })
+  }
+  for (const r of recordedOn(actions.value, todayIso())) {
+    if (seen.has(r.recordId)) continue
+    const row = rowById.value.get(r.recordId)
+    // Undone since (alive again): no longer listed.
+    if (!row || lifeOf(get(row)).state !== 'dead') continue
+    const mine = r.actors.some(a => a.id === me)
+    if (mineOnly.value && !mine) continue
+    out.push({ row, status: 'saved', others: r.actors.filter(a => a.id !== me).map(a => a.name), changeIds: r.changeIds })
+  }
+  return out
+})
+
+/** A recorded death opened in the panel: its date and cause as they are, and a note to add. */
+function startEdit(row: TableRow) {
+  focus.value = null
+  if (editingId.value === row.id) return closePanel()
+  editingId.value = row.id
+  const death = pending.value(row, 'Death_date')
+  draft.value = {
+    date: typeof death === 'number' ? serialToIso(death) : '',
+    cause: cellText(pending.value(row, 'Death_cause')),
+    preserved: preservedNow(row),
+    note: '',
+  }
+  revealPanel()
+}
+/** Its CAM or first tube holds an ID: preserved. */
+const preservedNow = (row: TableRow) =>
+  ['CAM_ID', 'Tube_1_id'].some(f => {
+    const v = cellText(pending.value(row, f))
+    return v && v !== 'NA'
+  })
+const preservationLine = (row: TableRow) =>
+  preservedNow(row)
+    ? [t('Preservada'), cellText(pending.value(row, 'CAM_ID')), cellText(pending.value(row, 'Tube_1_id'))].filter(v => v && v !== 'NA').join(' · ')
+    : t('Sin preservar')
+/** What correcting it writes: a new date or cause, and the note after the notes there. */
+const draftCells = computed<DeathCell[]>(() => {
+  const row = editingRow.value
+  if (!row) return []
+  const out: DeathCell[] = []
+  const serial = draft.value.date ? serialFromIso(draft.value.date) : null
+  if (serial !== null && serial !== pending.value(row, 'Death_date')) out.push({ field: 'Death_date', value: serial })
+  if (draft.value.cause && draft.value.cause !== cellText(pending.value(row, 'Death_cause')))
+    out.push({ field: 'Death_cause', value: draft.value.cause })
+  const note = noteCell(row, pending.value, draft.value.note, today.value, initials.value)
+  if (note) out.push(note)
+  return out.filter(c => !row.formulas.includes(c.field))
+})
+async function saveEdit() {
+  const row = editingRow.value
+  if (!row || !draftCells.value.length || saving.value || dateError.value) return
+  saving.value = true
+  const id = idOf(row)
+  try {
+    for (const c of draftCells.value) pending.setCell(MODULE, row, id, c.field, c.value)
+    pending.touch()
+    await waitIdle()
+    const result = await pending.save('')
+    const issue = issueOf(row)
+    if (issue !== undefined) notify(t('No se guardó {ids}: {reason}', { ids: id, reason: issue }), 'error')
+    else {
+      notify(result.queued ? t('Esperando a Google Sheets: se escribe cuando responda') : t('Muerte de {id} corregida', { id }), 'success')
+      editingId.value = null
+    }
+    loadRecorded()
   } catch (e) {
     notify(errorText(e), 'error')
   } finally {
     saving.value = false
   }
 }
-async function undo() {
-  const last = lastSave.value
-  if (!last || undoing.value) return
-  undoing.value = true
-  try {
-    const result = await api<{ records?: ServerRecord[] }>('history/undo', {
-      method: 'POST',
-      body: { actionIds: [last.actionId], requestId: requestId(), reason: null },
-    })
-    if (result.records?.length) tables.merge(result.records)
-    else await tables.load(MODULE, true)
-    // The cards come back, to correct and save again.
-    // (`ids` are in card order, newest first: added back oldest first, the cards look as before.)
-    picked.value = [...new Set([...picked.value, ...[...last.ids].reverse()])]
-    several.value = picked.value.length > 1
-    touched.value = true
-    // With the date, cause and preservation they were saved with (each card's own too).
-    date.value = last.all.date
-    cause.value = last.all.cause
-    preserved.value = last.all.preserved
-    note.value = last.all.note ?? ''
-    own.value = { ...own.value, ...keepOwn(last.own, last.ids) }
-    lastSave.value = null
-    notify(tn(last.count, '{n} muerte deshecha en Google Sheets', '{n} muertes deshechas en Google Sheets'), 'success')
-  } catch (e) {
-    notify(errorText(e), 'error')
-  } finally {
-    undoing.value = false
-  }
+
+// «Deshacer muerte»: a saved one through the history's undo (preview, then confirm); one not saved yet, its cells dropped.
+const { undoing, reason: undoReason, busy: undoBusy, review, cancel: cancelUndo, confirm: confirmUndo } = useUndo(() => loadRecorded())
+function undoDeath(item: RecordedItem) {
+  const id = idOf(item.row)
+  if (editingId.value === item.row.id) editingId.value = null
+  if (item.status === 'queued') return
+  if (item.status === 'saved') return review({ changeIds: item.changeIds }, t('Deshacer la muerte de {id}', { id }))
+  if (!window.confirm(t('¿Descartar la muerte de {id}, aún sin guardar?', { id }))) return
+  for (const field of Object.keys(pending.edits[item.row.id]?.values ?? {}))
+    if (DEATH_COLUMNS.includes(field) || field === NOTES) pending.setCell(MODULE, item.row, id, field, item.row.values[field] ?? null)
+  pending.touch()
 }
 
 // --- Preserved without CAM or tube (server/alerts.mjs, kept by the server): an amber chip on its card and line.
@@ -727,73 +813,75 @@ const sampleGap = (row: TableRow) => {
   const s = noSample.value.get(row.id)
   return s && s.missing.some(f => !/\d/.test(String(pending.value(row, f) ?? ''))) ? s : null
 }
-const sampleTitle = (s: MissingSample) => `${t('Preservada sin CAM o tubo')} · ${t('pregunta al equipo')}`
+const sampleTitle = () => `${t('Preservada sin CAM o tubo')} · ${t('pregunta al equipo')}`
+const gapChip = (row: TableRow) => (sampleGap(row) ? t('Sin CAM/tubo') : '')
 
-// --- Latest deaths, by day; the ones registered and not yet saved first
-/** Rows of Insectary_data with a death date or cause among the pending changes (left one at a time, typed in an editor). */
-const unsaved = computed(() => {
-  const out: TableRow[] = []
-  for (const e of Object.values(pending.edits)) {
-    if (e.module !== MODULE || !('Death_date' in e.values || 'Death_cause' in e.values)) continue
-    const row = rowById.value.get(e.id)
-    if (row) out.push(row)
-  }
-  return out
-})
-const isUnsaved = (row: TableRow) => pending.isDirty(row.id, 'Death_date') || pending.isDirty(row.id, 'Death_cause')
-const recent = computed(() => {
-  if (!props.table) return []
-  const first = new Set(unsaved.value.map(r => r.id))
-  const saved = props.table.rows
-    .filter(r => r.observed && typeof r.values.Death_date === 'number' && !isBlank(r.values.Insectary_ID) && !first.has(r.id))
-    .sort((a, b) => (b.values.Death_date as number) - (a.values.Death_date as number) || b.row - a.row)
-    .slice(0, recentCount.value)
-  return [...unsaved.value, ...saved]
-})
-const recentGroups = computed(() => {
-  const groups: { label: string; unsaved?: boolean; rows: { row: TableRow; at: number }[] }[] = []
-  recent.value.forEach((row, at) => {
-    if (isUnsaved(row)) {
-      if (!groups.length) groups.push({ label: t('Por guardar'), unsaved: true, rows: [] })
-      groups[0].rows.push({ row, at })
-      return
+// --- The button at the foot of the panel, and Ctrl+Enter
+const footer = computed(() => {
+  if (panelMode.value === 'recorded') {
+    const row = editingRow.value!
+    return {
+      text: dateError.value || (draftCells.value.length ? '' : t('Cambia la fecha, la causa o escribe una nota')),
+      gap: '',
+      label: t('Guardar el cambio de {id}', { id: idOf(row) }),
+      disabled: !!dateError.value || !draftCells.value.length,
+      run: saveEdit,
     }
-    const day = row.values.Death_date as number
-    const ago = today.value - day
-    const label = ago === 0 ? t('Hoy') : ago === 1 ? t('Ayer') : dayLabel(serialToIso(day)).split(' · ')[0]
-    if (groups.at(-1)?.label !== label) groups.push({ label, rows: [] })
-    groups.at(-1)!.rows.push({ row, at })
-  })
-  return groups
+  }
+  if (panelMode.value === 'card') {
+    const row = focusRow.value!
+    const lack = lackFor(row)
+    return {
+      text: lackText(lack, row),
+      gap: lack === 'sample' ? idOf(row) : '',
+      label: t('Añadir {id} a muertes', { id: idOf(row) }),
+      disabled: !!lack,
+      run: () => record([row]),
+    }
+  }
+  if (!cardRows.value.length) return null
+  const first = notReady.value[0]
+  const lack = first ? lackFor(first) : ''
+  return {
+    text: first
+      ? tn(notReady.value.length, '{n} sin terminar: {why}', '{n} sin terminar: {why}', {
+          why: `${idOf(first)}, ${lackText(lack, first).replace(/^./, c => c.toLowerCase())}`,
+        })
+      : '',
+    gap: lack === 'sample' ? idOf(first!) : '',
+    label: readyRows.value.length ? tn(readyRows.value.length, 'Añadir {n} a muertes', 'Añadir las {n} a muertes') : t('Añadir a muertes'),
+    disabled: !readyRows.value.length,
+    run: () => record(readyRows.value),
+  }
 })
-
-// --- The full-screen editor, over the list it was opened from
-const editing = ref<null | { list: 'cards' | 'recent'; ids: string[]; index: number }>(null)
-const editorRows = computed(() =>
-  editing.value ? editing.value.ids.map(id => rowById.value.get(id)).filter((r): r is TableRow => !!r) : [],
-)
-function openEditor(list: 'cards' | 'recent', at: number) {
-  const rows = list === 'cards' ? cards.value : recent.value
-  editing.value = { list, ids: rows.map(r => r.id), index: at }
+function onKey(e: KeyboardEvent) {
+  if (undoing.value || showHistory.value || drawerRow.value) return
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault()
+    if (footer.value && !footer.value.disabled && !saving.value) footer.value.run()
+  } else if (e.key === 'Escape' && panelMode.value !== 'defaults') closePanel()
 }
-/** A card's note (its own or the panel's), shown and edited in the editor opened from the cards. */
-const cardNote = (row: TableRow) => choiceOf(row).note
+onMounted(() => window.addEventListener('keydown', onKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+const shortcut = computed(() => (touch.value ? '' : navigator.platform?.startsWith('Mac') ? '⌘+Enter' : 'Ctrl+Enter'))
+
 const drawerRow = ref<TableRow | null>(null)
+const showHistory = ref(false)
 
 // --- The keyboard: the screen fits above it, and the box being typed in stays in view
 const root = ref<HTMLElement>()
-/** The page's scroller (one column), or the left column's (search, cards, latest deaths). */
+/** The page's scroller (one column), or the left column's (search, cards, recorded deaths). */
 const scroller = ref<HTMLElement>()
-/** The right column's scroller on a wide screen (date, cause, preservation). */
+/** The right column's scroller on a wide screen (the panel). */
 const aside = ref<HTMLElement>()
-const footer = ref<HTMLElement>()
+const footerEl = ref<HTMLElement>()
 const searchBar = ref<HTMLElement>()
 const details = ref<HTMLElement>()
 const rootBottom = ref(0)
 const footerHeight = ref(0)
 const measure = () => {
   rootBottom.value = root.value?.getBoundingClientRect().bottom ?? 0
-  footerHeight.value = footer.value?.offsetHeight ?? 0
+  footerHeight.value = footerEl.value?.offsetHeight ?? 0
 }
 /**
  * With the keyboard open the screen is pinned to what is visible (Chrome only
@@ -801,14 +889,14 @@ const measure = () => {
  */
 const fitted = computed(() => keyboard.open.value)
 /**
- * Too little left to show the box being typed and Save together (Gboard
+ * Too little left to show the box being typed and the button together (Gboard
  * sideways can leave 50 px until its suggestion strip appears): the box wins,
- * Save comes back with more room or once the keyboard closes.
+ * the button comes back with more room or once the keyboard closes.
  */
 const cramped = computed(() => fitted.value && keyboard.visibleBottom.value - keyboard.visibleTop.value < 140)
-/** The column the save bar is in: on a wide screen the right one. */
+/** The column the button is in: on a wide screen the right one. */
 const saveColumn = computed(() => (wide.value ? aside.value : scroller.value))
-/** The part of a column one can see: under its sticky bar and the top of the screen, above the keyboard and the save bar. */
+/** The part of a column one can see: under its sticky bar and the top of the screen, above the keyboard and the button. */
 function visibleBand(box: HTMLElement) {
   const sticky = box === scroller.value ? (searchBar.value?.getBoundingClientRect().bottom ?? 0) : box.getBoundingClientRect().top
   const top = Math.max(sticky, keyboard.visibleTop.value) + 8
@@ -816,7 +904,7 @@ function visibleBand(box: HTMLElement) {
   const bottom = Math.min(rootBottom.value, keyboard.visibleBottom.value) - save - 8
   return { top, bottom }
 }
-/** The suggestions fill the space between the search box and the save bar (or the keyboard). */
+/** The suggestions fill the space between the search box and the button (or the keyboard). */
 const listHeight = computed(() => {
   const top = searchBar.value?.getBoundingClientRect().bottom ?? 0
   const save = wide.value ? 0 : footerHeight.value
@@ -846,9 +934,9 @@ const sizes = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(
 onMounted(() => {
   measure()
   if (root.value) sizes?.observe(root.value)
-  if (footer.value) sizes?.observe(footer.value)
+  if (footerEl.value) sizes?.observe(footerEl.value)
 })
-watch(footer, (el, old) => {
+watch(footerEl, (el, old) => {
   if (old) sizes?.unobserve(old)
   if (el) sizes?.observe(el)
   nextTick(measure)
@@ -875,17 +963,24 @@ watch(showPreservation, now => {
   })
 })
 onBeforeUnmount(() => clearTimeout(flashTimer))
-/** Goes to the box a butterfly still lacks (from its card or the message above Save) and opens it for typing. */
+/** Goes to the box a butterfly still lacks (from its card or the message above the button) and opens it for typing. */
 function goToGap(id: string) {
   const g = gapById.value.get(id)
   const kind = g?.cam ? 'cam' : 'tube'
-  const input = details.value?.querySelector<HTMLInputElement>(`[data-sample="${CSS.escape(id)}:${kind}"]`)
-  if (!input) return reveal(details.value?.querySelector(`[data-row="${CSS.escape(id)}"]`))
-  reveal(input)
-  input.focus()
+  if (panelMode.value !== 'defaults' || !wide.value) {
+    editingId.value = null
+    focus.value = id
+  }
+  nextTick(() => {
+    const input = details.value?.querySelector<HTMLInputElement>(`[data-sample="${CSS.escape(id)}:${kind}"]`)
+    if (!input) return reveal(details.value?.querySelector(`[data-row="${CSS.escape(id)}"]`))
+    reveal(input)
+    input.focus()
+  })
 }
 /** Enter in a CAM or tube box goes to the next box (the next butterfly's), the last one closes the keyboard. */
 function nextBox(event: KeyboardEvent) {
+  if (event.ctrlKey || event.metaKey) return
   const boxes = [...(details.value?.querySelectorAll<HTMLInputElement>('input[data-sample]') ?? [])]
   const at = boxes.indexOf(event.target as HTMLInputElement)
   const next = boxes[at + 1]
@@ -893,68 +988,23 @@ function nextBox(event: KeyboardEvent) {
   else (event.target as HTMLInputElement).blur()
 }
 
-const summary = computed(() => {
-  const ids = cards.value.map(idOf)
-  const same = <F extends ChoiceField>(field: F) => sharedChoice(all.value, own.value, ids, field)
-  const day = same('date')
-  const why = same('cause')
-  const kept = same('preserved')
-  const noted = cards.value.filter(noteOf).length
-  const parts = [
-    day === undefined ? t('varias fechas') : day ? dayLabel(day).split(' · ')[0] : '',
-    why === undefined ? t('varias causas') : why,
-    kept === undefined ? t('algunas preservadas') : kept ? t('preservadas') : t('sin preservar'),
-    noted ? (noted === cards.value.length ? t('con nota') : t('algunas con nota')) : '',
-  ].filter(Boolean)
-  return parts.join(' · ')
-})
-/** A card's date, cause and preservation, as chips; `own`: set for this card only. */
-function chipsOf(row: TableRow) {
-  const c = choiceOf(row)
-  const s = samples[idOf(row)]
-  const preserving = c.preserved && dying(row)
-  return [
-    {
-      field: 'date' as const,
-      text: c.date ? (serialFromIso(c.date) !== null ? formatSerial(isoToSerial(c.date)) : c.date) : t('sin fecha'),
-      missing: !c.date,
-    },
-    { field: 'cause' as const, text: c.cause || t('sin causa'), missing: !c.cause && dying(row) },
-    {
-      field: 'preserved' as const,
-      text: preserving
-        ? [t('Preservada'), s?.cam.trim().toUpperCase(), s?.tube.trim().toUpperCase()].filter(Boolean).join(' · ')
-        : c.preserved
-          ? t('Preservada')
-          : t('Sin preservar'),
-      missing: false,
-    },
-  ].map(chip => ({ ...chip, own: hasOwn(row, chip.field) }))
-}
-const showHistory = ref(false)
 /** Clutch and the day it entered the insectary, as one line under the species (the sex is a badge beside it). */
 const line = (f: Facts) =>
   [
     f.clutch && t('clutch {c}', { c: f.clutch }),
     f.entered !== null &&
-      (f.wild
-        ? t('Capturada {date}', { date: formatSerial(f.entered) })
-        : t('Emergió {date}', { date: formatSerial(f.entered) })),
+      (f.wild ? t('Capturada {date}', { date: formatSerial(f.entered) }) : t('Emergió {date}', { date: formatSerial(f.entered) })),
   ]
     .filter(Boolean)
     .join(' · ')
-const cellText = (v: CellValue) => (v === null || v === undefined ? '' : String(v))
-const deathDay = (row: TableRow) => {
-  const v = pending.value(row, 'Death_date')
-  return typeof v === 'number' ? formatSerial(v) : ''
-}
 const choice = (on: boolean) =>
   on ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white text-stone-800 active:bg-stone-100'
+const isFocused = (row: TableRow) => !!focus.value && sameId(focus.value, idOf(row))
 </script>
 
 <template>
   <!-- While the keyboard is open the screen fits the part one can see (a phone sideways keeps ~115 px):
-       the search bar at its top, Save at its bottom, the box being typed in between. -->
+       the search bar at its top, the button at its bottom, the box being typed in between. -->
   <div
     ref="root"
     class="flex h-full bg-stone-50"
@@ -989,7 +1039,8 @@ const choice = (on: boolean) =>
                 @focus="focused = true"
                 @blur="focused = false"
                 @input="missing = []"
-                @keydown.enter.prevent="enter"
+                @keydown.enter.exact.prevent="enter"
+                @keydown="searchKeys"
                 @paste="onPaste"
               />
               <button
@@ -1015,17 +1066,17 @@ const choice = (on: boolean) =>
             <History :size="18" /> <span v-if="roomy">{{ $t('Historial') }}</span>
           </button>
         </div>
-        <!-- The filters and the suggestions span the whole bar (the box beside the mode buttons is narrow on a phone). -->
-        <!-- What is seen on the butterfly ranks the IDs offered (only while typing: the bar stays small otherwise). -->
+        <!-- What is seen on the butterfly in hand ranks the IDs offered (on a phone only while typing: the bar stays
+             small; on a wide screen always, so nothing below moves when the search box loses the focus). -->
         <IdFilters
-          v-if="focused || query"
+          v-if="wide || focused || query"
           v-model:sex="sexFilter"
           v-model:species="speciesFilter"
           :species-list="aliveSpecies"
           class="mt-2 short:hidden"
         />
-        <!-- Suggestions: one at a time a tap shows that butterfly (in place of the one there); in several it joins
-             or leaves the group and the keyboard stays for the next ID. Ctrl/Shift-click or a long press adds it to a group. -->
+        <!-- Suggestions: a tap puts the butterfly in «Seleccionadas»; in several it joins or leaves and the keyboard
+             stays for the next ID. Ctrl/Shift-click or a long press adds it beside the others. -->
         <ul
           v-if="focused && suggestions.length"
           class="absolute inset-x-3 top-full z-30 mt-1 divide-y divide-stone-100 overflow-y-auto rounded-xl border border-stone-200 bg-white shadow-lg"
@@ -1053,13 +1104,7 @@ const choice = (on: boolean) =>
                 class="shrink-0"
                 :class="isPicked(s.entry.id) ? 'text-brand-700' : 'text-stone-300'"
               />
-              <IdSuggestion
-                :id="s.entry.id"
-                :facts="factsFor(s.entry.row)"
-                :at="s.match?.at"
-                :via="s.via"
-                :greyed="s.match?.greyed"
-              />
+              <IdSuggestion :id="s.entry.id" :facts="factsFor(s.entry.row)" :at="s.match?.at" :via="s.via" :greyed="s.match?.greyed" />
             </button>
           </li>
         </ul>
@@ -1081,25 +1126,18 @@ const choice = (on: boolean) =>
             </button>
           </div>
         </div>
-        <!-- One at a time or several: always in sight, with what a tap on an ID will do. -->
+        <!-- «Seleccionar varias»: always in sight, with what a tap on an ID will do. -->
         <div
           v-if="ready && canEdit && several"
-          class="-mx-3 -mb-2 mt-2 flex min-h-12 items-center gap-2 bg-brand-700 px-3 py-1 text-white short:-mb-1.5 short:mt-1.5"
+          class="-mx-3 mt-2 -mb-2 flex min-h-12 items-center gap-2 bg-brand-700 px-3 py-1 text-white short:mt-1.5 short:-mb-1.5"
           role="status"
           data-several
         >
           <ListChecks :size="20" class="shrink-0" />
           <p class="min-w-0 flex-1 text-sm leading-tight">
-            <span class="font-semibold">{{ $tn(picked.length, '{n} seleccionada', '{n} seleccionadas') }}</span>
+            <span class="font-semibold">{{ $tn(scratch.length, '{n} seleccionada', '{n} seleccionadas') }}</span>
             <span class="block text-xs opacity-90 short:hidden">{{ $t('Cada ID que toques se añade o se quita') }}</span>
           </p>
-          <button
-            v-if="picked.length"
-            class="h-10 shrink-0 rounded-lg border border-white/60 px-3 text-sm font-semibold active:bg-brand-800"
-            @click="leaveSeveral"
-          >
-            {{ $t('Vaciar') }}
-          </button>
           <button
             class="flex h-10 shrink-0 items-center gap-1 rounded-lg bg-white px-3 text-sm font-semibold text-brand-800 active:bg-brand-50"
             :aria-label="$t('Salir de la selección: una a una')"
@@ -1111,12 +1149,15 @@ const choice = (on: boolean) =>
         <div v-else-if="ready" class="mt-1.5 flex min-h-11 items-center gap-2">
           <p class="min-w-0 flex-1 text-xs text-stone-500">
             <template v-if="cleared">
-              {{ $t('Selección vaciada ({n})', { n: cleared.picked.length }) }}
+              {{ $t('Selección vaciada ({n})', { n: cleared.length }) }}
               <button class="ml-1 h-11 font-semibold text-brand-800 underline" @click="undoClear">{{ $t('Deshacer') }}</button>
             </template>
-            <template v-else-if="picked.length && canEdit">{{ $t('Una a la vez: otro ID la reemplaza') }}</template>
             <span v-else-if="!query" class="short:hidden">{{
-              $t('Escribe un ID para ver si está viva; pega varios o un rango (B0D-B9D) para registrar muertes.')
+              shortcut
+                ? $t('Enter añade la mariposa a Seleccionadas; {keys} la añade a muertes. Pega varias o un rango (B0D-B9D).', {
+                    keys: shortcut,
+                  })
+                : $t('Escribe un ID para ver si está viva; pega varios o un rango (B0D-B9D) para registrar muertes.')
             }}</span>
           </p>
           <button
@@ -1131,148 +1172,73 @@ const choice = (on: boolean) =>
         </div>
       </div>
 
-      <!-- Left unfinished (another ID chosen before its cause…): a tap takes it up again. -->
-      <section v-if="canEdit && unfinishedRows.length" class="px-3 pt-3" data-unfinished>
-        <h2 class="text-sm font-semibold text-amber-900">{{ $t('Sin terminar') }}</h2>
-        <ul class="mt-1 flex flex-wrap gap-2">
-          <li v-for="u in unfinishedRows" :key="u.row.id" class="flex items-center rounded-lg border border-amber-300 bg-amber-50">
-            <button class="flex min-h-11 items-center gap-2 px-3 text-left" @click="resume(idOf(u.row))">
-              <span class="font-semibold">{{ idOf(u.row) }}</span>
-              <span class="text-xs text-amber-900">{{ lackText(u.lack) }}</span>
-            </button>
-            <button
-              class="grid h-11 w-10 place-items-center text-stone-500"
-              :aria-label="$t('Descartar {id}', { id: idOf(u.row) })"
-              @click="dropUnfinished(idOf(u.row))"
-            >
-              <X :size="16" />
-            </button>
-          </li>
-        </ul>
-      </section>
-
-      <!-- The butterfly chosen, or the group: a card opens its full sheet, × takes it out. -->
-      <section v-if="cards.length" class="px-3 pt-3">
-        <ul class="grid grid-cols-[repeat(auto-fill,minmax(17rem,1fr))] gap-2">
-          <li
-            v-for="(row, i) in cards"
-            :key="row.id"
-            class="relative flex flex-col rounded-xl border-2 bg-white shadow-sm"
-            :class="several ? 'border-brand-600' : 'border-stone-200'"
-            :data-card="idOf(row)"
-          >
-            <button
-              class="block w-full flex-1 rounded-t-xl px-3 pt-2.5 pr-24 pb-2 text-left"
-              :aria-label="$t('Ver la ficha de {id}', { id: idOf(row) })"
-              @click="openEditor('cards', i)"
-            >
-              <span class="flex flex-wrap items-center gap-2">
-                <CheckCircle2 v-if="several" :size="22" class="shrink-0 text-brand-700" />
-                <span class="text-xl font-semibold">{{ row.values.Insectary_ID }}</span>
-                <LifeBadge :facts="factsFor(row)" />
-                <span
-                  v-if="sampleGap(row)"
-                  class="rounded-md bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-900"
-                  :title="sampleTitle(sampleGap(row)!)"
-                  >{{ $t('Sin CAM/tubo') }}</span
-                >
-              </span>
-              <span class="mt-0.5 block text-sm">{{ factsFor(row).species || '—' }}</span>
-              <span class="flex items-center gap-1.5 text-xs text-stone-600"
-                ><SexBadge :sex="factsFor(row).sex" />{{ line(factsFor(row)) }}</span
-              >
-              <span v-if="factsFor(row).life.cause" class="block text-xs text-stone-700"
-                >Death_cause: {{ factsFor(row).life.cause }}</span
-              >
-              <span v-if="factsFor(row).notes" class="block truncate text-xs text-stone-500">{{ factsFor(row).notes }}</span>
-            </button>
-            <div class="absolute top-1 right-1 flex">
-              <button
-                class="grid h-11 w-11 place-items-center rounded-lg text-stone-600 active:bg-stone-100"
-                :aria-label="$t('Ver la ficha de {id}', { id: idOf(row) })"
-                :title="$t('Ver la ficha de {id}', { id: idOf(row) })"
-                @click="openEditor('cards', i)"
-              >
-                <ChevronRight :size="22" />
-              </button>
-              <button
-                class="grid h-11 w-11 place-items-center rounded-lg text-stone-500 active:bg-stone-100"
-                :aria-label="$t('Quitar {id}', { id: idOf(row) })"
-                @click="remove(idOf(row))"
-              >
-                <X :size="20" />
-              </button>
-            </div>
-            <!-- Preserved and still lacking its CAM or tube: a tap goes to the box, under «Preservada». -->
-            <button
-              v-if="canEdit && gapById.get(idOf(row)) && hasGap(gapById.get(idOf(row))!)"
-              class="flex min-h-11 items-center gap-1.5 border-t border-amber-200 bg-amber-50 px-3 py-1.5 text-left text-sm font-medium text-amber-900"
-              @click="goToGap(idOf(row))"
-            >
-              <AlertTriangle :size="16" class="shrink-0" />
-              <span class="min-w-0 flex-1">{{ gapText(gapById.get(idOf(row))!) }}</span>
-              <ChevronRight :size="16" class="shrink-0" />
-            </button>
-            <!-- This card's date, cause and preservation (its own ones in violet), or why nothing is written. -->
-            <div
-              v-if="canEdit"
-              class="rounded-b-xl border-t px-3 py-1.5 text-xs"
-              :class="several ? 'border-brand-100' : 'border-stone-100'"
-            >
-              <p v-if="registered(row)" class="text-stone-500">
-                {{ noteOf(row) ? $t('Ya registrada: solo se añade la nota') : $t('Ya registrada: no se cambiará') }}
-              </p>
-              <p v-else class="flex flex-wrap gap-1" :data-choice="idOf(row)">
-                <span
-                  v-for="chip in chipsOf(row)"
-                  :key="chip.field"
-                  class="rounded-md px-1.5 py-0.5 font-medium"
-                  :class="
-                    chip.missing
-                      ? 'bg-amber-100 text-amber-900'
-                      : chip.own
-                        ? 'bg-violet-100 text-violet-900 ring-1 ring-violet-300'
-                        : 'bg-stone-100 text-stone-700'
-                  "
-                  :title="chip.own ? $t('Solo de esta tarjeta') : undefined"
-                  >{{ chip.text }}</span
-                >
-              </p>
-              <!-- The note Save adds, as it will be written (its own one in violet). -->
-              <p
-                v-if="noteOf(row)"
-                class="mt-1 flex items-start gap-1 rounded-md px-1.5 py-0.5 break-words"
-                :class="noteOf(row)!.own ? 'bg-violet-100 text-violet-900 ring-1 ring-violet-300' : 'bg-stone-100 text-stone-700'"
-                :title="noteOf(row)!.own ? $t('Solo de esta tarjeta') : undefined"
-                :data-note="idOf(row)"
-              >
-                <StickyNote :size="13" class="mt-px shrink-0" /><span class="min-w-0">{{ noteOf(row)!.text }}</span>
-              </p>
-            </div>
-          </li>
-        </ul>
-      </section>
-
-      <!-- How they died: here on a phone held upright, in the right column on a wide screen. -->
+      <!-- The panel: in the right column on a wide screen; on a phone held upright above the cards, folded into one line
+           for the next butterflies' values and unfolded with a card or a recorded death open. -->
       <Teleport to="#deaths-register" defer :disabled="!wide">
-        <section v-if="canEdit && cards.length" class="space-y-5 px-3 pb-2" :class="wide ? 'pt-3' : 'pt-5'">
-          <!-- Whose death the choices below register: the one butterfly, or every one in the group, named. -->
+        <section v-if="canEdit && !unfolded" class="px-3 pt-3">
+          <button
+            class="flex min-h-12 w-full items-center gap-2 rounded-xl border border-stone-300 bg-white px-3 py-2 text-left text-sm active:bg-stone-100"
+            :aria-expanded="false"
+            data-panel-folded
+            @click="panelOpen = true"
+          >
+            <span class="min-w-0 flex-1">
+              <span class="block text-xs text-stone-500">{{ $t('Para las próximas mariposas') }}</span>
+              <span class="block font-semibold text-stone-800">{{ panelSummary }}</span>
+            </span>
+            <span class="shrink-0 font-medium text-brand-800">{{ $t('Cambiar') }}</span>
+            <ChevronDown :size="18" class="shrink-0 text-stone-500" />
+          </button>
+        </section>
+        <section v-else-if="canEdit" ref="panel" class="space-y-5 px-3 pb-2" :class="wide ? 'pt-3' : 'pt-3'" data-panel>
+          <!-- Whose death the choices below are: the next butterflies', one card's, or a recorded one being corrected. -->
           <div
             class="sticky top-0 z-10 -mx-3 flex min-h-12 items-center gap-2 border-y px-3 py-1.5"
-            :class="several ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-200 bg-stone-100 text-stone-800'"
+            :class="panelMode === 'defaults' ? 'border-stone-200 bg-stone-100 text-stone-800' : 'border-brand-700 bg-brand-700 text-white'"
             role="status"
             data-applies
           >
-            <ListChecks v-if="several" :size="20" class="shrink-0" />
-            <p class="min-w-0 flex-1 text-sm">
-              <span class="font-semibold">{{
-                several
-                  ? $tn(cards.length, 'Se aplica a {n} mariposa: {ids}', 'Se aplica a las {n} mariposas: {ids}', {
-                      ids: chosen.map(idOf).join(', '),
-                    })
-                  : $t('Muerte de {id}', { id: idOf(cards[0]) })
-              }}</span>
+            <p class="min-w-0 flex-1 text-sm leading-tight">
+              <template v-if="panelMode === 'defaults'">
+                <span class="block font-semibold">{{ $t('Para las próximas mariposas') }}</span>
+                <span class="block text-xs text-stone-600">{{ $t('Cada mariposa que añadas empieza con estos valores.') }}</span>
+              </template>
+              <template v-else-if="panelMode === 'card'">
+                <span class="block font-semibold">{{ $t('Muerte de {id}', { id: idOf(focusRow!) }) }}</span>
+                <span class="block text-xs opacity-90">{{ $t('Solo esta tarjeta; las demás siguen igual.') }}</span>
+              </template>
+              <template v-else>
+                <span class="block font-semibold">{{ $t('Muerte de {id}', { id: idOf(editingRow!) }) }}</span>
+                <span class="block text-xs opacity-90">{{ $t('Registrada: corrígela y guarda el cambio.') }}</span>
+              </template>
             </p>
+            <button
+              v-if="panelMode !== 'defaults'"
+              class="h-10 shrink-0 rounded-lg bg-white px-4 text-sm font-semibold text-brand-800 active:bg-brand-50"
+              :title="shortcut ? 'Esc' : undefined"
+              @click="closePanel"
+            >
+              {{ panelMode === 'card' ? $t('Listo') : $t('Cancelar') }}
+            </button>
+            <button
+              v-else-if="!wide"
+              class="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-stone-600 active:bg-stone-200"
+              :aria-label="$t('Plegar las opciones')"
+              :aria-expanded="true"
+              @click="panelOpen = false"
+            >
+              <ChevronUp :size="20" />
+            </button>
+          </div>
+          <!-- The card or the death opened: what it is, at a glance. -->
+          <div v-if="panelMode !== 'defaults'" class="flex items-start gap-2 text-sm">
+            <div class="min-w-0 flex-1">
+              <p class="font-medium">{{ factsFor((focusRow ?? editingRow)!).species || '—' }}</p>
+              <p class="flex items-center gap-1.5 text-stone-600">
+                <SexBadge :sex="factsFor((focusRow ?? editingRow)!).sex" />{{ line(factsFor((focusRow ?? editingRow)!)) }}
+              </p>
+            </div>
+            <LifeBadge :facts="factsFor((focusRow ?? editingRow)!)" />
           </div>
           <div>
             <h2 class="mb-1.5 text-sm font-semibold text-stone-700">{{ $t('Fecha de muerte') }}</h2>
@@ -1287,17 +1253,13 @@ const choice = (on: boolean) =>
               >
                 {{ d.name }}
               </button>
-              <DateField
-                :model-value="shownDate"
-                class="field-input h-12 text-base"
-                @update:model-value="setField('date', $event)"
-              />
+              <DateField :model-value="shownDate" class="field-input h-12 text-base" @update:model-value="setField('date', $event)" />
             </div>
             <p v-if="dateError" class="mt-1 text-sm text-red-700">{{ dateError }}</p>
             <p v-else-if="shownDate" class="mt-1 text-sm text-stone-600">{{ dayLabel(shownDate) }}</p>
-            <p v-if="ownOf('date').length" class="mt-1 text-xs text-violet-800">
-              {{ $t('Con fecha propia: {ids}', { ids: ownOf('date').join(', ') }) }}
-            </p>
+            <button v-if="spread('date').length" class="mt-1 text-xs font-semibold text-brand-800 underline" @click="spreadField('date')">
+              {{ $tn(spread('date').length, 'Aplicar también a {n} seleccionada', 'Aplicar también a las {n} seleccionadas') }}
+            </button>
           </div>
           <div>
             <h2 class="mb-1.5 text-sm font-semibold text-stone-700">Death_cause</h2>
@@ -1306,149 +1268,159 @@ const choice = (on: boolean) =>
                 v-for="c in causes"
                 :key="c"
                 class="min-h-12 rounded-lg border px-2 py-2 text-base font-medium break-words"
-                :class="choice(shown('cause') === c)"
-                :aria-pressed="shown('cause') === c"
+                :class="choice(shown.cause === c)"
+                :aria-pressed="shown.cause === c"
                 @click="pickCause(c)"
               >
                 {{ c }}
               </button>
             </div>
-            <p v-if="ownOf('cause').length" class="mt-1 text-xs text-violet-800">
-              {{ $t('Con causa propia: {ids}', { ids: ownOf('cause').join(', ') }) }}
-            </p>
+            <button v-if="spread('cause').length" class="mt-1 text-xs font-semibold text-brand-800 underline" @click="spreadField('cause')">
+              {{ $tn(spread('cause').length, 'Aplicar también a {n} seleccionada', 'Aplicar también a las {n} seleccionadas') }}
+            </button>
           </div>
           <div>
             <h2 class="mb-1.5 text-sm font-semibold text-stone-700">{{ $t('Preservación') }}</h2>
-            <div class="grid grid-cols-2 gap-2">
-              <button
-                class="min-h-12 rounded-lg border px-2 text-base font-medium"
-                :class="choice(shown('preserved') === false)"
-                :aria-pressed="shown('preserved') === false"
-                @click="setField('preserved', false)"
-              >
-                {{ $t('Sin preservar') }}
-              </button>
-              <button
-                class="min-h-12 rounded-lg border px-2 text-base font-medium"
-                :class="choice(shown('preserved') === true)"
-                :aria-pressed="shown('preserved') === true"
-                @click="setField('preserved', true)"
-              >
-                {{ $t('Preservada') }}
-              </button>
-            </div>
-            <p v-if="ownOf('preserved').length" class="mt-1 text-xs text-violet-800">
-              {{ $t('Con preservación propia: {ids}', { ids: ownOf('preserved').join(', ') }) }}
-            </p>
-            <p v-if="shown('preserved') === false" class="mt-1.5 text-sm text-stone-600">
-              {{ $t('Sin preservar: CAM y tubos NA, tejidos y medios NOT_COLLECTED') }}
-            </p>
-            <!-- Preserved: the medium, then each butterfly's CAM and tube, right here where the eye is. -->
-            <div
-              v-if="showPreservation"
-              ref="details"
-              class="mt-2 rounded-xl border bg-white p-3 transition-shadow duration-700"
-              :class="flash ? 'border-brand-600 shadow-[0_0_0_4px_var(--color-brand-100)]' : 'border-stone-200'"
-            >
-              <p class="text-sm text-stone-600 short:hidden">
-                {{
-                  $t('Cuerpo entero ({tissue}) en un tubo: confirma o escribe el CAM y el tubo de cada una.', { tissue: WHOLE })
-                }}
+            <!-- A recorded death keeps its preservation here (Tubos changes it, or undo and add it again). -->
+            <template v-if="panelMode === 'recorded'">
+              <p class="rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm font-medium">{{ preservationLine(editingRow!) }}</p>
+              <p class="mt-1 text-xs text-stone-500">
+                {{ $t('Para cambiarla: Tubos, o «Deshacer muerte» y añadirla otra vez.') }}
               </p>
-              <span class="field-label mt-3 short:mt-0">{{ $t('Medio') }}</span>
-              <div class="grid grid-cols-3 gap-2">
+            </template>
+            <template v-else>
+              <div class="grid grid-cols-2 gap-2">
                 <button
-                  v-for="m in mediums"
-                  :key="m"
-                  class="min-h-11 rounded-lg border px-1 text-sm font-medium"
-                  :class="choice(medium === m)"
-                  :aria-pressed="medium === m"
-                  @click="medium = m"
+                  class="min-h-12 rounded-lg border px-2 text-base font-medium"
+                  :class="choice(shown.preserved === false)"
+                  :aria-pressed="shown.preserved === false"
+                  @click="setField('preserved', false)"
                 >
-                  {{ m }}
+                  {{ $t('Sin preservar') }}
+                </button>
+                <button
+                  class="min-h-12 rounded-lg border px-2 text-base font-medium"
+                  :class="choice(shown.preserved === true)"
+                  :aria-pressed="shown.preserved === true"
+                  @click="setField('preserved', true)"
+                >
+                  {{ $t('Preservada') }}
                 </button>
               </div>
-              <p v-if="rack" class="mt-1 text-xs text-stone-500">
-                {{ $t('Tubos de la gradilla {rack}', { rack: tx(rack.label, rack.labelMsg) }) }}
+              <button
+                v-if="spread('preserved').length"
+                class="mt-1 text-xs font-semibold text-brand-800 underline"
+                @click="spreadField('preserved')"
+              >
+                {{ $tn(spread('preserved').length, 'Aplicar también a {n} seleccionada', 'Aplicar también a las {n} seleccionadas') }}
+              </button>
+              <p v-if="shown.preserved === false" class="mt-1.5 text-sm text-stone-600">
+                {{ $t('Sin preservar: CAM y tubos NA, tejidos y medios NOT_COLLECTED') }}
               </p>
-
-              <div v-if="toPreserve.length" class="mt-3 flex items-baseline justify-between gap-2">
-                <span class="text-sm font-semibold text-stone-700">{{ $t('CAM y tubo de cada una') }}</span>
-                <span
-                  class="text-xs font-semibold"
-                  :class="readyCount === toPreserve.length ? 'text-brand-700' : 'text-amber-800'"
-                  role="status"
-                >
-                  {{ $t('{ok} de {n} listas', { ok: readyCount, n: toPreserve.length }) }}
-                </span>
-              </div>
-              <ul v-if="toPreserve.length" class="mt-1.5 divide-y divide-stone-100 rounded-lg border border-stone-200">
-                <li
-                  v-for="row in toPreserve"
-                  :key="row.id"
-                  :data-row="idOf(row)"
-                  class="grid grid-cols-[minmax(3.25rem,auto)_1fr_1fr] items-start gap-2 px-2 py-2"
-                  :class="hasGap(gapById.get(idOf(row))!) ? 'bg-amber-50/70' : ''"
-                >
-                  <span class="pt-6 text-lg leading-tight font-semibold">{{ idOf(row) }}</span>
-                  <label v-if="!gapById.get(idOf(row))?.keepsCam" class="min-w-0">
-                    <span class="field-label">CAM_ID</span>
-                    <input
-                      v-model="sampleOf(idOf(row)).cam"
-                      :data-sample="`${idOf(row)}:cam`"
-                      class="field-input h-11 text-base uppercase"
-                      :class="{
-                        'border-amber-500 bg-white ring-2 ring-amber-200': gapById.get(idOf(row))?.cam === 'missing',
-                        'border-red-500 ring-2 ring-red-100': gapById.get(idOf(row))?.cam === 'repeated',
-                      }"
-                      :placeholder="$t('Falta')"
-                      autocapitalize="characters"
-                      autocomplete="off"
-                      spellcheck="false"
-                      enterkeyhint="next"
-                      @keydown.enter.prevent="nextBox"
-                    />
-                    <span v-if="isSuggested(idOf(row), 'cam')" class="text-xs text-stone-500">{{ $t('siguiente libre') }}</span>
-                  </label>
-                  <p v-else class="min-w-0 text-sm">
-                    <span class="field-label">CAM_ID</span>
-                    <span class="block truncate pt-2 font-medium">{{ cellText(pending.value(row, 'CAM_ID')) }}</span>
-                    <span class="text-xs text-stone-500">{{ $t('se conserva') }}</span>
-                  </p>
-                  <label v-if="gapById.get(idOf(row))?.slot !== null" class="min-w-0">
-                    <span class="field-label">Tube_{{ gapById.get(idOf(row))?.slot }}_id</span>
-                    <input
-                      v-model="sampleOf(idOf(row)).tube"
-                      :data-sample="`${idOf(row)}:tube`"
-                      class="field-input h-11 text-base uppercase"
-                      :class="{
-                        'border-amber-500 bg-white ring-2 ring-amber-200': gapById.get(idOf(row))?.tube === 'missing',
-                        'border-red-500 ring-2 ring-red-100': gapById.get(idOf(row))?.tube === 'repeated',
-                      }"
-                      :placeholder="$t('Falta')"
-                      autocapitalize="characters"
-                      autocomplete="off"
-                      spellcheck="false"
-                      enterkeyhint="next"
-                      @keydown.enter.prevent="nextBox"
-                    />
-                    <span v-if="isSuggested(idOf(row), 'tube')" class="text-xs text-stone-500">{{ $t('siguiente libre') }}</span>
-                  </label>
-                  <p v-else class="min-w-0 pt-6 text-sm text-red-700">{{ $t('Sin sitio para otro tubo') }}</p>
-                  <p
-                    v-if="gapById.get(idOf(row))?.cam === 'repeated' || gapById.get(idOf(row))?.tube === 'repeated'"
-                    class="col-span-3 text-xs text-red-700"
+              <!-- Preserved: the medium, then each butterfly's CAM and tube, right here where the eye is. -->
+              <div
+                v-if="showPreservation"
+                ref="details"
+                class="mt-2 rounded-xl border bg-white p-3 transition-shadow duration-700"
+                :class="flash ? 'border-brand-600 shadow-[0_0_0_4px_var(--color-brand-100)]' : 'border-stone-200'"
+              >
+                <p class="text-sm text-stone-600 short:hidden">
+                  {{ $t('Cuerpo entero ({tissue}) en un tubo: confirma o escribe el CAM y el tubo de cada una.', { tissue: WHOLE }) }}
+                </p>
+                <span class="field-label mt-3 short:mt-0">{{ $t('Medio') }}</span>
+                <div class="grid grid-cols-3 gap-2">
+                  <button
+                    v-for="m in mediums"
+                    :key="m"
+                    class="min-h-11 rounded-lg border px-1 text-sm font-medium"
+                    :class="choice(medium === m)"
+                    :aria-pressed="medium === m"
+                    @click="medium = m"
                   >
-                    {{ gapText(gapById.get(idOf(row))!) }}
-                  </p>
-                </li>
-              </ul>
-              <p v-if="notToPreserve.length" class="mt-2 text-xs text-stone-500">
-                {{ $t('Ya registradas como muertas, sin tubo aquí: {ids}', { ids: notToPreserve.map(idOf).join(', ') }) }}
-              </p>
-            </div>
+                    {{ m }}
+                  </button>
+                </div>
+                <p v-if="rack" class="mt-1 text-xs text-stone-500">
+                  {{ $t('Tubos de la gradilla {rack}', { rack: tx(rack.label, rack.labelMsg) }) }}
+                </p>
+                <div v-if="panelPreserve.length" class="mt-3 flex items-baseline justify-between gap-2">
+                  <span class="text-sm font-semibold text-stone-700">{{ $t('CAM y tubo de cada una') }}</span>
+                  <span
+                    class="text-xs font-semibold"
+                    :class="panelReady === panelPreserve.length ? 'text-brand-700' : 'text-amber-800'"
+                    role="status"
+                  >
+                    {{ $t('{ok} de {n} listas', { ok: panelReady, n: panelPreserve.length }) }}
+                  </span>
+                </div>
+                <ul v-if="panelPreserve.length" class="mt-1.5 divide-y divide-stone-100 rounded-lg border border-stone-200">
+                  <li
+                    v-for="row in panelPreserve"
+                    :key="row.id"
+                    :data-row="idOf(row)"
+                    class="grid grid-cols-[minmax(3.25rem,auto)_1fr_1fr] items-start gap-2 px-2 py-2"
+                    :class="hasGap(gapById.get(idOf(row))!) ? 'bg-amber-50/70' : ''"
+                  >
+                    <span class="pt-6 text-lg leading-tight font-semibold">{{ idOf(row) }}</span>
+                    <label v-if="!gapById.get(idOf(row))?.keepsCam" class="min-w-0">
+                      <span class="field-label">CAM_ID</span>
+                      <input
+                        v-model="sampleOf(idOf(row)).cam"
+                        :data-sample="`${idOf(row)}:cam`"
+                        class="field-input h-11 text-base uppercase"
+                        :class="{
+                          'border-amber-500 bg-white ring-2 ring-amber-200': gapById.get(idOf(row))?.cam === 'missing',
+                          'border-red-500 ring-2 ring-red-100': gapById.get(idOf(row))?.cam === 'repeated',
+                        }"
+                        :placeholder="$t('Falta')"
+                        autocapitalize="characters"
+                        autocomplete="off"
+                        spellcheck="false"
+                        enterkeyhint="next"
+                        @keydown.enter.exact.prevent="nextBox"
+                      />
+                      <span v-if="isSuggested(idOf(row), 'cam')" class="text-xs text-stone-500">{{ $t('siguiente libre') }}</span>
+                    </label>
+                    <p v-else class="min-w-0 text-sm">
+                      <span class="field-label">CAM_ID</span>
+                      <span class="block truncate pt-2 font-medium">{{ cellText(pending.value(row, 'CAM_ID')) }}</span>
+                      <span class="text-xs text-stone-500">{{ $t('se conserva') }}</span>
+                    </p>
+                    <label v-if="gapById.get(idOf(row))?.slot !== null" class="min-w-0">
+                      <span class="field-label">Tube_{{ gapById.get(idOf(row))?.slot }}_id</span>
+                      <input
+                        v-model="sampleOf(idOf(row)).tube"
+                        :data-sample="`${idOf(row)}:tube`"
+                        class="field-input h-11 text-base uppercase"
+                        :class="{
+                          'border-amber-500 bg-white ring-2 ring-amber-200': gapById.get(idOf(row))?.tube === 'missing',
+                          'border-red-500 ring-2 ring-red-100': gapById.get(idOf(row))?.tube === 'repeated',
+                        }"
+                        :placeholder="$t('Falta')"
+                        autocapitalize="characters"
+                        autocomplete="off"
+                        spellcheck="false"
+                        enterkeyhint="next"
+                        @keydown.enter.exact.prevent="nextBox"
+                      />
+                      <span v-if="isSuggested(idOf(row), 'tube')" class="text-xs text-stone-500">{{ $t('siguiente libre') }}</span>
+                    </label>
+                    <p v-else class="min-w-0 pt-6 text-sm text-red-700">{{ $t('Sin sitio para otro tubo') }}</p>
+                    <p
+                      v-if="gapById.get(idOf(row))?.cam === 'repeated' || gapById.get(idOf(row))?.tube === 'repeated'"
+                      class="col-span-3 text-xs text-red-700"
+                    >
+                      {{ gapText(gapById.get(idOf(row))!) }}
+                    </p>
+                  </li>
+                </ul>
+                <p v-if="panelNotPreserve.length" class="mt-2 text-xs text-stone-500">
+                  {{ $t('Ya registradas como muertas, sin tubo aquí: {ids}', { ids: panelNotPreserve.map(idOf).join(', ') }) }}
+                </p>
+              </div>
+            </template>
           </div>
-          <!-- A note, in English: typed or quick phrases; Save adds it, dated and signed, after the notes there. -->
+          <!-- A note, in English: typed or quick phrases; recording adds it, dated and signed, after the notes there. -->
           <div>
             <h2 class="mb-1.5 text-sm font-semibold text-stone-700">{{ $t('Nota') }}</h2>
             <div class="mb-2 flex flex-wrap gap-1.5">
@@ -1465,7 +1437,7 @@ const choice = (on: boolean) =>
             <label class="block">
               <span class="sr-only">{{ $t('Nota') }}</span>
               <textarea
-                :value="shownNote"
+                :value="shown.note"
                 class="field-input min-h-20 text-base short:min-h-0"
                 :rows="short ? 1 : 2"
                 :placeholder="$t('Nota, en inglés (p. ej. Only wings found)')"
@@ -1475,17 +1447,16 @@ const choice = (on: boolean) =>
               />
             </label>
             <p class="mt-1 text-xs text-stone-500">
-              {{
-                $t('Al guardar se añade a Notes_Insectary_data, tras las notas que ya tiene: «{prefix} …»', {
-                  prefix: notePrefix,
-                })
-              }}
+              {{ $t('Al guardar se añade a Notes_Insectary_data, tras las notas que ya tiene: «{prefix} …»', { prefix: notePrefix }) }}
             </p>
-            <p v-if="ownOf('note').length" class="mt-1 text-xs text-violet-800">
-              {{ $t('Con nota propia: {ids}', { ids: ownOf('note').join(', ') }) }}
-            </p>
+            <button v-if="spread('note').length" class="mt-1 text-xs font-semibold text-brand-800 underline" @click="spreadField('note')">
+              {{ $tn(spread('note').length, 'Aplicar también a {n} seleccionada', 'Aplicar también a las {n} seleccionadas') }}
+            </button>
           </div>
-          <p v-if="otherPending" class="text-xs text-amber-900">
+          <button v-if="panelMode !== 'defaults'" class="btn h-11 w-full" @click="drawerRow = (focusRow ?? editingRow)!">
+            <Columns3 :size="16" /> {{ $t('Todas las columnas') }}
+          </button>
+          <p v-if="otherPending && panelMode !== 'recorded' && cardRows.length" class="text-xs text-amber-900">
             {{
               $tn(
                 otherPending,
@@ -1495,66 +1466,120 @@ const choice = (on: boolean) =>
             }}
           </p>
         </section>
-        <p v-else-if="wide && canEdit" class="px-4 py-6 text-sm text-stone-500">
-          {{ $t('Busca y añade mariposas: aquí eliges la fecha, la causa, si se preservan y una nota, y las guardas.') }}
-        </p>
       </Teleport>
 
-      <!-- The latest deaths, by day; those registered and not saved yet first (in amber, as pending cells are). -->
-      <section class="px-3 pt-6 pb-8">
-        <h2 class="text-sm font-semibold text-stone-700">{{ $t('Últimas muertes registradas') }}</h2>
-        <p v-if="ready && !recent.length" class="py-3 text-sm text-stone-500">{{ $t('No hay muertes registradas.') }}</p>
-        <template v-for="group in recentGroups" :key="group.label">
-          <h3
-            class="mt-3 mb-1 text-xs font-semibold tracking-wide uppercase"
-            :class="group.unsaved ? 'text-amber-900' : 'text-stone-500'"
+      <!-- «Seleccionadas»: the butterflies picked, each with its own death; a tap opens it in the panel, × takes it out. -->
+      <section v-if="cardRows.length" class="px-3 pt-4" data-selected>
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="text-sm font-semibold text-stone-700">
+            {{ $t('Seleccionadas') }} <span class="font-normal text-stone-500">({{ cardRows.length }})</span>
+          </h2>
+          <span class="min-w-0 flex-1" />
+          <button v-if="cardRows.length > 1" class="h-10 rounded-lg px-2 text-sm text-stone-600 underline active:bg-stone-100" @click="clearAll">
+            {{ $t('Vaciar') }}
+          </button>
+          <button
+            v-if="canEdit && cardRows.length > 1"
+            class="btn h-10"
+            :disabled="!readyRows.length || saving"
+            :title="shortcut && panelMode === 'defaults' ? shortcut : undefined"
+            @click="record(readyRows)"
           >
-            {{ group.label }}
-            <span v-if="group.unsaved" class="font-normal tracking-normal normal-case">
-              · {{ pending.saving ? $t('Guardando…') : pending.autoSave ? $t('se guardan solas en un momento') : $t('guárdalas con «Guardar en la hoja», abajo') }}
-            </span>
-          </h3>
-          <ul
-            class="divide-y overflow-hidden rounded-xl border"
-            :class="group.unsaved ? 'divide-amber-100 border-amber-300 bg-amber-50' : 'divide-stone-100 border-stone-200 bg-white'"
-            :data-unsaved="group.unsaved ? '' : undefined"
+            <Plus :size="16" /> {{ $t('Añadir todas ({n})', { n: readyRows.length }) }}
+          </button>
+        </div>
+        <ul class="mt-2 grid grid-cols-[repeat(auto-fill,minmax(17rem,1fr))] gap-2">
+          <li
+            v-for="row in cardRows"
+            :key="row.id"
+            class="relative flex flex-col rounded-xl border-2 bg-white shadow-sm"
+            :class="isFocused(row) ? 'border-brand-600 ring-2 ring-brand-100' : 'border-stone-200'"
+            :data-card="idOf(row)"
           >
-            <li v-for="{ row, at } in group.rows" :key="row.id">
-              <button
-                class="flex min-h-12 w-full items-center gap-3 px-3 py-1.5 text-left active:bg-stone-50"
-                @click="openEditor('recent', at)"
-              >
-                <span class="w-14 shrink-0 font-semibold">{{ row.values.Insectary_ID }}</span>
-                <span class="min-w-0 flex-1">
-                  <span class="block truncate text-sm">{{
-                    group.unsaved
-                      ? [deathDay(row), cellText(pending.value(row, 'Death_cause'))].filter(Boolean).join(' · ') || '—'
-                      : cellText(row.values.Death_cause) || '—'
-                  }}</span>
-                  <span class="block truncate text-xs text-stone-500">
-                    {{ cellText(row.values.SPECIES) }} <SexBadge :sex="cellText(row.values.Sex)" />
-                  </span>
-                </span>
-                <span
-                  v-if="sampleGap(row)"
-                  class="shrink-0 rounded-md bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-900"
-                  :title="sampleTitle(sampleGap(row)!)"
-                  >{{ $t('Sin CAM/tubo') }}</span
-                >
-                <span v-else-if="!isBlank(row.values.CAM_ID)" class="shrink-0 text-xs text-brand-700">{{
-                  row.values.CAM_ID
+            <button
+              class="block w-full flex-1 rounded-t-xl px-3 pt-2.5 pr-12 pb-2 text-left"
+              :aria-label="$t('Abrir {id} en el panel', { id: idOf(row) })"
+              :aria-pressed="isFocused(row)"
+              @click="toggleFocus(row)"
+            >
+              <span class="flex flex-wrap items-center gap-2">
+                <span class="text-xl font-semibold">{{ row.values.Insectary_ID }}</span>
+                <LifeBadge :facts="factsFor(row)" />
+                <span v-if="sampleGap(row)" class="rounded-md bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-900" :title="sampleTitle()">{{
+                  $t('Sin CAM/tubo')
                 }}</span>
-              </button>
-            </li>
-          </ul>
-        </template>
-        <button v-if="recent.length >= recentCount" class="btn mt-3 h-11 w-full" @click="recentCount += 30">
-          {{ $t('ver más') }}
-        </button>
+              </span>
+              <span class="mt-0.5 block text-sm">{{ factsFor(row).species || '—' }}</span>
+              <span class="flex items-center gap-1.5 text-xs text-stone-600"><SexBadge :sex="factsFor(row).sex" />{{ line(factsFor(row)) }}</span>
+              <span v-if="factsFor(row).life.cause" class="block text-xs text-stone-700">Death_cause: {{ factsFor(row).life.cause }}</span>
+            </button>
+            <button
+              class="absolute top-1 right-1 grid h-11 w-11 place-items-center rounded-lg text-stone-500 active:bg-stone-100"
+              :aria-label="$t('Quitar {id}', { id: idOf(row) })"
+              :title="$t('Quitar {id}', { id: idOf(row) })"
+              @click="remove(idOf(row))"
+            >
+              <X :size="20" />
+            </button>
+            <!-- Preserved and still lacking its CAM or tube: a tap goes to the box. -->
+            <button
+              v-if="canEdit && gapById.get(idOf(row)) && hasGap(gapById.get(idOf(row))!)"
+              class="flex min-h-11 items-center gap-1.5 border-t border-amber-200 bg-amber-50 px-3 py-1.5 text-left text-sm font-medium text-amber-900"
+              @click="goToGap(idOf(row))"
+            >
+              <AlertTriangle :size="16" class="shrink-0" />
+              <span class="min-w-0 flex-1">{{ gapText(gapById.get(idOf(row))!) }}</span>
+            </button>
+            <!-- This card's date, cause and preservation, and the note it adds; then its button. -->
+            <div v-if="canEdit" class="rounded-b-xl border-t border-stone-100 px-3 py-1.5 text-xs">
+              <p v-if="registered(row) && !noteOf(row)" class="text-stone-500">{{ $t('Ya registrada: no se cambiará') }}</p>
+              <p v-else class="flex flex-wrap gap-1" :data-choice="idOf(row)">
+                <span
+                  v-for="chip in chipsOf(row)"
+                  :key="chip.field"
+                  class="rounded-md px-1.5 py-0.5 font-medium"
+                  :class="chip.missing ? 'bg-amber-100 text-amber-900' : 'bg-stone-100 text-stone-700'"
+                  >{{ chip.text }}</span
+                >
+              </p>
+              <p v-if="noteOf(row)" class="mt-1 flex items-start gap-1 rounded-md bg-stone-100 px-1.5 py-0.5 break-words text-stone-700" :data-note="idOf(row)">
+                <StickyNote :size="13" class="mt-px shrink-0" /><span class="min-w-0">{{ noteOf(row) }}</span>
+              </p>
+              <p v-if="refusals[idOf(row)]" class="mt-1 text-sm text-red-700">{{ $t('No se guardó: {reason}', { reason: refusals[idOf(row)] }) }}</p>
+              <div class="mt-1.5 flex items-center gap-2">
+                <span class="min-w-0 flex-1 text-xs" :class="lackFor(row) === 'nothing' ? 'text-stone-500' : 'text-amber-900'">{{
+                  lackFor(row) && lackFor(row) !== 'sample' ? lackText(lackFor(row), row) : ''
+                }}</span>
+                <button
+                  class="btn-primary h-10 shrink-0 px-3 text-sm"
+                  :disabled="!!lackFor(row) || saving"
+                  :data-add="idOf(row)"
+                  @click="record([row])"
+                >
+                  <Loader2 v-if="recording.includes(idOf(row))" :size="15" class="animate-spin" /><Plus v-else :size="16" />
+                  {{ $t('Añadir a muertes') }}
+                </button>
+              </div>
+            </div>
+          </li>
+        </ul>
       </section>
+
+      <DeathsRecorded
+        v-model:order="order"
+        v-model:mine-only="mineOnly"
+        :items="recorded"
+        :editing="editingId"
+        :can-edit="canEdit"
+        :loading="loadingRecorded"
+        :gap-of="gapChip"
+        @edit="startEdit"
+        @undo="undoDeath"
+        @refresh="loadRecorded"
+      />
     </div>
 
-    <!-- The right column on a wide screen: registering, with Save at its foot. -->
+    <!-- The right column on a wide screen: the panel, always there, with its button at the foot. -->
     <aside
       v-show="wide"
       class="flex min-h-0 w-[min(30rem,46%)] shrink-0 flex-col border-l border-stone-200 bg-stone-50"
@@ -1564,80 +1589,53 @@ const choice = (on: boolean) =>
       <div id="deaths-save" />
     </aside>
 
-    <!-- Save (or the last save, with Undo): at the foot of what is visible, above the keyboard. -->
+    <!-- The panel's button: at the foot of what is visible, above the keyboard. -->
     <Teleport to="#deaths-save" defer :disabled="!wide">
       <footer
-        v-if="lastSave || (canEdit && cards.length)"
-        ref="footer"
+        v-if="canEdit && (footer || wide)"
+        ref="footerEl"
         class="relative z-20 shrink-0 border-t border-stone-200 bg-white px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] short:pt-1.5 short:pb-1.5"
         :class="{ hidden: cramped }"
       >
-        <div v-if="lastSave && !cards.length" class="flex items-center gap-2" role="status">
-          <Check :size="22" class="shrink-0 text-brand-700" />
-          <p class="min-w-0 flex-1 text-sm">
-            <span class="font-medium">{{
-              $tn(lastSave.count, '{n} muerte guardada en Google Sheets', '{n} muertes guardadas en Google Sheets')
-            }}</span>
-            <span class="block truncate text-xs text-stone-500">{{ lastSave.ids.join(', ') }}</span>
-          </p>
-          <button class="btn h-12 px-4 text-base" :disabled="undoing" @click="undo">
-            <Loader2 v-if="undoing" :size="18" class="animate-spin" /><Undo2 v-else :size="18" /> {{ $t('Deshacer') }}
-          </button>
-          <button class="btn h-12 px-3" :aria-label="$t('Cerrar')" @click="lastSave = null"><X :size="18" /></button>
-        </div>
+        <p v-if="!footer" class="py-2 text-sm text-stone-500">
+          {{ $t('Busca y añade mariposas: cada una lleva los valores de arriba, y la añades a muertes desde su tarjeta.') }}
+        </p>
         <!-- Upright phone: the message above a full-width button; sideways or wide: side by side. -->
         <div v-else :class="wide ? 'flex items-center gap-3' : ''">
           <button
-            v-if="blocker.gap"
+            v-if="footer.gap"
             class="flex min-h-11 w-full min-w-0 items-center gap-1 text-left text-sm font-medium text-amber-900 underline decoration-amber-400 underline-offset-2"
             :class="wide ? 'flex-1' : 'mb-1 short:min-h-8'"
-            @click="goToGap(blocker.gap)"
+            @click="goToGap(footer.gap)"
           >
-            <AlertTriangle :size="16" class="shrink-0" /><span class="min-w-0 truncate">{{ blocker.text }}</span>
+            <AlertTriangle :size="16" class="shrink-0" /><span class="min-w-0 truncate">{{ footer.text }}</span>
           </button>
           <p
-            v-else
+            v-else-if="footer.text || wide"
             :class="[
-              blocker.text ? 'text-amber-900' : 'text-stone-600',
+              footer.disabled ? 'text-amber-900' : 'text-stone-600',
               wide ? 'line-clamp-2 min-w-0 flex-1 text-sm' : 'mb-1.5 truncate text-xs',
             ]"
           >
-            {{ blocker.text || summary }}
+            {{ footer.text }}
           </p>
           <button
             class="btn-primary h-13 text-base short:h-11"
-            :class="wide ? 'shrink-0 px-6' : 'w-full'"
-            :disabled="!!blocker.text || saving"
-            @click="save"
+            :class="wide ? 'shrink-0 px-5' : 'w-full'"
+            :disabled="footer.disabled || saving"
+            :title="shortcut || undefined"
+            data-primary
+            @click="footer.run()"
           >
-            <Loader2 v-if="saving" :size="18" class="animate-spin" />
-            {{
-              saving
-                ? $t('Guardando…')
-                : several
-                  ? $tn(toSave.length, 'Guardar {n} muerte', 'Guardar {n} muertes')
-                  : $t('Guardar la muerte de {id}', { id: idOf(cards[0]) })
-            }}
+            <Loader2 v-if="saving" :size="18" class="animate-spin" /><Plus v-else-if="panelMode !== 'recorded'" :size="18" />
+            {{ saving ? $t('Guardando…') : footer.label }}
           </button>
         </div>
       </footer>
     </Teleport>
 
     <TabHistory v-if="showHistory" :title="$t('Historial de Muertes')" purpose="muertes" @close="showHistory = false" />
-    <DeathEditor
-      v-if="editing && editorRows.length"
-      v-model:index="editing.index"
-      :rows="editorRows"
-      :columns="table?.columns || []"
-      :causes="causes"
-      :options="options"
-      :can-edit="canEdit"
-      :initials="initials"
-      :card-note="editing.list === 'cards' ? cardNote : undefined"
-      @note="(row: TableRow, text: string) => setField('note', text, several ? [idOf(row)] : [])"
-      @close="editing = null"
-      @more="drawerRow = $event"
-    />
+    <UndoDialog v-if="undoing" v-model:reason="undoReason" :review="undoing" :busy="undoBusy" @cancel="cancelUndo" @confirm="confirmUndo" />
     <RowDrawer
       v-if="drawerRow && table"
       :module="MODULE"

@@ -135,16 +135,29 @@ chosen, the date, the cause and preserved or not, and write the same cells.
 
 Below: «Últimas N muertes registradas» («ver más»).
 
-**Tarjetas**: a search box (Insectary ID, CAM or tube; says alive or dead;
-for a worn wing, `A?B` = one character unreadable, `A[16]B` = one of two, and
-look-alikes such as 6/8 or B/D are offered with the doubtful character in
-amber; ♀ / ♂ / ? and a species under the box rank what is seen),
-the butterflies as cards, then «Fecha de muerte» (Hoy / Ayer / a date), the
-cause as buttons and «Sin preservar | Preservada». «Preservada» shows the
-medium and, right under it, each butterfly's CAM and tube (next free ones
-pre-filled; missing ones in amber). «Guardar N muertes» writes and saves at
-once, with «Deshacer». On a wide screen (tablet, phone sideways) the cards
-are on the left and the registering with Save on the right. No link parameters.
+**Tarjetas**, in two levels like a shopping cart:
+1. A search box (Insectary ID, CAM or tube; says alive or dead; for a worn
+   wing, `A?B` = one character unreadable, `A[16]B` = one of two, and
+   look-alikes such as 6/8 or B/D are offered with the doubtful character in
+   amber; ♀ / ♂ / ? and a species under the box rank what is seen). Enter or
+   a tap puts the butterfly in «Seleccionadas»; a pasted list or a range
+   (`B0D-B9D`) puts them all; «Seleccionar varias» adds each ID tapped.
+2. The panel (right column on a wide screen; on a phone one line above the
+   cards, «Cambiar»): «Fecha de muerte» (Hoy / Ayer / a date), the cause as
+   buttons, «Sin preservar | Preservada» (the medium and each one's CAM and
+   tube, next free ones pre-filled) and a note. With no card open it is «Para
+   las próximas mariposas»: every butterfly added afterwards starts with those
+   values (choose Heat stroke once, then add ten IDs). A card tapped opens in
+   it («Muerte de G7D») and changes that card only; a butterfly added alone
+   opens by itself (one at a time).
+3. Each card's «+ Añadir a muertes», or «Añadir todas» (Ctrl+Enter), writes
+   and saves its death; × takes a card out, nothing saved.
+4. «Registradas hoy»: the deaths saved from Muertes today, everyone's or
+   «Mías», sorted by Insectary ID, emergence date or sheet row (↑/↓, kept in
+   the browser) to copy them into the paper notebook. A tap opens one in the
+   panel to correct its date or cause or add a note; ↶ «Deshacer» undoes its
+   death (the Historial's preview and confirmation).
+No link parameters.
 
 ## Tubos — `#/tubos`
 

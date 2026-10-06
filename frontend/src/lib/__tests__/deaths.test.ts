@@ -4,31 +4,20 @@ import {
   bestRack,
   buildIndex,
   cardCells,
-  choiceFor,
   daysAlive,
   deathCells,
-  endSeveral,
   factsOf,
   hasGap,
   lackOf,
   lifeOf,
   lookAlikes,
   noteCell,
-  pickMany,
-  pickOne,
   preservationGaps,
   rankCauses,
-  setAside,
-  setChoice,
-  sharedChoice,
-  startSeveral,
-  keepOwn,
   suggest,
   usedSamples,
   type DeathChoice,
   type Getter,
-  type OwnChoices,
-  type Lack,
 } from '../deaths'
 import type { CellValue, TableRow } from '../types'
 
@@ -258,38 +247,13 @@ describe('causes and racks', () => {
 
 describe('each card its own date, cause, preservation and note', () => {
   const all: DeathChoice = { date: '2026-09-30', cause: 'Unknown', preserved: false, note: '' }
-  it('nothing selected: the panel sets every card (and their own values of that field go)', () => {
-    let state = { all, own: { B7A: { cause: 'Eaten' }, C8B: { cause: 'Spider', date: '2026-09-29' } } as OwnChoices }
-    state = setChoice(state.all, state.own, [], 'cause', 'Disappearance')
-    expect(state.all.cause).toBe('Disappearance')
-    expect(state.own).toEqual({ C8B: { date: '2026-09-29' } })
-    expect(choiceFor(state.all, state.own, 'B7A')).toEqual({ date: '2026-09-30', cause: 'Disappearance', preserved: false, note: '' })
-    expect(choiceFor(state.all, state.own, 'C8B')).toEqual({ date: '2026-09-29', cause: 'Disappearance', preserved: false, note: '' })
-  })
-  it('cards selected: only theirs change; the panel\'s own value is not kept as theirs', () => {
-    let state = { all, own: {} as OwnChoices }
-    state = setChoice(state.all, state.own, ['B7A'], 'cause', 'Eaten')
-    state = setChoice(state.all, state.own, ['B7A', 'D1C'], 'preserved', true)
-    expect(state.all).toEqual(all)
-    expect(state.own).toEqual({ B7A: { cause: 'Eaten', preserved: true }, D1C: { preserved: true } })
-    expect(choiceFor(state.all, state.own, 'C8B')).toEqual(all)
-    expect(sharedChoice(state.all, state.own, ['B7A', 'D1C'], 'preserved')).toBe(true)
-    expect(sharedChoice(state.all, state.own, ['B7A', 'D1C'], 'cause')).toBeUndefined()
-    expect(sharedChoice(state.all, state.own, [], 'cause')).toBeUndefined()
-    // Back to the panel's cause: no longer its own.
-    state = setChoice(state.all, state.own, ['B7A'], 'cause', 'Unknown')
-    expect(state.own.B7A).toEqual({ preserved: true })
-    expect(keepOwn(state.own, ['D1C'])).toEqual({ D1C: { preserved: true } })
-  })
-  it('Save writes each card\'s own values', () => {
+  it('recording writes each card\'s own values', () => {
     const a = row({ Insectary_ID: 'B7A' })
     const b = row({ Insectary_ID: 'C8B' })
-    const own: OwnChoices = { C8B: { cause: 'Killed_Preserved', preserved: true, date: '2026-09-29' } }
-    const cellsA = asObject(cardCells(a, saved, choiceFor(all, own, 'B7A'), { medium: 'Flash frozen', today: DAY }))
+    const cellsA = asObject(cardCells(a, saved, all, { medium: 'Flash frozen', today: DAY }))
     expect(cellsA).toEqual({ Death_date: DAY, Death_cause: 'Unknown', ...NOT_PRESERVED })
-    const cellsB = asObject(
-      cardCells(b, saved, choiceFor(all, own, 'C8B'), { sample: { cam: ' cam1 ', tube: 'fs9' }, medium: 'Flash frozen', today: DAY }),
-    )
+    const own: DeathChoice = { ...all, cause: 'Killed_Preserved', preserved: true, date: '2026-09-29' }
+    const cellsB = asObject(cardCells(b, saved, own, { sample: { cam: ' cam1 ', tube: 'fs9' }, medium: 'Flash frozen', today: DAY }))
     expect(cellsB).toMatchObject({
       Death_date: DAY - 1,
       Death_cause: 'Killed_Preserved',
@@ -303,78 +267,24 @@ describe('each card its own date, cause, preservation and note', () => {
     const dead = row({ Insectary_ID: 'E2E', Death_date: DAY - 5, Death_cause: 'Eaten' })
     expect(cardCells(dead, saved, { ...all, preserved: true }, { sample: { cam: 'CAM2', tube: 'FS1' }, medium: 'Ethanol', today: DAY })).toEqual([])
   })
-  it('the note: added after the old ones, dated and initialled; own or for all; empty writes nothing', () => {
+  it('the note: added after the old ones, dated and initialled; empty writes nothing', () => {
     const a = row({ Insectary_ID: 'B7A', Notes_Insectary_data: '29/9/26 MJS: marked with lines in the abdomen' })
     const b = row({ Insectary_ID: 'C8B', Notes_Insectary_data: null })
     const dead = row({ Insectary_ID: 'E2E', Death_date: DAY - 5, Death_cause: 'Eaten', CAM_ID: 'CAM9', Tube_1_id: 'FS2', Notes_Insectary_data: 'NA' })
-    // For all cards (nothing selected).
-    let state = setChoice(all, {}, [], 'note', 'Only wings found')
-    const note = (r: TableRow, id: string) =>
-      asObject(cardCells(r, saved, choiceFor(state.all, state.own, id), { medium: 'Ethanol', today: DAY + 1, initials: 'FCH' }))
-        .Notes_Insectary_data
-    expect(note(a, 'B7A')).toBe('29/9/26 MJS: marked with lines in the abdomen | 1/10/26 FCH: Only wings found')
-    expect(note(b, 'C8B')).toBe('1/10/26 FCH: Only wings found')
+    const note = (r: TableRow, text: string) =>
+      asObject(cardCells(r, saved, { ...all, note: text }, { medium: 'Ethanol', today: DAY + 1, initials: 'FCH' })).Notes_Insectary_data
+    expect(note(a, 'Only wings found')).toBe('29/9/26 MJS: marked with lines in the abdomen | 1/10/26 FCH: Only wings found')
+    expect(note(b, '  Head eaten ')).toBe('1/10/26 FCH: Head eaten')
+    expect(note(a, '')).toBeUndefined()
     // Already recorded dead: only the note is written ("NA" is no note to keep).
-    expect(cardCells(dead, saved, choiceFor(state.all, state.own, 'E2E'), { medium: 'Ethanol', today: DAY + 1, initials: 'FCH' })).toEqual([
+    expect(cardCells(dead, saved, { ...all, note: 'Only wings found' }, { medium: 'Ethanol', today: DAY + 1, initials: 'FCH' })).toEqual([
       { field: 'Notes_Insectary_data', value: '1/10/26 FCH: Only wings found', overwrite: true },
     ])
-    // B7A selected: its own note; C8B keeps the panel's.
-    state = setChoice(state.all, state.own, ['B7A'], 'note', '  Head eaten ')
-    expect(state.own).toEqual({ B7A: { note: '  Head eaten ' } })
-    expect(note(a, 'B7A')).toBe('29/9/26 MJS: marked with lines in the abdomen | 1/10/26 FCH: Head eaten')
-    expect(note(b, 'C8B')).toBe('1/10/26 FCH: Only wings found')
-    // The panel's note emptied for all: B7A keeps nothing of its own either, and no note is written.
-    state = setChoice(state.all, state.own, [], 'note', '')
-    expect(state.own).toEqual({})
-    expect(note(a, 'B7A')).toBeUndefined()
-    expect(cardCells(dead, saved, choiceFor(state.all, state.own, 'E2E'), { medium: 'Ethanol', today: DAY + 1, initials: 'FCH' })).toEqual([])
+    expect(cardCells(dead, saved, all, { medium: 'Ethanol', today: DAY + 1, initials: 'FCH' })).toEqual([])
     // A blank note writes nothing; a formula cell is never written.
     expect(noteCell(b, saved, '   ', DAY, 'FCH')).toBeNull()
     expect(noteCell(row({ Notes_Insectary_data: 'x' }, { formulas: ['Notes_Insectary_data'] }), saved, 'Weak', DAY, 'FCH')).toBeNull()
   })
-})
-
-describe('choosing: one butterfly at a time, or several as a group', () => {
-  const one = (...picked: string[]) => ({ picked, several: false })
-  const group = (...picked: string[]) => ({ picked, several: true })
-
-  it('one at a time: a new ID replaces the one there, which is left behind', () => {
-    expect(pickOne(one(), 'A1B')).toEqual({ picked: ['A1B'], several: false, left: [] })
-    expect(pickOne(one('A1B'), 'A2B')).toEqual({ picked: ['A2B'], several: false, left: ['A1B'] })
-    // The same one again (any case) changes nothing.
-    expect(pickOne(one('A1B'), 'a1b')).toEqual({ picked: ['A1B'], several: false, left: [] })
-  })
-
-  it('several: a tap adds the ID to the group, a second tap takes it out (nothing left behind)', () => {
-    expect(pickOne(group('A1B'), 'A2B')).toEqual({ picked: ['A1B', 'A2B'], several: true, left: [] })
-    expect(pickOne(group('A1B', 'A2B'), 'a2b')).toEqual({ picked: ['A1B'], several: true, left: [] })
-    // Taking the last one out keeps the mode: the next tap still adds.
-    expect(pickOne(group('A1B'), 'A1B')).toEqual({ picked: [], several: true, left: [] })
-  })
-
-  it('Ctrl/Shift-click or a long press adds to a group from one at a time, never takes out', () => {
-    expect(pickOne(one('A1B'), 'A2B', true)).toEqual({ picked: ['A1B', 'A2B'], several: true, left: [] })
-    expect(pickOne(one(), 'A2B', true)).toEqual({ picked: ['A2B'], several: true, left: [] })
-    expect(pickOne(one('A1B'), 'A1B', true)).toEqual({ picked: ['A1B'], several: false, left: [] })
-  })
-
-  it('a range or a list makes the group, leaving the one there unless it is in it', () => {
-    expect(pickMany(one('A1B'), ['B0D', 'B1D', 'B2D'])).toEqual({ picked: ['B0D', 'B1D', 'B2D'], several: true, left: ['A1B'] })
-    expect(pickMany(one('B1D'), ['B0D', 'B1D'])).toEqual({ picked: ['B0D', 'B1D'], several: true, left: [] })
-    // In several they join the group, without repeats.
-    expect(pickMany(group('A1B', 'B0D'), ['B0D', 'B1D', 'b1d'])).toEqual({ picked: ['A1B', 'B0D', 'B1D'], several: true, left: [] })
-    // One ID is a single choice; none changes nothing.
-    expect(pickMany(one('A1B'), ['B0D'])).toEqual({ picked: ['B0D'], several: false, left: ['A1B'] })
-    expect(pickMany(one('A1B'), [])).toEqual({ picked: ['A1B'], several: false, left: [] })
-  })
-
-  it('«Seleccionar varias» starts the group with the one there; leaving empties a group, keeps a lone one', () => {
-    expect(startSeveral(one('A1B'))).toEqual({ picked: ['A1B'], several: true })
-    expect(startSeveral(one())).toEqual({ picked: [], several: true })
-    expect(endSeveral(group('A1B', 'A2B', 'A3B'))).toEqual({ picked: [], several: false })
-    expect(endSeveral(group('A1B'))).toEqual({ picked: ['A1B'], several: false })
-  })
-
   it('what a butterfly still lacks: a date, a valid date, a cause while dying, its CAM or tube', () => {
     const c = (over: Partial<DeathChoice> = {}): DeathChoice => ({ date: '2026-10-05', cause: 'Natural', preserved: false, note: '', ...over })
     expect(lackOf(c(), true)).toBe('')
@@ -386,14 +296,5 @@ describe('choosing: one butterfly at a time, or several as a group', () => {
     const gap = { id: 'A1B', slot: 1, keepsCam: false, cam: 'missing' as const, tube: '' as const }
     expect(lackOf(c({ preserved: true }), true, gap)).toBe('sample')
     expect(lackOf(c({ preserved: true }), true, { ...gap, cam: '' })).toBe('')
-  })
-
-  it('left behind: nothing when nothing was registered; else ready ones to pending, the rest unfinished', () => {
-    const lacks: Record<string, Lack> = { A1B: '', A2B: 'cause' }
-    expect(setAside(['A1B', 'A2B'], false, id => lacks[id])).toEqual({ pending: [], unfinished: [] })
-    expect(setAside(['A1B', 'A2B'], true, id => lacks[id])).toEqual({
-      pending: ['A1B'],
-      unfinished: [{ id: 'A2B', lack: 'cause' }],
-    })
   })
 })
