@@ -42,12 +42,12 @@ test('a formula is checked before it is proposed', () => {
   assert.ok(!sameCell({ formula: '=IFS(U2="a","")' }, { formula: '=IFS(U2="A","")' }), 'text in quotes keeps its case');
 });
 
-async function fixture(rows = 6) {
+async function fixture(rows = 6, options = {}) {
   const fields = moduleMap.get('Insectary_data').fields;
   const column = key => fields.find(f => f.key === key).column;
   const data = [];
   for (let row = 2; row <= rows + 1; row++) data.push({ row, values: { Insectary_ID: `A${row}Z`, Tube_2_tissue: row === 3 ? 'NOT_COLLECTED' : 'NA', Sex: 'male' } });
-  const sheets = new LocalSheets({ Insectary_data: data });
+  const sheets = new LocalSheets({ Insectary_data: data }, options);
   for (const r of sheets.rows.get('Insectary_data')) {
     if (r.row < 2) continue;
     // Row 4 typed over (no formula); the others hold the old formula.
@@ -69,7 +69,7 @@ async function fixture(rows = 6) {
   const http = (method, path, body = {}) => assistant.handle({ method, path, body, user, query: { all: '1' } });
   const cell = row => sheets.rows.get('Insectary_data').find(r => r.row === row).cells[column('T2_Preservation_medium')];
   const record = row => store.getRecordBySheetRow('Insectary_data', row);
-  return { store, sheets, call, http, cell, record };
+  return { store, sheets, call, http, cell, record, assistant };
 }
 
 test('a bulk replaces a formula down a column (where it still holds it), shown with what it gives; applied, then undone', async () => {
@@ -175,6 +175,32 @@ test('a formula proposal longer than one save is written in parts, each its own 
     assert.equal(cell(601).userEnteredValue.formulaValue, OLD(601));
     assert.equal(cell(2).userEnteredValue.formulaValue, NEW.replaceAll('{row}', '2'));
   } finally {
+    store.close();
+  }
+});
+
+test('while Google does not answer, both parts wait in the app; the proposal is applied once the last one is written', async () => {
+  const { store, sheets, call, cell, assistant } = await fixture(600, { health: { probeMs: 20 } });
+  try {
+    const { proposalId } = await call('propose_changes', {
+      reason: 'x',
+      bulk: [{ sheet: 'Insectary_data', rows: { from: 2, to: 601 }, set: { T2_Preservation_medium: { formula: NEW } }, onlyWhereFormula: true }],
+    });
+    sheets.simulateBusy({ minutes: 1, delayMs: 0 });
+    await sheets.probe().catch(() => {});
+    const out = await call('apply_proposal', { proposalId });
+    assert.equal(out.status, 'queued', JSON.stringify(out).slice(0, 300));
+    assert.equal(store.db.prepare("SELECT count(*) n FROM outbox WHERE kind = 'proposal' AND ref = ?").get(proposalId).n, 2);
+    sheets.simulateBusy({ minutes: 0 });
+    await sheets.health.runProbe();
+    const end = Date.now() + 5000;
+    while (store.db.prepare('SELECT status FROM ai_proposals WHERE id = ?').get(proposalId).status !== 'applied') {
+      if (Date.now() > end) throw new Error('not applied');
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.equal(cell(601).userEnteredValue.formulaValue, NEW.replaceAll('{row}', '601'));
+  } finally {
+    assistant.close();
     store.close();
   }
 });
