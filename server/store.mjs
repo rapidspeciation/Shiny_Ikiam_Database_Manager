@@ -5,6 +5,7 @@ import { dirname } from 'node:path';
 import { modules, moduleMap, labelFor, validateValues, comparable, nextInsectaryId, makeSourceUrl } from './schema.mjs';
 import { GoogleSheets, LocalSheets, formulaRowShift, moveRowRefs, rowKey, rowValues } from './sheets.mjs';
 import { headerLayout, sameLayout } from './columns.mjs';
+import { sameCell } from './formula-write.mjs';
 import { applyBatch } from './batch.mjs';
 import { initMonitoring } from './monitoring.mjs';
 import { initHistory } from './history.mjs';
@@ -1109,7 +1110,7 @@ export class Store {
           const current = read(c);
           return current.formulas[c.field] ? { formula: current.formulas[c.field] } : current.values[c.field];
         };
-        if (changes.every(c => comparable(at(c)) === comparable(c.after))) {
+        if (changes.every(c => sameCell(at(c), c.after))) {
           const records = [];
           for (const c of changes) {
             if (records.some(r => r.id === c.recordId)) continue;
@@ -1130,7 +1131,7 @@ export class Store {
           }
           this.finishAction(row.id, 'verified', { records, record: records[0], status: 'verified' });
           recovered++;
-        } else if (changes.every(c => comparable(at(c)) === comparable(c.before))) {
+        } else if (changes.every(c => sameCell(at(c), c.before))) {
           this.finishAction(row.id, 'failed', null);
           failed++;
         }
@@ -1210,7 +1211,7 @@ export class Store {
         !record ||
         record.missing ||
         later ||
-        comparable(current) !== comparable(last.after) ||
+        !sameCell(current, last.after) ||
         chain.some((c, i) => i && comparable(c.before) !== comparable(chain[i - 1].after))
       ) {
         conflicts.push({

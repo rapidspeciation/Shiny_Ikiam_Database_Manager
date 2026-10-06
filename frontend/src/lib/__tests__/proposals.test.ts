@@ -485,6 +485,28 @@ describe("a notebook page's proposal", () => {
     // Never written.
     expect(proposal([row]).changes[0].values).toEqual({ Wild_Reared: 'Reared', Tube_2_tissue: 'NOT_COLLECTED' })
   })
+  it('a formula the proposal writes: its text as the value, what it gives and the formula it replaces beside it', () => {
+    const row = edited(
+      'r1',
+      { T2_Preservation_medium: '=IFS(U9="","",U9="NOT_COLLECTED","NOT_COLLECTED",TRUE,"")' },
+      {
+        sheet: 'Insectary_data',
+        rowValues: { T2_Preservation_medium: '#N/A' },
+        current: undefined,
+        formulas: ['T2_Preservation_medium'],
+        formulaCells: ['T2_Preservation_medium'],
+        formulaGives: { T2_Preservation_medium: 'NOT_COLLECTED' },
+        oldFormulas: { T2_Preservation_medium: '=IFS(U9="","",U9="NA","NA")' },
+      },
+    )
+    expect(cellOf(row, 'T2_Preservation_medium')).toMatchObject({
+      kind: 'proposed',
+      value: '=IFS(U9="","",U9="NOT_COLLECTED","NOT_COLLECTED",TRUE,"")',
+      formulaWrite: true,
+      computed: 'NOT_COLLECTED',
+      oldFormula: '=IFS(U9="","",U9="NA","NA")',
+    })
+  })
   it("typing the species the formula gives leaves it to the formula (not a change), the assistant's other one aside", () => {
     const row = edited(
       'r1',

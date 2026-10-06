@@ -231,6 +231,12 @@ export default {
     "Calculated by the sheet's formula with the proposed values: not written",
   'No se pudo calcular aquí: es el valor actual de la hoja, que la fórmula puede cambiar al aplicar':
     "Could not be calculated here: this is the sheet's current value, which the formula may change once applied",
+  'Cambia la fórmula de la celda: {formula}': "Changes the cell's formula: {formula}",
+  'Dará: {value}': 'Will give: {value}',
+  'Fórmula actual: {formula}': 'Current formula: {formula}',
+  'La propuesta cambia la fórmula de la celda: se ve lo que dará; la fórmula, al pasar el ratón y en la barra':
+    "The proposal changes the cell's formula: what it will give is shown; the formula on hover and in the bar",
+  'cambia la fórmula': 'changes the formula',
   'La fórmula de la hoja da un error con estos valores: revísalo antes de aplicar':
     "The sheet's formula gives an error with these values: check it before applying",
   'Línea de la página que no escribe nada: solo para seguirla': 'A line of the page that writes nothing: shown to follow the page',

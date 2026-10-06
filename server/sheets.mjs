@@ -13,6 +13,8 @@ export const WRITE_TIMEOUT_MS = 120_000;
 /** A read a save waits for (its rows, the probe): given up sooner, once, so a busy workbook queues the save. */
 export const FAST_READ_TIMEOUT_MS = 30_000;
 const TOKEN_TIMEOUT_MS = 30_000;
+/** Rows read in one request at most (readRows). */
+export const READ_ROWS = 800;
 
 export class GoogleSheets {
   constructor(config = {}) {
@@ -200,18 +202,43 @@ export class GoogleSheets {
       if (!moduleMap.has(sheet)) throw new Error(`Unknown sheet: ${sheet}`);
       // Rows past the sheet's grid cannot be requested; they are empty by definition.
       const gridCount = this.gridRows.get(sheet);
-      for (const [start, end] of consecutiveRuns(gridCount ? rows.filter(r => r <= gridCount) : rows))
-        ranges.push({ sheet, start, end, a1: `${quoteTitle(sheet)}!${start}:${end}` });
+      for (const [first, last] of consecutiveRuns(gridCount ? rows.filter(r => r <= gridCount) : rows))
+        // Long runs (a formula written down thousands of rows) in pieces of READ_ROWS.
+        for (let start = first; start <= last; start += READ_ROWS) {
+          const end = Math.min(last, start + READ_ROWS - 1);
+          ranges.push({ sheet, start, end, a1: `${quoteTitle(sheet)}!${start}:${end}` });
+        }
     }
     const out = new Map();
     for (const { sheet, rows } of targets) for (const row of rows) out.set(rowKey(sheet, row), { row, cells: [] });
     if (!ranges.length) return out;
+    // One request per READ_ROWS rows at most (a whole row of Insectary_data is some 50 cells with formulas).
+    const requests = [];
+    for (const range of ranges) {
+      const size = range.end - range.start + 1;
+      const last = requests.at(-1);
+      if (last && last.rows + size <= READ_ROWS && last.ranges.length < 200) {
+        last.ranges.push(range);
+        last.rows += size;
+      } else requests.push({ ranges: [range], rows: size });
+    }
+    for (const { ranges: part } of requests) this.takeRows(await this.readRanges(part, { failFast }), out);
+    for (const range of ranges)
+      for (let row = range.start; row <= range.end; row++)
+        if (!out.has(rowKey(range.sheet, row))) out.set(rowKey(range.sheet, row), { row, cells: [] });
+    return out;
+  }
+  /** One request for these ranges (readRows). */
+  readRanges(ranges, { failFast = false } = {}) {
     const params = new URLSearchParams({
       fields:
         'sheets(properties(title,gridProperties(rowCount)),data(startRow,rowData(values(userEnteredValue,effectiveValue,userEnteredFormat(numberFormat)))))',
     });
     for (const range of ranges) params.append('ranges', range.a1);
-    const result = await this.request(`?${params}`, { failFast });
+    return this.request(`?${params}`, { failFast });
+  }
+  /** The rows of a readRanges answer into `out` (by rowKey). */
+  takeRows(result, out) {
     for (const sheet of result.sheets || []) {
       const title = sheet.properties?.title;
       const rowCount = sheet.properties?.gridProperties?.rowCount;
@@ -223,10 +250,6 @@ export class GoogleSheets {
         );
       }
     }
-    for (const range of ranges)
-      for (let row = range.start; row <= range.end; row++)
-        if (!out.has(rowKey(range.sheet, row))) out.set(rowKey(range.sheet, row), { row, cells: [] });
-    return out;
   }
   /** Rows `start`–`end` with what a pre-made row carries: formulas, number formats and data validation. */
   async readGrid(sheet, start, end) {

@@ -278,7 +278,8 @@ function drawn(cell: CellComponent, field: string, c: CellInfo, comments: CellCo
   el.classList.toggle('is-inferred', c.inferred)
   el.classList.toggle('is-unreadable', c.kind === 'unreadable')
   el.classList.toggle('is-warned', !!c.warning)
-  el.classList.toggle('is-formula-gives', !!c.fromFormula)
+  el.classList.toggle('is-formula-gives', !!c.fromFormula || !!c.formulaWrite)
+  el.classList.toggle('is-formula-write', !!c.formulaWrite)
   el.classList.toggle('is-sheet-edit', !!c.sheetEdit)
   el.classList.toggle('is-kept', c.kind === 'kept')
   el.classList.toggle('is-again', !!c.sheetEdit?.again)
@@ -295,6 +296,9 @@ function drawn(cell: CellComponent, field: string, c: CellInfo, comments: CellCo
       ? t('leído en parte: {values}', { values: c.unreadable.partial.join(' / ') })
       : '',
     problem,
+    c.formulaWrite ? t('Cambia la fórmula de la celda: {formula}', { formula: String(c.value ?? '') }) : '',
+    c.formulaWrite && c.computed !== undefined ? t('Dará: {value}', { value: show(field, c.computed) || t('vacío') }) : '',
+    c.formulaWrite && c.oldFormula ? t('Fórmula actual: {formula}', { formula: c.oldFormula }) : '',
     c.kind === 'proposed' && !change.create ? t(before, { value: was }) : '',
     c.kind === 'person'
       ? [
@@ -352,6 +356,15 @@ function drawn(cell: CellComponent, field: string, c: CellInfo, comments: CellCo
     mark.textContent = t('ilegible')
     box.append(mark)
     if (text) box.append(' ', withTotal(field, c.value, text))
+    return box
+  }
+  // A formula the proposal writes: an "ƒx" tag, then what it will give (its text in the tooltip and the cell bar).
+  if (c.formulaWrite) {
+    const box = document.createElement('span')
+    const mark = document.createElement('span')
+    mark.className = 'fx-mark'
+    mark.textContent = 'ƒx'
+    box.append(mark, ' ', c.computed !== undefined ? show(field, c.computed) || t('vacío') : text)
     return box
   }
   // What the formula will give (grey, tagged): then the sheet's older value, struck through, if it had one.
@@ -482,6 +495,7 @@ function drawnText(change: ProposalChange, field: string) {
   if (cell.sheetEdit) return `${t('hoja')}   ${textWithTotal(field, cell.value)} ${textWithTotal(field, cell.was)}`
   if (cell.kind === 'unreadable') return `${t('ilegible')}   ${textWithTotal(field, cell.value)}`
   if (cell.warning) return `${t('falta')}   ${textWithTotal(field, cell.value)}`
+  if (cell.formulaWrite) return `ƒx   ${cell.computed !== undefined ? textWithTotal(field, cell.computed) : textWithTotal(field, cell.value)}`
   if (cell.fromFormula)
     return `${textWithTotal(field, cell.value)}  ${t('fórmula')}  ${cell.was ? textWithTotal(field, cell.was) : ''}${cell.kind === 'reverted' ? ` ${textWithTotal(field, cell.ai)}` : ''}`
   return (cell.doubtful ? '?  ' : '') + textWithTotal(field, cell.value) + beside
@@ -1260,6 +1274,25 @@ watch(
   color: #57534e;
   background: #f3f4f1;
   font-style: italic;
+}
+/* A formula the proposal writes: the formula tint with the proposal's green edge, and an "ƒx" tag. */
+.proposal-sheet .tabulator-cell.is-formula-write {
+  box-shadow: inset 3px 0 0 #15803d;
+}
+.proposal-sheet .tabulator-cell .fx-mark,
+.legend.is-formula-write::before {
+  display: inline-block;
+  padding: 0 3px;
+  border: 1px solid #15803d;
+  border-radius: 3px;
+  color: #15803d;
+  font-style: normal;
+  font-size: 11px;
+  line-height: 14px;
+}
+.legend.is-formula-write::before {
+  content: 'ƒx';
+  margin-right: 4px;
 }
 /* The formula gives an error with the proposed values (#N/A): red, the only colour for errors. */
 .proposal-sheet .tabulator-cell.is-formula-error {
