@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch 
 import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
-import { Check, CheckCheck, FileSpreadsheet, Redo2, Sparkles, Table2, Undo2 } from 'lucide-vue-next'
+import { ArrowDown, ArrowUp, Check, CheckCheck, FileSpreadsheet, Redo2, Sparkles, Table2, Undo2 } from 'lucide-vue-next'
 import { displayValue, editText, normalizeInput } from '../../lib/cells'
 import { copyText } from '../../lib/clipboard'
 import {
@@ -71,6 +71,7 @@ import {
   type SheetRows,
 } from '../../lib/proposalRows'
 import { StepBuilder, UndoHistory, historyFor, snapCell, type Step } from '../../lib/proposalUndo'
+import { planMove, rowsText, type MovePlan, type MoveRefusal } from '../../lib/proposalMove'
 import { errorText } from '../../lib/notice'
 import { isSumField, sumTotal } from '../../lib/sums'
 import type { CellValue, Field } from '../../lib/types'
@@ -127,6 +128,10 @@ import CellBar from '../CellBar.vue'
  * Ctrl+Z / Ctrl+Shift+Z (Ctrl+Y), or the buttons above, undo and redo the
  * person's own edits in the table, a paste or a fill as one step
  * (lib/proposalUndo); cells the assistant changed since stay as it left them.
+ * Alt+↑ / Alt+↓ (⌥ on a Mac), or «Mover», move the selected cells a row up or
+ * down in their columns, past the slim rows: what the proposal has there
+ * changes places with the next row's, as one step to undo; a death takes its
+ * template's columns and its note along (lib/proposalMove).
  */
 export interface CellEdit {
   key: string
@@ -945,6 +950,7 @@ function selected() {
 function updateActions() {
   const next = props.editable && table ? selectionActions(selected().map(s => s.cell)) : { sheet: 0, ai: 0, check: 0 }
   if (next.sheet !== actions.value.sheet || next.ai !== actions.value.ai || next.check !== actions.value.check) actions.value = next
+  updateMoves()
 }
 /**
  * "Valor de la hoja": the selected cells go back to what the sheet has (a new
@@ -1059,6 +1065,89 @@ function onUndoKey(event: KeyboardEvent) {
   undoRedo(which)
 }
 
+// ------------------------------------------------------------ cells moved a row up or down
+/** Whether the selection can go up or down (the buttons): it holds cells of the sheet, and there is a row beyond it. */
+const moves = ref({ up: false, down: false })
+const isRow = (r: RowComponent) => !(r.getData() as Row).__marker
+/** The selection as planMove reads it: the rows shown, its first and last of them, its columns of the sheet. */
+function moveSpan() {
+  const range = table?.getRanges()[0]
+  if (!table || !range) return null
+  const shownRows = table.getRows('active')
+  const at = range
+    .getRows()
+    .map(r => shownRows.indexOf(r))
+    .filter(i => i >= 0)
+  const fields = range
+    .getColumns()
+    .map(c => c.getField())
+    .filter(f => fieldSet.value.has(f))
+  if (!at.length || !fields.length) return null
+  return { shownRows, top: Math.min(...at), bottom: Math.max(...at), fields }
+}
+function updateMoves() {
+  const span = props.editable ? moveSpan() : null
+  const rows = span && span.shownRows.slice(span.top, span.bottom + 1).some(isRow)
+  const next = {
+    up: !!rows && span.shownRows.slice(0, span.top).some(isRow),
+    down: !!rows && span.shownRows.slice(span.bottom + 1).some(isRow),
+  }
+  if (next.up !== moves.value.up || next.down !== moves.value.down) moves.value = next
+}
+function refusal(out: MoveRefusal, dir: 'up' | 'down') {
+  if (out.why === 'edge') return dir === 'up' ? t('No hay ninguna fila más arriba') : t('No hay ninguna fila más abajo')
+  if (out.why === 'readonly') return t('No se puede mover: la fila {row} es solo para leer', { row: out.label ?? '' })
+  if (out.why === 'locked')
+    return t('No se puede mover: {field} de {row} es una fórmula de la hoja', { field: out.field ?? '', row: out.label ?? '' })
+  if (out.why === 'empty') return t('Nada que mover: esas celdas no tienen cambios propuestos')
+  return t('Elige las celdas que quieres mover')
+}
+function movedText(out: MovePlan) {
+  const where = { from: rowsText(out.from), to: rowsText(out.to) }
+  const what = out.death
+    ? out.note
+      ? t('Muerte de {from} movida a {to}, con su nota', where)
+      : t('Muerte de {from} movida a {to}', where)
+    : t('Celdas de {from} movidas a {to}', where)
+  if (!out.kept) return what
+  const kept = tn(
+    out.kept,
+    '{n} celda de la plantilla queda como en la hoja, que ya tenía un valor',
+    '{n} celdas de la plantilla quedan como en la hoja, que ya tenía valores',
+  )
+  return `${what} · ${kept}`
+}
+/**
+ * Alt+↑ / Alt+↓ or «Mover»: the selected cells change places with the next row's
+ * (lib/proposalMove), sent as the table's own edits and undone in one step;
+ * the selection goes with them.
+ */
+function moveCells(dir: 'up' | 'down') {
+  if (!props.editable || !table) return
+  const span = moveSpan()
+  if (!span) return emit('notice', t('Elige las celdas que quieres mover'))
+  const rows = span.shownRows.map(r => {
+    const data = r.getData() as Row
+    return data.__marker ? null : (latest.value.get(data.__key) ?? byKey.get(data.__key) ?? null)
+  })
+  const out = planMove({ ...span, rows, dir, sheet: props.sheet, newRowFormulas: props.newRowFormulas })
+  if (!out.ok) return emit('notice', refusal(out, dir))
+  const columns = table.getRanges()[0].getColumns().map(c => c.getField())
+  recordCells(out.edits)
+  emit('edit', out.edits)
+  emit('notice', movedText(out))
+  selectCells(out.target.flatMap(key => columns.map(field => ({ key, field }))))
+}
+/** Alt+↑ / Alt+↓ (⌥ on a Mac) on the grid, before its own arrows move the selection. */
+function onMoveKey(event: KeyboardEvent) {
+  if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || !props.editable) return
+  if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+  if ((event.target as HTMLElement).closest('input, textarea, select, .tabulator-editing')) return
+  event.preventDefault()
+  event.stopImmediatePropagation()
+  moveCells(event.key === 'ArrowUp' ? 'up' : 'down')
+}
+
 // ------------------------------------------------------------ a doubtful cell, checked where it is
 /**
  * The selected doubtful cell's choices, beside it: «Correcta» keeps the
@@ -1082,6 +1171,9 @@ const reviewKey = mac ? '⌘ Enter' : 'Ctrl+Enter'
 /** The undo and redo keys, for the buttons' tooltips. */
 const undoKey = mac ? '⌘Z' : 'Ctrl+Z'
 const redoKey = mac ? '⌘⇧Z' : 'Ctrl+Y'
+/** The keys that move the selected cells a row up or down. */
+const upKey = mac ? '⌥↑' : 'Alt+↑'
+const downKey = mac ? '⌥↓' : 'Alt+↓'
 /** The cell edited in the sheet just chosen for: its choices stay away until another cell is selected. */
 let chosenHere: string | null = null
 function placeQuick() {
@@ -1380,7 +1472,7 @@ onMounted(() => {
       })
   copied = attachCopyMarker(table, container, notice, formulaCell)
   cuts = attachPendingCut(table, container, canEdit)
-  fit =attachColumnFit(table, host.value, {
+  fit = attachColumnFit(table, host.value, {
     text: (data, field) => {
       const change = byKey.get(String(data.__key))
       return fieldSet.value.has(field) && change ? drawnText(change, field) : String(data[field] ?? '')
@@ -1406,6 +1498,7 @@ onMounted(() => {
   table.on('cellEditCancelled', follow)
   host.value.addEventListener('keydown', onReviewKey, true)
   host.value.addEventListener('keydown', onUndoKey)
+  host.value.addEventListener('keydown', onMoveKey, true)
   host.value.addEventListener('keydown', onKeydown)
   host.value.addEventListener('keydown', onEditingKey, true)
   sizeWatch = watchSize(() => table, host.value)
@@ -1429,6 +1522,7 @@ onBeforeUnmount(() => {
   shownWatch?.disconnect()
   host.value?.removeEventListener('keydown', onReviewKey, true)
   host.value?.removeEventListener('keydown', onUndoKey)
+  host.value?.removeEventListener('keydown', onMoveKey, true)
   host.value?.removeEventListener('keydown', onKeydown)
   host.value?.removeEventListener('keydown', onEditingKey, true)
   table?.destroy()
@@ -1476,6 +1570,36 @@ watch(
             @click="undoRedo('redo')"
           >
             <Redo2 :size="12" />
+          </button>
+        </span>
+        <span class="flex items-center gap-1">
+          <button
+            class="proposal-use"
+            :disabled="!moves.up"
+            :title="
+              moves.up
+                ? $t('Sube las celdas elegidas una fila: cambian de sitio con las de arriba; una muerte se lleva sus columnas y su nota ({key})', { key: upKey })
+                : $t('Elige celdas para moverlas una fila ({key})', { key: upKey })
+            "
+            :aria-label="$t('Mover arriba')"
+            @mousedown.prevent
+            @click="moveCells('up')"
+          >
+            <ArrowUp :size="12" /> {{ $t('Mover') }}
+          </button>
+          <button
+            class="proposal-use"
+            :disabled="!moves.down"
+            :title="
+              moves.down
+                ? $t('Baja las celdas elegidas una fila: cambian de sitio con las de abajo; una muerte se lleva sus columnas y su nota ({key})', { key: downKey })
+                : $t('Elige celdas para moverlas una fila ({key})', { key: downKey })
+            "
+            :aria-label="$t('Mover abajo')"
+            @mousedown.prevent
+            @click="moveCells('down')"
+          >
+            <ArrowDown :size="12" /> {{ $t('Mover') }}
           </button>
         </span>
         <button

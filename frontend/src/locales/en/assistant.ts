@@ -151,6 +151,28 @@ export default {
   '{reason} (por {who})': '{reason} (by {who})',
   'No escrito en la línea': 'Not written on the line',
   'Marcar revisadas': 'Mark as checked',
+  // Cells moved a row up or down in the proposal's table (Alt+↑ / Alt+↓)
+  Mover: 'Move',
+  'Mover arriba': 'Move up',
+  'Mover abajo': 'Move down',
+  'Sube las celdas elegidas una fila: cambian de sitio con las de arriba; una muerte se lleva sus columnas y su nota ({key})':
+    'Moves the selected cells one row up: they swap places with those above; a death takes its columns and its note along ({key})',
+  'Baja las celdas elegidas una fila: cambian de sitio con las de abajo; una muerte se lleva sus columnas y su nota ({key})':
+    'Moves the selected cells one row down: they swap places with those below; a death takes its columns and its note along ({key})',
+  'Elige celdas para moverlas una fila ({key})': 'Select cells to move them one row ({key})',
+  'Elige las celdas que quieres mover': 'Select the cells you want to move',
+  'No hay ninguna fila más arriba': 'There is no row above',
+  'No hay ninguna fila más abajo': 'There is no row below',
+  'No se puede mover: la fila {row} es solo para leer': 'Cannot move: row {row} is read-only',
+  'No se puede mover: {field} de {row} es una fórmula de la hoja': 'Cannot move: {field} of {row} is a formula of the sheet',
+  'Nada que mover: esas celdas no tienen cambios propuestos': 'Nothing to move: those cells have no proposed changes',
+  'Muerte de {from} movida a {to}': 'Death of {from} moved to {to}',
+  'Muerte de {from} movida a {to}, con su nota': 'Death of {from} moved to {to}, with its note',
+  'Celdas de {from} movidas a {to}': 'Cells of {from} moved to {to}',
+  '{n} celda de la plantilla queda como en la hoja, que ya tenía un valor':
+    '{n} template cell stays as in the sheet, which already had a value',
+  '{n} celdas de la plantilla quedan como en la hoja, que ya tenía valores':
+    '{n} template cells stay as in the sheet, which already had values',
   // Undo / redo in the proposal's table
   Deshacer: 'Undo',
   Rehacer: 'Redo',

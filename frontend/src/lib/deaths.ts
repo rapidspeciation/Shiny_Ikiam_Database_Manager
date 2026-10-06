@@ -36,6 +36,13 @@ export const NOT_PRESERVED: Record<string, string> = {
   Preservation_date: 'NA',
   Location_body: 'NA',
 }
+/**
+ * The columns a death fills in a row: its date and cause, then those of the
+ * not-preserved block or of a preserved body (deathCells), and Research_purpose,
+ * which the notebook's template adds (server/notebook.mjs NOT_PRESERVED).
+ * Cambios propuestos moves them together (lib/proposalMove).
+ */
+export const DEATH_COLUMNS = ['Death_date', 'Death_cause', ...Object.keys(NOT_PRESERVED), 'Research_purpose']
 export const KILLED = 'Killed_Preserved'
 export const WHOLE = 'WHOLE_ORGANISM'
 
