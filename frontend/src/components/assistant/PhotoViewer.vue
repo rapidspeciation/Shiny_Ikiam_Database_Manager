@@ -62,11 +62,31 @@ const fit = computed(() => {
 function reset(animate = true) {
   pz?.reset({ animate })
 }
+/**
+ * How a photo opens: as wide as the pane, from its top (a notebook page's rows
+ * readable at once; the pane is wider than tall). A photo narrower than the
+ * pane once fitted is zoomed to its width; one already as wide stays whole.
+ */
+function start() {
+  if (!pz) return
+  pz.reset({ animate: false })
+  const { w, h } = natural.value
+  const { w: pw, h: ph } = size.value
+  if (!w || !h || !pw || !ph) return
+  const [bw, bh] = turn.value % 2 === 1 ? [h, w] : [w, h]
+  const fitted = Math.min(pw / bw, ph / bh)
+  const k = Math.min(MAX_SCALE, pw / (bw * fitted))
+  if (k <= 1.01) return
+  pz.zoom(k, { animate: false })
+  // Panzoom's pan is in the zoomed element's own units: the page's top to the pane's top.
+  const tall = bh * fitted * k
+  if (tall > ph) pz.pan(0, (tall - ph) / 2 / k, { animate: false, force: true })
+}
 const zoomIn = () => pz?.zoomIn()
 const zoomOut = () => pz?.zoomOut()
 function rotate(by: 1 | -1) {
   turns.value = { ...turns.value, [props.photo]: (turn.value + by + 4) % 4 }
-  void nextTick(() => reset(false))
+  void nextTick(start)
 }
 const MIN_SCALE = 0.5
 const MAX_SCALE = 12
@@ -90,7 +110,7 @@ const onDblclick = (e: MouseEvent) => pz?.zoomToPoint(Math.min(MAX_SCALE, pz.get
 function onLoad() {
   failed.value = false
   if (img.value) natural.value = { w: img.value.naturalWidth, h: img.value.naturalHeight }
-  void nextTick(() => reset(false))
+  void nextTick(start)
 }
 watch(
   () => props.photo,
