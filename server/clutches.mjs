@@ -13,8 +13,10 @@
 //
 // Also app-only: what the paper cannot hold (clutch_events): per clutch and
 // day, larvae hatched, died, disappeared (not the same as died) or preserved
-// (with their Insectary IDs), and the same for eggs and pupae; one team
-// setting (whether preserved larvae are taken off NUMBER OF LARVAE); and the
+// (with their Insectary IDs), and the same for eggs and pupae; the clutches'
+// photos (server/clutch-photos.mjs), listed with the day and the timeline; one
+// team setting (whether preserved larvae are taken off NUMBER OF LARVAE: not by
+// default since 5 Oct 2026, the count holds the larvae used); and the
 // notebook's list: the changes made through the app since the paper notebook
 // was last brought up to date, leaving out what came from the notebook itself.
 
@@ -191,9 +193,14 @@ export function tally(events, young = []) {
   return out;
 }
 
-/** The team's settings for clutches: whether preserved larvae are taken off NUMBER OF LARVAE (yes until changed). */
+/**
+ * The team's settings for clutches: whether preserved larvae are taken off
+ * NUMBER OF LARVAE. Not by default (the team's convention since 5 Oct 2026:
+ * the count holds the larvae used, so only those that died or disappeared are
+ * taken off); an administrator can change it.
+ */
 export function clutchSettings(store) {
-  return { subtractPreserved: store.getSetting(SUBTRACT_KEY) !== '0' };
+  return { subtractPreserved: store.getSetting(SUBTRACT_KEY) === '1' };
 }
 /** Changes the team's setting (administrators): one convention for the Clutches and Emergidos saves. */
 export function setClutchSettings(store, body, user) {
@@ -236,6 +243,25 @@ const shapeEvent = r => ({
   createdAt: r.created_at,
 });
 const EVENT_SELECT = 'SELECT e.*, u.username, u.display_name name FROM clutch_events e LEFT JOIN users u ON u.id = e.actor';
+/** A clutch's photo as the day and the timeline list it (the bytes: server/clutch-photos.mjs). */
+const PHOTO_SELECT =
+  'SELECT p.id, p.record_id, p.clutch, p.day, p.event_id, p.note, p.actor, p.width, p.height, p.bytes, p.thumb_bytes, p.created_at, u.username, u.display_name name FROM clutch_photos p LEFT JOIN users u ON u.id = p.actor';
+const shapePhoto = r => ({
+  id: r.id,
+  recordId: r.record_id,
+  clutch: r.clutch,
+  day: r.day,
+  eventId: r.event_id ?? null,
+  note: r.note ?? null,
+  actor: r.actor,
+  username: r.username ?? null,
+  name: r.name ?? null,
+  width: r.width,
+  height: r.height,
+  bytes: r.bytes,
+  thumbBytes: r.thumb_bytes,
+  createdAt: r.created_at,
+});
 
 /**
  * One day's checks and changes of clutches: the checks marked in the app, and
@@ -253,6 +279,7 @@ export function clutchDay(store, query = {}) {
     .all(day)
     .map(shape);
   const events = store.db.prepare(`${EVENT_SELECT} WHERE e.day = ? ORDER BY e.created_at`).all(day).map(shapeEvent);
+  const photos = store.db.prepare(`${PHOTO_SELECT} WHERE p.day = ? ORDER BY p.created_at`).all(day).map(shapePhoto);
   const [from, to] = dayRange(day);
   const rows = store.db
     .prepare(
@@ -301,7 +328,7 @@ export function clutchDay(store, query = {}) {
   for (const c of changes) c.isNew = created.has(c.recordId);
   // Entries kept in the app, not in the sheet yet (server/staged.mjs): listed too, marked, without undo (undone in the tab).
   for (const line of stagedLines(store, from, to)) changes.push({ ...line, actorIds: line.actorIds, parts: [] });
-  return { day, checks, changes, events };
+  return { day, checks, changes, events, photos };
 }
 
 /**
@@ -481,20 +508,23 @@ export function removeClutchEvent(store, id, user) {
   if (!row) throw fail('EVENT_NOT_FOUND', 'Event not found', 404);
   if (row.actor !== user.id && !['reviewer', 'admin'].includes(user.role)) throw fail('FORBIDDEN', 'Only your own events', 403);
   store.db.prepare('DELETE FROM clutch_events WHERE id = ?').run(id);
+  // Its photos stay, as the day's.
+  store.db.prepare('UPDATE clutch_photos SET event_id = NULL WHERE event_id = ?').run(id);
   return { removed: id };
 }
 
 /**
  * One clutch's events, every day (oldest first), with the eggs and larvae of
- * it registered in Insectary_data (Emergidos), what they add up to, and the
- * team's settings: the clutch editor's timeline.
+ * it registered in Insectary_data (Emergidos), its photos, what they add up
+ * to, and the team's settings: the clutch editor's timeline.
  */
 export function clutchEvents(store, query = {}) {
   const record = stocksRecord(store, query.recordId);
   const events = store.db.prepare(`${EVENT_SELECT} WHERE e.record_id = ? ORDER BY e.day, e.created_at`).all(record.id).map(shapeEvent);
   const number = clutchText((parse(record.values_json) || {})['CLUTCH NUMBER']);
   const young = number ? youngRows(store, number) : [];
-  return { recordId: record.id, clutch: number, events, young, tally: tally(events, young), settings: clutchSettings(store) };
+  const photos = store.db.prepare(`${PHOTO_SELECT} WHERE p.record_id = ? ORDER BY p.day, p.created_at`).all(record.id).map(shapePhoto);
+  return { recordId: record.id, clutch: number, events, young, photos, tally: tally(events, young), settings: clutchSettings(store) };
 }
 
 // --- The notebook's list: what the app changed since the paper notebook was brought up to date

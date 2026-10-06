@@ -77,6 +77,7 @@ import { solvedFindings } from './findings.mjs';
 import { alerts } from './alerts.mjs';
 import { createInstructions } from './instructions.mjs';
 import { createPhotoService, photoCacheDir } from './photos.mjs';
+import { CHUNK_MAX, clutchPhotoDir, createClutchPhotos } from './clutch-photos.mjs';
 import { listOptions } from './verify.mjs';
 import { moduleMap, validateValues } from './schema.mjs';
 import { REAL_ID, checkWorkbookId, workbookFromEnv, workbookUrl } from './workbook.mjs';
@@ -235,6 +236,8 @@ export function configFromEnv(env = process.env) {
     // Specimen photos fetched from Drive for the Revisión tab (server/photos.mjs).
     photoCacheDir: env.PHOTO_CACHE_DIR,
     photoCacheMb: Number(env.PHOTO_CACHE_MB || 1024),
+    // Photos of clutches taken in the app (server/clutch-photos.mjs): clutch-photos next to the database by default.
+    clutchPhotoDir: env.CLUTCH_PHOTO_DIR,
     // T3 Code (stock install on its own host), shown inside the Asistente tab.
     t3: env.ITHOMIINI_T3_URL
       ? {
@@ -287,6 +290,17 @@ async function bodyOf(req) {
   } catch {
     throw fail('INVALID_JSON', 'Request body must be valid JSON');
   }
+}
+/** A request's bytes as they came (a photo's chunk), up to `limit`. */
+async function bytesOf(req, limit) {
+  const pieces = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > limit) throw fail('BODY_TOO_LARGE', 'Request body is too large', 413);
+    pieces.push(chunk);
+  }
+  return Buffer.concat(pieces);
 }
 function parseFilters(text) {
   if (!text) return {};
@@ -417,6 +431,9 @@ export async function createApp(config = {}, options = {}) {
     maxBytes: (config.photoCacheMb || 1024) * 1024 * 1024,
     ...(options.fetchPhoto ? { fetchImpl: options.fetchPhoto } : {}),
   });
+  const clutchPhotos = createClutchPhotos(store, {
+    dir: config.clutchPhotoDir || clutchPhotoDir({}, store.db.location?.() ?? null),
+  });
   const mailer = options.mailer ?? mailerFromEnv();
   const invitations = createInvitations(store, mailer, options.mail ? { send: options.mail } : {});
   const resets = createPasswordResets(store, mailer, options.mail ? { send: options.mail } : {});
@@ -454,7 +471,9 @@ export async function createApp(config = {}, options = {}) {
           csrf: session ? csrfForSession(store, session) : null,
           setupRequired: !store.db.prepare("SELECT 1 FROM users WHERE role='admin' AND active=1").get(),
         });
-      const body = ['POST', 'PATCH', 'PUT', 'DELETE'].includes(method) ? await bodyOf(req) : {};
+      // A chunk of a clutch photo arrives as bytes (server/clutch-photos.mjs), read once the person is known.
+      const rawUpload = method === 'PUT' && /^\/api\/clutches\/photo-uploads\/[^/]+$/.test(path);
+      const body = ['POST', 'PATCH', 'PUT', 'DELETE'].includes(method) && !rawUpload ? await bodyOf(req) : {};
       // T3 Code's chats reach the assistant's tools here with the person's token (scripts/t3-provision.mjs) instead of a session.
       if (path === '/api/ai/mcp') {
         if (!assistant?.mcp) throw fail('NOT_FOUND', 'Not found', 404);
@@ -718,6 +737,44 @@ export async function createApp(config = {}, options = {}) {
       }
       if (method === 'PUT' && path === '/api/clutches/settings') return json(res, 200, setClutchSettings(store, body, user));
       if (method === 'GET' && path === '/api/clutches/notebook') return json(res, 200, notebookChanges(store, query));
+      // Clutch photos (app only): uploaded in chunks that resume, then stored; listed, shown, relinked, removed.
+      if (rawUpload) {
+        requireEditor(user);
+        const chunk = await bytesOf(req, CHUNK_MAX);
+        const out = clutchPhotos.receiveChunk(decodePart(path.split('/')[4]), query.offset, chunk, user);
+        return json(res, out.status ?? 200, { received: out.received, done: !!out.done });
+      }
+      if (method === 'GET' && /^\/api\/clutches\/photo-uploads\/[^/]+$/.test(path)) {
+        requireEditor(user);
+        return json(res, 200, clutchPhotos.uploadState(decodePart(path.split('/')[4]), user));
+      }
+      if (method === 'POST' && path === '/api/clutches/photos') {
+        requireEditor(user);
+        const saved = await clutchPhotos.finish(body, user);
+        return json(res, saved.duplicate ? 200 : 201, { photo: saved.photo });
+      }
+      if (method === 'GET' && path === '/api/clutches/photos') return json(res, 200, clutchPhotos.list(query));
+      if (method === 'GET' && /^\/api\/clutches\/photos\/[^/]+$/.test(path)) {
+        const data = clutchPhotos.file(decodePart(path.split('/')[4]), query.size === 'thumb' ? 'thumb' : 'full');
+        if (!data) throw fail('PHOTO_NOT_FOUND', 'Photo not found', 404);
+        // A photo never changes under its id.
+        res.writeHead(200, {
+          'content-type': 'image/jpeg',
+          'content-length': data.length,
+          'content-security-policy': 'sandbox; default-src none',
+          'x-content-type-options': 'nosniff',
+          'cache-control': 'private, max-age=31536000, immutable',
+        });
+        return res.end(data);
+      }
+      if (method === 'PATCH' && /^\/api\/clutches\/photos\/[^/]+$/.test(path)) {
+        requireEditor(user);
+        return json(res, 200, clutchPhotos.update(decodePart(path.split('/')[4]), body, user));
+      }
+      if (method === 'DELETE' && /^\/api\/clutches\/photos\/[^/]+$/.test(path)) {
+        requireEditor(user);
+        return json(res, 200, clutchPhotos.remove(decodePart(path.split('/')[4]), user));
+      }
       if (method === 'PUT' && path === '/api/clutches/notebook/up-to') {
         requireEditor(user);
         return json(res, 200, setNotebookUpTo(store, body, user));

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { DatabaseSync, backup } from 'node:sqlite';
-import { mkdir, readdir, unlink, chmod, rm } from 'node:fs/promises';
+import { mkdir, readdir, unlink, chmod, rm, copyFile, stat } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
@@ -41,3 +41,36 @@ for (const name of await readdir(directory)) {
   if (/^ithomiini-\d{4}-.*\.sqlite-(shm|wal)$/.test(name) && !kept.has(base)) await unlink(join(directory, name));
 }
 console.log(`Verified backup created: ${destination}.gz`);
+// The clutches' photos (server/clutch-photos.mjs: files, the database holds only their list) are
+// copied beside the backups once each: a photo never changes under its name, and one taken away
+// in the app stays here.
+const photos = resolve(process.env.CLUTCH_PHOTO_DIR || join(dirname(source), 'clutch-photos'));
+const photoCopy = join(directory, 'clutch-photos');
+let copied = 0;
+async function copyPhotos(from, to) {
+  let entries;
+  try {
+    entries = await readdir(from, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (entry.name === 'uploads') continue;
+    const src = join(from, entry.name);
+    const dst = join(to, entry.name);
+    if (entry.isDirectory()) {
+      await mkdir(dst, { recursive: true, mode: 0o700 });
+      await copyPhotos(src, dst);
+    } else if (entry.isFile() && entry.name.endsWith('.jpg')) {
+      try {
+        await stat(dst);
+      } catch {
+        await copyFile(src, dst);
+        await chmod(dst, 0o600);
+        copied++;
+      }
+    }
+  }
+}
+await copyPhotos(photos, photoCopy);
+if (copied) console.log(`Clutch photos copied: ${copied} new file(s) in ${photoCopy}`);

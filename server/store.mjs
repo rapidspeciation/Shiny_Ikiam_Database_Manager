@@ -9,6 +9,7 @@ import { applyBatch } from './batch.mjs';
 import { initMonitoring } from './monitoring.mjs';
 import { initHistory } from './history.mjs';
 import { initClutches } from './clutches.mjs';
+import { initClutchPhotos } from './clutch-photos.mjs';
 import { initCensus } from './census.mjs';
 import { SANDBOX_ID } from './workbook.mjs';
 import { initClaims } from './claims.mjs';
@@ -62,6 +63,7 @@ export class Store {
     initMonitoring(this.db);
     // Clutches checked on phones and tablets (Clutches tab, cards).
     initClutches(this.db);
+    initClutchPhotos(this.db);
     // Censuses of a species in the insectary (Censo tab) and everyone's marks.
     initCensus(this.db);
     // Identifiers held by changes not in the sheet yet, saves waiting for Google, Emergidos and Clutches entries.

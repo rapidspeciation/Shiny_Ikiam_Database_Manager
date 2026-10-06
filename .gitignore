@@ -17,3 +17,5 @@ token*.json
 web/
 # Written by `npm run build` (scripts/instructions-history.mjs); shipped in releases.
 server/instructions-history.json
+# Clutch photos taken in the app (server/clutch-photos.mjs), when the database sits in the checkout.
+clutch-photos/

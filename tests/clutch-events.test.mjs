@@ -135,14 +135,15 @@ test('events: per clutch and day, with the eggs and larvae registered in Insecta
   assert.equal(clutchEvents(store, { recordId: c1012 }).tally.larva.preserved, 2);
 });
 
-test('the setting: preserved larvae taken off NUMBER OF LARVAE by default; only an admin changes it', async () => {
+test('the setting: preserved larvae stay in NUMBER OF LARVAE by default (larvae used); only an admin changes it', async () => {
   const { store } = await fixture();
-  assert.deepEqual(clutchState(store).settings, { subtractPreserved: true });
-  assert.throws(() => setClutchSettings(store, { subtractPreserved: false }, ana), { code: 'FORBIDDEN' });
-  assert.throws(() => setClutchSettings(store, { subtractPreserved: 'no' }, boss), { code: 'INVALID_SETTING' });
-  assert.deepEqual(setClutchSettings(store, { subtractPreserved: false }, boss), { subtractPreserved: false });
   assert.deepEqual(clutchState(store).settings, { subtractPreserved: false });
+  assert.throws(() => setClutchSettings(store, { subtractPreserved: true }, ana), { code: 'FORBIDDEN' });
+  assert.throws(() => setClutchSettings(store, { subtractPreserved: 'no' }, boss), { code: 'INVALID_SETTING' });
   assert.deepEqual(setClutchSettings(store, { subtractPreserved: true }, boss), { subtractPreserved: true });
+  assert.deepEqual(clutchState(store).settings, { subtractPreserved: true });
+  assert.deepEqual(setClutchSettings(store, { subtractPreserved: false }, boss), { subtractPreserved: false });
+  assert.deepEqual(clutchEvents(store, { recordId: store.getRecordBySheetRow('Insectary_stocks', 11).id }).settings, { subtractPreserved: false });
 });
 
 test("the notebook's list: the app's changes in the notebook's order, without what came from the notebook", async () => {

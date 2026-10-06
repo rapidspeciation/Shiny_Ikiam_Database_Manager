@@ -178,12 +178,12 @@ test('clutch checks: marked by editors, seen by everyone, with the day\'s change
   assert.deepEqual([event.status, event.data.event.kind, event.data.event.name], [201, 'died', 'Beto Paz']);
   assert.equal((await beto.call('/api/clutches/events', 'POST', died)).status, 200);
   const events = (await olga.call(`/api/clutches/events?recordId=${c1012.id}`)).data;
-  assert.deepEqual([events.events.length, events.tally.larva.died, events.settings.subtractPreserved], [1, 2, true]);
+  assert.deepEqual([events.events.length, events.tally.larva.died, events.settings.subtractPreserved], [1, 2, false]);
   assert.equal((await olga.call('/api/clutches/day')).data.events.length, 1);
   assert.equal((await ana.call(`/api/clutches/events/${event.data.event.id}`, 'DELETE', {})).status, 403);
-  assert.equal((await beto.call('/api/clutches/settings', 'PUT', { subtractPreserved: false })).status, 403);
-  assert.equal((await admin.call('/api/clutches/settings', 'PUT', { subtractPreserved: false })).status, 200);
-  assert.equal((await ana.call('/api/clutches/state')).data.settings.subtractPreserved, false);
+  assert.equal((await beto.call('/api/clutches/settings', 'PUT', { subtractPreserved: true })).status, 403);
+  assert.equal((await admin.call('/api/clutches/settings', 'PUT', { subtractPreserved: true })).status, 200);
+  assert.equal((await ana.call('/api/clutches/state')).data.settings.subtractPreserved, true);
   const notebook = (await olga.call('/api/clutches/notebook')).data;
   assert.deepEqual(
     notebook.clutches.map(c => [c.clutch, c.lines.map(l => l.field), c.events.length]),
