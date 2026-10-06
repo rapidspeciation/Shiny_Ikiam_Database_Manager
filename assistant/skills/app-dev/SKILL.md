@@ -42,22 +42,24 @@ description: Change the web app itself (Ikiam Insectary DB): its screens, grids,
    same branch).
 2. Tell the person in 2–4 lines what you will change, then change the source,
    following the style of the code around it.
-3. Check: `npm --prefix frontend ci` (once), `node scripts/check.mjs`,
-   `npm test`. All must pass; add a test for new logic.
+3. Check while you work: `npm --prefix frontend ci` (once),
+   `node scripts/check.mjs` and the tests of the part you changed
+   (`node --test tests/<area>.test.mjs`; `npm --prefix frontend test` for
+   screens). Add a test for new logic. The full `npm test` runs in the
+   deploy.
 4. `git add` the files you changed, `git commit -m "<what and why, in one line>"`
-   and `git push`.
-5. Deploy: first check that no proposal is being applied (`list_proposals`,
-   status `applying`) and tell the person the app restarts for about a
-   minute; an apply caught by the restart is left unconfirmed (saves made
-   during the restart, and those waiting for Google, are kept and written by
-   the new process). Then
-   `scripts/deploy.sh`. It builds, tests, makes a new release,
-   restarts the app (about a minute; T3 chats keep running) and refreshes the
-   T3 workspaces; it stops if your commit is not on GitHub.
+   and `git push`: one commit per change. Changes that come together (asked
+   at once, or while you are still working) go out in one deploy.
+5. Deploy: tell the person the app restarts for about a minute, then run
+   `scripts/deploy.sh` once (a few minutes; in the background where your
+   shell offers it, which tells you when it ends). It waits by itself while
+   a save is being written, runs the full tests (a failure stops it before
+   anything changes: fix, commit, push and run it again), builds, makes a new
+   release, restarts the app (T3 chats keep running) and refreshes the T3
+   workspaces; it stops if your commit is not on GitHub. Saves waiting for
+   Google are kept and written by the new process.
 6. Verify: `curl -s https://ithomiini-ikiam.com/version.json` shows the new
    build. Tell the person to reload the page (a banner offers it) and what to
    look at. If something broke, say so: the previous release is named in
    `/home/ubuntu/ithomiini/shared/previous-release`, and a fix goes through
    the same steps.
-
-Small, focused changes: one request, one commit, one deploy.

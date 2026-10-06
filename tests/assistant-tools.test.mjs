@@ -1,12 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { moduleMap, parseDateText } from '../server/schema.mjs';
 import { createAssistant } from '../server/assistant.mjs';
 import { findRecords } from '../server/records-tool.mjs';
 import { noteText } from '../server/notebook.mjs';
+import { LINES_FILE_BYTES } from '../server/notebook-tool.mjs';
 
 // The assistant's tools after their first real use: what null means in a proposal, notes in the
 // team's form, notebook pages in line order with context rows, and row queries that stay small.
@@ -22,12 +26,12 @@ function formula(sheets, sheet, row, field, text, value) {
   };
 }
 
-async function setup(seed, formulas = []) {
+async function setup(seed, formulas = [], config = {}) {
   const sheets = new LocalSheets(seed);
   for (const f of formulas) formula(sheets, ...f);
   const store = new Store({ localMode: true }, { sheets });
   await store.sync({ sheets: Object.keys(seed) });
-  const assistant = createAssistant({ store, config: {} });
+  const assistant = createAssistant({ store, config });
   store.db
     .prepare(
       "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u-franz','franz','Franz Chandi','editor','s','h',1,'2026-01-01')",
@@ -212,8 +216,10 @@ test('match_notebook: rows in the page order, context rows for lines already in 
     await call('match_notebook', { ...PAGE, replaceProposalId: plain.proposalId, includeUnchanged: true }).then(out => {
       assert.equal(out.proposalId, plain.proposalId);
       assert.equal(out.counts.contextRows, 1);
-      assert.equal(out.lines[1].contextRow, true);
-      assert.equal(out.lines[1].inProposal, false);
+      // Line 2 has nothing to fill or flag: in the table, counted, not listed in the answer.
+      assert.deepEqual(out.lines.map(l => l.n), [1, 3]);
+      assert.equal(out.counts.linesAsInSheet, 1);
+      assert.equal(out.counts.lines, 3);
     });
     [shown] = await list();
     assert.deepEqual(shown.changes.map(c => c.line), [1, 2, 3]);
@@ -258,6 +264,99 @@ test('a context row edited in the table becomes a real change', async () => {
     const row = edited.body.proposal.changes.find(c => c.key === context.key);
     assert.ok(!row.context);
     assert.deepEqual(row.values, { 'NUMBER OF EGGS': '=5' });
+  } finally {
+    store.close();
+  }
+});
+
+test("match_notebook reads a notebook reader's file from the work/ folder of the person's own workspace", async () => {
+  const workspaces = mkdtempSync(join(tmpdir(), 'ithomiini-workspaces-'));
+  const own = join(workspaces, 'franz');
+  const folder = join(own, 'work', '2026-10-05-posturas');
+  mkdirSync(folder, { recursive: true });
+  // The reader's file: the lines and the page's kind, year, title and photo.
+  writeFileSync(join(folder, 'p1.json'), JSON.stringify({ ...PAGE, title: 'posturas 838–999', photo: 'not-an-attachment.jpg' }));
+  const { store, call, list } = await setup(NOTEBOOK_SHEETS, [], { t3Workspaces: workspaces });
+  try {
+    const out = await call('match_notebook', { linesFile: 'work/2026-10-05-posturas/p1.json', includeUnchanged: true });
+    assert.ok(out.proposalId, JSON.stringify(out));
+    assert.equal(out.counts.lines, 3);
+    assert.equal(out.year, 2025);
+    let shown = await list();
+    assert.match(shown[0].reason, /posturas 838–999/);
+    // Its full path works too, and the call's arguments go over the file's.
+    const again = await call('match_notebook', { linesFile: join(folder, 'p1.json'), title: 'posturas 838–999 corregida', replaceProposalId: out.proposalId });
+    assert.equal(again.proposalId, out.proposalId);
+    shown = await list();
+    assert.equal(shown.length, 1);
+    assert.match(shown[0].reason, /corregida/);
+
+    // Only a JSON file of this person's work/ folder, not too large, with lines.
+    mkdirSync(join(workspaces, 'other', 'work'), { recursive: true });
+    writeFileSync(join(workspaces, 'other', 'work', 'p.json'), JSON.stringify(PAGE));
+    writeFileSync(join(own, 'page.json'), JSON.stringify(PAGE));
+    symlinkSync(join(workspaces, 'other', 'work', 'p.json'), join(own, 'work', 'link.json'));
+    writeFileSync(join(own, 'work', 'big.json'), ' '.repeat(LINES_FILE_BYTES + 1));
+    writeFileSync(join(own, 'work', 'bad.json'), '{"lines": [');
+    writeFileSync(join(own, 'work', 'empty.json'), '{"kind": "stocks"}');
+    writeFileSync(join(own, 'work', 'p1.txt'), JSON.stringify(PAGE));
+    for (const [linesFile, why] of [
+      ['page.json', /not in this workspace's work\/ folder/],
+      ['work/../../other/work/p.json', /not in this workspace's work\/ folder/],
+      [join(workspaces, 'other', 'work', 'p.json'), /not in this workspace's work\/ folder/],
+      ['work/link.json', /not in this workspace's work\/ folder/],
+      ['work/missing.json', /not found/],
+      ['work/big.json', /larger than 512 KB/],
+      ['work/bad.json', /not valid JSON/],
+      ['work/empty.json', /no `lines`/],
+      ['work/p1.txt', /\.json/],
+    ]) {
+      const refused = await call('match_notebook', { linesFile });
+      assert.match(refused.error ?? '', why, linesFile);
+      assert.match(refused.error, /Nothing was proposed/);
+    }
+    assert.equal((await list()).length, 1, 'nothing more was proposed');
+  } finally {
+    store.close();
+    rmSync(workspaces, { recursive: true, force: true });
+  }
+  // A server without the workspaces folder: the file cannot be read, `lines` still work.
+  const bare = await setup(NOTEBOOK_SHEETS);
+  try {
+    assert.match((await bare.call('match_notebook', { linesFile: 'work/p.json' })).error, /no workspace of yours/);
+    assert.match((await bare.call('match_notebook', { kind: 'stocks' })).error, /Give `lines` or `linesFile`/);
+  } finally {
+    bare.store.close();
+  }
+});
+
+test('update_proposal answers rows given the same cells as one sameChange entry, with their indexes and labels', async () => {
+  const seed = {
+    Insectary_stocks: [900, 901, 902, 903].map((n, i) => ({ row: i + 2, values: { 'CLUTCH NUMBER': n, SPECIES: 'Mechanitis lysimnia' } })),
+  };
+  const { store, call, stock } = await setup(seed);
+  try {
+    const proposed = await call('propose_changes', {
+      reason: 'Posturas',
+      changes: [2, 3, 4, 5].map(row => ({ recordId: stock(row).id, values: { 'NUMBER OF EGGS': '12' } })),
+    });
+    assert.equal(proposed.rows, 4, JSON.stringify(proposed));
+    const out = await call('update_proposal', {
+      proposalId: proposed.proposalId,
+      rows: [
+        ...[0, 1, 2].map(index => ({ index, values: { 'NUMBER OF LARVAE': '10' } })),
+        { index: 3, values: { 'NUMBER OF LARVAE': '5' } },
+      ],
+    });
+    assert.equal(out.revision, 2, JSON.stringify(out));
+    assert.deepEqual(out.sameChange, [{ rows: 3, values: { 'NUMBER OF LARVAE': 10 }, indexes: [0, 1, 2], labels: ['900', '901', '902'] }]);
+    // A row with other news is listed in full.
+    assert.deepEqual(out.changed.map(r => r.index), [3]);
+    assert.deepEqual(out.changed[0].values, { 'NUMBER OF EGGS': 12, 'NUMBER OF LARVAE': 5 });
+    // full: every row as before.
+    const full = await call('update_proposal', { proposalId: proposed.proposalId, rows: [{ index: 0, values: { 'NUMBER OF LARVAE': '11' } }], full: true });
+    assert.equal(full.rows.length, 4);
+    assert.equal(full.sameChange, undefined);
   } finally {
     store.close();
   }
@@ -399,10 +498,14 @@ test('Claude Code loads the reading and proposal tools with the chat; describe_s
     const tools = (await mcp('tools/list')).body.result.tools;
     const loaded = tools.filter(t => t._meta?.['anthropic/alwaysLoad'] === true).map(t => t.name);
     assert.deepEqual(loaded.sort(), [
+      'apply_proposal',
       'count_records',
       'describe_sheet',
       'find_records',
+      'get_proposal',
       'get_record',
+      'list_proposals',
+      'match_notebook',
       'propose_changes',
       'query',
       'search_records',

@@ -5,8 +5,10 @@
 // sums, the SPECIES formula) and turned into one proposal the person reviews
 // beside the chat. Nothing is written until they apply it.
 
+import { readFileSync, realpathSync, statSync } from 'node:fs';
+import { basename, isAbsolute, join, sep } from 'node:path';
 import { moduleMap } from './schema.mjs';
-import { VIEW_PARAM } from './proposal-view.mjs';
+import { VIEW_UPDATE } from './proposal-view.mjs';
 import { newRowFormulaFields } from './premade.mjs';
 import { TUBE_FIELD, isIdValue, isUnique, twinRows } from './verifications.mjs';
 import { listOptions } from './verify.mjs';
@@ -37,97 +39,127 @@ const clip = (value, length) => String(value ?? '').slice(0, length);
 const ecuadorDay = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(new Date());
 const isoOf = serial => new Date(Date.UTC(1899, 11, 30) + serial * 864e5).toISOString().slice(0, 10);
 
+/** The largest notebook-reader file match_notebook reads (a page of 150 lines is some 60 KB). */
+export const LINES_FILE_BYTES = 512 * 1024;
+/** What a notebook-reader file may give (anything else in it is ignored). */
+const FILE_KEYS = ['kind', 'year', 'title', 'photo', 'rotate', 'lines', 'spans'];
+
+/**
+ * A notebook's columns for the description: listed, or "as <kind> without …" when they are an
+ * earlier notebook's of the same sheet less a few (shorter: the description loads with every chat).
+ */
+function columnsText(id) {
+  const own = columnsOf(KINDS[id]);
+  const listed = own.join(', ');
+  for (const other of KIND_IDS.slice(0, KIND_IDS.indexOf(id))) {
+    const theirs = columnsOf(KINDS[other]);
+    if (KINDS[other].sheet !== KINDS[id].sheet || !own.every(f => theirs.includes(f))) continue;
+    const less = `as ${other} without ${theirs.filter(f => !own.includes(f)).join(', ')}`;
+    if (less.length < listed.length) return less;
+  }
+  return listed;
+}
+
 /** The tool's description and schema, with each notebook's columns taken from KINDS. */
 export const MATCH_NOTEBOOK_TOOL = {
   type: 'function',
   function: {
     name: 'match_notebook',
     description: [
-      'Match a transcribed notebook page (or envelopes/labels) with the sheet and draft ONE proposal, shown at once beside the chat. The digitalizar-cuaderno skill says how to transcribe a page and what the answer holds.',
-      '- Every line, top to bottom, values as written (dates "17/9", counts "12+15"); a cell empty on the page: its column left out.',
-      '- Doubtful cell: your best reading, confidence < 0.8, up to 3 alternatives and a reason. Unreadable cell: null (never left out), a reason, any partial reading in alternatives.',
-      `- \`year\` only when the page shows it. Without it: the year the sheet has for the same dates, or the current year when the page's dates are from the last ${RECENT_DAYS} days; otherwise nothing is proposed and the answer asks for \`year\`.`,
-      "- The server finds each row (look-alike IDs), completes list values and notes, and flags what breaks a run; nothing is written until the person applies it. The table lists the rows in the sheet's order, each with its photo and line.",
-      'Answer: proposalId, year/yearSource, counts, per line its status, the cells by group and warnings, and `lookAt` as in propose_changes.',
+      'Match a transcribed notebook page (or envelopes/labels) with the sheet and draft ONE proposal beside the chat; nothing is written until the person applies it. How to read a page and its answer: the digitalizar-cuaderno skill.',
+      "- `lines` top to bottom, values as written (\"17/9\", \"12+15\"); a cell empty on the page: its column left out. Or `linesFile`: a notebook-reader's file.",
+      `- \`year\` only when the page shows it. Without it: the sheet's year for those dates, or the current year for dates from the last ${RECENT_DAYS} days; otherwise the answer asks for it.`,
+      'Answer: proposalId, year/yearSource, counts, the lines with something to fill or flag (status, cells by group, warnings) and `lookAt`.',
       '',
-      'Columns per kind (exact names):',
-      ...KIND_IDS.map(
-        id =>
-          `- ${id} (${KINDS[id].label}, ${KINDS[id].sheet}): ${columnsOf(KINDS[id]).join(', ')}${KINDS[id].aliases ? ` (also accepted: ${Object.entries(KINDS[id].aliases).map(([a, f]) => `${a} = ${f}`).join(', ')})` : ''}`,
-      ),
+      'Columns per kind:',
+      ...KIND_IDS.map(id => `- ${id} (${KINDS[id].label}, ${KINDS[id].sheet}): ${columnsText(id)}`),
     ].join('\n'),
     parameters: {
       type: 'object',
       properties: {
-        kind: { type: 'string', enum: KIND_IDS, description: 'Which notebook the page is' },
-        year: { type: 'integer', description: 'The year of the page, only if written on it (a header, a sticky note, a full date)' },
-        title: { type: 'string', description: 'Short name of the page for the proposal, e.g. "posturas 120–134"' },
+        kind: { type: 'string', enum: KIND_IDS },
+        year: { type: 'integer', description: 'Only if written on the page' },
+        title: { type: 'string', description: 'e.g. "posturas 120–134"' },
+        linesFile: {
+          type: 'string',
+          description: "A notebook-reader's file (work/…/<page>.json): its lines, spans, kind, year, title, photo and rotate; arguments given here go over it",
+        },
         lines: {
           type: 'array',
-          description: 'One entry per written line, top to bottom (up to 150)',
+          description: 'One per written line (up to 150)',
           items: {
             type: 'object',
             properties: {
-              raw: { type: 'string', description: 'The line as written, short, keeping abbreviations and symbols' },
-              values: {
-                type: 'object',
-                description: 'Column → text as read. null = cannot read it at all: shown to the person as an unreadable cell to fill (give why in reasons)',
-              },
-              confidence: { type: 'object', description: 'Column → 0..1, only for cells you are not sure of' },
-              alternatives: {
-                type: 'object',
-                description: 'Column → other possible readings (up to 3); for an unreadable cell (null), the part that could be read, as written (e.g. "1?/9")',
-              },
-              reasons: {
-                type: 'object',
-                description:
-                  'Column → why the cell is doubtful or unreadable, a few words the person reads (e.g. "1 or 7: this hand", "smudged", "cut off by the photo edge")',
-              },
-              crossedOut: { type: 'boolean', description: 'The line is crossed out or marked "no se usó el ID"' },
-              photo: { type: 'integer', description: 'With several photos: which one the line is on (0 = the first)' },
+              raw: { type: 'string', description: 'The line as written, short' },
+              values: { type: 'object', description: 'Column → text as read; null: unreadable (why in reasons)' },
+              confidence: { type: 'object', description: 'Column → 0..1, only unsure cells (< 0.8)' },
+              alternatives: { type: 'object', description: 'Column → up to 3 other readings; for null, the part read ("1?/9")' },
+              reasons: { type: 'object', description: 'Column → why doubtful or unreadable, a few words the person reads' },
+              crossedOut: { type: 'boolean', description: 'Crossed out, or "no se usó el ID"' },
+              photo: { type: 'integer', description: 'Which photo the line is on (0 = the first)' },
             },
             required: ['raw', 'values'],
           },
         },
         spans: {
           type: 'array',
-          description:
-            'A value a brace or ditto marks give to a run of lines, once: the column, the value, and the first and last line by their key (Insectary_ID, CLUTCH NUMBER…). Fills the lines between (both included) that leave that column out.',
+          description: 'A value a brace or ditto gives to a run of lines, once: fills `field` on the lines from `from` to `to` (their keys, both included) that leave it out',
           items: {
             type: 'object',
-            properties: {
-              field: { type: 'string' },
-              value: { type: 'string' },
-              from: { type: 'string', description: 'Key of the first line the brace covers' },
-              to: { type: 'string', description: 'Key of the last line the brace covers' },
-            },
+            properties: { field: { type: 'string' }, value: { type: 'string' }, from: { type: 'string' }, to: { type: 'string' } },
             required: ['field', 'value', 'from', 'to'],
           },
         },
         photo: {
-          description:
-            'The photo of the page: the file name of the attachment (from "[Attached image … saved at …]" in the chat), or a list of them when the lines come from several photos. Shown beside the proposal.',
+          description: "The page's photo, or a list: the attachment's file name (from \"[Attached image … saved at …]\")",
           anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
         },
         rotate: {
-          description: 'Clockwise turn that makes the photo upright (0, 90, 180, 270), as given to crops.py; a list for several photos',
+          description: 'Clockwise turn that makes it upright, as given to crops.py; a list for several photos',
           anyOf: [{ type: 'integer', enum: [0, 90, 180, 270] }, { type: 'array', items: { type: 'integer', enum: [0, 90, 180, 270] } }],
         },
-        replaceProposalId: {
-          type: 'string',
-          description: 'A pending proposal of this page to replace (after the person corrects a reading)',
-        },
-        includeUnchanged: {
-          type: 'boolean',
-          description:
-            'Also show the lines already in the sheet (nothing to write) as grey context rows, so the table follows the whole page. Context rows are never written.',
-        },
-        view: VIEW_PARAM,
+        replaceProposalId: { type: 'string', description: "This page's pending proposal, replaced by a corrected reading" },
+        includeUnchanged: { type: 'boolean', description: 'Lines already in the sheet as grey context rows (never written)' },
+        view: VIEW_UPDATE,
       },
-      required: ['kind', 'lines'],
     },
   },
 };
+
+/**
+ * match_notebook's arguments with a notebook-reader's file (`linesFile`) read in: a JSON file in
+ * the work/ folder of the person's own T3 workspace (<workspaces>/<username>, as
+ * scripts/t3-provision.mjs makes it), given relative to the workspace or as its full path.
+ * The file holds { kind, year, title, photo, rotate, lines, spans } (or only the lines); the
+ * arguments given in the call go over it. Returns { args } or { error }.
+ */
+export function withLinesFile(args, { workspaces, username }) {
+  if (args?.linesFile === undefined || args.linesFile === null || args.linesFile === '') return { args };
+  const given = String(args.linesFile).trim();
+  const fail = why => ({ error: `linesFile ${clip(given, 200)}: ${why}. Nothing was proposed.` });
+  const name = String(username ?? '');
+  if (!workspaces || !name || basename(name) !== name || name.startsWith('.')) return fail('no workspace of yours on this server; give `lines`');
+  if (!/\.json$/i.test(given)) return fail('give the .json file the reader wrote in work/');
+  const root = join(workspaces, name);
+  let data;
+  try {
+    const work = realpathSync(join(root, 'work'));
+    const path = realpathSync(isAbsolute(given) ? given : join(root, given));
+    if (!path.startsWith(work + sep)) return fail("not in this workspace's work/ folder");
+    const stat = statSync(path);
+    if (!stat.isFile()) return fail('not a file');
+    if (stat.size > LINES_FILE_BYTES) return fail(`larger than ${LINES_FILE_BYTES / 1024} KB`);
+    data = JSON.parse(readFileSync(path, 'utf8'));
+  } catch (e) {
+    if (e instanceof SyntaxError) return fail(`not valid JSON (${clip(e.message, 120)})`);
+    return fail(e.code === 'ENOENT' ? 'not found' : 'cannot be read');
+  }
+  const file = Array.isArray(data) ? { lines: data } : data && typeof data === 'object' ? data : null;
+  if (!Array.isArray(file?.lines)) return fail('no `lines` list in it');
+  const own = Object.fromEntries(Object.entries(args).filter(([k, v]) => k !== 'linesFile' && v !== undefined && v !== null));
+  const read = Object.fromEntries(FILE_KEYS.filter(k => file[k] !== undefined && file[k] !== null).map(k => [k, file[k]]));
+  return { args: { ...read, ...own } };
+}
 
 /**
  * Collection_data's fixed cells per kind of record, as the team types them now
@@ -636,6 +668,10 @@ export function matchSummary({ review, changes, ignored, wildWithoutCollection =
     if (context.has(l.n)) out.contextRow = true;
     return out;
   });
+  // A line found in the sheet with nothing to fill or flag is in the table only: counted, not listed.
+  const QUIET = new Set(['n', 'raw', 'status', 'row', 'label', 'same', 'inProposal', 'contextRow']);
+  const quiet = l => l.status === 'match' && !l.inProposal && Object.keys(l).every(k => QUIET.has(k));
+  const listed = lines.filter(l => !quiet(l));
   const c = review.counts;
   return {
     kind: review.kind,
@@ -653,6 +689,7 @@ export function matchSummary({ review, changes, ignored, wildWithoutCollection =
       problems: c.errors,
       newRows: c.created,
       same: c.same,
+      ...(listed.length < lines.length ? { linesAsInSheet: lines.length - listed.length } : {}),
     },
     proposalId: proposalId ?? null,
     ...(ignored.length ? { ignoredColumns: ignored } : {}),
@@ -679,6 +716,6 @@ export function matchSummary({ review, changes, ignored, wildWithoutCollection =
           })),
         }
       : {}),
-    lines,
+    lines: listed,
   };
 }

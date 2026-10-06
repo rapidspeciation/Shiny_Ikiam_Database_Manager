@@ -74,15 +74,20 @@ test('the tool list: the long texts once, the tools loaded with every chat kept 
   assert.equal(times(JSON.stringify(FILTERS_DOC).slice(1, -1)), 1, 'the filters explained once (find_records)');
   assert.equal(times('{\\"clear\\": true} empties the cell'), 1, 'the values explained once (propose_changes)');
   const always = tools.filter(t => t._meta?.['anthropic/alwaysLoad']);
-  // Formulas in proposals (propose_changes: {"formula"}, bulk rows, missingFormulas) took some 750 of it.
-  assert.ok(JSON.stringify(always).length < 12200, String(JSON.stringify(always).length));
-  // The notebook procedure is in the digitalizar-cuaderno skill; the tool keeps the columns.
+  // Formulas in proposals (propose_changes: {"formula"}, bulk rows, missingFormulas) took some 750 of it;
+  // match_notebook and get/apply/list_proposals some 7200.
+  assert.ok(JSON.stringify(always).length < 19400, String(JSON.stringify(always).length));
+  // The notebook procedure is in the digitalizar-cuaderno skill and the reading in the reader's
+  // instructions; the tool keeps the columns.
   const notebook = tools.find(t => t.name === 'match_notebook').description;
-  assert.ok(notebook.length < 4500, String(notebook.length));
+  assert.ok(notebook.length < 2000, String(notebook.length));
   assert.match(notebook, /digitalizar-cuaderno skill/);
   const skill = readFileSync(new URL('../assistant/skills/digitalizar-cuaderno/SKILL.md', import.meta.url), 'utf8');
-  assert.match(skill, /## What `match_notebook` takes/);
   assert.match(skill, /\*\*The year\*\*/);
+  assert.match(skill, /notebook-reader\.md/);
+  const reader = readFileSync(new URL('../assistant/agents/notebook-reader.md', import.meta.url), 'utf8');
+  assert.match(reader, /## Reading a page/);
+  assert.match(reader, /### Doubtful and unreadable cells/);
 });
 
 test('column names as people write them: one column, or the nearest ones named', () => {
