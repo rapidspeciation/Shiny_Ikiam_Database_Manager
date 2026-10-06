@@ -25,8 +25,9 @@ else
   fi
 fi
 npm --prefix frontend ci
+# The one full test run of a change (the app-dev skill runs only the quick checks while developing).
 node scripts/check.mjs
-npm test
+npm test || { echo "Tests failed: nothing was deployed. Fix, commit, push and run scripts/deploy.sh again." >&2; exit 1; }
 # Also writes server/instructions-history.json (the AI instructions page's history: the release has no .git).
 npm run build
 release="$(date -u +%Y%m%dT%H%M%SZ)"
