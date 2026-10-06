@@ -45,7 +45,12 @@ describe('matchIds', () => {
     const m = run(items, 'A1B')
     expect(m[0]).toMatchObject({ item: { id: 'A1B' }, kind: 'exact', tier: 0, at: [] })
     // 1↔7 and B↔D: one look-alike each, before two.
-    expect(m.slice(1, 3).map(x => x.item.id).sort()).toEqual(['A1D', 'A7B'])
+    expect(
+      m
+        .slice(1, 3)
+        .map(x => x.item.id)
+        .sort(),
+    ).toEqual(['A1D', 'A7B'])
     expect(m.find(x => x.item.id === 'A7B')).toMatchObject({ kind: 'lookalike', at: [1], tier: 3 })
     // A7D needs two (absent here); A8B is not a look-alike of 1.
     expect(ids(items, 'A1B')).not.toContain('A8B')
@@ -86,12 +91,7 @@ describe('matchIds', () => {
   })
 
   it('within a step: alive first, then the species given, then the sex given, then the newest; other species marked', () => {
-    const set = [
-      b('A1B', LYS, 'female'),
-      b('A1D', POLY, 'male'),
-      b('A7B', POLY, 'female'),
-      b('A1F', POLY, 'female', false),
-    ]
+    const set = [b('A1B', LYS, 'female'), b('A1D', POLY, 'male'), b('A7B', POLY, 'female'), b('A1F', POLY, 'female', false)]
     // One look-alike each: A1D (B↔D), A7B (1↔7), A1F (dead, and E↔F is not B).
     const m = run(set, 'A1B', { species: POLY, sex: 'female' })
     expect(m.map(x => x.item.id)).toEqual(['A1B', 'A7B', 'A1D'])
@@ -109,6 +109,8 @@ describe('matchIds', () => {
     const dead = [b('A6B', POLY, 'male', false), b('A8B'), b('A6BX')]
     expect(ids(dead, 'A6B')).toEqual(['A6BX', 'A6B', 'A8B'])
     expect(run(dead, 'A6B')[1]).toMatchObject({ kind: 'exact', alive: false })
+    // In a census a dead one cannot be in the cage: every living match first.
+    expect(ids(dead, 'A6B', { deadStep: 10 })).toEqual(['A6BX', 'A8B', 'A6B'])
   })
 
   it('skips the chosen ones, keeps to the limit, and matches plain IDs (the table picker)', () => {

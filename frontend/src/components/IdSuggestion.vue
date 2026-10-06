@@ -31,7 +31,7 @@ const chars = computed(() => [...props.id].map((c, i) => ({ c, lit: props.at.inc
 const line = computed(() => {
   const f = props.facts
   return [
-    f.clutch && t('clutch {c}', { c: f.clutch }),
+    f.clutch && f.clutch !== 'NA' && t('clutch {c}', { c: f.clutch }),
     f.entered !== null &&
       (f.wild
         ? t('Capturada {date}', { date: formatSerial(f.entered) })
@@ -45,7 +45,7 @@ const line = computed(() => {
 <template>
   <span class="flex min-w-0 flex-1 items-center gap-3">
     <span
-      class="w-20 shrink-0 text-lg font-semibold tracking-wide"
+      class="w-16 shrink-0 text-lg font-semibold"
       :class="greyed ? 'text-stone-400' : 'text-stone-900'"
       :title="at.length ? $t('Los caracteres en ámbar se leyeron como parecidos') : undefined"
     >

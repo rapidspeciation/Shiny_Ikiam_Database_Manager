@@ -12,7 +12,8 @@
  * Within each, butterflies alive first, then the species and the sex given (a
  * census's species, the sex seen on the butterfly), then the newest rows. A
  * butterfly recorded dead ranks lower still: below a living one whose ID starts
- * with what was typed, above any look-alike.
+ * with what was typed, above any look-alike (`deadStep`; a census, where a dead
+ * one cannot be in the cage, puts every living one first).
  */
 
 /**
@@ -171,6 +172,8 @@ export interface MatchOptions<T> {
   skip?: (item: T) => boolean
   table?: LookAlikeTable
   limit?: number
+  /** How many steps a butterfly recorded dead drops (default 2.5: below living IDs that start with the text). */
+  deadStep?: number
 }
 
 /** A dead butterfly drops this many steps: below a living one whose ID starts with the text, above any look-alike. */
@@ -202,7 +205,7 @@ export function matchIds<T extends Matchable>(items: T[], typed: string, opts: M
       alive,
       sameSpecies: !species || speciesKey(opts.speciesOf?.(item)) === species,
       sameSex: !sex || sexOf(opts.sexOf?.(item)) === sex,
-      score: tier + (alive ? 0 : DEAD_STEP),
+      score: tier + (alive ? 0 : (opts.deadStep ?? DEAD_STEP)),
     })
   }
   out.sort(

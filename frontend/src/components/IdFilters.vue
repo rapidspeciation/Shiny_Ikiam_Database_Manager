@@ -30,16 +30,17 @@ const sexes = computed<{ value: SexFilter; label: string; title: string }[]>(() 
         v-for="s in sexes"
         :key="s.value"
         type="button"
-        class="h-10 min-w-11 border-l border-stone-200 px-2 text-sm font-semibold first:border-l-0"
-        :class="
+        class="h-10 min-w-11 border-l border-stone-200 px-2 font-semibold first:border-l-0"
+        :class="[
+          s.value === 'female' || s.value === 'male' ? 'text-xl leading-none' : 'text-sm',
           sex === s.value
             ? s.value === 'female'
               ? 'bg-pink-600 text-white'
               : s.value === 'male'
                 ? 'bg-sky-600 text-white'
                 : 'bg-brand-700 text-white'
-            : 'text-stone-700 active:bg-stone-100'
-        "
+            : 'text-stone-700 active:bg-stone-100',
+        ]"
         :aria-pressed="sex === s.value"
         :title="s.title"
         @mousedown.prevent

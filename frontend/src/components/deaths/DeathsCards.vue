@@ -825,38 +825,6 @@ const choice = (on: boolean) =>
                 <X :size="20" />
               </button>
             </div>
-            <!-- What is seen on the butterfly ranks the IDs offered (only while typing: the bar stays small otherwise). -->
-            <IdFilters
-              v-if="focused || query"
-              v-model:sex="sexFilter"
-              v-model:species="speciesFilter"
-              :species-list="aliveSpecies"
-              class="mt-2 short:hidden"
-            />
-            <!-- Suggestions: tapping one adds its card and keeps the keyboard for the next ID. -->
-            <ul
-              v-if="focused && suggestions.length"
-              class="absolute inset-x-0 top-full z-30 mt-1 divide-y divide-stone-100 overflow-y-auto rounded-xl border border-stone-200 bg-white shadow-lg"
-              :style="{ maxHeight: `${listHeight}px` }"
-              role="listbox"
-            >
-              <li v-for="s in suggestions" :key="s.entry.id">
-                <button
-                  class="flex min-h-14 w-full items-center gap-3 px-3 py-2 text-left active:bg-brand-50 short:min-h-12"
-                  role="option"
-                  @mousedown.prevent
-                  @click="choose(s.entry.id)"
-                >
-                  <IdSuggestion
-                    :id="s.entry.id"
-                    :facts="factsFor(s.entry.row)"
-                    :at="s.match?.at"
-                    :via="s.via"
-                    :greyed="s.match?.greyed"
-                  />
-                </button>
-              </li>
-            </ul>
           </div>
           <!-- Cards or the table: kept in this browser. -->
           <EntryModeToggle v-model="mode" :compact="!roomy" class="h-13 shrink-0 short:h-11 *:min-w-11" />
@@ -870,6 +838,39 @@ const choice = (on: boolean) =>
             <History :size="18" /> <span v-if="roomy">{{ $t('Historial') }}</span>
           </button>
         </div>
+        <!-- The filters and the suggestions span the whole bar (the box beside the mode buttons is narrow on a phone). -->
+        <!-- What is seen on the butterfly ranks the IDs offered (only while typing: the bar stays small otherwise). -->
+        <IdFilters
+          v-if="focused || query"
+          v-model:sex="sexFilter"
+          v-model:species="speciesFilter"
+          :species-list="aliveSpecies"
+          class="mt-2 short:hidden"
+        />
+        <!-- Suggestions: tapping one adds its card and keeps the keyboard for the next ID. -->
+        <ul
+          v-if="focused && suggestions.length"
+          class="absolute inset-x-3 top-full z-30 mt-1 divide-y divide-stone-100 overflow-y-auto rounded-xl border border-stone-200 bg-white shadow-lg"
+          :style="{ maxHeight: `${listHeight}px` }"
+          role="listbox"
+        >
+          <li v-for="s in suggestions" :key="s.entry.id">
+            <button
+              class="flex min-h-14 w-full items-center gap-3 px-3 py-2 text-left active:bg-brand-50 short:min-h-12"
+              role="option"
+              @mousedown.prevent
+              @click="choose(s.entry.id)"
+            >
+              <IdSuggestion
+                :id="s.entry.id"
+                :facts="factsFor(s.entry.row)"
+                :at="s.match?.at"
+                :via="s.via"
+                :greyed="s.match?.greyed"
+              />
+            </button>
+          </li>
+        </ul>
         <p v-if="!ready" class="mt-1.5 text-sm text-stone-500">{{ $t('Cargando {sheet}…', { sheet: MODULE }) }}</p>
         <p v-else-if="alreadyChosen" class="mt-1.5 text-sm text-stone-600">
           {{ $t('{id} ya está en las tarjetas', { id: alreadyChosen }) }}
