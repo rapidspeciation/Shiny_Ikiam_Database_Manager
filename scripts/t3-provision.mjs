@@ -3,8 +3,7 @@
 // a folder with the Ithomiini brief (assistant/AGENTS.md with the person's name filled in, server/brief.mjs;
 // AGENTS.md for Codex, CLAUDE.md a link to it for Claude),
 // the skills (every folder of assistant/skills, in .claude/skills and .agents/skills), the Claude Code
-// subagents (assistant/agents: notebook-reader, notebook-reviewer on Sonnet), a shell guard hook
-// (assistant/hooks: no command may name the secrets or the database), the app's tools over MCP
+// subagents (assistant/agents: notebook-reader, notebook-reviewer on Sonnet), the app's tools over MCP
 // with a personal token (.mcp.json for Claude, .codex/config.toml for Codex), and `t3 project add`. Run on the server:
 //   node scripts/t3-provision.mjs <username>     new person, or a fresh token
 //   node scripts/t3-provision.mjs --refresh-all  after a release (scripts/deploy.sh):
@@ -201,21 +200,9 @@ function provision(user, { freshToken, addProject }) {
   rmSync(agentsTarget, { recursive: true, force: true });
   if (existsSync(agents)) cpSync(agents, agentsTarget, { recursive: true });
 
-  // The shell guard (assistant/hooks/guard-bash.mjs): the deny rules below only cover Claude's
-  // file tools, so shell commands naming the secrets, the database or a denied folder are stopped
-  // by a PreToolUse hook, and so are files written with those paths in them (a script to run).
-  // Sourcing gog.env for gog stays allowed.
-  const hooksTarget = join(workspace, '.claude', 'hooks');
-  rmSync(hooksTarget, { recursive: true, force: true });
-  cpSync(join(release, 'assistant', 'hooks'), hooksTarget, { recursive: true });
-  const denied = [configDir, database, ...extraDeny].map(p => p.replace(/\/+$/, ''));
-  // Also the last two parts of a deep path (`cd ~ && cat .config/ithomiini/…`).
-  const tails = denied.map(p => p.split('/').filter(Boolean)).filter(p => p.length >= 3).map(p => p.slice(-2).join('/'));
-  writeFileSync(
-    join(hooksTarget, 'guard-bash.json'),
-    JSON.stringify({ deny: [...new Set([...denied, ...tails])], sourceOnly: [join(configDir, 'gog.env')] }, null, 2),
-  );
-  const guard = `'${process.execPath}' '${join(hooksTarget, 'guard-bash.mjs')}'`;
+  // Chats may write and run their own scripts, the database included (no shell guard): an older
+  // release's guard hook is taken out.
+  rmSync(join(workspace, '.claude', 'hooks'), { recursive: true, force: true });
 
   const token = (!freshToken && keptToken(workspace, user)) || mintToken(user);
   const mcp = join(workspace, '.mcp.json');
@@ -245,23 +232,22 @@ function provision(user, { freshToken, addProject }) {
   settings.env = { ...settings.env, PATH: TOOLS_PATH, ENABLE_CLAUDEAI_MCP_SERVERS: 'false' };
   settings.permissions ??= {};
   settings.permissions.allow = [...new Set([...(settings.permissions.allow ?? []), 'mcp__ithomiini', 'Skill'])];
-  // Our guard replaces its earlier copy; other hooks of the folder are kept.
+  // The old guard hook out; other hooks of the folder are kept.
   const own = entry => entry?.hooks?.some(h => String(h.command ?? '').includes('guard-bash.mjs'));
-  settings.hooks = {
-    ...settings.hooks,
-    PreToolUse: [
-      ...(settings.hooks?.PreToolUse ?? []).filter(e => !own(e)),
-      { matcher: 'Bash|Write|Edit|MultiEdit|NotebookEdit', hooks: [{ type: 'command', command: guard }] },
-    ],
-  };
-  // Secrets and built releases are off limits (data goes through the tools; code through ~/ithomiini/src).
+  const kept = (settings.hooks?.PreToolUse ?? []).filter(e => !own(e));
+  if (settings.hooks) {
+    if (kept.length) settings.hooks.PreToolUse = kept;
+    else delete settings.hooks.PreToolUse;
+    if (!Object.keys(settings.hooks).length) delete settings.hooks;
+  }
+  // Secrets and built releases are off limits (code changes go through ~/ithomiini/src); the database
+  // is not (an older release denied it: taken out).
   settings.permissions.deny = [
     ...new Set([
-      ...(settings.permissions.deny ?? []),
+      ...(settings.permissions.deny ?? []).filter(rule => rule !== `Read(/${database}*)`),
       `Read(/${join(configDir, 'service.env')})`,
       `Read(/${join(configDir, '*.json')})`,
       `Read(/${configDir}/**)`,
-      `Read(/${database}*)`,
       `Edit(/${join(root, 'releases')}/**)`,
       `Edit(/${join(root, 'current')}/**)`,
       `Write(/${join(root, 'releases')}/**)`,

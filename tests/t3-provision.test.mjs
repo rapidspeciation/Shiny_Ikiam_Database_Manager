@@ -70,30 +70,10 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     // The claude.ai account's connectors (Claude Docs…) are not loaded in the chats.
     assert.equal(settings.env.ENABLE_CLAUDEAI_MCP_SERVERS, 'false');
     assert.ok(JSON.parse(readFileSync(join(home, '.claude.json'), 'utf8')).projects[workspace].hasTrustDialogAccepted);
-    // Shell commands naming the secrets or the database are stopped by the guard hook; gog.env may be sourced.
-    const [hook] = settings.hooks.PreToolUse;
-    assert.equal(hook.matcher, 'Bash|Write|Edit|MultiEdit|NotebookEdit');
-    const guard = (command, input = { command }) => {
-      try {
-        execFileSync('sh', ['-c', hook.hooks[0].command], { input: JSON.stringify({ tool_input: input }), env: { ...env, HOME: home }, encoding: 'utf8', stdio: 'pipe' });
-        return 'allowed';
-      } catch (error) {
-        assert.equal(error.status, 2, error.stderr);
-        assert.match(error.stderr, /Blocked/);
-        return 'blocked';
-      }
-    };
-    assert.equal(guard('grep -iE sheet ~/.config/ithomiini/service.env'), 'blocked');
-    assert.equal(guard('ls $HOME/.config/ithomiini'), 'blocked');
-    assert.equal(guard(`python3 -c "import sqlite3; sqlite3.connect('${join(shared, 'database.sqlite')}')"`), 'blocked');
-    assert.equal(guard('cd ~ && cat .config/ithomiini/gog.env'), 'blocked');
-    assert.equal(guard('set -a; . ~/.config/ithomiini/gog.env; set +a; gog --readonly gmail search x'), 'allowed');
-    assert.equal(guard('python3 crops.py photo.jpg --out work/2026-09-30-posturas'), 'allowed');
-    // A script with the database's path in it, written to run later.
-    const dbFile = join(shared, 'database.sqlite');
-    assert.equal(guard(null, { file_path: 'work/build.py', content: `sqlite3.connect('${dbFile}')` }), 'blocked');
-    assert.equal(guard(null, { file_path: 'work/build.py', old_string: 'x', new_string: `'${dbFile}'` }), 'blocked');
-    assert.equal(guard(null, { file_path: 'work/notes.md', content: 'the lines of page 3' }), 'allowed');
+    // Chats may write and run their own scripts, the database included: no guard hook, no deny on it.
+    assert.equal(settings.hooks, undefined);
+    assert.ok(!existsSync(join(workspace, '.claude', 'hooks')));
+    assert.ok(!settings.permissions.deny.some(rule => rule.includes('database.sqlite')));
 
     // Codex (GPT threads): the same brief (AGENTS.md), skills and MCP server with the same token.
     assert.match(readFileSync(join(workspace, '.agents', 'skills', 'digitalizar-cuaderno', 'SKILL.md'), 'utf8'), /name: digitalizar-cuaderno/);
@@ -111,7 +91,19 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     // A stale file of an old skill version, a person's own setting, a workspace of a user who left.
     writeFileSync(join(workspace, '.claude', 'skills', 'digitalizar-cuaderno', 'old.md'), 'x');
     writeFileSync(join(workspace, '.claude', 'agents', 'old-agent.md'), 'x');
-    writeFileSync(join(workspace, '.claude', 'settings.json'), JSON.stringify({ ...settings, model: 'opus' }));
+    // An older release's guard hook and database deny, beside a hook of the person's own.
+    const oldGuard = { matcher: 'Bash', hooks: [{ type: 'command', command: "node '.claude/hooks/guard-bash.mjs'" }] };
+    const ownHook = { matcher: 'Bash', hooks: [{ type: 'command', command: 'echo mine' }] };
+    writeFileSync(
+      join(workspace, '.claude', 'settings.json'),
+      JSON.stringify({
+        ...settings,
+        model: 'opus',
+        hooks: { PreToolUse: [oldGuard, ownHook] },
+        permissions: { ...settings.permissions, deny: [...settings.permissions.deny, `Read(/${join(shared, 'database.sqlite')}*)`] },
+      }),
+    );
+    mkdirSync(join(workspace, '.claude', 'hooks'), { recursive: true });
     mkdirSync(join(shared, 't3-workspaces', 'old'), { recursive: true });
     writeFileSync(join(workspace, 'AGENTS.md'), 'outdated');
     rmSync(join(workspace, 'CLAUDE.md'));
@@ -133,7 +125,10 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     assert.ok(existsSync(join(workspace, '.claude', 'agents', 'notebook-reader.md')));
     assert.equal(JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8')).mcpServers.ithomiini.headers.Authorization, mcp.headers.Authorization, 'the token is kept');
     assert.equal(JSON.parse(readFileSync(join(workspace, '.claude', 'settings.json'), 'utf8')).model, 'opus');
-    assert.equal(JSON.parse(readFileSync(join(workspace, '.claude', 'settings.json'), 'utf8')).hooks.PreToolUse.length, 1, 'the guard once');
+    const refreshed = JSON.parse(readFileSync(join(workspace, '.claude', 'settings.json'), 'utf8'));
+    assert.deepEqual(refreshed.hooks.PreToolUse, [ownHook], 'the old guard out, the person\'s own hook kept');
+    assert.ok(!refreshed.permissions.deny.some(rule => rule.includes('database.sqlite')), 'the database readable again');
+    assert.ok(!existsSync(join(workspace, '.claude', 'hooks')));
     assert.equal(db.prepare('SELECT count(*) n FROM ai_tokens WHERE revoked_at IS NULL').get().n, 1);
     assert.equal(readFileSync(join(workspace, '.codex', 'config.toml'), 'utf8'), codex, 'Codex keeps the token too');
     assert.equal(readFileSync(join(home, '.codex', 'config.toml'), 'utf8'), trusted, 'the workspace is trusted once');
@@ -187,7 +182,7 @@ test('Another install (the local lab) sets the database, MCP address, workspaces
     assert.match(appDev, /^---\nname: app-dev\n[\s\S]*?\n---\n\n> \*\*Lab copy\.\*\*[^\n]*\n>\n> This is the \*\*local test lab\*\*/);
     assert.match(appDev, /> the checks, restart the lab app/);
     const deny = JSON.parse(readFileSync(join(workspace, '.claude', 'settings.json'), 'utf8')).permissions.deny;
-    assert.ok(deny.includes(`Read(/${database}*)`));
+    assert.ok(!deny.includes(`Read(/${database}*)`));
     assert.ok(deny.includes(`Read(/${lab}/**)`) && deny.includes('Read(//secret/answers/**)'));
     assert.ok(deny.includes('Bash(scripts/deploy.sh:*)'), 'the lab never deploys');
     assert.equal(db.prepare('SELECT count(*) n FROM ai_tokens WHERE revoked_at IS NULL').get().n, 1);
