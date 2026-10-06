@@ -8,7 +8,7 @@ import { checkData, freshIssues } from './checks.mjs';
 import { agreedFixes, markApplied } from './review.mjs';
 import { CERTAINTIES, allSuggestions, suggestionPage } from './suggestions/index.mjs';
 import { formulaGroup } from './suggestions/formulas.mjs';
-import { alerts } from './alerts.mjs';
+import { freshAlerts } from './alerts.mjs';
 import { msg, tpl, withoutMsgs } from './messages.mjs';
 import { columnKeys, columnOf, comparable, isSumField, labelFor, moduleMap, simpleSum, validateValues, withColumnNames } from './schema.mjs';
 import { TUBE_FIELD, isIdValue, isUnique } from './verifications.mjs';
@@ -3859,7 +3859,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         context.sources.set(s.recordId, { id: s.recordId, type: 'record', sheet: s.sheet, row: s.row, label: s.label });
       return { ...withoutMsgs(out), certainties: CERTAINTIES };
     }
-    if (name === 'get_alerts') return withoutMsgs(alerts(store));
+    if (name === 'get_alerts') return withoutMsgs(await freshAlerts(store));
     if (name === 'match_notebook') return withGoogle(await matchNotebook(args, context));
     if (HISTORY_TOOL_NAMES.has(name)) return runHistoryTool(store, name, args, context, { publicUrl: config.publicUrl });
     if (name === 'apply_proposal') {

@@ -68,7 +68,10 @@ export const CERTAINTIES = ['certain', 'likely', 'check'];
 /** In the order they are listed. */
 const SOURCES = [checkFixes, spaces, formulas, dates, tubes, twins, pedigree, wikilocTransects];
 
-/** Adds a source (see the header); its id must be new. */
+/**
+ * Adds a source (see the header); its id must be new. The app computes the suggestions in a worker
+ * thread (server/checks-host.mjs), which loads this module afresh: a source the app lists is in SOURCES.
+ */
 export function registerSource(source) {
   if (!/^\w+$/.test(source?.id ?? '') || typeof source.suggest !== 'function')
     throw new Error('A suggestion source needs an id (letters, digits, _) and suggest(ctx)');
@@ -144,34 +147,29 @@ async function compute(store) {
   return { items, timings };
 }
 
-/** Every suggestion, computed again only when the local copy, the day or a source's own data changed. */
+/** The state of what the suggestions read: the local copy, the day and each source's own data. */
+export const suggestionsStamp = store =>
+  [recordsStamp(store), todaySerial(), ...SOURCES.map(s => s.revision?.(store) ?? '')].join(':');
+
+/**
+ * Every suggestion, computed again only when the local copy, the day or a source's own data
+ * changed: { stamp, items, computedAt, ms, timings }. In the app they are computed in the
+ * Revisión worker thread (server/checks-host.mjs), so people's requests are answered meanwhile.
+ */
 export async function allSuggestions(store) {
-  const stamp = [recordsStamp(store), todaySerial(), ...SOURCES.map(s => s.revision?.(store) ?? '')].join(':');
+  const runner = runners.get(store);
+  return runner ? runner.fresh() : suggestionsHere(store);
+}
+/** The same, computed here in this thread (the worker, the tests, the app when the worker cannot). */
+export async function suggestionsHere(store) {
+  const stamp = suggestionsStamp(store);
   const hit = cache.get(store);
   if (hit?.stamp === stamp) return hit.ready ?? hit.promise;
   const entry = { stamp };
   entry.promise = (async () => {
     const started = Date.now();
     const { items, timings } = await compute(store);
-    const computedAt = new Date().toISOString();
-    trackFindings(
-      store,
-      'suggestion',
-      items.map(s => ({
-        key: s.key,
-        kind: s.source,
-        sheet: s.sheet,
-        row: s.row,
-        recordId: s.recordId,
-        field: s.field,
-        label: s.label,
-        value: { current: s.current, suggested: s.suggested, certainty: s.certainty },
-        text: s.reason,
-        textMsg: s.reasonMsg,
-      })),
-      { at: computedAt },
-    );
-    entry.ready = { stamp, items, computedAt, ms: Date.now() - started, timings };
+    entry.ready = keepSuggestions(store, { stamp, items, computedAt: new Date().toISOString(), ms: Date.now() - started, timings });
     return entry.ready;
   })();
   cache.set(store, entry);
@@ -181,6 +179,44 @@ export async function allSuggestions(store) {
     if (cache.get(store) === entry) cache.delete(store);
     throw e;
   }
+}
+
+/**
+ * Suggestions as the app keeps them, found here or in the worker: those new and those gone go to
+ * «Resueltos» (server/findings.mjs); the cached answer while what they read is as it was.
+ */
+export function keepSuggestions(store, entry) {
+  trackFindings(
+    store,
+    'suggestion',
+    entry.items.map(s => ({
+      key: s.key,
+      kind: s.source,
+      sheet: s.sheet,
+      row: s.row,
+      recordId: s.recordId,
+      field: s.field,
+      label: s.label,
+      value: { current: s.current, suggested: s.suggested, certainty: s.certainty },
+      text: s.reason,
+      textMsg: s.reasonMsg,
+    })),
+    { at: entry.computedAt },
+  );
+  if (entry.stamp === suggestionsStamp(store)) cache.set(store, { stamp: entry.stamp, ready: entry });
+  return entry;
+}
+/** The kept suggestions when they are still up to date, else null. */
+export function cachedSuggestions(store) {
+  const hit = cache.get(store);
+  return hit?.ready && hit.stamp === suggestionsStamp(store) ? hit.ready : null;
+}
+
+/** Who computes the suggestions for the app's requests (server/checks-host.mjs: a worker thread), by store. */
+const runners = new WeakMap();
+export function useSuggestionsRunner(store, runner) {
+  if (runner) runners.set(store, runner);
+  else runners.delete(store);
 }
 
 const fail = (code, message, status = 400) => Object.assign(new Error(message), { code, status });

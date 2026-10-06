@@ -28,6 +28,33 @@ export function workerMode(store, config) {
 }
 
 /**
+ * Each sheet's columns as the last sync read them (store.layouts), for workers that read them
+ * (server/store-reader.mjs setLayouts): current() for a worker starting, and `post(changed)` after
+ * each sync with the sheets whose columns changed since. { current(), stop() }.
+ */
+export function layoutsFeed(store, post) {
+  const sent = new Map();
+  const key = layout => JSON.stringify({ ...layout, columns: [...(layout?.columns ?? [])] });
+  const stop = store.watchSyncs?.(() => {
+    const changed = [];
+    for (const [sheet, layout] of store.layouts ?? []) {
+      const k = key(layout);
+      if (sent.get(sheet) === k) continue;
+      sent.set(sheet, k);
+      changed.push([sheet, layout]);
+    }
+    if (changed.length) post(changed);
+  });
+  return {
+    current() {
+      for (const [sheet, layout] of store.layouts ?? []) sent.set(sheet, key(layout));
+      return [...(store.layouts ?? [])];
+    },
+    stop: () => stop?.(),
+  };
+}
+
+/**
  * One worker thread of a role, started when first needed: call(message) → its answer. `data()`:
  * what it starts with (workerData); `onMessage`: what it says besides its answers. `name`: how
  * the errors call it, `log`: the log.

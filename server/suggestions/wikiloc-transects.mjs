@@ -95,7 +95,7 @@ function tableRows(store, sheet) {
 }
 
 /** Changes whenever the sheet copy, the stored walks or the waiting walks change. */
-function stateOf(store) {
+export function analyseState(store) {
   const rows = store.db
     .prepare("SELECT count(*) n, max(updated_at) u FROM records WHERE sheet IN ('Collection_data','SamplingDay_data')")
     .get();
@@ -193,7 +193,7 @@ const cache = new WeakMap();
  * walks or the waiting walks change.
  */
 export function analyse(store) {
-  const state = stateOf(store);
+  const state = analyseState(store);
   const hit = cache.get(store);
   if (hit?.state === state) return hit.result;
   const result = build(store);

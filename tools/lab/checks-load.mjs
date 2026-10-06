@@ -1,15 +1,19 @@
 #!/usr/bin/env node
-// How long people wait while the Revisión checks scan the whole local copy (server/checks.mjs,
-// about 1.6 s on the team's 107k rows), in the app's thread (--mode inline, as before) and in the
-// checks' worker (--mode worker, server/checks-host.mjs). A copy of the lab app's database
+// How long people wait while the app works over the whole local copy: the Revisión checks
+// (server/checks.mjs), the suggested edits (server/suggestions/), the alerts (server/alerts.mjs) and
+// Inicio's summaries (server/summary.mjs), a second or so each on the team's 107k rows, in the app's thread (--mode inline, as before) and
+// in the Revisión worker (--mode worker, server/checks-host.mjs). A copy of the lab app's database
 // ($LAB/app/app.sqlite, or --db) opened by a Store as the app opens it, and timed with
 // - the longest stretch the event loop got no turn and its p99 delay as /health reports it,
 // - a "person": a row read and a save of a cell every 100 ms (each save changes the copy),
-// for: a page asking for the issues after a restart (nothing scanned yet), after a data change,
-// and pages asking every 250 ms for 5 s while the person saves. Then, with no one saving, the
-// worker's issues are compared with a scan in the app's thread of the same copy.
-//   node tools/lab/checks-load.mjs                 both modes, one after the other
-//   node tools/lab/checks-load.mjs --mode worker   one mode
+// for each of them (--kinds, default alerts,issues,suggestions,summary): a page asking for it after a
+// restart (nothing done yet), after a data change, and pages asking every 250 ms for 5 s while the
+// person saves. Then, with no one saving, the worker's results are compared with the same work in
+// the app's thread on the same copy.
+// --mode checks-only: only the checks in the worker (as before the others moved).
+//   node tools/lab/checks-load.mjs                          the three modes, one after the other
+//   node tools/lab/checks-load.mjs --mode worker            one mode
+//   node tools/lab/checks-load.mjs --kinds suggestions      one kind
 import { spawnSync } from 'node:child_process';
 import { deepStrictEqual } from 'node:assert';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -26,11 +30,12 @@ const option = (name, fallback) => {
 };
 const MODE = option('--mode', 'both');
 const SOURCE = option('--db', labPath('app', 'app.sqlite'));
+const KINDS = option('--kinds', 'alerts,issues,suggestions,summary').split(',');
 
 if (MODE === 'both') {
   // Each mode in its own process, on its own copy: nothing kept from the other.
   const rest = argv.filter((a, i) => a !== '--mode' && argv[i - 1] !== '--mode');
-  for (const mode of ['inline', 'worker']) {
+  for (const mode of ['inline', 'checks-only', 'worker']) {
     const run = spawnSync(process.execPath, [fileURLToPath(import.meta.url), '--mode', mode, ...rest], { stdio: 'inherit' });
     if (run.status) process.exit(run.status);
   }
@@ -39,6 +44,9 @@ if (MODE === 'both') {
 
 const { Store } = await import('../../server/store.mjs');
 const { allIssues, freshIssues } = await import('../../server/checks.mjs');
+const { allSuggestions, useSuggestionsRunner } = await import('../../server/suggestions/index.mjs');
+const { alertsEntry, freshAlerts, useAlertsRunner } = await import('../../server/alerts.mjs');
+const { freshSummary, summaryHere, useSummaryRunner } = await import('../../server/summary.mjs');
 const { createChecksHost } = await import('../../server/checks-host.mjs');
 const { watchEventLoop } = await import('../../server/event-loop.mjs');
 
@@ -59,8 +67,14 @@ source.close();
 console.log(`[${MODE}] copy of ${SOURCE}: ${ms(performance.now() - s)}`);
 
 const store = new Store({ databasePath, localMode: true }, {});
-const host = MODE === 'worker' ? createChecksHost({ store, config: {} }) : null;
-if (MODE === 'worker' && host.mode !== 'worker') throw new Error(`No worker: ${host.status().why}`);
+const host = MODE === 'inline' ? null : createChecksHost({ store, config: {} });
+if (host && host.mode !== 'worker') throw new Error(`No worker: ${host.status().why}`);
+if (MODE === 'checks-only') {
+  // As before the suggested edits, the alerts and the summaries moved too: only the checks in the worker.
+  useSuggestionsRunner(store, null);
+  useAlertsRunner(store, null);
+  useSummaryRunner(store, null);
+}
 
 // The longest stretch the event loop got no turn (a 1 ms timer that keeps asking).
 let longest = 0;
@@ -125,31 +139,58 @@ async function measure(what, fn) {
   return out;
 }
 
-const first = await measure('a page after a restart (nothing scanned yet)', () => freshIssues(store));
-console.log(`  ${first.issues.length} issues`);
-save();
-await measure('a page after a data change', () => freshIssues(store));
-await measure('pages every 250 ms for 5 s, the person saving', async () => {
-  const asked = [];
-  const until = performance.now() + 5000;
-  while (performance.now() < until) {
-    const at = performance.now();
-    asked.push(freshIssues(store).then(() => performance.now() - at));
-    await sleep(250);
-  }
-  const waited = await Promise.all(asked);
-  console.log(`  pages (${waited.length}): median ${ms(quantile(waited, 0.5))}, max ${ms(Math.max(...waited))}`);
-});
+/** What a page asks for each kind, and how many it got. */
+const ask = {
+  alerts: () => freshAlerts(store),
+  issues: () => freshIssues(store),
+  suggestions: () => allSuggestions(store),
+  summary: () => freshSummary(store, { signedIn: true }),
+};
+const size = {
+  alerts: a => `${a.alerts.length} alerts`,
+  issues: e => `${e.issues.length} issues`,
+  suggestions: e => `${e.items.length} suggestions`,
+  summary: s => `summaries of ${s.today}`,
+};
+for (const kind of KINDS) {
+  const first = await measure(`${kind}: a page after a restart (nothing done yet)`, ask[kind]);
+  console.log(`  ${size[kind](first)}`);
+  save();
+  await measure(`${kind}: a page after a data change`, ask[kind]);
+  await measure(`${kind}: pages every 250 ms for 5 s, the person saving`, async () => {
+    const asked = [];
+    const until = performance.now() + 5000;
+    while (performance.now() < until) {
+      const at = performance.now();
+      asked.push(ask[kind]().then(() => performance.now() - at));
+      await sleep(250);
+    }
+    const waited = await Promise.all(asked);
+    console.log(`  pages (${waited.length}): median ${ms(quantile(waited, 0.5))}, max ${ms(Math.max(...waited))}`);
+  });
+}
 
-if (MODE === 'worker') {
-  // The same copy, nobody saving: the worker's issues and a scan here, side by side.
+if (MODE !== 'inline') {
+  // The same copy, nobody saving: what the app got and the same work here, side by side.
   await sleep(200);
-  const fromWorker = await freshIssues(store);
   const here = new Store({ databasePath, localMode: true }, {});
-  const inline = allIssues(here);
-  deepStrictEqual(fromWorker.stamp, inline.stamp);
-  deepStrictEqual(fromWorker.issues, inline.issues);
-  console.log(`[${MODE}] the worker's ${fromWorker.issues.length} issues are the same as a scan in the app's thread`);
+  const timeless = ({ computedAt, ms, ...rest }) => rest;
+  const undated = ({ generatedAt, ...rest }) => rest;
+  for (const kind of KINDS) {
+    const got = await ask[kind]();
+    if (kind === 'issues') {
+      const inline = allIssues(here);
+      deepStrictEqual(got.stamp, inline.stamp);
+      deepStrictEqual(got.issues, inline.issues);
+    } else if (kind === 'alerts') deepStrictEqual(timeless(got), timeless(alertsEntry(here).value));
+    else if (kind === 'summary') deepStrictEqual(undated(got), undated(summaryHere(here, { signedIn: true })));
+    else {
+      const inline = await allSuggestions(here);
+      deepStrictEqual(got.stamp, inline.stamp);
+      deepStrictEqual(got.items, inline.items);
+    }
+    console.log(`[${MODE}] ${kind}: the app's ${size[kind](got)} are the same as found in the app's thread`);
+  }
   console.log(`[${MODE}] /health checks:`, JSON.stringify(host.status()));
   here.close();
 }

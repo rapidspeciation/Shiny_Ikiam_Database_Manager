@@ -1,13 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { moduleMap } from '../server/schema.mjs';
 import { allIssues } from '../server/checks.mjs';
 import { allSuggestions, registerSource, suggestionPage, suggestionsCsv } from '../server/suggestions/index.mjs';
 import { solvedFindings } from '../server/findings.mjs';
-import { alerts } from '../server/alerts.mjs';
+import { alerts, freshAlerts } from '../server/alerts.mjs';
+import { createChecksHost } from '../server/checks-host.mjs';
+import { freshSummary, summaryHere } from '../server/summary.mjs';
+import { freshCorrections, wikilocCorrections } from '../server/monitoring-export.mjs';
 import { createAssistant } from '../server/assistant.mjs';
 
 const EPOCH = Date.UTC(1899, 11, 30);
@@ -29,7 +35,7 @@ const cam = n => `CAM${String(78000 + n).padStart(6, '0')}`;
  * sex; a Collection row without the lookups of the rows above; a CAM range of
  * Lists nearly used up; and a species with 31 preserved at Ikiam.
  */
-async function fixture() {
+async function fixture({ databasePath } = {}) {
   const insectary = [];
   const pedigree = [];
   for (let i = 0; i < 60; i++) {
@@ -158,7 +164,7 @@ async function fixture() {
       `=XLOOKUP(D2, Insectary_data!A:A, Insectary_data!${letter}:${letter},"")`,
       field === 'Death_date' ? today - 1 : '',
     );
-  const store = new Store({ localMode: true }, { sheets });
+  const store = new Store({ localMode: true, ...(databasePath ? { databasePath } : {}) }, { sheets });
   await store.sync({ sheets: ['Insectary_data', 'Collection_data', 'F1/F2_MutationRate', 'SamplingDay_data', 'Lists'] });
   store.db
     .prepare(
@@ -331,6 +337,106 @@ test('the assistant reads the suggestions and the alerts; neither writes anythin
   assert.ok(got.alerts.some(a => a.id === 'thirty:Oleria tigilla'));
   assert.equal(versions(), before);
   store.close();
+});
+
+/** The fixture on a database file, with the Revisión worker (server/checks-host.mjs). */
+async function inWorker(t, { workerUrl } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'suggestions-worker-'));
+  const databasePath = join(dir, 'app.sqlite');
+  const store = await fixture({ databasePath });
+  const host = createChecksHost({ store, config: { databasePath, localMode: true }, ...(workerUrl ? { workerUrl } : {}) });
+  t.after(() => {
+    host.close();
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  /** The same file computed in this thread: another store, with the sheets' columns the app read. */
+  const here = () => {
+    const other = new Store({ databasePath, localMode: true }, {});
+    other.layouts = new Map(store.layouts);
+    t.after(() => other.close());
+    return other;
+  };
+  return { store, host, here };
+}
+const timeless = ({ computedAt, ms, ...rest }) => rest;
+
+test('the suggested edits and the alerts in the Revisión worker: the same as here, kept until the copy changes', async t => {
+  const { store, host, here } = await inWorker(t);
+  assert.equal(host.mode, 'worker');
+  const [found, warned] = await Promise.all([allSuggestions(store), freshAlerts(store)]);
+  const other = here();
+  const inline = await allSuggestions(other);
+  assert.equal(found.stamp, inline.stamp);
+  assert.deepEqual(found.items, inline.items);
+  assert.ok(['tubes', 'twins', 'pedigree', 'dates'].every(source => found.items.some(s => s.source === source)));
+  assert.deepEqual(timeless(warned), timeless(alerts(other)));
+  assert.ok(warned.alerts.some(a => a.id === 'thirty:Oleria tigilla'));
+  // The app wrote the suggestions' first seen (the worker cannot write).
+  const open = () => store.db.prepare("SELECT count(*) n FROM findings WHERE type='suggestion' AND solved_at IS NULL").get().n;
+  assert.equal(open(), found.items.length);
+  // Kept while the copy is as computed: no second run.
+  assert.equal(await allSuggestions(store), found);
+  assert.equal(await freshAlerts(store), warned);
+  assert.equal((await suggestionPage(store, { source: 'tubes' })).total, 3);
+  assert.equal(host.status().suggestions.runs, 1);
+  assert.equal(host.status().alerts.runs, 1);
+
+  // A change: the wild butterfly's sex agrees with its collection row, and a CAM is used.
+  const user = { id: 'u1', username: 'ana', role: 'editor', displayName: 'Ana' };
+  const k1a = found.items.find(s => s.source === 'twins').recordId;
+  const q2a = store.getRecordBySheetRow('Insectary_data', 63).id;
+  await store.applyProposal(
+    [
+      { recordId: k1a, values: { Sex: 'female' } },
+      { recordId: q2a, values: { CAM_ID: cam(61) } },
+    ],
+    { user, requestId: randomUUID() },
+  );
+  const [after, warnedAfter] = await Promise.all([allSuggestions(store), freshAlerts(store)]);
+  assert.notEqual(after.stamp, found.stamp);
+  assert.ok(!after.items.some(s => s.source === 'twins'));
+  assert.equal(warnedAfter.camPools.find(p => p.pool === 'InsectaryWild&Reared_CAMid').ranges[0].used, 62);
+  assert.deepEqual(after.items, (await allSuggestions(here())).items);
+  // «Resueltos»: the suggestion the change solved, with who solved it.
+  assert.ok(solvedFindings(store, { type: 'suggestion' }).items.some(i => i.kind === 'twins' && i.solved.user === 'Ana'));
+  assert.equal(host.status().suggestions.runs, 2);
+  assert.equal(host.status().alerts.runs, 2);
+});
+
+test("Inicio's summaries and Monitoreo's Wikiloc corrections in the worker: the same as here; visitors see no team counts", async t => {
+  const { store, host, here } = await inWorker(t);
+  const other = here();
+  const undated = ({ generatedAt, ...rest }) => rest;
+  const signedIn = await freshSummary(store, { signedIn: true });
+  assert.deepEqual(undated(signedIn), undated(summaryHere(other, { signedIn: true })));
+  assert.ok(signedIn.team && signedIn.nature);
+  const visitor = await freshSummary(store, { signedIn: false });
+  assert.equal(visitor.team, null);
+  assert.deepEqual(visitor.nature, signedIn.nature);
+  assert.equal(host.status().summary.runs, 1);
+  assert.deepEqual(await freshCorrections(store), wikilocCorrections(other));
+  assert.equal(host.status().corrections.runs, 1);
+  // A collection row changes what both read.
+  const user = { id: 'u1', username: 'ana', role: 'editor', displayName: 'Ana' };
+  const row = store.getRecordBySheetRow('Collection_data', 40);
+  await store.applyProposal([{ recordId: row.id, values: { Collection_location: 'Ikiam' } }], { user, requestId: randomUUID() });
+  assert.deepEqual(undated(await freshSummary(store, { signedIn: true })), undated(summaryHere(here(), { signedIn: true })));
+  assert.deepEqual(await freshCorrections(store), wikilocCorrections(here()));
+  assert.equal(host.status().summary.runs, 2);
+  assert.equal(host.status().corrections.runs, 2);
+});
+
+test('a Revisión worker that fails: the suggested edits and the alerts are found in the app instead', async t => {
+  const crash = new URL('./fixtures/checks-worker-crash.mjs', import.meta.url);
+  const { store } = await inWorker(t, { workerUrl: crash });
+  const errors = t.mock.method(console, 'error', () => {});
+  const found = await allSuggestions(store);
+  assert.equal(found.items.filter(s => s.source === 'tubes').length, 3);
+  const warned = await freshAlerts(store);
+  assert.ok(warned.alerts.some(a => a.id === 'thirty:Oleria tigilla'));
+  assert.ok(errors.mock.calls.some(c => /\(suggestions\).*done in the app instead/.test(c.arguments.join(' '))));
+  assert.ok(errors.mock.calls.some(c => /\(alerts\).*done in the app instead/.test(c.arguments.join(' '))));
 });
 
 test('a new source plugs into the registry; a malformed one is refused', async () => {

@@ -7,6 +7,7 @@ import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { allIssues, cachedIssues, freshIssues, readyIssues } from '../server/checks.mjs';
 import { createChecksHost } from '../server/checks-host.mjs';
+import { layoutsFeed } from '../server/worker-slot.mjs';
 import { createApp } from '../server/index.mjs';
 
 // The Revisión checks' scan in a worker thread (server/checks-host.mjs), on a database file: the
@@ -109,7 +110,7 @@ test('a checks worker that fails: the scan runs in the app instead', async t => 
   const errors = t.mock.method(console, 'error', () => {});
   const found = await freshIssues(store);
   assert.ok(repeats(found).includes('FD30881999'));
-  assert.ok(errors.mock.calls.some(c => /scanned in the app instead/.test(c.arguments.join(' '))));
+  assert.ok(errors.mock.calls.some(c => /done in the app instead/.test(c.arguments.join(' '))));
 });
 
 test('the app serves Revisión from the checks worker and says so on /health', async t => {
@@ -143,7 +144,35 @@ test('the app serves Revisión from the checks worker and says so on /health', a
     .join('; ');
   const checks = await (await fetch(`${base}/api/checks?kind=repeat`, { headers: { cookie } })).json();
   assert.ok(checks.issues.some(i => i.value === 'FD30881999'));
+  const alerts = await (await fetch(`${base}/api/alerts`, { headers: { cookie } })).json();
+  assert.ok(Array.isArray(alerts.alerts) && alerts.camPools && alerts.preserveRule);
+  const suggested = await (await fetch(`${base}/api/suggested-edits`, { headers: { cookie } })).json();
+  assert.ok(Array.isArray(suggested.items) && suggested.sources.length);
   const health = await (await fetch(`${base}/health`)).json();
   assert.equal(health.checks.mode, 'worker');
   assert.ok(health.checks.scans >= 1);
+  assert.ok(health.checks.alerts.runs >= 1);
+  assert.ok(health.checks.suggestions.runs >= 1);
+});
+
+test('the workers get each sheet’s columns at their start, and those a sync changed', () => {
+  let synced = null;
+  const store = { layouts: new Map([['Insectary_data', { columns: ['A', 'B'] }]]), watchSyncs: fn => ((synced = fn), () => (synced = null)) };
+  const posted = [];
+  const feed = layoutsFeed(store, changed => posted.push(changed));
+  assert.deepEqual(feed.current(), [['Insectary_data', { columns: ['A', 'B'] }]]);
+  // A sync that read the same columns: nothing to send.
+  synced();
+  assert.deepEqual(posted, []);
+  store.layouts.set('Insectary_data', { columns: ['A', 'B', 'C'] });
+  store.layouts.set('Clutches', { columns: ['X'] });
+  synced();
+  assert.deepEqual(posted, [
+    [
+      ['Insectary_data', { columns: ['A', 'B', 'C'] }],
+      ['Clutches', { columns: ['X'] }],
+    ],
+  ]);
+  feed.stop();
+  assert.equal(synced, null);
 });

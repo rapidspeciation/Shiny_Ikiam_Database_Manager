@@ -179,14 +179,27 @@ node tools/lab/sync-load.mjs                       # each step's time, longest b
 node tools/lab/sync-load.mjs --profile /tmp/prof   # also a CPU profile of each step
 ```
 
-The Revisión checks scan the whole copy (a second or two) in their own worker
-thread (`server/checks-host.mjs`); the app keeps the last result while the copy
-is unchanged. To measure it on a copy of the lab app's database, in the app's
-thread and then in the worker (a page after a restart, after a change, pages
-asking while someone saves every 100 ms), and to compare the two results:
+The Revisión checks, the suggested edits, the alerts, Inicio's summaries and
+Monitoreo's Wikiloc corrections read the whole copy (a second or two each) in
+one worker thread (`server/checks-host.mjs`); the app keeps each last result
+while the copy is unchanged. To measure them on a copy of the lab app's
+database, in the app's thread, with only the checks in the worker (as before
+the others moved) and all in the worker (a page after a restart, after a
+change, pages asking while someone saves every 100 ms), and to compare the
+results:
 
 ```sh
 node tools/lab/checks-load.mjs                     # each step's time, longest block, p99 lag, a person's waits
+node tools/lab/checks-load.mjs --mode worker --kinds summary
+```
+
+To find the requests of the main pages that still hold up everyone else (each
+asked a first time, after a save in Insectary_data, and again; the longest
+stretch the app answered no one), on the whole app over HTTP:
+
+```sh
+node tools/lab/pages-load.mjs                      # every page; those over 200 ms listed at the end
+node tools/lab/pages-load.mjs --only table,emerged --over 100 --sheet Collection_data
 ```
 
 ## Cases

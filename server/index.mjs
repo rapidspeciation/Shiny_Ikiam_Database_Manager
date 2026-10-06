@@ -7,7 +7,8 @@ import { join, resolve, extname, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 import { backup } from 'node:sqlite';
-import { brotliCompressSync, constants as zlib, gzipSync } from 'node:zlib';
+import { brotliCompressSync, constants as zlib, gzip, gzipSync } from 'node:zlib';
+import { promisify } from 'node:util';
 import { Store } from './store.mjs';
 import { copyBeside } from './replica.mjs';
 import { applyBatch } from './batch.mjs';
@@ -35,8 +36,8 @@ import {
   linkCapture,
   storeReviewedWalk,
 } from './monitoring.mjs';
-import { monitoringRowsCsv, pointsCsv, walksGpx, wikilocCorrections } from './monitoring-export.mjs';
-import { idSuggestions, tableChanges, tablePayload, tableRevision } from './grid.mjs';
+import { freshCorrections, monitoringRowsCsv, pointsCsv, walksGpx } from './monitoring-export.mjs';
+import { idSuggestions, tableChanges, tableRevision, tableText } from './grid.mjs';
 import { holdId, releaseHold } from './holds.mjs';
 import { searchAll, searchRange } from './search.mjs';
 import { extendPremadeRows } from './premade.mjs';
@@ -68,7 +69,7 @@ import {
 import { createSheetHook } from './hooks.mjs';
 import { createInvitations, mailerFromEnv } from './invitations.mjs';
 import { createPasswordResets } from './passwordReset.mjs';
-import { createSummary } from './summary.mjs';
+import { freshSummary } from './summary.mjs';
 import { applyIdChange, planIdChange } from './insectaryId.mjs';
 import { UNIQUE, TUBE_FIELD } from './verifications.mjs';
 import { CHECK_KINDS, checkData, freshIssues } from './checks.mjs';
@@ -76,7 +77,7 @@ import { createChecksHost } from './checks-host.mjs';
 import { reviewPage, setVerdicts, trainingLabels, verdictHistory } from './review.mjs';
 import { allSuggestions, suggestionPage, suggestionSources, suggestionsCsv } from './suggestions/index.mjs';
 import { solvedFindings } from './findings.mjs';
-import { alerts } from './alerts.mjs';
+import { freshAlerts } from './alerts.mjs';
 import { createInstructions } from './instructions.mjs';
 import { createPhotoService, photoCacheDir } from './photos.mjs';
 import { CHUNK_MAX, clutchPhotoDir, createClutchPhotos } from './clutch-photos.mjs';
@@ -102,6 +103,7 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const webRoot = resolve(here, '../web');
 const now = () => new Date().toISOString();
+const gzipAsync = promisify(gzip);
 const fail = (code, message, status = 400, details) => Object.assign(new Error(message), { code, status, details });
 const json = (res, status, value, headers = {}) => send(res, status, JSON.stringify(value), headers);
 /**
@@ -425,7 +427,7 @@ export async function createApp(config = {}, options = {}) {
     const { createAssistantHost } = await import(new URL('./assistant-host.mjs', import.meta.url).href);
     assistant = createAssistantHost({ store, config });
   }
-  // The Revisión checks' whole scan in a worker thread where it can (server/checks-host.mjs).
+  // The Revisión checks' whole scan, the suggested edits, the alerts, Inicio's summaries and the Wikiloc corrections in a worker thread where it can (server/checks-host.mjs).
   const checks = createChecksHost({ store, config });
   // Each person's own T3 project, made when missing (server/t3projects.mjs).
   const t3Projects = createT3Projects({
@@ -438,7 +440,6 @@ export async function createApp(config = {}, options = {}) {
   const eventLoop = watchEventLoop();
   const tableCache = new Map();
   const sheetHook = createSheetHook(store, { secret: config.sheetHookSecret });
-  const summary = createSummary(store);
   // The AI instructions page: the assistant's brief, skills, subagents and tools with their history.
   const instructions = createInstructions({ tools: () => assistant?.tools?.() ?? [], ...options.instructions });
   const photos = createPhotoService(store, {
@@ -471,7 +472,7 @@ export async function createApp(config = {}, options = {}) {
       // `google`: whether the workbook answers (ok, slow, busy), saves waiting for it, entries kept in the app.
       // `eventLoop`: over the last minute, how late the server got to what was waiting (p99 and the longest).
       // `assistant`: where the AI's tool calls run (worker, inline, degraded), how many now, how often a worker was replaced.
-      // `checks`: where the Revisión checks run, how many scans and the last one's time.
+      // `checks`: where the Revisión checks, suggested edits, alerts, Inicio's summaries and the Wikiloc corrections run; how many runs and the last one's time (each).
       if (method === 'GET' && path === '/health')
         return json(res, 200, {
           status: 'ok',
@@ -582,7 +583,7 @@ export async function createApp(config = {}, options = {}) {
       }
       // The home page is open to visitors: natural-history summaries only (the team's
       // counts are added for signed-in people).
-      if (method === 'GET' && path === '/api/summary') return json(res, 200, summary.build({ signedIn: !!session }));
+      if (method === 'GET' && path === '/api/summary') return json(res, 200, await freshSummary(store, { signedIn: !!session }));
       // The invitation page is used before the person has an account.
       if (method === 'GET' && path === '/api/invitations/lookup')
         return json(res, 200, { invitation: invitations.lookup(url.searchParams.get('t')) });
@@ -726,11 +727,13 @@ export async function createApp(config = {}, options = {}) {
         }
         let cached = tableCache.get(module);
         if (cached?.revision !== revision) {
-          const text = JSON.stringify({ ...tablePayload(store, module), revision });
-          cached = { revision, text, gzipped: gzipSync(text) };
+          // Only the rows that changed are read again; compressed in zlib's threads, not the app's.
+          const text = tableText(store, module, revision);
+          const kept = (cached = { revision, text, gzipped: gzipAsync(text) });
+          kept.gzipped.catch(() => tableCache.get(module) === kept && tableCache.delete(module));
           tableCache.set(module, cached);
         }
-        return send(res, 200, cached.text, { etag, 'cache-control': 'no-cache' }, cached.gzipped);
+        return send(res, 200, cached.text, { etag, 'cache-control': 'no-cache' }, await cached.gzipped);
       }
       if (method === 'GET' && path === '/api/table/changes')
         return json(res, 200, tableChanges(store, String(query.module || ''), query.since));
@@ -907,7 +910,7 @@ export async function createApp(config = {}, options = {}) {
         return json(res, 200, { ...solvedFindings(store, query), titles });
       }
       // CAM pools running out and the 30-preserved rule (server/alerts.mjs): for the team (Inicio, Revisión).
-      if (method === 'GET' && path === '/api/alerts') return json(res, 200, alerts(store));
+      if (method === 'GET' && path === '/api/alerts') return json(res, 200, await freshAlerts(store));
       // Verdicts on what models read from the photos, kept as training labels.
       if (method === 'GET' && path === '/api/review/labels') {
         requireEditor(user);
@@ -1073,7 +1076,7 @@ export async function createApp(config = {}, options = {}) {
       }
       if (method === 'GET' && path === '/api/monitoring/tracks') return sendTagged(res, { tracks: listTracks(store, user) });
       // Monitoreo → Wikiloc: what the app holds, the corrections its points suggest, and the downloads (anyone signed in).
-      if (method === 'GET' && path === '/api/monitoring/wikiloc-data') return json(res, 200, wikilocCorrections(store));
+      if (method === 'GET' && path === '/api/monitoring/wikiloc-data') return json(res, 200, await freshCorrections(store));
       if (method === 'GET' && /^\/api\/monitoring\/export\/(rows\.csv|points\.csv|walks\.gpx)$/.test(path)) {
         const kind = path.split('/')[4];
         const walk = query.walk ? String(query.walk) : null;
@@ -1364,10 +1367,16 @@ export async function createApp(config = {}, options = {}) {
           return store.syncStatus;
         })
         .finally(() => store.outbox.kick());
-  // After a restart the first Revisión page finds the issues scanned already (in the worker: nobody waits for it).
+  // After a restart the first pages find Inicio's summaries and alerts, the issues and the suggested
+  // edits done already (in the worker: nobody waits for them).
   if (checks.mode === 'worker')
     ready.then(() => {
-      if (!store.closed) freshIssues(store).catch(e => store.closed || e.code === 'WORKER_CLOSED' || console.error('Checks:', e.message));
+      if (store.closed) return;
+      const said = e => store.closed || e.code === 'WORKER_CLOSED' || console.error('Checks:', e.message);
+      freshSummary(store, { signedIn: true }).catch(said);
+      freshAlerts(store).catch(said);
+      freshIssues(store).catch(said);
+      allSuggestions(store).catch(said);
     });
   // Saves kept while Google did not answer (before a restart too): written once it does.
   store.outbox.start(config.outboxCheckMs ?? undefined);

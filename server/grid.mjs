@@ -23,19 +23,64 @@ export function tablePayload(store, module) {
     )
     .all(module, mod.headerRow);
   const keys = mod.fields.map(f => f.key);
-  const layout = store.layouts.get(module);
+  return { ...tableHead(store, mod), rows: rows.map(r => wireRow(keys, r)), latest: latestUpdate(store, module) };
+}
+
+function tableHead(store, mod) {
+  const layout = store.layouts.get(mod.id);
   return {
-    module,
+    module: mod.id,
     // A field whose column is missing from the sheet shows its last known values, read-only.
     columns: mod.fields.map(({ column, ...field }) =>
       layout && !layout.blocked && !layout.columns.has(field.key)
         ? { ...field, readonly: true, unavailable: true }
         : field,
     ),
-    headerProblems: store.headerProblems.get(module) || [],
-    rows: rows.map(r => wireRow(keys, r)),
-    latest: latestUpdate(store, module),
+    headerProblems: store.headerProblems.get(mod.id) || [],
   };
+}
+
+/**
+ * tablePayload with `revision`, as JSON text (the grid's /api/table), made of each row's text
+ * kept while the row stays the same (version, time, place): after a save only the rows it
+ * touched are read and parsed again (the whole of Insectary_data took a third of a second).
+ */
+const rowTexts = new WeakMap();
+export function tableText(store, module, revision) {
+  const mod = moduleMap.get(module);
+  if (!mod) throw fail('MODULE_NOT_FOUND', 'Hoja desconocida', 404);
+  const states = store.db
+    .prepare(
+      'SELECT id,row_num,version,observed,updated_at FROM records WHERE sheet=? AND missing=0 AND row_num>? AND row_num<2000000000 ORDER BY row_num',
+    )
+    .all(module, mod.headerRow);
+  const sheets = rowTexts.get(store) ?? rowTexts.set(store, new Map()).get(store);
+  const before = sheets.get(module) ?? new Map();
+  const stateOf = r => `${r.version}:${r.updated_at}:${r.row_num}:${r.observed}`;
+  const keys = mod.fields.map(f => f.key);
+  const stale = states.filter(r => before.get(r.id)?.state !== stateOf(r));
+  const read = new Map();
+  // Many rows changed (a sync, the first time): the sheet in one pass; else each changed row.
+  if (stale.length > 500)
+    for (const r of store.db
+      .prepare('SELECT id,row_num,version,observed,values_json,formulas_json FROM records WHERE sheet=? AND missing=0 AND row_num>? AND row_num<2000000000')
+      .all(module, mod.headerRow))
+      read.set(r.id, r);
+  else {
+    const one = store.db.prepare('SELECT id,row_num,version,observed,values_json,formulas_json FROM records WHERE id=?');
+    for (const r of stale) read.set(r.id, one.get(r.id));
+  }
+  const now = new Map();
+  const texts = states.map(r => {
+    const state = stateOf(r);
+    let kept = before.get(r.id);
+    if (kept?.state !== state) kept = { state, text: JSON.stringify(wireRow(keys, read.get(r.id))) };
+    now.set(r.id, kept);
+    return kept.text;
+  });
+  sheets.set(module, now);
+  const head = JSON.stringify(tableHead(store, mod));
+  return `${head.slice(0, -1)},"rows":[${texts.join(',')}],"latest":${JSON.stringify(latestUpdate(store, module))},"revision":${JSON.stringify(revision)}}`;
 }
 
 /** One row as an array of values in column order, plus the indexes of formula cells. */
@@ -94,18 +139,55 @@ export function tableRevision(store, module) {
   return `${r.n}-${r.u}-${r.v}-${r.r}`;
 }
 
-function rowsOf(store, sheet) {
-  return store.db
-    .prepare(
-      'SELECT row_num,observed,values_json,formulas_json FROM records WHERE sheet=? AND missing=0 AND row_num>0 ORDER BY row_num',
-    )
-    .all(sheet)
-    .map(r => ({
-      row: r.row_num,
-      observed: Boolean(r.observed),
-      values: JSON.parse(r.values_json),
-      formulas: JSON.parse(r.formulas_json || '{}') || {},
-    }));
+/**
+ * Some columns of every row of a sheet: { id, row, observed, state, values } with `fields` in
+ * values (null when the cell has nothing; columns other callers asked for may be there too), the
+ * rows read-only and shared. SQLite reads the columns out of each row (a whole row parsed here
+ * costs several times more); each row's are kept while the row stays the same (version, time,
+ * place), the columns everyone asked for read together: the identifiers' answers read a few
+ * columns of many sheets, and a save changes a row or two of one of them.
+ */
+const picked = new WeakMap();
+function columnsOf(store, sheet, fields) {
+  const stamp = tableRevision(store, sheet);
+  const kept = picked.get(store) ?? picked.set(store, new Map()).get(store);
+  const hit = kept.get(sheet);
+  const known = hit && fields.every(f => hit.fields.has(f));
+  if (known && hit.stamp === stamp) return hit.rows;
+  const all = [...new Set([...(hit?.fields ?? []), ...fields])];
+  const before = known ? hit.byId : new Map();
+  const states = store.db
+    .prepare('SELECT id,row_num,observed,version,updated_at FROM records WHERE sheet=? AND missing=0 AND row_num>0 ORDER BY row_num')
+    .all(sheet);
+  const stateOf = r => `${r.version}:${r.updated_at}:${r.row_num}:${r.observed}`;
+  const stale = states.filter(r => before.get(r.id)?.state !== stateOf(r));
+  // Two paths at least, so SQLite answers a JSON array (one path answers the value as SQL: true as 1).
+  const paths = (all.length > 1 ? all : [all[0], all[0]]).map(f => `$."${f}"`);
+  const extract = `json_extract(values_json,${paths.map(() => '?').join(',')})`;
+  const read = new Map();
+  // Many rows changed (the first time, a sync): the sheet in one pass; else each changed row.
+  if (stale.length > 500)
+    for (const r of store.db
+      .prepare(`SELECT id,${extract} picked FROM records WHERE sheet=? AND missing=0 AND row_num>0`)
+      .all(...paths, sheet))
+      read.set(r.id, r.picked);
+  else {
+    const one = store.db.prepare(`SELECT ${extract} picked FROM records WHERE id=?`);
+    for (const r of stale) read.set(r.id, one.get(...paths, r.id).picked);
+  }
+  const byId = new Map();
+  const rows = states.map(r => {
+    const state = stateOf(r);
+    let row = before.get(r.id);
+    if (row?.state !== state) {
+      const values = JSON.parse(read.get(r.id));
+      row = { id: r.id, row: r.row_num, observed: Boolean(r.observed), state, values: Object.fromEntries(all.map((f, i) => [f, values[i]])) };
+    }
+    byId.set(r.id, row);
+    return row;
+  });
+  kept.set(sheet, { stamp, fields: new Set(all), rows, byId });
+  return rows;
 }
 
 /**
@@ -171,9 +253,38 @@ function computeIds(store, { kind, start, count, check } = {}) {
 }
 
 /**
+ * Whether anything besides its ID was typed in a pre-made row of Insectary_data (a cell that is
+ * not a formula): such a row is not offered. Each row is read once while it stays the same (its
+ * version and time): pre-made rows carry many formulas, and reading them all again after every
+ * save took most of the time. `done()` keeps what was read for the next time.
+ */
+const typedRows = new WeakMap();
+function typedInPremade(store) {
+  const before = typedRows.get(store) ?? new Map();
+  const now = new Map();
+  const read = store.db.prepare('SELECT values_json, formulas_json FROM records WHERE id = ?');
+  const typedIn = r => {
+    let kept = before.get(r.id);
+    if (kept?.state !== r.state) {
+      const row = read.get(r.id);
+      const values = JSON.parse(row.values_json);
+      const formulas = JSON.parse(row.formulas_json || '{}') || {};
+      const typed = Object.entries(values).some(
+        ([field, value]) => field !== 'Insectary_ID' && !formulas[field] && String(value ?? '').trim() !== '',
+      );
+      kept = { state: r.state, typed };
+    }
+    now.set(r.id, kept);
+    return kept.typed;
+  };
+  typedIn.done = () => typedRows.set(store, now);
+  return typedIn;
+}
+
+/**
  * The pre-made rows free in the sheets (claims aside), the last row used and the
  * last pre-made ID: reading every row of Insectary_data and the sheets naming IDs
- * takes half a second, so it is kept until one of those sheets changes (a tap's
+ * takes a while, so it is kept until one of those sheets changes (a tap's
  * hold, server/holds.mjs, changes only the claims laid over it).
  */
 const insectaryBases = new WeakMap();
@@ -181,23 +292,21 @@ function insectaryBase(store) {
   const stamp = ID_SHEETS.insectary().map(sheet => tableRevision(store, sheet)).join('|');
   const hit = insectaryBases.get(store);
   if (hit?.stamp === stamp) return hit;
-  const rows = rowsOf(store, 'Insectary_data');
+  const rows = columnsOf(store, 'Insectary_data', ['Insectary_ID']);
   const norm = value => String(value ?? '').trim().toUpperCase();
   const used = new Set(rows.filter(r => r.observed).map(r => norm(r.values.Insectary_ID)));
   for (const [sheet, fields] of Object.entries(REFERENCES))
-    for (const r of moduleMap.has(sheet) ? rowsOf(store, sheet) : [])
+    for (const r of moduleMap.has(sheet) ? columnsOf(store, sheet, fields) : [])
       for (const field of fields) if (!blank(r.values[field])) used.add(norm(r.values[field]));
   const copies = new Map();
   for (const r of rows) copies.set(norm(r.values.Insectary_ID), (copies.get(norm(r.values.Insectary_ID)) || 0) + 1);
   const lastObserved = rows.reduce((max, r) => (r.observed ? Math.max(max, r.row) : max), 0);
-  const typedIn = r =>
-    Object.entries(r.values).some(
-      ([field, value]) => field !== 'Insectary_ID' && !r.formulas[field] && String(value ?? '').trim() !== '',
-    );
+  const typedIn = typedInPremade(store);
   const free = rows.filter(r => {
     const id = norm(r.values.Insectary_ID);
     return !r.observed && id && !blank(id) && !used.has(id) && copies.get(id) === 1 && !typedIn(r);
   });
+  typedIn.done();
   const round = r => /^[A-ZÑ]\d([A-Z])$/.exec(norm(r.values.Insectary_ID))?.[1] ?? '';
   const lastPremade = rows.findLast(r => round(r))?.values.Insectary_ID;
   const out = { stamp, rows: free, lastObserved, lastPremade };
@@ -287,6 +396,9 @@ function usedAmong(used, check) {
   return { used: Object.fromEntries(values.filter(v => used.has(v)).map(v => [v, used.get(v)])) };
 }
 
+/** The columns holderOf reads. */
+const HOLDER_COLUMNS = ['Insectary_ID', 'CAM_ID', 'FieldMark_ID'];
+const CAM_COLUMNS = ['CAM_ID', 'CAM_ID_CollData', 'CAM_ID_insectary'];
 /** Where a used ID is: the first row holding it (sheet, row, the row's label). */
 const holderOf = (sheet, r) => ({
   sheet,
@@ -298,8 +410,8 @@ const holderOf = (sheet, r) => ({
 function usedCamIds(store) {
   const used = new Map();
   for (const sheet of ['Insectary_data', 'Collection_data'])
-    for (const r of rowsOf(store, sheet))
-      for (const key of ['CAM_ID', 'CAM_ID_CollData', 'CAM_ID_insectary']) {
+    for (const r of columnsOf(store, sheet, [...CAM_COLUMNS, ...HOLDER_COLUMNS]))
+      for (const key of CAM_COLUMNS) {
         const value = String(r.values[key] ?? '').trim();
         if (!blank(value) && !used.has(value)) used.set(value, holderOf(sheet, r));
       }
@@ -319,7 +431,7 @@ function usedTubeIds(store) {
   for (const mod of moduleMap.values()) {
     const keys = mod.fields.map(f => f.key).filter(k => TUBE_COLUMN.test(k) && !NOT_TUBE_COLUMN.test(k));
     if (!keys.length) continue;
-    for (const r of rowsOf(store, mod.id))
+    for (const r of columnsOf(store, mod.id, [...new Set([...keys, ...HOLDER_COLUMNS])]))
       for (const key of keys) {
         const value = String(r.values[key] ?? '').trim();
         if (BARCODE.test(value) && !used.has(value)) used.set(value, holderOf(mod.id, r));
@@ -369,7 +481,7 @@ function nextAfterRuns(items, used) {
 }
 
 function camSuggestions(store) {
-  const items = rowsOf(store, 'Insectary_data')
+  const items = columnsOf(store, 'Insectary_data', ['CAM_ID', 'Preservation_date', 'Intro2Insectary_date'])
     .filter(r => r.observed && !blank(r.values.CAM_ID))
     .map(r => ({
       id: r.values.CAM_ID,
@@ -414,7 +526,8 @@ function tubeSuggestions(store) {
     const m = blank(medium) || /^(NA|NOT_COLLECTED)$/i.test(String(medium)) ? 'Medio sin indicar' : String(medium);
     items.push({ id: value, row, group: `${context} · ${m}`, context, medium: m, date: numeric(date) });
   };
-  for (const r of rowsOf(store, 'Insectary_data')) {
+  const insectary = ['Research_purpose', 'Tube_1_id', 'Tube_2_id', 'Tube_3_id', 'Tube_4_id', 'T1_Preservation_medium', 'T2_Preservation_medium', 'Preservation_date'];
+  for (const r of columnsOf(store, 'Insectary_data', insectary)) {
     if (!r.observed) continue;
     const context = CROSSES.test(String(r.values.Research_purpose ?? '')) ? 'Cruces' : 'Insectario';
     for (const slot of [1, 2, 3, 4])
@@ -426,7 +539,8 @@ function tubeSuggestions(store) {
         r.row,
       );
   }
-  for (const r of rowsOf(store, 'Collection_data')) {
+  const collection = ['Purpose', 'Preservation_date', 'Collection_date', 'Tube_1_id', 'Tube_2_id', 'Tube_3_id', 'Tube_4_id_LEGS', 'Preservation_medium'];
+  for (const r of columnsOf(store, 'Collection_data', collection)) {
     if (!r.observed) continue;
     const context = /monitor/i.test(String(r.values.Purpose ?? '')) ? 'Monitoreo' : 'Colecta';
     const date = numeric(r.values.Preservation_date) ?? numeric(r.values.Collection_date);
