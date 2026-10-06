@@ -68,6 +68,10 @@ pop-out opens the one for what the panel shows):
 - **Choosing values**: select cells and press «Valor de la hoja» (back to the
   sheet's value, or empty in a new row: the AI value stays aside, dashed and
   struck through, not written) or «Valor de la IA» (the AI value again).
+- **Formulas the proposal writes** show «ƒx» and what they will give; the
+  formula, the one it replaces and, beside the cell, «Fórmula» when it is not
+  the column's usual one (with that one) are on hover and in the cell bar.
+  Applying writes them as formulas; Historial undoes them.
 - **Doubtful cells** (the AI is unsure) are amber and dashed with a «?»; the
   header says «N celdas dudosas por revisar» (a click goes to the next) and
   the cell bar shows why and the other readings to pick. Editing, picking a
@@ -138,8 +142,9 @@ the assistant for a proposal with the chosen ones).
   faltan, Fechas imposibles, Tubos con un dígito de más o de menos, Colecta e
   insectario no coinciden, Pedigree sin decidir).
 - Each: «Seguro» / «Probable» / «Revisar», the row (link to Buscador), now →
-  suggested («decidir» when a person must choose), the reason, «en Google
-  Sheets» for formula cells, and since when.
+  suggested («decidir» when a person must choose; «ƒx» before a formula), the
+  reason, «en Google Sheets» for what only Sheets can do, and since when.
+  «Fórmulas que faltan» is listed by sheet · column · kind of row, with counts.
 - Filters: certainty, source, «Hoja», search; «CSV» downloads and «Copiar»
   copies the filtered list.
 

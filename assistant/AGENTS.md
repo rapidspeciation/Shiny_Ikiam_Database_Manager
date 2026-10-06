@@ -37,8 +37,10 @@ When Google is slow, `apply_proposal` answers `queued`: the changes are kept
 in the app and written on their own when it answers, so nothing needs applying
 again.
 
-A formula or conditional format for the sheet uses fixed ranges: `INDIRECTO`
-and `DESREF` make the whole workbook recalculate after every edit.
+A formula goes into a proposal as `{"formula": "=..."}`, in English with
+commas as the Sheets API takes it (`IF`, `XLOOKUP`; people see `SI`,
+`BUSCARX`). A formula or conditional format for the sheet uses fixed ranges:
+`INDIRECTO` and `DESREF` make the whole workbook recalculate after every edit.
 
 **Emergidos and Clutches entries are kept in the app** until someone presses
 «Guardar en Google Sheets» («Save to Google Sheets»), so they are not in the

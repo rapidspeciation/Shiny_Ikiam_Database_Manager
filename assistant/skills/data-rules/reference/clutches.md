@@ -9,7 +9,8 @@ eggs; the plant is taped with date, species and egg count).
 
 Rows from clutch 989 lack the two formulas that count from Insectary_data
 (`Earliest Emerge Date`, `Number of Adults in Insectary_data`; the pre-made
-block ran out): PAS copies them down; no values are typed there.
+block ran out): listed in «Fórmulas que faltan» for a proposal to fill; no
+values are typed there.
 
 ## Clutch numbers
 

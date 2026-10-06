@@ -46,8 +46,9 @@ The kind is decided by `Release_Collect` first, then `Purpose`.
   Preserved_dead_alive come from the Insectary_data twin by formula
   (`=XLOOKUP(D…, Insectary_data!A:A, Insectary_data!I:I, "")`): keep them; no
   values are typed there. Rows from Aug 2026 lack these formulas (blank even
-  where the twin has died): point it out; PAS copies them down from the row
-  above.
+  where the twin has died): Revisión → Sugerencias lists them («Fórmulas que
+  faltan»), and a proposal fills them (`missingFormulas`). Rows the app
+  creates get them.
 - **At death, not preserved**: CAM_ID_insectary `NA`, Tube_1_id `NA`, tissues
   `NOT_COLLECTED`, weight, Splitted_body and Location_* `NA`.
 - **At death, preserved**: CAM_ID_insectary = the insectary CAM, Tube_1_id =
