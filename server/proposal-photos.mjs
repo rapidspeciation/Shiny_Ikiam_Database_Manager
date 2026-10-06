@@ -32,14 +32,13 @@ export const rightAngle = value => {
 /**
  * The attachment a photo argument names (its file name, or the path the chat
  * gives: only the name counts), or null: it must be a file directly in the T3
- * attachments folder (links followed), and, when the chat is known, one of
- * that chat's (its name starts with the thread id).
+ * attachments folder (links followed). Any chat's: a new chat may gather the
+ * pages left pending in older chats into its own proposals.
  */
-export function attachmentFile(home, value, thread = null) {
+export function attachmentFile(home, value) {
   if (!home || typeof value !== 'string' || !value.trim()) return null;
   const name = basename(value.trim().replaceAll('\\', '/'));
   if (!NAME.test(name)) return null;
-  if (thread && !name.startsWith(`${thread}-`)) return null;
   try {
     const dir = realpathSync(attachmentsDir(home));
     const path = realpathSync(join(dir, name));
@@ -54,13 +53,13 @@ export function attachmentFile(home, value, thread = null) {
  * The photos of a match_notebook call: `photo` a name or a list, `rotate` a
  * turn or a list (one per photo; one turn for all). Returns { photos, refused }.
  */
-export function photosOf(home, args, thread = null) {
+export function photosOf(home, args) {
   const names = (Array.isArray(args.photo) ? args.photo : args.photo ? [args.photo] : []).slice(0, 12);
   const turns = Array.isArray(args.rotate) ? args.rotate : names.map(() => args.rotate);
   const photos = [];
   const refused = [];
   names.forEach((value, i) => {
-    const file = attachmentFile(home, value, thread);
+    const file = attachmentFile(home, value);
     if (file) photos.push({ file: file.name, rotate: rightAngle(turns[i] ?? 0) });
     else refused.push(String(value).slice(0, 200));
   });

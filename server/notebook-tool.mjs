@@ -111,7 +111,7 @@ export const MATCH_NOTEBOOK_TOOL = {
           },
         },
         photo: {
-          description: "The page's photo, or a list: the attachment's file name (from \"[Attached image … saved at …]\")",
+          description: "The page's photo, or a list: the attachment's file name (from \"[Attached image … saved at …]\"; an older chat's photo: its name in the T3 attachments folder, starting with that chat's id)",
           anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
         },
         rotate: {

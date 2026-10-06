@@ -127,23 +127,25 @@ const PAGE = {
   ],
 };
 
-test('a photo is an attachment of the proposal chat, directly in the T3 attachments folder', async () => {
+test('a photo is an attachment of any T3 chat, directly in the T3 attachments folder', async () => {
   const { home, close } = await setup();
   try {
-    assert.equal(attachmentFile(home, `${THREAD}-aaaa.jpg`, THREAD)?.name, `${THREAD}-aaaa.jpg`);
+    assert.equal(attachmentFile(home, `${THREAD}-aaaa.jpg`)?.name, `${THREAD}-aaaa.jpg`);
     // The path the chat gives: only its name counts.
-    assert.equal(attachmentFile(home, `/somewhere/else/${THREAD}-aaaa.jpg`, THREAD)?.name, `${THREAD}-aaaa.jpg`);
-    assert.equal(attachmentFile(home, `${OTHER}-bbbb.jpg`, THREAD), null, 'another chat');
-    assert.equal(attachmentFile(home, `${OTHER}-bbbb.jpg`)?.name, `${OTHER}-bbbb.jpg`, 'the chat not known yet: only the folder counts');
-    assert.equal(attachmentFile(home, `${THREAD}-link.jpg`, THREAD), null, 'a link out of the folder');
+    assert.equal(attachmentFile(home, `/somewhere/else/${THREAD}-aaaa.jpg`)?.name, `${THREAD}-aaaa.jpg`);
+    assert.equal(attachmentFile(home, `${OTHER}-bbbb.jpg`)?.name, `${OTHER}-bbbb.jpg`, "an older chat's page, gathered by a new chat");
+    assert.equal(attachmentFile(home, `${THREAD}-link.jpg`), null, 'a link out of the folder');
     assert.equal(attachmentFile(home, '../secret.jpg'), null);
     assert.equal(attachmentFile(home, '..'), null);
-    assert.equal(attachmentFile(home, `${THREAD}-none.jpg`, THREAD), null, 'no such file');
+    assert.equal(attachmentFile(home, `${THREAD}-none.jpg`), null, 'no such file');
     assert.equal(attachmentFile(null, `${THREAD}-aaaa.jpg`), null, 'T3 not configured');
     assert.deepEqual([0, 90, 180, 270, 360, -90, 'x'].map(rightAngle), [0, 90, 180, 270, 0, 270, 0]);
-    assert.deepEqual(photosOf(home, { photo: [`${THREAD}-aaaa.jpg`, `${OTHER}-bbbb.jpg`], rotate: 90 }, THREAD), {
-      photos: [{ file: `${THREAD}-aaaa.jpg`, rotate: 90 }],
-      refused: [`${OTHER}-bbbb.jpg`],
+    assert.deepEqual(photosOf(home, { photo: [`${THREAD}-aaaa.jpg`, `${OTHER}-bbbb.jpg`, 'none.jpg'], rotate: 90 }), {
+      photos: [
+        { file: `${THREAD}-aaaa.jpg`, rotate: 90 },
+        { file: `${OTHER}-bbbb.jpg`, rotate: 90 },
+      ],
+      refused: ['none.jpg'],
     });
   } finally {
     close();
@@ -155,11 +157,11 @@ test("a page's proposal shows every line in the sheet's order, with its photo, a
   try {
     const out = await call('match_notebook', {
       ...PAGE,
-      photo: [`/home/ubuntu/.t3/userdata/attachments/${THREAD}-aaaa.jpg`, `${THREAD}-aaaa.jpg`, `${OTHER}-bbbb.jpg`, '../../etc/passwd'],
+      photo: [`/home/ubuntu/.t3/userdata/attachments/${THREAD}-aaaa.jpg`, `${THREAD}-aaaa.jpg`, `${THREAD}-none.jpg`, '../../etc/passwd'],
       rotate: [90, 0, 0, 0],
     });
     assert.ok(out.proposalId, JSON.stringify(out));
-    assert.deepEqual(out.photoNotShown, [`${OTHER}-bbbb.jpg`, '../../etc/passwd']);
+    assert.deepEqual(out.photoNotShown, [`${THREAD}-none.jpg`, '../../etc/passwd']);
     let [p] = await proposals();
     assert.deepEqual(p.page, { kind: 'emergence', sheet: 'Insectary_data', columns: p.page.columns, keys: ['Insectary_ID'], photos: 2 });
     assert.deepEqual(p.page.columns.slice(0, 4), ['Insectary_ID', 'SPECIES', 'Sex', 'CLUTCH NUMBER']);
@@ -200,9 +202,9 @@ test("a page's proposal shows every line in the sheet's order, with its photo, a
     // Someone else on the team who finishes the chat sees them too; someone who only looks does not.
     assert.equal((await get(`/api/proposals/${out.proposalId}/photos/0`, ana)).status, 200, "another editor, the chat handed over");
     assert.equal((await get(`/api/proposals/${out.proposalId}/photos/0`, { ...ana, role: 'observer' })).status, 404, 'an observer');
-    // The proposal said to come from another chat: its photos are not that chat's.
+    // A proposal made in another chat from this chat's photos (a page gathered from an older chat) shows them too.
     store.db.prepare('UPDATE ai_proposals SET t3_thread = ? WHERE id = ?').run(OTHER, out.proposalId);
-    assert.equal((await get(`/api/proposals/${out.proposalId}/photos/0`)).status, 404);
+    assert.equal((await get(`/api/proposals/${out.proposalId}/photos/0`)).status, 200);
     store.db.prepare('UPDATE ai_proposals SET t3_thread = ? WHERE id = ?').run(THREAD, out.proposalId);
 
     // Franz's chat handed to Ana (open in her T3 frame, or asked for): its proposals are in her table, live,
@@ -315,9 +317,9 @@ test('a proposal made before pages were kept gets its photo later with update_pr
     let [p] = await proposals();
     assert.equal(p.page?.photos ?? 0, 0);
 
-    // Another chat's photo, or none by that name: refused, nothing changes.
-    const refused = await call('update_proposal', { proposalId: out.proposalId, photo: `${OTHER}-bbbb.jpg` });
-    assert.match(refused.error, /No photo of this chat/);
+    // No photo by that name: refused, nothing changes.
+    const refused = await call('update_proposal', { proposalId: out.proposalId, photo: `${OTHER}-none.jpg` });
+    assert.match(refused.error, /No photo by that name/);
 
     const done = await call('update_proposal', { proposalId: out.proposalId, photo: `${THREAD}-aaaa.jpg`, rotate: 90 });
     assert.equal(done.photos, 1);

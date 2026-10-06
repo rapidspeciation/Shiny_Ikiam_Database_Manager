@@ -2445,11 +2445,9 @@ export function createAssistant({ store, config = {} }) {
       .map((r, k) => (Number.isInteger(r) ? r : typeof r === 'string' ? rowIndex({ id: r }, `removeRows[${k}]`) : -1))
       .filter(i => i >= 0);
     if (problems.length) return { error: 'Nothing was changed', problems: problems.slice(0, 20) };
-    // The page's photos (attachments of this chat), for a proposal made without them.
-    const chat = proposal.t3_thread || (context.t3 ? chatOfCall(context)?.id : null) || null;
-    const given = args.photo ? photosOf(config.t3?.home, args, chat) : null;
-    if (given && !given.photos.length)
-      return { error: 'No photo of this chat by that name', photoNote: 'Give `photo` as the file name of this chat\'s attachment, from "[Attached image … saved at …]"' };
+    // The page's photos (T3 attachments, this chat's or an older one's), for a proposal made without them.
+    const given = args.photo ? photosOf(config.t3?.home, args) : null;
+    if (given && !given.photos.length) return { error: 'No photo by that name', photoNote: 'Give `photo` as the attachment\'s file name: from "[Attached image … saved at …]", or an older chat\'s in the T3 attachments folder (its name starts with that chat\'s id)' };
     const viewGiven = args.view !== undefined && args.view !== null;
     if (!set.length && !check.length && !remove.length && !add.changes.length && !add.newRows.length && !args.reason && !given && !viewGiven)
       return { error: 'Give rows, changes, newRows, removeRows, photo or view' };
@@ -3881,13 +3879,12 @@ export function createAssistant({ store, config = {} }) {
       changed(owner(context.user));
     }
     if (editor && writes && !proposal) proposal = saveProposal(matched.changes, reason, context, [], view);
-    // The page and its photos (attachments of this chat), kept with the proposal: its table follows
+    // The page and its photos (T3 attachments, this chat's or an older one's), kept with the proposal: its table follows
     // the whole page, beside the photo. A page matched again without photos keeps the ones it had.
     let refused = [];
     if (proposal) {
       const stored = db.prepare('SELECT t3_thread, page_json FROM ai_proposals WHERE id = ?').get(proposal.id);
-      const chat = stored?.t3_thread || (context.t3 ? chatOfCall(context)?.id : null) || null;
-      const given = photosOf(config.t3?.home, args, chat);
+      const given = photosOf(config.t3?.home, args);
       refused = given.refused;
       const photos = args.photo ? given.photos : (parse(stored?.page_json ?? 'null')?.photos ?? []);
       db.prepare('UPDATE ai_proposals SET page_json = ? WHERE id = ?').run(json({ ...matched.page, photos }), proposal.id);
@@ -3901,7 +3898,7 @@ export function createAssistant({ store, config = {} }) {
       ...(refused.length
         ? {
             photoNotShown: refused,
-            photoNote: 'Give `photo` as the file name of this chat\'s attachment, from "[Attached image … saved at …]"',
+            photoNote: 'Give `photo` as the attachment\'s file name: from "[Attached image … saved at …]", or an older chat\'s in the T3 attachments folder (its name starts with that chat\'s id)',
           }
         : {}),
       ...(replaced ? { replaced: replaced.id } : {}),
@@ -3921,8 +3918,8 @@ export function createAssistant({ store, config = {} }) {
   /**
    * GET /api/proposals/:id/photos/:n?size=thumb|view: a photo of a notebook
    * page's proposal, upright (`raw` bytes for index.mjs). For its owner and for
-   * anyone who may edit proposals (a chat handed over), and only an attachment
-   * of the T3 chat the proposal comes from.
+   * anyone who may edit proposals (a chat handed over), and only a file in the
+   * T3 attachments folder.
    */
   async function proposalPhoto(id, n, user, query, headers = {}) {
     // Its owner, or anyone on the team who may edit proposals (a chat handed over to finish).
@@ -3934,7 +3931,7 @@ export function createAssistant({ store, config = {} }) {
       proposal = find();
     }
     const photo = proposal ? parse(proposal.page_json ?? 'null')?.photos?.[n] : null;
-    const file = photo && proposal.t3_thread ? attachmentFile(config.t3?.home, photo.file, proposal.t3_thread) : null;
+    const file = photo ? attachmentFile(config.t3?.home, photo.file) : null;
     if (!file) return bad(404, 'not_found', 'Photo not found.');
     photoCopies ??= createPhotoCopies({
       dir: (() => {
