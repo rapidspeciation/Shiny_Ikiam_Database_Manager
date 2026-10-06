@@ -36,7 +36,8 @@ const parse = (value, fallback) => {
   }
 };
 const clip = (value, length) => String(value ?? '').slice(0, length);
-const ecuadorDay = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(new Date());
+const ECUADOR_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' });
+const ecuadorDay = () => ECUADOR_DAY.format(new Date());
 const isoOf = serial => new Date(Date.UTC(1899, 11, 30) + serial * 864e5).toISOString().slice(0, 10);
 
 /** The largest notebook-reader file match_notebook reads (a page of 150 lines is some 60 KB). */

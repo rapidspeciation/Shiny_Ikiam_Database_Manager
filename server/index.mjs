@@ -82,6 +82,7 @@ import { CHUNK_MAX, clutchPhotoDir, createClutchPhotos } from './clutch-photos.m
 import { listOptions } from './verify.mjs';
 import { moduleMap, validateValues } from './schema.mjs';
 import { REAL_ID, checkWorkbookId, workbookFromEnv, workbookUrl } from './workbook.mjs';
+import { watchEventLoop } from './event-loop.mjs';
 import {
   setup,
   login,
@@ -427,6 +428,8 @@ export async function createApp(config = {}, options = {}) {
     startChat: chatStarter(config.t3 ?? {}),
   });
   const loginLimiter = new LoginLimiter();
+  // How late the server answers (/health): one long piece of work holds up every request.
+  const eventLoop = watchEventLoop();
   const tableCache = new Map();
   const sheetHook = createSheetHook(store, { secret: config.sheetHookSecret });
   const summary = createSummary(store);
@@ -460,8 +463,15 @@ export async function createApp(config = {}, options = {}) {
         method = req.method;
       // `writing`: what a restart would cut (scripts/deploy.sh waits for it to be all 0).
       // `google`: whether the workbook answers (ok, slow, busy), saves waiting for it, entries kept in the app.
+      // `eventLoop`: over the last minute, how late the server got to what was waiting (p99 and the longest).
       if (method === 'GET' && path === '/health')
-        return json(res, 200, { status: 'ok', sync: store.syncStatus.state, writing: writingNow(), google: store.googleState() });
+        return json(res, 200, {
+          status: 'ok',
+          sync: store.syncStatus.state,
+          writing: writingNow(),
+          google: store.googleState(),
+          eventLoop: eventLoop.stats(),
+        });
       // Shares are normally caught by the service worker; if it was not active yet,
       // open the import screen and let the person share again.
       if (method === 'POST' && path === '/share-target') {
@@ -1364,6 +1374,7 @@ export async function createApp(config = {}, options = {}) {
     },
     close: async () => {
       if (interval) clearInterval(interval);
+      eventLoop.stop();
       if (t3Proxy) {
         t3Proxy.closeAllConnections();
         await new Promise(resolve => t3Proxy.close(resolve));

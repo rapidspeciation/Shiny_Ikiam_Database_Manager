@@ -62,7 +62,8 @@ const UP_TO_KEY = 'clutches.notebookUpTo';
 const FORMULA_COLUMNS = new Set(['Earliest Emerge Date', 'Number of Adults in Insectary_data']);
 
 /** Today in Ecuador (the insectary's day), as an ISO date. */
-export const ecuadorDay = (now = new Date()) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(now);
+const ECUADOR_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' });
+export const ecuadorDay = (now = new Date()) => ECUADOR_DAY.format(now);
 /** The UTC instants an Ecuador day runs between (UTC−5 all year). */
 function dayRange(day) {
   const start = Date.parse(`${day}T05:00:00.000Z`);

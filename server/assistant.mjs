@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
+import { performance } from 'node:perf_hooks';
 import { createReports } from './reports.mjs';
 import { MAX_BATCH, TYPED_OVER_FORMULA, renamesWithSuffix, sameAsFormula, uniqueIdIndex } from './batch.mjs';
 import { allIssues, checkData } from './checks.mjs';
@@ -21,7 +22,7 @@ import { FILTERS_DOC, FIND_BUDGET, RECORD_TOOLS, compactRecord, countRecords, fi
 import { RESULT_BUDGET, fitList, fitResult } from './tool-budget.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary, withLinesFile } from './notebook-tool.mjs';
 import { duplicateIdRow, insectaryBaseRows, insectaryIdPlaces, insectaryIdRow, newRowFormulaFields, suffixedId } from './premade.mjs';
-import { formulaNotes, isPlaceholder, newRowPatternFields } from './formula-patterns.mjs';
+import { formulaNotes, isPlaceholder, newRowPatternFields, sheetPatterns } from './formula-patterns.mjs';
 import { claimHolder, claimsOf } from './claims.mjs';
 import { BETWEEN_ROWS, PEEK_ROWS, VIEW_PARAM, VIEW_UPDATE, readView, showBetween, viewColumns } from './proposal-view.mjs';
 import { proposalSampleWarnings } from './preserved.mjs';
@@ -58,6 +59,8 @@ const BULK_PICKED = 4 * PROPOSAL_ROWS;
 /** Rows one proposal may take: more when it only writes formulas (one column's formula down the sheet). */
 const rowCap = changes =>
   changes.length && changes.every(c => !c.create && Object.keys(c.values).every(f => c.formulaCells?.includes(f))) ? FORMULA_ROWS : PROPOSAL_ROWS;
+/** Work done before the server answers other requests (a long list is built in turns this long). */
+const TURN_MS = 50;
 const narrower = () =>
   `One proposal takes at most ${PROPOSAL_ROWS} rows: narrow the filters (count_records says how many match, e.g. per month), or make another proposal for the rest.`;
 const isoDate = serial => new Date(Date.UTC(1899, 11, 30) + serial * 864e5).toISOString().slice(0, 10);
@@ -117,7 +120,8 @@ const AI_VALUE = Symbol('ai value');
 const NOTE_FIELD = /^notes?(?:_|$)/i;
 /** A note already in the team's form: "29/9/26 FCH:", "16/06/2023 AA:", "23Ago26 PAS". */
 const NOTE_PREFIX = /^\s*(?:\d{1,2}\s*[/.-]\s*\d{1,2}\s*[/.-]\s*\d{2,4}|\d{1,2}\s*[A-Za-z]{3}\s*\d{2,4})\s+[A-ZÑ]{2,4}\b/;
-const ecuadorDay = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(new Date());
+const ECUADOR_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' });
+const ecuadorDay = () => ECUADOR_DAY.format(new Date());
 /** How to name a notebook photo (match_notebook, update_proposal, show_rows). */
 const PHOTO_NOTE =
   'Give `photo` as the attachment\'s file name (or {name, note}): from "[Attached image … saved at …]", or an older chat\'s in the T3 attachments folder (its name starts with that chat\'s id)';
@@ -1846,14 +1850,62 @@ export function createAssistant({ store, config = {} }) {
    * known), and a digest of it all: a page that holds it already gets only { id, digest, same: true }.
    */
   const listedView = (r, titles = new Map()) => {
+    const source = (r.t3_thread && (titles.get(r.t3_thread)?.title ?? r.t3_title)) || r.title;
+    const key = listedKey(r, source);
+    const kept = listed.get(r.id);
+    if (kept?.key === key && kept.patterns.every(([sheet, p]) => sheetPatterns(store, sheet) === p)) {
+      // The most recently used last: the oldest go first when there are too many.
+      listed.delete(r.id);
+      listed.set(r.id, kept);
+      return kept.out;
+    }
     const view = {
       ...(isTable(r) ? tableView(r) : proposalView({ id: r.id, changes: [], reason: r.reason, status: r.status }, r)),
       createdAt: r.created_at,
-      source: (r.t3_thread && (titles.get(r.t3_thread)?.title ?? r.t3_title)) || r.title,
+      source,
       chat: r.t3_thread || null,
     };
-    return { ...view, digest: createHash('sha1').update(json(view)).digest('base64url').slice(0, 12) };
+    const out = { ...view, digest: createHash('sha1').update(json(view)).digest('base64url').slice(0, 12) };
+    // The formula notes read the usual formulas of their rows' sheets (worked out again at most once a minute).
+    const patterns = [...new Set(view.changes.filter(c => c.formulaCells?.length && !c.create && c.row).map(c => c.sheet))].map(sheet => [
+      sheet,
+      sheetPatterns(store, sheet),
+    ]);
+    listed.delete(r.id);
+    listed.set(r.id, { key, patterns, out, rows: (view.changes?.length ?? 0) + (view.rows?.length ?? 0) });
+    let rows = 0;
+    for (const entry of listed.values()) rows += entry.rows;
+    for (const [id, entry] of listed) {
+      if (listed.size <= LISTED_KEPT && rows <= LISTED_ROWS) break;
+      listed.delete(id);
+      rows -= entry.rows;
+    }
+    return out;
   };
+  /**
+   * Proposals as Cambios propuestos last got them (listedView), by id: the list is asked again on
+   * every change of any of the person's proposals (a new one, an edit), and a long one takes a
+   * second or more to build, so each is built again only when something it reads changed: its
+   * own row, the local copy and its history (store.copyVersion), the checks' findings, the day,
+   * the sheets' columns, its chat's title. The most recently used last.
+   */
+  const listed = new Map();
+  const LISTED_KEPT = 120;
+  const LISTED_ROWS = 30_000;
+  const objectIds = new WeakMap();
+  let objectCount = 0;
+  const idOf = o => (o && typeof o === 'object' ? (objectIds.get(o) ?? objectIds.set(o, ++objectCount).get(o)) : 0);
+  function listedKey(r, source) {
+    const open = !isTable(r) && r.status === 'pending';
+    return [
+      createHash('sha1').update(json(r)).digest('base64url'),
+      source,
+      store.copyVersion?.() ?? Math.random(),
+      ecuadorDay(),
+      open ? idOf(issuesByRecord(store, { ready: true })) : '-',
+      [...(store.layouts?.values() ?? [])].map(idOf).join(','),
+    ].join('\u0000');
+  }
 
   /**
    * What the sheet did to a pending proposal's row since it was drafted (`since`):
@@ -4171,7 +4223,17 @@ export function createAssistant({ store, config = {} }) {
       // The proposals the page holds as they are now (their digests, `have`) are not sent again: a long
       // proposal (hundreds of rows) goes once, then only when it changes.
       const have = new Set(String(query.have ?? '').split(',').slice(0, 400).filter(d => d.length === 12));
-      const proposals = rows.map(r => listedView(r, titles)).map(p => (have.has(p.digest) ? { id: p.id, digest: p.digest, same: true } : p));
+      // Built one by one, the server answering others in between (a long proposal takes a while).
+      const proposals = [];
+      let turn = performance.now();
+      for (const r of rows) {
+        if (performance.now() - turn > TURN_MS) {
+          await new Promise(resolve => setImmediate(resolve));
+          turn = performance.now();
+        }
+        const p = listedView(r, titles);
+        proposals.push(have.has(p.digest) ? { id: p.id, digest: p.digest, same: true } : p);
+      }
       // The first request of a page (no revision held): tagged, so a reload with nothing new is a 304.
       return { status: 200, tagged: !held, body: { revision, stamp, ...head, proposals } };
     }

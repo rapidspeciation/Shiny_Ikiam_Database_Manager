@@ -52,8 +52,10 @@ const KIND_ORDER = Object.keys(CHECK_KINDS);
 const EPOCH = Date.UTC(1899, 11, 30);
 export const iso = serial => new Date(EPOCH + Math.round(serial) * 864e5).toISOString().slice(0, 10);
 /** Today in Ecuador as a sheet date serial. */
+// Made once: a new Intl.DateTimeFormat takes about as long as a whole small check.
+const ECUADOR_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' });
 export const todaySerial = () => {
-  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(new Date());
+  const today = ECUADOR_DAY.format(new Date());
   return Math.round((Date.parse(`${today}T00:00:00Z`) - EPOCH) / 864e5);
 };
 const text = value => (value === null || value === undefined ? '' : String(value).trim());
@@ -140,9 +142,16 @@ function idShapeOutliers(sheets) {
 
 /** The state of the local copy: changes whenever any row is written, synced or removed. */
 export function recordsStamp(store) {
+  // Read again only when something was written (store.copyVersion): asked for every proposal of a list.
+  const version = store.copyVersion?.();
+  const kept = stamps.get(store);
+  if (version !== undefined && kept?.version === version) return kept.stamp;
   const state = store.db.prepare('SELECT count(*) n, max(updated_at) u FROM records').get();
-  return `${state.n}:${state.u}`;
+  const stamp = `${state.n}:${state.u}`;
+  if (version !== undefined) stamps.set(store, { version, stamp });
+  return stamp;
 }
+const stamps = new WeakMap();
 
 /** Loads every recorded row once, in sheet order; placeholders (pre-made rows) are kept apart. */
 function load(store) {

@@ -71,7 +71,22 @@ export class Store {
     initClaims(this.db);
     initOutbox(this.db);
     initStaged(this.db);
-    this.sheets = sheets || (config.localMode ? new LocalSheets(seed || {}, { health: config.health }) : new GoogleSheets(config));
+    // Prepared once (prepare costs about as much as a small read): see statement().
+    this.statements = new Map();
+    // Grows with every row written to the local copy (records) or to its history (actions, changes,
+    // and the names it shows, users), whatever code writes it: views built from them (the proposals'
+    // tables) are kept until it moves (copyVersion).
+    this.copyWrites = 0;
+    this.db.function('copy_written', () => {
+      this.copyWrites++;
+      return null;
+    });
+    for (const table of ['records', 'actions', 'changes', 'users'])
+      for (const event of ['INSERT', 'UPDATE', 'DELETE'])
+        this.db.exec(
+          `CREATE TEMP TRIGGER IF NOT EXISTS copy_${table}_${event.toLowerCase()} AFTER ${event} ON main.${table} BEGIN SELECT copy_written(); END`,
+        );
+    this.sheets =sheets || (config.localMode ? new LocalSheets(seed || {}, { health: config.health }) : new GoogleSheets(config));
     this.localMode = this.sheets instanceof LocalSheets;
     // What open pages follow (GET /api/pulse): the workbook's state, the outbox, the staged entries.
     this.boot = randomUUID().slice(0, 8);
@@ -104,6 +119,19 @@ export class Store {
       source: this.localMode ? 'local' : 'google',
       spreadsheetId: this.sheets.spreadsheetId,
     };
+  }
+  /** A statement prepared once for this database (reads asked thousands of times per proposal). */
+  statement(sql) {
+    let s = this.statements.get(sql);
+    if (!s) this.statements.set(sql, (s = this.db.prepare(sql)));
+    return s;
+  }
+  /**
+   * The local copy's version: changes whenever a row of it or of its history is written, here or by
+   * another process on the same database file (scripts): what a view kept from them is checked against.
+   */
+  copyVersion() {
+    return `${this.copyWrites}.${this.statement('PRAGMA data_version').get().data_version}`;
   }
   close() {
     this.closed = true;
@@ -300,10 +328,10 @@ export class Store {
     };
   }
   getRecord(id) {
-    return this.hydrate(this.db.prepare('SELECT * FROM records WHERE id=?').get(id));
+    return this.hydrate(this.statement('SELECT * FROM records WHERE id=?').get(id));
   }
   getRecordBySheetRow(sheet, row) {
-    return this.hydrate(this.db.prepare('SELECT * FROM records WHERE sheet=? AND row_num=?').get(sheet, row));
+    return this.hydrate(this.statement('SELECT * FROM records WHERE sheet=? AND row_num=?').get(sheet, row));
   }
   searchRecords({ module, sheet, q = '', limit = 50, offset = 0, filters = {}, observedOnly = true } = {}) {
     const selected = module || sheet;
