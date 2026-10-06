@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { AlertTriangle, Check, Pencil, StickyNote, X } from 'lucide-vue-next'
+import { AlertTriangle, Check, Loader2, Pencil, StickyNote, X } from 'lucide-vue-next'
 import ChoiceField from '../ChoiceField.vue'
 import SampleBoxes from './SampleBoxes.vue'
 import { EMERGED_NOTE_PHRASES, LIFESTAGES, MAIN_STAGES, preserving, speciesOf, type Draft, type Fate, type Sample, type Sex } from '../../lib/emerged'
@@ -144,6 +144,14 @@ const otherDay = computed(() => props.draft.date !== props.day)
       >
         {{ draft.id || '—' }} <Pencil v-if="canEdit" :size="14" class="text-stone-400" />
       </button>
+      <!-- Its ID held for it on the server (lib/holds.ts): being asked, or not held. -->
+      <Loader2 v-if="draft.hold === 'waiting'" :size="15" class="-ml-1 shrink-0 animate-spin text-stone-400" :aria-label="$t('Reservando el ID…')" />
+      <AlertTriangle
+        v-else-if="draft.hold"
+        :size="15"
+        class="-ml-1 shrink-0 text-amber-700"
+        :aria-label="draft.hold === 'offline' ? $t('Sin conexión: el ID se reserva al volver la señal') : $t('Este ID no quedó reservado')"
+      />
       <!-- An adult's sex, beside its ID (one tap). -->
       <span v-if="draft.kind === 'adult'" class="flex gap-1" role="group" :aria-label="$t('Sexo')">
         <button

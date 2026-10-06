@@ -15,7 +15,7 @@ afterEach(() => {
 })
 
 const TODAY = isoToSerial('2026-10-05')
-async function mount(start: CellValue, { stage = 'larva' as Stage, subtractPreserved = false, canRegister = false } = {}) {
+async function mount(start: CellValue, { stage = 'larva' as Stage, subtractPreserved = false, canRegister = false, startOfDay = undefined as CellValue | undefined } = {}) {
   const value = ref<CellValue>(start)
   const events: CountEvent[] = []
   const registers: { count: number; lifestage: string; day: number; done: (ids: string[]) => void }[] = []
@@ -27,7 +27,8 @@ async function mount(start: CellValue, { stage = 'larva' as Stage, subtractPrese
         field: 'NUMBER OF LARVAE',
         value: value.value,
         saved: start,
-        dirty: false,
+        startOfDay,
+        dirty: value.value !== start,
         editable: true,
         locked: false,
         more: 'hatched',
@@ -63,11 +64,47 @@ async function mount(start: CellValue, { stage = 'larva' as Stage, subtractPrese
 }
 
 describe('a count on a clutch card', () => {
-  it('−5 died: the count takes them off, the event is today, and the note for NOTES is shown', async () => {
+  it('− without a number: the cause, then how many (1 to start, + and − to change it)', async () => {
+    const m = await mount('=20')
+    await m.click(m.button('−'))
+    expect(m.host.textContent).toContain('What happened?')
+    await m.click(m.button('Disappeared'))
+    const box = m.host.querySelector<HTMLInputElement>('input[aria-label="How many"]')!
+    expect(box.value).toBe('1')
+    await m.click(m.host.querySelector<HTMLButtonElement>('button[aria-label="One more"]')!)
+    await m.click(m.button('Subtract 2'))
+    expect(m.value.value).toBe('=20-2')
+    expect(m.events.map(e => [e.kind, e.count])).toEqual([['disappeared', 2]])
+  })
+  it('a chip tapped is struck out of the sum, and back in when tapped again', async () => {
+    const m = await mount('=2+3+9+1+8+23')
+    const chip = () => [...m.host.querySelectorAll<HTMLButtonElement>('button[aria-pressed]')].find(b => b.textContent?.trim() === '+23')!
+    await m.click(chip())
+    expect(m.value.value).toBe('=2+3+9+1+8')
+    await nextTick()
+    expect(chip().getAttribute('aria-pressed')).toBe('true')
+    expect(m.host.textContent).toContain('Struck out = not in the sum')
+    await m.click(chip())
+    expect(m.value.value).toBe('=2+3+9+1+8+23')
+    // No separate "remove the last term" button.
+    expect(m.host.textContent).not.toMatch(/Remove \+23/)
+  })
+  it("this morning against now, today's chips apart, and one tap takes today's changes back", async () => {
+    const m = await mount('=11-1+4+5', { startOfDay: '=11-1+4' })
+    expect(m.host.textContent).toMatch(/This morning\s*14\s*→\s*now\s*19/)
+    expect(m.host.textContent).toMatch(/today\s*\+5/)
+    await m.click(m.button("Undo today's changes"))
+    expect(m.value.value).toBe('=11-1+4')
+  })
+  it('−5 died: the cause first, then how many; the count takes them off, the event is today, and the note for NOTES is shown', async () => {
     const m = await mount('=20')
     await m.type('5')
     await m.click(m.button('−5'))
+    // Nothing taken off before the cause is said.
+    expect(m.value.value).toBe('=20')
     await m.click(m.button('Died'))
+    expect(m.host.textContent).toContain('5/10/26 FCH: 5 larvae died')
+    await m.click(m.button('Subtract 5'))
     expect(m.value.value).toBe('=20-5')
     expect(m.events.map(e => [e.kind, e.count, e.day])).toEqual([['died', 5, TODAY]])
     expect(m.host.textContent).toContain('Added to NOTES (saved with the clutch): 5/10/26 FCH: 5 larvae died')
@@ -77,6 +114,7 @@ describe('a count on a clutch card', () => {
     await m.type('10')
     await m.click(m.button('−10'))
     await m.click(m.button('Preserved'))
+    expect(m.host.querySelector<HTMLInputElement>('input[aria-label="How many"]')!.value).toBe('10')
     expect(m.host.textContent).toContain('5/10/26 FCH: 10 larvae preserved as 3rd instar')
     await m.click(m.button('4th instar larva'))
     expect(m.host.textContent).toContain('10 larvae preserved as 4th instar')

@@ -57,6 +57,10 @@ export interface Draft {
   typedTube?: string
   /** An egg or larva: what it has of its own instead of the batch's (YoungBatch). */
   own?: YoungOwn
+  /** The Insectary ID the server holds for this card (server/holds.mjs), once it answered. */
+  held?: string
+  /** Its hold: being asked, not held (someone else has the ID, or it is not free), or no answer (no signal). */
+  hold?: 'waiting' | 'refused' | 'offline'
 }
 
 /** LIFESTAGE of a butterfly with a date in Intro2Insectary_date (emerged or brought in). */

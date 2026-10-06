@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { AlertTriangle, CalendarClock, Check, ChevronLeft, ChevronRight, Columns3, Loader2, X } from 'lucide-vue-next'
+import { AlertTriangle, CalendarClock, Check, ChevronDown, ChevronLeft, ChevronRight, Columns3, Loader2, X } from 'lucide-vue-next'
 import ChoiceField from '../ChoiceField.vue'
 import CountEditor, { type CountEvent } from './CountEditor.vue'
 import PreserveYoung from '../emerged/PreserveYoung.vue'
 import ClutchTimeline from './ClutchTimeline.vue'
 import DateRow from './DateRow.vue'
 import ClutchNotes from './ClutchNotes.vue'
+import ClutchPhotoAdd from './ClutchPhotoAdd.vue'
+import ClutchPhotoViewer from './ClutchPhotoViewer.vue'
+import { useClutchRecord } from '../../composables/useClutchRecord'
 import { useKeyboard } from '../../composables/usePhone'
 import { useParents } from '../../composables/useParents'
 import type { ClutchDay } from '../../composables/useClutchDay'
@@ -23,7 +26,10 @@ import {
   latestGains,
   lockedFormula,
   noteDay,
+  notesOf,
+  noteParts,
   outlook,
+  parentsOf,
   readCount,
   totalOf,
   VERIFY_REASONS,
@@ -35,16 +41,20 @@ import {
   type Stage,
   type StageDurations,
 } from '../../lib/clutches'
+import type { ClutchPhoto } from '../../lib/clutchPhotos'
 import { formatSerial, isoToSerial, serialToIso, todayIso } from '../../lib/dates'
 import { errorText, notify } from '../../lib/notice'
 import type { CellValue, Field, TableRow } from '../../lib/types'
 import { usePending } from '../../stores/pending'
-import { t } from '../../lib/i18n'
+import { t, tn } from '../../lib/i18n'
 
 /**
- * One clutch, to update during the round: each count's sum (tap the total and
- * type the new one; or +N / −N / "Counted today") and its stage date, notes dated and initialled, the parents
- * (F1/F2) in NOTES, species, generation and room. Changes are pending edits
+ * One clutch, to update during the round, one stage at a time (tabs Eggs,
+ * Larvae, Pupae, Adults with each count on its tab, the clutch's stage first):
+ * its count's sum (tap the total and type the new one; or +N / − / "Counted
+ * today") and its stage date; below, folded, the notes dated and initialled
+ * with the parents (F1/F2) in NOTES, the history and photos, and the rest
+ * (dissections, species, generation and room). Changes are pending edits
  * saved as any other (kept in the app until «Guardar en Google Sheets»);
  * «Marcar como revisado» saves and marks the clutch as checked today, with the
  * fields it changed. Every event (+N hatched, −N died…) also writes its dated,
@@ -279,8 +289,10 @@ const stageTotals = computed(() => {
 
 // --- What should be in the cage today, and when the next stages come
 /** The latest laid, hatched and pupated days of this clutch's events (the timeline loads them). */
-const gains = ref<{ laid: number | null; hatched: number | null; pupated: number | null }>({ laid: null, hatched: null, pupated: null })
-const onEvents = (events: ClutchEvent[]) => (gains.value = latestGains(events))
+const record = useClutchRecord(computed(() => row.value?.id ?? ''), props.day)
+const recordEvents = computed<ClutchEvent[]>(() => record.data.value?.events ?? [])
+const recordPhotos = computed<ClutchPhoto[]>(() => record.data.value?.photos ?? [])
+const gains = computed(() => latestGains(recordEvents.value))
 const speciesName = computed(() => (isBlank(get('SPECIES')) ? '' : String(get('SPECIES'))))
 const days = computed(() => props.durations.of(speciesName.value))
 const view = computed(() =>
@@ -320,6 +332,44 @@ const daysText = computed(() =>
     from: days.value.from === 'species' ? t('sus clutches') : days.value.from === 'genus' ? t('su género') : t('todos los clutches'),
   }),
 )
+
+// --- One stage at a time: the tab of the stage the clutch is in, unless another is chosen
+const STAGE_TAB: Record<Stage, () => string> = { egg: () => t('Huevos'), larva: () => t('Larvas'), pupa: () => t('Pupas'), adult: () => t('Adultos') }
+const tab = ref<Stage>('egg')
+const tabDirty = (s: (typeof STAGES)[number]) => dirty(s.count) || (!!s.date && dirty(s.date))
+/** The rest, folded under the stage: notes and parents, history and photos, the other columns. */
+const folds = ref({ notes: false, history: false, more: false })
+const notesPreview = computed(() => {
+  const p = parentsOf(get('NOTES'))
+  const last = notesOf(get('NOTES')).at(-1)
+  return [p ? `${p.female}♀ + ${p.male}♂` : '', last ? noteParts(last).text : ''].filter(Boolean).join(' · ')
+})
+const notesCount = computed(() => notesOf(get('NOTES')).length)
+const historyPreview = computed(() =>
+  [
+    recordEvents.value.length ? tn(recordEvents.value.length, '{n} evento', '{n} eventos') : '',
+    recordPhotos.value.length ? tn(recordPhotos.value.length, '{n} foto', '{n} fotos') : '',
+  ]
+    .filter(Boolean)
+    .join(' · ') || t('Nada todavía.'),
+)
+const morePreview = computed(() =>
+  [isBlank(get('Generation')) ? '' : String(get('Generation')), String(get('INSECTARY OR LABORATORY') ?? ''), speciesName.value].filter(Boolean).join(' · '),
+)
+
+// --- Photos of a chip's event: its photos to see (and add to), or the camera for its first
+const addingPhoto = ref<{ day: string; eventId: string | null } | null>(null)
+const viewingPhotos = ref<{ photos: ClutchPhoto[]; index: number; event: ClutchEvent } | null>(null)
+function chipPhoto(e: ClutchEvent) {
+  const photos = recordPhotos.value.filter(p => p.eventId === e.id)
+  if (photos.length) viewingPhotos.value = { photos, index: 0, event: e }
+  else addingPhoto.value = { day: e.day, eventId: e.id }
+}
+function photoRemoved(id: string) {
+  record.photoRemoved(id)
+  const v = viewingPhotos.value
+  if (v) viewingPhotos.value = { ...v, photos: v.photos.filter(p => p.id !== id), index: Math.max(0, Math.min(v.index, v.photos.length - 2)) }
+}
 
 // --- Larvae (or eggs) preserved, registered in Insectary_data with Emergidos' cards
 const preserving = ref<{ count: number; lifestage: string; day: number; done: (ids: string[]) => void } | null>(null)
@@ -388,6 +438,10 @@ watch(
     verifying.value = false
     verifyNote.value = ''
     opened.value = r ? { id: r.id, values: Object.fromEntries(props.columns.map(c => [c.key, norm(c.key, current(c.key))])) } : null
+    tab.value = clutchState.value?.stage ?? 'egg'
+    folds.value = { notes: false, history: false, more: false }
+    addingPhoto.value = null
+    viewingPhotos.value = null
     nextTick(() => scroller.value?.scrollTo({ top: 0 }))
   },
   { immediate: true },
@@ -476,25 +530,36 @@ const endedText = (e: ClutchState['ended']) =>
         <p class="mt-0.5 text-[11px] text-stone-600">{{ daysText }}</p>
       </div>
 
-      <!-- Parents and NOTES first: read before counting, and easy to find. -->
-      <ClutchNotes
-        v-if="has('NOTES')"
-        class="border-b border-stone-100"
-        :notes="get('NOTES')"
-        :saved="row.values.NOTES ?? null"
-        :dirty="dirty('NOTES')"
-        :editable="editable('NOTES')"
-        :initials="initials"
-        :today="today"
-        :parents="parents"
-        :species="isBlank(get('SPECIES')) ? '' : String(get('SPECIES'))"
-        :clutch-id="row.id"
-        @set="setValue('NOTES', $event)"
-        @parents-written="parentsWritten"
-      />
+      <!-- One stage at a time: each count on its tab, the clutch's stage chosen when it opens. -->
+      <div class="sticky top-0 z-10 -mx-4 mt-2 border-b border-stone-200 bg-white px-4 pt-1" role="tablist" :aria-label="$t('Etapa')">
+        <div class="grid grid-cols-4 gap-1">
+          <button
+            v-for="s in STAGES"
+            :key="s.stage"
+            type="button"
+            role="tab"
+            class="relative flex h-14 flex-col items-center justify-center rounded-t-lg border-b-[3px] leading-tight"
+            :class="tab === s.stage ? 'border-brand-700 bg-brand-50 text-brand-900' : 'border-transparent text-stone-600 active:bg-stone-50'"
+            :aria-selected="tab === s.stage"
+            :aria-controls="`clutch-stage-${s.stage}`"
+            @click="tab = s.stage"
+          >
+            <span class="text-xs font-medium">{{ STAGE_TAB[s.stage]() }}</span>
+            <span class="text-xl font-semibold tabular-nums">{{ readCount(countOf(s.count)).na ? 'NA' : (stageTotals[s.stage] ?? '—') }}</span>
+            <span v-if="tabDirty(s)" class="absolute top-1.5 right-2 size-2 rounded-full bg-amber-500" :title="$t('Sin guardar')" />
+          </button>
+        </div>
+      </div>
 
-      <!-- Each stage: its count kept as a sum, and the date it started. -->
-      <section v-for="s in STAGES" :key="s.count" class="border-b border-stone-100 py-3">
+      <!-- The stage chosen: its count kept as a sum, and the date it started (the others stay, hidden, with their undo). -->
+      <section
+        v-for="s in STAGES"
+        v-show="tab === s.stage"
+        :id="`clutch-stage-${s.stage}`"
+        :key="s.count"
+        class="py-3"
+        role="tabpanel"
+      >
         <CountEditor
           :key="`${row.id}:${s.count}`"
           :field="s.count"
@@ -510,10 +575,14 @@ const endedText = (e: ClutchState['ended']) =>
           :today="today"
           :note-for="e => noteFor(s.stage, e)"
           :can-register="canEdit && inSheet"
+          :events="recordEvents"
+          :photos="recordPhotos"
+          :can-photo="canEdit && inSheet"
           @set="setValue(s.count, $event)"
           @event="recordEvent(s.stage, $event)"
           @unevent="dropEvent"
           @register="preserving = $event"
+          @photo="chipPhoto"
         >
           <DateRow
             v-if="s.date && has(s.date)"
@@ -528,81 +597,140 @@ const endedText = (e: ClutchState['ended']) =>
           />
         </CountEditor>
       </section>
-      <!-- Hatched, died, disappeared, preserved: day by day, only in the app. -->
-      <ClutchTimeline
-        :record-id="row.id"
-        :clutch="label"
-        :day="day"
-        :totals="stageTotals"
-        :expected="view.expected"
-        :can-edit="canEdit"
-        :can-photo="inSheet"
-        :initials="who"
-        @loaded="onEvents"
-      />
-      <section class="border-b border-stone-100 py-3">
-        <CountEditor
-          :key="`${row.id}:dissections`"
-          field="NUMBER OF PUPAE/LARVAE FOR DISECTIONS"
-          :value="countOf('NUMBER OF PUPAE/LARVAE FOR DISECTIONS')"
-          :saved="savedOf('NUMBER OF PUPAE/LARVAE FOR DISECTIONS')"
-          :dirty="dirty('NUMBER OF PUPAE/LARVAE FOR DISECTIONS')"
-          :editable="editable('NUMBER OF PUPAE/LARVAE FOR DISECTIONS')"
-          :locked="lockedFormula(row, 'NUMBER OF PUPAE/LARVAE FOR DISECTIONS', formulas)"
-          :more="MORE['NUMBER OF PUPAE/LARVAE FOR DISECTIONS']()"
-          @set="setValue('NUMBER OF PUPAE/LARVAE FOR DISECTIONS', $event)"
-        />
-      </section>
 
-      <!-- Generation, room, species. -->
-      <section v-if="has('Generation')" class="border-b border-stone-100 py-3">
-        <span class="field-label">Generation</span>
-        <div class="grid grid-cols-4 gap-2">
-          <button
-            v-for="g in generations"
-            :key="g"
-            type="button"
-            class="min-h-11 rounded-lg border px-1 text-sm font-medium"
-            :class="get('Generation') === g ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white text-stone-800'"
-            :aria-pressed="get('Generation') === g"
-            :disabled="!editable('Generation')"
-            @click="setValue('Generation', g)"
-          >
-            {{ g }}
+      <!-- Folded under the stage: notes and parents, history and photos, the other columns. -->
+      <div class="divide-y divide-stone-100 border-y border-stone-200">
+        <section v-if="has('NOTES')">
+          <button type="button" class="flex min-h-14 w-full items-center gap-2 py-2 text-left" :aria-expanded="folds.notes" @click="folds.notes = !folds.notes">
+            <span class="min-w-0 flex-1">
+              <span class="flex items-center gap-1.5 text-sm font-semibold">
+                {{ $t('Notas y padres') }}
+                <span v-if="notesCount" class="rounded-full bg-stone-100 px-1.5 text-xs font-medium text-stone-600 tabular-nums">{{ notesCount }}</span>
+                <span v-if="dirty('NOTES')" class="size-2 rounded-full bg-amber-500" :title="$t('Sin guardar')" />
+              </span>
+              <span v-if="!folds.notes" class="block truncate text-xs text-stone-600">{{ notesPreview || $t('Sin notas') }}</span>
+            </span>
+            <ChevronDown :size="20" class="shrink-0 text-stone-500 transition-transform" :class="{ 'rotate-180': folds.notes }" />
           </button>
-        </div>
-      </section>
-      <section class="border-b border-stone-100 py-3">
-        <span class="field-label">INSECTARY OR LABORATORY</span>
-        <div class="grid grid-cols-2 gap-2">
-          <button
-            v-for="p in ['Insectary', 'Laboratory']"
-            :key="p"
-            type="button"
-            class="min-h-11 rounded-lg border px-1 text-sm font-medium"
-            :class="get('INSECTARY OR LABORATORY') === p ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white text-stone-800'"
-            :aria-pressed="get('INSECTARY OR LABORATORY') === p"
-            :disabled="!editable('INSECTARY OR LABORATORY')"
-            @click="setValue('INSECTARY OR LABORATORY', p)"
-          >
-            {{ p }}
-          </button>
-        </div>
-      </section>
-      <section class="border-b border-stone-100 py-3">
-        <label class="block">
-          <span class="field-label">SPECIES</span>
-          <ChoiceField
-            v-if="editable('SPECIES')"
-            :model-value="isBlank(get('SPECIES')) && get('SPECIES') !== 'NA' ? '' : String(get('SPECIES'))"
-            class="field-input h-12 text-base"
-            :class="{ 'is-dirty': dirty('SPECIES') }"
-            :options="species"
-            @update:model-value="setValue('SPECIES', $event || null)"
+          <ClutchNotes
+            v-if="folds.notes"
+            class="-mt-2"
+            :notes="get('NOTES')"
+            :saved="row.values.NOTES ?? null"
+            :dirty="dirty('NOTES')"
+            :editable="editable('NOTES')"
+            :initials="initials"
+            :today="today"
+            :parents="parents"
+            :species="isBlank(get('SPECIES')) ? '' : String(get('SPECIES'))"
+            :clutch-id="row.id"
+            @set="setValue('NOTES', $event)"
+            @parents-written="parentsWritten"
           />
-          <p v-else class="text-sm">{{ get('SPECIES') || '—' }}</p>
-        </label>
-      </section>
+        </section>
+        <section>
+          <button type="button" class="flex min-h-14 w-full items-center gap-2 py-2 text-left" :aria-expanded="folds.history" @click="folds.history = !folds.history">
+            <span class="min-w-0 flex-1">
+              <span class="block text-sm font-semibold">{{ $t('Historia y fotos') }}</span>
+              <span v-if="!folds.history" class="block truncate text-xs text-stone-600">{{ historyPreview }}</span>
+            </span>
+            <ChevronDown :size="20" class="shrink-0 text-stone-500 transition-transform" :class="{ 'rotate-180': folds.history }" />
+          </button>
+          <!-- Hatched, died, disappeared, preserved: day by day, only in the app. -->
+          <ClutchTimeline
+            v-if="folds.history"
+            class="-mt-2 !border-b-0"
+            :record-id="row.id"
+            :clutch="label"
+            :day="day"
+            :totals="stageTotals"
+            :expected="view.expected"
+            :can-edit="canEdit"
+            :can-photo="inSheet"
+            :initials="who"
+            :record="record"
+          />
+        </section>
+        <section>
+          <button type="button" class="flex min-h-14 w-full items-center gap-2 py-2 text-left" :aria-expanded="folds.more" @click="folds.more = !folds.more">
+            <span class="min-w-0 flex-1">
+              <span class="flex items-center gap-1.5 text-sm font-semibold">
+                {{ $t('Más: disecciones, generación, sala, especie') }}
+                <span
+                  v-if="['NUMBER OF PUPAE/LARVAE FOR DISECTIONS', 'Generation', 'INSECTARY OR LABORATORY', 'SPECIES'].some(dirty)"
+                  class="size-2 rounded-full bg-amber-500"
+                  :title="$t('Sin guardar')"
+                />
+              </span>
+              <span v-if="!folds.more" class="block truncate text-xs text-stone-600">{{ morePreview }}</span>
+            </span>
+            <ChevronDown :size="20" class="shrink-0 text-stone-500 transition-transform" :class="{ 'rotate-180': folds.more }" />
+          </button>
+          <template v-if="folds.more">
+            <section class="border-t border-stone-100 py-3">
+              <CountEditor
+                :key="`${row.id}:dissections`"
+                field="NUMBER OF PUPAE/LARVAE FOR DISECTIONS"
+                :value="countOf('NUMBER OF PUPAE/LARVAE FOR DISECTIONS')"
+                :saved="savedOf('NUMBER OF PUPAE/LARVAE FOR DISECTIONS')"
+                :dirty="dirty('NUMBER OF PUPAE/LARVAE FOR DISECTIONS')"
+                :editable="editable('NUMBER OF PUPAE/LARVAE FOR DISECTIONS')"
+                :locked="lockedFormula(row, 'NUMBER OF PUPAE/LARVAE FOR DISECTIONS', formulas)"
+                :more="MORE['NUMBER OF PUPAE/LARVAE FOR DISECTIONS']()"
+                @set="setValue('NUMBER OF PUPAE/LARVAE FOR DISECTIONS', $event)"
+              />
+            </section>
+            <section v-if="has('Generation')" class="border-t border-stone-100 py-3">
+              <span class="field-label">Generation</span>
+              <div class="grid grid-cols-4 gap-2">
+                <button
+                  v-for="g in generations"
+                  :key="g"
+                  type="button"
+                  class="min-h-11 rounded-lg border px-1 text-sm font-medium"
+                  :class="get('Generation') === g ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white text-stone-800'"
+                  :aria-pressed="get('Generation') === g"
+                  :disabled="!editable('Generation')"
+                  @click="setValue('Generation', g)"
+                >
+                  {{ g }}
+                </button>
+              </div>
+            </section>
+            <section class="border-t border-stone-100 py-3">
+              <span class="field-label">INSECTARY OR LABORATORY</span>
+              <div class="grid grid-cols-2 gap-2">
+                <button
+                  v-for="p in ['Insectary', 'Laboratory']"
+                  :key="p"
+                  type="button"
+                  class="min-h-11 rounded-lg border px-1 text-sm font-medium"
+                  :class="get('INSECTARY OR LABORATORY') === p ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white text-stone-800'"
+                  :aria-pressed="get('INSECTARY OR LABORATORY') === p"
+                  :disabled="!editable('INSECTARY OR LABORATORY')"
+                  @click="setValue('INSECTARY OR LABORATORY', p)"
+                >
+                  {{ p }}
+                </button>
+              </div>
+            </section>
+            <section class="border-t border-stone-100 py-3">
+              <label class="block">
+                <span class="field-label">SPECIES</span>
+                <ChoiceField
+                  v-if="editable('SPECIES')"
+                  :model-value="isBlank(get('SPECIES')) && get('SPECIES') !== 'NA' ? '' : String(get('SPECIES'))"
+                  class="field-input h-12 text-base"
+                  :class="{ 'is-dirty': dirty('SPECIES') }"
+                  :options="species"
+                  @update:model-value="setValue('SPECIES', $event || null)"
+                />
+                <p v-else class="text-sm">{{ get('SPECIES') || '—' }}</p>
+              </label>
+            </section>
+          </template>
+        </section>
+      </div>
       <p v-if="day.last.value[row.id]" class="pt-3 text-xs text-stone-500">
         {{ $t('Último cambio: {when} · {who}', { when: new Date(day.last.value[row.id].at).toLocaleString(), who: day.last.value[row.id].name || (day.last.value[row.id].actor === 'unknown' ? 'Google Sheets' : day.last.value[row.id].actor) }) }}
       </p>
@@ -683,6 +811,27 @@ const endedText = (e: ClutchState['ended']) =>
       </template>
       <button v-else class="btn h-12 px-4" @click="emit('close')">{{ $t('Cerrar') }}</button>
     </footer>
+    <!-- A chip's photos (its event's): to zoom, or the camera for its first. -->
+    <ClutchPhotoAdd
+      v-if="addingPhoto"
+      :record-id="row.id"
+      :clutch="label"
+      :day="addingPhoto.day"
+      :events="recordEvents.filter(e => e.day === addingPhoto!.day)"
+      :event-id="addingPhoto.eventId"
+      @close="addingPhoto = null"
+    />
+    <ClutchPhotoViewer
+      v-if="viewingPhotos && viewingPhotos.photos.length"
+      v-model="viewingPhotos.index"
+      :photos="viewingPhotos.photos"
+      :events="recordEvents"
+      :initials="who"
+      :can-add="canEdit && inSheet"
+      @add="(addingPhoto = { day: viewingPhotos.event.day, eventId: viewingPhotos.event.id }), (viewingPhotos = null)"
+      @removed="photoRemoved"
+      @close="viewingPhotos = null"
+    />
     <PreserveYoung
       v-if="preserving"
       :clutch="label"

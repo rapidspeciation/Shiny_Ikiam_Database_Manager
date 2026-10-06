@@ -122,10 +122,13 @@ export function idSuggestions(store, { kind, start, count, check } = {}) {
   if (!sheets) return computeIds(store, { kind, start, count });
   // Reading every row of these sheets takes up to a second (tube IDs): the answer is kept
   // until one of the sheets it reads changes.
-  // Identifiers held by entries not in the sheet yet (server/claims.mjs) count as used too.
-  const stamp = [...sheets.map(sheet => tableRevision(store, sheet)), claimStamp(store)].join('|');
-  let cache = idCache.get(store);
-  if (cache?.stamp !== stamp) idCache.set(store, (cache = { stamp, answers: new Map() }));
+  // Identifiers held by entries not in the sheet yet (server/claims.mjs) count as used too: those of
+  // this kind (a tap holding an Insectary ID, server/holds.mjs, leaves the tubes' answers alone).
+  // Each kind keeps its own answers, so asking for tubes and Insectary IDs in turn reads neither again.
+  const stamp = [...sheets.map(sheet => tableRevision(store, sheet)), claimStamp(store, kind)].join('|');
+  const kinds = idCache.get(store) ?? idCache.set(store, new Map()).get(store);
+  let cache = kinds.get(kind);
+  if (cache?.stamp !== stamp) kinds.set(kind, (cache = { stamp, answers: new Map() }));
   const key = `${kind}\u0000${start ?? ''}\u0000${count ?? ''}\u0000${check ?? ''}`;
   if (!cache.answers.has(key)) {
     const answer = computeIds(store, { kind, start, count, check });
@@ -136,10 +139,10 @@ export function idSuggestions(store, { kind, start, count, check } = {}) {
 }
 
 const idCache = new WeakMap();
-/** Changes whenever a claim is taken or released. */
-function claimStamp(store) {
+/** Changes whenever a claim of `kind` is taken or released. */
+function claimStamp(store, kind) {
   try {
-    const r = store.db.prepare('SELECT count(*) n, max(created_at) at, group_concat(value) v FROM claims').get();
+    const r = store.db.prepare('SELECT count(*) n, max(created_at) at, group_concat(value) v FROM claims WHERE kind = ?').get(kind);
     return `${r.n}-${r.at}-${r.v?.length ?? 0}`;
   } catch {
     return '';
@@ -168,26 +171,22 @@ function computeIds(store, { kind, start, count, check } = {}) {
 }
 
 /**
- * Free pre-made Insectary IDs. The letter at the end is the round of the
- * sheet's ID formula (A0A…Z9A, then A0B…Z9B, …, now D), not a kind of
- * butterfly. The team mostly goes on after the last row used, but also fills
- * earlier empty rows (backlogs, emergences typed later: H0B–H2B, L8D…), so
- * those count too, after the ones at the end. An ID is free when its row is
- * empty (nothing typed besides its formulas: a row of NA with a note "we skipt
- * this ID" is not) and no row of any sheet names it; an ID with two pre-made
- * rows is left out.
- * `tail` is how many come after the last row used (the usual suggestion).
+ * The pre-made rows free in the sheets (claims aside), the last row used and the
+ * last pre-made ID: reading every row of Insectary_data and the sheets naming IDs
+ * takes half a second, so it is kept until one of those sheets changes (a tap's
+ * hold, server/holds.mjs, changes only the claims laid over it).
  */
-function insectaryIds(store, start, count) {
+const insectaryBases = new WeakMap();
+function insectaryBase(store) {
+  const stamp = ID_SHEETS.insectary().map(sheet => tableRevision(store, sheet)).join('|');
+  const hit = insectaryBases.get(store);
+  if (hit?.stamp === stamp) return hit;
   const rows = rowsOf(store, 'Insectary_data');
   const norm = value => String(value ?? '').trim().toUpperCase();
   const used = new Set(rows.filter(r => r.observed).map(r => norm(r.values.Insectary_ID)));
   for (const [sheet, fields] of Object.entries(REFERENCES))
     for (const r of moduleMap.has(sheet) ? rowsOf(store, sheet) : [])
       for (const field of fields) if (!blank(r.values[field])) used.add(norm(r.values[field]));
-  // Held by an Emergidos entry (or a save waiting for Google) of anyone: never offered again.
-  const claimed = claimedValues(store.db, 'insectary');
-  for (const id of claimed.keys()) used.add(id);
   const copies = new Map();
   for (const r of rows) copies.set(norm(r.values.Insectary_ID), (copies.get(norm(r.values.Insectary_ID)) || 0) + 1);
   const lastObserved = rows.reduce((max, r) => (r.observed ? Math.max(max, r.row) : max), 0);
@@ -199,6 +198,32 @@ function insectaryIds(store, start, count) {
     const id = norm(r.values.Insectary_ID);
     return !r.observed && id && !blank(id) && !used.has(id) && copies.get(id) === 1 && !typedIn(r);
   });
+  const round = r => /^[A-ZÑ]\d([A-Z])$/.exec(norm(r.values.Insectary_ID))?.[1] ?? '';
+  const lastPremade = rows.findLast(r => round(r))?.values.Insectary_ID;
+  const out = { stamp, rows: free, lastObserved, lastPremade };
+  insectaryBases.set(store, out);
+  return out;
+}
+
+/**
+ * Free pre-made Insectary IDs. The letter at the end is the round of the
+ * sheet's ID formula (A0A…Z9A, then A0B…Z9B, …, now D), not a kind of
+ * butterfly. The team mostly goes on after the last row used, but also fills
+ * earlier empty rows (backlogs, emergences typed later: H0B–H2B, L8D…), so
+ * those count too, after the ones at the end. An ID is free when its row is
+ * empty (nothing typed besides its formulas: a row of NA with a note "we skipt
+ * this ID" is not) and no row of any sheet names it; an ID with two pre-made
+ * rows is left out.
+ * `tail` is how many come after the last row used (the usual suggestion).
+ */
+function insectaryIds(store, start, count) {
+  const { rows: premade, lastObserved, lastPremade } = insectaryBase(store);
+  const norm = value => String(value ?? '').trim().toUpperCase();
+  // Held by an Emergidos entry, a card's tap (server/holds.mjs) or a save waiting for Google, of anyone: never offered again.
+  const claimed = claimedValues(store.db, 'insectary');
+  const free = premade.filter(r => !claimed.has(norm(r.values.Insectary_ID)));
+  // Pre-made rows free but for a claim: the cards holding them keep their place in the order.
+  const held = premade.filter(r => claimed.has(norm(r.values.Insectary_ID))).map(r => ({ value: String(r.values.Insectary_ID).trim(), row: r.row }));
   const tail = free.filter(r => r.row > lastObserved);
   // Earlier rows: the newest round first (D before C before B), in sheet order. IDs of older
   // forms (85Y, 6HQ) are not offered: they can still be typed when a wing carries one.
@@ -216,14 +241,13 @@ function insectaryIds(store, start, count) {
     pool = free.filter(r => r.row >= from.row && (r === from || round(r)));
   }
   const ids = pool.slice(0, count).map(r => ({ value: String(r.values.Insectary_ID).trim(), row: r.row }));
-  // The last pre-made ID of the series ("hasta Q5D" in the warning when few are left).
-  const lastPremade = rows.findLast(r => round(r))?.values.Insectary_ID;
   return {
     suggestions: ids.slice(0, 1).map(i => ({ value: i.value, label: `${i.value} (fila ${i.row})` })),
     sequence: ids.map(i => i.value),
     rows: ids,
     tail: start ? ids.length : Math.min(tail.length, ids.length),
     freeAtEnd: tail.length,
+    held,
     last: lastPremade ? String(lastPremade).trim() : null,
   };
 }

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { Check, Delete, PenLine, Tag, Undo2, X } from 'lucide-vue-next'
+import { Camera, Check, Minus, PenLine, Plus, Tag, Undo2, X } from 'lucide-vue-next'
 import DateField from '../DateField.vue'
 import {
   appendTerm,
+  chipEvents,
   countedToday,
   countValue,
   effectLabel,
@@ -14,15 +15,19 @@ import {
   LOSSES,
   parseIds,
   readCount,
-  removeLast,
+  rebaseChips,
   termLabels,
+  todaySplit,
+  toggleStrike,
   totalOf,
   typedTotal,
+  type ClutchEvent,
   type CountResult,
   type EventKind,
   type Loss,
   type Stage,
 } from '../../lib/clutches'
+import type { ClutchPhoto } from '../../lib/clutchPhotos'
 import { dayFirst, isoToSerial, serialToIso } from '../../lib/dates'
 import { LIFESTAGES, MAIN_STAGES } from '../../lib/emerged'
 import type { CellValue } from '../../lib/types'
@@ -32,16 +37,19 @@ import { t } from '../../lib/i18n'
  * One count of a clutch kept as the notebook sums it (=3+5-2): its history as
  * chips and the total. Tapping the total and typing the new one is the main
  * way (32 → 30 adds −2 to the sum, as "Counted today"); also +N (more hatched,
- * pupated or emerged), −N (died, disappeared or preserved: it asks which),
- * "Counted today: N" and "remove the last term" (yesterday's −3, when the 3
- * turn up again). Each step writes the team's formula, never a plain total.
- * What happened is recorded apart, only in the app (`event`): a + as hatched
- * (pupated…), a − as the person says; preserved ones stay in the count when
- * the team keeps them counted (`subtractPreserved` false). Each event happened
- * today unless Yesterday or another day is chosen first, and the note it adds
- * to NOTES (`noteFor`) is shown before it is saved. Larvae (or eggs) preserved
- * can be registered one by one in Insectary_data (`register`: the parent opens
- * Emergidos' cards and answers with the IDs they took).
+ * pupated or emerged), − (died, disappeared or preserved: the cause first, then
+ * how many) and "Counted today: N". A chip tapped is struck out of the sum
+ * (tapped again, it is back) until the clutch is saved; the chips added today
+ * are marked apart from earlier days', and "This morning → now" takes today's
+ * changes back at once. A chip with its event (+3 hatched, −1 died) has a
+ * camera for its photos. Each step writes the team's formula, never a plain
+ * total. What happened is recorded apart, only in the app (`event`): a + as
+ * hatched (pupated…), a − as the person says; preserved ones stay in the count
+ * when the team keeps them counted (`subtractPreserved` false). Each event
+ * happened today unless Yesterday or another day is chosen first, and the note
+ * it adds to NOTES (`noteFor`) is shown before it is saved. Larvae (or eggs)
+ * preserved can be registered one by one in Insectary_data (`register`: the
+ * parent opens Emergidos' cards and answers with the IDs they took).
  */
 const props = defineProps<{
   field: string
@@ -67,6 +75,12 @@ const props = defineProps<{
   noteFor?: (e: { kind: EventKind; count: number; ids: string[]; day: number; lifestage?: string }) => string
   /** Preserved larvae and eggs can be registered in Insectary_data from here (a clutch in the sheet). */
   canRegister?: boolean
+  /** The clutch's events (only in the app), to link each chip to its own. */
+  events?: ClutchEvent[]
+  /** The clutch's photos, to show which chips have some. */
+  photos?: ClutchPhoto[]
+  /** Photos can be added (a clutch already in the sheet). */
+  canPhoto?: boolean
 }>()
 export interface CountEvent {
   key: string
@@ -83,6 +97,8 @@ const emit = defineEmits<{
   event: [event: CountEvent]
   unevent: [key: string]
   register: [request: { count: number; lifestage: string; day: number; done: (ids: string[]) => void }]
+  /** A chip's camera: its event's photos (or a new one). */
+  photo: [event: ClutchEvent]
 }>()
 
 const count = computed(() => readCount(props.value))
@@ -122,6 +138,7 @@ function undoStep() {
   message.value = ''
   lastNote.value = ''
   asking.value = null
+  losing.value = null
   if (step.event) emit('unevent', step.event)
   if (!step.only) emit('set', step.value)
 }
@@ -134,7 +151,46 @@ function forgetEvents() {
       s.event = undefined
     }
   asking.value = null
+  losing.value = null
 }
+
+// --- The chips: struck out of the sum by a tap (and back by another), today's told apart
+const chips = ref<{ base: number[]; struck: number[] }>({ base: [...count.value.terms], struck: [] })
+watch(
+  () => count.value.terms.join(','),
+  () => (chips.value = rebaseChips(chips.value.base, chips.value.struck, count.value.terms)),
+)
+function tapChip(i: number) {
+  if (!canWork.value) return
+  const r = toggleStrike(chips.value.base, chips.value.struck, i)
+  if (!r.ok) {
+    message.value = reasonText(r.reason)
+    return
+  }
+  message.value = ''
+  chips.value = { base: chips.value.base, struck: r.struck }
+  setCount(r.terms.length ? countValue(r.terms) : null)
+}
+/** This morning's count: as it was before today's first change, else as the sheet has it. */
+const morning = computed(() => (props.startOfDay !== undefined ? props.startOfDay : props.saved))
+const morningCount = computed(() => readCount(morning.value))
+/** A count compared as its sum (=3+5 and "=3 + 5" are one). */
+const sumKey = (v: CellValue | undefined) => {
+  const c = readCount(v)
+  return c.text ?? (c.na ? 'NA' : c.terms.join(','))
+}
+/** Changed today (saved, or still to save). */
+const changedToday = computed(() => sumKey(morning.value) !== sumKey(props.value))
+/** The chips before this index are from earlier days (this morning's sum); those after it, today's. */
+const firstToday = computed(() => (changedToday.value ? todaySplit(morningCount.value.terms, chips.value.base).kept : chips.value.base.length))
+const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.length ? String(totalOf(c.terms)) : '—')
+const chipLabels = computed(() => termLabels(chips.value.base))
+// Each chip's event (its photos), for a stage's count.
+const chipEvent = computed(() =>
+  props.stage && props.events?.length ? chipEvents(chips.value.base, props.events, props.stage, props.subtractPreserved !== false) : [],
+)
+const eventById = computed(() => new Map((props.events ?? []).map(e => [e.id, e])))
+const photosOf = (id: string | null) => (id ? (props.photos ?? []).filter(p => p.eventId === id).length : 0)
 
 // --- What happened, told apart (only in the app): died, disappeared or preserved; hatched…
 const lossy = computed(() => hasLosses(props.stage ?? null))
@@ -172,48 +228,117 @@ function record(kind: EventKind, n: number, ids: string[] = []) {
   otherDay.value = false
   return key
 }
+
+// --- − : the cause first (died, disappeared, preserved), then how many
+const losing = ref<{ kind: Loss | null } | null>(null)
+const lossText = ref('')
+const lossN = computed(() => (/^\d{1,4}$/.test(lossText.value.trim()) ? Number(lossText.value.trim()) : null))
+const lossBox = ref<HTMLInputElement>()
+const idsText = ref('')
+function startLoss() {
+  if (!lossy.value) {
+    // Adults (and the dissections): no cause to tell, the number typed comes off.
+    if (n.value === null) return (message.value = reasonText('empty'))
+    return apply(appendTerm(count.value.terms, -n.value))
+  }
+  message.value = ''
+  lastNote.value = ''
+  asking.value = null
+  lossText.value = n.value !== null ? String(n.value) : ''
+  typed.value = ''
+  idsText.value = ''
+  losing.value = { kind: null }
+}
+async function pickCause(kind: Loss) {
+  if (!losing.value) return
+  losing.value = { kind }
+  if (!lossText.value) lossText.value = '1'
+  await nextTick()
+  if (kind !== 'preserved') lossBox.value?.select()
+}
+function stepLoss(by: number) {
+  lossText.value = String(Math.max(1, Math.min(9999, (lossN.value ?? 0) + by)))
+}
+/** The −N a cause and number would add (or why not). */
+const lossCheck = computed<CountResult | null>(() => {
+  const kind = losing.value?.kind
+  if (!kind || lossN.value === null) return null
+  return lossTakesOff(kind, subtract.value) ? appendTerm(count.value.terms, -lossN.value) : { ok: true, terms: count.value.terms }
+})
+/** The note this answer would add, while it is being chosen. */
+const lossNote = computed(() => {
+  const kind = losing.value?.kind
+  if (!kind || lossN.value === null || !props.noteFor) return ''
+  return props.noteFor({
+    kind,
+    count: lossN.value,
+    ids: kind === 'preserved' ? parseIds(idsText.value) : [],
+    day: eventDay.value,
+    lifestage: kind === 'preserved' && props.stage === 'larva' ? lifestage.value : undefined,
+  })
+})
+function confirmLoss() {
+  const kind = losing.value?.kind
+  const amount = lossN.value
+  if (!kind) return
+  if (amount === null || amount === 0) return (message.value = reasonText('empty'))
+  const ids = kind === 'preserved' ? parseIds(idsText.value) : []
+  if (ids.length > amount) return (message.value = t('Más IDs que el número ({n})', { n: amount }))
+  message.value = ''
+  if (lossTakesOff(kind, subtract.value)) {
+    const r = appendTerm(count.value.terms, -amount)
+    if (!r.ok) return (message.value = reasonText(r.reason))
+    setCount(countValue(r.terms))
+    steps.value[steps.value.length - 1].event = record(kind, amount, ids)
+  } else steps.value.push({ value: props.value, event: record(kind, amount, ids), only: true })
+  losing.value = null
+  idsText.value = ''
+}
+/** Registered in Insectary_data (Emergidos' cards): their IDs come back and the loss is recorded with them. */
+function register() {
+  const l = losing.value
+  const amount = lossN.value
+  if (!l || amount === null) return (message.value = reasonText('empty'))
+  emit('register', {
+    count: amount,
+    lifestage: props.stage === 'egg' ? 'Egg' : lifestage.value,
+    day: eventDay.value,
+    done: ids => {
+      if (losing.value !== l) return
+      lossText.value = String(Math.max(amount, ids.length))
+      idsText.value = ids.join(' ')
+      confirmLoss()
+    },
+  })
+}
+const lossWord: Record<Loss, () => string> = {
+  died: () => t('Murieron'),
+  disappeared: () => t('Desaparecieron'),
+  preserved: () => t('Se preservaron'),
+}
+
+/**
+ * After a count changed by typing or Counted: what the difference was (eggs,
+ * larvae, pupae); the total already changed, the answer only says why (a
+ * recount is no event).
+ */
+const asking = ref<{ n: number; gain: boolean } | null>(null)
+const choosingIds = ref(false)
+function askAfter(before: number[], after: number[]) {
+  if (!props.stage) return
+  const diff = totalOf(after) - totalOf(before)
+  lastNote.value = ''
+  choosingIds.value = false
+  idsText.value = ''
+  if (diff < 0 && lossy.value) asking.value = { n: -diff, gain: false }
+  else if (diff > 0 && before.length) asking.value = { n: diff, gain: true }
+}
 /** The note a preserved answer would add, while it is being chosen. */
 const preservedNote = computed(() => {
   const a = asking.value
   if (!a || !props.noteFor) return ''
   return props.noteFor({ kind: 'preserved', count: a.n, ids: parseIds(idsText.value), day: eventDay.value, lifestage: props.stage === 'larva' ? lifestage.value : undefined })
 })
-/** Registered in Insectary_data (Emergidos' cards): their IDs come back and the answer is given with them. */
-function register() {
-  const a = asking.value
-  if (!a) return
-  emit('register', {
-    count: a.n,
-    lifestage: props.stage === 'egg' ? 'Egg' : lifestage.value,
-    day: eventDay.value,
-    done: ids => {
-      if (asking.value !== a) return
-      idsText.value = ids.slice(0, a.n).join(' ')
-      choose('preserved')
-    },
-  })
-}
-/**
- * The question after a −N or a new total: what happened to them. `before`:
- * the −N button, applied once answered; `after`: the total already changed,
- * the answer only says why (a recount is no event).
- */
-const asking = ref<{ n: number; mode: 'before' | 'after'; gain: boolean } | null>(null)
-const choosingIds = ref(false)
-const idsText = ref('')
-function ask(n: number, mode: 'before' | 'after', gain = false) {
-  lastNote.value = ''
-  asking.value = { n, mode, gain }
-  choosingIds.value = false
-  idsText.value = ''
-}
-/** After a count changed by typing or Counted: asks what the difference was (eggs, larvae, pupae). */
-function askAfter(before: number[], after: number[]) {
-  if (!props.stage) return
-  const diff = totalOf(after) - totalOf(before)
-  if (diff < 0 && lossy.value) ask(-diff, 'after')
-  else if (diff > 0 && before.length) ask(diff, 'after', true)
-}
 function choose(kind: EventKind) {
   const a = asking.value
   if (!a) return
@@ -228,44 +353,22 @@ function choose(kind: EventKind) {
   }
   message.value = ''
   const takesOff = a.gain || lossTakesOff(kind as Loss, subtract.value)
-  if (a.mode === 'before') {
-    if (takesOff) {
-      const r = appendTerm(count.value.terms, -a.n)
-      if (!r.ok) {
-        message.value = reasonText(r.reason)
-        return
-      }
-      setCount(countValue(r.terms))
-      steps.value[steps.value.length - 1].event = record(kind, a.n, ids)
-    } else steps.value.push({ value: props.value, event: record(kind, a.n, ids), only: true })
-  } else {
-    const last = steps.value[steps.value.length - 1]
-    if (!takesOff && last && !last.event) {
-      // Preserved, and the team keeps them counted: the count goes back to what it was.
-      emit('set', last.value)
-      last.only = true
-    }
-    if (last && !last.event) last.event = record(kind, a.n, ids)
+  const last = steps.value[steps.value.length - 1]
+  if (!takesOff && last && !last.event) {
+    // Preserved, and the team keeps them counted: the count goes back to what it was.
+    emit('set', last.value)
+    last.only = true
   }
+  if (last && !last.event) last.event = record(kind, a.n, ids)
   asking.value = null
   choosingIds.value = false
 }
-const lossWord: Record<Loss, () => string> = {
-  died: () => t('Murieron'),
-  disappeared: () => t('Desaparecieron'),
-  preserved: () => t('Se preservaron'),
-}
-const same = (a: CellValue | undefined, b: CellValue | undefined) => String(a ?? '').replace(/\s+/g, '') === String(b ?? '').replace(/\s+/g, '')
+
 /** Today's changes to this count, taken back at once: the formula it had this morning. */
-const changedToday = computed(() => props.startOfDay !== undefined && !same(props.startOfDay, props.value))
-const startText = computed(() => {
-  const c = readCount(props.startOfDay)
-  return c.na ? 'NA' : c.terms.length ? `${formulaOf(c.terms)} (${totalOf(c.terms)})` : '—'
-})
 function backToMorning() {
   message.value = ''
   forgetEvents()
-  setCount(props.startOfDay ?? null)
+  setCount(morning.value ?? null)
 }
 function apply(result: CountResult) {
   if (!result.ok) {
@@ -309,23 +412,15 @@ function plus() {
   if (n.value === null) return (message.value = reasonText('empty'))
   const added = n.value
   const before = steps.value.length
+  losing.value = null
   apply(appendTerm(count.value.terms, added))
   if (props.stage && steps.value.length > before) steps.value[steps.value.length - 1].event = record(gainOf(props.stage), added)
-}
-/** −N: for eggs, larvae and pupae it asks first what happened to them. */
-function minus() {
-  if (n.value === null) return (message.value = reasonText('empty'))
-  if (!lossy.value) return apply(appendTerm(count.value.terms, -n.value))
-  const r = appendTerm(count.value.terms, -n.value)
-  if (!r.ok) return (message.value = reasonText(r.reason))
-  message.value = ''
-  ask(n.value, 'before')
-  typed.value = ''
 }
 function counted() {
   if (n.value === null) return (message.value = reasonText('empty'))
   const before = count.value.terms
   const r = countedToday(before, n.value)
+  losing.value = null
   apply(r)
   if (r.ok) askAfter(before, r.terms)
 }
@@ -354,6 +449,7 @@ async function startTyping() {
   if (!canWork.value) return
   message.value = ''
   newTotal.value = ''
+  losing.value = null
   typing.value = true
   await nextTick()
   totalBox.value?.focus()
@@ -389,33 +485,6 @@ function onTotalBlur() {
   }
   if (typedResult.value.ok) applyTotal()
   else stopTyping()
-}
-
-/** A chip tapped (any term of the sum), to take it out. */
-const picked = ref<number | null>(null)
-function dropTerm(i: number) {
-  const terms = count.value.terms.filter((_, k) => k !== i)
-  picked.value = null
-  message.value = ''
-  // The first term is where the count started: a loss can't come first.
-  if (terms.length && terms[0] < 0) {
-    message.value = reasonText('first')
-    return
-  }
-  if (totalOf(terms) < 0) {
-    message.value = reasonText('negative')
-    return
-  }
-  setCount(terms.length ? countValue(terms) : null)
-}
-function dropLast() {
-  message.value = ''
-  setCount(countValue(removeLast(count.value.terms)))
-}
-function revert() {
-  message.value = ''
-  forgetEvents()
-  setCount(props.saved)
 }
 </script>
 
@@ -470,62 +539,68 @@ function revert() {
       <p class="min-w-0 flex-1 text-sm tabular-nums" :class="typedResult.ok ? 'font-medium text-brand-800' : 'text-stone-600'" role="status">
         {{ typedEffect || $t('Escribe el total contado hoy') }}
       </p>
-      <button
-        type="button"
-        class="btn-primary h-11 shrink-0 px-4"
-        :disabled="!typedResult.ok"
-        @mousedown.prevent
-        @click="applyTotal"
-      >
+      <button type="button" class="btn-primary h-11 shrink-0 px-4" :disabled="!typedResult.ok" @mousedown.prevent @click="applyTotal">
         <Check :size="18" /> {{ $t('Poner') }}
       </button>
-      <button
-        type="button"
-        class="btn h-11 w-11 shrink-0 px-0"
-        :aria-label="$t('Cancelar')"
-        @pointerdown="willCancel"
-        @mousedown.prevent
-        @click="stopTyping"
-      >
+      <button type="button" class="btn h-11 w-11 shrink-0 px-0" :aria-label="$t('Cancelar')" @pointerdown="willCancel" @mousedown.prevent @click="stopTyping">
         <X :size="18" />
       </button>
     </div>
-    <!-- The history: each term a chip; tap one to take it out (the button beside them takes the last). -->
-    <div v-if="count.terms.length" class="mt-1 flex flex-wrap items-center gap-1" :aria-label="$t('Historia de la suma')">
-      <button
-        v-for="(label, i) in termLabels(count.terms)"
-        :key="i"
-        type="button"
-        class="min-h-8 rounded-md px-2 py-0.5 text-sm font-medium tabular-nums"
-        :class="[
-          count.terms[i] < 0 ? 'bg-red-50 text-red-800' : 'bg-stone-100 text-stone-800',
-          dirty && i === count.terms.length - 1 ? 'ring-1 ring-amber-400' : '',
-          picked === i ? 'ring-2 ring-brand-600' : '',
-          canWork ? 'hover:ring-1 hover:ring-stone-400' : 'cursor-default',
-        ]"
-        :disabled="!canWork"
-        :title="canWork ? $t('Toca para quitar este término') : undefined"
-        @click="picked = picked === i ? null : i"
-      >
-        {{ label }}
+    <!-- Today against this morning: what it was, what it is, and one tap to take today's changes back. -->
+    <div v-if="changedToday && editable && !locked" class="mt-2 flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5" role="status">
+      <p class="min-w-0 flex-1 text-sm leading-tight tabular-nums">
+        <span class="text-stone-600">{{ $t('Esta mañana') }}</span> <strong class="text-base">{{ shown(morningCount) }}</strong>
+        <span class="mx-1 text-stone-500">→</span>
+        <span class="text-stone-600">{{ $t('ahora') }}</span> <strong class="text-base text-amber-900">{{ shown(count) }}</strong>
+      </p>
+      <button type="button" class="btn h-10 shrink-0 border-amber-400 bg-white px-2.5 text-sm text-amber-950" @click="backToMorning">
+        <Undo2 :size="16" /> {{ $t('Deshacer lo de hoy') }}
       </button>
+    </div>
+    <!-- The history: each term a chip, earlier days' then today's; a tap strikes it out of the sum (another, back in). -->
+    <div v-if="chips.base.length" class="mt-2 flex flex-wrap items-center gap-1.5" :aria-label="$t('Historia de la suma')">
+      <template v-for="(label, i) in chipLabels" :key="i">
+        <span v-if="i === firstToday && i < chips.base.length" class="text-[11px] font-semibold tracking-wide text-amber-800 uppercase">{{ $t('hoy') }}</span>
+        <span
+          class="flex min-h-10 items-stretch overflow-hidden rounded-lg text-base font-semibold tabular-nums"
+          :class="[
+            chips.struck.includes(i)
+              ? 'border border-dashed border-stone-400 bg-white text-stone-400'
+              : i >= firstToday
+                ? 'bg-amber-100 ring-1 ring-amber-300 ' + (chips.base[i] < 0 ? 'text-red-800' : 'text-amber-950')
+                : chips.base[i] < 0
+                  ? 'bg-red-50 text-red-800'
+                  : 'bg-stone-100 text-stone-800',
+          ]"
+        >
+          <button
+            type="button"
+            class="px-2.5"
+            :class="[chips.struck.includes(i) ? 'line-through decoration-2' : '', canWork ? 'active:bg-black/5' : 'cursor-default']"
+            :disabled="!canWork"
+            :aria-pressed="chips.struck.includes(i)"
+            :title="canWork ? (chips.struck.includes(i) ? $t('Tachado: fuera de la suma. Toca para devolverlo') : $t('Toca para quitarlo de la suma')) : undefined"
+            @click="tapChip(i)"
+          >
+            {{ label }}
+          </button>
+          <!-- Its event's photos: a camera, with how many. -->
+          <button
+            v-if="chipEvent[i] && (canPhoto || photosOf(chipEvent[i]))"
+            type="button"
+            class="flex items-center gap-0.5 border-l border-black/10 px-1.5 text-xs font-medium active:bg-black/5"
+            :class="photosOf(chipEvent[i]) ? 'text-brand-800' : 'text-stone-400'"
+            :aria-label="photosOf(chipEvent[i]) ? $t('Fotos de {term} ({n})', { term: label, n: photosOf(chipEvent[i]) }) : $t('Añadir foto a {term}', { term: label })"
+            @click="emit('photo', eventById.get(chipEvent[i]!)!)"
+          >
+            <Camera :size="14" /><span v-if="photosOf(chipEvent[i])">{{ photosOf(chipEvent[i]) }}</span>
+          </button>
+        </span>
+      </template>
       <span class="text-sm text-stone-500 tabular-nums">= {{ total }}</span>
-      <button
-        v-if="canWork"
-        type="button"
-        class="ml-auto flex h-11 items-center gap-1 rounded-md px-2 text-sm text-stone-700 active:bg-stone-100"
-        :aria-label="$t('Quitar el último término ({term})', { term: termLabels(count.terms).at(-1) ?? '' })"
-        @click="dropLast"
-      >
-        <Delete :size="18" /> {{ $t('Quitar {term}', { term: termLabels(count.terms).at(-1) ?? '' }) }}
-      </button>
     </div>
-    <!-- A term tapped: take it out of the sum (any one, not only the last). -->
-    <div v-if="picked !== null && canWork" class="mt-1.5 flex flex-wrap items-center gap-2 rounded-md bg-stone-100 px-2 py-1.5 text-sm">
-      <span>{{ $t('Quitar {term} de la suma: queda {total}', { term: termLabels(count.terms)[picked] ?? '', total: totalOf(count.terms.filter((_, k) => k !== picked)) }) }}</span>
-      <button type="button" class="btn-primary h-9 px-3" @click="dropTerm(picked)">{{ $t('Quitar término') }}</button>
-      <button type="button" class="btn h-9 px-3" @click="picked = null">{{ $t('Cancelar') }}</button>
-    </div>
+    <p v-if="chips.struck.length && canWork" class="mt-1 text-xs text-stone-600">{{ $t('Tachado = fuera de la suma. Tócalo otra vez para devolverlo.') }}</p>
+    <p v-else-if="chips.base.length > 1 && canWork && !dirty" class="mt-1 text-xs text-stone-500">{{ $t('Toca un número para quitarlo de la suma.') }}</p>
     <p v-if="locked" class="mt-1 text-xs text-stone-500">{{ $t('Fórmula de la hoja (solo lectura)') }}</p>
     <p v-else-if="count.text && editable" class="mt-1 text-xs text-amber-900">
       {{ $t('No es una suma: corrígelo en la tabla') }}
@@ -569,16 +644,137 @@ function revert() {
         <span class="text-lg leading-none font-semibold">+{{ n ?? '' }}</span>
         <span class="text-[11px] leading-tight">{{ more }}</span>
       </button>
-      <button type="button" class="count-btn border-red-300 text-red-800" :aria-label="$t('Restar {n}', { n: typed })" @click="minus">
+      <button
+        type="button"
+        class="count-btn border-red-300 text-red-800"
+        :class="{ 'bg-red-50 ring-2 ring-red-200': losing }"
+        :aria-label="lossy ? $t('Restar: murieron, desaparecieron o se preservaron') : $t('Restar {n}', { n: typed })"
+        :aria-expanded="lossy ? !!losing : undefined"
+        @click="losing ? (losing = null) : startLoss()"
+      >
         <span class="text-lg leading-none font-semibold">−{{ n ?? '' }}</span>
-        <span class="text-[11px] leading-tight">{{ lossy ? $t('murieron, faltan…') : $t('murieron / faltan') }}</span>
+        <span class="text-[11px] leading-tight">{{ lossy ? $t('¿qué pasó?') : $t('murieron / faltan') }}</span>
       </button>
       <button type="button" class="count-btn border-stone-400 text-stone-800" @click="counted">
         <span class="text-sm leading-none font-semibold">{{ n === null ? $t('Contados') : $t('Contados: {n}', { n }) }}</span>
         <span class="text-[11px] leading-tight">{{ countedEffect || $t('hoy') }}</span>
       </button>
     </div>
-    <!-- What happened to them: recorded apart, only in the app (the sheet keeps its sum). -->
+    <!-- −: the cause first, then how many (and, preserved, their stage and IDs). Recorded apart, only in the app. -->
+    <div v-if="losing && canWork" class="mt-2 rounded-lg border border-red-200 bg-red-50/40 p-2.5" role="group" :aria-label="$t('Restar')">
+      <template v-if="!losing.kind">
+        <p class="text-sm font-medium">{{ $t('¿Qué pasó?') }} <span class="text-xs font-normal text-stone-500">{{ $t('primero la causa, luego cuántas') }}</span></p>
+        <div class="mt-1.5 grid grid-cols-3 gap-1.5">
+          <button
+            v-for="k in LOSSES"
+            :key="k"
+            type="button"
+            class="btn h-12 justify-center px-1 text-base"
+            :class="k === 'preserved' ? 'border-sky-500 text-sky-900' : 'border-red-300 text-red-800'"
+            @click="pickCause(k)"
+          >
+            {{ lossWord[k]() }}
+          </button>
+        </div>
+        <button type="button" class="mt-1.5 h-10 w-full text-sm text-stone-600" @click="losing = null">{{ $t('Cancelar') }}</button>
+      </template>
+      <template v-else>
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            class="flex h-10 items-center gap-1 rounded-full border px-3 text-sm font-semibold"
+            :class="losing.kind === 'preserved' ? 'border-sky-500 bg-sky-50 text-sky-900' : 'border-red-300 bg-white text-red-800'"
+            :title="$t('Cambiar la causa')"
+            @click="losing = { kind: null }"
+          >
+            {{ lossWord[losing.kind]() }} <PenLine :size="13" class="opacity-60" />
+          </button>
+          <span class="text-sm text-stone-700">{{ $t('¿Cuántas?') }}</span>
+          <span class="ml-auto flex items-stretch overflow-hidden rounded-lg border border-stone-300 bg-white">
+            <button type="button" class="grid h-11 w-11 place-items-center active:bg-stone-100" :aria-label="$t('Una menos')" @click="stepLoss(-1)"><Minus :size="18" /></button>
+            <input
+              ref="lossBox"
+              v-model="lossText"
+              class="h-11 w-14 border-x border-stone-300 text-center text-xl font-semibold tabular-nums outline-none"
+              type="text"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              maxlength="4"
+              autocomplete="off"
+              enterkeyhint="done"
+              :aria-label="$t('Cuántas')"
+              @input="message = ''"
+              @keydown.enter.prevent="losing.kind === 'preserved' && canRegister && (stage === 'larva' || stage === 'egg') ? register() : confirmLoss()"
+            />
+            <button type="button" class="grid h-11 w-11 place-items-center active:bg-stone-100" :aria-label="$t('Una más')" @click="stepLoss(1)"><Plus :size="18" /></button>
+          </span>
+        </div>
+        <template v-if="losing.kind === 'preserved'">
+          <!-- LIFESTAGE of the larvae preserved: the 3rd instar unless another is chosen. -->
+          <div v-if="stage === 'larva'" class="mt-2 flex flex-wrap gap-1" role="group" aria-label="LIFESTAGE">
+            <button
+              v-for="st in lifestages"
+              :key="st"
+              type="button"
+              class="min-h-10 rounded-lg border px-2 text-sm font-medium"
+              :class="lifestage === st ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white text-stone-800'"
+              :aria-pressed="lifestage === st"
+              @click="lifestage = st"
+            >
+              {{ st }}
+            </button>
+            <button type="button" class="min-h-10 rounded-lg border border-dashed border-stone-300 px-2 text-sm text-stone-700" @click="moreStages = !moreStages">
+              {{ moreStages ? $t('Menos') : $t('Otro estadio') }}
+            </button>
+          </div>
+          <button
+            v-if="canRegister && (stage === 'larva' || stage === 'egg')"
+            type="button"
+            class="btn-primary mt-2 h-12 w-full flex-col justify-center leading-tight"
+            :disabled="lossN === null"
+            @click="register"
+          >
+            <span>{{ $tn(lossN ?? 0, 'Registrar {n} en Insectary_data', 'Registrar {n} en Insectary_data') }}</span>
+            <span class="text-xs font-normal opacity-90">{{ $t('Insectary ID, CAM y tubo de cada una (Flash frozen)') }}</span>
+          </button>
+          <label class="mt-2 block text-xs text-stone-600" :for="`ids-${field}`">{{ canRegister ? $t('O solo contarlas, con sus IDs si los tienen (opcional)') : $t('IDs de Insectary (si los tienen, opcional)') }}</label>
+          <div class="mt-1 flex gap-2">
+            <input
+              :id="`ids-${field}`"
+              v-model="idsText"
+              class="field-input h-11 min-w-0 flex-1 uppercase"
+              type="text"
+              autocomplete="off"
+              autocapitalize="characters"
+              spellcheck="false"
+              enterkeyhint="done"
+              placeholder="H0E H1E"
+              @keydown.enter.prevent="confirmLoss"
+            />
+            <button type="button" :class="canRegister ? 'btn' : 'btn-primary'" class="h-11 shrink-0 px-4" @click="confirmLoss"><Check :size="18" /> {{ $t('Poner') }}</button>
+          </div>
+          <p class="mt-1 text-xs text-stone-600">
+            {{
+              subtract
+                ? $t('Se restan de {field}, como dice el ajuste del equipo.', { field })
+                : $t('Se quedan en {field}, como dice el ajuste del equipo.', { field })
+            }}
+          </p>
+        </template>
+        <p v-if="lossNote" class="mt-2 text-xs break-words text-stone-700">
+          {{ $t('Se añade a NOTES:') }} <span class="rounded bg-amber-50 px-1 text-stone-900">{{ lossNote }}</span>
+        </p>
+        <p v-if="lossCheck && !lossCheck.ok" class="mt-1 text-sm text-red-700">{{ reasonText(lossCheck.reason) }}</p>
+        <div v-if="losing.kind !== 'preserved'" class="mt-2 flex gap-2">
+          <button type="button" class="btn h-12 flex-1" @click="losing = null">{{ $t('Cancelar') }}</button>
+          <button type="button" class="btn-primary h-12 flex-[2] text-base" :disabled="!lossCheck?.ok" @click="confirmLoss">
+            <Check :size="18" /> {{ $t('Restar {n}', { n: lossN ?? '' }) }}
+          </button>
+        </div>
+        <button v-else type="button" class="mt-1 h-10 w-full text-sm text-stone-600" @click="losing = null">{{ $t('Cancelar') }}</button>
+      </template>
+    </div>
+    <!-- A new total typed (or Counted): what the difference was. Recorded apart, only in the app (the sheet keeps its sum). -->
     <div v-if="asking && canWork" class="mt-2 rounded-lg border border-stone-300 bg-stone-50 p-2" role="group" :aria-label="$t('¿Qué pasó?')">
       <p class="text-sm font-medium">
         <span class="tabular-nums">{{ asking.gain ? '+' : '−' }}{{ asking.n }}</span> ·
@@ -594,12 +790,9 @@ function revert() {
             {{ lossWord[k]() }}
           </button>
         </template>
-        <button type="button" class="btn h-11 justify-center text-stone-600" @click="asking = null">
-          {{ asking.mode === 'before' ? $t('Cancelar') : $t('Solo recuento') }}
-        </button>
+        <button type="button" class="btn h-11 justify-center text-stone-600" @click="asking = null">{{ $t('Solo recuento') }}</button>
       </div>
       <div v-else class="mt-1.5">
-        <!-- LIFESTAGE of the larvae preserved: the 3rd instar unless another is chosen. -->
         <div v-if="stage === 'larva'" class="mb-2 flex flex-wrap gap-1" role="group" aria-label="LIFESTAGE">
           <button
             v-for="st in lifestages"
@@ -612,18 +805,11 @@ function revert() {
           >
             {{ st }}
           </button>
-          <button type="button" class="min-h-10 rounded-lg border border-dashed border-stone-300 px-2 text-sm text-stone-700" @click="moreStages = !moreStages">
-            {{ moreStages ? $t('Menos') : $t('Otro estadio') }}
-          </button>
         </div>
-        <button v-if="canRegister && (stage === 'larva' || stage === 'egg')" type="button" class="btn-primary mb-2 h-12 w-full flex-col justify-center leading-tight" @click="register">
-          <span>{{ $tn(asking.n, 'Registrar {n} en Insectary_data', 'Registrar {n} en Insectary_data') }}</span>
-          <span class="text-xs font-normal opacity-90">{{ $t('Insectary ID, CAM y tubo de cada una') }}</span>
-        </button>
-        <label class="block text-xs text-stone-600" :for="`ids-${field}`">{{ canRegister ? $t('O solo contarlas, con sus IDs si los tienen (opcional)') : $t('IDs de Insectary (si los tienen, opcional)') }}</label>
+        <label class="block text-xs text-stone-600" :for="`ids-after-${field}`">{{ $t('IDs de Insectary (si los tienen, opcional)') }}</label>
         <div class="mt-1 flex gap-2">
           <input
-            :id="`ids-${field}`"
+            :id="`ids-after-${field}`"
             v-model="idsText"
             class="field-input h-11 min-w-0 flex-1 uppercase"
             type="text"
@@ -634,17 +820,10 @@ function revert() {
             placeholder="H0E H1E"
             @keydown.enter.prevent="choose('preserved')"
           />
-          <button type="button" :class="canRegister ? 'btn' : 'btn-primary'" class="h-11 shrink-0 px-4" @click="choose('preserved')"><Check :size="18" /> {{ $t('Poner') }}</button>
+          <button type="button" class="btn-primary h-11 shrink-0 px-4" @click="choose('preserved')"><Check :size="18" /> {{ $t('Poner') }}</button>
         </div>
         <p v-if="preservedNote" class="mt-1 text-xs break-words text-stone-700">
           {{ $t('Se añade a NOTES:') }} <span class="rounded bg-amber-50 px-1 text-stone-900">{{ preservedNote }}</span>
-        </p>
-        <p class="mt-1 text-xs text-stone-600">
-          {{
-            subtract
-              ? $t('Se restan de {field}, como dice el ajuste del equipo.', { field })
-              : $t('Se quedan en {field}, como dice el ajuste del equipo.', { field })
-          }}
         </p>
       </div>
     </div>
@@ -664,33 +843,25 @@ function revert() {
         @keydown.enter.prevent="applyFormula"
         @keydown.esc.prevent.stop="editingFormula = false"
       />
-      <span class="text-sm tabular-nums" :class="formulaResult.ok ? 'font-medium text-brand-800' : 'text-stone-600'">{{
-        formulaResult.ok ? formulaResult.label : ''
-      }}</span>
+      <span class="text-sm tabular-nums" :class="formulaResult.ok ? 'font-medium text-brand-800' : 'text-stone-600'">{{ formulaResult.ok ? formulaResult.label : '' }}</span>
       <button type="button" class="btn-primary h-11 px-4" :disabled="!formulaResult.ok" @click="applyFormula">
         <Check :size="18" /> {{ $t('Poner') }}
       </button>
       <button type="button" class="btn h-11 px-3" :aria-label="$t('Cancelar')" @click="editingFormula = false"><X :size="18" /></button>
     </div>
-    <p v-if="message" class="mt-1 text-sm text-red-700">{{ message }}</p>
-    <p v-if="lastNote && !asking" class="mt-1.5 flex items-start gap-1.5 rounded-md bg-amber-50 px-2 py-1 text-xs text-stone-800" role="status">
+    <p v-if="message" class="mt-1 text-sm text-red-700" role="alert">{{ message }}</p>
+    <p v-if="lastNote && !asking && !losing" class="mt-1.5 flex items-start gap-1.5 rounded-md bg-amber-50 px-2 py-1 text-xs text-stone-800" role="status">
       <Tag :size="13" class="mt-0.5 shrink-0 text-amber-800" />
       <span class="min-w-0 break-words">{{ $t('Añadido a NOTES (se guarda con el clutch):') }} <strong class="font-medium">{{ lastNote }}</strong></span>
     </p>
     <div v-if="canWork" class="mt-1 flex flex-wrap items-center gap-x-4">
       <button v-if="steps.length" type="button" class="flex h-9 items-center gap-1 text-sm font-medium text-brand-800 underline" @click="undoStep">
-        <Undo2 :size="14" /> {{ $t('Deshacer') }}
-      </button>
-      <button v-if="changedToday" type="button" class="flex h-9 items-center gap-1 text-sm text-stone-600 underline" @click="backToMorning">
-        <Undo2 :size="14" /> {{ $t('Volver a como estaba esta mañana: {value}', { value: startText }) }}
+        <Undo2 :size="14" /> {{ $t('Deshacer el último paso') }}
       </button>
       <button v-if="!editingFormula" type="button" class="flex h-9 items-center gap-1 text-sm text-stone-600 underline" @click="startFormula">
         <PenLine :size="14" /> {{ $t('Editar la fórmula') }}
       </button>
     </div>
-    <button v-if="dirty && editable" type="button" class="mt-1 flex h-9 items-center gap-1 text-sm text-stone-600 underline" @click="revert">
-      <Undo2 :size="14" /> {{ $t('Deshacer los cambios de este número') }}
-    </button>
     <slot />
   </div>
 </template>

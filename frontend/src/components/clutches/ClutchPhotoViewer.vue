@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Trash2, X } from 'lucide-vue-next'
+import { Camera, Trash2, X } from 'lucide-vue-next'
 import PhotoViewer from '../assistant/PhotoViewer.vue'
 import { api } from '../../lib/api'
 import { linkedEvent, photoUrl, sizeText, type ClutchPhoto } from '../../lib/clutchPhotos'
@@ -17,9 +17,15 @@ import { eventLine } from './eventWords'
  * day, who took it, the event it shows ("Larvas: −1 desaparecieron") and its
  * caption. Its author (or a reviewer) can take it away.
  */
-const props = defineProps<{ photos: ClutchPhoto[]; events: ClutchEvent[]; initials: (name: string) => string }>()
+const props = defineProps<{
+  photos: ClutchPhoto[]
+  events: ClutchEvent[]
+  initials: (name: string) => string
+  /** One more photo can be taken from here (the photos of one chip's event). */
+  canAdd?: boolean
+}>()
 const index = defineModel<number>({ required: true })
-const emit = defineEmits<{ close: []; removed: [id: string] }>()
+const emit = defineEmits<{ close: []; removed: [id: string]; add: [] }>()
 const session = useSession()
 const photo = computed(() => props.photos[Math.min(index.value, props.photos.length - 1)])
 const url = (n: number, size: 'thumb' | 'view') => photoUrl(props.photos[n]?.id ?? '', size === 'thumb' ? 'thumb' : 'full')
@@ -57,6 +63,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <p class="min-w-0 flex-1 truncate text-sm">
         {{ $t('Foto {n} de {total}', { n: index + 1, total: photos.length }) }} · {{ dayLabel(photo.day) }}
       </p>
+      <button v-if="canAdd" class="flex h-11 items-center gap-1 rounded-md px-2 text-sm text-stone-100" @click="emit('add')">
+        <Camera :size="20" /> {{ $t('Otra foto') }}
+      </button>
       <button v-if="mine" class="grid h-11 w-11 place-items-center rounded-md text-stone-200" :aria-label="$t('Quitar esta foto')" :disabled="removing" @click="remove">
         <Trash2 :size="20" />
       </button>

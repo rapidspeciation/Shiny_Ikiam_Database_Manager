@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { AlertTriangle, Check, ChevronRight, History, Loader2, Plus, Undo2, X } from 'lucide-vue-next'
 import DateField from '../DateField.vue'
 import EntryModeToggle from '../EntryModeToggle.vue'
+import ExtendRowsButton from '../ExtendRowsButton.vue'
 import InsectaryIdsWarning from '../InsectaryIdsWarning.vue'
 import RowDrawer from '../RowDrawer.vue'
 import SexBadge from '../SexBadge.vue'
@@ -48,6 +49,7 @@ import {
   type StockPlan,
   type YoungField,
 } from '../../lib/emerged'
+import { HoldQueue, type HoldAnswer } from '../../lib/holds'
 import { localRun, normalizeId, problemsOf as tubeProblems, type Problem as TubeProblem } from '../../lib/tubes'
 import { errorText, notify } from '../../lib/notice'
 import { initialsOf } from '../../lib/rows'
@@ -225,9 +227,12 @@ function add(kind: Kind, sex: Sex, count = 1, young: { stage: string; foundDead:
     })
   }
   if (!added.length) return
-  drafts.value = [...drafts.value, ...added]
+  drafts.value = [...drafts.value, ...added.map(d => ({ ...d, hold: 'waiting' as const }))]
+  // Each ID held at once, in the order of the taps (lib/holds).
+  for (const d of added) void holds.push(d.key)
   if (props.focus) focusKeys.value = [...focusKeys.value, ...added.map(d => d.key)]
   lastSave.value = null
+  if (count === 1) said.value = { key: added[0].key, text: `${kind === 'young' ? stageShort(added[0].stage) : SEX_MARK[sex]} ${added[0].id}` }
   fresh.value = added.map(d => d.key)
   clearTimeout(freshTimer)
   freshTimer = setTimeout(() => (fresh.value = []), 1200)
@@ -235,6 +240,52 @@ function add(kind: Kind, sex: Sex, count = 1, young: { stage: string; foundDead:
   if (kind === 'young')
     nextTick(() => document.querySelector(`[data-key="${added[0].key}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }))
 }
+const SEX_MARK: Record<Sex, string> = { female: '♀', male: '♂', NA: '?' }
+/** The last tap, said beside the buttons ("♀ A9E"), for the eye and for a screen reader. */
+const said = ref<{ key: string; text: string } | null>(null)
+
+// --- Each card's Insectary ID held from its tap (server/holds.mjs): one request at a time, in the order of the taps
+const draftOf = (key: string) => drafts.value.find(d => d.key === key)
+function patchDraft(key: string, patch: Partial<Draft>) {
+  drafts.value = drafts.value.map(d => (d.key === key ? { ...d, ...patch } : d))
+}
+const holds: HoldQueue = new HoldQueue({
+  hold: (key, id) => api<HoldAnswer>('ids/hold', { method: 'POST', body: { key, value: id } }),
+  idOf: key => draftOf(key)?.id ?? null,
+  /** The next free ID after the cards before it (those tapped after it and still waiting move with it). */
+  pick(key, refused): string | null {
+    const waiting: string[] = holds.waiting
+    const later = new Set(waiting.slice(waiting.indexOf(key) + 1))
+    const taken = drafts.value.filter(d => d.key !== key && !later.has(d.key)).map(d => d.id)
+    return nextId(inOrder.value, freeIds.value[0] ?? '', [...taken, ...refused])
+  },
+  assign(key, id, from) {
+    patchDraft(key, { id, hold: 'waiting' })
+    if (said.value?.key === key) said.value = { key, text: said.value.text.replace(from.id, id) }
+    if (from.holder) notify(t('{from} ya lo tiene {name}: esta mariposa es {id}', { from: from.id, name: from.holder, id }), 'error', 6000)
+  },
+  settled(key, state, answer) {
+    const d = draftOf(key)
+    if (!d) return
+    patchDraft(key, state === 'held' ? { held: d.id.trim().toUpperCase(), hold: undefined } : { held: undefined, hold: state })
+    if (state === 'refused' && answer?.code === 'CLAIMED') refused.value[key] = t('{id} ya lo tiene {name} en la app (aún no en Google Sheets)', { id: answer.value, name: answer.holder ?? '?' })
+  },
+})
+/** The cards whose ID is not held for them (kept from before, changed by hand, no signal then): asked again, never moved. */
+function holdAgain() {
+  for (const d of drafts.value) if (d.id.trim() && d.held !== d.id.trim().toUpperCase() && !holds.waiting.includes(d.key)) void holds.push(d.key, { move: false })
+}
+/** Cards taken away: their IDs free for everyone. */
+function letGo(list: Draft[]) {
+  for (const d of list) if (d.held || d.hold) void api(`ids/hold/${encodeURIComponent(d.key)}`, { method: 'DELETE', body: {} }).catch(() => {})
+}
+onMounted(holdAgain)
+const onOnline = () => holdAgain()
+onMounted(() => window.addEventListener('online', onOnline))
+onBeforeUnmount(() => window.removeEventListener('online', onOnline))
+// The free IDs asked again: an ID refused a moment ago may be free now.
+watch(freeIds, () => holds.forgetRefused())
+
 // Focus: as many cards as were counted, of the stage chosen in Clutches, once the free IDs are known.
 if (props.focus) {
   const f = props.focus
@@ -251,6 +302,7 @@ if (props.focus) {
 /** Focus: closed without saving: its cards go. */
 function cancelFocus() {
   const keys = new Set(focusKeys.value)
+  letGo(drafts.value.filter(d => keys.has(d.key)))
   drafts.value = drafts.value.filter(d => !keys.has(d.key))
   selected.value = selected.value.filter(k => !keys.has(k))
   focusKeys.value = []
@@ -272,6 +324,8 @@ const larvaIds = computed(() => {
 const larvaStages = computed(() =>
   larvae.value.moreStages ? LIFESTAGES : LIFESTAGES.filter(s => MAIN_STAGES.includes(s) || s === young.value.stage),
 )
+/** A stage in two or three letters, for the list of taps: L3, L4, Pre-pupa, Egg. */
+const stageShort = (stage: string) => (stage === 'Egg' ? t('Huevo') : /^(\d)\w+ instar larva$/.exec(stage)?.[1] ? `L${/^(\d)/.exec(stage)![1]}` : stage)
 const STAGE_NAME: Record<string, () => string> = {
   Egg: () => t('Huevo'),
   '1st instar larva': () => 'L1',
@@ -282,8 +336,9 @@ const STAGE_NAME: Record<string, () => string> = {
   'Pre-pupa': () => 'Pre-pupa',
 }
 function addLarvae() {
+  // The panel stays open: each tap of «Añadir 1 larva» adds the next one (its ID, CAM and tube the next free ones).
   add('young', 'NA', larvaCount.value, { stage: young.value.stage, foundDead: young.value.foundDead })
-  larvae.value = { ...larvae.value, open: false, count: 1 }
+  larvae.value = { ...larvae.value, count: 1 }
 }
 const many = ref<{ open: boolean; female: number | null; male: number | null; none: number | null }>({ open: false, female: null, male: null, none: null })
 function addMany() {
@@ -296,18 +351,30 @@ function addMany() {
   many.value = { open: false, female: null, male: null, none: null }
 }
 function update(key: string, patch: Partial<Draft>) {
+  const before = draftOf(key)
   drafts.value = drafts.value.map(d => (d.key === key ? { ...d, ...patch } : d))
   delete refused.value[key]
+  // The ID changed to what the wing says: held for this card instead (never moved on).
+  if (patch.id !== undefined && before && patch.id.trim().toUpperCase() !== before.held) {
+    patchDraft(key, { hold: 'waiting' })
+    void holds.push(key, { move: false })
+  }
 }
 function remove(key: string) {
+  letGo(drafts.value.filter(d => d.key === key))
   drafts.value = drafts.value.filter(d => d.key !== key)
+  if (said.value?.key === key) said.value = null
 }
 function removeClutch(c: string) {
+  letGo(drafts.value.filter(d => d.clutch === c && d.kind !== 'young'))
   drafts.value = drafts.value.filter(d => d.clutch !== c || d.kind === 'young')
 }
 function removeYoung() {
+  letGo(drafts.value.filter(d => d.kind === 'young'))
   drafts.value = drafts.value.filter(d => d.kind !== 'young')
 }
+/** This clutch's cards of the day, in the order tapped: the list under the buttons, each with its undo. */
+const tapped = computed(() => drafts.value.filter(d => d.clutch === clutch.value && d.date === date.value))
 
 /**
  * The adults' cards by clutch: the chosen clutch first (its newest card on top, under the buttons), then
@@ -623,11 +690,13 @@ const ID_PROBLEM: Record<string, (id: string) => string> = {
 const heldBy = (kind: 'insectary' | 'cam' | 'tube', value: string) => claimHolder(live.claims, kind, value)
 function problemsOf(d: Draft): string[] {
   const out: string[] = []
+  // Its own hold (server/holds.mjs) is no one else's claim, and keeps the ID free for it.
+  const mine = !!d.held && d.held === d.id.trim().toUpperCase()
   const claim = heldBy('insectary', d.id)
-  if (claim) out.push(t('{id} ya lo tiene {name} en la app (aún no en Google Sheets)', { id: claim.value, name: claim.actorName }))
+  if (claim && claim.hold !== d.key && !mine) out.push(t('{id} ya lo tiene {name} en la app (aún no en Google Sheets)', { id: claim.value, name: claim.actorName }))
   else if (idsLoaded.value) {
     const others = drafts.value.filter(o => o.key !== d.key).map(o => o.id)
-    const p = idProblem(d.id, others, freeSet.value, usedIds.value)
+    const p = idProblem(d.id, others, mine ? new Set([...freeSet.value, d.held!]) : freeSet.value, usedIds.value)
     if (p) out.push(ID_PROBLEM[p](d.id.trim().toUpperCase()))
   }
   if (!speciesOfClutch(d.clutch) && !d.species) out.push(t('El clutch no tiene especie: elige qué emergió'))
@@ -817,7 +886,9 @@ async function undo() {
     await live.loadStaged()
     // The cards come back, to correct and save again.
     const have = new Set(drafts.value.map(d => d.key))
-    drafts.value = [...last.drafts.filter(d => !have.has(d.key)), ...drafts.value]
+    drafts.value = [...last.drafts.filter(d => !have.has(d.key)).map(d => ({ ...d, held: undefined, hold: 'waiting' as const })), ...drafts.value]
+    // Their IDs were freed with the entry: held again for them.
+    holdAgain()
     lastSave.value = null
     notify(tn(last.count, '{n} emergido deshecho', '{n} emergidos deshechos'), 'success')
   } catch (e) {
@@ -962,25 +1033,65 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
             <p v-if="doubt" class="mt-2 flex items-start gap-1.5 text-sm font-medium text-amber-900"><AlertTriangle :size="16" class="mt-0.5 shrink-0" />{{ doubt }}</p>
 
             <template v-if="canEdit">
+              <!-- One tap, one butterfly: tap again for the next (each gets the next free ID, held at once). -->
               <div class="mt-3 grid grid-cols-2 gap-2">
                 <button
-                  class="flex h-16 flex-col items-center justify-center rounded-xl bg-pink-600 text-white shadow-sm active:bg-pink-700 disabled:opacity-50"
+                  class="flex h-18 touch-manipulation flex-col items-center justify-center rounded-xl bg-pink-600 text-white shadow-sm select-none active:scale-[0.98] active:bg-pink-700 disabled:opacity-50"
                   :disabled="!next"
-                  :aria-label="$t('Añadir una hembra')"
+                  :aria-label="next ? $t('Añadir una hembra: {id}', { id: next }) : $t('Añadir una hembra')"
                   @click="add('adult', 'female')"
                 >
                   <span class="text-2xl leading-none font-bold">+ ♀</span>
-                  <span v-if="next" class="text-xs font-medium opacity-90">{{ next }}</span>
+                  <span class="mt-1 text-base leading-none font-semibold tabular-nums opacity-95">{{ next ?? (idsLoaded ? $t('sin IDs libres') : '…') }}</span>
                 </button>
                 <button
-                  class="flex h-16 flex-col items-center justify-center rounded-xl bg-sky-600 text-white shadow-sm active:bg-sky-700 disabled:opacity-50"
+                  class="flex h-18 touch-manipulation flex-col items-center justify-center rounded-xl bg-sky-600 text-white shadow-sm select-none active:scale-[0.98] active:bg-sky-700 disabled:opacity-50"
                   :disabled="!next"
-                  :aria-label="$t('Añadir un macho')"
+                  :aria-label="next ? $t('Añadir un macho: {id}', { id: next }) : $t('Añadir un macho')"
                   @click="add('adult', 'male')"
                 >
                   <span class="text-2xl leading-none font-bold">+ ♂</span>
-                  <span v-if="next" class="text-xs font-medium opacity-90">{{ next }}</span>
+                  <span class="mt-1 text-base leading-none font-semibold tabular-nums opacity-95">{{ next ?? (idsLoaded ? $t('sin IDs libres') : '…') }}</span>
                 </button>
+              </div>
+              <!-- This clutch's butterflies of the day in the order tapped: the ID to write on each wing, and its undo. -->
+              <div v-if="tapped.length" class="mt-2 rounded-lg bg-stone-50 px-2 py-1.5" role="status" aria-live="polite">
+                <p class="flex items-baseline gap-2 text-xs text-stone-600">
+                  <span class="min-w-0 flex-1">
+                    <template v-if="said && tapped.some(d => d.key === said!.key)">
+                      {{ $t('Último') }}: <strong class="text-sm text-stone-900">{{ said.text }}</strong> · {{ $t('escríbelo en el ala') }}
+                    </template>
+                    <template v-else>{{ $tn(tapped.length, '{n} de este clutch hoy', '{n} de este clutch hoy') }}</template>
+                  </span>
+                  <span class="shrink-0">{{ $t('✕ deshace') }}</span>
+                </p>
+                <ul class="mt-1 flex flex-wrap gap-1.5">
+                  <li
+                    v-for="d in tapped"
+                    :key="d.key"
+                    class="flex h-9 items-center rounded-full border bg-white pl-2.5 text-sm font-semibold tabular-nums transition-shadow"
+                    :class="[
+                      d.kind === 'young' ? 'border-violet-300 text-violet-900' : d.sex === 'female' ? 'border-pink-300 text-pink-900' : d.sex === 'male' ? 'border-sky-300 text-sky-900' : 'border-stone-300 text-stone-800',
+                      fresh.includes(d.key) ? 'ring-2 ring-brand-300' : '',
+                      d.hold === 'refused' || problems.get(d.key)?.length ? 'border-amber-500 bg-amber-50' : '',
+                    ]"
+                    :title="d.hold === 'waiting' ? $t('Reservando el ID…') : d.hold === 'offline' ? $t('Sin conexión: el ID se reserva al volver la señal') : d.hold === 'refused' ? $t('Este ID no quedó reservado') : $t('ID reservado para esta mariposa')"
+                  >
+                    <span>{{ d.kind === 'young' ? stageShort(d.stage) : SEX_MARK[d.sex] }} {{ d.id }}</span>
+                    <Loader2 v-if="d.hold === 'waiting'" :size="13" class="ml-1 animate-spin text-stone-400" />
+                    <AlertTriangle v-else-if="d.hold" :size="13" class="ml-1 text-amber-700" />
+                    <Check v-else-if="d.held" :size="13" class="ml-1 text-brand-700" />
+                    <button
+                      v-if="canEdit"
+                      type="button"
+                      class="grid h-9 w-9 place-items-center rounded-full text-stone-500 active:bg-stone-100"
+                      :aria-label="$t('Quitar {id}', { id: d.id })"
+                      @click="remove(d.key)"
+                    >
+                      <X :size="15" />
+                    </button>
+                  </li>
+                </ul>
               </div>
               <div class="mt-2 grid grid-cols-3 gap-2">
                 <button class="btn h-11 justify-center px-1 text-sm" :disabled="!next" :title="$t('Sexo no visible (NA)')" @click="add('adult', 'NA')"><Plus :size="15" /> {{ $t('Sin sexo') }}</button>
@@ -1059,7 +1170,7 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
                     {{ $t('Encontradas muertas') }}
                   </button>
                 </div>
-                <button class="btn-primary flex h-12 w-full flex-col justify-center text-base leading-tight" :disabled="!larvaIds.length">
+                <button class="btn-primary flex h-12 w-full touch-manipulation flex-col justify-center text-base leading-tight select-none" :disabled="!larvaIds.length">
                   <span>{{ $tn(larvaCount, 'Añadir {n} larva', 'Añadir {n} larvas') }}</span>
                   <span v-if="larvaIds.length" class="text-xs font-normal opacity-90">{{ larvaIds.length > 1 ? `${larvaIds[0]}–${larvaIds.at(-1)}` : larvaIds[0] }}</span>
                 </button>
@@ -1079,6 +1190,8 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
                 <template v-else-if="idsLoaded">{{ $t('No quedan filas preasignadas libres: crea más filas preasignadas en Insectary_data.') }}</template>
                 <template v-else>{{ $t('Cargando los Insectary IDs libres…') }}</template>
               </p>
+              <!-- Out of IDs: more pre-made rows from here, without looking for the warning above. -->
+              <ExtendRowsButton v-if="!next && idsLoaded" class="mt-2 h-11 w-full justify-center" sheet="Insectary_data" :count="200" @done="state.loadFreeIds()" />
               <p v-if="skipped.length" class="mt-1 flex items-start gap-1.5 text-sm text-amber-900">
                 <AlertTriangle :size="15" class="mt-0.5 shrink-0" />
                 {{ $t('Quedan filas vacías entre las tarjetas: {ids}', { ids: skipped.slice(0, 6).join(', ') + (skipped.length > 6 ? '…' : '') }) }}
@@ -1122,6 +1235,15 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
               {{ $tn(youngCards.length, '{n} huevo o larva preservado', '{n} huevos o larvas preservados') }}
             </h2>
             <button v-if="canEdit && !focus" class="ml-auto h-10 px-2 text-sm text-stone-600 underline" @click="removeYoung">{{ $t('Quitar todas') }}</button>
+            <!-- From Clutches: one more each tap (the next ID, CAM and tube), to correct afterwards if needed. -->
+            <button
+              v-if="canEdit && focus"
+              class="btn ml-auto h-11 touch-manipulation px-3 select-none"
+              :disabled="!next"
+              @click="add('young', 'NA', 1, { stage: young.stage, foundDead: young.foundDead })"
+            >
+              <Plus :size="16" /> {{ $t('Una más') }} <span v-if="next" class="text-xs text-stone-500 tabular-nums">{{ next }}</span>
+            </button>
           </div>
           <YoungPanel
             v-if="canEdit"
