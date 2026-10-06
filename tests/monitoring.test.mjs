@@ -408,6 +408,8 @@ test('a waiting walk whose points do not pair surely is listed to be paired by h
       ['Planta', 'none'],
     ],
   );
+  // Its GPS position, for the section it lies in.
+  assert.deepEqual([listed[1].lat, listed[1].lon], [-0.95, -77.87]);
   // The rows it could be, although the matcher gave that one to "Marip 1".
   assert.deepEqual(
     listed[1].candidates.map(r => r.row),
@@ -424,6 +426,47 @@ test('a waiting walk whose points do not pair surely is listed to be paired by h
   );
   assert.equal(listWalks(s)[0].status, 'imported');
   assert.equal(rematchTracks(s).doubts.filter(d => d.walkId === walk.id).length, 0);
+  s.close();
+});
+
+test('the pairing board stores a point whose recapture row is being added, and rows without a point', async () => {
+  const { s, id } = await misPaired();
+  const { walk } = await saveWalk(
+    s,
+    {
+      ...walkBody(),
+      date: '2025-09-10',
+      collector: 'AA - Alex Arias',
+      waypoints: [
+        { lat: -0.95, lon: -77.86, text: 'Hypothyris euclea macho 9:12', photos: [] },
+        { lat: -0.95, lon: -77.87, text: 'Planta', photos: [] },
+      ],
+    },
+    editor,
+  );
+  // Row 6 has no point: it cannot also be the first point's row, nor be of another day.
+  assert.throws(() => storeReviewedWalk(s, walk.id, { links: [[id(6)], []], rowsWithoutPoint: [id(6)] }, editor), {
+    code: 'INVALID_LINK',
+  });
+  assert.throws(() => storeReviewedWalk(s, walk.id, { links: [[], []], rowsWithoutPoint: [id(2)] }, editor), {
+    code: 'INVALID_LINK',
+  });
+  storeReviewedWalk(s, walk.id, { links: [[], []], rowsWithoutPoint: [id(6)] }, editor);
+  assert.deepEqual(listTracks(s)[0].rowsWithoutPoint, [id(6)]);
+  assert.deepEqual(listTracks(s)[0].captures.map(c => c.link), ['none', 'none']);
+  // Decided again on the board of the imported walk: 'new' points wait without a link (no earlier
+  // "none" kept), and are paired with their row once it is in the sheet (row 6 stands for it here).
+  storeReviewedWalk(s, walk.id, { links: ['new', 'new'], rowsWithoutPoint: [] }, editor);
+  const [track] = listTracks(s);
+  assert.deepEqual(track.rowsWithoutPoint, []);
+  assert.deepEqual(
+    track.captures.map(c => [c.row, c.link ?? null, !!c.doubt]),
+    [
+      [6, null, false],
+      [null, null, false],
+    ],
+  );
+  assert.equal(listWalks(s)[0].status, 'imported');
   s.close();
 });
 

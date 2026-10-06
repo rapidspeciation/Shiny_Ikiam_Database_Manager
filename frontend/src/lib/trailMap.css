@@ -1,0 +1,13 @@
+.leaflet-container {
+  font-family: inherit;
+}
+.transect-label {
+  background: rgba(28, 25, 23, 0.75);
+  color: white;
+  font:
+    600 11px 'Fira Sans',
+    sans-serif;
+  border-radius: 3px;
+  text-align: center;
+  line-height: 16px;
+}

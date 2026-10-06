@@ -88,6 +88,18 @@ export function nearestSection(lat: number, lon: number): { section: number; dis
   return best
 }
 
+/** The section a GPS point lies in (null: off the trail, further than MAX_SECTION_DISTANCE) and its distance to the trail in whole metres. */
+export function estimatedSection(lat: number, lon: number): { section: number | null; distance: number } {
+  const near = nearestSection(lat, lon)
+  return { section: near.distance <= MAX_SECTION_DISTANCE ? near.section : null, distance: Math.round(near.distance) }
+}
+
+/** Whether a point's estimated section and its row's Transect_section are both known and not the same. */
+export function sectionDiffers(estimate: { section: number | null }, rowSection: string | number | null | undefined) {
+  const row = Number(String(rowSection ?? '').trim())
+  return estimate.section !== null && row >= 1 && row <= 4 && row !== estimate.section
+}
+
 /** Distance in metres between two points. */
 export function distance(a: [number, number], b: [number, number]) {
   const lat0 = (a[0] + b[0]) / 2

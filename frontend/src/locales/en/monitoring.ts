@@ -495,7 +495,8 @@ export default {
     '{stored} walks on the map and {waiting} waiting review, from {first} to {last}: {points} points ({linked} with their sheet row) and {photos} photos ({mb} MB).',
   'Las líneas que vienen de la página pública de Wikiloc no tienen horas GPS; solo las de un GPX subido a la app ({n}) las tienen.':
     'Lines read from the public Wikiloc page have no GPS times; only those of a GPX uploaded to the app ({n}) have them.',
-  'Días con filas de monitoreo de esa persona pero sin recorrido en la app': 'Days with monitoring rows of that person but no walk in the app',
+  'Días con filas de monitoreo de esa persona pero sin recorrido en la app':
+    'Days with monitoring rows of that person but no walk in the app',
   'Días sin recorrido': 'Days without walk',
   Descargas: 'Downloads',
   'Cada fila de monitoreo de Collection_data con todas sus columnas y, al final, la posición de su punto de Wikiloc':
@@ -540,4 +541,74 @@ export default {
   'Días con filas de monitoreo pero sin recorrido de Wikiloc en la app (no se buscó o su título no dice «monitoreo»): sus transectos no se pueden calcular.':
     'Days with monitoring rows but no Wikiloc walk in the app (not fetched, or its title does not say “monitoreo”): their transects cannot be computed.',
   '{n} sin transecto': '{n} without transect',
+  // Pairing board of one walk (WalkBoard) and the GPS section of a point
+  Empate: 'Tie',
+  'Por orden': 'By order',
+  Importados: 'Imported',
+  'Tablero de un recorrido': 'Board of a walk',
+  'Elige un recorrido de Wikiloc…': 'Choose a Wikiloc walk…',
+  'Todos los puntos del recorrido junto a todas las filas de ese día': 'Every point of the walk beside every row of that day',
+  Tablero: 'Board',
+  'La posición GPS del punto cae en otro transecto que el de su fila':
+    "The point's GPS position lies in another transect than its row's",
+  'Transecto según la posición GPS del punto (a {d} m del sendero)':
+    "Transect from the point's GPS position ({d} m from the trail)",
+  'GPS: T{n}': 'GPS: T{n}',
+  'GPS: fuera del sendero ({d} m)': 'GPS: off the trail ({d} m)',
+  'fila: T{n}': 'row: T{n}',
+  'fila: sin transecto': 'row: no transect',
+  'Punto {n}': 'Point {n}',
+  '{n} punto': '{n} point',
+  guardada: 'stored',
+  elegida: 'chosen',
+  'sugerida: {how}': 'suggested: {how}',
+  recaptura: 'recapture',
+  'Fila de recaptura {mark} añadida: revisa y pulsa Guardar': 'Recapture row {mark} added: check it and press Save',
+  '¿Guardar el emparejamiento de "{name}"? Las filas de la hoja no cambian.':
+    'Save the pairing of "{name}"? The sheet rows do not change.',
+  '¿Importar "{name}" al mapa con estas filas? Las filas de la hoja no cambian.':
+    'Import "{name}" to the map with these rows? The sheet rows do not change.',
+  'Emparejamiento guardado': 'Pairing saved',
+  'Recorrido importado al mapa': 'Walk imported to the map',
+  importado: 'imported',
+  'Deshace lo decidido aquí y vuelve a lo guardado y sugerido':
+    'Undoes what was decided here and goes back to what is stored and suggested',
+  'Empezar de nuevo': 'Start again',
+  'Falta decidir {n} puntos': '{n} points still to decide',
+  'Guardar emparejamiento': 'Save pairing',
+  'Este recorrido no tiene fecha o colector: complétalos en Importar recorrido.':
+    'This walk has no date or collector: fill them in Import walk.',
+  'Toca un punto y luego su fila (o la fila y luego el punto) para emparejarlos; tocar una pareja ya unida la separa. Los puntos en ámbar están sin decidir; las filas en ámbar no tienen punto.':
+    'Tap a point and then its row (or the row and then the point) to pair them; tapping a pair already joined separates it. Amber points are undecided; amber rows have no point.',
+  'Puntos del recorrido ({n})': 'Points of the walk ({n})',
+  'Ver fotos': 'See photos',
+  'Nunca se pasó a la hoja': 'Never entered in the sheet',
+  'Fila de recaptura nueva, sin guardar': 'New recapture row, not saved',
+  'Sin decidir': 'Undecided',
+  'recaptura escrita en la nota de la fila {n}': 'recapture written in the note of row {n}',
+  'recaptura de la marca de la fila {n}, sin fila propia': 'recapture of the mark of row {n}, without a row of its own',
+  'El punto vuelve a quedar sin decidir': 'The point is undecided again',
+  'Quitar lo decidido': 'Clear decision',
+  'La fila sugerida es la correcta': 'The suggested row is the right one',
+  'Sí es esa fila': 'It is that row',
+  'El punto queda en el mapa sin fila: la mariposa nunca se anotó en la hoja':
+    'The point stays on the map without a row: the butterfly was never entered in the sheet',
+  'Nunca se pasó a la hoja (error de campo)': 'Point never entered (field mistake)',
+  'Añade una fila Mark_Released con la marca y la especie de la fila {n} y la fecha, hora y transecto del punto (sin guardar)':
+    "Adds a Mark_Released row with the mark and species of row {n} and the point's date, time and transect (not saved)",
+  'Hacer fila de recaptura': 'Make it a recapture row',
+  'Filas de ese día de {who} ({n})': 'Rows of that day by {who} ({n})',
+  'No hay filas de este colector ese día.': 'This collector has no rows that day.',
+  'sin transecto': 'no transect',
+  'Fila sin punto': 'Row without a point',
+  'Sin punto': 'No point',
+  'La fila no tiene punto en Wikiloc (el punto no se marcó en el campo)':
+    'The row has no Wikiloc point (the point was not marked in the field)',
+  'Sí tiene punto': 'It has a point',
+  '{point} elegido: toca su fila': '{point} chosen: tap its row',
+  'Fila {n} elegida: toca su punto': 'Row {n} chosen: tap its point',
+  '{n} punto sin decidir': '{n} undecided point',
+  '{n} puntos sin decidir': '{n} undecided points',
+  '{n} fila sin punto': '{n} row without a point',
+  '{n} filas sin punto': '{n} rows without a point',
 } as Record<string, string>

@@ -27,6 +27,8 @@ export interface StoredTrack {
   track: TrackPoint[]
   captures: StoredCapture[]
   wikiloc?: { id: string; url: string } | null
+  /** Rows of the walk's day a person said have no point (the pairing board). */
+  rowsWithoutPoint?: string[]
   /** Whether the person signed in may remove it (server/monitoring.mjs canDeleteTrack). */
   canDelete?: boolean
 }

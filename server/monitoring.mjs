@@ -98,6 +98,14 @@ const touched = store =>
 export const tracksRevision = store =>
   Number(store.db.prepare("SELECT value FROM settings WHERE key='tracksRevision'").get()?.value) || 0;
 
+/** Record ids (the rows of a walk's day with no point). */
+function cleanIds(ids) {
+  if (ids === undefined || ids === null) return [];
+  if (!Array.isArray(ids) || ids.length > MAX_CAPTURES || ids.some(id => typeof id !== 'string' || !id || id.length > 80))
+    throw fail('INVALID_TRACK', 'Invalid row list');
+  return [...new Set(ids)];
+}
+
 function cleanPhotoIds(ids) {
   if (ids === undefined || ids === null) return [];
   if (!Array.isArray(ids) || ids.length > 20 || ids.some(id => typeof id !== 'string' || !/^\d{1,20}$/.test(id)))
@@ -387,6 +395,9 @@ function trackDoubts(store, index, t) {
       name: t.name,
       wikiloc: t.wikiloc?.url || null,
       text: c.text,
+      // Its GPS position, for the section it lies in beside its row's Transect_section.
+      lat: c.lat,
+      lon: c.lon,
       minutes: points[p].timeFromTrack ? null : points[p].minutes,
       note: noteInfo(points[p]),
       photos: c.photos || [],
@@ -454,6 +465,8 @@ export function rematchTracks(store, user = null) {
         name: w.name,
         wikiloc: w.url,
         text: captures[i].text,
+        lat: captures[i].lat,
+        lon: captures[i].lon,
         minutes: captures[i].minutes,
         note: noteInfo(captures[i]),
         photos: captures[i].photos,
@@ -528,9 +541,13 @@ export function linkCapture(store, trackId, body) {
 }
 
 /**
- * A waiting Wikiloc walk reviewed in "Dudas": each point with the rows a person
- * chose (none for a point that is not a butterfly of the sheet), stored on the
- * map with those links kept as chosen.
+ * A Wikiloc walk reviewed in "Dudas" (a waiting one, or an imported one paired
+ * again on its board): each point with the rows a person chose (none for a
+ * point that is not a butterfly of the sheet), stored on the map with those
+ * links kept as chosen. 'new' is a point whose row is still being added (a
+ * recapture written only in notes, made a row): stored without a link, so it is
+ * paired with its row once that is saved. `rowsWithoutPoint` are the day's rows
+ * a person said have no point in the walk.
  */
 export function storeReviewedWalk(store, walkId, body, user) {
   const walk = store.db.prepare('SELECT * FROM wikiloc_walks WHERE id=?').get(walkId);
@@ -549,6 +566,7 @@ export function storeReviewedWalk(store, walkId, body, user) {
   const roles = lib.walkMarkRoles([...index.byId.values()], date, points);
   const captures = data.waypoints.flatMap((p, i) => {
     const c = points[i];
+    if (links[i] === 'new') return [{ ...c, recapture: roles[i]?.role === 'recapture', row: null, recordId: null }];
     const ids = Array.isArray(links[i]) ? links[i].map(String) : [];
     const rows = ids.map(id => {
       const r = index.byId.get(id);
@@ -559,15 +577,25 @@ export function storeReviewedWalk(store, walkId, body, user) {
     const base = { ...c, recapture: roles[i]?.role === 'recapture' };
     return rows.length ? rows.map(r => ({ ...withRow(base, r), link: 'manual' })) : [{ ...base, row: null, recordId: null, link: 'none' }];
   });
-  return saveTrack(store, { requestId: text(body.requestId, 80) || randomUUID(), date, collector, name: walk.name, track: data.track, wikilocWalkId: walk.id, captures }, user);
+  const day = new Set(dayRows(index, date, collector).map(r => r.id));
+  const rowsWithoutPoint = cleanIds(body.rowsWithoutPoint);
+  if (rowsWithoutPoint.some(id => !day.has(id) || seen.has(id))) throw fail('INVALID_LINK', 'A row without a point is not of that day, or has a point');
+  return saveTrack(
+    store,
+    { requestId: text(body.requestId, 80) || randomUUID(), date, collector, name: walk.name, track: data.track, wikilocWalkId: walk.id, captures, rowsWithoutPoint },
+    user,
+    // Every point was decided here: none keeps an older pairing.
+    { keepChosen: false },
+  );
 }
 
 /**
  * Saves a track once: the same file uploaded again returns the stored copy,
  * with its captures' row links refreshed. A Wikiloc walk reviewed again
- * replaces its earlier track.
+ * replaces its earlier track; its points paired by hand keep that pairing
+ * unless `keepChosen` is false (every point decided again).
  */
-export function saveTrack(store, body, user) {
+export function saveTrack(store, body, user, { keepChosen = true } = {}) {
   const date = text(body.date, 10);
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)))
     throw fail('INVALID_TRACK', 'A date (YYYY-MM-DD) is required');
@@ -576,6 +604,8 @@ export function saveTrack(store, body, user) {
     throw fail('INVALID_TRACK', 'Invalid capture list');
   const captures = body.captures.map(cleanCapture);
   if (!track.length && !captures.length) throw fail('INVALID_TRACK', 'The file has no track or waypoints');
+  // Rows of the day a person said have no point (the pairing board); kept until the walk is reviewed again.
+  const withoutPoint = body.rowsWithoutPoint === undefined ? undefined : cleanIds(body.rowsWithoutPoint);
   const name = text(body.name, 200) || `Monitoreo ${date}`;
   const collector = text(body.collector, 120);
   const walk = body.wikilocWalkId ? store.db.prepare('SELECT * FROM wikiloc_walks WHERE id=?').get(String(body.wikilocWalkId)) : null;
@@ -595,7 +625,7 @@ export function saveTrack(store, body, user) {
     const timed = points => points.some(p => p[3]);
     // A point a person paired by hand keeps that pairing (same note at the same place).
     const chosen = new Map(
-      (old.captures || []).filter(c => c.link).map(c => [`${c.text}|${c.lat}|${c.lon}`, c]),
+      (keepChosen ? old.captures || [] : []).filter(c => c.link).map(c => [`${c.text}|${c.lat}|${c.lon}`, c]),
     );
     const kept = captures.map(c => {
       const was = !c.link && chosen.get(`${c.text}|${c.lat}|${c.lon}`);
@@ -604,6 +634,7 @@ export function saveTrack(store, body, user) {
       return { ...withRow(c, null), row: was.row, recordId: was.recordId, link: was.link };
     });
     const data = { ...old, track: timed(old.track || []) && !timed(track) ? old.track : track, captures: kept };
+    if (withoutPoint) data.rowsWithoutPoint = withoutPoint;
     if (walk) data.wikiloc = { id: walk.wikiloc_id, url: walk.url };
     const clash = store.db.prepare('SELECT id FROM monitoring_tracks WHERE fingerprint=? AND id<>?').get(fingerprint, existing.id);
     store.db
@@ -621,7 +652,12 @@ export function saveTrack(store, body, user) {
     date,
     collector,
     name,
-    data_json: JSON.stringify({ track, captures, wikiloc: walk ? { id: walk.wikiloc_id, url: walk.url } : null }),
+    data_json: JSON.stringify({
+      track,
+      captures,
+      wikiloc: walk ? { id: walk.wikiloc_id, url: walk.url } : null,
+      ...(withoutPoint?.length ? { rowsWithoutPoint: withoutPoint } : {}),
+    }),
     created_by: user.username,
     created_at: new Date().toISOString(),
   };

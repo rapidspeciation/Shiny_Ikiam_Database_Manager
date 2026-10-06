@@ -3,7 +3,6 @@ import ChoiceField from '../ChoiceField.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import L from 'leaflet'
-import 'leaflet/dist/leaflet.css'
 import { ExternalLink, Link2, RotateCcw, Trash2, X } from 'lucide-vue-next'
 import FilterSelect, { type FilterOption } from './FilterSelect.vue'
 import { useMonitoring, type StoredCapture, type StoredTrack } from '../../composables/useMonitoring'
@@ -25,7 +24,8 @@ import {
   type MapPoint,
 } from '../../lib/monitoringMap'
 import { errorText, notify } from '../../lib/notice'
-import { SECTIONS, distance } from '../../lib/transects'
+import { satelliteLayer, streetsLayer, transectsLayer } from '../../lib/trailMap'
+import { distance } from '../../lib/transects'
 import { useSession } from '../../stores/session'
 
 /**
@@ -543,17 +543,8 @@ function addLayersControl(satellite: L.TileLayer, streets: L.TileLayer) {
 onMounted(() => {
   // Canvas draws hundreds of points much faster than one SVG element each.
   map = L.map(host.value!, { zoomControl: true, attributionControl: true, preferCanvas: true })
-  const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-    maxZoom: 20,
-    // Esri has no imagery of the trail at zoom 19 ("Map data not yet available"); zoom 18 is enlarged instead.
-    maxNativeZoom: 18,
-    attribution: t('Imágenes © Esri, Maxar, Earthstar Geographics'),
-  }).addTo(map)
-  const streets = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 20,
-    maxNativeZoom: 19,
-    attribution: '© OpenStreetMap',
-  })
+  const satellite = satelliteLayer().addTo(map)
+  const streets = streetsLayer()
   addLayersControl(satellite, streets)
   // The language button renames the layers and the imagery credit.
   stopLocale = watch(locale, () => {
@@ -566,16 +557,7 @@ onMounted(() => {
     draw()
   })
   L.control.scale({ imperial: false }).addTo(map)
-  transects = L.featureGroup()
-  for (const s of SECTIONS) {
-    L.polyline(s.path, { color: s.color, weight: 5, opacity: 0.95 })
-      .bindTooltip(() => t('Transecto {n}', { n: s.section }), { sticky: true })
-      .addTo(transects)
-    L.marker(s.path[Math.floor(s.path.length / 2)], {
-      icon: L.divIcon({ className: 'transect-label', html: `T${s.section}`, iconSize: [26, 16] }),
-      interactive: false,
-    }).addTo(transects)
-  }
+  transects = transectsLayer()
   map.fitBounds(transects.getBounds(), { padding: [30, 30] })
   overlay = L.layerGroup().addTo(map)
   map.on('zoomend', () => heat?.setOptions({ max: heatMax() }))
@@ -842,19 +824,6 @@ const withoutGps = computed(() => {
 </template>
 
 <style>
-.leaflet-container {
-  font-family: inherit;
-}
-.transect-label {
-  background: rgba(28, 25, 23, 0.75);
-  color: white;
-  font:
-    600 11px 'Fira Sans',
-    sans-serif;
-  border-radius: 3px;
-  text-align: center;
-  line-height: 16px;
-}
 .map-cluster {
   display: grid;
   place-items: center;

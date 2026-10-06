@@ -1,7 +1,7 @@
 // Explicit .ts extensions: the server loads this file too (Node strips the types), so the
 // assistant builds monitoring rows exactly as the Monitoreo review does (server/walks.mjs).
 import { formatSerial, isoToSerial, serialToIso } from './dates.ts'
-import { MAX_SECTION_DISTANCE, nearestSection } from './transects.ts'
+import { estimatedSection } from './transects.ts'
 import type { CellValue, TableRow } from './types.ts'
 
 /**
@@ -658,15 +658,15 @@ export interface ImportedCapture extends Capture {
 
 export function locateCapture(w: GpxWaypoint, taxa: Taxa, local?: Taxa): ImportedCapture {
   const c = parseCapture(w.text, taxa, local)
-  const near = nearestSection(w.lat, w.lon)
+  const near = estimatedSection(w.lat, w.lon)
   if (c.minutes === null && w.time) c.minutes = localTime(w.time)?.minutes ?? null
   return {
     ...c,
     lat: w.lat,
     lon: w.lon,
     ele: w.ele,
-    section: near.distance <= MAX_SECTION_DISTANCE ? near.section : null,
-    sectionDistance: Math.round(near.distance),
+    section: near.section,
+    sectionDistance: near.distance,
     photos: w.photos || [],
   }
 }
@@ -2030,7 +2030,7 @@ export function noteRecaptures(rows: TableRow[]): NoteRecapture[] {
   return out
 }
 
-/** A new Mark_Released row for a recapture found in notes, copying the marked individual. */
+/** A new Mark_Released row for a recapture found in notes (or only as a Wikiloc point: `note` empty), copying the marked individual. */
 export function noteRecaptureValues(r: NoteRecapture, collectors: string[]): Record<string, CellValue> {
   const v = r.row.values
   const collector = (r.initials && collectors.find(c => c.split(' - ')[0].trim() === r.initials)) || r.initials
@@ -2061,7 +2061,10 @@ export function noteRecaptureValues(r: NoteRecapture, collectors: string[]): Rec
     Butterfly_weight: 'NA',
     Preservation_date: 'NA',
     Preservation_medium: 'NOT_COLLECTED',
-    Notes_Collection_data: `${d}/${m}/${y} ${r.initials || ''}: Recapture, moved from the note of row ${r.row.row}`,
+    // Without a note: a recapture only its Wikiloc point holds (its walk's pairing board).
+    Notes_Collection_data: r.note
+      ? `${d}/${m}/${y} ${r.initials || ''}: Recapture, moved from the note of row ${r.row.row}`
+      : `${d}/${m}/${y} ${r.initials || ''}: Recapture of the butterfly marked in row ${r.row.row}, from its Wikiloc point`,
   }
 }
 

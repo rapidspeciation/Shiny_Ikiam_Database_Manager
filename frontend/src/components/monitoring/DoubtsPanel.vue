@@ -1,14 +1,20 @@
 <script setup lang="ts">
 import ChoiceField from '../ChoiceField.vue'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Check, ChevronLeft, ChevronRight, ExternalLink, MapPin, RefreshCw, X } from 'lucide-vue-next'
-import { useMonitoring } from '../../composables/useMonitoring'
+import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { Check, Columns2, ExternalLink, MapPin, RefreshCw, X } from 'lucide-vue-next'
+import PointPhotoViewer from './PointPhotoViewer.vue'
+import PointSection from './PointSection.vue'
+import { useMonitoring, type WikilocWalk } from '../../composables/useMonitoring'
 import { api, requestId } from '../../lib/api'
 import { formatSerial, isoToSerial } from '../../lib/dates'
 import { t } from '../../lib/i18n'
 import { formatMinutes, type MatchConfidence, type MatchConflict } from '../../lib/monitoring'
 import { errorText, notify } from '../../lib/notice'
+import { CONFLICT } from '../../lib/walkBoard'
 import { useSession } from '../../stores/session'
+
+const WalkBoard = defineAsyncComponent(() => import('./WalkBoard.vue'))
 
 /**
  * "Dudas de emparejamiento": walk points whose sheet row is not certain (a tie
@@ -20,6 +26,8 @@ import { useSession } from '../../stores/session'
  * changed by matching again); "No es ninguna" leaves the point without a row.
  * Old walks still waiting in "por revisar" are paired here point by point and
  * then go on the map. Reviewers apply the changes of matching all walks again.
+ * Any Wikiloc walk (waiting, or imported) also opens whole on its pairing
+ * board (WalkBoard): every point beside every row of the day.
  */
 interface RowInfo {
   recordId: string
@@ -49,6 +57,9 @@ interface Doubt {
   name: string
   wikiloc: string | null
   text: string
+  /** The point's GPS position (its section beside the row's Transect_section). */
+  lat?: number
+  lon?: number
   minutes: number | null
   /** What the note itself says (species, sex, mark, time), to set beside its row. */
   note?: NoteInfo
@@ -86,7 +97,9 @@ interface WalkCount {
 }
 
 const session = useSession()
-const { loadTracks, loadWalks } = useMonitoring()
+const { loadTracks, loadWalks, walks } = useMonitoring()
+const route = useRoute()
+const router = useRouter()
 const canReview = computed(() => ['reviewer', 'admin'].includes(session.user?.role || ''))
 
 const data = ref<{ changes: Change[]; doubts: Doubt[]; walks: WalkCount[] } | null>(null)
@@ -129,12 +142,6 @@ const REASON: Record<MatchConfidence, string> = {
   tie: '¿Qué fila es? Otra fila encaja igual',
   order: '¿Qué fila es? Puesta por orden: la nota no tiene hora que encaje',
   none: 'Sin fila',
-}
-const CONFLICT: Record<MatchConflict, string> = {
-  sexo: 'el sexo no coincide',
-  especie: 'la especie no coincide',
-  marca: 'la marca no coincide',
-  hora: 'otra hora',
 }
 const rowLabel = (r: RowInfo) =>
   [
@@ -316,22 +323,49 @@ async function applyChanges() {
 }
 const changedWalks = computed(() => new Set((data.value?.changes || []).map(c => c.trackId)).size)
 
+/** The row a point is paired with now (or chosen for it), for its section. */
+function rowOf(d: Doubt): RowInfo | null {
+  const settled = settledRow(d)
+  if (settled) return settled
+  const id = chosenOf(d)[0]
+  return (id && d.candidates.find(r => r.recordId === id)) || null
+}
+
+// ------------------------------------------------------------ the pairing board of one walk
+/** The walk open on its board (in the page link, so it can be shared). */
+const boardWalk = computed({
+  get: () => String(route.query.recorrido ?? ''),
+  set: v => router.replace({ query: { ...route.query, recorrido: v || undefined } }),
+})
+/** Wikiloc walks that open on a board: those waiting first, then the imported ones, newest first. */
+const boardChoices = computed(() =>
+  [...walks.value]
+    .filter(w => w.date && (w.collector || w.trackId))
+    .sort((a, b) => (a.status === b.status ? (b.date || '').localeCompare(a.date || '') : a.status === 'waiting' ? -1 : 1))
+    .map(w => ({
+      value: w.id,
+      label: `${day(w.date!)} · ${initials(w.collector ?? null)} · ${w.name}`,
+      group: w.status === 'waiting' ? t('Por revisar') : t('Importados'),
+    })),
+)
+/** The Wikiloc walk of a group of doubts: the waiting walk, or the one its stored track came from. */
+const walkOfGroup = (g: WalkCount): WikilocWalk | null =>
+  walks.value.find(w => (g.source === 'walk' ? w.id === g.id : w.trackId === g.id)) || null
+async function boardStored() {
+  boardWalk.value = ''
+  await load()
+}
+
 // ------------------------------------------------------------ enlarged photo
 const photoUrl = (id: string) => `api/monitoring/photos/${id}`
 const viewer = ref<{ photos: string[]; index: number; text: string } | null>(null)
-function onKey(event: KeyboardEvent) {
-  if (!viewer.value) return
-  const n = viewer.value.photos.length
-  if (event.key === 'Escape') viewer.value = null
-  else if (event.key === 'ArrowRight') viewer.value.index = (viewer.value.index + 1) % n
-  else if (event.key === 'ArrowLeft') viewer.value.index = (viewer.value.index - 1 + n) % n
-}
-onMounted(() => window.addEventListener('keydown', onKey))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <template>
-  <div class="h-full overflow-y-auto">
+  <div v-if="boardWalk" class="h-full overflow-y-auto">
+    <WalkBoard :walk-id="boardWalk" @close="boardWalk = ''" @stored="boardStored" />
+  </div>
+  <div v-else class="h-full overflow-y-auto">
     <div class="toolbar">
       <label class="block">
         <span class="field-label">{{ $t('Colector') }}</span>
@@ -355,6 +389,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           )
         }}
       </p>
+      <label class="block min-w-0 sm:w-80">
+        <span class="field-label">{{ $t('Tablero de un recorrido') }}</span>
+        <ChoiceField
+          v-model="boardWalk"
+          class="field-input"
+          :freetext="false"
+          :placeholder="$t('Elige un recorrido de Wikiloc…')"
+          :options="boardChoices"
+        />
+      </label>
       <button class="btn ml-auto" :disabled="loading" :title="$t('Volver a emparejar y calcular las dudas')" @click="load">
         <RefreshCw :size="14" :class="{ 'animate-spin': loading }" /> {{ $t('Actualizar') }}
       </button>
@@ -414,8 +458,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             ><ExternalLink :size="14"
           /></a>
           <button
+            v-if="walkOfGroup(g.walk)"
+            class="btn ml-auto"
+            :title="$t('Todos los puntos del recorrido junto a todas las filas de ese día')"
+            @click="boardWalk = walkOfGroup(g.walk)!.id"
+          >
+            <Columns2 :size="14" /> {{ $t('Tablero') }}
+          </button>
+          <button
             v-if="g.walk.source === 'walk' && session.canEdit"
-            class="btn-primary ml-auto"
+            class="btn-primary"
             :disabled="busy"
             :title="$t('Guarda el recorrido en el mapa con las filas elegidas')"
             @click="storeWalk(g.walk, g.doubts)"
@@ -448,6 +500,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 <span v-if="d.indexes.length > 1" class="text-stone-500">
                   ({{ $t('{n} mariposas', { n: d.indexes.length }) }})</span
                 >
+                <span class="mt-0.5 block"><PointSection :lat="d.lat" :lon="d.lon" :row="rowOf(d)?.section ?? null" /></span>
               </figcaption>
             </figure>
             <div v-if="settledRow(d)" class="min-w-0 flex-1 text-sm">
@@ -567,36 +620,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </section>
     </div>
 
-    <div
-      v-if="viewer"
-      class="fixed inset-0 z-[2000] flex flex-col bg-black/90 text-white"
-      role="dialog"
-      aria-modal="true"
-      @click.self="viewer = null"
-    >
-      <div class="flex items-center gap-3 px-4 py-2 text-sm">
-        <span>«{{ viewer.text }}» · {{ $t('foto {n} de {total}', { n: viewer.index + 1, total: viewer.photos.length }) }}</span>
-        <button class="ml-auto rounded p-1 hover:bg-white/10" :title="$t('Cerrar (Esc)')" @click="viewer = null">
-          <X :size="20" />
-        </button>
-      </div>
-      <div class="relative flex min-h-0 flex-1 items-center justify-center" @click.self="viewer = null">
-        <button
-          v-if="viewer.photos.length > 1"
-          class="absolute left-2 rounded-full bg-white/10 p-2 hover:bg-white/20"
-          @click="viewer.index = (viewer.index - 1 + viewer.photos.length) % viewer.photos.length"
-        >
-          <ChevronLeft :size="24" />
-        </button>
-        <img :src="photoUrl(viewer.photos[viewer.index])" alt="" class="max-h-full max-w-full object-contain" />
-        <button
-          v-if="viewer.photos.length > 1"
-          class="absolute right-2 rounded-full bg-white/10 p-2 hover:bg-white/20"
-          @click="viewer.index = (viewer.index + 1) % viewer.photos.length"
-        >
-          <ChevronRight :size="24" />
-        </button>
-      </div>
-    </div>
+    <PointPhotoViewer v-if="viewer" :photos="viewer.photos" :start="viewer.index" :text="viewer.text" @close="viewer = null" />
   </div>
 </template>
