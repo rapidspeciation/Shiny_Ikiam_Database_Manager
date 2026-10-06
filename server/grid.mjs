@@ -122,10 +122,13 @@ export function idSuggestions(store, { kind, start, count, check } = {}) {
   if (!sheets) return computeIds(store, { kind, start, count });
   // Reading every row of these sheets takes up to a second (tube IDs): the answer is kept
   // until one of the sheets it reads changes.
-  // Identifiers held by entries not in the sheet yet (server/claims.mjs) count as used too.
-  const stamp = [...sheets.map(sheet => tableRevision(store, sheet)), claimStamp(store)].join('|');
-  let cache = idCache.get(store);
-  if (cache?.stamp !== stamp) idCache.set(store, (cache = { stamp, answers: new Map() }));
+  // Identifiers held by entries not in the sheet yet (server/claims.mjs) count as used too: those of
+  // this kind (a tap holding an Insectary ID, server/holds.mjs, leaves the tubes' answers alone).
+  // Each kind keeps its own answers, so asking for tubes and Insectary IDs in turn reads neither again.
+  const stamp = [...sheets.map(sheet => tableRevision(store, sheet)), claimStamp(store, kind)].join('|');
+  const kinds = idCache.get(store) ?? idCache.set(store, new Map()).get(store);
+  let cache = kinds.get(kind);
+  if (cache?.stamp !== stamp) kinds.set(kind, (cache = { stamp, answers: new Map() }));
   const key = `${kind}\u0000${start ?? ''}\u0000${count ?? ''}\u0000${check ?? ''}`;
   if (!cache.answers.has(key)) {
     const answer = computeIds(store, { kind, start, count, check });
@@ -136,10 +139,10 @@ export function idSuggestions(store, { kind, start, count, check } = {}) {
 }
 
 const idCache = new WeakMap();
-/** Changes whenever a claim is taken or released. */
-function claimStamp(store) {
+/** Changes whenever a claim of `kind` is taken or released. */
+function claimStamp(store, kind) {
   try {
-    const r = store.db.prepare('SELECT count(*) n, max(created_at) at, group_concat(value) v FROM claims').get();
+    const r = store.db.prepare('SELECT count(*) n, max(created_at) at, group_concat(value) v FROM claims WHERE kind = ?').get(kind);
     return `${r.n}-${r.at}-${r.v?.length ?? 0}`;
   } catch {
     return '';
