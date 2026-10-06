@@ -264,6 +264,7 @@ export default {
   'El clutch {clutch} es {species}: el stock es su subespecie; la página dice «{read}»':
     'Clutch {clutch} is {species}: the stock is its subspecies; the page says «{read}»',
   'Causa escrita «{written}»: Unknown': 'Cause written «{written}»: Unknown',
+  'Sin causa escrita; Unknown por defecto': 'No cause written; Unknown by default',
   'Larva o huevo encontrado muerto y preservado': 'Egg or larva found dead and preserved',
   'Huevo o larva preservado: lo que el equipo escribe': 'Preserved egg or larva: what the team writes',
 

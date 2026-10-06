@@ -158,7 +158,8 @@ test('death templates: unused tubes on every preserved or dead row; preserved la
   const bare = impliedValues({ text: {}, death: recent });
   assert.equal(bare.values.Tube_2_tissue, 'NOT_COLLECTED');
   assert.equal(bare.values.CAM_ID, 'NA');
-  assert.equal(bare.values.Death_cause, undefined, 'the cause stays for the person');
+  assert.equal(bare.values.Death_cause, 'Unknown', 'no cause written: Unknown, for the person to check');
+  assert.deepEqual(bare.doubts, { Death_cause: true });
   // "N/A" written as the cause: Unknown.
   const na = impliedValues({ text: { Death_cause: 'N/A' }, death: recent });
   assert.equal(na.values.Death_cause, 'Unknown');

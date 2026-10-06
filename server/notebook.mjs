@@ -1035,7 +1035,8 @@ export function noteColumns(text, field = 'Notes_Insectary_data') {
  * give the medium, a wing clip, Research_purpose Pheromones and the cause.
  * `text`: the line's values as written (after noteColumns); `row`: the sheet
  * row's values; `death`/`intro`: the dates as serials (line or row), or null.
- * Returns { values: { field: value as the sheet stores it }, reasons: { field: why, a msg() } }.
+ * Returns { values: { field: value as the sheet stores it }, reasons: { field: why, a msg() },
+ * doubts: { field: true } for a value the person is to check (Unknown for a cause not written) }.
  */
 export function impliedValues({ text, row = {}, note = {}, death = null, intro = null }) {
   const values = {};
@@ -1050,7 +1051,8 @@ export function impliedValues({ text, row = {}, note = {}, death = null, intro =
     .join(', ');
   const fromNote = msg('De la nota: {words}', { words: said });
   const fromDead = msg('De la nota: {words}', { words: '«dead»' });
-  const written = String(text.Death_cause ?? row.Death_cause ?? '').trim();
+  // The cause written on the line, else the sheet's (an empty line cell leaves the sheet's).
+  const written = String((isNone(text.Death_cause) ? row.Death_cause : text.Death_cause) ?? '').trim();
   const sample = has('CAM_ID') || has('Tube_1_id');
   const died = death !== null || !isNone(written) || note.unknown;
   // The cause the line does not write: "unk" is Unknown; preserved, for pheromones, or a CAM on the
@@ -1065,6 +1067,12 @@ export function impliedValues({ text, row = {}, note = {}, death = null, intro =
     set('Death_cause', (cause = 'Other'), msg('Larva o huevo encontrado muerto y preservado'));
   else if (!cause && death !== null && !note.dead && (note.preserved || note.pheromone || (sample && (note.medium || (intro !== null && death === intro)))))
     set('Death_cause', (cause = 'Killed_Preserved'), note.preserved || note.pheromone || note.medium ? fromNote : msg('Con CAM y muerta el día que emergió'));
+  // A death date and no cause anywhere: Unknown, a value of the list, for the person to check.
+  const doubts = {};
+  if (!cause && death !== null) {
+    set('Death_cause', (cause = 'Unknown'), msg('Sin causa escrita; Unknown por defecto'));
+    doubts.Death_cause = true;
+  }
   if (note.pheromone) set('Research_purpose', 'Pheromones', fromNote);
   const killed = /^killed/i.test(cause ?? '');
   const year = death ?? intro;
@@ -1110,7 +1118,7 @@ export function impliedValues({ text, row = {}, note = {}, death = null, intro =
     if (note.wingClip) set('Tube_1_tissue', WING_CLIP, fromNote);
     if (note.medium || recent) set('T1_Preservation_medium', note.medium ?? 'Flash frozen', note.medium ? fromNote : usual);
   }
-  return { values, reasons };
+  return { values, reasons, doubts };
 }
 
 /** A preserved egg or larva (not an adult): the note says it ("3rd instar"), or the row's LIFESTAGE does. */
@@ -1657,6 +1665,7 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
       // What the page implies where the line writes nothing; it only fills an empty cell.
       let inferred = null;
       let hint = null;
+      let guessed = null;
       if (usable && !typed && !unreadable && isNone(text[field])) {
         if (field === 'INSECTARY OR LABORATORY' && pageRoom) inferred = pageRoom;
         // "(F1)" not written after the species: no generation (the team types NA).
@@ -1673,8 +1682,14 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         else if (field === 'LIFESTAGE' && kind.sheet === 'Insectary_data' && entryDate() !== null && !preservedLarva(i, record))
           [inferred, hint] = ['Adult', msg('Con fecha de entrada en Intro2Insectary_date: adulto')];
         // A death's other columns (the not-preserved block, a preserved butterfly's), the note's words.
-        else if (deathKind && IMPLIED_FIELDS.has(field) && impliedNow().values[field] !== undefined)
+        else if (deathKind && IMPLIED_FIELDS.has(field) && impliedNow().values[field] !== undefined) {
           [inferred, hint] = [impliedNow().values[field], impliedNow().reasons[field] ?? null];
+          // A default for the person to check (Unknown for a cause not written): doubtful, its reason the hint's.
+          if (impliedNow().doubts?.[field] && hint) {
+            guessed = { reason: hint.text, reasonMsg: hint.msg };
+            confidence = Math.min(confidence, 0.5);
+          }
+        }
       }
       let source = check ? check.value : (inferred ?? text[field]);
       // "ins/lab" read as "ins/oda": the room is sure, whose butterflies they are is not.
@@ -1795,7 +1810,7 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         // A doubtful reading (or a value outside a list that is not strict, a species name) goes into the
         // proposal highlighted, with its other readings, for the person to check before applying.
         doubt,
-        ...(doubt ? doubtReason(check ?? stock, line.r?.[field] ?? (ownerGuess ? 'read "ins/lab": most likely "ins/oda"' : camClash ? `the row already has ${rowCam}: one CAM per individual (a new sample takes a new tube)` : undefined), unlisted && !list?.strict ? { value: unlisted, field } : null, confidence) : { reason: null }),
+        ...(doubt ? doubtReason(check ?? stock ?? guessed, line.r?.[field] ?? (ownerGuess ? 'read "ins/lab": most likely "ins/oda"' : camClash ? `the row already has ${rowCam}: one CAM per individual (a new sample takes a new tube)` : undefined), unlisted && !list?.strict ? { value: unlisted, field } : null, confidence) : { reason: null }),
         alternatives: [...new Set(alternatives)],
         edited: typed,
         include: false,

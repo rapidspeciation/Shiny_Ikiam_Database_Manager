@@ -160,6 +160,37 @@ test('match_notebook fills the implied columns, keeps what the row has, and the 
   assert.ok(!('Notes_Insectary_data' in changes[2].values));
 });
 
+test('a death date without a cause: Unknown, doubtful; a cause on the page or in the sheet stays', () => {
+  const rows = [blank('R6B', 10), blank('R7B', 11), blank('R8B', 12, { Death_cause: 'Disappearance' })];
+  const review = buildReview({
+    transcription: page('deaths', [
+      { v: { Insectary_ID: 'R6B', Death_date: '22/9' } },
+      { v: { Insectary_ID: 'R7B', Death_date: '22/9', Death_cause: 'Eaten' } },
+      { v: { Insectary_ID: 'R8B', Death_date: '22/9' } },
+    ]),
+    year: 2026,
+    today: '2026-10-06',
+    initials: 'FCH',
+    lookup: lookupOf(rows),
+  });
+  const [bare, written, inSheet] = review.lines;
+  const cause = bare.cells.Death_cause;
+  assert.equal(cause.value, 'Unknown');
+  assert.ok(cause.doubt && cause.include && cause.inferred);
+  assert.equal(cause.reason, 'Sin causa escrita; Unknown por defecto');
+  assert.equal(written.cells.Death_cause.value, 'Eaten');
+  assert.ok(!written.cells.Death_cause.doubt && !written.cells.Death_cause.inferred);
+  assert.ok(!inSheet.cells.Death_cause.include && !inSheet.cells.Death_cause.doubt, "the sheet's cause is untouched");
+  const { changes } = proposalRows(review);
+  assert.deepEqual(changes[0].doubts.Death_cause, {
+    confidence: 0.5,
+    alternatives: [],
+    reason: 'Sin causa escrita; Unknown por defecto',
+    reasonMsg: { key: 'Sin causa escrita; Unknown por defecto' },
+  });
+  assert.ok(!changes.find(c => c.recordId === 'r12')?.values.Death_cause);
+});
+
 test('a clutch read unlike the run next to it (848 among 843s) is flagged, and taken from the run when it cannot be', () => {
   const runs = clutchRuns(
     [

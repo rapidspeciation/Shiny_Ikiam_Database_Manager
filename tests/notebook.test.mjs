@@ -238,7 +238,8 @@ test('each line is compared with its row: fills, conflicts, doubts, formulas and
   assert.deepEqual(
     changes.map(ch => [ch.recordId, ch.line, Object.keys(ch.values).sort()]),
     [
-      ['r2', 2, ['CAM_ID', 'Death_date', 'Sex']],
+      // A death date and no cause: Unknown, doubtful.
+      ['r2', 2, ['CAM_ID', 'Death_cause', 'Death_date', 'Sex']],
       // The species outside the list goes in as a doubt (the sex outside its strict list cannot).
       ['r3', 5, ['SPECIES']],
     ],

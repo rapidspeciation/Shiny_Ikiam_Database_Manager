@@ -53,8 +53,8 @@ const PAGE = {
   lines: [
     // A death date to write, a CAM cut off by the photo's edge (part of it read), an entry date the sheet already has.
     {
-      raw: '5VB ♀ 848 ?/8 dead 7/8 CAM0765..',
-      values: { Insectary_ID: '5VB', Sex: 'female', 'CLUTCH NUMBER': '848', Intro2Insectary_date: null, Death_date: '7/8', CAM_ID: null },
+      raw: '5VB ♀ 848 ?/8 dead 7/8 disappeared CAM0765..',
+      values: { Insectary_ID: '5VB', Sex: 'female', 'CLUTCH NUMBER': '848', Intro2Insectary_date: null, Death_date: '7/8', Death_cause: 'Disappearance', CAM_ID: null },
       reasons: { CAM_ID: 'cut off by the photo edge', Intro2Insectary_date: 'smudged' },
       alternatives: { CAM_ID: ['CAM0765??'] },
     },

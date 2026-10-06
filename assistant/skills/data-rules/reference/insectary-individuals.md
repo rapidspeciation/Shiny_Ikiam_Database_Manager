@@ -132,8 +132,9 @@ unk → Unknown; eaten / body eaten → Eaten; spider, "founded by spider" (= fo
 → Spider; ants; mantis → Other + note; deformed; heat or thermal shock → Heat
 stroke; disapp / desaparecido / escaped → Disappearance; preserved / killed →
 Killed_Preserved; only wings → Unknown - Only wings; N/A on a dead butterfly →
-Unknown. Use the cause itself; the old habit of `Other` + note "Eaten" ended
-in 2024.
+Unknown. A death date with no cause written anywhere also takes `Unknown`,
+for the person to confirm. Use the cause itself; the old habit of `Other` +
+note "Eaten" ended in 2024.
 
 - **Disappearance** is a cage-count outcome: butterflies no longer seen are
   closed in bulk with the sweep day as Death_date (not a real death date) and
