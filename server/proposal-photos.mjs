@@ -1,6 +1,6 @@
 // The notebook photos a proposal was read from (match_notebook's `photo` and
-// `rotate`), shown beside its table: a small upright copy for the page's
-// header and a larger one to open in a new tab. The photos are T3 Code chat
+// `rotate`; show_rows's for a table of rows), shown beside its table: a small
+// upright copy for the page's header and a larger one to open in a new tab. The photos are T3 Code chat
 // attachments (<T3 home>/userdata/attachments/<threadId>-<uuid>.jpg); only a
 // file of that folder whose name starts with the proposal's chat is served.
 //

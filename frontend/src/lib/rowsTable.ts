@@ -22,19 +22,37 @@ export interface TableRow {
   /** The whole row marked, or some of its cells. */
   highlight?: boolean
   marked?: string[]
+  /** Where it is on the table's notebook photos (0 = the first), as a page's proposal row says it. */
+  page?: { photo: number; line?: number }
 }
 
-/** What the grid holds for a row: its own columns (__key, __row, __label, __note) and the table's. */
+/** What the grid holds for a row: its own columns (__key, __row, __label, __note, __line) and the table's. */
 export type GridRow = Record<string, CellValue> & {
   __key: string
   __row: number | null
   __label: string
   __note: string
+  __line: string
 }
 
+/** Whether the rows are on more than one photo (their "Línea" then says the photo too). */
+export const severalPhotos = (rows: TableRow[]) => new Set(rows.flatMap(r => (r.page ? [r.page.photo] : []))).size > 1
+
+/** A row's place on the photos, as the "Línea" column shows it: the line, or photo·line when there are several. */
+export function lineText(row: TableRow, several: boolean) {
+  if (!row.page) return ''
+  const line = row.page.line ? String(row.page.line) : ''
+  return several ? [row.page.photo + 1, line].filter(Boolean).join('·') : line
+}
+
+/** The photo and line of a row selected in the table, for the photo beside it (null: none). */
+export const rowPlace = (row: TableRow | undefined): [number | null, number | null] =>
+  row?.page ? [row.page.photo, row.page.line ?? null] : [null, null]
+
 export function gridRows(rows: TableRow[], fields: string[]): GridRow[] {
+  const several = severalPhotos(rows)
   return rows.map(r => {
-    const out = { __key: r.key, __row: r.row, __label: r.label, __note: r.note ?? '' } as GridRow
+    const out = { __key: r.key, __row: r.row, __label: r.label, __note: r.note ?? '', __line: lineText(r, several) } as GridRow
     for (const f of fields) out[f] = r.values[f] ?? null
     return out
   })

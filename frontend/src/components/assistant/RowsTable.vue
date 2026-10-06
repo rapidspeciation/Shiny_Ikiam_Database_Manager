@@ -18,7 +18,7 @@ import {
   type CellBarNote,
 } from '../../lib/gridKit'
 import type { Proposal } from '../../lib/proposals'
-import { compareCells, gridRows, isMarked, tableCounts, type GridRow, type TableRow } from '../../lib/rowsTable'
+import { compareCells, gridRows, isMarked, rowPlace, severalPhotos, tableCounts, type GridRow, type TableRow } from '../../lib/rowsTable'
 import type { CellValue, Field } from '../../lib/types'
 import { locale, t } from '../../lib/i18n'
 import { notify } from '../../lib/notice'
@@ -34,9 +34,11 @@ import CellBar from '../CellBar.vue'
  * cell gives it a corner mark (its tooltip and the bar above the table say
  * it); rows or cells it marks are yellow. A row no longer in the sheet stays,
  * grey. «Cerrar» takes it out of the panel (its link still opens it).
+ * A table read from notebook photos says each row's line ("Línea") and, in
+ * «Revisar con la foto», the row selected brings its photo and line (`row`).
  */
 const props = defineProps<{ table: Proposal }>()
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; row: [photo: number | null, line: number | null] }>()
 
 const host = ref<HTMLDivElement>()
 let grid: Tabulator | null = null
@@ -49,6 +51,9 @@ const fields = computed(() => props.table.fields)
 const sheet = computed(() => props.table.sheets?.[0] ?? '')
 const counts = computed(() => tableCounts(rows.value))
 const noted = computed(() => rows.value.some(r => r.note))
+/** The rows say where they are on the photos: a "Línea" column (photo · line when they are on several). */
+const several = computed(() => severalPhotos(rows.value))
+const paged = computed(() => rows.value.some(r => r.page?.line) || several.value)
 const open = computed(() => props.table.status === 'shown')
 let byKey = new Map<string, TableRow>()
 
@@ -104,6 +109,17 @@ function columns(): ColumnDefinition[] {
       return value === null ? '—' : String(value)
     },
   } as ColumnDefinition)
+  if (paged.value)
+    cols.push({
+      title: t('Línea'),
+      field: '__line',
+      width: several.value ? 58 : 50,
+      frozen: wide,
+      hozAlign: 'right',
+      cssClass: 'row-number',
+      headerTooltip: several.value ? t('Foto · línea del cuaderno') : t('Línea del cuaderno'),
+      sorter,
+    } as ColumnDefinition)
   if (wide) cols.push(id)
   if (noted.value)
     cols.push({
@@ -151,7 +167,7 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
   const field = cell.getField()
   const row = byKey.get(data.__key)
   const base = { index: data.__key, field, row: data.__label, editable: false, multiline: false }
-  const column = { __label: 'ID', __row: t('Fila'), __note: t('Nota IA') }[field] ?? field
+  const column = { __label: 'ID', __row: t('Fila'), __note: t('Nota IA'), __line: t('Línea') }[field] ?? field
   const value = data[field] as CellValue
   const text =
     field === '__row' ? (value === null ? '—' : String(value)) : field.startsWith('__') ? String(value ?? '') : show(field, value)
@@ -160,12 +176,21 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
   if (row?.missing) notes.push({ text: t('Esta fila ya no está en la hoja'), kind: 'edited' })
   return { ...base, column, text, notes, readonly: t('Tabla del asistente: solo para leer') }
 }
-const showBar = () => (bar.value = grid ? describe(selectedCell(grid)) : null)
+/** The row selected last: a new one says its photo and line (for the photo beside the table). */
+let selectedKey: string | null = null
+function showBar() {
+  const cell = grid ? selectedCell(grid) : null
+  bar.value = describe(cell)
+  const key = cell ? (cell.getData() as GridRow).__key : null
+  if (key === selectedKey) return
+  selectedKey = key
+  if (key) emit('row', ...rowPlace(byKey.get(key)))
+}
 
 // ------------------------------------------------------------ drawing
 let shownColumns = ''
 let shownData = ''
-const layoutKey = () => [fields.value.join('|'), noted.value, locale.value].join('\n')
+const layoutKey = () => [fields.value.join('|'), noted.value, paged.value, several.value, locale.value].join('\n')
 function sync() {
   if (!grid || !built) return
   byKey = new Map(rows.value.map(r => [r.key, r]))

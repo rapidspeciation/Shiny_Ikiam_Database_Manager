@@ -77,9 +77,9 @@ const RowsTable = defineAsyncComponent({
  * The tables of rows the assistant shows to read (show_rows) come in the same
  * list, marked as such (RowsTable): nothing to apply, they count as nothing to
  * review, and «Cerrar» takes them out.
- * «Revisar con la foto» (a notebook page's proposal with its photos) opens its
- * table with the photo over the whole browser tab (PhotoReview); its card in
- * the list waits meanwhile.
+ * «Revisar con la foto» (a notebook page's proposal with its photos, or a
+ * table of rows read from notebook photos) opens its table with the photo over
+ * the whole browser tab (PhotoReview); its card in the list waits meanwhile.
  */
 const props = withDefaults(
   defineProps<{
@@ -432,7 +432,7 @@ async function discard(proposal: Proposal) {
 /** The proposal reviewed with its photo (over the whole tab), and the photo shown. */
 const reviewing = ref<{ id: string; photo: number } | null>(null)
 const reviewed$ = computed(() => (reviewing.value ? (proposals.value.find(p => p.id === reviewing.value!.id) ?? null) : null))
-const photosOf = (p: Proposal) => (isTable(p) ? 0 : (p.page?.photos ?? 0))
+const photosOf = (p: Proposal) => p.page?.photos ?? 0
 function review(p: Proposal, photo = 0) {
   reviewing.value = { id: p.id, photo }
   if (props.layout === 'page') emit('photo', true)

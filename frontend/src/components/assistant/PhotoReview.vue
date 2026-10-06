@@ -7,6 +7,7 @@ import { persistentRef } from '../../lib/persist'
 import PhotoViewer from './PhotoViewer.vue'
 
 const ProposalGrid = defineAsyncComponent(() => import('../ProposalGrid.vue'))
+const RowsTable = defineAsyncComponent(() => import('./RowsTable.vue'))
 
 /**
  * «Revisar con la foto»: a proposal's table and its notebook photo together,
@@ -14,6 +15,8 @@ const ProposalGrid = defineAsyncComponent(() => import('../ProposalGrid.vue'))
  * by side on a wide screen, each scrolled on its own, the divider dragged to
  * share the room (kept in this browser). Selecting a row in the table brings
  * its photo and says its line; the table works as on its card (edits, Aplicar).
+ * A table of rows the assistant shows (show_rows) read from notebook photos
+ * comes the same way, still only to read.
  */
 const props = defineProps<{ proposal: Proposal; busy?: boolean; photo: number }>()
 const emit = defineEmits<{
@@ -123,7 +126,9 @@ onBeforeUnmount(() => {
     <div ref="split" class="flex min-h-0 flex-1" :class="beside ? 'flex-row' : 'flex-col'" :style="{ '--share': `${share}%` }">
       <!-- A size container: the table is at most its height (ProposalSheet), so its column names stay in sight. -->
       <div class="min-h-0 min-w-0 shrink-0 grow-0 basis-(--share) overflow-y-auto px-2 pb-2 [container-type:size]">
+        <RowsTable v-if="proposal.kind === 'table'" :table="proposal" @close="emit('discard')" @row="onRow" />
         <ProposalGrid
+          v-else
           :proposal="proposal"
           :busy="busy"
           reviewing

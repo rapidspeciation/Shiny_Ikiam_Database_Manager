@@ -1,6 +1,7 @@
 // A notebook page's proposal: every line of the page in its order (context
 // and placeholder rows), what the SPECIES formula will give, the page's photos
-// (only attachments of the proposal's own T3 chat) and the lean payload.
+// (only attachments of the proposal's own T3 chat) and the lean payload; a
+// table of rows (show_rows) read from photos too.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -331,6 +332,69 @@ test('a proposal made before pages were kept gets its photo later with update_pr
     const thumb = await get(`/api/proposals/${out.proposalId}/photos/0`);
     assert.equal(thumb.status, 200);
     if (!thumb.raw.equals(JPEG)) assert.deepEqual(jpegSize(thumb.raw), [2, 4], 'turned 90° clockwise');
+  } finally {
+    close();
+  }
+});
+
+test("show_rows read from notebook photos: any chat's attachments kept with the table, each row on its photo and line", async () => {
+  const { store, call, get, proposals, close, ana } = await setup();
+  try {
+    const id = n => store.getRecordBySheetRow('Insectary_data', n).id;
+    // The butterflies missing from a census, read from two photos: one an older chat's.
+    const out = await call('show_rows', {
+      title: 'Missing from the census',
+      sheet: 'Insectary_data',
+      recordIds: ['5VB', '8VD', '3AB'],
+      photo: [`${OTHER}-bbbb.jpg`, `/home/ubuntu/.t3/userdata/attachments/${THREAD}-aaaa.jpg`, `${THREAD}-none.jpg`],
+      rotate: [0, 90, 0],
+      notes: [
+        { recordId: '5VB', photo: 0, line: 2, text: 'not counted' },
+        { recordId: '8VD', photo: `${THREAD}-aaaa.jpg`, line: 5 },
+        { recordId: '3AB', photo: 2 },
+      ],
+    });
+    assert.ok(out.tableId, JSON.stringify(out));
+    assert.equal(out.photos, 2);
+    assert.deepEqual(out.photoNotShown, [`${THREAD}-none.jpg`]);
+    assert.deepEqual(out.rowsOffPhotos, [id(5)], 'a third photo the table does not have');
+    let [t] = await proposals();
+    assert.equal(t.kind, 'table');
+    assert.equal(t.page.photos, 2);
+    assert.deepEqual(
+      t.rows.map(r => [r.label, r.page ?? null, r.note ?? null]),
+      [
+        ['5VB', { photo: 0, line: 2 }, 'not counted'],
+        ['8VD', { photo: 1, line: 5 }, null],
+        ['3AB', { photo: 2 }, null],
+      ],
+    );
+    // Served as a page's photos are: upright, for its owner and whoever may edit proposals.
+    const second = await get(`/api/proposals/${out.tableId}/photos/1`);
+    assert.equal(second.status, 200);
+    if (!second.raw.equals(JPEG)) assert.deepEqual(jpegSize(second.raw), [2, 4], 'turned 90° clockwise');
+    assert.equal((await get(`/api/proposals/${out.tableId}/photos/0`, ana)).status, 200);
+    assert.equal((await get(`/api/proposals/${out.tableId}/photos/2`)).status, 404);
+
+    // Changed without photos: they stay (and the rows' places with the notes).
+    const renamed = await call('show_rows', { tableId: out.tableId, title: 'Missing from the census of 3 Oct' });
+    assert.equal(renamed.photos, 2);
+    [t] = await proposals();
+    assert.deepEqual([t.reason, t.page.photos, t.rows[1].page], ['Missing from the census of 3 Oct', 2, { photo: 1, line: 5 }]);
+    // Photos given replace them; none by that name changes nothing.
+    assert.match((await call('show_rows', { tableId: out.tableId, photo: 'none.jpg' })).error, /No photo by that name/);
+    const replaced = await call('show_rows', { tableId: out.tableId, photo: [`${THREAD}-aaaa.jpg`] });
+    assert.equal(replaced.photos, 1);
+    assert.deepEqual(replaced.rowsOffPhotos, [id(3), id(5)]);
+    [t] = await proposals();
+    assert.equal(t.page.photos, 1);
+    assert.equal((await get(`/api/proposals/${out.tableId}/photos/1`)).status, 404);
+    // An empty list takes them out: a plain table again.
+    await call('show_rows', { tableId: out.tableId, photo: [] });
+    [t] = await proposals();
+    assert.equal(t.page, undefined);
+    assert.ok(t.rows.every(r => !r.page));
+    assert.equal((await get(`/api/proposals/${out.tableId}/photos/0`)).status, 404);
   } finally {
     close();
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compareCells, gridRows, isMarked, tableCounts, type TableRow } from '../rowsTable'
+import { compareCells, gridRows, isMarked, lineText, rowPlace, severalPhotos, tableCounts, type TableRow } from '../rowsTable'
 import type { CellValue } from '../types'
 
 const row = (key: string, values: Record<string, CellValue>, extra: Partial<TableRow> = {}): TableRow => ({
@@ -23,12 +23,27 @@ describe('a table of rows the assistant shows (show_rows)', () => {
         __row: 2,
         __label: 'a',
         __note: 'the first',
+        __line: '',
         SPECIES: 'Mechanitis polymnia',
         Dissection_date: null,
       },
-      { __key: 'b', __row: null, __label: 'b', __note: '', SPECIES: null, Dissection_date: null },
+      { __key: 'b', __row: null, __label: 'b', __note: '', __line: '', SPECIES: null, Dissection_date: null },
     ])
     expect(tableCounts(rows)).toEqual({ rows: 2, missing: 1 })
+  })
+
+  it('says where each row is on the notebook photos, and gives the photo and line of the row selected', () => {
+    const one = [row('a', {}, { page: { photo: 0, line: 3 } }), row('b', {})]
+    expect(severalPhotos(one)).toBe(false)
+    expect(gridRows(one, []).map(r => r.__line)).toEqual(['3', ''])
+    // On several photos: the photo (from 1) and the line; a row on a photo without its line, the photo.
+    const two = [row('a', {}, { page: { photo: 0, line: 3 } }), row('b', {}, { page: { photo: 1, line: 12 } }), row('c', {}, { page: { photo: 1 } })]
+    expect(severalPhotos(two)).toBe(true)
+    expect(two.map(r => lineText(r, true))).toEqual(['1·3', '2·12', '2'])
+    expect(rowPlace(two[1])).toEqual([1, 12])
+    expect(rowPlace(two[2])).toEqual([1, null])
+    expect(rowPlace(row('d', {}))).toEqual([null, null])
+    expect(rowPlace(undefined)).toEqual([null, null])
   })
 
   it('marks a whole row, or only the cells the assistant names', () => {

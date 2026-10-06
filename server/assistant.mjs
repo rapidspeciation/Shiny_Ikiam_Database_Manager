@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { createReports } from './reports.mjs';
 import { MAX_BATCH, TYPED_OVER_FORMULA, renamesWithSuffix, sameAsFormula, uniqueIdIndex } from './batch.mjs';
 import { allIssues, checkData } from './checks.mjs';
@@ -118,6 +118,9 @@ const NOTE_FIELD = /^notes?(?:_|$)/i;
 /** A note already in the team's form: "29/9/26 FCH:", "16/06/2023 AA:", "23Ago26 PAS". */
 const NOTE_PREFIX = /^\s*(?:\d{1,2}\s*[/.-]\s*\d{1,2}\s*[/.-]\s*\d{2,4}|\d{1,2}\s*[A-Za-z]{3}\s*\d{2,4})\s+[A-ZÑ]{2,4}\b/;
 const ecuadorDay = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(new Date());
+/** How to name a notebook photo (match_notebook, update_proposal, show_rows). */
+const PHOTO_NOTE =
+  'Give `photo` as the attachment\'s file name: from "[Attached image … saved at …]", or an older chat\'s in the T3 attachments folder (its name starts with that chat\'s id)';
 /** Rows a table shown with show_rows holds at most, and the columns it shows when the assistant names none. */
 const TABLE_ROWS = 500;
 const TABLE_COLUMNS = 20;
@@ -413,16 +416,16 @@ const TOOLS = [
       name: 'show_rows',
       description:
         [
-          "Show the person rows of one sheet as a read-only table beside the chat (current values). When an answer is about many rows (a clutch's butterflies, an issue's rows), show them there and keep the text to what they mean.",
+          "Show the person rows of one sheet as a read-only table beside the chat (current values). When an answer is about many rows, show them there and keep the text to what they mean.",
           `- Rows: \`recordIds\` (or IDs) and/or \`filters\` or \`field\` + \`values\` as in find_records; up to ${TABLE_ROWS}.`,
-          '- `columns`: the ones that matter, in order (default: ID columns, then filled ones). `notes`: comments on a row or a cell (`field`); `highlight` marks it.',
+          '- `columns`: in order (default: ID columns, then filled ones). `notes`: on a row or a cell (`field`); `highlight` marks it.',
+          "- `photo`, `rotate`: the rows' notebook photos, as in match_notebook; a note's `photo` (0 = first) and `line` place its row.",
           '- `tableId`: change a shown table in place (what you leave out stays).',
-          'Returns `link` (the table alone) and `assistantLink` (beside its chat).',
         ].join('\n'),
       parameters: {
         type: 'object',
         properties: {
-          title: { type: 'string', description: 'e.g. "Dissections of M. lysimnia"' },
+          title: { type: 'string' },
           sheet: { type: 'string' },
           recordIds: { type: 'array', items: { type: 'string' } },
           field: { type: 'string' },
@@ -433,10 +436,19 @@ const TOOLS = [
             type: 'array',
             items: {
               type: 'object',
-              properties: { recordId: { type: 'string' }, field: { type: 'string' }, text: { type: 'string' }, highlight: { type: 'boolean' } },
+              properties: {
+                recordId: { type: 'string' },
+                field: { type: 'string' },
+                text: { type: 'string' },
+                highlight: { type: 'boolean' },
+                photo: { type: 'integer' },
+                line: { type: 'integer' },
+              },
               required: ['recordId'],
             },
           },
+          photo: { type: 'array', items: { type: 'string' } },
+          rotate: { type: 'array', items: { type: 'integer' } },
           tableId: { type: 'string' },
         },
       },
@@ -2226,13 +2238,16 @@ export function createAssistant({ store, config = {} }) {
   }
 
   /**
-   * The assistant's notes, by row: { note, cells: field → text, highlight, marked: [fields] };
+   * The assistant's notes, by row: { note, cells: field → text, highlight, marked: [fields], photo, line };
    * `skipped`: notes on rows not in the table or on columns the sheet does not have.
+   * `photo`: the table's photo the row was read from (0 = the first, or its file name), `line` its line
+   * there; `offPhoto`: rows whose photo is no file of the table.
    */
-  function tableNotes(list, ids, mod) {
+  function tableNotes(list, ids, mod, photos = []) {
     const rows = new Set(ids);
     const notes = {};
     const skipped = [];
+    const offPhoto = [];
     const given = (Array.isArray(list) ? list : []).slice(0, 2000);
     // A note's row by its recordId or its ID in the sheet (W2B).
     const named = resolveRows(
@@ -2249,6 +2264,12 @@ export function createAssistant({ store, config = {} }) {
         continue;
       }
       const at = (notes[id] ??= {});
+      // Where the row is on the notebook photos (a line alone: on the first).
+      const photo =
+        typeof n.photo === 'string' ? photos.findIndex(p => p.file === basename(n.photo.trim().replaceAll('\\', '/'))) : n.photo;
+      if (Number.isInteger(photo) && photo >= 0) at.photo = photo;
+      else if (n.photo !== undefined && n.photo !== null) offPhoto.push(id);
+      if (Number.isInteger(n.line) && n.line > 0) at.line = n.line;
       if (field) {
         if (text) at.cells = { ...at.cells, [field]: text };
         if (n.highlight === true) at.marked = [...new Set([...(at.marked ?? []), field])];
@@ -2258,7 +2279,7 @@ export function createAssistant({ store, config = {} }) {
       }
       if (!Object.keys(at).length) delete notes[id];
     }
-    return { notes, skipped: [...new Set(skipped)] };
+    return { notes, skipped: [...new Set(skipped)], offPhoto };
   }
 
   /** show_rows: a read-only table of rows beside the chat, new or (tableId) changed in place. */
@@ -2276,8 +2297,21 @@ export function createAssistant({ store, config = {} }) {
     const picked = rowsAsked || !old ? tableRows(sheet, args) : { ids: before.rows ?? [], missing: [] };
     if (picked.error) return picked;
     const { ids } = picked;
-    const { notes, skipped } =
-      args.notes !== undefined || !old ? tableNotes(args.notes, ids, mod) : { notes: before.notes ?? {}, skipped: [] };
+    // The notebook photos the rows were read from (T3 attachments, any chat's), as a page's proposal keeps
+    // them, so the table can be read beside them; a table changed without photos keeps the ones it had.
+    // An empty list takes them out.
+    const photoGiven = args.photo !== undefined && args.photo !== null && args.photo !== '';
+    const given = photoGiven ? photosOf(config.t3?.home, args) : { photos: [], refused: [] };
+    if (given.refused.length && !given.photos.length) return { error: 'No photo by that name', photoNote: PHOTO_NOTE };
+    const photos = photoGiven ? given.photos : (parse(old?.page_json ?? 'null')?.photos ?? []);
+    const { notes, skipped, offPhoto: unnamed } =
+      args.notes !== undefined || !old
+        ? tableNotes(args.notes, ids, mod, photos)
+        : { notes: before.notes ?? {}, skipped: [], offPhoto: [] };
+    // Rows placed on a photo the table does not have (counted from 1, a photo left out).
+    const offPhoto = [
+      ...new Set([...unnamed, ...Object.entries(notes).filter(([, n]) => n.photo >= photos.length).map(([id]) => id)]),
+    ];
     // A note on a cell of a column the table lacks brings that column in.
     const noted = [...new Set(Object.values(notes).flatMap(n => [...Object.keys(n.cells ?? {}), ...(n.marked ?? [])]))];
     const keep = old && args.columns === undefined && sheet === before.sheet;
@@ -2287,12 +2321,13 @@ export function createAssistant({ store, config = {} }) {
     if (shown.error) return shown;
     const labels = Object.fromEntries(ids.map(id => [id, store.getRecord(id)?.label ?? before.labels?.[id] ?? '']));
     const table = { sheet, columns: shown.columns, rows: ids, labels, notes };
+    const page = photos.length ? json({ photos }) : null;
     let id, chat;
     if (old) {
       db.prepare(
-        `UPDATE ai_proposals SET table_json = ?, reason = ?, status = 'shown', revision = revision + 1, updated_at = ?,
-         last_by = 'ai' WHERE id = ?`,
-      ).run(json(table), title, now(), old.id);
+        `UPDATE ai_proposals SET table_json = ?, page_json = ?, reason = ?, status = 'shown', revision = revision + 1,
+         updated_at = ?, last_by = 'ai' WHERE id = ?`,
+      ).run(json(table), page, title, now(), old.id);
       id = old.id;
       chat = chatOf(old, context);
     } else {
@@ -2302,8 +2337,8 @@ export function createAssistant({ store, config = {} }) {
       const at = now();
       db.prepare(
         `INSERT INTO ai_proposals (id,thread_id,owner_id,changes_json,reason,status,created_at,updated_at,last_by,
-         t3_thread,t3_title,t3_tool_use,table_json) VALUES (?,?,?,'[]',?,'shown',?,?,'ai',?,?,?,?)`,
-      ).run(id, context.threadId, owner(context.user), title, at, at, chat, found?.title ?? null, context.t3?.toolUseId ?? null, json(table));
+         t3_thread,t3_title,t3_tool_use,table_json,page_json) VALUES (?,?,?,'[]',?,'shown',?,?,'ai',?,?,?,?,?)`,
+      ).run(id, context.threadId, owner(context.user), title, at, at, chat, found?.title ?? null, context.t3?.toolUseId ?? null, json(table), page);
     }
     changed(owner(context.user));
     return {
@@ -2313,6 +2348,14 @@ export function createAssistant({ store, config = {} }) {
       sheet,
       rows: ids.length,
       columns: shown.columns,
+      ...(photos.length ? { photos: photos.length } : {}),
+      ...(given.refused.length ? { photoNotShown: given.refused, photoNote: PHOTO_NOTE } : {}),
+      ...(offPhoto.length
+        ? {
+            rowsOffPhotos: offPhoto.slice(0, 20),
+            rowsNote: `The table has ${photos.length} photo(s), counted from 0: these rows' photo is not one of them.`,
+          }
+        : {}),
       ...(picked.missing.length ? { notFound: picked.missing.slice(0, 50) } : {}),
       ...(skipped.length
         ? { notesNotShown: skipped.slice(0, 20), notesNote: 'These rows or columns are not in the table: their notes were left out.' }
@@ -2331,6 +2374,7 @@ export function createAssistant({ store, config = {} }) {
     const mod = moduleMap.get(spec.sheet);
     const columns = spec.columns ?? [];
     const versions = [];
+    const photos = (parse(r.page_json ?? 'null')?.photos ?? []).length;
     const rows = (spec.rows ?? []).map(id => {
       const record = store.getRecord(id);
       const live = !!record && !record.missing;
@@ -2347,6 +2391,10 @@ export function createAssistant({ store, config = {} }) {
         ...(n.cells ? { cells: n.cells } : {}),
         ...(n.highlight ? { highlight: true } : {}),
         ...(n.marked?.length ? { marked: n.marked } : {}),
+        // Its place on the notebook photos, as a page's proposal row says it.
+        ...(photos && (n.photo !== undefined || n.line)
+          ? { page: { photo: n.photo ?? 0, ...(n.line ? { line: n.line } : {}) } }
+          : {}),
       };
     });
     rows.sort((a, b) => (a.row ?? Infinity) - (b.row ?? Infinity));
@@ -2364,6 +2412,8 @@ export function createAssistant({ store, config = {} }) {
       appliedAt: null,
       applied: null,
       sheetStamp: createHash('sha1').update(json(versions)).digest('base64url').slice(0, 12),
+      // The notebook photos it was read from: reviewed beside them as a page's proposal is.
+      ...(photos ? { page: { kind: '', sheet: spec.sheet, columns: [], keys: [], photos } } : {}),
       changes: [],
       rows,
     };
@@ -2447,7 +2497,7 @@ export function createAssistant({ store, config = {} }) {
     if (problems.length) return { error: 'Nothing was changed', problems: problems.slice(0, 20) };
     // The page's photos (T3 attachments, this chat's or an older one's), for a proposal made without them.
     const given = args.photo ? photosOf(config.t3?.home, args) : null;
-    if (given && !given.photos.length) return { error: 'No photo by that name', photoNote: 'Give `photo` as the attachment\'s file name: from "[Attached image … saved at …]", or an older chat\'s in the T3 attachments folder (its name starts with that chat\'s id)' };
+    if (given && !given.photos.length) return { error: 'No photo by that name', photoNote: PHOTO_NOTE };
     const viewGiven = args.view !== undefined && args.view !== null;
     if (!set.length && !check.length && !remove.length && !add.changes.length && !add.newRows.length && !args.reason && !given && !viewGiven)
       return { error: 'Give rows, changes, newRows, removeRows, photo or view' };
@@ -3919,7 +3969,7 @@ export function createAssistant({ store, config = {} }) {
       ...(refused.length
         ? {
             photoNotShown: refused,
-            photoNote: 'Give `photo` as the attachment\'s file name: from "[Attached image … saved at …]", or an older chat\'s in the T3 attachments folder (its name starts with that chat\'s id)',
+            photoNote: PHOTO_NOTE,
           }
         : {}),
       ...(replaced ? { replaced: replaced.id } : {}),
@@ -3938,7 +3988,7 @@ export function createAssistant({ store, config = {} }) {
   let photoCopies = null;
   /**
    * GET /api/proposals/:id/photos/:n?size=thumb|view: a photo of a notebook
-   * page's proposal, upright (`raw` bytes for index.mjs). For its owner and for
+   * page's proposal (or of a table read from photos), upright (`raw` bytes for index.mjs). For its owner and for
    * anyone who may edit proposals (a chat handed over), and only a file in the
    * T3 attachments folder.
    */
