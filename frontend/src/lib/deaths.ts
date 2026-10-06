@@ -437,7 +437,7 @@ export interface DeathChoice {
   note: string
 }
 export type ChoiceField = keyof DeathChoice
-/** The values a card has of its own (set with the card selected), by Insectary ID; the rest come from the panel. */
+/** The values a card has of its own (a note typed in its editor, an unfinished one's choices), by Insectary ID; the rest come from the panel. */
 export type OwnChoices = Record<string, Partial<DeathChoice>>
 
 /** A card's date, cause, preservation and note: its own where it has them, else the panel's (for all cards). */
@@ -545,4 +545,83 @@ export function cardCells(
   const cells = deathCells(row, get, { serial, cause: choice.cause, notPreserved: !choice.preserved, preserve })
   const note = noteCell(row, get, choice.note ?? '', today, initials)
   return note ? [...cells, note] : cells
+}
+
+// --- Choosing: one butterfly at a time, or several as an explicit group
+
+/** What is chosen: the Insectary IDs (one, unless `several`), and whether taps build a group. */
+export interface Picking {
+  picked: string[]
+  several: boolean
+}
+/** A new choice, and the IDs it leaves behind whose registering is kept (setAside). */
+export interface PickResult extends Picking {
+  left: string[]
+}
+const sameId = (a: string, b: string) => searchKey(a) === searchKey(b)
+
+/**
+ * One ID chosen (a suggestion, Enter, «¿Quisiste decir?»). One at a time it
+ * replaces the butterfly there (left behind); in several, or with `add`
+ * (Ctrl or Shift click, a long press), it joins the group, and leaves it when
+ * already in (nothing left behind: taking it out drops what it had).
+ */
+export function pickOne(p: Picking, id: string, add = false): PickResult {
+  const has = p.picked.some(x => sameId(x, id))
+  if (p.several || add) {
+    if (!has) return { picked: [...p.picked, id], several: true, left: [] }
+    return p.several ? { picked: p.picked.filter(x => !sameId(x, id)), several: true, left: [] } : { ...p, left: [] }
+  }
+  if (has && p.picked.length === 1) return { ...p, left: [] }
+  return { picked: [id], several: false, left: p.picked.filter(x => !sameId(x, id)) }
+}
+
+/**
+ * Several IDs at once (a range B0D-B9D, a list pasted): they become the group
+ * (after the ones already in it, in several), and the butterfly there one at a
+ * time is left behind unless it is one of them. A single ID is pickOne.
+ */
+export function pickMany(p: Picking, ids: string[]): PickResult {
+  if (!ids.length) return { ...p, left: [] }
+  if (ids.length === 1) return pickOne(p, ids[0])
+  const picked = p.several ? [...p.picked] : []
+  for (const id of ids) if (!picked.some(x => sameId(x, id))) picked.push(id)
+  const left = p.several ? [] : p.picked.filter(x => !picked.some(y => sameId(x, y)))
+  return { picked, several: true, left }
+}
+
+/** «Seleccionar varias»: the butterfly there starts the group. */
+export const startSeveral = (p: Picking): Picking => ({ picked: p.picked, several: true })
+/** Leaving several («Una a una», «Vaciar»): back to one at a time, keeping a group of one, else with none chosen. */
+export const endSeveral = (p: Picking): Picking => ({ picked: p.picked.length === 1 ? p.picked : [], several: false })
+
+/** Why a butterfly's death cannot be written yet: '' when it can. */
+export type Lack = '' | 'date' | 'bad-date' | 'cause' | 'sample'
+export function lackOf(choice: DeathChoice, dying: boolean, gap?: PreservationGap): Lack {
+  if (!choice.date) return 'date'
+  if (serialFromIso(choice.date) === null) return 'bad-date'
+  if (dying && !choice.cause) return 'cause'
+  if (gap && hasGap(gap)) return 'sample'
+  return ''
+}
+
+/**
+ * What becomes of butterflies no longer chosen, one at a time: nothing when
+ * nothing was registered for them (looked up to see if alive); else those with
+ * all they need go to the pending changes (saved like any edit) and the rest
+ * wait as unfinished, with what they lack.
+ */
+export function setAside(
+  ids: string[],
+  touched: boolean,
+  lack: (id: string) => Lack,
+): { pending: string[]; unfinished: { id: string; lack: Exclude<Lack, ''> }[] } {
+  const out = { pending: [] as string[], unfinished: [] as { id: string; lack: Exclude<Lack, ''> }[] }
+  if (!touched) return out
+  for (const id of ids) {
+    const why = lack(id)
+    if (why) out.unfinished.push({ id, lack: why })
+    else out.pending.push(id)
+  }
+  return out
 }

@@ -5,15 +5,22 @@ import { persistentRef } from '../lib/persist'
 
 /**
  * What Muertes is registering, shared by its two modes (the cards and the
- * table, see useEntryMode): the butterflies chosen, the death date, the cause,
+ * table, see useEntryMode): the butterflies chosen (one at a time, or several),
+ * the death date, the cause,
  * preserved or not, the note, the medium and the CAM and tube typed for each. Switching
  * mode (or turning a phone) keeps all of it. The IDs, cause, preserved, note and the
  * cards' own values live as long as the browser tab (sessionStorage), the
  * medium in this browser.
  */
 export interface DeathsState {
-  /** The Insectary IDs chosen, in the order they were added. */
+  /** The Insectary IDs chosen, in the order they were added: one, unless `several`. */
   picked: Ref<string[]>
+  /** «Seleccionar varias»: choosing an ID adds it to the group instead of replacing the one there. */
+  several: Ref<boolean>
+  /** Something was registered for the ones chosen (a cause, date, preservation or note tapped): kept when they are left. */
+  touched: Ref<boolean>
+  /** Butterflies left unfinished (a date without a cause…), their choices in `own`, to come back to. */
+  unfinished: Ref<string[]>
   /** The death date (ISO), today by default. */
   date: Ref<string>
   cause: Ref<string>
@@ -27,13 +34,11 @@ export interface DeathsState {
   /** What the app suggested, so a value the person typed is never replaced. */
   suggested: Record<string, { cam: string; tube: string }>
   /**
-   * The cards' own date, cause, preservation or note, by Insectary ID (the
-   * cards only: set with the card selected; the rest come from date, cause,
-   * preserved and note above, which apply to all).
+   * The cards' own date, cause, preservation or note, by Insectary ID (a note
+   * typed in a card's editor, an unfinished one's choices; the rest come from
+   * date, cause, preserved and note above, which apply to all chosen).
    */
   own: Ref<OwnChoices>
-  /** The cards selected (tapped): what the panel sets while any is selected. */
-  selected: Ref<string[]>
 }
 
 const PREFIX = 'ithomiini:'
@@ -100,6 +105,9 @@ export function createDeathsState(): DeathsState {
   migrateDeathKeys()
   return {
     picked: persistentRef<string[]>('deaths:ids', []),
+    several: persistentRef('deaths:several', false),
+    touched: persistentRef('deaths:touched', false),
+    unfinished: persistentRef<string[]>('deaths:unfinished', []),
     // Deaths are usually entered the same day.
     date: ref(todayIso()),
     cause: persistentRef('deaths:cause', ''),
@@ -109,7 +117,6 @@ export function createDeathsState(): DeathsState {
     samples: reactive({}),
     suggested: reactive({}),
     own: persistentRef<OwnChoices>('deaths:own', {}),
-    selected: ref<string[]>([]),
   }
 }
 

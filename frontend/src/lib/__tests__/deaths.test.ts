@@ -7,21 +7,28 @@ import {
   choiceFor,
   daysAlive,
   deathCells,
+  endSeveral,
   factsOf,
   hasGap,
+  lackOf,
   lifeOf,
   lookAlikes,
   noteCell,
+  pickMany,
+  pickOne,
   preservationGaps,
   rankCauses,
+  setAside,
   setChoice,
   sharedChoice,
+  startSeveral,
   keepOwn,
   suggest,
   usedSamples,
   type DeathChoice,
   type Getter,
   type OwnChoices,
+  type Lack,
 } from '../deaths'
 import type { CellValue, TableRow } from '../types'
 
@@ -324,5 +331,69 @@ describe('each card its own date, cause, preservation and note', () => {
     // A blank note writes nothing; a formula cell is never written.
     expect(noteCell(b, saved, '   ', DAY, 'FCH')).toBeNull()
     expect(noteCell(row({ Notes_Insectary_data: 'x' }, { formulas: ['Notes_Insectary_data'] }), saved, 'Weak', DAY, 'FCH')).toBeNull()
+  })
+})
+
+describe('choosing: one butterfly at a time, or several as a group', () => {
+  const one = (...picked: string[]) => ({ picked, several: false })
+  const group = (...picked: string[]) => ({ picked, several: true })
+
+  it('one at a time: a new ID replaces the one there, which is left behind', () => {
+    expect(pickOne(one(), 'A1B')).toEqual({ picked: ['A1B'], several: false, left: [] })
+    expect(pickOne(one('A1B'), 'A2B')).toEqual({ picked: ['A2B'], several: false, left: ['A1B'] })
+    // The same one again (any case) changes nothing.
+    expect(pickOne(one('A1B'), 'a1b')).toEqual({ picked: ['A1B'], several: false, left: [] })
+  })
+
+  it('several: a tap adds the ID to the group, a second tap takes it out (nothing left behind)', () => {
+    expect(pickOne(group('A1B'), 'A2B')).toEqual({ picked: ['A1B', 'A2B'], several: true, left: [] })
+    expect(pickOne(group('A1B', 'A2B'), 'a2b')).toEqual({ picked: ['A1B'], several: true, left: [] })
+    // Taking the last one out keeps the mode: the next tap still adds.
+    expect(pickOne(group('A1B'), 'A1B')).toEqual({ picked: [], several: true, left: [] })
+  })
+
+  it('Ctrl/Shift-click or a long press adds to a group from one at a time, never takes out', () => {
+    expect(pickOne(one('A1B'), 'A2B', true)).toEqual({ picked: ['A1B', 'A2B'], several: true, left: [] })
+    expect(pickOne(one(), 'A2B', true)).toEqual({ picked: ['A2B'], several: true, left: [] })
+    expect(pickOne(one('A1B'), 'A1B', true)).toEqual({ picked: ['A1B'], several: false, left: [] })
+  })
+
+  it('a range or a list makes the group, leaving the one there unless it is in it', () => {
+    expect(pickMany(one('A1B'), ['B0D', 'B1D', 'B2D'])).toEqual({ picked: ['B0D', 'B1D', 'B2D'], several: true, left: ['A1B'] })
+    expect(pickMany(one('B1D'), ['B0D', 'B1D'])).toEqual({ picked: ['B0D', 'B1D'], several: true, left: [] })
+    // In several they join the group, without repeats.
+    expect(pickMany(group('A1B', 'B0D'), ['B0D', 'B1D', 'b1d'])).toEqual({ picked: ['A1B', 'B0D', 'B1D'], several: true, left: [] })
+    // One ID is a single choice; none changes nothing.
+    expect(pickMany(one('A1B'), ['B0D'])).toEqual({ picked: ['B0D'], several: false, left: ['A1B'] })
+    expect(pickMany(one('A1B'), [])).toEqual({ picked: ['A1B'], several: false, left: [] })
+  })
+
+  it('«Seleccionar varias» starts the group with the one there; leaving empties a group, keeps a lone one', () => {
+    expect(startSeveral(one('A1B'))).toEqual({ picked: ['A1B'], several: true })
+    expect(startSeveral(one())).toEqual({ picked: [], several: true })
+    expect(endSeveral(group('A1B', 'A2B', 'A3B'))).toEqual({ picked: [], several: false })
+    expect(endSeveral(group('A1B'))).toEqual({ picked: ['A1B'], several: false })
+  })
+
+  it('what a butterfly still lacks: a date, a valid date, a cause while dying, its CAM or tube', () => {
+    const c = (over: Partial<DeathChoice> = {}): DeathChoice => ({ date: '2026-10-05', cause: 'Natural', preserved: false, note: '', ...over })
+    expect(lackOf(c(), true)).toBe('')
+    expect(lackOf(c({ date: '' }), true)).toBe('date')
+    expect(lackOf(c({ date: '1890-01-01' }), true)).toBe('bad-date')
+    expect(lackOf(c({ cause: '' }), true)).toBe('cause')
+    // Already dead: a note alone is enough.
+    expect(lackOf(c({ cause: '', note: 'Head eaten' }), false)).toBe('')
+    const gap = { id: 'A1B', slot: 1, keepsCam: false, cam: 'missing' as const, tube: '' as const }
+    expect(lackOf(c({ preserved: true }), true, gap)).toBe('sample')
+    expect(lackOf(c({ preserved: true }), true, { ...gap, cam: '' })).toBe('')
+  })
+
+  it('left behind: nothing when nothing was registered; else ready ones to pending, the rest unfinished', () => {
+    const lacks: Record<string, Lack> = { A1B: '', A2B: 'cause' }
+    expect(setAside(['A1B', 'A2B'], false, id => lacks[id])).toEqual({ pending: [], unfinished: [] })
+    expect(setAside(['A1B', 'A2B'], true, id => lacks[id])).toEqual({
+      pending: ['A1B'],
+      unfinished: [{ id: 'A2B', lack: 'cause' }],
+    })
   })
 })
