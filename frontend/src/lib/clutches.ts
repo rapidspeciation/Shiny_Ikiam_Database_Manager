@@ -366,6 +366,19 @@ export function appendNote(current: CellValue | undefined, text: string, today: 
   const old = isBlank(current) ? '' : String(current).trim()
   return old ? `${old} | ${note}` : note
 }
+/**
+ * NOTES without one note added in this session (an event taken back): its
+ * last occurrence goes, with the " | " that joined it; the rest stays as written.
+ */
+export function withoutNote(current: CellValue | undefined, note: string): CellValue {
+  const text = isBlank(current) ? '' : String(current)
+  const at = note ? text.lastIndexOf(note) : -1
+  if (at < 0) return current ?? null
+  const before = text.slice(0, at).replace(/\s*\|\s*$/, '')
+  const after = text.slice(at + note.length).replace(/^\s*\|\s*/, '')
+  const out = before && after ? `${before} | ${after}` : before || after
+  return out.trim() ? out : null
+}
 /** The notes of a cell one by one (as written, joined with " | "). */
 export const notesOf = (value: CellValue | undefined) =>
   isBlank(value)
@@ -564,6 +577,216 @@ export function aliveAndSurvived(sheetTotal: number, preserved: number, subtract
 
 /** Whether a loss is taken off the count: always, except preserved ones when the team keeps them counted. */
 export const lossTakesOff = (kind: Loss, subtractPreserved: boolean) => kind !== 'preserved' || subtractPreserved
+
+// --- The note an event writes in NOTES (English, as the sheet's notes)
+
+const NOUN: Record<Stage, [string, string]> = { egg: ['egg', 'eggs'], larva: ['larva', 'larvae'], pupa: ['pupa', 'pupae'], adult: ['adult', 'adults'] }
+/** "3rd instar larva" → "3rd instar", "Pre-pupa" → "prepupae", for "preserved as …". */
+function asStage(lifestage: string, count: number): string {
+  const s = lifestage.trim()
+  if (!s || /^egg$/i.test(s)) return ''
+  if (/^pre-?pupa$/i.test(s)) return count === 1 ? 'prepupa' : 'prepupae'
+  return s.replace(/\s+larvae?$/i, '')
+}
+/**
+ * What an event says in the clutch's NOTES, after "d/m/yy INI: ", as the team
+ * writes it: "5 larvae died", "2 larvae disappeared", "5 larvae preserved as
+ * 3rd instar (R0C, R1C)", "3 larvae hatched", "3 pupated", "4 adults emerged",
+ * "7 eggs laid"; with the day it happened when that was not the day written
+ * ("… on 4/10/26"): the sheet keeps one date per stage, the notes the rest.
+ */
+export function eventNote(
+  e: { stage: Stage; kind: EventKind; count: number; ids?: string[]; lifestage?: string; day?: number | null },
+  today: number,
+): string {
+  const [one, many] = NOUN[e.stage]
+  const noun = e.count === 1 ? one : many
+  let text: string
+  switch (e.kind) {
+    case 'laid':
+      text = `${e.count} ${noun} laid`
+      break
+    case 'hatched':
+      text = `${e.count} ${e.count === 1 ? 'larva' : 'larvae'} hatched`
+      break
+    case 'pupated':
+      text = `${e.count} pupated`
+      break
+    case 'emerged':
+      text = `${e.count} ${e.count === 1 ? 'adult' : 'adults'} emerged`
+      break
+    case 'preserved': {
+      const as = e.stage === 'larva' && e.lifestage ? asStage(e.lifestage, e.count) : ''
+      text = `${e.count} ${noun} preserved${as ? ` as ${as}` : ''}`
+      break
+    }
+    default:
+      text = `${e.count} ${noun} ${e.kind}`
+  }
+  if (e.ids?.length) text += ` (${e.ids.join(', ')})`
+  if (e.day !== undefined && e.day !== null && e.day !== today) text += ` on ${noteDay(e.day)}`
+  return text
+}
+
+// --- What is in the cage now, and when the next stages come
+
+/** What a count gained: its positive terms (=12+5-2 → 17: hatched, pupated, emerged so far). */
+export const gainsOf = (terms: number[]) => terms.reduce((a, t) => (t > 0 ? a + t : a), 0)
+
+export interface Expected {
+  /** Eggs not hatched yet (null: no eggs counted). */
+  eggs: number | null
+  /** Larvae that should be in the cage to count today. */
+  larvae: number | null
+  /** Pupae that should be in the cage. */
+  pupae: number | null
+}
+/**
+ * What should be in the cage today, from the sheet's counts as the team keeps
+ * them (a stage's count is never lowered when they move on: NUMBER OF LARVAE
+ * holds the larvae that hatched, less those that died or disappeared) and the
+ * preserved ones the app knows of: eggs = eggs − hatched; larvae = larvae −
+ * pupated; pupae = pupae − emerged; each less its preserved ones when the team
+ * keeps them counted (`subtractPreserved` false). Never below 0.
+ */
+export function expectedNow(
+  counts: { eggs: Count; larvae: Count; pupae: Count; adults: Count },
+  preserved: { egg?: number; larva?: number; pupa?: number },
+  subtractPreserved: boolean,
+): Expected {
+  const total = (c: Count) => (c.terms.length ? totalOf(c.terms) : null)
+  const left = (c: Count, next: Count, kept: number | undefined) => {
+    const t = total(c)
+    if (t === null) return null
+    return Math.max(0, t - gainsOf(next.terms) - (subtractPreserved ? 0 : (kept ?? 0)))
+  }
+  return {
+    eggs: left(counts.eggs, counts.larvae, preserved.egg),
+    larvae: left(counts.larvae, counts.pupae, preserved.larva),
+    pupae: left(counts.pupae, counts.adults, preserved.pupa),
+  }
+}
+
+/** Days from laying to hatching (egg), hatching to pupation (larva) and pupation to emergence (pupa). */
+export interface Durations {
+  egg: number
+  larva: number
+  pupa: number
+  /** Where they come from: the species' clutches, its genus', or all clutches (or the usual days). */
+  from: 'species' | 'genus' | 'all'
+}
+/** The usual days when the sheet has too few clutches (medians of 2023–26: 5, 16 and 8). */
+export const USUAL_DURATIONS: Durations = { egg: 5, larva: 16, pupa: 8, from: 'all' }
+/** A stage's days are believed within these bounds (a typo gives 300). */
+const BOUNDS = { egg: [1, 20], larva: [5, 45], pupa: [3, 25] } as const
+const MIN_CLUTCHES = 5
+const median = (xs: number[]) => {
+  const s = [...xs].sort((a, b) => a - b)
+  const m = s.length >> 1
+  return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2)
+}
+export interface StageDurations {
+  of: (species: string) => Durations
+}
+/**
+ * Each species' typical days per stage, from the clutches in the sheet (the
+ * median of HATCHING DATE − DATE LAID, PUPA DATE − HATCHING DATE, EMERGENCE
+ * DATE − PUPA DATE); with fewer than five clutches, its genus' (Mechanitis,
+ * Melinaea), else all clutches', else the usual days.
+ */
+export function stageDurations(rows: { species: CellValue; laid: CellValue; hatch: CellValue; pupa: CellValue; emerge: CellValue }[]): StageDurations {
+  type Lists = { egg: number[]; larva: number[]; pupa: number[] }
+  const species = new Map<string, Lists>()
+  const genus = new Map<string, Lists>()
+  const all: Lists = { egg: [], larva: [], pupa: [] }
+  const at = (map: Map<string, Lists>, key: string) => map.get(key) ?? (map.set(key, { egg: [], larva: [], pupa: [] }), map.get(key)!)
+  for (const r of rows) {
+    const name = isBlank(r.species) ? '' : String(r.species).trim()
+    const known = !!name && !/^NA$/i.test(name)
+    const add = (stage: keyof Lists, from: CellValue, to: CellValue) => {
+      const a = date(from)
+      const b = date(to)
+      if (a === null || b === null) return
+      const days = b - a
+      const [lo, hi] = BOUNDS[stage]
+      if (days < lo || days > hi) return
+      all[stage].push(days)
+      if (known) {
+        at(species, name)[stage].push(days)
+        at(genus, name.split(/\s+/)[0])[stage].push(days)
+      }
+    }
+    add('egg', r.laid, r.hatch)
+    add('larva', r.hatch, r.pupa)
+    add('pupa', r.pupa, r.emerge)
+  }
+  const memo = new Map<string, Durations>()
+  return {
+    of(name: string) {
+      const key = name.trim()
+      const hit = memo.get(key)
+      if (hit) return hit
+      const out: Durations = { ...USUAL_DURATIONS }
+      const sources = new Set<Durations['from']>()
+      for (const stage of ['egg', 'larva', 'pupa'] as const) {
+        const own = species.get(key)?.[stage] ?? []
+        const kin = genus.get(key.split(/\s+/)[0] ?? '')?.[stage] ?? []
+        if (own.length >= MIN_CLUTCHES) {
+          out[stage] = median(own)
+          sources.add('species')
+        } else if (kin.length >= MIN_CLUTCHES) {
+          out[stage] = median(kin)
+          sources.add('genus')
+        } else if (all[stage].length >= MIN_CLUTCHES) out[stage] = median(all[stage])
+      }
+      out.from = sources.has('species') ? 'species' : sources.has('genus') ? 'genus' : 'all'
+      memo.set(key, out)
+      return out
+    },
+  }
+}
+
+export interface Predicted {
+  /** The day each next stage is expected (a date serial), or null when it is not to come. */
+  hatch: number | null
+  pupa: number | null
+  emerge: number | null
+}
+/**
+ * When the next hatching, pupation and emergence are expected: from the day the
+ * stage before last grew (the latest laid, hatched or pupated event the app
+ * knows of, else the sheet's first date of that stage, else the date expected
+ * for it) plus the species' days. A stage is to come while something of the
+ * stage before it is expected in the cage (or nothing of it was counted yet
+ * and the stage before is coming).
+ */
+export function predict(
+  dates: { laid: CellValue; hatch: CellValue; pupa: CellValue },
+  expected: Expected,
+  durations: Durations,
+  latest: { laid?: number | null; hatched?: number | null; pupated?: number | null } = {},
+): Predicted {
+  const later = (a: number | null | undefined, b: number | null) => (a !== null && a !== undefined && (b === null || a > b) ? a : b)
+  const fromLaid = later(latest.laid, date(dates.laid))
+  const hatchDay = fromLaid !== null ? fromLaid + durations.egg : null
+  const fromHatch = later(latest.hatched, date(dates.hatch)) ?? hatchDay
+  const pupaDay = fromHatch !== null ? fromHatch + durations.larva : null
+  const fromPupa = later(latest.pupated, date(dates.pupa)) ?? pupaDay
+  const emergeDay = fromPupa !== null ? fromPupa + durations.pupa : null
+  const eggs = expected.eggs !== null && expected.eggs > 0
+  const larvae = expected.larvae !== null ? expected.larvae > 0 : eggs
+  const pupae = expected.pupae !== null ? expected.pupae > 0 : larvae
+  return { hatch: eggs ? hatchDay : null, pupa: larvae ? pupaDay : null, emerge: pupae ? emergeDay : null }
+}
+
+/** The eggs of a new clutch as typed: 12, 3+5+7 or =3+5 (groups on other leaves or days) → their terms; null when not that. */
+export function eggGroups(text: string): number[] | null {
+  const raw = text.trim().replace(/\s+/g, '')
+  if (!raw) return []
+  if (!/^=?\d{1,4}(\+\d{1,4})*$/.test(raw)) return null
+  const terms = raw.replace(/^=/, '').split('+').map(Number)
+  return terms.length > 1 && terms.some(n => n <= 0) ? null : terms
+}
 
 /** An event in short: "+4 hatched", "−2 preserved (M0E, N9E)". `word` names the kind in the person's language. */
 export function eventText(

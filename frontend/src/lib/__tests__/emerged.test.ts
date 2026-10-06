@@ -171,44 +171,57 @@ describe("the clutch's row", () => {
     expect(p.cells).toEqual([
       { field: 'NUMBER OF ADULTS', value: '=2+2+2+1', before: '=2+2' },
       { field: 'EMERGENCE DATE', value: DAY, before: null },
+      // Each day's adults in NOTES, dated and signed (the sheet keeps only the first emergence date).
+      { field: 'NOTES', value: '3/10/26 FCH: 2 adults emerged on 2/10/26 | 3/10/26 FCH: 1 adult emerged', before: null },
     ])
     // A first emergence date already there stays.
-    expect(plan([draft()], { 'EMERGENCE DATE': DAY - 3 }).cells.map(c => c.field)).toEqual(['NUMBER OF ADULTS'])
+    expect(plan([draft()], { 'EMERGENCE DATE': DAY - 3 }).cells.map(c => c.field)).toEqual(['NUMBER OF ADULTS', 'NOTES'])
   })
-  it('larvae and eggs preserved taken off their counts, with a note', () => {
-    const p = plan([draft({ kind: 'young', stage: '3rd instar larva' }), draft({ key: 'k2', kind: 'young', stage: '4th instar larva' }), draft({ key: 'k3', kind: 'young', stage: 'Egg' })])
+  it('larvae and eggs preserved stay counted by default (the larvae used), each group with its note and IDs', () => {
+    const p = plan([
+      draft({ kind: 'young', stage: '3rd instar larva' }),
+      draft({ key: 'k2', id: 'E5E', kind: 'young', stage: '3rd instar larva' }),
+      draft({ key: 'k3', id: 'E6E', kind: 'young', stage: 'Egg', date: '2026-10-03' }),
+    ])
     expect(p.cells).toEqual([
-      { field: 'NUMBER OF LARVAE', value: '=9+3-2', before: '=9+3' },
-      { field: 'NUMBER OF EGGS', value: '=12-1', before: '=12' },
-      { field: 'NOTES', value: '3/10/26 FCH: 2 larvae and 1 egg preserved 2/10', before: null },
+      {
+        field: 'NOTES',
+        value: '3/10/26 FCH: 2 larvae preserved as 3rd instar (E4E, E5E) on 2/10/26 | 3/10/26 FCH: 1 egg preserved (E6E)',
+        before: null,
+      },
     ])
   })
-  it("preserved ones kept counted when the team's setting says so; those found dead are taken off always", () => {
+  it("preserved ones taken off when the team's setting says so; those found dead are taken off always", () => {
     const young = [
       draft({ kind: 'young', stage: '3rd instar larva' }),
-      draft({ key: 'k2', kind: 'young', stage: '4th instar larva', foundDead: true }),
-      draft({ key: 'k3', kind: 'young', stage: 'Egg' }),
+      draft({ key: 'k2', id: 'E5E', kind: 'young', stage: '4th instar larva', foundDead: true }),
+      draft({ key: 'k3', id: 'E6E', kind: 'young', stage: 'Egg' }),
     ]
-    const keep = stockPlan(tallies(young)[0], f => readCount(counts[f] ?? null), f => counts[f] ?? null, {
-      today: isoToSerial('2026-10-03'),
-      initials: 'FCH',
-      subtractPreserved: false,
-    })
+    const options = (subtractPreserved: boolean) => ({ today: isoToSerial('2026-10-03'), initials: 'FCH', subtractPreserved })
+    const keep = stockPlan(tallies(young)[0], f => readCount(counts[f] ?? null), f => counts[f] ?? null, options(false))
+    const notes =
+      '3/10/26 FCH: 1 larva preserved as 3rd instar (E4E) on 2/10/26 | 3/10/26 FCH: 1 larva found dead, preserved (E5E) on 2/10/26 | 3/10/26 FCH: 1 egg preserved (E6E) on 2/10/26'
     expect(keep.cells).toEqual([
       { field: 'NUMBER OF LARVAE', value: '=9+3-1', before: '=9+3' },
-      { field: 'NOTES', value: '3/10/26 FCH: 2 larvae and 1 egg preserved 2/10', before: null },
+      { field: 'NOTES', value: notes, before: null },
+    ])
+    const off = stockPlan(tallies(young)[0], f => readCount(counts[f] ?? null), f => counts[f] ?? null, options(true))
+    expect(off.cells).toEqual([
+      { field: 'NUMBER OF LARVAE', value: '=9+3-2', before: '=9+3' },
+      { field: 'NUMBER OF EGGS', value: '=12-1', before: '=12' },
+      { field: 'NOTES', value: notes, before: null },
     ])
     // The team's setting (Clutches' settings) is what a save follows when not told.
-    clutchSettings.subtractPreserved = false
+    clutchSettings.subtractPreserved = true
     try {
-      expect(plan([draft({ kind: 'young', stage: 'Egg' })]).cells.map(c => c.field)).toEqual(['NOTES'])
+      expect(plan([draft({ kind: 'young', stage: 'Egg' })]).cells.map(c => c.field)).toEqual(['NUMBER OF EGGS', 'NOTES'])
     } finally {
-      clutchSettings.subtractPreserved = true
+      clutchSettings.subtractPreserved = false
     }
-    expect(plan([draft({ kind: 'young', stage: 'Egg' })]).cells.map(c => c.field)).toEqual(['NUMBER OF EGGS', 'NOTES'])
+    expect(plan([draft({ kind: 'young', stage: 'Egg' })]).cells.map(c => c.field)).toEqual(['NOTES'])
   })
   it('a count that would go below 0 is left as it is', () => {
-    const p = stockPlan(tallies([draft({ kind: 'young', stage: 'Egg' })])[0], () => readCount(null), () => null, { today: 1, initials: 'X' })
+    const p = stockPlan(tallies([draft({ kind: 'young', stage: 'Egg' })])[0], () => readCount(null), () => null, { today: 1, initials: 'X', subtractPreserved: true })
     expect(p.skipped).toEqual(['NUMBER OF EGGS'])
   })
 })

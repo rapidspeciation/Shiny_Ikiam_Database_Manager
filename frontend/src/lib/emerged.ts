@@ -1,5 +1,5 @@
 import { isBlank } from './cells'
-import { appendNote, appendTerm, countValue, noteDay, totalOf, type Count } from './clutches'
+import { appendNote, appendTerm, countValue, eventNote, totalOf, type Count } from './clutches'
 import { clutchSettings } from './clutchSettings'
 import { serialFromIso } from './dates'
 import { deathCells, KILLED } from './deaths'
@@ -63,8 +63,8 @@ export interface Draft {
 export const ADULT = 'Adult'
 /** LIFESTAGE values, as the sheet writes them (used only for eggs and larvae). */
 export const LIFESTAGES = ['Egg', '1st instar larva', '2nd instar larva', '3rd instar larva', '4th instar larva', '5th instar larva', 'Pre-pupa']
-/** The protocol preserves F1 larvae at the 4th instar. */
-export const DEFAULT_STAGE = '4th instar larva'
+/** F1 larvae are preserved at the 3rd instar (the team, 5 Oct 2026). */
+export const DEFAULT_STAGE = '3rd instar larva'
 
 /** Phrases written in the Emergidos notebook's notes (English, as in the sheet): quick buttons. */
 export const EMERGED_NOTE_PHRASES = [
@@ -418,6 +418,14 @@ export function youngSamples(
 
 // --- The clutch's row in Insectary_stocks
 
+/** Eggs or larvae preserved on one day, of one stage, alive or found dead: one note in NOTES. */
+export interface YoungGroup {
+  day: number
+  stage: 'egg' | 'larva'
+  lifestage: string
+  dead: boolean
+  ids: string[]
+}
 /** What one save adds to a clutch: adults per emergence day, eggs and larvae preserved per day. */
 export interface ClutchTally {
   clutch: string
@@ -430,6 +438,8 @@ export interface ClutchTally {
   larvaeDead: number
   /** The days eggs or larvae were preserved (serials). */
   preservedOn: number[]
+  /** The eggs and larvae by day, stage and fate, with their Insectary IDs (for the notes). */
+  groups: YoungGroup[]
 }
 /** The cards of each clutch, counted for its stocks row (in the order the clutches first appear). */
 export function tallies(drafts: Draft[]): ClutchTally[] {
@@ -438,9 +448,14 @@ export function tallies(drafts: Draft[]): ClutchTally[] {
     const serial = serialFromIso(d.date)
     if (serial === null) continue
     let t = out.get(d.clutch)
-    if (!t) out.set(d.clutch, (t = { clutch: d.clutch, adults: [], eggs: 0, larvae: 0, eggsDead: 0, larvaeDead: 0, preservedOn: [], byDay: new Map() }))
+    if (!t) out.set(d.clutch, (t = { clutch: d.clutch, adults: [], eggs: 0, larvae: 0, eggsDead: 0, larvaeDead: 0, preservedOn: [], groups: [], byDay: new Map() }))
     if (d.kind === 'adult') t.byDay.set(serial, (t.byDay.get(serial) ?? 0) + 1)
     else {
+      const stage = d.stage === 'Egg' ? 'egg' : 'larva'
+      const lifestage = d.stage || DEFAULT_STAGE
+      let g = t.groups.find(x => x.day === serial && x.stage === stage && x.lifestage === lifestage && x.dead === d.foundDead)
+      if (!g) t.groups.push((g = { day: serial, stage, lifestage, dead: d.foundDead, ids: [] }))
+      g.ids.push(norm(d.id))
       if (d.stage === 'Egg') {
         t.eggs++
         if (d.foundDead) t.eggsDead++
@@ -451,7 +466,12 @@ export function tallies(drafts: Draft[]): ClutchTally[] {
       if (!t.preservedOn.includes(serial)) t.preservedOn.push(serial)
     }
   }
-  return [...out.values()].map(({ byDay, ...t }) => ({ ...t, adults: [...byDay].sort((a, b) => a[0] - b[0]), preservedOn: t.preservedOn.sort((a, b) => a - b) }))
+  return [...out.values()].map(({ byDay, ...t }) => ({
+    ...t,
+    adults: [...byDay].sort((a, b) => a[0] - b[0]),
+    preservedOn: t.preservedOn.sort((a, b) => a - b),
+    groups: t.groups.sort((a, b) => a.day - b.day),
+  }))
 }
 
 /** One cell the clutch's row gets, with what it showed before (a sum: its formula, which the save compares). */
@@ -468,12 +488,15 @@ export interface StockPlan {
 /**
  * What the clutch's row gets for a save's cards: each emergence day's adults
  * as one more term of NUMBER OF ADULTS (=2+2 → =2+2+3), EMERGENCE DATE when
- * empty (the first day); eggs and larvae preserved said in NOTES ("3 larvae
- * preserved 2/10") and taken off NUMBER OF EGGS / NUMBER OF LARVAE (−3) as
- * the team's setting says (`subtractPreserved`, Clutches' settings: yes by
- * default); those found dead are a death, taken off always. `count(field)`: a
- * count as the person sees it; `value(field)`: the cell as the sheet has it
- * (a sum as its formula).
+ * empty (the first day); eggs and larvae preserved taken off NUMBER OF EGGS /
+ * NUMBER OF LARVAE (−3) as the team's setting says (`subtractPreserved`,
+ * Clutches' settings: kept counted by default); those found dead are a death,
+ * taken off always. Each day's adults and each group of eggs or larvae get a
+ * dated, signed note in NOTES, as Clutches writes its events (lib/clutches
+ * eventNote: "3 adults emerged", "2 larvae preserved as 3rd instar (E4E,
+ * E5E)", with the day when it was not today). `count(field)`: a count as the
+ * person sees it; `value(field)`: the cell as the sheet has it (a sum as its
+ * formula).
  */
 export function stockPlan(
   tally: ClutchTally,
@@ -505,21 +528,20 @@ export function stockPlan(
     const first = tally.adults[0][0]
     if (isBlank(value('EMERGENCE DATE'))) cells.push({ field: 'EMERGENCE DATE', value: first, before: value('EMERGENCE DATE') })
   }
-  const parts: string[] = []
   // Taken off the count: all of them, or (preserved ones kept counted) only those found dead.
   const off = (all: number, dead: number) => (subtractPreserved ? all : dead)
-  if (tally.larvae) {
-    if (off(tally.larvae, tally.larvaeDead ?? 0)) addTerms('NUMBER OF LARVAE', [-off(tally.larvae, tally.larvaeDead ?? 0)])
-    parts.push(`${tally.larvae} ${tally.larvae === 1 ? 'larva' : 'larvae'}`)
-  }
-  if (tally.eggs) {
-    if (off(tally.eggs, tally.eggsDead ?? 0)) addTerms('NUMBER OF EGGS', [-off(tally.eggs, tally.eggsDead ?? 0)])
-    parts.push(`${tally.eggs} ${tally.eggs === 1 ? 'egg' : 'eggs'}`)
-  }
-  if (parts.length) {
-    const days = tally.preservedOn.map(s => noteDay(s).replace(/\/\d+$/, '')).join(', ')
-    cells.push({ field: 'NOTES', value: appendNote(value('NOTES'), `${parts.join(' and ')} preserved ${days}`, today, initials), before: value('NOTES') })
-  }
+  if (tally.larvae && off(tally.larvae, tally.larvaeDead ?? 0)) addTerms('NUMBER OF LARVAE', [-off(tally.larvae, tally.larvaeDead ?? 0)])
+  if (tally.eggs && off(tally.eggs, tally.eggsDead ?? 0)) addTerms('NUMBER OF EGGS', [-off(tally.eggs, tally.eggsDead ?? 0)])
+  const notes = [
+    ...tally.adults.map(([day, n]) => eventNote({ stage: 'adult', kind: 'emerged', count: n, day }, today)),
+    ...(tally.groups ?? []).map(g =>
+      g.dead
+        ? eventNote({ stage: g.stage, kind: 'died', count: g.ids.length, ids: g.ids, day: g.day }, today).replace(' died', ' found dead, preserved')
+        : eventNote({ stage: g.stage, kind: 'preserved', count: g.ids.length, ids: g.ids, lifestage: g.lifestage, day: g.day }, today),
+    ),
+  ]
+  if (notes.length)
+    cells.push({ field: 'NOTES', value: notes.reduce<CellValue>((all, n) => appendNote(all, n, today, initials), value('NOTES')), before: value('NOTES') })
   return { cells, skipped }
 }
 
