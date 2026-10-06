@@ -72,10 +72,10 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     assert.ok(JSON.parse(readFileSync(join(home, '.claude.json'), 'utf8')).projects[workspace].hasTrustDialogAccepted);
     // Shell commands naming the secrets or the database are stopped by the guard hook; gog.env may be sourced.
     const [hook] = settings.hooks.PreToolUse;
-    assert.equal(hook.matcher, 'Bash');
-    const guard = command => {
+    assert.equal(hook.matcher, 'Bash|Write|Edit|MultiEdit|NotebookEdit');
+    const guard = (command, input = { command }) => {
       try {
-        execFileSync('sh', ['-c', hook.hooks[0].command], { input: JSON.stringify({ tool_input: { command } }), env: { ...env, HOME: home }, encoding: 'utf8', stdio: 'pipe' });
+        execFileSync('sh', ['-c', hook.hooks[0].command], { input: JSON.stringify({ tool_input: input }), env: { ...env, HOME: home }, encoding: 'utf8', stdio: 'pipe' });
         return 'allowed';
       } catch (error) {
         assert.equal(error.status, 2, error.stderr);
@@ -89,6 +89,11 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     assert.equal(guard('cd ~ && cat .config/ithomiini/gog.env'), 'blocked');
     assert.equal(guard('set -a; . ~/.config/ithomiini/gog.env; set +a; gog --readonly gmail search x'), 'allowed');
     assert.equal(guard('python3 crops.py photo.jpg --out work/2026-09-30-posturas'), 'allowed');
+    // A script with the database's path in it, written to run later.
+    const dbFile = join(shared, 'database.sqlite');
+    assert.equal(guard(null, { file_path: 'work/build.py', content: `sqlite3.connect('${dbFile}')` }), 'blocked');
+    assert.equal(guard(null, { file_path: 'work/build.py', old_string: 'x', new_string: `'${dbFile}'` }), 'blocked');
+    assert.equal(guard(null, { file_path: 'work/notes.md', content: 'the lines of page 3' }), 'allowed');
 
     // Codex (GPT threads): the same brief (AGENTS.md), skills and MCP server with the same token.
     assert.match(readFileSync(join(workspace, '.agents', 'skills', 'digitalizar-cuaderno', 'SKILL.md'), 'utf8'), /name: digitalizar-cuaderno/);

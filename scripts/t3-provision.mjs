@@ -203,7 +203,8 @@ function provision(user, { freshToken, addProject }) {
 
   // The shell guard (assistant/hooks/guard-bash.mjs): the deny rules below only cover Claude's
   // file tools, so shell commands naming the secrets, the database or a denied folder are stopped
-  // by a PreToolUse hook. Sourcing gog.env for gog stays allowed.
+  // by a PreToolUse hook, and so are files written with those paths in them (a script to run).
+  // Sourcing gog.env for gog stays allowed.
   const hooksTarget = join(workspace, '.claude', 'hooks');
   rmSync(hooksTarget, { recursive: true, force: true });
   cpSync(join(release, 'assistant', 'hooks'), hooksTarget, { recursive: true });
@@ -248,7 +249,10 @@ function provision(user, { freshToken, addProject }) {
   const own = entry => entry?.hooks?.some(h => String(h.command ?? '').includes('guard-bash.mjs'));
   settings.hooks = {
     ...settings.hooks,
-    PreToolUse: [...(settings.hooks?.PreToolUse ?? []).filter(e => !own(e)), { matcher: 'Bash', hooks: [{ type: 'command', command: guard }] }],
+    PreToolUse: [
+      ...(settings.hooks?.PreToolUse ?? []).filter(e => !own(e)),
+      { matcher: 'Bash|Write|Edit|MultiEdit|NotebookEdit', hooks: [{ type: 'command', command: guard }] },
+    ],
   };
   // Secrets and built releases are off limits (data goes through the tools; code through ~/ithomiini/src).
   settings.permissions.deny = [

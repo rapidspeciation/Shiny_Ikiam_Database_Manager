@@ -362,6 +362,15 @@ test('a row with the ID as read wins over older look-alikes, even an empty pre-m
     alone.lines.map(l => [l.status, l.row, l.message]),
     [['match', 206, 'Leído «W2B»; en la hoja es W2B.1']],
   );
+  // Another butterfly than the repeat (another sex or clutch: the first W2B, given out first): its own empty row.
+  for (const v of [{ Sex: 'male' }, { 'CLUTCH NUMBER': '997' }]) {
+    const other = buildReview({
+      transcription: parseTranscription(JSON.stringify({ kind: 'emergence', lines: [{ raw: 'W2B', v: { Insectary_ID: 'W2B', ...v } }] })),
+      today: '2026-09-28',
+      lookup,
+    });
+    assert.deepEqual(other.lines.map(l => [l.status, l.row]), [['match', 204]], JSON.stringify(v));
+  }
   // Only its ID written: nothing says which, it keeps its own row.
   const bare = buildReview({
     transcription: parseTranscription(JSON.stringify({ kind: 'emergence', lines: [{ raw: 'W2B', v: { Insectary_ID: 'W2B' } }] })),

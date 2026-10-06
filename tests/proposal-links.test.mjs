@@ -34,12 +34,12 @@ async function setup(config = {}) {
   store.db
     .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
     .run(createHash('sha256').update('franz-token').digest('hex'), 'u-franz');
-  const call = async (name, args) =>
+  const call = async (name, args, meta = undefined) =>
     JSON.parse(
       (
         await assistant.mcp(
           { authorization: 'Bearer franz-token' },
-          { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } },
+          { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args, ...(meta ? { _meta: meta } : {}) } },
         )
       ).body.result.content[0].text,
     );
@@ -144,6 +144,15 @@ test("list_proposals from a T3 chat: that chat's proposals, pending and reviewed
     assert.ok((await call('list_proposals', {})).proposals.some(p => p.proposalId === left.proposalId), 'in the chat that read it again');
     calling = THREAD;
     assert.ok(!(await call('list_proposals', {})).proposals.some(p => p.proposalId === left.proposalId), 'no longer in the old one');
+
+    // T3 has not recorded the call yet when it runs: the page moves a moment later.
+    const late = await call('match_notebook', { ...page, lines: [{ raw: '903 larvas', values: { 'CLUTCH NUMBER': '903', NOTES: 'larvas' } }] });
+    calling = null;
+    await call('match_notebook', { ...page, lines: [{ raw: '903 larvas', values: { 'CLUTCH NUMBER': '903', NOTES: 'larvas' } }], replaceProposalId: late.proposalId }, { 'claudecode/toolUseId': 'toolu_late' });
+    calling = OTHER;
+    await new Promise(r => setTimeout(r, 1200));
+    assert.equal(store.db.prepare('SELECT t3_thread FROM ai_proposals WHERE id = ?').get(late.proposalId).t3_thread, OTHER);
+    calling = THREAD;
   } finally {
     store.close?.();
   }

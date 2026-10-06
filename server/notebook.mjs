@@ -1118,6 +1118,20 @@ export const isLarva = (note = {}, row = {}) => Boolean(note.larva) || /larva|eg
 
 /** A line that writes something besides its key. */
 const hasData = (kind, text) => columnsOf(kind).some(f => !kind.keys.includes(f) && !isNone(text[f]));
+/**
+ * A line that says something else than a used row on what never changes (sex, clutch): another
+ * butterfly. The page's A0E (♀, clutch 997, 20/9) is not the wild-caught A0E.1 typed for 29/9.
+ */
+const FIXED = ['Sex', 'CLUTCH NUMBER'];
+function contradicts(text, record, year) {
+  return FIXED.some(field => {
+    if (isNone(text[field])) return false;
+    const read = readValue(field, text[field], { year }).value;
+    const held = record.values?.[field];
+    if (read === null || read === '' || held === null || held === undefined || held === '') return false;
+    return String(read).trim().toLowerCase() !== String(held).trim().toLowerCase();
+  });
+}
 
 /** A row nobody has used yet (a pre-made row: its key and formulas only). */
 function unusedRow(kind, record) {
@@ -1468,11 +1482,15 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
     if (readable) {
       const exact = lookup.find(keyValues);
       // The ID's row still an empty pre-made row, and the butterfly typed as a repeat of it (A0E.1,
-      // at the end of the sheet): a line with data is that row, unless the page names the repeat too.
+      // at the end of the sheet): a line with data is that row, unless the page names the repeat too
+      // or the line is another butterfly (another sex or clutch: the first A0E, whose row is still empty).
       const repeats =
         exact.length && exact.every(r => unusedRow(kind, r)) && hasData(kind, text)
           ? (lookup.repeats?.(keyValues) ?? []).filter(
-              r => !unusedRow(kind, r) && !keysRead.has(kind.keys.map(k => clutchKey(r.values?.[k])).join('|')),
+              r =>
+                !unusedRow(kind, r) &&
+                !keysRead.has(kind.keys.map(k => clutchKey(r.values?.[k])).join('|')) &&
+                !contradicts(text, r, currentYear),
             )
           : [];
       if (repeats.length) for (const record of repeats) candidates.push({ record, exact: false });

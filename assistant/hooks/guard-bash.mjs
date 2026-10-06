@@ -4,7 +4,8 @@
 // database or the other folders the workspace denies. Read rules only cover the Read, Grep and
 // Glob tools; a chat once printed a secret with `grep … service.env`, and another read the
 // database with python when a tool's answer was too long. The Google account's settings may only
-// be sourced for gog (`. ~/.config/ithomiini/gog.env`), never printed.
+// be sourced for gog (`. ~/.config/ithomiini/gog.env`), never printed. Files written by Write or
+// Edit are checked too: a chat once wrote the database's path into a script and ran the script.
 import { readFileSync } from 'node:fs';
 
 const config = JSON.parse(readFileSync(new URL('./guard-bash.json', import.meta.url), 'utf8'));
@@ -12,7 +13,11 @@ let input = '';
 for await (const chunk of process.stdin) input += chunk;
 let command = '';
 try {
-  command = String(JSON.parse(input).tool_input?.command ?? '');
+  const given = JSON.parse(input).tool_input ?? {};
+  // A shell command, or what a file tool writes (Write's content, Edit's new text, MultiEdit's edits).
+  command = [given.command, given.content, given.new_string, given.new_source, ...(given.edits ?? []).map(e => e?.new_string)]
+    .filter(v => typeof v === 'string')
+    .join('\n');
 } catch {
   process.exit(0);
 }

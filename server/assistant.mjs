@@ -3381,6 +3381,20 @@ export function createAssistant({ store, config = {} }) {
     const id = toolUseId ? t3.threadOfToolUse(toolUseId, ago(now(), 10 * 60_000)) : t3.onlyRunning(context.user.username);
     return id ? { id, title: t3.threads([id]).get(id)?.title ?? null } : null;
   }
+  /**
+   * A replaced page's move to the chat that read it again, when T3 had not recorded the call yet:
+   * tried again for half a minute.
+   */
+  function moveWhenKnown(id, toolUseId, ownerId, tries = 6) {
+    const again = () => {
+      const thread = t3?.threadOfToolUse(toolUseId, ago(now(), 10 * 60_000));
+      if (!thread) return void (--tries > 0 && setTimeout(again, 5000).unref?.());
+      const title = t3.threads([thread]).get(thread)?.title ?? null;
+      const moved = db.prepare('UPDATE ai_proposals SET t3_thread = ?, t3_title = ? WHERE id = ? AND t3_thread IS NOT ?').run(thread, title, id, thread);
+      if (moved.changes) changed(ownerId);
+    };
+    setTimeout(again, 1000).unref?.();
+  }
   /*
    * Proposals from T3 Code whose chat is not known yet (T3 had not recorded the
    * call, or they were made before chats were recorded) are linked when the
@@ -3878,7 +3892,7 @@ export function createAssistant({ store, config = {} }) {
       if (here && here.id !== replaced.t3_thread) {
         db.prepare('UPDATE ai_proposals SET t3_thread = ?, t3_title = ? WHERE id = ?').run(here.id, here.title, replaced.id);
         replaced.t3_thread = here.id;
-      }
+      } else if (!here && context.t3?.toolUseId) moveWhenKnown(replaced.id, context.t3.toolUseId, owner(context.user));
       if (saveRevision(replaced, carried.changes, 'ai', reason) !== null)
         proposal = { id: replaced.id, chat: chatOf(replaced, context) };
     } else if (editor && replaced) {
