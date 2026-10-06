@@ -358,3 +358,32 @@ test('"Valor de la hoja" and "Valor de la IA": cells set back are kept aside and
     store.close();
   }
 });
+
+test('propose_changes takes highlight on changes and new rows; update_proposal newRows too', async () => {
+  const { store, call, list, record } = await fixture();
+  try {
+    const made = await call('propose_changes', {
+      reason: 'Recorrido del 26 sep',
+      newRows: [{ ...newRow({ SPECIES: 'Oleria gunilla', Sex: 'female', FieldMark_ID: 'B41' }), highlight: true }],
+      changes: [
+        { recordId: record(2).id, values: { Sex: 'female' }, highlight: true },
+        { recordId: record(3).id, values: { Sex: 'male' } },
+      ],
+    });
+    assert.ok(made.proposalId, JSON.stringify(made));
+    let full = await call('get_proposal', { proposalId: made.proposalId, full: true });
+    assert.deepEqual(full.rows.map(r => !!r.highlight), [true, true, false]);
+    const revised = await call('update_proposal', {
+      proposalId: made.proposalId,
+      newRows: [{ ...newRow({ SPECIES: 'Oleria gunilla', Sex: 'male' }, 'M2'), highlight: true }],
+      rows: [{ index: 1, highlight: false }],
+    });
+    assert.ok(!revised.error, JSON.stringify(revised));
+    full = await call('get_proposal', { proposalId: made.proposalId, full: true });
+    assert.deepEqual(full.rows.map(r => !!r.highlight), [true, false, false, true]);
+    const [shown] = (await list()).proposals;
+    assert.equal(shown.changes.filter(c => c.highlight).length, 2);
+  } finally {
+    store.close();
+  }
+});

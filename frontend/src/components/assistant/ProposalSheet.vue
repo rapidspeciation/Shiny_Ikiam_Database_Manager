@@ -281,6 +281,7 @@ function toRow(c: ProposalChange): Row {
     (props.notebookOrder ? 'n' : '') +
     (props.editable ? 'e' : '') +
     (c.context ? 'c' : '') +
+    (c.highlight ? 'h' : '') +
     (c.page?.error ? 'x' : '') +
     Object.keys(c.values).length
   return out
@@ -773,6 +774,7 @@ function rowLook(row: RowComponent) {
   el.classList.toggle('is-placeholder-row', !!change?.placeholder)
   el.classList.toggle('is-error-row', !!change?.page?.error)
   el.classList.toggle('is-taken-row', !!change?.rowTaken)
+  el.classList.toggle('is-marked-row', !!change?.highlight && !data.__marker)
 }
 
 // ------------------------------------------------------------ a slim row opened
@@ -1729,6 +1731,17 @@ watch(
 .proposal-sheet .tabulator-row.is-placeholder-row .tabulator-cell.proposal-note,
 .proposal-sheet .tabulator-row.is-context-row .tabulator-cell.proposal-note {
   color: #78716c;
+}
+/*
+ * Marked by the assistant (highlight): the row yellow, as in show_rows tables. Its cells with a
+ * proposal's colour (the assistant's, the person's, a doubt) keep it; a grey context row turns yellow.
+ */
+.sheet-grid.proposal-sheet .tabulator-row.is-marked-row,
+.proposal-sheet :where(.tabulator-row.is-marked-row) .tabulator-cell,
+.proposal-sheet .tabulator-row.is-marked-row.is-context-row .tabulator-cell,
+.proposal-sheet .tabulator-row.is-marked-row.is-placeholder-row .tabulator-cell,
+.legend.is-marked {
+  background: #fef9c3;
 }
 /* A line the save refused: red, with why in its note. */
 .proposal-sheet .tabulator-row.is-error-row .tabulator-cell,

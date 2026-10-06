@@ -269,6 +269,70 @@ test('a context row edited in the table becomes a real change', async () => {
   }
 });
 
+test('update_proposal highlights rows (a context row and a changed one), keeps the mark across revisions and takes it off', async () => {
+  const { store, call, list } = await setup(NOTEBOOK_SHEETS);
+  try {
+    const out = await call('match_notebook', { ...PAGE, includeUnchanged: true });
+    const full = await call('get_proposal', { proposalId: out.proposalId, full: true });
+    const context = full.rows.find(r => r.context);
+    const changed = full.rows.find(r => !r.context && !r.create);
+    assert.ok(context && changed, JSON.stringify(full.rows));
+    assert.ok(full.rows.every(r => !('highlight' in r)));
+
+    let revised = await call('update_proposal', {
+      proposalId: out.proposalId,
+      rows: [{ index: context.index, highlight: true }, { index: changed.index, highlight: true, note: 'check the count' }],
+    });
+    assert.ok(!revised.error, JSON.stringify(revised));
+    assert.deepEqual(revised.changed.map(r => [r.index, r.highlight]).sort(), [[context.index, true], [changed.index, true]].sort());
+    let [shown] = await list();
+    assert.equal(shown.changes.find(c => c.context).highlight, true, 'the context row is marked, and stays context');
+    assert.equal(shown.changes.find(c => c.key === changed.key || c.label === changed.label && !c.context).highlight, true);
+
+    // Another revision of the row's cells keeps the mark; get_proposal full shows it.
+    revised = await call('update_proposal', { proposalId: out.proposalId, rows: [{ index: changed.index, values: { NOTES: 'larvas sanas' } }] });
+    assert.ok(!revised.error, JSON.stringify(revised));
+    let again = await call('get_proposal', { proposalId: out.proposalId, full: true });
+    assert.equal(again.rows[changed.index].highlight, true);
+    assert.equal(again.rows[context.index].highlight, true);
+
+    // false takes it off; a row not named keeps its mark.
+    revised = await call('update_proposal', { proposalId: out.proposalId, rows: [{ index: context.index, highlight: false }] });
+    assert.deepEqual(revised.changed.map(r => [r.index, 'highlight' in r]), [[context.index, false]]);
+    again = await call('get_proposal', { proposalId: out.proposalId, full: true });
+    assert.ok(!('highlight' in again.rows[context.index]));
+    assert.equal(again.rows[changed.index].highlight, true);
+    [shown] = await list();
+    assert.ok(!shown.changes.find(c => c.context).highlight);
+  } finally {
+    store.close();
+  }
+});
+
+test('update_proposal takes highlight in changes (a row already in the proposal) and rows', async () => {
+  const { store, call, list } = await setup(NOTEBOOK_SHEETS);
+  try {
+    const out = await call('match_notebook', PAGE);
+    const full = await call('get_proposal', { proposalId: out.proposalId, full: true });
+    const fresh = full.rows.find(r => r.create);
+    // A row already in the proposal named again in changes, with highlight.
+    const existing = full.rows.find(r => !r.create && !r.context);
+    const revised = await call('update_proposal', {
+      proposalId: out.proposalId,
+      changes: [{ recordId: existing.recordId, values: {}, highlight: true }],
+      rows: [{ index: fresh.index, highlight: true }],
+    });
+    assert.ok(!revised.error, JSON.stringify(revised));
+    const [shown] = await list();
+    assert.deepEqual(
+      shown.changes.filter(c => c.highlight).map(c => c.label).sort(),
+      [existing.label, fresh.label].sort(),
+    );
+  } finally {
+    store.close();
+  }
+});
+
 test("match_notebook reads a notebook reader's file from the work/ folder of the person's own workspace", async () => {
   const workspaces = mkdtempSync(join(tmpdir(), 'ithomiini-workspaces-'));
   const own = join(workspaces, 'franz');

@@ -125,6 +125,8 @@ export interface ProposalChange {
   /** Cells the person typed in the table. */
   personEdits?: Record<string, PersonEdit>
   note?: string
+  /** Marked by the assistant (update_proposal `highlight`): the whole row yellow, as in show_rows tables. */
+  highlight?: boolean
   /** Doubtful cells (match_notebook), by column. */
   doubts?: Record<string, Doubt>
   /** Cells nobody could read (match_notebook), by column: empty until someone fills them. */
