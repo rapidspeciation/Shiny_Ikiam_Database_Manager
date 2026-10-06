@@ -1472,18 +1472,41 @@ watch(
     font-size: 14px;
   }
 }
-/* A slim row between the rows: where they are not continuous in the sheet, a jump of the notebook's lines, «not on the photo». */
+/*
+ * A slim row between the rows: where they are not continuous in the sheet, a jump of the notebook's
+ * lines, «not on the photo». Drawn as a tear: the rows above and below end in teeth over a grey gap.
+ */
 .proposal-sheet .tabulator-row.is-marker-row,
 .proposal-sheet .tabulator-row.is-marker-row .tabulator-cell {
   min-height: 0;
   border-color: transparent;
-  background: #fafaf9;
+  background: #e7e5e4;
 }
 .proposal-sheet .tabulator-row.is-marker-row .tabulator-cell {
-  padding-top: 1px;
-  padding-bottom: 1px;
+  padding-top: 7px;
+  padding-bottom: 7px;
   font-size: 11px;
   line-height: 16px;
+}
+.proposal-sheet .tabulator-row.is-marker-row::before,
+.proposal-sheet .tabulator-row.is-marker-row::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 6px;
+  z-index: 13;
+  pointer-events: none;
+  background-repeat: repeat-x;
+  background-size: 12px 6px;
+}
+.proposal-sheet .tabulator-row.is-marker-row::before {
+  top: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='6'%3E%3Cpath d='M0 0L6 5.5L12 0Z' fill='white'/%3E%3Cpath d='M0 0L6 5.5L12 0' fill='none' stroke='%23a8a29e' stroke-width='0.8'/%3E%3C/svg%3E");
+}
+.proposal-sheet .tabulator-row.is-marker-row::after {
+  bottom: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='6'%3E%3Cpath d='M0 6L6 0.5L12 6Z' fill='white'/%3E%3Cpath d='M0 6L6 0.5L12 6' fill='none' stroke='%23a8a29e' stroke-width='0.8'/%3E%3C/svg%3E");
 }
 /* Its text runs over the empty cells beside it, and stays at the left while scrolling. */
 .proposal-sheet .tabulator-row.is-marker-row .tabulator-cell.is-marker-cell {
