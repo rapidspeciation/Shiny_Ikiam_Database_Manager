@@ -191,6 +191,23 @@ export function insectaryIdPlaces(store, ids) {
   return out;
 }
 
+/**
+ * The rows of these base Insectary IDs (A0E for A0E.1): base → { row, empty }, the first
+ * row holding it and whether it is still an empty pre-made row. One read for them all.
+ */
+export function insectaryBaseRows(store, bases) {
+  const wanted = [...new Set(bases.map(id => String(id ?? '').trim().toUpperCase()).filter(Boolean))];
+  const out = new Map();
+  if (!wanted.length) return out;
+  const rows = store.db
+    .prepare(
+      `SELECT row_num r, observed, upper(trim(json_extract(values_json,'$.Insectary_ID'))) v FROM records WHERE sheet='Insectary_data' AND missing=0 AND row_num>0 AND row_num<2000000000 AND upper(trim(json_extract(values_json,'$.Insectary_ID'))) IN (${wanted.map(() => '?').join(',')}) ORDER BY row_num`,
+    )
+    .all(...wanted);
+  for (const { r, observed, v } of rows) if (!out.has(v)) out.set(v, { row: r, empty: !observed });
+  return out;
+}
+
 /** `W2B.2` → { base: 'W2B', n: 2 }: an Insectary ID written on two butterflies, told apart by a suffix. Null otherwise. */
 export function suffixedId(id) {
   const m = /^([A-Z0-9]+)\.([1-9]\d*)$/.exec(String(id ?? '').trim().toUpperCase());

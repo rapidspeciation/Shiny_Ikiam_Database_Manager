@@ -168,6 +168,19 @@ export interface ProposalChange {
   gap?: boolean
   /** A notebook line that comes before this line of its photo in the sheet, though after it on the page. */
   outOfOrder?: { line: number; id: string }
+  /** A row not written yet: the sheet row it will go to (x.5: inserted below row x). */
+  place?: number
+  /**
+   * An Insectary ID written as a repeat (A0E.1): its base ID, that ID's row (and
+   * whether it is still an empty pre-made row), the ID of the row just above it.
+   */
+  repeatOf?: RepeatOf
+}
+export interface RepeatOf {
+  id: string
+  row?: number
+  empty?: boolean
+  above?: string
 }
 /** A notebook page's line whose sheet row goes another way than the page (within its photo). */
 export interface OrderNote {

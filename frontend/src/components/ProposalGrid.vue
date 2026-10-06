@@ -49,6 +49,7 @@ import {
 } from '../lib/proposals'
 import type { CellValue } from '../lib/types'
 import { columnChoices, orderColumns, viewFor, type ColumnView } from '../lib/proposalColumns'
+import { layRows, repeatSummary, shownRows, unexplained, type RowOrder } from '../lib/proposalRows'
 import { useSession } from '../stores/session'
 import { useLive } from '../stores/live'
 import { t } from '../lib/i18n'
@@ -87,7 +88,11 @@ export type { Proposal, ProposalChange } from '../lib/proposals'
  * chat when the app can, else copied to paste there.
  * The columns go as the person chooses on the card (lib/proposalColumns): the
  * sheet's order, the notebook's (a notebook page's proposal), or their own
- * (ordered and hidden in ColumnChooser), remembered per person.
+ * (ordered and hidden in ColumnChooser), remembered per person. A notebook
+ * page's rows go in the sheet's order or the notebook's (the photo's lines),
+ * remembered per person too; the table tells where its rows are not
+ * continuous in the sheet, and a summary above says which repeated IDs
+ * (A0E.1) have their rows away from their series (lib/proposalRows).
  * «Aplicar» while Google Sheets does not answer as usual asks first: the save
  * then waits in the app (status queued) and the card says so until written.
  */
@@ -111,9 +116,14 @@ const session = useSession()
 const live = useLive()
 
 const pending = computed(() => props.proposal.status === 'pending')
-/** A notebook page whose lines go another way in the sheet (within a photo): said above the table, rows marked ↕. */
+/** Repeated IDs (A0E.1) whose rows are away from their series: said in plain words above the table. */
+const repeatNotice = computed(() => repeatSummary(props.proposal.changes))
+/**
+ * A notebook page whose lines go another way in the sheet (within a photo): said above the table, rows
+ * marked ↕ (those a repeat explains are said by its summary).
+ */
 const orderNotice = computed(() => {
-  const notes = props.proposal.outOfOrder ?? []
+  const notes = unexplained(props.proposal.outOfOrder ?? [], props.proposal.changes)
   const photos = new Set(props.proposal.changes.flatMap(c => (c.page ? [c.page.photo] : [])))
   return notes.length ? orderText(notes, photos.size > 1) : ''
 })
@@ -377,6 +387,16 @@ function viewColumns(g: { sheet: string; fields: string[]; changes: ProposalChan
     keep: marked(g.changes),
   })
 }
+/** The rows' order of a notebook page's table: the sheet's or the notebook's (remembered per person). */
+const rowOrder = computed<RowOrder>(() => choices.value.rowOrder)
+const rowOrders = computed(
+  () =>
+    [
+      ['sheet', t('Hoja'), t('Las filas en el orden de la hoja; una fila fina dice dónde no van seguidas')],
+      ['notebook', t('Cuaderno'), t('Las filas en el orden de las líneas de la foto; una fila fina dice cuánto salta la hoja')],
+    ] as [RowOrder, string, string][],
+)
+const pagedTable = (changes: ProposalChange[]) => changes.some(c => c.page)
 function setView(v: ColumnView) {
   choices.value.setView(v)
   if (v !== 'custom') choosing.value = null
@@ -423,16 +443,23 @@ const tables = computed(() =>
   groups.value.flatMap(g => {
     const near = g.changes.filter(c => c.sameErrorAs !== undefined)
     const own = near.length ? g.changes.filter(c => c.sameErrorAs === undefined) : g.changes
+    // The rows in the order chosen, with the slim rows that say where the sheet is not continuous.
+    const paged = pagedTable(own)
+    const laid = shownRows(layRows(own, paged ? rowOrder.value : 'sheet', paged), new Set(rowsOf(own).map(rowKey)), rowKey)
     const table = {
       ...g,
       id: g.sheet,
       near: false,
-      rows: rowsOf(own),
+      paged,
+      laid,
+      rows: laid.flatMap(item => (item.change ? [item.change] : [])),
       columns: columnsOf(g, viewColumns(g)),
       quiet: quietRows(own),
       photos: page.value?.sheet === g.sheet ? photosOf(own) : [],
     }
-    return near.length ? [table, { ...table, id: `${g.sheet}:near`, near: true, rows: near, quiet: 0, photos: [] }] : [table]
+    return near.length
+      ? [table, { ...table, id: `${g.sheet}:near`, near: true, paged: false, laid: undefined, rows: near, quiet: 0, photos: [] }]
+      : [table]
   }),
 )
 const photoUrl = (n: number, size: 'thumb' | 'view') => `api/proposals/${props.proposal.id}/photos/${n}?size=${size}`
@@ -634,15 +661,34 @@ const statusText = computed(
         {{ $tn(new Set(noSample.map(w => w.key)).size, '{n} preservada sin CAM o tubo', '{n} preservadas sin CAM o tubo') }}
       </span>
     </p>
-    <!-- The rows go in the sheet's order: lines of a photo the sheet has the other way round (an ID misread?). -->
-    <p
-      v-if="pending && orderNotice"
-      class="order-notice"
-      role="status"
-      :title="$t('Las filas van en el orden de la hoja. Estas líneas de una misma foto están al revés en la hoja (marcadas con ↕ en «Fila»): revisa que el ID esté bien leído')"
-    >
-      <AlertTriangle :size="12" class="shrink-0" /> {{ orderNotice }}
-    </p>
+    <!-- Where the page and the sheet differ: repeated IDs with their rows away from their series, and lines of a
+         photo the sheet has the other way round (an ID misread?). -->
+    <div v-if="pending && (repeatNotice || orderNotice)" class="order-notice flex-wrap" role="status">
+      <AlertTriangle :size="12" class="shrink-0" />
+      <span class="min-w-0 flex-1">
+        <span
+          v-if="repeatNotice"
+          class="block"
+          :title="$t('El mismo ID se escribió en dos mariposas: la repetida va en su propia fila (con .1, .2…) después de la serie, no en la fila sin usar de su ID')"
+          >{{ repeatNotice }}</span
+        >
+        <span
+          v-if="orderNotice"
+          class="block"
+          :title="$t('Las filas van en el orden de la hoja. Estas líneas de una misma foto están al revés en la hoja (marcadas con ↕ en «Fila»): revisa que el ID esté bien leído')"
+          >{{ orderNotice }}</span
+        >
+      </span>
+      <button
+        v-if="rowOrder === 'sheet' && tables.some(g => g.paged)"
+        type="button"
+        class="font-semibold underline decoration-dotted hover:text-amber-950"
+        :title="$t('Las filas en el orden de las líneas de la foto; una fila fina dice cuánto salta la hoja')"
+        @click="choices.setRowOrder('notebook')"
+      >
+        {{ $t('Ver en el orden del cuaderno') }}
+      </button>
+    </div>
     <!-- Edited in the sheet after this proposal: how many, what applying does, to the next one; and telling the assistant. -->
     <div v-if="pending && edited.length" class="sheet-banner" role="status">
       <button
@@ -737,6 +783,8 @@ const statusText = computed(
         :ref="sheetRef(g.id)"
         :sheet="g.sheet"
         :changes="g.rows"
+        :laid="g.laid"
+        :notebook-order="g.paged && rowOrder === 'notebook'"
         :fields="g.columns"
         :types="typesOf(g.sheet)"
         :new-row-formulas="proposal.newRowFormulas?.[g.sheet] ?? []"
@@ -753,6 +801,24 @@ const statusText = computed(
       >
         <template v-if="!g.near" #default>
           <span v-if="groups.length > 1" class="font-medium text-stone-700">{{ g.sheet }}</span>
+          <!-- A notebook page's rows: the sheet's order or the photo's lines (remembered for them). -->
+          <template v-if="g.paged">
+            <span>{{ $t('Filas') }}</span>
+            <span class="view-switch" role="group" :aria-label="$t('Orden de las filas')">
+              <button
+                v-for="[o, label, tip] in rowOrders"
+                :key="o"
+                type="button"
+                :class="{ 'is-on': rowOrder === o }"
+                :aria-pressed="rowOrder === o"
+                :title="tip"
+                @click="choices.setRowOrder(o)"
+              >
+                {{ label }}
+              </button>
+            </span>
+            <span>{{ $t('Columnas') }}</span>
+          </template>
           <!-- The columns' order: the sheet's, the notebook's, the person's own (remembered for them). -->
           <span class="view-switch" role="group" :aria-label="$t('Orden de las columnas')">
             <button

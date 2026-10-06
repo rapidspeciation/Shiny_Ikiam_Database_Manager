@@ -1116,6 +1116,9 @@ export function impliedValues({ text, row = {}, note = {}, death = null, intro =
 /** A preserved egg or larva (not an adult): the note says it ("3rd instar"), or the row's LIFESTAGE does. */
 export const isLarva = (note = {}, row = {}) => Boolean(note.larva) || /larva|egg|pupa/i.test(String(row.LIFESTAGE ?? ''));
 
+/** A line that writes something besides its key. */
+const hasData = (kind, text) => columnsOf(kind).some(f => !kind.keys.includes(f) && !isNone(text[f]));
+
 /** A row nobody has used yet (a pre-made row: its key and formulas only). */
 function unusedRow(kind, record) {
   if (typeof record.observed === 'boolean') return !record.observed;
@@ -1448,6 +1451,10 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
     }
     if (found.unplaced.length) unplaced[i] = found.unplaced;
   });
+  // The IDs the page reads, to tell a repeat in the sheet (A0E.1) the page names itself.
+  const keysRead = new Set(
+    transcription.lines.map((line, i) => kind.keys.map(k => clutchKey(readValue(k, texts[i][k], { year: currentYear }).value)).join('|')),
+  );
   const lines = transcription.lines.map((line, i) => {
     const edited = edits[line.n] ?? {};
     const text = texts[i];
@@ -1460,7 +1467,16 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
     const candidates = [];
     if (readable) {
       const exact = lookup.find(keyValues);
-      for (const record of exact) candidates.push({ record, exact: true });
+      // The ID's row still an empty pre-made row, and the butterfly typed as a repeat of it (A0E.1,
+      // at the end of the sheet): a line with data is that row, unless the page names the repeat too.
+      const repeats =
+        exact.length && exact.every(r => unusedRow(kind, r)) && hasData(kind, text)
+          ? (lookup.repeats?.(keyValues) ?? []).filter(
+              r => !unusedRow(kind, r) && !keysRead.has(kind.keys.map(k => clutchKey(r.values?.[k])).join('|')),
+            )
+          : [];
+      if (repeats.length) for (const record of repeats) candidates.push({ record, exact: false });
+      else for (const record of exact) candidates.push({ record, exact: true });
       if (!exact.some(r => unusedRow(kind, r)))
         for (const variant of lookAlikes(kind, keyValues))
           for (const record of lookup.find(variant))

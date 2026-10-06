@@ -154,6 +154,8 @@ export const COLLECTION_TEMPLATES = {
 export function createNotebookMatcher({ store, db, newIds, draftChanges, initialsFor }) {
   // ---- The sheet, as the review reads it --------------------------------
   const indexes = new Map();
+  /** Per key index, its repeats by base ID (A0E → the rows of A0E.1, A0E.2): made once per index. */
+  const repeatIndexes = new WeakMap();
   /** Rows by their key columns (normalized: "685 (3)" = "685(3)"), rebuilt when the sheet changes. */
   function keyIndex(sheet, keys) {
     const mod = moduleMap.get(sheet);
@@ -213,6 +215,21 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
     };
     return {
       find: values => (mine().get(values.map(clutchKey).join('|')) ?? []).map(h => record(h.id)).filter(Boolean),
+      // The rows of an Insectary ID's repeats (A0E.1, A0E.2 for A0E).
+      repeats: values => {
+        if (keys.length !== 1 || keys[0] !== 'Insectary_ID') return [];
+        const map = mine();
+        let bases = repeatIndexes.get(map);
+        if (!bases) {
+          bases = new Map();
+          for (const [key, hits] of map) {
+            const m = /^(.+)\.[1-9]\d*$/.exec(key);
+            if (m) bases.set(m[1], [...(bases.get(m[1]) ?? []), ...hits]);
+          }
+          repeatIndexes.set(map, bases);
+        }
+        return (bases.get(clutchKey(values[0])) ?? []).map(h => record(h.id)).filter(Boolean);
+      },
       clutch: value => clutches().get(clutchKey(value))?.[0]?.value ?? null,
       // Adults only: eggs and larvae preserved with their own row (LIFESTAGE) are not emergences.
       adultsOfClutch: value =>

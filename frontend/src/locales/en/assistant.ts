@@ -337,6 +337,56 @@ export default {
     'The rows go in the sheet\'s order. These lines of one photo are the other way round in the sheet (marked ↕ in «Row»): check the ID was read right',
   'En el cuaderno va después de la línea {line} ({id}), pero en la hoja va antes':
     'In the notebook it comes after line {line} ({id}), but in the sheet before it',
+  // The rows' order of a page's table, and where the sheet is not continuous (ProposalGrid, ProposalSheet, lib/proposalRows)
+  Columnas: 'Columns',
+  'Orden de las filas': 'Row order',
+  'Las filas en el orden de la hoja; una fila fina dice dónde no van seguidas':
+    "The rows in the sheet's order; a slim row says where they are not continuous",
+  'Las filas en el orden de las líneas de la foto; una fila fina dice cuánto salta la hoja':
+    "The rows in the order of the photo's lines; a slim row says how far the sheet jumps",
+  'Ver en el orden del cuaderno': 'See in notebook order',
+  '⋯ {n} fila que no es de esta página ({range})': '⋯ {n} row not on this page ({range})',
+  '⋯ {n} filas que no son de esta página ({range})': '⋯ {n} rows not on this page ({range})',
+  'Las filas de la tabla no van seguidas en la hoja: aquí hay filas de la hoja que no son de esta página':
+    "The table's rows are not continuous in the sheet: here there are sheet rows that are not on this page",
+  '⋯ {n} fila de la hoja entre medias ({range})': '⋯ {n} sheet row in between ({range})',
+  '⋯ {n} filas de la hoja entre medias ({range})': '⋯ {n} sheet rows in between ({range})',
+  'Las filas de la tabla no van seguidas en la hoja: aquí hay filas de la hoja que la propuesta no toca':
+    "The table's rows are not continuous in the sheet: here there are sheet rows the proposal leaves alone",
+  '↓ +{n} fila en la hoja': '↓ +{n} row in the sheet',
+  '↓ +{n} filas en la hoja': '↓ +{n} rows in the sheet',
+  'La línea siguiente del cuaderno está {n} filas más abajo en la hoja (fila {to}, no {next})':
+    "The notebook's next line is {n} rows further down in the sheet (row {to}, not {next})",
+  '↑ {n} fila atrás en la hoja': '↑ {n} row back in the sheet',
+  '↑ {n} filas atrás en la hoja': '↑ {n} rows back in the sheet',
+  'La línea siguiente del cuaderno está más arriba en la hoja (fila {to}), antes que la línea anterior (fila {from})':
+    "The notebook's next line is higher up in the sheet (row {to}), before the previous line (row {from})",
+  'No está en la foto · {n} fila': 'Not on the photo · {n} row',
+  'No están en la foto · {n} filas': 'Not on the photo · {n} rows',
+  'Filas sin línea en las fotos de la página: añadidas a mano o encontradas fuera de la página':
+    "Rows with no line on the page's photos: added by hand or found off the page",
+  'no en la foto': 'not on the photo',
+  'Esta fila no está en las fotos de la página: añadida a mano o encontrada fuera de la página':
+    "This row is not on the page's photos: added by hand or found off the page",
+  // Repeated IDs (A0E.1)
+  '{ids} es una repetición': '{ids} is a repeat',
+  '{ids} son repeticiones': '{ids} are repeats',
+  'su fila es la {rows}': 'its row is {rows}',
+  'sus filas son {rows}': 'their rows are {rows}',
+  'después de {id}': 'after {id}',
+  'no con {bases}': 'not with {bases}',
+  'no con la fila sin usar de {bases} ({rows}, vacía)': 'not with the pre-made {bases} ({rows}, empty)',
+  'no con las filas sin usar de {bases} ({rows}, vacías)': 'not with the pre-made {bases} ({rows}, empty)',
+  'no con {bases} ({rows})': 'not with {bases} ({rows})',
+  'repite {id} (fila {row})': 'repeat of {id} (row {row})',
+  'repite {id}': 'repeat of {id}',
+  'El mismo ID ({id}) se escribió en dos mariposas: la repetida va en su propia fila, después de la serie, no en la fila de {id}':
+    'The same ID ({id}) was written on two butterflies: the repeat goes in its own row, after the series, not in the row of {id}',
+  'La fila de {id} es la {row}: sin usar, vacía': 'The row of {id} is {row}: pre-made, empty',
+  'La fila de {id} es la {row}': 'The row of {id} is {row}',
+  'Clic: ir a esa fila': 'Click: go to that row',
+  'El mismo ID se escribió en dos mariposas: la repetida va en su propia fila (con .1, .2…) después de la serie, no en la fila sin usar de su ID':
+    'The same ID was written on two butterflies: the repeat goes in its own row (with .1, .2…) after the series, not in the pre-made row of its ID',
   // The columns' order on a proposal's card (ProposalGrid, ColumnChooser)
   'Todas las columnas en el orden de la hoja, como en Google Sheets': "Every column in the sheet's order, as in Google Sheets",
   'Las columnas del cuaderno primero, en su orden de izquierda a derecha; luego las demás':
