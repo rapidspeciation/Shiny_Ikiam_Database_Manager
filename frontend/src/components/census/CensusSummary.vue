@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { ArrowLeft, BookCheck, Copy, RotateCcw } from 'lucide-vue-next'
+import { computed, ref } from 'vue'
+import { ArrowLeft, BookCheck, Copy, RotateCcw, Smile } from 'lucide-vue-next'
 import CensusCounts from './CensusCounts.vue'
 import { useCensus } from '../../composables/useCensus'
 import { findingsOf, notebookLines, type Finding } from '../../lib/census'
@@ -27,6 +27,16 @@ const serial = computed(() => isoToSerial(c.value.day))
 const lines = computed(() =>
   notebookLines(detail.value.roster, serial.value, { seen: '☺', disappeared: t('desaparecida'), excluded: t('no contada') }),
 )
+/** The day as the notebook writes it (5/10/26), said once above the list instead of on every line. */
+const notebookDay = computed(() => lines.value.find(l => l.status === 'disappeared')?.text.split(' ').pop() ?? '')
+const counts = computed(() => ({
+  seen: lines.value.filter(l => l.status === 'seen').length,
+  disappeared: lines.value.filter(l => l.status === 'disappeared').length,
+  excluded: lines.value.filter(l => l.status === 'excluded').length,
+}))
+/** Which lines the list shows: all (the notebook's order), or one kind to find them quickly. */
+const showing = ref<'all' | 'seen' | 'disappeared' | 'excluded'>('all')
+const shown = computed(() => (showing.value === 'all' ? lines.value : lines.value.filter(l => l.status === showing.value)))
 const findings = computed(() => findingsOf(c.value.species, detail.value.roster, detail.value.marks))
 const canReopen = computed(
   () => session.canEdit && c.value.status === 'finished' && (c.value.deaths === 'staged' || c.value.deaths === 'none'),
@@ -67,12 +77,13 @@ function findingText(f: Finding) {
         : t('algo se ve distinto')
   return `${m.insectaryId}: ${what}`
 }
-const tone = (status: string) =>
+/** A line's look: the seen stand out (they get the smiley); the disappeared are quiet; left out, dashed. */
+const look = (status: string) =>
   status === 'seen'
-    ? 'text-lg leading-none font-bold text-brand-700'
+    ? 'border-emerald-500 bg-emerald-100 text-emerald-900'
     : status === 'disappeared'
-      ? 'text-stone-900 font-medium'
-      : 'text-stone-500'
+      ? 'border-stone-200 bg-white text-stone-500'
+      : 'border-dashed border-stone-300 bg-white text-stone-400'
 </script>
 
 <template>
@@ -127,18 +138,45 @@ const tone = (status: string) =>
           <h2 class="flex-1 text-base font-semibold text-stone-800">{{ $t('Para el cuaderno') }}</h2>
           <button class="btn h-10" @click="copy"><Copy :size="15" /> {{ $t('Copiar') }}</button>
         </div>
-        <p class="mb-2 text-sm text-stone-600">
-          {{ $t('En el orden de los Insectary IDs: ☺ junto a las vistas, la fecha junto a las desaparecidas.') }}
-        </p>
-        <ol class="gap-x-6 rounded-xl border border-stone-200 bg-white px-3 py-2 sm:columns-2 lg:columns-3">
-          <li
-            v-for="l in lines"
-            :key="l.id"
-            class="flex break-inside-avoid items-baseline gap-2 border-b border-stone-100 py-1 text-sm"
+        <!-- What to write: ☺ next to the seen, «desaparecida <day>» next to the others (the day said once). -->
+        <div class="mb-2 flex flex-wrap items-center gap-1.5 text-sm" role="group" :aria-label="$t('Mostrar')">
+          <button
+            v-for="f in [
+              { key: 'all', label: $t('Todas ({n})', { n: lines.length }), cls: '' },
+              { key: 'seen', label: $t('☺ vistas ({n})', { n: counts.seen }), cls: 'text-brand-800' },
+              {
+                key: 'disappeared',
+                label: $t('desaparecidas {day} ({n})', { day: notebookDay, n: counts.disappeared }),
+                cls: 'text-stone-700',
+              },
+              ...(counts.excluded ? [{ key: 'excluded', label: $t('no contadas ({n})', { n: counts.excluded }), cls: 'text-stone-500' }] : []),
+            ]"
+            :key="f.key"
+            type="button"
+            class="min-h-9 rounded-full border px-3"
+            :class="[showing === f.key ? 'border-stone-800 bg-stone-800 text-white' : 'border-stone-300 bg-white ' + f.cls]"
+            :aria-pressed="showing === f.key"
+            @click="showing = f.key as typeof showing"
           >
-            <span class="w-14 font-semibold">{{ l.id }}</span>
-            <span :class="tone(l.status)">{{ l.text }}</span>
-            <span v-if="l.note" class="truncate text-xs text-stone-500" :title="l.note">{{ l.note }}</span>
+            {{ f.label }}
+          </button>
+        </div>
+        <p class="mb-2 text-xs text-stone-500">
+          {{ $t('En el orden del cuaderno: ☺ junto a las vistas; «desaparecida {day}» junto a las demás.', { day: notebookDay }) }}
+        </p>
+        <ol class="grid grid-cols-[repeat(auto-fill,minmax(7.5rem,1fr))] gap-1.5">
+          <li
+            v-for="l in shown"
+            :key="l.id"
+            class="flex min-h-11 items-center justify-between gap-1 rounded-lg border px-2.5 py-1"
+            :class="look(l.status)"
+            :title="l.note || undefined"
+          >
+            <span class="font-semibold tabular-nums" :class="l.status === 'disappeared' ? 'text-stone-700' : ''">{{ l.id }}</span>
+            <Smile v-if="l.status === 'seen'" :size="22" class="shrink-0 text-emerald-700" aria-hidden="true" />
+            <span v-else-if="l.status === 'disappeared'" class="text-xs">{{ $t('desap.') }}</span>
+            <span v-else class="truncate text-xs">{{ l.note || $t('no contada') }}</span>
+            <span class="sr-only">{{ l.text }}</span>
           </li>
         </ol>
         <button

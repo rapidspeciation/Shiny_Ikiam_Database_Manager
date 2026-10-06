@@ -128,6 +128,14 @@ export default {
   'Escribiéndose en Google Sheets (o esperando a que responda).': 'Being written to Google Sheets (or waiting for it to answer).',
   'Las desapariciones están en Google Sheets.': 'The disappearances are in Google Sheets.',
   'Para el cuaderno': 'For the notebook',
+  'Todas ({n})': 'All ({n})',
+  '☺ vistas ({n})': '☺ seen ({n})',
+  'desaparecidas {day} ({n})': 'disappeared {day} ({n})',
+  'no contadas ({n})': 'left out ({n})',
+  'En el orden del cuaderno: ☺ junto a las vistas; «desaparecida {day}» junto a las demás.':
+    'In notebook order: ☺ next to the seen; "disappeared {day}" next to the others.',
+  'desap.': 'disap.',
+  Mostrar: 'Show',
   'En el orden de los Insectary IDs: ☺ junto a las vistas, la fecha junto a las desaparecidas.':
     'In Insectary ID order: ☺ next to those seen, the date next to those disappeared.',
   desaparecida: 'disappeared',
