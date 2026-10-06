@@ -52,6 +52,7 @@ import {
   type CellInfo,
   type ProposalChange,
 } from '../../lib/proposals'
+import { baseRowKey, markerText, offPhoto, repeatChip, type Laid, type Marker } from '../../lib/proposalRows'
 import { isSumField, sumTotal } from '../../lib/sums'
 import type { CellValue, Field } from '../../lib/types'
 import { listProblem, verificationsFor } from '../../lib/verifications'
@@ -94,6 +95,11 @@ import CellBar from '../CellBar.vue'
  * and what the sheet has now, by whom and when, and the buttons beside it
  * (`sheet`) keep the sheet's value or use the proposal's. A new row whose
  * pre-made row was used meanwhile is violet too, and is not written.
+ * The rows go as `laid` says (lib/proposalRows): slim rows between them tell
+ * where they are not continuous in the sheet (or, in the notebook's order, how
+ * far the next line's row jumps), and which rows are not on the photo. A
+ * repeated ID (A0E.1) has a chip «repeat of A0E (row …)», which goes to that
+ * row when the table shows it.
  */
 export interface CellEdit {
   key: string
@@ -116,6 +122,10 @@ const props = defineProps<{
   applied: number[] | null
   /** Cells to flash (the assistant just changed them). */
   flash: Set<string>
+  /** The rows in the order shown, with the markers between them (lib/proposalRows); else `changes` as they are. */
+  laid?: Laid[]
+  /** The rows go as the notebook has them (no ↕ marks: the jumps say it). */
+  notebookOrder?: boolean
 }>()
 const emit = defineEmits<{
   edit: [cells: CellEdit[]]
@@ -139,6 +149,8 @@ type Row = Record<string, CellValue> & {
   __note: string
   __line: string
   __state: string
+  /** A slim row between the rows (lib/proposalRows): its kind. */
+  __marker?: string
 }
 
 const host = ref<HTMLDivElement>()
@@ -226,12 +238,77 @@ function toRow(c: ProposalChange): Row {
     JSON.stringify(c.sheetChanged ?? null) +
     JSON.stringify(c.rowTaken ?? null) +
     JSON.stringify(c.outOfOrder ?? null) +
+    JSON.stringify(c.repeatOf ?? null) +
+    (props.notebookOrder ? 'n' : '') +
     (props.editable ? 'e' : '') +
     (c.context ? 'c' : '') +
     (c.page?.error ? 'x' : '') +
     Object.keys(c.values).length
   return out
 }
+
+/** A slim row between the rows: its text in the first column that stays at the left. */
+const markerField = () => (wide ? '__row' : '__label')
+function markerRow(m: Marker, next: string): Row {
+  return { __key: `mark:${m.kind}:${next}`, __marker: m.kind, __done: '', __row: '', __label: '', __note: '', __line: '', __state: JSON.stringify(m) } as Row
+}
+/** A marker row's cell: its text (it overflows the columns beside it), the rest empty. */
+function markerCell(cell: CellComponent): Node | string {
+  const row = cell.getData() as Row
+  const el = cell.getElement()
+  const here = cell.getField() === markerField()
+  el.classList.toggle('is-marker-cell', here)
+  if (!here) return ''
+  const m = JSON.parse(row.__state) as Marker
+  const { text, title } = markerText(m)
+  el.title = title
+  const box = document.createElement('span')
+  box.className = `marker-text is-${m.kind}${m.kind === 'jump' ? (m.by > 0 ? '-down' : '-up') : ''}`
+  box.textContent = text
+  return box
+}
+
+/** The ID, with a repeat's chip («repeat of A0E (row …)»: a click goes to that row when the table shows it). */
+function labelFormatter(cell: CellComponent) {
+  const row = cell.getData() as Row
+  if (row.__marker) return markerCell(cell)
+  const change = byKey.get(row.__key)
+  const chip = change ? repeatChip(change) : null
+  if (!chip) return document.createTextNode(row.__label)
+  const box = document.createElement('span')
+  const mark = document.createElement('span')
+  mark.className = 'repeat-chip'
+  mark.textContent = chip.text
+  const target = baseRowKey(change!, props.changes, rowKey)
+  mark.title = target ? `${chip.title}. ${t('Clic: ir a esa fila')}` : chip.title
+  if (target) {
+    mark.classList.add('is-link')
+    mark.addEventListener('click', e => {
+      e.stopPropagation()
+      focusCell(target, '__label')
+    })
+  }
+  box.append(row.__label, ' ', mark)
+  return box
+}
+/** The page's line; a row with none, in a page's table, says it is not on the photo. */
+function lineFormatter(cell: CellComponent) {
+  const row = cell.getData() as Row
+  if (row.__marker) return ''
+  const change = byKey.get(row.__key)
+  if (!change || !offPhotoRows() || !offPhoto(change)) return document.createTextNode(row.__line)
+  const mark = document.createElement('span')
+  mark.className = 'off-photo'
+  mark.textContent = t('no en la foto')
+  mark.title = t('Esta fila no está en las fotos de la página: añadida a mano o encontrada fuera de la página')
+  return mark
+}
+/** Rows not on the photo in a page's table, in the sheet's order: the line column makes room for their tag (in the notebook's, a heading says it). */
+const offPhotoRows = () => paged() && !props.notebookOrder && props.changes.some(offPhoto)
+/** Rows marked ↕ (sheet order): the row column makes room for the mark. */
+const markedRows = () => !props.notebookOrder && props.changes.some(c => c.outOfOrder)
+/** Repeated IDs: the ID column makes room for their chip. */
+const repeatRows = () => props.changes.some(c => c.repeatOf)
 
 /**
  * The cell as the table shows it: the value, and in an existing row the sheet's
@@ -440,6 +517,7 @@ function marked(c: CellInfo, content: Node): Node {
 /** The row number; a row with nothing left to write (every cell back to the sheet's value) is struck through. */
 function rowFormatter(cell: CellComponent) {
   const row = cell.getData() as Row
+  if (row.__marker) return markerCell(cell)
   const change = byKey.get(row.__key)
   // (A row whose only cells are unreadable ones still to fill is not: it waits for them.)
   const waiting = !!change && Object.keys(change.unreadable ?? {}).some(f => !(f in change.values))
@@ -448,7 +526,7 @@ function rowFormatter(cell: CellComponent) {
   const el = cell.getElement()
   el.classList.toggle('is-skipped', skipped)
   // A page line that comes before the previous line of its photo in the sheet: marked, with which line.
-  const after = change?.outOfOrder
+  const after = props.notebookOrder ? undefined : change?.outOfOrder
   el.classList.toggle('is-out-of-order', !!after)
   const why = after
     ? t('En el cuaderno va después de la línea {line} ({id}), pero en la hoja va antes', { line: after.line, id: after.id })
@@ -513,6 +591,9 @@ function columns(): ColumnDefinition[] {
     frozen: true,
     headerSort: false,
     cssClass: 'proposal-label',
+    formatter: labelFormatter as never,
+    // Room for a repeat's chip («repeat of A0E (row 13263)»).
+    ...(repeatRows() ? { width: Math.min(240, 7.2 * Math.max(4, ...props.changes.map(c => c.label.length)) + 150) } : {}),
   } as ColumnDefinition
   if (!wide) cols.push(id)
   if (props.applied)
@@ -528,7 +609,7 @@ function columns(): ColumnDefinition[] {
   cols.push({
     title: t('Fila'),
     field: '__row',
-    width: 54,
+    width: markedRows() ? 70 : 54,
     frozen: wide,
     hozAlign: 'right',
     cssClass: 'row-number',
@@ -540,8 +621,9 @@ function columns(): ColumnDefinition[] {
     cols.push({
       title: t('Línea'),
       field: '__line',
-      width: severalPhotos() ? 58 : 50,
+      width: offPhotoRows() ? 92 : severalPhotos() ? 58 : 50,
       frozen: wide,
+      formatter: lineFormatter as never,
       hozAlign: 'right',
       cssClass: 'row-number',
       headerSort: false,
@@ -559,6 +641,7 @@ function columns(): ColumnDefinition[] {
     cssClass: 'proposal-note',
     headerTooltip: t('Nota de la IA sobre la fila: de dónde salen sus valores'),
     formatter: (cell: CellComponent) => {
+      if ((cell.getData() as Row).__marker) return ''
       const note = String(cell.getValue() ?? '')
       cell.getElement().title = note
       return note
@@ -606,8 +689,10 @@ const removable = (key: string) => {
 }
 /** A page line's row: grey when it writes nothing, red when the save refused it. */
 function rowLook(row: RowComponent) {
-  const change = byKey.get((row.getData() as Row).__key)
+  const data = row.getData() as Row
+  const change = byKey.get(data.__key)
   const el = row.getElement()
+  el.classList.toggle('is-marker-row', !!data.__marker)
   el.classList.toggle('is-context-row', !!change?.context && !change.page?.error)
   el.classList.toggle('is-placeholder-row', !!change?.placeholder)
   el.classList.toggle('is-error-row', !!change?.page?.error)
@@ -919,7 +1004,8 @@ function pasteRange(rowsData: Record<string, unknown>[]) {
   if (!table || !rowsData.length) return []
   const selected = table.getRanges()[0]?.getRows() || []
   if (!selected.length) return []
-  const active = table.getRows('active')
+  // (The slim rows between the rows take no line of the block.)
+  const active = table.getRows('active').filter(r => r === selected[0] || !(r.getData() as Row).__marker)
   const start = active.indexOf(selected[0])
   if (start < 0) return []
   let skipped = 0
@@ -956,6 +1042,9 @@ const layoutKey = () =>
     rules.value ? 1 : 0,
     locale.value,
     paged() ? (severalPhotos() ? 'pp' : 'p') : '',
+    offPhotoRows() ? 'o' : '',
+    markedRows() ? 'm' : '',
+    repeatRows() ? `r${Math.max(0, ...props.changes.map(c => c.label.length))}` : '',
   ].join('\n')
 function sync() {
   if (!table || !built) return
@@ -967,7 +1056,12 @@ function sync() {
   }
   stale = false
   byKey = new Map(props.changes.map(c => [rowKey(c), c]))
-  const rows = props.changes.map(toRow)
+  const laid = props.laid ?? props.changes.map(change => ({ change }))
+  const rows = laid.map((item, i) => {
+    if (item.change) return toRow(item.change)
+    const next = laid.slice(i + 1).find(x => x.change)?.change
+    return markerRow(item.marker, next ? rowKey(next) : 'end')
+  })
   const layout = layoutKey()
   if (layout !== shownColumns) {
     shownColumns = layout
@@ -1111,7 +1205,7 @@ onBeforeUnmount(() => {
   table = null
 })
 watch(
-  () => [props.changes, props.fields, props.flash, props.editable, props.applied, rules.value, locale.value],
+  () => [props.changes, props.laid, props.fields, props.flash, props.editable, props.applied, rules.value, locale.value],
   sync,
 )
 </script>
@@ -1343,6 +1437,73 @@ watch(
     padding: 0 12px;
     font-size: 14px;
   }
+}
+/* A slim row between the rows: where they are not continuous in the sheet, a jump of the notebook's lines, «not on the photo». */
+.proposal-sheet .tabulator-row.is-marker-row,
+.proposal-sheet .tabulator-row.is-marker-row .tabulator-cell {
+  min-height: 0;
+  border-color: transparent;
+  background: #fafaf9;
+}
+.proposal-sheet .tabulator-row.is-marker-row .tabulator-cell {
+  padding-top: 1px;
+  padding-bottom: 1px;
+  font-size: 11px;
+  line-height: 16px;
+}
+/* Its text runs over the empty cells beside it, and stays at the left while scrolling. */
+.proposal-sheet .tabulator-row.is-marker-row .tabulator-cell.is-marker-cell {
+  overflow: visible;
+  z-index: 12;
+}
+.proposal-sheet .marker-text {
+  white-space: nowrap;
+  color: #78716c;
+  font-style: italic;
+}
+.proposal-sheet .marker-text.is-jump-down,
+.proposal-sheet .marker-text.is-jump-up {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 3px;
+  font-style: normal;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.proposal-sheet .marker-text.is-jump-down {
+  background: #e0f2fe;
+  color: #075985;
+}
+.proposal-sheet .marker-text.is-jump-up {
+  background: #fef3c7;
+  color: #92400e;
+}
+.proposal-sheet .marker-text.is-apart {
+  font-style: normal;
+  font-weight: 600;
+  color: #57534e;
+}
+/* A repeated ID (A0E.1): which ID it repeats and that ID's row. */
+.proposal-sheet .repeat-chip,
+.proposal-sheet .off-photo {
+  display: inline-block;
+  padding: 0 4px;
+  border: 1px solid #d6d3d1;
+  border-radius: 3px;
+  color: #57534e;
+  background: #f5f5f4;
+  font-size: 10px;
+  line-height: 13px;
+  white-space: nowrap;
+}
+.proposal-sheet .repeat-chip {
+  border-color: #99f6e4;
+  background: #f0fdfa;
+  color: #115e59;
+}
+.proposal-sheet .repeat-chip.is-link {
+  cursor: pointer;
+  text-decoration: underline dotted;
 }
 .proposal-sheet .tabulator-cell .formula-mark {
   display: inline-block;

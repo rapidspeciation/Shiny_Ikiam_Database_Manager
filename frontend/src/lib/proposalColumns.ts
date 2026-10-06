@@ -104,6 +104,7 @@ export interface KeptStorage {
   removeItem(key: string): void
 }
 const viewKey = (user: string) => `ithomiini:proposal-view:${user}`
+const rowOrderKey = (user: string) => `ithomiini:proposal-row-order:${user}`
 const customKey = (user: string, sheet: string) => `ithomiini:proposal-columns-custom:${user}:${sheet}`
 
 export function readView(storage: KeptStorage, user: string): ColumnView {
@@ -119,6 +120,25 @@ export function writeView(storage: KeptStorage, user: string, view: ColumnView) 
     storage.setItem(viewKey(user), view)
   } catch {
     /* storage full or blocked: the choice lasts while the page is open */
+  }
+}
+/**
+ * How a notebook page's table orders its rows: 'sheet', as the sheet has them;
+ * 'notebook', as the photo's lines (lib/proposalRows). Remembered per person.
+ */
+export type RowOrder = 'sheet' | 'notebook'
+export function readRowOrder(storage: KeptStorage, user: string): RowOrder {
+  try {
+    return storage.getItem(rowOrderKey(user)) === 'notebook' ? 'notebook' : 'sheet'
+  } catch {
+    return 'sheet'
+  }
+}
+export function writeRowOrder(storage: KeptStorage, user: string, order: RowOrder) {
+  try {
+    storage.setItem(rowOrderKey(user), order)
+  } catch {
+    /* as for the view */
   }
 }
 export function readCustom(storage: KeptStorage, user: string, sheet: string): CustomColumns | null {
@@ -157,6 +177,7 @@ export function moveColumn(list: string[], from: number, to: number): string[] {
 const shared = reactive({
   user: '',
   view: 'sheet' as ColumnView,
+  rowOrder: 'sheet' as RowOrder,
   custom: {} as Record<string, CustomColumns | null>,
 })
 const storage = (): KeptStorage | null => (typeof localStorage === 'undefined' ? null : localStorage)
@@ -165,6 +186,7 @@ function forUser(user: string) {
   shared.user = user
   const s = storage()
   shared.view = s ? readView(s, user) : 'sheet'
+  shared.rowOrder = s ? readRowOrder(s, user) : 'sheet'
   shared.custom = {}
 }
 export function columnChoices(user: string) {
@@ -177,6 +199,14 @@ export function columnChoices(user: string) {
       shared.view = view
       const s = storage()
       if (s) writeView(s, user, view)
+    },
+    get rowOrder() {
+      return shared.rowOrder
+    },
+    setRowOrder(order: RowOrder) {
+      shared.rowOrder = order
+      const s = storage()
+      if (s) writeRowOrder(s, user, order)
     },
     custom(sheet: string): CustomColumns | null {
       // Read from the browser until changed here (a change is kept in `shared`, so every card follows it).
