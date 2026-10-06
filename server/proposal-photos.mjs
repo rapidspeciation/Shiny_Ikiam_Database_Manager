@@ -1,7 +1,8 @@
 // The notebook photos a proposal was read from (match_notebook's `photo` and
 // `rotate`; show_rows's for a table of rows), shown beside its table: a small
-// upright copy for the page's header and a larger one to open in a new tab. The photos are T3 Code chat
-// attachments (<T3 home>/userdata/attachments/<threadId>-<uuid>.jpg); only a
+// upright copy for the page's header and a larger one to open in a new tab,
+// each with the assistant's few words on why it is there. The photos are T3
+// Code chat attachments (<T3 home>/userdata/attachments/<threadId>-<uuid>.jpg); only a
 // file of that folder whose name starts with the proposal's chat is served.
 //
 // WhatsApp photos carry no EXIF orientation (a page taken sideways stays
@@ -49,21 +50,44 @@ export function attachmentFile(home, value) {
   }
 }
 
+/** Longest note on a photo (why it is there), in characters. */
+export const PHOTO_NOTE_LENGTH = 80;
+const noteOf = value => (typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, PHOTO_NOTE_LENGTH) : null);
+
 /**
- * The photos of a match_notebook call: `photo` a name or a list, `rotate` a
- * turn or a list (one per photo; one turn for all). Returns { photos, refused }.
+ * The photos of a match_notebook call (update_proposal's and show_rows's too):
+ * `photo` a name or a list, each a file name or { name, note } (a few words on
+ * why the photo is there: "old IDs (21 Sep page)"); `rotate` a turn or a list
+ * (one per photo; one turn for all). `old`: the photos kept so far; one given
+ * again by name alone keeps its note. Returns { photos, refused }.
  */
-export function photosOf(home, args) {
-  const names = (Array.isArray(args.photo) ? args.photo : args.photo ? [args.photo] : []).slice(0, 12);
+export function photosOf(home, args, old = []) {
+  const given = Array.isArray(args.photo) ? args.photo : args.photo ? [args.photo] : [];
+  const names = given.slice(0, 12);
   const turns = Array.isArray(args.rotate) ? args.rotate : names.map(() => args.rotate);
+  const notes = new Map((Array.isArray(old) ? old : []).filter(p => p?.note).map(p => [p.file, p.note]));
   const photos = [];
   const refused = [];
   names.forEach((value, i) => {
-    const file = attachmentFile(home, value);
-    if (file) photos.push({ file: file.name, rotate: rightAngle(turns[i] ?? 0) });
-    else refused.push(String(value).slice(0, 200));
+    const named = value && typeof value === 'object' ? value : null;
+    const file = attachmentFile(home, named ? (named.name ?? named.file) : value);
+    if (!file) return refused.push(String((named ? (named.name ?? named.file) : value) ?? '').slice(0, 200));
+    const note = named && 'note' in named ? noteOf(named.note) : (notes.get(file.name) ?? null);
+    photos.push({ file: file.name, rotate: rightAngle(turns[i] ?? 0), ...(note ? { note } : {}) });
   });
   return { photos, refused };
+}
+
+/**
+ * What the page sends of its photos: how many, a short tag of which (the note
+ * included, so a new caption shows at once) and their notes in the same order
+ * (only when one has a note).
+ */
+export function photoPage(photos) {
+  if (!Array.isArray(photos) || !photos.length) return { photos: 0, photoKey: null };
+  const photoKey = createHash('sha1').update(JSON.stringify(photos)).digest('base64url').slice(0, 8);
+  const notes = photos.map(p => p.note ?? '');
+  return { photos: photos.length, photoKey, ...(notes.some(Boolean) ? { photoNotes: notes } : {}) };
 }
 
 const SCRIPT = `

@@ -30,6 +30,7 @@ import {
   expandProposal,
   nextCell,
   notApplied,
+  notebookColumns,
   orderText,
   photoSummaries,
   rowKey,
@@ -71,8 +72,9 @@ export type { Proposal, ProposalChange } from '../lib/proposals'
  * apart; they are never written until the person types them, and "Aplicar"
  * says so before applying.
  * A notebook page's proposal follows the page: a header per photo (its
- * thumbnail, which opens it upright in a new tab, and how many of its lines
- * change), every line in the sheet's order with its photo and line, lines a
+ * thumbnail, which opens it upright in a new tab, the assistant's few words on
+ * why it is there, and how many of its lines change), every line in the
+ * sheet's order with its photo and line, lines a
  * photo has the other way round in the sheet told and marked ↕ ("solo cambios" hides the lines
  * that write nothing), the notebook's columns first and the template's NA /
  * NOT_COLLECTED columns folded.
@@ -87,7 +89,8 @@ export type { Proposal, ProposalChange } from '../lib/proposals'
  * asistente» sends the assistant which ones, to look at them again: into its T3
  * chat when the app can, else copied to paste there.
  * The columns go as the person chooses on the card (lib/proposalColumns): the
- * sheet's order, the notebook's (a notebook page's proposal), or their own
+ * sheet's order, the notebook's (a notebook page's proposal, or any
+ * Collection_data table: a wild-caught butterfly's columns), or their own
  * (ordered and hidden in ColumnChooser), remembered per person. A notebook
  * page's rows go in the sheet's order or the notebook's (the photo's lines),
  * remembered per person too; the table tells where its rows are not
@@ -349,8 +352,8 @@ const page = computed(() => props.proposal.page)
 
 // ------------------------------------------------------------ the columns' order: the sheet's, the notebook's, the person's
 const choices = computed(() => columnChoices(session.user?.username ?? ''))
-/** The notebook's columns of a sheet's table (a notebook page's proposal), in the page's order. */
-const notebookOf = (sheet: string) => (page.value?.sheet === sheet ? (page.value.columns ?? []) : [])
+/** The notebook's columns of a sheet's table (a notebook page's, in the page's order; else the sheet's own: Collection_data). */
+const notebookOf = (sheet: string) => notebookColumns(props.proposal, sheet)
 const hasNotebook = computed(() => groups.value.some(g => notebookOf(g.sheet).length > 0))
 const view = computed(() => viewFor(choices.value.view, hasNotebook.value))
 const views = computed(() =>
@@ -462,6 +465,8 @@ const tables = computed(() =>
       : [table]
   }),
 )
+/** The assistant's few words on why a photo is there ('' for none). */
+const photoNote = (n: number) => page.value?.photoNotes?.[n] ?? ''
 const photoUrl = (n: number, size: 'thumb' | 'view') => `api/proposals/${props.proposal.id}/photos/${n}?size=${size}${props.proposal.page?.photoKey ? `&v=${props.proposal.page.photoKey}` : ''}`
 /** A thumbnail that would not load (an old proposal's photo gone): hidden. */
 const brokenPhotos = ref(new Set<number>())
@@ -742,7 +747,7 @@ const statusText = computed(
         <AlertTriangle :size="12" />
         {{ $tn(g.rows.length, 'Mismo error cerca (no en la foto) · {n} fila', 'Mismo error cerca (no en la foto) · {n} filas') }}
       </p>
-      <!-- A notebook page: per photo, its thumbnail (opens upright in a new tab) and how its lines compare with the sheet. -->
+      <!-- A notebook page: per photo, its thumbnail (opens upright in a new tab), why it is there and how its lines compare with the sheet. -->
       <div v-if="page && g.photos.length" class="flex flex-wrap gap-2 px-2 pt-1.5">
         <div
           v-for="p in g.photos"
@@ -767,10 +772,12 @@ const statusText = computed(
             />
           </a>
           <span>
-            <b v-if="g.photos.length > 1" class="font-medium text-stone-700"
-              >{{ $t('Foto {n}', { n: p.photo + 1 }) }} ·
-            </b>
+            <b v-if="g.photos.length > 1 || photoNote(p.photo)" class="font-medium text-stone-700">{{
+              $t('Foto {n}', { n: p.photo + 1 })
+            }}</b>
+            <template v-if="photoNote(p.photo)"> · {{ photoNote(p.photo) }}</template>
             <template v-if="p.to"
+              ><template v-if="g.photos.length > 1 || photoNote(p.photo)"> · </template
               >{{ $t('Líneas {from}–{to}', { from: p.from, to: p.to }) }} ·
               {{ $tn(p.change, '{n} cambia', '{n} cambian') }} · {{ $tn(p.same, '{n} igual', '{n} iguales') }}
               <template v-if="p.other"> · {{ $tn(p.other, '{n} sin escribir', '{n} sin escribir') }}</template>

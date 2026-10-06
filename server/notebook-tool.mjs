@@ -111,8 +111,8 @@ export const MATCH_NOTEBOOK_TOOL = {
           },
         },
         photo: {
-          description: "The page's photo, or a list: the attachment's file name (from \"[Attached image … saved at …]\", or another chat's)",
-          anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
+          description: "The page's photo, or a list: the attachment's file name (from \"[Attached image … saved at …]\", or another chat's), or {name, note: why it is here, a few words}",
+          anyOf: [{ type: 'string' }, { type: 'array' }],
         },
         rotate: {
           description: 'Clockwise turn that makes it upright, as given to crops.py; a list for several photos',

@@ -7,7 +7,9 @@ import { reactive } from 'vue'
  *   right, as Google Sheets shows them);
  * - 'notebook': a notebook page's proposal follows the notebook, its columns
  *   left to right as the page has them (server/notebook.mjs KINDS, sent as
- *   `page.columns`), then the others in the sheet's order;
+ *   `page.columns`), then the others in the sheet's order; a Collection_data
+ *   table without a page, the columns a wild-caught butterfly is written down
+ *   with (server/proposal-columns.mjs NOTEBOOK_COLUMNS);
  * - 'custom': the person's own order and hidden columns, per sheet.
  */
 export type ColumnView = 'sheet' | 'notebook' | 'custom'
@@ -92,7 +94,7 @@ export function orderColumns(
   return inSheetOrder(fields, sheetOrder)
 }
 
-/** The view a card shows: the one chosen, unless it is the notebook's and the proposal has no notebook page. */
+/** The view a card shows: the one chosen, unless it is the notebook's and the proposal has no notebook columns. */
 export const viewFor = (chosen: ColumnView, paged: boolean): ColumnView => (chosen === 'notebook' && !paged ? 'sheet' : chosen)
 
 // ------------------------------------------------------------ the person's choices, kept in this browser

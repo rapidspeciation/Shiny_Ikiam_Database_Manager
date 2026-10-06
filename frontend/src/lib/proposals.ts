@@ -99,6 +99,8 @@ export interface ProposalPage {
   photos: number
   /** Which photos (a short tag): in their addresses, so other photos at the same place show at once. */
   photoKey?: string
+  /** The assistant's few words on why each photo is there, in the photos' order ('' for none); absent when none has one. */
+  photoNotes?: string[]
 }
 export interface ProposalChange {
   index: number
@@ -225,9 +227,11 @@ export interface Proposal {
    * The columns each sheet's table shows whatever the proposal changes, in order
    * (reviewColumns in server/notebook.mjs); `keys`: the row's own ID, shown in the
    * table's ID column (its own column only when the proposal changes it);
-   * `hidden`: columns never shown, not even added (server/proposal-columns.mjs).
+   * `hidden`: columns never shown, not even added (server/proposal-columns.mjs);
+   * `notebook`: the Notebook view's columns when the proposal has no notebook page
+   * for the sheet (Collection_data's).
    */
-  shownColumns?: Record<string, { fields: string[]; keys: string[]; hidden?: string[] }>
+  shownColumns?: Record<string, { fields: string[]; keys: string[]; hidden?: string[]; notebook?: string[] }>
   /** Changes when the sheet's rows of a pending proposal change (an edit in the sheet): the list redraws it. */
   sheetStamp?: string
   /** The rows are listed in the sheet's order: a notebook page's lines that go another way there. */
@@ -645,6 +649,16 @@ export function unfilledUnreadable(p: Pick<Proposal, 'changes'>) {
     for (const field of Object.keys(c.unreadable ?? {})) if (!(field in c.values)) out.push({ key: rowKey(c), field, index: c.index })
   }
   return out
+}
+
+/**
+ * A sheet's columns in the Notebook view: its notebook page's, in the page's
+ * order, else the sheet's own list (Collection_data: what a wild-caught
+ * butterfly is written down with); none: the view is not offered.
+ */
+export function notebookColumns(p: Pick<Proposal, 'page' | 'shownColumns'>, sheet: string): string[] {
+  const own = p.page?.sheet === sheet ? (p.page.columns ?? []) : []
+  return own.length ? own : (p.shownColumns?.[sheet]?.notebook ?? [])
 }
 
 /** Values a template fills (no news): a column holding only these is folded away. */

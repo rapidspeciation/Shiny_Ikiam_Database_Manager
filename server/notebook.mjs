@@ -170,8 +170,8 @@ const KEY_COLUMN = /^(SPECIES|Species|CAM_ID|Tube_1_id|Tube_ID)$/;
 /**
  * The columns the review table (Cambios propuestos) shows for a sheet's rows
  * whatever a proposal changes, so a wrong row shows (its species, CAM, tubes):
- * a sheet's DEFAULT_COLUMNS (server/proposal-columns.mjs: Insectary_data, every
- * column up to Notes_Insectary_data in the sheet's order), else
+ * a sheet's DEFAULT_COLUMNS (server/proposal-columns.mjs: Insectary_data and
+ * Collection_data, every column up to their notes in the sheet's order), else
  * for a sheet a notebook fills, that notebook's columns in its order (a page's
  * own notebook, else the sheet's fullest one: Emergidos for Insectary_data),
  * then the sheet's other columns in its order up to the last one any of its
