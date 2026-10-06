@@ -214,12 +214,17 @@ const REUSE_MS = 60_000;
 export function sheetPatterns(store, sheet, today = todaySerial()) {
   const mod = moduleMap.get(sheet);
   if (!mod) return [];
-  const state = store.db.prepare('SELECT count(*) n, max(updated_at) u FROM records WHERE sheet=?').get(sheet);
-  const stamp = `${state.n}:${state.u}:${today}`;
   const bySheet = cache.get(store) ?? cache.set(store, new Map()).get(store);
   const hit = bySheet.get(sheet);
-  // Saves change the stamp, rarely the patterns: worked out again at most once a minute.
-  if (hit && (hit.stamp === stamp || (Date.now() - hit.at < REUSE_MS && hit.today === today))) return hit.patterns;
+  // Saves change the stamp, rarely the patterns: worked out again at most once a minute. Asked once
+  // per row of a long proposal: within the minute the stamp (a count over the whole sheet) is not read.
+  if (hit && Date.now() - hit.at < REUSE_MS && hit.today === today) return hit.patterns;
+  const state = store.db.prepare('SELECT count(*) n, max(updated_at) u FROM records WHERE sheet=?').get(sheet);
+  const stamp = `${state.n}:${state.u}:${today}`;
+  if (hit?.stamp === stamp) {
+    hit.at = Date.now();
+    return hit.patterns;
+  }
   // Only the last year's rows are parsed (their formulas are long): found by their dates first.
   const where = 'sheet=? AND missing=0 AND observed=1 AND row_num>? AND row_num<2000000000';
   const field = DATE_FIELD[sheet];
