@@ -20,6 +20,8 @@ interface Pulse {
   mine: { id: string; status: string; kind: string; ref: string | null; updated_at: string }[]
   /** The lab's simulated busy workbook (LOCAL_MODE). */
   simulated?: { mode: string; until: string } | null
+  /** Changes to censuses (Censo): a census open on this page loads again when it changes. */
+  census?: number
 }
 
 let stopped = true
@@ -41,6 +43,8 @@ export const useLive = defineStore('live', {
     items: [] as StagedItem[],
     claims: [] as StagedClaim[],
     stagedLoaded: false,
+    /** Censuses changed (server/census.mjs): marks, a census started or finished. */
+    census: 0,
     /** Bumped on every change (pages that follow something else, e.g. the pending saves). */
     ticks: 0,
   }),
@@ -61,6 +65,7 @@ export const useLive = defineStore('live', {
       this.counts = p.staged
       this.mine = p.mine ?? []
       this.simulated = p.simulated ?? null
+      this.census = p.census ?? 0
       this.ticks++
       if (stagedChanged || !this.stagedLoaded) void this.loadStaged()
     },

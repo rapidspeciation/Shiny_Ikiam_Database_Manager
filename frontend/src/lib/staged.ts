@@ -11,7 +11,7 @@ export interface StagedItem {
   id: string
   /** One press of a tab's Save: undone together. */
   entryId: string
-  purpose: 'emergidos' | 'clutches'
+  purpose: 'emergidos' | 'clutches' | 'censo'
   /** A new row, or cells of a sheet row. */
   kind: 'create' | 'edit'
   sheet: string

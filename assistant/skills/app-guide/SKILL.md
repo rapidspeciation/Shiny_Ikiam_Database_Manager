@@ -1,6 +1,6 @@
 ---
 name: app-guide
-description: Guide to the "Ikiam Insectary DB" web app (https://ithomiini-ikiam.com) — every tab (Inicio, Buscador, Colecta, Monitoreo, Muertes, Tubos, Emergidos, Clutches, Historial, Asistente, Revisión, Usuarios), what each is for, who can use it, its controls and workflows, grid and date tips, which sheet it writes, and deep links with query parameters. Use it whenever the person asks how to do something in the app, where something is, why a button or tab is missing, or asks for a link.
+description: Guide to the "Ikiam Insectary DB" web app (https://ithomiini-ikiam.com) — every tab (Inicio, Buscador, Colecta, Monitoreo, Muertes, Tubos, Emergidos, Clutches, Censo, Historial, Asistente, Revisión, Usuarios), what each is for, who can use it, its controls and workflows, grid and date tips, which sheet it writes, and deep links with query parameters. Use it whenever the person asks how to do something in the app, where something is, why a button or tab is missing, or asks for a link.
 ---
 
 # App guide: Ikiam Insectary DB
@@ -22,7 +22,7 @@ parameter):
 
 | File | Tabs |
 |---|---|
-| [reference/data-entry.md](reference/data-entry.md) | Buscador, Colecta, Muertes, Tubos, Emergidos, Clutches; grid, keyboard and date tips |
+| [reference/data-entry.md](reference/data-entry.md) | Buscador, Colecta, Muertes, Tubos, Emergidos, Clutches, Censo; grid, keyboard and date tips |
 | [reference/monitoreo.md](reference/monitoreo.md) | Monitoreo: Importar recorrido, Reporte, Mapa, Recapturas, Dudas de emparejamiento, Datos de Wikiloc |
 | [reference/review-history-assistant.md](reference/review-history-assistant.md) | Inicio, Asistente (T3 Code, Cambios propuestos, Instrucciones de la IA), Revisión, Usuarios, login and invitations, the save bar |
 
@@ -40,6 +40,7 @@ Historial: skill **historial**.
 | Tubos | `#/tubos` | CAM IDs, tubes, tissue, medium; tube labels | Insectary_data |
 | Emergidos | `#/emergidos` | new adults of a clutch into pre-made rows | Insectary_data |
 | Clutches | `#/clutches` | new clutches and their follow-up | Insectary_stocks |
+| Censo | `#/censo` | census of a species: mark each butterfly seen as it is released; those not seen become `Disappearance` | Insectary_data (after «Guardar en Google Sheets») |
 | Historial | `#/historial` | every saved change; selective undo | (undo writes back) |
 | Asistente | `#/asistente?propuesta=…&chat=…` | T3 Code (this assistant), Cambios propuestos beside it; one proposal alone: `#/propuestas/<id>` (its `link`), one chat's: `#/propuestas?chat=…`; «Instrucciones de la IA» (`#/instrucciones`) | via proposals |
 | Revisión | `#/revision?…` | data problems as cards to judge | verdicts (app); fixes via a proposal |

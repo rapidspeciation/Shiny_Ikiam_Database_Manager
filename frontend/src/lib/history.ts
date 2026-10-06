@@ -14,6 +14,7 @@ export const PURPOSES: Record<string, { label: string; tone: string }> = {
   muertes: { label: 'Muertes', tone: 'bg-stone-200 text-stone-800' },
   emergidos: { label: 'Emergidos', tone: 'bg-amber-100 text-amber-800' },
   clutches: { label: 'Clutches', tone: 'bg-orange-100 text-orange-800' },
+  censo: { label: 'Censo', tone: 'bg-lime-100 text-lime-800' },
   tubos: { label: 'Tubos', tone: 'bg-sky-100 text-sky-800' },
   tablas: { label: 'Buscador', tone: 'bg-indigo-100 text-indigo-800' },
   revision: { label: 'Revisión', tone: 'bg-violet-100 text-violet-800' },
@@ -34,6 +35,7 @@ const TAB_PURPOSE: Record<string, string> = {
   emergidos: 'emergidos',
   clutches: 'clutches',
   posturas: 'clutches',
+  censo: 'censo',
   revision: 'revision',
 }
 

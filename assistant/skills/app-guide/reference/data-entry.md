@@ -135,7 +135,10 @@ chosen, the date, the cause and preserved or not, and write the same cells.
 
 Below: «Últimas N muertes registradas» («ver más»).
 
-**Tarjetas**: a search box (Insectary ID, CAM or tube; says alive or dead),
+**Tarjetas**: a search box (Insectary ID, CAM or tube; says alive or dead;
+for a worn wing, `A?B` = one character unreadable, `A[16]B` = one of two, and
+look-alikes such as 6/8 or B/D are offered with the doubtful character in
+amber; ♀ / ♂ / ? and a species under the box rank what is seen),
 the butterflies as cards, then «Fecha de muerte» (Hoy / Ayer / a date), the
 cause as buttons and «Sin preservar | Preservada». «Preservada» shows the
 medium and, right under it, each butterfly's CAM and tube (next free ones
@@ -233,3 +236,31 @@ Clutches (eggs laid) and their follow-up in Insectary_stocks.
    últimos 150» shows more.
 
 Link: `#/clutches` (no parameters).
+
+## Censo — `#/censo`
+
+A census of one species in the insectary, replacing the notebook smileys:
+the butterflies go into a small cage and are released one by one.
+
+1. «Nuevo censo»: the date (today by default), then tap the species (its
+   butterflies alive are counted beside it: Insectary_data rows with no
+   Death_date and no Death_cause). A census already «En curso» for that species
+   and day is joined; several phones mark it at once and see each other's marks.
+2. For each butterfly: type the wing ID (`A?B`, `A[16]B` and look-alikes as in
+   Muertes; ♀ / ♂ / ? if seen) and tap it, or Enter for the first: a big ☺ with
+   «Deshacer». «Viva, pero se ve distinta…» keeps a sex or species doubt with a
+   note; another species found in the cage, a butterfly recorded dead, or an ID
+   in no row («Anotar … como hallazgo») are kept as findings, nothing corrected.
+   «Aún sin ver» lists the rest (cards or table), each can be marked from there.
+3. «Terminar el censo» → review: those not seen will get Death_date = census
+   date and Death_cause `Disappearance`, plus the not-preserved block as in
+   Muertes (CAM and tubes NA, tissues and media NOT_COLLECTED, when the row has
+   no CAM or tube); «No contar» leaves one out (in another cage…). «Marcar N
+   como desaparecidas» keeps them in the app, like Emergidos and Clutches, until
+   «Guardar en Google Sheets».
+4. Afterwards: «Para el cuaderno» lists the IDs in order with ☺ or
+   «desaparecida d/m/yy» (copyable), «Ya lo pasé al cuaderno», and «Reabrir el
+   censo» while the disappearances are not yet in Google Sheets. «Censos
+   anteriores» keeps every census (date, species, who, counts, findings).
+
+Link: `#/censo` (no parameters).

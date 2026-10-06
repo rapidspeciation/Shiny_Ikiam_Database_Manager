@@ -2,6 +2,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import {
+  ClipboardList,
   ArrowRight,
   Eye,
   Binoculars,
@@ -53,6 +54,7 @@ const ICONS = {
   muertes: Skull,
   emergidos: Sparkles,
   clutches: Egg,
+  censo: ClipboardList,
   tubos: TestTube,
   tablas: Table2,
   revision: ClipboardCheck,
