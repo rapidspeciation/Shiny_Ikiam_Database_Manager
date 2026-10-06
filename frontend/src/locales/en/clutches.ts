@@ -233,6 +233,8 @@ export default {
   'Al día hasta «Desde»': 'Up to date until “From”',
 
   // Review marks: actions, then the state they leave ("✓ Checked by FCH")
+  'Desmarcar': 'Unmark',
+  'Quitar la marca de hoy: vuelve a «sin revisar»': 'Take today’s mark off: back to «not checked»',
   'Marcar como revisado': 'Mark as checked',
   'Marcar como verificado': 'Mark as verified',
   'Guardar y marcar como revisado': 'Save and mark as checked',

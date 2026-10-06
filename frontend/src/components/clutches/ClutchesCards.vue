@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { AlertTriangle, ArrowDownUp, BookOpen, CalendarClock, Camera, Check, History, Plus, Search, Settings, X } from 'lucide-vue-next'
+import { AlertTriangle, ArrowDownUp, BookOpen, CalendarClock, Camera, Check, History, Plus, Search, Settings, Undo2, X } from 'lucide-vue-next'
 import ClutchEditor from './ClutchEditor.vue'
 import ClutchSettings from './ClutchSettings.vue'
 import NewClutch from './NewClutch.vue'
@@ -266,6 +266,23 @@ async function undoMark() {
   if (!m) return
   lastMark.value = null
   await day.unmark(m.id)
+}
+/**
+ * Takes today's latest mark off a clutch (someone started checking it and had
+ * to leave it): it is «not checked» again. Your own marks; an admin's, anyone's.
+ */
+async function unmarkLatest(row: TableRow) {
+  const latest = day.today(row.id).latest
+  if (!latest) return
+  marking.value = row.id
+  try {
+    await day.unmark(latest.id)
+    if (lastMark.value?.id === latest.id) lastMark.value = null
+  } catch (e) {
+    notify(errorText(e), 'error')
+  } finally {
+    marking.value = null
+  }
 }
 
 // --- A new clutch
@@ -574,6 +591,17 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                   @click="askVerify(item.row)"
                 >
                   <AlertTriangle :size="16" /> {{ $t('Pedir verificación…') }}
+                </button>
+              </div>
+              <!-- Marked today: the mark can be taken off again (the check was not finished). -->
+              <div v-if="canEdit && !inApp(item.row) && day.today(item.row.id).latest" class="flex justify-end border-t border-stone-100">
+                <button
+                  class="flex h-9 items-center gap-1 px-3 text-xs font-medium text-stone-600 active:bg-stone-100"
+                  :disabled="marking === item.row.id"
+                  :title="$t('Quitar la marca de hoy: vuelve a «sin revisar»')"
+                  @click="unmarkLatest(item.row)"
+                >
+                  <Undo2 :size="14" /> {{ $t('Desmarcar') }}
                 </button>
               </div>
               <form
