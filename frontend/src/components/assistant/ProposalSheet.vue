@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch 
 import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition, RowComponent } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
-import { Check, CheckCheck, FileSpreadsheet, Sparkles, Table2 } from 'lucide-vue-next'
+import { Check, CheckCheck, FileSpreadsheet, Redo2, Sparkles, Table2, Undo2 } from 'lucide-vue-next'
 import { displayValue, editText, normalizeInput } from '../../lib/cells'
 import { copyText } from '../../lib/clipboard'
 import {
@@ -11,6 +11,8 @@ import {
   attachColumnFit,
   attachCopyMarker,
   attachFillHandle,
+  attachPendingCut,
+  cutCellId,
   attachTouchSheet,
   plainCopy,
   backToGrid,
@@ -31,6 +33,7 @@ import {
   type CellBarInfo,
   type CellBarNote,
   type Direction,
+  type PendingCut,
 } from '../../lib/gridKit'
 import { parseBlock } from '../../lib/paste'
 import {
@@ -67,6 +70,7 @@ import {
   type PeekState,
   type SheetRows,
 } from '../../lib/proposalRows'
+import { StepBuilder, UndoHistory, historyFor, snapCell, type Step } from '../../lib/proposalUndo'
 import { errorText } from '../../lib/notice'
 import { isSumField, sumTotal } from '../../lib/sums'
 import type { CellValue, Field } from '../../lib/types'
@@ -118,6 +122,11 @@ import CellBar from '../CellBar.vue'
  * rows the table does not show (`loadRows`) opens them under it, grey and to
  * read only (up to PEEK_ROWS, then a slim row for the rest); another click
  * folds them.
+ * Ctrl+X only marks the cells (dashed) until they are pasted: Ctrl+V then moves
+ * them in one go; Esc or another copy leaves them (gridKit's attachPendingCut).
+ * Ctrl+Z / Ctrl+Shift+Z (Ctrl+Y), or the buttons above, undo and redo the
+ * person's own edits in the table, a paste or a fill as one step
+ * (lib/proposalUndo); cells the assistant changed since stay as it left them.
  */
 export interface CellEdit {
   key: string
@@ -146,13 +155,15 @@ const props = defineProps<{
   notebookOrder?: boolean
   /** The sheet's rows `from`–`to` as they are now, for a slim row opened with a click (none: they do not open). */
   loadRows?: (from: number, to: number) => Promise<SheetRows>
+  /** Where the table's undo steps are kept while the page is open (the proposal and the table); none: while it is shown. */
+  historyKey?: string
 }>()
 const emit = defineEmits<{
   edit: [cells: CellEdit[]]
   remove: [key: string]
   notice: [message: string]
-  /** Doubtful cells the person reviewed and leaves as they are («Marcar revisadas»). */
-  check: [cells: { key: string; field: string }[]]
+  /** Doubtful cells the person reviewed and leaves as they are («Marcar revisadas»); `checked: false` (an undo) unmarks them. */
+  check: [cells: { key: string; field: string; checked?: boolean }[]]
   /** On to the doubtful cell (or the cell edited in the sheet) after this one (null: from the top), in any of the proposal's tables. */
   next: [from: { key: string; field: string } | null, which?: 'doubtful' | 'sheet']
   /** Cells edited in the sheet: the sheet's value kept, or the proposal's written over it. */
@@ -873,10 +884,13 @@ const pickFromBar = (target: CellBarInfo, text: string) => saveFromBar(target, t
 // ------------------------------------------------------------ edits
 let normalizing = false
 let outgoing: CellEdit[] = []
+/** The cells the edits going out together change, as they were before: one undo step. */
+const step = new StepBuilder()
 function send() {
   if (!outgoing.length) return
   const cells = outgoing
   outgoing = []
+  record(step.take())
   emit('edit', cells)
 }
 function onCellEdited(cell: CellComponent) {
@@ -906,6 +920,8 @@ function onCellEdited(cell: CellComponent) {
   // meanwhile): the sheet's value, or what the formula will give, is no change of anyone's.
   const was = info(row.__key, field)
   const over = was?.kind === 'proposed' || was?.kind === 'person' ? before : null
+  const change = latest.value.get(row.__key)
+  if (change) step.add(change, field)
   outgoing.push({ key: row.__key, field, value: result.value, before: over })
   // A paste or a fill sets many cells at once: they go out together.
   if (outgoing.length === 1) queueMicrotask(send)
@@ -942,14 +958,104 @@ function use(which: 'sheet' | 'ai') {
     if (which === 'ai' && cell.aiProposed && (cell.kind === 'reverted' || cell.kind === 'person'))
       cells.push({ key, field, value: cell.ai ?? null, before: cell.value, use: 'ai' })
   }
-  if (cells.length) emit('edit', cells)
+  if (!cells.length) return
+  recordCells(cells)
+  emit('edit', cells)
 }
 /** «Marcar revisadas»: the selected doubtful cells were looked at and stay as they are. */
 function markChecked() {
   const cells = selected()
     .filter(s => s.cell.doubtful)
     .map(({ key, field }) => ({ key, field }))
-  if (cells.length) emit('check', cells)
+  if (!cells.length) return
+  recordCells(cells)
+  emit('check', cells)
+}
+
+// ------------------------------------------------------------ undo, redo
+/** The rows as the table has them now (the person's edits not saved yet included). */
+const latest = computed(() => new Map(props.changes.map(c => [rowKey(c), c])))
+const history = props.historyKey ? historyFor(props.historyKey) : new UndoHistory()
+/** How many steps there are to undo and to redo (the buttons). */
+const steps = ref({ undo: history.done.length, redo: history.undone.length })
+const countSteps = () => (steps.value = { undo: history.done.length, redo: history.undone.length })
+function record(cells: Step) {
+  if (!cells.length) return
+  history.record(cells)
+  countSteps()
+}
+/** One step: the cells as they are before the person's edit. */
+function recordCells(cells: { key: string; field: string }[]) {
+  const builder = new StepBuilder()
+  for (const { key, field } of cells) {
+    const change = latest.value.get(key)
+    if (change) builder.add(change, field)
+  }
+  record(builder.take())
+}
+/**
+ * Ctrl+Z (⌘Z) undoes the last step; Ctrl+Shift+Z or Ctrl+Y redoes it: the cells
+ * go back through the same edits as typing (saved to the proposal). Cells the
+ * assistant changed since stay as it left them, and the person is told.
+ */
+function undoRedo(which: 'undo' | 'redo') {
+  if (!props.editable || !table) return
+  const out = which === 'undo' ? history.undo(key => latest.value.get(key)) : history.redo(key => latest.value.get(key))
+  countSteps()
+  if (!out) return
+  if (out.edits.length) emit('edit', out.edits)
+  if (out.checks.length) emit('check', out.checks)
+  if (out.sheets.length) emit('sheet', out.sheets)
+  const done = out.inverse.length
+  if (out.revised)
+    emit(
+      'notice',
+      which === 'undo'
+        ? done
+          ? tn(out.revised, 'Deshecho, salvo {n} celda que la IA cambió después: queda como la dejó', 'Deshecho, salvo {n} celdas que la IA cambió después: quedan como las dejó')
+          : tn(out.revised, 'No se deshizo: la IA cambió esa celda después y queda como la dejó', 'No se deshizo: la IA cambió esas {n} celdas después y quedan como las dejó')
+        : done
+          ? tn(out.revised, 'Rehecho, salvo {n} celda que la IA cambió después: queda como la dejó', 'Rehecho, salvo {n} celdas que la IA cambió después: quedan como las dejó')
+          : tn(out.revised, 'No se rehízo: la IA cambió esa celda después y queda como la dejó', 'No se rehízo: la IA cambió esas {n} celdas después y quedan como las dejó'),
+    )
+  if (out.gone)
+    emit('notice', tn(out.gone, '{n} celda quedó como está: su fila ya no está en la propuesta', '{n} celdas quedaron como están: su fila ya no está en la propuesta'))
+  selectCells(out.inverse)
+}
+/** The cells an undo put back, selected (the block around them) and brought into view. */
+function selectCells(cells: { key: string; field: string }[]) {
+  if (!table || !cells.length) return
+  const rows = table.getRows('active')
+  const columns = table.getColumns().filter(c => c.isVisible())
+  const at = cells
+    .map(c => {
+      const row = table!.getRow(c.key)
+      return { r: row ? rows.indexOf(row) : -1, c: columns.findIndex(col => col.getField() === c.field) }
+    })
+    .filter(p => p.r >= 0 && p.c >= 0)
+  if (!at.length) return
+  const top = Math.min(...at.map(p => p.r))
+  const bottom = Math.max(...at.map(p => p.r))
+  const left = Math.min(...at.map(p => p.c))
+  const right = Math.max(...at.map(p => p.c))
+  const from = rows[top].getCell(columns[left].getField())
+  const to = rows[bottom].getCell(columns[right].getField())
+  if (!from || !to) return
+  try {
+    ;(table as unknown as { addRange: (a: CellComponent, b: CellComponent) => void }).addRange(from, to)
+  } catch {
+    /* Range selection is off on touch screens. */
+  }
+  from.getElement().scrollIntoView({ block: 'nearest', inline: 'nearest' })
+}
+/** Ctrl+Z / ⌘Z, Ctrl+Shift+Z / ⌘⇧Z and Ctrl+Y on the grid (in a cell being edited, the box's own undo). */
+function onUndoKey(event: KeyboardEvent) {
+  if (!(event.ctrlKey || event.metaKey) || event.altKey || !props.editable) return
+  const key = event.key.toLowerCase()
+  const which = key === 'z' ? (event.shiftKey ? 'redo' : 'undo') : key === 'y' && !event.shiftKey ? 'redo' : null
+  if (!which || (event.target as HTMLElement).closest('input, textarea, select, .tabulator-editing')) return
+  event.preventDefault()
+  undoRedo(which)
 }
 
 // ------------------------------------------------------------ a doubtful cell, checked where it is
@@ -972,6 +1078,9 @@ const quick = ref<{
 const quickBox = ref<HTMLDivElement>()
 const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 const reviewKey = mac ? '⌘ Enter' : 'Ctrl+Enter'
+/** The undo and redo keys, for the buttons' tooltips. */
+const undoKey = mac ? '⌘Z' : 'Ctrl+Z'
+const redoKey = mac ? '⌘⇧Z' : 'Ctrl+Y'
 /** The cell edited in the sheet just chosen for: its choices stay away until another cell is selected. */
 let chosenHere: string | null = null
 function placeQuick() {
@@ -1031,10 +1140,12 @@ function placeQuick() {
 function chooseQuick(key: string, field: string, use: 'sheet' | 'proposal') {
   chosenHere = cellId(key, field)
   quick.value = null
+  recordCells([{ key, field }])
   emit('sheet', [{ key, field, use }])
   emit('next', { key, field }, 'sheet')
 }
 function confirmQuick(key: string, field: string) {
+  recordCells([{ key, field }])
   emit('check', [{ key, field }])
   emit('next', { key, field })
 }
@@ -1074,12 +1185,19 @@ function focusCell(key: string, field: string) {
 }
 defineExpose({ focusCell })
 
-/** The copied block as rows of { field: text }, from the first selected column on (as SheetGrid). */
+/** The cut being pasted (its cells are emptied once the paste is written). */
+let moving: PendingCut | null = null
+/**
+ * The copied block as rows of { field: text }, from the first selected column on (as SheetGrid).
+ * The cells cut in this table go as they were cut (not repeated over a bigger selection).
+ */
 function pasteParser(text: string) {
   const range = table?.getRanges()[0]
+  moving = null
   if (!table || !range) return false
   const block = parseBlock(text) ?? [[text.replace(/\r?\n$/, '')]]
-  const tiled = tileToSelection(block, range.getRows().length, range.getColumns().length)
+  moving = cuts?.take(text) ?? null
+  const tiled = moving ? block : tileToSelection(block, range.getRows().length, range.getColumns().length)
   const visible = table.getColumns().filter(c => c.isVisible())
   const first = range.getColumns()[0]?.getField()
   const start = visible.findIndex(c => c.getField() === first)
@@ -1088,6 +1206,8 @@ function pasteParser(text: string) {
   return tiled.map(line => Object.fromEntries(fields.map((f, j) => [f, line[j]])))
 }
 function pasteRange(rowsData: Record<string, unknown>[]) {
+  const move = moving
+  moving = null
   if (!table || !rowsData.length) return []
   const selected = table.getRanges()[0]?.getRows() || []
   if (!selected.length) return []
@@ -1097,9 +1217,12 @@ function pasteRange(rowsData: Record<string, unknown>[]) {
   if (start < 0) return []
   let skipped = 0
   const touched: RowComponent[] = []
+  /** The cells the paste covers: a cut's cells among them are not emptied after. */
+  const written = new Set<string>()
   for (const [offset, row] of active.slice(start, start + rowsData.length).entries()) {
     for (const [field, raw] of Object.entries(rowsData[offset])) {
       if (!fieldSet.value.has(field)) continue
+      written.add(cutCellId(row.getIndex() as string, field))
       if (!canEdit(row, field)) {
         skipped++
         continue
@@ -1107,6 +1230,11 @@ function pasteRange(rowsData: Record<string, unknown>[]) {
       row.getCell(field).setValue(raw === undefined ? null : String(raw))
     }
     touched.push(row)
+  }
+  // A cut pasted: the cells it came from are emptied now, with the paste (one step to undo).
+  if (move && cuts) {
+    cuts.finish(move, written)
+    copied?.clear()
   }
   if (skipped) emit('notice', t('{n} celdas de solo lectura no se modificaron', { n: skipped }))
   return touched
@@ -1187,10 +1315,14 @@ const onKeydown = spreadsheetKeys(
   () => table,
   canEdit,
   message => emit('notice', message),
+  undefined,
+  // Ctrl+X marks the cells; the paste moves them.
+  { cut: () => cuts?.start() },
 )
 const onEditingKey = editingKeys(() => table)
 let fill: { destroy: () => void } | null = null
 let copied: ReturnType<typeof attachCopyMarker> | null = null
+let cuts: ReturnType<typeof attachPendingCut> | null = null
 let sizeWatch: { disconnect: () => void } | null = null
 let fit: { destroy: () => void } | null = null
 
@@ -1246,7 +1378,8 @@ onMounted(() => {
         onFilled: rows => notice(tn(rows, 'Copiado a {n} fila', 'Copiado a {n} filas')),
       })
   copied = attachCopyMarker(table, container, notice, formulaCell)
-  fit = attachColumnFit(table, host.value, {
+  cuts = attachPendingCut(table, container, canEdit)
+  fit =attachColumnFit(table, host.value, {
     text: (data, field) => {
       const change = byKey.get(String(data.__key))
       return fieldSet.value.has(field) && change ? drawnText(change, field) : String(data[field] ?? '')
@@ -1271,6 +1404,7 @@ onMounted(() => {
   })
   table.on('cellEditCancelled', follow)
   host.value.addEventListener('keydown', onReviewKey, true)
+  host.value.addEventListener('keydown', onUndoKey)
   host.value.addEventListener('keydown', onKeydown)
   host.value.addEventListener('keydown', onEditingKey, true)
   sizeWatch = watchSize(() => table, host.value)
@@ -1288,10 +1422,12 @@ onBeforeUnmount(() => {
   window.clearTimeout(retry)
   fill?.destroy()
   copied?.destroy()
+  cuts?.destroy()
   fit?.destroy()
   sizeWatch?.disconnect()
   shownWatch?.disconnect()
   host.value?.removeEventListener('keydown', onReviewKey, true)
+  host.value?.removeEventListener('keydown', onUndoKey)
   host.value?.removeEventListener('keydown', onKeydown)
   host.value?.removeEventListener('keydown', onEditingKey, true)
   table?.destroy()
@@ -1319,6 +1455,28 @@ watch(
       <slot />
       <template v-if="editable">
         <!-- Kept from taking the focus: the grid keeps its selection while the button is pressed. -->
+        <span class="flex items-center gap-1">
+          <button
+            class="proposal-use"
+            :disabled="!steps.undo"
+            :title="$t('Deshacer tu último cambio en la tabla ({key})', { key: undoKey })"
+            :aria-label="$t('Deshacer')"
+            @mousedown.prevent
+            @click="undoRedo('undo')"
+          >
+            <Undo2 :size="12" />
+          </button>
+          <button
+            class="proposal-use"
+            :disabled="!steps.redo"
+            :title="$t('Rehacer lo deshecho ({key})', { key: redoKey })"
+            :aria-label="$t('Rehacer')"
+            @mousedown.prevent
+            @click="undoRedo('redo')"
+          >
+            <Redo2 :size="12" />
+          </button>
+        </span>
         <button
           class="proposal-use"
           :disabled="!actions.sheet"

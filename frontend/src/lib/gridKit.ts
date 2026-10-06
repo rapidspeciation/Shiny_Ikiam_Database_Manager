@@ -204,23 +204,95 @@ export function clearRange(table: Tabulator, canEdit: CanEdit) {
   for (const cell of range.getCells().flat() as CellComponent[]) if (canEdit(cell.getRow(), cell.getField())) cell.setValue(null)
 }
 
-/** A cut is being copied: the copied cells' border and notice (attachCopyMarker) say so. */
-let cutting = false
+/**
+ * A cut is being copied: the copied cells' border and notice (attachCopyMarker)
+ * say so. 'clear': its cells are emptied at once; 'keep': they stay until it is
+ * pasted (attachPendingCut).
+ */
+let cutting: false | 'clear' | 'keep' = false
 /**
  * Cut (Ctrl+X): the selection is copied as Ctrl+C copies it, then its editable
  * cells are cleared as Supr clears them; read-only cells are only copied.
+ * `keep`: nothing is cleared yet (the paste moves the cells: attachPendingCut).
  */
-export function cutRange(table: Tabulator, canEdit: CanEdit) {
+export function cutRange(table: Tabulator, canEdit: CanEdit, { keep = false } = {}) {
   type Inner = { modules: { clipboard?: { copy: (range: unknown, internal: boolean) => void } } }
   const clipboard = (table as unknown as Inner).modules.clipboard
   if (!clipboard || !table.getRanges()[0]) return
-  cutting = true
+  cutting = keep ? 'keep' : 'clear'
   try {
     clipboard.copy(false, true)
   } finally {
     cutting = false
   }
-  clearRange(table, canEdit)
+  if (!keep) clearRange(table, canEdit)
+}
+
+/** A cut waiting for its paste: its cells (row index, field) and the text it put on the clipboard. */
+export interface PendingCut {
+  cells: { row: string | number; field: string }[]
+  text: string
+}
+/** Clipboard text as compared: the line ends a system may change, and the last line's end. */
+const clipText = (text: string) => text.replace(/\r\n?/g, '\n').replace(/\n+$/, '')
+/** The text pasted is what the pending cut put on the clipboard. */
+export const isCutText = (cut: PendingCut | null, text: string) => !!cut && clipText(cut.text) === clipText(text)
+/** A cell of a pending cut as `finish` is told the cells written: `${row index}\u0000${field}`. */
+export const cutCellId = (row: string | number, field: string) => `${row}\u0000${field}`
+/**
+ * Cut as in Google Sheets: Ctrl+X (`start`) only marks the cells (the copied
+ * cells' dashed border) and puts them on the clipboard; pasting them (`take`,
+ * then `finish`) writes them at the target and empties the cells cut that the
+ * paste did not cover, in one go. Esc, a new copy or cut, or editing a cell
+ * leaves the cut cells as they are. Rows are found again by their index, so a
+ * redrawn table still finds them.
+ */
+export function attachPendingCut(table: Tabulator, container: HTMLElement, canEdit: CanEdit) {
+  let cut: PendingCut | null = null
+  let starting: PendingCut['cells'] | null = null
+  table.on('clipboardCopied', ((plain: string) => {
+    cut = starting ? { cells: starting, text: plain } : null
+    starting = null
+  }) as never)
+  const cancel = () => (cut = null)
+  table.on('cellEditing', cancel)
+  const onKey = (e: KeyboardEvent) => e.key === 'Escape' && cancel()
+  container.addEventListener('keydown', onKey)
+  return {
+    get pending() {
+      return cut
+    },
+    start() {
+      const range = table.getRanges()[0]
+      if (!range) return
+      starting = (range.getCells().flat() as CellComponent[])
+        .filter(c => c.getField())
+        .map(c => ({ row: c.getRow().getIndex() as string | number, field: c.getField() }))
+      try {
+        cutRange(table, canEdit, { keep: true })
+      } finally {
+        starting = null
+      }
+    },
+    cancel,
+    /** The pending cut, if `text` is what it put on the clipboard (else a plain paste: the cut stays). */
+    take(text: string) {
+      return isCutText(cut, text) ? cut : null
+    },
+    /**
+     * The cut pasted: its editable cells the paste did not write over (`written`,
+     * by cutCellId) are emptied, and the cut is done (pasting again copies).
+     */
+    finish(done: PendingCut, written: Set<string>) {
+      if (cut === done) cut = null
+      for (const { row, field } of done.cells) {
+        if (written.has(cutCellId(row, field))) continue
+        const r = table.getRow(row)
+        if (r && canEdit(r, field)) r.getCell(field)?.setValue(null)
+      }
+    },
+    destroy: () => container.removeEventListener('keydown', onKey),
+  }
 }
 
 // Keys typed while a cell's editor is still opening are kept and given to it,
@@ -249,7 +321,7 @@ function giveText(tries = 0) {
 /**
  * Spreadsheet keys: typing on a selected cell replaces its content; Enter or
  * F2 edits it in place; Ctrl+D fills down; Supr clears the selection; Ctrl+X
- * cuts it.
+ * cuts it (`cut`: the grid's own cut instead, as attachPendingCut's start).
  * `whyNot` explains a cell that cannot be typed in, when there is a reason to give.
  */
 export function spreadsheetKeys(
@@ -257,6 +329,7 @@ export function spreadsheetKeys(
   canEdit: CanEdit,
   notice: Notice,
   whyNot?: (row: RowComponent, field: string) => string | null,
+  { cut }: { cut?: (table: Tabulator) => void } = {},
 ) {
   return (event: KeyboardEvent) => {
     const t = table()
@@ -290,7 +363,8 @@ export function spreadsheetKeys(
       fillDown(t, canEdit, notice)
     } else if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'x') {
       event.preventDefault()
-      cutRange(t, canEdit)
+      if (cut) cut(t)
+      else cutRange(t, canEdit)
     } else if (event.key === 'Delete') {
       event.preventDefault()
       clearRange(t, canEdit)
@@ -579,9 +653,10 @@ export function attachCopyMarker(
   table.on('clipboardCopied', () => {
     cells = (table.getRanges()[0]?.getCells().flat() as CellComponent[] | undefined) ?? null
     const n = cells?.length ?? 0
-    // Cut: the cells are emptied at once, so no border is left around them.
+    // Cut: the cells are emptied at once, so no border is left around them; a cut kept until pasted keeps it.
     if (cutting) {
-      clear()
+      if (cutting === 'keep') place()
+      else clear()
       if (n)
         notice(
           tn(n, 'Cortado: {n} celda. Selecciona dónde pegar y pulsa Ctrl+V', 'Cortado: {n} celdas. Selecciona dónde pegar y pulsa Ctrl+V'),
