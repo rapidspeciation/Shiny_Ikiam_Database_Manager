@@ -223,7 +223,7 @@ export function configFromEnv(env = process.env) {
     setupToken: env.SETUP_TOKEN,
     localMode: env.LOCAL_MODE === '1',
     // Emergidos and Clutches keep their changes in the app until «Guardar en Google Sheets» (server/staged.mjs),
-    // and the Censo tab (which needs that) is shown; STAGED_SAVING=0 saves those tabs straight to the sheet, as before.
+    // as do a census's disappearances; STAGED_SAVING=0 saves those tabs and the census straight to the sheet.
     stagedSaving: env.STAGED_SAVING !== '0',
     seedFile: env.SEED_FILE,
     secureCookies: env.SECURE_COOKIES !== '0',
@@ -796,7 +796,7 @@ export async function createApp(config = {}, options = {}) {
         requireEditor(user);
         return json(res, 200, setNotebookUpTo(store, body, user));
       }
-      // Censuses (Censo tab): start or join, everyone's marks, finish (disappearances kept in the app), history.
+      // Censuses (Censo tab): start or join, everyone's marks, finish (disappearances kept in the app, or written with staged saving off), history.
       if (method === 'GET' && path === '/api/census') return json(res, 200, censusOverview(store, query));
       if (method === 'POST' && path === '/api/census') {
         requireEditor(user);

@@ -38,6 +38,8 @@ export default {
   'en la app, aún no en Google Sheets': 'in the app, not yet in Google Sheets',
   'escribiéndose en Google Sheets': 'being written to Google Sheets',
   'en Google Sheets': 'in Google Sheets',
+  'esperando a Google Sheets': 'waiting for Google Sheets',
+  'no escritas en Google Sheets': 'not written to Google Sheets',
 
   // Marking
   'Volver a los censos': 'Back to the censuses',
@@ -109,6 +111,8 @@ export default {
     '{id}: seen alive, but not on the list (recorded dead, or a repeated ID)',
   'Quedan en la app (como Emergidos y Clutches) hasta «Guardar en Google Sheets».':
     'They stay in the app (like Emerged and Clutches) until «Save to Google Sheets».',
+  'Se escriben en Google Sheets al terminar (si Google está ocupado, esperan y se escriben solas).':
+    'They are written to Google Sheets when you finish (if Google is busy, they wait and are written on their own).',
   'Marcar {n} como desaparecida': 'Mark {n} as disappeared',
   'Marcar {n} como desaparecidas': 'Mark {n} as disappeared',
   'Terminar sin desapariciones': 'Finish without disappearances',
@@ -116,6 +120,11 @@ export default {
   'Censo terminado': 'Census finished',
   '{n} desaparición en la app: falta «Guardar en Google Sheets»': '{n} disappearance in the app: «Save to Google Sheets» is still to do',
   '{n} desapariciones en la app: falta «Guardar en Google Sheets»': '{n} disappearances in the app: «Save to Google Sheets» is still to do',
+  '{n} desaparición escrita en Google Sheets': '{n} disappearance written to Google Sheets',
+  '{n} desapariciones escritas en Google Sheets': '{n} disappearances written to Google Sheets',
+  '{n} desaparición espera a que Google Sheets responda; se escribe sola': '{n} disappearance waits for Google Sheets to answer; it is written on its own',
+  '{n} desapariciones esperan a que Google Sheets responda; se escriben solas':
+    '{n} disappearances wait for Google Sheets to answer; they are written on their own',
 
   // Done
   'cancelado por {who}': 'cancelled by {who}',
@@ -126,7 +135,13 @@ export default {
   '{n} desapariciones esperan en la app: «Guardar en Google Sheets» (arriba) las escribe.':
     '{n} disappearances wait in the app: «Save to Google Sheets» (above) writes them.',
   'Escribiéndose en Google Sheets (o esperando a que responda).': 'Being written to Google Sheets (or waiting for it to answer).',
-  'Las desapariciones están en Google Sheets.': 'The disappearances are in Google Sheets.',
+  '{n} desaparición escrita en Google Sheets.': '{n} disappearance written to Google Sheets.',
+  '{n} desapariciones escritas en Google Sheets.': '{n} disappearances written to Google Sheets.',
+  '{n} desaparición espera a que Google Sheets responda; se escribe sola.': '{n} disappearance waits for Google Sheets to answer; it is written on its own.',
+  '{n} desapariciones esperan a que Google Sheets responda; se escriben solas.':
+    '{n} disappearances wait for Google Sheets to answer; they are written on their own.',
+  'Google Sheets no aceptó las desapariciones: no se escribió nada (el motivo está en Historial). Reabre el censo para terminarlo otra vez.':
+    'Google Sheets did not accept the disappearances: nothing was written (the reason is in History). Reopen the census to finish it again.',
   'Para el cuaderno': 'For the notebook',
   'Todas ({n})': 'All ({n})',
   '☺ vistas ({n})': '☺ seen ({n})',

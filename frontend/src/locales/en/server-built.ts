@@ -34,6 +34,8 @@ export default {
   '{id} ya está marcada como vista': '{id} is already marked as seen',
   '{id}: solo la fecha del censo, Disappearance y las celdas de una muerte sin preservar':
     '{id}: only the census date, Disappearance and the cells of a death not preserved',
+  '{ids} aún está en la app, sin guardar en Google Sheets: guárdalo y termina el censo después':
+    '{ids} is still in the app, not saved to Google Sheets: save it and finish the census afterwards',
   '{n} muertes registradas': '{n} deaths recorded',
   '{n} mariposa con tubos o CAM': '{n} butterfly with tubes or CAM',
   '{n} mariposas con tubos o CAM': '{n} butterflies with tubes or CAM',

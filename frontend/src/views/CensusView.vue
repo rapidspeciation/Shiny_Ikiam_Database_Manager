@@ -18,9 +18,10 @@ import { useSheet } from '../composables/useSheet'
  * Here: start (or join) a census of a species → mark each butterfly as it is
  * released, from one or several phones at once (CensusRun) → review what is
  * left (CensusReview) → the disappearances wait in the app for «Guardar en
- * Google Sheets» like Emergidos and Clutches, and the notebook's lines to copy
- * (CensusSummary). The sheet shown carries everyone's entries kept in the app
- * (a butterfly emerged today is on the list; a death kept in the app is not).
+ * Google Sheets» like Emergidos and Clutches (or, with staged saving off, are
+ * written to the sheet), and the notebook's lines to copy (CensusSummary).
+ * The sheet shown carries everyone's entries kept in the app (a butterfly
+ * emerged today is on the list; a death kept in the app is not).
  */
 const { table, ready, listColumn } = useSheet(ref('Insectary_data'), ref(true), { staged: true })
 /** People's initials for the note on each disappearance ("FCH - Franz Chandi"). */
@@ -56,7 +57,7 @@ function leave() {
 
 <template>
   <div class="flex h-full flex-col bg-stone-50">
-    <!-- The disappearances wait in the app with Emergidos and Clutches for «Guardar en Google Sheets». -->
+    <!-- The disappearances wait in the app with Emergidos and Clutches for «Guardar en Google Sheets» (staged saving on). -->
     <StagedBar />
     <div class="min-h-0 flex-1">
       <CensusStart v-if="screen === 'start'" />

@@ -1,6 +1,6 @@
 // Censo: everyone marks the butterflies of one species seen alive; finishing keeps the ones
 // not seen as disappeared (Death_cause Disappearance, the census day) in the app until
-// «Guardar en Google Sheets», like Emergidos and Clutches.
+// «Guardar en Google Sheets», like Emergidos and Clutches (or, with staged saving off, writes them).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -56,8 +56,8 @@ function seed() {
   };
 }
 
-async function fixture(databasePath = ':memory:', sheets = new LocalSheets(seed(), { health: { probeMs: 20 } })) {
-  const store = new Store({ localMode: true, databasePath }, { sheets });
+async function fixture(databasePath = ':memory:', sheets = new LocalSheets(seed(), { health: { probeMs: 20 } }), config = {}) {
+  const store = new Store({ localMode: true, databasePath, ...config }, { sheets });
   await store.sync({ sheets: ['Insectary_data', 'Insectary_stocks'] });
   for (const u of [ana, luis, viewer])
     store.db
@@ -93,6 +93,13 @@ function disappearance(recordId, { preserved = false } = {}) {
   const values = { Death_date: SERIAL, Death_cause: DISAPPEARED, ...(preserved ? {} : NOT_PRESERVED) };
   return { id: recordId, values, expected: Object.fromEntries(Object.keys(values).map(f => [f, null])) };
 }
+const until = async (check, ms = 3000) => {
+  const end = Date.now() + ms;
+  while (!check()) {
+    if (Date.now() > end) throw new Error('timed out');
+    await new Promise(r => setTimeout(r, 10));
+  }
+};
 const cellIn = (sheets, row, field) => {
   const rows = sheets.rows.get('Insectary_data');
   const header = rows.find(r => r.row === 1).cells.findIndex(c => c?.userEnteredValue?.stringValue === field);
@@ -342,6 +349,86 @@ test('undoing a census entry in the bar opens the census again; a census with no
     assert.equal(cancelled.census.status, 'cancelled');
     assert.equal(cancelled.marks.length, 1);
     assert.equal(censusOverview(store).open.length, 0);
+  } finally {
+    store.close();
+  }
+});
+
+test('staged saving off: finishing writes the disappearances to the sheet as one census save; not reopened once written', async () => {
+  const { store, sheets } = await fixture(':memory:', undefined, { stagedSaving: false });
+  try {
+    const id = start(store, ana).census.id;
+    mark(store, id, ana, { recordId: recordOf(store, 'A1B') });
+    mark(store, id, luis, { recordId: recordOf(store, 'A8B'), kind: 'excluded', note: 'In the other cage' });
+    const a2 = recordOf(store, 'A2B');
+    const a3 = recordOf(store, 'A3B');
+    const finish = edits => finishCensus(store, id, { requestId: randomUUID(), edits }, ana);
+    // The same checks as with staged saving on.
+    await assert.rejects(finish([disappearance(a2)]), e => e.code === 'CENSUS_CHANGED');
+    const wrongCell = disappearance(a2);
+    wrongCell.values.Sex = 'female';
+    await assert.rejects(finish([wrongCell, disappearance(a3)]), e => e.code === 'INVALID_VALUES');
+    assert.equal(cellIn(sheets, 3, 'Death_cause'), null, 'nothing written by a refused finish');
+
+    const requestId = randomUUID();
+    const done = await finishCensus(store, id, { requestId, edits: [disappearance(a2), disappearance(a3, { preserved: true })] }, ana);
+    assert.equal(done.census.status, 'finished');
+    assert.equal(done.census.deaths, 'written');
+    assert.equal(store.staged.list().items.length, 0, 'nothing kept in the app');
+    assert.equal(cellIn(sheets, 3, 'Death_cause'), DISAPPEARED);
+    assert.equal(cellIn(sheets, 3, 'Death_date'), SERIAL);
+    assert.equal(cellIn(sheets, 3, 'Tube_1_tissue'), 'NOT_COLLECTED');
+    assert.equal(cellIn(sheets, 4, 'Death_cause'), DISAPPEARED);
+    const action = store.db.prepare('SELECT purpose, actor FROM actions WHERE id = (SELECT action_id FROM censuses WHERE id = ?)').get(id);
+    assert.deepEqual({ ...action }, { purpose: 'censo', actor: 'ana' }, 'History shows it as the census');
+    assert.deepEqual(aliveButterflies(store, { species: POLY }).map(b => b.id), ['A1B', 'A8B']);
+    // Sent twice: the same census, written once.
+    const twice = await finishCensus(store, id, { requestId, edits: [disappearance(a2), disappearance(a3, { preserved: true })] }, ana);
+    assert.equal(twice.duplicate, true);
+    assert.equal(store.db.prepare("SELECT count(*) n FROM actions WHERE purpose = 'censo'").get().n, 1);
+    await assert.rejects(reopenCensus(store, id, ana), e => e.code === 'CENSUS_WRITTEN');
+  } finally {
+    store.close();
+  }
+});
+
+test('staged saving off, Google busy: the census save waits in the outbox and is written when Google answers', async () => {
+  const { store, sheets } = await fixture(':memory:', undefined, { stagedSaving: false });
+  try {
+    const id = start(store, ana, LYS).census.id;
+    sheets.simulateBusy({ minutes: 1, delayMs: 0 });
+    await sheets.probe().catch(() => {});
+    const done = await finishCensus(store, id, { requestId: randomUUID(), edits: [disappearance(recordOf(store, 'A7B'))] }, ana);
+    assert.equal(done.census.status, 'finished');
+    assert.equal(done.census.deaths, 'queued');
+    assert.equal(cellIn(sheets, 8, 'Death_cause'), null);
+    const item = store.db.prepare("SELECT kind, ref, purpose FROM outbox WHERE status = 'queued'").get();
+    assert.deepEqual({ ...item }, { kind: 'census', ref: id, purpose: 'censo' });
+    // While it waits it is not reopened (it would be written anyway).
+    await assert.rejects(reopenCensus(store, id, luis), e => e.code === 'STAGED_SENT');
+    const stamp = store.censusStamp;
+    sheets.simulateBusy({ minutes: 0 });
+    await sheets.health.runProbe();
+    await until(() => censusDetail(store, id).census.deaths === 'written');
+    assert.ok(store.censusStamp > stamp, 'open pages are told');
+    assert.equal(cellIn(sheets, 8, 'Death_cause'), DISAPPEARED);
+    const action = store.db.prepare('SELECT purpose FROM actions WHERE id = (SELECT action_id FROM censuses WHERE id = ?)').get(id);
+    assert.equal(action.purpose, 'censo');
+  } finally {
+    store.close();
+  }
+});
+
+test('staged saving off: a disappearance the sheet contradicts refuses the whole census, which stays open', async () => {
+  const { store, sheets } = await fixture(':memory:', undefined, { stagedSaving: false });
+  try {
+    const id = start(store, ana, LYS).census.id;
+    const a7 = recordOf(store, 'A7B');
+    const edit = disappearance(a7);
+    edit.expected.CAM_ID = 'CAM000999';
+    await assert.rejects(finishCensus(store, id, { requestId: randomUUID(), edits: [edit] }, ana), e => e.code === 'BATCH_CONFLICT');
+    assert.equal(censusDetail(store, id).census.status, 'open');
+    assert.equal(cellIn(sheets, 8, 'Death_cause'), null);
   } finally {
     store.close();
   }

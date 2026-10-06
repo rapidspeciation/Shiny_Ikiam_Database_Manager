@@ -11,7 +11,7 @@ import { initMonitoring } from './monitoring.mjs';
 import { initHistory } from './history.mjs';
 import { initClutches } from './clutches.mjs';
 import { initClutchPhotos } from './clutch-photos.mjs';
-import { initCensus } from './census.mjs';
+import { initCensus, watchCensusSaves } from './census.mjs';
 import { SANDBOX_ID } from './workbook.mjs';
 import { initClaims } from './claims.mjs';
 import { initOutbox, Outbox } from './outbox.mjs';
@@ -79,6 +79,7 @@ export class Store {
     this.liveWaiters = new Set();
     this.outbox = new Outbox(this);
     this.staged = new Staged(this);
+    watchCensusSaves(this);
     // The workbook answers again (or only slowly): the waiting saves are written.
     this.sheets.health?.onChange(state => {
       this.bumpLive('workbook');

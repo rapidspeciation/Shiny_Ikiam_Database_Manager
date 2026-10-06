@@ -15,6 +15,10 @@ const deaths = computed(() => {
       return { text: t('en la app, aún no en Google Sheets'), tone: 'bg-amber-100 text-amber-900' }
     case 'sending':
       return { text: t('escribiéndose en Google Sheets'), tone: 'bg-amber-100 text-amber-900' }
+    case 'queued':
+      return { text: t('esperando a Google Sheets'), tone: 'bg-amber-100 text-amber-900' }
+    case 'failed':
+      return { text: t('no escritas en Google Sheets'), tone: 'bg-red-100 text-red-900' }
     case 'written':
       return { text: t('en Google Sheets'), tone: 'bg-brand-50 text-brand-800' }
     default:

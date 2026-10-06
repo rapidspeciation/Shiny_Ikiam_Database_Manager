@@ -10,6 +10,7 @@ import {
   findingsOf,
   markFinder,
   notSeen,
+  type CensusSummary,
   type Finding,
   type RosterEntry,
 } from '../../lib/census'
@@ -20,6 +21,7 @@ import type { Table } from '../../lib/types'
 import { initialsOf } from '../../lib/rows'
 import { useSession } from '../../stores/session'
 import { t, tn } from '../../lib/i18n'
+import { stagedSaving } from '../../lib/stagedSwitch'
 
 /**
  * Before the census ends: (a) the butterflies seen alive; (b) those not seen,
@@ -27,7 +29,8 @@ import { t, tn } from '../../lib/i18n'
  * it is in another cage); (c) the findings, kept for review. «Marcar N como
  * desaparecidas» keeps those deaths in the app, written as Muertes writes a
  * death not preserved (lib/census.ts disappearanceEdits), until «Guardar en
- * Google Sheets».
+ * Google Sheets»; with staged saving off it writes them to the sheet at once
+ * (or they wait for Google when it is busy).
  */
 const props = defineProps<{ table: Table | undefined; ready: boolean; collectors?: string[] }>()
 const session = useSession()
@@ -35,6 +38,8 @@ const session = useSession()
 const initials = computed(() => initialsOf(session.user?.displayName || '', props.collectors ?? [], session.user?.username || ''))
 const emit = defineEmits<{ back: [] }>()
 const census = useCensus()
+/** Whether the disappearances wait in the app for «Guardar en Google Sheets» (or are written when finishing). */
+const staged = stagedSaving()
 
 const detail = computed(() => census.detail.value!)
 const species = computed(() => detail.value.census.species)
@@ -83,6 +88,19 @@ function findingText(f: Finding) {
 
 // --- Finish
 const saving = ref(false)
+/** What finishing did with the disappearances: kept in the app, written, or waiting for Google. */
+function finishedText(deaths: CensusSummary['deaths'], n: number) {
+  if (!n || deaths === 'none') return t('Censo terminado')
+  if (deaths === 'written') return tn(n, '{n} desaparición escrita en Google Sheets', '{n} desapariciones escritas en Google Sheets')
+  if (deaths === 'queued')
+    return tn(
+      n,
+      '{n} desaparición espera a que Google Sheets responda; se escribe sola',
+      '{n} desapariciones esperan a que Google Sheets responda; se escriben solas',
+    )
+  if (deaths === 'sending') return t('Escribiéndose en Google Sheets (o esperando a que responda).')
+  return tn(n, '{n} desaparición en la app: falta «Guardar en Google Sheets»', '{n} desapariciones en la app: falta «Guardar en Google Sheets»')
+}
 async function finish() {
   if (saving.value) return
   const { edits, absent } = disappearanceEdits(missing.value, rowById.value, serial.value, {
@@ -93,17 +111,8 @@ async function finish() {
     return notify(t('Falta cargar {ids} de Insectary_data; espera un momento', { ids: absent.join(', ') }), 'error')
   saving.value = true
   try {
-    await census.finish(edits)
-    notify(
-      edits.length
-        ? tn(
-            edits.length,
-            '{n} desaparición en la app: falta «Guardar en Google Sheets»',
-            '{n} desapariciones en la app: falta «Guardar en Google Sheets»',
-          )
-        : t('Censo terminado'),
-      'success',
-    )
+    const out = await census.finish(edits)
+    notify(finishedText(out?.census.deaths ?? null, edits.length), 'success')
   } catch (e) {
     if (e instanceof ApiError && e.code === 'CENSUS_CHANGED') await census.loadDetail()
     notify(errorText(e), 'error')
@@ -249,7 +258,11 @@ async function finish() {
     <footer class="border-t border-stone-200 bg-white px-3 py-2 sm:px-4">
       <div class="mx-auto flex max-w-3xl items-center gap-3">
         <p class="min-w-0 flex-1 text-xs text-stone-600">
-          {{ $t('Quedan en la app (como Emergidos y Clutches) hasta «Guardar en Google Sheets».') }}
+          {{
+            staged
+              ? $t('Quedan en la app (como Emergidos y Clutches) hasta «Guardar en Google Sheets».')
+              : $t('Se escriben en Google Sheets al terminar (si Google está ocupado, esperan y se escriben solas).')
+          }}
         </p>
         <button class="btn-primary h-12 px-4 text-base" :disabled="saving || !ready" @click="finish">
           <Loader2 v-if="saving" :size="18" class="animate-spin" /><Flag v-else :size="18" />

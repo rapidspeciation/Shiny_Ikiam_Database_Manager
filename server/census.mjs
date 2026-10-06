@@ -9,11 +9,15 @@
 // by everyone through /api/pulse. Finishing stages the disappearances as an
 // entry kept in the app (server/staged.mjs, purpose «censo»): they wait for
 // «Guardar en Google Sheets» with the Emergidos and Clutches entries and go
-// through the outbox when Google is busy. The cells written for each
-// disappearance come from the client (lib/deaths.ts deathCells, what Muertes
-// writes for a death not preserved); the server checks they are deaths of
-// exactly the butterflies not seen, on the census day. Undoing that entry
-// («Deshacer» in the bar, or «Reabrir») opens the census again.
+// through the outbox when Google is busy. Undoing that entry («Deshacer» in the
+// bar, or «Reabrir») opens the census again. With staged saving off
+// (STAGED_SAVING=0, where Emergidos and Clutches save straight to the sheet),
+// finishing writes them as one save of the census (applyBatch, purpose «censo»;
+// the outbox keeps it while Google is busy), and the census can no longer be
+// reopened once written. The cells written for each disappearance come from the
+// client (lib/deaths.ts deathCells, what Muertes writes for a death not
+// preserved); the server checks they are deaths of exactly the butterflies not
+// seen, on the census day.
 //
 // "Alive in the insectary": an Insectary_data row with an Insectary ID, typed
 // (not a pre-made row), with no Death_date and no Death_cause, everyone's
@@ -25,6 +29,7 @@
 import { randomUUID } from 'node:crypto';
 import { msg, msgError } from './messages.mjs';
 import { ecuadorDay } from './clutches.mjs';
+import { applyBatch } from './batch.mjs';
 
 const SHEET = 'Insectary_data';
 /** The Death_cause list's value for a butterfly not found (3,000 rows use it). */
@@ -88,6 +93,18 @@ export function initCensus(db) {
       insectary_id TEXT NOT NULL, kind TEXT NOT NULL, species TEXT, doubt TEXT, note TEXT, actor TEXT NOT NULL,
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(census_id, record_id));
     CREATE INDEX IF NOT EXISTS census_marks_census ON census_marks(census_id, created_at);`);
+  // The save waiting for Google with a census's disappearances (staged saving off).
+  if (!db.prepare('PRAGMA table_info(censuses)').all().some(c => c.name === 'outbox_id')) db.exec('ALTER TABLE censuses ADD COLUMN outbox_id TEXT');
+}
+
+/** A census's save that waited for Google settled: open pages see where its disappearances are. */
+export function watchCensusSaves(store) {
+  store.outbox?.watch(item => {
+    if (item.kind !== 'census') return;
+    if (item.status === 'done' && item.action_id)
+      store.db.prepare('UPDATE censuses SET action_id = ? WHERE id = ? AND outbox_id = ? AND action_id IS NULL').run(item.action_id, item.ref, item.id);
+    bump(store);
+  });
 }
 
 /** Open pages are told (GET /api/pulse carries `census`, which they compare). */
@@ -216,9 +233,22 @@ function markFinder(marks) {
 }
 
 /** Where the census's disappearances are: none, kept in the app, being written, or in Google Sheets. */
+/**
+ * Where a finished census's disappearances are: none; staged (kept in the app), sending
+ * (being written, or confirmed); queued (waiting for Google, staged saving off); written;
+ * failed (Google or the sheet refused them: nothing written, the census may be reopened).
+ */
 function deathsState(store, c) {
   if (c.status !== 'finished') return null;
-  if (c.action_id) return 'written';
+  if (c.action_id) {
+    const status = store.db.prepare('SELECT status FROM actions WHERE id = ?').get(c.action_id)?.status;
+    return status === 'failed' ? 'failed' : status === 'verified' || !status ? 'written' : 'sending';
+  }
+  if (c.outbox_id) {
+    const item = store.outbox?.get(c.outbox_id);
+    if (!item || item.status === 'done') return 'written';
+    return item.status === 'conflict' || item.status === 'failed' ? 'failed' : 'queued';
+  }
   if (!c.staged_entry) return 'none';
   const rows = store.db.prepare("SELECT status FROM staged WHERE entry_id = ? AND status IN ('staged','sent')").all(c.staged_entry);
   if (!rows.length) return 'written';
@@ -473,7 +503,8 @@ export async function finishCensus(store, censusId, body, user) {
   store.requireRequestId(body.requestId);
   const edits = Array.isArray(body.edits) ? body.edits : [];
   if (edits.length > 500) throw fail('BATCH_TOO_LARGE', msg('Guarda como máximo {n} filas a la vez', { n: 500 }));
-  return store.staged.serial(async () => {
+  const direct = store.config?.stagedSaving === false;
+  return (direct ? oneFinishAtATime(store, censusId) : store.staged.serial.bind(store.staged))(async () => {
     const c = getCensus(store, censusId);
     if (c.status === 'finished' && c.finish_request === body.requestId) return { ...censusDetail(store, c.id), duplicate: true };
     requireOpen(c);
@@ -502,7 +533,9 @@ export async function finishCensus(store, censusId, body, user) {
         throw fail('INVALID_VALUES', msg('{id}: solo la fecha del censo, Disappearance y las celdas de una muerte sin preservar', { id: label }));
     }
     let entryId = null;
-    if (edits.length) {
+    let written = null;
+    if (edits.length && direct) written = await writeDisappearances(store, c, body.requestId, edits, roster, user);
+    else if (edits.length) {
       const out = await store.staged.stageNow({ requestId: body.requestId, purpose: 'censo', partial: false }, user, edits, []);
       entryId = out.entryId;
     }
@@ -514,25 +547,72 @@ export async function finishCensus(store, censusId, body, user) {
     };
     store.db
       .prepare(
-        "UPDATE censuses SET status = 'finished', finished_by = ?, finished_at = ?, finish_request = ?, staged_entry = ?, result_json = ? WHERE id = ?",
+        "UPDATE censuses SET status = 'finished', finished_by = ?, finished_at = ?, finish_request = ?, staged_entry = ?, action_id = ?, outbox_id = ?, result_json = ? WHERE id = ?",
       )
-      .run(user.id || user.username, now(), body.requestId, entryId, json(result), c.id);
+      .run(user.id || user.username, now(), body.requestId, entryId, written?.actionId ?? null, written?.outboxId ?? null, json(result), c.id);
     bump(store);
     return { ...censusDetail(store, c.id), staged: store.staged.summary().staged };
   });
 }
 
+/** One finish of a census at a time (staged saving off: the write to Google is not behind the staged entries). */
+function oneFinishAtATime(store, censusId) {
+  store.censusFinishing ??= new Map();
+  const key = String(censusId ?? '');
+  return fn => {
+    const before = store.censusFinishing.get(key) ?? Promise.resolve();
+    const result = before.then(fn);
+    const settled = result.catch(() => {});
+    store.censusFinishing.set(key, settled);
+    void settled.then(() => {
+      if (store.censusFinishing.get(key) === settled) store.censusFinishing.delete(key);
+    });
+    return result;
+  };
+}
+
+/**
+ * Staged saving off: the disappearances written as one save of the census, as any
+ * save (applyBatch: checked against the sheet, all or nothing; kept in the outbox
+ * while Google is busy). { actionId } or { outboxId }; a write Google did not
+ * confirm counts as written-being-confirmed (its action is settled by the recovery).
+ */
+async function writeDisappearances(store, c, requestId, edits, roster, user) {
+  const kept = edits.filter(e => String(e.id).startsWith('staged:'));
+  if (kept.length)
+    throw fail(
+      'CENSUS_STAGED_ROWS',
+      msg('{ids} aún está en la app, sin guardar en Google Sheets: guárdalo y termina el censo después', {
+        ids: kept.map(e => roster.find(b => b.recordId === e.id)?.id ?? e.id).join(', '),
+      }),
+      409,
+    );
+  try {
+    const out = await applyBatch(store, { requestId, edits, partial: false, purpose: 'censo' }, user, {
+      source: 'app',
+      purpose: 'censo',
+      outbox: { kind: 'census', ref: c.id },
+    });
+    if (out.status === 'queued') return { outboxId: out.outboxId };
+    return { actionId: out.action?.id ?? null };
+  } catch (e) {
+    if (e.code === 'WRITE_UNCERTAIN' && e.details?.actionId) return { actionId: e.details.actionId };
+    throw e;
+  }
+}
+
 /**
  * Opens a finished census again (to mark one more, or leave one out): its
  * disappearances kept in the app are undone (staged.remove, which reopens it).
- * Not once they are being written or in Google Sheets.
+ * Not once they are being written or in Google Sheets; yes when Google refused them.
  */
 export async function reopenCensus(store, censusId, user) {
   store.validateRole(user);
   const c = getCensus(store, censusId);
   if (c.status !== 'finished') throw fail('CENSUS_NOT_FINISHED', 'Ese censo no está terminado', 409);
   const state = deathsState(store, c);
-  if (state === 'sending') throw fail('STAGED_SENT', 'Se está escribiendo en Google Sheets; deshazlo desde Historial cuando esté guardado', 409);
+  if (state === 'sending' || state === 'queued')
+    throw fail('STAGED_SENT', 'Se está escribiendo en Google Sheets; deshazlo desde Historial cuando esté guardado', 409);
   if (state === 'written')
     throw fail('CENSUS_WRITTEN', 'Las desapariciones ya están en Google Sheets: corrígelas en Muertes o deshazlas en Historial', 409);
   if (state === 'staged') await store.staged.remove({ entryId: c.staged_entry }, user);
@@ -542,7 +622,7 @@ export async function reopenCensus(store, censusId, user) {
 }
 function reopenFinished(db, id) {
   db.prepare(
-    "UPDATE censuses SET status = 'open', finished_by = NULL, finished_at = NULL, finish_request = NULL, staged_entry = NULL, result_json = NULL WHERE id = ?",
+    "UPDATE censuses SET status = 'open', finished_by = NULL, finished_at = NULL, finish_request = NULL, staged_entry = NULL, action_id = NULL, outbox_id = NULL, result_json = NULL WHERE id = ?",
   ).run(id);
 }
 /** Entries kept in the app undone (server/staged.mjs remove): the censuses they finished are open again. */

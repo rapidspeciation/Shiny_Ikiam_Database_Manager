@@ -75,7 +75,8 @@ export interface CensusSummary {
     doubts: number
   }
   /** Where its disappearances are: none to write, kept in the app, being written, in Google Sheets. */
-  deaths: null | 'none' | 'staged' | 'sending' | 'written'
+  /** Where its disappearances are: kept in the app (staged), waiting for Google (queued, staged saving off), being written, written, or refused (failed). */
+  deaths: null | 'none' | 'staged' | 'sending' | 'queued' | 'written' | 'failed'
   notebookAt: string | null
   notebookByName: string | null
 }

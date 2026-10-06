@@ -12,10 +12,10 @@ import { t } from '../../lib/i18n'
 
 /**
  * A census done (or cancelled): its counts, where its disappearances are
- * (in the app until «Guardar en Google Sheets», or in the sheet), the lines to
- * bring the paper notebook up to date (in Insectary ID order: ☺ for seen, the
- * day for disappeared), the findings, and «Reabrir» while its disappearances
- * are still only in the app.
+ * (in the app until «Guardar en Google Sheets», waiting for Google with staged
+ * saving off, or in the sheet), the lines to bring the paper notebook up to
+ * date (in Insectary ID order: ☺ for seen, the day for disappeared), the
+ * findings, and «Reabrir» while its disappearances are not in the sheet.
  */
 defineProps<{ table: Table | undefined }>()
 const emit = defineEmits<{ leave: [] }>()
@@ -39,7 +39,7 @@ const showing = ref<'all' | 'seen' | 'disappeared' | 'excluded'>('all')
 const shown = computed(() => (showing.value === 'all' ? lines.value : lines.value.filter(l => l.status === showing.value)))
 const findings = computed(() => findingsOf(c.value.species, detail.value.roster, detail.value.marks))
 const canReopen = computed(
-  () => session.canEdit && c.value.status === 'finished' && (c.value.deaths === 'staged' || c.value.deaths === 'none'),
+  () => session.canEdit && c.value.status === 'finished' && ['staged', 'none', 'failed'].includes(c.value.deaths ?? ''),
 )
 
 async function copy() {
@@ -128,8 +128,30 @@ const look = (status: string) =>
       <p v-else-if="c.deaths === 'sending'" class="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
         {{ $t('Escribiéndose en Google Sheets (o esperando a que responda).') }}
       </p>
+      <p v-else-if="c.deaths === 'queued'" class="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+        {{
+          $tn(
+            c.counts.disappeared,
+            '{n} desaparición espera a que Google Sheets responda; se escribe sola.',
+            '{n} desapariciones esperan a que Google Sheets responda; se escriben solas.',
+          )
+        }}
+      </p>
       <p v-else-if="c.deaths === 'written'" class="rounded-xl border border-brand-200 bg-brand-50 p-3 text-sm text-brand-900">
-        {{ $t('Las desapariciones están en Google Sheets.') }}
+        {{
+          $tn(
+            c.counts.disappeared,
+            '{n} desaparición escrita en Google Sheets.',
+            '{n} desapariciones escritas en Google Sheets.',
+          )
+        }}
+      </p>
+      <p v-else-if="c.deaths === 'failed'" class="rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-950">
+        {{
+          $t(
+            'Google Sheets no aceptó las desapariciones: no se escribió nada (el motivo está en Historial). Reabre el censo para terminarlo otra vez.',
+          )
+        }}
       </p>
 
       <!-- The notebook: what to write next to each ID, in its order. -->
