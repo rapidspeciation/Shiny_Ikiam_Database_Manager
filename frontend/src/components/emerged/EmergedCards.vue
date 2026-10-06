@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { AlertTriangle, Check, ChevronRight, History, Loader2, Plus, Undo2, X } from 'lucide-vue-next'
 import DateField from '../DateField.vue'
 import EntryModeToggle from '../EntryModeToggle.vue'
@@ -69,6 +69,12 @@ import { t, tn } from '../../lib/i18n'
  * and, for each clutch, its adults as one more term of NUMBER OF ADULTS (as
  * Clutches counts them), all or nothing, with an Undo; «Historial» lists the
  * tab's saves. The cards are shared with the table (useEmergedState).
+ *
+ * With `focus` (components/emerged/PreserveYoung, opened from a clutch in
+ * Clutches): only the larvae (or eggs) being preserved from that clutch, as many
+ * cards as were counted, with the same batch panel, CAMs, tubes and checks; the
+ * save writes their Insectary_data rows only (the clutch's own row is Clutches'
+ * edit, with its event and note) and says which IDs it used (`preserved`).
  */
 const props = defineProps<{
   table: Table | undefined
@@ -79,14 +85,24 @@ const props = defineProps<{
   createFormulas: string[]
   /** Rows of entries kept in the app, not in Google Sheets yet (everyone's: lib/staged.ts). */
   stagedMarks?: Record<string, StagedMark>
+  /** Only the eggs or larvae preserved from one clutch (opened from Clutches): how many, their LIFESTAGE and day (ISO). */
+  focus?: { clutch: string; count: number; stage: string; date: string } | null
 }>()
 const mode = defineModel<EntryMode>('mode', { required: true })
+const emit = defineEmits<{
+  /** Focus: the cards were saved (kept in the app), with the Insectary IDs they took. */
+  preserved: [result: { ids: string[]; stage: string; date: string; entryId: string | null }]
+  close: []
+}>()
 
 const session = useSession()
 const tables = useTables()
 const live = useLive()
 const state = useEmergedState()
-const { date, clutch, drafts, skipStock, medium, young, selected, freeIds, inOrder, rowOf, idsLoaded } = state
+const { drafts, skipStock, medium, young, selected, freeIds, inOrder, rowOf, idsLoaded } = state
+// Focus: the clutch and day of the larvae come from Clutches (the tab's own clutch and day stay as they are).
+const clutch = props.focus ? ref(props.focus.clutch) : state.clutch
+const date = props.focus ? ref(props.focus.date) : state.date
 const day = useClutchDay()
 const keyboard = useKeyboard()
 const roomy = useMedia('(min-width: 1024px)')
@@ -210,6 +226,7 @@ function add(kind: Kind, sex: Sex, count = 1, young: { stage: string; foundDead:
   }
   if (!added.length) return
   drafts.value = [...drafts.value, ...added]
+  if (props.focus) focusKeys.value = [...focusKeys.value, ...added.map(d => d.key)]
   lastSave.value = null
   fresh.value = added.map(d => d.key)
   clearTimeout(freshTimer)
@@ -217,6 +234,27 @@ function add(kind: Kind, sex: Sex, count = 1, young: { stage: string; foundDead:
   // Eggs and larvae are listed in order under the batch panel: the first one added comes into view.
   if (kind === 'young')
     nextTick(() => document.querySelector(`[data-key="${added[0].key}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }))
+}
+// Focus: as many cards as were counted, of the stage chosen in Clutches, once the free IDs are known.
+if (props.focus) {
+  const f = props.focus
+  let started = false
+  const start = () => {
+    if (started || !idsLoaded.value) return
+    started = true
+    young.value = { ...young.value, stage: f.stage || young.value.stage, foundDead: false }
+    add('young', 'NA', Math.max(1, Math.min(60, f.count)), { stage: f.stage || young.value.stage, foundDead: false })
+  }
+  onMounted(start)
+  watch(idsLoaded, start)
+}
+/** Focus: closed without saving: its cards go. */
+function cancelFocus() {
+  const keys = new Set(focusKeys.value)
+  drafts.value = drafts.value.filter(d => !keys.has(d.key))
+  selected.value = selected.value.filter(k => !keys.has(k))
+  focusKeys.value = []
+  emit('close')
 }
 /** «+ N larvae»: N cards with consecutive Insectary IDs, CAMs and tubes, of one stage, alive or found dead. */
 const larvae = ref<{ open: boolean; count: number | null; moreStages: boolean }>({ open: false, count: 1, moreStages: false })
@@ -339,7 +377,11 @@ watch(
 )
 
 // --- Eggs and larvae: the batch (medium, rack, first CAM, purpose) and each card's CAM and tube, consecutive
-const youngCards = computed(() => drafts.value.filter(d => d.kind === 'young'))
+/** Focus: the cards this panel added (the tab's other cards wait in Emergidos). */
+const focusKeys = ref<string[]>([])
+const youngCards = computed(() => drafts.value.filter(d => d.kind === 'young' && (!props.focus || focusKeys.value.includes(d.key))))
+/** What Save writes: every card, or (focus) the larvae of this panel. */
+const toSave = computed(() => (props.focus ? youngCards.value : drafts.value))
 // Cards kept from before the batch panel: their CAM and tube count as typed.
 if (drafts.value.some(d => d.kind === 'young' && (d.cam || d.tube)))
   drafts.value = drafts.value.map(d =>
@@ -668,22 +710,22 @@ function cellText(field: string, before: CellValue, value: CellValue) {
 
 // --- Save, then Undo
 const blocker = computed(() => {
-  if (!drafts.value.length) return t('Añade al menos una mariposa')
+  if (!toSave.value.length) return props.focus ? t('Añade al menos una larva') : t('Añade al menos una mariposa')
   if (!idsLoaded.value) return t('Cargando los Insectary IDs libres…')
-  const bad = drafts.value.find(d => problems.value.get(d.key)?.length)
+  const bad = toSave.value.find(d => problems.value.get(d.key)?.length)
   if (bad) {
-    const n = drafts.value.filter(d => problems.value.get(d.key)?.length).length
+    const n = toSave.value.filter(d => problems.value.get(d.key)?.length).length
     return `${bad.id || '—'}: ${problems.value.get(bad.key)![0]}${n > 1 ? ` ${tn(n - 1, '(y {n} más)', '(y {n} más)')}` : ''}`
   }
-  if (stockLines.value.some(l => l.on) && !day.loaded.value) return t('Cargando los clutches…')
+  if (!props.focus && stockLines.value.some(l => l.on) && !day.loaded.value) return t('Cargando los clutches…')
   return ''
 })
 const summary = computed(() => {
-  const adults = drafts.value.filter(isAdult)
-  const ids = [...drafts.value].sort((a, b) => (rowOf.value.get(a.id) ?? 0) - (rowOf.value.get(b.id) ?? 0)).map(d => d.id)
+  const adults = toSave.value.filter(isAdult)
+  const ids = [...toSave.value].sort((a, b) => (rowOf.value.get(a.id) ?? 0) - (rowOf.value.get(b.id) ?? 0)).map(d => d.id)
   const parts = [
-    tn(adults.length, '{n} adulto', '{n} adultos'),
-    drafts.value.length > adults.length ? tn(drafts.value.length - adults.length, '{n} huevo o larva', '{n} huevos o larvas') : '',
+    adults.length || !props.focus ? tn(adults.length, '{n} adulto', '{n} adultos') : '',
+    toSave.value.length > adults.length ? tn(toSave.value.length - adults.length, '{n} huevo o larva', '{n} huevos o larvas') : '',
     ids.length > 1 ? `${ids[0]}–${ids.at(-1)}` : ids[0],
   ]
   return parts.filter(Boolean).join(' · ')
@@ -699,7 +741,7 @@ async function save() {
   if (blocker.value || saving.value) return
   saving.value = true
   refused.value = {}
-  const list = [...drafts.value].sort((a, b) => (rowOf.value.get(a.id) ?? 0) - (rowOf.value.get(b.id) ?? 0))
+  const list = [...toSave.value].sort((a, b) => (rowOf.value.get(a.id) ?? 0) - (rowOf.value.get(b.id) ?? 0))
   const creates = list.map(d => {
     const row = stockOf(d.clutch)
     // An egg or larva: the CAM and tube on its card, its medium and purpose (its own or the batch's).
@@ -715,8 +757,9 @@ async function save() {
     })
     return { clientId: d.key, module: MODULE, values, replaceFormula: values.SPECIES ? ['SPECIES'] : [] }
   })
+  // Focus: the clutch's row is Clutches' edit (its count, event and note), not this save's.
   const edits = stockLines.value
-    .filter(l => l.on && l.row && l.plan)
+    .filter(l => !props.focus && l.on && l.row && l.plan)
     .map(l => ({
       id: l.row!.id,
       values: Object.fromEntries(l.plan!.cells.map(c => [c.field, c.value])),
@@ -735,10 +778,16 @@ async function save() {
     pendingRequest = null
     // The entries everyone sees, with these: the cards leave as their rows appear.
     await live.loadStaged()
+    const saved = new Set(list.map(d => d.key))
+    drafts.value = drafts.value.filter(d => !saved.has(d.key))
+    selected.value = selected.value.filter(k => !saved.has(k))
+    if (props.focus) {
+      focusKeys.value = []
+      emit('preserved', { ids: list.map(d => d.id.trim().toUpperCase()), stage: list[0]?.stage ?? props.focus.stage, date: date.value, entryId: result.entryId })
+      return
+    }
     lastSave.value = result.entryId ? { entryId: result.entryId, drafts: list, ids: list.map(d => d.id), count: list.length } : null
-    drafts.value = []
     skipStock.value = []
-    selected.value = []
     for (const d of list) suggested.delete(d.key)
     if (!result.entryId) notify(tn(list.length, '{n} emergido guardado en la app', '{n} emergidos guardados en la app'), 'success')
     scroller.value?.scrollTo({ top: 0 })
@@ -815,8 +864,20 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
 <template>
   <div class="flex h-full flex-col bg-stone-50" @focusin="onFocusIn">
     <div ref="scroller" class="min-h-0 flex-1 overflow-y-auto">
+      <!-- Focus (from Clutches): what is being preserved, from which clutch. -->
+      <div v-if="focus" class="flex items-center gap-2 border-b border-stone-200 bg-white py-1 pr-1 pl-3">
+        <div class="min-w-0 flex-1">
+          <h2 class="truncate text-lg leading-tight font-semibold">{{ $t('Preservar del clutch {clutch}', { clutch: focus.clutch }) }}</h2>
+          <p class="truncate text-xs text-stone-600">
+            {{ dayLabel(date) }} · {{ $t('Cada una con su Insectary ID, CAM y tubo, como en Emergidos') }}
+          </p>
+        </div>
+        <button class="grid h-11 w-11 shrink-0 place-items-center rounded-md text-stone-700" :aria-label="$t('Cerrar')" @click="cancelFocus">
+          <X :size="22" />
+        </button>
+      </div>
       <!-- The day the butterflies emerged, the mode and the tab's history. -->
-      <div class="border-b border-stone-200 bg-white px-3 pt-2.5 pb-2">
+      <div v-else class="border-b border-stone-200 bg-white px-3 pt-2.5 pb-2">
         <!-- Upright phone: the day on its own row, the mode and history beside its label; wider: one row. -->
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1.5">
           <div class="grid min-w-0 flex-[1_1_20rem] grid-cols-[auto_auto_minmax(8.5rem,1fr)] gap-1.5">
@@ -860,7 +921,7 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
       <!-- One readable column on a wide screen. -->
       <div v-else class="mx-auto max-w-5xl">
         <ClutchPicker
-          v-if="showPicker"
+          v-if="showPicker && !focus"
           :rows="stocks?.rows || []"
           :sums="day.sums.value"
           :registered="registered"
@@ -872,7 +933,7 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
         />
 
         <!-- The clutch: what it has, and the buttons that add what emerged today. -->
-        <section v-else class="px-3 pt-3">
+        <section v-else-if="!focus" class="px-3 pt-3">
           <div class="rounded-xl border border-stone-200 bg-white p-3 shadow-sm">
             <div class="flex items-start gap-2">
               <div class="min-w-0 flex-1">
@@ -1027,7 +1088,7 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
         </section>
 
         <!-- The cards, by clutch: the chosen clutch's newest on top. -->
-        <section v-for="s in sections" :key="s.clutch" class="px-3 pt-4">
+        <section v-for="s in focus ? [] : sections" :key="s.clutch" class="px-3 pt-4">
           <div class="mb-1.5 flex items-center gap-2">
             <h2 class="text-sm font-semibold text-stone-700">
               <template v-if="s.clutch === clutch">{{ $tn(s.cards.length, '{n} tarjeta de este clutch', '{n} tarjetas de este clutch') }}</template>
@@ -1060,7 +1121,7 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
             <h2 class="text-sm font-semibold text-stone-700">
               {{ $tn(youngCards.length, '{n} huevo o larva preservado', '{n} huevos o larvas preservados') }}
             </h2>
-            <button v-if="canEdit" class="ml-auto h-10 px-2 text-sm text-stone-600 underline" @click="removeYoung">{{ $t('Quitar todas') }}</button>
+            <button v-if="canEdit && !focus" class="ml-auto h-10 px-2 text-sm text-stone-600 underline" @click="removeYoung">{{ $t('Quitar todas') }}</button>
           </div>
           <YoungPanel
             v-if="canEdit"
@@ -1102,7 +1163,7 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
         </section>
 
         <!-- What the save does to each clutch's row (Insectary_stocks), each one can be left out. -->
-        <section v-if="canEdit && stockLines.length" class="px-3 pt-4">
+        <section v-if="canEdit && stockLines.length && !focus" class="px-3 pt-4">
           <h2 class="mb-1.5 text-sm font-semibold text-stone-700">{{ $t('Al guardar, en Insectary_stocks') }}</h2>
           <ul class="space-y-2">
             <li v-for="line in stockLines" :key="line.clutch" class="rounded-xl border border-stone-200 bg-white p-2.5 text-sm">
@@ -1123,7 +1184,10 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
         </section>
 
         <!-- The latest emergences in the sheet, by day. -->
-        <section class="px-3 pt-6 pb-8">
+        <p v-if="focus" class="px-3 pt-3 pb-8 text-xs text-stone-600">
+          {{ $t('Al guardar, las filas quedan en la app hasta «Guardar en Google Sheets»; el clutch cuenta las larvas preservadas y su nota en NOTES.') }}
+        </p>
+        <section v-else class="px-3 pt-6 pb-8">
           <h2 class="text-sm font-semibold text-stone-700">{{ $t('Últimos emergidos registrados') }}</h2>
           <p v-if="!recent.length" class="py-3 text-sm text-stone-500">{{ $t('No hay emergidos registrados.') }}</p>
           <template v-for="group in recentGroups" :key="group.label">
@@ -1155,7 +1219,7 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
 
     <!-- Save (or the last save, with Undo), under the cards; hidden while typing. -->
     <footer
-      v-if="(lastSave && !drafts.length) || (canEdit && drafts.length)"
+      v-if="(lastSave && !drafts.length) || (canEdit && toSave.length)"
       v-show="!keyboard.open.value"
       class="shrink-0 border-t border-stone-200 bg-white px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]"
     >
@@ -1172,9 +1236,10 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
       </div>
       <div v-else class="mx-auto flex max-w-3xl items-center gap-3">
         <p class="line-clamp-2 min-w-0 flex-1 text-sm" :class="blocker ? 'text-amber-900' : 'text-stone-600'">{{ blocker || summary }}</p>
+        <button v-if="focus" class="btn h-13 shrink-0 px-3 text-base" :disabled="saving" @click="cancelFocus">{{ $t('Cancelar') }}</button>
         <button class="btn-primary h-13 shrink-0 px-5 text-base" :disabled="!!blocker || saving" @click="save">
           <Loader2 v-if="saving" :size="18" class="animate-spin" />
-          {{ saving ? $t('Guardando…') : $t('Guardar {n}', { n: drafts.length }) }}
+          {{ saving ? $t('Guardando…') : $t('Guardar {n}', { n: toSave.length }) }}
         </button>
       </div>
     </footer>

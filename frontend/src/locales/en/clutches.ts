@@ -77,7 +77,6 @@ export default {
   'Último cambio: {when} · {who}': 'Last change: {when} · {who}',
   'Guardado en Google Sheets': 'Saved to Google Sheets',
   'Sin cambios': 'No changes',
-  'Guardar y revisado': 'Save · checked',
   'Revisado, sin cambios': 'Checked, no change',
   'Clutch {clutch} guardado y revisado': 'Clutch {clutch} saved and checked',
   'Clutch {clutch} revisado, sin cambios': 'Clutch {clutch} checked, no change',
@@ -154,8 +153,6 @@ export default {
   'Por verificar ({who}): {note}': 'To verify ({who}): {note}',
   'Por verificar ({who})': 'To verify ({who})',
   '¿Qué hay que verificar? (opcional)': 'What needs verifying? (optional)',
-  'Marcar por verificar': 'Mark to verify',
-  'Revisado, pero hay que verificar': 'Checked, but needs verification',
   'Por verificar': 'To verify',
   'Primero los por verificar, luego los sin revisar': 'Those to verify first, then those not checked yet',
   'Pendientes primero': 'Pending first',
@@ -165,7 +162,6 @@ export default {
   '{n} sin revisar': '{n} not checked',
   'Ningún clutch por verificar.': 'No clutch to verify.',
   Verificado: 'Verified',
-  'Verificar…': 'Verify…',
   Marcar: 'Mark',
   // Events the paper cannot hold (only in the app)
   'Eventos (solo en la app)': 'Events (only in the app)',
@@ -242,4 +238,92 @@ export default {
     'Copied it into the notebook? Mark it so the next list starts here (for everyone).',
   'Cuaderno al día hasta ahora': 'Notebook up to date until now',
   'Al día hasta «Desde»': 'Up to date until “From”',
+
+  // Review marks: actions, then the state they leave ("✓ Checked by FCH")
+  'Marcar como revisado': 'Mark as checked',
+  'Marcar como verificado': 'Mark as verified',
+  'Guardar y marcar como revisado': 'Save and mark as checked',
+  'Pedir verificación': 'Ask for a recheck',
+  'Pedir verificación…': 'Ask for a recheck…',
+  'Pedir que alguien lo verifique': 'Ask someone to check it again',
+  'Revisado por {who}': 'Checked by {who}',
+
+  // Events: their day and their note in NOTES
+  'Día del evento': 'Day it happened',
+  Pasó: 'When',
+  'Otro día': 'Other day',
+  'Añadido a NOTES (se guarda con el clutch):': 'Added to NOTES (saved with the clutch):',
+  'Registrar {n} en Insectary_data': 'Register {n} in Insectary_data',
+  'Insectary ID, CAM y tubo de cada una': 'Insectary ID, CAM and tube for each',
+  'O solo contarlas, con sus IDs si los tienen (opcional)': 'Or only count them, with their IDs if they have them (optional)',
+  '{n} en Insectary_data (en la app): {ids}': '{n} in Insectary_data (in the app): {ids}',
+  'Huevos: un número o grupos sumados (3+5+7)': 'Eggs: a number, or groups added up (3+5+7)',
+  'Otro grupo de huevos': 'Another group of eggs',
+
+  // Today in the cage, and the dates expected
+  'Para contar hoy': 'To count today',
+  Contar: 'Count',
+  '{n} huevos sin eclosionar': '{n} eggs not hatched',
+  '{species}: huevo {egg} d · larva {larva} d · pupa {pupa} d ({from})': '{species}: egg {egg} d · larva {larva} d · pupa {pupa} d ({from})',
+  'sus clutches': 'its clutches',
+  'su género': 'its genus',
+  'todos los clutches': 'all clutches',
+  ya: 'due',
+
+  // The setting
+  'No: dejarlas contadas (la convención del equipo)': "No: keep them counted (the team's convention)",
+  'NUMBER OF LARVAE guarda las larvas usadas: solo se restan las que murieron o desaparecieron; las preservadas quedan registradas aparte. 20 larvas, 10 preservadas, 5 pupas, 5 murieron → 15.':
+    'NUMBER OF LARVAE holds the larvae used: only those that died or disappeared are taken off; the preserved ones are recorded apart. 20 larvae, 10 preserved, 5 pupated, 5 died → 15.',
+  'Sí: restarlas': 'Yes: take them off',
+  'Con los eventos registrados aparte, la app muestra en cada clutch cuántas deberían estar en la jaula para contarlas hoy, con cualquiera de las dos reglas.':
+    'With the events recorded apart, the app shows on each clutch how many should be in the cage to count today, under either rule.',
+
+  // Events and photos
+  'Eventos y fotos (solo en la app)': 'Events and photos (app only)',
+  'En la jaula: las que deberían estar hoy para contarlas (las del número menos las que ya pasaron a pupa y las preservadas).':
+    'In the cage: those that should be there today to count (the number less those that pupated and those preserved).',
+  'NUMBER OF LARVAE en la hoja: el equipo resta las preservadas, como las que murieron o desaparecieron.':
+    'NUMBER OF LARVAE in the sheet: the team takes the preserved ones off, like those that died or disappeared.',
+  'NUMBER OF LARVAE en la hoja: las larvas usadas. Las preservadas no se restan; solo las que murieron o desaparecieron (20 larvas, 10 preservadas, 5 pupas, 5 murieron → 15).':
+    'NUMBER OF LARVAE in the sheet: the larvae used. Preserved ones are not taken off; only those that died or disappeared (20 larvae, 10 preserved, 5 pupated, 5 died → 15).',
+  'Los eventos y las fotos se guardan solo en la app (no en Google Sheets), con quién y cuándo; cada evento escribe también su nota en NOTES. Las larvas preservadas en Emergidos cuentan también.':
+    'Events and photos are kept only in the app (not in Google Sheets), with who and when; each event also writes its note in NOTES. Larvae preserved in Emergidos count too.',
+  'en la jaula (para contar hoy)': 'in the cage (to count today)',
+  'Foto de hoy': "Today's photo",
+  'Del clutch, o de un evento (+5 eclosionaron, −1 desapareció)': 'Of the clutch, or of an event (+5 hatched, −1 disappeared)',
+  'Fotos enviándose': 'Photos being sent',
+  'Achicando la foto…': 'Making the photo smaller…',
+  'Enviando… {p} %': 'Sending… {p} %',
+  'Sin conexión: se reintenta sola ({n})': 'No connection: it retries by itself ({n})',
+  'En cola': 'Queued',
+  'Foto guardada': 'Photo saved',
+  'No se pudo enviar': 'Could not be sent',
+  Reintentar: 'Retry',
+  'No enviar esta foto': "Don't send this photo",
+  'Foto de este día': 'Photo of this day',
+  'Foto de este evento': 'Photo of this event',
+  'Fotos de hoy': "Today's photos",
+  'Fotos del clutch {clutch}': 'Photos of clutch {clutch}',
+  'solo en la app (no van a Google Sheets)': "app only (they don't go to Google Sheets)",
+  '¿Qué muestran?': 'What do they show?',
+  'El clutch ese día': 'The clutch that day',
+  'Leyenda (opcional, en inglés)': 'Caption (optional, in English)',
+  Cámara: 'Camera',
+  Galería: 'Gallery',
+  'Se achican en el teléfono (2560 px) antes de enviarse; sin la ubicación GPS.': 'Made smaller on the phone (2560 px) before sending; without the GPS location.',
+  'Foto {n} del clutch': 'Clutch photo {n}',
+  '¿Quitar esta foto? Se borra para todos.': 'Remove this photo? It is deleted for everyone.',
+  'Fotos del clutch': 'Clutch photos',
+  'Foto {n} de {total}': 'Photo {n} of {total}',
+  'Quitar esta foto': 'Remove this photo',
+  'Foto del día': "The day's photo",
+  'La foto ya no está en este teléfono: vuelve a elegirla': 'The photo is no longer on this phone: choose it again',
+  'No se pudo leer la foto (¿es una imagen JPEG o PNG?)': 'The photo could not be read (is it a JPEG or PNG image?)',
+
+  // Larvae preserved from a clutch, with Emergidos' cards
+  'Añade al menos una larva': 'Add at least one larva',
+  'Preservar del clutch {clutch}': 'Preserve from clutch {clutch}',
+  'Cada una con su Insectary ID, CAM y tubo, como en Emergidos': 'Each with its Insectary ID, CAM and tube, as in Emergidos',
+  'Al guardar, las filas quedan en la app hasta «Guardar en Google Sheets»; el clutch cuenta las larvas preservadas y su nota en NOTES.':
+    'Once saved, the rows wait in the app until “Save to Google Sheets”; the clutch counts the preserved larvae and gets its note in NOTES.',
 }

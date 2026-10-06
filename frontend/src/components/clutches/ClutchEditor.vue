@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { AlertTriangle, Check, ChevronLeft, ChevronRight, Columns3, Loader2, X } from 'lucide-vue-next'
+import { AlertTriangle, CalendarClock, Check, ChevronLeft, ChevronRight, Columns3, Loader2, X } from 'lucide-vue-next'
 import ChoiceField from '../ChoiceField.vue'
-import CountEditor from './CountEditor.vue'
+import CountEditor, { type CountEvent } from './CountEditor.vue'
+import PreserveYoung from '../emerged/PreserveYoung.vue'
 import ClutchTimeline from './ClutchTimeline.vue'
 import DateRow from './DateRow.vue'
 import ClutchNotes from './ClutchNotes.vue'
@@ -14,17 +15,27 @@ import {
   COUNTS,
   MODULE,
   STAGES,
+  appendNote,
   countCell,
+  eventNote,
   formulaOf,
+  gainOf,
+  latestGains,
   lockedFormula,
+  noteDay,
+  outlook,
   readCount,
   totalOf,
   VERIFY_REASONS,
+  withoutNote,
+  type ClutchEvent,
   type ClutchState,
+  type CountField,
   type EventKind,
   type Stage,
+  type StageDurations,
 } from '../../lib/clutches'
-import { isoToSerial, todayIso } from '../../lib/dates'
+import { formatSerial, isoToSerial, serialToIso, todayIso } from '../../lib/dates'
 import { errorText, notify } from '../../lib/notice'
 import type { CellValue, Field, TableRow } from '../../lib/types'
 import { usePending } from '../../stores/pending'
@@ -34,9 +45,14 @@ import { t } from '../../lib/i18n'
  * One clutch, to update during the round: each count's sum (tap the total and
  * type the new one; or +N / −N / "Counted today") and its stage date, notes dated and initialled, the parents
  * (F1/F2) in NOTES, species, generation and room. Changes are pending edits
- * saved as any other (automatically, or with «Guardar»); «Revisado» saves and
- * marks the clutch as checked today, with the fields it changed. Full screen on
- * a phone; beside the list (`docked`) on a tablet or computer.
+ * saved as any other (kept in the app until «Guardar en Google Sheets»);
+ * «Marcar como revisado» saves and marks the clutch as checked today, with the
+ * fields it changed. Every event (+N hatched, −N died…) also writes its dated,
+ * signed note in NOTES (shown before saving) and, for a stage's first one,
+ * its date; larvae preserved can be registered one by one in Insectary_data
+ * (Emergidos' cards, components/emerged/PreserveYoung). On top: what should be
+ * in the cage today and when the next stages are expected. Full screen on a
+ * phone; beside the list (`docked`) on a tablet or computer.
  */
 const props = defineProps<{
   rows: TableRow[]
@@ -49,6 +65,8 @@ const props = defineProps<{
   initials: string
   /** A person's initials from their name (FCH), for the marks and events. */
   initialsFor?: (name: string) => string
+  /** Each species' days per stage (lib/clutches stageDurations), for the dates expected. */
+  durations: StageDurations
   docked?: boolean
 }>()
 const index = defineModel<number>('index', { required: true })
@@ -195,21 +213,51 @@ const checkedLine = computed(() => {
 // --- Events (only in the app): what a count's change was, recorded as the person says
 /** The event behind each step of the counts (CountEditor's key → the server's id, once saved). */
 const posted = new Map<string, Promise<string | null>>()
-function recordEvent(stage: Stage, e: { key: string; kind: EventKind; count: number; ids: string[] }) {
+/** The first date of each stage, set by its first gain when empty (or later than it). */
+const GAIN_DATE: Record<Stage, string> = { egg: 'DATE LAID', larva: 'HATCHING DATE', pupa: 'PUPA DATE', adult: 'EMERGENCE DATE' }
+/** What each step wrote besides its event (the note in NOTES, a stage's date), to take it back with it. */
+const made = new Map<string, { note: string; date?: { field: string; before: CellValue; after: number } }>()
+/** The note an event adds to NOTES, dated and signed: "5/10/26 FCH: 5 larvae died" ('' when NOTES cannot be written). */
+function noteFor(stage: Stage, e: { kind: EventKind; count: number; ids: string[]; day: number; lifestage?: string }) {
+  if (!editable('NOTES')) return ''
+  return `${noteDay(today.value)} ${props.initials}: ${eventNote({ stage, ...e }, today.value)}`
+}
+function recordEvent(stage: Stage, e: CountEvent) {
   const r = row.value
   if (!r) return
   posted.set(
     e.key,
     props.day
-      .addEvent({ recordId: r.id, stage, kind: e.kind, count: e.count, ids: e.ids })
+      .addEvent({ recordId: r.id, stage, kind: e.kind, count: e.count, ids: e.ids, day: serialToIso(e.day) })
       .then(ev => ev.id)
       .catch(err => {
         message.value = errorText(err)
         return null
       }),
   )
+  // Its note in NOTES (the sheet keeps one date per stage; the notes keep each day's counts).
+  const did: { note: string; date?: { field: string; before: CellValue; after: number } } = { note: '' }
+  if (editable('NOTES')) {
+    const text = eventNote({ stage, kind: e.kind, count: e.count, ids: e.ids, lifestage: e.lifestage, day: e.day }, today.value)
+    did.note = `${noteDay(today.value)} ${props.initials}: ${text}`
+    setValue('NOTES', appendNote(get('NOTES'), text, today.value, props.initials))
+  }
+  // A stage's first day: written by its first gain (or an earlier one).
+  const field = gainOf(stage) === e.kind ? GAIN_DATE[stage] : null
+  if (field && editable(field)) {
+    const now = get(field)
+    if (now === null || now === '' || (typeof now === 'number' && e.day < now)) {
+      did.date = { field, before: now, after: e.day }
+      setValue(field, e.day)
+    }
+  }
+  made.set(e.key, did)
 }
 async function dropEvent(key: string) {
+  const did = made.get(key)
+  made.delete(key)
+  if (did?.note) setValue('NOTES', withoutNote(get('NOTES'), did.note))
+  if (did?.date && get(did.date.field) === did.date.after) setValue(did.date.field, did.date.before)
   const id = await posted.get(key)
   posted.delete(key)
   if (!id) return
@@ -228,6 +276,60 @@ const stageTotals = computed(() => {
   }
   return out
 })
+
+// --- What should be in the cage today, and when the next stages come
+/** The latest laid, hatched and pupated days of this clutch's events (the timeline loads them). */
+const gains = ref<{ laid: number | null; hatched: number | null; pupated: number | null }>({ laid: null, hatched: null, pupated: null })
+const onEvents = (events: ClutchEvent[]) => (gains.value = latestGains(events))
+const speciesName = computed(() => (isBlank(get('SPECIES')) ? '' : String(get('SPECIES'))))
+const days = computed(() => props.durations.of(speciesName.value))
+const view = computed(() =>
+  outlook(
+    get,
+    f => readCount(countOf(f as CountField)),
+    row.value ? props.day.tallies.value[row.value.id] : undefined,
+    props.day.settings.subtractPreserved,
+    days.value,
+    gains.value,
+    today.value,
+  ),
+)
+const ahead = computed(() => {
+  if (clutchState.value?.ended) return []
+  const p = view.value.predicted
+  return [
+    { key: 'hatch', name: t('eclosión'), day: p.hatch },
+    { key: 'pupa', name: t('pupa'), day: p.pupa },
+    { key: 'emerge', name: t('emergencia'), day: p.emerge },
+  ].filter((x): x is { key: string; name: string; day: number } => x.day !== null)
+})
+const inCage = computed(() => {
+  const e = view.value.expected
+  return [
+    e.eggs ? t('{n} huevos sin eclosionar', { n: e.eggs }) : '',
+    e.larvae !== null ? t('{n} larvas', { n: e.larvae }) : '',
+    e.pupae ? t('{n} pupas', { n: e.pupae }) : '',
+  ].filter(Boolean)
+})
+const daysText = computed(() =>
+  t('{species}: huevo {egg} d · larva {larva} d · pupa {pupa} d ({from})', {
+    species: speciesName.value || t('sin especie'),
+    egg: days.value.egg,
+    larva: days.value.larva,
+    pupa: days.value.pupa,
+    from: days.value.from === 'species' ? t('sus clutches') : days.value.from === 'genus' ? t('su género') : t('todos los clutches'),
+  }),
+)
+
+// --- Larvae (or eggs) preserved, registered in Insectary_data with Emergidos' cards
+const preserving = ref<{ count: number; lifestage: string; day: number; done: (ids: string[]) => void } | null>(null)
+const inSheet = computed(() => !!row.value && !row.value.id.startsWith('staged:'))
+function preserved(result: { ids: string[] }) {
+  const p = preserving.value
+  preserving.value = null
+  p?.done(result.ids)
+  notify(t('{n} en Insectary_data (en la app): {ids}', { n: result.ids.length, ids: result.ids.join(', ') }), 'success')
+}
 
 function go(step: number) {
   const next = index.value + step
@@ -360,6 +462,19 @@ const endedText = (e: ClutchState['ended']) =>
         <span class="text-stone-500">{{ get('INSECTARY OR LABORATORY') || '' }}</span>
       </div>
       <p v-if="!canEdit" class="mt-2 rounded bg-stone-100 px-3 py-2 text-sm text-stone-700">{{ $t('Solo lectura') }}</p>
+      <!-- Today in the cage, and the dates expected (from the species' usual days). -->
+      <div v-if="!clutchState?.ended && (inCage.length || ahead.length)" class="mt-2 rounded-lg border border-sky-200 bg-sky-50/60 px-3 py-2 text-sm" role="status">
+        <p v-if="inCage.length">
+          <span class="font-medium">{{ $t('Para contar hoy') }}:</span> <span class="tabular-nums">{{ inCage.join(' · ') }}</span>
+        </p>
+        <p v-if="ahead.length" class="mt-0.5 flex flex-wrap items-center gap-x-3">
+          <CalendarClock :size="14" class="-mr-1.5 text-sky-800" />
+          <span v-for="a in ahead" :key="a.key" class="tabular-nums" :class="a.day <= today ? 'font-semibold text-brand-800' : ''">
+            {{ a.name }} ≈ {{ formatSerial(a.day) }}<template v-if="a.day <= today"> ({{ a.day === today ? $t('hoy') : $t('ya') }})</template>
+          </span>
+        </p>
+        <p class="mt-0.5 text-[11px] text-stone-600">{{ daysText }}</p>
+      </div>
 
       <!-- Parents and NOTES first: read before counting, and easy to find. -->
       <ClutchNotes
@@ -392,9 +507,13 @@ const endedText = (e: ClutchState['ended']) =>
           :start-of-day="startOfDay(s.count)"
           :stage="s.stage"
           :subtract-preserved="day.settings.subtractPreserved"
+          :today="today"
+          :note-for="e => noteFor(s.stage, e)"
+          :can-register="canEdit && inSheet"
           @set="setValue(s.count, $event)"
           @event="recordEvent(s.stage, $event)"
           @unevent="dropEvent"
+          @register="preserving = $event"
         >
           <DateRow
             v-if="s.date && has(s.date)"
@@ -410,7 +529,17 @@ const endedText = (e: ClutchState['ended']) =>
         </CountEditor>
       </section>
       <!-- Hatched, died, disappeared, preserved: day by day, only in the app. -->
-      <ClutchTimeline :record-id="row.id" :day="day" :totals="stageTotals" :can-edit="canEdit" :initials="who" />
+      <ClutchTimeline
+        :record-id="row.id"
+        :clutch="label"
+        :day="day"
+        :totals="stageTotals"
+        :expected="view.expected"
+        :can-edit="canEdit"
+        :can-photo="inSheet"
+        :initials="who"
+        @loaded="onEvents"
+      />
       <section class="border-b border-stone-100 py-3">
         <CountEditor
           :key="`${row.id}:dissections`"
@@ -534,13 +663,13 @@ const endedText = (e: ClutchState['ended']) =>
           :disabled="finishing"
           @click="finish('verify', verifyNote)"
         >
-          <AlertTriangle :size="16" class="-mt-0.5 inline" /> {{ $t('Marcar por verificar') }}
+          <AlertTriangle :size="16" class="-mt-0.5 inline" /> {{ $t('Pedir verificación') }}
         </button>
         <template v-else>
           <button
             class="grid h-12 w-12 shrink-0 place-items-center rounded-lg border border-orange-300 text-orange-800 active:bg-orange-50"
-            :aria-label="$t('Revisado, pero hay que verificar')"
-            :title="$t('Revisado, pero hay que verificar')"
+            :aria-label="$t('Pedir que alguien lo verifique')"
+            :title="$t('Pedir que alguien lo verifique')"
             :disabled="finishing"
             @click="verifying = true"
           >
@@ -548,11 +677,20 @@ const endedText = (e: ClutchState['ended']) =>
           </button>
           <button class="btn-primary h-12 px-4 text-base" :disabled="finishing" @click="finish()">
             <Loader2 v-if="finishing" :size="18" class="animate-spin" /><Check v-else :size="18" />
-            {{ changedFields.length || rowPending ? $t('Guardar y revisado') : $t('Revisado, sin cambios') }}
+            {{ changedFields.length || rowPending ? $t('Guardar y marcar como revisado') : status?.review === 'verify' ? $t('Marcar como verificado') : $t('Marcar como revisado') }}
           </button>
         </template>
       </template>
       <button v-else class="btn h-12 px-4" @click="emit('close')">{{ $t('Cerrar') }}</button>
     </footer>
+    <PreserveYoung
+      v-if="preserving"
+      :clutch="label"
+      :count="preserving.count"
+      :stage="preserving.lifestage"
+      :date="serialToIso(preserving.day)"
+      @preserved="preserved"
+      @close="preserving = null"
+    />
   </div>
 </template>

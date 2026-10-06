@@ -1,5 +1,6 @@
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { api, requestId } from '../lib/api'
+import type { ClutchPhoto } from '../lib/clutchPhotos'
 import { MODULE, reviewState, type ClutchEvent, type ClutchTallies, type DayChange, type EventKind, type ReviewState, type Stage } from '../lib/clutches'
 import { applyClutchSettings, clutchSettings } from '../lib/clutchSettings'
 import { overlaySums, overlayTable } from '../lib/staged'
@@ -37,6 +38,8 @@ export interface Day {
   changes: ServerDayChange[]
   /** The day's app-only events (hatched, died, disappeared, preserved). */
   events?: ClutchEvent[]
+  /** The day's photos of clutches (only in the app). */
+  photos?: ClutchPhoto[]
 }
 /** What the cards show of a clutch today. */
 export interface ClutchToday {
@@ -53,9 +56,11 @@ export interface ClutchToday {
   review: ReviewState
   /** The latest mark, if any. */
   latest: ClutchCheck | null
+  /** Photos taken today. */
+  photos: number
 }
 const POLL_MS = 20_000
-const NONE: ClutchToday = { checks: [], changes: [], events: [], checked: false, changed: false, who: [], checkedBy: [], review: 'none', latest: null }
+const NONE: ClutchToday = { checks: [], changes: [], events: [], checked: false, changed: false, who: [], checkedBy: [], review: 'none', latest: null, photos: 0 }
 
 /**
  * The clutches' sum formulas, last changes, what their events add up to and
@@ -74,7 +79,7 @@ export function useClutchDay() {
   })
   const last = ref<Record<string, { at: string; actor: string; name: string | null }>>({})
   const tallies = ref<Record<string, ClutchTallies>>({})
-  const day = ref<Day>({ day: '', checks: [], changes: [], events: [] })
+  const day = ref<Day>({ day: '', checks: [], changes: [], events: [], photos: [] })
   const loaded = ref(false)
   const error = ref('')
 
@@ -164,6 +169,7 @@ export function useClutchDay() {
       for (const who of c.actors) if (!v.who.includes(who)) v.who.push(who)
     }
     for (const e of day.value.events ?? []) get(e.recordId).events.push(e)
+    for (const p of day.value.photos ?? []) get(p.recordId).photos++
     return out
   })
   const today = (recordId: string) => byRecord.value.get(recordId) ?? NONE
@@ -201,7 +207,7 @@ export function useClutchDay() {
   /** Bumped by every event recorded or taken back here, for the timelines to load again. */
   const eventsVersion = ref(0)
   /** Records what happened to some eggs, larvae or pupae today (only in the app). */
-  async function addEvent(body: { recordId: string; stage: Stage; kind: EventKind; count: number; ids?: string[]; note?: string; actionId?: string | null }) {
+  async function addEvent(body: { recordId: string; stage: Stage; kind: EventKind; count: number; ids?: string[]; note?: string; day?: string; actionId?: string | null }) {
     const { event } = await api<{ event: ClutchEvent }>('clutches/events', {
       method: 'POST',
       body: { requestId: requestId(), ...body },

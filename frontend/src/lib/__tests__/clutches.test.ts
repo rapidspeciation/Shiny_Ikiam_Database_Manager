@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  aliveAndSurvived,
   appendNote,
   appendTerm,
   changeText,
@@ -301,12 +300,6 @@ describe('daily review marks', () => {
 })
 
 describe('events and the preserved-larvae convention', () => {
-  it('alive in the cage and survived, under either convention', () => {
-    // 20 larvae in the sheet, 3 preserved recorded.
-    expect(aliveAndSurvived(20, 3, true)).toEqual({ alive: 20, survived: 23 })
-    expect(aliveAndSurvived(20, 3, false)).toEqual({ alive: 17, survived: 20 })
-    expect(aliveAndSurvived(2, 5, false)).toEqual({ alive: 0, survived: 5 })
-  })
   it('only preserved ones kept counted stay in the count', () => {
     expect(lossTakesOff('died', false)).toBe(true)
     expect(lossTakesOff('disappeared', false)).toBe(true)

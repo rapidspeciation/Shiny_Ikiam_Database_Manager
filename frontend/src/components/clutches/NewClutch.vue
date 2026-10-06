@@ -8,7 +8,7 @@ import SexBadge from '../SexBadge.vue'
 import { useKeyboard } from '../../composables/usePhone'
 import { useParents } from '../../composables/useParents'
 import { isBlank } from '../../lib/cells'
-import { MODULE, appendNote, clutchNumber, clutchOptions, hasClutch, nextBatch, nextClutch, parentsText, sameMating, type ClutchOption } from '../../lib/clutches'
+import { MODULE, appendNote, clutchNumber, clutchOptions, eggGroups, formulaOf, hasClutch, nextBatch, nextClutch, parentsText, sameMating, totalOf, type ClutchOption } from '../../lib/clutches'
 import { dayLabel, formatSerial, isoToSerial, serialFromIso, serialToIso, todayIso } from '../../lib/dates'
 import { errorText, notify } from '../../lib/notice'
 import type { CellValue, TableRow } from '../../lib/types'
@@ -19,8 +19,10 @@ import { t, tn } from '../../lib/i18n'
  * A new clutch, as the table's «Nuevo clutch» writes it (a new row in the next
  * free row of Insectary_stocks, saved at once): its number (the next one, or the
  * next batch N(k) of the same parents), species (the mother's when the parents
- * are given), date laid, eggs as the team's formula (=12), room, generation and
- * the parents in NOTES ("d/m/yy INI: U8A♀ + C8B♂").
+ * are given), date laid, eggs as the team's formula (=12, or groups on other
+ * leaves or laid apart: 3+5+7 → =3+5+7), room, generation and the parents in
+ * NOTES ("d/m/yy INI: U8A♀ + C8B♂"). Groups laid on later days are added in the
+ * clutch's editor (+N laid, with their day).
  */
 const props = defineProps<{
   rows: TableRow[]
@@ -179,7 +181,7 @@ const blocker = computed(() => {
     return t('El clutch {clutch} ya existe', { clutch: n })
   if (!chosen.value) return t('Elige la especie del clutch')
   if (date.value && serialFromIso(date.value) === null) return t('Fecha no válida: el año debe estar entre 1990 y 2099')
-  if (eggs.value.trim() && !/^\d{1,4}$/.test(eggs.value.trim())) return t('Huevos: escribe un número')
+  if (eggGroups(eggs.value) === null) return t('Huevos: un número o grupos sumados (3+5+7)')
   if (withParents.value && (!female.value.trim() || !male.value.trim())) return t('Escribe el ID de la hembra y del macho')
   return ''
 })
@@ -197,8 +199,8 @@ async function create() {
     'CLUTCH NUMBER': /^\d+$/.test(clutch) ? Number(clutch) : clutch,
     SPECIES: chosen.value,
     'DATE LAID': date.value ? serialFromIso(date.value) : null,
-    // Counts are the team's formulas, even a single one (=12).
-    'NUMBER OF EGGS': eggs.value.trim() ? `=${Number(eggs.value.trim())}` : null,
+    // Counts are the team's formulas, even a single one (=12); groups as a sum (=3+5+7).
+    'NUMBER OF EGGS': formulaOf(eggGroups(eggs.value) ?? []),
     'INSECTARY OR LABORATORY': place.value,
     NOTES: notes,
   }
@@ -228,6 +230,18 @@ async function create() {
   } finally {
     saving.value = false
   }
+}
+/** The eggs as the sheet gets them: "=3+5+7 (15)". */
+const eggsFormula = computed(() => {
+  const terms = eggGroups(eggs.value)
+  if (!terms?.length) return ''
+  return terms.length > 1 ? `${formulaOf(terms)} (${totalOf(terms)})` : (formulaOf(terms) ?? '')
+})
+const eggsBox = ref<HTMLInputElement>()
+function addGroup() {
+  const text = eggs.value.trim()
+  if (text && !text.endsWith('+')) eggs.value = `${text}+`
+  eggsBox.value?.focus()
 }
 /** A phone on its side with the keyboard up: the header and the button step aside for the box typed in. */
 const tight = computed(() => keyboard.open.value && keyboard.visibleBottom.value - keyboard.visibleTop.value < 360)
@@ -305,16 +319,21 @@ function reveal(e: FocusEvent) {
         </label>
         <label class="block min-w-0">
           <span class="field-label">NUMBER OF EGGS</span>
-          <input
-            v-model="eggs"
-            class="field-input h-12 text-lg"
-            type="text"
-            inputmode="numeric"
-            pattern="[0-9]*"
-            autocomplete="off"
-            enterkeyhint="done"
-          />
-          <span v-if="eggs.trim()" class="text-xs text-stone-500">={{ eggs.trim() }}</span>
+          <div class="flex gap-1">
+            <input
+              ref="eggsBox"
+              v-model="eggs"
+              class="field-input h-12 min-w-0 flex-1 text-lg"
+              type="text"
+              inputmode="tel"
+              autocomplete="off"
+              enterkeyhint="done"
+              placeholder="12"
+            />
+            <!-- Another group (another leaf, or laid apart): phones' number pads have no +. -->
+            <button type="button" class="btn h-12 shrink-0 px-2 text-lg" :aria-label="$t('Otro grupo de huevos')" :title="$t('Otro grupo de huevos')" @click="addGroup">+</button>
+          </div>
+          <span v-if="eggsFormula" class="text-xs text-stone-500">{{ eggsFormula }}</span>
         </label>
       </section>
       <section>

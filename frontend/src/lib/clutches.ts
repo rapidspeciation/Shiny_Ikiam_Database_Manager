@@ -562,19 +562,6 @@ export function parseIds(text: string): string[] {
   return out
 }
 
-/**
- * The two numbers the team debates, from the sheet's count and the preserved
- * ones the app knows of. "Alive in the cage": the larvae there now (hatched −
- * died − disappeared − preserved). "Survived": alive plus preserved (they were
- * alive when taken). Which one NUMBER OF LARVAE holds depends on the team's
- * setting: preserved taken off it (it holds the alive ones) or kept in it (it
- * holds the survivors).
- */
-export function aliveAndSurvived(sheetTotal: number, preserved: number, subtractPreserved: boolean): { alive: number; survived: number } {
-  const alive = Math.max(0, subtractPreserved ? sheetTotal : sheetTotal - preserved)
-  return { alive, survived: alive + preserved }
-}
-
 /** Whether a loss is taken off the count: always, except preserved ones when the team keeps them counted. */
 export const lossTakesOff = (kind: Loss, subtractPreserved: boolean) => kind !== 'preserved' || subtractPreserved
 
@@ -758,13 +745,16 @@ export interface Predicted {
  * knows of, else the sheet's first date of that stage, else the date expected
  * for it) plus the species' days. A stage is to come while something of the
  * stage before it is expected in the cage (or nothing of it was counted yet
- * and the stage before is coming).
+ * and the stage before is coming). A date long gone (more than half the
+ * stage's days, at least 3, after it was due: eggs that dried, larvae that
+ * pupated uncounted) is not given: what is left will not come.
  */
 export function predict(
   dates: { laid: CellValue; hatch: CellValue; pupa: CellValue },
   expected: Expected,
   durations: Durations,
   latest: { laid?: number | null; hatched?: number | null; pupated?: number | null } = {},
+  today: number | null = null,
 ): Predicted {
   const later = (a: number | null | undefined, b: number | null) => (a !== null && a !== undefined && (b === null || a > b) ? a : b)
   const fromLaid = later(latest.laid, date(dates.laid))
@@ -776,7 +766,49 @@ export function predict(
   const eggs = expected.eggs !== null && expected.eggs > 0
   const larvae = expected.larvae !== null ? expected.larvae > 0 : eggs
   const pupae = expected.pupae !== null ? expected.pupae > 0 : larvae
-  return { hatch: eggs ? hatchDay : null, pupa: larvae ? pupaDay : null, emerge: pupae ? emergeDay : null }
+  const live = (day: number | null, days: number) => (day !== null && (today === null || day >= today - Math.max(3, Math.ceil(days / 2))) ? day : null)
+  return {
+    hatch: eggs ? live(hatchDay, durations.egg) : null,
+    pupa: larvae ? live(pupaDay, durations.larva) : null,
+    emerge: pupae ? live(emergeDay, durations.pupa) : null,
+  }
+}
+
+/**
+ * A clutch's outlook for the round: what should be in the cage today and when
+ * the next stages come, from its counts as the person sees them, the preserved
+ * ones the app knows of (ClutchTallies) and the team's setting.
+ */
+export function outlook(
+  values: (field: string) => CellValue,
+  count: (field: CountField) => Count,
+  tallies: ClutchTallies | undefined,
+  subtractPreserved: boolean,
+  durations: Durations,
+  latest: { laid?: number | null; hatched?: number | null; pupated?: number | null } = {},
+  today: number | null = null,
+): { expected: Expected; predicted: Predicted } {
+  const expected = expectedNow(
+    { eggs: count('NUMBER OF EGGS'), larvae: count('NUMBER OF LARVAE'), pupae: count('NUMBER OF PUPA'), adults: count('NUMBER OF ADULTS') },
+    { egg: tallies?.egg?.preserved, larva: tallies?.larva?.preserved, pupa: tallies?.pupa?.preserved },
+    subtractPreserved,
+  )
+  const predicted = predict({ laid: values('DATE LAID'), hatch: values('HATCHING DATE'), pupa: values('PUPA DATE') }, expected, durations, latest, today)
+  // Eggs whose hatching is long gone (dried, never hatched) are not to count.
+  if (expected.eggs && predicted.hatch === null && today !== null) expected.eggs = null
+  return { expected, predicted }
+}
+/** The latest day each stage grew, from a clutch's events (laid, hatched, pupated), as date serials. */
+export function latestGains(events: Pick<ClutchEvent, 'kind' | 'day'>[]): { laid: number | null; hatched: number | null; pupated: number | null } {
+  const out = { laid: null as number | null, hatched: null as number | null, pupated: null as number | null }
+  for (const e of events) {
+    if (e.kind !== 'laid' && e.kind !== 'hatched' && e.kind !== 'pupated') continue
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(e.day)
+    if (!m) continue
+    const serial = Math.round((Date.UTC(+m[1], +m[2] - 1, +m[3]) - Date.UTC(1899, 11, 30)) / 86_400_000)
+    if (out[e.kind] === null || serial > out[e.kind]!) out[e.kind] = serial
+  }
+  return out
 }
 
 /** The eggs of a new clutch as typed: 12, 3+5+7 or =3+5 (groups on other leaves or days) → their terms; null when not that. */

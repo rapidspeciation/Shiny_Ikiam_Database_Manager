@@ -85,6 +85,9 @@ describe('what is expected in the cage, and when', () => {
       pupa: laid + 22,
       emerge: laid + 30,
     })
+    // Long overdue (eggs that dried): no hatching date; one a day late is still given.
+    expect(predict({ laid, hatch: null, pupa: null }, { eggs: 5, larvae: null, pupae: null }, days, {}, laid + 30).hatch).toBe(null)
+    expect(predict({ laid, hatch: null, pupa: null }, { eggs: 5, larvae: null, pupae: null }, days, {}, laid + 6).hatch).toBe(laid + 5)
     // Nothing left: no dates.
     expect(predict({ laid, hatch: laid + 5, pupa: laid + 21 }, { eggs: 0, larvae: 0, pupae: 0 }, days)).toEqual({ hatch: null, pupa: null, emerge: null })
   })

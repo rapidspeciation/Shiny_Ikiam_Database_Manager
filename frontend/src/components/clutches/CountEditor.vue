@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
-import { Check, Delete, PenLine, Undo2, X } from 'lucide-vue-next'
+import { computed, nextTick, ref, watch } from 'vue'
+import { Check, Delete, PenLine, Tag, Undo2, X } from 'lucide-vue-next'
+import DateField from '../DateField.vue'
 import {
   appendTerm,
   countedToday,
@@ -22,6 +23,8 @@ import {
   type Loss,
   type Stage,
 } from '../../lib/clutches'
+import { dayFirst, isoToSerial, serialToIso } from '../../lib/dates'
+import { LIFESTAGES, MAIN_STAGES } from '../../lib/emerged'
 import type { CellValue } from '../../lib/types'
 import { t } from '../../lib/i18n'
 
@@ -34,7 +37,11 @@ import { t } from '../../lib/i18n'
  * turn up again). Each step writes the team's formula, never a plain total.
  * What happened is recorded apart, only in the app (`event`): a + as hatched
  * (pupated…), a − as the person says; preserved ones stay in the count when
- * the team keeps them counted (`subtractPreserved` false).
+ * the team keeps them counted (`subtractPreserved` false). Each event happened
+ * today unless Yesterday or another day is chosen first, and the note it adds
+ * to NOTES (`noteFor`) is shown before it is saved. Larvae (or eggs) preserved
+ * can be registered one by one in Insectary_data (`register`: the parent opens
+ * Emergidos' cards and answers with the IDs they took).
  */
 const props = defineProps<{
   field: string
@@ -54,11 +61,28 @@ const props = defineProps<{
   stage?: Stage | null
   /** The team's setting: preserved ones taken off the count (true) or kept in it. */
   subtractPreserved?: boolean
+  /** Today (a date serial): the day events happen unless another is chosen. */
+  today?: number
+  /** The note an event adds to NOTES ("5/10/26 FCH: 5 larvae died"), '' when NOTES cannot be written. */
+  noteFor?: (e: { kind: EventKind; count: number; ids: string[]; day: number; lifestage?: string }) => string
+  /** Preserved larvae and eggs can be registered in Insectary_data from here (a clutch in the sheet). */
+  canRegister?: boolean
 }>()
+export interface CountEvent {
+  key: string
+  kind: EventKind
+  count: number
+  ids: string[]
+  /** The day it happened (a date serial). */
+  day: number
+  /** LIFESTAGE of larvae preserved ("3rd instar larva"). */
+  lifestage?: string
+}
 const emit = defineEmits<{
   set: [value: CellValue]
-  event: [event: { key: string; kind: EventKind; count: number; ids: string[] }]
+  event: [event: CountEvent]
   unevent: [key: string]
+  register: [request: { count: number; lifestage: string; day: number; done: (ids: string[]) => void }]
 }>()
 
 const count = computed(() => readCount(props.value))
@@ -96,12 +120,14 @@ function undoStep() {
   const step = steps.value.pop()
   if (!step) return
   message.value = ''
+  lastNote.value = ''
   asking.value = null
   if (step.event) emit('unevent', step.event)
   if (!step.only) emit('set', step.value)
 }
 /** Takes back every event recorded here (the count goes back as a whole). */
 function forgetEvents() {
+  lastNote.value = ''
   for (const s of steps.value)
     if (s.event) {
       emit('unevent', s.event)
@@ -114,10 +140,58 @@ function forgetEvents() {
 const lossy = computed(() => hasLosses(props.stage ?? null))
 const subtract = computed(() => props.subtractPreserved !== false)
 let keys = 0
+// --- The day of the next event: today unless Yesterday or another day is chosen (back to today after it).
+const todaySerial = computed(() => props.today ?? isoToSerial(new Date().toISOString().slice(0, 10)))
+const eventDay = ref(todaySerial.value)
+const otherDay = ref(false)
+watch(todaySerial, d => (eventDay.value = d))
+const eventIso = computed({
+  get: () => serialToIso(eventDay.value),
+  set: (iso: string) => {
+    const s = iso ? isoToSerial(iso) : todaySerial.value
+    if (s <= todaySerial.value) eventDay.value = s
+  },
+})
+function pickDay(which: 'today' | 'yesterday' | 'other') {
+  otherDay.value = which === 'other'
+  if (which !== 'other') eventDay.value = which === 'today' ? todaySerial.value : todaySerial.value - 1
+}
+/** LIFESTAGE of larvae preserved: the 3rd instar unless another is chosen. */
+const lifestage = ref('3rd instar larva')
+const moreStages = ref(false)
+const lifestages = computed(() => (moreStages.value ? LIFESTAGES.filter(s => s !== 'Egg') : MAIN_STAGES))
+/** The note the last event added to NOTES, shown until the next step (it is saved with the clutch). */
+const lastNote = ref('')
 function record(kind: EventKind, n: number, ids: string[] = []) {
   const key = `${props.field}:${Date.now()}:${++keys}`
-  emit('event', { key, kind, count: n, ids })
+  const day = eventDay.value
+  const stage = kind === 'preserved' ? (props.stage === 'egg' ? 'Egg' : props.stage === 'larva' ? lifestage.value : undefined) : undefined
+  emit('event', { key, kind, count: n, ids, day, ...(stage ? { lifestage: stage } : {}) })
+  lastNote.value = props.noteFor?.({ kind, count: n, ids, day, lifestage: stage }) ?? ''
+  eventDay.value = todaySerial.value
+  otherDay.value = false
   return key
+}
+/** The note a preserved answer would add, while it is being chosen. */
+const preservedNote = computed(() => {
+  const a = asking.value
+  if (!a || !props.noteFor) return ''
+  return props.noteFor({ kind: 'preserved', count: a.n, ids: parseIds(idsText.value), day: eventDay.value, lifestage: props.stage === 'larva' ? lifestage.value : undefined })
+})
+/** Registered in Insectary_data (Emergidos' cards): their IDs come back and the answer is given with them. */
+function register() {
+  const a = asking.value
+  if (!a) return
+  emit('register', {
+    count: a.n,
+    lifestage: props.stage === 'egg' ? 'Egg' : lifestage.value,
+    day: eventDay.value,
+    done: ids => {
+      if (asking.value !== a) return
+      idsText.value = ids.slice(0, a.n).join(' ')
+      choose('preserved')
+    },
+  })
 }
 /**
  * The question after a −N or a new total: what happened to them. `before`:
@@ -128,6 +202,7 @@ const asking = ref<{ n: number; mode: 'before' | 'after'; gain: boolean } | null
 const choosingIds = ref(false)
 const idsText = ref('')
 function ask(n: number, mode: 'before' | 'after', gain = false) {
+  lastNote.value = ''
   asking.value = { n, mode, gain }
   choosingIds.value = false
   idsText.value = ''
@@ -455,6 +530,26 @@ function revert() {
     <p v-else-if="count.text && editable" class="mt-1 text-xs text-amber-900">
       {{ $t('No es una suma: corrígelo en la tabla') }}
     </p>
+    <!-- The day of the next +N / −N (an egg group laid yesterday, larvae that hatched a day later). -->
+    <div v-if="canWork && stage" class="mt-2 flex flex-wrap items-center gap-1.5 text-sm" role="group" :aria-label="$t('Día del evento')">
+      <span class="text-xs text-stone-600">{{ $t('Pasó') }}:</span>
+      <button
+        v-for="d in (['today', 'yesterday', 'other'] as const)"
+        :key="d"
+        type="button"
+        class="h-9 rounded-full border px-3"
+        :class="
+          (d === 'other' ? otherDay : !otherDay && eventDay === (d === 'today' ? todaySerial : todaySerial - 1))
+            ? 'border-brand-700 bg-brand-50 font-medium text-brand-800'
+            : 'border-stone-300 bg-white text-stone-700'
+        "
+        :aria-pressed="d === 'other' ? otherDay : !otherDay && eventDay === (d === 'today' ? todaySerial : todaySerial - 1)"
+        @click="pickDay(d)"
+      >
+        {{ d === 'today' ? $t('Hoy') : d === 'yesterday' ? $t('Ayer') : otherDay ? dayFirst(eventIso) : $t('Otro día') }}
+      </button>
+      <DateField v-if="otherDay" v-model="eventIso" class="field-input h-9 w-36 text-sm" :aria-label="$t('Día del evento')" />
+    </div>
     <div v-if="canWork" class="mt-2 flex gap-2">
       <input
         v-model="typed"
@@ -504,7 +599,28 @@ function revert() {
         </button>
       </div>
       <div v-else class="mt-1.5">
-        <label class="block text-xs text-stone-600" :for="`ids-${field}`">{{ $t('IDs de Insectary (si los tienen, opcional)') }}</label>
+        <!-- LIFESTAGE of the larvae preserved: the 3rd instar unless another is chosen. -->
+        <div v-if="stage === 'larva'" class="mb-2 flex flex-wrap gap-1" role="group" aria-label="LIFESTAGE">
+          <button
+            v-for="st in lifestages"
+            :key="st"
+            type="button"
+            class="min-h-10 rounded-lg border px-2 text-sm font-medium"
+            :class="lifestage === st ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white text-stone-800'"
+            :aria-pressed="lifestage === st"
+            @click="lifestage = st"
+          >
+            {{ st }}
+          </button>
+          <button type="button" class="min-h-10 rounded-lg border border-dashed border-stone-300 px-2 text-sm text-stone-700" @click="moreStages = !moreStages">
+            {{ moreStages ? $t('Menos') : $t('Otro estadio') }}
+          </button>
+        </div>
+        <button v-if="canRegister && (stage === 'larva' || stage === 'egg')" type="button" class="btn-primary mb-2 h-12 w-full flex-col justify-center leading-tight" @click="register">
+          <span>{{ $tn(asking.n, 'Registrar {n} en Insectary_data', 'Registrar {n} en Insectary_data') }}</span>
+          <span class="text-xs font-normal opacity-90">{{ $t('Insectary ID, CAM y tubo de cada una') }}</span>
+        </button>
+        <label class="block text-xs text-stone-600" :for="`ids-${field}`">{{ canRegister ? $t('O solo contarlas, con sus IDs si los tienen (opcional)') : $t('IDs de Insectary (si los tienen, opcional)') }}</label>
         <div class="mt-1 flex gap-2">
           <input
             :id="`ids-${field}`"
@@ -518,8 +634,11 @@ function revert() {
             placeholder="H0E H1E"
             @keydown.enter.prevent="choose('preserved')"
           />
-          <button type="button" class="btn-primary h-11 shrink-0 px-4" @click="choose('preserved')"><Check :size="18" /> {{ $t('Poner') }}</button>
+          <button type="button" :class="canRegister ? 'btn' : 'btn-primary'" class="h-11 shrink-0 px-4" @click="choose('preserved')"><Check :size="18" /> {{ $t('Poner') }}</button>
         </div>
+        <p v-if="preservedNote" class="mt-1 text-xs break-words text-stone-700">
+          {{ $t('Se añade a NOTES:') }} <span class="rounded bg-amber-50 px-1 text-stone-900">{{ preservedNote }}</span>
+        </p>
         <p class="mt-1 text-xs text-stone-600">
           {{
             subtract
@@ -554,6 +673,10 @@ function revert() {
       <button type="button" class="btn h-11 px-3" :aria-label="$t('Cancelar')" @click="editingFormula = false"><X :size="18" /></button>
     </div>
     <p v-if="message" class="mt-1 text-sm text-red-700">{{ message }}</p>
+    <p v-if="lastNote && !asking" class="mt-1.5 flex items-start gap-1.5 rounded-md bg-amber-50 px-2 py-1 text-xs text-stone-800" role="status">
+      <Tag :size="13" class="mt-0.5 shrink-0 text-amber-800" />
+      <span class="min-w-0 break-words">{{ $t('Añadido a NOTES (se guarda con el clutch):') }} <strong class="font-medium">{{ lastNote }}</strong></span>
+    </p>
     <div v-if="canWork" class="mt-1 flex flex-wrap items-center gap-x-4">
       <button v-if="steps.length" type="button" class="flex h-9 items-center gap-1 text-sm font-medium text-brand-800 underline" @click="undoStep">
         <Undo2 :size="14" /> {{ $t('Deshacer') }}

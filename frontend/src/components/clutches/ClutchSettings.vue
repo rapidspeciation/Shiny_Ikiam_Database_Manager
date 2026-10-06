@@ -9,7 +9,8 @@ import { t } from '../../lib/i18n'
 
 /**
  * The Clutches tab's settings: one team convention, whether preserved larvae
- * (and eggs, pupae) are taken off NUMBER OF LARVAE or stay counted in it.
+ * (and eggs, pupae) are taken off NUMBER OF LARVAE or stay counted in it (the
+ * team's convention since 5 Oct 2026, the default: the larvae used).
  * Clutches (−N → preserved) and Emergidos (larvae preserved from a clutch)
  * follow it. Everyone sees it explained; only an administrator changes it.
  */
@@ -33,14 +34,15 @@ onMounted(() => window.addEventListener('keydown', onKey))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 const OPTIONS = [
   {
-    value: true,
-    title: () => t('Sí: restarlas (como hasta ahora)'),
-    text: () => t('NUMBER OF LARVAE guarda las larvas vivas en la jaula. Una larva preservada se resta, como una muerta (−1), y queda registrada aparte como preservada.'),
+    value: false,
+    title: () => t('No: dejarlas contadas (la convención del equipo)'),
+    text: () =>
+      t('NUMBER OF LARVAE guarda las larvas usadas: solo se restan las que murieron o desaparecieron; las preservadas quedan registradas aparte. 20 larvas, 10 preservadas, 5 pupas, 5 murieron → 15.'),
   },
   {
-    value: false,
-    title: () => t('No: dejarlas contadas'),
-    text: () => t('NUMBER OF LARVAE guarda las larvas que sobrevivieron (vivas + preservadas). Solo las que murieron o desaparecieron se restan; las preservadas quedan registradas aparte.'),
+    value: true,
+    title: () => t('Sí: restarlas'),
+    text: () => t('NUMBER OF LARVAE guarda las larvas vivas en la jaula. Una larva preservada se resta, como una muerta (−1), y queda registrada aparte como preservada.'),
   },
 ]
 </script>
@@ -74,7 +76,7 @@ const OPTIONS = [
         </button>
       </div>
       <p class="mt-3 text-sm text-stone-600">
-        {{ $t('Con los eventos registrados aparte, la app muestra los dos números en cada clutch: vivas en la jaula y sobrevivieron (vivas + preservadas).') }}
+        {{ $t('Con los eventos registrados aparte, la app muestra en cada clutch cuántas deberían estar en la jaula para contarlas hoy, con cualquiera de las dos reglas.') }}
       </p>
       <p v-if="!session.isAdmin" class="mt-2 rounded-md bg-stone-100 px-3 py-2 text-sm text-stone-700">{{ $t('Solo un administrador puede cambiarlo.') }}</p>
     </section>

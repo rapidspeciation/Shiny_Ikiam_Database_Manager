@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { AlertTriangle, ArrowDownUp, BookOpen, Check, History, Plus, Search, Settings, X } from 'lucide-vue-next'
+import { AlertTriangle, ArrowDownUp, BookOpen, CalendarClock, Camera, Check, History, Plus, Search, Settings, X } from 'lucide-vue-next'
 import ClutchEditor from './ClutchEditor.vue'
 import ClutchSettings from './ClutchSettings.vue'
 import NewClutch from './NewClutch.vue'
@@ -19,6 +19,7 @@ import {
   clutchState,
   countCell,
   hasClutch,
+  outlook,
   parentsOf,
   readCount,
   REVIEW_ORDER,
@@ -26,6 +27,7 @@ import {
   totalOf,
   undatedTail,
   VERIFY_REASONS,
+  stageDurations,
   type ClutchState,
   type CountField,
 } from '../../lib/clutches'
@@ -128,6 +130,45 @@ const items = computed<Item[]>(() => {
   })
   return out
 })
+/** Each species' days per stage, from every clutch in the sheet (for the dates expected). */
+const durations = computed(() =>
+  stageDurations(
+    rows.value.map(r => ({
+      species: r.values.SPECIES ?? null,
+      laid: r.values['DATE LAID'] ?? null,
+      hatch: r.values['HATCHING DATE'] ?? null,
+      pupa: r.values['PUPA DATE'] ?? null,
+      emerge: r.values['EMERGENCE DATE'] ?? null,
+    })),
+  ),
+)
+/**
+ * A card's line for the round: what to count today and the next date expected
+ * ("5 larvas · 7 huevos sin eclosionar · pupa ≈ 20-Oct-26").
+ */
+function aheadText(item: Item): { count: string; next: string; due: boolean } {
+  if (item.state.ended) return { count: '', next: '', due: false }
+  const get = (f: string) => value(item.row, f)
+  const o = outlook(get, f => item.counts[f], day.tallies.value[item.row.id], day.settings.subtractPreserved, durations.value.of(item.species), {}, today.value)
+  const e = o.expected
+  const count = [
+    e.larvae !== null ? t('{n} larvas', { n: e.larvae }) : '',
+    e.pupae ? t('{n} pupas', { n: e.pupae }) : '',
+    e.eggs ? t('{n} huevos sin eclosionar', { n: e.eggs }) : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
+  const p = o.predicted
+  const next = p.hatch !== null ? [t('eclosión'), p.hatch] : p.pupa !== null ? [t('pupa'), p.pupa] : p.emerge !== null ? [t('emergencia'), p.emerge] : null
+  return {
+    count,
+    next: next ? `${next[0]} ≈ ${formatSerial(next[1] as number)}` : '',
+    due: !!next && (next[1] as number) <= today.value,
+  }
+}
+/** The cards listed, each line worked out once. */
+const aheads = computed(() => new Map(listed.value.map(i => [i.row.id, aheadText(i)])))
+const ahead = (item: Item) => aheads.value.get(item.row.id) ?? aheadText(item)
 const stateOf = (row: TableRow) => {
   const counts = countsOf(row)
   const all = rows.value
@@ -456,7 +497,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                       :title="checkedText(item.row)"
                       :aria-label="checkedText(item.row)"
                     >
-                      <Check :size="12" /> {{ day.today(item.row.id).checkedBy.map(initialsFor).join(', ') }}
+                      <Check :size="12" /> {{ $t('Revisado por {who}', { who: day.today(item.row.id).checkedBy.map(initialsFor).join(', ') }) }}
                     </span>
                   </span>
                 </span>
@@ -479,7 +520,19 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                     <span v-if="item.counts[s.count].terms.length > 1" class="block truncate text-[11px] leading-tight text-stone-500 tabular-nums">{{ termsText(item.counts[s.count].terms) }}</span>
                   </span>
                 </span>
-                <span v-if="lastText(item.row)" class="mt-1 block truncate text-[11px] text-stone-500">{{ lastText(item.row) }}</span>
+                <!-- What to count today, and the next stage's date expected. -->
+                <span v-if="ahead(item).count || ahead(item).next" class="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 text-xs text-sky-900">
+                  <span v-if="ahead(item).count" class="min-w-0 tabular-nums">{{ $t('Contar') }}: {{ ahead(item).count }}</span>
+                  <span v-if="ahead(item).next" class="ml-auto flex shrink-0 items-center gap-0.5 tabular-nums" :class="ahead(item).due ? 'font-semibold text-brand-800' : ''">
+                    <CalendarClock :size="12" /> {{ ahead(item).next }}
+                  </span>
+                </span>
+                <span v-if="lastText(item.row) || day.today(item.row.id).photos" class="mt-1 flex items-center gap-2 text-[11px] text-stone-500">
+                  <span class="min-w-0 flex-1 truncate">{{ lastText(item.row) }}</span>
+                  <span v-if="day.today(item.row.id).photos" class="flex shrink-0 items-center gap-0.5" :title="$t('Fotos de hoy')">
+                    <Camera :size="12" /> {{ day.today(item.row.id).photos }}
+                  </span>
+                </span>
                 <span
                   v-if="day.today(item.row.id).review === 'verify' && day.today(item.row.id).latest?.note"
                   class="mt-1 block rounded-md bg-orange-50 px-2 py-1 text-xs text-orange-950"
@@ -495,17 +548,17 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                   @click="markChecked(item.row)"
                 >
                   <Check :size="16" />
-                  {{ day.today(item.row.id).review === 'verify' ? $t('Verificado') : $t('Revisado, sin cambios') }}
+                  {{ day.today(item.row.id).review === 'verify' ? $t('Marcar como verificado') : $t('Marcar como revisado') }}
                   <span class="hidden text-xs font-normal text-stone-500 min-[400px]:inline">· {{ $t('solo en la app') }}</span>
                 </button>
                 <button
                   v-if="day.today(item.row.id).review === 'none'"
                   class="flex h-11 shrink-0 items-center gap-1 border-l border-stone-100 px-3 text-sm font-medium text-orange-800 active:bg-orange-50"
                   :aria-expanded="verifyFor === item.row.id"
-                  :title="$t('Revisado, pero hay que verificar')"
+                  :title="$t('Pedir que alguien lo verifique')"
                   @click="askVerify(item.row)"
                 >
-                  <AlertTriangle :size="16" /> {{ $t('Verificar…') }}
+                  <AlertTriangle :size="16" /> {{ $t('Pedir verificación…') }}
                 </button>
               </div>
               <form
@@ -535,7 +588,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
                     enterkeyhint="done"
                   />
                   <button class="h-11 shrink-0 rounded-lg border border-orange-400 bg-orange-100 px-3 text-sm font-semibold text-orange-950" :disabled="marking === item.row.id">
-                    {{ $t('Marcar') }}
+                    {{ $t('Pedir verificación') }}
                   </button>
                 </div>
               </form>
@@ -570,6 +623,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
             :can-edit="canEdit"
             :initials="initials"
             :initials-for="initialsFor"
+            :durations="durations"
             @close="editing = null"
             @more="drawerRow = $event"
           />
@@ -618,6 +672,7 @@ watch(view, () => (wide.value ? listEl.value : rootEl.value)?.scrollTo({ top: 0 
         :can-edit="canEdit"
         :initials="initials"
         :initials-for="initialsFor"
+        :durations="durations"
         @close="editing = null"
         @more="drawerRow = $event"
       />

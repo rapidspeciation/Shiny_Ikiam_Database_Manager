@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { Search, X } from 'lucide-vue-next'
 import SexBadge from '../SexBadge.vue'
 import { isBlank } from '../../lib/cells'
-import { clutchState, countCell, hasClutch, parentsOf, readCount, totalOf, undatedTail, type ClutchState, type CountField } from '../../lib/clutches'
+import { clutchState, countCell, hasClutch, parentsOf, readCount, stageDurations, totalOf, undatedTail, type ClutchState, type CountField } from '../../lib/clutches'
 import { formatSerial } from '../../lib/dates'
 import type { CellValue, TableRow } from '../../lib/types'
 import { usePending } from '../../stores/pending'
@@ -12,7 +12,7 @@ import { t } from '../../lib/i18n'
 /**
  * Which clutch the butterflies emerged from: the clutches emerging and those
  * with pupae first (the oldest pupae first: they emerge about 8 days after
- * pupating), then the other clutches still going; any clutch by number,
+ * pupating, the species' own days as Clutches gives them), then the other clutches still going; any clutch by number,
  * species or parent. Each shows its pupae and adults (the sums of Clutches),
  * the butterflies already in Insectary_data and the cards not saved yet.
  */
@@ -31,8 +31,18 @@ const emit = defineEmits<{ pick: [clutch: string]; close: [] }>()
 const pending = usePending()
 const query = ref('')
 
-/** Pupa to adult, in days (median 2024–26, data rules). */
-const PUPA_DAYS = 8
+/** Each species' days per stage, from every clutch in the sheet (pupa to adult: 8 for most, 10 for Melinaea). */
+const durations = computed(() =>
+  stageDurations(
+    props.rows.map(r => ({
+      species: r.values.SPECIES ?? null,
+      laid: r.values['DATE LAID'] ?? null,
+      hatch: r.values['HATCHING DATE'] ?? null,
+      pupa: r.values['PUPA DATE'] ?? null,
+      emerge: r.values['EMERGENCE DATE'] ?? null,
+    })),
+  ),
+)
 
 interface Item {
   row: TableRow
@@ -103,7 +113,7 @@ const found = computed(() => {
   const contains = items.value.filter(i => !i.number.toLowerCase().startsWith(q) && i.search.includes(q))
   return [...starts.reverse(), ...contains.reverse()].slice(0, 40)
 })
-const due = (i: Item) => (i.pupaDate !== null && i.state.stage === 'pupa' ? i.pupaDate + PUPA_DAYS : null)
+const due = (i: Item) => (i.pupaDate !== null && i.state.stage === 'pupa' ? i.pupaDate + durations.value.of(i.species).pupa : null)
 const dueText = (i: Item) => {
   const d = due(i)
   return d === null ? '' : formatSerial(d)
