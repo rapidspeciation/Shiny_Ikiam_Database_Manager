@@ -30,12 +30,15 @@ const text = v => (v === null || v === undefined || typeof v === 'object' ? '' :
 const clip = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const same = (a, b) => text(a).toLowerCase() === text(b).toLowerCase();
 
-/** The issues of each row (by recordId), built once per scan. `ready`: only if found already (pages polled often). */
+/**
+ * The issues of each row (by recordId), built once per scan. `ready`: only if found already (pages
+ * polled often); `found`: a scan the caller holds (freshIssues).
+ */
 const indexes = new WeakMap();
-export function issuesByRecord(store, { ready = false } = {}) {
+export function issuesByRecord(store, { ready = false, found = null } = {}) {
   let entry;
   try {
-    entry = ready ? readyIssues(store) : allIssues(store);
+    entry = found ?? (ready ? readyIssues(store) : allIssues(store));
   } catch {
     // A store without the sheets' copy (some tests' stand-ins): the proposal goes on without them.
     return null;
@@ -79,15 +82,16 @@ function grouped() {
  * The lookAt block of a proposal's rows (`changes` as saved), or null when there
  * is nothing to say. `only`: the indexes to look at (the rows a revision changed);
  * `told`: [{ index, field }] already said in the answer (preservedWithoutSample);
- * `formulaEmpty`: [{ index, field, clutch }] formula cells that will give nothing.
+ * `formulaEmpty`: [{ index, field, clutch }] formula cells that will give nothing; `found`: the
+ * checks' scan the caller holds (freshIssues), else it is found here.
  */
-export function lookAt(store, changes, { only = null, told = [], formulaEmpty = [] } = {}) {
+export function lookAt(store, changes, { only = null, told = [], formulaEmpty = [], found = null } = {}) {
   const rows = changes.map((change, index) => ({ change, index })).filter(r => !r.change.placeholder && (!only || only.has(r.index)));
   if (!rows.length) return null;
   const several = new Set(rows.map(r => r.change.sheet)).size > 1;
   const where = c => (several ? { sheet: c.sheet } : {});
   const name = (c, index) => c.label || `#${index}`;
-  const index = issuesByRecord(store);
+  const index = issuesByRecord(store, { found });
   const issues = grouped();
   const notes = grouped();
   const said = new Set(told.map(t => `${t.index}\u0000${t.field}`));

@@ -7,6 +7,8 @@
 //
 // The whole scan runs once per state of the local copy and of the stored walks
 // (and per day, for future dates) and is cached, so paging and filtering are free.
+// In the app it runs in a worker thread (server/checks-host.mjs): its requests ask
+// freshIssues or readyIssues, never allIssues.
 //
 // Problem texts are Spanish (the assistant reads them); each also goes as a
 // descriptor (problemMsg, fixNoteMsg) the interface shows in its language
@@ -746,18 +748,56 @@ function scan(store) {
 
 const cache = new WeakMap();
 // The stored walks and the imported photo readings too (walk_doubt, the photo kinds).
-const issuesStamp = store => `${recordsStamp(store)}:${todaySerial()}:${tracksRevision(store)}:${reviewRevision(store.db)}`;
-/** Every issue, recomputed only when the local copy (or the day) changed. */
+export const issuesStamp = store =>
+  `${recordsStamp(store)}:${todaySerial()}:${tracksRevision(store)}:${reviewRevision(store.db)}`;
+/**
+ * Every issue, recomputed only when the local copy (or the day) changed, here in this thread.
+ * The app's requests ask freshIssues instead (the scan in a worker thread); this is for the
+ * assistant's workers, the tests and code that already holds what it needs.
+ */
 export function allIssues(store) {
   const stamp = issuesStamp(store);
   const hit = cache.get(store);
   if (hit?.stamp === stamp) return hit;
   const started = Date.now();
-  const entry = { stamp, issues: scan(store), checkedAt: new Date().toISOString(), ms: Date.now() - started };
+  return keepIssues(store, { stamp, issues: scan(store), checkedAt: new Date().toISOString(), ms: Date.now() - started });
+}
+
+/**
+ * A scan's result as the app keeps it: { stamp, issues, checkedAt, ms }, found here or in the
+ * checks' worker (server/checks-host.mjs). Its first seen and solved go to «Resueltos»; it is
+ * the cached answer while the local copy is still as it was scanned.
+ */
+export function keepIssues(store, entry) {
   // First seen / solved (the Revisión tab's «Resueltos»): issues no longer found are solved.
   trackFindings(store, 'check', entry.issues.map(checkFinding), { at: entry.checkedAt });
-  cache.set(store, entry);
+  if (entry.stamp === issuesStamp(store)) cache.set(store, entry);
   return entry;
+}
+/** The kept result when it is still up to date, else null. */
+export function cachedIssues(store) {
+  const hit = cache.get(store);
+  return hit?.stamp === issuesStamp(store) ? hit : null;
+}
+
+/**
+ * Who scans for the app's requests (server/checks-host.mjs: a worker thread), by store:
+ * { fresh() → promise of an entry, ready() → entry or null }.
+ */
+const runners = new WeakMap();
+export function useChecksRunner(store, runner) {
+  if (runner) runners.set(store, runner);
+  else runners.delete(store);
+}
+
+/**
+ * Every issue as of now, for the app's requests: the kept result when nothing changed since,
+ * else a scan that starts after this call (in the checks' worker, where there is one: the app
+ * answers others meanwhile). A promise.
+ */
+export async function freshIssues(store) {
+  const runner = runners.get(store);
+  return runner ? runner.fresh() : allIssues(store);
 }
 
 const scheduled = new WeakSet();
@@ -766,8 +806,10 @@ const scheduled = new WeakSet();
  * (for the next call): for pages polled often, which never wait for a whole scan.
  */
 export function readyIssues(store) {
-  const hit = cache.get(store);
-  if (hit?.stamp === issuesStamp(store)) return hit;
+  const runner = runners.get(store);
+  if (runner) return runner.ready();
+  const hit = cachedIssues(store);
+  if (hit) return hit;
   if (!scheduled.has(store)) {
     scheduled.add(store);
     setImmediate(() => {
@@ -801,8 +843,9 @@ const checkFinding = issue => ({
 /**
  * One page of issues, optionally only some kinds (comma-separated), one sheet,
  * or the rows of one record. Counts per kind and per sheet come with it.
+ * `found`: the scan to page (freshIssues), else it is found here.
  */
-export function checkData(store, { sheet, kind, recordId, limit = 50, offset = 0 } = {}) {
+export function checkData(store, { sheet, kind, recordId, limit = 50, offset = 0 } = {}, found = null) {
   if (sheet && !moduleMap.has(String(sheet)))
     throw Object.assign(new Error(`Unknown sheet ${String(sheet).slice(0, 60)}`), { status: 404, code: 'MODULE_NOT_FOUND' });
   const kinds = kind
@@ -817,7 +860,7 @@ export function checkData(store, { sheet, kind, recordId, limit = 50, offset = 0
       status: 400,
       code: 'INVALID_KIND',
     });
-  const { issues, checkedAt } = allIssues(store);
+  const { issues, checkedAt } = found ?? allIssues(store);
   const inSheet = issues.filter(i => (!sheet || i.sheet === sheet) && (!recordId || i.recordId === recordId));
   const counts = Object.fromEntries(KIND_ORDER.map(k => [k, 0]));
   for (const i of inSheet) counts[i.kind]++;
