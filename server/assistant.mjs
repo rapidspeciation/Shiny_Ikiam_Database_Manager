@@ -722,17 +722,26 @@ function recordSource(record) {
   };
 }
 
-export function createAssistant({ store, config = {} }) {
+/**
+ * The assistant: its tools (MCP, for T3 Code's chats) and the app's routes for proposals.
+ * `role`: 'main' in the app's own thread (everything); 'tools' in the tools' worker
+ * (server/assistant-worker.mjs), which only answers tool calls over a StoreReader and tells the app
+ * through `onChanged` whose proposals changed; 'views' in the views' worker, which only builds the
+ * proposals as Cambios propuestos shows them (listedViews). The workers leave the database's
+ * set-up, the watchers of syncs and saves, and the sheets' copy to the app.
+ */
+export function createAssistant({ store, config = {}, role = 'main', onChanged = null }) {
   if (!store?.db) throw new Error('Assistant requires store.db');
   const db = store.db;
-  init(db);
+  const inWorker = role !== 'main';
+  if (!inWorker) init(db);
   const ai = providerConfig(config);
   const reports = createReports({ store, config });
   const knowledge = createKnowledge(config);
   // What a proposal's formula cells will give once applied (server/formula-gives.mjs).
   const formulaReader = createFormulaReader(store);
   // The sheets' copy that `query` reads (server/replica.mjs), where the app keeps one.
-  const sheetsCopy = config.sheetsCopyPath ? createSheetsCopy({ store, path: config.sheetsCopyPath, ...config.sheetsCopy }) : null;
+  const sheetsCopy = !inWorker && config.sheetsCopyPath ? createSheetsCopy({ store, path: config.sheetsCopyPath, ...config.sheetsCopy }) : null;
   const queries = sheetsCopy ? createQueryRunner({ path: sheetsCopy.path, ...config.sheetsQuery }) : null;
   // The chats of T3 Code (its state and trace log, read-only): which one made a proposal, which one is open.
   const t3 = config.t3Chats ?? (config.t3?.home ? createT3Chats({ home: config.t3.home }) : null);
@@ -1810,18 +1819,29 @@ export function createAssistant({ store, config = {} }) {
   }
 
   /**
-   * Saves a revised proposal (only while pending): its revision goes up and the
-   * Asistente tab follows it at once (`page`: the page whose edit it is, which has it already).
+   * Saves a revised proposal (only while pending, and only over the revision it was read at:
+   * the assistant's worker and the person's table write the same row from two threads): its
+   * revision goes up and the Asistente tab follows it at once (`page`: the page whose edit it is,
+   * which has it already). `also`: its page_json / view_json, written with it.
+   * The new revision; null when it is no longer pending; false when someone revised it since it
+   * was read (read it again and revise that).
    */
-  function saveRevision(proposal, changes, by, reason = null, page = null) {
+  function saveRevision(proposal, changes, by, reason = null, page = null, also = {}) {
+    const columns = Object.keys(also).filter(c => c === 'page_json' || c === 'view_json');
     const row = db
       .prepare(
-        "UPDATE ai_proposals SET changes_json = ?, reason = coalesce(?, reason), revision = revision + 1, updated_at = ?, last_by = ? WHERE id = ? AND status = 'pending' RETURNING revision",
+        `UPDATE ai_proposals SET changes_json = ?, reason = coalesce(?, reason), revision = revision + 1, updated_at = ?, last_by = ?${columns.map(c => `, ${c} = ?`).join('')}
+         WHERE id = ? AND status = 'pending' AND revision = ? RETURNING revision`,
       )
-      .get(json(changes), reason, now(), by, proposal.id);
-    if (row) changed(proposal.owner_id, page);
-    return row?.revision ?? null;
+      .get(json(changes), reason, now(), by, ...columns.map(c => also[c]), proposal.id, proposal.revision ?? 1);
+    if (row) {
+      changed(proposal.owner_id, page);
+      return row.revision;
+    }
+    return db.prepare('SELECT status FROM ai_proposals WHERE id = ?').get(proposal.id)?.status === 'pending' ? false : null;
   }
+  /** What the assistant hears when the person revised its proposal while it was revising it too. */
+  const EDITED_MEANWHILE = 'The person edited the table meanwhile: get_proposal, then update again.';
 
   const ownProposal = (id, user) =>
     db.prepare('SELECT * FROM ai_proposals WHERE id = ? AND owner_id = ?').get(String(id ?? ''), owner(user));
@@ -1883,11 +1903,46 @@ export function createAssistant({ store, config = {} }) {
     return out;
   };
   /**
+   * The proposals of a list as Cambios propuestos shows them (listedView); those whose digest the
+   * page holds (`have`) only as { id, digest, same }. Built one by one, the thread answering others
+   * in between (a long proposal takes a while).
+   */
+  async function listedViews(rows, titles = new Map(), have = new Set()) {
+    const out = [];
+    let turn = performance.now();
+    for (const r of rows) {
+      if (performance.now() - turn > TURN_MS) {
+        await new Promise(resolve => setImmediate(resolve));
+        turn = performance.now();
+      }
+      const p = listedView(r, titles);
+      out.push(have.has(p.digest) ? { id: p.id, digest: p.digest, same: true } : p);
+    }
+    return out;
+  }
+  /**
+   * The views' worker (server/assistant-host.mjs sets it): the app's thread hands it the rows and
+   * gets the views back, answering people meanwhile. Without it (tests, a worker that keeps failing)
+   * they are built here.
+   */
+  let views = null;
+  async function listedList(rows, titles, have) {
+    if (views && rows.length)
+      try {
+        return await views.list(rows, titles, have);
+      } catch (e) {
+        console.error('Proposal views (worker):', e.message);
+      }
+    return listedViews(rows, titles, have);
+  }
+  const listedOne = async r => (await listedList([r], new Map(), new Set()))[0];
+  /**
    * Proposals as Cambios propuestos last got them (listedView), by id: the list is asked again on
    * every change of any of the person's proposals (a new one, an edit), and a long one takes a
    * second or more to build, so each is built again only when something it reads changed: its
    * own row, the local copy and its history (store.copyVersion), the checks' findings, the day,
-   * the sheets' columns, its chat's title. The most recently used last.
+   * the sheets' columns, its chat's title. The most recently used last. (Kept by the thread that
+   * builds them: the views' worker, where there is one.)
    */
   const listed = new Map();
   const LISTED_KEPT = 120;
@@ -2560,15 +2615,16 @@ export function createAssistant({ store, config = {} }) {
     const view = viewGiven ? readView(args.view, [...new Set(out.changes.map(c => c.sheet))], oldView) : oldView;
     if (view?.error) return { error: 'Nothing was changed', problems: [view.error] };
     const reason = args.reason ? clip(args.reason, 500) : null;
-    if (given) {
-      const page = parse(proposal.page_json ?? 'null') ?? {};
-      db.prepare('UPDATE ai_proposals SET page_json = ? WHERE id = ?').run(json({ ...page, photos: given.photos }), proposal.id);
-    }
     const viewChanged = json(view) !== json(oldView);
-    if (viewChanged) db.prepare('UPDATE ai_proposals SET view_json = ? WHERE id = ?').run(view ? json(view) : null, proposal.id);
     const unchanged = json(out.changes) === json(changes) && !reason && !given && !viewChanged;
-    const revision = unchanged ? proposal.revision : saveRevision(proposal, out.changes, 'ai', reason);
+    // Its photos and view go with the revision, in one write.
+    const also = {
+      ...(given ? { page_json: json({ ...(parse(proposal.page_json ?? 'null') ?? {}), photos: given.photos }) } : {}),
+      ...(viewChanged ? { view_json: view ? json(view) : null } : {}),
+    };
+    const revision = unchanged ? proposal.revision : saveRevision(proposal, out.changes, 'ai', reason, null, also);
     if (revision === null) return { error: 'The proposal is no longer pending' };
+    if (revision === false) return { error: `Nothing was changed. ${EDITED_MEANWHILE}` };
     const table = proposalTable(out.changes, proposal);
     const revised = args.full === true ? { rows: table } : revisedRows(changes, out.changes, table, proposal);
     return {
@@ -2708,11 +2764,18 @@ export function createAssistant({ store, config = {} }) {
       .filter(([, c]) => Object.keys(c.values ?? {}).length);
     const written = writes.map(([i]) => i);
     if (!writes.length) throw Object.assign(new Error('Only doubtful cells were left to write.'), { status: 400, code: 'nothing_selected' });
+    // Only the revision checked here is written: one the assistant (in its worker) revised meanwhile is looked at again.
     const claimed = db
-      .prepare("UPDATE ai_proposals SET status = 'applying' WHERE id = ? AND status = 'pending'")
-      .run(proposal.id);
-    if (!claimed.changes)
+      .prepare("UPDATE ai_proposals SET status = 'applying' WHERE id = ? AND status = 'pending' AND revision = ?")
+      .run(proposal.id, proposal.revision ?? 1);
+    if (!claimed.changes) {
+      if (db.prepare('SELECT status FROM ai_proposals WHERE id = ?').get(proposal.id)?.status === 'pending')
+        throw Object.assign(new Error('La propuesta cambió mientras la revisabas: mira la tabla y vuelve a aplicar.'), {
+          status: 409,
+          code: 'proposal_changed',
+        });
       throw Object.assign(new Error('Proposal is already being applied.'), { status: 409, code: 'proposal_used' });
+    }
     changed(proposal.owner_id);
     // A formula cell's text is written as a formula; any other "=..." stays text.
     const rows = writes.map(([, c]) =>
@@ -2823,11 +2886,12 @@ export function createAssistant({ store, config = {} }) {
     }
     changed(proposal.owner_id);
   }
-  store.outbox?.watch(item => {
-    if (item.kind === 'proposal') queuedSettled(item);
-  });
+  if (!inWorker)
+    store.outbox?.watch(item => {
+      if (item.kind === 'proposal') queuedSettled(item);
+    });
   // Settled while this was not listening (a restart): settled once the assistant is set up.
-  setImmediate(() => {
+  if (!inWorker) setImmediate(() => {
     try {
       for (const p of db.prepare("SELECT id FROM ai_proposals WHERE status = 'queued'").all()) {
         const item = db.prepare("SELECT * FROM outbox WHERE kind = 'proposal' AND ref = ? ORDER BY rowid DESC LIMIT 1").get(p.id);
@@ -3458,7 +3522,20 @@ export function createAssistant({ store, config = {} }) {
   /** A page's revision names whose list it is: a page that moves to another person's chat starts again. */
   const tagOf = ownerId => createHash('sha1').update(String(ownerId)).digest('base64url').slice(0, 6);
   const revisionOf = ownerId => `${boot}.${tagOf(ownerId)}.${revisions.get(ownerId) ?? 0}`;
+  /** In a worker: the changes to tell the app, sent once the work that made them is written. */
+  const told = new Map();
   function changed(ownerId, page = null) {
+    if (inWorker) {
+      if (!told.size)
+        queueMicrotask(() => {
+          const list = [...told.values()];
+          told.clear();
+          for (const c of list) onChanged?.(c.ownerId, c.page);
+        });
+      const key = `${ownerId}\u0000${page ?? ''}`;
+      if (!told.has(key)) told.set(key, { ownerId, page });
+      return;
+    }
     const n = (revisions.get(ownerId) ?? 0) + 1;
     revisions.set(ownerId, n);
     const by = editors.get(ownerId) ?? editors.set(ownerId, new Map()).get(ownerId);
@@ -3468,7 +3545,7 @@ export function createAssistant({ store, config = {} }) {
   }
   // A row of a pending proposal (or of a table shown) saved to the local copy (edited in the sheet and read by a
   // sync or the sheet hook, or saved from the app): its owner's list changes, so the table shows the sheet's edits at once.
-  store.watchRecords?.(rows => {
+  if (!inWorker) store.watchRecords?.(rows => {
     const ids = new Set(rows.map(r => r.id));
     const insectary = rows.some(r => r.sheet === 'Insectary_data');
     let pending = [];
@@ -3808,6 +3885,8 @@ export function createAssistant({ store, config = {} }) {
             : {}),
         });
       } catch (e) {
+        if (e.code === 'proposal_changed')
+          return { error: 'Not applied: the proposal was revised while it was being checked. get_proposal, then apply again.' };
         if (e.code === 'sheet_changed_again')
           return {
             error: 'Not applied: cells edited in the sheet again after the person chose',
@@ -3890,17 +3969,14 @@ export function createAssistant({ store, config = {} }) {
   const agents = new Map();
   /** A person's conversation with a fixed title (T3 Code, Revisión de datos), created on first use. */
   function namedThread(user, title) {
-    const found = db.prepare('SELECT id FROM ai_threads WHERE owner_id = ? AND title = ?').get(owner(user), title);
+    const find = () => db.prepare('SELECT id FROM ai_threads WHERE owner_id = ? AND title = ? ORDER BY rowid LIMIT 1').get(owner(user), title);
+    const found = find();
     if (found) return found.id;
-    const id = randomUUID();
-    db.prepare('INSERT INTO ai_threads (id,owner_id,title,created_at,updated_at) VALUES (?,?,?,?,?)').run(
-      id,
-      owner(user),
-      title,
-      now(),
-      now(),
-    );
-    return id;
+    // One statement: the app and the assistant's worker asking at once still make one conversation.
+    db.prepare(
+      'INSERT INTO ai_threads (id,owner_id,title,created_at,updated_at) SELECT ?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM ai_threads WHERE owner_id = ? AND title = ?)',
+    ).run(randomUUID(), owner(user), title, now(), now(), owner(user), title);
+    return find().id;
   }
   function agentTurn(token) {
     const hash = createHash('sha256').update(token).digest('hex');
@@ -4032,7 +4108,6 @@ export function createAssistant({ store, config = {} }) {
       // The corrected page takes the place of its proposal (same id): the table beside the chat changes in place.
       const carried = carryPersonEdits(parse(replaced.changes_json) ?? [], matched.changes, context.user);
       conflicts = carried.conflicts;
-      db.prepare('UPDATE ai_proposals SET view_json = ? WHERE id = ?').run(view ? json(view) : null, replaced.id);
       // A page an older chat left pending, read again in a new one, moves to the chat that read it again
       // (several chats' pages gathered for one review).
       const here = context.t3 ? chatOfCall(context) : null;
@@ -4040,8 +4115,12 @@ export function createAssistant({ store, config = {} }) {
         db.prepare('UPDATE ai_proposals SET t3_thread = ?, t3_title = ? WHERE id = ?').run(here.id, here.title, replaced.id);
         replaced.t3_thread = here.id;
       } else if (!here && context.t3?.toolUseId) moveWhenKnown(replaced.id, context.t3.toolUseId, owner(context.user));
-      if (saveRevision(replaced, carried.changes, 'ai', reason) !== null)
-        proposal = { id: replaced.id, chat: chatOf(replaced, context) };
+      const saved = saveRevision(replaced, carried.changes, 'ai', reason, null, { view_json: view ? json(view) : null });
+      if (saved === false)
+        return {
+          error: `Nothing was proposed: the person edited this page's table meanwhile. Call match_notebook again with the same replaceProposalId (their edits are kept).`,
+        };
+      if (saved !== null) proposal = { id: replaced.id, chat: chatOf(replaced, context) };
     } else if (editor && replaced) {
       db.prepare("UPDATE ai_proposals SET status = 'discarded' WHERE id = ? AND status = 'pending'").run(replaced.id);
       changed(owner(context.user));
@@ -4223,17 +4302,7 @@ export function createAssistant({ store, config = {} }) {
       // The proposals the page holds as they are now (their digests, `have`) are not sent again: a long
       // proposal (hundreds of rows) goes once, then only when it changes.
       const have = new Set(String(query.have ?? '').split(',').slice(0, 400).filter(d => d.length === 12));
-      // Built one by one, the server answering others in between (a long proposal takes a while).
-      const proposals = [];
-      let turn = performance.now();
-      for (const r of rows) {
-        if (performance.now() - turn > TURN_MS) {
-          await new Promise(resolve => setImmediate(resolve));
-          turn = performance.now();
-        }
-        const p = listedView(r, titles);
-        proposals.push(have.has(p.digest) ? { id: p.id, digest: p.digest, same: true } : p);
-      }
+      const proposals = await listedList(rows, titles, have);
       // The first request of a page (no revision held): tagged, so a reload with nothing new is a 304.
       return { status: 200, tagged: !held, body: { revision, stamp, ...head, proposals } };
     }
@@ -4241,7 +4310,7 @@ export function createAssistant({ store, config = {} }) {
     const editMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/edit$/.exec(path);
     if (editMatch && method === 'POST') {
       if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot edit proposals.');
-      const proposal = teamProposal(editMatch[1], user);
+      let proposal = teamProposal(editMatch[1], user);
       if (!proposal) return bad(404, 'not_found', 'Proposal not found.');
       if (isTable(proposal)) return bad(409, 'read_only_table', 'Una tabla del asistente solo se lee.');
       if (proposal.status !== 'pending') return bad(409, 'proposal_used', 'La propuesta ya no está pendiente.');
@@ -4276,41 +4345,51 @@ export function createAssistant({ store, config = {} }) {
             .map(c => ({ ref: c.key, field: c.field, checked: c.checked !== false }))
         : [];
       const addEmpty = Array.isArray(body.add) ? body.add.filter(a => typeof a?.sheet === 'string').slice(0, 20) : [];
-      const out = reviseChanges(
-        withPageRows(parse(proposal.changes_json) ?? [], parse(proposal.page_json ?? 'null'), cells.map(c => c.key)),
-        {
-          // use: the buttons for the selected cells, "Valor de la hoja" (back to the sheet's value,
-          // the assistant's kept aside) and "Valor de la IA" (the assistant's value again).
-          set: cells.map(c => ({
-            ref: c.key,
-            values: {
-              [c.field]:
-                c.use === 'sheet'
-                  ? DROP
-                  : c.use === 'ai'
-                    ? AI_VALUE
-                    : typeof c.value === 'string'
-                      ? clip(c.value, 2000)
-                      : (c.value ?? null),
-            },
-            ...(c.before !== undefined && !c.use && scalar(c.before) ? { before: { [c.field]: c.before } } : {}),
-          })),
-          check,
-          sheet,
-          remove,
-          addEmpty,
-        },
-        { by: 'person', user },
-      );
-      if (out.changes.length > rowCap(out.changes)) {
-        const m = msg('Una propuesta tiene como máximo {n} filas', { n: rowCap(out.changes) });
-        return { status: 409, body: { error: { code: 'too_many_rows', message: m.text, messageMsg: m.msg } } };
+      const ops = {
+        // use: the buttons for the selected cells, "Valor de la hoja" (back to the sheet's value,
+        // the assistant's kept aside) and "Valor de la IA" (the assistant's value again).
+        set: cells.map(c => ({
+          ref: c.key,
+          values: {
+            [c.field]:
+              c.use === 'sheet'
+                ? DROP
+                : c.use === 'ai'
+                  ? AI_VALUE
+                  : typeof c.value === 'string'
+                    ? clip(c.value, 2000)
+                    : (c.value ?? null),
+          },
+          ...(c.before !== undefined && !c.use && scalar(c.before) ? { before: { [c.field]: c.before } } : {}),
+        })),
+        check,
+        sheet,
+        remove,
+        addEmpty,
+      };
+      // The assistant (in its worker) may revise the proposal at the same moment: the person's cells
+      // then go on the revision it saved, read again (a few times at most), so neither loses anything.
+      let out;
+      for (let tries = 1; ; tries++) {
+        out = reviseChanges(withPageRows(parse(proposal.changes_json) ?? [], parse(proposal.page_json ?? 'null'), cells.map(c => c.key)), ops, {
+          by: 'person',
+          user,
+        });
+        if (out.changes.length > rowCap(out.changes)) {
+          const m = msg('Una propuesta tiene como máximo {n} filas', { n: rowCap(out.changes) });
+          return { status: 409, body: { error: { code: 'too_many_rows', message: m.text, messageMsg: m.msg } } };
+        }
+        if (json(out.changes) === proposal.changes_json) break;
+        const saved = saveRevision(proposal, out.changes, 'person', null, page);
+        if (saved === null) return bad(409, 'proposal_used', 'La propuesta ya no está pendiente.');
+        if (saved !== false) break;
+        proposal = teamProposal(editMatch[1], user);
+        if (proposal?.status !== 'pending') return bad(409, 'proposal_used', 'La propuesta ya no está pendiente.');
+        if (tries >= 5) return bad(409, 'proposal_changed', 'La propuesta cambió mientras la editabas: vuelve a intentarlo.');
       }
-      if (json(out.changes) !== proposal.changes_json && saveRevision(proposal, out.changes, 'person', null, page) === null)
-        return bad(409, 'proposal_used', 'La propuesta ya no está pendiente.');
       return {
         status: 200,
-        body: { proposal: listedView(ownProposalListed(proposal.id)), rejected: out.rejected, overrode: out.overrode },
+        body: { proposal: await listedOne(ownProposalListed(proposal.id)), rejected: out.rejected, overrode: out.overrode },
       };
     }
     // The sheet's rows a marker of the table stands for, opened with a click: whoever may see the proposal.
@@ -4583,7 +4662,7 @@ export function createAssistant({ store, config = {} }) {
     }
     return out;
   }
-  const stopWatching = store.watchSyncs?.(status => {
+  const stopWatching = inWorker ? null : store.watchSyncs?.(status => {
     if (status?.state === 'error') return;
     try {
       checkNeedsReview();
@@ -4599,6 +4678,13 @@ export function createAssistant({ store, config = {} }) {
     t3,
     sheetsCopy,
     checkNeedsReview,
+    /** A worker's word that a person's proposals changed: their pages waiting for the list are woken. */
+    notifyChanged: (ownerId, page = null) => changed(ownerId, page),
+    /** The views' worker's builder of listedViews, or null to build them here. */
+    useViews(builder) {
+      views = builder;
+    },
+    listedViews,
     close() {
       stopWatching?.();
       sheetsCopy?.close();

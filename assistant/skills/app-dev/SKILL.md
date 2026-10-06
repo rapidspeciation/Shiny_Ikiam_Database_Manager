@@ -21,7 +21,7 @@ description: Change the web app itself (Ikiam Insectary DB): its screens, grids,
 | Part | Where |
 |---|---|
 | Screens | `frontend/src`: Vue 3 + TypeScript + Tailwind. Grids are Tabulator 6.5 through `components/SheetGrid.vue`, `CollectGrid.vue`, `components/assistant/ProposalSheet.vue` and `lib/gridKit.ts` |
-| Server | `server/*.mjs`: Node 24, node:sqlite. The assistant's tools: `server/assistant.mjs`; notebook matching: `server/notebook*.mjs`; document tools: `server/knowledge.mjs` |
+| Server | `server/*.mjs`: Node 24, node:sqlite. The assistant's tools: `server/assistant.mjs`, run in a worker thread (`server/assistant-host.mjs`) that reads the database through `server/store-reader.mjs` (the Store's reads it lists, writes only to the proposals); notebook matching: `server/notebook*.mjs`; document tools: `server/knowledge.mjs` |
 | Assistant instructions | `assistant/`: `AGENTS.md` (the brief; `server/brief.mjs` fills in the person), `skills/`, `agents/` (the app shows them at `#/instrucciones`) |
 | Design and docs | `DESIGN.md` and `PRODUCT.md` (read both before UI work), `docs/` |
 

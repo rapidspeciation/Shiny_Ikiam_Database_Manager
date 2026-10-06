@@ -87,10 +87,16 @@ function cleanCapture(c) {
   };
 }
 
-/** Bumped on every write to the stored tracks, so Revisión de datos knows when to look again. */
-const revisions = new WeakMap();
-const touched = store => revisions.set(store, (revisions.get(store) || 0) + 1);
-export const tracksRevision = store => revisions.get(store) || 0;
+/**
+ * Bumped on every write to the stored tracks, so Revisión de datos knows when to look again. Kept in
+ * the database (settings), so the assistant's worker, on its own connection, sees it move too.
+ */
+const touched = store =>
+  store.db
+    .prepare("INSERT INTO settings(key,value) VALUES('tracksRevision','1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1")
+    .run();
+export const tracksRevision = store =>
+  Number(store.db.prepare("SELECT value FROM settings WHERE key='tracksRevision'").get()?.value) || 0;
 
 function cleanPhotoIds(ids) {
   if (ids === undefined || ids === null) return [];

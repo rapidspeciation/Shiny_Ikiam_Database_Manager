@@ -55,6 +55,8 @@ function solvingChange(db, finding, since) {
  * text, textMsg, others } each. Returns how many were new and how many solved.
  */
 export function trackFindings(store, type, list, { at = new Date().toISOString() } = {}) {
+  // The assistant's workers find the same problems on their own connection: the app keeps the record.
+  if (store.reader) return { added: 0, solved: 0 };
   const db = store.db;
   initFindings(db);
   const open = new Map(
@@ -76,7 +78,8 @@ export function trackFindings(store, type, list, { at = new Date().toISOString()
   const users = db.prepare('SELECT display_name FROM users WHERE id = ?');
   let added = 0,
     solved = 0;
-  db.exec('BEGIN');
+  // Takes the write lock first: another connection (the assistant's worker) writing meanwhile makes it wait, not fail.
+  db.exec('BEGIN IMMEDIATE');
   try {
     for (const f of list) {
       if (current.has(f.key)) continue;

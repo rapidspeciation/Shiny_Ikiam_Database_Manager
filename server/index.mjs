@@ -220,6 +220,8 @@ export function configFromEnv(env = process.env) {
     databasePath: env.DATABASE_PATH || join(here, '../.local/app.sqlite'),
     // The sheets' copy the assistant's `query` reads (server/replica.mjs); beside the database by default.
     sheetsCopyPath: env.SHEETS_COPY_PATH || undefined,
+    // The AI's tool calls and the proposals' views in worker threads (server/assistant-host.mjs): 'auto', or '0' to run them in the app's thread.
+    assistantWorker: env.ASSISTANT_WORKER || 'auto',
     googleCredentialsFile: env.GOOGLE_CREDENTIALS_FILE,
     setupToken: env.SETUP_TOKEN,
     localMode: env.LOCAL_MODE === '1',
@@ -418,8 +420,9 @@ export async function createApp(config = {}, options = {}) {
   const assistantFile = new URL('./assistant.mjs', import.meta.url);
   let assistant = null;
   if (existsSync(fileURLToPath(assistantFile))) {
-    const { createAssistant } = await import(assistantFile.href);
-    assistant = createAssistant({ store, config });
+    // The AI's tool calls and the proposals' views in worker threads where it can (server/assistant-host.mjs).
+    const { createAssistantHost } = await import(new URL('./assistant-host.mjs', import.meta.url).href);
+    assistant = createAssistantHost({ store, config });
   }
   // Each person's own T3 project, made when missing (server/t3projects.mjs).
   const t3Projects = createT3Projects({
@@ -464,6 +467,7 @@ export async function createApp(config = {}, options = {}) {
       // `writing`: what a restart would cut (scripts/deploy.sh waits for it to be all 0).
       // `google`: whether the workbook answers (ok, slow, busy), saves waiting for it, entries kept in the app.
       // `eventLoop`: over the last minute, how late the server got to what was waiting (p99 and the longest).
+      // `assistant`: where the AI's tool calls run (worker, inline, degraded), how many now, how often a worker was replaced.
       if (method === 'GET' && path === '/health')
         return json(res, 200, {
           status: 'ok',
@@ -471,6 +475,7 @@ export async function createApp(config = {}, options = {}) {
           writing: writingNow(),
           google: store.googleState(),
           eventLoop: eventLoop.stats(),
+          ...(assistant?.status ? { assistant: assistant.status() } : {}),
         });
       // Shares are normally caught by the service worker; if it was not active yet,
       // open the import screen and let the person share again.
@@ -1321,7 +1326,14 @@ export async function createApp(config = {}, options = {}) {
     } catch {
       /* No assistant tables (tests). */
     }
-    return { applying, inFlight: store.writesInFlight ?? 0, unconfirmed: store.unconfirmedCount(), draining: !!store.draining };
+    return {
+      applying,
+      inFlight: store.writesInFlight ?? 0,
+      unconfirmed: store.unconfirmedCount(),
+      draining: !!store.draining,
+      // The AI's tool calls running in the assistant's worker (they may be drafting a proposal).
+      ...(assistant?.mode === 'worker' ? { aiCalls: assistant.inFlight() } : {}),
+    };
   };
   /**
    * Before the process stops (a deploy, a restart): no new saves or applies, and those in
@@ -1332,7 +1344,7 @@ export async function createApp(config = {}, options = {}) {
     const until = Date.now() + ms;
     for (;;) {
       const w = writingNow();
-      if (!w.applying && !w.inFlight) return true;
+      if (!w.applying && !w.inFlight && !w.aiCalls) return true;
       if (Date.now() > until) return false;
       await new Promise(resolve => setTimeout(resolve, 250));
     }

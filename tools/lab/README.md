@@ -155,6 +155,19 @@ LOCAL_BUSY=unavailable:10 tools/lab/app.sh --bg   # start the app with the workb
   sheet meanwhile (`sheet-edit.mjs … --no-hook`) to see a waiting save refused
   and shown in red instead of overwriting.
 
+## The AI's work beside people's requests
+
+The assistant's tool calls and the proposals' tables are built in worker
+threads (`server/assistant-host.mjs`), so a chat drafting big proposals never
+holds up anyone else's request. Two synthetic loads, no Google, no browser:
+
+```sh
+node tools/lab/proposal-load.mjs     # one process, in memory: each step's time and longest block
+node tools/lab/worker-load.mjs       # the whole app on a database file, ASSISTANT_WORKER=0 then auto:
+                                     # a chat drafts five 2,000-row proposals, Cambios propuestos open,
+                                     # someone checks clutches every 100 ms; their p50/p99 and the app's lag
+```
+
 ## Cases
 
 `cases.json` in the lab folder:

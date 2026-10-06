@@ -22,12 +22,30 @@ const parse = value => (value ? JSON.parse(value) : null);
 const now = () => new Date().toISOString();
 const error = (code, message, status = 400, details) => Object.assign(new Error(message), { code, status, details });
 
+/**
+ * A counter that grows with every row written to the local copy (records) or to its history (actions,
+ * changes, and the names it shows, users), by whatever connection writes it (the app, a script): views
+ * built from them (the proposals' tables) are kept until it moves (Store#copyVersion). Writes to other
+ * tables (the assistant's proposals) leave it alone.
+ */
+function initCopyVersion(db) {
+  db.exec(`CREATE TABLE IF NOT EXISTS copy_version(id INTEGER PRIMARY KEY CHECK (id = 1), n INTEGER NOT NULL);
+    INSERT OR IGNORE INTO copy_version(id, n) VALUES (1, 0);`);
+  for (const table of ['records', 'actions', 'changes', 'users'])
+    for (const event of ['INSERT', 'UPDATE', 'DELETE'])
+      db.exec(
+        `CREATE TRIGGER IF NOT EXISTS copy_${table}_${event.toLowerCase()} AFTER ${event} ON ${table} BEGIN UPDATE copy_version SET n = n + 1 WHERE id = 1; END`,
+      );
+}
+
 export class Store {
   constructor(config = {}, { sheets, seed, switching = false } = {}) {
     this.config = config;
     const dbPath = config.databasePath || ':memory:';
     if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true });
-    this.db = new DatabaseSync(dbPath);
+    // The assistant's worker (server/assistant-worker.mjs) writes its proposals on its own connection:
+    // a write of the app waits its turn (a few ms) instead of failing as busy.
+    this.db = new DatabaseSync(dbPath, { timeout: 5000 });
     if (dbPath !== ':memory:') chmodSync(dbPath, 0o600);
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
       CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, username TEXT UNIQUE NOT NULL, display_name TEXT NOT NULL, role TEXT NOT NULL, salt TEXT NOT NULL, password_hash TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL);
@@ -73,19 +91,7 @@ export class Store {
     initStaged(this.db);
     // Prepared once (prepare costs about as much as a small read): see statement().
     this.statements = new Map();
-    // Grows with every row written to the local copy (records) or to its history (actions, changes,
-    // and the names it shows, users), whatever code writes it: views built from them (the proposals'
-    // tables) are kept until it moves (copyVersion).
-    this.copyWrites = 0;
-    this.db.function('copy_written', () => {
-      this.copyWrites++;
-      return null;
-    });
-    for (const table of ['records', 'actions', 'changes', 'users'])
-      for (const event of ['INSERT', 'UPDATE', 'DELETE'])
-        this.db.exec(
-          `CREATE TEMP TRIGGER IF NOT EXISTS copy_${table}_${event.toLowerCase()} AFTER ${event} ON main.${table} BEGIN SELECT copy_written(); END`,
-        );
+    initCopyVersion(this.db);
     this.sheets =sheets || (config.localMode ? new LocalSheets(seed || {}, { health: config.health }) : new GoogleSheets(config));
     this.localMode = this.sheets instanceof LocalSheets;
     // What open pages follow (GET /api/pulse): the workbook's state, the outbox, the staged entries.
@@ -129,9 +135,10 @@ export class Store {
   /**
    * The local copy's version: changes whenever a row of it or of its history is written, here or by
    * another process on the same database file (scripts): what a view kept from them is checked against.
+   * The assistant's proposals, written by its worker, leave it as it is.
    */
   copyVersion() {
-    return `${this.copyWrites}.${this.statement('PRAGMA data_version').get().data_version}`;
+    return String(this.statement('SELECT n FROM copy_version WHERE id = 1').get()?.n ?? 0);
   }
   close() {
     this.closed = true;
