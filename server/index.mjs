@@ -37,6 +37,7 @@ import {
 } from './monitoring.mjs';
 import { monitoringRowsCsv, pointsCsv, walksGpx, wikilocCorrections } from './monitoring-export.mjs';
 import { idSuggestions, tableChanges, tablePayload, tableRevision } from './grid.mjs';
+import { holdId, releaseHold } from './holds.mjs';
 import { searchAll, searchRange } from './search.mjs';
 import { extendPremadeRows } from './premade.mjs';
 import {
@@ -713,6 +714,15 @@ export async function createApp(config = {}, options = {}) {
       if (method === 'GET' && path === '/api/search') return json(res, 200, searchAll(store, query));
       if (method === 'GET' && path === '/api/search/rows') return json(res, 200, searchRange(store, query));
       if (method === 'GET' && path === '/api/ids') return json(res, 200, idSuggestions(store, query));
+      // An Insectary ID held for a card of Emergidos from the tap that gives it (server/holds.mjs).
+      if (method === 'POST' && path === '/api/ids/hold') {
+        requireEditor(user);
+        return json(res, 200, holdId(store, body, user));
+      }
+      if (method === 'DELETE' && /^\/api\/ids\/hold\/[^/]+$/.test(path)) {
+        requireEditor(user);
+        return json(res, 200, releaseHold(store, decodePart(path.split('/')[4]), user));
+      }
       // Clutches (cards): the counts' sum formulas and last changes; the day's checks and changes; marking a check.
       if (method === 'GET' && path === '/api/clutches/state') return sendTagged(res, clutchState(store));
       if (method === 'GET' && path === '/api/clutches/day') return json(res, 200, clutchDay(store, query));

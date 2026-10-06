@@ -14,6 +14,10 @@ export default {
   'No se pudo confirmar la escritura en Google Sheets': 'The write to Google Sheets could not be confirmed',
   'No se pudo verificar la escritura en Google Sheets': 'The write to Google Sheets could not be verified',
   'Algunos cambios necesitan revisión; no se guardó nada': 'Some changes need review; nothing was saved',
+  // server/holds.mjs
+  'Falta la tarjeta': 'The card is missing',
+  'Solo se reservan Insectary IDs': 'Only Insectary IDs can be held',
+  'Insectary ID no válido': 'Invalid Insectary ID',
   // server/grid.mjs, server/index.mjs, server/schema.mjs
   'El ID inicial debe ser como CAM078277 o FS00001234': 'The first ID must look like CAM078277 or FS00001234',
   'Hoja desconocida': 'Unknown sheet',

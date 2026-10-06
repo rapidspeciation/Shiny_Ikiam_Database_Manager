@@ -23,6 +23,7 @@ import { checkAgainst } from './batch.mjs';
 import { censusEntriesUndone } from './census.mjs';
 import { claimsOf, releaseClaims, takeClaims } from './claims.mjs';
 import { idSuggestions } from './grid.mjs';
+import { HOLD, dropStaleHolds, holdOwners } from './holds.mjs';
 import { asCell, comparable, labelFor, moduleMap } from './schema.mjs';
 import { msg, msgError, tpl } from './messages.mjs';
 import { rowKey } from './sheets.mjs';
@@ -106,10 +107,18 @@ export class Staged {
   list() {
     const people = this.people();
     const items = this.rows().map(r => this.shape(r, people));
+    // And the Insectary IDs held by cards of Emergidos not saved yet (server/holds.mjs): `hold` is the card.
+    dropStaleHolds(this.db);
     const claims = this.db
-      .prepare("SELECT kind, value, owner, actor FROM claims WHERE owner LIKE 'staged:%' ORDER BY created_at")
+      .prepare("SELECT kind, value, owner, actor FROM claims WHERE owner LIKE 'staged:%' OR owner LIKE 'hold:%' ORDER BY created_at")
       .all()
-      .map(c => ({ kind: c.kind, value: c.value, itemId: c.owner.slice(7), actor: c.actor, actorName: people.get(c.actor) ?? c.actor }));
+      .map(c => ({
+        kind: c.kind,
+        value: c.value,
+        ...(c.owner.startsWith(HOLD) ? { itemId: null, hold: c.owner.slice(HOLD.length) } : { itemId: c.owner.slice(7) }),
+        actor: c.actor,
+        actorName: people.get(c.actor) ?? c.actor,
+      }));
     return { items, claims, count: this.count(), revision: this.store.liveRevision?.() ?? null };
   }
   /** Changes waiting for «Guardar en Google Sheets» (cells of edits, plus new rows), and those being written. */
@@ -256,7 +265,9 @@ export class Staged {
         ...again.map(a => ({ module: a.item.sheet, clientId: a.item.client_id, values: a.values, replaceFormula: parse(a.item.replace_formula_json) ?? [] })),
       ],
     };
-    const owners = [...exclude].map(id => `staged:${id}`);
+    // The IDs this person holds for their cards (server/holds.mjs) are theirs to save.
+    const holds = holdOwners(this.db, actor);
+    const owners = [...[...exclude].map(id => `staged:${id}`), ...holds];
     const checked = await checkAgainst(this.store, input, { live: this.live(exclude), claimOwners: owners });
     const againIds = new Set(again.map(a => a.item.client_id));
     // A refusal of a row entered here is said on that row (staged:<clientId>).
@@ -317,7 +328,12 @@ export class Staged {
               json(target.clean), null, null, json(raw?.replaceFormula ?? []), actor, at, at,
             );
           }
-          const refused = takeClaims(this.db, owner, actor, claimsOf(target.sheet, target.clean), { now: at });
+          const wanted = claimsOf(target.sheet, target.clean);
+          // A card's held ID passes to its entry.
+          if (holds.length)
+            for (const c of wanted)
+              this.db.prepare("DELETE FROM claims WHERE kind = ? AND value = ? AND owner LIKE 'hold:%' AND actor = ?").run(c.kind, c.value, actor);
+          const refused = takeClaims(this.db, owner, actor, wanted, { now: at });
           if (refused.length) {
             // Taken a moment ago by someone else's entry: the next free one is offered.
             this.db.exec('ROLLBACK TO row');
