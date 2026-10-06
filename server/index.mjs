@@ -252,6 +252,9 @@ export function configFromEnv(env = process.env) {
           provision: env.ITHOMIINI_T3_PROVISION || 'systemd',
         }
       : null,
+    // The people's T3 workspaces (scripts/t3-provision.mjs), where match_notebook reads a reader's linesFile;
+    // beside the database by default (<shared>/t3-workspaces on the server).
+    t3Workspaces: env.ITHOMIINI_T3_WORKSPACES || undefined,
     aiApiKey: env.AI_API_KEY || env.OPENAI_API_KEY,
     aiModel: env.AI_MODEL || env.OPENAI_MODEL,
     aiBaseUrl: env.AI_BASE_URL,

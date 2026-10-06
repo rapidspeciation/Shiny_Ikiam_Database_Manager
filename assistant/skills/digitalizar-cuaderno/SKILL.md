@@ -5,87 +5,54 @@ description: Digitize photos of the Ikiam insectary notebooks into the Ithomiini
 
 # Digitalizar cuaderno
 
-You read the handwriting; `match_notebook` finds each line's row, compares
-every cell with the sheet and drafts **one proposal per page** beside the
-chat. Send values **as written**: the tool converts them, and its
+The handwriting is read blind; `match_notebook` finds each line's row,
+compares every cell with the sheet and drafts **one proposal per page**
+beside the chat. Values go **as written**: the tool converts them, and its
 description lists each notebook's columns.
+
+How to read a page (the file format, doubtful and unreadable cells, how the
+team writes values, each notebook's layout) is in
+`.claude/agents/notebook-reader.md`, the reader subagents' instructions.
 
 ## Workflow
 
-1. **Identify the notebook** from its headers (below). If unsure, say so in
-   one line and use the closest kind; don't stop to ask.
-2. **Crop and read** (see "Crops"): transcribe **every line and every
-   column**, top to bottom, crossed-out lines included (`crossedOut: true`)
-   and the notes. Skip only lines holding nothing but a pre-written ID or
-   number.
-   - A spread of two facing pages is one page: follow each line across the
-     gutter (count the ruled lines from the header on both pages; highlights
-     and notes help) and give its right-hand values too.
-   - Before calling the tool, check the two halves are in step: the stages
-     must make sense on each line (no hatch date or 0 larvae → no pupae or
-     adults; "no hatch" / "all died" sit on such lines; `ins`/`lab` is on
-     almost every line). If not, the right page is shifted by a line:
-     re-align it.
-3. **Propose at once**: one `match_notebook` per page with
-   `includeUnchanged: true` (the table then follows the whole page), and
-   `year` only if the page shows it (see "The year" below). All the envelopes/labels of a message are
-   one call (`kind: "labels"`). Don't look the rows up first: the tool does
-   it. Pass `photo` (the attachment's file name) and `rotate` (the turn you
-   gave crops.py) so the page shows upright beside its table.
-4. **Second reading, only when needed** (see "Verification").
-5. **Tell the person in 3–6 short lines**: which notebook and rows
+1. **Identify the notebook** from its headers (`stocks` Posturas, `emergence`
+   Emergidos, `deaths` Muertes, `crispr` CRISPR, `labels` envelopes and
+   labels). If unsure, say so in one line and use the closest kind; don't
+   stop to ask.
+2. **Cut the strips** (see "Crops").
+3. **Read**:
+   - one page: read it yourself, following
+     `.claude/agents/notebook-reader.md` (steps 1–4 and "Reading a page"
+     on), and give the lines to `match_notebook` directly;
+   - several pages: one reader subagent per page (see "Several pages at
+     once");
+   - envelopes and labels: read them yourself the same way (see "Labels").
+4. **Propose at once**: one `match_notebook` per page with
+   `includeUnchanged: true` (the table then follows the whole page), `year`
+   only if the page shows it (see "The year"), `photo` (the attachment's
+   file name) and `rotate` (the turn you gave crops.py) so the page shows
+   upright beside its table. All the envelopes/labels of a message are one
+   call (`kind: "labels"`). Don't look the rows up first: the tool does it.
+5. **Second reading, only when needed** (see "Verification").
+6. **Tell the person in 3–6 short lines**: which notebook and rows
    ("Posturas, clutches 120–134"), how many cells it fills, the differences
    with the sheet (sheet → notebook), what the second reading changed (if one
    was done), and the lines not found in the sheet. A small table only when
    there are several differences.
-6. **Corrections** ("la línea 5 es macho"): a few cells → `update_proposal`
+7. **Corrections** ("la línea 5 es macho"): a few cells → `update_proposal`
    on the same proposal; many lines (a shifted block) → `match_notebook`
    again with the whole page corrected and `replaceProposalId`. Say what
    changed. A page already proposed in this chat is re-matched the same way
    (one proposal per page).
 
-From the answer (`proposalId`, `year`/`yearSource`, counts, and per line its
-status: match, new, missing, ambiguous, duplicate, nokey, crossed; then
-`inProposal`, `rowError`, `warnings` and the cells by group: fill, differs,
-doubtful, unreadable, implied, kept, notWritten, problems):
-
-- `missing` (an ID not in the sheet: probably misread; see `didYouMean`),
-  `ambiguous` and `duplicate` lines go in your summary, with `rowError`,
-  `differs` and `warnings` (e.g. a clutch's adults unlike the butterflies
-  typed in Insectary_data).
-- `overlaps` = the same rows in another pending proposal: if it is the same
-  page, pass its id as `replaceProposalId` next time.
-- A correction that looks like a typing slip (a digit missing, two swapped,
-  another prefix) was often repeated in the rows typed with it: look at the
-  same column in the rows around the page. The tool adds those it finds
-  (`sameErrorNearby`) after the page's rows, as doubtful cells; propose
-  others you see the same way, and say in the summary how many rows off the
-  photo have it and where. Those with `inProposal` are in the proposal;
-  `alreadyIn` names another pending proposal that writes them.
-- `wildWithoutCollection`: wild-caught butterflies without their
-  Collection_data row, drafted for you to complete.
-
 Pages that are not a plain notebook table (cage cards, crosses notebook,
 field envelopes): read the skill **data-rules** first.
 
-## What `match_notebook` takes
+## What `match_notebook` does and answers
 
-Every line, top to bottom, with its values as written:
-
-- dates as written (`17/9`); ditto marks replaced by the value above (a brace
-  or ditto over many lines can go once in `spans`); short CAMs and tubes
-  (`cam505`, `81`) may stay short;
-- counts as written (`12+15`; a corrected count as `12=9=4`); INSECTARY OR
-  LABORATORY (`ins/oda`) and the notes columns as written;
-- a doubtful cell: your best reading as the value, confidence below 0.8, up
-  to 3 alternatives and a short reason; it is highlighted;
-- an unreadable cell: null (never left out), a reason, and any partial
-  reading in alternatives; it shows empty for the person to fill and is
-  never written empty;
-- a cell empty on the page: its column left out.
-
-The tool finds each row (look-alike IDs 0/O, 1/I, 5/S, row order), completes
-list values, keeps the SPECIES formula unless what emerged differs or it gives
+It finds each row (look-alike IDs 0/O, 1/I, 5/S, row order), completes list
+values, keeps the SPECIES formula unless what emerged differs or it gives
 nothing for the clutch (then the page's species is written), writes notes as
 `d/m/yy INI: text` after the existing note, turns owner codes, generations
 (`(F1)`), dashes and note words (`ethanol`, `wc`, a CAM…) into their columns,
@@ -100,145 +67,36 @@ dates in those rows, or the current year when the page's dates are from the
 last 120 days. Otherwise it proposes nothing and asks for the year: ask the
 person, then call again with `year`.
 
-## Doubtful and unreadable cells
+The answer: `proposalId`, `year`/`yearSource`, counts, and the lines with
+something to fill or flag (lines already as in the sheet are only counted,
+`linesAsInSheet`), each with its status (match, new, missing, ambiguous,
+duplicate, nokey, crossed), `inProposal`, `rowError`, `warnings` and the
+cells by group: fill, differs, doubtful, unreadable, implied, kept,
+notWritten, problems.
 
-Propose everything readable; doubt is a highlight, not an omission.
-
-- **Not sure**: your best reading, with confidence, alternatives and a
-  reason, as above. Use it for characters you cannot tell apart,
-  not for whole columns: a value you can read, on a line you could follow, is
-  sure. A clear value that looks wrong (a date out of stage order, adults >
-  pupae) is sure: send it as written and point it out.
-- **Cannot read it at all**: mark it unreadable as above.
-- **Look-alikes**: 0/O, 1/I/7, 1/4, 1/2, 3/7, 2/7, 5/S, 8/B, 2/Z, 6/G, 4/9,
-  3/8, `+`/1; ♀/♂ written small. Before reading digits, compare this hand's 1
-  and 7 (and 3/8) on clear cells of the same page, zoomed. Copy IDs as
-  written (`600` for `6OO`; `5OS` and `50S` are two butterflies): the tool
-  looks among look-alikes.
-- **Crossed out**: a crossed-out date or text is not the value: the one
-  beside or above it is. Counts are different (below).
-
-## Writing the values
-
-- **Dates** day first, as written (`17/9`, `4-8`, `19-6-23`), without adding
-  the year. `~2/7` and `29/6?` are that date, doubtful; `2/9+3/9` is the
-  first day.
-- **Values written once for several lines**: when consecutive lines share a
-  value, the team often writes it once and marks the lines it covers with a
-  brace `}` (or ditto marks: `"`, `ll`, `||`, `〃`, a wavy line). The value is
-  often written midway along the brace; the brace's two ends mark the first
-  and last line. Note each brace's first and last ID before filling the
-  lines, then give its value to every line it covers (or once, in the tool's
-  `spans`). A date written once for several lines applies to all; a capture
-  day written once in a bracketed note over wild lines is each line's
-  `Intro2Insectary_date`. A ditto under a blank cell repeats the last value
-  written above; an arrow `↑`/`↗` under a note repeats the note.
-- **Dashes and blanks**: `—` or `-` alone is `"NA"`; an empty cell: leave the
-  column out.
-- **Sex**: ♀ = `female`, ♂ = `male`, `NA` when written so.
-
-**Species**, as full names:
-
-| Written | SPECIES |
-|---|---|
-| `messen.`, `messenoid` | Mechanitis messenoides messenoides |
-| `interm.`, `inter` | Mechanitis messenoides intermedia |
-| `decept` | Mechanitis messenoides deceptus |
-| `pol. p.`, `polymnia p.`, `proceriformis`, `polymnia` alone (the usual stock: sure) | Mechanitis polymnia proceriformis |
-| `pol. e.`, `eurydice` | Mechanitis polymnia eurydice |
-| `wer x pro`, `werpro` | Mechanitis polymnia werneri x proceriformis |
-| `pro x wer`, `proxwer` | Mechanitis polymnia proceriformis x werneri |
-| `lysimnia`, `lys` | Mechanitis lysimnia |
-| `zaneka` | Melinaea menophilus zaneka |
-| `mothone` | Melinaea mothone |
-| `hibrido`, `hibrido x hibrido`, `zaneka x hibrido`, `hibrido x zaneka` | Melinaea menophilus zaneka x menophilus |
-| `salapia` | Ithomia salapia salapia |
-| `confusa`, `Methona` | Methona confusa psamathe |
-
-- **Counts corrected on the page** (a number crossed out and a new one beside
-  or above it, or a total after `=` that is not the sum): the first value as
-  written, then each new total after `=`, in the order written:
-  - `1̶2̶ 9̶ 4̶ 3̶ 2` → `12=9=4=3=2`; `16+2̶ 1` (the 2 crossed out, 1 written) →
-    `16+2=17`; `24-1 = 2̶3̶ = 18` → `24-1=23=18`.
-  - A lone crossed-out term stays and is subtracted: `23+3+1̶` → `23+3+1-1`.
-  - A second total written below another is the final one; small raised
-    terms (`8⁺¹+4`) are part of the sum. A minus is part of the count
-    (`27-5`: 27 larvae, 5 died).
-  - Such a cell is **sure when its final total is clear**: a confidence only
-    if that total is unclear.
-- **Death causes**: `unk` = Unknown, `eaten` = Eaten, `spider` = Spider,
-  `ants` = Ants, `disapp` = Disappearance, `deformed` = Deformed,
-  `heat shock` = Heat stroke, `preserved` = Killed_Preserved, `only wings` =
-  Unknown - Only wings, `N/A` on a dead butterfly = Unknown. More paper
-  words: data-rules `reference/insectary-individuals.md`.
-- **Notes** in clear, correct English with the same meaning: translate
-  Spanish ("3 pupas muertas" → "3 pupae dead") and correct the English
-  ("founded dead" → "found dead"), keeping IDs, codes and names. A place written short is its list
-  name (Cavernas, C.T.C → Cavernas Templo de Ceremonia). More: data-rules
-  `reference/notes.md`.
-- **Which line a value is on**: notebook pages curve like any open book, so
-  a value can look as if it sits on the line above or below its own. Follow
-  the page's printed horizontal lines to the ID they start from; a straight
-  line across the photo can land on the wrong row. One note per clutch or
-  butterfly; a bracket or arrow shares it between the lines it spans.
-
-## The notebooks (kind → sheet)
-
-### `stocks` — Posturas → Insectary_stocks
-
-One line per clutch: *Clutch number · Species · Date laid · Number eggs ·
-Hatching date · Number of larvae · Pupa date · Number of pupa · Emerge date ·
-Number of adults · Insectary or lab · Notes*, often over two facing pages;
-lines highlighted in colour are finished clutches.
-
-- `CLUTCH NUMBER`: `994`, `994(7)` = batch 7 of the same couple; `994(F1)` =
-  generation F1, `994(3) F1` = batch 3 of an F1.
-- `INSECTARY OR LABORATORY` as written: `ins`, `lab`, `ins/oda`,
-  `ins/este`, `ins ESTEBAN` (what looks like `ins/lab` is `ins/oda`).
-- `NOTES`: parents female first: `U8A♀ + C8B♂`.
-- The dissections column, often a sum, is its own column.
-
-More: data-rules `reference/clutches.md`.
-
-### `emergence` — Emergidos → Insectary_data
-
-One line per butterfly: *# · ID · Species · Sex · # Clutch · Stock origin ·
-Emerge date · Dead date · Notes*. The first `#` is a running count such as
-3096: ignore it. Highlighted lines are usually dead butterflies.
-
-- `Insectary_ID`: the ID on the wing (digit + two letters like `5VB`, `6OO`,
-  or letter, digit, letter like `N4D`).
-- `Stock_of_origin` as written (`interm.`, `messen.`). Only the *M.
-  messenoides* stocks have one: every other line, and a dash, is `"NA"`;
-  always send it.
-- Emerge date → `Intro2Insectary_date`; dead date → `Death_date`. The notes
-  go to `Notes_Insectary_data` with their column words ("ethanol", "wc", a
-  CAM…): the tool moves those to their columns.
-- **A CRISPR control** ("CRISPR #159 control" in the clutch column):
-  `CLUTCH NUMBER` `"NA"`, `Wild_Reared` `Reared`, the stock, note "Comes from CRISPR
-  control #159".
-- **An "ethanol" / "flash frozen" bracket** over a butterfly with a CAM: it
-  was killed and preserved on its emerge date: that is its `Death_date`, even
-  when blank.
-- **Wild-caught lines** (no clutch, "—"; the note gives the collector's
-  initials, time, weather and place, e.g. "PAS 12:15 N.C C.T.C"):
-  `Wild_Reared` `Wild-caught`, species, sex, `Intro2Insectary_date` (the
-  capture day). Collector, time, weather and place stay out of the notes:
-  they go in the butterfly's Collection_data row, in the same proposal,
-  unasked. Complete the rows the tool drafts (`wildWithoutCollection`) from
-  the page: `Collector` (`PAS - …`), `Identifier`,
-  `Collection_location`, `Collection_time`, `Cloud_cover`, `Rainfall`,
-  `Purpose` (`NA` when the page does not say). Paper codes: skill
+- `missing` (an ID not in the sheet: probably misread; see `didYouMean`),
+  `ambiguous` and `duplicate` lines go in your summary, with `rowError`,
+  `differs` and `warnings` (e.g. a clutch's adults unlike the butterflies
+  typed in Insectary_data).
+- `overlaps` = the same rows in another pending proposal: if it is the same
+  page, pass its id as `replaceProposalId` next time.
+- A correction that looks like a typing slip (a digit missing, two swapped,
+  another prefix) was often repeated in the rows typed with it: look at the
+  same column in the rows around the page. The tool adds those it finds
+  (`sameErrorNearby`) after the page's rows, as doubtful cells; propose
+  others you see the same way, and say in the summary how many rows off the
+  photo have it and where. Those with `inProposal` are in the proposal;
+  `alreadyIn` names another pending proposal that writes them.
+- `wildWithoutCollection`: wild-caught butterflies (Emergidos) without their
+  Collection_data row, drafted for you to complete from the line's note (its
+  `raw`): `Collector` (`PAS - …`), `Identifier`, `Collection_location`,
+  `Collection_time`, `Cloud_cover`, `Rainfall`, `Purpose` (`NA` when the page
+  does not say), in the same proposal, unasked. Paper codes: skill
   **monitoring** (weather) and data-rules `reference/field-collections.md`.
   Ask in your summary what the page does not say (identifier, a doubtful
   time).
 
-### `deaths` — Muertes → Insectary_data
-
-The daily round: *Date · ID · Species · Sex · Cause · CAM · Notes*. The notes
-go to `Notes_Insectary_data` with their column words, as in Emergidos.
-
-### `labels` — Sobres y etiquetas → Insectary_data
+## Labels — Sobres y etiquetas → Insectary_data
 
 The envelope or label of one sampled butterfly: a CAM, the species, the sex,
 "Reared ID: 1TG", a date, often a tube held beside it (read its printed
@@ -254,15 +112,6 @@ code). One line per label; ignore the notebook behind it.
   difference for the person to decide.
 
 More: data-rules `reference/reading-paper.md`.
-
-### `crispr` — CRISPR → CRISPR
-
-One line per injected egg: *CRISPR · # Eggs · CRISPR date · Guide · Specie ·
-Hatch date · Pupa date · Emerge date · Mutant yes/no · CAM ID · Notes*.
-
-- `CRISPR_No.` is the experiment (e.g. 50), `Eggs_No.` the egg (1, 2, 3…).
-- `Guide` as written: `2B`, `2A-2D`, `No guide`.
-- The "Specie" column is `Stock_of_origin` (e.g. `Inter`).
 
 ## Crops
 
@@ -301,15 +150,18 @@ or one strip per page.
 - Read a single page yourself (splitting one page across readers was slower
   and not more accurate).
 - Several pages in one message: cut every page's strips, then start one
-  `notebook-reader` subagent per page (`general-purpose` if that type is
-  missing), **all in one message** (several Agent calls in the same reply,
-  `run_in_background: false`), each with its notebook kind, columns (from
-  the `match_notebook` description), the photo path (for `--zoom`) and strip
-  paths. The reading is blind: none of your readings and none of the sheet's
-  values. Each answer ends with a line on how this hand writes 1/7 and 3/8:
-  keep it for the reviewers.
-- Check each page's lines (stages in step) and call `match_notebook` per page
-  as the answers arrive.
+  `notebook-reader` subagent per page (`general-purpose` told to follow
+  `.claude/agents/notebook-reader.md` if that type is missing), **all in one
+  message** (`run_in_background: false`). Each prompt holds only the kind,
+  the photo path and `rotate`, the strip paths with their lines, and the
+  output file `work/<today>-<topic>/<page>.json`. The reading is blind: none
+  of your readings and none of the sheet's values.
+- Each reader saves its page to that file and answers with the path, its
+  counts, anything odd and how this hand writes 1/7 and 3/8 (keep that line
+  for the reviewers).
+- Then `match_notebook` with `linesFile` (the path) and `includeUnchanged:
+  true` for every page, several calls in one message; the file already holds
+  the kind, title, photo and rotate.
 - Without subagents (Codex): read the pages yourself, one after another.
 
 ## Verification: a second reading only when needed

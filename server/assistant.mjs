@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { createReports } from './reports.mjs';
 import { MAX_BATCH, TYPED_OVER_FORMULA, renamesWithSuffix, sameAsFormula, uniqueIdIndex } from './batch.mjs';
 import { allIssues, checkData } from './checks.mjs';
@@ -18,7 +19,7 @@ import { createFormulaReader, isFormulaError, sameResult } from './formula-gives
 import { FORMULA_ROWS, checkFormula, isFormulaValue, sameFormula, withRow } from './formula-write.mjs';
 import { FILTERS_DOC, FIND_BUDGET, RECORD_TOOLS, compactRecord, countRecords, findRecords, pickRows, resolveRows, selectRecords } from './records-tool.mjs';
 import { RESULT_BUDGET, fitList, fitResult } from './tool-budget.mjs';
-import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary } from './notebook-tool.mjs';
+import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary, withLinesFile } from './notebook-tool.mjs';
 import { duplicateIdRow, insectaryBaseRows, insectaryIdPlaces, insectaryIdRow, newRowFormulaFields, suffixedId } from './premade.mjs';
 import { formulaNotes, isPlaceholder, newRowPatternFields } from './formula-patterns.mjs';
 import { claimHolder, claimsOf } from './claims.mjs';
@@ -49,6 +50,8 @@ const EDITORS = ['editor', 'reviewer', 'admin'];
  * picks up to as many.
  */
 const PROPOSAL_ROWS = 500;
+/** update_proposal: this many rows or more given the same cells are answered as one `sameChange` entry. */
+const SAME_CHANGE_ROWS = 3;
 const tooManyRows = n => `At most ${PROPOSAL_ROWS} rows per proposal (here ${n}): put the rest in another proposal.`;
 /** Rows a `bulk` call may pick before those already holding its values are left out. */
 const BULK_PICKED = 4 * PROPOSAL_ROWS;
@@ -457,10 +460,10 @@ const TOOLS = [
       name: 'apply_proposal',
       description:
         [
-          "Write a pending proposal to Google Sheets. Only when the person's latest message explicitly approves it ('sí, aplícalo', 'está correcto').",
-          "- It writes what the table shows: your values and the cells the person typed, not the cells they set back to the sheet's value (a row left with nothing to write is skipped). `indexes`: only those rows.",
-          "- Doubtful cells (match_notebook's, amber in the table) not yet checked: it writes nothing and returns them (doubtful: index, label, field, value, alternatives, reason); ask the person about each. Then `confirmDoubtful: true` writes them as they are (only when the person said so after seeing them), or `skipDoubtful: true` writes only the sure cells.",
-          '- Unreadable cells still empty are never written (the sheet keeps its value); the answer lists them (unreadable, unreadableNote): ask the person for those values.',
+          "Write a pending proposal to Google Sheets, only when the person's latest message explicitly approves it ('sí, aplícalo', 'está correcto').",
+          "- It writes what the table shows: your values and the person's, not cells set back to the sheet's value (a row left with nothing is skipped). `indexes`: only those rows.",
+          '- Unchecked doubtful cells (amber): nothing is written and the answer lists them (index, label, field, value, alternatives, reason): ask the person about each. Then `confirmDoubtful` writes them as they are (only when the person said so after seeing them), or `skipDoubtful` only the sure cells.',
+          '- Unreadable cells still empty are never written (the sheet keeps its value); the answer lists them: ask the person for those values.',
         ].join('\n'),
       parameters: {
         type: 'object',
@@ -485,7 +488,7 @@ const TOOLS = [
           '- changes / newRows: more rows, as in propose_changes. removeRows: indexes or IDs. If a value fails its checks, nothing is saved.',
           '- Cells the person edited are theirs: kept, and returned as conflicts; `overridePersonEdits` only when they ask.',
           "- photo / rotate: the page's photos, as in match_notebook.",
-          'Returns `changed` (those rows as get_proposal full shows them), their `lookAt`, `removed`, the row count; `full: true`: every row.',
+          'Returns `changed` (those rows as get_proposal full shows them; rows given the same cells as one `sameChange`), their `lookAt`, `removed`, the row count; `full: true`: every row.',
         ].join('\n'),
       parameters: {
         type: 'object',
@@ -524,13 +527,11 @@ const TOOLS = [
       name: 'get_proposal',
       description:
         [
-          "A proposal as the person sees it now: status, revision, each row's label by index (`labels`) and `attention`, the rows that need a look:",
-          "- personEdits: cells the person corrected in the table, or set back to the sheet's value («Valor de la hoja», not written), each with what you had proposed;",
-          "- doubtful: match_notebook's doubtful cells not checked yet (value, alternatives, reason);",
-          '- unreadable: cells nobody could read, still empty (never written empty);',
+          "A proposal as the person sees it now: status, revision, each row's label by index (`labels`), `lookAt` and `attention`, the rows that need a look:",
+          "- personEdits: cells the person corrected, or set back to the sheet's value (not written), with what you had proposed;",
+          '- doubtful: doubtful cells not checked yet (value, alternatives, reason); unreadable: cells still empty (never written empty);',
           "- sheetChanged: cells edited in the sheet after you read them (read, now, by, applying). Applying keeps the sheet's value unless the person chose yours; re-check them, then update_proposal: your value goes over the sheet's, null keeps it. rowTaken: a new row's pre-made row is in use now.",
-          "A notebook page's lines that go another way in the sheet than on the page come as `orderDiffers`; `lookAt` as in propose_changes.",
-          '`full: true`: every row with its index, values (dates YYYY-MM-DD), note and these marks (`offset` continues a long one).',
+          "`orderDiffers`: a notebook page's lines in another order in the sheet. `full: true`: every row with its index, values (dates YYYY-MM-DD), note and these marks (`offset` continues a long one).",
           'Read it when the person says they changed the table, before update_proposal on a proposal you did not just make, and before apply_proposal if they edited it.',
         ].join('\n'),
       parameters: {
@@ -543,8 +544,9 @@ const TOOLS = [
 ];
 
 /**
- * The tools most chats use (reading rows, the documents, drafting and revising a proposal):
- * Claude Code loads them with the chat instead of behind its tool search, a round trip saved.
+ * The tools most chats use (reading rows, the documents, a proposal from drafting to applying,
+ * a notebook page): Claude Code loads them with the chat instead of behind its tool search, a
+ * round trip saved on each one's first use.
  */
 const ALWAYS_LOADED = new Set([
   'search_records',
@@ -555,6 +557,10 @@ const ALWAYS_LOADED = new Set([
   'describe_sheet',
   'propose_changes',
   'update_proposal',
+  'get_proposal',
+  'apply_proposal',
+  'list_proposals',
+  'match_notebook',
   'show_rows',
 ]);
 
@@ -714,6 +720,8 @@ export function createAssistant({ store, config = {} }) {
   const queries = sheetsCopy ? createQueryRunner({ path: sheetsCopy.path, ...config.sheetsQuery }) : null;
   // The chats of T3 Code (its state and trace log, read-only): which one made a proposal, which one is open.
   const t3 = config.t3Chats ?? (config.t3?.home ? createT3Chats({ home: config.t3.home }) : null);
+  // The people's T3 workspaces (<workspaces>/<username>, scripts/t3-provision.mjs): beside the database by default.
+  const workspaces = config.t3Workspaces ?? (config.databasePath ? join(dirname(config.databasePath), 't3-workspaces') : null);
   /** A note in the person's conversation (T3 Code, Revisión de datos) of the proposals made there. */
   const insertMessage = (threadId, role, content, sources = [], results = [], proposals = []) => {
     const at = now();
@@ -2026,17 +2034,52 @@ export function createAssistant({ store, config = {} }) {
       delete rest.index;
       return json(rest);
     };
-    const before = new Map(proposalTable(old, proposal).map((v, i) => [rowKey(old[i]), plain(v)]));
+    const before = new Map(proposalTable(old, proposal).map((v, i) => [rowKey(old[i]), v]));
     const kept = new Set(fresh.map(rowKey));
-    const changed = table.filter((v, i) => before.get(rowKey(fresh[i])) !== plain(v));
+    const changed = table.filter((v, i) => !before.has(rowKey(fresh[i])) || plain(before.get(rowKey(fresh[i]))) !== plain(v));
+    // Rows whose only news is the same cells set to the same values ("29 rows: CAM_ID=NA"): one
+    // entry with their indexes and labels instead of each row in full.
+    const groups = new Map();
+    for (const v of changed) {
+      const set = sameCells(before.get(rowKey(fresh[v.index])), v);
+      if (!set) continue;
+      const key = json(Object.entries(set).sort(([a], [b]) => (a < b ? -1 : 1)));
+      groups.set(key, [...(groups.get(key) ?? []), { v, set }]);
+    }
+    const same = [...groups.values()].filter(g => g.length >= SAME_CHANGE_ROWS);
+    const grouped = new Set(same.flatMap(g => g.map(({ v }) => v.index)));
     const removed = old.flatMap((c, i) => (kept.has(rowKey(c)) ? [] : [{ index: i, label: c.label }]));
     const doubtful = uncheckedDoubts(fresh).length;
     return {
       rows: fresh.length,
-      changed,
+      changed: changed.filter(v => !grouped.has(v.index)),
+      ...(same.length
+        ? {
+            sameChange: same.map(g => ({
+              rows: g.length,
+              values: g[0].set,
+              indexes: g.map(({ v }) => v.index),
+              labels: g.map(({ v }) => v.label),
+            })),
+          }
+        : {}),
       ...(removed.length ? { removed, labels: fresh.map(c => c.label) } : {}),
       ...(doubtful ? { doubtfulUnchecked: doubtful } : {}),
     };
+  }
+
+  /**
+   * The cells a revision set on a row when that is all that changed in its view (the values it
+   * now proposes; null: a change taken back), or null when anything else changed with them.
+   */
+  function sameCells(was, now) {
+    if (!was) return null;
+    const keys = new Set([...Object.keys(was), ...Object.keys(now)]);
+    for (const k of keys) if (k !== 'index' && k !== 'values' && json(was[k]) !== json(now[k])) return null;
+    const set = {};
+    for (const [f, v] of Object.entries(now.values)) if (json(v) !== json(was.values[f])) set[f] = v;
+    for (const f of Object.keys(was.values)) if (!(f in now.values)) set[f] = null;
+    return Object.keys(set).length ? set : null;
   }
 
   /** A needs_review check as get_proposal gives it: few cells one by one, many as their rows and columns. */
@@ -2435,7 +2478,9 @@ export function createAssistant({ store, config = {} }) {
       ...(given ? { photos: given.photos.length, ...(given.refused.length ? { photoNotShown: given.refused } : {}) } : {}),
       ...revised,
       // About the rows this revision changed (every row, with full).
-      ...(unchanged ? {} : lookAtRows(out.changes, revised.changed && new Set(revised.changed.map(v => v.index)))),
+      ...(unchanged
+        ? {}
+        : lookAtRows(out.changes, revised.changed && new Set([...revised.changed, ...(revised.sameChange ?? [])].flatMap(v => v.indexes ?? [v.index])))),
       ...(out.leftOut.length ? { leftOut: `Formula columns left out of the new rows: ${out.leftOut.join(', ')}` } : {}),
       ...(out.conflicts.length
         ? {
@@ -3783,7 +3828,12 @@ export function createAssistant({ store, config = {} }) {
    * proposal for the page, replacing the page's earlier one when Claude matches
    * it again after a correction.
    */
-  function matchNotebook(args, context) {
+  function matchNotebook(given, context) {
+    // A notebook-reader's file (linesFile) in the person's own workspace: its lines are read here.
+    const loaded = withLinesFile(given, { workspaces, username: context.user?.username });
+    if (loaded.error) return { error: loaded.error };
+    const args = loaded.args;
+    if (!Array.isArray(args.lines) && typeof args.lines !== 'string') return { error: 'Give `lines` or `linesFile`. Nothing was proposed.' };
     let matched;
     try {
       matched = notebooks.match(args, context.user);

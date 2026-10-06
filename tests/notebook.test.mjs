@@ -8,6 +8,7 @@ import { moduleMap, parseDateText } from '../server/schema.mjs';
 import { createAssistant } from '../server/assistant.mjs';
 import {
   KINDS,
+  columnsOf,
   buildReview,
   checkTranscription,
   proposalRows,
@@ -33,12 +34,30 @@ test('the skill names every notebook the tool matches; the tool description name
   const skill = readFileSync(new URL('../assistant/skills/digitalizar-cuaderno/SKILL.md', import.meta.url), 'utf8');
   assert.match(skill, /^---\nname: digitalizar-cuaderno\ndescription: .+photo/m);
   const { description } = MATCH_NOTEBOOK_TOOL.function;
+  // A notebook's columns, listed or "as <kind> without …" (an earlier notebook's less a few).
+  const listed = id => {
+    const text = description.split('\n').find(l => l.startsWith(`- ${id} (`))?.replace(/^- \S+ \([^)]*\): /, '');
+    assert.ok(text, `the description lists ${id}`);
+    const less = /^as (\w+) without (.+)$/.exec(text);
+    if (!less) return text.split(', ');
+    const without = less[2].split(', ');
+    return listed(less[1]).filter(f => !without.includes(f));
+  };
   for (const [id, kind] of Object.entries(KINDS)) {
     assert.ok(skill.includes(`\`${id}\``), `kind ${id}`);
-    const line = description.split('\n').find(l => l.startsWith(`- ${id} (`));
-    assert.ok(line, `the description lists ${id}`);
-    for (const field of kind.fields) assert.ok(line.includes(field), `${id}: ${field}`);
+    assert.deepEqual(new Set(listed(id)), new Set(columnsOf(kind)), id);
+    for (const field of kind.fields) assert.ok(listed(id).includes(field), `${id}: ${field}`);
   }
+  // The readers write the same columns (labels are read in the chat itself).
+  const reader = readFileSync(new URL('../assistant/agents/notebook-reader.md', import.meta.url), 'utf8');
+  const block = reader.split('Columns per kind:')[1].split('\n## ')[0].replace(/\n[ \t]+/g, ' ');
+  const own = Object.fromEntries([...block.matchAll(/^- `(\w+)` \([^)]*\): (.+)$/gm)].map(m => [m[1], m[2].trim()]));
+  const readerColumns = id => {
+    const less = /^as (\w+) without (.+)$/.exec(own[id]);
+    return less ? readerColumns(less[1]).filter(f => !less[2].split(', ').includes(f)) : own[id].split(', ');
+  };
+  for (const id of Object.keys(KINDS).filter(id => id !== 'labels'))
+    assert.deepEqual(new Set(readerColumns(id)), new Set(columnsOf(KINDS[id])), `notebook-reader.md: ${id}`);
 });
 
 test('the tool input is checked: unknown columns reported, doubts kept, crossed lines marked', () => {

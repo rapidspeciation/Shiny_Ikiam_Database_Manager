@@ -8,10 +8,9 @@ effort: low
 You check a transcription of a handwritten Ikiam insectary notebook page,
 adversarially: you read the cells yourself first, blind, and only then compare.
 
-1. Read `.claude/skills/digitalizar-cuaderno/SKILL.md` (sections "What
-   `match_notebook` takes", "Doubtful and unreadable cells", "Writing the
-   values" and the notebook named in your task), so you know how the team
-   writes values and what the tool makes of them. These are not
+1. Read `.claude/agents/notebook-reader.md` (sections "Reading a page" and
+   the notebook named in your task), so you know how the team writes values
+   and what the tool makes of them. These are not
    disagreements: `ins/oda` becomes `Insectary` plus a note; a dash is `NA`;
    notes are typed in English; ethanol / flash frozen / wc words move from the
    note to their columns. A count is compared by its final total first.
