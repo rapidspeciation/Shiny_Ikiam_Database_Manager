@@ -212,6 +212,8 @@ export interface Proposal {
   /** Goes up on every change, by the assistant or the person. */
   revision?: number
   updatedAt?: string | null
+  /** When it was applied (null until then). */
+  appliedAt?: string | null
   lastBy?: 'ai' | 'person' | null
   fields: string[]
   types: Record<string, string>

@@ -4273,14 +4273,15 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
               : ' AND p.t3_thread = ?';
       const args = [...(anyone ? [] : [me]), ...(query.only ? [String(query.only)] : ['all', 'app', 'draft'].includes(scope.chat) ? [] : [scope.chat])];
       const order = 'ORDER BY p.created_at DESC, p.rowid DESC';
-      // all=1: the pending ones and the last few reviewed (the panel shows five), not every old proposal on each change.
+      // all=1: the pending ones and the last few reviewed, latest applied or discarded first (the panel shows five),
+      // not every old proposal on each change.
       // Tables shown (show_rows) go with the pending ones; a closed one only on its own page.
       const rows = [
         ...db.prepare(`${select}${where} AND p.status IN ('pending', 'applying', 'queued', 'shown') ${order} LIMIT 200`).all(...args),
         ...(query.all
           ? db
               .prepare(
-                `${select}${where} AND p.status NOT IN ('pending', 'applying', 'queued', 'shown'${query.only ? '' : ", 'closed'"}) ${order} LIMIT ?`,
+                `${select}${where} AND p.status NOT IN ('pending', 'applying', 'queued', 'shown'${query.only ? '' : ", 'closed'"}) ORDER BY coalesce(p.applied_at, p.updated_at, p.created_at) DESC, p.rowid DESC LIMIT ?`,
               )
               .all(...args, Math.min(Number(query.reviewed) || 5, 50))
           : []),

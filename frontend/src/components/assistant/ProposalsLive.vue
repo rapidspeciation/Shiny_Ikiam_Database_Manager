@@ -152,7 +152,11 @@ const open = (p: Proposal) => p.status === 'pending' || p.status === 'applying' 
 const mine = computed(() => (props.only ? proposals.value.filter(p => p.id === props.only) : proposals.value))
 /** The proposals to review (a table shown is only to read), in the sheet's order: see byRows. */
 const pending = computed(() => mine.value.filter(p => open(p) && !isTable(p)).sort(byRows))
-const reviewed = computed(() => (props.only ? [] : mine.value.filter(p => !open(p) && !isTable(p)).slice(0, 5)))
+/** The last reviewed ones, the latest applied or discarded first (to find the one just applied). */
+const reviewedAt = (p: Proposal) => p.appliedAt ?? p.updatedAt ?? ''
+const reviewed = computed(() =>
+  props.only ? [] : mine.value.filter(p => !open(p) && !isTable(p)).sort((a, b) => reviewedAt(b).localeCompare(reviewedAt(a))).slice(0, 5),
+)
 /**
  * The cards shown: the tables of rows the assistant opened (newest first, as answers), then the proposals
  * to review in the sheet's order; on a proposal's own page, that proposal whatever its state.
