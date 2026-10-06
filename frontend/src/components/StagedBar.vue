@@ -110,7 +110,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <template v-if="count">
         <span class="font-medium">
           {{
-            $tn(count, '{n} cambio en la app, aún no en Google Sheets', '{n} cambios en la app, aún no en Google Sheets')
+            $tn(count, '{n} fila cambiada en la app, aún no en Google Sheets', '{n} filas cambiadas en la app, aún no en Google Sheets')
           }}
         </span>
         <span class="text-xs text-amber-900">{{ people.join(', ') }}</span>
@@ -123,7 +123,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         {{
           live.busy
             ? $tn(sending, '{n} esperando a que Google Sheets responda', '{n} esperando a que Google Sheets responda')
-            : $tn(sending, 'Escribiendo {n} cambio en Google Sheets…', 'Escribiendo {n} cambios en Google Sheets…')
+            : $tn(sending, 'Escribiendo {n} fila en Google Sheets…', 'Escribiendo {n} filas en Google Sheets…')
         }}
       </span>
       <div class="ml-auto flex items-center gap-2">
@@ -131,7 +131,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <component :is="open ? ChevronUp : ChevronDown" :size="15" /> {{ open ? $t('Ocultar') : $t('Ver') }}
         </button>
         <button v-if="count && session.canEdit" class="btn-primary h-9" :disabled="saving" @click="confirming = true">
-          <CloudUpload :size="15" /> {{ $tn(count, 'Guardar en Google Sheets ({n} cambio)', 'Guardar en Google Sheets ({n} cambios)') }}
+          <CloudUpload :size="15" /> {{ $tn(count, 'Guardar en Google Sheets ({n} fila)', 'Guardar en Google Sheets ({n} filas)') }}
         </button>
       </div>
     </div>
@@ -164,8 +164,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             {{
               $tn(
                 changeCount(live.items),
-                'Se escribe {n} cambio de Emergidos y Clutches, de todo el equipo, en una sola vez. Si Google Sheets está ocupado, espera en la app y se escribe solo.',
-                'Se escriben {n} cambios de Emergidos y Clutches, de todo el equipo, en una sola vez. Si Google Sheets está ocupado, esperan en la app y se escriben solos.',
+                'Se escribe {n} fila de Emergidos, Clutches y Censo, de todo el equipo, en una sola vez. Si Google Sheets está ocupado, espera en la app y se escribe sola.',
+                'Se escriben {n} filas de Emergidos, Clutches y Censo, de todo el equipo, en una sola vez. Si Google Sheets está ocupado, esperan en la app y se escriben solas.',
               )
             }}
           </p>

@@ -180,8 +180,9 @@ export function stagedSummary(items: StagedItem[], status: 'staged' | 'sent' = '
 }
 
 /** How many changes wait: a new row counts one, an edit its cells. */
+/** Rows changed (each item is one row's edit or a new row): a census of 221 butterflies is 221, not its cells. */
 export function changeCount(items: StagedItem[], status: 'staged' | 'sent' = 'staged') {
-  return items.filter(i => i.status === status).reduce((n, i) => n + (i.kind === 'create' ? 1 : Object.keys(i.values).length), 0)
+  return items.filter(i => i.status === status).length
 }
 
 /** Who holds an identifier in an entry (A4E — Ana), or null. */

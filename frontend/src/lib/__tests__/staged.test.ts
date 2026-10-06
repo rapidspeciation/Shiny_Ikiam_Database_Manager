@@ -61,13 +61,13 @@ describe('the sheet with the entries kept in the app on top', () => {
     expect(overlayTable(stocks, [item({ values: { Insectary_ID: 'A1E' } })]).table).toBe(stocks)
   })
 
-  it('what «Guardar en Google Sheets» will write, by sheet and row, and how many changes', () => {
+  it('what «Guardar en Google Sheets» will write, by sheet and row, and how many rows', () => {
     const items = [
       item({ label: 'A1E', values: { Insectary_ID: 'A1E', Sex: 'male' } }),
       item({ id: 'i2', kind: 'edit', sheet: 'Insectary_stocks', recordId: 's1', rowId: 's1', clientId: null, label: '990', values: { 'NUMBER OF ADULTS': { formula: '=1' }, NOTES: 'x' }, actorName: 'Luis' }),
       item({ id: 'i3', clientId: 'c3', rowId: 'staged:c3', status: 'sent', values: { Insectary_ID: 'A2E' } }),
     ]
-    expect(changeCount(items)).toBe(3)
+    expect(changeCount(items)).toBe(2)
     expect(changeCount(items, 'sent')).toBe(1)
     const summary = stagedSummary(items)
     expect(summary.map(g => [g.sheet, g.rows.map(r => [r.label, r.isNew, r.cells.map(c => `${c.field}=${c.value}`).join(','), r.who.join()])])).toEqual([

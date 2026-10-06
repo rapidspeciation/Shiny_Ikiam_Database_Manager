@@ -32,8 +32,8 @@ export default {
   'Esperando a que Google Sheets responda; se escribe solo': 'Waiting for Google Sheets to answer; it is written on its own',
   'Fila nueva aún no en Google Sheets · {who}': 'New row not in Google Sheets yet · {who}',
   // components/StagedBar.vue
-  '{n} cambio en la app, aún no en Google Sheets': '{n} change in the app, not in Google Sheets yet',
-  '{n} cambios en la app, aún no en Google Sheets': '{n} changes in the app, not in Google Sheets yet',
+  '{n} fila cambiada en la app, aún no en Google Sheets': '{n} row changed in the app, not in Google Sheets yet',
+  '{n} filas cambiadas en la app, aún no en Google Sheets': '{n} rows changed in the app, not in Google Sheets yet',
   'No hay cambios por guardar': 'No changes to save',
   'Google Sheets no responde: los cambios esperan en la app y se escribirán solos cuando responda':
     'Google Sheets is not answering: the changes wait in the app and will be written on their own when it answers',
@@ -46,14 +46,14 @@ export default {
   'Guardado en Google Sheets; {n} fila necesita revisión (marcada en rojo)': 'Saved to Google Sheets; {n} row needs review (marked in red)',
   'Guardado en Google Sheets; {n} filas necesitan revisión (marcadas en rojo)': 'Saved to Google Sheets; {n} rows need review (marked in red)',
   '{n} esperando a que Google Sheets responda': '{n} waiting for Google Sheets to answer',
-  'Escribiendo {n} cambio en Google Sheets…': 'Writing {n} change to Google Sheets…',
-  'Escribiendo {n} cambios en Google Sheets…': 'Writing {n} changes to Google Sheets…',
-  'Guardar en Google Sheets ({n} cambio)': 'Save to Google Sheets ({n} change)',
-  'Guardar en Google Sheets ({n} cambios)': 'Save to Google Sheets ({n} changes)',
-  'Se escribe {n} cambio de Emergidos y Clutches, de todo el equipo, en una sola vez. Si Google Sheets está ocupado, espera en la app y se escribe solo.':
-    "{n} change from Emergidos and Clutches, the whole team's, is written at once. If Google Sheets is busy, it waits in the app and is written on its own.",
-  'Se escriben {n} cambios de Emergidos y Clutches, de todo el equipo, en una sola vez. Si Google Sheets está ocupado, esperan en la app y se escriben solos.':
-    "{n} changes from Emergidos and Clutches, the whole team's, are written at once. If Google Sheets is busy, they wait in the app and are written on their own.",
+  'Escribiendo {n} fila en Google Sheets…': 'Writing {n} row to Google Sheets…',
+  'Escribiendo {n} filas en Google Sheets…': 'Writing {n} rows to Google Sheets…',
+  'Guardar en Google Sheets ({n} fila)': 'Save to Google Sheets ({n} row)',
+  'Guardar en Google Sheets ({n} filas)': 'Save to Google Sheets ({n} rows)',
+  'Se escribe {n} fila de Emergidos, Clutches y Censo, de todo el equipo, en una sola vez. Si Google Sheets está ocupado, espera en la app y se escribe sola.':
+    "{n} row from Emergidos, Clutches and Census, the whole team's, is written at once. If Google Sheets is busy, it waits in the app and is written on its own.",
+  'Se escriben {n} filas de Emergidos, Clutches y Censo, de todo el equipo, en una sola vez. Si Google Sheets está ocupado, esperan en la app y se escriben solas.':
+    "{n} rows from Emergidos, Clutches and Census, the whole team's, are written at once. If Google Sheets is busy, they wait in the app and are written on their own.",
   // Proposals (components/ProposalGrid.vue, assistant/ProposalsLive.vue)
   'Esperando a Google Sheets: se escribe solo cuando responda': 'Waiting for Google Sheets: it is written on its own when it answers',
   'Google Sheets no responde: {n} fila espera y se escribirá sola': 'Google Sheets is not answering: {n} row waits and will be written on its own',

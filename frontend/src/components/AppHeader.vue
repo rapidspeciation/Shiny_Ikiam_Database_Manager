@@ -21,7 +21,7 @@ const waiting = computed(() => {
   for (const [path, purpose] of Object.entries(PURPOSE)) {
     const items = live.items.filter(i => i.purpose === purpose && i.status === 'staged')
     // A census: its disappearances (one row each), not their cells.
-    out[path] = purpose === 'censo' ? items.length : changeCount(items)
+    out[path] = changeCount(items)
   }
   return out
 })
@@ -70,8 +70,8 @@ async function logout() {
             :title="
               $tn(
                 waiting[tab.path],
-                '{n} cambio en la app, aún no en Google Sheets',
-                '{n} cambios en la app, aún no en Google Sheets',
+                '{n} fila cambiada en la app, aún no en Google Sheets',
+                '{n} filas cambiadas en la app, aún no en Google Sheets',
               )
             "
             >{{ waiting[tab.path] }}</span
