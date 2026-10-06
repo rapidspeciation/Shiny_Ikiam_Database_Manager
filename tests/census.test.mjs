@@ -260,6 +260,10 @@ test('finishing keeps the disappearances in the app with Muertes cells; reopenin
     const wrongCell = disappearance(a2);
     wrongCell.values.Sex = 'female';
     await assert.rejects(finish([wrongCell, disappearance(a3)]), e => e.code === 'INVALID_VALUES');
+    // The note on how it was found may go with it; any other note may not.
+    const otherNote = disappearance(a2);
+    otherNote.values.Notes_Insectary_data = '5/10/26 FCH: escaped';
+    await assert.rejects(finish([otherNote, disappearance(a3)]), e => e.code === 'INVALID_VALUES');
     assert.equal(store.staged.list().items.length, 0, 'nothing kept by a refused finish');
 
     // A3B has a CAM already: Muertes leaves its preservation cells alone.

@@ -17,6 +17,8 @@ import { dayLabel, formatSerial, isoToSerial, todayIso } from '../../lib/dates'
 import { ApiError } from '../../lib/api'
 import { errorText, notify } from '../../lib/notice'
 import type { Table } from '../../lib/types'
+import { initialsOf } from '../../lib/rows'
+import { useSession } from '../../stores/session'
 import { t, tn } from '../../lib/i18n'
 
 /**
@@ -27,7 +29,10 @@ import { t, tn } from '../../lib/i18n'
  * death not preserved (lib/census.ts disappearanceEdits), until «Guardar en
  * Google Sheets».
  */
-const props = defineProps<{ table: Table | undefined; ready: boolean }>()
+const props = defineProps<{ table: Table | undefined; ready: boolean; collectors?: string[] }>()
+const session = useSession()
+/** Whose initials sign the note «Disappeared in census» (FCH). */
+const initials = computed(() => initialsOf(session.user?.displayName || '', props.collectors ?? [], session.user?.username || ''))
 const emit = defineEmits<{ back: [] }>()
 const census = useCensus()
 
@@ -80,7 +85,10 @@ function findingText(f: Finding) {
 const saving = ref(false)
 async function finish() {
   if (saving.value) return
-  const { edits, absent } = disappearanceEdits(missing.value, rowById.value, serial.value)
+  const { edits, absent } = disappearanceEdits(missing.value, rowById.value, serial.value, {
+    today: isoToSerial(todayIso()),
+    initials: initials.value,
+  })
   if (absent.length)
     return notify(t('Falta cargar {ids} de Insectary_data; espera un momento', { ids: absent.join(', ') }), 'error')
   saving.value = true

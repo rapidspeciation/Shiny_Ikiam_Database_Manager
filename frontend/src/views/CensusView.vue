@@ -22,7 +22,9 @@ import { useSheet } from '../composables/useSheet'
  * (CensusSummary). The sheet shown carries everyone's entries kept in the app
  * (a butterfly emerged today is on the list; a death kept in the app is not).
  */
-const { table, ready } = useSheet(ref('Insectary_data'), ref(true), { staged: true })
+const { table, ready, listColumn } = useSheet(ref('Insectary_data'), ref(true), { staged: true })
+/** People's initials for the note on each disappearance ("FCH - Franz Chandi"). */
+const collectors = computed(() => listColumn('Abbr_name'))
 const census = useCensus()
 const reviewing = ref(false)
 const screen = computed(() => {
@@ -60,7 +62,7 @@ function leave() {
       <CensusStart v-if="screen === 'start'" />
       <p v-else-if="screen === 'loading'" class="p-6 text-stone-500">{{ $t('Cargando el censo…') }}</p>
       <CensusRun v-else-if="screen === 'run'" :table="table" :ready="ready" @review="reviewing = true" @leave="leave" />
-      <CensusReview v-else-if="screen === 'review'" :table="table" :ready="ready" @back="reviewing = false" />
+      <CensusReview v-else-if="screen === 'review'" :table="table" :ready="ready" :collectors="collectors" @back="reviewing = false" />
       <CensusSummary v-else :table="table" @leave="leave" />
     </div>
   </div>

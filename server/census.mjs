@@ -491,7 +491,14 @@ export async function finishCensus(store, censusId, body, user) {
     for (const e of edits) {
       const values = e?.values ?? {};
       const label = roster.find(b => b.recordId === e.id)?.id ?? e.id;
-      if (values.Death_date !== serial || values.Death_cause !== DISAPPEARED || Object.keys(values).some(f => !DEATH_FIELDS.has(f)))
+      // The note «… Disappeared in census» (lib/census.ts disappearanceEdits) may go with them.
+      const noted = values.Notes_Insectary_data === undefined || /Disappeared in census/.test(String(values.Notes_Insectary_data));
+      if (
+        values.Death_date !== serial ||
+        values.Death_cause !== DISAPPEARED ||
+        !noted ||
+        Object.keys(values).some(f => f !== 'Notes_Insectary_data' && !DEATH_FIELDS.has(f))
+      )
         throw fail('INVALID_VALUES', msg('{id}: solo la fecha del censo, Disappearance y las celdas de una muerte sin preservar', { id: label }));
     }
     let entryId = null;

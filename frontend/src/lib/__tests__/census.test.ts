@@ -129,6 +129,20 @@ describe('disappearances', () => {
     expect(a3.values.Location_body).toBe('NA')
     expect(a3.expected.Location_body).toBe('')
   })
+  it('each disappearance gets the note «Disappeared in census», after the notes it has', () => {
+    const rows = new Map([
+      ['r1', row('r1', {})],
+      ['r2', row('r2', { Notes_Insectary_data: '1/9/26 MJS: Wing clip 30/8/26' })],
+    ])
+    const sign = { today: 46300, initials: 'FCH' }
+    const { edits } = disappearanceEdits([entry('r1', 'A1B', 2), entry('r2', 'A2B', 3)], rows, 46300, sign)
+    expect(edits[0].values.Notes_Insectary_data).toBe('5/10/26 FCH: Disappeared in census')
+    expect(edits[1].values.Notes_Insectary_data).toBe('1/9/26 MJS: Wing clip 30/8/26 | 5/10/26 FCH: Disappeared in census')
+    expect(edits[1].expected.Notes_Insectary_data).toBe('1/9/26 MJS: Wing clip 30/8/26')
+    // A census finished another day says which census.
+    const later = disappearanceEdits([entry('r1', 'A1B', 2)], rows, 46300, { today: 46301, initials: 'FCH' })
+    expect(later.edits[0].values.Notes_Insectary_data).toBe('6/10/26 FCH: Disappeared in census of 5/10/26')
+  })
 })
 
 describe('the notebook lines and the matcher index', () => {

@@ -1,6 +1,6 @@
 import { isBlank } from './cells'
 import { deathCells, searchKey, type Entry } from './deaths'
-import { noteDay } from './clutches'
+import { appendNote, noteDay } from './clutches'
 import type { CellValue, TableRow } from './types'
 
 /**
@@ -168,6 +168,10 @@ export interface DeathEdit {
   values: Record<string, CellValue>
   expected: Record<string, CellValue>
 }
+const NOTES = 'Notes_Insectary_data'
+/** The note on a butterfly the census did not find (the team's words for it). */
+export const CENSUS_NOTE = 'Disappeared in census'
+
 /**
  * The cells of each butterfly not seen, as Muertes writes a death not preserved
  * (lib/deaths.ts deathCells: Death_date, Death_cause Disappearance, and for a
@@ -180,6 +184,7 @@ export function disappearanceEdits(
   missing: RosterEntry[],
   rows: Map<string, TableRow>,
   serial: number,
+  sign?: { today: number; initials: string },
 ): { edits: DeathEdit[]; absent: string[] } {
   const edits: DeathEdit[] = []
   const absent: string[] = []
@@ -197,6 +202,12 @@ export function disappearanceEdits(
       values[c.field] = c.value
       // Exactly what the cell holds (the server compares it with its copy): '' and NA as they are.
       expected[c.field] = get(row, c.field)
+    }
+    // How it was found: «d/m/yy INI: Disappeared in census» after the notes it has (the census day in it when not today).
+    if (sign) {
+      const text = sign.today === serial ? CENSUS_NOTE : `${CENSUS_NOTE} of ${noteDay(serial)}`
+      values[NOTES] = appendNote(get(row, NOTES), text, sign.today, sign.initials)
+      expected[NOTES] = get(row, NOTES)
     }
     edits.push({ id: b.recordId, values, expected })
   }
