@@ -35,6 +35,9 @@ description: Change the web app itself (Ikiam Insectary DB): its screens, grids,
 - Speed matters: grids stay fast with thousands of rows.
 - The app writes to the team's **real** Google Sheet: test with the checks
   and tests, not by saving data on the live site.
+- While Google Sheets is not answering, wait for it before deploying.
+- A subagent for app work gets a short brief (what to change, files, how to
+  check), not the whole conversation.
 
 ## Steps
 
