@@ -406,13 +406,70 @@ export function insectaryGaps(store) {
         rowTo: rows.at(-1).row,
         free: free.length,
         held: rows.length - free.length,
-        latest: !!first && rows.includes(first),
+        latest: !!first && rows.some(r => r.id === first.id),
       };
     })
     .sort((a, b) => b.rowFrom - a.rowFrom);
   const answer = { gaps };
   gapCache.set(store, { stamp, answer });
   return structuredClone(answer);
+}
+
+/** A pre-made ID's place in the sheet's formula series (A0A…Z9A, A0B…): its round, letter and digit. */
+const seriesKey = id => {
+  const m = /^([A-ZÑ])(\d)([A-Z])$/.exec(id);
+  return m ? (m[3].charCodeAt(0) * 64 + m[1].charCodeAt(0)) * 10 + Number(m[2]) : null;
+};
+
+/**
+ * An Insectary ID typed in Emergidos' «Siguiente ID» (GET /api/ids/start?value=S8E): the
+ * buttons start there and go on in order within its free run (S3E–S7E kept for a colleague).
+ * `ok` with its row and its gap (as insectaryGaps answers it) when it is a free pre-made row,
+ * or held by this person's own card (the next card follows it). Else refused with `code`:
+ * USED (a butterfly's row), CLAIMED (someone's card or entry in the app, `holder`), NAMED
+ * (another sheet names it, `sheet`), TYPED (something typed in its row), DUPLICATE (two
+ * pre-made rows), BEYOND (after the last pre-made row, `last`), NOT_PREMADE (no pre-made row
+ * of the series has it), INVALID (empty); with `next`, the first free ID after it (or the
+ * usual next one), to offer instead.
+ */
+export function insectaryStart(store, input, user) {
+  const norm = value => String(value ?? '').trim().toUpperCase();
+  const value = norm(input);
+  if (!value) return { ok: false, value, code: 'INVALID', next: null };
+  const base = insectaryBase(store);
+  const claimed = claimedValues(store.db, 'insectary');
+  const actor = user?.id || user?.username;
+  const rows = columnsOf(store, 'Insectary_data', ['Insectary_ID']);
+  const own = rows.filter(r => norm(r.values.Insectary_ID) === value);
+  const round = id => /^[A-ZÑ]\d[A-Z]$/.test(id);
+  // Offered rows (as insectaryIds and the gaps): after the last row used, or earlier ones of the series.
+  const offered = r => r.row > base.lastObserved || round(norm(r.values.Insectary_ID));
+  const freeAfter = row => {
+    const r = base.rows.find(x => x.row > row && offered(x) && !claimed.has(norm(x.values.Insectary_ID)));
+    return r ? String(r.values.Insectary_ID).trim() : null;
+  };
+  const usual = () => insectaryIds(store, '', 1).sequence[0] ?? null;
+  const refuse = (code, extra = {}, row = null) => ({ ok: false, value, code, ...extra, next: (row !== null ? freeAfter(row) : null) ?? usual() });
+  if (!own.length) {
+    const key = seriesKey(value);
+    const last = base.lastPremade ? norm(base.lastPremade) : null;
+    if (key !== null && last && seriesKey(last) !== null && key > seriesKey(last)) return { ok: false, value, code: 'BEYOND', last, next: usual() };
+    return refuse('NOT_PREMADE');
+  }
+  const row = own[0].row;
+  if (own.some(r => r.observed)) return refuse('USED', { row: own.find(r => r.observed).row }, row);
+  if (own.length > 1) return refuse('DUPLICATE', {}, row);
+  for (const [sheet, fields] of Object.entries(REFERENCES))
+    for (const r of moduleMap.has(sheet) ? columnsOf(store, sheet, fields) : [])
+      if (fields.some(f => norm(r.values[f]) === value)) return refuse('NAMED', { sheet }, row);
+  const free = base.rows.find(r => r.id === own[0].id);
+  if (!free) return refuse('TYPED', {}, row);
+  const holder = claimed.get(value);
+  const mine = !!holder && String(holder.owner).startsWith('hold:') && holder.actor === actor;
+  if (holder && !mine) return refuse('CLAIMED', { holder: holder.name }, row);
+  const gap = insectaryGaps(store).gaps.find(g => g.rowFrom <= row && row <= g.rowTo);
+  if (!gap) return refuse('NOT_PREMADE', {}, row);
+  return { ok: true, value: String(own[0].values.Insectary_ID).trim(), row, mine, gap };
 }
 
 const splitId = id => {

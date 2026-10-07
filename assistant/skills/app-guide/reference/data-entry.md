@@ -233,6 +233,15 @@ New adults of a clutch into the next free pre-made rows of Insectary_data.
 4. If another subspecies emerged, change SPECIES in that row (only then).
    Write each ID on the wings.
 
+On the cards (phones), «Siguiente ID» takes a typed ID (S8E, to leave S3E–S7E
+for a colleague who wrote them on paper) or a gap from its list; the buttons
+then give that ID and the next ones in order until «Volver al último». An ID
+with data, held by someone else or past the pre-made rows is refused with the
+reason and the next free one. «+ Preservados…» registers eggs, larvae (L1–L5,
+prepupa) and pupae (Pupa day 1–12) preserved from the clutch, each with its
+ID, CAM and tube and an optional note; «+ 1 más igual» adds one more like the
+last ones.
+
 Below: the butterflies already recorded from that clutch and the latest rows.
 When few pre-made IDs are left a banner offers «Crear filas preasignadas»
 (reviewer/admin). No link parameters.

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { AlertTriangle, Check, ChevronRight, History, Loader2, Plus, Undo2, X } from 'lucide-vue-next'
+import { AlertTriangle, Check, ChevronDown, ChevronRight, History, Loader2, Plus, Undo2, X } from 'lucide-vue-next'
 import DateField from '../DateField.vue'
 import EntryModeToggle from '../EntryModeToggle.vue'
 import ExtendRowsButton from '../ExtendRowsButton.vue'
@@ -10,6 +10,7 @@ import SexBadge from '../SexBadge.vue'
 import TabHistory from '../history/TabHistory.vue'
 import ClutchPicker from './ClutchPicker.vue'
 import DraftCard from './DraftCard.vue'
+import PreservedForm from './PreservedForm.vue'
 import YoungPanel, { type Rack } from './YoungPanel.vue'
 import { useClutchDay } from '../../composables/useClutchDay'
 import { heldIds, useEmergedState } from '../../composables/useEmergedState'
@@ -22,8 +23,6 @@ import { dayFirst, dayLabel, formatSerial, isoToSerial, serialFromIso, serialToI
 import { bestRack, buildIndex, searchKey, usedSamples } from '../../lib/deaths'
 import {
   CROSS_PURPOSE,
-  LIFESTAGES,
-  MAIN_STAGES,
   MODULE,
   STOCKS,
   dayDoubt,
@@ -36,6 +35,7 @@ import {
   preserving,
   siblingSpecies,
   skippedIds,
+  stageGroup,
   stockPlan,
   setYoung,
   sharedYoung,
@@ -51,7 +51,20 @@ import {
   type YoungField,
 } from '../../lib/emerged'
 import { HoldQueue, type HoldAnswer } from '../../lib/holds'
-import { choose, gapIds, gapOptions, gapSpan, nextFor, nextMany, sameGap, type GapChoice } from '../../lib/idGaps'
+import {
+  choose,
+  gapIds,
+  gapOptions,
+  gapSpan,
+  keptBefore,
+  localStart,
+  nextFor,
+  nextMany,
+  sameGap,
+  startChoice,
+  type GapChoice,
+  type StartAnswer,
+} from '../../lib/idGaps'
 import { persistentRef } from '../../lib/persist'
 import { localRun, normalizeId, problemsOf as tubeProblems, type Problem as TubeProblem } from '../../lib/tubes'
 import { errorText, notify } from '../../lib/notice'
@@ -69,7 +82,7 @@ import { t, tn } from '../../lib/i18n'
  * card per butterfly with the next free Insectary ID to write on its wing (the
  * ID can be changed to what the wing says). Each card can say it was deformed,
  * died or was preserved that day, what emerged when it is not the clutch's
- * species, and a note; eggs and larvae preserved from the clutch get their
+ * species, and a note; eggs, larvae and pupae preserved from the clutch get their
  * cards too. One Save writes the rows (into the pre-made rows of their IDs)
  * and, for each clutch, its adults as one more term of NUMBER OF ADULTS (as
  * Clutches counts them), all or nothing, with an Undo; «Historial» lists the
@@ -90,7 +103,7 @@ const props = defineProps<{
   createFormulas: string[]
   /** Rows of entries kept in the app, not in Google Sheets yet (everyone's: lib/staged.ts). */
   stagedMarks?: Record<string, StagedMark>
-  /** Only the eggs or larvae preserved from one clutch (opened from Clutches): how many, their LIFESTAGE and day (ISO). */
+  /** Only the eggs, larvae or pupae preserved from one clutch (opened from Clutches): how many, their LIFESTAGE and day (ISO). */
   focus?: { clutch: string; count: number; stage: string; date: string } | null
 }>()
 const mode = defineModel<EntryMode>('mode', { required: true })
@@ -222,10 +235,78 @@ const gapList = computed(() => {
   if (!options.some(o => o.key === 'latest')) options.unshift({ key: 'latest', option: null as never, label: t('Por defecto (como siempre)') })
   return options
 })
-const gapKey = computed(() => (gap.value ? (gapList.value.find(o => o.key !== 'latest' && sameGap(o.option, gap.value!))?.key ?? 'latest') : 'latest'))
+const gapKey = computed(() => {
+  const g = gap.value
+  if (!g || g.start) return g ? '' : 'latest'
+  return gapList.value.find(o => o.key !== 'latest' && sameGap(o.option, g))?.key ?? 'latest'
+})
+/** The list of gaps under the box, open while choosing. */
+const gapsOpen = ref(false)
 function chooseGap(key: string) {
   const o = gapList.value.find(x => x.key === key)
   gapChoice.value = key === 'latest' || !o ? null : choose(o.option)
+  gapsOpen.value = false
+  startProblem.value = null
+}
+/** Free IDs a typed start leaves before it in its run (S3E–S7E), for whoever wrote them on paper. */
+const kept = computed(() => keptBefore(inOrder.value, rowOf.value, gaps.value, gap.value, held.value))
+
+// An ID typed in «Siguiente ID»: the buttons start there and go on in order within its free run.
+const startText = ref('')
+const checkingStart = ref(false)
+/** Why the ID typed was refused, and the next free one offered instead (or more rows to make). */
+const startProblem = ref<{ text: string; next: string | null; beyond: boolean } | null>(null)
+function startRefusal(a: Extract<StartAnswer, { ok: false }>): string {
+  const id = a.value
+  switch (a.code) {
+    case 'USED': {
+      const row = rowWithData(id)
+      return row ? t('{id} ya tiene datos: {what}', { id, what: rowText(row) }) : t('{id} ya es una mariposa de Insectary_data', { id })
+    }
+    case 'CLAIMED':
+      return t('{id} ya lo tiene {name} en la app (aún no en Google Sheets)', { id, name: a.holder ?? '?' })
+    case 'NAMED':
+      return t('{id} ya está en {sheet}', { id, sheet: a.sheet ?? '?' })
+    case 'TYPED':
+      return t('{id}: su fila ya tiene algo escrito', { id })
+    case 'DUPLICATE':
+      return t('{id} tiene dos filas preasignadas', { id })
+    case 'BEYOND':
+      return t('{id} está después de las filas preasignadas (la última es {last})', { id, last: a.last ?? '?' })
+    case 'INVALID':
+      return t('Escribe un Insectary ID')
+    default:
+      return t('{id} no es una fila preasignada libre de Insectary_data', { id })
+  }
+}
+async function useStart(value = startText.value) {
+  const id = value.trim().toUpperCase()
+  if (!id || checkingStart.value) return
+  checkingStart.value = true
+  startProblem.value = null
+  try {
+    // Rows typed in the table and not saved yet hold their IDs too (not known to the server).
+    const a = await api<StartAnswer>(`ids/start?value=${encodeURIComponent(id)}`)
+    if (a.ok) {
+      gapChoice.value = startChoice(a.value, a.row, a.gap)
+      startText.value = ''
+      gapsOpen.value = false
+    } else startProblem.value = { text: startRefusal(a), next: a.next && a.next !== id ? a.next : null, beyond: a.code === 'BEYOND' }
+  } catch (e) {
+    // No signal: only an ID known free here (in a known gap) is taken.
+    const local = localStart(id, gaps.value, inOrder.value, rowOf.value)
+    if (local) {
+      gapChoice.value = local
+      startText.value = ''
+    } else startProblem.value = { text: errorText(e), next: null, beyond: false }
+  } finally {
+    checkingStart.value = false
+  }
+}
+function backToLatest() {
+  gapChoice.value = null
+  startProblem.value = null
+  startText.value = ''
 }
 /** The chosen gap's IDs free now (none of this person's cards): what the buttons go on with. */
 const gapLeft = computed(() => (gap.value ? gapIds(inOrder.value, rowOf.value, gap.value).filter(id => !held.value.includes(id.toUpperCase())) : []))
@@ -238,7 +319,7 @@ const fresh = ref<string[]>([])
 let freshTimer: ReturnType<typeof setTimeout> | undefined
 onBeforeUnmount(() => clearTimeout(freshTimer))
 
-function add(kind: Kind, sex: Sex, count = 1, young: { stage: string; foundDead: boolean } = { stage: '', foundDead: false }) {
+function add(kind: Kind, sex: Sex, count = 1, young: Young = { stage: '', foundDead: false, note: '' }) {
   if (!clutch.value) return notify(t('Elige el clutch'))
   if (dateError.value || !date.value) return notify(dateError.value || t('Elige el día'), 'error')
   if (!idsLoaded.value) return notify(t('Cargando los Insectary IDs libres…'))
@@ -265,7 +346,7 @@ function add(kind: Kind, sex: Sex, count = 1, young: { stage: string; foundDead:
       species: '',
       stage: kind === 'young' ? young.stage : '',
       foundDead: kind === 'young' && young.foundDead,
-      note: '',
+      note: kind === 'young' ? young.note.trim() : '',
       cam: '',
       tube: '',
     })
@@ -285,6 +366,14 @@ function add(kind: Kind, sex: Sex, count = 1, young: { stage: string; foundDead:
     nextTick(() => document.querySelector(`[data-key="${added[0].key}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }))
 }
 const SEX_MARK: Record<Sex, string> = { female: '♀', male: '♂', NA: '?' }
+/** What an egg, larva or pupa card starts with: its stage, alive or found dead, its note ('' = the default one). */
+interface Young {
+  stage: string
+  foundDead: boolean
+  note: string
+}
+/** What the last «Añadir» gave (stage, fate, note): «+ 1 más igual» adds one more like it, with the next ID. */
+const lastYoung = ref<Young | null>(null)
 /** The last tap, said beside the buttons ("♀ A9E"), for the eye and for a screen reader. */
 const said = ref<{ key: string; text: string } | null>(null)
 
@@ -341,7 +430,9 @@ if (props.focus) {
     if (started || !idsLoaded.value) return
     started = true
     young.value = { ...young.value, stage: f.stage || young.value.stage, foundDead: false }
-    add('young', 'NA', Math.max(1, Math.min(60, f.count)), { stage: f.stage || young.value.stage, foundDead: false })
+    const like = { stage: f.stage || young.value.stage, foundDead: false, note: '' }
+    add('young', 'NA', Math.max(1, Math.min(60, f.count)), like)
+    lastYoung.value = like
   }
   onMounted(start)
   watch(idsLoaded, start)
@@ -355,30 +446,49 @@ function cancelFocus() {
   focusKeys.value = []
   emit('close')
 }
-/** «+ N larvae»: N cards with consecutive Insectary IDs, CAMs and tubes, of one stage, alive or found dead. */
-const larvae = ref<{ open: boolean; count: number | null; moreStages: boolean }>({ open: false, count: 1, moreStages: false })
-const larvaCount = computed(() => Math.max(1, Math.min(60, Math.floor(larvae.value.count ?? 1))))
-const larvaIds = computed(() =>
-  idsLoaded.value ? nextMany(inOrder.value, freeIds.value[0] ?? '', held.value, gap.value, rowOf.value, larvaCount.value) : [],
+/**
+ * «+ Preservados…»: N cards of eggs, larvae or pupae preserved from the clutch, with consecutive Insectary IDs,
+ * CAMs and tubes, of one stage, alive or found dead, with a note (each card's, editable there).
+ */
+const preserve = ref<{ open: boolean; count: number | null; note: string }>({ open: false, count: 1, note: '' })
+const preserveCount = computed(() => Math.max(1, Math.min(60, Math.floor(preserve.value.count ?? 1))))
+const preserveIds = computed(() =>
+  idsLoaded.value ? nextMany(inOrder.value, freeIds.value[0] ?? '', held.value, gap.value, rowOf.value, preserveCount.value) : [],
 )
-const larvaStages = computed(() =>
-  larvae.value.moreStages ? LIFESTAGES : LIFESTAGES.filter(s => MAIN_STAGES.includes(s) || s === young.value.stage),
-)
-/** A stage in two or three letters, for the list of taps: L3, L4, Pre-pupa, Egg. */
-const stageShort = (stage: string) => (stage === 'Egg' ? t('Huevo') : /^(\d)\w+ instar larva$/.exec(stage)?.[1] ? `L${/^(\d)/.exec(stage)![1]}` : stage)
-const STAGE_NAME: Record<string, () => string> = {
-  Egg: () => t('Huevo'),
-  '1st instar larva': () => 'L1',
-  '2nd instar larva': () => 'L2',
-  '3rd instar larva': () => t('3.er estadio'),
-  '4th instar larva': () => t('4.º estadio'),
-  '5th instar larva': () => 'L5',
-  'Pre-pupa': () => 'Pre-pupa',
+/** A stage in two or three letters, for the list of taps: L3, L4, Pre-pupa, Huevo, Pupa d3. */
+function stageShort(stage: string): string {
+  if (stage === 'Egg') return t('Huevo')
+  if (stageGroup(stage) === 'pupa') return t('Pupa d{n}', { n: stage.replace('Pupa day ', '') })
+  const instar = /^(\d)\w+ instar larva$/.exec(stage)?.[1]
+  return instar ? `L${instar}` : stage
 }
-function addLarvae() {
-  // The panel stays open: each tap of «Añadir 1 larva» adds the next one (its ID, CAM and tube the next free ones).
-  add('young', 'NA', larvaCount.value, { stage: young.value.stage, foundDead: young.value.foundDead })
-  larvae.value = { ...larvae.value, count: 1 }
+/** «+ 1 más igual», in short: the stage, found dead, the note. */
+const sameText = computed(() => {
+  const y = lastYoung.value
+  if (!y) return null
+  const note = y.note.length > 18 ? `${y.note.slice(0, 17)}…` : y.note
+  return [stageShort(y.stage), y.foundDead ? t('muerta') : '', note ? `«${note}»` : ''].filter(Boolean).join(' · ')
+})
+function addPreserved() {
+  // The form stays open: «+ 1 más igual» then adds the next one (its ID, CAM and tube the next free ones).
+  const like = { stage: young.value.stage, foundDead: young.value.foundDead, note: preserve.value.note.trim() }
+  add('young', 'NA', preserveCount.value, like)
+  lastYoung.value = like
+  preserve.value = { ...preserve.value, count: 1 }
+}
+function addSame() {
+  add('young', 'NA', 1, lastYoung.value ?? { stage: young.value.stage, foundDead: young.value.foundDead, note: preserve.value.note.trim() })
+}
+/** The form's stage, fate or note; from Clutches they go to all its cards (and to the next «+ 1 más igual»). */
+function setPreserved(patch: Partial<Young>) {
+  if (patch.stage !== undefined) young.value = { ...young.value, stage: patch.stage }
+  if (patch.foundDead !== undefined) young.value = { ...young.value, foundDead: patch.foundDead }
+  if (patch.note !== undefined) preserve.value = { ...preserve.value, note: patch.note }
+  if (!props.focus) return
+  const keys = new Set(focusKeys.value)
+  const cardPatch: Partial<Draft> = { ...patch, ...(patch.note !== undefined ? { note: patch.note.trim() } : {}) }
+  drafts.value = drafts.value.map(d => (keys.has(d.key) ? { ...d, ...cardPatch } : d))
+  lastYoung.value = { stage: young.value.stage, foundDead: young.value.foundDead, note: preserve.value.note.trim() }
 }
 const many = ref<{ open: boolean; female: number | null; male: number | null; none: number | null }>({ open: false, female: null, male: null, none: null })
 function addMany() {
@@ -854,7 +964,7 @@ function cellText(field: string, before: CellValue, value: CellValue) {
 
 // --- Save, then Undo
 const blocker = computed(() => {
-  if (!toSave.value.length) return props.focus ? t('Añade al menos una larva') : t('Añade al menos una mariposa')
+  if (!toSave.value.length) return props.focus ? t('Añade al menos uno') : t('Añade al menos una mariposa')
   if (!idsLoaded.value) return t('Cargando los Insectary IDs libres…')
   const bad = toSave.value.find(d => problems.value.get(d.key)?.length)
   if (bad) {
@@ -869,7 +979,7 @@ const summary = computed(() => {
   const ids = [...toSave.value].sort((a, b) => sheetOrder(a) - sheetOrder(b)).map(d => d.id)
   const parts = [
     adults.length || !props.focus ? tn(adults.length, '{n} adulto', '{n} adultos') : '',
-    toSave.value.length > adults.length ? tn(toSave.value.length - adults.length, '{n} huevo o larva', '{n} huevos o larvas') : '',
+    toSave.value.length > adults.length ? tn(toSave.value.length - adults.length, '{n} preservado', '{n} preservados') : '',
     ids.length > 1 ? `${ids[0]}–${ids.at(-1)}` : ids[0],
   ]
   return parts.filter(Boolean).join(' · ')
@@ -1126,34 +1236,89 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
             <p v-if="doubt" class="mt-2 flex items-start gap-1.5 text-sm font-medium text-amber-900"><AlertTriangle :size="16" class="mt-0.5 shrink-0" />{{ doubt }}</p>
 
             <template v-if="canEdit">
-              <!-- «Siguiente ID»: the gap of free rows the buttons take from (an older one: IDs written on paper meanwhile). -->
+              <!--
+                «Siguiente ID»: an ID typed to start from (S8E, keeping S3E–S7E for a colleague), or the gap of free rows
+                the buttons take from (an older one: IDs written on paper meanwhile).
+              -->
               <div
-                v-if="idsLoaded && (gapList.length > 1 || gap)"
+                v-if="idsLoaded"
                 class="mt-3 rounded-lg border px-2 py-1.5"
                 :class="gap ? 'border-amber-400 bg-amber-50' : 'border-stone-200 bg-stone-50'"
                 data-gaps
+                @keydown.escape="gapsOpen = false"
               >
-                <label class="grid gap-1">
-                  <span class="text-sm font-medium text-stone-800">{{ $t('Siguiente ID') }}</span>
-                  <select
-                    class="field-input h-11 w-full min-w-0 text-base tabular-nums"
-                    :class="{ 'border-amber-500 font-semibold': gap }"
-                    :value="gapKey"
-                    @change="chooseGap(($event.target as HTMLSelectElement).value)"
-                  >
-                    <option v-for="o in gapList" :key="o.key" :value="o.key">{{ o.label }}</option>
-                  </select>
-                </label>
+                <form class="grid gap-1" @submit.prevent="useStart()">
+                  <span class="flex items-baseline gap-2">
+                    <label for="emerged-next-id" class="text-sm font-medium text-stone-800">{{ $t('Siguiente ID') }}</label>
+                    <span v-if="gap?.start" class="truncate rounded-full bg-amber-200 px-2 text-xs font-semibold text-amber-950" data-start>
+                      {{ $t('desde {id} (escrito)', { id: gap.start }) }}
+                    </span>
+                    <span v-else-if="gap" class="truncate rounded-full bg-amber-200 px-2 text-xs font-semibold text-amber-950">{{ $t('hueco anterior') }}</span>
+                  </span>
+                  <span class="flex gap-1.5">
+                    <span class="relative min-w-0 flex-1">
+                      <input
+                        id="emerged-next-id"
+                        v-model="startText"
+                        role="combobox"
+                        aria-autocomplete="none"
+                        aria-controls="emerged-gap-list"
+                        :aria-expanded="gapsOpen"
+                        class="field-input h-11 w-full pr-11 font-mono text-base uppercase tabular-nums placeholder:font-sans placeholder:normal-case"
+                        :placeholder="$t('Escribe un ID o elige')"
+                        autocapitalize="characters"
+                        autocomplete="off"
+                        autocorrect="off"
+                        spellcheck="false"
+                        enterkeyhint="go"
+                        @input="startProblem = null"
+                      />
+                      <button
+                        type="button"
+                        class="absolute inset-y-0 right-0 grid w-11 place-items-center rounded-r-md text-stone-600 active:bg-stone-100"
+                        :aria-label="$t('Elegir un hueco de IDs libres')"
+                        :aria-expanded="gapsOpen"
+                        @click="gapsOpen = !gapsOpen"
+                      >
+                        <ChevronDown :size="18" :class="{ 'rotate-180': gapsOpen }" />
+                      </button>
+                    </span>
+                    <button class="btn h-11 shrink-0 px-3" :disabled="!startText.trim() || checkingStart">
+                      <Loader2 v-if="checkingStart" :size="16" class="animate-spin" />{{ $t('Usar') }}
+                    </button>
+                  </span>
+                </form>
+                <ul v-if="gapsOpen" id="emerged-gap-list" role="listbox" class="mt-1 max-h-64 overflow-y-auto rounded-lg border border-stone-200 bg-white">
+                  <li v-for="o in gapList" :key="o.key" role="option" :aria-selected="o.key === gapKey">
+                    <button
+                      type="button"
+                      class="block min-h-11 w-full px-3 py-1.5 text-left text-sm tabular-nums active:bg-stone-100"
+                      :class="o.key === gapKey ? 'bg-brand-50 font-semibold text-brand-900' : 'text-stone-800'"
+                      @click="chooseGap(o.key)"
+                    >
+                      {{ o.label }}
+                    </button>
+                  </li>
+                </ul>
+                <div v-if="startProblem" class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-red-800" role="alert">
+                  <AlertTriangle :size="15" class="shrink-0" />
+                  <span class="min-w-0 flex-1">{{ startProblem.text }}</span>
+                  <button v-if="startProblem.next" type="button" class="h-9 shrink-0 rounded-lg border border-stone-300 bg-white px-3 font-medium text-stone-800" @click="useStart(startProblem.next)">
+                    {{ $t('Usar {id}, el siguiente libre', { id: startProblem.next }) }}
+                  </button>
+                  <ExtendRowsButton v-if="startProblem.beyond" class="h-9 w-full justify-center" sheet="Insectary_data" :count="200" @done="state.loadFreeIds()" />
+                </div>
                 <p v-if="gap" class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-amber-950" role="status">
                   <AlertTriangle :size="15" class="shrink-0" />
                   <span class="min-w-0 flex-1">
-                    {{
-                      gapLeft.length
-                        ? $t('Hueco anterior: los botones dan {span} en orden, no los IDs del final.', { span: gapSpan(gapLeft) })
-                        : $t('El hueco elegido ya no tiene IDs libres.')
-                    }}
+                    <template v-if="!gapLeft.length">{{ gap.start ? $t('Ya no quedan IDs libres desde {id}.', { id: gap.start }) : $t('El hueco elegido ya no tiene IDs libres.') }}</template>
+                    <template v-else-if="gap.start">
+                      {{ $t('Los botones dan {span} en orden.', { span: gapSpan(gapLeft) }) }}
+                      <template v-if="kept.length">{{ $t('{span} quedan libres.', { span: gapSpan(kept) }) }}</template>
+                    </template>
+                    <template v-else>{{ $t('Hueco anterior: los botones dan {span} en orden, no los IDs del final.', { span: gapSpan(gapLeft) }) }}</template>
                   </span>
-                  <button type="button" class="h-9 shrink-0 rounded-lg border border-amber-500 bg-white px-3 font-medium" @click="gapChoice = null">
+                  <button type="button" class="h-9 shrink-0 rounded-lg border border-amber-500 bg-white px-3 font-medium" @click="backToLatest">
                     {{ $t('Volver al último') }}
                   </button>
                 </p>
@@ -1223,87 +1388,44 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
                 <button class="btn h-11 justify-center px-1 text-sm" :aria-expanded="many.open" @click="many.open = !many.open">{{ $t('Varios…') }}</button>
                 <button
                   class="btn h-11 justify-center px-1 text-sm"
-                  :class="{ 'border-violet-400 bg-violet-50 text-violet-900': larvae.open }"
+                  :class="{ 'border-violet-400 bg-violet-50 text-violet-900': preserve.open }"
                   :disabled="!next"
-                  :aria-expanded="larvae.open"
-                  :title="$t('Huevo o larva preservado (Sex NOT_COLLECTED, LIFESTAGE)')"
-                  @click="larvae.open = !larvae.open"
+                  :aria-expanded="preserve.open"
+                  :title="$t('Huevo, larva o pupa preservado (Sex NOT_COLLECTED, LIFESTAGE)')"
+                  @click="preserve.open = !preserve.open"
                 >
-                  <Plus :size="15" /> {{ $t('Larvas…') }}
+                  <Plus :size="15" /> {{ $t('Preservados…') }}
                 </button>
               </div>
-              <!-- «+ N larvae»: preserved from the clutch, each with its Insectary ID, CAM and tube. -->
-              <form v-if="larvae.open" class="mt-2 space-y-2 rounded-lg border border-violet-200 bg-violet-50/60 p-2" @submit.prevent="addLarvae">
-                <div class="flex items-center gap-2">
-                  <span class="min-w-0 flex-1 text-sm font-medium text-violet-950">{{ $t('Larvas preservadas') }}</span>
-                  <span class="flex items-stretch overflow-hidden rounded-lg border border-stone-300 bg-white">
-                    <button type="button" class="h-11 w-11 text-xl active:bg-stone-100" :aria-label="$t('Una menos')" @click="larvae.count = Math.max(1, larvaCount - 1)">−</button>
-                    <input
-                      v-model.number="larvae.count"
-                      type="number"
-                      inputmode="numeric"
-                      min="1"
-                      max="60"
-                      class="h-11 w-14 border-x border-stone-300 text-center text-lg font-semibold tabular-nums outline-none"
-                      :aria-label="$t('Cuántas')"
-                    />
-                    <button type="button" class="h-11 w-11 text-xl active:bg-stone-100" :aria-label="$t('Una más')" @click="larvae.count = Math.min(60, larvaCount + 1)">+</button>
-                  </span>
-                </div>
-                <div class="flex flex-wrap gap-1" role="group" aria-label="LIFESTAGE">
-                  <button
-                    v-for="st in larvaStages"
-                    :key="st"
-                    type="button"
-                    class="min-h-11 rounded-lg border px-2 font-medium"
-                    :class="[
-                      young.stage === st ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white text-stone-800 active:bg-stone-100',
-                      MAIN_STAGES.includes(st) ? 'min-w-16 flex-1 text-base' : 'min-w-11 text-sm',
-                    ]"
-                    :aria-pressed="young.stage === st"
-                    :title="st"
-                    @click="young = { ...young, stage: st }"
-                  >
-                    {{ STAGE_NAME[st]() }}
-                  </button>
-                  <button
-                    type="button"
-                    class="min-h-11 rounded-lg border border-dashed border-stone-300 px-2 text-sm text-stone-700"
-                    :aria-expanded="larvae.moreStages"
-                    @click="larvae.moreStages = !larvae.moreStages"
-                  >
-                    {{ larvae.moreStages ? $t('Menos') : $t('Otro estadio') }}
-                  </button>
-                </div>
-                <div class="grid grid-cols-2 gap-1.5">
-                  <button
-                    type="button"
-                    class="min-h-11 rounded-lg border text-sm font-medium"
-                    :class="!young.foundDead ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white text-stone-800'"
-                    :aria-pressed="!young.foundDead"
-                    @click="young = { ...young, foundDead: false }"
-                  >
-                    {{ $t('Vivas, preservadas') }}
-                  </button>
-                  <button
-                    type="button"
-                    class="min-h-11 rounded-lg border text-sm font-medium"
-                    :class="young.foundDead ? 'border-amber-700 bg-amber-700 text-white' : 'border-stone-300 bg-white text-stone-800'"
-                    :aria-pressed="young.foundDead"
-                    @click="young = { ...young, foundDead: true }"
-                  >
-                    {{ $t('Encontradas muertas') }}
-                  </button>
-                </div>
-                <button class="btn-primary flex h-12 w-full touch-manipulation flex-col justify-center text-base leading-tight select-none" :disabled="!larvaIds.length">
-                  <span>{{ $tn(larvaCount, 'Añadir {n} larva', 'Añadir {n} larvas') }}</span>
-                  <span v-if="larvaIds.length" class="text-xs font-normal opacity-90">{{ larvaIds.length > 1 ? `${larvaIds[0]}–${larvaIds.at(-1)}` : larvaIds[0] }}</span>
-                </button>
-                <p v-if="larvaIds.length && larvaIds.length < larvaCount" class="flex items-start gap-1.5 text-sm text-amber-900">
-                  <AlertTriangle :size="15" class="mt-0.5 shrink-0" />
-                  {{ $t('Solo hay {n} filas preasignadas libres desde {id}: crea más filas preasignadas en Insectary_data', { n: larvaIds.length, id: larvaIds[0] }) }}
-                </p>
-              </form>
+              <!-- «+ Preservados…»: eggs, larvae or pupae preserved from the clutch, each with its Insectary ID, CAM and tube. -->
+              <PreservedForm
+                v-if="preserve.open"
+                class="mt-2"
+                :stage="young.stage"
+                :found-dead="young.foundDead"
+                :note="preserve.note"
+                :count="preserve.count"
+                :ids="preserveIds"
+                :next="next"
+                :same="sameText"
+                :can-edit="canEdit"
+                @update:stage="setPreserved({ stage: $event })"
+                @update:found-dead="setPreserved({ foundDead: $event })"
+                @update:note="setPreserved({ note: $event })"
+                @update:count="preserve.count = $event"
+                @add="addPreserved"
+                @same="addSame"
+              />
+              <!-- Closed: one more like the last ones, still one tap away. -->
+              <button
+                v-else-if="lastYoung"
+                type="button"
+                class="btn mt-2 flex h-11 w-full touch-manipulation items-center justify-center gap-1.5 text-sm select-none"
+                :disabled="!next"
+                @click="addSame"
+              >
+                <Plus :size="15" /> {{ $t('1 más igual') }} <span v-if="next" class="min-w-0 truncate text-stone-600 tabular-nums">· {{ sameText }} · {{ next }}</span>
+              </button>
               <form v-if="many.open" class="mt-2 grid grid-cols-[1fr_1fr_1fr_auto] items-end gap-2 rounded-lg border border-stone-200 bg-stone-50 p-2" @submit.prevent="addMany">
                 <label><span class="field-label">♀ {{ $t('Hembras') }}</span><input v-model.number="many.female" type="number" inputmode="numeric" min="0" max="60" class="field-input h-11 text-base" /></label>
                 <label><span class="field-label">♂ {{ $t('Machos') }}</span><input v-model.number="many.male" type="number" inputmode="numeric" min="0" max="60" class="field-input h-11 text-base" /></label>
@@ -1360,19 +1482,26 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
         <section v-if="youngCards.length" class="px-3 pt-4" data-young>
           <div class="mb-1.5 flex items-center gap-2">
             <h2 class="text-sm font-semibold text-stone-700">
-              {{ $tn(youngCards.length, '{n} huevo o larva preservado', '{n} huevos o larvas preservados') }}
+              {{ $tn(youngCards.length, '{n} preservado (huevo, larva o pupa)', '{n} preservados (huevos, larvas o pupas)') }}
             </h2>
             <button v-if="canEdit && !focus" class="ml-auto h-10 px-2 text-sm text-stone-600 underline" @click="removeYoung">{{ $t('Quitar todas') }}</button>
-            <!-- From Clutches: one more each tap (the next ID, CAM and tube), to correct afterwards if needed. -->
-            <button
-              v-if="canEdit && focus"
-              class="btn ml-auto h-11 touch-manipulation px-3 select-none"
-              :disabled="!next"
-              @click="add('young', 'NA', 1, { stage: young.stage, foundDead: young.foundDead })"
-            >
-              <Plus :size="16" /> {{ $t('Una más') }} <span v-if="next" class="text-xs text-stone-500 tabular-nums">{{ next }}</span>
-            </button>
           </div>
+          <!-- From Clutches: the stage, fate and note of all of them, and one more each tap (the next ID, CAM and tube). -->
+          <PreservedForm
+            v-if="canEdit && focus"
+            class="mb-2"
+            for-all
+            :stage="young.stage"
+            :found-dead="young.foundDead"
+            :note="preserve.note"
+            :next="next"
+            :same="sameText"
+            :can-edit="canEdit"
+            @update:stage="setPreserved({ stage: $event })"
+            @update:found-dead="setPreserved({ foundDead: $event })"
+            @update:note="setPreserved({ note: $event })"
+            @same="addSame"
+          />
           <YoungPanel
             v-if="canEdit"
             class="mb-2"

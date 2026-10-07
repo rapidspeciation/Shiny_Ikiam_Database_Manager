@@ -1,7 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import { isoToSerial } from '../dates'
-import { draftValues, setYoung, sharedYoung, youngSamples, youngStarts, youngValue, YOUNG_BATCH, type Draft, type RowContext, type YoungBatch } from '../emerged'
+import {
+  draftValues,
+  PRESERVED_STAGES,
+  setYoung,
+  sharedYoung,
+  stageGroup,
+  youngNote,
+  youngSamples,
+  youngStarts,
+  youngValue,
+  YOUNG_BATCH,
+  type Draft,
+  type RowContext,
+  type YoungBatch,
+} from '../emerged'
 import { localRun } from '../tubes'
+// The sheet's own lists, as the server reads them (Lists sheet and data validation).
+import { LISTS } from '../../../../server/verifications.mjs'
 
 // Eggs and larvae preserved from a clutch (Emergidos): the batch panel and each card's CAM and tube.
 const larva = (key: string, over: Partial<Draft> = {}): Draft => ({
@@ -152,5 +168,44 @@ describe('the row of a larva', () => {
       Preserved_Dead_Alive: 'Dead',
       Research_purpose: 'Sperm dissections',
     })
+  })
+})
+
+describe('«+ Preservados…»: eggs, larvae and pupae', () => {
+  const ctx: RowContext = {
+    clutchValue: '994(3)',
+    clutchSpecies: 'Mechanitis messenoides deceptus',
+    generation: 'F1',
+    formulas: ['Insectary_ID', 'SPECIES'],
+    today: isoToSerial('2026-10-03'),
+    initials: 'FCH',
+    medium: YOUNG_BATCH.medium,
+  }
+  it("offers every stage of the sheet's LIFESTAGE list but the adult's: egg, the five instars, prepupa, pupa days 1–12", () => {
+    const list = (LISTS.Insectary_data.LIFESTAGE as { values: string[] }).values
+    expect(PRESERVED_STAGES).toEqual(list.filter(v => !['Adult', 'NOT_COLLECTED', 'NA'].includes(v)))
+    expect(PRESERVED_STAGES.map(stageGroup).filter((g, i, all) => all.indexOf(g) === i)).toEqual(['egg', 'larva', 'pupa'])
+    expect(stageGroup('Pre-pupa')).toBe('larva')
+  })
+  it('a pupa gets the defaults the data rules give a preserved egg or larva, its day as LIFESTAGE', () => {
+    const v = draftValues(larva('a', { stage: 'Pupa day 4', cam: 'CAM078238', tube: 'FS63886700' }), ctx)
+    expect(v).toMatchObject({
+      Wild_Reared: 'Reared',
+      Sex: 'NOT_COLLECTED',
+      Intro2Insectary_date: 'NA',
+      LIFESTAGE: 'Pupa day 4',
+      Death_cause: 'Killed_Preserved',
+      Preserved_Dead_Alive: 'Alive',
+      T1_Preservation_medium: 'Flash frozen',
+      Tube_1_tissue: 'WHOLE_ORGANISM',
+      Research_purpose: 'F1/F2 mutation rate',
+      Notes_Insectary_data: '3/10/26 FCH: Preserved alive pupa day 4',
+    })
+    expect(youngNote('Pupa day 4', true)).toBe('Found dead, pupa day 4')
+    expect(youngNote('1st instar larva', false)).toBe('Preserved alive 1st instar')
+  })
+  it('a note typed for the individual is its note, dated and signed (empty: the default one)', () => {
+    expect(draftValues(larva('a', { stage: '5th instar larva', note: 'Looked sick' }), ctx).Notes_Insectary_data).toBe('3/10/26 FCH: Looked sick')
+    expect(draftValues(larva('a', { stage: '5th instar larva', note: '  ' }), ctx).Notes_Insectary_data).toBe('3/10/26 FCH: Preserved alive 5th instar')
   })
 })

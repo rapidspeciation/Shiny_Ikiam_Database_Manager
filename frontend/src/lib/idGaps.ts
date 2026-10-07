@@ -2,7 +2,8 @@ import { nextId } from './emerged'
 
 /**
  * Emergidos' «Siguiente ID»: which run of free pre-made Insectary IDs the
- * buttons (+♀, +♂, Sin sexo, Varios…, + Larvas…) take their IDs from. By
+ * buttons (+♀, +♂, Sin sexo, Varios…, + Preservados…) take their IDs from, or
+ * an ID typed to start from (the IDs before it in its run kept for someone). By
  * default the one after the last row used (the buttons as always); a colleague
  * who wrote IDs on paper while offline chooses that older gap and records them
  * in order, while the others go on with the latest. A gap is kept by its rows,
@@ -29,6 +30,53 @@ export interface IdGap {
 export interface GapChoice {
   rowFrom: number
   rowTo: number
+  /** An ID typed as the start (S8E, to keep S3E–S7E for a colleague): its row is `rowFrom`. */
+  start?: string
+}
+
+/** The server's answer to an ID typed in «Siguiente ID» (server/grid.mjs insectaryStart). */
+export type StartAnswer =
+  | { ok: true; value: string; row: number; mine?: boolean; gap: IdGap }
+  | {
+      ok: false
+      value: string
+      code: 'USED' | 'CLAIMED' | 'NAMED' | 'TYPED' | 'DUPLICATE' | 'BEYOND' | 'NOT_PREMADE' | 'INVALID'
+      /** The first free ID after it (or the usual next one), offered instead. */
+      next: string | null
+      row?: number
+      holder?: string
+      sheet?: string
+      last?: string
+    }
+
+/**
+ * The choice an ID typed as the start makes: from its row to the end of its run
+ * (the run after the last row used goes on to new pre-made rows when more are
+ * made). The buttons give it, then the next ones in order.
+ */
+export function startChoice(id: string, row: number, gap: Pick<IdGap, 'rowTo' | 'latest'>): GapChoice {
+  return { rowFrom: row, rowTo: gap.latest ? Number.MAX_SAFE_INTEGER : gap.rowTo, start: id.trim().toUpperCase() }
+}
+
+/**
+ * Without the server (no signal): an ID typed is taken as the start only when
+ * it is one of `order` (free, or this person's card's) inside a known gap.
+ */
+export function localStart(id: string, gaps: IdGap[], order: string[], rowOf: Map<string, number>): GapChoice | null {
+  const key = norm(id)
+  if (!order.some(o => norm(o) === key)) return null
+  const row = rowOf.get(key)
+  const gap = row === undefined ? undefined : gaps.find(g => g.rowFrom <= row && row <= g.rowTo)
+  return gap && row !== undefined ? startChoice(key, row, gap) : null
+}
+
+/** The free IDs a typed start leaves before it in its run (S3E–S7E): kept for whoever wrote them. */
+export function keptBefore(order: string[], rowOf: Map<string, number>, gaps: IdGap[], choice: GapChoice | null, held: string[]): string[] {
+  if (!choice?.start) return []
+  const gap = gaps.find(g => g.rowFrom < choice.rowFrom && choice.rowFrom <= g.rowTo)
+  if (!gap) return []
+  const taken = new Set(held.map(norm))
+  return gapIds(order, rowOf, { rowFrom: gap.rowFrom, rowTo: choice.rowFrom - 1 }).filter(id => !taken.has(norm(id)))
 }
 
 /** One line of the selector: the IDs this person can take from a gap now. */
@@ -97,7 +145,7 @@ export function sameGap(a: GapChoice, b: GapChoice): boolean {
   return a.rowFrom <= b.rowTo && b.rowFrom <= a.rowTo
 }
 
-/** The choice kept: null for the latest gap (the buttons as always). */
+/** The choice kept: null for the latest gap (the buttons as always). A gap picked drops a start typed. */
 export function choose(option: GapOption | null): GapChoice | null {
   return option && !option.latest ? { rowFrom: option.rowFrom, rowTo: option.rowTo } : null
 }

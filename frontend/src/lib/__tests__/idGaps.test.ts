@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { overwriteEdit, overwriting, type Draft } from '../emerged'
-import { choose, gapIds, gapOptions, gapSpan, nextFor, nextMany, sameGap, type IdGap } from '../idGaps'
+import { choose, gapIds, gapOptions, gapSpan, keptBefore, localStart, nextFor, nextMany, sameGap, startChoice, type IdGap } from '../idGaps'
 import type { TableRow } from '../types'
 
 // The free pre-made rows: an old gap (S3E–S7E, rows 100–104; S5E held by someone else's card, so not
@@ -70,6 +70,36 @@ describe('«Siguiente ID»: the gap the buttons take from', () => {
     expect(choose(latest)).toBeNull()
     expect(choose(old)).toEqual(OLD)
     expect(choose(null)).toBeNull()
+  })
+})
+
+describe('«Siguiente ID»: an ID typed to start from', () => {
+  it('the buttons start at it and go on in order within its run, the IDs before it kept for someone', () => {
+    // C2F typed (keeping C0F–C1F for a colleague): the latest gap from C2F on, open to new pre-made rows.
+    const typed = startChoice(' c2f', 502, GAPS[1])
+    expect(typed).toEqual({ rowFrom: 502, rowTo: Number.MAX_SAFE_INTEGER, start: 'C2F' })
+    expect(nextFor(order, 'C0F', [], typed, rowOf)).toBe('C2F')
+    expect(nextMany(order, 'C0F', [], typed, rowOf, 5)).toEqual(['C2F', 'C3F', 'C4F'])
+    expect(keptBefore(order, rowOf, GAPS, typed, [])).toEqual(['C0F', 'C1F'])
+    // More pre-made rows made after it: still followed.
+    const more = [...order, 'C5F']
+    const moreRows = new Map([...rowOf, ['C5F', 505]])
+    expect(nextFor(more, 'C0F', ['C2F', 'C3F', 'C4F'], typed, moreRows)).toBe('C5F')
+    // In an older gap: S6E on (S5E held by someone else), never into the latest gap.
+    const old = startChoice('S6E', 103, GAPS[0])
+    expect(old).toEqual({ rowFrom: 103, rowTo: 104, start: 'S6E' })
+    expect(nextMany(order, 'C0F', [], old, rowOf, 4)).toEqual(['S6E', 'S7E'])
+    expect(keptBefore(order, rowOf, GAPS, old, ['S3E'])).toEqual(['S4E'])
+    // The start the first of its run: nothing kept; a gap picked from the list has no start.
+    expect(keptBefore(order, rowOf, GAPS, startChoice('S3E', 100, GAPS[0]), [])).toEqual([])
+    expect(keptBefore(order, rowOf, GAPS, OLD, [])).toEqual([])
+  })
+
+  it('without signal only an ID known free here, in a known gap, is taken', () => {
+    expect(localStart('s4e', GAPS, order, rowOf)).toEqual({ rowFrom: 101, rowTo: 104, start: 'S4E' })
+    // S5E is someone else's (not in the order); X9Z is not a free pre-made row here.
+    expect(localStart('S5E', GAPS, order, rowOf)).toBeNull()
+    expect(localStart('X9Z', GAPS, order, rowOf)).toBeNull()
   })
 })
 
