@@ -182,10 +182,10 @@ export function stagedSummary(items: StagedItem[], status: 'staged' | 'sent' = '
   return [...bySheet].map(([sheet, rows]) => ({ sheet, rows: [...rows.values()] }))
 }
 
-/** How many changes wait: a new row counts one, an edit its cells. */
-/** Rows changed (each item is one row's edit or a new row): a census of 221 butterflies is 221, not its cells. */
+/** Rows changed (a new row, or a sheet row however many times it was edited): a census of 221 butterflies is 221, not its cells. */
 export function changeCount(items: StagedItem[], status: 'staged' | 'sent' = 'staged') {
-  return items.filter(i => i.status === status).length
+  // Rows, not entries: two changes to the same row (a count changed twice) are one row to save.
+  return new Set(items.filter(i => i.status === status).map(i => i.recordId ?? i.clientId ?? i.id)).size
 }
 
 /** Who holds an identifier in an entry (A4E — Ana), or null. */

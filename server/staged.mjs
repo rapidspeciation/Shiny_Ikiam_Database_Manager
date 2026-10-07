@@ -197,6 +197,27 @@ export class Staged {
     };
   }
 
+  /**
+   * Takes a cell out of the entries still waiting (status 'staged', not being written): the entry
+   * keeps its other cells, or goes when that cell was its only one.
+   */
+  dropWaiting(recordId, field) {
+    const rows = this.db.prepare("SELECT * FROM staged WHERE kind='edit' AND record_id=? AND status='staged'").all(recordId);
+    for (const r of rows) {
+      const values = parse(r.values_json) ?? {};
+      if (!Object.hasOwn(values, field)) continue;
+      const rest = Object.fromEntries(Object.entries(values).filter(([f]) => f !== field));
+      if (!Object.keys(rest).length) {
+        this.db.prepare('DELETE FROM staged WHERE id = ?').run(r.id);
+        continue;
+      }
+      const keep = obj => json(Object.fromEntries(Object.entries(parse(obj) ?? {}).filter(([f]) => f !== field)));
+      this.db
+        .prepare('UPDATE staged SET values_json = ?, expected_json = ?, base_json = ? WHERE id = ?')
+        .run(json(rest), keep(r.expected_json), keep(r.base_json), r.id);
+    }
+  }
+
   /** A cell's latest entry not written yet: { value, item } or null. */
   latestOn(recordId, field, exclude = new Set()) {
     const rows = this.db.prepare("SELECT * FROM staged WHERE kind='edit' AND record_id=? AND status IN ('staged','sent') ORDER BY rowid DESC").all(recordId);
@@ -294,7 +315,14 @@ export class Staged {
         for (const target of plan.targets) {
           if (target.record) {
             // An existing row's cells: what the person saw, and what the sheet holds under everyone's entries.
-            const fields = (target.changes ?? []).map(c => c.field);
+            // A cell set back to what the sheet holds (a term taken out of a sum and put back) cancels the
+            // entries still waiting on it instead of adding one more: nothing is left to save for it.
+            const sheetCell = field => cellOf(target.record.values, target.record.formulas, field);
+            const back = (target.changes ?? [])
+              .map(c => c.field)
+              .filter(field => this.latestOn(target.record.id, field) && sameCell(target.clean[field], sheetCell(field)) && sameCell(sheetCell(field), target.clean[field]));
+            for (const field of back) this.dropWaiting(target.record.id, field);
+            const fields = (target.changes ?? []).map(c => c.field).filter(f => !back.includes(f));
             if (!fields.length) continue;
             const id = randomUUID();
             const raw = sheetEdits.find(e => e?.id === target.record.id);

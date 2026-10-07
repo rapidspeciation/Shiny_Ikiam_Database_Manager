@@ -155,6 +155,26 @@ test('a clutch count changed by two people in turn: the second builds on the fir
   }
 });
 
+test('a count changed and set back to what the sheet holds: the waiting entry is cancelled, nothing is left to save', async () => {
+  const { store } = await fixture();
+  try {
+    const id = clutchId(store, 991);
+    await store.staged.stage(
+      { requestId: randomUUID(), purpose: 'clutches', edits: [{ id, values: { 'NUMBER OF EGGS': '=12+3' }, expected: { 'NUMBER OF EGGS': 12 } }] },
+      ana,
+    );
+    assert.equal(store.staged.list().items.length, 1);
+    const back = await store.staged.stage(
+      { requestId: randomUUID(), purpose: 'clutches', edits: [{ id, values: { 'NUMBER OF EGGS': 12 }, expected: { 'NUMBER OF EGGS': '=12+3' } }] },
+      ana,
+    );
+    assert.notEqual(back.status, 'error');
+    assert.deepEqual(store.staged.list().items, [], 'both edits cancel out');
+  } finally {
+    store.close();
+  }
+});
+
 test('«Guardar en Google Sheets» writes every entry of both tabs as one save; their claims end', async () => {
   const { store, sheets } = await fixture();
   try {
