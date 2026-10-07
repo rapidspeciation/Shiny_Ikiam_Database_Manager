@@ -452,6 +452,15 @@ class Plan {
     this.pools = [];
   }
 
+  /**
+   * Formula cells a save may type over: SPECIES (what emerged differs from its clutch), a suffixed
+   * Insectary_ID, and in a reviewed proposal any formula cell it marks so (a value its formula would
+   * not give, shown to the person as doubtful: server/assistant.mjs weighFormulaCells).
+   */
+  mayReplace(sheet, field) {
+    return mayReplace(sheet, field) || (this.source === 'ai_approved' && !(sheet === 'Insectary_data' && field === 'Insectary_ID'));
+  }
+
   /** `message`: a text or a msg() (message and messageMsg). */
   conflict(target, code, message, extra = {}) {
     this.conflicts.push({
@@ -485,7 +494,7 @@ class Plan {
       const target = { index, editId: edit?.id, expected: edit?.expected || null, raw: edit?.values || {} };
       const record = typeof edit?.id === 'string' ? this.store.getRecord(edit.id) : null;
       target.replaceFormula = new Set(
-        Array.isArray(edit?.replaceFormula) && record ? edit.replaceFormula.filter(f => mayReplace(record.sheet, f)) : [],
+        Array.isArray(edit?.replaceFormula) && record ? edit.replaceFormula.filter(f => this.mayReplace(record.sheet, f)) : [],
       );
       if (!record || record.missing || record.row <= 0)
         return this.conflict(target, 'RECORD_NOT_FOUND', 'La fila ya no está disponible; recarga la tabla');
@@ -507,9 +516,10 @@ class Plan {
     const reach = new Map(); // sheet → the furthest row an Insectary ID ahead of the pre-made rows needs
     creates.forEach((create, index) => {
       const target = { index, clientId: create?.clientId || `new-${index}`, sheet: create?.module };
-      const allowed = TYPED_OVER_FORMULA[create?.module];
       target.replaceFormula = new Set(
-        Array.isArray(create?.replaceFormula) ? create.replaceFormula.filter(f => allowed?.has(f)) : [],
+        Array.isArray(create?.replaceFormula)
+          ? create.replaceFormula.filter(f => TYPED_OVER_FORMULA[create?.module]?.has(f) || (this.source === 'ai_approved' && f !== 'Insectary_ID'))
+          : [],
       );
       if (!moduleMap.has(create?.module)) return this.conflict(target, 'MODULE_NOT_FOUND', 'Hoja desconocida');
       // If an earlier save to this sheet may or may not have landed, a new row could

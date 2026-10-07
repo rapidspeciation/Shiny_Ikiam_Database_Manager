@@ -14,7 +14,7 @@ import { columnKeys, columnOf, comparable, isSumField, labelFor, moduleMap, simp
 import { TUBE_FIELD, isIdValue, isUnique } from './verifications.mjs';
 import { listOptions, listProblem } from './verify.mjs';
 import { queueWalk, walkDraft } from './walks.mjs';
-import { KINDS, isNone, noteText, reviewColumns } from './notebook.mjs';
+import { KINDS, isNone, noteText, reviewColumns, show as showValue } from './notebook.mjs';
 import { HIDDEN_COLUMNS, NOTEBOOK_COLUMNS, isNotWritten, notWrittenWhy } from './proposal-columns.mjs';
 import { createFormulaReader, isFormulaError, sameResult } from './formula-gives.mjs';
 import { FORMULA_ROWS, checkFormula, isFormulaValue, sameFormula, withRow } from './formula-write.mjs';
@@ -22,7 +22,8 @@ import { FILTERS_DOC, FIND_BUDGET, RECORD_TOOLS, compactRecord, countRecords, fi
 import { RESULT_BUDGET, fitList, fitResult } from './tool-budget.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary, proposalPage, withLinesFile, writeLinesFile } from './notebook-tool.mjs';
 import { duplicateIdRow, insectaryBaseRows, insectaryIdPlaces, insectaryIdRow, newRowFormulaFields, protectedFields, suffixedId } from './premade.mjs';
-import { formulaNotes, isPlaceholder, newRowPatternFields, sheetPatterns } from './formula-patterns.mjs';
+import { formulaNotes, isPlaceholder, newRowFormulas, newRowPatternFields, sheetPatterns } from './formula-patterns.mjs';
+import { parseFormula, relativeFormula } from './formula.mjs';
 import { formulaCostAnswer, proposalFormulaCost } from './formula-cost.mjs';
 import { claimHolder, claimsOf } from './claims.mjs';
 import { BETWEEN_ROWS, PEEK_ROWS, VIEW_PARAM, VIEW_UPDATE, readView, showBetween, viewColumns } from './proposal-view.mjs';
@@ -296,7 +297,7 @@ const TOOLS = [
           'Draft edits to existing rows (`changes`) and/or new rows (`newRows`), shown at once as a table beside the chat; nothing is written until the person confirms.',
           '- One proposal per task (a walk, a kind of fix), with a short note per row on where its values come from.',
           '- A row: its `recordId`, or `sheet` + `id`, its ID in the sheet (W2B, CAM079891, a clutch number).',
-          "- Formula cells take no typed value, but Insectary_data's SPECIES when its formula gives another one or none, and a suffix on a repeated Insectary_ID (W2B → W2B.1).",
+          '- A value typed in a formula cell is left to the formula when it gives the same, else written over it, doubtful; Insectary_ID takes only a suffix (W2B → W2B.1).',
           `- {"formula": "=..."} writes a formula ({row}: the row's number), with English function names and commas. Down a column: bulk \`rows\`; up to ${FORMULA_ROWS} rows when it only writes formulas.`,
           "- A new Insectary_data row names its Insectary_ID and fills the pre-made row of that ID; a second butterfly of a used ID takes a suffix (W2B.2), its row inserted below that ID's rows.",
           `- Up to ${PROPOSAL_ROWS} rows per proposal; \`bulk\` gives the same values to many existing rows.`,
@@ -940,6 +941,127 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     return fields;
   }
 
+  /** A sheet's columns (field → index), by the header read last. */
+  const sheetColumns = sheet =>
+    store.layouts?.get(sheet)?.columns ?? new Map(moduleMap.get(sheet)?.fields.map(f => [f.key, f.column]) ?? []);
+
+  /** A column whose formula the team copies down (server/formula-patterns.mjs). */
+  const patternedColumn = (sheet, field) => sheetPatterns(store, sheet).some(p => p.field === field);
+
+  /**
+   * Whether a formula reads its own sheet beyond its row (Data_entry_order reads the row above):
+   * what it gives in a row not written yet depends on the rows written before it.
+   */
+  function readsOtherRows(sheet, formula, row) {
+    let tree;
+    try {
+      tree = parseFormula(relativeFormula(formula, row));
+    } catch {
+      return true;
+    }
+    const own = node => !node.sheet || node.sheet === sheet;
+    const walk = node => {
+      if (!node || typeof node !== 'object') return false;
+      if (node.t === 'ref' && own(node) && node.row && ('rel' in node.row ? node.row.rel !== 0 : node.row.abs !== row)) return true;
+      if (node.t === 'range' && own(node)) return true;
+      return [node.a, node.b, ...(node.args ?? [])].some(walk);
+    };
+    return walk(tree);
+  }
+
+  /**
+   * The row a new row of the proposal goes into, with the formulas it will hold: the pre-made
+   * row's, and where that row has none, the column's usual formula for rows of its kind (the save
+   * writes it there: server/batch.mjs). `k`: the how-manieth new row of its sheet in the proposal
+   * (they take consecutive rows). Null when nothing there is a formula.
+   */
+  function newRowTarget(change, k = 0) {
+    const premade = premadeRecordOf(change, k);
+    if (change.sheet === 'Insectary_data') return premade;
+    const row = premade?.row ?? nextFreeRow(change.sheet) + k;
+    const own = premade?.formulas ?? {};
+    const filled = premade?.values ?? {};
+    const fills = newRowFormulas(store, change.sheet, row, { ...filled, ...(change.values ?? {}) });
+    const added = Object.entries(fills).filter(([f]) => !own[f] && (filled[f] === null || filled[f] === undefined || filled[f] === ''));
+    if (!premade && !added.length) return null;
+    return { ...(premade ?? { id: null, sheet: change.sheet, row, values: {} }), formulas: { ...own, ...Object.fromEntries(added) } };
+  }
+
+  /** The first row after a sheet's last row in use: where its new rows go (server/batch.mjs addCreates). */
+  const nextFreeRow = sheet =>
+    (db.prepare('SELECT max(row_num) n FROM records WHERE sheet=? AND missing=0 AND observed=1 AND row_num<2000000000').get(sheet).n ||
+      (moduleMap.get(sheet)?.headerRow ?? 1)) + 1;
+
+  /**
+   * Values a proposal row types into formula cells (`fields`, of `target`: the record whose
+   * formulas the row keeps), weighed against what each formula gives with the row's values, as
+   * Insectary_data's SPECIES is: `values` loses those left to the formula. Returns
+   * { left: [{ field, value, why, gives }], over: [{ field, value, gives }] }:
+   *  - why 'same': the formula gives it (spacing and capitals aside); 'protected': a column the
+   *    app's account cannot write there; 'formula': a placeholder (NA), a column without a usual
+   *    formula, or what the formula gives cannot be told here;
+   *  - over: the formula would give another value: written over it, a doubtful cell to look at.
+   */
+  function weighFormulaCells(sheet, values, target, fields, { create = false } = {}) {
+    const left = [];
+    const over = [];
+    if (!target || !fields.length) return { left, over };
+    const locked = protectedFields(db, sheet, target.row, sheetColumns(sheet));
+    let evaluated = null;
+    const gives = () => (evaluated ??= rowFormulaGives({ create, sheet, values: { ...values } }, target));
+    for (const field of fields) {
+      const value = values[field];
+      const formula = target.formulas?.[field];
+      if (locked.has(field)) left.push({ field, value, why: 'protected' });
+      else if (
+        !formula ||
+        isPlaceholder(value) ||
+        isNone(value) ||
+        !patternedColumn(sheet, field) ||
+        (create && readsOtherRows(sheet, formula, target.row))
+      )
+        left.push({ field, value, why: 'formula' });
+      else {
+        const { gives: all, fallback } = gives();
+        if (fallback.includes(field) || !(field in all)) left.push({ field, value, why: 'formula' });
+        else if (sameAsFormula(all[field] ?? '', value)) left.push({ field, value, why: 'same', gives: all[field] });
+        else over.push({ field, value, gives: all[field] ?? null });
+      }
+    }
+    for (const { field } of left) delete values[field];
+    return { left, over };
+  }
+
+  /** What the table says beside a cell left to its formula, and on one typed over it (a doubt). */
+  const leftHint = l => {
+    const value = isNone(l.value) ? msg('vacío') : showValue(l.field, l.value);
+    return l.why === 'protected'
+      ? msg('«{value}» no se escribe: columna protegida en la hoja', { value })
+      : l.why === 'same'
+        ? msg('«{value}» es lo que da la fórmula: se deja la fórmula', { value })
+        : msg('«{value}» no se escribe: la columna es una fórmula', { value });
+  };
+  /** The doubts and hints of a row's weighed formula cells, as the change keeps them. */
+  function formulaMarks({ left, over }) {
+    const out = {};
+    if (over.length)
+      out.doubts = Object.fromEntries(
+        over.map(o => {
+          const m = msg('La fórmula daría «{value}»', { value: isNone(o.gives) ? msg('vacío') : showValue(o.field, o.gives) });
+          return [o.field, { alternatives: isNone(o.gives) ? [] : [o.gives], reason: m.text, reasonMsg: m.msg, formula: true }];
+        }),
+      );
+    if (left.length)
+      out.hints = Object.fromEntries(
+        left.map(l => {
+          const m = leftHint(l);
+          return [l.field, { text: m.text, msg: m.msg, formula: true }];
+        }),
+      );
+    if (left.length) out.formulaLeft = left.map(({ field, why }) => ({ field, why }));
+    return out;
+  }
+
   /**
    * What a formula column will give once a row's `values` are written (`record`:
    * the existing row, null for a new one): SPECIES follows the clutch the row
@@ -987,13 +1109,30 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     for (const [key, value] of Object.entries(values)) if (value?.formula && isSumField(sheet, key)) values[key] = value.formula;
     const formulas = createFormulaFields(sheet);
     const kept = key => isSumField(sheet, key) && values[key] !== null;
-    // Columns rows of this kind keep as formulas (server/formula-patterns.mjs): the save writes the
-    // formula there, over a placeholder NA; a real value typed there is the person's and stays.
-    const patterned = newRowPatternFields(store, sheet, values);
-    const leave = key => (formulas.has(key) && !kept(key)) || (patterned.has(key) && isPlaceholder(values[key]));
-    const dropped = Object.keys(values).filter(leave);
-    for (const key of Object.keys(values)) if (leave(key) || values[key] === null) delete values[key];
+    for (const key of Object.keys(values)) if (values[key] === null) delete values[key];
+    // The row's formula cells (its pre-made row's, and the column's usual formula for rows of its
+    // kind, which the save writes there: server/formula-patterns.mjs): a value typed there is left
+    // to the formula when it gives the same, or when the column is protected; another one is
+    // written over it, doubtful. Insectary_data's SPECIES and Collection_location: left to theirs.
+    const target = newRowTarget({ create: true, sheet, values });
+    const typedOver = key => !!TYPED_OVER_FORMULA[sheet]?.has(key) && formulas.has(key);
+    const weighed = weighFormulaCells(
+      sheet,
+      values,
+      target,
+      Object.keys(values).filter(
+        key =>
+          !kept(key) &&
+          !typedOver(key) &&
+          !(sheet === 'Insectary_data' && key === 'Insectary_ID') &&
+          (formulas.has(key) || !!target?.formulas?.[key]),
+      ),
+      { create: true },
+    );
+    const dropped = [...Object.keys(values).filter(typedOver), ...weighed.left.map(l => l.field)];
+    for (const key of Object.keys(values)) if (typedOver(key)) delete values[key];
     if (!Object.keys(values).length) return { error: `${at}: the new row has no values` };
+    const marks = formulaMarks(weighed);
     const lists = listOptions(store, sheet);
     for (const [field, value] of Object.entries(values)) {
       const problem = lists[field]?.strict && listProblem(lists, field, value);
@@ -1029,10 +1168,12 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         label: clip(identity ?? ([values.SPECIES, time].filter(Boolean).join(' ') || labelFor(sheet, values)), 80),
         before: {},
         values,
-        replaceFormula: [],
+        // Written over the formula of its pre-made row (the column's usual one is then not written).
+        replaceFormula: weighed.over.map(o => o.field),
         note: clip(candidate.note, 300),
         ...(candidate.highlight === true ? { highlight: true } : {}),
         ...(dropped.length ? { dropped } : {}),
+        ...marks,
       },
     };
   }
@@ -1151,7 +1292,30 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       // A pre-made row someone is registering in Emergidos (kept in the app, not in the sheet yet), or an ID they hold.
       const held = heldByEntry(old.sheet, { ...values, ...(old.sheet === 'Insectary_data' && old.observed === false ? { Insectary_ID: old.values?.Insectary_ID } : {}) });
       if (held) return { error: `${old.label}: ${held}` };
+      // Values typed into formula cells of a column whose formula the team copies down (Family,
+      // Genus, the lookups…): left to the formula when it gives the same, else written over it, doubtful.
+      const plain = Object.fromEntries(Object.entries(values).filter(([key]) => !(key in formulas)));
+      const weighed = weighFormulaCells(
+        old.sheet,
+        plain,
+        old,
+        Object.keys(plain).filter(
+          key =>
+            old.formulas?.[key] &&
+            !TYPED_OVER_FORMULA[old.sheet]?.has(key) &&
+            !isSumField(old.sheet, key) &&
+            !(old.sheet === 'Insectary_data' && key === 'Insectary_ID') &&
+            patternedColumn(old.sheet, key),
+        ),
+      );
+      for (const { field } of weighed.left) delete values[field];
+      const overFormula = new Set(weighed.over.map(o => o.field));
       for (const key of Object.keys(values)) {
+        if (overFormula.has(key)) {
+          replaceFormula.push(key);
+          before[key] = old.values?.[key] ?? null;
+          continue;
+        }
         if (key in formulas) {
           // The same formula already there: nothing to write. Else it goes over the cell's formula or value.
           if (old.formulas?.[key] && sameFormula(old.formulas[key], formulas[key])) {
@@ -1208,10 +1372,41 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         ...(formulaCells.length ? { formulaCells } : {}),
         note: clip(candidate.note, 300),
         ...(candidate.highlight === true ? { highlight: true } : {}),
+        ...formulaMarks({ left: weighed.left, over: weighed.over.filter(o => o.field in values) }),
       });
     }
     if (!changes.length) return { error: 'Every proposed value is already in the sheet' };
     return { changes };
+  }
+
+  /**
+   * What an answer says of the values a proposal typed into formula cells: those left to the
+   * formula and why (`extra`: other columns left out of new rows), and those written over it.
+   * `only`: the indexes of the rows to say it of (all when null).
+   */
+  function formulaAnswer(all, extra = [], only = null) {
+    const rows = all.map((c, index) => (only && !only.has(index) ? {} : c));
+    const why = { same: 'the formula gives the same', protected: 'protected column, left to the sheet', formula: 'a formula column' };
+    const groups = new Map();
+    const add = (reason, field) => (groups.get(reason) ?? groups.set(reason, new Set()).get(reason)).add(field);
+    for (const c of rows) for (const l of c.formulaLeft ?? []) add(l.why, l.field);
+    for (const field of extra) if (![...groups.values()].some(g => g.has(field))) add('formula', field);
+    const over = rows.flatMap((c, index) =>
+      Object.entries(c.doubts ?? {})
+        .filter(([f, d]) => d?.formula && f in (c.values ?? {}))
+        .map(([field, d]) => ({ index, label: c.label, field, value: c.values[field], formulaGives: d.alternatives?.[0] ?? null })),
+    );
+    return {
+      ...(groups.size
+        ? { leftOut: `Not written, the formula kept: ${[...groups].map(([r, f]) => `${[...f].join(', ')} (${why[r]})`).join('; ')}` }
+        : {}),
+      ...(over.length
+        ? {
+            overFormula: over.slice(0, 20),
+            overFormulaNote: "Written over the column's formula, which gives another value: doubtful cells the person checks. Drop them (null) when the formula is right.",
+          }
+        : {}),
+    };
   }
 
   // ------------------------------------------------------------ the same rows in two pending proposals
@@ -1732,7 +1927,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       ...(overlaps.length ? { overlaps } : {}),
       ...(formulaNoted.length ? { formulaNotes: formulaNoted } : {}),
       ...(formulaCost ? { formulaCost } : {}),
-      ...(dropped.length ? { leftOut: `Formula columns left out of the new rows: ${dropped.join(', ')}` } : {}),
+      ...formulaAnswer(changes, dropped),
       ...(ignored.length ? { noChange: ignored.slice(0, 50), noChangeNote: 'null means no change: these cells keep the sheet value. To empty one give {"clear": true}.' } : {}),
       ...(listed
         ? { table: changes.map((c, index) => ({ index, sheet: c.sheet, label: c.label, ...(c.create ? { create: true } : { row: c.row }) })) }
@@ -1801,6 +1996,28 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   }
 
   /**
+   * A row's marks on its formula cells (formulaMarks) as the row checked again gives them: the
+   * others' (a notebook's doubts and hints) kept, a formula doubt already checked kept checked
+   * while its value is the same.
+   */
+  function remarked(change, next) {
+    const others = map => Object.entries(map ?? {}).filter(([, m]) => !m?.formula);
+    const doubts = Object.fromEntries([
+      ...others(change.doubts),
+      ...Object.entries(next.doubts ?? {}).map(([f, d]) => {
+        const was = change.doubts?.[f];
+        return [f, was?.formula && was.checked && same(change.values?.[f], next.values?.[f]) ? { ...d, checked: was.checked } : d];
+      }),
+    ]);
+    const hints = Object.fromEntries([...others(change.hints), ...Object.entries(next.hints ?? {})]);
+    return {
+      doubts: Object.keys(doubts).length ? doubts : undefined,
+      hints: Object.keys(hints).length ? hints : undefined,
+      formulaLeft: next.formulaLeft,
+    };
+  }
+
+  /**
    * One row checked again as propose_changes checks it: { change, dropped } or { error }.
    * An existing row keeps what the sheet had when each cell was read (`before`): only
    * `fresh`, the cell the assistant sets now, is read again, so a cell edited in the
@@ -1808,7 +2025,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
    */
   function redraftRow(change, index, others, used, fresh = null) {
     const personEdits = change.personEdits && Object.keys(change.personEdits).length ? change.personEdits : undefined;
-    const keep = next => ({ ...change, ...next, personEdits });
+    const keep = next => ({ ...change, ...next, personEdits, ...remarked(change, next) });
     const read = drafted => {
       const out = { ...drafted };
       for (const [f, v] of Object.entries(change.before ?? {})) if (f !== fresh) out[f] = v;
@@ -1900,10 +2117,18 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         }
         const drafted = redraftRow(setCell(row, field, value), i, rows.filter((_, j) => j !== i), used, by === 'ai' ? field : null);
         // The species the new row's formula will give: left to the formula, nothing to say.
+        const left = drafted.change?.formulaLeft?.find(l => l.field === field);
         const toFormula =
-          !drafted.error && row.create && value !== DROP && sameAsFormula(formulaWillGive(row.sheet, field, drafted.change.values, null) ?? null, value);
+          !drafted.error &&
+          row.create &&
+          value !== DROP &&
+          (left?.why === 'same' || sameAsFormula(formulaWillGive(row.sheet, field, drafted.change.values, null) ?? null, value));
         if (drafted.error || (drafted.dropped.includes(field) && !toFormula)) {
-          const message = drafted.error ?? `${field} is a formula in the new row; it is left empty`;
+          const message =
+            drafted.error ??
+            (left?.why === 'protected'
+              ? `${field} is protected in the sheet; the new row leaves it to the sheet`
+              : `${field} is a formula in the new row; it is left empty`);
           if (drafted.error || by === 'person') out.rejected.push({ ...where(i), field, message });
           else out.leftOut.push(field);
           if (drafted.error) continue;
@@ -2861,7 +3086,11 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       ...(unchanged
         ? {}
         : lookAtRows(out.changes, revised.changed && new Set([...revised.changed, ...(revised.sameChange ?? [])].flatMap(v => v.indexes ?? [v.index])))),
-      ...(out.leftOut.length ? { leftOut: `Formula columns left out of the new rows: ${out.leftOut.join(', ')}` } : {}),
+      ...formulaAnswer(
+        unchanged ? [] : out.changes,
+        out.leftOut,
+        revised.changed ? new Set(revised.changed.flatMap(v => v.indexes ?? [v.index])) : null,
+      ),
       ...(formulaCost ? { formulaCost } : {}),
       ...(out.conflicts.length
         ? {
@@ -3306,9 +3535,10 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
 
   /**
    * The sheet row a new row goes into, whose formulas it keeps: its Insectary ID's pre-made row in
-   * Insectary_data, else the sheet's next pre-made row. Null when there is none yet.
+   * Insectary_data, else the sheet's next pre-made row after its last row in use (`k`: the
+   * how-manieth new row of its sheet, as the save places them). Null when there is none yet.
    */
-  function premadeRecordOf(change) {
+  function premadeRecordOf(change, k = 0) {
     if (change.sheet === 'Insectary_data') {
       const place = change.values?.Insectary_ID ? insectaryIdRow(store, change.values.Insectary_ID) : null;
       if (place && !place.ahead) return store.getRecordBySheetRow('Insectary_data', place.row);
@@ -3320,8 +3550,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       return template?.formulas && Object.keys(template.formulas).length ? { ...template, values: {} } : null;
     }
     const next = db
-      .prepare('SELECT id FROM records WHERE sheet=? AND missing=0 AND observed=0 AND row_num>? AND row_num<2000000000 ORDER BY row_num LIMIT 1')
-      .get(change.sheet, moduleMap.get(change.sheet)?.headerRow ?? 1);
+      .prepare('SELECT id FROM records WHERE sheet=? AND missing=0 AND observed=0 AND row_num=?')
+      .get(change.sheet, nextFreeRow(change.sheet) + k);
     return next ? store.getRecord(next.id) : null;
   }
 
@@ -3453,11 +3683,39 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       sheets.map(s => moduleMap.get(s)?.fields.find(x => x.key === f)?.type).find(Boolean) ?? 'text';
     const newRowFormulas = open
       ? Object.fromEntries(
-          sheets.filter(s => changes.some(c => c.create && c.sheet === s)).map(s => [s, locked(s, [...createFormulaFields(s)])]),
+          sheets
+            .filter(s => changes.some(c => c.create && c.sheet === s))
+            .map(s => {
+              // The pre-made row's formulas, and the columns' usual ones the save writes in rows of their kind.
+              const usual = changes.filter(c => c.create && c.sheet === s).flatMap(c => [...newRowPatternFields(store, s, c.values ?? {})]);
+              return [s, locked(s, [...new Set([...createFormulaFields(s), ...usual])])];
+            }),
         )
       : {};
     // What the row's formula cells will give once its values are written (shown, never written).
     const formulaSession = formulaReader.session();
+    // New rows go into consecutive rows after their sheet's last one: each is worked out at its own
+    // row, a formula reading the row above (Data_entry_order) seeing the new row before it.
+    const newRowGives = new Map();
+    {
+      const added = new Map();
+      const session = formulaReader.session({
+        overlay: (sheet, row, field) => {
+          const r = added.get(`${sheet}\u0000${row}`);
+          return r ? (field in r.values ? r.values[field] : (r.gives[field] ?? null)) : undefined;
+        },
+      });
+      const nth = new Map();
+      for (const c of changes) {
+        if (!c.create || c.context || c.placeholder || c.gap) continue;
+        const k = nth.get(c.sheet) ?? 0;
+        nth.set(c.sheet, k + 1);
+        const target = newRowTarget(c, k);
+        const result = rowFormulaGives(c, target, session);
+        newRowGives.set(c, { target, ...result });
+        if (target) added.set(`${c.sheet}\u0000${target.row}`, { values: c.values ?? {}, gives: result.gives });
+      }
+    }
     const hintTable = [];
     const hintIndex = new Map();
     const hintOf = h => {
@@ -3528,8 +3786,9 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       // row's); beside a species typed over its formula too, so the table can tell when the person types the
       // formula's own. Those that cannot be evaluated keep the sheet's value, marked (formulaFallback).
       if (!change.context && !change.gap) {
-        const target = change.create ? premadeRecordOf(change) : record;
-        const { gives: all, fallback } = rowFormulaGives(change, target, formulaSession);
+        const worked = change.create ? newRowGives.get(change) : null;
+        const target = change.create ? (worked?.target ?? newRowTarget(change)) : record;
+        const { gives: all, fallback } = worked ?? rowFormulaGives(change, target, formulaSession);
         // A new row's columns the app's account cannot write (Data_entry_order…): left to the sheet, never shown as computed.
         const locked =
           open && change.create
@@ -3537,7 +3796,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
                 db,
                 change.sheet,
                 target?.row ?? 1_000_000,
-                store.layouts?.get(change.sheet)?.columns ?? new Map(moduleMap.get(change.sheet)?.fields.map(f => [f.key, f.column]) ?? []),
+                sheetColumns(change.sheet),
               )
             : null;
         const gives = locked?.size ? Object.fromEntries(Object.entries(all).filter(([f]) => !locked.has(f))) : all;
@@ -3549,7 +3808,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
           change.formulaCells?.includes(f)
             ? true
             : f in change.values
-            ? TYPED_OVER_FORMULA[change.sheet]?.has(f) && !isNone(v)
+            ? (TYPED_OVER_FORMULA[change.sheet]?.has(f) || !!change.replaceFormula?.includes(f)) && !isNone(v)
             : change.create
               ? v !== null && v !== ''
               : !sameResult(v, shownValue(record, f)),

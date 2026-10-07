@@ -43,8 +43,12 @@ export function createFormulaReader(store) {
       .prepare('SELECT (SELECT count(*) FROM records WHERE sheet = ? AND missing = 0) n, (SELECT max(updated_at) FROM records WHERE sheet = ?) u')
       .get(sheet, sheet);
 
-  /** One proposal's reading: the lookups' indexes checked once against the sheets. */
-  function session() {
+  /**
+   * One proposal's reading: the lookups' indexes checked once against the sheets.
+   * `overlay(sheet, row, field)`: a cell of a row not in the sheet yet (a proposal's
+   * earlier new row, read by the row below: Data_entry_order), undefined for the sheet's.
+   */
+  function session({ overlay = null } = {}) {
     const checked = new Set();
     const fieldAt = (sheet, col) => {
       const cols = columnsOf(sheet);
@@ -86,6 +90,8 @@ export function createFormulaReader(store) {
       const { field, cols } = fieldAt(sheet, col);
       if (row === cols.headerRow) return field;
       if (row < cols.headerRow) return null;
+      const added = overlay?.(sheet, row, field);
+      if (added !== undefined) return added;
       return store.getRecordBySheetRow(sheet, row)?.values?.[field] ?? null;
     };
     return {

@@ -586,8 +586,9 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
         ...out.changes.map(c => ({
           ...c,
           line: row.line,
-          ...(keep(row.doubts) ? { doubts: keep(row.doubts) } : {}),
-          ...(keep(row.hints) ? { hints: keep(row.hints) } : {}),
+          // The page's own, beside those of formula cells the row typed over (or left to their formula).
+          ...(keep(row.doubts) ? { doubts: { ...c.doubts, ...keep(row.doubts) } } : {}),
+          ...(keep(row.hints) ? { hints: { ...c.hints, ...keep(row.hints) } } : {}),
           ...(inferred.length ? { inferred } : {}),
           ...(gives.length ? { formulaGives: Object.fromEntries(gives) } : {}),
           // Cells the reader could not read: never in `values`, for the person to fill.
