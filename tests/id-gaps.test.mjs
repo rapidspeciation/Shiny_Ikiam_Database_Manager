@@ -246,7 +246,8 @@ test('the gaps answer fast on a 20 000-row sheet', async () => {
     const t0 = performance.now();
     const { gaps } = insectaryGaps(store);
     const ms = performance.now() - t0;
-    assert.ok(ms < 50, `${ms.toFixed(1)} ms`);
+    // The bound catches a slow way of working it out (a rescan, n²), not a busy machine.
+    assert.ok(ms < 500, `${ms.toFixed(1)} ms`);
     assert.ok(gaps[0].latest);
     assert.ok(gaps.length > 50);
   } finally {

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { availableParallelism } from 'node:os';
 
 function files(path) {
   return readdirSync(path, { withFileTypes: true }).flatMap(entry =>
@@ -12,15 +13,25 @@ const targets = [
   ...['server', 'scripts', 'tests'].flatMap(files),
   ...readdirSync('tools/wikiloc').map(name => `tools/wikiloc/${name}`),
 ].filter(path => /\.(m?js)$/.test(path));
-let failed = false;
-for (const path of targets) {
-  const result = spawnSync(process.execPath, ['--check', resolve(path)], { encoding: 'utf8' });
-  if (result.status) {
-    failed = true;
-    process.stderr.write(result.stderr);
-  }
+// One `node --check` per file, a few at a time.
+const check = path =>
+  new Promise(done => {
+    const child = spawn(process.execPath, ['--check', resolve(path)], { stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    child.stderr.on('data', chunk => (stderr += chunk));
+    child.on('close', status => done(status ? stderr : ''));
+  });
+const queue = [...targets];
+const errors = [];
+await Promise.all(
+  Array.from({ length: Math.max(2, availableParallelism()) }, async () => {
+    while (queue.length) errors.push(await check(queue.shift()));
+  }),
+);
+if (errors.some(Boolean)) {
+  process.stderr.write(errors.join(''));
+  process.exit(1);
 }
-if (failed) process.exit(1);
 console.log(`Syntax checked ${targets.length} JavaScript files`);
 
 // The frontend is TypeScript + Vue; its type check needs `npm --prefix frontend install` once.

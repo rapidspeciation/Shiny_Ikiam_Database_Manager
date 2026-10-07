@@ -25,11 +25,24 @@ else
   fi
 fi
 npm --prefix frontend ci
-# The one full test run of a change (the app-dev skill runs only the quick checks while developing).
-node scripts/check.mjs
-npm test || { echo "Tests failed: nothing was deployed. Fix, commit, push and run scripts/deploy.sh again." >&2; exit 1; }
+# The one full test run of a change (the app-dev skill runs only the quick checks while developing):
+# syntax and types, server tests and frontend tests side by side, at low priority (on the server the
+# app keeps answering meanwhile).
+logs="$(mktemp -d)"
+nice -n 10 node scripts/check.mjs >"$logs/check" 2>&1 & check=$!
+nice -n 10 node --test tests/*.test.mjs >"$logs/server" 2>&1 & server=$!
+nice -n 10 npm --prefix frontend test >"$logs/frontend" 2>&1 & frontend=$!
+failed=0
+for job in check:$check server:$server frontend:$frontend; do
+  if ! wait "${job#*:}"; then failed=1; echo "== ${job%%:*} failed:" >&2; tail -n 80 "$logs/${job%%:*}" >&2; fi
+done
+grep -h -E '^ℹ (pass|fail) |Tests +[0-9]|^Type checked' "$logs"/* || true
+rm -rf "$logs"
+[ "$failed" = 0 ] || { echo "Tests failed: nothing was deployed. Fix, commit, push and run scripts/deploy.sh again." >&2; exit 1; }
 # Also writes server/instructions-history.json (the AI instructions page's history: the release has no .git).
-npm run build
+# The types were checked above: vite only.
+node scripts/instructions-history.mjs
+(cd frontend && npx vite build)
 release="$(date -u +%Y%m%dT%H%M%SZ)"
 on_server "mkdir -p /home/ubuntu/ithomiini/releases/$release /home/ubuntu/ithomiini/shared /home/ubuntu/.config/systemd/user"
 # frontend/src/lib goes too: the assistant's Wikiloc tools run the monitoring code of the app (server/walks.mjs).
