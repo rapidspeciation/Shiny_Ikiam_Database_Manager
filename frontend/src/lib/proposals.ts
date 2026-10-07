@@ -1,3 +1,4 @@
+import type { FormulaCost } from './formulaCost'
 import type { CellValue } from './types'
 import type { TableRow } from './rowsTable'
 import { t, tn, tx, type Msg } from './i18n'
@@ -240,6 +241,8 @@ export interface Proposal {
   sheetStamp?: string
   /** The rows are listed in the sheet's order: a notebook page's lines that go another way there. */
   outOfOrder?: OrderNote[]
+  /** A pending proposal writing formulas: what they cost the sheet's recalculation (lib/formulaCost). */
+  formulaCost?: FormulaCost[]
   /** A hash of it as the server sent it: the list asks again with it and gets only { id, digest, same } while it holds. */
   digest?: string
   same?: boolean

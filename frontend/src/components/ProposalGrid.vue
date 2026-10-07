@@ -18,6 +18,7 @@ import {
 } from 'lucide-vue-next'
 import ProposalSheet, { type CellEdit } from './assistant/ProposalSheet.vue'
 import ColumnChooser from './assistant/ColumnChooser.vue'
+import FormulaCostNotice from './assistant/FormulaCostNotice.vue'
 import { api } from '../lib/api'
 import { displayValue } from '../lib/cells'
 import { errorText, notify } from '../lib/notice'
@@ -669,6 +670,8 @@ const statusText = computed(
         {{ $tn(new Set(noSample.map(w => w.key)).size, '{n} preservada sin CAM o tubo', '{n} preservadas sin CAM o tubo') }}
       </span>
     </p>
+    <!-- Formulas it writes: what they cost the sheet's recalculation (amber when heavy). -->
+    <FormulaCostNotice v-if="pending && proposal.formulaCost?.length" :cost="proposal.formulaCost" />
     <!-- Where the page and the sheet differ: repeated IDs with their rows away from their series, and lines of a
          photo the sheet has the other way round (an ID misread?). -->
     <div v-if="pending && (repeatNotice || orderNotice)" class="order-notice flex-wrap" role="status">
