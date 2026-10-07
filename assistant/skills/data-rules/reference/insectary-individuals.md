@@ -211,6 +211,7 @@ those that died or disappeared are subtracted ([clutches.md](clutches.md)).
 
 The same ID written on two butterflies: the first one keeps the plain ID
 (`W0B`), the second becomes `W0B.1`, a third `W0B.2`, with the note "ID
-duplicated". The repeat's row goes in the same place as in the Emergidos
-notebook: after the row of the ID written just before it (`W0B.1` after
-`W9B`). Point a new duplicate out to the person, with the row it goes after.
+duplicated". The repeat's row goes where the Emergidos notebook puts it,
+after the ID written just before it on that page, which can be far from the
+first use. Point a new duplicate out to the person, with the row it goes
+after.
