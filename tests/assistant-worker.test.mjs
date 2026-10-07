@@ -23,7 +23,7 @@ const base = {
   SPECIES: 'Oleria gunilla',
 };
 
-async function fixture(t, { callMs = 20_000 } = {}) {
+async function fixture(t, { callMs = 20_000, backoffMs } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'assistant-worker-'));
   const databasePath = join(dir, 'app.sqlite');
   const sheets = new LocalSheets({
@@ -40,6 +40,7 @@ async function fixture(t, { callMs = 20_000 } = {}) {
     config: { databasePath, localMode: true, proposalWaitMs: 10_000 },
     workerUrl: hooks,
     callMs,
+    backoffMs,
   });
   store.db
     .prepare(
@@ -144,7 +145,8 @@ test("the assistant's revision racing a person's edit: neither is lost, the assi
       proposalId: proposed.proposalId,
       rows: [{ index: 1, values: { Notes_Collection_data: 'the assistant' } }],
     });
-    await new Promise(resolve => setTimeout(resolve, 800));
+    // The worker is warm (it made the proposal): it reads the proposal at once, then waits for the lock.
+    await new Promise(resolve => setTimeout(resolve, 300));
     // Meanwhile the person types in the table.
     const edited = await http('POST', `/api/chat/proposals/${proposed.proposalId}/edit`, {
       cells: [{ key: keys[0], field: 'Sex', value: 'female' }],
@@ -182,7 +184,8 @@ test("the assistant's revision racing a person's edit: neither is lost, the assi
 });
 
 test('a call that hangs or a worker that dies: the call is answered "call again", a new worker answers the next one', async t => {
-  const { host, rpc, call, record } = await fixture(t, { callMs: 1500 });
+  // callMs covers the first worker's start; no wait before starting a worker again.
+  const { host, rpc, call, record } = await fixture(t, { callMs: 1500, backoffMs: 0 });
   const hung = await rpc('__hang');
   assert.match(hung.body.error.message, /call again/);
   assert.equal(host.status().restarts, 1);

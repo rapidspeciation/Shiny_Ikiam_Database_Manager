@@ -30,7 +30,7 @@ const VIEWS_MS = 60_000;
 /**
  * The assistant (server/assistant.mjs) with its tool calls and proposal views in workers where it
  * can: the same answers as createAssistant, plus status() for /health and inFlight() (tool calls
- * running in the worker, which a restart waits for). `workerUrl`, `callMs`, `viewsMs`: for tests.
+ * running in the worker, which a restart waits for). `workerUrl`, `callMs`, `viewsMs`, `backoffMs`: for tests.
  */
 export function createAssistantHost({
   store,
@@ -38,6 +38,7 @@ export function createAssistantHost({
   workerUrl = new URL('./assistant-worker.mjs', import.meta.url),
   callMs,
   viewsMs,
+  backoffMs,
 } = {}) {
   const main = createAssistant({ store, config });
   const decided = workerMode(store, config);
@@ -71,6 +72,7 @@ export function createAssistantHost({
     url: workerUrl,
     data,
     timeoutMs: callMs ?? config.assistantCallMs ?? CALL_MS,
+    backoffMs,
     onMessage,
   });
   const views = workerSlot({
