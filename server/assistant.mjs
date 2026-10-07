@@ -20,14 +20,14 @@ import { createFormulaReader, isFormulaError, sameResult } from './formula-gives
 import { FORMULA_ROWS, checkFormula, isFormulaValue, sameFormula, withRow } from './formula-write.mjs';
 import { FILTERS_DOC, FIND_BUDGET, RECORD_TOOLS, compactRecord, countRecords, findRecords, pickRows, resolveRows, selectRecords } from './records-tool.mjs';
 import { RESULT_BUDGET, fitList, fitResult } from './tool-budget.mjs';
-import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary, withLinesFile } from './notebook-tool.mjs';
+import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary, proposalPage, withLinesFile, writeLinesFile } from './notebook-tool.mjs';
 import { duplicateIdRow, insectaryBaseRows, insectaryIdPlaces, insectaryIdRow, newRowFormulaFields, suffixedId } from './premade.mjs';
 import { formulaNotes, isPlaceholder, newRowPatternFields, sheetPatterns } from './formula-patterns.mjs';
 import { formulaCostAnswer, proposalFormulaCost } from './formula-cost.mjs';
 import { claimHolder, claimsOf } from './claims.mjs';
 import { BETWEEN_ROWS, PEEK_ROWS, VIEW_PARAM, VIEW_UPDATE, readView, showBetween, viewColumns } from './proposal-view.mjs';
 import { proposalSampleWarnings } from './preserved.mjs';
-import { issuesByRecord, lookAt, rowIssues } from './look-at.mjs';
+import { briefLookAt, issuesByRecord, lookAt, rowIssues } from './look-at.mjs';
 import { compareWithSheet, currentRecord } from './needs-review.mjs';
 import { carryChecks, dropDoubt, setChecked, uncheckedDoubts, unfilledUnreadable, withoutUnchecked } from './doubts.mjs';
 import { decide, editedInSheet, forget, lastEdit, resolveSheetEdits, sheetChangesOf, shownValue, takenRow, takenRows } from './sheet-edits.mjs';
@@ -480,7 +480,7 @@ const TOOLS = [
         [
           "Write a pending proposal to Google Sheets, only when the person's latest message explicitly approves it ('sí, aplícalo', 'está correcto').",
           "- It writes what the table shows: your values and the person's, not cells set back to the sheet's value (a row left with nothing is skipped). `indexes`: only those rows.",
-          '- Unchecked doubtful cells (amber): nothing is written and the answer lists them (index, label, field, value, alternatives, reason): ask the person about each. Then `confirmDoubtful` writes them as they are (only when the person said so after seeing them), or `skipDoubtful` only the sure cells.',
+          '- Unchecked doubtful cells (amber): nothing is written and the answer lists them: ask the person about each. Then `confirmDoubtful` writes them as they are (only when the person said so after seeing them), or `skipDoubtful` only the sure cells.',
           '- Unreadable cells still empty are never written (the sheet keeps its value); the answer lists them: ask the person for those values.',
         ].join('\n'),
       parameters: {
@@ -501,11 +501,11 @@ const TOOLS = [
       name: 'update_proposal',
       description:
         [
-          'Revise a pending proposal in place (the person sees it change): when the person corrects something, update the same proposal.',
-          '- rows: cells of its rows, by `index` or `id` (e.g. "W2B"). A value replaces yours; null drops your proposed change to that cell, never empties it; {"clear": true} empties it. `checked`: doubtful cells the person confirmed.',
+          'Revise a pending proposal in place (the person sees it change), as the person corrects it.',
+          '- rows: cells of its rows, by `index` or `id` (its ID). A value replaces yours; null drops your proposed change to that cell, never empties it; {"clear": true} empties it. `checked`: doubtful cells the person confirmed.',
           '- changes / newRows: more rows, as in propose_changes. removeRows: indexes or IDs. If a value fails its checks, nothing is saved.',
           '- Cells the person edited are theirs: kept, and returned as conflicts; `overridePersonEdits` only when they ask.',
-          "- photo / rotate: the page's photos, as in match_notebook.",
+          "- photo / rotate: as in match_notebook; a show_rows table's too.",
           '- `highlight` (rows, changes, newRows; propose_changes too): marks the row, as in show_rows; false unmarks.',
           'Returns `changed` (those rows as get_proposal full shows them; rows given the same cells as one `sameChange`), their `lookAt`, `removed`, the row count; `full: true`: every row.',
         ].join('\n'),
@@ -556,7 +556,12 @@ const TOOLS = [
         ].join('\n'),
       parameters: {
         type: 'object',
-        properties: { proposalId: { type: 'string' }, full: { type: 'boolean' }, offset: { type: 'integer' } },
+        properties: {
+          proposalId: { type: 'string' },
+          full: { type: 'boolean' },
+          offset: { type: 'integer' },
+          saveLines: { type: 'string', description: 'A page proposal to work/….json in paper order, as linesFile' },
+        },
         required: ['proposalId'],
       },
     },
@@ -712,6 +717,22 @@ async function complete(ai, messages, tools = TOOLS, model = ai.model, timeoutMs
   if (!message || (typeof message.content !== 'string' && !Array.isArray(message.tool_calls)))
     throw new Error('AI provider returned no message');
   return message;
+}
+
+/**
+ * A butterfly's death as a proposal's table marks it on its ID, read from the sheet's copy each time
+ * the table is built (so a page matched again keeps it), for the person to mark those lines in the
+ * paper notebook: `sheetDeath` when its Insectary_data row already has a Death_date (context rows
+ * too), `diesHere` when this proposal gives it one (an applied proposal: the one it wrote).
+ */
+export function deathMark(change, record, open) {
+  if (change.sheet !== 'Insectary_data' || change.placeholder) return null;
+  const sheet = record?.values ?? {};
+  const own = change.context ? {} : (change.values ?? {});
+  const dies = () => ({ diesHere: { date: own.Death_date, cause: isNone(own.Death_cause) ? (sheet.Death_cause ?? null) : own.Death_cause } });
+  if (!open && !isNone(own.Death_date)) return dies();
+  if (!isNone(sheet.Death_date)) return { sheetDeath: { date: sheet.Death_date, cause: sheet.Death_cause ?? null } };
+  return isNone(own.Death_date) ? null : dies();
 }
 
 function recordSource(record) {
@@ -1727,7 +1748,9 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         out.rejected.push({ ref: op.ref, message: `Row ${clip(op.ref, 60)} is not in the proposal` });
         continue;
       }
-      if (typeof op.note === 'string' && by === 'ai') rows[i] = { ...rows[i], note: clip(op.note, 300) };
+      // The assistant's own note, with the one it replaced (a page matched again keeps it while the line reads the same).
+      if (typeof op.note === 'string' && by === 'ai')
+        rows[i] = { ...rows[i], note: clip(op.note, 300), aiNote: rows[i].aiNote ?? { read: rows[i].note ?? '' } };
       // The assistant's mark on the row (yellow, as in show_rows tables); false takes it off.
       if (typeof op.highlight === 'boolean' && by === 'ai') {
         const { highlight: _, ...rest } = rows[i];
@@ -1782,6 +1805,17 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
           else marks[field] = { ...(ai === undefined ? {} : { ai }), by: who, at: now() };
         }
         rows[i] = { ...next, personEdits: Object.keys(marks).length ? marks : undefined };
+        // The assistant's own edit, with what the row held before it (`read`; none: no change there), so a
+        // page matched again keeps it while the new reading of that cell is the same (carryEdits).
+        if (by === 'ai') {
+          const had = row.aiEdits?.[field];
+          const read = had ? had.read : current;
+          const edits = { ...rows[i].aiEdits };
+          const back = after === undefined || read === undefined ? after === read : same(after, read);
+          if (back) delete edits[field];
+          else edits[field] = read === undefined ? {} : { read };
+          rows[i] = { ...rows[i], aiEdits: Object.keys(edits).length ? edits : undefined };
+        }
         // A notebook line shown only for context becomes a real change once someone gives it a value
         // (in place: same record and line); left with nothing again (an undo), it is shown for context again.
         if (rows[i].context && Object.keys(rows[i].values).length) rows[i] = { ...rows[i], context: undefined, fromContext: true };
@@ -1826,7 +1860,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       const drafted = draftChanges(add, { proposed, used });
       if (drafted.error) out.rejected.push({ message: drafted.error });
       else {
-        rows.push(...drafted.changes.map(({ dropped, ...c }) => c));
+        // The assistant's rows (a page matched again keeps them).
+        rows.push(...drafted.changes.map(({ dropped, ...c }) => (by === 'ai' ? { ...c, aiAdded: true } : c)));
         out.leftOut.push(...drafted.changes.flatMap(c => c.dropped ?? []));
       }
     }
@@ -2247,6 +2282,19 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     const proposal = ownProposal(args.proposalId, context.user);
     if (!proposal) return { error: 'Proposal not found' };
     if (isTable(proposal)) return { error: NOT_A_PROPOSAL };
+    // A notebook page's proposal as a reader's file in the person's workspace, to match the page again.
+    if (args.saveLines) {
+      const page = proposalPage(proposal, id => store.getRecord(id));
+      if (page.error) return { error: `saveLines: ${page.error}` };
+      const saved = writeLinesFile(String(args.saveLines).trim(), page.file, { workspaces, username: context.user?.username });
+      if (saved.error) return saved;
+      return {
+        proposalId: proposal.id,
+        linesFile: String(args.saveLines).trim(),
+        lines: page.file.lines.length,
+        ...(page.left.length ? { notInFile: page.left.slice(0, 20), notInFileNote: 'Rows of the sheet that are no line of the page' } : {}),
+      };
+    }
     const changes = parse(proposal.changes_json) ?? [];
     const table = proposalTable(changes, proposal);
     const head = {
@@ -2551,10 +2599,16 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
 
   /** update_proposal: the assistant revises a pending proposal the person is looking at. */
   function updateProposal(args, context) {
-    if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot propose edits' };
     const proposal = ownProposal(args.proposalId, context.user);
+    // A table shown with show_rows takes its photos here too, as show_rows with tableId does.
+    if (isTable(proposal)) {
+      const other = Object.keys(args).filter(k => !['proposalId', 'photo', 'rotate'].includes(k) && args[k] !== undefined && args[k] !== null);
+      if (args.photo === undefined || other.length)
+        return { error: `That is a table shown with show_rows: it changes nothing. Change it with show_rows tableId (${clip(other.join(', ') || 'no photo', 80)} given here).` };
+      return showRows({ tableId: proposal.id, photo: args.photo, rotate: args.rotate }, context);
+    }
+    if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot propose edits' };
     if (!proposal) return { error: 'Proposal not found' };
-    if (isTable(proposal)) return { error: NOT_A_PROPOSAL };
     if (proposal.status !== 'pending')
       return { error: `The proposal is ${proposal.status}; draft a new one with propose_changes` };
     const changes = parse(proposal.changes_json) ?? [];
@@ -2675,8 +2729,11 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
 
   /**
    * A notebook page matched again (match_notebook with replaceProposalId) takes
-   * the place of the page's proposal, keeping its id; the person's cells stay,
-   * and are conflicts where the new match reads something else.
+   * the place of the page's proposal, keeping its id. The person's cells stay,
+   * and are conflicts where the new match reads something else. The assistant's
+   * own edits (update_proposal: cells, notes, highlight, rows it added) stay too,
+   * unless the new reading of that cell (or line) differs from the one it
+   * edited: then the reading wins and the edit is listed in `replacedAiEdits`.
    */
   function carryPersonEdits(old, fresh, user) {
     const sameRow = (a, b) =>
@@ -2687,8 +2744,38 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       return before ? { ...c, clientId: before.clientId } : c;
     });
     // Doubtful cells already checked stay checked while the new reading gives the same value.
-    const rows = carryChecks(old, keyed, sameRow, same);
+    let rows = carryChecks(old, keyed, sameRow, same);
     const conflicts = [];
+    const replacedAiEdits = [];
+    // The assistant's edits first (the person's go over them).
+    const aiSet = [];
+    for (const o of old) {
+      const i = rows.findIndex(c => sameRow(o, c));
+      if (i < 0) {
+        // A row it added that the page does not give (a wild-caught butterfly's Collection_data row).
+        if (o.aiAdded) rows.push(o);
+        continue;
+      }
+      if (o.highlight) rows[i] = { ...rows[i], highlight: true };
+      if (o.aiNote) {
+        if ((rows[i].note ?? '') === o.aiNote.read) rows[i] = { ...rows[i], note: o.note, aiNote: o.aiNote };
+        else replacedAiEdits.push({ label: rows[i].label, field: 'note', yours: o.note, reading: rows[i].note ?? '' });
+      }
+      for (const [field, mark] of Object.entries(o.aiEdits ?? {})) {
+        if (o.personEdits?.[field]) continue;
+        const yours = proposedOf(o, field);
+        const reading = proposedOf(rows[i], field);
+        const unchanged = reading === undefined || mark.read === undefined ? reading === mark.read : same(reading, mark.read);
+        if (unchanged) aiSet.push({ ref: i, values: { [field]: yours === undefined ? DROP : yours } });
+        else if (yours === undefined ? reading !== undefined : reading === undefined || !same(reading, yours))
+          replacedAiEdits.push({ label: rows[i].label, field, yours: yours ?? 'no change', reading: reading ?? 'no change' });
+      }
+    }
+    if (aiSet.length) {
+      const kept = reviseChanges(rows, { set: aiSet }, { by: 'ai', force: true, user });
+      rows = kept.changes;
+      for (const r of kept.rejected) replacedAiEdits.push({ label: r.label, field: r.field, message: `Your value no longer fits: ${r.message}` });
+    }
     const set = [];
     for (const o of old) {
       const edits = Object.entries(o.personEdits ?? {});
@@ -2709,7 +2796,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     }
     const out = reviseChanges(rows, { set }, { by: 'person', user });
     for (const r of out.rejected) conflicts.push({ ...r, message: `The person's value no longer fits: ${r.message}` });
-    return { changes: out.changes, conflicts };
+    return { changes: out.changes, conflicts, replacedAiEdits };
   }
 
   /**
@@ -3115,7 +3202,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       const record = recordId ? store.getRecord(recordId) : null;
       versions.push(record?.version ?? null);
       // Not needed by the table: what the sheet had when it was drafted, the version the save checks.
-      const { before, expectedVersion, hints, formulaGives, sheetEdits, ...rest } = change;
+      const { before, expectedVersion, hints, formulaGives, sheetEdits, aiEdits, aiNote, aiAdded, ...rest } = change;
       const view = {
         ...rest,
         key: change.key ?? rowKey(change),
@@ -3144,6 +3231,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       // Before the previous line of its photo in the sheet: the notebook goes the other way here.
       if (after) view.outOfOrder = after;
       if (change.placeholder) return view;
+      // Dead in the sheet already, or dying through this proposal: marked on its ID.
+      Object.assign(view, deathMark(change, record, open));
       // Cells edited in the sheet since they were read (or the pre-made row taken): told apart in the table.
       if (open && !change.context) Object.assign(view, sheetState(change, row?.created_at, inUse));
       // The rest of the row, for columns the person adds to the table (and its formula columns).
@@ -4137,10 +4226,12 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (view?.error) return { error: `${view.error}. Nothing was proposed.` };
     let proposal = null;
     let conflicts = [];
+    let replacedAiEdits = [];
     if (editor && replaced && writes) {
       // The corrected page takes the place of its proposal (same id): the table beside the chat changes in place.
       const carried = carryPersonEdits(parse(replaced.changes_json) ?? [], matched.changes, context.user);
       conflicts = carried.conflicts;
+      replacedAiEdits = carried.replacedAiEdits;
       // A page an older chat left pending, read again in a new one, moves to the chat that read it again
       // (several chats' pages gathered for one review).
       const here = context.t3 ? chatOfCall(context) : null;
@@ -4174,7 +4265,10 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     const order = stored ? orderDiffers(stored) : {};
     return {
       ...matchSummary(matched, proposal?.id),
-      ...lookAtRows(stored ? (parse(stored.changes_json) ?? []) : matched.changes),
+      ...(() => {
+        const { lookAt: look } = lookAtRows(stored ? (parse(stored.changes_json) ?? []) : matched.changes);
+        return look ? { lookAt: briefLookAt(look) } : {};
+      })(),
       ...(proposal ? proposalLink(proposal.id, proposal.chat) : {}),
       ...(refused.length
         ? {
@@ -4189,6 +4283,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
             conflictNote: 'Cells the person corrected by hand in the table were kept. Tell the person where your new reading differs.',
           }
         : {}),
+      // Your earlier update_proposal edits are kept, except where the new reading differs: these.
+      ...(replacedAiEdits.length ? { replacedAiEdits } : {}),
       ...(overlaps.length ? { overlaps } : {}),
       ...order,
       ...(!editor ? { note: 'This person can only read the workbook: nothing was proposed' } : {}),

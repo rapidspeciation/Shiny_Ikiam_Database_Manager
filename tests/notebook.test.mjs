@@ -543,15 +543,9 @@ test('match_notebook matches a transcribed page and leaves one proposal beside T
       sheet: null,
     });
     assert.equal(out.counts.doubtful, 1);
-    // A butterfly with a clutch was reared.
-    assert.deepEqual(line(2).fill, { Intro2Insectary_date: '2025-08-08' });
-    assert.deepEqual(
-      line(2).implied,
-      { Stock_of_origin: 'messenoides', Wild_Reared: 'Reared', LIFESTAGE: 'Adult' },
-      "not written on the line: implied (the clutch's subspecies; an entry date: an adult)",
-    );
-    // Dates as ISO; the tube already filed as this butterfly's Tube_2_id.
-    assert.deepEqual(line(3).fill, { Intro2Insectary_date: '2025-08-08', Death_date: '2025-08-09', Death_cause: 'Unknown' });
+    // The answer keeps to what needs a look: the cells a line only fills or implies are in the proposal.
+    assert.ok(!('fill' in line(2)) && !('implied' in line(2)));
+    // The tube already filed as this butterfly's Tube_2_id.
     assert.match(line(3).problems.Tube_1_id, /ya está en Insectary_data fila 4/);
     assert.equal(line(4).label, '6OO');
     assert.match(line(4).message, /Leído «600»; en la hoja es 6OO/);
@@ -579,6 +573,12 @@ test('match_notebook matches a transcribed page and leaves one proposal beside T
     assert.ok(listed[0].changes[4].placeholder && listed[0].changes[4].context && listed[0].changes[4].index < 0);
     assert.deepEqual(listed[0].page, { kind: 'emergence', sheet: 'Insectary_data', columns: KINDS.emergence.fields, keys: KINDS.emergence.keys, photos: 0 });
     assert.deepEqual(listed[0].changes[0].replaceFormula, ['SPECIES']);
+    // A butterfly with a clutch was reared; not written on the line: implied (the clutch's subspecies; an entry date: an adult).
+    const reared = listed[0].changes[1];
+    assert.equal(reared.values.Intro2Insectary_date, d('2025-08-08'));
+    assert.deepEqual([reared.values.Stock_of_origin, reared.values.Wild_Reared, reared.values.LIFESTAGE], ['messenoides', 'Reared', 'Adult']);
+    assert.deepEqual(new Set(reared.inferred), new Set(['Stock_of_origin', 'Wild_Reared', 'LIFESTAGE']));
+    assert.deepEqual([listed[0].changes[2].values.Death_date, listed[0].changes[2].values.Death_cause], [d('2025-08-09'), 'Unknown']);
     // The proposal keeps the doubt with the cell: its value, how sure, the alternatives and why.
     assert.equal(listed[0].changes[1].values.Sex, 'female');
     assert.deepEqual(listed[0].changes[1].doubts, {
@@ -596,7 +596,7 @@ test('match_notebook matches a transcribed page and leaves one proposal beside T
     const again = await call('match_notebook', { ...corrected, replaceProposalId: out.proposalId });
     assert.equal(again.replaced, out.proposalId);
     assert.ok(!again.overlaps, 'the replaced proposal is not an overlap');
-    assert.equal(again.lines[1].fill.Sex, 'male');
+    assert.ok(!again.lines.some(l => l.n === 2), 'line 2 is no longer doubtful: not listed');
     const pending = (await http('GET', '/api/chat/proposals')).body.proposals;
     assert.deepEqual(pending.map(p => p.id), [again.proposalId]);
 
@@ -656,6 +656,45 @@ test('a page matched again keeps its proposal, and the cells the person correcte
   }
 });
 
+test("a page matched again keeps the assistant's own edits (cells, notes, highlight, rows it added) unless the new reading differs", async () => {
+  const { store, call } = await setup();
+  try {
+    const out = await call('match_notebook', PAGE);
+    const rowOf = async label => (await call('get_proposal', { proposalId: out.proposalId, full: true })).rows.find(r => r.label === label);
+    const edited = await call('update_proposal', {
+      proposalId: out.proposalId,
+      rows: [
+        { id: '9VD', values: { Death_cause: 'Spider' } },
+        { id: '8VD', note: 'Revisar el sexo con la foto' },
+        { id: '5VB', highlight: true },
+      ],
+      newRows: [{ sheet: 'Insectary_stocks', values: { 'CLUTCH NUMBER': 777 } }],
+    });
+    assert.ok(!edited.error, JSON.stringify(edited));
+
+    // The same reading again: every edit of the assistant stays.
+    const again = await call('match_notebook', { ...PAGE, replaceProposalId: out.proposalId });
+    assert.equal(again.proposalId, out.proposalId, JSON.stringify(again));
+    assert.ok(!again.replacedAiEdits, JSON.stringify(again.replacedAiEdits));
+    assert.equal((await rowOf('9VD')).values.Death_cause, 'Spider');
+    assert.equal((await rowOf('8VD')).note, 'Revisar el sexo con la foto');
+    assert.equal((await rowOf('5VB')).highlight, true);
+    assert.ok(await rowOf('777'), 'the row the assistant added stays');
+
+    // A new reading of that cell: the reading wins, and the answer says which edit it replaced.
+    const corrected = structuredClone(PAGE);
+    corrected.lines[2] = { ...corrected.lines[2], values: { ...corrected.lines[2].values, Death_cause: 'Eaten' } };
+    const third = await call('match_notebook', { ...corrected, replaceProposalId: out.proposalId });
+    assert.deepEqual(third.replacedAiEdits, [{ label: '9VD', field: 'Death_cause', yours: 'Spider', reading: 'Eaten' }]);
+    assert.equal((await rowOf('9VD')).values.Death_cause, 'Eaten');
+    assert.equal((await rowOf('8VD')).note, 'Revisar el sexo con la foto', 'the other edits stay');
+    assert.equal((await rowOf('5VB')).highlight, true);
+    assert.ok(await rowOf('777'));
+  } finally {
+    store.close();
+  }
+});
+
 test('a clutch page proposes its counts as the notebook sums them, and they are written as such', async () => {
   const { store, call, http } = await setup();
   try {
@@ -667,7 +706,7 @@ test('a clutch page proposes its counts as the notebook sums them, and they are 
         { raw: '848 messen. 7', values: { 'CLUTCH NUMBER': '848', 'NUMBER OF EGGS': '7' } },
       ],
     });
-    assert.deepEqual(out.lines[0].fill, { 'NUMBER OF EGGS': '=12+15', 'NUMBER OF LARVAE': '=2+4+8' });
+    assert.deepEqual(out.lines, [], 'only cells to fill: nothing listed');
     const [proposal] = (await http('GET', '/api/chat/proposals')).body.proposals;
     assert.deepEqual(
       proposal.changes.map(c => c.values),
