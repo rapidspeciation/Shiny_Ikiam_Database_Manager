@@ -8,7 +8,7 @@ import type { CellValue, TableRow } from './types'
  * seen alive as they are released one by one; those not seen die as
  * disappeared on the census day. These are the census's shapes and what the
  * tab works out from them: progress, the butterflies not seen yet, the
- * findings, the cells of each disappearance and the notebook's lines.
+ * findings and the cells of each disappearance (the notebook's lines: lib/paperNotebook.ts).
  */
 
 /** The Death_cause list's value for a butterfly not found. */
@@ -213,35 +213,6 @@ export function disappearanceEdits(
     edits.push({ id: b.recordId, values, expected })
   }
   return { edits, absent }
-}
-
-/** One line of the paper notebook's update, in its order: ☺ for seen, the disappearance's date, or left out. */
-export interface NotebookLine {
-  id: string
-  status: 'seen' | 'excluded' | 'disappeared'
-  text: string
-  note: string
-}
-/** The finished census's list as lines for the notebook, in Insectary ID order (the rows'). */
-export function notebookLines(
-  roster: RosterEntry[],
-  serial: number,
-  words: { seen: string; disappeared: string; excluded: string },
-): NotebookLine[] {
-  return [...roster]
-    .filter(b => b.status)
-    .sort((a, b) => (a.row ?? Infinity) - (b.row ?? Infinity) || a.id.localeCompare(b.id))
-    .map(b => ({
-      id: b.id,
-      status: b.status!,
-      text:
-        b.status === 'seen'
-          ? words.seen
-          : b.status === 'disappeared'
-            ? `${words.disappeared} ${noteDay(serial)}`
-            : words.excluded,
-      note: b.note ?? '',
-    }))
 }
 
 /**

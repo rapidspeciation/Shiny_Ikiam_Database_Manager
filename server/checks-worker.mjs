@@ -1,7 +1,8 @@
 // The Revisión worker thread (server/checks-host.mjs starts it): the whole scan of the local copy
 // (server/checks.mjs), the suggested edits (server/suggestions/), the alerts (server/alerts.mjs),
 // Inicio's summaries (server/summary.mjs) and Monitoreo's Wikiloc corrections
-// (server/monitoring-export.mjs), up to a second or two each on the team's workbook, run here, so
+// (server/monitoring-export.mjs), and the butterflies «Actualizar el cuaderno» reads
+// (server/paper-notebook.mjs), up to a second or two each on the team's workbook, run here, so
 // the app answers people meanwhile; what they read in common is read once. It reads the app's
 // database on its own connection, where SQLite refuses any write (server/store-reader.mjs); the
 // app keeps «Resueltos» with what it sends back.
@@ -12,6 +13,7 @@ import { alertsEntry } from './alerts.mjs';
 import { allSuggestions } from './suggestions/index.mjs';
 import { summaryEntry } from './summary.mjs';
 import { correctionsEntry } from './monitoring-export.mjs';
+import { factsEntry } from './paper-notebook.mjs';
 
 const { path, localMode, spreadsheetId, layouts, config } = workerData;
 const store = createStoreReader({ path, writable: [], localMode, spreadsheetId, layouts, config });
@@ -31,6 +33,7 @@ const work = {
     return { ...summaryEntry(store), workMs: Date.now() - started };
   },
   corrections: () => correctionsEntry(store),
+  notebookFacts: () => factsEntry(store),
 };
 
 /** The work on the copy as it is now: one read transaction, so a save landing meanwhile is in all of it or none. */

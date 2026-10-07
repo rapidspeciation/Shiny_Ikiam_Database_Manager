@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { BookCheck, ChevronRight, Loader2, Users } from 'lucide-vue-next'
+import { BookCheck, BookOpenCheck, ChevronRight, Loader2, Users } from 'lucide-vue-next'
 import DateField from '../DateField.vue'
 import CensusCounts from './CensusCounts.vue'
 import { useCensus } from '../../composables/useCensus'
@@ -12,8 +12,10 @@ import { t } from '../../lib/i18n'
 /**
  * The census's start: the censuses going on now (to join from another phone),
  * a new one (the day, today by default, then one tap on the species: its
- * butterflies alive are counted beside it), and the past ones.
+ * butterflies alive are counted beside it), the past ones, and «Actualizar el
+ * cuaderno» for any day and species (what to mark on paper).
  */
+const emit = defineEmits<{ notebook: [] }>()
 const census = useCensus()
 const session = useSession()
 const day = ref(todayIso())
@@ -137,7 +139,12 @@ const choice = (on: boolean) =>
 
     <!-- Past censuses: tap one to see it, with its lines for the notebook. -->
     <section>
-      <h2 class="mb-1.5 text-sm font-semibold text-stone-700">{{ $t('Censos anteriores') }}</h2>
+      <div class="mb-1.5 flex flex-wrap items-center gap-2">
+        <h2 class="flex-1 text-sm font-semibold text-stone-700">{{ $t('Censos anteriores') }}</h2>
+        <button type="button" class="btn h-11" @click="emit('notebook')">
+          <BookOpenCheck :size="16" /> {{ $t('Actualizar el cuaderno') }}
+        </button>
+      </div>
       <p v-if="census.overview.value && !census.overview.value.history.length" class="text-sm text-stone-500">
         {{ $t('Aún no hay censos.') }}
       </p>

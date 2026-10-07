@@ -29,6 +29,7 @@ import {
   keepCorrections,
   useCorrectionsRunner,
 } from './monitoring-export.mjs';
+import { cachedFacts, factsEntry, factsStamp, keepFacts, useFactsRunner } from './paper-notebook.mjs';
 import { layoutsFeed, workerMode, workerSlot } from './worker-slot.mjs';
 
 const SCAN_MS = 120_000;
@@ -165,7 +166,16 @@ export function createChecksHost({
     keep: out => keepCorrections(store, out),
     here: () => correctionsEntry(store),
   });
+  // The cells of every butterfly «Actualizar el cuaderno» reads (server/paper-notebook.mjs).
+  const facts = runner({
+    type: 'notebookFacts',
+    stamp: () => factsStamp(store),
+    cached: () => cachedFacts(store),
+    keep: out => keepFacts(store, out),
+    here: () => factsEntry(store),
+  });
   useChecksRunner(store, issues);
+  useFactsRunner(store, facts);
   useSuggestionsRunner(store, suggestions);
   useAlertsRunner(store, alerts);
   useSummaryRunner(store, summary);
@@ -183,6 +193,7 @@ export function createChecksHost({
         alerts: alerts.status(),
         summary: summary.status(),
         corrections: corrections.status(),
+        notebookFacts: facts.status(),
       };
     },
     close() {
@@ -191,6 +202,7 @@ export function createChecksHost({
       useAlertsRunner(store, null);
       useSummaryRunner(store, null);
       useCorrectionsRunner(store, null);
+      useFactsRunner(store, null);
       layouts.stop();
       worker.close();
     },

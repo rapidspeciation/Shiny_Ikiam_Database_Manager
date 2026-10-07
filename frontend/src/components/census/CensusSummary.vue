@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { ArrowLeft, BookCheck, Copy, RotateCcw, Smile } from 'lucide-vue-next'
+import { ArrowLeft, BookCheck, RotateCcw } from 'lucide-vue-next'
 import CensusCounts from './CensusCounts.vue'
+import CensusNotebook from './CensusNotebook.vue'
 import { useCensus } from '../../composables/useCensus'
-import { findingsOf, notebookLines, type Finding } from '../../lib/census'
-import { dayLabel, isoToSerial } from '../../lib/dates'
-import { notify } from '../../lib/notice'
+import { findingsOf, type Finding } from '../../lib/census'
+import { dayLabel } from '../../lib/dates'
 import type { Table } from '../../lib/types'
 import { useSession } from '../../stores/session'
 import { t } from '../../lib/i18n'
@@ -13,9 +13,9 @@ import { t } from '../../lib/i18n'
 /**
  * A census done (or cancelled): its counts, where its disappearances are
  * (in the app until «Guardar en Google Sheets», waiting for Google with staged
- * saving off, or in the sheet), the lines to bring the paper notebook up to
- * date (in Insectary ID order: ☺ for seen, the day for disappeared), the
- * findings, and «Reabrir» while its disappearances are not in the sheet.
+ * saving off, or in the sheet), «Actualizar el cuaderno» (CensusNotebook: what to
+ * mark on paper for the species censused that day), the findings, and
+ * «Reabrir» while its disappearances are not in the sheet.
  */
 defineProps<{ table: Table | undefined }>()
 const emit = defineEmits<{ leave: [] }>()
@@ -23,37 +23,11 @@ const census = useCensus()
 const session = useSession()
 const detail = computed(() => census.detail.value!)
 const c = computed(() => detail.value.census)
-const serial = computed(() => isoToSerial(c.value.day))
-const lines = computed(() =>
-  notebookLines(detail.value.roster, serial.value, { seen: '☺', disappeared: t('desaparecida'), excluded: t('no contada') }),
-)
-/** The day as the notebook writes it (5/10/26), said once above the list instead of on every line. */
-const notebookDay = computed(() => lines.value.find(l => l.status === 'disappeared')?.text.split(' ').pop() ?? '')
-const counts = computed(() => ({
-  seen: lines.value.filter(l => l.status === 'seen').length,
-  disappeared: lines.value.filter(l => l.status === 'disappeared').length,
-  excluded: lines.value.filter(l => l.status === 'excluded').length,
-}))
-/** Which lines the list shows: all (the notebook's order), or one kind to find them quickly. */
-const showing = ref<'all' | 'seen' | 'disappeared' | 'excluded'>('all')
-const shown = computed(() => (showing.value === 'all' ? lines.value : lines.value.filter(l => l.status === showing.value)))
 const findings = computed(() => findingsOf(c.value.species, detail.value.roster, detail.value.marks))
 const canReopen = computed(
   () => session.canEdit && c.value.status === 'finished' && ['staged', 'none', 'failed'].includes(c.value.deaths ?? ''),
 )
 
-async function copy() {
-  const text = [
-    `${c.value.species} · ${dayLabel(c.value.day).split(' · ')[0]}`,
-    ...lines.value.map(l => `${l.id}\t${l.text}${l.note ? ` (${l.note})` : ''}`),
-  ].join('\n')
-  try {
-    await navigator.clipboard.writeText(text)
-    notify(t('Copiado'), 'success')
-  } catch {
-    notify(t('No se pudo copiar'), 'error')
-  }
-}
 async function reopen() {
   if (
     c.value.deaths === 'staged' &&
@@ -77,13 +51,6 @@ function findingText(f: Finding) {
         : t('algo se ve distinto')
   return `${m.insectaryId}: ${what}`
 }
-/** A line's look: the seen stand out (they get the smiley); the disappeared are quiet; left out, dashed. */
-const look = (status: string) =>
-  status === 'seen'
-    ? 'border-emerald-500 bg-emerald-100 text-emerald-900'
-    : status === 'disappeared'
-      ? 'border-stone-200 bg-white text-stone-500'
-      : 'border-dashed border-stone-300 bg-white text-stone-400'
 </script>
 
 <template>
@@ -154,53 +121,10 @@ const look = (status: string) =>
         }}
       </p>
 
-      <!-- The notebook: what to write next to each ID, in its order. -->
+      <!-- The paper notebook: what to mark next to each ID, for every species censused that day. -->
       <section v-if="c.status === 'finished'">
-        <div class="mb-1.5 flex flex-wrap items-center gap-2">
-          <h2 class="flex-1 text-base font-semibold text-stone-800">{{ $t('Para el cuaderno') }}</h2>
-          <button class="btn h-10" @click="copy"><Copy :size="15" /> {{ $t('Copiar') }}</button>
-        </div>
-        <!-- What to write: ☺ next to the seen, «desaparecida <day>» next to the others (the day said once). -->
-        <div class="mb-2 flex flex-wrap items-center gap-1.5 text-sm" role="group" :aria-label="$t('Mostrar')">
-          <button
-            v-for="f in [
-              { key: 'all', label: $t('Todas ({n})', { n: lines.length }), cls: '' },
-              { key: 'seen', label: $t('☺ vistas ({n})', { n: counts.seen }), cls: 'text-brand-800' },
-              {
-                key: 'disappeared',
-                label: $t('desaparecidas {day} ({n})', { day: notebookDay, n: counts.disappeared }),
-                cls: 'text-stone-700',
-              },
-              ...(counts.excluded ? [{ key: 'excluded', label: $t('no contadas ({n})', { n: counts.excluded }), cls: 'text-stone-500' }] : []),
-            ]"
-            :key="f.key"
-            type="button"
-            class="min-h-9 rounded-full border px-3"
-            :class="[showing === f.key ? 'border-stone-800 bg-stone-800 text-white' : 'border-stone-300 bg-white ' + f.cls]"
-            :aria-pressed="showing === f.key"
-            @click="showing = f.key as typeof showing"
-          >
-            {{ f.label }}
-          </button>
-        </div>
-        <p class="mb-2 text-xs text-stone-500">
-          {{ $t('En el orden del cuaderno: ☺ junto a las vistas; «desaparecida {day}» junto a las demás.', { day: notebookDay }) }}
-        </p>
-        <ol class="grid grid-cols-[repeat(auto-fill,minmax(7.5rem,1fr))] gap-1.5">
-          <li
-            v-for="l in shown"
-            :key="l.id"
-            class="flex min-h-11 items-center justify-between gap-1 rounded-lg border px-2.5 py-1"
-            :class="look(l.status)"
-            :title="l.note || undefined"
-          >
-            <span class="font-semibold tabular-nums" :class="l.status === 'disappeared' ? 'text-stone-700' : ''">{{ l.id }}</span>
-            <Smile v-if="l.status === 'seen'" :size="22" class="shrink-0 text-emerald-700" aria-hidden="true" />
-            <span v-else-if="l.status === 'disappeared'" class="text-xs">{{ $t('desap.') }}</span>
-            <span v-else class="truncate text-xs">{{ l.note || $t('no contada') }}</span>
-            <span class="sr-only">{{ l.text }}</span>
-          </li>
-        </ol>
+        <h2 class="mb-1.5 text-base font-semibold text-stone-800">{{ $t('Actualizar el cuaderno') }}</h2>
+        <CensusNotebook :key="c.day" :day="c.day" />
         <button
           v-if="session.canEdit"
           class="mt-2 flex min-h-12 w-full items-center justify-center gap-2 rounded-lg border px-3 text-base font-medium"

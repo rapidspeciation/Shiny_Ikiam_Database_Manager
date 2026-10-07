@@ -6,6 +6,7 @@ import { History, PenLine } from 'lucide-vue-next'
 import EntryModeToggle from '../components/EntryModeToggle.vue'
 import IdPicker from '../components/IdPicker.vue'
 import DeathsCards from '../components/deaths/DeathsCards.vue'
+import DeathsHighlights from '../components/deaths/DeathsHighlights.vue'
 import TabHistory from '../components/history/TabHistory.vue'
 import SheetGrid from '../components/SheetGrid.vue'
 import { useDeathsState } from '../composables/useDeathsState'
@@ -25,9 +26,11 @@ import { t } from '../lib/i18n'
  * «Seleccionadas», big buttons; components/deaths/DeathsCards.vue) or as the
  * table: the IDs typed show their rows at once (to look at them), and
  * "Escribir" puts each one's death date and cause in its empty cells. The
- * latest recorded deaths are a separate table below. Both modes share what is
- * being registered (useDeathsState): the IDs are the cards', and a date, cause
- * or preservation chosen here applies to all of them and to the next ones.
+ * latest recorded deaths are a separate table below; «Filas para resaltar»
+ * (DeathsHighlights) lists the deaths entered since a moment, for the paper
+ * notebook. Both modes share what is being registered (useDeathsState): the
+ * IDs are the cards', and a date, cause or preservation chosen here applies to
+ * all of them and to the next ones.
  */
 const MODULE = 'Insectary_data'
 const module = ref(MODULE)
@@ -184,6 +187,8 @@ function write() {
       <EntryModeToggle v-model="mode" />
     </div>
     <div class="flex min-h-0 flex-1 flex-col">
+      <!-- The deaths entered since a moment, to highlight their rows in the paper notebook. -->
+      <DeathsHighlights class="max-h-[50%] shrink-0 overflow-y-auto border-b-4 border-stone-200 !pt-1 !pb-2" />
       <p v-if="!ready" class="p-6 text-stone-500">{{ $t('Cargando {sheet}…', { sheet: 'Insectary_data' }) }}</p>
       <template v-else>
         <section v-if="chosenRows.length" class="flex max-h-[55%] shrink-0 flex-col border-b-4 border-stone-200">
