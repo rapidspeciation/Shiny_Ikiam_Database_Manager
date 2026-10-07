@@ -148,6 +148,8 @@ export interface ProposalChange {
   checks?: Record<string, Hint[]>
   /** A notebook line shown only for context: never written. */
   context?: boolean
+  /** Written already by an earlier «Aplicar» of its sheet (its number in the proposal's `applies`): not written again, not editable. */
+  applied?: number
   /** A page line with no sheet row (not found, crossed out): shown as written, never written. */
   placeholder?: boolean
   /**
@@ -224,6 +226,17 @@ export interface ProposalOverlap {
   rows: string[]
   count: number
 }
+/** One «Aplicar» of a proposal: one sheet's rows (`sheets`) or all of them (null). */
+export interface ProposalApply {
+  n: number
+  at: string
+  by: string
+  sheets: string[] | null
+  rows: number
+  status: 'applied' | 'queued' | 'needs_review' | 'refused'
+  /** The sheets whose rows were still to apply after it. */
+  left?: string[]
+}
 export interface Proposal {
   id: string
   /** For a table (show_rows): its title. */
@@ -278,6 +291,8 @@ export interface Proposal {
   digest?: string
   same?: boolean
   applied: number[] | null
+  /** Each «Aplicar» so far (a proposal applied one sheet at a time has one per sheet). */
+  applies?: ProposalApply[]
   changes: ProposalChange[]
 }
 
@@ -320,11 +335,12 @@ export function expandProposal(p: Proposal): Proposal {
 /**
  * A row the person only reads (never written): a page line as written (no sheet
  * row), a sheet row shown between the proposal's rows or opened under a slim
- * row. A page line as the sheet has it can be typed in: the server makes it a
- * row of the proposal (a death read on the line beside it goes there).
+ * row; or a row its sheet's «Aplicar» wrote already. A page line as the sheet has
+ * it can be typed in: the server makes it a row of the proposal (a death read on
+ * the line beside it goes there).
  */
-export const readOnlyRow = (c: Pick<ProposalChange, 'context' | 'placeholder' | 'page' | 'recordId' | 'gap'>) =>
-  !!c.placeholder || (!!c.context && (!c.recordId || !c.page || !!c.gap))
+export const readOnlyRow = (c: Pick<ProposalChange, 'context' | 'placeholder' | 'page' | 'recordId' | 'gap' | 'applied'>) =>
+  !!c.placeholder || !!c.applied || (!!c.context && (!c.recordId || !c.page || !!c.gap))
 /** A page line shown without a row of its own in the proposal (nothing to take out). */
 export const pageOnly = (c: Pick<ProposalChange, 'index'>) => c.index < 0
 
@@ -630,7 +646,7 @@ export function uncheckedDoubts(p: Pick<Proposal, 'changes'>, indexes?: number[]
   const out: { key: string; field: string; index: number }[] = []
   const chosen = indexes ? new Set(indexes) : null
   for (const c of p.changes) {
-    if (c.context || (chosen && !chosen.has(c.index))) continue
+    if (c.context || c.applied || (chosen && !chosen.has(c.index))) continue
     const written = new Set(writtenFields(c))
     for (const [field, doubt] of Object.entries(c.doubts ?? {}))
       if (written.has(field) && !doubt.checked && !c.personEdits?.[field]) out.push({ key: rowKey(c), field, index: c.index })
@@ -692,7 +708,7 @@ export function sampleWarnings(p: Pick<Proposal, 'changes'>) {
 export function unfilledUnreadable(p: Pick<Proposal, 'changes'>) {
   const out: { key: string; field: string; index: number }[] = []
   for (const c of p.changes) {
-    if (c.context) continue
+    if (c.context || c.applied) continue
     for (const field of Object.keys(c.unreadable ?? {})) if (!(field in c.values)) out.push({ key: rowKey(c), field, index: c.index })
   }
   return out
@@ -872,7 +888,25 @@ export function withLocal(
 
 /** Rows to apply: those with something to write (a row whose every cell went back to the sheet is left out). */
 export function rowsToWrite(p: Pick<Proposal, 'changes'>): number[] {
-  return p.changes.filter(c => writtenFields(c).length && !c.context).map(c => c.index)
+  return p.changes.filter(c => writtenFields(c).length && !c.context && !c.applied).map(c => c.index)
+}
+
+/**
+ * Each sheet's table of a proposal with rows of several sheets (a notebook page's
+ * Insectary_data rows and new Collection_data rows), as its own «Aplicar» says it:
+ * the rows it writes (`rows`, of those `chosen`) and how many an earlier apply of
+ * that sheet wrote. Empty for a proposal of one sheet (its one «Aplicar» does).
+ */
+export function sheetApplies(changes: Pick<ProposalChange, 'sheet' | 'index' | 'applied' | 'context' | 'values'>[], chosen: number[]) {
+  const picked = new Set(chosen)
+  const sheets = [...new Set(changes.filter(c => !c.context && (c.applied || Object.keys(c.values).length)).map(c => c.sheet))]
+  if (sheets.length < 2) return new Map<string, { rows: number[]; written: number }>()
+  return new Map(
+    sheets.map(sheet => {
+      const own = changes.filter(c => c.sheet === sheet)
+      return [sheet, { rows: own.filter(c => picked.has(c.index)).map(c => c.index), written: own.filter(c => c.applied).length }]
+    }),
+  )
 }
 
 /** How many of the assistant's values the person set back to the sheet's (kept aside, not written). */

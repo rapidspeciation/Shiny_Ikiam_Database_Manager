@@ -19,6 +19,8 @@ import {
 import ProposalSheet, { type CellEdit } from './assistant/ProposalSheet.vue'
 import ColumnChooser from './assistant/ColumnChooser.vue'
 import FormulaCostNotice from './assistant/FormulaCostNotice.vue'
+import PhotoThumbs from './assistant/PhotoThumbs.vue'
+import SheetApply from './assistant/SheetApply.vue'
 import { api } from '../lib/api'
 import { displayValue } from '../lib/cells'
 import { errorText, notify } from '../lib/notice'
@@ -37,6 +39,7 @@ import {
   rowKey,
   rowsToWrite,
   sameAsFormula,
+  sheetApplies,
   sheetEdits,
   sheetGroups,
   sampleWarnings,
@@ -100,6 +103,11 @@ export type { Proposal, ProposalChange } from '../lib/proposals'
  * (A0E.1) have their rows away from their series (lib/proposalRows).
  * «Aplicar» while Google Sheets does not answer as usual asks first: the save
  * then waits in the app (status queued) and the card says so until written.
+ * Rows of several sheets (a page's Insectary_data rows and new Collection_data
+ * rows for its wild-caught butterflies): each sheet's table has its own
+ * «Aplicar», so one is written and the other checked first; the proposal stays
+ * pending with the rest («Aplicar todo» writes all that is left), each apply
+ * listed under the tables.
  */
 const props = defineProps<{
   proposal: Proposal
@@ -108,8 +116,11 @@ const props = defineProps<{
   reviewing?: boolean
 }>()
 const emit = defineEmits<{
-  /** doubtful: what to do with the unreviewed doubtful cells (the person chose it in the dialog). */
-  apply: [indexes: number[], revision: number | undefined, doubtful?: 'confirm' | 'skip']
+  /**
+   * doubtful: what to do with the unreviewed doubtful cells (the person chose it in the dialog);
+   * sheets: only those sheets' rows (a sheet's own «Aplicar»).
+   */
+  apply: [indexes: number[], revision: number | undefined, doubtful?: 'confirm' | 'skip', sheets?: string[]]
   discard: []
   replace: [proposal: Proposal]
   /** A photo's thumbnail clicked: shown with the table (PhotoReview). */
@@ -351,6 +362,24 @@ onBeforeUnmount(() => window.clearTimeout(flashTimer))
 /** The rows "Aplicar" writes: what the table shows (a row set back to the sheet in every cell is left out). */
 const chosen = computed(() => rowsToWrite(shown.value))
 const setAside = computed(() => notApplied(shown.value))
+/** Rows of several sheets: each sheet's rows to write and those written already (empty for one sheet). */
+const perSheet = computed(() => sheetApplies(shown.value.changes, chosen.value))
+/** Sheets with rows still to write. */
+const sheetsToApply = computed(() => [...perSheet.value].filter(([, s]) => s.rows.length).map(([sheet]) => sheet))
+/** Some rows were written by an earlier apply of their sheet. */
+const someWritten = computed(() => [...perSheet.value.values()].some(s => s.written))
+/** The sheet whose own «Aplicar» was pressed (null: «Aplicar todo», or a proposal of one sheet). */
+const applySheet = ref<string | null>(null)
+const sheetOf = (index: number) => shown.value.changes.find(c => c.index === index)?.sheet
+/** The rows this «Aplicar» writes: the sheet's own, or all. */
+const scoped = computed(() => (applySheet.value ? chosen.value.filter(i => sheetOf(i) === applySheet.value) : chosen.value))
+/** Each «Aplicar» so far, when the proposal was applied one sheet at a time (or more than once). */
+const applyLog = computed(() => {
+  const list = props.proposal.applies ?? []
+  return list.length > 1 || list.some(a => a.sheets) ? list : []
+})
+const applyStatus = (s: string) =>
+  ({ applied: t('aplicado'), queued: t('esperando a Google Sheets'), needs_review: t('sin confirmar'), refused: t('no se aplicó') })[s] ?? s
 
 /** Columns the person added to a sheet's table (kept while the tab is open). */
 const extra = persistentRef<Record<string, string[]>>(`proposal-columns:${props.proposal.id}`, {})
@@ -487,11 +516,6 @@ const tables = computed(() =>
 /** A sheet's rows `from`–`to` as they are now: a slim row of its table opened with a click. */
 const sheetRows = (sheet: string) => (from: number, to: number) =>
   api<SheetRows>(`chat/proposals/${props.proposal.id}/rows?sheet=${encodeURIComponent(sheet)}&from=${from}&to=${to}`)
-/** The assistant's few words on why a photo is there ('' for none). */
-const photoNote = (n: number) => page.value?.photoNotes?.[n] ?? ''
-const photoUrl = (n: number, size: 'thumb' | 'view') => `api/proposals/${props.proposal.id}/photos/${n}?size=${size}${props.proposal.page?.photoKey ? `&v=${props.proposal.page.photoKey}` : ''}`
-/** A thumbnail that would not load (an old proposal's photo gone): hidden. */
-const brokenPhotos = ref(new Set<number>())
 const typesOf = (sheet: string) => ({
   ...Object.fromEntries((fieldsOf(sheet) ?? []).map(f => [f.key, f.type])),
   ...props.proposal.types,
@@ -515,11 +539,15 @@ function addColumn(sheet: string, event: Event) {
 let savedRevision = 0
 /** Doubtful cells nobody reviewed yet (in the whole table, and in the rows "Aplicar" writes). */
 const doubtful = computed(() => uncheckedDoubts(shown.value))
-const doubtfulToWrite = computed(() => uncheckedDoubts(shown.value, chosen.value))
+const doubtfulToWrite = computed(() => uncheckedDoubts(shown.value, scoped.value))
 /** The CAM or tube a preserved butterfly would be left without: marked in the table until filled. */
 const noSample = computed(() => sampleWarnings(shown.value))
 /** Unreadable cells nobody filled yet: applying leaves them as the sheet has them. */
 const unreadable = computed(() => unfilledUnreadable(shown.value))
+/** Those of the rows this «Aplicar» writes (a sheet's own, or all). */
+const unreadableToWrite = computed(() =>
+  applySheet.value ? unreadable.value.filter(u => sheetOf(u.index) === applySheet.value) : unreadable.value,
+)
 /** Cells edited in the sheet since the proposal (and new rows whose pre-made row was used): the banner's. */
 const edited = computed(() => sheetEdits(shown.value))
 const editedCells = computed(
@@ -540,7 +568,7 @@ async function apply(how?: 'confirm' | 'skip', leave = false, waiting = false) {
   // What was just typed goes into the proposal first.
   await save()
   await nextTick()
-  if ((!how && doubtfulToWrite.value.length) || (!how && !leave && unreadable.value.length)) {
+  if ((!how && doubtfulToWrite.value.length) || (!how && !leave && unreadableToWrite.value.length)) {
     asking.value = true
     return
   }
@@ -552,8 +580,18 @@ async function apply(how?: 'confirm' | 'skip', leave = false, waiting = false) {
   }
   waitAsk.value = null
   // With the rows whose cells the sheet keeps (nothing of theirs is written): the answer says what stayed.
-  const rows = [...new Set([...chosen.value, ...edited.value.map(e => e.index)])].filter(i => i >= 0)
-  emit('apply', rows, Math.max(props.proposal.revision ?? 1, savedRevision) || undefined, how)
+  const sheet = applySheet.value
+  const rows = [...new Set([...scoped.value, ...edited.value.map(e => e.index)])].filter(
+    i => i >= 0 && (!sheet || sheetOf(i) === sheet),
+  )
+  emit('apply', rows, Math.max(props.proposal.revision ?? 1, savedRevision) || undefined, how, sheet ? [sheet] : undefined)
+}
+/** A sheet's own «Aplicar» (null: «Aplicar todo»): the dialogs it opens keep to those rows. */
+function applyRows(sheet: string | null) {
+  applySheet.value = sheet
+  asking.value = false
+  waitAsk.value = null
+  void apply()
 }
 /** The tables, to bring a doubtful cell into view. */
 const sheets = new Map<string, { focusCell: (key: string, field: string) => boolean }>()
@@ -624,12 +662,6 @@ const personCells = computed(() => shown.value.changes.reduce((n, c) => n + Obje
 function onSelect(key: string) {
   const c = shown.value.changes.find(x => rowKey(x) === key)
   emit('row', c?.page ? c.page.photo : null, c?.page ? c.page.line : null)
-}
-/** A thumbnail: beside the table in the same tab («Revisar con la foto»); Ctrl/⌘ or the middle button, a new tab. */
-function openPhoto(n: number, e: MouseEvent) {
-  if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return
-  e.preventDefault()
-  emit('photo', n)
 }
 const statusText = computed(
   () =>
@@ -788,43 +820,7 @@ const statusText = computed(
         {{ $tn(g.rows.length, 'Mismo error cerca (no en la foto) · {n} fila', 'Mismo error cerca (no en la foto) · {n} filas') }}
       </p>
       <!-- A notebook page: per photo, its thumbnail (opens upright in a new tab), why it is there and how its lines compare with the sheet. -->
-      <div v-if="page && g.photos.length" class="flex flex-wrap gap-2 px-2 pt-1.5">
-        <div
-          v-for="p in g.photos"
-          :key="p.photo"
-          class="flex items-center gap-2 rounded border border-stone-200 bg-stone-50 py-1 pr-2 pl-1 text-[11px] text-stone-600"
-        >
-          <a
-            v-if="p.photo < page.photos && !brokenPhotos.has(p.photo)"
-            :href="photoUrl(p.photo, 'view')"
-            target="_blank"
-            rel="noopener"
-            class="shrink-0"
-            :title="reviewing ? $t('Ver esta foto') : $t('Revisar con esta foto (Ctrl+clic: en una pestaña nueva)')"
-            @click="openPhoto(p.photo, $event)"
-          >
-            <img
-              :src="photoUrl(p.photo, 'thumb')"
-              :alt="$t('Foto {n} del cuaderno', { n: p.photo + 1 })"
-              class="h-14 w-auto max-w-24 rounded border border-stone-300 bg-white object-contain"
-              loading="lazy"
-              @error="brokenPhotos = new Set([...brokenPhotos, p.photo])"
-            />
-          </a>
-          <span>
-            <b v-if="g.photos.length > 1 || photoNote(p.photo)" class="font-medium text-stone-700">{{
-              $t('Foto {n}', { n: p.photo + 1 })
-            }}</b>
-            <template v-if="photoNote(p.photo)"> · {{ photoNote(p.photo) }}</template>
-            <template v-if="p.to"
-              ><template v-if="g.photos.length > 1 || photoNote(p.photo)"> · </template
-              >{{ $t('Líneas {from}–{to}', { from: p.from, to: p.to }) }} ·
-              {{ $tn(p.change, '{n} cambia', '{n} cambian') }} · {{ $tn(p.same, '{n} igual', '{n} iguales') }}
-              <template v-if="p.other"> · {{ $tn(p.other, '{n} sin escribir', '{n} sin escribir') }}</template>
-            </template>
-          </span>
-        </div>
-      </div>
+      <PhotoThumbs v-if="page && g.photos.length" :id="proposal.id" :page="page" :photos="g.photos" :reviewing="reviewing" @photo="n => emit('photo', n)" />
       <!-- The table and its bar, where ProposalSheet adds the buttons for the selected cells (Valor de la hoja / de la IA). -->
       <ProposalSheet
         :ref="sheetRef(g.id)"
@@ -837,7 +833,13 @@ const statusText = computed(
         :types="typesOf(g.sheet)"
         :new-row-formulas="proposal.newRowFormulas?.[g.sheet] ?? []"
         :editable="editable"
-        :applied="proposal.status === 'applied' ? (proposal.applied ?? []) : null"
+        :applied="
+          proposal.status === 'applied'
+            ? (proposal.applied ?? [])
+            : perSheet.get(g.sheet)?.written
+              ? g.rows.filter(c => c.applied).map(c => c.index)
+              : null
+        "
         :flash="flash"
         :history-key="`${proposal.id}:${g.id}`"
         @edit="onEdit"
@@ -1024,13 +1026,44 @@ const statusText = computed(
           </span>
         </template>
       </ProposalSheet>
+      <!-- Rows of several sheets: this sheet's own «Aplicar», or that its rows are written. -->
+      <SheetApply
+        v-if="pending && !g.near && perSheet.has(g.sheet)"
+        :sheet="g.sheet"
+        :rows="perSheet.get(g.sheet)!.rows.length"
+        :written="perSheet.get(g.sheet)!.written"
+        :busy="busy"
+        @apply="applyRows(g.sheet)"
+      />
     </div>
+    <!-- Each «Aplicar» of a proposal applied one sheet at a time (each a save of its own in Historial). -->
+    <ul v-if="applyLog.length" class="border-t border-stone-100 px-2 pt-1.5 text-[11px] text-stone-600" data-apply-log>
+      <li v-for="a in applyLog" :key="a.n" class="flex items-center gap-1">
+        <Check :size="11" class="shrink-0 text-brand-700" />
+        {{ whenText(a.at) }} · {{ a.by }} · {{ a.sheets ? a.sheets.join(', ') : $t('todo') }} ·
+        {{ $tn(a.rows, '{n} fila', '{n} filas') }} · {{ applyStatus(a.status) }}
+      </li>
+    </ul>
     <div class="flex flex-wrap items-center gap-2 px-2 py-1.5">
       <template v-if="pending">
-        <button class="btn-primary bg-emerald-700 hover:bg-emerald-800" :disabled="busy || !chosen.length" @click="apply()">
-          <Check :size="15" /> {{ $tn(chosen.length, 'Aplicar {n} fila', 'Aplicar {n} filas') }}
+        <!-- One sheet: its «Aplicar». Several: each table has its own, and «Aplicar todo» while two or more have rows left. -->
+        <button
+          v-if="!perSheet.size || sheetsToApply.length > 1"
+          class="btn-primary bg-emerald-700 hover:bg-emerald-800"
+          :disabled="busy || !chosen.length"
+          @click="applyRows(null)"
+        >
+          <Check :size="15" />
+          {{ perSheet.size ? $tn(chosen.length, 'Aplicar todo ({n} fila)', 'Aplicar todo ({n} filas)') : $tn(chosen.length, 'Aplicar {n} fila', 'Aplicar {n} filas') }}
         </button>
-        <button class="btn" :disabled="busy" @click="emit('discard')"><X :size="15" /> {{ $t('Descartar') }}</button>
+        <button
+          class="btn"
+          :disabled="busy"
+          :title="someWritten ? $t('Lo ya escrito se queda en la hoja; las filas que faltan no se aplican') : undefined"
+          @click="emit('discard')"
+        >
+          <X :size="15" /> {{ someWritten ? $t('Descartar el resto') : $t('Descartar') }}
+        </button>
         <span class="hint">
           <template v-if="saving">{{ $t('Guardando tus cambios…') }}</template>
           <template v-else-if="failed">{{ $t('Sin conexión: tus cambios se guardarán al volver') }}</template>
@@ -1095,10 +1128,10 @@ const statusText = computed(
           {{ $t('Revísalas en la tabla (bordes ámbar con «?»): «Correcta» u otra lectura junto a cada una, o edítala.') }}
         </p>
       </template>
-      <p v-if="unreadable.length" :class="doubtfulToWrite.length ? 'unread-line' : 'font-medium'">
+      <p v-if="unreadableToWrite.length" :class="doubtfulToWrite.length ? 'unread-line' : 'font-medium'">
         {{
           $tn(
-            unreadable.length,
+            unreadableToWrite.length,
             '{n} celda ilegible sigue vacía: al aplicar no se escribe (queda como está en la hoja).',
             '{n} celdas ilegibles siguen vacías: al aplicar no se escriben (quedan como están en la hoja).',
           )
@@ -1112,7 +1145,7 @@ const statusText = computed(
         </template>
         <template v-else>
           <button class="btn" :disabled="busy" @click="reviewNext('unreadable')"><SquarePen :size="14" /> {{ $t('Rellenarlas') }}</button>
-          <button class="btn" :disabled="busy || !chosen.length" @click="apply(undefined, true)">{{ $t('Aplicar sin ellas') }}</button>
+          <button class="btn" :disabled="busy || !scoped.length" @click="apply(undefined, true)">{{ $t('Aplicar sin ellas') }}</button>
         </template>
         <button class="btn" @click="asking = false"><X :size="14" /> {{ $t('Cancelar') }}</button>
       </div>
