@@ -18,9 +18,9 @@ Row order: Insectary_data follows the Emergidos notebook, so a butterfly's
 row sits in its ID's place (a repeated ID's row right under the first one,
 `W0B.1` under `W0B`). A row that belongs between others is inserted by a
 person, since the app's account cannot insert rows: ask, then fill it with a
-proposal. In Collection_data the order matters little: new captures go at
-the end (`newRows` writes them after the last used row, into the empty rows
-ready there).
+proposal. In Collection_data, a capture that was left out when its day was
+typed goes at the end (`newRows` writes it after the last used row, into the
+empty rows ready there).
 
 Counts, ranges, comparisons across sheets and cell histories take one `query`:
 SQL on a copy of the sheets (their rows in use; `<sheet>_all` adds the empty
