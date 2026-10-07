@@ -72,12 +72,13 @@ dates in those rows, or the current year when the page's dates are from the
 last 120 days. Otherwise it proposes nothing and asks for the year: ask the
 person, then call again with `year`.
 
-The answer: `proposalId`, `year`/`yearSource`, counts, and the lines with
-something to fill or flag (lines already as in the sheet are only counted,
-`linesAsInSheet`), each with its status (match, new, missing, ambiguous,
-duplicate, nokey, crossed), `inProposal`, `rowError`, `warnings` and the
-cells by group: fill, differs, doubtful, unreadable, implied, kept,
-notWritten, problems.
+The answer: `proposalId`, `year`/`yearSource`, counts, and only the lines
+that need attention (not found, crossed out, differences, doubtful,
+unreadable, problems, warnings), each with its status (match, new, missing,
+ambiguous, duplicate, nokey, crossed), `rowError`, `warnings` and those
+cells. Lines that only fill cells or are already as in the sheet are
+counted (`linesOnlyFilled`, `linesAsInSheet`); the proposal (`get_proposal`)
+has every line and cell.
 
 - `missing` (an ID not in the sheet: probably misread; see `didYouMean`),
   `ambiguous` and `duplicate` lines go in your summary, with `rowError`,
