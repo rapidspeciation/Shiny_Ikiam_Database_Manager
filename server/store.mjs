@@ -1455,7 +1455,15 @@ export class Store {
             ...(c.replaceFormula?.length ? { replaceFormula: c.replaceFormula } : {}),
           })),
         // New rows (e.g. the captures of a Wikiloc walk) go into the next unused rows.
-        creates: changes.filter(c => c.create).map(c => ({ module: c.sheet, clientId: c.clientId, values: c.values })),
+        // A value typed over the formula of its pre-made row (the person saw it marked doubtful): replaceFormula.
+        creates: changes
+          .filter(c => c.create)
+          .map(c => ({
+            module: c.sheet,
+            clientId: c.clientId,
+            values: c.values,
+            ...(c.replaceFormula?.length ? { replaceFormula: c.replaceFormula } : {}),
+          })),
       },
       user,
       { source: 'ai_approved', outbox },

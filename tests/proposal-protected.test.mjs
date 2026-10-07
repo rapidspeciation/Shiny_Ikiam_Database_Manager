@@ -24,8 +24,8 @@ const id = i => `${String.fromCharCode(65 + Math.floor(i / 10))}${i % 10}T`;
 /**
  * Collection_data: 30 wild butterflies sent to the insectary with Data_entry_order and the
  * Death_date and Preservation_date lookups (rows 2–31), then pre-made rows 32–35 holding the
- * Data_entry_order formula only. Column A (Data_entry_order) and Death_date are protected:
- * only the sheet's owner edits them. Insectary_stocks: clutches 990 and 991.
+ * Data_entry_order formula only. Column A (Data_entry_order), Death_date and the notes are
+ * protected: only the sheet's owner edits them. Insectary_stocks: clutches 990 and 991.
  */
 async function fixture() {
   const cells = (values, formulas = {}) => {
@@ -48,6 +48,7 @@ async function fixture() {
   }
   for (const r of [32, 33, 34, 35]) collection.push({ row: r, cells: cells({}, { Data_entry_order: order(r) }) });
   const death = col('Collection_data', 'Death_date');
+  const notes = col('Collection_data', 'Notes_Collection_data');
   const sheets = new LocalSheets(
     {
       Collection_data: collection,
@@ -64,6 +65,7 @@ async function fixture() {
         Collection_data: [
           { startRowIndex: 1, startColumnIndex: 0, endColumnIndex: 1 },
           { startRowIndex: 1, startColumnIndex: death, endColumnIndex: death + 1 },
+          { startRowIndex: 1, startColumnIndex: notes, endColumnIndex: notes + 1 },
         ],
       },
     },
@@ -129,23 +131,28 @@ test("a wild-caught butterfly's new Collection_data row applies and leaves the p
 test('Google refusing a protected cell keeps the proposal pending with why; a needs_review one says its status', async () => {
   const { store, call, listed, cell } = await fixture();
   try {
-    // A date typed in the protected column: the app writes it, Google refuses the whole save.
-    const proposed = await call('propose_changes', { reason: 'Silvestres', newRows: [wild('Y6T', { Death_date: '2026-10-01' })] });
+    // A date typed in the protected formula column: left to the sheet, never sent to Google.
+    const dated = await call('propose_changes', { reason: 'Silvestres', newRows: [wild('Y9T', { Death_date: '2026-10-01' })] });
+    assert.match(dated.leftOut, /Death_date \(protected column, left to the sheet\)/, JSON.stringify(dated));
+    assert.ok(!('Death_date' in (await listed(dated.proposalId)).changes[0].values));
+    store.db.prepare("UPDATE ai_proposals SET status = 'discarded' WHERE id = ?").run(dated.proposalId);
+    // A note typed in a protected column that is no formula: the app writes it, Google refuses the whole save.
+    const proposed = await call('propose_changes', { reason: 'Silvestres', newRows: [wild('Y6T', { Notes_Collection_data: 'ala rota' })] });
     const refused = await call('apply_proposal', { proposalId: proposed.proposalId });
-    assert.match(refused.error, /Google rechazó la escritura: celda protegida en Death_date/, JSON.stringify(refused));
+    assert.match(refused.error, /Google rechazó la escritura: celda protegida en Notes_Collection_data/, JSON.stringify(refused));
     assert.equal(refused.proposalStatus, 'pending');
     assert.equal(cell(32, 'Insectary_ID'), undefined, 'nothing was written');
     const got = await call('get_proposal', { proposalId: proposed.proposalId });
     assert.equal(got.status, 'pending');
     assert.equal(got.lastError.code, 'CELLS_PROTECTED');
-    assert.match(got.lastError.message, /celda protegida en Death_date/);
+    assert.match(got.lastError.message, /celda protegida en Notes_Collection_data/);
     assert.ok(got.lastError.at);
     const view = await listed(proposed.proposalId);
     assert.equal(view.status, 'pending');
-    assert.match(view.lastError.message, /celda protegida en Death_date/);
-    assert.equal(view.lastError.messageMsg.vars.fields[0], 'Death_date');
+    assert.match(view.lastError.message, /celda protegida en Notes_Collection_data/);
+    assert.equal(view.lastError.messageMsg.vars.fields[0], 'Notes_Collection_data');
     // Still usable: corrected and applied; the error goes with it.
-    const fixed = await call('update_proposal', { proposalId: proposed.proposalId, rows: [{ index: 0, values: { Death_date: null } }] });
+    const fixed = await call('update_proposal', { proposalId: proposed.proposalId, rows: [{ index: 0, values: { Notes_Collection_data: null } }] });
     assert.ok(!fixed.error, JSON.stringify(fixed));
     const applied = await call('apply_proposal', { proposalId: proposed.proposalId });
     assert.equal(applied.status, 'applied', JSON.stringify(applied));

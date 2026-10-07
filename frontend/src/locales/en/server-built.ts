@@ -404,4 +404,9 @@ export default {
   'Punto de Wikiloc sin fila en la hoja': 'Wikiloc point without a sheet row',
   'Fila de monitoreo sin punto en el recorrido de Wikiloc de ese día': 'Monitoring row without a point in that day’s Wikiloc walk',
   '{a}{b}': '{a}{b}',
+  // server/assistant.mjs: values a proposal typed into formula cells
+  '«{value}» es lo que da la fórmula: se deja la fórmula': '«{value}» is what the formula gives: the formula stays',
+  '«{value}» no se escribe: columna protegida en la hoja': '«{value}» is not written: the column is protected in the sheet',
+  '«{value}» no se escribe: la columna es una fórmula': '«{value}» is not written: the column is a formula',
+  'La fórmula daría «{value}»': 'The formula would give «{value}»',
 } as Record<string, string>
