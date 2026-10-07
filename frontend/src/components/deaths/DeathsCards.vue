@@ -925,8 +925,17 @@ async function saveEdit() {
 
 // «Deshacer muerte»: a saved one through the history's undo (preview, then confirm); one not saved yet, its cells dropped.
 const { undoing, reason: undoReason, busy: undoBusy, review, cancel: cancelUndo, confirm: confirmUndo } = useUndo(() => loadRecorded())
+/** The short question the undo asks here: which death, and that the butterfly is alive again. */
+const undoSummary = ref('')
 function undoDeath(item: RecordedItem) {
   const id = idOf(item.row)
+  const when = item.row.values.Death_date
+  undoSummary.value = t('¿Deshacer la muerte de {id}{what}? Vuelve a estar viva en la hoja.', {
+    id,
+    what: [typeof when === 'number' ? formatSerial(when) : '', item.row.values.Death_cause ?? ''].filter(Boolean).length
+      ? ` (${[typeof when === 'number' ? formatSerial(when) : '', item.row.values.Death_cause ?? ''].filter(Boolean).join(', ')})`
+      : '',
+  })
   if (editingId.value === item.row.id) editingId.value = null
   if (item.status === 'queued') return
   if (item.status === 'saved') return review({ changeIds: item.changeIds }, t('Deshacer la muerte de {id}', { id }))
@@ -1884,7 +1893,16 @@ const choice = (on: boolean) =>
     </Teleport>
 
     <TabHistory v-if="showHistory" :title="$t('Historial de Muertes')" purpose="muertes" @close="showHistory = false" />
-    <UndoDialog v-if="undoing" v-model:reason="undoReason" :review="undoing" :busy="undoBusy" @cancel="cancelUndo" @confirm="confirmUndo" />
+    <UndoDialog
+      v-if="undoing"
+      v-model:reason="undoReason"
+      :review="undoing"
+      :busy="undoBusy"
+      :summary="undoSummary"
+      :action="$t('Deshacer la muerte')"
+      @cancel="cancelUndo"
+      @confirm="confirmUndo"
+    />
     <RowDrawer
       v-if="drawerRow && table"
       :module="MODULE"

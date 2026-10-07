@@ -44,4 +44,5 @@ export default {
     'The camera is in use by another program (a video call…): close it and try again.',
   'El navegador solo abre la cámara en una dirección segura (https://).': 'The browser only opens the camera on a secure address (https://).',
   'No se pudo abrir la cámara.': 'Could not open the camera.',
+  'Ver detalles': 'See details',
 } as Record<string, string>

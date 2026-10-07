@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue'
 import { ArrowRight, Undo2, X } from 'lucide-vue-next'
 import { displayValue } from '../../lib/cells'
 import type { UndoPreviewItem } from '../../lib/types'
@@ -11,7 +12,13 @@ import { useSession } from '../../stores/session'
  * since, the row gone), in which case nothing is written. An optional reason;
  * «Deshacer en la hoja» writes it. Shared by the Historial and the tabs' own history.
  */
-defineProps<{ review: UndoReview; busy: boolean }>()
+/**
+ * `summary`: a short confirmation instead of every cell (a death undone from Muertes): one sentence,
+ * the cells folded under «Ver detalles», no reason box. The full list shows when something can't be undone.
+ */
+const props = defineProps<{ review: UndoReview; busy: boolean; summary?: string; action?: string }>()
+const details = ref(false)
+const short = computed(() => !!props.summary && !props.review.preview.conflicts.length && !details.value)
 const reason = defineModel<string>('reason', { default: '' })
 const emit = defineEmits<{ cancel: []; confirm: [] }>()
 const session = useSession()
@@ -34,10 +41,11 @@ const empty = (value: UndoPreviewItem['before']) => value === null || value === 
     <section class="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-lg bg-white shadow-xl" role="dialog" :aria-label="review.title">
       <header class="flex items-start gap-2 border-b border-stone-200 px-4 py-3">
         <div class="min-w-0 flex-1">
-          <h2 class="text-lg font-semibold">
+          <h2 v-if="summary" class="text-lg font-semibold">{{ review.title }}</h2>
+          <h2 v-else class="text-lg font-semibold">
             {{ $tn(review.preview.changes.length, 'Deshacer {n} cambio', 'Deshacer {n} cambios') }}
           </h2>
-          <p class="hint break-words">{{ review.title }}</p>
+          <p v-if="!summary" class="hint break-words">{{ review.title }}</p>
         </div>
         <button class="btn-ghost h-11 w-11 justify-center" :aria-label="$t('Cerrar')" :disabled="busy" @click="emit('cancel')"><X :size="20" /></button>
       </header>
@@ -63,8 +71,12 @@ const empty = (value: UndoPreviewItem['before']) => value === null || value === 
         <p v-for="d in review.preview.rowDeletes ?? []" :key="d.recordId" class="mb-2 rounded bg-amber-50 px-3 py-2 text-amber-900">
           {{ $t('Se borra la fila {row} ({label}), que insertó ese guardado; las filas de debajo suben una.', { row: d.row ?? '', label: d.label || d.recordId }) }}
         </p>
-        <p class="hint mb-1">{{ $t('Cada celda vuelve al valor que tenía antes del guardado:') }}</p>
-        <ul class="divide-y divide-stone-100">
+        <template v-if="short">
+          <p class="text-base">{{ summary }}</p>
+          <button class="mt-2 text-xs text-stone-500 underline" @click="details = true">{{ $t('Ver detalles') }}</button>
+        </template>
+        <p v-if="!short" class="hint mb-1">{{ $t('Cada celda vuelve al valor que tenía antes del guardado:') }}</p>
+        <ul v-if="!short" class="divide-y divide-stone-100">
           <li v-for="c in review.preview.changes" :key="c.recordId + c.field" class="py-1 sm:flex sm:items-start sm:gap-2">
             <span class="block shrink-0 sm:w-56">
               <strong>{{ c.label || c.recordId }}</strong>
@@ -91,13 +103,14 @@ const empty = (value: UndoPreviewItem['before']) => value === null || value === 
         </ul>
       </div>
       <footer class="flex flex-wrap items-end gap-2 border-t border-stone-200 px-4 py-3">
-        <label class="min-w-48 flex-1">
+        <span v-if="summary" class="flex-1" />
+        <label v-else class="min-w-48 flex-1">
           <span class="field-label">{{ $t('Motivo (opcional)') }}</span>
           <input v-model="reason" class="field-input" :placeholder="$t('p. ej. mariposas guardadas dos veces')" />
         </label>
         <button class="btn h-11" :disabled="busy" @click="emit('cancel')">{{ $t('Cancelar') }}</button>
         <button class="btn-primary h-11" :disabled="busy || !review.preview.eligible" @click="emit('confirm')">
-          <Undo2 :size="15" /> {{ busy ? $t('Deshaciendo…') : $t('Deshacer en la hoja') }}
+          <Undo2 :size="15" /> {{ busy ? $t('Deshaciendo…') : action || $t('Deshacer en la hoja') }}
         </button>
       </footer>
     </section>

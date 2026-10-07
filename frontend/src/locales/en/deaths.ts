@@ -144,6 +144,8 @@ export default {
   'Muerte de {id} corregida': "{id}'s death corrected",
   'Esperando a Google Sheets: se escribe cuando responda': 'Waiting for Google Sheets: written when it answers',
   'Deshacer la muerte de {id}': "Undo {id}'s death",
+  '¿Deshacer la muerte de {id}{what}? Vuelve a estar viva en la hoja.': 'Undo the death of {id}{what}? It is alive again in the sheet.',
+  'Deshacer la muerte': 'Undo the death',
   '¿Descartar la muerte de {id}, aún sin guardar?': "Discard {id}'s death, not saved yet?",
   'Esperando a Google Sheets: se podrá deshacer cuando se escriba': 'Waiting for Google Sheets: it can be undone once written',
 }
