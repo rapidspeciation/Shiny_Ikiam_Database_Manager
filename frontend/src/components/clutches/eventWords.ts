@@ -10,6 +10,9 @@ const KIND: Record<EventKind, () => string> = {
   died: () => t('murieron'),
   disappeared: () => t('desaparecieron'),
   preserved: () => t('se preservaron'),
+  not_hatched: () => t('no eclosionaron'),
+  correction: () => t('corrección'),
+  transfer: () => t('traspaso'),
 }
 const STAGE: Record<Stage, () => string> = {
   egg: () => t('Huevos'),
@@ -20,5 +23,5 @@ const STAGE: Record<Stage, () => string> = {
 export const kindWord = (kind: EventKind) => KIND[kind]?.() ?? kind
 export const stageWord = (stage: Stage) => STAGE[stage]?.() ?? stage
 /** "Larvas: −2 se preservaron (M0E, N9E) · for life history". */
-export const eventLine = (e: Pick<ClutchEvent, 'kind' | 'count' | 'ids' | 'note' | 'stage'>) =>
+export const eventLine = (e: Pick<ClutchEvent, 'kind' | 'count' | 'ids' | 'note' | 'stage' | 'term'>) =>
   `${stageWord(e.stage)}: ${eventText(e, x => kindWord(x.kind))}`

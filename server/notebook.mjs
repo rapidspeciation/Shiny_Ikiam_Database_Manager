@@ -4,7 +4,7 @@
 // functions: the sheet is reached through the `lookup` given to buildReview
 // (server/notebook-tool.mjs).
 
-import { isSumField, parseDateText, simpleSum } from './schema.mjs';
+import { isSumField, parseDateText, simpleSum, sumGroups } from './schema.mjs';
 import { msg } from './messages.mjs';
 import { DEFAULT_COLUMNS, isHiddenColumn } from './proposal-columns.mjs';
 
@@ -428,12 +428,20 @@ export function readDate(text, year) {
 }
 
 /**
+ * A sum as text without spaces or its "=", its groups' parentheses taken off
+ * ("(6-2)+(5+3)" → "6-2+5+3": the terms, in order) when it is a sum of groups.
+ */
+const withoutGroups = text => {
+  const s = String(text ?? '').replace(/\s+/g, '').replace(/^=/, '');
+  return s.includes('(') && simpleSum(`=${s}`) ? s.replace(/[()]/g, '') : s;
+};
+/**
  * The terms of a count written as a sum: "12+15", "12 + 15", "=12+15", "27-5";
  * a worked sum "2+4=6+8=14" (a running total, then more terms) gives 2, 4, 8.
  * Null when the text is not a sum, or its steps do not add up.
  */
 export function sumTerms(text) {
-  const s = String(text ?? '').replace(/\s+/g, '').replace(/^=/, '');
+  const s = withoutGroups(text);
   if (!/^\d+(?:[+-]\d+)*(?:=\d+(?:[+-]\d+)*)*$/.test(s)) return null;
   const parts = s.split('=').map(p => p.match(/[+-]?\d+/g).map(Number));
   let terms = parts[0];
@@ -452,7 +460,7 @@ export function sumTerms(text) {
  * 9, then 4) → 12, -3, -5; "2+4=6+8=14" (steps that add up) → 2, 4, 8. Null when not a sum.
  */
 export function correctedTerms(text) {
-  const s = String(text ?? '').replace(/\s+/g, '').replace(/^=/, '');
+  const s = withoutGroups(text);
   if (!/^\d+(?:[+-]\d+)*(?:=\d+(?:[+-]\d+)*)*$/.test(s)) return null;
   const parts = s.split('=').map(p => p.match(/[+-]?\d+/g).map(Number));
   const terms = [...parts[0]];
@@ -464,6 +472,13 @@ export function correctedTerms(text) {
   return terms;
 }
 const formulaOf = terms => `=${terms.map((t, i) => (i && t >= 0 ? `+${t}` : String(t))).join('')}`;
+/** A sum with more terms at its end: in its last group's parentheses when it is kept in groups (=(6-2)+(5+3)). */
+const withTermsAtEnd = (formula, extra) => {
+  const groups = sumGroups(formula);
+  if (!groups || groups.length < 2) return formulaOf([...(groups?.flat() ?? []), ...extra]);
+  groups[groups.length - 1].push(...extra);
+  return '=' + groups.map(g => `(${formulaOf(g).slice(1)})`).join('+');
+};
 
 /** The value a notebook cell gives a column, as the sheet stores it, or an error. */
 export function readValue(field, text, { year, sheet = null }) {
@@ -487,6 +502,8 @@ export function readValue(field, text, { year, sheet = null }) {
   if (type === 'number') {
     // Stock counts are kept as the notebook sums them (=12+15, =19; a corrected count keeps
     // its first terms and the corrections: =31+4-34); elsewhere the total.
+    // A count in groups (one parenthesized sub-sum per box: =(6-2)+(5+3)) is kept as written.
+    if (isSumField(sheet, field) && s.includes('(') && simpleSum(s)) return { value: simpleSum(s) };
     const terms = sumTerms(s) ?? (isSumField(sheet, field) ? correctedTerms(s) : null);
     if (terms) return { value: (isSumField(sheet, field) && simpleSum(formulaOf(terms))) || terms.reduce((a, b) => a + b, 0) };
     // A worked sum whose steps do not add up counts what follows the last "=".
@@ -1968,7 +1985,7 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
           const at = x?.length > 1 && y ? x.findIndex((t, k) => k < y.length && t !== y[k]) : -1;
           if (at >= 0) {
             why = msg('La página cambia el término {n} de la suma de la hoja ({sheet}); los términos nuevos se escriben al final', { n: at + 1, sheet: before });
-            if (y.length > x.length) other = formulaOf([...x, ...y.slice(x.length)]);
+            if (y.length > x.length) other = withTermsAtEnd(before, y.slice(x.length));
           }
         }
         if (why) {

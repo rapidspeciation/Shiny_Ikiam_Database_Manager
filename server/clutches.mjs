@@ -43,19 +43,40 @@ export function initClutches(db) {
   if (!columns.has('note')) db.exec('ALTER TABLE clutch_checks ADD COLUMN note TEXT');
   // The entry kept in the app a check or event went with (server/staged.mjs), until it is written.
   if (!columns.has('staged_entry')) db.exec('ALTER TABLE clutch_checks ADD COLUMN staged_entry TEXT');
-  if (!new Set(db.prepare('PRAGMA table_info(clutch_events)').all().map(c => c.name)).has('staged_entry'))
-    db.exec('ALTER TABLE clutch_events ADD COLUMN staged_entry TEXT');
+  const eventColumns = new Set(db.prepare('PRAGMA table_info(clutch_events)').all().map(c => c.name));
+  if (!eventColumns.has('staged_entry')) db.exec('ALTER TABLE clutch_events ADD COLUMN staged_entry TEXT');
+  // The term an event wrote in its stage's count (+27, −2; none for preserved ones kept counted), the
+  // group it happened to (and, hatched or pupated, the earlier stage's group it came from), whether its
+  // day is known (larvae found already big: the hatch day is NA), and the step it was recorded in.
+  for (const [column, type] of [
+    ['field', 'TEXT'],
+    ['term', 'INTEGER'],
+    ['group_id', 'TEXT'],
+    ['from_group_id', 'TEXT'],
+    ['day_known', 'INTEGER NOT NULL DEFAULT 1'],
+    ['step_id', 'TEXT'],
+  ])
+    if (!eventColumns.has(column)) db.exec(`ALTER TABLE clutch_events ADD COLUMN ${column} ${type}`);
+  initClutchGroups(db);
 }
 
 /** Check states: looked at and fine, or looked at and someone should look again. */
 export const CHECK_STATES = new Set(['checked', 'verify']);
-/** What can happen to a clutch's eggs, larvae, pupae and adults: the gain of the stage, then the losses. */
+/**
+ * What can happen to a clutch's eggs, larvae, pupae and adults: the gain of the
+ * stage, then the losses; eggs that never hatched (no term: the eggs laid stay
+ * counted), a correction of the total (its own term, ±), and a transfer between
+ * groups (a term in each group's parentheses).
+ */
 export const EVENT_KINDS = {
-  egg: ['laid', 'died', 'disappeared', 'preserved'],
-  larva: ['hatched', 'died', 'disappeared', 'preserved'],
-  pupa: ['pupated', 'died', 'disappeared', 'preserved'],
-  adult: ['emerged'],
+  egg: ['laid', 'died', 'disappeared', 'preserved', 'not_hatched', 'correction', 'transfer'],
+  larva: ['hatched', 'died', 'disappeared', 'preserved', 'correction', 'transfer'],
+  pupa: ['pupated', 'died', 'disappeared', 'preserved', 'correction', 'transfer'],
+  adult: ['emerged', 'correction'],
 };
+/** The count column each stage's events write their terms in. */
+export const STAGE_FIELD = { egg: 'NUMBER OF EGGS', larva: 'NUMBER OF LARVAE', pupa: 'NUMBER OF PUPA', adult: 'NUMBER OF ADULTS' };
+const LOSS_KINDS = new Set(['died', 'disappeared', 'preserved']);
 const SUBTRACT_KEY = 'clutches.subtractPreserved';
 const UP_TO_KEY = 'clutches.notebookUpTo';
 /** Columns the sheet fills with its own formulas (counted from Insectary_data): never in the notebook. */
@@ -182,12 +203,14 @@ function youngRows(store, clutch = null) {
  */
 export function tally(events, young = []) {
   const out = {};
-  const at = stage => (out[stage] ??= { gained: 0, died: 0, disappeared: 0, preserved: 0 });
+  const at = stage => (out[stage] ??= { gained: 0, died: 0, disappeared: 0, preserved: 0, notHatched: 0 });
   const named = new Set();
   for (const e of events) {
     const kinds = EVENT_KINDS[e.stage];
     if (!kinds?.includes(e.kind)) continue;
-    at(e.stage)[e.kind === kinds[0] ? 'gained' : e.kind] += e.count;
+    // Corrections and transfers are in the sum; they are no gain or loss of their own.
+    if (e.kind === 'correction' || e.kind === 'transfer') continue;
+    at(e.stage)[e.kind === kinds[0] ? 'gained' : e.kind === 'not_hatched' ? 'notHatched' : e.kind] += e.count;
     for (const id of e.ids ?? []) named.add(String(id).toUpperCase());
   }
   for (const y of young) if (!named.has(y.id)) at(y.stage)[y.kind] += 1;
@@ -236,6 +259,12 @@ const shapeEvent = r => ({
   count: r.count,
   ids: parse(r.ids_json) || [],
   note: r.note ?? null,
+  field: r.field ?? null,
+  term: r.term ?? null,
+  groupId: r.group_id ?? null,
+  fromGroupId: r.from_group_id ?? null,
+  dayKnown: r.day_known !== 0,
+  stepId: r.step_id ?? null,
   actor: r.actor,
   username: r.username ?? null,
   name: r.name ?? null,
@@ -246,13 +275,14 @@ const shapeEvent = r => ({
 const EVENT_SELECT = 'SELECT e.*, u.username, u.display_name name FROM clutch_events e LEFT JOIN users u ON u.id = e.actor';
 /** A clutch's photo as the day and the timeline list it (the bytes: server/clutch-photos.mjs). */
 const PHOTO_SELECT =
-  'SELECT p.id, p.record_id, p.clutch, p.day, p.event_id, p.note, p.actor, p.width, p.height, p.bytes, p.thumb_bytes, p.created_at, u.username, u.display_name name FROM clutch_photos p LEFT JOIN users u ON u.id = p.actor';
+  'SELECT p.id, p.record_id, p.clutch, p.day, p.event_id, p.group_id, p.note, p.actor, p.width, p.height, p.bytes, p.thumb_bytes, p.created_at, u.username, u.display_name name FROM clutch_photos p LEFT JOIN users u ON u.id = p.actor';
 const shapePhoto = r => ({
   id: r.id,
   recordId: r.record_id,
   clutch: r.clutch,
   day: r.day,
   eventId: r.event_id ?? null,
+  groupId: r.group_id ?? null,
   note: r.note ?? null,
   actor: r.actor,
   username: r.username ?? null,
@@ -329,7 +359,8 @@ export function clutchDay(store, query = {}) {
   for (const c of changes) c.isNew = created.has(c.recordId);
   // Entries kept in the app, not in the sheet yet (server/staged.mjs): listed too, marked, without undo (undone in the tab).
   for (const line of stagedLines(store, from, to)) changes.push({ ...line, actorIds: line.actorIds, parts: [] });
-  return { day, checks, changes, events, photos };
+  const notes = store.db.prepare(`${NOTE_SELECT} WHERE n.day = ? ORDER BY n.updated_at`).all(day).map(shapeNote);
+  return { day, checks, changes, events, photos, notes };
 }
 
 /**
@@ -480,6 +511,29 @@ export function addClutchEvent(store, body, user) {
   const prior = store.db.prepare(`${EVENT_SELECT} WHERE e.request_id = ?`).get(body.requestId);
   if (prior) return { event: shapeEvent(prior), duplicate: true };
   const record = stocksRecord(store, body.recordId);
+  const actionId = body.actionId ? String(body.actionId) : null;
+  if (actionId && !store.db.prepare('SELECT 1 FROM actions WHERE id = ?').get(actionId)) throw fail('ACTION_NOT_FOUND', 'Save not found', 404);
+  const id = insertEvent(store, record, { ...body, actionId }, user, { requestId: body.requestId, stagedEntry: stagedEntryOf(store, body) });
+  return { event: shapeEvent(store.db.prepare(`${EVENT_SELECT} WHERE e.id = ?`).get(id)), duplicate: false };
+}
+
+/** An event's day: today unless an earlier one is given (ISO), never one to come. */
+function eventDay(value) {
+  const today = ecuadorDay();
+  const day = value === undefined || value === null ? today : String(value);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || Number.isNaN(Date.parse(day)) || day > today || day < '2020-01-01') throw fail('INVALID_DAY', 'Invalid day');
+  return day;
+}
+/** The stage before (where a hatch or a pupation comes from). */
+const STAGE_BEFORE = { larva: 'egg', pupa: 'larva', adult: 'pupa' };
+/**
+ * An event checked: its stage and kind, how many, the term it writes in the
+ * stage's count (a gain +count, a loss −count or none, a correction or a
+ * transfer ±count, eggs that did not hatch none) and the groups it names, of
+ * this clutch: `groupId` of the stage's count, `fromGroupId` of the stage
+ * before (hatched from the eggs of box A) or, a transfer, of the same stage.
+ */
+function checkedEvent(store, record, body) {
   const kinds = EVENT_KINDS[body.stage];
   if (!kinds) throw fail('INVALID_STAGE', 'Invalid stage');
   if (!kinds.includes(body.kind)) throw fail('INVALID_KIND', 'Invalid event for this stage');
@@ -487,20 +541,66 @@ export function addClutchEvent(store, body, user) {
   if (!Number.isInteger(count) || count < 1 || count > 9999) throw fail('INVALID_COUNT', 'The count must be a whole number from 1 to 9999');
   const ids = cleanIds(body.ids);
   if (ids.length > count) throw fail('INVALID_IDS', 'More Insectary IDs than the count');
-  const today = ecuadorDay();
-  const day = body.day === undefined || body.day === null ? today : String(body.day);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || Number.isNaN(Date.parse(day)) || day > today || day < '2020-01-01') throw fail('INVALID_DAY', 'Invalid day');
-  const note = cleanNote(body.note);
-  const actionId = body.actionId ? String(body.actionId) : null;
-  if (actionId && !store.db.prepare('SELECT 1 FROM actions WHERE id = ?').get(actionId)) throw fail('ACTION_NOT_FOUND', 'Save not found', 404);
+  const term = body.term === undefined || body.term === null ? null : body.term;
+  const both = body.kind === 'correction' || body.kind === 'transfer';
+  if (term !== null) {
+    if (!Number.isInteger(term)) throw fail('INVALID_TERM', 'Invalid term');
+    const ok = body.kind === kinds[0] ? term === count : LOSS_KINDS.has(body.kind) ? term === -count : both ? Math.abs(term) === count : false;
+    if (!ok) throw fail('INVALID_TERM', 'The term does not match the event');
+  } else if (both) throw fail('INVALID_TERM', 'A correction or a transfer needs its term');
+  const groupOf = (value, stage) => {
+    if (value === undefined || value === null || value === '') return null;
+    const g = store.db.prepare('SELECT id, stage FROM clutch_groups WHERE id = ? AND record_id = ?').get(String(value), record.id);
+    if (!g || g.stage !== stage) throw fail('GROUP_NOT_FOUND', 'Group not found for this clutch and stage', 404);
+    return g.id;
+  };
+  return {
+    stage: body.stage,
+    kind: body.kind,
+    count,
+    ids,
+    term,
+    field: term === null ? null : STAGE_FIELD[body.stage],
+    groupId: groupOf(body.groupId, body.stage),
+    fromGroupId: STAGE_BEFORE[body.stage] || body.kind === 'transfer' ? groupOf(body.fromGroupId, body.kind === 'transfer' ? body.stage : STAGE_BEFORE[body.stage]) : null,
+    day: eventDay(body.day),
+    dayKnown: body.dayKnown !== false,
+    note: cleanNote(body.note),
+  };
+}
+/** Stores one event (checked); its id. */
+function insertEvent(store, record, body, user, { requestId = null, stepId = null, stagedEntry = null } = {}) {
+  const e = checkedEvent(store, record, body);
   const values = parse(record.values_json) || {};
   const id = randomUUID();
   store.db
     .prepare(
-      'INSERT INTO clutch_events(id,request_id,record_id,clutch,day,stage,kind,count,ids_json,note,actor,action_id,created_at,staged_entry) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      `INSERT INTO clutch_events(id,request_id,record_id,clutch,day,stage,kind,count,ids_json,note,actor,action_id,created_at,staged_entry,
+         field,term,group_id,from_group_id,day_known,step_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
-    .run(id, body.requestId, record.id, clutchText(values['CLUTCH NUMBER']) || null, day, body.stage, body.kind, count, JSON.stringify(ids), note, user.id, actionId, new Date().toISOString(), stagedEntryOf(store, body));
-  return { event: shapeEvent(store.db.prepare(`${EVENT_SELECT} WHERE e.id = ?`).get(id)), duplicate: false };
+    .run(
+      id,
+      requestId,
+      record.id,
+      clutchText(values['CLUTCH NUMBER']) || null,
+      e.day,
+      e.stage,
+      e.kind,
+      e.count,
+      JSON.stringify(e.ids),
+      e.note,
+      user.id,
+      body.actionId ?? null,
+      new Date().toISOString(),
+      stagedEntry,
+      e.field,
+      e.term,
+      e.groupId,
+      e.fromGroupId,
+      e.dayKnown ? 1 : 0,
+      stepId,
+    );
+  return id;
 }
 
 /** Takes back an event recorded by mistake: one's own, or anyone's for reviewers and admins. */
@@ -515,6 +615,37 @@ export function removeClutchEvent(store, id, user) {
 }
 
 /**
+ * What is said of an event, corrected: its day (or that it is not known), the
+ * cause of a loss (among the losses that write the same term), its group and
+ * its note. Its count and term stay: the sum changes only by its own steps.
+ */
+export function updateClutchEvent(store, id, body, user) {
+  const row = store.db.prepare('SELECT * FROM clutch_events WHERE id = ?').get(String(id));
+  if (!row) throw fail('EVENT_NOT_FOUND', 'Event not found', 404);
+  if (row.actor !== user.id && !['reviewer', 'admin'].includes(user.role)) throw fail('FORBIDDEN', 'Only your own events', 403);
+  const record = stocksRecord(store, row.record_id);
+  const kind = body.kind === undefined || body.kind === null ? row.kind : String(body.kind);
+  if (kind !== row.kind && !(LOSS_KINDS.has(kind) && LOSS_KINDS.has(row.kind))) throw fail('INVALID_KIND', 'Only the cause of a loss can change');
+  const e = checkedEvent(store, record, {
+    stage: row.stage,
+    kind,
+    count: row.count,
+    ids: parse(row.ids_json) || [],
+    term: row.term,
+    groupId: body.groupId === undefined ? row.group_id : body.groupId,
+    fromGroupId: row.from_group_id,
+    day: body.day === undefined || body.day === null ? row.day : body.day,
+    dayKnown: body.dayKnown === undefined ? row.day_known !== 0 : body.dayKnown !== false,
+    note: body.note === undefined ? row.note : body.note,
+  });
+  store.db
+    .prepare('UPDATE clutch_events SET kind = ?, group_id = ?, day = ?, day_known = ?, note = ? WHERE id = ?')
+    .run(e.kind, e.groupId, e.day, e.dayKnown ? 1 : 0, e.note, row.id);
+  return { event: shapeEvent(store.db.prepare(`${EVENT_SELECT} WHERE e.id = ?`).get(row.id)) };
+}
+
+
+/**
  * One clutch's events, every day (oldest first), with the eggs and larvae of
  * it registered in Insectary_data (Emergidos), its photos, what they add up
  * to, and the team's settings: the clutch editor's timeline.
@@ -525,7 +656,10 @@ export function clutchEvents(store, query = {}) {
   const number = clutchText((parse(record.values_json) || {})['CLUTCH NUMBER']);
   const young = number ? youngRows(store, number) : [];
   const photos = store.db.prepare(`${PHOTO_SELECT} WHERE p.record_id = ? ORDER BY p.day, p.created_at`).all(record.id).map(shapePhoto);
-  return { recordId: record.id, clutch: number, events, young, photos, tally: tally(events, young), settings: clutchSettings(store) };
+  const groups = store.db.prepare(`${GROUP_SELECT} WHERE g.record_id = ? ORDER BY g.field, g.ended_at IS NOT NULL, g.position, g.created_at`).all(record.id).map(shapeGroup);
+  const log = store.db.prepare(`${LOG_SELECT} WHERE l.record_id = ? ORDER BY l.day, l.created_at`).all(record.id).map(shapeLog);
+  const notes = store.db.prepare(`${NOTE_SELECT} WHERE n.record_id = ? ORDER BY n.day`).all(record.id).map(shapeNote);
+  return { recordId: record.id, clutch: number, events, young, photos, groups, log, notes, tally: tally(events, young), settings: clutchSettings(store) };
 }
 
 // --- The notebook's list: what the app changed since the paper notebook was brought up to date
@@ -696,8 +830,277 @@ export function notebookChanges(store, query = {}) {
     c.isNew = c.lines.some(l => l.field === 'CLUTCH NUMBER' && (l.before === null || l.before === ''));
   }
   const valuesOf = store.db.prepare('SELECT values_json FROM records WHERE id = ?');
-  for (const e of store.db.prepare(`${EVENT_SELECT} WHERE e.created_at >= ? AND e.created_at < ? ORDER BY e.day, e.created_at`).all(from, to))
+  // Transfers between groups are in the count's change (its parentheses); not listed one by one.
+  for (const e of store.db.prepare(`${EVENT_SELECT} WHERE e.created_at >= ? AND e.created_at < ? AND e.kind <> 'transfer' ORDER BY e.day, e.created_at`).all(from, to))
     clutchOf(e.record_id, valuesOf.get(e.record_id)?.values_json).events.push(shapeEvent(e));
   const list = [...clutches.values()].filter(c => c.lines.length || c.events.length).sort(byNotebook);
   return { from, to, upTo, sheets: withSheets, excluded, clutches: list };
+}
+
+// --- Groups, steps, the history of regroupings and formula edits, the day's notes (app-only)
+//
+// A stage's count is written in the sheet as one parenthesized sub-sum per group
+// (box A, box B: =(6-2)+(5+3); a single group is the plain sum =27-2-11-3). The
+// app keeps what the parentheses cannot: each group's label, where it came from
+// (the larvae of box A hatched from the eggs of box A) and its photos, by
+// position: the open groups of a count, in the order of its parentheses. The
+// frontend works out the formula (lib/clutchGroups.ts); a step stores at once
+// what one action recorded besides it: the events (one per term), the groups as
+// they are after it, and a line of history (a regrouping, a formula edited by
+// hand). A step can be taken back as a whole (the person's Undo).
+
+const LABEL_MAX = 40;
+const DAY_NOTE_MAX = 20_000;
+const LOG_KINDS = new Set(['regroup', 'formula']);
+const STAGE_OF_FIELD = Object.fromEntries(Object.entries(STAGE_FIELD).map(([stage, field]) => [field, stage]));
+
+export function initClutchGroups(db) {
+  db.exec(`CREATE TABLE IF NOT EXISTS clutch_groups(id TEXT PRIMARY KEY, record_id TEXT NOT NULL, field TEXT NOT NULL, stage TEXT NOT NULL,
+      position INTEGER NOT NULL, label TEXT, origin_id TEXT, actor TEXT NOT NULL, created_at TEXT NOT NULL, ended_at TEXT, step_id TEXT);
+    CREATE INDEX IF NOT EXISTS clutch_groups_record ON clutch_groups(record_id, field);
+    CREATE TABLE IF NOT EXISTS clutch_log(id TEXT PRIMARY KEY, record_id TEXT NOT NULL, clutch TEXT, stage TEXT, field TEXT, day TEXT NOT NULL,
+      kind TEXT NOT NULL, before_text TEXT, after_text TEXT, note TEXT, actor TEXT NOT NULL, step_id TEXT, created_at TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS clutch_log_record ON clutch_log(record_id, day);
+    CREATE TABLE IF NOT EXISTS clutch_steps(id TEXT PRIMARY KEY, request_id TEXT UNIQUE, record_id TEXT NOT NULL, actor TEXT NOT NULL,
+      data_json TEXT NOT NULL, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS clutch_notes(id TEXT PRIMARY KEY, record_id TEXT NOT NULL, clutch TEXT, day TEXT NOT NULL, text TEXT NOT NULL,
+      actor TEXT NOT NULL, created_at TEXT NOT NULL, updated_by TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(record_id, day));
+    CREATE INDEX IF NOT EXISTS clutch_notes_day ON clutch_notes(day);`);
+}
+
+const GROUP_SELECT = 'SELECT g.* FROM clutch_groups g';
+const shapeGroup = r => ({
+  id: r.id,
+  recordId: r.record_id,
+  field: r.field,
+  stage: r.stage,
+  position: r.position,
+  label: r.label ?? null,
+  originId: r.origin_id ?? null,
+  actor: r.actor,
+  createdAt: r.created_at,
+  endedAt: r.ended_at ?? null,
+});
+const LOG_SELECT = 'SELECT l.*, u.username, u.display_name name FROM clutch_log l LEFT JOIN users u ON u.id = l.actor';
+const shapeLog = r => ({
+  id: r.id,
+  recordId: r.record_id,
+  clutch: r.clutch,
+  stage: r.stage,
+  field: r.field,
+  day: r.day,
+  kind: r.kind,
+  before: r.before_text,
+  after: r.after_text,
+  note: r.note ?? null,
+  actor: r.actor,
+  username: r.username ?? null,
+  name: r.name ?? null,
+  stepId: r.step_id ?? null,
+  createdAt: r.created_at,
+});
+const NOTE_SELECT =
+  'SELECT n.*, u.username, u.display_name name, w.display_name updated_name FROM clutch_notes n LEFT JOIN users u ON u.id = n.actor LEFT JOIN users w ON w.id = n.updated_by';
+const shapeNote = r => ({
+  id: r.id,
+  recordId: r.record_id,
+  clutch: r.clutch,
+  day: r.day,
+  text: r.text,
+  actor: r.actor,
+  username: r.username ?? null,
+  name: r.name ?? null,
+  updatedBy: r.updated_by,
+  updatedName: r.updated_name ?? null,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});
+
+const cleanLabel = value => {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string') throw fail('INVALID_LABEL', 'Invalid group label');
+  const text = value.trim().replace(/\s+/g, ' ');
+  if (text.length > LABEL_MAX) throw fail('INVALID_LABEL', `The group label is too long (${LABEL_MAX} characters at most)`);
+  return text || null;
+};
+const openGroups = (store, recordId, field) =>
+  store.db.prepare('SELECT * FROM clutch_groups WHERE record_id = ? AND field = ? AND ended_at IS NULL ORDER BY position').all(recordId, field);
+/** Runs `fn` in one transaction. */
+function inTransaction(store, fn) {
+  store.db.exec('BEGIN IMMEDIATE');
+  try {
+    const out = fn();
+    store.db.exec('COMMIT');
+    return out;
+  } catch (e) {
+    store.db.exec('ROLLBACK');
+    throw e;
+  }
+}
+const stepOut = (store, stepId, recordId) => ({
+  id: stepId,
+  events: store.db.prepare(`${EVENT_SELECT} WHERE e.step_id = ? ORDER BY e.created_at, e.rowid`).all(stepId).map(shapeEvent),
+  groups: store.db.prepare(`${GROUP_SELECT} WHERE g.record_id = ? AND g.ended_at IS NULL ORDER BY g.field, g.position`).all(recordId).map(shapeGroup),
+  log: store.db.prepare(`${LOG_SELECT} WHERE l.step_id = ? ORDER BY l.created_at`).all(stepId).map(shapeLog),
+});
+
+/**
+ * One action on a clutch, recorded at once (only in the app): its events, the
+ * groups of each count it touched as they are after it (`groups`: per count,
+ * the whole list of open groups in the order of its parentheses, each an
+ * existing `id` or a new one with a `key` the events can name, its label and
+ * the earlier stage's group it came from), and history lines (`log`: a
+ * regrouping or a formula edited by hand, before → after). The first time a
+ * count gets groups, its events without one go to the first group (the terms
+ * written before are wrapped in its parentheses).
+ */
+export function addClutchStep(store, body, user) {
+  const prior = store.db.prepare('SELECT id, record_id FROM clutch_steps WHERE request_id = ?').get(body.requestId);
+  if (prior) return { step: stepOut(store, prior.id, prior.record_id), duplicate: true };
+  const record = stocksRecord(store, body.recordId);
+  const groups = body.groups ?? [];
+  const events = body.events ?? [];
+  const log = body.log ?? [];
+  if (![groups, events, log].every(Array.isArray) || groups.length > 6 || events.length > 60 || log.length > 6) throw fail('INVALID_STEP', 'Invalid step');
+  if (!groups.length && !events.length && !log.length) throw fail('INVALID_STEP', 'Nothing to record');
+  const stepId = randomUUID();
+  const now = new Date().toISOString();
+  const values = parse(record.values_json) || {};
+  const clutch = clutchText(values['CLUTCH NUMBER']) || null;
+  const stagedEntry = stagedEntryOf(store, body);
+  return inTransaction(store, () => {
+    const data = { events: [], log: [], fields: {}, created: [], adopted: [] };
+    const keys = new Map();
+    for (const g of groups) {
+      const field = String(g?.field ?? '');
+      const stage = STAGE_OF_FIELD[field];
+      if (!stage || stage === 'adult') throw fail('INVALID_FIELD', 'Groups are kept for the eggs, larvae and pupae');
+      if (data.fields[field]) throw fail('INVALID_STEP', 'A count named twice');
+      if (!Array.isArray(g.list) || g.list.length > 26) throw fail('INVALID_GROUPS', 'Invalid groups');
+      const before = openGroups(store, record.id, field);
+      data.fields[field] = before.map(b => ({ id: b.id, position: b.position, label: b.label }));
+      const kept = new Set();
+      g.list.forEach((item, position) => {
+        const label = cleanLabel(item?.label);
+        if (item?.id) {
+          const own = before.find(b => b.id === item.id);
+          if (!own || kept.has(own.id)) throw fail('GROUP_NOT_FOUND', 'Group not found for this count', 404);
+          kept.add(own.id);
+          store.db.prepare('UPDATE clutch_groups SET position = ?, label = ? WHERE id = ?').run(position, label, own.id);
+          return;
+        }
+        const key = item?.key ? String(item.key) : '';
+        if (!key || keys.has(key)) throw fail('INVALID_GROUPS', 'A new group needs its own key');
+        let origin = null;
+        if (item.originId) {
+          const o = store.db.prepare('SELECT id, stage FROM clutch_groups WHERE id = ? AND record_id = ?').get(String(item.originId), record.id);
+          if (!o || o.stage !== STAGE_BEFORE[stage]) throw fail('GROUP_NOT_FOUND', 'The group it came from is not of this clutch', 404);
+          origin = o.id;
+        }
+        const id = randomUUID();
+        store.db
+          .prepare('INSERT INTO clutch_groups(id,record_id,field,stage,position,label,origin_id,actor,created_at,step_id) VALUES(?,?,?,?,?,?,?,?,?,?)')
+          .run(id, record.id, field, stage, position, label, origin, user.id, now, stepId);
+        keys.set(key, id);
+        data.created.push(id);
+      });
+      for (const b of before) if (!kept.has(b.id)) store.db.prepare('UPDATE clutch_groups SET ended_at = ? WHERE id = ?').run(now, b.id);
+      // The terms written before the count had groups are the first group's now.
+      const first = openGroups(store, record.id, field)[0];
+      if (!before.length && first) {
+        const loose = store.db.prepare('SELECT id FROM clutch_events WHERE record_id = ? AND stage = ? AND group_id IS NULL').all(record.id, stage).map(r => r.id);
+        for (const id of loose) store.db.prepare('UPDATE clutch_events SET group_id = ? WHERE id = ?').run(first.id, id);
+        data.adopted.push(...loose);
+      }
+    }
+    const resolve = (id, key) => (key ? (keys.get(String(key)) ?? fail('GROUP_NOT_FOUND', 'Unknown group key', 404)) : (id ?? null));
+    for (const e of events) {
+      if (!e || typeof e !== 'object') throw fail('INVALID_STEP', 'Invalid event');
+      const groupId = resolve(e.groupId, e.groupKey);
+      const fromGroupId = resolve(e.fromGroupId, e.fromGroupKey);
+      if (groupId instanceof Error) throw groupId;
+      if (fromGroupId instanceof Error) throw fromGroupId;
+      data.events.push(insertEvent(store, record, { ...e, groupId, fromGroupId, actionId: null }, user, { stepId, stagedEntry }));
+    }
+    for (const l of log) {
+      if (!l || !LOG_KINDS.has(l.kind)) throw fail('INVALID_LOG', 'Invalid history line');
+      const field = String(l.field ?? '');
+      if (!isSumField(SHEET, field)) throw fail('INVALID_FIELD', 'Not a count');
+      const text = v => (v === undefined || v === null ? null : String(v).slice(0, 2000));
+      const id = randomUUID();
+      store.db
+        .prepare('INSERT INTO clutch_log(id,record_id,clutch,stage,field,day,kind,before_text,after_text,note,actor,step_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)')
+        .run(id, record.id, clutch, STAGE_OF_FIELD[field] ?? null, field, ecuadorDay(), l.kind, text(l.before), text(l.after), cleanNote(l.note), user.id, stepId, now);
+      data.log.push(id);
+    }
+    store.db.prepare('INSERT INTO clutch_steps(id,request_id,record_id,actor,data_json,created_at) VALUES(?,?,?,?,?,?)').run(stepId, body.requestId, record.id, user.id, JSON.stringify(data), now);
+    return { step: stepOut(store, stepId, record.id), duplicate: false };
+  });
+}
+
+/**
+ * Takes a step back as a whole: its events and history lines go, the groups of
+ * each count it touched are as they were before it (the groups it made go,
+ * their photos stay the day's). One's own, or anyone's for reviewers and admins.
+ */
+export function undoClutchStep(store, id, user) {
+  const row = store.db.prepare('SELECT * FROM clutch_steps WHERE id = ?').get(String(id));
+  if (!row) throw fail('STEP_NOT_FOUND', 'Step not found', 404);
+  if (row.actor !== user.id && !['reviewer', 'admin'].includes(user.role)) throw fail('FORBIDDEN', 'Only your own steps', 403);
+  const data = parse(row.data_json) || {};
+  return inTransaction(store, () => {
+    for (const eventId of data.events ?? []) {
+      store.db.prepare('DELETE FROM clutch_events WHERE id = ?').run(eventId);
+      store.db.prepare('UPDATE clutch_photos SET event_id = NULL WHERE event_id = ?').run(eventId);
+    }
+    for (const eventId of data.adopted ?? []) store.db.prepare('UPDATE clutch_events SET group_id = NULL WHERE id = ?').run(eventId);
+    for (const [field, before] of Object.entries(data.fields ?? {})) {
+      store.db.prepare('UPDATE clutch_groups SET ended_at = ? WHERE record_id = ? AND field = ? AND ended_at IS NULL').run(row.created_at, row.record_id, field);
+      for (const g of before) store.db.prepare('UPDATE clutch_groups SET ended_at = NULL, position = ?, label = ? WHERE id = ?').run(g.position, g.label, g.id);
+    }
+    for (const groupId of data.created ?? []) {
+      store.db.prepare('DELETE FROM clutch_groups WHERE id = ?').run(groupId);
+      store.db.prepare('UPDATE clutch_photos SET group_id = NULL WHERE group_id = ?').run(groupId);
+      store.db.prepare('UPDATE clutch_events SET group_id = NULL WHERE group_id = ?').run(groupId);
+      store.db.prepare('UPDATE clutch_events SET from_group_id = NULL WHERE from_group_id = ?').run(groupId);
+    }
+    for (const logId of data.log ?? []) store.db.prepare('DELETE FROM clutch_log WHERE id = ?').run(logId);
+    store.db.prepare('DELETE FROM clutch_steps WHERE id = ?').run(row.id);
+    return { removed: row.id };
+  });
+}
+
+/** A group's label changed (box A → plant 2). */
+export function renameClutchGroup(store, id, body) {
+  const row = store.db.prepare('SELECT * FROM clutch_groups WHERE id = ?').get(String(id));
+  if (!row) throw fail('GROUP_NOT_FOUND', 'Group not found', 404);
+  store.db.prepare('UPDATE clutch_groups SET label = ? WHERE id = ?').run(cleanLabel(body.label), row.id);
+  return { group: shapeGroup(store.db.prepare(`${GROUP_SELECT} WHERE g.id = ?`).get(row.id)) };
+}
+
+/**
+ * The day's note of a clutch (one per clutch and day, as long as needed; only
+ * in the app: the sheet's NOTES keeps the short dated lines): written or
+ * rewritten by anyone; an empty text takes it away.
+ */
+export function setClutchNote(store, body, user) {
+  const record = stocksRecord(store, body.recordId);
+  const day = eventDay(body.day);
+  if (typeof body.text !== 'string') throw fail('INVALID_NOTE', 'Invalid note');
+  const text = body.text.replace(/\r\n/g, '\n').trim();
+  if (text.length > DAY_NOTE_MAX) throw fail('INVALID_NOTE', 'The note is too long');
+  const prior = store.db.prepare('SELECT * FROM clutch_notes WHERE record_id = ? AND day = ?').get(record.id, day);
+  const now = new Date().toISOString();
+  if (!text) {
+    if (prior) store.db.prepare('DELETE FROM clutch_notes WHERE id = ?').run(prior.id);
+    return { note: null, removed: prior?.id ?? null };
+  }
+  if (prior) store.db.prepare('UPDATE clutch_notes SET text = ?, updated_by = ?, updated_at = ? WHERE id = ?').run(text, user.id, now, prior.id);
+  else {
+    const values = parse(record.values_json) || {};
+    store.db
+      .prepare('INSERT INTO clutch_notes(id,record_id,clutch,day,text,actor,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?)')
+      .run(randomUUID(), record.id, clutchText(values['CLUTCH NUMBER']) || null, day, text, user.id, now, user.id, now);
+  }
+  return { note: shapeNote(store.db.prepare(`${NOTE_SELECT} WHERE n.record_id = ? AND n.day = ?`).get(record.id, day)) };
 }

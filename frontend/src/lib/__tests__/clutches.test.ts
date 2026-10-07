@@ -42,14 +42,14 @@ const TODAY = 46296 // 1-Oct-26
 
 describe('counts kept as sums', () => {
   it('reads the history of a count: formulas, plain numbers, NA and other text', () => {
-    expect(readCount('=3+5-2')).toEqual({ terms: [3, 5, -2], na: false, text: null })
-    expect(readCount('= 12 + 15')).toEqual({ terms: [12, 15], na: false, text: null })
-    expect(readCount(6)).toEqual({ terms: [6], na: false, text: null })
-    expect(readCount('=0')).toEqual({ terms: [0], na: false, text: null })
-    expect(readCount('7')).toEqual({ terms: [7], na: false, text: null })
-    expect(readCount(null)).toEqual({ terms: [], na: false, text: null })
-    expect(readCount('NA')).toEqual({ terms: [], na: true, text: null })
-    expect(readCount('3 pupas; 1 larva')).toEqual({ terms: [], na: false, text: '3 pupas; 1 larva' })
+    expect(readCount('=3+5-2')).toMatchObject({ terms: [3, 5, -2], na: false, text: null })
+    expect(readCount('= 12 + 15')).toMatchObject({ terms: [12, 15], na: false, text: null })
+    expect(readCount(6)).toMatchObject({ terms: [6], na: false, text: null })
+    expect(readCount('=0')).toMatchObject({ terms: [0], na: false, text: null })
+    expect(readCount('7')).toMatchObject({ terms: [7], na: false, text: null })
+    expect(readCount(null)).toMatchObject({ terms: [], na: false, text: null })
+    expect(readCount('NA')).toMatchObject({ terms: [], na: true, text: null })
+    expect(readCount('3 pupas; 1 larva')).toMatchObject({ terms: [], na: false, text: '3 pupas; 1 larva' })
     expect(readCount('=A2+1').text).toBe('=A2+1')
   })
   it('writes the terms back as the team types them, and shows them as chips', () => {

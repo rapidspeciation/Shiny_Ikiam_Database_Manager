@@ -21,6 +21,8 @@ export interface ClutchPhoto {
   clutch: string | null
   day: string
   eventId: string | null
+  /** The group of the clutch it shows (box A's larvae), if any. */
+  groupId?: string | null
   note: string | null
   actor: string
   username: string | null

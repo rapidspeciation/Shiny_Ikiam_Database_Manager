@@ -198,17 +198,41 @@ export const SUM_FIELDS = {
     'NUMBER OF PUPAE/LARVAE FOR DISECTIONS',
   ]),
 };
-const SUM = /^=?\s*\d+(?:\s*[+-]\s*\d+)*\s*$/;
+/** A group of terms in parentheses (the box or plant part of a stage sits on): (6-2). */
+const GROUP = String.raw`\(\s*\d+(?:\s*[+-]\s*\d+)*\s*\)`;
+const SUM = new RegExp(String.raw`^=?\s*(?:\d+|${GROUP})(?:\s*(?:[+-]\s*\d+|\+\s*${GROUP}))*\s*$`);
 /**
  * "=12+15", "12 + 15", "27-5" (27 larvae, 5 died) or "=27" as the formula
- * "=12+15" / "=27-5" / "=27"; null when it is not a simple sum.
+ * "=12+15" / "=27-5" / "=27"; with groups, one parenthesized sub-sum each
+ * (box A, box B): "=(6-2)+(5+3)"; null when it is not a simple sum.
  */
 export function simpleSum(text) {
   if (typeof text !== 'string' || !SUM.test(text)) return null;
   const trimmed = text.trim();
   // A plain number stays a number; only a sum (or an explicit "=") becomes a formula.
-  if (!trimmed.startsWith('=') && !/[+-]/.test(trimmed)) return null;
+  if (!trimmed.startsWith('=') && !/[+\-(]/.test(trimmed)) return null;
   return '=' + trimmed.replace(/^=/, '').replace(/\s+/g, '');
+}
+/**
+ * A simple sum's groups, each its terms: "=(6-2)+(5+3)" → [[6, -2], [5, 3]];
+ * without parentheses one group ("=27-2" → [[27, -2]]); terms written outside
+ * parentheses between groups make a group of their own. Null when not a sum.
+ */
+export function sumGroups(text) {
+  const formula = typeof text === 'string' ? simpleSum(text) : null;
+  if (!formula) return null;
+  const groups = [];
+  let bare = null;
+  for (const m of formula.slice(1).matchAll(/\(([^)]*)\)|([+-]?\d+)/g)) {
+    if (m[1] !== undefined) {
+      bare = null;
+      groups.push(m[1].match(/[+-]?\d+/g).map(Number));
+    } else {
+      if (!bare) groups.push((bare = []));
+      bare.push(Number(m[2]));
+    }
+  }
+  return groups;
 }
 export const isSumField = (module, field) => !!SUM_FIELDS[module]?.has(field);
 

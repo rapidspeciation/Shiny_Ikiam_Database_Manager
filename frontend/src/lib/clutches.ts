@@ -1,4 +1,5 @@
 import { isBlank } from './cells'
+import { formulaOfGroups, groupsOf, type Groups } from './clutchGroups'
 import { simpleSum } from './sums'
 import type { CellValue, TableRow } from './types'
 
@@ -38,19 +39,24 @@ export const DATES = ['DATE LAID', 'HATCHING DATE', 'PUPA DATE', 'EMERGENCE DATE
  */
 export interface Count {
   terms: number[]
+  /** The terms by group: one parenthesized sub-sum per group (=(6-2)+(5+3) → [[6, −2], [5, 3]]); one group without parentheses. */
+  groups: Groups
   na: boolean
   text: string | null
 }
 export function readCount(value: CellValue | undefined): Count {
-  if (value === null || value === undefined) return { terms: [], na: false, text: null }
-  if (typeof value === 'number') return Number.isInteger(value) && value >= 0 ? { terms: [value], na: false, text: null } : { terms: [], na: false, text: String(value) }
+  const none = { terms: [], groups: [], na: false, text: null }
+  if (value === null || value === undefined) return none
+  if (typeof value === 'number')
+    return Number.isInteger(value) && value >= 0 ? { terms: [value], groups: [[value]], na: false, text: null } : { ...none, text: String(value) }
   const raw = String(value).trim()
-  if (!raw) return { terms: [], na: false, text: null }
-  if (/^(NA|N\/A)$/i.test(raw)) return { terms: [], na: true, text: null }
-  if (/^\d+$/.test(raw)) return { terms: [Number(raw)], na: false, text: null }
+  if (!raw) return none
+  if (/^(NA|N\/A)$/i.test(raw)) return { ...none, na: true }
+  if (/^\d+$/.test(raw)) return { terms: [Number(raw)], groups: [[Number(raw)]], na: false, text: null }
   const sum = simpleSum(raw)
-  if (!sum) return { terms: [], na: false, text: raw }
-  return { terms: (sum.slice(1).match(/[+-]?\d+/g) || []).map(Number), na: false, text: null }
+  const groups = sum ? groupsOf(sum) : null
+  if (!groups) return { ...none, text: raw }
+  return { terms: groups.flat(), groups, na: false, text: null }
 }
 export const totalOf = (terms: number[]) => terms.reduce((a, b) => a + b, 0)
 /** The sheet's formula for terms: [3, 5, -2] → "=3+5-2"; nothing for no terms. */
@@ -117,6 +123,8 @@ export const removeLast = (terms: number[]) => terms.slice(0, -1)
 
 /** The value a count cell gets for its terms: the team's formula, or empty. */
 export const countValue = (terms: number[]): CellValue => formulaOf(terms)
+/** The value a count cell gets for its groups: =(6-2)+(5+3), or the plain sum for one group. */
+export const groupsValue = (groups: Groups): CellValue => formulaOfGroups(groups)
 
 /**
  * A count's cell as the person sees it: an unsaved edit first, then the sheet's
@@ -433,7 +441,7 @@ function countText(v: DayChange['before']): string {
   if (isBlank(value)) return '—'
   const c = readCount(value)
   if (c.text) return c.text
-  const f = formulaOf(c.terms)
+  const f = formulaOfGroups(c.groups)
   return c.terms.length > 1 ? `${f} (${totalOf(c.terms)})` : (f ?? String(value))
 }
 /**
@@ -457,7 +465,7 @@ export function changeText(
       if (short.every((t, i) => t === long[i]) && short.length !== long.length) {
         const diff = termLabels(long).slice(short.length).map(l => (/^[+−]/.test(l) ? l : `+${l}`))
         const verb = a.terms.length < b.terms.length ? diff.join(' ') : `${removedWord} ${diff.join(' ')}`
-        return `${verb} (${totalOf(a.terms)} → ${totalOf(b.terms)}) · ${formulaOf(b.terms)}`
+        return `${verb} (${totalOf(a.terms)} → ${totalOf(b.terms)}) · ${formulaOfGroups(b.groups)}`
       }
     }
     return `${countText(c.before)} → ${countText(c.after)}`
@@ -504,14 +512,25 @@ export const REVIEW_ORDER: Record<ReviewState, number> = { verify: 0, none: 1, c
 
 // --- Events the paper cannot hold (only in the app): hatched, died, disappeared, preserved
 
-export type EventKind = 'laid' | 'hatched' | 'pupated' | 'emerged' | 'died' | 'disappeared' | 'preserved'
+export type EventKind = 'laid' | 'hatched' | 'pupated' | 'emerged' | 'died' | 'disappeared' | 'preserved' | 'not_hatched' | 'correction' | 'transfer'
 export type Loss = 'died' | 'disappeared' | 'preserved'
-/** What can happen to each stage (server/clutches.mjs EVENT_KINDS): its gain first, then the losses. */
+/**
+ * What can happen to each stage (server/clutches.mjs EVENT_KINDS): its gain
+ * first, then the losses, eggs that never hatched, a correction of the total
+ * and a transfer between groups.
+ */
 export const EVENT_KINDS: Record<Stage, EventKind[]> = {
-  egg: ['laid', 'died', 'disappeared', 'preserved'],
-  larva: ['hatched', 'died', 'disappeared', 'preserved'],
-  pupa: ['pupated', 'died', 'disappeared', 'preserved'],
-  adult: ['emerged'],
+  egg: ['laid', 'died', 'disappeared', 'preserved', 'not_hatched', 'correction', 'transfer'],
+  larva: ['hatched', 'died', 'disappeared', 'preserved', 'correction', 'transfer'],
+  pupa: ['pupated', 'died', 'disappeared', 'preserved', 'correction', 'transfer'],
+  adult: ['emerged', 'correction'],
+}
+/** The count each stage's events write their terms in. */
+export const STAGE_FIELD: Record<Stage, CountField> = {
+  egg: 'NUMBER OF EGGS',
+  larva: 'NUMBER OF LARVAE',
+  pupa: 'NUMBER OF PUPA',
+  adult: 'NUMBER OF ADULTS',
 }
 export const LOSSES: Loss[] = ['died', 'disappeared', 'preserved']
 /** The stage a count belongs to (none for the dissections). */
@@ -519,7 +538,7 @@ export const stageOfCount = (field: string): Stage | null => STAGES.find(s => s.
 /** The stage's gain: hatched for larvae, pupated for pupae… */
 export const gainOf = (stage: Stage): EventKind => EVENT_KINDS[stage][0]
 /** A stage whose losses can be told apart (eggs, larvae, pupae: adults leave the clutch for Insectary_data). */
-export const hasLosses = (stage: Stage | null): stage is Stage => !!stage && EVENT_KINDS[stage].length > 1
+export const hasLosses = (stage: Stage | null): stage is Stage => !!stage && stage !== 'adult'
 
 export interface ClutchEvent {
   id: string
@@ -532,6 +551,15 @@ export interface ClutchEvent {
   count: number
   ids: string[]
   note: string | null
+  /** The count its term is in, and the term (+27, −2, −1 corrected); none for preserved ones kept counted, eggs that did not hatch. */
+  field?: string | null
+  term?: number | null
+  /** The group it happened to (of its stage's count) and, hatched or pupated, the earlier stage's group it came from. */
+  groupId?: string | null
+  fromGroupId?: string | null
+  /** False when its day is not known (larvae found already big: the hatch day is NA). */
+  dayKnown?: boolean
+  stepId?: string | null
   actor: string
   username: string | null
   name: string | null
@@ -552,6 +580,8 @@ export interface StageTally {
   died: number
   disappeared: number
   preserved: number
+  /** Eggs that never hatched (not taken off the eggs laid). */
+  notHatched?: number
 }
 export type ClutchTallies = Partial<Record<Stage, StageTally>>
 
@@ -594,7 +624,22 @@ function asStage(lifestage: string, count: number): string {
  * ("… on 4/10/26"): the sheet keeps one date per stage, the notes the rest.
  */
 export function eventNote(
-  e: { stage: Stage; kind: EventKind; count: number; ids?: string[]; lifestage?: string; day?: number | null },
+  e: {
+    stage: Stage
+    kind: EventKind
+    count: number
+    ids?: string[]
+    lifestage?: string
+    day?: number | null
+    /** A correction: the term and the total counted. */
+    term?: number | null
+    total?: number
+    /** The day is not known (larvae found already big). */
+    dayKnown?: boolean
+    /** The group's name, when the count has groups ("group A"). */
+    group?: string | null
+    reason?: string | null
+  },
   today: number,
 ): string {
   const [one, many] = NOUN[e.stage]
@@ -618,11 +663,23 @@ export function eventNote(
       text = `${e.count} ${noun} preserved${as ? ` as ${as}` : ''}`
       break
     }
+    case 'not_hatched':
+      text = `${e.count} ${noun} left unhatched`
+      break
+    case 'correction':
+      text = `${many} counted again: ${e.total ?? '?'}${e.term ? ` (${e.term > 0 ? '+' : '−'}${Math.abs(e.term)})` : ''}`
+      break
+    case 'transfer':
+      text = `${e.count} ${noun} moved`
+      break
     default:
       text = `${e.count} ${noun} ${e.kind}`
   }
+  if (e.group) text += ` in group ${e.group}`
   if (e.ids?.length) text += ` (${e.ids.join(', ')})`
-  if (e.day !== undefined && e.day !== null && e.day !== today) text += ` on ${noteDay(e.day)}`
+  if (e.dayKnown === false) text += ' (hatch date unknown, found already big)'
+  else if (e.day !== undefined && e.day !== null && e.day !== today) text += ` on ${noteDay(e.day)}`
+  if (e.reason) text += `: ${e.reason}`
   return text
 }
 
@@ -651,15 +708,16 @@ export function expectedNow(
   counts: { eggs: Count; larvae: Count; pupae: Count; adults: Count },
   preserved: { egg?: number; larva?: number; pupa?: number },
   subtractPreserved: boolean,
+  notHatched = 0,
 ): Expected {
   const total = (c: Count) => (c.terms.length ? totalOf(c.terms) : null)
-  const left = (c: Count, next: Count, kept: number | undefined) => {
+  const left = (c: Count, next: Count, kept: number | undefined, gone = 0) => {
     const t = total(c)
     if (t === null) return null
-    return Math.max(0, t - gainsOf(next.terms) - (subtractPreserved ? 0 : (kept ?? 0)))
+    return Math.max(0, t - gainsOf(next.terms) - (subtractPreserved ? 0 : (kept ?? 0)) - gone)
   }
   return {
-    eggs: left(counts.eggs, counts.larvae, preserved.egg),
+    eggs: left(counts.eggs, counts.larvae, preserved.egg, notHatched),
     larvae: left(counts.larvae, counts.pupae, preserved.larva),
     pupae: left(counts.pupae, counts.adults, preserved.pupa),
   }
@@ -803,6 +861,7 @@ export function outlook(
     { eggs: count('NUMBER OF EGGS'), larvae: count('NUMBER OF LARVAE'), pupae: count('NUMBER OF PUPA'), adults: count('NUMBER OF ADULTS') },
     { egg: tallies?.egg?.preserved, larva: tallies?.larva?.preserved, pupa: tallies?.pupa?.preserved },
     subtractPreserved,
+    tallies?.egg?.notHatched ?? 0,
   )
   const predicted = predict({ laid: values('DATE LAID'), hatch: values('HATCHING DATE'), pupa: values('PUPA DATE') }, expected, durations, latest, today)
   // Eggs whose hatching is long gone (dried, never hatched) are not to count.
@@ -810,10 +869,12 @@ export function outlook(
   return { expected, predicted }
 }
 /** The latest day each stage grew, from a clutch's events (laid, hatched, pupated), as date serials. */
-export function latestGains(events: Pick<ClutchEvent, 'kind' | 'day'>[]): { laid: number | null; hatched: number | null; pupated: number | null } {
+export function latestGains(events: Pick<ClutchEvent, 'kind' | 'day' | 'dayKnown'>[]): { laid: number | null; hatched: number | null; pupated: number | null } {
   const out = { laid: null as number | null, hatched: null as number | null, pupated: null as number | null }
   for (const e of events) {
     if (e.kind !== 'laid' && e.kind !== 'hatched' && e.kind !== 'pupated') continue
+    // A hatch day not known (larvae found already big) says nothing of when.
+    if (e.dayKnown === false) continue
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(e.day)
     if (!m) continue
     const serial = Math.round((Date.UTC(+m[1], +m[2] - 1, +m[3]) - Date.UTC(1899, 11, 30)) / 86_400_000)
@@ -833,13 +894,14 @@ export function eggGroups(text: string): number[] | null {
 
 /** An event in short: "+4 hatched", "−2 preserved (M0E, N9E)". `word` names the kind in the person's language. */
 export function eventText(
-  e: Pick<ClutchEvent, 'kind' | 'count' | 'ids' | 'note' | 'stage'>,
+  e: Pick<ClutchEvent, 'kind' | 'count' | 'ids' | 'note' | 'stage'> & { term?: number | null },
   word: (e: Pick<ClutchEvent, 'kind' | 'stage' | 'count'>) => string,
 ): string {
-  const gain = EVENT_KINDS[e.stage]?.[0] === e.kind
+  const gain = EVENT_KINDS[e.stage]?.[0] === e.kind || ((e.kind === 'correction' || e.kind === 'transfer') && (e.term ?? 0) > 0)
   const ids = e.ids.length ? ` (${e.ids.join(', ')})` : ''
   const note = e.note ? ` · ${e.note}` : ''
-  return `${gain ? '+' : '−'}${e.count} ${word(e)}${ids}${note}`
+  const sign = e.kind === 'not_hatched' ? '' : gain ? '+' : '−'
+  return `${sign}${e.count} ${word(e)}${ids}${note}`
 }
 
 // --- The notebook's list: what the app changed since the notebook was brought up to date
@@ -891,38 +953,7 @@ export function notebookText(
   return lines.join('\n')
 }
 
-// --- A count's chips in the editor: struck out to take them from the sum, today's told apart, linked to their events
-
-/** The sum's terms: the chips not struck out (`struck`: indexes into `base`). */
-export const struckTerms = (base: number[], struck: number[]) => base.filter((_, i) => !struck.includes(i))
-
-/**
- * A chip tapped: struck out of the sum (it stays in place, crossed out), or put
- * back if it was. Refused when the sum would start with a loss or go below 0.
- */
-export function toggleStrike(
-  base: number[],
-  struck: number[],
-  index: number,
-): { ok: true; struck: number[]; terms: number[] } | { ok: false; reason: 'first' | 'negative' } {
-  if (index < 0 || index >= base.length) return { ok: true, struck, terms: struckTerms(base, struck) }
-  const next = struck.includes(index) ? struck.filter(i => i !== index) : [...struck, index].sort((a, b) => a - b)
-  const terms = struckTerms(base, next)
-  if (terms.length && terms[0] < 0) return { ok: false, reason: 'first' }
-  if (totalOf(terms) < 0) return { ok: false, reason: 'negative' }
-  return { ok: true, struck: next, terms }
-}
-
-/**
- * The chips once the count changed (a +N added, Undo, another person's edit):
- * the struck ones stay while the sum is still the same, or the same with terms
- * added after it; any other change starts the chips again from the new sum.
- */
-export function rebaseChips(base: number[], struck: number[], terms: number[]): { base: number[]; struck: number[] } {
-  const now = struckTerms(base, struck)
-  if (now.length <= terms.length && now.every((t, i) => t === terms[i])) return { base: [...base, ...terms.slice(now.length)], struck }
-  return { base: [...terms], struck: [] }
-}
+// --- How a count changed today
 
 /**
  * How a count changed today: the terms of this morning's sum still at its start
@@ -933,37 +964,4 @@ export function todaySplit(morning: number[], now: number[]): { kept: number; ad
   let kept = 0
   while (kept < morning.length && kept < now.length && morning[kept] === now[kept]) kept++
   return { kept, added: now.slice(kept), removed: morning.slice(kept) }
-}
-
-/**
- * The event behind each chip of a stage's count (its id, or null): a + is that
- * stage's gain of the same number (5 hatched for +5), a − a death or
- * disappearance (or preserved ones, when the team takes them off) of that many.
- * Matched from the newest chip and the newest event back, each event once; a
- * recount has none.
- */
-export function chipEvents(
-  terms: number[],
-  events: Pick<ClutchEvent, 'id' | 'kind' | 'count' | 'stage' | 'day' | 'createdAt'>[],
-  stage: Stage,
-  subtractPreserved: boolean,
-): (string | null)[] {
-  const signed = (e: (typeof events)[number]) =>
-    e.kind === gainOf(stage)
-      ? e.count
-      : e.kind === 'died' || e.kind === 'disappeared' || (e.kind === 'preserved' && subtractPreserved)
-        ? -e.count
-        : null
-  const pool = events
-    .filter(e => e.stage === stage && signed(e) !== null)
-    .sort((a, b) => b.day.localeCompare(a.day) || b.createdAt.localeCompare(a.createdAt))
-  const used = new Set<string>()
-  const out: (string | null)[] = terms.map(() => null)
-  for (let i = terms.length - 1; i >= 0; i--) {
-    const e = pool.find(x => !used.has(x.id) && signed(x) === terms[i])
-    if (!e) continue
-    used.add(e.id)
-    out[i] = e.id
-  }
-  return out
 }

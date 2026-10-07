@@ -55,6 +55,8 @@ export function initClutchPhotos(db) {
     CREATE INDEX IF NOT EXISTS clutch_photos_record ON clutch_photos(record_id, day);
     CREATE INDEX IF NOT EXISTS clutch_photos_day ON clutch_photos(day);
     CREATE TABLE IF NOT EXISTS clutch_photo_uploads(id TEXT PRIMARY KEY, actor TEXT NOT NULL, created_at TEXT NOT NULL);`);
+  // A photo of one group of the clutch (box A's larvae: server/clutches.mjs clutch_groups), older databases.
+  if (!new Set(db.prepare('PRAGMA table_info(clutch_photos)').all().map(c => c.name)).has('group_id')) db.exec('ALTER TABLE clutch_photos ADD COLUMN group_id TEXT');
 }
 
 // --- JPEG: size, EXIF turn, and the metadata segments taken out (no image library needed)
@@ -180,6 +182,7 @@ const shape = r => ({
   clutch: r.clutch,
   day: r.day,
   eventId: r.event_id ?? null,
+  groupId: r.group_id ?? null,
   note: r.note ?? null,
   actor: r.actor,
   username: r.username ?? null,
@@ -284,7 +287,8 @@ export function createClutchPhotos(store, { dir = null, python = 'python3' } = {
   /**
    * The upload complete: `thumbBytes` its first bytes are the thumbnail, the
    * rest the photo; stored for the clutch (`recordId`), its `day`, an event of
-   * that clutch (`eventId`) or none, and a caption (`note`).
+   * that clutch (`eventId`), one of its groups (`groupId`) or none (the clutch
+   * that day), and a caption (`note`).
    */
   async function finish(body, user) {
     const uploadId = String(body.requestId ?? '');
@@ -297,6 +301,7 @@ export function createClutchPhotos(store, { dir = null, python = 'python3' } = {
     const eventId = body.eventId ? String(body.eventId) : null;
     if (eventId && !db.prepare('SELECT 1 FROM clutch_events WHERE id = ? AND record_id = ?').get(eventId, record.id))
       throw fail('EVENT_NOT_FOUND', 'Event not found for this clutch', 404);
+    const groupId = groupOf(body.groupId, record.id);
     const note = cleanNote(body.note);
     const owner = db.prepare('SELECT actor FROM clutch_photo_uploads WHERE id = ?').get(uploadId);
     if (!owner) throw fail('UPLOAD_NOT_FOUND', 'Nothing has arrived for this photo', 404);
@@ -327,9 +332,9 @@ export function createClutchPhotos(store, { dir = null, python = 'python3' } = {
     const values = JSON.parse(record.values_json || '{}');
     const clutch = values['CLUTCH NUMBER'] === null || values['CLUTCH NUMBER'] === undefined ? null : String(values['CLUTCH NUMBER']).trim();
     db.prepare(
-      `INSERT INTO clutch_photos(id, request_id, record_id, clutch, day, event_id, note, actor, width, height, bytes, thumb_bytes, file, created_at)
-       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    ).run(id, uploadId, record.id, clutch, day, eventId, note, user.id, photo.width, photo.height, photo.clean.length, thumbData.length, file, new Date().toISOString());
+      `INSERT INTO clutch_photos(id, request_id, record_id, clutch, day, event_id, group_id, note, actor, width, height, bytes, thumb_bytes, file, created_at)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    ).run(id, uploadId, record.id, clutch, day, eventId, groupId, note, user.id, photo.width, photo.height, photo.clean.length, thumbData.length, file, new Date().toISOString());
     dropPart(uploadId);
     return { photo: shape(db.prepare(`${SELECT} WHERE p.id = ?`).get(id)), duplicate: false };
   }
@@ -352,6 +357,13 @@ export function createClutchPhotos(store, { dir = null, python = 'python3' } = {
     }
   }
 
+  /** A group of the clutch a photo shows, or none. */
+  const groupOf = (value, recordId) => {
+    if (!value) return null;
+    const g = db.prepare('SELECT id FROM clutch_groups WHERE id = ? AND record_id = ?').get(String(value), recordId);
+    if (!g) throw fail('GROUP_NOT_FOUND', 'Group not found for this clutch', 404);
+    return g.id;
+  };
   const mayChange = (row, user) => row.actor === user.id || ['reviewer', 'admin'].includes(user.role);
   /** What a photo shows, changed: the event it goes with (or none: the day) and its caption. */
   function update(id, body, user) {
@@ -364,8 +376,9 @@ export function createClutchPhotos(store, { dir = null, python = 'python3' } = {
       if (eventId && !db.prepare('SELECT 1 FROM clutch_events WHERE id = ? AND record_id = ?').get(eventId, row.record_id))
         throw fail('EVENT_NOT_FOUND', 'Event not found for this clutch', 404);
     }
+    const groupId = body.groupId !== undefined ? groupOf(body.groupId, row.record_id) : row.group_id;
     const note = body.note !== undefined ? cleanNote(body.note) : row.note;
-    db.prepare('UPDATE clutch_photos SET event_id = ?, note = ? WHERE id = ?').run(eventId, note, row.id);
+    db.prepare('UPDATE clutch_photos SET event_id = ?, group_id = ?, note = ? WHERE id = ?').run(eventId, groupId, note, row.id);
     return { photo: shape(db.prepare(`${SELECT} WHERE p.id = ?`).get(row.id)) };
   }
 

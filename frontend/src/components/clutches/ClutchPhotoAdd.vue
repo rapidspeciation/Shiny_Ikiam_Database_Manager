@@ -22,10 +22,17 @@ const props = defineProps<{
   events: ClutchEvent[]
   /** The event the camera button was next to. */
   eventId?: string | null
+  /** The clutch's groups (box A's larvae…), to link a photo to one. */
+  groups?: { id: string; name: string }[]
+  /** The group the camera button was for. */
+  groupId?: string | null
 }>()
 const emit = defineEmits<{ close: [] }>()
 const uploads = usePhotoUploads()
 const link = ref<string | null>(props.eventId ?? null)
+const group = ref<string | null>(props.eventId ? null : (props.groupId ?? null))
+const pickEvent = (id: string | null) => ((link.value = id), (group.value = null))
+const pickGroup = (id: string) => ((group.value = id), (link.value = null))
 const note = ref('')
 const camera = ref<HTMLInputElement>()
 const gallery = ref<HTMLInputElement>()
@@ -34,7 +41,7 @@ function chosen(e: Event) {
   const files = [...(input.files ?? [])].filter(f => f.type.startsWith('image/') || !f.type)
   input.value = ''
   if (!files.length) return
-  void uploads.add(files, { recordId: props.recordId, clutch: props.clutch, day: props.day, eventId: link.value, note: note.value.trim() || null })
+  void uploads.add(files, { recordId: props.recordId, clutch: props.clutch, day: props.day, eventId: link.value, groupId: group.value, note: note.value.trim() || null })
   emit('close')
 }
 const onKey = (e: KeyboardEvent) => e.key === 'Escape' && emit('close')
@@ -58,9 +65,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           type="button"
           role="radio"
           class="min-h-10 rounded-full border px-3 text-sm"
-          :class="link === null ? 'border-brand-700 bg-brand-50 font-medium text-brand-800' : 'border-stone-300 bg-white text-stone-700'"
-          :aria-checked="link === null"
-          @click="link = null"
+          :class="link === null && group === null ? 'border-brand-700 bg-brand-50 font-medium text-brand-800' : 'border-stone-300 bg-white text-stone-700'"
+          :aria-checked="link === null && group === null"
+          @click="pickEvent(null)"
         >
           {{ $t('El clutch ese día') }}
         </button>
@@ -72,9 +79,21 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           class="min-h-10 rounded-full border px-3 text-sm tabular-nums"
           :class="link === e.id ? 'border-brand-700 bg-brand-50 font-medium text-brand-800' : 'border-stone-300 bg-white text-stone-700'"
           :aria-checked="link === e.id"
-          @click="link = e.id"
+          @click="pickEvent(e.id)"
         >
           {{ eventLine(e) }}
+        </button>
+        <button
+          v-for="g in groups ?? []"
+          :key="g.id"
+          type="button"
+          role="radio"
+          class="min-h-10 rounded-full border px-3 text-sm"
+          :class="group === g.id ? 'border-brand-700 bg-brand-50 font-medium text-brand-800' : 'border-stone-300 bg-white text-stone-700'"
+          :aria-checked="group === g.id"
+          @click="pickGroup(g.id)"
+        >
+          {{ g.name }}
         </button>
       </div>
 

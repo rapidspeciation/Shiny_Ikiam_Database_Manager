@@ -44,14 +44,19 @@ import { extendPremadeRows } from './premade.mjs';
 import {
   addClutchCheck,
   addClutchEvent,
+  addClutchStep,
   clutchDay,
   clutchEvents,
   clutchState,
   notebookChanges,
   removeClutchCheck,
   removeClutchEvent,
+  renameClutchGroup,
+  setClutchNote,
   setClutchSettings,
   setNotebookUpTo,
+  undoClutchStep,
+  updateClutchEvent,
 } from './clutches.mjs';
 import {
   addMark,
@@ -774,6 +779,29 @@ export async function createApp(config = {}, options = {}) {
       if (method === 'DELETE' && /^\/api\/clutches\/events\/[^/]+$/.test(path)) {
         requireEditor(user);
         return json(res, 200, removeClutchEvent(store, decodePart(path.split('/')[4]), user));
+      }
+      if (method === 'PATCH' && /^\/api\/clutches\/events\/[^/]+$/.test(path)) {
+        requireEditor(user);
+        return json(res, 200, updateClutchEvent(store, decodePart(path.split('/')[4]), body, user));
+      }
+      // A step: one action's events, groups and history line at once (taken back as a whole); a group's label; the day's note.
+      if (method === 'POST' && path === '/api/clutches/steps') {
+        requireEditor(user);
+        requireId(body);
+        const saved = addClutchStep(store, body, user);
+        return json(res, saved.duplicate ? 200 : 201, { step: saved.step });
+      }
+      if (method === 'DELETE' && /^\/api\/clutches\/steps\/[^/]+$/.test(path)) {
+        requireEditor(user);
+        return json(res, 200, undoClutchStep(store, decodePart(path.split('/')[4]), user));
+      }
+      if (method === 'PATCH' && /^\/api\/clutches\/groups\/[^/]+$/.test(path)) {
+        requireEditor(user);
+        return json(res, 200, renameClutchGroup(store, decodePart(path.split('/')[4]), body));
+      }
+      if (method === 'PUT' && path === '/api/clutches/notes') {
+        requireEditor(user);
+        return json(res, 200, setClutchNote(store, body, user));
       }
       if (method === 'PUT' && path === '/api/clutches/settings') return json(res, 200, setClutchSettings(store, body, user));
       if (method === 'GET' && path === '/api/clutches/notebook') return json(res, 200, notebookChanges(store, query));
