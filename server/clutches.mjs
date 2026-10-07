@@ -55,6 +55,12 @@ export function initClutches(db) {
     ['from_group_id', 'TEXT'],
     ['day_known', 'INTEGER NOT NULL DEFAULT 1'],
     ['step_id', 'TEXT'],
+    // A term written before the app (in the sheet or the notebook) given its event when it first got a
+    // photo, a note or a loss (`adopted`); where the term sits in its group's parentheses (`term_at`, a
+    // hint to tell equal terms apart); the term a loss was taken from (`of_event_id`: −1 from the +27).
+    ['adopted', 'INTEGER NOT NULL DEFAULT 0'],
+    ['term_at', 'INTEGER'],
+    ['of_event_id', 'TEXT'],
   ])
     if (!eventColumns.has(column)) db.exec(`ALTER TABLE clutch_events ADD COLUMN ${column} ${type}`);
   initClutchGroups(db);
@@ -265,6 +271,9 @@ const shapeEvent = r => ({
   fromGroupId: r.from_group_id ?? null,
   dayKnown: r.day_known !== 0,
   stepId: r.step_id ?? null,
+  adopted: r.adopted === 1,
+  termAt: r.term_at ?? null,
+  ofEventId: r.of_event_id ?? null,
   actor: r.actor,
   username: r.username ?? null,
   name: r.name ?? null,
@@ -543,6 +552,11 @@ function checkedEvent(store, record, body) {
   if (ids.length > count) throw fail('INVALID_IDS', 'More Insectary IDs than the count');
   const term = body.term === undefined || body.term === null ? null : body.term;
   const both = body.kind === 'correction' || body.kind === 'transfer';
+  // A term written before the app, adopted: its event says only what the sign does (a gain of the
+  // stage, or a minus whose cause is not known: a correction); the formula already holds it.
+  const adopted = body.adopted === true;
+  if (adopted && (term === null || (term > 0 ? body.kind !== kinds[0] : body.kind !== 'correction')))
+    throw fail('INVALID_TERM', 'An adopted term is a gain of its stage, or a minus as a correction');
   if (term !== null) {
     if (!Number.isInteger(term)) throw fail('INVALID_TERM', 'Invalid term');
     const ok = body.kind === kinds[0] ? term === count : LOSS_KINDS.has(body.kind) ? term === -count : both ? Math.abs(term) === count : false;
@@ -566,7 +580,22 @@ function checkedEvent(store, record, body) {
     day: eventDay(body.day),
     dayKnown: body.dayKnown !== false,
     note: cleanNote(body.note),
+    adopted,
+    termAt: termAtOf(body.termAt),
+    ofEventId: ofEventOf(store, record, body.ofEventId, body.stage),
   };
+}
+const termAtOf = value => {
+  if (value === undefined || value === null) return null;
+  if (!Number.isInteger(value) || value < 0 || value > 999) throw fail('INVALID_TERM', 'Invalid term position');
+  return value;
+};
+/** The term of this clutch's stage a loss was taken from (its event). */
+function ofEventOf(store, record, value, stage) {
+  if (value === undefined || value === null || value === '') return null;
+  const e = store.db.prepare('SELECT id, stage, term FROM clutch_events WHERE id = ? AND record_id = ?').get(String(value), record.id);
+  if (!e || e.stage !== stage || e.term === null) throw fail('EVENT_NOT_FOUND', 'The term it was taken from is not of this clutch and stage', 404);
+  return e.id;
 }
 /** Stores one event (checked); its id. */
 function insertEvent(store, record, body, user, { requestId = null, stepId = null, stagedEntry = null } = {}) {
@@ -576,7 +605,7 @@ function insertEvent(store, record, body, user, { requestId = null, stepId = nul
   store.db
     .prepare(
       `INSERT INTO clutch_events(id,request_id,record_id,clutch,day,stage,kind,count,ids_json,note,actor,action_id,created_at,staged_entry,
-         field,term,group_id,from_group_id,day_known,step_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         field,term,group_id,from_group_id,day_known,step_id,adopted,term_at,of_event_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
       id,
@@ -599,6 +628,9 @@ function insertEvent(store, record, body, user, { requestId = null, stepId = nul
       e.fromGroupId,
       e.dayKnown ? 1 : 0,
       stepId,
+      e.adopted ? 1 : 0,
+      e.termAt,
+      e.ofEventId,
     );
   return id;
 }
@@ -609,8 +641,9 @@ export function removeClutchEvent(store, id, user) {
   if (!row) throw fail('EVENT_NOT_FOUND', 'Event not found', 404);
   if (row.actor !== user.id && !['reviewer', 'admin'].includes(user.role)) throw fail('FORBIDDEN', 'Only your own events', 403);
   store.db.prepare('DELETE FROM clutch_events WHERE id = ?').run(id);
-  // Its photos stay, as the day's.
+  // Its photos stay, as the day's; losses taken from it stay, no longer linked.
   store.db.prepare('UPDATE clutch_photos SET event_id = NULL WHERE event_id = ?').run(id);
+  store.db.prepare('UPDATE clutch_events SET of_event_id = NULL WHERE of_event_id = ?').run(id);
   return { removed: id };
 }
 
@@ -622,7 +655,7 @@ export function removeClutchEvent(store, id, user) {
 export function updateClutchEvent(store, id, body, user) {
   const row = store.db.prepare('SELECT * FROM clutch_events WHERE id = ?').get(String(id));
   if (!row) throw fail('EVENT_NOT_FOUND', 'Event not found', 404);
-  if (row.actor !== user.id && !['reviewer', 'admin'].includes(user.role)) throw fail('FORBIDDEN', 'Only your own events', 403);
+  if (!row.adopted && row.actor !== user.id && !['reviewer', 'admin'].includes(user.role)) throw fail('FORBIDDEN', 'Only your own events', 403);
   const record = stocksRecord(store, row.record_id);
   const kind = body.kind === undefined || body.kind === null ? row.kind : String(body.kind);
   if (kind !== row.kind && !(LOSS_KINDS.has(kind) && LOSS_KINDS.has(row.kind))) throw fail('INVALID_KIND', 'Only the cause of a loss can change');
@@ -1052,6 +1085,7 @@ export function undoClutchStep(store, id, user) {
     for (const eventId of data.events ?? []) {
       store.db.prepare('DELETE FROM clutch_events WHERE id = ?').run(eventId);
       store.db.prepare('UPDATE clutch_photos SET event_id = NULL WHERE event_id = ?').run(eventId);
+      store.db.prepare('UPDATE clutch_events SET of_event_id = NULL WHERE of_event_id = ?').run(eventId);
     }
     for (const eventId of data.adopted ?? []) store.db.prepare('UPDATE clutch_events SET group_id = NULL WHERE id = ?').run(eventId);
     for (const [field, before] of Object.entries(data.fields ?? {})) {

@@ -14,6 +14,7 @@ import {
   clutchEvents,
   ecuadorDay,
   notebookChanges,
+  removeClutchEvent,
   renameClutchGroup,
   setClutchNote,
   undoClutchStep,
@@ -219,4 +220,45 @@ test("photos of a group; the day's note (one per clutch and day, only in the app
   assert.equal(clutchEvents(store, { recordId: c }).notes[0].id, first.id);
   assert.deepEqual(setClutchNote(store, { recordId: c, text: '  ' }, ana), { note: null, removed: first.id });
   assert.equal(clutchDay(store).notes.length, 0);
+});
+
+test('a term written before the app gets its event when it is first given a photo, a note or a loss; a loss taken from it is linked', async () => {
+  const { store, id } = await fixture();
+  const c = id(11); // NUMBER OF LARVAE =27-2-11-3, written before the app
+  // The +27: hatched on the clutch's HATCHING DATE (the first + term); the −2: a minus whose cause is not known.
+  const adopted = step(store, {
+    recordId: c,
+    events: [{ stage: 'larva', kind: 'hatched', count: 27, term: 27, adopted: true, termAt: 0, day: '2026-09-25', note: 'big plant' }],
+  }).events[0];
+  assert.deepEqual([adopted.adopted, adopted.termAt, adopted.day, adopted.dayKnown, adopted.note], [true, 0, '2026-09-25', true, 'big plant']);
+  const minus = step(store, { recordId: c, events: [{ stage: 'larva', kind: 'correction', count: 2, term: -2, adopted: true, termAt: 1, dayKnown: false }] }).events[0];
+  assert.deepEqual([minus.kind, minus.dayKnown], ['correction', false]);
+  // Refused: an adopted term that is not the stage's gain (+) or a correction (−).
+  assert.throws(() => step(store, { recordId: c, events: [{ stage: 'larva', kind: 'died', count: 2, term: -2, adopted: true }] }), { code: 'INVALID_TERM' });
+  assert.throws(() => step(store, { recordId: c, events: [{ stage: 'larva', kind: 'hatched', count: 27, adopted: true }] }), { code: 'INVALID_TERM' });
+  // Anyone can describe a term of the sheet (Bob gives it a note), unlike someone's own event.
+  assert.equal(updateClutchEvent(store, adopted.id, { note: 'plant 1' }, bob).event.note, 'plant 1');
+  // «− De este número»: 1 died of the 27 (the −1 at the end of the plain sum, =27-2-11-3-1), linked to it.
+  const loss = step(store, { recordId: c, events: [{ stage: 'larva', kind: 'died', count: 1, term: -1, termAt: 4, ofEventId: adopted.id }] }).events[0];
+  assert.deepEqual([loss.ofEventId, loss.termAt, loss.term], [adopted.id, 4, -1]);
+  // Refused: a term of another clutch or another stage; one without a term.
+  const other = step(store, { recordId: id(10), events: [{ stage: 'egg', kind: 'laid', count: 10, term: 10, adopted: true, termAt: 0 }] }).events[0];
+  assert.throws(() => step(store, { recordId: c, events: [{ stage: 'larva', kind: 'died', count: 1, term: -1, ofEventId: other.id }] }), { code: 'EVENT_NOT_FOUND' });
+  const kept = step(store, { recordId: c, events: [{ stage: 'larva', kind: 'preserved', count: 1, term: null, ofEventId: adopted.id }] }).events[0];
+  assert.throws(() => step(store, { recordId: c, events: [{ stage: 'larva', kind: 'died', count: 1, term: -1, ofEventId: kept.id }] }), { code: 'EVENT_NOT_FOUND' });
+  // Photos on the adopted term, several.
+  const photos = createClutchPhotos(store);
+  for (const p of ['p1', 'p2'])
+    store.db
+      .prepare(
+        "INSERT INTO clutch_photos(id, request_id, record_id, clutch, day, actor, width, height, bytes, thumb_bytes, file, created_at) VALUES(?,?,?,'1021',?,?,10,10,1,1,'x','2026-10-06')",
+      )
+      .run(p, `r-${p}`, c, ecuadorDay(), ana.id);
+  for (const p of ['p1', 'p2']) assert.equal(photos.update(p, { eventId: adopted.id }, ana).photo.eventId, adopted.id);
+  assert.equal(clutchEvents(store, { recordId: c }).photos.filter(p => p.eventId === adopted.id).length, 2);
+  // The adopted term taken out of the sum: its photos stay the day's, its losses stay, unlinked.
+  removeClutchEvent(store, adopted.id, ana);
+  const after = clutchEvents(store, { recordId: c });
+  assert.ok(after.photos.every(p => p.eventId === null));
+  assert.equal(after.events.find(e => e.id === loss.id).ofEventId, null);
 });

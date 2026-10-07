@@ -170,15 +170,19 @@ const chips = computed(() => {
       const e = id ? (byId.value.get(id) ?? null) : null
       const sign = term < 0 ? `−${-term}` : `+${term}`
       const what =
-        !e || e.kind === 'hatched' || e.kind === 'laid' || e.kind === 'pupated' || e.kind === 'emerged'
+        !e || e.kind === 'hatched' || e.kind === 'laid' || e.kind === 'pupated' || e.kind === 'emerged' || e.adopted
           ? ''
           : e.kind === 'transfer'
             ? `${term < 0 ? '→' : '←'} ${otherGroup(e.fromGroupId) ?? (term < 0 ? t('a otro grupo') : t('de otro grupo'))}`
             : kindWord(e.kind)
       const when = e && e.kind !== 'transfer' ? (e.dayKnown === false ? t('fecha NA') : shortDay(e.day)) : ''
-      const isToday = e ? e.day === today && e.kind !== 'transfer' : flat >= firstToday.value
+      const isToday = e ? e.day === today && e.kind !== 'transfer' && !e.adopted : flat >= firstToday.value
       flat++
-      return { g, i, term, e, label: [sign, what].filter(Boolean).join(' '), when, photos: e ? photosOf(p => p.eventId === e.id) : 0, isToday }
+      // Losses taken from this term (−1 of the +27), and the term a loss was taken from.
+      const taken = e ? (props.events ?? []).filter(x => x.ofEventId === e.id).reduce((n, x) => n + x.count, 0) : 0
+      const from = e?.ofEventId ? byId.value.get(e.ofEventId) : null
+      const of = from && from.term ? `${t('de')} +${from.term}` : ''
+      return { g, i, term, e, label: [sign, what, of].filter(Boolean).join(' '), when, taken, photos: e ? photosOf(p => p.eventId === e.id) : 0, isToday }
     }),
   )
 })
@@ -472,7 +476,7 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
             :class="[c.isToday ? 'bg-amber-100 ring-1 ring-amber-300' : c.term < 0 ? 'bg-red-50' : 'bg-stone-50', c.term < 0 ? 'text-red-800' : 'text-stone-800']"
             @click="emit('open', { group: c.g, index: c.i, term: c.term, event: c.e })"
           >
-            {{ c.label }}<span v-if="c.when" class="text-xs font-normal opacity-75">· {{ c.when }}</span>
+            {{ c.label }}<span v-if="c.taken" class="text-xs text-red-800">(−{{ c.taken }})</span><span v-if="c.when" class="text-xs font-normal opacity-75">· {{ c.when }}</span>
             <span v-if="c.photos" class="flex items-center text-xs text-brand-800"><Camera :size="12" />{{ c.photos }}</span>
           </button>
         </div>
@@ -485,7 +489,7 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
             :class="[c.isToday ? 'bg-amber-100 ring-1 ring-amber-300' : c.term < 0 ? 'bg-red-50' : 'bg-stone-100', c.term < 0 ? 'text-red-800' : 'text-stone-800']"
             @click="emit('open', { group: c.g, index: c.i, term: c.term, event: c.e })"
           >
-            {{ c.label }}<span v-if="c.when" class="text-xs font-normal opacity-75">· {{ c.when }}</span>
+            {{ c.label }}<span v-if="c.taken" class="text-xs text-red-800">(−{{ c.taken }})</span><span v-if="c.when" class="text-xs font-normal opacity-75">· {{ c.when }}</span>
             <span v-if="c.photos" class="flex items-center text-xs text-brand-800"><Camera :size="12" />{{ c.photos }}</span>
           </button>
         </template>
