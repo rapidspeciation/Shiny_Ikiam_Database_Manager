@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
+import { signIn } from './helpers/assistant.mjs';
 import { createAssistant } from '../server/assistant.mjs';
 import { KINDS, NOT_PRESERVED, columnsOf as columnsOfKind, reviewColumns } from '../server/notebook.mjs';
 import { DEFAULT_COLUMNS, HIDDEN_COLUMNS, NOTEBOOK_COLUMNS, isHiddenColumn, isNotWritten } from '../server/proposal-columns.mjs';
@@ -74,32 +74,13 @@ test('a proposal changing one column sends the columns to show, and the sheet va
   try {
     await store.sync({ sheets: ['Insectary_data'] });
     const assistant = createAssistant({ store, config: {} });
-    store.db
-      .prepare(
-        "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u1','franz','Franz','editor','s','h',1,'2026-01-01')",
-      )
-      .run();
-    store.db
-      .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
-      .run(createHash('sha256').update('franz-token').digest('hex'), 'u1');
+    const { result, user } = signIn(store, assistant);
     const at = row => store.getRecordBySheetRow('Insectary_data', row).id;
-    const out = await assistant.mcp(
-      { authorization: 'Bearer franz-token' },
-      {
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'tools/call',
-        params: {
-          name: 'propose_changes',
-          arguments: {
-            reason: 'Sexo no anotado',
-            changes: [2, 3].map(row => ({ recordId: at(row), values: { Sex: 'NOT_COLLECTED' } })),
-          },
-        },
-      },
-    );
-    assert.ok(!out.body.result.isError, out.body.result.content[0].text);
-    const user = { id: 'u1', username: 'franz', displayName: 'Franz', role: 'editor' };
+    const out = await result('propose_changes', {
+      reason: 'Sexo no anotado',
+      changes: [2, 3].map(row => ({ recordId: at(row), values: { Sex: 'NOT_COLLECTED' } })),
+    });
+    assert.ok(!out.isError, out.content[0].text);
     const list = async () =>
       (await assistant.handle({ method: 'GET', path: '/api/chat/proposals', body: {}, user, query: { all: '1' } })).body.proposals[0];
     const pending = await list();
@@ -133,19 +114,7 @@ test("the assistant's view: its columns first, or only them (and the changed one
   try {
     await store.sync({ sheets: ['Insectary_data'] });
     const assistant = createAssistant({ store, config: {} });
-    store.db
-      .prepare(
-        "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u1','franz','Franz','editor','s','h',1,'2026-01-01')",
-      )
-      .run();
-    store.db
-      .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
-      .run(createHash('sha256').update('franz-token').digest('hex'), 'u1');
-    const call = async (name, args) =>
-      JSON.parse(
-        (await assistant.mcp({ authorization: 'Bearer franz-token' }, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }))
-          .body.result.content[0].text,
-      );
+    const { call } = signIn(store, assistant);
     const user = { id: 'u1', username: 'franz', displayName: 'Franz', role: 'editor' };
     const shownOf = async id => {
       const { hidden, ...shown } = (
@@ -205,19 +174,7 @@ test('a Collection_data proposal: its columns up to its notes, the ones after hi
   try {
     await store.sync({ sheets: ['Collection_data', 'Insectary_data'] });
     const assistant = createAssistant({ store, config: {} });
-    store.db
-      .prepare(
-        "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u1','franz','Franz','editor','s','h',1,'2026-01-01')",
-      )
-      .run();
-    store.db
-      .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
-      .run(createHash('sha256').update('franz-token').digest('hex'), 'u1');
-    const call = async (name, args) =>
-      JSON.parse(
-        (await assistant.mcp({ authorization: 'Bearer franz-token' }, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }))
-          .body.result.content[0].text,
-      );
+    const { call } = signIn(store, assistant);
     const user = { id: 'u1', username: 'franz', displayName: 'Franz', role: 'editor' };
     const cam = store.getRecordBySheetRow('Collection_data', 2).id;
     const k2b = store.getRecordBySheetRow('Insectary_data', 2).id;

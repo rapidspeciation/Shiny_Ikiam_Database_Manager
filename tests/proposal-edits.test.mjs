@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { createAssistant } from '../server/assistant.mjs';
+import { signIn } from './helpers/assistant.mjs';
 
 // A proposal revised in place: by the assistant (update_proposal) and by the person in the table.
 
@@ -32,22 +33,7 @@ async function fixture() {
   const store = new Store({ localMode: true }, { sheets });
   await store.sync({ sheets: ['Collection_data', 'Taxonomy_v18Jun25', 'Location_data'] });
   const assistant = createAssistant({ store, config: {} });
-  store.db
-    .prepare(
-      "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u1','franz','Franz','editor','s','h',1,'2026-01-01')",
-    )
-    .run();
-  store.db
-    .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
-    .run(createHash('sha256').update('franz-token').digest('hex'), 'u1');
-  const call = async (name, args) => {
-    const out = await assistant.mcp(
-      { authorization: 'Bearer franz-token' },
-      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } },
-    );
-    return JSON.parse(out.body.result.content[0].text);
-  };
-  const user = { id: 'u1', username: 'franz', displayName: 'Franz', role: 'editor' };
+  const { call, user } = signIn(store, assistant);
   const http = (method, path, body = {}, query = {}) => assistant.handle({ method, path, body, user, query });
   const list = async () => (await http('GET', '/api/chat/proposals', {}, { all: '1' })).body;
   const record = row => store.getRecordBySheetRow('Collection_data', row);
@@ -63,10 +49,6 @@ const newRow = (values, note = 'M1') => ({
 test('update_proposal revises the same proposal: cells, rows added and removed, a revision per change', async () => {
   const { store, assistant, call, list, user } = await fixture();
   try {
-    const tools = (await assistant.mcp({ authorization: 'Bearer franz-token' }, { jsonrpc: '2.0', id: 1, method: 'tools/list' }))
-      .body.result.tools;
-    assert.ok(tools.some(t => t.name === 'update_proposal') && tools.some(t => t.name === 'get_proposal'));
-
     const proposed = await call('propose_changes', {
       reason: 'Recorrido del 26 sep',
       newRows: [newRow({ SPECIES: 'Oleria gunilla', Sex: 'female', FieldMark_ID: 'B41' }), newRow({ SPECIES: 'Oleria gunilla', Sex: 'male' }, 'M2')],

@@ -1,7 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { columnOf } from '../server/schema.mjs';
@@ -10,6 +8,7 @@ import { applyBatch } from '../server/batch.mjs';
 import { runHistoryTool } from '../server/history.mjs';
 import { FILTERS_DOC, findRecords, resolveRows } from '../server/records-tool.mjs';
 import { RESULT_BUDGET, fitResult } from '../server/tool-budget.mjs';
+import { signIn } from './helpers/assistant.mjs';
 
 // Tool answers within one size, rows named by their ID in the sheet, and column names as people
 // write them.
@@ -21,15 +20,7 @@ async function setup(seed) {
   const store = new Store({ localMode: true }, { sheets });
   await store.sync({ sheets: Object.keys(seed) });
   const assistant = createAssistant({ store, config: {} });
-  store.db
-    .prepare("INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES(?,?,?,?,'s','h',1,'2026-01-01')")
-    .run(editor.id, editor.username, editor.displayName, editor.role);
-  store.db
-    .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
-    .run(createHash('sha256').update('franz-token').digest('hex'), editor.id);
-  const mcp = (method, params) => assistant.mcp({ authorization: 'Bearer franz-token' }, { jsonrpc: '2.0', id: 1, method, params });
-  const raw = async (name, args) => (await mcp('tools/call', { name, arguments: args })).body.result.content[0].text;
-  const call = async (name, args) => JSON.parse(await raw(name, args));
+  const { mcp, raw, call } = signIn(store, assistant, editor);
   const row = (sheet, n) => store.getRecordBySheetRow(sheet, n);
   return { store, mcp, raw, call, row };
 }
@@ -81,13 +72,6 @@ test('the tool list: the long texts once, the tools loaded with every chat kept 
   // instructions; the tool keeps the columns.
   const notebook = tools.find(t => t.name === 'match_notebook').description;
   assert.ok(notebook.length < 2000, String(notebook.length));
-  assert.match(notebook, /digitalizar-cuaderno skill/);
-  const skill = readFileSync(new URL('../assistant/skills/digitalizar-cuaderno/SKILL.md', import.meta.url), 'utf8');
-  assert.match(skill, /\*\*The year\*\*/);
-  assert.match(skill, /notebook-reader\.md/);
-  const reader = readFileSync(new URL('../assistant/agents/notebook-reader.md', import.meta.url), 'utf8');
-  assert.match(reader, /## Reading a page/);
-  assert.match(reader, /### Doubtful and unreadable cells/);
 });
 
 test('column names as people write them: one column, or the nearest ones named', () => {

@@ -4,11 +4,11 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { createAssistant } from '../server/assistant.mjs';
 import { applySlip, sameErrorRows, typingSlip } from '../server/notebook.mjs';
+import { signIn } from './helpers/assistant.mjs';
 
 test('typingSlip names one slip between the sheet and the page, and applySlip repeats it', () => {
   assert.deepEqual(typingSlip('FS5848994', 'FS50848994'), { kind: 'missing', at: 3, char: '0', anchor: 'FS5', length: 9 });
@@ -141,16 +141,7 @@ test('match_notebook adds the rows around the page with the same slip to its pro
   const store = new Store({ localMode: true }, { sheets: new LocalSheets({ Insectary_data: rows }) });
   await store.sync({ sheets: ['Insectary_data'] });
   const assistant = createAssistant({ store, config: {} });
-  store.db
-    .prepare("INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u-franz','franz','Franz Chandi','editor','s','h',1,'2026-01-01')")
-    .run();
-  store.db.prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')").run(createHash('sha256').update('tok').digest('hex'), 'u-franz');
-  const call = async (name, args) =>
-    JSON.parse(
-      (await assistant.mcp({ authorization: 'Bearer tok' }, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } })).body.result
-        .content[0].text,
-    );
-  const user = { id: 'u-franz', username: 'franz', displayName: 'Franz Chandi', role: 'editor' };
+  const { call, get } = signIn(store, assistant, { id: 'u-franz', displayName: 'Franz Chandi' });
   const page = {
     kind: 'emergence',
     year: 2026,
@@ -168,7 +159,7 @@ test('match_notebook adds the rows around the page with the same slip to its pro
     );
     assert.match(out.sameErrorNearby[0].reason, /Mismo error que la línea 1 de la página \(FS5848967 → FS50848967: falta un 0\)/);
 
-    const proposal = (await assistant.handle({ method: 'GET', path: '/api/chat/proposals', body: {}, user, query: {} })).body.proposals[0];
+    const proposal = (await get('/api/chat/proposals')).body.proposals[0];
     assert.equal(proposal.id, out.proposalId);
     const nearby = proposal.changes.filter(c => c.sameErrorAs);
     assert.deepEqual(

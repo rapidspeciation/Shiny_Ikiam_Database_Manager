@@ -4,11 +4,12 @@
 // with the other sheet's rows (those written can no longer be edited) until they are applied too.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { moduleMap } from '../server/schema.mjs';
 import { createAssistant } from '../server/assistant.mjs';
+import { signIn } from './helpers/assistant.mjs';
 
 const col = (sheet, key) => moduleMap.get(sheet).fields.find(f => f.key === key).column;
 const SENT = 'Collected_Sent2Insectary';
@@ -33,28 +34,13 @@ async function fixture() {
   const store = new Store({ localMode: true }, { sheets });
   await store.sync({ sheets: ['Collection_data', 'Insectary_data'] });
   const assistant = createAssistant({ store, config: {} });
-  store.db
-    .prepare("INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u-ana','ana','Ana','editor','s','h',1,'2026-01-01')")
-    .run();
-  store.db
-    .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,'u-ana','t3','2026-01-01')")
-    .run(createHash('sha256').update('ana-token').digest('hex'));
-  const call = async (name, args) =>
-    JSON.parse(
-      (
-        await assistant.mcp(
-          { authorization: 'Bearer ana-token' },
-          { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } },
-        )
-      ).body.result.content[0].text,
-    );
-  const ana = { id: 'u-ana', username: 'ana', displayName: 'Ana', role: 'editor' };
+  const { call, user: ana } = signIn(store, assistant, { id: 'u-ana', username: 'ana', displayName: 'Ana' });
   const listed = async id =>
     (await assistant.handle({ method: 'GET', path: '/api/chat/proposals', user: ana, query: { all: '1', only: id } })).body.proposals[0];
   const post = (path, body) => assistant.handle({ method: 'POST', path, user: ana, body });
   const cell = (sheet, row, key) => sheets.cell(sheet, row, col(sheet, key))?.userEnteredValue;
   const saves = () => store.db.prepare("SELECT count(*) AS n FROM actions WHERE status != 'failed'").get().n;
-  return { store, call, listed, post, cell, saves };
+  return { store, assistant, call, listed, post, cell, saves };
 }
 
 /** The page's two Insectary_data rows and a new Collection_data row for a wild-caught butterfly. */
@@ -193,4 +179,24 @@ test('one sheet refused as a whole stays to apply; a partly written one compared
   } finally {
     store.close();
   }
+});
+
+test('someone else on the team finishes a handed-over chat: applies its proposal as themselves', async () => {
+  const { store, assistant, call } = await fixture();
+  const a0 = store.getRecordBySheetRow('Insectary_data', 2);
+  const { proposalId } = await call('propose_changes', {
+    reason: 'Página 12',
+    changes: [{ recordId: a0.id, values: { Notes_Insectary_data: 'ala rota' } }],
+  });
+  const luis = { id: 'u-luis', username: 'luis', displayName: 'Luis', role: 'editor' };
+  const as = who => body => assistant.handle({ method: 'POST', path: `/api/chat/proposals/${proposalId}/apply`, body, user: who });
+  // Someone who only looks can't.
+  assert.equal((await as({ ...luis, role: 'observer' })({ requestId: 'apply-observer-1' })).status, 404);
+  const out = await as(luis)({ requestId: 'apply-luis-12345' });
+  assert.equal(out.status, 200, JSON.stringify(out.body));
+  // The note was written by the assistant for Ana (Ana's chat); the save is Luis's.
+  assert.match(store.getRecord(a0.id).values.Notes_Insectary_data, /^\d+\/\d+\/\d+ A: ala rota$/);
+  const actors = store.db.prepare("SELECT DISTINCT actor FROM actions WHERE request_id LIKE '%apply-luis-12345%'").all();
+  assert.deepEqual(actors.map(a => a.actor), ['u-luis']);
+  store.close();
 });

@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
+import { signIn } from './helpers/assistant.mjs';
 import { createAssistant } from '../server/assistant.mjs';
 import { FIND_BUDGET, findRecords } from '../server/records-tool.mjs';
 import { noteText } from '../server/notebook.mjs';
@@ -32,21 +32,7 @@ async function setup(seed = { Insectary_data: LARVAE }) {
   const store = new Store({ localMode: true }, { sheets });
   await store.sync({ sheets: Object.keys(seed) });
   const assistant = createAssistant({ store, config: {} });
-  store.db
-    .prepare(
-      "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u-franz','franz','Franz Chandi','editor','s','h',1,'2026-01-01')",
-    )
-    .run();
-  store.db
-    .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
-    .run(createHash('sha256').update('franz-token').digest('hex'), 'u-franz');
-  const call = async (name, args) => {
-    const out = await assistant.mcp(
-      { authorization: 'Bearer franz-token' },
-      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } },
-    );
-    return JSON.parse(out.body.result.content[0].text);
-  };
+  const { call } = signIn(store, assistant, { id: 'u-franz', displayName: 'Franz Chandi' });
   const row = n => store.getRecordBySheetRow('Insectary_data', n);
   const saved = id => {
     const p = store.db.prepare('SELECT * FROM ai_proposals WHERE id = ?').get(id);

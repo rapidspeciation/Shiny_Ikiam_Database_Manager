@@ -22,7 +22,7 @@ async function fixture() {
   return { store, sheets, at: row => store.getRecordBySheetRow('Insectary_data', row) };
 }
 
-test('a partial save writes every change except the one that conflicts, and says why in Spanish', async () => {
+test('a partial save writes every change except the one that conflicts, and says why', async () => {
   const { store, at } = await fixture();
   const n3 = at(3),
     n4 = at(4);
@@ -49,7 +49,11 @@ test('a partial save writes every change except the one that conflicts, and says
   assert.equal(result.skipped[0].code, 'DUPLICATE_ID');
   assert.equal(result.skipped[0].field, 'CAM_ID');
   assert.equal(result.skipped[0].id, n3.id);
-  assert.equal(result.skipped[0].message, 'CAM078274 ya está usado en Insectary_data fila 2 (N2D)');
+  // Why, in the app's language: where the CAM is used.
+  assert.deepEqual(result.skipped[0].messageMsg, {
+    key: '{value} ya está usado en {sheet} fila {row} ({label})',
+    vars: { value: 'CAM078274', sheet: 'Insectary_data', row: 2, label: 'N2D' },
+  });
   // Retrying the same request (an unclear answer) reports the same cells left out.
   assert.deepEqual((await applyBatch(store, body, user)).skipped, result.skipped);
   store.close();

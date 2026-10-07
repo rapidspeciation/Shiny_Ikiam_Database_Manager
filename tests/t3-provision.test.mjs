@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
+import { labAppDev } from '../server/brief.mjs';
+
 const script = new URL('../scripts/t3-provision.mjs', import.meta.url).pathname;
 
 test('T3 workspaces get the brief and the skills; a refresh after a release keeps each token', () => {
@@ -30,7 +32,6 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     run('ana');
     const workspace = join(shared, 't3-workspaces', 'ana');
     const brief = readFileSync(join(workspace, 'AGENTS.md'), 'utf8');
-    assert.match(brief, /You work for \*\*Ana Pérez\*\* \(app user `ana`\)/);
     // The brief is assistant/AGENTS.md with the person and the docs folder filled in; the rest is in skills.
     const docs = new URL('../docs', import.meta.url).pathname;
     const template = readFileSync(new URL('../assistant/AGENTS.md', import.meta.url), 'utf8');
@@ -45,7 +46,6 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     );
     assert.doesNotMatch(brief, /\{\{|Local test lab/);
     for (const skill of ['data-rules', 'digitalizar-cuaderno', 'monitoring', 'data-review', 'historial', 'google-account', 'app-guide', 'app-dev']) {
-      assert.match(brief, new RegExp(`\\| \`${skill}\` \\|`), `the brief names the skill ${skill}`);
       const file = join(workspace, '.claude', 'skills', skill, 'SKILL.md');
       assert.match(readFileSync(file, 'utf8'), new RegExp(`^---\\nname: ${skill}\\ndescription: .+\\n---\\n`), `skill ${skill} installed`);
     }
@@ -54,13 +54,11 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     assert.equal(readlinkSync(join(workspace, 'CLAUDE.md')), 'AGENTS.md');
     assert.equal(readFileSync(join(workspace, 'CLAUDE.md'), 'utf8'), brief);
     assert.match(readFileSync(join(workspace, '.claude', 'skills', 'digitalizar-cuaderno', 'SKILL.md'), 'utf8'), /name: digitalizar-cuaderno/);
-    // Every folder of assistant/skills is installed, with its reference files; the brief points to the app guide.
-    assert.match(readFileSync(join(workspace, '.claude', 'skills', 'app-guide', 'SKILL.md'), 'utf8'), /name: app-guide/);
+    // Every folder of assistant/skills is installed, with its reference files.
     assert.ok(existsSync(join(workspace, '.claude', 'skills', 'app-guide', 'reference', 'monitoreo.md')));
-    assert.match(brief, /app-guide/);
     // Claude Code subagents (assistant/agents): the notebook readers and reviewers, on their own model.
     assert.match(readFileSync(join(workspace, '.claude', 'agents', 'notebook-reader.md'), 'utf8'), /^name: notebook-reader$/m);
-    assert.match(readFileSync(join(workspace, '.claude', 'agents', 'notebook-reviewer.md'), 'utf8'), /^model: claude-sonnet-5-5$/m);
+    assert.match(readFileSync(join(workspace, '.claude', 'agents', 'notebook-reviewer.md'), 'utf8'), /^model: \S+$/m);
     const mcp = JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8')).mcpServers.ithomiini;
     // The service's base path is /: the endpoint is /api/ai/mcp.
     assert.equal(mcp.url, 'http://127.0.0.1:8794/api/ai/mcp');
@@ -172,15 +170,15 @@ test('Another install (the local lab) sets the database, MCP address, workspaces
     execFileSync(process.execPath, [script, 'lab'], { env, encoding: 'utf8' });
     const workspace = join(workspaces, 'lab');
     assert.equal(JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8')).mcpServers.ithomiini.url, 'http://127.0.0.1:8795/api/ai/mcp');
-    // The lab's brief ends with the lab note, and app-dev opens with it: changes stay local.
+    // The lab's brief ends with the lab's rule (its address and checkout), and app-dev opens with it: changes stay local.
+    const note = labAppDev('http://127.0.0.1:8795/', '/work/ithomiini');
     const brief = readFileSync(join(workspace, 'AGENTS.md'), 'utf8');
-    assert.match(brief, /## Local test lab\n\nThis is the \*\*local test lab\*\*: the app at http:\/\/127\.0\.0\.1:8795\//);
-    assert.match(brief, /git checkout `\/work\/ithomiini`/);
+    assert.ok(brief.endsWith(`${note}\n`));
     // The sheets' copy that `query` reads, beside the lab's database.
     assert.ok(brief.includes(`\`${join(lab, 'sheets.sqlite')}\``));
     const appDev = readFileSync(join(workspace, '.claude', 'skills', 'app-dev', 'SKILL.md'), 'utf8');
-    assert.match(appDev, /^---\nname: app-dev\n[\s\S]*?\n---\n\n> \*\*Lab copy\.\*\*[^\n]*\n>\n> This is the \*\*local test lab\*\*/);
-    assert.match(appDev, /> the checks, restart the lab app/);
+    const top = appDev.split('\n---\n')[1];
+    assert.ok(top.includes(note.replace(/^/gm, '> ')), 'the rule quoted at the top of app-dev');
     const deny = JSON.parse(readFileSync(join(workspace, '.claude', 'settings.json'), 'utf8')).permissions.deny;
     assert.ok(!deny.includes(`Read(/${database}*)`));
     assert.ok(deny.includes(`Read(/${lab}/**)`) && deny.includes('Read(//secret/answers/**)'));

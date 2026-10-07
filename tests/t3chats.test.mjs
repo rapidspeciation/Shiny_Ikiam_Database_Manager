@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { appendFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store } from '../server/store.mjs';
@@ -66,7 +66,7 @@ function t3Home() {
   return { home, db, call, screen, remove };
 }
 
-async function fixture({ withT3 = true } = {}) {
+async function fixture({ withT3 = true, config = {} } = {}) {
   const sheets = new LocalSheets({
     Collection_data: [{ row: 2, values: { Purpose: 'Monitoring', SPECIES: 'Oleria gunilla', Sex: 'male', CAM_ID: 'CAM000001' } }],
     Taxonomy_v18Jun25: [{ row: 2, values: { species: 'Oleria gunilla', tribe: 'Ithomiini' } }],
@@ -79,8 +79,8 @@ async function fixture({ withT3 = true } = {}) {
   let offset = 0;
   const later = ms => void (offset += ms);
   const t3Chats = t3 && createT3Chats({ home: t3.home, now: () => Date.now() + offset });
-  const assistant = createAssistant({ store, config: { ...(t3 ? { t3Chats, followCheckMs: 10 } : {}) } });
-  const { user, call } = signIn(store, assistant);
+  const assistant = createAssistant({ store, config: { ...(t3 ? { t3Chats, followCheckMs: 10 } : {}), ...config } });
+  const { user, call, http } = signIn(store, assistant);
   const record = store.getRecordBySheetRow('Collection_data', 2);
   /** propose_changes from a T3 chat, as Claude Code calls it (its tool-use id in _meta). */
   const propose = async (note, toolUseId) => {
@@ -99,7 +99,7 @@ async function fixture({ withT3 = true } = {}) {
     t3Chats?.close();
     t3?.remove();
   };
-  return { store, assistant, t3, user, propose, list, linked, later, close };
+  return { store, assistant, t3, user, propose, list, linked, later, close, http };
 }
 
 test("T3's trace log tells the chat on screen; a person's latest one is open, two pages keep the one shown", () => {
@@ -334,4 +334,56 @@ test("a person's T3 chats are those of their workspace folder", () => {
   assert.equal(chats.onlyRunning('franz'), null, 'two chats answering: unknown');
   chats.close();
   remove();
+});
+
+test("“Tell the assistant” sends to the proposal's own T3 chat when it is idle; otherwise the page copies it", async () => {
+  const thread = '11111111-1111-4111-8111-111111111111';
+  const sessions = { [thread]: { projectId: 'p-franz', runtimeMode: 'full-access', interactionMode: 'default', busy: false } };
+  const sent = [];
+  const t3Chats = {
+    available: true,
+    session: id => sessions[id] ?? null,
+    projectsOf: name => (name === 'franz' ? ['p-franz'] : []),
+    threads: () => new Map(),
+    chatsOf: () => [],
+    threadOfToolUse: () => null,
+    onlyRunning: () => null,
+    findProposals: async () => new Map(),
+    open: () => null,
+  };
+  const t3Fetch = async (url, options) => {
+    sent.push({ url, auth: options.headers.authorization, body: JSON.parse(options.body) });
+    return { ok: true, json: async () => ({ sequence: 1 }) };
+  };
+  const dir = mkdtempSync(join(tmpdir(), 't3tell-'));
+  writeFileSync(join(dir, 'token'), 'admin-token\n');
+  const { store, propose, http, close } = await fixture({
+    withT3: false,
+    config: { t3Chats, t3Fetch, t3: { local: 'http://t3.test', tokenFile: join(dir, 'token') } },
+  });
+  try {
+    const proposalId = await propose('foto 1');
+    const tell = text => http('POST', `/api/chat/proposals/${proposalId}/tell`, { body: { text } });
+    const text = 'La hoja cambió: Sex (CAM000001). Revísalo y actualiza la propuesta.';
+    // Not linked to a chat yet.
+    assert.deepEqual((await tell(text)).body, { sent: false, reason: 'no_chat', chat: null });
+    store.db.prepare('UPDATE ai_proposals SET t3_thread = ? WHERE id = ?').run(thread, proposalId);
+    sessions[thread].busy = true;
+    assert.equal((await tell(text)).body.reason, 'busy');
+    sessions[thread].busy = false;
+    assert.deepEqual((await tell(text)).body, { sent: true, chat: thread });
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].url, 'http://t3.test/api/orchestration/dispatch');
+    assert.equal(sent[0].auth, 'Bearer admin-token');
+    assert.equal(sent[0].body.type, 'thread.turn.start');
+    assert.equal(sent[0].body.threadId, thread);
+    assert.equal(sent[0].body.message.text, text);
+    // Another person's chat is never written to.
+    sessions[thread].projectId = 'p-other';
+    assert.equal((await tell(text)).body.reason, 'no_chat');
+    assert.equal((await tell('')).status, 400);
+  } finally {
+    close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

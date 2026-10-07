@@ -5,11 +5,11 @@
 // else's pending proposal are said in the answer and above the table.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { moduleMap } from '../server/schema.mjs';
 import { createAssistant } from '../server/assistant.mjs';
+import { signIn } from './helpers/assistant.mjs';
 
 const EPOCH = Date.UTC(1899, 11, 30);
 const today = Math.round(
@@ -73,32 +73,11 @@ async function fixture() {
   const store = new Store({ localMode: true }, { sheets });
   await store.sync({ sheets: ['Collection_data', 'Insectary_data', 'Insectary_stocks'] });
   const assistant = createAssistant({ store, config: {} });
-  const people = [
-    ['u-ana', 'ana', 'Ana'],
-    ['u-franz', 'franz', 'Franz'],
-  ];
-  for (const [uid, username, name] of people) {
-    store.db
-      .prepare("INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES(?,?,?,'editor','s','h',1,'2026-01-01')")
-      .run(uid, username, name);
-    store.db
-      .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
-      .run(createHash('sha256').update(`${username}-token`).digest('hex'), uid);
-  }
-  const callAs = username => async (name, args) =>
-    JSON.parse(
-      (
-        await assistant.mcp(
-          { authorization: `Bearer ${username}-token` },
-          { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } },
-        )
-      ).body.result.content[0].text,
-    );
-  const ana = { id: 'u-ana', username: 'ana', displayName: 'Ana', role: 'editor' };
-  const listed = async id =>
-    (await assistant.handle({ method: 'GET', path: '/api/chat/proposals', user: ana, query: { all: '1', only: id } })).body.proposals[0];
+  const ana = signIn(store, assistant, { id: 'u-ana', username: 'ana', displayName: 'Ana' });
+  const franz = signIn(store, assistant, { id: 'u-franz' });
+  const listed = async id => (await ana.get('/api/chat/proposals', { all: '1', only: id })).body.proposals[0];
   const cell = (row, key) => sheets.cell('Collection_data', row, col('Collection_data', key))?.userEnteredValue;
-  return { store, sheets, call: callAs('ana'), franz: callAs('franz'), listed, cell };
+  return { store, sheets, call: ana.call, franz: franz.call, listed, cell };
 }
 
 const wild = (insectaryId, extra = {}) => ({
