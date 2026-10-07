@@ -31,7 +31,7 @@ npm --prefix frontend ci
 logs="$(mktemp -d)"
 nice -n 10 node scripts/check.mjs >"$logs/check" 2>&1 & check=$!
 nice -n 10 node --test tests/*.test.mjs >"$logs/server" 2>&1 & server=$!
-nice -n 10 npm --prefix frontend test >"$logs/frontend" 2>&1 & frontend=$!
+NO_COLOR=1 nice -n 10 npm --prefix frontend test >"$logs/frontend" 2>&1 & frontend=$!
 failed=0
 for job in check:$check server:$server frontend:$frontend; do
   if ! wait "${job#*:}"; then failed=1; echo "== ${job%%:*} failed:" >&2; tail -n 80 "$logs/${job%%:*}" >&2; fi
