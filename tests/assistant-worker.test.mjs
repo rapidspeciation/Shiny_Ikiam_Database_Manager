@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -71,8 +71,15 @@ async function fixture(t, { callMs = 20_000, backoffMs } = {}) {
   return { databasePath, store, host, rpc, call, http, record };
 }
 
-test('propose_changes runs in the worker; the page waiting for the list wakes; apply_proposal runs in the app and writes', async t => {
-  const { store, host, call, http, record } = await fixture(t);
+// The tests that leave nothing another one checks share one app and its workers (each start costs
+// about a second): the first one finds no proposals yet.
+let shared = null;
+const closing = [];
+after(() => closing.forEach(close => close()));
+const sharedFixture = () => (shared ??= fixture({ after: close => closing.push(close) }));
+
+test('propose_changes runs in the worker; the page waiting for the list wakes; apply_proposal runs in the app and writes', async () => {
+  const { store, host, call, http, record } = await sharedFixture();
   assert.equal(host.mode, 'worker');
   const first = (await http('GET', '/api/chat/proposals', {}, { all: '1' })).body;
   assert.deepEqual(first.proposals, []);
@@ -110,7 +117,7 @@ test('propose_changes runs in the worker; the page waiting for the list wakes; a
 });
 
 test("the worker's connection refuses writes to the sheets' copy; a reader refuses what it does not have", async t => {
-  const { databasePath, rpc, record } = await fixture(t);
+  const { databasePath, rpc, record } = await sharedFixture();
   const out = await rpc('__write');
   assert.match(out.body.refused ?? '', /not authorized/);
   assert.notEqual(record(2).label, 'changed by the worker');
@@ -206,8 +213,8 @@ test('a call that hangs or a worker that dies: the call is answered "call again"
   assert.ok(!inline.error, JSON.stringify(inline));
 });
 
-test("every tool the worker answers runs there: nothing reaches for the app's memory or writes outside the proposals", async t => {
-  const { store, host, rpc, call, http, record } = await fixture(t);
+test("every tool the worker answers runs there: nothing reaches for the app's memory or writes outside the proposals", async () => {
+  const { store, host, rpc, call, http, record } = await sharedFixture();
   const proposed = await call('propose_changes', {
     reason: 'Una fila',
     changes: [{ recordId: record(4).id, values: { Sex: 'male' } }],
