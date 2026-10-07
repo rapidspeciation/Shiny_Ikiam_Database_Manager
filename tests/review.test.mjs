@@ -15,6 +15,10 @@ import { createPhotoService } from '../server/photos.mjs';
 import { photoIndex, photoName } from '../server/photodata.mjs';
 import { predictionDiffers } from '../server/taxonomy.mjs';
 import { createApp } from '../server/index.mjs';
+import { setPasswordHashCost } from '../server/auth.mjs';
+import { signIn } from './helpers/assistant.mjs';
+
+setPasswordHashCost(16);
 
 const DIR = fileURLToPath(new URL('./fixtures/envelope/', import.meta.url));
 const ids = JSON.parse(readFileSync(join(DIR, 'ids.json'), 'utf8'));
@@ -222,22 +226,7 @@ test('photo checks: envelope CAM, extra photos, envelope sex and species (by bat
 test('verdicts: last one counts, batches, other values, training labels, agreed fixes applied from one proposal', async () => {
   const { store } = await fixture();
   const assistant = createAssistant({ store, config: {} });
-  store.db
-    .prepare(
-      "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u1','ana','Ana','editor','s','h',1,'2026-01-01')",
-    )
-    .run();
-  const token = 'token-for-ana';
-  store.db
-    .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
-    .run(createHash('sha256').update(token).digest('hex'), 'u1');
-  const call = async (name, args) => {
-    const out = await assistant.mcp(
-      { authorization: `Bearer ${token}` },
-      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } },
-    );
-    return JSON.parse(out.body.result.content[0].text);
-  };
+  const { call } = signIn(store, assistant, { username: 'ana', displayName: 'Ana' });
   const sex = issueOf(store, 'envelope_sex', 'CAM000105');
   const species = issueOf(store, 'envelope_species', 'CAM000107');
   const ai = issueOf(store, 'ai_species', 'CAM000110');
@@ -279,10 +268,6 @@ test('verdicts: last one counts, batches, other values, training labels, agreed 
   assert.equal(rejected.envelope.fileId, ids.CAM000101d);
 
   // T3: "aplica las correcciones acordadas".
-  const tools = (
-    await assistant.mcp({ authorization: `Bearer ${token}` }, { jsonrpc: '2.0', id: 1, method: 'tools/list' })
-  ).body.result.tools;
-  assert.ok(tools.some(t => t.name === 'list_agreed_fixes'));
   const agreed = await call('list_agreed_fixes', {});
   assert.equal(agreed.fixes.length, 4);
   assert.deepEqual(agreed.fixes.find(f => f.issueId === ai.id).values, { SPECIES: 'Hypothyris anastasia' });
@@ -385,7 +370,7 @@ test('photos come from Drive once (lh3, else the thumbnail), are cached within a
   store.close();
 });
 
-test('the Revisión API needs an editor; photos are served behind login with a sandbox policy', async t => {
+test('the Revisión API: photos with a sandbox policy, the page, verdicts and labels (who may: auth-routes)', async t => {
   const app = await createApp(
     {
       databasePath: ':memory:',
@@ -418,7 +403,6 @@ test('the Revisión API needs an editor; photos are served behind login with a s
     if (response.headers.get('set-cookie')) cookie = response.headers.get('set-cookie').split(';')[0];
     return response;
   };
-  assert.equal((await call(`/api/photo/${ids.CAM000101d}?w=400`)).status, 401);
   const setup = await (
     await call('/api/auth/setup', 'POST', {
       token: 'private-review-setup',

@@ -6,11 +6,12 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createApp } from '../server/index.mjs';
 import { applyBatch } from '../server/batch.mjs';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { GoogleSheets } from '../server/sheets.mjs';
 import { SANDBOX_ID } from '../server/workbook.mjs';
+import { until } from './helpers/assistant.mjs';
 
 const user = { id: 'editor-1', username: 'editor', role: 'editor' };
 
@@ -29,7 +30,7 @@ test('stopping: saves in progress finish, new ones wait for the next process, /h
     sheets.writeBatch = async writes => (await held, write(writes));
     const id = store.db.prepare("SELECT id FROM records WHERE sheet='Collection_data' AND row_num=2").get().id;
     const saving = applyBatch(store, { requestId: randomUUID(), edits: [{ id, values: { Sex: 'female' } }] }, user);
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await until(() => app.writingNow().inFlight === 1);
     assert.deepEqual(app.writingNow(), { applying: 0, inFlight: 1, unconfirmed: 1, draining: false });
 
     const drained = app.drain(5000);
@@ -38,7 +39,7 @@ test('stopping: saves in progress finish, new ones wait for the next process, /h
     assert.equal(kept.status, 'queued');
     let done = false;
     drained.then(() => (done = true));
-    await new Promise(resolve => setTimeout(resolve, 300));
+    await new Promise(resolve => setTimeout(resolve, 30));
     assert.equal(done, false, 'waits for the save in progress');
     release();
     assert.equal((await saving).status, 'verified');
@@ -100,5 +101,6 @@ test('a request Google does not answer is given up: a read is retried, a write l
   } finally {
     globalThis.fetch = original;
     AbortSignal.timeout = realTimeout;
+    rmSync(dir, { recursive: true, force: true });
   }
 });

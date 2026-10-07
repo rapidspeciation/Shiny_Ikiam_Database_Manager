@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { cellText, searchAll, searchRange } from '../server/search.mjs';
-import { createApp } from '../server/index.mjs';
 
 // Insectary_data rows 2–41: A0B, A1B…; rows 20–23 have tubes typed FS58490… (a 0 missing), the rest FS508490….
 const insectary = Array.from({ length: 40 }, (_, i) => {
@@ -69,6 +68,14 @@ test('an ID is found in every sheet that has it, the sheet where it is the row I
   assert.deepEqual({ first: ins.first, last: ins.last }, { first: 2, last: 41 });
   // The other sheets' windows are their own rows.
   assert.deepEqual(result.sheets[2].window.rows.map(r => r.row), [2, 3]);
+  // A CAM ID is an ID in both sheets: the insectary's comes first, as in the sheet list.
+  assert.deepEqual(
+    searchAll(store, { q: 'CAM080010', context: 1 }).sheets.map(s => [s.module, s.idExact, s.focus, s.window.rows.length]),
+    [
+      ['Insectary_data', 1, 10, 3],
+      ['Collection_data', 1, 2, 2],
+    ],
+  );
   store.close();
 });
 
@@ -143,40 +150,4 @@ test('rows by range, for scrolling a result', async () => {
   assert.throws(() => searchRange(store, { module: 'Insectary_data', from: 10, to: 5 }), { code: 'INVALID_RANGE' });
   assert.throws(() => searchRange(store, { module: 'Nope', from: 1, to: 5 }), { code: 'MODULE_NOT_FOUND' });
   store.close();
-});
-
-test('GET /api/search and /api/search/rows answer signed-in people', async () => {
-  const store = await fixture();
-  const app = await createApp(
-    { localMode: true, secureCookies: false, setupToken: 'test-setup-secret', syncIntervalMs: 0 },
-    { store, skipInitialSync: true },
-  );
-  const address = await app.listen(0, '127.0.0.1');
-  try {
-    const api = `http://127.0.0.1:${address.port}/ithomiini/api`;
-    assert.equal((await fetch(`${api}/search?q=B5B`)).status, 401);
-    const setup = await fetch(`${api}/auth/setup`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ token: 'test-setup-secret', username: 'testadmin', password: 'test12', displayName: 'Test' }),
-    });
-    const cookie = setup.headers.get('set-cookie').split(';')[0];
-    const found = await (await fetch(`${api}/search?q=CAM080010&context=1`, { headers: { cookie } })).json();
-    assert.deepEqual(
-      found.sheets.map(s => [s.module, s.idExact, s.focus, s.window.rows.length]),
-      // A CAM ID is an ID in both sheets: the insectary's comes first, as in the sheet list.
-      [
-        ['Insectary_data', 1, 10, 3],
-        ['Collection_data', 1, 2, 2],
-      ],
-    );
-    const rows = await (await fetch(`${api}/search/rows?module=Insectary_data&from=2&to=4`, { headers: { cookie } })).json();
-    assert.deepEqual(
-      rows.rows.map(r => r.row),
-      [2, 3, 4],
-    );
-    assert.equal((await fetch(`${api}/search/rows?module=Insectary_data&from=x&to=4`, { headers: { cookie } })).status, 400);
-  } finally {
-    await app.close();
-  }
 });

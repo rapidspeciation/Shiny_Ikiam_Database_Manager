@@ -496,7 +496,7 @@ export async function createApp(config = {}, options = {}) {
         res.writeHead(303, { location: `${config.basePath === '/' ? '' : config.basePath}/#/monitoreo?vista=importar&compartido=0` });
         return res.end();
       }
-      if (!path.startsWith('/api/')) return serveStatic(req, res, path, config.basePath, config.t3?.url);
+      if (!path.startsWith('/api/')) return serveStatic(req, res, path, config.basePath, config.t3?.url, config.webRoot);
       if (method !== 'GET' && method !== 'HEAD') checkOrigin(req);
       const session = getSession(store, req.headers.cookie);
       if (method === 'GET' && path === '/api/auth/session')
@@ -1492,11 +1492,12 @@ async function t3Pairing(t3, user) {
   return { url: `${t3.url}/pair#token=${encodeURIComponent(credential)}`, expiresAt };
 }
 
-function serveStatic(req, res, path, base, frameSrc = '') {
+/** The built page from `root` (web/; config.webRoot for tests). */
+function serveStatic(req, res, path, base, frameSrc = '', root = webRoot) {
   if (req.method !== 'GET' && req.method !== 'HEAD') throw fail('METHOD_NOT_ALLOWED', 'Method not allowed', 405);
   const clean = decodeURIComponent(path).replace(/^\/+/, ''),
-    target = resolve(webRoot, clean || 'index.html');
-  if (!target.startsWith(webRoot + '/') && target !== webRoot) throw fail('NOT_FOUND', 'File not found', 404);
+    target = resolve(root, clean || 'index.html');
+  if (!target.startsWith(root + '/') && target !== root) throw fail('NOT_FOUND', 'File not found', 404);
   const found = existsSync(target) && statSync(target).isFile();
   // A missing script or style (a page opened before a deploy asks for the old build's files) is a 404,
   // not the page itself: served as HTML it broke the page instead of letting it reload.
@@ -1510,7 +1511,7 @@ function serveStatic(req, res, path, base, frameSrc = '') {
     res.writeHead(302, { location: page ? `${home}${page}${search}` : `${home}${search}` });
     return res.end();
   }
-  const file = found ? target : join(webRoot, 'index.html');
+  const file = found ? target : join(root, 'index.html');
   if (!existsSync(file)) throw fail('NOT_FOUND', 'Frontend is not built', 404);
   res.writeHead(200, {
     'content-type': mime[extname(file)] || 'application/octet-stream',

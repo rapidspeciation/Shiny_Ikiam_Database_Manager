@@ -4252,7 +4252,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     for (let n = from + 1; n <= to; n++) if (by.get(n) !== page) return false;
     return true;
   }
-  /** Waits for a change of the person's proposals, or until `moved()` says the chat to show changed (checked every 2 s). */
+  /** Waits for a change of the person's proposals, or until `moved()` says the chat to show changed (checked every 2 s, `config.followCheckMs`). */
   function waitForChange(ownerId, seen, ms, moved = null, page = null) {
     if (!caughtUp(ownerId, seen, page)) return Promise.resolve();
     return new Promise(resolve => {
@@ -4266,7 +4266,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       };
       wake.page = page;
       const timer = setTimeout(wake, ms);
-      const watch = moved ? setInterval(() => moved() && wake(), 2000) : undefined;
+      const watch = moved ? setInterval(() => moved() && wake(), config.followCheckMs ?? 2000) : undefined;
       list.add(wake);
     });
   }
@@ -4282,7 +4282,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   }
   /**
    * A replaced page's move to the chat that read it again, when T3 had not recorded the call yet:
-   * tried again for half a minute.
+   * tried again for half a minute (first after `config.chatMoveDelayMs`).
    */
   function moveWhenKnown(id, toolUseId, ownerId, tries = 6) {
     const again = () => {
@@ -4292,7 +4292,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       const moved = db.prepare('UPDATE ai_proposals SET t3_thread = ?, t3_title = ? WHERE id = ? AND t3_thread IS NOT ?').run(thread, title, id, thread);
       if (moved.changes) changed(ownerId);
     };
-    setTimeout(again, 1000).unref?.();
+    setTimeout(again, config.chatMoveDelayMs ?? 1000).unref?.();
   }
   /*
    * Proposals from T3 Code whose chat is not known yet (T3 had not recorded the

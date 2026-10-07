@@ -4,6 +4,10 @@ import { createHash } from 'node:crypto';
 import { createApp } from '../server/index.mjs';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
+import { setPasswordHashCost } from '../server/auth.mjs';
+
+// Hashing at production cost takes most of a second per sign-in here; the rules tested do not depend on it.
+setPasswordHashCost(16);
 
 const sha = text => createHash('sha256').update(text).digest('hex');
 
