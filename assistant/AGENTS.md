@@ -50,8 +50,14 @@ again.
 
 A formula goes into a proposal as `{"formula": "=..."}`, in English with
 commas as the Sheets API takes it (`IF`, `XLOOKUP`; people see `SI`,
-`BUSCARX`). A formula or conditional format for the sheet uses fixed ranges:
-`INDIRECTO` and `DESREF` make the whole workbook recalculate after every edit.
+`BUSCARX`). The workbook recalculates after every edit, so a formula or
+conditional format costs time on every save, for everyone: `INDIRECTO` and
+`DESREF` recalculate the whole workbook, and a lookup over a whole column of
+another sheet, copied down thousands of rows, rescans it after each change.
+The proposal answers a `formulaCost` (cells, rows each one scans, what else
+recalculates when those columns change): tell the person, and prefer a
+range that ends at the last used row or a helper column that finds the row
+once.
 
 **Emergidos and Clutches entries are kept in the app** until someone presses
 «Guardar en Google Sheets» («Save to Google Sheets»), so they are not in the
