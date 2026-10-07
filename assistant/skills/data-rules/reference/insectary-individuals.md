@@ -211,3 +211,18 @@ duplicated". The repeat's row goes where the Emergidos notebook puts it,
 after the ID written just before it on that page, which can be far from the
 first use. Point a new duplicate out to the person, with the row it goes
 after.
+
+How it has happened:
+
+- On 31 Aug 2026 the notebook wrote `W0B`–`W9B`, then started again at
+  `W0B` instead of going on to `X0B`: ten more butterflies of the same two
+  clutches got `W0B`–`W9B`, and the page went on with `X0B`. The second ten
+  are `W0B.1`–`W9B.1`, in rows after `W9B` and before `X0B`, as on the page.
+- `0PQ`–`9PX` (80 IDs) were used from 16 to 31 Dec 2024; over the holidays
+  (31 Dec–6 Jan) the same 80 were given out again, and the next ID after
+  them was `0PY`. The second ones are `0PQ.1`–`9PX.1`, after `9PX` and before
+  `0PY`.
+- `A0E`–`A8E` were used early by a series slip on 20–21 Sep 2026
+  ([samples-ids.md](samples-ids.md)); the 29 Sep ones, `A0E.1`–`A8E.1`, are
+  after `Z9D`, the ID before them on that page, about 250 rows below the
+  first ones.
