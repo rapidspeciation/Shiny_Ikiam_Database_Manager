@@ -56,17 +56,7 @@ test('ID suggestions are kept until a sheet they read changes', async () => {
   // A caller changing its copy does not change the kept answer.
   first.suggestions[0].value = 'changed';
   assert.equal(idSuggestions(store, { kind: 'tube' }).suggestions[0].value, 'FS50849034');
-  // A kept answer does not read the rows again.
-  let reads = 0;
-  const prepare = store.db.prepare.bind(store.db);
-  store.db.prepare = sql => (/values_json/.test(sql) && reads++, prepare(sql));
-  idSuggestions(store, { kind: 'tube' });
-  idSuggestions(store, { kind: 'cam' });
-  const afterFirstCam = reads;
-  idSuggestions(store, { kind: 'cam' });
-  assert.ok(afterFirstCam > 0);
-  assert.equal(reads, afterFirstCam);
-  store.db.prepare = prepare;
+  // (What a kept answer reads again after a save: the test below.)
   // A tube used in the sheet since: the next suggestion moves on.
   await sheets.externalEdit('Insectary_data', 3, {
     Insectary_ID: 'A1A',
