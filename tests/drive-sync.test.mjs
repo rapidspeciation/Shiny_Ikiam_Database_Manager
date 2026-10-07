@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { crc32 } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { createKnowledge } from '../server/knowledge.mjs';
-import { vttText, withoutCallLinks, xmlText } from '../scripts/drive-sync.mjs';
+import { syncDrive, vttText, withoutCallLinks, xmlText } from '../scripts/drive-sync.mjs';
 
 const script = fileURLToPath(new URL('../scripts/drive-sync.mjs', import.meta.url));
 const config = JSON.parse(readFileSync(new URL('../deploy/drive-sync.json', import.meta.url), 'utf8'));
@@ -135,7 +135,7 @@ function fixture() {
       [ids.vtt]:
         'WEBVTT\n\n1\n00:00:01.000 --> 00:00:03.000\n<v Ana Pérez>Buenos días a todos\n\n2\n00:00:03.000 --> 00:00:05.000\n<v Ana Pérez>empezamos con las crías\n\n3\n00:00:05.000 --> 00:00:07.000\n<v Luis>Hay 40 pupas\n',
     },
-    binary: { [ids.pptx]: pptx.toString('base64'), [ids.docx]: docx.toString('base64'), [ids.slides]: pptx.toString('base64') },
+    binary: { [ids.pptx]: pptx, [ids.docx]: docx, [ids.slides]: pptx },
     tooLarge: [ids.slidesBig],
     decks: {
       [ids.slidesBig]: [
@@ -146,67 +146,52 @@ function fixture() {
   };
 }
 
-// The stub gog: lists folders and "downloads" files from the fixture, and logs every call.
-const STUB = `
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
-const args = process.argv.slice(2);
-appendFileSync(process.env.STUB_LOG, JSON.stringify(args) + '\\n');
-const fx = JSON.parse(readFileSync(process.env.STUB_FIXTURE, 'utf8'));
-const at = name => args[args.indexOf(name) + 1];
-const i = args.indexOf('drive');
-if (i < 0 && !args.includes('slides')) process.exit(9);
-if (i >= 0 && args[i + 1] === 'ls') {
-  const parent = at('--parent');
-  if ((fx.fail ?? []).includes(parent)) { console.error('Google API error 500'); process.exit(3); }
-  process.stdout.write(JSON.stringify({ files: fx.folders[parent] ?? [] }));
-} else if (i >= 0 && args[i + 1] === 'download') {
-  const id = args[i + 2];
-  if ((fx.tooLarge ?? []).includes(id)) { console.error('Google API error (403 exportSizeLimitExceeded): This file is too large to be exported.'); process.exit(1); }
-  if (fx.binary[id]) writeFileSync(at('--out'), Buffer.from(fx.binary[id], 'base64'));
-  else if (fx.content[id] !== undefined) writeFileSync(at('--out'), fx.content[id]);
-  else { console.error('not found'); process.exit(4); }
-  process.stdout.write(JSON.stringify({ path: at('--out') }));
-} else if (args[0 + args.indexOf('slides') + 1] === 'list-slides') {
-  const deck = fx.decks[args[args.indexOf('list-slides') + 1]];
-  process.stdout.write(JSON.stringify({ slides: deck.map(({ objectId, number }) => ({ objectId, number, isSkipped: false })) }));
-} else if (args[args.indexOf('slides') + 1] === 'read-slide') {
-  const at2 = args.indexOf('read-slide');
-  const deck = fx.decks[args[at2 + 1]];
-  process.stdout.write(JSON.stringify(deck.find(s => s.objectId === args[at2 + 2])));
-} else process.exit(9);
-`;
+// The stub gog, in process: lists folders and "downloads" files from the fixture, and logs every call.
+function stubGog(fx, calls) {
+  return async (bin, args) => {
+    calls.push(args);
+    const at = name => args[args.indexOf(name) + 1];
+    const i = args.indexOf('drive');
+    if (i >= 0 && args[i + 1] === 'ls') {
+      if ((fx.fail ?? []).includes(at('--parent'))) throw new Error('Google API error 500');
+      return JSON.stringify({ files: fx.folders[at('--parent')] ?? [] });
+    }
+    if (i >= 0 && args[i + 1] === 'download') {
+      const id = args[i + 2];
+      if ((fx.tooLarge ?? []).includes(id)) throw new Error('Google API error (403 exportSizeLimitExceeded): This file is too large to be exported.');
+      if (fx.binary[id]) writeFileSync(at('--out'), fx.binary[id]);
+      else if (fx.content[id] !== undefined) writeFileSync(at('--out'), fx.content[id]);
+      else throw new Error('not found');
+      return JSON.stringify({ path: at('--out') });
+    }
+    if (args.includes('list-slides'))
+      return JSON.stringify({ slides: fx.decks[at('list-slides')].map(({ objectId, number }) => ({ objectId, number, isSkipped: false })) });
+    if (args.includes('read-slide')) return JSON.stringify(fx.decks[at('read-slide')].find(s => s.objectId === args[args.indexOf('read-slide') + 2]));
+    throw new Error(`unexpected gog call ${args.join(' ')}`);
+  };
+}
 
 async function setup() {
   const dir = await mkdtemp(join(tmpdir(), 'ithomiini-drive-sync-'));
-  writeFileSync(join(dir, 'gog.mjs'), STUB);
-  writeFileSync(join(dir, 'gog'), `#!/bin/sh\nexec "${process.execPath}" "${join(dir, 'gog.mjs')}" "$@"\n`);
-  chmodSync(join(dir, 'gog'), 0o755);
   const fx = fixture();
-  const save = () => writeFileSync(join(dir, 'fixture.json'), JSON.stringify(fx));
-  save();
   const env = {
-    PATH: process.env.PATH,
-    HOME: dir,
     KNOWLEDGE_DIR: join(dir, 'knowledge'),
-    ITHOMIINI_GOG_BIN: join(dir, 'gog'),
+    ITHOMIINI_GOG_BIN: 'gog',
     GOG_ACCOUNT: 'project@example.test',
     ITHOMIINI_PDFTOTEXT: join(dir, 'no-pdftotext'),
-    STUB_LOG: join(dir, 'calls.log'),
-    STUB_FIXTURE: join(dir, 'fixture.json'),
   };
-  const sync = () => {
-    writeFileSync(env.STUB_LOG, '');
-    const out = spawnSync(process.execPath, [script], { env, encoding: 'utf8' });
-    const calls = readFileSync(env.STUB_LOG, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
-    return { ...out, calls };
+  /** One run; its gog calls are in .calls. */
+  const sync = async () => {
+    const calls = [];
+    const summary = await syncDrive({ env, exec: stubGog(fx, calls) });
+    return { ...summary, calls };
   };
   const drive = join(env.KNOWLEDGE_DIR, 'drive');
   const manifest = () => JSON.parse(readFileSync(join(drive, 'manifest.json'), 'utf8'));
-  return { dir, fx, save, sync, drive, manifest, env };
+  return { dir, fx, sync, drive, manifest };
 }
 const downloads = calls => calls.filter(c => c.includes('download')).map(c => c[c.indexOf('download') + 1]);
 const listed = calls => calls.filter(c => c.includes('ls')).map(c => c[c.indexOf('--parent') + 1]);
-
 test('office and transcript text extraction', () => {
   assert.equal(xmlText('<a:p><a:r><a:t>Hola &amp; adiós</a:t></a:r><a:br/><a:r><a:t>fin</a:t></a:r></a:p>'), 'Hola & adiós\nfin');
   assert.equal(withoutCallLinks('Enlace: https://meet.google.com/abc-defg-hij.'), 'Enlace: [enlace de videollamada omitido].');
@@ -214,11 +199,10 @@ test('office and transcript text extraction', () => {
 });
 
 test('drive sync exports the included folders read-only, never the excluded ones, and only changes after that', async () => {
-  const { dir, fx, save, sync, drive, manifest } = await setup();
+  const { dir, fx, sync, drive, manifest } = await setup();
   try {
-    const first = sync();
-    assert.equal(first.status, 0, first.stderr);
-    assert.match(first.stdout, /Drive sync: 9 documents/);
+    const first = await sync();
+    assert.equal(first.total, 9);
     // Every gog call is read-only, with the account and client.
     for (const call of first.calls) {
       assert.equal(call[0], '--readonly');
@@ -277,65 +261,98 @@ test('drive sync exports the included folders read-only, never the excluded ones
     fx.content[ids.meeting] = 'Texto corregido.';
     fx.folders[MEETINGS].splice(1, 1);
     fx.folders[REPORTS][0].trashed = true;
-    save();
-    const second = sync();
-    assert.equal(second.status, 0, second.stderr);
+    const second = await sync();
     assert.deepEqual(downloads(second.calls), [ids.meeting]);
     assert.match(readFileSync(join(drive, `${ids.meeting}.md`), 'utf8'), /Texto corregido/);
     assert.ok(!existsSync(join(drive, `${ids.meetingOld}.md`)));
     assert.ok(!existsSync(join(drive, `${ids.pptx}.md`)));
     assert.equal(manifest().files[ids.meetingOld], undefined);
-    assert.match(second.stdout, /deleted 2/);
+    assert.equal(second.deleted, 2);
 
     // Third run: nothing changed, nothing downloaded.
-    assert.deepEqual(downloads(sync().calls), []);
+    assert.deepEqual(downloads((await sync()).calls), []);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });
 
 test('a failed listing stops the sync without deleting anything; a running sync blocks another', async () => {
-  const { dir, fx, save, sync, drive } = await setup();
+  const { dir, fx, sync, drive } = await setup();
   try {
-    assert.equal(sync().status, 0);
+    await sync();
     fx.fail = [REPORTS];
-    save();
-    const failed = sync();
-    assert.notEqual(failed.status, 0);
-    assert.match(failed.stderr, /Drive sync failed/);
+    await assert.rejects(sync(), /Google API error 500/);
     assert.ok(existsSync(join(drive, `${ids.pptx}.md`)));
     assert.ok(!existsSync(join(drive, '.sync.lock')));
 
     // A lock held by a live process.
     fx.fail = [];
-    save();
     await writeFile(join(drive, '.sync.lock'), `${process.pid} now\n`);
-    const blocked = sync();
-    assert.notEqual(blocked.status, 0);
-    assert.match(blocked.stderr, /another drive sync is running/);
-    assert.equal(blocked.calls.length, 0);
+    await assert.rejects(sync(), e => e.locked === true);
     // A stale lock (process gone) is taken over.
     await writeFile(join(drive, '.sync.lock'), '999999999 old\n');
-    assert.equal(sync().status, 0);
+    await sync();
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });
 
 test('a failed export is reported and retried next run', async () => {
-  const { dir, fx, save, sync, manifest } = await setup();
+  const { dir, fx, sync, manifest } = await setup();
   try {
     delete fx.binary[ids.slides];
-    save();
-    const out = sync();
-    assert.equal(out.status, 1);
-    assert.match(out.stderr, /1 file\(s\) failed/);
+    assert.equal((await sync()).failed, 1);
     assert.equal(manifest().files[ids.slides].status, 'error');
-    fx.binary[ids.slides] = pptx.toString('base64');
-    save();
-    const again = sync();
-    assert.equal(again.status, 0, again.stderr);
+    fx.binary[ids.slides] = pptx;
+    const again = await sync();
+    assert.equal(again.failed, 0);
     assert.deepEqual(downloads(again.calls), [ids.slides]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// The command itself (what the timer runs), with a gog program: its summary, a failed file's exit
+// code, and a held lock's.
+test('the drive-sync command prints its summary and exits 1 on a failed file, 75 while another sync runs', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ithomiini-drive-sync-cli-'));
+  try {
+    const doc = 'application/vnd.google-apps.document';
+    const listing = { [MEETINGS]: [file(ids.meeting, '137 Meeting-10/09/2026', doc), file(ids.meetingOld, '12 Meeting-05/03/2025', doc)] };
+    writeFileSync(join(dir, 'config.json'), JSON.stringify({ folders: [{ id: MEETINGS, name: 'Meetings', kind: 'meeting' }] }));
+    writeFileSync(
+      join(dir, 'gog'),
+      `#!${process.execPath}
+const { appendFileSync, writeFileSync } = require('node:fs');
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(join(dir, 'calls.log'))}, JSON.stringify(args) + '\\n');
+const at = name => args[args.indexOf(name) + 1];
+if (args.includes('ls')) process.stdout.write(JSON.stringify({ files: (${JSON.stringify(listing)})[at('--parent')] ?? [] }));
+else if (at('download') === ${JSON.stringify(ids.meeting)}) writeFileSync(at('--out'), 'Acta');
+else { console.error('not found'); process.exit(4); }
+`,
+    );
+    chmodSync(join(dir, 'gog'), 0o755);
+    const env = {
+      PATH: process.env.PATH,
+      HOME: dir,
+      KNOWLEDGE_DIR: join(dir, 'knowledge'),
+      ITHOMIINI_GOG_BIN: join(dir, 'gog'),
+      ITHOMIINI_DRIVE_SYNC_CONFIG: join(dir, 'config.json'),
+    };
+    const run = () => spawnSync(process.execPath, [script], { env, encoding: 'utf8' });
+    const out = run();
+    assert.equal(out.status, 1, out.stderr);
+    assert.match(out.stdout, /Drive sync: 2 documents .*exported 1, .*failed 1/);
+    assert.match(out.stderr, /1 file\(s\) failed/);
+    const calls = readFileSync(join(dir, 'calls.log'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    assert.ok(calls.every(c => c[0] === '--readonly'));
+    assert.match(readFileSync(join(dir, 'knowledge', 'drive', `${ids.meeting}.md`), 'utf8'), /Acta/);
+
+    writeFileSync(join(dir, 'knowledge', 'drive', '.sync.lock'), `${process.pid} now\n`);
+    const blocked = run();
+    assert.equal(blocked.status, 75);
+    assert.match(blocked.stderr, /another drive sync is running/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
