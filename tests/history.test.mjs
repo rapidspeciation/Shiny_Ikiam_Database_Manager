@@ -293,6 +293,34 @@ test('undo a whole group, one save or one change, after a preview; the undo is a
   store.close();
 });
 
+test('a death that replaced an earlier one (Muertes, a misread ID): undoing its changes puts the earlier death and notes back', async () => {
+  const { store, save, row } = await fixture();
+  const r = () => row('Insectary_data', 4);
+  const death = values => ({ edits: [{ id: r().id, values }] });
+  // Recorded dead on 3 Sep (Unknown); found alive later, and dead on 30 Sep: the card replaces that death.
+  await save(bob, 'muertes', 0, death({ Death_date: 46268, Death_cause: 'Unknown', Tube_1_id: 'NA', Notes_Insectary_data: 'old note' }));
+  const note = 'old note | 30/9/26 ANA: Found dead today; replaces the death recorded on 3/9/26 (Unknown), probably a misread ID';
+  const replaced = await save(ana, 'muertes', 60, death({ Death_date: 46295, Death_cause: 'Heat stroke', Notes_Insectary_data: note }));
+  assert.equal(r().values.Death_date, 46295);
+  assert.equal(r().values.Death_cause, 'Heat stroke');
+  const changes = historyGroup(store, replaced).actions.find(a => a.id === replaced).changes;
+  assert.deepEqual(
+    changes.map(c => [c.field, c.before, c.after]),
+    [
+      ['Death_date', 46268, 46295],
+      ['Death_cause', 'Unknown', 'Heat stroke'],
+      ['Notes_Insectary_data', 'old note', note],
+    ],
+  );
+  // «Deshacer» in «Registradas hoy» undoes that day's changes of the row (their change ids).
+  await undoEdits(store, { changeIds: changes.map(c => c.id), requestId: 'undo-replaced-1' }, ana);
+  assert.equal(r().values.Death_date, 46268);
+  assert.equal(r().values.Death_cause, 'Unknown');
+  assert.equal(r().values.Notes_Insectary_data, 'old note');
+  assert.equal(r().values.Tube_1_id, 'NA');
+  store.close();
+});
+
 test('labels and summaries: runs of identifiers become ranges', () => {
   assert.deepEqual(compressLabels(['A2D', 'A0D', 'A1D', 'A3D', 'CAM079891', 'CAM079892', 'CAM079894', 'B0D', 'x']), [
     'A0D–A3D',

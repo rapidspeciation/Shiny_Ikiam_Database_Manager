@@ -4,21 +4,29 @@ import {
   bestRack,
   buildIndex,
   cardCells,
+  causeForKey,
+  causesByToday,
   daysAlive,
   deathCells,
+  diesBeforeEntry,
   factsOf,
   hasGap,
+  hasSampleIds,
   lackOf,
   lifeOf,
   lookAlikes,
   noteCell,
   preservationGaps,
+  priorDeath,
   rankCauses,
+  replaceCells,
+  replaceNote,
   suggest,
   usedSamples,
   type DeathChoice,
   type Getter,
 } from '../deaths'
+import { isBlank } from '../cells'
 import type { CellValue, TableRow } from '../types'
 
 let next = 1
@@ -296,5 +304,113 @@ describe('each card its own date, cause, preservation and note', () => {
     const gap = { id: 'A1B', slot: 1, keepsCam: false, cam: 'missing' as const, tube: '' as const }
     expect(lackOf(c({ preserved: true }), true, gap)).toBe('sample')
     expect(lackOf(c({ preserved: true }), true, { ...gap, cam: '' })).toBe('')
+  })
+})
+
+describe('the cause buttons', () => {
+  const list = ['Unknown', 'Heat stroke', 'Eaten', 'Disappearance', 'Spider']
+
+  it("today's causes first, most first, each with its count; the rest keep their order", () => {
+    const today = new Map([
+      ['Eaten', 2],
+      ['Spider', 5],
+      ['Disappearance', 2],
+    ])
+    expect(causesByToday(list, today)).toEqual([
+      { cause: 'Spider', today: 5 },
+      { cause: 'Eaten', today: 2 },
+      { cause: 'Disappearance', today: 2 },
+      { cause: 'Unknown', today: 0 },
+      { cause: 'Heat stroke', today: 0 },
+    ])
+    // Nothing recorded today: as they were. A cause not among the buttons is not added.
+    expect(causesByToday(list, new Map()).map(c => c.cause)).toEqual(list)
+    expect(causesByToday(list, new Map([['Old cause', 3]])).map(c => c.cause)).toEqual(list)
+  })
+
+  it('keys 1–9 pick the button in that place', () => {
+    const shown = causesByToday(list, new Map([['Spider', 1]])).map(c => c.cause)
+    expect(causeForKey('1', shown)).toBe('Spider')
+    expect(causeForKey('3', shown)).toBe('Heat stroke')
+    expect(causeForKey('5', shown)).toBe('Disappearance')
+    expect(causeForKey('6', shown)).toBeNull()
+    expect(causeForKey('0', shown)).toBeNull()
+    expect(causeForKey('a', shown)).toBeNull()
+    expect(causeForKey('12', shown)).toBeNull()
+  })
+})
+
+describe('a butterfly already dead in the sheet: its death replaced', () => {
+  const SEP3 = 46268 // 3-Sep-26
+  const choice: DeathChoice = { date: '2026-09-30', cause: 'Heat stroke', preserved: false, note: '' }
+  const notPreservedBlock = (extra: Record<string, CellValue> = {}) =>
+    row({ Insectary_ID: 'B9', Death_date: SEP3, Death_cause: 'Unknown', ...NOT_PRESERVED, Notes_Insectary_data: 'old note', ...extra })
+
+  it('knows the death it has, and whether the row holds a CAM or tube', () => {
+    const r = notPreservedBlock()
+    expect(priorDeath(f => r.values[f] ?? null)).toEqual({ date: SEP3, cause: 'Unknown' })
+    expect(priorDeath(() => null)).toBeNull()
+    expect(hasSampleIds(f => r.values[f] ?? null)).toBe(false)
+    expect(hasSampleIds(f => (f === 'CAM_ID' ? 'CAM078001' : null))).toBe(true)
+  })
+
+  it('the note says what it replaces, in English', () => {
+    expect(replaceNote({ date: SEP3, cause: 'Unknown' }, DAY, DAY)).toBe(
+      'Found dead today; replaces the death recorded on 3/9/26 (Unknown), probably a misread ID',
+    )
+    expect(replaceNote({ date: null, cause: 'Eaten' }, DAY - 1, DAY)).toBe(
+      'Found dead on 29/9/26; replaces the death recorded (Eaten), probably a misread ID',
+    )
+    expect(replaceNote({ date: SEP3, cause: '' }, DAY, DAY)).toBe('Found dead today; replaces the death recorded on 3/9/26, probably a misread ID')
+  })
+
+  it('writes the new date and cause over the old, and the note after the notes there, dated and signed', () => {
+    const r = notPreservedBlock()
+    const cells = replaceCells(r, saved, { ...choice, note: 'Head eaten' }, { medium: 'Flash frozen', today: DAY, initials: 'FCH' })
+    expect(cells).toEqual([
+      { field: 'Death_date', value: DAY, overwrite: true },
+      { field: 'Death_cause', value: 'Heat stroke', overwrite: true },
+      {
+        field: 'Notes_Insectary_data',
+        value: 'old note | 30/9/26 FCH: Found dead today; replaces the death recorded on 3/9/26 (Unknown), probably a misread ID; Head eaten',
+        overwrite: true,
+      },
+    ])
+  })
+
+  it('preserved now, the row without a CAM or tube: the body goes in a tube over the old NA / NOT_COLLECTED block', () => {
+    const r = notPreservedBlock()
+    const how = { sample: { cam: 'cam078001', tube: 'fs12' }, medium: 'Flash frozen', today: DAY }
+    const cells = replaceCells(r, saved, { ...choice, preserved: true }, how)
+    expect(asObject(cells)).toMatchObject({
+      Death_date: DAY,
+      Death_cause: 'Heat stroke',
+      CAM_ID: 'CAM078001',
+      Tube_1_id: 'FS12',
+      Tube_1_tissue: 'WHOLE_ORGANISM',
+      T1_Preservation_medium: 'Flash frozen',
+      Preservation_date: DAY,
+      Preserved_Dead_Alive: 'Dead',
+      Location_body: 'Ikiam',
+    })
+    // Each cell over a value the sheet has is marked to overwrite it.
+    expect(cells.filter(c => !isBlank(r.values[c.field])).every(c => c.overwrite)).toBe(true)
+  })
+
+  it('a row preserved before keeps its CAM and tubes', () => {
+    const r = row({ Insectary_ID: 'B9', Death_date: SEP3, Death_cause: 'Killed_Preserved', CAM_ID: 'CAM070001', Tube_1_id: 'FS3' })
+    const how = { sample: { cam: 'CAM1', tube: 'FS1' }, medium: 'Ethanol', today: DAY }
+    expect(Object.keys(asObject(replaceCells(r, saved, { ...choice, preserved: true }, how)))).toEqual([
+      'Death_date',
+      'Death_cause',
+      'Notes_Insectary_data',
+    ])
+  })
+
+  it('a death date before it entered the insectary is flagged', () => {
+    expect(diesBeforeEntry('2026-09-30', DAY + 1)).toBe(true)
+    expect(diesBeforeEntry('2026-09-30', DAY)).toBe(false)
+    expect(diesBeforeEntry('2026-09-30', null)).toBe(false)
+    expect(diesBeforeEntry('', DAY)).toBe(false)
   })
 })

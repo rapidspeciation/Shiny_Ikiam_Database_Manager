@@ -20,8 +20,10 @@ import {
   removeCards,
   setCardField,
   sortRecorded,
+  stillRecorded,
   type HistoryAction,
 } from '../deathsCart'
+import type { CellValue } from '../types'
 
 const heat: DeathChoice = { date: '2026-10-06', cause: 'Heat stroke', preserved: false, note: '' }
 const unknown: DeathChoice = { date: '2026-10-05', cause: 'Unknown', preserved: false, note: '' }
@@ -246,7 +248,31 @@ describe('«Registradas hoy»', () => {
         { id: 'u2', name: 'Ana' },
       ],
       changeIds: ['c1', 'c2', 'c4'],
+      before: { Death_date: null, Death_cause: null },
     })
+  })
+
+  it('a death undone since is no longer listed, also one that replaced another (the old one back)', () => {
+    const replaced = action({
+      changes: [
+        { id: 'c1', recordId: 'r1', label: 'B9', sheet: 'Insectary_data', field: 'Death_date', before: 46268, after: 46301 },
+        { id: 'c2', recordId: 'r1', label: 'B9', sheet: 'Insectary_data', field: 'Death_cause', before: 'Unknown', after: 'Heat stroke' },
+        { id: 'c3', recordId: 'r1', label: 'B9', sheet: 'Insectary_data', field: 'Notes_Insectary_data', before: null, after: 'x' },
+      ],
+    })
+    const [item] = recordedOn([replaced], '2026-10-06')
+    expect(item.before).toEqual({ Death_date: 46268, Death_cause: 'Unknown' })
+    const cells = (values: Record<string, CellValue>) => (f: string) => values[f] ?? null
+    expect(stillRecorded(item, cells({ Death_date: 46301, Death_cause: 'Heat stroke' }))).toBe(true)
+    // Undone: the old death is back.
+    expect(stillRecorded(item, cells({ Death_date: 46268, Death_cause: 'Unknown' }))).toBe(false)
+    // A new death undone: alive again (blank or NA).
+    const fresh = recordedOn([action({ changes: [change('c4', 'r2', 'A1E')] })], '2026-10-06')[0]
+    expect(stillRecorded(fresh, cells({ Death_date: 1 }))).toBe(true)
+    expect(stillRecorded(fresh, cells({ Death_date: 'NA' }))).toBe(false)
+    // Only a note saved: nothing to compare, it stays.
+    const note = recordedOn([action({ changes: [change('c5', 'r3', 'C1E', 'Notes_Insectary_data')] })], '2026-10-06')[0]
+    expect(stillRecorded(note, cells({}))).toBe(true)
   })
 
   it('sorts by Insectary ID, emergence date or sheet row, up or down', () => {

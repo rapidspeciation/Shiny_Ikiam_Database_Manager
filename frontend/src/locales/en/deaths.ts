@@ -91,6 +91,18 @@ export default {
   'Varias notas: lo que escribas reemplaza la de cada una': 'Different notes: what you type replaces each one',
   'Toca las tarjetas para añadirlas o quitarlas': 'Tap cards to add or take them out',
   '{key}+clic o Mayús+clic: varias a la vez': '{key}+click or Shift+click: several at once',
+  // Today's causes first (cards' panel)
+  '{n} hoy': '{n} today',
+  // A butterfly already dead in the sheet: its death replaced
+  'Ya muerta: {what}': 'Already dead: {what}',
+  'Reemplazar la muerte anterior': 'Replace the earlier death',
+  'Reemplazar la muerte anterior de {id}': 'Replace the earlier death of {id}',
+  '{n} ya muerta se omite: reemplázala desde su tarjeta': '{n} already dead is skipped: replace it from its card',
+  '{n} ya muertas se omiten: reemplázalas desde su tarjeta': '{n} already dead are skipped: replace them from their cards',
+  'se omite al añadir las seleccionadas; reemplázala desde su tarjeta': 'skipped when adding the selected ones; replace it from its card',
+  'Registrarla reemplaza esa muerte y lo anota en Notes_Insectary_data.':
+    'Recording it replaces that death and says so in Notes_Insectary_data.',
+  'La fecha de muerte es anterior a su entrada al insectario ({date})': 'The death date is before it entered the insectary ({date})',
   'Registrada: corrígela y guarda el cambio.': 'Recorded: correct it and save the change.',
   'Para cambiarla: Tubos, o «Deshacer muerte» y añadirla otra vez.': 'To change it: Tubes, or “Undo death” and add it again.',
   'Enter añade la mariposa a Seleccionadas; {keys} la añade a muertes. Pega varias o un rango (B0D-B9D).':

@@ -1,5 +1,5 @@
 import { isBlank } from './cells'
-import { appendNote } from './clutches'
+import { appendNote, noteDay } from './clutches'
 import { serialFromIso } from './dates'
 import type { CellValue, TableRow } from './types'
 
@@ -498,6 +498,96 @@ export function cardCells(
   const note = noteCell(row, get, choice.note ?? '', today, initials)
   return note ? [...cells, note] : cells
 }
+
+// --- A butterfly the sheet already has dead (a misread ID, found dead again): its death replaced
+
+/** The death the sheet has for a butterfly (date and cause), or null while it is alive. */
+export interface PriorDeath {
+  date: number | null
+  cause: string
+}
+export function priorDeath(get: (field: string) => CellValue): PriorDeath | null {
+  const life = lifeOf(get)
+  return life.state === 'dead' ? { date: life.death, cause: life.cause } : null
+}
+
+/** Its CAM or first tube holds an ID (a body preserved before): replacing the death keeps them. */
+export const hasSampleIds = (get: (field: string) => CellValue) => !isBlank(get('CAM_ID')) || !isBlank(get('Tube_1_id'))
+
+/**
+ * The note a replaced death adds, in English: "Found dead today; replaces the
+ * death recorded on 3/9/26 (Unknown), probably a misread ID".
+ */
+export function replaceNote(prior: PriorDeath, serial: number | null, today: number): string {
+  const when = serial === null || serial === today ? 'today' : `on ${noteDay(serial)}`
+  const was = [prior.date !== null ? `on ${noteDay(prior.date)}` : '', prior.cause ? `(${prior.cause})` : ''].filter(Boolean).join(' ')
+  return `Found dead ${when}; replaces the death recorded${was ? ` ${was}` : ''}, probably a misread ID`
+}
+
+/**
+ * The cells replacing the death a butterfly has in the sheet: Death_date and
+ * Death_cause written over the old ones; a body preserved now (when the row
+ * holds no CAM or tube ID yet) written as for a new death, over the old
+ * not-preserved block (NA, NOT_COLLECTED); a not-preserved death fills what
+ * is empty; then the note saying what it replaces (and the card's own note),
+ * dated `today` and signed. Undo in Historial puts the old death back.
+ */
+export function replaceCells(
+  row: TableRow,
+  get: Getter,
+  choice: DeathChoice,
+  {
+    sample,
+    medium,
+    today,
+    initials = '',
+  }: { sample?: { cam: string; tube: string }; medium: string; today: number; initials?: string },
+): DeathCell[] {
+  const value = (field: string) => get(row, field)
+  const prior = priorDeath(value) ?? { date: null, cause: '' }
+  const serial = choice.date ? serialFromIso(choice.date) : null
+  const out: DeathCell[] = []
+  const over = (field: string, v: CellValue) => {
+    if (!row.formulas.includes(field) && value(field) !== v) out.push({ field, value: v, overwrite: true })
+  }
+  if (serial !== null) over('Death_date', serial)
+  if (choice.cause) over('Death_cause', choice.cause)
+  const preserving = choice.preserved && !hasSampleIds(value)
+  // The rest of the death sees the new date and cause, and (preserving now) the old not-preserved block as empty.
+  const now = new Map(out.map(c => [c.field, c.value]))
+  const after: Getter = (r, field) =>
+    now.has(field) ? now.get(field)! : preserving && field in NOT_PRESERVED && value(field) === NOT_PRESERVED[field] ? null : get(r, field)
+  const preserve = preserving
+    ? { cam: sample?.cam.trim().toUpperCase() || '', tube: sample?.tube.trim().toUpperCase() || '', medium }
+    : undefined
+  for (const c of deathCells(row, after, { serial, cause: choice.cause, notPreserved: !choice.preserved, preserve }))
+    if (!now.has(c.field)) out.push(isBlank(value(c.field)) ? c : { ...c, overwrite: true })
+  const text = [replaceNote(prior, serial, today), (choice.note ?? '').trim()].filter(Boolean).join('; ')
+  const note = noteCell(row, get, text, today, initials)
+  return note ? [...out, note] : out
+}
+
+/** The death date chosen falls before the butterfly entered the insectary (emerged or caught): worth a look, not a block. */
+export const diesBeforeEntry = (date: string, entered: number | null) => {
+  const serial = date ? serialFromIso(date) : null
+  return serial !== null && entered !== null && serial < entered
+}
+
+// --- The cause buttons
+
+/**
+ * The causes in the order the buttons show them: those recorded today first,
+ * most first (a tie in the list's order), each with its count; then the rest
+ * in the list's order.
+ */
+export function causesByToday(list: string[], today: Map<string, number>): { cause: string; today: number }[] {
+  const out = list.map((cause, i) => ({ cause, today: today.get(cause) ?? 0, i }))
+  out.sort((a, b) => (b.today > 0 || a.today > 0 ? b.today - a.today : 0) || a.i - b.i)
+  return out.map(({ cause, today }) => ({ cause, today }))
+}
+
+/** The cause a number key picks (1–9: the button in that place), or null. */
+export const causeForKey = (key: string, causes: string[]) => (/^[1-9]$/.test(key) ? (causes[Number(key) - 1] ?? null) : null)
 
 /** Why a butterfly's death cannot be written yet: '' when it can. */
 export type Lack = '' | 'date' | 'bad-date' | 'cause' | 'sample'

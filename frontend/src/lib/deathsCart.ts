@@ -1,3 +1,4 @@
+import { isBlank } from './cells'
 import { searchKey, type ChoiceField, type DeathChoice } from './deaths'
 import type { CellValue } from './types'
 
@@ -194,6 +195,19 @@ export interface Recorded {
   at: string
   actors: { id: string; name: string }[]
   changeIds: string[]
+  /** Death_date and Death_cause before that day's first save of it (null: alive; a death replaced: the old one). */
+  before: Partial<Record<'Death_date' | 'Death_cause', CellValue>>
+}
+
+const DEATH_FIELDS = ['Death_date', 'Death_cause'] as const
+const sameCell = (a: CellValue | undefined, b: CellValue | undefined) => (isBlank(a) && isBlank(b)) || String(a ?? '') === String(b ?? '')
+/**
+ * The death recorded still holds: its date and cause are not back to what
+ * they were before (an undo, also of a death that replaced another).
+ */
+export function stillRecorded(item: Recorded, current: (field: string) => CellValue): boolean {
+  const fields = DEATH_FIELDS.filter(f => f in item.before)
+  return !fields.length || !fields.every(f => sameCell(current(f), item.before[f]))
 }
 
 /** The day (ISO) a moment falls on in Ecuador, as `todayIso` counts days. */
@@ -214,9 +228,10 @@ export function recordedOn(actions: HistoryAction[], day: string, dayOf: (iso: s
       if (change.sheet !== 'Insectary_data') continue
       let item = out.get(change.recordId)
       if (!item) {
-        item = { recordId: change.recordId, label: change.label ?? '', at: action.createdAt, actors: [], changeIds: [] }
+        item = { recordId: change.recordId, label: change.label ?? '', at: action.createdAt, actors: [], changeIds: [], before: {} }
         out.set(change.recordId, item)
       }
+      for (const f of DEATH_FIELDS) if (change.field === f && !(f in item.before)) item.before[f] = change.before
       item.at = action.createdAt
       if (change.label) item.label = change.label
       item.changeIds.push(change.id)

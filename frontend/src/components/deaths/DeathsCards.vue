@@ -42,14 +42,20 @@ import {
   bestRack,
   buildIndex,
   cardCells,
+  causeForKey,
+  causesByToday,
+  diesBeforeEntry,
   factsOf,
   hasGap,
+  hasSampleIds,
   lackOf,
   lifeOf,
   lookAlikes,
   noteCell,
   preservationGaps,
+  priorDeath,
   rankCauses,
+  replaceCells,
   searchKey,
   suggest,
   usedSamples,
@@ -79,6 +85,7 @@ import {
   recordedOn,
   removeCards,
   setCardField,
+  stillRecorded,
   DEFAULT_ORDER,
   type DeathCard,
   type HistoryAction,
@@ -449,9 +456,9 @@ function closePanel() {
 /** A click on empty space among the cards (not on a card, a button or a box): back to the values for the next ones. */
 function onEmptyClick(event: MouseEvent) {
   if (panelMode.value === 'defaults' && !selecting.value) return
-  const target = event.target as Element | null
-  if (!target || target.closest('button, a, input, textarea, select, label, [role="listbox"], [data-card], [data-panel], [data-panel-folded]'))
-    return
+  // The path as dispatched: a tap on a card may re-render what was tapped (its check icon) before the click gets here.
+  const controls = 'button, a, input, textarea, select, label, [role="listbox"], [data-card], [data-panel], [data-panel-folded], [data-search-bar]'
+  if (event.composedPath().some(el => el instanceof Element && el.matches(controls))) return
   // Text being selected (to copy an ID) is not a click on nothing.
   if (window.getSelection()?.toString()) return
   closePanel()
@@ -467,6 +474,17 @@ const causes = computed(() => {
   const values = list?.size ? [...list] : (props.options.Death_cause || []).filter(v => !/^\d+$/.test(v))
   return rankCauses(values, props.table?.rows || [], today.value)
 })
+/** The causes of today's deaths («Registradas hoy», everyone's), how many each. */
+const todayCauses = computed(() => {
+  const out = new Map<string, number>()
+  for (const item of allRecorded.value) {
+    const cause = cellText(pending.value(item.row, 'Death_cause'))
+    if (cause) out.set(cause, (out.get(cause) ?? 0) + 1)
+  }
+  return out
+})
+/** The buttons: today's causes first, most first, with their count («Heat stroke ×5»); then the rest as before. Keys 1–9 pick them. */
+const causeButtons = computed(() => causesByToday(causes.value, todayCauses.value))
 const quickDates = computed(() => [
   { iso: todayIso(), name: t('Hoy') },
   { iso: serialToIso(today.value - 1), name: t('Ayer') },
@@ -538,11 +556,16 @@ function revealPanel() {
 }
 
 // --- Preserved: each card's CAM and tube
-/** Rows dying now (no death date yet): preserved, each gets its CAM and tube. */
+/** Rows dying now (no death date yet). */
 const dying = (row: TableRow) => lifeOf(get(row)).state !== 'dead'
-const toPreserve = computed(() => cardRows.value.filter(r => choiceOf(r).preserved && dying(r)))
-/** Already recorded dead: "preserved" does not give them a tube here (Tubos does). */
-const notToPreserve = computed(() => cardRows.value.filter(r => choiceOf(r).preserved && !dying(r)))
+/** The death the sheet already has for a butterfly (a misread ID, found dead again): its card replaces it, explicitly. */
+const priorOf = (row: TableRow) => priorDeath(f => row.values[f] ?? null)
+const replacing = (row: TableRow) => priorOf(row) !== null
+/** Preserved, each gets its CAM and tube: a death now, or one replacing a death whose row holds no CAM or tube ID yet. */
+const canPreserve = (row: TableRow) => (replacing(row) ? !hasSampleIds(f => pending.value(row, f)) : dying(row))
+const toPreserve = computed(() => cardRows.value.filter(r => choiceOf(r).preserved && canPreserve(r)))
+/** Already preserved before: "preserved" does not give them a tube here (Tubos does). */
+const notToPreserve = computed(() => cardRows.value.filter(r => choiceOf(r).preserved && !canPreserve(r)))
 /** The CAM and tube boxes in the panel: the card's, or every card's being preserved (for «Añadir todas»). */
 const panelPreserve = computed(() =>
   panelMode.value === 'card' ? toPreserve.value.filter(isSelected) : panelMode.value === 'defaults' ? toPreserve.value : [],
@@ -629,22 +652,30 @@ function gapText(g: PreservationGap) {
 /** The cells recording each card writes (the same as the table's «Escribir fecha y causa», plus CAM, tube and note). */
 const plans = computed(() => {
   const out = new Map<string, DeathCell[]>()
-  for (const row of cardRows.value)
-    out.set(
-      row.id,
-      cardCells(row, pending.value, choiceOf(row), {
-        sample: samples[idOf(row)],
-        medium: medium.value,
-        today: today.value,
-        initials: initials.value,
-      }),
-    )
+  for (const row of cardRows.value) {
+    const how = { sample: samples[idOf(row)], medium: medium.value, today: today.value, initials: initials.value }
+    out.set(row.id, (replacing(row) ? replaceCells : cardCells)(row, pending.value, choiceOf(row), how))
+  }
   return out
 })
 type CardLack = Lack | 'nothing'
 /** Why a card cannot be recorded yet ('' when it can); 'nothing': already dead and nothing new to write. */
 const lackFor = (row: TableRow): CardLack =>
-  lackOf(choiceOf(row), dying(row), gapById.value.get(idOf(row))) || ((plans.value.get(row.id) || []).length ? '' : 'nothing')
+  lackOf(choiceOf(row), dying(row) || replacing(row), gapById.value.get(idOf(row))) ||
+  ((plans.value.get(row.id) || []).length ? '' : 'nothing')
+/** «Ya muerta: 3-Sep-26, Unknown»: the death in the sheet its card would replace. */
+function priorText(row: TableRow) {
+  const prior = priorOf(row)
+  if (!prior) return ''
+  const what = [prior.date !== null ? formatSerial(prior.date) : '', prior.cause].filter(Boolean).join(', ')
+  return t('Ya muerta: {what}', { what })
+}
+/** The death date chosen is before it entered the insectary: a warning, not a block. */
+const beforeEntry = (row: TableRow) => diesBeforeEntry(choiceOf(row).date, factsFor(row).entered)
+/** The cards open in the panel whose death date is before their entry. */
+const panelBeforeEntry = computed(() => (panelMode.value === 'card' ? selectedRows.value.filter(beforeEntry) : []))
+const beforeEntryText = (row: TableRow) =>
+  t('La fecha de muerte es anterior a su entrada al insectario ({date})', { date: formatSerial(factsFor(row).entered ?? NaN) })
 const lackText = (lack: CardLack, row?: TableRow) => {
   if (lack === 'sample' && row) {
     const g = gapById.value.get(idOf(row))
@@ -659,22 +690,23 @@ const lackText = (lack: CardLack, row?: TableRow) => {
     nothing: t('Ya registrada: no se cambiará'),
   }[lack]
 }
-const readyRows = computed(() => cardRows.value.filter(r => !lackFor(r)))
-/** Already recorded dead and nothing of its death left to write (its note may still be added). */
-const registered = (row: TableRow) =>
-  factsFor(row).life.state === 'dead' && !(plans.value.get(row.id) || []).some(c => c.field !== NOTES)
+/** What «Añadir todas» records: the cards ready, but not those replacing a death (each one only from its own button). */
+const readyRows = computed(() => cardRows.value.filter(r => !lackFor(r) && !replacing(r)))
+const skippedRows = computed(() => cardRows.value.filter(replacing))
+const skippedText = (n: number) =>
+  n ? tn(n, '{n} ya muerta se omite: reemplázala desde su tarjeta', '{n} ya muertas se omiten: reemplázalas desde su tarjeta') : ''
 /** A card's date, cause and preservation, as chips. */
 function chipsOf(row: TableRow) {
   const c = choiceOf(row)
   const s = samples[idOf(row)]
-  const preserving = c.preserved && dying(row)
+  const preserving = c.preserved && canPreserve(row)
   return [
     {
       field: 'date',
       text: c.date ? (serialFromIso(c.date) !== null ? formatSerial(isoToSerial(c.date)) : c.date) : t('sin fecha'),
       missing: !c.date,
     },
-    { field: 'cause', text: c.cause || t('sin causa'), missing: !c.cause && dying(row) },
+    { field: 'cause', text: c.cause || t('sin causa'), missing: !c.cause && (dying(row) || replacing(row)) },
     {
       field: 'preserved',
       text: preserving
@@ -711,7 +743,7 @@ const issueOf = (row: TableRow) => Object.entries(pending.issues).find(([k]) => 
  * sheet refuses gets its cells back and stays, with the reason. A save whose
  * outcome is unclear leaves its cells among the changes to save («Por guardar»).
  */
-async function record(rows: TableRow[]) {
+async function record(rows: TableRow[], skipped = 0) {
   const go = rows.filter(r => !lackFor(r))
   if (!go.length || saving.value) return
   saving.value = true
@@ -761,7 +793,7 @@ async function record(rows: TableRow[]) {
     else if (done.length && result?.queued)
       notify(tn(done.length, '{n} muerte esperando a Google Sheets: se escribe cuando responda', '{n} muertes esperando a Google Sheets: se escriben cuando responda'))
     else if (done.length)
-      notify(tn(done.length, '{n} muerte guardada en Google Sheets', '{n} muertes guardadas en Google Sheets') + ` · ${done.join(', ')}`, 'success')
+      notify(tn(done.length, '{n} muerte guardada en Google Sheets', '{n} muertes guardadas en Google Sheets') + ` · ${[done.join(', '), skippedText(skipped)].filter(Boolean).join(' · ')}`, 'success')
     loadRecorded()
     if (!touch.value) searchInput.value?.focus()
   } finally {
@@ -803,9 +835,10 @@ onBeforeUnmount(() => clearTimeout(reloadTimer))
 const mineOnly = persistentRef('deaths:recorded-mine', false, { lasting: true })
 const storedOrder = persistentRef<RecordedOrder>('deaths:recorded-order', DEFAULT_ORDER, { lasting: true })
 const order = computed<RecordedOrder>({ get: () => readOrder(storedOrder.value), set: v => (storedOrder.value = v) })
-const recorded = computed<RecordedItem[]>(() => {
+/** Today's deaths, everyone's («Mías» filters them below; the cause buttons count them all). */
+const allRecorded = computed<(RecordedItem & { mine: boolean })[]>(() => {
   const me = session.user?.id
-  const out: RecordedItem[] = []
+  const out: (RecordedItem & { mine: boolean })[] = []
   const seen = new Set<string>()
   // Not in Google Sheets yet (refused, waiting for Google, or typed in the table): first.
   for (const e of Object.values(pending.edits)) {
@@ -814,19 +847,19 @@ const recorded = computed<RecordedItem[]>(() => {
     if (!row) continue
     seen.add(row.id)
     const queued = pending.isQueued(row.id, 'Death_date') || pending.isQueued(row.id, 'Death_cause')
-    out.push({ row, status: queued ? 'queued' : 'pending', others: [], changeIds: [] })
+    out.push({ row, status: queued ? 'queued' : 'pending', others: [], changeIds: [], mine: true })
   }
   for (const r of recordedOn(actions.value, todayIso())) {
     if (seen.has(r.recordId)) continue
     const row = rowById.value.get(r.recordId)
-    // Undone since (alive again): no longer listed.
-    if (!row || lifeOf(get(row)).state !== 'dead') continue
+    // Undone since (alive again, or the death it replaced back): no longer listed.
+    if (!row || lifeOf(get(row)).state !== 'dead' || !stillRecorded(r, get(row))) continue
     const mine = r.actors.some(a => a.id === me)
-    if (mineOnly.value && !mine) continue
-    out.push({ row, status: 'saved', others: r.actors.filter(a => a.id !== me).map(a => a.name), changeIds: r.changeIds })
+    out.push({ row, status: 'saved', others: r.actors.filter(a => a.id !== me).map(a => a.name), changeIds: r.changeIds, mine })
   }
   return out
 })
+const recorded = computed<RecordedItem[]>(() => allRecorded.value.filter(item => !mineOnly.value || item.mine))
 
 /** A recorded death opened in the panel: its date and cause as they are, and a note to add. */
 function startEdit(row: TableRow) {
@@ -939,36 +972,52 @@ const footer = computed(() => {
     return {
       text: lackText(lack, row),
       gap: lack === 'sample' ? idOf(row) : '',
-      label: t('Añadir {id} a muertes', { id: idOf(row) }),
+      label: replacing(row) ? t('Reemplazar la muerte anterior de {id}', { id: idOf(row) }) : t('Añadir {id} a muertes', { id: idOf(row) }),
       disabled: !!lack,
       run: () => record([row]),
     }
   }
-  // The cards open in the panel, or all of them.
+  // The cards open in the panel, or all of them; those replacing a death only from their own button.
   const rows = panelMode.value === 'card' ? selectedRows.value : cardRows.value
   if (!rows.length) return null
-  const ready = rows.filter(r => !lackFor(r))
-  const waiting = rows.filter(r => lackFor(r))
+  const skipped = rows.filter(replacing)
+  const ready = rows.filter(r => !lackFor(r) && !replacing(r))
+  const waiting = rows.filter(r => lackFor(r) && !replacing(r))
   const first = waiting[0]
   const lack = first ? lackFor(first) : ''
   return {
-    text: first
-      ? tn(waiting.length, '{n} sin terminar: {why}', '{n} sin terminar: {why}', {
-          why: `${idOf(first)}, ${lackText(lack, first).replace(/^./, c => c.toLowerCase())}`,
-        })
-      : '',
+    text: [
+      first
+        ? tn(waiting.length, '{n} sin terminar: {why}', '{n} sin terminar: {why}', {
+            why: `${idOf(first)}, ${lackText(lack, first).replace(/^./, c => c.toLowerCase())}`,
+          })
+        : '',
+      skippedText(skipped.length),
+    ]
+      .filter(Boolean)
+      .join(' · '),
     gap: lack === 'sample' ? idOf(first!) : '',
     label: ready.length ? tn(ready.length, 'Añadir {n} a muertes', 'Añadir las {n} a muertes') : t('Añadir a muertes'),
     disabled: !ready.length,
-    run: () => record(ready),
+    run: () => record(ready, skipped.length),
   }
 })
+/** A box one types in has the keys (the search, the note, a date, a CAM). */
+const typing = (target: EventTarget | null) =>
+  target instanceof HTMLElement && (target.isContentEditable || !!target.closest('input, textarea, select, [contenteditable]'))
 function onKey(e: KeyboardEvent) {
   if (undoing.value || showHistory.value || drawerRow.value) return
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
     e.preventDefault()
     if (footer.value && !footer.value.disabled && !saving.value) footer.value.run()
   } else if (e.key === 'Escape' && (panelMode.value !== 'defaults' || selecting.value)) closePanel()
+  else if (!e.ctrlKey && !e.metaKey && !e.altKey && canEdit.value && !typing(e.target)) {
+    // 1–9: the cause in that place, for the card(s) open or the next butterflies.
+    const cause = causeForKey(e.key, causeButtons.value.map(b => b.cause))
+    if (!cause || (!wide.value && !unfolded.value)) return
+    e.preventDefault()
+    pickCause(cause)
+  }
 }
 onMounted(() => window.addEventListener('keydown', onKey))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
@@ -1129,7 +1178,7 @@ const choice = (on: boolean) =>
   >
     <div ref="scroller" data-scroll class="min-h-0 min-w-0 flex-1 overflow-y-auto" @click="onEmptyClick">
       <!-- The search stays at the top while the cards scroll. -->
-      <div ref="searchBar" class="sticky top-0 z-20 border-b border-stone-200 bg-white px-3 pt-3 pb-2 short:pt-1.5 short:pb-1.5">
+      <div ref="searchBar" data-search-bar class="sticky top-0 z-20 border-b border-stone-200 bg-white px-3 pt-3 pb-2 short:pt-1.5 short:pb-1.5">
         <div class="flex items-start gap-2">
           <div class="relative min-w-0 flex-1">
             <div class="relative">
@@ -1376,6 +1425,18 @@ const choice = (on: boolean) =>
             </div>
             <LifeBadge :facts="factsFor((focusRow ?? editingRow)!)" />
           </div>
+          <!-- Dead in the sheet already: recording replaces that death, with a note saying so. -->
+          <p
+            v-for="row in panelMode === 'card' ? selectedRows.filter(replacing) : []"
+            :key="row.id"
+            class="flex items-start gap-1.5 rounded-lg bg-red-50 px-2 py-1.5 text-sm text-red-800"
+          >
+            <AlertTriangle :size="16" class="mt-0.5 shrink-0" />
+            <span class="min-w-0"
+              ><span class="font-semibold">{{ multi ? `${idOf(row)}: ` : '' }}{{ priorText(row) }}</span>
+              {{ multi ? $t('se omite al añadir las seleccionadas; reemplázala desde su tarjeta') : $t('Registrarla reemplaza esa muerte y lo anota en Notes_Insectary_data.') }}</span
+            >
+          </p>
           <div>
             <h2 class="mb-1.5 text-sm font-semibold text-stone-700">
               {{ $t('Fecha de muerte') }} <span v-if="isMixed('date')" :class="mixedChip">{{ $t('varios') }}</span>
@@ -1395,6 +1456,9 @@ const choice = (on: boolean) =>
             </div>
             <p v-if="dateError" class="mt-1 text-sm text-red-700">{{ dateError }}</p>
             <p v-else-if="shownDate" class="mt-1 text-sm text-stone-600">{{ dayLabel(shownDate) }}</p>
+            <p v-for="row in panelBeforeEntry" :key="row.id" class="mt-1 text-sm text-amber-900">
+              {{ multi ? `${idOf(row)}: ` : '' }}{{ beforeEntryText(row) }}
+            </p>
             <button v-if="spread('date').length" class="mt-1 text-xs font-semibold text-brand-800 underline" @click="spreadField('date')">
               {{ $tn(spread('date').length, 'Aplicar también a {n} seleccionada', 'Aplicar también a las {n} seleccionadas') }}
             </button>
@@ -1405,14 +1469,27 @@ const choice = (on: boolean) =>
             </h2>
             <div class="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-2">
               <button
-                v-for="c in causes"
+                v-for="({ cause: c, today: n }, i) in causeButtons"
                 :key="c"
-                class="min-h-12 rounded-lg border px-2 py-2 text-base font-medium break-words"
+                class="relative min-h-12 rounded-lg border px-2 py-2 text-base font-medium break-words"
                 :class="choice(shown.cause === c)"
                 :aria-pressed="shown.cause === c"
+                :aria-keyshortcuts="!touch && i < 9 ? String(i + 1) : undefined"
+                :data-cause="c"
                 @click="pickCause(c)"
               >
+                <!-- The number key that picks it (computers only). -->
+                <span v-if="!touch && i < 9" class="absolute top-0.5 left-1.5 text-[0.65rem] leading-none font-semibold opacity-50" aria-hidden="true">{{
+                  i + 1
+                }}</span>
                 {{ c }}
+                <span
+                  v-if="n"
+                  class="ml-0.5 rounded px-1 text-xs font-semibold"
+                  :class="shown.cause === c ? 'bg-white/20' : 'bg-brand-50 text-brand-800'"
+                  :title="$tn(n, '{n} hoy', '{n} hoy')"
+                  >×{{ n }}</span
+                >
               </button>
             </div>
             <button v-if="spread('cause').length" class="mt-1 text-xs font-semibold text-brand-800 underline" @click="spreadField('cause')">
@@ -1628,12 +1705,15 @@ const choice = (on: boolean) =>
             v-if="canEdit && cardRows.length > 1"
             class="btn h-10"
             :disabled="!readyRows.length || saving"
-            :title="shortcut && panelMode === 'defaults' ? shortcut : undefined"
-            @click="record(readyRows)"
+            :title="[shortcut && panelMode === 'defaults' ? shortcut : '', skippedText(skippedRows.length)].filter(Boolean).join(' · ') || undefined"
+            @click="record(readyRows, skippedRows.length)"
           >
             <Plus :size="16" /> {{ $t('Añadir todas ({n})', { n: readyRows.length }) }}
           </button>
         </div>
+        <p v-if="canEdit && cardRows.length > 1 && skippedRows.length" class="mt-1 text-right text-xs text-red-800">
+          {{ skippedText(skippedRows.length) }}
+        </p>
         <ul class="mt-2 grid grid-cols-[repeat(auto-fill,minmax(17rem,1fr))] gap-2">
           <li
             v-for="row in cardRows"
@@ -1692,8 +1772,15 @@ const choice = (on: boolean) =>
             </button>
             <!-- This card's date, cause and preservation, and the note it adds; then its button. -->
             <div v-if="canEdit" class="rounded-b-xl border-t border-stone-100 px-3 py-1.5 text-xs">
-              <p v-if="registered(row) && !noteOf(row)" class="text-stone-500">{{ $t('Ya registrada: no se cambiará') }}</p>
-              <p v-else class="flex flex-wrap gap-1" :data-choice="idOf(row)">
+              <!-- Dead in the sheet already: what its button would replace. -->
+              <p
+                v-if="replacing(row)"
+                class="mb-1 flex items-start gap-1 rounded-md bg-red-50 px-1.5 py-1 text-sm font-semibold text-red-800"
+                :data-prior="idOf(row)"
+              >
+                <AlertTriangle :size="15" class="mt-0.5 shrink-0" /><span class="min-w-0">{{ priorText(row) }}</span>
+              </p>
+              <p class="flex flex-wrap gap-1" :data-choice="idOf(row)">
                 <span
                   v-for="chip in chipsOf(row)"
                   :key="chip.field"
@@ -1705,19 +1792,21 @@ const choice = (on: boolean) =>
               <p v-if="noteOf(row)" class="mt-1 flex items-start gap-1 rounded-md bg-stone-100 px-1.5 py-0.5 break-words text-stone-700" :data-note="idOf(row)">
                 <StickyNote :size="13" class="mt-px shrink-0" /><span class="min-w-0">{{ noteOf(row) }}</span>
               </p>
+              <p v-if="beforeEntry(row)" class="mt-1 text-amber-900" :data-before-entry="idOf(row)">{{ beforeEntryText(row) }}</p>
               <p v-if="refusals[idOf(row)]" class="mt-1 text-sm text-red-700">{{ $t('No se guardó: {reason}', { reason: refusals[idOf(row)] }) }}</p>
-              <div class="mt-1.5 flex items-center gap-2">
-                <span class="min-w-0 flex-1 text-xs" :class="lackFor(row) === 'nothing' ? 'text-stone-500' : 'text-amber-900'">{{
+              <div class="mt-1.5 flex flex-wrap items-center justify-end gap-2">
+                <span class="min-w-24 flex-1 text-xs" :class="lackFor(row) === 'nothing' ? 'text-stone-500' : 'text-amber-900'">{{
                   lackFor(row) && lackFor(row) !== 'sample' ? lackText(lackFor(row), row) : ''
                 }}</span>
                 <button
-                  class="btn-primary h-10 shrink-0 px-3 text-sm"
+                  class="h-10 shrink-0 px-3 text-sm"
+                  :class="replacing(row) ? 'btn border-red-300 text-red-800' : 'btn-primary'"
                   :disabled="!!lackFor(row) || saving"
                   :data-add="idOf(row)"
                   @click="record([row])"
                 >
-                  <Loader2 v-if="recording.includes(idOf(row))" :size="15" class="animate-spin" /><Plus v-else :size="16" />
-                  {{ $t('Añadir a muertes') }}
+                  <Loader2 v-if="recording.includes(idOf(row))" :size="15" class="animate-spin" /><Plus v-else-if="!replacing(row)" :size="16" />
+                  {{ replacing(row) ? $t('Reemplazar la muerte anterior') : $t('Añadir a muertes') }}
                 </button>
               </div>
             </div>
