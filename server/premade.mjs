@@ -40,6 +40,66 @@ const range = (sheetId, r0, r1, c0, c1) => ({
   endColumnIndex: c1,
 });
 
+/**
+ * The protected ranges of a sheet (as Google lists them) the app's account cannot
+ * edit: Google leaves requestingUserCanEdit out when it is false; ranges that only
+ * warn are editable.
+ */
+export const lockedRanges = ranges => (ranges || []).filter(p => p.requestingUserCanEdit !== true && !p.warningOnly);
+
+/**
+ * Whether column `column` (0-based) is locked for the app's account in sheet rows
+ * row0–row1 (1-based): a locked range (lockedRanges) reaches them, and none of its
+ * unprotected ranges leaves them all out.
+ */
+export function columnLocked(locked, column, row0, row1 = row0) {
+  const covers = (r, a, b) =>
+    (r.startRowIndex ?? 0) < b &&
+    a - 1 < (r.endRowIndex ?? Infinity) &&
+    (r.startColumnIndex ?? 0) <= column &&
+    column < (r.endColumnIndex ?? Infinity);
+  return locked.some(
+    p =>
+      covers(p.range ?? {}, row0, row1) &&
+      !(p.unprotectedRanges || []).some(u => (u.startRowIndex ?? 0) <= row0 - 1 && row1 <= (u.endRowIndex ?? Infinity) && covers(u, row0, row1)),
+  );
+}
+
+const PROTECTED_KEY = sheet => `protected:${sheet}`;
+/**
+ * Keeps the locked ranges of `sheet` (from Google's metadata, read with each sync and
+ * before a save makes new rows) in the app's settings, where the proposal tables
+ * (in the assistant's workers too) read them: protectedFields.
+ */
+export function noteProtection(db, sheet, ranges) {
+  const lean = lockedRanges(ranges).map(p => ({
+    range: p.range ?? {},
+    ...(p.unprotectedRanges?.length ? { unprotectedRanges: p.unprotectedRanges } : {}),
+  }));
+  const value = JSON.stringify(lean);
+  const was = db.prepare('SELECT value FROM settings WHERE key = ?').get(PROTECTED_KEY(sheet))?.value;
+  if (was !== value)
+    db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(PROTECTED_KEY(sheet), value);
+}
+
+/**
+ * The fields of `sheet` the app's account cannot write at sheet row `row` (`columns`:
+ * the sheet's header, field → column), as last noted (noteProtection); none when not
+ * known yet.
+ */
+export function protectedFields(db, sheet, row, columns) {
+  let locked;
+  try {
+    locked = JSON.parse(db.prepare('SELECT value FROM settings WHERE key = ?').get(PROTECTED_KEY(sheet))?.value ?? '[]');
+  } catch {
+    return new Set();
+  }
+  if (!locked.length || !columns) return new Set();
+  const out = new Set();
+  for (const [field, column] of columns) if (columnLocked(locked, column, row)) out.add(field);
+  return out;
+}
+
 /** Where the sheet's rows end in the app's copy: last row with formulas, last used row, last row. */
 function tail(store, sheet) {
   const q = where =>
@@ -381,23 +441,9 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
   }
 
   // Protected ranges this credential cannot edit (e.g. columns only the owner edits).
-  const locked = info.protectedRanges.filter(p => p.requestingUserCanEdit === false && !p.warningOnly);
-  const covers = (r, row0, row1, column) =>
-    (r.startRowIndex ?? 0) < row1 &&
-    row0 - 1 < (r.endRowIndex ?? Infinity) &&
-    (r.startColumnIndex ?? 0) <= column &&
-    column < (r.endColumnIndex ?? Infinity);
-  const isLocked = (column, row0, row1) =>
-    locked.some(
-      p =>
-        covers(p.range, row0, row1, column) &&
-        !(p.unprotectedRanges || []).some(
-          u =>
-            (u.startRowIndex ?? 0) <= row0 - 1 &&
-            row1 <= (u.endRowIndex ?? Infinity) &&
-            covers(u, row0, row1, column),
-        ),
-    );
+  const locked = lockedRanges(info.protectedRanges);
+  noteProtection(store.db, sheet, info.protectedRanges);
+  const isLocked = (column, row0, row1) => columnLocked(locked, column, row0, row1);
   const fillFrom = Math.min(start, ...fills.map(f => f.from));
   const lockedColumns = new Set();
   for (let column = 0; column < width; column++) if (isLocked(column, fillFrom, end)) lockedColumns.add(column);
@@ -643,7 +689,7 @@ export async function extendRows(store, sheet, count, { actor = 'app' } = {}) {
         r.startRowIndex === undefined && r.endRowIndex === undefined
           ? 'todas'
           : `${(r.startRowIndex ?? 0) + 1}–${r.endRowIndex ?? ''}`,
-      canEdit: p.requestingUserCanEdit !== false || !!p.warningOnly,
+      canEdit: p.requestingUserCanEdit === true || !!p.warningOnly,
       ...(p.description ? { description: p.description } : {}),
     })),
     records: touched,

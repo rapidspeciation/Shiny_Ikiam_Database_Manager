@@ -11,7 +11,7 @@ import { TYPED_OVER_FORMULA, comparable, isSumField, labelFor, moduleMap, simple
 import { isFormulaValue, sameCell } from './formula-write.mjs';
 import { hasDateFormat, hasTimeFormat, protectionRefused, rowKey, rowValues } from './sheets.mjs';
 import { describeProblems, headerLayout, sameLayout } from './columns.mjs';
-import { duplicateIdRow, ensurePremadeRows, insectaryIdRow, suffixedId } from './premade.mjs';
+import { columnLocked, duplicateIdRow, ensurePremadeRows, insectaryIdRow, lockedRanges, noteProtection, suffixedId } from './premade.mjs';
 import { isPlaceholder, newRowFormulas } from './formula-patterns.mjs';
 import { cleanPurpose, inferPurpose } from './history.mjs';
 import { TUBE_FIELD, UNIQUE, isIdValue, isUnique, twinRows } from './verifications.mjs';
@@ -294,6 +294,17 @@ export async function applyBatch(
             409,
             { actionId },
           );
+        // A cell the app's account may not edit (a column only the owner edits): which, in plain words.
+        const locked = rejected && protectionRefused(e) ? await protectedCells(store, plan.writes) : [];
+        if (locked.length)
+          throw fail(
+            'CELLS_PROTECTED',
+            msg('Google rechazó la escritura: celda protegida en {fields}; no se guardó nada', {
+              fields: [...new Set(locked.map(c => c.field))],
+            }),
+            409,
+            { actionId, protected: locked.slice(0, 20), cause: e.message?.slice(0, 300) },
+          );
         throw fail(
           rejected ? 'WRITE_REJECTED' : 'WRITE_UNCERTAIN',
           rejected
@@ -330,6 +341,28 @@ export async function applyBatch(
       store.endWrite(sheets);
     }
   }
+}
+
+/** The cells of `writes` in ranges the app's account cannot edit, as Google has them now: [{ sheet, row, field }]. */
+async function protectedCells(store, writes) {
+  const out = [];
+  const bySheet = new Map();
+  for (const write of writes) {
+    if (!write.columns) continue;
+    if (!bySheet.has(write.sheet))
+      try {
+        const ranges = await store.sheets.protectedRangesOf?.(write.sheet);
+        if (ranges) noteProtection(store.db, write.sheet, ranges);
+        bySheet.set(write.sheet, lockedRanges(ranges));
+      } catch {
+        bySheet.set(write.sheet, []);
+      }
+    const locked = bySheet.get(write.sheet);
+    for (const field of Object.keys(write.changes || {}))
+      if (write.columns[field] !== undefined && columnLocked(locked, write.columns[field], write.row))
+        out.push({ sheet: write.sheet, row: write.row, field });
+  }
+  return out;
 }
 
 /**
@@ -646,6 +679,9 @@ class Plan {
       used.add(`${target.sheet}:${target.row}`);
     }
     for (const target of this.targets.filter(t => t.deleteRow && !brokenSheets.has(t.sheet))) this.resolveDelete(target, live);
+    // New rows leave the columns the app's account cannot edit to the sheet (their owner fills them).
+    const creating = this.targets.filter(t => !t.record && !t.insert && !brokenSheets.has(t.sheet)).map(t => t.sheet);
+    if (!this.staging && this.source !== 'undo') await this.loadProtection(new Set(creating));
     for (const target of this.targets.filter(t => !t.record && !brokenSheets.has(t.sheet)))
       if (!unavailable(target)) {
         if (target.insert) this.resolveInsert(target, live);
@@ -790,6 +826,20 @@ class Plan {
     this.addWrite(target, liveRow, before, changes);
   }
 
+  /** The ranges of `sheets` the app's account cannot edit (Google's metadata, kept 30 s): this.locked. */
+  async loadProtection(sheets) {
+    this.locked = new Map();
+    for (const sheet of sheets)
+      try {
+        const ranges = await this.store.sheets.protectedRangesOf?.(sheet);
+        if (!ranges) continue;
+        noteProtection(this.store.db, sheet, ranges);
+        this.locked.set(sheet, lockedRanges(ranges));
+      } catch {
+        // Not known now: Google refuses a protected cell, and the save says which.
+      }
+  }
+
   async findMovedRow(record, identity) {
     // Checked against the app's copy (staging): the row is where the copy has it.
     if (this.staging) return null;
@@ -874,14 +924,20 @@ class Plan {
       if (this.source !== 'undo') {
         const layout = this.layouts.get(target.sheet);
         const fills = newRowFormulas(this.store, target.sheet, row, { ...before.values, ...target.clean });
+        // Columns the app's account cannot edit (Data_entry_order…) are left to the sheet, a placeholder typed there too.
+        const locked = this.locked?.get(target.sheet) ?? [];
+        const isLocked = field => locked.length > 0 && columnLocked(locked, layout.columns.get(field), row);
         for (const [field, formula] of Object.entries(fills)) {
           const typed = target.clean[field];
           if (before.formulas[field] || !layout.columns.has(field) || !blank(before.values[field])) continue;
           if (typed !== undefined && typed !== null && typed !== '' && !isPlaceholder(typed)) continue;
           const at = changes.findIndex(c => c.field === field);
           if (at >= 0) changes.splice(at, 1);
-          changes.push({ field, before: before.values[field] ?? null, after: { formula } });
+          if (!isLocked(field)) changes.push({ field, before: before.values[field] ?? null, after: { formula } });
         }
+        for (let i = changes.length - 1; i >= 0; i--)
+          if (isPlaceholder(changes[i].after) && isLocked(changes[i].field)) changes.splice(i, 1);
+        if (!changes.length) return this.conflict(target, 'INVALID_VALUES', 'La fila nueva no tiene nada que guardar');
       }
       return this.addWrite(target, liveRow, before, changes);
     }

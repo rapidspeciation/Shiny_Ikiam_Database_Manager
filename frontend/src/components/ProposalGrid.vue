@@ -43,6 +43,7 @@ import {
   tellText,
   uncheckedDoubts,
   unfilledUnreadable,
+  whenText,
   withLocal,
   type LocalCell,
   type Proposal,
@@ -54,7 +55,7 @@ import { columnChoices, orderColumns, viewFor, type ColumnView } from '../lib/pr
 import { layRows, repeatSummary, shownRows, unexplained, type RowOrder, type SheetRows } from '../lib/proposalRows'
 import { useSession } from '../stores/session'
 import { useLive } from '../stores/live'
-import { t } from '../lib/i18n'
+import { t, tx } from '../lib/i18n'
 
 export type { Proposal, ProposalChange } from '../lib/proposals'
 
@@ -132,6 +133,23 @@ const orderNotice = computed(() => {
   return notes.length ? orderText(notes, photos.size > 1) : ''
 })
 const editable = computed(() => pending.value && session.canEdit)
+/** Other pending proposals (anyone's) with the same rows or the same new IDs and clutches: said above the table. */
+const overlapNotices = computed(() =>
+  (props.proposal.overlaps ?? []).map(o =>
+    t('También en la propuesta pendiente de {name} ({id}): {rows}', {
+      name: o.by,
+      id: o.proposalId.slice(0, 8),
+      rows: o.rows.join(', ') + (o.count > o.rows.length ? '…' : ''),
+    }),
+  ),
+)
+/** Why its last apply failed, in plain words (Google's refusal, a cell changed meanwhile…). */
+const lastErrorText = computed(() => {
+  const e = props.proposal.lastError
+  if (!e) return ''
+  const first = e.items?.[0]
+  return [tx(e.message, e.messageMsg), first ? tx(first.message, first.messageMsg) : ''].filter(Boolean).join(' · ')
+})
 
 // ------------------------------------------------------------ the person's edits, saved to the proposal
 /** Typed and not yet saved (laid over the server's copy). */
@@ -700,6 +718,22 @@ const statusText = computed(
         {{ $t('Ver en el orden del cuaderno') }}
       </button>
     </div>
+    <!-- Why the last «Aplicar» failed (nothing was written), and the same rows in someone else's pending proposal. -->
+    <div v-if="pending && (lastErrorText || overlapNotices.length)" class="order-notice flex-wrap" role="status">
+      <AlertTriangle :size="12" class="shrink-0" />
+      <span class="min-w-0 flex-1">
+        <span v-if="lastErrorText" class="block">{{
+          $t('No se aplicó ({when}): {why}', { when: whenText(proposal.lastError?.at), why: lastErrorText })
+        }}</span>
+        <span
+          v-for="(line, i) in overlapNotices"
+          :key="i"
+          class="block"
+          :title="$t('Aplicar las dos escribiría lo mismo dos veces: aplica una y descarta o corrige la otra')"
+          >{{ line }}</span
+        >
+      </span>
+    </div>
     <!-- Edited in the sheet after this proposal: how many, what applying does, to the next one; and telling the assistant. -->
     <div v-if="pending && edited.length" class="sheet-banner" role="status">
       <button
@@ -1019,6 +1053,7 @@ const statusText = computed(
       >
         <Clock v-if="proposal.status === 'queued'" :size="13" class="shrink-0" />
         {{ statusText }}
+        <template v-if="proposal.status === 'needs_review' && lastErrorText"> · {{ lastErrorText }}</template>
       </span>
     </div>
     <!-- "Aplicar" while Google Sheets does not answer as usual: the changes wait in the app until it does. -->

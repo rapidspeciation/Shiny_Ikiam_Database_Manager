@@ -7,6 +7,7 @@ import { GoogleSheets, LocalSheets, formulaRowShift, moveRowRefs, rowKey, rowVal
 import { headerLayout, sameLayout } from './columns.mjs';
 import { sameCell } from './formula-write.mjs';
 import { applyBatch } from './batch.mjs';
+import { noteProtection } from './premade.mjs';
 import { initMonitoring } from './monitoring.mjs';
 import { initHistory } from './history.mjs';
 import { initClutches } from './clutches.mjs';
@@ -693,6 +694,13 @@ export class Store {
         }
         const epoch = this.writeEpoch.get(sheet) || 0;
         const rows = await this.sheets.readSheet(sheet);
+        // The columns the app's account cannot write (read with the sheet: no request more), for the proposal tables.
+        try {
+          const ranges = await this.sheets.protectedRangesOf?.(sheet);
+          if (ranges) noteProtection(this.db, sheet, ranges);
+        } catch {
+          /* Kept as last noted. */
+        }
         const layout = this.readLayout(sheet, rows.find(r => r.row === mod.headerRow));
         if (layout.blocked) {
           // Which column holds which field is unclear: reading would scramble values.

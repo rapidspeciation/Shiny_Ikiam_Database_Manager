@@ -158,6 +158,8 @@ export interface ProposalChange {
   formulaGives?: Record<string, CellValue>
   /** Formula cells the proposal reaches that could not be calculated here: the sheet's value is shown, marked. */
   formulaFallback?: string[]
+  /** A new row's columns the app's account cannot write (protected in the sheet): left to the sheet, never written. */
+  protectedCells?: string[]
   /** Cells the proposal writes as a formula (their value is the formula's text); the rest of its "=..." are text. */
   formulaCells?: string[]
   /** The formula those cells hold now, which the proposal replaces. */
@@ -206,6 +208,22 @@ export interface OrderNote {
   /** The line before it on the page, which comes after it in the sheet. */
   after: { line: number; id: string }
 }
+export interface ProposalError {
+  code: string
+  message: string
+  messageMsg?: Msg
+  at: string
+  items?: { field?: string; code?: string; message: string; messageMsg?: Msg }[]
+}
+export interface ProposalOverlap {
+  proposalId: string
+  /** Who drafted it. */
+  by: string
+  reason?: string | null
+  /** This proposal's rows it holds too (their labels, the first ten), and how many. */
+  rows: string[]
+  count: number
+}
 export interface Proposal {
   id: string
   /** For a table (show_rows): its title. */
@@ -252,6 +270,10 @@ export interface Proposal {
   outOfOrder?: OrderNote[]
   /** A pending proposal writing formulas: what they cost the sheet's recalculation (lib/formulaCost). */
   formulaCost?: FormulaCost[]
+  /** Why its last apply failed: Google's refusal or the save's (still pending when nothing was written). */
+  lastError?: ProposalError
+  /** Other pending proposals (anyone's) holding the same rows, or new rows with the same ID or clutch number. */
+  overlaps?: ProposalOverlap[]
   /** A hash of it as the server sent it: the list asks again with it and gets only { id, digest, same } while it holds. */
   digest?: string
   same?: boolean
@@ -383,6 +405,8 @@ export interface CellInfo {
   fromFormula?: boolean
   /** A formula cell that could not be calculated here: the sheet's current value, marked as such. */
   formulaFallback?: boolean
+  /** A new row's column the app's account cannot write (protected in the sheet): not written, left to the sheet. */
+  protectedColumn?: boolean
   /** The proposal writes a formula here (`value` its text): `computed` is what it will give, `oldFormula` the one it replaces. */
   formulaWrite?: boolean
   computed?: CellValue
@@ -463,6 +487,8 @@ export function cellOf(change: ProposalChange, field: string, newRowFormulas: st
   if (mark)
     return { value: change.create ? null : (was ?? null), kind: aiProposed ? 'reverted' : 'person', was, ai, aiProposed, ...quiet, ...formula }
   const locked = change.create ? newRowFormulas.includes(field) : !!change.formulas?.includes(field)
+  // A column the app's account cannot write: the sheet's owner fills it (never an evaluated error here).
+  if (change.create && change.protectedCells?.includes(field)) return { value: null, kind: 'locked', aiProposed, ...quiet, protectedColumn: true }
   if (change.create) return { value: null, kind: locked ? 'locked' : 'empty', aiProposed, ...quiet, ...formula }
   return { value: was ?? null, kind: locked ? 'locked' : 'sheet', was, aiProposed, ...quiet, ...formula }
 }

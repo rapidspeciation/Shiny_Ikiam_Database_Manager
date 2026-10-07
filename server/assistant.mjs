@@ -21,7 +21,7 @@ import { FORMULA_ROWS, checkFormula, isFormulaValue, sameFormula, withRow } from
 import { FILTERS_DOC, FIND_BUDGET, RECORD_TOOLS, compactRecord, countRecords, findRecords, pickRows, resolveRows, selectRecords } from './records-tool.mjs';
 import { RESULT_BUDGET, fitList, fitResult } from './tool-budget.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary, proposalPage, withLinesFile, writeLinesFile } from './notebook-tool.mjs';
-import { duplicateIdRow, insectaryBaseRows, insectaryIdPlaces, insectaryIdRow, newRowFormulaFields, suffixedId } from './premade.mjs';
+import { duplicateIdRow, insectaryBaseRows, insectaryIdPlaces, insectaryIdRow, newRowFormulaFields, protectedFields, suffixedId } from './premade.mjs';
 import { formulaNotes, isPlaceholder, newRowPatternFields, sheetPatterns } from './formula-patterns.mjs';
 import { formulaCostAnswer, proposalFormulaCost } from './formula-cost.mjs';
 import { claimHolder, claimsOf } from './claims.mjs';
@@ -43,6 +43,27 @@ import { PHOTO_SIZES, attachmentFile, attachmentsDir, createPhotoCopies, photoPa
 const bad = (status, code, message) => ({ status, body: { error: { code, message } } });
 const now = () => new Date().toISOString();
 const clip = (value, length = 1200) => String(value ?? '').slice(0, length);
+/** Codes of a save (server/batch.mjs, server/premade.mjs) refused before anything of it was written. */
+const REFUSED_WHOLE = new Set([
+  'BATCH_CONFLICT',
+  'WRITE_REJECTED',
+  'CELLS_PROTECTED',
+  'ROWS_PROTECTED',
+  'NO_ROWS_LEFT',
+  'ID_LOCKED',
+  'ID_SERIES',
+  'NO_TEMPLATE',
+  'INVALID_VALUES',
+  'BATCH_TOO_LARGE',
+  'REQUEST_ID_CONFLICT',
+  'SHUTTING_DOWN',
+]);
+/** The identifiers that tell a new row apart, per sheet: two pending proposals writing the same one overlap. */
+const OVERLAP_KEYS = {
+  Insectary_stocks: ['CLUTCH NUMBER'],
+  Insectary_data: ['Insectary_ID'],
+  Collection_data: ['FieldMark_ID', 'Insectary_ID'],
+};
 const owner = user => String(user?.id ?? user?.username ?? '');
 const json = value => JSON.stringify(value);
 const EDITORS = ['editor', 'reviewer', 'admin'];
@@ -647,7 +668,11 @@ function init(db) {
   if (!has('ai_proposals', 'view_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN view_json TEXT');
   // A proposal in needs_review compared with the sheet after a sync (server/needs-review.mjs).
   if (!has('ai_proposals', 'check_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN check_json TEXT');
+  // Why its last apply failed ({ code, message, messageMsg, at, items }): told with its status until it is applied.
+  if (!has('ai_proposals', 'last_error_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN last_error_json TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS ai_proposals_owner_status ON ai_proposals(owner_id, status, created_at)');
+  // The pending proposals of the whole team and their revisions, read without their rows (overlaps).
+  db.exec('CREATE INDEX IF NOT EXISTS ai_proposals_status_revision ON ai_proposals(status, id, revision, updated_at)');
   // Personal tokens for agents outside the app (T3 Code projects) to use the same tools.
   db.exec(`CREATE TABLE IF NOT EXISTS ai_tokens (
     token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, label TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT
@@ -1184,6 +1209,93 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     return { changes };
   }
 
+  // ------------------------------------------------------------ the same rows in two pending proposals
+  /**
+   * What tells a proposal row apart for overlaps: the sheet row it edits, and the identifier a new
+   * row (or an edit) writes (CLUTCH NUMBER, Insectary_ID, FieldMark_ID): the same eight clutches
+   * drafted twice, by two people, are found as well as the same row edited twice.
+   */
+  function overlapKeys(change) {
+    if (!change || change.context || change.placeholder) return [];
+    const keys = [];
+    if (!change.create && change.recordId) keys.push(`row\u0000${change.recordId}`);
+    for (const field of OVERLAP_KEYS[change.sheet] ?? []) {
+      const value = change.values?.[field];
+      if (typeof value !== 'object' && isIdValue(value)) keys.push(`${change.sheet}\u0000${field}\u0000${String(value).trim().toUpperCase()}`);
+    }
+    return keys;
+  }
+  /** Each proposal's keys ([key, label]) as of its revision, read once. */
+  const keyCache = new Map();
+  function keysOf(id, version, changesJson = null) {
+    const kept = keyCache.get(id);
+    if (kept?.version === version) return kept.keys;
+    const changes = parse(changesJson ?? db.prepare('SELECT changes_json FROM ai_proposals WHERE id = ?').get(id)?.changes_json ?? 'null') ?? [];
+    const keys = changes.flatMap(c => overlapKeys(c).map(k => [k, c.label || labelFor(c.sheet, c.values ?? {})]));
+    keyCache.delete(id);
+    keyCache.set(id, { version, keys });
+    if (keyCache.size > 400) keyCache.delete(keyCache.keys().next().value);
+    return keys;
+  }
+  /** The team's pending proposals by key (built again when one is added, revised or leaves pending). */
+  let pendingIndex = null;
+  function pendingKeys() {
+    const rows = db
+      .prepare("SELECT id, revision, updated_at FROM ai_proposals WHERE status = 'pending'")
+      .all();
+    const stamp = rows.map(r => `${r.id}:${r.revision}:${r.updated_at}`).join(',');
+    if (pendingIndex?.stamp === stamp) return pendingIndex;
+    const byKey = new Map();
+    for (const r of rows)
+      for (const [key] of keysOf(r.id, `${r.revision}:${r.updated_at}`)) {
+        const ids = byKey.get(key) ?? new Set();
+        ids.add(r.id);
+        byKey.set(key, ids);
+      }
+    pendingIndex = { stamp, byKey };
+    return pendingIndex;
+  }
+  /**
+   * The team's other pending proposals that hold rows of `changes` (not those in `exclude`): who
+   * drafted each, and the rows of `changes` it holds too (their labels).
+   */
+  function overlapsWith(changes, exclude = [], keys = null) {
+    const { byKey } = pendingKeys();
+    const skip = new Set(exclude.filter(Boolean));
+    const found = new Map();
+    for (const [key, label] of keys ?? changes.flatMap(c => overlapKeys(c).map(k => [k, c.label || labelFor(c.sheet, c.values ?? {})])))
+      for (const id of byKey.get(key) ?? []) {
+        if (skip.has(id)) continue;
+        if (!found.has(id)) found.set(id, new Set());
+        found.get(id).add(String(label));
+      }
+    if (!found.size) return [];
+    const people = new Map();
+    return [...found].map(([id, labels]) => {
+      const p = db.prepare('SELECT owner_id, reason FROM ai_proposals WHERE id = ?').get(id);
+      if (!people.has(p.owner_id)) {
+        let name = null;
+        try {
+          name = db.prepare('SELECT display_name FROM users WHERE id = ?').get(p.owner_id)?.display_name;
+        } catch {
+          /* No users table (tests of the assistant alone). */
+        }
+        people.set(p.owner_id, name || p.owner_id);
+      }
+      return { proposalId: id, by: people.get(p.owner_id), reason: p.reason, rows: [...labels].slice(0, 10), count: labels.size };
+    });
+  }
+  /** The columns the app's account cannot write, as last noted (server/premade.mjs noteProtection): changes the tables. */
+  const protectionStamp = () => {
+    try {
+      return db.prepare("SELECT group_concat(value, '|') v FROM settings WHERE key LIKE 'protected:%'").get()?.v ?? '';
+    } catch {
+      return ''; // No settings table (tests of the assistant alone).
+    }
+  };
+  /** A stored pending proposal's overlaps (its keys read once per revision). */
+  const overlapsOfRow = r => overlapsWith([], [r.id], keysOf(r.id, `${r.revision}:${r.updated_at}`, r.changes_json));
+
   /** A drafted proposal saved for review: it shows at once in Cambios propuestos (and the chat). */
   function saveProposal(changes, reason, context, issueIds = [], view = null) {
     const id = randomUUID();
@@ -1578,6 +1690,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (view?.error) return view;
     const issueIds = Array.isArray(args.issueIds) ? args.issueIds.slice(0, 500).map(i => clip(i, 200)) : [];
     const saved = saveProposal(changes, args.reason, context, issueIds, view);
+    // The same rows (or the same new clutches, butterflies) in a pending proposal of anyone on the team.
+    const overlaps = overlapsWith(changes, [saved.id]);
     const dropped = [...new Set(changes.flatMap(c => c.dropped ?? []))];
     const noSample = changes.flatMap((c, index) => {
       const warned = proposalSampleWarnings(c, c.create ? null : store.getRecord(c.recordId));
@@ -1610,6 +1724,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
           }
         : {}),
       ...(look ? { lookAt: look } : {}),
+      ...(overlaps.length ? { overlaps } : {}),
       ...(formulaNoted.length ? { formulaNotes: formulaNoted } : {}),
       ...(formulaCost ? { formulaCost } : {}),
       ...(dropped.length ? { leftOut: `Formula columns left out of the new rows: ${dropped.join(', ')}` } : {}),
@@ -2015,6 +2130,9 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       ecuadorDay(),
       open ? idOf(issuesByRecord(store, { ready: true })) : '-',
       [...(store.layouts?.values() ?? [])].map(idOf).join(','),
+      // The other pending proposals holding its rows (said above its table).
+      open ? json(overlapsOfRow(r)) : '-',
+      open ? protectionStamp() : '-',
     ].join('\u0000');
   }
 
@@ -2304,6 +2422,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       revision: proposal.revision,
       reason: proposal.reason,
       lastChangedBy: proposal.last_by ?? 'ai',
+      // Why its last apply failed (pending again when nothing was written).
+      ...(proposal.last_error_json ? { lastError: withoutMsgs(parse(proposal.last_error_json)) } : {}),
       // needs_review: what the sheet holds of it, as compared after the last sync.
       ...(proposal.status === 'needs_review' && proposal.check_json ? { sheetCheck: sheetCheckOf(parse(proposal.check_json)) } : {}),
     };
@@ -2610,7 +2730,12 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot propose edits' };
     if (!proposal) return { error: 'Proposal not found' };
     if (proposal.status !== 'pending')
-      return { error: `The proposal is ${proposal.status}; draft a new one with propose_changes` };
+      return {
+        error:
+          proposal.status === 'applied' || proposal.status === 'discarded'
+            ? `The proposal is ${proposal.status}; draft a new one with propose_changes`
+            : notPending(proposal),
+      };
     const changes = parse(proposal.changes_json) ?? [];
     const problems = [];
     // A row of the proposal by its index, or by its recordId, ID or label (W2B).
@@ -2800,6 +2925,47 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   }
 
   /**
+   * Whether a failed apply wrote nothing: the save refused it as a whole (a conflict, a check, Google
+   * refusing a protected cell: Google writes all or nothing), not a write left unconfirmed or an
+   * unexpected error.
+   */
+  const nothingWritten = e => REFUSED_WHOLE.has(e?.code);
+  /** A failed apply as kept with the proposal (last_error_json): its code, words, when, and the cells refused. */
+  function lastErrorOf(e) {
+    const items = (e?.details?.items ?? []).slice(0, 5).map(i => ({
+      ...(i.field ? { field: i.field } : {}),
+      ...(i.code ? { code: i.code } : {}),
+      message: clip(i.message, 200),
+      ...(i.messageMsg ? { messageMsg: i.messageMsg } : {}),
+    }));
+    return {
+      code: e?.code ?? 'SERVER_ERROR',
+      message: clip(e?.message, 300),
+      ...(e?.messageMsg ? { messageMsg: e.messageMsg } : {}),
+      at: now(),
+      ...(items.length ? { items } : {}),
+      ...(e?.details?.protected?.length ? { protected: e.details.protected.slice(0, 10) } : {}),
+    };
+  }
+
+  /**
+   * Why a proposal is not pending, in its status's words: applied, or needs_review with what its
+   * last write said (or that Google did not confirm it), for apply_proposal and update_proposal.
+   */
+  function notPending(proposal) {
+    const status = proposal.status;
+    const last = parse(proposal.last_error_json ?? 'null');
+    if (status === 'applied') return 'Proposal has already been applied.';
+    if (status === 'needs_review')
+      return last
+        ? `Proposal is needs_review: its last write failed: ${last.message}. Its rows may be partly written: compare them with the sheet (get_proposal: sheetCheck) before drafting what is missing.`
+        : 'Proposal is needs_review: it was sent to Google Sheets and not confirmed in full. The app compares its rows with the sheet after each sync (get_proposal: sheetCheck); draft only what is missing.';
+    if (status === 'queued') return 'Proposal is already waiting for Google: it is written when Google answers.';
+    if (status === 'applying') return 'Proposal is being applied now.';
+    return `Proposal is ${status}.`;
+  }
+
+  /**
    * Writes the chosen rows of a proposal as one save (undoable in Historial).
    * Cells edited in the sheet since they were read keep the sheet's value unless
    * the person chose the proposal's (server/sheet-edits.mjs): listed in the
@@ -2812,8 +2978,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         status: 409,
         code: 'proposal_used',
       });
-    if (proposal.status !== 'pending')
-      throw Object.assign(new Error('Proposal has already been applied.'), { status: 409, code: 'proposal_used' });
+    if (proposal.status !== 'pending') throw Object.assign(new Error(notPending(proposal)), { status: 409, code: 'proposal_used' });
     if (!EDITORS.includes(user.role))
       throw Object.assign(new Error('Your role cannot apply changes.'), { status: 403, code: 'forbidden' });
     // A row whose record a sync replaced (same sheet row and label, a new record): applied to that one.
@@ -2928,7 +3093,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         result?.status === 'queued' ? 'queued' : ['verified', 'unchanged'].includes(result?.status) ? 'applied' : 'needs_review';
       const created = Object.fromEntries((result?.created ?? []).map(c => [c.clientId, c.recordId]));
       db.prepare(
-        'UPDATE ai_proposals SET status = ?, applied_at = ?, applied_json = ?, created_json = ?, changes_json = ? WHERE id = ?',
+        'UPDATE ai_proposals SET status = ?, applied_at = ?, applied_json = ?, created_json = ?, changes_json = ?, last_error_json = NULL WHERE id = ?',
       ).run(status, status === 'applied' ? now() : null, json(written), json(created), json(kept), proposal.id);
       // Agreed issues of the Revisión tab whose rows were written: now applied.
       const issueIds = parse(proposal.issues_json ?? 'null');
@@ -2948,8 +3113,13 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       // The save refused it as a whole (nothing was written): still pending, to look at and apply again.
       // A cell someone changed in the sheet the app had not read yet is read now, so the table shows it.
       // A later part refused after earlier parts were written: to review (the written parts stay).
-      const refused = cause?.code === 'BATCH_CONFLICT' && !results.length;
-      db.prepare('UPDATE ai_proposals SET status = ? WHERE id = ?').run(refused ? 'pending' : 'needs_review', proposal.id);
+      // Refused before anything was written (a conflict, Google refusing a protected cell): still pending, with why.
+      const refused = !results.length && nothingWritten(cause);
+      db.prepare('UPDATE ai_proposals SET status = ?, last_error_json = ? WHERE id = ?').run(
+        refused ? 'pending' : 'needs_review',
+        json(lastErrorOf(cause)),
+        proposal.id,
+      );
       if (results.length) cause.details = { ...(cause.details ?? {}), writtenParts: results.length, parts: parts.length };
       if (refused) await readAgain(cause.details?.items ?? []);
       throw cause;
@@ -2992,9 +3162,14 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       if (issueIds?.length && user)
         markApplied(store, issueIds, { recordIds: new Set(written.map(i => changes[i]?.recordId).filter(Boolean)), proposalId: proposal.id, user });
     } else {
-      const refused = item.status === 'conflict';
-      db.prepare('UPDATE ai_proposals SET status = ? WHERE id = ?').run(refused ? 'pending' : 'needs_review', proposal.id);
-      if (refused) void readAgain(parse(item.error_json)?.details?.items ?? []).catch(() => {});
+      const error = parse(item.error_json) ?? {};
+      const refused = item.status === 'conflict' || nothingWritten(error);
+      db.prepare('UPDATE ai_proposals SET status = ?, last_error_json = ? WHERE id = ?').run(
+        refused ? 'pending' : 'needs_review',
+        json(lastErrorOf(error)),
+        proposal.id,
+      );
+      if (refused) void readAgain(error.details?.items ?? []).catch(() => {});
     }
     changed(proposal.owner_id);
   }
@@ -3256,7 +3431,22 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       // formula's own. Those that cannot be evaluated keep the sheet's value, marked (formulaFallback).
       if (!change.context && !change.gap) {
         const target = change.create ? premadeRecordOf(change) : record;
-        const { gives, fallback } = rowFormulaGives(change, target, formulaSession);
+        const { gives: all, fallback } = rowFormulaGives(change, target, formulaSession);
+        // A new row's columns the app's account cannot write (Data_entry_order…): left to the sheet, never shown as computed.
+        const locked =
+          open && change.create
+            ? protectedFields(
+                db,
+                change.sheet,
+                target?.row ?? 1_000_000,
+                store.layouts?.get(change.sheet)?.columns ?? new Map(moduleMap.get(change.sheet)?.fields.map(f => [f.key, f.column]) ?? []),
+              )
+            : null;
+        const gives = locked?.size ? Object.fromEntries(Object.entries(all).filter(([f]) => !locked.has(f))) : all;
+        if (locked?.size) {
+          const cells = [...locked].filter(f => !(f in change.values) && (f in all || newRowFormulas[change.sheet]?.includes(f)));
+          if (cells.length) view.protectedCells = cells;
+        }
         const shown = Object.entries(gives).filter(([f, v]) =>
           change.formulaCells?.includes(f)
             ? true
@@ -3304,6 +3494,10 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       types: Object.fromEntries(fields.map(f => [f, typeOf(f)])),
       newRowFormulas,
       shownColumns,
+      // Why its last apply failed (still pending when nothing was written).
+      ...(row?.last_error_json ? { lastError: parse(row.last_error_json) } : {}),
+      // The same rows in another pending proposal (anyone's): said above the table.
+      ...(open && row?.id ? (overlaps => (overlaps.length ? { overlaps } : {}))(overlapsOfRow(row)) : {}),
       ...(Object.keys(sheetFormulas).length ? { sheetFormulas } : {}),
       ...(hintTable.length ? { hintTable } : {}),
       ...(notebook ? { page: notebook } : {}),
@@ -4055,10 +4249,16 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
           };
         }
         // Google's own reason for a rejected save (a protected range, a bad request) helps fix it.
+        const status = db.prepare('SELECT status FROM ai_proposals WHERE id = ?').get(proposal.id)?.status;
         return {
           error: clip(e.message, 300),
           details: e.details?.items?.slice(0, 10),
+          ...(e.details?.protected ? { protectedCells: e.details.protected.slice(0, 10) } : {}),
           ...(e.details?.cause ? { cause: clip(e.details.cause, 300) } : {}),
+          proposalStatus: status,
+          ...(status === 'pending' && e.code !== 'proposal_used'
+            ? { note: 'Nothing was written; the proposal is still pending, with this reason in get_proposal (lastError): correct it with update_proposal and apply it again.' }
+            : {}),
         };
       }
     }
@@ -4207,19 +4407,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     // The same rows in another pending proposal: the page matched again, maybe in another conversation.
     // Context rows (includeUnchanged) write nothing: they neither overlap nor make a proposal alone.
     const writes = matched.changes.some(c => !c.context);
-    const rows = new Set(matched.changes.filter(c => !c.context).map(c => c.recordId).filter(Boolean));
-    const overlaps = rows.size
-      ? db
-          .prepare("SELECT id, reason, changes_json FROM ai_proposals WHERE owner_id = ? AND status = 'pending' AND id != ?")
-          .all(owner(context.user), replaced?.id ?? '')
-          .map(p => ({
-            id: p.id,
-            reason: p.reason,
-            rows: (parse(p.changes_json) ?? []).filter(c => !c.context && rows.has(c.recordId)).map(c => c.label),
-          }))
-          .filter(p => p.rows.length)
-          .map(p => ({ proposalId: p.id, reason: p.reason, rows: p.rows.slice(0, 10), count: p.rows.length }))
-      : [];
+    const overlaps = writes ? overlapsWith(matched.changes, [replaced?.id]) : [];
     const reason = `Cuaderno ${KINDS[review.kind].label} (${review.sheet})${args.title ? `: ${clip(args.title, 120)}` : ''}`;
     const sheets = [...new Set([review.sheet, ...matched.changes.map(c => c.sheet)])];
     const view = readView(args.view, sheets, replaced ? parse(replaced.view_json ?? 'null') : null);
@@ -4624,7 +4812,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       if (!proposal) return bad(404, 'not_found', 'Proposal not found.');
       if (isTable(proposal)) return bad(409, 'read_only_table', 'Una tabla del asistente solo se lee.');
       if (proposal.status === 'queued') return bad(409, 'proposal_used', 'Proposal is already waiting for Google: it is written when Google answers.');
-      if (proposal.status !== 'pending') return bad(409, 'proposal_used', 'Proposal has already been applied.');
+      if (proposal.status !== 'pending') return bad(409, 'proposal_used', notPending(proposal));
       const requestId = typeof body.requestId === 'string' ? body.requestId : '';
       if (requestId.length < 8 || requestId.length > 120)
         return bad(400, 'request_id_required', 'A unique requestId of 8 to 120 characters is required.');

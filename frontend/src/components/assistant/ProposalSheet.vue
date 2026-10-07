@@ -469,7 +469,9 @@ function drawn(cell: CellComponent, field: string, c: CellInfo, comments: CellCo
     (c.kind === 'locked' || c.fromFormula) && isFormulaError(c.value)
       ? t('La fórmula de la hoja da un error con estos valores: revísalo antes de aplicar')
       : '',
-    c.fromFormula
+    c.protectedColumn
+      ? t('Columna protegida en la hoja: la cuenta de la app no puede escribirla; la completa quien la protegió')
+      : c.fromFormula
       ? t('Calculado por la fórmula de la hoja con los valores propuestos: no se escribe')
       : c.formulaFallback
         ? t('No se pudo calcular aquí: es el valor actual de la hoja, que la fórmula puede cambiar al aplicar')
@@ -485,6 +487,13 @@ function drawn(cell: CellComponent, field: string, c: CellInfo, comments: CellCo
   const text = show(field, c.value)
   // Edited in the sheet after the proposal: a "sheet" tag, then the cell as it is written.
   if (c.sheetEdit) return sheetTagged(field, c, text)
+  // A new row's column the app's account cannot write: said instead of what its formula would give.
+  if (c.protectedColumn) {
+    const mark = document.createElement('span')
+    mark.className = 'formula-mark'
+    mark.textContent = t('no se escribe: columna protegida')
+    return mark
+  }
   // A preserved butterfly would be left without it: an amber "missing" tag, then what the cell holds.
   if (c.warning && c.kind !== 'unreadable') {
     const box = document.createElement('span')

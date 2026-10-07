@@ -212,6 +212,8 @@ export default {
   'No hay una fórmula de Insectary ID encima de la fila {row}': 'There is no Insectary ID formula above row {row}',
   'Google Sheets no deja a la cuenta de la app insertar la fila de {id}: pide a PAS que inserte la fila; no se guardó nada':
     'Google Sheets does not let the app’s account insert the row of {id}: ask PAS to insert the row; nothing was saved',
+  'Google rechazó la escritura: celda protegida en {fields}; no se guardó nada':
+    'Google refused the write: protected cell in {fields}; nothing was saved',
   // Checks after making pre-made rows (server/premade.mjs)
   '{problem} ({n} filas)': '{problem} ({n} rows)',
   'Falta la fórmula en {column}': 'The formula is missing in {column}',

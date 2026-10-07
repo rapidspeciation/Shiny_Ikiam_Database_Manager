@@ -121,6 +121,13 @@ export default {
   'la IA proponía: {value}': 'the AI proposed: {value}',
   'en la hoja: {value}': 'in the sheet: {value}',
   'Calculado por la fórmula de la hoja: no se escribe': "Calculated by the sheet's formula: not written",
+  'no se escribe: columna protegida': 'not written: protected column',
+  'Columna protegida en la hoja: la cuenta de la app no puede escribirla; la completa quien la protegió':
+    "Protected column in the sheet: the app's account cannot write it; whoever protected it fills it in",
+  'También en la propuesta pendiente de {name} ({id}): {rows}': "Also in {name}'s pending proposal ({id}): {rows}",
+  'Aplicar las dos escribiría lo mismo dos veces: aplica una y descarta o corrige la otra':
+    'Applying both would write the same twice: apply one and discard or correct the other',
+  'No se aplicó ({when}): {why}': 'Not applied ({when}): {why}',
   'Valor actual de la hoja; escribe para cambiarlo': "The sheet's current value; type to change it",
   'Vacía: no se escribe': 'Empty: not written',
   'Valor de la hoja: no cambia': "The sheet's value: not changed",
