@@ -31,7 +31,8 @@ import {
   idProblem,
   isAdult,
   knownSpecies,
-  nextId,
+  overwriteEdit,
+  overwriting,
   preserving,
   siblingSpecies,
   skippedIds,
@@ -50,6 +51,8 @@ import {
   type YoungField,
 } from '../../lib/emerged'
 import { HoldQueue, type HoldAnswer } from '../../lib/holds'
+import { choose, gapIds, gapOptions, gapSpan, nextFor, nextMany, sameGap, type GapChoice } from '../../lib/idGaps'
+import { persistentRef } from '../../lib/persist'
 import { localRun, normalizeId, problemsOf as tubeProblems, type Problem as TubeProblem } from '../../lib/tubes'
 import { errorText, notify } from '../../lib/notice'
 import { initialsOf } from '../../lib/rows'
@@ -101,7 +104,7 @@ const session = useSession()
 const tables = useTables()
 const live = useLive()
 const state = useEmergedState()
-const { drafts, skipStock, medium, young, selected, freeIds, inOrder, rowOf, idsLoaded } = state
+const { drafts, skipStock, medium, young, selected, freeIds, inOrder, rowOf, idsLoaded, gaps } = state
 // Focus: the clutch and day of the larvae come from Clutches (the tab's own clutch and day stay as they are).
 const clutch = props.focus ? ref(props.focus.clutch) : state.clutch
 const date = props.focus ? ref(props.focus.date) : state.date
@@ -193,8 +196,44 @@ function moveToDay() {
 
 // --- Adding cards
 const held = computed(() => heldIds(drafts.value))
-const next = computed(() => (idsLoaded.value ? nextId(inOrder.value, freeIds.value[0] ?? '', held.value) : null))
-const skipped = computed(() => skippedIds(inOrder.value, held.value))
+
+// --- «Siguiente ID»: the gap of free pre-made rows the buttons take their IDs from (lib/idGaps)
+/** The gap chosen, kept for the session, per person; null: the latest (after the last row used). Not from Clutches. */
+const gapChoice = persistentRef<GapChoice | null>(`emerged:gap:${session.user?.username ?? ''}`, null)
+const gap = computed(() => (props.focus ? null : gapChoice.value))
+/** The ID the next card gets after `taken` (the cards' IDs), in the chosen gap or after the last row used. */
+const nextOf = (taken: string[]) => nextFor(inOrder.value, freeIds.value[0] ?? '', taken, gap.value, rowOf.value)
+const next = computed(() => (idsLoaded.value ? nextOf(held.value) : null))
+const rowsText = (ids: string[]) => {
+  const a = rowOf.value.get(ids[0]?.toUpperCase() ?? '')
+  const b = rowOf.value.get(ids.at(-1)?.toUpperCase() ?? '')
+  return a === undefined ? '' : a === b || b === undefined ? t('fila {row}', { row: a }) : t('filas {a}–{b}', { a, b })
+}
+const gapList = computed(() => {
+  const options = gapOptions(gaps.value, inOrder.value, rowOf.value, held.value, gapChoice.value).map(o => ({
+    key: o.latest ? 'latest' : `${o.rowFrom}-${o.rowTo}`,
+    option: o,
+    label: [
+      o.latest ? `${t('Último')}: ` : '',
+      o.ids.length ? `${gapSpan(o.ids)} · ${tn(o.ids.length, '{n} libre', '{n} libres')} · ${rowsText(o.ids)}` : t('sin IDs libres'),
+    ].join(''),
+  }))
+  // No gap after the last row used: the buttons still go on as always (earlier empty rows).
+  if (!options.some(o => o.key === 'latest')) options.unshift({ key: 'latest', option: null as never, label: t('Por defecto (como siempre)') })
+  return options
+})
+const gapKey = computed(() => (gap.value ? (gapList.value.find(o => o.key !== 'latest' && sameGap(o.option, gap.value!))?.key ?? 'latest') : 'latest'))
+function chooseGap(key: string) {
+  const o = gapList.value.find(x => x.key === key)
+  gapChoice.value = key === 'latest' || !o ? null : choose(o.option)
+}
+/** The chosen gap's IDs free now (none of this person's cards): what the buttons go on with. */
+const gapLeft = computed(() => (gap.value ? gapIds(inOrder.value, rowOf.value, gap.value).filter(id => !held.value.includes(id.toUpperCase())) : []))
+/** Free IDs left between the cards' IDs, within each gap (between two gaps the rows are used). */
+const skipped = computed(() => {
+  if (!gaps.value.length) return skippedIds(inOrder.value, held.value)
+  return gaps.value.flatMap(g => skippedIds(gapIds(inOrder.value, rowOf.value, g), held.value))
+})
 const fresh = ref<string[]>([])
 let freshTimer: ReturnType<typeof setTimeout> | undefined
 onBeforeUnmount(() => clearTimeout(freshTimer))
@@ -205,9 +244,14 @@ function add(kind: Kind, sex: Sex, count = 1, young: { stage: string; foundDead:
   if (!idsLoaded.value) return notify(t('Cargando los Insectary IDs libres…'))
   const added: Draft[] = []
   for (let i = 0; i < count; i++) {
-    const id = nextId(inOrder.value, freeIds.value[0] ?? '', [...held.value, ...added.map(d => d.id)])
+    const id = nextOf([...held.value, ...added.map(d => d.id)])
     if (!id) {
-      notify(t('No quedan filas preasignadas libres: crea más filas preasignadas en Insectary_data'), 'error')
+      notify(
+        gap.value
+          ? t('El hueco elegido ya no tiene IDs libres: elige otro en «Siguiente ID»')
+          : t('No quedan filas preasignadas libres: crea más filas preasignadas en Insectary_data'),
+        'error',
+      )
       break
     }
     added.push({
@@ -257,7 +301,7 @@ const holds: HoldQueue = new HoldQueue({
     const waiting: string[] = holds.waiting
     const later = new Set(waiting.slice(waiting.indexOf(key) + 1))
     const taken = drafts.value.filter(d => d.key !== key && !later.has(d.key)).map(d => d.id)
-    return nextId(inOrder.value, freeIds.value[0] ?? '', [...taken, ...refused])
+    return nextOf([...taken, ...refused])
   },
   assign(key, id, from) {
     patchDraft(key, { id, hold: 'waiting' })
@@ -267,13 +311,16 @@ const holds: HoldQueue = new HoldQueue({
   settled(key, state, answer) {
     const d = draftOf(key)
     if (!d) return
+    // Written over a row with data: nothing to hold (the row is that butterfly's).
+    if (overwriting(d)) return patchDraft(key, { held: undefined, hold: undefined })
     patchDraft(key, state === 'held' ? { held: d.id.trim().toUpperCase(), hold: undefined } : { held: undefined, hold: state })
     if (state === 'refused' && answer?.code === 'CLAIMED') refused.value[key] = t('{id} ya lo tiene {name} en la app (aún no en Google Sheets)', { id: answer.value, name: answer.holder ?? '?' })
   },
 })
 /** The cards whose ID is not held for them (kept from before, changed by hand, no signal then): asked again, never moved. */
 function holdAgain() {
-  for (const d of drafts.value) if (d.id.trim() && d.held !== d.id.trim().toUpperCase() && !holds.waiting.includes(d.key)) void holds.push(d.key, { move: false })
+  for (const d of drafts.value)
+    if (d.id.trim() && d.held !== d.id.trim().toUpperCase() && !overwriting(d) && !holds.waiting.includes(d.key)) void holds.push(d.key, { move: false })
 }
 /** Cards taken away: their IDs free for everyone. */
 function letGo(list: Draft[]) {
@@ -311,16 +358,9 @@ function cancelFocus() {
 /** «+ N larvae»: N cards with consecutive Insectary IDs, CAMs and tubes, of one stage, alive or found dead. */
 const larvae = ref<{ open: boolean; count: number | null; moreStages: boolean }>({ open: false, count: 1, moreStages: false })
 const larvaCount = computed(() => Math.max(1, Math.min(60, Math.floor(larvae.value.count ?? 1))))
-const larvaIds = computed(() => {
-  if (!idsLoaded.value) return []
-  const out: string[] = []
-  for (let i = 0; i < larvaCount.value; i++) {
-    const id = nextId(inOrder.value, freeIds.value[0] ?? '', [...held.value, ...out])
-    if (!id) break
-    out.push(id)
-  }
-  return out
-})
+const larvaIds = computed(() =>
+  idsLoaded.value ? nextMany(inOrder.value, freeIds.value[0] ?? '', held.value, gap.value, rowOf.value, larvaCount.value) : [],
+)
 const larvaStages = computed(() =>
   larvae.value.moreStages ? LIFESTAGES : LIFESTAGES.filter(s => MAIN_STAGES.includes(s) || s === young.value.stage),
 )
@@ -686,6 +726,37 @@ const ID_PROBLEM: Record<string, (id: string) => string> = {
   used: id => t('{id} ya es una mariposa de Insectary_data', { id }),
   'not-free': id => t('{id} no es una fila preasignada libre de Insectary_data', { id }),
 }
+/** The sheet's butterfly holding an Insectary ID (a row with data: written over only on «Sobrescribir de todas formas»). */
+const sheetRowOf = computed(() => new Map(index.value.map(e => [e.key, e.row])))
+const rowWithData = (id: string) => (id.trim() ? sheetRowOf.value.get(searchKey(id)) : undefined)
+/** What a row with data holds, in short: «♀, emergió 3-Oct-26, clutch 990». */
+function rowText(r: TableRow): string {
+  const v = r.values
+  const sex = String(v.Sex ?? '').trim()
+  // An egg or larva (Sex NOT_COLLECTED) is said by its stage.
+  const stage = isBlank(v.LIFESTAGE) || v.LIFESTAGE === 'Adult' ? '' : String(v.LIFESTAGE).trim()
+  const parts = [sex === 'female' ? '♀' : sex === 'male' ? '♂' : stage || (sex && !isBlank(sex) ? sex : '')]
+  if (typeof v.Intro2Insectary_date === 'number') parts.push(t('emergió {date}', { date: formatSerial(v.Intro2Insectary_date) }))
+  if (typeof v.Death_date === 'number') parts.push(t('murió {date}', { date: formatSerial(v.Death_date) }))
+  if (!isBlank(v['CLUTCH NUMBER'])) parts.push(t('clutch {c}', { c: String(v['CLUTCH NUMBER']).trim() }))
+  const what = parts.filter(Boolean).join(', ')
+  return what || (isBlank(v.SPECIES) ? t('fila {row}', { row: r.row }) : String(v.SPECIES))
+}
+/** A card's ID on a row with data: what it holds, and whether the card was confirmed to write over it. */
+function usedRowOf(d: Draft): { text: string; row: number; on: boolean } | null {
+  const r = rowWithData(d.id)
+  return r ? { text: rowText(r), row: r.row, on: overwriting(d) } : null
+}
+/** A card's place in the sheet: its free row, or the row with data it writes over. */
+const sheetOrder = (d: Draft) => rowOf.value.get(d.id.trim().toUpperCase()) ?? rowWithData(d.id)?.row ?? 0
+function setOverwrite(key: string, on: boolean) {
+  const d = draftOf(key)
+  if (!d) return
+  // Any ID the card held before goes back to everyone.
+  if (on) letGo([d])
+  patchDraft(key, on ? { overwrite: d.id.trim().toUpperCase(), held: undefined, hold: undefined } : { overwrite: undefined })
+}
+
 /** An identifier someone else holds in an entry kept in the app (A4E — Ana). */
 const heldBy = (kind: 'insectary' | 'cam' | 'tube', value: string) => claimHolder(live.claims, kind, value)
 function problemsOf(d: Draft): string[] {
@@ -697,7 +768,11 @@ function problemsOf(d: Draft): string[] {
   else if (idsLoaded.value) {
     const others = drafts.value.filter(o => o.key !== d.key).map(o => o.id)
     const p = idProblem(d.id, others, mine ? new Set([...freeSet.value, d.held!]) : freeSet.value, usedIds.value)
-    if (p) out.push(ID_PROBLEM[p](d.id.trim().toUpperCase()))
+    const row = p === 'used' ? rowWithData(d.id) : undefined
+    // A row with data: written over only once confirmed on the card.
+    if (row) {
+      if (!overwriting(d)) out.push(t('{id} ya tiene datos: {what}', { id: d.id.trim().toUpperCase(), what: rowText(row) }))
+    } else if (p) out.push(ID_PROBLEM[p](d.id.trim().toUpperCase()))
   }
   if (!speciesOfClutch(d.clutch) && !d.species) out.push(t('El clutch no tiene especie: elige qué emergió'))
   if (serialFromIso(d.date) === null) out.push(t('Fecha no válida: el año debe estar entre 1990 y 2099'))
@@ -791,7 +866,7 @@ const blocker = computed(() => {
 })
 const summary = computed(() => {
   const adults = toSave.value.filter(isAdult)
-  const ids = [...toSave.value].sort((a, b) => (rowOf.value.get(a.id) ?? 0) - (rowOf.value.get(b.id) ?? 0)).map(d => d.id)
+  const ids = [...toSave.value].sort((a, b) => sheetOrder(a) - sheetOrder(b)).map(d => d.id)
   const parts = [
     adults.length || !props.focus ? tn(adults.length, '{n} adulto', '{n} adultos') : '',
     toSave.value.length > adults.length ? tn(toSave.value.length - adults.length, '{n} huevo o larva', '{n} huevos o larvas') : '',
@@ -810,30 +885,47 @@ async function save() {
   if (blocker.value || saving.value) return
   saving.value = true
   refused.value = {}
-  const list = [...toSave.value].sort((a, b) => (rowOf.value.get(a.id) ?? 0) - (rowOf.value.get(b.id) ?? 0))
-  const creates = list.map(d => {
+  const list = [...toSave.value].sort((a, b) => sheetOrder(a) - sheetOrder(b))
+  const contextOf = (d: Draft) => {
     const row = stockOf(d.clutch)
-    // An egg or larva: the CAM and tube on its card, its medium and purpose (its own or the batch's).
-    const values = draftValues(d.kind === 'young' ? { ...d, ...sampleOf(d) } : d, {
+    return {
       clutchValue: row?.values['CLUTCH NUMBER'] ?? d.clutch,
       clutchSpecies: speciesOfClutch(d.clutch),
       generation: String(row?.values.Generation ?? ''),
-      formulas: props.createFormulas,
       today: today.value,
       initials: initials.value,
       medium: d.kind === 'young' ? youngValue(d, young.value, 'medium') : medium.value,
       purpose: d.kind === 'young' ? youngValue(d, young.value, 'purpose') : undefined,
-    })
-    return { clientId: d.key, module: MODULE, values, replaceFormula: values.SPECIES ? ['SPECIES'] : [] }
+    }
+  }
+  // An egg or larva: the CAM and tube on its card, its medium and purpose (its own or the batch's).
+  const withSample = (d: Draft) => (d.kind === 'young' ? { ...d, ...sampleOf(d) } : d)
+  // «Sobrescribir de todas formas»: the row with data is edited (its old values in Historial, to undo).
+  const overwritten = new Map<string, string>()
+  const rowEdits = list.flatMap(d => {
+    const row = overwriting(d) ? rowWithData(d.id) : undefined
+    if (!row) return []
+    overwritten.set(row.id, d.key)
+    const edit = overwriteEdit(withSample(d), row, contextOf(d))
+    return Object.keys(edit.values).length ? [edit] : []
   })
+  const creates = list
+    .filter(d => !(overwriting(d) && rowWithData(d.id)))
+    .map(d => {
+      const values = draftValues(withSample(d), { ...contextOf(d), formulas: props.createFormulas })
+      return { clientId: d.key, module: MODULE, values, replaceFormula: values.SPECIES ? ['SPECIES'] : [] }
+    })
   // Focus: the clutch's row is Clutches' edit (its count, event and note), not this save's.
-  const edits = stockLines.value
-    .filter(l => !props.focus && l.on && l.row && l.plan)
-    .map(l => ({
-      id: l.row!.id,
-      values: Object.fromEntries(l.plan!.cells.map(c => [c.field, c.value])),
-      expected: Object.fromEntries(l.plan!.cells.map(c => [c.field, c.before])),
-    }))
+  const edits = [
+    ...rowEdits,
+    ...stockLines.value
+      .filter(l => !props.focus && l.on && l.row && l.plan)
+      .map(l => ({
+        id: l.row!.id,
+        values: Object.fromEntries(l.plan!.cells.map(c => [c.field, c.value])),
+        expected: Object.fromEntries(l.plan!.cells.map(c => [c.field, c.before])),
+      })),
+  ]
   // Kept in the app for everyone (server/staged.mjs), all or nothing: the butterflies and their clutches' counts
   // together. Their IDs, CAMs and tubes are claimed at once; «Guardar en Google Sheets» writes them.
   const body = { reason: null, purpose: 'emergidos', partial: false, creates, edits }
@@ -866,6 +958,7 @@ async function save() {
     const items = e instanceof ApiError ? ((e.details as { items?: { id?: string; clientId?: string; field?: string; message: string }[] })?.items ?? []) : []
     for (const item of items) {
       if (item.clientId && drafts.value.some(d => d.key === item.clientId)) refused.value[item.clientId] = t(item.message)
+      else if (item.id && overwritten.has(item.id)) refused.value[overwritten.get(item.id)!] = t(item.message)
       else if (item.id) {
         const line = stockLines.value.find(l => l.row?.id === item.id)
         if (line) notify(`${line.clutch}: ${t(item.message)}`, 'error')
@@ -1033,6 +1126,38 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
             <p v-if="doubt" class="mt-2 flex items-start gap-1.5 text-sm font-medium text-amber-900"><AlertTriangle :size="16" class="mt-0.5 shrink-0" />{{ doubt }}</p>
 
             <template v-if="canEdit">
+              <!-- «Siguiente ID»: the gap of free rows the buttons take from (an older one: IDs written on paper meanwhile). -->
+              <div
+                v-if="idsLoaded && (gapList.length > 1 || gap)"
+                class="mt-3 rounded-lg border px-2 py-1.5"
+                :class="gap ? 'border-amber-400 bg-amber-50' : 'border-stone-200 bg-stone-50'"
+                data-gaps
+              >
+                <label class="grid gap-1">
+                  <span class="text-sm font-medium text-stone-800">{{ $t('Siguiente ID') }}</span>
+                  <select
+                    class="field-input h-11 w-full min-w-0 text-base tabular-nums"
+                    :class="{ 'border-amber-500 font-semibold': gap }"
+                    :value="gapKey"
+                    @change="chooseGap(($event.target as HTMLSelectElement).value)"
+                  >
+                    <option v-for="o in gapList" :key="o.key" :value="o.key">{{ o.label }}</option>
+                  </select>
+                </label>
+                <p v-if="gap" class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-amber-950" role="status">
+                  <AlertTriangle :size="15" class="shrink-0" />
+                  <span class="min-w-0 flex-1">
+                    {{
+                      gapLeft.length
+                        ? $t('Hueco anterior: los botones dan {span} en orden, no los IDs del final.', { span: gapSpan(gapLeft) })
+                        : $t('El hueco elegido ya no tiene IDs libres.')
+                    }}
+                  </span>
+                  <button type="button" class="h-9 shrink-0 rounded-lg border border-amber-500 bg-white px-3 font-medium" @click="gapChoice = null">
+                    {{ $t('Volver al último') }}
+                  </button>
+                </p>
+              </div>
               <!-- One tap, one butterfly: tap again for the next (each gets the next free ID, held at once). -->
               <div class="mt-3 grid grid-cols-2 gap-2">
                 <button
@@ -1187,11 +1312,12 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
               </form>
               <p class="mt-2 text-xs text-stone-600">
                 <template v-if="next">{{ $t('Siguiente ID: {id} (fila {row}). Escríbelo en el ala; si el ala dice otro, toca el ID de la tarjeta.', { id: next, row: nextRow ?? '?' }) }}</template>
+                <template v-else-if="idsLoaded && gap">{{ $t('El hueco elegido ya no tiene IDs libres: elige otro en «Siguiente ID»') }}</template>
                 <template v-else-if="idsLoaded">{{ $t('No quedan filas preasignadas libres: crea más filas preasignadas en Insectary_data.') }}</template>
                 <template v-else>{{ $t('Cargando los Insectary IDs libres…') }}</template>
               </p>
               <!-- Out of IDs: more pre-made rows from here, without looking for the warning above. -->
-              <ExtendRowsButton v-if="!next && idsLoaded" class="mt-2 h-11 w-full justify-center" sheet="Insectary_data" :count="200" @done="state.loadFreeIds()" />
+              <ExtendRowsButton v-if="!next && idsLoaded && !gap"class="mt-2 h-11 w-full justify-center" sheet="Insectary_data" :count="200" @done="state.loadFreeIds()" />
               <p v-if="skipped.length" class="mt-1 flex items-start gap-1.5 text-sm text-amber-900">
                 <AlertTriangle :size="15" class="mt-0.5 shrink-0" />
                 {{ $t('Quedan filas vacías entre las tarjetas: {ids}', { ids: skipped.slice(0, 6).join(', ') + (skipped.length > 6 ? '…' : '') }) }}
@@ -1219,11 +1345,13 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
               :all-species="knownList"
               :problems="problems.get(d.key) || []"
               :hint="hintOf(d)"
+              :used-row="usedRowOf(d)"
               :day="date"
               :can-edit="canEdit"
               :fresh="fresh.includes(d.key)"
               @update="update(d.key, $event)"
               @remove="remove(d.key)"
+              @overwrite="setOverwrite(d.key, $event)"
             />
           </ul>
         </section>
@@ -1269,6 +1397,7 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
               :all-species="knownList"
               :problems="problems.get(d.key) || []"
               :hint="hintOf(d)"
+              :used-row="usedRowOf(d)"
               :day="date"
               :can-edit="canEdit"
               :fresh="fresh.includes(d.key)"
@@ -1280,6 +1409,7 @@ const nextRow = computed(() => (next.value ? rowOf.value.get(next.value.toUpperC
               @remove="remove(d.key)"
               @select="toggleSelect(d.key)"
               @accept="accept"
+              @overwrite="setOverwrite(d.key, $event)"
             />
           </ul>
         </section>

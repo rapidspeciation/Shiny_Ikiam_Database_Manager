@@ -136,4 +136,22 @@ export default {
   'Este ID no quedó reservado': 'This ID is not held',
   'ID reservado para esta mariposa': 'ID held for this butterfly',
   '{from} ya lo tiene {name}: esta mariposa es {id}': '{name} already has {from}: this butterfly is {id}',
+  // «Siguiente ID»: the gap of free pre-made rows the buttons take from
+  'Siguiente ID': 'Next ID',
+  'filas {a}–{b}': 'rows {a}–{b}',
+  '{n} libre': '{n} free',
+  '{n} libres': '{n} free',
+  'Por defecto (como siempre)': 'Default (as always)',
+  'Hueco anterior: los botones dan {span} en orden, no los IDs del final.': 'Earlier gap: the buttons give {span} in order, not the IDs at the end.',
+  'El hueco elegido ya no tiene IDs libres.': 'The chosen gap has no free IDs left.',
+  'El hueco elegido ya no tiene IDs libres: elige otro en «Siguiente ID»': 'The chosen gap has no free IDs left: choose another in «Next ID»',
+  'Volver al último': 'Back to the latest',
+  // A card's ID on a row that already holds a butterfly
+  '{id} ya tiene datos: {what}': '{id} already has data: {what}',
+  'emergió {date}': 'emerged {date}',
+  'murió {date}': 'died {date}',
+  'Sobrescribir de todas formas': 'Overwrite anyway',
+  'Al guardar se sobrescribe {id} (fila {row}: {what}); se puede deshacer en Historial.':
+    'Saving overwrites {id} (row {row}: {what}); it can be undone in History.',
+  'No sobrescribir': "Don't overwrite",
 }
