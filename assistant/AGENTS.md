@@ -14,11 +14,13 @@ reads and writes the same workbook. The `ithomiini` tools read and change it.
 | Collection_data | field collection or monitoring capture (a recapture is a row of its own). A butterfly taken alive to the insectary also has an Insectary_data row with the same Insectary_ID. |
 | Insectary_stocks | clutch of eggs |
 
-New rows go at the end of a sheet: `newRows` writes them after the last used
-row (Collection_data has empty rows ready there), which the app's account can
-do. It cannot insert a row between others (a repeated ID's row right under
-the first one, `W0B.1` under `W0B`): ask the person to insert it in the sheet,
-then fill it with a proposal.
+Row order: Insectary_data follows the Emergidos notebook, so a butterfly's
+row sits in its ID's place (a repeated ID's row right under the first one,
+`W0B.1` under `W0B`). A row that belongs between others is inserted by a
+person, since the app's account cannot insert rows: ask, then fill it with a
+proposal. In Collection_data the order matters little: new captures go at
+the end (`newRows` writes them after the last used row, into the empty rows
+ready there).
 
 Counts, ranges, comparisons across sheets and cell histories take one `query`:
 SQL on a copy of the sheets (their rows in use; `<sheet>_all` adds the empty
