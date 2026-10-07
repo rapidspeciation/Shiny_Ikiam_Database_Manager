@@ -186,7 +186,8 @@ test('a proposal: per distinct formula, heavy above the thresholds, and the answ
   assert.ok(!light.some(p => p.heavy), JSON.stringify(light));
 
   const answer = formulaCostAnswer(cost);
-  assert.deepEqual(answer[1], {
+  const { suggestion, ...said } = answer[1];
+  assert.deepEqual(said, {
     sheet: 'Insectary_data',
     column: 'CAM_ID_CollData',
     cells: 1000,
@@ -194,14 +195,11 @@ test('a proposal: per distinct formula, heavy above the thresholds, and the answ
     comparisons: '1,000 cells × 9,757 ≈ 9.8 M per full recalculation',
     flags: ['wholeColumnLookup', 'crossSheetRepeated'],
     heavy: true,
-    suggestion:
-      'a range ending at the last used row (Collection_data!$D$2:$D$9755) instead of the whole column; extend it when rows are added; skip rows that cannot match before searching (IF(key="","",…), or the row\'s kind)',
   });
-  assert.match(
-    answer[0].eachWrite,
-    /^recalculates 1,000 formulas reading T2_Preservation_medium whole \(F1\/F2_MutationRate 1,000\) ≈ 21 M comparisons$/,
-  );
-  assert.match(answer[0].suggestion, /one proposal, not cell by cell/);
+  // The bounded range to use instead, to the last used row.
+  assert.ok(suggestion.includes('Collection_data!$D$2:$D$9755'), suggestion);
+  // Each write: the formulas that read the column again, and how much that costs.
+  assert.ok(['T2_Preservation_medium', 'F1/F2_MutationRate 1,000', '21 M'].every(part => answer[0].eachWrite.includes(part)), answer[0].eachWrite);
   assert.equal(
     proposalFormulaCost(store, [{ sheet: 'Insectary_data', row: 2, values: { Sex: 'x' } }]),
     null,
@@ -252,18 +250,17 @@ test('propose_changes, update_proposal and the table say what the formulas cost'
       ],
     });
     assert.ok(out.proposalId, JSON.stringify(out));
-    assert.deepEqual(out.formulaCost, [
-      {
-        sheet: 'Insectary_data',
-        column: 'CAM_ID_CollData',
-        cells: 5,
-        scans: ['Collection_data!D:D: 2 rows'],
-        comparisons: '5 cells × 4 ≈ 20 per full recalculation',
-        flags: ['wholeColumnLookup'],
-        suggestion:
-          'a range ending at the last used row (Collection_data!$D$2:$D$2) instead of the whole column; extend it when rows are added; skip rows that cannot match before searching (IF(key="","",…), or the row\'s kind)',
-      },
-    ]);
+    assert.equal(out.formulaCost.length, 1);
+    const { suggestion, ...said } = out.formulaCost[0];
+    assert.deepEqual(said, {
+      sheet: 'Insectary_data',
+      column: 'CAM_ID_CollData',
+      cells: 5,
+      scans: ['Collection_data!D:D: 2 rows'],
+      comparisons: '5 cells × 4 ≈ 20 per full recalculation',
+      flags: ['wholeColumnLookup'],
+    });
+    assert.ok(suggestion.includes('Collection_data!$D$2:$D$2'), suggestion);
     const up = await call('update_proposal', {
       proposalId: out.proposalId,
       rows: [

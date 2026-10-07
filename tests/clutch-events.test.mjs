@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { applyBatch } from '../server/batch.mjs';
+import { undoEdits } from '../server/history.mjs';
 import {
   addClutchCheck,
   addClutchEvent,
@@ -13,6 +14,7 @@ import {
   ecuadorDay,
   notebookChanges,
   notebookUpTo,
+  removeClutchCheck,
   removeClutchEvent,
   setClutchSettings,
   setNotebookUpTo,
@@ -76,6 +78,68 @@ test('checks: checked or needs verification, with a short reason; the latest cou
   );
   assert.throws(() => addClutchCheck(store, { requestId: randomUUID(), recordId: c1012, state: 'maybe' }, ana), { code: 'INVALID_STATE' });
   assert.throws(() => addClutchCheck(store, { requestId: randomUUID(), recordId: c1012, note: 'x'.repeat(201) }, ana), { code: 'INVALID_NOTE' });
+});
+
+test("the day's list: a check stays in the app; a saved change before → after, undone from the list; a check taken back by its author or an admin", async () => {
+  const { store, row } = await fixture();
+  const [c1012, c1013] = [row(11), row(12)];
+  const saves = () => store.db.prepare('SELECT COUNT(*) n FROM actions').get().n;
+  const before = saves();
+  // "Checked, no change"; the same request again is the same check.
+  const requestId = randomUUID();
+  const first = addClutchCheck(store, { requestId, recordId: c1013.id }, ana);
+  assert.deepEqual([first.check.clutch, first.check.fields, first.duplicate], ['1013', [], false]);
+  const again = addClutchCheck(store, { requestId, recordId: c1013.id }, ana);
+  assert.deepEqual([again.check.id, again.duplicate], [first.check.id, true]);
+  // No save in the history, nothing written to the row (nor to Google Sheets).
+  assert.equal(saves(), before);
+  assert.deepEqual(store.getRecord(c1013.id), c1013);
+
+  // A change saved as usual (3 larvae dead: =3+5 → =3+5-3), then its check.
+  const saved = await applyBatch(
+    store,
+    { requestId: randomUUID(), purpose: 'clutches', edits: [{ id: c1012.id, values: { 'NUMBER OF LARVAE': '=3+5-3', NOTES: '2/10/26 BD: 3 larvae dead' } }] },
+    bob,
+  );
+  const checked = addClutchCheck(store, { requestId: randomUUID(), recordId: c1012.id, fields: ['NUMBER OF LARVAE', 'NOTES'], actionId: saved.action.id }, bob);
+  let day = clutchDay(store);
+  assert.deepEqual(
+    day.checks.map(c => [c.clutch, c.name, c.fields]),
+    [
+      ['1013', 'Ana Pérez', []],
+      ['1012', 'Bob Díaz', ['NUMBER OF LARVAE', 'NOTES']],
+    ],
+  );
+  const larvae = day.changes.find(c => c.field === 'NUMBER OF LARVAE');
+  assert.deepEqual(
+    [larvae.clutch, larvae.before, larvae.after, larvae.actors, larvae.isNew],
+    ['1012', { formula: '=3+5' }, { formula: '=3+5-3' }, ['Bob Díaz'], false],
+  );
+  // Each change still standing, to undo it from the day's list.
+  assert.deepEqual(larvae.parts.map(p => [p.actionId, p.actor]), [[saved.action.id, bob.id]]);
+  assert.equal(clutchState(store).last[c1012.id].name, 'Bob Díaz');
+  assert.equal(clutchState(store).sums[c1012.id]['NUMBER OF LARVAE'], '=3+5-3');
+  // Undone from the list (the Historial's undo of its parts): it leaves the list.
+  const notes = day.changes.find(c => c.field === 'NOTES');
+  await undoEdits(store, { changeIds: notes.parts.map(p => p.changeId), requestId: randomUUID() }, bob);
+  day = clutchDay(store);
+  assert.equal(day.changes.find(c => c.field === 'NOTES'), undefined);
+  assert.equal(day.changes.find(c => c.field === 'NUMBER OF LARVAE').parts.length, 1);
+  // Another day has nothing; a day that is no date is refused.
+  assert.deepEqual(clutchDay(store, { day: '2020-01-01' }).checks, []);
+  assert.throws(() => clutchDay(store, { day: 'yesterday' }), { code: 'INVALID_DAY' });
+  // Refused: a column the sheet has not, a save that does not exist, a row of another sheet.
+  const check = body => addClutchCheck(store, { requestId: randomUUID(), recordId: c1013.id, ...body }, ana);
+  assert.throws(() => check({ fields: ['Nope'] }), { code: 'INVALID_FIELDS' });
+  assert.throws(() => check({ actionId: 'missing' }), { code: 'ACTION_NOT_FOUND' });
+  assert.throws(() => check({ recordId: store.getRecordBySheetRow('Insectary_data', 2).id }), { code: 'RECORD_NOT_FOUND' });
+
+  // A check marked by mistake is taken back by its author (or a reviewer or admin), not by others.
+  assert.throws(() => removeClutchCheck(store, first.check.id, bob), { code: 'FORBIDDEN' });
+  assert.deepEqual(removeClutchCheck(store, first.check.id, ana), { removed: first.check.id });
+  assert.throws(() => removeClutchCheck(store, first.check.id, ana), { code: 'CHECK_NOT_FOUND' });
+  assert.deepEqual(removeClutchCheck(store, checked.check.id, boss), { removed: checked.check.id });
+  assert.deepEqual(clutchDay(store).checks, []);
 });
 
 test('events: per clutch and day, with the eggs and larvae registered in Insectary_data counted once', async () => {

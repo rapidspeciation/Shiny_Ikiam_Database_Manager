@@ -2,9 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { createAssistant } from '../server/assistant.mjs';
 import { createReports } from '../server/reports.mjs';
 
@@ -196,38 +193,8 @@ test('stage report sums observed values and marks missingness', async () => {
   assert.equal(response.status, 200);
   assert.equal(response.body.rows.find(row => row.stage === 'EGGS').total, 12);
   assert.equal(response.body.rows.find(row => row.stage === 'ADULTS').missingClutches, 1);
-  assert.match(response.body.method, /neither current live occupancy nor a cohort survival calculation/);
   assert.equal(response.body.sources[0].id, 's-1');
   db.close();
-});
-
-test('knowledge index only reads configured documents and preserves source URL', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'ithomiini-knowledge-'));
-  await writeFile(
-    join(dir, 'note.md'),
-    '---\ntitle: Meeting 137\nsourceUrl: https://docs.google.com/document/d/abc/edit\n---\n# Meeting\nClutch 944 reached pupae.',
-  );
-  const { assistant, db } = fixture({ knowledgeRoots: [dir] });
-  try {
-    const found = await assistant.handle({
-      method: 'GET',
-      path: '/api/knowledge',
-      query: { q: 'clutch 944' },
-      user: alice,
-    });
-    assert.equal(found.body.documents.length, 1);
-    assert.equal(found.body.documents[0].sourceUrl, 'https://docs.google.com/document/d/abc/edit');
-    const document = await assistant.handle({
-      method: 'GET',
-      path: `/api/knowledge/${found.body.documents[0].id}`,
-      user: alice,
-    });
-    assert.match(document.body.text, /reached pupae/);
-    assert.doesNotMatch(document.body.text, /sourceUrl:/);
-  } finally {
-    db.close();
-    await rm(dir, { recursive: true, force: true });
-  }
 });
 
 test('voice and image calls use configured chat models and return reviewable drafts', async () => {

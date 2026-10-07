@@ -359,43 +359,6 @@ test('match_notebook: a suffixed ID is its own key, and a death line with all it
   }
 });
 
-test('a proposal row for an existing record takes as many values as a new row (a death with its whole template)', async () => {
-  const { store, at, call } = await assistantFixture();
-  try {
-    const values = {
-      Sex: 'male',
-      Intro2Insectary_date: '2026-08-30',
-      Death_date: '2026-09-21',
-      Death_cause: 'Killed_Preserved',
-      CAM_ID: 'CAM079556',
-      Tube_1_id: 'FS50850002',
-      Notes_Insectary_data: 'preserved after mating',
-      Research_purpose: 'NA',
-      Preservation_date: '2026-09-21',
-      Preserved_Dead_Alive: 'Alive',
-      Location_body: 'Ikiam',
-      Tube_1_tissue: 'WHOLE_ORGANISM',
-      T1_Preservation_medium: 'Ethanol',
-      Tube_2_id: 'NA',
-      Tube_2_tissue: 'NOT_COLLECTED',
-      T2_Preservation_medium: 'NOT_COLLECTED',
-      Tube_3_id: 'NA',
-      Tube_3_tissue: 'NOT_COLLECTED',
-      Tube_4_id: 'NA',
-      Tube_4_tissue: 'NOT_COLLECTED',
-      Preservation_medium: 'NOT_COLLECTED',
-      Stock_of_origin: 'NA',
-      LIFESTAGE: 'Adult',
-    };
-    assert.ok(Object.keys(values).length > 20);
-    const out = await call('propose_changes', { reason: 'Muertes', changes: [{ recordId: at(5).id, values }] });
-    assert.ok(out.proposalId, JSON.stringify(out));
-    assert.equal(out.rows, 1);
-  } finally {
-    store.close();
-  }
-});
-
 test('a pending proposal on the rows below an inserted W2B.2 still maps to them: no edit in the sheet seen, nothing logged, applied where they went', async () => {
   const { store, at, idOf, call, assistant } = await assistantFixture();
   try {

@@ -83,7 +83,6 @@ test('the hook needs its secret, merges reports and syncs the sheet after row in
     }),
     { accepted: 1 },
   );
-  await new Promise(r => setTimeout(r, 30));
   await hook.flush();
   assert.equal(store.getRecordBySheetRow('Insectary_data', 2).values.Sex, 'NA');
   assert.equal(hook.status.lastResult, '1 rows');
@@ -94,7 +93,6 @@ test('the hook needs its secret, merges reports and syncs the sheet after row in
   await sheets.externalEdit('Insectary_data', 2, { Insectary_ID: 'Z9Z', SPECIES: 'Oleria onega' });
   sheets.rows.get('Insectary_data').sort((a, b) => a.row - b.row);
   hook.receive(headers, { sheet: 'Insectary_data', change: 'INSERT_ROW' });
-  await new Promise(r => setTimeout(r, 30));
   await hook.flush();
   assert.equal(hook.status.lastResult, 'sheet');
   assert.equal(store.getRecordBySheetRow('Insectary_data', 3).values.Insectary_ID, 'A0A');

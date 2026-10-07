@@ -83,11 +83,11 @@ function run(bin, args, { timeout = 600_000, env = process.env } = {}) {
   });
 }
 
-function gogFor(env) {
+function gogFor(env, exec = run) {
   const bin = env.ITHOMIINI_GOG_BIN;
   if (!bin) throw new Error('ITHOMIINI_GOG_BIN is not set');
   const base = ['--readonly', ...(env.GOG_ACCOUNT ? ['--account', env.GOG_ACCOUNT] : []), '--client', env.GOG_CLIENT || 'ithomiini', '--no-input'];
-  return (args, options) => run(bin, [...base, ...args], { ...options, env });
+  return (args, options) => exec(bin, [...base, ...args], { ...options, env });
 }
 
 const FIELDS = 'files(id,name,mimeType,modifiedTime,size,webViewLink,trashed,shortcutDetails),nextPageToken';
@@ -348,11 +348,14 @@ async function acquireLock(path) {
   return false;
 }
 
-/** One sync run. Returns a summary; throws when the Drive listing fails (nothing is deleted then). */
-export async function syncDrive({ env = process.env, configPath, log = () => {} } = {}) {
+/**
+ * One sync run. Returns a summary; throws when the Drive listing fails (nothing is deleted then).
+ * `exec(bin, args, options)` runs gog (resolves stdout, rejects with stderr's message); tests pass their own.
+ */
+export async function syncDrive({ env = process.env, configPath, log = () => {}, exec = run } = {}) {
   if (!env.KNOWLEDGE_DIR) throw new Error('KNOWLEDGE_DIR is not set');
   const config = loadConfig(configPath ?? env.ITHOMIINI_DRIVE_SYNC_CONFIG);
-  const gog = gogFor(env);
+  const gog = gogFor(env, exec);
   const out = join(env.KNOWLEDGE_DIR, 'drive');
   await mkdir(out, { recursive: true, mode: 0o700 });
   const lock = join(out, '.sync.lock');

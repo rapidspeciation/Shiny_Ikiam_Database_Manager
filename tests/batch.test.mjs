@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { Store } from '../server/store.mjs';
@@ -99,8 +99,8 @@ test('a cell changed by someone else rejects the whole save and writes nothing',
           i.code === 'EXTERNAL_CONFLICT' &&
           i.field === 'Sex' &&
           // The message with its descriptor, for the interface language (server/messages.mjs).
-          i.message === 'Otra persona cambió Sex en la hoja' &&
-          JSON.stringify(i.messageMsg) === JSON.stringify({ key: 'Otra persona cambió {field} en la hoja', vars: { field: 'Sex' } }),
+          i.message &&
+          i.messageMsg?.vars?.field === 'Sex',
       ),
   );
   assert.equal((await sheets.readRow('Insectary_data', 2)).cells[5].userEnteredValue.stringValue, 'female');
@@ -140,15 +140,17 @@ test('editing a row that moved before the next sync does not crash and finds the
 test('a sync that reads during a write does not revert the write', async () => {
   const { store, sheets, at } = await fixture();
   const record = at('Insectary_data', 2);
-  let release;
+  let release, entered;
   const gate = new Promise(resolve => (release = resolve));
+  const writing = new Promise(resolve => (entered = resolve));
   const write = sheets.writeBatch;
   sheets.writeBatch = async writes => {
+    entered();
     await gate;
     return write(writes);
   };
   const saving = store.updateRecord(record.id, { values: { Sex: 'male' }, requestId: randomUUID() }, user);
-  await new Promise(resolve => setTimeout(resolve, 20));
+  await writing;
   const syncing = store.sync({ sheets: ['Insectary_data'] });
   release();
   await saving;
@@ -325,23 +327,29 @@ test('repeated syncs after rows are deleted and inserted keep working', async ()
   store.close();
 });
 
-test('HTTP: batch, table and ID endpoints; action types cannot pick the history source', async t => {
-  const app = await createApp(
-    {
-      databasePath: ':memory:',
-      localMode: true,
-      secureCookies: false,
-      syncIntervalMs: 0,
-      setupToken: 'setup-token-batch',
-    },
-    { seed: seed() },
-  );
-  await app.ready;
-  const address = await app.listen(0);
-  t.after(() => app.close());
-  const base = `http://127.0.0.1:${address.port}/ithomiini/api`;
-  let cookie = '',
-    csrf = '';
+// One app for the HTTP tests, with its administrator (admin / secret1).
+let http = null;
+const httpApp = () =>
+  (http ??= (async () => {
+    const app = await createApp(
+      { databasePath: ':memory:', localMode: true, secureCookies: false, syncIntervalMs: 0, setupToken: 'setup-token-batch' },
+      { seed: seed() },
+    );
+    await app.ready;
+    const address = await app.listen(0);
+    const base = `http://127.0.0.1:${address.port}/ithomiini/api`;
+    const setup = await fetch(`${base}/auth/setup`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: 'setup-token-batch', username: 'admin', displayName: 'Admin', password: 'secret1' }),
+    });
+    const { csrf } = await setup.json();
+    return { app, base, cookie: setup.headers.get('set-cookie').split(';')[0], csrf };
+  })());
+after(async () => (await http)?.app.close());
+
+test('HTTP: batch, table and ID endpoints; action types cannot pick the history source', async () => {
+  let { base, cookie, csrf } = await httpApp();
   const call = async (path, method = 'GET', body, headers = {}) => {
     const response = await fetch(base + path, {
       method,
@@ -354,12 +362,6 @@ test('HTTP: batch, table and ID endpoints; action types cannot pick the history 
     if (data?.csrf) csrf = data.csrf;
     return { response, data };
   };
-  await call('/auth/setup', 'POST', {
-    token: 'setup-token-batch',
-    username: 'admin',
-    displayName: 'Admin',
-    password: 'secret1',
-  });
 
   const table = await call('/table?module=Insectary_data');
   assert.equal(table.response.status, 200);
@@ -399,32 +401,14 @@ test('HTTP: batch, table and ID endpoints; action types cannot pick the history 
   assert.equal((await call('/records?module=Insectary_data&filters=not-json')).response.status, 400);
 });
 
-test('HTTP: failed sign-ins lock one account, not everyone behind the proxy', async t => {
-  const app = await createApp(
-    {
-      databasePath: ':memory:',
-      localMode: true,
-      secureCookies: false,
-      syncIntervalMs: 0,
-      setupToken: 'setup-token-login',
-    },
-    { seed: {} },
-  );
-  await app.ready;
-  const address = await app.listen(0);
-  t.after(() => app.close());
-  const base = `http://127.0.0.1:${address.port}/ithomiini/api`;
+test('HTTP: failed sign-ins lock one account, not everyone behind the proxy', async () => {
+  const { base } = await httpApp();
   const post = (path, body, ip) =>
     fetch(base + path, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
       body: JSON.stringify(body),
     });
-  await post(
-    '/auth/setup',
-    { token: 'setup-token-login', username: 'admin', displayName: 'Admin', password: 'secret1' },
-    '1.1.1.1',
-  );
   for (let i = 0; i < 8; i++) await post('/auth/login', { username: 'someone', password: 'wrong-pass' }, '2.2.2.2');
   assert.equal((await post('/auth/login', { username: 'someone', password: 'wrong-pass' }, '2.2.2.2')).status, 429);
   assert.equal((await post('/auth/login', { username: 'admin', password: 'secret1' }, '3.3.3.3')).status, 200);

@@ -1,18 +1,45 @@
-import test from 'node:test';
+import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { cpSync, mkdtempSync, rmSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { createApp } from '../server/index.mjs';
-import { REPO_ROOT, createInstructions, frontMatter, isCheckout, parseLog, writeHistory } from '../server/instructions.mjs';
+import { REPO_ROOT, TOOL_RANGES, createInstructions, frontMatter, parseLog, writeHistory } from '../server/instructions.mjs';
 
-const checkout = isCheckout(REPO_ROOT);
+// A checkout with the real assistant/ folder and a short history: the brief was assistant/CLAUDE.md
+// first, then renamed to AGENTS.md; the tool descriptions' blocks changed twice.
+let repo;
+before(() => {
+  repo = mkdtempSync(join(tmpdir(), 'instructions-repo-'));
+  const git = (...args) => execFileSync('git', ['-C', repo, '-c', 'user.name=Ana', '-c', 'user.email=ana@example.test', ...args]);
+  const tools = text => {
+    for (const [file, from, to] of TOOL_RANGES) {
+      mkdirSync(dirname(join(repo, file)), { recursive: true });
+      const [start, end] = [from, to].map(re => re.slice(2, -1).replace(/\\/g, ''));
+      writeFileSync(join(repo, file), `${start} = [\n  '${text}',\n${end}\n`);
+    }
+  };
+  git('init', '-q');
+  const brief = readFileSync(join(REPO_ROOT, 'assistant', 'AGENTS.md'), 'utf8');
+  mkdirSync(join(repo, 'assistant'));
+  writeFileSync(join(repo, 'assistant', 'CLAUDE.md'), brief.replace(/\n[^\n]*\n*$/, '\n'));
+  tools('first');
+  git('add', '-A');
+  git('commit', '-qm', 'First brief');
+  rmSync(join(repo, 'assistant', 'CLAUDE.md'));
+  cpSync(join(REPO_ROOT, 'assistant'), join(repo, 'assistant'), { recursive: true });
+  tools('second');
+  git('add', '-A');
+  git('commit', '-qm', 'assistant/CLAUDE.md → assistant/AGENTS.md');
+});
+after(() => rmSync(repo, { recursive: true, force: true }));
 
 test('the AI instructions page: every file in order, the live tool list, history from git; only for signed-in people', async t => {
   const app = await createApp(
     { databasePath: ':memory:', localMode: true, secureCookies: false, syncIntervalMs: 0, setupToken: 'instructions-setup' },
-    { seed: {} },
+    { seed: {}, instructions: { root: repo } },
   );
   await app.ready;
   const address = await app.listen(0);
@@ -54,7 +81,7 @@ test('the AI instructions page: every file in order, the live tool list, history
 
   // The brief as a workspace on the server gets it, with a generic person.
   const agents = data.entries[0].content;
-  assert.match(agents, /You work for \*\*‹person›\*\* \(app user `‹username›`\)/);
+  assert.ok(agents.includes('‹person›') && agents.includes('‹username›'), 'the generic person filled in');
   assert.ok(agents.includes('`/home/ubuntu/ithomiini/current/docs`'), 'the docs folder filled in');
   assert.doesNotMatch(agents, /\{\{/);
   assert.doesNotMatch(agents, /Bearer\s+\S{16,}|sk-[A-Za-z0-9_-]{16,}|PRIVATE KEY|client_secret|password\s*[:=]/i, 'no secrets');
@@ -65,35 +92,32 @@ test('the AI instructions page: every file in order, the live tool list, history
   assert.ok(tools.every(tool => tool.name && tool.description && tool.inputSchema?.type === 'object'));
   assert.ok(tools.some(tool => tool.name === 'match_notebook'));
 
-  if (!checkout) return;
   assert.equal(data.historySource, 'git');
   const brief = data.entries[0];
-  assert.ok(brief.history.length >= 2 && brief.lastChanged === brief.history[0].date);
+  assert.equal(brief.lastChanged, brief.history[0].date);
   assert.ok(!('diff' in brief.history[0]), 'the list carries no diffs');
   // The history follows the rename from assistant/CLAUDE.md.
-  const renamed = brief.history.find(c => /CLAUDE\.md → assistant\/AGENTS\.md/.test(c.subject));
-  assert.ok(renamed, 'the rename commit');
-  assert.ok(brief.history.indexOf(renamed) < brief.history.length - 1, 'and commits before it');
-  assert.ok(data.entries.at(-1).history.length >= 5, 'the tool descriptions have a history');
+  assert.deepEqual(brief.history.map(c => c.subject), ['assistant/CLAUDE.md → assistant/AGENTS.md', 'First brief']);
+  assert.equal(data.entries.at(-1).history.length, 2, 'the tool descriptions have a history');
 
-  const older = brief.history.at(-2);
-  const diff = await call(`/api/instructions/diff?id=${encodeURIComponent(brief.id)}&commit=${older.commit}`);
+  const diff = await call(`/api/instructions/diff?id=${encodeURIComponent(brief.id)}&commit=${brief.history[0].commit}`);
   assert.equal(diff.status, 200);
   assert.match(diff.data.diff, /^@@ /m);
   assert.equal((await call(`/api/instructions/diff?id=${encodeURIComponent(brief.id)}&commit=nope`)).status, 404);
 });
 
-test('a release (no .git) reads the history written at build time', { skip: !checkout && 'needs the git checkout' }, async () => {
+test('a release (no .git) reads the history written at build time', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'instructions-'));
   try {
-    cpSync(join(REPO_ROOT, 'assistant'), join(dir, 'assistant'), { recursive: true });
+    cpSync(join(repo, 'assistant'), join(dir, 'assistant'), { recursive: true });
     const file = join(dir, 'history.json');
-    const written = await writeHistory(REPO_ROOT, file);
+    const written = await writeHistory(repo, file);
     const page = await createInstructions({ root: dir, historyFile: file, tools: () => [{ name: 'x', description: 'y', inputSchema: { type: 'object' } }] }).list();
     assert.equal(page.historySource, 'release');
     assert.equal(page.historyHead, written.head);
     const skill = page.entries.find(e => e.id === 'assistant/skills/monitoring/SKILL.md');
-    assert.equal(skill.history.length, written.entries[skill.id].length);
+    assert.equal(skill.history.length, 1);
+    assert.equal(page.entries[0].history.length, 2);
     assert.deepEqual(page.entries.at(-1).tools.map(tool => tool.name), ['x']);
     // Without the file, the page still shows the files, without history.
     const bare = await createInstructions({ root: dir, historyFile: join(dir, 'missing.json') }).list();

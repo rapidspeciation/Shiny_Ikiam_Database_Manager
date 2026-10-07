@@ -14,9 +14,8 @@ test('the app guide has the skill frontmatter and links its reference files', ()
 });
 
 test('every route the app guide links to exists in the router', () => {
-  const routes = new Set([...router.matchAll(/path: '\/([a-z]*)'/g)].map(m => m[1]));
-  // Being added in parallel (the proposals panel in its own tab).
-  routes.add('propuestas');
+  // '/propuestas/:id?' is the route 'propuestas' (its parameter optional).
+  const routes = new Set([...router.matchAll(/path: '\/([a-z]*)(?:\/:[a-zA-Z]+\??)?'/g)].map(m => m[1]));
   const linked = new Set([...text.matchAll(/#\/([a-z]+)/g)].map(m => m[1]));
   assert.ok(linked.size >= 12);
   for (const route of linked) assert.ok(routes.has(route), `#/${route} is a route`);

@@ -182,6 +182,11 @@ test('selected undo preserves another field and rejects a later same-field edit 
   const second = await store.updateRecord(record.id, { values: { SPECIES: 'B' }, requestId: 'update-0003' }, user);
   await store.updateRecord(record.id, { values: { SPECIES: 'A' }, requestId: 'update-0004' }, user);
   assert.equal(store.previewUndo({ actionIds: [second.action.id] }).eligible, false);
+  await assert.rejects(
+    store.undo({ actionIds: [second.action.id], requestId: 'undo-0002' }, user),
+    e => e.code === 'UNDO_CONFLICT' && e.details.conflicts.some(c => c.field === 'SPECIES'),
+  );
+  assert.equal(store.getRecord(record.id).values.SPECIES, 'A', 'nothing written');
   store.close();
 });
 
@@ -267,17 +272,6 @@ test('a slow sync read does not block an edit or overwrite its newer value', asy
   store.close();
 });
 
-test('a moved source row is resolved by a unique identity before writing', async () => {
-  const { store, sheets } = await fixture();
-  const record = store.getRecordBySheetRow('Insectary_data', 2);
-  sheets.rows.get('Insectary_data').find(r => r.row === 2).row = 5;
-  const result = await store.updateRecord(record.id, { values: { Sex: 'male' }, requestId: 'moved-row-0001' }, user);
-  assert.equal(result.record.row, 5);
-  assert.equal(store.getRecord(record.id).row, 5);
-  assert.equal(store.getRecordBySheetRow('Insectary_data', 2), null);
-  store.close();
-});
-
 async function twoEditsFixture() {
   const { store, sheets } = await fixture();
   const insect = store.getRecordBySheetRow('Insectary_data', 2),
@@ -306,15 +300,14 @@ test('undo of several records is atomic, and a rejected write can be retried wit
   store.close();
 });
 
-test('undo rejects a newer same-field edit even when its value returns, and writes nothing', async () => {
+test('a conflict on one row of an undo of several rows writes none of them', async () => {
   const { store, insect, collection, actionIds } = await twoEditsFixture();
   await store.updateRecord(collection.id, { values: { SPECIES: 'Other' }, requestId: 'later-edit-0001' }, user);
-  await store.updateRecord(collection.id, { values: { SPECIES: 'Changed' }, requestId: 'later-edit-0002' }, user);
   await assert.rejects(
     store.undo({ actionIds, requestId: 'multi-undo-0002' }, user),
     e => e.code === 'UNDO_CONFLICT' && e.details.conflicts.some(c => c.field === 'SPECIES'),
   );
-  assert.equal(store.getRecord(collection.id).values.SPECIES, 'Changed');
+  assert.equal(store.getRecord(collection.id).values.SPECIES, 'Other');
   assert.equal(store.getRecord(insect.id).values.Sex, 'male');
   store.close();
 });

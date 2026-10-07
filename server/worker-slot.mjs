@@ -57,7 +57,8 @@ export function layoutsFeed(store, post) {
 /**
  * One worker thread of a role, started when first needed: call(message) → its answer. `data()`:
  * what it starts with (workerData); `onMessage`: what it says besides its answers. `name`: how
- * the errors call it, `log`: the log.
+ * the errors call it, `log`: the log. `backoffMs`: the first wait before starting again after a
+ * failure (tests use 0).
  */
 export function workerSlot({
   role,
@@ -68,6 +69,7 @@ export function workerSlot({
   onDegraded,
   name = `The assistant's ${role}`,
   log = `Assistant ${role} worker`,
+  backoffMs = 1000,
 }) {
   let worker = null;
   let next = 0;
@@ -103,7 +105,7 @@ export function workerSlot({
     crashes.push(at);
     while (crashes.length && crashes[0] < at - CRASH_WINDOW_MS) crashes.shift();
     // Started again after 1, 2, 4… s (at most 30 s), with the next call.
-    backoffUntil = at + Math.min(30_000, 1000 * 2 ** (failures - 1));
+    backoffUntil = at + Math.min(30_000, backoffMs * 2 ** (failures - 1));
     rejectAll(fail('WORKER_FAILED', `${name} stopped unexpectedly and is starting again: call again.`));
     if (crashes.length >= CRASHES && !degraded) {
       degraded = true;

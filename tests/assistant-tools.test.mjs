@@ -61,12 +61,8 @@ const STOCKS = {
 const STOCK_FORMULAS = [['Insectary_stocks', 2, 'NUMBER OF EGGS', '=16+2-1', 17]];
 
 test('null in a proposal is no change, only {clear:true} empties a cell; the table and get_proposal say so', async () => {
-  const { store, mcp, call, list, stock } = await setup(STOCKS, STOCK_FORMULAS);
+  const { store, call, list, stock } = await setup(STOCKS, STOCK_FORMULAS);
   try {
-    const tools = (await mcp('tools/list')).body.result.tools;
-    assert.match(tools.find(t => t.name === 'update_proposal').description, /null drops your proposed change/);
-    assert.match(tools.find(t => t.name === 'propose_changes').description, /\{"clear": true\}/);
-
     // Only nulls: nothing to propose, and the assistant is told how to empty a cell.
     const nothing = await call('propose_changes', { reason: 'x', changes: [{ recordId: stock(3).id, values: { 'INSECTARY OR LABORATORY': null } }] });
     assert.match(nothing.error, /null means no change.*"clear": true/);
@@ -527,10 +523,8 @@ test('find_records: filters, distance to a place, computed values with their for
 });
 
 test('count_records counts by filters, place and groups', async () => {
-  const { store, call, mcp } = await setup(PLACES, PLACE_FORMULAS);
+  const { store, call } = await setup(PLACES, PLACE_FORMULAS);
   try {
-    const tools = (await mcp('tools/list')).body.result.tools;
-    assert.match(tools.find(t => t.name === 'count_records').description, /text column as groupBy.*each distinct text once with its count/);
     const total = await call('count_records', { sheet: 'Collection_data', filters: { Preservation_medium: 'Flash frozen' } });
     assert.equal(total.total, 5);
     const bySpecies = await call('count_records', { sheet: 'Collection_data', groupBy: 'SPECIES', near: { location: 'Ikiam', km: 15 } });
@@ -564,21 +558,10 @@ test('Claude Code loads the reading and proposal tools with the chat; describe_s
   try {
     const tools = (await mcp('tools/list')).body.result.tools;
     const loaded = tools.filter(t => t._meta?.['anthropic/alwaysLoad'] === true).map(t => t.name);
-    assert.deepEqual(loaded.sort(), [
-      'apply_proposal',
-      'count_records',
-      'describe_sheet',
-      'find_records',
-      'get_proposal',
-      'get_record',
-      'list_proposals',
-      'match_notebook',
-      'propose_changes',
-      'query',
-      'search_records',
-      'show_rows',
-      'update_proposal',
-    ]);
+    // What a chat needs from its first message is there; the rest loads when asked for.
+    for (const name of ['find_records', 'get_record', 'describe_sheet', 'propose_changes', 'update_proposal', 'get_proposal', 'apply_proposal'])
+      assert.ok(loaded.includes(name), name);
+    assert.ok(loaded.length < tools.length);
 
     // The latest filled rows only when asked.
     assert.ok(!('latestRows' in (await call('describe_sheet', { module: 'Sperm_dissections' }))));

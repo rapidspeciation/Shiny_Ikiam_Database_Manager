@@ -332,8 +332,12 @@ test('Sugerencias lists the cells lacking the formula, by sheet · column · kin
   assert.equal(death.suggested, lookup(43, 'I'));
   assert.equal(death.certainty, 'certain');
   assert.equal(death.group, `Collection_data · Death_date · ${SENT}`);
-  assert.match(death.reason, /^30 de 36 filas Collected_Sent2Insectary del último año tienen esta fórmula \(la última, fila 31\); hoy daría \d{4}-\d\d-\d\d/);
-  assert.match(at(42, 'Death_date').reason, /hoy daría vacío/);
+  // Why: how many rows of the kind hold it, the last one, and what it gives today.
+  const { value, ...why } = death.reasonMsg.vars;
+  assert.deepEqual(why, { n: 30, total: 36, kind: ' Collected_Sent2Insectary', example: 31 });
+  assert.match(value, /^\d{4}-\d\d-\d\d$/);
+  const gives = (row, field) => at(row, field).reasonMsg.vars.value;
+  assert.deepEqual(gives(42, 'Death_date'), { key: 'vacío' });
   // A typed date that differs from the insectary's is someone's decision: left alone.
   assert.equal(at(47, 'Death_date'), undefined);
   // No lookups by an Insectary_ID "NA" (it would find another row's NA), but its order number.
@@ -345,10 +349,10 @@ test('Sugerencias lists the cells lacking the formula, by sheet · column · kin
 
   // Data_entry_order, for every kind, numbered on from the row above as filling it down would
   // (row 45, which has it, counted on from the rows above once they are filled).
-  assert.match(at(42, 'Data_entry_order').reason, /hoy daría 41$/);
+  assert.equal(gives(42, 'Data_entry_order'), '41');
   assert.equal(at(45, 'Data_entry_order'), undefined);
-  assert.match(at(46, 'Data_entry_order').reason, /hoy daría 45$/);
-  assert.match(at(49, 'Data_entry_order').reason, /hoy daría 48$/);
+  assert.equal(gives(46, 'Data_entry_order'), '45');
+  assert.equal(gives(49, 'Data_entry_order'), '48');
   assert.equal(at(49, 'Data_entry_order').suggested, order(49));
   // Rows that have their formulas get nothing.
   assert.ok(!mine.some(s => s.row < 42));
@@ -368,7 +372,7 @@ test('a group of missing formulas becomes one reviewed proposal: the formula cel
     const { call, http } = assistantOf(store);
     // A group not listed: the answer names the sheet's groups.
     const none = await call('propose_changes', { reason: 'x', missingFormulas: [{ sheet: 'Collection_data', column: 'Death_date' }] });
-    assert.match(none.error, /no missing formulas in Collection_data · Death_date \(certain, likely\)\. Groups of Collection_data: .*Death_date · Collected_Sent2Insectary/);
+    assert.ok(none.error.includes(`Collection_data · Death_date · ${SENT}`), none.error);
 
     const out = await call('propose_changes', {
       reason: 'Death_date lookups the Aug–Sep rows lack',
@@ -411,11 +415,10 @@ test("a formula that is not the column's usual one is said, in the answer and th
     assert.ok(out.proposalId, JSON.stringify(out));
     assert.equal(out.formulaNotes.length, 1);
     assert.deepEqual([out.formulaNotes[0].column, out.formulaNotes[0].rows], ['Death_date', 1]);
-    assert.match(out.formulaNotes[0].note, /Not the column's usual formula: 30 of 36 Collected_Sent2Insectary rows of the last year hold =XLOOKUP\(D43, Insectary_data!A:A, Insectary_data!I:I,""\)/);
+    assert.ok(out.formulaNotes[0].note.includes(lookup(43, 'I')), 'with the usual formula');
     const p = (await http('GET', '/api/chat/proposals')).body.proposals[0];
     const [note] = p.changes[0].formulaNotes.Death_date;
-    assert.match(note.text, /^No es la fórmula de la columna: 30 de 36 filas Collected_Sent2Insectary del último año tienen =XLOOKUP\(D43/);
-    assert.equal(note.msg.key, 'No es la fórmula de la columna: {n} de {rows} filas{kind} del último año tienen {usual}');
+    assert.deepEqual(note.msg.vars, { n: 30, rows: 36, kind: ' Collected_Sent2Insectary', usual: lookup(43, 'I') });
 
     // A column without a usual formula, looked up over whole columns on every row: said, with the lighter way.
     const lookups = await call('propose_changes', {
