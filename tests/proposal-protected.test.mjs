@@ -109,6 +109,12 @@ const wild = (insectaryId, extra = {}) => ({
 test("a wild-caught butterfly's new Collection_data row applies and leaves the protected columns to the sheet", async () => {
   const { store, call, listed, cell } = await fixture();
   try {
+    // describe_sheet tells the AI which columns are left to the sheet before it drafts anything.
+    const described = await call('describe_sheet', { module: 'Collection_data', columns: ['Data_entry_order', 'SPECIES', 'Tube_1_manifest'] });
+    const col = key => described.columns.find(c => c.key === key);
+    assert.equal(col('Data_entry_order')?.protected, true, JSON.stringify(described.columns));
+    assert.equal(col('SPECIES')?.protected, undefined);
+    assert.equal(col('Tube_1_manifest')?.notWritten, true);
     const proposed = await call('propose_changes', { reason: 'Silvestres', newRows: [wild('Y5T', { Death_date: 'NA' })] });
     assert.ok(proposed.proposalId, JSON.stringify(proposed));
     // The table: the protected column is said as such, never as what its formula would give (#VALUE!).

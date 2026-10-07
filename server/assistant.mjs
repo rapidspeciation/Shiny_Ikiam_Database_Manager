@@ -191,7 +191,7 @@ const TOOLS = [
     function: {
       name: 'describe_sheet',
       description:
-        "A sheet's columns: type, `formula: true`, and for dropdown columns `allowed`: the sheet's list (from Lists; strict = other values refused), long ID lists (CAM pools, tubes) as ranges of consecutive IDs, newest first. Other columns with few values give the values in use; free text a few `examples` and the `distinct` count.",
+        "A sheet's columns: type, `formula: true`, `protected`/`notWritten` (left to the sheet), and for dropdown columns `allowed`: the sheet's list (from Lists; strict = other values refused), long ID lists (CAM pools, tubes) as ranges of consecutive IDs, newest first. Other columns with few values give the values in use; free text a few `examples` and the `distinct` count.",
       parameters: {
         type: 'object',
         properties: {
@@ -899,6 +899,10 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     // Typed cells: the pre-made rows hold only formulas, in some sheets also one default (Father_Split_tube "No").
     const typed = record =>
       Object.entries(record.values ?? {}).filter(([key, value]) => !record.formulas?.[key] && value !== null && value !== '').length;
+    // Columns the app's Google account cannot edit (protected ranges, read with each sync), at the row a
+    // new row would take; and those proposals never write (manifests, racks, the block after the notes).
+    const nextRow = (recent[0]?.row ?? 1) + 1;
+    const locked = protectedFields(db, mod.id, nextRow, sheetColumns(mod.id));
     const out = {
       sheet: mod.id,
       columns: mod.fields
@@ -910,6 +914,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
             key: f.key,
             type: f.type,
             ...((formulas.get(f.key) ?? 0) > recent.length / 2 ? { formula: true } : {}),
+            ...(locked.has(f.key) ? { protected: true } : isNotWritten(mod.id, f.key) ? { notWritten: true } : {}),
             ...(allowed ? { allowed } : seen && seen.size <= 30 ? inUse(seen) : {}),
           };
         }),
