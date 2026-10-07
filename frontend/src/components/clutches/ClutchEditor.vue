@@ -2,7 +2,9 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { AlertTriangle, CalendarClock, Check, ChevronDown, ChevronLeft, ChevronRight, Columns3, Loader2, X } from 'lucide-vue-next'
 import ChoiceField from '../ChoiceField.vue'
-import CountEditor, { type CountEvent } from './CountEditor.vue'
+import StagePanel, { type StageAct, type TermRef } from './StagePanel.vue'
+import EventSheet from './EventSheet.vue'
+import DayNoteSheet from './DayNoteSheet.vue'
 import PreserveYoung from '../emerged/PreserveYoung.vue'
 import ClutchTimeline from './ClutchTimeline.vue'
 import DateRow from './DateRow.vue'
@@ -18,13 +20,16 @@ import {
   COUNTS,
   MODULE,
   STAGES,
+  STAGE_FIELD,
   appendNote,
   countCell,
   eventNote,
   formulaOf,
   gainOf,
+  groupsValue,
   latestGains,
   lockedFormula,
+  lossTakesOff,
   noteDay,
   notesOf,
   noteParts,
@@ -42,11 +47,31 @@ import {
   type Stage,
   type StageDurations,
 } from '../../lib/clutches'
+import {
+  appendInGroup,
+  countState,
+  formulaOfGroups,
+  groupName,
+  leftOf,
+  nextLabel,
+  planCorrection,
+  planMoveOn,
+  planRegroup,
+  planRemove,
+  planSplit,
+  planTerm,
+  type CountState,
+  type GroupRow,
+  type Groups,
+  type Plan,
+  type StepGroupItem,
+} from '../../lib/clutchGroups'
 import type { ClutchPhoto } from '../../lib/clutchPhotos'
 import { formatSerial, isoToSerial, serialToIso, todayIso } from '../../lib/dates'
 import { errorText, notify } from '../../lib/notice'
 import type { CellValue, Field, TableRow } from '../../lib/types'
 import { usePending } from '../../stores/pending'
+import { useSession } from '../../stores/session'
 import { t, tn } from '../../lib/i18n'
 
 /**
@@ -221,62 +246,286 @@ const checkedLine = computed(() => {
   return t('Revisado hoy por {who} · solo en la app', { who: s.checkedBy.map(who).join(', ') })
 })
 
-// --- Events (only in the app): what a count's change was, recorded as the person says
-/** The event behind each step of the counts (CountEditor's key → the server's id, once saved). */
-const posted = new Map<string, Promise<string | null>>()
+// --- What happened, recorded as one step each: the count's formula (its terms in their groups),
+// the events behind the terms and the groups (only in the app), the short line in NOTES, the stage's first date.
 /** The first date of each stage, set by its first gain when empty (or later than it). */
 const GAIN_DATE: Record<Stage, string> = { egg: 'DATE LAID', larva: 'HATCHING DATE', pupa: 'PUPA DATE', adult: 'EMERGENCE DATE' }
-/** What each step wrote besides its event (the note in NOTES, a stage's date), to take it back with it. */
-const made = new Map<string, { note: string; date?: { field: string; before: CellValue; after: number } }>()
-/** The note an event adds to NOTES, dated and signed: "5/10/26 FCH: 5 larvae died" ('' when NOTES cannot be written). */
-function noteFor(stage: Stage, e: { kind: EventKind; count: number; ids: string[]; day: number; lifestage?: string }) {
-  if (!editable('NOTES')) return ''
-  return `${noteDay(today.value)} ${props.initials}: ${eventNote({ stage, ...e }, today.value)}`
+const NEXT: Partial<Record<Stage, Stage>> = { egg: 'larva', larva: 'pupa' }
+const BEFORE: Partial<Record<Stage, Stage>> = { larva: 'egg', pupa: 'larva' }
+const groupRows = computed<GroupRow[]>(() => record.data.value?.groups ?? [])
+/** A count's groups as written and what the app keeps of each, by position. */
+function stateOf(stage: Stage) {
+  const field = STAGE_FIELD[stage]
+  return countState(field, stage, readCount(countOf(field)).groups, groupRows.value)
 }
-function recordEvent(stage: Stage, e: CountEvent) {
+/** The groups selected in each stage (indexes into its parentheses). */
+const selected = ref<Partial<Record<Stage, number[]>>>({})
+/** This opening's steps, newest last: what each changed in the row (to put back) and its record in the app (to take back). */
+const steps = ref<{ id: string | null; before: Record<string, CellValue>; fields: string[] }[]>([])
+const stepsOf = (field: string) => steps.value.filter(s => s.fields.includes(field)).length
+/** The note each event wrote in NOTES (by event id), to take it out with the event. */
+const madeNotes = new Map<string, string>()
+const noteLine = (text: string) => `${noteDay(today.value)} ${props.initials}: ${text}`
+/** The note an event adds to NOTES, dated and signed: "5/10/26 FCH: 5 larvae died" ('' when NOTES cannot be written). */
+function noteFor(stage: Stage, e: { kind: EventKind; count: number; ids: string[]; lifestage?: string; group?: string | null }) {
+  if (!editable('NOTES')) return ''
+  return noteLine(eventNote({ stage, ...e }, today.value))
+}
+const panels = ref<Partial<Record<string, InstanceType<typeof StagePanel>>>>({})
+const failIn = (field: string, reason: string) => panels.value[field]?.fail(reason)
+
+/**
+ * Applies a plan: the counts' new formulas, a line in NOTES per event, a
+ * stage's first date; then records its events, groups and history at once (a
+ * step). If the app cannot record it, the row goes back as it was.
+ */
+async function apply(plan: Plan, { notes = [], dates = [] }: { notes?: (string | null)[]; dates?: { field: string; value: CellValue }[] } = {}) {
   const r = row.value
   if (!r) return
-  posted.set(
-    e.key,
-    props.day
-      .addEvent({ recordId: r.id, stage, kind: e.kind, count: e.count, ids: e.ids, day: serialToIso(e.day) })
-      .then(ev => ev.id)
-      .catch(err => {
-        message.value = errorText(err)
-        return null
-      }),
-  )
-  // Its note in NOTES (the sheet keeps one date per stage; the notes keep each day's counts).
-  const did: { note: string; date?: { field: string; before: CellValue; after: number } } = { note: '' }
-  if (editable('NOTES')) {
-    const text = eventNote({ stage, kind: e.kind, count: e.count, ids: e.ids, lifestage: e.lifestage, day: e.day }, today.value)
-    did.note = `${noteDay(today.value)} ${props.initials}: ${text}`
-    setValue('NOTES', appendNote(get('NOTES'), text, today.value, props.initials))
+  const fields = [...Object.keys(plan.counts), ...(notes.some(Boolean) && editable('NOTES') ? ['NOTES'] : []), ...dates.map(d => d.field).filter(editable)]
+  const before = Object.fromEntries(fields.map(f => [f, (COUNTS as readonly string[]).includes(f) ? countOf(f) : get(f)]))
+  for (const [field, groups] of Object.entries(plan.counts)) setValue(field, groupsValue(groups as Groups))
+  const lines = notes.map(n => (n && editable('NOTES') ? noteLine(n) : ''))
+  if (lines.some(Boolean)) {
+    let all = get('NOTES')
+    for (const n of notes) if (n) all = appendNote(all, n, today.value, props.initials)
+    setValue('NOTES', all)
   }
-  // A stage's first day: written by its first gain (or an earlier one).
-  const field = gainOf(stage) === e.kind ? GAIN_DATE[stage] : null
-  if (field && editable(field)) {
-    const now = get(field)
-    if (now === null || now === '' || (typeof now === 'number' && e.day < now)) {
-      did.date = { field, before: now, after: e.day }
-      setValue(field, e.day)
-    }
-  }
-  made.set(e.key, did)
-}
-async function dropEvent(key: string) {
-  const did = made.get(key)
-  made.delete(key)
-  if (did?.note) setValue('NOTES', withoutNote(get('NOTES'), did.note))
-  if (did?.date && get(did.date.field) === did.date.after) setValue(did.date.field, did.date.before)
-  const id = await posted.get(key)
-  posted.delete(key)
-  if (!id) return
+  for (const d of dates) if (editable(d.field)) setValue(d.field, d.value)
+  const step: (typeof steps.value)[number] = { id: null, before, fields }
+  steps.value = [...steps.value, step]
+  if (!inSheet.value || (!plan.events.length && !plan.groups.length && !plan.log.length)) return
   try {
-    await props.day.removeEvent(id)
+    const saved = await props.day.addStep({ recordId: r.id, events: plan.events, groups: plan.groups, log: plan.log })
+    step.id = saved.id
+    if (lines.length === saved.events.length) saved.events.forEach((e, i) => lines[i] && madeNotes.set(e.id, lines[i]))
+    record.data.value = record.data.value ? { ...record.data.value, groups: [...(record.data.value.groups ?? []).filter(g => g.endedAt), ...saved.groups] } : record.data.value
+  } catch (err) {
+    message.value = errorText(err)
+    steps.value = steps.value.filter(s => s !== step)
+    for (const [field, value] of Object.entries(before)) setValue(field, value)
+  }
+}
+/** Undoes this opening's last step: the row as it was before it, its events and groups taken back. */
+async function undoStep() {
+  const step = steps.value.at(-1)
+  if (!step) return
+  steps.value = steps.value.slice(0, -1)
+  for (const [field, value] of Object.entries(step.before)) setValue(field, value)
+  if (step.id)
+    try {
+      await props.day.undoStep(step.id)
+    } catch (err) {
+      message.value = errorText(err)
+    }
+}
+/** Today's changes to a count taken back: this opening's steps on it undone, then the formula it had this morning. */
+async function backToMorning(field: string, morning: CellValue | undefined) {
+  while (steps.value.length && steps.value.at(-1)!.fields.includes(field)) await undoStep()
+  setValue(field, morning ?? savedOf(field))
+}
+/** A stage's first date, from its first gain (or NA when the day is not known). */
+function firstDate(stage: Stage, day: string | undefined, dayKnown = true): { field: string; value: CellValue }[] {
+  const field = GAIN_DATE[stage]
+  if (!has(field)) return []
+  const now = get(field)
+  if (!dayKnown) return now === null || now === '' ? [{ field, value: 'NA' }] : []
+  const serial = isoToSerial(day ?? todayIso())
+  return now === null || now === '' || now === 'NA' || (typeof now === 'number' && serial < now) ? [{ field, value: serial }] : []
+}
+const nameIn = (s: CountState, index: number | null | undefined) => (s.groups.length > 1 && index !== null && index !== undefined ? groupName(s.meta[index], index) : null)
+
+/** What a stage panel asked for, worked out (lib/clutchGroups.ts) and applied. */
+async function act(stage: Stage | null, field: string, a: StageAct) {
+  message.value = ''
+  if (!stage) return actPlain(field, a)
+  const s = stateOf(stage)
+  const fail = (r: { ok: false; reason: string }) => failIn(field, r.reason)
+  if (a.type === 'gain') {
+    const kind = gainOf(stage)
+    const from = BEFORE[stage]
+    if (a.fromIndex !== null && from && a.groupIndex === null) {
+      const r = planMoveOn(stateOf(from), s, [{ index: a.fromIndex, count: a.count }], { day: a.day, dayKnown: a.dayKnown })
+      if (!r.ok) return fail(r)
+      const after = { ...s, groups: r.plan.counts[s.field]! }
+      return apply(r.plan, {
+        notes: r.plan.events.map(e => eventNote({ stage, kind, count: e.count, day: isoToSerial(a.day), dayKnown: a.dayKnown, group: after.groups.length > 1 ? groupName(stateOf(from).meta[a.fromIndex!], a.fromIndex!) : null }, today.value)),
+        dates: firstDate(stage, a.day, a.dayKnown),
+      })
+    }
+    const r = planTerm(s, a.groupIndex, { stage, kind, count: a.count, term: a.count, day: a.day, dayKnown: a.dayKnown })
+    if (!r.ok) return fail(r)
+    return apply(r.plan, {
+      notes: [eventNote({ stage, kind, count: a.count, day: isoToSerial(a.day), dayKnown: a.dayKnown, group: nameIn(s, a.groupIndex ?? s.groups.length - 1) }, today.value)],
+      dates: firstDate(stage, a.day, a.dayKnown),
+    })
+  }
+  if (a.type === 'loss') {
+    const term = a.kind !== 'not_hatched' && lossTakesOff(a.kind, props.day.settings.subtractPreserved) ? -a.count : null
+    const r = planTerm(s, a.groupIndex, { stage, kind: a.kind, count: a.count, term, ids: a.ids })
+    if (!r.ok) return fail(r)
+    return apply(r.plan, { notes: [eventNote({ stage, kind: a.kind, count: a.count, ids: a.ids, lifestage: a.lifestage, group: nameIn(s, a.groupIndex) }, today.value)] })
+  }
+  if (a.type === 'correction') {
+    const r = planCorrection(s, a.groupIndex, a.total, a.reason)
+    if (!r.ok) return fail(r)
+    const e = r.plan.events[0]
+    return apply(r.plan, { notes: [eventNote({ stage, kind: 'correction', count: e.count, term: e.term, total: a.total, reason: a.reason, group: nameIn(s, a.groupIndex ?? s.groups.length - 1) }, today.value)] })
+  }
+  if (a.type === 'formula') return apply(formulaPlan(s, a.groups))
+  if (a.type === 'regroup' || a.type === 'split') {
+    const r = a.type === 'regroup' ? planRegroup(s, a.targets, a.labels) : planSplit(s, a.index, a.count, a.label)
+    if (!r.ok) return fail(r)
+    const after = r.plan.counts[s.field]!
+    const names = r.plan.groups[0]?.list.map((g, i) => `${g.label ?? groupName(null, i)} ${after[i] ? after[i].reduce((x, y) => x + y, 0) : 0}`) ?? []
+    return apply(r.plan, { notes: [`${STAGE_NOUN[stage]} regrouped: ${names.join(', ')}`] })
+  }
+  if (a.type === 'moveOn') {
+    const next = NEXT[stage]
+    if (!next) return
+    const r = planMoveOn(s, stateOf(next), a.items)
+    if (!r.ok) return fail(r)
+    const grouped = r.plan.counts[STAGE_FIELD[next]]!.length > 1
+    const fromName = (id: string | null | undefined) => {
+      const at = s.meta.findIndex(m => m && m.id === id)
+      return at >= 0 ? groupName(s.meta[at], at) : null
+    }
+    return apply(r.plan, {
+      notes: r.plan.events.map(e =>
+        eventNote({ stage: e.stage, kind: e.kind, count: e.count, group: grouped || e.kind === 'not_hatched' ? fromName(e.kind === 'not_hatched' ? e.groupId : e.fromGroupId) : null }, today.value),
+      ),
+      dates: firstDate(next, undefined),
+    })
+  }
+}
+const STAGE_NOUN: Record<Stage, string> = { egg: 'eggs', larva: 'larvae', pupa: 'pupae', adult: 'adults' }
+/** The formula typed by hand: its groups by position (new ones named by letter, those beyond it gone) and a line of history. */
+function formulaPlan(s: CountState | { field: CountField; stage: null; groups: Groups; meta: (GroupRow | null)[] }, groups: Groups): Plan {
+  const before = s.groups
+  const named = s.meta.some(Boolean) || groups.length > 1
+  const list: StepGroupItem[] = []
+  if (s.stage && s.stage !== 'adult' && named) {
+    const used = s.meta.map(m => m?.label ?? null)
+    groups.forEach((_, i) => {
+      const m = s.meta[i]
+      if (m) list.push({ id: m.id, label: m.label })
+      else {
+        const label = nextLabel(used)
+        used.push(label)
+        list.push({ key: `f${Date.now().toString(36)}${i}`, label, originId: null })
+      }
+    })
+  }
+  return {
+    counts: { [s.field]: groups },
+    groups: list.length ? [{ field: s.field, list }] : [],
+    events: [],
+    log: [{ kind: 'formula', field: s.field, before: formulaOfGroups(before), after: formulaOfGroups(groups) }],
+  }
+}
+/** The dissections (no events): + and the total add a term; the formula as typed. */
+function actPlain(field: string, a: StageAct) {
+  const groups = readCount(countOf(field)).groups
+  if (a.type === 'gain' || a.type === 'correction') {
+    const term = a.type === 'gain' ? a.count : a.total - groups.flat().reduce((x, y) => x + y, 0)
+    const r = appendInGroup(groups, null, term)
+    if (!r.ok) return failIn(field, r.reason)
+    return apply({ counts: { [field]: r.groups }, groups: [], events: [], log: [] })
+  }
+  if (a.type === 'formula') return apply(formulaPlan({ field: field as CountField, stage: null, groups, meta: [] }, a.groups))
+}
+
+// --- A term opened from its chip: its event, to correct, give photos, or delete with its term
+const opened2 = ref<(TermRef & { stage: Stage | null; field: string }) | null>(null)
+const me = useSession()
+const mayChange = (e: ClutchEvent | null) => !e || e.actor === me.user?.id || ['reviewer', 'admin'].includes(me.user?.role ?? '')
+const openedPhotos = computed(() => (opened2.value?.event ? recordPhotos.value.filter(p => p.eventId === opened2.value!.event!.id) : []))
+const openedGroup = computed(() => {
+  const o = opened2.value
+  if (!o?.stage) return null
+  const s = stateOf(o.stage)
+  return s.groups.length > 1 ? groupName(s.meta[o.group], o.group) : null
+})
+async function saveOpened(patch: { day?: string; dayKnown?: boolean; kind?: string; note?: string | null }) {
+  const e = opened2.value?.event
+  if (!e) return
+  try {
+    await props.day.updateEvent(e.id, patch)
+    opened2.value = null
   } catch (err) {
     message.value = errorText(err)
   }
+}
+async function removeOpened() {
+  const o = opened2.value
+  if (!o) return
+  opened2.value = null
+  const groups = readCount(countOf(o.field)).groups
+  const s = o.stage ? stateOf(o.stage) : { field: o.field as CountField, stage: 'egg' as Stage, groups, meta: [] }
+  const r = planRemove(s, o.group, o.index)
+  if (!r.ok) return failIn(o.field, r.reason)
+  setValue(o.field, groupsValue(r.groups))
+  steps.value = []
+  const line = o.event ? madeNotes.get(o.event.id) : undefined
+  if (line) setValue('NOTES', withoutNote(get('NOTES'), line))
+  try {
+    if (o.event) await props.day.removeEvent(o.event.id)
+    if (r.list && row.value && inSheet.value) await props.day.addStep({ recordId: row.value.id, groups: [{ field: o.field, list: r.list }] })
+  } catch (err) {
+    message.value = errorText(err)
+  }
+}
+
+// --- The day's note (one per clutch and day, only in the app)
+const notingDay = ref(false)
+const savingNote = ref(false)
+async function saveDayNote(text: string) {
+  const r = row.value
+  if (!r) return
+  savingNote.value = true
+  try {
+    await props.day.setNote(r.id, text)
+    notingDay.value = false
+  } catch (err) {
+    message.value = errorText(err)
+  } finally {
+    savingNote.value = false
+  }
+}
+/** The groups of every stage, named, for a photo to show one. */
+const photoGroups = computed(() =>
+  (['egg', 'larva', 'pupa'] as Stage[]).flatMap(stage => {
+    const s = stateOf(stage)
+    return s.meta.flatMap((m, i) => (m ? [{ id: m.id, name: `${STAGE_TAB[stage]()} · ${groupName(m, i)}` }] : []))
+  }),
+)
+/** 📷 in a stage: of the one group selected, else of the clutch today. */
+function stagePhoto(stage: Stage) {
+  const s = stateOf(stage)
+  const sel = selected.value[stage] ?? []
+  const m = sel.length === 1 ? s.meta[sel[0]] : null
+  addingPhoto.value = { day: todayIso(), eventId: null, groupId: m?.id ?? null }
+}
+/** A group's photos (and its earlier stage's, the group it came from), or the camera for its first. */
+function groupPhotos(stage: Stage, index: number) {
+  const m = stateOf(stage).meta[index]
+  if (!m) return
+  const photos = recordPhotos.value.filter(p => p.groupId === m.id || (m.originId && p.groupId === m.originId))
+  if (photos.length) viewingPhotos.value = { photos, index: 0, event: null, groupId: m.id }
+  else addingPhoto.value = { day: todayIso(), eventId: null, groupId: m.id }
+}
+/** What is left of each group (eggs not hatched yet, larvae not pupated) and the groups of the stage before, for a panel. */
+function leftIn(stage: Stage) {
+  const next = NEXT[stage]
+  return next ? leftOf(stateOf(stage), recordEvents.value, next) : undefined
+}
+function sourcesOf(stage: Stage) {
+  const from = BEFORE[stage]
+  if (!from) return undefined
+  const s = stateOf(from)
+  if (!s.meta.some(Boolean)) return undefined
+  const left = leftOf(s, recordEvents.value, stage)
+  return s.groups.map((_, i) => ({ index: i, name: groupName(s.meta[i], i), left: left[i] ?? 0 }))
 }
 /** The sheet's totals as the person sees them, for the timeline's numbers. */
 const stageTotals = computed(() => {
@@ -362,13 +611,8 @@ const morePreview = computed(() =>
 )
 
 // --- Photos of a chip's event: its photos to see (and add to), or the camera for its first
-const addingPhoto = ref<{ day: string; eventId: string | null } | null>(null)
-const viewingPhotos = ref<{ photos: ClutchPhoto[]; index: number; event: ClutchEvent } | null>(null)
-function chipPhoto(e: ClutchEvent) {
-  const photos = recordPhotos.value.filter(p => p.eventId === e.id)
-  if (photos.length) viewingPhotos.value = { photos, index: 0, event: e }
-  else addingPhoto.value = { day: e.day, eventId: e.id }
-}
+const addingPhoto = ref<{ day: string; eventId: string | null; groupId?: string | null } | null>(null)
+const viewingPhotos = ref<{ photos: ClutchPhoto[]; index: number; event: ClutchEvent | null; groupId?: string | null } | null>(null)
 function photoRemoved(id: string) {
   record.photoRemoved(id)
   const v = viewingPhotos.value
@@ -376,7 +620,7 @@ function photoRemoved(id: string) {
 }
 
 // --- Larvae (or eggs) preserved, registered in Insectary_data with Emergidos' cards
-const preserving = ref<{ count: number; lifestage: string; day: number; done: (ids: string[]) => void } | null>(null)
+const preserving = ref<{ count: number; lifestage: string; done: (ids: string[]) => void } | null>(null)
 const inSheet = computed(() => !!row.value && !row.value.id.startsWith('staged:'))
 function preserved(result: { ids: string[] }) {
   const p = preserving.value
@@ -446,6 +690,11 @@ watch(
     folds.value = { notes: false, history: false, more: false }
     addingPhoto.value = null
     viewingPhotos.value = null
+    selected.value = {}
+    steps.value = []
+    madeNotes.clear()
+    opened2.value = null
+    notingDay.value = false
     nextTick(() => scroller.value?.scrollTo({ top: 0 }))
   },
   { immediate: true },
@@ -564,9 +813,12 @@ const endedText = (e: ClutchState['ended']) =>
         class="py-3"
         role="tabpanel"
       >
-        <CountEditor
+        <StagePanel
           :key="`${row.id}:${s.count}`"
+          :ref="(el: unknown) => (panels[s.count] = (el ?? undefined) as InstanceType<typeof StagePanel> | undefined)"
+          v-model:selected="selected[s.stage]"
           :field="s.count"
+          :stage="s.stage"
           :value="countOf(s.count)"
           :saved="savedOf(s.count)"
           :dirty="dirty(s.count)"
@@ -574,20 +826,26 @@ const endedText = (e: ClutchState['ended']) =>
           :locked="lockedFormula(row, s.count, formulas)"
           :more="MORE[s.count]()"
           :start-of-day="startOfDay(s.count)"
-          :stage="s.stage"
-          :subtract-preserved="day.settings.subtractPreserved"
-          :preserved="preservedOf(s.stage)"
-          :today="today"
-          :note-for="e => noteFor(s.stage, e)"
-          :can-register="canEdit && inSheet"
+          :meta="s.stage === 'adult' ? [] : stateOf(s.stage).meta"
+          :mismatch="s.stage !== 'adult' && stateOf(s.stage).mismatch"
+          :left="leftIn(s.stage)"
+          :sources="sourcesOf(s.stage)"
           :events="recordEvents"
           :photos="recordPhotos"
+          :subtract-preserved="day.settings.subtractPreserved"
+          :preserved="preservedOf(s.stage)"
+          :note-for="e => noteFor(s.stage, e)"
+          :can-register="canEdit && inSheet"
           :can-photo="canEdit && inSheet"
-          @set="setValue(s.count, $event)"
-          @event="recordEvent(s.stage, $event)"
-          @unevent="dropEvent"
+          :undoable="stepsOf(s.count)"
+          @act="act(s.stage, s.count, $event)"
+          @open="opened2 = { ...$event, stage: s.stage, field: s.count }"
+          @group-photos="groupPhotos(s.stage, $event)"
+          @photo="stagePhoto(s.stage)"
+          @note="notingDay = true"
+          @undo="undoStep"
+          @back-to-morning="backToMorning(s.count, startOfDay(s.count))"
           @register="preserving = $event"
-          @photo="chipPhoto"
         >
           <DateRow
             v-if="s.date && has(s.date)"
@@ -600,7 +858,7 @@ const endedText = (e: ClutchState['ended']) =>
             :suggest="readCount(countOf(s.count)).terms.some(n => n > 0)"
             @set="setValue(s.date, $event)"
           />
-        </CountEditor>
+        </StagePanel>
       </section>
 
       <!-- Folded under the stage: notes and parents, history and photos, the other columns. -->
@@ -673,16 +931,21 @@ const endedText = (e: ClutchState['ended']) =>
           </button>
           <template v-if="folds.more">
             <section class="border-t border-stone-100 py-3">
-              <CountEditor
+              <StagePanel
                 :key="`${row.id}:dissections`"
+                :ref="(el: unknown) => (panels['NUMBER OF PUPAE/LARVAE FOR DISECTIONS'] = (el ?? undefined) as InstanceType<typeof StagePanel> | undefined)"
                 field="NUMBER OF PUPAE/LARVAE FOR DISECTIONS"
+                :stage="null"
                 :value="countOf('NUMBER OF PUPAE/LARVAE FOR DISECTIONS')"
                 :saved="savedOf('NUMBER OF PUPAE/LARVAE FOR DISECTIONS')"
                 :dirty="dirty('NUMBER OF PUPAE/LARVAE FOR DISECTIONS')"
                 :editable="editable('NUMBER OF PUPAE/LARVAE FOR DISECTIONS')"
                 :locked="lockedFormula(row, 'NUMBER OF PUPAE/LARVAE FOR DISECTIONS', formulas)"
                 :more="MORE['NUMBER OF PUPAE/LARVAE FOR DISECTIONS']()"
-                @set="setValue('NUMBER OF PUPAE/LARVAE FOR DISECTIONS', $event)"
+                :undoable="stepsOf('NUMBER OF PUPAE/LARVAE FOR DISECTIONS')"
+                @act="act(null, 'NUMBER OF PUPAE/LARVAE FOR DISECTIONS', $event)"
+                @open="opened2 = { ...$event, stage: null, field: 'NUMBER OF PUPAE/LARVAE FOR DISECTIONS' }"
+                @undo="undoStep"
               />
             </section>
             <section v-if="has('Generation')" class="border-t border-stone-100 py-3">
@@ -816,14 +1079,16 @@ const endedText = (e: ClutchState['ended']) =>
       </template>
       <button v-else class="btn h-12 px-4" @click="emit('close')">{{ $t('Cerrar') }}</button>
     </footer>
-    <!-- A chip's photos (its event's): to zoom, or the camera for its first. -->
+    <!-- Photos: of an event, a group or the clutch today; to zoom, or the camera for the first. -->
     <ClutchPhotoAdd
       v-if="addingPhoto"
       :record-id="row.id"
       :clutch="label"
       :day="addingPhoto.day"
-      :events="recordEvents.filter(e => e.day === addingPhoto!.day)"
+      :events="recordEvents.filter(e => e.day === addingPhoto!.day && e.kind !== 'transfer')"
       :event-id="addingPhoto.eventId"
+      :groups="photoGroups"
+      :group-id="addingPhoto.groupId ?? null"
       @close="addingPhoto = null"
     />
     <ClutchPhotoViewer
@@ -833,16 +1098,43 @@ const endedText = (e: ClutchState['ended']) =>
       :events="recordEvents"
       :initials="who"
       :can-add="canEdit && inSheet"
-      @add="(addingPhoto = { day: viewingPhotos.event.day, eventId: viewingPhotos.event.id }), (viewingPhotos = null)"
+      @add="(addingPhoto = { day: viewingPhotos.event?.day ?? todayIso(), eventId: viewingPhotos.event?.id ?? null, groupId: viewingPhotos.groupId ?? null }), (viewingPhotos = null)"
       @removed="photoRemoved"
       @close="viewingPhotos = null"
+    />
+    <EventSheet
+      v-if="opened2"
+      :field="opened2.field"
+      :term="opened2.term"
+      :event="opened2.event"
+      :group="openedGroup"
+      :photos="openedPhotos"
+      :can-edit="canEdit"
+      :mine="mayChange(opened2.event)"
+      :can-photo="inSheet"
+      :initials="who"
+      @close="opened2 = null"
+      @save="saveOpened"
+      @remove="removeOpened"
+      @add-photo="(addingPhoto = { day: opened2.event!.day, eventId: opened2.event!.id }), (opened2 = null)"
+      @view-photo="(viewingPhotos = { photos: openedPhotos, index: $event, event: opened2.event }), (opened2 = null)"
+    />
+    <DayNoteSheet
+      v-if="notingDay"
+      :clutch="label"
+      :day="todayIso()"
+      :text="status?.note?.text ?? ''"
+      :by="status?.note ? who(status.note.updatedName || '') : null"
+      :saving="savingNote"
+      @close="notingDay = false"
+      @save="saveDayNote"
     />
     <PreserveYoung
       v-if="preserving"
       :clutch="label"
       :count="preserving.count"
       :stage="preserving.lifestage"
-      :date="serialToIso(preserving.day)"
+      :date="todayIso()"
       @preserved="preserved"
       @close="preserving = null"
     />

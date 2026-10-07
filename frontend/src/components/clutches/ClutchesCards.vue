@@ -30,6 +30,7 @@ import {
   VERIFY_REASONS,
   stageDurations,
   type ClutchState,
+  type Count,
   type CountField,
   type Stage,
 } from '../../lib/clutches'
@@ -102,7 +103,7 @@ interface Item {
   row: TableRow
   number: string
   species: string
-  counts: Record<CountField, { terms: number[]; na: boolean; text: string | null }>
+  counts: Record<CountField, Count>
   state: ClutchState
   parents: { female: string; male: string } | null
   search: string

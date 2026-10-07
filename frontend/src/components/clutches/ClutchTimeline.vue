@@ -3,7 +3,8 @@ import { computed, ref } from 'vue'
 import { Camera, Info, Loader2, RotateCcw, Trash2, X } from 'lucide-vue-next'
 import ClutchPhotoAdd from './ClutchPhotoAdd.vue'
 import ClutchPhotoViewer from './ClutchPhotoViewer.vue'
-import type { ClutchDay } from '../../composables/useClutchDay'
+import type { ClutchDay, ClutchLog, DayNote } from '../../composables/useClutchDay'
+import { t } from '../../lib/i18n'
 import type { ClutchRecordState } from '../../composables/useClutchRecord'
 import { usePhotoUploads } from '../../composables/usePhotoUploads'
 import { photoUrl, type ClutchPhoto } from '../../lib/clutchPhotos'
@@ -52,9 +53,12 @@ const photos = computed(() => data.value?.photos ?? [])
 /** Days newest first (today always, for its photos); Emergidos' rows whose ID an event already names are left out. */
 const days = computed(() => {
   const named = new Set((data.value?.events ?? []).flatMap(e => e.ids))
-  const out = new Map<string, { events: ClutchEvent[]; young: YoungRow[]; photos: ClutchPhoto[] }>()
-  const at = (day: string) => out.get(day) ?? (out.set(day, { events: [], young: [], photos: [] }), out.get(day)!)
-  for (const e of data.value?.events ?? []) at(e.day).events.push(e)
+  const out = new Map<string, { events: ClutchEvent[]; young: YoungRow[]; photos: ClutchPhoto[]; log: ClutchLog[]; note: DayNote | null }>()
+  const at = (day: string) => out.get(day) ?? (out.set(day, { events: [], young: [], photos: [], log: [], note: null }), out.get(day)!)
+  // Transfers between groups are told by their regrouping's line.
+  for (const e of data.value?.events ?? []) if (e.kind !== 'transfer') at(e.day).events.push(e)
+  for (const l of data.value?.log ?? []) at(l.day).log.push(l)
+  for (const n of data.value?.notes ?? []) at(n.day).note = n
   for (const y of data.value?.young ?? []) if (!named.has(y.id)) at(y.day ?? '').young.push(y)
   const events = new Set((data.value?.events ?? []).map(e => e.id))
   // Photos of an event go with it; the rest are the day's.
@@ -62,6 +66,16 @@ const days = computed(() => {
   return [...out.entries()].sort((a, b) => b[0].localeCompare(a[0]))
 })
 const ofEvent = (e: ClutchEvent) => photos.value.filter(p => p.eventId === e.id)
+/** A group's name (its label, else its letter) for an event. */
+const groupsById = computed(() => new Map((data.value?.groups ?? []).map(g => [g.id, g])))
+const groupOf = (id: string | null | undefined) => {
+  const g = id ? groupsById.value.get(id) : null
+  return g ? g.label || String.fromCharCode(65 + Math.min(g.position, 25)) : ''
+}
+const logLine = (l: ClutchLog) =>
+  l.kind === 'regroup'
+    ? t('Reagrupado {field}: {before} → {after}', { field: l.field, before: l.before ?? '—', after: l.after ?? '—' })
+    : t('Fórmula editada {field}: {before} → {after}', { field: l.field, before: l.before ?? '—', after: l.after ?? '—' })
 const sending = computed(() => uploads.uploads.filter(u => u.recordId === props.recordId))
 const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 const mine = (e: ClutchEvent) => e.actor === session.user?.id || ['reviewer', 'admin'].includes(session.user?.role ?? '')
@@ -195,7 +209,11 @@ const progress = (u: (typeof sending.value)[number]) => (u.total ? Math.round((u
         <ul class="mt-0.5 divide-y divide-stone-100 rounded-md border border-stone-200 bg-white">
           <li v-for="e in g.events" :key="e.id" class="py-1 pr-1 pl-3 text-sm">
             <div class="flex items-center gap-2">
-              <span class="min-w-0 flex-1 break-words tabular-nums">{{ eventLine(e) }}</span>
+              <span class="min-w-0 flex-1 break-words tabular-nums">
+                {{ eventLine(e) }}<span v-if="groupOf(e.groupId)" class="text-xs text-stone-500"> · {{ $t('grupo {name}', { name: groupOf(e.groupId) }) }}</span>
+                <span v-if="e.fromGroupId && groupOf(e.fromGroupId)" class="text-xs text-stone-500"> · {{ $t('de {name}', { name: groupOf(e.fromGroupId) }) }}</span>
+                <span v-if="e.dayKnown === false" class="text-xs text-amber-800"> · {{ $t('fecha NA') }}</span>
+              </span>
               <span class="shrink-0 text-xs text-stone-500">{{ initials(e.name || e.username || '') }} {{ time(e.createdAt) }}</span>
               <button
                 v-if="canEdit && canPhoto"
@@ -224,6 +242,13 @@ const progress = (u: (typeof sending.value)[number]) => (u.total ? Math.round((u
                 <img :src="photoUrl(p.id, 'thumb')" :alt="p.note || ''" loading="lazy" class="h-16 w-16 rounded object-cover" />
               </button>
             </div>
+          </li>
+          <li v-for="l in g.log" :key="l.id" class="flex items-center gap-2 px-3 py-1.5 text-sm">
+            <span class="min-w-0 flex-1 font-mono text-xs break-all">{{ logLine(l) }}</span>
+            <span class="shrink-0 text-xs text-stone-500">{{ initials(l.name || l.username || '') }} {{ time(l.createdAt) }}</span>
+          </li>
+          <li v-if="g.note" class="px-3 py-1.5 text-sm whitespace-pre-wrap">
+            <span class="mr-1 text-xs font-medium text-stone-500">{{ $t('Nota del día') }} · {{ initials(g.note.updatedName || g.note.name || '') }}</span>{{ g.note.text }}
           </li>
           <li v-for="y in g.young" :key="y.id" class="flex items-center gap-2 px-3 py-1.5 text-sm">
             <span class="min-w-0 flex-1">

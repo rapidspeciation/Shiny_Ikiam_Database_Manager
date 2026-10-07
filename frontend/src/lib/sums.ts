@@ -15,13 +15,17 @@ const SUM_FIELDS: Record<string, ReadonlySet<string>> = {
 }
 export const isSumField = (module: string, field: string) => !!SUM_FIELDS[module]?.has(field)
 
+/** A group of terms in parentheses (the box or plant part of a stage sits on): (6-2). */
+const GROUP = String.raw`\(\s*\d+(?:\s*[+-]\s*\d+)*\s*\)`
+const SUM = new RegExp(String.raw`^=?\s*(?:\d+|${GROUP})(?:\s*(?:[+-]\s*\d+|\+\s*${GROUP}))*$`)
 /**
  * "12+15", "= 12 + 15", "27-5" (27 larvae, 5 died) or "=27" as "=12+15" /
- * "=27-5" / "=27"; null when it is not a simple sum (a plain 27 stays a number).
+ * "=27-5" / "=27"; with groups, one parenthesized sub-sum each (box A, box B):
+ * "=(6-2)+(5+3)"; null when it is not a simple sum (a plain 27 stays a number).
  */
 export function simpleSum(text: string): string | null {
   const t = text.trim()
-  if (!/^=?\s*\d+(?:\s*[+-]\s*\d+)*$/.test(t) || (!t.startsWith('=') && !/[+-]/.test(t))) return null
+  if (!SUM.test(t) || (!t.startsWith('=') && !/[+\-(]/.test(t))) return null
   return '=' + t.replace(/^=/, '').replace(/\s+/g, '')
 }
 

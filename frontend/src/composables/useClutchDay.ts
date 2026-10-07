@@ -1,6 +1,7 @@
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { api, requestId } from '../lib/api'
 import type { ClutchPhoto } from '../lib/clutchPhotos'
+import type { GroupRow, StepEvent, StepGroupItem } from '../lib/clutchGroups'
 import { MODULE, reviewState, type ClutchEvent, type ClutchTallies, type DayChange, type EventKind, type ReviewState, type Stage } from '../lib/clutches'
 import { applyClutchSettings, clutchSettings } from '../lib/clutchSettings'
 import { overlaySums, overlayTable } from '../lib/staged'
@@ -40,6 +41,47 @@ export interface Day {
   events?: ClutchEvent[]
   /** The day's photos of clutches (only in the app). */
   photos?: ClutchPhoto[]
+  /** The day's notes of clutches (one per clutch, only in the app). */
+  notes?: DayNote[]
+}
+/** A clutch's note of one day (only in the app). */
+export interface DayNote {
+  id: string
+  recordId: string
+  clutch: string | null
+  day: string
+  text: string
+  actor: string
+  name: string | null
+  username: string | null
+  updatedBy: string
+  updatedName: string | null
+  createdAt: string
+  updatedAt: string
+}
+/** A line of a clutch's history besides its events: a regrouping, a formula edited by hand. */
+export interface ClutchLog {
+  id: string
+  recordId: string
+  stage: Stage | null
+  field: string
+  day: string
+  kind: 'regroup' | 'formula'
+  before: string | null
+  after: string | null
+  note: string | null
+  actor: string
+  name: string | null
+  username: string | null
+  stepId: string | null
+  createdAt: string
+}
+/** What one action recorded at once (server/clutches.mjs addClutchStep). */
+export interface ClutchStep {
+  id: string
+  events: ClutchEvent[]
+  groups: GroupRow[]
+  log: ClutchLog[]
 }
 /** What the cards show of a clutch today. */
 export interface ClutchToday {
@@ -58,9 +100,11 @@ export interface ClutchToday {
   latest: ClutchCheck | null
   /** Photos taken today. */
   photos: number
+  /** Today's note, if any. */
+  note: DayNote | null
 }
 const POLL_MS = 20_000
-const NONE: ClutchToday = { checks: [], changes: [], events: [], checked: false, changed: false, who: [], checkedBy: [], review: 'none', latest: null, photos: 0 }
+const NONE: ClutchToday = { checks: [], changes: [], events: [], checked: false, changed: false, who: [], checkedBy: [], review: 'none', latest: null, photos: 0, note: null }
 
 /**
  * The clutches' sum formulas, last changes, what their events add up to and
@@ -170,6 +214,7 @@ export function useClutchDay() {
     }
     for (const e of day.value.events ?? []) get(e.recordId).events.push(e)
     for (const p of day.value.photos ?? []) get(p.recordId).photos++
+    for (const n of day.value.notes ?? []) get(n.recordId).note = n
     return out
   })
   const today = (recordId: string) => byRecord.value.get(recordId) ?? NONE
@@ -217,6 +262,39 @@ export function useClutchDay() {
     void loadState()
     return event
   }
+  /** One action's events, groups and history line at once (only in the app); taken back as a whole by undoStep. */
+  async function addStep(body: {
+    recordId: string
+    events?: StepEvent[]
+    groups?: { field: string; list: StepGroupItem[] }[]
+    log?: { kind: 'regroup' | 'formula'; field: string; before: string | null; after: string | null; note?: string | null }[]
+  }) {
+    const { step } = await api<{ step: ClutchStep }>('clutches/steps', { method: 'POST', body: { requestId: requestId(), ...body } })
+    day.value = { ...day.value, events: [...(day.value.events ?? []).filter(e => !step.events.some(x => x.id === e.id)), ...step.events] }
+    eventsVersion.value++
+    void loadState()
+    return step
+  }
+  async function undoStep(id: string) {
+    await api(`clutches/steps/${encodeURIComponent(id)}`, { method: 'DELETE', body: {} })
+    day.value = { ...day.value, events: (day.value.events ?? []).filter(e => e.stepId !== id) }
+    eventsVersion.value++
+    void loadState()
+  }
+  /** What is said of an event, corrected (its day, cause, note). */
+  async function updateEvent(id: string, patch: { day?: string; dayKnown?: boolean; kind?: string; note?: string | null; groupId?: string | null }) {
+    const { event } = await api<{ event: ClutchEvent }>(`clutches/events/${encodeURIComponent(id)}`, { method: 'PATCH', body: patch })
+    day.value = { ...day.value, events: (day.value.events ?? []).map(e => (e.id === id ? event : e)) }
+    eventsVersion.value++
+    return event
+  }
+  /** The clutch's note of today (one per clutch and day); an empty text takes it away. */
+  async function setNote(recordId: string, text: string) {
+    const { note } = await api<{ note: DayNote | null }>('clutches/notes', { method: 'PUT', body: { recordId, text } })
+    day.value = { ...day.value, notes: [...(day.value.notes ?? []).filter(n => n.recordId !== recordId), ...(note ? [note] : [])] }
+    eventsVersion.value++
+    return note
+  }
   async function removeEvent(id: string) {
     await api(`clutches/events/${encodeURIComponent(id)}`, { method: 'DELETE', body: {} })
     day.value = { ...day.value, events: (day.value.events ?? []).filter(e => e.id !== id) }
@@ -240,6 +318,10 @@ export function useClutchDay() {
     eventsVersion,
     addEvent,
     removeEvent,
+    addStep,
+    undoStep,
+    updateEvent,
+    setNote,
   }
 }
 export type ClutchDay = ReturnType<typeof useClutchDay>

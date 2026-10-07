@@ -1,5 +1,6 @@
 import { ref, watch, type Ref } from 'vue'
-import type { ClutchDay } from './useClutchDay'
+import type { ClutchDay, ClutchLog, DayNote } from './useClutchDay'
+import type { GroupRow } from '../lib/clutchGroups'
 import { usePhotoUploads } from './usePhotoUploads'
 import { api } from '../lib/api'
 import type { ClutchPhoto } from '../lib/clutchPhotos'
@@ -9,6 +10,12 @@ export interface ClutchRecord {
   events: ClutchEvent[]
   young: YoungRow[]
   photos?: ClutchPhoto[]
+  /** Its groups by count (open ones in the order of their parentheses, then those ended). */
+  groups?: GroupRow[]
+  /** Regroupings and formulas edited by hand. */
+  log?: ClutchLog[]
+  /** Its notes of each day. */
+  notes?: DayNote[]
   tally: ClutchTallies
 }
 
@@ -34,7 +41,7 @@ export function useClutchRecord(recordId: Ref<string>, day: ClutchDay) {
   }
   watch(recordId, () => (data.value = null))
   watch(
-    () => [recordId.value, day.eventsVersion.value, day.day.value.events?.length, day.day.value.photos?.length, uploads.stored.value],
+    () => [recordId.value, day.eventsVersion.value, day.day.value.events?.length, day.day.value.photos?.length, day.day.value.notes?.length, uploads.stored.value],
     load,
     { immediate: true },
   )

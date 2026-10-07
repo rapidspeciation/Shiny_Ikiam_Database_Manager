@@ -106,7 +106,7 @@ test('events: per clutch and day, with the eggs and larvae registered in Insecta
     ],
   );
   // Larvae: 4 hatched; died 1 + M2E found dead; preserved 2 (M0E, N9E) + M1E; disappeared 2.
-  assert.deepEqual(all.tally, { larva: { gained: 4, died: 2, disappeared: 2, preserved: 3 }, pupa: { gained: 1, died: 0, disappeared: 0, preserved: 0 } });
+  assert.deepEqual(all.tally, { larva: { gained: 4, died: 2, disappeared: 2, preserved: 3, notHatched: 0 }, pupa: { gained: 1, died: 0, disappeared: 0, preserved: 0, notHatched: 0 } });
   assert.deepEqual(clutchState(store).tallies[c1012], all.tally);
   assert.equal(clutchDay(store).events.length, 5);
   assert.deepEqual(tally([{ stage: 'adult', kind: 'died', count: 3 }]), {}, 'an event a stage does not have is not counted');

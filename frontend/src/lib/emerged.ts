@@ -1,5 +1,6 @@
 import { isBlank } from './cells'
-import { appendNote, appendTerm, countValue, eventNote, totalOf, type Count } from './clutches'
+import { appendNote, eventNote, groupsValue, totalOf, type Count } from './clutches'
+import { appendInGroup } from './clutchGroups'
 import { clutchSettings } from './clutchSettings'
 import { serialFromIso } from './dates'
 import { deathCells, KILLED } from './deaths'
@@ -516,16 +517,17 @@ export function stockPlan(
       skipped.push(field)
       return
     }
-    let now = c.terms
+    // In the last group's parentheses when the count is kept in groups (=(6-2)+(5+3)).
+    let now = c.groups
     for (const n of terms) {
-      const r = appendTerm(now, n)
+      const r = appendInGroup(now, null, n)
       if (!r.ok) {
         skipped.push(field)
         return
       }
-      now = r.terms
+      now = r.groups
     }
-    if (now !== c.terms) cells.push({ field, value: countValue(now), before: value(field) })
+    if (now !== c.groups) cells.push({ field, value: groupsValue(now), before: value(field) })
   }
   if (tally.adults.length) {
     addTerms('NUMBER OF ADULTS', tally.adults.map(([, n]) => n))
@@ -551,8 +553,8 @@ export function stockPlan(
 
 /** A count's change in short, for the save's summary: "=2+2 → =2+2+3 (7)". */
 export function countChange(before: Count, after: CellValue): string {
-  const from = before.terms.length ? (countValue(before.terms) as string) : '—'
-  const terms = String(after ?? '').slice(1).match(/[+-]?\d+/g)?.map(Number) ?? []
+  const from = before.terms.length ? (groupsValue(before.groups) as string) : '—'
+  const terms = String(after ?? '').match(/[+-]?\d+/g)?.map(Number) ?? []
   return `${from} → ${after} (${totalOf(terms)})`
 }
 

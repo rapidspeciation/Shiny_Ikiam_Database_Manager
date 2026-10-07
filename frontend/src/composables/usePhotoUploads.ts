@@ -17,6 +17,8 @@ export interface PhotoUpload {
   clutch: string
   day: string
   eventId: string | null
+  /** The group of the clutch it shows (box A's larvae), or none. */
+  groupId?: string | null
   note: string | null
   /** The thumbnail, shown while it goes. */
   preview: string
@@ -104,7 +106,7 @@ async function send(u: PhotoUpload) {
   u.sent = u.total
   await api<{ photo: ClutchPhoto }>('clutches/photos', {
     method: 'POST',
-    body: { requestId: u.id, recordId: u.recordId, day: u.day, eventId: u.eventId, note: u.note, thumbBytes: payload.thumbBytes, totalBytes: u.total },
+    body: { requestId: u.id, recordId: u.recordId, day: u.day, eventId: u.eventId, groupId: u.groupId ?? null, note: u.note, thumbBytes: payload.thumbBytes, totalBytes: u.total },
   })
   payload = undefined
   payloads.delete(u.id)
@@ -150,7 +152,7 @@ async function run() {
 }
 
 /** Photos chosen for a clutch: made small here, then sent one after another. */
-async function add(files: File[], meta: { recordId: string; clutch: string; day: string; eventId: string | null; note: string | null }) {
+async function add(files: File[], meta: { recordId: string; clutch: string; day: string; eventId: string | null; groupId?: string | null; note: string | null }) {
   const items: PhotoUpload[] = files.map(() =>
     reactive({ id: requestId(), ...meta, preview: '', status: 'preparing' as const, sent: 0, total: 0, attempts: 0, error: '' }),
   )
