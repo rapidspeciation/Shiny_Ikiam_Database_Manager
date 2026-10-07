@@ -1,4 +1,5 @@
 import type { ClutchEvent, CountField, EventKind, Stage } from './clutches'
+import { serialToIso } from './dates'
 
 /**
  * A stage's count written as the sheet keeps it, in groups: one parenthesized
@@ -156,12 +157,14 @@ export function toggleSelection(selected: number[], index: number, only = false)
 
 // --- Which event each term is
 
-type Termed = Pick<ClutchEvent, 'id' | 'term' | 'groupId' | 'createdAt'> & { field?: string | null }
+type Termed = Pick<ClutchEvent, 'id' | 'term' | 'groupId' | 'createdAt'> & { field?: string | null; termAt?: number | null }
 /**
  * The event behind each term of each group (its id, or null for a term written
  * before the app, by hand or in Sheets). A group's terms are matched with that
  * group's events (the first group also takes events without a group) of the
- * same value, from the newest term and event back, each event once.
+ * same value: first those whose place in the group is known and still holds
+ * their value (two +5 told apart), then the rest from the newest term and
+ * event back, each event once.
  */
 export function alignTerms(groups: Groups, events: Termed[], groupIds: (string | null)[]): (string | null)[][] {
   const used = new Set<string>()
@@ -170,7 +173,14 @@ export function alignTerms(groups: Groups, events: Termed[], groupIds: (string |
     const id = groupIds[p] ?? null
     const pool = sorted.filter(e => (id !== null && e.groupId === id) || (p === 0 && (e.groupId === null || e.groupId === undefined)))
     const out: (string | null)[] = terms.map(() => null)
+    for (const e of pool) {
+      const at = e.termAt
+      if (at === null || at === undefined || used.has(e.id) || out[at] !== null || terms[at] !== e.term) continue
+      used.add(e.id)
+      out[at] = e.id
+    }
     for (let i = terms.length - 1; i >= 0; i--) {
+      if (out[i] !== null) continue
       const e = pool.find(x => !used.has(x.id) && x.term === terms[i])
       if (!e) continue
       used.add(e.id)
@@ -196,6 +206,12 @@ export interface StepEvent {
   dayKnown?: boolean
   ids?: string[]
   note?: string | null
+  /** Where its term sits in its group's parentheses. */
+  termAt?: number
+  /** A term written before the app, given its event now (no change to the formula). */
+  adopted?: boolean
+  /** The term (its event) a loss was taken from. */
+  ofEventId?: string | null
 }
 export interface StepGroupItem {
   id?: string
@@ -267,7 +283,63 @@ export function planTerm(
   if (e.term === null) return { ok: true, plan: { counts: {}, groups: [], events: [event], log: [] } }
   const r = appendInGroup(s.groups, at, e.term)
   if (!r.ok) return r
+  event.termAt = r.groups[at].length - 1
   return { ok: true, plan: { counts: { [s.field]: r.groups }, groups: [], events: [event], log: [] } }
+}
+
+// --- A term written before the app: given its event when it first gets a photo, a note or a loss
+
+/** The kind a term's event has by its stage and sign: the stage's gain (+), a minus whose cause is not known (a correction). */
+const GAIN: Record<Stage, EventKind> = { egg: 'laid', larva: 'hatched', pupa: 'pupated', adult: 'emerged' }
+/**
+ * The event a term written before the app gets (term `index` of group `group`),
+ * without changing the formula: a + is the stage's gain, dated with the stage's
+ * first date (DATE LAID, HATCHING DATE, PUPA DATE, EMERGENCE DATE: `firstDate`,
+ * a date serial) when it is the stage's first + term, else its day is not known
+ * (NA); a − is a correction whose day is not known.
+ */
+export function adoption(s: CountState, group: number, index: number, firstDate: number | null): StepEvent | null {
+  const term = s.groups[group]?.[index]
+  if (term === undefined || term === 0) return null
+  const flat = s.groups.flat()
+  const position = s.groups.slice(0, group).reduce((n, g) => n + g.length, 0) + index
+  const first = term > 0 && flat.findIndex(t => t > 0) === position
+  const day = first && firstDate !== null ? serialToIso(firstDate) : null
+  const known = !!day && day >= '2020-01-01'
+  return {
+    stage: s.stage,
+    kind: term > 0 ? GAIN[s.stage] : 'correction',
+    count: Math.abs(term),
+    term,
+    groupId: s.meta[group]?.id ?? null,
+    termAt: index,
+    adopted: true,
+    dayKnown: known,
+    ...(known ? { day: day! } : {}),
+  }
+}
+
+/**
+ * A loss taken from one term («− De este número»: 1 died of the +27): its −N
+ * goes inside the parentheses of the group that holds the term, at its end, so
+ * the formula keeps its order (a count without groups stays the plain sum:
+ * =27-2-11-3 → =27-2-11-3-1); the event names the term it came from. Not more
+ * than the term has left (its value less what was taken from it before).
+ * Preserved ones kept counted write no term but are linked the same.
+ */
+export function planFromTerm(
+  s: CountState,
+  group: number,
+  index: number,
+  ofEventId: string,
+  loss: { kind: EventKind; count: number; term: number | null; ids?: string[] },
+  taken = 0,
+): PlanResult {
+  const term = s.groups[group]?.[index]
+  if (term === undefined || term <= 0) return { ok: false, reason: 'first' }
+  if (!Number.isInteger(loss.count) || loss.count < 1) return { ok: false, reason: 'empty' }
+  if (loss.count > term - taken) return { ok: false, reason: 'negative' }
+  return planTerm(s, group, { stage: s.stage, kind: loss.kind, count: loss.count, term: loss.term, ...(loss.ids?.length ? { ids: loss.ids } : {}), ofEventId })
 }
 
 /**

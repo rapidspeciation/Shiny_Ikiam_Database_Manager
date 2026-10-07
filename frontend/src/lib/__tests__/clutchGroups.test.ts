@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  adoption,
   alignTerms,
   countState,
   formulaOfGroups,
@@ -10,6 +11,7 @@ import {
   parseFormula,
   parseTerms,
   planCorrection,
+  planFromTerm,
   planMoveOn,
   planRegroup,
   planRemove,
@@ -101,6 +103,13 @@ describe('the event behind each term', () => {
       [null, 'h3'],
     ])
   })
+  it('equal terms told apart by where each sits (its place in the parentheses)', () => {
+    const at = (id: string, term: number, termAt: number, day: string) => ({ ...ev(id, term, null, day), termAt })
+    // The second +5 is newer, but the first one's event says it is the first.
+    expect(alignTerms([[5, 5]], [at('first', 5, 0, '2'), ev('second', 5, null, '1')], [null])).toEqual([['first', 'second']])
+    // A place that no longer holds its value is only a hint: matched by value then.
+    expect(alignTerms([[5, 3]], [at('x', 5, 1, '1')], [null])).toEqual([['x', null]])
+  })
   it('the first group also takes the events recorded before there were groups', () => {
     expect(alignTerms([[10, -1, -1]], [ev('a', -1, null, '1'), ev('b', -1, null, '2')], [null])).toEqual([[null, 'a', 'b']])
   })
@@ -123,7 +132,7 @@ describe('steps written into the groups', () => {
   it('a loss in the group selected goes inside its parentheses, with its group', () => {
     const r = ok(planTerm(larvae('=(6)+(5+3)', AB), 0, { stage: 'larva', kind: 'died', count: 2, term: -2 }))
     expect(formulaOf(r.plan, 'NUMBER OF LARVAE')).toBe('=(6-2)+(5+3)')
-    expect(r.plan.events).toEqual([{ stage: 'larva', kind: 'died', count: 2, term: -2, groupId: 'A' }])
+    expect(r.plan.events).toEqual([{ stage: 'larva', kind: 'died', count: 2, term: -2, groupId: 'A', termAt: 1 }])
   })
   it('no group said: the last one; one group: the plain sum', () => {
     expect(formulaOf(ok(planTerm(larvae('=(6)+(5)', AB), null, { stage: 'larva', kind: 'hatched', count: 3, term: 3 })).plan, 'NUMBER OF LARVAE')).toBe('=(6)+(5+3)')
@@ -230,5 +239,46 @@ describe('hatched (pupated) from groups', () => {
   })
   it('nothing chosen: refused', () => {
     expect(planMoveOn(eggs, countState('NUMBER OF LARVAE', 'larva', [], []), [{ index: 0, count: 0 }])).toEqual({ ok: false, reason: 'empty' })
+  })
+})
+
+describe('a term written before the app: its event, and a loss taken from it', () => {
+  const HATCH = 46290 // 25-Sep-2026
+  const plain = countState('NUMBER OF LARVAE', 'larva', groupsOf('=27-2-11-3')!, [])
+  it('the first + term gets the stage’s first date; the others and the minus terms an unknown day; the formula is not touched', () => {
+    expect(adoption(plain, 0, 0, HATCH)).toEqual({
+      stage: 'larva',
+      kind: 'hatched',
+      count: 27,
+      term: 27,
+      groupId: null,
+      termAt: 0,
+      adopted: true,
+      dayKnown: true,
+      day: '2026-09-25',
+    })
+    expect(adoption(plain, 0, 1, HATCH)).toMatchObject({ kind: 'correction', count: 2, term: -2, termAt: 1, dayKnown: false })
+    expect(adoption(plain, 0, 1, HATCH)).not.toHaveProperty('day')
+    const two = countState('NUMBER OF EGGS', 'egg', groupsOf('=12+15')!, [])
+    expect(adoption(two, 0, 1, HATCH)).toMatchObject({ kind: 'laid', term: 15, dayKnown: false })
+    expect(adoption(two, 0, 0, null)).toMatchObject({ kind: 'laid', term: 12, dayKnown: false })
+  })
+  it('without groups, the loss goes at the end of the plain sum, linked to the term (=27-2-11-3 → =27-2-11-3-1)', () => {
+    const r = ok(planFromTerm(plain, 0, 0, 'e27', { kind: 'died', count: 1, term: -1 }))
+    expect(formulaOf(r.plan, 'NUMBER OF LARVAE')).toBe('=27-2-11-3-1')
+    expect(r.plan.events).toEqual([{ stage: 'larva', kind: 'died', count: 1, term: -1, groupId: null, termAt: 4, ofEventId: 'e27' }])
+  })
+  it('with groups, inside the parentheses of the group holding the term', () => {
+    const s = countState('NUMBER OF LARVAE', 'larva', groupsOf('=(6-2)+(5+3)')!, [row('A', 'NUMBER OF LARVAE', 0, 'A'), row('B', 'NUMBER OF LARVAE', 1, 'B')])
+    const r = ok(planFromTerm(s, 1, 0, 'e5', { kind: 'disappeared', count: 2, term: -2 }))
+    expect(formulaOf(r.plan, 'NUMBER OF LARVAE')).toBe('=(6-2)+(5+3-2)')
+    expect(r.plan.events[0]).toMatchObject({ groupId: 'B', ofEventId: 'e5', termAt: 2 })
+  })
+  it('preserved ones kept counted are linked without a term; never more than the term has left', () => {
+    const kept = ok(planFromTerm(plain, 0, 0, 'e27', { kind: 'preserved', count: 3, term: null }))
+    expect(kept.plan.counts).toEqual({})
+    expect(kept.plan.events[0]).toMatchObject({ kind: 'preserved', ofEventId: 'e27', term: null })
+    expect(planFromTerm(plain, 0, 0, 'e27', { kind: 'died', count: 3, term: -3 }, 25)).toEqual({ ok: false, reason: 'negative' })
+    expect(planFromTerm(plain, 0, 1, 'e2', { kind: 'died', count: 1, term: -1 })).toEqual({ ok: false, reason: 'first' })
   })
 })

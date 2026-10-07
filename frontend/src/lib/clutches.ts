@@ -560,6 +560,12 @@ export interface ClutchEvent {
   /** False when its day is not known (larvae found already big: the hatch day is NA). */
   dayKnown?: boolean
   stepId?: string | null
+  /** A term written before the app, given its event when it first got a photo, a note or a loss. */
+  adopted?: boolean
+  /** Where its term sits in its group's parentheses. */
+  termAt?: number | null
+  /** The term (its event) a loss was taken from. */
+  ofEventId?: string | null
   actor: string
   username: string | null
   name: string | null
@@ -639,6 +645,8 @@ export function eventNote(
     /** The group's name, when the count has groups ("group A"). */
     group?: string | null
     reason?: string | null
+    /** The term a loss was taken from ("+27 of 24/9"). */
+    from?: string | null
   },
   today: number,
 ): string {
@@ -675,6 +683,7 @@ export function eventNote(
     default:
       text = `${e.count} ${noun} ${e.kind}`
   }
+  if (e.from) text += ` (from the ${e.from})`
   if (e.group) text += ` in group ${e.group}`
   if (e.ids?.length) text += ` (${e.ids.join(', ')})`
   if (e.dayKnown === false) text += ' (hatch date unknown, found already big)'

@@ -44,10 +44,12 @@ import {
   type ClutchState,
   type CountField,
   type EventKind,
+  type Loss,
   type Stage,
   type StageDurations,
 } from '../../lib/clutches'
 import {
+  adoption,
   appendInGroup,
   countState,
   formulaOfGroups,
@@ -55,6 +57,7 @@ import {
   leftOf,
   nextLabel,
   planCorrection,
+  planFromTerm,
   planMoveOn,
   planRegroup,
   planRemove,
@@ -435,26 +438,97 @@ function actPlain(field: string, a: StageAct) {
   if (a.type === 'formula') return apply(formulaPlan({ field: field as CountField, stage: null, groups, meta: [] }, a.groups))
 }
 
-// --- A term opened from its chip: its event, to correct, give photos, or delete with its term
+// --- A term opened from its chip (any, old or new): photos, a note, its day, a loss taken from it; or out of the sum
 const opened2 = ref<(TermRef & { stage: Stage | null; field: string }) | null>(null)
 const me = useSession()
-const mayChange = (e: ClutchEvent | null) => !e || e.actor === me.user?.id || ['reviewer', 'admin'].includes(me.user?.role ?? '')
+const mayChange = (e: ClutchEvent | null) => !e || !!e.adopted || e.actor === me.user?.id || ['reviewer', 'admin'].includes(me.user?.role ?? '')
 const openedPhotos = computed(() => (opened2.value?.event ? recordPhotos.value.filter(p => p.eventId === opened2.value!.event!.id) : []))
+const openedLosses = computed(() => (opened2.value?.event ? recordEvents.value.filter(e => e.ofEventId === opened2.value!.event!.id) : []))
 const openedGroup = computed(() => {
   const o = opened2.value
   if (!o?.stage) return null
   const s = stateOf(o.stage)
   return s.groups.length > 1 ? groupName(s.meta[o.group], o.group) : null
 })
+/** The stage's first date (DATE LAID, HATCHING DATE…) as a serial, for a term of the sheet given its event. */
+const firstDateOf = (stage: Stage) => {
+  const v = get(GAIN_DATE[stage])
+  return typeof v === 'number' ? v : null
+}
+/** The event a term written before the app would get: its day, or null (not known). */
+const adoptDay = computed(() => {
+  const o = opened2.value
+  if (!o?.stage || o.event) return null
+  const a = adoption(stateOf(o.stage), o.group, o.index, firstDateOf(o.stage))
+  return a?.dayKnown ? (a.day ?? null) : null
+})
+const openedBusy = ref(false)
+/**
+ * The opened term's event, made now if it is a term written before the app
+ * (its day, kind and place in the formula; the formula does not change).
+ * `extra`: what the person said of it at once (a note, its day).
+ */
+async function ensureEvent(extra: { note?: string | null; day?: string; dayKnown?: boolean } = {}): Promise<ClutchEvent | null> {
+  const o = opened2.value
+  const r = row.value
+  if (!o?.stage || !r) return null
+  if (o.event) return o.event
+  const a = adoption(stateOf(o.stage), o.group, o.index, firstDateOf(o.stage))
+  if (!a || !inSheet.value) return null
+  const body = { ...a, ...(extra.note !== undefined ? { note: extra.note } : {}), ...(extra.dayKnown === false ? { dayKnown: false, day: undefined } : extra.day ? { day: extra.day, dayKnown: true } : {}) }
+  openedBusy.value = true
+  try {
+    const step = await props.day.addStep({ recordId: r.id, events: [body] })
+    const e = step.events[0]
+    if (opened2.value === o) opened2.value = { ...o, event: e }
+    await record.load()
+    return e
+  } catch (err) {
+    message.value = errorText(err)
+    return null
+  } finally {
+    openedBusy.value = false
+  }
+}
 async function saveOpened(patch: { day?: string; dayKnown?: boolean; kind?: string; note?: string | null }) {
   const e = opened2.value?.event
-  if (!e) return
   try {
+    if (!e) {
+      if (await ensureEvent(patch)) opened2.value = null
+      return
+    }
     await props.day.updateEvent(e.id, patch)
     opened2.value = null
   } catch (err) {
     message.value = errorText(err)
   }
+}
+async function openedPhoto() {
+  const e = await ensureEvent()
+  if (!e) return
+  addingPhoto.value = { day: e.day, eventId: e.id }
+  opened2.value = null
+}
+/** «− De este número»: a loss taken from the opened term, inside its group's parentheses, linked to it. */
+async function lossFromOpened(loss: { kind: Loss; count: number }) {
+  const o = opened2.value
+  if (!o?.stage) return
+  const e = await ensureEvent()
+  if (!e) return
+  const s = stateOf(o.stage)
+  const term = lossTakesOff(loss.kind, props.day.settings.subtractPreserved) ? -loss.count : null
+  const taken = recordEvents.value.filter(x => x.ofEventId === e.id).reduce((n, x) => n + x.count, 0)
+  const r = planFromTerm(s, o.group, o.index, e.id, { kind: loss.kind, count: loss.count, term }, taken)
+  if (!r.ok) return failIn(o.field, r.reason)
+  opened2.value = null
+  const from = `${o.term > 0 ? '+' : ''}${o.term}${e.dayKnown !== false && e.kind !== 'correction' ? ` of ${noteDay(isoToSerial(e.day))}` : ''}`
+  await apply(r.plan, { notes: [eventNote({ stage: o.stage, kind: loss.kind, count: loss.count, group: nameIn(s, o.group), from }, today.value)] })
+}
+/** The line a loss from the opened term would add to NOTES. */
+const openedNoteFor = (l: { kind: Loss; count: number }) => {
+  const o = opened2.value
+  if (!o?.stage || !editable('NOTES')) return ''
+  return noteLine(eventNote({ stage: o.stage, kind: l.kind, count: l.count, group: nameIn(stateOf(o.stage), o.group), from: `${o.term > 0 ? '+' : ''}${o.term}` }, today.value))
 }
 async function removeOpened() {
   const o = opened2.value
@@ -1104,19 +1178,27 @@ const endedText = (e: ClutchState['ended']) =>
     />
     <EventSheet
       v-if="opened2"
+      :key="`${opened2.field}:${opened2.group}:${opened2.index}`"
       :field="opened2.field"
+      :stage="opened2.stage"
       :term="opened2.term"
       :event="opened2.event"
+      :adopt-day="adoptDay"
       :group="openedGroup"
       :photos="openedPhotos"
+      :losses="openedLosses"
       :can-edit="canEdit"
       :mine="mayChange(opened2.event)"
       :can-photo="inSheet"
+      :busy="openedBusy"
+      :subtract-preserved="day.settings.subtractPreserved"
+      :note-for="openedNoteFor"
       :initials="who"
       @close="opened2 = null"
       @save="saveOpened"
       @remove="removeOpened"
-      @add-photo="(addingPhoto = { day: opened2.event!.day, eventId: opened2.event!.id }), (opened2 = null)"
+      @add-photo="openedPhoto"
+      @loss="lossFromOpened"
       @view-photo="(viewingPhotos = { photos: openedPhotos, index: $event, event: opened2.event }), (opened2 = null)"
     />
     <DayNoteSheet
