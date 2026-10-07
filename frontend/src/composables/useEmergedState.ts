@@ -2,6 +2,7 @@ import { computed, ref, watch, type Ref } from 'vue'
 import { api } from '../lib/api'
 import { todayIso } from '../lib/dates'
 import { YOUNG_BATCH, type Draft, type YoungBatch } from '../lib/emerged'
+import type { IdGap } from '../lib/idGaps'
 import { errorText, notify } from '../lib/notice'
 import { persistentRef } from '../lib/persist'
 import { useLive } from '../stores/live'
@@ -36,6 +37,8 @@ export interface EmergedState {
   /** Sheet row of each free pre-made ID. */
   rowOf: Ref<Map<string, number>>
   idsLoaded: Ref<boolean>
+  /** The runs of free pre-made IDs, newest first («Siguiente ID»: lib/idGaps). */
+  gaps: Ref<IdGap[]>
   loadFreeIds: () => Promise<void>
 }
 
@@ -47,15 +50,19 @@ function create(): EmergedState {
   const inOrder = ref<string[]>([])
   const rowOf = ref(new Map<string, number>())
   const idsLoaded = ref(false)
+  const gaps = ref<IdGap[]>([])
   const drafts = persistentRef<Draft[]>('emerged:drafts', [], { lasting: true })
   let asking: Promise<void> | null = null
   async function loadFreeIds() {
     if (asking) return asking
     asking = (async () => {
       try {
-        const result = await api<{ sequence: string[]; rows: { value: string; row: number }[]; held?: { value: string; row: number }[] }>(
-          'ids?kind=insectary&count=5000',
-        )
+        const [result, runs] = await Promise.all([
+          api<{ sequence: string[]; rows: { value: string; row: number }[]; held?: { value: string; row: number }[] }>('ids?kind=insectary&count=5000'),
+          // The gaps only offer a choice: without them the buttons go on as always.
+          api<{ gaps: IdGap[] }>('ids/gaps').catch(() => ({ gaps: [] as IdGap[] })),
+        ])
+        gaps.value = runs.gaps
         // Rows added in the table and not saved yet hold their IDs too.
         const used = new Set(pending.creates.filter(c => c.module === MODULE).map(c => String(c.values.Insectary_ID).toUpperCase()))
         freeIds.value = result.sequence.filter(id => !used.has(id.toUpperCase()))
@@ -103,6 +110,7 @@ function create(): EmergedState {
     inOrder,
     rowOf,
     idsLoaded,
+    gaps,
     loadFreeIds,
   }
 }

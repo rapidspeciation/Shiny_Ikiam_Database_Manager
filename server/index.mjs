@@ -37,7 +37,7 @@ import {
   storeReviewedWalk,
 } from './monitoring.mjs';
 import { freshCorrections, monitoringRowsCsv, pointsCsv, walksGpx } from './monitoring-export.mjs';
-import { idSuggestions, tableChanges, tableRevision, tableText } from './grid.mjs';
+import { idSuggestions, insectaryGaps, tableChanges, tableRevision, tableText } from './grid.mjs';
 import { holdId, releaseHold } from './holds.mjs';
 import { searchAll, searchRange } from './search.mjs';
 import { extendPremadeRows } from './premade.mjs';
@@ -746,6 +746,8 @@ export async function createApp(config = {}, options = {}) {
       if (method === 'GET' && path === '/api/search') return json(res, 200, searchAll(store, query));
       if (method === 'GET' && path === '/api/search/rows') return json(res, 200, searchRange(store, query));
       if (method === 'GET' && path === '/api/ids') return json(res, 200, idSuggestions(store, query));
+      // The runs of free pre-made Insectary IDs, newest first: Emergidos' «Siguiente ID».
+      if (method === 'GET' && path === '/api/ids/gaps') return json(res, 200, insectaryGaps(store));
       // An Insectary ID held for a card of Emergidos from the tap that gives it (server/holds.mjs).
       if (method === 'POST' && path === '/api/ids/hold') {
         requireEditor(user);

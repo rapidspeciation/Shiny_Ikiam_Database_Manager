@@ -25,6 +25,8 @@ const props = defineProps<{
   problems: string[]
   /** Worth a look, not blocking (an ID from an empty row higher up in the sheet). */
   hint?: string
+  /** Its ID is a row with data (a butterfly of the sheet): what it holds, and whether this card writes over it. */
+  usedRow?: { text: string; row: number; on: boolean } | null
   /** The day shown above (a card of another day says its own). */
   day: string
   canEdit: boolean
@@ -45,7 +47,7 @@ const props = defineProps<{
   /** An egg or larva: what it takes from the batch, short (its own values marked). */
   chips?: { text: string; own: boolean }[]
 }>()
-const emit = defineEmits<{ update: [patch: Partial<Draft>]; remove: []; select: []; accept: [value: string] }>()
+const emit = defineEmits<{ update: [patch: Partial<Draft>]; remove: []; select: []; accept: [value: string]; overwrite: [on: boolean] }>()
 
 const editingId = ref(false)
 const idText = ref('')
@@ -365,9 +367,27 @@ const otherDay = computed(() => props.draft.date !== props.day)
     </div>
     <p v-else-if="draft.note" class="mx-2 mt-1.5 truncate rounded-md bg-stone-100 px-1.5 py-0.5 text-xs text-stone-700">{{ draft.note }}</p>
 
-    <ul v-if="problems.length" class="mt-1.5 space-y-0.5 rounded-b-[10px] border-t border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-950">
-      <li v-for="p in problems" :key="p" class="flex items-start gap-1.5"><AlertTriangle :size="15" class="mt-0.5 shrink-0" />{{ p }}</li>
-    </ul>
+    <div v-if="problems.length" class="mt-1.5 rounded-b-[10px] border-t border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-950">
+      <ul class="space-y-0.5">
+        <li v-for="p in problems" :key="p" class="flex items-start gap-1.5"><AlertTriangle :size="15" class="mt-0.5 shrink-0" />{{ p }}</li>
+      </ul>
+      <!-- A row with data: only on purpose (the save edits it; Historial undoes it). -->
+      <button
+        v-if="usedRow && !usedRow.on && canEdit"
+        type="button"
+        class="mt-1.5 h-10 rounded-lg border border-red-300 bg-white px-3 text-sm font-medium text-red-800 active:bg-red-50"
+        @click="emit('overwrite', true)"
+      >
+        {{ $t('Sobrescribir de todas formas') }}
+      </button>
+    </div>
+    <div v-else-if="usedRow?.on" class="mt-1.5 rounded-b-[10px] border-t border-red-200 bg-red-50 px-3 py-1.5 text-sm text-red-900" role="status">
+      <p class="flex items-start gap-1.5">
+        <AlertTriangle :size="15" class="mt-0.5 shrink-0" />
+        {{ $t('Al guardar se sobrescribe {id} (fila {row}: {what}); se puede deshacer en Historial.', { id: draft.id.trim().toUpperCase(), row: usedRow.row, what: usedRow.text }) }}
+      </p>
+      <button v-if="canEdit" type="button" class="mt-1 h-9 px-1 text-sm font-medium underline" @click="emit('overwrite', false)">{{ $t('No sobrescribir') }}</button>
+    </div>
     <p v-else-if="hint" class="mt-1.5 flex items-start gap-1.5 rounded-b-[10px] border-t border-amber-100 bg-amber-50/60 px-3 py-1.5 text-xs text-amber-900">
       <AlertTriangle :size="14" class="mt-px shrink-0" />{{ hint }}
     </p>

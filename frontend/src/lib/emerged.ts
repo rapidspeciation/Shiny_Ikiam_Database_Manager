@@ -62,6 +62,11 @@ export interface Draft {
   held?: string
   /** Its hold: being asked, not held (someone else has the ID, or it is not free), or no answer (no signal). */
   hold?: 'waiting' | 'refused' | 'offline'
+  /**
+   * «Sobrescribir de todas formas»: the ID (upper case) whose row already holds a butterfly, confirmed to be
+   * written over (an ID changed afterwards needs it again). The save edits that row instead of a free one.
+   */
+  overwrite?: string
 }
 
 /** LIFESTAGE of a butterfly with a date in Intro2Insectary_date (emerged or brought in). */
@@ -264,6 +269,32 @@ export function draftValues(d: Draft, ctx: RowContext): Record<string, CellValue
   // The pre-made row's formulas stay (SPECIES only when what emerged differs; the server checks).
   for (const field of ctx.formulas) if (field !== 'Insectary_ID' && field !== 'SPECIES') delete values[field]
   return values
+}
+
+/** A card confirmed to write over the row of its ID, which holds a butterfly already. */
+export const overwriting = (d: Pick<Draft, 'id' | 'overwrite'>) => !!d.overwrite && d.overwrite === norm(d.id)
+
+/**
+ * The edit that writes a card over a row with data («Sobrescribir de todas
+ * formas»): the card's values as on a new row (the row's own formulas left
+ * alone, SPECIES typed over its formula only when it differs), the cells it
+ * held and the card does not set emptied (a death, a CAM, a note of the old
+ * butterfly), and `expected` what the person saw, so a change meanwhile is
+ * refused rather than lost. Kept in the app and undone from Historial like any save.
+ */
+export function overwriteEdit(
+  d: Draft,
+  row: TableRow,
+  ctx: Omit<RowContext, 'formulas'>,
+): { id: string; values: Record<string, CellValue>; expected: Record<string, CellValue>; replaceFormula: string[] } {
+  const formulas = new Set(row.formulas)
+  const values = draftValues(d, { ...ctx, formulas: row.formulas })
+  delete values.Insectary_ID
+  for (const [field, value] of Object.entries(row.values))
+    if (field !== 'Insectary_ID' && !formulas.has(field) && !(field in values) && !isBlank(value)) values[field] = null
+  for (const field of Object.keys(values)) if (values[field] === (row.values[field] ?? null) && !formulas.has(field)) delete values[field]
+  const expected = Object.fromEntries(Object.keys(values).map(f => [f, row.values[f] ?? null]))
+  return { id: row.id, values, expected, replaceFormula: 'SPECIES' in values && formulas.has('SPECIES') ? ['SPECIES'] : [] }
 }
 
 /** A card that needs a CAM and a tube (killed and preserved, or an egg or larva). */

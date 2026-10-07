@@ -361,6 +361,60 @@ function insectaryIds(store, start, count) {
   };
 }
 
+/**
+ * The gaps of free pre-made Insectary IDs (GET /api/ids/gaps): each run of consecutive
+ * pre-made rows nobody used (no butterfly, nothing typed, named nowhere), newest first.
+ * Emergidos offers them under «Siguiente ID»: a colleague who wrote IDs on paper while
+ * offline records them later from their gap, while the others go on after the last row
+ * used (the gap marked `latest`). IDs held by changes not in the sheet yet (anyone's
+ * cards or entries) stay in their run, counted apart in `held`: `free` and `from`–`to`
+ * are those nobody holds. Rows with data break a run and are never in one. Read from the
+ * same kept rows as the free IDs; kept until the sheets or the claims change.
+ */
+const gapCache = new WeakMap();
+export function insectaryGaps(store) {
+  const base = insectaryBase(store);
+  const stamp = `${base.stamp}|${claimStamp(store, 'insectary')}`;
+  const hit = gapCache.get(store);
+  if (hit?.stamp === stamp) return structuredClone(hit.answer);
+  const norm = value => String(value ?? '').trim().toUpperCase();
+  const claimed = claimedValues(store.db, 'insectary');
+  // Earlier rows of older ID forms (85Y, 6HQ) are not offered (as insectaryIds): they break a run.
+  const round = id => /^[A-ZÑ]\d[A-Z]$/.test(id);
+  const open = new Set(base.rows.filter(r => r.row > base.lastObserved || round(norm(r.values.Insectary_ID))).map(r => r.id));
+  const runs = [];
+  let run = null;
+  for (const r of columnsOf(store, 'Insectary_data', ['Insectary_ID'])) {
+    if (!open.has(r.id)) {
+      run = null;
+      continue;
+    }
+    if (!run) runs.push((run = []));
+    run.push(r);
+  }
+  // The gap the buttons use unless someone chooses another: the one of the first free row after the last one used.
+  const tail = base.rows.filter(r => r.row > base.lastObserved);
+  const first = tail.find(r => !claimed.has(norm(r.values.Insectary_ID))) ?? tail[0];
+  const gaps = runs
+    .map(rows => {
+      const free = rows.filter(r => !claimed.has(norm(r.values.Insectary_ID)));
+      const id = r => (r ? String(r.values.Insectary_ID).trim() : null);
+      return {
+        from: id(free[0]),
+        to: id(free.at(-1)),
+        rowFrom: rows[0].row,
+        rowTo: rows.at(-1).row,
+        free: free.length,
+        held: rows.length - free.length,
+        latest: !!first && rows.includes(first),
+      };
+    })
+    .sort((a, b) => b.rowFrom - a.rowFrom);
+  const answer = { gaps };
+  gapCache.set(store, { stamp, answer });
+  return structuredClone(answer);
+}
+
 const splitId = id => {
   const m = /^([A-Za-z]+)(\d+)$/.exec(String(id).trim());
   return m ? { prefix: m[1], number: Number(m[2]), width: m[2].length } : null;
