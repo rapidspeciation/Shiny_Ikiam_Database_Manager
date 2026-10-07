@@ -972,6 +972,18 @@ const statusText = computed(
               :title="$t('Fila marcada por la IA para que la mires')"
               >{{ $t('marcada') }}</span
             >
+            <span
+              v-if="g.changes.some(c => c.sheetDeath)"
+              class="legend is-dead-sheet"
+              :title="$t('Ya muerta en la hoja (su Death_date): márcala en el cuaderno')"
+              >{{ $t('muerta en la hoja') }}</span
+            >
+            <span
+              v-if="g.changes.some(c => c.diesHere)"
+              class="legend is-dies-here"
+              :title="$t('Muere con esta propuesta (le da su Death_date)')"
+              >{{ $t('muere aquí') }}</span
+            >
           </span>
         </template>
       </ProposalSheet>

@@ -57,6 +57,7 @@ import {
 } from '../../lib/proposals'
 import {
   baseRowKey,
+  deathMark,
   hiddenRange,
   markerKey,
   markerText,
@@ -278,6 +279,8 @@ function toRow(c: ProposalChange): Row {
     JSON.stringify(c.rowTaken ?? null) +
     JSON.stringify(c.outOfOrder ?? null) +
     JSON.stringify(c.repeatOf ?? null) +
+    JSON.stringify(c.sheetDeath ?? c.diesHere ?? null) +
+    (c.sheetDeath ? 'd' : '') +
     (props.notebookOrder ? 'n' : '') +
     (props.editable ? 'e' : '') +
     (c.context ? 'c' : '') +
@@ -333,6 +336,13 @@ function labelFormatter(cell: CellComponent) {
   const row = cell.getData() as Row
   if (row.__marker) return markerCell(cell)
   const change = byKey.get(row.__key)
+  // Dead in the sheet already (marker yellow) or dying through this proposal: on the ID, with when and why.
+  const death = change ? deathMark(change) : null
+  const el = cell.getElement()
+  el.classList.toggle('is-dead-sheet', death?.kind === 'dead')
+  el.classList.toggle('is-dies-here', death?.kind === 'dies')
+  if (death) el.title = death.text
+  else el.removeAttribute('title')
   const chip = change ? repeatChip(change) : null
   if (!chip) return document.createTextNode(row.__label)
   const box = document.createElement('span')
@@ -818,7 +828,11 @@ function describe(cell: CellComponent | null): CellBarInfo | null {
   const base = { index: row.__key, field, row: row.__label, editable: false, multiline: false }
   // The row's own columns: its note (where the values come from), its ID and row number.
   if (field === '__note') return { ...base, column: t('Nota IA'), text: row.__note }
-  if (field === '__label') return { ...base, column: 'ID', text: row.__label }
+  if (field === '__label') {
+    // A butterfly dead in the sheet, or dying here: said in the bar too (a phone has no tooltips).
+    const death = byKey.has(row.__key) ? deathMark(byKey.get(row.__key)!) : null
+    return { ...base, column: 'ID', text: row.__label, ...(death ? { notes: [{ text: death.text, kind: 'hint' as const }] } : {}) }
+  }
   if (field === '__row') return { ...base, column: t('Fila'), text: row.__row }
   if (field === '__line') return { ...base, column: t('Línea'), text: row.__line }
   const c = fieldSet.value.has(field) ? info(row.__key, field) : null
@@ -1966,6 +1980,19 @@ watch(
   font-style: normal;
   font-weight: 600;
   color: #57534e;
+}
+/*
+ * A butterfly dead in the sheet already: its ID in highlighter yellow, as the person marks the line
+ * in the notebook (stronger than the assistant's row mark, which it shows over). Dying through this
+ * proposal: the same yellow as an underline.
+ */
+.proposal-sheet .tabulator-row .tabulator-cell.proposal-label.is-dead-sheet,
+.legend.is-dead-sheet {
+  background: #fde047;
+}
+.proposal-sheet .tabulator-row .tabulator-cell.proposal-label.is-dies-here,
+.legend.is-dies-here {
+  box-shadow: inset 0 -4px 0 #facc15;
 }
 /* A repeated ID (A0E.1): which ID it repeats and that ID's row. */
 .proposal-sheet .repeat-chip,

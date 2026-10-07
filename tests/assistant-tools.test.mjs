@@ -216,9 +216,12 @@ test('match_notebook: rows in the page order, context rows for lines already in 
     await call('match_notebook', { ...PAGE, replaceProposalId: plain.proposalId, includeUnchanged: true }).then(out => {
       assert.equal(out.proposalId, plain.proposalId);
       assert.equal(out.counts.contextRows, 1);
-      // Line 2 has nothing to fill or flag: in the table, counted, not listed in the answer.
-      assert.deepEqual(out.lines.map(l => l.n), [1, 3]);
+      // Nothing to look at: line 1 only fills cells, line 2 is as in the sheet, line 3 a new row (counted, not listed).
+      assert.deepEqual(out.lines, []);
       assert.equal(out.counts.linesAsInSheet, 1);
+      assert.equal(out.counts.linesOnlyFilled, 2);
+      assert.equal(out.counts.newRows, 1);
+      assert.match(out.rest, /get_proposal/);
       assert.equal(out.counts.lines, 3);
     });
     [shown] = await list();

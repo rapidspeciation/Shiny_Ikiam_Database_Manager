@@ -177,3 +177,36 @@ export function lookAt(store, changes, { only = null, told = [], formulaEmpty = 
   if (!Object.keys(out).length) return null;
   return rest ? { ...out, rest: REST } : out;
 }
+
+/** Items per list in a short lookAt (match_notebook answers one per page). */
+const BRIEF_ITEMS = 10;
+/**
+ * A lookAt kept short (match_notebook answers one per page): issues of one kind on one column
+ * (a photo missing on each preserved butterfly) as one item, with the first problem as its
+ * example and how many there are; each list cut at BRIEF_ITEMS. The rest: get_proposal.
+ */
+export function briefLookAt(look) {
+  if (!look) return look;
+  const out = {};
+  let cut = false;
+  for (const [key, value] of Object.entries(look)) {
+    if (!Array.isArray(value)) {
+      if (key !== 'rest' && !/More$/.test(key)) out[key] = value;
+      cut ||= key === 'rest';
+      continue;
+    }
+    let list = value;
+    if (key === 'issues')
+      list = [...Map.groupBy(value, i => [i.sheet, i.kind, i.field].join('\u0000')).values()].flatMap(group => {
+        if (group.length < 3) return group;
+        const rows = group.flatMap(i => i.rows);
+        const more = group.reduce((n, i) => n + (i.moreRows ?? 0), 0) + Math.max(0, rows.length - LOOK_ROWS);
+        return [{ ...group[0], problems: group.length, rows: rows.slice(0, LOOK_ROWS), ...(more ? { moreRows: more } : {}) }];
+      });
+    out[key] = list.slice(0, BRIEF_ITEMS);
+    const more = list.length - BRIEF_ITEMS + (look[`${key}More`] ?? 0);
+    if (more > 0) out[`${key}More`] = more;
+    cut ||= more > 0;
+  }
+  return cut ? { ...out, rest: 'The rest: get_proposal.' } : out;
+}

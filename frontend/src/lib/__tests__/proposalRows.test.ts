@@ -4,6 +4,8 @@ import { rowKey } from '../proposals'
 import {
   PEEK_ROWS,
   baseOf,
+  deathDay,
+  deathMark,
   hiddenRange,
   layRows,
   markerKey,
@@ -264,5 +266,28 @@ describe('the rows’ order is remembered per person', () => {
     writeRowOrder(storage, 'ana', 'notebook')
     expect(readRowOrder(storage, 'ana')).toBe('notebook')
     expect(readRowOrder(storage, 'franz')).toBe('sheet')
+  })
+})
+
+describe('butterflies dead in the sheet, or dying through the proposal', () => {
+  const SEP_28_2026 = 46293
+  it('a death day as the paper says it: day and month this year, with the year another', () => {
+    expect(deathDay(SEP_28_2026, '2026-10-06')).toBe('28-Sep')
+    expect(deathDay(SEP_28_2026 - 365, '2026-10-06')).toBe('28-Sep-25')
+    expect(deathDay('28/9', '2026-10-06')).toBe('28/9')
+  })
+  it('the mark on its ID: dead in the sheet (context rows too) or dying here, with when and why', () => {
+    const today = '2026-10-06'
+    expect(deathMark(row('5VB', 3, 1, { context: true, sheetDeath: { date: SEP_28_2026, cause: 'Unknown' } }), today)).toEqual({
+      kind: 'dead',
+      text: 'muerta en la hoja: 28-Sep, Unknown',
+    })
+    expect(deathMark(row('6VB', 4, 2, { sheetDeath: { date: SEP_28_2026, cause: null } }), today)?.text).toBe('muerta en la hoja: 28-Sep')
+    expect(deathMark(row('7VB', 5, 3, { diesHere: { date: SEP_28_2026 + 2, cause: 'Eaten' } }), today)).toEqual({
+      kind: 'dies',
+      text: 'muere en esta propuesta: 30-Sep, Eaten',
+    })
+    // Independent of the assistant's highlight; nothing on a living butterfly.
+    expect(deathMark(row('8VB', 6, 4, { highlight: true }), today)).toBeNull()
   })
 })

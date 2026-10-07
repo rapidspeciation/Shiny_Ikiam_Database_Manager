@@ -343,12 +343,12 @@ test('match_notebook: a suffixed ID is its own key, and a death line with all it
       ],
     });
     assert.ok(out.proposalId, JSON.stringify(out));
-    const [dup, plain] = out.lines;
-    assert.equal(dup.status, 'match');
-    assert.equal(dup.row, 5, 'W2B.1 is its own row, not W2B');
-    assert.ok(!dup.rowError && !plain.rowError, JSON.stringify(out.lines));
+    // Both lines found and written; only W2B.1 has a cell to look at (its research purpose).
+    assert.deepEqual(out.lines.map(l => [l.label, l.row, l.status, !!l.rowError]), [['W2B.1', 5, 'match', false]], JSON.stringify(out.lines));
+    assert.equal(out.counts.rowsInProposal, 2);
     const proposal = await call('get_proposal', { proposalId: out.proposalId, full: true });
     assert.equal(proposal.rows.length, 2);
+    assert.equal(proposal.rows.find(r => r.label === 'W2B.1').row, 5, 'W2B.1 is its own row, not W2B');
     const death = proposal.rows.find(r => r.label === 'W3B');
     assert.ok(Object.keys(death.values).length >= 18, JSON.stringify(death));
     assert.equal(death.values.Preservation_medium, 'NOT_COLLECTED');

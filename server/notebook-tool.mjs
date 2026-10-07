@@ -5,8 +5,8 @@
 // sums, the SPECIES formula) and turned into one proposal the person reviews
 // beside the chat. Nothing is written until they apply it.
 
-import { readFileSync, realpathSync, statSync } from 'node:fs';
-import { basename, isAbsolute, join, sep } from 'node:path';
+import { lstatSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { moduleMap } from './schema.mjs';
 import { VIEW_UPDATE } from './proposal-view.mjs';
 import { newRowFormulaFields } from './premade.mjs';
@@ -24,6 +24,7 @@ import {
   nearIds,
   proposalRows,
   sameErrorRows,
+  sumTerms,
   typeOf,
   unreadableOf,
 } from './notebook.mjs';
@@ -67,10 +68,10 @@ export const MATCH_NOTEBOOK_TOOL = {
   function: {
     name: 'match_notebook',
     description: [
-      'Match a transcribed notebook page (or envelopes/labels) with the sheet and draft ONE proposal beside the chat; nothing is written until the person applies it. How to read a page and its answer: the digitalizar-cuaderno skill.',
+      'Match a transcribed notebook page (or envelopes/labels) with the sheet and draft ONE proposal beside the chat. How to read a page and its answer: the digitalizar-cuaderno skill.',
       "- `lines` top to bottom, values as written (\"17/9\", \"12+15\"); a cell empty on the page: its column left out. Or `linesFile`: a notebook-reader's file.",
       `- \`year\` only when the page shows it. Without it: the sheet's year for those dates, or the current year for dates from the last ${RECENT_DAYS} days; otherwise the answer asks for it.`,
-      'Answer: proposalId, year/yearSource, counts, the lines with something to fill or flag (status, cells by group, warnings) and `lookAt`.',
+      'Answer: proposalId, year/yearSource, counts, `lookAt` and only the lines that need a look (status, cells by group, warnings); every row: get_proposal.',
       '',
       'Columns per kind:',
       ...KIND_IDS.map(id => `- ${id} (${KINDS[id].label}, ${KINDS[id].sheet}): ${columnsText(id)}`),
@@ -83,7 +84,7 @@ export const MATCH_NOTEBOOK_TOOL = {
         title: { type: 'string', description: 'e.g. "posturas 120–134"' },
         linesFile: {
           type: 'string',
-          description: "A notebook-reader's file (work/…/<page>.json): its lines, spans, kind, year, title, photo and rotate; arguments given here go over it",
+          description: "A notebook-reader's file (work/…/<page>.json; get_proposal saveLines writes one); arguments given here go over it",
         },
         lines: {
           type: 'array',
@@ -119,7 +120,7 @@ export const MATCH_NOTEBOOK_TOOL = {
           description: 'Clockwise turn that makes it upright, as given to crops.py; a list for several photos',
           anyOf: [{ type: 'integer', enum: [0, 90, 180, 270] }, { type: 'array', items: { type: 'integer', enum: [0, 90, 180, 270] } }],
         },
-        replaceProposalId: { type: 'string', description: "This page's pending proposal (any chat's), replaced by a corrected reading" },
+        replaceProposalId: { type: 'string', description: "This page's pending proposal (any chat's), replaced by a corrected reading; edits kept where it reads the same" },
         includeUnchanged: { type: 'boolean', description: 'Lines already in the sheet as grey context rows (never written)' },
         view: VIEW_UPDATE,
       },
@@ -127,30 +128,60 @@ export const MATCH_NOTEBOOK_TOOL = {
   },
 };
 
+const exists = path => {
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * A file in the work/ folder of the person's own T3 workspace (<workspaces>/<username>, as
+ * scripts/t3-provision.mjs makes it), given relative to the workspace or as its full path:
+ * { path } (links followed, still in work/) or { why }. `create`: the file and its folders
+ * may not be there yet.
+ */
+function workFile(given, { workspaces, username }, { create = false } = {}) {
+  const name = String(username ?? '');
+  if (!workspaces || !name || basename(name) !== name || name.startsWith('.')) return { why: 'no workspace of yours on this server', none: true };
+  const root = join(workspaces, name);
+  try {
+    const work = exists(join(root, 'work')) ? realpathSync(join(root, 'work')) : join(realpathSync(root), 'work');
+    // The part of the path that is there, links followed (so a link out of work/ is refused), then the rest.
+    let base = resolve(isAbsolute(given) ? given : join(root, given));
+    const rest = [];
+    while (create && !exists(base) && dirname(base) !== base) {
+      rest.unshift(basename(base));
+      base = dirname(base);
+    }
+    const path = join(realpathSync(base), ...rest);
+    if (!path.startsWith(work + sep)) return { why: "not in this workspace's work/ folder" };
+    if (exists(path) && !statSync(path).isFile()) return { why: 'not a file' };
+    return { path };
+  } catch (e) {
+    return { why: create ? 'cannot be written there' : e.code === 'ENOENT' ? 'not found' : 'cannot be read' };
+  }
+}
+
 /**
  * match_notebook's arguments with a notebook-reader's file (`linesFile`) read in: a JSON file in
- * the work/ folder of the person's own T3 workspace (<workspaces>/<username>, as
- * scripts/t3-provision.mjs makes it), given relative to the workspace or as its full path.
- * The file holds { kind, year, title, photo, rotate, lines, spans } (or only the lines); the
- * arguments given in the call go over it. Returns { args } or { error }.
+ * the work/ folder of the person's own T3 workspace (workFile). The file holds { kind, year,
+ * title, photo, rotate, lines, spans } (or only the lines); the arguments given in the call go
+ * over it. Returns { args } or { error }.
  */
-export function withLinesFile(args, { workspaces, username }) {
+export function withLinesFile(args, workspace) {
   if (args?.linesFile === undefined || args.linesFile === null || args.linesFile === '') return { args };
   const given = String(args.linesFile).trim();
   const fail = why => ({ error: `linesFile ${clip(given, 200)}: ${why}. Nothing was proposed.` });
-  const name = String(username ?? '');
-  if (!workspaces || !name || basename(name) !== name || name.startsWith('.')) return fail('no workspace of yours on this server; give `lines`');
   if (!/\.json$/i.test(given)) return fail('give the .json file the reader wrote in work/');
-  const root = join(workspaces, name);
+  const at = workFile(given, workspace);
+  if (at.why) return fail(at.none ? `${at.why}; give \`lines\`` : at.why);
   let data;
   try {
-    const work = realpathSync(join(root, 'work'));
-    const path = realpathSync(isAbsolute(given) ? given : join(root, given));
-    if (!path.startsWith(work + sep)) return fail("not in this workspace's work/ folder");
-    const stat = statSync(path);
-    if (!stat.isFile()) return fail('not a file');
-    if (stat.size > LINES_FILE_BYTES) return fail(`larger than ${LINES_FILE_BYTES / 1024} KB`);
-    data = JSON.parse(readFileSync(path, 'utf8'));
+    if (statSync(at.path).size > LINES_FILE_BYTES) return fail(`larger than ${LINES_FILE_BYTES / 1024} KB`);
+    data = JSON.parse(readFileSync(at.path, 'utf8'));
   } catch (e) {
     if (e instanceof SyntaxError) return fail(`not valid JSON (${clip(e.message, 120)})`);
     return fail(e.code === 'ENOENT' ? 'not found' : 'cannot be read');
@@ -160,6 +191,133 @@ export function withLinesFile(args, { workspaces, username }) {
   const own = Object.fromEntries(Object.entries(args).filter(([k, v]) => k !== 'linesFile' && v !== undefined && v !== null));
   const read = Object.fromEntries(FILE_KEYS.filter(k => file[k] !== undefined && file[k] !== null).map(k => [k, file[k]]));
   return { args: { ...read, ...own } };
+}
+
+/** A notebook proposal's reason: "Cuaderno Posturas (Insectary_stocks): posturas 838–999". */
+const PAGE_REASON = /^Cuaderno (.+?) \([^)]*\)(?:: (.*))?$/s;
+/** A row's note from match_notebook: "Línea 3: «999 lys (F1) 1/9 12» · …" (a long line is cut). */
+const LINE_NOTE = /^Línea (\d+): «(.*?)(?:»(?= · |$)|$)/s;
+/** The date and initials match_notebook puts before a page's note ("6/10/26 FC: "). */
+const ADDED_NOTE = /^\d{1,2}\/\d{1,2}\/\d{2} \S+: /;
+const NOTE_COLUMN = /^Notes|^NOTES$/;
+const dayText = serial => {
+  const day = new Date(Date.UTC(1899, 11, 30) + serial * 864e5);
+  return `${day.getUTCDate()}/${day.getUTCMonth() + 1}/${day.getUTCFullYear()}`;
+};
+
+/**
+ * A notebook page's proposal as a notebook-reader's file (what match_notebook's `linesFile`
+ * reads), to match the page again with replaceProposalId. The lines in the page's order (as
+ * kept with the proposal; one made before pages were kept: its rows in order, each line as
+ * its note quotes it), each with its key and what the proposal writes now, as a reader gives
+ * it: dates d/m/yyyy, sums as written, a note without the sheet's old note and the date and
+ * initials the match put before it. Formulas and the columns the match implies are left out
+ * (it implies them again); doubtful and unreadable cells keep their confidence, other readings
+ * and the reader's reasons. getRecord(id): a sheet row, for the key of a row the proposal does
+ * not change. Returns { file, left } (left: rows of the sheet that are no line) or { error }.
+ */
+export function proposalPage(proposal, getRecord) {
+  const page = parse(proposal.page_json ?? 'null', null);
+  const reason = PAGE_REASON.exec(String(proposal.reason ?? ''));
+  const kindId = KINDS[page?.kind] ? page.kind : KIND_IDS.find(id => KINDS[id].label === reason?.[1]);
+  if (!kindId) return { error: 'not a notebook page (match_notebook)' };
+  const kind = KINDS[kindId];
+  const columns = new Set(columnsOf(kind));
+  const changes = (parse(proposal.changes_json, []) ?? []).filter(c => c.sheet === kind.sheet && !c.sameErrorAs);
+  const lineOf = c => (Number.isInteger(c.line) ? c.line : Number(LINE_NOTE.exec(String(c.note ?? ''))?.[1]) || null);
+  const text = (field, value) => (typeOf(field) === 'date' && typeof value === 'number' ? dayText(value) : String(value));
+  const some = map => Object.keys(map).length > 0;
+  const lineOut = (n, raw, change, id) => {
+    const values = {};
+    const record = change?.recordId ? getRecord(change.recordId) : null;
+    for (const key of kind.keys) {
+      const value = change?.values?.[key] ?? record?.values?.[key] ?? (kind.keys.length === 1 ? (change?.label ?? id) : null);
+      if (!isNone(value)) values[key] = text(key, value);
+    }
+    const inferred = new Set(change?.inferred ?? []);
+    for (const [field, value] of Object.entries(change?.values ?? {})) {
+      if (kind.keys.includes(field) || !columns.has(field) || inferred.has(field)) continue;
+      // An emptied cell (null) is no reading.
+      if (value === null || typeof value === 'object') continue;
+      if (typeof value === 'string' && value.startsWith('=')) {
+        // A count kept as its sum (=12+15) is what the page says; another formula is the sheet's.
+        if (typeOf(field) === 'number' && sumTerms(value)) values[field] = value.slice(1);
+        continue;
+      }
+      if (NOTE_COLUMN.test(field) && typeof value === 'string') {
+        const before = change.before?.[field];
+        const added = !isNone(before) && value.startsWith(`${before} | `) ? value.slice(String(before).length + 3) : value;
+        values[field] = added.replace(ADDED_NOTE, '');
+        continue;
+      }
+      values[field] = text(field, value);
+    }
+    const confidence = {};
+    const alternatives = {};
+    const reasons = {};
+    for (const [field, doubt] of Object.entries(change?.doubts ?? {})) {
+      if (!(field in values)) continue;
+      if (typeof doubt.confidence === 'number') confidence[field] = doubt.confidence;
+      if (doubt.alternatives?.length) alternatives[field] = doubt.alternatives.map(a => text(field, a));
+      // The reader's own words; a reason of the match's own (reasonMsg) it gives again.
+      if (doubt.reason && !doubt.reasonMsg) reasons[field] = doubt.reason;
+    }
+    for (const [field, cell] of Object.entries(change?.unreadable ?? {})) {
+      if (!columns.has(field) || field in values) continue;
+      values[field] = null;
+      if (cell.partial?.length) alternatives[field] = cell.partial;
+      if (cell.reason) reasons[field] = cell.reason;
+    }
+    return {
+      n,
+      raw,
+      values,
+      ...(some(confidence) ? { confidence } : {}),
+      ...(some(alternatives) ? { alternatives } : {}),
+      ...(some(reasons) ? { reasons } : {}),
+    };
+  };
+  const used = new Set();
+  const lines = Array.isArray(page?.lines)
+    ? page.lines.map(l => {
+        const change = changes.find(c => lineOf(c) === l.n);
+        if (change) used.add(change);
+        return {
+          ...lineOut(l.n, l.raw, change, l.id),
+          ...(l.photo > 0 ? { photo: l.photo } : {}),
+          ...(l.status === 'crossed' ? { crossedOut: true } : {}),
+        };
+      })
+    : changes
+        .filter(c => lineOf(c) !== null)
+        .map(c => {
+          used.add(c);
+          return lineOut(lineOf(c), LINE_NOTE.exec(String(c.note ?? ''))?.[2] ?? String(c.label ?? ''), c, c.label);
+        });
+  if (!lines.length) return { error: 'no lines of a page in it' };
+  const photos = Array.isArray(page?.photos) ? page.photos.filter(p => p?.file) : [];
+  const file = {
+    kind: kindId,
+    ...(reason?.[2] ? { title: reason[2] } : {}),
+    ...(photos.length ? { photo: photos.map(p => p.file), rotate: photos.map(p => p.rotate ?? 0) } : {}),
+    lines,
+  };
+  return { file, left: changes.filter(c => !used.has(c) && !c.context).map(c => c.label) };
+}
+
+/** A notebook-reader's file written in the work/ folder of the person's workspace (workFile): { path } or { error }. */
+export function writeLinesFile(given, file, workspace) {
+  const fail = why => ({ error: `saveLines ${clip(given, 200)}: ${why}` });
+  if (!/\.json$/i.test(given)) return fail('give a .json file in work/');
+  const at = workFile(given, workspace, { create: true });
+  if (at.why) return fail(at.why);
+  try {
+    mkdirSync(dirname(at.path), { recursive: true });
+    writeFileSync(at.path, `${JSON.stringify(file, null, 1)}\n`);
+  } catch {
+    return fail('cannot be written there');
+  }
+  return { path: at.path };
 }
 
 /**
@@ -604,7 +762,23 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
   return { match, speciesOfClutch };
 }
 
-/** What the tool tells Claude about the matched page: per line only what matters (not the equal cells). */
+/** A line's raw text in the answer (Claude wrote it; the start is enough to tell it). */
+const RAW_CHARS = 60;
+/** Lines that need the same look (the same cells, the same warnings) are listed as one entry from this many. */
+const SAME_LINES = 3;
+/** The rows near the page with its slip listed (the rest counted). */
+const SAME_ERROR_LISTED = 10;
+/** The groups of a line's cells that need a look; fill, newRow and implied are in the proposal only. */
+const ATTENTION = ['differs', 'doubtful', 'unreadable', 'problems', 'kept', 'notWritten'];
+/** The lines not listed in match_notebook's answer, and where they are. */
+const NOT_LISTED = 'Lines not listed only fill cells or are as in the sheet; get_proposal shows every row.';
+
+/**
+ * What the tool tells Claude about the matched page, kept short (a page's answer used to be 10–16k
+ * characters; a chat of pages filled its context): counts, the year, and only the lines that need a
+ * look (not found, crossed out, differences, doubts, unreadable cells, problems, warnings), those that
+ * say the same as one entry. The cells a line only fills are in the proposal (get_proposal).
+ */
 export function matchSummary({ review, changes, ignored, wildWithoutCollection = [], sameError = [] }, proposalId) {
   const show = (field, value) =>
     typeOf(field) === 'date' && typeof value === 'number' ? isoOf(value) : value === undefined ? null : value;
@@ -617,7 +791,8 @@ export function matchSummary({ review, changes, ignored, wildWithoutCollection =
   const lines = review.lines.map(l => {
     const out = { n: l.n, raw: l.raw, status: l.status };
     if (l.row) Object.assign(out, { row: l.row, label: l.label });
-    if (l.message) out.message = l.message;
+    // A new row's message only says it is new (counted in newRows).
+    if (l.message && l.status !== 'new') out.message = l.message;
     const group = {};
     for (const [field, cell] of Object.entries(l.cells)) {
       const put = (name, value) => ((group[name] ??= {})[field] = value);
@@ -640,8 +815,10 @@ export function matchSummary({ review, changes, ignored, wildWithoutCollection =
               }),
         });
       else if (cell.status === 'error') put('problems', cell.message);
-      else if (cell.status === 'formula')
-        put('notWritten', cell.message ?? 'formula column');
+      // A formula column the page writes: said only where the sheet's value differs (a sum to fix there).
+      else if (cell.status === 'formula') {
+        if (cell.mismatch) put('notWritten', cell.message ?? 'formula column');
+      }
       // In the proposal, highlighted for the person to check (with these alternatives to pick from).
       else if (cell.doubt && ['fill', 'conflict', 'new'].includes(cell.status))
         put('doubtful', {
@@ -669,10 +846,28 @@ export function matchSummary({ review, changes, ignored, wildWithoutCollection =
     if (context.has(l.n)) out.contextRow = true;
     return out;
   });
-  // A line found in the sheet with nothing to fill or flag is in the table only: counted, not listed.
-  const QUIET = new Set(['n', 'raw', 'status', 'row', 'label', 'same', 'inProposal', 'contextRow']);
-  const quiet = l => l.status === 'match' && !l.inProposal && Object.keys(l).every(k => QUIET.has(k));
-  const listed = lines.filter(l => !quiet(l));
+  // Only the lines that need a look: one not found as read or crossed out, a cell to look at, a warning.
+  const needsLook = l =>
+    !['match', 'new'].includes(l.status) || ATTENTION.some(g => g in l) || !!(l.message || l.didYouMean || l.rowError || l.warnings);
+  const listedLines = lines.filter(needsLook).map(l => {
+    const { fill, newRow, implied, same, ...rest } = l;
+    return { ...rest, raw: rest.raw.length > RAW_CHARS ? `${rest.raw.slice(0, RAW_CHARS - 1)}…` : rest.raw };
+  });
+  // Lines saying the same (a ditto's species unlike the sheet on a whole run) as one entry.
+  const sameKey = ({ n, raw, row, label, message, didYouMean, ...rest }) => (message || didYouMean ? null : JSON.stringify(rest));
+  const byKey = Map.groupBy(listedLines, l => sameKey(l) ?? `\u0000${l.n}`);
+  const listed = [];
+  for (const group of byKey.values()) {
+    if (group.length < SAME_LINES) {
+      listed.push(...group);
+      continue;
+    }
+    const { n, raw, row, label, ...rest } = group[0];
+    listed.push({ lines: group.map(l => l.n), ids: group.map(l => l.label ?? l.raw), ...rest });
+  }
+  listed.sort((a, b) => (a.n ?? a.lines[0]) - (b.n ?? b.lines[0]));
+  const asInSheet = lines.filter(l => l.status === 'match' && !needsLook(l) && !l.inProposal).length;
+  const onlyFilled = lines.length - lines.filter(needsLook).length - asInSheet;
   const c = review.counts;
   return {
     kind: review.kind,
@@ -690,7 +885,8 @@ export function matchSummary({ review, changes, ignored, wildWithoutCollection =
       problems: c.errors,
       newRows: c.created,
       same: c.same,
-      ...(listed.length < lines.length ? { linesAsInSheet: lines.length - listed.length } : {}),
+      ...(asInSheet ? { linesAsInSheet: asInSheet } : {}),
+      ...(onlyFilled ? { linesOnlyFilled: onlyFilled } : {}),
     },
     proposalId: proposalId ?? null,
     ...(ignored.length ? { ignoredColumns: ignored } : {}),
@@ -698,14 +894,19 @@ export function matchSummary({ review, changes, ignored, wildWithoutCollection =
       ? {
           wildWithoutCollection: {
             ids: wildWithoutCollection.map(w => w.id),
-            rows: wildWithoutCollection.map(w => w.row),
-            todo: 'Wild-caught without a Collection_data row: add these rows to this proposal with update_proposal newRows, completed from the page (Collector, Identifier, Collection_location, Collection_time, Rainfall, Cloud_cover, Purpose; NA when the page does not say). The template cells are as the team types a live capture: keep them; leave the death and preservation columns empty.',
+            // The template's cells once; each row its own.
+            template: { sheet: 'Collection_data', values: COLLECTION_TEMPLATES.Collected_Sent2Insectary },
+            rows: wildWithoutCollection.map(w =>
+              Object.fromEntries(Object.entries(w.row.values).filter(([f, v]) => COLLECTION_TEMPLATES.Collected_Sent2Insectary[f] !== v)),
+            ),
+            todo: 'Wild-caught without a Collection_data row: add these rows (each `template` plus its cells) to this proposal with update_proposal newRows, completed from the page (Collector, Identifier, Collection_location, Collection_time, Rainfall, Cloud_cover, Purpose; NA when the page does not say). The template cells are as the team types a live capture: keep them; leave the death and preservation columns empty.',
           },
         }
       : {}),
     ...(sameError.length
       ? {
-          sameErrorNearby: sameError.map(f => ({
+          ...(sameError.length > SAME_ERROR_LISTED ? { sameErrorMore: sameError.length - SAME_ERROR_LISTED } : {}),
+          sameErrorNearby: sameError.slice(0, SAME_ERROR_LISTED).map(f => ({
             row: f.row,
             id: f.label,
             field: f.field,
@@ -718,5 +919,6 @@ export function matchSummary({ review, changes, ignored, wildWithoutCollection =
         }
       : {}),
     lines: listed,
+    ...(listed.length < lines.length ? { rest: NOT_LISTED } : {}),
   };
 }

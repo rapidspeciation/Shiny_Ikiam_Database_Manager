@@ -440,6 +440,15 @@ export default {
   'La fila de {id} es la {row}, aún vacía': 'The row of {id} is {row}, still empty',
   'La fila de {id} es la {row}': 'The row of {id} is {row}',
   'Clic: ir a esa fila': 'Click: go to that row',
+  // A butterfly's death on its ID (lib/proposalRows deathMark)
+  'muerta en la hoja: {date}, {cause}': 'dead in the sheet: {date}, {cause}',
+  'muerta en la hoja: {date}': 'dead in the sheet: {date}',
+  'muere en esta propuesta: {date}, {cause}': 'dies in this proposal: {date}, {cause}',
+  'muere en esta propuesta: {date}': 'dies in this proposal: {date}',
+  'muerta en la hoja': 'dead in the sheet',
+  'muere aquí': 'dies here',
+  'Ya muerta en la hoja (su Death_date): márcala en el cuaderno': 'Already dead in the sheet (its Death_date): mark it in the notebook',
+  'Muere con esta propuesta (le da su Death_date)': 'Dies through this proposal (it gives its Death_date)',
   'El mismo ID se escribió en dos mariposas: la repetida va en su propia fila (con .1, .2…) después de la serie, no en la fila de su ID':
     'The same ID was written on two butterflies: the repeat goes in its own row (with .1, .2…) after the series, not in the row of its ID',
   // The columns' order on a proposal's card (ProposalGrid, ColumnChooser)

@@ -396,6 +396,14 @@ test("show_rows read from notebook photos: any chat's attachments kept with the 
     assert.equal(t.page, undefined);
     assert.ok(t.rows.every(r => !r.page));
     assert.equal((await get(`/api/proposals/${out.tableId}/photos/0`)).status, 404);
+
+    // update_proposal on the table takes its photos as show_rows tableId does; anything else points there.
+    const viaUpdate = await call('update_proposal', { proposalId: out.tableId, photo: [`${THREAD}-aaaa.jpg`], rotate: [90] });
+    assert.equal(viaUpdate.tableId, out.tableId, JSON.stringify(viaUpdate));
+    assert.equal(viaUpdate.photos, 1);
+    [t] = await proposals();
+    assert.equal(t.page.photos, 1);
+    assert.match((await call('update_proposal', { proposalId: out.tableId, rows: [{ index: 0, note: 'x' }] })).error, /show_rows tableId \(rows given here\)/);
   } finally {
     close();
   }

@@ -2,6 +2,7 @@ import type { OrderNote, ProposalChange } from './proposals'
 import type { RowOrder } from './proposalColumns'
 import { t, tn } from './i18n'
 import type { CellValue } from './types'
+import { formatSerial, todayIso } from './dates'
 
 /**
  * The rows of a proposal's table as laid out, between the sheet and the
@@ -383,4 +384,27 @@ export function baseRowKey(c: ProposalChange, changes: ProposalChange[], keyOf: 
   const id = c.repeatOf?.id
   const hit = id ? changes.find(o => o !== c && idKey(idOf(o)) === id) : null
   return hit ? keyOf(hit) : null
+}
+
+/** A death's day as the paper's margin would say it: "28-Sep" this year, "28-Sep-25" another. */
+export function deathDay(date: CellValue, today = todayIso()): string {
+  if (typeof date !== 'number') return String(date ?? '').trim()
+  const day = formatSerial(date)
+  return day.endsWith(`-${today.slice(2, 4)}`) ? day.slice(0, -3) : day
+}
+
+/**
+ * The mark on a butterfly's ID in a proposal's table: dead in the sheet already
+ * («muerta en la hoja: 28-Sep, Unknown»), or dying through this proposal; the
+ * person marks those lines in the paper notebook. Independent of the
+ * assistant's highlight.
+ */
+export function deathMark(c: ProposalChange, today = todayIso()): { kind: 'dead' | 'dies'; text: string } | null {
+  const death = c.sheetDeath ?? c.diesHere
+  if (!death) return null
+  const cause = String(death.cause ?? '').trim()
+  const vars = { date: deathDay(death.date, today), cause }
+  if (c.sheetDeath)
+    return { kind: 'dead', text: cause ? t('muerta en la hoja: {date}, {cause}', vars) : t('muerta en la hoja: {date}', vars) }
+  return { kind: 'dies', text: cause ? t('muere en esta propuesta: {date}, {cause}', vars) : t('muere en esta propuesta: {date}', vars) }
 }

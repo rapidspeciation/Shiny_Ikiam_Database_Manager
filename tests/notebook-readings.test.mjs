@@ -314,9 +314,9 @@ test('a line the save refuses shows as its row with the reason, never as a conte
       (await assistant.mcp({ authorization: 'Bearer tok' }, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } })).body.result.content[0].text,
     );
   const out = await call('match_notebook', { kind: 'emergence', year: 2026, lines, includeUnchanged: true });
-  const p5b = out.lines.find(l => l.n === 1);
-  assert.ok(!p5b.rowError, p5b.rowError);
-  assert.equal(p5b.inProposal, true);
+  // Line 1 has nothing to look at (no rowError): not listed, and its row is in the proposal.
+  assert.ok(!out.lines.some(l => l.n === 1), JSON.stringify(out.lines));
+  assert.equal(out.counts.rowsInProposal, 2);
 
   // A save that refuses the first line: its row shows with the reason, nothing to write.
   const matcher = createNotebookMatcher({

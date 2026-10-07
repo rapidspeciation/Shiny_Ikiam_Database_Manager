@@ -127,6 +127,10 @@ export interface ProposalChange {
   note?: string
   /** Marked by the assistant (update_proposal `highlight`): the whole row yellow, as in show_rows tables. */
   highlight?: boolean
+  /** An Insectary_data butterfly whose sheet row already has a Death_date (read from the sheet when the table is built). */
+  sheetDeath?: Death
+  /** A butterfly this proposal gives a Death_date (the sheet has none; once applied, the one it wrote). */
+  diesHere?: Death
   /** Doubtful cells (match_notebook), by column. */
   doubts?: Record<string, Doubt>
   /** Cells nobody could read (match_notebook), by column: empty until someone fills them. */
@@ -181,6 +185,11 @@ export interface ProposalChange {
    * whether it is still an empty pre-made row), the ID of the row just above it.
    */
   repeatOf?: RepeatOf
+}
+/** A butterfly's death: its date (a sheet serial, or text as typed) and cause. */
+export interface Death {
+  date: CellValue
+  cause: CellValue
 }
 export interface RepeatOf {
   id: string
