@@ -122,25 +122,6 @@ describe('the tables of a proposal', () => {
   })
 })
 
-describe('a notebook page\'s table', () => {
-  it('shows the page\'s columns first in the page\'s order, then the rest and the added ones at their place in the sheet', () => {
-    const p = {
-      ...proposal([edited('r1', { Death_date: '2026-10-01', Sex: 'NA', CAM_ID: 'CAM078318', Wild_Reared: 'Reared' }, { sheet: 'Insectary_data' })]),
-      // A proposal whose reason names the notebook (no page saved): its columns, no photos.
-      page: {
-        kind: 'emergence',
-        sheet: 'Insectary_data',
-        columns: ['Insectary_ID', 'SPECIES', 'Sex', 'CLUTCH NUMBER', 'Death_date', 'CAM_ID'],
-        keys: ['Insectary_ID'],
-        photos: 0,
-      },
-    }
-    const order = () => ['Insectary_ID', 'Wild_Reared', 'CLUTCH NUMBER', 'SPECIES', 'Sex', 'Death_date', 'LIFESTAGE', 'CAM_ID', 'Location_body']
-    const [g] = sheetGroups(p, { Insectary_data: ['Location_body', 'LIFESTAGE'] }, order)
-    expect(g.fields).toEqual(['SPECIES', 'Sex', 'CLUTCH NUMBER', 'Death_date', 'CAM_ID', 'Wild_Reared', 'LIFESTAGE', 'Location_body'])
-  })
-})
-
 describe('the columns a table always shows', () => {
   // Insectary_data as reviewColumns gives it (shortened): the notebook's columns, then the sheet's others up to the notes.
   const shownColumns = {

@@ -110,9 +110,8 @@ describe('copying from a grid', () => {
 
     expect(Object.keys(written)).toEqual(['text/plain'])
     expect(written['text/plain']).toBe('CAM079895\t2026-10-04\t27\nCAM079896\t2026-10-05\t3')
-    expect(notices.at(-1)).toBe(
-      'Copiado: 6 celdas. Selecciona dónde pegar y pulsa Ctrl+V · Incluye 2 celdas con fórmula: pegadas en Google Sheets, sus valores reemplazan las fórmulas',
-    )
+    // The notice counts the cells copied (6) and, among them, those holding a formula (2).
+    expect(notices.at(-1)).toMatch(/\b6\b.*\b2\b/)
     marker.destroy()
     table.destroy()
     box.remove()

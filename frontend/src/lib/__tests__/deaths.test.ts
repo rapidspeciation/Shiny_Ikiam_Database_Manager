@@ -85,7 +85,8 @@ describe('what a death writes', () => {
     expect(cells.CAM_ID).toBe('NA')
     expect(deathCells(r, pendingGet, { serial: DAY, cause: '', notPreserved: false })).toEqual([{ field: 'Death_date', value: DAY }])
   })
-  it('preserved: CAM, the whole body in the first free tube, its medium, the rest NA as Tubos writes it', () => {
+  // Every cell of a preserved body, the same as Tubos writes it: tubes.test.
+  it('preserved over the NOT_COLLECTED an earlier "not preserved" left: the medium is replaced', () => {
     const r = row({ Insectary_ID: 'E1D', T1_Preservation_medium: 'NOT_COLLECTED' })
     const cells = deathCells(r, saved, {
       serial: DAY,
@@ -93,27 +94,8 @@ describe('what a death writes', () => {
       notPreserved: false,
       preserve: { cam: 'CAM078312', tube: 'FS90415421', medium: 'Flash frozen' },
     })
-    expect(asObject(cells)).toEqual({
-      Death_date: DAY,
-      Death_cause: 'Killed_Preserved',
-      CAM_ID: 'CAM078312',
-      Tube_1_id: 'FS90415421',
-      Tube_1_tissue: 'WHOLE_ORGANISM',
-      T1_Preservation_medium: 'Flash frozen',
-      Preservation_date: DAY,
-      Preserved_Dead_Alive: 'Alive',
-      Preservation_medium: 'NOT_COLLECTED',
-      Location_body: 'Ikiam',
-      Tube_2_id: 'NA',
-      Tube_2_tissue: 'NOT_COLLECTED',
-      T2_Preservation_medium: 'NOT_COLLECTED',
-      Tube_3_id: 'NA',
-      Tube_3_tissue: 'NOT_COLLECTED',
-      Tube_4_id: 'NA',
-      Tube_4_tissue: 'NOT_COLLECTED',
-    })
-    // NOT_COLLECTED left by an earlier "not preserved" is replaced.
-    expect(cells.find(c => c.field === 'T1_Preservation_medium')?.overwrite).toBe(true)
+    expect(cells.find(c => c.field === 'T1_Preservation_medium')).toEqual({ field: 'T1_Preservation_medium', value: 'Flash frozen', overwrite: true })
+    expect(asObject(cells)).toMatchObject({ Death_cause: 'Killed_Preserved', Tube_1_id: 'FS90415421', Preserved_Dead_Alive: 'Alive' })
   })
   it('a wing-clipped butterfly found dead keeps its CAM; the body goes to Tube_2, "Dead"', () => {
     const r = row({

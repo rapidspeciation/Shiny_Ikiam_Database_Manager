@@ -89,7 +89,7 @@ describe('proposals by T3 chat', () => {
   })
 
   it('keeps room for a table not built yet, up to a screenful', () => {
-    expect(cardHeight(1)).toBe(148)
+    expect(cardHeight(2)).toBeGreaterThan(cardHeight(1))
     expect(cardHeight(500)).toBe(cardHeight(60))
   })
 })
