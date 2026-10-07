@@ -5,8 +5,10 @@ import CensusStart from '../components/census/CensusStart.vue'
 import CensusRun from '../components/census/CensusRun.vue'
 import CensusReview from '../components/census/CensusReview.vue'
 import CensusSummary from '../components/census/CensusSummary.vue'
+import CensusNotebook from '../components/census/CensusNotebook.vue'
 import { useCensus } from '../composables/useCensus'
 import { useSheet } from '../composables/useSheet'
+import { todayIso } from '../lib/dates'
 
 /**
  * Censo: counting the butterflies of one species alive in the insectary. On
@@ -20,6 +22,8 @@ import { useSheet } from '../composables/useSheet'
  * left (CensusReview) → the disappearances wait in the app for «Guardar en
  * Google Sheets» like Emergidos and Clutches (or, with staged saving off, are
  * written to the sheet), and the notebook's lines to copy (CensusSummary).
+ * «Actualizar el cuaderno» (CensusNotebook) says what to mark on paper after
+ * a day's censuses, for any day and species.
  * The sheet shown carries everyone's entries kept in the app (a butterfly
  * emerged today is on the list; a death kept in the app is not).
  */
@@ -28,9 +32,11 @@ const { table, ready, listColumn } = useSheet(ref('Insectary_data'), ref(true), 
 const collectors = computed(() => listColumn('Abbr_name'))
 const census = useCensus()
 const reviewing = ref(false)
+/** «Actualizar el cuaderno» for any day and species, from the start. */
+const notebook = ref(false)
 const screen = computed(() => {
   const d = census.detail.value
-  if (!census.currentId.value) return 'start'
+  if (!census.currentId.value) return notebook.value ? 'notebook' : 'start'
   if (!d) return 'loading'
   if (d.census.status !== 'open') return 'summary'
   return reviewing.value ? 'review' : 'run'
@@ -60,7 +66,8 @@ function leave() {
     <!-- The disappearances wait in the app with Emergidos and Clutches for «Guardar en Google Sheets» (staged saving on). -->
     <StagedBar />
     <div class="min-h-0 flex-1">
-      <CensusStart v-if="screen === 'start'" />
+      <CensusStart v-if="screen === 'start'" @notebook="notebook = true" />
+      <CensusNotebook v-else-if="screen === 'notebook'" :day="todayIso()" free @leave="notebook = false" />
       <p v-else-if="screen === 'loading'" class="p-6 text-stone-500">{{ $t('Cargando el censo…') }}</p>
       <CensusRun v-else-if="screen === 'run'" :table="table" :ready="ready" @review="reviewing = true" @leave="leave" />
       <CensusReview v-else-if="screen === 'review'" :table="table" :ready="ready" :collectors="collectors" @back="reviewing = false" />

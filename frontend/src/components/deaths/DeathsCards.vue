@@ -23,6 +23,7 @@ import IdSuggestion from '../IdSuggestion.vue'
 import SexBadge from '../SexBadge.vue'
 import LifeBadge from './LifeBadge.vue'
 import DeathsRecorded, { type RecordedItem } from './DeathsRecorded.vue'
+import DeathsHighlights from './DeathsHighlights.vue'
 import TabHistory from '../history/TabHistory.vue'
 import UndoDialog from '../history/UndoDialog.vue'
 import { useDeathsState } from '../../composables/useDeathsState'
@@ -1835,6 +1836,7 @@ const choice = (on: boolean) =>
         @undo="undoDeath"
         @refresh="loadRecorded"
       />
+      <DeathsHighlights />
     </div>
 
     <!-- The right column on a wide screen: the panel, always there, with its button at the foot. -->

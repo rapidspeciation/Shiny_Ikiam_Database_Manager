@@ -71,6 +71,7 @@ import {
   startCensus,
   updateMark,
 } from './census.mjs';
+import { enteredDeaths, notebookUpdate, openedHighlights } from './paper-notebook.mjs';
 import { createSheetHook } from './hooks.mjs';
 import { createInvitations, mailerFromEnv } from './invitations.mjs';
 import { createPasswordResets } from './passwordReset.mjs';
@@ -857,6 +858,10 @@ export async function createApp(config = {}, options = {}) {
         return json(res, 200, startCensus(store, body, user));
       }
       if (method === 'GET' && path === '/api/census/lookalikes') return json(res, 200, { pairs: learnedLookAlikes(store) });
+      // What to mark in the paper Emergidos notebook: a day's censuses (☺ / ✗ / ▬), and the deaths entered since a moment.
+      if (method === 'GET' && path === '/api/census/notebook') return json(res, 200, await notebookUpdate(store, query));
+      if (method === 'GET' && path === '/api/deaths/highlights') return json(res, 200, enteredDeaths(store, query));
+      if (method === 'POST' && path === '/api/deaths/highlights/opened') return json(res, 200, openedHighlights(store, user));
       if (path.startsWith('/api/census/')) {
         const [, , , censusId, part, markId, extra] = path.split('/');
         const id = decodePart(censusId ?? '');

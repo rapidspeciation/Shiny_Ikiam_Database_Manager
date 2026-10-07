@@ -5,7 +5,6 @@ import {
   findingsOf,
   markFinder,
   notSeen,
-  notebookLines,
   progressOf,
   type CensusMark,
   type RosterEntry,
@@ -145,21 +144,7 @@ describe('disappearances', () => {
   })
 })
 
-describe('the notebook lines and the matcher index', () => {
-  it('lists the finished census in Insectary ID order (rows), with the disappearance day as the team writes it', () => {
-    const done = [
-      entry('r3', 'A3B', 4, { status: 'excluded', note: 'Other cage' }),
-      entry('r1', 'A1B', 2, { status: 'seen' }),
-      entry('x', 'B0C', null, { status: 'disappeared' }),
-      entry('r2', 'A2B', 3, { status: 'disappeared' }),
-    ]
-    expect(notebookLines(done, 46300, { seen: '☺', disappeared: 'desaparecida', excluded: 'no contada' })).toEqual([
-      { id: 'A1B', status: 'seen', text: '☺', note: '' },
-      { id: 'A2B', status: 'disappeared', text: 'desaparecida 5/10/26', note: '' },
-      { id: 'A3B', status: 'excluded', text: 'no contada', note: 'Other cage' },
-      { id: 'B0C', status: 'disappeared', text: 'desaparecida 5/10/26', note: '' },
-    ])
-  })
+describe('the matcher index', () => {
   it('keeps repeated IDs (an old dead B9D and a living one) and leaves pre-made rows out', () => {
     const rows: TableRow[] = [
       { id: 'a', row: 2, version: 1, observed: true, values: { Insectary_ID: 'B9D', Death_date: 44000 }, formulas: [] },

@@ -153,28 +153,38 @@ export function aliveButterflies(store, { species = null } = {}) {
     if (want !== null && !inTaxon(want, values.SPECIES)) continue;
     out.push(entryOf(r.id, r.row_num, values, values.SPECIES));
   }
-  // Emerged and not yet in the sheet: its species is its clutch's (the sheet's formula gives it once written).
-  if (staged.creates.length) {
-    const clutchSpecies = new Map();
-    for (const r of store.db
-      .prepare(
-        "SELECT json_extract(values_json,'$.\"CLUTCH NUMBER\"') n, json_extract(values_json,'$.SPECIES') s FROM records WHERE sheet='Insectary_stocks' AND missing=0",
-      )
-      .all())
-      if (!blank(r.n)) clutchSpecies.set(text(r.n), r.s);
-    const premade = store.db.prepare(
-      "SELECT row_num FROM records WHERE sheet=? AND missing=0 AND observed=0 AND upper(trim(json_extract(values_json,'$.Insectary_ID')))=?",
-    );
-    for (const item of staged.creates) {
-      const values = item.values ?? {};
-      if (blank(values.Insectary_ID) || !isAlive(values)) continue;
-      const kind = text(values.SPECIES) || text(clutchSpecies.get(text(values['CLUTCH NUMBER'])));
-      if (want !== null && !inTaxon(want, kind)) continue;
-      const row = premade.get(SHEET, upper(values.Insectary_ID))?.row_num ?? null;
-      out.push(entryOf(item.rowId, row, values, kind, true));
-    }
+  for (const b of stagedButterflies(store, staged)) {
+    if (!isAlive(b.values)) continue;
+    if (want !== null && !inTaxon(want, b.species)) continue;
+    out.push(entryOf(b.recordId, b.row, b.values, b.species, true));
   }
   return out.sort((a, b) => (a.row ?? Infinity) - (b.row ?? Infinity));
+}
+
+/**
+ * The butterflies emerged in Emergidos and kept in the app (not yet in the sheet), with an Insectary ID:
+ * their species is their clutch's (the sheet's formula gives it once written), their row the pre-made one.
+ */
+export function stagedButterflies(store, staged = store.staged.ofSheet(SHEET)) {
+  if (!staged.creates.length) return [];
+  const clutchSpecies = new Map();
+  for (const r of store.db
+    .prepare(
+      "SELECT json_extract(values_json,'$.\"CLUTCH NUMBER\"') n, json_extract(values_json,'$.SPECIES') s FROM records WHERE sheet='Insectary_stocks' AND missing=0",
+    )
+    .all())
+    if (!blank(r.n)) clutchSpecies.set(text(r.n), r.s);
+  const premade = store.db.prepare(
+    "SELECT row_num FROM records WHERE sheet=? AND missing=0 AND observed=0 AND upper(trim(json_extract(values_json,'$.Insectary_ID')))=?",
+  );
+  const out = [];
+  for (const item of staged.creates) {
+    const values = item.values ?? {};
+    if (blank(values.Insectary_ID)) continue;
+    const species = text(values.SPECIES) || text(clutchSpecies.get(text(values['CLUTCH NUMBER'])));
+    out.push({ recordId: item.rowId, row: premade.get(SHEET, upper(values.Insectary_ID))?.row_num ?? null, values, species, item });
+  }
+  return out;
 }
 
 /**

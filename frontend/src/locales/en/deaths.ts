@@ -148,4 +148,23 @@ export default {
   'Deshacer la muerte': 'Undo the death',
   '¿Descartar la muerte de {id}, aún sin guardar?': "Discard {id}'s death, not saved yet?",
   'Esperando a Google Sheets: se podrá deshacer cuando se escriba': 'Waiting for Google Sheets: it can be undone once written',
+  // «Filas para resaltar» (DeathsHighlights)
+  'Filas para resaltar': 'Rows to highlight',
+  '(muertes anotadas en la base, para resaltarlas en el cuaderno)': '(deaths entered in the database, to highlight in the notebook)',
+  'Anotadas desde': 'Entered since',
+  'Anotadas desde:': 'Entered since:',
+  'la última vez que la abrí ({when})': 'the last time I opened it ({when})',
+  'la última vez que la abrí': 'the last time I opened it',
+  '7 días': '7 days',
+  'Desde el día': 'From the day',
+  'Desde {when}. Cuándo se anotó cada muerte sale del Historial (no de su Death_date).':
+    'Since {when}. When each death was entered comes from the History (not from its Death_date).',
+  'El día empieza a las 00:00 de Ecuador.': 'The day starts at 00:00 Ecuador time.',
+  'El historial empieza el {date}: las muertes anotadas antes no salen aquí.': 'The history starts on {date}: deaths entered before it are not listed here.',
+  'anotada {when}': 'entered {when}',
+  'en Google Sheets': 'in Google Sheets',
+  'Filas para resaltar desde {when}': 'Rows to highlight since {when}',
+  'Ninguna muerte anotada desde entonces.': 'No death entered since then.',
+  '{n} fila para resaltar': '{n} row to highlight',
+  '{n} filas para resaltar': '{n} rows to highlight',
 }
