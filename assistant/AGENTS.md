@@ -15,8 +15,8 @@ reads and writes the same workbook. The `ithomiini` tools read and change it.
 | Insectary_stocks | clutch of eggs |
 
 The app's account cannot insert rows: when a row is needed between others (a
-repeated ID's row, `W0B.1`), ask the person to insert it where they want it,
-then fill it with a proposal. A Collection_data capture that was left out
+repeated ID's row, `W0B.1`), tell the person where it goes (see data-rules,
+Duplicates) and ask them to insert it, then fill it with a proposal. A Collection_data capture that was left out
 goes at the end with `newRows`.
 
 Counts, ranges, comparisons across sheets and cell histories take one `query`:
