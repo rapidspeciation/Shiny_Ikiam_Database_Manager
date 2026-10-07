@@ -5,8 +5,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Store } from '../server/store.mjs';
-import { LocalSheets } from '../server/sheets.mjs';
+import { GoogleSheets, LocalSheets } from '../server/sheets.mjs';
+import { SANDBOX_ID } from '../server/workbook.mjs';
 import { moduleMap } from '../server/schema.mjs';
 import { createAssistant } from '../server/assistant.mjs';
 import { checkFormula, formulaKey, sameCell } from '../server/formula-write.mjs';
@@ -140,29 +144,16 @@ test('one row: a formula over a typed value, a plain "=..." stays text, mistakes
   }
 });
 
-test('a proposal that only writes formulas may take 2,000 rows; others 500', async () => {
-  const { store, call } = await fixture(600);
-  try {
-    const formulas = await call('propose_changes', {
-      reason: 'x',
-      bulk: [{ sheet: 'Insectary_data', rows: { from: 2, to: 601 }, set: { T2_Preservation_medium: { formula: NEW } }, onlyWhereFormula: true }],
-    });
-    assert.equal(formulas.rows, 599, JSON.stringify(formulas).slice(0, 300));
-    const plain = await call('propose_changes', { reason: 'x', bulk: [{ sheet: 'Insectary_data', rows: { from: 2, to: 601 }, set: { Sex: 'female' } }] });
-    assert.match(plain.error, /600 rows to change/);
-  } finally {
-    store.close();
-  }
-});
-
-test('a formula proposal longer than one save is written in parts, each its own undoable save', async () => {
+test('a proposal that only writes formulas may take more rows than one save (others 500): written in parts, each its own undoable save', async () => {
   const { store, call, http, cell } = await fixture(600);
   try {
+    const plain = await call('propose_changes', { reason: 'x', bulk: [{ sheet: 'Insectary_data', rows: { from: 2, to: 601 }, set: { Sex: 'female' } }] });
+    assert.match(plain.error, /600 rows to change/);
     const out = await call('propose_changes', {
       reason: 'x',
       bulk: [{ sheet: 'Insectary_data', rows: { from: 2, to: 601 }, set: { T2_Preservation_medium: { formula: NEW } }, onlyWhereFormula: true }],
     });
-    assert.equal(out.rows, 599);
+    assert.equal(out.rows, 599, JSON.stringify(out).slice(0, 300));
     const p = (await http('GET', '/api/chat/proposals')).body.proposals[0];
     const applied = await http('POST', `/api/chat/proposals/${p.id}/apply`, { requestId: randomUUID() });
     assert.equal(applied.status, 200, JSON.stringify(applied.body).slice(0, 300));
@@ -205,13 +196,10 @@ test('while Google does not answer, both parts wait in the app; the proposal is 
   }
 });
 
-test('rows are read 800 at most per request (a formula written down 2,000 rows)', async () => {
-  const { mkdtempSync, writeFileSync } = await import('node:fs');
-  const { tmpdir } = await import('node:os');
-  const { join } = await import('node:path');
-  const { GoogleSheets } = await import('../server/sheets.mjs');
-  const { SANDBOX_ID } = await import('../server/workbook.mjs');
-  const file = join(mkdtempSync(join(tmpdir(), 'rows-')), 'google.json');
+test('rows are read 800 at most per request (a formula written down 2,000 rows)', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'rows-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const file = join(dir, 'google.json');
   writeFileSync(file, JSON.stringify({ client_id: 'c', client_secret: 's', refresh_token: 'r' }));
   const sheets = new GoogleSheets({ spreadsheetId: SANDBOX_ID, googleCredentialsFile: file });
   const requests = [];
