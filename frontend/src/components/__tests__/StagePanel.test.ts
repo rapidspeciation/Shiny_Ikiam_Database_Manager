@@ -38,6 +38,9 @@ const event = (id: string, term: number, groupId: string | null, kind: ClutchEve
 async function mount(value: CellValue, { meta = [] as (GroupRow | null)[], events = [] as ClutchEvent[] } = {}) {
   const acts: StageAct[] = []
   const opened: TermRef[] = []
+  const said: string[] = []
+  const activeTerm = ref<{ group: number; index: number } | null>(null)
+  const inlineOpen = ref(false)
   const selected = ref<number[]>([])
   const host = document.createElement('div')
   document.body.append(host)
@@ -56,8 +59,12 @@ async function mount(value: CellValue, { meta = [] as (GroupRow | null)[], event
         events,
         selected: selected.value,
         'onUpdate:selected': (s: number[]) => (selected.value = s),
+        activeTerm: activeTerm.value,
+        inlineOpen: inlineOpen.value,
         onAct: (a: StageAct) => acts.push(a),
         onOpen: (r: TermRef) => opened.push(r),
+        onPanelOpened: () => said.push('panelOpened'),
+        onEmptyTap: () => said.push('emptyTap'),
       }),
   })
   app.config.globalProperties.$t = t
@@ -77,7 +84,7 @@ async function mount(value: CellValue, { meta = [] as (GroupRow | null)[], event
     input.dispatchEvent(new Event('input'))
     await nextTick()
   }
-  return { host, acts, opened, selected, button, click, type }
+  return { host, acts, opened, said, activeTerm, inlineOpen, selected, button, click, type }
 }
 
 describe('a stage of a clutch', () => {
@@ -100,7 +107,7 @@ describe('a stage of a clutch', () => {
   })
   it('groups are selected by a tap; − then goes to the one selected, the cause first', async () => {
     const m = await mount('=(6)+(5)', { meta: [group('A', 0, 'A'), group('B', 1, 'B')] })
-    await m.click(m.host.querySelectorAll<HTMLButtonElement>('button[aria-pressed]')[1])
+    await m.click(m.host.querySelectorAll<HTMLButtonElement>('button[title="Tap to select the group"]')[1])
     expect(m.selected.value).toEqual([1])
     await nextTick()
     await m.click(m.button(/what happened/))
@@ -126,5 +133,34 @@ describe('a stage of a clutch', () => {
     await m.type(box, '6 5')
     await m.click([...m.host.querySelectorAll<HTMLButtonElement>('button.btn-primary')].find(b => b.textContent?.includes('Regroup'))!)
     expect(m.acts).toEqual([{ type: 'regroup', targets: [6, 5], labels: ['A', 'B'] }])
+  })
+  it('a chip tapped is shown selected (its sheet is the editor’s, under the chips); a tap outside the chips closes it', async () => {
+    const m = await mount('=27-2', { events: [] })
+    await m.click(m.button('+27'))
+    expect(m.opened.map(o => [o.group, o.index, o.term, o.event])).toEqual([[0, 0, 27, null]])
+    m.activeTerm.value = { group: 0, index: 0 }
+    await nextTick()
+    expect(m.button('+27').getAttribute('aria-pressed')).toBe('true')
+    expect(m.button('−2').getAttribute('aria-pressed')).toBe('false')
+    await m.click(m.host.querySelector<HTMLElement>('[aria-label="History of the sum"]')!)
+    expect(m.said).toEqual(['emptyTap'])
+  })
+  it('one area at a time, inline with its title: opening one tells the editor; the editor opening its own closes it; Esc closes it', async () => {
+    const m = await mount('=11')
+    await m.click(m.button('Regroup'))
+    expect(m.said).toEqual(['panelOpened'])
+    expect(m.host.querySelector('[role="group"][aria-label="Regroup"] h3')?.textContent).toBe('Regroup')
+    expect(document.querySelector('.fixed')).toBeNull()
+    m.inlineOpen.value = true
+    await nextTick()
+    await nextTick()
+    expect(m.host.querySelector('input[id^="regroup-"]')).toBeNull()
+    m.inlineOpen.value = false
+    await nextTick()
+    await m.click(m.host.querySelector<HTMLButtonElement>('button[aria-label^="Type the total"]')!)
+    expect(m.host.textContent).toContain("Today's count")
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await nextTick()
+    expect(m.host.querySelector('input[aria-label^="New total"]')).toBeNull()
   })
 })

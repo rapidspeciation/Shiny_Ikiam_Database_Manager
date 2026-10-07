@@ -506,7 +506,7 @@ async function saveOpened(patch: { day?: string; dayKnown?: boolean; kind?: stri
 async function openedPhoto() {
   const e = await ensureEvent()
   if (!e) return
-  addingPhoto.value = { day: e.day, eventId: e.id }
+  addingPhoto.value = { day: e.day, eventId: e.id, field: opened2.value?.field, at: 'term' }
   opened2.value = null
 }
 /** «− De este número»: a loss taken from the opened term, inside its group's parentheses, linked to it. */
@@ -551,7 +551,8 @@ async function removeOpened() {
 }
 
 // --- The day's note (one per clutch and day, only in the app)
-const notingDay = ref(false)
+/** The stage whose area shows the day's note. */
+const notingField = ref<string | null>(null)
 const savingNote = ref(false)
 async function saveDayNote(text: string) {
   const r = row.value
@@ -559,7 +560,7 @@ async function saveDayNote(text: string) {
   savingNote.value = true
   try {
     await props.day.setNote(r.id, text)
-    notingDay.value = false
+    notingField.value = null
   } catch (err) {
     message.value = errorText(err)
   } finally {
@@ -578,7 +579,8 @@ function stagePhoto(stage: Stage) {
   const s = stateOf(stage)
   const sel = selected.value[stage] ?? []
   const m = sel.length === 1 ? s.meta[sel[0]] : null
-  addingPhoto.value = { day: todayIso(), eventId: null, groupId: m?.id ?? null }
+  closeInline()
+  addingPhoto.value = { day: todayIso(), eventId: null, groupId: m?.id ?? null, field: STAGE_FIELD[stage], at: 'panel' }
 }
 /** A group's photos (and its earlier stage's, the group it came from), or the camera for its first. */
 function groupPhotos(stage: Stage, index: number) {
@@ -586,7 +588,10 @@ function groupPhotos(stage: Stage, index: number) {
   if (!m) return
   const photos = recordPhotos.value.filter(p => p.groupId === m.id || (m.originId && p.groupId === m.originId))
   if (photos.length) viewingPhotos.value = { photos, index: 0, event: null, groupId: m.id }
-  else addingPhoto.value = { day: todayIso(), eventId: null, groupId: m.id }
+  else {
+    closeInline()
+    addingPhoto.value = { day: todayIso(), eventId: null, groupId: m.id, field: STAGE_FIELD[stage], at: 'panel' }
+  }
 }
 /** What is left of each group (eggs not hatched yet, larvae not pupated) and the groups of the stage before, for a panel. */
 function leftIn(stage: Stage) {
@@ -685,7 +690,31 @@ const morePreview = computed(() =>
 )
 
 // --- Photos of a chip's event: its photos to see (and add to), or the camera for its first
-const addingPhoto = ref<{ day: string; eventId: string | null; groupId?: string | null } | null>(null)
+/** A photo being added, inline in a stage (`field`): under the chips for a term (`at`), else under the action bar. */
+const addingPhoto = ref<{ day: string; eventId: string | null; groupId?: string | null; field?: string; at?: 'term' | 'panel' } | null>(null)
+/** The stage a photo is added in: the one it names, else the tab shown. */
+const photoField = computed(() => addingPhoto.value?.field ?? STAGE_FIELD[tab.value])
+/** One inline area at a time: what the editor shows in a stage (a term's sheet, a photo, the day's note). */
+const inlineIn = (field: string) => opened2.value?.field === field || (!!addingPhoto.value && photoField.value === field) || notingField.value === field
+function closeInline() {
+  opened2.value = null
+  addingPhoto.value = null
+  notingField.value = null
+}
+/** A chip tapped: its sheet opens under the chips; the same chip again closes it, another switches. */
+function openTerm(ref: TermRef, stage: Stage | null, field: string) {
+  const o = opened2.value
+  if (o && o.field === field && o.group === ref.group && o.index === ref.index) return (opened2.value = null)
+  closeInline()
+  opened2.value = { ...ref, stage, field }
+}
+function openNote(field: string) {
+  const open = notingField.value === field
+  closeInline()
+  if (!open) notingField.value = field
+}
+// Esc: each inline area closes itself (the term's sheet, the photo, the day's note).
+watch(tab, closeInline)
 const viewingPhotos = ref<{ photos: ClutchPhoto[]; index: number; event: ClutchEvent | null; groupId?: string | null } | null>(null)
 function photoRemoved(id: string) {
   record.photoRemoved(id)
@@ -768,7 +797,7 @@ watch(
     steps.value = []
     madeNotes.clear()
     opened2.value = null
-    notingDay.value = false
+    notingField.value = null
     nextTick(() => scroller.value?.scrollTo({ top: 0 }))
   },
   { immediate: true },
@@ -913,14 +942,81 @@ const endedText = (e: ClutchState['ended']) =>
           :can-photo="canEdit && inSheet"
           :undoable="stepsOf(s.count)"
           @act="act(s.stage, s.count, $event)"
-          @open="opened2 = { ...$event, stage: s.stage, field: s.count }"
+          :active-term="opened2 && opened2.field === s.count ? opened2 : null"
+          :inline-open="inlineIn(s.count)"
+          @open="openTerm($event, s.stage, s.count)"
+          @empty-tap="opened2 = null"
+          @panel-opened="closeInline"
           @group-photos="groupPhotos(s.stage, $event)"
           @photo="stagePhoto(s.stage)"
-          @note="notingDay = true"
+          @note="openNote(s.count)"
           @undo="undoStep"
           @back-to-morning="backToMorning(s.count, startOfDay(s.count))"
           @register="preserving = $event"
         >
+          <template #term>
+          <EventSheet
+            v-if="opened2 && opened2.field === s.count"
+            :key="`${opened2.field}:${opened2.group}:${opened2.index}`"
+            :field="opened2.field"
+            :stage="opened2.stage"
+            :term="opened2.term"
+            :event="opened2.event"
+            :adopt-day="adoptDay"
+            :group="openedGroup"
+            :photos="openedPhotos"
+            :losses="openedLosses"
+            :can-edit="canEdit"
+            :mine="mayChange(opened2.event)"
+            :can-photo="inSheet"
+            :busy="openedBusy"
+            :subtract-preserved="day.settings.subtractPreserved"
+            :note-for="openedNoteFor"
+            :initials="who"
+            @close="opened2 = null"
+            @save="saveOpened"
+            @remove="removeOpened"
+            @add-photo="openedPhoto"
+            @loss="lossFromOpened"
+            @view-photo="(viewingPhotos = { photos: openedPhotos, index: $event, event: opened2.event }), (opened2 = null)"
+          />
+          <ClutchPhotoAdd
+            v-else-if="addingPhoto && photoField === s.count && addingPhoto.at === 'term'"
+            inline
+            :record-id="row.id"
+            :clutch="label"
+            :day="addingPhoto.day"
+            :events="recordEvents.filter(e => e.day === addingPhoto!.day && e.kind !== 'transfer')"
+            :event-id="addingPhoto.eventId"
+            :groups="photoGroups"
+            :group-id="addingPhoto.groupId ?? null"
+            @close="addingPhoto = null"
+          />
+          </template>
+          <template #panel>
+          <ClutchPhotoAdd
+            v-if="addingPhoto && photoField === s.count && addingPhoto.at !== 'term'"
+            inline
+            :record-id="row.id"
+            :clutch="label"
+            :day="addingPhoto.day"
+            :events="recordEvents.filter(e => e.day === addingPhoto!.day && e.kind !== 'transfer')"
+            :event-id="addingPhoto.eventId"
+            :groups="photoGroups"
+            :group-id="addingPhoto.groupId ?? null"
+            @close="addingPhoto = null"
+          />
+          <DayNoteSheet
+            v-else-if="notingField === s.count"
+            :clutch="label"
+            :day="todayIso()"
+            :text="status?.note?.text ?? ''"
+            :by="status?.note ? who(status.note.updatedName || '') : null"
+            :saving="savingNote"
+            @close="notingField = null"
+            @save="saveDayNote"
+          />
+          </template>
           <DateRow
             v-if="s.date && has(s.date)"
             :key="`${row.id}:${s.date}`"
@@ -1018,9 +1114,41 @@ const endedText = (e: ClutchState['ended']) =>
                 :more="MORE['NUMBER OF PUPAE/LARVAE FOR DISECTIONS']()"
                 :undoable="stepsOf('NUMBER OF PUPAE/LARVAE FOR DISECTIONS')"
                 @act="act(null, 'NUMBER OF PUPAE/LARVAE FOR DISECTIONS', $event)"
-                @open="opened2 = { ...$event, stage: null, field: 'NUMBER OF PUPAE/LARVAE FOR DISECTIONS' }"
+                :active-term="opened2 && opened2.field === 'NUMBER OF PUPAE/LARVAE FOR DISECTIONS' ? opened2 : null"
+                :inline-open="inlineIn('NUMBER OF PUPAE/LARVAE FOR DISECTIONS')"
+                @open="openTerm($event, null, 'NUMBER OF PUPAE/LARVAE FOR DISECTIONS')"
+                @empty-tap="opened2 = null"
+                @panel-opened="closeInline"
                 @undo="undoStep"
-              />
+              >
+                <template #term>
+                <EventSheet
+                  v-if="opened2 && opened2.field === 'NUMBER OF PUPAE/LARVAE FOR DISECTIONS'"
+                  :key="`${opened2.field}:${opened2.group}:${opened2.index}`"
+                  :field="opened2.field"
+                  :stage="opened2.stage"
+                  :term="opened2.term"
+                  :event="opened2.event"
+                  :adopt-day="adoptDay"
+                  :group="openedGroup"
+                  :photos="openedPhotos"
+                  :losses="openedLosses"
+                  :can-edit="canEdit"
+                  :mine="mayChange(opened2.event)"
+                  :can-photo="inSheet"
+                  :busy="openedBusy"
+                  :subtract-preserved="day.settings.subtractPreserved"
+                  :note-for="openedNoteFor"
+                  :initials="who"
+                  @close="opened2 = null"
+                  @save="saveOpened"
+                  @remove="removeOpened"
+                  @add-photo="openedPhoto"
+                  @loss="lossFromOpened"
+                  @view-photo="(viewingPhotos = { photos: openedPhotos, index: $event, event: opened2.event }), (opened2 = null)"
+                />
+                </template>
+              </StagePanel>
             </section>
             <section v-if="has('Generation')" class="border-t border-stone-100 py-3">
               <span class="field-label">Generation</span>
@@ -1153,18 +1281,7 @@ const endedText = (e: ClutchState['ended']) =>
       </template>
       <button v-else class="btn h-12 px-4" @click="emit('close')">{{ $t('Cerrar') }}</button>
     </footer>
-    <!-- Photos: of an event, a group or the clutch today; to zoom, or the camera for the first. -->
-    <ClutchPhotoAdd
-      v-if="addingPhoto"
-      :record-id="row.id"
-      :clutch="label"
-      :day="addingPhoto.day"
-      :events="recordEvents.filter(e => e.day === addingPhoto!.day && e.kind !== 'transfer')"
-      :event-id="addingPhoto.eventId"
-      :groups="photoGroups"
-      :group-id="addingPhoto.groupId ?? null"
-      @close="addingPhoto = null"
-    />
+    <!-- A photo zoomed (the viewer is full screen). -->
     <ClutchPhotoViewer
       v-if="viewingPhotos && viewingPhotos.photos.length"
       v-model="viewingPhotos.index"
@@ -1175,41 +1292,6 @@ const endedText = (e: ClutchState['ended']) =>
       @add="(addingPhoto = { day: viewingPhotos.event?.day ?? todayIso(), eventId: viewingPhotos.event?.id ?? null, groupId: viewingPhotos.groupId ?? null }), (viewingPhotos = null)"
       @removed="photoRemoved"
       @close="viewingPhotos = null"
-    />
-    <EventSheet
-      v-if="opened2"
-      :key="`${opened2.field}:${opened2.group}:${opened2.index}`"
-      :field="opened2.field"
-      :stage="opened2.stage"
-      :term="opened2.term"
-      :event="opened2.event"
-      :adopt-day="adoptDay"
-      :group="openedGroup"
-      :photos="openedPhotos"
-      :losses="openedLosses"
-      :can-edit="canEdit"
-      :mine="mayChange(opened2.event)"
-      :can-photo="inSheet"
-      :busy="openedBusy"
-      :subtract-preserved="day.settings.subtractPreserved"
-      :note-for="openedNoteFor"
-      :initials="who"
-      @close="opened2 = null"
-      @save="saveOpened"
-      @remove="removeOpened"
-      @add-photo="openedPhoto"
-      @loss="lossFromOpened"
-      @view-photo="(viewingPhotos = { photos: openedPhotos, index: $event, event: opened2.event }), (opened2 = null)"
-    />
-    <DayNoteSheet
-      v-if="notingDay"
-      :clutch="label"
-      :day="todayIso()"
-      :text="status?.note?.text ?? ''"
-      :by="status?.note ? who(status.note.updatedName || '') : null"
-      :saving="savingNote"
-      @close="notingDay = false"
-      @save="saveDayNote"
     />
     <PreserveYoung
       v-if="preserving"

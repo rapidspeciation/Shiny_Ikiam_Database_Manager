@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Camera, Check, CheckSquare, Minus, NotebookPen, PenLine, Plus, Shuffle, Undo2, X } from 'lucide-vue-next'
 import DateField from '../DateField.vue'
 import TermsPreview from './TermsPreview.vue'
+import PanelHead from './PanelHead.vue'
 import {
   LOSSES,
   hasLosses,
@@ -84,6 +85,10 @@ const props = defineProps<{
   canPhoto?: boolean
   /** Steps of this opening that Undo can take back. */
   undoable?: number
+  /** The term whose sheet is open under the chips (its chip shown selected). */
+  activeTerm?: { group: number; index: number } | null
+  /** The clutch editor shows something of this stage inline (a term, a photo, the day's note): this panel's own area closes. */
+  inlineOpen?: boolean
 }>()
 export type StageAct =
   | { type: 'gain'; count: number; groupIndex: number | null; fromIndex: number | null; day: string; dayKnown: boolean }
@@ -109,6 +114,10 @@ const emit = defineEmits<{
   undo: []
   backToMorning: []
   register: [request: { count: number; lifestage: string; done: (ids: string[]) => void }]
+  /** One of this panel's own areas opened (the editor's inline area closes: one at a time). */
+  panelOpened: []
+  /** A tap on the chips row outside any chip (closes the term open). */
+  emptyTap: []
 }>()
 
 const count = computed(() => readCount(props.value))
@@ -205,7 +214,25 @@ const panel = ref<Panel>(null)
 function open(p: Panel) {
   message.value = ''
   panel.value = panel.value === p ? null : p
+  if (panel.value) emit('panelOpened')
 }
+// One inline area at a time: the editor's (a term's sheet, a photo, the day's note) closes this panel's.
+watch(
+  () => props.inlineOpen,
+  on => {
+    if (on) panel.value = null
+  },
+)
+/** Esc closes the area open (its own input's Esc too). */
+function onKey(e: KeyboardEvent) {
+  if (e.key === 'Escape' && panel.value) {
+    panel.value = null
+    e.preventDefault()
+  }
+}
+onMounted(() => window.addEventListener('keydown', onKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+const isActive = (g: number, i: number) => props.activeTerm?.group === g && props.activeTerm?.index === i
 watch(
   () => props.field + String(props.value),
   () => (message.value = ''),
@@ -437,7 +464,7 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
     </div>
 
     <!-- The sum: its terms as chips (each its event), in their groups; «=» and the total, the only one, tapped to correct it. -->
-    <div class="mt-1.5 flex flex-wrap items-center gap-1.5" :aria-label="$t('Historia de la suma')">
+    <div class="mt-1.5 flex flex-wrap items-center gap-1.5" :aria-label="$t('Historia de la suma')" @click.self="emit('emptyTap')">
       <template v-for="(terms, g) in chips" :key="g">
         <div
           v-if="grouped"
@@ -445,6 +472,7 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
           :class="selected.includes(g) ? 'border-brand-600 bg-brand-50' : 'border-stone-200 bg-white'"
           role="group"
           :aria-label="$t('Grupo {name}', { name: nameOf(g) })"
+          @click.self="emit('emptyTap')"
         >
           <button
             type="button"
@@ -473,7 +501,11 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
             :key="c.i"
             type="button"
             class="flex min-h-9 items-center gap-1 rounded-lg px-2 text-sm font-semibold tabular-nums"
-            :class="[c.isToday ? 'bg-amber-100 ring-1 ring-amber-300' : c.term < 0 ? 'bg-red-50' : 'bg-stone-50', c.term < 0 ? 'text-red-800' : 'text-stone-800']"
+            :class="[
+              isActive(c.g, c.i) ? 'bg-brand-700 text-white ring-2 ring-brand-300' : c.isToday ? 'bg-amber-100 ring-1 ring-amber-300' : c.term < 0 ? 'bg-red-50' : 'bg-stone-50',
+              isActive(c.g, c.i) ? '' : c.term < 0 ? 'text-red-800' : 'text-stone-800',
+            ]"
+            :aria-pressed="isActive(c.g, c.i)"
             @click="emit('open', { group: c.g, index: c.i, term: c.term, event: c.e })"
           >
             {{ c.label }}<span v-if="c.taken" class="text-xs text-red-800">(−{{ c.taken }})</span><span v-if="c.when" class="text-xs font-normal opacity-75">· {{ c.when }}</span>
@@ -486,7 +518,11 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
             :key="c.i"
             type="button"
             class="flex min-h-10 items-center gap-1 rounded-lg px-2.5 text-base font-semibold tabular-nums"
-            :class="[c.isToday ? 'bg-amber-100 ring-1 ring-amber-300' : c.term < 0 ? 'bg-red-50' : 'bg-stone-100', c.term < 0 ? 'text-red-800' : 'text-stone-800']"
+            :class="[
+              isActive(c.g, c.i) ? 'bg-brand-700 text-white ring-2 ring-brand-300' : c.isToday ? 'bg-amber-100 ring-1 ring-amber-300' : c.term < 0 ? 'bg-red-50' : 'bg-stone-100',
+              isActive(c.g, c.i) ? '' : c.term < 0 ? 'text-red-800' : 'text-stone-800',
+            ]"
+            :aria-pressed="isActive(c.g, c.i)"
             @click="emit('open', { group: c.g, index: c.i, term: c.term, event: c.e })"
           >
             {{ c.label }}<span v-if="c.taken" class="text-xs text-red-800">(−{{ c.taken }})</span><span v-if="c.when" class="text-xs font-normal opacity-75">· {{ c.when }}</span>
@@ -541,9 +577,12 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
     </p>
     <p v-if="locked" class="mt-1 text-xs text-stone-500">{{ $t('Fórmula de la hoja (solo lectura)') }}</p>
     <p v-else-if="count.text && editable" class="mt-1 text-xs text-amber-900">{{ $t('No es una suma: corrígelo en la tabla') }}</p>
+    <!-- The term chosen: its sheet, right under the chips (the clutch editor's). -->
+    <slot name="term" />
 
     <!-- The total being typed: what it does, a reason if wanted, ✓ / ✕. -->
-    <div v-if="panel === 'total'" class="mt-2 rounded-lg border border-brand-200 bg-brand-50/40 p-2">
+    <div v-if="panel === 'total'" class="mt-2 rounded-lg border border-brand-200 bg-brand-50/40 p-2.5">
+      <PanelHead :title="$t('Total contado hoy')" @close="panel = null" />
       <TermsPreview :text="totalText" counts />
       <p class="text-sm font-medium tabular-nums" :class="counted !== null ? 'text-brand-800' : 'text-stone-600'" role="status">
         {{ totalEffect || $t('Escribe el total contado hoy (un espacio suma: 6 5 = 11)') }}
@@ -599,8 +638,8 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
 
     <!-- +: how many, and (larvae) the day they hatched and the eggs they came from. -->
     <div v-if="panel === 'gain' && canWork" class="mt-2 rounded-lg border border-brand-200 bg-brand-50/40 p-2.5" role="group" :aria-label="gainButton">
+      <PanelHead :title="gainButton" @close="panel = null" />
       <div class="flex items-center gap-2">
-        <span class="text-sm font-medium">{{ gainButton }}</span>
         <input
           ref="gainBox"
           v-model="gainText"
@@ -655,8 +694,9 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
 
     <!-- −: the cause first, then how many. -->
     <div v-if="panel === 'loss' && canWork" class="mt-2 rounded-lg border border-red-200 bg-red-50/40 p-2.5" role="group" :aria-label="$t('Restar')">
+      <PanelHead :title="$t('− ¿Qué pasó?')" @close="panel = null" />
       <template v-if="!lossKind">
-        <p class="text-sm font-medium">{{ $t('¿Qué pasó?') }} <span class="text-xs font-normal text-stone-500">{{ $t('primero la causa, luego cuántas') }}</span></p>
+        <p class="text-xs text-stone-500">{{ $t('primero la causa, luego cuántas') }}</p>
         <div class="mt-1.5 grid grid-cols-2 gap-1.5 min-[420px]:grid-cols-4">
           <button v-for="k in causes" :key="k" type="button" class="btn h-12 justify-center px-1 text-base" :class="k === 'preserved' ? 'border-sky-500 text-sky-900' : 'border-red-300 text-red-800'" @click="pickCause(k)">
             {{ lossWord(k) }}
@@ -757,7 +797,7 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
 
     <!-- Hatched (pupated) from the groups selected: each its count, editable; eggs left as not hatched. -->
     <div v-if="panel === 'moveOn' && canWork" class="mt-2 rounded-lg border border-sky-200 bg-sky-50/50 p-2.5" role="group" :aria-label="moveButton">
-      <p class="text-sm font-medium">{{ moveButton }}</p>
+      <PanelHead :title="moveButton" @close="panel = null" />
       <ul class="mt-1.5 space-y-1.5">
         <li v-for="r in moveRows" :key="r.index" class="flex flex-wrap items-center gap-2">
           <span class="min-w-16 text-sm font-semibold">{{ r.name || $t('Todos') }}</span>
@@ -784,6 +824,7 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
 
     <!-- Regroup: the groups' counts, adding up to the total; or part of the one selected in a group of its own. -->
     <div v-if="panel === 'regroup' && canWork" class="mt-2 rounded-lg border border-stone-300 bg-stone-50 p-2.5" role="group" :aria-label="$t('Reagrupar')">
+      <PanelHead :title="$t('Reagrupar')" @close="panel = null" />
       <label class="block text-sm font-medium" :for="`regroup-${field}`">{{ $t('¿Cuántos en cada grupo? (un espacio separa: 6 5)') }}</label>
       <input
         :id="`regroup-${field}`"
@@ -819,6 +860,7 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
 
     <!-- The whole formula, by hand (advanced). -->
     <div v-if="panel === 'formula' && canWork" class="mt-2 rounded-lg border border-stone-300 bg-white p-2.5">
+      <PanelHead :title="$t('Editar la fórmula')" @close="panel = null" />
       <label class="block text-xs text-stone-600" :for="`formula-${field}`">{{ $t('La fórmula (un espacio suma; «-» resta; paréntesis por grupo)') }}</label>
       <input
         :id="`formula-${field}`"
@@ -850,6 +892,8 @@ const shown = (c: { na: boolean; terms: number[] }) => (c.na ? 'NA' : c.terms.le
       </div>
     </div>
 
+    <!-- The editor's areas of this stage: a photo, the day's note (one area at a time). -->
+    <slot name="panel" />
     <p v-if="message" class="mt-1 text-sm text-red-700" role="alert">{{ message }}</p>
     <slot name="after" />
     <div v-if="canWork && undoable" class="mt-1 flex items-center gap-1">

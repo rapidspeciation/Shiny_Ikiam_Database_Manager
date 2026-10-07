@@ -29,6 +29,8 @@ const props = defineProps<{
   groups?: { id: string; name: string }[]
   /** The group the camera button was for. */
   groupId?: string | null
+  /** Shown inline in the clutch's stage (no overlay); the computer's camera stays its own view. */
+  inline?: boolean
 }>()
 const emit = defineEmits<{ close: [] }>()
 const uploads = usePhotoUploads()
@@ -66,11 +68,19 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" @click.self="emit('close')">
-    <section class="max-h-full w-full overflow-y-auto rounded-t-2xl bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-xl sm:max-w-lg sm:rounded-2xl" role="dialog" :aria-label="$t('Fotos del clutch {clutch}', { clutch })">
+  <div :class="inline ? 'mt-2' : 'fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center'" @click.self="!inline && emit('close')">
+    <section
+      :class="
+        inline
+          ? 'rounded-lg border border-stone-300 bg-white p-2.5'
+          : 'max-h-full w-full overflow-y-auto rounded-t-2xl bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-xl sm:max-w-lg sm:rounded-2xl'
+      "
+      :role="inline ? 'region' : 'dialog'"
+      :aria-label="$t('Fotos del clutch {clutch}', { clutch })"
+    >
       <header class="flex items-center gap-2">
         <Camera :size="20" class="text-stone-600" />
-        <h2 class="min-w-0 flex-1 text-lg font-semibold">{{ $t('Fotos del clutch {clutch}', { clutch }) }}</h2>
+        <h2 class="min-w-0 flex-1 font-semibold" :class="inline ? 'text-sm' : 'text-lg'">{{ $t('Fotos del clutch {clutch}', { clutch }) }}</h2>
         <button class="btn-ghost h-11 w-11 justify-center" :aria-label="$t('Cerrar')" @click="emit('close')"><X :size="22" /></button>
       </header>
       <p class="text-sm text-stone-600">{{ dayLabel(day) }} · {{ $t('solo en la app (no van a Google Sheets)') }}</p>
@@ -132,6 +142,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </button>
       </div>
       <p class="mt-2 text-xs text-stone-500">{{ $t('Se achican en el teléfono (2560 px) antes de enviarse; sin la ubicación GPS.') }}</p>
+      <button v-if="inline" type="button" class="btn mt-2 h-11 w-full" @click="emit('close')">{{ $t('Cancelar') }}</button>
       <input ref="camera" type="file" accept="image/*" capture="environment" class="hidden" @change="chosen" />
       <input ref="gallery" type="file" accept="image/*" multiple class="hidden" @change="chosen" />
     </section>

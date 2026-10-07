@@ -113,29 +113,29 @@ function confirmLoss() {
 }
 
 const confirming = ref(false)
-const onKey = (ev: KeyboardEvent) => ev.key === 'Escape' && emit('close')
+const onKey = (ev: KeyboardEvent) => {
+  if (ev.key !== 'Escape') return
+  if (losing.value) losing.value = false
+  else if (confirming.value) confirming.value = false
+  else emit('close')
+}
 onMounted(() => window.addEventListener('keydown', onKey))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" @click.self="emit('close')">
-    <section
-      class="max-h-full w-full overflow-y-auto rounded-t-2xl bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-xl sm:max-w-lg sm:rounded-2xl"
-      role="dialog"
-      :aria-label="label"
-    >
+  <section class="mt-2 rounded-xl border-2 border-brand-600 bg-white p-3 shadow-sm" role="region" :aria-label="label">
       <header class="flex items-start gap-2">
         <div class="min-w-0 flex-1">
-          <h2 class="text-xl font-semibold tabular-nums" :class="term < 0 ? 'text-red-800' : ''">
+          <h3 class="text-lg font-semibold tabular-nums" :class="term < 0 ? 'text-red-800' : ''">
             {{ label }}<span v-if="losses.length" class="ml-1 text-base font-normal text-red-800">(−{{ taken }})</span>
-          </h2>
+          </h3>
           <p class="text-xs text-stone-500">{{ field }}<template v-if="group"> · {{ $t('grupo {name}', { name: group }) }}</template></p>
           <p v-if="e && !e.adopted" class="text-xs text-stone-500">{{ $t('Registrado por {who} · {when}', { who: initials(e.name || e.username || ''), when: new Date(e.createdAt).toLocaleString() }) }}</p>
           <p v-else-if="!e && withEvents" class="text-xs text-stone-500">{{ $t('Escrito en la hoja o en el cuaderno') }}</p>
         </div>
         <Loader2 v-if="busy" :size="18" class="mt-2 animate-spin text-stone-500" />
-        <button class="btn-ghost h-11 w-11 justify-center" :aria-label="$t('Cerrar')" @click="emit('close')"><X :size="22" /></button>
+        <button type="button" class="grid h-10 w-10 shrink-0 place-items-center rounded-md text-stone-500 active:bg-stone-100" :aria-label="$t('Cerrar')" :title="$t('Cerrar (Esc)')" @click="emit('close')"><X :size="20" /></button>
       </header>
 
       <template v-if="withEvents">
@@ -189,7 +189,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           </div>
         </section>
         <p v-if="e?.ids.length" class="mt-2 text-sm">{{ e.ids.join(', ') }}</p>
-        <button v-if="editable && changed" type="button" class="btn-primary mt-3 h-12 w-full" :disabled="busy" @click="save"><Check :size="18" /> {{ $t('Guardar') }}</button>
 
         <!-- Losses taken from this number, and one more. -->
         <section v-if="gain && stage !== 'adult'" class="mt-4 border-t border-stone-200 pt-3">
@@ -251,6 +250,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <p v-if="e?.kind === 'transfer'" class="mt-2 text-xs text-stone-600">{{ $t('Un traspaso entre grupos se cambia con «Reagrupar» (o «Deshacer el último paso»).') }}</p>
       <p v-if="canEdit && e && !mine" class="mt-2 text-xs text-stone-500">{{ t('Solo quien lo registró (o un revisor) puede cambiarlo.') }}</p>
 
+      <div class="mt-3 flex gap-2">
+        <button type="button" class="btn h-11 flex-1" @click="emit('close')">{{ $t('Cancelar') }}</button>
+        <button type="button" class="btn-primary h-11 flex-[2]" :disabled="busy" @click="editable && changed ? save() : emit('close')"><Check :size="18" /> {{ $t('Listo') }}</button>
+      </div>
+
       <!-- Taking it out of the sum: secondary, at the bottom, with a confirm. -->
       <div v-if="canEdit && (!e || (mine && e.kind !== 'transfer'))" class="mt-4 border-t border-stone-100 pt-2">
         <div v-if="confirming" class="rounded-lg border border-red-300 bg-red-50 p-2.5" role="alertdialog">
@@ -267,6 +271,5 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <Trash2 :size="13" /> {{ $t('Quitar {term} de la suma…', { term: sign }) }}
         </button>
       </div>
-    </section>
-  </div>
+  </section>
 </template>

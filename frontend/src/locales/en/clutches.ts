@@ -409,6 +409,8 @@ export default {
   'Separar del grupo {name} en uno nuevo:': 'Split from group {name} into a new one:',
   Separar: 'Split',
   'Quitar de la suma': 'Take out of the sum',
+  'Total contado hoy': "Today's count",
+  '− ¿Qué pasó?': '− What happened?',
   'Quitar {term} de la suma…': 'Take {term} out of the sum…',
   'Este número solo tiene {n}': 'This number only has {n}',
   'Escrito en la hoja o en el cuaderno': 'Written in the sheet or the notebook',
