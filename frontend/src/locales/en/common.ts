@@ -29,4 +29,19 @@ export default {
   // AppHeader in the offline lab copy (LOCAL_MODE): no link to the team's sheet.
   'Copia de prueba': 'Test copy',
   'Copia sin conexión: los cambios se guardan solo aquí, nunca en la hoja del equipo': 'Offline copy: changes are saved only here, never in the team\'s sheet',
+  // CameraCapture: the computer's camera inside the app (the «Cámara» buttons on a desktop).
+  'Tomar foto': 'Take photo',
+  'Usar foto': 'Use photo',
+  Repetir: 'Retake',
+  'Foto tomada': 'Photo taken',
+  'Cambiar de cámara': 'Switch camera',
+  'Elegir un archivo': 'Choose a file',
+  'No se pudo tomar la foto: vuelve a intentar.': 'Could not take the photo: try again.',
+  'Sin permiso para usar la cámara: permítelo en el navegador (el ícono junto a la dirección) y vuelve a intentar.':
+    'No permission to use the camera: allow it in the browser (the icon next to the address) and try again.',
+  'No se encontró ninguna cámara en este equipo.': 'No camera was found on this computer.',
+  'La cámara está ocupada por otro programa (una videollamada…): ciérralo y vuelve a intentar.':
+    'The camera is in use by another program (a video call…): close it and try again.',
+  'El navegador solo abre la cámara en una dirección segura (https://).': 'The browser only opens the camera on a secure address (https://).',
+  'No se pudo abrir la cámara.': 'Could not open the camera.',
 } as Record<string, string>

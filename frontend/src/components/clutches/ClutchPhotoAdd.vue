@@ -2,6 +2,8 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { Camera, Images, X } from 'lucide-vue-next'
 import { usePhotoUploads } from '../../composables/usePhotoUploads'
+import { cameraMode } from '../../lib/camera'
+import CameraCapture from '../CameraCapture.vue'
 import { PHOTO_CAPTIONS } from '../../lib/clutchPhotos'
 import type { ClutchEvent } from '../../lib/clutches'
 import { dayLabel } from '../../lib/dates'
@@ -11,7 +13,8 @@ import { eventLine } from './eventWords'
  * Photos for a clutch's day: what they show (one of that day's events, "+5
  * eclosionaron", "−1 desaparecieron", or just the day) and a short caption are
  * chosen first, then the camera or the gallery (several at once); choosing them
- * starts sending at once (usePhotoUploads) and closes this sheet.
+ * starts sending at once (usePhotoUploads) and closes this sheet. On a phone the
+ * camera is its camera app; on a computer it opens inside the app (CameraCapture).
  */
 const props = defineProps<{
   recordId: string
@@ -40,11 +43,24 @@ function chosen(e: Event) {
   const input = e.target as HTMLInputElement
   const files = [...(input.files ?? [])].filter(f => f.type.startsWith('image/') || !f.type)
   input.value = ''
+  send(files)
+}
+function send(files: File[]) {
   if (!files.length) return
   void uploads.add(files, { recordId: props.recordId, clutch: props.clutch, day: props.day, eventId: link.value, groupId: group.value, note: note.value.trim() || null })
   emit('close')
 }
-const onKey = (e: KeyboardEvent) => e.key === 'Escape' && emit('close')
+/** The computer's camera, open over this sheet. */
+const inApp = ref(false)
+function openCamera() {
+  if (cameraMode() === 'app') inApp.value = true
+  else camera.value?.click()
+}
+function fileInstead() {
+  inApp.value = false
+  gallery.value?.click()
+}
+const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !inApp.value && emit('close')
 onMounted(() => window.addEventListener('keydown', onKey))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
@@ -108,7 +124,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </label>
 
       <div class="mt-4 grid grid-cols-2 gap-2">
-        <button type="button" class="btn-primary h-14 flex-col justify-center text-base leading-tight" @click="camera?.click()">
+        <button type="button" class="btn-primary h-14 flex-col justify-center text-base leading-tight" @click="openCamera">
           <Camera :size="22" /> {{ $t('Cámara') }}
         </button>
         <button type="button" class="btn h-14 flex-col justify-center text-base leading-tight" @click="gallery?.click()">
@@ -119,5 +135,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <input ref="camera" type="file" accept="image/*" capture="environment" class="hidden" @change="chosen" />
       <input ref="gallery" type="file" accept="image/*" multiple class="hidden" @change="chosen" />
     </section>
+    <CameraCapture
+      v-if="inApp"
+      :title="$t('Fotos del clutch {clutch}', { clutch })"
+      @photo="file => ((inApp = false), send([file]))"
+      @file="fileInstead"
+      @close="inApp = false"
+    />
   </div>
 </template>
