@@ -67,6 +67,11 @@ export class Staged {
     store.outbox.watch(item => {
       if (item.kind === 'staged') this.settled(item);
     });
+    try {
+      this.collapseUnchanged();
+    } catch (e) {
+      console.error('Staged entries back to the sheet:', e.message);
+    }
   }
   /** One staging at a time (they claim identifiers); never behind a write to Google. */
   serial(fn) {
@@ -103,8 +108,35 @@ export class Staged {
   people() {
     return new Map(this.db.prepare('SELECT id, display_name FROM users').all().map(u => [u.id, u.display_name]));
   }
+  /**
+   * A record's waiting cells whose latest entry gives back what the sheet holds (a clutch's sum changed
+   * and changed back in entries made before stageNow cancelled them, or the sheet given that value
+   * meanwhile): taken out (dropWaiting), as nothing is left to save for them. Cells with an entry being
+   * written are left alone. How many cells.
+   */
+  collapseUnchanged() {
+    const latest = new Map();
+    for (const r of this.rows("kind = 'edit' AND status IN ('staged','sent')"))
+      for (const [field, value] of Object.entries(parse(r.values_json) ?? {})) {
+        const key = `${r.record_id}\u0000${field}`;
+        latest.set(key, { recordId: r.record_id, field, value, sent: !!latest.get(key)?.sent || r.status === 'sent' });
+      }
+    let dropped = 0;
+    for (const { recordId, field, value, sent } of latest.values()) {
+      if (sent) continue;
+      const record = this.store.getRecord(recordId);
+      if (!record || record.missing) continue;
+      const sheet = cellOf(record.values, record.formulas, field);
+      if (!sameCell(value, sheet) || !sameCell(sheet, value)) continue;
+      this.dropWaiting(recordId, field);
+      dropped++;
+    }
+    if (dropped) this.store.bumpLive?.('staged');
+    return dropped;
+  }
   /** Everyone's entries not in the sheet yet, and what they claim. */
   list() {
+    this.collapseUnchanged();
     const people = this.people();
     const items = this.rows().map(r => this.shape(r, people));
     // And the Insectary IDs held by cards of Emergidos not saved yet (server/holds.mjs): `hold` is the card.

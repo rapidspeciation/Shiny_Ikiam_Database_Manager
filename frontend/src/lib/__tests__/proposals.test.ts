@@ -82,6 +82,10 @@ describe('a cell of the proposal table', () => {
     expect(cellOf(fresh, 'Sex').kind).toBe('proposed')
     expect(cellOf(fresh, 'Notes_Collection_data')).toMatchObject({ value: null, kind: 'empty' })
     expect(cellOf(fresh, 'Tribe', ['Tribe']).kind).toBe('locked')
+    // A column the app's account cannot write: said as such, never what its formula would give (#VALUE!).
+    const guarded = created('c2', { Sex: 'male' }, { protectedCells: ['Data_entry_order'], formulaGives: { Tribe: 'Ithomiini' } })
+    expect(cellOf(guarded, 'Data_entry_order', ['Data_entry_order'])).toMatchObject({ value: null, kind: 'locked', protectedColumn: true })
+    expect(cellOf(guarded, 'Tribe', ['Tribe']).protectedColumn).toBeUndefined()
     // A new row's cell the person emptied: the assistant's value is kept aside, not written.
     expect(cellOf(created('c1', {}, { personEdits: { Sex: { ai: 'male' } } }), 'Sex')).toMatchObject({
       value: null,

@@ -157,6 +157,10 @@ export class GoogleSheets {
       protectedRanges: source.protectedRanges || [],
     };
   }
+  /** The protected ranges of a tab, from the metadata kept for 30 s (a sync's read has it already). */
+  async protectedRangesOf(sheet) {
+    return (await this.loadMetadata()).get(sheet)?.protectedRanges ?? [];
+  }
   sheetIdOf(sheet) {
     return this.metadata?.get(sheet)?.properties?.sheetId ?? moduleMap.get(sheet)?.sheetId;
   }
@@ -402,12 +406,28 @@ export class LocalSheets {
       })),
     };
   }
+  async protectedRangesOf(sheet) {
+    const sheetId = moduleMap.get(sheet)?.sheetId ?? 0;
+    return (this.protectedRanges[sheet] || []).map(({ requestingUserCanEdit = false, ...range }) => ({
+      range: { sheetId, ...range },
+      requestingUserCanEdit,
+    }));
+  }
   async writeBatch(writes) {
     await this.gate();
     if (this.failNextWrite) {
       const failure = this.failNextWrite;
       this.failNextWrite = null;
       throw failure;
+    }
+    // As Google: a cell in a protected range the credential cannot edit fails the whole batch, before anything is written.
+    for (const write of writes) {
+      if (!write.columns || write.insert) continue;
+      for (const field of Object.keys(write.changes || {})) {
+        const column = write.columns[field];
+        if (column !== undefined && this.isProtected(write.sheet, { startRowIndex: write.row - 1, endRowIndex: write.row, startColumnIndex: column, endColumnIndex: column + 1 }))
+          throw Object.assign(new Error('Google Sheets 400: You are trying to edit a protected cell or object.'), { status: 400 });
+      }
     }
     // Rows inserted or deleted first (as Google applies the requests in order), then the cells.
     const structure = structureRequests(writes, sheet => moduleMap.get(sheet)?.sheetId ?? 0);
