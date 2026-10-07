@@ -10,11 +10,16 @@
 | since 30 Jun 2026 | letter + digit + series letter; the digit runs fastest, then the first letter; 260 per series | `A0A`…`Z9A`, `A0B`…; series E from 29 Sep 2026 |
 
 - The current series has **no Ñ**: `N9D` → `O0D`. The next ID is the next free
-  **pre-made row** (the app's «Siguiente Insectary ID», Inicio). What follows
+  **pre-made row** (the IDs are typed ahead, so a free row is one with no
+  SPECIES or other data) (the app's «Siguiente Insectary ID», Inicio). What follows
   `Z9` of the last series: the team decides when it comes; ask.
-- `A0E`–`A8E` were given out twice: the reared salapia of 20–21 Sep 2026
-  keep the plain IDs, and the wild-caught butterflies of 29 Sep 2026 are
-  `A0E.1`–`A8E.1`. The Panama STRI rows with Insectary_ID `NA` are not ours.
+- The series letter changes only after `Z9`: after `A9D` comes `B0D`. On
+  20–21 Sep 2026 the notebook went from `A9D` to `A0E`, so `A0E`–`A8E` were
+  used before their turn; when the D series really ended (29 Sep), they were
+  given out again. The first ones keep the plain IDs, the 29 Sep ones are
+  `A0E.1`–`A8E.1`. An ID that changes series in the middle of a page is
+  worth pointing out.
+- The Panama STRI rows with Insectary_ID `NA` are not ours.
 - An ID skipped on a page that is otherwise typed (the notebook goes from
   `C4E` to `C9E`, or says «no existe») gets `NA` in Wild_Reared, CLUTCH
   NUMBER, Stock_of_origin, SPECIES, Sex and LIFESTAGE, and the note "ID not

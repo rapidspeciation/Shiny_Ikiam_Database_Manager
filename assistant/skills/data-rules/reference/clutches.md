@@ -28,10 +28,6 @@ values are typed there.
 ## Counts are sums, kept as formulas
 
 - One term per day, plant or group: `=12+15`. Single values too: `=12`.
-- A stage kept in several boxes or plants has one parenthesized sub-sum per
-  group, each with its own dated terms: `=(6-2)+(5+3)` is box A 4 and box B 8
-  (12 in all); moving larvae between groups adds a −N in one and a +N in the
-  other, so the total stays.
 - A minus is a loss: `=27-5` (27 larvae, 5 died). A total corrected later
   becomes a subtraction: `=31+4-34`.
 - NUMBER OF LARVAE holds the larvae used (team convention since Oct 2026):

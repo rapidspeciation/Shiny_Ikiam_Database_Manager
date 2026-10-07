@@ -145,8 +145,7 @@ note "Eaten" ended in 2024.
   days). The butterflies are released one by one and each wing ID is read; a
   butterfly in the insectary that is not seen gets Death_date = the census
   day (not a real death date), Death_cause `Disappearance`, the not-preserved
-  block, and the note "Disappeared in census" ("Disappeared in census of
-  d/m/yy" when entered on another day). The Censo tab does all of this while
+  block, and the note "Disappeared in census of d/m/yy" (the census day). The Censo tab does all of this while
   the census happens. For a single named butterfly missing outside a census,
   ask who handled it last (it may have been taken for an experiment).
 - **A census on paper**: a smiley beside an ID in the Emergidos notebook is a
@@ -165,9 +164,6 @@ note "Eaten" ended in 2024.
   - a death date before the census on a line with a smiley belongs to
     another butterfly: keep it as a note on that line and leave the
     butterflies without a smiley to the census.
-  The team highlights in the notebook every butterfly whose death is in the
-  database; the tables mark those rows, so the person knows which lines to
-  highlight.
 - Weekend deaths are dated the day they were found (often Monday).
 - Partial remains: wings and legs are still preserved; cause from the note.
 

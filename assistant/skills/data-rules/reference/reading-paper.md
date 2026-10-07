@@ -36,7 +36,8 @@ marks and shorthand not listed there.
 - Ticks (✓, `V`, `✓✓`) in the margin or after a clutch number mean the line
   was already typed into the sheet. The tick is not data; the row should
   exist, so compare (expect few changes) and say if it is missing.
-- Highlights: Emergidos, usually dead butterflies; Posturas, finished or dead
+- Highlights: Emergidos, dead butterflies already in the database (the
+  proposal tables mark the rows already dead in the sheet); Posturas, finished or dead
   clutches (green). Orange highlights have no known meaning: ask. A green
   strike-through in 2022 = dead.
 - Pink or red ink = a later correction; the correction is the value.

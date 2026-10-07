@@ -10,7 +10,7 @@ reads and writes the same workbook. The `ithomiini` tools read and change it.
 
 | Sheet | One row per |
 |---|---|
-| Insectary_data | insectary butterfly. Rows are made ahead with their Insectary_ID (`5VB`, `N4D`); the ID is written on the wing, then the butterfly's data are typed into its row. Below the last pre-made ID the rows hold only formulas, so "to the last row" means the last row with an Insectary_ID. |
+| Insectary_data | insectary butterfly. Rows are made ahead with their Insectary_ID (`5VB`, `N4D`); the ID is written on the wing, then the butterfly's data are typed into its row. |
 | Collection_data | field collection or monitoring capture (a recapture is a row of its own). A butterfly taken alive to the insectary also has an Insectary_data row with the same Insectary_ID. |
 | Insectary_stocks | clutch of eggs |
 
@@ -55,14 +55,17 @@ again.
 
 A formula goes into a proposal as `{"formula": "=..."}`, in English with
 commas as the Sheets API takes it (`IF`, `XLOOKUP`; people see `SI`,
-`BUSCARX`). The workbook recalculates after every edit, so a formula or
-conditional format costs time on every save, for everyone: `INDIRECTO` and
-`DESREF` recalculate the whole workbook, and a lookup over a whole column of
-another sheet, copied down thousands of rows, rescans it after each change.
-The proposal answers a `formulaCost` (cells, rows each one scans, what else
-recalculates when those columns change): tell the person, and prefer a
-range that ends at the last used row or a helper column that finds the row
-once.
+`BUSCARX`).
+
+Formulas and conditional formats need to be light: the workbook recalculates
+after every change, and the app waits for it before it can save again. A
+conditional format that marked repeated Insectary IDs using `INDIRECTO` once
+made every change take about 3 minutes, so nobody could save from the app;
+rewritten with a fixed range (`=Y(A2<>"", CONTAR.SI($A$2:$A$20846, A2) > 1)`)
+changes took 1–3 seconds again. Prefer fixed ranges that end near the last
+used row over `INDIRECTO`, `DESREF` or whole-column lookups copied down
+thousands of rows. The proposal answers a `formulaCost`: tell the person
+what it says.
 
 **Emergidos and Clutches entries are kept in the app** until someone presses
 «Guardar en Google Sheets» («Save to Google Sheets»), so they are not in the

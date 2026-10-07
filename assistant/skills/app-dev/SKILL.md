@@ -36,31 +36,23 @@ description: Change the web app itself (Ikiam Insectary DB): its screens, grids,
 - The app writes to the team's **real** Google Sheet: test with the checks
   and tests, not by saving data on the live site.
 
-## What goes live from a chat
+## What a change is for
 
-Changes in one area that the person needs now and the team has agreed on
-(a tool option, a column, a text, a check) are made, tested and deployed
-here. These go instead to a branch `chat/<topic>` on GitHub, with a note in
-the commit on what and why, and the person is told the developer will
-release it:
-
-- a new screen or a redesign;
-- how proposals are saved, written to Google or undone;
-- a rule the team has not agreed yet (ask first; build it once confirmed);
-- a change that only fits by raising a test's limit (tool description and
-  answer sizes keep every chat light).
+A change the person asks for goes live in production here: it is the only
+copy of the app they have to try it. If they don't like it, offer to revert
+it. Ask first only when it changes a rule the whole team follows.
 
 When the app makes the person or you work around it (a note standing in for
 a highlight, empty rows chosen to avoid a protected column), name the change
 in the app that would remove the workaround: it is usually the change to
-make, or to leave on a branch. Before adding an option the AI sets row by
-row, check whether the app could know it by itself (e.g. which rows are
-dead, from Death_date).
+make. Before adding an option the AI sets row by row, check whether the app
+could know it by itself (e.g. which rows are dead, from Death_date). The
+limits in the tests on tool description and answer sizes keep every chat
+light: make a change smaller before raising one.
 
 ## Steps
 
-1. Tell the person in 2–4 lines what will change and whether it goes live
-   today or to a branch.
+1. Tell the person in 2–4 lines what will change.
 2. Several chats share `/home/ubuntu/ithomiini/src`, so work in a copy of
    your own:
    `git -C /home/ubuntu/ithomiini/src fetch -q origin && git -C /home/ubuntu/ithomiini/src worktree add /home/ubuntu/ithomiini/work/<topic> -b chat/<topic> origin/main`,
@@ -90,6 +82,7 @@ dead, from Death_date).
    `"status":"ok"` and an `eventLoop` p99 of a few ms; use the change once
    (e.g. the new option on this chat's proposal). Tell the person to reload
    and what to look at, and say what you could not see on a screen. If
-   something broke, `/home/ubuntu/ithomiini/shared/previous-release` names
-   the release before, and a fix goes through the same steps. Remove the
+   something broke, or the person wants it undone, `git revert` the commit
+   and deploy again (`/home/ubuntu/ithomiini/shared/previous-release` names
+   the release before). Remove the
    worktree when done (`git -C /home/ubuntu/ithomiini/src worktree remove /home/ubuntu/ithomiini/work/<topic>`).

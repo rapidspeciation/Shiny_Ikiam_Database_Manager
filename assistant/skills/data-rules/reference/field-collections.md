@@ -118,7 +118,8 @@ The kind is decided by `Release_Collect` first, then `Purpose`.
 ## Formula columns
 
 Taxonomy (Family, Subfamily, Tribe, Genus), place, photo, rack, manifest and
-Sanger (STS) columns are formulas, and Data_entry_order is protected. A row,
+Sanger (STS) columns are formulas; Data_entry_order, Family to Genus, Country
+and Side_Andes are also protected (the app cannot write them). A row,
 new or existing, leaves them to their formulas: the proposal shows what each
 one will give, and when that is the value wanted nothing is typed there; a
 value is typed over a formula only when the formula gives something else,

@@ -204,9 +204,9 @@ export function disappearanceEdits(
       // Exactly what the cell holds (the server compares it with its copy): '' and NA as they are.
       expected[c.field] = get(row, c.field)
     }
-    // How it was found: «d/m/yy INI: Disappeared in census» after the notes it has (the census day in it when not today).
+    // How it was found: «d/m/yy INI: Disappeared in census of d/m/yy» after the notes it has (the census day always said).
     if (sign) {
-      const text = sign.today === serial ? CENSUS_NOTE : `${CENSUS_NOTE} of ${noteDay(serial)}`
+      const text = `${CENSUS_NOTE} of ${noteDay(serial)}`
       values[NOTES] = appendNote(get(row, NOTES), text, sign.today, sign.initials)
       expected[NOTES] = get(row, NOTES)
     }
