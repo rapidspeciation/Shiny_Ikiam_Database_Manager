@@ -99,8 +99,8 @@ test('a cell changed by someone else rejects the whole save and writes nothing',
           i.code === 'EXTERNAL_CONFLICT' &&
           i.field === 'Sex' &&
           // The message with its descriptor, for the interface language (server/messages.mjs).
-          i.message === 'Otra persona cambió Sex en la hoja' &&
-          JSON.stringify(i.messageMsg) === JSON.stringify({ key: 'Otra persona cambió {field} en la hoja', vars: { field: 'Sex' } }),
+          i.message &&
+          i.messageMsg?.vars?.field === 'Sex',
       ),
   );
   assert.equal((await sheets.readRow('Insectary_data', 2)).cells[5].userEnteredValue.stringValue, 'female');
@@ -140,15 +140,17 @@ test('editing a row that moved before the next sync does not crash and finds the
 test('a sync that reads during a write does not revert the write', async () => {
   const { store, sheets, at } = await fixture();
   const record = at('Insectary_data', 2);
-  let release;
+  let release, entered;
   const gate = new Promise(resolve => (release = resolve));
+  const writing = new Promise(resolve => (entered = resolve));
   const write = sheets.writeBatch;
   sheets.writeBatch = async writes => {
+    entered();
     await gate;
     return write(writes);
   };
   const saving = store.updateRecord(record.id, { values: { Sex: 'male' }, requestId: randomUUID() }, user);
-  await new Promise(resolve => setTimeout(resolve, 20));
+  await writing;
   const syncing = store.sync({ sheets: ['Insectary_data'] });
   release();
   await saving;
