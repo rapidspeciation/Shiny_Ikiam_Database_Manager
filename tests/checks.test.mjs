@@ -145,45 +145,32 @@ test('check_data finds each kind of inconsistency, with the row, the value and t
   const out = checkData(store, { limit: 500 });
   // Each problem comes with its descriptor for the interface language, built from the same template.
   sameTexts(out.issues);
-  assert.deepEqual(out.counts, {
-    repeat: 2,
-    id_format: 0,
-    cam_cross: 2,
-    list: 1,
-    insectary_link: 4,
-    link_mismatch: 2,
-    date_order: 2,
-    future_date: 1,
-    bad_date: 1,
-    missing_sample: 3,
-    preserved_na: 0,
-    stage_adult: 0,
-    mark_reuse: 1,
-    walk_doubt: 0,
-    photo_camid: 0,
-    photo_extra: 0,
-    envelope_sex: 0,
-    envelope_species: 0,
-    photo_missing: 0,
-    ai_species: 0,
-  });
+  // The problems planted in the fixture, and nothing more.
+  const planted = { repeat: 2, cam_cross: 2, list: 1, insectary_link: 4, link_mismatch: 2, date_order: 2, future_date: 1, bad_date: 1, missing_sample: 3, mark_reuse: 1 };
+  for (const [kind, n] of Object.entries(out.counts)) assert.equal(n, planted[kind] ?? 0, kind);
+  for (const kind of Object.keys(planted)) assert.ok(kind in out.counts, kind);
   // A number that is no date, flagged once (not as a date in the future), with the day its note gives.
   const broken = find(out, 'bad_date', 'SamplingDay_data', 2, 'Date');
-  assert.match(broken.problem, /375004 \(año 2926\), que no es una fecha/);
+  assert.deepEqual(broken.problemMsg.vars, { field: 'Date', value: 375004, year: 2926 });
   assert.deepEqual(broken.fix.values, { Date: '2026-09-21' });
   // Tubes are unique across the workbook.
-  assert.match(find(out, 'repeat', 'Collection_data', 9, 'Tube_1_id').problem, /FS00000010 también está en Insectary_data fila 2/);
+  const tube = find(out, 'repeat', 'Collection_data', 9, 'Tube_1_id').problemMsg.vars;
+  assert.equal(tube.value, 'FS00000010');
+  assert.deepEqual(tube.places.map(p => p.vars), [{ sheet: 'Insectary_data', row: 2 }]);
   // A CAM given to a field butterfly and to an insectary butterfly.
-  assert.match(find(out, 'cam_cross', 'Collection_data', 5, 'CAM_ID').problem, /Insectary_data fila 2 \(N5D\)/);
+  assert.deepEqual(find(out, 'cam_cross', 'Collection_data', 5, 'CAM_ID').problemMsg.vars.rows.map(r => r.vars), [
+    { sheet: 'Insectary_data', row: 2, label: 'N5D' },
+  ]);
   // Outside the strict Sex list, with the obvious spelling as fix.
   const sex = find(out, 'list', 'Collection_data', 5, 'Sex');
   assert.equal(sex.value, 'female_?');
   assert.deepEqual(sex.fix, { recordId: sex.recordId, values: { Sex: 'female ?' } });
   // Both directions of the Collection ↔ Insectary link.
-  assert.match(find(out, 'insectary_link', 'Collection_data', 3).problem, /N9Z no tiene fila en Insectary_data/);
-  assert.match(find(out, 'insectary_link', 'Collection_data', 4).problem, /sin Insectary_ID/);
-  assert.match(find(out, 'insectary_link', 'Collection_data', 10).problem, /N7D en Insectary_data \(fila 4\) está vacía/);
-  assert.match(find(out, 'insectary_link', 'Insectary_data', 3).problem, /N6D sin fila en Collection_data/);
+  const link = (sheet, row) => find(out, 'insectary_link', sheet, row).problemMsg.vars;
+  assert.deepEqual(link('Collection_data', 3), { id: 'N9Z' }); // no row in Insectary_data
+  assert.equal(link('Collection_data', 4), undefined); // sent to the insectary without an ID
+  assert.deepEqual(link('Collection_data', 10), { id: 'N7D', row: 4 }); // its row there is empty
+  assert.deepEqual(link('Insectary_data', 3), { id: 'N6D' }); // wild, without its Collection_data row
   // The same butterfly described differently in the two sheets.
   const species = find(out, 'link_mismatch', 'Insectary_data', 2, 'SPECIES');
   assert.equal(species.related[0].row, 2);
@@ -200,7 +187,7 @@ test('check_data finds each kind of inconsistency, with the row, the value and t
   assert.ok(find(out, 'missing_sample', 'Collection_data', 6, 'CAM_ID'));
   // The later butterfly with B40 is the one listed; marks are compared without case.
   const mark = find(out, 'mark_reuse', 'Collection_data', 8, 'FieldMark_ID');
-  assert.match(mark.problem, /B40 ya se usó para Oleria gunilla \(fila 7, 2026-05-10\)/);
+  assert.deepEqual(mark.problemMsg.vars, { mark: 'B40', species: 'Oleria gunilla', row: 7, date: '2026-05-10', here: 'Hyposcada illinissa' });
   store.close();
 });
 
@@ -320,14 +307,18 @@ test('walk_doubt lists the Wikiloc points stored without a row, until a person p
   assert.equal(tie.label, 'Wikiloc 08/09/2025 AA');
   assert.equal(tie.link, '#/monitoreo?vista=dudas');
   assert.deepEqual(tie.walk, { trackId: track.id, index: 0, date: '2025-09-08', collector: 'AA - Alex Arias', name: 'Monitoreo 8/9/2025', wikiloc: null });
-  assert.match(tie.problem, /del recorrido del 08\/09\/2025 \(AA - Alex Arias\) guardado sin fila: empate con otra fila\. Puede ser la fila \d \(/);
-  assert.match(tie.problem, /Emparéjalo en Monitoreo → Dudas/);
+  const said = issue => {
+    const { day, collector, why, options } = issue.problemMsg.vars;
+    return { day, collector, why: why.key, rows: [options.vars.a.vars.row, options.vars.b.vars.row] };
+  };
+  assert.deepEqual(said(tie), { day: '08/09/2025', collector: 'AA - Alex Arias', why: 'empate con otra fila', rows: [2, 3] });
   assert.equal(tie.fix, undefined);
   assert.deepEqual(tie.related.map(r => r.row).sort(), [2, 3]);
   // Nothing fits "Planta": no row, the free rows of the day to choose from.
   assert.equal(plant.row, null);
   assert.equal(plant.recordId, null);
-  assert.match(plant.problem, /ninguna fila encaja\. Puede ser la fila 2 .* o la fila 3/);
+  assert.deepEqual(said(plant).why, 'ninguna fila encaja');
+  assert.deepEqual(said(plant).rows, [2, 3]);
   // Paired in Dudas: gone from the list at once (the scan follows the stored walks too).
   linkCapture(store, track.id, { index: 2, recordId: null });
   assert.deepEqual(
@@ -465,11 +456,11 @@ test('missing_sample and preserved_na: an insectary butterfly preserved by its c
     'preserved_na K1K Death_cause',
   ]);
   const d5d = find(out, 'missing_sample', 'Insectary_data', 2, 'CAM_ID');
-  assert.equal(d5d.problem, 'Preservada (Death_cause Killed_Preserved, Preserved_Dead_Alive Alive) sin CAM_ID');
+  assert.deepEqual(d5d.problemMsg.vars, { why: ['Death_cause Killed_Preserved', 'Preserved_Dead_Alive Alive'], field: 'CAM_ID' });
   // Nobody is named: the issue says what is missing, not whom to ask.
   assert.equal(d5d.ask, undefined);
   const k1k = find(out, 'preserved_na', 'Insectary_data', 6);
-  assert.match(k1k.problem, /CAM_ID y los tubos dicen NA \(no preservada\)$/);
+  assert.deepEqual(k1k.problemMsg.vars, { why: ['Death_cause Killed_Preserved'] });
 
   // Alerts: the recent ones, asking the team, with a link to the row; the full list apart.
   const data = alerts(store);
@@ -484,10 +475,9 @@ test('missing_sample and preserved_na: an insectary butterfly preserved by its c
   const D5D = store.getRecordBySheetRow('Insectary_data', 2);
   const alert = data.alerts.find(a => a.id === `sample:${D5D.id}`);
   assert.equal(alert.level, 'warn');
-  assert.equal(alert.text, `D5D (Mechanitis lysimnia) preservada el ${dayFirst(today - 10)} sin CAM/tubo — pregunta al equipo`);
-  assert.equal(alert.textMsg.key, '{id} ({species}) preservada el {date} sin CAM/tubo — pregunta al equipo');
+  assert.deepEqual(alert.textMsg.vars, { id: 'D5D', species: 'Mechanitis lysimnia', date: dayFirst(today - 10) });
   assert.equal(alert.link, '#/tablas?hoja=Insectary_data&buscar=D5D');
-  assert.match(data.alerts.find(a => a.id === `sample:${K1K.id}`).text, /^K1K .*Killed_Preserved.*NA — pregunta al equipo$/);
+  assert.equal(data.alerts.find(a => a.id === `sample:${K1K.id}`).textMsg.vars.id, 'K1K');
   // Older than 180 days: in the list, not an alert.
   assert.ok(!data.alerts.some(a => a.text.startsWith('B1B')));
 
@@ -580,7 +570,7 @@ test('stage_adult: a date in Intro2Insectary_date with an egg, larva or pupa sta
     const out = checkData(store, { kind: 'stage_adult', limit: 50 });
     sameTexts(out.issues);
     assert.deepEqual(out.issues.map(i => `${i.label} ${i.field}`).sort(), ['A1A LIFESTAGE', 'A2A LIFESTAGE', 'A3A LIFESTAGE']);
-    assert.match(out.issues.find(i => i.label === 'A2A').problem, /Pupa day 4.*2026-10-04/);
+    assert.deepEqual(out.issues.find(i => i.label === 'A2A').problemMsg.vars, { stage: 'Pupa day 4', date: '2026-10-04' });
   } finally {
     store.close();
   }
