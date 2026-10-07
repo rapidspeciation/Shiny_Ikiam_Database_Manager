@@ -189,24 +189,24 @@ test('the document tools reach T3 Code and Claude through MCP, and /api/knowledg
 });
 
 test('sync_documents starts the Drive sync unit on request and reports when the mirror is fresh', async () => {
-  const { mkdtempSync, mkdirSync, writeFileSync, chmodSync } = await import('node:fs');
-  const { tmpdir } = await import('node:os');
-  const { join } = await import('node:path');
-  const { createKnowledge, runKnowledgeTool } = await import('../server/knowledge.mjs');
-  const root = mkdtempSync(join(tmpdir(), 'ks-sync-'));
-  mkdirSync(join(root, 'drive'));
-  const manifest = join(root, 'drive', 'manifest.json');
-  writeFileSync(manifest, JSON.stringify({ version: 1, syncedAt: '2026-09-29T04:37:32.036Z', files: {} }));
-  // A stub systemctl: "start" writes a newer manifest, "is-active" says the run is over.
-  const stub = join(root, 'systemctl');
-  writeFileSync(
-    stub,
-    `#!/bin/sh\ncase "$2" in start) echo '{"version":1,"syncedAt":"2026-09-29T12:00:00.000Z","files":{}}' > ${manifest};; is-active) echo inactive; exit 3;; esac\n`,
-  );
-  chmodSync(stub, 0o755);
-  const knowledge = createKnowledge({ knowledgeRoots: [root], systemctl: stub, syncPollMs: 10 });
-  const out = await runKnowledgeTool(knowledge, 'sync_documents', {}, { sources: new Map() });
-  assert.equal(out.running, false);
-  assert.equal(out.lastSync, '2026-09-29T12:00:00.000Z');
-  assert.match(out.note, /al día/);
+  const root = await mkdtemp(join(tmpdir(), 'ks-sync-'));
+  try {
+    await mkdir(join(root, 'drive'));
+    const manifest = join(root, 'drive', 'manifest.json');
+    await writeFile(manifest, JSON.stringify({ version: 1, syncedAt: '2026-09-29T04:37:32.036Z', files: {} }));
+    // A stub systemctl: "start" writes a newer manifest, "is-active" says the run is over.
+    const stub = join(root, 'systemctl');
+    await writeFile(
+      stub,
+      `#!/bin/sh\ncase "$2" in start) echo '{"version":1,"syncedAt":"2026-09-29T12:00:00.000Z","files":{}}' > ${manifest};; is-active) echo inactive; exit 3;; esac\n`,
+      { mode: 0o755 },
+    );
+    const knowledge = createKnowledge({ knowledgeRoots: [root], systemctl: stub, syncPollMs: 10 });
+    const out = await runKnowledgeTool(knowledge, 'sync_documents', {}, { sources: new Map() });
+    assert.equal(out.running, false);
+    assert.equal(out.lastSync, '2026-09-29T12:00:00.000Z');
+    assert.match(out.note, /al día/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
