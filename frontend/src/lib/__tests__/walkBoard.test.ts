@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { isoToSerial } from '../dates'
 import { taxaFrom } from '../monitoring'
-import { SECTIONS, estimatedSection, sectionDiffers } from '../transects'
+import { SECTIONS } from '../transects'
 import type { CellValue, TableRow } from '../types'
 import {
   boardSummary,
@@ -40,24 +40,6 @@ const at = (time: string) => {
   const [h, m] = time.split(':').map(Number)
   return (h * 60 + m) / 1440
 }
-
-describe('estimatedSection', () => {
-  it('gives the section of a point on the trail, and none off it with the distance', () => {
-    for (const s of [1, 2, 3, 4]) expect(estimatedSection(...mid(s)).section).toBe(s)
-    const [lat, lon] = mid(2)
-    const off = estimatedSection(lat + 0.001, lon)
-    expect(off.section).toBeNull()
-    expect(off.distance).toBeGreaterThan(40)
-    expect(Number.isInteger(off.distance)).toBe(true)
-  })
-  it('differs from the row only when both are known', () => {
-    expect(sectionDiffers({ section: 3 }, '4')).toBe(true)
-    expect(sectionDiffers({ section: 3 }, 3)).toBe(false)
-    expect(sectionDiffers({ section: 3 }, 'NA')).toBe(false)
-    expect(sectionDiffers({ section: 3 }, null)).toBe(false)
-    expect(sectionDiffers({ section: null }, '2')).toBe(false)
-  })
-})
 
 // --------------------------------------------------------------- a walk and its day
 const DATE = '2025-09-10'

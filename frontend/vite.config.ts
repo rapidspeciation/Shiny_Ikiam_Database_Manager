@@ -17,7 +17,7 @@ const version = {
 }
 
 // Lib tests that need a page (document, window or localStorage).
-const libWithPage = ['camera', 'cellBar', 'clipboard', 'gridKeys', 'gridKit', 'pendingStaged', 'proposalColumns', 'saveChecks'].map(
+const libWithPage = ['camera', 'cellBar', 'clipboard', 'gridKeys', 'proposalColumns'].map(
   name => `src/lib/__tests__/${name}.test.ts`,
 )
 
