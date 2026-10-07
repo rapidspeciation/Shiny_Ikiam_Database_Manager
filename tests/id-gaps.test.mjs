@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { insectaryGaps } from '../server/grid.mjs';
+import { idSuggestions, insectaryGaps, insectaryStart } from '../server/grid.mjs';
 import { holdId, releaseHold } from '../server/holds.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { Store } from '../server/store.mjs';
@@ -64,6 +64,11 @@ test('the gaps: runs of free pre-made rows, newest first, the one after the last
       'A4E-A6E:6-8:3/0',
       'A1E-A2E:3-4:2/0',
     ]);
+    // Other columns of Insectary_data read meanwhile (the next CAM): the latest gap is still marked.
+    idSuggestions(store, { kind: 'cam' });
+    holdId(store, { key: randomUUID(), value: 'A1E' }, luis);
+    assert.equal(insectaryGaps(store).gaps.filter(g => g.latest).length, 1);
+    assert.ok(insectaryGaps(store).gaps[0].latest);
   } finally {
     store.close();
   }
@@ -160,6 +165,62 @@ test('a row with data is never taken by a new row; overwriting it is an edit kep
     assert.equal(cellIn(sheets, 'Insectary_data', 5, 'Sex'), 'female');
     assert.equal(cellIn(sheets, 'Insectary_data', 5, 'Intro2Insectary_date'), 46290);
     assert.equal(cellIn(sheets, 'Insectary_data', 5, 'Notes_Insectary_data'), 'old note');
+  } finally {
+    store.close();
+  }
+});
+
+test('an ID typed in «Siguiente ID»: free starts there (its gap); used, held, typed in or beyond the rows refused with the next free one', async () => {
+  const { store } = await fixture();
+  try {
+    // Free: the buttons start there, within its run (A4E–A6E kept from A5E on).
+    const a5 = insectaryStart(store, ' a5e ', ana);
+    assert.equal(a5.ok, true);
+    assert.equal(a5.value, 'A5E');
+    assert.equal(a5.row, 7);
+    assert.deepEqual([a5.gap.rowFrom, a5.gap.rowTo, a5.gap.latest], [6, 8, false]);
+    assert.equal(insectaryStart(store, 'B1E', ana).gap.latest, true);
+    // A butterfly's row: refused, the next free one after it offered.
+    assert.deepEqual(insectaryStart(store, 'A3E', ana), { ok: false, value: 'A3E', code: 'USED', row: 5, next: 'A4E' });
+    // Something typed in the row (a skipped ID's note).
+    assert.deepEqual(insectaryStart(store, 'A7E', ana), { ok: false, value: 'A7E', code: 'TYPED', next: 'A8E' });
+    // Held by someone else's card: refused with who; by this person's own card: fine (the next card follows it).
+    holdId(store, { key: randomUUID(), value: 'B0E' }, luis);
+    assert.deepEqual(insectaryStart(store, 'B0E', ana), { ok: false, value: 'B0E', code: 'CLAIMED', holder: 'Luis', next: 'B1E' });
+    const mine = insectaryStart(store, 'B0E', luis);
+    assert.equal(mine.ok, true);
+    assert.equal(mine.mine, true);
+    // After the last pre-made row: refused, saying which one is the last.
+    assert.deepEqual(insectaryStart(store, 'B5E', ana), { ok: false, value: 'B5E', code: 'BEYOND', last: 'B2E', next: 'B1E' });
+    // Not an ID of the series at all.
+    assert.equal(insectaryStart(store, 'ZZZ9', ana).code, 'NOT_PREMADE');
+    assert.equal(insectaryStart(store, '', ana).code, 'INVALID');
+  } finally {
+    store.close();
+  }
+});
+
+test('an ID another sheet names is refused, as one with two pre-made rows', async () => {
+  const sheets = new LocalSheets(
+    {
+      Insectary_data: [
+        { row: 2, values: { Insectary_ID: 'A0E', Sex: 'male', 'CLUTCH NUMBER': 1 } },
+        { row: 3, values: { Insectary_ID: 'A1E' } },
+        { row: 4, values: { Insectary_ID: 'A2E' } },
+        { row: 5, values: { Insectary_ID: 'A2E' } },
+        { row: 6, values: { Insectary_ID: 'A3E' } },
+      ],
+      Collection_data: [{ row: 2, values: { Insectary_ID: 'A1E', CAM_ID: 'CAM000001' } }],
+    },
+    { health: { probeMs: 20 } },
+  );
+  const store = new Store({ localMode: true }, { sheets });
+  await store.sync({ sheets: ['Insectary_data', 'Collection_data'] });
+  try {
+    assert.deepEqual(insectaryStart(store, 'A1E', ana), { ok: false, value: 'A1E', code: 'NAMED', sheet: 'Collection_data', next: 'A3E' });
+    assert.equal(insectaryStart(store, 'A2E', ana).code, 'DUPLICATE');
+    assert.equal(insectaryStart(store, 'A2E', ana).next, 'A3E');
+    assert.equal(insectaryStart(store, 'A3E', ana).ok, true);
   } finally {
     store.close();
   }

@@ -75,6 +75,12 @@ export const ADULT = 'Adult'
 export const LIFESTAGES = ['Egg', '1st instar larva', '2nd instar larva', '3rd instar larva', '4th instar larva', '5th instar larva', 'Pre-pupa']
 /** F1 larvae are preserved at the 3rd instar (the team, 5 Oct 2026). */
 export const DEFAULT_STAGE = '3rd instar larva'
+/** A pupa preserved: its day as a pupa, as the sheet's LIFESTAGE list writes it (Pupa day 1 … Pupa day 12). */
+export const PUPA_STAGES = Array.from({ length: 12 }, (_, i) => `Pupa day ${i + 1}`)
+/** Every stage an egg, larva or pupa can be preserved at («+ Preservados…»), in the list's order. */
+export const PRESERVED_STAGES = [...LIFESTAGES, ...PUPA_STAGES]
+/** Which count of the clutch a stage belongs to: eggs, larvae (prepupae too) or pupae. */
+export const stageGroup = (stage: string): 'egg' | 'larva' | 'pupa' => (stage === 'Egg' ? 'egg' : /^Pupa day /.test(stage) ? 'pupa' : 'larva')
 
 /** Phrases written in the Emergidos notebook's notes (English, as in the sheet): quick buttons. */
 export const EMERGED_NOTE_PHRASES = [
@@ -201,7 +207,7 @@ export interface RowContext {
 
 /** The note a card adds by default: an egg or larva preserved, as the team writes it ("Preserved alive 3rd instar"). */
 export function youngNote(stage: string, foundDead: boolean): string {
-  const what = stage === 'Egg' ? 'egg' : stage === 'Pre-pupa' ? 'prepupa' : stage.replace(/ larva$/, '')
+  const what = stage === 'Egg' ? 'egg' : stage === 'Pre-pupa' ? 'prepupa' : stageGroup(stage) === 'pupa' ? stage.toLowerCase() : stage.replace(/ larva$/, '')
   return foundDead ? `Found dead, ${what}` : `Preserved alive ${what}`
 }
 
@@ -454,10 +460,10 @@ export function youngSamples(
 
 // --- The clutch's row in Insectary_stocks
 
-/** Eggs or larvae preserved on one day, of one stage, alive or found dead: one note in NOTES. */
+/** Eggs, larvae or pupae preserved on one day, of one stage, alive or found dead: one note in NOTES. */
 export interface YoungGroup {
   day: number
-  stage: 'egg' | 'larva'
+  stage: 'egg' | 'larva' | 'pupa'
   lifestage: string
   dead: boolean
   ids: string[]
@@ -472,7 +478,10 @@ export interface ClutchTally {
   /** Of those, the ones found dead (preserved, but a death: always taken off the count). */
   eggsDead: number
   larvaeDead: number
-  /** The days eggs or larvae were preserved (serials). */
+  /** Pupae preserved (Pupa day N), and those found dead: taken off NUMBER OF PUPA as larvae off theirs. */
+  pupae?: number
+  pupaeDead?: number
+  /** The days eggs, larvae or pupae were preserved (serials). */
   preservedOn: number[]
   /** The eggs and larvae by day, stage and fate, with their Insectary IDs (for the notes). */
   groups: YoungGroup[]
@@ -484,17 +493,20 @@ export function tallies(drafts: Draft[]): ClutchTally[] {
     const serial = serialFromIso(d.date)
     if (serial === null) continue
     let t = out.get(d.clutch)
-    if (!t) out.set(d.clutch, (t = { clutch: d.clutch, adults: [], eggs: 0, larvae: 0, eggsDead: 0, larvaeDead: 0, preservedOn: [], groups: [], byDay: new Map() }))
+    if (!t) out.set(d.clutch, (t = { clutch: d.clutch, adults: [], eggs: 0, larvae: 0, eggsDead: 0, larvaeDead: 0, pupae: 0, pupaeDead: 0, preservedOn: [], groups: [], byDay: new Map() }))
     if (d.kind === 'adult') t.byDay.set(serial, (t.byDay.get(serial) ?? 0) + 1)
     else {
-      const stage = d.stage === 'Egg' ? 'egg' : 'larva'
+      const stage = stageGroup(d.stage || DEFAULT_STAGE)
       const lifestage = d.stage || DEFAULT_STAGE
       let g = t.groups.find(x => x.day === serial && x.stage === stage && x.lifestage === lifestage && x.dead === d.foundDead)
       if (!g) t.groups.push((g = { day: serial, stage, lifestage, dead: d.foundDead, ids: [] }))
       g.ids.push(norm(d.id))
-      if (d.stage === 'Egg') {
+      if (stage === 'egg') {
         t.eggs++
         if (d.foundDead) t.eggsDead++
+      } else if (stage === 'pupa') {
+        t.pupae = (t.pupae ?? 0) + 1
+        if (d.foundDead) t.pupaeDead = (t.pupaeDead ?? 0) + 1
       } else {
         t.larvae++
         if (d.foundDead) t.larvaeDead++
@@ -524,8 +536,8 @@ export interface StockPlan {
 /**
  * What the clutch's row gets for a save's cards: each emergence day's adults
  * as one more term of NUMBER OF ADULTS (=2+2 → =2+2+3), EMERGENCE DATE when
- * empty (the first day); eggs and larvae preserved taken off NUMBER OF EGGS /
- * NUMBER OF LARVAE (−3) as the team's setting says (`subtractPreserved`,
+ * empty (the first day); eggs, larvae and pupae preserved taken off NUMBER OF EGGS /
+ * NUMBER OF LARVAE / NUMBER OF PUPA (−3) as the team's setting says (`subtractPreserved`,
  * Clutches' settings: kept counted by default); those found dead are a death,
  * taken off always. Each day's adults and each group of eggs or larvae get a
  * dated, signed note in NOTES, as Clutches writes its events (lib/clutches
@@ -569,12 +581,16 @@ export function stockPlan(
   const off = (all: number, dead: number) => (subtractPreserved ? all : dead)
   if (tally.larvae && off(tally.larvae, tally.larvaeDead ?? 0)) addTerms('NUMBER OF LARVAE', [-off(tally.larvae, tally.larvaeDead ?? 0)])
   if (tally.eggs && off(tally.eggs, tally.eggsDead ?? 0)) addTerms('NUMBER OF EGGS', [-off(tally.eggs, tally.eggsDead ?? 0)])
+  if (tally.pupae && off(tally.pupae, tally.pupaeDead ?? 0)) addTerms('NUMBER OF PUPA', [-off(tally.pupae, tally.pupaeDead ?? 0)])
   const notes = [
     ...tally.adults.map(([day, n]) => eventNote({ stage: 'adult', kind: 'emerged', count: n, day }, today)),
     ...(tally.groups ?? []).map(g =>
       g.dead
         ? eventNote({ stage: g.stage, kind: 'died', count: g.ids.length, ids: g.ids, day: g.day }, today).replace(' died', ' found dead, preserved')
-        : eventNote({ stage: g.stage, kind: 'preserved', count: g.ids.length, ids: g.ids, lifestage: g.lifestage, day: g.day }, today),
+        : g.stage === 'pupa'
+          ? // "2 pupae preserved as pupa day 3 (S8E, S9E)", as the larvae's "as 3rd instar".
+            eventNote({ stage: 'pupa', kind: 'preserved', count: g.ids.length, ids: g.ids, day: g.day }, today).replace(' preserved', ` preserved as ${g.lifestage.toLowerCase()}`)
+          : eventNote({ stage: g.stage, kind: 'preserved', count: g.ids.length, ids: g.ids, lifestage: g.lifestage, day: g.day }, today),
     ),
   ]
   if (notes.length)

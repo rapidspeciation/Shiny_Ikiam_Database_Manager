@@ -220,6 +220,23 @@ describe("the clutch's row", () => {
     }
     expect(plan([draft({ kind: 'young', stage: 'Egg' })]).cells.map(c => c.field)).toEqual(['NOTES'])
   })
+  it('pupae preserved: their day in the note, taken off NUMBER OF PUPA as larvae off theirs', () => {
+    const pupae = [
+      draft({ kind: 'young', stage: 'Pupa day 3' }),
+      draft({ key: 'k2', id: 'E5E', kind: 'young', stage: 'Pupa day 3' }),
+      draft({ key: 'k3', id: 'E6E', kind: 'young', stage: 'Pupa day 5', foundDead: true }),
+    ]
+    const t = tallies(pupae)[0]
+    expect([t.pupae, t.pupaeDead, t.larvae, t.eggs]).toEqual([3, 1, 0, 0])
+    const options = (subtractPreserved: boolean) => ({ today: isoToSerial('2026-10-02'), initials: 'FCH', subtractPreserved })
+    const notes = '2/10/26 FCH: 2 pupae preserved as pupa day 3 (E4E, E5E) | 2/10/26 FCH: 1 pupa found dead, preserved (E6E)'
+    // Kept counted: only the one found dead comes off.
+    expect(stockPlan(t, f => readCount(counts[f] ?? null), f => counts[f] ?? null, options(false)).cells).toEqual([
+      { field: 'NUMBER OF PUPA', value: '=10-1', before: '=10' },
+      { field: 'NOTES', value: notes, before: null },
+    ])
+    expect(stockPlan(t, f => readCount(counts[f] ?? null), f => counts[f] ?? null, options(true)).cells[0]).toEqual({ field: 'NUMBER OF PUPA', value: '=10-3', before: '=10' })
+  })
   it('a count that would go below 0 is left as it is', () => {
     const p = stockPlan(tallies([draft({ kind: 'young', stage: 'Egg' })])[0], () => readCount(null), () => null, { today: 1, initials: 'X', subtractPreserved: true })
     expect(p.skipped).toEqual(['NUMBER OF EGGS'])

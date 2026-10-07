@@ -3,7 +3,8 @@ import { computed, nextTick, ref } from 'vue'
 import { AlertTriangle, Check, Loader2, Pencil, StickyNote, X } from 'lucide-vue-next'
 import ChoiceField from '../ChoiceField.vue'
 import SampleBoxes from './SampleBoxes.vue'
-import { EMERGED_NOTE_PHRASES, LIFESTAGES, MAIN_STAGES, preserving, speciesOf, type Draft, type Fate, type Sample, type Sex } from '../../lib/emerged'
+import StagePicker from './StagePicker.vue'
+import { EMERGED_NOTE_PHRASES, preserving, speciesOf, stageGroup, youngNote, type Draft, type Fate, type Sample, type Sex } from '../../lib/emerged'
 import { dayFirst } from '../../lib/dates'
 import { t } from '../../lib/i18n'
 
@@ -76,21 +77,7 @@ const FATES: { value: Fate; name: () => string; hint: () => string }[] = [
   { value: 'dead', name: () => t('Murió'), hint: () => t('Murió el día que emergió (Unknown)') },
   { value: 'preserved', name: () => t('Preservada'), hint: () => t('Sacrificada y preservada el día que emergió: CAM y tubo') },
 ]
-const STAGE_SHORT: Record<string, string> = {
-  Egg: 'Egg',
-  '1st instar larva': 'L1',
-  '2nd instar larva': 'L2',
-  '3rd instar larva': 'L3',
-  '4th instar larva': 'L4',
-  '5th instar larva': 'L5',
-  'Pre-pupa': 'Pre-pupa',
-}
-
-/** The other stages (eggs, younger larvae, 5th instar, prepupae) open on demand; a card in one of them shows it. */
-const showStages = ref(false)
-const stagesShown = computed(() =>
-  showStages.value ? LIFESTAGES : LIFESTAGES.filter(s => MAIN_STAGES.includes(s) || s === props.draft.stage),
-)
+const GROUP_NAME = { egg: () => t('Huevo'), larva: () => t('Larva'), pupa: () => t('Pupa') }
 const typed = (field: 'cam' | 'tube', value: string | undefined) =>
   emit('update', field === 'cam' ? { typedCam: value } : { typedTube: value })
 
@@ -184,7 +171,7 @@ const otherDay = computed(() => props.draft.date !== props.day)
           </span>
         </button>
         <span class="min-w-0 truncate rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-900">
-          {{ draft.stage === 'Egg' ? $t('Huevo') : $t('Larva') }}<template v-if="showClutch"> · {{ draft.clutch }}</template>
+          {{ GROUP_NAME[stageGroup(draft.stage)]() }}<template v-if="showClutch"> · {{ draft.clutch }}</template>
         </span>
       </template>
       <span class="ml-auto flex shrink-0">
@@ -256,30 +243,9 @@ const otherDay = computed(() => props.draft.date !== props.day)
         </button>
       </div>
     </template>
-    <!-- An egg or larva preserved: its stage, alive or found dead. -->
+    <!-- An egg, larva or pupa preserved: its stage, alive or found dead. -->
     <template v-else>
-      <div class="mt-2 flex flex-wrap gap-1 px-2" role="group" aria-label="LIFESTAGE">
-        <button
-          v-for="s in stagesShown"
-          :key="s"
-          class="min-h-11 rounded-lg border px-2 font-medium"
-          :class="[choice(draft.stage === s), MAIN_STAGES.includes(s) ? 'min-w-16 flex-1 text-base' : 'min-w-11 text-sm']"
-          :aria-pressed="draft.stage === s"
-          :title="s"
-          :disabled="!canEdit"
-          @click="emit('update', { stage: s })"
-        >
-          {{ MAIN_STAGES.includes(s) ? $t(s === '3rd instar larva' ? '3.er estadio' : '4.º estadio') : STAGE_SHORT[s] }}
-        </button>
-        <button
-          v-if="canEdit"
-          class="min-h-11 rounded-lg border border-dashed border-stone-300 px-2 text-sm text-stone-700 active:bg-stone-100"
-          :aria-expanded="showStages"
-          @click="showStages = !showStages"
-        >
-          {{ showStages ? $t('Menos') : $t('Otro estadio') }}
-        </button>
-      </div>
+      <StagePicker class="mt-2 px-2" fold :model-value="draft.stage" :disabled="!canEdit" @update:model-value="emit('update', { stage: $event })" />
       <div class="mt-1.5 grid grid-cols-2 gap-1.5 px-2">
         <button class="min-h-10 rounded-lg border text-sm font-medium" :class="choice(!draft.foundDead)" :aria-pressed="!draft.foundDead" :disabled="!canEdit" @click="emit('update', { foundDead: false })">
           {{ $t('Viva, preservada') }}
@@ -359,7 +325,7 @@ const otherDay = computed(() => props.draft.date !== props.day)
       <input
         :value="draft.note"
         class="field-input h-11 text-base"
-        :placeholder="draft.kind === 'young' ? $t('Nota (por defecto: {note})', { note: 'Preserved alive 4th instar' }) : $t('Nota, en inglés (p. ej. Deformed wings, can fly)')"
+        :placeholder="draft.kind === 'young' ? $t('Nota (por defecto: {note})', { note: youngNote(draft.stage, draft.foundDead) }) : $t('Nota, en inglés (p. ej. Deformed wings, can fly)')"
         enterkeyhint="done"
         :disabled="!canEdit"
         @input="emit('update', { note: ($event.target as HTMLInputElement).value })"
