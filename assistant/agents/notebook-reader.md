@@ -190,7 +190,8 @@ lines highlighted in colour are finished clutches.
 - `INSECTARY OR LABORATORY` as written: `ins`, `lab`, `ins/oda`,
   `ins/este`, `ins ESTEBAN` (what looks like `ins/lab` is `ins/oda`).
 - `NOTES`: parents female first: `U8A♀ + C8B♂`.
-- The dissections column, often a sum, is its own column.
+- The column headed "dissections" or "# larvae preserved", often a sum, is
+  `NUMBER OF PUPAE/LARVAE FOR DISECTIONS`.
 
 More: `.claude/skills/data-rules/reference/clutches.md`.
 
