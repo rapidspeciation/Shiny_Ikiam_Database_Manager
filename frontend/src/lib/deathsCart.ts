@@ -37,10 +37,105 @@ export function addCards(cards: DeathCard[], ids: string[], defaults: DeathChoic
 
 export const removeCards = (cards: DeathCard[], ids: string[]) => cards.filter(c => !ids.some(id => same(c.id, id)))
 
-/** One card's value of a field (the panel with that card selected). */
-export function setCardField<F extends ChoiceField>(cards: DeathCard[], id: string, field: F, value: DeathChoice[F]): DeathCard[] {
-  return cards.map(c => (same(c.id, id) ? { ...c, choice: { ...c.choice, [field]: value } } : c))
+/** The value of a field of one card, or of each card selected in the panel. */
+export function setCardField<F extends ChoiceField>(cards: DeathCard[], ids: string | string[], field: F, value: DeathChoice[F]): DeathCard[] {
+  const list = typeof ids === 'string' ? [ids] : ids
+  return cards.map(c => (list.some(id => same(c.id, id)) ? { ...c, choice: { ...c.choice, [field]: value } } : c))
 }
+
+/** A quick phrase after what a note says ("Head eaten; With fungi"). */
+export const withPhrase = (note: string, phrase: string) => (note.trim() ? `${note.trim()}; ${phrase}` : phrase)
+
+/** A quick phrase added to each selected card's own note. */
+export const addPhraseTo = (cards: DeathCard[], ids: string[], phrase: string): DeathCard[] =>
+  cards.map(c => (ids.some(id => same(c.id, id)) ? { ...c, choice: { ...c.choice, note: withPhrase(c.choice.note, phrase) } } : c))
+
+// --- Several cards open in the panel at once
+
+/** The cards open in the panel (their IDs, in the cards' order), and the one a Shift+click counts from. */
+export interface CardSelection {
+  ids: string[]
+  anchor: string | null
+}
+/**
+ * A click on a card, with the cards' IDs as shown (`order`). Plain: that card
+ * alone (`again` when it was already the one open, to make it pulse). Ctrl or
+ * ⌘ (`toggle`): it joins or leaves the others. Shift (`range`): the cards from
+ * the last one clicked to this one (with Ctrl too, beside those already there).
+ */
+export function clickCard(
+  selection: CardSelection,
+  order: string[],
+  id: string,
+  how: { toggle?: boolean; range?: boolean } = {},
+): CardSelection & { again: boolean } {
+  const at = order.findIndex(o => same(o, id))
+  if (at < 0) return { ...selection, again: false }
+  const card = order[at]
+  const sorted = (ids: string[]) => order.filter(o => ids.some(i => same(i, o)))
+  const from = selection.anchor === null ? -1 : order.findIndex(o => same(o, selection.anchor!))
+  if (how.range && from >= 0) {
+    const span = order.slice(Math.min(from, at), Math.max(from, at) + 1)
+    return { ids: sorted(how.toggle ? [...selection.ids, ...span] : span), anchor: order[from], again: false }
+  }
+  if (how.toggle) {
+    const there = selection.ids.some(i => same(i, card))
+    return { ids: sorted(there ? selection.ids.filter(i => !same(i, card)) : [...selection.ids, card]), anchor: card, again: false }
+  }
+  return { ids: [card], anchor: card, again: selection.ids.length === 1 && same(selection.ids[0], card) }
+}
+
+/**
+ * What the panel shows for the cards selected: each field's value when they
+ * all have it, and the fields where they differ («varios»; shown empty).
+ */
+export function commonChoice(cards: DeathCard[], ids: string[]): { choice: DeathChoice; mixed: ChoiceField[] } {
+  const chosen = cards.filter(c => ids.some(id => same(c.id, id))).map(c => c.choice)
+  const choice: DeathChoice = { date: '', cause: '', preserved: false, note: '' }
+  const mixed: ChoiceField[] = []
+  if (!chosen.length) return { choice, mixed }
+  for (const field of ['date', 'cause', 'preserved', 'note'] as const) {
+    const first = chosen[0][field]
+    if (chosen.every(c => c[field] === first)) (choice as Record<ChoiceField, unknown>)[field] = first
+    else mixed.push(field)
+  }
+  return { choice, mixed }
+}
+
+/** The IDs named in the panel's title: the first `max`, and how many more («G7D, G8D y 3 más (5)»). */
+export const namedIds = (ids: string[], max = 2) => ({ shown: ids.slice(0, max), more: Math.max(0, ids.length - max) })
+
+// --- The values for the next butterflies
+
+/**
+ * After recording, the next butterflies start with that death (a run of the
+ * same cause needs one tap): the last card recorded's values, or the panel's
+ * as they were when nothing was recorded.
+ */
+export const nextDefaults = (recorded: DeathChoice[], current: DeathChoice): DeathChoice =>
+  recorded.length ? { ...recorded[recorded.length - 1] } : current
+
+/** The values for the next butterflies as kept in the browser: the date with the day it was chosen on. */
+export interface KeptDefaults {
+  cause: string
+  preserved: boolean
+  note: string
+  date?: string
+  day?: string
+}
+/** The values kept, read back: the date only the same day (else today's); anything missing, empty. */
+export function readDefaults(kept: unknown, today: string): DeathChoice {
+  const k = (kept && typeof kept === 'object' ? kept : {}) as Partial<KeptDefaults>
+  const text = (v: unknown) => (typeof v === 'string' ? v : '')
+  return {
+    date: k.day === today && typeof k.date === 'string' ? k.date : today,
+    cause: text(k.cause),
+    preserved: k.preserved === true,
+    note: text(k.note),
+  }
+}
+/** The values for the next butterflies to keep, stamped with today. */
+export const keepDefaults = (choice: DeathChoice, today: string): KeptDefaults => ({ ...choice, day: today })
 
 /** The cards whose value of a field is not the panel's (to offer giving them the panel's). */
 export const differing = (cards: DeathCard[], defaults: DeathChoice, field: ChoiceField) =>

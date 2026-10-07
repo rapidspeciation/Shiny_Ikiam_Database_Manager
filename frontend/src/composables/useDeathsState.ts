@@ -1,7 +1,7 @@
-import { computed, reactive, ref, type Ref, type WritableComputedRef } from 'vue'
+import { computed, reactive, type Ref, type WritableComputedRef } from 'vue'
 import { todayIso } from '../lib/dates'
 import type { DeathChoice } from '../lib/deaths'
-import { addCards, cardsForIds, type DeathCard } from '../lib/deathsCart'
+import { addCards, cardsForIds, keepDefaults, readDefaults, type DeathCard, type KeptDefaults } from '../lib/deathsCart'
 import { persistentRef } from '../lib/persist'
 
 /**
@@ -11,15 +11,15 @@ import { persistentRef } from '../lib/persist'
  * «Seleccionadas» (each butterfly picked with its own values), the one the
  * panel shows, the medium, and the CAM and tube typed for each. They live as
  * long as the browser tab (sessionStorage), the medium in this browser; the
- * date starts at today on every load.
+ * date chosen is kept that day only, and starts at today on another.
  */
 export interface DeathsState {
   /** «Para las próximas mariposas»: the values each butterfly picked starts with. */
   defaults: Ref<DeathChoice>
   /** «Seleccionadas», in the order picked. */
   cards: Ref<DeathCard[]>
-  /** The card the panel shows (its Insectary ID); null: the values for the next butterflies. */
-  focus: Ref<string | null>
+  /** The cards the panel shows (their Insectary IDs, one or several); none: the values for the next butterflies. */
+  selected: Ref<string[]>
   /** «Seleccionar varias»: each ID tapped is added (or taken out) and the search stays for the next. */
   several: Ref<boolean>
   medium: Ref<string>
@@ -129,16 +129,19 @@ export function migrateGroupKeys(session: Storage = sessionStorage) {
 export function createDeathsState(): DeathsState {
   migrateDeathKeys()
   migrateGroupKeys()
-  // The panel's cause, preservation and note are kept; the date is today's on every load.
-  const kept = persistentRef<Omit<DeathChoice, 'date'>>('deaths:defaults', { cause: '', preserved: false, note: '' })
-  const date = ref(todayIso())
+  // The panel's values are kept as long as the tab; the date only the day it was chosen (then today's).
+  const kept = persistentRef<KeptDefaults>('deaths:defaults', { cause: '', preserved: false, note: '' })
   const defaults = computed<DeathChoice>({
-    get: () => ({ date: date.value, cause: kept.value.cause ?? '', preserved: !!kept.value.preserved, note: kept.value.note ?? '' }),
-    set: v => {
-      date.value = v.date
-      kept.value = { cause: v.cause, preserved: v.preserved, note: v.note }
-    },
+    get: () => readDefaults(kept.value, todayIso()),
+    set: v => (kept.value = keepDefaults(v, todayIso())),
   })
+  // The one card the panel showed until 6 Oct 2026 becomes the selection.
+  const oldFocus = read(sessionStorage, 'deaths:focus')
+  if (oldFocus !== undefined) {
+    if (typeof oldFocus === 'string' && oldFocus && read(sessionStorage, 'deaths:selection') === undefined)
+      write(sessionStorage, 'deaths:selection', [oldFocus])
+    drop(sessionStorage, 'deaths:focus')
+  }
   const cards = persistentRef<DeathCard[]>('deaths:cards', [])
   const field = <F extends keyof DeathChoice>(key: F) =>
     computed<DeathChoice[F]>({
@@ -148,7 +151,7 @@ export function createDeathsState(): DeathsState {
   return {
     defaults,
     cards,
-    focus: persistentRef<string | null>('deaths:focus', null),
+    selected: persistentRef<string[]>('deaths:selection', []),
     several: persistentRef('deaths:several-pick', false),
     medium: persistentRef('deaths:medium', 'Flash frozen', { lasting: true }),
     samples: reactive({}),

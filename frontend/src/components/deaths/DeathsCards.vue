@@ -65,11 +65,17 @@ import {
 } from '../../lib/deaths'
 import {
   addCards,
+  addPhraseTo,
   applyToAll,
+  clickCard,
+  commonChoice,
   differing,
   focusAfterPick,
   hasCard,
+  namedIds,
+  nextDefaults,
   readOrder,
+  withPhrase,
   recordedOn,
   removeCards,
   setCardField,
@@ -97,8 +103,12 @@ import { t, tn, tx, type Msg } from '../../lib/i18n'
  * butterfly by Insectary ID (or CAM or tube; worn wings with A?B, A[16]B and
  * look-alikes) and says at once whether it is alive; Enter or a tap puts it
  * in «Seleccionadas», with the panel's values for the next butterflies (date,
- * cause, preservation, note: choose Heat stroke once, then pick ten IDs). A
- * card tapped opens in the panel, which then changes that card only. Each
+ * cause, preservation, note: choose Heat stroke once, then pick ten IDs; after
+ * recording, they become that death's, so a run of the same cause needs one
+ * tap). A card clicked opens in the panel, which then changes that card only
+ * (clicked again it stays, and pulses); Ctrl/⌘+click and Shift+click (a long
+ * press on a phone) open several, and a change goes to each; Esc, «Listo» or
+ * a click on empty space go back to the values for the next ones. Each
  * card's «Añadir a muertes» (or «Añadir todas», Ctrl+Enter) records its death
  * as before (lib/deaths.ts cardCells: the NA / NOT_COLLECTED block or the
  * preserved body's CAM and tube, the note dated and signed) and saves it;
@@ -132,7 +142,7 @@ const short = useMedia('(max-height: 520px)')
 /** A finger rather than a mouse: the keyboard closes after a pick, nothing is focused by itself. */
 const touch = useMedia('(pointer: coarse)')
 
-const { defaults, cards: scratch, focus, several, medium, samples, suggested } = useDeathsState()
+const { defaults, cards: scratch, selected, several, medium, samples, suggested } = useDeathsState()
 const query = ref('')
 const today = computed(() => isoToSerial(todayIso()))
 /** Who signs the notes added here ("1/10/26 FCH: …"), as in Clutches. */
@@ -184,16 +194,22 @@ watch(
   { immediate: true },
 )
 
-/** The card the panel shows, or none (the values for the next butterflies). */
-const focusRow = computed(() => (focus.value ? (cardRows.value.find(r => sameId(idOf(r), focus.value!)) ?? null) : null))
+/** The cards the panel shows (one, or several: a change goes to each), in the cards' order; none: the values for the next butterflies. */
+const selectedRows = computed(() => cardRows.value.filter(r => selected.value.some(id => sameId(id, idOf(r)))))
+const selectedIds = computed(() => selectedRows.value.map(idOf))
+/** The one card open, when only one is. */
+const focusRow = computed(() => (selectedRows.value.length === 1 ? selectedRows.value[0] : null))
+const multi = computed(() => selectedRows.value.length > 1)
+const isSelected = (row: TableRow) => selected.value.some(id => sameId(id, idOf(row)))
 watch(scratch, list => {
-  if (focus.value && !hasCard(list, focus.value)) focus.value = null
+  const kept = selected.value.filter(id => hasCard(list, id))
+  if (kept.length !== selected.value.length) selected.value = kept
 })
 /** A death of «Registradas hoy» open in the panel to correct it (its row id). */
 const editingId = ref<string | null>(null)
 const editingRow = computed(() => (editingId.value ? (rowById.value.get(editingId.value) ?? null) : null))
 const panelMode = computed<'defaults' | 'card' | 'recorded'>(() =>
-  editingRow.value ? 'recorded' : focusRow.value ? 'card' : 'defaults',
+  editingRow.value ? 'recorded' : selectedRows.value.length ? 'card' : 'defaults',
 )
 
 // --- Search
@@ -257,8 +273,10 @@ function pick(ids: string[], add = false) {
   const before = scratch.value
   const after = addCards(before, ids, defaults.value).cards
   scratch.value = after
-  focus.value = focusAfterPick(before, after, ids, several.value || add)
-  if (focus.value) editingId.value = null
+  const open = focusAfterPick(before, after, ids, several.value || add)
+  selected.value = open ? [open] : []
+  anchor.value = open
+  if (open) editingId.value = null
   cleared.value = null
 }
 /** One ID chosen (a suggestion, Enter, «¿Quisiste decir?»); in several a tap on one there takes it out. */
@@ -343,7 +361,8 @@ const cleared = ref<DeathCard[] | null>(null)
 function clearAll() {
   cleared.value = scratch.value
   scratch.value = []
-  focus.value = null
+  selected.value = []
+  selecting.value = false
 }
 function undoClear() {
   if (!cleared.value) return
@@ -353,21 +372,89 @@ function undoClear() {
 /** «Seleccionar varias»: each ID tapped joins (or leaves) without opening it; the search is ready for the next. */
 function enterSeveral() {
   several.value = true
-  focus.value = null
+  selected.value = []
+  selecting.value = false
   cleared.value = null
   searchInput.value?.focus()
 }
 const leaveSeveral = () => (several.value = false)
-/** A card tapped: the panel shows it (and changes it only); tapped again, back to the values for the next ones. */
-function toggleFocus(row: TableRow) {
+
+// --- Cards open in the panel: a click opens one, Ctrl/⌘ adds or takes one out, Shift a run; on a phone a long press
+/** The card a Shift+click counts from (the last one clicked). */
+const anchor = ref<string | null>(null)
+/** Choosing cards on a touch screen (after a long press on one): each tap adds or takes one out. */
+const selecting = ref(false)
+/** The card clicked while already open: it pulses for a moment, to show it is the one in the panel. */
+const pulsing = ref<string | null>(null)
+let pulseTimer: ReturnType<typeof setTimeout> | undefined
+function pulse(id: string) {
+  clearTimeout(pulseTimer)
+  pulsing.value = null
+  // A frame without the class, so a second click plays it again.
+  requestAnimationFrame(() => {
+    pulsing.value = id
+    pulseTimer = setTimeout(() => (pulsing.value = null), 700)
+  })
+}
+onBeforeUnmount(() => clearTimeout(pulseTimer))
+function clickRow(event: MouseEvent, row: TableRow) {
+  if (cardLongPressed) {
+    cardLongPressed = false
+    return
+  }
   editingId.value = null
-  focus.value = focus.value && sameId(focus.value, idOf(row)) ? null : idOf(row)
-  if (focus.value) revealPanel()
+  const how = selecting.value ? { toggle: true } : { toggle: event.ctrlKey || event.metaKey, range: event.shiftKey }
+  const next = clickCard({ ids: selectedIds.value, anchor: anchor.value }, cardRows.value.map(idOf), idOf(row), how)
+  selected.value = next.ids
+  anchor.value = next.anchor
+  if (next.again) pulse(idOf(row))
+  if (selecting.value) {
+    if (!next.ids.length) selecting.value = false
+  } else if (next.ids.length) revealPanel()
+}
+/** Shift+click chooses cards, not text. */
+const noTextSelect = (event: MouseEvent) => event.shiftKey && event.preventDefault()
+let cardTimer: ReturnType<typeof setTimeout> | undefined
+let cardLongPressed = false
+function cardPressStart(event: PointerEvent, row: TableRow) {
+  cardLongPressed = false
+  clearTimeout(cardTimer)
+  if (event.pointerType !== 'touch' || selecting.value) return
+  cardTimer = setTimeout(() => {
+    cardLongPressed = true
+    navigator.vibrate?.(30)
+    selecting.value = true
+    several.value = false
+    editingId.value = null
+    if (!isSelected(row)) {
+      const next = clickCard({ ids: selectedIds.value, anchor: anchor.value }, cardRows.value.map(idOf), idOf(row), { toggle: true })
+      selected.value = next.ids
+      anchor.value = next.anchor
+    }
+  }, 500)
+}
+const cardPressEnd = () => clearTimeout(cardTimer)
+onBeforeUnmount(cardPressEnd)
+/** «Listo» on the bar: done choosing; the panel (above the cards) shows them. */
+function doneSelecting() {
+  selecting.value = false
+  if (selectedRows.value.length) revealPanel()
 }
 /** Back to the values for the next butterflies. */
 function closePanel() {
-  focus.value = null
+  selected.value = []
+  selecting.value = false
   editingId.value = null
+}
+/** A click on empty space among the cards (not on a card, a button or a box): back to the values for the next ones. */
+function onEmptyClick(event: MouseEvent) {
+  if (panelMode.value === 'defaults' && !selecting.value) return
+  const target = event.target as Element | null
+  if (!target || target.closest('button, a, input, textarea, select, label, [role="listbox"], [data-card], [data-panel], [data-panel-folded]'))
+    return
+  // Text being selected (to copy an ID) is not a click on nothing.
+  if (window.getSelection()?.toString()) return
+  closePanel()
 }
 
 // --- The panel: the values for the next butterflies, one card's, or a recorded death being corrected
@@ -386,9 +473,19 @@ const quickDates = computed(() => [
 ])
 /** A recorded death being corrected: its date and cause as the sheet has them, and a note to add. */
 const draft = ref<DeathChoice>({ date: '', cause: '', preserved: false, note: '' })
+/** The cards open: the values they share, and the fields where they differ («varios», shown empty). */
+const common = computed(() => commonChoice(scratch.value, selectedIds.value))
 const shown = computed<DeathChoice>(() =>
-  panelMode.value === 'recorded' ? draft.value : panelMode.value === 'card' ? choiceOf(focusRow.value!) : defaults.value,
+  panelMode.value === 'recorded' ? draft.value : panelMode.value === 'card' ? common.value.choice : defaults.value,
 )
+const isMixed = (field: ChoiceField) => panelMode.value === 'card' && common.value.mixed.includes(field)
+const mixedChip = 'ml-1 rounded-md bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-900'
+/** «Muerte de G7D, G8D (2)», «Muerte de G7D, G8D y 3 más (5)». */
+const selectionTitle = computed(() => {
+  const { shown: ids, more } = namedIds(selectedIds.value)
+  const vars = { ids: ids.join(', '), more, n: selectedIds.value.length }
+  return more ? t('Muerte de {ids} y {more} más ({n})', vars) : t('Muerte de {ids} ({n})', vars)
+})
 const shownDate = computed(() => shown.value.date)
 const dateError = computed(() =>
   shownDate.value && serialFromIso(shownDate.value) === null ? t('Fecha no válida: el año debe estar entre 1990 y 2099') : '',
@@ -396,7 +493,7 @@ const dateError = computed(() =>
 /** A value chosen in the panel: the card's, the death's being corrected, or the next butterflies'. */
 function setField<F extends ChoiceField>(field: F, value: DeathChoice[F]) {
   if (panelMode.value === 'recorded') draft.value = { ...draft.value, [field]: value }
-  else if (panelMode.value === 'card') scratch.value = setCardField(scratch.value, idOf(focusRow.value!), field, value)
+  else if (panelMode.value === 'card') scratch.value = setCardField(scratch.value, selectedIds.value, field, value)
   else defaults.value = { ...defaults.value, [field]: value }
 }
 function pickCause(c: string) {
@@ -410,10 +507,10 @@ function spreadField(field: ChoiceField) {
   scratch.value = applyToAll(scratch.value, field, defaults.value[field])
 }
 const mediums = ['Flash frozen', 'Ethanol', 'DMSO']
-/** A quick phrase goes after what is typed ("Head eaten; With fungi"). */
+/** A quick phrase goes after what is typed ("Head eaten; With fungi"): each card open, after its own note. */
 function addPhrase(p: string) {
-  const text = shown.value.note.trim()
-  setField('note', text ? `${text}; ${p}` : p)
+  if (panelMode.value === 'card') scratch.value = addPhraseTo(scratch.value, selectedIds.value, p)
+  else setField('note', withPhrase(shown.value.note, p))
 }
 /** The note a card adds, as it will be written ("1/10/26 FCH: Only wings found"). */
 function noteOf(row: TableRow) {
@@ -448,10 +545,10 @@ const toPreserve = computed(() => cardRows.value.filter(r => choiceOf(r).preserv
 const notToPreserve = computed(() => cardRows.value.filter(r => choiceOf(r).preserved && !dying(r)))
 /** The CAM and tube boxes in the panel: the card's, or every card's being preserved (for «Añadir todas»). */
 const panelPreserve = computed(() =>
-  panelMode.value === 'card' ? toPreserve.value.filter(r => r === focusRow.value) : panelMode.value === 'defaults' ? toPreserve.value : [],
+  panelMode.value === 'card' ? toPreserve.value.filter(isSelected) : panelMode.value === 'defaults' ? toPreserve.value : [],
 )
 const panelNotPreserve = computed(() =>
-  panelMode.value === 'card' ? notToPreserve.value.filter(r => r === focusRow.value) : panelMode.value === 'defaults' ? notToPreserve.value : [],
+  panelMode.value === 'card' ? notToPreserve.value.filter(isSelected) : panelMode.value === 'defaults' ? notToPreserve.value : [],
 )
 const showPreservation = computed(() => panelMode.value !== 'recorded' && (shown.value.preserved || panelPreserve.value.length > 0))
 const sampleOf = (id: string) => (samples[id] ??= { cam: '', tube: '' })
@@ -563,7 +660,6 @@ const lackText = (lack: CardLack, row?: TableRow) => {
   }[lack]
 }
 const readyRows = computed(() => cardRows.value.filter(r => !lackFor(r)))
-const notReady = computed(() => cardRows.value.filter(r => lackFor(r)))
 /** Already recorded dead and nothing of its death left to write (its note may still be added). */
 const registered = (row: TableRow) =>
   factsFor(row).life.state === 'dead' && !(plans.value.get(row.id) || []).some(c => c.field !== NOTES)
@@ -620,6 +716,8 @@ async function record(rows: TableRow[]) {
   if (!go.length || saving.value) return
   saving.value = true
   recording.value = go.map(idOf)
+  // Each one's death as recorded: the last one's becomes the values for the next butterflies.
+  const deaths = new Map(go.map(r => [r.id, { ...choiceOf(r) }]))
   const written = new Map<string, DeathCell[]>()
   try {
     for (const row of go) {
@@ -645,7 +743,13 @@ async function record(rows: TableRow[]) {
         if (pending.isDirty(row.id, c.field) && pending.value(row, c.field) === c.value)
           pending.setCell(MODULE, row, idOf(row), c.field, row.values[c.field] ?? null)
     }
-    const done = go.filter(r => !refused.includes(r)).map(idOf)
+    const doneRows = go.filter(r => !refused.includes(r))
+    const done = doneRows.map(idOf)
+    // A run of the same death needs one tap: the next ones start with it (the last card's, if they differed).
+    defaults.value = nextDefaults(
+      doneRows.map(r => deaths.get(r.id)!),
+      defaults.value,
+    )
     scratch.value = removeCards(scratch.value, done)
     for (const id of done) {
       delete samples[id]
@@ -726,7 +830,8 @@ const recorded = computed<RecordedItem[]>(() => {
 
 /** A recorded death opened in the panel: its date and cause as they are, and a note to add. */
 function startEdit(row: TableRow) {
-  focus.value = null
+  selected.value = []
+  selecting.value = false
   if (editingId.value === row.id) return closePanel()
   editingId.value = row.id
   const death = pending.value(row, 'Death_date')
@@ -828,8 +933,8 @@ const footer = computed(() => {
       run: saveEdit,
     }
   }
-  if (panelMode.value === 'card') {
-    const row = focusRow.value!
+  if (panelMode.value === 'card' && focusRow.value) {
+    const row = focusRow.value
     const lack = lackFor(row)
     return {
       text: lackText(lack, row),
@@ -839,19 +944,23 @@ const footer = computed(() => {
       run: () => record([row]),
     }
   }
-  if (!cardRows.value.length) return null
-  const first = notReady.value[0]
+  // The cards open in the panel, or all of them.
+  const rows = panelMode.value === 'card' ? selectedRows.value : cardRows.value
+  if (!rows.length) return null
+  const ready = rows.filter(r => !lackFor(r))
+  const waiting = rows.filter(r => lackFor(r))
+  const first = waiting[0]
   const lack = first ? lackFor(first) : ''
   return {
     text: first
-      ? tn(notReady.value.length, '{n} sin terminar: {why}', '{n} sin terminar: {why}', {
+      ? tn(waiting.length, '{n} sin terminar: {why}', '{n} sin terminar: {why}', {
           why: `${idOf(first)}, ${lackText(lack, first).replace(/^./, c => c.toLowerCase())}`,
         })
       : '',
     gap: lack === 'sample' ? idOf(first!) : '',
-    label: readyRows.value.length ? tn(readyRows.value.length, 'Añadir {n} a muertes', 'Añadir las {n} a muertes') : t('Añadir a muertes'),
-    disabled: !readyRows.value.length,
-    run: () => record(readyRows.value),
+    label: ready.length ? tn(ready.length, 'Añadir {n} a muertes', 'Añadir las {n} a muertes') : t('Añadir a muertes'),
+    disabled: !ready.length,
+    run: () => record(ready),
   }
 })
 function onKey(e: KeyboardEvent) {
@@ -859,11 +968,12 @@ function onKey(e: KeyboardEvent) {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
     e.preventDefault()
     if (footer.value && !footer.value.disabled && !saving.value) footer.value.run()
-  } else if (e.key === 'Escape' && panelMode.value !== 'defaults') closePanel()
+  } else if (e.key === 'Escape' && (panelMode.value !== 'defaults' || selecting.value)) closePanel()
 }
 onMounted(() => window.addEventListener('keydown', onKey))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
-const shortcut = computed(() => (touch.value ? '' : navigator.platform?.startsWith('Mac') ? '⌘+Enter' : 'Ctrl+Enter'))
+const macKeys = !!navigator.platform?.startsWith('Mac')
+const shortcut = computed(() => (touch.value ? '' : macKeys ? '⌘+Enter' : 'Ctrl+Enter'))
 
 const drawerRow = ref<TableRow | null>(null)
 const showHistory = ref(false)
@@ -967,9 +1077,11 @@ onBeforeUnmount(() => clearTimeout(flashTimer))
 function goToGap(id: string) {
   const g = gapById.value.get(id)
   const kind = g?.cam ? 'cam' : 'tube'
-  if (panelMode.value !== 'defaults' || !wide.value) {
+  // Its box is in the panel already when it is open there (alone or with others) or, on a wide screen, the next ones' values are.
+  if ((panelMode.value !== 'defaults' || !wide.value) && !(panelMode.value === 'card' && selectedIds.value.some(s => sameId(s, id)))) {
     editingId.value = null
-    focus.value = id
+    selected.value = [id]
+    anchor.value = id
   }
   nextTick(() => {
     const input = details.value?.querySelector<HTMLInputElement>(`[data-sample="${CSS.escape(id)}:${kind}"]`)
@@ -999,7 +1111,6 @@ const line = (f: Facts) =>
     .join(' · ')
 const choice = (on: boolean) =>
   on ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white text-stone-800 active:bg-stone-100'
-const isFocused = (row: TableRow) => !!focus.value && sameId(focus.value, idOf(row))
 </script>
 
 <template>
@@ -1016,7 +1127,7 @@ const isFocused = (row: TableRow) => !!focus.value && sameId(focus.value, idOf(r
     "
     @focusin="onFocusIn"
   >
-    <div ref="scroller" data-scroll class="min-h-0 min-w-0 flex-1 overflow-y-auto">
+    <div ref="scroller" data-scroll class="min-h-0 min-w-0 flex-1 overflow-y-auto" @click="onEmptyClick">
       <!-- The search stays at the top while the cards scroll. -->
       <div ref="searchBar" class="sticky top-0 z-20 border-b border-stone-200 bg-white px-3 pt-3 pb-2 short:pt-1.5 short:pb-1.5">
         <div class="flex items-start gap-2">
@@ -1126,9 +1237,28 @@ const isFocused = (row: TableRow) => !!focus.value && sameId(focus.value, idOf(r
             </button>
           </div>
         </div>
+        <!-- Choosing cards on a touch screen (a long press on one): each tap adds or takes one out; «Listo» shows them in the panel. -->
+        <div
+          v-if="ready && canEdit && selecting"
+          class="-mx-3 mt-2 -mb-2 flex min-h-12 items-center gap-2 bg-brand-700 px-3 py-1 text-white short:mt-1.5 short:-mb-1.5"
+          role="status"
+          data-selecting
+        >
+          <CheckCircle2 :size="20" class="shrink-0" />
+          <p class="min-w-0 flex-1 text-sm leading-tight">
+            <span class="font-semibold">{{ $tn(selectedRows.length, '{n} seleccionada', '{n} seleccionadas') }}</span>
+            <span class="block text-xs opacity-90 short:hidden">{{ $t('Toca las tarjetas para añadirlas o quitarlas') }}</span>
+          </p>
+          <button
+            class="h-10 shrink-0 rounded-lg bg-white px-4 text-sm font-semibold text-brand-800 active:bg-brand-50"
+            @click="doneSelecting"
+          >
+            {{ $t('Listo') }}
+          </button>
+        </div>
         <!-- «Seleccionar varias»: always in sight, with what a tap on an ID will do. -->
         <div
-          v-if="ready && canEdit && several"
+          v-else-if="ready && canEdit && several"
           class="-mx-3 mt-2 -mb-2 flex min-h-12 items-center gap-2 bg-brand-700 px-3 py-1 text-white short:mt-1.5 short:-mb-1.5"
           role="status"
           data-several
@@ -1203,6 +1333,12 @@ const isFocused = (row: TableRow) => !!focus.value && sameId(focus.value, idOf(r
                 <span class="block font-semibold">{{ $t('Para las próximas mariposas') }}</span>
                 <span class="block text-xs text-stone-600">{{ $t('Cada mariposa que añadas empieza con estos valores.') }}</span>
               </template>
+              <template v-else-if="panelMode === 'card' && multi">
+                <span class="block font-semibold" data-selection-title>{{ selectionTitle }}</span>
+                <span class="block text-xs opacity-90">{{
+                  $t('Cada cambio va a las {n} seleccionadas; las demás siguen igual.', { n: selectedRows.length })
+                }}</span>
+              </template>
               <template v-else-if="panelMode === 'card'">
                 <span class="block font-semibold">{{ $t('Muerte de {id}', { id: idOf(focusRow!) }) }}</span>
                 <span class="block text-xs opacity-90">{{ $t('Solo esta tarjeta; las demás siguen igual.') }}</span>
@@ -1231,7 +1367,7 @@ const isFocused = (row: TableRow) => !!focus.value && sameId(focus.value, idOf(r
             </button>
           </div>
           <!-- The card or the death opened: what it is, at a glance. -->
-          <div v-if="panelMode !== 'defaults'" class="flex items-start gap-2 text-sm">
+          <div v-if="panelMode === 'recorded' || focusRow" class="flex items-start gap-2 text-sm">
             <div class="min-w-0 flex-1">
               <p class="font-medium">{{ factsFor((focusRow ?? editingRow)!).species || '—' }}</p>
               <p class="flex items-center gap-1.5 text-stone-600">
@@ -1241,7 +1377,9 @@ const isFocused = (row: TableRow) => !!focus.value && sameId(focus.value, idOf(r
             <LifeBadge :facts="factsFor((focusRow ?? editingRow)!)" />
           </div>
           <div>
-            <h2 class="mb-1.5 text-sm font-semibold text-stone-700">{{ $t('Fecha de muerte') }}</h2>
+            <h2 class="mb-1.5 text-sm font-semibold text-stone-700">
+              {{ $t('Fecha de muerte') }} <span v-if="isMixed('date')" :class="mixedChip">{{ $t('varios') }}</span>
+            </h2>
             <div class="grid grid-cols-[1fr_1fr_minmax(9rem,1.4fr)] gap-2">
               <button
                 v-for="d in quickDates"
@@ -1262,7 +1400,9 @@ const isFocused = (row: TableRow) => !!focus.value && sameId(focus.value, idOf(r
             </button>
           </div>
           <div>
-            <h2 class="mb-1.5 text-sm font-semibold text-stone-700">Death_cause</h2>
+            <h2 class="mb-1.5 text-sm font-semibold text-stone-700">
+              Death_cause <span v-if="isMixed('cause')" :class="mixedChip">{{ $t('varios') }}</span>
+            </h2>
             <div class="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-2">
               <button
                 v-for="c in causes"
@@ -1280,7 +1420,9 @@ const isFocused = (row: TableRow) => !!focus.value && sameId(focus.value, idOf(r
             </button>
           </div>
           <div>
-            <h2 class="mb-1.5 text-sm font-semibold text-stone-700">{{ $t('Preservación') }}</h2>
+            <h2 class="mb-1.5 text-sm font-semibold text-stone-700">
+              {{ $t('Preservación') }} <span v-if="isMixed('preserved')" :class="mixedChip">{{ $t('varios') }}</span>
+            </h2>
             <!-- A recorded death keeps its preservation here (Tubos changes it, or undo and add it again). -->
             <template v-if="panelMode === 'recorded'">
               <p class="rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm font-medium">{{ preservationLine(editingRow!) }}</p>
@@ -1292,8 +1434,8 @@ const isFocused = (row: TableRow) => !!focus.value && sameId(focus.value, idOf(r
               <div class="grid grid-cols-2 gap-2">
                 <button
                   class="min-h-12 rounded-lg border px-2 text-base font-medium"
-                  :class="choice(shown.preserved === false)"
-                  :aria-pressed="shown.preserved === false"
+                  :class="choice(shown.preserved === false && !isMixed('preserved'))"
+                  :aria-pressed="shown.preserved === false && !isMixed('preserved')"
                   @click="setField('preserved', false)"
                 >
                   {{ $t('Sin preservar') }}
@@ -1314,7 +1456,7 @@ const isFocused = (row: TableRow) => !!focus.value && sameId(focus.value, idOf(r
               >
                 {{ $tn(spread('preserved').length, 'Aplicar también a {n} seleccionada', 'Aplicar también a las {n} seleccionadas') }}
               </button>
-              <p v-if="shown.preserved === false" class="mt-1.5 text-sm text-stone-600">
+              <p v-if="shown.preserved === false && !isMixed('preserved')" class="mt-1.5 text-sm text-stone-600">
                 {{ $t('Sin preservar: CAM y tubos NA, tejidos y medios NOT_COLLECTED') }}
               </p>
               <!-- Preserved: the medium, then each butterfly's CAM and tube, right here where the eye is. -->
@@ -1422,7 +1564,9 @@ const isFocused = (row: TableRow) => !!focus.value && sameId(focus.value, idOf(r
           </div>
           <!-- A note, in English: typed or quick phrases; recording adds it, dated and signed, after the notes there. -->
           <div>
-            <h2 class="mb-1.5 text-sm font-semibold text-stone-700">{{ $t('Nota') }}</h2>
+            <h2 class="mb-1.5 text-sm font-semibold text-stone-700">
+              {{ $t('Nota') }} <span v-if="isMixed('note')" :class="mixedChip">{{ $t('varios') }}</span>
+            </h2>
             <div class="mb-2 flex flex-wrap gap-1.5">
               <button
                 v-for="p in DEATH_NOTE_PHRASES"
@@ -1440,7 +1584,9 @@ const isFocused = (row: TableRow) => !!focus.value && sameId(focus.value, idOf(r
                 :value="shown.note"
                 class="field-input min-h-20 text-base short:min-h-0"
                 :rows="short ? 1 : 2"
-                :placeholder="$t('Nota, en inglés (p. ej. Only wings found)')"
+                :placeholder="
+                  isMixed('note') ? $t('Varias notas: lo que escribas reemplaza la de cada una') : $t('Nota, en inglés (p. ej. Only wings found)')
+                "
                 enterkeyhint="done"
                 data-note-input
                 @input="setField('note', ($event.target as HTMLTextAreaElement).value)"
@@ -1453,7 +1599,7 @@ const isFocused = (row: TableRow) => !!focus.value && sameId(focus.value, idOf(r
               {{ $tn(spread('note').length, 'Aplicar también a {n} seleccionada', 'Aplicar también a las {n} seleccionadas') }}
             </button>
           </div>
-          <button v-if="panelMode !== 'defaults'" class="btn h-11 w-full" @click="drawerRow = (focusRow ?? editingRow)!">
+          <button v-if="panelMode === 'recorded' || focusRow" class="btn h-11 w-full" @click="drawerRow = (focusRow ?? editingRow)!">
             <Columns3 :size="16" /> {{ $t('Todas las columnas') }}
           </button>
           <p v-if="otherPending && panelMode !== 'recorded' && cardRows.length" class="text-xs text-amber-900">
@@ -1493,16 +1639,30 @@ const isFocused = (row: TableRow) => !!focus.value && sameId(focus.value, idOf(r
             v-for="row in cardRows"
             :key="row.id"
             class="relative flex flex-col rounded-xl border-2 bg-white shadow-sm"
-            :class="isFocused(row) ? 'border-brand-600 ring-2 ring-brand-100' : 'border-stone-200'"
+            :class="[
+              isSelected(row) ? 'border-brand-600 ring-2 ring-brand-100' : 'border-stone-200',
+              pulsing && sameId(pulsing, idOf(row)) ? 'card-pulse' : '',
+            ]"
             :data-card="idOf(row)"
+            :data-selected="isSelected(row) || undefined"
           >
             <button
               class="block w-full flex-1 rounded-t-xl px-3 pt-2.5 pr-12 pb-2 text-left"
+              :class="touch ? 'select-none [-webkit-touch-callout:none]' : ''"
               :aria-label="$t('Abrir {id} en el panel', { id: idOf(row) })"
-              :aria-pressed="isFocused(row)"
-              @click="toggleFocus(row)"
+              :aria-pressed="isSelected(row)"
+              :title="shortcut ? $t('{key}+clic o Mayús+clic: varias a la vez', { key: macKeys ? '⌘' : 'Ctrl' }) : undefined"
+              @mousedown="noTextSelect"
+              @pointerdown="cardPressStart($event, row)"
+              @pointerup="cardPressEnd"
+              @pointercancel="cardPressEnd"
+              @pointerleave="cardPressEnd"
+              @contextmenu="touch && $event.preventDefault()"
+              @click="clickRow($event, row)"
             >
               <span class="flex flex-wrap items-center gap-2">
+                <CheckCircle2 v-if="isSelected(row)" :size="20" class="shrink-0 text-brand-700" />
+                <Circle v-else-if="selecting" :size="20" class="shrink-0 text-stone-300" />
                 <span class="text-xl font-semibold">{{ row.values.Insectary_ID }}</span>
                 <LifeBadge :facts="factsFor(row)" />
                 <span v-if="sampleGap(row)" class="rounded-md bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-900" :title="sampleTitle()">{{
@@ -1652,3 +1812,30 @@ const isFocused = (row: TableRow) => !!focus.value && sameId(focus.value, idOf(r
     />
   </div>
 </template>
+
+<style scoped>
+/* A card clicked while already open in the panel: a short ring and lift, to say "this one". */
+.card-pulse {
+  animation: card-pulse 600ms ease-out;
+}
+@keyframes card-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-brand-600) 55%, transparent);
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(1.015);
+  }
+  100% {
+    box-shadow: 0 0 0 12px transparent;
+    transform: scale(1);
+  }
+}
+/* Without motion: the card lights up for that moment instead. */
+@media (prefers-reduced-motion: reduce) {
+  .card-pulse {
+    animation: none;
+    background-color: var(--color-brand-50);
+  }
+}
+</style>

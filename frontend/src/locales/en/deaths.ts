@@ -83,6 +83,14 @@ export default {
   'Para las próximas mariposas': 'For the next butterflies',
   'Cada mariposa que añadas empieza con estos valores.': 'Each butterfly you add starts with these values.',
   'Solo esta tarjeta; las demás siguen igual.': 'This card only; the others stay as they are.',
+  // Several cards open in the panel (Ctrl/⌘+click, Shift+click, a long press on a phone)
+  'Muerte de {ids} ({n})': 'Death of {ids} ({n})',
+  'Muerte de {ids} y {more} más ({n})': 'Death of {ids} and {more} more ({n})',
+  'Cada cambio va a las {n} seleccionadas; las demás siguen igual.': 'Each change goes to the {n} selected; the others stay as they are.',
+  varios: 'mixed',
+  'Varias notas: lo que escribas reemplaza la de cada una': 'Different notes: what you type replaces each one',
+  'Toca las tarjetas para añadirlas o quitarlas': 'Tap cards to add or take them out',
+  '{key}+clic o Mayús+clic: varias a la vez': '{key}+click or Shift+click: several at once',
   'Registrada: corrígela y guarda el cambio.': 'Recorded: correct it and save the change.',
   'Para cambiarla: Tubos, o «Deshacer muerte» y añadirla otra vez.': 'To change it: Tubes, or “Undo death” and add it again.',
   'Enter añade la mariposa a Seleccionadas; {keys} la añade a muertes. Pega varias o un rango (B0D-B9D).':

@@ -69,7 +69,7 @@ describe('the IDs and choices Muertes keeps', () => {
   it('starts empty, today, not preserved, Flash frozen', () => {
     const s = createDeathsState()
     expect(s.cards.value).toEqual([])
-    expect(s.focus.value).toBeNull()
+    expect(s.selected.value).toEqual([])
     expect(s.defaults.value.date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
     expect(s.defaults.value.cause).toBe('')
     expect(s.defaults.value.preserved).toBe(false)
@@ -95,7 +95,16 @@ describe('the IDs and choices Muertes keeps', () => {
     expect(reloaded.picked.value).toEqual(['E1D', 'E2D'])
     expect(reloaded.cause.value).toBe('Unknown')
     expect(reloaded.preserved.value).toBe(true)
-    // The date starts at today again.
-    expect(reloaded.date.value).not.toBe('2026-09-30')
+    // The date chosen is kept the same day.
+    expect(reloaded.date.value).toBe('2026-09-30')
+  })
+  it('the date chosen another day starts at today; the one card open before becomes the selection', () => {
+    put(sessionStorage, 'deaths:defaults', { date: '2026-09-30', day: '2026-09-30', cause: 'Eaten', preserved: true, note: 'Head eaten' })
+    put(sessionStorage, 'deaths:focus', 'G7D')
+    const s = createDeathsState()
+    expect(s.defaults.value.date).not.toBe('2026-09-30')
+    expect(s.defaults.value).toMatchObject({ cause: 'Eaten', preserved: true, note: 'Head eaten' })
+    expect(s.selected.value).toEqual(['G7D'])
+    expect(got(sessionStorage, 'deaths:focus')).toBeUndefined()
   })
 })
