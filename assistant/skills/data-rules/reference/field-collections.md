@@ -117,10 +117,14 @@ The kind is decided by `Release_Collect` first, then `Purpose`.
 
 ## Formula columns
 
-Taxonomy, place, photo, rack, manifest and Sanger (STS) columns are formulas.
-A Death/Preservation lookup keyed on an Insectary_ID `NA` or blank pulls
-another butterfly's data: point it out; those values are not this
-butterfly's.
+Taxonomy (Family, Subfamily, Tribe, Genus), place, photo, rack, manifest and
+Sanger (STS) columns are formulas, and Data_entry_order is protected. A row,
+new or existing, leaves them to their formulas: the proposal shows what each
+one will give, and when that is the value wanted nothing is typed there; a
+value is typed over a formula only when the formula gives something else,
+and that is said. The manifest columns are kept by PAS. A Death/Preservation
+lookup keyed on an Insectary_ID `NA` or blank pulls another butterfly's data:
+point it out; those values are not this butterfly's.
 
 ## Wild-caught twins
 
