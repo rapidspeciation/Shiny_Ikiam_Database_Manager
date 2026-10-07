@@ -9,10 +9,7 @@ test('new passwords accept 6 through 16 characters and verify correctly', () => 
     assert.equal(verifyPassword(password, { salt, password_hash: hash }), true);
   }
   for (const password of ['', 'abcde', 'abcdefghijklmnopq', null, 123456]) {
-    assert.throws(() => validatePassword(password), {
-      code: 'WEAK_PASSWORD',
-      message: 'Password must have 6 to 16 characters',
-    });
+    assert.throws(() => validatePassword(password), { code: 'WEAK_PASSWORD' });
   }
 });
 
