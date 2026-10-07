@@ -44,7 +44,10 @@ team writes values, each notebook's layout) is in
    on the same proposal; many lines (a shifted block) → `match_notebook`
    again with the whole page corrected and `replaceProposalId`. Say what
    changed. A page already proposed in this chat is re-matched the same way
-   (one proposal per page).
+   (one proposal per page). When the person moves a value to the line above
+   or below, re-read the other deaths and notes of that page, and of the
+   pages read with it, on zoomed crops; correct those that moved in the same
+   proposals and list them.
 
 Pages that are not a plain notebook table (cage cards, crosses notebook,
 field envelopes): read the skill **data-rules** first.

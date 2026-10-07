@@ -37,7 +37,20 @@ description: Change the web app itself (Ikiam Insectary DB): its screens, grids,
   and tests, not by saving data on the live site.
 - While Google Sheets is not answering, wait for it before deploying.
 - A subagent for app work gets a short brief (what to change, files, how to
-  check), not the whole conversation.
+  check), not the whole conversation; run it in the background and keep
+  answering the person, then deploy when it reports.
+- The limits in the tests that keep chats light (tool description and
+  answer sizes) belong to the developer. When a change needs one raised, make
+  the change smaller, or leave it on a branch (see below).
+
+## What to do here
+
+Small changes in one area that the person needs in this chat (a tool
+option, a column, a text, a check) are made and deployed here. A new screen,
+or a change to how proposals are saved or written to Google, goes to a
+branch `chat/<topic>` with a note on what and why, for the developer to
+merge. Before adding an option the AI sets row by row, check whether the app
+could know it by itself (e.g. which rows are dead, from Death_date).
 
 ## Steps
 
@@ -62,7 +75,9 @@ description: Change the web app itself (Ikiam Insectary DB): its screens, grids,
    workspaces; it stops if your commit is not on GitHub. Saves waiting for
    Google are kept and written by the new process.
 6. Verify: `curl -s https://ithomiini-ikiam.com/version.json` shows the new
-   build. Tell the person to reload the page (a banner offers it) and what to
+   build and `curl -s https://ithomiini-ikiam.com/health` answers `"status":"ok"`;
+   then use the change once (e.g. call the new option on this chat's
+   proposal) and say what you could not see. Tell the person to reload the page (a banner offers it) and what to
    look at. If something broke, say so: the previous release is named in
    `/home/ubuntu/ithomiini/shared/previous-release`, and a fix goes through
    the same steps.

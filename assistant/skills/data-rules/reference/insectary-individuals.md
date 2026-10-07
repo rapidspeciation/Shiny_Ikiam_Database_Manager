@@ -140,11 +140,34 @@ Unknown. A death date with no cause written anywhere also takes `Unknown`,
 for the person to confirm. Use the cause itself; the old habit of `Other` +
 note "Eaten" ended in 2024.
 
-- **Disappearance** is a cage-count outcome: butterflies no longer seen are
-  closed in bulk with the sweep day as Death_date (not a real death date) and
-  the note "Disappeared in census" (the Censo tab writes both). For
-  a single named butterfly, ask who handled it last (it may have been taken for
-  an experiment).
+- **Disappearance** comes from a census, done one species at a time (often
+  several species the same day; sometimes females and males on different
+  days). The butterflies are released one by one and each wing ID is read; a
+  butterfly in the insectary that is not seen gets Death_date = the census
+  day (not a real death date), Death_cause `Disappearance`, the not-preserved
+  block, and the note "Disappeared in census" ("Disappeared in census of
+  d/m/yy" when entered on another day). The Censo tab does all of this while
+  the census happens. For a single named butterfly missing outside a census,
+  ask who handled it last (it may have been taken for an experiment).
+- **A census on paper**: a smiley beside an ID in the Emergidos notebook is a
+  butterfly seen alive in the census of its species. The date is not written
+  on the page: ask for it per species, or, if nobody knows, estimate it from
+  the smileys (after the latest emergence that has one, before the first
+  that doesn't) and say how. From photos of those pages:
+  - each page gets its own `match_notebook` table with its photo; the
+    butterflies of the censused species that are alive in the sheet and have
+    no smiley are proposed as disappeared on that species' census day;
+  - each row of those species says in its note what the photo shows:
+    "smiley", "no smiley" or "unclear mark" (unclear ones are left out and
+    listed);
+  - butterflies that entered after the census day, and pages only seen in
+    photos taken before it, are left out and listed;
+  - a death date before the census on a line with a smiley belongs to
+    another butterfly: keep it as a note on that line and leave the
+    butterflies without a smiley to the census.
+  The team highlights in the notebook every butterfly whose death is in the
+  database; the tables mark those rows, so the person knows which lines to
+  highlight.
 - Weekend deaths are dated the day they were found (often Monday).
 - Partial remains: wings and legs are still preserved; cause from the note.
 

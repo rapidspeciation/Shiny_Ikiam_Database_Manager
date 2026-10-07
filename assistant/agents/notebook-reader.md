@@ -169,7 +169,11 @@ Give everything readable; doubt is a highlight, not an omission.
   a value can look as if it sits on the line above or below its own. Follow
   the page's printed horizontal lines to the ID they start from; a straight
   line across the photo can land on the wrong row. One note per clutch or
-  butterfly; a bracket or arrow shares it between the lines it spans.
+  butterfly; a bracket or arrow shares it between the lines it spans. On
+  Emergidos pages the death date and cause are often written low on their
+  line, close to the next ID: a smiley, or a death before the emergence, on
+  the line a death seems to sit on means it belongs to the line above. A
+  value between two lines is doubtful; say which two.
 
 ## The notebooks
 

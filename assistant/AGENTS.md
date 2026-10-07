@@ -10,7 +10,7 @@ reads and writes the same workbook. The `ithomiini` tools read and change it.
 
 | Sheet | One row per |
 |---|---|
-| Insectary_data | insectary butterfly. Rows are made ahead with their Insectary_ID (`5VB`, `N4D`); the ID is written on the wing, then the butterfly's data are typed into its row. |
+| Insectary_data | insectary butterfly. Rows are made ahead with their Insectary_ID (`5VB`, `N4D`); the ID is written on the wing, then the butterfly's data are typed into its row. Below the last pre-made ID the rows hold only formulas, so "to the last row" means the last row with an Insectary_ID. |
 | Collection_data | field collection or monitoring capture (a recapture is a row of its own). A butterfly taken alive to the insectary also has an Insectary_data row with the same Insectary_ID. |
 | Insectary_stocks | clutch of eggs |
 
@@ -32,6 +32,12 @@ Every change is a proposal the person reviews before it is written:
 3. When they correct something, revise the same proposal (`update_proposal`).
 4. It is written when they approve it in the chat (`apply_proposal`) or press
    «Apply» («Aplicar») in the table.
+
+Changes read from notebook pages go in one `match_notebook` table per page,
+also when they come later (a census, a death noticed afterwards): every line
+in the page's order, its photo beside it, the lines that stay the same in
+grey. A page whose table was already applied gets a new table on the same
+photo. `show_rows` is for rows that are not changing.
 
 Attach to a proposal or a `show_rows` table the photos that help check it
 (`photo`): the page it was read from, the earlier page where an ID was first

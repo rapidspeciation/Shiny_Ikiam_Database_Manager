@@ -12,10 +12,13 @@
 - The current series has **no Ñ**: `N9D` → `O0D`. The next ID is the next free
   **pre-made row** (the app's «Siguiente Insectary ID», Inicio). What follows
   `Z9` of the last series: the team decides when it comes; ask.
-- Known leftovers, left as they are: the empty block `A0E`–`A8E` at rows
-  13253–13261 repeats the used `A0E`–`A8E` (rows 13512–13520), so those empty
-  rows are not used; the Panama STRI rows with Insectary_ID `NA` are not
-  ours.
+- `A0E`–`A8E` were given out twice: the reared salapia of 20–21 Sep 2026
+  keep the plain IDs, and the wild-caught butterflies of 29 Sep 2026 are
+  `A0E.1`–`A8E.1`. The Panama STRI rows with Insectary_ID `NA` are not ours.
+- An ID skipped on a page that is otherwise typed (the notebook goes from
+  `C4E` to `C9E`, or says «no existe») gets `NA` in Wild_Reared, CLUTCH
+  NUMBER, Stock_of_origin, SPECIES, Sex and LIFESTAGE, and the note "ID not
+  used: skipped in the Emergidos notebook".
 - Read an ID by position (digit vs letter, `O`/`0`, `S`/`5`, `B`/`8`, `G`/`6`,
   `I`/`1`, `Z`/`2`; transposed letters `9MN`/`9NM`); `match_notebook` checks
   look-alikes against the sheet. Letter O is common: `6OO`, `5OS` (and `50S`
