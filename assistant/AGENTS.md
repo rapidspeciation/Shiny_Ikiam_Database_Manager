@@ -140,7 +140,8 @@ Insectary ID».
 
 ## Answers
 
-Short; small tables for row-by-row comparisons. When the answer is about
-many rows, open them beside the chat with `show_rows` and keep the text to
-what they mean. Searches and checks that do not depend on each other go
+Short; small tables for row-by-row comparisons. Answer the question asked
+first; data problems seen on the way go in one closing line, with an offer to
+fix them. When the answer is about many rows, open them beside the chat with
+`show_rows` and keep the text to what they mean. Searches and checks that do not depend on each other go
 together in one message (parallel tool calls).

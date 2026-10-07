@@ -22,6 +22,10 @@ Also ask what happens to the rows already in the sheet: they stay as they are,
 or they are corrected (that is a separate proposal, made with the usual
 tools). Do the data change the person asked for either way.
 
+A fact about the workbook or the tools that every chat needs goes into these
+instructions (or the tool), where every chat reads it, rather than into one
+person's memory.
+
 ## 2. Find where the rule lives
 
 Search `assistant/` in the source checkout (skill **app-dev**: where it is,

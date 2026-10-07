@@ -34,7 +34,9 @@ team writes values, each notebook's layout) is in
    file name) and `rotate` (the turn you gave crops.py) so the page shows
    upright beside its table. All the envelopes/labels of a message are one
    call (`kind: "labels"`). Don't look the rows up first: the tool does it.
-5. **Second reading, only when needed** (see "Verification").
+5. **Second reading** (see "Verification"): when the page has any of the
+   cells listed there, it is done in the same turn, before the summary, so the
+   person reviews the page once.
 6. **Tell the person in 3–6 short lines**: which notebook and rows
    ("Posturas, clutches 120–134"), how many cells it fills, the differences
    with the sheet (sheet → notebook), what the second reading changed (if one
