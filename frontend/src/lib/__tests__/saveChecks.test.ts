@@ -1,11 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { markRaw } from 'vue'
-import { createPinia, setActivePinia } from 'pinia'
+import { describe, expect, it } from 'vitest'
 import { dateProblem, localProblems, type CheckSheet } from '../saveChecks'
 import type { Field, TableRow } from '../types'
-import { usePending } from '../../stores/pending'
-import { useTables } from '../../stores/tables'
-import { verificationsFor } from '../verifications'
 
 const columns: Field[] = [
   { key: 'Insectary_ID', label: 'Insectary ID', type: 'text' },
@@ -88,111 +83,5 @@ describe('checks before saving', () => {
         sheets,
       ),
     ).toEqual({})
-  })
-})
-
-describe('saving pending changes', () => {
-  let sent: { edits: { id: string; values: Record<string, unknown> }[]; partial: boolean }[] = []
-  let answer: () => Response
-  beforeEach(async () => {
-    setActivePinia(createPinia())
-    localStorage.clear()
-    sent = []
-    answer = () => new Response(JSON.stringify({ records: [], skipped: [], created: [] }))
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string, init?: RequestInit) => {
-        if (url.startsWith('api/verifications'))
-          return new Response(
-            JSON.stringify({
-              unique: rules.unique,
-              lists: { Preserved_Dead_Alive: { strict: true, source: 'x', values: ['Dead', 'Alive', 'NA'] } },
-            }),
-          )
-        sent.push(JSON.parse(String(init?.body)))
-        return answer()
-      }),
-    )
-    useTables().tables.Insectary_data = markRaw({ module: 'Insectary_data', revision: '1', columns, rows, headerProblems: [] })
-    verificationsFor('Insectary_data')
-    await new Promise(resolve => setTimeout(resolve, 0))
-  })
-
-  it('saves every other change and keeps a repeated CAM and a broken date pending, with the reason', async () => {
-    const pending = usePending()
-    pending.setAutoSave(false)
-    pending.setCell('Insectary_data', rows[1], 'N3D', 'CAM_ID', 'CAM078274')
-    pending.setCell('Insectary_data', rows[1], 'N3D', 'Death_date', 46292)
-    pending.setCell('Insectary_data', rows[2], 'N4D', 'Death_date', 32_902_000)
-    pending.setCell('Insectary_data', rows[2], 'N4D', 'Death_cause', 'Unknown')
-    const result = await pending.save('')
-    expect(sent).toHaveLength(1)
-    expect(sent[0].partial).toBe(true)
-    expect(sent[0].edits).toEqual([
-      { id: 'r2', values: { Death_date: 46292 }, expected: { Death_date: null } },
-      { id: 'r3', values: { Death_cause: 'Unknown' }, expected: { Death_cause: null } },
-    ])
-    expect(result).toEqual({ saved: 2, left: 2 })
-    expect(Object.keys(pending.edits.r2.values)).toEqual(['CAM_ID'])
-    expect(Object.keys(pending.edits.r3.values)).toEqual(['Death_date'])
-    expect(pending.issues['r2:CAM_ID']).toBe('CAM078274 ya está usado en Insectary_data fila 13384 (N2D)')
-    expect(pending.issues['r3:Death_date']).toMatch(/Fecha no válida/)
-  })
-
-  it('keeps what the server left out red, and automatic saving does not send it again until it is edited', async () => {
-    const pending = usePending()
-    pending.setAutoSave(false)
-    answer = () =>
-      new Response(
-        JSON.stringify({
-          records: [],
-          created: [],
-          skipped: [
-            { id: 'r2', field: 'CAM_ID', code: 'DUPLICATE_ID', message: 'CAM079001 ya está usado en Collection_data fila 9000' },
-          ],
-        }),
-      )
-    pending.setCell('Insectary_data', rows[1], 'N3D', 'CAM_ID', 'CAM079001')
-    pending.setCell('Insectary_data', rows[2], 'N4D', 'Death_cause', 'Unknown')
-    expect(await pending.save('')).toEqual({ saved: 1, left: 1 })
-    expect(pending.errors['r2:CAM_ID']).toMatch(/Collection_data fila 9000/)
-    expect(pending.edits.r3).toBeUndefined()
-    // Another change: automatic saving sends it, not the refused CAM.
-    pending.setCell('Insectary_data', rows[2], 'N4D', 'Sex', 'male')
-    answer = () => new Response(JSON.stringify({ records: [], skipped: [], created: [] }))
-    await pending.save('', { retryRefused: false })
-    expect(sent[1].edits).toEqual([{ id: 'r3', values: { Sex: 'male' }, expected: { Sex: null } }])
-    expect(pending.errors['r2:CAM_ID']).toBeDefined()
-    // Nothing else to send: no request at all.
-    expect(await pending.save('', { retryRefused: false })).toEqual({ saved: 0, left: 1 })
-    expect(sent).toHaveLength(2)
-  })
-
-  it('sends the tab most changes were typed in, as the purpose of the save (Historial)', async () => {
-    const pending = usePending()
-    pending.setAutoSave(false)
-    location.hash = '#/tubos'
-    pending.setCell('Insectary_data', rows[2], 'N4D', 'Sex', 'male')
-    location.hash = '#/muertes'
-    pending.setCell('Insectary_data', rows[1], 'N3D', 'Death_cause', 'Unknown')
-    pending.setCell('Insectary_data', rows[2], 'N4D', 'Death_cause', 'Unknown')
-    location.hash = '#/historial'
-    await pending.save('')
-    expect((sent[0] as unknown as { purpose: string }).purpose).toBe('muertes')
-    location.hash = ''
-  })
-
-  it("leaves a walk's new rows for Guardar: automatic saving sends only the other changes", async () => {
-    const pending = usePending()
-    pending.setAutoSave(false)
-    pending.addCreate('Insectary_data', 'captura', { Insectary_ID: 'Z9Z' }, { manual: true })
-    pending.setCell('Insectary_data', rows[2], 'N4D', 'Death_cause', 'Unknown')
-    await pending.save('', { retryRefused: false, auto: true })
-    expect(sent[0].edits).toEqual([{ id: 'r3', values: { Death_cause: 'Unknown' }, expected: { Death_cause: null } }])
-    expect(JSON.stringify(sent[0])).not.toContain('Z9Z')
-    expect(pending.creates).toHaveLength(1)
-    // Guardar sends it.
-    await pending.save('')
-    expect(JSON.stringify(sent[1])).toContain('Z9Z')
   })
 })

@@ -56,14 +56,10 @@ async function key(input: HTMLInputElement, name: string) {
 }
 
 describe('ChoiceField', () => {
-  it('filters as you type, prefix matches first, and marks the first', async () => {
+  // The order of the suggestions is lib/choices (choices.test); here, the list it opens.
+  it('typing opens the list with the first suggestion marked, also for screen readers', async () => {
     const { input } = await mount(species)
     await type(input, 'm')
-    expect(items().map(el => el.textContent?.trim())).toEqual([
-      'Mechanitis messenoides',
-      'Mechanitis polymnia',
-      'Ithomia salapia',
-    ])
     expect(picked()).toBe('Mechanitis messenoides')
     expect(input.getAttribute('aria-expanded')).toBe('true')
     expect(input.getAttribute('aria-activedescendant')).toBe(items()[0].id)

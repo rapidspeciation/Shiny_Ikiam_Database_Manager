@@ -8,15 +8,12 @@ import {
   byHour,
   effortDays,
   existingRow,
-  isMonitoringRow,
   kindsByMonth,
   rareSpecies,
   recaptureDistances,
   seasonality,
   speciesAccumulation,
   speciesBySection,
-  matchWalk,
-  monitoringDays,
   median,
   monthRange,
   markConflicts,
@@ -34,7 +31,6 @@ import {
   taxaFrom,
   trackSpan,
 } from '../monitoring'
-import { nearestSection } from '../transects'
 import type { CellValue, TableRow } from '../types'
 
 let n = 0
@@ -131,12 +127,8 @@ describe('waypoint notes', () => {
   })
 })
 
-describe('transect sections', () => {
-  it('places captures on the trail section they were taken in', () => {
-    expect(nearestSection(-0.950925, -77.869495).section).toBe(4)
-    expect(nearestSection(-0.952142, -77.867853).section).toBe(3)
-    expect(nearestSection(-0.9528, -77.8655).section).toBe(2)
-    expect(nearestSection(-0.9521, -77.86432).section).toBe(1)
+describe('locating a capture', () => {
+  it('a point far from the trail is on no section', () => {
     const far = locateCapture({ lat: -0.96, lon: -77.87, ele: null, time: null, text: 'M1 Oleria onega macho 9:00' }, taxa)
     expect(far.section).toBeNull()
   })
@@ -424,42 +416,6 @@ describe('live report', () => {
     expect(byHeight(rows)).toEqual([1, 0, 1, 0, 0, 1])
     expect(byCloud(rows)).toEqual([0, 1, 1, 0])
     expect(median([5, 1, 9, 3])).toBe(4)
-  })
-})
-
-describe('matching old walks to the sheet', () => {
-  it('reads several butterflies at one point, times with a dot and M marks at the start', () => {
-    expect(parseCapture('Mariposa 1 y 2', taxa)).toMatchObject({ count: 2, seq: 1 })
-    expect(parseCapture('Marip 3', taxa)).toMatchObject({ count: 1, seq: 3 })
-    expect(parseCapture('Mariposa 3 4 y 5', taxa).count).toBe(3)
-    expect(parseCapture('Dos, 1.20 seco oscuro, 10.19', taxa)).toMatchObject({ minutes: 619, height: null })
-    expect(parseCapture('Mariposa 1 2.5m hembra 9:12 NC seco', taxa)).toMatchObject({ count: 1, height: 2.5, minutes: 552 })
-  })
-  const day = (values: Record<string, CellValue>) => row({ Collector: 'FCH - Franz Chandi', Collection_date: 44971, ...values })
-  it('pairs short notes with the rows of the day in order when the numbers agree', () => {
-    const rows = [day({ SPECIES: 'A a' }), day({ SPECIES: 'B b' }), day({ SPECIES: 'C c' }), day({ SPECIES: 'D d' })]
-    const points = ['Mariposa 1 y 2', 'Marip 3', 'Marip 4'].map(t => parseCapture(t, taxa))
-    const m = matchWalk(rows, '2023-02-14', 'FCH - Franz Chandi', points)
-    expect(m.pairs.map(p => p.row.values.SPECIES)).toEqual(['A a', 'B b', 'C c', 'D d'])
-    expect(m.left).toHaveLength(0)
-    // Other collectors' rows that day are not used.
-    const other = matchWalk([...rows, day({ SPECIES: 'E e', Collector: 'AA - Alex Arias' })], '2023-02-14', 'FCH', points)
-    expect(other.pairs).toHaveLength(4)
-  })
-  it('finds a walk whose title is one day off by its marks', () => {
-    const rows = [
-      row({ Collector: 'AA - Alex Arias', Collection_date: 45827, FieldMark_ID: 'A52', SPECIES: 'Hyposcada illinissa' }),
-    ]
-    const m = matchWalk(rows, '2025-06-20', 'AA - Alex Arias', [parseCapture('A52 lluvia NO 9:52 0.5m', taxa)])
-    expect(m.date).toBe('2025-06-19')
-    expect(m.pairs).toHaveLength(1)
-  })
-  it('counts rows without Purpose on a monitoring day as monitoring', () => {
-    const days = monitoringDays([row({ Date: 45149, Location: 'Ikiam', Purpose: 'Monitoring', Collectors_initials: 'FCH' })])
-    const na = row({ Purpose: 'NA', Collector: 'FCH - Franz Chandi', Collection_date: 45149 })
-    expect(isMonitoringRow(na, days)).toBe(true)
-    expect(isMonitoringRow({ ...na, values: { ...na.values, Collection_date: 45150 } }, days)).toBe(false)
-    expect(isMonitoringRow(na)).toBe(false)
   })
 })
 

@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import { SECTIONS, TRAIL_LENGTH, nearestSection, trailPosition } from '../transects'
+import { SECTIONS, TRAIL_LENGTH, estimatedSection, nearestSection, sectionDiffers, trailPosition } from '../transects'
+
+const mid = (section: number) => {
+  const s = SECTIONS.find(x => x.section === section)!
+  return s.path[Math.floor(s.path.length / 2)]
+}
+
+describe('nearestSection', () => {
+  it('places captures on the trail section they were taken in', () => {
+    expect(nearestSection(-0.950925, -77.869495).section).toBe(4)
+    expect(nearestSection(-0.952142, -77.867853).section).toBe(3)
+    expect(nearestSection(-0.9528, -77.8655).section).toBe(2)
+    expect(nearestSection(-0.9521, -77.86432).section).toBe(1)
+  })
+})
 
 describe('trailPosition', () => {
   it('agrees with nearestSection and measures along the trail from the T4 end', () => {
@@ -26,5 +40,23 @@ describe('trailPosition', () => {
     expect(p.section).toBe(4)
     expect(p.distance).toBeGreaterThan(5)
     expect(p.distance).toBeLessThan(15)
+  })
+})
+
+describe('estimatedSection', () => {
+  it('gives the section of a point on the trail, and none off it with the distance', () => {
+    for (const s of [1, 2, 3, 4]) expect(estimatedSection(...mid(s)).section).toBe(s)
+    const [lat, lon] = mid(2)
+    const off = estimatedSection(lat + 0.001, lon)
+    expect(off.section).toBeNull()
+    expect(off.distance).toBeGreaterThan(40)
+    expect(Number.isInteger(off.distance)).toBe(true)
+  })
+  it('differs from the row only when both are known', () => {
+    expect(sectionDiffers({ section: 3 }, '4')).toBe(true)
+    expect(sectionDiffers({ section: 3 }, 3)).toBe(false)
+    expect(sectionDiffers({ section: 3 }, 'NA')).toBe(false)
+    expect(sectionDiffers({ section: 3 }, null)).toBe(false)
+    expect(sectionDiffers({ section: null }, '2')).toBe(false)
   })
 })

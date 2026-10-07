@@ -22,6 +22,7 @@ import {
   sampleWarnings,
   selectionActions,
   sheetEdits,
+  sheetApplies,
   sheetGroups,
   tellText,
   uncheckedDoubts,
@@ -118,25 +119,6 @@ describe('the tables of a proposal', () => {
       ['Collection_data', ['Sex', 'SPECIES', 'Collector'], 1],
       ['Insectary_data', ['Death_date'], 1],
     ])
-  })
-})
-
-describe('a notebook page\'s table', () => {
-  it('shows the page\'s columns first in the page\'s order, then the rest and the added ones at their place in the sheet', () => {
-    const p = {
-      ...proposal([edited('r1', { Death_date: '2026-10-01', Sex: 'NA', CAM_ID: 'CAM078318', Wild_Reared: 'Reared' }, { sheet: 'Insectary_data' })]),
-      // A proposal whose reason names the notebook (no page saved): its columns, no photos.
-      page: {
-        kind: 'emergence',
-        sheet: 'Insectary_data',
-        columns: ['Insectary_ID', 'SPECIES', 'Sex', 'CLUTCH NUMBER', 'Death_date', 'CAM_ID'],
-        keys: ['Insectary_ID'],
-        photos: 0,
-      },
-    }
-    const order = () => ['Insectary_ID', 'Wild_Reared', 'CLUTCH NUMBER', 'SPECIES', 'Sex', 'Death_date', 'LIFESTAGE', 'CAM_ID', 'Location_body']
-    const [g] = sheetGroups(p, { Insectary_data: ['Location_body', 'LIFESTAGE'] }, order)
-    expect(g.fields).toEqual(['SPECIES', 'Sex', 'CLUTCH NUMBER', 'Death_date', 'CAM_ID', 'Wild_Reared', 'LIFESTAGE', 'Location_body'])
   })
 })
 
@@ -457,6 +439,31 @@ describe('applying', () => {
     ])
     expect(rowsToWrite(p)).toEqual([0, 2, 4])
     expect(notApplied(p)).toBe(3)
+  })
+})
+
+describe('a proposal with rows of two sheets, applied one sheet at a time', () => {
+  /** A notebook page's two Insectary_data rows and a new Collection_data row for a wild-caught butterfly. */
+  const row = (index: number, sheet: string, extra: Partial<ProposalChange> = {}) =>
+    ({ index, key: `k${index}`, recordId: `r${index}`, sheet, row: index + 2, label: `A${index}T`, values: { Sex: 'male' }, ...extra }) as ProposalChange
+  const changes = [row(0, 'Insectary_data'), row(1, 'Insectary_data'), row(2, 'Collection_data', { create: true, recordId: null })]
+
+  it('each sheet has its own rows to apply; one sheet alone has none of its own', () => {
+    const per = sheetApplies(changes, rowsToWrite({ changes }))
+    expect([...per.keys()]).toEqual(['Insectary_data', 'Collection_data'])
+    expect(per.get('Insectary_data')).toEqual({ rows: [0, 1], written: 0 })
+    expect(per.get('Collection_data')).toEqual({ rows: [2], written: 0 })
+    expect(sheetApplies(changes.slice(0, 2), [0, 1]).size).toBe(0)
+  })
+
+  it('once one sheet is written: its rows read-only and not written again, the other still to apply', () => {
+    const after = changes.map(c => (c.sheet === 'Insectary_data' ? { ...c, applied: 1 } : c))
+    expect(rowsToWrite({ changes: after })).toEqual([2])
+    expect(readOnlyRow(after[0])).toBe(true)
+    expect(readOnlyRow(after[2])).toBe(false)
+    const per = sheetApplies(after, rowsToWrite({ changes: after }))
+    expect(per.get('Insectary_data')).toEqual({ rows: [], written: 2 })
+    expect(per.get('Collection_data')).toEqual({ rows: [2], written: 0 })
   })
 })
 

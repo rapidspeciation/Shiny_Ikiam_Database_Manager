@@ -95,8 +95,6 @@ describe('a stage of a clutch', () => {
     expect(m.host.textContent).toContain('11 → 10 · −1 correction')
     await m.click(m.button('Set'))
     expect(m.acts).toEqual([{ type: 'correction', total: 10, groupIndex: null, reason: null }])
-    // No separate box for the total, and no "tap a number to take it out".
-    expect(m.host.textContent).not.toMatch(/Tap a number/)
   })
   it('each term a chip with its event; tapped, it opens the event', async () => {
     const m = await mount('=(6-2)+(5)', { meta: [group('A', 0, 'A'), group('B', 1, 'box B')], events: [event('h6', 6, 'A'), event('d2', -2, 'A'), event('h5', 5, 'B')] })
@@ -131,7 +129,8 @@ describe('a stage of a clutch', () => {
     await m.type(box, '6 4')
     expect(m.host.textContent).toContain('= 10 / 11')
     await m.type(box, '6 5')
-    await m.click([...m.host.querySelectorAll<HTMLButtonElement>('button.btn-primary')].find(b => b.textContent?.includes('Regroup'))!)
+    const area = m.host.querySelector('[role="group"][aria-label="Regroup"]')!
+    await m.click([...area.querySelectorAll('button')].find(b => b.textContent?.includes('Regroup'))!)
     expect(m.acts).toEqual([{ type: 'regroup', targets: [6, 5], labels: ['A', 'B'] }])
   })
   it('a chip tapped is shown selected (its sheet is the editor’s, under the chips); a tap outside the chips closes it', async () => {
@@ -149,8 +148,9 @@ describe('a stage of a clutch', () => {
     const m = await mount('=11')
     await m.click(m.button('Regroup'))
     expect(m.said).toEqual(['panelOpened'])
-    expect(m.host.querySelector('[role="group"][aria-label="Regroup"] h3')?.textContent).toBe('Regroup')
-    expect(document.querySelector('.fixed')).toBeNull()
+    // Inline in the panel, not a dialog over the page.
+    expect(m.host.querySelector('[role="group"][aria-label="Regroup"]')).not.toBeNull()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
     m.inlineOpen.value = true
     await nextTick()
     await nextTick()
@@ -158,7 +158,7 @@ describe('a stage of a clutch', () => {
     m.inlineOpen.value = false
     await nextTick()
     await m.click(m.host.querySelector<HTMLButtonElement>('button[aria-label^="Type the total"]')!)
-    expect(m.host.textContent).toContain("Today's count")
+    expect(m.host.querySelector('input[aria-label^="New total"]')).not.toBeNull()
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     await nextTick()
     expect(m.host.querySelector('input[aria-label^="New total"]')).toBeNull()

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compareCells, gridRows, isMarked, lineText, rowPlace, severalPhotos, tableCounts, type TableRow } from '../rowsTable'
+import { compareCells, gridRows, isMarked, lineText, rowPlace, severalPhotos, tableCounts, tablePhotos, type TableRow } from '../rowsTable'
 import type { CellValue } from '../types'
 
 const row = (key: string, values: Record<string, CellValue>, extra: Partial<TableRow> = {}): TableRow => ({
@@ -61,5 +61,16 @@ describe('a table of rows the assistant shows (show_rows)', () => {
     const desc = [...values].sort((a, b) => -compareCells(a, b, 'desc'))
     expect(desc.slice(0, 5)).toEqual(['W10B', 'w2b', 'Mechanitis', 46000, 45000])
     expect(desc.slice(5).every(v => v === null || v === '')).toBe(true)
+  })
+})
+
+describe('the photos above a read-only table', () => {
+  it('per photo: the lines of its rows and how many', () => {
+    const rows = [{ page: { photo: 0, line: 3 } }, { page: { photo: 0, line: 7 } }, { page: { photo: 1, line: 2 } }, {}]
+    expect(tablePhotos(rows, 3)).toEqual([
+      { photo: 0, from: 3, to: 7, rows: 2 },
+      { photo: 1, from: 2, to: 2, rows: 1 },
+      { photo: 2, from: 0, to: 0, rows: 0 },
+    ])
   })
 })

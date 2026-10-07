@@ -27,8 +27,8 @@ const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(KEY) :
 export const locale = ref<Locale>(stored === 'es' ? 'es' : 'en')
 if (typeof document !== 'undefined') document.documentElement.lang = locale.value
 watch(locale, value => {
-  localStorage.setItem(KEY, value)
-  document.documentElement.lang = value
+  if (typeof localStorage !== 'undefined') localStorage.setItem(KEY, value)
+  if (typeof document !== 'undefined') document.documentElement.lang = value
 })
 
 type Vars = Record<string, string | number | null | undefined>
