@@ -25,7 +25,7 @@ const now = () => new Date().toISOString();
 /** Saves a record (Store.persistRecord): a new one, or the same id with all its fields. */
 const UPSERT_RECORD = `INSERT INTO records(id,sheet,row_num,values_json,formulas_json,identity_json,label,version,updated_at,missing,observed) VALUES(?,?,?,?,?,?,?,?,?,?,?)
   ON CONFLICT(id) DO UPDATE SET row_num=excluded.row_num,values_json=excluded.values_json,formulas_json=excluded.formulas_json,identity_json=excluded.identity_json,label=excluded.label,version=excluded.version,updated_at=excluded.updated_at,missing=excluded.missing,observed=excluded.observed`;
-/** Rows a sync writes to the local copy in one transaction at most (Store.reconcile). */
+/** Rows a sync writes to the local copy in one transaction at most (Store.reconcile; config.syncWriteRows for tests). */
 const WRITE_ROWS = 1000;
 const error = (code, message, status = 400, details) => Object.assign(new Error(message), { code, status, details });
 
@@ -773,7 +773,7 @@ export class Store {
    */
   async reconcile(sheet, rows, layout, { history = true } = {}) {
     const mod = moduleMap.get(sheet);
-    const turn = turns();
+    const turn = turns(this.config.syncTurnMs);
     let added = 0,
       changed = 0,
       moved = 0,
@@ -960,9 +960,10 @@ export class Store {
     // Up to WRITE_ROWS rows per transaction, each row with its history: more (every row of a big sheet
     // moved by a row inserted at its top) are written in several, with a turn for the others between them.
     const index = new Map(writes.map((w, i) => [w, i]));
-    for (let from = 0; from === 0 || from < order.length; from += WRITE_ROWS) {
+    const writeRows = this.config.syncWriteRows ?? WRITE_ROWS;
+    for (let from = 0; from === 0 || from < order.length; from += writeRows) {
       if (from) await turn();
-      const part = order.slice(from, from + WRITE_ROWS);
+      const part = order.slice(from, from + writeRows);
       this.db.exec('BEGIN IMMEDIATE');
       try {
         this.rowsUncounted(() => {

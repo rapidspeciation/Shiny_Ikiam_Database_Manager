@@ -11,6 +11,7 @@ writeFileSync(fakePython, `#!/usr/bin/env node
 const { spawn } = require('node:child_process');
 const { writeFileSync } = require('node:fs');
 let input = '';
+if (process.env.FAKE_READY_FILE) writeFileSync(process.env.FAKE_READY_FILE, 'ready');
 process.stdin.on('data', chunk => {
   input += chunk;
   for (let end; (end = input.indexOf('\\n')) >= 0;) {
@@ -87,7 +88,10 @@ test('timed out requests terminate the browser', async () => {
 test('timeout stops browser descendants', { skip: process.platform !== 'linux' }, async () => {
   process.env.FAKE_MODE = 'hang_tree';
   process.env.FAKE_CHILD_FILE = join(directory, 'child.pid');
+  process.env.FAKE_READY_FILE = join(directory, 'ready');
   const browser = await openBrowser({ timeoutMs: 150 });
+  // Started (a busy machine may take longer than the timeout to start a process): then the request.
+  for (let i = 0; i < 500 && !existsSync(process.env.FAKE_READY_FILE); i++) await new Promise(resolve => setTimeout(resolve, 10));
   await assert.rejects(browser.page.goto('https://es.wikiloc.com/'), /timed out/);
   const pid = Number(readFileSync(process.env.FAKE_CHILD_FILE, 'utf8'));
   let running = true;
@@ -99,5 +103,6 @@ test('timeout stops browser descendants', { skip: process.platform !== 'linux' }
   }
   assert.equal(running, false);
   delete process.env.FAKE_CHILD_FILE;
+  delete process.env.FAKE_READY_FILE;
   delete process.env.FAKE_MODE;
 });

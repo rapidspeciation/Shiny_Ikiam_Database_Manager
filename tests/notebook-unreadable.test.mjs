@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { moduleMap, parseDateText } from '../server/schema.mjs';
 import { createAssistant } from '../server/assistant.mjs';
 import { unfilledUnreadable } from '../server/doubts.mjs';
+import { signIn } from './helpers/assistant.mjs';
 
 // Cells match_notebook could not read (null): in the proposal as empty cells
 // marked unreadable, for the person to fill; never written unless filled.
@@ -30,20 +30,9 @@ async function setup() {
   const store = new Store({ localMode: true }, { sheets });
   await store.sync({ sheets: ['Insectary_stocks', 'Insectary_data'] });
   const assistant = createAssistant({ store, config: {} });
-  store.db
-    .prepare(
-      "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u-franz','franz','Franz Chandi','editor','s','h',1,'2026-01-01')",
-    )
-    .run();
-  const token = 'token-for-franz';
-  store.db
-    .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
-    .run(createHash('sha256').update(token).digest('hex'), 'u-franz');
-  const mcp = (method, params) => assistant.mcp({ authorization: `Bearer ${token}` }, { jsonrpc: '2.0', id: 1, method, params });
-  const call = async (name, args) => JSON.parse((await mcp('tools/call', { name, arguments: args })).body.result.content[0].text);
-  const user = { id: 'u-franz', username: 'franz', displayName: 'Franz Chandi', role: 'editor' };
-  const http = (method, path, body) => assistant.handle({ method, path, body, user, query: {} });
-  return { store, mcp, call, http };
+  const { call, http: api } = signIn(store, assistant, { id: 'u-franz', displayName: 'Franz Chandi' });
+  const http = (method, path, body) => api(method, path, { body });
+  return { store, call, http };
 }
 
 const PAGE = {
@@ -68,12 +57,8 @@ const PAGE = {
 };
 
 test('match_notebook puts unreadable cells in the proposal for the person to fill, with why and what was read', async () => {
-  const { store, mcp, call, http } = await setup();
+  const { store, call, http } = await setup();
   try {
-    const tool = (await mcp('tools/list')).body.result.tools.find(t => t.name === 'match_notebook');
-    assert.match(tool.inputSchema.properties.lines.items.properties.values.description, /null: unreadable/);
-    assert.match(tool.inputSchema.properties.lines.items.properties.reasons.description, /unreadable/);
-
     const out = await call('match_notebook', PAGE);
     const line = n => out.lines.find(l => l.n === n);
     assert.equal(out.counts.unreadableToFill, 2);

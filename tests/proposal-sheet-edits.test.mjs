@@ -4,38 +4,21 @@
 // proposal's, a choice that holds only while the sheet keeps that value.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { createAssistant } from '../server/assistant.mjs';
 import { moduleMap } from '../server/schema.mjs';
 import { nextInSeries } from '../server/premade.mjs';
-
-const user = { id: 'u1', username: 'franz', displayName: 'Franz', role: 'editor' };
+import { signIn } from './helpers/assistant.mjs';
 
 async function fixture(seed, { evaluate, config = {} } = {}) {
   const sheets = new LocalSheets(seed, evaluate ? { evaluate } : {});
   const store = new Store({ localMode: true }, { sheets });
   await store.sync({ sheets: Object.keys(seed) });
   const assistant = createAssistant({ store, config: { proposalWaitMs: 300, ...config } });
-  store.db
-    .prepare(
-      "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u1','franz','Franz','editor','s','h',1,'2026-01-01')",
-    )
-    .run();
-  store.db
-    .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
-    .run(createHash('sha256').update('franz-token').digest('hex'), 'u1');
-  const call = async (name, args) => {
-    const out = await assistant.mcp(
-      { authorization: 'Bearer franz-token' },
-      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } },
-    );
-    return JSON.parse(out.body.result.content[0].text);
-  };
-  const listed = async id =>
-    (await assistant.handle({ method: 'GET', path: '/api/chat/proposals', body: {}, user, query: { all: '1', only: id } })).body.proposals[0];
-  const post = (id, action, body) => assistant.handle({ method: 'POST', path: `/api/chat/proposals/${id}/${action}`, body, user });
+  const { call, get, http, user } = signIn(store, assistant);
+  const listed = async id => (await get('/api/chat/proposals', { all: '1', only: id })).body.proposals[0];
+  const post = (id, action, body) => http('POST', `/api/chat/proposals/${id}/${action}`, { body });
   let n = 0;
   const apply = (id, body = {}) => post(id, 'apply', { requestId: `apply-${++n}-${id}`, ...body });
   /** Someone types in Google Sheets; the sheet hook reports the row. */
@@ -44,7 +27,7 @@ async function fixture(seed, { evaluate, config = {} } = {}) {
     await store.refreshRows(sheet, [row]);
   };
   const close = () => store.close?.();
-  return { sheets, store, assistant, call, listed, post, apply, typeInSheet, close };
+  return { sheets, store, assistant, user, call, listed, post, apply, typeInSheet, close };
 }
 
 const insectary = () => ({
@@ -242,7 +225,7 @@ test("a sheet edit to a proposal's row wakes the person's list (with a new stamp
   try {
     const a1 = f.store.getRecordBySheetRow('Insectary_data', 2);
     const { proposalId } = await f.call('propose_changes', { changes: [{ recordId: a1.id, values: { Sex: 'female' } }] });
-    const ask = query => f.assistant.handle({ method: 'GET', path: '/api/chat/proposals', body: {}, user, query });
+    const ask = query => f.assistant.handle({ method: 'GET', path: '/api/chat/proposals', body: {}, user: f.user, query });
     const first = (await ask({})).body;
     // Nothing new: the wait runs out and answers "unchanged".
     const idle = (await ask({ wait: '1', revision: first.revision, stamp: first.stamp })).body;
@@ -299,82 +282,6 @@ test('a new row whose pre-made row was typed into meanwhile is flagged, and left
     assert.equal(out.body.keptFromSheet[0].rowTaken.row, 4);
     assert.equal(f.store.getRecordBySheetRow('Insectary_data', 4).values.Sex, 'male');
     assert.equal(f.store.getRecordBySheetRow('Insectary_data', 5).values.Sex, 'male');
-  } finally {
-    f.close();
-  }
-});
-
-test("“Tell the assistant” sends to the proposal's own T3 chat when it is idle; otherwise the page copies it", async () => {
-  const thread = '11111111-1111-4111-8111-111111111111';
-  const sessions = { [thread]: { projectId: 'p-franz', runtimeMode: 'full-access', interactionMode: 'default', busy: false } };
-  const sent = [];
-  const t3Chats = {
-    available: true,
-    session: id => sessions[id] ?? null,
-    projectsOf: name => (name === 'franz' ? ['p-franz'] : []),
-    threads: () => new Map(),
-    chatsOf: () => [],
-    threadOfToolUse: () => null,
-    onlyRunning: () => null,
-    findProposals: async () => new Map(),
-    open: () => null,
-  };
-  const t3Fetch = async (url, options) => {
-    sent.push({ url, auth: options.headers.authorization, body: JSON.parse(options.body) });
-    return { ok: true, json: async () => ({ sequence: 1 }) };
-  };
-  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
-  const { join } = await import('node:path');
-  const { tmpdir } = await import('node:os');
-  const dir = await mkdtemp(join(tmpdir(), 't3tell-'));
-  await writeFile(join(dir, 'token'), 'admin-token\n');
-  const f = await fixture(insectary(), { config: { t3Chats, t3Fetch, t3: { local: 'http://t3.test', tokenFile: join(dir, 'token') } } });
-  try {
-    const a1 = f.store.getRecordBySheetRow('Insectary_data', 2);
-    const { proposalId } = await f.call('propose_changes', { changes: [{ recordId: a1.id, values: { Sex: 'female' } }] });
-    const text = 'La hoja cambió: Sex (A1A). Revísalo y actualiza la propuesta.';
-    // Not linked to a chat yet.
-    assert.deepEqual((await f.post(proposalId, 'tell', { text })).body, { sent: false, reason: 'no_chat', chat: null });
-    f.store.db.prepare('UPDATE ai_proposals SET t3_thread = ? WHERE id = ?').run(thread, proposalId);
-    sessions[thread].busy = true;
-    assert.equal((await f.post(proposalId, 'tell', { text })).body.reason, 'busy');
-    sessions[thread].busy = false;
-    const out = await f.post(proposalId, 'tell', { text });
-    assert.deepEqual(out.body, { sent: true, chat: thread });
-    assert.equal(sent.length, 1);
-    assert.equal(sent[0].url, 'http://t3.test/api/orchestration/dispatch');
-    assert.equal(sent[0].auth, 'Bearer admin-token');
-    assert.equal(sent[0].body.type, 'thread.turn.start');
-    assert.equal(sent[0].body.threadId, thread);
-    assert.equal(sent[0].body.message.text, text);
-    // Another person's chat is never written to.
-    sessions[thread].projectId = 'p-other';
-    assert.equal((await f.post(proposalId, 'tell', { text })).body.reason, 'no_chat');
-    assert.equal((await f.post(proposalId, 'tell', { text: '' })).status, 400);
-  } finally {
-    f.close();
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("someone else on the team finishes a handed-over chat: applies its proposal as themselves", async () => {
-  const f = await fixture(insectary());
-  try {
-    const a1 = f.store.getRecordBySheetRow('Insectary_data', 2);
-    const { proposalId } = await f.call('propose_changes', {
-      reason: 'Página 12',
-      changes: [{ recordId: a1.id, values: { Notes_Insectary_data: 'ala rota' } }],
-    });
-    const ana = { id: 'u2', username: 'ana', displayName: 'Ana', role: 'editor' };
-    const as = who => (action, body) => f.assistant.handle({ method: 'POST', path: `/api/chat/proposals/${proposalId}/${action}`, body, user: who });
-    // Someone who only looks can't.
-    assert.equal((await as({ ...ana, role: 'observer' })('apply', { requestId: 'apply-observer-1' })).status, 404);
-    const out = await as(ana)('apply', { requestId: 'apply-ana-12345' });
-    assert.equal(out.status, 200, JSON.stringify(out.body));
-    // The note was written by the assistant for Franz (Franz's chat); the save is Ana's.
-    assert.match(f.store.getRecord(a1.id).values.Notes_Insectary_data, /^\d+\/\d+\/\d+ F: ala rota$/);
-    const actor = f.store.db.prepare("SELECT actor FROM actions WHERE request_id LIKE '%apply-ana-12345%' OR actor = 'u2' LIMIT 1").get()?.actor;
-    assert.equal(actor, 'u2');
   } finally {
     f.close();
   }

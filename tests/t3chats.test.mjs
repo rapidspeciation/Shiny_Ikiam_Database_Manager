@@ -1,14 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { appendFileSync, mkdirSync, mkdtempSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { createAssistant } from '../server/assistant.mjs';
 import { addReports, chatsOnScreen, createT3Chats, openChat } from '../server/t3chats.mjs';
+import { signIn, until } from './helpers/assistant.mjs';
 
 // Proposals by T3 Code chat: which chat drafted a proposal, and which chat the panel follows.
 
@@ -58,10 +59,14 @@ function t3Home() {
   /** A T3 page shows this chat now (its last two reports, 2 s apart). */
   const screen = (path, at = Date.now()) =>
     appendFileSync(join(home, 'userdata', 'logs', 'server.trace.ndjson'), `${traceLine(path, at - 2000)}\n${traceLine(path, at)}\n`);
-  return { home, db, call, screen };
+  const remove = () => {
+    db.close();
+    rmSync(home, { recursive: true, force: true });
+  };
+  return { home, db, call, screen, remove };
 }
 
-async function fixture({ withT3 = true } = {}) {
+async function fixture({ withT3 = true, config = {} } = {}) {
   const sheets = new LocalSheets({
     Collection_data: [{ row: 2, values: { Purpose: 'Monitoring', SPECIES: 'Oleria gunilla', Sex: 'male', CAM_ID: 'CAM000001' } }],
     Taxonomy_v18Jun25: [{ row: 2, values: { species: 'Oleria gunilla', tribe: 'Ithomiini' } }],
@@ -70,39 +75,31 @@ async function fixture({ withT3 = true } = {}) {
   const store = new Store({ localMode: true }, { sheets });
   await store.sync({ sheets: ['Collection_data', 'Taxonomy_v18Jun25', 'Location_data'] });
   const t3 = withT3 ? t3Home() : null;
-  const assistant = createAssistant({ store, config: { ...(t3 ? { t3: { home: t3.home } } : {}) } });
-  store.db
-    .prepare(
-      "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u1','franz','Franz','editor','s','h',1,'2026-01-01')",
-    )
-    .run();
-  store.db
-    .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
-    .run(createHash('sha256').update('franz-token').digest('hex'), 'u1');
-  const user = { id: 'u1', username: 'franz', displayName: 'Franz', role: 'editor' };
+  // T3's chats on a clock the test moves on (the trace log is read at most once a second).
+  let offset = 0;
+  const later = ms => void (offset += ms);
+  const t3Chats = t3 && createT3Chats({ home: t3.home, now: () => Date.now() + offset });
+  const assistant = createAssistant({ store, config: { ...(t3 ? { t3Chats, followCheckMs: 10 } : {}), ...config } });
+  const { user, call, http } = signIn(store, assistant);
   const record = store.getRecordBySheetRow('Collection_data', 2);
   /** propose_changes from a T3 chat, as Claude Code calls it (its tool-use id in _meta). */
   const propose = async (note, toolUseId) => {
-    const out = await assistant.mcp(
-      { authorization: 'Bearer franz-token' },
-      {
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'tools/call',
-        params: {
-          name: 'propose_changes',
-          arguments: { reason: note, changes: [{ recordId: record.id, values: { Sex: 'female' }, note }] },
-          ...(toolUseId ? { _meta: { 'claudecode/toolUseId': toolUseId } } : {}),
-        },
-      },
+    const result = await call(
+      'propose_changes',
+      { reason: note, changes: [{ recordId: record.id, values: { Sex: 'female' }, note }] },
+      toolUseId ? { 'claudecode/toolUseId': toolUseId } : undefined,
     );
-    const result = JSON.parse(out.body.result.content[0].text);
     assert.ok(result.proposalId, JSON.stringify(result));
     return result.proposalId;
   };
   const list = (query = {}) => assistant.handle({ method: 'GET', path: '/api/chat/proposals', user, query: { all: '1', ...query } });
   const linked = id => store.db.prepare('SELECT t3_thread, t3_title FROM ai_proposals WHERE id = ?').get(id);
-  return { store, assistant, t3, user, propose, list, linked };
+  const close = () => {
+    store.close();
+    t3Chats?.close();
+    t3?.remove();
+  };
+  return { store, assistant, t3, user, propose, list, linked, later, close, http };
 }
 
 test("T3's trace log tells the chat on screen; a person's latest one is open, two pages keep the one shown", () => {
@@ -165,7 +162,7 @@ test("T3's trace log tells the chat on screen; a person's latest one is open, tw
 });
 
 test('a proposal is linked to the T3 chat that made it: by tool-use id, later if T3 records the call late, or by its result', async () => {
-  const { store, t3, propose, list, linked } = await fixture();
+  const { t3, propose, list, linked, close } = await fixture();
   try {
     // T3 has recorded the call already: linked at once, with the chat's title.
     t3.call(A, 'tool.started', { itemType: 'mcp_tool_call', toolCallId: 'toolu_A1', status: 'inProgress' });
@@ -180,9 +177,8 @@ test('a proposal is linked to the T3 chat that made it: by tool-use id, later if
     const codex = await propose('foto 3');
     t3.call(B, 'tool.completed', { itemType: 'mcp_tool_call', detail: `{"proposalId":"${codex}","rows":1}` });
     await list();
-    await new Promise(resolve => setTimeout(resolve, 50));
-    assert.equal(linked(late).t3_thread, B);
-    assert.equal(linked(codex).t3_thread, B);
+    assert.equal(linked(late).t3_thread, B, 'by tool-use id, before the answer');
+    await until(() => linked(codex).t3_thread === B);
 
     const body = (await list({ chat: 'all' })).body;
     assert.deepEqual(
@@ -201,12 +197,12 @@ test('a proposal is linked to the T3 chat that made it: by tool-use id, later if
       ],
     );
   } finally {
-    store.close();
+    close();
   }
 });
 
 test('the panel follows the chat open in T3, else the latest active one; other chats and those outside T3 stay reachable', async () => {
-  const { store, t3, user, propose, list } = await fixture();
+  const { store, t3, user, propose, list, later, close } = await fixture();
   try {
     t3.call(A, 'tool.started', { toolCallId: 'toolu_A1' });
     t3.call(B, 'tool.started', { toolCallId: 'toolu_B1' });
@@ -228,7 +224,7 @@ test('the panel follows the chat open in T3, else the latest active one; other c
 
     // A is open in T3: its proposals only, the others listed in the selector.
     t3.screen(`/${ENV}/${A}`);
-    await new Promise(resolve => setTimeout(resolve, 1100)); // the trace log is read at most every second
+    later(1000);
     body = (await list({ chat: 'auto' })).body;
     assert.deepEqual({ ...body.scope }, { chat: A, how: 'open', title: 'Cuaderno de emergidos' });
     assert.deepEqual(body.proposals.map(p => p.id), [inA]);
@@ -250,21 +246,22 @@ test('the panel follows the chat open in T3, else the latest active one; other c
 
     // The panel waits for changes; opening B in T3 wakes it with B's proposals.
     const { revision } = (await list({ chat: 'auto' })).body;
-    const waiting = list({ chat: 'auto', wait: '1', revision, follow: A });
-    await new Promise(resolve => setTimeout(resolve, 300));
+    let woken = false;
+    const waiting = list({ chat: 'auto', wait: '1', revision, follow: A }).then(out => ((woken = true), out));
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(woken, false, 'nothing changed yet');
     t3.screen(`/${ENV}/${B}`);
-    const started = Date.now();
+    later(1000);
     body = (await waiting).body;
-    assert.ok(Date.now() - started < 5000);
     assert.equal(body.scope.chat, B);
     assert.deepEqual(body.proposals.map(p => p.id), [inB]);
   } finally {
-    store.close();
+    close();
   }
 });
 
 test("the chat the page's T3 frame shows (its bridge) wins over the trace log's guess", async () => {
-  const { store, t3, propose, list } = await fixture();
+  const { t3, propose, list, later, close } = await fixture();
   try {
     t3.call(A, 'tool.started', { toolCallId: 'toolu_A1' });
     t3.call(B, 'tool.started', { toolCallId: 'toolu_B1' });
@@ -273,7 +270,7 @@ test("the chat the page's T3 frame shows (its bridge) wins over the trace log's 
     const inB = await propose('foto 2', 'toolu_B1');
     // Another T3 tab left on B keeps reporting it; the frame beside the panel shows A.
     t3.screen(`/${ENV}/${B}`);
-    await new Promise(resolve => setTimeout(resolve, 1100));
+    later(1000);
     assert.equal((await list({ chat: 'auto' })).body.scope.chat, B, 'the guess');
     let body = (await list({ chat: 'auto', seen: A })).body;
     assert.deepEqual({ ...body.scope }, { chat: A, how: 'open', title: 'Cuaderno de emergidos' });
@@ -294,20 +291,20 @@ test("the chat the page's T3 frame shows (its bridge) wins over the trace log's 
     assert.equal((await list({ chat: 'auto', seen: "x' OR 1" })).body.scope.chat, B);
     // The page asks again itself when its frame moves: the wait is for proposals only.
     const { revision } = body;
-    const waiting = list({ chat: 'auto', seen: A, follow: A, wait: '1', revision });
-    const started = Date.now();
-    await new Promise(resolve => setTimeout(resolve, 100));
+    let woken = false;
+    const waiting = list({ chat: 'auto', seen: A, follow: A, wait: '1', revision }).then(out => ((woken = true), out));
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(woken, false, 'no proposal yet');
     await propose('foto 3', 'toolu_A1');
     body = (await waiting).body;
-    assert.ok(Date.now() - started < 2000);
     assert.equal(body.proposals.length, 2);
   } finally {
-    store.close();
+    close();
   }
 });
 
 test('without T3 the panel shows every proposal, as before', async () => {
-  const { store, propose, list, linked } = await fixture({ withT3: false });
+  const { propose, list, linked, close } = await fixture({ withT3: false });
   try {
     const id = await propose('foto 1', 'toolu_X');
     assert.equal(linked(id).t3_thread, null);
@@ -321,12 +318,12 @@ test('without T3 the panel shows every proposal, as before', async () => {
     assert.deepEqual(chats.chatsOf('franz'), []);
     assert.equal(chats.threadOfToolUse('toolu_X', iso(0)), null);
   } finally {
-    store.close();
+    close();
   }
 });
 
 test("a person's T3 chats are those of their workspace folder", () => {
-  const { home, db } = t3Home();
+  const { home, db, remove } = t3Home();
   const chats = createT3Chats({ home });
   assert.deepEqual(chats.projectsOf('franz'), ['p-franz']);
   assert.deepEqual(chats.projectsOf('ana'), ['p-ana'], 'a trailing slash is the same folder');
@@ -336,4 +333,57 @@ test("a person's T3 chats are those of their workspace folder", () => {
   db.prepare("INSERT INTO projection_thread_sessions VALUES (?, 'running')").run(B);
   assert.equal(chats.onlyRunning('franz'), null, 'two chats answering: unknown');
   chats.close();
+  remove();
+});
+
+test("“Tell the assistant” sends to the proposal's own T3 chat when it is idle; otherwise the page copies it", async () => {
+  const thread = '11111111-1111-4111-8111-111111111111';
+  const sessions = { [thread]: { projectId: 'p-franz', runtimeMode: 'full-access', interactionMode: 'default', busy: false } };
+  const sent = [];
+  const t3Chats = {
+    available: true,
+    session: id => sessions[id] ?? null,
+    projectsOf: name => (name === 'franz' ? ['p-franz'] : []),
+    threads: () => new Map(),
+    chatsOf: () => [],
+    threadOfToolUse: () => null,
+    onlyRunning: () => null,
+    findProposals: async () => new Map(),
+    open: () => null,
+  };
+  const t3Fetch = async (url, options) => {
+    sent.push({ url, auth: options.headers.authorization, body: JSON.parse(options.body) });
+    return { ok: true, json: async () => ({ sequence: 1 }) };
+  };
+  const dir = mkdtempSync(join(tmpdir(), 't3tell-'));
+  writeFileSync(join(dir, 'token'), 'admin-token\n');
+  const { store, propose, http, close } = await fixture({
+    withT3: false,
+    config: { t3Chats, t3Fetch, t3: { local: 'http://t3.test', tokenFile: join(dir, 'token') } },
+  });
+  try {
+    const proposalId = await propose('foto 1');
+    const tell = text => http('POST', `/api/chat/proposals/${proposalId}/tell`, { body: { text } });
+    const text = 'La hoja cambió: Sex (CAM000001). Revísalo y actualiza la propuesta.';
+    // Not linked to a chat yet.
+    assert.deepEqual((await tell(text)).body, { sent: false, reason: 'no_chat', chat: null });
+    store.db.prepare('UPDATE ai_proposals SET t3_thread = ? WHERE id = ?').run(thread, proposalId);
+    sessions[thread].busy = true;
+    assert.equal((await tell(text)).body.reason, 'busy');
+    sessions[thread].busy = false;
+    assert.deepEqual((await tell(text)).body, { sent: true, chat: thread });
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].url, 'http://t3.test/api/orchestration/dispatch');
+    assert.equal(sent[0].auth, 'Bearer admin-token');
+    assert.equal(sent[0].body.type, 'thread.turn.start');
+    assert.equal(sent[0].body.threadId, thread);
+    assert.equal(sent[0].body.message.text, text);
+    // Another person's chat is never written to.
+    sessions[thread].projectId = 'p-other';
+    assert.equal((await tell(text)).body.reason, 'no_chat');
+    assert.equal((await tell('')).status, 400);
+  } finally {
+    close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -20,6 +20,12 @@ export function publicUser(row) {
     }
   );
 }
+// scrypt's cost; tests lower it (a hash only verifies with the cost it was made with).
+let scryptOptions = {};
+export function setPasswordHashCost(N) {
+  scryptOptions = N ? { N } : {};
+}
+const hashOf = (password, salt) => scryptSync(password, salt, 64, scryptOptions);
 export function validatePassword(password) {
   if (typeof password !== 'string' || password.length < 6 || password.length > 16)
     throw bad('WEAK_PASSWORD', 'Password must have 6 to 16 characters');
@@ -27,16 +33,16 @@ export function validatePassword(password) {
 export function passwordFields(password) {
   validatePassword(password);
   const salt = randomBytes(24).toString('hex');
-  return { salt, hash: scryptSync(password, salt, 64).toString('hex') };
+  return { salt, hash: hashOf(password, salt).toString('hex') };
 }
 export function verifyPassword(password, user) {
   if (typeof password !== 'string') return false;
   // An unknown account takes as long as a wrong password, so timing does not tell which accounts exist.
   if (!user) {
-    scryptSync(password, 'no-such-account', 64);
+    hashOf(password, 'no-such-account');
     return false;
   }
-  const given = scryptSync(password, user.salt, 64);
+  const given = hashOf(password, user.salt);
   const expected = Buffer.from(user.password_hash, 'hex');
   return given.length === expected.length && timingSafeEqual(given, expected);
 }

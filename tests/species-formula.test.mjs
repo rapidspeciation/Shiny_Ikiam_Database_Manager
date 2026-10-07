@@ -3,11 +3,12 @@
 // it, the person typed it in the table, or a save sends it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { applyBatch } from '../server/batch.mjs';
 import { moduleMap } from '../server/schema.mjs';
+import { signIn } from './helpers/assistant.mjs';
 import { createAssistant } from '../server/assistant.mjs';
 
 const user = { id: 'u1', username: 'franz', displayName: 'Franz', role: 'editor' };
@@ -121,23 +122,7 @@ test("a new row's species equal to its clutch's keeps the formula, asked to repl
 test('in a proposal, the formula\'s species is dropped (the assistant\'s or typed) and shown as what the formula gives', async () => {
   const { store, record } = await fixture();
   const assistant = createAssistant({ store, config: {} });
-  store.db
-    .prepare(
-      "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u1','franz','Franz','editor','s','h',1,'2026-01-01')",
-    )
-    .run();
-  store.db
-    .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
-    .run(createHash('sha256').update('franz-token').digest('hex'), 'u1');
-  const call = async (name, args) =>
-    JSON.parse(
-      (
-        await assistant.mcp(
-          { authorization: 'Bearer franz-token' },
-          { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } },
-        )
-      ).body.result.content[0].text,
-    );
+  const { call } = signIn(store, assistant);
   const http = (method, path, body = {}) => assistant.handle({ method, path, body, user, query: { all: '1' } });
   try {
     const proposed = await call('propose_changes', {

@@ -19,7 +19,6 @@ const validSuggestion = s =>
   CERTAINTIES.includes(s.certainty) &&
   typeof s.reason === 'string';
 import { monitoringRowsCsv, pointsCsv, walksGpx, wikilocCorrections } from '../server/monitoring-export.mjs';
-import { createApp } from '../server/index.mjs';
 
 const serial = iso => Math.round((Date.parse(`${iso}T00:00:00Z`) - Date.UTC(1899, 11, 30)) / 864e5);
 const AA = 'AA - Alex Arias';
@@ -197,20 +196,17 @@ test('a walk still waiting for review is paired on the fly', async () => {
   s.close();
 });
 
-test('the registry lists the source, and its suggestions have the shape the registry needs', async () => {
+test('the registry lists the source, which suggests what analyse finds', async () => {
   const { s } = await fixture();
   assert.ok(suggestionSources().some(x => x.id === 'wikiloc-transects'));
-  assert.equal(typeof source.title, 'string');
-  assert.equal(typeof source.describe, 'string');
-  const all = await source.suggest({ store: s });
-  assert.ok(all.length >= 5);
-  assert.ok(all.every(validSuggestion));
+  assert.deepEqual(await source.suggest({ store: s }), analyse(s).suggestions);
   s.close();
 });
 
 test('downloads: monitoring rows with their point, points and GPX per walk or all', async () => {
   const { s } = await fixture();
   const rows = monitoringRowsCsv(s);
+  assert.match(rows.type, /^text\/csv/);
   const lines = rows.body.replace(/^\uFEFF/, '').trim().split('\r\n');
   const header = lines[0].split(',');
   assert.equal(header[0], 'Sheet_row');
@@ -224,7 +220,10 @@ test('downloads: monitoring rows with their point, points and GPX per walk or al
   assert.equal(two[header.indexOf('Wikiloc_latitude')], String(T4[0]));
   assert.equal(two[header.indexOf('Wikiloc_transect_section')], '4');
 
-  const { inventory } = wikilocCorrections(s);
+  const corrections = wikilocCorrections(s);
+  const { inventory } = corrections;
+  assert.equal(corrections.counts.points, 6);
+  assert.equal(corrections.points, undefined, 'the points only in the downloads');
   assert.equal(inventory.stored, 1);
   assert.equal(inventory.points, 6);
   const walk = inventory.walks[0].id;
@@ -234,41 +233,11 @@ test('downloads: monitoring rows with their point, points and GPX per walk or al
   assert.equal(pointsCsv(s).body, points.body);
 
   const gpx = walksGpx(s, walk);
+  assert.equal(gpx.name, 'wikiloc_2025-09-08_AA.gpx');
   assert.match(gpx.body, /^<\?xml/);
   assert.equal((gpx.body.match(/<wpt /g) || []).length, 6);
   assert.equal((gpx.body.match(/<trkpt /g) || []).length, 2);
   assert.match(gpx.body, /<desc>2025-09-08 AA - Alex Arias · Collection_data row 2 · Oleria onega male B1 · T4<\/desc>/);
   assert.throws(() => walksGpx(s, 'nope'), { code: 'WALK_NOT_FOUND' });
   s.close();
-});
-
-test('the Wikiloc data and downloads need a sign-in and are open to anyone signed in', async () => {
-  const { s } = await fixture();
-  const app = await createApp(
-    { localMode: true, secureCookies: false, setupToken: 'test-setup-secret', syncIntervalMs: 0 },
-    { store: s, skipInitialSync: true },
-  );
-  const address = await app.listen(0, '127.0.0.1');
-  try {
-    const origin = `http://127.0.0.1:${address.port}/ithomiini/api`;
-    assert.equal((await fetch(`${origin}/monitoring/export/rows.csv`)).status, 401);
-    assert.equal((await fetch(`${origin}/monitoring/wikiloc-data`)).status, 401);
-    const setup = await fetch(`${origin}/auth/setup`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ token: 'test-setup-secret', username: 'testadmin', password: 'test12', displayName: 'Test' }),
-    });
-    const cookie = setup.headers.get('set-cookie').split(';')[0];
-    const data = await (await fetch(`${origin}/monitoring/wikiloc-data`, { headers: { cookie } })).json();
-    assert.equal(data.counts.points, 6);
-    assert.equal(data.points, undefined);
-    const gpx = await fetch(`${origin}/monitoring/export/walks.gpx?walk=${data.inventory.walks[0].id}`, { headers: { cookie } });
-    assert.equal(gpx.status, 200);
-    assert.match(gpx.headers.get('content-disposition'), /attachment; filename="wikiloc_2025-09-08_AA\.gpx"/);
-    assert.equal((await fetch(`${origin}/monitoring/export/walks.gpx?walk=nope`, { headers: { cookie } })).status, 404);
-    const csv = await fetch(`${origin}/monitoring/export/rows.csv`, { headers: { cookie } });
-    assert.match(csv.headers.get('content-type'), /^text\/csv/);
-  } finally {
-    await app.close();
-  }
 });

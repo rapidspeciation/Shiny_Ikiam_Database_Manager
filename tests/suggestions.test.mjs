@@ -1,6 +1,6 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,6 +15,7 @@ import { createChecksHost } from '../server/checks-host.mjs';
 import { freshSummary, summaryHere } from '../server/summary.mjs';
 import { freshCorrections, wikilocCorrections } from '../server/monitoring-export.mjs';
 import { createAssistant } from '../server/assistant.mjs';
+import { addToken, addUser, mcpClient } from './helpers/assistant.mjs';
 
 const EPOCH = Date.UTC(1899, 11, 30);
 const serial = iso => Math.round((Date.parse(`${iso}T00:00:00Z`) - EPOCH) / 864e5);
@@ -166,11 +167,7 @@ async function fixture({ databasePath } = {}) {
     );
   const store = new Store({ localMode: true, ...(databasePath ? { databasePath } : {}) }, { sheets });
   await store.sync({ sheets: ['Insectary_data', 'Collection_data', 'F1/F2_MutationRate', 'SamplingDay_data', 'Lists'] });
-  store.db
-    .prepare(
-      "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u1','ana','Ana','editor','s','h',1,'2026-01-01')",
-    )
-    .run();
+  addUser(store, { username: 'ana', displayName: 'Ana' });
   return store;
 }
 const one = (items, source, sheet, row, field) =>
@@ -313,20 +310,8 @@ test('alerts: a CAM range in use running low, a species at 30 preserved, one clo
 test('the assistant reads the suggestions and the alerts; neither writes anything', async () => {
   const store = await fixture();
   const assistant = createAssistant({ store, config: {} });
-  const token = 'token-for-ana';
-  store.db
-    .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
-    .run(createHash('sha256').update(token).digest('hex'), 'u1');
-  const call = async (name, args) => {
-    const out = await assistant.mcp(
-      { authorization: `Bearer ${token}` },
-      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } },
-    );
-    return JSON.parse(out.body.result.content[0].text);
-  };
-  const tools = (await assistant.mcp({ authorization: `Bearer ${token}` }, { jsonrpc: '2.0', id: 1, method: 'tools/list' }))
-    .body.result.tools;
-  assert.ok(['list_suggested_edits', 'get_alerts'].every(n => tools.some(t => t.name === n)));
+  addToken(store, 'u1', 'ana-token');
+  const { call } = mcpClient(assistant, 'ana-token');
   const versions = () => store.db.prepare('SELECT sum(version) v FROM records').get().v;
   const before = versions();
   const tubes = await call('list_suggested_edits', { source: 'tubes' });
@@ -339,13 +324,16 @@ test('the assistant reads the suggestions and the alerts; neither writes anythin
   store.close();
 });
 
-/** The fixture on a database file, with the Revisión worker (server/checks-host.mjs). */
-async function inWorker(t, { workerUrl } = {}) {
+/**
+ * The fixture on a database file, with the Revisión worker (server/checks-host.mjs). `cleanup`
+ * registers what to close (a test's t.after, or the file's after).
+ */
+async function inWorker(cleanup, { workerUrl } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'suggestions-worker-'));
   const databasePath = join(dir, 'app.sqlite');
   const store = await fixture({ databasePath });
   const host = createChecksHost({ store, config: { databasePath, localMode: true }, ...(workerUrl ? { workerUrl } : {}) });
-  t.after(() => {
+  cleanup(() => {
     host.close();
     store.close();
     rmSync(dir, { recursive: true, force: true });
@@ -354,15 +342,20 @@ async function inWorker(t, { workerUrl } = {}) {
   const here = () => {
     const other = new Store({ databasePath, localMode: true }, {});
     other.layouts = new Map(store.layouts);
-    t.after(() => other.close());
+    cleanup(() => other.close());
     return other;
   };
   return { store, host, here };
 }
 const timeless = ({ computedAt, ms, ...rest }) => rest;
+/** One worker for the tests that read through it (each kind of work counts its own runs). */
+let shared;
+const closing = [];
+after(() => closing.reverse().forEach(close => close()));
+const sharedWorker = () => (shared ??= inWorker(close => closing.push(close)));
 
-test('the suggested edits and the alerts in the Revisión worker: the same as here, kept until the copy changes', async t => {
-  const { store, host, here } = await inWorker(t);
+test('the suggested edits and the alerts in the Revisión worker: the same as here, kept until the copy changes', async () => {
+  const { store, host, here } = await sharedWorker();
   assert.equal(host.mode, 'worker');
   const [found, warned] = await Promise.all([allSuggestions(store), freshAlerts(store)]);
   const other = here();
@@ -404,8 +397,8 @@ test('the suggested edits and the alerts in the Revisión worker: the same as he
   assert.equal(host.status().alerts.runs, 2);
 });
 
-test("Inicio's summaries and Monitoreo's Wikiloc corrections in the worker: the same as here; visitors see no team counts", async t => {
-  const { store, host, here } = await inWorker(t);
+test("Inicio's summaries and Monitoreo's Wikiloc corrections in the worker: the same as here; visitors see no team counts", async () => {
+  const { store, host, here } = await sharedWorker();
   const other = here();
   const undated = ({ generatedAt, ...rest }) => rest;
   const signedIn = await freshSummary(store, { signedIn: true });
@@ -429,11 +422,11 @@ test("Inicio's summaries and Monitoreo's Wikiloc corrections in the worker: the 
 
 test('a Revisión worker that fails: the suggested edits and the alerts are found in the app instead', async t => {
   const crash = new URL('./fixtures/checks-worker-crash.mjs', import.meta.url);
-  const { store } = await inWorker(t, { workerUrl: crash });
+  const { store } = await inWorker(fn => t.after(fn), { workerUrl: crash });
   const errors = t.mock.method(console, 'error', () => {});
-  const found = await allSuggestions(store);
+  // Both asked at once: the crash fails both calls (one after the other, the second would wait out the restart backoff).
+  const [found, warned] = await Promise.all([allSuggestions(store), freshAlerts(store)]);
   assert.equal(found.items.filter(s => s.source === 'tubes').length, 3);
-  const warned = await freshAlerts(store);
   assert.ok(warned.alerts.some(a => a.id === 'thirty:Oleria tigilla'));
   assert.ok(errors.mock.calls.some(c => /\(suggestions\).*done in the app instead/.test(c.arguments.join(' '))));
   assert.ok(errors.mock.calls.some(c => /\(alerts\).*done in the app instead/.test(c.arguments.join(' '))));
@@ -455,6 +448,5 @@ test('a new source plugs into the registry; a malformed one is refused', async (
   const page = await suggestionPage(store, { source: 'demo' });
   assert.equal(page.total, 1);
   assert.equal(page.items[0].key, `demo:${page.items[0].recordId}:Location`);
-  assert.equal(page.items[0].label, page.items[0].label || '');
   store.close();
 });

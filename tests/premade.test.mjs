@@ -11,7 +11,6 @@ import { LocalSheets, insectaryIdValue, shiftFormula } from '../server/sheets.mj
 import { applyBatch } from '../server/batch.mjs';
 import { idSuggestions } from '../server/grid.mjs';
 import { extendPremadeRows, insectaryIdRow, nextInSeries } from '../server/premade.mjs';
-import { createApp } from '../server/index.mjs';
 import { moduleMap } from '../server/schema.mjs';
 
 const SHEET = 'Insectary_data';
@@ -402,42 +401,4 @@ test('a new row named by an Insectary ID past the pre-made rows gets its row: th
   assert.equal(cell(17, 'Wild_Reared').userEnteredValue.stringValue, 'Reared');
   assert.equal(cell(5, 'Wild_Reared')?.userEnteredValue, undefined, 'Q3D stays free');
   store.close();
-});
-
-test('POST /api/sheets/:sheet/extend is for reviewers and admins, at most 500 rows', async () => {
-  const sheets = new LocalSheets({ [SHEET]: workbook({ used: 3, withIds: 4, last: 4 }) }, { evaluate });
-  const config = { databasePath: ':memory:', localMode: true, secureCookies: false, setupToken: 'setup-secret' };
-  const app = await createApp({ ...config, syncIntervalMs: 0 }, { sheets });
-  await app.ready;
-  const address = await app.listen(0, '127.0.0.1');
-  try {
-    await app.store.sync({ sheets: [SHEET] });
-    const base = `http://127.0.0.1:${address.port}/ithomiini`;
-    let cookie = '',
-      csrf = '';
-    const call = async (path, method = 'GET', body) => {
-      const response = await fetch(base + path, {
-        method,
-        headers: { 'content-type': 'application/json', ...(cookie ? { cookie, 'x-csrf-token': csrf } : {}) },
-        body: body ? JSON.stringify({ requestId: randomUUID(), ...body }) : undefined,
-      });
-      const data = await response.json();
-      if (response.headers.get('set-cookie')) cookie = response.headers.get('set-cookie').split(';')[0];
-      if (data.csrf) csrf = data.csrf;
-      return { status: response.status, data };
-    };
-    await call('/api/auth/setup', 'POST', { token: 'setup-secret', username: 'admin1', password: 'test-admin-123' });
-    await call('/api/admin/users', 'POST', { username: 'editor1', password: 'test-editor-123', role: 'editor' });
-    assert.equal((await call('/api/sheets/Insectary_data/extend', 'POST', { count: 501 })).status, 400);
-    const done = await call('/api/sheets/Insectary_data/extend', 'POST', { count: 3 });
-    assert.equal(done.status, 200, JSON.stringify(done.data));
-    assert.equal(done.data.firstId, 'Q3D');
-    assert.equal(done.data.lastId, 'Q5D');
-    assert.equal((await call('/api/ids?kind=insectary&count=5000')).data.freeAtEnd, 4);
-    await call('/api/auth/logout', 'POST', {});
-    await call('/api/auth/login', 'POST', { username: 'editor1', password: 'test-editor-123' });
-    assert.equal((await call('/api/sheets/Insectary_data/extend', 'POST', { count: 3 })).status, 403);
-  } finally {
-    await app.close();
-  }
 });

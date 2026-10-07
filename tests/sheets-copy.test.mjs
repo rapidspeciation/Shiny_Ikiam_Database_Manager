@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,6 +11,7 @@ import { moduleMap, parseDateText } from '../server/schema.mjs';
 import { createAssistant } from '../server/assistant.mjs';
 import { buildCopy, createSheetsCopy, isoOfText } from '../server/replica.mjs';
 import { sqlProblem } from '../server/query-tool.mjs';
+import { addToken, addUser, mcpClient } from './helpers/assistant.mjs';
 
 // The sheets' copy the assistant's `query` reads (server/replica.mjs) and the tool itself
 // (server/query-tool.mjs): only the workbook's data, typed for SQL, read-only, with a time limit.
@@ -56,9 +57,7 @@ async function setup(dir) {
   formula(sheets, 'Insectary_data', 4, 'Insectary_ID', '=CONCATENATE("A",3,"A")', 'A3A');
   const store = new Store({ localMode: true, databasePath: join(dir, 'app.sqlite') }, { sheets });
   await store.sync();
-  store.db
-    .prepare("INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES(?,?,?,'editor','s','h',1,'2026-01-01')")
-    .run(user.id, user.username, user.displayName);
+  addUser(store, user);
   const at = row => store.getRecordBySheetRow('Insectary_data', row);
   return { sheets, store, at };
 }
@@ -69,7 +68,7 @@ async function until(check, ms = 15000) {
     const value = await check();
     if (value) return value;
     if (Date.now() > end) throw new Error(`timed out waiting: ${check}`);
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise(resolve => setTimeout(resolve, 10));
   }
 }
 
@@ -153,18 +152,14 @@ test('query: one read-only statement, capped, stopped after the time limit, with
   const { store, at } = await setup(dir);
   const assistant = createAssistant({
     store,
-    config: { sheetsCopyPath: join(dir, 'sheets.sqlite'), sheetsCopy: { startMs: 0, delayMs: 50, log: { log() {}, error: console.error } }, sheetsQuery: { timeoutMs: 1500 } },
+    config: { sheetsCopyPath: join(dir, 'sheets.sqlite'), sheetsCopy: { startMs: 0, delayMs: 50, log: { log() {}, error: console.error } }, sheetsQuery: { timeoutMs: 600 } },
   });
-  store.db
-    .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
-    .run(createHash('sha256').update('ana-token').digest('hex'), user.id);
+  addToken(store, user.id, 'ana-token');
+  const { result } = mcpClient(assistant, 'ana-token');
   const call = async (sql, limit) => {
-    const res = await assistant.mcp(
-      { authorization: 'Bearer ana-token' },
-      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'query', arguments: { sql, ...(limit ? { limit } : {}) } } },
-    );
-    const { text } = res.body.result.content[0];
-    return res.body.result.isError ? JSON.parse(text) : text;
+    const out = await result('query', { sql, ...(limit ? { limit } : {}) });
+    const { text } = out.content[0];
+    return out.isError ? JSON.parse(text) : text;
   };
   try {
     // Rows as tab-separated lines, the copy's age last.
@@ -194,7 +189,7 @@ test('query: one read-only statement, capped, stopped after the time limit, with
     // A runaway query is stopped; the next one runs in a new process.
     const started = Date.now();
     const runaway = await call('WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT count(*) FROM c');
-    assert.match(runaway.error, /ran over 1\.5 s and was stopped/);
+    assert.match(runaway.error, /ran over 0\.6 s and was stopped/);
     assert.ok(Date.now() - started < 5000);
     assert.equal((await call('SELECT count(*) FROM Insectary_data')).split('\n')[1], '2');
 

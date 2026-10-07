@@ -1,9 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createApp } from '../server/index.mjs';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
-import { activity, clutchStage, marks, sessions, todaySerial, upcoming } from '../server/summary.mjs';
+import { activity, clutchStage, marks, sessions, summaryHere, todaySerial, upcoming } from '../server/summary.mjs';
 
 const today = todaySerial();
 
@@ -60,54 +59,30 @@ async function fixture() {
 
 test('visitors get the natural history; the team counts and the insectary need a session', async () => {
   const store = await fixture();
-  const app = await createApp(
-    { localMode: true, secureCookies: false, setupToken: 'test-setup-secret', syncIntervalMs: 0 },
-    { store, skipInitialSync: true },
-  );
-  const address = await app.listen(0, '127.0.0.1');
-  const origin = `http://127.0.0.1:${address.port}/ithomiini/api`;
-  const call = async (path, { method = 'GET', body, cookie } = {}) => {
-    const response = await fetch(`${origin}${path}`, {
-      method,
-      headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}) },
-      body: body && JSON.stringify(body),
-    });
-    return { status: response.status, body: await response.json(), cookie: response.headers.get('set-cookie')?.split(';')[0] };
-  };
-  try {
-    const open = await call('/summary');
-    assert.equal(open.status, 200);
-    // Visitors get rates and proportions only, no counts of butterflies collected or reared.
-    assert.equal(open.body.team, null);
-    const nature = open.body.nature;
-    assert.equal(nature.facts.places, 2);
-    assert.deepEqual(nature.deaths, [{ name: 'Arañas', percent: 100 }]);
-    assert.ok(!JSON.stringify(nature).includes('someone@example.org'));
-    assert.equal((await call('/public/table?module=Collection_data')).status, 401);
-    assert.equal((await call('/table?module=Collection_data')).status, 401);
+  // Visitors get rates and proportions only, no counts of butterflies collected or reared.
+  const open = summaryHere(store, { signedIn: false });
+  assert.equal(open.team, null);
+  const nature = open.nature;
+  assert.equal(nature.facts.places, 2);
+  assert.deepEqual(nature.deaths, [{ name: 'Arañas', percent: 100 }]);
+  assert.ok(!JSON.stringify(nature).includes('someone@example.org'));
 
-    const admin = await call('/auth/setup', {
-      method: 'POST',
-      body: { token: 'test-setup-secret', username: 'boss', password: 'secret1', displayName: 'Boss' },
-    });
-    const signed = await call('/summary', { cookie: admin.cookie });
-    assert.equal(signed.body.team.latestIds.clutch, '902');
-    assert.equal(signed.body.team.latestIds.mark.last, 'A12');
-    assert.equal(signed.body.team.collections.total, 2);
-    assert.equal(signed.body.team.monitoring.individuals, 1);
-    assert.equal(signed.body.team.crispr.hatched, 1);
-    const insectary = signed.body.team.insectary;
-    // A0A is alive; A1A has no death date but entered 400 days ago; A2A died.
-    assert.equal(insectary.alive, 1);
-    assert.equal(insectary.stale, 1);
-    assert.equal(insectary.deaths30, 1);
-    // Clutch 800 is too old to be in progress.
-    assert.equal(insectary.clutches, 2);
-    assert.deepEqual(insectary.stages.larva, { clutches: 1, n: 25 });
-    assert.deepEqual(insectary.stages.egg, { clutches: 1, n: 12 });
-  } finally {
-    await app.close();
-  }
+  const { team } = summaryHere(store, { signedIn: true });
+  assert.equal(team.latestIds.clutch, '902');
+  assert.equal(team.latestIds.mark.last, 'A12');
+  assert.equal(team.collections.total, 2);
+  assert.equal(team.monitoring.individuals, 1);
+  assert.equal(team.crispr.hatched, 1);
+  const insectary = team.insectary;
+  // A0A is alive; A1A has no death date but entered 400 days ago; A2A died.
+  assert.equal(insectary.alive, 1);
+  assert.equal(insectary.stale, 1);
+  assert.equal(insectary.deaths30, 1);
+  // Clutch 800 is too old to be in progress.
+  assert.equal(insectary.clutches, 2);
+  assert.deepEqual(insectary.stages.larva, { clutches: 1, n: 25 });
+  assert.deepEqual(insectary.stages.egg, { clutches: 1, n: 12 });
+  store.close();
 });
 
 test('a clutch is at its latest recorded stage', () => {

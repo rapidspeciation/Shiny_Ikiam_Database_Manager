@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { addProfile, claimJob, finishJob, saveWalk } from '../server/monitoring.mjs';
+import { signIn } from './helpers/assistant.mjs';
 import { createAssistant } from '../server/assistant.mjs';
 
 const EPOCH = Date.UTC(1899, 11, 30);
@@ -50,21 +51,7 @@ async function fixture() {
   const store = new Store({ localMode: true }, { sheets });
   await store.sync({ sheets: ['Collection_data', 'Taxonomy_v18Jun25', 'Location_data', 'SamplingDay_data'] });
   const assistant = createAssistant({ store, config: {} });
-  store.db
-    .prepare(
-      "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u1','franz','Franz','editor','s','h',1,'2026-01-01')",
-    )
-    .run();
-  store.db
-    .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
-    .run(createHash('sha256').update('franz-token').digest('hex'), 'u1');
-  const call = async (name, args) => {
-    const out = await assistant.mcp(
-      { authorization: 'Bearer franz-token' },
-      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } },
-    );
-    return JSON.parse(out.body.result.content[0].text);
-  };
+  const { call } = signIn(store, assistant);
   return { store, assistant, call, user: { id: 'u1', username: 'franz', role: 'editor' } };
 }
 

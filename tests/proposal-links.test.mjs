@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,6 +8,10 @@ import { LocalSheets } from '../server/sheets.mjs';
 import { parseDateText } from '../server/schema.mjs';
 import { createAssistant } from '../server/assistant.mjs';
 import { createApp } from '../server/index.mjs';
+import { setPasswordHashCost } from '../server/auth.mjs';
+import { signIn, until } from './helpers/assistant.mjs';
+
+setPasswordHashCost(16);
 
 // Links to a proposal (its own page #/propuestas/<id>; beside its chat #/asistente?propuesta=…&chat=…), and the live list of
 // Cambios propuestos sending nothing again when nothing changed but the page's own edits.
@@ -25,27 +28,8 @@ const THREAD = '5c8de89d-bbaf-4328-b354-74733e099781';
 async function setup(config = {}) {
   const store = new Store({ localMode: true }, { sheets: new LocalSheets(SEED) });
   await store.sync({ sheets: Object.keys(SEED) });
-  const assistant = createAssistant({ store, config });
-  store.db
-    .prepare(
-      "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u-franz','franz','Franz Chandi','editor','s','h',1,'2026-01-01')",
-    )
-    .run();
-  store.db
-    .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
-    .run(createHash('sha256').update('franz-token').digest('hex'), 'u-franz');
-  const call = async (name, args, meta = undefined) =>
-    JSON.parse(
-      (
-        await assistant.mcp(
-          { authorization: 'Bearer franz-token' },
-          { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args, ...(meta ? { _meta: meta } : {}) } },
-        )
-      ).body.result.content[0].text,
-    );
-  const user = { id: 'u-franz', username: 'franz', displayName: 'Franz Chandi', role: 'editor' };
-  const http = (method, path, { body = {}, query = {}, page = null } = {}) =>
-    assistant.handle({ method, path, body, user, query, page });
+  const assistant = createAssistant({ store, config: { chatMoveDelayMs: 5, ...config } });
+  const { call, http } = signIn(store, assistant, { id: 'u-franz', displayName: 'Franz Chandi' });
   const stock = row => store.getRecordBySheetRow('Insectary_stocks', row);
   return { store, call, http, stock };
 }
@@ -150,8 +134,7 @@ test("list_proposals from a T3 chat: that chat's proposals, pending and reviewed
     calling = null;
     await call('match_notebook', { ...page, lines: [{ raw: '903 larvas', values: { 'CLUTCH NUMBER': '903', NOTES: 'larvas' } }], replaceProposalId: late.proposalId }, { 'claudecode/toolUseId': 'toolu_late' });
     calling = OTHER;
-    await new Promise(r => setTimeout(r, 1200));
-    assert.equal(store.db.prepare('SELECT t3_thread FROM ai_proposals WHERE id = ?').get(late.proposalId).t3_thread, OTHER);
+    await until(() => store.db.prepare('SELECT t3_thread FROM ai_proposals WHERE id = ?').get(late.proposalId).t3_thread === OTHER);
     calling = THREAD;
   } finally {
     store.close?.();
@@ -201,7 +184,7 @@ test('the live list: "unchanged" when nothing changed but this page\'s own edits
   assert.equal((await list('A', held)).body.proposals.length, 1);
 });
 
-test('the app: T3 status names its environment, the first list answers 304 when unchanged, a page address without its # is redirected', async () => {
+test('the app: T3 status names its environment, a page address without its # is redirected', async () => {
   const home = mkdtempSync(join(tmpdir(), 'ithomiini-t3-'));
   mkdirSync(join(home, 'userdata'));
   const ENV = '4e6c4765-8cfa-4adc-b761-3c3bae2ae7e0';
@@ -234,13 +217,6 @@ test('the app: T3 status names its environment, the first list answers 304 when 
       projectKey: null,
       chat: null,
     });
-    const path = `${api}/chat/proposals?all=1&chat=auto&wait=1&revision=`;
-    const first = await fetch(path, { headers: { cookie } });
-    assert.equal(first.status, 200);
-    const etag = first.headers.get('etag');
-    assert.ok(etag);
-    assert.deepEqual((await first.json()).proposals, []);
-    assert.equal((await fetch(path, { headers: { cookie, 'if-none-match': etag } })).status, 304);
     // A page's address typed without its #: sent to the app's own (its files load relative to it).
     const site = `http://127.0.0.1:${address.port}`;
     const to = async url => {

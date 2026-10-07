@@ -3,13 +3,13 @@
 // to the same proposal: how a chat gathers older chats' pages without the app's database.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { parseDateText } from '../server/schema.mjs';
+import { signIn } from './helpers/assistant.mjs';
 import { createAssistant } from '../server/assistant.mjs';
 
 const d = text => parseDateText(text);
@@ -33,19 +33,7 @@ async function setup() {
   const store = new Store({ localMode: true }, { sheets });
   await store.sync({ sheets: ['Insectary_stocks', 'Insectary_data'] });
   const assistant = createAssistant({ store, config: { t3Workspaces: workspaces, t3: { home: join(root, 't3') } } });
-  store.db
-    .prepare(
-      "INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u-franz','franz','Franz Chandi','editor','s','h',1,'2026-01-01')",
-    )
-    .run();
-  store.db
-    .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
-    .run(createHash('sha256').update('franz-token').digest('hex'), 'u-franz');
-  const call = async (name, args) =>
-    JSON.parse(
-      (await assistant.mcp({ authorization: 'Bearer franz-token' }, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }))
-        .body.result.content[0].text,
-    );
+  const { call } = signIn(store, assistant, { id: 'u-franz', displayName: 'Franz Chandi' });
   const stored = id => store.db.prepare('SELECT * FROM ai_proposals WHERE id = ?').get(id);
   // The rows as the proposal keeps them (a new row's client id is new each time).
   const rows = id => JSON.parse(stored(id).changes_json).map(({ clientId, ...c }) => c);
