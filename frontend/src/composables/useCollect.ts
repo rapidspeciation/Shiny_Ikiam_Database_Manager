@@ -21,6 +21,7 @@ import {
   misfit,
   parseWeight,
   signNote,
+  splitSpecies,
   rankByRecency,
   type Column,
   type Draft,
@@ -447,6 +448,11 @@ export function useCollect() {
     } else if (column === 'deadAlive') {
       const v = text.trim()
       d.deadAlive = /^(dead|muerta)$/i.test(v) ? 'Dead' : /^(alive|viva)$/i.test(v) ? 'Alive' : ''
+    } else if (column === 'species') {
+      // "Methona confusa psamathe" (as in Insectary_data): the sheet lists only "Methona confusa".
+      const split = splitSpecies(text, allSpecies.value)
+      d.species = split?.species ?? text
+      if (split) d.subspecies = split.form
     } else d[column] = text === 'NA' && column === 'subspecies' ? '' : text
     return null
   }

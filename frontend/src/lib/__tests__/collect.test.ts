@@ -9,6 +9,7 @@ import {
   signNote,
   speciesEntries,
   speciesTotals,
+  splitSpecies,
   summarize,
   weatherLabel,
   type Draft,
@@ -189,5 +190,18 @@ describe('Colecta cards', () => {
     ])
     expect(searchSpecies(entries, 'methona confusa')[0].label).toBe('Methona confusa')
     expect(searchSpecies(entries, '').length).toBe(entries.length)
+  })
+})
+
+describe('a species typed as in Insectary_data', () => {
+  const listed = ['Methona confusa', 'Mechanitis messenoides', 'Mechanitis polymnia']
+  it('goes to SPECIES and Subspecies_Form when the sheet lists its first two words', () => {
+    expect(splitSpecies('methona confusa psamathe', listed)).toEqual({ species: 'Methona confusa', form: 'psamathe' })
+    expect(splitSpecies('Mechanitis messenoides deceptus', listed)).toEqual({ species: 'Mechanitis messenoides', form: 'deceptus' })
+  })
+  it('stays as typed when it is a binomial, a hybrid or an unlisted species', () => {
+    expect(splitSpecies('Methona confusa', listed)).toBeNull()
+    expect(splitSpecies('Mechanitis polymnia werneri x eurydice', listed)).toBeNull()
+    expect(splitSpecies('Methona grandior grandior', listed)).toBeNull()
   })
 })

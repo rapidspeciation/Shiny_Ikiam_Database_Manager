@@ -261,6 +261,22 @@ export function weatherLabel(value: string) {
   return m ? { code: m[1], words: m[2].replace(/_/g, ' ') } : { code: value, words: '' }
 }
 
+/**
+ * A name typed as in Insectary_data ("Methona confusa psamathe") split into
+ * Collection_data's SPECIES and Subspecies_Form, when the sheet lists the first
+ * two words as a species ("methona confusa" → "Methona confusa"). Null when the
+ * name is listed as it is, is a hybrid, or its species is not listed.
+ */
+export function splitSpecies(typed: string, species: string[]): { species: string; form: string } | null {
+  const words = typed.trim().split(/\s+/)
+  if (words.length < 3 || / x |\bVS\b/i.test(typed)) return null
+  const name = typed.trim().toLowerCase()
+  if (species.some(s => s.toLowerCase() === name)) return null
+  const head = words.slice(0, 2).join(' ').toLowerCase()
+  const listed = species.find(s => s.toLowerCase() === head)
+  return listed ? { species: listed, form: words.slice(2).join(' ') } : null
+}
+
 /** One choice of the species search: a species, or a species with a form the team uses ("Mechanitis messenoides deceptus"). */
 export interface SpeciesEntry {
   species: string
