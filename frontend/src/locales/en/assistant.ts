@@ -485,4 +485,16 @@ export default {
   'Girar a la derecha': 'Turn right',
   'Ver la foto entera': 'Show the whole photo',
   'No se pudo cargar la foto.': 'The photo could not be loaded.',
+  // What a proposal's formulas cost the sheet's recalculation (FormulaCostNotice, lib/formulaCost)
+  '{cells} × {rows} ≈ {total} comparaciones por recálculo': '{cells} × {rows} ≈ {total} comparisons per recalculation',
+  'cada escritura aquí recalcula {n} búsquedas de {sheets}': 'each write here recalculates {n} lookups in {sheets}',
+  'Más ligero:': 'Lighter:',
+  'el mismo rango se busca varias veces por fila: una columna auxiliar con XMATCH una vez por fila, luego INDEX':
+    'the same range is searched several times per row: a helper column with XMATCH once per row, then INDEX',
+  'un rango que acabe en la última fila usada ({range}) en vez de la columna entera; hay que alargarlo al añadir filas':
+    'a range ending at the last used row ({range}) instead of the whole column; extend it when rows are added',
+  'saltar las filas que no pueden coincidir antes de buscar (IF(clave="","",…) o el tipo de fila)':
+    'skip the rows that cannot match before searching (IF(key="","",…) or the kind of row)',
+  'escribirla de una vez, no celda por celda: cada escritura recalcula esas búsquedas':
+    'write it in one go, not cell by cell: each write recalculates those lookups',
 } as Record<string, string>

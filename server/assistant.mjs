@@ -23,6 +23,7 @@ import { RESULT_BUDGET, fitList, fitResult } from './tool-budget.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary, withLinesFile } from './notebook-tool.mjs';
 import { duplicateIdRow, insectaryBaseRows, insectaryIdPlaces, insectaryIdRow, newRowFormulaFields, suffixedId } from './premade.mjs';
 import { formulaNotes, isPlaceholder, newRowPatternFields, sheetPatterns } from './formula-patterns.mjs';
+import { formulaCostAnswer, proposalFormulaCost } from './formula-cost.mjs';
 import { claimHolder, claimsOf } from './claims.mjs';
 import { BETWEEN_ROWS, PEEK_ROWS, VIEW_PARAM, VIEW_UPDATE, readView, showBetween, viewColumns } from './proposal-view.mjs';
 import { proposalSampleWarnings } from './preserved.mjs';
@@ -1569,6 +1570,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     });
     // Formulas not the column's usual one, or looking up whole columns: said with how many rows.
     const formulaNoted = formulaNotesSummary(changes);
+    // What the formulas cost the workbook's recalculation (server/formula-cost.mjs).
+    const formulaCost = formulaCostAnswer(proposalFormulaCost(store, changes));
     // Row indexes for update_proposal (new rows first, then edits of existing rows). A long
     // proposal: a bulk call's preview, or where to read them.
     const listed = changes.length <= (bulk ? 30 : 100);
@@ -1587,6 +1590,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         : {}),
       ...(look ? { lookAt: look } : {}),
       ...(formulaNoted.length ? { formulaNotes: formulaNoted } : {}),
+      ...(formulaCost ? { formulaCost } : {}),
       ...(dropped.length ? { leftOut: `Formula columns left out of the new rows: ${dropped.join(', ')}` } : {}),
       ...(ignored.length ? { noChange: ignored.slice(0, 50), noChangeNote: 'null means no change: these cells keep the sheet value. To empty one give {"clear": true}.' } : {}),
       ...(listed
@@ -2645,6 +2649,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (revision === false) return { error: `Nothing was changed. ${EDITED_MEANWHILE}` };
     const table = proposalTable(out.changes, proposal);
     const revised = args.full === true ? { rows: table } : revisedRows(changes, out.changes, table, proposal);
+    // The formulas' cost, when the revision wrote formulas.
+    const formulaCost = !unchanged && out.changes.some(c => c.formulaCells?.length) ? formulaCostAnswer(proposalFormulaCost(store, out.changes)) : null;
     return {
       proposalId: proposal.id,
       ...proposalLink(proposal.id, chatOf(proposal, context)),
@@ -2657,6 +2663,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         ? {}
         : lookAtRows(out.changes, revised.changed && new Set([...revised.changed, ...(revised.sameChange ?? [])].flatMap(v => v.indexes ?? [v.index])))),
       ...(out.leftOut.length ? { leftOut: `Formula columns left out of the new rows: ${out.leftOut.join(', ')}` } : {}),
+      ...(formulaCost ? { formulaCost } : {}),
       ...(out.conflicts.length
         ? {
             conflicts: out.conflicts,
@@ -3176,6 +3183,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       return view;
     });
     repeatsOf(out);
+    // What the formulas it writes cost the workbook's recalculation, said above the table (pending only).
+    const formulaCost = open && changes.some(c => c.formulaCells?.length) ? proposalFormulaCost(store, changes) : null;
     // A sheet's formula columns once: a row lists its own only when they differ.
     const sheetFormulas = {};
     for (const sheet of sheets) {
@@ -3210,6 +3219,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       ...(hintTable.length ? { hintTable } : {}),
       ...(notebook ? { page: notebook } : {}),
       ...(outOfOrder.length ? { outOfOrder: outOfOrder.map(({ key, ...o }) => o) } : {}),
+      ...(formulaCost ? { formulaCost } : {}),
       changes: out,
     };
   }
