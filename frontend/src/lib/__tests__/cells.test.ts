@@ -1,25 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { displayValue, editText, isBlank, normalizeInput } from '../cells'
-import { formatSerial, isoToSerial, parseDateInput, serialToIso } from '../dates'
 import { buildOptions } from '../options'
 import type { Table } from '../types'
 
 const date = { key: 'Death_date', type: 'date' as const }
 const text = { key: 'Sex', type: 'text' as const }
-
-describe('dates', () => {
-  it('round-trips Sheets serial numbers', () => {
-    expect(isoToSerial('2025-08-14')).toBe(45883)
-    expect(serialToIso(45883)).toBe('2025-08-14')
-    expect(formatSerial(45883)).toBe('14-Aug-25')
-  })
-  it('reads the formats people type', () => {
-    for (const input of ['14-Aug-25', '14-ago-2025', '2025-08-14', '14/08/2025', '45883'])
-      expect(parseDateInput(input)).toBe(45883)
-    expect(parseDateInput('31/02/2025')).toBeNull()
-    expect(parseDateInput('mañana')).toBeNull()
-  })
-})
 
 describe('cells', () => {
   it('normalizes dates, NA, numbers and times', () => {

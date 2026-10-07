@@ -1,22 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { nextTick } from 'vue'
-import { DEFAULT_MODE, choiceFor, modeFor, useEntryMode } from '../useEntryMode'
+import { useEntryMode } from '../useEntryMode'
 
 beforeEach(() => localStorage.clear())
 
 describe('cards or table', () => {
-  it('cards by default on every device, a choice stored before is kept', () => {
-    expect(DEFAULT_MODE).toBe('cards')
-    expect(modeFor(null)).toBe('cards')
-    expect(modeFor(undefined)).toBe('cards')
-    expect(modeFor('something old')).toBe('cards')
-    expect(modeFor('table')).toBe('table')
-    expect(modeFor('cards')).toBe('cards')
-    expect(choiceFor('cards')).toBeNull()
-    expect(choiceFor('table')).toBe('table')
-  })
-  it('reads and remembers the choice per tab in this browser', async () => {
+  it('cards by default; the choice per tab is kept in this browser, an unknown old one read as the default', async () => {
     expect(useEntryMode('deaths').mode.value).toBe('cards')
+    localStorage.setItem('ithomiini:entry-mode:tubes', JSON.stringify('something old'))
+    expect(useEntryMode('tubes').mode.value).toBe('cards')
     localStorage.setItem('ithomiini:entry-mode:clutches', JSON.stringify('table'))
     const clutches = useEntryMode('clutches')
     expect(clutches.mode.value).toBe('table')

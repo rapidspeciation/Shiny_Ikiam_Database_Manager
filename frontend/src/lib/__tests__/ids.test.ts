@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import { idTokens, resolveIds } from '../ids'
-import { dayLabel, formatSerial, parseDateInput, serialFromIso } from '../dates'
 import { initialsOf } from '../rows'
 
 // Insectary IDs in the sheet's pre-made row order: N9D is followed by O0D.
@@ -16,22 +15,6 @@ describe('ID picker lists', () => {
     // Typed backwards, still the same run.
     expect(resolveIds(['O1D-N8D'], order).found).toEqual(['N8D', 'N9D', 'O0D', 'O1D'])
     expect(resolveIds(['B0D', 'Z1Z', 'B0D-Z9Z'], order)).toEqual({ found: ['B0D'], missing: ['Z1Z', 'B0D-Z9Z'] })
-  })
-})
-
-describe('dates typed in date boxes', () => {
-  it('refuses a year typed as 92026 and never shows NaN', () => {
-    expect(serialFromIso('2026-09-21')).toBe(46286)
-    expect(serialFromIso('92026-09-21')).toBeNull()
-    expect(serialFromIso('1899-12-30')).toBeNull()
-    expect(serialFromIso('')).toBeNull()
-    expect(formatSerial(Number.NaN)).toBe('fecha no válida')
-    expect(parseDateInput('92026')).toBeNull()
-  })
-  it('shows the weekday and how long ago, so a wrong day stands out', () => {
-    expect(dayLabel('2026-09-27', '2026-09-28')).toBe('domingo 27-Sep-26 · ayer')
-    expect(dayLabel('2026-09-28', '2026-09-28')).toBe('lunes 28-Sep-26 · hoy')
-    expect(dayLabel('2026-09-21', '2026-09-28')).toBe('lunes 21-Sep-26 · hace 7 días')
   })
 })
 

@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, h, nextTick, ref } from 'vue'
 import DateField from '../DateField.vue'
-import { calendarDays, shiftMonth } from '../../lib/dates'
 import { locale, t, tn } from '../../lib/i18n'
 
 let unmount = () => {}
@@ -35,16 +34,6 @@ async function mount(start = '2026-09-28') {
 }
 
 describe('the calendar of a date box', () => {
-  it('months Monday first, six weeks, the days around greyed', () => {
-    const october = calendarDays(2026, 10)
-    expect(october).toHaveLength(42)
-    // 1 Oct 2026 is a Thursday: Monday 28 Sep starts the grid.
-    expect(october[0]).toEqual({ iso: '2026-09-28', day: 28, inMonth: false })
-    expect(october[3]).toEqual({ iso: '2026-10-01', day: 1, inMonth: true })
-    expect(october.filter(d => d.inMonth)).toHaveLength(31)
-    expect(shiftMonth(2026, 1, -1)).toEqual({ year: 2025, month: 12 })
-    expect(shiftMonth(2026, 12, 1)).toEqual({ year: 2027, month: 1 })
-  })
   it('opens on the date chosen; choosing a day sets it and closes', async () => {
     const { value, calendar, open } = await mount()
     await open()

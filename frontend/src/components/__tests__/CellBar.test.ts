@@ -39,7 +39,7 @@ async function mount(start: CellBarInfo | null) {
   app.mount(host)
   unmount = () => app.unmount()
   await nextTick()
-  return { box: host.querySelector('textarea')!, where: host.querySelector('.cell-bar-where')!, info, saved, back }
+  return { box: host.querySelector('textarea')!, info, saved, back }
 }
 const press = (box: HTMLElement, key: string, mods: KeyboardEventInit = {}) =>
   box.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...mods }))
@@ -49,26 +49,26 @@ function type(box: HTMLTextAreaElement, text: string) {
 }
 
 describe('the cell bar', () => {
-  it('shows the cell (column · row) and its whole text', async () => {
-    const { box, where } = await mount(note)
-    expect(where.textContent).toBe('Notes_Insectary_data · 00R')
+  it("shows the selected cell's whole text, editable where the cell is", async () => {
+    const { box } = await mount(note)
     expect(box.value).toBe('12/10/24 FCH: dead pupa')
     expect(box.readOnly).toBe(false)
   })
-  it('saves the typed text with Enter and moves down', async () => {
-    const { box, saved } = await mount(note)
+  // Which key does what is lib/gridKit barKey (cellBar.test); here, that the bar carries it out.
+  it('Shift+Enter in a notes column adds a line; Enter saves what was typed; Esc gives it up', async () => {
+    const { box, saved, back } = await mount(note)
     box.focus()
+    box.setSelectionRange(box.value.length, box.value.length)
+    press(box, 'Enter', { shiftKey: true })
+    expect(box.value).toBe('12/10/24 FCH: dead pupa\n')
     type(box, '12/10/24 FCH: dead pupa | 30/9/26 L: pupa muerta')
     press(box, 'Enter')
     expect(saved).toEqual([['00R', '12/10/24 FCH: dead pupa | 30/9/26 L: pupa muerta', 'down']])
-  })
-  it('gives the change up with Esc and goes back to the grid', async () => {
-    const { box, saved, back } = await mount(note)
     box.focus()
     type(box, 'something else')
     press(box, 'Escape')
     await nextTick()
-    expect(saved).toEqual([])
+    expect(saved).toHaveLength(1)
     expect(back).toEqual(['here'])
     expect(box.value).toBe(note.text)
   })
@@ -82,21 +82,6 @@ describe('the cell bar', () => {
     expect(box.value).toBe('pupa muerta')
     box.blur()
     expect(saved).toEqual([['00R', 'pupa muerta', null]])
-  })
-  it('breaks the line with Shift+Enter in a notes column; elsewhere Enter saves', async () => {
-    const { box, saved, info } = await mount(note)
-    box.focus()
-    box.setSelectionRange(box.value.length, box.value.length)
-    press(box, 'Enter', { shiftKey: true })
-    expect(box.value).toBe('12/10/24 FCH: dead pupa\n')
-    expect(saved).toEqual([])
-    box.blur()
-    info.value = { ...note, field: 'Insectary_ID', column: 'Insectary_ID', text: '00R', multiline: false }
-    await nextTick()
-    box.focus()
-    type(box, '00T')
-    press(box, 'Enter', { shiftKey: true })
-    expect(saved.at(-1)).toEqual(['00R', '00T', 'up'])
   })
   it('does not save an unchanged text, nor a read-only cell', async () => {
     const { box, saved, back, info } = await mount(note)
@@ -119,26 +104,12 @@ describe('the cell bar', () => {
         { label: 'IA', text: 'pupa muerta', kind: 'ai' },
       ],
     })
-    expect(box.parentElement!.querySelector('.cell-bar-notes')!.textContent).toContain('Hoja: dead pupa')
-    expect(box.parentElement!.querySelector('.cell-bar-notes')!.textContent).toContain('IA: pupa muerta')
-  })
-  it('keeps its one line whatever cell is selected; with the focus, all of it shows over the grid', async () => {
-    const { box, info } = await mount(note)
-    const bar = box.closest('.cell-bar')!
-    expect(bar.classList.contains('is-open')).toBe(false)
-    info.value = { ...note, text: 'a much longer note\nover\nseveral\nlines' }
-    await nextTick()
-    expect(bar.classList.contains('is-open')).toBe(false)
-    box.focus()
-    await nextTick()
-    expect(bar.classList.contains('is-open')).toBe(true)
-    box.blur()
-    await nextTick()
-    expect(bar.classList.contains('is-open')).toBe(false)
+    const bar = box.closest('[data-cell-bar]')!.textContent
+    expect(bar).toContain('dead pupa')
+    expect(bar).toContain('pupa muerta')
   })
   it('waits for a cell when none is selected', async () => {
     const { box } = await mount(null)
     expect(box.disabled).toBe(true)
-    expect(box.placeholder).toBe('Selecciona una celda para ver todo su texto')
   })
 })

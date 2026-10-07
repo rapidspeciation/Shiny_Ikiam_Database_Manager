@@ -22,6 +22,7 @@ import {
   sampleWarnings,
   selectionActions,
   sheetEdits,
+  sheetApplies,
   sheetGroups,
   tellText,
   uncheckedDoubts,
@@ -457,6 +458,31 @@ describe('applying', () => {
     ])
     expect(rowsToWrite(p)).toEqual([0, 2, 4])
     expect(notApplied(p)).toBe(3)
+  })
+})
+
+describe('a proposal with rows of two sheets, applied one sheet at a time', () => {
+  /** A notebook page's two Insectary_data rows and a new Collection_data row for a wild-caught butterfly. */
+  const row = (index: number, sheet: string, extra: Partial<ProposalChange> = {}) =>
+    ({ index, key: `k${index}`, recordId: `r${index}`, sheet, row: index + 2, label: `A${index}T`, values: { Sex: 'male' }, ...extra }) as ProposalChange
+  const changes = [row(0, 'Insectary_data'), row(1, 'Insectary_data'), row(2, 'Collection_data', { create: true, recordId: null })]
+
+  it('each sheet has its own rows to apply; one sheet alone has none of its own', () => {
+    const per = sheetApplies(changes, rowsToWrite({ changes }))
+    expect([...per.keys()]).toEqual(['Insectary_data', 'Collection_data'])
+    expect(per.get('Insectary_data')).toEqual({ rows: [0, 1], written: 0 })
+    expect(per.get('Collection_data')).toEqual({ rows: [2], written: 0 })
+    expect(sheetApplies(changes.slice(0, 2), [0, 1]).size).toBe(0)
+  })
+
+  it('once one sheet is written: its rows read-only and not written again, the other still to apply', () => {
+    const after = changes.map(c => (c.sheet === 'Insectary_data' ? { ...c, applied: 1 } : c))
+    expect(rowsToWrite({ changes: after })).toEqual([2])
+    expect(readOnlyRow(after[0])).toBe(true)
+    expect(readOnlyRow(after[2])).toBe(false)
+    const per = sheetApplies(after, rowsToWrite({ changes: after }))
+    expect(per.get('Insectary_data')).toEqual({ rows: [], written: 2 })
+    expect(per.get('Collection_data')).toEqual({ rows: [2], written: 0 })
   })
 })
 
