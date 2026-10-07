@@ -38,6 +38,25 @@ export type GridRow = Record<string, CellValue> & {
 /** Whether the rows are on more than one photo (their "Línea" then says the photo too). */
 export const severalPhotos = (rows: TableRow[]) => new Set(rows.flatMap(r => (r.page ? [r.page.photo] : []))).size > 1
 
+/**
+ * A table's notebook photos as their thumbnails say them (as a page's proposal does): the
+ * lines of its rows on each and how many rows; every photo, those without rows too.
+ */
+export function tablePhotos(rows: Pick<TableRow, 'page'>[], photos: number) {
+  const out = new Map<number, { photo: number; from: number; to: number; rows: number }>()
+  for (let n = 0; n < photos; n++) out.set(n, { photo: n, from: 0, to: 0, rows: 0 })
+  for (const r of rows) {
+    if (!r.page || r.page.photo >= photos) continue
+    const s = out.get(r.page.photo)!
+    s.rows++
+    if (r.page.line) {
+      s.from = s.from ? Math.min(s.from, r.page.line) : r.page.line
+      s.to = Math.max(s.to, r.page.line)
+    }
+  }
+  return [...out.values()]
+}
+
 /** A row's place on the photos, as the "Línea" column shows it: the line, or photo·line when there are several. */
 export function lineText(row: TableRow, several: boolean) {
   if (!row.page) return ''

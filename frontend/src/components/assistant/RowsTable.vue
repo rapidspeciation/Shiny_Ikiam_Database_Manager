@@ -18,11 +18,22 @@ import {
   type CellBarNote,
 } from '../../lib/gridKit'
 import type { Proposal } from '../../lib/proposals'
-import { compareCells, gridRows, isMarked, rowPlace, severalPhotos, tableCounts, type GridRow, type TableRow } from '../../lib/rowsTable'
+import {
+  compareCells,
+  gridRows,
+  isMarked,
+  rowPlace,
+  severalPhotos,
+  tableCounts,
+  tablePhotos,
+  type GridRow,
+  type TableRow,
+} from '../../lib/rowsTable'
 import type { CellValue, Field } from '../../lib/types'
 import { locale, t } from '../../lib/i18n'
 import { notify } from '../../lib/notice'
 import CellBar from '../CellBar.vue'
+import PhotoThumbs from './PhotoThumbs.vue'
 
 /**
  * A table of sheet rows the assistant shows beside the chat (show_rows), in
@@ -34,11 +45,13 @@ import CellBar from '../CellBar.vue'
  * cell gives it a corner mark (its tooltip and the bar above the table say
  * it); rows or cells it marks are yellow. A row no longer in the sheet stays,
  * grey. «Cerrar» takes it out of the panel (its link still opens it).
- * A table read from notebook photos says each row's line ("Línea") and, in
- * «Revisar con la foto», the row selected brings its photo and line (`row`).
+ * A table read from notebook photos says each row's line ("Línea"), shows the
+ * photos' thumbnails above it as a page's proposal does (a click opens «Revisar
+ * con la foto» on that photo: `photo`) and, there, the row selected brings its
+ * photo and line (`row`).
  */
-const props = defineProps<{ table: Proposal }>()
-const emit = defineEmits<{ close: []; row: [photo: number | null, line: number | null] }>()
+const props = defineProps<{ table: Proposal; reviewing?: boolean }>()
+const emit = defineEmits<{ close: []; row: [photo: number | null, line: number | null]; photo: [n: number] }>()
 
 const host = ref<HTMLDivElement>()
 let grid: Tabulator | null = null
@@ -55,6 +68,8 @@ const noted = computed(() => rows.value.some(r => r.note))
 const several = computed(() => severalPhotos(rows.value))
 const paged = computed(() => rows.value.some(r => r.page?.line) || several.value)
 const open = computed(() => props.table.status === 'shown')
+/** Its notebook photos, each with its rows' lines (thumbnails above the table). */
+const photos = computed(() => (props.table.page?.photos ? tablePhotos(rows.value, props.table.page.photos) : []))
 let byKey = new Map<string, TableRow>()
 
 const typeOf = (field: string) => (props.table.types[field] ?? 'text') as Field['type']
@@ -296,6 +311,14 @@ watch(() => [props.table, locale.value], sync)
       </button>
       <span v-else class="ml-auto font-normal text-stone-500">{{ $t('Cerrada') }}</span>
     </p>
+    <PhotoThumbs
+      v-if="table.page && photos.length"
+      :id="table.id"
+      :page="table.page"
+      :photos="photos"
+      :reviewing="reviewing"
+      @photo="n => emit('photo', n)"
+    />
     <div class="sheet-grid rows-table">
       <CellBar :info="bar" notes-line @back="move => grid && backToGrid(grid, move)" />
       <!-- The grid's own box: the copied cells' border is placed in it, below the bar. -->

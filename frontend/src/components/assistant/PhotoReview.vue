@@ -22,7 +22,7 @@ const props = defineProps<{ proposal: Proposal; busy?: boolean; photo: number }>
 const emit = defineEmits<{
   close: []
   'update:photo': [n: number]
-  apply: [indexes: number[], revision: number | undefined, doubtful?: 'confirm' | 'skip']
+  apply: [indexes: number[], revision: number | undefined, doubtful?: 'confirm' | 'skip', sheets?: string[]]
   discard: []
   replace: [proposal: Proposal]
 }>()
@@ -128,13 +128,13 @@ onBeforeUnmount(() => {
     <div ref="split" class="flex min-h-0 flex-1" :class="beside ? 'flex-row' : 'flex-col'" :style="{ '--share': `${share}%` }">
       <!-- A size container: the table is at most its height (ProposalSheet), so its column names stay in sight. -->
       <div class="min-h-0 min-w-0 shrink-0 grow-0 basis-(--share) overflow-y-auto px-2 pb-2 [container-type:size]">
-        <RowsTable v-if="proposal.kind === 'table'" :table="proposal" @close="emit('discard')" @row="onRow" />
+        <RowsTable v-if="proposal.kind === 'table'" :table="proposal" reviewing @close="emit('discard')" @row="onRow" @photo="pick" />
         <ProposalGrid
           v-else
           :proposal="proposal"
           :busy="busy"
           reviewing
-          @apply="(indexes, at, doubtful) => emit('apply', indexes, at, doubtful)"
+          @apply="(indexes, at, doubtful, sheets) => emit('apply', indexes, at, doubtful, sheets)"
           @discard="emit('discard')"
           @replace="p => emit('replace', p)"
           @photo="pick"

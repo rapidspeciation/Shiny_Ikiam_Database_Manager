@@ -500,7 +500,7 @@ const TOOLS = [
       description:
         [
           "Write a pending proposal to Google Sheets, only when the person's latest message explicitly approves it ('sí, aplícalo', 'está correcto').",
-          "- It writes what the table shows: your values and the person's, not cells set back to the sheet's value (a row left with nothing is skipped). `indexes`: only those rows.",
+          "- It writes what the table shows: your values and the person's, not cells set back to the sheet's value. `indexes`: only those rows; `sheet`: only that sheet's rows (the rest stays pending).",
           '- Unchecked doubtful cells (amber): nothing is written and the answer lists them: ask the person about each. Then `confirmDoubtful` writes them as they are (only when the person said so after seeing them), or `skipDoubtful` only the sure cells.',
           '- Unreadable cells still empty are never written (the sheet keeps its value); the answer lists them: ask the person for those values.',
         ].join('\n'),
@@ -509,8 +509,9 @@ const TOOLS = [
         properties: {
           proposalId: { type: 'string' },
           indexes: { type: 'array', items: { type: 'integer' } },
-          confirmDoubtful: { type: 'boolean', description: 'The person saw the unchecked doubtful cells and wants them written as they are' },
-          skipDoubtful: { type: 'boolean', description: 'Write only the sure cells; the unchecked doubtful ones are left out' },
+          sheet: { type: 'string' },
+          confirmDoubtful: { type: 'boolean' },
+          skipDoubtful: { type: 'boolean' },
         },
         required: ['proposalId'],
       },
@@ -670,6 +671,10 @@ function init(db) {
   if (!has('ai_proposals', 'check_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN check_json TEXT');
   // Why its last apply failed ({ code, message, messageMsg, at, items }): told with its status until it is applied.
   if (!has('ai_proposals', 'last_error_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN last_error_json TEXT');
+  // Each «Aplicar» of it ([{ n, at, by, sheets, rows, status }]): a proposal applied one sheet at a time
+  // (its Insectary_data rows, then its Collection_data rows) stays pending until the last; its rows written
+  // carry the apply's `n` (`applied`).
+  if (!has('ai_proposals', 'applies_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN applies_json TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS ai_proposals_owner_status ON ai_proposals(owner_id, status, created_at)');
   // The pending proposals of the whole team and their revisions, read without their rows (overlaps).
   db.exec('CREATE INDEX IF NOT EXISTS ai_proposals_status_revision ON ai_proposals(status, id, revision, updated_at)');
@@ -1216,7 +1221,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
    * drafted twice, by two people, are found as well as the same row edited twice.
    */
   function overlapKeys(change) {
-    if (!change || change.context || change.placeholder) return [];
+    if (!change || change.context || change.placeholder || change.applied) return [];
     const keys = [];
     if (!change.create && change.recordId) keys.push(`row\u0000${change.recordId}`);
     for (const field of OVERLAP_KEYS[change.sheet] ?? []) {
@@ -1850,7 +1855,16 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
    */
   function reviseChanges(changes, ops, { by, force = false, user } = {}) {
     let rows = changes.map(c => ({ ...c, values: { ...c.values }, ...(c.personEdits ? { personEdits: { ...c.personEdits } } : {}) }));
-    const find = ref => (typeof ref === 'number' ? (rows[ref] ? ref : -1) : rows.findIndex(c => rowKey(c) === ref));
+    // A row an apply of its sheet wrote already (the proposal applied one sheet at a time) stays as written: -2.
+    const written = new Set();
+    const find = ref => {
+      const i = typeof ref === 'number' ? (rows[ref] ? ref : -1) : rows.findIndex(c => rowKey(c) === ref);
+      if (i >= 0 && rows[i].applied) {
+        written.add(i);
+        return -2;
+      }
+      return i;
+    };
     const out = { conflicts: [], rejected: [], overrode: [], leftOut: [] };
     let index;
     const used = () => (index ??= uniqueIdIndex(store));
@@ -1860,7 +1874,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     for (const op of ops.set ?? []) {
       const i = find(op.ref);
       if (i < 0) {
-        out.rejected.push({ ref: op.ref, message: `Row ${clip(op.ref, 60)} is not in the proposal` });
+        if (i === -1) out.rejected.push({ ref: op.ref, message: `Row ${clip(op.ref, 60)} is not in the proposal` });
         continue;
       }
       // The assistant's own note, with the one it replaced (a page matched again keeps it while the line reads the same).
@@ -1984,6 +1998,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       if (!moduleMap.has(sheet)) continue;
       rows.push({ create: true, sheet, clientId: randomUUID(), recordId: null, row: null, label: '', before: {}, values: {}, replaceFormula: [], note: '' });
     }
+    for (const i of written)
+      out.rejected.push({ index: i, key: rowKey(changes[i]), label: changes[i].label, sheet: changes[i].sheet, message: 'Already written to the sheet: it stays as written' });
     if (rows.length > rowCap(rows)) out.rejected.push({ message: tooManyRows(rows.length) });
     out.leftOut = [...new Set(out.leftOut)];
     return { changes: rows, ...out };
@@ -2422,6 +2438,10 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       revision: proposal.revision,
       reason: proposal.reason,
       lastChangedBy: proposal.last_by ?? 'ai',
+      // Applied one sheet at a time: the sheets whose rows are written already.
+      ...(proposal.status === 'pending' && changes.some(c => c.applied)
+        ? { writtenSheets: [...new Set(changes.filter(c => c.applied).map(c => c.sheet))] }
+        : {}),
       // Why its last apply failed (pending again when nothing was written).
       ...(proposal.last_error_json ? { lastError: withoutMsgs(parse(proposal.last_error_json)) } : {}),
       // needs_review: what the sheet holds of it, as compared after the last sync.
@@ -2948,6 +2968,13 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     };
   }
 
+  /** A row an apply writes: with values, not a line shown for context, not written by an earlier apply of its sheet. */
+  const toApply = c => !!c && !c.context && !c.applied && Object.keys(c.values ?? {}).length > 0;
+  /** The sheets with rows still to apply (once one sheet's rows were applied). */
+  const sheetsLeft = changes => [...new Set(changes.filter(toApply).map(c => c.sheet))];
+  /** The rows earlier applies wrote (their indexes): marked with ✓ in the table. */
+  const appliedIndexes = changes => changes.flatMap((c, i) => (c.applied ? [i] : []));
+
   /**
    * Why a proposal is not pending, in its status's words: applied, or needs_review with what its
    * last write said (or that Google did not confirm it), for apply_proposal and update_proposal.
@@ -2970,8 +2997,11 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
    * Cells edited in the sheet since they were read keep the sheet's value unless
    * the person chose the proposal's (server/sheet-edits.mjs): listed in the
    * answer as `keptFromSheet`. One edited again after the person chose stops it.
+   * `sheets`: only the rows of those sheets (a notebook page's Insectary_data rows
+   * before its Collection_data rows): once written, the proposal stays pending with
+   * the other sheets' rows, applied with the last of them.
    */
-  async function applyProposal(proposal, user, { requestId, indexes, reason, doubtful = null }) {
+  async function applyProposal(proposal, user, { requestId, indexes, reason, doubtful = null, sheets = null }) {
     if (isTable(proposal)) throw Object.assign(new Error(NOT_A_PROPOSAL), { status: 409, code: 'read_only_table' });
     if (proposal.status === 'queued')
       throw Object.assign(new Error('Proposal is already waiting for Google: it is written when Google answers.'), {
@@ -2987,11 +3017,18 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       const record = currentRecord(store, c);
       return record && record.id !== c.recordId ? { ...c, recordId: record.id } : c;
     });
-    // A row left without values (the person emptied it in the table) has nothing to write, and a
-    // notebook line shown only for context (match_notebook includeUnchanged) is never written.
+    // A row left without values (the person emptied it in the table) has nothing to write, a
+    // notebook line shown only for context (match_notebook includeUnchanged) is never written, and a
+    // row an earlier apply of one sheet wrote is not written again.
+    const only = Array.isArray(sheets) && sheets.length ? new Set(sheets.map(String)) : null;
+    if (only && ![...only].every(s => all.some(c => c.sheet === s)))
+      throw Object.assign(new Error(`The proposal has no rows of ${[...only].filter(s => !all.some(c => c.sheet === s)).join(', ')}.`), {
+        status: 400,
+        code: 'unknown_sheet',
+      });
     const picked = (
       Array.isArray(indexes) && indexes.length ? [...new Set(indexes.map(Number))].filter(i => all[i]) : all.map((_, i) => i)
-    ).filter(i => Object.keys(all[i].values ?? {}).length && !all[i].context);
+    ).filter(i => toApply(all[i]) && (!only || only.has(all[i].sheet)));
     // The sheet's edits since the proposal was read: kept (left out), or written over as the person chose.
     const sheet = resolveSheetEdits(store, picked.map(i => [i, all[i]]));
     if (sheet.again.length)
@@ -3054,6 +3091,24 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       throw Object.assign(new Error('Proposal is already being applied.'), { status: 409, code: 'proposal_used' });
     }
     changed(proposal.owner_id);
+    // This apply in the proposal's list of them; its rows carry its number once written (`applied`).
+    const applies = parse(proposal.applies_json ?? 'null') ?? [];
+    const n = (applies.at(-1)?.n ?? 0) + 1;
+    const inThis = new Set(picked);
+    const marked = kept.map((c, i) => (inThis.has(i) ? { ...c, applied: n } : c));
+    // Rows of other sheets still to apply: the proposal stays pending for them.
+    const left = only ? sheetsLeft(marked) : [];
+    const before = all.flatMap((c, i) => (c.applied ? [i] : []));
+    const appliedRows = [...new Set([...before, ...written])].sort((a, b) => a - b);
+    const entry = status => ({
+      n,
+      at: now(),
+      by: who,
+      sheets: only ? [...only] : null,
+      rows: written.length,
+      status,
+      ...(left.length ? { left } : {}),
+    });
     // A formula cell's text is written as a formula; any other "=..." stays text.
     const rows = writes.map(([, c]) =>
       c.formulaCells?.length
@@ -3089,20 +3144,35 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
               ...(queued ? { outboxId: queued.outboxId, workbook: queued.workbook } : {}),
               parts: results.length,
             };
-      const status =
+      const outcome =
         result?.status === 'queued' ? 'queued' : ['verified', 'unchanged'].includes(result?.status) ? 'applied' : 'needs_review';
-      const created = Object.fromEntries((result?.created ?? []).map(c => [c.clientId, c.recordId]));
+      // One sheet's rows written, others still to apply: pending again (each apply in applies_json).
+      const status = outcome === 'applied' && left.length ? 'pending' : outcome;
+      const created = {
+        ...(parse(proposal.created_json ?? 'null') ?? {}),
+        ...Object.fromEntries((result?.created ?? []).map(c => [c.clientId, c.recordId])),
+      };
       db.prepare(
-        'UPDATE ai_proposals SET status = ?, applied_at = ?, applied_json = ?, created_json = ?, changes_json = ?, last_error_json = NULL WHERE id = ?',
-      ).run(status, status === 'applied' ? now() : null, json(written), json(created), json(kept), proposal.id);
+        'UPDATE ai_proposals SET status = ?, applied_at = ?, applied_json = ?, created_json = ?, changes_json = ?, applies_json = ?, updated_at = ?, last_error_json = NULL WHERE id = ?',
+      ).run(
+        status,
+        status === 'applied' ? now() : null,
+        json(appliedRows),
+        json(created),
+        json(marked),
+        json([...applies, entry(outcome)]),
+        now(),
+        proposal.id,
+      );
       // Agreed issues of the Revisión tab whose rows were written: now applied.
       const issueIds = parse(proposal.issues_json ?? 'null');
       if (status === 'applied' && issueIds?.length)
-        markApplied(store, issueIds, { recordIds: new Set(written.map(i => all[i].recordId)), proposalId: proposal.id, user });
+        markApplied(store, issueIds, { recordIds: new Set(appliedRows.map(i => all[i].recordId)), proposalId: proposal.id, user });
       return {
         proposalId: proposal.id,
         status,
         applied: written,
+        ...(left.length ? { left } : {}),
         result,
         ...(status === 'queued' ? { outboxId: result.outboxId, workbook: result.workbook } : {}),
         ...(unchecked.length ? { doubtful: { count: unchecked.length, how: doubtful } } : {}),
@@ -3120,6 +3190,15 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         json(lastErrorOf(cause)),
         proposal.id,
       );
+      // Maybe written in part: its rows marked as this apply's, to compare with the sheet (checkNeedsReview).
+      if (!refused)
+        db.prepare('UPDATE ai_proposals SET changes_json = ?, applies_json = ?, applied_json = ?, updated_at = ? WHERE id = ?').run(
+          json(marked),
+          json([...applies, entry('needs_review')]),
+          json(appliedRows),
+          now(),
+          proposal.id,
+        );
       if (results.length) cause.details = { ...(cause.details ?? {}), writtenParts: results.length, parts: parts.length };
       if (refused) await readAgain(cause.details?.items ?? []);
       throw cause;
@@ -3141,32 +3220,51 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       ? db.prepare("SELECT * FROM outbox WHERE kind = 'proposal' AND ref = ? AND request_id LIKE ? ORDER BY rowid").all(item.ref, `${base}:%`)
       : [item];
     if (siblings.some(s => !['done', 'conflict', 'failed'].includes(s.status))) return;
-    const parts = Math.ceil((parse(proposal.applied_json)?.length ?? 1) / MAX_BATCH);
+    // The apply waiting (the last of applies_json): how many rows it wrote, and whether it was one sheet's.
+    const applies = parse(proposal.applies_json ?? 'null') ?? [];
+    const last = applies.at(-1)?.status === 'queued' ? applies.at(-1) : null;
+    const settle = status => (last ? json([...applies.slice(0, -1), { ...last, status }]) : proposal.applies_json ?? null);
+    const parts = Math.ceil((last?.rows ?? parse(proposal.applied_json)?.length ?? 1) / MAX_BATCH);
     const someWritten = siblings.length < parts || siblings.some(s => s.status === 'done');
     const unsettled = siblings.find(s => s.status !== 'done');
     if (unsettled && someWritten) {
-      db.prepare("UPDATE ai_proposals SET status = 'needs_review' WHERE id = ?").run(proposal.id);
+      db.prepare("UPDATE ai_proposals SET status = 'needs_review', applies_json = ? WHERE id = ?").run(settle('needs_review'), proposal.id);
       changed(proposal.owner_id);
       return;
     }
     item = unsettled ?? item;
+    const changes = parse(proposal.changes_json) ?? [];
     if (item.status === 'done') {
-      const created = Object.fromEntries(
-        siblings.flatMap(s => parse(s.result_json)?.created ?? []).map(c => [c.clientId, c.recordId]),
+      const created = {
+        ...(parse(proposal.created_json ?? 'null') ?? {}),
+        ...Object.fromEntries(siblings.flatMap(s => parse(s.result_json)?.created ?? []).map(c => [c.clientId, c.recordId])),
+      };
+      // One sheet's rows written, others still to apply: pending again.
+      const status = last?.sheets && sheetsLeft(changes).length ? 'pending' : 'applied';
+      db.prepare('UPDATE ai_proposals SET status = ?, applied_at = ?, created_json = ?, applies_json = ?, updated_at = ? WHERE id = ?').run(
+        status,
+        status === 'applied' ? now() : null,
+        json(created),
+        settle('applied'),
+        now(),
+        proposal.id,
       );
-      db.prepare("UPDATE ai_proposals SET status = 'applied', applied_at = ?, created_json = ? WHERE id = ?").run(now(), json(created), proposal.id);
       const issueIds = parse(proposal.issues_json ?? 'null');
-      const changes = parse(proposal.changes_json) ?? [];
       const written = parse(proposal.applied_json) ?? [];
       const user = parse(item.user_json);
-      if (issueIds?.length && user)
+      if (status === 'applied' && issueIds?.length && user)
         markApplied(store, issueIds, { recordIds: new Set(written.map(i => changes[i]?.recordId).filter(Boolean)), proposalId: proposal.id, user });
     } else {
       const error = parse(item.error_json) ?? {};
       const refused = item.status === 'conflict' || nothingWritten(error);
-      db.prepare('UPDATE ai_proposals SET status = ?, last_error_json = ? WHERE id = ?').run(
+      // Refused as a whole: its rows are to apply again.
+      const rows = refused && last ? changes.map(c => (c.applied === last.n ? (({ applied: _, ...rest }) => rest)(c) : c)) : changes;
+      db.prepare('UPDATE ai_proposals SET status = ?, last_error_json = ?, changes_json = ?, applied_json = ?, applies_json = ? WHERE id = ?').run(
         refused ? 'pending' : 'needs_review',
         json(lastErrorOf(error)),
+        json(rows),
+        refused && last ? json(appliedIndexes(rows)) : (proposal.applied_json ?? null),
+        settle(refused ? 'refused' : 'needs_review'),
         proposal.id,
       );
       if (refused) void readAgain(error.details?.items ?? []).catch(() => {});
@@ -3288,7 +3386,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     const status = row?.status ?? proposal.status;
     const open = status === 'pending';
     // A butterfly the row would leave preserved without CAM or tube: those cells are marked (and shown) until filled.
-    const warned = changes.map(c => (open ? proposalSampleWarnings(c, c.create ? null : store.getRecord(c.recordId)) : null));
+    const warned = changes.map(c => (open && !c.applied ? proposalSampleWarnings(c, c.create ? null : store.getRecord(c.recordId)) : null));
     // What the checks (Revisión) say about its rows' cells, once they are found (never waited for here).
     const issues = open ? issuesByRecord(store, { ready: true }) : null;
     const checked = changes.map(c => {
@@ -3409,7 +3507,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       // Dead in the sheet already, or dying through this proposal: marked on its ID.
       Object.assign(view, deathMark(change, record, open));
       // Cells edited in the sheet since they were read (or the pre-made row taken): told apart in the table.
-      if (open && !change.context) Object.assign(view, sheetState(change, row?.created_at, inUse));
+      if (open && !change.context && !change.applied) Object.assign(view, sheetState(change, row?.created_at, inUse));
       // The rest of the row, for columns the person adds to the table (and its formula columns).
       if (open && !change.create) {
         view.rowValues = Object.fromEntries(
@@ -3489,6 +3587,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       lastBy: row?.last_by ?? null,
       appliedAt: row?.applied_at ?? null,
       applied: parse(row?.applied_json ?? 'null'),
+      // Each «Aplicar» (one sheet's rows, or all): when, who, how many rows, how it went.
+      ...(row?.applies_json ? { applies: parse(row.applies_json) } : {}),
       sheets,
       fields,
       types: Object.fromEntries(fields.map(f => [f, typeOf(f)])),
@@ -4176,6 +4276,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         const out = await applyProposal(proposal, context.user, {
           requestId: `ai-${randomUUID()}`,
           indexes: args.indexes,
+          sheets: typeof args.sheet === 'string' && args.sheet.trim() ? [args.sheet.trim()] : null,
           reason: tpl('Confirmado en el chat'),
           doubtful: args.confirmDoubtful === true ? 'confirm' : args.skipDoubtful === true ? 'skip' : null,
         });
@@ -4190,6 +4291,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
               }
             : {}),
           rows: out.applied.length,
+          ...(out.left ? { stillPending: out.left } : {}),
           ...(out.keptFromSheet ? { keptFromSheet: sheetList(out.keptFromSheet) } : {}),
           ...(out.doubtful ? { doubtful: out.doubtful } : {}),
           ...(out.unreadable
@@ -4403,6 +4505,11 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
           .prepare("SELECT * FROM ai_proposals WHERE id = ? AND owner_id = ? AND status = 'pending'")
           .get(String(args.replaceProposalId), owner(context.user))
       : null;
+    // A page applied one sheet at a time: its written rows stay as they were written.
+    if (replaced && (parse(replaced.changes_json) ?? []).some(c => c.applied))
+      return {
+        error: `Proposal ${replaced.id} has rows written already (its ${[...new Set((parse(replaced.changes_json) ?? []).filter(c => c.applied).map(c => c.sheet))].join(', ')} rows): match the page without replaceProposalId, or correct the rest with update_proposal.`,
+      };
     const { review } = matched;
     // The same rows in another pending proposal: the page matched again, maybe in another conversation.
     // Context rows (includeUnchanged) write nothing: they neither overlap nor make a proposal alone.
@@ -4798,9 +4905,13 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (discardMatch && method === 'POST') {
       const proposal = teamProposal(discardMatch[1], user);
       if (!proposal) return bad(404, 'not_found', 'Proposal not found.');
-      // A table shown (show_rows) is closed; a proposal, discarded.
-      const [from, to] = isTable(proposal) ? ['shown', 'closed'] : ['pending', 'discarded'];
-      const done = db.prepare('UPDATE ai_proposals SET status = ? WHERE id = ? AND status = ?').run(to, discardMatch[1], from);
+      // A table shown (show_rows) is closed; a proposal, discarded; one with a sheet's rows written already
+      // (applied one sheet at a time), applied as it is: the rest is left out.
+      const some = !isTable(proposal) && appliedIndexes(parse(proposal.changes_json) ?? []).length > 0;
+      const [from, to] = isTable(proposal) ? ['shown', 'closed'] : ['pending', some ? 'applied' : 'discarded'];
+      const done = db
+        .prepare(`UPDATE ai_proposals SET status = ?${some ? ', applied_at = ?' : ''} WHERE id = ? AND status = ?`)
+        .run(to, ...(some ? [now()] : []), discardMatch[1], from);
       if (done.changes) changed(proposal.owner_id);
       return done.changes
         ? { status: 200, body: { proposalId: discardMatch[1], status: to } }
@@ -4818,14 +4929,18 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         return bad(400, 'request_id_required', 'A unique requestId of 8 to 120 characters is required.');
       if (body.indexes !== undefined && (!Array.isArray(body.indexes) || body.indexes.some(i => !Number.isInteger(i))))
         return bad(400, 'invalid_indexes', 'indexes must be a list of row numbers.');
+      // One sheet's table applied (its own «Aplicar»): the other sheets' rows stay pending.
+      if (body.sheets !== undefined && (!Array.isArray(body.sheets) || body.sheets.length > 20 || body.sheets.some(s => typeof s !== 'string')))
+        return bad(400, 'invalid_sheets', 'sheets must be a list of sheet names.');
       // The rows were chosen on the revision the table showed: if the assistant changed it since, look again.
       if (body.revision !== undefined && Number(body.revision) !== proposal.revision)
         return bad(409, 'proposal_changed', 'La propuesta cambió mientras la revisabas: mira la tabla y vuelve a aplicar.');
       try {
         const doubtful = body.doubtful === 'confirm' || body.doubtful === 'skip' ? body.doubtful : null;
-        const out = await applyProposal(proposal, user, { requestId, indexes: body.indexes, reason: body.reason, doubtful });
+        const out = await applyProposal(proposal, user, { requestId, indexes: body.indexes, reason: body.reason, doubtful, sheets: body.sheets });
         // queued: Google does not answer; the save waits in the app and is written when it does (server/outbox.mjs).
-        return { status: out.status === 'applied' || out.status === 'queued' ? 200 : 409, body: out };
+        // pending: one sheet's rows written, the others' still to apply.
+        return { status: ['applied', 'queued', 'pending'].includes(out.status) ? 200 : 409, body: out };
       } catch (cause) {
         const current = (parse(proposal.changes_json) ?? []).map(change => {
           const record = store.getRecord(change.recordId);
@@ -4964,16 +5079,26 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     const out = { applied: [], differ: [] };
     for (const p of rows) {
       const changes = parse(p.changes_json) ?? [];
-      const { cells, differ } = compareWithSheet(store, changes, parse(p.created_json ?? 'null') ?? {});
+      // The rows its applies sent (all of them for a proposal from before applies were kept).
+      const sent = changes.some(c => c.applied);
+      const { cells, differ } = compareWithSheet(
+        store,
+        sent ? changes.map(c => (c.applied ? c : { ...c, context: true })) : changes,
+        parse(p.created_json ?? 'null') ?? {},
+      );
       if (!cells) continue;
       const at = now();
       if (!differ.length) {
-        const written = changes.map((c, i) => (!c.context && Object.keys(c.values ?? {}).length ? i : -1)).filter(i => i >= 0);
+        const written = sent ? appliedIndexes(changes) : changes.map((c, i) => (!c.context && Object.keys(c.values ?? {}).length ? i : -1)).filter(i => i >= 0);
+        // One sheet's rows written after all, others still to apply: pending again.
+        const applies = parse(p.applies_json ?? 'null') ?? [];
+        const status = applies.at(-1)?.sheets && sheetsLeft(changes).length ? 'pending' : 'applied';
+        const settled = applies.length ? json([...applies.slice(0, -1), { ...applies.at(-1), status: 'applied' }]) : (p.applies_json ?? null);
         db.prepare(
-          "UPDATE ai_proposals SET status = 'applied', applied_at = ?, applied_json = ?, check_json = ? WHERE id = ? AND status = 'needs_review'",
-        ).run(at, json(written), json({ at, matched: cells, differ: [] }), p.id);
+          "UPDATE ai_proposals SET status = ?, applied_at = ?, applied_json = ?, check_json = ?, applies_json = ?, updated_at = ? WHERE id = ? AND status = 'needs_review'",
+        ).run(status, status === 'applied' ? at : null, json(written), json({ at, matched: cells, differ: [] }), settled, at, p.id);
         out.applied.push(p.id);
-        console.log(`Proposal ${p.id}: every cell (${cells}) is in the sheet; marked applied`);
+        console.log(`Proposal ${p.id}: every cell (${cells}) is in the sheet; marked ${status === 'applied' ? 'applied' : 'written, the rest pending'}`);
       } else {
         db.prepare('UPDATE ai_proposals SET check_json = ? WHERE id = ?').run(json({ at, matched: cells - differ.length, differ: differ.slice(0, 200), count: differ.length }), p.id);
         out.differ.push(p.id);

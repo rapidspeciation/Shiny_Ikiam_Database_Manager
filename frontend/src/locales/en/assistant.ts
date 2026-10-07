@@ -102,6 +102,22 @@ export default {
   'Aplicar {n} fila': 'Apply {n} row',
   'Aplicar {n} filas': 'Apply {n} rows',
   Descartar: 'Discard',
+  // A proposal with rows of several sheets, applied one sheet at a time (ProposalGrid, SheetApply)
+  'Aplicar todo ({n} fila)': 'Apply all ({n} row)',
+  'Aplicar todo ({n} filas)': 'Apply all ({n} rows)',
+  'Escribe en la hoja solo las filas de {sheet}; las demás siguen pendientes':
+    'Writes only the {sheet} rows to the sheet; the others stay pending',
+  '{n} fila ya escrita en la hoja': '{n} row already written to the sheet',
+  '{n} filas ya escritas en la hoja': '{n} rows already written to the sheet',
+  'Ya escrita en la hoja (aplicada con su hoja): no se cambia aquí': 'Already written to the sheet (applied with its sheet): not changed here',
+  'Descartar el resto': 'Discard the rest',
+  'Lo ya escrito se queda en la hoja; las filas que faltan no se aplican':
+    'What was written stays in the sheet; the rows left are not applied',
+  'pendiente: {sheets}': 'pending: {sheets}',
+  aplicado: 'applied',
+  'esperando a Google Sheets': 'waiting for Google Sheets',
+  'sin confirmar': 'not confirmed',
+  'no se aplicó': 'not applied',
   'Guardando tus cambios…': 'Saving your changes…',
   'Sin conexión: tus cambios se guardarán al volver': 'Offline: your changes will be saved when you are back',
   '{n} celda editada por ti': '{n} cell edited by you',

@@ -232,9 +232,11 @@ const canEditCell = (key: string, field: string) => {
 }
 /** Why a row is only to read: a page line that writes nothing, or a sheet row between the proposal's rows. */
 const readOnlyText = (change: ProposalChange) =>
-  change.gap
-    ? t('Fila de la hoja que la propuesta no cambia: se muestra para leer en orden')
-    : t('Línea de la página que no escribe nada: solo para seguirla')
+  change.applied
+    ? t('Ya escrita en la hoja (aplicada con su hoja): no se cambia aquí')
+    : change.gap
+      ? t('Fila de la hoja que la propuesta no cambia: se muestra para leer en orden')
+      : t('Línea de la página que no escribe nada: solo para seguirla')
 /** The rows come from a notebook page: a "Línea" column (photo and line, when the page has several photos). */
 const paged = () => props.changes.some(c => c.page)
 const severalPhotos = () => new Set(props.changes.map(c => c.page?.photo ?? 0)).size > 1
@@ -284,6 +286,7 @@ function toRow(c: ProposalChange): Row {
     (props.notebookOrder ? 'n' : '') +
     (props.editable ? 'e' : '') +
     (c.context ? 'c' : '') +
+    (c.applied ? 'a' : '') +
     (c.highlight ? 'h' : '') +
     (c.page?.error ? 'x' : '') +
     Object.keys(c.values).length

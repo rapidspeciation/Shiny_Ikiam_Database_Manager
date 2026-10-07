@@ -373,18 +373,19 @@ watch(
 )
 watch([proposals, connected], () => void bring())
 
-async function apply(proposal: Proposal, indexes: number[], at: number | undefined, doubtful?: 'confirm' | 'skip') {
+async function apply(proposal: Proposal, indexes: number[], at: number | undefined, doubtful?: 'confirm' | 'skip', sheets?: string[]) {
   applying.value = proposal.id
   try {
-    const out = await api<{ status: Proposal['status']; applied: number[]; keptFromSheet?: unknown[] }>(
+    const out = await api<{ status: Proposal['status']; applied: number[]; keptFromSheet?: unknown[]; left?: string[] }>(
       `chat/proposals/${proposal.id}/apply`,
       {
         method: 'POST',
-        body: { requestId: requestId(), indexes, revision: at, ...(doubtful ? { doubtful } : {}) },
+        body: { requestId: requestId(), indexes, revision: at, ...(doubtful ? { doubtful } : {}), ...(sheets ? { sheets } : {}) },
       },
     )
     proposal.status = out.status
-    proposal.applied = out.applied
+    // One sheet's rows written, the others still pending: the list brings it again with its rows marked.
+    proposal.applied = out.status === 'pending' ? null : out.applied
     proposal.digest = undefined
     await Promise.all(Object.keys(tables.tables).map(sheet => tables.load(sheet, true)))
     // Google is not answering: the save waits in the app and is written on its own (server/outbox.mjs).
@@ -394,9 +395,13 @@ async function apply(proposal: Proposal, indexes: number[], at: number | undefin
     // Cells (or new rows) edited in the sheet meanwhile, left as the sheet has them.
     const kept = out.keptFromSheet?.length ?? 0
     notify(
-      kept
-        ? `${applied} · ${tn(kept, '{n} cambio se dejó como está en la hoja', '{n} cambios se dejaron como están en la hoja')}`
-        : applied,
+      [
+        applied,
+        kept ? tn(kept, '{n} cambio se dejó como está en la hoja', '{n} cambios se dejaron como están en la hoja') : '',
+        out.left?.length ? t('pendiente: {sheets}', { sheets: out.left.join(', ') }) : '',
+      ]
+        .filter(Boolean)
+        .join(' · '),
       'success',
     )
   } catch (e) {
@@ -425,8 +430,9 @@ async function apply(proposal: Proposal, indexes: number[], at: number | undefin
 /** «Descartar» a proposal, or «Cerrar» a table of rows. */
 async function discard(proposal: Proposal) {
   try {
-    await api(`chat/proposals/${proposal.id}/discard`, { method: 'POST', body: {} })
-    proposal.status = isTable(proposal) ? 'closed' : 'discarded'
+    // A proposal with a sheet's rows written already ends applied (the rest left out).
+    const out = await api<{ status: Proposal['status'] }>(`chat/proposals/${proposal.id}/discard`, { method: 'POST', body: {} })
+    proposal.status = out?.status ?? (isTable(proposal) ? 'closed' : 'discarded')
     proposal.digest = undefined
   } catch (e) {
     notify(errorText(e), 'error')
@@ -610,12 +616,12 @@ const origin = (p: Proposal) =>
           <button type="button" class="btn ml-auto" @click="endReview">{{ $t('Volver a la lista') }}</button>
         </p>
         <WhenSeen v-else :height="heightOf(p)">
-          <RowsTable v-if="isTable(p)" :table="p" @close="discard(p)" />
+          <RowsTable v-if="isTable(p)" :table="p" @close="discard(p)" @photo="n => review(p, n)" />
           <ProposalGrid
             v-else
             :proposal="p"
             :busy="applying === p.id"
-            @apply="(indexes, at, doubtful) => apply(p, indexes, at, doubtful)"
+            @apply="(indexes, at, doubtful, sheets) => apply(p, indexes, at, doubtful, sheets)"
             @discard="discard(p)"
             @replace="replace"
             @photo="n => review(p, n)"
@@ -652,7 +658,7 @@ const origin = (p: Proposal) =>
         :photo="reviewing.photo"
         @update:photo="n => reviewing && (reviewing = { ...reviewing, photo: n })"
         @close="endReview"
-        @apply="(indexes, at, doubtful) => reviewed$ && apply(reviewed$, indexes, at, doubtful)"
+        @apply="(indexes, at, doubtful, sheets) => reviewed$ && apply(reviewed$, indexes, at, doubtful, sheets)"
         @discard="reviewed$ && discard(reviewed$)"
         @replace="replace"
       />
