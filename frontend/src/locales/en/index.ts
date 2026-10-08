@@ -20,6 +20,7 @@ import review from './review'
 import search from './search'
 import server from './server'
 import serverBuilt from './server-built'
+import speciesPhotos from './species-photos'
 import tubes from './tubes'
 
 export const en: Record<string, string> = Object.assign(
@@ -34,6 +35,7 @@ export const en: Record<string, string> = Object.assign(
   clutches,
   collect,
   monitoring,
+  speciesPhotos,
   home,
   review,
   history,
