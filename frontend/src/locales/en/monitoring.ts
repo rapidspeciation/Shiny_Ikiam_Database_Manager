@@ -153,6 +153,9 @@ export default {
     'Species with at least 5 sexed individuals: females on the left, males on the right',
   'Comportamiento y clima': 'Behaviour and weather',
   'Hora de captura': 'Capture time',
+  'Cada 10 minutos alrededor del monitoreo habitual (9:00–11:00, sombreado); en gris, las capturas antes de 8:30 ({before}) y desde 11:30 ({after}). {none} sin hora.':
+    'Every 10 minutes around the usual walk (9:00–11:00, shaded); in grey, captures before 8:30 ({before}) and from 11:30 ({after}). {none} without a time.',
+  'horario habitual': 'usual hours',
   'Altura de vuelo (m)': 'Flight height (m)',
   Nubosidad: 'Cloud cover',
   Soleado: 'Sunny',

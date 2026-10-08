@@ -12,7 +12,7 @@ import {
   HEIGHT_CLASSES,
   byCloud,
   byHeight,
-  byHour,
+  byTime,
   kindsByMonth,
   markHistories,
   monthOf,
@@ -446,8 +446,43 @@ const simpleBars = (categories: string[], values: number[], unit = t('individuos
   yAxis: axis('value'),
   series: [{ type: 'bar', barMaxWidth: 24, itemStyle: barStyle(SERIES[0]), data: values }],
 })
-const HOURS = Array.from({ length: 9 }, (_, i) => `${i + 7}h`)
-const hours = computed(() => byHour(props.rows))
+/** Capture time in 10-minute bins around the usual walk (9:00–11:00), with the captures earlier and later at the ends. */
+const times = computed(() => byTime(props.rows))
+const timeLabels = computed(() => ['< 8:30', ...times.value.labels, '≥ 11:30'])
+const timeValues = computed(() => [times.value.before, ...times.value.bins, times.value.after])
+const timeOption = computed(() => {
+  const last = timeLabels.value.length - 1
+  return {
+    ...base(),
+    grid: { ...base().grid, top: 24 },
+    tooltip: {
+      ...base().tooltip,
+      trigger: 'axis',
+      axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(0,0,0,.04)' } },
+      formatter: (p: { dataIndex: number }[]) => {
+        const i = p[0].dataIndex
+        const label = i === 0 || i === last ? timeLabels.value[i] : `${timeLabels.value[i]}–${timeLabels.value[i + 1].replace('≥ ', '')}`
+        return tipTitle(label) + `<b>${timeValues.value[i]}</b> ${t('individuos')}`
+      },
+    },
+    xAxis: axis('category', timeLabels.value),
+    yAxis: { ...axis('value'), minInterval: 1 },
+    series: [
+      {
+        type: 'bar',
+        barMaxWidth: 24,
+        data: timeValues.value.map((v, i) => ({ value: v, itemStyle: barStyle(i === 0 || i === last ? OTHER : SERIES[0]) })),
+        // The usual walk, shaded.
+        markArea: {
+          silent: true,
+          itemStyle: { color: 'rgba(42,120,214,.06)' },
+          label: { show: true, position: 'top', color: '#898781', fontSize: 11, formatter: t('horario habitual') },
+          data: [[{ xAxis: '9:00' }, { xAxis: '10:50' }]],
+        },
+      },
+    ],
+  }
+})
 const heights = computed(() => byHeight(props.rows))
 const clouds = computed(() => byCloud(props.rows))
 
@@ -617,17 +652,24 @@ const table = (head: string[], rows: (string | number)[][]) => ({ head, rows })
 
     <section class="space-y-3">
       <h2 class="font-semibold">{{ $t('Comportamiento y clima') }}</h2>
-      <div class="grid gap-4 lg:grid-cols-3">
+      <div class="grid gap-4 lg:grid-cols-2">
         <ChartCard
+          class="lg:col-span-2"
           :title="$t('Hora de captura')"
+          :subtitle="
+            $t(
+              'Cada 10 minutos alrededor del monitoreo habitual (9:00–11:00, sombreado); en gris, las capturas antes de 8:30 ({before}) y desde 11:30 ({after}). {none} sin hora.',
+              { before: times.before, after: times.after, none: times.none },
+            )
+          "
           :table="
             table(
               [$t('Hora'), $t('Individuos')],
-              HOURS.map((h, i) => [h, hours[i]]),
+              [...timeLabels.map((h, i) => [h, timeValues[i]]), [$t('Sin hora'), times.none]],
             )
           "
         >
-          <EChart :option="simpleBars(HOURS, hours)" :height="180" />
+          <EChart :option="timeOption" :height="200" />
         </ChartCard>
         <ChartCard
           :title="$t('Altura de vuelo (m)')"

@@ -70,7 +70,7 @@ Monitoreo → Reporte replaces the monthly slides. One row of filters (period, c
 - **Headline numbers:** individuals, monitoring days (one per collector and date, from SamplingDay_data plus days with captures), individuals per day, species, preserved and marked, recaptures (and the share of marked individuals recaptured), next mark.
 - **Abundance and effort:** individuals per month by fate (zoomable), individuals per monitoring day, monitoring days per collector, comparison between years.
 - **Species:** most abundant species by fate, species accumulation curve (with singletons and doubletons), seasonality (individuals per monitoring day by calendar month), composition by transect, sex ratio.
-- **Behaviour and weather:** hour of capture, flight height, cloud cover.
+- **Behaviour and weather:** capture time in 10-minute bins from 8:30 to 11:30 around the usual walk (9:00–11:00, shaded), with the captures before 8:30 and from 11:30 as grey bars at the ends and those without a time counted in the subtitle; flight height, cloud cover.
 - **Marking and recapture:** days between captures of the same individual, and distance moved when both captures have GPS (walks on the map).
 - **Tables:** species with the 30-preserved rule (top 10, expandable), individuals per transect and month, recapture histories.
 - **Data review** (at the bottom, as notes): marks recorded on two species, recaptures written only in notes, and monitoring rows whose Purpose is empty or "NA" (counted as monitoring when the collector recorded that day in SamplingDay_data).
