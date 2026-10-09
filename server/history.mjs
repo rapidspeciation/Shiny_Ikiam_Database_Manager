@@ -1214,10 +1214,10 @@ export const HISTORY_TOOLS = [
   {
     type: 'function',
     function: {
-      name: 'record_history',
+      name: 'row_history',
       description:
         [
-          'Every change to one row, oldest first: when, who, why, each field before → after, and a link to each save.',
+          'Every change to one row, oldest first: when, who, why, each field before → after, and a link to each save. Saves across rows (by person, day, tab): `list_history`.',
           '- `id`: a label or identifier (Insectary_ID, CAM_ID, clutch number…). When several rows have it, they are listed with their recordId instead.',
           '- `others`: further rows with that name (another sheet, gone from the sheet, or formerly so named).',
           '- Formula cells read "(formula)" unless `formulas: true`. A long history comes in parts: `next` is the offset of the rest.',
@@ -1404,7 +1404,7 @@ export async function runHistoryTool(store, name, args = {}, context = {}, { pub
       }
       return answer(max);
     }
-    if (name === 'record_history') {
+    if (name === 'row_history') {
       const out = recordHistory(store, {
         id: args.id,
         recordId: args.recordId,

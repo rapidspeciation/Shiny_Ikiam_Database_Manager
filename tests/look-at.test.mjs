@@ -165,7 +165,7 @@ test('lookAt caps its lists and says how to see the rest', async () => {
     assert.equal(missing.problem, 'Preservada (Death_cause Killed_Preserved) sin CAM_ID');
     assert.equal(missing.rows.length, 10);
     assert.equal(missing.moreRows, 2);
-    assert.match(look.rest, /check_data with a row's recordId.*`query`/);
+    assert.match(look.rest, /review_issues with a row's recordId.*`query`/);
     // Only some rows (those a revision changed).
     assert.deepEqual(lookAt(store, changes, { only: new Set([0]) }), { notes: [{ field: 'Notes_Insectary_data', note: 'nota 0', rows: ['N0E'] }] });
   } finally {

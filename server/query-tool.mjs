@@ -21,10 +21,13 @@ export const QUERY_TOOL = {
   function: {
     name: 'query',
     description: [
-      'Read-only SQLite on a copy of the sheets (refreshed within a minute of a save): counts, ranges, comparisons across sheets, cell histories.',
-      '- A table per sheet, its rows in use (<sheet>_all: also the empty pre-made rows); "CLUTCH NUMBER": names with spaces or signs quoted; _row: sheet row; _id: recordId; dates YYYY-MM-DD.',
-      '- _tables; _columns (sheet, column, type, list); history (at, sheet, row, id_label, record_id, field, before, after, who, source, reason); staged: entries not in the sheet yet.',
-      '- fold(text): lowercase, no accents; km(lat1, lon1, lat2, lon2).',
+      "One read-only SQLite statement (SELECT or WITH) on a copy of the workbook and the app's save history, refreshed within a minute of a save; the rows come back as text, tab-separated under a header line. For counts, ranges, comparisons across sheets, cell histories and anything over many rows.",
+      '- A table per sheet, named as the sheet (Insectary_data, Collection_data, Insectary_stocks, "F1/F2_MutationRate"…): its rows in use. <sheet>_all also holds the pre-made rows (made ahead with their ID, or holding only NA or a default; _premade = 1).',
+      "- Their columns are the sheet's headers (describe_sheet lists them, or SELECT column FROM _columns WHERE sheet = '…'); a header with spaces or signs in double quotes (\"CLUTCH NUMBER\"). Also _row (the sheet's row) and _id (the recordId proposals take). Values as the sheet shows them (formulas computed); dates YYYY-MM-DD, times H:MM; ID columns compare without case.",
+      '- _tables (name, rows, premade); _columns (sheet, column, header: the sheet\'s, when two differ only in case the second column takes _2; type; list: a dropdown\'s values as JSON; strict).',
+      '- history: every cell saved, by the app or typed in Google Sheets: at, sheet, row, id_label, record_id, field, before, after, who, source (the tab, Asistente, Google Sheets, Deshacer…), reason, action_id; formula cells as "(formula)".',
+      '- staged: Emergidos and Clutches entries kept in the app, not in the sheet yet, a row per cell: at, who, tab, kind (new row or edit), sheet, row, id_label, record_id, field, value, before, status.',
+      "- fold(text): lowercase without accents (fold(SPECIES) LIKE '%oleria%'); km(lat1, lon1, lat2, lon2): the distance in km.",
     ].join('\n'),
     parameters: {
       type: 'object',

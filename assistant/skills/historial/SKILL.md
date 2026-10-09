@@ -6,7 +6,7 @@ description: The app's Historial tab — every save to the workbook (from the ap
 # Historial: finding and undoing a save
 
 - The history of one butterfly, clutch or row ("¿qué cambios ha tenido
-  D5D?", "¿quién cambió el sexo de 5VB?"): `record_history`.
+  D5D?", "¿quién cambió el sexo de 5VB?"): `row_history`.
 - Otherwise:
   1. Find the save with `list_history` from what the person remembers (who,
      when, which tab, an ID or value).

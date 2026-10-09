@@ -933,7 +933,7 @@ export async function createApp(config = {}, options = {}) {
         const unique = mod.fields.map(f => f.key).filter(k => UNIQUE[module]?.includes(k) || TUBE_FIELD.test(k));
         return sendTagged(res, { module, unique, lists });
       }
-      // Revisión de datos: inconsistencies across the workbook (the assistant's check_data tool).
+      // Revisión de datos: inconsistencies across the workbook (the assistant's review_issues tool).
       if (method === 'GET' && path === '/api/checks') return json(res, 200, checkData(store, query, await freshIssues(store)));
       // The Revisión tab: the same issues with people's verdicts, and the specimen photos they show.
       if (method === 'GET' && path === '/api/review') {

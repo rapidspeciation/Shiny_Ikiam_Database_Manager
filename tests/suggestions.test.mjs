@@ -314,11 +314,11 @@ test('the assistant reads the suggestions and the alerts; neither writes anythin
   const { call } = mcpClient(assistant, 'ana-token');
   const versions = () => store.db.prepare('SELECT sum(version) v FROM records').get().v;
   const before = versions();
-  const tubes = await call('list_suggested_edits', { source: 'tubes' });
+  const tubes = await call('review_suggestions', { source: 'tubes' });
   assert.equal(tubes.total, 3);
   assert.equal(tubes.items[0].reasonMsg, undefined, 'the assistant reads the Spanish text');
   assert.ok(tubes.sources.some(s => s.id === 'pedigree' && s.describe));
-  const got = await call('get_alerts', {});
+  const got = await call('review_issues', { show: 'alerts' });
   assert.ok(got.alerts.some(a => a.id === 'thirty:Oleria tigilla'));
   assert.equal(versions(), before);
   store.close();

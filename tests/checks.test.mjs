@@ -140,7 +140,7 @@ const sameTexts = issues => {
 const find = (out, kind, sheet, row, field) =>
   out.issues.find(i => i.kind === kind && i.sheet === sheet && i.row === row && (!field || i.field === field));
 
-test('check_data finds each kind of inconsistency, with the row, the value and the obvious fix', async () => {
+test('review_issues finds each kind of inconsistency, with the row, the value and the obvious fix', async () => {
   const store = await fixture();
   const out = checkData(store, { limit: 500 });
   // Each problem comes with its descriptor for the interface language, built from the same template.
@@ -191,7 +191,7 @@ test('check_data finds each kind of inconsistency, with the row, the value and t
   store.close();
 });
 
-test('check_data pages and filters by sheet and kind, and is computed once per state of the copy', async () => {
+test('review_issues pages and filters by sheet and kind, and is computed once per state of the copy', async () => {
   const store = await fixture();
   const first = checkData(store, { kind: 'insectary_link,link_mismatch', limit: 2 });
   assert.equal(first.total, 6);
@@ -212,7 +212,7 @@ test('check_data pages and filters by sheet and kind, and is computed once per s
   store.close();
 });
 
-test('the assistant follows check_data with propose_changes, and the person applies the fix', async () => {
+test('the assistant follows review_issues with propose_changes, and the person applies the fix', async () => {
   const store = await fixture();
   const assistant = createAssistant({ store, config: {} });
   store.db
@@ -233,13 +233,13 @@ test('the assistant follows check_data with propose_changes, and the person appl
   };
   const tools = (await assistant.mcp({ authorization: `Bearer ${token}` }, { jsonrpc: '2.0', id: 1, method: 'tools/list' }))
     .body.result.tools;
-  assert.ok(['check_data', 'queue_wikiloc', 'get_walk'].every(n => tools.some(t => t.name === n)));
+  assert.ok(['review_issues', 'queue_walk', 'get_walk'].every(n => tools.some(t => t.name === n)));
 
-  const found = await call('check_data', { kind: 'date_order,list' });
+  const found = await call('review_issues', { kind: 'date_order,list' });
   const fixes = found.issues.filter(i => i.fix);
   assert.equal(fixes.length, 2);
   const proposed = await call('propose_changes', {
-    reason: 'Arreglos obvios de check_data',
+    reason: 'Arreglos obvios de review_issues',
     changes: fixes.map(i => ({ ...i.fix, note: i.problem })),
   });
   assert.equal(proposed.rows, 2);
@@ -255,7 +255,7 @@ test('the assistant follows check_data with propose_changes, and the person appl
   assert.equal(applied.body.status, 'applied');
   assert.equal(store.getRecordBySheetRow('Insectary_data', 3).values.Death_date, serial('2026-09-03'));
   assert.equal(store.getRecordBySheetRow('Collection_data', 5).values.Sex, 'female ?');
-  assert.equal((await call('check_data', { kind: 'list' })).total, 0);
+  assert.equal((await call('review_issues', { kind: 'list' })).total, 0);
 
   // The same from the app: "Proponer arreglos" in Revisión de datos.
   const future = checkData(store, { kind: 'future_date' }).issues[0];

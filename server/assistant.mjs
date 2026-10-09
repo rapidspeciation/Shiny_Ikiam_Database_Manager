@@ -160,12 +160,12 @@ const TOOLS = [
   {
     type: 'function',
     function: {
-      name: 'search_records',
+      name: 'search_text',
       description:
-        'Search workbook rows by free text: up to 12 rows with sheet, row and app ID.\nExact identifiers or column conditions: `find_records`. Counts: `count_records`.',
+        "Rows of any sheet whose ID or any cell contains a text (case ignored), the most recently changed first: up to 12, each with its sheet, row, recordId and non-empty values, and `total`. For when you do not know the sheet or column. Rows of one sheet by identifiers or column conditions: `find_records`; counts: `count_records` or `query`.",
       parameters: {
         type: 'object',
-        properties: { query: { type: 'string' }, module: { type: 'string' } },
+        properties: { query: { type: 'string', description: 'The text, e.g. a CAM, a tube, a name in the notes' }, module: { type: 'string', description: 'Only this sheet' } },
         required: ['query'],
       },
     },
@@ -210,13 +210,22 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'run_report',
-      description: 'Produce a sourced count, stage, cross, sample, quality or weekly report.',
+      description: [
+        'A fixed summary table over the rows in use, with `method` (what it counts and what it does not mean) and the first rows it read as sources to cite. Any other count or grouping: `count_records` or `query`.',
+        '- overview: rows with data per sheet, every sheet.',
+        '- counts: rows of `module` (required) per value of `field` (default SPECIES), empty ones as "(missing)".',
+        '- stages: Insectary_stocks, the totals of NUMBER OF EGGS / LARVAE / PUPA / ADULTS and how many clutches have each.',
+        '- crosses: Melinaea_crosses, attempts with and without Mating_started, and with an egg count.',
+        '- samples: Pheromones_data, rows without CAM_ID, without a tube, without Treatment.',
+        '- quality: `field` (default CAM_ID) of `module` (default Collection_data): rows, rows without it, values repeated.',
+        '- daily / weekly: rows per day of the last 14 days (default Collection_data) / per week, from Monday, of the last 16 (default Insectary_data), by their first date column.',
+      ].join('\n'),
       parameters: {
         type: 'object',
         properties: {
-          kind: { type: 'string', enum: ['overview', 'counts', 'stages', 'crosses', 'samples', 'quality', 'weekly'] },
-          module: { type: 'string' },
-          field: { type: 'string' },
+          kind: { type: 'string', enum: ['overview', 'counts', 'stages', 'crosses', 'samples', 'quality', 'daily', 'weekly'] },
+          module: { type: 'string', description: 'The sheet' },
+          field: { type: 'string', description: 'The column (counts, quality)' },
         },
         required: ['kind'],
       },
@@ -225,27 +234,28 @@ const TOOLS = [
   {
     type: 'function',
     function: {
-      name: 'check_data',
+      name: 'review_issues',
       description:
         [
-          "Scan the workbook (the app's copy: fast) for inconsistencies: the issues people judge in the Revisión tab («Problemas»).",
-          '- Without `kind`: how many issues there are of each kind. Then ask for one kind or sheet, paging with `offset`.',
-          "- Each issue: kind, sheet, row, recordId, label, field, value, problem (Spanish), related (the other rows involved), and `fix` = {recordId, values} when the checks compute the right value (`list_suggested_edits` source `check_fixes` gives each fix its certainty).",
-          '- Without a fix, the rows disagree and the data alone do not say which is right: show the person the rows and the evidence.',
-          '- Photo issues add cam, strength (fuerte/media/baja/dudosa: how often such a reading was right), curation (an earlier decision), photos, envelopeText (what was read on the envelope in the photo), envelopeCamid, prediction.',
-          '- An issue with `task.text` is work on the photos in Drive, not a sheet change.',
+          "The Revisión tab's «Problemas» and «Alertas» (read-only): the inconsistencies the app's checks find in the workbook, the fixes people agreed on there, and the alerts. Its «Sugerencias»: `review_suggestions`.",
+          '- Without `kind`: how many issues there are of each kind and sheet, how many agreed fixes wait (`agreed`) and how many alerts there are. Then ask for one kind or sheet, paging with `offset`.',
+          "- Each issue: kind, sheet, row, recordId, label, field, value, problem (Spanish), related (the other rows involved), and `fix` = {recordId, values} when the checks compute the right value (`review_suggestions` source `check_fixes` gives each fix its certainty). Without a fix, the rows disagree and the data alone do not say which is right.",
+          '- Photo issues add cam, strength (fuerte/media/baja/dudosa: how often such a reading was right), curation (an earlier decision), photos, envelopeText (what was read on the envelope in the photo), envelopeCamid, prediction. An issue with `task.text` is work on the photos in Drive, not a sheet change.',
+          '- show "agreed": the corrections people agreed on (accepted, or another value given). fixes: {issueId, recordId, sheet, row, label, values, note, decidedBy}, made with one `propose_changes` (values merged per recordId, notes kept) given their issueIds, so Revisión marks them applied; tasks: Drive work on the photos; needsValue: accepted without a value; stale: the row changed since the verdict.',
+          '- show "alerts": camPools (per range of each CAM pool in Lists: size, used, highest, next free, left above the highest, gaps, last use; under 50 or 15 % left is an alert, PAS or AA hand out new ranges), preserveRule (Ithomiini species with 30 or more Collected_Preserved from Ikiam, Casa de Lin or Mariposario Ikiam, the day each reached 30, those preserved after; close = 25–29), missingSamples (insectary butterflies preserved without CAM_ID or Tube_1_id, or Killed_Preserved with NA in them; those of the last 180 days are alerts), and `alerts`: the texts the app shows.',
         ].join('\n'),
       parameters: {
         type: 'object',
         properties: {
+          show: { type: 'string', enum: ['issues', 'agreed', 'alerts'], description: 'Default issues' },
           sheet: { type: 'string', description: 'Only this sheet, e.g. Collection_data' },
           kind: {
             type: 'string',
             description:
-              'Comma-separated: repeat (a unique ID or a tube in two rows), id_format (an ID with a digit more or less than its series, e.g. FS + 7 digits among FS + 8), cam_cross (one CAM on two butterflies across Collection_data and Insectary_data / Wing_tissue), list (outside a strict list), insectary_link (Collected_Sent2Insectary without its Insectary_data row, or the reverse), link_mismatch (the two rows of one butterfly disagree), date_order, future_date, bad_date (no date in a date column), missing_sample (preserved without CAM_ID or Tube_1_id), preserved_na (Death_cause Killed_Preserved but CAM_ID NA and no tube: the cause and the preservation cells disagree), mark_reuse (a FieldMark_ID on two species), walk_doubt (a Wikiloc point stored without a row, its pairing doubtful: row = the likeliest or null, related = the candidates; a person pairs it in Monitoreo → Dudas, not with propose_changes), photo_camid (envelope CAM ≠ photo file name: Drive task), photo_extra (another butterfly\'s photos in a CAM folder: Drive task), envelope_sex, envelope_species (ocr = {read, sheet}; group = the batch), photo_missing (preserved over 30 days, no photos), ai_species (the Wings Gallery model sees another species; a person decides)',
+              'Comma-separated: repeat (a unique ID or a tube in two rows), id_format (an ID with a digit more or less than its series, e.g. FS + 7 digits among FS + 8), cam_cross (one CAM on two butterflies across Collection_data and Insectary_data / Wing_tissue), list (outside a strict list), insectary_link (Collected_Sent2Insectary without its Insectary_data row, or the reverse), link_mismatch (the two rows of one butterfly disagree), date_order, future_date, bad_date (no date in a date column), missing_sample (preserved without CAM_ID or Tube_1_id), preserved_na (Death_cause Killed_Preserved but CAM_ID NA and no tube: the cause and the preservation cells disagree), mark_reuse (a FieldMark_ID on two species), walk_doubt (a Wikiloc point stored without a row, its pairing doubtful: row = the likeliest or null, related = the candidates; a person pairs it in Monitoreo → Dudas), photo_camid (envelope CAM ≠ photo file name: Drive task), photo_extra (another butterfly\'s photos in a CAM folder: Drive task), envelope_sex, envelope_species (ocr = {read, sheet}; group = the batch), photo_missing (preserved over 30 days, no photos), ai_species (the Wings Gallery model sees another species; a person decides)',
           },
           recordId: { type: 'string', description: 'Only the issues of this row' },
-          limit: { type: 'integer', description: '1 to 200, default 50' },
+          limit: { type: 'integer', description: '1 to 200, default 50 (agreed: 1 to 100, default 100)' },
           offset: { type: 'integer' },
         },
       },
@@ -254,9 +264,9 @@ const TOOLS = [
   {
     type: 'function',
     function: {
-      name: 'queue_wikiloc',
+      name: 'queue_walk',
       description:
-        "Queue a Wikiloc monitoring walk (trail URL) for the app server's Wikiloc importer, which reads the public trail page, usually within a minute or two. A walk already read returns its walkId at once. Then call `get_walk`.",
+        "Queue a Wikiloc monitoring walk (trail URL) for the app server's Wikiloc importer, which reads the public trail page, usually within a minute or two. A walk already read returns its walkId at once. Then `get_walk` gives its points and rows.",
       parameters: {
         type: 'object',
         properties: {
@@ -354,7 +364,7 @@ const TOOLS = [
           missingFormulas: {
             type: 'array',
             description:
-              "«Fórmulas que faltan» groups (list_suggested_edits `group`: sheet · column · kind) whose cells get the column's formula: certain and likely ones, or `certainty`.",
+              "«Fórmulas que faltan» groups (review_suggestions `group`: sheet · column · kind) whose cells get the column's formula: certain and likely ones, or `certainty`.",
             items: {
               type: 'object',
               properties: { sheet: { type: 'string' }, column: { type: 'string' }, kind: { type: 'string' }, certainty: { type: 'string' } },
@@ -365,7 +375,7 @@ const TOOLS = [
           issueIds: {
             type: 'array',
             items: { type: 'string' },
-            description: 'Of the list_agreed_fixes fixes in it (marked applied in Revisión with it)',
+            description: 'Of the review_issues agreed fixes in it (marked applied in Revisión with it)',
           },
           view: VIEW_PARAM,
         },
@@ -376,32 +386,10 @@ const TOOLS = [
   {
     type: 'function',
     function: {
-      name: 'list_agreed_fixes',
+      name: 'review_suggestions',
       description:
         [
-          'The corrections people agreed on in the Revisión tab (accepted, or another value given):',
-          '- fixes: {issueId, recordId, sheet, row, label, values, note, decidedBy}.',
-          '- tasks: Drive work on the specimen photos (renames, merges), not sheet changes.',
-          '- needsValue: accepted without a value: ask for it.',
-          '- stale: the row changed since the verdict.',
-          'To make them: one `propose_changes` with the fixes (values merged per recordId, notes kept) and their issueIds.',
-        ].join('\n'),
-      parameters: {
-        type: 'object',
-        properties: {
-          kind: { type: 'string', description: 'Only these kinds (comma-separated), e.g. envelope_sex' },
-          limit: { type: 'integer', description: '1 to 100, default 100' },
-        },
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'list_suggested_edits',
-      description:
-        [
-          'Read-only: the corrections the app computes from the workbook (Revisión → Sugerencias).',
+          "The Revisión tab's «Sugerencias» (read-only): corrections the app computes from the workbook, each with its evidence and certainty. Its «Problemas» and «Alertas»: `review_issues`.",
           '- Without filters, the answer also lists the sources with their description and counts.',
           '- Each suggestion: sheet, row, recordId, label, field, current, suggested (null = a person must decide), certainty, reason (the evidence, Spanish).',
           '- certainty: certain = only the spelling changes; likely = strong evidence; check = a lead for someone who knows.',
@@ -421,20 +409,6 @@ const TOOLS = [
           offset: { type: 'integer' },
         },
       },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'get_alerts',
-      description:
-        [
-          'Read-only alerts (`alerts`: the texts the app shows, in Spanish).',
-          '- camPools: the CAM pools of the Lists sheet; per range its size, used, highest, next free, left above the highest used, gaps and last use. A range in use with fewer than 50 or 15 % left is an alert (PAS or AA hand out new ranges).',
-          '- preserveRule: the 30-preserved rule: Ithomiini species with 30 or more Collected_Preserved from Ikiam, Casa de Lin or Mariposario Ikiam, the day each reached 30 and those preserved after it; close = species at 25–29.',
-          '- missingSamples: insectary butterflies preserved (by their preservation cells) without CAM_ID or Tube_1_id, or Killed_Preserved with NA in them (kind preserved_na). Those that died in the last 180 days are alerts.',
-        ].join('\n'),
-      parameters: { type: 'object', properties: {} },
     },
   },
   MATCH_NOTEBOOK_TOOL,
@@ -601,9 +575,7 @@ const TOOLS = [
  * round trip saved on each one's first use.
  */
 const ALWAYS_LOADED = new Set([
-  'search_records',
   'find_records',
-  'count_records',
   'query',
   'get_record',
   'describe_sheet',
@@ -615,6 +587,26 @@ const ALWAYS_LOADED = new Set([
   'match_notebook',
   'show_rows',
 ]);
+
+/**
+ * Earlier names of renamed or merged tools. A chat keeps the tool list it loaded, so these still
+ * answer in tools/call (tools/list gives only the new names): `name` is the tool now, `args` turns
+ * the old arguments into its own where it was merged into another one.
+ */
+export const TOOL_ALIASES = {
+  search_records: { name: 'search_text' },
+  record_history: { name: 'row_history' },
+  queue_wikiloc: { name: 'queue_walk' },
+  check_data: { name: 'review_issues' },
+  list_suggested_edits: { name: 'review_suggestions' },
+  list_agreed_fixes: { name: 'review_issues', args: a => ({ show: 'agreed', kind: a.kind, limit: a.limit }) },
+  get_alerts: { name: 'review_issues', args: () => ({ show: 'alerts' }) },
+};
+/** A tool call by its name now: { name, args }. */
+export function currentTool(name, args = {}) {
+  const alias = Object.hasOwn(TOOL_ALIASES, name) ? TOOL_ALIASES[name] : null;
+  return alias ? { name: alias.name, args: alias.args ? alias.args(args ?? {}) : args } : { name, args };
+}
 
 /** The tools as MCP's tools/list gives them to T3 Code's chats (and the app's AI instructions page shows them). */
 export const mcpTools = () =>
@@ -651,7 +643,7 @@ function init(db) {
   if (!has('ai_proposals', 'applied_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN applied_json TEXT');
   // New rows of a proposal, once written: their record IDs (to show their sheet rows).
   if (!has('ai_proposals', 'created_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN created_json TEXT');
-  // Issues of the Revisión tab a proposal fixes (list_agreed_fixes): marked applied when it is written.
+  // Issues of the Revisión tab a proposal fixes (review_issues show "agreed"): marked applied when it is written.
   if (!has('ai_proposals', 'issues_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN issues_json TEXT');
   // Proposals are revised in place (update_proposal, the person's edits in the table): a revision per
   // proposal, when and by whom ('ai' or 'person') it last changed.
@@ -4417,9 +4409,11 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     return formatRows(out, { limit: args.limit, pending: sheetsCopy.status().pending });
   }
 
-  async function executeTool(name, args, context) {
+  async function executeTool(called, given, context) {
+    // An earlier name (TOOL_ALIASES) runs the tool it became.
+    const { name, args } = currentTool(called, given);
     if (name === 'query') return queryCopy(args);
-    if (name === 'search_records') {
+    if (name === 'search_text') {
       const query = clip(args.query, 100).trim();
       if (!query) return { error: 'Search query required' };
       const page = await store.searchRecords({
@@ -4474,7 +4468,13 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         kept < result.rows.length ? { truncated: true, next: `${result.rows.length - kept} more rows not shown: count_records with filters and groupBy gives them in parts` } : {};
       return fitList(result, 'rows', RESULT_BUDGET - 500, more).out;
     }
-    if (name === 'check_data') {
+    if (name === 'review_issues') {
+      const show = String(args.show ?? 'issues');
+      if (show === 'alerts') return withoutMsgs(await freshAlerts(store));
+      if (show === 'agreed')
+        return agreedFixes(store, { kind: args.kind ? clip(args.kind, 300) : undefined, limit: args.limit }, await freshIssues(store));
+      if (show !== 'issues') return { error: 'show is issues (the default), agreed or alerts' };
+      const found = await freshIssues(store);
       const out = checkData(
         store,
         {
@@ -4484,20 +4484,28 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
           limit: Math.min(Number(args.limit) || 50, 200),
           offset: args.offset,
         },
-        await freshIssues(store),
+        found,
       );
-      // The kinds explained only in an answer that is not about some of them.
-      const page = { ...out, ...(args.kind ? { kinds: undefined } : {}), issues: withoutMsgs(out.issues) };
+      // The overview (no kind): the kinds explained, and the tab's other parts counted (the agreed
+      // fixes waiting, the alerts). An answer about some kinds leaves those out.
+      const overview = { kinds: undefined };
+      if (!args.kind) {
+        const agreed = agreedFixes(store, {}, found);
+        overview.kinds = out.kinds;
+        overview.agreed = { fixes: agreed.total, tasks: agreed.tasks.length, needsValue: agreed.needsValue.length, stale: agreed.stale.length };
+        overview.alerts = (await freshAlerts(store)).alerts.length;
+      }
+      const page = { ...out, ...overview, issues: withoutMsgs(out.issues) };
       const more = kept =>
         kept < out.issues.length || out.offset + out.issues.length < out.total
-          ? { truncated: true, next: `Issues from ${out.offset + kept} on not shown${kept < out.issues.length ? ' (size limit)' : ''}: check_data with offset: ${out.offset + kept}, or one kind or sheet` }
+          ? { truncated: true, next: `Issues from ${out.offset + kept} on not shown${kept < out.issues.length ? ' (size limit)' : ''}: review_issues with offset: ${out.offset + kept}, or one kind or sheet` }
           : {};
       const fitted = fitList({ ...page, ...more(page.issues.length) }, 'issues', RESULT_BUDGET - 500, more);
       for (const issue of fitted.out.issues.filter(i => i.recordId))
         context.sources.set(issue.recordId, { id: issue.recordId, type: 'record', sheet: issue.sheet, row: issue.row, label: issue.label });
       return fitted.out;
     }
-    if (name === 'queue_wikiloc') {
+    if (name === 'queue_walk') {
       if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot queue walks' };
       return queueWalk(store, { url: clip(args.url, 500), refresh: !!args.refresh }, context.user);
     }
@@ -4518,9 +4526,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (name === 'get_proposal') return getProposal(args, context);
     if (name === 'list_proposals') return listProposals(args, context);
     if (name === 'show_rows') return showRows(args, context);
-    if (name === 'list_agreed_fixes')
-      return agreedFixes(store, { kind: args.kind ? clip(args.kind, 300) : undefined, limit: args.limit }, await freshIssues(store));
-    if (name === 'list_suggested_edits') {
+    if (name === 'review_suggestions') {
       const out = await suggestionPage(store, {
         source: args.source ? clip(args.source, 300) : undefined,
         certainty: args.certainty ? clip(args.certainty, 100) : undefined,
@@ -4534,7 +4540,6 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         context.sources.set(s.recordId, { id: s.recordId, type: 'record', sheet: s.sheet, row: s.row, label: s.label });
       return { ...withoutMsgs(out), certainties: CERTAINTIES };
     }
-    if (name === 'get_alerts') return withoutMsgs(await freshAlerts(store));
     if (name === 'match_notebook') return withGoogle(await matchNotebook(args, context));
     if (HISTORY_TOOL_NAMES.has(name)) return runHistoryTool(store, name, args, context, { publicUrl: config.publicUrl });
     if (INVITE_TOOL_NAMES.has(name)) {
@@ -4747,7 +4752,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       // Within one answer's size (server/tool-budget.mjs): the tools cut their own lists where they
       // can say how to go on; anything still too long loses the end of its longest lists, and says so.
       out = fitResult(out, {
-        narrow: HISTORY_TOOL_NAMES.has(String(body.params?.name ?? ''))
+        narrow: HISTORY_TOOL_NAMES.has(currentTool(String(body.params?.name ?? '')).name)
           ? 'narrow it with recordId, field(s), text or dates, or a smaller maxChanges or limit'
           : 'ask for less (filters, fewer columns, a smaller limit) or page with offset',
       });

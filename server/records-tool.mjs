@@ -1,5 +1,5 @@
 // Rows of the workbook as the assistant reads them (find_records, count_records,
-// get_record, search_records): computed values of formula cells included, the
+// get_record, search_text): computed values of formula cells included, the
 // formula text where it tells something (a count typed as =16+2-1), column
 // filters, distance to a place, rows named by their ID in the sheet (W2B, a
 // clutch number) and answers kept under a size budget so a wide query says
@@ -13,7 +13,7 @@ const clip = (value, length) => String(value ?? '').slice(0, length);
 /** A formula that is only arithmetic on typed numbers (a count kept as =16+2-1): its text is worth showing. */
 const ARITHMETIC = /^=[\d\s+\-*/().]+$/;
 /**
- * Characters of rows one find_records (or search_records) answer holds: the
+ * Characters of rows one find_records (or search_text) answer holds: the
  * rest of the answer (counts, formula columns, the note on what was cut) fits
  * in what is left of RESULT_BUDGET.
  */
@@ -660,7 +660,7 @@ export const RECORD_TOOLS = [
     function: {
       name: 'count_records',
       description: [
-        'Count the rows of one sheet matching `filters` and/or `near` (as in find_records), in total and per group (`groupBy`: up to 3 columns; a date column as "Collection_date:year" or ":month"; empty cells as "(empty)"). Pre-made rows are not counted.',
+        'Count the rows of one sheet matching `filters` and/or `near` (as in find_records), in total and per group (`groupBy`: up to 3 columns; a date column as "Collection_date:year" or ":month"; empty cells as "(empty)"). Pre-made rows are not counted. Across sheets, or conditions between columns: `query`.',
         '- A text column as groupBy (e.g. Notes) gives each distinct text once with its count: a quick way to read and classify notes.',
       ].join('\n'),
       parameters: {

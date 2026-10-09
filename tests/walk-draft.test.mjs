@@ -84,13 +84,13 @@ test('a Wikiloc link becomes preliminary Collection_data rows the person confirm
   addProfile(store, { url: '13756119', collector: FCH }, user);
 
   // The server cannot open Wikiloc: the link is queued for the home computer.
-  const queued = await call('queue_wikiloc', { url: `Mira este: ${URL_}` });
+  const queued = await call('queue_walk', { url: `Mira este: ${URL_}` });
   assert.equal(queued.status, 'queued');
   assert.equal(queued.workerOnline, false);
   assert.equal((await call('get_walk', { url: URL_ })).status, 'queued');
 
   await worker(store, user);
-  const ready = await call('queue_wikiloc', { url: URL_ });
+  const ready = await call('queue_walk', { url: URL_ });
   assert.equal(ready.status, 'ready');
 
   const draft = await call('get_walk', { walkId: ready.walkId });
@@ -201,7 +201,7 @@ test('a Wikiloc link becomes preliminary Collection_data rows the person confirm
 
 test('a walk without day or collector says what to ask, and takes them as arguments', async () => {
   const { store, call, user } = await fixture();
-  await call('queue_wikiloc', { url: URL_ });
+  await call('queue_walk', { url: URL_ });
   const { job } = claimJob(store);
   // A followed profile without its collector, and a title without the day.
   await saveWalk(
@@ -224,6 +224,6 @@ test('a walk without day or collector says what to ask, and takes them as argume
   const given = await call('get_walk', { url: URL_, date: '2026-09-27', collector: FCH });
   assert.equal(given.newRows.length, 1);
   assert.equal(given.newRows[0].values.Collection_date, '2026-09-27');
-  assert.match((await call('queue_wikiloc', { url: 'https://example.com/123' })).error, /No Wikiloc trail link/);
+  assert.match((await call('queue_walk', { url: 'https://example.com/123' })).error, /No Wikiloc trail link/);
   store.close();
 });

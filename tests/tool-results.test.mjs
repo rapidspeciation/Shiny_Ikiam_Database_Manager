@@ -145,7 +145,7 @@ test('find_records: identifiers in one pass, any case, missing in the order give
   }
 });
 
-test('check_data, describe_sheet and long count groups stay within one answer and say how to go on', async () => {
+test('review_issues, describe_sheet and long count groups stay within one answer and say how to go on', async () => {
   // 260 rows with the same tube: 260 "repeat" issues.
   const rows = Array.from({ length: 260 }, (_, i) => ({
     row: i + 2,
@@ -153,12 +153,12 @@ test('check_data, describe_sheet and long count groups stay within one answer an
   }));
   const { store, raw, call } = await setup({ Insectary_data: rows });
   try {
-    const text = await raw('check_data', { kind: 'repeat', limit: 200 });
+    const text = await raw('review_issues', { kind: 'repeat', limit: 200 });
     assert.ok(text.length <= RESULT_BUDGET, String(text.length));
     const page = JSON.parse(text);
     assert.equal(page.truncated, true);
     assert.ok(page.issues.length > 0 && page.issues.length < 200);
-    assert.match(page.next, new RegExp(`check_data with offset: ${page.issues.length}`));
+    assert.match(page.next, new RegExp(`review_issues with offset: ${page.issues.length}`));
     assert.ok(!page.kinds, 'the kinds are explained only when no kind is asked');
     const notes = await raw('count_records', { sheet: 'Insectary_data', groupBy: 'Notes_Insectary_data' });
     assert.ok(notes.length <= RESULT_BUDGET);
@@ -169,7 +169,7 @@ test('check_data, describe_sheet and long count groups stay within one answer an
   }
 });
 
-test('get_history_group and record_history: formulas as "(formula)" unless asked, saves without changes counted, pages within the budget', async () => {
+test('get_history_group and row_history: formulas as "(formula)" unless asked, saves without changes counted, pages within the budget', async () => {
   const species = row => ({ formula: `=XLOOKUP(C${row},Insectary_stocks!A:A,Insectary_stocks!C:C,"")` });
   const { store, row } = await setup({ Insectary_data: [{ row: 2, values: { Insectary_ID: 'A0A', SPECIES: species(2), Sex: 'female' } }] });
   try {
@@ -202,10 +202,10 @@ test('get_history_group and record_history: formulas as "(formula)" unless asked
     const rest = await tool({ id: action, formulas: true, offset: texts.next });
     assert.ok(rest.actions[0].changes.length > 0);
 
-    const history = await runHistoryTool(store, 'record_history', { recordId: a0 }, {}, {});
+    const history = await runHistoryTool(store, 'row_history', { recordId: a0 }, {}, {});
     assert.ok(JSON.stringify(history).length <= RESULT_BUDGET);
     assert.match(history.saves[0].cells.find(c => c.startsWith('Lookup_0')), /^Lookup_0: \(formula\) → \(formula\)$/);
-    const withTexts = await runHistoryTool(store, 'record_history', { recordId: a0, formulas: true }, {}, {});
+    const withTexts = await runHistoryTool(store, 'row_history', { recordId: a0, formulas: true }, {}, {});
     assert.ok(JSON.stringify(withTexts).length <= RESULT_BUDGET);
     assert.match(withTexts.saves[0].moreCells, /more cells of this save not shown/);
   } finally {

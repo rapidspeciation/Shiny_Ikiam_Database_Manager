@@ -1,5 +1,5 @@
 // Alerts: things the team must act on before they become a problem, shown in
-// Revisión → Alertas, on Inicio and to the assistant (get_alerts).
+// Revisión → Alertas, on Inicio and to the assistant (review_issues show "alerts").
 //
 // CAM pools. The CAM_ID columns take their values from pools in the Lists sheet
 // (InsectaryWild&Reared_CAMid, Wild_indv_CAMid…, the dropdowns of

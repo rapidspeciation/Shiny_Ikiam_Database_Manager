@@ -2,7 +2,7 @@
 // verdict people gave it. A verdict is accepted (the proposed fix is right),
 // rejected (not a problem, or the reading is wrong) or other (the right value
 // is another one). The last verdict of an issue counts; all are kept. Accepted
-// fixes wait until someone asks for them (the T3 tool list_agreed_fixes, or
+// fixes wait until someone asks for them (the T3 tool review_issues, show "agreed", or
 // "Preparar propuesta" in the tab): they become one ordinary proposal that a
 // person confirms, and once it is written its issues move to "applied".
 // Verdicts on issues read from photos by a model are also training labels.
@@ -324,7 +324,7 @@ function agreedChange(issue, v) {
 }
 
 /**
- * Accepted issues ready to be proposed (list_agreed_fixes): sheet fixes with
+ * Accepted issues ready to be proposed (review_issues, show "agreed"): sheet fixes with
  * their issue ids, and tasks that are no sheet change (Drive renames and merges)
  * as a checklist. Issues accepted but gone from the checks are counted apart.
  * `found`: the issues as of now (freshIssues), else they are found here.

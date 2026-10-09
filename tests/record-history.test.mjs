@@ -151,9 +151,9 @@ test('older syncs: formulas moved with their rows are marked and left out of the
   store.close();
 });
 
-test('record_history: every change to one row, oldest first, with who, why and a link to each save', async () => {
+test('row_history: every change to one row, oldest first, with who, why and a link to each save', async () => {
   const { tool, ids, a0 } = await scene();
-  const out = await tool('record_history', { id: 'A0A' });
+  const out = await tool('row_history', { id: 'A0A' });
   assert.deepEqual(out.row, { recordId: a0, sheet: 'Insectary_data', row: 2, label: 'A0A' });
   assert.deepEqual(
     out.saves.map(s => [s.who, s.purpose, s.cells]),
@@ -174,21 +174,21 @@ test('record_history: every change to one row, oldest first, with who, why and a
   );
 
   // Filters and pages.
-  assert.deepEqual((await tool('record_history', { id: 'A0A', fields: ['Notes_Insectary_data'] })).saves.map(s => s.cells), [
+  assert.deepEqual((await tool('row_history', { id: 'A0A', fields: ['Notes_Insectary_data'] })).saves.map(s => s.cells), [
     ['Notes_Insectary_data: (empty) → uno'],
     ['Notes_Insectary_data: uno → dos'],
   ]);
-  assert.equal((await tool('record_history', { id: 'A0A', from: '2026-09-21' })).total, 0);
-  assert.equal((await tool('record_history', { id: 'A0A', to: '2026-09-20' })).total, 3);
-  const page = await tool('record_history', { id: 'A0A', limit: 2 });
+  assert.equal((await tool('row_history', { id: 'A0A', from: '2026-09-21' })).total, 0);
+  assert.equal((await tool('row_history', { id: 'A0A', to: '2026-09-20' })).total, 3);
+  const page = await tool('row_history', { id: 'A0A', limit: 2 });
   assert.equal(page.saves.length, 2);
   assert.equal(page.next, 2);
-  assert.equal((await tool('record_history', { id: 'A0A', limit: 2, offset: 2 })).saves[0].who, 'unknown');
+  assert.equal((await tool('row_history', { id: 'A0A', limit: 2, offset: 2 })).saves[0].who, 'unknown');
 
   // By record id, by another case, and a name several rows share.
-  assert.equal((await tool('record_history', { recordId: a0 })).total, 3);
-  assert.equal((await tool('record_history', { id: 'a0a' })).row.recordId, a0);
-  const shared = await tool('record_history', { id: 'B0B' });
+  assert.equal((await tool('row_history', { recordId: a0 })).total, 3);
+  assert.equal((await tool('row_history', { id: 'a0a' })).row.recordId, a0);
+  const shared = await tool('row_history', { id: 'B0B' });
   assert.deepEqual(
     shared.rows.map(r => [r.label, r.row]),
     [
@@ -197,7 +197,7 @@ test('record_history: every change to one row, oldest first, with who, why and a
     ],
   );
   assert.equal(shared.saves, undefined);
-  assert.equal((await tool('record_history', { id: 'Z9Z' })).code, 'RECORD_NOT_FOUND');
+  assert.equal((await tool('row_history', { id: 'Z9Z' })).code, 'RECORD_NOT_FOUND');
 });
 
 test('get_history_group: filters, pages and one save alone; list_history names the saves that match', async () => {
