@@ -19,7 +19,7 @@ if [ "$(cat "$dest/.installed" 2>/dev/null)" = "$stamp" ] && systemctl --user is
   echo "Wikiloc worker unchanged: not reinstalled."
   exit 0
 fi
-cp"$here/lib.mjs" "$here/worker.mjs" "$here/fetch.mjs" "$here/browser.mjs" "$here/browser.py" "$here/requirements.txt" "$here/package.json" "$here/package-lock.json" "$dest/"
+cp "$here/lib.mjs" "$here/worker.mjs" "$here/fetch.mjs" "$here/browser.mjs" "$here/browser.py" "$here/requirements.txt" "$here/package.json" "$here/package-lock.json" "$dest/"
 "$python" -m venv "$dest/venv"
 "$dest/venv/bin/python" -m pip install --disable-pip-version-check -q -r "$dest/requirements.txt"
 "$dest/venv/bin/python" -m camoufox fetch official/152.0.4-beta.31
