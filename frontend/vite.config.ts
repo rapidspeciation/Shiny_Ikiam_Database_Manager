@@ -34,7 +34,7 @@ export default defineConfig(({ command }) => ({
   // Lib tests run in Node, where Vue loads natively and no page is built per file;
   // they also share loaded modules within a worker (isolate: false), so the
   // translations load once per worker — the setup file still runs per test file.
-  // Components, composables, stores and the lib tests that use the page or
+  // Components, views, composables, stores and the lib tests that use the page or
   // localStorage run in happy-dom, each file on its own.
   test: {
     setupFiles: ['./src/test-setup.ts'],
@@ -45,7 +45,7 @@ export default defineConfig(({ command }) => ({
       },
       {
         extends: true,
-        test: { name: 'dom', environment: 'happy-dom', include: ['src/{components,composables,stores}/**/*.test.ts', ...libWithPage] },
+        test: { name: 'dom', environment: 'happy-dom', include: ['src/{components,composables,stores,views}/**/*.test.ts', ...libWithPage] },
       },
     ],
   },

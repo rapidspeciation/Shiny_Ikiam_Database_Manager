@@ -167,13 +167,18 @@ reached 30, the day, those preserved after; species close to it).
 
 - Login: `#/entrar` («Usuario», «Contraseña»); `?volver=<route>` returns
   there after login. The very first setup asks a «Código de configuración».
-- Invitations: an admin sends one from Usuarios; the email link
-  (`#/activar?t=…`) lets the person choose
+- Invitations: an admin sends one from Usuarios, or from a chat (skill
+  **invitar**); the email link (`#/activar?t=…`) lets the person choose
   «Usuario» (3–64 letters, numbers, dots, dashes), «Nombre» and a password of
-  6–16 characters.
+  6–16 characters. The link does not expire: in its first 7 days it opens
+  straight away; after that «Enviarme un código» emails a 6-digit code (valid 15
+  minutes) to the invitation's address, typed before the form. A revoked
+  invitation stops working until it is sent again.
 - Usuarios — `#/usuarios` (admin; user menu top right): invite by «Correo»,
   «Nombre», «Permiso» (Solo lectura, Editor, Revisor, Administrador) →
-  «Enviar invitación»; pending invitations (copy link, send again, revoke);
+  «Enviar invitación»; the invitations with their status («Esperando», «Vencida (pide código)»,
+  «Cuenta creada», «Anulada») and how often an expired link was
+  opened (copy link, send again with 7 new days, revoke);
   users with role, active, «Cambiar contraseña»; «Crear una cuenta sin
   correo (con contraseña inicial)».
 - The user menu also has «Abrir Google Sheet» (phones) and «Cerrar sesión».

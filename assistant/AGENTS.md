@@ -128,6 +128,7 @@ Insectary ID».
 | `data-review` | working through the data's inconsistencies, the corrections agreed or suggested in Revisión, the alerts |
 | `historial` | who changed what and when; undoing a save |
 | `google-account` | the project's Gmail, Calendar, or a Drive file that is not among the project documents |
+| `invitar` | an administrator invites someone to the app, or asks how the invitations stand |
 | `app-guide` | how to do something in the app, where it is, a link to it |
 | `edit-instructions` | a request that differs from these instructions, or a new way the team records something: whether and how to change them |
 | `app-dev` | changing the app itself |

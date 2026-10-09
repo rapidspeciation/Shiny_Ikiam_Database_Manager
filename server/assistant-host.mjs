@@ -2,7 +2,7 @@
 // app's own thread; the AI's work in worker threads (server/assistant-worker.mjs), so a long tool
 // call or a big proposal's table never keeps the app from answering people.
 // - The tools' worker answers T3 Code's tool calls (MCP tools/call), all but MAIN_TOOLS: those
-//   write to Google or the app's state (apply, undo, the Wikiloc queue, the documents' sync), or
+//   write to Google or the app's state (apply, undo, the Wikiloc queue, the documents' sync, invitations), or
 //   run apart already (`query`, a child process).
 // - The views' worker builds the proposals as Cambios propuestos shows them (the list the page
 //   asks for, and the answer to a person's edit in the table).
@@ -23,6 +23,9 @@ export const MAIN_TOOLS = new Set([
   'queue_wikiloc',
   'sync_documents',
   'query',
+  // They send email and write the invitations (server/invite-tool.mjs).
+  'invite_person',
+  'list_invitations',
 ]);
 const CALL_MS = 180_000;
 const VIEWS_MS = 60_000;
@@ -35,12 +38,13 @@ const VIEWS_MS = 60_000;
 export function createAssistantHost({
   store,
   config = {},
+  invitations = null,
   workerUrl = new URL('./assistant-worker.mjs', import.meta.url),
   callMs,
   viewsMs,
   backoffMs,
 } = {}) {
-  const main = createAssistant({ store, config });
+  const main = createAssistant({ store, config, invitations });
   const decided = workerMode(store, config);
   if (decided.mode === 'inline') {
     return {

@@ -426,12 +426,15 @@ export async function createApp(config = {}, options = {}) {
   }
   // The sheets' copy for the assistant's `query`: beside the database file the store opened (none in memory).
   if (given.sheetsCopyPath === undefined) config.sheetsCopyPath = copyBeside(store.db.location?.() ?? null);
+  const mailer = options.mailer ?? mailerFromEnv();
+  // Invitations: from Usuarios, and from an administrator's chat (the assistant's invite_person).
+  const invitations = createInvitations(store, mailer, options.mail ? { send: options.mail } : {});
   const assistantFile = new URL('./assistant.mjs', import.meta.url);
   let assistant = null;
   if (existsSync(fileURLToPath(assistantFile))) {
     // The AI's tool calls and the proposals' views in worker threads where it can (server/assistant-host.mjs).
     const { createAssistantHost } = await import(new URL('./assistant-host.mjs', import.meta.url).href);
-    assistant = createAssistantHost({ store, config });
+    assistant = createAssistantHost({ store, config, invitations });
   }
   // The Revisión checks' whole scan, the suggested edits, the alerts, Inicio's summaries and the Wikiloc corrections in a worker thread where it can (server/checks-host.mjs).
   const checks = createChecksHost({ store, config });
@@ -457,11 +460,11 @@ export async function createApp(config = {}, options = {}) {
   const clutchPhotos = createClutchPhotos(store, {
     dir: config.clutchPhotoDir || clutchPhotoDir({}, store.db.location?.() ?? null),
   });
-  const mailer = options.mailer ?? mailerFromEnv();
-  const invitations = createInvitations(store, mailer, options.mail ? { send: options.mail } : {});
   const resets = createPasswordResets(store, mailer, options.mail ? { send: options.mail } : {});
   // Reset links asked for from the sign-in page: 3 per account and 9 per address every 15 minutes.
   const resetLimiter = new LoginLimiter({ limit: 3 });
+  // Codes asked for from an invitation's page after its 7 days: 3 per invitation and 9 per address every hour.
+  const codeLimiter = new LoginLimiter({ limit: 3, windowMs: 60 * 60_000 });
   // T3's pages with the script that tells the Asistente tab which chat they show (server/t3bridge.mjs).
   const t3Bridge = config.t3?.url && config.t3?.local ? createT3Bridge({ t3: config.t3, appOrigin: config.publicUrl }) : null;
   let t3Proxy = null;
@@ -593,13 +596,31 @@ export async function createApp(config = {}, options = {}) {
       // The invitation page is used before the person has an account.
       if (method === 'GET' && path === '/api/invitations/lookup')
         return json(res, 200, { invitation: invitations.lookup(url.searchParams.get('t')) });
+      // Codes asked for, and failed tries (a wrong code, a taken username, a link that is not valid), count per link and per address.
+      const invitationKey = `invitation:${String(body?.token ?? '').slice(0, 64)}`;
+      // After the 7 days: a code to the invitation's email.
+      if (method === 'POST' && path === '/api/invitations/code') {
+        if (codeLimiter.accountBlocked(req, invitationKey) || codeLimiter.addressBlocked(req))
+          throw fail('CODE_LIMIT', 'Too many codes asked for; wait an hour and try again', 429);
+        codeLimiter.failed(req, invitationKey);
+        return json(res, 200, await invitations.sendCode(body.token));
+      }
+      if (method === 'POST' && path === '/api/invitations/code/check') {
+        loginLimiter.check(req, invitationKey);
+        try {
+          return json(res, 200, invitations.checkCode(body.token, body.code));
+        } catch (e) {
+          loginLimiter.failed(req, invitationKey);
+          throw e;
+        }
+      }
       if (method === 'POST' && path === '/api/invitations/accept') {
-        loginLimiter.check(req, 'invitation');
+        loginLimiter.check(req, invitationKey);
         let created;
         try {
           created = invitations.accept(body.token, body);
         } catch (e) {
-          loginLimiter.failed(req, 'invitation');
+          loginLimiter.failed(req, invitationKey);
           throw e;
         }
         const auth = login(store, { username: created.username, password: body.password });

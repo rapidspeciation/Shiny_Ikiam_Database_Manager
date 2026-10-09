@@ -1,56 +1,134 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { api, setCsrf } from '../lib/api'
+import { api, setCsrf, type ApiError } from '../lib/api'
 import { errorText } from '../lib/notice'
 import { useSession } from '../stores/session'
 import { t } from '../lib/i18n'
+import { activationError, activationStep, usernameFromEmail, type InvitationLookup } from '../lib/invitations'
 
-/** Opened from the invitation email: the person chooses a username and password. */
+/**
+ * Opened from the invitation email: the person chooses a username and password.
+ * After the link's first 7 days a code sent to the invitation's email comes first.
+ */
 const route = useRoute()
 const router = useRouter()
 const session = useSession()
 const token = String(route.query.t ?? '')
-const invitation = ref<{ email: string; displayName: string; role: string; status: string } | null>(null)
+const invitation = ref<InvitationLookup | null>(null)
+const invalid = ref(false)
 const problem = ref('')
 const busy = ref(false)
 const form = reactive({ username: '', displayName: '', password: '', repeat: '' })
+// After the 7 days: the code typed, whether one was asked for here, and whether it was right.
+const code = ref('')
+const codeAsked = ref(false)
+const codeOk = ref(false)
+const codeNote = ref('')
+const codeInput = ref<HTMLInputElement | null>(null)
 // After activation: the username and email the person signs in with.
 const created = ref<{ username: string; email: string | null } | null>(null)
+const step = computed(() =>
+  activationStep(invitation.value, { invalid: invalid.value, codeAsked: codeAsked.value, codeOk: codeOk.value }),
+)
+
+/** The page's own words for the errors it expects; the usual text otherwise. */
+function show(e: unknown) {
+  const err = e as ApiError
+  if (err.code === 'INVITATION_INVALID') invalid.value = true
+  else if (err.code === 'INVITATION_USED' && invitation.value) invitation.value.status = 'used'
+  else if (err.code === 'INVITATION_REVOKED' && invitation.value) invitation.value.status = 'revoked'
+  else {
+    const own = activationError(err.code)
+    problem.value = own ? t(own) : errorText(e)
+    if (['CODE_EXPIRED', 'CODE_NEEDED'].includes(err.code)) {
+      codeOk.value = false
+      code.value = ''
+    }
+  }
+}
+
+function startForm(email: string) {
+  form.displayName = invitation.value?.displayName ?? ''
+  form.username = usernameFromEmail(email)
+}
 
 onMounted(async () => {
   try {
     invitation.value = (
-      await api<{ invitation: NonNullable<typeof invitation.value> }>(`invitations/lookup?t=${encodeURIComponent(token)}`)
+      await api<{ invitation: InvitationLookup }>(`invitations/lookup?t=${encodeURIComponent(token)}`)
     ).invitation
-    form.displayName = invitation.value.displayName
-    form.username = invitation.value.email
-      .split('@')[0]
-      .toLowerCase()
-      .replace(/[^a-z0-9._-]/g, '')
-      .slice(0, 30)
+    if (invitation.value.status === 'pending') startForm(invitation.value.email)
   } catch (e) {
-    problem.value = errorText(e)
+    show(e)
   }
 })
 
-async function submit() {
+async function sendCode() {
+  problem.value = ''
+  busy.value = true
+  try {
+    const out = await api<{ email: string; minutes: number }>('invitations/code', { method: 'POST', body: { token } })
+    codeAsked.value = true
+    code.value = ''
+    codeNote.value = t('Te enviamos un código a {email}. Vale {minutes} minutos.', out)
+    await nextTick()
+    codeInput.value?.focus()
+  } catch (e) {
+    show(e)
+  } finally {
+    busy.value = false
+  }
+}
+
+async function checkCode() {
+  problem.value = ''
+  busy.value = true
+  try {
+    const out = await api<{ email: string }>('invitations/code/check', {
+      method: 'POST',
+      body: { token, code: code.value.trim() },
+    })
+    codeOk.value = true
+    startForm(out.email)
+    if (invitation.value) invitation.value.email = out.email
+  } catch (e) {
+    show(e)
+  } finally {
+    busy.value = false
+  }
+}
+
+async function createAccount() {
   problem.value = ''
   if (form.password !== form.repeat) return void (problem.value = t('Las contraseñas no coinciden.'))
   busy.value = true
   try {
     const out = await api<{ csrf: string; user: { username: string; email: string | null } }>('invitations/accept', {
       method: 'POST',
-      body: { token, username: form.username, displayName: form.displayName, password: form.password },
+      body: {
+        token,
+        username: form.username,
+        displayName: form.displayName,
+        password: form.password,
+        ...(codeOk.value ? { code: code.value.trim() } : {}),
+      },
     })
     setCsrf(out.csrf)
     await session.load()
     created.value = { username: out.user.username, email: out.user.email }
   } catch (e) {
-    problem.value = errorText(e)
+    show(e)
   } finally {
     busy.value = false
   }
+}
+
+function submit() {
+  if (created.value) return
+  if (step.value === 'ask-code') return sendCode()
+  if (step.value === 'enter-code') return checkCode()
+  if (step.value === 'form') return createAccount()
 }
 </script>
 
@@ -69,12 +147,47 @@ async function submit() {
           {{ $t('Continuar') }}
         </button>
       </template>
-      <template v-else-if="invitation?.status === 'pending'">
+      <template v-else-if="step === 'ask-code' || step === 'enter-code'">
+        <p class="text-sm text-stone-600">
+          {{
+            $t(
+              'Hola {name}. Esta invitación pasó sus primeros 7 días: para comprobar que eres tú, enviaremos un código de 6 cifras a {email}.',
+              { name: invitation!.displayName, email: invitation!.email },
+            )
+          }}
+        </p>
+        <button v-if="step === 'ask-code'" class="btn-primary w-full justify-center" :disabled="busy">
+          {{ busy ? $t('Enviando…') : $t('Enviarme un código') }}
+        </button>
+        <template v-else>
+          <p v-if="codeNote" class="rounded bg-brand-50 px-3 py-2 text-sm text-stone-800">{{ codeNote }}</p>
+          <label class="block">
+            <span class="field-label">{{ $t('Código del correo') }}</span>
+            <input
+              ref="codeInput"
+              v-model="code"
+              class="field-input w-full text-center text-lg tracking-[0.3em]"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              pattern="\s*\d{6}\s*"
+              maxlength="8"
+              required
+            />
+          </label>
+          <button class="btn-primary w-full justify-center" :disabled="busy">
+            {{ busy ? $t('Un momento…') : $t('Continuar') }}
+          </button>
+          <button type="button" class="btn-ghost w-full justify-center text-sm" :disabled="busy" @click="sendCode">
+            {{ $t('Enviarme otro código') }}
+          </button>
+        </template>
+      </template>
+      <template v-else-if="step === 'form'">
         <p class="text-sm text-stone-600">
           {{
             $t('Hola {name}. Elige cómo entrarás a la app ({email}).', {
-              name: invitation.displayName,
-              email: invitation.email,
+              name: invitation!.displayName,
+              email: invitation!.email,
             })
           }}
         </p>
@@ -108,12 +221,15 @@ async function submit() {
           {{ busy ? $t('Creando…') : $t('Crear mi cuenta') }}
         </button>
       </template>
-      <p v-else-if="invitation?.status === 'used'" class="text-sm text-stone-700">
+      <p v-else-if="step === 'used'" class="text-sm text-stone-700">
         {{ $t('Esta invitación ya se usó.') }}
         <RouterLink to="/tablas" class="underline">{{ $t('Inicia sesión con tu usuario.') }}</RouterLink>
       </p>
-      <p v-else-if="invitation" class="text-sm text-stone-700">
-        {{ $t('Esta invitación venció. Pide a un administrador que te envíe una nueva.') }}
+      <p v-else-if="step === 'revoked'" class="text-sm text-stone-700">
+        {{ $t('Esta invitación fue anulada. Si necesitas una cuenta, pide una invitación nueva a un administrador del equipo.') }}
+      </p>
+      <p v-else-if="step === 'invalid'" class="text-sm text-stone-700">
+        {{ $t('Este enlace no es válido. Revisa que esté completo, o pide una invitación nueva a un administrador del equipo.') }}
       </p>
       <p v-if="problem" class="text-sm text-red-700">{{ problem }}</p>
     </form>

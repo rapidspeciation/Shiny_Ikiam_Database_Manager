@@ -35,6 +35,8 @@ import { decide, editedInSheet, forget, lastEdit, resolveSheetEdits, sheetChange
 import { tellChat } from './t3tell.mjs';
 import { KNOWLEDGE_TOOLS, createKnowledge, runKnowledgeTool } from './knowledge.mjs';
 import { HISTORY_TOOLS, HISTORY_TOOL_NAMES, runHistoryTool } from './history.mjs';
+import { INVITE_TOOLS, INVITE_TOOL_NAMES, runInviteTool } from './invite-tool.mjs';
+import { createInvitations, mailerFromEnv } from './invitations.mjs';
 import { QUERY_HINT, QUERY_TOOL, createQueryRunner, formatRows, sqlProblem } from './query-tool.mjs';
 import { createSheetsCopy } from './replica.mjs';
 import { createT3Chats } from './t3chats.mjs';
@@ -438,6 +440,8 @@ const TOOLS = [
   MATCH_NOTEBOOK_TOOL,
   // Historial: find a save, link to it, preview and undo (server/history.mjs).
   ...HISTORY_TOOLS,
+  // Administrators invite people from a chat (server/invite-tool.mjs).
+  ...INVITE_TOOLS,
   {
     type: 'function',
     function: {
@@ -786,7 +790,7 @@ function recordSource(record) {
  * proposals as Cambios propuestos shows them (listedViews). The workers leave the database's
  * set-up, the watchers of syncs and saves, and the sheets' copy to the app.
  */
-export function createAssistant({ store, config = {}, role = 'main', onChanged = null }) {
+export function createAssistant({ store, config = {}, role = 'main', onChanged = null, invitations = null }) {
   if (!store?.db) throw new Error('Assistant requires store.db');
   const db = store.db;
   const inWorker = role !== 'main';
@@ -803,6 +807,9 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   const t3 = config.t3Chats ?? (config.t3?.home ? createT3Chats({ home: config.t3.home }) : null);
   // The people's T3 workspaces (<workspaces>/<username>, scripts/t3-provision.mjs): beside the database by default.
   const workspaces = config.t3Workspaces ?? (config.databasePath ? join(dirname(config.databasePath), 't3-workspaces') : null);
+  // Invitations sent from a chat (invite_person): the app's own (server/index.mjs), or made here with the
+  // server's mailer. Only the app's thread sends them (server/assistant-host.mjs MAIN_TOOLS).
+  const invites = () => (invitations ??= createInvitations(store, mailerFromEnv()));
   /** A note in the person's conversation (T3 Code, Revisión de datos) of the proposals made there. */
   const insertMessage = (threadId, role, content, sources = [], results = [], proposals = []) => {
     const at = now();
@@ -4530,6 +4537,12 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (name === 'get_alerts') return withoutMsgs(await freshAlerts(store));
     if (name === 'match_notebook') return withGoogle(await matchNotebook(args, context));
     if (HISTORY_TOOL_NAMES.has(name)) return runHistoryTool(store, name, args, context, { publicUrl: config.publicUrl });
+    if (INVITE_TOOL_NAMES.has(name)) {
+      if (inWorker) return { error: 'Call it again in a moment.' };
+      // The person's role now (the chat's turn keeps the one it started with).
+      const row = db.prepare('SELECT role, active FROM users WHERE id = ?').get(context.user.id);
+      return runInviteTool(invites(), name, args, { ...context.user, role: row?.active ? row.role : null });
+    }
     if (name === 'apply_proposal') {
       const proposal = db
         .prepare('SELECT * FROM ai_proposals WHERE id = ? AND thread_id = ?')

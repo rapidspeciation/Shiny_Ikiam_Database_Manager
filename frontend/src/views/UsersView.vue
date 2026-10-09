@@ -6,7 +6,8 @@ import { api, requestId } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
 import type { User } from '../lib/types'
 import { useSession } from '../stores/session'
-import { intlLocale, t } from '../lib/i18n'
+import { t } from '../lib/i18n'
+import { shortDay, type InvitationStatus } from '../lib/invitations'
 
 /**
  * Administrators invite people by email (they choose their own username and
@@ -22,7 +23,11 @@ interface Invitation {
   sentAt: string | null
   sendError: string | null
   usedAt: string | null
-  status: 'pending' | 'used' | 'expired'
+  revokedAt: string | null
+  /** Openings of the link after its 7 days, and the last one. */
+  expiredOpens: number
+  expiredOpenedAt: string | null
+  status: InvitationStatus
 }
 
 const session = useSession()
@@ -39,9 +44,13 @@ const ROLES: Record<string, string> = {
   admin: 'Administrador',
 }
 const roleChoices = computed(() => Object.entries(ROLES).map(([value, label]) => ({ value, label: t(label) })))
-const STATUS: Record<Invitation['status'], string> = { pending: 'Esperando', used: 'Cuenta creada', expired: 'Vencida' }
-const day = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleDateString(intlLocale(), { day: 'numeric', month: 'short' }) : ''
+const STATUS: Record<InvitationStatus, string> = {
+  pending: 'Esperando',
+  expired: 'Vencida (pide código)',
+  used: 'Cuenta creada',
+  revoked: 'Anulada',
+}
+const day = shortDay
 
 async function load() {
   try {
@@ -178,7 +187,7 @@ async function resetPassword(user: User) {
         <p class="hint w-full">
           {{
             $t(
-              'Llega un correo desde {from} con un enlace para que la persona elija su usuario y contraseña. El enlace vale 7 días.',
+              'Llega un correo desde {from} con un enlace para que la persona elija su usuario y contraseña. El enlace no caduca: los primeros 7 días se abre directamente; después envía primero un código a ese correo.',
               { from: 'jmithominii@gmail.com' },
             )
           }}
@@ -204,11 +213,20 @@ async function resetPassword(user: User) {
               {{ $t(STATUS[i.status]) }}
               <span class="hint">
                 <template v-if="i.status === 'pending'"
-                  >· {{ $t('enviada {sent}, vence {expires}', { sent: day(i.sentAt), expires: day(i.expiresAt) }) }}</template
+                  >· {{ $t('enviada {sent}; sin código hasta {expires}', { sent: day(i.sentAt), expires: day(i.expiresAt) }) }}</template
                 >
+                <template v-else-if="i.status === 'expired'">· {{ $t('enviada {sent}', { sent: day(i.sentAt) }) }}</template>
                 <template v-else-if="i.status === 'used'">· {{ day(i.usedAt) }}</template>
+                <template v-else-if="i.status === 'revoked'">· {{ day(i.revokedAt) }}</template>
               </span>
-              <span v-if="i.sendError && i.status === 'pending'" class="block text-xs text-red-700">
+              <span v-if="i.expiredOpens" class="block text-xs text-stone-600">
+                {{
+                  $tn(i.expiredOpens, 'abierta tras vencer: {n} vez, el {last}', 'abierta tras vencer: {n} veces, la última el {last}', {
+                    last: day(i.expiredOpenedAt),
+                  })
+                }}
+              </span>
+              <span v-if="i.sendError && (i.status === 'pending' || i.status === 'expired')" class="block text-xs text-red-700">
                 {{ $t('Correo no enviado: {error}', { error: i.sendError }) }}
               </span>
             </td>
@@ -224,7 +242,7 @@ async function resetPassword(user: User) {
                 >
                   <RefreshCw :size="14" />
                 </button>
-                <button v-if="i.status === 'pending'" class="btn-ghost" :title="$t('Anular')" @click="revoke(i)">
+                <button v-if="i.status === 'pending' || i.status === 'expired'" class="btn-ghost" :title="$t('Anular')" @click="revoke(i)">
                   <X :size="14" />
                 </button>
               </template>

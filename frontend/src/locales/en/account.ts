@@ -27,8 +27,23 @@ export default {
   'Crear mi cuenta': 'Create my account',
   'Esta invitación ya se usó.': 'This invitation has already been used.',
   'Inicia sesión con tu usuario.': 'Sign in with your username.',
-  'Esta invitación venció. Pide a un administrador que te envíe una nueva.':
-    'This invitation has expired. Ask an administrator to send you a new one.',
+  'Hola {name}. Esta invitación pasó sus primeros 7 días: para comprobar que eres tú, enviaremos un código de 6 cifras a {email}.':
+    "Hello {name}. This invitation is past its first 7 days: to check it's you, we'll send a 6-digit code to {email}.",
+  'Enviarme un código': 'Send me a code',
+  'Enviarme otro código': 'Send me another code',
+  'Código del correo': 'Code from the email',
+  'Te enviamos un código a {email}. Vale {minutes} minutos.': 'We sent a code to {email}. It is valid for {minutes} minutes.',
+  'Ese código no es correcto. Revísalo e inténtalo de nuevo.': 'That code is not right. Check it and try again.',
+  'Ese código ya no vale (vence a los 15 minutos o tras varios intentos). Pide uno nuevo.':
+    'That code no longer works (it lasts 15 minutes or a few tries). Ask for a new one.',
+  'Primero pide un código.': 'Ask for a code first.',
+  'Ya pediste varios códigos. Espera una hora e inténtalo de nuevo.':
+    'You have asked for several codes. Wait an hour and try again.',
+  'No se pudo enviar el código. Inténtalo en unos minutos.': 'The code could not be sent. Try again in a few minutes.',
+  'Esta invitación fue anulada. Si necesitas una cuenta, pide una invitación nueva a un administrador del equipo.':
+    'This invitation was cancelled. If you need an account, ask a team administrator for a new invitation.',
+  'Este enlace no es válido. Revisa que esté completo, o pide una invitación nueva a un administrador del equipo.':
+    'This link is not valid. Check that it is complete, or ask a team administrator for a new invitation.',
   // UsersView
   'Solo lectura': 'Read only',
   Editor: 'Editor',
@@ -36,7 +51,8 @@ export default {
   Administrador: 'Administrator',
   Esperando: 'Waiting',
   'Cuenta creada': 'Account created',
-  Vencida: 'Expired',
+  'Vencida (pide código)': 'Expired (code needed)',
+  Anulada: 'Revoked',
   'Invitación enviada a {email}': 'Invitation sent to {email}',
   'No se pudo enviar el correo ({error}). Copia el enlace y compártelo.':
     'The email could not be sent ({error}). Copy the link and share it.',
@@ -50,11 +66,14 @@ export default {
   Permiso: 'Permission',
   'Enviando…': 'Sending…',
   'Enviar invitación': 'Send invitation',
-  'Llega un correo desde {from} con un enlace para que la persona elija su usuario y contraseña. El enlace vale 7 días.':
-    'An email arrives from {from} with a link for the person to choose their username and password. The link is valid for 7 days.',
+  'Llega un correo desde {from} con un enlace para que la persona elija su usuario y contraseña. El enlace no caduca: los primeros 7 días se abre directamente; después envía primero un código a ese correo.':
+    "An email arrives from {from} with a link for the person to choose their username and password. The link doesn't expire: in the first 7 days it opens straight away; after that it first sends a code to that email.",
   Invitación: 'Invitation',
   Estado: 'Status',
-  'enviada {sent}, vence {expires}': 'sent {sent}, expires {expires}',
+  'enviada {sent}; sin código hasta {expires}': 'sent {sent}; no code needed until {expires}',
+  'enviada {sent}': 'sent {sent}',
+  'abierta tras vencer: {n} vez, el {last}': 'opened after it expired: {n} time, on {last}',
+  'abierta tras vencer: {n} veces, la última el {last}': 'opened after it expired: {n} times, last {last}',
   'Correo no enviado: {error}': 'Email not sent: {error}',
   'Copiar enlace': 'Copy link',
   'Enviar de nuevo (el enlace anterior deja de funcionar)': 'Send again (the previous link stops working)',
