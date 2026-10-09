@@ -84,8 +84,10 @@ has every line and cell.
   `ambiguous` and `duplicate` lines go in your summary, with `rowError`,
   `differs` and `warnings` (e.g. a clutch's adults unlike the butterflies
   typed in Insectary_data).
-- `overlaps` = the same rows in another pending proposal: if it is the same
-  page, pass its id as `replaceProposalId` next time.
+- `overlaps` = the same rows in another pending proposal (`get_proposal`
+  reads it, a teammate's too). If it is your own copy of the same page, pass
+  its id as `replaceProposalId` next time, or discard the older copy
+  (`update_proposal` `discard`).
 - A correction that looks like a typing slip (a digit missing, two swapped,
   another prefix) was often repeated in the rows typed with it: look at the
   same column in the rows around the page. The tool adds those it finds
