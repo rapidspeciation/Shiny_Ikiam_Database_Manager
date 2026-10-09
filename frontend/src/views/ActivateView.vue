@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, setCsrf, type ApiError } from '../lib/api'
 import { errorText } from '../lib/notice'
@@ -15,6 +15,11 @@ const route = useRoute()
 const router = useRouter()
 const session = useSession()
 const token = String(route.query.t ?? '')
+// Another invitation's link opened in this tab: the page starts again with it.
+watch(
+  () => route.query.t,
+  next => next !== token && location.reload(),
+)
 const invitation = ref<InvitationLookup | null>(null)
 const invalid = ref(false)
 const problem = ref('')

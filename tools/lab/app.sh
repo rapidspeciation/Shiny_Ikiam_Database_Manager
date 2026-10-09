@@ -94,9 +94,12 @@ env_app=(
   ITHOMIINI_T3_HOME="$T3HOME"
   ITHOMIINI_T3_PROVISION=direct
   "${env_provision[@]}"
+  # Emails (invitations, codes, password resets) are saved in $LAB/mail instead of sent.
+  ITHOMIINI_GOG_BIN="$HERE/tools/lab/fake-gog.sh"
+  GOG_ACCOUNT=lab
   NODE_OPTIONS=--max-old-space-size=8192
 )
-# No Google credentials, keys or mail settings reach the lab app.
+# No Google credentials or keys reach the lab app; its mail goes to $LAB/mail.
 run_app() { env -u GOOGLE_CREDENTIALS_FILE -u WORKBOOK_ID -u SHEET_HOOK_SECRET "${env_app[@]}" node server/index.mjs; }
 
 stop
