@@ -56,8 +56,14 @@ values are typed there.
   `0` more often than `NA`).
 - DATE LAID `NA` = eggs found or brought in, or the date unknown.
 - `NUMBER OF PUPAE/LARVAE FOR DISECTIONS`: `NA` by default, else a sum
-  (`=2+6`; words like "3 pupas; 1 larva" = 4). The dissection dates go in
-  NOTES ("2 larvae dissected on 27/4").
+  (`=2+6`; words like "3 pupas; 1 larva" = 4) of the larvae and pupae
+  preserved or dissected. The Posturas notebook's column for it is headed
+  "dissections" or "# larvae preserved" (`4+3+3` → `=4+3+3`). Each group
+  also gets a NOTES entry with its date and Insectary IDs, for when each was
+  preserved: "Larvae preserved: 4 on 1/10/26 (D7E–E0E), 3 on 7/10/26 (T9E,
+  U0E, U1E)". The dates and IDs are the larvae's Insectary_data rows
+  (LIFESTAGE, Preservation_date, same CLUTCH NUMBER); a group the page
+  counts that has no rows there is named as such in the note.
 
 ## Room and owner
 

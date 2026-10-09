@@ -83,11 +83,14 @@ export const KINDS = {
       'NOTES',
     ],
     // Also read (not named in the skill yet): the generation, from "(F1)" after the species or
-    // its own column, and the count kept for dissections (the notebook's "dissections" column).
+    // its own column, and the count kept for dissections (the notebook's "dissections" or
+    // "# larvae preserved" column).
     extra: ['Generation', 'NUMBER OF PUPAE/LARVAE FOR DISECTIONS'],
     aliases: {
       dissections: 'NUMBER OF PUPAE/LARVAE FOR DISECTIONS',
       disecciones: 'NUMBER OF PUPAE/LARVAE FOR DISECTIONS',
+      'larvae preserved': 'NUMBER OF PUPAE/LARVAE FOR DISECTIONS',
+      '# larvae preserved': 'NUMBER OF PUPAE/LARVAE FOR DISECTIONS',
       'NUMBER OF PUPAE/LARVAE FOR DISSECTIONS': 'NUMBER OF PUPAE/LARVAE FOR DISECTIONS',
       generación: 'Generation',
     },

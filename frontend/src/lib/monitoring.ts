@@ -2130,16 +2130,28 @@ export function effortDays(dayRows: TableRow[], captures: TableRow[]): Set<strin
   return out
 }
 
-/** Captures per hour of the day (index = hour). */
-export function byHour(rows: TableRow[], from = 7, to = 15) {
-  const out = Array.from({ length: to - from + 1 }, () => 0)
+/**
+ * Captures by time of day around the usual walk (9:00–11:00): `step`-minute
+ * bins from `from` to `to` (minutes after midnight), and the captures before,
+ * after and without a time, so none is left out silently.
+ */
+export function byTime(rows: TableRow[], from = 510, to = 690, step = 10) {
+  const bins = Array.from({ length: Math.ceil((to - from) / step) }, () => 0)
+  let before = 0
+  let after = 0
+  let none = 0
   for (const r of rows) {
     const t = r.values.Collection_time
-    if (typeof t !== 'number' || t <= 0 || t >= 1) continue
-    const h = Math.floor(t * 24)
-    if (h >= from && h <= to) out[h - from]++
+    if (typeof t !== 'number' || t <= 0 || t >= 1) {
+      none++
+      continue
+    }
+    const minute = Math.round(t * 1440)
+    if (minute < from) before++
+    else if (minute >= to) after++
+    else bins[Math.floor((minute - from) / step)]++
   }
-  return out
+  return { bins, labels: bins.map((_, i) => formatMinutes(from + i * step)), before, after, none }
 }
 
 export const HEIGHT_CLASSES = ['< 0,5', '0,5–1', '1–1,5', '1,5–2', '2–3', '≥ 3']

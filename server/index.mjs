@@ -86,6 +86,7 @@ import { solvedFindings } from './findings.mjs';
 import { freshAlerts } from './alerts.mjs';
 import { createInstructions } from './instructions.mjs';
 import { createPhotoService, photoCacheDir } from './photos.mjs';
+import { createSpeciesPhotos } from './species-photos.mjs';
 import { CHUNK_MAX, clutchPhotoDir, createClutchPhotos } from './clutch-photos.mjs';
 import { listOptions } from './verify.mjs';
 import { moduleMap, validateValues } from './schema.mjs';
@@ -252,6 +253,8 @@ export function configFromEnv(env = process.env) {
     // Specimen photos fetched from Drive for the Revisión tab (server/photos.mjs).
     photoCacheDir: env.PHOTO_CACHE_DIR,
     photoCacheMb: Number(env.PHOTO_CACHE_MB || 1024),
+    // iNaturalist photos in the Monitoreo report (server/species-photos.mjs); SPECIES_PHOTOS=0 turns them off.
+    speciesPhotos: env.SPECIES_PHOTOS !== '0',
     // Photos of clutches taken in the app (server/clutch-photos.mjs): clutch-photos next to the database by default.
     clutchPhotoDir: env.CLUTCH_PHOTO_DIR,
     // T3 Code (stock install on its own host), shown inside the Asistente tab.
@@ -456,6 +459,11 @@ export async function createApp(config = {}, options = {}) {
     dir: config.photoCacheDir || photoCacheDir({}, store.db.location?.() ?? null),
     maxBytes: (config.photoCacheMb || 1024) * 1024 * 1024,
     ...(options.fetchPhoto ? { fetchImpl: options.fetchPhoto } : {}),
+  });
+  // iNaturalist and specimen photos of the species in the Monitoreo report (server/species-photos.mjs).
+  const speciesPhotos = createSpeciesPhotos(store, {
+    enabled: config.speciesPhotos !== false,
+    ...(options.fetchInat ? { fetchImpl: options.fetchInat } : {}),
   });
   const clutchPhotos = createClutchPhotos(store, {
     dir: config.clutchPhotoDir || clutchPhotoDir({}, store.db.location?.() ?? null),
@@ -979,6 +987,9 @@ export async function createApp(config = {}, options = {}) {
         });
         return res.end(trainingLabels(store));
       }
+      // Photos of species by name: what is cached now, the rest marked pending (asked again by the page).
+      if (method === 'POST' && path === '/api/species-photos')
+        return json(res, 200, { species: speciesPhotos.photosOf(body.names) });
       if (method === 'GET' && /^\/api\/photo\/[\w-]+$/.test(path)) {
         const photo = await photos.get(path.split('/')[3], Number(query.w || 400));
         if (req.headers['if-none-match'] === photo.etag) {

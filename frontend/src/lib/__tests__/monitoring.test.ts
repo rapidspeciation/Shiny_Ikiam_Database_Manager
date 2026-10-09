@@ -5,7 +5,7 @@ import {
   locateCapture,
   byCloud,
   byHeight,
-  byHour,
+  byTime,
   effortDays,
   existingRow,
   kindsByMonth,
@@ -412,7 +412,12 @@ describe('live report', () => {
     expect([...days].sort()).toEqual(['2026-09-19|AA', '2026-09-25|FCH', '2026-10-05|MJS'])
   })
   it('counts captures by hour, flight height and cloud cover', () => {
-    expect(byHour(rows).slice(2, 4)).toEqual([2, 1])
+    // 10:48 and twice 9:36, in 10-minute bins from 8:30.
+    const time = byTime(rows)
+    expect([time.bins[13], time.bins[6], time.before, time.after]).toEqual([1, 2, 0, 0])
+    expect(time.bins.reduce((a, b) => a + b, 0) + time.none).toBe(rows.length)
+    expect(time.labels.slice(0, 3)).toEqual(['8:30', '8:40', '8:50'])
+    expect(byTime([row({ Collection_time: 0.3 }), row({ Collection_time: 11.5 / 24 })])).toMatchObject({ before: 1, after: 1 })
     expect(byHeight(rows)).toEqual([1, 0, 1, 0, 0, 1])
     expect(byCloud(rows)).toEqual([0, 1, 1, 0])
     expect(median([5, 1, 9, 3])).toBe(4)

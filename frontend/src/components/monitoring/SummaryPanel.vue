@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import { Download, SlidersHorizontal } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import ReportCharts from './ReportCharts.vue'
+import SpeciesCard from './SpeciesCard.vue'
 import { format, heat } from '../charts/chart'
 import { useMonitoring } from '../../composables/useMonitoring'
 import { formatSerial, isoToSerial, serialToIso, todayIso } from '../../lib/dates'
@@ -345,77 +346,37 @@ const pct = (a: number, b: number) => (b ? `${Math.round((100 * a) / b)} %` : '�
             )
           }}
         </p>
-        <div class="overflow-x-auto rounded-md border border-stone-200 bg-white">
-          <table class="w-full text-sm">
-            <thead class="bg-stone-100 text-left text-xs text-stone-600">
-              <tr>
-                <th class="px-3 py-2">{{ $t('Especie') }}</th>
-                <th class="px-3 py-2">{{ $t('Regla de {n}', { n: MARK_THRESHOLD }) }}</th>
-                <th class="px-3 py-2 text-right">{{ $t('Preserv.') }}</th>
-                <th class="px-3 py-2 text-right">{{ $t('Marcados') }}</th>
-                <th class="px-3 py-2 text-right">{{ $t('Recapt.') }}</th>
-                <th class="px-3 py-2 text-right">♀</th>
-                <th class="px-3 py-2 text-right">♂</th>
-                <th class="px-3 py-2 text-right">{{ $t('Total') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="s in shownSpecies" :key="s.key" class="border-t border-stone-100">
-                <td class="px-3 py-1.5">
-                  <i>{{ s.species === 'Sin especie' ? $t('Sin especie') : s.species }}</i>
-                  <span class="text-stone-500">{{ s.subspecies }}</span>
-                </td>
-                <td class="min-w-48 px-3 py-1.5">
-                  <span v-if="!ruleOf(s.species).applies" class="text-xs text-stone-400">{{
-                    $t('no aplica (no es Ithomiini)')
-                  }}</span>
-                  <div v-else class="flex items-center gap-2">
-                    <div class="h-2 w-24 overflow-hidden rounded bg-stone-200">
-                      <div
-                        class="h-full"
-                        :class="ruleOf(s.species).done ? 'bg-brand-600' : 'bg-amber-500'"
-                        :style="{ width: `${Math.min(100, (100 * ruleOf(s.species).preserved) / MARK_THRESHOLD)}%` }"
-                      />
-                    </div>
-                    <span class="text-xs whitespace-nowrap" :class="ruleOf(s.species).done ? 'text-brand-700' : 'text-amber-800'">
-                      {{ ruleOf(s.species).preserved }}/{{ MARK_THRESHOLD }} ·
-                      {{
-                        ruleOf(s.species).done
-                          ? $t('marcar y liberar')
-                          : $t('preservar (faltan {n})', { n: ruleOf(s.species).missing })
-                      }}
-                    </span>
-                  </div>
-                </td>
-                <td class="px-3 py-1.5 text-right tabular-nums">{{ s.preserved || '' }}</td>
-                <td class="px-3 py-1.5 text-right tabular-nums">{{ s.marked || '' }}</td>
-                <td class="px-3 py-1.5 text-right tabular-nums">{{ s.recaptured || '' }}</td>
-                <td class="px-3 py-1.5 text-right tabular-nums">{{ s.female || '' }}</td>
-                <td class="px-3 py-1.5 text-right tabular-nums">{{ s.male || '' }}</td>
-                <td class="px-3 py-1.5 text-right font-medium tabular-nums">{{ s.total }}</td>
-              </tr>
-              <tr v-if="species.length > 10" class="border-t border-stone-100">
-                <td colspan="8" class="px-3 py-1.5">
-                  <button class="text-xs text-brand-700 underline" @click="allSpecies = !allSpecies">
-                    {{
-                      allSpecies
-                        ? $t('Mostrar solo las 10 más abundantes')
-                        : $t('Ver todas ({n} especies)', { n: species.length })
-                    }}
-                  </button>
-                </td>
-              </tr>
-              <tr class="border-t border-stone-300 bg-stone-50 font-medium">
-                <td class="px-3 py-1.5" colspan="2">{{ $t('Total') }}</td>
-                <td class="px-3 py-1.5 text-right tabular-nums">{{ totals.preserved }}</td>
-                <td class="px-3 py-1.5 text-right tabular-nums">{{ totals.marked }}</td>
-                <td class="px-3 py-1.5 text-right tabular-nums">{{ totals.recaptured }}</td>
-                <td class="px-3 py-1.5 text-right tabular-nums">{{ species.reduce((n, s) => n + s.female, 0) }}</td>
-                <td class="px-3 py-1.5 text-right tabular-nums">{{ species.reduce((n, s) => n + s.male, 0) }}</td>
-                <td class="px-3 py-1.5 text-right tabular-nums">{{ totals.total }}</td>
-              </tr>
-            </tbody>
-          </table>
+        <p class="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-stone-600 tabular-nums">
+          <span
+            ><b class="font-semibold text-stone-900">{{ species.length }}</b> {{ $t('especies') }}</span
+          >
+          <span
+            ><b class="font-semibold text-stone-900">{{ format(totals.total) }}</b> {{ $t('individuos') }}</span
+          >
+          <span
+            ><b class="font-semibold text-stone-900">{{ totals.preserved }}</b> {{ $t('preserv.') }}</span
+          >
+          <span
+            ><b class="font-semibold text-stone-900">{{ totals.marked }}</b> {{ $t('marcados') }}</span
+          >
+          <span
+            ><b class="font-semibold text-stone-900">{{ totals.recaptured }}</b> {{ $t('recapt.') }}</span
+          >
+          <span
+            ><b class="font-semibold text-stone-900">{{ species.reduce((n, s) => n + s.female, 0) }}</b> ♀ ·
+            <b class="font-semibold text-stone-900">{{ species.reduce((n, s) => n + s.male, 0) }}</b> ♂</span
+          >
+        </p>
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          <SpeciesCard v-for="s in shownSpecies" :key="s.key" :s="s" :rule="ruleOf(s.species)" />
+        </div>
+        <div v-if="species.length > 10" class="mt-3 text-center">
+          <button
+            class="rounded-full border border-stone-300 bg-white px-4 py-1.5 text-xs text-brand-700 hover:bg-stone-50"
+            @click="allSpecies = !allSpecies"
+          >
+            {{ allSpecies ? $t('Mostrar solo las 10 más abundantes') : $t('Ver todas ({n} especies)', { n: species.length }) }}
+          </button>
         </div>
       </section>
 
