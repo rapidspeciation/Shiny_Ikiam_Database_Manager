@@ -62,7 +62,15 @@ const noteOf = value => (typeof value === 'string' ? value.replace(/\s+/g, ' ').
  * again by name alone keeps its note. Returns { photos, refused }.
  */
 export function photosOf(home, args, old = []) {
-  const given = Array.isArray(args.photo) ? args.photo : args.photo ? [args.photo] : [];
+  // A list given as JSON text (some clients send an array argument that way).
+  let photo = args.photo;
+  if (typeof photo === 'string' && /^\s*[[{]/.test(photo))
+    try {
+      photo = JSON.parse(photo);
+    } catch {
+      /* a name after all */
+    }
+  const given = Array.isArray(photo) ? photo : photo ? [photo] : [];
   const names = given.slice(0, 12);
   const turns = Array.isArray(args.rotate) ? args.rotate : names.map(() => args.rotate);
   const notes = new Map((Array.isArray(old) ? old : []).filter(p => p?.note).map(p => [p.file, p.note]));

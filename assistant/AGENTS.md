@@ -76,7 +76,10 @@ refused, so take the next free one.
 Proposal results carry a `link`, a page that shows that proposal on its own
 (works from any device): give it with each new proposal, and again when
 asked where to review. `list_proposals` has the links of this chat's
-proposals.
+proposals, and finds the person's proposals in other chats (and the team's,
+read-only) by status, sheet, row ID, photo or date, with what became of
+each. A proposal no longer wanted (the person says so, or another one
+replaces it) is discarded with `update_proposal` `discard`.
 
 ## Reading values well
 

@@ -303,6 +303,7 @@ const TOOLS = [
           `- {"formula": "=..."} writes a formula ({row}: the row's number), with English function names and commas. Down a column: bulk \`rows\`; up to ${FORMULA_ROWS} rows when it only writes formulas.`,
           "- A new Insectary_data row names its Insectary_ID and fills the pre-made row of that ID; a second butterfly of a used ID takes a suffix (W2B.2), its row inserted below that ID's rows.",
           `- Up to ${PROPOSAL_ROWS} rows per proposal; \`bulk\` gives the same values to many existing rows.`,
+          '- `photo`, `rotate`: the photos the values come from, shown beside the table (as in match_notebook).',
           '- lookAt: rows of the proposal worth a look (checks, notes); tell the person what matters before they apply.',
           VALUES_RULES,
         ].join('\n'),
@@ -367,6 +368,8 @@ const TOOLS = [
             items: { type: 'string' },
             description: 'Of the list_agreed_fixes fixes in it (marked applied in Revisión with it)',
           },
+          photo: { description: 'As in match_notebook' },
+          rotate: { description: 'As in match_notebook' },
           view: VIEW_PARAM,
         },
         required: ['reason'],
@@ -491,10 +494,24 @@ const TOOLS = [
     function: {
       name: 'list_proposals',
       description:
-        "This chat's proposals and tables (show_rows), newest first (pending or shown, then the last reviewed or closed), each with its status, reason, rows and `link`; `chatLink` shows them all on one page. allChats: every chat's pending proposals and tables shown.",
+        [
+          "This chat's proposals and tables (show_rows), newest first: the open ones, then the last closed; `chatLink` shows them all on one page.",
+          "Each: status, reason, rows, sheets, chat (another chat's), createdAt, updatedAt and lastChangedBy (ai or person), personEdits and doubtfulUnchecked (cell counts), appliedAt/appliedBy or closedAt/closedBy, `link`.",
+          "allChats or any filter: all the person's chats (status default: the open ones, needs_review included). team: everyone's, with `by`, read-only for you.",
+        ].join('\n'),
       parameters: {
         type: 'object',
-        properties: { allChats: { type: 'boolean' } },
+        properties: {
+          allChats: { type: 'boolean' },
+          status: { type: 'string', description: 'Comma-separated (pending, needs_review, applied, discarded, shown, closed…) or any' },
+          sheet: { type: 'string' },
+          id: { type: 'string', description: "A row's ID in the sheet (W2B, a clutch) among its rows" },
+          photo: { type: 'string', description: 'Part of a notebook photo file name' },
+          since: { type: 'string', description: 'Created or changed since this date' },
+          chat: { type: 'string', description: 'A T3 chat id (or its start)' },
+          team: { type: 'boolean' },
+          limit: { type: 'integer', description: '1 to 100, default 30' },
+        },
       },
     },
   },
@@ -534,6 +551,8 @@ const TOOLS = [
           '- Cells the person edited are theirs: kept, and returned as conflicts; `overridePersonEdits` only when they ask.',
           "- photo / rotate: as in match_notebook; a show_rows table's too.",
           '- `highlight` (rows, changes, newRows; propose_changes too): marks the row, as in show_rows; false unmarks.',
+          '- `discard: true` alone: takes it out of review (a table: closes it); nothing is written.',
+          'On a proposal no longer pending: what became of it (applied or discarded, when, by whom) and where further changes go.',
           'Returns `changed` (those rows as get_proposal full shows them; rows given the same cells as one `sameChange`), their `lookAt`, `removed`, the row count; `full: true`: every row.',
         ].join('\n'),
       parameters: {
@@ -563,6 +582,7 @@ const TOOLS = [
           overridePersonEdits: { type: 'boolean' },
           view: VIEW_UPDATE,
           full: { type: 'boolean' },
+          discard: { type: 'boolean' },
         },
         required: ['proposalId'],
       },
@@ -574,12 +594,13 @@ const TOOLS = [
       name: 'get_proposal',
       description:
         [
-          "A proposal as the person sees it now: status, revision, each row's label by index (`labels`), `lookAt` and `attention`, the rows that need a look:",
+          "A proposal as the person sees it now: status (applied or closed: when, by whom), revision, its photos, each row's label by index (`labels`), `lookAt` and `attention`, the rows that need a look:",
           "- personEdits: cells the person corrected, or set back to the sheet's value (not written), with what you had proposed;",
           '- doubtful: doubtful cells not checked yet (value, alternatives, reason); unreadable: cells still empty (never written empty);',
           "- sheetChanged: cells edited in the sheet after you read them (read, now, by, applying). Applying keeps the sheet's value unless the person chose yours; re-check them, then update_proposal: your value goes over the sheet's, null keeps it. rowTaken: a new row's pre-made row is in use now.",
           "`orderDiffers`: a notebook page's lines in another order in the sheet. `full: true`: every row with its index, values (dates YYYY-MM-DD), note and these marks (`offset` continues a long one).",
           'Read it when the person says they changed the table, before update_proposal on a proposal you did not just make, and before apply_proposal if they edited it.',
+          "A teammate's proposal reads the same, with `by` and readOnly.",
         ].join('\n'),
       parameters: {
         type: 'object',
@@ -1509,12 +1530,12 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   const overlapsOfRow = r => overlapsWith([], [r.id], keysOf(r.id, `${r.revision}:${r.updated_at}`, r.changes_json));
 
   /** A drafted proposal saved for review: it shows at once in Cambios propuestos (and the chat). */
-  function saveProposal(changes, reason, context, issueIds = [], view = null) {
+  function saveProposal(changes, reason, context, issueIds = [], view = null, photos = []) {
     const id = randomUUID();
     const time = now();
     const chat = context.t3 ? chatOfCall(context) : null;
     db.prepare(
-      'INSERT INTO ai_proposals (id,thread_id,owner_id,changes_json,reason,status,created_at,issues_json,updated_at,last_by,t3_thread,t3_title,t3_tool_use,view_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      'INSERT INTO ai_proposals (id,thread_id,owner_id,changes_json,reason,status,created_at,issues_json,updated_at,last_by,t3_thread,t3_title,t3_tool_use,view_json,page_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
     ).run(
       id,
       context.threadId,
@@ -1530,6 +1551,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       chat?.title ?? null,
       context.t3?.toolUseId ?? null,
       view ? json(view) : null,
+      photos.length ? json({ photos }) : null,
     );
     const proposal = { id, changes, reason: clip(reason, 500), status: 'pending' };
     context.proposals.push(proposal);
@@ -1900,8 +1922,11 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       };
     const view = readView(input.view, [...new Set(changes.map(c => c.sheet))]);
     if (view?.error) return view;
+    // The photos the values were read from (T3 attachments), shown beside the table as a notebook page's.
+    const shot = input.photo !== undefined && input.photo !== null && input.photo !== '' ? photosOf(config.t3?.home, input) : null;
+    if (shot && !shot.photos.length) return { error: 'No photo by that name', photoNote: PHOTO_NOTE };
     const issueIds = Array.isArray(args.issueIds) ? args.issueIds.slice(0, 500).map(i => clip(i, 200)) : [];
-    const saved = saveProposal(changes, args.reason, context, issueIds, view);
+    const saved = saveProposal(changes, args.reason, context, issueIds, view, shot?.photos ?? []);
     // The same rows (or the same new clutches, butterflies) in a pending proposal of anyone on the team.
     const overlaps = overlapsWith(changes, [saved.id]);
     const dropped = [...new Set(changes.flatMap(c => c.dropped ?? []))];
@@ -1927,6 +1952,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       ...proposalLink(saved.id, saved.chat),
       rows: changes.length,
       status: 'waiting for the person to confirm',
+      ...(shot ? { photos: shot.photos.length, ...(shot.refused.length ? { photoNotShown: shot.refused, photoNote: PHOTO_NOTE } : {}) } : {}),
       ...(bulk ? { bulk: bulkSummary(bulk.groups, changes) } : {}),
       ...(noSample.length
         ? {
@@ -2275,6 +2301,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
    * tools still reach only the proposals of the person they act for.
    */
   const anyProposal = id => db.prepare('SELECT * FROM ai_proposals WHERE id = ?').get(String(id ?? ''));
+  /** A proposal the assistant may read (get_proposal): the person's own, or a teammate's for those who edit proposals. */
+  const readableProposal = (id, user) => ownProposal(id, user) ?? (EDITORS.includes(user?.role) ? anyProposal(id) : undefined);
   /** A proposal the person may see in the table: their own, or anyone's for those who may edit proposals. */
   const teamProposal = (id, user) => {
     const found = anyProposal(id);
@@ -2650,7 +2678,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
    * as fit in one answer.
    */
   function getProposal(args, context) {
-    const proposal = ownProposal(args.proposalId, context.user);
+    const proposal = readableProposal(args.proposalId, context.user);
     if (!proposal) return { error: 'Proposal not found' };
     if (isTable(proposal)) return { error: NOT_A_PROPOSAL };
     // A notebook page's proposal as a reader's file in the person's workspace, to match the page again.
@@ -2668,13 +2696,21 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     }
     const changes = parse(proposal.changes_json) ?? [];
     const table = proposalTable(changes, proposal);
+    const photos = (parse(proposal.page_json ?? 'null')?.photos ?? []).map(p => ({ file: p.file, rotate: p.rotate ?? 0 }));
     const head = {
       proposalId: proposal.id,
       ...proposalLink(proposal.id, chatOf(proposal, context)),
+      // A teammate's proposal: read here, changed only by them (or from the table by whoever has it on screen).
+      ...(proposal.owner_id !== owner(context.user) ? { by: personName(proposal.owner_id), readOnly: true } : {}),
+      ...(proposal.t3_title ? { chatTitle: proposal.t3_title } : {}),
       status: proposal.status,
+      ...closedOf(proposal),
       revision: proposal.revision,
       reason: proposal.reason,
+      createdAt: proposal.created_at,
       lastChangedBy: proposal.last_by ?? 'ai',
+      ...(proposal.updated_at ? { updatedAt: proposal.updated_at } : {}),
+      ...(photos.length ? { photos } : {}),
       // Applied one sheet at a time: the sheets whose rows are written already.
       ...(proposal.status === 'pending' && changes.some(c => c.applied)
         ? { writtenSheets: [...new Set(changes.filter(c => c.applied).map(c => c.sheet))] }
@@ -2703,27 +2739,122 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     };
   }
 
-  /** list_proposals: the proposals of the chat calling (all chats' pending ones when it is not known, or asked). */
+  /** A person's name in answers about the team's proposals (their id when the app does not know it). */
+  function personName(ownerId) {
+    try {
+      return db.prepare('SELECT display_name FROM users WHERE id = ?').get(ownerId)?.display_name || ownerId;
+    } catch {
+      return ownerId; // No users table (tests of the assistant alone).
+    }
+  }
+  /** How a proposal left review: applied (when, by whom), or discarded / closed (when, by the person or the assistant). */
+  function closedOf(p) {
+    if (p.status === 'applied') {
+      const last = (parse(p.applies_json ?? 'null') ?? []).at(-1);
+      return { appliedAt: p.applied_at ?? last?.at ?? null, ...(last?.by ? { appliedBy: last.by } : {}) };
+    }
+    if (p.status === 'discarded' || p.status === 'closed')
+      return { closedAt: p.updated_at ?? p.created_at, closedBy: p.last_by === 'ai' ? 'assistant' : 'person' };
+    return {};
+  }
+  /** The statuses of proposals and tables still open: waiting for the person, for Google, or for a look. */
+  const OPEN = ['pending', 'applying', 'queued', 'needs_review', 'shown'];
+  const STATUSES = [...OPEN, 'applied', 'discarded', 'closed'];
+  /** A date as list_proposals takes it (YYYY-MM-DD or d/m/yyyy) in the form the proposals keep, or null. */
+  function sinceDate(value) {
+    const text = String(value ?? '').trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+    const dmy = /^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/.exec(text);
+    if (!dmy) return null;
+    const year = dmy[3].length === 2 ? `20${dmy[3]}` : dmy[3];
+    return `${year}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+  }
+
+  /**
+   * list_proposals: the proposals and tables of the chat calling (all chats' open ones when it is
+   * not known, or asked). Filters (status, sheet, id, photo, since, chat) look through all the
+   * person's chats; `team`: everyone's (read-only for the assistant, with who drafted each).
+   * Each entry says what a get_proposal would be read for: its state, who changed it last, the
+   * cells the person edited and the doubtful ones left, and how it was closed.
+   */
   function listProposals(args, context) {
-    const chat = !args.allChats && context.t3 ? (chatOfCall(context)?.id ?? null) : null;
-    const select = `SELECT id, status, reason, changes_json, table_json, created_at, t3_thread FROM ai_proposals WHERE owner_id = ?${chat ? ' AND t3_thread = ?' : ''}`;
-    const params = [owner(context.user), ...(chat ? [chat] : [])];
-    const order = 'ORDER BY created_at DESC, rowid DESC';
-    const rows = [
-      ...db.prepare(`${select} AND status IN ('pending', 'applying', 'queued', 'shown') ${order} LIMIT 50`).all(...params),
-      ...(chat ? db.prepare(`${select} AND status NOT IN ('pending', 'applying', 'queued', 'shown') ${order} LIMIT 10`).all(...params) : []),
+    const text = v => (v === undefined || v === null ? '' : String(v).trim());
+    const team = args.team === true && EDITORS.includes(context.user?.role);
+    const filtered = team || ['status', 'sheet', 'id', 'photo', 'since', 'chat'].some(k => text(args[k]));
+    const here = !args.allChats && !filtered && context.t3 ? (chatOfCall(context)?.id ?? null) : null;
+    const asked = text(args.status).toLowerCase();
+    const statuses = !asked ? OPEN : asked === 'any' ? STATUSES : asked.split(/[\s,]+/).filter(Boolean);
+    const unknown = statuses.filter(s => !STATUSES.includes(s));
+    if (unknown.length) return { error: `Unknown status ${unknown.join(', ')}: ${STATUSES.join(', ')} or any` };
+    const since = text(args.since) ? sinceDate(args.since) : null;
+    if (text(args.since) && !since) return { error: 'since: a date, YYYY-MM-DD or d/m/yyyy' };
+    const where = [...(team ? [] : ['owner_id = ?']), ...(here ? ['t3_thread = ?'] : []), ...(text(args.chat) ? ['t3_thread LIKE ?'] : [])];
+    if (since) where.push('coalesce(updated_at, created_at) >= ?');
+    const params = [
+      ...(team ? [] : [owner(context.user)]),
+      ...(here ? [here] : []),
+      ...(text(args.chat) ? [`${text(args.chat).replace(/[%_]/g, '')}%`] : []),
+      ...(since ? [since] : []),
     ];
-    return {
-      ...(chat ? { chat, chatLink: chatProposalsLink(chat) } : { chat: 'all chats (pending only)' }),
-      proposals: rows.map(r => ({
-        ...(r.table_json ? { tableId: r.id, kind: 'table (show_rows)' } : { proposalId: r.id }),
+    const select = `SELECT * FROM ai_proposals WHERE ${[...where, '1'].join(' AND ')}`;
+    const order = 'ORDER BY created_at DESC, rowid DESC';
+    const of = list => `status IN (${list.map(() => '?').join(',')})`;
+    const rows = here
+      ? [
+          ...db.prepare(`${select} AND ${of(OPEN)} ${order} LIMIT 50`).all(...params, ...OPEN),
+          ...db.prepare(`${select} AND NOT ${of(OPEN)} ${order} LIMIT 10`).all(...params, ...OPEN),
+        ]
+      : db.prepare(`${select} AND ${of(statuses)} ${order} LIMIT 2000`).all(...params, ...statuses);
+    // The filters a proposal's rows answer: a sheet, a row's ID in the sheet, a notebook photo.
+    const sheet = text(args.sheet).toLowerCase();
+    const id = text(args.id).toUpperCase();
+    const photo = text(args.photo).toLowerCase();
+    const parts = r => {
+      const spec = r.table_json ? (parse(r.table_json) ?? {}) : null;
+      const changes = spec ? [] : (parse(r.changes_json) ?? []);
+      return { spec, changes, sheets: spec ? [spec.sheet] : [...new Set(changes.map(c => c.sheet))] };
+    };
+    const fits = (r, { spec, changes, sheets }) =>
+      (!sheet || sheets.some(s => String(s).toLowerCase() === sheet)) &&
+      (!id ||
+        (spec
+          ? Object.values(spec.labels ?? {}).some(l => String(l).trim().toUpperCase() === id)
+          : changes.some(c => String(c.label ?? '').trim().toUpperCase() === id || c.recordId === text(args.id)))) &&
+      (!photo || (parse(r.page_json ?? 'null')?.photos ?? []).some(p => String(p.file ?? '').toLowerCase().includes(photo)));
+    const limit = Math.min(Math.max(Number(args.limit) || 30, 1), 100);
+    const found = [];
+    let total = 0;
+    for (const r of rows) {
+      const read = parts(r);
+      if (filtered && !fits(r, read)) continue;
+      total++;
+      if (here || found.length < limit) found.push([r, read]);
+    }
+    const mine = owner(context.user);
+    const entry = (r, { spec, changes, sheets }) => {
+      const personEdits = changes.reduce((n, c) => n + Object.keys(c.personEdits ?? {}).length, 0);
+      const doubtful = r.status === 'pending' ? uncheckedDoubts(changes).length : 0;
+      return {
+        ...(spec ? { tableId: r.id, kind: 'table (show_rows)' } : { proposalId: r.id }),
         status: r.status,
         reason: r.reason,
-        rows: r.table_json ? (parse(r.table_json)?.rows ?? []).length : (parse(r.changes_json) ?? []).length,
+        rows: spec ? (spec.rows ?? []).length : changes.length,
+        sheets,
+        ...(r.owner_id !== mine ? { by: personName(r.owner_id), readOnly: true } : {}),
+        ...(r.t3_thread && r.t3_thread !== here ? { chat: r.t3_thread, ...(r.t3_title ? { chatTitle: r.t3_title } : {}) } : {}),
         createdAt: r.created_at,
+        ...(r.updated_at && r.updated_at !== r.created_at ? { updatedAt: r.updated_at, lastChangedBy: r.last_by ?? 'ai' } : {}),
+        ...(personEdits ? { personEdits } : {}),
+        ...(doubtful ? { doubtfulUnchecked: doubtful } : {}),
+        ...closedOf(r),
         ...proposalLink(r.id, r.t3_thread),
-      })),
+      };
     };
+    const head = here
+      ? { chat: here, chatLink: chatProposalsLink(here) }
+      : { chat: text(args.chat) || 'all chats', ...(team ? { team: true } : {}), statuses, found: total };
+    const more = shown => (shown < total ? { truncated: true, next: `${total - shown} more: narrow the filters (since, sheet, id), or limit up to 100` } : {});
+    return fitList({ ...head, proposals: found.map(([r, read]) => entry(r, read)), ...(here ? {} : more(found.length)) }, 'proposals', RESULT_BUDGET - 500, more).out;
   }
 
   // ------------------------------------------------------------ tables of rows (show_rows)
@@ -2974,9 +3105,62 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     };
   }
 
+  /**
+   * Takes a proposal out of review (the table's «Descartar», update_proposal discard): a table shown
+   * (show_rows) is closed; a proposal, discarded; one with a sheet's rows written already (applied
+   * one sheet at a time), applied as it is: the rest is left out. `by`: 'person' or 'ai'. Returns
+   * its new status, or null when it was no longer open.
+   */
+  function discardProposal(proposal, by) {
+    const some = !isTable(proposal) && appliedIndexes(parse(proposal.changes_json) ?? []).length > 0;
+    const [from, to] = isTable(proposal) ? ['shown', 'closed'] : ['pending', some ? 'applied' : 'discarded'];
+    const at = now();
+    const done = db
+      .prepare(`UPDATE ai_proposals SET status = ?, updated_at = ?, last_by = ?${some ? ', applied_at = ?' : ''} WHERE id = ? AND status = ?`)
+      .run(to, at, by, ...(some ? [at] : []), proposal.id, from);
+    if (!done.changes) return null;
+    changed(proposal.owner_id);
+    return to;
+  }
+
+  /**
+   * update_proposal on a proposal that is no longer pending: what became of it (when, by whom)
+   * and where its rows go from here.
+   */
+  function closedAnswer(proposal) {
+    const about = { proposalId: proposal.id, status: proposal.status, ...closedOf(proposal) };
+    if (proposal.status === 'applied')
+      return {
+        error:
+          'Applied: its rows are in the sheet. More changes to them go in a new proposal (propose_changes, or match_notebook for a page); notes beside its photo without changes, in a table (show_rows).',
+        ...about,
+      };
+    if (proposal.status === 'discarded')
+      return { error: 'Discarded: nothing of it was written. To write it after all, draft it again (propose_changes).', ...about };
+    return { error: notPending(proposal), ...about };
+  }
+
   /** update_proposal: the assistant revises a pending proposal the person is looking at. */
   function updateProposal(args, context) {
     const proposal = ownProposal(args.proposalId, context.user);
+    if (!proposal) {
+      const other = readableProposal(args.proposalId, context.user);
+      if (other)
+        return {
+          error: `${personName(other.owner_id)}'s ${isTable(other) ? 'table' : 'proposal'}: read-only from your chats (get_proposal). They change it, or anyone from its table; your own changes go in a new proposal.`,
+        };
+    }
+    // Taken out of review: discarded (a table, closed); nothing is written.
+    if (args.discard === true) {
+      if (!proposal) return { error: 'Proposal not found' };
+      const also = Object.keys(args).filter(k => !['proposalId', 'discard'].includes(k) && args[k] !== undefined && args[k] !== null);
+      if (also.length) return { error: `discard takes the whole proposal out of review: give it alone (${clip(also.join(', '), 80)} given too)` };
+      if (!isTable(proposal) && !EDITORS.includes(context.user.role)) return { error: 'Your role cannot propose edits' };
+      const open = isTable(proposal) ? proposal.status === 'shown' : proposal.status === 'pending';
+      if (!open) return closedAnswer(proposal);
+      const to = discardProposal(proposal, 'ai');
+      return to ? { proposalId: proposal.id, status: to } : closedAnswer(ownProposal(proposal.id, context.user));
+    }
     // A table shown with show_rows takes its photos here too, as show_rows with tableId does.
     if (isTable(proposal)) {
       const other = Object.keys(args).filter(k => !['proposalId', 'photo', 'rotate'].includes(k) && args[k] !== undefined && args[k] !== null);
@@ -2986,13 +3170,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     }
     if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot propose edits' };
     if (!proposal) return { error: 'Proposal not found' };
-    if (proposal.status !== 'pending')
-      return {
-        error:
-          proposal.status === 'applied' || proposal.status === 'discarded'
-            ? `The proposal is ${proposal.status}; draft a new one with propose_changes`
-            : notPending(proposal),
-      };
+    if (proposal.status !== 'pending') return closedAnswer(proposal);
     const changes = parse(proposal.changes_json) ?? [];
     const problems = [];
     // A row of the proposal by its index, or by its recordId, ID or label (W2B).
@@ -5182,15 +5360,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (discardMatch && method === 'POST') {
       const proposal = teamProposal(discardMatch[1], user);
       if (!proposal) return bad(404, 'not_found', 'Proposal not found.');
-      // A table shown (show_rows) is closed; a proposal, discarded; one with a sheet's rows written already
-      // (applied one sheet at a time), applied as it is: the rest is left out.
-      const some = !isTable(proposal) && appliedIndexes(parse(proposal.changes_json) ?? []).length > 0;
-      const [from, to] = isTable(proposal) ? ['shown', 'closed'] : ['pending', some ? 'applied' : 'discarded'];
-      const done = db
-        .prepare(`UPDATE ai_proposals SET status = ?${some ? ', applied_at = ?' : ''} WHERE id = ? AND status = ?`)
-        .run(to, ...(some ? [now()] : []), discardMatch[1], from);
-      if (done.changes) changed(proposal.owner_id);
-      return done.changes
+      const to = discardProposal(proposal, 'person');
+      return to
         ? { status: 200, body: { proposalId: discardMatch[1], status: to } }
         : bad(409, 'proposal_used', 'Proposal is no longer pending.');
     }
