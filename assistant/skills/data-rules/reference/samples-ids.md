@@ -55,8 +55,8 @@
   - CRISPR: CAM078500–078549 (older 075801–075850). Other pools exist (wing
     dissections, genome annotation): check Lists.
 - Next CAM = the last used **in that pool** + 1, skipping used ones. Before
-  proposing one, check it is unused in **every** sheet and in pending
-  proposals (`search_records`): when several people preserve on the same days,
+  proposing one, check it is unused in **every** sheet (`search_text` looks
+  in all of them) and in pending proposals: when several people preserve on the same days,
   the same CAM can be taken twice. CAMs follow preservation order, not ID
   order.
 - When a pool is nearly empty (< 50), say so and ask PAS or AA (they hand out

@@ -1,7 +1,7 @@
 // How large one tool answer may be. Claude Code refuses a tool result much over
 // 25k tokens (answers of 60k characters and more were refused), and JSON of IDs
 // and codes runs at 2–3 characters a token: every answer stays within
-// RESULT_BUDGET characters. A tool that pages (find_records, check_data, the
+// RESULT_BUDGET characters. A tool that pages (find_records, review_issues, the
 // history) cuts its own list where it can say how to go on; fitResult is the
 // last step for every answer: it drops the trailing items of its longest lists
 // and says so (`truncated`, `next`), instead of an error.

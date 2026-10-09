@@ -111,7 +111,7 @@ function pending(store, found) {
     message: job?.message ?? null,
     workerOnline: workerOnline(store),
     next: !job
-      ? 'Queue it first with queue_wikiloc.'
+      ? 'Queue it first with queue_walk.'
       : job.status === 'failed'
         ? 'Reading the page failed; tell the person the message.'
         : 'Not read yet; try again in about a minute.',

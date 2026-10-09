@@ -151,11 +151,11 @@ test('partial apply is marked for review with current field values and cannot be
   db.close();
 });
 
-test('search_records reads exact rows through the tools', async () => {
+test('search_text reads exact rows through the tools', async () => {
   const { db, call } = fixture();
-  const found = await call(alice, 'search_records', { query: 'A0A' });
+  const found = await call(alice, 'search_text', { query: 'A0A' });
   assert.deepEqual(found.records.map(r => r.id), ['r-1']);
-  assert.match((await call(alice, 'search_records', { query: ' ' })).error, /required/);
+  assert.match((await call(alice, 'search_text', { query: ' ' })).error, /required/);
   db.close();
 });
 

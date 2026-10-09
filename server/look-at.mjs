@@ -24,7 +24,7 @@ const GAP_ROWS = 10;
 const GAP_SHARE = 0.9;
 const NOTE_FIELD = /^notes?(?:_|$)/i;
 const NOTE_CHARS = 120;
-const REST = "The rest: check_data with a row's recordId (its issues), or `query` (notes, empty cells).";
+const REST = "The rest: review_issues with a row's recordId (its issues), or `query` (notes, empty cells).";
 
 const text = v => (v === null || v === undefined || typeof v === 'object' ? '' : String(v).trim());
 const clip = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);

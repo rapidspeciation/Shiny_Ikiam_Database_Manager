@@ -1,6 +1,6 @@
 ---
 name: monitoring
-description: Butterfly monitoring on the Ikiam transects T1–T4 — a Wikiloc walk turned into Collection_data rows (queue_wikiloc, get_walk), a monitoring capture recorded by hand, field marks (M/A/B series) and recaptures, the 30-preserved rule, weather codes (paper and Wikiloc shorthand → list values), SamplingDay_data. Use it when the person sends a Wikiloc link, asks about a walk, a mark or a recapture, whether a species should be preserved or marked, or how monitoring data are recorded.
+description: Butterfly monitoring on the Ikiam transects T1–T4 — a Wikiloc walk turned into Collection_data rows (queue_walk, get_walk), a monitoring capture recorded by hand, field marks (M/A/B series) and recaptures, the 30-preserved rule, weather codes (paper and Wikiloc shorthand → list values), SamplingDay_data. Use it when the person sends a Wikiloc link, asks about a walk, a mark or a recapture, whether a species should be preserved or marked, or how monitoring data are recorded.
 ---
 
 # Monitoring (Ikiam transects)
@@ -12,7 +12,7 @@ project documentation's `monitoring.md` has the app's full rules.
 
 ## A Wikiloc walk
 
-1. `queue_wikiloc` → `get_walk` → one `propose_changes` with its `newRows` →
+1. `queue_walk` → `get_walk` → one `propose_changes` with its `newRows` →
    the person confirms → `apply_proposal`.
 2. Check that SamplingDay_data has the walker's row for that day (below).
 
@@ -37,7 +37,7 @@ given).
   Cloud_cover per row, Rainfall per day, Transect_section 1–4.
 - **Transect_section**: many rows since Apr 2026 have it blank. `get_walk`
   and the import take it from the point's GPS position, and
-  `list_suggested_edits` (source `wikiloc-transects`) suggests the missing
+  `review_suggestions` (source `wikiloc-transects`) suggests the missing
   ones.
 - **Which butterflies**: all Ithomiini **and** their tiger-pattern mimics
   (Heliconius numata and others); the 30 rule applies to Ithomiini only.
@@ -88,8 +88,8 @@ given).
   Ikiam, Casa de Lin and Mariposario Ikiam together (every
   `Collected_Preserved` row from those places, whatever its Purpose), further
   captures there are marked and released.
-- `get_alerts` gives the counts, the day each species reached 30 and those
-  close to it.
+- `review_issues` with show `alerts` gives the counts, the day each species
+  reached 30 and those close to it.
 - When you draft a preserved capture of a species already at 30, or are asked
   what to do with one, say it should be marked and released.
 

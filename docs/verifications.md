@@ -71,13 +71,14 @@ grouped by batch); preserved butterflies without photos (`photo_missing`); and t
 species prediction against the recorded one (`ai_species`).
 
 It is shown in the **Revisión** tab (cards with the rows side by side, the photos and the envelope,
-and a verdict per card; Tablas → Revisión de datos opens it) and is the assistant's `check_data`
-tool (`GET /api/checks?sheet=&kind=&limit=&offset=`); the agreed fixes are `list_agreed_fixes`.
+and a verdict per card; Tablas → Revisión de datos opens it) and is the assistant's `review_issues`
+tool (`GET /api/checks?sheet=&kind=&limit=&offset=`); the agreed fixes are `review_issues` with
+`show: "agreed"`.
 
 ### Suggested edits, solved problems and alerts
 
 **Sugerencias** (`server/suggestions/`, `GET /api/suggested-edits`, the assistant's
-`list_suggested_edits`) are corrections the app computes, each with a certainty
+`review_suggestions`) are corrections the app computes, each with a certainty
 (certain / likely / check) and its reason; nothing applies them (CSV and copy
 only), a person asks the assistant for an ordinary proposal from the ones they
 choose. Sources: the checks' own fixes (`check_fixes`), padded values
@@ -96,6 +97,6 @@ with the time and the person of the last saved change of that cell (or row)
 from the history.
 
 **Alertas** (`server/alerts.mjs`, `GET /api/alerts`, the assistant's
-`get_alerts`): CAM ranges of the Lists pools in use with fewer than 50 (or 15 %)
+`review_issues` with `show: "alerts"`): CAM ranges of the Lists pools in use with fewer than 50 (or 15 %)
 CAMs left above the highest used, and the 30-preserved rule per species
 (docs/monitoring.md).

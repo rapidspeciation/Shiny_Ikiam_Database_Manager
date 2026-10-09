@@ -10,17 +10,18 @@ what the tools give:
 
 | Revisión view | What it holds | Tool |
 |---|---|---|
-| «Problemas» | inconsistencies, as cards people judge (accept the fix, reject, give another value) | `check_data`; the judged ones: `list_agreed_fixes` |
-| «Sugerencias» | corrections the app computes, each with a certainty | `list_suggested_edits` |
+| «Problemas» | inconsistencies, as cards people judge (accept the fix, reject, give another value) | `review_issues`; the ones agreed: `review_issues` with show `agreed` |
+| «Sugerencias» | corrections the app computes, each with a certainty | `review_suggestions` |
 | «Resueltos» | problems the sheet no longer has, and who solved them | — |
-| «Alertas» | CAM ranges running out, the 30-preserved rule | `get_alerts` |
+| «Alertas» | CAM ranges running out, the 30-preserved rule | `review_issues` with show `alerts` |
 
 ## The workflow
 
 ### 1. The overview
 
-Without filters, `check_data` gives how many issues there are of each kind,
-and `list_suggested_edits` gives its sources with their counts. Tell the
+Without filters, `review_issues` gives how many issues there are of each
+kind, how many agreed fixes wait and how many alerts there are, and
+`review_suggestions` gives its sources with their counts. Tell the
 person in a few lines what there is, and agree where to start (a sheet, a
 kind of issue, a period) when there is a lot.
 
@@ -28,7 +29,8 @@ kind of issue, a period) when there is a lot.
 
 Gather the fixes whose right value is not in doubt:
 
-- the corrections people already agreed in Revisión (`list_agreed_fixes`);
+- the corrections people already agreed in Revisión (`review_issues` with
+  show `agreed`);
 - the suggestions with certainty `certain` (only the spelling changes: a list
   value written another way, extra spaces).
 
@@ -55,7 +57,7 @@ run of tubes), show:
     and Insectary_data, same Insectary_ID): when they disagree on species or
     sex, the suggestion of source `twins` says which side was corrected later
     or matches the envelope;
-  - who changed the cell and when (`record_history` with the row's recordId
+  - who changed the cell and when (`row_history` with the row's recordId
     and the field);
   - the paper: ask for a photo of the notebook page or the envelope;
 - the options, with the one the evidence favours.
@@ -75,11 +77,6 @@ which correction they follow.
 | Drive work on the photos (`task`: rename, move) | by a person in Drive; give them as a checklist (they are marked done in Revisión) |
 | A Wikiloc point without its row (`walk_doubt`) | Monitoreo → «Dudas de emparejamiento»: say which rows fit; a person pairs it |
 | A formula cell (`manual`) | by hand in Google Sheets |
-
-## Agreed fixes: what else comes back
-
-`list_agreed_fixes` also returns `needsValue` (accepted without a value: ask
-for it) and `stale` (the row changed after the verdict: show it again).
 
 ## Alerts
 

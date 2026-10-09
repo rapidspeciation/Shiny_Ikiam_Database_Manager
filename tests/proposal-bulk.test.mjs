@@ -192,7 +192,7 @@ test('a 500-row proposal goes to the page once: then, while it holds, only its d
   }
 });
 
-test('find_records stays small: rows cut at the size budget, idsOnly for long lists; search_records too', async () => {
+test('find_records stays small: rows cut at the size budget, idsOnly for long lists; search_text too', async () => {
   const long = 'x'.repeat(3000);
   const seed = {
     Insectary_data: LARVAE.map(r => ({ ...r, values: { ...r.values, Notes_Insectary_data: `larva con hongos ${long}` } })),
@@ -214,7 +214,7 @@ test('find_records stays small: rows cut at the size budget, idsOnly for long li
     assert.ok(!('formulaColumns' in ids));
     assert.equal(findRecords(store.db, { module: 'Insectary_data', field: 'Insectary_ID', values: ['L1E'], idsOnly: true }).found[0].row, 3);
 
-    const search = await call('search_records', { query: 'hongos' });
+    const search = await call('search_text', { query: 'hongos' });
     assert.ok(search.records.length >= 1 && search.records.length < 12);
     assert.equal(search.truncated, true);
     assert.match(search.next, /more rows not shown \(size limit\): use find_records/);

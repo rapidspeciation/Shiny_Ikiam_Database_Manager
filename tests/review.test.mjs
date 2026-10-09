@@ -268,13 +268,13 @@ test('verdicts: last one counts, batches, other values, training labels, agreed 
   assert.equal(rejected.envelope.fileId, ids.CAM000101d);
 
   // T3: "aplica las correcciones acordadas".
-  const agreed = await call('list_agreed_fixes', {});
+  const agreed = await call('review_issues', { show: 'agreed' });
   assert.equal(agreed.fixes.length, 4);
   assert.deepEqual(agreed.fixes.find(f => f.issueId === ai.id).values, { SPECIES: 'Hypothyris anastasia' });
   assert.match(agreed.fixes.find(f => f.issueId === sex.id).note, /aceptado por Ana: se ve ♂/);
   assert.equal(agreed.tasks.length, 1);
   assert.match(agreed.tasks[0].task, /CAM000104/);
-  assert.equal((await call('list_agreed_fixes', { kind: 'envelope_sex' })).fixes.length, 1);
+  assert.equal((await call('review_issues', { show: 'agreed', kind: 'envelope_sex' })).fixes.length, 1);
   const proposed = await call('propose_changes', {
     reason: 'Correcciones acordadas',
     changes: agreed.fixes.map(f => ({ recordId: f.recordId, values: f.values, note: f.note })),
@@ -305,7 +305,7 @@ test('verdicts: last one counts, batches, other values, training labels, agreed 
   assert.equal(done.counts.envelope_species, 2);
   // Counted from the pending view too.
   assert.equal(reviewPage(store, {}).statuses.applied, 4);
-  assert.equal((await call('list_agreed_fixes', {})).fixes.length, 0);
+  assert.equal((await call('review_issues', { show: 'agreed' })).fixes.length, 0);
   // The Drive task is marked done by hand.
   setVerdicts(store, { ids: ['photo_extra:CAM000103'], verdict: 'applied' }, ana);
   assert.equal(agreedFixes(store).tasks.length, 0);

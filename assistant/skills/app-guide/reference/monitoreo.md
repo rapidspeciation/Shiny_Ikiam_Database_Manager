@@ -139,7 +139,7 @@ note, with the rows it could be (editors).
 - Re-matching all walks with the current method: «Aplicar N cambios»
   (reviewer/admin only).
 
-These are the `walk_doubt` issues of `check_data`: the assistant can say which
+These are the `walk_doubt` issues of `review_issues`: the assistant can say which
 rows fit and draft the question for the collector, but a person pairs them
 here. Link: `https://ithomiini-ikiam.com/#/monitoreo?vista=dudas`.
 

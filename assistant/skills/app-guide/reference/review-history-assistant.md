@@ -104,7 +104,7 @@ and «Alertas» (`vista=sugerencias|resueltos|alertas`).
 ### Problemas
 
 Every inconsistency of the workbook and of the specimen photos as a card,
-judged by people. Same kinds as `check_data` (sidebar groups «Datos de la
+judged by people. Same kinds as `review_issues` (sidebar groups «Datos de la
 hoja» and «Fotos y sobres», with counts).
 
 - **Status buttons**: Pendiente (default), Aceptado, Otro valor, Rechazado,
@@ -127,7 +127,7 @@ hoja» and «Fotos y sobres», with counts).
 - The download button exports the photo verdicts as training labels.
 
 Parameters (only non-default ones appear in the link): `tipo=<kind>` (the
-kinds of `check_data`, e.g. `envelope_sex`), `hoja=<sheet>`,
+kinds of `review_issues`, e.g. `envelope_sex`), `hoja=<sheet>`,
 `persona=<name>`, `desde=YYYY-MM-DD`, `hasta=YYYY-MM-DD`,
 `estado=accepted|other|rejected|applied|all` (default pending),
 `lote=<batch key>`, `q=<text>`, `orden=old|kind` (default recent). Example:

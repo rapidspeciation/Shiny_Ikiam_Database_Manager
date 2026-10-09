@@ -226,21 +226,21 @@ test("every tool the worker answers runs there: nothing reaches for the app's me
   });
   assert.ok(shown.tableId, JSON.stringify(shown));
   const calls = [
-    ['search_records', { query: 'Oleria' }],
+    ['search_text', { query: 'Oleria' }],
     ['find_records', { sheet: 'Collection_data', filters: { Sex: 'female' } }],
     ['count_records', { sheet: 'Collection_data', groupBy: 'Sex' }],
     ['get_record', { id: 'B3', sheet: 'Collection_data' }],
     ['describe_sheet', { module: 'Collection_data', latestRows: 2 }],
     ['run_report', { kind: 'overview' }],
     ['run_report', { kind: 'quality' }],
-    ['check_data', {}],
-    ['check_data', { kind: 'repeat,date_order', sheet: 'Collection_data' }],
+    ['review_issues', {}],
+    ['review_issues', { kind: 'repeat,date_order', sheet: 'Collection_data' }],
     ['get_walk', { url: 'https://es.wikiloc.com/rutas-senderismo/ikiam-123456789' }],
-    ['list_agreed_fixes', {}],
-    ['list_suggested_edits', {}],
-    ['get_alerts', {}],
+    ['review_issues', { show: 'agreed' }],
+    ['review_suggestions', {}],
+    ['review_issues', { show: 'alerts' }],
     ['list_history', {}],
-    ['record_history', { recordId: record(2).id }],
+    ['row_history', { recordId: record(2).id }],
     ['list_proposals', { allChats: true }],
     ['get_proposal', { proposalId: proposed.proposalId, full: true }],
     [

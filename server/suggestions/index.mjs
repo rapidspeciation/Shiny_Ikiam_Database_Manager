@@ -1,6 +1,6 @@
 // Suggested edits: corrections the app can compute from the workbook itself,
 // each with how sure it is, for the team to look at in Revisión → Sugerencias
-// (and the assistant, list_suggested_edits). Nothing here writes: there is no
+// (and the assistant, review_suggestions). Nothing here writes: there is no
 // apply button. A person who agrees asks the assistant to make an ordinary
 // proposal from some of them (propose_changes), which they confirm as always.
 //
