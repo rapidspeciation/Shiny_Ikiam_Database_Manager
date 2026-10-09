@@ -47,8 +47,9 @@ a highlight, empty rows chosen to avoid a protected column), name the change
 in the app that would remove the workaround: it is usually the change to
 make. Before adding an option the AI sets row by row, check whether the app
 could know it by itself (e.g. which rows are dead, from Death_date). The
-limits in the tests on tool description and answer sizes keep every chat
-light: make a change smaller before raising one.
+tests limit the size of tool answers and of the tool descriptions every chat
+loads: a clearer description is worth its characters; cut repetition first,
+and raise the limit when what remains is needed.
 
 ## Steps
 

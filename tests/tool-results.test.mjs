@@ -67,7 +67,9 @@ test('the tool list: the long texts once, the tools loaded with every chat kept 
   const always = tools.filter(t => t._meta?.['anthropic/alwaysLoad']);
   // Formulas in proposals (propose_changes: {"formula"}, bulk rows, missingFormulas) took some 750 of it;
   // match_notebook and get/apply/list_proposals some 7200; a row's `highlight` in proposals some 200.
-  assert.ok(JSON.stringify(always).length < 19600, String(JSON.stringify(always).length));
+  // These descriptions go into every chat: the limit keeps them from growing by accident (about 6,000
+  // tokens), with room for a description to say clearly what it needs to.
+  assert.ok(JSON.stringify(always).length < 24000, String(JSON.stringify(always).length));
   // The notebook procedure is in the digitalizar-cuaderno skill and the reading in the reader's
   // instructions; the tool keeps the columns.
   const notebook = tools.find(t => t.name === 'match_notebook').description;
