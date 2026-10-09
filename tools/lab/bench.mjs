@@ -140,6 +140,12 @@ async function startThread(kase, taken) {
   try {
     await page.goto(T3);
     const newThread = page.locator(`button[aria-label="New thread in ${PROJECT}"]`);
+    // T3 opens a draft of the last project used: the lab project is chosen in the draft's picker.
+    await page.locator('button[aria-label="Send message"]').waitFor({ timeout: 30000 });
+    if (!(await newThread.isVisible())) {
+      await page.getByText('What should we build in').locator('..').locator('button, [role=button]').first().click();
+      await page.getByText(PROJECT, { exact: true }).last().click();
+    }
     await newThread.waitFor({ timeout: 30000 });
     await newThread.click();
     await page.waitForURL(/\/draft\//, { timeout: 15000 });
