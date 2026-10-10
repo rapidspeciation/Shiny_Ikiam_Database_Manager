@@ -5,6 +5,9 @@ import { LocalSheets, GoogleSheets } from '../server/sheets.mjs';
 import { nextInsectaryId } from '../server/schema.mjs';
 import { validateValues } from '../server/schema.mjs';
 import { createApp } from '../server/index.mjs';
+import { setPasswordHashCost } from '../server/auth.mjs';
+
+setPasswordHashCost(16);
 
 const user = { id: 'editor-1', username: 'editor', role: 'editor' };
 const seed = {

@@ -7,6 +7,9 @@ import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { createInvitations, initInvitations, statusOf } from '../server/invitations.mjs';
 import { createAssistant, mcpTools } from '../server/assistant.mjs';
+import { setPasswordHashCost } from '../server/auth.mjs';
+
+setPasswordHashCost(16);
 
 test('an admin invites someone by email; the link creates their account once and signs them in', async () => {
   const store = new Store({ localMode: true }, { sheets: new LocalSheets({}) });
