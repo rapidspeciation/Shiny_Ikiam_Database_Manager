@@ -42,6 +42,7 @@ import {
   NOTES,
   WHOLE,
   bestRack,
+  bodyReminder,
   buildIndex,
   cardCells,
   causeForKey,
@@ -581,8 +582,8 @@ const showPreservation = computed(() => panelMode.value !== 'recorded' && (shown
 // --- A butterfly with a sample: the reminder to preserve a wing-clipped one, and its Research_purpose
 /** A wing clip taken alive is its only sample: a cross or pheromone parent. */
 const clipped = (row: TableRow) => (dying(row) || replacing(row)) && onlyWingClip(f => pending.value(row, f))
-/** Wing-clipped and going in as not preserved: what remains of it (the wings at least) is usually preserved. */
-const clipReminder = (row: TableRow) => clipped(row) && !choiceOf(row).preserved && choiceOf(row).cause !== 'Disappearance'
+/** Wing-clipped and going in as not preserved, with a cause that leaves a body: it is usually preserved. */
+const clipReminder = (row: TableRow) => clipped(row) && bodyReminder(choiceOf(row))
 /** Recording it writes the panel's Research_purpose: a body preserved now or a wing clip, its purpose still empty. */
 const takesPurpose = (row: TableRow) =>
   isBlank(pending.value(row, 'Research_purpose')) && ((choiceOf(row).preserved && canPreserve(row)) || clipped(row))
@@ -1571,8 +1572,8 @@ const choice = (on: boolean) =>
                 <span class="min-w-0">{{
                   $tn(
                     panelClipped.length,
-                    '{ids} tiene un clip de ala (cruces o feromonas): de estas se suele preservar lo que quede, al menos las alas.',
-                    '{ids} tienen un clip de ala (cruces o feromonas): de estas se suele preservar lo que quede, al menos las alas.',
+                    '{ids} tiene un clip de ala (cruces o feromonas): su cuerpo se suele preservar.',
+                    '{ids} tienen un clip de ala (cruces o feromonas): su cuerpo se suele preservar.',
                     { ids: panelClipped.map(idOf).join(', ') },
                   )
                 }}</span>
@@ -1848,7 +1849,7 @@ const choice = (on: boolean) =>
               <p v-if="beforeEntry(row)" class="mt-1 text-amber-900" :data-before-entry="idOf(row)">{{ beforeEntryText(row) }}</p>
               <p v-if="clipReminder(row)" class="mt-1 flex items-start gap-1 text-amber-900" :data-clip="idOf(row)">
                 <AlertTriangle :size="13" class="mt-px shrink-0" /><span class="min-w-0">{{
-                  $t('Con clip de ala: ¿se preserva lo que quede?')
+                  $t('Con clip de ala: ¿hay cuerpo para preservar?')
                 }}</span>
               </p>
               <p v-if="refusals[idOf(row)]" class="mt-1 text-sm text-red-700">{{ $t('No se guardó: {reason}', { reason: refusals[idOf(row)] }) }}</p>

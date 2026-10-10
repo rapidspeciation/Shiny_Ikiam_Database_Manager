@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   NOT_PRESERVED,
   bestRack,
+  bodyReminder,
   buildIndex,
   cardCells,
   causeForKey,
@@ -105,6 +106,13 @@ describe('what a death writes', () => {
     expect(asObject(chosen).Research_purpose).toBe('Pheromones')
     const has = row({ ...values, Research_purpose: 'WEST x EAST polymnia crosses' })
     expect('Research_purpose' in asObject(deathCells(has, saved, { serial: DAY, cause: 'Ants', notPreserved: true }))).toBe(false)
+  })
+  it('the reminder to preserve a clipped butterfly: not when nothing is left of it', () => {
+    const choice = (cause: string, note = '', preserved = false) => ({ cause, note, preserved })
+    expect(['Unknown', 'Eaten', 'Heat stroke', 'Spider', ''].every(c => bodyReminder(choice(c)))).toBe(true)
+    expect(['Disappearance', 'Ants', 'Unknown - Only wings'].some(c => bodyReminder(choice(c)))).toBe(false)
+    expect(bodyReminder(choice('Unknown', 'Only wings found'))).toBe(false)
+    expect(bodyReminder(choice('Unknown', '', true))).toBe(false)
   })
   it('the purpose: NA when not preserved, the one chosen for a body preserved now', () => {
     const plain = asObject(deathCells(row({ Insectary_ID: 'G1D' }), saved, { serial: DAY, cause: 'Unknown', notPreserved: true, purpose: 'Pheromones' }))

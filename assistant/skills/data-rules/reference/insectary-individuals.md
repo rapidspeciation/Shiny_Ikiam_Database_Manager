@@ -90,9 +90,9 @@ The app's Muertes tab and `match_notebook` write this block.
 After a wing clip, with the body not preserved: the CAM and the clip's tube
 stay, the other cells take the block above, and Research_purpose is the
 project it was clipped for (`F1/F2 mutation rate` when nobody says). Muertes
-writes it so, and reminds the person that what remains of a cross or
-pheromone parent (the wings at least) is usually preserved
-([crosses.md](crosses.md)).
+writes it so. A clipped butterfly's body is nearly always preserved (Unknown
+144 of 151, Eaten 28 of 29), so Muertes asks about it, except when nothing is
+left: `Disappearance`, `Ants`, only wings found.
 
 ## Death, preserved
 

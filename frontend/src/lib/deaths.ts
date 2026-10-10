@@ -57,6 +57,16 @@ export const CROSS_PURPOSE = 'F1/F2 mutation rate'
  */
 export const onlyWingClip = (get: (field: string) => CellValue) =>
   /WING CLIP/i.test(String(get('Tube_1_tissue') ?? '')) && [2, 3, 4].every(n => isBlank(get(`Tube_${n}_id`)))
+/**
+ * Whether a wing-clipped butterfly going in as not preserved is worth a
+ * reminder: its body is nearly always preserved (Unknown 144 of 151, Eaten 28
+ * of 29, Heat stroke 13 of 14, by Oct 2026), but not when nothing is left of
+ * it: it disappeared, ants took it, or only wings were found (the cause, or
+ * the note's words).
+ */
+const NO_BODY = ['Disappearance', 'Ants', 'Unknown - Only wings']
+export const bodyReminder = (choice: Pick<DeathChoice, 'cause' | 'preserved' | 'note'>) =>
+  !choice.preserved && !NO_BODY.includes(choice.cause) && !/only wings/i.test(choice.note ?? '')
 /** The clip's own cells, which a death leaves as they are. */
 const CLIP_CELLS = ['CAM_ID', 'Tube_1_id', 'Tube_1_tissue', 'T1_Preservation_medium']
 
