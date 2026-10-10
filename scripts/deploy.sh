@@ -24,25 +24,37 @@ else
     fi
   fi
 fi
-npm --prefix frontend ci
+# Kept from one deploy to the next on this machine, outside the releases: node's compiled code of each
+# file, by its content (every test file starts a node that loads the server: about half that start).
+cache="${ITHOMIINI_DEPLOY_CACHE:-$HOME/.cache/ithomiini-deploy}"
+mkdir -p "$cache"
+export NODE_COMPILE_CACHE="$cache/node-compile"
+# The frontend's packages are installed again only when the lockfile, what is installed or node changed.
+installed() { cat frontend/package-lock.json frontend/node_modules/.package-lock.json 2>/dev/null | sha256sum | cut -d' ' -f1; node --version; }
+if [ "$(installed)" = "$(cat frontend/node_modules/.deploy-installed 2>/dev/null)" ]; then
+  echo "Frontend packages as installed: npm ci not needed."
+else
+  npm --prefix frontend ci
+  installed > frontend/node_modules/.deploy-installed
+fi
 # The one full test run of a change (the app-dev skill runs only the quick checks while developing):
-# syntax and types, server tests and frontend tests side by side, at low priority (on the server the
-# app keeps answering meanwhile).
+# syntax and types (incremental: frontend/node_modules/.cache), server tests (a file per core) and
+# frontend tests side by side, at low priority (on the server the app keeps answering meanwhile); the
+# type check, the longest single step, a little ahead of the others. The build is made meanwhile, and
+# deployed only if they all pass. It also writes server/instructions-history.json (the AI instructions
+# page's history: the release has no .git); the types are checked beside it: vite only.
 logs="$(mktemp -d)"
-nice -n 10 node scripts/check.mjs >"$logs/check" 2>&1 & check=$!
-nice -n 10 node --test tests/*.test.mjs >"$logs/server" 2>&1 & server=$!
+nice -n 5 node scripts/check.mjs >"$logs/check" 2>&1 & check=$!
+nice -n 10 node --test --test-concurrency="$(nproc 2>/dev/null || echo 4)" tests/*.test.mjs >"$logs/server" 2>&1 & server=$!
 NO_COLOR=1 nice -n 10 npm --prefix frontend test >"$logs/frontend" 2>&1 & frontend=$!
+nice -n 10 bash -c 'node scripts/instructions-history.mjs && cd frontend && npx vite build' >"$logs/build" 2>&1 & build=$!
 failed=0
-for job in check:$check server:$server frontend:$frontend; do
+for job in check:$check server:$server frontend:$frontend build:$build; do
   if ! wait "${job#*:}"; then failed=1; echo "== ${job%%:*} failed:" >&2; tail -n 80 "$logs/${job%%:*}" >&2; fi
 done
-grep -h -E '^ℹ (pass|fail) |Tests +[0-9]|^Type checked' "$logs"/* || true
+grep -h -E '^ℹ (pass|fail) |Tests +[0-9]|^Type checked|^Instructions history|built in' "$logs"/* || true
 rm -rf "$logs"
-[ "$failed" = 0 ] || { echo "Tests failed: nothing was deployed. Fix, commit, push and run scripts/deploy.sh again." >&2; exit 1; }
-# Also writes server/instructions-history.json (the AI instructions page's history: the release has no .git).
-# The types were checked above: vite only.
-node scripts/instructions-history.mjs
-(cd frontend && npx vite build)
+[ "$failed" = 0 ] || { echo "Checks failed: nothing was deployed. Fix, commit, push and run scripts/deploy.sh again." >&2; exit 1; }
 release="$(date -u +%Y%m%dT%H%M%SZ)"
 on_server "mkdir -p /home/ubuntu/ithomiini/releases/$release /home/ubuntu/ithomiini/shared /home/ubuntu/.config/systemd/user"
 # frontend/src/lib goes too: the assistant's Wikiloc tools run the monitoring code of the app (server/walks.mjs).
