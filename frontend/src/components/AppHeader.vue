@@ -53,7 +53,7 @@ async function logout() {
     <!-- One row on wide screens; on phones the tabs get their own full-width row. -->
     <div class="flex flex-wrap items-center gap-x-3 px-3 sm:flex-nowrap sm:px-4">
       <RouterLink to="/inicio" class="flex shrink-0 items-center gap-2 py-2 font-semibold">
-        <img src="/mark.svg" alt="" class="h-6 w-6" />
+        <img src="/mark.svg?v=2" alt="" class="h-6 w-6" />
         <span>Ikiam Insectary DB</span>
       </RouterLink>
       <nav

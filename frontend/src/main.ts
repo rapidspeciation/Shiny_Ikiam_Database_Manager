@@ -5,6 +5,10 @@ import { router } from './router'
 import './style.css'
 import { updateAvailable, watchForUpdates } from './lib/updates'
 import { t, tn } from './lib/i18n'
+import { askEarly } from './lib/api'
+
+// Opening on Inicio: its summary is asked now, with the session, instead of after it (HomeView takes it).
+if (/^#?\/?(inicio)?(\?|$)/.test(location.hash)) askEarly('summary')
 
 const app = createApp(App)
 // $t / $tn in every template: the interface in English or Spanish (lib/i18n.ts).

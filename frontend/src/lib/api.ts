@@ -59,3 +59,20 @@ export async function api<T>(
 }
 
 export const requestId = () => crypto.randomUUID()
+
+/**
+ * A GET asked as the page starts, before the page that shows it is built (main.ts: Inicio's
+ * summary, at the same time as the session); that page takes it once with `early(path)`, or
+ * asks again when it is gone or older than a minute.
+ */
+const asked = new Map<string, { at: number; answer: Promise<unknown> }>()
+export function askEarly(path: string) {
+  const answer = api(path)
+  answer.catch(() => {})
+  asked.set(path, { at: Date.now(), answer })
+}
+export function early<T>(path: string): Promise<T> {
+  const kept = asked.get(path)
+  asked.delete(path)
+  return kept && Date.now() - kept.at < 60_000 ? (kept.answer as Promise<T>) : api<T>(path)
+}

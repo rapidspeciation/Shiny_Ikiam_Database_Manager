@@ -207,6 +207,24 @@ test('a large JSON answer is sent with brotli or gzip, as the browser accepts', 
   assert.equal(small.headers['content-encoding'], undefined);
 });
 
+// A whole sheet is kept compressed until it changes: brotli for browsers, gzip only for a client that asks for it.
+test('a whole sheet is sent with brotli or gzip, as the client accepts', async () => {
+  const path = '/ithomiini/api/table?module=Collection_data';
+  const plain = await get(path);
+  assert.equal(plain.status, 200);
+  assert.equal(plain.headers['content-encoding'], undefined);
+  const text = plain.body.toString();
+  assert.equal(JSON.parse(text).module, 'Collection_data');
+  for (let i = 0; i < 2; i++) {
+    const br = await get(path, { 'accept-encoding': 'gzip, deflate, br, zstd' });
+    assert.equal(br.headers['content-encoding'], 'br');
+    assert.equal(brotliDecompressSync(br.body).toString(), text);
+    const gzip = await get(path, { 'accept-encoding': 'gzip, deflate' });
+    assert.equal(gzip.headers['content-encoding'], 'gzip');
+    assert.equal(gunzipSync(gzip.body).toString(), text);
+  }
+});
+
 test('Monitoreo walks and tracks and a sheet’s lists answer 304 when unchanged', async () => {
   const api = `http://127.0.0.1:${port}/ithomiini/api`;
   const tags = new Set();

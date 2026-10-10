@@ -9,7 +9,7 @@ import TeamCounts from '../components/home/TeamCounts.vue'
 import UpcomingCard from '../components/home/UpcomingCard.vue'
 import AlertsCard from '../components/home/AlertsCard.vue'
 import { format } from '../components/charts/chart'
-import { api } from '../lib/api'
+import { early } from '../lib/api'
 import { errorText } from '../lib/notice'
 import { dateLabel, type Summary } from '../lib/summary'
 import { useSession } from '../stores/session'
@@ -25,7 +25,7 @@ const data = ref<Summary | null>(null)
 const problem = ref('')
 async function load() {
   try {
-    data.value = await api<Summary>('summary')
+    data.value = await early<Summary>('summary')
     problem.value = ''
   } catch (e) {
     problem.value = errorText(e)

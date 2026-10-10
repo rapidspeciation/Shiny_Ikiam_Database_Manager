@@ -2,6 +2,10 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
+import { readdir, readFile, writeFile } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
+import { promisify } from 'node:util'
+import { brotliCompress, constants } from 'node:zlib'
 
 // The app is served under a configurable base path (default /ithomiini/), so
 // production assets use relative URLs. The dev server proxies the API to a
@@ -16,6 +20,32 @@ const version = {
   },
 }
 
+// Every built script, style, font and page also as <file>.br, at brotli's highest level: the server
+// sends that copy to browsers that take brotli (server/index.mjs serveStatic). It is about a fifth
+// smaller than what the proxy compresses on the fly (zstd or gzip), and the fonts, which the proxy
+// leaves alone, go from 1.5 MB to 0.5 MB.
+let outDir = ''
+const precompress = {
+  name: 'precompress',
+  apply: 'build' as const,
+  configResolved(config: { root: string; build: { outDir: string } }) {
+    outDir = resolve(config.root, config.build.outDir)
+  },
+  async closeBundle() {
+    const brotli = promisify(brotliCompress)
+    const files = (await readdir(outDir, { recursive: true })).filter(f => /\.(js|css|html|svg|ttf|json|webmanifest)$/.test(f))
+    await Promise.all(
+      files.map(async name => {
+        const data = await readFile(join(outDir, name))
+        if (data.length < 1024) return
+        const params = { [constants.BROTLI_PARAM_QUALITY]: 11, [constants.BROTLI_PARAM_SIZE_HINT]: data.length }
+        const packed = await brotli(data, { params })
+        if (packed.length < data.length * 0.9) await writeFile(join(outDir, `${name}.br`), packed)
+      }),
+    )
+  },
+}
+
 // Lib tests that need a page (document, window or localStorage).
 const libWithPage = ['camera', 'cellBar', 'clipboard', 'gridKeys', 'proposalColumns'].map(
   name => `src/lib/__tests__/${name}.test.ts`,
@@ -23,7 +53,7 @@ const libWithPage = ['camera', 'cellBar', 'clipboard', 'gridKeys', 'proposalColu
 
 export default defineConfig(({ command }) => ({
   base: command === 'serve' ? '/ithomiini/' : './',
-  plugins: [vue(), tailwindcss(), version],
+  plugins: [vue(), tailwindcss(), version, precompress],
   define: { __BUILD_ID__: JSON.stringify(command === 'serve' ? 'dev' : buildId) },
   build: { outDir: '../web', emptyOutDir: true, chunkSizeWarningLimit: 900 },
   server: {

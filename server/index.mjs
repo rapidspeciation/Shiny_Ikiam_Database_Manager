@@ -7,7 +7,7 @@ import { join, resolve, extname, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 import { backup } from 'node:sqlite';
-import { brotliCompressSync, constants as zlib, gzip, gzipSync } from 'node:zlib';
+import { brotliCompress, brotliCompressSync, constants as zlib, gzip, gzipSync } from 'node:zlib';
 import { promisify } from 'node:util';
 import { Store } from './store.mjs';
 import { copyBeside } from './replica.mjs';
@@ -111,17 +111,24 @@ const here = dirname(fileURLToPath(import.meta.url));
 const webRoot = resolve(here, '../web');
 const now = () => new Date().toISOString();
 const gzipAsync = promisify(gzip);
+const brotliAsync = promisify(brotliCompress);
+const accepts = (req, encoding) => new RegExp(`\\b${encoding}\\b`).test(req?.headers['accept-encoding'] || '');
 const fail = (code, message, status = 400, details) => Object.assign(new Error(message), { code, status, details });
 const json = (res, status, value, headers = {}) => send(res, status, JSON.stringify(value), headers);
 /**
  * Sends JSON, compressed when the client accepts it and the body is large: brotli
  * (at a fast level: a 500-row proposal list, 216 kB, takes 1.4 ms, to 25 kB), else
- * gzip (27 kB); `gzipped`: the body compressed already (a cached answer).
+ * gzip (27 kB); `ready`: the body compressed already (a cached answer), as { br } or { gzip }.
  */
-function send(res, status, text, headers = {}, gzipped = null) {
-  const accepted = res.req?.headers['accept-encoding'] || '';
-  const large = !!gzipped || text.length > 8192;
-  const encoding = !large ? null : !gzipped && /\bbr\b/.test(accepted) ? 'br' : /\bgzip\b/.test(accepted) ? 'gzip' : null;
+function send(res, status, text, headers = {}, ready = null) {
+  const large = !!ready || text.length > 8192;
+  const encoding = !large
+    ? null
+    : accepts(res.req, 'br') && (!ready || ready.br)
+      ? 'br'
+      : accepts(res.req, 'gzip')
+        ? 'gzip'
+        : null;
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
     'cache-control': 'no-store',
@@ -132,9 +139,10 @@ function send(res, status, text, headers = {}, gzipped = null) {
   });
   res.end(
     encoding === 'br'
-      ? brotliCompressSync(text, { params: { [zlib.BROTLI_PARAM_QUALITY]: 4, [zlib.BROTLI_PARAM_SIZE_HINT]: Buffer.byteLength(text) } })
+      ? ready?.br ||
+          brotliCompressSync(text, { params: { [zlib.BROTLI_PARAM_QUALITY]: 4, [zlib.BROTLI_PARAM_SIZE_HINT]: Buffer.byteLength(text) } })
       : encoding === 'gzip'
-        ? gzipped || gzipSync(text)
+        ? ready?.gzip || gzipSync(text)
         : text,
   );
 }
@@ -219,6 +227,9 @@ const mime = {
   '.ico': 'image/x-icon',
   '.json': 'application/json',
   '.webmanifest': 'application/manifest+json',
+  // As a font, not a download: the proxy compresses it (Caddy's encode skips unknown types).
+  '.ttf': 'font/ttf',
+  '.woff2': 'font/woff2',
 };
 
 export function configFromEnv(env = process.env) {
@@ -763,12 +774,26 @@ export async function createApp(config = {}, options = {}) {
         let cached = tableCache.get(module);
         if (cached?.revision !== revision) {
           // Only the rows that changed are read again; compressed in zlib's threads, not the app's.
+          // Brotli at level 5, what browsers take: 12–25% smaller than gzip for a whole sheet
+          // (Insectary_data 811 → 712 kB, Collection_data 762 → 578 kB) in about the same time.
+          // Gzip only for a client that asks for it.
           const text = tableText(store, module, revision);
-          const kept = (cached = { revision, text, gzipped: gzipAsync(text) });
-          kept.gzipped.catch(() => tableCache.get(module) === kept && tableCache.delete(module));
+          const level = { [zlib.BROTLI_PARAM_QUALITY]: 5, [zlib.BROTLI_PARAM_SIZE_HINT]: Buffer.byteLength(text) };
+          const kept = (cached = { revision, text, br: brotliAsync(text, { params: level }), gzipped: null });
+          kept.br.catch(() => tableCache.get(module) === kept && tableCache.delete(module));
           tableCache.set(module, cached);
         }
-        return send(res, 200, cached.text, { etag, 'cache-control': 'no-cache' }, await cached.gzipped);
+        let ready = null;
+        if (accepts(req, 'br')) ready = { br: await cached.br };
+        else if (accepts(req, 'gzip')) {
+          const kept = cached;
+          if (!kept.gzipped) {
+            kept.gzipped = gzipAsync(kept.text);
+            kept.gzipped.catch(() => tableCache.get(module) === kept && tableCache.delete(module));
+          }
+          ready = { gzip: await kept.gzipped };
+        }
+        return send(res, 200, cached.text, { etag, 'cache-control': 'no-cache' }, ready);
       }
       if (method === 'GET' && path === '/api/table/changes')
         return json(res, 200, tableChanges(store, String(query.module || ''), query.since));
@@ -1545,8 +1570,14 @@ function serveStatic(req, res, path, base, frameSrc = '', root = webRoot) {
   }
   const file = found ? target : join(root, 'index.html');
   if (!existsSync(file)) throw fail('NOT_FOUND', 'Frontend is not built', 404);
+  // Scripts, styles and fonts come with a copy compressed at brotli's highest level beside them (the
+  // build makes it: frontend/vite.config.ts), a fifth smaller than what the proxy compresses on the fly.
+  const compressed = existsSync(`${file}.br`);
+  const br = compressed && accepts(req, 'br');
   res.writeHead(200, {
     'content-type': mime[extname(file)] || 'application/octet-stream',
+    ...(compressed ? { vary: 'accept-encoding' } : {}),
+    ...(br ? { 'content-encoding': 'br', 'content-length': statSync(`${file}.br`).size } : {}),
     'x-content-type-options': 'nosniff',
     'content-security-policy': `default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; img-src 'self' data: blob: https:; connect-src 'self'; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self'${frameSrc ? `; frame-src ${frameSrc}` : ''}`,
     // Built scripts and styles carry a content hash in their name: a new build gets new names.
@@ -1557,7 +1588,7 @@ function serveStatic(req, res, path, base, frameSrc = '', root = webRoot) {
         : 'public, max-age=3600',
   });
   if (req.method === 'HEAD') return res.end();
-  createReadStream(file).pipe(res);
+  createReadStream(br ? `${file}.br` : file).pipe(res);
 }
 function relatedRecords(store, record) {
   const identityField =

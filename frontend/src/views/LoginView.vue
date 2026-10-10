@@ -48,7 +48,7 @@ async function submit() {
   <div class="grid min-h-full place-items-center bg-brand-700 p-4">
     <form class="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl" @submit.prevent="submit">
       <div class="mb-5 flex items-center gap-2">
-        <img src="/mark.svg" alt="" class="h-8 w-8" />
+        <img src="/mark.svg?v=2" alt="" class="h-8 w-8" />
         <div>
           <h1 class="text-lg font-semibold">Ikiam Insectary DB</h1>
           <p class="text-sm text-stone-500">{{ setupMode ? $t('Crear la cuenta de administrador') : $t('Iniciar sesión') }}</p>
