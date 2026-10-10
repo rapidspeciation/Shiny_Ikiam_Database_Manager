@@ -30,6 +30,7 @@ import { todayIso } from '../lib/dates'
 const { table, ready, listColumn } = useSheet(ref('Insectary_data'), ref(true), { staged: true })
 /** People's initials for the note on each disappearance ("FCH - Franz Chandi"). */
 const collectors = computed(() => listColumn('Abbr_name'))
+const purposes = computed(() => listColumn('Research_purpose'))
 const census = useCensus()
 const reviewing = ref(false)
 /** «Actualizar el cuaderno» for any day and species, from the start. */
@@ -70,7 +71,14 @@ function leave() {
       <CensusNotebook v-else-if="screen === 'notebook'" :day="todayIso()" free @leave="notebook = false" />
       <p v-else-if="screen === 'loading'" class="p-6 text-stone-500">{{ $t('Cargando el censo…') }}</p>
       <CensusRun v-else-if="screen === 'run'" :table="table" :ready="ready" @review="reviewing = true" @leave="leave" />
-      <CensusReview v-else-if="screen === 'review'" :table="table" :ready="ready" :collectors="collectors" @back="reviewing = false" />
+      <CensusReview
+        v-else-if="screen === 'review'"
+        :table="table"
+        :ready="ready"
+        :collectors="collectors"
+        :purposes="purposes"
+        @back="reviewing = false"
+      />
       <CensusSummary v-else :table="table" @leave="leave" />
     </div>
   </div>

@@ -121,8 +121,8 @@ Medium rules and ethanol exceptions: [samples-ids.md](samples-ids.md).
   CAM_ID; `NA` when the CAM is `NA`).
 - The rows before ID `H0B` (Aug 2026) have an older T2_Preservation_medium
   formula with no case for `NOT_COLLECTED`: it shows `#N/A` once the tissue
-  is `NOT_COLLECTED`. The app's tabs type `NOT_COLLECTED` over it in those
-  rows; a proposal leaves the cell, so name such a row to the person.
+  is `NOT_COLLECTED`. In those rows the app's tabs and proposals type the
+  value over the formula; where the formula gives the value, it stays.
 - CAM_ID_CollData: `NA` for a reared butterfly (it has no Collection_data
   row). A formula from `H0B` on; typed in the rows before it.
 

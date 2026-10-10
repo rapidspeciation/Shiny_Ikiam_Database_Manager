@@ -162,6 +162,30 @@ test('match_notebook fills the implied columns, keeps what the row has, and the 
   assert.ok(!('Notes_Insectary_data' in changes[2].values));
 });
 
+test('a death not preserved types the Tube 2 medium over a formula that cannot show it, and leaves one that can', () => {
+  const rows = [blank('D2B', 10), blank('J1E', 11)];
+  // The rows before H0B: no case for NOT_COLLECTED. The newer formula has one.
+  rows[0].formulas = { T2_Preservation_medium: '=IFS(U10="","",U10="NA","NA")' };
+  rows[1].formulas = { T2_Preservation_medium: '=IFS(U11="","",OR(U11="NA",U11="NOT_COLLECTED",U11="NOT_PROVIDED"),"NOT_COLLECTED")' };
+  const review = buildReview({
+    transcription: page('emergence', [
+      { v: { Insectary_ID: 'D2B', Death_date: '6/10', Death_cause: 'Heat stroke' } },
+      { v: { Insectary_ID: 'J1E', Death_date: '6/10', Death_cause: 'Unknown' } },
+    ]),
+    year: 2026,
+    today: '2026-10-10',
+    initials: 'FCH',
+    lookup: lookupOf(rows),
+  });
+  const [older, newer] = review.lines;
+  assert.equal(older.cells.T2_Preservation_medium.status, 'fill');
+  assert.ok(older.cells.T2_Preservation_medium.include);
+  assert.equal(newer.cells.T2_Preservation_medium.status, 'keep');
+  const { changes } = proposalRows(review);
+  assert.equal(changes[0].values.T2_Preservation_medium, 'NOT_COLLECTED');
+  assert.ok(!('T2_Preservation_medium' in changes[1].values));
+});
+
 test('a death date without a cause: Unknown, doubtful; a cause on the page or in the sheet stays', () => {
   const rows = [blank('R6B', 10), blank('R7B', 11), blank('R8B', 12, { Death_cause: 'Disappearance' })];
   const review = buildReview({

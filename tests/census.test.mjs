@@ -2,6 +2,7 @@
 // not seen as disappeared (Death_cause Disappearance, the census day) in the app until
 // «Guardar en Google Sheets», like Emergidos and Clutches (or, with staged saving off, writes them).
 import test from 'node:test';
+import { moduleMap } from '../server/schema.mjs';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync } from 'node:fs';
@@ -88,6 +89,7 @@ const NOT_PRESERVED = {
   Preservation_medium: 'NOT_COLLECTED',
   Preservation_date: 'NA',
   Location_body: 'NA',
+  Research_purpose: 'NA',
 };
 function disappearance(recordId, { preserved = false } = {}) {
   const values = { Death_date: SERIAL, Death_cause: DISAPPEARED, ...(preserved ? {} : NOT_PRESERVED) };
@@ -324,6 +326,37 @@ test('finishing keeps the disappearances in the app with Muertes cells; reopenin
     // The paper notebook brought up to date.
     assert.equal(setCensusNotebook(store, id, {}, luis).census.notebookByName, 'Luis');
     assert.equal(setCensusNotebook(store, id, { done: false }, luis).census.notebookAt, null);
+  } finally {
+    store.close();
+  }
+});
+
+test('a disappearance fills the row: the purpose, CAM_ID_CollData, and the Tube 2 medium over a formula that would not give it', async () => {
+  const sheets = new LocalSheets(seed(), { health: { probeMs: 20 } });
+  const col = key => moduleMap.get('Insectary_data').fields.find(f => f.key === key).column;
+  // A2B's row keeps the older formula (no case for NOT_COLLECTED); A3B has a wing clip.
+  sheets.rows.get('Insectary_data').find(r => r.row === 3).cells[col('T2_Preservation_medium')] = {
+    userEnteredValue: { formulaValue: '=IFS(U3="","",U3="NA","NA")' },
+  };
+  const { store } = await fixture(':memory:', sheets);
+  try {
+    const id = start(store, ana).census.id;
+    mark(store, id, ana, { recordId: recordOf(store, 'A1B') });
+    mark(store, id, ana, { recordId: recordOf(store, 'A8B') });
+    const a2 = disappearance(recordOf(store, 'A2B'));
+    a2.values.CAM_ID_CollData = 'NA';
+    a2.expected.CAM_ID_CollData = null;
+    const clipped = { Death_date: SERIAL, Death_cause: DISAPPEARED, Research_purpose: 'F1/F2 mutation rate', Tube_2_id: 'NA', Tube_2_tissue: 'NOT_COLLECTED' };
+    const a3 = { id: recordOf(store, 'A3B'), values: clipped, expected: Object.fromEntries(Object.keys(clipped).map(f => [f, null])) };
+    const done = await finishCensus(store, id, { requestId: randomUUID(), edits: [a2, a3] }, ana);
+    assert.equal(done.census.deaths, 'staged');
+    const out = await store.staged.flush({ requestId: randomUUID() }, ana);
+    assert.equal(out.status, 'done', JSON.stringify(out).slice(0, 300));
+    assert.equal(cellIn(sheets, 3, 'Research_purpose'), 'NA');
+    assert.equal(cellIn(sheets, 3, 'CAM_ID_CollData'), 'NA');
+    const medium = sheets.rows.get('Insectary_data').find(r => r.row === 3).cells[col('T2_Preservation_medium')];
+    assert.equal(medium.userEnteredValue.stringValue, 'NOT_COLLECTED', 'typed over the formula that would show #N/A');
+    assert.equal(cellIn(sheets, 4, 'Research_purpose'), 'F1/F2 mutation rate');
   } finally {
     store.close();
   }

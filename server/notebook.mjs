@@ -2005,12 +2005,18 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
         }
       }
       const formula = record?.formulas?.[field];
-      // What the page only implies never goes over a formula (T2_Preservation_medium often is one).
-      if (inferred !== null && hint && formulaHere && ['fill', 'conflict', 'new'].includes(cell.status))
+      // The Tube 2 medium goes over its row's formula where that formula cannot show it (the rows
+      // before H0B have no case for NOT_COLLECTED, no row has one for a body's medium), as the app's
+      // tabs write it: such a formula shows only the texts it holds. The save checks it again.
+      const formulaFails =
+        field === 'T2_Preservation_medium' && !!record && typeof formula === 'string' && cell.value !== null && !formula.includes(`"${cell.value}"`);
+      // What the page only implies never goes over another formula.
+      if (inferred !== null && hint && formulaHere && !formulaFails && ['fill', 'conflict', 'new'].includes(cell.status))
         Object.assign(cell, { status: 'keep', message: null });
       if (['fill', 'conflict', 'new'].includes(cell.status) && formulaHere && !(field === 'SPECIES' && cell.formula)) {
         // A count typed as a sum (=12+15) is replaced by the notebook's sum; other formulas are kept.
         const allowed =
+          formulaFails ||
           (lookup.typedOverFormula?.has(field) && record) ||
           (sumField && (!record || sheetSum !== null) && (typeof cell.value === 'number' || simpleSum(cell.value) !== null));
         if (!allowed) {

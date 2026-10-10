@@ -1,5 +1,5 @@
 import { isBlank } from './cells'
-import { deathCells, searchKey, type Entry } from './deaths'
+import { deathCells, onlyWingClip, searchKey, type Entry } from './deaths'
 import { appendNote, noteDay } from './clutches'
 import type { CellValue, TableRow } from './types'
 
@@ -174,18 +174,31 @@ const NOTES = 'Notes_Insectary_data'
 export const CENSUS_NOTE = 'Disappeared in census'
 
 /**
+ * The butterflies not seen that have a wing clip (cross or pheromone parents)
+ * and no Research_purpose yet: their disappearance writes the purpose chosen.
+ */
+export function clippedWithoutPurpose(missing: RosterEntry[], rows: Map<string, TableRow>): RosterEntry[] {
+  return missing.filter(b => {
+    const row = rows.get(b.recordId)
+    return !!row && onlyWingClip(f => row.values[f] ?? null) && isBlank(row.values.Research_purpose)
+  })
+}
+
+/**
  * The cells of each butterfly not seen, as Muertes writes a death not preserved
- * (lib/deaths.ts deathCells: Death_date, Death_cause Disappearance, and for a
- * row without CAM or tube the NA / NOT_COLLECTED block), read from the sheet
- * with everyone's entries kept in the app (`rows`), with what each cell holds
- * now (what the server checks it still holds). Returns the edits and the
- * butterflies whose row is not loaded.
+ * (lib/deaths.ts deathCells: Death_date, Death_cause Disappearance, and the
+ * NA / NOT_COLLECTED block: all of it for a row without CAM or tube, what a
+ * wing clip left empty with the `purpose` chosen for one with a clip), read
+ * from the sheet with everyone's entries kept in the app (`rows`), with what
+ * each cell holds now (what the server checks it still holds). Returns the
+ * edits and the butterflies whose row is not loaded.
  */
 export function disappearanceEdits(
   missing: RosterEntry[],
   rows: Map<string, TableRow>,
   serial: number,
   sign?: { today: number; initials: string },
+  purpose?: string,
 ): { edits: DeathEdit[]; absent: string[] } {
   const edits: DeathEdit[] = []
   const absent: string[] = []
@@ -196,7 +209,7 @@ export function disappearanceEdits(
       absent.push(b.id)
       continue
     }
-    const cells = deathCells(row, get, { serial, cause: DISAPPEARED, notPreserved: true })
+    const cells = deathCells(row, get, { serial, cause: DISAPPEARED, notPreserved: true, purpose })
     const values: Record<string, CellValue> = {}
     const expected: Record<string, CellValue> = {}
     for (const c of cells) {

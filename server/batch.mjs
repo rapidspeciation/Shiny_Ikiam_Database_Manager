@@ -828,7 +828,9 @@ class Plan {
             msg('El Insectary ID {id} se calcula con una fórmula: solo se cambia añadiéndole un sufijo ({id}.1)', { id: predicted ?? '' }),
             { field },
           );
-        if (target.expected && Object.hasOwn(target.expected, field) && !cellHolds(record.sheet, field, target.expected[field], before, true))
+        // What was expected there: the value the formula showed, or (an entry kept in the app) the formula itself.
+        const seen = target.expected && Object.hasOwn(target.expected, field) ? target.expected[field] : undefined;
+        if (seen !== undefined && !cellHolds(record.sheet, field, seen, before, !isFormulaValue(seen)))
           return this.conflict(target, 'EXTERNAL_CONFLICT', msg('Otra persona cambió {field} en la hoja', { field }), {
             field,
             expected: target.expected[field],

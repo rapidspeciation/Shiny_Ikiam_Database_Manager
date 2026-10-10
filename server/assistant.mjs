@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { createReports } from './reports.mjs';
-import { MAX_BATCH, TYPED_OVER_FORMULA, renamesWithSuffix, sameAsFormula, uniqueIdIndex } from './batch.mjs';
+import { MAX_BATCH, TYPED_OVER_FORMULA, TYPED_WHERE_FORMULA_FAILS, renamesWithSuffix, sameAsFormula, uniqueIdIndex } from './batch.mjs';
 import { checkData, freshIssues } from './checks.mjs';
 import { agreedFixes, markApplied } from './review.mjs';
 import { CERTAINTIES, allSuggestions, suggestionPage } from './suggestions/index.mjs';
@@ -1340,6 +1340,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
           key =>
             old.formulas?.[key] &&
             !TYPED_OVER_FORMULA[old.sheet]?.has(key) &&
+            !TYPED_WHERE_FORMULA_FAILS[old.sheet]?.has(key) &&
             !isSumField(old.sheet, key) &&
             !(old.sheet === 'Insectary_data' && key === 'Insectary_ID') &&
             patternedColumn(old.sheet, key),
@@ -1347,6 +1348,15 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       );
       for (const { field } of weighed.left) delete values[field];
       const overFormula = new Set(weighed.over.map(o => o.field));
+      // The Tube 2 medium: typed over its formula in the rows where the formula would not give it
+      // (as the app's tabs do: server/batch.mjs TYPED_WHERE_FORMULA_FAILS), left to it in the others.
+      let rowGives = null;
+      for (const key of Object.keys(values)) {
+        if (!old.formulas?.[key] || !TYPED_WHERE_FORMULA_FAILS[old.sheet]?.has(key) || key in formulas) continue;
+        const { gives, fallback } = (rowGives ??= rowFormulaGives({ sheet: old.sheet, values: plain }, old));
+        if (fallback.includes(key) || !(key in gives) || sameAsFormula(gives[key] ?? '', values[key])) delete values[key];
+        else overFormula.add(key);
+      }
       for (const key of Object.keys(values)) {
         if (overFormula.has(key)) {
           replaceFormula.push(key);

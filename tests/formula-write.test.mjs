@@ -57,6 +57,7 @@ async function fixture(rows = 6, options = {}) {
     // Row 4 typed over (no formula); the others hold the old formula.
     r.cells[column('T2_Preservation_medium')] =
       r.row === 4 ? { userEnteredValue: { stringValue: 'Ethanol' } } : { userEnteredValue: { formulaValue: OLD(r.row) }, effectiveValue: { stringValue: 'NA' } };
+    if (r.row === 2) r.cells[column('Pedigree')] = { userEnteredValue: { formulaValue: '="NA"' }, effectiveValue: { stringValue: 'NA' } };
   }
   const store = new Store({ localMode: true }, { sheets });
   await store.sync({ sheets: ['Insectary_data'] });
@@ -129,8 +130,17 @@ test('one row: a formula over a typed value, a plain "=..." stays text, mistakes
     const same = await call('propose_changes', { reason: 'x', changes: [{ recordId: record(2).id, values: { T2_Preservation_medium: { formula: OLD('{row}') } } }] });
     assert.match(same.error, /already in the sheet/);
     // Text over a formula cell: refused as before.
-    const text = await call('propose_changes', { reason: 'x', changes: [{ recordId: record(2).id, values: { T2_Preservation_medium: '=1+1' } }] });
+    const text = await call('propose_changes', { reason: 'x', changes: [{ recordId: record(2).id, values: { Pedigree: '=1+1' } }] });
     assert.match(text.error, /calculated by a formula/);
+    // The Tube 2 medium as a value: left to the formula where it gives it (row 2: NA), typed over it
+    // where it would not (row 3: the older formula has no case for NOT_COLLECTED).
+    const gives = await call('propose_changes', { reason: 'x', changes: [{ recordId: record(2).id, values: { T2_Preservation_medium: 'NA' } }] });
+    assert.match(gives.error, /already in the sheet/);
+    const typed = await call('propose_changes', { reason: 'x', changes: [{ recordId: record(3).id, values: { T2_Preservation_medium: 'NOT_COLLECTED' } }] });
+    assert.ok(typed.proposalId, JSON.stringify(typed));
+    const shown = await call('get_proposal', { proposalId: typed.proposalId, full: true });
+    assert.equal(shown.rows[0].values.T2_Preservation_medium, 'NOT_COLLECTED');
+    assert.deepEqual(shown.rows[0].replaceFormula ?? ['T2_Preservation_medium'], ['T2_Preservation_medium']);
     // onlyWhereFormula needs a formula in set.
     const only = await call('propose_changes', { reason: 'x', bulk: [{ sheet: 'Insectary_data', rows: { from: 2, to: 4 }, set: { Sex: 'female' }, onlyWhereFormula: true }] });
     assert.match(only.error, /go with a \{"formula"/);
@@ -209,4 +219,43 @@ test('rows are read 800 at most per request (a formula written down 2,000 rows)'
   assert.equal(out.size, 2001);
   assert.ok(requests.every(r => r.reduce((n, [a, b]) => n + b - a + 1, 0) <= 800), JSON.stringify(requests));
   assert.deepEqual(requests.flat(), [[1, 1], [12001, 12800], [12801, 13600], [13601, 14000]]);
+});
+
+test('match_notebook: a death not preserved types the Tube 2 medium in the rows whose formula would not give it', async () => {
+  const column = key => moduleMap.get('Insectary_data').fields.find(f => f.key === key).column;
+  const NEWER = row => `=IFS(U${row}="","",OR(U${row}="NA",U${row}="NOT_COLLECTED",U${row}="NOT_PROVIDED"),"NOT_COLLECTED")`;
+  const data = [2, 3].map(row => ({ row, values: { Insectary_ID: `A${row}Z`, Sex: 'male', Wild_Reared: 'Reared', Intro2Insectary_date: 46280 } }));
+  const sheets = new LocalSheets({ Insectary_data: data });
+  const cell = row => sheets.rows.get('Insectary_data').find(r => r.row === row).cells;
+  cell(2)[column('T2_Preservation_medium')] = { userEnteredValue: { formulaValue: OLD(2) } };
+  cell(3)[column('T2_Preservation_medium')] = { userEnteredValue: { formulaValue: NEWER(3) } };
+  const store = new Store({ localMode: true }, { sheets });
+  try {
+    await store.sync({ sheets: ['Insectary_data'] });
+    const assistant = createAssistant({ store, config: {} });
+    store.db
+      .prepare("INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('u1','franz','Franz','editor','s','h',1,'2026-01-01')")
+      .run();
+    store.db.prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')").run(createHash('sha256').update('franz-token').digest('hex'), 'u1');
+    const call = async (name, args) =>
+      JSON.parse(
+        (await assistant.mcp({ authorization: 'Bearer franz-token' }, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }))
+          .body.result.content[0].text,
+      );
+    const out = await call('match_notebook', {
+      kind: 'emergence',
+      year: 2026,
+      lines: [2, 3].map(n => ({ raw: `A${n}Z 6/10 unk`, values: { Insectary_ID: `A${n}Z`, Death_date: '6/10', Death_cause: 'Unknown' } })),
+    });
+    assert.ok(out.proposalId, JSON.stringify(out).slice(0, 300));
+    const full = await call('get_proposal', { proposalId: out.proposalId, full: true });
+    assert.equal(full.rows[0].values.T2_Preservation_medium, 'NOT_COLLECTED');
+    assert.ok(!('T2_Preservation_medium' in full.rows[1].values), 'the newer formula gives it');
+    const applied = await assistant.handle({ method: 'POST', path: `/api/chat/proposals/${out.proposalId}/apply`, body: { requestId: randomUUID() }, user, query: { all: '1' } });
+    assert.equal(applied.status, 200, JSON.stringify(applied.body).slice(0, 300));
+    assert.equal(cell(2)[column('T2_Preservation_medium')].userEnteredValue.stringValue, 'NOT_COLLECTED');
+    assert.equal(cell(3)[column('T2_Preservation_medium')].userEnteredValue.formulaValue, NEWER(3));
+  } finally {
+    store.close();
+  }
 });

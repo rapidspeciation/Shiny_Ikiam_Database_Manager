@@ -34,10 +34,15 @@ import { applyBatch } from './batch.mjs';
 const SHEET = 'Insectary_data';
 /** The Death_cause list's value for a butterfly not found (3,000 rows use it). */
 export const DISAPPEARED = 'Disappearance';
-/** The cells a disappearance may write (lib/deaths.ts deathCells: the date, the cause and the not-preserved block). */
+/**
+ * The cells a disappearance may write (lib/deaths.ts deathCells: the date, the cause, the
+ * not-preserved block with its Research_purpose, and CAM_ID_CollData NA for a reared butterfly).
+ */
 const DEATH_FIELDS = new Set([
   'Death_date',
   'Death_cause',
+  'Research_purpose',
+  'CAM_ID_CollData',
   'Preserved_Dead_Alive',
   'CAM_ID',
   'Tube_1_id',

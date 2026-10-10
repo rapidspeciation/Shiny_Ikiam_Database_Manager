@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   censusIndex,
+  clippedWithoutPurpose,
   disappearanceEdits,
   findingsOf,
   markFinder,
@@ -86,7 +87,7 @@ describe('disappearances', () => {
   it('the cells Muertes writes for a death not preserved, on the census day, with what each cell holds now', () => {
     const rows = new Map([
       ['r1', row('r1', {})],
-      // A wing clip: it keeps its CAM and tube, only the date and cause.
+      // A tissue in its tube (not a wing clip): it keeps its CAM and tube, only the date and cause.
       ['r2', row('r2', { CAM_ID: 'CAM000500', Tube_1_id: 'FS00000500', Tube_1_tissue: 'WINGS' })],
       // NA already in some cells, and a formula cell never written.
       ['r3', row('r3', { Tube_4_id: 'NA', Location_body: '' }, ['Preservation_date'])],
@@ -142,6 +143,21 @@ describe('disappearances', () => {
     // A census finished another day says which census.
     const later = disappearanceEdits([entry('r1', 'A1B', 2)], rows, 46300, { today: 46301, initials: 'FCH' })
     expect(later.edits[0].values.Notes_Insectary_data).toBe('6/10/26 FCH: Disappeared in census of 5/10/26')
+  })
+  it('a wing-clipped butterfly not seen: the clip stays, the rest of the block and the purpose chosen', () => {
+    const clip = { CAM_ID: 'CAM000500', Tube_1_id: 'FS00000500', Tube_1_tissue: '**OTHER_SOMATIC_ANIMAL_TISSUE** | WING CLIP' }
+    const rows = new Map([
+      ['r1', row('r1', {})],
+      ['r2', row('r2', clip)],
+      ['r3', row('r3', { ...clip, Research_purpose: 'Pheromones' })],
+    ])
+    const missing = [entry('r1', 'A1B', 2), entry('r2', 'A2B', 3), entry('r3', 'A3B', 4)]
+    expect(clippedWithoutPurpose(missing, rows).map(b => b.id)).toEqual(['A2B'])
+    const { edits } = disappearanceEdits(missing, rows, 46300, undefined, 'WEST x EAST polymnia crosses')
+    expect(edits[0].values.Research_purpose).toBe('NA')
+    expect(edits[1].values).toMatchObject({ Research_purpose: 'WEST x EAST polymnia crosses', Tube_2_id: 'NA', Tube_2_tissue: 'NOT_COLLECTED', Location_body: 'NA' })
+    expect('CAM_ID' in edits[1].values || 'Tube_1_id' in edits[1].values).toBe(false)
+    expect('Research_purpose' in edits[2].values).toBe(false)
   })
 })
 

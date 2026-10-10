@@ -6,6 +6,7 @@ import { useCensus } from '../../composables/useCensus'
 import {
   DISAPPEARED,
   OLD_DAYS,
+  clippedWithoutPurpose,
   disappearanceEdits,
   findingsOf,
   markFinder,
@@ -15,6 +16,7 @@ import {
   type RosterEntry,
 } from '../../lib/census'
 import { dayLabel, formatSerial, isoToSerial, todayIso } from '../../lib/dates'
+import { CROSS_PURPOSE } from '../../lib/deaths'
 import { ApiError } from '../../lib/api'
 import { errorText, notify } from '../../lib/notice'
 import type { Table } from '../../lib/types'
@@ -28,11 +30,12 @@ import { stagedSaving } from '../../lib/stagedSwitch'
  * which will die as disappeared on the census day (each can be left out, e.g.
  * it is in another cage); (c) the findings, kept for review. «Marcar N como
  * desaparecidas» keeps those deaths in the app, written as Muertes writes a
- * death not preserved (lib/census.ts disappearanceEdits), until «Guardar en
+ * death not preserved (lib/census.ts disappearanceEdits; one with a wing clip
+ * takes the Research_purpose chosen here), until «Guardar en
  * Google Sheets»; with staged saving off it writes them to the sheet at once
  * (or they wait for Google when it is busy).
  */
-const props = defineProps<{ table: Table | undefined; ready: boolean; collectors?: string[] }>()
+const props = defineProps<{ table: Table | undefined; ready: boolean; collectors?: string[]; purposes?: string[] }>()
 const session = useSession()
 /** Whose initials sign the note «Disappeared in census» (FCH). */
 const initials = computed(() => initialsOf(session.user?.displayName || '', props.collectors ?? [], session.user?.username || ''))
@@ -52,6 +55,10 @@ const seen = computed(() => roster.value.filter(b => markOf.value(b)?.kind === '
 const excluded = computed(() => roster.value.filter(b => markOf.value(b)?.kind === 'excluded'))
 const findings = computed(() => findingsOf(species.value, roster.value, detail.value.marks))
 const rowById = computed(() => new Map((props.table?.rows ?? []).map(r => [r.id, r])))
+/** Not seen, with a wing clip and no Research_purpose yet: the purpose their disappearance writes. */
+const clipped = computed(() => clippedWithoutPurpose(missing.value, rowById.value))
+const purpose = ref(CROSS_PURPOSE)
+const purposeList = computed(() => [...new Set([CROSS_PURPOSE, ...(props.purposes ?? [])])].filter(Boolean))
 const ageOf = (b: RosterEntry) => (b.entered === null ? null : Math.max(0, today.value - b.entered))
 const old = (b: RosterEntry) => (ageOf(b) ?? 0) > OLD_DAYS
 
@@ -103,10 +110,13 @@ function finishedText(deaths: CensusSummary['deaths'], n: number) {
 }
 async function finish() {
   if (saving.value) return
-  const { edits, absent } = disappearanceEdits(missing.value, rowById.value, serial.value, {
-    today: isoToSerial(todayIso()),
-    initials: initials.value,
-  })
+  const { edits, absent } = disappearanceEdits(
+    missing.value,
+    rowById.value,
+    serial.value,
+    { today: isoToSerial(todayIso()), initials: initials.value },
+    purpose.value,
+  )
   if (absent.length)
     return notify(t('Falta cargar {ids} de Insectary_data; espera un momento', { ids: absent.join(', ') }), 'error')
   saving.value = true
@@ -206,6 +216,23 @@ async function finish() {
               </div>
             </li>
           </ul>
+          <!-- Cross or pheromone parents among them: the purpose written with their disappearance. -->
+          <label v-if="clipped.length" class="mt-2 block rounded-xl border border-amber-200 bg-amber-50 p-3" data-purpose>
+            <span class="flex items-start gap-1.5 text-sm text-amber-900">
+              <AlertTriangle :size="16" class="mt-0.5 shrink-0" />
+              <span class="min-w-0">{{
+                $tn(
+                  clipped.length,
+                  '{ids} tiene un clip de ala (cruces o feromonas). Su Research_purpose:',
+                  '{ids} tienen un clip de ala (cruces o feromonas). Su Research_purpose:',
+                  { ids: clipped.map(b => b.id).join(', ') },
+                )
+              }}</span>
+            </span>
+            <select v-model="purpose" class="field-input mt-1.5 h-11 text-base">
+              <option v-for="p in purposeList" :key="p" :value="p">{{ p }}</option>
+            </select>
+          </label>
         </section>
 
         <section v-if="excluded.length">
