@@ -3,7 +3,7 @@ import { appendNote, eventNote, groupsValue, totalOf, type Count } from './clutc
 import { appendInGroup } from './clutchGroups'
 import { clutchSettings } from './clutchSettings'
 import { serialFromIso } from './dates'
-import { deathCells, KILLED } from './deaths'
+import { CROSS_PURPOSE, deathCells, KILLED } from './deaths'
 import { assign, normalizeId } from './tubes'
 import type { CellValue, TableRow } from './types'
 
@@ -22,7 +22,7 @@ export const MODULE = 'Insectary_data'
 export const STOCKS = 'Insectary_stocks'
 /** The Mechanitis messenoides stock lines: their Stock_of_origin is the clutch's subspecies. */
 export const STOCK_ORIGINS = ['deceptus', 'messenoides', 'intermedia']
-export const CROSS_PURPOSE = 'F1/F2 mutation rate'
+export { CROSS_PURPOSE }
 
 /** An adult that emerged, or an egg or larva preserved from the clutch (since Sep 2026). */
 export type Kind = 'adult' | 'young'

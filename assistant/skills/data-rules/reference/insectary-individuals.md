@@ -87,6 +87,13 @@ Cause not `Killed_Preserved` and no CAM:
 
 The app's Muertes tab and `match_notebook` write this block.
 
+After a wing clip, with the body not preserved: the CAM and the clip's tube
+stay, the other cells take the block above, and Research_purpose is the
+project it was clipped for (`F1/F2 mutation rate` when nobody says). Muertes
+writes it so, and reminds the person that what remains of a cross or
+pheromone parent (the wings at least) is usually preserved
+([crosses.md](crosses.md)).
+
 ## Death, preserved
 
 Preservation_date = Death_date · CAM_ID (insectary pool) · Tube_1_id
@@ -112,8 +119,12 @@ Medium rules and ethanol exceptions: [samples-ids.md](samples-ids.md).
   Ikiam), Pedigree, T2_Preservation_medium (from Tube_2_tissue: `NA` → `NA`,
   `NOT_COLLECTED` → `NOT_COLLECTED`), Photo_dorsal and Photo_ventral (from
   CAM_ID; `NA` when the CAM is `NA`).
+- The rows before ID `H0B` (Aug 2026) have an older T2_Preservation_medium
+  formula with no case for `NOT_COLLECTED`: it shows `#N/A` once the tissue
+  is `NOT_COLLECTED`. The app's tabs type `NOT_COLLECTED` over it in those
+  rows; a proposal leaves the cell, so name such a row to the person.
 - CAM_ID_CollData: `NA` for a reared butterfly (it has no Collection_data
-  row).
+  row). A formula from `H0B` on; typed in the rows before it.
 
 ## LIFESTAGE
 

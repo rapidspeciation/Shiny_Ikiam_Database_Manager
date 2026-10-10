@@ -107,9 +107,11 @@ describe('what a card writes', () => {
     expect(tubeCells(row({ Insectary_ID: 'D1E', CAM_ID: 'CAM1' }), saved, none, { cam: '', tubes: [] }, opts)).toEqual([])
   })
 
-  it('formula cells are never written', () => {
-    const r = row({ Insectary_ID: 'D3E' }, { formulas: ['T2_Preservation_medium'] })
-    expect(tubeCells(r, saved, whole, { cam: 'CAM1', tubes: ['FS90415433'] }, opts).some(c => c.field === 'T2_Preservation_medium')).toBe(false)
+  it('formula cells are never written, but the Tube 2 medium (the server types it only where the formula would not give it)', () => {
+    const r = row({ Insectary_ID: 'D3E' }, { formulas: ['T2_Preservation_medium', 'Location_body'] })
+    const fields = tubeCells(r, saved, whole, { cam: 'CAM1', tubes: ['FS90415433'] }, opts).map(c => c.field)
+    expect(fields).toContain('T2_Preservation_medium')
+    expect(fields).not.toContain('Location_body')
   })
 })
 

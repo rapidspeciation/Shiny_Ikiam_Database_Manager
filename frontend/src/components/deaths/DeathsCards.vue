@@ -35,6 +35,7 @@ import { isBlank } from '../../lib/cells'
 import { noteDay } from '../../lib/clutches'
 import { dayLabel, formatSerial, isoToSerial, serialFromIso, serialToIso, todayIso } from '../../lib/dates'
 import {
+  CROSS_PURPOSE,
   DEATH_COLUMNS,
   DEATH_NOTE_PHRASES,
   KILLED,
@@ -53,6 +54,7 @@ import {
   lifeOf,
   lookAlikes,
   noteCell,
+  onlyWingClip,
   preservationGaps,
   priorDeath,
   rankCauses,
@@ -150,7 +152,7 @@ const short = useMedia('(max-height: 520px)')
 /** A finger rather than a mouse: the keyboard closes after a pick, nothing is focused by itself. */
 const touch = useMedia('(pointer: coarse)')
 
-const { defaults, cards: scratch, selected, several, medium, samples, suggested } = useDeathsState()
+const { defaults, cards: scratch, selected, several, medium, purpose, samples, suggested } = useDeathsState()
 const query = ref('')
 const today = computed(() => isoToSerial(todayIso()))
 /** Who signs the notes added here ("1/10/26 FCH: …"), as in Clutches. */
@@ -575,6 +577,19 @@ const panelNotPreserve = computed(() =>
   panelMode.value === 'card' ? notToPreserve.value.filter(isSelected) : panelMode.value === 'defaults' ? notToPreserve.value : [],
 )
 const showPreservation = computed(() => panelMode.value !== 'recorded' && (shown.value.preserved || panelPreserve.value.length > 0))
+
+// --- A butterfly with a sample: the reminder to preserve a wing-clipped one, and its Research_purpose
+/** A wing clip taken alive is its only sample: a cross or pheromone parent. */
+const clipped = (row: TableRow) => (dying(row) || replacing(row)) && onlyWingClip(f => pending.value(row, f))
+/** Wing-clipped and going in as not preserved: what remains of it (the wings at least) is usually preserved. */
+const clipReminder = (row: TableRow) => clipped(row) && !choiceOf(row).preserved && choiceOf(row).cause !== 'Disappearance'
+/** Recording it writes the panel's Research_purpose: a body preserved now or a wing clip, its purpose still empty. */
+const takesPurpose = (row: TableRow) =>
+  isBlank(pending.value(row, 'Research_purpose')) && ((choiceOf(row).preserved && canPreserve(row)) || clipped(row))
+const panelRows = computed(() => (panelMode.value === 'card' ? selectedRows.value : panelMode.value === 'defaults' ? cardRows.value : []))
+const panelClipped = computed(() => panelRows.value.filter(clipReminder))
+const panelPurpose = computed(() => panelRows.value.filter(takesPurpose))
+const purposes = computed(() => [...new Set([CROSS_PURPOSE, purpose.value, ...(props.options.Research_purpose || [])])].filter(Boolean))
 const sampleOf = (id: string) => (samples[id] ??= { cam: '', tube: '' })
 
 // The next free CAM IDs and tubes (server/grid.mjs idSuggestions), asked for only when preserving.
@@ -654,7 +669,7 @@ function gapText(g: PreservationGap) {
 const plans = computed(() => {
   const out = new Map<string, DeathCell[]>()
   for (const row of cardRows.value) {
-    const how = { sample: samples[idOf(row)], medium: medium.value, today: today.value, initials: initials.value }
+    const how = { sample: samples[idOf(row)], medium: medium.value, purpose: purpose.value, today: today.value, initials: initials.value }
     out.set(row.id, (replacing(row) ? replaceCells : cardCells)(row, pending.value, choiceOf(row), how))
   }
   return out
@@ -1546,6 +1561,22 @@ const choice = (on: boolean) =>
               <p v-if="shown.preserved === false && !isMixed('preserved')" class="mt-1.5 text-sm text-stone-600">
                 {{ $t('Sin preservar: CAM y tubos NA, tejidos y medios NOT_COLLECTED') }}
               </p>
+              <!-- A cross or pheromone parent going in as not preserved: a reminder, not a block. -->
+              <p
+                v-if="panelClipped.length"
+                class="mt-1.5 flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+                data-clip-reminder
+              >
+                <AlertTriangle :size="16" class="mt-0.5 shrink-0" />
+                <span class="min-w-0">{{
+                  $tn(
+                    panelClipped.length,
+                    '{ids} tiene un clip de ala (cruces o feromonas): de estas se suele preservar lo que quede, al menos las alas.',
+                    '{ids} tienen un clip de ala (cruces o feromonas): de estas se suele preservar lo que quede, al menos las alas.',
+                    { ids: panelClipped.map(idOf).join(', ') },
+                  )
+                }}</span>
+              </p>
               <!-- Preserved: the medium, then each butterfly's CAM and tube, right here where the eye is. -->
               <div
                 v-if="showPreservation"
@@ -1647,6 +1678,18 @@ const choice = (on: boolean) =>
                   {{ $t('Ya registradas como muertas, sin tubo aquí: {ids}', { ids: panelNotPreserve.map(idOf).join(', ') }) }}
                 </p>
               </div>
+              <!-- With a sample (a body now, a wing clip) and no purpose yet: the one written with the death. -->
+              <label v-if="panelPurpose.length" class="mt-2 block" data-purpose>
+                <span class="field-label">Research_purpose</span>
+                <select v-model="purpose" class="field-input h-11 text-base">
+                  <option v-for="p in purposes" :key="p" :value="p">{{ p }}</option>
+                </select>
+                <span class="mt-1 block text-xs text-stone-500">{{
+                  $t('Se escribe en las que tienen muestra (cuerpo o clip de ala) y aún no tienen propósito: {ids}', {
+                    ids: panelPurpose.map(idOf).join(', '),
+                  })
+                }}</span>
+              </label>
             </template>
           </div>
           <!-- A note, in English: typed or quick phrases; recording adds it, dated and signed, after the notes there. -->
@@ -1803,6 +1846,11 @@ const choice = (on: boolean) =>
                 <StickyNote :size="13" class="mt-px shrink-0" /><span class="min-w-0">{{ noteOf(row) }}</span>
               </p>
               <p v-if="beforeEntry(row)" class="mt-1 text-amber-900" :data-before-entry="idOf(row)">{{ beforeEntryText(row) }}</p>
+              <p v-if="clipReminder(row)" class="mt-1 flex items-start gap-1 text-amber-900" :data-clip="idOf(row)">
+                <AlertTriangle :size="13" class="mt-px shrink-0" /><span class="min-w-0">{{
+                  $t('Con clip de ala: ¿se preserva lo que quede?')
+                }}</span>
+              </p>
               <p v-if="refusals[idOf(row)]" class="mt-1 text-sm text-red-700">{{ $t('No se guardó: {reason}', { reason: refusals[idOf(row)] }) }}</p>
               <div class="mt-1.5 flex flex-wrap items-center justify-end gap-2">
                 <span class="min-w-24 flex-1 text-xs" :class="lackFor(row) === 'nothing' ? 'text-stone-500' : 'text-amber-900'">{{

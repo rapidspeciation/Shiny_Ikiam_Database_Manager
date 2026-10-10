@@ -118,3 +118,51 @@ test('emerged butterflies keep the clutch prediction unless another subspecies e
   assert.equal(cell(4).userEnteredValue.stringValue, 'Mechanitis polymnia eurydice');
   store.close();
 });
+
+test('the Tube 2 medium is typed over its formula only in the rows whose formula would not give it', async () => {
+  const col = key => moduleMap.get('Insectary_data').fields.find(f => f.key === key).column;
+  const letter = n => (n >= 26 ? String.fromCharCode(64 + Math.floor(n / 26)) : '') + String.fromCharCode(65 + (n % 26));
+  const U = letter(col('Tube_2_tissue'));
+  const sheets = new LocalSheets(
+    {
+      Insectary_data: [
+        { row: 2, values: { Insectary_ID: 'D2B', Sex: 'male' } },
+        { row: 3, values: { Insectary_ID: 'J1E', Sex: 'male' } },
+      ],
+    },
+    {
+      // What Google would show: the older formula has no case for NOT_COLLECTED.
+      evaluate: (formula, { row, value }) => {
+        const tissue = value(row, col('Tube_2_tissue'));
+        if (tissue === null || tissue === undefined || tissue === '') return '';
+        if (tissue === 'NA') return formula.includes('NOT_PROVIDED') ? 'NOT_COLLECTED' : 'NA';
+        return formula.includes('NOT_PROVIDED') && tissue === 'NOT_COLLECTED' ? 'NOT_COLLECTED' : '#N/A';
+      },
+    },
+  );
+  const cell = row => sheets.rows.get('Insectary_data').find(r => r.row === row).cells;
+  cell(2)[col('T2_Preservation_medium')] = { userEnteredValue: { formulaValue: `=IFS(${U}2="","",${U}2="NA","NA")` } };
+  cell(3)[col('T2_Preservation_medium')] = {
+    userEnteredValue: { formulaValue: `=IFS(${U}3="","",OR(${U}3="NA",${U}3="NOT_COLLECTED",${U}3="NOT_PROVIDED"),"NOT_COLLECTED")` },
+  };
+  const store = new Store({ localMode: true }, { sheets });
+  await store.sync({ sheets: ['Insectary_data'] });
+  const death = { Death_cause: 'Unknown', Tube_2_id: 'NA', Tube_2_tissue: 'NOT_COLLECTED', T2_Preservation_medium: 'NOT_COLLECTED' };
+  const saved = await applyBatch(
+    store,
+    {
+      requestId: randomUUID(),
+      edits: [2, 3].map(row => ({ id: store.getRecordBySheetRow('Insectary_data', row).id, values: death })),
+    },
+    user,
+  );
+  assert.equal(saved.status, 'verified');
+  // The older formula would show #N/A: the value is typed. The newer one gives it: the formula stays.
+  assert.equal(cell(2)[col('T2_Preservation_medium')].userEnteredValue.stringValue, 'NOT_COLLECTED');
+  assert.match(cell(3)[col('T2_Preservation_medium')].userEnteredValue.formulaValue, /NOT_PROVIDED/);
+  assert.equal(store.getRecordBySheetRow('Insectary_data', 2).values.T2_Preservation_medium, 'NOT_COLLECTED');
+
+  await store.undo({ actionIds: [saved.action.id], requestId: randomUUID() }, user);
+  assert.match(cell(2)[col('T2_Preservation_medium')].userEnteredValue.formulaValue, /^=IFS/);
+  store.close();
+});

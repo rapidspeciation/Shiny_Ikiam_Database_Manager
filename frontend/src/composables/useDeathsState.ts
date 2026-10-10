@@ -1,6 +1,6 @@
 import { computed, reactive, type Ref, type WritableComputedRef } from 'vue'
 import { todayIso } from '../lib/dates'
-import type { DeathChoice } from '../lib/deaths'
+import { CROSS_PURPOSE, type DeathChoice } from '../lib/deaths'
 import { addCards, cardsForIds, keepDefaults, readDefaults, type DeathCard, type KeptDefaults } from '../lib/deathsCart'
 import { persistentRef } from '../lib/persist'
 
@@ -9,9 +9,10 @@ import { persistentRef } from '../lib/persist'
  * table, see useEntryMode), so switching mode (or turning a phone) keeps it:
  * the panel's values for the next butterflies (date, cause, preserved, note),
  * «Seleccionadas» (each butterfly picked with its own values), the one the
- * panel shows, the medium, and the CAM and tube typed for each. They live as
- * long as the browser tab (sessionStorage), the medium in this browser; the
- * date chosen is kept that day only, and starts at today on another.
+ * panel shows, the medium, the Research_purpose of those with a sample, and
+ * the CAM and tube typed for each. They live as long as the browser tab
+ * (sessionStorage), the medium in this browser; the date chosen is kept that
+ * day only, and starts at today on another.
  */
 export interface DeathsState {
   /** «Para las próximas mariposas»: the values each butterfly picked starts with. */
@@ -23,6 +24,8 @@ export interface DeathsState {
   /** «Seleccionar varias»: each ID tapped is added (or taken out) and the search stays for the next. */
   several: Ref<boolean>
   medium: Ref<string>
+  /** The Research_purpose written with a body preserved now, or with a wing-clipped butterfly's death. */
+  purpose: Ref<string>
   /** The CAM and tube typed (or suggested) for each butterfly, by Insectary ID. */
   samples: Record<string, { cam: string; tube: string }>
   /** What the app suggested, so a value the person typed is never replaced. */
@@ -154,6 +157,7 @@ export function createDeathsState(): DeathsState {
     selected: persistentRef<string[]>('deaths:selection', []),
     several: persistentRef('deaths:several-pick', false),
     medium: persistentRef('deaths:medium', 'Flash frozen', { lasting: true }),
+    purpose: persistentRef('deaths:purpose', CROSS_PURPOSE),
     samples: reactive({}),
     suggested: reactive({}),
     picked: computed({

@@ -304,6 +304,13 @@ export default {
   'Para causas distintas de Killed_Preserved y filas sin CAM ni tubo: CAM, tubos, Preservation_date, Location_body y Preserved_Dead_Alive en NA; tejidos y medios en NOT_COLLECTED. Sin marcar, solo fecha y causa: el CAM y el tubo van en Tubos o en las tarjetas.':
     'For causes other than Killed_Preserved and rows without a CAM or tube: CAM, tubes, Preservation_date, Location_body and Preserved_Dead_Alive set to NA; tissues and media set to NOT_COLLECTED. Unticked, only the date and cause: the CAM and tube go in Tubos or in the cards.',
   'Sin preservar: CAM y tubos NA, tejidos y medios NOT_COLLECTED': 'Not preserved: CAM and tubes NA, tissues and media NOT_COLLECTED',
+  '{ids} tiene un clip de ala (cruces o feromonas): de estas se suele preservar lo que quede, al menos las alas.':
+    '{ids} has a wing clip (crosses or pheromones): what remains of these is usually preserved, the wings at least.',
+  '{ids} tienen un clip de ala (cruces o feromonas): de estas se suele preservar lo que quede, al menos las alas.':
+    '{ids} have a wing clip (crosses or pheromones): what remains of these is usually preserved, the wings at least.',
+  'Con clip de ala: ¿se preserva lo que quede?': 'Wing-clipped: preserve what remains?',
+  'Se escribe en las que tienen muestra (cuerpo o clip de ala) y aún no tienen propósito: {ids}':
+    'Written for those with a sample (a body or a wing clip) and no purpose yet: {ids}',
   'Escribe la fecha y la causa en las celdas vacías de los {n} IDs elegidos':
     'Writes the date and cause in the empty cells of the {n} chosen IDs',
   'Escribe primero los Insectary IDs': 'Type the Insectary IDs first',

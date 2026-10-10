@@ -68,12 +68,65 @@ describe('what a death writes', () => {
     expect(cells.Preserved_Dead_Alive).toBeUndefined()
     expect('Location_body' in cells).toBe(false)
     expect(Object.keys(deathCells(r, saved, { serial: DAY, cause: 'Killed_Preserved', notPreserved: true }))).toHaveLength(1)
-    // A butterfly with a CAM (a wing clip) is never marked "not preserved".
-    const clipped = row({ Insectary_ID: 'C2D', CAM_ID: 'CAM1', Tube_1_id: 'FS1' })
-    expect(asObject(deathCells(clipped, saved, { serial: DAY, cause: 'Eaten', notPreserved: true }))).toEqual({
+    // A butterfly whose body is in a tube is never marked "not preserved".
+    const body = row({ Insectary_ID: 'C2D', CAM_ID: 'CAM1', Tube_1_id: 'FS1', Tube_1_tissue: 'WHOLE_ORGANISM' })
+    expect(asObject(deathCells(body, saved, { serial: DAY, cause: 'Eaten', notPreserved: true }))).toEqual({
       Death_date: DAY,
       Death_cause: 'Eaten',
     })
+  })
+  it('a wing-clipped butterfly not preserved: the clip stays, the rest of the block is filled, with its purpose', () => {
+    const values = {
+      Insectary_ID: 'F1B',
+      CAM_ID: 'CAM070000',
+      Tube_1_id: 'FS1',
+      Tube_1_tissue: '**OTHER_SOMATIC_ANIMAL_TISSUE** | WING CLIP',
+      T1_Preservation_medium: 'Flash frozen',
+    }
+    const cells = asObject(deathCells(row(values), saved, { serial: DAY, cause: 'Ants', notPreserved: true }))
+    expect(cells).toEqual({
+      Death_date: DAY,
+      Death_cause: 'Ants',
+      Research_purpose: 'F1/F2 mutation rate',
+      Preserved_Dead_Alive: 'NA',
+      Tube_2_id: 'NA',
+      Tube_2_tissue: 'NOT_COLLECTED',
+      T2_Preservation_medium: 'NOT_COLLECTED',
+      Tube_3_id: 'NA',
+      Tube_3_tissue: 'NOT_COLLECTED',
+      Tube_4_id: 'NA',
+      Tube_4_tissue: 'NOT_COLLECTED',
+      Preservation_medium: 'NOT_COLLECTED',
+      Preservation_date: 'NA',
+      Location_body: 'NA',
+    })
+    // The purpose chosen in Muertes, and one the row has already (set when it emerged) is kept.
+    const chosen = deathCells(row(values), saved, { serial: DAY, cause: 'Ants', notPreserved: true, purpose: 'Pheromones' })
+    expect(asObject(chosen).Research_purpose).toBe('Pheromones')
+    const has = row({ ...values, Research_purpose: 'WEST x EAST polymnia crosses' })
+    expect('Research_purpose' in asObject(deathCells(has, saved, { serial: DAY, cause: 'Ants', notPreserved: true }))).toBe(false)
+  })
+  it('the purpose: NA when not preserved, the one chosen for a body preserved now', () => {
+    const plain = asObject(deathCells(row({ Insectary_ID: 'G1D' }), saved, { serial: DAY, cause: 'Unknown', notPreserved: true, purpose: 'Pheromones' }))
+    expect(plain.Research_purpose).toBe('NA')
+    const preserve = { cam: 'CAM9', tube: 'FS2', medium: 'Flash frozen' }
+    const kept = asObject(deathCells(row({ Insectary_ID: 'G2D' }), saved, { serial: DAY, cause: 'Killed_Preserved', notPreserved: false, preserve }))
+    expect('Research_purpose' in kept).toBe(false)
+    const body = deathCells(row({ Insectary_ID: 'G3D' }), saved, { serial: DAY, cause: 'Killed_Preserved', notPreserved: false, preserve, purpose: 'Pheromones' })
+    expect(asObject(body).Research_purpose).toBe('Pheromones')
+  })
+  it('the Tube 2 medium is written over its formula too; CAM_ID_CollData NA for a reared butterfly whose cell is typed', () => {
+    const old = row({ Insectary_ID: 'D2B', Wild_Reared: 'Reared' }, { formulas: ['T2_Preservation_medium'] })
+    const cells = asObject(deathCells(old, saved, { serial: DAY, cause: 'Heat stroke', notPreserved: true }))
+    expect(cells).toMatchObject({ T2_Preservation_medium: 'NOT_COLLECTED', CAM_ID_CollData: 'NA' })
+    // A newer row: the cell is a formula there. A wild-caught one has a Collection_data row.
+    const newer = row({ Insectary_ID: 'J1E', Wild_Reared: 'Reared' }, { formulas: ['CAM_ID_CollData'] })
+    expect('CAM_ID_CollData' in asObject(deathCells(newer, saved, { serial: DAY, cause: 'Unknown', notPreserved: true }))).toBe(false)
+    const wild = row({ Insectary_ID: 'K1E', Wild_Reared: 'Wild-caught' })
+    expect('CAM_ID_CollData' in asObject(deathCells(wild, saved, { serial: DAY, cause: 'Unknown', notPreserved: true }))).toBe(false)
+    // Nothing of the death to write: nothing else either.
+    const done = row({ Insectary_ID: 'L1E', Wild_Reared: 'Reared', Death_date: DAY, Death_cause: 'Killed_Preserved' })
+    expect(deathCells(done, saved, { serial: DAY, cause: 'Killed_Preserved', notPreserved: false })).toEqual([])
   })
   it('matches the desktop fills cell by cell (the cause just written counts for the block)', () => {
     const edits: Record<string, CellValue> = { Death_cause: 'Unknown' }

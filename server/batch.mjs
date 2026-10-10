@@ -9,6 +9,7 @@
 import { randomUUID } from 'node:crypto';
 import { TYPED_OVER_FORMULA, comparable, isSumField, labelFor, moduleMap, simpleSum, validateValues } from './schema.mjs';
 import { isFormulaValue, sameCell } from './formula-write.mjs';
+import { createFormulaReader, sameResult } from './formula-gives.mjs';
 import { hasDateFormat, hasTimeFormat, protectionRefused, rowKey, rowValues } from './sheets.mjs';
 import { describeProblems, headerLayout, sameLayout } from './columns.mjs';
 import { columnLocked, duplicateIdRow, ensurePremadeRows, insectaryIdRow, lockedRanges, noteProtection, suffixedId } from './premade.mjs';
@@ -45,6 +46,12 @@ export const renamesWithSuffix = (current, next) => {
   const parsed = suffixedId(next);
   return !!parsed && parsed.base === String(current ?? '').trim().toUpperCase() && String(next).trim().toUpperCase() === parsed.id;
 };
+// Formula cells typed over only in the rows whose formula would not give the value: the Tube 2
+// medium. Its formula in the rows before ID H0B (Aug 2026) has no case for NOT_COLLECTED (the cell
+// shows #N/A), and no row's has one for a body's own medium (Flash frozen). Where the formula gives
+// the value, the formula stays.
+export const TYPED_WHERE_FORMULA_FAILS = { Insectary_data: new Set(['T2_Preservation_medium']) };
+
 const mayReplace = (sheet, field) => TYPED_OVER_FORMULA[sheet]?.has(field) || (sheet === 'Insectary_data' && field === 'Insectary_ID');
 
 /** What the SPECIES formula of an insectary row will give: the species of its clutch in Insectary_stocks. */
@@ -791,7 +798,20 @@ class Plan {
           : (before.values[field] ?? null);
         if (predicted !== undefined && sameAsFormula(predicted, after)) continue;
       }
-      const replacing = !!before.formulas[field] && target.replaceFormula.has(field);
+      let fails = false;
+      if (before.formulas[field] && TYPED_WHERE_FORMULA_FAILS[record.sheet]?.has(field) && this.source !== 'undo' && !isFormulaValue(after)) {
+        // What the formula shows once this edit is in (it reads the row's other cells); one that cannot be worked out here stays.
+        const { [field]: _typed, ...rest } = target.clean;
+        const { gives } = (this.formulaReader ??= createFormulaReader(this.store)).rowGives({
+          sheet: record.sheet,
+          record: { row: record.row, values: before.values, formulas: before.formulas },
+          values: rest,
+          force: [field],
+        });
+        if (!(field in gives) || sameResult(gives[field], after)) continue;
+        fails = true;
+      }
+      const replacing = !!before.formulas[field] && (fails || target.replaceFormula.has(field));
       // A count kept as a sum (=12+15) may be rewritten; any other formula stays the sheet's.
       const sumCell = isSumField(record.sheet, field) && !!simpleSum(before.formulas[field]);
       // A formula written over a formula (a proposal's {"formula"}) is checked and written as any value.

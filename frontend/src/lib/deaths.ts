@@ -1,4 +1,4 @@
-import { isBlank } from './cells'
+import { isBlank, typedWhereFormulaFails } from './cells'
 import { appendNote, noteDay } from './clutches'
 import { serialFromIso } from './dates'
 import type { CellValue, TableRow } from './types'
@@ -17,7 +17,8 @@ export type Getter = (row: TableRow, field: string) => CellValue
  * What the team writes for a butterfly that was not preserved (Unknown,
  * Disappearance, Eaten…): no CAM, no tubes (NA), their tissues and media
  * NOT_COLLECTED (Franz, 1 Oct 2026: the intended method; NA in the tissues
- * of 2026 was only quicker to type).
+ * of 2026 was only quicker to type), and no research purpose (NA; Pedigree,
+ * a formula on it, then gives NA too).
  */
 export const NOT_PRESERVED: Record<string, string> = {
   Preserved_Dead_Alive: 'NA',
@@ -35,16 +36,29 @@ export const NOT_PRESERVED: Record<string, string> = {
   Preservation_medium: 'NOT_COLLECTED',
   Preservation_date: 'NA',
   Location_body: 'NA',
+  Research_purpose: 'NA',
 }
+/** A reared butterfly has no Collection_data row: NA, where the row's cell is typed (the rows before ID H0B; a formula since). */
+const COLL_CAM = 'CAM_ID_CollData'
 /**
  * The columns a death fills in a row: its date and cause, then those of the
- * not-preserved block or of a preserved body (deathCells), and Research_purpose,
- * which the notebook's template adds (server/notebook.mjs NOT_PRESERVED).
+ * not-preserved block or of a preserved body (deathCells), and CAM_ID_CollData.
  * Cambios propuestos moves them together (lib/proposalMove).
  */
-export const DEATH_COLUMNS = ['Death_date', 'Death_cause', ...Object.keys(NOT_PRESERVED), 'Research_purpose']
+export const DEATH_COLUMNS = ['Death_date', 'Death_cause', ...Object.keys(NOT_PRESERVED), COLL_CAM]
 export const KILLED = 'Killed_Preserved'
 export const WHOLE = 'WHOLE_ORGANISM'
+/** The purpose of most butterflies with a sample (cross parents and their offspring): the one offered first. */
+export const CROSS_PURPOSE = 'F1/F2 mutation rate'
+
+/**
+ * Its only sample is a wing clip, taken alive (a cross or pheromone parent):
+ * the body is still to be preserved, or not.
+ */
+export const onlyWingClip = (get: (field: string) => CellValue) =>
+  /WING CLIP/i.test(String(get('Tube_1_tissue') ?? '')) && [2, 3, 4].every(n => isBlank(get(`Tube_${n}_id`)))
+/** The clip's own cells, which a death leaves as they are. */
+const CLIP_CELLS = ['CAM_ID', 'Tube_1_id', 'Tube_1_tissue', 'T1_Preservation_medium']
 
 /** One cell a death fills: only when empty (or NA), or, with `overwrite`, also over a placeholder. */
 export interface DeathCell {
@@ -77,23 +91,33 @@ export interface Preservation {
 
 /**
  * The cells a death writes in one row, in order, each only where the cell is
- * empty or NA (formula cells never): Death_date and Death_cause; then either
- * the not-preserved block (cause other than Killed_Preserved, no CAM or tube
- * yet) or, for a preserved body, what Tubos writes for a whole organism
+ * empty or NA (formula cells never, but the Tube 2 medium: typedWhereFormulaFails):
+ * Death_date and Death_cause; then either the not-preserved block (cause other
+ * than Killed_Preserved, no CAM or tube yet; after a wing clip, what the clip
+ * left empty) or, for a preserved body, what Tubos writes for a whole organism
  * (TubesView's assign with tissue WHOLE_ORGANISM, the preservation date being
- * the death date). Later steps see the cells earlier ones filled, as the
- * desktop's sequence of fills did.
+ * the death date); and CAM_ID_CollData NA for a reared butterfly. Later steps
+ * see the cells earlier ones filled, as the desktop's sequence of fills did.
+ * `purpose`: the Research_purpose of a butterfly with a sample (a body
+ * preserved now, a wing clip); without one, a body's stays as it is and a
+ * clipped butterfly gets the cross purpose.
  */
 export function deathCells(
   row: TableRow,
   get: Getter,
-  { serial, cause, notPreserved, preserve }: { serial: number | null; cause: string; notPreserved: boolean; preserve?: Preservation },
+  {
+    serial,
+    cause,
+    notPreserved,
+    preserve,
+    purpose,
+  }: { serial: number | null; cause: string; notPreserved: boolean; preserve?: Preservation; purpose?: string },
 ): DeathCell[] {
   const out: DeathCell[] = []
   const now = new Map<string, CellValue>()
   const value = (field: string) => (now.has(field) ? now.get(field)! : get(row, field))
   const set = (field: string, v: CellValue, overwrite = false) => {
-    if (row.formulas.includes(field)) return
+    if (row.formulas.includes(field) && !typedWhereFormulaFails('Insectary_data', field)) return
     const current = value(field)
     if (!overwrite && !isBlank(current)) return
     if (current === v) return
@@ -125,16 +149,18 @@ export function deathCells(
         put(`Tube_${next}_tissue`, 'NOT_COLLECTED')
         if (next <= 2) put(`T${next}_Preservation_medium`, 'NOT_COLLECTED')
       }
+      if (purpose) set('Research_purpose', purpose)
     }
-  } else if (
-    notPreserved &&
-    !isBlank(why) &&
-    why !== KILLED &&
-    isBlank(value('CAM_ID')) &&
-    isBlank(value('Tube_1_id'))
-  )
-    // Not preserved: only rows without a CAM or tube yet (a preserved one keeps its IDs).
-    for (const [field, v] of Object.entries(NOT_PRESERVED)) set(field, v)
+  } else if (notPreserved && !isBlank(why) && why !== KILLED) {
+    // Not preserved: only rows without a CAM or tube yet (a preserved one keeps its IDs)…
+    if (isBlank(value('CAM_ID')) && isBlank(value('Tube_1_id'))) for (const [field, v] of Object.entries(NOT_PRESERVED)) set(field, v)
+    // …or with a wing clip only: the clip's CAM and tube stay, the rest as above, with the purpose it was clipped for.
+    else if (onlyWingClip(value)) {
+      set('Research_purpose', purpose || CROSS_PURPOSE)
+      for (const [field, v] of Object.entries(NOT_PRESERVED)) if (!CLIP_CELLS.includes(field)) set(field, v)
+    }
+  }
+  if (out.length && value('Wild_Reared') === 'Reared') set(COLL_CAM, 'NA')
   return out
 }
 
@@ -473,8 +499,8 @@ export function noteCell(row: TableRow, get: Getter, note: string, today: number
 /**
  * The cells recording a card's death writes, with its own date, cause,
  * preservation and note: what the table's «Escribir fecha y causa»
- * writes (deathCells), plus, for a body preserved now, its CAM, tube (`sample`)
- * and the medium; then the note, dated `today` and signed with `initials`.
+ * writes (deathCells), plus, for a body preserved now, its CAM, tube (`sample`),
+ * the medium and the `purpose`; then the note, dated `today` and signed with `initials`.
  * A butterfly already recorded dead gets no tube here (Tubos does), but its note.
  */
 export function cardCells(
@@ -484,9 +510,10 @@ export function cardCells(
   {
     sample,
     medium,
+    purpose,
     today,
     initials = '',
-  }: { sample?: { cam: string; tube: string }; medium: string; today: number; initials?: string },
+  }: { sample?: { cam: string; tube: string }; medium: string; purpose?: string; today: number; initials?: string },
 ): DeathCell[] {
   const serial = choice.date ? serialFromIso(choice.date) : null
   const dying = lifeOf(f => get(row, f)).state !== 'dead'
@@ -494,7 +521,7 @@ export function cardCells(
     choice.preserved && dying
       ? { cam: sample?.cam.trim().toUpperCase() || '', tube: sample?.tube.trim().toUpperCase() || '', medium }
       : undefined
-  const cells = deathCells(row, get, { serial, cause: choice.cause, notPreserved: !choice.preserved, preserve })
+  const cells = deathCells(row, get, { serial, cause: choice.cause, notPreserved: !choice.preserved, preserve, purpose })
   const note = noteCell(row, get, choice.note ?? '', today, initials)
   return note ? [...cells, note] : cells
 }
@@ -539,9 +566,10 @@ export function replaceCells(
   {
     sample,
     medium,
+    purpose,
     today,
     initials = '',
-  }: { sample?: { cam: string; tube: string }; medium: string; today: number; initials?: string },
+  }: { sample?: { cam: string; tube: string }; medium: string; purpose?: string; today: number; initials?: string },
 ): DeathCell[] {
   const value = (field: string) => get(row, field)
   const prior = priorDeath(value) ?? { date: null, cause: '' }
@@ -560,7 +588,7 @@ export function replaceCells(
   const preserve = preserving
     ? { cam: sample?.cam.trim().toUpperCase() || '', tube: sample?.tube.trim().toUpperCase() || '', medium }
     : undefined
-  for (const c of deathCells(row, after, { serial, cause: choice.cause, notPreserved: !choice.preserved, preserve }))
+  for (const c of deathCells(row, after, { serial, cause: choice.cause, notPreserved: !choice.preserved, preserve, purpose }))
     if (!now.has(c.field)) out.push(isBlank(value(c.field)) ? c : { ...c, overwrite: true })
   const text = [replaceNote(prior, serial, today), (choice.note ?? '').trim()].filter(Boolean).join('; ')
   const note = noteCell(row, get, text, today, initials)

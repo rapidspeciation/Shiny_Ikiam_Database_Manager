@@ -1,4 +1,4 @@
-import { isBlank } from './cells'
+import { isBlank, typedWhereFormulaFails } from './cells'
 import type { CellValue, Field, TableRow } from './types'
 import { usePending } from '../stores/pending'
 
@@ -20,11 +20,12 @@ export function rowsById(rows: TableRow[], field: string, ids: string[]): TableR
 
 /**
  * Sets a cell as a pending change unless it already holds a value (or is a
- * formula). Returns true when something changed. Used by the "fill" buttons.
+ * formula, other than those of typedWhereFormulaFails). Returns true when
+ * something changed. Used by the "fill" buttons.
  */
 export function fillIfBlank(module: string, row: TableRow, label: string, field: string, value: CellValue, overwrite = false) {
   const pending = usePending()
-  if (row.formulas.includes(field)) return false
+  if (row.formulas.includes(field) && !typedWhereFormulaFails(module, field)) return false
   if (!overwrite && !isBlank(pending.value(row, field))) return false
   if (pending.value(row, field) === value) return false
   pending.setCell(module, row, label, field, value)

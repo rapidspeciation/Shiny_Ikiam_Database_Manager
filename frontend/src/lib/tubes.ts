@@ -1,4 +1,4 @@
-import { isBlank } from './cells'
+import { isBlank, typedWhereFormulaFails } from './cells'
 import { appendNote, noteDay } from './clutches'
 import { serialFromIso } from './dates'
 import { KILLED, NOT_PRESERVED, WHOLE, firstEmptySlot, placeholder, type DeathCell, type Getter } from './deaths'
@@ -142,7 +142,7 @@ export function tubeCells(
   const now = new Map<string, CellValue>()
   const value = (field: string) => (now.has(field) ? now.get(field)! : get(row, field))
   const set = (field: string, v: CellValue, overwrite = false) => {
-    if (row.formulas.includes(field)) return
+    if (row.formulas.includes(field) && !typedWhereFormulaFails('Insectary_data', field)) return
     const current = value(field)
     if (!overwrite && !isBlank(current)) return
     if (current === v) return

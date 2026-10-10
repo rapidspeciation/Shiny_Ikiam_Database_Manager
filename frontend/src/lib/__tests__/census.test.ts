@@ -116,6 +116,7 @@ describe('disappearances', () => {
       Preservation_medium: 'NOT_COLLECTED',
       Preservation_date: 'NA',
       Location_body: 'NA',
+      Research_purpose: 'NA',
     })
     expect(Object.values(a1.expected).every(v => v === null)).toBe(true)
     expect(a2).toEqual({

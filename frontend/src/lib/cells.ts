@@ -59,6 +59,15 @@ export function normalizeInput(raw: unknown, field: Pick<Field, 'type' | 'key'>,
   return { ok: true, value: text }
 }
 
+/**
+ * Formula cells that take a typed value all the same: the Tube 2 medium. The
+ * server writes it only in the rows whose formula would not give it (the
+ * formula of the rows before ID H0B has no case for NOT_COLLECTED, none has
+ * one for a body's medium); in the others the formula stays (server/batch.mjs
+ * TYPED_WHERE_FORMULA_FAILS).
+ */
+export const typedWhereFormulaFails = (module: string, field: string) => module === 'Insectary_data' && field === 'T2_Preservation_medium'
+
 /** Values that mean "nothing recorded" in the workbook. */
 export function isBlank(value: CellValue | undefined): boolean {
   return value === null || value === undefined || /^\s*(|NA|N\/A)\s*$/i.test(String(value))
