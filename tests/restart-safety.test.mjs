@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { GoogleSheets } from '../server/sheets.mjs';
 import { SANDBOX_ID } from '../server/workbook.mjs';
 import { until } from './helpers/assistant.mjs';
+import { setPasswordHashCost } from '../server/auth.mjs';
 
 const user = { id: 'editor-1', username: 'editor', role: 'editor' };
 
@@ -48,6 +49,30 @@ test('stopping: saves in progress finish, new ones wait for the next process, /h
   } finally {
     await app.close();
   }
+});
+
+test("stopping does not wait for a page's long wait for news (a deploy's restart stays short)", async () => {
+  setPasswordHashCost(16);
+  const app = await createApp(
+    { databasePath: ':memory:', localMode: true, secureCookies: false, syncIntervalMs: 0, setupToken: 'setup-token-123', pulseWaitMs: 25_000 },
+    { seed: {} },
+  );
+  await app.ready;
+  await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const setup = await fetch(`${base}/api/auth/setup`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: base },
+    body: JSON.stringify({ token: 'setup-token-123', username: 'ana', displayName: 'Ana', password: 'secret12' }),
+  });
+  const cookie = setup.headers.getSetCookie().map(c => c.split(';')[0]).join('; ');
+  const { revision } = await (await fetch(`${base}/api/pulse`, { headers: { cookie } })).json();
+  const waiting = fetch(`${base}/api/pulse?wait=1&revision=${encodeURIComponent(revision)}`, { headers: { cookie } }).catch(e => e);
+  await until(() => app.store.liveWaiters.size === 1);
+  const started = Date.now();
+  await app.close();
+  assert.ok(Date.now() - started < 3000, `closed in ${Date.now() - started} ms`);
+  await waiting;
 });
 
 test('a save left unconfirmed is checked again after the next sync', async () => {

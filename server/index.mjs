@@ -1482,7 +1482,12 @@ export async function createApp(config = {}, options = {}) {
       t3Bridge?.close();
       assistant?.close?.();
       checks.close();
-      await new Promise(resolve => server.close(resolve));
+      // A page's wait for news (wait=1, up to 25 s) would hold the stop until the 5 s limit: what is
+      // still open after a second is cut (the pages ask again, as after any restart).
+      const closed = new Promise(resolve => server.close(resolve));
+      const cut = setTimeout(() => server.closeAllConnections(), 1000);
+      await closed;
+      clearTimeout(cut);
       store.close();
     },
   };
