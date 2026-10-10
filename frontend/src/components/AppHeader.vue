@@ -52,8 +52,9 @@ async function logout() {
   <header class="app-header border-b border-brand-800 bg-brand-700 text-white">
     <!-- One row on wide screens; on phones the tabs get their own full-width row. -->
     <div class="flex flex-wrap items-center gap-x-3 px-3 sm:flex-nowrap sm:px-4">
-      <RouterLink to="/inicio" class="flex shrink-0 items-center gap-2 py-2 font-semibold">
-        <img src="/mark.svg?v=2" alt="" class="h-6 w-6" />
+      <RouterLink to="/inicio" class="flex shrink-0 items-center gap-2 py-1 font-semibold">
+        <!-- The butterfly alone (no tile), with a pale edge for the dark bar. -->
+        <img src="/logo.svg?v=1" alt="" class="h-9 w-auto" />
         <span>Ikiam Insectary DB</span>
       </RouterLink>
       <nav
