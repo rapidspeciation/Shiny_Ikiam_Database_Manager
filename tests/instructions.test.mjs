@@ -7,6 +7,9 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createApp } from '../server/index.mjs';
 import { REPO_ROOT, TOOL_RANGES, createInstructions, frontMatter, parseLog, writeHistory } from '../server/instructions.mjs';
+import { setPasswordHashCost } from '../server/auth.mjs';
+
+setPasswordHashCost(16);
 
 // A checkout with the real assistant/ folder and a short history: the brief was assistant/CLAUDE.md
 // first, then renamed to AGENTS.md; the tool descriptions' blocks changed twice.

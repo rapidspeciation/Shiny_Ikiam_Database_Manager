@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createApp } from '../server/index.mjs';
 import { moduleMap } from '../server/schema.mjs';
+import { setPasswordHashCost } from '../server/auth.mjs';
+
+setPasswordHashCost(16);
 
 const fields = moduleMap.get('Insectary_stocks').fields;
 const col = key => fields.find(f => f.key === key).column;

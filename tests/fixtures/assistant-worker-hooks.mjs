@@ -6,7 +6,8 @@ import { store } from '../../server/assistant-worker.mjs';
 
 parentPort.on('message', m => {
   const name = m?.type === 'mcp' ? m.body?.params?.name : null;
-  if (name === '__hang') for (;;);
+  // Blocked for good without spinning a core (the host stops the thread).
+  if (name === '__hang') Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
   if (name === '__crash') throw new Error('crashed on purpose');
   if (name === '__write') {
     let body;

@@ -9,6 +9,9 @@ import { allIssues, cachedIssues, freshIssues, readyIssues } from '../server/che
 import { createChecksHost } from '../server/checks-host.mjs';
 import { layoutsFeed } from '../server/worker-slot.mjs';
 import { createApp } from '../server/index.mjs';
+import { setPasswordHashCost } from '../server/auth.mjs';
+
+setPasswordHashCost(16);
 
 // The Revisión checks' scan in a worker thread (server/checks-host.mjs), on a database file: the
 // same issues as a scan in the app's thread, kept while the copy is as scanned, and found again

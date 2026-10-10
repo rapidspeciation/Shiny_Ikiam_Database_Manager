@@ -6,6 +6,9 @@ import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { createApp } from '../server/index.mjs';
+import { setPasswordHashCost } from '../server/auth.mjs';
+
+setPasswordHashCost(16);
 
 test('HTTP workflow enforces access, saves exact fields, reverses a selected edit and persists operations', async t => {
   const app = await createApp(

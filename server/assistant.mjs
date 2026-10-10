@@ -639,6 +639,18 @@ export const mcpTools = () =>
   }));
 
 function init(db) {
+  // New tables are made in one transaction (one write to disk, not one per column: server/store.mjs).
+  const fresh = !db.isTransaction && !db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'ai_proposals'").get();
+  if (fresh) db.exec('BEGIN IMMEDIATE');
+  try {
+    initTables(db);
+    if (fresh) db.exec('COMMIT');
+  } catch (e) {
+    if (fresh) db.exec('ROLLBACK');
+    throw e;
+  }
+}
+function initTables(db) {
   db.exec(`CREATE TABLE IF NOT EXISTS ai_threads (
     id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, title TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
   );

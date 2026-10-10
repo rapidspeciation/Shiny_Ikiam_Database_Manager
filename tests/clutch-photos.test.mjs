@@ -9,6 +9,9 @@ import { LocalSheets } from '../server/sheets.mjs';
 import { createApp } from '../server/index.mjs';
 import { addClutchEvent, clutchDay, clutchEvents, ecuadorDay, removeClutchEvent } from '../server/clutches.mjs';
 import { createClutchPhotos, readJpeg } from '../server/clutch-photos.mjs';
+import { setPasswordHashCost } from '../server/auth.mjs';
+
+setPasswordHashCost(16);
 
 const ana = { id: 'u-ana', username: 'ana', displayName: 'Ana Pérez', role: 'editor' };
 const bob = { id: 'u-bob', username: 'bob', displayName: 'Bob Díaz', role: 'editor' };

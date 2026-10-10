@@ -5,6 +5,9 @@ import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { applyBatch } from '../server/batch.mjs';
 import { createApp } from '../server/index.mjs';
+import { setPasswordHashCost } from '../server/auth.mjs';
+
+setPasswordHashCost(16);
 
 const user = { id: 'editor-1', username: 'editor', role: 'editor' };
 const formulaCell = (formula, value) => ({
