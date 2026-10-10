@@ -92,7 +92,8 @@ stay, the other cells take the block above, and Research_purpose is the
 project it was clipped for (`F1/F2 mutation rate` when nobody says). Muertes
 writes it so. A clipped butterfly's body is nearly always preserved (Unknown
 144 of 151, Eaten 28 of 29), so Muertes asks about it, except when nothing is
-left: `Disappearance`, `Ants`, only wings found.
+left: `Disappearance`, `Ants`, only wings found (the wings go in its
+envelope, without a tube).
 
 ## Death, preserved
 

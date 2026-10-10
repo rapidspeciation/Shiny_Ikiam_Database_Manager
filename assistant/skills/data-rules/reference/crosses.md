@@ -47,8 +47,12 @@ documents' folder, citing the document and date): "Protocol for Controlled Cross
    ([insectary-individuals.md](insectary-individuals.md)). Dead 1st–2nd
    instar larvae of families are preserved as well (dead and live siblings
    are wanted), tied to clutch, stage and date.
-7. A parent that dies: preserve whatever remains (wings at least). Found dead
-   → medium per the rules in [samples-ids.md](samples-ids.md).
+7. A parent that dies: its body goes in a tube when there is one (Tube_2,
+   after the wing clip in Tube_1; found dead → medium per the rules in
+   [samples-ids.md](samples-ids.md)), and its wings are always kept in its
+   envelope. With no body left (ants, only wings found) the wings in the
+   envelope are all that is kept: no tube, and the row is written as not
+   preserved ([insectary-individuals.md](insectary-individuals.md)).
 
 ## Where the data goes
 
