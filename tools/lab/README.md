@@ -202,6 +202,18 @@ node tools/lab/pages-load.mjs                      # every page; those over 200 
 node tools/lab/pages-load.mjs --only table,emerged --over 100 --sheet Collection_data
 ```
 
+How fast the pages open in a browser (Chromium): requests, bytes by type, the
+scripts and API calls of the first view, first paint, largest paint and the
+moment the page's own content shows. Each load starts with nothing cached;
+`--warm` measures a second load (HTTP cache and service worker in place).
+Production can be measured as a visitor (Inicio); signed-in pages on the lab app:
+
+```sh
+node tools/lab/load-time.mjs https://ithomiini-ikiam.com --phone --throttle slow4g --cpu 4 --runs 3
+node tools/lab/load-time.mjs http://127.0.0.1:8795 --login ~/.cache/ithomiini-lab/credentials.json \
+  --paths /inicio,/tablas,/colecta --throttle fast4g
+```
+
 ## Cases
 
 `cases.json` in the lab folder:
