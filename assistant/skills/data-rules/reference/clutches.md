@@ -16,14 +16,15 @@ values are typed there.
 
 - One global sequence (1016 in Sep 2026), appended in **pickup order, not
   laying order**: DATE LAID can be earlier than the previous clutch's.
-- All eggs of one mating share one number; batches are `N(k)` with no space.
-  - F1 clutches (Generation `F1`, parents in NOTES, e.g. `A7E♀`): every
-    batch carries its number, the first one too: `1023(1)`, `1023(2)`,
-    `1023(3)`.
-  - Stock clutches (Generation `NA`): the first batch plain `N`, the next
-    ones `N(2)`, `N(3)`…: `1007`, `1007(2)`.
-  - F1 clutches started before 1023 keep a plain first batch (`994`, `1006`,
-    `1012`); their new batches continue as `994(9)`, `1006(6)`.
+- Only F1 clutches have batches, written `N(k)` with no space:
+  - F1 clutches (Generation `F1`, parents in NOTES, e.g. `A7E♀`): all eggs
+    of one couple share one number, and every batch carries its number in
+    parentheses, the first one too: `1022(1)`, `1023(1)`, `1023(2)`.
+  - Stock clutches (Generation `NA`) carry no batch number: each one takes
+    the next plain number of the sequence (`1025`, `1027`).
+  - F1 clutches started before 1022 keep a plain first batch (`994`, `1006`,
+    `1012`, `1013`, `1019`); their new batches continue as `994(9)`,
+    `1006(6)`.
 - Older rows keep theirs (`831 (3)` with a space in 2024–25; `992(1)`).
   Insectary_data writes the clutch exactly as its Insectary_stocks row does.
 - `(F1)` after the number (`994(F1)`) is the generation, not a batch;

@@ -186,7 +186,9 @@ Number of adults · Insectary or lab · Notes*, often over two facing pages;
 lines highlighted in colour are finished clutches.
 
 - `CLUTCH NUMBER`: `994`, `994(7)` = batch 7 of the same couple; `994(F1)` =
-  generation F1, `994(3) F1` = batch 3 of an F1.
+  generation F1, `994(3) F1` = batch 3 of an F1. `(F1)` written in the
+  species cell goes to `Generation` (`F1`); the clutch number stays as
+  written (`1013(2)`).
 - `INSECTARY OR LABORATORY` as written: `ins`, `lab`, `ins/oda`,
   `ins/este`, `ins ESTEBAN` (what looks like `ins/lab` is `ins/oda`).
 - `NOTES`: parents female first: `U8A♀ + C8B♂`.
