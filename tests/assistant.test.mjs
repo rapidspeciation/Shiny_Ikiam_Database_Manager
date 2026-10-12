@@ -228,12 +228,14 @@ test('voice and image calls use configured chat models and return reviewable dra
 });
 
 test('weekly report accepts Sheets serial dates and scans beyond 5000 rows', async () => {
+  // A Sheets serial date two weeks back: the report keeps the last 112 days.
+  const serial = Math.floor(Date.now() / 86400000) + 25569 - 14;
   const rows = Array.from({ length: 5200 }, (_, index) => ({
     id: `row-${index}`,
     sheet: 'Insectary_data',
     row: index + 2,
     version: 1,
-    values: { Insectary_ID: `A${index}`, Sex: 'Female', Intro2Insectary_date: 46200 },
+    values: { Insectary_ID: `A${index}`, Sex: 'Female', Intro2Insectary_date: serial },
     formulas: {},
   }));
   let calls = 0;
