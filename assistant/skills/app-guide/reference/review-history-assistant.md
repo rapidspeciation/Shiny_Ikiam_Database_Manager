@@ -99,6 +99,12 @@ pop-out opens the one for what the panel shows):
   row, all or only those to look at. «Apply N rows» writes them, some hundred
   per save, with a bar showing how far it is; «Read again» reads the folders
   again into the same card (a reading is kept for half an hour).
+- **«Changes to the photo files on Google Drive»** (the assistant's plan to
+  rename, move or remove photo files, skill `photos`): how many of each,
+  which go to Drive's bin and which are renamed `…_todelete` for their owner
+  to delete, what was left out and why, and «See the N changes» for every
+  file. «Apply N changes» makes them with a bar showing how far it is, then
+  Photo_links follows; the assistant takes them back when asked.
 - **Which proposals**: those of the chat open in T3 beside it («Este chat:
   …»; a new chat not sent yet has none; «Último chat: …» when T3 does not say
   which is open), counted in «Cambios propuestos (N)». A selector above the

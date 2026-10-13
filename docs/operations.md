@@ -87,6 +87,8 @@ Docs are exported as Markdown (embedded images left out), Slides as PowerPoint a
 
 The Photo_links sheet is brought up to date with the photo folders on Drive by the assistant's `sync_photo_links` tool (`server/photo-links.mjs`, `server/drive.mjs`): it lists the folders with the app's own Google login (its `drive.metadata.readonly` scope gives names, links, owners and capture times; no file is opened), shows what the sheet lacks and what looks wrong in the new photos (as a card of Cambios propuestos, with its rows and a progress bar), and writes it as ordinary saves once the person agrees, in the chat or with the card's «Aplicar». It needs no setup: the folders listed are those already in Photo_links, and the folder holding them is where new ones are looked for. The sheet's own script (`list_google_drive_files.gs` in the Wings Gallery's repository, menu «📷 Photo Database Tools») writes the same rows and still works.
 
+The assistant's `organize_photos` changes the files themselves (rename, move, remove, new folders, shortcuts; `server/photo-files.mjs`), which the app's login cannot: it uses the project's Google account, an editor of the photo folders, from the credentials file named in `GOOGLE_DRIVE_CREDENTIALS_FILE` (`client_id`, `client_secret`, `refresh_token` with the `drive` scope, mode 600). Without that variable the tool answers that no account is set up. That account bins only the files it owns; another account's file is renamed `…_todelete` for its owner to delete. Each plan's changes are kept in the table `drive_changes` so they can be taken back.
+
 ```sh
 ssh claudeclaw 'systemctl --user start ithomiini-drive-sync.service'   # sync now
 ssh claudeclaw 'journalctl --user -u ithomiini-drive-sync.service -n 20 --no-pager'
