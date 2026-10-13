@@ -94,12 +94,25 @@ function knownId(id, ids) {
  *  - items: the Drive items (driveTree: Map id → item with `parent`).
  *  - home: the folder holding the listed folders (its other folders are offered as not listed yet).
  *  - add: Drive IDs of folders to start listing.
+ *  - scope: when only some folders' files were read, those folders' IDs: the rest of the sheet is left as it is.
  *  - lookups: Map Drive ID → drive.get's answer, for rows whose file `items` lacks (`unknown` in the answer).
- *  - ids: the specimen IDs of the database, in capitals (the new photos' names are checked against them).
- * Answers { edits, creates, unknown, summary }: `edits` [{ id, values, expected }] and `creates`
- * [{ module, values }] as server/batch.mjs takes them.
+ *  - ids: the specimens of the database, Map ID (in capitals) → { date, country } (specimens(); a Set of IDs
+ *    will do): the new photos are checked against them (checkPhotos).
+ * Answers { edits, creates, display, unknown, summary }: `edits` [{ id, values, expected }] and `creates`
+ * [{ module, values, folder }] as server/batch.mjs takes them; `display`, one line per new row (as `creates`)
+ * and then per edit, as the panel lists them.
  */
-export function planPhotoLinks({ rows, items, home = null, add = [], lookups = new Map(), ids = new Set(), timeZone = 'Europe/London' }) {
+export function planPhotoLinks({
+  rows,
+  items,
+  home = null,
+  add = [],
+  scope = null,
+  lookups = new Map(),
+  ids = new Set(),
+  timeZone = 'Europe/London',
+}) {
+  const info = ids instanceof Map ? ids : new Map([...ids].map(id => [id, {}]));
   const status = [];
   const listed = new Map();
   let repeated = 0;
@@ -143,6 +156,7 @@ export function planPhotoLinks({ rows, items, home = null, add = [], lookups = n
     for (let f = item; f; f = f.parent ? items.get(f.parent) : null) parts.unshift(f.name);
     return parts.join('/');
   };
+  const inScope = item => !scope || scope.has(isFolder(item) ? item.id : item.parent);
   const cells = (item, path) => ({
     'Full Path': path,
     Name: item.name,
@@ -156,10 +170,13 @@ export function planPhotoLinks({ rows, items, home = null, add = [], lookups = n
   });
 
   const edits = [];
-  const edit = (r, values, kind) => {
+  const edited = [];
+  const edit = (r, values, kind, shown = {}) => {
     const changed = Object.fromEntries(Object.entries(values).filter(([f, v]) => !same(f, r.values[f], v)));
     if (!Object.keys(changed).length) return false;
     edits.push({ id: r.id, row: r.row, kind, values: changed, expected: Object.fromEntries(Object.keys(changed).map(f => [f, r.values[f] ?? null])) });
+    if (kind !== 'status')
+      edited.push({ change: kind, row: r.row, folder: dirOf(values['Full Path'] ?? r.values['Full Path']), name: values.Name ?? r.values.Name ?? '', ...shown });
     return true;
   };
   const summary = {
@@ -180,12 +197,15 @@ export function planPhotoLinks({ rows, items, home = null, add = [], lookups = n
   // Rows whose file Drive still has.
   const missing = [];
   const emptied = new Set();
+  // With only some folders read, a row's file can be missing only when the row was listed in one of them.
+  const scopePaths = scope ? new Set([...scope].map(id => placeOf(id)?.path).filter(Boolean)) : null;
   for (const [id, r] of listed) {
     const item = items.get(id);
     if (!item) {
-      missing.push([id, r]);
+      if (!scopePaths || scopePaths.has(dirOf(r.values['Full Path']))) missing.push([id, r]);
       continue;
     }
+    if (!inScope(item)) continue;
     const path = pathOf(item);
     if (!path) {
       summary.outside++;
@@ -201,6 +221,7 @@ export function planPhotoLinks({ rows, items, home = null, add = [], lookups = n
       r,
       { ...(renamed || moved ? { 'Full Path': path, Name: item.name } : {}), 'Size KB': sizeKb(item), 'Owner Email': owner(item) },
       renamed ? 'rename' : moved ? 'move' : 'details',
+      renamed ? { from: r.values.Name } : {},
     );
     if (renamed) summary.renamed.push({ row: r.row, from: r.values.Name, to: item.name });
     else if (moved) summary.moved++;
@@ -217,11 +238,14 @@ export function planPhotoLinks({ rows, items, home = null, add = [], lookups = n
     if (!free.has(key)) free.set(key, []);
     free.get(key).push(item);
   }
-  // Rows whose file the listing lacks.
+  // Rows whose file the listing lacks: linked to a file of the same name now in the listed folders, or
+  // emptied once Drive says the file is gone. With only some folders read, the file may be in another
+  // one: Drive is asked first.
   const unknown = [];
   for (const [id, r] of missing) {
+    const found = lookups.get(id);
     const again = r.values.Type === 'File' ? free.get(lower(r.values.Name))?.find(f => !taken.has(f.id)) : null;
-    if (again) {
+    if (again && (!scope || found?.gone)) {
       taken.add(again.id);
       relinkedTo.set(r.id, again.id);
       const { Name: _name, Type: _type, ...link } = cells(again, pathOf(again));
@@ -229,7 +253,6 @@ export function planPhotoLinks({ rows, items, home = null, add = [], lookups = n
       summary.relinked.push({ row: r.row, name: r.values.Name });
       continue;
     }
-    const found = lookups.get(id);
     if (found === undefined) {
       unknown.push(id);
       summary.unchecked++;
@@ -241,17 +264,26 @@ export function planPhotoLinks({ rows, items, home = null, add = [], lookups = n
     } else summary.elsewhere++;
   }
 
-  // Names the sheet holds once the edits are in.
+  // Names the sheet holds once the edits are in, and the butterflies' views they stand for.
   const names = new Map();
+  const views = new Set();
   const renamedTo = new Map(edits.filter(e => e.values.Name).map(e => [e.id, e.values.Name]));
+  const seeView = name => {
+    const parsed = PHOTO.test(name) ? specimenName(name) : null;
+    const id = parsed && !parsed.extra ? knownId(parsed.id, info) : null;
+    if (id) views.add(`${id}|${parsed.view}`);
+  };
   for (const r of rows) {
     if (emptied.has(r.id) || r.values.Type !== 'File') continue;
     const name = renamedTo.get(r.id) ?? r.values.Name;
-    if (!blank(name) && !names.has(lower(name))) names.set(lower(name), relinkedTo.get(r.id) ?? driveIdOf(r.values.URL));
+    if (blank(name)) continue;
+    if (!names.has(lower(name))) names.set(lower(name), relinkedTo.get(r.id) ?? driveIdOf(r.values.URL));
+    seeView(String(name));
   }
 
   // New rows: each listed folder in the order Drive was read, its own row first, then its files by name.
   const creates = [];
+  const display = [];
   const byFolder = [];
   const newFolders = [];
   const sameName = { copies: 0, different: 0, examples: [] };
@@ -265,12 +297,13 @@ export function planPhotoLinks({ rows, items, home = null, add = [], lookups = n
   }
   const byName = (a, b) => a.name.localeCompare(b.name, 'en', { numeric: true });
   for (const folder of items.values()) {
-    if (!isFolder(folder)) continue;
+    if (!isFolder(folder) || !inScope(folder)) continue;
     const place = placeOf(folder.id);
     if (!place) continue;
     let count = 0;
     if (!listed.has(folder.id)) {
-      creates.push({ module: SHEET, values: cells(folder, place.path) });
+      creates.push({ module: SHEET, values: cells(folder, place.path), folder: place.path });
+      display.push({ change: 'folder', folder: place.path, name: folder.name });
       newFolders.push(place.path);
     }
     const files = (children.get(folder.id) || []).filter(f => !isFolder(f));
@@ -289,7 +322,9 @@ export function planPhotoLinks({ rows, items, home = null, add = [], lookups = n
         continue;
       }
       names.set(key, file.id);
-      creates.push({ module: SHEET, values: cells(file, `${place.path}/${file.name}`) });
+      seeView(file.name);
+      creates.push({ module: SHEET, values: cells(file, `${place.path}/${file.name}`), folder: place.path });
+      display.push({ change: 'new', folder: place.path, name: file.name, taken: takenText(file), url: file.webViewLink, file: file.id });
       added.push(file);
       count++;
     }
@@ -297,48 +332,64 @@ export function planPhotoLinks({ rows, items, home = null, add = [], lookups = n
   }
 
   // Folders not listed: those beside the listed ones (offered), and the …_temp ones inside them (set aside).
-  const groups = new Map();
-  const groupOf = folderId => {
-    if (groups.has(folderId)) return groups.get(folderId);
-    const folder = items.get(folderId);
-    let out = null;
-    if (folder && !placeOf(folderId)) {
-      groups.set(folderId, null);
-      if (SET_ASIDE.test(folder.name) && folder.parent && placeOf(folder.parent)) out = { kind: 'aside', id: folderId };
-      else if (home && folder.parent === home) out = { kind: 'beside', id: folderId };
-      else if (folder.parent) out = groupOf(folder.parent);
-    }
-    groups.set(folderId, out);
-    return out;
-  };
-  const tallies = new Map();
-  for (const item of items.values()) {
-    if (isFolder(item) || !item.parent) continue;
-    const group = groupOf(item.parent);
-    if (!group) continue;
-    const t = tallies.get(group.id) ?? tallies.set(group.id, { kind: group.kind, files: 0, photos: 0, named: 0 }).get(group.id);
-    t.files++;
-    if (!PHOTO.test(item.name)) continue;
-    t.photos++;
-    const parsed = specimenName(item.name);
-    if (parsed && knownId(parsed.id, ids)) t.named++;
-  }
-  const folderPath = id => {
-    const parts = [];
-    for (let f = items.get(id); f && f.id !== home; f = f.parent ? items.get(f.parent) : null) parts.unshift(f.name);
-    return parts.join('/');
-  };
   const notListed = [];
   const setAside = [];
-  for (const [id, t] of tallies) {
-    if (t.kind === 'aside') setAside.push({ folder: pathOf(items.get(items.get(id).parent)) + '/' + items.get(id).name, files: t.files });
-    else if (t.named) notListed.push({ folder: folderPath(id), id, files: t.files, photos: t.photos, namedAsSpecimens: t.named });
+  if (!scope) {
+    const groups = new Map();
+    const groupOf = folderId => {
+      if (groups.has(folderId)) return groups.get(folderId);
+      const folder = items.get(folderId);
+      let out = null;
+      if (folder && !placeOf(folderId)) {
+        groups.set(folderId, null);
+        if (SET_ASIDE.test(folder.name) && folder.parent && placeOf(folder.parent)) out = { kind: 'aside', id: folderId };
+        else if (home && folder.parent === home) out = { kind: 'beside', id: folderId };
+        else if (folder.parent) out = groupOf(folder.parent);
+      }
+      groups.set(folderId, out);
+      return out;
+    };
+    const tallies = new Map();
+    for (const item of items.values()) {
+      if (isFolder(item) || !item.parent) continue;
+      const group = groupOf(item.parent);
+      if (!group) continue;
+      const t = tallies.get(group.id) ?? tallies.set(group.id, { kind: group.kind, files: 0, photos: 0, named: 0 }).get(group.id);
+      t.files++;
+      if (!PHOTO.test(item.name)) continue;
+      t.photos++;
+      const parsed = specimenName(item.name);
+      if (parsed && knownId(parsed.id, info)) t.named++;
+    }
+    const folderPath = id => {
+      const parts = [];
+      for (let f = items.get(id); f && f.id !== home; f = f.parent ? items.get(f.parent) : null) parts.unshift(f.name);
+      return parts.join('/');
+    };
+    for (const [id, t] of tallies) {
+      if (t.kind === 'aside') setAside.push({ folder: pathOf(items.get(items.get(id).parent)) + '/' + items.get(id).name, files: t.files });
+      else if (t.named) notListed.push({ folder: folderPath(id), id, files: t.files, photos: t.photos, namedAsSpecimens: t.named });
+    }
+    notListed.sort((a, b) => b.namedAsSpecimens - a.namedAsSpecimens);
   }
-  notListed.sort((a, b) => b.namedAsSpecimens - a.namedAsSpecimens);
+
+  const checked = checkPhotos({
+    added,
+    info,
+    views,
+    photosIn: folderId => (children.get(folderId) || []).filter(f => !isFolder(f) && PHOTO.test(f.name) && !TO_DELETE.test(f.name)),
+    folderOf: file => placeOf(file.parent)?.path ?? '',
+  });
+  for (const line of display) {
+    const flags = line.file ? checked.flags.get(line.file) : null;
+    if (flags?.length) line.checks = flags;
+    delete line.file;
+  }
 
   return {
     edits,
     creates,
+    display: [...display, ...edited],
     unknown: unknown.slice(0, LOOKUPS),
     summary: {
       ...summary,
@@ -348,12 +399,24 @@ export function planPhotoLinks({ rows, items, home = null, add = [], lookups = n
       byFolder,
       sameName,
       leftOut,
-      names: checkNames(added, ids, item => pathOf(items.get(item.parent))),
+      names: checked.summary,
       notListed,
       setAside,
     },
   };
 }
+
+const dirOf = path => String(path ?? '').split('/').slice(0, -1).join('/');
+/** The camera's capture time as text ("2026-07-20 10:15"), or ''. */
+const takenText = file => {
+  const m = /(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2})/.exec(String(file.imageMediaMetadata?.time ?? ''));
+  return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}` : '';
+};
+/** The camera's capture time as milliseconds (its own clock, read as UTC), or null. */
+const takenMs = file => {
+  const m = /(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/.exec(String(file.imageMediaMetadata?.time ?? ''));
+  return m ? Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : null;
+};
 
 /** Cells compared as the sheet keeps them: numbers within a rounding, texts as they are, empty as empty. */
 function same(field, before, after) {
@@ -363,68 +426,178 @@ function same(field, before, after) {
   return String(before ?? '') === String(after ?? '');
 }
 
+/** A session covers nearby IDs: one further than this from every photo around it is out of place (as the Rename Photos app). */
+const SEQUENCE_GAP = 15;
+/** Photos looked at before and after one, in the order they were taken. */
+const AROUND = 3;
+/** A folder is one country's when this share of its photos (and at least FOLDER_PHOTOS of them) are of butterflies from it. */
+const FOLDER_SHARE = 0.7;
+const FOLDER_PHOTOS = 20;
+
 /**
- * The new photos' names against what the sheets look up: Photo_dorsal and Photo_ventral find
- * <ID>d.JPG and <ID>v.JPG (capitals aside) of an ID in the database (`linked`); the CRISPR sheet
- * also takes .HEIC and a first extra view (d1, v1), counted with the other extra views and formats
- * (`otherViews`). RAW files and other files are not looked up.
+ * The new photos against the workbook and the photos around them. `flags`: Map file ID → what to look at,
+ * each { kind, … }; `summary`: the counts, with examples (each with the photo's `url` on Drive).
+ *  - rename: Photo_dorsal and Photo_ventral look up <ID>d.JPG and <ID>v.JPG (capitals aside); this name
+ *    is another way of writing it (`to`: the name they find).
+ *  - unknownId: the ID is not in the workbook (`maybe`: when it is out of order too, workbook IDs one character
+ *    away that fit the photos around it and have no such photo yet).
+ *  - unnamed: not a specimen's name (the camera's).
+ *  - outOfOrder: its ID is far from those of the photos taken just before and after it in its folder
+ *    (`around`), which is how a misread ID looks.
+ *  - unpaired: the butterfly's other view is in no listed folder (`missing`).
+ *  - beforeCollection: taken before the butterfly was collected or preserved (`days` before `date`), so the
+ *    ID is another butterfly's.
+ *  - otherCountry: the butterfly is from another country (`country`) than nearly all in its folder (`folder`).
+ * `linked` counts the photos the sheets find as they are; `otherViews` the extra views and other formats
+ * (.HEIC), which only the CRISPR sheet looks up. RAW files and other files are not checked.
  */
-function checkNames(files, ids, folderOf) {
-  const out = { photos: 0, linked: 0, butterflies: 0, otherViews: 0, rename: [], unknownId: [], unnamed: [] };
-  if (!ids.size) return null;
-  const linked = new Set();
-  const counts = { rename: 0, unknownId: 0, unnamed: 0 };
-  const note = (kind, entry) => {
-    counts[kind]++;
-    if (out[kind].length < EXAMPLES) out[kind].push(entry);
+function checkPhotos({ added, info, views, photosIn, folderOf }) {
+  const flags = new Map();
+  const kinds = ['rename', 'unknownId', 'unnamed', 'outOfOrder', 'unpaired', 'beforeCollection', 'otherCountry'];
+  const found = Object.fromEntries(kinds.map(k => [k, { count: 0, examples: [] }]));
+  const out = { photos: 0, linked: 0, butterflies: 0, otherViews: 0 };
+  if (!info.size) return { flags, summary: null };
+  const flag = (file, kind, detail = {}) => {
+    if (!flags.has(file.id)) flags.set(file.id, []);
+    flags.get(file.id).push({ kind, ...detail });
+    found[kind].count++;
+    if (found[kind].examples.length < EXAMPLES) found[kind].examples.push({ name: file.name, in: folderOf(file), url: file.webViewLink, ...detail });
   };
-  for (const file of files) {
+  const read = file => {
+    const parsed = specimenName(file.name);
+    // The ID as written, without separators ("CAMO77986" with its letter O as a zero), and its number in its series.
+    const written = parsed
+      ? parsed.id
+          .replace(/[\s_-]+/g, '')
+          .toUpperCase()
+          .replace(/^CAM[O\d]+$/, t => t.replace(/O/g, '0'))
+      : null;
+    const number = written ? /^(\D*)(\d+)$/.exec(written) : null;
+    return {
+      file,
+      parsed,
+      id: parsed ? knownId(parsed.id, info) : null,
+      written,
+      series: number ? number[1] : null,
+      n: number ? Number(number[2]) : null,
+      t: takenMs(file),
+    };
+  };
+  // A folder's photos in the order they were taken, and the country nearly all its butterflies are from.
+  const folders = new Map();
+  const folderInfo = folderId => {
+    if (folders.has(folderId)) return folders.get(folderId);
+    const photos = photosIn(folderId).map(read);
+    const timed = photos.filter(x => x.t !== null && x.n !== null).sort((a, b) => a.t - b.t || a.file.name.localeCompare(b.file.name));
+    const countries = new Map();
+    let known = 0;
+    for (const x of photos) {
+      const country = x.id ? info.get(x.id)?.country : null;
+      if (!country) continue;
+      known++;
+      countries.set(country, (countries.get(country) || 0) + 1);
+    }
+    const [top, n] = [...countries].sort((a, b) => b[1] - a[1])[0] ?? [null, 0];
+    const about = { timed, at: new Map(timed.map((x, i) => [x.file.id, i])), country: known >= FOLDER_PHOTOS && n / known >= FOLDER_SHARE ? top : null };
+    folders.set(folderId, about);
+    return about;
+  };
+  // Workbook IDs without a photo of a view, by length (an unknown ID is compared with those one character away).
+  let lacking = null;
+  const oneAway = (written, view, fits) => {
+    lacking ??= [...info.keys()];
+    const near = [];
+    for (const id of lacking) {
+      if (id.length !== written.length || views.has(`${id}|${view}`)) continue;
+      let differ = 0;
+      for (let i = 0; i < id.length && differ < 2; i++) if (id[i] !== written[i]) differ++;
+      if (differ === 1 && fits(Number(/(\d+)$/.exec(id)?.[1]))) near.push(id);
+      if (near.length === 3) break;
+    }
+    return near;
+  };
+
+  const linked = new Set();
+  for (const file of added) {
     if (!PHOTO.test(file.name) || RAW.test(file.name)) continue;
     out.photos++;
-    const parsed = specimenName(file.name);
-    if (!parsed) {
-      note('unnamed', { name: file.name, in: folderOf(file) });
+    const x = read(file);
+    if (!x.parsed) {
+      flag(file, 'unnamed');
       continue;
     }
-    const id = knownId(parsed.id, ids);
-    if (!id) {
-      note('unknownId', { name: file.name, in: folderOf(file) });
+    const about = folderInfo(file.parent);
+    const at = about.at.get(file.id);
+    // The photos of other butterflies of its series taken just before and after it.
+    const near =
+      at === undefined
+        ? []
+        : [...about.timed.slice(Math.max(0, at - AROUND), at), ...about.timed.slice(at + 1, at + 1 + AROUND)].filter(
+            y => y.written !== x.written && y.series === x.series,
+          );
+    const fits = n => near.some(y => Math.abs(y.n - n) <= SEQUENCE_GAP);
+    const outOfOrder = near.length > 0 && !fits(x.n);
+    if (outOfOrder) {
+      const before = about.timed.slice(0, at).findLast(y => y.written !== x.written);
+      const after = about.timed.slice(at + 1).find(y => y.written !== x.written);
+      flag(file, 'outOfOrder', { around: [before?.written, after?.written].filter(Boolean) });
+    }
+    if (!x.id) {
+      // Out of order too: a workbook ID one character away that fits the photos around it is likely the one meant.
+      const maybe = outOfOrder ? oneAway(x.written, x.parsed.view, fits) : [];
+      flag(file, 'unknownId', maybe.length ? { maybe } : {});
       continue;
     }
     // A .jpeg takes the .JPG the lookups expect; another format keeps its own.
-    const jpeg = /^jpe?g$/i.test(parsed.ext);
-    const right = `${id}${parsed.view}${parsed.extra}.${jpeg ? 'JPG' : parsed.ext}`;
-    if (file.name.toUpperCase() !== right.toUpperCase()) {
-      note('rename', { name: file.name, to: right, in: folderOf(file) });
-      continue;
-    }
-    if (parsed.extra || !jpeg) out.otherViews++;
+    const jpeg = /^jpe?g$/i.test(x.parsed.ext);
+    const right = `${x.id}${x.parsed.view}${x.parsed.extra}.${jpeg ? 'JPG' : x.parsed.ext}`;
+    const exact = file.name.toUpperCase() === right.toUpperCase();
+    if (!exact) flag(file, 'rename', { to: right });
+    else if (x.parsed.extra || !jpeg) out.otherViews++;
     else {
       out.linked++;
-      linked.add(id);
+      linked.add(x.id);
     }
+    if (!x.parsed.extra && !views.has(`${x.id}|${x.parsed.view === 'd' ? 'v' : 'd'}`))
+      flag(file, 'unpaired', { missing: x.parsed.view === 'd' ? 'ventral' : 'dorsal' });
+    const specimen = info.get(x.id) ?? {};
+    if (x.t !== null && typeof specimen.date === 'number') {
+      const day = Math.floor((x.t - SHEETS_EPOCH) / 86_400_000);
+      if (day < Math.floor(specimen.date)) flag(file, 'beforeCollection', { days: Math.floor(specimen.date) - day, date: isoDay(specimen.date) });
+    }
+    if (about.country && specimen.country && specimen.country !== about.country)
+      flag(file, 'otherCountry', { country: specimen.country, folder: about.country });
   }
   out.butterflies = linked.size;
-  for (const kind of ['rename', 'unknownId', 'unnamed']) out[kind] = { count: counts[kind], examples: out[kind] };
-  return out;
+  return { flags, summary: { ...out, ...found } };
 }
+const isoDay = serial => new Date(SHEETS_EPOCH + Math.floor(serial) * 86_400_000).toISOString().slice(0, 10);
 
-/** The specimen IDs photos are named after: the CAM_ID columns of the sheets that show photos. */
-export function specimenIds(store) {
-  const ids = new Set();
-  const read = (sheet, field) => {
-    for (const r of store.db
-      .prepare(`SELECT DISTINCT json_extract(values_json, '$."${field}"') v FROM records WHERE sheet=? AND missing=0 AND observed=1`)
-      .all(sheet)) {
-      const v = String(r.v ?? '').trim();
-      if (v && !/^(NA|N\/A|not given|to be assigned)$/i.test(v)) ids.add(v.toUpperCase());
+/**
+ * The specimens photos are named after: Map ID (in capitals) → { date, country }, from the CAM_ID
+ * columns of the sheets that show photos. `date`: the earliest day the butterfly could be photographed
+ * (collected in the field; preserved, dead or brought in at the insectary); `country`: where it was collected.
+ */
+export function specimens(store) {
+  const out = new Map();
+  const text = v => String(v ?? '').trim();
+  const read = (sheet, field, dates, country = null) => {
+    for (const r of store.db.prepare('SELECT values_json FROM records WHERE sheet=? AND missing=0 AND observed=1').all(sheet)) {
+      const values = JSON.parse(r.values_json);
+      const id = text(values[field]).toUpperCase();
+      if (!id || /^(NA|N\/A|NOT GIVEN|TO BE ASSIGNED)$/.test(id)) continue;
+      const entry = out.get(id) ?? out.set(id, {}).get(id);
+      const date = dates.map(f => values[f]).find(v => typeof v === 'number');
+      if (date !== undefined && !(entry.date <= date)) entry.date = date;
+      const where = country ? text(values[country]) : '';
+      if (where && !/^(NA|NOT_FOUND|NOT_PROVIDED)$/i.test(where)) entry.country ??= where;
     }
   };
-  read('Collection_data', 'CAM_ID');
-  read('Collection_data', 'CAM_ID_insectary');
-  read('Insectary_data', 'CAM_ID');
-  read('CRISPR', 'CAM_ID');
-  return ids;
+  read('Collection_data', 'CAM_ID', ['Collection_date'], 'Country');
+  read('Collection_data', 'CAM_ID_insectary', ['Collection_date'], 'Country');
+  read('Insectary_data', 'CAM_ID', ['Preservation_date', 'Death_date', 'Intro2Insectary_date']);
+  read('CRISPR', 'CAM_ID', []);
+  return out;
 }
 
 /** The sheet's rows as planPhotoLinks takes them. */
@@ -438,12 +611,41 @@ export function photoLinkRows(store) {
 /** A folder named by its Drive ID or link. */
 const folderIdIn = text => driveIdOf(text) ?? (/^[\w-]{20,}$/.test(String(text).trim()) ? String(text).trim() : null);
 
+/** The folders named in `texts` (a Drive link or ID, a path from `home`, or a name no other folder has): { ids, notFound }. */
+function namedFolders(texts, items, home) {
+  const ids = [];
+  const notFound = [];
+  const folders = [...items.values()].filter(f => f.mimeType === FOLDER && f.id !== home);
+  const pathFromHome = item => {
+    const parts = [];
+    for (let f = item; f && f.id !== home; f = f.parent ? items.get(f.parent) : null) parts.unshift(f.name);
+    return parts.join('/');
+  };
+  for (const text of texts) {
+    // A link or an ID (a long name without spaces looks like one: it is then looked for by name).
+    const linked = folderIdIn(text);
+    if (linked && items.get(linked)?.mimeType === FOLDER) {
+      ids.push(linked);
+      continue;
+    }
+    const wanted = lower(String(text).trim().replace(/^\/+|\/+$/g, ''));
+    const byPath = folders.filter(f => lower(pathFromHome(f)) === wanted || lower(pathFromHome(f)).endsWith(`/${wanted}`));
+    const named = byPath.length ? byPath : folders.filter(f => lower(f.name) === wanted);
+    if (named.length === 1) ids.push(named[0].id);
+    else notFound.push(text);
+  }
+  return { ids, notFound };
+}
+
 /**
  * Reads the photo folders and compares them with the sheet: planPhotoLinks' answer plus
- * `read` { folders, files, requests, seconds }. `add`: folders to start listing, each a name or
- * path among those the last reading offered (`notListed`), or a Drive link or ID.
+ * `read` { folders, files, requests, seconds, rows }.
+ *  - add: folders to start listing, each a name or path among those the last reading offered
+ *    (`notListed`), or a Drive link or ID.
+ *  - only: the folders to bring up to date (with what they hold), named the same way. Only their
+ *    files are read (the folders' names of the rest, to place them), and the rest of the sheet is left as it is.
  */
-export async function scanPhotoLinks({ store, drive, add = [], timeZone = 'Europe/London' }) {
+export async function scanPhotoLinks({ store, drive, add = [], only = [], timeZone = 'Europe/London' }) {
   const started = Date.now();
   const rows = photoLinkRows(store);
   const rootIds = rows
@@ -457,32 +659,28 @@ export async function scanPhotoLinks({ store, drive, add = [], timeZone = 'Europ
     if (parent && !rootIds.includes(parent)) parents.set(parent, (parents.get(parent) || 0) + 1);
   }
   const home = [...parents].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
-  const byLink = add.map(folderIdIn);
-  const items = await driveTree(drive, [...(home ? [home] : []), ...rootIds, ...byLink.filter(Boolean)]);
+  const tops = [...(home ? [home] : []), ...rootIds, ...[...add, ...only].map(folderIdIn).filter(Boolean)];
+  const items = await driveTree(drive, tops, { foldersOnly: only.length > 0 });
+  const added = namedFolders(add, items, home);
+  const chosen = namedFolders(only, items, home);
 
-  // Folders named by name or path, among those under the folder that holds the listed ones.
-  const addIds = [];
-  const notFound = [];
-  const pathFromHome = item => {
-    const parts = [];
-    for (let f = item; f && f.id !== home; f = f.parent ? items.get(f.parent) : null) parts.unshift(f.name);
-    return parts.join('/');
-  };
-  for (const [i, text] of add.entries()) {
-    if (byLink[i]) {
-      if (items.get(byLink[i])?.mimeType === FOLDER) addIds.push(byLink[i]);
-      else notFound.push(text);
-      continue;
-    }
-    const wanted = lower(String(text).trim().replace(/^\/+|\/+$/g, ''));
-    const folders = [...items.values()].filter(f => f.mimeType === FOLDER && f.id !== home);
-    const match = folders.filter(f => lower(pathFromHome(f)) === wanted);
-    const named = match.length ? match : folders.filter(f => lower(f.name) === wanted);
-    if (named.length === 1) addIds.push(named[0].id);
-    else notFound.push(text);
+  // Only some folders: they and the folders inside them, with their files.
+  let scope = null;
+  if (only.length) {
+    scope = new Set(chosen.ids);
+    for (const item of items.values()) if (item.mimeType === FOLDER && item.parent && scope.has(item.parent)) scope.add(item.id);
+    const queue = [...scope];
+    await Promise.all(
+      Array.from({ length: 8 }, async () => {
+        while (queue.length) {
+          const folderId = queue.shift();
+          for (const item of await drive.children(folderId)) if (!items.has(item.id)) items.set(item.id, { ...item, parent: folderId });
+        }
+      }),
+    );
   }
 
-  const input = { rows, items, home, add: addIds, ids: specimenIds(store), timeZone };
+  const input = { rows, items, home, add: added.ids, scope, ids: specimens(store), timeZone };
   let plan = planPhotoLinks(input);
   if (plan.unknown.length) {
     const lookups = new Map();
@@ -500,7 +698,8 @@ export async function scanPhotoLinks({ store, drive, add = [], timeZone = 'Europ
   const all = [...items.values()];
   return {
     ...plan,
-    notFound,
+    notFound: [...added.notFound, ...chosen.notFound],
+    only: scope ? chosen.ids.map(id => items.get(id).name) : null,
     read: {
       folders: all.filter(isFolder).length,
       files: all.length - all.filter(isFolder).length,

@@ -47,6 +47,8 @@ const ProposalGrid = defineAsyncComponent({
   },
   delay: 150,
 })
+/** A reading of the photo folders on Drive for Photo_links (sync_photo_links): its own card. */
+const PhotoLinksCard = defineAsyncComponent(() => import('./PhotoLinksCard.vue'))
 /** «Revisar con la foto»: a proposal's table with its notebook photo (pan and zoom load apart too). */
 const PhotoReview = defineAsyncComponent(() => import('./PhotoReview.vue'))
 /** A table of rows the assistant shows (show_rows): read-only, also with Tabulator. */
@@ -135,6 +137,7 @@ const others = computed(() => elsewhere(scope.value, chats.value))
 const mixed = computed(() => !scope.value || scope.value.chat === 'all' || scope.value.chat === 'app')
 
 const isTable = (p: Proposal) => p.kind === 'table'
+const isSync = (p: Proposal) => p.kind === 'photo_links'
 /**
  * Proposals from the oldest rows of the sheet to the newest, so they are reviewed and applied in the
  * sheet's order: by sheet, then the first existing row each one changes (one with only new rows after
@@ -165,7 +168,7 @@ const cards = computed(() =>
   props.only ? mine.value : [...mine.value.filter(p => open(p) && isTable(p)), ...pending.value],
 )
 /** A card's room before its table is built. */
-const heightOf = (p: Proposal) => cardHeight(isTable(p) ? (p.rows?.length ?? 0) : p.changes.length)
+const heightOf = (p: Proposal) => cardHeight(isTable(p) ? (p.rows?.length ?? 0) : isSync(p) ? 6 + (p.sync?.byFolder?.length ?? 0) : p.changes.length)
 watch(
   () => pending.value.length,
   n => emit('count', n),
@@ -427,6 +430,11 @@ async function apply(proposal: Proposal, indexes: number[], at: number | undefin
     applying.value = null
   }
 }
+/** A reading of the photo folders began to be written: the list brings its progress from here on. */
+function started(proposal: Proposal) {
+  proposal.status = 'applying'
+  proposal.digest = undefined
+}
 /** «Descartar» a proposal, or «Cerrar» a table of rows. */
 async function discard(proposal: Proposal) {
   try {
@@ -617,6 +625,7 @@ const origin = (p: Proposal) =>
         </p>
         <WhenSeen v-else :height="heightOf(p)">
           <RowsTable v-if="isTable(p)" :table="p" @close="discard(p)" @photo="n => review(p, n)" />
+          <PhotoLinksCard v-else-if="isSync(p)" :proposal="p" @discard="discard(p)" @started="started(p)" />
           <ProposalGrid
             v-else
             :proposal="p"
@@ -646,7 +655,10 @@ const origin = (p: Proposal) =>
           :class="{ 'ring-2 ring-emerald-400': arrived.has(p.id) }"
         >
           <p class="mt-2 px-1 text-[11px] text-stone-500">{{ origin(p) }}</p>
-          <WhenSeen :height="heightOf(p)"><ProposalGrid :proposal="p" @photo="n => review(p, n)" /></WhenSeen>
+          <WhenSeen :height="heightOf(p)">
+            <PhotoLinksCard v-if="isSync(p)" :proposal="p" />
+            <ProposalGrid v-else :proposal="p" @photo="n => review(p, n)" />
+          </WhenSeen>
         </div>
       </details>
     </div>

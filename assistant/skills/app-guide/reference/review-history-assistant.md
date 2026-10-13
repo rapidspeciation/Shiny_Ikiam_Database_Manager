@@ -89,6 +89,16 @@ pop-out opens the one for what the panel shows):
   doubtful cells it asks first («Revisarlas», «Aplicar sin las dudosas»,
   «Aplicar todo igualmente», «Cancelar»). «Descartar» drops the proposal;
   «Revisados hace poco (N)» keeps the last five.
+- **«Photo_links ← Google Drive»** (the photo folders read by the
+  assistant, skill `photos`): the new photos by folder, each with a checkbox
+  (unticked: left for later), the rows that follow a renamed, replaced or
+  deleted file, and under «To look at» what looks wrong in the new photos (a
+  name the sheets will not find, an ID the workbook lacks, one out of the
+  order the photos were taken in…), each opening its examples; a photo's
+  name opens it on Drive. «See the N rows that would be written» lists every
+  row, all or only those to look at. «Apply N rows» writes them, some hundred
+  per save, with a bar showing how far it is; «Read again» reads the folders
+  again into the same card (a reading is kept for half an hour).
 - **Which proposals**: those of the chat open in T3 beside it («Este chat:
   …»; a new chat not sent yet has none; «Último chat: …» when T3 does not say
   which is open), counted in «Cambios propuestos (N)». A selector above the

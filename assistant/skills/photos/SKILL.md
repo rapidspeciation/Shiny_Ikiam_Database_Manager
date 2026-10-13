@@ -21,8 +21,9 @@ description: The photos of the butterflies' wings, from the camera to the workbo
    (https://rapidspeciation.github.io/Shiny_Ikiam_Wings_Gallery/) reads the
    same sheets when someone presses its «Update DB».
 
-Step 4 is the one people forget: photos that are on Drive but not in
-Photo_links show `NOT FOUND` (`Not Found` in Collection_data) in their row.
+Photos that are on Drive but not yet in Photo_links show `NOT FOUND`
+(`Not Found` in Collection_data) in their row: step 4 is what makes them
+appear.
 
 ## File names
 
@@ -99,30 +100,40 @@ https://github.com/Fr4nzz/rename_photos_AI.
 
 ## Updating Photo_links
 
-`sync_photo_links` reads the Drive folders and says what the sheet lacks;
-nothing is written until the person agrees. From its answer, tell the person:
+`sync_photo_links` reads the Drive folders and compares them with the sheet:
+about half a minute for every folder, a few seconds with `only` when the
+person names the folder they uploaded to. Nothing is written until the person
+agrees, in the chat or with «Apply» on the card that opens beside the chat
+(«Proposed changes»): the card lists every row, a folder can be unticked
+there to leave it for later, and a bar shows the writing as it goes (about
+7 seconds per 400 rows; other people's saves wait their turn between two of
+them, so say so before a large one).
 
-- how many photos are new, by folder;
-- the new photos the sheets will not find, with the name each needs
-  (`rename`), and those still carrying the camera's name (`unnamed`);
-- photos named after an ID the workbook lacks (`unknownId`): the row is not
-  typed yet, or the ID was misread (look at the envelope in the photo);
-- files with the name of a photo already listed that are another photo
-  (`sameName.different`): one of the two is misnamed, or the CAM was used on
-  two butterflies (skill `data-rules`, duplicates);
-- folders with specimen photos that are not listed (`notListed`): ask whether
-  to list them.
+Its answer is also a check of the new photos. Before asking whether to
+write, say what it found, what it most likely is and what you suggest:
 
-Files with a name to correct can be listed as they are and renamed later:
-the row follows its file at the next `sync_photo_links`. Many files to
+| Found | Most likely | What to do |
+|---|---|---|
+| `rename` | another way of writing the name (`CAM077986_d.jpg`) | rename to the name in `to`; a whole folder named that way can be renamed in one go (below) |
+| `unnamed` | the photo was not renamed (`IMG_5069.JPG`), or shows no envelope | look at it; rename it or move it to a `_temp` folder |
+| `unknownId` | the butterfly's row is not typed yet (IDs running on after the sheet's last ones), or the ID was misread (it is `outOfOrder` too; `maybe` is the workbook ID one character away that fits) | ask which; a misread one is renamed |
+| `outOfOrder` | a misread ID: `around` are the IDs photographed just before and after it | look at the photo's envelope |
+| `unpaired` | the other view was not photographed, or carries another name (often the `outOfOrder` or `unknownId` photo beside it) | find it among those, or ask for the photo |
+| `beforeCollection` | the ID belongs to another butterfly: this one was not collected yet | look at the envelope; check the row's date |
+| `otherCountry` | a photo uploaded to the wrong folder, or one CAM used for two butterflies (skill `data-rules`, duplicates) | compare the envelope with both rows |
+| `sameName.different` | two photos share a name: one is misnamed, or the CAM was used twice | compare the two photos |
+| `notListed` | a new folder nobody asked to list | ask whether to list it (`add`) |
+
+When a name is in doubt, look at the photo: each example has its `url`, and
+the project's Google account downloads it (skill `google-account`,
+`gog drive download <fileId>`, the ID in the `url`); the envelope in it shows
+the ID. A few photos at a time: each is several megabytes.
+
+Photos with something to look at can be listed as they are and corrected
+later: the row follows its file at the next `sync_photo_links`. Many files to
 rename the same way (an underscore to remove in a whole folder) can be
-renamed on Drive with the project's Google account (skill `google-account`,
-`gog drive rename <fileId> <newName>`): show the person the list of old and
-new names first.
-
-Thousands of new rows take several minutes to write, some hundred per save,
-and the workbook recalculates its photo links after each one, so other
-people's saves wait their turn meanwhile: say so before a large one.
+renamed on Drive with the project's Google account (`gog drive rename
+<fileId> <newName>`): show the person the list of old and new names first.
 
 The sheet's own menu «📷 Photo Database Tools» (Append New Files Only, Full
 Sync) writes the same rows from Google Sheets; either can be used.

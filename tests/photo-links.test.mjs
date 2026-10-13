@@ -158,7 +158,7 @@ test('the plan: new files of the listed folders, rows following their file, name
   assert.equal(s.names.photos, 4);
   assert.equal(s.names.linked, 1);
   assert.equal(s.names.butterflies, 1);
-  assert.deepEqual(s.names.rename, { count: 1, examples: [{ name: 'CAM000003_v.jpg', to: 'CAM000003v.JPG', in: 'Wild/Ecuador_2026' }] });
+  assert.deepEqual(s.names.rename, { count: 1, examples: [{ name: 'CAM000003_v.jpg', in: 'Wild/Ecuador_2026', url: fileUrl(21), to: 'CAM000003v.JPG' }] });
   assert.equal(s.names.unknownId.count, 1);
   assert.equal(s.names.unnamed.examples[0].name, 'IMG_0271.JPG');
 
@@ -259,6 +259,93 @@ test('sync_photo_links reads, then writes once confirmed', async () => {
   }
 });
 
+test('the checks: out of the order the photos were taken in, a view missing, another date or country', async () => {
+  const at = (minute, extra = {}) => ({ imageMediaMetadata: { time: `2026:07:20 10:${String(minute).padStart(2, '0')}:00` }, ...extra });
+  const files = [folder(1, 'Photos'), folder(2, 'Peru_2026', 1)];
+  // A session of CAM000101…CAM000112 in order, with CAM000950 in the middle of it.
+  for (let i = 0; i < 12; i++) {
+    files.push(file(100 + 2 * i, `CAM${String(101 + i).padStart(6, '0')}d.JPG`, 2, at(2 * i)));
+    if (i !== 3) files.push(file(101 + 2 * i, `CAM${String(101 + i).padStart(6, '0')}v.JPG`, 2, at(2 * i + 1)));
+  }
+  files.push(file(200, 'CAM000950d.JPG', 2, at(9)), file(201, 'CAM000950v.JPG', 2, at(9)));
+  const ids = new Map();
+  for (let i = 0; i < 12; i++) ids.set(`CAM${String(101 + i).padStart(6, '0')}`, { country: i < 11 ? 'Peru' : 'Brazil', date: i === 5 ? 46250 : 46000 });
+  // One character from the name out of order, and it fits the photos around it.
+  ids.set('CAM000150', { country: 'Peru' });
+  const items = await driveTree(new LocalDrive(files), [id(1)]);
+  const rows = [{ id: 'r2', row: 2, values: row(2, 'Peru_2026', 'Folder') }];
+  // The folder is one country's only with enough photos of it.
+  const plan = planPhotoLinks({ rows, items, home: id(1), ids });
+  const n = plan.summary.names;
+  assert.deepEqual(n.outOfOrder.examples.map(e => [e.name, e.around]), [
+    ['CAM000950d.JPG', ['CAM000105', 'CAM000106']],
+    ['CAM000950v.JPG', ['CAM000105', 'CAM000106']],
+  ]);
+  assert.deepEqual(n.unknownId.examples.map(e => [e.name, e.maybe]), [
+    ['CAM000950d.JPG', undefined],
+    ['CAM000950v.JPG', undefined],
+  ]);
+  assert.deepEqual(n.unpaired.examples.map(e => [e.name, e.missing]), [['CAM000104d.JPG', 'ventral']]);
+  // CAM000106's date is after its photos' day.
+  assert.equal(n.beforeCollection.count, 2);
+  assert.equal(n.beforeCollection.examples[0].name, 'CAM000106d.JPG');
+  assert.ok(n.beforeCollection.examples[0].days > 0);
+  assert.equal(n.beforeCollection.examples[0].date, '2026-08-16');
+  assert.deepEqual(n.otherCountry.examples.map(e => [e.name, e.country, e.folder]), [
+    ['CAM000112d.JPG', 'Brazil', 'Peru'],
+    ['CAM000112v.JPG', 'Brazil', 'Peru'],
+  ]);
+  // The panel's lines carry the same flags.
+  const line = plan.display.find(d => d.name === 'CAM000104d.JPG');
+  assert.deepEqual(line, { change: 'new', folder: 'Peru_2026', name: 'CAM000104d.JPG', taken: '2026-07-20 10:06', url: fileUrl(106), checks: [{ kind: 'unpaired', missing: 'ventral' }] });
+  assert.equal(plan.display.length, plan.creates.length);
+
+  // An unknown ID out of order: the workbook ID one character away that fits is offered.
+  const typo = [folder(1, 'Photos'), folder(2, 'Peru_2026', 1)];
+  for (let i = 0; i < 6; i++) typo.push(file(100 + i, `CAM${String(145 + i).padStart(6, '0')}d.JPG`, 2, at(2 * i)));
+  typo.push(file(300, 'CAM000950d.JPG', 2, at(5)));
+  const known = new Map([...Array(6)].map((_, i) => [`CAM${String(145 + i).padStart(6, '0')}`, {}]));
+  known.set('CAM000151', {});
+  const second = planPhotoLinks({ rows, items: await driveTree(new LocalDrive(typo), [id(1)]), home: id(1), ids: known });
+  // CAM000950 is not in the workbook; CAM000150 has its photo already, so nothing one character away is free.
+  assert.deepEqual(second.summary.names.unknownId.examples.map(e => e.maybe), [undefined]);
+  known.set('CAM000900', {});
+  const third = planPhotoLinks({ rows, items: await driveTree(new LocalDrive(typo), [id(1)]), home: id(1), ids: known });
+  // …and CAM000900, free and one character away, is far from the photos around it: not offered either.
+  assert.deepEqual(third.summary.names.unknownId.examples.map(e => e.maybe), [undefined]);
+  // CAM000751 is one character from CAM000151, which has no photo and fits the photos around: likely the one meant.
+  typo.push(file(301, 'CAM000751d.JPG', 2, at(9)));
+  const fourth = planPhotoLinks({ rows, items: await driveTree(new LocalDrive(typo), [id(1)]), home: id(1), ids: known });
+  assert.deepEqual(fourth.summary.names.unknownId.examples.find(e => e.name === 'CAM000751d.JPG').maybe, ['CAM000151']);
+});
+
+test('only some folders: their files are read, and the rest of the sheet is left as it is', async () => {
+  const { store } = await fixture();
+  const local = new LocalDrive(drive());
+  const tool = createPhotoLinksTool({ store, config: { drive: local } });
+  const kim = { id: 'kim', username: 'kim', role: 'editor' };
+  try {
+    const read = await tool.run({ only: ['Ecuador_2026'] }, kim);
+    assert.deepEqual(read.onlyFolders, ['Ecuador_2026']);
+    // CAM000001v.JPG too: the sheet has no row of that name while the folder above is not looked at.
+    assert.equal(read.changes.newFiles, 6);
+    // The renamed, replaced and deleted files of the folder above are not looked at.
+    assert.equal(read.changes.renamed, undefined);
+    assert.equal(read.changes.removed, undefined);
+    assert.equal(read.notListed, undefined);
+    assert.equal(read.drive.files, 8);
+    const done = await tool.run({ confirmed: true, scan: read.scan, skip: [] }, kim);
+    assert.equal(done.status, 'done');
+    // The folder above, by its name: its own files and those inside it.
+    const all = await tool.run({ only: ['wild'] }, kim);
+    assert.deepEqual(all.changes.removed, [{ row: 6, path: 'Wild/CAM000008d.JPG' }]);
+    assert.equal(all.changes.renamed.length, 1);
+    assert.deepEqual((await tool.run({ only: ['nowhere'] }, kim)).foldersNotFound, ['nowhere']);
+  } finally {
+    store.close();
+  }
+});
+
 test('the assistant offers sync_photo_links to editors', async () => {
   const { store } = await fixture();
   const assistant = createAssistant({ store, config: { drive: new LocalDrive(drive()) } });
@@ -275,6 +362,122 @@ test('the assistant offers sync_photo_links to editors', async () => {
     assert.equal(read.changes.newFiles, 5);
     assert.equal(read.sheetRows, 6);
   } finally {
+    store.close();
+  }
+});
+
+test('a reading is a card of Cambios propuestos: its rows, «Aplicar» with a folder left for later, its progress', async () => {
+  const { sheets, store } = await fixture();
+  const assistant = createAssistant({ store, config: { drive: new LocalDrive(drive()) } });
+  store.db
+    .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
+    .run(createHash('sha256').update('kim-token').digest('hex'), 'kim');
+  const kim = { id: 'kim', username: 'kim', role: 'editor' };
+  const call = async (name, args) =>
+    JSON.parse(
+      (
+        await assistant.mcp(
+          { authorization: 'Bearer kim-token' },
+          { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } },
+        )
+      ).body.result.content[0].text,
+    );
+  const http = (method, path, body = {}) => assistant.handle({ method, path: `/api/chat/proposals${path}`, user: kim, query: {}, body });
+  const cards = async () => (await http('GET', '')).body.proposals.filter(p => p.kind === 'photo_links');
+  try {
+    const read = await call('sync_photo_links', { add: ['Insectary'] });
+    assert.match(read.link, /propuestas/);
+    let [card] = await cards();
+    assert.equal(card.id, read.scan);
+    assert.equal(card.status, 'pending');
+    assert.equal(card.reason, 'Photo_links ← Google Drive');
+    assert.equal(card.sync.total, 13);
+    assert.deepEqual(card.sync.byFolder.map(f => [f.folder, f.new]), [
+      ['Insectary', 2],
+      ['Wild/Ecuador_2026', 5],
+    ]);
+    assert.equal(card.sync.checks.rename.count, 1);
+    assert.deepEqual(card.sync.add, ['Insectary']);
+
+    // Read again in the chat: the same card.
+    assert.equal((await call('sync_photo_links', { add: ['Insectary'] })).scan, read.scan);
+    assert.equal((await cards()).length, 1);
+
+    const rows = (await http('GET', `/${card.id}/photo-links/rows`)).body.rows;
+    assert.equal(rows.length, 12);
+    assert.deepEqual(rows.find(r => r.name === 'CAM000003_v.jpg').checks, [{ kind: 'rename', to: 'CAM000003v.JPG' }]);
+    assert.deepEqual(
+      rows.filter(r => r.change !== 'new' && r.change !== 'folder').map(r => [r.change, r.row]),
+      [
+        ['rename', 4],
+        ['relink', 5],
+        ['remove', 6],
+      ],
+    );
+
+    // An ordinary proposal's tools and endpoints leave it alone.
+    assert.match((await call('update_proposal', { proposalId: card.id, changes: [] })).error, /sync_photo_links/);
+    assert.equal((await http('POST', `/${card.id}/edit`, { cells: [] })).status, 409);
+
+    // «Aplicar» with the insectary folder left for later.
+    const started = await http('POST', `/${card.id}/photo-links/apply`, { skip: ['Insectary'] });
+    assert.equal(started.status, 202);
+    for (let i = 0; i < 200 && (await cards()).some(c => c.status === 'applying'); i++) await new Promise(r => setTimeout(r, 10));
+    const done = (await http('GET', '', {})).body.proposals;
+    assert.equal(done.filter(p => p.kind === 'photo_links' && p.status === 'pending').length, 0);
+    const applied = store.db.prepare('SELECT status, sync_json, applied_at FROM ai_proposals WHERE id = ?').get(card.id);
+    assert.equal(applied.status, 'applied');
+    assert.ok(applied.applied_at);
+    const progress = JSON.parse(applied.sync_json).progress;
+    assert.equal(progress.state, 'done');
+    assert.equal(progress.written, 10);
+    assert.deepEqual(progress.leftFolders, ['Insectary']);
+    assert.equal(cellsOf(sheets, 6)['Full Path'], 'Wild/Ecuador_2026');
+    assert.equal((await http('POST', `/${card.id}/photo-links/apply`, {})).status, 409);
+
+    // What was left: a new card, applied from the chat as any proposal is.
+    const rest = await call('sync_photo_links', { add: ['Insectary'] });
+    assert.notEqual(rest.scan, read.scan);
+    assert.equal(rest.changes.newFiles, 2);
+    const written = await call('apply_proposal', { proposalId: rest.scan });
+    assert.equal(written.status, 'done');
+    assert.equal(written.rowsWritten, 3);
+    assert.equal(cellsOf(sheets, 13).Name, 'CAM000005d.JPG');
+
+    // Nothing left: no card.
+    assert.equal((await call('sync_photo_links', { add: ['Insectary'] })).upToDate, true);
+    assert.equal((await cards()).filter(c => c.status === 'pending').length, 0);
+  } finally {
+    store.close();
+  }
+});
+
+test('a card whose rows are no longer kept is read again from its button', async () => {
+  const { store } = await fixture();
+  const assistant = createAssistant({ store, config: { drive: new LocalDrive(drive()) } });
+  store.db
+    .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
+    .run(createHash('sha256').update('kim-token').digest('hex'), 'kim');
+  const kim = { id: 'kim', username: 'kim', role: 'editor' };
+  try {
+    const out = await assistant.mcp(
+      { authorization: 'Bearer kim-token' },
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'sync_photo_links', arguments: { only: ['Ecuador_2026'] } } },
+    );
+    const { scan } = JSON.parse(out.body.result.content[0].text);
+    // Another app (a restart): the card is there, its rows are not.
+    const later = createAssistant({ store, config: { drive: new LocalDrive(drive()) } });
+    const http = (method, path, body = {}) => later.handle({ method, path: `/api/chat/proposals/${scan}/photo-links/${path}`, user: kim, query: {}, body });
+    assert.equal((await http('GET', 'rows')).status, 410);
+    assert.equal((await http('POST', 'apply')).status, 410);
+    assert.equal((await http('POST', 'refresh')).status, 200);
+    // The folder's row and its six new files.
+    const rows = (await http('GET', 'rows')).body.rows;
+    assert.equal(rows.length, 7);
+    assert.deepEqual(JSON.parse(store.db.prepare('SELECT sync_json FROM ai_proposals WHERE id = ?').get(scan).sync_json).only, ['Ecuador_2026']);
+    assert.equal((await http('POST', 'apply')).status, 202);
+  } finally {
+    await new Promise(r => setTimeout(r, 200));
     store.close();
   }
 });

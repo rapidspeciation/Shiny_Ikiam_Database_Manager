@@ -697,6 +697,12 @@ function initTables(db) {
   // A table of sheet rows the assistant shows the person (show_rows): its sheet, rows, columns and
   // notes. It is listed with the proposals but never written: status 'shown', then 'closed'.
   if (!has('ai_proposals', 'table_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN table_json TEXT');
+  // A reading of the photo folders for Photo_links (sync_photo_links): its card (server/photo-links-tool.mjs).
+  if (!has('ai_proposals', 'sync_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN sync_json TEXT');
+  // One being written when the app stopped: what was written stays, the rest needs the folders read again.
+  db.exec(
+    "UPDATE ai_proposals SET status = 'pending', sync_json = json_set(sync_json, '$.stale', json('true')) WHERE sync_json IS NOT NULL AND status = 'applying'",
+  );
   // How the assistant asked its proposal's table to be shown (the `view` of propose_changes): the
   // columns first or only, and the sheet's rows between its rows or not.
   if (!has('ai_proposals', 'view_json')) db.exec('ALTER TABLE ai_proposals ADD COLUMN view_json TEXT');
@@ -839,7 +845,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   // server's mailer. Only the app's thread sends them (server/assistant-host.mjs MAIN_TOOLS).
   const invites = () => (invitations ??= createInvitations(store, mailerFromEnv()));
   // Photo_links against Google Drive (sync_photo_links): read and written by the app's thread only.
-  const photoLinks = inWorker ? null : createPhotoLinksTool({ store, config });
+  const photoLinks = inWorker ? null : createPhotoLinksTool({ store, config, show: (reading, context) => showSync(reading, context), tell: (id, progress) => syncProgress(id, progress) });
   /** A note in the person's conversation (T3 Code, Revisión de datos) of the proposals made there. */
   const insertMessage = (threadId, role, content, sources = [], results = [], proposals = []) => {
     const at = now();
@@ -2351,7 +2357,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       return kept.out;
     }
     const view = {
-      ...(isTable(r) ? tableView(r) : proposalView({ id: r.id, changes: [], reason: r.reason, status: r.status }, r)),
+      ...(isTable(r) ? tableView(r) : isSync(r) ? syncView(r) : proposalView({ id: r.id, changes: [], reason: r.reason, status: r.status }, r)),
       createdAt: r.created_at,
       source,
       chat: r.t3_thread || null,
@@ -2700,6 +2706,10 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     const proposal = readableProposal(args.proposalId, context.user);
     if (!proposal) return { error: 'Proposal not found' };
     if (isTable(proposal)) return { error: NOT_A_PROPOSAL };
+    if (isSync(proposal)) {
+      const { add: _add, only: _only, ...card } = parse(proposal.sync_json) ?? {};
+      return { proposalId: proposal.id, kind: 'photo folders read for Photo_links (sync_photo_links)', status: proposal.status, ...card, ...proposalLink(proposal.id, proposal.t3_thread) };
+    }
     // A notebook page's proposal as a reader's file in the person's workspace, to match the page again.
     if (args.saveLines) {
       const page = proposalPage(proposal, id => store.getRecord(id));
@@ -2831,7 +2841,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     const parts = r => {
       const spec = r.table_json ? (parse(r.table_json) ?? {}) : null;
       const changes = spec ? [] : (parse(r.changes_json) ?? []);
-      return { spec, changes, sheets: spec ? [spec.sheet] : [...new Set(changes.map(c => c.sheet))] };
+      return { spec, changes, sheets: spec ? [spec.sheet] : isSync(r) ? ['Photo_links'] : [...new Set(changes.map(c => c.sheet))] };
     };
     const fits = (r, { spec, changes, sheets }) =>
       (!sheet || sheets.some(s => String(s).toLowerCase() === sheet)) &&
@@ -2855,9 +2865,10 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       const doubtful = r.status === 'pending' ? uncheckedDoubts(changes).length : 0;
       return {
         ...(spec ? { tableId: r.id, kind: 'table (show_rows)' } : { proposalId: r.id }),
+        ...(isSync(r) ? { kind: 'photo folders read for Photo_links (sync_photo_links)' } : {}),
         status: r.status,
         reason: r.reason,
-        rows: spec ? (spec.rows ?? []).length : changes.length,
+        rows: spec ? (spec.rows ?? []).length : isSync(r) ? (parse(r.sync_json)?.total ?? 0) : changes.length,
         sheets,
         ...(r.owner_id !== mine ? { by: personName(r.owner_id), readOnly: true } : {}),
         ...(r.t3_thread && r.t3_thread !== here ? { chat: r.t3_thread, ...(r.t3_title ? { chatTitle: r.t3_title } : {}) } : {}),
@@ -2985,6 +2996,83 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     }
     return { notes, skipped: [...new Set(skipped)], offPhoto };
   }
+
+  // ------------------------------------------------------------ Photo_links from Drive (sync_photo_links)
+  /*
+   * A reading of the photo folders is a card of Cambios propuestos too: a row of ai_proposals with
+   * `sync_json` (what the reading found: server/photo-links-tool.mjs cardOf) and no changes of its
+   * own. 'pending' until someone applies it (the chat, or the card's «Aplicar»), 'applying' while its
+   * rows are written (`progress` in the card), then 'applied'. The rows themselves stay with the tool,
+   * for half an hour: an older card is read again (`stale`).
+   */
+  const isSync = proposal => !!proposal?.sync_json;
+  const SYNC_TITLE = 'Photo_links ← Google Drive';
+  /** Keeps a reading's card: the chat's card still to review is read again in place (`id`: that card, from its own button). */
+  function showSync({ id: replace, card }, context) {
+    const at = now();
+    const chat = context?.t3 ? chatOfCall(context) : null;
+    const old = replace
+      ? anyProposal(replace)
+      : context
+        ? db
+            .prepare(
+              "SELECT * FROM ai_proposals WHERE owner_id = ? AND thread_id = ? AND sync_json IS NOT NULL AND status = 'pending' AND coalesce(t3_thread, '') = ? ORDER BY created_at DESC LIMIT 1",
+            )
+            .get(owner(context.user), context.threadId, chat?.id ?? '')
+        : null;
+    if (old) {
+      // Nothing left to write: the card leaves the list.
+      db.prepare('UPDATE ai_proposals SET sync_json = ?, status = ?, revision = revision + 1, updated_at = ?, last_by = ? WHERE id = ?').run(
+        json(card),
+        card.total ? 'pending' : 'discarded',
+        at,
+        context ? 'ai' : 'person',
+        old.id,
+      );
+      changed(old.owner_id);
+      return { id: old.id, ...(card.total ? proposalLink(old.id, old.t3_thread) : {}) };
+    }
+    const id = randomUUID();
+    if (!context || !card.total) return { id };
+    db.prepare(
+      `INSERT INTO ai_proposals (id,thread_id,owner_id,changes_json,reason,status,created_at,updated_at,last_by,
+       t3_thread,t3_title,t3_tool_use,sync_json) VALUES (?,?,?,'[]',?,'pending',?,?,'ai',?,?,?,?)`,
+    ).run(id, context.threadId, owner(context.user), SYNC_TITLE, at, at, chat?.id ?? null, chat?.title ?? null, context.t3?.toolUseId ?? null, json(card));
+    changed(owner(context.user));
+    return { id, ...proposalLink(id, chat?.id ?? null) };
+  }
+  /** The writing of a card as it goes (the panel's progress bar), and how it ended. */
+  function syncProgress(id, progress) {
+    const r = anyProposal(id);
+    if (!isSync(r)) return;
+    const status = progress.state === 'writing' ? 'applying' : progress.state === 'done' ? 'applied' : 'pending';
+    // Stopped half way (Google not answering, a row changed): what is left needs the folders read again.
+    const card = { ...(parse(r.sync_json) ?? {}), progress, ...(status === 'pending' ? { stale: true } : {}) };
+    const at = now();
+    db.prepare(
+      `UPDATE ai_proposals SET sync_json = ?, status = ?, revision = revision + 1, updated_at = ?${status === 'applied' ? ', applied_at = ?' : ''} WHERE id = ?`,
+    ).run(json(card), status, at, ...(status === 'applied' ? [at] : []), id);
+    changed(r.owner_id);
+  }
+  function syncView(r) {
+    return {
+      id: r.id,
+      kind: 'photo_links',
+      reason: r.reason ?? '',
+      status: r.status,
+      sheets: ['Photo_links'],
+      fields: [],
+      types: {},
+      revision: r.revision ?? 1,
+      updatedAt: r.updated_at ?? null,
+      lastBy: r.last_by ?? null,
+      appliedAt: r.applied_at ?? null,
+      applied: null,
+      changes: [],
+      sync: parse(r.sync_json) ?? {},
+    };
+  }
+  const SYNC_NOT_A_PROPOSAL = 'That is a reading of the photo folders (sync_photo_links): read them again with sync_photo_links to change it.';
 
   /** show_rows: a read-only table of rows beside the chat, new or (tableId) changed in place. */
   function showRows(args, context) {
@@ -3169,6 +3257,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
           error: `${personName(other.owner_id)}'s ${isTable(other) ? 'table' : 'proposal'}: read-only from your chats (get_proposal). They change it, or anyone from its table; your own changes go in a new proposal.`,
         };
     }
+    if (isSync(proposal) && args.discard !== true) return { error: SYNC_NOT_A_PROPOSAL };
     // Taken out of review: discarded (a table, closed); nothing is written.
     if (args.discard === true) {
       if (!proposal) return { error: 'Proposal not found' };
@@ -3441,6 +3530,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
    */
   async function applyProposal(proposal, user, { requestId, indexes, reason, doubtful = null, sheets = null }) {
     if (isTable(proposal)) throw Object.assign(new Error(NOT_A_PROPOSAL), { status: 409, code: 'read_only_table' });
+    if (isSync(proposal)) throw Object.assign(new Error(SYNC_NOT_A_PROPOSAL), { status: 409, code: 'photo_links' });
     if (proposal.status === 'queued')
       throw Object.assign(new Error('Proposal is already waiting for Google: it is written when Google answers.'), {
         status: 409,
@@ -4753,13 +4843,16 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       const row = db.prepare('SELECT role, active FROM users WHERE id = ?').get(context.user.id);
       return runInviteTool(invites(), name, args, { ...context.user, role: row?.active ? row.role : null });
     }
-    if (name === 'sync_photo_links') return photoLinks ? photoLinks.run(args, context.user) : { error: 'Call it again in a moment.' };
+    if (name === 'sync_photo_links') return photoLinks ? photoLinks.run(args, context.user, context) : { error: 'Call it again in a moment.' };
     if (name === 'apply_proposal') {
       const proposal = db
         .prepare('SELECT * FROM ai_proposals WHERE id = ? AND thread_id = ?')
         .get(String(args.proposalId ?? ''), context.threadId);
       if (!proposal) return { error: 'Proposal not found in this conversation' };
       if (isTable(proposal)) return { error: NOT_A_PROPOSAL };
+      // A reading of the photo folders: written as sync_photo_links writes it.
+      if (isSync(proposal))
+        return photoLinks ? photoLinks.run({ confirmed: true, scan: proposal.id }, context.user, context) : { error: 'Call it again in a moment.' };
       try {
         const out = await applyProposal(proposal, context.user, {
           requestId: `ai-${randomUUID()}`,
@@ -5225,7 +5318,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot edit proposals.');
       let proposal = teamProposal(editMatch[1], user);
       if (!proposal) return bad(404, 'not_found', 'Proposal not found.');
-      if (isTable(proposal)) return bad(409, 'read_only_table', 'Una tabla del asistente solo se lee.');
+      if (isTable(proposal) || isSync(proposal)) return bad(409, 'read_only_table', 'Una tabla del asistente solo se lee.');
       if (proposal.status !== 'pending') return bad(409, 'proposal_used', 'La propuesta ya no está pendiente.');
       const cells = body.cells ?? [];
       const scalar = v => v === null || ['string', 'number', 'boolean'].includes(typeof v);
@@ -5388,6 +5481,31 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         ...(config.t3Fetch ? { fetchImpl: config.t3Fetch } : {}),
       });
       return { status: 200, body: { ...out, chat: proposal.t3_thread || null } };
+    }
+    // A reading of the photo folders (sync_photo_links): its rows, «Aplicar» and «Leer de nuevo».
+    const syncMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/photo-links\/(rows|apply|refresh)$/.exec(path);
+    if (syncMatch) {
+      const proposal = teamProposal(syncMatch[1], user);
+      if (!proposal || !isSync(proposal)) return bad(404, 'not_found', 'Proposal not found.');
+      if (!photoLinks) return bad(503, 'unavailable', 'Call it again in a moment.');
+      const [, id, what] = syncMatch;
+      if (what === 'rows' && method === 'GET') {
+        const rows = photoLinks.rows(id);
+        return rows ? { status: 200, body: { rows } } : bad(410, 'stale', 'Las carpetas se leyeron hace más de media hora: léelas de nuevo.');
+      }
+      if (method !== 'POST') return bad(405, 'method', 'POST');
+      if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot edit proposals.');
+      if (proposal.status !== 'pending') return bad(409, 'proposal_used', 'La propuesta ya no está pendiente.');
+      if (what === 'apply') {
+        const out = photoLinks.apply(id, user, { skip: body.skip });
+        if (out.code === 'stale') return bad(410, 'stale', 'Las carpetas se leyeron hace más de media hora: léelas de nuevo.');
+        if (out.code === 'busy') return bad(409, 'busy', 'Photo_links ya se está escribiendo: espera a que termine.');
+        return out.error ? bad(409, out.code, out.error) : { status: 202, body: out };
+      }
+      const card = parse(proposal.sync_json) ?? {};
+      const out = await photoLinks.refresh(id, { add: card.add, only: card.only }, user);
+      if (out.code === 'busy') return bad(409, 'busy', 'Photo_links ya se está escribiendo: espera a que termine.');
+      return out.error ? bad(409, out.code, out.error) : { status: 200, body: out };
     }
     const discardMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/discard$/.exec(path);
     if (discardMatch && method === 'POST') {

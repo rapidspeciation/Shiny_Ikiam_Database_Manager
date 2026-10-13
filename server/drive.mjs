@@ -3,7 +3,7 @@
 // gives names, links, dates, sizes, owners and the photos' capture time.
 // - GoogleDrive: the Drive API with the app's token (server/sheets.mjs GoogleSheets.accessToken).
 // - LocalDrive: a recorded listing (LOCAL_MODE: the lab, tests).
-// Both answer children(folderId) → the items in it, and get(id) → the item, { gone: true } when
+// Both answer children(folderId) → the items in it (`foldersOnly`: its folders), and get(id) → the item, { gone: true } when
 // it was deleted or sits in the bin, or null when it cannot be told.
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -41,12 +41,12 @@ export class GoogleDrive {
       throw Object.assign(new Error(`Google Drive ${response.status}: ${body.slice(0, 300)}`), { status: response.status });
     }
   }
-  async children(folderId) {
+  async children(folderId, { foldersOnly = false } = {}) {
     const out = [];
     let pageToken = null;
     do {
       const params = new URLSearchParams({
-        q: `'${folderId}' in parents and trashed = false`,
+        q: `'${folderId}' in parents and trashed = false${foldersOnly ? ` and mimeType = '${FOLDER}'` : ''}`,
         pageSize: '1000',
         fields: `nextPageToken,files(${FIELDS})`,
         supportsAllDrives: 'true',
@@ -82,9 +82,9 @@ export class LocalDrive {
       }
     this.requests = 0;
   }
-  async children(folderId) {
+  async children(folderId, { foldersOnly = false } = {}) {
     this.requests++;
-    return (this.byParent.get(folderId) || []).filter(f => !f.trashed);
+    return (this.byParent.get(folderId) || []).filter(f => !f.trashed && (!foldersOnly || f.mimeType === FOLDER));
   }
   async get(id) {
     this.requests++;
@@ -104,9 +104,9 @@ export function driveFor(store, config = {}) {
 
 /**
  * Everything under `rootIds` (folders and files, a folder before what it holds), read `parallel`
- * folders at a time: Map id → item with `parent` (the folder holding it).
+ * folders at a time: Map id → item with `parent` (the folder holding it). `foldersOnly`: the folders, without their files.
  */
-export async function driveTree(drive, rootIds, { parallel = 8 } = {}) {
+export async function driveTree(drive, rootIds, { parallel = 8, foldersOnly = false } = {}) {
   const items = new Map();
   const queue = [];
   for (const id of rootIds) {
@@ -129,7 +129,7 @@ export async function driveTree(drive, rootIds, { parallel = 8 } = {}) {
         const folderId = queue.shift();
         active++;
         drive
-          .children(folderId)
+          .children(folderId, { foldersOnly })
           .then(
             list => {
               for (const item of list) {
