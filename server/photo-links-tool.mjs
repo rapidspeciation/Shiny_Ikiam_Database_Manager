@@ -7,35 +7,86 @@
 
 import { randomUUID } from 'node:crypto';
 import { applyBatch } from './batch.mjs';
-import { driveFor } from './drive.mjs';
-import { SHEET, scanPhotoLinks } from './photo-links.mjs';
+import { driveFor, driveWriterFor } from './drive.mjs';
+import { SHEET, driveIdOf, photoLinkRows, scanPhotoLinks } from './photo-links.mjs';
+import { describeChanges, kindOf, planFileChanges, runFileChanges, settleChanges, undoFileChanges } from './photo-files.mjs';
 
-export const PHOTO_LINKS_TOOL = {
-  type: 'function',
-  function: {
-    name: 'sync_photo_links',
-    description: [
-      "Bring the Photo_links sheet up to date with the photo folders on Google Drive, so Photo_dorsal and Photo_ventral find the photos uploaded since (what the sheet's menu «📷 Photo Database Tools» does).",
-      '- Without `confirmed`: reads Drive (up to about half a minute) and answers what would change; nothing is written. It also shows beside the chat (`link`), with every row and an «Apply» button. Tell the person what matters in it:',
-      '  - `changes`: new files per listed folder; rows whose file was renamed, replaced by one of the same name (`relinked`) or deleted (`removed`: the row is emptied).',
-      "  - `newPhotos`: of the new photos (RAW files apart), `linked` are named <ID>d.JPG or <ID>v.JPG with an ID of the workbook, which is what the sheets look up. The rest are things to look at, each with examples: `rename` (found under the name in `to`), `unknownId` (the workbook lacks the ID; `maybe`: likely the ID meant), `unnamed` (the camera's name), `outOfOrder` (the ID is far from those of the photos taken just before and after, `around`: how a misread ID looks), `otherFolder` (the same ID has photos in another folder, `other`: another photo, or the same one filed twice, `copy`), `unpaired` (the other view is missing), `beforeCollection` (taken before the butterfly was collected), `otherCountry` (a butterfly of another country than its folder's).",
-      '  - `sameName`: files not listed because a listed file already has their name: `copies` of that photo, or `different` photos (one of the two is misnamed, or the ID was used twice).',
-      '  - `notListed`: folders with specimen photos beside the listed ones. `leftOut`: files named …_todelete and folders named …_temp, which are never listed.',
-      '- `only`: just these folders (a `byFolder` name, or the folder above them), which is quicker: `["Guyana_2025"]`. `add`: folders to start listing, by their `notListed` name or a Drive link.',
-      "- `confirmed: true` with that answer's `scan`, only after the person's latest message approves it: writes it, some hundred rows per save (`skip`: folders of `byFolder` to leave for later). A long one answers `writing`: call again with the same arguments to follow it.",
-    ].join('\n'),
-    parameters: {
-      type: 'object',
-      properties: {
-        only: { type: 'array', items: { type: 'string' } },
-        add: { type: 'array', items: { type: 'string' } },
-        scan: { type: 'string' },
-        confirmed: { type: 'boolean' },
-        skip: { type: 'array', items: { type: 'string' } },
+// ------------------------------------------------------------ the tools
+export const PHOTO_TOOLS = [
+  {
+    type: 'function',
+    function: {
+      name: 'sync_photo_links',
+      description: [
+        "Bring the Photo_links sheet up to date with the photo folders on Google Drive, so Photo_dorsal and Photo_ventral find the photos uploaded since (what the sheet's menu «📷 Photo Database Tools» does).",
+        '- Without `confirmed`: reads Drive (up to about half a minute) and answers what would change; nothing is written. It also shows beside the chat (`link`), with every row and an «Apply» button. Tell the person what matters in it:',
+        '  - `changes`: new files per listed folder; rows whose file was renamed, replaced by one of the same name (`relinked`) or deleted (`removed`: the row is emptied).',
+        "  - `newPhotos`: of the new photos (RAW files apart), `linked` are named <ID>d.JPG or <ID>v.JPG with an ID of the workbook, which is what the sheets look up. The rest are things to look at, each with examples: `rename` (found under the name in `to`), `unknownId` (the workbook lacks the ID; `maybe`: likely the ID meant), `unnamed` (the camera's name), `outOfOrder` (the ID is far from those of the photos taken just before and after, `around`: how a misread ID looks), `otherFolder` (the same ID has photos in another folder, `other`: another photo, or the same one filed twice, `copy`), `unpaired` (the other view is missing), `beforeCollection` (taken before the butterfly was collected), `otherCountry` (a butterfly of another country than its folder's).",
+        '  - `sameName`: files not listed because a listed file already has their name: `copies` of that photo, or `different` photos (one of the two is misnamed, or the ID was used twice).',
+        '  - `notListed`: folders with specimen photos beside the listed ones. `leftOut`: files named …_todelete and folders named …_temp, which are never listed.',
+        '- `only`: just these folders (a `byFolder` name, or the folder above them), which is quicker: `["Guyana_2025"]`. `add`: folders to start listing, by their `notListed` name or a Drive link.',
+        "- `confirmed: true` with that answer's `scan`, only after the person's latest message approves it: writes it, some hundred rows per save (`skip`: folders of `byFolder` to leave for later). A long one answers `writing`: call again with the same arguments to follow it.",
+      ].join('\n'),
+      parameters: {
+        type: 'object',
+        properties: {
+          only: { type: 'array', items: { type: 'string' } },
+          add: { type: 'array', items: { type: 'string' } },
+          scan: { type: 'string' },
+          confirmed: { type: 'boolean' },
+          skip: { type: 'array', items: { type: 'string' } },
+        },
       },
     },
   },
-};
+  {
+    type: 'function',
+    function: {
+      name: 'organize_photos',
+      description: [
+        "Put the photo folders on Google Drive in order with the project's Google account: rename files, move them to another folder, remove them, make folders, gather shortcuts to a set of photos. Photo_links then follows the files changed (their rows renamed, linked to the file kept, or emptied).",
+        '- Without `confirmed`: works the plan out and shows it beside the chat (`link`), every change listed; nothing is changed. Tell the person what it would do and what was left out (`leftOut`).',
+        '- `operations`: {action: "rename", file, name} · {action: "move", file, to} (a file or a folder into the folder `to`) · {action: "remove", file} · {action: "folder", name, in} · {action: "shortcut", ids, to} (shortcuts to the dorsal and ventral photos of those specimens, e.g. to share a project\'s photos). `file` and the folders: a Drive link, a path ("PERU_2024/JPG/CAM077740d.JPG") or a name no other has; a folder this plan makes can be named in its later operations.',
+        '- `fix`: what a check of sync_photo_links calls for, in the folder `in` and inside it: {check: "rename", in} every photo whose name the sheets do not find takes the name they look up · {check: "copies", in} every file of `in` that is also, the same file, in another listed folder is removed · {check: "copied", in} every …_todelete file whose copy is beside it is binned.',
+        "- A photo renamed or removed takes its RAW file with it (`withRaw: false`: not). Removing bins the files the project's account owns (30 days in Drive's bin); Drive lets nobody bin someone else's file, so those are renamed …_todelete (out of Photo_links, for their owner to delete).",
+        "- `confirmed: true` with that answer's `plan`, only after the person's latest message approves it: makes the changes. A long one answers `writing`: call again with the same arguments. `undo` with a plan's ID takes its changes back.",
+      ].join('\n'),
+      parameters: {
+        type: 'object',
+        properties: {
+          operations: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                action: { type: 'string', enum: ['rename', 'move', 'remove', 'folder', 'shortcut'] },
+                file: { type: 'string' },
+                name: { type: 'string' },
+                to: { type: 'string' },
+                in: { type: 'string' },
+                ids: { type: 'array', items: { type: 'string' } },
+              },
+              required: ['action'],
+            },
+          },
+          fix: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: { check: { type: 'string', enum: ['rename', 'copies', 'copied'] }, in: { type: 'string' } },
+              required: ['check'],
+            },
+          },
+          withRaw: { type: 'boolean' },
+          plan: { type: 'string' },
+          confirmed: { type: 'boolean' },
+          undo: { type: 'string' },
+        },
+      },
+    },
+  },
+];
+export const PHOTO_TOOL_NAMES = new Set(PHOTO_TOOLS.map(t => t.function.name));
 
 const EDITORS = ['editor', 'reviewer', 'admin'];
 const EXAMPLES = 6;
@@ -47,6 +98,9 @@ const FRESH_MS = 30 * 60_000;
 const WAIT_MS = 100_000;
 /** Readings kept (each holds its rows). */
 const KEPT = 6;
+/** What a reading of every folder knows of the files is used again this long (organize_photos). */
+const INDEX_MS = 10 * 60_000;
+const FILES_TITLE = 'Google Drive: photo files';
 
 const filled = object =>
   Object.fromEntries(
@@ -157,6 +211,7 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
     const drive = driveFor(store, config);
     if (!drive) return { error: 'This copy of the app has no Google Drive to read.' };
     const scan = await scanPhotoLinks({ store, drive, add, only, timeZone: await timeZone() });
+    if (!only.length) known = { at: Date.now(), index: scan.index };
     const card = cardOf(scan, { add, only });
     const shown = show?.({ id: replace, card }, context) ?? { id: randomUUID().slice(0, 8) };
     const plan = { id: shown.id, shown, at: Date.now(), add, only, edits: scan.edits, creates: scan.creates, display: scan.display, card };
@@ -256,7 +311,7 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
     return job;
   }
 
-  /** Starts writing a reading: its job, or { error, code }. */
+  /** Starts writing a reading (or making a plan's changes on Drive): its job, or { error, code }. */
   function start(id, user, skip = []) {
     if (!EDITORS.includes(user?.role)) return { error: 'Your role cannot change the sheet', code: 'forbidden' };
     const running = [...jobs.values()].find(j => j.state === 'writing');
@@ -267,6 +322,12 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
         error: 'That reading is no longer kept (the folders may have changed since): read them again, look at the result, then confirm that one.',
         code: 'stale',
       };
+    if (plan.type === 'files') {
+      plans.delete(id);
+      const job = change(plan, user);
+      jobs.set(id, job);
+      return { job };
+    }
     const leave = new Set(skip);
     const total = plan.edits.length + plan.creates.filter(c => !leave.has(c.folder)).length;
     if (!total) return { error: `${SHEET} is already up to date.`, code: 'nothing' };
@@ -277,6 +338,7 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
   }
 
   const answer = (id, job) => {
+    if (job.type === 'files') return changed(id, job);
     const base = filled({
       scan: id,
       rowsWritten: job.written,
@@ -341,8 +403,186 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
     return brief(plan.id, plan.card, shown);
   }
 
+  // ------------------------------------------------------------ the folders put in order (organize_photos)
+  /** What the latest reading of every folder knows of the files: { at, index }. */
+  let known = null;
+  async function wholeIndex() {
+    if (known && Date.now() - known.at < INDEX_MS) return known.index;
+    const drive = driveFor(store, config);
+    if (!drive) return null;
+    const scan = await scanPhotoLinks({ store, drive, timeZone: await timeZone() });
+    known = { at: Date.now(), index: scan.index };
+    return known.index;
+  }
+  // The changes made on Drive, kept to take them back: a plan's ops as they went, and the saves that followed in Photo_links.
+  store.db.exec(
+    "CREATE TABLE IF NOT EXISTS drive_changes (id TEXT PRIMARY KEY, actor TEXT NOT NULL, created_at TEXT NOT NULL, ops_json TEXT NOT NULL, actions_json TEXT NOT NULL DEFAULT '[]', undone_at TEXT)",
+  );
+  const kept = op => ({ action: op.action, id: op.id, name: op.name, to: op.to, from: op.from, toId: op.toId, how: op.how, made: op.made, done: op.done });
+
+  /** A plan's changes as its card keeps them. */
+  function filesCard({ ops, problems }) {
+    const counts = {};
+    for (const op of ops) counts[kindOf(op)] = (counts[kindOf(op)] || 0) + 1;
+    return {
+      type: 'files',
+      total: ops.length,
+      counts,
+      raw: ops.filter(o => o.raw).length,
+      problems: { count: problems.length, examples: problems.slice(0, 8).map(p => [p.file ?? p.at, p.error].filter(Boolean).join(': ')) },
+    };
+  }
+  const shownOp = op =>
+    filled({ change: kindOf(op), folder: op.folder, name: op.name, to: op.action === 'folder' ? null : op.to, url: op.url, raw: op.raw, copy: op.copy || op.copied });
+
+  /** Makes a plan's changes on Drive, then has Photo_links follow the files touched. */
+  function change(plan, user) {
+    const writer = driveWriterFor(store, config);
+    const job = { type: 'files', state: 'writing', total: plan.ops.length, written: 0, failed: 0, sheetRows: 0 };
+    const say = () => {
+      try {
+        tell?.(
+          plan.id,
+          filled({
+            state: job.state,
+            written: job.written,
+            total: job.total,
+            failed: job.failed,
+            errors: job.errors,
+            phase: job.phase,
+            sheetRows: job.sheetRows,
+            sheetNote: job.sheetNote,
+            error: job.error,
+          }),
+        );
+      } catch (e) {
+        console.error('Drive changes progress:', e.message);
+      }
+    };
+    say();
+    job.promise = (async () => {
+      let last = 0;
+      await runFileChanges(writer, plan.ops, {
+        onStep: (done, failed) => {
+          Object.assign(job, { written: done, failed });
+          if (Date.now() - last < 700) return;
+          last = Date.now();
+          say();
+        },
+      });
+      known = null;
+      job.errors = plan.ops.filter(o => o.error).slice(0, EXAMPLES).map(o => `${o.name}: ${o.error}`);
+      const done = plan.ops.filter(o => o.done);
+      store.db
+        .prepare('INSERT OR REPLACE INTO drive_changes (id, actor, created_at, ops_json) VALUES (?,?,?,?)')
+        .run(plan.id, String(user.id ?? user.username), new Date().toISOString(), JSON.stringify(done.map(kept)));
+      // Photo_links follows: the rows of the files renamed, moved or removed.
+      const touched = new Set(done.filter(o => ['rename', 'move', 'remove'].includes(o.action)).map(o => o.id));
+      const drive = driveFor(store, config);
+      if (touched.size && drive) {
+        job.phase = 'sheet';
+        say();
+        const fileOf = new Map(photoLinkRows(store).map(r => [r.id, driveIdOf(r.values.URL)]));
+        const scan = await scanPhotoLinks({ store, drive, timeZone: await timeZone() });
+        known = { at: Date.now(), index: scan.index };
+        const edits = scan.edits.filter(e => touched.has(fileOf.get(e.id))).map(({ id, values, expected }) => ({ id, values, expected }));
+        const actions = [];
+        for (let i = 0; i < edits.length; i += chunk) {
+          const body = { edits: edits.slice(i, i + chunk), reason: `Photo_links follows the files changed on Google Drive (${edits.length} rows)` };
+          const { out, skipped } = await save(body, user);
+          if (out.status !== 'verified') {
+            job.sheetNote = 'Google Sheets did not confirm the save: sync_photo_links brings the rest of the rows up to date later.';
+            break;
+          }
+          job.sheetRows += body.edits.length - skipped;
+          if (out.action?.id) actions.push(out.action.id);
+          await new Promise(resolve => setImmediate(resolve));
+        }
+        store.db.prepare('UPDATE drive_changes SET actions_json = ? WHERE id = ?').run(JSON.stringify(actions), plan.id);
+      }
+      job.state = 'done';
+    })()
+      .catch(e => {
+        job.state = 'failed';
+        job.error = e?.message || String(e);
+      })
+      .finally(say);
+    return job;
+  }
+  const changed = (id, job) => {
+    const base = filled({
+      plan: id,
+      filesChanged: job.written,
+      of: job.total,
+      failed: job.failed,
+      failedExamples: job.errors,
+      photoLinksRowsUpdated: job.sheetRows,
+      note: job.sheetNote,
+    });
+    if (job.state === 'writing') return { status: 'writing', ...base, next: 'Still changing files: call organize_photos again with the same arguments to follow it.' };
+    if (job.state === 'failed') return { status: 'failed', ...base, error: job.error, undo: `organize_photos with undo: "${id}" takes back what was changed.` };
+    return {
+      status: 'done',
+      ...base,
+      undo: `organize_photos with undo: "${id}" takes these changes back (the files, and Photo_links' rows).`,
+      next: 'New files in the listed folders, if any, still need sync_photo_links.',
+    };
+  };
+
+  /** Takes a plan's changes back: the files as they were, and the saves that followed in Photo_links undone. */
+  async function undo(id, user, writer) {
+    const batch = store.db.prepare('SELECT * FROM drive_changes WHERE id = ?').get(id);
+    if (!batch) return { error: 'No changes are kept under that ID.' };
+    if (batch.undone_at) return { error: `Those changes were taken back already (${batch.undone_at.slice(0, 16)}).` };
+    const out = await undoFileChanges(writer, JSON.parse(batch.ops_json));
+    known = null;
+    let saves = 0;
+    let sheetNote = null;
+    for (const actionId of JSON.parse(batch.actions_json || '[]').reverse())
+      try {
+        await store.undo({ actionIds: [actionId], requestId: `photo-files-undo-${randomUUID()}` }, user);
+        saves++;
+      } catch (e) {
+        sheetNote = `A save of Photo_links could not be undone (${e?.message || e}): sync_photo_links brings the sheet up to date.`;
+      }
+    store.db.prepare('UPDATE drive_changes SET undone_at = ? WHERE id = ?').run(new Date().toISOString(), id);
+    return filled({ status: 'undone', filesAsTheyWere: out.undone, failed: out.failed, photoLinksSavesUndone: saves, note: sheetNote });
+  }
+
+  async function organize(args = {}, user, context = null) {
+    if (!EDITORS.includes(user?.role)) return { error: 'Your role cannot change files' };
+    const writer = driveWriterFor(store, config);
+    if (!writer) return { error: 'This app has no Google account set up to change files on Drive.' };
+    const running = [...jobs].find(([, j]) => j.state === 'writing');
+    if (running) return waited(...running);
+    if (args.undo) return undo(String(args.undo), user, writer);
+    if (args.confirmed) {
+      const id = String(args.plan ?? '');
+      if (jobs.has(id)) return answer(id, jobs.get(id));
+      const started = start(id, user);
+      return started.error ? { error: started.error } : waited(id, started.job);
+    }
+    const asked = value => (Array.isArray(value) ? value : value ? [value] : []).slice(0, 5000);
+    const index = await wholeIndex();
+    if (!index) return { error: 'This copy of the app has no Google Drive to read.' };
+    const planned = await settleChanges(writer, planFileChanges({ index, operations: asked(args.operations), fix: asked(args.fix), withRaw: args.withRaw !== false }));
+    if (!planned.ops.length) return { error: 'Nothing to change.', ...describeChanges([], planned.problems) };
+    const card = filesCard(planned);
+    const shown = show?.({ id: null, card, title: FILES_TITLE }, context) ?? { id: randomUUID() };
+    plans.set(shown.id, { id: shown.id, shown, type: 'files', at: Date.now(), ops: planned.ops, display: planned.ops.map(shownOp), card });
+    jobs.delete(shown.id);
+    const { id, ...links } = shown;
+    return {
+      plan: id,
+      ...links,
+      changes: describeChanges(planned.ops, planned.problems),
+      next: `Nothing is changed yet. After the person agrees (they can also press «Apply» beside the chat): organize_photos with plan "${id}" and confirmed: true.`,
+    };
+  }
+
   return {
     run,
+    organize,
     /** The card's «Aplicar»: { status: 'applying' } once it has started, or { error, code }. */
     apply(id, user, { skip = [] } = {}) {
       const started = start(id, user, list(skip));

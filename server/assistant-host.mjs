@@ -28,6 +28,8 @@ export const MAIN_TOOLS = new Set([
   'list_invitations',
   // It reads Google Drive and writes Photo_links (server/photo-links-tool.mjs).
   'sync_photo_links',
+  // It changes files on Google Drive, then writes Photo_links.
+  'organize_photos',
 ]);
 const CALL_MS = 180_000;
 const VIEWS_MS = 60_000;

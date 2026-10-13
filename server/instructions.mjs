@@ -29,7 +29,7 @@ export const TOOL_RANGES = [
   ['server/history.mjs', '/^const selectionProps/', '/^\\];/'],
   ['server/knowledge.mjs', '/^export const KNOWLEDGE_TOOLS/', '/^\\];/'],
   ['server/query-tool.mjs', '/^export const QUERY_TOOL/', '/^};/'],
-  ['server/photo-links-tool.mjs', '/^export const PHOTO_LINKS_TOOL/', '/^};/'],
+  ['server/photo-links-tool.mjs', '/^export const PHOTO_TOOLS/', '/^\\];/'],
 ];
 /** Characters of one commit's diff kept (a whole-file rewrite stays readable, not endless). */
 const DIFF_LIMIT = 150_000;

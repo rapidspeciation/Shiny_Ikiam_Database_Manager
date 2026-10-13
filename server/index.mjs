@@ -243,6 +243,11 @@ export function configFromEnv(env = process.env) {
     sheetsCopyPath: env.SHEETS_COPY_PATH || undefined,
     // LOCAL_MODE (the lab): a recorded listing of the photo folders on Drive, read by sync_photo_links (server/drive.mjs).
     driveListingFile: env.DRIVE_LISTING_FILE || undefined,
+    // The Google account that changes files on Drive when the assistant puts the photo folders in order
+    // (organize_photos, server/drive.mjs driveWriterFor): the project's own, an editor of those folders.
+    driveCredentialsFile: env.GOOGLE_DRIVE_CREDENTIALS_FILE || undefined,
+    // LOCAL_MODE: the address that account has in the recorded listing (it owns that owner's files).
+    driveAccount: env.DRIVE_ACCOUNT || undefined,
     // The AI's tool calls and the proposals' views in worker threads (server/assistant-host.mjs): 'auto', or '0' to run them in the app's thread.
     assistantWorker: env.ASSISTANT_WORKER || 'auto',
     googleCredentialsFile: env.GOOGLE_CREDENTIALS_FILE,

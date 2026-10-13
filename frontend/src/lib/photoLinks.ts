@@ -169,3 +169,59 @@ export function filterRows(rows: PhotoRow[], show: 'all' | 'flagged' | CheckKind
   if (show === 'flagged') return rows.filter(r => r.checks?.length)
   return rows.filter(r => r.checks?.some(c => c.kind === show))
 }
+
+// ------------------------------------------------------------ the files put in order (organize_photos)
+/** What is done to a file: binned (the account's own), or renamed …_todelete for its owner to delete (`mark`). */
+export type FileChange = 'rename' | 'move' | 'bin' | 'mark' | 'folder' | 'shortcut'
+/** A change of the plan (GET chat/proposals/<id>/photo-links/rows). */
+export interface FileRow {
+  change: FileChange
+  folder: string
+  name: string
+  /** The new name, or the folder it goes into. */
+  to?: string
+  url?: string
+  /** A RAW file following its photo. */
+  raw?: boolean
+  /** Removed because the same file is elsewhere. */
+  copy?: boolean
+}
+export interface FilesProgress {
+  state: 'writing' | 'done' | 'failed'
+  written?: number
+  total?: number
+  failed?: number
+  errors?: string[]
+  /** 'sheet': the files are done, Photo_links is following. */
+  phase?: 'sheet'
+  sheetRows?: number
+  sheetNote?: string
+  error?: string
+}
+/** A plan of changes to the photo files on Drive, as its card keeps it (server/photo-links-tool.mjs filesCard). */
+export interface PhotoFiles {
+  type: 'files'
+  total: number
+  counts: Partial<Record<FileChange, number>>
+  raw: number
+  problems: { count: number; examples: string[] }
+  progress?: FilesProgress
+  stale?: boolean
+}
+export const FILE_CHANGES: FileChange[] = ['rename', 'move', 'bin', 'mark', 'folder', 'shortcut']
+export const fileChangeLabel = (change: FileChange): string =>
+  ({
+    rename: t('renombrar'),
+    move: t('mover'),
+    bin: t('a la papelera'),
+    mark: t('marcar …_todelete'),
+    folder: t('carpeta nueva'),
+    shortcut: t('acceso directo'),
+  })[change]
+/** "3 renombrar · 2 a la papelera": what a plan does, in a line. */
+export const fileCounts = (counts: PhotoFiles['counts']): string =>
+  FILE_CHANGES.filter(c => counts[c])
+    .map(c => `${counts[c]} ${fileChangeLabel(c)}`)
+    .join(' · ')
+/** What a row shows after its arrow: the new name, the folder, or nothing. */
+export const fileTarget = (row: FileRow): string => (row.change === 'bin' || row.change === 'folder' ? '' : (row.to ?? ''))

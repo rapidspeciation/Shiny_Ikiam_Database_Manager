@@ -36,7 +36,7 @@ import { tellChat } from './t3tell.mjs';
 import { KNOWLEDGE_TOOLS, createKnowledge, runKnowledgeTool } from './knowledge.mjs';
 import { HISTORY_TOOLS, HISTORY_TOOL_NAMES, runHistoryTool } from './history.mjs';
 import { INVITE_TOOLS, INVITE_TOOL_NAMES, runInviteTool } from './invite-tool.mjs';
-import { PHOTO_LINKS_TOOL, createPhotoLinksTool } from './photo-links-tool.mjs';
+import { PHOTO_TOOLS, createPhotoLinksTool } from './photo-links-tool.mjs';
 import { createInvitations, mailerFromEnv } from './invitations.mjs';
 import { QUERY_HINT, QUERY_TOOL, createQueryRunner, formatRows, sqlProblem } from './query-tool.mjs';
 import { createSheetsCopy } from './replica.mjs';
@@ -420,8 +420,8 @@ const TOOLS = [
   ...HISTORY_TOOLS,
   // Administrators invite people from a chat (server/invite-tool.mjs).
   ...INVITE_TOOLS,
-  // Photo_links brought up to date with the photo folders on Drive (server/photo-links-tool.mjs).
-  PHOTO_LINKS_TOOL,
+  // Photo_links brought up to date with the photo folders on Drive, and those folders put in order (server/photo-links-tool.mjs).
+  ...PHOTO_TOOLS,
   {
     type: 'function',
     function: {
@@ -3007,16 +3007,19 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
    */
   const isSync = proposal => !!proposal?.sync_json;
   const SYNC_TITLE = 'Photo_links ← Google Drive';
-  /** Keeps a reading's card: the chat's card still to review is read again in place (`id`: that card, from its own button). */
-  function showSync({ id: replace, card }, context) {
+  /**
+   * Keeps a reading's card: the chat's card still to review is read again in place (`id`: that card, from its
+   * own button). A plan of changes to the files (organize_photos, `card.type` 'files') is always a card of its own.
+   */
+  function showSync({ id: replace, card, title = SYNC_TITLE }, context) {
     const at = now();
     const chat = context?.t3 ? chatOfCall(context) : null;
     const old = replace
       ? anyProposal(replace)
-      : context
+      : context && card.type !== 'files'
         ? db
             .prepare(
-              "SELECT * FROM ai_proposals WHERE owner_id = ? AND thread_id = ? AND sync_json IS NOT NULL AND status = 'pending' AND coalesce(t3_thread, '') = ? ORDER BY created_at DESC LIMIT 1",
+              "SELECT * FROM ai_proposals WHERE owner_id = ? AND thread_id = ? AND sync_json IS NOT NULL AND json_extract(sync_json, '$.type') IS NULL AND status = 'pending' AND coalesce(t3_thread, '') = ? ORDER BY created_at DESC LIMIT 1",
             )
             .get(owner(context.user), context.threadId, chat?.id ?? '')
         : null;
@@ -3037,7 +3040,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     db.prepare(
       `INSERT INTO ai_proposals (id,thread_id,owner_id,changes_json,reason,status,created_at,updated_at,last_by,
        t3_thread,t3_title,t3_tool_use,sync_json) VALUES (?,?,?,'[]',?,'pending',?,?,'ai',?,?,?,?)`,
-    ).run(id, context.threadId, owner(context.user), SYNC_TITLE, at, at, chat?.id ?? null, chat?.title ?? null, context.t3?.toolUseId ?? null, json(card));
+    ).run(id, context.threadId, owner(context.user), title, at, at, chat?.id ?? null, chat?.title ?? null, context.t3?.toolUseId ?? null, json(card));
     changed(owner(context.user));
     return { id, ...proposalLink(id, chat?.id ?? null) };
   }
@@ -3055,9 +3058,11 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     changed(r.owner_id);
   }
   function syncView(r) {
+    const card = parse(r.sync_json) ?? {};
     return {
       id: r.id,
-      kind: 'photo_links',
+      // A reading of the folders for Photo_links, or changes to make to the files on Drive (organize_photos).
+      kind: card.type === 'files' ? 'photo_files' : 'photo_links',
       reason: r.reason ?? '',
       status: r.status,
       sheets: ['Photo_links'],
@@ -3069,7 +3074,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       appliedAt: r.applied_at ?? null,
       applied: null,
       changes: [],
-      sync: parse(r.sync_json) ?? {},
+      sync: card,
     };
   }
   const SYNC_NOT_A_PROPOSAL = 'That is a reading of the photo folders (sync_photo_links): read them again with sync_photo_links to change it.';
@@ -4844,6 +4849,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       return runInviteTool(invites(), name, args, { ...context.user, role: row?.active ? row.role : null });
     }
     if (name === 'sync_photo_links') return photoLinks ? photoLinks.run(args, context.user, context) : { error: 'Call it again in a moment.' };
+    if (name === 'organize_photos') return photoLinks ? photoLinks.organize(args, context.user, context) : { error: 'Call it again in a moment.' };
     if (name === 'apply_proposal') {
       const proposal = db
         .prepare('SELECT * FROM ai_proposals WHERE id = ? AND thread_id = ?')
@@ -5503,6 +5509,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         return out.error ? bad(409, out.code, out.error) : { status: 202, body: out };
       }
       const card = parse(proposal.sync_json) ?? {};
+      if (card.type === 'files') return bad(409, 'no_refresh', 'Ask the assistant for the plan again.');
       const out = await photoLinks.refresh(id, { add: card.add, only: card.only }, user);
       if (out.code === 'busy') return bad(409, 'busy', 'Photo_links ya se está escribiendo: espera a que termine.');
       return out.error ? bad(409, out.code, out.error) : { status: 200, body: out };

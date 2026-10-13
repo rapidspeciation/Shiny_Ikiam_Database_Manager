@@ -82,6 +82,8 @@ env_app=(
   PHOTO_CACHE_DIR="$LAB/app/photos"
   # A recorded listing of the photo folders on Drive, for sync_photo_links (server/drive.mjs LocalDrive).
   DRIVE_LISTING_FILE="$LAB/drive-listing.json"
+  # The account that changes files in that listing (organize_photos): it owns the files of this owner, as on Drive.
+  DRIVE_ACCOUNT="jmithominii@gmail.com"
   APP_HOST=127.0.0.1
   APP_PORT="$PORT"
   APP_BASE_PATH=/

@@ -1,15 +1,21 @@
-// Google Drive as the app reads it (never writes): the folders of specimen photos, listed for
-// Photo_links (server/photo-links.mjs). The app's Google login has drive.metadata.readonly, which
-// gives names, links, dates, sizes, owners and the photos' capture time.
-// - GoogleDrive: the Drive API with the app's token (server/sheets.mjs GoogleSheets.accessToken).
-// - LocalDrive: a recorded listing (LOCAL_MODE: the lab, tests).
-// Both answer children(folderId) → the items in it (`foldersOnly`: its folders), and get(id) → the item, { gone: true } when
-// it was deleted or sits in the bin, or null when it cannot be told.
+// Google Drive as the app uses it: the folders of specimen photos, listed for Photo_links
+// (server/photo-links.mjs) and put in order when someone asks (server/photo-files.mjs).
+// - Reading (driveFor): the app's Google login, whose drive.metadata.readonly gives names, links,
+//   dates, sizes, owners and the photos' capture time.
+// - Changing files (driveWriterFor): the project's own Google account (GOOGLE_DRIVE_CREDENTIALS_FILE),
+//   an editor of the photo folders: it renames and moves any file there and makes folders, and
+//   bins only the files it owns (Drive lets nobody bin someone else's file).
+// - LocalDrive: a recorded listing, changed in memory (LOCAL_MODE: the lab, tests).
+// All answer children(folderId) → the items in it (`foldersOnly`: its folders), and get(id) → the
+// item, { gone: true } when it was deleted or sits in the bin, or null when it cannot be told;
+// rename, move, trash, untrash, createFolder and createShortcut answer the item as it is afterwards.
 
 import { existsSync, readFileSync } from 'node:fs';
 
 export const FOLDER = 'application/vnd.google-apps.folder';
-const FIELDS = 'id,name,mimeType,webViewLink,createdTime,description,size,trashed,owners(emailAddress),imageMediaMetadata(time),parents';
+const SHORTCUT = 'application/vnd.google-apps.shortcut';
+const FIELDS =
+  'id,name,mimeType,webViewLink,createdTime,description,size,trashed,ownedByMe,owners(emailAddress),imageMediaMetadata(time),parents';
 const API = 'https://www.googleapis.com/drive/v3/files';
 const TIMEOUT_MS = 60_000;
 
@@ -19,17 +25,20 @@ export class GoogleDrive {
     this.fetch = fetchFn;
     this.requests = 0;
   }
-  async request(url) {
+  async request(url, { method = 'GET', body = null } = {}) {
     for (let attempt = 0; ; attempt++) {
       this.requests++;
       let response;
       try {
         response = await this.fetch(url, {
-          headers: { authorization: `Bearer ${await this.token()}` },
+          method,
+          headers: { authorization: `Bearer ${await this.token()}`, ...(body ? { 'content-type': 'application/json' } : {}) },
+          ...(body ? { body: JSON.stringify(body) } : {}),
           signal: AbortSignal.timeout(TIMEOUT_MS),
         });
       } catch (e) {
-        if (attempt < 3) continue;
+        // A change that got no answer may have been made: it is not sent twice.
+        if (attempt < 3 && method === 'GET') continue;
         throw new Error(`Google Drive did not answer (${e?.name || e})`);
       }
       if (response.ok || response.status === 404) return response;
@@ -67,11 +76,49 @@ export class GoogleDrive {
     const item = await response.json();
     return item.trashed ? { gone: true } : item;
   }
+  /** A change of a file's own data (its name, its folders, the bin). */
+  async update(id, body, params = {}) {
+    const query = new URLSearchParams({ fields: FIELDS, supportsAllDrives: 'true', ...params });
+    const response = await this.request(`${API}/${encodeURIComponent(id)}?${query}`, { method: 'PATCH', body });
+    if (response.status === 404) throw Object.assign(new Error('The file is no longer on Drive'), { status: 404 });
+    return response.json();
+  }
+  rename(id, name) {
+    return this.update(id, { name });
+  }
+  move(id, from, to) {
+    return this.update(id, {}, { addParents: to, removeParents: from });
+  }
+  trash(id) {
+    return this.update(id, { trashed: true });
+  }
+  untrash(id) {
+    return this.update(id, { trashed: false });
+  }
+  async createFolder(name, parent) {
+    const query = new URLSearchParams({ fields: FIELDS, supportsAllDrives: 'true' });
+    const response = await this.request(`${API}?${query}`, { method: 'POST', body: { name, mimeType: FOLDER, parents: [parent] } });
+    return response.json();
+  }
+  /** A shortcut to a file, in another folder (the file stays where it is). */
+  async createShortcut(target, name, parent) {
+    const query = new URLSearchParams({ fields: FIELDS, supportsAllDrives: 'true' });
+    const response = await this.request(`${API}?${query}`, {
+      method: 'POST',
+      body: { name, mimeType: SHORTCUT, shortcutDetails: { targetId: target }, parents: [parent] },
+    });
+    return response.json();
+  }
 }
 
 export class LocalDrive {
-  /** `files`: the items as the Drive API gives them (each with `parents`), or the path of a JSON file of them. */
-  constructor(files) {
+  /**
+   * `files`: the items as the Drive API gives them (each with `parents`), or the path of a JSON file
+   * of them. `me`: the address of the account changing files (it owns the files of that owner).
+   */
+  constructor(files, { me = null } = {}) {
+    this.me = me;
+    this.made = 0;
     const list = typeof files === 'string' ? JSON.parse(readFileSync(files, 'utf8')) : files;
     this.items = new Map((Array.isArray(list) ? list : list.files).map(f => [f.id, f]));
     this.byParent = new Map();
@@ -91,15 +138,103 @@ export class LocalDrive {
     const item = this.items.get(id);
     // A folder known only as a parent (the one holding the photo folders).
     if (!item) return this.byParent.has(id) ? { id, name: id, mimeType: FOLDER, parents: [] } : { gone: true };
-    return item.trashed ? { gone: true } : item;
+    return item.trashed ? { gone: true } : this.seen(item);
+  }
+  /** An item as the account sees it: its own when it is the owner. */
+  seen(item) {
+    return this.me ? { ...item, ownedByMe: item.ownedByMe ?? item.owners?.[0]?.emailAddress === this.me } : item;
+  }
+  existing(id) {
+    const item = this.items.get(id);
+    if (!item) throw Object.assign(new Error('The file is no longer on Drive'), { status: 404 });
+    return item;
+  }
+  async rename(id, name) {
+    this.requests++;
+    const item = this.existing(id);
+    item.name = name;
+    return this.seen(item);
+  }
+  async move(id, from, to) {
+    this.requests++;
+    const item = this.existing(id);
+    this.byParent.set(from, (this.byParent.get(from) || []).filter(f => f.id !== id));
+    if (!this.byParent.has(to)) this.byParent.set(to, []);
+    this.byParent.get(to).push(item);
+    item.parents = [...(item.parents || []).filter(p => p !== from), to];
+    return this.seen(item);
+  }
+  async trash(id) {
+    this.requests++;
+    const item = this.existing(id);
+    if (!this.seen(item).ownedByMe && this.me)
+      throw Object.assign(new Error('Google Drive 403: the account does not own this file'), { status: 403 });
+    item.trashed = true;
+    return this.seen(item);
+  }
+  async untrash(id) {
+    this.requests++;
+    const item = this.existing(id);
+    item.trashed = false;
+    return this.seen(item);
+  }
+  make(item) {
+    this.requests++;
+    const id = `local-made-${String(++this.made).padStart(20, '0')}`;
+    const made = { id, createdTime: new Date().toISOString(), owners: this.me ? [{ emailAddress: this.me }] : [], ownedByMe: true, ...item };
+    this.items.set(id, made);
+    for (const parent of made.parents) {
+      if (!this.byParent.has(parent)) this.byParent.set(parent, []);
+      this.byParent.get(parent).push(made);
+    }
+    return made;
+  }
+  async createFolder(name, parent) {
+    const folder = this.make({ name, mimeType: FOLDER, parents: [parent] });
+    folder.webViewLink = `https://drive.google.com/drive/folders/${folder.id}`;
+    return folder;
+  }
+  async createShortcut(target, name, parent) {
+    return this.make({ name, mimeType: SHORTCUT, shortcutDetails: { targetId: target }, parents: [parent] });
   }
 }
 
+/** An access token from a credentials file (client_id, client_secret, refresh_token), renewed when it runs out. */
+function tokenFrom(file) {
+  let held = null;
+  return async () => {
+    if (held && held.expires > Date.now() + 60_000) return held.value;
+    const c = JSON.parse(readFileSync(file, 'utf8'));
+    const response = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      signal: AbortSignal.timeout(30_000),
+      body: new URLSearchParams({ client_id: c.client_id, client_secret: c.client_secret, refresh_token: c.refresh_token, grant_type: 'refresh_token' }),
+    });
+    if (!response.ok) throw new Error(`Google token refresh failed (${response.status})`);
+    const body = await response.json();
+    held = { value: body.access_token, expires: Date.now() + body.expires_in * 1000 };
+    return held.value;
+  };
+}
+
+// A local copy's listing is one object for the reader and the writer: what is changed in it is read back.
+const locals = new WeakMap();
+function localDrive(store, config) {
+  if (!config.driveListingFile || !existsSync(config.driveListingFile)) return null;
+  if (!locals.has(store)) locals.set(store, new LocalDrive(config.driveListingFile, { me: config.driveAccount || null }));
+  return locals.get(store);
+}
 /** The Drive reader of a store: the app's Google login, or the recorded listing of a local copy (null without one). */
 export function driveFor(store, config = {}) {
   if (config.drive) return config.drive;
-  if (store.localMode) return config.driveListingFile && existsSync(config.driveListingFile) ? new LocalDrive(config.driveListingFile) : null;
+  if (store.localMode) return localDrive(store, config);
   return new GoogleDrive({ token: () => store.sheets.accessToken() });
+}
+/** The Drive account that changes files for a store: the project's own (null when none is set up). */
+export function driveWriterFor(store, config = {}) {
+  if (config.drive) return config.drive;
+  if (store.localMode) return localDrive(store, config);
+  return config.driveCredentialsFile && existsSync(config.driveCredentialsFile) ? new GoogleDrive({ token: tokenFrom(config.driveCredentialsFile) }) : null;
 }
 
 /**

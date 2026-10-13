@@ -14,6 +14,7 @@ import {
 import { useRouter } from 'vue-router'
 import { ExternalLink, Image as ImageIcon, Link, ListChecks, Maximize2, Minimize2, PanelBottom, PanelRight, X } from 'lucide-vue-next'
 import type { Proposal } from '../../lib/proposals'
+import type { PhotoSync } from '../../lib/photoLinks'
 import WhenSeen from './WhenSeen.vue'
 import { api, requestId } from '../../lib/api'
 import { errorText, notify } from '../../lib/notice'
@@ -49,6 +50,8 @@ const ProposalGrid = defineAsyncComponent({
 })
 /** A reading of the photo folders on Drive for Photo_links (sync_photo_links): its own card. */
 const PhotoLinksCard = defineAsyncComponent(() => import('./PhotoLinksCard.vue'))
+/** Changes to make to the photo files on Drive (organize_photos): its own card too. */
+const PhotoFilesCard = defineAsyncComponent(() => import('./PhotoFilesCard.vue'))
 /** «Revisar con la foto»: a proposal's table with its notebook photo (pan and zoom load apart too). */
 const PhotoReview = defineAsyncComponent(() => import('./PhotoReview.vue'))
 /** A table of rows the assistant shows (show_rows): read-only, also with Tabulator. */
@@ -137,7 +140,7 @@ const others = computed(() => elsewhere(scope.value, chats.value))
 const mixed = computed(() => !scope.value || scope.value.chat === 'all' || scope.value.chat === 'app')
 
 const isTable = (p: Proposal) => p.kind === 'table'
-const isSync = (p: Proposal) => p.kind === 'photo_links'
+const isSync = (p: Proposal) => p.kind === 'photo_links' || p.kind === 'photo_files'
 /**
  * Proposals from the oldest rows of the sheet to the newest, so they are reviewed and applied in the
  * sheet's order: by sheet, then the first existing row each one changes (one with only new rows after
@@ -168,7 +171,7 @@ const cards = computed(() =>
   props.only ? mine.value : [...mine.value.filter(p => open(p) && isTable(p)), ...pending.value],
 )
 /** A card's room before its table is built. */
-const heightOf = (p: Proposal) => cardHeight(isTable(p) ? (p.rows?.length ?? 0) : isSync(p) ? 6 + (p.sync?.byFolder?.length ?? 0) : p.changes.length)
+const heightOf = (p: Proposal) => cardHeight(isTable(p) ? (p.rows?.length ?? 0) : isSync(p) ? 6 + ((p.sync as PhotoSync | undefined)?.byFolder?.length ?? 0) : p.changes.length)
 watch(
   () => pending.value.length,
   n => emit('count', n),
@@ -625,6 +628,7 @@ const origin = (p: Proposal) =>
         </p>
         <WhenSeen v-else :height="heightOf(p)">
           <RowsTable v-if="isTable(p)" :table="p" @close="discard(p)" @photo="n => review(p, n)" />
+          <PhotoFilesCard v-else-if="p.kind === 'photo_files'" :proposal="p" @discard="discard(p)" @started="started(p)" />
           <PhotoLinksCard v-else-if="isSync(p)" :proposal="p" @discard="discard(p)" @started="started(p)" />
           <ProposalGrid
             v-else
@@ -656,7 +660,8 @@ const origin = (p: Proposal) =>
         >
           <p class="mt-2 px-1 text-[11px] text-stone-500">{{ origin(p) }}</p>
           <WhenSeen :height="heightOf(p)">
-            <PhotoLinksCard v-if="isSync(p)" :proposal="p" />
+            <PhotoFilesCard v-if="p.kind === 'photo_files'" :proposal="p" />
+            <PhotoLinksCard v-else-if="isSync(p)" :proposal="p" />
             <ProposalGrid v-else :proposal="p" @photo="n => review(p, n)" />
           </WhenSeen>
         </div>

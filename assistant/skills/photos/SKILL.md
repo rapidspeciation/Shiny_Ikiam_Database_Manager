@@ -1,6 +1,6 @@
 ---
 name: photos
-description: The photos of the butterflies' wings, from the camera to the workbook — naming the files after the CAM_ID (the Rename Photos app), the folders on Google Drive, and the Photo_links sheet that Photo_dorsal and Photo_ventral read (sync_photo_links). Use it when the person uploaded, renamed, moved or deleted photos, asks to update Photo_links or the photo links, says a photo shows Not Found or the wrong butterfly, asks which photos are missing, how to rename photos, where to put them, or about the Wings Gallery.
+description: The photos of the butterflies' wings, from the camera to the workbook — naming the files after the CAM_ID (the Rename Photos app), the folders on Google Drive and putting them in order (organize_photos: rename, move, remove duplicates, make folders, shortcuts), the Photo_links sheet that Photo_dorsal and Photo_ventral read (sync_photo_links), and moving the photos to another account to free space. Use it when the person uploaded, renamed, moved or deleted photos, asks to update Photo_links or the photo links, says a photo shows Not Found or the wrong butterfly, asks which photos are missing, how to rename photos, where to put them, to tidy or delete photos on Drive, about the Drive space running out, or about the Wings Gallery.
 ---
 
 # Wing photos and Photo_links
@@ -114,11 +114,11 @@ write, say what it found, what it most likely is and what you suggest:
 
 | Found | Most likely | What to do |
 |---|---|---|
-| `rename` | another way of writing the name (`CAM077986_d.jpg`) | rename to the name in `to`; a whole folder named that way can be renamed in one go (below) |
+| `rename` | another way of writing the name (`CAM077986_d.jpg`) | rename to the name in `to`: `organize_photos` does a whole folder in one go (below) |
 | `unnamed` | the photo was not renamed (`IMG_5069.JPG`), or shows no envelope | look at it; rename it or move it to a `_temp` folder |
 | `unknownId` | the butterfly's row is not typed yet (IDs running on after the sheet's last ones), or the ID was misread (it is `outOfOrder` too; `maybe` is the workbook ID one character away that fits) | ask which; a misread one is renamed |
 | `outOfOrder` | a misread ID: `around` are the IDs photographed just before and after it | look at the photo's envelope |
-| `otherFolder` | the same ID has photos in another folder (`other`): the same photo filed twice (`copy`), or another photo, so one of the two is misnamed or the CAM was used on two butterflies | a copy: remove the one in the wrong folder; another photo: compare the two envelopes with the row |
+| `otherFolder` | the same ID has photos in another folder (`other`): the same photo filed twice (`copy`), or another photo, so one of the two is misnamed or the CAM was used on two butterflies | a copy: remove the one in the wrong folder (`organize_photos`; the right folder is the one of the butterfly's country and year in its row); another photo: compare the two envelopes with the row |
 | `unpaired` | the other view was not photographed, or carries another name (often the `outOfOrder` or `unknownId` photo beside it) | find it among those, or ask for the photo |
 | `beforeCollection` | the ID belongs to another butterfly: this one was not collected yet | look at the envelope; check the row's date |
 | `otherCountry` | a photo uploaded to the wrong folder, or one CAM used for two butterflies (skill `data-rules`, duplicates) | compare the envelope with both rows |
@@ -131,13 +131,74 @@ the project's Google account downloads it (skill `google-account`,
 the ID. A few photos at a time: each is several megabytes.
 
 Photos with something to look at can be listed as they are and corrected
-later: the row follows its file at the next `sync_photo_links`. Many files to
-rename the same way (an underscore to remove in a whole folder) can be
-renamed on Drive with the project's Google account (`gog drive rename
-<fileId> <newName>`): show the person the list of old and new names first.
+later: the row follows its file.
 
 The sheet's own menu «📷 Photo Database Tools» (Append New Files Only, Full
 Sync) writes the same rows from Google Sheets; either can be used.
+
+## Putting the folders in order
+
+`organize_photos` changes the files on Drive with the project's Google
+account: it shows the plan as a card beside the chat, every change listed,
+and makes it when the person agrees (in the chat, or with the card's
+«Apply»). Photo_links then follows the files changed by itself, and the
+tool takes a plan's changes back when asked (`undo`).
+
+| The person asks | The plan |
+|---|---|
+| to give a folder's photos the names the sheets look up | `fix: [{check: "rename", in: "PANAMA_2025"}]` |
+| to delete from a folder the photos that are in another one too | `fix: [{check: "copies", in: <the wrong folder>}]`: only the files that are the same file elsewhere |
+| to rename, move or remove these files | `operations`, one per file, named by its path, its name or its link |
+| a new folder, and files moved into it | `{action: "folder", name, in}`, then `move` operations naming it |
+| the photos of a list of butterflies gathered to share (a project's specimens) | `{action: "shortcut", ids: [CAM…], to: <folder>}`: shortcuts to their dorsal and ventral photos; the photos stay where they are |
+
+- A photo renamed or removed takes its RAW file with it. A photo moved does
+  not: its RAW file is moved with a second operation, to the RAW folder
+  beside the new one.
+- Removing: the project's account bins the files it owns (they stay 30 days
+  in Drive's bin). Drive lets nobody bin another account's file, and most
+  photos belong to the account they were copied to (below): those are
+  renamed `…_todelete`, which takes them out of Photo_links, and their owner
+  deletes them. Say which of the two will happen (the plan counts them).
+- Two different photos named after one CAM are not copies: no fix removes
+  them. Look at both envelopes, then rename or remove the wrong one by name.
+- After changes that bring new files into the listed folders (a folder moved
+  in), `sync_photo_links` lists them.
+
+## Moving the photos to another account (space on Drive)
+
+The project account's Drive fills up with the photos, the RAW files above
+all. They are then handed to another account with more room (the curator's
+institutional one) with the sheet «Transfer Ownership & Free Up Space», in
+Drive › Photos. Drive cannot give a file to an account of another
+organisation, so the file is copied and the original deleted:
+
+1. The person whose account takes the photos over opens the sheet signed in
+   to that account, writes the folder's ID (the last part of its link) in
+   «Source Folder ID» and presses «Copy files». Every file of the folder that
+   belongs to someone else is copied (the copy is theirs, with the original's
+   name) and the original renamed `…_todelete`. «Process subfolders» set to 1
+   takes the folders inside it too.
+2. The first owner opens the sheet signed in to their account and presses
+   «Delete copied files»: the `…_todelete` files they own go to the bin
+   (mode 0; the space is freed when the bin is emptied) or are deleted for
+   good (mode 1).
+
+- The account that presses «Copy files» is the one that ends up owning the
+  photos: pressed from the project's account it copies them the other way.
+  «Delete copied files» only touches files named `…_todelete`.
+- The copies are new files, so the old links end with the originals.
+  `sync_photo_links` moves each row to the copy of the same name; it can be
+  run right after step 1, and the links never break.
+- Step 2 for the project's own files can be done here:
+  `organize_photos` `fix: [{check: "copied", in: <folder>}]` bins each
+  `…_todelete` file whose copy is beside it (same name, same size), and leaves
+  the others. The bin still counts against the space until it is emptied in
+  Drive. Step 1 cannot: only the account taking the photos over can make the
+  copies.
+- Which account owns each file is Photo_links' «Owner Email» column
+  (`query`): the files still owned by the project's account are the ones
+  that take its space.
 
 ## Which photos are missing
 

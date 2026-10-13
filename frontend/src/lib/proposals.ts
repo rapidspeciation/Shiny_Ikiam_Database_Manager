@@ -2,7 +2,7 @@ import type { FormulaCost } from './formulaCost'
 import type { CellValue } from './types'
 import type { TableRow } from './rowsTable'
 import { t, tn, tx, type Msg } from './i18n'
-import type { PhotoSync } from './photoLinks'
+import type { PhotoFiles, PhotoSync } from './photoLinks'
 
 /**
  * The assistant's proposed changes as the Asistente tab shows them: a live
@@ -245,10 +245,13 @@ export interface Proposal {
   /** A table of rows the assistant shows (show_rows) is 'shown', then 'closed': never pending, never applied. */
   /** queued: applied while Google did not answer; its save waits in the app and is written when it does. */
   status: 'pending' | 'applying' | 'queued' | 'applied' | 'needs_review' | 'discarded' | 'shown' | 'closed'
-  /** 'table': rows of the sheet to read (lib/rowsTable), not changes. 'photo_links': a reading of the photo folders (lib/photoLinks). */
-  kind?: 'table' | 'photo_links'
-  /** A reading of the photo folders on Drive: what Photo_links lacks, and how far its writing is. */
-  sync?: PhotoSync
+  /**
+   * 'table': rows of the sheet to read (lib/rowsTable), not changes. 'photo_links': a reading of the photo
+   * folders; 'photo_files': changes to make to the photo files on Drive (lib/photoLinks).
+   */
+  kind?: 'table' | 'photo_links' | 'photo_files'
+  /** A reading of the photo folders on Drive (what Photo_links lacks), or a plan of changes to its files; and how far it is. */
+  sync?: PhotoSync | PhotoFiles
   /** A table's rows, with the sheet's current values of its columns (`fields`). */
   rows?: TableRow[]
   sheets?: string[]

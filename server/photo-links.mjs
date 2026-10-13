@@ -89,6 +89,19 @@ function knownId(id, ids) {
 }
 
 /**
+ * The name the sheets look up for a photo named `name`: <ID><d|v><extra>.JPG with the ID as the
+ * workbook has it (`ids`: its IDs in capitals); the name itself when it is that already (capitals
+ * aside), null when it names no specimen of the workbook. Another format than JPEG keeps its ending.
+ */
+export function rightName(name, ids) {
+  const parsed = PHOTO.test(name) ? specimenName(name) : null;
+  const id = parsed ? knownId(parsed.id, ids) : null;
+  if (!id) return null;
+  const right = `${id}${parsed.view}${parsed.extra}.${/^jpe?g$/i.test(parsed.ext) ? 'JPG' : parsed.ext}`;
+  return right.toUpperCase() === String(name).toUpperCase() ? name : right;
+}
+
+/**
  * What Photo_links needs to match Drive.
  *  - rows: the sheet's rows [{ id, row, values }], in row order.
  *  - items: the Drive items (driveTree: Map id → item with `parent`).
@@ -194,8 +207,17 @@ export function planPhotoLinks({
   };
   for (const r of status) edit(r, { 'Full Path': null }, 'status');
 
+  /** In a …_temp folder of a listed folder. */
+  const inTemp = item => {
+    for (let f = item.parent ? items.get(item.parent) : null; f; f = f.parent ? items.get(f.parent) : null) {
+      if (placeOf(f.id)) return false;
+      if (SET_ASIDE.test(f.name) && f.parent && placeOf(f.parent)) return true;
+    }
+    return false;
+  };
   // Rows whose file Drive still has.
   const missing = [];
+  const aside = new Set();
   const emptied = new Set();
   // With only some folders read, a row's file can be missing only when the row was listed in one of them.
   const scopePaths = scope ? new Set([...scope].map(id => placeOf(id)?.path).filter(Boolean)) : null;
@@ -206,6 +228,13 @@ export function planPhotoLinks({
       continue;
     }
     if (!inScope(item)) continue;
+    // Set aside since it was listed (named …_todelete, or moved into a …_temp folder): as a deleted file,
+    // its row takes the file of that name left in the listed folders, or is emptied.
+    if (!isFolder(item) && (TO_DELETE.test(item.name) || inTemp(item))) {
+      aside.add(id);
+      missing.push([id, r]);
+      continue;
+    }
     const path = pathOf(item);
     if (!path) {
       summary.outside++;
@@ -243,9 +272,9 @@ export function planPhotoLinks({
   // one: Drive is asked first.
   const unknown = [];
   for (const [id, r] of missing) {
-    const found = lookups.get(id);
+    const found = aside.has(id) ? { gone: true } : lookups.get(id);
     const again = r.values.Type === 'File' ? free.get(lower(r.values.Name))?.find(f => !taken.has(f.id)) : null;
-    if (again && (!scope || found?.gone)) {
+    if (again && (!scope || found?.gone) && !aside.has(again.id)) {
       taken.add(again.id);
       relinkedTo.set(r.id, again.id);
       const { Name: _name, Type: _type, ...link } = cells(again, pathOf(again));
@@ -403,6 +432,8 @@ export function planPhotoLinks({
     edits,
     creates,
     display: [...display, ...edited],
+    // What the reading knows of each file, for putting the folders in order (server/photo-files.mjs).
+    index: { items, home, info, flags: checked.flags, folderPath: id => placeOf(id)?.path ?? null },
     unknown: unknown.slice(0, LOOKUPS),
     summary: {
       ...summary,
@@ -578,8 +609,8 @@ function checkPhotos({ added, info, views, where, place, photosIn, folderOf }) {
     }
     // A .jpeg takes the .JPG the lookups expect; another format keeps its own.
     const jpeg = /^jpe?g$/i.test(x.parsed.ext);
-    const right = `${x.id}${x.parsed.view}${x.parsed.extra}.${jpeg ? 'JPG' : x.parsed.ext}`;
-    const exact = file.name.toUpperCase() === right.toUpperCase();
+    const right = rightName(file.name, info);
+    const exact = right === file.name;
     if (!exact) flag(file, 'rename', { to: right });
     else if (x.parsed.extra || !jpeg) out.otherViews++;
     else {
