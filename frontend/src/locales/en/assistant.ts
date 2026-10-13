@@ -650,4 +650,22 @@ export default {
   'a la papelera': 'to the bin',
   'marcar …_todelete': 'mark …_todelete',
   'acceso directo': 'shortcut',
+  'hoja de traspaso': 'transfer sheet',
+  'cuenta desconocida': 'unknown account',
+  'con sus subcarpetas': 'with its subfolders',
+  'sin sus subcarpetas': 'without its subfolders',
+  'borrado definitivo': 'deleted for good',
+  'La hoja «{sheet}» queda preparada para la carpeta {folder} ({set}).': 'The sheet «{sheet}» is left ready for the folder {folder} ({set}).',
+  'Después, cada cuenta dueña abre la hoja con su sesión y pulsa «{button}»:': 'Afterwards, each owning account opens the sheet signed in to it and presses «{button}»:',
+  'la cuenta dueña de los archivos …_todelete': 'the account that owns the …_todelete files',
+  'Después, la cuenta que se queda con las fotos abre la hoja con su sesión y pulsa «{button}»: copia los archivos de las otras cuentas y renombra los originales …_todelete.':
+    'Afterwards, the account that takes the photos over opens the sheet signed in to it and presses «{button}»: it copies the other accounts\' files and renames the originals …_todelete.',
+  'Archivos ahora:': 'Files now:',
+  'Último uso de la hoja: {run}': 'The sheet\'s last run: {run}',
+  'Falta el paso de otra cuenta.': 'Another account\'s step is left.',
+  'Cada cuenta dueña abre la hoja «{sheet}» con su sesión y pulsa «{button}»:': 'Each owning account opens the sheet «{sheet}» signed in to it and presses «{button}»:',
+  'La cuenta que se queda con las fotos abre la hoja «{sheet}» con su sesión y pulsa «{button}»; después, pide al asistente actualizar Photo_links.':
+    'The account that takes the photos over opens the sheet «{sheet}» signed in to it and presses «{button}»; afterwards, ask the assistant to update Photo_links.',
+  'La hoja ya tiene la carpeta {folder}.': 'The sheet already has the folder {folder}.',
+  'Abrir la hoja': 'Open the sheet',
 } as Record<string, string>

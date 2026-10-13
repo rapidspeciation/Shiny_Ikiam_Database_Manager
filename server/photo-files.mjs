@@ -16,9 +16,15 @@
 // files», run by the account that takes the photos over, copies each file and renames the original
 // …_todelete; its «Delete copied files», run by the first owner, deletes those. The fix `copied`
 // does that second step for the account's own files, and only where the copy is there.
+//
+// What only another account can do is left ready for it in that sheet (server/transfer-sheet.mjs):
+// a `transfer` step writes the folder and the options in its cells, and the person signed in to
+// that account opens it and presses the button. A plan that leaves …_todelete files to other
+// accounts gets that step by itself.
 
 import { FOLDER } from './drive.mjs';
 import { driveIdOf, rightName } from './photo-links.mjs';
+import { TRANSFER_BUTTONS, TRANSFER_SHEET_NAME } from './transfer-sheet.mjs';
 
 const PHOTO = /\.(jpe?g|png|heic|heif|jfif)$/i;
 const RAW = /\.(cr2|cr3|orf|nef|arw|dng|raf|rw2|pef|tiff?)$/i;
@@ -42,6 +48,9 @@ const idIn = text => driveIdOf(text) ?? (/^[\w-]{20,}$/.test(String(text ?? '').
  *      remove   { file }           a file out of the photos (binned, or renamed …_todelete)
  *      folder   { name, in }       a new folder `name` inside the folder `in`
  *      shortcut { ids, to }        shortcuts to the dorsal and ventral photos of those specimens, in the folder `to`
+ *      transfer { step, in, subfolders, permanent }  the sheet «Transfer Ownership & Free Up Space» left ready
+ *                                  for the folder `in`: step 'copy' (its «Copy files») or 'delete' (its «Delete
+ *                                  copied files»; `permanent`: deleted for good, not binned). One a plan.
  *    `file` and the folders: a Drive link or ID, a path ("PERU_2024/JPG/CAM077740d.JPG") or a name no
  *    other has. A folder made by this plan can be named by its path in later operations; `to` may be
  *    the link of a folder outside the photo folders.
@@ -193,8 +202,29 @@ export function planFileChanges({ index, operations = [], fix = [], withRaw = tr
       if (already) problems.push({ at, error: `${already} are in that folder already` });
       continue;
     }
+    if (action === 'transfer') {
+      const step = lower(o.step);
+      const where = ['copy', 'delete'].includes(step) ? findFolder(o.in) : { error: 'transfer: step is copy or delete' };
+      if (where.error || where.fresh !== undefined || ops.some(x => x.action === 'transfer')) {
+        problems.push({ at, error: where.error ?? (where.fresh !== undefined ? 'transfer: the folder is not made yet' : 'the sheet takes one folder at a time: one transfer a plan') });
+        continue;
+      }
+      const item = where.item;
+      ops.push({
+        action: 'transfer',
+        step,
+        id: item?.id ?? where.outside,
+        name: item?.name ?? String(o.in).slice(0, 200),
+        folder: item ? pathOfFolder(item.parent) : '',
+        subfolders: o.subfolders !== false,
+        permanent: o.permanent === true,
+        ...(item?.webViewLink ? { url: item.webViewLink } : {}),
+        ...(item ? {} : { outside: true }),
+      });
+      continue;
+    }
     if (!['rename', 'move', 'remove'].includes(action)) {
-      problems.push({ at, error: `action is rename, move, remove, folder or shortcut (${String(o?.action).slice(0, 30)} given)` });
+      problems.push({ at, error: `action is rename, move, remove, folder, shortcut or transfer (${String(o?.action).slice(0, 30)} given)` });
       continue;
     }
     const found = find(o.file, action === 'move' ? () => true : f => !isFolder(f), 'file');
@@ -286,42 +316,111 @@ export function planFileChanges({ index, operations = [], fix = [], withRaw = tr
   return { ops, problems };
 }
 
+/** The folder holding all of these files, within the folders read: { id, name, path }, or null. */
+function folderHolding(index, fileIds) {
+  const { items, home, folderPath } = index;
+  let shared = null;
+  for (const id of fileIds) {
+    const chain = [];
+    for (let p = items.get(id)?.parent; p; p = p === home ? null : items.get(p)?.parent) chain.push(p);
+    shared = shared ? shared.filter(p => chain.includes(p)) : chain;
+  }
+  const id = shared?.[0];
+  return id && items.has(id) ? { id, name: items.get(id).name, path: folderPath(id) ?? items.get(id).name, url: items.get(id).webViewLink } : null;
+}
+
+/** The files of a folder (and of the folders inside it) counted by the account that owns them, the most first. */
+function owners(index, folderId, subfolders, want) {
+  const { items } = index;
+  const counts = new Map();
+  for (const item of items.values()) {
+    if (isFolder(item) || !want(item)) continue;
+    let inside = item.parent === folderId;
+    if (!inside && subfolders) for (let p = items.get(item.parent)?.parent; p && !inside; p = items.get(p)?.parent) inside = p === folderId;
+    if (!inside) continue;
+    const account = item.owners?.[0]?.emailAddress ?? '';
+    counts.set(account, (counts.get(account) ?? 0) + 1);
+  }
+  return [...counts].map(([account, files]) => ({ account, files })).sort((a, b) => b.files - a.files);
+}
+
 /**
  * What the account that changes files may do: each `remove` is a file binned when it is the
  * account's own (`how: 'bin'`), renamed …_todelete otherwise (`how: 'mark'`); a …_todelete file that
  * is someone else's, and a `to` that is no folder, are left out (added to `problems`).
+ * With the sheet «Transfer Ownership & Free Up Space» (`sheet`, and the `index` the plan was made
+ * from): the …_todelete files left to other accounts get a `transfer` step for the folder holding
+ * them, and a `transfer` step says which accounts own the files concerned (`by`).
  */
-export async function settleChanges(writer, { ops, problems }, { parallel = 8 } = {}) {
+export async function settleChanges(writer, { ops, problems }, { parallel = 8, index = null, sheet = null } = {}) {
   const left = new Set();
   const asked = new Map();
   const ask = id => asked.get(id) ?? asked.set(id, writer.get(id).catch(() => null)).get(id);
   const queue = ops.filter(op => op.action === 'remove' || op.outside);
+  const others = [];
   let notOwn = 0;
   await Promise.all(
     Array.from({ length: parallel }, async () => {
       while (queue.length) {
         const op = queue.shift();
         if (op.outside) {
-          const folder = await ask(op.toId);
+          const folder = await ask(op.action === 'transfer' ? op.id : op.toId);
           if (folder?.mimeType !== FOLDER) {
             left.add(op);
-            problems.push({ file: `${op.folder}/${op.name}`, error: `${op.to} is not a folder the account can open` });
-          } else op.to = folder.name;
+            problems.push({ file: [op.folder, op.name].filter(Boolean).join('/'), error: `${op.action === 'transfer' ? op.name : op.to} is not a folder the account can open` });
+          } else if (op.action === 'transfer') Object.assign(op, { name: folder.name, ...(folder.webViewLink ? { url: folder.webViewLink } : {}) });
+          else op.to = folder.name;
           continue;
         }
         const item = await ask(op.id);
         if (item?.ownedByMe) op.how = 'bin';
         else if (op.copied) {
           left.add(op);
+          others.push(op.id);
           notOwn++;
         } else {
           op.how = 'mark';
           op.to = `${op.name}_todelete`;
+          others.push(op.id);
         }
       }
     }),
   );
-  if (notOwn) problems.push({ error: `${notOwn} …_todelete files belong to another account: their owner deletes them («Delete copied files» in the sheet «Transfer Ownership & Free Up Space»)` });
+  if (notOwn) problems.push({ error: `${notOwn} …_todelete files belong to another account: their owner deletes them («${TRANSFER_BUTTONS.delete}» in the sheet «${TRANSFER_SHEET_NAME}»)` });
+
+  // What is left to other accounts: the sheet ready for the folder holding it.
+  let transfer = ops.find(op => op.action === 'transfer' && !left.has(op));
+  if (!transfer && others.length && sheet && index && !ops.some(op => op.action === 'transfer')) {
+    const holder = folderHolding(index, others);
+    if (holder) {
+      const { items } = index;
+      transfer = { action: 'transfer', step: 'delete', id: holder.id, name: holder.name, folder: index.folderPath(items.get(holder.id)?.parent) ?? '', subfolders: true, permanent: false, auto: true, ...(holder.url ? { url: holder.url } : {}) };
+      ops.push(transfer);
+    }
+  }
+  if (transfer) {
+    const now = sheet ? await sheet.read().catch(e => ({ error: e?.message || String(e) })) : { error: `this app has no sheet «${TRANSFER_SHEET_NAME}» set up` };
+    const going = now.busy ? `the sheet «${TRANSFER_SHEET_NAME}» is in use (${now.last.action} of ${now.last.folder}: ${now.last.status}, ${now.last.hoursAgo} h ago): when that run ends, ask for this step again` : now.error;
+    if (going) {
+      left.add(transfer);
+      problems.push({ file: [transfer.folder, transfer.name].filter(Boolean).join('/'), error: going });
+    } else {
+      if (sheet.url) transfer.sheetUrl = sheet.url;
+      if (now.last) transfer.lastRun = `${now.last.action} of ${now.last.folder}: ${now.last.files} files, ${now.last.status}${now.last.runtime ? `, ${now.last.runtime}` : ''}`;
+      if (index && !transfer.outside) {
+        // «Delete copied files»: the accounts whose …_todelete files are there, with those this plan marks.
+        // «Copy files»: the accounts whose files are there now (the one that presses it copies the others').
+        const marked = new Set(ops.filter(op => op.how === 'mark' && !left.has(op)).map(op => op.id));
+        const binned = new Set(ops.filter(op => op.how === 'bin').map(op => op.id));
+        transfer.by = owners(
+          index,
+          transfer.id,
+          transfer.subfolders,
+          transfer.step === 'delete' ? f => marked.has(f.id) || (TO_DELETE.test(f.name) && !binned.has(f.id)) : f => !TO_DELETE.test(f.name),
+        ).slice(0, 12);
+      }
+    }
+  }
   // Left out: the ops after them keep pointing at the folders this plan makes.
   const kept = ops.filter(op => !left.has(op));
   const at = new Map(kept.map((op, i) => [op, i]));
@@ -333,7 +432,7 @@ export async function settleChanges(writer, { ops, problems }, { parallel = 8 } 
  * Makes the changes, the folders first: each op comes back with `done: true`, or `error`.
  * `onStep(done, failed)` is called as they go; `parallel` files at a time.
  */
-export async function runFileChanges(writer, ops, { onStep = null, parallel = 4 } = {}) {
+export async function runFileChanges(writer, ops, { onStep = null, parallel = 4, sheet = null } = {}) {
   let done = 0;
   let failed = 0;
   const step = (op, error) => {
@@ -354,7 +453,7 @@ export async function runFileChanges(writer, ops, { onStep = null, parallel = 4 
       step(op, e);
     }
   }
-  const queue = ops.filter(o => o.action !== 'folder');
+  const queue = ops.filter(o => o.action !== 'folder' && o.action !== 'transfer');
   await Promise.all(
     Array.from({ length: parallel }, async () => {
       while (queue.length) {
@@ -376,18 +475,31 @@ export async function runFileChanges(writer, ops, { onStep = null, parallel = 4 
       }
     }),
   );
+  // Last, the sheet left ready for the account that does the rest.
+  for (const op of ops.filter(o => o.action === 'transfer')) {
+    try {
+      if (!sheet) throw new Error(`this app has no sheet «${TRANSFER_SHEET_NAME}» set up`);
+      const now = await sheet.read();
+      if (now.busy) throw new Error(`the sheet is in use (${now.last.action} of ${now.last.folder}: ${now.last.status})`);
+      await sheet.write({ folder: op.id, subfolders: op.subfolders, ...(op.step === 'delete' ? { permanent: op.permanent } : {}) });
+      step(op);
+    } catch (e) {
+      step(op, e);
+    }
+  }
   return ops;
 }
 
 /**
  * Takes back the changes made (`done`), the last first: names and folders as they were, files out
- * of the bin, shortcuts binned. Folders made stay. Answers { undone, failed }.
+ * of the bin, shortcuts binned. Folders made stay, and what was written in the sheet «Transfer
+ * Ownership & Free Up Space». Answers { undone, failed }.
  */
 export async function undoFileChanges(writer, ops, { onStep = null } = {}) {
   let undone = 0;
   let failed = 0;
   for (const op of [...ops].reverse()) {
-    if (!op.done || op.action === 'folder') continue;
+    if (!op.done || op.action === 'folder' || op.action === 'transfer') continue;
     try {
       if (op.action === 'move') await writer.move(op.id, op.toId, op.from);
       else if (op.action === 'shortcut') await writer.trash(op.made);
@@ -402,8 +514,24 @@ export async function undoFileChanges(writer, ops, { onStep = null } = {}) {
   return { undone, failed };
 }
 
-/** What an op is, for counts and the card: rename, move, bin, mark (renamed …_todelete), folder, shortcut. */
-export const kindOf = op => (op.action === 'remove' ? (op.how === 'bin' ? 'bin' : 'mark') : op.action);
+/** What an op is, for counts and the card: rename, move, bin, mark (renamed …_todelete), folder, shortcut, sheet (a `transfer` step). */
+export const kindOf = op => (op.action === 'remove' ? (op.how === 'bin' ? 'bin' : 'mark') : op.action === 'transfer' ? 'sheet' : op.action);
+
+/** A `transfer` step as the card and the model are told it: what the sheet is left ready for, and who presses what. */
+export const transferOf = op =>
+  op && {
+    step: op.step,
+    button: TRANSFER_BUTTONS[op.step],
+    folder: [op.folder, op.name].filter(Boolean).join('/'),
+    ...(op.url ? { folderUrl: op.url } : {}),
+    sheet: TRANSFER_SHEET_NAME,
+    ...(op.sheetUrl ? { sheetUrl: op.sheetUrl } : {}),
+    subfolders: op.subfolders,
+    ...(op.step === 'delete' ? { permanent: op.permanent } : {}),
+    ...(op.by?.length ? { by: op.by } : {}),
+    ...(op.lastRun ? { lastRun: op.lastRun } : {}),
+    ...(op.auto ? { auto: true } : {}),
+  };
 
 /** A plan as the model is told it: the counts, a few of each, what was left out. */
 export function describeChanges(ops, problems) {
@@ -417,12 +545,24 @@ export function describeChanges(ops, problems) {
         : `${op.folder}/${op.name} → ${op.to}`;
   const names = { rename: 'rename', move: 'move', bin: 'binned', mark: 'renamedToDelete', folder: 'newFolders', shortcut: 'shortcuts' };
   const out = {};
-  for (const [kind, list] of Object.entries(groups))
+  for (const [kind, list] of Object.entries(groups)) {
+    if (kind === 'sheet') {
+      const t = transferOf(list[0]);
+      out.otherAccountStep = {
+        ...t,
+        then:
+          t.step === 'delete'
+            ? `Once applied, each account of \`by\` opens the sheet signed in to that account and presses «${t.button}»: it ${t.permanent ? 'deletes for good' : 'bins'} the …_todelete files that account owns there.`
+            : `Once applied, the account that takes the photos over opens the sheet signed in to that account and presses «${t.button}»: it copies the files the other accounts own there (\`by\`) and renames the originals …_todelete. Then sync_photo_links moves the rows to the copies.`,
+      };
+      continue;
+    }
     out[names[kind]] = {
       count: list.length,
       ...(list.some(o => o.raw) ? { rawFilesWithTheirPhoto: list.filter(o => o.raw).length } : {}),
       examples: list.filter(o => !o.raw).slice(0, EXAMPLES).map(show),
     };
+  }
   if (problems.length) out.leftOut = { count: problems.length, examples: problems.slice(0, 10) };
   return out;
 }

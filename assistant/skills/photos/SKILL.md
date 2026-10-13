@@ -139,10 +139,10 @@ Sync) writes the same rows from Google Sheets; either can be used.
 ## Putting the folders in order
 
 `organize_photos` changes the files on Drive with the project's Google
-account: it shows the plan as a card beside the chat, every change listed,
-and makes it when the person agrees (in the chat, or with the card's
-«Apply»). Photo_links then follows the files changed by itself, and the
-tool takes a plan's changes back when asked (`undo`).
+account: it shows the plan as a card beside the chat («Proposed changes»),
+every change listed, and the changes are made when the person presses
+«Apply» on that card. Photo_links then follows the files changed by itself,
+and the tool takes a plan's changes back when asked (`undo`).
 
 | The person asks | The plan |
 |---|---|
@@ -151,6 +151,7 @@ tool takes a plan's changes back when asked (`undo`).
 | to rename, move or remove these files | `operations`, one per file, named by its path, its name or its link |
 | a new folder, and files moved into it | `{action: "folder", name, in}`, then `move` operations naming it |
 | the photos of a list of butterflies gathered to share (a project's specimens) | `{action: "shortcut", ids: [CAM…], to: <folder>}`: shortcuts to their dorsal and ventral photos; the photos stay where they are |
+| something only another account can do (delete its own files, take a folder's photos over) | `{action: "transfer", step: "delete" or "copy", in: <folder>}`: the team's sheet is left ready, and that account presses its button (below) |
 
 - A photo renamed or removed takes its RAW file with it. A photo moved does
   not: its RAW file is moved with a second operation, to the RAW folder
@@ -159,7 +160,11 @@ tool takes a plan's changes back when asked (`undo`).
   in Drive's bin). Drive lets nobody bin another account's file, and most
   photos belong to the account they were copied to (below): those are
   renamed `…_todelete`, which takes them out of Photo_links, and their owner
-  deletes them. Say which of the two will happen (the plan counts them).
+  deletes them: the plan leaves the sheet «Transfer Ownership & Free Up
+  Space» ready for their folder, and its answer (`otherAccountStep.by`) names
+  the accounts that then open the sheet and press «Delete copied files». Say
+  which of the two will happen (the plan counts them) and who is left to
+  press the button.
 - Two different photos named after one CAM are not copies: no fix removes
   them. Look at both envelopes, then rename or remove the wrong one by name.
 - After changes that bring new files into the listed folders (a folder moved
@@ -187,15 +192,20 @@ organisation, so the file is copied and the original deleted:
 - The account that presses «Copy files» is the one that ends up owning the
   photos: pressed from the project's account it copies them the other way.
   «Delete copied files» only touches files named `…_todelete`.
+- The sheet's cells are written from here, so the other person only opens it
+  and presses the button: `organize_photos` with
+  `{action: "transfer", step: "copy", in: <folder>}` before step 1, or
+  `step: "delete"` before step 2 (`permanent: true` for mode 1, when the
+  space is needed right away). The sheet holds one folder at a time; while a
+  run of it is going on the plan says so and leaves the step out.
 - The copies are new files, so the old links end with the originals.
   `sync_photo_links` moves each row to the copy of the same name; it can be
   run right after step 1, and the links never break.
 - Step 2 for the project's own files can be done here:
   `organize_photos` `fix: [{check: "copied", in: <folder>}]` bins each
   `…_todelete` file whose copy is beside it (same name, same size), and leaves
-  the others. The bin still counts against the space until it is emptied in
-  Drive. Step 1 cannot: only the account taking the photos over can make the
-  copies.
+  the sheet ready for the accounts that own the others. The bin still counts
+  against the space until it is emptied in Drive.
 - Which account owns each file is Photo_links' «Owner Email» column
   (`query`): the files still owned by the project's account are the ones
   that take its space.

@@ -3,7 +3,9 @@
 // (server/photo-links-tool.mjs → server/batch.mjs) reading the real photo folders on Drive and writing
 // the copy's Photo_links, then undoing what it wrote.
 //
-//   node tools/perf/photo-links-bench.mjs --id <copy id> [--only "Guyana_2025"] [--keep]
+//   node tools/perf/photo-links-bench.mjs --id <copy id> [--only "Guyana_2025"] [--keep] [--read]
+//
+// --read: only the reading of Drive and its comparison with the copy's sheet; nothing is written.
 //
 // Credentials (on claudeclaw): --creds for the copy (default ~/.config/ithomiini/google.jmithominii.json),
 // --drive-creds for Drive (default ~/.config/ithomiini/google.json, the app's login).
@@ -46,7 +48,7 @@ try {
   const read = await timed(`Drive read${only.length ? ` (${only.join(', ')})` : ' (every listed folder)'} and compared`, () => tool.run({ only }, user));
   if (read.error) throw new Error(read.error);
   console.log(`  ${read.drive.files} files in ${read.drive.folders} folders; new files: ${read.changes?.newFiles ?? 0}; requests to Drive: ${drive.requests}`);
-  if (read.upToDate) process.exit(0);
+  if (read.upToDate || args.read) process.exit(0);
   const before = Date.now();
   const done = await timed('Written to Photo_links and confirmed', () => tool.run({ confirmed: true, scan: read.scan }, user));
   console.log(`  ${JSON.stringify({ status: done.status, rowsWritten: done.rowsWritten, saves: done.saves, error: done.error })}`);

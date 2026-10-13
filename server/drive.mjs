@@ -46,8 +46,8 @@ export class GoogleDrive {
         await new Promise(resolve => setTimeout(resolve, 1000 * 2 ** attempt));
         continue;
       }
-      const body = await response.text();
-      throw Object.assign(new Error(`Google Drive ${response.status}: ${body.slice(0, 300)}`), { status: response.status });
+      const said = await response.text();
+      throw Object.assign(new Error(`Google Drive ${response.status}: ${said.slice(0, 300)}`), { status: response.status });
     }
   }
   async children(folderId, { foldersOnly = false } = {}) {

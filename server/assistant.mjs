@@ -4856,9 +4856,13 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         .get(String(args.proposalId ?? ''), context.threadId);
       if (!proposal) return { error: 'Proposal not found in this conversation' };
       if (isTable(proposal)) return { error: NOT_A_PROPOSAL };
-      // A reading of the photo folders: written as sync_photo_links writes it.
-      if (isSync(proposal))
-        return photoLinks ? photoLinks.run({ confirmed: true, scan: proposal.id }, context.user, context) : { error: 'Call it again in a moment.' };
+      // A reading of the photo folders: written as sync_photo_links writes it. A plan of changes to the files: made from its card.
+      if (isSync(proposal)) {
+        if (!photoLinks) return { error: 'Call it again in a moment.' };
+        return parse(proposal.sync_json)?.type === 'files'
+          ? photoLinks.organize({ plan: proposal.id }, context.user, context)
+          : photoLinks.run({ confirmed: true, scan: proposal.id }, context.user, context);
+      }
       try {
         const out = await applyProposal(proposal, context.user, {
           requestId: `ai-${randomUUID()}`,

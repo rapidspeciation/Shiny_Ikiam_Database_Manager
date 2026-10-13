@@ -3,12 +3,12 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
-import { AlertTriangle, Check, ChevronDown, ChevronRight, FolderCog, X } from 'lucide-vue-next'
+import { AlertTriangle, Check, ChevronDown, ChevronRight, ExternalLink, FolderCog, UserRoundCheck, X } from 'lucide-vue-next'
 import { api } from '../../lib/api'
 import { errorText, notify } from '../../lib/notice'
 import { locale, t } from '../../lib/i18n'
 import type { Proposal } from '../../lib/proposals'
-import { fileChangeLabel, fileCounts, fileTarget, progressPercent, type FileRow, type PhotoFiles } from '../../lib/photoLinks'
+import { fileChangeLabel, fileCounts, fileTarget, handoverAccounts, progressPercent, type FileRow, type PhotoFiles } from '../../lib/photoLinks'
 
 /**
  * Changes to make to the photo files on Google Drive (the assistant's organize_photos), as a card
@@ -16,7 +16,10 @@ import { fileChangeLabel, fileCounts, fileTarget, progressPercent, type FileRow,
  * files of another account, for their owner to delete), the folders and shortcuts made, what was
  * left out and why, and every change in a table. «Aplicar» makes them with the project's Google
  * account, a bar showing how far it is; Photo_links then follows the files changed. The
- * assistant takes a plan's changes back when asked.
+ * assistant takes a plan's changes back when asked. Only this button makes them.
+ * What another account has to do afterwards (`handover`: copy a folder's files, or delete the
+ * …_todelete ones it owns) is left ready in the team's sheet «Transfer Ownership & Free Up Space»:
+ * the card says which account opens it and which button it presses.
  */
 const props = defineProps<{ proposal: Proposal }>()
 const emit = defineEmits<{ discard: []; started: [] }>()
@@ -26,6 +29,18 @@ const status = computed(() => props.proposal.status)
 const pending = computed(() => status.value === 'pending')
 const progress = computed(() => plan.value.progress)
 const base = computed(() => `chat/proposals/${props.proposal.id}/photo-links`)
+const handover = computed(() => plan.value.handover)
+/** The files changed: the steps made, without the sheet's own. */
+const filesDone = computed(() => Math.max(0, (progress.value?.written ?? 0) - (progress.value?.handover ? 1 : 0)))
+/** What the sheet is set to: the folder, with or without those inside it, and where deleted files go. */
+const handoverSet = computed(() => {
+  const h = handover.value
+  if (!h) return ''
+  return [
+    h.subfolders ? t('con sus subcarpetas') : t('sin sus subcarpetas'),
+    ...(h.step === 'delete' ? [h.permanent ? t('borrado definitivo') : t('a la papelera')] : []),
+  ].join(' · ')
+})
 
 const busy = ref(false)
 async function apply() {
@@ -146,7 +161,7 @@ onBeforeUnmount(dropGrid)
       <p class="flex items-start gap-1.5 text-emerald-800">
         <Check :size="14" class="mt-px shrink-0" />
         <span>
-          {{ $tn(progress?.written ?? 0, '{n} archivo cambiado en Google Drive.', '{n} archivos cambiados en Google Drive.') }}
+          {{ $tn(filesDone, '{n} archivo cambiado en Google Drive.', '{n} archivos cambiados en Google Drive.') }}
           <template v-if="progress?.sheetRows">
             {{ $tn(progress.sheetRows, 'Photo_links: {n} fila actualizada (en Historial).', 'Photo_links: {n} filas actualizadas (en Historial).') }}
           </template>
@@ -154,6 +169,31 @@ onBeforeUnmount(dropGrid)
         </span>
       </p>
       <p v-if="progress?.sheetNote" class="text-amber-900">{{ progress.sheetNote }}</p>
+      <!-- The step left to another account. -->
+      <div v-if="progress?.handover" class="mt-1 rounded border border-sky-300 bg-sky-50 px-2 py-1.5 text-sky-950" data-handover-next>
+        <p class="flex items-start gap-1.5">
+          <UserRoundCheck :size="14" class="mt-px shrink-0 text-sky-700" />
+          <span>
+            <strong class="font-medium">{{ $t('Falta el paso de otra cuenta.') }}</strong>
+            <template v-if="progress.handover.step === 'delete'">
+              {{ $t('Cada cuenta dueña abre la hoja «{sheet}» con su sesión y pulsa «{button}»:', { sheet: progress.handover.sheet, button: progress.handover.button }) }}
+              <strong class="font-medium break-all">{{ handoverAccounts(progress.handover) || $t('la cuenta dueña de los archivos …_todelete') }}</strong>
+            </template>
+            <template v-else>
+              {{
+                $t('La cuenta que se queda con las fotos abre la hoja «{sheet}» con su sesión y pulsa «{button}»; después, pide al asistente actualizar Photo_links.', {
+                  sheet: progress.handover.sheet,
+                  button: progress.handover.button,
+                })
+              }}
+            </template>
+            {{ $t('La hoja ya tiene la carpeta {folder}.', { folder: progress.handover.folder }) }}
+          </span>
+        </p>
+        <a v-if="progress.handover.sheetUrl" :href="progress.handover.sheetUrl" target="_blank" rel="noopener" class="mt-1 ml-5 inline-flex items-center gap-1 text-sky-800 hover:underline">
+          <ExternalLink :size="12" /> {{ $t('Abrir la hoja') }}
+        </a>
+      </div>
     </div>
     <p v-else-if="status === 'discarded'" class="px-3 py-2 text-xs text-stone-500">{{ $t('Descartada') }}</p>
 
@@ -184,6 +224,29 @@ onBeforeUnmount(dropGrid)
           }}
         </p>
         <p>{{ $t('Después, las filas de Photo_links siguen a los archivos cambiados.') }}</p>
+      </div>
+      <div v-if="handover" class="space-y-1 border-b border-stone-200 bg-sky-50 px-3 py-2 text-xs text-sky-950" data-handover>
+        <p class="flex items-start gap-1.5">
+          <UserRoundCheck :size="14" class="mt-px shrink-0 text-sky-700" />
+          <span>
+            {{ $t('La hoja «{sheet}» queda preparada para la carpeta {folder} ({set}).', { sheet: handover.sheet, folder: handover.folder, set: handoverSet }) }}
+          </span>
+        </p>
+        <p v-if="handover.step === 'delete'" class="ml-5">
+          {{ $t('Después, cada cuenta dueña abre la hoja con su sesión y pulsa «{button}»:', { button: handover.button }) }}
+          <strong class="font-medium break-all">{{ handoverAccounts(handover) || $t('la cuenta dueña de los archivos …_todelete') }}</strong>
+        </p>
+        <p v-else class="ml-5">
+          {{
+            $t('Después, la cuenta que se queda con las fotos abre la hoja con su sesión y pulsa «{button}»: copia los archivos de las otras cuentas y renombra los originales …_todelete.', {
+              button: handover.button,
+            })
+          }}
+          <template v-if="handover.by?.length">
+            {{ $t('Archivos ahora:') }} <span class="break-all">{{ handoverAccounts(handover) }}</span>
+          </template>
+        </p>
+        <p v-if="handover.lastRun" class="ml-5 text-sky-900/70">{{ $t('Último uso de la hoja: {run}', { run: handover.lastRun }) }}</p>
       </div>
       <div v-if="plan.problems?.count" class="border-b border-stone-200 px-3 py-2 text-xs text-amber-900" data-problems>
         <p class="flex items-center gap-1.5">

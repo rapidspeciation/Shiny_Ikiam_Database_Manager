@@ -171,8 +171,11 @@ export function filterRows(rows: PhotoRow[], show: 'all' | 'flagged' | CheckKind
 }
 
 // ------------------------------------------------------------ the files put in order (organize_photos)
-/** What is done to a file: binned (the account's own), or renamed …_todelete for its owner to delete (`mark`). */
-export type FileChange = 'rename' | 'move' | 'bin' | 'mark' | 'folder' | 'shortcut'
+/**
+ * What is done to a file: binned (the account's own), or renamed …_todelete for its owner to delete (`mark`).
+ * `sheet`: the sheet «Transfer Ownership & Free Up Space» left ready for another account's step.
+ */
+export type FileChange = 'rename' | 'move' | 'bin' | 'mark' | 'folder' | 'shortcut' | 'sheet'
 /** A change of the plan (GET chat/proposals/<id>/photo-links/rows). */
 export interface FileRow {
   change: FileChange
@@ -196,7 +199,31 @@ export interface FilesProgress {
   phase?: 'sheet'
   sheetRows?: number
   sheetNote?: string
+  /** The sheet is ready for another account's step. */
+  handover?: Handover
   error?: string
+}
+/**
+ * What another account does once the plan is applied, in the sheet «Transfer Ownership & Free Up
+ * Space» (server/photo-files.mjs transferOf): the app writes the folder in it, and the person
+ * signed in to that account presses `button`.
+ */
+export interface Handover {
+  step: 'copy' | 'delete'
+  button: string
+  folder: string
+  folderUrl?: string
+  sheet: string
+  sheetUrl?: string
+  subfolders: boolean
+  /** delete: for good, not to the bin. */
+  permanent?: boolean
+  /** delete: the accounts with …_todelete files there; copy: the accounts whose files are there now. */
+  by?: { account: string; files: number }[]
+  /** The sheet's last run, as it logged it. */
+  lastRun?: string
+  /** Added by the app for the files the plan leaves to other accounts. */
+  auto?: boolean
 }
 /** A plan of changes to the photo files on Drive, as its card keeps it (server/photo-links-tool.mjs filesCard). */
 export interface PhotoFiles {
@@ -205,10 +232,11 @@ export interface PhotoFiles {
   counts: Partial<Record<FileChange, number>>
   raw: number
   problems: { count: number; examples: string[] }
+  handover?: Handover
   progress?: FilesProgress
   stale?: boolean
 }
-export const FILE_CHANGES: FileChange[] = ['rename', 'move', 'bin', 'mark', 'folder', 'shortcut']
+export const FILE_CHANGES: FileChange[] = ['rename', 'move', 'bin', 'mark', 'folder', 'shortcut', 'sheet']
 export const fileChangeLabel = (change: FileChange): string =>
   ({
     rename: t('renombrar'),
@@ -217,7 +245,11 @@ export const fileChangeLabel = (change: FileChange): string =>
     mark: t('marcar …_todelete'),
     folder: t('carpeta nueva'),
     shortcut: t('acceso directo'),
+    sheet: t('hoja de traspaso'),
   })[change]
+/** "x@… (214) · y@… (3)": the accounts of a handover, with their files. */
+export const handoverAccounts = (handover: Handover | undefined): string =>
+  (handover?.by ?? []).map(b => `${b.account || t('cuenta desconocida')} (${b.files})`).join(' · ')
 /** "3 renombrar · 2 a la papelera": what a plan does, in a line. */
 export const fileCounts = (counts: PhotoFiles['counts']): string =>
   FILE_CHANGES.filter(c => counts[c])

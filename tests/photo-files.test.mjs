@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
-import { FOLDER, LocalDrive, driveTree } from '../server/drive.mjs';
+import { FOLDER, GoogleDrive, LocalDrive, driveTree } from '../server/drive.mjs';
 import { planPhotoLinks } from '../server/photo-links.mjs';
 import { describeChanges, kindOf, planFileChanges, runFileChanges, settleChanges, undoFileChanges } from '../server/photo-files.mjs';
+import { GoogleTransferSheet, LocalTransferSheet, parseTransfer } from '../server/transfer-sheet.mjs';
 import { createAssistant, mcpTools } from '../server/assistant.mjs';
 import { moduleMap } from '../server/schema.mjs';
 
@@ -195,7 +196,8 @@ test('organize_photos: a card, the changes made on Drive, Photo_links following,
   await store.sync({ sheets: ['Photo_links', 'Insectary_data'] });
   store.db.prepare("INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('kim','kim','Kim','editor','s','h',1,'2026-01-01')").run();
   const local = new LocalDrive(drive(), { me: ME });
-  const assistant = createAssistant({ store, config: { drive: local } });
+  const sheet = new LocalTransferSheet();
+  const assistant = createAssistant({ store, config: { drive: local, transferSheet: sheet } });
   store.db.prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')").run(createHash('sha256').update('kim-token').digest('hex'), 'kim');
   const kim = { id: 'kim', username: 'kim', role: 'editor' };
   const call = async (name, args) =>
@@ -206,14 +208,25 @@ test('organize_photos: a card, the changes made on Drive, Photo_links following,
     assert.ok(mcpTools().some(t => t.name === 'organize_photos'));
     const plan = await call('organize_photos', { fix: [{ check: 'rename', in: 'Peru' }, { check: 'copies', in: 'Peru' }] });
     assert.match(plan.link, /propuestas/);
-    assert.deepEqual(Object.fromEntries(Object.entries(plan.changes).map(([k, v]) => [k, v.count])), { rename: 2, binned: 2, renamedToDelete: 1 });
+    assert.deepEqual(Object.fromEntries(Object.entries(plan.changes).map(([k, v]) => [k, v.count ?? v.step])), { rename: 2, binned: 2, renamedToDelete: 1, otherAccountStep: 'delete' });
     assert.deepEqual(plan.changes.rename.examples, ['Wild/Peru/JPG/CAM000001_d.jpg → CAM000001d.JPG']);
 
     const [card] = (await http('GET', '')).body.proposals;
     assert.equal(card.kind, 'photo_files');
     assert.equal(card.reason, 'Google Drive: photo files');
-    assert.deepEqual(card.sync.counts, { rename: 2, bin: 2, mark: 1 });
-    assert.equal(card.sync.total, 5);
+    assert.deepEqual(card.sync.counts, { rename: 2, bin: 2, mark: 1, sheet: 1 });
+    assert.equal(card.sync.total, 6);
+    assert.deepEqual(card.sync.handover, {
+      step: 'delete',
+      button: 'Delete copied files',
+      folder: 'Wild/Peru/JPG',
+      folderUrl: folderUrl(4),
+      sheet: 'Transfer Ownership & Free Up Space',
+      subfolders: true,
+      permanent: false,
+      by: [{ account: 'curator@example.org', files: 1 }],
+      auto: true,
+    });
     const rows = (await http('GET', `/${card.id}/photo-links/rows`)).body.rows;
     assert.deepEqual(rows[0], { change: 'rename', folder: 'Wild/Peru/JPG', name: 'CAM000001_d.jpg', to: 'CAM000001d.JPG', url: fileUrl(40) });
     assert.equal(rows.filter(r => r.raw).length, 1);
@@ -222,10 +235,19 @@ test('organize_photos: a card, the changes made on Drive, Photo_links following,
     // Nothing changed yet.
     assert.deepEqual(await names(4), ['CAM000001_d.jpg', 'CAM000002d.JPG', 'CAM000003d.JPG', 'CAM000004d.JPG']);
 
-    const done = await call('organize_photos', { plan: plan.plan, confirmed: true });
+    // The chat does not make them: neither the tool nor apply_proposal. The card's button does.
+    assert.equal((await call('organize_photos', { plan: plan.plan, confirmed: true })).status, 'pending');
+    assert.equal((await call('apply_proposal', { proposalId: plan.plan })).status, 'pending');
+    assert.deepEqual(await names(4), ['CAM000001_d.jpg', 'CAM000002d.JPG', 'CAM000003d.JPG', 'CAM000004d.JPG']);
+    assert.equal((await http('POST', `/${card.id}/photo-links/apply`)).status, 202);
+    const done = await call('organize_photos', { plan: plan.plan });
     assert.equal(done.status, 'done');
     assert.equal(done.filesChanged, 5);
     assert.equal(done.photoLinksRowsUpdated, 3);
+    // The curator's file was left to its owner: the sheet is ready for the folder holding it.
+    assert.deepEqual(sheet.written, [{ folder: id(4), subfolders: true, permanent: false }]);
+    assert.equal(done.otherAccountStep.button, 'Delete copied files');
+    assert.deepEqual(done.otherAccountStep.by, [{ account: 'curator@example.org', files: 1 }]);
     assert.deepEqual(await names(4), ['CAM000001d.JPG', 'CAM000002d.JPG', 'CAM000004d.JPG_todelete']);
     assert.deepEqual(await names(5), ['CAM000001d.CR2']);
     // Photo_links: the renamed photo's row follows it; the rows of the copies removed take the files kept in Panama.
@@ -237,11 +259,13 @@ test('organize_photos: a card, the changes made on Drive, Photo_links following,
     assert.equal(cellsOf(sheets, 6).Name, 'CAM000004d.JPG');
     const applied = store.db.prepare('SELECT status, sync_json FROM ai_proposals WHERE id = ?').get(card.id);
     assert.equal(applied.status, 'applied');
-    assert.deepEqual(JSON.parse(applied.sync_json).progress, { state: 'done', written: 5, total: 5, phase: 'sheet', sheetRows: 3 });
+    const progress = JSON.parse(applied.sync_json).progress;
+    assert.deepEqual({ ...progress, handover: progress.handover.step }, { state: 'done', written: 6, total: 6, phase: 'sheet', sheetRows: 3, handover: 'delete' });
 
     // Taken back: the files, and the sheet's rows.
     const undone = await call('organize_photos', { undo: plan.plan });
     assert.deepEqual(undone, { status: 'undone', filesAsTheyWere: 5, photoLinksSavesUndone: 1 });
+    assert.equal((await call('organize_photos', { plan: plan.plan })).status, 'undone');
     assert.deepEqual(await names(4), ['CAM000001_d.jpg', 'CAM000002d.JPG', 'CAM000003d.JPG', 'CAM000004d.JPG']);
     assert.equal(cellsOf(sheets, 3).Name, 'CAM000001_d.jpg');
     assert.equal(cellsOf(sheets, 5).URL, fileUrl(42));
@@ -258,4 +282,146 @@ test('organize_photos: a card, the changes made on Drive, Photo_links following,
   } finally {
     store.close();
   }
+});
+
+test('what only another account can do is left ready in the transfer sheet', async () => {
+  const { local, index } = await reading();
+  // Asked for: the folder's photos handed to another account («Copy files»), without the folders inside it.
+  const sheet = new LocalTransferSheet({ folder: 'old-folder', last: { action: 'DELETE', folder: 'Guyana', files: 506, status: 'COMPLETED', runtime: '2m 28s', hoursAgo: 9 } });
+  const copy = await settleChanges(local, planFileChanges({ index, operations: [{ action: 'transfer', step: 'copy', in: 'Panama/JPG', subfolders: false }] }), { index, sheet });
+  assert.deepEqual(told(copy.ops), [['sheet', 'Wild/Panama/JPG', null]]);
+  // Whose the files are now: the account that presses «Copy files» copies the others'.
+  assert.deepEqual(copy.ops[0].by, [{ account: 'curator@example.org', files: 4 }]);
+  const said = describeChanges(copy.ops, copy.problems).otherAccountStep;
+  assert.equal(said.button, 'Copy files');
+  assert.equal(said.lastRun, 'DELETE of Guyana: 506 files, COMPLETED, 2m 28s');
+  assert.match(said.then, /takes the photos over/);
+  await runFileChanges(local, copy.ops, { sheet });
+  assert.deepEqual(sheet.written, [{ folder: id(7), subfolders: false }]);
+  assert.equal((await sheet.read()).permanent, true);
+  // Nothing of it to take back.
+  assert.deepEqual(await undoFileChanges(local, copy.ops), { undone: 0, failed: 0 });
+
+  // «Delete copied files» for good, in a folder and those inside it: every account with …_todelete files there.
+  const del = await settleChanges(local, planFileChanges({ index, operations: [{ action: 'transfer', step: 'delete', in: 'Panama', permanent: true }] }), { index, sheet });
+  assert.deepEqual(del.ops[0].by, [
+    { account: ME, files: 2 },
+    { account: 'curator@example.org', files: 1 },
+  ]);
+  await runFileChanges(local, del.ops, { sheet });
+  assert.deepEqual(sheet.written.at(-1), { folder: id(6), subfolders: true, permanent: true });
+
+  // The fix `copied`: the project's own is binned, and the other account's gets the sheet ready by itself.
+  const copied = await settleChanges(local, planFileChanges({ index, fix: [{ check: 'copied', in: 'Panama' }] }), { index, sheet });
+  assert.deepEqual(told(copied.ops), [
+    ['bin', 'Wild/Panama/JPG/CAM000005d.JPG_todelete', null],
+    ['sheet', 'Wild/Panama/JPG', null],
+  ]);
+  assert.equal(copied.ops[1].auto, true);
+  // Those this plan bins are not left to anyone.
+  assert.deepEqual(copied.ops[1].by, [
+    { account: ME, files: 1 },
+    { account: 'curator@example.org', files: 1 },
+  ]);
+
+  // One folder at a time, a step that exists, a folder that exists; and not while the sheet is in use.
+  const wrong = planFileChanges({
+    index,
+    operations: [
+      { action: 'transfer', step: 'delete', in: 'Peru' },
+      { action: 'transfer', step: 'copy', in: 'Panama' },
+      { action: 'transfer', step: 'move', in: 'Panama' },
+    ],
+  });
+  assert.equal(wrong.ops.length, 1);
+  assert.deepEqual(wrong.problems.map(p => p.error.slice(0, 28)), ['the sheet takes one folder a', 'transfer: step is copy or de']);
+  const busy = new LocalTransferSheet({ busy: true, last: { action: 'COPY', folder: 'RAW', files: 0, status: 'Running', runtime: '0s', hoursAgo: 1.5 } });
+  const waiting = await settleChanges(local, planFileChanges({ index, operations: [{ action: 'transfer', step: 'delete', in: 'Peru' }] }), { index, sheet: busy });
+  assert.deepEqual(waiting.ops, []);
+  assert.match(waiting.problems[0].error, /is in use \(COPY of RAW: Running, 1.5 h ago\)/);
+  assert.match((await settleChanges(local, planFileChanges({ index, operations: [{ action: 'transfer', step: 'delete', in: 'Peru' }] }), { index })).problems[0].error, /no sheet/);
+});
+
+test('the transfer sheet as Google gives it: its cells by their labels, its last run, and what is written', async () => {
+  const serial = ms => (ms - Date.UTC(1899, 11, 30)) / 86_400_000;
+  const now = Date.UTC(2026, 9, 13, 20, 0, 0);
+  const grid = (status, hoursAgo) => [
+    ['Step 1 (Run as New Owner): …'],
+    ['Source Folder ID', 'folder-a'],
+    [],
+    ['Mode: Send files to trash (0)\nDelete permanently, skip trash (1)', '1'],
+    ['Process subfolders: yes(1), no (0)', 0],
+    ['Last Log'],
+    ['Timestamp', 'User Email', 'Action', 'Parent Folder Name', 'Processed Files', 'Status', 'Runtime', 'Source ID'],
+    [serial(now - hoursAgo * 3_600_000), 'someone@example.org', 'DELETE', 'Guyana_2025', '506', status, '2m 28s', 'folder-a'],
+  ];
+  const read = parseTransfer(grid('COMPLETED', 2), { timeZone: 'UTC', now });
+  assert.deepEqual(read, {
+    folder: 'folder-a',
+    subfolders: false,
+    permanent: true,
+    last: { action: 'DELETE', folder: 'Guyana_2025', files: 506, status: 'COMPLETED', runtime: '2m 28s', by: 'someone@example.org', hoursAgo: 2 },
+    busy: false,
+    cells: { folder: 'B2', permanent: 'B4', subfolders: 'B5' },
+  });
+  // A run the sheet shows as going on: for a few hours only (one left at «Starting...» is not waited for).
+  assert.equal(parseTransfer(grid('Auto-Paused (Time Limit)', 1), { timeZone: 'UTC', now }).busy, true);
+  assert.equal(parseTransfer(grid('Starting...', 30), { timeZone: 'UTC', now }).busy, false);
+  assert.equal(parseTransfer(grid('Error: too many triggers', 1), { timeZone: 'UTC', now }).busy, false);
+
+  const calls = [];
+  const fetchFn = async (url, options = {}) => {
+    calls.push([options.method ?? 'GET', url.replace('https://sheets.googleapis.com/v4/spreadsheets/sheet-id', ''), options.body ? JSON.parse(options.body) : null, options.headers.authorization]);
+    const body = url.includes('fields=properties') ? { properties: { timeZone: 'UTC' } } : url.includes('/values/') ? { values: grid('COMPLETED', 2) } : {};
+    return { ok: true, status: 200, json: async () => body };
+  };
+  const sheet = new GoogleTransferSheet({ id: 'sheet-id', token: async () => 'tok', fetch: fetchFn });
+  await sheet.write({ folder: 'folder-b', subfolders: true });
+  assert.deepEqual(calls.at(-1), [
+    'POST',
+    '/values:batchUpdate',
+    { valueInputOption: 'RAW', data: [{ range: 'B2', values: [['folder-b']] }, { range: 'B5', values: [[1]] }] },
+    'Bearer tok',
+  ]);
+  assert.equal(sheet.url, 'https://docs.google.com/spreadsheets/d/sheet-id/edit');
+});
+
+test('Google Drive as the app calls it: pages, a file gone, a change, a busy answer tried again', async () => {
+  const calls = [];
+  const answers = [];
+  const fetchFn = async (url, options = {}) => {
+    calls.push([options.method ?? 'GET', decodeURIComponent(url.replace('https://www.googleapis.com/drive/v3/files', '').replaceAll('+', ' ')), options.body ? JSON.parse(options.body) : null]);
+    const { status = 200, body = {} } = answers.shift() ?? {};
+    return { ok: status < 300, status, json: async () => body, text: async () => JSON.stringify(body) };
+  };
+  const google = new GoogleDrive({ token: async () => 'tok', fetch: fetchFn });
+
+  answers.push({ body: { files: [{ id: 'a' }], nextPageToken: 'p2' } }, { body: { files: [{ id: 'b' }] } });
+  assert.deepEqual(await google.children('folder-1', { foldersOnly: true }), [{ id: 'a' }, { id: 'b' }]);
+  assert.match(calls[0][1], /'folder-1' in parents and trashed = false and mimeType = 'application\/vnd.google-apps.folder'/);
+  assert.match(calls[1][1], /pageToken=p2/);
+
+  answers.push({ status: 404 }, { body: { id: 'c', trashed: true } }, { body: { id: 'd', name: 'x.JPG' } });
+  assert.deepEqual(await google.get('gone'), { gone: true });
+  assert.deepEqual(await google.get('c'), { gone: true });
+  assert.equal((await google.get('d')).name, 'x.JPG');
+
+  answers.push({ body: { id: 'd', name: 'y.JPG' } });
+  assert.equal((await google.rename('d', 'y.JPG')).name, 'y.JPG');
+  assert.deepEqual(calls.at(-1).slice(0, 1).concat([calls.at(-1)[2]]), ['PATCH', { name: 'y.JPG' }]);
+  answers.push({ body: { id: 'd' } });
+  await google.move('d', 'from-1', 'to-1');
+  assert.match(calls.at(-1)[1], /addParents=to-1&removeParents=from-1/);
+  answers.push({ body: { id: 'd' } });
+  await google.trash('d');
+  assert.deepEqual(calls.at(-1)[2], { trashed: true });
+  answers.push({ body: { id: 'f' } });
+  await google.createFolder('New', 'parent-1');
+  assert.deepEqual(calls.at(-1)[2], { name: 'New', mimeType: FOLDER, parents: ['parent-1'] });
+
+  // Google busy: asked again; refused: said as Google says it.
+  answers.push({ status: 503 }, { body: { id: 'd', name: 'x.JPG' } });
+  assert.equal((await google.get('d')).name, 'x.JPG');
+  answers.push({ status: 403, body: { error: { message: 'insufficientFilePermissions' } } });
+  await assert.rejects(google.trash('d'), /Google Drive 403: .*insufficientFilePermissions/);
 });

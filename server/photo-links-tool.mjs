@@ -3,13 +3,16 @@
 // shows it beside the chat as a card of Cambios propuestos (server/assistant.mjs keeps the card), and
 // writes it once the person agrees, in the chat or with the card's «Aplicar», as ordinary saves
 // (server/batch.mjs: each in Historial, each undoable), telling the card how far it is.
+// Its second tool (organize_photos) changes the files themselves (server/photo-files.mjs): its plan
+// is a card too, and is made only from the card's «Aplicar».
 // Only the app's thread runs it (server/assistant-host.mjs MAIN_TOOLS): it reads Google and writes the sheet.
 
 import { randomUUID } from 'node:crypto';
 import { applyBatch } from './batch.mjs';
 import { driveFor, driveWriterFor } from './drive.mjs';
 import { SHEET, driveIdOf, photoLinkRows, scanPhotoLinks } from './photo-links.mjs';
-import { describeChanges, kindOf, planFileChanges, runFileChanges, settleChanges, undoFileChanges } from './photo-files.mjs';
+import { describeChanges, kindOf, planFileChanges, runFileChanges, settleChanges, transferOf, undoFileChanges } from './photo-files.mjs';
+import { transferSheetFor } from './transfer-sheet.mjs';
 
 // ------------------------------------------------------------ the tools
 export const PHOTO_TOOLS = [
@@ -44,12 +47,13 @@ export const PHOTO_TOOLS = [
     function: {
       name: 'organize_photos',
       description: [
-        "Put the photo folders on Google Drive in order with the project's Google account: rename files, move them to another folder, remove them, make folders, gather shortcuts to a set of photos. Photo_links then follows the files changed (their rows renamed, linked to the file kept, or emptied).",
-        '- Without `confirmed`: works the plan out and shows it beside the chat (`link`), every change listed; nothing is changed. Tell the person what it would do and what was left out (`leftOut`).',
+        "Put the photo folders on Google Drive in order with the project's Google account: rename files, move them to another folder, remove them, make folders, gather shortcuts to a set of photos, and leave ready what only another account can do. Photo_links then follows the files changed (their rows renamed, linked to the file kept, or emptied).",
+        '- It works the plan out and shows it as a card beside the chat (`link`), every change listed. The changes are made when the person presses «Apply» on that card. Tell the person what it would do and what was left out (`leftOut`).',
         '- `operations`: {action: "rename", file, name} · {action: "move", file, to} (a file or a folder into the folder `to`) · {action: "remove", file} · {action: "folder", name, in} · {action: "shortcut", ids, to} (shortcuts to the dorsal and ventral photos of those specimens, e.g. to share a project\'s photos). `file` and the folders: a Drive link, a path ("PERU_2024/JPG/CAM077740d.JPG") or a name no other has; a folder this plan makes can be named in its later operations.',
         '- `fix`: what a check of sync_photo_links calls for, in the folder `in` and inside it: {check: "rename", in} every photo whose name the sheets do not find takes the name they look up · {check: "copies", in} every file of `in` that is also, the same file, in another listed folder is removed · {check: "copied", in} every …_todelete file whose copy is beside it is binned.',
         "- A photo renamed or removed takes its RAW file with it (`withRaw: false`: not). Removing bins the files the project's account owns (30 days in Drive's bin); Drive lets nobody bin someone else's file, so those are renamed …_todelete (out of Photo_links, for their owner to delete).",
-        "- `confirmed: true` with that answer's `plan`, only after the person's latest message approves it: makes the changes. A long one answers `writing`: call again with the same arguments. `undo` with a plan's ID takes its changes back.",
+        '- What another account has to do is left ready in the team\'s sheet «Transfer Ownership & Free Up Space», where that account presses a button: {action: "transfer", step: "delete", in} for its «Delete copied files» (the account that owns …_todelete files in the folder `in` deletes them: to the bin, or for good with `permanent: true`), {action: "transfer", step: "copy", in} for its «Copy files» (the account that takes a folder\'s photos over copies them). `subfolders: false`: the folder without those inside it. A plan that leaves …_todelete files to other accounts gets the delete step by itself. The answer\'s `otherAccountStep` says which accounts (`by`) and what to tell them.',
+        "- `plan` with a plan's ID: how it is going, or how it ended, once the person has pressed «Apply». `undo` with a plan's ID takes its changes back.",
       ].join('\n'),
       parameters: {
         type: 'object',
@@ -59,12 +63,15 @@ export const PHOTO_TOOLS = [
             items: {
               type: 'object',
               properties: {
-                action: { type: 'string', enum: ['rename', 'move', 'remove', 'folder', 'shortcut'] },
+                action: { type: 'string', enum: ['rename', 'move', 'remove', 'folder', 'shortcut', 'transfer'] },
                 file: { type: 'string' },
                 name: { type: 'string' },
                 to: { type: 'string' },
                 in: { type: 'string' },
                 ids: { type: 'array', items: { type: 'string' } },
+                step: { type: 'string', enum: ['copy', 'delete'] },
+                subfolders: { type: 'boolean' },
+                permanent: { type: 'boolean' },
               },
               required: ['action'],
             },
@@ -79,7 +86,6 @@ export const PHOTO_TOOLS = [
           },
           withRaw: { type: 'boolean' },
           plan: { type: 'string' },
-          confirmed: { type: 'boolean' },
           undo: { type: 'string' },
         },
       },
@@ -311,8 +317,8 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
     return job;
   }
 
-  /** Starts writing a reading (or making a plan's changes on Drive): its job, or { error, code }. */
-  function start(id, user, skip = []) {
+  /** Starts writing a reading, or (`files`: from its card) making a plan's changes on Drive: its job, or { error, code }. */
+  function start(id, user, skip = [], files = false) {
     if (!EDITORS.includes(user?.role)) return { error: 'Your role cannot change the sheet', code: 'forbidden' };
     const running = [...jobs.values()].find(j => j.state === 'writing');
     if (running) return { error: 'Photo_links is being written already: wait for it to finish.', code: 'busy' };
@@ -323,6 +329,7 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
         code: 'stale',
       };
     if (plan.type === 'files') {
+      if (!files) return { error: 'Changes to the files on Drive are made with «Apply» on their card.', code: 'card' };
       plans.delete(id);
       const job = change(plan, user);
       jobs.set(id, job);
@@ -424,16 +431,27 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
   function filesCard({ ops, problems }) {
     const counts = {};
     for (const op of ops) counts[kindOf(op)] = (counts[kindOf(op)] || 0) + 1;
+    const transfer = ops.find(o => o.action === 'transfer');
     return {
       type: 'files',
       total: ops.length,
       counts,
       raw: ops.filter(o => o.raw).length,
       problems: { count: problems.length, examples: problems.slice(0, 8).map(p => [p.file ?? p.at, p.error].filter(Boolean).join(': ')) },
+      // What another account does afterwards, in the sheet «Transfer Ownership & Free Up Space».
+      ...(transfer ? { handover: transferOf(transfer) } : {}),
     };
   }
   const shownOp = op =>
-    filled({ change: kindOf(op), folder: op.folder, name: op.name, to: op.action === 'folder' ? null : op.to, url: op.url, raw: op.raw, copy: op.copy || op.copied });
+    filled({
+      change: kindOf(op),
+      folder: op.folder,
+      name: op.name,
+      to: op.action === 'folder' ? null : op.action === 'transfer' ? `«${transferOf(op).button}»` : op.to,
+      url: op.url,
+      raw: op.raw,
+      copy: op.copy || op.copied,
+    });
 
   /** Makes a plan's changes on Drive, then has Photo_links follow the files touched. */
   function change(plan, user) {
@@ -452,6 +470,7 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
             phase: job.phase,
             sheetRows: job.sheetRows,
             sheetNote: job.sheetNote,
+            handover: job.handover,
             error: job.error,
           }),
         );
@@ -463,6 +482,7 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
     job.promise = (async () => {
       let last = 0;
       await runFileChanges(writer, plan.ops, {
+        sheet: transferSheetFor(store, config, writer),
         onStep: (done, failed) => {
           Object.assign(job, { written: done, failed });
           if (Date.now() - last < 700) return;
@@ -472,6 +492,8 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
       });
       known = null;
       job.errors = plan.ops.filter(o => o.error).slice(0, EXAMPLES).map(o => `${o.name}: ${o.error}`);
+      const transfer = plan.ops.find(o => o.action === 'transfer' && o.done);
+      if (transfer) job.handover = transferOf(transfer);
       const done = plan.ops.filter(o => o.done);
       store.db
         .prepare('INSERT OR REPLACE INTO drive_changes (id, actor, created_at, ops_json) VALUES (?,?,?,?)')
@@ -512,8 +534,8 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
   const changed = (id, job) => {
     const base = filled({
       plan: id,
-      filesChanged: job.written,
-      of: job.total,
+      filesChanged: job.written - (job.handover ? 1 : 0),
+      of: job.total - (job.handover ? 1 : 0),
       failed: job.failed,
       failedExamples: job.errors,
       photoLinksRowsUpdated: job.sheetRows,
@@ -521,12 +543,36 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
     });
     if (job.state === 'writing') return { status: 'writing', ...base, next: 'Still changing files: call organize_photos again with the same arguments to follow it.' };
     if (job.state === 'failed') return { status: 'failed', ...base, error: job.error, undo: `organize_photos with undo: "${id}" takes back what was changed.` };
+    const h = job.handover;
     return {
       status: 'done',
       ...base,
+      ...(h
+        ? {
+            otherAccountStep: {
+              ...h,
+              tell:
+                h.step === 'delete'
+                  ? `The sheet is ready. Tell the person who has to press «${h.button}» in it: each account of \`by\`, signed in to that account.`
+                  : `The sheet is ready. Tell the person that the account taking the photos over opens it, signed in to that account, and presses «${h.button}»; afterwards sync_photo_links moves the rows to the copies.`,
+            },
+          }
+        : {}),
       undo: `organize_photos with undo: "${id}" takes these changes back (the files, and Photo_links' rows).`,
       next: 'New files in the listed folders, if any, still need sync_photo_links.',
     };
+  };
+  /** How a plan is: waiting for its card's «Aplicar», being made, or made. */
+  const planStatus = id => {
+    const made = store.db.prepare('SELECT created_at, undone_at, ops_json FROM drive_changes WHERE id = ?').get(id);
+    if (made?.undone_at) return { status: 'undone', plan: id, undoneAt: made.undone_at.slice(0, 16) };
+    if (jobs.has(id)) return waited(id, jobs.get(id));
+    if (plans.get(id)?.type === 'files') {
+      const { id: _id, ...links } = plans.get(id).shown;
+      return { status: 'pending', plan: id, ...links, note: 'Nothing is changed yet: the person presses «Apply» on the card.' };
+    }
+    if (made) return { status: 'done', plan: id, filesChanged: JSON.parse(made.ops_json).filter(o => o.action !== 'transfer').length, at: made.created_at.slice(0, 16) };
+    return { error: 'That plan is no longer kept (half an hour after it was made): work it out again.' };
   };
 
   /** Takes a plan's changes back: the files as they were, and the saves that followed in Photo_links undone. */
@@ -556,16 +602,14 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
     const running = [...jobs].find(([, j]) => j.state === 'writing');
     if (running) return waited(...running);
     if (args.undo) return undo(String(args.undo), user, writer);
-    if (args.confirmed) {
-      const id = String(args.plan ?? '');
-      if (jobs.has(id)) return answer(id, jobs.get(id));
-      const started = start(id, user);
-      return started.error ? { error: started.error } : waited(id, started.job);
-    }
+    if (args.plan) return planStatus(String(args.plan));
     const asked = value => (Array.isArray(value) ? value : value ? [value] : []).slice(0, 5000);
     const index = await wholeIndex();
     if (!index) return { error: 'This copy of the app has no Google Drive to read.' };
-    const planned = await settleChanges(writer, planFileChanges({ index, operations: asked(args.operations), fix: asked(args.fix), withRaw: args.withRaw !== false }));
+    const planned = await settleChanges(writer, planFileChanges({ index, operations: asked(args.operations), fix: asked(args.fix), withRaw: args.withRaw !== false }), {
+      index,
+      sheet: transferSheetFor(store, config, writer),
+    });
     if (!planned.ops.length) return { error: 'Nothing to change.', ...describeChanges([], planned.problems) };
     const card = filesCard(planned);
     const shown = show?.({ id: null, card, title: FILES_TITLE }, context) ?? { id: randomUUID() };
@@ -576,7 +620,7 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
       plan: id,
       ...links,
       changes: describeChanges(planned.ops, planned.problems),
-      next: `Nothing is changed yet. After the person agrees (they can also press «Apply» beside the chat): organize_photos with plan "${id}" and confirmed: true.`,
+      next: `Nothing is changed yet: the person looks at the card and presses «Apply» on it. organize_photos with plan "${id}" then tells how it went.`,
     };
   }
 
@@ -585,7 +629,7 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
     organize,
     /** The card's «Aplicar»: { status: 'applying' } once it has started, or { error, code }. */
     apply(id, user, { skip = [] } = {}) {
-      const started = start(id, user, list(skip));
+      const started = start(id, user, list(skip), true);
       return started.error ? started : { status: 'applying' };
     },
     /** The card's «Leer de nuevo»: the folders read again into the same card. */

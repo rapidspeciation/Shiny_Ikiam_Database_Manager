@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { filterRows, flagText, foundChecks, progressPercent, rowsToWrite, type PhotoChecks, type PhotoRow, type PhotoSync } from '../photoLinks'
+import { fileCounts, filterRows, flagText, foundChecks, handoverAccounts, progressPercent, rowsToWrite, type PhotoChecks, type PhotoRow, type PhotoSync } from '../photoLinks'
 
 const none = { count: 0, examples: [] }
 const checks: PhotoChecks = {
@@ -63,5 +63,23 @@ describe('a reading of the photo folders', () => {
     expect(filterRows(rows, 'all')).toHaveLength(3)
     expect(filterRows(rows, 'flagged').map(r => r.name)).toEqual(['CAM000002_d.jpg', 'IMG_1.JPG'])
     expect(filterRows(rows, 'unnamed').map(r => r.name)).toEqual(['IMG_1.JPG'])
+  })
+
+  it('says what a plan of file changes does, and which accounts are left a step', () => {
+    expect(fileCounts({ rename: 3, mark: 2, sheet: 1 })).toBe('3 renombrar · 2 marcar …_todelete · 1 hoja de traspaso')
+    expect(
+      handoverAccounts({
+        step: 'delete',
+        button: 'Delete copied files',
+        folder: 'PERU_2024',
+        sheet: 'Transfer Ownership & Free Up Space',
+        subfolders: true,
+        by: [
+          { account: 'a@example.org', files: 214 },
+          { account: '', files: 3 },
+        ],
+      }),
+    ).toBe('a@example.org (214) · cuenta desconocida (3)')
+    expect(handoverAccounts(undefined)).toBe('')
   })
 })

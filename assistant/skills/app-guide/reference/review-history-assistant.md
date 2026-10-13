@@ -104,7 +104,13 @@ pop-out opens the one for what the panel shows):
   which go to Drive's bin and which are renamed `…_todelete` for their owner
   to delete, what was left out and why, and «See the N changes» for every
   file. «Apply N changes» makes them with a bar showing how far it is, then
-  Photo_links follows; the assistant takes them back when asked.
+  Photo_links follows; the assistant takes them back when asked. Only that
+  button makes them: the assistant prepares the plan and says how it went.
+  When part of it is another account's to do (deleting files it owns,
+  copying a folder's photos to take them over), a blue note names the
+  account, and after «Apply» the team's sheet «Transfer Ownership & Free Up
+  Space» already has the folder: that person opens it («Open the sheet»)
+  signed in to that account and presses the button the note names.
 - **Which proposals**: those of the chat open in T3 beside it («Este chat:
   …»; a new chat not sent yet has none; «Último chat: …» when T3 does not say
   which is open), counted in «Cambios propuestos (N)». A selector above the

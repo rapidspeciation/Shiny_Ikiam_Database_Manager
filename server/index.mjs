@@ -246,6 +246,8 @@ export function configFromEnv(env = process.env) {
     // The Google account that changes files on Drive when the assistant puts the photo folders in order
     // (organize_photos, server/drive.mjs driveWriterFor): the project's own, an editor of those folders.
     driveCredentialsFile: env.GOOGLE_DRIVE_CREDENTIALS_FILE || undefined,
+    // The team's sheet where another account does its part of a plan (server/transfer-sheet.mjs); the team's own by default.
+    transferSheetId: env.TRANSFER_SHEET_ID || undefined,
     // LOCAL_MODE: the address that account has in the recorded listing (it owns that owner's files).
     driveAccount: env.DRIVE_ACCOUNT || undefined,
     // The AI's tool calls and the proposals' views in worker threads (server/assistant-host.mjs): 'auto', or '0' to run them in the app's thread.
