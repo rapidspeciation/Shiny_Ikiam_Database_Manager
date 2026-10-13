@@ -155,6 +155,21 @@ LOCAL_BUSY=unavailable:10 tools/lab/app.sh --bg   # start the app with the workb
   sheet meanwhile (`sheet-edit.mjs … --no-hook`) to see a waiting save refused
   and shown in red instead of overwriting.
 
+## The photo folders on Drive
+
+The lab has no Google login, so `sync_photo_links` (Photo_links brought up to
+date with Drive) reads a recorded listing of the photo folders:
+`~/.cache/ithomiini-lab/drive-listing.json` (`DRIVE_LISTING_FILE`). It is made
+where the app's Google login is, read-only, and copied here:
+
+```sh
+GOOGLE_CREDENTIALS_FILE=~/.config/ithomiini/google.json node tools/lab/drive-listing.mjs <folder ID> > drive-listing.json
+```
+
+`<folder ID>` is the Drive folder «Photos», which holds the photo folders.
+What the tool writes goes to the lab's copy of Photo_links, as every save
+here. Without the file the tool answers that this copy has no Drive to read.
+
 ## The AI's work beside people's requests
 
 The assistant's tool calls and the proposals' tables are built in worker

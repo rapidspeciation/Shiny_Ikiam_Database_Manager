@@ -241,6 +241,8 @@ export function configFromEnv(env = process.env) {
     databasePath: env.DATABASE_PATH || join(here, '../.local/app.sqlite'),
     // The sheets' copy the assistant's `query` reads (server/replica.mjs); beside the database by default.
     sheetsCopyPath: env.SHEETS_COPY_PATH || undefined,
+    // LOCAL_MODE (the lab): a recorded listing of the photo folders on Drive, read by sync_photo_links (server/drive.mjs).
+    driveListingFile: env.DRIVE_LISTING_FILE || undefined,
     // The AI's tool calls and the proposals' views in worker threads (server/assistant-host.mjs): 'auto', or '0' to run them in the app's thread.
     assistantWorker: env.ASSISTANT_WORKER || 'auto',
     googleCredentialsFile: env.GOOGLE_CREDENTIALS_FILE,

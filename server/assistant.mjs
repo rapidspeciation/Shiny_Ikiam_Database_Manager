@@ -36,6 +36,7 @@ import { tellChat } from './t3tell.mjs';
 import { KNOWLEDGE_TOOLS, createKnowledge, runKnowledgeTool } from './knowledge.mjs';
 import { HISTORY_TOOLS, HISTORY_TOOL_NAMES, runHistoryTool } from './history.mjs';
 import { INVITE_TOOLS, INVITE_TOOL_NAMES, runInviteTool } from './invite-tool.mjs';
+import { PHOTO_LINKS_TOOL, createPhotoLinksTool } from './photo-links-tool.mjs';
 import { createInvitations, mailerFromEnv } from './invitations.mjs';
 import { QUERY_HINT, QUERY_TOOL, createQueryRunner, formatRows, sqlProblem } from './query-tool.mjs';
 import { createSheetsCopy } from './replica.mjs';
@@ -419,6 +420,8 @@ const TOOLS = [
   ...HISTORY_TOOLS,
   // Administrators invite people from a chat (server/invite-tool.mjs).
   ...INVITE_TOOLS,
+  // Photo_links brought up to date with the photo folders on Drive (server/photo-links-tool.mjs).
+  PHOTO_LINKS_TOOL,
   {
     type: 'function',
     function: {
@@ -835,6 +838,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   // Invitations sent from a chat (invite_person): the app's own (server/index.mjs), or made here with the
   // server's mailer. Only the app's thread sends them (server/assistant-host.mjs MAIN_TOOLS).
   const invites = () => (invitations ??= createInvitations(store, mailerFromEnv()));
+  // Photo_links against Google Drive (sync_photo_links): read and written by the app's thread only.
+  const photoLinks = inWorker ? null : createPhotoLinksTool({ store, config });
   /** A note in the person's conversation (T3 Code, Revisión de datos) of the proposals made there. */
   const insertMessage = (threadId, role, content, sources = [], results = [], proposals = []) => {
     const at = now();
@@ -4748,6 +4753,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       const row = db.prepare('SELECT role, active FROM users WHERE id = ?').get(context.user.id);
       return runInviteTool(invites(), name, args, { ...context.user, role: row?.active ? row.role : null });
     }
+    if (name === 'sync_photo_links') return photoLinks ? photoLinks.run(args, context.user) : { error: 'Call it again in a moment.' };
     if (name === 'apply_proposal') {
       const proposal = db
         .prepare('SELECT * FROM ai_proposals WHERE id = ? AND thread_id = ?')

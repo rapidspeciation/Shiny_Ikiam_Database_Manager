@@ -872,6 +872,8 @@ function consecutiveRuns(rows) {
   }
   return runs;
 }
+/** Sheets whose date cells are shown another way than the app's d-mmm-yy: Photo_links, as its script leaves them. */
+const DATE_PATTERN = { Photo_links: 'dd/mm/yyyy' };
 function cellRequests({ sheet, row, changes, columns, dateFormat = [], timeFormat = [] }, sheetId) {
   if (!sheetId) throw new Error(`Sheet ${sheet} has no verified sheet ID`);
   return Object.entries(changes).map(([field, value]) => {
@@ -880,7 +882,7 @@ function cellRequests({ sheet, row, changes, columns, dateFormat = [], timeForma
     if (column === undefined) throw new Error(`No live column for ${field} in ${sheet}`);
     const cell = asCell(value);
     const formatDate = dateFormat.includes(field) && typeof value === 'number';
-    if (formatDate) cell.userEnteredFormat = { numberFormat: { type: 'DATE', pattern: 'd-mmm-yy' } };
+    if (formatDate) cell.userEnteredFormat = { numberFormat: { type: 'DATE', pattern: DATE_PATTERN[sheet] ?? 'd-mmm-yy' } };
     const formatTime = timeFormat.includes(field) && typeof value === 'number';
     if (formatTime) cell.userEnteredFormat = { numberFormat: { type: 'TIME', pattern: 'h:mm' } };
     return {

@@ -74,7 +74,7 @@ which correction they follow.
 
 | Issue | Where it is solved |
 |---|---|
-| Drive work on the photos (`task`: rename, move) | by a person in Drive; give them as a checklist (they are marked done in Revisión) |
+| Drive work on the photos (`task`: rename, move) | by a person in Drive; give them as a checklist (they are marked done in Revisión). Afterwards `sync_photo_links` brings Photo_links up to date (skill `photos`) |
 | A Wikiloc point without its row (`walk_doubt`) | Monitoreo → «Dudas de emparejamiento»: say which rows fit; a person pairs it |
 | A formula cell (`manual`) | by hand in Google Sheets |
 

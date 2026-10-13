@@ -80,6 +80,8 @@ env_app=(
   SEED_FILE="$SEED"
   DATABASE_PATH="$LAB/app/app.sqlite"
   PHOTO_CACHE_DIR="$LAB/app/photos"
+  # A recorded listing of the photo folders on Drive, for sync_photo_links (server/drive.mjs LocalDrive).
+  DRIVE_LISTING_FILE="$LAB/drive-listing.json"
   APP_HOST=127.0.0.1
   APP_PORT="$PORT"
   APP_BASE_PATH=/
