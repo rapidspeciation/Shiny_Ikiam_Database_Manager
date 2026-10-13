@@ -11,6 +11,7 @@ const checks: PhotoChecks = {
   unknownId: none,
   unnamed: { count: 1, examples: [{ name: 'IMG_5069.JPG', in: 'Guyana_2025/jpg_2' }] },
   outOfOrder: none,
+  otherFolder: none,
   unpaired: none,
   beforeCollection: none,
   otherCountry: none,

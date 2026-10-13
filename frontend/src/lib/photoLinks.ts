@@ -4,7 +4,7 @@
 import { t, tn } from './i18n'
 
 /** What a new photo is flagged for (server/photo-links.mjs checkPhotos). */
-export const CHECK_KINDS = ['rename', 'unknownId', 'unnamed', 'outOfOrder', 'unpaired', 'beforeCollection', 'otherCountry'] as const
+export const CHECK_KINDS = ['rename', 'unknownId', 'unnamed', 'outOfOrder', 'otherFolder', 'unpaired', 'beforeCollection', 'otherCountry'] as const
 export type CheckKind = (typeof CHECK_KINDS)[number]
 
 export interface PhotoFlag {
@@ -15,6 +15,9 @@ export interface PhotoFlag {
   maybe?: string[]
   /** outOfOrder: the IDs of the photos taken just before and after. */
   around?: string[]
+  /** otherFolder: the other folder with photos of the same ID; `copy`: the same photo there. */
+  other?: string
+  copy?: boolean
   /** unpaired: the view no listed folder has. */
   missing?: 'dorsal' | 'ventral'
   /** beforeCollection: days before the butterfly's date. */
@@ -99,6 +102,7 @@ export const checkLabel = (kind: CheckKind): string =>
     unknownId: t('ID que no está en la base'),
     unnamed: t('Sin renombrar (nombre de la cámara)'),
     outOfOrder: t('ID lejos de los de las fotos tomadas antes y después'),
+    otherFolder: t('El mismo ID tiene fotos en otra carpeta'),
     unpaired: t('Falta la otra vista'),
     beforeCollection: t('Tomada antes de la fecha de la mariposa'),
     otherCountry: t('Mariposa de otro país que su carpeta'),
@@ -115,6 +119,10 @@ export function flagText(flag: PhotoFlag | (PhotoExample & { kind: CheckKind }))
       return t('nombre de la cámara')
     case 'outOfOrder':
       return flag.around?.length ? t('tomada entre {ids}', { ids: flag.around.join(' · ') }) : t('fuera de orden')
+    case 'otherFolder':
+      return flag.copy
+        ? t('la misma foto está en {folder}', { folder: flag.other ?? '' })
+        : t('otra foto del mismo ID en {folder}', { folder: flag.other ?? '' })
     case 'unpaired':
       return flag.missing === 'dorsal' ? t('falta la dorsal') : t('falta la ventral')
     case 'beforeCollection':

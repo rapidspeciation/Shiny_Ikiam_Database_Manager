@@ -273,12 +273,22 @@ export function planPhotoLinks({
     const id = parsed && !parsed.extra ? knownId(parsed.id, info) : null;
     if (id) views.add(`${id}|${parsed.view}`);
   };
+  // Every photo of a butterfly, listed or not, by its ID as written: where it is (checkPhotos: an ID in two folders).
+  const where = new Map();
+  const seePhoto = (name, folder, size, capture) => {
+    const id = PHOTO.test(name) ? writtenId(specimenName(name)) : null;
+    if (!id) return;
+    if (!where.has(id)) where.set(id, []);
+    where.get(id).push({ folder, size, capture });
+  };
   for (const r of rows) {
     if (emptied.has(r.id) || r.values.Type !== 'File') continue;
     const name = renamedTo.get(r.id) ?? r.values.Name;
     if (blank(name)) continue;
     if (!names.has(lower(name))) names.set(lower(name), relinkedTo.get(r.id) ?? driveIdOf(r.values.URL));
     seeView(String(name));
+    const again = edits.find(e => e.id === r.id && e.kind === 'relink');
+    seePhoto(String(name), dirOf(again?.values['Full Path'] ?? r.values['Full Path']), again?.values['Size KB'] ?? r.values['Size KB'], again?.values['Capture Date'] ?? r.values['Capture Date']);
   }
 
   // New rows: each listed folder in the order Drive was read, its own row first, then its files by name.
@@ -313,6 +323,7 @@ export function planPhotoLinks({
         leftOut++;
         continue;
       }
+      seePhoto(file.name, place.path, sizeKb(file), captureSerial(file.imageMediaMetadata?.time, timeZone));
       const key = lower(file.name);
       if (names.has(key)) {
         const first = items.get(names.get(key));
@@ -377,6 +388,8 @@ export function planPhotoLinks({
     added,
     info,
     views,
+    where,
+    place: file => ({ folder: placeOf(file.parent)?.path ?? '', size: sizeKb(file), capture: captureSerial(file.imageMediaMetadata?.time, timeZone) }),
     photosIn: folderId => (children.get(folderId) || []).filter(f => !isFolder(f) && PHOTO.test(f.name) && !TO_DELETE.test(f.name)),
     folderOf: file => placeOf(file.parent)?.path ?? '',
   });
@@ -426,6 +439,17 @@ function same(field, before, after) {
   return String(before ?? '') === String(after ?? '');
 }
 
+/** A photo name's ID as written, without separators and in capitals ("CAMO77986": its letter O is a zero); null without one. */
+const writtenId = parsed =>
+  parsed
+    ? parsed.id
+        .replace(/[\s_-]+/g, '')
+        .toUpperCase()
+        .replace(/^CAM[O\d]+$/, t => t.replace(/O/g, '0'))
+    : null;
+/** Two folders as the sheet writes them are one when a path ends in the other (rows written from a folder further down). */
+const sameFolder = (a, b) => a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
+
 /** A session covers nearby IDs: one further than this from every photo around it is out of place (as the Rename Photos app). */
 const SEQUENCE_GAP = 15;
 /** Photos looked at before and after one, in the order they were taken. */
@@ -444,6 +468,8 @@ const FOLDER_PHOTOS = 20;
  *  - unnamed: not a specimen's name (the camera's).
  *  - outOfOrder: its ID is far from those of the photos taken just before and after it in its folder
  *    (`around`), which is how a misread ID looks.
+ *  - otherFolder: photos of the same ID are in another listed folder too (`other`): another photo, so one of the
+ *    two is misnamed or the ID was used on two butterflies; or the same photo filed twice (`copy`).
  *  - unpaired: the butterfly's other view is in no listed folder (`missing`).
  *  - beforeCollection: taken before the butterfly was collected or preserved (`days` before `date`), so the
  *    ID is another butterfly's.
@@ -451,9 +477,9 @@ const FOLDER_PHOTOS = 20;
  * `linked` counts the photos the sheets find as they are; `otherViews` the extra views and other formats
  * (.HEIC), which only the CRISPR sheet looks up. RAW files and other files are not checked.
  */
-function checkPhotos({ added, info, views, photosIn, folderOf }) {
+function checkPhotos({ added, info, views, where, place, photosIn, folderOf }) {
   const flags = new Map();
-  const kinds = ['rename', 'unknownId', 'unnamed', 'outOfOrder', 'unpaired', 'beforeCollection', 'otherCountry'];
+  const kinds = ['rename', 'unknownId', 'unnamed', 'outOfOrder', 'otherFolder', 'unpaired', 'beforeCollection', 'otherCountry'];
   const found = Object.fromEntries(kinds.map(k => [k, { count: 0, examples: [] }]));
   const out = { photos: 0, linked: 0, butterflies: 0, otherViews: 0 };
   if (!info.size) return { flags, summary: null };
@@ -465,13 +491,8 @@ function checkPhotos({ added, info, views, photosIn, folderOf }) {
   };
   const read = file => {
     const parsed = specimenName(file.name);
-    // The ID as written, without separators ("CAMO77986" with its letter O as a zero), and its number in its series.
-    const written = parsed
-      ? parsed.id
-          .replace(/[\s_-]+/g, '')
-          .toUpperCase()
-          .replace(/^CAM[O\d]+$/, t => t.replace(/O/g, '0'))
-      : null;
+    // The ID as written, and its number in its series.
+    const written = writtenId(parsed);
     const number = written ? /^(\D*)(\d+)$/.exec(written) : null;
     return {
       file,
@@ -541,6 +562,13 @@ function checkPhotos({ added, info, views, photosIn, folderOf }) {
       const before = about.timed.slice(0, at).findLast(y => y.written !== x.written);
       const after = about.timed.slice(at + 1).find(y => y.written !== x.written);
       flag(file, 'outOfOrder', { around: [before?.written, after?.written].filter(Boolean) });
+    }
+    // The same ID on photos of another folder: the same photo filed twice (`copy`), or another photo.
+    const here = place(file);
+    const others = (where.get(x.written) ?? []).filter(o => !sameFolder(o.folder, here.folder));
+    if (others.length) {
+      const copy = others.find(o => sameSize(o.size, here.size) && same('Capture Date', o.capture, here.capture));
+      flag(file, 'otherFolder', { other: (copy ?? others[0]).folder, ...(copy ? { copy: true } : {}) });
     }
     if (!x.id) {
       // Out of order too: a workbook ID one character away that fits the photos around it is likely the one meant.

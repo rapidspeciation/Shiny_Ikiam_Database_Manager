@@ -118,6 +118,7 @@ write, say what it found, what it most likely is and what you suggest:
 | `unnamed` | the photo was not renamed (`IMG_5069.JPG`), or shows no envelope | look at it; rename it or move it to a `_temp` folder |
 | `unknownId` | the butterfly's row is not typed yet (IDs running on after the sheet's last ones), or the ID was misread (it is `outOfOrder` too; `maybe` is the workbook ID one character away that fits) | ask which; a misread one is renamed |
 | `outOfOrder` | a misread ID: `around` are the IDs photographed just before and after it | look at the photo's envelope |
+| `otherFolder` | the same ID has photos in another folder (`other`): the same photo filed twice (`copy`), or another photo, so one of the two is misnamed or the CAM was used on two butterflies | a copy: remove the one in the wrong folder; another photo: compare the two envelopes with the row |
 | `unpaired` | the other view was not photographed, or carries another name (often the `outOfOrder` or `unknownId` photo beside it) | find it among those, or ask for the photo |
 | `beforeCollection` | the ID belongs to another butterfly: this one was not collected yet | look at the envelope; check the row's date |
 | `otherCountry` | a photo uploaded to the wrong folder, or one CAM used for two butterflies (skill `data-rules`, duplicates) | compare the envelope with both rows |

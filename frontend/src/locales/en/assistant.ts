@@ -613,4 +613,7 @@ export default {
   'tomada {n} día antes de su fecha ({date})': 'taken {n} day before its date ({date})',
   'tomada {n} días antes de su fecha ({date})': 'taken {n} days before its date ({date})',
   'Photo_links ya se está escribiendo: espera a que termine.': 'Photo_links is already being written: wait for it to finish.',
+  'El mismo ID tiene fotos en otra carpeta': 'The same ID has photos in another folder',
+  'la misma foto está en {folder}': 'the same photo is in {folder}',
+  'otra foto del mismo ID en {folder}': 'another photo of the same ID in {folder}',
 } as Record<string, string>

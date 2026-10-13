@@ -319,6 +319,43 @@ test('the checks: out of the order the photos were taken in, a view missing, ano
   assert.deepEqual(fourth.summary.names.unknownId.examples.find(e => e.name === 'CAM000751d.JPG').maybe, ['CAM000151']);
 });
 
+test('the same ID photographed in two folders: another photo, or the same one filed twice', async () => {
+  const files = [
+    folder(1, 'Photos'),
+    folder(2, 'Wild', 1),
+    folder(3, 'Peru', 2),
+    folder(4, 'Panama', 2),
+    // Listed, from a path further down ("Peru/…").
+    file(10, 'CAM000001d.JPG', 3),
+    file(11, 'CAM000002d.JPG', 3),
+    // The same butterfly's ID, written another way: another photo, and the same photo again.
+    file(20, 'CAM000001_d.jpg', 4, { size: '4096', imageMediaMetadata: { time: '2026:01:23 09:00:00' } }),
+    file(21, 'CAM000002_d.jpg', 4),
+    file(22, 'CAM000003d.JPG', 4),
+  ];
+  const items = await driveTree(new LocalDrive(files), [id(1)]);
+  const capture = captureSerial('2026:07:20 10:15:30', 'Europe/London');
+  const rows = [row(2, 'Wild', 'Folder'), row(10, 'Peru/CAM000001d.JPG', 'File', { 'Capture Date': capture }), row(11, 'Peru/CAM000002d.JPG', 'File', { 'Capture Date': capture })].map(
+    (values, i) => ({ id: `r${i}`, row: i + 2, values }),
+  );
+  const plan = planPhotoLinks({ rows, items, home: id(1), ids });
+  assert.deepEqual(
+    plan.summary.names.otherFolder.examples.map(e => [e.name, e.other, e.copy]),
+    [
+      ['CAM000001_d.jpg', 'Peru', undefined],
+      ['CAM000002_d.jpg', 'Peru', true],
+    ],
+  );
+  // A row written from a folder further down ("Peru/…") is in the same folder as Wild/Peru: a new photo
+  // there is told of the one in Panama, not of its own folder's.
+  const more = [...files, file(12, 'CAM000001v.JPG', 3)];
+  const again = planPhotoLinks({ rows, items: await driveTree(new LocalDrive(more), [id(1)]), home: id(1), ids });
+  assert.deepEqual(
+    again.display.find(d => d.name === 'CAM000001v.JPG').checks.filter(c => c.kind === 'otherFolder'),
+    [{ kind: 'otherFolder', other: 'Wild/Panama' }],
+  );
+});
+
 test('only some folders: their files are read, and the rest of the sheet is left as it is', async () => {
   const { store } = await fixture();
   const local = new LocalDrive(drive());
