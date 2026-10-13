@@ -175,7 +175,7 @@ onBeforeUnmount(dropGrid)
         <p class="flex items-start gap-1.5">
           <UserRoundCheck :size="14" class="mt-px shrink-0 text-sky-700" />
           <span>
-            <strong class="font-medium">{{ $t('Falta el paso de otra cuenta.') }}</strong>
+            <strong class="font-medium">{{ $t('Falta el paso de otra cuenta.') }}</strong>{{ ' ' }}
             <template v-if="progress.handover.step === 'delete'">
               {{ $t('Cada cuenta dueña abre la hoja «{sheet}» con su sesión y pulsa «{button}»:', { sheet: progress.handover.sheet, button: progress.handover.button }) }}
               <strong class="font-medium break-all">{{ handoverAccounts(progress.handover) || $t('la cuenta dueña de los archivos …_todelete') }}</strong>
