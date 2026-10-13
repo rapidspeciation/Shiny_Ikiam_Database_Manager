@@ -50,7 +50,7 @@ export const PHOTO_TOOLS = [
         "Put the photo folders on Google Drive in order with the project's Google account: rename files, move them to another folder, remove them, make folders, gather shortcuts to a set of photos, and leave ready what only another account can do. Photo_links then follows the files changed (their rows renamed, linked to the file kept, or emptied).",
         '- It works the plan out and shows it as a card beside the chat (`link`), every change listed. The changes are made when the person presses «Apply» on that card. Tell the person what it would do and what was left out (`leftOut`).',
         '- `operations`: {action: "rename", file, name} · {action: "move", file, to} (a file or a folder into the folder `to`) · {action: "remove", file} · {action: "folder", name, in} · {action: "shortcut", ids, to} (shortcuts to the dorsal and ventral photos of those specimens, e.g. to share a project\'s photos). `file` and the folders: a Drive link, a path ("PERU_2024/JPG/CAM077740d.JPG") or a name no other has; a folder this plan makes can be named in its later operations.',
-        '- `fix`: what a check of sync_photo_links calls for, in the folder `in` and inside it: {check: "rename", in} every photo whose name the sheets do not find takes the name they look up · {check: "copies", in} every file of `in` that is also, the same file, in another listed folder is removed · {check: "copied", in} every …_todelete file whose copy is beside it is binned.',
+        '- `fix`: what a check of sync_photo_links calls for, in the folder `in` and inside it: {check: "rename", in} every photo whose name the sheets do not find takes the name they look up · {check: "copies", in, keptIn} every file of `in` that is also, the same file, in another listed folder is removed (`keptIn`: only those whose other file is in that folder; `sameFileKeptIn` in the answer counts them by the folder that keeps them) · {check: "copied", in} every …_todelete file whose copy is beside it is binned.',
         "- A photo renamed or removed takes its RAW file with it (`withRaw: false`: not). Removing bins the files the project's account owns (30 days in Drive's bin); Drive lets nobody bin someone else's file, so those are renamed …_todelete (out of Photo_links, for their owner to delete).",
         '- What another account has to do is left ready in the team\'s sheet «Transfer Ownership & Free Up Space», where that account presses a button: {action: "transfer", step: "delete", in} for its «Delete copied files» (the account that owns …_todelete files in the folder `in` deletes them: to the bin, or for good with `permanent: true`), {action: "transfer", step: "copy", in} for its «Copy files» (the account that takes a folder\'s photos over copies them). `subfolders: false`: the folder without those inside it. A plan that leaves …_todelete files to other accounts gets the delete step by itself. The answer\'s `otherAccountStep` says which accounts (`by`) and what to tell them.',
         "- `plan` with a plan's ID: how it is going, or how it ended, once the person has pressed «Apply». `undo` with a plan's ID takes its changes back.",
@@ -80,7 +80,7 @@ export const PHOTO_TOOLS = [
             type: 'array',
             items: {
               type: 'object',
-              properties: { check: { type: 'string', enum: ['rename', 'copies', 'copied'] }, in: { type: 'string' } },
+              properties: { check: { type: 'string', enum: ['rename', 'copies', 'copied'] }, in: { type: 'string' }, keptIn: { type: 'string' } },
               required: ['check'],
             },
           },
@@ -451,6 +451,7 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
       url: op.url,
       raw: op.raw,
       copy: op.copy || op.copied,
+      keptIn: op.keptIn,
     });
 
   /** Makes a plan's changes on Drive, then has Photo_links follow the files touched. */

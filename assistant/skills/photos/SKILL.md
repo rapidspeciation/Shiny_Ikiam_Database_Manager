@@ -147,7 +147,7 @@ and the tool takes a plan's changes back when asked (`undo`).
 | The person asks | The plan |
 |---|---|
 | to give a folder's photos the names the sheets look up | `fix: [{check: "rename", in: "PANAMA_2025"}]` |
-| to delete from a folder the photos that are in another one too | `fix: [{check: "copies", in: <the wrong folder>}]`: only the files that are the same file elsewhere |
+| to delete from a folder the photos that are in another one too | `fix: [{check: "copies", in: <the wrong folder>, keptIn: <the right one>}]`: only the files that are the same file there (without `keptIn`: in any other listed folder; the answer counts them by the folder that keeps them) |
 | to rename, move or remove these files | `operations`, one per file, named by its path, its name or its link |
 | a new folder, and files moved into it | `{action: "folder", name, in}`, then `move` operations naming it |
 | the photos of a list of butterflies gathered to share (a project's specimens) | `{action: "shortcut", ids: [CAM…], to: <folder>}`: shortcuts to their dorsal and ventral photos; the photos stay where they are |

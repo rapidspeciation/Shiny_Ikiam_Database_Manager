@@ -85,7 +85,8 @@ function columns(): ColumnDefinition[] {
       headerSort: false,
       formatter: (c: CellComponent) => {
         const row = c.getData() as FileRow
-        return [row.raw ? t('RAW de su foto') : '', row.copy ? t('el mismo archivo está en otra carpeta') : ''].filter(Boolean).join(' · ')
+        const copy = !row.copy ? '' : row.keptIn ? t('el mismo archivo está en {folder}', { folder: row.keptIn }) : t('el mismo archivo está en otra carpeta')
+        return [row.raw ? t('RAW de su foto') : '', copy].filter(Boolean).join(' · ')
       },
     },
   ] as ColumnDefinition[]

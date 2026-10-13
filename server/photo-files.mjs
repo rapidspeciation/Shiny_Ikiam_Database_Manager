@@ -57,6 +57,7 @@ const idIn = text => driveIdOf(text) ?? (/^[\w-]{20,}$/.test(String(text ?? '').
  *  - fix: [{ check, in }] the changes a check of the photos calls for, in the folder `in` and inside it:
  *      rename  every photo whose name the sheets do not find takes the name they look up
  *      copies  every file of `in` that is also, the same file, in another listed folder is removed
+ *              (`keptIn`: only those whose other file is in that folder)
  *      copied  every …_todelete file whose copy is beside it is binned (the account's own files)
  *  - withRaw: a photo renamed or removed takes its RAW file with it (the file of its name in the
  *    RAW folder beside its own).
@@ -270,15 +271,16 @@ export function planFileChanges({ index, operations = [], fix = [], withRaw = tr
       continue;
     }
     const where = f.in === undefined || f.in === null || f.in === '' ? null : find(f.in, isFolder, 'folder');
-    if (where?.error || (check === 'copies' && !where)) {
-      problems.push({ at, error: where?.error ?? 'copies: give the folder to remove them from (`in`)' });
+    const kept = check === 'copies' && f.keptIn ? find(f.keptIn, isFolder, 'folder') : null;
+    if (where?.error || kept?.error || (check === 'copies' && !where)) {
+      problems.push({ at, error: where?.error ?? kept?.error ?? 'copies: give the folder to remove them from (`in`)' });
       continue;
     }
-    const inside = item => {
-      if (!where) return true;
-      for (let p = item.parent; p; p = items.get(p)?.parent) if (p === where.item.id) return true;
+    const under = (item, folderId) => {
+      for (let p = item.parent; p; p = items.get(p)?.parent) if (p === folderId) return true;
       return false;
     };
+    const inside = item => !where || under(item, where.item.id);
     const before = ops.length;
     if (check === 'rename') {
       for (const item of all) {
@@ -289,10 +291,12 @@ export function planFileChanges({ index, operations = [], fix = [], withRaw = tr
     } else if (check === 'copies') {
       // The same file twice: the same name (as the sheets read it) and the same size.
       const key = item => `${lower(rightName(item.name, info) ?? item.name)}|${item.size ?? ''}`;
-      const elsewhere = new Set();
-      for (const item of all) if (listedFile(item) && !TO_DELETE.test(item.name) && !inside(item)) elsewhere.add(key(item));
+      const elsewhere = new Map();
       for (const item of all)
-        if (listedFile(item) && !TO_DELETE.test(item.name) && inside(item) && item.size && elsewhere.has(key(item)) && !touched.has(item.id)) remove(item, { copy: true });
+        if (listedFile(item) && !TO_DELETE.test(item.name) && !inside(item) && (!kept || under(item, kept.item.id)) && !elsewhere.has(key(item))) elsewhere.set(key(item), item);
+      for (const item of all)
+        if (listedFile(item) && !TO_DELETE.test(item.name) && inside(item) && item.size && elsewhere.has(key(item)) && !touched.has(item.id))
+          remove(item, { copy: true, keptIn: pathOfFolder(elsewhere.get(key(item)).parent) });
     } else {
       // Left by «Copy files»: the original, renamed …_todelete, beside its copy (its name, its size).
       for (const item of all) {
@@ -533,6 +537,13 @@ export const transferOf = op =>
     ...(op.auto ? { auto: true } : {}),
   };
 
+/** How many of each, the most first: { name: count }. */
+const tally = names => {
+  const counts = new Map();
+  for (const name of names) counts.set(name, (counts.get(name) ?? 0) + 1);
+  return Object.fromEntries([...counts].sort((a, b) => b[1] - a[1]).slice(0, 10));
+};
+
 /** A plan as the model is told it: the counts, a few of each, what was left out. */
 export function describeChanges(ops, problems) {
   const groups = {};
@@ -560,6 +571,7 @@ export function describeChanges(ops, problems) {
     out[names[kind]] = {
       count: list.length,
       ...(list.some(o => o.raw) ? { rawFilesWithTheirPhoto: list.filter(o => o.raw).length } : {}),
+      ...(list.some(o => o.keptIn) ? { sameFileKeptIn: tally(list.filter(o => o.keptIn).map(o => o.keptIn)) } : {}),
       examples: list.filter(o => !o.raw).slice(0, EXAMPLES).map(show),
     };
   }

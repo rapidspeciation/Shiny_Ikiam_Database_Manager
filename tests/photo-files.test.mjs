@@ -154,6 +154,10 @@ test('the fixes: names the sheets look up, files that are in another folder too,
     ['bin', 'Wild/Peru/RAW/CAM000003d.CR2', null],
   ]);
   assert.match(planFileChanges({ index, fix: [{ check: 'copies' }] }).problems[0].error, /give the folder/);
+  // Where each stays, and only those that stay in the folder named.
+  assert.deepEqual(describeChanges(copies.ops, []).binned.sameFileKeptIn, { 'Wild/Panama/JPG': 1, 'Wild/Panama/RAW': 1 });
+  assert.deepEqual(told(planFileChanges({ index, fix: [{ check: 'copies', in: 'Wild/Peru', keptIn: 'Panama/RAW' }] }).ops), [['mark', 'Wild/Peru/RAW/CAM000003d.CR2', null]]);
+  assert.match(planFileChanges({ index, fix: [{ check: 'copies', in: 'Wild/Peru', keptIn: 'Peru/RAW' }] }).problems[0].error, /no file there is also in another listed folder/);
 
   // …_todelete beside its copy: binned when the project's own; another account's is left to its owner; no copy, not touched.
   const copied = await settleChanges(local, planFileChanges({ index, fix: [{ check: 'copied', in: 'Panama' }] }));
