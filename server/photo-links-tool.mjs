@@ -19,6 +19,18 @@ export const PHOTO_TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'drive_space',
+      description: [
+        "The space of the project's Google account on Drive, where the wing photos are uploaded: used, free, and how much of it sits in the bin (`inBinGb`: freed when the bin is emptied in Drive).",
+        "- `ownByFolder`: the photo folders with the files that account still owns (those take its space), the largest first, from Photo_links: the ones to hand to the account that takes the photos over (`takenOverBefore`: the account that pressed «Copy files» in the team's sheet «Transfer Ownership & Free Up Space» the last time).",
+        '- `nearlyFull`: little space is left: say so, name the folders that would free most, and offer to leave the sheet ready for them (organize_photos, {action: "transfer", step: "copy", in}).',
+      ].join('\n'),
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'sync_photo_links',
       description: [
         "Bring the Photo_links sheet up to date with the photo folders on Google Drive, so Photo_dorsal and Photo_ventral find the photos uploaded since (what the sheet's menu «📷 Photo Database Tools» does).",
@@ -54,6 +66,7 @@ export const PHOTO_TOOLS = [
         "- A photo renamed or removed takes its RAW file with it (`withRaw: false`: not). Removing bins the files the project's account owns (30 days in Drive's bin); Drive lets nobody bin someone else's file, so those are renamed …_todelete (out of Photo_links, for their owner to delete).",
         '- What another account has to do is left ready in the team\'s sheet «Transfer Ownership & Free Up Space», where that account presses a button: {action: "transfer", step: "delete", in} for its «Delete copied files» (the account that owns …_todelete files in the folder `in` deletes them: to the bin, or for good with `permanent: true`), {action: "transfer", step: "copy", in} for its «Copy files» (the account that takes a folder\'s photos over copies them). `subfolders: false`: the folder without those inside it. A plan that leaves …_todelete files to other accounts gets the delete step by itself. The answer\'s `otherAccountStep` says which accounts (`by`) and what to tell them.',
         "- `plan` with a plan's ID: how it is going, or how it ended, once the person has pressed «Apply». `undo` with a plan's ID takes its changes back.",
+        '- {check: "copied", in, permanent: true} deletes those originals for good instead of binning them: their space is free at once (the bin keeps counting until it is emptied), and they cannot be brought back, so only after sync_photo_links has moved the rows to the copies.',
       ].join('\n'),
       parameters: {
         type: 'object',
@@ -80,7 +93,7 @@ export const PHOTO_TOOLS = [
             type: 'array',
             items: {
               type: 'object',
-              properties: { check: { type: 'string', enum: ['rename', 'copies', 'copied'] }, in: { type: 'string' }, keptIn: { type: 'string' } },
+              properties: { check: { type: 'string', enum: ['rename', 'copies', 'copied'] }, in: { type: 'string' }, keptIn: { type: 'string' }, permanent: { type: 'boolean' } },
               required: ['check'],
             },
           },
@@ -93,6 +106,10 @@ export const PHOTO_TOOLS = [
   },
 ];
 export const PHOTO_TOOL_NAMES = new Set(PHOTO_TOOLS.map(t => t.function.name));
+/** The project's Drive is nearly full from this share of its space on. */
+export const DRIVE_NEARLY_FULL = 0.85;
+const SPACE_MS = 10 * 60_000;
+const gb = bytes => Math.round((bytes / 2 ** 30) * 10) / 10;
 
 const EDITORS = ['editor', 'reviewer', 'admin'];
 const EXAMPLES = 6;
@@ -593,7 +610,14 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
         sheetNote = `A save of Photo_links could not be undone (${e?.message || e}): sync_photo_links brings the sheet up to date.`;
       }
     store.db.prepare('UPDATE drive_changes SET undone_at = ? WHERE id = ?').run(new Date().toISOString(), id);
-    return filled({ status: 'undone', filesAsTheyWere: out.undone, failed: out.failed, photoLinksSavesUndone: saves, note: sheetNote });
+    return filled({
+      status: 'undone',
+      filesAsTheyWere: out.undone,
+      failed: out.failed,
+      deletedForGoodNotBroughtBack: out.deletedForGood,
+      photoLinksSavesUndone: saves,
+      note: sheetNote,
+    });
   }
 
   async function organize(args = {}, user, context = null) {
@@ -625,9 +649,66 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
     };
   }
 
+  // ------------------------------------------------------------ the project account's space on Drive (drive_space)
+  let spaceHeld = null;
+  /** { account, usedGb, limitGb, freeGb, inBinGb, percent, nearlyFull }, asked again after ten minutes; null without an account. */
+  async function space({ fresh = false } = {}) {
+    if (!fresh && spaceHeld && Date.now() - spaceHeld.at < SPACE_MS) return spaceHeld.value;
+    const writer = driveWriterFor(store, config);
+    if (!writer?.about) return null;
+    const a = await writer.about();
+    const value = filled({
+      account: a.account,
+      usedGb: gb(a.used),
+      limitGb: a.limit ? gb(a.limit) : null,
+      freeGb: a.limit ? gb(Math.max(0, a.limit - a.used)) : null,
+      inBinGb: gb(a.inBin),
+      percent: a.limit ? Math.round((a.used / a.limit) * 100) : null,
+      nearlyFull: a.limit ? a.used / a.limit >= DRIVE_NEARLY_FULL : false,
+    });
+    spaceHeld = { at: Date.now(), value };
+    return value;
+  }
+  /** The listed folders by the size of the files the account still owns in them (Photo_links' Owner Email and Size KB). */
+  function ownByFolder(account) {
+    const folders = new Map();
+    const links = new Map();
+    for (const r of photoLinkRows(store)) {
+      const v = r.values;
+      const path = String(v['Full Path'] ?? '');
+      if (v.Type === 'Folder') links.set(path, v.URL);
+      if (v.Type !== 'File' || !account || String(v['Owner Email'] ?? '').toLowerCase() !== account.toLowerCase()) continue;
+      const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+      const entry = folders.get(folder) ?? folders.set(folder, { files: 0, kb: 0 }).get(folder);
+      entry.files++;
+      entry.kb += Number(v['Size KB']) || 0;
+    }
+    return [...folders]
+      .map(([folder, f]) => filled({ folder, url: links.get(folder), files: f.files, gb: Math.round((f.kb / 2 ** 20) * 100) / 100 }))
+      .sort((a, b) => (b.gb ?? 0) - (a.gb ?? 0));
+  }
+  async function driveSpace(user) {
+    if (!EDITORS.includes(user?.role)) return { error: 'Your role cannot see the Drive account' };
+    const s = await space({ fresh: true }).catch(e => ({ error: e?.message || String(e) }));
+    if (!s) return { error: 'This app has no Google account set up for Drive.' };
+    if (s.error) return s;
+    const own = ownByFolder(s.account);
+    const sheet = transferSheetFor(store, config, driveWriterFor(store, config));
+    const taker = await sheet?.copiedBy?.().catch(() => null);
+    return filled({
+      ...s,
+      ownByFolder: own.slice(0, 15),
+      ownInListedFoldersGb: Math.round(own.reduce((sum, f) => sum + (f.gb ?? 0), 0) * 10) / 10,
+      takenOverBefore: taker,
+      note: 'Photo_links counts the listed folders as of its last update; RAW files weigh most.',
+    });
+  }
+
   return {
     run,
     organize,
+    space,
+    driveSpace,
     /** The card's «Aplicar»: { status: 'applying' } once it has started, or { error, code }. */
     apply(id, user, { skip = [] } = {}) {
       const started = start(id, user, list(skip), true);

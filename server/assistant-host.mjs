@@ -30,6 +30,8 @@ export const MAIN_TOOLS = new Set([
   'sync_photo_links',
   // It changes files on Google Drive, then writes Photo_links.
   'organize_photos',
+  // It asks Google for the project account's space.
+  'drive_space',
   // They reach the person's «Renombrar fotos» tab, which talks to the app's thread (server/rename-photos.mjs).
   'rename_photos_read',
   'rename_photos_look',

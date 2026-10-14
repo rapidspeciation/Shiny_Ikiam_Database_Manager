@@ -853,7 +853,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   // Photo_links against Google Drive (sync_photo_links): read and written by the app's thread only.
   const photoLinks = inWorker ? null : createPhotoLinksTool({ store, config, show: (reading, context) => showSync(reading, context), tell: (id, progress) => syncProgress(id, progress) });
   // The batches open in people's «Renombrar fotos» tabs (rename_photos_*): the tabs talk to the app's thread.
-  const renamePhotos = inWorker ? null : createRenamePhotos({ store, ...(config.renamePhotos ?? {}) });
+  const renamePhotos = inWorker ? null : createRenamePhotos({ store, space: () => photoLinks.space(), ...(config.renamePhotos ?? {}) });
   // The public sites' updates on GitHub (update_websites).
   const siteUpdates = inWorker ? null : createSiteUpdates({ tokenFile: config.githubTokenFile ?? null, ...(config.siteUpdates ?? {}) });
   /** A note in the person's conversation (T3 Code, Revisión de datos) of the proposals made there. */
@@ -4860,6 +4860,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     }
     if (name === 'sync_photo_links') return photoLinks ? photoLinks.run(args, context.user, context) : { error: 'Call it again in a moment.' };
     if (name === 'organize_photos') return photoLinks ? photoLinks.organize(args, context.user, context) : { error: 'Call it again in a moment.' };
+    if (name === 'drive_space') return photoLinks ? photoLinks.driveSpace(context.user) : { error: 'Call it again in a moment.' };
     if (RENAME_TOOL_NAMES.has(name)) return renamePhotos ? renamePhotos.run(name, args, context.user) : { error: 'Call it again in a moment.' };
     if (SITE_TOOL_NAMES.has(name)) return siteUpdates ? siteUpdates.run(args, context.user) : { error: 'Call it again in a moment.' };
     if (name === 'apply_proposal') {
@@ -5510,6 +5511,11 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         ...(config.t3Fetch ? { fetchImpl: config.t3Fetch } : {}),
       });
       return { status: 200, body: { ...out, chat: proposal.t3_thread || null } };
+    }
+    // The project account's space on Drive, for the «Renombrar fotos» tab's bar (null: no account set up, or Google not answering).
+    if (path === '/api/chat/drive-space' && method === 'GET') {
+      const space = EDITORS.includes(user.role) && photoLinks ? await photoLinks.space().catch(() => null) : null;
+      return { status: 200, body: { space } };
     }
     // A reading of the photo folders (sync_photo_links): its rows, «Aplicar» and «Leer de nuevo».
     const syncMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/photo-links\/(rows|apply|refresh)$/.exec(path);

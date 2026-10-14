@@ -4,7 +4,7 @@ import { Check, Copy, PanelRightClose, PanelRightOpen, Sparkles } from 'lucide-v
 import { api } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
 import { t } from '../lib/i18n'
-import { batchCounts, batchLine, renameHost } from '../lib/renameHost'
+import { batchCounts, batchLine, renameHost, spaceLine, type DriveSpace } from '../lib/renameHost'
 import { ensureT3, t3Host } from '../lib/t3Host'
 
 defineOptions({ name: 'RenameView' })
@@ -32,6 +32,19 @@ const copied = ref(false)
 let onScreen = false
 
 const counts = computed(() => batchCounts(renameHost.state))
+/** The project account's space on Drive, where the renamed photos are uploaded; asked when the tab comes on screen. */
+const drive = ref<DriveSpace | null>(null)
+const space = computed(() => spaceLine(drive.value, renameHost.state?.folderBytes))
+let spaceAt = 0
+async function askSpace() {
+  if (Date.now() - spaceAt < 5 * 60_000) return
+  spaceAt = Date.now()
+  try {
+    drive.value = (await api<{ space: DriveSpace | null }>('chat/drive-space')).space
+  } catch {
+    // The bar goes without it.
+  }
+}
 const line = computed(() => batchLine(renameHost.state))
 const canReview = computed(() => counts.value.photos > 0 && !renameHost.state?.reading.on)
 
@@ -43,6 +56,7 @@ onActivated(() => {
   onScreen = true
   renameHost.started = true
   place()
+  void askSpace()
 })
 onDeactivated(() => {
   onScreen = false
@@ -119,6 +133,24 @@ function resize(event: PointerEvent) {
       <span v-if="line" class="min-w-0 truncate text-stone-700" data-batch>{{ line }}</span>
       <span v-else class="text-stone-500">{{ $t('Abre la carpeta con las fotos y pulsa «Run PaddleOCR»: los IDs se leen en este ordenador.') }}</span>
       <span class="ml-auto flex items-center gap-2">
+        <!-- Where the photos go next: the project's Drive, and whether this folder fits. -->
+        <span
+          v-if="space"
+          class="rounded px-2 py-0.5 text-xs"
+          :class="
+            space.level === 'full' ? 'bg-red-100 text-red-900' : space.level === 'low' ? 'bg-amber-100 text-amber-950' : 'text-stone-500'
+          "
+          :title="
+            space.level === 'ok'
+              ? $t('Donde se suben las fotos renombradas')
+              : $t('Queda poco espacio: el asistente puede preparar el traspaso de carpetas a la cuenta que guarda las fotos')
+          "
+          data-drive-space
+        >
+          {{ space.text }}
+          <template v-if="space.level === 'full'"> · {{ $t('esta carpeta ocupa {gb} GB: no cabe', { gb: space.folderGb ?? 0 }) }}</template>
+          <template v-else-if="space.folderGb"> · {{ $t('esta carpeta: {gb} GB', { gb: space.folderGb }) }}</template>
+        </span>
         <button
           class="btn-primary bg-emerald-700 px-3 py-1 hover:bg-emerald-800"
           :disabled="!canReview || asking"

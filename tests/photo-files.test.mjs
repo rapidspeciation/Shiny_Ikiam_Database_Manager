@@ -200,7 +200,7 @@ test('organize_photos: a card, the changes made on Drive, Photo_links following,
   await store.sync({ sheets: ['Photo_links', 'Insectary_data'] });
   store.db.prepare("INSERT INTO users(id,username,display_name,role,salt,password_hash,active,created_at) VALUES('kim','kim','Kim','editor','s','h',1,'2026-01-01')").run();
   const local = new LocalDrive(drive(), { me: ME });
-  const sheet = new LocalTransferSheet();
+  const sheet = new LocalTransferSheet({ copiedBy: 'curator@example.org' });
   const assistant = createAssistant({ store, config: { drive: local, transferSheet: sheet } });
   store.db.prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')").run(createHash('sha256').update('kim-token').digest('hex'), 'kim');
   const kim = { id: 'kim', username: 'kim', role: 'editor' };
@@ -210,6 +210,12 @@ test('organize_photos: a card, the changes made on Drive, Photo_links following,
   const names = async parent => (await local.children(id(parent))).map(f => f.name).sort();
   try {
     assert.ok(mcpTools().some(t => t.name === 'organize_photos'));
+    // The project account's space, the folders where it still owns files, and who took the photos over before.
+    const space = await call('drive_space', {});
+    assert.deepEqual([space.account, space.limitGb, space.freeGb, space.nearlyFull ?? false], [ME, 100, 100, false]);
+    assert.deepEqual(space.ownByFolder, [{ folder: 'Wild/Peru/JPG', files: 1 }]);
+    assert.equal(space.takenOverBefore, 'curator@example.org');
+    assert.equal((await assistant.handle({ method: 'GET', path: '/api/chat/drive-space', user: kim, query: {}, body: {} })).body.space.limitGb, 100);
     const plan = await call('organize_photos', { fix: [{ check: 'rename', in: 'Peru' }, { check: 'copies', in: 'Peru' }] });
     assert.match(plan.link, /propuestas/);
     assert.deepEqual(Object.fromEntries(Object.entries(plan.changes).map(([k, v]) => [k, v.count ?? v.step])), { rename: 2, binned: 2, renamedToDelete: 1, otherAccountStep: 'delete' });
@@ -328,6 +334,27 @@ test('what only another account can do is left ready in the transfer sheet', asy
     { account: 'curator@example.org', files: 1 },
   ]);
 
+  // For good, to free the space at once: only the project's own originals whose copy is still beside them.
+  const forGood = await settleChanges(local, planFileChanges({ index, fix: [{ check: 'copied', in: 'Panama', permanent: true }] }), { index, sheet });
+  assert.deepEqual(told(forGood.ops)[0], ['delete', 'Wild/Panama/JPG/CAM000005d.JPG_todelete', null]);
+  assert.equal(describeChanges(forGood.ops, []).deletedForGood.count, 1);
+  const before = await local.about();
+  assert.deepEqual([before.account, before.limit, before.used > 0], [ME, 100 * 2 ** 30, true]);
+  await runFileChanges(local, forGood.ops, { sheet });
+  assert.equal(forGood.ops[0].done, true);
+  assert.deepEqual(await local.get(id(72)), { gone: true });
+  assert.equal((await local.about()).used, before.used - 2048);
+  // Nothing of it can be brought back.
+  assert.deepEqual(await undoFileChanges(local, forGood.ops), { undone: 0, failed: 0, deletedForGood: 1 });
+  // A copy that went meanwhile: its original stays.
+  const again = await reading([...drive(), file(90, 'CAM000008d.JPG_todelete', 7, mine), file(91, 'CAM000008d.JPG', 7)]);
+  const gone = await settleChanges(again.local, planFileChanges({ index: again.index, fix: [{ check: 'copied', in: 'Panama', permanent: true }] }), { index: again.index });
+  await again.local.trash(id(73)).catch(() => again.local.items.delete(id(73)));
+  again.local.items.delete(id(91));
+  await runFileChanges(again.local, gone.ops);
+  assert.match(gone.ops.find(o => o.id === id(90)).error, /its copy is no longer beside it/);
+  assert.equal((await again.local.get(id(90))).name, 'CAM000008d.JPG_todelete');
+
   // One folder at a time, a step that exists, a folder that exists; and not while the sheet is in use.
   const wrong = planFileChanges({
     index,
@@ -419,6 +446,11 @@ test('Google Drive as the app calls it: pages, a file gone, a change, a busy ans
   answers.push({ body: { id: 'd' } });
   await google.trash('d');
   assert.deepEqual(calls.at(-1)[2], { trashed: true });
+  answers.push({ status: 204 });
+  await google.delete('d');
+  assert.deepEqual(calls.at(-1).slice(0, 2), ['DELETE', '/d?supportsAllDrives=true']);
+  answers.push({ body: { user: { emailAddress: 'project@example.org' }, storageQuota: { limit: '107374182400', usage: '75161927680', usageInDriveTrash: '1073741824' } } });
+  assert.deepEqual(await google.about(), { account: 'project@example.org', limit: 107374182400, used: 75161927680, inBin: 1073741824 });
   answers.push({ body: { id: 'f' } });
   await google.createFolder('New', 'parent-1');
   assert.deepEqual(calls.at(-1)[2], { name: 'New', mimeType: FOLDER, parents: ['parent-1'] });

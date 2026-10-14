@@ -25,6 +25,8 @@ export interface RenameState {
   folder: string | null
   canWrite: boolean
   files: number
+  /** The size of everything in the folder, RAW files too (null until counted). */
+  folderBytes?: number | null
   reading: { on: boolean; percent: number; message: string }
   rows: RenameRow[]
 }
@@ -67,6 +69,32 @@ export function batchLine(state: RenameState | null): string {
     if (c.byAssistant) parts.push(tn(c.byAssistant, '{n} cambiada por el asistente', '{n} cambiadas por el asistente'))
   } else if (state.files) parts.push(tn(state.files, '{n} foto sin leer', '{n} fotos sin leer'))
   return parts.join(' · ')
+}
+
+/** The project account's space on Drive (GET chat/drive-space; server/photo-links-tool.mjs space). */
+export interface DriveSpace {
+  account?: string
+  usedGb: number
+  limitGb?: number
+  freeGb?: number
+  inBinGb?: number
+  percent?: number
+  nearlyFull?: boolean
+}
+const oneDecimal = (n: number) => (Math.round(n * 10) / 10).toLocaleString(undefined, { maximumFractionDigits: 1 })
+/**
+ * The space as the tab's bar says it, and how urgent it is: 'full' when the open folder is larger
+ * than what is left, 'low' when little is left (the server's threshold), else 'ok'.
+ */
+export function spaceLine(space: DriveSpace | null, folderBytes: number | null | undefined): { text: string; level: 'ok' | 'low' | 'full'; folderGb: number | null } | null {
+  if (!space || space.limitGb === undefined || space.freeGb === undefined) return null
+  const folderGb = folderBytes ? Math.round((folderBytes / 2 ** 30) * 10) / 10 : null
+  const level = folderGb !== null && folderGb > space.freeGb ? 'full' : space.nearlyFull ? 'low' : 'ok'
+  return {
+    text: t('Drive del proyecto: {free} GB libres de {limit}', { free: oneDecimal(space.freeGb), limit: oneDecimal(space.limitGb) }),
+    level,
+    folderGb,
+  }
 }
 
 /** A picture as text, for the JSON the server takes. */

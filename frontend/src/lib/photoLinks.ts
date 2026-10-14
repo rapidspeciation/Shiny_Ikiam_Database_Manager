@@ -175,7 +175,7 @@ export function filterRows(rows: PhotoRow[], show: 'all' | 'flagged' | CheckKind
  * What is done to a file: binned (the account's own), or renamed …_todelete for its owner to delete (`mark`).
  * `sheet`: the sheet «Transfer Ownership & Free Up Space» left ready for another account's step.
  */
-export type FileChange = 'rename' | 'move' | 'bin' | 'mark' | 'folder' | 'shortcut' | 'sheet'
+export type FileChange = 'rename' | 'move' | 'bin' | 'delete' | 'mark' | 'folder' | 'shortcut' | 'sheet'
 /** A change of the plan (GET chat/proposals/<id>/photo-links/rows). */
 export interface FileRow {
   change: FileChange
@@ -237,12 +237,13 @@ export interface PhotoFiles {
   progress?: FilesProgress
   stale?: boolean
 }
-export const FILE_CHANGES: FileChange[] = ['rename', 'move', 'bin', 'mark', 'folder', 'shortcut', 'sheet']
+export const FILE_CHANGES: FileChange[] = ['rename', 'move', 'bin', 'delete', 'mark', 'folder', 'shortcut', 'sheet']
 export const fileChangeLabel = (change: FileChange): string =>
   ({
     rename: t('renombrar'),
     move: t('mover'),
     bin: t('a la papelera'),
+    delete: t('borrar definitivamente'),
     mark: t('marcar …_todelete'),
     folder: t('carpeta nueva'),
     shortcut: t('acceso directo'),
@@ -257,4 +258,4 @@ export const fileCounts = (counts: PhotoFiles['counts']): string =>
     .map(c => `${counts[c]} ${fileChangeLabel(c)}`)
     .join(' · ')
 /** What a row shows after its arrow: the new name, the folder, or nothing. */
-export const fileTarget = (row: FileRow): string => (row.change === 'bin' || row.change === 'folder' ? '' : (row.to ?? ''))
+export const fileTarget = (row: FileRow): string => (row.change === 'bin' || row.change === 'delete' || row.change === 'folder' ? '' : (row.to ?? ''))

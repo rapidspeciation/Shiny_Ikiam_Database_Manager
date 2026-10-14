@@ -8,7 +8,8 @@
 // with the project's Google account; the person signed in to the account concerned then opens the
 // sheet and presses the button (server/photo-files.mjs, the `transfer` step of a plan).
 // read() answers { folder, subfolders, permanent, last, busy }: what the cells hold and the last run
-// the sheet logged; write({ folder, subfolders, permanent }) writes the ones given.
+// the sheet logged; write({ folder, subfolders, permanent }) writes the ones given; copiedBy() the
+// account that pressed «Copy files» last (the one that takes the photos over), from the sheet's log.
 
 import { sheetSerial } from './photo-links.mjs';
 
@@ -81,6 +82,10 @@ export class GoogleTransferSheet {
     const { values = [] } = await this.request(`/values/${RANGE}?valueRenderOption=UNFORMATTED_VALUE`);
     return parseTransfer(values, { timeZone: this.timeZone });
   }
+  async copiedBy() {
+    const { values = [] } = await this.request(`/values/${encodeURIComponent('Logs!A2:C2000')}?valueRenderOption=UNFORMATTED_VALUE`).catch(() => ({}));
+    return values.filter(r => /^copy$/i.test(text(r[2])) && text(r[1])).at(-1)?.[1] ?? null;
+  }
   async write(options) {
     const { cells } = await this.read();
     const data = [];
@@ -99,6 +104,11 @@ export class LocalTransferSheet {
     this.state = { folder: '', subfolders: true, permanent: true, last: null, busy: false, ...state };
     this.url = null;
     this.written = [];
+    this.copier = state.copiedBy ?? null;
+    delete this.state.copiedBy;
+  }
+  async copiedBy() {
+    return this.copier;
   }
   async read() {
     return { ...this.state };

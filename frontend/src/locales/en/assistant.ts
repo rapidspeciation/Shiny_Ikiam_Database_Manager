@@ -652,6 +652,12 @@ export default {
   'marcar …_todelete': 'mark …_todelete',
   'acceso directo': 'shortcut',
   'hoja de traspaso': 'transfer sheet',
+  'borrar definitivamente': 'delete for good',
+  '{n} archivo se borra definitivamente: su espacio queda libre al momento y no se puede recuperar. Su copia está junto a él (mismo nombre y tamaño).':
+    '{n} file is deleted for good: its space is free at once and it cannot be brought back. Its copy is beside it (same name and size).',
+  '{n} archivos se borran definitivamente: su espacio queda libre al momento y no se pueden recuperar. Sus copias están junto a ellos (mismo nombre y tamaño).':
+    '{n} files are deleted for good: their space is free at once and they cannot be brought back. Their copies are beside them (same name and size).',
+  'Los archivos borrados definitivamente no se pueden recuperar.': 'Files deleted for good cannot be brought back.',
   'cuenta desconocida': 'unknown account',
   'con sus subcarpetas': 'with its subfolders',
   'sin sus subcarpetas': 'without its subfolders',
@@ -684,6 +690,12 @@ export default {
   'No se pudo abrir el chat con el pedido. Pégalo en un chat nuevo:': 'The chat could not be opened with the request. Paste it into a new chat:',
   'No se pudo copiar: selecciona el texto y cópialo.': 'It could not be copied: select the text and copy it.',
   'leyendo {percent}%': 'reading {percent}%',
+  'Drive del proyecto: {free} GB libres de {limit}': 'Project\'s Drive: {free} GB free of {limit}',
+  'Donde se suben las fotos renombradas': 'Where the renamed photos are uploaded',
+  'Queda poco espacio: el asistente puede preparar el traspaso de carpetas a la cuenta que guarda las fotos':
+    'Little space is left: the assistant can prepare handing folders over to the account that keeps the photos',
+  'esta carpeta ocupa {gb} GB: no cabe': 'this folder takes {gb} GB: it does not fit',
+  'esta carpeta: {gb} GB': 'this folder: {gb} GB',
   '{n} foto': '{n} photo',
   '{n} fotos': '{n} photos',
   'ninguna por revisar': 'none to review',

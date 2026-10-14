@@ -58,7 +58,8 @@ const idIn = text => driveIdOf(text) ?? (/^[\w-]{20,}$/.test(String(text ?? '').
  *      rename  every photo whose name the sheets do not find takes the name they look up
  *      copies  every file of `in` that is also, the same file, in another listed folder is removed
  *              (`keptIn`: only those whose other file is in that folder)
- *      copied  every …_todelete file whose copy is beside it is binned (the account's own files)
+ *      copied  every …_todelete file whose copy is beside it is binned (the account's own files);
+ *              `permanent`: deleted for good instead, which frees its space at once and cannot be taken back
  *  - withRaw: a photo renamed or removed takes its RAW file with it (the file of its name in the
  *    RAW folder beside its own).
  * An op: { action, id, name, folder, to, … }: `to` is the new name, or the folder gone into (`toId`,
@@ -302,7 +303,8 @@ export function planFileChanges({ index, operations = [], fix = [], withRaw = tr
       for (const item of all) {
         if (isFolder(item) || !TO_DELETE.test(item.name) || !inside(item) || touched.has(item.id)) continue;
         const copy = inFolder(item.parent).get(lower(item.name.replace(TO_DELETE, '')));
-        if (copy && copy.id !== item.id && String(copy.size ?? '') === String(item.size ?? '')) add({ action: 'remove', copied: true }, item);
+        if (copy && copy.id !== item.id && String(copy.size ?? '') === String(item.size ?? ''))
+          add({ action: 'remove', copied: true, copyId: copy.id, size: Number(item.size) || 0, ...(f.permanent === true ? { permanent: true } : {}) }, item);
       }
     }
     if (ops.length === before)
@@ -377,7 +379,7 @@ export async function settleChanges(writer, { ops, problems }, { parallel = 8, i
           continue;
         }
         const item = await ask(op.id);
-        if (item?.ownedByMe) op.how = 'bin';
+        if (item?.ownedByMe) op.how = op.permanent ? 'delete' : 'bin';
         else if (op.copied) {
           left.add(op);
           others.push(op.id);
@@ -415,7 +417,7 @@ export async function settleChanges(writer, { ops, problems }, { parallel = 8, i
         // «Delete copied files»: the accounts whose …_todelete files are there, with those this plan marks.
         // «Copy files»: the accounts whose files are there now (the one that presses it copies the others').
         const marked = new Set(ops.filter(op => op.how === 'mark' && !left.has(op)).map(op => op.id));
-        const binned = new Set(ops.filter(op => op.how === 'bin').map(op => op.id));
+        const binned = new Set(ops.filter(op => op.how === 'bin' || op.how === 'delete').map(op => op.id));
         transfer.by = owners(
           index,
           transfer.id,
@@ -470,8 +472,15 @@ export async function runFileChanges(writer, ops, { onStep = null, parallel = 4,
           if (op.action === 'rename') await writer.rename(op.id, op.to);
           else if (op.action === 'move') await writer.move(op.id, op.from, op.toId);
           else if (op.action === 'shortcut') op.made = (await writer.createShortcut(op.id, op.name, op.toId)).id;
-          else if (op.how === 'bin') await writer.trash(op.id);
-          else await writer.rename(op.id, op.to);
+          else if (op.how === 'bin' || op.how === 'delete') {
+            // An original is removed only while its copy is still there, the size it had.
+            if (op.copyId) {
+              const copy = await writer.get(op.copyId);
+              if (!copy || copy.gone || (op.size && Number(copy.size) !== op.size)) throw new Error('its copy is no longer beside it');
+            }
+            if (op.how === 'delete') await writer.delete(op.id);
+            else await writer.trash(op.id);
+          } else await writer.rename(op.id, op.to);
           step(op);
         } catch (e) {
           step(op, e);
@@ -502,8 +511,14 @@ export async function runFileChanges(writer, ops, { onStep = null, parallel = 4,
 export async function undoFileChanges(writer, ops, { onStep = null } = {}) {
   let undone = 0;
   let failed = 0;
+  let gone = 0;
   for (const op of [...ops].reverse()) {
     if (!op.done || op.action === 'folder' || op.action === 'transfer') continue;
+    // Deleted for good: nothing to bring back.
+    if (op.how === 'delete') {
+      gone++;
+      continue;
+    }
     try {
       if (op.action === 'move') await writer.move(op.id, op.toId, op.from);
       else if (op.action === 'shortcut') await writer.trash(op.made);
@@ -515,11 +530,11 @@ export async function undoFileChanges(writer, ops, { onStep = null } = {}) {
     }
     onStep?.(undone, failed);
   }
-  return { undone, failed };
+  return { undone, failed, ...(gone ? { deletedForGood: gone } : {}) };
 }
 
-/** What an op is, for counts and the card: rename, move, bin, mark (renamed …_todelete), folder, shortcut, sheet (a `transfer` step). */
-export const kindOf = op => (op.action === 'remove' ? (op.how === 'bin' ? 'bin' : 'mark') : op.action === 'transfer' ? 'sheet' : op.action);
+/** What an op is, for counts and the card: rename, move, bin, delete (for good), mark (renamed …_todelete), folder, shortcut, sheet (a `transfer` step). */
+export const kindOf = op => (op.action === 'remove' ? (op.how === 'bin' ? 'bin' : op.how === 'delete' ? 'delete' : 'mark') : op.action === 'transfer' ? 'sheet' : op.action);
 
 /** A `transfer` step as the card and the model are told it: what the sheet is left ready for, and who presses what. */
 export const transferOf = op =>
@@ -554,7 +569,7 @@ export function describeChanges(ops, problems) {
       : op.action === 'remove'
         ? `${op.folder}/${op.name}`
         : `${op.folder}/${op.name} → ${op.to}`;
-  const names = { rename: 'rename', move: 'move', bin: 'binned', mark: 'renamedToDelete', folder: 'newFolders', shortcut: 'shortcuts' };
+  const names = { rename: 'rename', move: 'move', bin: 'binned', delete: 'deletedForGood', mark: 'renamedToDelete', folder: 'newFolders', shortcut: 'shortcuts' };
   const out = {};
   for (const [kind, list] of Object.entries(groups)) {
     if (kind === 'sheet') {
@@ -572,6 +587,7 @@ export function describeChanges(ops, problems) {
       count: list.length,
       ...(list.some(o => o.raw) ? { rawFilesWithTheirPhoto: list.filter(o => o.raw).length } : {}),
       ...(list.some(o => o.keptIn) ? { sameFileKeptIn: tally(list.filter(o => o.keptIn).map(o => o.keptIn)) } : {}),
+      ...(kind === 'delete' || kind === 'bin' ? { gb: Math.round((list.reduce((sum, o) => sum + (o.size || 0), 0) / 2 ** 30) * 100) / 100 || undefined } : {}),
       examples: list.filter(o => !o.raw).slice(0, EXAMPLES).map(show),
     };
   }

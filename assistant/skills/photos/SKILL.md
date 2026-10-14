@@ -166,8 +166,20 @@ own click («Rename», or «Rename & rotate») once the batch is right.
   only when the person says a butterfly was photographed the other way round.
 - At the end say what you changed (file, from which ID to which), what is
   left for them and why, and whether they can rename now (nothing waiting).
-  After renaming: they upload the JPG and RAW files to their Drive folders,
-  then `sync_photo_links` lists them, then `update_websites`.
+- Then say where the files go, from `upload`: the folder for the photos and
+  the one for the RAW files, each with its link and its place in Drive for
+  desktop (`inDriveForDesktop`). They are the folders that hold the photos
+  of the IDs nearest these; `alsoNear` is a second folder some of them point
+  to, worth asking about. With `noFolderYet` the batch is a new collection:
+  propose its folder (the country and year of `butterflies`, with `JPG` and
+  `RAW` inside) and make it with `organize_photos` once they agree.
+- `projectDrive` is the space left in the account they upload with. When the
+  folder does not fit (`fits`), or the Drive is `nearlyFull`, say so before
+  they start uploading and offer to free space (below, «Moving the photos to
+  another account»).
+- Offer the rest of the way: once they say the upload is done,
+  `sync_photo_links` lists the new files, then `update_websites` brings the
+  Wings Gallery and the maps up to date.
 
 ## Updating the sites
 
@@ -285,10 +297,30 @@ organisation, so the file is copied and the original deleted:
   `organize_photos` `fix: [{check: "copied", in: <folder>}]` bins each
   `…_todelete` file whose copy is beside it (same name, same size), and leaves
   the sheet ready for the accounts that own the others. The bin still counts
-  against the space until it is emptied in Drive.
+  against the space until it is emptied in Drive; `permanent: true` deletes
+  them for good instead, which frees the space at once and cannot be taken
+  back.
 - Which account owns each file is Photo_links' «Owner Email» column
   (`query`): the files still owned by the project's account are the ones
   that take its space.
+
+When the space runs short (`drive_space`: `nearlyFull`, or a folder about to
+be uploaded does not fit), offer this, a step at a time:
+
+1. Say how much is left and which folders would free most (`ownByFolder`:
+   the RAW folders weigh most), and who took the photos over the last time
+   (`takenOverBefore`). Ask which folder to hand over.
+2. `organize_photos` with `{action: "transfer", step: "copy", in: <folder>}`:
+   once they press «Apply», the sheet has the folder. Give them the sheet's
+   link to send to the person of that account, who opens it signed in to it
+   and presses «Copy files» (a few seconds a file: a folder of some hundred
+   photos takes half an hour or more).
+3. When they say the copy is done: `sync_photo_links`, so the rows point to
+   the copies.
+4. Then `organize_photos` with
+   `fix: [{check: "copied", in: <folder>, permanent: true}]`: the originals
+   the project's account owns, each with its copy beside it, are deleted for
+   good and the space is free. `drive_space` afterwards shows it.
 
 ## Which photos are missing
 

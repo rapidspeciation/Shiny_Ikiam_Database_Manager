@@ -8,7 +8,9 @@
 // - LocalDrive: a recorded listing, changed in memory (LOCAL_MODE: the lab, tests).
 // All answer children(folderId) → the items in it (`foldersOnly`: its folders), and get(id) → the
 // item, { gone: true } when it was deleted or sits in the bin, or null when it cannot be told;
-// rename, move, trash, untrash, createFolder and createShortcut answer the item as it is afterwards.
+// rename, move, trash, untrash, createFolder and createShortcut answer the item as it is afterwards;
+// delete removes a file for good (the account's own only); about() answers the account and its space:
+// { account, limit, used, inBin } in bytes (limit null: no limit).
 
 import { existsSync, readFileSync } from 'node:fs';
 
@@ -17,6 +19,7 @@ const SHORTCUT = 'application/vnd.google-apps.shortcut';
 const FIELDS =
   'id,name,mimeType,webViewLink,createdTime,description,size,trashed,ownedByMe,owners(emailAddress),imageMediaMetadata(time),parents';
 const API = 'https://www.googleapis.com/drive/v3/files';
+const ABOUT = 'https://www.googleapis.com/drive/v3/about';
 const TIMEOUT_MS = 60_000;
 
 export class GoogleDrive {
@@ -109,6 +112,20 @@ export class GoogleDrive {
     });
     return response.json();
   }
+  /** Deleted for good, skipping the bin: its space is free at once, and it cannot be brought back. */
+  async delete(id) {
+    await this.request(`${API}/${encodeURIComponent(id)}?supportsAllDrives=true`, { method: 'DELETE' });
+  }
+  async about() {
+    const response = await this.request(`${ABOUT}?fields=${encodeURIComponent('user(emailAddress),storageQuota(limit,usage,usageInDrive,usageInDriveTrash)')}`);
+    const { user, storageQuota: q = {} } = await response.json();
+    return {
+      account: user?.emailAddress ?? null,
+      limit: q.limit ? Number(q.limit) : null,
+      used: Number(q.usage ?? q.usageInDrive ?? 0),
+      inBin: Number(q.usageInDriveTrash ?? 0),
+    };
+  }
 }
 
 export class LocalDrive {
@@ -116,8 +133,9 @@ export class LocalDrive {
    * `files`: the items as the Drive API gives them (each with `parents`), or the path of a JSON file
    * of them. `me`: the address of the account changing files (it owns the files of that owner).
    */
-  constructor(files, { me = null } = {}) {
+  constructor(files, { me = null, limit = 100 * 2 ** 30 } = {}) {
     this.me = me;
+    this.limit = limit;
     this.made = 0;
     const list = typeof files === 'string' ? JSON.parse(readFileSync(files, 'utf8')) : files;
     this.items = new Map((Array.isArray(list) ? list : list.files).map(f => [f.id, f]));
@@ -196,6 +214,25 @@ export class LocalDrive {
   }
   async createShortcut(target, name, parent) {
     return this.make({ name, mimeType: SHORTCUT, shortcutDetails: { targetId: target }, parents: [parent] });
+  }
+  async delete(id) {
+    this.requests++;
+    const item = this.existing(id);
+    if (!this.seen(item).ownedByMe && this.me) throw Object.assign(new Error('Google Drive 403: the account does not own this file'), { status: 403 });
+    this.items.delete(id);
+    for (const parent of item.parents || []) this.byParent.set(parent, (this.byParent.get(parent) || []).filter(f => f.id !== id));
+  }
+  /** The account's files count against its space, those in the bin too. */
+  async about() {
+    this.requests++;
+    let used = 0;
+    let inBin = 0;
+    for (const item of this.items.values()) {
+      if (!this.seen(item).ownedByMe) continue;
+      used += Number(item.size) || 0;
+      if (item.trashed) inBin += Number(item.size) || 0;
+    }
+    return { account: this.me, limit: this.limit, used, inBin };
   }
 }
 

@@ -27,6 +27,7 @@ export const RENAME_TOOLS = [
         "The batch of wing photos open in the person's «Rename photos» tab: the photos of a folder on their computer, each with the ID the app read on its envelope, before they are renamed after it.",
         '- `order`: the IDs in the order the photos were taken, each with its number of photos (`CAM077001×2`); `!` marks one with a photo waiting for a person, `?` photos without an ID.',
         '- `checks`: what does not add up. `notTwoPhotos`: an ID with one photo, or more than two (each butterfly has a dorsal and a ventral photo, taken one after the other) · `apart`: an ID on photos not taken one after the other · `notInWorkbook`: an ID no row of the workbook has (`maybe`: workbook IDs one character away) · `alreadyPhotographed`: an ID whose photos Photo_links already lists · `turned`: photos whose envelope pointed another way than the rest of their session.',
+        "- `upload`: where the files go once renamed: the Drive folders that hold the photos (`photos`) and the RAW files (`rawFiles`) of the IDs nearest these, each with its link and its place in Drive for desktop; the folder's size on the computer and the space left in the project's Drive (`projectDrive`).",
         '- `rows`: the photos to look at (those flagged and those in `checks`), or with `show: "all"` every photo, `from` and `limit` paging through them; `files` picks photos by name. A row: its number in the batch `n`, `file`, `id`, `view` (d, v: by the order taken), `taken`, `review` (why the reader left it for a person: no-reading, not-in-database, out-of-sequence, repeated-id, unreadable-photo, rotation-outlier), `suggest`, `conf` (how sure the reader was, 0–1), `rotation` (clockwise degrees chosen for it).',
       ].join('\n'),
       parameters: {
@@ -147,6 +148,7 @@ export function cleanState(state) {
     folder: text(state?.folder).slice(0, 200) || null,
     canWrite: state?.canWrite === true,
     files: Number(state?.files) || 0,
+    folderBytes: Number(state?.folderBytes) > 0 ? Number(state.folderBytes) : null,
     reading: { on: state?.reading?.on === true, percent: Number(state?.reading?.percent) || 0, message: text(state?.reading?.message).slice(0, 200) },
     rows: (Array.isArray(state?.rows) ? state.rows.slice(0, MAX_ROWS) : []).map(cleanRow).filter(r => r.file),
   };
@@ -225,6 +227,103 @@ export function checkBatch(rows, { known = null, listed = null } = {}) {
   };
 }
 
+const PHOTO_FILE = /\.(jpe?g|png|heic|heif)$/i;
+const RAW_FILE = /\.(cr2|cr3|orf|nef|arw|dng|raf|rw2|pef)$/i;
+/** How far apart two IDs' numbers may be for one's folder to say where the other's photos go. */
+const NEAR = 400;
+/** The folder everything is under, as Drive for desktop shows it. */
+const DRIVE_HOME = 'Ithomiini_IKIAM › Photos';
+const idParts = id => /^([A-Z]+)(\d+)$/.exec(String(id ?? '').toUpperCase());
+
+/**
+ * Where the photos Photo_links lists are, by their ID: { jpg, raw } (each [{ prefix, num, folder }]
+ * in the order of the IDs) and the folders' links by their path.
+ */
+export function listedPlaces(rows) {
+  const out = { jpg: [], raw: [], folders: new Map() };
+  for (const { values: v } of rows) {
+    const path = text(v['Full Path']);
+    if (v.Type === 'Folder') out.folders.set(path, text(v.URL));
+    if (v.Type !== 'File') continue;
+    const kind = PHOTO_FILE.test(path) ? out.jpg : RAW_FILE.test(path) ? out.raw : null;
+    const parts = kind && idParts(specimenName(v.Name)?.id);
+    if (parts && path.includes('/')) kind.push({ prefix: parts[1], num: Number(parts[2]), folder: path.slice(0, path.lastIndexOf('/')) });
+  }
+  for (const list of [out.jpg, out.raw]) list.sort((a, b) => (a.prefix < b.prefix ? -1 : a.prefix > b.prefix ? 1 : a.num - b.num));
+  return out;
+}
+
+/** The folder most of `ids` point to: the one holding the photos of the listed IDs nearest each. */
+function folderFor(ids, list, folders) {
+  // A folder weighs by the files near each ID; `idsFor`: how many IDs have one of its files near.
+  const votes = new Map();
+  const idsFor = new Map();
+  let voters = 0;
+  for (const id of ids) {
+    const parts = idParts(id);
+    if (!parts) continue;
+    const [, prefix, digits] = parts;
+    const num = Number(digits);
+    // The first listed ID not below this one, then its neighbours on both sides.
+    let lo = 0;
+    let hi = list.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      const e = list[mid];
+      if (e.prefix < prefix || (e.prefix === prefix && e.num < num)) lo = mid + 1;
+      else hi = mid;
+    }
+    const near = [];
+    for (const at of [lo - 2, lo - 1, lo, lo + 1]) {
+      const e = list[at];
+      if (e && e.prefix === prefix && Math.abs(e.num - num) <= NEAR) near.push(e.folder);
+    }
+    if (!near.length) continue;
+    voters++;
+    for (const folder of near) votes.set(folder, (votes.get(folder) ?? 0) + 1);
+    for (const folder of new Set(near)) idsFor.set(folder, (idsFor.get(folder) ?? 0) + 1);
+  }
+  if (!voters) return null;
+  const [[folder], second] = [...votes].sort((a, b) => b[1] - a[1]);
+  const count = idsFor.get(folder);
+  return filled({
+    folder,
+    link: folders.get(folder),
+    inDriveForDesktop: `${DRIVE_HOME} › ${folder.split('/').join(' › ')}`,
+    because: `the photos of the IDs nearest ${count} of these ${ids.length} IDs are there`,
+    alsoNear: second && idsFor.get(second[0]) >= voters / 4 ? second[0] : null,
+  });
+}
+
+/**
+ * Where a batch's files go on Drive: the folders that hold the photos, and the RAW files, of the IDs
+ * nearest the batch's; or, when none is near, what the batch's butterflies are (to name a new folder).
+ */
+export function uploadPlace(rows, places, butterflies = null) {
+  const ids = [...new Set(rows.filter(r => !r.skip && r.id).map(r => r.id))];
+  if (!ids.length) return null;
+  const jpg = folderFor(ids, places.jpg, places.folders);
+  const raw = folderFor(ids, places.raw, places.folders);
+  const found = ids.map(id => butterflies?.get(id)).filter(Boolean);
+  const count = values => {
+    const tally = new Map();
+    for (const v of values) if (v) tally.set(v, (tally.get(v) ?? 0) + 1);
+    return Object.fromEntries([...tally].sort((a, b) => b[1] - a[1]).slice(0, 4));
+  };
+  // A sheet's date number as its year.
+  const year = date => (typeof date === 'number' ? new Date(Date.UTC(1899, 11, 30) + date * 86_400_000).getUTCFullYear() : null);
+  return filled({
+    photos: jpg,
+    rawFiles: raw,
+    ...(jpg
+      ? {}
+      : {
+          noFolderYet: 'No photo of an ID near these is listed: a new collection. Its folder is named after the country and year (PERU_2024), with JPG and RAW inside, in «Photos wings of collected butterflies» (organize_photos makes them).',
+          butterflies: filled({ countries: count(found.map(b => b.country)), years: count(found.map(b => year(b.date))) }),
+        }),
+  });
+}
+
 /** A row as the model is told it. */
 const told = r =>
   filled({
@@ -256,9 +355,10 @@ export const REVIEW_PROMPT = [
  *  - run(name, args, user): a tool.
  *  - handle({ method, path, body, query, user }): the tab's HTTP (null: not one of its paths).
  *  - active(user): whether the person's tab is open with a batch.
- * `pollMs`, `answerMs`: for tests.
+ * `space()`: the project account's space on Drive (server/photo-links-tool.mjs), for where the batch
+ * goes next. `pollMs`, `answerMs`: for tests.
  */
-export function createRenamePhotos({ store, pollMs = POLL_MS, answerMs = null, now = Date.now } = {}) {
+export function createRenamePhotos({ store, pollMs = POLL_MS, answerMs = null, now = Date.now, space = null } = {}) {
   /** By person: { tab, at, state, queue, wake, pending: Map id → { resolve, timer } }. */
   const sessions = new Map();
   const keyOf = user => String(user?.id ?? user?.username ?? '');
@@ -309,17 +409,41 @@ export function createRenamePhotos({ store, pollMs = POLL_MS, answerMs = null, n
   let lookups = null;
   function fresh() {
     if (lookups && now() - lookups.at < LOOKUPS_MS) return lookups;
-    const known = new Set(specimens(store).keys());
+    const butterflies = specimens(store);
+    const known = new Set(butterflies.keys());
     const listed = new Set();
-    for (const r of photoLinkRows(store)) {
+    const links = photoLinkRows(store);
+    for (const r of links) {
       const photo = r.values.Type === 'File' ? specimenName(r.values.Name) : null;
       if (photo) listed.add(photo.id.toUpperCase());
     }
-    lookups = { at: now(), known, listed };
+    lookups = { at: now(), known, listed, butterflies, places: listedPlaces(links) };
     return lookups;
   }
 
-  function read(args, s) {
+  /** After the renaming: where the files go on Drive, and whether they fit. */
+  async function afterRenaming(state) {
+    const { places, butterflies } = fresh();
+    const upload = uploadPlace(state.rows, places, butterflies);
+    if (!upload) return null;
+    const drive = await Promise.resolve(space?.()).catch(() => null);
+    const batchGb = state.folderBytes ? Math.round((state.folderBytes / 2 ** 30) * 10) / 10 : null;
+    return filled({
+      ...upload,
+      folderOnTheComputerGb: batchGb,
+      projectDrive: drive
+        ? filled({
+            freeGb: drive.freeGb,
+            usedPercent: drive.percent,
+            nearlyFull: drive.nearlyFull,
+            fits: batchGb !== null && drive.freeGb !== undefined && batchGb > drive.freeGb ? 'no: the folder is larger than the space left' : null,
+          })
+        : null,
+      then: 'Once the files are uploaded: sync_photo_links lists them, then update_websites brings the Wings Gallery and the maps up to date.',
+    });
+  }
+
+  async function read(args, s) {
     const state = s.state;
     if (!state?.rows.length)
       return filled({
@@ -350,6 +474,7 @@ export function createRenamePhotos({ store, pollMs = POLL_MS, answerMs = null, n
       checks: checked.checks,
       rows: page.map(told),
       more: pool.length > from + limit ? { from: from + limit, of: pool.length } : null,
+      upload: picked || from ? null : await afterRenaming(state),
     });
   }
 

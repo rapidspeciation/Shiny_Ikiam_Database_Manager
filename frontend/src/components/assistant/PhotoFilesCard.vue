@@ -166,7 +166,8 @@ onBeforeUnmount(dropGrid)
           <template v-if="progress?.sheetRows">
             {{ $tn(progress.sheetRows, 'Photo_links: {n} fila actualizada (en Historial).', 'Photo_links: {n} filas actualizadas (en Historial).') }}
           </template>
-          {{ $t('El asistente puede deshacer estos cambios si se lo pides.') }}
+          <template v-if="plan.counts.delete">{{ $t('Los archivos borrados definitivamente no se pueden recuperar.') }}</template>
+          <template v-else>{{ $t('El asistente puede deshacer estos cambios si se lo pides.') }}</template>
         </span>
       </p>
       <p v-if="progress?.sheetNote" class="text-amber-900">{{ progress.sheetNote }}</p>
@@ -214,6 +215,15 @@ onBeforeUnmount(dropGrid)
       <div class="space-y-1 border-b border-stone-200 px-3 py-2 text-xs text-stone-700">
         <p v-if="plan.counts.bin">
           {{ $tn(plan.counts.bin, '{n} archivo va a la papelera de Drive, donde queda 30 días.', '{n} archivos van a la papelera de Drive, donde quedan 30 días.') }}
+        </p>
+        <p v-if="plan.counts.delete" class="font-medium text-red-800" data-delete>
+          {{
+            $tn(
+              plan.counts.delete,
+              '{n} archivo se borra definitivamente: su espacio queda libre al momento y no se puede recuperar. Su copia está junto a él (mismo nombre y tamaño).',
+              '{n} archivos se borran definitivamente: su espacio queda libre al momento y no se pueden recuperar. Sus copias están junto a ellos (mismo nombre y tamaño).',
+            )
+          }}
         </p>
         <p v-if="plan.counts.mark">
           {{

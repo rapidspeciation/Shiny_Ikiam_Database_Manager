@@ -8,7 +8,7 @@ import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { createApp } from '../server/index.mjs';
 import { createAssistant, mcpTools } from '../server/assistant.mjs';
-import { IMAGES, REVIEW_PROMPT, checkBatch, cleanState, createRenamePhotos } from '../server/rename-photos.mjs';
+import { IMAGES, REVIEW_PROMPT, checkBatch, cleanState, createRenamePhotos, listedPlaces, uploadPlace } from '../server/rename-photos.mjs';
 import { SITES, createSiteUpdates } from '../server/site-updates.mjs';
 
 const minute = n => `2026-07-20T10:${String(n).padStart(2, '0')}:00.000Z`;
@@ -19,6 +19,7 @@ const batch = () => ({
   folder: 'batch july 20',
   canWrite: true,
   files: 13,
+  folderBytes: 5 * 2 ** 30,
   reading: { on: false, percent: 100, message: '' },
   rows: [
     photo(1, 'CAM077001'),
@@ -59,6 +60,35 @@ test('what does not add up in a batch: photos per ID, IDs apart, IDs the workboo
   assert.deepEqual([clean.order, clean.checks, clean.flagged], ['CAM077001×2', {}, []]);
 });
 
+test('where a batch goes on Drive: the folders of the photos of the IDs nearest its own', () => {
+  const link = n => `https://drive.google.com/drive/folders/folder-${n}`;
+  const fileRow = path => ({ values: { 'Full Path': path, Name: path.split('/').at(-1), Type: 'File' } });
+  const places = listedPlaces([
+    { values: { 'Full Path': 'Wild/PERU_2024/JPG', Name: 'JPG', Type: 'Folder', URL: link(1) } },
+    { values: { 'Full Path': 'Wild/PERU_2024/RAW', Name: 'RAW', Type: 'Folder', URL: link(2) } },
+    { values: { 'Full Path': 'CRISPR', Name: 'CRISPR', Type: 'Folder', URL: link(3) } },
+    ...['CAM076990', 'CAM076995', 'CAM076999'].flatMap(id => [fileRow(`Wild/PERU_2024/JPG/${id}d.JPG`), fileRow(`Wild/PERU_2024/JPG/${id}v.JPG`), fileRow(`Wild/PERU_2024/RAW/${id}d.CR2`)]),
+    fileRow('CRISPR/CAM077003d1.JPG'),
+    fileRow('CRISPR/CAM090000d.JPG'),
+  ]);
+  const rows = cleanState(batch()).rows;
+  const where = uploadPlace(rows, places);
+  assert.deepEqual(where.photos, {
+    folder: 'Wild/PERU_2024/JPG',
+    link: link(1),
+    inDriveForDesktop: 'Ithomiini_IKIAM › Photos › Wild › PERU_2024 › JPG',
+    because: 'the photos of the IDs nearest 5 of these 6 IDs are there',
+    // A file of another folder is near them too.
+    alsoNear: 'CRISPR',
+  });
+  assert.deepEqual([where.rawFiles.folder, where.rawFiles.link], ['Wild/PERU_2024/RAW', link(2)]);
+  // IDs far from every listed one: a new collection, named after its butterflies.
+  const far = uploadPlace([{ id: 'CAM099001' }, { id: 'CAM099002' }, { id: 'M6285' }], places, new Map([['CAM099001', { country: 'Guyana', date: 46200 }], ['CAM099002', { country: 'Guyana', date: 46201 }]]));
+  assert.match(far.noFolderYet, /new collection/);
+  assert.deepEqual(far.butterflies, { countries: { Guyana: 2 }, years: { 2026: 2 } });
+  assert.equal(uploadPlace([{ id: '', skip: false }], places), null);
+});
+
 /** A «Renombrar fotos» tab: it tells its batch, asks for work, and answers it as the frame's app would. */
 function fakeTab(rename, user, { tab = 'tab-1', state = batch() } = {}) {
   const done = [];
@@ -90,7 +120,7 @@ test('the tools reach the batch through the open tab: read, pictures, correction
   const sheets = new LocalSheets({ Insectary_data: [...known].map((cam, i) => ({ row: i + 2, values: { Insectary_ID: `A${i}B`, Sex: 'female', CAM_ID: cam } })) });
   const store = new Store({ localMode: true }, { sheets });
   await store.sync({ sheets: ['Insectary_data'] });
-  const rename = createRenamePhotos({ store, pollMs: 40, answerMs: 2000 });
+  const rename = createRenamePhotos({ store, pollMs: 40, answerMs: 2000, space: async () => ({ freeGb: 4.2, percent: 96, nearlyFull: true }) });
   const kim = { id: 'kim', username: 'kim', role: 'editor' };
   try {
     // No tab open: the tools say what the person has to do; a visitor's role cannot use them.
@@ -108,6 +138,10 @@ test('the tools reach the batch through the open tab: read, pictures, correction
     assert.match(read.order, /^CAM077001×2 CAM077002×1 CAM077008×1!/);
     assert.equal(read.checks.notInWorkbook.examples[0].id, 'CAM077999');
     assert.deepEqual(read.rows[3], { n: 4, file: 'IMG_4.JPG', id: 'CAM077008', taken: '10:04:00', review: ['out-of-sequence'], suggest: ['CAM077002'] });
+    // What comes after the renaming: no folder near (the sheet lists no photos here), the folder's size against the space left.
+    assert.match(read.upload.noFolderYet, /new collection/);
+    assert.deepEqual([read.upload.folderOnTheComputerGb, read.upload.projectDrive], [5, { freeGb: 4.2, usedPercent: 96, nearlyFull: true, fits: 'no: the folder is larger than the space left' }]);
+    assert.match(read.upload.then, /sync_photo_links.*update_websites/);
     // Every photo, a page at a time; or some by name.
     const all = await rename.run('rename_photos_read', { show: 'all', limit: 5 }, kim);
     assert.deepEqual([all.rows.length, all.more], [5, { from: 5, of: 13 }]);
