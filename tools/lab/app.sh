@@ -113,6 +113,11 @@ env_app=(
 run_app() { env -u GOOGLE_CREDENTIALS_FILE -u WORKBOOK_ID -u SHEET_HOOK_SECRET "${env_app[@]}" node server/index.mjs; }
 
 stop
+# Its T3 (the Asistente tab's chats), started when it is not running (after a reboot, it is not).
+if ! curl -fsS -o /dev/null -m 3 "http://127.0.0.1:$T3PORT/"; then
+  setsid -f "$HERE/tools/lab/t3.sh" --bg > /dev/null 2>&1
+  for _ in $(seq 1 30); do curl -fsS -o /dev/null -m 2 "http://127.0.0.1:$T3PORT/" && break; sleep 2; done
+fi
 [ -f "$T3HOME/workspaces/lab/.claude/t3-project" ] && provision --refresh-all
 if [ "${1:-}" != "--bg" ]; then
   echo "Lab app on $URL (foreground; the first start takes a minute to load the snapshot)"
