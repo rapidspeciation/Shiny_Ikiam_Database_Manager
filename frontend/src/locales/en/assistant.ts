@@ -727,6 +727,7 @@ export default {
   'Elige las carpetas y pulsa «Leer Drive»: aquí verás lo que cambiaría en Photo_links antes de aplicarlo.':
     'Choose the folders and press «Read Drive»: here you will see what would change in Photo_links before applying it.',
   'Sitios públicos': 'Public sites',
+  '{used} GB de {limit} GB usado': '{used} GB of {limit} GB used',
   'Continuar la revisión': 'Continue the review',
   'Empezar un chat nuevo para revisar esta carpeta (el anterior, del {date}, queda en T3)': 'Start a new chat to review this folder (the earlier one, from {date}, stays in T3)',
   'Abre el chat que ya revisó esta carpeta (del {date})': 'Opens the chat that already reviewed this folder (from {date})',
@@ -787,7 +788,6 @@ export default {
   'Después se suben a:': 'They then go to:',
   fotos: 'photos',
   'Es una colecta nueva: pide al asistente la carpeta donde subirlas.': 'A new collection: ask the assistant for the folder to upload them to.',
-  'Drive del proyecto: {free} GB libres de {limit}': 'Project\'s Drive: {free} GB free of {limit}',
   'Donde se suben las fotos renombradas': 'Where the renamed photos are uploaded',
   'Queda poco espacio: el asistente puede preparar el traspaso de carpetas a la cuenta que guarda las fotos':
     'Little space is left: the assistant can prepare handing folders over to the account that keeps the photos',

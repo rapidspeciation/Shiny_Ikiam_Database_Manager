@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
-import { Check, CloudUpload, Copy, ExternalLink, MessageSquarePlus, PanelRightClose, PanelRightOpen, Sparkles } from 'lucide-vue-next'
+import { Check, Cloud, CloudUpload, Copy, ExternalLink, MessageSquarePlus, PanelRightClose, PanelRightOpen, Sparkles } from 'lucide-vue-next'
 const PhotoLinksPanel = defineAsyncComponent(() => import('../components/PhotoLinksPanel.vue'))
 import { api } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
@@ -165,6 +165,8 @@ const earlierDate = computed(() => (earlier.value?.at ? new Date(earlier.value.a
 async function review(fresh = false) {
   asking.value = true
   prompt.value = ''
+  // The frame's app shows its review: the cards Claude's changes go to.
+  renameHost.show = { view: 'review', at: Date.now() }
   try {
     await ensureT3()
     const out = await api<{ chat: string | null; prompt: string; resumed?: boolean }>('rename/review', { method: 'POST', body: fresh ? { fresh: true } : {} })
@@ -243,13 +245,10 @@ function resize(event: PointerEvent) {
           </li>
         </ol>
         <span class="ml-auto flex items-center gap-2">
-          <!-- Where the photos go next: the project's Drive, and whether this folder fits. -->
-          <span
+          <!-- Where the photos go next: the project's Drive as Google shows it, and whether this folder fits. -->
+          <div
             v-if="space"
-            class="rounded px-2 py-0.5 text-xs"
-            :class="
-              space.level === 'full' ? 'bg-red-100 text-red-900' : space.level === 'low' ? 'bg-amber-100 text-amber-950' : 'text-stone-500'
-            "
+            class="flex items-center gap-2 text-xs"
             :title="
               space.level === 'ok'
                 ? $t('Donde se suben las fotos renombradas')
@@ -257,10 +256,20 @@ function resize(event: PointerEvent) {
             "
             data-drive-space
           >
-            {{ space.text }}
-            <template v-if="space.level === 'full'"> · {{ $t('esta carpeta ocupa {gb} GB: no cabe', { gb: space.folderGb ?? 0 }) }}</template>
-            <template v-else-if="space.folderGb"> · {{ $t('esta carpeta: {gb} GB', { gb: space.folderGb }) }}</template>
-          </span>
+            <Cloud :size="15" :class="space.level === 'full' ? 'text-red-600' : space.level === 'low' ? 'text-amber-600' : 'text-stone-500'" />
+            <div class="w-36">
+              <div class="h-1.5 overflow-hidden rounded-full bg-stone-200" role="progressbar" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="space.percent">
+                <div
+                  class="h-full rounded-full"
+                  :class="space.level === 'full' || space.percent >= 90 ? 'bg-red-500' : space.level === 'low' ? 'bg-amber-500' : 'bg-blue-600'"
+                  :style="{ width: `${Math.min(100, space.percent)}%` }"
+                />
+              </div>
+              <p class="mt-0.5 text-[11px] leading-tight text-stone-700">{{ space.text }}</p>
+            </div>
+            <span v-if="space.level === 'full'" class="rounded bg-red-100 px-1.5 py-0.5 text-red-900">{{ $t('esta carpeta ocupa {gb} GB: no cabe', { gb: space.folderGb ?? 0 }) }}</span>
+            <span v-else-if="space.folderGb" class="text-stone-500">{{ $t('esta carpeta: {gb} GB', { gb: space.folderGb }) }}</span>
+          </div>
           <button
             v-if="section === 'rename' && step === 'upload'"
             class="btn-primary bg-emerald-700 px-3 py-1 hover:bg-emerald-800"

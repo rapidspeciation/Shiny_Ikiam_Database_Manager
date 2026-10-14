@@ -44,6 +44,8 @@ export const renameHost = reactive({
   state: null as RenameState | null,
   /** This page's name for its batch on the server (RenameHost). */
   tab: '',
+  /** A part of the frame's app to show (set with the time asked, so asking again shows it again). */
+  show: null as { view: 'review'; at: number } | null,
 })
 
 /** The way from the camera's files to the sheets, a step at a time. */
@@ -126,15 +128,20 @@ export interface DriveSpace {
 }
 const oneDecimal = (n: number) => (Math.round(n * 10) / 10).toLocaleString(undefined, { maximumFractionDigits: 1 })
 /**
- * The space as the tab's bar says it, and how urgent it is: 'full' when the open folder is larger
- * than what is left, 'low' when little is left (the server's threshold), else 'ok'.
+ * The space as the tab's bar shows it, as Google Drive does: «70 GB de 100 GB usado» over a bar filled
+ * to `percent`, and how urgent it is: 'full' when the open folder is larger than what is left, 'low'
+ * when little is left (the server's threshold), else 'ok'.
  */
-export function spaceLine(space: DriveSpace | null, folderBytes: number | null | undefined): { text: string; level: 'ok' | 'low' | 'full'; folderGb: number | null } | null {
+export function spaceLine(
+  space: DriveSpace | null,
+  folderBytes: number | null | undefined,
+): { text: string; percent: number; level: 'ok' | 'low' | 'full'; folderGb: number | null } | null {
   if (!space || space.limitGb === undefined || space.freeGb === undefined) return null
   const folderGb = folderBytes ? Math.round((folderBytes / 2 ** 30) * 10) / 10 : null
   const level = folderGb !== null && folderGb > space.freeGb ? 'full' : space.nearlyFull ? 'low' : 'ok'
   return {
-    text: t('Drive del proyecto: {free} GB libres de {limit}', { free: oneDecimal(space.freeGb), limit: oneDecimal(space.limitGb) }),
+    text: t('{used} GB de {limit} GB usado', { used: oneDecimal(space.usedGb), limit: oneDecimal(space.limitGb) }),
+    percent: space.percent ?? Math.round((space.usedGb / space.limitGb) * 100),
     level,
     folderGb,
   }

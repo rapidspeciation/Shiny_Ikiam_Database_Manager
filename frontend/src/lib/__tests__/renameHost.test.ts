@@ -33,7 +33,8 @@ describe('the batch of the Fotos tab', () => {
     const drive = { usedGb: 69.7, limitGb: 100, freeGb: 30.3, percent: 70 }
     expect(spaceLine(null, null)).toBeNull()
     expect(spaceLine(drive, null)).toMatchObject({ level: 'ok', folderGb: null })
-    expect(spaceLine(drive, 4 * 2 ** 30)?.text).toMatch(/^Drive del proyecto: 30[.,]3 GB libres de 100$/)
+    expect(spaceLine(drive, 4 * 2 ** 30)).toMatchObject({ percent: 70 })
+    expect(spaceLine(drive, 4 * 2 ** 30)?.text).toMatch(/^69[.,]7 GB de 100 GB usado$/)
     expect(spaceLine({ ...drive, freeGb: 9, nearlyFull: true }, 4 * 2 ** 30)).toMatchObject({ level: 'low', folderGb: 4 })
     expect(spaceLine({ ...drive, freeGb: 9, nearlyFull: true }, 14.2 * 2 ** 30)).toMatchObject({ level: 'full', folderGb: 14.2 })
     // An account without a limit says nothing.

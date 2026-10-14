@@ -105,6 +105,12 @@ async function work() {
   }
 }
 
+// The page asking the frame's app to show a part of it (the review, when a chat about the batch starts).
+watch(
+  () => renameHost.show?.at,
+  () => renameHost.show && say({ type: 'show', view: renameHost.show.view }),
+)
+
 async function hear(event: MessageEvent) {
   if (event.origin !== location.origin || event.source !== frame.value?.contentWindow) return
   const m = event.data as { source?: string; type?: string; id?: string; ok?: boolean; data?: unknown; error?: string; state?: RenameState } | null
