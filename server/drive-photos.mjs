@@ -97,6 +97,8 @@ const DOWNLOADS = 2;
 const CACHE_BYTES = 1024 ** 3;
 const KEPT_DAYS = 14;
 const LOOK_MAX = 12;
+/** How long a call on a batch being read waits for it to end before answering how far it is. */
+const WAIT_MS = 90_000;
 const PAGE = 150;
 
 const text = v => String(v ?? '').trim();
@@ -184,7 +186,7 @@ export const nameFor = (r, ext = '.JPG') => (r.camid && r.view ? `${r.camid}${r.
  * and started (server/photo-links-tool.mjs), answering { plan, link } or { error }. `show(batch)`,
  * `tell(batch)`: its card made, and changed. `readerDir`, `cacheDir`, `reader` (a fake for tests).
  */
-export function createDrivePhotos({ store, config = {}, readerDir = null, cacheDir = null, organize = null, show = null, tell = null, reader = null }) {
+export function createDrivePhotos({ store, config = {}, readerDir = null, cacheDir = null, organize = null, show = null, tell = null, reader = null, waitMs = WAIT_MS }) {
   const db = store.db;
   db.exec(`CREATE TABLE IF NOT EXISTS drive_photo_batches (id TEXT PRIMARY KEY, owner TEXT NOT NULL, folder_id TEXT NOT NULL, folder TEXT NOT NULL,
     status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, summary_json TEXT NOT NULL DEFAULT '{}', plan TEXT, error TEXT)`);
@@ -244,6 +246,7 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
 
   // ------------------------------------------------------------ reading
   let running = null;
+  let runningId = null;
   const queue = [];
   function startReader(knownFile) {
     if (reader) return reader;
@@ -348,6 +351,7 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
   function pump() {
     if (running || !queue.length) return;
     const id = queue.shift();
+    runningId = id;
     running = readBatch(id)
       .catch(e => {
         setBatch(id, { status: 'failed', error: String(e.message || e).slice(0, 300) });
@@ -355,6 +359,7 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
       })
       .finally(() => {
         running = null;
+        runningId = null;
         pump();
       });
   }
@@ -468,7 +473,7 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
       withRawFile: photos.filter(f => raws.has(stem(f.name))).length,
       ...shown,
       waitingFor: ahead ? `${ahead} other batch(es) first` : null,
-      next: `Reading takes about ${Math.max(1, Math.round((photos.length * 1.3) / 60))} min. Call drive_photos with batch "${id}" to follow it; the card beside the chat shows it too.`,
+      next: `Reading takes about ${Math.max(1, Math.round((photos.length * 1.3) / 60))} min. Call drive_photos with batch "${id}": it answers once the batch is read (or after a minute and a half). The card beside the chat shows it too.`,
     });
   }
 
@@ -496,7 +501,7 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
     if (!batch) return { error: 'No batch by that ID.' };
     const summary = JSON.parse(batch.summary_json || '{}');
     if (batch.status === 'reading')
-      return { batch: id, status: 'reading', folder: batch.folder, read: `${summary.read ?? 0} of ${summary.photos}`, next: 'Call again in a minute.' };
+      return { batch: id, status: 'reading', folder: batch.folder, read: `${summary.read ?? 0} of ${summary.photos}`, next: 'Still reading: call drive_photos with this batch again (it waits for the end).' };
     if (batch.status === 'failed') return { batch: id, status: 'failed', error: batch.error };
     const rows = rowsOf(id);
     const shown = which === 'all' ? rows : rows.filter(r => r.marked || r.error || r.remove || (r.setBy && r.setBy !== 'reader'));
@@ -623,7 +628,11 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
     async run(name, args = {}, user, context) {
       if (!EDITORS.includes(user?.role)) return { error: 'Your role cannot change the photos.' };
       try {
-        if (name === 'drive_photos') return args.folder && !args.batch ? await start({ folder: args.folder, all: args.all === true }, user, context) : status(args.batch, args);
+        if (name === 'drive_photos' && args.folder && !args.batch) return await start({ folder: args.folder, all: args.all === true }, user, context);
+        // Being read: the answer waits for it to end, a minute and a half at most.
+        if (name === 'drive_photos' && runningId === String(args.batch) && running)
+          await Promise.race([running, new Promise(resolve => setTimeout(resolve, waitMs).unref?.())]);
+        if (name === 'drive_photos') return status(args.batch, args);
         if (name === 'drive_photos_look') return look(args);
         if (name === 'drive_photos_edit') return edit(args, 'assistant');
       } catch (e) {

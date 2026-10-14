@@ -197,3 +197,12 @@ test("show_photos: each ID's listed photos side by side, a view missing said so,
   ]);
   assert.equal(items[0].photos[0].file, id(2));
 });
+
+test('asked about a batch being read, the answer waits for it to end', async t => {
+  const { photos } = await fixture(t);
+  const started = await photos.run('drive_photos', { folder: 'Upload' }, kim, {});
+  // At once: no polling needed.
+  const seen = await photos.run('drive_photos', { batch: started.batch }, kim);
+  assert.equal(seen.status, 'ready');
+  assert.ok(seen.order);
+});
