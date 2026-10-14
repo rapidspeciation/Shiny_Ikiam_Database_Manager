@@ -373,9 +373,16 @@ test('only some folders: their files are read, and the rest of the sheet is left
     assert.equal(read.drive.files, 8);
     const done = await tool.run({ confirmed: true, scan: read.scan, skip: [] }, kim);
     assert.equal(done.status, 'done');
-    // The folder above, by its name: its own files and those inside it.
+    // The folder above, by its name: its own files and those inside it. A row whose file is gone follows the
+    // file of its name there without asking Drive (copies another account made); Drive is asked about the rest.
+    const asked = [];
+    const get = local.get.bind(local);
+    local.get = async fileId => (asked.push(fileId), get(fileId));
     const all = await tool.run({ only: ['wild'] }, kim);
     assert.deepEqual(all.changes.removed, [{ row: 6, path: 'Wild/CAM000008d.JPG' }]);
+    assert.deepEqual(all.changes.relinked, [{ row: 5, name: 'CAM000002d.JPG' }]);
+    assert.ok(asked.includes(id(14)));
+    assert.ok(!asked.includes(id(12)));
     assert.equal(all.changes.renamed.length, 1);
     assert.deepEqual((await tool.run({ only: ['nowhere'] }, kim)).foldersNotFound, ['nowhere']);
   } finally {

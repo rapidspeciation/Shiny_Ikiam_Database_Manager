@@ -48,6 +48,10 @@ try {
   const read = await timed(`Drive read${only.length ? ` (${only.join(', ')})` : ' (every listed folder)'} and compared`, () => tool.run({ only }, user));
   if (read.error) throw new Error(read.error);
   console.log(`  ${read.drive.files} files in ${read.drive.folders} folders; new files: ${read.changes?.newFiles ?? 0}; requests to Drive: ${drive.requests}`);
+  const c = read.changes ?? {};
+  const n = v => (typeof v === 'number' ? v : Array.isArray(v) ? v.length : (v?.count ?? 0));
+  console.log(`  rows: renamed ${n(c.renamed)}, relinked to a file of the same name ${n(c.relinked)}, emptied ${n(c.removed)}, moved ${c.movedInDrive ?? 0}, owner or size ${c.ownerOrSizeChanged ?? 0}; new by folder: ${(c.byFolder ?? []).map(f => `${f.folder} ${f.new}`).join(', ')}`);
+  console.log(`  left out: ${JSON.stringify(read.leftOut ?? {})}`);
   if (read.upToDate || args.read) process.exit(0);
   const before = Date.now();
   const done = await timed('Written to Photo_links and confirmed', () => tool.run({ confirmed: true, scan: read.scan }, user));

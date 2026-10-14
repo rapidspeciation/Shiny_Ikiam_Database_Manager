@@ -26,7 +26,7 @@ const TO_DELETE = /_todelete$/i;
 const PHOTO = /\.(jpe?g|png|heic|heif|jfif)$/i;
 const RAW = /\.(cr2|cr3|orf|nef|arw|dng|raf|rw2|pef|tiff?)$/i;
 /** Rows whose file the listing lacks, asked one by one whether they still exist (the rest is left as it is). */
-const LOOKUPS = 400;
+const LOOKUPS = 1000;
 const EXAMPLES = 6;
 
 const blank = v => v === null || v === undefined || String(v).trim() === '';
@@ -267,14 +267,14 @@ export function planPhotoLinks({
     if (!free.has(key)) free.set(key, []);
     free.get(key).push(item);
   }
-  // Rows whose file the listing lacks: linked to a file of the same name now in the listed folders, or
-  // emptied once Drive says the file is gone. With only some folders read, the file may be in another
-  // one: Drive is asked first.
+  // Rows whose file the listing lacks: linked to a file of the same name now in the folders read (photos
+  // uploaded again, copies another account made of them), or emptied once Drive says the file is gone
+  // (asked only for those without one: about 35 files a second).
   const unknown = [];
   for (const [id, r] of missing) {
     const found = aside.has(id) ? { gone: true } : lookups.get(id);
     const again = r.values.Type === 'File' ? free.get(lower(r.values.Name))?.find(f => !taken.has(f.id)) : null;
-    if (again && (!scope || found?.gone) && !aside.has(again.id)) {
+    if (again && !aside.has(again.id)) {
       taken.add(again.id);
       relinkedTo.set(r.id, again.id);
       const { Name: _name, Type: _type, ...link } = cells(again, pathOf(again));
