@@ -9,7 +9,8 @@ description: The photos of the butterflies' wings, from the camera to the workbo
 
 1. **Photograph** each preserved butterfly's wings twice, dorsal and ventral,
    with its envelope in the picture (the CAM_ID is read from it), the ruler
-   and the colour card. The camera saves a JPG and a RAW file of each.
+   and the colour card. The camera saves a JPG and a RAW file of each
+   (details below).
 2. **Rename** the files after the CAM_ID, on the computer, with the Rename
    Photos app (below).
 3. **Upload** them to the project's Drive folder «Photos», into the folder of
@@ -24,6 +25,25 @@ description: The photos of the butterflies' wings, from the camera to the workbo
 Photos that are on Drive but not yet in Photo_links show `NOT FOUND`
 (`Not Found` in Collection_data) in their row: step 4 is what makes them
 appear.
+
+## Taking the photos
+
+From the team's «Photos Processing Protocol» (Google Doc, in the project's
+Drive):
+
+- The camera on the articulated arm, level (a bubble-level app on the phone,
+  the camera's grid), the ruler at the bottom of the frame straight, and the
+  pencilled cross of the board a little left of the centre: the colour card
+  on the right takes more room than the envelope on the left.
+- Manual focus on one wing in the centre, zoomed in; checked again often.
+- One wing per quadrant, dorsal side first (the side that touches when the
+  wings close; a male's hair pencils show on it). Then the wings are flipped,
+  the left ones to the right and the right ones to the left, for the ventral
+  photo. So each butterfly has two photos taken one after the other, dorsal
+  then ventral.
+- A remote shutter or the 5-second timer, so the camera does not shake.
+- The photos are copied from the card into a folder per batch, named by its
+  date, and renamed there before they are uploaded.
 
 ## File names
 
