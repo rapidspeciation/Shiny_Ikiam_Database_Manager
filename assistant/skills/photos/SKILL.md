@@ -196,7 +196,8 @@ beside the chat shows the batch as it is read.
    The others are not to be looked at: two photos per ID, in the order of
    the IDs around them, read sure, turned as their session.
 2. `drive_photos_look` at those, the envelope first (`what: "photo"` for the
-   side, the wings, the turn), and `drive_photos_edit` what is clear, as in
+   side, the wings, the turn; `box` for a part at full resolution: a faint
+   envelope, a wing), and `drive_photos_edit` what is clear, as in
    «Reviewing a batch» above (the same digits mistaken, the same order of
    IDs). A photo not wanted (blurred, a repeat): `remove`; the reason in
    `note`.

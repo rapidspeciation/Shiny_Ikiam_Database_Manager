@@ -35,6 +35,8 @@ test('the tag is read and changed in a JPEG and in a TIFF-based RAW, nothing els
     ['jpeg', jpeg(1)],
     ['raw, little-endian', tiff(1)],
     ['raw, big-endian', tiff(1, false)],
+    // Olympus .ORF: "IIRO" where TIFF has "II*\0".
+    ['orf', (b => (b.set([0x49, 0x49, 0x52, 0x4f]), b))(tiff(1))],
   ]) {
     assert.equal(readOrientation(bytes).value, 1, kind);
     const out = writeOrientation(bytes, 6);

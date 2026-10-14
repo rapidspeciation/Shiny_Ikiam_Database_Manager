@@ -257,6 +257,8 @@ export function configFromEnv(env = process.env) {
     photoReaderDir: env.PHOTO_READER_DIR ? resolve(env.PHOTO_READER_DIR) : resolve(here, '..', 'photo-reader'),
     // Where the batches' small pictures are kept (at most 1 GB): beside the database by default.
     drivePhotosCache: env.DRIVE_PHOTOS_CACHE ? resolve(env.DRIVE_PHOTOS_CACHE) : env.DATABASE_PATH ? join(dirname(resolve(env.DATABASE_PATH)), 'drive-photos') : undefined,
+    // Whole photos kept for the assistant to look closer (GB; 0: none), the least used dropped first.
+    drivePhotosOriginalsGb: env.DRIVE_PHOTOS_ORIGINALS_GB !== undefined ? Number(env.DRIVE_PHOTOS_ORIGINALS_GB) : undefined,
     // A folder of photos on this computer shown as a Drive folder (the lab: LocalDrive, server/drive.mjs).
     driveLocalPhotos: env.DRIVE_LOCAL_PHOTOS ? { dir: resolve(env.DRIVE_LOCAL_PHOTOS), under: env.DRIVE_LOCAL_PHOTOS_UNDER || 'Photos wings of collected butterflies' } : undefined,
     // The team's sheet where another account does its part of a plan (server/transfer-sheet.mjs); the team's own by default.

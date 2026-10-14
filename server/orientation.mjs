@@ -1,6 +1,6 @@
 // A photo turned without touching its pixels: its EXIF orientation tag (0x0112) changed in place, in a
-// JPEG (in its Exif block) or a TIFF-based RAW file (Canon .CR2, .NEF, .ARW, .DNG: in the first
-// directory), the file the same size. Viewers and Drive's previews show the photo turned by the tag.
+// JPEG (in its Exif block) or a TIFF-based RAW file (Canon .CR2, Olympus .ORF, Nikon .NEF, Sony .ARW,
+// .DNG, Panasonic .RW2: in the first directory), the file the same size. Viewers and Drive's previews show the photo turned by the tag.
 // readOrientation(bytes) → { value, at } (null without a tag); writeOrientation(bytes, value) → a copy
 // with the tag set, or null when the file has no tag to change. turned(value, degrees) → the tag that
 // shows the photo `degrees` further clockwise.
@@ -29,7 +29,8 @@ export function readOrientation(bytes) {
   const little = bytes[start] === 0x49;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const u16 = at => view.getUint16(at, little);
-  if (u16(start + 2) !== 42) return null;
+  // TIFF's own mark, or a camera maker's: Olympus (ORF: "RO", "RS"), Panasonic (RW2: 0x55).
+  if (![42, 0x4f52, 0x5352, 0x55].includes(u16(start + 2))) return null;
   const ifd = start + view.getUint32(start + 4, little);
   if (ifd + 2 > bytes.length) return null;
   const entries = u16(ifd);

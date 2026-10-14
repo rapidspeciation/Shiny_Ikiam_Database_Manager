@@ -1,7 +1,9 @@
 // Photos uploaded to Drive without being renamed (the camera's names), read on this server: each
 // photo is downloaded, its envelope's CAM ID read by the Rename Photos app's reader (the same models,
-// photo-reader/ beside the server: scripts/build-rename-app.sh), a small copy of it and of its envelope
-// kept, and the photo deleted at once, so the server's disk holds a few photos at a time. The batch is
+// photo-reader/ beside the server: scripts/build-rename-app.sh), and a small copy of it and of its
+// envelope kept. The photo itself is kept too, in a cache of whole photos (5 GB by default, the least
+// used dropped first; none while the disk has little room), for the assistant to look closer at the odd
+// ones (drive_photos_look with a `box`: a part at full resolution); one dropped is downloaded again. The batch is
 // then put in order the way the «Fotos» tab does (server/rename-photos.mjs checkBatch): its IDs in the
 // order the photos were taken, two photos each (d then v), one turn per shooting session; what does not
 // add up is marked for a look, and only that is shown to the assistant. Applied from its card, it
@@ -13,7 +15,8 @@
 
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, statfsSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -43,10 +46,15 @@ export const DRIVE_PHOTO_TOOLS = [
     function: {
       name: 'drive_photos_look',
       description:
-        "Pictures of photos of a batch of drive_photos, as the server keeps them: `what: \"envelope\"` (default: the envelope, to read its ID) or `\"photo\"` (the whole photo, small: which side, wings, turn). `files`: the rows' `file` (up to 12).",
+        "Pictures of photos of a batch of drive_photos: `what: \"envelope\"` (default: the envelope, to read its ID), `\"photo\"` (the whole photo, small: which side, wings, turn) or `\"full\"` (the whole photo, 1600 px). `box` [x0, y0, x1, y1], fractions of the photo as shown (0,0 its top left): that part at full resolution (an envelope hard to read, a wing; 1 to 4 files). `files`: the rows' `file` (up to 12).",
       parameters: {
         type: 'object',
-        properties: { batch: { type: 'string' }, files: { type: 'array', items: { type: 'string' } }, what: { type: 'string', enum: ['envelope', 'photo'] } },
+        properties: {
+          batch: { type: 'string' },
+          files: { type: 'array', items: { type: 'string' } },
+          what: { type: 'string', enum: ['envelope', 'photo', 'full'] },
+          box: { type: 'array', items: { type: 'number' } },
+        },
         required: ['batch', 'files'],
       },
     },
@@ -95,6 +103,9 @@ const MAX_PHOTOS = 3000;
 const DOWNLOADS = 2;
 /** The pictures kept, in all: the oldest batches' go first. */
 const CACHE_BYTES = 1024 ** 3;
+/** Whole photos kept (DRIVE_PHOTOS_ORIGINALS_GB), the least used dropped first; none kept below FREE_BYTES of disk. */
+const ORIGINALS_BYTES = 5 * 1024 ** 3;
+const FREE_BYTES = 10 * 1024 ** 3;
 const KEPT_DAYS = 14;
 const LOOK_MAX = 12;
 /** How long a call on a batch being read waits for it to end before answering how far it is. */
@@ -186,7 +197,7 @@ export const nameFor = (r, ext = '.JPG') => (r.camid && r.view ? `${r.camid}${r.
  * and started (server/photo-links-tool.mjs), answering { plan, link } or { error }. `show(batch)`,
  * `tell(batch)`: its card made, and changed. `readerDir`, `cacheDir`, `reader` (a fake for tests).
  */
-export function createDrivePhotos({ store, config = {}, readerDir = null, cacheDir = null, organize = null, show = null, tell = null, reader = null, waitMs = WAIT_MS }) {
+export function createDrivePhotos({ store, config = {}, readerDir = null, cacheDir = null, organize = null, show = null, tell = null, reader = null, waitMs = WAIT_MS, freeBytes = FREE_BYTES }) {
   const db = store.db;
   db.exec(`CREATE TABLE IF NOT EXISTS drive_photo_batches (id TEXT PRIMARY KEY, owner TEXT NOT NULL, folder_id TEXT NOT NULL, folder TEXT NOT NULL,
     status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, summary_json TEXT NOT NULL DEFAULT '{}', plan TEXT, error TEXT)`);
@@ -194,6 +205,51 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
     PRIMARY KEY (batch_id, file))`);
   const cache = cacheDir ?? config.drivePhotosCache ?? join(tmpdir(), 'ithomiini-drive-photos');
   mkdirSync(cache, { recursive: true, mode: 0o700 });
+  const originals = join(cache, 'originals');
+  mkdirSync(originals, { recursive: true, mode: 0o700 });
+  const originalsBytes = config.drivePhotosOriginalsGb !== undefined ? Number(config.drivePhotosOriginalsGb) * 1024 ** 3 : ORIGINALS_BYTES;
+  const originalOf = file => join(originals, `${String(file).replace(/[^\w-]/g, '')}.jpg`);
+  /** Whether a whole photo may be kept: the cache allows some, and the disk has room. */
+  const roomForOriginals = () => {
+    if (!(originalsBytes > 0)) return false;
+    try {
+      const fs = statfsSync(originals);
+      return fs.bavail * fs.bsize > freeBytes;
+    } catch {
+      return false;
+    }
+  };
+  /** The whole photos beyond the space allowed: the least recently used go. */
+  function trimOriginals() {
+    const files = readdirSync(originals)
+      .filter(f => f.endsWith('.jpg'))
+      .map(f => {
+        const s = statSync(join(originals, f));
+        return { f, size: s.size, at: s.mtimeMs };
+      })
+      .sort((a, b) => a.at - b.at);
+    let total = files.reduce((n, x) => n + x.size, 0);
+    for (const x of files) {
+      if (total <= originalsBytes) break;
+      rmSync(join(originals, x.f), { force: true });
+      total -= x.size;
+    }
+  }
+  /** A photo's whole file on this server: the one kept (marked used), or downloaded again. */
+  async function original(file) {
+    const path = originalOf(file);
+    if (existsSync(path)) {
+      const now = new Date();
+      utimesSync(path, now, now);
+      return path;
+    }
+    const writer = driveWriterFor(store, config);
+    if (!writer?.download) throw new Error('This app has no Google account set up that can read the photos.');
+    await writer.download(file, `${path}.part`);
+    renameSync(`${path}.part`, path);
+    trimOriginals();
+    return path;
+  }
   const now = () => new Date().toISOString();
 
   const batchOf = id => db.prepare('SELECT * FROM drive_photo_batches WHERE id = ?').get(String(id ?? ''));
@@ -248,11 +304,12 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
   let running = null;
   let runningId = null;
   const queue = [];
-  function startReader(knownFile) {
+  function startReader(knownFile = null) {
     if (reader) return reader;
     const dir = readerDir ?? config.photoReaderDir;
     if (!dir || !existsSync(join(dir, 'photo-reader.mjs'))) throw new Error('This server has no photo reader installed (photo-reader/: scripts/build-rename-app.sh).');
-    const child = spawn(process.execPath, [join(dir, 'photo-reader.mjs'), '--models', join(dir, 'models'), '--known', knownFile, '--threads', '2'], {
+    const args = [join(dir, 'photo-reader.mjs'), '--models', join(dir, 'models'), ...(knownFile ? ['--known', knownFile] : []), '--threads', '2'];
+    const child = spawn(process.execPath, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     const waiting = new Map();
@@ -307,9 +364,14 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
       const one = async () => {
         while (next < todo.length) {
           const r = todo[next++];
-          const path = join(work, `${r.file}.jpg`);
+          // Downloaded where whole photos are kept; deleted after reading when there is no room for it.
+          const path = originalOf(r.file);
+          const keep = roomForOriginals();
           try {
-            await writer.download(r.file, path);
+            if (!existsSync(path)) {
+              await writer.download(r.file, `${path}.part`);
+              renameSync(`${path}.part`, path);
+            }
             const out = await read.read({ id: r.file, path, preview: picture(id, r.file, 'photo'), crop: picture(id, r.file, 'envelope') });
             if (out.error) throw new Error(out.error);
             Object.assign(r, {
@@ -326,7 +388,8 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
           } catch (e) {
             Object.assign(r, { read: true, camid: null, error: String(e.message || e).slice(0, 200), setBy: 'reader', readRotation: null });
           } finally {
-            rmSync(path, { force: true });
+            rmSync(`${path}.part`, { force: true });
+            if (!keep) rmSync(path, { force: true });
           }
           saveRow(id, r);
           done++;
@@ -341,6 +404,7 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
       read.close?.();
       rmSync(work, { recursive: true, force: true });
     }
+    trimOriginals();
     settle(id);
     setBatch(id, { status: 'ready' });
     tell?.(batchOf(id));
@@ -518,21 +582,43 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
     });
   }
 
-  function look({ batch, files, what = 'envelope' }) {
+  async function look({ batch, files, what = 'envelope', box = null }) {
     const b = batchOf(batch);
     if (!b) return { error: 'No batch by that ID.' };
     const rows = new Map(rowsOf(batch).map(r => [r.file, r]));
     const out = { batch, pictures: [] };
     const images = [];
-    for (const file of (Array.isArray(files) ? files : [files]).slice(0, LOOK_MAX)) {
-      const r = rows.get(String(file)) ?? [...rows.values()].find(x => x.name === file);
-      const path = r && picture(batch, r.file, what === 'photo' ? 'photo' : 'envelope');
-      if (!r || !existsSync(path)) {
-        out.pictures.push({ file, missing: r ? `no ${what} picture kept` : 'no such row' });
-        continue;
+    // A part of the whole photo, or all of it larger: cut from the photo kept (downloaded again if dropped).
+    const whole = what === 'full' || (Array.isArray(box) && box.length === 4);
+    const cutter = whole ? startReader() : null;
+    try {
+      for (const file of (Array.isArray(files) ? files : [files]).slice(0, whole ? 4 : LOOK_MAX)) {
+        const r = rows.get(String(file)) ?? [...rows.values()].find(x => x.name === file);
+        if (!r) {
+          out.pictures.push({ file, missing: 'no such row' });
+          continue;
+        }
+        let path = picture(batch, r.file, what === 'photo' ? 'photo' : 'envelope');
+        if (whole) {
+          const area = Array.isArray(box) && box.length === 4 ? box.map(Number) : [0, 0, 1, 1];
+          path = join(cache, batch, `${r.file}-z${createHash('sha1').update(JSON.stringify(area)).digest('hex').slice(0, 10)}.jpg`);
+          if (!existsSync(path)) {
+            const cut = await cutter.read({ id: `${r.file}-cut`, op: 'cut', path: await original(r.file), box: area, out: path, side: 1600 });
+            if (cut.error) {
+              out.pictures.push({ file, missing: cut.error });
+              continue;
+            }
+          }
+        }
+        if (!existsSync(path)) {
+          out.pictures.push({ file, missing: `no ${what} picture kept` });
+          continue;
+        }
+        out.pictures.push(filled({ file: r.file, name: r.name, id: r.camid, view: r.view, box: whole ? (box ?? 'whole') : null }));
+        images.push({ data: readFileSync(path).toString('base64'), mimeType: 'image/jpeg' });
       }
-      out.pictures.push(filled({ file: r.file, name: r.name, id: r.camid, view: r.view }));
-      images.push({ data: readFileSync(path).toString('base64'), mimeType: 'image/jpeg' });
+    } finally {
+      if (cutter && cutter !== reader) cutter.close?.();
     }
     return Object.assign(out, { [IMAGES]: images });
   }
@@ -633,7 +719,7 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
         if (name === 'drive_photos' && runningId === String(args.batch) && running)
           await Promise.race([running, new Promise(resolve => setTimeout(resolve, waitMs).unref?.())]);
         if (name === 'drive_photos') return status(args.batch, args);
-        if (name === 'drive_photos_look') return look(args);
+        if (name === 'drive_photos_look') return await look(args);
         if (name === 'drive_photos_edit') return edit(args, 'assistant');
       } catch (e) {
         return { error: String(e.message || e) };

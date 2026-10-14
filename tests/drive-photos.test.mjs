@@ -44,7 +44,7 @@ test('arrange: views by ID, one turn per session, the marked rows', () => {
   assert.match(out.order, /CAM000001×2 CAM000002×2! \?×1/);
 });
 
-async function fixture(t) {
+async function fixture(t, { originalsGb } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'drive-photos-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   // A folder with eight camera-named photos and their RAW files, beside a listed folder.
@@ -89,6 +89,10 @@ async function fixture(t) {
   const byFile = new Map(files.map(f => [f.id, f.name]));
   const reader = {
     read: async job => {
+      if (job.op === 'cut') {
+        writeFileSync(job.out, `cut of ${job.path.split('/').at(-1)} ${JSON.stringify(job.box)}`);
+        return { id: job.id, out: job.out, width: 800, height: 600 };
+      }
       writeFileSync(job.preview, 'p');
       writeFileSync(job.crop, 'c');
       return { id: job.id, orientation: 1, inWorkbook: true, candidates: [], ...said[byFile.get(job.id)] };
@@ -98,8 +102,10 @@ async function fixture(t) {
   const cards = [];
   const photos = createDrivePhotos({
     store,
-    config: { drive },
+    config: { drive, ...(originalsGb !== undefined ? { drivePhotosOriginalsGb: originalsGb } : {}) },
     cacheDir: join(dir, 'cache'),
+    // Whatever room this computer's temporary folder has.
+    freeBytes: 0,
     reader,
     organize: async (operations, user) => (planned.push({ operations, user }), { plan: 'plan-1', link: 'https://app/#/propuestas/plan-1' }),
     show: batch => (cards.push(['show', batch.status]), { link: 'https://app/#/propuestas/' + batch.id }),
@@ -116,9 +122,10 @@ test('a folder read on the server: the batch in order, what to look at, correcti
   assert.equal(started.withRawFile, 8);
   assert.match(started.link, /propuestas/);
   await photos.idle();
-  // The photos are deleted once read; their pictures are kept.
+  // The pictures are kept, and the whole photos, for a closer look.
   assert.deepEqual(readdirSync(tmpdir()).filter(f => f.startsWith(`ithomiini-drive-photos-${started.batch}`)), []);
   assert.equal(readdirSync(join(dir, 'cache', started.batch)).length, 16);
+  assert.equal(readdirSync(join(dir, 'cache', 'originals')).length, 8);
 
   const seen = await photos.run('drive_photos', { batch: started.batch }, kim);
   assert.equal(seen.status, 'ready');
@@ -133,6 +140,12 @@ test('a folder read on the server: the batch in order, what to look at, correcti
   const looked = await photos.run('drive_photos_look', { batch: started.batch, files: [id(14), 'nothing'] }, kim);
   assert.equal(looked[IMAGES].length, 1);
   assert.equal(looked.pictures[1].missing, 'no such row');
+  // A part of a whole photo, cut from the one kept; a photo no longer kept is downloaded again first.
+  rmSync(join(dir, 'cache', 'originals', `${id(15)}.jpg`));
+  const closer = await photos.run('drive_photos_look', { batch: started.batch, files: [id(14), id(15)], box: [0, 0, 0.5, 0.4] }, kim);
+  assert.equal(closer[IMAGES].length, 2);
+  assert.match(Buffer.from(closer[IMAGES][1].data, 'base64').toString(), /^cut of drive-id-0+15\.jpg \[0,0,0.5,0.4\]$/);
+  assert.ok(existsSync(join(dir, 'cache', 'originals', `${id(15)}.jpg`)));
 
   // Corrected: the misread ID, the photo without one, a third photo not wanted.
   const edited = await photos.run(
@@ -205,4 +218,12 @@ test('asked about a batch being read, the answer waits for it to end', async t =
   const seen = await photos.run('drive_photos', { batch: started.batch }, kim);
   assert.equal(seen.status, 'ready');
   assert.ok(seen.order);
+});
+
+test('no whole photos kept when the cache allows none', async t => {
+  const { dir, photos } = await fixture(t, { originalsGb: 0 });
+  const started = await photos.run('drive_photos', { folder: 'Upload' }, kim, {});
+  await photos.run('drive_photos', { batch: started.batch }, kim);
+  assert.equal(readdirSync(join(dir, 'cache', 'originals')).length, 0);
+  assert.equal(readdirSync(join(dir, 'cache', started.batch)).length, 16);
 });
