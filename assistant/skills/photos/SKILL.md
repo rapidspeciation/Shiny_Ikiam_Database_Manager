@@ -100,10 +100,10 @@ beside it that double-checks the batch (below).
 1. «Open folder», then «Run PaddleOCR»: it reads the CAM_ID on each envelope
    (about a second per photo) and turns each photo and its RAW file so the
    envelope reads upright.
-2. «Review», filter «Needs review»: confirm or correct each photo it was not
-   sure of (Enter, the check mark, or one of the suggestions). The strip at
-   the top shows the CAMs in the order the photos were taken, where gaps and
-   repeats stand out.
+2. «Review»: a card per butterfly with its photos side by side; those that
+   need a look come first. Confirm or correct each (Enter, «Confirm», or one
+   of the suggestions). The strip at the top shows the CAMs in the order the
+   photos were taken, where gaps and repeats stand out.
 3. «Rename Files». RAW files are renamed with their JPG. A log in the
    folder's `rename_files/` lets «Restore» undo it.
 

@@ -38,18 +38,37 @@ Every save, with selective undo: skill **historial**.
 The Rename Photos app inside this one (skill `photos`): «Open folder» picks
 the folder of wing photos on the computer, «Run PaddleOCR» reads the CAM_ID
 on each envelope there, in the browser (about a second a photo; the reader's
-files, 24 MB, download the first time), and the review shows the photos it
-was not sure of. «Rename» renames the files in place, RAW files with their
-JPG. The bar above says the folder, how many photos and how many wait for a
-person.
+files, 24 MB, download the first time). «Rename» renames the files in place,
+RAW files with their JPG.
+
+- **The steps above the photos** (Open folder, Read the IDs, Review the IDs,
+  Rename, Upload to Drive, Update sheets and sites): the one in green is
+  where the batch is, and the line under them says what to do now, the
+  folder, how many photos and how many wait for a person. The project's free
+  space on Drive is at the right (amber when little is left, red when this
+  folder does not fit).
+- **The review** shows one card per butterfly: its photos side by side
+  (dorsal, ventral), the envelope's ID line enlarged, and the ID in a box
+  that changes all its photos at once (Enter confirms and goes to the next).
+  Those that need a look come first («To look at»: a photo in doubt, only
+  one photo, three or more); the others are a line each under «Ready», opened
+  with a click. A photo's «more» has its suffix, notes and its own ID. The
+  two buttons at the left of the toolbar switch to one card per photo;
+  «More options» shows the results files, the suffix mode, the crop and the
+  copies.
+- **Where the files go**: once nothing waits, the line under the steps names
+  the Drive folder for the photos and the one for the RAW files, with their
+  links; after renaming, «Uploaded: update» opens a chat that lists the new
+  photos in Photo_links and then updates the Wings Gallery and the maps.
 
 - **«Revisar con Claude»** (once a folder is read) opens a chat of T3 beside
   the photos that starts with the request to double-check the batch. The
   assistant looks at the envelopes it asks for, corrects the rows that are
-  clear and leaves the others marked with the reason; each change shows on
-  its card with a «Claude» badge, and a button in the review's toolbar takes
-  them all back. Only small copies of the photos it asks for leave the
-  computer. Renaming stays the person's own click.
+  clear and leaves the others marked with the reason. A blue strip above the
+  cards lists its changes (the ID the reader had and the one it set; those
+  left for the person first), each going to its card, and a button in the
+  toolbar takes them all back. Only small copies of the photos it asks for
+  leave the computer. Renaming stays the person's own click.
 - The button beside it shows or hides the chat; the divider resizes it.
 - The tab keeps its folder and readings while other tabs are used; reloading
   the page asks for the folder again (the readings are kept in its results
