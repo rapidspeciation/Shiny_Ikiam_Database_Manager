@@ -213,7 +213,14 @@ test('organize_photos: a card, the changes made on Drive, Photo_links following,
     // The project account's space, the folders where it still owns files, and who took the photos over before.
     const space = await call('drive_space', {});
     assert.deepEqual([space.account, space.limitGb, space.freeGb, space.nearlyFull ?? false], [ME, 100, 100, false]);
-    assert.deepEqual(space.ownByFolder, [{ folder: 'Wild/Peru/JPG', files: 1 }]);
+    // Where the account owns files, as Drive says; its originals already copied by another account.
+    assert.deepEqual(space.ownByFolder.map(f => [f.folder, f.files, f.alreadyCopiedToDelete ?? 0]), [
+      ['Photos › Wild › Peru › RAW', 1, 0],
+      ['Photos › Wild › Panama › JPG', 2, 2],
+      ['Photos › Wild › Peru › JPG', 1, 0],
+    ]);
+    assert.equal(space.ownByFolder[0].link, folderUrl(5));
+    assert.equal(space.originalsAlreadyCopied.files, 2);
     assert.equal(space.takenOverBefore, 'curator@example.org');
     assert.equal((await assistant.handle({ method: 'GET', path: '/api/chat/drive-space', user: kim, query: {}, body: {} })).body.space.limitGb, 100);
     const plan = await call('organize_photos', { fix: [{ check: 'rename', in: 'Peru' }, { check: 'copies', in: 'Peru' }] });

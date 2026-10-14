@@ -10,7 +10,7 @@
 // item, { gone: true } when it was deleted or sits in the bin, or null when it cannot be told;
 // rename, move, trash, untrash, createFolder and createShortcut answer the item as it is afterwards;
 // delete removes a file for good (the account's own only); about() answers the account and its space:
-// { account, limit, used, inBin } in bytes (limit null: no limit).
+// { account, limit, used, inBin } in bytes (limit null: no limit); owned() every file the account owns.
 
 import { existsSync, readFileSync } from 'node:fs';
 
@@ -115,6 +115,19 @@ export class GoogleDrive {
   /** Deleted for good, skipping the bin: its space is free at once, and it cannot be brought back. */
   async delete(id) {
     await this.request(`${API}/${encodeURIComponent(id)}?supportsAllDrives=true`, { method: 'DELETE' });
+  }
+  /** Every file the account owns, anywhere in its Drive: [{ name, size, parent }] (what takes its space). */
+  async owned() {
+    const out = [];
+    let pageToken = null;
+    do {
+      const params = new URLSearchParams({ q: "'me' in owners and trashed = false", pageSize: '1000', fields: 'nextPageToken,files(name,quotaBytesUsed,parents)' });
+      if (pageToken) params.set('pageToken', pageToken);
+      const body = await (await this.request(`${API}?${params}`)).json();
+      for (const f of body.files || []) out.push({ name: f.name, size: Number(f.quotaBytesUsed) || 0, parent: f.parents?.[0] ?? null });
+      pageToken = body.nextPageToken || null;
+    } while (pageToken && out.length < 200_000);
+    return out;
   }
   async about() {
     const response = await this.request(`${ABOUT}?fields=${encodeURIComponent('user(emailAddress),storageQuota(limit,usage,usageInDrive,usageInDriveTrash)')}`);
@@ -221,6 +234,12 @@ export class LocalDrive {
     if (!this.seen(item).ownedByMe && this.me) throw Object.assign(new Error('Google Drive 403: the account does not own this file'), { status: 403 });
     this.items.delete(id);
     for (const parent of item.parents || []) this.byParent.set(parent, (this.byParent.get(parent) || []).filter(f => f.id !== id));
+  }
+  async owned() {
+    this.requests++;
+    return [...this.items.values()]
+      .filter(f => !f.trashed && f.mimeType !== FOLDER && this.seen(f).ownedByMe)
+      .map(f => ({ name: f.name, size: Number(f.size) || 0, parent: f.parents?.[0] ?? null }));
   }
   /** The account's files count against its space, those in the bin too. */
   async about() {

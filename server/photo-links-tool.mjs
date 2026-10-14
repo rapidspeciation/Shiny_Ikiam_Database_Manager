@@ -22,7 +22,7 @@ export const PHOTO_TOOLS = [
       name: 'drive_space',
       description: [
         "The space of the project's Google account on Drive, where the wing photos are uploaded: used, free, and how much of it sits in the bin (`inBinGb`: freed when the bin is emptied in Drive).",
-        "- `ownByFolder`: the photo folders with the files that account still owns (those take its space), the largest first, from Photo_links: the ones to hand to the account that takes the photos over (`takenOverBefore`: the account that pressed «Copy files» in the team's sheet «Transfer Ownership & Free Up Space» the last time).",
+        "- `ownByFolder`: the folders of its Drive where that account owns files (those take its space), the largest first, as Drive says: the ones to hand to the account that takes the photos over (`takenOverBefore`: the account that pressed «Copy files» in the team's sheet «Transfer Ownership & Free Up Space» the last time). `alreadyCopiedToDelete`: originals there named …_todelete, whose copies exist (`originalsAlreadyCopied` in all): deleting them frees their space (organize_photos, {check: \"copied\", in, permanent: true}).",
         '- `nearlyFull`: little space is left: say so, name the folders that would free most, and offer to leave the sheet ready for them (organize_photos, {action: "transfer", step: "copy", in}).',
       ].join('\n'),
       parameters: { type: 'object', properties: {} },
@@ -669,38 +669,53 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
     spaceHeld = { at: Date.now(), value };
     return value;
   }
-  /** The listed folders by the size of the files the account still owns in them (Photo_links' Owner Email and Size KB). */
-  function ownByFolder(account) {
+  /**
+   * The folders of the account's Drive by the size of its own files in them, the largest first, asked
+   * of Drive itself (Photo_links lists only some folders): [{ folder, link, files, gb, toDelete }].
+   */
+  async function ownByFolder(writer, top = 12) {
     const folders = new Map();
-    const links = new Map();
-    for (const r of photoLinkRows(store)) {
-      const v = r.values;
-      const path = String(v['Full Path'] ?? '');
-      if (v.Type === 'Folder') links.set(path, v.URL);
-      if (v.Type !== 'File' || !account || String(v['Owner Email'] ?? '').toLowerCase() !== account.toLowerCase()) continue;
-      const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
-      const entry = folders.get(folder) ?? folders.set(folder, { files: 0, kb: 0 }).get(folder);
+    let waiting = { files: 0, bytes: 0 };
+    for (const f of await writer.owned()) {
+      const entry = folders.get(f.parent) ?? folders.set(f.parent, { files: 0, bytes: 0, toDelete: 0 }).get(f.parent);
       entry.files++;
-      entry.kb += Number(v['Size KB']) || 0;
+      entry.bytes += f.size;
+      if (/_todelete$/i.test(f.name)) {
+        entry.toDelete++;
+        waiting = { files: waiting.files + 1, bytes: waiting.bytes + f.size };
+      }
     }
-    return [...folders]
-      .map(([folder, f]) => filled({ folder, url: links.get(folder), files: f.files, gb: Math.round((f.kb / 2 ** 20) * 100) / 100 }))
-      .sort((a, b) => (b.gb ?? 0) - (a.gb ?? 0));
+    const largest = [...folders].filter(([id]) => id).sort((a, b) => b[1].bytes - a[1].bytes).slice(0, top);
+    // Each folder's path, a few levels up (asked once a folder).
+    const names = new Map();
+    const item = id => names.get(id) ?? names.set(id, writer.get(id).catch(() => null)).get(id);
+    const out = [];
+    for (const [id, f] of largest) {
+      const path = [];
+      for (let at = id, level = 0; at && level < 4; level++) {
+        const folder = await item(at);
+        if (!folder?.name || folder.gone) break;
+        path.unshift(folder.name);
+        at = folder.parents?.[0] ?? null;
+      }
+      out.push(filled({ folder: path.join(' › ') || id, link: `https://drive.google.com/drive/folders/${id}`, files: f.files, gb: Math.round((f.bytes / 2 ** 30) * 100) / 100, alreadyCopiedToDelete: f.toDelete }));
+    }
+    return { folders: out, waiting: filled({ files: waiting.files, gb: Math.round((waiting.bytes / 2 ** 30) * 100) / 100 }) };
   }
   async function driveSpace(user) {
     if (!EDITORS.includes(user?.role)) return { error: 'Your role cannot see the Drive account' };
+    const writer = driveWriterFor(store, config);
     const s = await space({ fresh: true }).catch(e => ({ error: e?.message || String(e) }));
-    if (!s) return { error: 'This app has no Google account set up for Drive.' };
+    if (!s || !writer) return { error: 'This app has no Google account set up for Drive.' };
     if (s.error) return s;
-    const own = ownByFolder(s.account);
-    const sheet = transferSheetFor(store, config, driveWriterFor(store, config));
+    const own = await ownByFolder(writer).catch(() => null);
+    const sheet = transferSheetFor(store, config, writer);
     const taker = await sheet?.copiedBy?.().catch(() => null);
     return filled({
       ...s,
-      ownByFolder: own.slice(0, 15),
-      ownInListedFoldersGb: Math.round(own.reduce((sum, f) => sum + (f.gb ?? 0), 0) * 10) / 10,
+      ownByFolder: own?.folders,
+      originalsAlreadyCopied: own?.waiting,
       takenOverBefore: taker,
-      note: 'Photo_links counts the listed folders as of its last update; RAW files weigh most.',
     });
   }
 

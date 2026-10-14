@@ -307,16 +307,19 @@ organisation, so the file is copied and the original deleted:
 When the space runs short (`drive_space`: `nearlyFull`, or a folder about to
 be uploaded does not fit), offer this, a step at a time:
 
-1. Say how much is left and which folders would free most (`ownByFolder`:
-   the RAW folders weigh most), and who took the photos over the last time
-   (`takenOverBefore`). Ask which folder to hand over.
+1. Say how much is left and which folders would free most (`ownByFolder`,
+   as Drive itself says: it counts folders Photo_links does not list too),
+   and who took the photos over the last time (`takenOverBefore`). Ask which
+   folder to hand over. Originals already copied (`originalsAlreadyCopied`)
+   are freed first: step 4 alone.
 2. `organize_photos` with `{action: "transfer", step: "copy", in: <folder>}`:
    once they press «Apply», the sheet has the folder. Give them the sheet's
    link to send to the person of that account, who opens it signed in to it
    and presses «Copy files» (a few seconds a file: a folder of some hundred
    photos takes half an hour or more).
 3. When they say the copy is done: `sync_photo_links`, so the rows point to
-   the copies.
+   the copies. A folder Photo_links does not list yet is listed with it
+   (`add`): its photos then show in the sheets, and step 4 can find it.
 4. Then `organize_photos` with
    `fix: [{check: "copied", in: <folder>, permanent: true}]`: the originals
    the project's account owns, each with its copy beside it, are deleted for
