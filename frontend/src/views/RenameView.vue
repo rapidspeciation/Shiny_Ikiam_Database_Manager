@@ -304,7 +304,7 @@ function resize(event: PointerEvent) {
         <span v-if="line" class="ml-auto min-w-0 truncate text-stone-500" data-batch>{{ line }}</span>
       </p>
     </div>
-    <PhotoLinksPanel v-if="section === 'links'" :preset="preset" class="min-h-0 flex-1" />
+    <PhotoLinksPanel v-if="section === 'links'" :preset="preset" class="min-h-0 flex-1" @used="preset = null" />
     <p v-else-if="renameHost.missing" class="p-4 text-sm text-stone-600" data-missing>
       {{ $t('La app para renombrar fotos no está instalada en este servidor.') }}
       <a class="text-emerald-800 underline" href="https://fr4nzz.github.io/rename_photos_AI/" target="_blank" rel="noopener">{{

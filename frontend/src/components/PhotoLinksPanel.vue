@@ -108,6 +108,7 @@ async function read() {
   }
 }
 watch(card, () => (written.value = false))
+const emit = defineEmits<{ used: [] }>()
 watch(
   () => props.preset?.at,
   () => {
@@ -115,8 +116,10 @@ watch(
     chosen.value = new Set(props.preset.folders)
     which.value = 'chosen'
     filter.value = ''
+    emit('used')
     void read()
   },
+  { immediate: true },
 )
 
 // ------------------------------------------------------------ the public sites
