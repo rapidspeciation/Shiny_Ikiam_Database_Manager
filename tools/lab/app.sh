@@ -28,7 +28,30 @@ URL="http://127.0.0.1:$PORT"
 PUBLIC_URL="${LAB_PUBLIC_URL:-$URL}"
 T3_PUBLIC_URL="${LAB_T3_PUBLIC_URL:-http://127.0.0.1:$T3PROXY}"
 umask 077
-mkdir -p "$LAB/app"
+# A Google Sheets copy of the workbook instead of the offline snapshot (to try what reads Google: Photo_links
+# from the real photo folders on Drive, read-only): `--workbook <id>` once (kept in $LAB/workbook-id),
+# `--offline` to go back. Its login is the app's own ($LAB/google.json, as on the server); the copy has its
+# own database ($LAB/app-workbook). The team's workbook is refused, and no account that changes files on
+# Drive reaches the lab (organize_photos and Drive batches stay off there).
+if [ "${1:-}" = "--workbook" ]; then
+  [ -n "${2:-}" ] || { echo "--workbook <spreadsheet id of a copy>" >&2; exit 1; }
+  echo "$2" > "$LAB/workbook-id"
+  shift 2
+  set -- --bg "$@"
+elif [ "${1:-}" = "--offline" ]; then
+  rm -f "$LAB/workbook-id"
+  shift
+  set -- --bg "$@"
+fi
+WORKBOOK="$(cat "$LAB/workbook-id" 2>/dev/null || true)"
+APPDIR="$LAB/app"
+if [ -n "$WORKBOOK" ]; then
+  REAL="$(cd "$HERE" && node -e 'import("./server/workbook.mjs").then(m => console.log(m.REAL_ID))')"
+  [ "$WORKBOOK" = "$REAL" ] && { echo "Refused: $WORKBOOK is the team's workbook. Give a copy." >&2; exit 1; }
+  [ -s "$LAB/google.json" ] || { echo "No $LAB/google.json (the app's Google login, mode 600): copy it from the server first." >&2; exit 1; }
+  APPDIR="$LAB/app-workbook"
+fi
+mkdir -p "$APPDIR"
 
 stop() {
   if [ -f "$LAB/app.pid" ] && kill -0 "$(cat "$LAB/app.pid")" 2>/dev/null; then
@@ -45,16 +68,16 @@ stop() {
 # The same settings reach the app: it makes the T3 project of anyone else who opens the
 # Asistente tab (ITHOMIINI_T3_PROVISION=direct, server/t3projects.mjs).
 env_provision=(
-  T3CODE_HOME="$T3HOME" ITHOMIINI_SHARED="$LAB/app" DATABASE_PATH="$LAB/app/app.sqlite"
+  T3CODE_HOME="$T3HOME" ITHOMIINI_SHARED="$APPDIR" DATABASE_PATH="$APPDIR/app.sqlite"
   ITHOMIINI_MCP_URL="$URL/api/ai/mcp" ITHOMIINI_T3_WORKSPACES="$T3HOME/workspaces"
   ITHOMIINI_SRC="$HERE" ITHOMIINI_LAB_URL="$PUBLIC_URL" ITHOMIINI_DOCS="$HERE/docs" ITHOMIINI_DENY_READ="$LAB:$HOME/.cache/ithomiini-test"
-  ITHOMIINI_KNOWLEDGE="$LAB/app/knowledge"
+  ITHOMIINI_KNOWLEDGE="$APPDIR/knowledge"
   T3_BIN="${T3_BIN:-$HOME/.local/bin/t3}"
 )
 provision() { env "${env_provision[@]}" node "$HERE/scripts/t3-provision.mjs" "$1"; }
 [ "${1:-}" = "--stop" ] && { stop; exit 0; }
 [ "${1:-}" = "--refresh" ] && { provision --refresh-all; exit 0; }
-[ -f "$LAB/snapshot.json" ] || { echo "No snapshot: run tools/lab/snapshot.sh first" >&2; exit 1; }
+[ -n "$WORKBOOK" ] || [ -f "$LAB/snapshot.json" ] || { echo "No snapshot: run tools/lab/snapshot.sh first" >&2; exit 1; }
 
 # The frontend, built when missing or older than its sources.
 cd "$HERE"
@@ -79,17 +102,30 @@ if [ "${LAB_SEED:-full}" = bench ]; then
 fi
 
 [ -s "$LAB/setup-token" ] || head -c 24 /dev/urandom | base64 | tr -d '/+=' > "$LAB/setup-token"
+if [ -n "$WORKBOOK" ]; then
+  env_data=(
+    # The copy, through the app's own login (as on the server); the photo folders read on Drive, read-only.
+    WORKBOOK_ID="$WORKBOOK"
+    GOOGLE_CREDENTIALS_FILE="$LAB/google.json"
+    DATABASE_PATH="$APPDIR/app.sqlite"
+    PHOTO_CACHE_DIR="$APPDIR/photos"
+  )
+else
+  env_data=(
+    LOCAL_MODE=1
+    SEED_FILE="$SEED"
+    DATABASE_PATH="$APPDIR/app.sqlite"
+    PHOTO_CACHE_DIR="$APPDIR/photos"
+    # A recorded listing of the photo folders on Drive, for sync_photo_links (server/drive.mjs LocalDrive).
+    DRIVE_LISTING_FILE="$LAB/drive-listing.json"
+    # The account that changes files in that listing (organize_photos): it owns the files of this owner, as on Drive.
+    DRIVE_ACCOUNT="jmithominii@gmail.com"
+    # The test photos shown as a folder of camera-named photos uploaded to Drive (drive_photos: server/drive-photos.mjs).
+    DRIVE_LOCAL_PHOTOS="${LAB_UPLOAD_PHOTOS:-$LAB/test-batch}"
+  )
+fi
 env_app=(
-  LOCAL_MODE=1
-  SEED_FILE="$SEED"
-  DATABASE_PATH="$LAB/app/app.sqlite"
-  PHOTO_CACHE_DIR="$LAB/app/photos"
-  # A recorded listing of the photo folders on Drive, for sync_photo_links (server/drive.mjs LocalDrive).
-  DRIVE_LISTING_FILE="$LAB/drive-listing.json"
-  # The account that changes files in that listing (organize_photos): it owns the files of this owner, as on Drive.
-  DRIVE_ACCOUNT="jmithominii@gmail.com"
-  # The test photos shown as a folder of camera-named photos uploaded to Drive (drive_photos: server/drive-photos.mjs).
-  DRIVE_LOCAL_PHOTOS="${LAB_UPLOAD_PHOTOS:-$LAB/test-batch}"
+  "${env_data[@]}"
   APP_HOST=127.0.0.1
   APP_PORT="$PORT"
   APP_BASE_PATH=/
@@ -109,8 +145,9 @@ env_app=(
   GOG_ACCOUNT=lab
   NODE_OPTIONS=--max-old-space-size=8192
 )
-# No Google credentials or keys reach the lab app; its mail goes to $LAB/mail.
-run_app() { env -u GOOGLE_CREDENTIALS_FILE -u WORKBOOK_ID -u SHEET_HOOK_SECRET "${env_app[@]}" node server/index.mjs; }
+# No Google credentials or keys reach the lab app but the copy's login in workbook mode; never an account that
+# changes files on Drive. Its mail goes to $LAB/mail.
+run_app() { env -u GOOGLE_CREDENTIALS_FILE -u GOOGLE_DRIVE_CREDENTIALS_FILE -u WORKBOOK_ID -u SHEET_HOOK_SECRET "${env_app[@]}" node server/index.mjs; }
 
 stop
 # Its T3 (the Asistente tab's chats), started when it is not running (after a reboot, it is not).
@@ -118,10 +155,12 @@ if ! curl -fsS -o /dev/null -m 3 "http://127.0.0.1:$T3PORT/"; then
   setsid -f "$HERE/tools/lab/t3.sh" --bg > /dev/null 2>&1
   for _ in $(seq 1 30); do curl -fsS -o /dev/null -m 2 "http://127.0.0.1:$T3PORT/" && break; sleep 2; done
 fi
-[ -f "$T3HOME/workspaces/lab/.claude/t3-project" ] && provision --refresh-all
+# The workspace follows this checkout (and this mode's database, once the app has made it: below otherwise).
+refreshed=""
+if [ -f "$T3HOME/workspaces/lab/.claude/t3-project" ] && [ -s "$APPDIR/app.sqlite" ]; then provision --refresh-all; refreshed=1; fi
 if [ "${1:-}" != "--bg" ]; then
   echo "Lab app on $URL (foreground; the first start takes a minute to load the snapshot)"
-  exec env -u GOOGLE_CREDENTIALS_FILE -u WORKBOOK_ID -u SHEET_HOOK_SECRET "${env_app[@]}" node server/index.mjs
+  exec env -u GOOGLE_CREDENTIALS_FILE -u GOOGLE_DRIVE_CREDENTIALS_FILE -u WORKBOOK_ID -u SHEET_HOOK_SECRET "${env_app[@]}" node server/index.mjs
 fi
 nohup bash -c "$(declare -f run_app); $(declare -p env_app); run_app" > "$LAB/app.log" 2>&1 &
 echo $! > "$LAB/app.pid"
@@ -132,9 +171,18 @@ for _ in $(seq 300); do
 done
 echo "Lab app on $PUBLIC_URL (sync: ${state:-down}; log $LAB/app.log)"
 
-# The admin, created once through the app's own setup flow.
+# The admin, created once through the app's own setup flow (in a database without people: the same password
+# as the other mode's, so the lab's login stays one).
+if [ -s "$LAB/credentials.json" ] && ! node -e '
+  const c = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+  fetch(process.argv[2] + "/api/auth/login", { method: "POST", headers: { "content-type": "application/json", origin: process.argv[2] }, body: JSON.stringify({ username: c.username, password: c.password }) })
+    .then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1));
+' "$LAB/credentials.json" "$URL"; then
+  PASS="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).password' "$LAB/credentials.json")"
+  mv "$LAB/credentials.json" "$LAB/credentials.json.kept"
+fi
 if [ ! -s "$LAB/credentials.json" ]; then
-  PASS=$(head -c 12 /dev/urandom | base64 | tr -d '/+=' | head -c 14)
+  PASS="${PASS:-$(head -c 12 /dev/urandom | base64 | tr -d '/+=' | head -c 14)}"
   node -e '
     const [url, token, pass, file] = process.argv.slice(1);
     const body = { token, username: "lab", password: pass, displayName: "Lab" };
@@ -147,6 +195,7 @@ if [ ! -s "$LAB/credentials.json" ]; then
 fi
 
 # The admin's T3 workspace, pointing at this app's database and MCP endpoint.
+[ -z "$refreshed" ] && [ -f "$T3HOME/workspaces/lab/.claude/t3-project" ] && provision --refresh-all
 if [ ! -f "$T3HOME/workspaces/lab/.claude/t3-project" ]; then
   if curl -fsS -o /dev/null "http://127.0.0.1:$T3PORT/"; then
     provision lab
