@@ -128,7 +128,7 @@ test('update_proposal revises the same proposal: cells, rows added and removed, 
     assert.deepEqual(merged.changed[0].set, { CAM_ID: 'CAM000009' });
     // A row named by its ID in the sheet (CAM000001 is that row's CAM_ID), not its recordId.
     const byId = await call('update_proposal', { proposalId: proposed.proposalId, rows: [{ id: 'CAM000001', values: { Flight_height: 3 } }] });
-    assert.deepEqual(byId.changed.map(r => [r.index, r.values.Flight_height]), [[1, 3]]);
+    assert.deepEqual(byId.changed.map(r => [r.index, r.set.Flight_height]), [[1, 3]]);
     const notThere = await call('update_proposal', { proposalId: proposed.proposalId, rows: [{ id: 'ZZZ9', values: { Sex: 'male' } }] });
     assert.match(notThere.problems[0], /^rows\[0\]: ZZZ9 is not a row of this proposal/);
     // The whole table only when asked.
