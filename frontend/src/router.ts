@@ -13,6 +13,8 @@ export const tabs = [
   { path: '/clutches', name: 'clutches', label: 'Clutches', component: () => import('./views/ClutchesView.vue') },
   { path: '/censo', name: 'census', label: 'Censo', component: () => import('./views/CensusView.vue') },
   { path: '/historial', name: 'history', label: 'Historial', component: () => import('./views/HistoryView.vue') },
+  // Wing photos named after the ID on their envelope, on the person's computer, before they are uploaded.
+  { path: '/renombrar', name: 'rename', label: 'Renombrar fotos', editors: true, component: () => import('./views/RenameView.vue') },
   { path: '/asistente', name: 'assistant', label: 'Asistente', component: () => import('./views/AssistantView.vue') },
   // Not a daily task: last.
   { path: '/revision', name: 'review', label: 'Revisión', editors: true, component: () => import('./views/RevisionView.vue') },

@@ -59,6 +59,10 @@ provision() { env "${env_provision[@]}" node "$HERE/scripts/t3-provision.mjs" "$
 # The frontend, built when missing or older than its sources.
 cd "$HERE"
 [ -d frontend/node_modules ] || npm --prefix frontend ci --no-audit --no-fund
+# The Rename Photos app of the «Renombrar fotos» tab, from the checkout beside this repository when there is one
+# (LAB_RENAME_APP_DIR names another; without any, the tab says the app is not installed).
+RENAME_SRC="${LAB_RENAME_APP_DIR:-$(cd .. && pwd)/rename_photos_AI}"
+if [ -d "$RENAME_SRC/web-app" ]; then RENAME_APP_DIR="$RENAME_SRC" APP_BASE_PATH=/ scripts/build-rename-app.sh || echo "Rename Photos app: not built" >&2; fi
 if [ ! -f web/index.html ] || [ -n "$(find frontend/src frontend/index.html -newer web/index.html -print -quit)" ]; then
   npm run build
 fi

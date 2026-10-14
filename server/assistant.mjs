@@ -37,6 +37,8 @@ import { KNOWLEDGE_TOOLS, createKnowledge, runKnowledgeTool } from './knowledge.
 import { HISTORY_TOOLS, HISTORY_TOOL_NAMES, runHistoryTool } from './history.mjs';
 import { INVITE_TOOLS, INVITE_TOOL_NAMES, runInviteTool } from './invite-tool.mjs';
 import { PHOTO_TOOLS, createPhotoLinksTool } from './photo-links-tool.mjs';
+import { IMAGES, RENAME_TOOLS, RENAME_TOOL_NAMES, createRenamePhotos } from './rename-photos.mjs';
+import { SITE_TOOLS, SITE_TOOL_NAMES, createSiteUpdates } from './site-updates.mjs';
 import { createInvitations, mailerFromEnv } from './invitations.mjs';
 import { QUERY_HINT, QUERY_TOOL, createQueryRunner, formatRows, sqlProblem } from './query-tool.mjs';
 import { createSheetsCopy } from './replica.mjs';
@@ -422,6 +424,10 @@ const TOOLS = [
   ...INVITE_TOOLS,
   // Photo_links brought up to date with the photo folders on Drive, and those folders put in order (server/photo-links-tool.mjs).
   ...PHOTO_TOOLS,
+  // The batch of wing photos open in the person's «Renombrar fotos» tab, before it is renamed (server/rename-photos.mjs).
+  ...RENAME_TOOLS,
+  // The public sites (the Wings Gallery, the maps) brought up to date with the workbook (server/site-updates.mjs).
+  ...SITE_TOOLS,
   {
     type: 'function',
     function: {
@@ -846,6 +852,10 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   const invites = () => (invitations ??= createInvitations(store, mailerFromEnv()));
   // Photo_links against Google Drive (sync_photo_links): read and written by the app's thread only.
   const photoLinks = inWorker ? null : createPhotoLinksTool({ store, config, show: (reading, context) => showSync(reading, context), tell: (id, progress) => syncProgress(id, progress) });
+  // The batches open in people's «Renombrar fotos» tabs (rename_photos_*): the tabs talk to the app's thread.
+  const renamePhotos = inWorker ? null : createRenamePhotos({ store, ...(config.renamePhotos ?? {}) });
+  // The public sites' updates on GitHub (update_websites).
+  const siteUpdates = inWorker ? null : createSiteUpdates({ tokenFile: config.githubTokenFile ?? null, ...(config.siteUpdates ?? {}) });
   /** A note in the person's conversation (T3 Code, Revisión de datos) of the proposals made there. */
   const insertMessage = (threadId, role, content, sources = [], results = [], proposals = []) => {
     const at = now();
@@ -4850,6 +4860,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     }
     if (name === 'sync_photo_links') return photoLinks ? photoLinks.run(args, context.user, context) : { error: 'Call it again in a moment.' };
     if (name === 'organize_photos') return photoLinks ? photoLinks.organize(args, context.user, context) : { error: 'Call it again in a moment.' };
+    if (RENAME_TOOL_NAMES.has(name)) return renamePhotos ? renamePhotos.run(name, args, context.user) : { error: 'Call it again in a moment.' };
+    if (SITE_TOOL_NAMES.has(name)) return siteUpdates ? siteUpdates.run(args, context.user) : { error: 'Call it again in a moment.' };
     if (name === 'apply_proposal') {
       const proposal = db
         .prepare('SELECT * FROM ai_proposals WHERE id = ? AND thread_id = ?')
@@ -5060,13 +5072,18 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       }
       // Within one answer's size (server/tool-budget.mjs): the tools cut their own lists where they
       // can say how to go on; anything still too long loses the end of its longest lists, and says so.
+      // Pictures a tool answers with (rename_photos_look) go beside its text.
+      const pictures = out?.[IMAGES] ?? [];
       out = fitResult(out, {
         narrow: HISTORY_TOOL_NAMES.has(currentTool(String(body.params?.name ?? '')).name)
           ? 'narrow it with recordId, field(s), text or dates, or a smaller maxChanges or limit'
           : 'ask for less (filters, fewer columns, a smaller limit) or page with offset',
       });
       // `query` answers in text lines (its rows), the other tools in JSON.
-      return result({ content: [{ type: 'text', text: typeof out === 'string' ? out : json(out) }], isError: Boolean(out?.error) });
+      return result({
+        content: [{ type: 'text', text: typeof out === 'string' ? out : json(out) }, ...pictures.map(p => ({ type: 'image', data: p.data, mimeType: p.mimeType }))],
+        isError: Boolean(out?.error),
+      });
     }
     return { status: 200, body: { jsonrpc: '2.0', id, error: { code: -32601, message: 'Method not found' } } };
   }
@@ -5213,6 +5230,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   }
 
   async function handle({ method, path, body = {}, user, query = {}, page = null, headers = {} }) {
+    // The «Renombrar fotos» tab's own requests (server/rename-photos.mjs).
+    if (path.startsWith('/api/rename/')) return (await renamePhotos?.handle({ method, path, body, query, user })) ?? null;
     if (!/^\/api\/(chat|reports|knowledge|ai|proposals)(?:\/|$)/.test(path)) return null;
     if (!user || !owner(user)) return bad(401, 'unauthorized', 'Sign in to use the assistant.');
     const photoMatch = /^\/api\/proposals\/([0-9a-f-]{36})\/photos\/(\d{1,2})$/.exec(path);
@@ -5732,6 +5751,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     tools: mcpTools,
     t3,
     sheetsCopy,
+    /** The batches open in people's «Renombrar fotos» tabs (null in a worker). */
+    renamePhotos,
     checkNeedsReview,
     /** A worker's word that a person's proposals changed: their pages waiting for the list are woken. */
     notifyChanged: (ownerId, page = null) => changed(ownerId, page),
@@ -5742,6 +5763,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     listedViews,
     close() {
       stopWatching?.();
+      renamePhotos?.close();
       sheetsCopy?.close();
       queries?.close();
     },

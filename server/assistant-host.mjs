@@ -30,6 +30,12 @@ export const MAIN_TOOLS = new Set([
   'sync_photo_links',
   // It changes files on Google Drive, then writes Photo_links.
   'organize_photos',
+  // They reach the person's «Renombrar fotos» tab, which talks to the app's thread (server/rename-photos.mjs).
+  'rename_photos_read',
+  'rename_photos_look',
+  'rename_photos_edit',
+  // It starts runs on GitHub and follows them for a minute and a half (server/site-updates.mjs).
+  'update_websites',
 ]);
 const CALL_MS = 180_000;
 const VIEWS_MS = 60_000;

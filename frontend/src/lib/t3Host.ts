@@ -1,4 +1,5 @@
 import { reactive } from 'vue'
+import { api } from './api'
 import type { T3Seen } from './t3Bridge'
 
 /**
@@ -28,3 +29,18 @@ export const t3Host = reactive({
   /** Raised to sign in to T3 again (Volver a conectar, after a T3 update). */
   reconnects: 0,
 })
+
+let asking: Promise<void> | null = null
+/** T3's address and the person's project, asked once (a tab other than Asistente that shows T3 beside its own work). */
+export function ensureT3(): Promise<void> {
+  if (t3Host.url) return Promise.resolve()
+  asking ??= api<{ url: string | null; environmentId?: string | null; projectKey?: string | null; chat?: string | null }>('t3/status')
+    .then(status => {
+      t3Host.environmentId = status.environmentId ?? null
+      t3Host.projectKey = status.projectKey ?? null
+      t3Host.start = status.chat ?? null
+      t3Host.url = status.url
+    })
+    .finally(() => (asking = null))
+  return asking
+}

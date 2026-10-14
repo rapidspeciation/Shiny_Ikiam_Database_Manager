@@ -10,6 +10,7 @@ export default {
   Clutches: 'Clutches',
   Historial: 'History',
   Asistente: 'Assistant',
+  'Renombrar fotos': 'Rename photos',
   Revisión: 'Review',
   Guardar: 'Save',
   Cancelar: 'Cancel',

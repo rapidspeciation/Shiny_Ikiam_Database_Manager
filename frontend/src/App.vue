@@ -8,6 +8,7 @@ import LoginView from './views/LoginView.vue'
 import { accountPaths, openPaths } from './router'
 import { notice } from './lib/notice'
 import { t3Host } from './lib/t3Host'
+import { renameHost } from './lib/renameHost'
 import { updateAvailable } from './lib/updates'
 import { useLive } from './stores/live'
 import { usePending } from './stores/pending'
@@ -16,6 +17,8 @@ import { useTables } from './stores/tables'
 
 // Loaded with the Asistente tab, not before.
 const T3Host = defineAsyncComponent(() => import('./components/T3Host.vue'))
+// Loaded with the Renombrar fotos tab, and kept like T3's frame.
+const RenameHost = defineAsyncComponent(() => import('./components/RenameHost.vue'))
 const session = useSession()
 const route = useRoute()
 const pending = usePending()
@@ -53,6 +56,8 @@ watch(
   <div v-else class="flex h-full flex-col">
     <!-- T3 Code, loaded once the Asistente tab was opened and kept for the session (it would reload in the tab). -->
     <T3Host v-if="session.user && t3Host.url" :key="session.user.username" />
+    <!-- The Rename Photos app, loaded once its tab was opened and kept (it would lose the folder and its readings). -->
+    <RenameHost v-if="session.user && renameHost.started" :key="`rename:${session.user.username}`" />
     <AppHeader v-if="!route.meta.bare" />
     <GoogleBanner v-if="session.user" />
     <!-- Tabs stay alive while another one is open: going back to Tablas does not rebuild a 13k-row grid. -->

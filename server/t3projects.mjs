@@ -57,32 +57,44 @@ const MODEL = {
 };
 
 /**
- * Makes an empty "New thread" in a project through T3's own command (with the
- * app's T3 token, server/index.mjs's sign-in links use it too): its id, or an error.
+ * Makes a chat in a project through T3's own commands (with the app's T3 token,
+ * server/index.mjs's sign-in links use it too): its id, or an error. Empty and called
+ * "New thread", or with `title` and a first message from the person (`text`), which
+ * the assistant starts answering at once (the «Renombrar fotos» tab's review).
  */
 export function chatStarter({ local, tokenFile, fetchImpl = fetch } = {}) {
   if (!local || !tokenFile) return null;
-  return async project => {
-    const threadId = randomUUID();
+  const dispatch = async command => {
     const response = await fetchImpl(`${local}/api/orchestration/dispatch`, {
       method: 'POST',
       headers: { authorization: `Bearer ${readFileSync(tokenFile, 'utf8').trim()}`, 'content-type': 'application/json' },
-      body: JSON.stringify({
-        type: 'thread.create',
-        commandId: randomUUID(),
-        threadId,
-        projectId: project.id,
-        title: 'New thread',
-        modelSelection: MODEL,
-        runtimeMode: 'full-access',
-        interactionMode: 'default',
-        branch: null,
-        worktreePath: null,
-        createdAt: new Date().toISOString(),
-      }),
+      body: JSON.stringify({ commandId: randomUUID(), ...command, createdAt: new Date().toISOString() }),
       signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) throw new Error(`T3 answered ${response.status}`);
+  };
+  return async (project, { title = 'New thread', text = '' } = {}) => {
+    const threadId = randomUUID();
+    await dispatch({
+      type: 'thread.create',
+      threadId,
+      projectId: project.id,
+      title,
+      modelSelection: MODEL,
+      runtimeMode: 'full-access',
+      interactionMode: 'default',
+      branch: null,
+      worktreePath: null,
+    });
+    if (text)
+      await dispatch({
+        type: 'thread.turn.start',
+        threadId,
+        message: { messageId: randomUUID(), role: 'user', text, attachments: [] },
+        modelSelection: MODEL,
+        runtimeMode: 'full-access',
+        interactionMode: 'default',
+      });
     return threadId;
   };
 }

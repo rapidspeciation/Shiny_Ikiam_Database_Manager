@@ -15,6 +15,8 @@ credentials*.json
 token*.json
 # Built by `npm run build` from frontend/; deployed, not committed.
 web/
+# The Rename Photos app built for this site (scripts/build-rename-app.sh); deployed, not committed.
+rename-app/
 # Written by `npm run build` (scripts/instructions-history.mjs); shipped in releases.
 server/instructions-history.json
 # Clutch photos taken in the app (server/clutch-photos.mjs), when the database sits in the checkout.

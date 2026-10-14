@@ -107,6 +107,12 @@ test("an empty chat is T3's own thread.create, with the app's T3 token", async (
   assert.deepEqual([command.type, command.threadId, command.projectId, command.title], ['thread.create', id, 'p-ana', 'New thread']);
   // Never fast mode; the person may change the model before writing.
   assert.deepEqual(command.modelSelection.options.find(o => o.id === 'fastMode'), { id: 'fastMode', value: false });
+  // With a first message from the person: the chat, then its first turn (the «Renombrar fotos» tab's review).
+  const review = await start({ id: 'p-ana' }, { title: 'Revisión de fotos', text: 'Revisa el lote' });
+  const [made, turn] = sent.slice(1).map(x => JSON.parse(x.init.body));
+  assert.deepEqual([made.type, made.title, made.threadId], ['thread.create', 'Revisión de fotos', review]);
+  assert.deepEqual([turn.type, turn.threadId, turn.message.role, turn.message.text], ['thread.turn.start', review, 'user', 'Revisa el lote']);
+  assert.notEqual(made.commandId, turn.commandId);
   assert.equal(chatStarter({ local: 'http://127.0.0.1:9' }), null);
   const refused = chatStarter({ local: 'x', tokenFile: join(dir, 'token'), fetchImpl: async () => ({ ok: false, status: 403 }) });
   await assert.rejects(refused({ id: 'p' }), /T3 answered 403/);

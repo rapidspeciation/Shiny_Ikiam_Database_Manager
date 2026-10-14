@@ -1,6 +1,6 @@
 ---
 name: photos
-description: The photos of the butterflies' wings, from the camera to the workbook — naming the files after the CAM_ID (the Rename Photos app), the folders on Google Drive and putting them in order (organize_photos: rename, move, remove duplicates, make folders, shortcuts), the Photo_links sheet that Photo_dorsal and Photo_ventral read (sync_photo_links), and moving the photos to another account to free space. Use it when the person uploaded, renamed, moved or deleted photos, asks to update Photo_links or the photo links, says a photo shows Not Found or the wrong butterfly, asks which photos are missing, how to rename photos, where to put them, to tidy or delete photos on Drive, about the Drive space running out, or about the Wings Gallery.
+description: The photos of the butterflies' wings, from the camera to the workbook — naming the files after the CAM_ID (the Rename Photos app, the app's «Rename photos» tab) and double-checking a batch before it is renamed (rename_photos_read, rename_photos_look, rename_photos_edit), the folders on Google Drive and putting them in order (organize_photos: rename, move, remove duplicates, make folders, shortcuts), the Photo_links sheet that Photo_dorsal and Photo_ventral read (sync_photo_links), and moving the photos to another account to free space, and bringing the Wings Gallery and the maps up to date (update_websites). Use it when the person uploaded, renamed, moved or deleted photos, asks to update Photo_links or the photo links, says a photo shows Not Found or the wrong butterfly, asks which photos are missing, how to rename photos, where to put them, to tidy or delete photos on Drive, about the Drive space running out, about the Wings Gallery or the maps not showing new data, or presses «Review with Claude» in the «Rename photos» tab.
 ---
 
 # Wing photos and Photo_links
@@ -20,7 +20,8 @@ description: The photos of the butterflies' wings, from the camera to the workbo
    Collection_data, Insectary_data and CRISPR are formulas that look the
    file's name up in Photo_links and link to it. The Wings Gallery
    (https://rapidspeciation.github.io/Shiny_Ikiam_Wings_Gallery/) reads the
-   same sheets when someone presses its «Update DB».
+   same sheets when its data is updated: `update_websites` (or its own
+   «Update DB» tab).
 
 Photos that are on Drive but not yet in Photo_links show `NOT FOUND`
 (`Not Found` in Collection_data) in their row: step 4 is what makes them
@@ -87,11 +88,14 @@ Everything is under «Photos»:
 
 ## The Rename Photos app
 
-https://fr4nzz.github.io/rename_photos_AI/ runs in the person's browser, on
-the photos in a folder of their computer, before they are uploaded. Nothing
-is sent anywhere and it needs no key. Chrome or Edge (Brave after switching
-on the setting the app shows); other browsers can read the folder but not
-rename in it.
+It is the app's «Rename photos» tab (and, for people without an account,
+https://fr4nzz.github.io/rename_photos_AI/). It runs in the person's
+browser, on the photos in a folder of their computer, before they are
+uploaded: the photos stay on the computer and it needs no key. Chrome or
+Edge (Brave after switching on the setting the app shows); other browsers
+can read the folder but not rename in it. In the tab it checks the IDs
+against the workbook as it is now, and «Review with Claude» opens a chat
+beside it that double-checks the batch (below).
 
 1. «Open folder», then «Run PaddleOCR»: it reads the CAM_ID on each envelope
    (about a second per photo) and turns each photo and its RAW file so the
@@ -105,18 +109,74 @@ rename in it.
 
 What sends a photo to review, which tells what to check:
 
-- the CAM it read is not in the workbook (the app reads the CAM_ID columns
-  of Collection_data, Insectary_data and CRISPR once a day), so the
-  butterflies' rows are typed before their photos are renamed;
+- the CAM it read is not in the workbook (in the tab, the workbook as it is
+  now; on its own page, a copy read once a day), so the butterflies' rows
+  are typed before their photos are renamed;
 - the CAM is far from those of the photos taken just before and after;
 - the same CAM on photos that were not taken one after the other, or on more
-  than two.
+  than two;
+- its envelope points another way than the rest of its session (photos
+  taken less than half an hour apart): the photo takes the session's
+  rotation and is flagged, in case it was the camera that was turned.
 
 It reads IDs written as `CAM` and six digits. Other IDs (the Colombian
 `M6285`) are typed in the review, or read in its Gemini mode (the sparkle
 button; it needs a Gemini API key, and its prompt names the ID's form).
 Its repository, with how the reader works and how accurate it is:
 https://github.com/Fr4nzz/rename_photos_AI.
+
+## Reviewing a batch before it is renamed
+
+The person pressed «Review with Claude» in the «Rename photos» tab, or asks
+you to check the photos they are renaming. The tab is your hands: it stays
+open on their computer, and the three tools read the batch from it, get
+pictures of the photos you ask for, and correct its rows. Renaming is their
+own click («Rename», or «Rename & rotate») once the batch is right.
+
+1. `rename_photos_read`: the IDs in the order photographed (`order`), what
+   does not add up (`checks`), and the photos to look at.
+2. `rename_photos_look` at those photos' envelopes, several a call. An
+   envelope has its ID in handwriting: `CAM` and six digits; an ID crossed
+   out on it does not count. The digits most often mistaken for each other:
+   1 and 7, 3 and 8, 4 and 9, 0 and 6, 5 and 6. The order helps as much as
+   the handwriting: the envelopes come out of a box in a run of IDs, and a
+   butterfly's two photos are taken one after the other.
+3. `rename_photos_edit` what is clear; `leave` the rest for the person with
+   the reason.
+4. Look at a sample of the photos nothing flagged as well, a dozen or two
+   spread over the batch: the reader is right on nearly all of those, and a
+   wrong one in the sample means looking at more around it.
+
+| Found | Most likely | What to do |
+|---|---|---|
+| `out-of-sequence`, or `not-in-database` with a `suggest` or `maybe` | a misread digit | read the envelope; set the ID when it fits the IDs before and after and the workbook has it |
+| `no-reading` | the envelope is partly out of the frame, covered by a wing, or faint | `part: "photo"` shows the whole photo; set the ID you can read; one you cannot read is the ID of the single photo beside it only when that leaves both with two photos |
+| `notTwoPhotos`, one photo | its other view carries another ID (often the flagged photo beside it), or was not taken | find it beside it; otherwise `leave`: the view is missing, to photograph again |
+| `notTwoPhotos`, three or more | a view photographed twice (the first one blurred), or two butterflies given one ID | look at the whole photos: `skip` the worse of a repeat; two butterflies are for the person |
+| `apart` | the later photos are misread, or one CAM is on two envelopes | read both envelopes; a CAM on two envelopes is for the person (skill `data-rules`, duplicates) |
+| `notInWorkbook` without `maybe` | the butterfly's row is not typed yet (IDs running on after the workbook's last ones) | say which IDs: their rows are typed before the photos are uploaded |
+| `alreadyPhotographed` | photographed again on purpose, or an older ID read by mistake | read the envelope; if it is right, ask whether the new photos replace the old ones |
+| `turned` | an envelope laid down turned: the photo already follows its session | look at the whole photo; `rotate` it only if it shows turned |
+| `repeated-id` | as `apart` | |
+
+- Set an ID yourself when the envelope reads clearly, the ID fits the run
+  around it and the workbook has it. Otherwise `leave` it: a wrong name puts
+  a photo on another butterfly's row.
+- `view` follows the order the photos were taken in, dorsal first. Change it
+  only when the person says a butterfly was photographed the other way round.
+- At the end say what you changed (file, from which ID to which), what is
+  left for them and why, and whether they can rename now (nothing waiting).
+  After renaming: they upload the JPG and RAW files to their Drive folders,
+  then `sync_photo_links` lists them, then `update_websites`.
+
+## Updating the sites
+
+The Wings Gallery and the maps keep their own copy of the data, made when
+their «Update Database» run on GitHub reads the sheets: `update_websites`
+starts it and says how it went. The gallery takes about a minute; the maps
+5 to 10. A photo reaches the gallery once Photo_links lists it and the
+workbook has recalculated, so the sites are updated after `sync_photo_links`,
+not before.
 
 ## Updating Photo_links
 

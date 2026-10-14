@@ -1,6 +1,7 @@
 import { t3Admin } from './t3admin.mjs';
 import { createT3Bridge } from './t3bridge.mjs';
 import { chatStarter, createT3Projects, projectKey, provisioner } from './t3projects.mjs';
+import { REVIEW_PROMPT } from './rename-photos.mjs';
 import http from 'node:http';
 import { readFileSync, statSync, createReadStream, existsSync, chmodSync } from 'node:fs';
 import { join, resolve, extname, dirname } from 'node:path';
@@ -109,6 +110,8 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const webRoot = resolve(here, '../web');
+/** The Rename Photos app built for this site (scripts/build-rename-app.sh), shown in the «Renombrar fotos» tab. */
+const renameAppRoot = resolve(here, '../rename-app');
 const now = () => new Date().toISOString();
 const gzipAsync = promisify(gzip);
 const brotliAsync = promisify(brotliCompress);
@@ -246,6 +249,10 @@ export function configFromEnv(env = process.env) {
     // The Google account that changes files on Drive when the assistant puts the photo folders in order
     // (organize_photos, server/drive.mjs driveWriterFor): the project's own, an editor of those folders.
     driveCredentialsFile: env.GOOGLE_DRIVE_CREDENTIALS_FILE || undefined,
+    // The GitHub token that may run the two public sites' update workflows (update_websites, server/site-updates.mjs).
+    githubTokenFile: env.GITHUB_ACTIONS_TOKEN_FILE || undefined,
+    // Where the Rename Photos app's build is (the «Renombrar fotos» tab's frame); rename-app/ beside the server by default.
+    renameAppRoot: env.RENAME_APP_ROOT ? resolve(env.RENAME_APP_ROOT) : undefined,
     // The team's sheet where another account does its part of a plan (server/transfer-sheet.mjs); the team's own by default.
     transferSheetId: env.TRANSFER_SHEET_ID || undefined,
     // LOCAL_MODE: the address that account has in the recorded listing (it owns that owner's files).
@@ -527,6 +534,7 @@ export async function createApp(config = {}, options = {}) {
         res.writeHead(303, { location: `${config.basePath === '/' ? '' : config.basePath}/#/monitoreo?vista=importar&compartido=0` });
         return res.end();
       }
+      if (path === '/rename-app' || path.startsWith('/rename-app/')) return serveRenameApp(req, res, path.slice('/rename-app'.length), config.renameAppRoot);
       if (!path.startsWith('/api/')) return serveStatic(req, res, path, config.basePath, config.t3?.url, config.webRoot);
       if (method !== 'GET' && method !== 'HEAD') checkOrigin(req);
       const session = getSession(store, req.headers.cookie);
@@ -1328,6 +1336,21 @@ export async function createApp(config = {}, options = {}) {
           chat: own?.chat ?? null,
         });
       }
+      // The «Renombrar fotos» tab's review: a chat of the person's own T3 project that starts with the request to
+      // check the batch open in the tab (server/rename-photos.mjs). Without T3, the request comes back to be pasted.
+      if (method === 'POST' && path === '/api/rename/review') {
+        requireEditor(user);
+        const start = chatStarter(config.t3 ?? {});
+        const own = config.t3 && start ? await t3Projects.ensure(user) : null;
+        let chat = null;
+        if (own?.project)
+          try {
+            chat = await start(own.project, { title: 'Revisión de fotos', text: REVIEW_PROMPT });
+          } catch (e) {
+            console.error(`Review chat for ${user.username}:`, e.message);
+          }
+        return json(res, chat ? 201 : 200, { chat, prompt: REVIEW_PROMPT });
+      }
       // Whose the chat on screen is (its T3 project's person): another's, and the Asistente tab says the AI takes you for them there.
       if (method === 'GET' && path === '/api/t3/chat-owner') {
         const username = assistant?.t3?.ownerOf(String(query.chat ?? '')) ?? null;
@@ -1563,6 +1586,30 @@ async function t3Pairing(t3, user) {
   return { url: `${t3.url}/pair#token=${encodeURIComponent(credential)}`, expiresAt };
 }
 
+/**
+ * The Rename Photos app's built files (`root`: rename-app/, config.renameAppRoot for tests), for the
+ * frame of the «Renombrar fotos» tab: only this site may frame them, its reader runs WebAssembly
+ * in workers, and its other reader (Gemini, with the person's own key) calls Google.
+ */
+function serveRenameApp(req, res, path, root = renameAppRoot) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') throw fail('METHOD_NOT_ALLOWED', 'Method not allowed', 405);
+  const clean = decodeURIComponent(path).replace(/^\/+/, '');
+  const file = resolve(root, clean || 'index.html');
+  if ((!file.startsWith(root + '/') && file !== root) || !existsSync(file) || !statSync(file).isFile()) throw fail('NOT_FOUND', 'File not found', 404);
+  const type = { ...mime, '.wasm': 'application/wasm', '.onnx': 'application/octet-stream' }[extname(file)] || 'application/octet-stream';
+  res.writeHead(200, {
+    'content-type': type,
+    'content-length': statSync(file).size,
+    'x-content-type-options': 'nosniff',
+    'content-security-policy':
+      "default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'; img-src 'self' data: blob:; connect-src 'self' https://generativelanguage.googleapis.com; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:",
+    // Built scripts carry a content hash in their name; the reader's models change with a new build's page.
+    'cache-control': file.endsWith('index.html') ? 'no-cache' : /^assets\//.test(clean) ? 'public, max-age=31536000, immutable' : 'public, max-age=86400',
+  });
+  if (req.method === 'HEAD') return res.end();
+  createReadStream(file).pipe(res);
+}
+
 /** The built page from `root` (web/; config.webRoot for tests). */
 function serveStatic(req, res, path, base, frameSrc = '', root = webRoot) {
   if (req.method !== 'GET' && req.method !== 'HEAD') throw fail('METHOD_NOT_ALLOWED', 'Method not allowed', 405);
@@ -1593,7 +1640,7 @@ function serveStatic(req, res, path, base, frameSrc = '', root = webRoot) {
     ...(compressed ? { vary: 'accept-encoding' } : {}),
     ...(br ? { 'content-encoding': 'br', 'content-length': statSync(`${file}.br`).size } : {}),
     'x-content-type-options': 'nosniff',
-    'content-security-policy': `default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; img-src 'self' data: blob: https:; connect-src 'self'; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self'${frameSrc ? `; frame-src ${frameSrc}` : ''}`,
+    'content-security-policy': `default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; img-src 'self' data: blob: https:; connect-src 'self'; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self'; frame-src 'self'${frameSrc ? ` ${frameSrc}` : ''}`,
     // Built scripts and styles carry a content hash in their name: a new build gets new names.
     'cache-control': file.endsWith('index.html')
       ? 'no-cache'

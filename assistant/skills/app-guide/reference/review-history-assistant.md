@@ -33,6 +33,29 @@ Signing out keeps unsaved changes on that device for next time.
 
 Every save, with selective undo: skill **historial**.
 
+## Renombrar fotos — `#/renombrar` (editors)
+
+The Rename Photos app inside this one (skill `photos`): «Open folder» picks
+the folder of wing photos on the computer, «Run PaddleOCR» reads the CAM_ID
+on each envelope there, in the browser (about a second a photo; the reader's
+files, 24 MB, download the first time), and the review shows the photos it
+was not sure of. «Rename» renames the files in place, RAW files with their
+JPG. The bar above says the folder, how many photos and how many wait for a
+person.
+
+- **«Revisar con Claude»** (once a folder is read) opens a chat of T3 beside
+  the photos that starts with the request to double-check the batch. The
+  assistant looks at the envelopes it asks for, corrects the rows that are
+  clear and leaves the others marked with the reason; each change shows on
+  its card with a «Claude» badge, and a button in the review's toolbar takes
+  them all back. Only small copies of the photos it asks for leave the
+  computer. Renaming stays the person's own click.
+- The button beside it shows or hides the chat; the divider resizes it.
+- The tab keeps its folder and readings while other tabs are used; reloading
+  the page asks for the folder again (the readings are kept in its results
+  file).
+- Chrome or Edge to rename in place; other browsers only read the folder.
+
 ## Asistente — `#/asistente`
 
 T3 Code (editors): this assistant, full screen, with the person's own
