@@ -41,6 +41,8 @@ const progress = computed(() => sync.value.progress)
 const checks = computed(() => foundChecks(sync.value.checks ?? null))
 const flagged = computed(() => checks.value.reduce((n, c) => n + c.count, 0))
 const changes = computed(() => sync.value.changes ?? { renamed: 0, relinked: 0, removed: 0, moved: 0, details: 0, statusRows: 0 })
+const twice = computed(() => sync.value.listedTwice ?? null)
+const openTwice = ref(false)
 
 /** Folders left for later (their new files are not written now). */
 const skip = ref(new Set<string>())
@@ -311,6 +313,48 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
         <span v-if="changes.moved">{{ $tn(changes.moved, '{n} archivo movido de carpeta', '{n} archivos movidos de carpeta') }}</span>
         <span v-if="changes.details">{{ $tn(changes.details, '{n} fila con otro dueño o tamaño', '{n} filas con otro dueño o tamaño') }}</span>
       </p>
+
+      <!-- Photos the sheet listed twice. -->
+      <div v-if="twice && (twice.sameFile || twice.copies || twice.different)" class="space-y-1 border-b border-stone-200 px-3 py-2 text-xs" data-listed-twice>
+        <p v-if="twice.sameFile + twice.copies" class="text-stone-700">
+          {{
+            $tn(
+              twice.sameFile + twice.copies,
+              '{n} fila vaciada: la misma foto estaba listada dos veces (las hojas y los sitios la toman una vez).',
+              '{n} filas vaciadas: la misma foto estaba listada dos veces (las hojas y los sitios la toman una vez).',
+            )
+          }}
+          <span v-if="twice.copyExamples[0]" class="text-stone-500">
+            {{ $t('Ej.: {name} se queda en {kept}.', { name: twice.copyExamples[0].name, kept: twice.copyExamples[0].kept.split('/').slice(0, -1).join('/') }) }}
+          </span>
+        </p>
+        <template v-if="twice.different">
+          <button
+            type="button"
+            class="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-amber-900 hover:bg-amber-50"
+            :aria-expanded="openTwice"
+            @click="openTwice = !openTwice"
+          >
+            <ChevronDown v-if="openTwice" :size="12" class="shrink-0" /><ChevronRight v-else :size="12" class="shrink-0" />
+            <AlertTriangle :size="12" class="shrink-0 text-amber-600" />
+            <span class="font-medium tabular-nums">{{ twice.different }}</span>
+            <span>{{ $t('nombres son de dos fotos distintas: compara los sobres; se dejan como están') }}</span>
+          </button>
+          <ul v-if="openTwice" class="mt-0.5 mb-1 ml-7 space-y-1 text-stone-700">
+            <li v-for="d in twice.differentExamples" :key="d.name" class="break-all">
+              <span class="font-medium">{{ d.name }}</span>:
+              <template v-for="(r, i) in d.rows" :key="r.row"
+                ><template v-if="i"> · </template
+                ><a class="text-emerald-800 hover:underline" :href="r.url" target="_blank" rel="noopener">{{ r.path.split('/').slice(0, -1).join('/') }}</a>
+                <span class="text-stone-400"> ({{ $t('fila {row}', { row: r.row }) }}, {{ r.kb }} KB)</span></template
+              >
+            </li>
+            <li v-if="twice.different > twice.differentExamples.length" class="text-stone-500">
+              {{ $t('y {n} más: pídeselos al asistente', { n: twice.different - twice.differentExamples.length }) }}
+            </li>
+          </ul>
+        </template>
+      </div>
 
       <!-- What looks wrong in the new photos. -->
       <div v-if="sync.checks" class="border-b border-stone-200 px-3 py-2 text-xs" data-checks>

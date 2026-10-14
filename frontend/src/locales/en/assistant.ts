@@ -727,6 +727,14 @@ export default {
   'Elige las carpetas y pulsa «Leer Drive»: aquí verás lo que cambiaría en Photo_links antes de aplicarlo.':
     'Choose the folders and press «Read Drive»: here you will see what would change in Photo_links before applying it.',
   'Sitios públicos': 'Public sites',
+  'repetida: vaciada': 'listed twice: emptied',
+  '{n} fila vaciada: la misma foto estaba listada dos veces (las hojas y los sitios la toman una vez).':
+    '{n} row emptied: the same photo was listed twice (the sheets and the sites take it once).',
+  '{n} filas vaciadas: la misma foto estaba listada dos veces (las hojas y los sitios la toman una vez).':
+    '{n} rows emptied: the same photos were listed twice (the sheets and the sites take each once).',
+  'Ej.: {name} se queda en {kept}.': 'E.g. {name} stays in {kept}.',
+  'nombres son de dos fotos distintas: compara los sobres; se dejan como están': 'names belong to two different photos: compare the envelopes; they are left as they are',
+  'y {n} más: pídeselos al asistente': 'and {n} more: ask the assistant for them',
   'Photo_links está escrito: actualiza la Wings Gallery para que muestre las fotos nuevas.': 'Photo_links is written: update the Wings Gallery so it shows the new photos.',
   'Ver de nuevo cómo van': 'Check how they are going',
   'Toman los datos del libro cuando se actualizan; después de escribir Photo_links, actualiza la Wings Gallery.':

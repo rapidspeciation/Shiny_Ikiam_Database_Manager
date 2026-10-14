@@ -146,13 +146,17 @@ export function planPhotoLinks({
   const info = ids instanceof Map ? ids : new Map([...ids].map(id => [id, {}]));
   const status = [];
   const listed = new Map();
+  // Rows of a file another row lists already.
+  const twins = [];
   let repeated = 0;
   let unread = 0;
   for (const r of rows) {
     const id = driveIdOf(r.values.URL);
     if (id) {
-      if (listed.has(id)) repeated++;
-      else listed.set(id, r);
+      if (listed.has(id)) {
+        repeated++;
+        twins.push([id, r]);
+      } else listed.set(id, r);
     } else if (STATUS_ROW.test(r.values['Full Path'] ?? '') && blank(r.values.Name)) status.push(r);
     else if (FIELDS.some(f => !blank(r.values[f]))) unread++;
   }
@@ -291,12 +295,14 @@ export function planPhotoLinks({
   const unknown = [];
   for (const [id, r] of missing) {
     const found = aside.has(id) ? { gone: true } : lookups.get(id);
-    const again = r.values.Type === 'File' ? free.get(lower(r.values.Name))?.find(f => !taken.has(f.id)) : null;
+    // By the name it had before it was set aside (the sheet's script lists a file again as …_todelete).
+    const again = r.values.Type === 'File' ? free.get(lower(String(r.values.Name ?? '').replace(TO_DELETE, '')))?.find(f => !taken.has(f.id)) : null;
     if (again && !aside.has(again.id)) {
       taken.add(again.id);
       relinkedTo.set(r.id, again.id);
-      const { Name: _name, Type: _type, ...link } = cells(again, pathOf(again));
-      edit(r, link, 'relink');
+      const { Name: name, Type: _type, ...link } = cells(again, pathOf(again));
+      // The copy's name where the row had another (…_todelete): the name the sheets look up.
+      edit(r, { ...link, ...(lower(name) === lower(r.values.Name) ? {} : { Name: name }) }, 'relink');
       summary.relinked.push({ row: r.row, name: r.values.Name });
       continue;
     }
@@ -310,6 +316,55 @@ export function planPhotoLinks({
       summary.removed.push({ row: r.row, path: r.values['Full Path'] });
     } else summary.elsewhere++;
   }
+
+  // Photos listed twice (Photo_dorsal and Photo_ventral take the first row of a name; the Wings Gallery
+  // and the maps show each row): a second row of the same file is emptied; of two files of one name, the
+  // row of a copy (the same size and moment taken) is emptied, the one in the folder of the butterfly's
+  // country kept; two different photos of one name are left for a person (one is misnamed, or the ID
+  // was used twice). In a reading of some folders, only names with a row in them.
+  const twice = { sameFile: 0, copies: [], different: [] };
+  const empty = (r, kind) => {
+    if (edit(r, Object.fromEntries(FIELDS.map(f => [f, null])), kind)) emptied.add(r.id);
+  };
+  for (const [id, r] of twins) {
+    if (emptied.has(r.id) || (scopePaths && !scopePaths.has(dirOf(r.values['Full Path'])))) continue;
+    if (listed.get(id) && !emptied.has(listed.get(id).id)) {
+      empty(r, 'duplicate');
+      twice.sameFile++;
+    }
+  }
+  {
+    const latest = new Map(edits.map(e => [e.id, e.values]));
+    const now = r => ({ ...r.values, ...(latest.get(r.id) ?? {}) });
+    const byName = new Map();
+    for (const r of rows) {
+      if (emptied.has(r.id) || r.values.Type !== 'File' || !driveIdOf(r.values.URL)) continue;
+      const v = now(r);
+      if (blank(v.Name) || TO_DELETE.test(String(v.Name))) continue;
+      const key = lower(v.Name);
+      (byName.get(key) ?? byName.set(key, []).get(key)).push({ r, v });
+    }
+    const kb = v => Math.round(Number(v['Size KB']) || 0);
+    const taken = v => (typeof v['Capture Date'] === 'number' ? Math.round(v['Capture Date'] * 86_400) : null);
+    for (const group of byName.values()) {
+      if (group.length < 2) continue;
+      if (scopePaths && !group.some(({ v }) => scopePaths.has(dirOf(v['Full Path'])))) continue;
+      const shown = group.map(({ r, v }) => ({ row: r.row, path: v['Full Path'], url: v.URL, kb: kb(v) }));
+      const copies = group.every(({ v }) => kb(v) === kb(group[0].v) && taken(v) === taken(group[0].v));
+      if (!copies) {
+        twice.different.push({ name: group[0].v.Name, rows: shown });
+        continue;
+      }
+      // Kept: the row in the folder named after the butterfly's country, else the first.
+      const parsed = specimenName(group[0].v.Name);
+      const country = lower(info.get(parsed ? (knownId(parsed.id, info) ?? '') : '')?.country ?? '').replace(/\s+/g, '');
+      const fits = ({ v }) => !!country && lower(v['Full Path']).replace(/[\s_]+/g, '').includes(country);
+      const keep = group.find(fits) ?? group[0];
+      for (const g of group) if (g !== keep) empty(g.r, 'duplicate');
+      twice.copies.push({ name: group[0].v.Name, kept: keep.v['Full Path'], emptied: group.filter(g => g !== keep).map(g => g.v['Full Path']) });
+    }
+  }
+  summary.listedTwice = twice;
 
   // Names the sheet holds once the edits are in, and the butterflies' views they stand for.
   const names = new Map();

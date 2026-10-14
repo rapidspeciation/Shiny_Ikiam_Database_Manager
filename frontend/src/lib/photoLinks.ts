@@ -39,7 +39,7 @@ export interface PhotoCheck {
 }
 export type PhotoChecks = { photos: number; linked: number; butterflies: number; otherViews: number } & Record<CheckKind, PhotoCheck>
 
-export type PhotoChange = 'new' | 'folder' | 'rename' | 'relink' | 'remove' | 'move' | 'details'
+export type PhotoChange = 'new' | 'folder' | 'rename' | 'relink' | 'remove' | 'move' | 'details' | 'duplicate'
 /** A row the reading would write (GET chat/proposals/<id>/photo-links/rows). */
 export interface PhotoRow {
   change: PhotoChange
@@ -87,6 +87,14 @@ export interface PhotoSync {
   }
   checks: PhotoChecks | null
   sameName: { copies: number; different: number; examples: { name: string; in: string; listed: string | null }[] }
+  /** Photos the sheet listed twice: rows emptied (the same file, a copy), and names of two different photos. */
+  listedTwice?: {
+    sameFile: number
+    copies: number
+    copyExamples: { name: string; kept: string; emptied: string[] }[]
+    different: number
+    differentExamples: { name: string; rows: { row: number; path: string; url: string; kb: number }[] }[]
+  } | null
   notListed: { folder: string; files: number; photos: number; namedAsSpecimens: number }[]
   leftOut: { toDelete: number; temp: { folder: string; files: number }[] }
   untouched: { outside: number; unchecked: number; repeated: number; unread: number }
@@ -139,6 +147,7 @@ export const changeLabel = (change: PhotoChange): string =>
     rename: t('renombrada'),
     relink: t('enlazada de nuevo'),
     remove: t('fila vaciada'),
+    duplicate: t('repetida: vaciada'),
     move: t('movida'),
     details: t('dueño o tamaño'),
   })[change]

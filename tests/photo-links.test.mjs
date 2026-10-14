@@ -171,6 +171,68 @@ test('the plan: new files of the listed folders, rows following their file, name
   assert.deepEqual(more.summary.notListed, []);
 });
 
+test("photos listed twice: the same file and copies are emptied (the country's folder kept), two different photos are told", async () => {
+  // Peru and Panama folders under the listed «Photos»; a Peru butterfly's photo copied into Panama.
+  const items = await driveTree(
+    new LocalDrive([
+      folder(1, 'Home'),
+      folder(2, 'Photos', 1),
+      folder(3, 'PANAMA_2025', 2),
+      folder(4, 'PERU_2024', 2),
+      file(30, 'CAM000001d.JPG', 3, { size: '4096', imageMediaMetadata: { time: '2026:07:20 10:15:30' } }),
+      file(40, 'CAM000001d.JPG', 4, { size: '4096', imageMediaMetadata: { time: '2026:07:20 10:15:30' } }),
+      // The same name, another photo.
+      file(31, 'CAM000002v.JPG', 3, { size: '9000' }),
+      file(41, 'CAM000002v.JPG', 4, { size: '3000' }),
+      file(42, 'CAM000003d.JPG', 4, { size: '4096' }),
+      // Renamed …_todelete once copied by another account; its copy has a row already.
+      file(43, 'CAM000004d.JPG_todelete', 4),
+      file(44, 'CAM000004d.JPG', 4, { size: '4096' }),
+      // The same, its copy not listed yet: the row follows the copy, and takes its name.
+      file(45, 'CAM000005d.JPG_todelete', 4),
+      file(46, 'CAM000005d.JPG', 4, { size: '4096' }),
+    ]),
+    [id(1)],
+  );
+  const listed = (n, path, extra = {}) => ({ ...row(n, path, 'File'), 'Size KB': 4, 'Capture Date': captureSerial('2026:07:20 10:15:30', 'Europe/London'), ...extra });
+  const rows = [
+    row(2, 'Photos', 'Folder'),
+    row(3, 'Photos/PANAMA_2025', 'Folder'),
+    row(4, 'Photos/PERU_2024', 'Folder'),
+    listed(30, 'Photos/PANAMA_2025/CAM000001d.JPG'),
+    listed(40, 'Photos/PERU_2024/CAM000001d.JPG'),
+    listed(31, 'Photos/PANAMA_2025/CAM000002v.JPG', { 'Size KB': 8.7890625, 'Capture Date': null }),
+    listed(41, 'Photos/PERU_2024/CAM000002v.JPG', { 'Size KB': 2.9296875, 'Capture Date': null }),
+    listed(42, 'Photos/PERU_2024/CAM000003d.JPG'),
+    // The same file twice.
+    listed(42, 'Photos/PERU_2024/CAM000003d.JPG'),
+    listed(43, 'Photos/PERU_2024/CAM000004d.JPG_todelete', { Name: 'CAM000004d.JPG_todelete' }),
+    listed(44, 'Photos/PERU_2024/CAM000004d.JPG'),
+    listed(45, 'Photos/PERU_2024/CAM000005d.JPG_todelete', { Name: 'CAM000005d.JPG_todelete' }),
+  ].map((values, i) => ({ id: `r${i + 2}`, row: i + 2, values }));
+  const ids = new Map([
+    ['CAM000001', { country: 'Peru' }],
+    ['CAM000002', { country: 'Peru' }],
+    ['CAM000003', { country: 'Peru' }],
+    ['CAM000004', { country: 'Peru' }],
+    ['CAM000005', { country: 'Peru' }],
+  ]);
+  const plan = planPhotoLinks({ rows, items, home: id(1), ids, timeZone: 'Europe/London' });
+  const kinds = Object.fromEntries(plan.edits.map(e => [e.row, e.kind]));
+  // Row 5 (the Panama copy) and row 10 (the second row of one file) emptied; the …_todelete row (11) too, its copy listed.
+  assert.deepEqual(kinds, { 5: 'duplicate', 10: 'duplicate', 11: 'remove', 13: 'relink' });
+  const followed = plan.edits.find(e => e.row === 13).values;
+  assert.deepEqual([followed.Name, followed.URL], ['CAM000005d.JPG', fileUrl(46)]);
+  const twice = plan.summary.listedTwice;
+  assert.equal(twice.sameFile, 1);
+  assert.deepEqual(twice.copies, [{ name: 'CAM000001d.JPG', kept: 'Photos/PERU_2024/CAM000001d.JPG', emptied: ['Photos/PANAMA_2025/CAM000001d.JPG'] }]);
+  assert.deepEqual(
+    twice.different.map(d => [d.name, d.rows.map(r => r.row)]),
+    [['CAM000002v.JPG', [7, 8]]],
+  );
+  assert.equal(plan.creates.length, 0);
+});
+
 test('a path written from a subfolder stays; a file moved to another folder gets its new path', async () => {
   const files = [folder(1, 'Photos'), folder(2, 'Wild', 1), folder(4, 'JPG', 2), folder(6, 'Peru', 2), file(20, 'CAM000003d.JPG', 4), file(21, 'CAM000003v.JPG', 6)];
   const items = await driveTree(new LocalDrive(files), [id(1)]);

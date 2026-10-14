@@ -38,6 +38,7 @@ export const PHOTO_TOOLS = [
         '  - `changes`: new files per listed folder; rows whose file was renamed, replaced by one of the same name (`relinked`) or deleted (`removed`: the row is emptied).',
         "  - `newPhotos`: of the new photos (RAW files apart), `linked` are named <ID>d.JPG or <ID>v.JPG with an ID of the workbook, which is what the sheets look up. The rest are things to look at, each with examples: `rename` (found under the name in `to`), `unknownId` (the workbook lacks the ID; `maybe`: likely the ID meant), `unnamed` (the camera's name), `outOfOrder` (the ID is far from those of the photos taken just before and after, `around`: how a misread ID looks), `otherFolder` (the same ID has photos in another folder, `other`: another photo, or the same one filed twice, `copy`), `unpaired` (the other view is missing), `beforeCollection` (taken before the butterfly was collected), `otherCountry` (a butterfly of another country than its folder's).",
         '  - `sameName`: files not listed because a listed file already has their name: `copies` of that photo, or `different` photos (one of the two is misnamed, or the ID was used twice).',
+        "  - `listedTwice`: photos the sheet already lists twice (Photo_dorsal and Photo_ventral take the first row of a name; the Wings Gallery and the maps show every row). The rows of the same file, and of copies (the same size and moment), are emptied, the one in the folder of the butterfly's country kept; the copies' files can then go with organize_photos ({check: \"copies\"}). `differentPhotosOfOneName`: two different photos under one name, each with its row, folder and link, left as they are: give the person the links to compare the envelopes; the misnamed one is then renamed with organize_photos (or the ID was used twice: skill `data-rules`).",
         '  - `notListed`: folders with specimen photos beside the listed ones. `leftOut`: files named …_todelete and folders named …_temp, which are never listed.',
         '- `only`: just these folders (a `byFolder` name, or the folder above them), which is quicker: `["Guyana_2025"]`. `add`: folders to start listing, by their `notListed` name or a Drive link.',
         "- `confirmed: true` with that answer's `scan`, only after the person's latest message approves it: writes it, some hundred rows per save (`skip`: folders of `byFolder` to leave for later). A long one answers `writing`: call again with the same arguments to follow it.",
@@ -156,6 +157,16 @@ export function cardOf(scan, { add = [], only = [] } = {}) {
     examples: { renamed: s.renamed.slice(0, EXAMPLES), relinked: s.relinked.slice(0, EXAMPLES), removed: s.removed.slice(0, EXAMPLES) },
     checks: s.names?.photos ? s.names : null,
     sameName: s.sameName,
+    // Photos the sheet lists twice: rows emptied (the same file, or a copy), and names of two different photos.
+    listedTwice: s.listedTwice
+      ? {
+          sameFile: s.listedTwice.sameFile,
+          copies: s.listedTwice.copies.length,
+          copyExamples: s.listedTwice.copies.slice(0, EXAMPLES),
+          different: s.listedTwice.different.length,
+          differentExamples: s.listedTwice.different.slice(0, 20),
+        }
+      : null,
     notListed: s.notListed.map(({ id: _id, ...rest }) => rest),
     leftOut: { toDelete: s.leftOut, temp: s.setAside },
     untouched: { outside: s.outside + s.elsewhere, unchecked: s.unchecked, repeated: s.repeated, unread: s.unread },
@@ -189,6 +200,13 @@ function brief(id, card, shown = {}) {
       : null,
     newPhotos: card.checks ? filled(Object.fromEntries(Object.entries(card.checks).map(([k, v]) => [k, v?.count === 0 ? null : v]))) : null,
     sameName: card.sameName.copies || card.sameName.different ? card.sameName : null,
+    listedTwice: card.listedTwice && (card.listedTwice.sameFile || card.listedTwice.copies || card.listedTwice.different)
+      ? filled({
+          rowsOfTheSameFileEmptied: card.listedTwice.sameFile,
+          rowsOfCopiesEmptied: card.listedTwice.copies ? { count: card.listedTwice.copies, examples: card.listedTwice.copyExamples } : null,
+          differentPhotosOfOneName: card.listedTwice.different ? { count: card.listedTwice.different, examples: card.listedTwice.differentExamples.slice(0, EXAMPLES) } : null,
+        })
+      : null,
     notListed: card.notListed,
     leftOut: filled({ toDeleteFiles: card.leftOut.toDelete, tempFolders: card.leftOut.temp }),
     // Rows left as they are.
