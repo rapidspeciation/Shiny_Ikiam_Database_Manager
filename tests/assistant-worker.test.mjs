@@ -37,7 +37,7 @@ async function fixture(t, { callMs = 20_000, backoffMs } = {}) {
   await store.sync({ sheets: ['Collection_data', 'Location_data', 'Insectary_stocks'] });
   const host = createAssistantHost({
     store,
-    config: { databasePath, localMode: true, proposalWaitMs: 10_000 },
+    config: { databasePath, localMode: true, proposalWaitMs: 10_000, assistantToolWorkers: 3 },
     workerUrl: hooks,
     callMs,
     backoffMs,
@@ -211,6 +211,29 @@ test('a call that hangs or a worker that dies: the call is answered "call again"
   assert.equal(host.status().mode, 'degraded');
   const inline = await call('get_record', { id: record(4).id });
   assert.ok(!inline.error, JSON.stringify(inline));
+});
+
+test("two people's calls at once: another worker answers the second, and one call that hangs leaves the other's alone", async t => {
+  const { store, host, call, record } = await fixture(t, { callMs: 4000, backoffMs: 0 });
+  store.db
+    .prepare("INSERT INTO ai_tokens(token_hash,user_id,label,created_at) VALUES(?,?,'t3','2026-01-01')")
+    .run(createHash('sha256').update('kim-token').digest('hex'), 'u1');
+  // The first worker started, and busy for good with one person's call.
+  await call('get_record', { id: record(2).id });
+  const hung = host.mcp({ authorization: 'Bearer franz-token' }, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: '__hang', arguments: {} } });
+  // The other person's call is answered meanwhile, by another worker.
+  const started = Date.now();
+  const other = await host.mcp(
+    { authorization: 'Bearer kim-token' },
+    { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'find_records', arguments: { sheet: 'Collection_data', filters: { FieldMark_ID: 'B3' } } } },
+  );
+  assert.ok(other.body.result, JSON.stringify(other.body));
+  assert.ok(Date.now() - started < 3500, 'not held behind the hanging call');
+  assert.equal(host.status().workers, '2 of 3');
+  // The hanging call is answered "call again"; only its worker was replaced.
+  assert.match((await hung).body.error.message, /call again/);
+  assert.equal(host.status().restarts, 1);
+  assert.ok(!(await call('get_record', { id: record(4).id })).error);
 });
 
 test("every tool the worker answers runs there: nothing reaches for the app's memory or writes outside the proposals", async () => {

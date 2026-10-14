@@ -259,6 +259,8 @@ export function configFromEnv(env = process.env) {
     driveAccount: env.DRIVE_ACCOUNT || undefined,
     // The AI's tool calls and the proposals' views in worker threads (server/assistant-host.mjs): 'auto', or '0' to run them in the app's thread.
     assistantWorker: env.ASSISTANT_WORKER || 'auto',
+    // How many workers answer the assistant's tool calls (server/worker-slot.mjs POOL_SIZE by default).
+    assistantToolWorkers: env.ASSISTANT_TOOL_WORKERS || undefined,
     googleCredentialsFile: env.GOOGLE_CREDENTIALS_FILE,
     setupToken: env.SETUP_TOKEN,
     localMode: env.LOCAL_MODE === '1',

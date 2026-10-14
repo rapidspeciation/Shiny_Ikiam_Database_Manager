@@ -3,6 +3,8 @@
 // are answered meanwhile. Each starts with the first call that needs it; a call that takes longer
 // than its time is answered "call again" and its worker is replaced; a worker that fails three
 // times in a minute is left aside (`degraded`: the caller does the work in the app's thread).
+// workerPool: a few such workers of one role, so one person's long call does not hold another's.
+import { availableParallelism } from 'node:os';
 import { Worker } from 'node:worker_threads';
 
 /** Failures in a minute that leave a worker aside. */
@@ -70,15 +72,16 @@ export function workerSlot({
   name = `The assistant's ${role}`,
   log = `Assistant ${role} worker`,
   backoffMs = 1000,
+  // The failures counted, and whether the work is left aside: a pool's workers share them.
+  group = { crashes: [], degraded: false },
 }) {
   let worker = null;
   let next = 0;
   let restarts = 0;
   let failures = 0;
   let backoffUntil = 0;
-  let degraded = false;
   let closed = false;
-  const crashes = [];
+  const { crashes } = group;
   const pending = new Map();
 
   const rejectAll = error => {
@@ -107,8 +110,8 @@ export function workerSlot({
     // Started again after 1, 2, 4… s (at most 30 s), with the next call.
     backoffUntil = at + Math.min(30_000, backoffMs * 2 ** (failures - 1));
     rejectAll(fail('WORKER_FAILED', `${name} stopped unexpectedly and is starting again: call again.`));
-    if (crashes.length >= CRASHES && !degraded) {
-      degraded = true;
+    if (crashes.length >= CRASHES && !group.degraded) {
+      group.degraded = true;
       console.error(
         `${log} failed ${crashes.length} times in a minute: its work runs in the app's thread until the next restart`,
         error?.message ?? '',
@@ -143,13 +146,13 @@ export function workerSlot({
   }
   return {
     get degraded() {
-      return degraded;
+      return group.degraded;
     },
     get alive() {
       return !!worker;
     },
     inFlight: () => pending.size,
-    status: () => ({ mode: degraded ? 'degraded' : 'worker', inFlight: pending.size, restarts, running: !!worker }),
+    status: () => ({ mode: group.degraded ? 'degraded' : 'worker', inFlight: pending.size, restarts, running: !!worker }),
     /** Tells the running worker something (the sheets' columns, how Google answers); a new one starts with data(). */
     post(message) {
       try {
@@ -160,7 +163,7 @@ export function workerSlot({
     },
     async call(message) {
       if (closed) throw fail('WORKER_CLOSED', 'The app is stopping: call again in a minute.');
-      if (degraded) throw fail('DEGRADED', `${name} worker is left aside`);
+      if (group.degraded) throw fail('DEGRADED', `${name} worker is left aside`);
       const wait = backoffUntil - Date.now();
       if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait).unref?.());
       if (!worker) spawn();
@@ -195,5 +198,58 @@ export function workerSlot({
       closed = true;
       stop(fail('WORKER_CLOSED', 'The app is stopping: call again in a minute.'));
     },
+  };
+}
+
+/** Workers of a pool by default: one per core but the app's own, at most three. */
+export const POOL_SIZE = Math.max(1, Math.min(3, availableParallelism() - 1));
+
+/**
+ * A few workers of one role (workerSlot's options; `size` of them), each started when the others
+ * are busy: call(message, key) goes to an idle one, the one that last served `key` (a person:
+ * what it read for them is still there) if it is idle, else the one with the fewest calls. A call
+ * too long replaces only its own worker; failures count for the pool together (three in a minute
+ * leave the pool aside).
+ */
+export function workerPool({ size = POOL_SIZE, log, ...options }) {
+  const group = { crashes: [], degraded: false };
+  const slots = Array.from({ length: Math.max(1, size) }, (_, i) =>
+    workerSlot({ ...options, ...(log ? { log: size > 1 ? `${log} ${i + 1}` : log } : {}), group }),
+  );
+  const servedBy = new Map();
+  function pick(key) {
+    const idle = slots.filter(s => s.alive && !s.inFlight());
+    const mine = servedBy.get(key);
+    if (mine && idle.includes(mine)) return mine;
+    if (idle.length) return idle[0];
+    const unstarted = slots.find(s => !s.alive);
+    if (unstarted) return unstarted;
+    return slots.reduce((a, b) => (b.inFlight() < a.inFlight() ? b : a));
+  }
+  return {
+    get degraded() {
+      return group.degraded;
+    },
+    get alive() {
+      return slots.some(s => s.alive);
+    },
+    inFlight: () => slots.reduce((n, s) => n + s.inFlight(), 0),
+    status() {
+      const each = slots.map(s => s.status());
+      return {
+        mode: group.degraded ? 'degraded' : 'worker',
+        inFlight: each.reduce((n, s) => n + s.inFlight, 0),
+        restarts: each.reduce((n, s) => n + s.restarts, 0),
+        running: each.some(s => s.running),
+        workers: `${each.filter(s => s.running).length} of ${slots.length}`,
+      };
+    },
+    post: message => slots.forEach(s => s.post(message)),
+    call(message, key = null) {
+      const slot = pick(key);
+      if (key !== null) servedBy.set(key, slot);
+      return slot.call(message);
+    },
+    close: () => slots.forEach(s => s.close()),
   };
 }

@@ -1,7 +1,7 @@
 // The assistant as the app runs it: what people use, and everything that reaches Google, in the
 // app's own thread; the AI's work in worker threads (server/assistant-worker.mjs), so a long tool
 // call or a big proposal's table never keeps the app from answering people.
-// - The tools' worker answers T3 Code's tool calls (MCP tools/call), all but MAIN_TOOLS: those
+// - The tools' workers (a few: server/worker-slot.mjs workerPool) answer T3 Code's tool calls (MCP tools/call), all but MAIN_TOOLS: those
 //   write to Google or the app's state (apply, undo, the Wikiloc queue, the documents' sync, invitations), or
 //   run apart already (`query`, a child process).
 // - The views' worker builds the proposals as Cambios propuestos shows them (the list the page
@@ -13,7 +13,7 @@
 // No worker (the work in the app's thread): an in-memory database (tests), ASSISTANT_WORKER=0, or
 // a configuration that cannot be handed to a thread.
 import { createAssistant, currentTool } from './assistant.mjs';
-import { layoutsFeed, workerMode, workerSlot } from './worker-slot.mjs';
+import { layoutsFeed, workerMode, workerPool, workerSlot } from './worker-slot.mjs';
 
 /** Tools that run in the app's thread. */
 export const MAIN_TOOLS = new Set([
@@ -83,13 +83,15 @@ export function createAssistantHost({
   const onMessage = m => {
     if (m?.type === 'changed') main.notifyChanged(m.ownerId, m.page ?? null);
   };
-  const tools = workerSlot({
+  // A few, so two people's chats calling tools at once are not answered one after the other.
+  const tools = workerPool({
     role: 'tools',
     url: workerUrl,
     data,
     timeoutMs: callMs ?? config.assistantCallMs ?? CALL_MS,
     backoffMs,
     onMessage,
+    ...(config.assistantToolWorkers ? { size: Number(config.assistantToolWorkers) } : {}),
   });
   const views = workerSlot({
     role: 'views',
@@ -132,7 +134,7 @@ export function createAssistantHost({
       // Stopping (a deploy): no new calls; those running finish first.
       if (store.draining) return rpcError(id, 'The app is restarting: call again in a minute.');
       try {
-        return await tools.call({ type: 'mcp', headers: { authorization: headers?.authorization }, body });
+        return await tools.call({ type: 'mcp', headers: { authorization: headers?.authorization }, body }, headers?.authorization ?? null);
       } catch (e) {
         if (e.code === 'DEGRADED') return main.mcp(headers, body);
         return rpcError(id, e.message);
