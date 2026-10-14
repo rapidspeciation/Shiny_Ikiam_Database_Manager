@@ -59,11 +59,11 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     // Claude Code subagents (assistant/agents): the notebook readers and reviewers, on their own model.
     assert.match(readFileSync(join(workspace, '.claude', 'agents', 'notebook-reader.md'), 'utf8'), /^name: notebook-reader$/m);
     assert.match(readFileSync(join(workspace, '.claude', 'agents', 'notebook-reviewer.md'), 'utf8'), /^model: \S+$/m);
-    const mcp = JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8')).mcpServers.ithomiini;
+    const mcp = JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8')).mcpServers.db;
     // The service's base path is /: the endpoint is /api/ai/mcp.
     assert.equal(mcp.url, 'http://127.0.0.1:8794/api/ai/mcp');
     const settings = JSON.parse(readFileSync(join(workspace, '.claude', 'settings.json'), 'utf8'));
-    assert.deepEqual(settings.permissions.allow, ['mcp__ithomiini', 'Skill']);
+    assert.deepEqual(settings.permissions.allow, ['mcp__db', 'Skill']);
     assert.ok(settings.permissions.deny.includes(`Read(/${join(home, '.config', 'ithomiini')}/**)`));
     // The claude.ai account's connectors (Claude Docs…) are not loaded in the chats.
     assert.equal(settings.env.ENABLE_CLAUDEAI_MCP_SERVERS, 'false');
@@ -77,7 +77,7 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     assert.match(readFileSync(join(workspace, '.agents', 'skills', 'digitalizar-cuaderno', 'SKILL.md'), 'utf8'), /name: digitalizar-cuaderno/);
     assert.ok(existsSync(join(workspace, '.agents', 'skills', 'app-guide', 'reference', 'monitoreo.md')));
     const codex = readFileSync(join(workspace, '.codex', 'config.toml'), 'utf8');
-    assert.match(codex, /^\[mcp_servers\.ithomiini\]$/m);
+    assert.match(codex, /^\[mcp_servers\.db\]$/m);
     assert.match(codex, /^url = "http:\/\/127\.0\.0\.1:8794\/api\/ai\/mcp"$/m);
     assert.ok(codex.includes(`http_headers = { Authorization = "${mcp.headers.Authorization}" }`));
     assert.match(codex, /^default_tools_approval_mode = "approve"$/m);
@@ -121,7 +121,7 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     assert.ok(!existsSync(join(workspace, '.claude', 'skills', 'digitalizar-cuaderno', 'old.md')));
     assert.ok(!existsSync(join(workspace, '.claude', 'agents', 'old-agent.md')));
     assert.ok(existsSync(join(workspace, '.claude', 'agents', 'notebook-reader.md')));
-    assert.equal(JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8')).mcpServers.ithomiini.headers.Authorization, mcp.headers.Authorization, 'the token is kept');
+    assert.equal(JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8')).mcpServers.db.headers.Authorization, mcp.headers.Authorization, 'the token is kept');
     assert.equal(JSON.parse(readFileSync(join(workspace, '.claude', 'settings.json'), 'utf8')).model, 'opus');
     const refreshed = JSON.parse(readFileSync(join(workspace, '.claude', 'settings.json'), 'utf8'));
     assert.deepEqual(refreshed.hooks.PreToolUse, [ownHook], 'the old guard out, the person\'s own hook kept');
@@ -131,11 +131,23 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     assert.equal(readFileSync(join(workspace, '.codex', 'config.toml'), 'utf8'), codex, 'Codex keeps the token too');
     assert.equal(readFileSync(join(home, '.codex', 'config.toml'), 'utf8'), trusted, 'the workspace is trusted once');
 
+    // A workspace made when the tools' server was called `ithomiini`: its token is kept under the new name,
+    // and the old permission rule goes.
+    const old = JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8'));
+    writeFileSync(join(workspace, '.mcp.json'), JSON.stringify({ mcpServers: { ithomiini: old.mcpServers.db } }));
+    const before = JSON.parse(readFileSync(join(workspace, '.claude', 'settings.json'), 'utf8'));
+    before.permissions.allow = ['mcp__ithomiini', 'Skill'];
+    writeFileSync(join(workspace, '.claude', 'settings.json'), JSON.stringify(before));
+    run('--refresh-all');
+    const renamed = JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8')).mcpServers;
+    assert.deepEqual([Object.keys(renamed), renamed.db.headers.Authorization], [['db'], mcp.headers.Authorization]);
+    assert.deepEqual(JSON.parse(readFileSync(join(workspace, '.claude', 'settings.json'), 'utf8')).permissions.allow, ['Skill', 'mcp__db']);
+
     // Provisioning the person again gives a fresh token (the old one stops working).
     run('ana');
-    assert.notEqual(JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8')).mcpServers.ithomiini.headers.Authorization, mcp.headers.Authorization);
+    assert.notEqual(JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8')).mcpServers.db.headers.Authorization, mcp.headers.Authorization);
     assert.equal(db.prepare('SELECT count(*) n FROM ai_tokens WHERE revoked_at IS NULL').get().n, 1);
-    const fresh = JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8')).mcpServers.ithomiini.headers.Authorization;
+    const fresh = JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8')).mcpServers.db.headers.Authorization;
     assert.ok(readFileSync(join(workspace, '.codex', 'config.toml'), 'utf8').includes(`Authorization = "${fresh}"`), 'Codex gets the new token');
     db.close();
   } finally {
@@ -169,7 +181,7 @@ test('Another install (the local lab) sets the database, MCP address, workspaces
     };
     execFileSync(process.execPath, [script, 'lab'], { env, encoding: 'utf8' });
     const workspace = join(workspaces, 'lab');
-    assert.equal(JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8')).mcpServers.ithomiini.url, 'http://127.0.0.1:8795/api/ai/mcp');
+    assert.equal(JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8')).mcpServers.db.url, 'http://127.0.0.1:8795/api/ai/mcp');
     // The lab's brief ends with the lab's rule (its address and checkout), and app-dev opens with it: changes stay local.
     const note = labAppDev('http://127.0.0.1:8795/', '/work/ithomiini');
     const brief = readFileSync(join(workspace, 'AGENTS.md'), 'utf8');

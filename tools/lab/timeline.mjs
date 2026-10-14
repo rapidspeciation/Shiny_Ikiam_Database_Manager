@@ -47,7 +47,7 @@ for (const t of run.threads.filter(t => t.threadId && (!only || t.case === only)
   const started = new Map();
   for (const r of rows) {
     const p = JSON.parse(r.payload_json);
-    const name = (p.data?.toolName ?? '').replace(/^mcp__ithomiini__/, '');
+    const name = (p.data?.toolName ?? '').replace(/^mcp__(?:db|ithomiini)__/, '');
     if (name === 'Read') {
       if (r.kind === 'tool.started') views++;
       continue;

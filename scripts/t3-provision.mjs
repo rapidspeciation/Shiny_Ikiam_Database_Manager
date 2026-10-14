@@ -83,11 +83,18 @@ function mintToken(user) {
   return token;
 }
 
+/**
+ * The name the app's tools have in a chat: Claude Code calls them mcp__<name>__<tool>
+ * (mcp__db__query), so it is short. Workspaces made when it was `ithomiini` keep their token.
+ */
+const MCP_SERVER = 'db';
+const OLD_MCP_SERVER = 'ithomiini';
+
 /** The token already in the workspace's .mcp.json, if it is still valid. */
 function keptToken(workspace, user) {
   try {
     const mcp = JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8'));
-    const token = /^Bearer\s+(\S+)$/.exec(mcp.mcpServers?.ithomiini?.headers?.Authorization ?? '')?.[1];
+    const token = /^Bearer\s+(\S+)$/.exec((mcp.mcpServers?.[MCP_SERVER] ?? mcp.mcpServers?.[OLD_MCP_SERVER])?.headers?.Authorization ?? '')?.[1];
     if (!token) return null;
     const hash = createHash('sha256').update(token).digest('hex');
     const live = db
@@ -124,7 +131,7 @@ function codexConfig(workspace, token) {
   writeFileSync(
     file,
     `# Written by scripts/t3-provision.mjs: the app's tools (MCP) for Codex threads in T3.
-[mcp_servers.ithomiini]
+[mcp_servers.${MCP_SERVER}]
 url = ${q(mcpUrl)}
 http_headers = { Authorization = ${q(`Bearer ${token}`)} }
 default_tools_approval_mode = "approve"
@@ -209,7 +216,7 @@ function provision(user, { freshToken, addProject }) {
   writeFileSync(
     mcp,
     JSON.stringify(
-      { mcpServers: { ithomiini: { type: 'http', url: mcpUrl, headers: { Authorization: `Bearer ${token}` } } } },
+      { mcpServers: { [MCP_SERVER]: { type: 'http', url: mcpUrl, headers: { Authorization: `Bearer ${token}` } } } },
       null,
       2,
     ),
@@ -231,7 +238,7 @@ function provision(user, { freshToken, addProject }) {
   // connectors stay out of the chats: they add tools and instructions to every turn, even mid-answer.
   settings.env = { ...settings.env, PATH: TOOLS_PATH, ENABLE_CLAUDEAI_MCP_SERVERS: 'false' };
   settings.permissions ??= {};
-  settings.permissions.allow = [...new Set([...(settings.permissions.allow ?? []), 'mcp__ithomiini', 'Skill'])];
+  settings.permissions.allow = [...new Set([...(settings.permissions.allow ?? []).filter(rule => rule !== `mcp__${OLD_MCP_SERVER}`), `mcp__${MCP_SERVER}`, 'Skill'])];
   // The old guard hook out; other hooks of the folder are kept.
   const own = entry => entry?.hooks?.some(h => String(h.command ?? '').includes('guard-bash.mjs'));
   const kept = (settings.hooks?.PreToolUse ?? []).filter(e => !own(e));

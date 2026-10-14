@@ -277,7 +277,7 @@ function toolCounts(db, threadId) {
     } catch {
       continue;
     }
-    name = name.replace(/^mcp__ithomiini__/, '');
+    name = name.replace(/^mcp__(?:db|ithomiini)__/, '');
     if (name) counts[name] = (counts[name] ?? 0) + 1;
   }
   return counts;

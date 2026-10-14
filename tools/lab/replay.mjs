@@ -42,7 +42,7 @@ function calls(t3, threadId) {
     .prepare("SELECT payload_json p FROM projection_thread_activities WHERE thread_id = ? AND kind = 'tool.completed' ORDER BY sequence, created_at")
     .all(threadId)) {
     const data = JSON.parse(p).data ?? {};
-    const name = String(data.toolName ?? '').replace(/^mcp__ithomiini__/, '');
+    const name = String(data.toolName ?? '').replace(/^mcp__(?:db|ithomiini)__/, '');
     if (name === data.toolName) continue;
     const text = [data.result?.content ?? data.result]
       .flat()
