@@ -1,4 +1,4 @@
-// The «Renombrar fotos» tab as the assistant reaches it. The photos are on the person's computer,
+// The «Fotos» tab as the assistant reaches it. The photos are on the person's computer,
 // read and renamed in their browser by the Rename Photos app shown in the tab
 // (github.com/Fr4nzz/rename_photos_AI, frontend RenameHost.vue); the assistant runs on the server.
 // So the open tab is its hands: it tells the app the batch as it changes (the rows: each photo's
@@ -346,19 +346,19 @@ const told = r =>
 
 /** The prompt of the chat the tab's «Review with Claude» starts. */
 export const REVIEW_PROMPT = [
-  'Revisa el lote de fotos que tengo abierto en la pestaña «Renombrar fotos» (skill `photos`, «Reviewing a batch before it is renamed»).',
+  'Revisa el lote de fotos que tengo abierto en la pestaña «Fotos» (skill `photos`, «Reviewing a batch before it is renamed»).',
   'Comprueba las fotos marcadas, los IDs que no tienen exactamente dos fotos y una muestra de las demás mirando los sobres. Corrige lo que esté claro y déjame señalado lo que no puedas resolver.',
   'Al terminar dime qué cambiaste, qué queda para mí y si ya puedo pulsar «Rename».',
 ].join(' ');
 
 /** The prompt of the chat started when the person says the renamed files are uploaded. */
 export const UPLOADED_PROMPT = [
-  'Ya subí a Drive las fotos renombradas del lote de la pestaña «Renombrar fotos» (skill `photos`).',
+  'Ya subí a Drive las fotos renombradas del lote de la pestaña «Fotos» (skill `photos`).',
   'Actualiza Photo_links con las carpetas donde las subí y dime qué encontraste; cuando esté escrito, actualiza la Wings Gallery y los mapas.',
 ].join(' ');
 
 /**
- * The batches open in people's «Renombrar fotos» tabs, for one app.
+ * The batches open in people's «Fotos» tabs, for one app.
  *  - run(name, args, user): a tool.
  *  - handle({ method, path, body, query, user }): the tab's HTTP (null: not one of its paths).
  *  - active(user): whether the person's tab is open with a batch.

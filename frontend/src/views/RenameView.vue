@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
 import { Check, CloudUpload, Copy, ExternalLink, PanelRightClose, PanelRightOpen, Sparkles } from 'lucide-vue-next'
+const PhotoLinksPanel = defineAsyncComponent(() => import('../components/PhotoLinksPanel.vue'))
 import { api } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
 import { t } from '../lib/i18n'
@@ -21,8 +22,8 @@ import { ensureT3, t3Host } from '../lib/t3Host'
 defineOptions({ name: 'RenameView' })
 
 /**
- * «Renombrar fotos»: the wing photos of a folder on this computer named after the ID on each
- * one's envelope, before they are uploaded to Drive. The work is done by the Rename Photos app
+ * «Fotos», in two parts. «Renombrar»: the wing photos of a folder on this computer named after the
+ * ID on each one's envelope, before they are uploaded to Drive. The work is done by the Rename Photos app
  * in the frame (RenameHost over `slot`): it reads the IDs here, in the browser, and renames the
  * files in place. «Revisar con Claude» opens a chat of T3 Code beside it that starts with the
  * request to double-check the batch: the assistant looks at the envelopes it asks for, corrects
@@ -30,9 +31,15 @@ defineOptions({ name: 'RenameView' })
  * this page's own button.
  * The bar above the frame shows the way from the camera's files to the sheets, a step at a time,
  * with what to do now; once the photos are ready to upload it says where they go on Drive (the
- * folders of the nearest IDs' photos), and «Ya las subí» starts the chat that lists them in
- * Photo_links and updates the public sites.
+ * folders of the nearest IDs' photos), and «Ya las subí» reads those folders in the other part.
+ * «Photo_links y sitios» (PhotoLinksPanel): Photo_links brought up to date with Drive and the public
+ * sites updated, with the app's own buttons, as the sheet's menu did: no assistant needed.
  */
+/** The part shown, kept for the next visit. */
+const section = ref<'rename' | 'links'>(localStorage.getItem('fotos:section') === 'links' ? 'links' : 'rename')
+watch(section, now => localStorage.setItem('fotos:section', now))
+/** The folders «Ya las subí» has the Photo_links part read. */
+const preset = ref<{ folders: string[]; at: number } | null>(null)
 const slot = ref<HTMLElement>()
 const chatSlot = ref<HTMLElement>()
 const split = ref<HTMLElement>()
@@ -79,7 +86,7 @@ const hint = computed(() => {
     case 'upload':
       return t('Renombradas. Súbelas a Drive con Drive para escritorio:')
     default:
-      return t('El asistente actualiza Photo_links y los sitios en el chat.')
+      return t('En «Photo_links y sitios»: aplica lo que se leyó de Drive y luego actualiza la Wings Gallery.')
   }
 })
 /** Where the files go on Drive, asked once the batch has nothing waiting. */
@@ -98,7 +105,7 @@ async function askUpload() {
 watch(step, now => (now === 'rename' || now === 'upload') && void askUpload(), { immediate: true })
 
 function place() {
-  renameHost.slot = onScreen ? (slot.value ?? null) : null
+  renameHost.slot = onScreen && section.value === 'rename' ? (slot.value ?? null) : null
   if (onScreen) t3Host.slot = chat.value ? (chatSlot.value ?? null) : null
 }
 onActivated(() => {
@@ -116,7 +123,7 @@ onBeforeUnmount(() => {
   // Signed out: the next session starts without the frame until it opens this tab.
   Object.assign(renameHost, { started: false, slot: null, ready: false, state: null })
 })
-watch([slot, chatSlot, chat], place, { flush: 'post' })
+watch([slot, chatSlot, chat, section], place, { flush: 'post' })
 watch(dragging, now => {
   renameHost.passThrough = now
   t3Host.passThrough = now
@@ -130,13 +137,19 @@ async function showChat() {
   }
   chat.value = true
 }
-async function review(done = false) {
+/** «Ya las subí»: the Photo_links part reads the folders the files went to. */
+function uploadedNow() {
+  uploaded.value = renameHost.state?.folder ?? ''
+  const folders = [upload.value?.photos?.folder, upload.value?.rawFiles?.folder].filter((f): f is string => !!f)
+  section.value = 'links'
+  preset.value = folders.length ? { folders, at: Date.now() } : null
+}
+async function review() {
   asking.value = true
   prompt.value = ''
   try {
     await ensureT3()
-    const out = await api<{ chat: string | null; prompt: string }>('rename/review', { method: 'POST', body: done ? { step: 'uploaded' } : {} })
-    if (done) uploaded.value = renameHost.state?.folder ?? ''
+    const out = await api<{ chat: string | null; prompt: string }>('rename/review', { method: 'POST', body: {} })
     chat.value = true
     if (out.chat) t3Host.open = { thread: out.chat }
     else prompt.value = out.prompt
@@ -180,9 +193,24 @@ function resize(event: PointerEvent) {
 <template>
   <div class="flex h-full flex-col">
     <div class="border-b border-stone-200 bg-white text-sm">
-      <div class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 pt-1.5">
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 pt-1.5" :class="{ 'pb-1.5': section === 'links' }">
+        <!-- The tab's two parts. -->
+        <div class="flex shrink-0 rounded-md border border-stone-300 p-0.5 text-xs" role="tablist" data-sections>
+          <button
+            v-for="[key, label] in [['rename', $t('Renombrar')], ['links', $t('Photo_links y sitios')]] as const"
+            :key="key"
+            role="tab"
+            class="rounded px-2 py-0.5"
+            :class="section === key ? 'bg-emerald-700 font-medium text-white' : 'text-stone-600 hover:text-stone-900'"
+            :aria-selected="section === key"
+            :data-section="key"
+            @click="section = key"
+          >
+            {{ label }}
+          </button>
+        </div>
         <!-- The way from the camera's files to the sheets: done, now, to come. -->
-        <ol class="flex min-w-0 flex-wrap items-center gap-1" :aria-label="$t('Pasos')" data-steps>
+        <ol v-if="section === 'rename'" class="flex min-w-0 flex-wrap items-center gap-1" :aria-label="$t('Pasos')" data-steps>
           <li
             v-for="(name, i) in RENAME_STEPS"
             :key="name"
@@ -215,16 +243,16 @@ function resize(event: PointerEvent) {
             <template v-else-if="space.folderGb"> · {{ $t('esta carpeta: {gb} GB', { gb: space.folderGb }) }}</template>
           </span>
           <button
-            v-if="step === 'upload'"
+            v-if="section === 'rename' && step === 'upload'"
             class="btn-primary bg-emerald-700 px-3 py-1 hover:bg-emerald-800"
-            :disabled="asking"
-            :title="$t('Abre un chat que lista las fotos nuevas en Photo_links y después actualiza la Wings Gallery y los mapas')"
+            :title="$t('Lee en Drive las carpetas donde se subieron, para listarlas en Photo_links; después se actualizan los sitios')"
             data-uploaded
-            @click="review(true)"
+            @click="uploadedNow"
           >
-            <CloudUpload :size="15" /> {{ asking ? $t('Abriendo el chat…') : $t('Ya las subí: actualizar') }}
+            <CloudUpload :size="15" /> {{ $t('Ya las subí: actualizar') }}
           </button>
           <button
+            v-if="section === 'rename'"
             :class="step === 'review' ? 'btn-primary bg-emerald-700 px-3 py-1 hover:bg-emerald-800' : 'btn px-3 py-1'"
             :disabled="!canReview || asking"
             :title="
@@ -235,9 +263,10 @@ function resize(event: PointerEvent) {
             data-review
             @click="review()"
           >
-            <Sparkles :size="15" /> {{ asking && step !== 'upload' ? $t('Abriendo el chat…') : $t('Revisar con Claude') }}
+            <Sparkles :size="15" /> {{ asking ? $t('Abriendo el chat…') : $t('Revisar con Claude') }}
           </button>
           <button
+            v-if="section === 'rename'"
             class="btn-ghost"
             :title="chat ? $t('Ocultar el chat') : $t('Mostrar el chat del asistente')"
             :aria-pressed="chat"
@@ -249,7 +278,7 @@ function resize(event: PointerEvent) {
         </span>
       </div>
       <!-- What to do now, the batch in a line, and where its files go once they are ready. -->
-      <p class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-3 pt-0.5 pb-1.5 text-xs text-stone-600" data-now>
+      <p v-if="section === 'rename'" class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-3 pt-0.5 pb-1.5 text-xs text-stone-600" data-now>
         <span class="font-medium text-stone-800" data-hint>{{ hint }}</span>
         <template v-if="(step === 'upload' || step === 'rename') && upload">
           <template v-if="upload.photos">
@@ -275,7 +304,8 @@ function resize(event: PointerEvent) {
         <span v-if="line" class="ml-auto min-w-0 truncate text-stone-500" data-batch>{{ line }}</span>
       </p>
     </div>
-    <p v-if="renameHost.missing" class="p-4 text-sm text-stone-600" data-missing>
+    <PhotoLinksPanel v-if="section === 'links'" :preset="preset" class="min-h-0 flex-1" />
+    <p v-else-if="renameHost.missing" class="p-4 text-sm text-stone-600" data-missing>
       {{ $t('La app para renombrar fotos no está instalada en este servidor.') }}
       <a class="text-emerald-800 underline" href="https://fr4nzz.github.io/rename_photos_AI/" target="_blank" rel="noopener">{{
         $t('Ábrela en su propia página')

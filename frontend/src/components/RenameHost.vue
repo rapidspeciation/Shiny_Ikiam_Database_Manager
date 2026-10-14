@@ -5,7 +5,7 @@ import { blobBase64, renameHost, type RenameState } from '../lib/renameHost'
 
 /**
  * The Rename Photos app's frame for the whole session (lib/renameHost.ts): fixed over the
- * «Renombrar fotos» tab's slot, hidden (not unloaded) while another tab is open, so the folder
+ * «Fotos» tab's slot, hidden (not unloaded) while another tab is open, so the folder
  * and its readings stay.
  * It is also the link between that app and this one's server (server/rename-photos.mjs):
  *  - the workbook's IDs go to the frame (its reader's "is this ID in the database" rule);

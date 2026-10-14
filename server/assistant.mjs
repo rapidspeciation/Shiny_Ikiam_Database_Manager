@@ -424,7 +424,7 @@ const TOOLS = [
   ...INVITE_TOOLS,
   // Photo_links brought up to date with the photo folders on Drive, and those folders put in order (server/photo-links-tool.mjs).
   ...PHOTO_TOOLS,
-  // The batch of wing photos open in the person's «Renombrar fotos» tab, before it is renamed (server/rename-photos.mjs).
+  // The batch of wing photos open in the person's «Fotos» tab, before it is renamed (server/rename-photos.mjs).
   ...RENAME_TOOLS,
   // The public sites (the Wings Gallery, the maps) brought up to date with the workbook (server/site-updates.mjs).
   ...SITE_TOOLS,
@@ -852,10 +852,10 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   const invites = () => (invitations ??= createInvitations(store, mailerFromEnv()));
   // Photo_links against Google Drive (sync_photo_links): read and written by the app's thread only.
   const photoLinks = inWorker ? null : createPhotoLinksTool({ store, config, show: (reading, context) => showSync(reading, context), tell: (id, progress) => syncProgress(id, progress) });
-  // The batches open in people's «Renombrar fotos» tabs (rename_photos_*): the tabs talk to the app's thread.
+  // The batches open in people's «Fotos» tabs (rename_photos_*): the tabs talk to the app's thread.
   const renamePhotos = inWorker ? null : createRenamePhotos({ store, space: () => photoLinks.space(), ...(config.renamePhotos ?? {}) });
   // The public sites' updates on GitHub (update_websites).
-  const siteUpdates = inWorker ? null : createSiteUpdates({ tokenFile: config.githubTokenFile ?? null, ...(config.siteUpdates ?? {}) });
+  const siteUpdates = inWorker ? null : createSiteUpdates({ passwordFile: config.siteUpdatePasswordFile ?? null, ...(config.siteUpdates ?? {}) });
   /** A note in the person's conversation (T3 Code, Revisión de datos) of the proposals made there. */
   const insertMessage = (threadId, role, content, sources = [], results = [], proposals = []) => {
     const at = now();
@@ -3085,7 +3085,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         json(card),
         card.total ? 'pending' : 'discarded',
         at,
-        context ? 'ai' : 'person',
+        context && !context.person ? 'ai' : 'person',
         old.id,
       );
       changed(old.owner_id);
@@ -3095,8 +3095,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (!context || !card.total) return { id };
     db.prepare(
       `INSERT INTO ai_proposals (id,thread_id,owner_id,changes_json,reason,status,created_at,updated_at,last_by,
-       t3_thread,t3_title,t3_tool_use,sync_json) VALUES (?,?,?,'[]',?,'pending',?,?,'ai',?,?,?,?)`,
-    ).run(id, context.threadId, owner(context.user), title, at, at, chat?.id ?? null, chat?.title ?? null, context.t3?.toolUseId ?? null, json(card));
+       t3_thread,t3_title,t3_tool_use,sync_json) VALUES (?,?,?,'[]',?,'pending',?,?,?,?,?,?,?)`,
+    ).run(id, context.threadId, owner(context.user), title, at, at, context.person ? 'person' : 'ai', chat?.id ?? null, chat?.title ?? null, context.t3?.toolUseId ?? null, json(card));
     changed(owner(context.user));
     return { id, ...proposalLink(id, chat?.id ?? null) };
   }
@@ -5277,9 +5277,9 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   }
 
   async function handle({ method, path, body = {}, user, query = {}, page = null, headers = {} }) {
-    // The «Renombrar fotos» tab's own requests (server/rename-photos.mjs).
+    // The «Fotos» tab's own requests (server/rename-photos.mjs).
     if (path.startsWith('/api/rename/')) return (await renamePhotos?.handle({ method, path, body, query, user })) ?? null;
-    if (!/^\/api\/(chat|reports|knowledge|ai|proposals)(?:\/|$)/.test(path)) return null;
+    if (!/^\/api\/(chat|reports|knowledge|ai|proposals|photo-links|sites)(?:\/|$)/.test(path)) return null;
     if (!user || !owner(user)) return bad(401, 'unauthorized', 'Sign in to use the assistant.');
     const photoMatch = /^\/api\/proposals\/([0-9a-f-]{36})\/photos\/(\d{1,2})$/.exec(path);
     if (photoMatch && method === 'GET') return proposalPhoto(photoMatch[1], Number(photoMatch[2]), user, query, headers);
@@ -5558,10 +5558,43 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       });
       return { status: 200, body: { ...out, chat: proposal.t3_thread || null } };
     }
-    // The project account's space on Drive, for the «Renombrar fotos» tab's bar (null: no account set up, or Google not answering).
+    // The project account's space on Drive, for the «Fotos» tab's bar (null: no account set up, or Google not answering).
     if (path === '/api/chat/drive-space' && method === 'GET') {
       const space = EDITORS.includes(user.role) && photoLinks ? await photoLinks.space().catch(() => null) : null;
       return { status: 200, body: { space } };
+    }
+    // Photo_links from the «Fotos» tab, without the assistant: the folders it lists, and a reading of
+    // all or some of them (a card of Cambios propuestos, the person's own, applied from the tab).
+    if (path === '/api/photo-links/folders' && method === 'GET') {
+      if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot change the sheet.');
+      if (!photoLinks) return bad(503, 'unavailable', 'Call it again in a moment.');
+      return { status: 200, body: { folders: photoLinks.folders() } };
+    }
+    if (path === '/api/photo-links/read' && method === 'POST') {
+      if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot change the sheet.');
+      if (!photoLinks) return bad(503, 'unavailable', 'Call it again in a moment.');
+      const names = value => (Array.isArray(value) ? value : []).map(v => String(v).trim()).filter(Boolean);
+      const context = { threadId: namedThread(user, 'Photo_links'), user, person: true };
+      const out = await photoLinks.run({ only: names(body.only), add: names(body.add) }, user, context);
+      if (out.error) return bad(409, 'unavailable', out.error);
+      if (out.status === 'writing') return bad(409, 'busy', 'Photo_links ya se está escribiendo: espera a que termine.');
+      return {
+        status: 200,
+        body: { proposalId: out.upToDate ? null : out.scan, upToDate: !!out.upToDate, notFound: out.foldersNotFound ?? [], notListed: out.notListed ?? [] },
+      };
+    }
+    // The public sites' updates from the «Fotos» tab: how each went, and its buttons (update_websites without waiting).
+    if (path === '/api/sites' && method === 'GET') {
+      if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot update the sites.');
+      if (!siteUpdates) return bad(503, 'unavailable', 'Call it again in a moment.');
+      const out = await siteUpdates.run({ fresh: query.fresh === '1' }, user);
+      return out.error ? bad(502, 'github', out.error) : { status: 200, body: { ...out, ready: siteUpdates.ready() } };
+    }
+    if (path === '/api/sites/update' && method === 'POST') {
+      if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot update the sites.');
+      if (!siteUpdates) return bad(503, 'unavailable', 'Call it again in a moment.');
+      const out = await siteUpdates.run({ sites: body.sites, gbif: body.gbif === true }, user, { wait: false });
+      return out.error ? bad(409, 'not_started', out.error) : { status: 200, body: out };
     }
     // A reading of the photo folders (sync_photo_links): its rows, «Aplicar» and «Leer de nuevo».
     const syncMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/photo-links\/(rows|apply|refresh)$/.exec(path);
@@ -5803,7 +5836,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     tools: mcpTools,
     t3,
     sheetsCopy,
-    /** The batches open in people's «Renombrar fotos» tabs (null in a worker). */
+    /** The batches open in people's «Fotos» tabs (null in a worker). */
     renamePhotos,
     checkNeedsReview,
     /** A worker's word that a person's proposals changed: their pages waiting for the list are woken. */

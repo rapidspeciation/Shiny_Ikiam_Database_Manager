@@ -60,7 +60,7 @@ const MODEL = {
  * Makes a chat in a project through T3's own commands (with the app's T3 token,
  * server/index.mjs's sign-in links use it too): its id, or an error. Empty and called
  * "New thread", or with `title` and a first message from the person (`text`), which
- * the assistant starts answering at once (the «Renombrar fotos» tab's review).
+ * the assistant starts answering at once (the «Fotos» tab's review).
  */
 export function chatStarter({ local, tokenFile, fetchImpl = fetch } = {}) {
   if (!local || !tokenFile) return null;

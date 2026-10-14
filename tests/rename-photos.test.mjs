@@ -89,7 +89,7 @@ test('where a batch goes on Drive: the folders of the photos of the IDs nearest 
   assert.equal(uploadPlace([{ id: '', skip: false }], places), null);
 });
 
-/** A «Renombrar fotos» tab: it tells its batch, asks for work, and answers it as the frame's app would. */
+/** A «Fotos» tab: it tells its batch, asks for work, and answers it as the frame's app would. */
 function fakeTab(rename, user, { tab = 'tab-1', state = batch() } = {}) {
   const done = [];
   let open = true;
@@ -235,40 +235,38 @@ test('the Rename Photos app is served for the tab\'s frame, and the review asks 
     await app.close();
     rmSync(renameAppRoot, { recursive: true, force: true });
   }
-  assert.match(REVIEW_PROMPT, /Renombrar fotos/);
+  assert.match(REVIEW_PROMPT, /«Fotos»/);
   assert.match(UPLOADED_PROMPT, /Photo_links/);
 });
 
-test('update_websites: when each site was last updated, an update started and followed, its publishing', async () => {
+test('update_websites: when each site was last updated, an update started through its worker and followed, its publishing', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'site-updates-'));
-  const tokenFile = join(dir, 'token');
+  const passwordFile = join(dir, 'password');
   const kim = { id: 'kim', role: 'editor' };
-  // GitHub, as far as the tool uses it.
-  const hub = { calls: [], runs: { gallery: { update: [], deploy: [] }, maps: { update: [], deploy: [] } }, head: { gallery: { sha: 'aaa', commit: { message: 'Support moths' } }, maps: { sha: 'mmm', commit: { message: 'Field visits' } } } };
+  // GitHub and the two Cloudflare Workers, as far as the tool uses them.
+  const hub = { calls: [], runs: { gallery: { update: [], deploy: [] }, maps: { update: [], deploy: [] } } };
+  const keyOf = url => Object.keys(SITES).find(k => url === SITES[k].worker || url.includes(`/repos/${SITES[k].repo}/`));
   const fetchImpl = async (url, init = {}) => {
-    const path = url.replace('https://api.github.com', '');
-    const key = Object.keys(SITES).find(k => path.startsWith(`/repos/${SITES[k].repo}/`));
+    const key = keyOf(url);
     const method = init.method ?? 'GET';
-    hub.calls.push([method, key, path.replace(`/repos/${SITES[key].repo}`, ''), init.body ? JSON.parse(init.body) : null, init.headers.authorization ?? null]);
     const json = body => ({ ok: true, status: 200, json: async () => body, text: async () => '' });
-    const kind = /update_data/.test(path) ? 'update' : 'deploy';
-    if (method === 'POST') {
-      if (!init.headers.authorization) return { ok: false, status: 401, text: async () => 'Requires authentication' };
-      if (kind === 'update') {
-        // The run ends at once and commits new data.
-        hub.runs[key].update.unshift({ id: hub.runs[key].update.length + 1, status: 'completed', conclusion: 'success', created_at: '2026-10-14T01:00:00Z', updated_at: '2026-10-14T01:00:40Z', html_url: `https://github.com/run/${key}`, head_sha: hub.head[key].sha });
-        hub.head[key] = { sha: `${key}-data`, commit: { message: key === 'maps' ? '🔄 Auto-update database from Google Sheets/GBIF' : 'Auto-update database from Google Sheets' } };
-      } else hub.runs[key].deploy.unshift({ id: 9, status: 'queued', conclusion: null, created_at: '2026-10-14T01:01:00Z', html_url: 'https://github.com/run/deploy', head_sha: hub.head[key].sha });
-      return { ok: true, status: 204, json: async () => null, text: async () => '' };
+    if (url === SITES[key].worker) {
+      const body = JSON.parse(init.body);
+      hub.calls.push(['worker', key, body]);
+      if (body.password !== 'secret') return { ok: false, status: 401, text: async () => 'Invalid password' };
+      // The run ends at once, commits new data and starts the publishing.
+      hub.runs[key].update.unshift({ id: hub.runs[key].update.length + 10, status: 'completed', conclusion: 'success', created_at: '2026-10-14T01:00:00Z', updated_at: '2026-10-14T01:00:40Z', html_url: `https://github.com/run/${key}` });
+      hub.runs[key].deploy.unshift({ id: 99, status: 'in_progress', conclusion: null, created_at: '2026-10-14T01:00:41Z', html_url: `https://github.com/deploy/${key}` });
+      return { ok: true, status: 200, text: async () => 'Update triggered successfully' };
     }
-    if (/\/commits\/main$/.test(path)) return json(hub.head[key]);
-    return json({ workflow_runs: hub.runs[key][kind] });
+    hub.calls.push([method, key, url.replace(`https://api.github.com/repos/${SITES[key].repo}`, '')]);
+    return json({ workflow_runs: hub.runs[key][/update_data/.test(url) ? 'update' : 'deploy'] });
   };
   try {
-    hub.runs.gallery.update.push({ id: 1, status: 'completed', conclusion: 'success', created_at: '2026-02-24T15:39:28Z', updated_at: '2026-02-24T15:40:10Z', html_url: 'https://github.com/run/1', head_sha: 'old' });
-    hub.runs.gallery.deploy.push({ id: 2, status: 'completed', conclusion: 'success', created_at: '2026-09-29T05:05:30Z', updated_at: '2026-09-29T05:07:00Z', html_url: 'https://github.com/run/2', head_sha: 'aaa' });
-    // Without a token: the last runs are still told; starting one is not possible.
-    const reader = createSiteUpdates({ tokenFile, fetchImpl, waitMs: 200, stepMs: 5 });
+    hub.runs.gallery.update.push({ id: 1, status: 'completed', conclusion: 'success', created_at: '2026-02-24T15:39:28Z', updated_at: '2026-02-24T15:40:10Z', html_url: 'https://github.com/run/1' });
+    hub.runs.gallery.deploy.push({ id: 2, status: 'completed', conclusion: 'success', created_at: '2026-09-29T05:05:30Z', updated_at: '2026-09-29T05:07:00Z', html_url: 'https://github.com/run/2' });
+    // Without the password: the last runs are still told; starting one is not possible.
+    const reader = createSiteUpdates({ passwordFile, fetchImpl, waitMs: 200, stepMs: 5 });
     const seen = await reader.run({}, kim);
     assert.deepEqual(seen.sites[0], {
       site: 'Wings Gallery',
@@ -277,37 +275,33 @@ test('update_websites: when each site was last updated, an update started and fo
       publishing: { started: '2026-09-29T05:05:30Z', state: 'success', ended: '2026-09-29T05:07:00Z', link: 'https://github.com/run/2' },
     });
     assert.deepEqual(seen.sites[1], { site: 'Ithomiini maps', url: 'https://rapidspeciation.github.io/ithomiini_maps/', lastUpdate: 'never run' });
-    assert.match((await reader.run({ sites: ['gallery'] }, kim)).error, /no GitHub token/);
+    assert.equal(reader.ready(), false);
+    assert.match((await reader.run({ sites: ['gallery'] }, kim)).error, /no password/);
     assert.match((await reader.run({ sites: ['moths'] }, kim)).error, /gallery or maps/);
     assert.match((await reader.run({}, { role: 'viewer' })).error, /role/);
-    assert.ok(hub.calls.every(c => c[0] === 'GET' && c[4] === null));
+    assert.ok(hub.calls.every(c => c[0] === 'GET'));
 
-    // With it: the update is started, followed to its end, and the new data published.
-    writeFileSync(tokenFile, 'ghp_test\n');
-    const updates = createSiteUpdates({ tokenFile, fetchImpl, waitMs: 500, stepMs: 5 });
+    // With it: each worker is asked (the maps' with its repository and the GBIF choice), the run followed to its end, and its publishing told.
+    writeFileSync(passwordFile, 'secret\n');
+    const updates = createSiteUpdates({ passwordFile, fetchImpl, waitMs: 500, stepMs: 5 });
     hub.calls.length = 0;
     const out = await updates.run({ sites: ['gallery', 'maps'], gbif: true }, kim);
     assert.deepEqual(out.sites.map(s => [s.site, s.update.state, s.publishing.state]), [['Wings Gallery', 'success', 'running'], ['Ithomiini maps', 'success', 'running']]);
     assert.match(out.next, /Still running/);
-    const posts = hub.calls.filter(c => c[0] === 'POST');
-    assert.deepEqual(posts.map(c => [c[1], c[2], c[3], c[4]]).sort(), [
-      ['gallery', '/actions/workflows/deploy.yml/dispatches', { ref: 'main' }, 'Bearer ghp_test'],
-      ['gallery', '/actions/workflows/update_data.yml/dispatches', { ref: 'main' }, 'Bearer ghp_test'],
-      ['maps', '/actions/workflows/deploy.yml/dispatches', { ref: 'main' }, 'Bearer ghp_test'],
-      ['maps', '/actions/workflows/update_data.yml/dispatches', { ref: 'main', inputs: { update_sanger: 'true', update_gbif: 'true' } }, 'Bearer ghp_test'],
+    assert.deepEqual(hub.calls.filter(c => c[0] === 'worker').sort(), [
+      ['worker', 'gallery', { password: 'secret' }],
+      ['worker', 'maps', { password: 'secret', owner: 'rapidspeciation', repo: 'ithomiini_maps', update_sanger: true, update_gbif: true }],
     ]);
-    // Asked again: the publishing is the one already started, not another.
-    hub.calls.length = 0;
-    const later = await updates.run({}, kim);
-    assert.equal(later.sites[0].publishing.state, 'running');
-    assert.equal(hub.calls.filter(c => c[0] === 'POST').length, 0);
     // An update already running is not started twice.
-    hub.runs.maps.update.unshift({ id: 50, status: 'in_progress', conclusion: null, created_at: '2026-10-14T02:00:00Z', html_url: 'https://github.com/run/50', head_sha: 'x' });
+    hub.runs.maps.update.unshift({ id: 50, status: 'in_progress', conclusion: null, created_at: '2026-10-14T02:00:00Z', html_url: 'https://github.com/run/50' });
+    hub.calls.length = 0;
     const busy = await updates.run({ sites: ['maps'] }, kim);
     assert.match(busy.sites[0].update.note, /already running/);
-    // GitHub refusing the token.
-    const refused = createSiteUpdates({ tokenFile, fetchImpl: async () => ({ ok: false, status: 403, text: async () => 'Resource not accessible' }) });
-    assert.match((await refused.run({ sites: ['gallery'] }, kim)).error, /GitHub refused \(403\)/);
+    assert.equal(hub.calls.filter(c => c[0] === 'worker').length, 0);
+    // A wrong password.
+    writeFileSync(passwordFile, 'old\n');
+    const refused = await updates.run({ sites: ['gallery'] }, kim);
+    assert.match(refused.sites[0].error, /refused the password/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

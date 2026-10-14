@@ -128,7 +128,7 @@ Insectary ID».
 | `data-rules` | how the team records each kind of row: before drafting new rows or corrections, or when a value looks odd |
 | `digitalizar-cuaderno` | a photo of a notebook page, envelope or label to type into the workbook |
 | `monitoring` | Wikiloc walks and captures on the Ikiam transects, marks, recaptures, the 30-preserved rule, weather codes |
-| `photos` | wing photos: naming the files and double-checking a batch in the «Renombrar fotos» tab before it is renamed, the Drive folders and putting them in order (renaming, moving, removing duplicates), updating Photo_links so the sheets show them, updating the Wings Gallery and the maps, which photos are missing, space on Drive |
+| `photos` | wing photos: naming the files and double-checking a batch in the «Fotos» tab before it is renamed, the Drive folders and putting them in order (renaming, moving, removing duplicates), updating Photo_links so the sheets show them, updating the Wings Gallery and the maps, which photos are missing, space on Drive |
 | `data-review` | working through the data's inconsistencies, the corrections agreed or suggested in Revisión, the alerts |
 | `historial` | who changed what and when; undoing a save |
 | `google-account` | the project's Gmail, Calendar, or a Drive file that is not among the project documents |

@@ -489,6 +489,43 @@ test('a reading is a card of Cambios propuestos: its rows, «Aplicar» with a fo
   }
 });
 
+test('the «Fotos» tab reads Photo_links without the assistant: the folders listed, a reading of some, its card applied', async () => {
+  const { sheets, store } = await fixture();
+  const assistant = createAssistant({ store, config: { drive: new LocalDrive(drive()) } });
+  const kim = { id: 'kim', username: 'kim', role: 'editor' };
+  const http = (method, path, body = {}) => assistant.handle({ method, path, user: kim, query: {}, body });
+  try {
+    // The folders the sheet lists, with the files under each.
+    const { folders } = (await http('GET', '/api/photo-links/folders')).body;
+    assert.ok(folders.length);
+    assert.ok(folders.every(f => typeof f.path === 'string' && typeof f.files === 'number'));
+    assert.equal((await assistant.handle({ method: 'GET', path: '/api/photo-links/folders', user: { id: 'v', role: 'viewer' }, query: {}, body: {} })).status, 403);
+
+    // A reading of a folder to start listing: the person's own card, in Cambios propuestos.
+    const read = await http('POST', '/api/photo-links/read', { add: ['Insectary'] });
+    assert.equal(read.status, 200);
+    const card = (await http('GET', '/api/chat/proposals')).body.proposals.find(p => p.id === read.body.proposalId);
+    assert.equal(card.kind, 'photo_links');
+    assert.equal(card.status, 'pending');
+    assert.equal(card.lastBy, 'person');
+    // Read again from the tab: the same card.
+    assert.equal((await http('POST', '/api/photo-links/read', { add: ['Insectary'] })).body.proposalId, read.body.proposalId);
+
+    // Applied from the card, then nothing is left.
+    assert.equal((await http('POST', `/api/chat/proposals/${card.id}/photo-links/apply`, {})).status, 202);
+    for (let i = 0; i < 200 && anyApplying(store); i++) await new Promise(r => setTimeout(r, 10));
+    assert.equal(store.db.prepare('SELECT status FROM ai_proposals WHERE id = ?').get(card.id).status, 'applied');
+    assert.ok(Object.keys(cellsOf(sheets, 6)).length);
+    const again = await http('POST', '/api/photo-links/read', { add: ['Insectary'] });
+    assert.deepEqual([again.body.proposalId, again.body.upToDate], [null, true]);
+    // A folder Drive does not have.
+    assert.deepEqual((await http('POST', '/api/photo-links/read', { only: ['Nowhere_2030'] })).body.notFound, ['Nowhere_2030']);
+  } finally {
+    store.close();
+  }
+});
+const anyApplying = store => !!store.db.prepare("SELECT 1 FROM ai_proposals WHERE status = 'applying'").get();
+
 test('a card whose rows are no longer kept is read again from its button', async () => {
   const { store } = await fixture();
   const assistant = createAssistant({ store, config: { drive: new LocalDrive(drive()) } });

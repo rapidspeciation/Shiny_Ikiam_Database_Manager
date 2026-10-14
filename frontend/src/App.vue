@@ -17,7 +17,7 @@ import { useTables } from './stores/tables'
 
 // Loaded with the Asistente tab, not before.
 const T3Host = defineAsyncComponent(() => import('./components/T3Host.vue'))
-// Loaded with the Renombrar fotos tab, and kept like T3's frame.
+// Loaded with the Fotos tab, and kept like T3's frame.
 const RenameHost = defineAsyncComponent(() => import('./components/RenameHost.vue'))
 const session = useSession()
 const route = useRoute()

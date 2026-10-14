@@ -33,9 +33,11 @@ Signing out keeps unsaved changes on that device for next time.
 
 Every save, with selective undo: skill **historial**.
 
-## Renombrar fotos — `#/renombrar` (editors)
+## Fotos — `#/fotos` (editors)
 
-The Rename Photos app inside this one (skill `photos`): «Open folder» picks
+Two parts, switched at the top left: «Renombrar» and «Photo_links y sitios».
+
+«Renombrar» is the Rename Photos app inside this one (skill `photos`): «Open folder» picks
 the folder of wing photos on the computer, «Run PaddleOCR» reads the CAM_ID
 on each envelope there, in the browser (about a second a photo; the reader's
 files, 24 MB, download the first time). «Rename» renames the files in place,
@@ -58,8 +60,16 @@ RAW files with their JPG.
   copies.
 - **Where the files go**: once nothing waits, the line under the steps names
   the Drive folder for the photos and the one for the RAW files, with their
-  links; after renaming, «Uploaded: update» opens a chat that lists the new
-  photos in Photo_links and then updates the Wings Gallery and the maps.
+  links; after renaming, «Uploaded: update» opens «Photo_links y sitios»
+  with those folders being read.
+- **«Photo_links y sitios»**, without the assistant (what the sheet's menu
+  «📷 Photo Database Tools» did): «Read Drive» reads all the listed folders,
+  only the ones ticked (quicker; the search box finds folders inside), or a
+  new one by its Drive link, and shows the same card the chat would, with
+  «Apply». Rows follow files renamed, deleted or copied to another account.
+  Below, the Wings Gallery and the maps: when each last took the data, how
+  its publishing went, and «Update the site» (the maps can also download
+  GBIF and iNaturalist again).
 
 - **«Revisar con Claude»** (once a folder is read) opens a chat of T3 beside
   the photos that starts with the request to double-check the batch. The

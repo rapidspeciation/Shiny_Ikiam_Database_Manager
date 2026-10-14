@@ -2,7 +2,7 @@ import { reactive } from 'vue'
 import { tn, t } from './i18n'
 
 /**
- * The «Renombrar fotos» tab's frame: the Rename Photos app (github.com/Fr4nzz/rename_photos_AI,
+ * The «Fotos» tab's frame: the Rename Photos app (github.com/Fr4nzz/rename_photos_AI,
  * built for this site and served from rename-app/), which reads the IDs on the envelopes of a
  * folder of wing photos on the person's computer and renames the files after them.
  * Like T3's (lib/t3Host.ts), the frame lives for the whole session once the tab was opened
@@ -146,4 +146,34 @@ export async function blobBase64(blob: Blob): Promise<string> {
   let binary = ''
   for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
   return btoa(binary)
+}
+
+/** A run of a public site's workflow on GitHub, as the server tells it (server/site-updates.mjs). */
+export interface SiteRun {
+  started?: string
+  ended?: string
+  /** 'running', or how it ended: 'success', 'failure', 'cancelled'… */
+  state: string
+  link?: string
+  note?: string
+}
+export interface SiteStatus {
+  site: string
+  url: string
+  lastUpdate?: SiteRun | 'never run'
+  update?: SiteRun
+  publishing?: SiteRun
+  error?: string
+}
+export interface SitesAnswer {
+  sites: SiteStatus[]
+  ready: boolean
+}
+/** How a run went, in a word. */
+export function siteRunLabel(state: string): string {
+  if (state === 'running') return t('en curso')
+  if (state === 'success') return t('bien')
+  if (state === 'failure') return t('falló')
+  if (state === 'cancelled') return t('cancelada')
+  return state
 }

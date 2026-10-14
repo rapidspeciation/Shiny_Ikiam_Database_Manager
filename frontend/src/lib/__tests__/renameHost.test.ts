@@ -15,7 +15,7 @@ const state = (extra: Partial<RenameState> = {}): RenameState => ({
   ...extra,
 })
 
-describe('the batch of the Renombrar fotos tab', () => {
+describe('the batch of the Fotos tab', () => {
   it('counts the photos waiting for a person, without the skipped ones', () => {
     expect(batchCounts(state())).toEqual({ photos: 4, waiting: 1, withoutId: 1, byAssistant: 1, renamed: 0 })
     expect(batchCounts(null)).toEqual({ photos: 0, waiting: 0, withoutId: 0, byAssistant: 0, renamed: 0 })

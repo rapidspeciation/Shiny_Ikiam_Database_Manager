@@ -32,7 +32,7 @@ export const MAIN_TOOLS = new Set([
   'organize_photos',
   // It asks Google for the project account's space.
   'drive_space',
-  // They reach the person's «Renombrar fotos» tab, which talks to the app's thread (server/rename-photos.mjs).
+  // They reach the person's «Fotos» tab, which talks to the app's thread (server/rename-photos.mjs).
   'rename_photos_read',
   'rename_photos_look',
   'rename_photos_edit',

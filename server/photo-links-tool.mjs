@@ -719,11 +719,33 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
     });
   }
 
+  /**
+   * The folders Photo_links lists, for the «Fotos» tab to choose which to read: [{ path, link, files }]
+   * (`files`: the rows of files in it and in the folders inside it), in the order of their paths.
+   */
+  function folders() {
+    const rows = photoLinkRows(store);
+    const out = rows
+      .filter(r => r.values.Type === 'Folder' && r.values['Full Path'])
+      .map(r => ({ path: String(r.values['Full Path']).trim(), link: String(r.values.URL ?? '').trim(), files: 0 }));
+    const byPath = new Map(out.map(f => [f.path, f]));
+    for (const r of rows) {
+      if (r.values.Type !== 'File') continue;
+      const parts = String(r.values['Full Path'] ?? '').split('/').slice(0, -1);
+      for (let n = parts.length; n > 0; n--) {
+        const f = byPath.get(parts.slice(0, n).join('/'));
+        if (f) f.files++;
+      }
+    }
+    return out.sort((a, b) => a.path.localeCompare(b.path));
+  }
+
   return {
     run,
     organize,
     space,
     driveSpace,
+    folders,
     /** The card's «Aplicar»: { status: 'applying' } once it has started, or { error, code }. */
     apply(id, user, { skip = [] } = {}) {
       const started = start(id, user, list(skip), true);

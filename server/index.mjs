@@ -110,7 +110,7 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const webRoot = resolve(here, '../web');
-/** The Rename Photos app built for this site (scripts/build-rename-app.sh), shown in the «Renombrar fotos» tab. */
+/** The Rename Photos app built for this site (scripts/build-rename-app.sh), shown in the «Fotos» tab. */
 const renameAppRoot = resolve(here, '../rename-app');
 const now = () => new Date().toISOString();
 const gzipAsync = promisify(gzip);
@@ -249,9 +249,9 @@ export function configFromEnv(env = process.env) {
     // The Google account that changes files on Drive when the assistant puts the photo folders in order
     // (organize_photos, server/drive.mjs driveWriterFor): the project's own, an editor of those folders.
     driveCredentialsFile: env.GOOGLE_DRIVE_CREDENTIALS_FILE || undefined,
-    // The GitHub token that may run the two public sites' update workflows (update_websites, server/site-updates.mjs).
-    githubTokenFile: env.GITHUB_ACTIONS_TOKEN_FILE || undefined,
-    // Where the Rename Photos app's build is (the «Renombrar fotos» tab's frame); rename-app/ beside the server by default.
+    // The password of the Cloudflare Workers that start the two public sites' updates (update_websites, server/site-updates.mjs).
+    siteUpdatePasswordFile: env.SITE_UPDATE_PASSWORD_FILE || undefined,
+    // Where the Rename Photos app's build is (the «Fotos» tab's frame); rename-app/ beside the server by default.
     renameAppRoot: env.RENAME_APP_ROOT ? resolve(env.RENAME_APP_ROOT) : undefined,
     // The team's sheet where another account does its part of a plan (server/transfer-sheet.mjs); the team's own by default.
     transferSheetId: env.TRANSFER_SHEET_ID || undefined,
@@ -1336,7 +1336,7 @@ export async function createApp(config = {}, options = {}) {
           chat: own?.chat ?? null,
         });
       }
-      // The «Renombrar fotos» tab's review: a chat of the person's own T3 project that starts with the request to
+      // The «Fotos» tab's review: a chat of the person's own T3 project that starts with the request to
       // check the batch open in the tab (server/rename-photos.mjs). Without T3, the request comes back to be pasted.
       if (method === 'POST' && path === '/api/rename/review') {
         requireEditor(user);
@@ -1591,7 +1591,7 @@ async function t3Pairing(t3, user) {
 
 /**
  * The Rename Photos app's built files (`root`: rename-app/, config.renameAppRoot for tests), for the
- * frame of the «Renombrar fotos» tab: only this site may frame them, its reader runs WebAssembly
+ * frame of the «Fotos» tab: only this site may frame them, its reader runs WebAssembly
  * in workers, and its other reader (Gemini, with the person's own key) calls Google.
  */
 function serveRenameApp(req, res, path, root = renameAppRoot) {

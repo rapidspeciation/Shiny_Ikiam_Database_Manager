@@ -13,8 +13,8 @@ export const tabs = [
   { path: '/clutches', name: 'clutches', label: 'Clutches', component: () => import('./views/ClutchesView.vue') },
   { path: '/censo', name: 'census', label: 'Censo', component: () => import('./views/CensusView.vue') },
   { path: '/historial', name: 'history', label: 'Historial', component: () => import('./views/HistoryView.vue') },
-  // Wing photos named after the ID on their envelope, on the person's computer, before they are uploaded.
-  { path: '/renombrar', name: 'rename', label: 'Renombrar fotos', editors: true, component: () => import('./views/RenameView.vue') },
+  // The wing photos: named after the ID on their envelope on the person's computer, then listed in Photo_links and on the sites.
+  { path: '/fotos', name: 'rename', label: 'Fotos', editors: true, component: () => import('./views/RenameView.vue') },
   { path: '/asistente', name: 'assistant', label: 'Asistente', component: () => import('./views/AssistantView.vue') },
   // Not a daily task: last.
   { path: '/revision', name: 'review', label: 'Revisión', editors: true, component: () => import('./views/RevisionView.vue') },
@@ -31,6 +31,8 @@ export const router = createRouter({
     { path: '/', redirect: '/inicio' },
     // The tab was called Posturas.
     { path: '/posturas', redirect: '/clutches' },
+    // The tab was called Renombrar fotos.
+    { path: '/renombrar', redirect: '/fotos' },
     ...tabs.map(({ path, name, component }) => ({ path, name, component })),
     { path: '/usuarios', name: 'users', component: () => import('./views/UsersView.vue') },
     // Notebook photos are digitized in the Asistente tab (T3 Code); old links to the digitizer land there.

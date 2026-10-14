@@ -1,6 +1,6 @@
 ---
 name: photos
-description: The photos of the butterflies' wings, from the camera to the workbook — naming the files after the CAM_ID (the Rename Photos app, the app's «Rename photos» tab) and double-checking a batch before it is renamed (rename_photos_read, rename_photos_look, rename_photos_edit), the folders on Google Drive and putting them in order (organize_photos: rename, move, remove duplicates, make folders, shortcuts), the Photo_links sheet that Photo_dorsal and Photo_ventral read (sync_photo_links), and moving the photos to another account to free space, and bringing the Wings Gallery and the maps up to date (update_websites). Use it when the person uploaded, renamed, moved or deleted photos, asks to update Photo_links or the photo links, says a photo shows Not Found or the wrong butterfly, asks which photos are missing, how to rename photos, where to put them, to tidy or delete photos on Drive, about the Drive space running out, about the Wings Gallery or the maps not showing new data, or presses «Review with Claude» in the «Rename photos» tab.
+description: The photos of the butterflies' wings, from the camera to the workbook — naming the files after the CAM_ID (the Rename Photos app, the app's «Photos» tab) and double-checking a batch before it is renamed (rename_photos_read, rename_photos_look, rename_photos_edit), the folders on Google Drive and putting them in order (organize_photos: rename, move, remove duplicates, make folders, shortcuts), the Photo_links sheet that Photo_dorsal and Photo_ventral read (sync_photo_links), and moving the photos to another account to free space, and bringing the Wings Gallery and the maps up to date (update_websites). Use it when the person uploaded, renamed, moved or deleted photos, asks to update Photo_links or the photo links, says a photo shows Not Found or the wrong butterfly, asks which photos are missing, how to rename photos, where to put them, to tidy or delete photos on Drive, about the Drive space running out, about the Wings Gallery or the maps not showing new data, or presses «Review with Claude» in the «Photos» tab.
 ---
 
 # Wing photos and Photo_links
@@ -15,13 +15,14 @@ description: The photos of the butterflies' wings, from the camera to the workbo
    Photos app (below).
 3. **Upload** them to the project's Drive folder «Photos», into the folder of
    their collection (below).
-4. **List** them in the Photo_links sheet: `sync_photo_links`.
+4. **List** them in the Photo_links sheet: `sync_photo_links`, or «Read
+   Drive» in the «Photos» tab's «Photo_links y sitios».
 5. The sheets then show them: Photo_dorsal and Photo_ventral of
    Collection_data, Insectary_data and CRISPR are formulas that look the
    file's name up in Photo_links and link to it. The Wings Gallery
    (https://rapidspeciation.github.io/Shiny_Ikiam_Wings_Gallery/) reads the
-   same sheets when its data is updated: `update_websites` (or its own
-   «Update DB» tab).
+   same sheets when its data is updated: `update_websites` (or the
+   «Photos» tab, or the gallery's own «Update DB» tab).
 
 Photos that are on Drive but not yet in Photo_links show `NOT FOUND`
 (`Not Found` in Collection_data) in their row: step 4 is what makes them
@@ -88,7 +89,7 @@ Everything is under «Photos»:
 
 ## The Rename Photos app
 
-It is the app's «Rename photos» tab (and, for people without an account,
+It is the «Renombrar» part of the app's «Photos» tab (and, for people without an account,
 https://fr4nzz.github.io/rename_photos_AI/). It runs in the person's
 browser, on the photos in a folder of their computer, before they are
 uploaded: the photos stay on the computer and it needs no key. Chrome or
@@ -127,7 +128,7 @@ https://github.com/Fr4nzz/rename_photos_AI.
 
 ## Reviewing a batch before it is renamed
 
-The person pressed «Review with Claude» in the «Rename photos» tab, or asks
+The person pressed «Review with Claude» in the «Photos» tab, or asks
 you to check the photos they are renaming. The tab is your hands: it stays
 open on their computer, and the three tools read the batch from it, get
 pictures of the photos you ask for, and correct its rows. Renaming is their
@@ -177,9 +178,9 @@ own click («Rename», or «Rename & rotate») once the batch is right.
   folder does not fit (`fits`), or the Drive is `nearlyFull`, say so before
   they start uploading and offer to free space (below, «Moving the photos to
   another account»).
-- Offer the rest of the way: once they say the upload is done,
-  `sync_photo_links` lists the new files, then `update_websites` brings the
-  Wings Gallery and the maps up to date.
+- The rest of the way: once the upload is done, «Uploaded: update» in the
+  tab reads those folders for Photo_links, and the same part of the tab
+  updates the sites; or `sync_photo_links`, then `update_websites`, here.
 
 ## Updating the sites
 
