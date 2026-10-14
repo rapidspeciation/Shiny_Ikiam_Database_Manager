@@ -11,14 +11,24 @@
 // rename, move, trash, untrash, createFolder and createShortcut answer the item as it is afterwards;
 // delete removes a file for good (the account's own only); about() answers the account and its space:
 // { account, limit, used, inBin } in bytes (limit null: no limit); owned() every file the account owns.
+// The writer also reads a file's bytes (download(id, path): written to that path; the reader's login
+// sees only the files' details) and replaces them (replaceContent(id, bytes, mimeType): the same file,
+// its link and ID kept; server/drive-photos.mjs turns photos so).
 
-import { existsSync, readFileSync } from 'node:fs';
+import { createWriteStream, existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
+import { copyFile } from 'node:fs/promises';
+import { Readable, Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
 export const FOLDER = 'application/vnd.google-apps.folder';
 const SHORTCUT = 'application/vnd.google-apps.shortcut';
 const FIELDS =
   'id,name,mimeType,webViewLink,createdTime,description,size,trashed,ownedByMe,owners(emailAddress),imageMediaMetadata(time),parents';
 const API = 'https://www.googleapis.com/drive/v3/files';
+const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
+/** A file larger than this is not downloaded (a photo is some MB, a RAW file some tens). */
+const MAX_DOWNLOAD = 200 * 2 ** 20;
 const ABOUT = 'https://www.googleapis.com/drive/v3/about';
 const TIMEOUT_MS = 60_000;
 
@@ -115,6 +125,34 @@ export class GoogleDrive {
   /** Deleted for good, skipping the bin: its space is free at once, and it cannot be brought back. */
   async delete(id) {
     await this.request(`${API}/${encodeURIComponent(id)}?supportsAllDrives=true`, { method: 'DELETE' });
+  }
+  async download(id, path, { maxBytes = MAX_DOWNLOAD } = {}) {
+    const response = await this.fetch(`${API}/${encodeURIComponent(id)}?alt=media&supportsAllDrives=true`, {
+      headers: { authorization: `Bearer ${await this.token()}` },
+      signal: AbortSignal.timeout(10 * 60_000),
+    });
+    this.requests++;
+    if (!response.ok) throw Object.assign(new Error(`Google Drive ${response.status}: the file could not be read`), { status: response.status });
+    let bytes = 0;
+    const bounded = new Transform({
+      transform(chunk, _encoding, done) {
+        bytes += chunk.length;
+        done(bytes > maxBytes ? new Error('The file is larger than the app downloads') : null, chunk);
+      },
+    });
+    await pipeline(Readable.fromWeb(response.body), bounded, createWriteStream(path, { mode: 0o600 }));
+    return bytes;
+  }
+  async replaceContent(id, bytes, mimeType) {
+    const response = await this.fetch(`${UPLOAD}/${encodeURIComponent(id)}?uploadType=media&supportsAllDrives=true&fields=${encodeURIComponent(FIELDS)}`, {
+      method: 'PATCH',
+      headers: { authorization: `Bearer ${await this.token()}`, 'content-type': mimeType || 'application/octet-stream' },
+      body: bytes,
+      signal: AbortSignal.timeout(10 * 60_000),
+    });
+    this.requests++;
+    if (!response.ok) throw Object.assign(new Error(`Google Drive ${response.status}: ${(await response.text()).slice(0, 200)}`), { status: response.status });
+    return response.json();
   }
   /** Every file the account owns, anywhere in its Drive: [{ name, size, parent }] (what takes its space). */
   async owned() {
@@ -228,6 +266,23 @@ export class LocalDrive {
   async createShortcut(target, name, parent) {
     return this.make({ name, mimeType: SHORTCUT, shortcutDetails: { targetId: target }, parents: [parent] });
   }
+  /** A file's bytes: those written last, else its `localPath` (a lab's photos on disk). */
+  async download(id, path) {
+    this.requests++;
+    const item = this.existing(id);
+    const held = this.contents?.get(id);
+    if (held) writeFileSync(path, held, { mode: 0o600 });
+    else if (item.localPath) await copyFile(item.localPath, path);
+    else throw Object.assign(new Error('This copy of Drive has no bytes for that file'), { status: 404 });
+    return held?.length ?? Number(item.size) ?? 0;
+  }
+  async replaceContent(id, bytes) {
+    this.requests++;
+    const item = this.existing(id);
+    (this.contents ??= new Map()).set(id, Buffer.from(bytes));
+    item.size = String(bytes.length);
+    return this.seen(item);
+  }
   async delete(id) {
     this.requests++;
     const item = this.existing(id);
@@ -277,8 +332,31 @@ function tokenFrom(file) {
 const locals = new WeakMap();
 function localDrive(store, config) {
   if (!config.driveListingFile || !existsSync(config.driveListingFile)) return null;
-  if (!locals.has(store)) locals.set(store, new LocalDrive(config.driveListingFile, { me: config.driveAccount || null }));
+  if (!locals.has(store)) {
+    const drive = new LocalDrive(config.driveListingFile, { me: config.driveAccount || null });
+    if (config.driveLocalPhotos) addLocalPhotos(drive, config.driveLocalPhotos);
+    locals.set(store, drive);
+  }
   return locals.get(store);
+}
+/**
+ * A folder of photos on this computer shown as a Drive folder of the listing ({ dir, under }: inside the
+ * folder of that name), as if someone had uploaded them without renaming: the lab's Drive review.
+ */
+function addLocalPhotos(drive, { dir, under }) {
+  if (!dir || !existsSync(dir)) return;
+  const parent = [...drive.items.values()].find(f => f.mimeType === FOLDER && f.name === under);
+  if (!parent) return;
+  const owner = parent.owners ?? [{ emailAddress: drive.me ?? 'photos@example.org' }];
+  const folder = drive.make({ name: `Upload_${basename(dir)}`, mimeType: FOLDER, parents: [parent.id], owners: owner });
+  folder.webViewLink = `https://drive.google.com/drive/folders/${folder.id}`;
+  for (const name of readdirSync(dir).sort()) {
+    const path = join(dir, name);
+    const info = statSync(path);
+    if (!info.isFile()) continue;
+    const file = drive.make({ name, mimeType: /\.jpe?g$/i.test(name) ? 'image/jpeg' : 'application/octet-stream', parents: [folder.id], owners: owner, size: String(info.size) });
+    Object.assign(file, { localPath: path, webViewLink: `https://drive.google.com/file/d/${file.id}/view`, createdTime: info.mtime.toISOString() });
+  }
 }
 /** The Drive reader of a store: the app's Google login, or the recorded listing of a local copy (null without one). */
 export function driveFor(store, config = {}) {

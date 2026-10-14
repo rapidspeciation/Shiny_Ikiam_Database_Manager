@@ -88,6 +88,8 @@ env_app=(
   DRIVE_LISTING_FILE="$LAB/drive-listing.json"
   # The account that changes files in that listing (organize_photos): it owns the files of this owner, as on Drive.
   DRIVE_ACCOUNT="jmithominii@gmail.com"
+  # The test photos shown as a folder of camera-named photos uploaded to Drive (drive_photos: server/drive-photos.mjs).
+  DRIVE_LOCAL_PHOTOS="${LAB_UPLOAD_PHOTOS:-$LAB/test-batch}"
   APP_HOST=127.0.0.1
   APP_PORT="$PORT"
   APP_BASE_PATH=/

@@ -59,10 +59,11 @@ release="$(date -u +%Y%m%dT%H%M%SZ)"
 on_server "mkdir -p /home/ubuntu/ithomiini/releases/$release /home/ubuntu/ithomiini/shared /home/ubuntu/.config/systemd/user"
 # frontend/src/lib goes too: the assistant's Wikiloc tools run the monitoring code of the app (server/walks.mjs).
 tar --exclude='tools/wikiloc/node_modules' --exclude='tools/wikiloc/venv' --exclude='tools/wikiloc/__pycache__' -czf - server web docs assistant package.json rename-app.commit deploy scripts licenses PRODUCT.md DESIGN.md frontend/src/lib tools/wikiloc | on_server "tar -xzf - -C /home/ubuntu/ithomiini/releases/$release"
-# The Rename Photos app of the «Renombrar fotos» tab (scripts/build-rename-app.sh, from the commit in rename-app.commit):
-# built in shared/ when that commit changed (44 MB, mostly the reader's models) and linked from the release.
+# The Rename Photos app of the «Fotos» tab (scripts/build-rename-app.sh, from the commit in rename-app.commit), and its
+# reader for photos on Drive (photo-reader/, server/drive-photos.mjs): built in shared/ when that commit changed and
+# linked from the release.
 # Without it (its commit not on GitHub yet, no network) the deploy goes on and the tab says the app is not installed.
-on_server "set -u; cd /home/ubuntu/ithomiini; node=\$(sed -n 's/^ExecStart=\([^ ]*\/node\) .*/\1/p' releases/$release/deploy/ithomiini.service); export PATH=\"\$(dirname \"\$node\"):\$PATH\"; base=\$(sed -n 's/^APP_BASE_PATH=//p' /home/ubuntu/.config/ithomiini/service.env | tail -n 1); if APP_BASE_PATH=\"\${base:-/}\" bash releases/$release/scripts/build-rename-app.sh /home/ubuntu/ithomiini/shared/rename-app; then ln -sfn /home/ubuntu/ithomiini/shared/rename-app releases/$release/rename-app; else echo 'Rename Photos app not built: the Renombrar fotos tab will say it is not installed.' >&2; fi"
+on_server "set -u; cd /home/ubuntu/ithomiini; node=\$(sed -n 's/^ExecStart=\([^ ]*\/node\) .*/\1/p' releases/$release/deploy/ithomiini.service); export PATH=\"\$(dirname \"\$node\"):\$PATH\"; base=\$(sed -n 's/^APP_BASE_PATH=//p' /home/ubuntu/.config/ithomiini/service.env | tail -n 1); if APP_BASE_PATH=\"\${base:-/}\" bash releases/$release/scripts/build-rename-app.sh /home/ubuntu/ithomiini/shared/rename-app /home/ubuntu/ithomiini/shared/photo-reader; then ln -sfn /home/ubuntu/ithomiini/shared/rename-app releases/$release/rename-app; ln -sfn /home/ubuntu/ithomiini/shared/photo-reader releases/$release/photo-reader; else echo 'Rename Photos app not built: the Renombrar fotos tab will say it is not installed.' >&2; fi"
 # Never restart in the middle of a save: wait while a proposal is being applied, a save is being written
 # or a save's outcome is still unknown (server /health `writing`). The app itself also finishes saves in
 # progress when it is stopped (SIGTERM). DEPLOY_FORCE=1 deploys anyway (e.g. Google down for long).

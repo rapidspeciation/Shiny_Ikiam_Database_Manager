@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { readOrientation } from '../server/orientation.mjs';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { FOLDER, GoogleDrive, LocalDrive, driveTree } from '../server/drive.mjs';
@@ -135,6 +139,69 @@ test('a plan: files by path or name, a RAW file with its photo, a folder made an
   assert.deepEqual(await undoFileChanges(local, plan.ops), { undone: 6, failed: 0 });
   const back = await driveTree(local, [id(1)]);
   assert.deepEqual([...back.values()].filter(f => f.parent === id(4)).map(f => f.name).sort(), ['CAM000001_d.jpg', 'CAM000002d.JPG', 'CAM000003d.JPG', 'CAM000004d.JPG']);
+});
+
+test('a photo turned by its orientation tag, its RAW file too, beside a rename; the same files; taken back', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'photo-turn-'));
+  try {
+    // A JPEG and a TIFF-based RAW file, each with its orientation tag (upright).
+    const tiff = () => {
+      const out = new Uint8Array(8 + 2 + 12 + 4);
+      const view = new DataView(out.buffer);
+      out.set([0x49, 0x49]);
+      view.setUint16(2, 42, true);
+      view.setUint32(4, 8, true);
+      view.setUint16(8, 1, true);
+      view.setUint16(10, 0x0112, true);
+      view.setUint16(12, 3, true);
+      view.setUint32(14, 1, true);
+      view.setUint16(18, 1, true);
+      return out;
+    };
+    const exif = [...Buffer.from('Exif\0\0'), ...tiff()];
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe1, (exif.length + 2) >> 8, (exif.length + 2) & 0xff, ...exif, 0xff, 0xda, 0, 2, 1, 0xff, 0xd9]);
+    writeFileSync(join(dir, 'photo.jpg'), jpeg);
+    writeFileSync(join(dir, 'photo.cr2'), tiff());
+    const files = drive().map(f => (f.id === id(40) ? { ...f, localPath: join(dir, 'photo.jpg') } : f.id === id(50) ? { ...f, localPath: join(dir, 'photo.cr2') } : f));
+    const { local, index } = await reading(files);
+    const plan = planFileChanges({
+      index,
+      operations: [
+        { action: 'rename', file: fileUrl(40), name: 'CAM000001d.JPG' },
+        { action: 'rotate', file: fileUrl(40), degrees: 90 },
+        { action: 'rotate', file: fileUrl(41), degrees: 45 },
+      ],
+    });
+    assert.deepEqual(
+      plan.ops.map(o => [kindOf(o), o.name, o.degrees ?? o.to]),
+      [
+        ['rename', 'CAM000001_d.jpg', 'CAM000001d.JPG'],
+        ['rename', 'CAM000001_d.CR2', 'CAM000001d.CR2'],
+        ['rotate', 'CAM000001_d.jpg', 90],
+        ['rotate', 'CAM000001_d.CR2', 90],
+      ],
+    );
+    assert.match(plan.problems[0].error, /degrees, 90, 180 or 270/);
+    assert.equal(describeChanges(plan.ops, []).turned.count, 2);
+
+    const tagOf = async fileId => {
+      const path = join(dir, `read-${fileId}`);
+      await local.download(fileId, path);
+      return readOrientation(new Uint8Array(readFileSync(path))).value;
+    };
+    await runFileChanges(local, plan.ops);
+    assert.ok(plan.ops.every(o => o.done), JSON.stringify(plan.ops.map(o => o.error)));
+    assert.deepEqual([await tagOf(id(40)), await tagOf(id(50))], [6, 6]);
+    assert.equal((await local.get(id(40))).name, 'CAM000001d.JPG');
+    assert.deepEqual(await undoFileChanges(local, plan.ops), { undone: 4, failed: 0 });
+    assert.deepEqual([await tagOf(id(40)), await tagOf(id(50))], [1, 1]);
+    // A file with no tag to change says so.
+    const bare = planFileChanges({ index, operations: [{ action: 'rotate', file: fileUrl(41), degrees: 180 }] });
+    await runFileChanges(local, bare.ops);
+    assert.match(bare.ops[0].error, /no bytes|no orientation tag/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('the fixes: names the sheets look up, files that are in another folder too, originals already copied', async () => {

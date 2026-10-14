@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Check, ExternalLink, FolderSearch, Globe, Loader2, RefreshCw } from 'lucide-vue-next'
+import { Check, ExternalLink, FolderSearch, Globe, Loader2, RefreshCw, ScanText } from 'lucide-vue-next'
 import { api } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
 import { intlLocale, t } from '../lib/i18n'
@@ -122,6 +122,27 @@ watch(
   { immediate: true },
 )
 
+// ------------------------------------------------------------ photos uploaded without being renamed
+/** A folder of camera-named photos on Drive (its link, or its path in Photo_links), read on the server. */
+const uploaded = ref('')
+const readingIds = ref(false)
+async function readIds() {
+  if (!uploaded.value.trim()) return notify(t('Pega el enlace de la carpeta, o su ruta en Photo_links'), 'error')
+  readingIds.value = true
+  try {
+    const out = await api<{ batch: string; photos: number }>('drive-photos/start', { method: 'POST', body: { folder: uploaded.value.trim() } })
+    card.value = out.batch
+    localStorage.setItem(CARD_KEY, out.batch)
+    upToDate.value = ''
+    uploaded.value = ''
+    notify(t('Leyendo {n} fotos en el servidor (un segundo cada una)', { n: out.photos }))
+  } catch (e) {
+    notify(errorText(e), 'error')
+  } finally {
+    readingIds.value = false
+  }
+}
+
 // ------------------------------------------------------------ the public sites
 const sites = ref<SiteStatus[]>([])
 const sitesReady = ref(true)
@@ -211,6 +232,24 @@ onBeforeUnmount(() => timer && clearTimeout(timer))
         <button class="btn-primary w-full justify-center bg-emerald-700 hover:bg-emerald-800" :disabled="reading" data-read-drive @click="read">
           <Loader2 v-if="reading" :size="15" class="animate-spin" /><FolderSearch v-else :size="15" />
           {{ reading ? $t('Leyendo Drive (hasta medio minuto)…') : $t('Leer Drive') }}
+        </button>
+      </section>
+
+      <!-- Photos uploaded without being renamed: their IDs read on the server. -->
+      <section class="space-y-2 border-t border-stone-200 pt-3" data-unrenamed>
+        <h2 class="flex items-center gap-1.5 font-medium text-stone-800"><ScanText :size="15" class="text-emerald-700" /> {{ $t('Fotos subidas sin renombrar') }}</h2>
+        <p class="text-xs text-stone-600">
+          {{ $t('El servidor lee el ID del sobre de cada foto (IMG_…), las ordena y te muestra solo las dudosas; se renombran al aplicar.') }}
+        </p>
+        <input
+          v-model="uploaded"
+          type="text"
+          class="w-full rounded border border-stone-300 px-2 py-1 text-xs"
+          :placeholder="$t('Enlace de la carpeta en Drive, o su ruta')"
+          @keydown.enter="readIds"
+        />
+         <button class="btn w-full justify-center py-1" :disabled="readingIds" data-read-ids @click="readIds">
+          <Loader2 v-if="readingIds" :size="14" class="animate-spin" /><ScanText v-else :size="14" /> {{ $t('Leer los IDs en el servidor') }}
         </button>
       </section>
 

@@ -39,6 +39,7 @@ import { INVITE_TOOLS, INVITE_TOOL_NAMES, runInviteTool } from './invite-tool.mj
 import { PHOTO_TOOLS, createPhotoLinksTool } from './photo-links-tool.mjs';
 import { IMAGES, RENAME_TOOLS, RENAME_TOOL_NAMES, createRenamePhotos } from './rename-photos.mjs';
 import { SITE_TOOLS, SITE_TOOL_NAMES, createSiteUpdates } from './site-updates.mjs';
+import { DRIVE_PHOTO_TOOLS, DRIVE_PHOTO_TOOL_NAMES, createDrivePhotos } from './drive-photos.mjs';
 import { createInvitations, mailerFromEnv } from './invitations.mjs';
 import { QUERY_HINT, QUERY_TOOL, createQueryRunner, formatRows, sqlProblem } from './query-tool.mjs';
 import { createSheetsCopy } from './replica.mjs';
@@ -426,6 +427,8 @@ const TOOLS = [
   ...PHOTO_TOOLS,
   // The batch of wing photos open in the person's «Fotos» tab, before it is renamed (server/rename-photos.mjs).
   ...RENAME_TOOLS,
+  // Photos uploaded to Drive without being renamed, read on the server (server/drive-photos.mjs).
+  ...DRIVE_PHOTO_TOOLS,
   // The public sites (the Wings Gallery, the maps) brought up to date with the workbook (server/site-updates.mjs).
   ...SITE_TOOLS,
   {
@@ -854,6 +857,26 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   const photoLinks = inWorker ? null : createPhotoLinksTool({ store, config, show: (reading, context) => showSync(reading, context), tell: (id, progress) => syncProgress(id, progress) });
   // The batches open in people's «Fotos» tabs (rename_photos_*): the tabs talk to the app's thread.
   const renamePhotos = inWorker ? null : createRenamePhotos({ store, space: () => photoLinks.space(), ...(config.renamePhotos ?? {}) });
+  // Photos uploaded to Drive without being renamed, read here (the app's thread: it reads Drive and runs the reader).
+  const personContext = user => ({ threadId: namedThread(user, 'Photo_links'), user, person: true });
+  const drivePhotos = inWorker
+    ? null
+    : createDrivePhotos({
+        store,
+        config,
+        readerDir: config.photoReaderDir ?? null,
+        cacheDir: config.drivePhotosCache ?? null,
+        reader: config.photoReader ?? null,
+        // «Aplicar» on a batch: its changes as a plan of organize_photos, started at once (the person pressed it).
+        organize: async (operations, user) => {
+          const out = await photoLinks.organize({ operations }, user, personContext(user));
+          if (out.error) return out;
+          const started = photoLinks.apply(out.plan, user);
+          return started.error ? started : { plan: out.plan, link: out.link };
+        },
+        show: (batch, context) => showPhotos(batch, context),
+        tell: batch => photosProgress(batch),
+      });
   // The public sites' updates on GitHub (update_websites).
   const siteUpdates = inWorker ? null : createSiteUpdates({ passwordFile: config.siteUpdatePasswordFile ?? null, ...(config.siteUpdates ?? {}) });
   /** A note in the person's conversation (T3 Code, Revisión de datos) of the proposals made there. */
@@ -3100,6 +3123,35 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     changed(owner(context.user));
     return { id, ...proposalLink(id, chat?.id ?? null) };
   }
+  /**
+   * A batch of photos read on the server (server/drive-photos.mjs) as a card of its own: made with the
+   * batch (in the chat that asked, or the person's own), changed as it is read, put in order and applied.
+   */
+  const PHOTOS_STATUS = { reading: 'pending', ready: 'pending', failed: 'pending', applied: 'applied', discarded: 'discarded' };
+  const photosCard = batch => ({ type: 'photos', batch: batch.id, folder: batch.folder, state: batch.status, error: batch.error ?? null, plan: batch.plan ?? null, ...JSON.parse(batch.summary_json || '{}') });
+  function showPhotos(batch, context) {
+    if (!context) return {};
+    const at = now();
+    const chat = context.t3 ? chatOfCall(context) : null;
+    const id = batch.id;
+    db.prepare(
+      `INSERT INTO ai_proposals (id,thread_id,owner_id,changes_json,reason,status,created_at,updated_at,last_by,
+       t3_thread,t3_title,t3_tool_use,sync_json) VALUES (?,?,?,'[]',?,'pending',?,?,?,?,?,?,?)`,
+    ).run(id, context.threadId, owner(context.user), `Drive: ${batch.folder}`, at, at, context.person ? 'person' : 'ai', chat?.id ?? null, chat?.title ?? null, context.t3?.toolUseId ?? null, json(photosCard(batch)));
+    changed(owner(context.user));
+    return proposalLink(id, chat?.id ?? null);
+  }
+  function photosProgress(batch) {
+    const r = anyProposal(batch.id);
+    if (!r) return;
+    const status = PHOTOS_STATUS[batch.status] ?? 'pending';
+    const at = now();
+    db.prepare(
+      `UPDATE ai_proposals SET sync_json = ?, status = ?, revision = revision + 1, updated_at = ?${status === 'applied' ? ', applied_at = ?' : ''} WHERE id = ?`,
+    ).run(json(photosCard(batch)), status, at, ...(status === 'applied' ? [at] : []), batch.id);
+    changed(r.owner_id);
+  }
+
   /** The writing of a card as it goes (the panel's progress bar), and how it ended. */
   function syncProgress(id, progress) {
     const r = anyProposal(id);
@@ -3118,7 +3170,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     return {
       id: r.id,
       // A reading of the folders for Photo_links, or changes to make to the files on Drive (organize_photos).
-      kind: card.type === 'files' ? 'photo_files' : 'photo_links',
+      kind: card.type === 'files' ? 'photo_files' : card.type === 'photos' ? 'photo_review' : 'photo_links',
       reason: r.reason ?? '',
       status: r.status,
       sheets: ['Photo_links'],
@@ -4909,6 +4961,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (name === 'drive_space') return photoLinks ? photoLinks.driveSpace(context.user) : { error: 'Call it again in a moment.' };
     if (RENAME_TOOL_NAMES.has(name)) return renamePhotos ? renamePhotos.run(name, args, context.user) : { error: 'Call it again in a moment.' };
     if (SITE_TOOL_NAMES.has(name)) return siteUpdates ? siteUpdates.run(args, context.user) : { error: 'Call it again in a moment.' };
+    if (DRIVE_PHOTO_TOOL_NAMES.has(name)) return drivePhotos ? drivePhotos.run(name, args, context.user, context) : { error: 'Call it again in a moment.' };
     if (name === 'apply_proposal') {
       const proposal = db
         .prepare('SELECT * FROM ai_proposals WHERE id = ? AND thread_id = ?')
@@ -5279,7 +5332,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   async function handle({ method, path, body = {}, user, query = {}, page = null, headers = {} }) {
     // The «Fotos» tab's own requests (server/rename-photos.mjs).
     if (path.startsWith('/api/rename/')) return (await renamePhotos?.handle({ method, path, body, query, user })) ?? null;
-    if (!/^\/api\/(chat|reports|knowledge|ai|proposals|photo-links|sites)(?:\/|$)/.test(path)) return null;
+    if (!/^\/api\/(chat|reports|knowledge|ai|proposals|photo-links|sites|drive-photos)(?:\/|$)/.test(path)) return null;
     if (!user || !owner(user)) return bad(401, 'unauthorized', 'Sign in to use the assistant.');
     const photoMatch = /^\/api\/proposals\/([0-9a-f-]{36})\/photos\/(\d{1,2})$/.exec(path);
     if (photoMatch && method === 'GET') return proposalPhoto(photoMatch[1], Number(photoMatch[2]), user, query, headers);
@@ -5583,6 +5636,39 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         body: { proposalId: out.upToDate ? null : out.scan, upToDate: !!out.upToDate, notFound: out.foldersNotFound ?? [], notListed: out.notListed ?? [] },
       };
     }
+    // Photos read on the server (server/drive-photos.mjs): a batch started from the «Fotos» tab, its rows
+    // and pictures for its card, a person's corrections, «Aplicar» and «Descartar».
+    if (path.startsWith('/api/drive-photos')) {
+      if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot change the photos.');
+      if (!drivePhotos) return bad(503, 'unavailable', 'Call it again in a moment.');
+      if (path === '/api/drive-photos/start' && method === 'POST') {
+        const out = await drivePhotos.start({ folder: body.folder, all: body.all === true }, user, personContext(user));
+        return out.error ? bad(409, 'not_started', out.error) : { status: 201, body: out };
+      }
+      const m = /^\/api\/drive-photos\/([0-9a-f-]{36})(?:\/(edit|apply|discard)|\/([\w-]{10,})\/(photo|envelope))?$/.exec(path);
+      const batch = m && drivePhotos.batch(m[1]);
+      if (!batch) return bad(404, 'not_found', 'No such batch.');
+      if (m[3]) {
+        const file = drivePhotos.picture(m[1], m[3], m[4]);
+        if (!file) return bad(404, 'not_found', 'No picture kept.');
+        return {
+          status: 200,
+          raw: await readFile(file),
+          headers: { 'content-type': 'image/jpeg', 'cache-control': 'private, max-age=86400', 'x-content-type-options': 'nosniff', 'content-security-policy': 'sandbox; default-src none' },
+        };
+      }
+      if (!m[2] && method === 'GET') return { status: 200, body: { batch: { id: batch.id, folder: batch.folder, status: batch.status, plan: batch.plan, error: batch.error }, rows: drivePhotos.rows(batch.id) } };
+      if (method !== 'POST') return bad(405, 'method', 'POST');
+      if (m[2] === 'edit') {
+        const out = drivePhotos.edit({ batch: batch.id, changes: body.changes }, 'person');
+        return out.error ? bad(409, 'not_changed', out.error) : { status: 200, body: out };
+      }
+      if (m[2] === 'apply') {
+        const out = await drivePhotos.apply(batch.id, user);
+        return out.error ? bad(409, out.code ?? 'not_applied', out.error) : { status: 202, body: out };
+      }
+      return drivePhotos.discard(batch.id) ? { status: 200, body: { status: 'discarded' } } : bad(409, 'state', 'The batch is being read.');
+    }
     // The public sites' updates from the «Fotos» tab: how each went, and its buttons (update_websites without waiting).
     if (path === '/api/sites' && method === 'GET') {
       if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot update the sites.');
@@ -5626,6 +5712,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (discardMatch && method === 'POST') {
       const proposal = teamProposal(discardMatch[1], user);
       if (!proposal) return bad(404, 'not_found', 'Proposal not found.');
+      // A batch of photos read on the server: its pictures go with it.
+      if (parse(proposal.sync_json)?.type === 'photos') drivePhotos?.discard(proposal.id);
       const to = discardProposal(proposal, 'person');
       return to
         ? { status: 200, body: { proposalId: discardMatch[1], status: to } }

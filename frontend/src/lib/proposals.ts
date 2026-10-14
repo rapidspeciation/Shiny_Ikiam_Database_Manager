@@ -247,9 +247,10 @@ export interface Proposal {
   status: 'pending' | 'applying' | 'queued' | 'applied' | 'needs_review' | 'discarded' | 'shown' | 'closed'
   /**
    * 'table': rows of the sheet to read (lib/rowsTable), not changes. 'photo_links': a reading of the photo
-   * folders; 'photo_files': changes to make to the photo files on Drive (lib/photoLinks).
+   * folders; 'photo_files': changes to make to the photo files on Drive (lib/photoLinks); 'photo_review':
+   * photos uploaded without being renamed, read on the server (lib/drivePhotos).
    */
-  kind?: 'table' | 'photo_links' | 'photo_files'
+  kind?: 'table' | 'photo_links' | 'photo_files' | 'photo_review'
   /** A reading of the photo folders on Drive (what Photo_links lacks), or a plan of changes to its files; and how far it is. */
   sync?: PhotoSync | PhotoFiles
   /** A table's rows, with the sheet's current values of its columns (`fields`). */

@@ -38,6 +38,10 @@ export const MAIN_TOOLS = new Set([
   'rename_photos_edit',
   // It starts runs on GitHub and follows them for a minute and a half (server/site-updates.mjs).
   'update_websites',
+  // They download photos from Drive, run the reader and keep the batches (server/drive-photos.mjs).
+  'drive_photos',
+  'drive_photos_look',
+  'drive_photos_edit',
 ]);
 const CALL_MS = 180_000;
 const VIEWS_MS = 60_000;

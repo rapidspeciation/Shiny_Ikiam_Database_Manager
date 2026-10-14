@@ -460,7 +460,7 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
   store.db.exec(
     "CREATE TABLE IF NOT EXISTS drive_changes (id TEXT PRIMARY KEY, actor TEXT NOT NULL, created_at TEXT NOT NULL, ops_json TEXT NOT NULL, actions_json TEXT NOT NULL DEFAULT '[]', undone_at TEXT)",
   );
-  const kept = op => ({ action: op.action, id: op.id, name: op.name, to: op.to, from: op.from, toId: op.toId, how: op.how, made: op.made, done: op.done });
+  const kept = op => ({ action: op.action, id: op.id, name: op.name, to: op.to, from: op.from, toId: op.toId, how: op.how, made: op.made, done: op.done, degrees: op.degrees, tagBefore: op.tagBefore });
 
   /** A plan's changes as its card keeps them. */
   function filesCard({ ops, problems }) {

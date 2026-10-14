@@ -17,6 +17,8 @@ token*.json
 web/
 # The Rename Photos app built for this site (scripts/build-rename-app.sh); deployed, not committed.
 rename-app/
+# Its CAMID reader for photos on Drive (the same script).
+photo-reader/
 # Written by `npm run build` (scripts/instructions-history.mjs); shipped in releases.
 server/instructions-history.json
 # Clutch photos taken in the app (server/clutch-photos.mjs), when the database sits in the checkout.

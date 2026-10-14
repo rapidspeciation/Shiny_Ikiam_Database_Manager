@@ -101,7 +101,7 @@ export function specimenName(name) {
   return m ? { id: m[1], view: m[2].toLowerCase(), extra: m[3], ext: name.slice(dot + 1) } : null;
 }
 /** The database's ID a name's ID stands for: itself, or without separators, or with the letter O of "CAMO…" as a zero. */
-function knownId(id, ids) {
+export function knownId(id, ids) {
   const tries = [id, id.replace(/[\s_-]+/g, ''), id.replace(/[\s_-]+/g, '').replace(/^CAM[O0-9]+$/i, s => s.replace(/O/gi, '0'))];
   return tries.map(t => t.toUpperCase()).find(t => ids.has(t)) ?? null;
 }

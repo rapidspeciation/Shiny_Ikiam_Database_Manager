@@ -1,4 +1,5 @@
 // The photo folders on Google Drive put in order: files renamed, moved to another folder or removed,
+// photos turned (their orientation tag changed, the same file and link: server/orientation.mjs),
 // folders made, shortcuts to a set of photos gathered in a folder, as the assistant's organize_photos
 // asks (server/photo-links-tool.mjs shows the plan as a card and runs it once the person agrees;
 // Photo_links then follows the files it touched).
@@ -22,7 +23,12 @@
 // that account opens it and presses the button. A plan that leaves …_todelete files to other
 // accounts gets that step by itself.
 
+import { readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { FOLDER } from './drive.mjs';
+import { readOrientation, turned, writeOrientation } from './orientation.mjs';
 import { driveIdOf, rightName } from './photo-links.mjs';
 import { TRANSFER_BUTTONS, TRANSFER_SHEET_NAME } from './transfer-sheet.mjs';
 
@@ -225,8 +231,8 @@ export function planFileChanges({ index, operations = [], fix = [], withRaw = tr
       });
       continue;
     }
-    if (!['rename', 'move', 'remove'].includes(action)) {
-      problems.push({ at, error: `action is rename, move, remove, folder, shortcut or transfer (${String(o?.action).slice(0, 30)} given)` });
+    if (!['rename', 'move', 'remove', 'rotate'].includes(action)) {
+      problems.push({ at, error: `action is rename, move, remove, rotate, folder, shortcut or transfer (${String(o?.action).slice(0, 30)} given)` });
       continue;
     }
     const found = find(o.file, action === 'move' ? () => true : f => !isFolder(f), 'file');
@@ -235,6 +241,18 @@ export function planFileChanges({ index, operations = [], fix = [], withRaw = tr
       continue;
     }
     const item = found.item;
+    if (action === 'rotate') {
+      // A quarter, a half or three quarters clockwise; its RAW file the same. Beside a rename of the same file.
+      const asked = Number(o.degrees);
+      const degrees = Number.isInteger(asked / 90) ? ((asked % 360) + 360) % 360 : 0;
+      if (!degrees || !PHOTO.test(item.name)) {
+        problems.push({ at, error: degrees ? `${item.name} is not a photo` : 'rotate: give degrees, 90, 180 or 270 clockwise' });
+        continue;
+      }
+      if (add({ action: 'rotate', degrees }, item, `${item.id}|rotate`))
+        for (const raw of rawsOf(item)) add({ action: 'rotate', degrees, raw: true }, raw, `${raw.id}|rotate`);
+      continue;
+    }
     if (action === 'rename') {
       const name = String(o.name ?? '').trim();
       if (!name || /[/\\]/.test(name)) {
@@ -470,6 +488,7 @@ export async function runFileChanges(writer, ops, { onStep = null, parallel = 4,
             op.toId = ops[op.toNew].id;
           }
           if (op.action === 'rename') await writer.rename(op.id, op.to);
+          else if (op.action === 'rotate') op.tagBefore = await rotateFile(writer, op.id, tag => turned(tag, op.degrees), op.name);
           else if (op.action === 'move') await writer.move(op.id, op.from, op.toId);
           else if (op.action === 'shortcut') op.made = (await writer.createShortcut(op.id, op.name, op.toId)).id;
           else if (op.how === 'bin' || op.how === 'delete') {
@@ -521,6 +540,7 @@ export async function undoFileChanges(writer, ops, { onStep = null } = {}) {
     }
     try {
       if (op.action === 'move') await writer.move(op.id, op.toId, op.from);
+      else if (op.action === 'rotate') await rotateFile(writer, op.id, () => op.tagBefore, op.name);
       else if (op.action === 'shortcut') await writer.trash(op.made);
       else if (op.action === 'remove' && op.how === 'bin') await writer.untrash(op.id);
       else await writer.rename(op.id, op.name);
@@ -533,7 +553,27 @@ export async function undoFileChanges(writer, ops, { onStep = null } = {}) {
   return { undone, failed, ...(gone ? { deletedForGood: gone } : {}) };
 }
 
-/** What an op is, for counts and the card: rename, move, bin, delete (for good), mark (renamed …_todelete), folder, shortcut, sheet (a `transfer` step). */
+/**
+ * A file's orientation tag set to `to(tag it has)`: its bytes read, the tag changed, the same file given
+ * them back (its ID and link kept). Answers the tag it had; throws when it has none to change.
+ */
+async function rotateFile(writer, id, to, name = '') {
+  const path = join(tmpdir(), `ithomiini-rotate-${randomUUID()}`);
+  try {
+    await writer.download(id, path);
+    const bytes = new Uint8Array(readFileSync(path));
+    const tag = readOrientation(bytes);
+    if (!tag) throw new Error('it has no orientation tag to change');
+    const value = to(tag.value);
+    if (!value) throw new Error(`its orientation tag (${tag.value}) is mirrored: turn it by hand`);
+    if (value !== tag.value) await writer.replaceContent(id, writeOrientation(bytes, value), /\.jpe?g$/i.test(name) ? 'image/jpeg' : 'application/octet-stream');
+    return tag.value;
+  } finally {
+    rmSync(path, { force: true });
+  }
+}
+
+/** What an op is, for counts and the card: rename, move, bin, delete (for good), mark (renamed …_todelete), folder, shortcut, rotate, sheet (a `transfer` step). */
 export const kindOf = op => (op.action === 'remove' ? (op.how === 'bin' ? 'bin' : op.how === 'delete' ? 'delete' : 'mark') : op.action === 'transfer' ? 'sheet' : op.action);
 
 /** A `transfer` step as the card and the model are told it: what the sheet is left ready for, and who presses what. */
@@ -568,8 +608,10 @@ export function describeChanges(ops, problems) {
       ? `${op.folder}/${op.name}`
       : op.action === 'remove'
         ? `${op.folder}/${op.name}`
-        : `${op.folder}/${op.name} → ${op.to}`;
-  const names = { rename: 'rename', move: 'move', bin: 'binned', delete: 'deletedForGood', mark: 'renamedToDelete', folder: 'newFolders', shortcut: 'shortcuts' };
+        : op.action === 'rotate'
+          ? `${op.folder}/${op.name} ↻ ${op.degrees}°`
+          : `${op.folder}/${op.name} → ${op.to}`;
+  const names = { rename: 'rename', move: 'move', rotate: 'turned', bin: 'binned', delete: 'deletedForGood', mark: 'renamedToDelete', folder: 'newFolders', shortcut: 'shortcuts' };
   const out = {};
   for (const [kind, list] of Object.entries(groups)) {
     if (kind === 'sheet') {
