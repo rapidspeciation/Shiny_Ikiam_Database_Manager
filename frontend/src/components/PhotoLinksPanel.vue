@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Check, ExternalLink, FolderSearch, Globe, Loader2, RefreshCw } from 'lucide-vue-next'
 import { api } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
@@ -35,6 +35,27 @@ const reading = ref(false)
 const CARD_KEY = 'photo-links:card'
 const card = ref(localStorage.getItem(CARD_KEY) ?? '')
 const upToDate = ref('')
+const result = ref<HTMLElement>()
+/** The card was written in this visit: the gallery's update comes next. */
+const written = ref(false)
+let wasOpen = false
+/** The card's count of what waits: from one to none, it was applied or discarded (asked which). */
+async function onCount(n: number) {
+  if (n > 0) {
+    wasOpen = true
+    return
+  }
+  if (!wasOpen || !card.value) return
+  wasOpen = false
+  try {
+    const { proposals } = await api<{ proposals: { id: string; status: string }[] }>(
+      `chat/proposals?${new URLSearchParams({ only: card.value, all: '1' })}`,
+    )
+    if (proposals.find(p => p.id === card.value)?.status === 'applied') written.value = true
+  } catch {
+    // Without it, no nudge.
+  }
+}
 
 /** The folders listed: the top ones, or every one whose path has the text typed. */
 const shown = computed(() => {
@@ -77,12 +98,16 @@ async function read() {
       localStorage.removeItem(CARD_KEY)
     }
     if (add.length) added.value = ''
+    // On a phone the result is under the folders and the sites: brought into sight.
+    await nextTick()
+    if (!matchMedia('(min-width: 768px)').matches) result.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   } catch (e) {
     notify(errorText(e), 'error')
   } finally {
     reading.value = false
   }
 }
+watch(card, () => (written.value = false))
 watch(
   () => props.preset?.at,
   () => {
@@ -119,6 +144,7 @@ async function update(key: 'gallery' | 'maps') {
   try {
     const out = await api<SitesAnswer>('sites/update', { method: 'POST', body: { sites: [key], gbif: key === 'maps' && gbif.value } })
     const site = out.sites[0]
+    if (key === 'gallery' && !site?.error) written.value = false
     if (site?.error) notify(site.error, 'error')
     else if (site?.update?.note) notify(site.update.note)
     else notify(t('Actualización iniciada: el sitio muestra los datos nuevos en unos minutos'))
@@ -141,8 +167,8 @@ onBeforeUnmount(() => timer && clearTimeout(timer))
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col md:flex-row" data-photo-links-panel>
-    <aside class="flex shrink-0 flex-col gap-4 overflow-y-auto border-stone-200 bg-white p-3 text-sm md:w-80 md:border-r">
+  <div class="flex min-h-0 flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden" data-photo-links-panel>
+    <aside class="flex shrink-0 flex-col gap-4 border-b border-stone-200 bg-white p-3 text-sm md:w-80 md:overflow-y-auto md:border-r md:border-b-0">
       <!-- Photo_links: which folders to read. -->
       <section class="space-y-2" data-read>
         <h2 class="font-medium text-stone-800">Photo_links</h2>
@@ -192,6 +218,9 @@ onBeforeUnmount(() => timer && clearTimeout(timer))
           <button class="btn-ghost ml-auto p-1" :title="$t('Ver de nuevo cómo van')" @click="loadSites(true)"><RefreshCw :size="13" /></button>
         </h2>
         <p class="text-xs text-stone-600">{{ $t('Toman los datos del libro cuando se actualizan; después de escribir Photo_links, actualiza la Wings Gallery.') }}</p>
+        <p v-if="written" class="rounded bg-emerald-50 px-2 py-1 text-xs text-emerald-900" data-next>
+          {{ $t('Photo_links está escrito: actualiza la Wings Gallery para que muestre las fotos nuevas.') }}
+        </p>
         <p v-if="!sitesReady" class="rounded bg-amber-50 px-2 py-1 text-xs text-amber-900">{{ $t('Este servidor no tiene la contraseña de las actualizaciones: solo se ve cómo van.') }}</p>
         <div v-for="(s, i) in sites" :key="s.site" class="rounded border border-stone-200 p-2 text-xs" :data-site="KEYS[i]">
           <p class="flex items-center gap-1.5">
@@ -213,7 +242,8 @@ onBeforeUnmount(() => timer && clearTimeout(timer))
             {{ $t('También GBIF e iNaturalist (un cuarto de hora más)') }}
           </label>
           <button
-            class="btn mt-1.5 w-full justify-center py-1"
+            class="mt-1.5 w-full justify-center py-1"
+            :class="written && KEYS[i] === 'gallery' ? 'btn-primary bg-emerald-700 hover:bg-emerald-800' : 'btn'"
             :disabled="!sitesReady || !!starting || running(s)"
             :data-update="KEYS[i]"
             @click="update(KEYS[i])"
@@ -226,11 +256,11 @@ onBeforeUnmount(() => timer && clearTimeout(timer))
     </aside>
 
     <!-- The reading: the card of Cambios propuestos, applied here. -->
-    <div class="flex min-h-0 min-w-0 flex-1 flex-col bg-stone-50">
+    <div ref="result" class="flex min-h-[75vh] min-w-0 flex-1 flex-col bg-stone-50 md:min-h-0">
       <p v-if="upToDate" class="m-3 flex items-center gap-1.5 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900" data-up-to-date>
         <Check :size="15" /> {{ $t('Photo_links ya está al día con esas carpetas (leídas a las {at}).', { at: upToDate }) }}
       </p>
-      <ProposalsLive v-if="card" :key="card" layout="page" :only="card" class="min-h-0 flex-1" />
+      <ProposalsLive v-if="card" :key="card" layout="page" :only="card" class="min-h-0 flex-1" @count="onCount" />
       <p v-else-if="!upToDate" class="m-auto max-w-sm p-6 text-center text-sm text-stone-500">
         {{ $t('Elige las carpetas y pulsa «Leer Drive»: aquí verás lo que cambiaría en Photo_links antes de aplicarlo.') }}
       </p>

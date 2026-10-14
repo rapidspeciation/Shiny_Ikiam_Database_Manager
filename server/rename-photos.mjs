@@ -351,12 +351,6 @@ export const REVIEW_PROMPT = [
   'Al terminar dime qué cambiaste, qué queda para mí y si ya puedo pulsar «Rename».',
 ].join(' ');
 
-/** The prompt of the chat started when the person says the renamed files are uploaded. */
-export const UPLOADED_PROMPT = [
-  'Ya subí a Drive las fotos renombradas del lote de la pestaña «Fotos» (skill `photos`).',
-  'Actualiza Photo_links con las carpetas donde las subí y dime qué encontraste; cuando esté escrito, actualiza la Wings Gallery y los mapas.',
-].join(' ');
-
 /**
  * The batches open in people's «Fotos» tabs, for one app.
  *  - run(name, args, user): a tool.

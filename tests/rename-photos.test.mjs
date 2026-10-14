@@ -8,7 +8,7 @@ import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { createApp } from '../server/index.mjs';
 import { createAssistant, mcpTools } from '../server/assistant.mjs';
-import { IMAGES, REVIEW_PROMPT, UPLOADED_PROMPT, checkBatch, cleanState, createRenamePhotos, listedPlaces, uploadPlace } from '../server/rename-photos.mjs';
+import { IMAGES, REVIEW_PROMPT, checkBatch, cleanState, createRenamePhotos, listedPlaces, uploadPlace } from '../server/rename-photos.mjs';
 import { SITES, createSiteUpdates } from '../server/site-updates.mjs';
 
 const minute = n => `2026-07-20T10:${String(n).padStart(2, '0')}:00.000Z`;
@@ -236,7 +236,6 @@ test('the Rename Photos app is served for the tab\'s frame, and the review asks 
     rmSync(renameAppRoot, { recursive: true, force: true });
   }
   assert.match(REVIEW_PROMPT, /«Fotos»/);
-  assert.match(UPLOADED_PROMPT, /Photo_links/);
 });
 
 test('update_websites: when each site was last updated, an update started through its worker and followed, its publishing', async () => {

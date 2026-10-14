@@ -172,7 +172,7 @@ export interface SitesAnswer {
 /** How a run went, in a word. */
 export function siteRunLabel(state: string): string {
   if (state === 'running') return t('en curso')
-  if (state === 'success') return t('bien')
+  if (state === 'success') return t('listo')
   if (state === 'failure') return t('falló')
   if (state === 'cancelled') return t('cancelada')
   return state

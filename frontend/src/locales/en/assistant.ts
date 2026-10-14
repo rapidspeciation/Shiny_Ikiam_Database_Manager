@@ -727,6 +727,7 @@ export default {
   'Elige las carpetas y pulsa «Leer Drive»: aquí verás lo que cambiaría en Photo_links antes de aplicarlo.':
     'Choose the folders and press «Read Drive»: here you will see what would change in Photo_links before applying it.',
   'Sitios públicos': 'Public sites',
+  'Photo_links está escrito: actualiza la Wings Gallery para que muestre las fotos nuevas.': 'Photo_links is written: update the Wings Gallery so it shows the new photos.',
   'Ver de nuevo cómo van': 'Check how they are going',
   'Toman los datos del libro cuando se actualizan; después de escribir Photo_links, actualiza la Wings Gallery.':
     'They take the workbook\'s data when updated; after writing Photo_links, update the Wings Gallery.',
@@ -739,7 +740,6 @@ export default {
   'Actualizar el sitio': 'Update the site',
   'Actualización iniciada: el sitio muestra los datos nuevos en unos minutos': 'Update started: the site shows the new data in a few minutes',
   'en curso': 'running',
-  bien: 'fine',
   cancelada: 'cancelled',
   'Ya las subí: actualizar': 'Uploaded: update',
   'Después se suben a:': 'They then go to:',

@@ -1,7 +1,7 @@
 import { t3Admin } from './t3admin.mjs';
 import { createT3Bridge } from './t3bridge.mjs';
 import { chatStarter, createT3Projects, projectKey, provisioner } from './t3projects.mjs';
-import { REVIEW_PROMPT, UPLOADED_PROMPT } from './rename-photos.mjs';
+import { REVIEW_PROMPT } from './rename-photos.mjs';
 import http from 'node:http';
 import { readFileSync, statSync, createReadStream, existsSync, chmodSync } from 'node:fs';
 import { join, resolve, extname, dirname } from 'node:path';
@@ -1342,9 +1342,7 @@ export async function createApp(config = {}, options = {}) {
         requireEditor(user);
         const start = chatStarter(config.t3 ?? {});
         const own = config.t3 && start ? await t3Projects.ensure(user) : null;
-        // `uploaded`: the renamed files are on Drive; the chat lists them in Photo_links and updates the sites.
-        const uploaded = body?.step === 'uploaded';
-        const [title, text] = uploaded ? ['Fotos subidas', UPLOADED_PROMPT] : ['Revisión de fotos', REVIEW_PROMPT];
+        const [title, text] = ['Revisión de fotos', REVIEW_PROMPT];
         let chat = null;
         if (own?.project)
           try {
