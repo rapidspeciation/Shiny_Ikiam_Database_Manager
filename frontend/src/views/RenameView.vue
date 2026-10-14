@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onActivated, onBeforeUnmount, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Check, Cloud, CloudUpload, Copy, ExternalLink, MessageSquarePlus, PanelRightClose, PanelRightOpen, Sparkles } from 'lucide-vue-next'
 const PhotoLinksPanel = defineAsyncComponent(() => import('../components/PhotoLinksPanel.vue'))
 import { api } from '../lib/api'
@@ -180,6 +180,14 @@ async function review(fresh = false) {
     asking.value = false
   }
 }
+// A card asked Claude (askClaude): its chat shows beside, or its request to paste when T3 could not start it.
+function claudeOpened(event: Event) {
+  const out = (event as CustomEvent<{ chat: string | null; prompt: string }>).detail
+  prompt.value = out?.chat ? '' : (out?.prompt ?? '')
+  chat.value = true
+}
+onMounted(() => window.addEventListener('claude:open', claudeOpened))
+onUnmounted(() => window.removeEventListener('claude:open', claudeOpened))
 async function copyPrompt() {
   try {
     await navigator.clipboard.writeText(prompt.value)
@@ -307,7 +315,6 @@ function resize(event: PointerEvent) {
             <MessageSquarePlus :size="16" />
           </button>
           <button
-            v-if="section === 'rename'"
             class="btn-ghost"
             :title="chat ? $t('Ocultar el chat') : $t('Mostrar el chat del asistente')"
             :aria-pressed="chat"
@@ -345,16 +352,16 @@ function resize(event: PointerEvent) {
         <span v-if="line" class="ml-auto min-w-0 truncate text-stone-500" data-batch>{{ line }}</span>
       </p>
     </div>
-    <PhotoLinksPanel v-if="section === 'links'" :preset="preset" class="min-h-0 flex-1" @used="preset = null" />
-    <p v-else-if="renameHost.missing" class="p-4 text-sm text-stone-600" data-missing>
+    <p v-if="section === 'rename' && renameHost.missing" class="p-4 text-sm text-stone-600" data-missing>
       {{ $t('La app para renombrar fotos no está instalada en este servidor.') }}
       <a class="text-emerald-800 underline" href="https://fr4nzz.github.io/rename_photos_AI/" target="_blank" rel="noopener">{{
         $t('Ábrela en su propia página')
       }}</a>
     </p>
     <div v-else ref="split" class="flex min-h-0 flex-1" :class="{ 'select-none': dragging }" :style="{ '--share': `${share}%` }">
+      <PhotoLinksPanel v-if="section === 'links'" :preset="preset" class="min-h-0 min-w-0 flex-1" @used="preset = null" />
       <!-- The Rename Photos app's place: its frame (RenameHost) sits over it. -->
-      <div ref="slot" class="min-h-0 min-w-0 flex-1" />
+      <div v-else ref="slot" class="min-h-0 min-w-0 flex-1" />
       <template v-if="chat">
         <div
           role="separator"

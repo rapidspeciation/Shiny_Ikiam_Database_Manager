@@ -3,7 +3,10 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
-import { AlertTriangle, Check, ChevronDown, ChevronRight, Images, RefreshCw, X } from 'lucide-vue-next'
+import { AlertTriangle, Check, ChevronDown, ChevronRight, FolderPlus, Images, RefreshCw, Sparkles, Wrench, X } from 'lucide-vue-next'
+import { askClaude, showCard } from '../../lib/askClaude'
+import { fixFor, type PhotoFix } from '../../lib/photoFixes'
+import { photoUrl } from '../../lib/review'
 import { api } from '../../lib/api'
 import { errorText, notify } from '../../lib/notice'
 import { intlLocale, locale, t } from '../../lib/i18n'
@@ -81,6 +84,66 @@ async function apply() {
     } else notify(errorText(e), 'error')
   } finally {
     busy.value = ''
+  }
+}
+
+// ------------------------------------------------------------ the fixes it offers, and Claude
+/** The rows are needed to work the fixes out: read once the card is pending with something to fix. */
+watch(
+  () => [pending.value, checks.value.length, sync.value.read?.at],
+  () => pending.value && !sync.value.stale && checks.value.length && void loadRows(),
+  { immediate: true },
+)
+const fixes = computed(() => new Map(checks.value.map(c => [c.kind, rows.value ? fixFor(c.kind, rows.value) : null])))
+const fixing = ref('')
+async function runFix(kind: string, fix: PhotoFix) {
+  fixing.value = kind
+  try {
+    if (fix.operations) {
+      const out = await api<{ plan: string }>('photo-links/plan', { method: 'POST', body: { operations: fix.operations } })
+      showCard(out.plan)
+      notify(t('Plan listo: revísalo y pulsa «Aplicar» en su tarjeta'))
+    } else
+      for (const folder of fix.folders ?? []) {
+        const out = await api<{ batch: string }>('drive-photos/start', { method: 'POST', body: { folder } })
+        showCard(out.batch)
+      }
+  } catch (e) {
+    notify(errorText(e), 'error')
+  } finally {
+    fixing.value = ''
+  }
+}
+const asking = ref('')
+async function ask(what: string, text: string) {
+  asking.value = what
+  try {
+    const out = await askClaude(
+      `${text} Es la lectura de Photo_links de la tarjeta ${props.proposal.id} (Cambios propuestos): míralo con get_proposal de esa tarjeta o con sync_photo_links. Propón los cambios en tarjetas; no apliques nada sin que yo lo diga.`,
+      t('Photo_links: revisar'),
+    )
+    if (!out.chat) notify(t('T3 no está disponible: copia el pedido que aparece junto al chat'), 'error')
+  } catch (e) {
+    notify(errorText(e), 'error')
+  } finally {
+    asking.value = ''
+  }
+}
+const askCheck = (kind: CheckKind, count: number) =>
+  ask(kind, t('Hay {n} fotos con «{check}». Ayúdame a resolverlas: mira cada una (los IDs de alrededor, el sobre si hace falta) y dime qué hacer.', { n: count, check: checkLabel(kind) }))
+const fileOf = (url: string) => /\/d\/([\w-]{20,})/.exec(url)?.[1] ?? ''
+const listing = ref('')
+/** A folder not listed yet, read with the others to start listing it (the same card, read again). */
+async function listFolder(folder: string) {
+  listing.value = folder
+  try {
+    const out = await api<{ proposalId: string | null }>('photo-links/read', { method: 'POST', body: { add: [folder], only: sync.value.onlyFolders?.length ? sync.value.only ?? [] : [] } })
+    if (out.proposalId && out.proposalId !== props.proposal.id) showCard(out.proposalId)
+    notify(t('Leída de nuevo con {folder}: revisa sus filas nuevas', { folder }))
+  } catch (e) {
+    notify(errorText(e), 'error')
+  } finally {
+    listing.value = ''
   }
 }
 
@@ -201,9 +264,21 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
         {{ $t('solo {folders}', { folders: sync.onlyFolders.join(', ') }) }}
       </span>
       <button
+        v-if="pending && !sync.stale"
+        type="button"
+        class="ml-auto flex items-center gap-1 rounded border border-sky-300 bg-white px-1.5 py-0.5 text-xs text-sky-800 hover:border-sky-600 disabled:opacity-50"
+        :disabled="!!asking"
+        :title="$t('Abre un chat con Claude al lado, que empieza con esta lectura, para que te ayude a resolver lo que encontró')"
+        data-ask-claude
+        @click="ask('card', $t('Ayúdame con lo que encontró esta lectura: lo que hay que revisar y cómo resolverlo, empezando por lo que afecta a más fotos.'))"
+      >
+        <Sparkles :size="12" /> {{ asking === 'card' ? $t('Abriendo…') : $t('Preguntar a Claude') }}
+      </button>
+      <button
         v-if="pending"
         type="button"
-        class="ml-auto flex items-center gap-1 rounded border border-stone-300 bg-white px-1.5 py-0.5 text-xs text-stone-700 hover:border-emerald-600 hover:text-emerald-800 disabled:opacity-50"
+        class="flex items-center gap-1 rounded border border-stone-300 bg-white px-1.5 py-0.5 text-xs text-stone-700 hover:border-emerald-600 hover:text-emerald-800 disabled:opacity-50"
+        :class="{ 'ml-auto': sync.stale }"
         :disabled="!!busy"
         :title="$t('Vuelve a leer las carpetas de Drive y compara de nuevo con la hoja')"
         data-read-again
@@ -340,14 +415,30 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
             <span class="font-medium tabular-nums">{{ twice.different }}</span>
             <span>{{ $t('nombres son de dos fotos distintas: compara los sobres; se dejan como están') }}</span>
           </button>
-          <ul v-if="openTwice" class="mt-0.5 mb-1 ml-7 space-y-1 text-stone-700">
+          <div v-if="pending" class="ml-7 flex gap-1.5">
+            <button
+              type="button"
+              class="flex items-center gap-1 rounded border border-sky-200 bg-white px-1.5 py-0.5 text-sky-800 hover:border-sky-500 disabled:opacity-50"
+              :disabled="!!asking"
+              data-ask-twice
+              @click="ask('twice', $t('Hay {n} nombres que son de dos fotos distintas listadas en Photo_links. Ayúdame a ver cuál está mal nombrada en cada caso (el sobre, la carpeta, los IDs de alrededor) y a renombrarla.', { n: twice.different }))"
+            >
+              <Sparkles :size="11" /> {{ asking === 'twice' ? $t('Abriendo…') : $t('Resolver con Claude') }}
+            </button>
+          </div>
+          <!-- Both photos of each name side by side, to compare the envelopes. -->
+          <ul v-if="openTwice" class="mt-1 mb-1 ml-7 space-y-2 text-stone-700">
             <li v-for="d in twice.differentExamples" :key="d.name" class="break-all">
-              <span class="font-medium">{{ d.name }}</span>:
-              <template v-for="(r, i) in d.rows" :key="r.row"
-                ><template v-if="i"> · </template
-                ><a class="text-emerald-800 hover:underline" :href="r.url" target="_blank" rel="noopener">{{ r.path.split('/').slice(0, -1).join('/') }}</a>
-                <span class="text-stone-400"> ({{ $t('fila {row}', { row: r.row }) }}, {{ r.kb }} KB)</span></template
-              >
+              <span class="font-medium">{{ d.name }}</span>
+              <div class="mt-1 grid grid-cols-2 gap-1.5">
+                <a v-for="r in d.rows" :key="r.row" class="group block rounded border border-stone-200 hover:border-emerald-600" :href="r.url" target="_blank" rel="noopener">
+                  <img :src="photoUrl(fileOf(r.url))" :alt="r.path" loading="lazy" class="h-28 w-full rounded-t bg-stone-100 object-contain" />
+                  <span class="block px-1 py-0.5 text-[11px]">
+                    <span class="text-emerald-800 group-hover:underline">{{ r.path.split('/').slice(0, -1).join('/') }}</span>
+                    <span class="text-stone-400"> · {{ $t('fila {row}', { row: r.row }) }}, {{ r.kb }} KB</span>
+                  </span>
+                </a>
+              </div>
             </li>
             <li v-if="twice.different > twice.differentExamples.length" class="text-stone-500">
               {{ $t('y {n} más: pídeselos al asistente', { n: twice.different - twice.differentExamples.length }) }}
@@ -368,18 +459,43 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
           }}
         </p>
         <ul v-if="checks.length" class="mt-1.5 space-y-0.5">
-          <li v-for="c in checks" :key="c.kind">
-            <button
-              type="button"
-              class="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-amber-900 hover:bg-amber-50"
-              :aria-expanded="openCheck === c.kind"
-              @click="openCheck = openCheck === c.kind ? null : c.kind"
-            >
-              <ChevronDown v-if="openCheck === c.kind" :size="12" class="shrink-0" /><ChevronRight v-else :size="12" class="shrink-0" />
-              <AlertTriangle :size="12" class="shrink-0 text-amber-600" />
-              <span class="font-medium tabular-nums">{{ c.count }}</span>
-              <span>{{ checkLabel(c.kind) }}</span>
-            </button>
+          <li v-for="c in checks" :key="c.kind" :data-check="c.kind">
+            <div class="flex items-center gap-1.5">
+              <button
+                type="button"
+                class="flex min-w-0 flex-1 items-center gap-1.5 rounded px-1 py-0.5 text-left text-amber-900 hover:bg-amber-50"
+                :aria-expanded="openCheck === c.kind"
+                @click="openCheck = openCheck === c.kind ? null : c.kind"
+              >
+                <ChevronDown v-if="openCheck === c.kind" :size="12" class="shrink-0" /><ChevronRight v-else :size="12" class="shrink-0" />
+                <AlertTriangle :size="12" class="shrink-0 text-amber-600" />
+                <span class="font-medium tabular-nums">{{ c.count }}</span>
+                <span>{{ checkLabel(c.kind) }}</span>
+              </button>
+              <!-- The fix that is safe without a look, as a plan to check on its own card. -->
+              <button
+                v-if="pending && fixes.get(c.kind)"
+                type="button"
+                class="flex shrink-0 items-center gap-1 rounded border border-emerald-300 bg-white px-1.5 py-0.5 text-emerald-800 hover:border-emerald-600 disabled:opacity-50"
+                :disabled="!!fixing"
+                :title="fixes.get(c.kind)!.title"
+                data-fix
+                @click="runFix(c.kind, fixes.get(c.kind)!)"
+              >
+                <Wrench :size="11" /> {{ fixing === c.kind ? $t('Preparando…') : fixes.get(c.kind)!.label }}
+              </button>
+              <button
+                v-if="pending"
+                type="button"
+                class="flex shrink-0 items-center gap-1 rounded border border-sky-200 bg-white px-1.5 py-0.5 text-sky-800 hover:border-sky-500 disabled:opacity-50"
+                :disabled="!!asking"
+                :title="$t('Abre un chat con Claude que empieza con estas fotos')"
+                data-ask
+                @click="askCheck(c.kind, c.count)"
+              >
+                <Sparkles :size="11" /> {{ asking === c.kind ? $t('Abriendo…') : 'Claude' }}
+              </button>
+            </div>
             <ul v-if="openCheck === c.kind" class="mt-0.5 mb-1 ml-7 space-y-0.5 text-stone-700">
               <li v-for="e in c.examples" :key="e.name + (e.in ?? '')" class="break-all">
                 <a v-if="e.url" class="font-medium text-emerald-800 hover:underline" :href="e.url" target="_blank" rel="noopener">{{ e.name }}</a>
@@ -412,16 +528,38 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
               { examples: sync.sameName.examples.slice(0, 3).map(e => e.name).join(', ') },
             )
           }}
+          <button
+            v-if="pending"
+            type="button"
+            class="ml-1 inline-flex items-center gap-1 rounded border border-sky-200 bg-white px-1.5 py-0.5 text-sky-800 hover:border-sky-500 disabled:opacity-50"
+            :disabled="!!asking"
+            @click="ask('sameName', $t('Hay {n} archivos que no se listan porque otra foto, distinta, ya está listada con su nombre. Ayúdame a ver cuál está mal nombrada y a renombrarla.', { n: sync.sameName.different }))"
+          >
+            <Sparkles :size="11" /> Claude
+          </button>
         </p>
         <p v-if="sync.sameName?.copies">
           {{ $tn(sync.sameName.copies, '{n} copia de una foto ya listada no se lista.', '{n} copias de fotos ya listadas no se listan.') }}
         </p>
-        <p v-if="sync.notListed?.length">
-          {{ $t('Carpetas con fotos de especímenes que no se listan (pide al asistente que las agregue):') }}
-          <template v-for="(n, i) in sync.notListed" :key="n.folder"
-            ><template v-if="i">, </template><span class="font-medium">{{ n.folder }}</span> ({{ $tn(n.photos, '{n} foto', '{n} fotos') }})</template
-          >
-        </p>
+        <div v-if="sync.notListed?.length">
+          <p>{{ $t('Carpetas con fotos de especímenes que no se listan:') }}</p>
+          <ul class="mt-0.5 space-y-0.5">
+            <li v-for="n in sync.notListed" :key="n.folder" class="flex items-center gap-2">
+              <span class="min-w-0 flex-1"><span class="font-medium">{{ n.folder }}</span> ({{ $tn(n.photos, '{n} foto', '{n} fotos') }})</span>
+              <button
+                v-if="pending"
+                type="button"
+                class="flex shrink-0 items-center gap-1 rounded border border-emerald-300 bg-white px-1.5 py-0.5 text-emerald-800 hover:border-emerald-600 disabled:opacity-50"
+                :disabled="!!listing"
+                :title="$t('Lee las carpetas de nuevo con esta, para empezar a listarla (sus filas aparecen en esta tarjeta para aplicar)')"
+                data-list-folder
+                @click="listFolder(n.folder)"
+              >
+                <FolderPlus :size="11" /> {{ listing === n.folder ? $t('Leyendo…') : $t('Listar') }}
+              </button>
+            </li>
+          </ul>
+        </div>
         <p v-if="sync.leftOut?.toDelete || sync.leftOut?.temp?.length" class="text-stone-500">
           {{ $t('Nunca se listan:') }}
           <template v-if="sync.leftOut.toDelete">{{ $tn(sync.leftOut.toDelete, '{n} archivo …_todelete', '{n} archivos …_todelete') }}</template>

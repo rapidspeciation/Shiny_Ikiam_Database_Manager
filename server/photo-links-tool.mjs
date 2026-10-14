@@ -365,6 +365,7 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
       };
     if (plan.type === 'files') {
       if (!files) return { error: 'Changes to the files on Drive are made with «Apply» on their card.', code: 'card' };
+      if (!driveWriterFor(store, config)) return { error: 'This copy of the app has no account that changes files on Drive: the plan only shows what would change.', code: 'no_writer' };
       plans.delete(id);
       const job = change(plan, user);
       jobs.set(id, job);
@@ -640,8 +641,11 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
 
   async function organize(args = {}, user, context = null) {
     if (!EDITORS.includes(user?.role)) return { error: 'Your role cannot change files' };
+    // Without the account that changes files (the lab on a copy of the workbook) a plan is still worked
+    // out, reading Drive with the app's own login, to see what it would do; it is not made.
     const writer = driveWriterFor(store, config);
-    if (!writer) return { error: 'This app has no Google account set up to change files on Drive.' };
+    const planner = writer ?? (args.undo ? null : driveFor(store, config));
+    if (!planner) return { error: 'This app has no Google account set up to change files on Drive.' };
     const running = [...jobs].find(([, j]) => j.state === 'writing');
     if (running) return waited(...running);
     if (args.undo) return undo(String(args.undo), user, writer);
@@ -649,9 +653,9 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
     const asked = value => (Array.isArray(value) ? value : value ? [value] : []).slice(0, 5000);
     const index = await wholeIndex();
     if (!index) return { error: 'This copy of the app has no Google Drive to read.' };
-    const planned = await settleChanges(writer, planFileChanges({ index, operations: asked(args.operations), fix: asked(args.fix), withRaw: args.withRaw !== false }), {
+    const planned = await settleChanges(planner, planFileChanges({ index, operations: asked(args.operations), fix: asked(args.fix), withRaw: args.withRaw !== false }), {
       index,
-      sheet: transferSheetFor(store, config, writer),
+      sheet: writer ? transferSheetFor(store, config, writer) : null,
     });
     if (!planned.ops.length) return { error: 'Nothing to change.', ...describeChanges([], planned.problems) };
     const card = filesCard(planned);

@@ -5687,6 +5687,15 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       }
       return drivePhotos.discard(batch.id) ? { status: 200, body: { status: 'discarded' } } : bad(409, 'state', 'The batch is being read.');
     }
+    // A fix a reading's card offers (rename to the names the sheets look up, remove copies, rename to the
+    // likely ID): a plan of organize_photos on the person's own card, made only with its «Aplicar».
+    if (path === '/api/photo-links/plan' && method === 'POST') {
+      if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot change files.');
+      if (!photoLinks) return bad(503, 'unavailable', 'Call it again in a moment.');
+      const list = value => (Array.isArray(value) ? value.slice(0, 5000) : []);
+      const out = await photoLinks.organize({ operations: list(body.operations), fix: list(body.fix) }, user, personContext(user));
+      return out.error ? bad(409, 'not_planned', out.error) : { status: 201, body: { plan: out.plan, changes: out.changes } };
+    }
     // The public sites' updates from the «Fotos» tab: how each went, and its buttons (update_websites without waiting).
     if (path === '/api/sites' && method === 'GET') {
       if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot update the sites.');

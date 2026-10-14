@@ -1375,6 +1375,23 @@ export async function createApp(config = {}, options = {}) {
             .run(user.username, open.key, open.folder, chat, now());
         return json(res, chat ? 201 : 200, { chat, prompt: text });
       }
+      // A chat of the person's own T3 project that starts with a request a page makes for them (a card's
+      // «Preguntar a Claude»). Without T3 the request comes back, to be pasted.
+      if (method === 'POST' && path === '/api/t3/ask') {
+        requireEditor(user);
+        const text = String(body?.text ?? '').trim().slice(0, 4000);
+        if (!text) throw fail('NO_TEXT', 'Say what to ask', 400);
+        const start = chatStarter(config.t3 ?? {});
+        const own = config.t3 && start ? await t3Projects.ensure(user) : null;
+        let chat = null;
+        if (own?.project)
+          try {
+            chat = await start(own.project, { title: String(body?.title ?? '').trim().slice(0, 80) || text.slice(0, 60), text });
+          } catch (e) {
+            console.error(`Chat for ${user.username}:`, e.message);
+          }
+        return json(res, chat ? 201 : 200, { chat, prompt: text });
+      }
       // Whose the chat on screen is (its T3 project's person): another's, and the Asistente tab says the AI takes you for them there.
       if (method === 'GET' && path === '/api/t3/chat-owner') {
         const username = assistant?.t3?.ownerOf(String(query.chat ?? '')) ?? null;

@@ -131,8 +131,12 @@ async function readIds() {
   readingIds.value = true
   try {
     const out = await api<{ batch: string; photos: number }>('drive-photos/start', { method: 'POST', body: { folder: uploaded.value.trim() } })
-    card.value = out.batch
-    localStorage.setItem(CARD_KEY, out.batch)
+    // Beside the reading (the reading's card stays where it is).
+    if (card.value) cardMade(new CustomEvent('photos:card', { detail: out.batch }))
+    else {
+      card.value = out.batch
+      localStorage.setItem(CARD_KEY, out.batch)
+    }
     upToDate.value = ''
     uploaded.value = ''
     notify(t('Leyendo {n} fotos en el servidor (un segundo cada una)', { n: out.photos }))
@@ -183,11 +187,21 @@ const KEYS = ['gallery', 'maps'] as const
 const when = (iso?: string) =>
   iso ? new Date(iso).toLocaleString(intlLocale(), { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''
 
+/** Cards made from the reading's (a fix's plan, a batch read on the server): shown below it, the latest first. */
+const extra = ref<string[]>([])
+function cardMade(event: Event) {
+  const id = (event as CustomEvent<string>).detail
+  if (id && id !== card.value) extra.value = [id, ...extra.value.filter(x => x !== id)].slice(0, 4)
+}
 onMounted(() => {
   void loadFolders()
   void loadSites()
+  window.addEventListener('photos:card', cardMade)
 })
-onBeforeUnmount(() => timer && clearTimeout(timer))
+onBeforeUnmount(() => {
+  if (timer) clearTimeout(timer)
+  window.removeEventListener('photos:card', cardMade)
+})
 </script>
 
 <template>
@@ -302,6 +316,9 @@ onBeforeUnmount(() => timer && clearTimeout(timer))
       <p v-if="upToDate" class="m-3 flex items-center gap-1.5 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900" data-up-to-date>
         <Check :size="15" /> {{ $t('Photo_links ya está al día con esas carpetas (leídas a las {at}).', { at: upToDate }) }}
       </p>
+      <div v-if="extra.length" class="max-h-[50%] shrink-0 overflow-y-auto border-b border-stone-300" data-extra-cards>
+        <ProposalsLive v-for="id in extra" :key="id" layout="page" :only="id" class="min-h-0" />
+      </div>
       <ProposalsLive v-if="card" :key="card" layout="page" :only="card" class="min-h-0 flex-1" @count="onCount" />
       <p v-else-if="!upToDate" class="m-auto max-w-sm p-6 text-center text-sm text-stone-500">
         {{ $t('Elige las carpetas y pulsa «Leer Drive»: aquí verás lo que cambiaría en Photo_links antes de aplicarlo.') }}
