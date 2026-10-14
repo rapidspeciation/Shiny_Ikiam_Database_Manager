@@ -11,6 +11,7 @@
   "excludePattern": "InfoAcc?ess|password|contrase|factura|invoice|contrat",
   "maxFileMb": 30,
   "maxTextKb": 400,
+  "maxTotalMb": 5120,
   "pdfPages": 80,
   "concurrency": 3
 }

@@ -63,6 +63,8 @@ export function loadConfig(path) {
     excluded: name => names.has(String(name).trim().toLowerCase()) || Boolean(pattern?.test(String(name))),
     maxFileBytes: (raw.maxFileMb ?? 30) * 1024 * 1024,
     maxTextBytes: (raw.maxTextKb ?? 400) * 1024,
+    // The text kept in all: past it, new documents wait (listed, without text) and are tried again each run.
+    maxTotalBytes: (raw.maxTotalMb ?? 5120) * 1024 * 1024,
     pdfPages: raw.pdfPages ?? 80,
     concurrency: Math.max(1, Math.min(raw.concurrency ?? 3, 8)),
   };
@@ -440,6 +442,8 @@ export async function syncDrive({ env = process.env, configPath, log = () => {},
 
     let next = 0,
       done = 0;
+    // The text kept, as the manifest counts it.
+    let kept = Object.values(files).reduce((n, f) => n + (Number(f.bytes) || 0), 0);
     const worker = async slot => {
       while (next < todo.length) {
         const file = todo[next++];
@@ -452,9 +456,17 @@ export async function syncDrive({ env = process.env, configPath, log = () => {},
           sourceUrl: file.webViewLink ?? null,
           extractor: EXTRACTOR,
         };
+        const before = Number(files[file.id]?.bytes) || 0;
+        if (!before && kept >= config.maxTotalBytes) {
+          // No room for a new one: listed without text (modifiedTime empty, so it is tried again).
+          files[file.id] = { ...entry, modifiedTime: null, status: 'sin espacio' };
+          summary.full = (summary.full ?? 0) + 1;
+          continue;
+        }
         try {
           const result = await exportOne(file, slot);
           files[file.id] = { ...entry, ...result, exportedAt: new Date().toISOString() };
+          kept += result.bytes - before;
           summary.exported++;
         } catch (e) {
           // The earlier text (if any) stays until the export works again.
@@ -493,6 +505,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       console.log(
         `Drive sync: ${s.total} documents (${kinds || 'none'}); exported ${s.exported}, unchanged ${s.unchanged}, deleted ${s.deleted}, failed ${s.failed}; status: ${status || '-'}; excluded ${s.excluded}, not text ${s.ignored}`,
       );
+      if (s.full) console.error(`Drive sync: ${s.full} new document(s) left without text: the mirror reached its maxTotalMb`);
       if (s.failed) {
         console.error(`Drive sync: ${s.failed} file(s) failed; they are retried next run (see drive/manifest.json)`);
         process.exitCode = 1;

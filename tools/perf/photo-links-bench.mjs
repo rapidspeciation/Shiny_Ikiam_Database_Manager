@@ -39,7 +39,7 @@ const timed = async (label, work) => {
   return out;
 };
 
-try {
+async function main() {
   await timed('The copy read into the app (Photo_links and the three sheets with CAM IDs)', () =>
     store.sync({ sheets: ['Photo_links', 'Collection_data', 'Insectary_data', 'CRISPR'] }),
   );
@@ -52,7 +52,7 @@ try {
   const n = v => (typeof v === 'number' ? v : Array.isArray(v) ? v.length : (v?.count ?? 0));
   console.log(`  rows: renamed ${n(c.renamed)}, relinked to a file of the same name ${n(c.relinked)}, emptied ${n(c.removed)}, moved ${c.movedInDrive ?? 0}, owner or size ${c.ownerOrSizeChanged ?? 0}; new by folder: ${(c.byFolder ?? []).map(f => `${f.folder} ${f.new}`).join(', ')}`);
   console.log(`  left out: ${JSON.stringify(read.leftOut ?? {})}`);
-  if (read.upToDate || args.read) process.exit(0);
+  if (read.upToDate || args.read) return;
   const before = Date.now();
   const done = await timed('Written to Photo_links and confirmed', () => tool.run({ confirmed: true, scan: read.scan }, user));
   console.log(`  ${JSON.stringify({ status: done.status, rowsWritten: done.rowsWritten, saves: done.saves, error: done.error })}`);
@@ -63,7 +63,12 @@ try {
       for (const a of actions.reverse()) await store.undo({ actionIds: [a.id], requestId: `bench-undo-${a.id}` }, user);
     });
   }
+}
+try {
+  await main();
 } finally {
   store.close();
   fs.rmSync(dir, { recursive: true, force: true });
 }
+// Its timers (the tool's, Google's) would keep the process open: done once the copy is cleaned.
+process.exit(process.exitCode ?? 0);

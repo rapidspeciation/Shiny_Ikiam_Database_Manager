@@ -171,7 +171,7 @@ function stubGog(fx, calls) {
   };
 }
 
-async function setup() {
+async function setup({ config = null } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'ithomiini-drive-sync-'));
   const fx = fixture();
   const env = {
@@ -180,10 +180,17 @@ async function setup() {
     GOG_ACCOUNT: 'project@example.test',
     ITHOMIINI_PDFTOTEXT: join(dir, 'no-pdftotext'),
   };
+  // Another configuration: the project's own with these values changed.
+  let configPath = null;
+  if (config) {
+    configPath = join(dir, 'config.json');
+    const base = JSON.parse(readFileSync(new URL('../deploy/drive-sync.json', import.meta.url), 'utf8'));
+    writeFileSync(configPath, JSON.stringify({ ...base, ...config }));
+  }
   /** One run; its gog calls are in .calls. */
   const sync = async () => {
     const calls = [];
-    const summary = await syncDrive({ env, exec: stubGog(fx, calls) });
+    const summary = await syncDrive({ env, exec: stubGog(fx, calls), ...(configPath ? { configPath } : {}) });
     return { ...summary, calls };
   };
   const drive = join(env.KNOWLEDGE_DIR, 'drive');
@@ -307,6 +314,24 @@ test('a failed export is reported and retried next run', async () => {
     const again = await sync();
     assert.equal(again.failed, 0);
     assert.deepEqual(downloads(again.calls), [ids.slides]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('past the total size allowed, new documents wait without text and are tried again once there is room', async () => {
+  // Room for about one document's text.
+  const { dir, fx, sync, manifest } = await setup({ config: { maxTotalMb: 0.0001, concurrency: 1 } });
+  try {
+    const first = await sync();
+    assert.ok(first.exported >= 1);
+    assert.ok(first.full >= 1, JSON.stringify(first));
+    const waiting = Object.entries(manifest().files).filter(([, f]) => f.status === 'sin espacio');
+    assert.equal(waiting.length, first.full);
+    // Asked again: the waiting ones are tried again (still no room), the exported ones are not.
+    const again = await sync();
+    assert.equal(again.full, first.full);
+    assert.equal(again.exported, 0);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
