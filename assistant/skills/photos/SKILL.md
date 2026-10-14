@@ -1,6 +1,6 @@
 ---
 name: photos
-description: The photos of the butterflies' wings, from the camera to the workbook — naming the files after the CAM_ID (the Rename Photos app, the app's «Photos» tab) and double-checking a batch before it is renamed (rename_photos_read, rename_photos_look, rename_photos_edit), the folders on Google Drive and putting them in order (organize_photos: rename, move, remove duplicates, make folders, shortcuts), the Photo_links sheet that Photo_dorsal and Photo_ventral read (sync_photo_links), and moving the photos to another account to free space, and bringing the Wings Gallery and the maps up to date (update_websites). Use it when the person uploaded, renamed, moved or deleted photos, asks to update Photo_links or the photo links, says a photo shows Not Found or the wrong butterfly, asks which photos are missing, how to rename photos, where to put them, to tidy or delete photos on Drive, about the Drive space running out, about the Wings Gallery or the maps not showing new data, or presses «Review with Claude» in the «Photos» tab.
+description: The photos of the butterflies' wings, from the camera to the workbook — naming the files after the CAM_ID (the Rename Photos app, the app's «Photos» tab) and double-checking a batch before it is renamed (rename_photos_read, rename_photos_look, rename_photos_edit), photos uploaded without being renamed (drive_photos), showing butterflies' photos (show_photos), the folders on Google Drive and putting them in order (organize_photos: rename, move, remove duplicates, make folders, shortcuts), the Photo_links sheet that Photo_dorsal and Photo_ventral read (sync_photo_links), and moving the photos to another account to free space, and bringing the Wings Gallery and the maps up to date (update_websites). Use it when the person uploaded, renamed, moved or deleted photos, asks to update Photo_links or the photo links, says a photo shows Not Found or the wrong butterfly, asks which photos are missing, how to rename photos, where to put them, to tidy or delete photos on Drive, about the Drive space running out, about the Wings Gallery or the maps not showing new data, or presses «Review with Claude» in the «Photos» tab.
 ---
 
 # Wing photos and Photo_links
@@ -181,6 +181,38 @@ own click («Rename», or «Rename & rotate») once the batch is right.
 - The rest of the way: once the upload is done, «Uploaded: update» in the
   tab reads those folders for Photo_links, and the same part of the tab
   updates the sites; or `sync_photo_links`, then `update_websites`, here.
+
+## Photos uploaded to Drive without being renamed
+
+Photos on Drive with the camera's names (IMG_…), found by a Photo_links
+reading (`unnamed`) or named by the person, are read on the server:
+`drive_photos` with the folder (its link, or its name or path). Each photo is
+downloaded, its envelope read with the same reader as the Rename Photos app,
+a small copy kept and the photo deleted; about a second a photo. A card
+beside the chat shows the batch as it is read.
+
+1. `drive_photos` with the `batch` once read: the IDs in the order taken
+   (`order`), the checks, and `toLook`, only the photos that do not add up.
+   The others are not to be looked at: two photos per ID, in the order of
+   the IDs around them, read sure, turned as their session.
+2. `drive_photos_look` at those, the envelope first (`what: "photo"` for the
+   side, the wings, the turn), and `drive_photos_edit` what is clear, as in
+   «Reviewing a batch» above (the same digits mistaken, the same order of
+   IDs). A photo not wanted (blurred, a repeat): `remove`; the reason in
+   `note`.
+3. Tell the person what you changed and what is left for them; they check
+   the card (each tile has the ID, the view, a turn and «quitar») and press
+   «Aplicar en Drive»: a plan of the files' changes (renames with the RAW
+   files, turns, removals: the project account bins its own files; another
+   account's are renamed …_todelete and the transfer sheet left ready).
+   Then a Photo_links reading lists them.
+4. IDs whose photos have to be taken again (a view missing, two photos of
+   one side, an envelope that cannot be read): say them, and show them with
+   `show_photos` (`notes` says why for each), so the person sees which
+   butterflies to take out.
+
+`show_photos` also serves any list of butterflies to look at: photos the
+person asks about, two IDs to compare, the odd cases of a check.
 
 ## Updating the sites
 

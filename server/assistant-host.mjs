@@ -42,6 +42,8 @@ export const MAIN_TOOLS = new Set([
   'drive_photos',
   'drive_photos_look',
   'drive_photos_edit',
+  // It shows a card of photos (server/photo-gallery.mjs).
+  'show_photos',
 ]);
 const CALL_MS = 180_000;
 const VIEWS_MS = 60_000;

@@ -40,6 +40,7 @@ import { PHOTO_TOOLS, createPhotoLinksTool } from './photo-links-tool.mjs';
 import { IMAGES, RENAME_TOOLS, RENAME_TOOL_NAMES, createRenamePhotos } from './rename-photos.mjs';
 import { SITE_TOOLS, SITE_TOOL_NAMES, createSiteUpdates } from './site-updates.mjs';
 import { DRIVE_PHOTO_TOOLS, DRIVE_PHOTO_TOOL_NAMES, createDrivePhotos } from './drive-photos.mjs';
+import { GALLERY_TOOLS, GALLERY_TOOL_NAMES, createGallery } from './photo-gallery.mjs';
 import { createInvitations, mailerFromEnv } from './invitations.mjs';
 import { QUERY_HINT, QUERY_TOOL, createQueryRunner, formatRows, sqlProblem } from './query-tool.mjs';
 import { createSheetsCopy } from './replica.mjs';
@@ -429,6 +430,8 @@ const TOOLS = [
   ...RENAME_TOOLS,
   // Photos uploaded to Drive without being renamed, read on the server (server/drive-photos.mjs).
   ...DRIVE_PHOTO_TOOLS,
+  // Butterflies' photos shown beside the chat by their CAM IDs (server/photo-gallery.mjs).
+  ...GALLERY_TOOLS,
   // The public sites (the Wings Gallery, the maps) brought up to date with the workbook (server/site-updates.mjs).
   ...SITE_TOOLS,
   {
@@ -877,6 +880,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         show: (batch, context) => showPhotos(batch, context),
         tell: batch => photosProgress(batch),
       });
+  // Butterflies' photos beside the chat (show_photos): a card that only shows.
+  const gallery = createGallery({ store, show: (card, context) => showGallery(card, context) });
   // The public sites' updates on GitHub (update_websites).
   const siteUpdates = inWorker ? null : createSiteUpdates({ passwordFile: config.siteUpdatePasswordFile ?? null, ...(config.siteUpdates ?? {}) });
   /** A note in the person's conversation (T3 Code, Revisión de datos) of the proposals made there. */
@@ -3141,6 +3146,18 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     changed(owner(context.user));
     return proposalLink(id, chat?.id ?? null);
   }
+  /** A card of butterflies' photos (show_photos): shown, to read only (it is closed like a table of rows). */
+  function showGallery(card, context) {
+    const at = now();
+    const chat = context?.t3 ? chatOfCall(context) : null;
+    const id = randomUUID();
+    db.prepare(
+      `INSERT INTO ai_proposals (id,thread_id,owner_id,changes_json,reason,status,created_at,updated_at,last_by,
+       t3_thread,t3_title,t3_tool_use,sync_json) VALUES (?,?,?,'[]',?,'pending',?,?,'ai',?,?,?,?)`,
+    ).run(id, context.threadId, owner(context.user), card.title, at, at, chat?.id ?? null, chat?.title ?? null, context.t3?.toolUseId ?? null, json(card));
+    changed(owner(context.user));
+    return { card: id, ...proposalLink(id, chat?.id ?? null) };
+  }
   function photosProgress(batch) {
     const r = anyProposal(batch.id);
     if (!r) return;
@@ -3170,7 +3187,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     return {
       id: r.id,
       // A reading of the folders for Photo_links, or changes to make to the files on Drive (organize_photos).
-      kind: card.type === 'files' ? 'photo_files' : card.type === 'photos' ? 'photo_review' : 'photo_links',
+      kind: card.type === 'files' ? 'photo_files' : card.type === 'photos' ? 'photo_review' : card.type === 'gallery' ? 'photo_gallery' : 'photo_links',
       reason: r.reason ?? '',
       status: r.status,
       sheets: ['Photo_links'],
@@ -4962,6 +4979,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (RENAME_TOOL_NAMES.has(name)) return renamePhotos ? renamePhotos.run(name, args, context.user) : { error: 'Call it again in a moment.' };
     if (SITE_TOOL_NAMES.has(name)) return siteUpdates ? siteUpdates.run(args, context.user) : { error: 'Call it again in a moment.' };
     if (DRIVE_PHOTO_TOOL_NAMES.has(name)) return drivePhotos ? drivePhotos.run(name, args, context.user, context) : { error: 'Call it again in a moment.' };
+    if (GALLERY_TOOL_NAMES.has(name)) return gallery.run(args, context.user, context);
     if (name === 'apply_proposal') {
       const proposal = db
         .prepare('SELECT * FROM ai_proposals WHERE id = ? AND thread_id = ?')

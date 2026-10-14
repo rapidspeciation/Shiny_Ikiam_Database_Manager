@@ -178,3 +178,22 @@ test('a folder without camera-named photos, or none such', async t => {
   assert.equal(photos.picture(all.batch, id(11), 'photo'), null);
   assert.equal(existsSync(join(tmpdir(), `ithomiini-drive-photos-${all.batch}`)), false);
 });
+
+test("show_photos: each ID's listed photos side by side, a view missing said so, notes kept", async t => {
+  const { galleryOf } = await import('../server/photo-gallery.mjs');
+  const file = (n, path) => ({ 'Full Path': path, Name: path.split('/').at(-1), Type: 'File', URL: `https://drive.google.com/file/d/${id(n)}/view` });
+  const sheets = new LocalSheets({
+    Collection_data: ['CAM000001', 'CAM000002'].map((cam, i) => ({ row: i + 2, values: { CAM_ID: cam, FieldMark_ID: `F${i}` } })),
+    Photo_links: [file(1, 'Peru/CAM000001v.JPG'), file(2, 'Peru/CAM000001d.JPG'), file(3, 'Peru/CAM000002d.JPG'), file(4, 'Peru/CAM000002d.CR2')].map((values, i) => ({ row: i + 2, values })),
+  });
+  const store = new Store({ localMode: true }, { sheets });
+  await store.sync({ sheets: ['Collection_data', 'Photo_links'] });
+  t.after(() => store.close());
+  const items = galleryOf(store, ['cam000001', 'CAM000002', 'CAM000009'], { cam000001: 'both views ventral?' });
+  assert.deepEqual(items.map(i => [i.id, i.photos.map(p => p.view), i.missing, i.note ?? null, i.inWorkbook]), [
+    ['CAM000001', ['d', 'v'], [], 'both views ventral?', true],
+    ['CAM000002', ['d'], ['v'], null, true],
+    ['CAM000009', [], ['d', 'v'], null, false],
+  ]);
+  assert.equal(items[0].photos[0].file, id(2));
+});

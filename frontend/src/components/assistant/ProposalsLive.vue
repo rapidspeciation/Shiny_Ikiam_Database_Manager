@@ -54,6 +54,8 @@ const PhotoLinksCard = defineAsyncComponent(() => import('./PhotoLinksCard.vue')
 const PhotoFilesCard = defineAsyncComponent(() => import('./PhotoFilesCard.vue'))
 /** Photos uploaded to Drive without being renamed, read on the server (drive_photos): their own card. */
 const DrivePhotosCard = defineAsyncComponent(() => import('./DrivePhotosCard.vue'))
+/** Butterflies' photos the assistant shows (show_photos). */
+const PhotoGalleryCard = defineAsyncComponent(() => import('./PhotoGalleryCard.vue'))
 /** «Revisar con la foto»: a proposal's table with its notebook photo (pan and zoom load apart too). */
 const PhotoReview = defineAsyncComponent(() => import('./PhotoReview.vue'))
 /** A table of rows the assistant shows (show_rows): read-only, also with Tabulator. */
@@ -142,7 +144,7 @@ const others = computed(() => elsewhere(scope.value, chats.value))
 const mixed = computed(() => !scope.value || scope.value.chat === 'all' || scope.value.chat === 'app')
 
 const isTable = (p: Proposal) => p.kind === 'table'
-const isSync = (p: Proposal) => p.kind === 'photo_links' || p.kind === 'photo_files' || p.kind === 'photo_review'
+const isSync = (p: Proposal) => p.kind === 'photo_links' || p.kind === 'photo_files' || p.kind === 'photo_review' || p.kind === 'photo_gallery'
 /**
  * Proposals from the oldest rows of the sheet to the newest, so they are reviewed and applied in the
  * sheet's order: by sheet, then the first existing row each one changes (one with only new rows after
@@ -632,6 +634,7 @@ const origin = (p: Proposal) =>
           <RowsTable v-if="isTable(p)" :table="p" @close="discard(p)" @photo="n => review(p, n)" />
           <PhotoFilesCard v-else-if="p.kind === 'photo_files'" :proposal="p" @discard="discard(p)" @started="started(p)" />
           <DrivePhotosCard v-else-if="p.kind === 'photo_review'" :proposal="p" @discard="discard(p)" />
+          <PhotoGalleryCard v-else-if="p.kind === 'photo_gallery'" :proposal="p" @discard="discard(p)" />
           <PhotoLinksCard v-else-if="isSync(p)" :proposal="p" @discard="discard(p)" @started="started(p)" />
           <ProposalGrid
             v-else
@@ -665,6 +668,7 @@ const origin = (p: Proposal) =>
           <WhenSeen :height="heightOf(p)">
             <PhotoFilesCard v-if="p.kind === 'photo_files'" :proposal="p" />
             <DrivePhotosCard v-else-if="p.kind === 'photo_review'" :proposal="p" />
+            <PhotoGalleryCard v-else-if="p.kind === 'photo_gallery'" :proposal="p" />
             <PhotoLinksCard v-else-if="isSync(p)" :proposal="p" />
             <ProposalGrid v-else :proposal="p" @photo="n => review(p, n)" />
           </WhenSeen>
