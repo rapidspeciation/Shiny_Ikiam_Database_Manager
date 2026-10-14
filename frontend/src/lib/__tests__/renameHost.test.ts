@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { batchCounts, batchLine, blobBase64, spaceLine, type RenameState } from '../renameHost'
+import { batchCounts, batchLine, blobBase64, folderName, spaceLine, stepOf, type RenameState } from '../renameHost'
 
 const state = (extra: Partial<RenameState> = {}): RenameState => ({
   folder: 'batch july 20',
@@ -38,6 +38,27 @@ describe('the batch of the Renombrar fotos tab', () => {
     expect(spaceLine({ ...drive, freeGb: 9, nearlyFull: true }, 14.2 * 2 ** 30)).toMatchObject({ level: 'full', folderGb: 14.2 })
     // An account without a limit says nothing.
     expect(spaceLine({ usedGb: 5 }, null)).toBeNull()
+  })
+
+  it('knows the step a batch is at, from the folder to the sheets', () => {
+    const read = { on: false, percent: 100, message: '' }
+    expect(stepOf(null)).toBe('open')
+    expect(stepOf(state({ files: 0, rows: [] }))).toBe('open')
+    expect(stepOf(state({ rows: [] }))).toBe('read')
+    expect(stepOf(state({ reading: { ...read, on: true } }))).toBe('read')
+    // A photo waiting for a person, or without an ID.
+    expect(stepOf(state())).toBe('review')
+    const confirmed = [
+      { file: 'a.JPG', id: 'CAM077001', review: [] },
+      { file: 'b.JPG', id: 'CAM077001', review: [] },
+      { file: 'c.JPG', id: '', review: ['no-reading'], skip: true },
+    ]
+    expect(stepOf(state({ rows: confirmed }))).toBe('rename')
+    const renamed = confirmed.map(r => ({ ...r, status: 'Renamed' }))
+    expect(stepOf(state({ rows: [renamed[0], confirmed[1]] }))).toBe('rename')
+    expect(stepOf(state({ rows: renamed }))).toBe('upload')
+    expect(stepOf(state({ rows: renamed }), true)).toBe('update')
+    expect(folderName('Photos wings of collected butterflies/PERU_2024/JPG')).toBe('JPG')
   })
 
   it('turns a picture into text for the server', async () => {

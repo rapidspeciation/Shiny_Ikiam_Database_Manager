@@ -12,7 +12,8 @@
 //   rename_photos_edit   corrections to rows (ID, skip, turn, leave for the person), or all taken back
 //
 // HTTP, for the tab (RenameHost.vue): POST rename/state, GET rename/commands (waits for one),
-// POST rename/result, GET rename/ids (the workbook's IDs, for the reader's database rule).
+// POST rename/result, GET rename/ids (the workbook's IDs, for the reader's database rule),
+// GET rename/upload (where the batch's files go on Drive, for the tab's own bar).
 
 import { randomUUID } from 'node:crypto';
 import { photoLinkRows, specimenName, specimens } from './photo-links.mjs';
@@ -350,6 +351,12 @@ export const REVIEW_PROMPT = [
   'Al terminar dime qué cambiaste, qué queda para mí y si ya puedo pulsar «Rename».',
 ].join(' ');
 
+/** The prompt of the chat started when the person says the renamed files are uploaded. */
+export const UPLOADED_PROMPT = [
+  'Ya subí a Drive las fotos renombradas del lote de la pestaña «Renombrar fotos» (skill `photos`).',
+  'Actualiza Photo_links con las carpetas donde las subí y dime qué encontraste; cuando esté escrito, actualiza la Wings Gallery y los mapas.',
+].join(' ');
+
 /**
  * The batches open in people's «Renombrar fotos» tabs, for one app.
  *  - run(name, args, user): a tool.
@@ -520,7 +527,7 @@ export function createRenamePhotos({ store, pollMs = POLL_MS, answerMs = null, n
       return edit(args, s);
     },
     async handle({ method, path, body = {}, query = {}, user }) {
-      const m = /^\/api\/rename\/(state|commands|result|ids)$/.exec(path);
+      const m = /^\/api\/rename\/(state|commands|result|ids|upload)$/.exec(path);
       if (!m) return null;
       if (!EDITORS.includes(user?.role)) return { status: 403, body: { code: 'forbidden', message: 'Your role cannot rename photos' } };
       const what = m[1];
@@ -529,6 +536,8 @@ export function createRenamePhotos({ store, pollMs = POLL_MS, answerMs = null, n
       if (!tab) return { status: 400, body: { code: 'bad_request', message: 'tab is required' } };
       const s = sessionOf(user, tab);
       s.at = now();
+      // Where the batch's files go, as the tab's bar says it (null before any photo has an ID).
+      if (what === 'upload' && method === 'GET') return { status: 200, body: { upload: s.state?.rows.length ? await afterRenaming(s.state) : null } };
       if (what === 'state' && method === 'POST') {
         s.state = cleanState(body.state);
         return { status: 200, body: { ok: true } };

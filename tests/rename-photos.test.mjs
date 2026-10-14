@@ -8,7 +8,7 @@ import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { createApp } from '../server/index.mjs';
 import { createAssistant, mcpTools } from '../server/assistant.mjs';
-import { IMAGES, REVIEW_PROMPT, checkBatch, cleanState, createRenamePhotos, listedPlaces, uploadPlace } from '../server/rename-photos.mjs';
+import { IMAGES, REVIEW_PROMPT, UPLOADED_PROMPT, checkBatch, cleanState, createRenamePhotos, listedPlaces, uploadPlace } from '../server/rename-photos.mjs';
 import { SITES, createSiteUpdates } from '../server/site-updates.mjs';
 
 const minute = n => `2026-07-20T10:${String(n).padStart(2, '0')}:00.000Z`;
@@ -142,6 +142,9 @@ test('the tools reach the batch through the open tab: read, pictures, correction
     assert.match(read.upload.noFolderYet, /new collection/);
     assert.deepEqual([read.upload.folderOnTheComputerGb, read.upload.projectDrive], [5, { freeGb: 4.2, usedPercent: 96, nearlyFull: true, fits: 'no: the folder is larger than the space left' }]);
     assert.match(read.upload.then, /sync_photo_links.*update_websites/);
+    // The same for the tab's own bar.
+    const bar = await rename.handle({ method: 'GET', path: '/api/rename/upload', user: kim, query: { tab: 'tab-1' } });
+    assert.match(bar.body.upload.noFolderYet, /new collection/);
     // Every photo, a page at a time; or some by name.
     const all = await rename.run('rename_photos_read', { show: 'all', limit: 5 }, kim);
     assert.deepEqual([all.rows.length, all.more], [5, { from: 5, of: 13 }]);
@@ -233,6 +236,7 @@ test('the Rename Photos app is served for the tab\'s frame, and the review asks 
     rmSync(renameAppRoot, { recursive: true, force: true });
   }
   assert.match(REVIEW_PROMPT, /Renombrar fotos/);
+  assert.match(UPLOADED_PROMPT, /Photo_links/);
 });
 
 test('update_websites: when each site was last updated, an update started and followed, its publishing', async () => {

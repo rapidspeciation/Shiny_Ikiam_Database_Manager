@@ -42,7 +42,50 @@ export const renameHost = reactive({
   /** The app's build is not on this server. */
   missing: false,
   state: null as RenameState | null,
+  /** This page's name for its batch on the server (RenameHost). */
+  tab: '',
 })
+
+/** The way from the camera's files to the sheets, a step at a time. */
+export const RENAME_STEPS = ['open', 'read', 'review', 'rename', 'upload', 'update'] as const
+export type RenameStep = (typeof RENAME_STEPS)[number]
+export const stepLabel = (step: RenameStep): string =>
+  ({
+    open: t('Abrir carpeta'),
+    read: t('Leer los IDs'),
+    review: t('Revisar los IDs'),
+    rename: t('Renombrar'),
+    upload: t('Subir a Drive'),
+    update: t('Actualizar hojas y sitios'),
+  })[step]
+
+/**
+ * The step a batch is at: its folder to open, its photos to read, photos waiting for a person,
+ * files to rename, then to upload; `uploaded`: the person said they are on Drive.
+ */
+export function stepOf(state: RenameState | null, uploaded = false): RenameStep {
+  if (!state || (!state.files && !state.rows.length)) return 'open'
+  if (!state.rows.length || state.reading.on) return 'read'
+  const named = state.rows.filter(r => !r.skip && r.id)
+  if (state.rows.some(r => !r.skip && (r.review.length > 0 || !r.id))) return 'review'
+  if (named.some(r => r.status !== 'Renamed')) return 'rename'
+  return uploaded ? 'update' : 'upload'
+}
+
+/** Where a batch's files go on Drive (GET rename/upload; server/rename-photos.mjs uploadPlace). */
+export interface UploadFolder {
+  folder: string
+  link?: string
+  inDriveForDesktop: string
+  alsoNear?: string
+}
+export interface UploadPlace {
+  photos?: UploadFolder
+  rawFiles?: UploadFolder
+  noFolderYet?: string
+}
+/** A folder's own name, the last of its path. */
+export const folderName = (path: string) => path.split('/').filter(Boolean).at(-1) ?? path
 
 /** A batch in numbers. */
 export function batchCounts(state: RenameState | null) {

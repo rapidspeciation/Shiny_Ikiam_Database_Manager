@@ -20,6 +20,7 @@ const frame = ref<HTMLIFrameElement>()
 const box = ref({ left: 0, top: 0, width: 0, height: 0 })
 const shown = ref(false)
 const tab = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+renameHost.tab = tab
 let observer: ResizeObserver | undefined
 let alive = true
 let looping = false
