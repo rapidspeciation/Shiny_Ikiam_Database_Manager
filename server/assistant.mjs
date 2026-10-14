@@ -5573,11 +5573,11 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (path === '/api/photo-links/read' && method === 'POST') {
       if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot change the sheet.');
       if (!photoLinks) return bad(503, 'unavailable', 'Call it again in a moment.');
+      if (photoLinks.writing()) return bad(409, 'busy', 'Photo_links ya se está escribiendo: espera a que termine.');
       const names = value => (Array.isArray(value) ? value : []).map(v => String(v).trim()).filter(Boolean);
       const context = { threadId: namedThread(user, 'Photo_links'), user, person: true };
       const out = await photoLinks.run({ only: names(body.only), add: names(body.add) }, user, context);
       if (out.error) return bad(409, 'unavailable', out.error);
-      if (out.status === 'writing') return bad(409, 'busy', 'Photo_links ya se está escribiendo: espera a que termine.');
       return {
         status: 200,
         body: { proposalId: out.upToDate ? null : out.scan, upToDate: !!out.upToDate, notFound: out.foldersNotFound ?? [], notListed: out.notListed ?? [] },

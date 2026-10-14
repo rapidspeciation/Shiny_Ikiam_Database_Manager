@@ -137,7 +137,7 @@ async function loadSites(fresh = false) {
     // The section shows what it had.
   }
   // While a run goes on, asked again now and then (GitHub answers 60 times an hour to the server).
-  if (sites.value.some(running)) timer = setTimeout(() => void loadSites(true), 30_000)
+  if (sites.value.some(running)) timer = setTimeout(() => void loadSites(true), 45_000)
 }
 async function update(key: 'gallery' | 'maps') {
   starting.value = key

@@ -58,15 +58,19 @@ const EDITORS = ['editor', 'reviewer', 'admin'];
 const API = 'https://api.github.com';
 /** How long a call follows the runs it started. */
 const WAIT_MS = 90_000;
-const STEP_MS = 5_000;
-/** GitHub answers 60 unsigned requests an hour: the sites' runs are asked again after this long. */
-const HELD_MS = 20_000;
+const STEP_MS = 15_000;
+/**
+ * GitHub answers 60 unsigned requests an hour from the server: a workflow's runs are asked again after
+ * this long, or (`fresh`, a run going on) after FRESH_MS; refused for that limit, the last ones are told.
+ */
+const HELD_MS = 5 * 60_000;
+const FRESH_MS = 20_000;
 
 /**
  * update_websites for one app. `passwordFile`: the workers' password (config.siteUpdatePasswordFile);
- * `fetchImpl`, `waitMs`, `stepMs`, `now`: for tests.
+ * `fetchImpl`, `waitMs`, `stepMs`, `freshMs`, `now`: for tests.
  */
-export function createSiteUpdates({ passwordFile = null, fetchImpl = fetch, waitMs = WAIT_MS, stepMs = STEP_MS, now = Date.now } = {}) {
+export function createSiteUpdates({ passwordFile = null, fetchImpl = fetch, waitMs = WAIT_MS, stepMs = STEP_MS, freshMs = FRESH_MS, now = Date.now } = {}) {
   const password = () => (passwordFile && existsSync(passwordFile) ? readFileSync(passwordFile, 'utf8').trim() : '');
   const held = new Map();
 
@@ -81,15 +85,23 @@ export function createSiteUpdates({ passwordFile = null, fetchImpl = fetch, wait
     }
     return response.json();
   }
-  /** A workflow's latest runs; `fresh`: not the ones held a moment ago. */
-  async function runsOf(site, workflow, { n = 3, fresh = false } = {}) {
-    const key = `${site.repo} ${workflow} ${n}`;
+  /** A workflow's latest runs; `fresh`: asked again unless they were a moment ago; `force`: asked again. */
+  async function runsOf(site, workflow, { fresh = false, force = false } = {}) {
+    const key = `${site.repo} ${workflow}`;
     const kept = held.get(key);
-    if (!fresh && kept && now() - kept.at < HELD_MS) return kept.runs;
-    const runs = (await github(`/repos/${site.repo}/actions/workflows/${workflow}/runs?per_page=${n}`)).workflow_runs ?? [];
-    held.set(key, { at: now(), runs });
-    return runs;
+    if (!force && kept && now() - kept.at < (fresh ? freshMs : HELD_MS)) return kept.runs;
+    try {
+      const runs = (await github(`/repos/${site.repo}/actions/workflows/${workflow}/runs?per_page=3`)).workflow_runs ?? [];
+      held.set(key, { at: now(), runs });
+      return runs;
+    } catch (e) {
+      if (kept && (e.status === 403 || e.status === 429)) return kept.runs;
+      throw e;
+    }
   }
+  /** Whether the runs last read of a site show one going on (only those are asked again often). */
+  const going = site =>
+    [site.update, site.deploy].some(w => held.get(`${site.repo} ${w}`)?.runs?.some(r => r.status !== 'completed'));
   /** Asks the site's worker to start its update: null, or what went wrong. */
   async function start(site, gbif) {
     const response = await fetchImpl(site.worker, {
@@ -125,14 +137,15 @@ export function createSiteUpdates({ passwordFile = null, fetchImpl = fetch, wait
 
   async function status(key, fresh = false) {
     const site = SITES[key];
-    const [update] = await runsOf(site, site.update, { fresh });
-    return { site: site.name, url: site.url, lastUpdate: shown(update) ?? 'never run', ...(await publishing(site, update, fresh)) };
+    const again = fresh && going(site);
+    const [update] = await runsOf(site, site.update, { fresh: again });
+    return { site: site.name, url: site.url, lastUpdate: shown(update) ?? 'never run', ...(await publishing(site, update, again)) };
   }
 
   /** Starts a site's update and (`wait`) follows it until it ends or the wait is over. */
   async function update(key, { gbif = false, wait = true } = {}) {
     const site = SITES[key];
-    const before = await runsOf(site, site.update, { fresh: true });
+    const before = await runsOf(site, site.update, { force: true });
     if (before.some(r => r.status !== 'completed'))
       return { site: site.name, url: site.url, update: { ...shown(before.find(r => r.status !== 'completed')), note: 'an update was already running: this one was not started' } };
     const last = before[0]?.id ?? null;
@@ -142,7 +155,7 @@ export function createSiteUpdates({ passwordFile = null, fetchImpl = fetch, wait
     let run = null;
     while (now() < until) {
       await new Promise(resolve => setTimeout(resolve, stepMs));
-      run = (await runsOf(site, site.update, { n: 1, fresh: true }))[0] ?? null;
+      run = (await runsOf(site, site.update, { force: true }))[0] ?? null;
       if (run?.id === last) run = null;
       if (run && (run.status === 'completed' || !wait)) break;
     }

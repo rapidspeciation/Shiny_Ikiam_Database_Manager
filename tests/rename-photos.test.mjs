@@ -297,6 +297,28 @@ test('update_websites: when each site was last updated, an update started throug
     const busy = await updates.run({ sites: ['maps'] }, kim);
     assert.match(busy.sites[0].update.note, /already running/);
     assert.equal(hub.calls.filter(c => c[0] === 'worker').length, 0);
+    // GitHub's 60 requests an hour: asked again within minutes, the runs held are told; refused for the limit, too.
+    Object.assign(hub.runs.gallery.deploy[0], { status: 'completed', conclusion: 'success', updated_at: '2026-10-14T01:02:00Z' });
+    let clock = Date.parse('2026-10-14T03:00:00Z');
+    let limited = false;
+    const counted = [];
+    const sparing = createSiteUpdates({
+      passwordFile,
+      now: () => clock,
+      fetchImpl: async (url, init) => {
+        counted.push(url);
+        return limited ? { ok: false, status: 403, text: async () => 'API rate limit exceeded' } : fetchImpl(url, init);
+      },
+    });
+    const first = await sparing.run({}, kim);
+    assert.equal(counted.length, 4);
+    clock += 60_000;
+    assert.deepEqual(await sparing.run({ fresh: true }, kim), first);
+    // Only the maps had a run going: only theirs were asked again.
+    assert.deepEqual(counted.slice(4).map(u => keyOf(u)), ['maps', 'maps']);
+    clock += 10 * 60_000;
+    limited = true;
+    assert.deepEqual((await sparing.run({}, kim)).sites[0].lastUpdate, first.sites[0].lastUpdate);
     // A wrong password.
     writeFileSync(passwordFile, 'old\n');
     const refused = await updates.run({ sites: ['gallery'] }, kim);
