@@ -87,66 +87,6 @@ async function apply() {
   }
 }
 
-// ------------------------------------------------------------ the fixes it offers, and Claude
-/** The rows are needed to work the fixes out: read once the card is pending with something to fix. */
-watch(
-  () => [pending.value, checks.value.length, sync.value.read?.at],
-  () => pending.value && !sync.value.stale && checks.value.length && void loadRows(),
-  { immediate: true },
-)
-const fixes = computed(() => new Map(checks.value.map(c => [c.kind, rows.value ? fixFor(c.kind, rows.value) : null])))
-const fixing = ref('')
-async function runFix(kind: string, fix: PhotoFix) {
-  fixing.value = kind
-  try {
-    if (fix.operations) {
-      const out = await api<{ plan: string }>('photo-links/plan', { method: 'POST', body: { operations: fix.operations } })
-      showCard(out.plan)
-      notify(t('Plan listo: revísalo y pulsa «Aplicar» en su tarjeta'))
-    } else
-      for (const folder of fix.folders ?? []) {
-        const out = await api<{ batch: string }>('drive-photos/start', { method: 'POST', body: { folder } })
-        showCard(out.batch)
-      }
-  } catch (e) {
-    notify(errorText(e), 'error')
-  } finally {
-    fixing.value = ''
-  }
-}
-const asking = ref('')
-async function ask(what: string, text: string) {
-  asking.value = what
-  try {
-    const out = await askClaude(
-      `${text} Es la lectura de Photo_links de la tarjeta ${props.proposal.id} (Cambios propuestos): míralo con get_proposal de esa tarjeta o con sync_photo_links. Propón los cambios en tarjetas; no apliques nada sin que yo lo diga.`,
-      t('Photo_links: revisar'),
-    )
-    if (!out.chat) notify(t('T3 no está disponible: copia el pedido que aparece junto al chat'), 'error')
-  } catch (e) {
-    notify(errorText(e), 'error')
-  } finally {
-    asking.value = ''
-  }
-}
-const askCheck = (kind: CheckKind, count: number) =>
-  ask(kind, t('Hay {n} fotos con «{check}». Ayúdame a resolverlas: mira cada una (los IDs de alrededor, el sobre si hace falta) y dime qué hacer.', { n: count, check: checkLabel(kind) }))
-const fileOf = (url: string) => /\/d\/([\w-]{20,})/.exec(url)?.[1] ?? ''
-const listing = ref('')
-/** A folder not listed yet, read with the others to start listing it (the same card, read again). */
-async function listFolder(folder: string) {
-  listing.value = folder
-  try {
-    const out = await api<{ proposalId: string | null }>('photo-links/read', { method: 'POST', body: { add: [folder], only: sync.value.onlyFolders?.length ? sync.value.only ?? [] : [] } })
-    if (out.proposalId && out.proposalId !== props.proposal.id) showCard(out.proposalId)
-    notify(t('Leída de nuevo con {folder}: revisa sus filas nuevas', { folder }))
-  } catch (e) {
-    notify(errorText(e), 'error')
-  } finally {
-    listing.value = ''
-  }
-}
-
 // ------------------------------------------------------------ what to look at
 const openCheck = ref<CheckKind | null>(null)
 /** Whether an example says more than its check's name does. */
@@ -248,6 +188,66 @@ watch(
   },
 )
 onBeforeUnmount(dropGrid)
+
+// ------------------------------------------------------------ the fixes it offers, and Claude
+/** The rows are needed to work the fixes out: read once the card is pending with something to fix. */
+watch(
+  () => [pending.value, checks.value.length, sync.value.read?.at],
+  () => pending.value && !sync.value.stale && checks.value.length && void loadRows(),
+  { immediate: true },
+)
+const fixes = computed(() => new Map(checks.value.map(c => [c.kind, rows.value ? fixFor(c.kind, rows.value) : null])))
+const fixing = ref('')
+async function runFix(kind: string, fix: PhotoFix) {
+  fixing.value = kind
+  try {
+    if (fix.operations) {
+      const out = await api<{ plan: string }>('photo-links/plan', { method: 'POST', body: { operations: fix.operations } })
+      showCard(out.plan)
+      notify(t('Plan listo: revísalo y pulsa «Aplicar» en su tarjeta'))
+    } else
+      for (const folder of fix.folders ?? []) {
+        const out = await api<{ batch: string }>('drive-photos/start', { method: 'POST', body: { folder } })
+        showCard(out.batch)
+      }
+  } catch (e) {
+    notify(errorText(e), 'error')
+  } finally {
+    fixing.value = ''
+  }
+}
+const asking = ref('')
+async function ask(what: string, text: string) {
+  asking.value = what
+  try {
+    const out = await askClaude(
+      `${text} Es la lectura de Photo_links de la tarjeta ${props.proposal.id} (Cambios propuestos): míralo con get_proposal de esa tarjeta o con sync_photo_links. Propón los cambios en tarjetas; no apliques nada sin que yo lo diga.`,
+      t('Photo_links: revisar'),
+    )
+    if (!out.chat) notify(t('T3 no está disponible: copia el pedido que aparece junto al chat'), 'error')
+  } catch (e) {
+    notify(errorText(e), 'error')
+  } finally {
+    asking.value = ''
+  }
+}
+const askCheck = (kind: CheckKind, count: number) =>
+  ask(kind, t('Hay {n} fotos con «{check}». Ayúdame a resolverlas: mira cada una (los IDs de alrededor, el sobre si hace falta) y dime qué hacer.', { n: count, check: checkLabel(kind) }))
+const fileOf = (url: string) => /\/d\/([\w-]{20,})/.exec(url)?.[1] ?? ''
+const listing = ref('')
+/** A folder not listed yet, read with the others to start listing it (the same card, read again). */
+async function listFolder(folder: string) {
+  listing.value = folder
+  try {
+    const out = await api<{ proposalId: string | null }>('photo-links/read', { method: 'POST', body: { add: [folder], only: sync.value.onlyFolders?.length ? sync.value.only ?? [] : [] } })
+    if (out.proposalId && out.proposalId !== props.proposal.id) showCard(out.proposalId)
+    notify(t('Leída de nuevo con {folder}: revisa sus filas nuevas', { folder }))
+  } catch (e) {
+    notify(errorText(e), 'error')
+  } finally {
+    listing.value = ''
+  }
+}
 
 const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at).toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' }) : ''))
 </script>

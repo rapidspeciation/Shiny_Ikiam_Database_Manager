@@ -316,8 +316,8 @@ onBeforeUnmount(() => {
       <p v-if="upToDate" class="m-3 flex items-center gap-1.5 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900" data-up-to-date>
         <Check :size="15" /> {{ $t('Photo_links ya está al día con esas carpetas (leídas a las {at}).', { at: upToDate }) }}
       </p>
-      <div v-if="extra.length" class="max-h-[50%] shrink-0 overflow-y-auto border-b border-stone-300" data-extra-cards>
-        <ProposalsLive v-for="id in extra" :key="id" layout="page" :only="id" class="min-h-0" />
+      <div v-if="extra.length" class="max-h-[55%] shrink-0 overflow-y-auto border-b-2 border-stone-300" data-extra-cards>
+        <ProposalsLive v-for="id in extra" :key="id" layout="page" :only="id" class="h-[24rem] border-b border-stone-200" />
       </div>
       <ProposalsLive v-if="card" :key="card" layout="page" :only="card" class="min-h-0 flex-1" @count="onCount" />
       <p v-else-if="!upToDate" class="m-auto max-w-sm p-6 text-center text-sm text-stone-500">
