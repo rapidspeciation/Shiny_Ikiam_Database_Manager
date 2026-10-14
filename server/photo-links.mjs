@@ -38,10 +38,29 @@ export function driveIdOf(url) {
   return m ? m[1] || m[2] || m[3] : null;
 }
 
+/** Names in the order a person reads them (CAM2 before CAM10); one collator, as a comparison each would be slow. */
+const NAME_ORDER = new Intl.Collator('en', { numeric: true }).compare;
+
 const SHEETS_EPOCH = Date.UTC(1899, 11, 30);
 const formatters = new Map();
 /** A moment as the sheet's date-time number, in the workbook's time zone (as Apps Script writes a Date). */
 export function sheetSerial(ms, timeZone) {
+  // The zone's offset, worked out once a quarter of an hour (zones change it on the quarter hour at most):
+  // thousands of files' dates in a reading.
+  const quarter = Math.floor(ms / 900_000);
+  const key = `${timeZone}|${quarter}`;
+  let offset = offsets.get(key);
+  if (offset === undefined) {
+    const start = quarter * 900_000;
+    offset = zoneTime(start, timeZone) - start;
+    if (offsets.size > 20_000) offsets.clear();
+    offsets.set(key, offset);
+  }
+  return (ms + offset - SHEETS_EPOCH) / 86_400_000;
+}
+const offsets = new Map();
+/** A moment as the clock shows it in a time zone, as a UTC moment. */
+function zoneTime(ms, timeZone) {
   let format = formatters.get(timeZone);
   if (!format)
     formatters.set(
@@ -58,8 +77,7 @@ export function sheetSerial(ms, timeZone) {
       })),
     );
   const p = Object.fromEntries(format.formatToParts(new Date(ms)).map(x => [x.type, Number(x.value)]));
-  const local = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) + (ms % 1000);
-  return (local - SHEETS_EPOCH) / 86_400_000;
+  return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) + (ms % 1000);
 }
 /**
  * The camera's capture time ("2026:05:06 20:15:28") as the script writes it: read as if it were
@@ -310,13 +328,14 @@ export function planPhotoLinks({
     if (!where.has(id)) where.set(id, []);
     where.get(id).push({ folder, size, capture });
   };
+  const relinks = new Map(edits.filter(e => e.kind === 'relink').map(e => [e.id, e]));
   for (const r of rows) {
     if (emptied.has(r.id) || r.values.Type !== 'File') continue;
     const name = renamedTo.get(r.id) ?? r.values.Name;
     if (blank(name)) continue;
     if (!names.has(lower(name))) names.set(lower(name), relinkedTo.get(r.id) ?? driveIdOf(r.values.URL));
     seeView(String(name));
-    const again = edits.find(e => e.id === r.id && e.kind === 'relink');
+    const again = relinks.get(r.id);
     seePhoto(String(name), dirOf(again?.values['Full Path'] ?? r.values['Full Path']), again?.values['Size KB'] ?? r.values['Size KB'], again?.values['Capture Date'] ?? r.values['Capture Date']);
   }
 
@@ -334,7 +353,7 @@ export function planPhotoLinks({
     if (!children.has(item.parent)) children.set(item.parent, []);
     children.get(item.parent).push(item);
   }
-  const byName = (a, b) => a.name.localeCompare(b.name, 'en', { numeric: true });
+  const byName = (a, b) => NAME_ORDER(a.name, b.name);
   for (const folder of items.values()) {
     if (!isFolder(folder) || !inScope(folder)) continue;
     const place = placeOf(folder.id);
@@ -638,11 +657,24 @@ const isoDay = serial => new Date(SHEETS_EPOCH + Math.floor(serial) * 86_400_000
  * (collected in the field; preserved, dead or brought in at the insectary); `country`: where it was collected.
  */
 export function specimens(store) {
+  // Kept until the three sheets change (asked in a few milliseconds; reading them takes half a second).
+  const key = JSON.stringify(
+    store.db
+      .prepare(
+        "SELECT count(*) n, max(updated_at) at, sum(version) v, sum(missing) m, sum(observed) o FROM records WHERE sheet IN ('Collection_data', 'Insectary_data', 'CRISPR')",
+      )
+      .get(),
+  );
+  const kept = specimensKept.get(store.db);
+  if (kept?.key === key) return kept.out;
   const out = new Map();
   const text = v => String(v ?? '').trim();
+  // Only the cells used, picked by SQLite (parsing every row of three sheets took half a second).
   const read = (sheet, field, dates, country = null) => {
-    for (const r of store.db.prepare('SELECT values_json FROM records WHERE sheet=? AND missing=0 AND observed=1').all(sheet)) {
-      const values = JSON.parse(r.values_json);
+    const picked = [field, ...dates, ...(country ? [country] : [])];
+    const sql = `SELECT ${picked.map((f, i) => `json_extract(values_json, '$."${f}"') AS c${i}`).join(', ')} FROM records WHERE sheet=? AND missing=0 AND observed=1`;
+    for (const r of store.db.prepare(sql).all(sheet)) {
+      const values = Object.fromEntries(picked.map((f, i) => [f, r[`c${i}`]]));
       const id = text(values[field]).toUpperCase();
       if (!id || /^(NA|N\/A|NOT GIVEN|TO BE ASSIGNED)$/.test(id)) continue;
       const entry = out.get(id) ?? out.set(id, {}).get(id);
@@ -656,8 +688,10 @@ export function specimens(store) {
   read('Collection_data', 'CAM_ID_insectary', ['Collection_date'], 'Country');
   read('Insectary_data', 'CAM_ID', ['Preservation_date', 'Death_date', 'Intro2Insectary_date']);
   read('CRISPR', 'CAM_ID', []);
+  specimensKept.set(store.db, { key, out });
   return out;
 }
+const specimensKept = new WeakMap();
 
 /** The sheet's rows as planPhotoLinks takes them. */
 export function photoLinkRows(store) {
