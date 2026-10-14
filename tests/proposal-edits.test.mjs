@@ -93,7 +93,10 @@ test('update_proposal revises the same proposal: cells, rows added and removed, 
     // index, and every row's label by its new index (the rows after it moved up).
     assert.equal(updated.rows, 3);
     assert.deepEqual(updated.changed.map(r => [r.index, r.note]), [[0, 'M1 corregido'], [2, 'M3']]);
-    assert.equal(updated.changed[0].values.Collection_date, '2026-09-26');
+    // A revised row says the cells set; a new row comes whole, the sheet said once.
+    assert.equal(updated.changed[0].set.SPECIES, 'Hypothyris anastasia');
+    assert.ok(!('Collection_date' in updated.changed[0].set), 'a cell it did not touch is not repeated');
+    assert.ok(updated.changed[1].values && !('sheet' in updated.changed[1]) && updated.sheet === 'Collection_data', JSON.stringify(updated.changed[1]));
     assert.deepEqual(updated.removed.map(r => r.index), [1]);
     assert.equal(updated.labels.length, 3);
     const full = await call('get_proposal', { proposalId: proposed.proposalId, full: true });
@@ -122,7 +125,7 @@ test('update_proposal revises the same proposal: cells, rows added and removed, 
     });
     assert.equal(merged.rows, 3);
     assert.deepEqual(merged.changed.map(r => r.index), [1]);
-    assert.deepEqual(merged.changed[0].values, { Sex: 'female', CAM_ID: 'CAM000009' });
+    assert.deepEqual(merged.changed[0].set, { CAM_ID: 'CAM000009' });
     // A row named by its ID in the sheet (CAM000001 is that row's CAM_ID), not its recordId.
     const byId = await call('update_proposal', { proposalId: proposed.proposalId, rows: [{ id: 'CAM000001', values: { Flight_height: 3 } }] });
     assert.deepEqual(byId.changed.map(r => [r.index, r.values.Flight_height]), [[1, 3]]);
@@ -198,8 +201,8 @@ test('the person edits cells in the table: checked, marked, kept from the assist
       { field: clash.conflicts[0].field, person: clash.conflicts[0].person, yours: clash.conflicts[0].yours },
       { field: 'SPECIES', person: 'Hypothyris anastasia', yours: 'Oleria gunilla' },
     );
-    assert.equal(clash.changed[0].values.SPECIES, 'Hypothyris anastasia');
-    assert.equal(clash.changed[0].values.Collection_time, 10 / 24, 'the other cell is updated');
+    // The person's cell is not among the cells set; the other one is.
+    assert.deepEqual(clash.changed[0].set, { Collection_time: 10 / 24 });
     // Removing a row the person edited is a conflict too.
     const keep = await call('update_proposal', { proposalId, removeRows: [1] });
     assert.equal(keep.conflicts[0].index, 1);

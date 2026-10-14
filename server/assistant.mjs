@@ -536,7 +536,7 @@ const TOOLS = [
           '- `highlight` (rows, changes, newRows; propose_changes too): marks the row, as in show_rows; false unmarks.',
           '- `discard: true` alone: takes it out of review (a table: closes it); nothing is written.',
           'On a proposal no longer pending: what became of it (applied or discarded, when, by whom) and where further changes go.',
-          'Returns `changed` (those rows as get_proposal full shows them; rows given the same cells as one `sameChange`), their `lookAt`, `removed`, the row count; `full: true`: every row.',
+          'Returns `changed`: for each row, the cells this revision set (`set`; a new row, or one changed in another way, as get_proposal full shows it; rows given the same cells as one `sameChange`), their `lookAt`, `removed`, the row count; `full: true`: every row.',
         ].join('\n'),
       parameters: {
         type: 'object',
@@ -2634,9 +2634,28 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   }
 
   /**
-   * What a revision changed, as update_proposal answers it: the rows whose view changed (as
-   * get_proposal full shows them), the rows taken out (their old index) and then every row's
-   * label by its new index, how many rows there are and how many doubtful cells wait unchecked.
+   * Rows as the tools answer them, without what repeats: the sheet said once when they share it
+   * (`sheet`), and a row's recordId only where its label does not name it (none, or shared).
+   */
+  function slimRows(rows) {
+    const one = rows.length > 0 && rows.every(r => r.sheet === rows[0].sheet);
+    const labels = new Map();
+    for (const r of rows) labels.set(r.label, (labels.get(r.label) ?? 0) + 1);
+    return {
+      ...(one ? { sheet: rows[0].sheet } : {}),
+      rows: rows.map(({ sheet, recordId, ...rest }) => ({
+        ...rest,
+        ...(one ? {} : { sheet }),
+        ...(recordId && (!rest.label || labels.get(rest.label) > 1) ? { recordId } : {}),
+      })),
+    };
+  }
+
+  /**
+   * What a revision changed, as update_proposal answers it: for each row whose view changed, the
+   * cells it set (`set`; a new row, or one changed otherwise, as get_proposal full shows it), the
+   * rows taken out (their old index) and then every row's label by its new index, how many rows
+   * there are and how many doubtful cells wait unchecked.
    */
   function revisedRows(old, fresh, table, proposal) {
     const plain = view => {
@@ -2660,9 +2679,36 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     const grouped = new Set(same.flatMap(g => g.map(({ v }) => v.index)));
     const removed = old.flatMap((c, i) => (kept.has(rowKey(c)) ? [] : [{ index: i, label: c.label }]));
     const doubtful = uncheckedDoubts(fresh).length;
+    // A row whose cells, note or mark are all that changed: those, not the whole row again.
+    const delta = v => {
+      const was = before.get(rowKey(fresh[v.index]));
+      if (!was) return null;
+      for (const k of new Set([...Object.keys(was), ...Object.keys(v)]))
+        if (!['index', 'values', 'note', 'highlight'].includes(k) && json(was[k]) !== json(v[k])) return null;
+      const set = {};
+      for (const [f, value] of Object.entries(v.values)) if (json(value) !== json(was.values[f])) set[f] = value;
+      for (const f of Object.keys(was.values)) if (!(f in v.values)) set[f] = null;
+      return {
+        index: v.index,
+        label: v.label,
+        ...(Object.keys(set).length ? { set } : {}),
+        ...(json(was.note) !== json(v.note) ? { note: v.note ?? null } : {}),
+        ...(json(was.highlight) !== json(v.highlight) ? { highlight: !!v.highlight } : {}),
+      };
+    };
+    const whole = [];
+    const cells = [];
+    for (const v of changed) {
+      if (grouped.has(v.index)) continue;
+      const d = delta(v);
+      if (d) cells.push(d);
+      else whole.push(v);
+    }
+    const slim = slimRows(whole);
     return {
       rows: fresh.length,
-      changed: changed.filter(v => !grouped.has(v.index)),
+      ...(whole.length && slim.sheet ? { sheet: slim.sheet } : {}),
+      changed: [...cells, ...slim.rows].sort((a, b) => a.index - b.index),
       ...(same.length
         ? {
             sameChange: same.map(g => ({
@@ -2763,7 +2809,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       const from = Math.min(Math.max(Number(args.offset) || 0, 0), table.length);
       const rest = table.slice(from);
       const more = shown => (shown < rest.length ? { truncated: true, next: `Rows ${from + shown}–${table.length - 1} not shown: get_proposal with full: true and offset: ${from + shown}` } : {});
-      return fitList({ ...head, total: table.length, rows: rest }, 'rows', RESULT_BUDGET - 500, more).out;
+      return fitList({ ...head, total: table.length, ...slimRows(rest) }, 'rows', RESULT_BUDGET - 500, more).out;
     }
     const contextRows = changes.filter(c => c.context).length;
     const attention = attentionRows(table);
@@ -3385,7 +3431,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (revision === null) return { error: 'The proposal is no longer pending' };
     if (revision === false) return { error: `Nothing was changed. ${EDITED_MEANWHILE}` };
     const table = proposalTable(out.changes, proposal);
-    const revised = args.full === true ? { rows: table } : revisedRows(changes, out.changes, table, proposal);
+    const revised = args.full === true ? slimRows(table) : revisedRows(changes, out.changes, table, proposal);
     // The formulas' cost, when the revision wrote formulas.
     const formulaCost = !unchanged && out.changes.some(c => c.formulaCells?.length) ? formulaCostAnswer(proposalFormulaCost(store, out.changes)) : null;
     return {

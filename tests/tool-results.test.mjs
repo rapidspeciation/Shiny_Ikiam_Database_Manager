@@ -110,7 +110,7 @@ test('rows by their ID: a bare ID, {sheet, id}, a key; the first ID column wins 
     assert.match(twice.error, /^changes\[0\]: X1X is the ID of 2 rows/);
     // Rows of the proposal by their ID too.
     const byLabel = await call('update_proposal', { proposalId: proposed.proposalId, rows: [{ id: '4oo', values: { Sex: 'NA' } }], removeRows: ['W2B'] });
-    assert.deepEqual(byLabel.changed.map(r => [r.index, r.values]), [[0, { Sex: 'NA' }]]);
+    assert.deepEqual(byLabel.changed.map(r => [r.index, r.set]), [[0, { Sex: 'NA' }]]);
     assert.deepEqual(byLabel.removed, [{ index: 1, label: 'W2B' }]);
 
     // bulk, show_rows and get_record take IDs too.

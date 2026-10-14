@@ -89,7 +89,8 @@ test('null in a proposal is no change, only {clear:true} empties a cell; the tab
     // Only what changed comes back: the row revised, and how many rows the proposal has.
     assert.equal(dropped.rows, 1);
     assert.deepEqual(dropped.changed.map(r => r.index), [0]);
-    assert.deepEqual(dropped.changed[0].values, { 'HATCHING DATE': { clear: true } });
+    // …as the cells it set: a change taken back reads null.
+    assert.deepEqual(dropped.changed[0], { index: 0, label: dropped.changed[0].label, set: { 'HATCHING DATE': { clear: true }, 'NUMBER OF EGGS': null } });
     [shown] = await list();
     assert.deepEqual(shown.changes[0].values, { 'HATCHING DATE': null }, 'the table gets null: the cell to empty');
     assert.equal(shown.changes[0].rowValues['HATCHING DATE'], d('2026-09-05'));
@@ -101,7 +102,7 @@ test('null in a proposal is no change, only {clear:true} empties a cell; the tab
       proposalId: proposed.proposalId,
       changes: [{ recordId: stock(2).id, values: { 'HATCHING DATE': null, 'NUMBER OF LARVAE': '10' } }],
     });
-    assert.deepEqual(merged.changed[0].values, { 'NUMBER OF LARVAE': 10 }, 'null took back the clear');
+    assert.deepEqual(merged.changed[0].set, { 'NUMBER OF LARVAE': 10, 'HATCHING DATE': null }, 'null took back the clear');
     await call('update_proposal', { proposalId: proposed.proposalId, rows: [{ index: 0, values: { 'HATCHING DATE': { clear: true } } }] });
 
     const applied = await call('apply_proposal', { proposalId: proposed.proposalId });
@@ -139,12 +140,12 @@ test('notes the assistant adds keep the "d/m/yy INI:" form and go after the exis
     const [revised] = out.changed;
     const { index } = revised;
     assert.equal(revised.label, '900');
-    assert.equal(revised.values.NOTES, `15/7/26 MJS: some eggs dry | ${dated('larvas sanas')}`);
-    out = await call('update_proposal', { proposalId: proposed.proposalId, rows: [{ index, values: { NOTES: revised.values.NOTES } }] });
+    assert.equal(revised.set.NOTES, `15/7/26 MJS: some eggs dry | ${dated('larvas sanas')}`);
+    out = await call('update_proposal', { proposalId: proposed.proposalId, rows: [{ index, values: { NOTES: revised.set.NOTES } }] });
     assert.equal(out.unchanged, true, 'the note sent back as it was read is not appended twice');
     assert.deepEqual(out.changed, []);
     out = await call('update_proposal', { proposalId: proposed.proposalId, rows: [{ index, values: { NOTES: { replace: 'some eggs dry' } } }] });
-    assert.equal(out.changed[0].values.NOTES, 'some eggs dry');
+    assert.equal(out.changed[0].set.NOTES, 'some eggs dry');
     [shown] = await list();
     assert.equal(shown.changes[index].values.NOTES, 'some eggs dry');
   } finally {
@@ -297,7 +298,7 @@ test('update_proposal highlights rows (a context row and a changed one), keeps t
 
     // false takes it off; a row not named keeps its mark.
     revised = await call('update_proposal', { proposalId: out.proposalId, rows: [{ index: context.index, highlight: false }] });
-    assert.deepEqual(revised.changed.map(r => [r.index, 'highlight' in r]), [[context.index, false]]);
+    assert.deepEqual(revised.changed.map(r => [r.index, r.highlight]), [[context.index, false]]);
     again = await call('get_proposal', { proposalId: out.proposalId, full: true });
     assert.ok(!('highlight' in again.rows[context.index]));
     assert.equal(again.rows[changed.index].highlight, true);
@@ -318,7 +319,7 @@ test('update_proposal takes highlight in changes (a row already in the proposal)
     const existing = full.rows.find(r => !r.create && !r.context);
     const revised = await call('update_proposal', {
       proposalId: out.proposalId,
-      changes: [{ recordId: existing.recordId, values: {}, highlight: true }],
+      changes: [{ sheet: full.sheet, id: existing.label, values: {}, highlight: true }],
       rows: [{ index: fresh.index, highlight: true }],
     });
     assert.ok(!revised.error, JSON.stringify(revised));
@@ -413,9 +414,8 @@ test('update_proposal answers rows given the same cells as one sameChange entry,
     });
     assert.equal(out.revision, 2, JSON.stringify(out));
     assert.deepEqual(out.sameChange, [{ rows: 3, values: { 'NUMBER OF LARVAE': 10 }, indexes: [0, 1, 2], labels: ['900', '901', '902'] }]);
-    // A row with other news is listed in full.
-    assert.deepEqual(out.changed.map(r => r.index), [3]);
-    assert.deepEqual(out.changed[0].values, { 'NUMBER OF EGGS': 12, 'NUMBER OF LARVAE': 5 });
+    // A row with other news is listed by itself, with the cells set.
+    assert.deepEqual(out.changed, [{ index: 3, label: out.changed[0].label, set: { 'NUMBER OF LARVAE': 5 } }]);
     // full: every row as before.
     const full = await call('update_proposal', { proposalId: proposed.proposalId, rows: [{ index: 0, values: { 'NUMBER OF LARVAE': '11' } }], full: true });
     assert.equal(full.rows.length, 4);
