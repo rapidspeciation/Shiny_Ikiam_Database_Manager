@@ -15,7 +15,7 @@
 // POST rename/result, GET rename/ids (the workbook's IDs, for the reader's database rule),
 // GET rename/upload (where the batch's files go on Drive, for the tab's own bar).
 
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { photoLinkRows, specimenName, specimens } from './photo-links.mjs';
 
 // ------------------------------------------------------------ the tools
@@ -362,6 +362,13 @@ const told = r =>
     changedByYou: r.byHost,
   });
 
+/** A folder of photos found again: its name and the names its photos had when first read (they keep them as `file`). */
+export const folderKey = state =>
+  createHash('sha1')
+    .update(`${state.folder}\n${state.rows.map(r => r.file).sort().join('\n')}`)
+    .digest('hex')
+    .slice(0, 24);
+
 /** The prompt of the chat the tab's «Review with Claude» starts. */
 export const REVIEW_PROMPT = [
   'Revisa el lote de fotos que tengo abierto en la pestaña «Fotos» (skill `photos`, «Reviewing a batch before it is renamed»).',
@@ -374,7 +381,7 @@ export const REVIEW_PROMPT = [
  * The batches open in people's «Fotos» tabs, for one app.
  *  - run(name, args, user): a tool.
  *  - handle({ method, path, body, query, user }): the tab's HTTP (null: not one of its paths).
- *  - active(user): whether the person's tab is open with a batch.
+ *  - active(user): whether the person's tab is open with a batch; folderOf(user): its folder, and the key that finds it again.
  * `space()`: the project account's space on Drive (server/photo-links-tool.mjs), for where the batch
  * goes next. `pollMs`, `answerMs`: for tests.
  */
@@ -531,6 +538,11 @@ export function createRenamePhotos({ store, pollMs = POLL_MS, answerMs = null, n
 
   return {
     active: user => !!live(user)?.state?.rows.length,
+    /** The folder open in the person's tab, as a key that finds it again (its name and its photos' first names), or null. */
+    folderOf: user => {
+      const state = live(user)?.state;
+      return state?.folder && state.rows.length ? { folder: state.folder, key: folderKey(state) } : null;
+    },
     async run(name, args = {}, user) {
       if (!EDITORS.includes(user?.role)) return { error: 'Your role cannot rename photos' };
       const s = live(user);

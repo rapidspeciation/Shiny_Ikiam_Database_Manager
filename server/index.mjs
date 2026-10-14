@@ -1348,11 +1348,20 @@ export async function createApp(config = {}, options = {}) {
       }
       // The «Fotos» tab's review: a chat of the person's own T3 project that starts with the request to
       // check the batch open in the tab (server/rename-photos.mjs). Without T3, the request comes back to be pasted.
-      if (method === 'POST' && path === '/api/rename/review') {
+      // The chat that reviewed a folder is kept with it (rename_reviews, by person and folder): the folder
+      // opened again goes back to it; `fresh: true` starts another. GET: the folder's chat, if any.
+      if (path === '/api/rename/review' && (method === 'POST' || method === 'GET')) {
         requireEditor(user);
+        store.db.exec(
+          'CREATE TABLE IF NOT EXISTS rename_reviews (owner TEXT NOT NULL, folder_key TEXT NOT NULL, folder TEXT NOT NULL, chat TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (owner, folder_key))',
+        );
+        const open = assistant?.renamePhotos?.folderOf(user) ?? null;
+        const kept = open ? store.db.prepare('SELECT chat, created_at FROM rename_reviews WHERE owner = ? AND folder_key = ?').get(user.username, open.key) : null;
+        if (method === 'GET') return json(res, 200, { folder: open?.folder ?? null, chat: kept?.chat ?? null, at: kept?.created_at ?? null });
+        if (kept && body?.fresh !== true) return json(res, 200, { chat: kept.chat, resumed: true, prompt: REVIEW_PROMPT });
         const start = chatStarter(config.t3 ?? {});
         const own = config.t3 && start ? await t3Projects.ensure(user) : null;
-        const [title, text] = ['Revisión de fotos', REVIEW_PROMPT];
+        const [title, text] = [open ? `Revisión de fotos · ${open.folder}`.slice(0, 80) : 'Revisión de fotos', REVIEW_PROMPT];
         let chat = null;
         if (own?.project)
           try {
@@ -1360,6 +1369,10 @@ export async function createApp(config = {}, options = {}) {
           } catch (e) {
             console.error(`Review chat for ${user.username}:`, e.message);
           }
+        if (chat && open)
+          store.db
+            .prepare('INSERT OR REPLACE INTO rename_reviews (owner, folder_key, folder, chat, created_at) VALUES (?,?,?,?,?)')
+            .run(user.username, open.key, open.folder, chat, now());
         return json(res, chat ? 201 : 200, { chat, prompt: text });
       }
       // Whose the chat on screen is (its T3 project's person): another's, and the Asistente tab says the AI takes you for them there.

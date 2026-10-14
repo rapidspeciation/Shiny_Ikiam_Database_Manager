@@ -327,3 +327,27 @@ test('update_websites: when each site was last updated, an update started throug
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('a folder opened again is found again: its name and the names its photos had when read', async () => {
+  const { folderKey } = await import('../server/rename-photos.mjs');
+  const rows = names => names.map((file, i) => ({ file, now: `CAM00000${i}d.JPG` }));
+  const once = folderKey({ folder: 'wing photos', rows: rows(['IMG_1.JPG', 'IMG_2.JPG']) });
+  // Renamed since (their `file` is still the camera's name), in another order: the same folder.
+  assert.equal(folderKey({ folder: 'wing photos', rows: rows(['IMG_2.JPG', 'IMG_1.JPG']).map(r => ({ ...r, now: 'x' })) }), once);
+  assert.notEqual(folderKey({ folder: 'wing photos 2', rows: rows(['IMG_1.JPG', 'IMG_2.JPG']) }), once);
+  assert.notEqual(folderKey({ folder: 'wing photos', rows: rows(['IMG_1.JPG']) }), once);
+
+  const store = new Store({ localMode: true }, { sheets: new LocalSheets({}) });
+  const rename = createRenamePhotos({ store, pollMs: 40, answerMs: 2000 });
+  const kim = { id: 'kim', username: 'kim', role: 'editor' };
+  try {
+    assert.equal(rename.folderOf(kim), null);
+    const tab = fakeTab(rename, kim);
+    for (let i = 0; i < 50 && !rename.folderOf(kim); i++) await new Promise(r => setTimeout(r, 10));
+    assert.deepEqual(rename.folderOf(kim), { folder: batch().folder, key: folderKey(batch()) });
+    await tab.close();
+  } finally {
+    rename.close();
+    store.close();
+  }
+});

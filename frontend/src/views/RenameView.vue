@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
-import { Check, CloudUpload, Copy, ExternalLink, PanelRightClose, PanelRightOpen, Sparkles } from 'lucide-vue-next'
+import { Check, CloudUpload, Copy, ExternalLink, MessageSquarePlus, PanelRightClose, PanelRightOpen, Sparkles } from 'lucide-vue-next'
 const PhotoLinksPanel = defineAsyncComponent(() => import('../components/PhotoLinksPanel.vue'))
 import { api } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
-import { t } from '../lib/i18n'
+import { intlLocale, t } from '../lib/i18n'
 import {
   RENAME_STEPS,
   batchCounts,
@@ -144,12 +144,31 @@ function uploadedNow() {
   section.value = 'links'
   preset.value = folders.length ? { folders, at: Date.now() } : null
 }
-async function review() {
+/** The chat that already reviewed the folder open (kept by the server for this folder): «Revisar» goes back to it. */
+const earlier = ref<{ chat: string; at: string } | null>(null)
+let earlierFor = ''
+async function askEarlier() {
+  const key = `${renameHost.state?.folder ?? ''}|${counts.value.photos}`
+  if (key === earlierFor) return
+  earlierFor = key
+  if (!renameHost.state?.folder || !counts.value.photos) return void (earlier.value = null)
+  try {
+    const out = await api<{ chat: string | null; at: string | null }>('rename/review')
+    earlier.value = out.chat ? { chat: out.chat, at: out.at ?? '' } : null
+  } catch {
+    earlierFor = ''
+  }
+}
+watch(() => [renameHost.state?.folder, counts.value.photos], () => void askEarlier(), { immediate: true })
+const earlierDate = computed(() => (earlier.value?.at ? new Date(earlier.value.at).toLocaleDateString(intlLocale(), { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''))
+
+async function review(fresh = false) {
   asking.value = true
   prompt.value = ''
   try {
     await ensureT3()
-    const out = await api<{ chat: string | null; prompt: string }>('rename/review', { method: 'POST', body: {} })
+    const out = await api<{ chat: string | null; prompt: string; resumed?: boolean }>('rename/review', { method: 'POST', body: fresh ? { fresh: true } : {} })
+    if (out.chat) earlier.value = { chat: out.chat, at: out.resumed ? (earlier.value?.at ?? '') : new Date().toISOString() }
     chat.value = true
     if (out.chat) t3Host.open = { thread: out.chat }
     else prompt.value = out.prompt
@@ -256,14 +275,27 @@ function resize(event: PointerEvent) {
             :class="step === 'review' ? 'btn-primary bg-emerald-700 px-3 py-1 hover:bg-emerald-800' : 'btn px-3 py-1'"
             :disabled="!canReview || asking"
             :title="
-              canReview
-                ? $t('El asistente mira los sobres de las fotos marcadas y de una muestra, corrige lo que esté claro y te deja señalado lo demás')
-                : $t('Primero lee las fotos de una carpeta')
+              !canReview
+                ? $t('Primero lee las fotos de una carpeta')
+                : earlier
+                  ? $t('Abre el chat que ya revisó esta carpeta (del {date})', { date: earlierDate })
+                  : $t('El asistente mira los sobres de las fotos marcadas y de una muestra, corrige lo que esté claro y te deja señalado lo demás')
             "
             data-review
             @click="review()"
           >
-            <Sparkles :size="15" /> {{ asking ? $t('Abriendo el chat…') : $t('Revisar con Claude') }}
+            <Sparkles :size="15" /> {{ asking ? $t('Abriendo el chat…') : earlier ? $t('Continuar la revisión') : $t('Revisar con Claude') }}
+          </button>
+          <!-- A chat of its own already reviewed this folder: another, from the start. -->
+          <button
+            v-if="section === 'rename' && earlier"
+            class="btn-ghost"
+            :disabled="asking"
+            :title="$t('Empezar un chat nuevo para revisar esta carpeta (el anterior, del {date}, queda en T3)', { date: earlierDate })"
+            data-review-fresh
+            @click="review(true)"
+          >
+            <MessageSquarePlus :size="16" />
           </button>
           <button
             v-if="section === 'rename'"

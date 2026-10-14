@@ -727,6 +727,9 @@ export default {
   'Elige las carpetas y pulsa «Leer Drive»: aquí verás lo que cambiaría en Photo_links antes de aplicarlo.':
     'Choose the folders and press «Read Drive»: here you will see what would change in Photo_links before applying it.',
   'Sitios públicos': 'Public sites',
+  'Continuar la revisión': 'Continue the review',
+  'Empezar un chat nuevo para revisar esta carpeta (el anterior, del {date}, queda en T3)': 'Start a new chat to review this folder (the earlier one, from {date}, stays in T3)',
+  'Abre el chat que ya revisó esta carpeta (del {date})': 'Opens the chat that already reviewed this folder (from {date})',
   '¿cuál lado arriba? alas anteriores arriba': 'which way up? forewings on top',
   'no está en la base': 'not in the workbook',
   'sin foto {view} en Photo_links': 'no {view} photo in Photo_links',
