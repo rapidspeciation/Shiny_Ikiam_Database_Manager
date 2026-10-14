@@ -58,6 +58,7 @@ export function reasonText(reason: string): string {
       'no ID read': t('sin ID leído'),
       'unsure reading': t('lectura dudosa'),
       'rotation-outlier': t('girada distinto que su sesión'),
+      'turn-unsure': t('¿cuál lado arriba? alas anteriores arriba'),
       checks: t('su ID no suma dos fotos, o está fuera de orden'),
     } as Record<string, string>
   )[reason] ?? reason

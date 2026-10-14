@@ -727,6 +727,7 @@ export default {
   'Elige las carpetas y pulsa «Leer Drive»: aquí verás lo que cambiaría en Photo_links antes de aplicarlo.':
     'Choose the folders and press «Read Drive»: here you will see what would change in Photo_links before applying it.',
   'Sitios públicos': 'Public sites',
+  '¿cuál lado arriba? alas anteriores arriba': 'which way up? forewings on top',
   'no está en la base': 'not in the workbook',
   'sin foto {view} en Photo_links': 'no {view} photo in Photo_links',
   // DrivePhotosCard (photos read on the server) and the panel's part for them

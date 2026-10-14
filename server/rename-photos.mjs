@@ -27,9 +27,9 @@ export const RENAME_TOOLS = [
       description: [
         "The batch of wing photos open in the person's «Rename photos» tab: the photos of a folder on their computer, each with the ID the app read on its envelope, before they are renamed after it.",
         '- `order`: the IDs in the order the photos were taken, each with its number of photos (`CAM077001×2`); `!` marks one with a photo waiting for a person, `?` photos without an ID.',
-        '- `checks`: what does not add up. `notTwoPhotos`: an ID with one photo, or more than two (each butterfly has a dorsal and a ventral photo, taken one after the other) · `apart`: an ID on photos not taken one after the other · `notInWorkbook`: an ID no row of the workbook has (`maybe`: workbook IDs one character away) · `alreadyPhotographed`: an ID whose photos Photo_links already lists · `turned`: photos whose envelope pointed another way than the rest of their session.',
+        '- `checks`: what does not add up. `notTwoPhotos`: an ID with one photo, or more than two (each butterfly has a dorsal and a ventral photo, taken one after the other) · `apart`: an ID on photos not taken one after the other · `notInWorkbook`: an ID no row of the workbook has (`maybe`: workbook IDs one character away) · `alreadyPhotographed`: an ID whose photos Photo_links already lists · `turned`: photos whose envelope pointed another way than the rest of their session · `turnUnsure`: the turn of the batch is not clear from the envelopes (laid sideways, or pointing both ways): two photos of each run to look at (`lookAt`); the photos are landscape with the forewings above the hindwings, and one turn fits them all.',
         "- `upload`: where the files go once renamed: the Drive folders that hold the photos (`photos`) and the RAW files (`rawFiles`) of the IDs nearest these, each with its link and its place in Drive for desktop; the folder's size on the computer and the space left in the project's Drive (`projectDrive`).",
-        '- `rows`: the photos to look at (those flagged and those in `checks`), or with `show: "all"` every photo, `from` and `limit` paging through them; `files` picks photos by name. A row: its number in the batch `n`, `file`, `id`, `view` (d, v: by the order taken), `taken`, `review` (why the reader left it for a person: no-reading, not-in-database, out-of-sequence, repeated-id, unreadable-photo, rotation-outlier), `suggest`, `conf` (how sure the reader was, 0–1), `rotation` (clockwise degrees chosen for it).',
+        '- `rows`: the photos to look at (those flagged and those in `checks`), or with `show: "all"` every photo, `from` and `limit` paging through them; `files` picks photos by name. A row: its number in the batch `n`, `file`, `id`, `view` (d, v: by the order taken), `taken`, `review` (why the reader left it for a person: no-reading, not-in-database, out-of-sequence, repeated-id, unreadable-photo, rotation-outlier, turn-unsure), `suggest`, `conf` (how sure the reader was, 0–1), `rotation` (clockwise degrees chosen for it).',
       ].join('\n'),
       parameters: {
         type: 'object',
@@ -158,7 +158,10 @@ export function cleanState(state) {
 /** The rows in the order the photos were taken (those without a time after, by their number). */
 const inOrder = rows =>
   [...rows].sort((a, b) => (a.taken ? Date.parse(a.taken) : Infinity) - (b.taken ? Date.parse(b.taken) : Infinity) || a.n - b.n);
-const waits = r => r.review.length > 0;
+// A photo flagged only for which way up it is waits as its session does (checks.turnUnsure), not by itself.
+const waits = r => r.review.some(x => x !== 'turn-unsure');
+/** Photos taken further apart than this are of another session (one setup, one turn). */
+const SESSION_MS = 30 * 60_000;
 
 /** IDs one character away from `id` among `known` (a misread digit), a few. */
 function near(id, known) {
@@ -202,16 +205,31 @@ export function checkBatch(rows, { known = null, listed = null } = {}) {
   const unknown = known ? [...byId].filter(([id]) => !known.has(id)).map(([id, list]) => filled({ id, photos: list.length, maybe: near(id, known) })) : [];
   const already = listed ? [...byId].filter(([id]) => listed.has(id)).map(([id, list]) => ({ id, photos: list.length })) : [];
   const turned = ordered.filter(r => r.review.includes('rotation-outlier')).map(show);
+  // Which way up: the sessions whose envelopes lay sideways, with two of their photos to look at.
+  const unsure = [];
+  let last = NaN;
+  for (const r of ordered) {
+    const t = r.taken ? Date.parse(r.taken) : NaN;
+    if (r.review.includes('turn-unsure')) {
+      const open = unsure.at(-1);
+      if (open && !(t - last >= SESSION_MS)) open.rows.push(r);
+      else unsure.push({ rows: [r] });
+    }
+    if (!Number.isNaN(t)) last = t;
+  }
+  const turnUnsure = unsure.map(u => ({ photos: u.rows.length, from: u.rows[0].n, to: u.rows.at(-1).n, rotation: u.rows[0].rotation, lookAt: [u.rows[0], u.rows[Math.floor(u.rows.length / 2)]].filter((r, i, a) => a.indexOf(r) === i).map(show) }));
   const checks = filled({
     notTwoPhotos: notTwo.length ? some(notTwo) : null,
     apart: apart.length ? some(apart) : null,
     notInWorkbook: unknown.length ? some(unknown) : null,
     alreadyPhotographed: already.length ? some(already) : null,
     turned: turned.length ? some(turned) : null,
+    turnUnsure: turnUnsure.length ? some(turnUnsure) : null,
   });
   // The photos to look at: those waiting for a person, and those of the IDs the checks name.
   const named = new Set([...notTwo, ...apart, ...unknown].map(x => x.id));
-  const flagged = ordered.filter(r => waits(r) || !r.id || named.has(r.id));
+  const samples = new Set(turnUnsure.flatMap(u => u.lookAt.map(x => x.file)));
+  const flagged = ordered.filter(r => waits(r) || !r.id || named.has(r.id) || samples.has(r.now || r.file));
   return {
     order,
     counts: filled({
@@ -348,6 +366,7 @@ const told = r =>
 export const REVIEW_PROMPT = [
   'Revisa el lote de fotos que tengo abierto en la pestaña «Fotos» (skill `photos`, «Reviewing a batch before it is renamed»).',
   'Comprueba las fotos marcadas, los IDs que no tienen exactamente dos fotos y una muestra de las demás mirando los sobres. Corrige lo que esté claro y déjame señalado lo que no puedas resolver.',
+  'Comprueba también el giro mirando dos o tres fotos enteras: deben quedar horizontales, con las alas anteriores arriba y las posteriores abajo; si no, gíralas todas igual.',
   'Al terminar dime qué cambiaste, qué queda para mí y si ya puedo pulsar «Rename».',
 ].join(' ');
 

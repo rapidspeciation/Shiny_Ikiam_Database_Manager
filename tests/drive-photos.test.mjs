@@ -21,27 +21,40 @@ test('views in the order taken: d, v, then d2, v2', () => {
   assert.deepEqual(viewsFor(4), ['d', 'v', 'd2', 'v2']);
 });
 
-test('arrange: views by ID, one turn per session, the marked rows', () => {
+test('arrange: views by ID, one turn for the batch in the camera frame, the marked rows', () => {
   const t = s => `2026-10-14T10:${s}Z`;
+  const row = (file, camid, s, readRotation, extra = {}) => ({ file, camid, taken: t(s), readRotation, setBy: 'reader', conf: 1, wide: true, orientation: 1, ...extra });
   const rows = [
-    { file: 'a', camid: 'CAM000001', taken: t('00:00'), readRotation: 90, setBy: 'reader', conf: 1 },
-    { file: 'b', camid: 'CAM000001', taken: t('00:30'), readRotation: 90, setBy: 'reader', conf: 1 },
-    { file: 'c', camid: 'CAM000002', taken: t('01:00'), readRotation: 0, setBy: 'reader', conf: 0.5 },
-    { file: 'd', camid: 'CAM000002', taken: t('01:30'), readRotation: 90, setBy: 'reader', conf: 1 },
-    { file: 'e', camid: null, taken: t('02:00'), readRotation: null, setBy: 'reader' },
+    row('a', 'CAM000001', '00:00', 180),
+    row('b', 'CAM000001', '00:30', 180),
+    row('c', 'CAM000002', '01:00', 0, { conf: 0.5 }),
+    row('d', 'CAM000002', '01:30', 180),
+    row('e', null, '02:00', null),
+    // Its tag flipped (it shows standing): the same turn of the camera frame is a quarter less from how it shows.
+    row('f', 'CAM000003', '02:30', 90, { wide: false, orientation: 6 }),
   ];
-  const out = arrange(rows, { known: new Set(['CAM000001', 'CAM000002']), listed: new Set() });
+  const out = arrange(rows, { known: new Set(['CAM000001', 'CAM000002', 'CAM000003']), listed: new Set() });
   assert.deepEqual(rows.map(r => [r.file, r.view, r.rotation]), [
-    ['a', 'd', 90],
-    ['b', 'v', 90],
-    ['c', 'd', 90],
-    ['d', 'v', 90],
-    ['e', '', 90],
+    ['a', 'd', 180],
+    ['b', 'v', 180],
+    ['c', 'd', 180],
+    ['d', 'v', 180],
+    ['e', '', 180],
+    ['f', 'd', 90],
   ]);
-  // c: read unsure and turned otherwise than its session; e: no ID.
-  assert.deepEqual(rows.filter(r => r.marked).map(r => r.file), ['c', 'e']);
-  assert.deepEqual(rows.find(r => r.file === 'c').review, ['unsure reading', 'rotation-outlier']);
-  assert.match(out.order, /CAM000001×2 CAM000002×2! \?×1/);
+  // c: read unsure; e: no ID; f: one photo of its ID.
+  assert.deepEqual(rows.filter(r => r.marked).map(r => r.file), ['c', 'e', 'f']);
+  assert.deepEqual(rows.find(r => r.file === 'c').review, ['unsure reading']);
+  assert.match(out.order, /CAM000001×2 CAM000002×2! \?×1! CAM000003×1/);
+});
+
+test('arrange: envelopes laid sideways decide no turn; the photos stay landscape and two of them are to look at', () => {
+  const rows = ['a', 'b', 'c', 'd'].map((file, i) => ({ file, camid: `CAM00000${Math.floor(i / 2) + 1}`, taken: `2026-10-14T10:0${i}:00Z`, readRotation: 270, setBy: 'reader', conf: 1, wide: true, orientation: 1 }));
+  const out = arrange(rows, { known: new Set(['CAM000001', 'CAM000002']), listed: new Set() });
+  assert.deepEqual(rows.map(r => r.rotation), [0, 0, 0, 0]);
+  assert.equal(out.checks.turnUnsure.count, 1);
+  assert.equal(out.checks.turnUnsure.examples[0].photos, 4);
+  assert.deepEqual(rows.filter(r => r.marked).map(r => r.file), ['a', 'c']);
 });
 
 async function fixture(t, { originalsGb } = {}) {
@@ -77,14 +90,14 @@ async function fixture(t, { originalsGb } = {}) {
   t.after(() => store.close());
   // What the reader says of each photo (by its name): two photos per ID, one ID read wrong, one not read, turned a quarter.
   const said = {
-    'IMG_5001.JPG': { camid: 'CAM000001', conf: 1, rotation: 90 },
-    'IMG_5002.JPG': { camid: 'CAM000001', conf: 1, rotation: 90 },
-    'IMG_5003.JPG': { camid: 'CAM000002', conf: 0.98, rotation: 90 },
-    'IMG_5004.JPG': { camid: 'CAM000092', conf: 0.6, rotation: 90, inWorkbook: false },
-    'IMG_5005.JPG': { camid: 'CAM000003', conf: 1, rotation: 90 },
-    'IMG_5006.JPG': { camid: 'CAM000003', conf: 1, rotation: 90 },
+    'IMG_5001.JPG': { camid: 'CAM000001', conf: 1, rotation: 180 },
+    'IMG_5002.JPG': { camid: 'CAM000001', conf: 1, rotation: 180 },
+    'IMG_5003.JPG': { camid: 'CAM000002', conf: 0.98, rotation: 180 },
+    'IMG_5004.JPG': { camid: 'CAM000092', conf: 0.6, rotation: 180, inWorkbook: false },
+    'IMG_5005.JPG': { camid: 'CAM000003', conf: 1, rotation: 180 },
+    'IMG_5006.JPG': { camid: 'CAM000003', conf: 1, rotation: 180 },
     'IMG_5007.JPG': { camid: null, conf: 0, rotation: null },
-    'IMG_5008.JPG': { camid: 'CAM000003', conf: 1, rotation: 90 },
+    'IMG_5008.JPG': { camid: 'CAM000003', conf: 1, rotation: 180 },
   };
   const byFile = new Map(files.map(f => [f.id, f.name]));
   const reader = {
@@ -95,7 +108,7 @@ async function fixture(t, { originalsGb } = {}) {
       }
       writeFileSync(job.preview, 'p');
       writeFileSync(job.crop, 'c');
-      return { id: job.id, orientation: 1, inWorkbook: true, candidates: [], ...said[byFile.get(job.id)] };
+      return { id: job.id, orientation: 1, width: 6000, height: 4000, inWorkbook: true, candidates: [], ...said[byFile.get(job.id)] };
     },
   };
   const planned = [];
@@ -162,10 +175,13 @@ test('a folder read on the server: the batch in order, what to look at, correcti
     kim,
   );
   assert.equal(edited.changed, 4);
+  // One turn for all the photos.
+  assert.equal((await photos.run('drive_photos_edit', { batch: started.batch, turnAll: 0 }, kim)).changed, 8);
+  assert.equal((await photos.run('drive_photos_edit', { batch: started.batch, turnAll: 180 }, kim)).changed, 8);
   assert.equal(edited.order, 'CAM000001×2 CAM000002×2 CAM000003×2');
   assert.equal(edited.checks, undefined);
 
-  // «Aplicar»: renames (each RAW file follows its photo there), the quarter turn of the session, the two removed.
+  // «Aplicar»: renames (each RAW file follows its photo there), the batch's half turn, the two removed.
   const applied = await photos.apply(started.batch, kim);
   assert.equal(applied.plan, 'plan-1');
   const ops = planned[0].operations.map(o => [o.action, o.file.match(/d\/(.+?)\//)[1], o.name ?? o.degrees ?? '']);

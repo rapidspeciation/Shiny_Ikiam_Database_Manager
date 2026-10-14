@@ -158,11 +158,21 @@ own click («Rename», or «Rename & rotate») once the batch is right.
 | `notInWorkbook` without `maybe` | the butterfly's row is not typed yet (IDs running on after the workbook's last ones) | say which IDs: their rows are typed before the photos are uploaded |
 | `alreadyPhotographed` | photographed again on purpose, or an older ID read by mistake | read the envelope; if it is right, ask whether the new photos replace the old ones |
 | `turned` | an envelope laid down turned: the photo already follows its session | look at the whole photo; `rotate` it only if it shows turned |
+| `turnUnsure` | the envelopes lay sideways, or point both ways: their direction does not say which way up the photos are | look at the photos of `lookAt` whole, and turn them all the same way if needed (below) |
 | `repeated-id` | as `apart` | |
 
 - Set an ID yourself when the envelope reads clearly, the ID fits the run
   around it and the workbook has it. Otherwise `leave` it: a wrong name puts
   a photo on another butterfly's row.
+- Which way up: a photo is landscape, the wings side by side with the
+  forewings above the hindwings (the ruler and colour card are usually at
+  the bottom, but not always). The envelope's direction does not count: it
+  is often laid down turned. The camera does not move between shots, so one
+  turn fits the whole batch: look at two or three whole photos
+  (`part: "photo"`, as they will be once turned), and if they show standing
+  or upside down, `rotate` every photo of the batch the same way. A photo
+  turned otherwise than the rest is an envelope laid down turned, not a
+  photo to turn.
 - `view` follows the order the photos were taken in, dorsal first. Change it
   only when the person says a butterfly was photographed the other way round.
 - At the end say what you changed (file, from which ID to which), what is
@@ -197,7 +207,8 @@ beside the chat shows the batch as it is read.
    the IDs around them, read sure, turned as their session.
 2. `drive_photos_look` at those, the envelope first (`what: "photo"` for the
    side, the wings, the turn; `box` for a part at full resolution: a faint
-   envelope, a wing), and `drive_photos_edit` what is clear, as in
+   envelope, a wing), and `drive_photos_edit` what is clear (one turn for
+   all the photos, after a look at two or three whole ones: `turnAll`), as in
    «Reviewing a batch» above (the same digits mistaken, the same order of
    IDs). A photo not wanted (blurred, a repeat): `remove`; the reason in
    `note`.

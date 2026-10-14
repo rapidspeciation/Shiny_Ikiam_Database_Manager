@@ -5,7 +5,7 @@
 // used dropped first; none while the disk has little room), for the assistant to look closer at the odd
 // ones (drive_photos_look with a `box`: a part at full resolution); one dropped is downloaded again. The batch is
 // then put in order the way the «Fotos» tab does (server/rename-photos.mjs checkBatch): its IDs in the
-// order the photos were taken, two photos each (d then v), one turn per shooting session; what does not
+// order the photos were taken, two photos each (d then v), one turn for the batch; what does not
 // add up is marked for a look, and only that is shown to the assistant. Applied from its card, it
 // becomes a plan of changes on Drive (server/photo-files.mjs: renames with their RAW files, turns,
 // removals), made with the card of that plan, after which Photo_links lists the photos.
@@ -30,9 +30,9 @@ export const DRIVE_PHOTO_TOOLS = [
     function: {
       name: 'drive_photos',
       description: [
-        "Photos uploaded to a Drive folder without being renamed (the camera's names, IMG_…): the server reads the CAM ID on each envelope with the Rename Photos reader, keeps a small copy, and puts the batch in order (two photos per ID, d then v, in the order taken; one turn per shooting session). It shows as a card beside the chat, where the person checks it and presses «Aplicar».",
+        "Photos uploaded to a Drive folder without being renamed (the camera's names, IMG_…): the server reads the CAM ID on each envelope with the Rename Photos reader, keeps a small copy, and puts the batch in order (two photos per ID, d then v, in the order taken; one turn for the batch, the photos landscape with the forewings above the hindwings). It shows as a card beside the chat, where the person checks it and presses «Aplicar».",
         '- `folder` (a Drive link, or a folder of Photo_links by its path): starts reading it (about a second a photo; answers at once with the batch). `all: true`: the photos already named too.',
-        '- `batch`: how it goes, then the IDs in the order taken (`order`), the counts, the checks (IDs without exactly two photos, IDs out of the order taken, IDs the workbook lacks, IDs with photos listed already, turns that differ from their session) and the rows to look at (`toLook`). `rows: "all"`: every row.',
+        '- `batch`: how it goes, then the IDs in the order taken (`order`), the counts, the checks (IDs without exactly two photos, IDs out of the order taken, IDs the workbook lacks, IDs with photos listed already, `turnUnsure`: the turn of the batch not clear from the envelopes, two photos to look at) and the rows to look at (`toLook`). `rows: "all"`: every row.',
         'Look only at the rows marked (drive_photos_look), correct the clear ones (drive_photos_edit), and tell the person what is left for them and which IDs need photos taken again.',
       ].join('\n'),
       parameters: {
@@ -64,11 +64,12 @@ export const DRIVE_PHOTO_TOOLS = [
     function: {
       name: 'drive_photos_edit',
       description:
-        "Corrects rows of a batch of drive_photos (the card shows each change as the assistant's): `changes` [{ file, id (the CAM ID), view (d, v, d2…), remove (true: a photo not wanted, removed when applied), rotation (0, 90, 180, 270 clockwise, from the photo as shown), note (what a person should know) }]. Views are worked out again for the IDs changed unless given.",
+        "Corrects rows of a batch of drive_photos (the card shows each change as the assistant's): `changes` [{ file, id (the CAM ID), view (d, v, d2…), remove (true: a photo not wanted, removed when applied), rotation (0, 90, 180, 270 clockwise, from the photo as shown), note (what a person should know) }]. Views are worked out again for the IDs changed unless given. `turnAll` (0, 90, 180, 270): the same turn, from how each shows, for every photo of the batch (one camera setup, one turn: the photos landscape, forewings above hindwings).",
       parameters: {
         type: 'object',
         properties: {
           batch: { type: 'string' },
+          turnAll: { type: 'number' },
           changes: {
             type: 'array',
             items: {
@@ -85,7 +86,7 @@ export const DRIVE_PHOTO_TOOLS = [
             },
           },
         },
-        required: ['batch', 'changes'],
+        required: ['batch'],
       },
     },
   },
@@ -97,8 +98,6 @@ const PHOTO = /\.(jpe?g)$/i;
 const RAW = /\.(cr2|cr3|orf|nef|arw|dng|raf|rw2|pef)$/i;
 /** Below this the reader's ID is a guess to look at. */
 const SURE = 0.9;
-/** Photos taken further apart than this are of another session (one turn each). */
-const SESSION_MS = 30 * 60_000;
 const MAX_PHOTOS = 3000;
 const DOWNLOADS = 2;
 /** The pictures kept, in all: the oldest batches' go first. */
@@ -128,8 +127,8 @@ const byNumber = new Intl.Collator('en', { numeric: true }).compare;
 export const viewsFor = count => Array.from({ length: count }, (_, i) => `${i % 2 ? 'v' : 'd'}${i >= 2 ? Math.floor(i / 2) + 1 : ''}`);
 
 /**
- * A batch's rows put in order (they come in the order taken): each ID's views, the turn of each
- * session (the most common among its photos read), and what to look at (`review`). `known`: the
+ * A batch's rows put in order (they come in the order taken): each ID's views, the batch's one turn
+ * (in the camera's frame, keeping the photos landscape), and what to look at (`review`). `known`: the
  * workbook's IDs; `listed`: the IDs whose photos Photo_links lists. Rows a person or the assistant
  * set keep their view and turn.
  */
@@ -145,23 +144,26 @@ export function arrange(rows, { known = null, listed = null } = {}) {
     auto.forEach((r, i) => (r.view = free[i]));
   }
   for (const r of live) if (!r.camid && !r.viewSet) r.view = '';
-  // One turn per session: the most common turn the reader found among its photos.
-  const sessions = [];
-  let last = NaN;
+  // One turn for the batch (as the Rename Photos app: rotationPlan oneTurn). The camera on its stand does
+  // not move, so in its own frame (the orientation tag ignored) every photo needs the same turn, and the
+  // photos are landscape: an envelope read upright or upside down votes, one laid sideways does not.
+  const TAG_CW = { 1: 0, 6: 90, 3: 180, 8: 270 };
+  const frameWide = r => (r.wide === undefined || TAG_CW[r.orientation ?? 1] === undefined ? null : (TAG_CW[r.orientation ?? 1] % 180 === 0) === r.wide);
+  const fits = (turn, wide) => (norm(turn) % 180 === 0) === wide;
+  const votes = new Map();
   for (const r of live) {
-    const t = r.taken ? Date.parse(r.taken) : NaN;
-    if (!sessions.length || t - last >= SESSION_MS) sessions.push([]);
-    sessions.at(-1).push(r);
-    if (!Number.isNaN(t)) last = t;
+    const wide = frameWide(r);
+    if (r.readRotation === null || r.readRotation === undefined || wide === null) continue;
+    const turn = norm(TAG_CW[r.orientation ?? 1] + r.readRotation);
+    if (fits(turn, wide)) votes.set(turn, (votes.get(turn) ?? 0) + 1);
   }
-  for (const list of sessions) {
-    const votes = new Map();
-    for (const r of list) if (r.readRotation !== null && r.readRotation !== undefined) votes.set(r.readRotation, (votes.get(r.readRotation) ?? 0) + 1);
-    const [common] = [...votes].sort((a, b) => b[1] - a[1])[0] ?? [0];
-    for (const r of list) {
-      if (!r.rotationSet) r.rotation = common;
-      r.turnedApart = r.readRotation !== null && r.readRotation !== undefined && r.readRotation !== r.rotation;
-    }
+  const total = [...votes.values()].reduce((a, b) => a + b, 0);
+  const [best, most] = [...votes].sort((a, b) => b[1] - a[1])[0] ?? [0, 0];
+  const sure = total >= 3 && most / total >= 0.8;
+  for (const r of live) {
+    const wide = frameWide(r);
+    if (!r.rotationSet && wide !== null) r.rotation = norm((fits(best, wide) ? best : best + 90) - TAG_CW[r.orientation ?? 1]);
+    r.turnUnsure = !sure && !r.rotationSet;
   }
   // What to look at.
   const shaped = live.map((r, i) => ({
@@ -173,7 +175,7 @@ export function arrange(rows, { known = null, listed = null } = {}) {
     review: [
       ...(!r.camid ? ['no ID read'] : []),
       ...(r.camid && r.setBy === 'reader' && (r.conf ?? 0) < SURE ? ['unsure reading'] : []),
-      ...(r.turnedApart ? ['rotation-outlier'] : []),
+      ...(r.turnUnsure ? ['turn-unsure'] : []),
     ],
     skip: false,
     status: '',
@@ -383,6 +385,7 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
               candidates: (out.candidates ?? []).map(c => c.id),
               readRotation: out.rotation === null || out.rotation === undefined ? null : norm(out.rotation),
               orientation: out.orientation,
+              ...(out.width && out.height ? { wide: out.width >= out.height } : {}),
               setBy: 'reader',
             });
           } catch (e) {
@@ -624,13 +627,27 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
   }
 
   /** Changes to rows (`by`: 'assistant' or 'person'); the batch put in order again. */
-  function edit({ batch, changes }, by) {
+  function edit({ batch, changes = [], turnAll }, by) {
     const b = batchOf(batch);
     if (!b) return { error: 'No batch by that ID.' };
     if (b.status !== 'ready') return { error: b.status === 'reading' ? 'Still reading: wait for it.' : `The batch is ${b.status}.` };
     const rows = new Map(rowsOf(batch).map(r => [r.file, r]));
     const problems = [];
     let changed = 0;
+    // One turn for all, as the photos with the batch's usual orientation tag show; one whose tag flipped
+    // takes the same turn of the camera's frame.
+    if (turnAll !== undefined && turnAll !== null) {
+      const cw = r => ({ 1: 0, 6: 90, 3: 180, 8: 270 })[r.orientation ?? 1] ?? 0;
+      const tally = new Map();
+      for (const r of rows.values()) if (r.read) tally.set(cw(r), (tally.get(cw(r)) ?? 0) + 1);
+      const usual = [...tally].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0;
+      for (const r of rows.values()) {
+        if (!r.read) continue;
+        Object.assign(r, { rotation: norm(Number(turnAll) + usual - cw(r)), rotationSet: true, setBy: by });
+        saveRow(batch, r);
+        changed++;
+      }
+    }
     for (const c of Array.isArray(changes) ? changes : []) {
       const r = rows.get(String(c.file)) ?? [...rows.values()].find(x => x.name === c.file);
       if (!r) {
