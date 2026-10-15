@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fileCounts, filterRows, flagText, foundChecks, handoverAccounts, progressPercent, rowsToWrite, type PhotoChecks, type PhotoRow, type PhotoSync } from '../photoLinks'
+import { fileCounts, filterRows, flagText, foundChecks, handoverAccounts, progressPercent, rowsToWrite, rowsWanted, type PhotoChecks, type PhotoRow, type PhotoSync } from '../photoLinks'
 
 const none = { count: 0, examples: [] }
 const checks: PhotoChecks = {
@@ -36,16 +36,38 @@ describe('a reading of the photo folders', () => {
 
   it('counts the rows to write without the folders left for later', () => {
     const sync = {
-      total: 512,
+      total: 508,
       newFolders: ['Guyana_2025/jpg_2', 'Guyana_2025/raw_2'],
       byFolder: [
-        { folder: 'Guyana_2025/jpg_2', new: 253, files: 253 },
-        { folder: 'Guyana_2025/raw_2', new: 253, files: 253 },
+        // folders not listed yet: their own row among their new ones
+        { folder: 'Guyana_2025/jpg_2', new: 254, files: 253 },
+        { folder: 'Guyana_2025/raw_2', new: 254, files: 253 },
       ],
     } as PhotoSync
-    expect(rowsToWrite(sync, new Set())).toBe(512)
+    expect(rowsToWrite(sync, new Set())).toBe(508)
     // The folder's 253 files and its own row.
-    expect(rowsToWrite(sync, new Set(['Guyana_2025/raw_2']))).toBe(258)
+    expect(rowsToWrite(sync, new Set(['Guyana_2025/raw_2']))).toBe(254)
+  })
+
+  it('a folder\'s new rows and its changed rows are left for later each on its own; the rows shown follow', () => {
+    const sync = {
+      total: 10,
+      newFolders: [],
+      byFolder: [
+        { folder: 'A', new: 3, files: 9, changed: 2 },
+        { folder: 'B', new: 0, files: 4, changed: 5 },
+      ],
+    } as unknown as PhotoSync
+    expect(rowsToWrite(sync, new Set(['A']), new Set())).toBe(7)
+    expect(rowsToWrite(sync, new Set(), new Set(['A', 'B']))).toBe(3)
+    const rows = [
+      { change: 'new', folder: 'A', name: 'x.JPG' },
+      { change: 'rename', folder: 'A', name: 'y.JPG', row: 4 },
+      { change: 'remove', folder: 'B', name: 'z.JPG', row: 5 },
+    ] as PhotoRow[]
+    expect(rowsWanted(rows, new Set(['A']), new Set()).map(r => r.name)).toEqual(['y.JPG', 'z.JPG'])
+    expect(rowsWanted(rows, new Set(), new Set(['A', 'B'])).map(r => r.name)).toEqual(['x.JPG'])
+    expect(rowsWanted(rows, new Set(['A']), new Set(['A', 'B']))).toEqual([])
   })
 
   it('shows how far the writing is', () => {

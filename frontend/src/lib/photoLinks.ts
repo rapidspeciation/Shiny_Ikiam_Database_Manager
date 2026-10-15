@@ -161,12 +161,20 @@ export function foundChecks(checks: PhotoChecks | null): { kind: CheckKind; coun
     .sort((a, b) => b.count - a.count)
 }
 
-/** Rows written with the folders in `skip` left for later (their new files, their own row and their changed rows). */
-export function rowsToWrite(sync: PhotoSync, skip: ReadonlySet<string>): number {
+/** Rows written with some folders' new rows (`skipNew`; a folder not listed yet counts its own row among them) and changed rows (`skipChanges`) left for later. */
+export function rowsToWrite(sync: PhotoSync, skipNew: ReadonlySet<string>, skipChanges: ReadonlySet<string> = skipNew): number {
   let left = sync.total
-  for (const f of sync.byFolder) if (skip.has(f.folder)) left -= f.new + (f.changed ?? 0)
-  for (const f of sync.newFolders) if (skip.has(f)) left -= 1
+  for (const f of sync.byFolder) {
+    if (skipNew.has(f.folder)) left -= f.new
+    if (skipChanges.has(f.folder)) left -= f.changed ?? 0
+  }
   return Math.max(left, 0)
+}
+
+/** The rows that would be written, as the ticks are: a new row (or a new folder's own) by `skipNew`, a changed one by `skipChanges`. */
+export function rowsWanted(rows: PhotoRow[], skipNew: ReadonlySet<string>, skipChanges: ReadonlySet<string>): PhotoRow[] {
+  if (!skipNew.size && !skipChanges.size) return rows
+  return rows.filter(r => (r.change === 'new' || r.change === 'folder' ? !skipNew.has(r.folder) : !skipChanges.has(r.folder)))
 }
 
 /** How far the writing is, 0–100. */

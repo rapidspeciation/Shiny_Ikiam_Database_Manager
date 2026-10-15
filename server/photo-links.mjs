@@ -210,11 +210,12 @@ export function planPhotoLinks({
     const changed = Object.fromEntries(Object.entries(values).filter(([f, v]) => !same(f, r.values[f], v)));
     if (!Object.keys(changed).length) return false;
     // its folder: where the file is now (an emptied row: where it was), to apply a folder's changes or leave them
-    // (the script's status lines hold text there, not a path: no folder)
-    const folder = kind === 'status' ? '' : dirOf(values['Full Path'] ?? r.values['Full Path']);
+    // (the script's status lines hold text there, not a path: no folder; nor a row the script wrote one into)
+    const where = values['Full Path'] ?? r.values['Full Path'];
+    const folder = kind === 'status' || STATUS_ROW.test(where ?? '') ? '' : dirOf(where);
     edits.push({ id: r.id, row: r.row, kind, folder, values: changed, expected: Object.fromEntries(Object.keys(changed).map(f => [f, r.values[f] ?? null])) });
     if (kind !== 'status')
-      edited.push({ change: kind, row: r.row, folder: dirOf(values['Full Path'] ?? r.values['Full Path']), name: values.Name ?? r.values.Name ?? '', ...shown });
+      edited.push({ change: kind, row: r.row, folder, name: values.Name ?? r.values.Name ?? '', ...shown });
     return true;
   };
   const summary = {
@@ -417,7 +418,9 @@ export function planPhotoLinks({
     const place = placeOf(folder.id);
     if (!place) continue;
     let count = 0;
+    // a folder not listed yet: its own row is one of its new rows
     if (!listed.has(folder.id)) {
+      count++;
       creates.push({ module: SHEET, values: cells(folder, place.path), folder: place.path });
       display.push({ change: 'folder', folder: place.path, name: folder.name });
       newFolders.push(place.path);

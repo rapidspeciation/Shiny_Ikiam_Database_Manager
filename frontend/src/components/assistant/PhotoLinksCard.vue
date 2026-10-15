@@ -19,6 +19,7 @@ import {
   foundChecks,
   progressPercent,
   rowsToWrite,
+  rowsWanted,
   type CheckKind,
   type PhotoExample,
   type PhotoRow,
@@ -47,18 +48,25 @@ const changes = computed(() => sync.value.changes ?? { renamed: 0, relinked: 0, 
 const twice = computed(() => sync.value.listedTwice ?? null)
 const openTwice = ref(false)
 
-/** Folders left for later (their new files and their changed rows are not written now). */
-const skip = ref(new Set<string>())
-function toggle(folder: string) {
-  const next = new Set(skip.value)
+/** What is left for later, by folder: its new rows (files not listed yet), its changed rows (rows already there). */
+const skipNew = ref(new Set<string>())
+const skipChanges = ref(new Set<string>())
+type Part = 'new' | 'changes'
+const setOf = (part: Part) => (part === 'new' ? skipNew : skipChanges)
+function toggle(part: Part, folder: string) {
+  const next = new Set(setOf(part).value)
   if (!next.delete(folder)) next.add(folder)
-  skip.value = next
+  setOf(part).value = next
 }
-/** Every folder ticked, or none. */
-const allTicked = computed(() => !skip.value.size)
-function toggleAll() {
-  skip.value = allTicked.value ? new Set((sync.value.byFolder ?? []).map(f => f.folder)) : new Set()
+/** The folders with something of that part. */
+const foldersWith = (part: Part) => (sync.value.byFolder ?? []).filter(f => (part === 'new' ? f.new : f.changed)).map(f => f.folder)
+/** Every folder's part ticked, or none. */
+const allTicked = (part: Part) => !foldersWith(part).some(f => setOf(part).value.has(f))
+function toggleAll(part: Part) {
+  setOf(part).value = allTicked(part) ? new Set(foldersWith(part)) : new Set()
 }
+/** Folders with something left for later. */
+const leftFolders = computed(() => new Set([...skipNew.value, ...skipChanges.value]).size)
 const KIND_LABEL: Record<string, string> = {
   rename: 'renombrados', move: 'movidos', remove: 'borrados en Drive', relink: 'enlazados al archivo nuevo',
   details: 'dueño o tamaño', duplicate: 'listados dos veces', status: 'estado',
@@ -69,7 +77,7 @@ const folderName = (f: { folder: string; changed?: number; kinds?: Record<string
   f.folder || (f.kinds?.status && f.kinds.status === f.changed ? t('(líneas de estado del script)') : t('(sin carpeta)'))
 const kindsText = (kinds: Record<string, number> = {}) =>
   Object.entries(kinds).map(([k, n]) => `${n} ${t(KIND_LABEL[k] ?? k)}`).join(' · ')
-const writing = computed(() => rowsToWrite(sync.value, skip.value))
+const writing = computed(() => rowsToWrite(sync.value, skipNew.value, skipChanges.value))
 
 const busy = ref<'' | 'apply' | 'read'>('')
 const base = computed(() => `chat/proposals/${props.proposal.id}/photo-links`)
@@ -88,7 +96,7 @@ async function readAgain(quiet = false) {
 async function apply() {
   busy.value = 'apply'
   try {
-    await api(`${base.value}/apply`, { method: 'POST', body: { skip: [...skip.value] } })
+    await api(`${base.value}/apply`, { method: 'POST', body: { skipNew: [...skipNew.value], skipChanges: [...skipChanges.value] } })
     // The list brings its progress from here on.
     emit('started')
   } catch (e) {
@@ -108,13 +116,14 @@ const openCheck = ref<CheckKind | null>(null)
 const hasDetail = (kind: CheckKind, e: PhotoExample) => kind !== 'unnamed' && !(kind === 'unknownId' && !e.maybe?.length)
 
 // ------------------------------------------------------------ the rows
-const showRows = ref(false)
+// open from the start, like a proposal's table: it follows the ticks above
+const showRows = ref(true)
 const rows = ref<PhotoRow[] | null>(null)
 const rowsGone = ref(false)
 const show = ref<'all' | 'flagged' | CheckKind>('all')
 const host = ref<HTMLDivElement>()
 let grid: Tabulator | null = null
-const shown = computed(() => filterRows(rows.value ?? [], show.value))
+const shown = computed(() => filterRows(rowsWanted(rows.value ?? [], skipNew.value, skipChanges.value), show.value))
 
 function columns(): ColumnDefinition[] {
   return [
@@ -194,7 +203,8 @@ watch(
   () => {
     rows.value = null
     rowsGone.value = false
-    skip.value = new Set()
+    skipNew.value = new Set()
+    skipChanges.value = new Set()
     if (showRows.value && pending.value && !sync.value.stale) void draw()
     else {
       showRows.value = false
@@ -360,47 +370,65 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
     </p>
 
     <template v-if="pending && !sync.stale">
-      <!-- What changes, by folder: each folder applied now or left for later. -->
-      <table v-if="sync.byFolder?.length" class="w-full border-b border-stone-200 text-xs" data-folders>
-        <thead>
-          <tr class="text-left text-stone-500">
-            <th class="w-7 py-1 pl-3">
-              <input
-                type="checkbox"
-                class="rounded border-stone-300 text-emerald-700"
-                :checked="allTicked"
-                :aria-label="$t('Todas las carpetas')"
-                :title="$t('Marcar o desmarcar todas')"
-                data-all-folders
-                @change="toggleAll"
-              />
-            </th>
-            <th class="py-1 font-normal">{{ $t('Carpeta') }}</th>
-            <th class="px-2 py-1 text-right font-normal">{{ $t('Nuevos') }}</th>
-            <th class="px-2 py-1 text-right font-normal" :title="$t('Filas que ya están y cambian: renombradas, movidas, borradas en Drive, de otro dueño…')">{{ $t('Cambian') }}</th>
-            <th class="py-1 pr-3 text-right font-normal">{{ $t('En la carpeta') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="f in sync.byFolder" :key="f.folder" class="border-t border-stone-100" :class="{ 'text-stone-400': skip.has(f.folder) }">
-            <td class="py-1 pl-3">
-              <input
-                type="checkbox"
-                class="rounded border-stone-300 text-emerald-700"
-                :checked="!skip.has(f.folder)"
-                :aria-label="$t('Aplicar {folder} ahora', { folder: folderName(f) })"
-                :title="$t('Desmárcala para dejar los cambios de esta carpeta para después')"
-                @change="toggle(f.folder)"
-              />
-            </td>
-            <td class="py-1 break-all">{{ folderName(f) }}</td>
-            <td class="px-2 py-1 text-right font-medium tabular-nums">{{ f.new || '' }}</td>
-            <td class="px-2 py-1 text-right font-medium tabular-nums" :title="kindsText(f.kinds)">{{ f.changed || '' }}</td>
-            <td class="py-1 pr-3 text-right text-stone-500 tabular-nums">{{ f.files ?? '' }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <!-- What changes, by folder: its new rows and its changed rows, each applied now or left for later. -->
+      <div v-if="sync.byFolder?.length" class="border-b border-stone-200" data-folders>
+        <p class="px-3 pt-1.5 text-xs text-stone-600">
+          {{ $t('Nuevos: filas que se añaden (archivos que la hoja aún no lista). Cambian: filas que ya están y se corrigen (renombrados, movidos, borrados en Drive…). Desmarca lo que quieras dejar para después: las filas de abajo siguen tus marcas.') }}
+        </p>
+        <table class="w-full text-xs">
+          <thead>
+            <tr class="text-left text-stone-500">
+              <th class="py-1 pl-3 font-normal">{{ $t('Carpeta') }}</th>
+              <th v-for="part in (['new', 'changes'] as const)" :key="part" class="px-2 py-1 text-right font-normal">
+                <label class="inline-flex cursor-pointer items-center gap-1" :title="part === 'new' ? $t('Añadir las filas nuevas de todas las carpetas') : $t('Aplicar los cambios de todas las carpetas')">
+                  <input type="checkbox" class="rounded border-stone-300 text-emerald-700" :checked="allTicked(part)" :data-all="part" @change="toggleAll(part)" />
+                  {{ part === 'new' ? $t('Nuevos') : $t('Cambian') }}
+                </label>
+              </th>
+              <th class="py-1 pr-3 text-right font-normal">{{ $t('En la carpeta') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="f in sync.byFolder" :key="f.folder" class="border-t border-stone-100">
+              <td class="py-1 pl-3 break-all" :class="{ 'text-stone-400': (!f.new || skipNew.has(f.folder)) && (!f.changed || skipChanges.has(f.folder)) }">{{ folderName(f) }}</td>
+              <td v-for="part in (['new', 'changes'] as const)" :key="part" class="px-2 py-1 text-right tabular-nums">
+                <label v-if="part === 'new' ? f.new : f.changed" class="inline-flex cursor-pointer items-center gap-1 font-medium" :class="{ 'text-stone-400 line-through': setOf(part).value.has(f.folder) }"
+                  :title="part === 'new' ? $t('Añadir sus filas nuevas ahora') : kindsText(f.kinds)">
+                  <input type="checkbox" class="rounded border-stone-300 text-emerald-700" :checked="!setOf(part).value.has(f.folder)"
+                    :aria-label="part === 'new' ? $t('Filas nuevas de {folder}', { folder: folderName(f) }) : $t('Cambios de {folder}', { folder: folderName(f) })"
+                    @change="toggle(part, f.folder)" />
+                  {{ part === 'new' ? f.new : f.changed }}
+                </label>
+              </td>
+              <td class="py-1 pr-3 text-right text-stone-500 tabular-nums">{{ f.files ?? '' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
+      <!-- Every row. -->
+      <div class="border-b border-stone-200 px-3 py-1.5 text-xs">
+        <div class="flex flex-wrap items-center gap-2">
+          <button type="button" class="flex items-center gap-1 font-medium text-emerald-800 hover:underline" data-show-rows @click="showRows = !showRows">
+            <ChevronDown v-if="showRows" :size="12" /><ChevronRight v-else :size="12" />
+            {{ $tn(writing, 'La fila que se escribiría', 'Las {n} filas que se escribirían') }}
+          </button>
+          <select
+            v-if="showRows && rows"
+            v-model="show"
+            class="rounded border border-stone-200 bg-white py-0.5 pr-6 pl-1.5 text-xs text-stone-800"
+            :aria-label="$t('Qué filas mostrar')"
+          >
+            <option value="all">{{ $t('Todas ({n})', { n: writing }) }}</option>
+            <option v-if="flagged" value="flagged">{{ $t('Solo para revisar') }}</option>
+            <option v-for="c in checks" :key="c.kind" :value="c.kind">{{ checkLabel(c.kind) }} ({{ c.count }})</option>
+          </select>
+        </div>
+        <p v-if="showRows && rowsGone" class="py-2 text-stone-500">{{ $t('Las carpetas se leyeron hace más de media hora: léelas de nuevo.') }}</p>
+        <div v-show="showRows && rows" class="sheet-grid rows-table photo-links-rows mt-1.5">
+          <div ref="host" />
+        </div>
+      </div>
       <!-- Rows that follow their file. -->
       <p
         v-if="changes.renamed || changes.relinked || changes.removed || changes.moved || changes.details"
@@ -563,29 +591,6 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
         </p>
       </div>
 
-      <!-- Every row. -->
-      <div class="border-b border-stone-200 px-3 py-1.5 text-xs">
-        <div class="flex flex-wrap items-center gap-2">
-          <button type="button" class="flex items-center gap-1 text-emerald-800 hover:underline" data-show-rows @click="showRows = !showRows">
-            <ChevronDown v-if="showRows" :size="12" /><ChevronRight v-else :size="12" />
-            {{ showRows ? $t('Ocultar las filas') : $tn(sync.total, 'Ver la fila que se escribiría', 'Ver las {n} filas que se escribirían') }}
-          </button>
-          <select
-            v-if="showRows && rows"
-            v-model="show"
-            class="rounded border border-stone-200 bg-white py-0.5 pr-6 pl-1.5 text-xs text-stone-800"
-            :aria-label="$t('Qué filas mostrar')"
-          >
-            <option value="all">{{ $t('Todas ({n})', { n: rows.length }) }}</option>
-            <option v-if="flagged" value="flagged">{{ $t('Solo para revisar') }}</option>
-            <option v-for="c in checks" :key="c.kind" :value="c.kind">{{ checkLabel(c.kind) }} ({{ c.count }})</option>
-          </select>
-        </div>
-        <p v-if="showRows && rowsGone" class="py-2 text-stone-500">{{ $t('Las carpetas se leyeron hace más de media hora: léelas de nuevo.') }}</p>
-        <div v-show="showRows && rows" class="sheet-grid rows-table photo-links-rows mt-1.5">
-          <div ref="host" />
-        </div>
-      </div>
     </template>
 
     <div v-if="pending" class="flex flex-wrap items-center gap-2 px-3 py-2">
@@ -602,8 +607,8 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
       <button v-else class="btn-primary bg-emerald-700 hover:bg-emerald-800" :disabled="!!busy" @click="readAgain()">
         <RefreshCw :size="15" :class="{ 'animate-spin': busy === 'read' }" /> {{ busy === 'read' ? $t('Leyendo…') : $t('Leer de nuevo') }}
       </button>
-      <span v-if="skip.size" class="text-xs text-stone-500">
-        {{ $tn(skip.size, '{n} carpeta queda para después', '{n} carpetas quedan para después') }}
+      <span v-if="leftFolders" class="text-xs text-stone-500">
+        {{ $tn(leftFolders, 'Algo de {n} carpeta queda para después', 'Algo de {n} carpetas queda para después') }}
       </span>
       <button class="btn ml-auto" :disabled="!!busy" @click="emit('discard')"><X :size="14" /> {{ $t('Descartar') }}</button>
     </div>

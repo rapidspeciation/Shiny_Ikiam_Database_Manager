@@ -144,7 +144,8 @@ test('the plan: new files of the listed folders, rows following their file, name
   assert.deepEqual(s.newFolders, ['Wild/Ecuador_2026']);
   // each folder's new rows and its changed ones (a row without a path: no folder)
   assert.deepEqual(s.byFolder, [
-    { folder: 'Wild/Ecuador_2026', new: 5, files: 8, changed: 0, kinds: {} },
+    // a folder not listed yet: its own row among its new rows
+    { folder: 'Wild/Ecuador_2026', new: 6, files: 8, changed: 0, kinds: {} },
     { folder: 'Wild', new: 0, files: 3, changed: 3, kinds: { rename: 1, relink: 1, remove: 1 } },
     { folder: '', new: 0, files: null, changed: 1, kinds: { status: 1 } },
   ]);
@@ -505,8 +506,8 @@ test('a reading is a card of Cambios propuestos: its rows, «Aplicar» with a fo
     assert.equal(card.sync.total, 13);
     // each folder with its new rows and its rows that change
     assert.deepEqual(card.sync.byFolder.map(f => [f.folder, f.new, f.changed]), [
-      ['Insectary', 2, 0],
-      ['Wild/Ecuador_2026', 5, 0],
+      ['Insectary', 3, 0],
+      ['Wild/Ecuador_2026', 6, 0],
       ['Wild', 0, 3],
       ['', 0, 1],
     ]);
@@ -534,7 +535,7 @@ test('a reading is a card of Cambios propuestos: its rows, «Aplicar» with a fo
     assert.equal((await http('POST', `/${card.id}/edit`, { cells: [] })).status, 409);
 
     // «Aplicar» with the insectary folder left for later, and the changes of the rows in Wild.
-    const started = await http('POST', `/${card.id}/photo-links/apply`, { skip: ['Insectary', 'Wild'] });
+    const started = await http('POST', `/${card.id}/photo-links/apply`, { skipNew: ['Insectary'], skipChanges: ['Insectary', 'Wild'] });
     assert.equal(started.status, 202);
     for (let i = 0; i < 200 && (await cards()).some(c => c.status === 'applying'); i++) await new Promise(r => setTimeout(r, 10));
     const done = (await http('GET', '', {})).body.proposals;

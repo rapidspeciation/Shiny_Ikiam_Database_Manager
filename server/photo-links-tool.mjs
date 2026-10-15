@@ -41,7 +41,7 @@ export const PHOTO_TOOLS = [
         "  - `listedTwice`: photos the sheet already lists twice (Photo_dorsal and Photo_ventral take the first row of a name; the Wings Gallery and the maps show every row). The rows of the same file, and of copies (the same size and moment), are emptied, the one in the folder of the butterfly's country kept; the copies' files can then go with organize_photos ({check: \"copies\"}). `differentPhotosOfOneName`: two different photos under one name, each with its row, folder and link, left as they are: give the person the links to compare the envelopes; the misnamed one is then renamed with organize_photos (or the ID was used twice: skill `data-rules`).",
         '  - `notListed`: folders with specimen photos beside the listed ones. `leftOut`: files named …_todelete and folders named …_temp, which are never listed.',
         '- `only`: just these folders (a `byFolder` name, or the folder above them), which is quicker: `["Guyana_2025"]`. `add`: folders to start listing, by their `notListed` name or a Drive link.',
-        "- `confirmed: true` with that answer's `scan`, only after the person's latest message approves it: writes it, some hundred rows per save (`skip`: folders of `byFolder` to leave for later, their new rows and their changed ones). A long one answers `writing`: call again with the same arguments to follow it.",
+        "- `confirmed: true` with that answer's `scan`, only after the person's latest message approves it: writes it, some hundred rows per save. Folders of `byFolder` to leave for later: `skip` (their new rows and their changed ones), `skipNew` (only their new rows), `skipChanges` (only their changed rows). A long one answers `writing`: call again with the same arguments to follow it.",
       ].join('\n'),
       parameters: {
         type: 'object',
@@ -51,6 +51,8 @@ export const PHOTO_TOOLS = [
           scan: { type: 'string' },
           confirmed: { type: 'boolean' },
           skip: { type: 'array', items: { type: 'string' } },
+          skipNew: { type: 'array', items: { type: 'string' } },
+          skipChanges: { type: 'array', items: { type: 'string' } },
         },
       },
     },
@@ -226,7 +228,8 @@ function brief(id, card, shown = {}) {
 /**
  * sync_photo_links for one app.
  *  - run(args, user, context): the tool.
- *  - apply(id, user, { skip }), refresh(id, params, user), rows(id): the card's «Aplicar», «Leer de nuevo» and its table.
+ *  - apply(id, user, { skip, skipNew, skipChanges }), refresh(id, params, user), rows(id): the card's «Aplicar», «Leer de nuevo» and its table
+ *    (`skipNew`: folders whose new rows wait, `skipChanges`: folders whose changed rows wait, `skip`: both).
  * `show({ id, card }, context)` keeps the card of a reading (`id`: the card it replaces) and answers
  * { id, …what the model is told, its link }; `tell(id, progress)` is called as the writing goes.
  * `drive` (in config), `waitMs`, `chunk`: for tests.
@@ -305,14 +308,14 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
       leftFolders: job.left,
     });
 
-  function write(plan, user, skip) {
-    const edits = plan.edits.filter(e => !skip.has(e.folder)).map(({ id, values, expected }) => ({ id, values, expected }));
-    const creates = plan.creates.filter(c => !skip.has(c.folder)).map(({ module, values }) => ({ module, values }));
+  function write(plan, user, { skipNew, skipChanges }) {
+    const edits = plan.edits.filter(e => !skipChanges.has(e.folder)).map(({ id, values, expected }) => ({ id, values, expected }));
+    const creates = plan.creates.filter(c => !skipNew.has(c.folder)).map(({ module, values }) => ({ module, values }));
     const reason = `Photo_links brought up to date with Google Drive (${creates.length} new rows, ${edits.length} rows changed)`;
     const saves = [];
     for (let i = 0; i < edits.length; i += chunk) saves.push({ edits: edits.slice(i, i + chunk) });
     for (let i = 0; i < creates.length; i += chunk) saves.push({ creates: creates.slice(i, i + chunk) });
-    const job = { state: 'writing', saves: saves.length, saved: 0, total: edits.length + creates.length, written: 0, skipped: 0, left: [...skip] };
+    const job = { state: 'writing', saves: saves.length, saved: 0, total: edits.length + creates.length, written: 0, skipped: 0, left: [...new Set([...skipNew, ...skipChanges])] };
     const say = () => {
       try {
         tell?.(plan.id, progressOf(job));
@@ -353,7 +356,8 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
   }
 
   /** Starts writing a reading, or (`files`: from its card) making a plan's changes on Drive: its job, or { error, code }. */
-  function start(id, user, skip = [], files = false) {
+  /** `leave`: { skip, skipNew, skipChanges } (folders' rows to leave for later). */
+  function start(id, user, leave = {}, files = false) {
     if (!EDITORS.includes(user?.role)) return { error: 'Your role cannot change the sheet', code: 'forbidden' };
     const running = [...jobs.values()].find(j => j.state === 'writing');
     if (running) return { error: 'Photo_links is being written already: wait for it to finish.', code: 'busy' };
@@ -371,11 +375,12 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
       jobs.set(id, job);
       return { job };
     }
-    const leave = new Set(skip);
-    const total = plan.edits.filter(e => !leave.has(e.folder)).length + plan.creates.filter(c => !leave.has(c.folder)).length;
+    const skipNew = new Set([...list(leave.skip), ...list(leave.skipNew)]);
+    const skipChanges = new Set([...list(leave.skip), ...list(leave.skipChanges)]);
+    const total = plan.edits.filter(e => !skipChanges.has(e.folder)).length + plan.creates.filter(c => !skipNew.has(c.folder)).length;
     if (!total) return { error: `${SHEET} is already up to date.`, code: 'nothing' };
     plans.delete(id);
-    const job = write(plan, user, leave);
+    const job = write(plan, user, { skipNew, skipChanges });
     jobs.set(id, job);
     return { job };
   }
@@ -427,7 +432,7 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
     if (args.confirmed) {
       const id = String(args.scan ?? '');
       if (jobs.has(id)) return answer(id, jobs.get(id));
-      const started = start(id, user, list(args.skip));
+      const started = start(id, user, args);
       if (started.error) return started.code === 'nothing' ? { status: 'done', note: started.error } : { error: started.error };
       return waited(id, started.job);
     }
@@ -769,8 +774,8 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
     driveSpace,
     folders,
     /** The card's «Aplicar»: { status: 'applying' } once it has started, or { error, code }. */
-    apply(id, user, { skip = [] } = {}) {
-      const started = start(id, user, list(skip), true);
+    apply(id, user, leave = {}) {
+      const started = start(id, user, leave, true);
       return started.error ? started : { status: 'applying' };
     },
     /** The card's «Leer de nuevo»: the folders read again into the same card. */

@@ -5724,7 +5724,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot edit proposals.');
       if (proposal.status !== 'pending') return bad(409, 'proposal_used', 'La propuesta ya no está pendiente.');
       if (what === 'apply') {
-        const out = photoLinks.apply(id, user, { skip: body.skip });
+        const out = photoLinks.apply(id, user, { skip: body.skip, skipNew: body.skipNew, skipChanges: body.skipChanges });
         if (out.code === 'stale') return bad(410, 'stale', 'Las carpetas se leyeron hace más de media hora: léelas de nuevo.');
         if (out.code === 'busy') return bad(409, 'busy', 'Photo_links ya se está escribiendo: espera a que termine.');
         return out.error ? bad(409, out.code, out.error) : { status: 202, body: out };
