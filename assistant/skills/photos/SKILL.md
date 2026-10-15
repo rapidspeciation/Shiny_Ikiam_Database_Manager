@@ -162,7 +162,7 @@ own click («Rename», or «Rename & rotate») once the batch is right.
 | `turned` | an envelope laid down turned: the photo already follows its session | look at the whole photo; `rotate` it only if it shows turned |
 | `turnUnsure` | the envelopes lay sideways, or point both ways: their direction does not say which way up the photos are | look at the photos of `lookAt` whole, and turn them all the same way if needed (below) |
 | `repeated-id` | as `apart` | |
-| `wing-side`: the d and v photos swapped | the ventral side photographed first | look at both whole photos; when they agree, set `view` of each |
+| `wing-side`: the d and v photos swapped | a view set by hand against the wings | look at both whole photos; when they agree with the wings, set `view` of each |
 | `wing-side`: both photos one side, or some wings not turned over | the butterfly not turned over (or only some wings) before its second photo | `leave`: to photograph again |
 | `wing-side`: a single photo against its name | its other photo carries another ID, or the view is missing | as `notTwoPhotos` |
 | `wing-count` | a wing moved or fell between the two photos; or one the check missed (a glass wing on the dark half of the background) | look at both whole photos; a wing really missing from one is for the person |
@@ -180,9 +180,10 @@ own click («Rename», or «Rename & rotate») once the batch is right.
   or upside down, `rotate` every photo of the batch the same way. A photo
   turned otherwise than the rest is an envelope laid down turned, not a
   photo to turn.
-- `view` follows the order the photos were taken in, dorsal first. Change it
-  when the person says a butterfly was photographed the other way round, or
-  when its wings say so (`wing-side`, swapped) and the whole photos agree.
+- `view` follows the wings when they are sure (`viewFrom: "wings"`: a
+  butterfly photographed underside first, or a CRISPR one with more views,
+  d2 and v2), and the order taken otherwise, dorsal first. A view you set
+  stays, and the ID's other photos take the views left.
 - At the end say what you changed (file, from which ID to which), what is
   left for them and why, and whether they can rename now (nothing waiting).
 - Then say where the files go, from `upload`: the folder for the photos and
