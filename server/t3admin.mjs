@@ -3,6 +3,7 @@
 // admins get one here: the installed and newest stable versions, the Claude
 // sessions T3 has open (an update restarts T3 and cuts them), and a button
 // that starts the systemd user unit ithomiini-t3-update.service (`t3 update`).
+// Also each person's sign-in link to T3 (t3Pairing), made with the admin token.
 import { execFile } from 'node:child_process';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -74,4 +75,36 @@ export function t3Admin({ home = '/home/ubuntu/.t3', systemctl = 'systemctl', fe
       return { started: true };
     },
   };
+}
+
+/** Scopes only the admin token keeps (people's links never get them); review:write is not granted from 0.0.46. */
+const ADMIN_ONLY = new Set(['access:read', 'access:write', 'relay:write', 'review:write']);
+
+/**
+ * A one-time T3 Code sign-in link for the person, made with the broker's admin
+ * token (T3 is a stock install: its own pairing flow, nothing patched). The link
+ * gets T3's own set for a client: on 0.0.45 the five scopes asked for by name
+ * before, from 0.0.46 finer ones too. An admin token issued by an older T3 lacks
+ * those (T3 answers 403): then the link gets the client scopes the token has.
+ */
+export async function t3Pairing(t3, user, { fetchImpl = fetch } = {}) {
+  const token = (await readFile(t3.tokenFile, 'utf8')).trim();
+  const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+  const ask = scopes =>
+    fetchImpl(`${t3.local}/api/auth/pairing-token`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ label: `ithomiini:${user.username}`, ...(scopes ? { scopes } : {}) }),
+      signal: AbortSignal.timeout(10_000),
+    });
+  let response = await ask(null);
+  if (response.status === 403) {
+    const session = await fetchImpl(`${t3.local}/api/auth/session`, { headers, signal: AbortSignal.timeout(10_000) });
+    const held = session.ok ? await session.json() : {};
+    const scopes = (held.permissions ?? held.scopes ?? []).filter(scope => !ADMIN_ONLY.has(scope));
+    if (scopes.length) response = await ask(scopes);
+  }
+  if (!response.ok) throw fail('T3_UNAVAILABLE', `T3 Code answered ${response.status}`, 502);
+  const { credential, expiresAt } = await response.json();
+  return { url: `${t3.url}/pair#token=${encodeURIComponent(credential)}`, expiresAt };
 }

@@ -336,6 +336,82 @@ test("a person's T3 chats are those of their workspace folder", () => {
   remove();
 });
 
+/** T3 0.0.46's database beside the old one (its update copies it to statev2.sqlite): the new orchestrator's tables read. */
+function newOrchestrator(home) {
+  const db = new DatabaseSync(join(home, 'userdata', 'statev2.sqlite'));
+  db.exec(`
+    CREATE TABLE projection_projects (project_id TEXT PRIMARY KEY, title TEXT, workspace_root TEXT, deleted_at TEXT);
+    CREATE TABLE projection_threads (thread_id TEXT PRIMARY KEY, latest_user_message_at TEXT);
+    CREATE TABLE orchestration_v2_projection_threads (thread_id TEXT PRIMARY KEY, project_id TEXT, title TEXT, runtime_mode TEXT,
+      interaction_mode TEXT, created_at TEXT, updated_at TEXT, archived_at TEXT, deleted_at TEXT, payload_json TEXT);
+    CREATE TABLE orchestration_v2_projection_messages (message_id TEXT PRIMARY KEY, thread_id TEXT, role TEXT, created_at TEXT,
+      updated_at TEXT, payload_json TEXT);
+    CREATE TABLE orchestration_v2_projection_runs (run_id TEXT PRIMARY KEY, thread_id TEXT, status TEXT, requested_at TEXT,
+      completed_at TEXT, payload_json TEXT);
+    CREATE TABLE orchestration_v2_projection_turn_items (turn_item_id TEXT PRIMARY KEY, thread_id TEXT, run_id TEXT, type TEXT,
+      status TEXT, updated_at TEXT, payload_json TEXT);
+    INSERT INTO projection_projects VALUES ('p-franz', 'Ithomiini · Franz', '/srv/t3-workspaces/franz', NULL);
+    INSERT INTO projection_projects VALUES ('p-ana', 'Ithomiini · Ana', '/srv/t3-workspaces/ana/', NULL);
+  `);
+  const thread = (id, project, title, parent = null) =>
+    db
+      .prepare("INSERT INTO orchestration_v2_projection_threads VALUES (?,?,?,'full-access','default',?,?,NULL,NULL,?)")
+      .run(id, project, title, iso(Date.now() - 300_000), iso(), JSON.stringify({ lineage: { parentThreadId: parent, relationshipToParent: parent ? 'subagent' : null } }));
+  const message = (threadId, at) => db.prepare("INSERT INTO orchestration_v2_projection_messages VALUES (?,?,'user',?,?,'{}')").run(randomUUID(), threadId, at, at);
+  const run = (threadId, status, completedAt = null) => {
+    const id = randomUUID();
+    db.prepare("INSERT INTO orchestration_v2_projection_runs VALUES (?,?,?,?,?,'{}')").run(id, threadId, status, iso(), completedAt);
+    return id;
+  };
+  /** A tool call T3 recorded in a run: Claude's tool-use id, and what the tool answered. */
+  const call = (threadId, runId, toolUseId, output) =>
+    db
+      .prepare("INSERT INTO orchestration_v2_projection_turn_items VALUES (?,?,?,'dynamic_tool','completed',?,?)")
+      .run(randomUUID(), threadId, runId, iso(), JSON.stringify({ type: 'dynamic_tool', nativeItemRef: { driver: 'claudeAgent', nativeId: toolUseId, strength: 'strong' }, output, startedAt: iso() }));
+  return { db, thread, message, run, call };
+}
+
+test('from T3 0.0.46 (statev2.sqlite, the new orchestrator): the same answers, its update noticed within a minute', async () => {
+  const { home, remove } = t3Home();
+  let clock = Date.now();
+  const chats = createT3Chats({ home, now: () => clock });
+  assert.deepEqual(chats.chatsOf('franz').map(c => c.id), [A, B]);
+  const v2 = newOrchestrator(home);
+  const CHILD = randomUUID();
+  v2.thread(A, 'p-franz', 'Cuaderno de emergidos');
+  v2.thread(B, 'p-franz', 'Cuaderno de posturas');
+  v2.thread(CHILD, 'p-franz', 'notebook-reader', A);
+  v2.thread(OTHER, 'p-ana', 'Chat de Ana');
+  v2.message(A, iso(Date.now() - 60_000));
+  // B came from 0.0.45: its messages are not imported yet, its last one is the old table's.
+  v2.db.prepare('INSERT INTO projection_threads VALUES (?, ?)').run(B, iso(Date.now() - 1000));
+  assert.deepEqual(chats.chatsOf('franz').map(c => c.id), [A, B], 'the old file until the next look');
+  clock += 61_000;
+  assert.deepEqual(chats.chatsOf('franz').map(c => c.id), [B, A], "a subagent's own thread is not one of the person's chats");
+  assert.equal(chats.ownerOf(B), 'franz');
+  assert.ok(chats.threads([A]).get(A).lastUserAt);
+  assert.deepEqual(chats.session(A), { projectId: 'p-franz', runtimeMode: 'full-access', interactionMode: 'default', busy: false });
+  const since = iso(Date.now() - 60_000);
+  // A answering (its subagent too): busy, and the only one running.
+  const running = v2.run(A, 'running');
+  v2.run(CHILD, 'running');
+  assert.equal(chats.session(A).busy, true);
+  assert.equal(chats.onlyRunning('franz'), A);
+  // A call of A's subagent is A's; one of B's run that ended is B's.
+  v2.call(CHILD, v2.run(CHILD, 'running'), 'toolu_child1', null);
+  assert.equal(chats.threadOfToolUse('toolu_child1', since), A);
+  const proposal = randomUUID();
+  v2.call(B, v2.run(B, 'completed', iso()), 'toolu_B1', [{ type: 'text', text: JSON.stringify({ proposalId: proposal }) }]);
+  assert.equal(chats.threadOfToolUse('toolu_B1', since), B);
+  assert.equal(chats.threadOfToolUse('toolu_B1', iso(Date.now() + 60_000)), null, 'a run that ended before is not looked at');
+  assert.deepEqual([...(await chats.findProposals([proposal], since))], [[proposal, B]]);
+  v2.db.prepare("UPDATE orchestration_v2_projection_runs SET status = 'completed', completed_at = ? WHERE run_id = ?").run(iso(), running);
+  assert.equal(chats.session(A).busy, false, 'A has answered');
+  chats.close();
+  v2.db.close();
+  remove();
+});
+
 test("“Tell the assistant” sends to the proposal's own T3 chat when it is idle; otherwise the page copies it", async () => {
   const thread = '11111111-1111-4111-8111-111111111111';
   const sessions = { [thread]: { projectId: 'p-franz', runtimeMode: 'full-access', interactionMode: 'default', busy: false } };

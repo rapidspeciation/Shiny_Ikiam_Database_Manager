@@ -1,8 +1,12 @@
 // Which T3 Code chat a proposal comes from, and which chat the person has open,
 // read from the stock T3 install's own files (nothing patched, never written):
-// - state.sqlite (opened read-only): its threads, their titles and projects, and
-//   every tool call a chat made (projection_thread_activities, with Claude's
-//   tool-use id as toolCallId and the tool's result);
+// - its database, opened read-only (state.sqlite; from 0.0.46 statev2.sqlite, which
+//   its update copies from the old one): its threads, their titles and projects, and
+//   every tool call a chat made, with Claude's tool-use id and the tool's result.
+//   Up to 0.0.45 in projection_threads and projection_thread_activities (toolCallId);
+//   from 0.0.46 (its new orchestrator) in the orchestration_v2_projection_* tables (a
+//   call is a turn item, its tool-use id nativeItemRef.nativeId; a chat answering has
+//   a run under way); projects stay in projection_projects;
 // - its trace log (userdata/logs/server.trace.ndjson): T3's web page sends its
 //   traces every ~3 s while it is open, and T3 logs each request with its
 //   Referer, the page's address (/<environment>/<threadId>): the chat on screen.
@@ -27,6 +31,16 @@ const OPEN_MS = 20_000;
  * browser lets report only about once a minute never counts as open.
  */
 const GAP_MS = 15_000;
+/** A run of the new orchestrator still under way (0.0.46 on): its chat is answering, or about to. */
+const UNDER_WAY = "('queued', 'preparing', 'starting', 'running', 'waiting')";
+/** In the new orchestrator's tables, the chat a thread is: its parent for a subagent's own thread. */
+const CHAT_OF = `CASE WHEN json_extract(t.payload_json, '$.lineage.relationshipToParent') = 'subagent'
+  THEN json_extract(t.payload_json, '$.lineage.parentThreadId') ELSE t.thread_id END`;
+/** When the person last wrote in a chat of the new orchestrator (an imported chat's messages may come later). */
+const LAST_USER = `coalesce(
+  (SELECT m.updated_at FROM orchestration_v2_projection_messages m WHERE m.thread_id = t.thread_id AND m.role = 'user'
+   ORDER BY m.updated_at DESC LIMIT 1),
+  (SELECT l.latest_user_message_at FROM projection_threads l WHERE l.thread_id = t.thread_id))`;
 
 /**
  * The chats T3 pages showed lately, from the end of T3's trace log: each
@@ -109,17 +123,37 @@ function tail(file, bytes) {
 }
 
 export function createT3Chats({ home, now = Date.now } = {}) {
-  const dbFile = home && join(home, 'userdata', 'state.sqlite');
-  const traceFile = home && join(home, 'userdata', 'logs', 'server.trace.ndjson');
+  const folder = home && join(home, 'userdata');
+  const traceFile = home && join(folder, 'logs', 'server.trace.ndjson');
   let db = null;
+  let file = null;
   let failedAt = 0;
-  /** T3's database, read-only; null without T3 (tried again after a minute). */
-  function state() {
-    if (db) return db;
-    if (!dbFile || now() - failedAt < 60_000) return null;
+  let checkedAt = 0;
+  let tables = { at: -Infinity, v2: false };
+  /** T3's database: statev2.sqlite from 0.0.46 (its update copies state.sqlite there once and leaves the old file as it was). */
+  const current = () => join(folder, existsSync(join(folder, 'statev2.sqlite')) ? 'statev2.sqlite' : 'state.sqlite');
+  function shut() {
     try {
-      if (!existsSync(dbFile)) throw new Error('no T3 state');
-      db = new DatabaseSync(dbFile, { readOnly: true, timeout: 2000 });
+      db?.close();
+    } catch {
+      /* already closed */
+    }
+    db = null;
+  }
+  /** T3's database, read-only; null without T3 (tried again after a minute). Another file (T3 updated) is noticed within a minute. */
+  function state() {
+    if (db && now() - checkedAt > 60_000) {
+      checkedAt = now();
+      if (current() !== file) shut();
+    }
+    if (db) return db;
+    if (!folder || now() - failedAt < 60_000) return null;
+    try {
+      file = current();
+      if (!existsSync(file)) throw new Error('no T3 state');
+      db = new DatabaseSync(file, { readOnly: true, timeout: 2000 });
+      checkedAt = now();
+      tables = { at: -Infinity, v2: false };
       return db;
     } catch {
       failedAt = now();
@@ -134,14 +168,18 @@ export function createT3Chats({ home, now = Date.now } = {}) {
       const statement = d.prepare(sql);
       return all ? statement.all(...args) : statement.get(...args);
     } catch {
-      try {
-        d.close();
-      } catch {
-        /* already closed */
-      }
-      db = null;
+      shut();
       return all ? [] : undefined;
     }
+  }
+
+  /** Whether T3 keeps its chats in the new orchestrator's tables (0.0.46 on), checked again every minute. */
+  function v2() {
+    if (!state()) return false;
+    if (now() - tables.at < 60_000) return tables.v2;
+    const found = query("SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = 'orchestration_v2_projection_threads'", [], false);
+    tables = { at: now(), v2: !!found };
+    return tables.v2;
   }
 
   let projects = { at: 0, byUser: new Map() };
@@ -169,8 +207,8 @@ export function createT3Chats({ home, now = Date.now } = {}) {
   /** Whose a chat is: the username of its project's workspace folder (null: not a person's project, or no such chat). */
   function ownerOf(threadId) {
     const row = query(
-      `SELECT p.workspace_root FROM projection_threads t JOIN projection_projects p ON p.project_id = t.project_id
-       WHERE t.thread_id = ? AND p.deleted_at IS NULL`,
+      `SELECT p.workspace_root FROM ${v2() ? 'orchestration_v2_projection_threads' : 'projection_threads'} t
+       JOIN projection_projects p ON p.project_id = t.project_id WHERE t.thread_id = ? AND p.deleted_at IS NULL`,
       [String(threadId ?? '')],
       false,
     );
@@ -182,8 +220,11 @@ export function createT3Chats({ home, now = Date.now } = {}) {
     const list = [...new Set(ids.filter(Boolean))];
     if (!list.length) return new Map();
     const rows = query(
-      `SELECT thread_id, title, project_id, latest_user_message_at, deleted_at, archived_at
-       FROM projection_threads WHERE thread_id IN (SELECT value FROM json_each(?))`,
+      v2()
+        ? `SELECT t.thread_id, t.title, t.project_id, ${LAST_USER} AS latest_user_message_at, t.deleted_at, t.archived_at
+           FROM orchestration_v2_projection_threads t WHERE t.thread_id IN (SELECT value FROM json_each(?))`
+        : `SELECT thread_id, title, project_id, latest_user_message_at, deleted_at, archived_at
+           FROM projection_threads WHERE thread_id IN (SELECT value FROM json_each(?))`,
       [JSON.stringify(list)],
     );
     return new Map(
@@ -199,9 +240,16 @@ export function createT3Chats({ home, now = Date.now } = {}) {
     const own = projectsOf(username);
     if (!own.length) return [];
     return query(
-      `SELECT thread_id, title, project_id, latest_user_message_at FROM projection_threads
-       WHERE project_id IN (SELECT value FROM json_each(?)) AND deleted_at IS NULL AND archived_at IS NULL
-       ORDER BY coalesce(latest_user_message_at, created_at) DESC LIMIT ?`,
+      v2()
+        ? // A subagent's own thread is part of its parent's chat, not one of the person's.
+          `SELECT t.thread_id, t.title, t.project_id, ${LAST_USER} AS latest_user_message_at
+           FROM orchestration_v2_projection_threads t
+           WHERE t.project_id IN (SELECT value FROM json_each(?)) AND t.deleted_at IS NULL AND t.archived_at IS NULL
+             AND json_extract(t.payload_json, '$.lineage.relationshipToParent') IS NOT 'subagent'
+           ORDER BY coalesce(latest_user_message_at, t.created_at) DESC LIMIT ?`
+        : `SELECT thread_id, title, project_id, latest_user_message_at FROM projection_threads
+           WHERE project_id IN (SELECT value FROM json_each(?)) AND deleted_at IS NULL AND archived_at IS NULL
+           ORDER BY coalesce(latest_user_message_at, created_at) DESC LIMIT ?`,
       [JSON.stringify(own), limit],
     ).map(r => ({ id: r.thread_id, title: r.title, projectId: r.project_id, lastUserAt: r.latest_user_message_at }));
   }
@@ -213,6 +261,20 @@ export function createT3Chats({ home, now = Date.now } = {}) {
    */
   function threadOfToolUse(toolUseId, since) {
     if (!/^[A-Za-z0-9_-]{8,100}$/.test(String(toolUseId ?? ''))) return null;
+    if (v2()) {
+      // Runs ended since or under way, then their calls by run (CROSS JOIN keeps that order).
+      const row = query(
+        `SELECT ${CHAT_OF} AS thread_id FROM orchestration_v2_projection_runs r
+         CROSS JOIN orchestration_v2_projection_turn_items i
+         JOIN orchestration_v2_projection_threads t ON t.thread_id = i.thread_id
+         WHERE (r.completed_at >= ? OR (r.completed_at IS NULL AND r.status IN ${UNDER_WAY}))
+           AND i.run_id = r.run_id AND i.payload_json LIKE ?
+         LIMIT 1`,
+        [since, `%"nativeId":"${toolUseId}"%`],
+        false,
+      );
+      return row?.thread_id ?? null;
+    }
     // Chats changed since (a thread's updated_at follows its activities), then their calls by index:
     // CROSS JOIN keeps that order (otherwise SQLite reads every call T3 ever recorded).
     const row = query(
@@ -231,8 +293,12 @@ export function createT3Chats({ home, now = Date.now } = {}) {
     const own = projectsOf(username);
     if (!own.length) return null;
     const rows = query(
-      `SELECT s.thread_id FROM projection_thread_sessions s JOIN projection_threads t ON t.thread_id = s.thread_id
-       WHERE t.project_id IN (SELECT value FROM json_each(?)) AND s.status = 'running'`,
+      v2()
+        ? `SELECT DISTINCT ${CHAT_OF} AS thread_id FROM orchestration_v2_projection_runs r
+           JOIN orchestration_v2_projection_threads t ON t.thread_id = r.thread_id
+           WHERE t.project_id IN (SELECT value FROM json_each(?)) AND r.status = 'running'`
+        : `SELECT s.thread_id FROM projection_thread_sessions s JOIN projection_threads t ON t.thread_id = s.thread_id
+           WHERE t.project_id IN (SELECT value FROM json_each(?)) AND s.status = 'running'`,
       [JSON.stringify(own)],
     );
     return rows.length === 1 ? rows[0].thread_id : null;
@@ -243,6 +309,16 @@ export function createT3Chats({ home, now = Date.now } = {}) {
    * it is answering now (busy). null when T3 does not know it (or it is gone).
    */
   function session(threadId) {
+    if (v2()) {
+      const row = query(
+        `SELECT t.project_id, t.runtime_mode, t.interaction_mode,
+           EXISTS (SELECT 1 FROM orchestration_v2_projection_runs r WHERE r.thread_id = t.thread_id AND r.status IN ${UNDER_WAY}) AS busy
+         FROM orchestration_v2_projection_threads t WHERE t.thread_id = ? AND t.deleted_at IS NULL AND t.archived_at IS NULL`,
+        [threadId],
+        false,
+      );
+      return row ? { projectId: row.project_id, runtimeMode: row.runtime_mode, interactionMode: row.interaction_mode, busy: !!row.busy } : null;
+    }
     const row = query(
       `SELECT t.project_id, t.runtime_mode, t.interaction_mode, s.status, s.active_turn_id
        FROM projection_threads t LEFT JOIN projection_thread_sessions s ON s.thread_id = t.thread_id
@@ -269,14 +345,30 @@ export function createT3Chats({ home, now = Date.now } = {}) {
     const wanted = new Set(ids);
     const found = new Map();
     if (!wanted.size) return found;
-    const recent = query('SELECT thread_id FROM projection_threads WHERE updated_at >= ?', [since]);
-    for (const { thread_id: thread } of recent) {
+    const newer = v2();
+    // From 0.0.46: the runs ended since or under way, each read by its own calls.
+    const recent = newer
+      ? query(
+          `SELECT r.run_id AS id, ${CHAT_OF} AS thread FROM orchestration_v2_projection_runs r
+           JOIN orchestration_v2_projection_threads t ON t.thread_id = r.thread_id
+           WHERE r.completed_at >= ? OR (r.completed_at IS NULL AND r.status IN ${UNDER_WAY})`,
+          [since],
+        )
+      : query('SELECT thread_id AS id, thread_id AS thread FROM projection_threads WHERE updated_at >= ?', [since]);
+    for (const { id, thread } of recent) {
       await new Promise(resolve => setImmediate(resolve));
-      const rows = query(
-        `SELECT created_at, payload_json FROM projection_thread_activities
-         WHERE thread_id = ? AND created_at >= ? AND kind = 'tool.completed' AND (payload_json LIKE '%proposalId%' OR payload_json LIKE '%tableId%')`,
-        [thread, since],
-      );
+      const rows = newer
+        ? query(
+            `SELECT coalesce(json_extract(payload_json, '$.startedAt'), updated_at) AS created_at, payload_json
+             FROM orchestration_v2_projection_turn_items
+             WHERE run_id = ? AND status = 'completed' AND (payload_json LIKE '%proposalId%' OR payload_json LIKE '%tableId%')`,
+            [id],
+          )
+        : query(
+            `SELECT created_at, payload_json FROM projection_thread_activities
+             WHERE thread_id = ? AND created_at >= ? AND kind = 'tool.completed' AND (payload_json LIKE '%proposalId%' OR payload_json LIKE '%tableId%')`,
+            [id, since],
+          );
       for (const r of rows)
         for (const m of r.payload_json.matchAll(PROPOSAL_ID)) {
           if (!wanted.has(m[1])) continue;
@@ -329,13 +421,6 @@ export function createT3Chats({ home, now = Date.now } = {}) {
     session,
     findProposals,
     open,
-    close() {
-      try {
-        db?.close();
-      } catch {
-        /* already closed */
-      }
-      db = null;
-    },
+    close: shut,
   };
 }

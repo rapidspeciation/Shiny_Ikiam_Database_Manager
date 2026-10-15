@@ -1,4 +1,4 @@
-import { t3Admin } from './t3admin.mjs';
+import { t3Admin, t3Pairing } from './t3admin.mjs';
 import { createT3Bridge } from './t3bridge.mjs';
 import { chatStarter, createT3Projects, projectKey, provisioner } from './t3projects.mjs';
 import { REVIEW_PROMPT } from './rename-photos.mjs';
@@ -1605,26 +1605,6 @@ function t3EnvironmentId(t3) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
   t3Environments.set(t3.home, id);
   return id;
-}
-
-/**
- * A one-time T3 Code sign-in link for the person, made with the broker's admin
- * token (T3 is a stock install: its own pairing flow, nothing patched).
- */
-async function t3Pairing(t3, user) {
-  const token = readFileSync(t3.tokenFile, 'utf8').trim();
-  const response = await fetch(`${t3.local}/api/auth/pairing-token`, {
-    method: 'POST',
-    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({
-      label: `ithomiini:${user.username}`,
-      scopes: ['orchestration:read', 'orchestration:operate', 'terminal:operate', 'review:write', 'relay:read'],
-    }),
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!response.ok) throw fail('T3_UNAVAILABLE', `T3 Code answered ${response.status}`, 502);
-  const { credential, expiresAt } = await response.json();
-  return { url: `${t3.url}/pair#token=${encodeURIComponent(credential)}`, expiresAt };
 }
 
 /**

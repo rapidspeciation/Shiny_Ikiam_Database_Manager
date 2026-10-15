@@ -36,8 +36,9 @@ function bridge() {
   const own = asked ? decodeURIComponent(asked[1]) : '';
   const madeHere = /[?&]ithomiini-made(?:=[^&#]*)?(?:&|$)/.test(search);
   if (asked || madeHere) {
-    const rest = search.replace(/([?&])ithomiini-(?:project|made)(?:=[^&#]*)?&?/g, '$1').replace(/[?&]$/, '');
-    history.replaceState(history.state, '', location.pathname + rest + (location.hash || ''));
+    // Both marks go (a frame loaded on a chat just made has the two); T3's own parameters stay.
+    const kept = search.slice(1).split('&').filter(part => part && !/^ithomiini-(?:project|made)(?:=|$)/.test(part));
+    history.replaceState(history.state, '', location.pathname + (kept.length ? `?${kept.join('&')}` : '') + (location.hash || ''));
   }
   if (own) {
     try {
@@ -85,7 +86,7 @@ function bridge() {
     }
   };
   // T3's router moves with history.pushState / replaceState (and back / forward).
-  // A chat just made, until the person goes elsewhere: { id, path }.
+  // A chat just made, until the person goes elsewhere: { id, path, heard, tries, until }.
   let wanted = null;
   let moving = false;
   for (const name of ['pushState', 'replaceState']) {
@@ -93,8 +94,10 @@ function bridge() {
     history[name] = function (...args) {
       const out = original.apply(this, args);
       // T3's own moves replace the page (its start page for a chat it does not have); a push not
-      // made here is the person's: the chat is no longer wanted.
+      // made here is the person's: the chat is no longer wanted. T3 may leave the chat after its
+      // page has received it (its router queues the move), so a replace looks again.
       if (name === 'pushState' && !moving) wanted = null;
+      if (name === 'replaceState' && wanted) setTimeout(again, 0);
       queueMicrotask(() => send());
       return out;
     };
@@ -115,12 +118,19 @@ function bridge() {
     }
     dispatchEvent(new PopStateEvent('popstate', { state: history.state }));
   };
+  // Back to the chat wanted once T3 has it, when T3 left it; a few times at most, for a while (a
+  // chat deleted meanwhile is never kept).
+  function again() {
+    if (!wanted || !wanted.heard || location.pathname === wanted.path || wanted.tries >= 3 || Date.now() > wanted.until) return;
+    wanted.tries++;
+    open(wanted.path);
+  }
   // What T3's page receives (its chat lists over HTTP, its updates over its socket): once it names the
   // chat wanted, T3 has it (after its own handlers, which run once this one has).
   const heard = text => {
-    if (!wanted || typeof text !== 'string' || !text.includes(wanted.id) || location.pathname === wanted.path) return;
-    const path = wanted.path;
-    setTimeout(() => wanted && wanted.path === path && open(path), 0);
+    if (!wanted || typeof text !== 'string' || !text.includes(wanted.id)) return;
+    wanted.heard = true;
+    setTimeout(again, 0);
   };
   const NativeSocket = window.WebSocket;
   if (NativeSocket)
@@ -139,7 +149,7 @@ function bridge() {
     };
   const want = path => {
     const chat = CHAT.exec(path);
-    wanted = chat ? { id: chat[2].toLowerCase(), path } : null;
+    wanted = chat ? { id: chat[2].toLowerCase(), path, heard: false, tries: 0, until: Date.now() + 30_000 } : null;
   };
   if (madeHere) want(location.pathname);
   addEventListener('message', e => {

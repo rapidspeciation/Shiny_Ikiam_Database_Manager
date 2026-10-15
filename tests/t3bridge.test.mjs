@@ -229,10 +229,31 @@ test('a chat the app has just made is opened once T3\'s page has it (T3 goes to 
   assert.equal(window.location.pathname, '/');
 });
 
+test('T3 leaving a chat just made after its page received it (its router queues the move): opened again, a few times at most', () => {
+  const { window, parent, say } = runBridge({ path: `/${ENV}/${B}` });
+  const socket = new window.WebSocket('wss://t3.example.org/ws');
+  const chat = `/${ENV}/${A}`;
+  say('message', { origin: APP, source: parent, data: { type: 'ithomiini-t3-open', path: chat, made: true } });
+  // The chat arrives while the page is still on it; T3's queued move to its start page comes after (0.0.46).
+  socket.receive(`{"kind":"thread.updated","thread":{"id":"${A}"}}`);
+  assert.equal(window.location.pathname, chat);
+  window.history.replaceState({}, '', '/');
+  assert.equal(window.location.pathname, chat, 'back to the chat');
+  // A chat T3 never keeps (deleted meanwhile): three more tries, then T3's start page stays.
+  for (let i = 0; i < 5; i++) window.history.replaceState({}, '', '/');
+  assert.equal(window.location.pathname, '/');
+});
+
 test("a page loaded on a chat just made (?ithomiini-made): T3's list fetched with it opens it", async () => {
   const chat = `/${ENV}/${A}`;
-  const { window } = runBridge({ path: chat, search: '?ithomiini-made=1', answers: { '/api/orchestration/shell': `{"threads":[{"id":"${A}"}]}` } });
-  assert.equal(window.location.pathname, chat, 'the mark leaves the address');
+  const project = encodeURIComponent(`${ENV}:/w/ana`);
+  const { window } = runBridge({
+    path: chat,
+    search: `?ithomiini-made=1&ithomiini-project=${project}`,
+    storage: { getItem: () => null, setItem: () => {} },
+    answers: { '/api/orchestration/shell': `{"threads":[{"id":"${A}"}]}` },
+  });
+  assert.equal(window.location.pathname, chat, 'both marks leave the address');
   // T3 opens on the list it kept, without the chat: its start page; then the current list arrives.
   window.history.replaceState({}, '', '/');
   await window.fetch('/api/orchestration/shell');

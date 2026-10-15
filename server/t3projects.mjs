@@ -16,8 +16,8 @@
 // (deploy/), as T3's updates do; the lab runs it directly ('direct').
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { t3Commands } from './t3commands.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../scripts/t3-provision.mjs', import.meta.url));
 /** A username a unit's name (and the workspace folder) can carry as it is. */
@@ -57,25 +57,17 @@ const MODEL = {
 };
 
 /**
- * Makes a chat in a project through T3's own commands (with the app's T3 token,
- * server/index.mjs's sign-in links use it too): its id, or an error. Empty and called
- * "New thread", or with `title` and a first message from the person (`text`), which
- * the assistant starts answering at once (the «Fotos» tab's review).
+ * Makes a chat in a project through T3's own commands (server/t3commands.mjs, with the
+ * app's T3 token; server/index.mjs's sign-in links use it too): its id, or an error. Empty
+ * and called "New thread", or with `title` and a first message from the person (`text`),
+ * which the assistant starts answering at once (the «Fotos» tab's review).
  */
-export function chatStarter({ local, tokenFile, fetchImpl = fetch } = {}) {
-  if (!local || !tokenFile) return null;
-  const dispatch = async command => {
-    const response = await fetchImpl(`${local}/api/orchestration/dispatch`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${readFileSync(tokenFile, 'utf8').trim()}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ commandId: randomUUID(), ...command, createdAt: new Date().toISOString() }),
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!response.ok) throw new Error(`T3 answered ${response.status}`);
-  };
+export function chatStarter({ local, tokenFile, fetchImpl = fetch, WebSocketImpl } = {}) {
+  const send = t3Commands({ local, tokenFile, fetchImpl, WebSocketImpl });
+  if (!send) return null;
   return async (project, { title = 'New thread', text = '' } = {}) => {
     const threadId = randomUUID();
-    await dispatch({
+    const made = {
       type: 'thread.create',
       threadId,
       projectId: project.id,
@@ -85,9 +77,10 @@ export function chatStarter({ local, tokenFile, fetchImpl = fetch } = {}) {
       interactionMode: 'default',
       branch: null,
       worktreePath: null,
-    });
-    if (text)
-      await dispatch({
+    };
+    if (!text) await send(made);
+    else
+      await send(made, {
         type: 'thread.turn.start',
         threadId,
         message: { messageId: randomUUID(), role: 'user', text, attachments: [] },
