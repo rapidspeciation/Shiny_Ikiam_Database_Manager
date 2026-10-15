@@ -436,7 +436,7 @@ export function createRenamePhotos({ store, pollMs = POLL_MS, answerMs = null, n
     const s = sessions.get(keyOf(user));
     return s && now() - s.at < ALIVE_MS ? s : null;
   };
-  const NOT_OPEN = "The «Rename photos» tab is not open in the person's browser (or was closed): they open it, choose the folder with the photos and press «Run PaddleOCR».";
+  const NOT_OPEN = "The «Rename photos» tab is not open in the person's browser (or was closed): they open it, choose the folder with the photos and press «Read photos».";
 
   /** Leaves a command for the tab and waits for its answer. */
   function ask(s, name, args) {
@@ -512,7 +512,7 @@ export function createRenamePhotos({ store, pollMs = POLL_MS, answerMs = null, n
         reading: state?.reading.on ? `${state.reading.percent}% ${state.reading.message}`.trim() : null,
         note: state?.reading.on
           ? 'The app is still reading the photos: read again when it has finished.'
-          : 'No photo has been read yet: the person chooses the folder in the tab and presses «Run PaddleOCR».',
+          : 'No photo has been read yet: the person chooses the folder in the tab and presses «Read photos».',
       });
     const { known, listed } = fresh();
     const checked = checkBatch(state.rows, { known, listed });

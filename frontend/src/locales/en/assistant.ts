@@ -676,7 +676,7 @@ export default {
   'La hoja ya tiene la carpeta {folder}.': 'The sheet already has the folder {folder}.',
   'Abrir la hoja': 'Open the sheet',
   // RenameView (the wing photos of a folder named after the ID on their envelope)
-  'Abre la carpeta con las fotos y pulsa «Run PaddleOCR»: los IDs se leen en este ordenador.': 'Open the folder with the photos and press «Run PaddleOCR»: the IDs are read on this computer.',
+  'Abre la carpeta con las fotos y pulsa «Read photos»: los IDs se leen en este ordenador.': 'Open the folder with the photos and press «Read photos»: the IDs are read on this computer.',
   'El asistente mira los sobres de las fotos marcadas y de una muestra, corrige lo que esté claro y te deja señalado lo demás':
     'The assistant looks at the envelopes of the flagged photos and of a sample, corrects what is clear and leaves the rest marked for you',
   'Primero lee las fotos de una carpeta': 'Read a folder\'s photos first',
@@ -698,8 +698,8 @@ export default {
   'Subir a Drive': 'Upload to Drive',
   'Actualizar hojas y sitios': 'Update sheets and sites',
   'Pulsa «Open folder» y elige la carpeta con las fotos de la cámara.': 'Press «Open folder» and choose the folder with the camera\'s photos.',
-  'Leyendo los sobres en este ordenador…': 'Reading the envelopes on this computer…',
-  'Pulsa «Run PaddleOCR»: lee el ID del sobre de cada foto, en este ordenador.': 'Press «Run PaddleOCR»: it reads the ID on each photo\'s envelope, on this computer.',
+  'Leyendo los sobres y las alas en este ordenador…': 'Reading the envelopes and the wings on this computer…',
+  'Pulsa «Read photos»: lee el ID del sobre de cada foto y revisa sus alas, en este ordenador.': 'Press «Read photos»: it reads the ID on each photo\'s envelope and checks its wings, on this computer.',
   'Corrige o confirma las fotos marcadas, o deja que Claude las revise.': 'Correct or confirm the flagged photos, or let Claude review them.',
   'Todo confirmado: pulsa «Rename» abajo.': 'All confirmed: press «Rename» below.',
   'Renombradas. Súbelas a Drive con Drive para escritorio:': 'Renamed. Upload them to Drive with Drive for desktop:',

@@ -98,7 +98,7 @@ can read the folder but not rename in it. In the tab it checks the IDs
 against the workbook as it is now, and «Review with Claude» opens a chat
 beside it that double-checks the batch (below).
 
-1. «Open folder», then «Run PaddleOCR»: it reads the CAM_ID on each envelope
+1. «Open folder», then «Read photos»: it reads the CAM_ID on each envelope
    (about a second per photo) and turns each photo and its RAW file so the
    envelope reads upright.
 2. «Review»: a card per butterfly with its photos side by side; those that

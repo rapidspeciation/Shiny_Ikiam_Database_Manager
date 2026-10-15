@@ -78,7 +78,7 @@ const hint = computed(() => {
     case 'open':
       return t('Pulsa «Open folder» y elige la carpeta con las fotos de la cámara.')
     case 'read':
-      return renameHost.state?.reading.on ? t('Leyendo los sobres en este ordenador…') : t('Pulsa «Run PaddleOCR»: lee el ID del sobre de cada foto, en este ordenador.')
+      return renameHost.state?.reading.on ? t('Leyendo los sobres y las alas en este ordenador…') : t('Pulsa «Read photos»: lee el ID del sobre de cada foto y revisa sus alas, en este ordenador.')
     case 'review':
       return t('Corrige o confirma las fotos marcadas, o deja que Claude las revise.')
     case 'rename':

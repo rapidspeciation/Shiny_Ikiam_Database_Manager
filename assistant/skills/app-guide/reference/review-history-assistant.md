@@ -38,7 +38,7 @@ Every save, with selective undo: skill **historial**.
 Two parts, switched at the top left: «Renombrar» and «Photo_links y sitios».
 
 «Renombrar» is the Rename Photos app inside this one (skill `photos`): «Open folder» picks
-the folder of wing photos on the computer, «Run PaddleOCR» reads the CAM_ID
+the folder of wing photos on the computer, «Read photos» reads the CAM_ID
 on each envelope there, in the browser (about a second a photo; the reader's
 files, 24 MB, download the first time). «Rename» renames the files in place,
 RAW files with their JPG.
