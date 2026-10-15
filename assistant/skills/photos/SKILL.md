@@ -146,7 +146,9 @@ own click («Rename», or «Rename & rotate») once the batch is right.
    the reason.
 4. Look at a sample of the photos nothing flagged as well, a dozen or two
    spread over the batch: the reader is right on nearly all of those, and a
-   wrong one in the sample means looking at more around it.
+   wrong one in the sample means looking at more around it. The sample is
+   for the IDs: the app's wing check (`wingCheck`) has compared every
+   photo's wings with its view and its turn, and flags those that differ.
 
 | Found | Most likely | What to do |
 |---|---|---|
@@ -160,6 +162,11 @@ own click («Rename», or «Rename & rotate») once the batch is right.
 | `turned` | an envelope laid down turned: the photo already follows its session | look at the whole photo; `rotate` it only if it shows turned |
 | `turnUnsure` | the envelopes lay sideways, or point both ways: their direction does not say which way up the photos are | look at the photos of `lookAt` whole, and turn them all the same way if needed (below) |
 | `repeated-id` | as `apart` | |
+| `wing-side`: the d and v photos swapped | the ventral side photographed first | look at both whole photos; when they agree, set `view` of each |
+| `wing-side`: both photos one side, or some wings not turned over | the butterfly not turned over (or only some wings) before its second photo | `leave`: to photograph again |
+| `wing-side`: a single photo against its name | its other photo carries another ID, or the view is missing | as `notTwoPhotos` |
+| `wing-count` | a wing moved or fell between the two photos; or one the check missed (a glass wing on the dark half of the background) | look at both whole photos; a wing really missing from one is for the person |
+| `wing-turn` | the photo turned otherwise than its wings ask | look at the whole photo; `rotate` it when its forewings are not on top |
 
 - Set an ID yourself when the envelope reads clearly, the ID fits the run
   around it and the workbook has it. Otherwise `leave` it: a wrong name puts
@@ -174,7 +181,8 @@ own click («Rename», or «Rename & rotate») once the batch is right.
   turned otherwise than the rest is an envelope laid down turned, not a
   photo to turn.
 - `view` follows the order the photos were taken in, dorsal first. Change it
-  only when the person says a butterfly was photographed the other way round.
+  when the person says a butterfly was photographed the other way round, or
+  when its wings say so (`wing-side`, swapped) and the whole photos agree.
 - At the end say what you changed (file, from which ID to which), what is
   left for them and why, and whether they can rename now (nothing waiting).
 - Then say where the files go, from `upload`: the folder for the photos and

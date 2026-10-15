@@ -60,6 +60,22 @@ test('what does not add up in a batch: photos per ID, IDs apart, IDs the workboo
   assert.deepEqual([clean.order, clean.checks, clean.flagged], ['CAM077001×2', {}, []]);
 });
 
+test("the app's wing check: a photo's wings in a few words, its notes among the checks, the photo to look at", () => {
+  const wings = { side: 'ventral', pDorsal: 0.012, forewings: 'ventral', hindwings: 'ventral', count: 3, missing: ['hindwing_left'], turn: 0 };
+  const says = ['Named d but the wings show their underside'];
+  const state = cleanState({
+    ...batch(),
+    wingCheck: { on: false, done: 0, total: 0, checked: 12 },
+    rows: batch().rows.map(r => (r.n === 3 ? { ...r, view: 'd', review: ['wing-side'], wings, wingNotes: says } : r)),
+  });
+  assert.deepEqual(state.wingCheck, { on: false, done: 0, total: 0, checked: 12 });
+  assert.equal(state.rows[2].wings, 'ventral p=0.01, 3 wings (no left hindwing), upright');
+  assert.equal(cleanState({ rows: [{ file: 'a.JPG', wings: { side: 'sideways' } }] }).rows[0].wings, undefined);
+  const { checks, flagged } = checkBatch(state.rows);
+  assert.deepEqual(checks.wings, { count: 1, examples: [{ n: 3, file: 'IMG_3.JPG', view: 'd', taken: '10:03:00', id: 'CAM077002', says }] });
+  assert.ok(flagged.some(r => r.n === 3));
+});
+
 test('where a batch goes on Drive: the folders of the photos of the IDs nearest its own', () => {
   const link = n => `https://drive.google.com/drive/folders/folder-${n}`;
   const fileRow = path => ({ values: { 'Full Path': path, Name: path.split('/').at(-1), Type: 'File' } });

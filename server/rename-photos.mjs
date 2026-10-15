@@ -27,9 +27,10 @@ export const RENAME_TOOLS = [
       description: [
         "The batch of wing photos open in the person's «Rename photos» tab: the photos of a folder on their computer, each with the ID the app read on its envelope, before they are renamed after it.",
         '- `order`: the IDs in the order the photos were taken, each with its number of photos (`CAM077001×2`); `!` marks one with a photo waiting for a person, `?` photos without an ID.',
-        '- `checks`: what does not add up. `notTwoPhotos`: an ID with one photo, or more than two (each butterfly has a dorsal and a ventral photo, taken one after the other) · `apart`: an ID on photos not taken one after the other · `notInWorkbook`: an ID no row of the workbook has (`maybe`: workbook IDs one character away) · `alreadyPhotographed`: an ID whose photos Photo_links already lists · `turned`: photos whose envelope pointed another way than the rest of their session · `turnUnsure`: the turn of the batch is not clear from the envelopes (laid sideways, or pointing both ways): two photos of each run to look at (`lookAt`); the photos are landscape with the forewings above the hindwings, and one turn fits them all.',
+        '- `checks`: what does not add up. `notTwoPhotos`: an ID with one photo, or more than two (each butterfly has a dorsal and a ventral photo, taken one after the other) · `apart`: an ID on photos not taken one after the other · `notInWorkbook`: an ID no row of the workbook has (`maybe`: workbook IDs one character away) · `alreadyPhotographed`: an ID whose photos Photo_links already lists · `turned`: photos whose envelope pointed another way than the rest of their session · `turnUnsure`: the turn of the batch is not clear from the envelopes (laid sideways, or pointing both ways): two photos of each run to look at (`lookAt`); the photos are landscape with the forewings above the hindwings, and one turn fits them all · `wings`: photos whose wings disagree with their name or turn (`says`).',
+        '- `wingCheck`: the wing check, run by the app on each photo after the reading: the side the wings show against d/v, the wings of a pair compared, which way up. Absent when it has run on every photo.',
         "- `upload`: where the files go once renamed: the Drive folders that hold the photos (`photos`) and the RAW files (`rawFiles`) of the IDs nearest these, each with its link and its place in Drive for desktop; the folder's size on the computer and the space left in the project's Drive (`projectDrive`).",
-        '- `rows`: the photos to look at (those flagged and those in `checks`), or with `show: "all"` every photo, `from` and `limit` paging through them; `files` picks photos by name. A row: its number in the batch `n`, `file`, `id`, `view` (d, v: by the order taken), `taken`, `review` (why the reader left it for a person: no-reading, not-in-database, out-of-sequence, repeated-id, unreadable-photo, rotation-outlier, turn-unsure), `suggest`, `conf` (how sure the reader was, 0–1), `rotation` (clockwise degrees chosen for it).',
+        '- `rows`: the photos to look at (those flagged and those in `checks`), or with `show: "all"` every photo, `from` and `limit` paging through them; `files` picks photos by name. A row: its number in the batch `n`, `file`, `id`, `view` (d, v: by the order taken), `taken`, `review` (why the reader left it for a person: no-reading, not-in-database, out-of-sequence, repeated-id, unreadable-photo, rotation-outlier, turn-unsure; wing-side, wing-count, wing-turn from the wing check), `suggest`, `conf` (how sure the reader was, 0–1), `rotation` (clockwise degrees chosen for it), `wings` (the side its wings show, dorsal being upper side up, with P(dorsal), the wings found and the turn that puts the forewings on top), `wingNotes` (what the wings say against its name or turn).',
       ].join('\n'),
       parameters: {
         type: 'object',
@@ -142,7 +143,20 @@ function cleanRow(r) {
     rotationPending: Number(r?.rotationPending) || 0,
     rotationFrom: text(r?.rotationFrom).slice(0, 20),
     byHost: list(r?.byHost),
+    wings: wingsOf(r?.wings),
+    wingNotes: Array.isArray(r?.wingNotes) ? r.wingNotes.map(x => text(x).slice(0, 200)).filter(Boolean).slice(0, 6) : [],
   };
+}
+const SIDES = new Set(['dorsal', 'ventral', 'unsure', 'mixed', 'absent']);
+/** The wing check of a photo, in a few words: the side its wings show, how many, which turn they ask for. */
+function wingsOf(w) {
+  if (!w || typeof w !== 'object' || !SIDES.has(w.side)) return undefined;
+  const p = typeof w.pDorsal === 'number' ? ` p=${w.pDorsal.toFixed(2)}` : '';
+  const count = Number(w.count) || 0;
+  const missing = Array.isArray(w.missing) && w.missing.length ? ` (no ${w.missing.map(x => text(x).split('_').reverse().join(' ')).join(', ')})` : '';
+  const turn = [90, 180, 270].includes(w.turn) ? `, upright after ${w.turn}°` : w.turn === 0 ? ', upright' : '';
+  const groups = w.side === 'mixed' ? ` (forewings ${text(w.forewings)}, hindwings ${text(w.hindwings)})` : '';
+  return `${w.side}${groups}${p}, ${count} wing${count === 1 ? '' : 's'}${missing}${turn}`.slice(0, 200);
 }
 export function cleanState(state) {
   return {
@@ -151,6 +165,12 @@ export function cleanState(state) {
     files: Number(state?.files) || 0,
     folderBytes: Number(state?.folderBytes) > 0 ? Number(state.folderBytes) : null,
     reading: { on: state?.reading?.on === true, percent: Number(state?.reading?.percent) || 0, message: text(state?.reading?.message).slice(0, 200) },
+    wingCheck: {
+      on: state?.wingCheck?.on === true,
+      done: Number(state?.wingCheck?.done) || 0,
+      total: Number(state?.wingCheck?.total) || 0,
+      checked: Number(state?.wingCheck?.checked) || 0,
+    },
     rows: (Array.isArray(state?.rows) ? state.rows.slice(0, MAX_ROWS) : []).map(cleanRow).filter(r => r.file),
   };
 }
@@ -217,6 +237,7 @@ export function checkBatch(rows, { known = null, listed = null } = {}) {
     }
     if (!Number.isNaN(t)) last = t;
   }
+  const wingsSay = ordered.filter(r => r.wingNotes?.length).map(r => ({ ...show(r), id: r.id, says: r.wingNotes }));
   const turnUnsure = unsure.map(u => ({ photos: u.rows.length, from: u.rows[0].n, to: u.rows.at(-1).n, rotation: u.rows[0].rotation, lookAt: [u.rows[0], u.rows[Math.floor(u.rows.length / 2)]].filter((r, i, a) => a.indexOf(r) === i).map(show) }));
   const checks = filled({
     notTwoPhotos: notTwo.length ? some(notTwo) : null,
@@ -225,6 +246,7 @@ export function checkBatch(rows, { known = null, listed = null } = {}) {
     alreadyPhotographed: already.length ? some(already) : null,
     turned: turned.length ? some(turned) : null,
     turnUnsure: turnUnsure.length ? some(turnUnsure) : null,
+    wings: wingsSay.length ? some(wingsSay) : null,
   });
   // The photos to look at: those waiting for a person, and those of the IDs the checks name.
   const named = new Set([...notTwo, ...apart, ...unknown].map(x => x.id));
@@ -359,6 +381,8 @@ const told = r =>
     rotation: r.rotation,
     skip: r.skip,
     note: r.note,
+    wings: r.wings,
+    wingNotes: r.wingNotes,
     changedByYou: r.byHost,
   });
 
@@ -373,7 +397,7 @@ export const folderKey = state =>
 export const REVIEW_PROMPT = [
   'Revisa el lote de fotos que tengo abierto en la pestaña «Fotos» (skill `photos`, «Reviewing a batch before it is renamed»).',
   'Comprueba las fotos marcadas, los IDs que no tienen exactamente dos fotos y una muestra de las demás mirando los sobres. Corrige lo que esté claro y déjame señalado lo que no puedas resolver.',
-  'Comprueba también el giro mirando dos o tres fotos enteras: deben quedar horizontales, con las alas anteriores arriba y las posteriores abajo; si no, gíralas todas igual.',
+  'El control de alas ya comparó las alas de cada foto con su d/v y su giro: mira las que señala. Si el giro sigue sin estar claro (`turnUnsure`), compruébalo mirando dos o tres fotos enteras: deben quedar horizontales, con las alas anteriores arriba y las posteriores abajo; si no, gíralas todas igual.',
   'Al terminar dime qué cambiaste, qué queda para mí y si ya puedo pulsar «Rename».',
 ].join(' ');
 
@@ -470,6 +494,15 @@ export function createRenamePhotos({ store, pollMs = POLL_MS, answerMs = null, n
     });
   }
 
+  /** Where the batch's wing check is (null: done on every photo). */
+  function wingCheckNow(state) {
+    const w = state.wingCheck;
+    if (w?.on) return `checking the wings: ${w.done}/${w.total} photos; read again when it has finished`;
+    const photos = state.rows.filter(r => !r.skip).length;
+    if (!w?.checked) return 'not run on this batch (the tab has a «Check wings» button)';
+    return w.checked < photos ? `run on ${w.checked} of ${photos} photos` : null;
+  }
+
   async function read(args, s) {
     const state = s.state;
     if (!state?.rows.length)
@@ -496,6 +529,7 @@ export function createRenamePhotos({ store, pollMs = POLL_MS, answerMs = null, n
       folder: state.folder,
       reading: state.reading.on ? `${state.reading.percent}% ${state.reading.message}`.trim() : null,
       canRenameInPlace: state.canWrite ? null : 'no: the folder was opened read-only (a browser other than Chrome or Edge)',
+      wingCheck: wingCheckNow(state),
       counts: checked.counts,
       order: checked.order,
       checks: checked.checks,
