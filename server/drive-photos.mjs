@@ -64,7 +64,7 @@ export const DRIVE_PHOTO_TOOLS = [
     function: {
       name: 'photo_files_look',
       description:
-        "Pictures of any photo files on Google Drive, from Drive's resized copies (as the Wings Gallery loads them: quick, not the whole file): what a Photo_links reading or a person points to. `files` (up to 8): a Drive file ID, its link, or a file name (with or without its extension: the files of that name in Photo_links, else on Drive). `size`: 800 (default: the wings, which side, the turn) or 1600 (an envelope's writing). `box` [x0, y0, x1, y1], fractions of the picture (0,0 its top left): that part, from the 1600 px copy.",
+        "Pictures of any photo files on Google Drive, from Drive's resized copies (as the Wings Gallery loads them: quick, not the whole file): what a Photo_links reading or a person points to. `files` (up to 8): a Drive file ID, its link, or a file name or path (with or without its extension: the files of that name in Photo_links, those in the path's folder first, else on Drive). `size`: 800 (default: the wings, which side, the turn) or 1600 (an envelope's writing). `box` [x0, y0, x1, y1], fractions of the picture (0,0 its top left): that part, from the 1600 px copy.",
       parameters: {
         type: 'object',
         properties: {
@@ -664,19 +664,27 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
       total -= x.size;
     }
   }
-  /** The files a name, link or ID stands for: [{ id, name }] (a name: its rows in Photo_links, else a search of Drive). */
+  /**
+   * The files a name, path, link or ID stands for: [{ id, name }]. A name (or a path: its folders
+   * put the files there first) is looked up in Photo_links, else on Drive.
+   */
   async function filesNamed(given) {
     const id = driveIdOf(given) ?? (/^[\w-]{25,}$/.test(given) ? given : null);
     if (id) return [{ id, name: null }];
-    const wanted = stem(given);
-    const exact = /\.[a-z0-9]{2,4}$/i.test(given) ? given.toLowerCase() : null;
+    const cut = given.lastIndexOf('/');
+    const folder = cut >= 0 ? given.slice(0, cut).toLowerCase() : '';
+    const base = given.slice(cut + 1);
+    const wanted = stem(base);
+    const exact = /\.[a-z0-9]{2,4}$/i.test(base) ? base.toLowerCase() : null;
+    const inFolder = f => (folder && String(f.path ?? '').toLowerCase().includes(folder) ? 0 : 1);
     const listed = photoLinkRows(store)
       .filter(r => (exact ? String(r.values.Name ?? '').toLowerCase() === exact : stem(r.values.Name ?? '') === wanted))
-      .map(r => ({ id: driveIdOf(r.values.URL), name: r.values.Name, row: r.row }))
-      .filter(f => f.id);
-    if (listed.length) return listed.slice(0, VIEW_PER_NAME);
+      .map(r => ({ id: driveIdOf(r.values.URL), name: r.values.Name, row: r.row, path: r.values['Full Path'] }))
+      .filter(f => f.id)
+      .sort((a, b) => inFolder(a) - inFolder(b));
+    if (listed.length) return listed.slice(0, VIEW_PER_NAME).map(({ path: _path, ...f }) => f);
     const drive = driveFor(store, config);
-    const found = (await drive?.named?.(exact ? given : null, exact ? null : given)) ?? [];
+    const found = (await drive?.named?.(exact ? base : null, exact ? null : base)) ?? [];
     return found.slice(0, VIEW_PER_NAME).map(f => ({ id: f.id, name: f.name }));
   }
   /** A file's resized copy on this server: Drive's own, else (not shared by link) made from the whole file. */

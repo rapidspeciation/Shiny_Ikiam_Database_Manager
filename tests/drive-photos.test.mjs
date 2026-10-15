@@ -258,7 +258,7 @@ test('any photo on Drive: its resized copy by ID, link or name; a file not share
   };
   const listed = [{ row: 3, values: { 'Full Path': 'Upload/CAM000001d.JPG', Name: 'CAM000001d.JPG', Type: 'File', URL: `https://drive.google.com/file/d/${id(90)}/view` } }];
   const { photos } = await fixture(t, { fetchImpl, listed });
-  const seen = await photos.run('photo_files_look', { files: ['CAM000001d', 'IMG_5003.JPG', 'NOPE123.JPG'] }, kim);
+  const seen = await photos.run('photo_files_look', { files: ['Upload/CAM000001d', 'IMG_5003.JPG', 'NOPE123.JPG'] }, kim);
   assert.equal(seen[IMAGES].length, 2);
   assert.deepEqual(seen.pictures.map(p => [p.name, p.photoLinksRow ?? null, p.missing ?? null]), [
     ['CAM000001d.JPG', 3, null],
