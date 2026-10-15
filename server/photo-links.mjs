@@ -209,7 +209,10 @@ export function planPhotoLinks({
   const edit = (r, values, kind, shown = {}) => {
     const changed = Object.fromEntries(Object.entries(values).filter(([f, v]) => !same(f, r.values[f], v)));
     if (!Object.keys(changed).length) return false;
-    edits.push({ id: r.id, row: r.row, kind, values: changed, expected: Object.fromEntries(Object.keys(changed).map(f => [f, r.values[f] ?? null])) });
+    // its folder: where the file is now (an emptied row: where it was), to apply a folder's changes or leave them
+    // (the script's status lines hold text there, not a path: no folder)
+    const folder = kind === 'status' ? '' : dirOf(values['Full Path'] ?? r.values['Full Path']);
+    edits.push({ id: r.id, row: r.row, kind, folder, values: changed, expected: Object.fromEntries(Object.keys(changed).map(f => [f, r.values[f] ?? null])) });
     if (kind !== 'status')
       edited.push({ change: kind, row: r.row, folder: dirOf(values['Full Path'] ?? r.values['Full Path']), name: values.Name ?? r.values.Name ?? '', ...shown });
     return true;
@@ -501,6 +504,27 @@ export function planPhotoLinks({
     if (flags?.length) line.checks = flags;
     delete line.file;
   }
+
+  // Each folder's changes beside its new rows (and the folders with changes only): to apply some, leave others.
+  const filesIn = new Map();
+  for (const item of items.values()) {
+    if (!isFolder(item)) continue;
+    const path = placeOf(item.id)?.path;
+    if (path) filesIn.set(path, (children.get(item.id) || []).filter(f => !isFolder(f)).length);
+  }
+  const changedIn = new Map();
+  for (const e of edits) {
+    const c = changedIn.get(e.folder) ?? { changed: 0, kinds: {} };
+    c.changed++;
+    c.kinds[e.kind] = (c.kinds[e.kind] ?? 0) + 1;
+    changedIn.set(e.folder, c);
+  }
+  for (const f of byFolder) {
+    Object.assign(f, changedIn.get(f.folder) ?? { changed: 0, kinds: {} });
+    changedIn.delete(f.folder);
+  }
+  for (const [folder, c] of [...changedIn].sort((a, b) => b[1].changed - a[1].changed))
+    byFolder.push({ folder, new: 0, files: filesIn.get(folder) ?? null, ...c });
 
   return {
     edits,

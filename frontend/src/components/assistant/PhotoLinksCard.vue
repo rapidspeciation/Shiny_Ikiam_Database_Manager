@@ -47,13 +47,28 @@ const changes = computed(() => sync.value.changes ?? { renamed: 0, relinked: 0, 
 const twice = computed(() => sync.value.listedTwice ?? null)
 const openTwice = ref(false)
 
-/** Folders left for later (their new files are not written now). */
+/** Folders left for later (their new files and their changed rows are not written now). */
 const skip = ref(new Set<string>())
 function toggle(folder: string) {
   const next = new Set(skip.value)
   if (!next.delete(folder)) next.add(folder)
   skip.value = next
 }
+/** Every folder ticked, or none. */
+const allTicked = computed(() => !skip.value.size)
+function toggleAll() {
+  skip.value = allTicked.value ? new Set((sync.value.byFolder ?? []).map(f => f.folder)) : new Set()
+}
+const KIND_LABEL: Record<string, string> = {
+  rename: 'renombrados', move: 'movidos', remove: 'borrados en Drive', relink: 'enlazados al archivo nuevo',
+  details: 'dueño o tamaño', duplicate: 'listados dos veces', status: 'estado',
+}
+/** What changes in a folder, in words (the title of its count). */
+/** A folder's name, or what the rows without one are (the sheet script's status lines, mostly). */
+const folderName = (f: { folder: string; changed?: number; kinds?: Record<string, number> }) =>
+  f.folder || (f.kinds?.status && f.kinds.status === f.changed ? t('(líneas de estado del script)') : t('(sin carpeta)'))
+const kindsText = (kinds: Record<string, number> = {}) =>
+  Object.entries(kinds).map(([k, n]) => `${n} ${t(KIND_LABEL[k] ?? k)}`).join(' · ')
 const writing = computed(() => rowsToWrite(sync.value, skip.value))
 
 const busy = ref<'' | 'apply' | 'read'>('')
@@ -345,13 +360,24 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
     </p>
 
     <template v-if="pending && !sync.stale">
-      <!-- New photos, by folder. -->
+      <!-- What changes, by folder: each folder applied now or left for later. -->
       <table v-if="sync.byFolder?.length" class="w-full border-b border-stone-200 text-xs" data-folders>
         <thead>
           <tr class="text-left text-stone-500">
-            <th class="w-7 py-1 pl-3" />
+            <th class="w-7 py-1 pl-3">
+              <input
+                type="checkbox"
+                class="rounded border-stone-300 text-emerald-700"
+                :checked="allTicked"
+                :aria-label="$t('Todas las carpetas')"
+                :title="$t('Marcar o desmarcar todas')"
+                data-all-folders
+                @change="toggleAll"
+              />
+            </th>
             <th class="py-1 font-normal">{{ $t('Carpeta') }}</th>
             <th class="px-2 py-1 text-right font-normal">{{ $t('Nuevos') }}</th>
+            <th class="px-2 py-1 text-right font-normal" :title="$t('Filas que ya están y cambian: renombradas, movidas, borradas en Drive, de otro dueño…')">{{ $t('Cambian') }}</th>
             <th class="py-1 pr-3 text-right font-normal">{{ $t('En la carpeta') }}</th>
           </tr>
         </thead>
@@ -362,14 +388,15 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
                 type="checkbox"
                 class="rounded border-stone-300 text-emerald-700"
                 :checked="!skip.has(f.folder)"
-                :aria-label="$t('Listar {folder} ahora', { folder: f.folder })"
-                :title="$t('Desmárcala para dejar esta carpeta para después')"
+                :aria-label="$t('Aplicar {folder} ahora', { folder: folderName(f) })"
+                :title="$t('Desmárcala para dejar los cambios de esta carpeta para después')"
                 @change="toggle(f.folder)"
               />
             </td>
-            <td class="py-1 break-all">{{ f.folder }}</td>
-            <td class="px-2 py-1 text-right font-medium tabular-nums">{{ f.new }}</td>
-            <td class="py-1 pr-3 text-right text-stone-500 tabular-nums">{{ f.files }}</td>
+            <td class="py-1 break-all">{{ folderName(f) }}</td>
+            <td class="px-2 py-1 text-right font-medium tabular-nums">{{ f.new || '' }}</td>
+            <td class="px-2 py-1 text-right font-medium tabular-nums" :title="kindsText(f.kinds)">{{ f.changed || '' }}</td>
+            <td class="py-1 pr-3 text-right text-stone-500 tabular-nums">{{ f.files ?? '' }}</td>
           </tr>
         </tbody>
       </table>

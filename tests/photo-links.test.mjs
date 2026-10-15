@@ -142,7 +142,12 @@ test('the plan: new files of the listed folders, rows following their file, name
 
   assert.equal(s.newFiles, 5);
   assert.deepEqual(s.newFolders, ['Wild/Ecuador_2026']);
-  assert.deepEqual(s.byFolder, [{ folder: 'Wild/Ecuador_2026', new: 5, files: 8 }]);
+  // each folder's new rows and its changed ones (a row without a path: no folder)
+  assert.deepEqual(s.byFolder, [
+    { folder: 'Wild/Ecuador_2026', new: 5, files: 8, changed: 0, kinds: {} },
+    { folder: 'Wild', new: 0, files: 3, changed: 3, kinds: { rename: 1, relink: 1, remove: 1 } },
+    { folder: '', new: 0, files: null, changed: 1, kinds: { status: 1 } },
+  ]);
   assert.equal(s.leftOut, 1);
   assert.deepEqual(s.setAside, [{ folder: 'Wild/bad_photos_temp', files: 1 }]);
   assert.deepEqual(s.sameName, {
@@ -498,9 +503,12 @@ test('a reading is a card of Cambios propuestos: its rows, «Aplicar» with a fo
     assert.equal(card.status, 'pending');
     assert.equal(card.reason, 'Photo_links ← Google Drive');
     assert.equal(card.sync.total, 13);
-    assert.deepEqual(card.sync.byFolder.map(f => [f.folder, f.new]), [
-      ['Insectary', 2],
-      ['Wild/Ecuador_2026', 5],
+    // each folder with its new rows and its rows that change
+    assert.deepEqual(card.sync.byFolder.map(f => [f.folder, f.new, f.changed]), [
+      ['Insectary', 2, 0],
+      ['Wild/Ecuador_2026', 5, 0],
+      ['Wild', 0, 3],
+      ['', 0, 1],
     ]);
     assert.equal(card.sync.checks.rename.count, 1);
     assert.deepEqual(card.sync.add, ['Insectary']);
@@ -525,8 +533,8 @@ test('a reading is a card of Cambios propuestos: its rows, «Aplicar» with a fo
     assert.match((await call('update_proposal', { proposalId: card.id, changes: [] })).error, /sync_photo_links/);
     assert.equal((await http('POST', `/${card.id}/edit`, { cells: [] })).status, 409);
 
-    // «Aplicar» with the insectary folder left for later.
-    const started = await http('POST', `/${card.id}/photo-links/apply`, { skip: ['Insectary'] });
+    // «Aplicar» with the insectary folder left for later, and the changes of the rows in Wild.
+    const started = await http('POST', `/${card.id}/photo-links/apply`, { skip: ['Insectary', 'Wild'] });
     assert.equal(started.status, 202);
     for (let i = 0; i < 200 && (await cards()).some(c => c.status === 'applying'); i++) await new Promise(r => setTimeout(r, 10));
     const done = (await http('GET', '', {})).body.proposals;
@@ -536,9 +544,10 @@ test('a reading is a card of Cambios propuestos: its rows, «Aplicar» with a fo
     assert.ok(applied.applied_at);
     const progress = JSON.parse(applied.sync_json).progress;
     assert.equal(progress.state, 'done');
-    assert.equal(progress.written, 10);
-    assert.deepEqual(progress.leftFolders, ['Insectary']);
-    assert.equal(cellsOf(sheets, 6)['Full Path'], 'Wild/Ecuador_2026');
+    assert.equal(progress.written, 7);
+    assert.deepEqual(progress.leftFolders, ['Insectary', 'Wild']);
+    // the row of a file deleted from Wild stays as it was until Wild is applied
+    assert.equal(cellsOf(sheets, 6)['Full Path'], 'Wild/CAM000008d.JPG');
     assert.equal((await http('POST', `/${card.id}/photo-links/apply`, {})).status, 409);
 
     // What was left: a new card, applied from the chat as any proposal is.
@@ -547,8 +556,10 @@ test('a reading is a card of Cambios propuestos: its rows, «Aplicar» with a fo
     assert.equal(rest.changes.newFiles, 2);
     const written = await call('apply_proposal', { proposalId: rest.scan });
     assert.equal(written.status, 'done');
-    assert.equal(written.rowsWritten, 3);
-    assert.equal(cellsOf(sheets, 13).Name, 'CAM000005d.JPG');
+    assert.equal(written.rowsWritten, 6, 'the insectary folder and the rows of Wild');
+    const names = sheets.rows.get('Photo_links').map(r => cellsOf(sheets, r.row).Name);
+    assert.ok(names.includes('CAM000005d.JPG'), 'the insectary photos written');
+    assert.ok(!names.includes('CAM000008d.JPG'), 'and the row of the file deleted from Wild emptied');
 
     // Nothing left: no card.
     assert.equal((await call('sync_photo_links', { add: ['Insectary'] })).upToDate, true);

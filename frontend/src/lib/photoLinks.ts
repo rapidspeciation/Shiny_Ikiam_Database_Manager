@@ -78,7 +78,8 @@ export interface PhotoSync {
   total: number
   newFiles: number
   newFolders: string[]
-  byFolder: { folder: string; new: number; files: number }[]
+  /** each folder's new rows and its rows that change (by kind: rename, move, remove, relink, details…) */
+  byFolder: { folder: string; new: number; files: number | null; changed?: number; kinds?: Record<string, number> }[]
   changes: { renamed: number; relinked: number; removed: number; moved: number; details: number; statusRows: number }
   examples: {
     renamed: { row: number; from: string; to: string }[]
@@ -160,10 +161,10 @@ export function foundChecks(checks: PhotoChecks | null): { kind: CheckKind; coun
     .sort((a, b) => b.count - a.count)
 }
 
-/** Rows written with the folders in `skip` left for later (their new files and their own row). */
+/** Rows written with the folders in `skip` left for later (their new files, their own row and their changed rows). */
 export function rowsToWrite(sync: PhotoSync, skip: ReadonlySet<string>): number {
   let left = sync.total
-  for (const f of sync.byFolder) if (skip.has(f.folder)) left -= f.new
+  for (const f of sync.byFolder) if (skip.has(f.folder)) left -= f.new + (f.changed ?? 0)
   for (const f of sync.newFolders) if (skip.has(f)) left -= 1
   return Math.max(left, 0)
 }
