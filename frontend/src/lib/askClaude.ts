@@ -2,7 +2,7 @@ import { api } from './api'
 import { ensureT3, t3Host } from './t3Host'
 
 /**
- * A card's «Preguntar a Claude»: a chat of the person's T3 project that starts with the request
+ * A card's «Resolver con Claude»: a chat of the person's T3 project that starts with the request
  * (POST api/t3/ask), opened in the T3 frame; the page holding the card shows its chat panel
  * (event `claude:open`). Without T3 the request comes back to be pasted (`prompt`).
  */

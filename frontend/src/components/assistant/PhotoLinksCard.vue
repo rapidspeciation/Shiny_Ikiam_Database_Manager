@@ -231,8 +231,6 @@ async function ask(what: string, text: string) {
     asking.value = ''
   }
 }
-const askCheck = (kind: CheckKind, count: number) =>
-  ask(kind, t('Hay {n} fotos con «{check}». Ayúdame a resolverlas: mira cada una (los IDs de alrededor, el sobre si hace falta) y dime qué hacer.', { n: count, check: checkLabel(kind) }))
 const fileOf = (url: string) => /\/d\/([\w-]{20,})/.exec(url)?.[1] ?? ''
 const listing = ref('')
 /** A folder not listed yet, read with the others to start listing it (the same card, read again). */
@@ -268,11 +266,11 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
         type="button"
         class="ml-auto flex items-center gap-1 rounded border border-sky-300 bg-white px-1.5 py-0.5 text-xs text-sky-800 hover:border-sky-600 disabled:opacity-50"
         :disabled="!!asking"
-        :title="$t('Abre un chat con Claude al lado, que empieza con esta lectura, para que te ayude a resolver lo que encontró')"
+        :title="$t('Abre un chat con Claude al lado que ve todos los problemas de esta lectura y las fotos que necesite, y propone cómo resolverlos')"
         data-ask-claude
-        @click="ask('card', $t('Ayúdame con lo que encontró esta lectura: lo que hay que revisar y cómo resolverlo, empezando por lo que afecta a más fotos.'))"
+        @click="ask('card', $t('Ayúdame con todo lo que encontró esta lectura: revisa cada problema, mira las fotos que hagan falta para decidir (el sobre, las alas) y propón cómo resolverlo, empezando por lo que afecta a más fotos.'))"
       >
-        <Sparkles :size="12" /> {{ asking === 'card' ? $t('Abriendo…') : $t('Preguntar a Claude') }}
+        <Sparkles :size="12" /> {{ asking === 'card' ? $t('Abriendo…') : $t('Resolver con Claude') }}
       </button>
       <button
         v-if="pending"
@@ -415,17 +413,6 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
             <span class="font-medium tabular-nums">{{ twice.different }}</span>
             <span>{{ $t('nombres son de dos fotos distintas: compara los sobres; se dejan como están') }}</span>
           </button>
-          <div v-if="pending" class="ml-7 flex gap-1.5">
-            <button
-              type="button"
-              class="flex items-center gap-1 rounded border border-sky-200 bg-white px-1.5 py-0.5 text-sky-800 hover:border-sky-500 disabled:opacity-50"
-              :disabled="!!asking"
-              data-ask-twice
-              @click="ask('twice', $t('Hay {n} nombres que son de dos fotos distintas listadas en Photo_links. Ayúdame a ver cuál está mal nombrada en cada caso (el sobre, la carpeta, los IDs de alrededor) y a renombrarla.', { n: twice.different }))"
-            >
-              <Sparkles :size="11" /> {{ asking === 'twice' ? $t('Abriendo…') : $t('Resolver con Claude') }}
-            </button>
-          </div>
           <!-- Both photos of each name side by side, to compare the envelopes. -->
           <ul v-if="openTwice" class="mt-1 mb-1 ml-7 space-y-2 text-stone-700">
             <li v-for="d in twice.differentExamples" :key="d.name" class="break-all">
@@ -484,17 +471,6 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
               >
                 <Wrench :size="11" /> {{ fixing === c.kind ? $t('Preparando…') : fixes.get(c.kind)!.label }}
               </button>
-              <button
-                v-if="pending"
-                type="button"
-                class="flex shrink-0 items-center gap-1 rounded border border-sky-200 bg-white px-1.5 py-0.5 text-sky-800 hover:border-sky-500 disabled:opacity-50"
-                :disabled="!!asking"
-                :title="$t('Abre un chat con Claude que empieza con estas fotos')"
-                data-ask
-                @click="askCheck(c.kind, c.count)"
-              >
-                <Sparkles :size="11" /> {{ asking === c.kind ? $t('Abriendo…') : 'Claude' }}
-              </button>
             </div>
             <ul v-if="openCheck === c.kind" class="mt-0.5 mb-1 ml-7 space-y-0.5 text-stone-700">
               <li v-for="e in c.examples" :key="e.name + (e.in ?? '')" class="break-all">
@@ -528,15 +504,6 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
               { examples: sync.sameName.examples.slice(0, 3).map(e => e.name).join(', ') },
             )
           }}
-          <button
-            v-if="pending"
-            type="button"
-            class="ml-1 inline-flex items-center gap-1 rounded border border-sky-200 bg-white px-1.5 py-0.5 text-sky-800 hover:border-sky-500 disabled:opacity-50"
-            :disabled="!!asking"
-            @click="ask('sameName', $t('Hay {n} archivos que no se listan porque otra foto, distinta, ya está listada con su nombre. Ayúdame a ver cuál está mal nombrada y a renombrarla.', { n: sync.sameName.different }))"
-          >
-            <Sparkles :size="11" /> Claude
-          </button>
         </p>
         <p v-if="sync.sameName?.copies">
           {{ $tn(sync.sameName.copies, '{n} copia de una foto ya listada no se lista.', '{n} copias de fotos ya listadas no se listan.') }}

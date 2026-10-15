@@ -62,6 +62,23 @@ export const DRIVE_PHOTO_TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'photo_files_look',
+      description:
+        "Pictures of any photo files on Google Drive, from Drive's resized copies (as the Wings Gallery loads them: quick, not the whole file): what a Photo_links reading or a person points to. `files` (up to 8): a Drive file ID, its link, or a file name (with or without its extension: the files of that name in Photo_links, else on Drive). `size`: 800 (default: the wings, which side, the turn) or 1600 (an envelope's writing). `box` [x0, y0, x1, y1], fractions of the picture (0,0 its top left): that part, from the 1600 px copy.",
+      parameters: {
+        type: 'object',
+        properties: {
+          files: { type: 'array', items: { type: 'string' } },
+          size: { type: 'number', enum: [800, 1600] },
+          box: { type: 'array', items: { type: 'number' } },
+        },
+        required: ['files'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'drive_photos_edit',
       description:
         "Corrects rows of a batch of drive_photos (the card shows each change as the assistant's): `changes` [{ file, id (the CAM ID), view (d, v, d2…), remove (true: a photo not wanted, removed when applied), rotation (0, 90, 180, 270 clockwise, from the photo as shown), note (what a person should know) }]. Views are worked out again for the IDs changed unless given. `turnAll` (0, 90, 180, 270): the same turn, from how each shows, for every photo of the batch (one camera setup, one turn: the photos landscape, forewings above hindwings).",
@@ -107,6 +124,13 @@ const ORIGINALS_BYTES = 5 * 1024 ** 3;
 const FREE_BYTES = 10 * 1024 ** 3;
 const KEPT_DAYS = 14;
 const LOOK_MAX = 12;
+/** drive_photo_look: files a call, names' files each, and the copies kept (the least used dropped first). */
+const VIEW_MAX = 8;
+const VIEW_PER_NAME = 4;
+const VIEWS_BYTES = 300 * 1024 ** 2;
+const VIEW_TIMEOUT_MS = 15_000;
+/** Drive's resized copies of a file shared by link (the Wings Gallery's); the first is usually the quicker. */
+const driveCopies = (id, size) => [`https://drive.google.com/thumbnail?id=${id}&sz=w${size}`, `https://lh3.googleusercontent.com/d/${id}=w${size}`];
 /** How long a call on a batch being read waits for it to end before answering how far it is. */
 const WAIT_MS = 90_000;
 const PAGE = 150;
@@ -199,7 +223,7 @@ export const nameFor = (r, ext = '.JPG') => (r.camid && r.view ? `${r.camid}${r.
  * and started (server/photo-links-tool.mjs), answering { plan, link } or { error }. `show(batch)`,
  * `tell(batch)`: its card made, and changed. `readerDir`, `cacheDir`, `reader` (a fake for tests).
  */
-export function createDrivePhotos({ store, config = {}, readerDir = null, cacheDir = null, organize = null, show = null, tell = null, reader = null, waitMs = WAIT_MS, freeBytes = FREE_BYTES }) {
+export function createDrivePhotos({ store, config = {}, readerDir = null, cacheDir = null, organize = null, show = null, tell = null, reader = null, waitMs = WAIT_MS, freeBytes = FREE_BYTES, fetchImpl = fetch }) {
   const db = store.db;
   db.exec(`CREATE TABLE IF NOT EXISTS drive_photo_batches (id TEXT PRIMARY KEY, owner TEXT NOT NULL, folder_id TEXT NOT NULL, folder TEXT NOT NULL,
     status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, summary_json TEXT NOT NULL DEFAULT '{}', plan TEXT, error TEXT)`);
@@ -626,6 +650,103 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
     return Object.assign(out, { [IMAGES]: images });
   }
 
+  // ------------------------------------------------------------ any photo on Drive
+  const views = join(cache, 'views');
+  /** The copies kept beyond their space: the least recently used go. */
+  function trimViews() {
+    const files = readdirSync(views)
+      .map(f => ({ f, ...statSync(join(views, f)) }))
+      .sort((a, b) => a.mtimeMs - b.mtimeMs);
+    let total = files.reduce((n, x) => n + x.size, 0);
+    for (const x of files) {
+      if (total <= VIEWS_BYTES) break;
+      rmSync(join(views, x.f), { force: true });
+      total -= x.size;
+    }
+  }
+  /** The files a name, link or ID stands for: [{ id, name }] (a name: its rows in Photo_links, else a search of Drive). */
+  async function filesNamed(given) {
+    const id = driveIdOf(given) ?? (/^[\w-]{25,}$/.test(given) ? given : null);
+    if (id) return [{ id, name: null }];
+    const wanted = stem(given);
+    const exact = /\.[a-z0-9]{2,4}$/i.test(given) ? given.toLowerCase() : null;
+    const listed = photoLinkRows(store)
+      .filter(r => (exact ? String(r.values.Name ?? '').toLowerCase() === exact : stem(r.values.Name ?? '') === wanted))
+      .map(r => ({ id: driveIdOf(r.values.URL), name: r.values.Name, row: r.row }))
+      .filter(f => f.id);
+    if (listed.length) return listed.slice(0, VIEW_PER_NAME);
+    const drive = driveFor(store, config);
+    const found = (await drive?.named?.(exact ? given : null, exact ? null : given)) ?? [];
+    return found.slice(0, VIEW_PER_NAME).map(f => ({ id: f.id, name: f.name }));
+  }
+  /** A file's resized copy on this server: Drive's own, else (not shared by link) made from the whole file. */
+  async function viewOf(id, size) {
+    mkdirSync(views, { recursive: true, mode: 0o700 });
+    const path = join(views, `${id.replace(/[^\w-]/g, '')}-${size}.jpg`);
+    if (existsSync(path)) {
+      const now = new Date();
+      utimesSync(path, now, now);
+      return path;
+    }
+    for (const url of driveCopies(id, size)) {
+      try {
+        const response = await fetchImpl(url, { redirect: 'follow', signal: AbortSignal.timeout(VIEW_TIMEOUT_MS) });
+        // A file not shared by link answers with Google's sign-in page.
+        if (!response.ok || !/^image\//.test(response.headers.get('content-type') ?? '')) continue;
+        writeFileSync(path, Buffer.from(await response.arrayBuffer()), { mode: 0o600 });
+        trimViews();
+        return path;
+      } catch {
+        // the other address, or the whole file
+      }
+    }
+    const cutter = startReader();
+    try {
+      const cut = await cutter.read({ id: `${id}-view`, op: 'cut', path: await original(id), box: [0, 0, 1, 1], out: path, side: size });
+      if (cut.error) throw new Error(cut.error);
+    } finally {
+      if (cutter !== reader) cutter.close?.();
+    }
+    trimViews();
+    return path;
+  }
+  async function lookAtDrive({ files, size = 800, box = null }) {
+    const side = Number(size) >= 1200 ? 1600 : 800;
+    const area = Array.isArray(box) && box.length === 4 ? box.map(Number) : null;
+    const out = { pictures: [] };
+    const images = [];
+    let cutter = null;
+    try {
+      for (const given of (Array.isArray(files) ? files : [files]).map(text).filter(Boolean).slice(0, VIEW_MAX)) {
+        const found = await filesNamed(given).catch(e => (out.pictures.push({ file: given, missing: String(e.message || e) }), null));
+        if (!found) continue;
+        if (!found.length) out.pictures.push({ file: given, missing: 'no file of that name in Photo_links or on Drive' });
+        for (const f of found) {
+          if (images.length >= VIEW_MAX) break;
+          try {
+            let path = await viewOf(f.id, area ? 1600 : side);
+            if (area) {
+              const part = join(views, `${f.id.replace(/[^\w-]/g, '')}-z${createHash('sha1').update(JSON.stringify(area)).digest('hex').slice(0, 10)}.jpg`);
+              if (!existsSync(part)) {
+                cutter ??= startReader();
+                const cut = await cutter.read({ id: `${f.id}-part`, op: 'cut', path, box: area, out: part, side: 1600 });
+                if (cut.error) throw new Error(cut.error);
+              }
+              path = part;
+            }
+            out.pictures.push(filled({ file: given, id: f.id, name: f.name, photoLinksRow: f.row, link: `https://drive.google.com/file/d/${f.id}/view`, box: area }));
+            images.push({ data: readFileSync(path).toString('base64'), mimeType: 'image/jpeg' });
+          } catch (e) {
+            out.pictures.push(filled({ file: given, id: f.id, name: f.name, missing: String(e.message || e).slice(0, 200) }));
+          }
+        }
+      }
+    } finally {
+      if (cutter && cutter !== reader) cutter.close?.();
+    }
+    return Object.assign(out, { [IMAGES]: images });
+  }
+
   /** Changes to rows (`by`: 'assistant' or 'person'); the batch put in order again. */
   function edit({ batch, changes = [], turnAll }, by) {
     const b = batchOf(batch);
@@ -737,6 +858,7 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
           await Promise.race([running, new Promise(resolve => setTimeout(resolve, waitMs).unref?.())]);
         if (name === 'drive_photos') return status(args.batch, args);
         if (name === 'drive_photos_look') return await look(args);
+        if (name === 'photo_files_look') return await lookAtDrive(args);
         if (name === 'drive_photos_edit') return edit(args, 'assistant');
       } catch (e) {
         return { error: String(e.message || e) };

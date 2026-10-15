@@ -89,6 +89,16 @@ export class GoogleDrive {
     const item = await response.json();
     return item.trashed ? { gone: true } : item;
   }
+  /** Files by name (`exact`, its extension too) or by the start of their name (`prefix`): at most 20, with their folders. */
+  async named(exact, prefix = null) {
+    const quote = v => String(v).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const q = `${exact ? `name = '${quote(exact)}'` : `name contains '${quote(prefix)}'`} and trashed = false and mimeType != '${FOLDER}'`;
+    const params = new URLSearchParams({ q, pageSize: '20', fields: `files(${FIELDS})`, supportsAllDrives: 'true', includeItemsFromAllDrives: 'true', corpora: 'allDrives' });
+    const response = await this.request(`${API}?${params}`);
+    const files = (await response.json()).files || [];
+    // `contains` matches words anywhere: the name has to start with it.
+    return prefix ? files.filter(f => f.name.toLowerCase().startsWith(String(prefix).toLowerCase())) : files;
+  }
   /** A change of a file's own data (its name, its folders, the bin). */
   async update(id, body, params = {}) {
     const query = new URLSearchParams({ fields: FIELDS, supportsAllDrives: 'true', ...params });
@@ -208,6 +218,11 @@ export class LocalDrive {
     // A folder known only as a parent (the one holding the photo folders).
     if (!item) return this.byParent.has(id) ? { id, name: id, mimeType: FOLDER, parents: [] } : { gone: true };
     return item.trashed ? { gone: true } : this.seen(item);
+  }
+  async named(exact, prefix = null) {
+    this.requests++;
+    const match = f => (exact ? f.name.toLowerCase() === exact.toLowerCase() : f.name.toLowerCase().startsWith(String(prefix).toLowerCase()));
+    return [...this.items.values()].filter(f => !f.trashed && f.mimeType !== FOLDER && match(f)).slice(0, 20);
   }
   /** An item as the account sees it: its own when it is the owner. */
   seen(item) {

@@ -44,6 +44,13 @@ let silentPage = false
 let pending: string | null = null
 let fallback: ReturnType<typeof setTimeout> | undefined
 let settle: ReturnType<typeof setTimeout> | undefined
+/**
+ * The chat asked for, until the frame shows it: a chat just made may not be in T3's list yet when the
+ * frame gets there, and T3 then goes to its start page (a new chat in the project used last, anyone's).
+ */
+let wanted: { thread: string; until: number } | null = null
+let again: ReturnType<typeof setTimeout> | undefined
+const WANTED_MS = 20_000
 
 /** A T3 address that also tells the bridge the person's own project (it takes it out before T3 reads it). */
 const withProject = (address: string) => (props.projectKey ? ownProject(address, props.projectKey) : address)
@@ -61,6 +68,7 @@ function go(thread: string) {
 }
 function show(thread: string) {
   if (!chatPath(props.environmentId, thread) || view?.threadId === thread) return
+  wanted = { thread, until: Date.now() + WANTED_MS }
   // Not loaded yet, or loading (signing in goes to T3's home first): moved once the bridge speaks.
   if (src.value && silentPage) src.value = addressOf(thread)
   else if (!src.value || !view) pending = thread
@@ -96,6 +104,13 @@ function hear(event: MessageEvent) {
     pending = null
     go(thread)
   }
+  // On a chat: the one asked for, or another the person opened.
+  if (wanted && now.threadId) wanted = null
+  else if (wanted && Date.now() < wanted.until && now.path !== '/pair' && !pending) {
+    const thread = wanted.thread
+    clearTimeout(again)
+    again = setTimeout(() => wanted?.thread === thread && go(thread), 1500)
+  }
   emit('seen', { bridge: 'on', view: now })
 }
 /** A page loaded in the frame: the bridge is asked again; silent for a few seconds = no bridge. */
@@ -123,6 +138,7 @@ onBeforeUnmount(() => {
   clearTimeout(silent)
   clearTimeout(fallback)
   clearTimeout(settle)
+  clearTimeout(again)
 })
 const key = `t3:paired:${session.user?.username}`
 const DAYS_29 = 29 * 24 * 60 * 60 * 1000

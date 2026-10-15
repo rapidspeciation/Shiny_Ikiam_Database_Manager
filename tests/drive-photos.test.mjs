@@ -57,7 +57,7 @@ test('arrange: envelopes laid sideways decide no turn; the photos stay landscape
   assert.deepEqual(rows.filter(r => r.marked).map(r => r.file), ['a', 'c']);
 });
 
-async function fixture(t, { originalsGb } = {}) {
+async function fixture(t, { originalsGb, fetchImpl, listed = [] } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'drive-photos-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   // A folder with eight camera-named photos and their RAW files, beside a listed folder.
@@ -83,7 +83,10 @@ async function fixture(t, { originalsGb } = {}) {
   const drive = new LocalDrive(files, { me: 'project@example.org' });
   const sheets = new LocalSheets({
     Collection_data: ['CAM000001', 'CAM000002', 'CAM000003'].map((cam, i) => ({ row: i + 2, values: { CAM_ID: cam, FieldMark_ID: `F${i}` } })),
-    Photo_links: [{ row: 2, values: { 'Full Path': 'Upload', Name: 'Upload', Type: 'Folder', URL: 'https://drive.google.com/drive/folders/' + id(2) } }],
+    Photo_links: [
+      { row: 2, values: { 'Full Path': 'Upload', Name: 'Upload', Type: 'Folder', URL: 'https://drive.google.com/drive/folders/' + id(2) } },
+      ...listed,
+    ],
   });
   const store = new Store({ localMode: true }, { sheets });
   await store.sync({ sheets: ['Collection_data', 'Photo_links'] });
@@ -120,6 +123,7 @@ async function fixture(t, { originalsGb } = {}) {
     // Whatever room this computer's temporary folder has.
     freeBytes: 0,
     reader,
+    ...(fetchImpl ? { fetchImpl } : {}),
     organize: async (operations, user) => (planned.push({ operations, user }), { plan: 'plan-1', link: 'https://app/#/propuestas/plan-1' }),
     show: batch => (cards.push(['show', batch.status]), { link: 'https://app/#/propuestas/' + batch.id }),
     tell: batch => cards.push(['tell', batch.status]),
@@ -242,4 +246,33 @@ test('no whole photos kept when the cache allows none', async t => {
   await photos.run('drive_photos', { batch: started.batch }, kim);
   assert.equal(readdirSync(join(dir, 'cache', 'originals')).length, 0);
   assert.equal(readdirSync(join(dir, 'cache', started.batch)).length, 16);
+});
+
+test('any photo on Drive: its resized copy by ID, link or name; a file not shared by link made from the whole file', async t => {
+  const asked = [];
+  const fetchImpl = async url => {
+    asked.push(url);
+    // Shared by link: the photo listed in Photo_links; the camera-named ones answer Google's sign-in page.
+    const shared = url.includes(id(90));
+    return new Response(shared ? `copy ${url}` : '<html>sign in</html>', { status: 200, headers: { 'content-type': shared ? 'image/jpeg' : 'text/html' } });
+  };
+  const listed = [{ row: 3, values: { 'Full Path': 'Upload/CAM000001d.JPG', Name: 'CAM000001d.JPG', Type: 'File', URL: `https://drive.google.com/file/d/${id(90)}/view` } }];
+  const { photos } = await fixture(t, { fetchImpl, listed });
+  const seen = await photos.run('photo_files_look', { files: ['CAM000001d', 'IMG_5003.JPG', 'NOPE123.JPG'] }, kim);
+  assert.equal(seen[IMAGES].length, 2);
+  assert.deepEqual(seen.pictures.map(p => [p.name, p.photoLinksRow ?? null, p.missing ?? null]), [
+    ['CAM000001d.JPG', 3, null],
+    ['IMG_5003.JPG', null, null],
+    [undefined, null, 'no file of that name in Photo_links or on Drive'],
+  ]);
+  // Drive's 800 px copy; the other file cut from its whole photo.
+  assert.match(Buffer.from(seen[IMAGES][0].data, 'base64').toString(), /^copy https:\/\/drive\.google\.com\/thumbnail\?id=drive-id-0+90&sz=w800$/);
+  assert.match(Buffer.from(seen[IMAGES][1].data, 'base64').toString(), /^cut of drive-id-0+13\.jpg \[0,0,1,1\]$/);
+  // Kept: asked again, Drive is not.
+  const before = asked.length;
+  await photos.run('photo_files_look', { files: [`https://drive.google.com/file/d/${id(90)}/view`] }, kim);
+  assert.equal(asked.length, before);
+  // A part, from the 1600 px copy.
+  const part = await photos.run('photo_files_look', { files: [id(90)], box: [0.1, 0.2, 0.5, 0.6] }, kim);
+  assert.match(Buffer.from(part[IMAGES][0].data, 'base64').toString(), /^cut of drive-id-0+90-1600\.jpg \[0\.1,0\.2,0\.5,0\.6\]$/);
 });

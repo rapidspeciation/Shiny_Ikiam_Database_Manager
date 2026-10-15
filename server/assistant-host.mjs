@@ -41,6 +41,7 @@ export const MAIN_TOOLS = new Set([
   // They download photos from Drive, run the reader and keep the batches (server/drive-photos.mjs).
   'drive_photos',
   'drive_photos_look',
+  'photo_files_look',
   'drive_photos_edit',
   // It shows a card of photos (server/photo-gallery.mjs).
   'show_photos',

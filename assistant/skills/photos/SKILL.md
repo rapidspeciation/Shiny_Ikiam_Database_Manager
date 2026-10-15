@@ -262,10 +262,10 @@ write, say what it found, what it most likely is and what you suggest:
 | `sameName.different` | two photos share a name: one is misnamed, or the CAM was used twice | compare the two photos |
 | `notListed` | a new folder nobody asked to list | ask whether to list it (`add`) |
 
-When a name is in doubt, look at the photo: each example has its `url`, and
-the project's Google account downloads it (skill `google-account`,
-`gog drive download <fileId>`, the ID in the `url`); the envelope in it shows
-the ID. A few photos at a time: each is several megabytes.
+When a name is in doubt, look at the photo with `photo_files_look`: by its
+name, its `url` or its ID, Drive's resized copy in about a second (1600 px
+for an envelope's writing, `box` for a part). The photos around it (the IDs
+taken just before and after) often settle it.
 
 Photos with something to look at can be listed as they are and corrected
 later: the row follows its file.
