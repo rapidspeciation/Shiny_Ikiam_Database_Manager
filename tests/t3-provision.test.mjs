@@ -175,12 +175,17 @@ test('Another install (the local lab) sets the database, MCP address, workspaces
       ITHOMIINI_MCP_URL: 'http://127.0.0.1:8795/api/ai/mcp',
       ITHOMIINI_T3_WORKSPACES: workspaces,
       ITHOMIINI_SRC: '/work/ithomiini',
-      ITHOMIINI_DENY_READ: `${lab}:/secret/answers/`,
+      // the lab's secrets and answers, file by file: its data (the database beside them) stays readable
+      ITHOMIINI_DENY_READ: `${join(lab, 'google.json')}:${join(lab, 'run-*.log')}:/secret/answers/`,
       ITHOMIINI_LAB_URL: 'http://127.0.0.1:8795/',
       T3_BIN: '/bin/true',
     };
-    execFileSync(process.execPath, [script, 'lab'], { env, encoding: 'utf8' });
+    writeFileSync(join(lab, 'google.json'), '{}');
+    // a workspace made when the lab denied its whole folder
     const workspace = join(workspaces, 'lab');
+    mkdirSync(join(workspace, '.claude'), { recursive: true });
+    writeFileSync(join(workspace, '.claude', 'settings.json'), JSON.stringify({ permissions: { deny: [`Read(/${lab}/**)`, 'Bash(rm -rf /:*)'] } }));
+    execFileSync(process.execPath, [script, 'lab'], { env, encoding: 'utf8' });
     assert.equal(JSON.parse(readFileSync(join(workspace, '.mcp.json'), 'utf8')).mcpServers.db.url, 'http://127.0.0.1:8795/api/ai/mcp');
     // The lab's brief ends with the lab's rule (its address and checkout), and app-dev opens with it: changes stay local.
     const note = labAppDev('http://127.0.0.1:8795/', '/work/ithomiini');
@@ -193,7 +198,9 @@ test('Another install (the local lab) sets the database, MCP address, workspaces
     assert.ok(top.includes(note.replace(/^/gm, '> ')), 'the rule quoted at the top of app-dev');
     const deny = JSON.parse(readFileSync(join(workspace, '.claude', 'settings.json'), 'utf8')).permissions.deny;
     assert.ok(!deny.includes(`Read(/${database}*)`));
-    assert.ok(deny.includes(`Read(/${lab}/**)`) && deny.includes('Read(//secret/answers/**)'));
+    assert.ok(!deny.includes(`Read(/${lab}/**)`), 'the old rule over the whole folder is gone');
+    assert.ok(deny.includes(`Read(/${join(lab, 'google.json')})`) && deny.includes(`Read(/${join(lab, 'run-*.log')})`) && deny.includes('Read(//secret/answers/**)'));
+    assert.ok(deny.includes('Bash(rm -rf /:*)'), 'other rules are kept');
     assert.ok(deny.includes('Bash(scripts/deploy.sh:*)'), 'the lab never deploys');
     assert.equal(db.prepare('SELECT count(*) n FROM ai_tokens WHERE revoked_at IS NULL').get().n, 1);
     db.close();

@@ -12,13 +12,13 @@
 //   ITHOMIINI_SHARED (shared folder), DATABASE_PATH (and SHEETS_COPY_PATH, else beside it), ITHOMIINI_MCP_URL (or ITHOMIINI_SERVICE_ENV),
 //   ITHOMIINI_T3_WORKSPACES (default <shared>/t3-workspaces), ITHOMIINI_SRC (the source checkout
 //   the brief names), ITHOMIINI_CONFIG_DIR (the service's secrets), ITHOMIINI_DOCS, T3_BIN, and
-//   ITHOMIINI_DENY_READ (more folders Claude threads may not read, separated by ":"), and
+//   ITHOMIINI_DENY_READ (more folders, files or file patterns Claude threads may not read, separated by ":"), and
 //   ITHOMIINI_LAB_URL (the lab app's address: changes to the app stay local, no push or deploy).
 
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { composeBrief, labAppDev } from '../server/brief.mjs';
@@ -251,7 +251,8 @@ function provision(user, { freshToken, addProject }) {
   // is not (an older release denied it: taken out).
   settings.permissions.deny = [
     ...new Set([
-      ...(settings.permissions.deny ?? []).filter(rule => rule !== `Read(/${database}*)`),
+      // the read rules are all written again below (an older lab denied its whole folder: taken out)
+      ...(settings.permissions.deny ?? []).filter(rule => !rule.startsWith('Read(')),
       `Read(/${join(configDir, 'service.env')})`,
       `Read(/${join(configDir, '*.json')})`,
       `Read(/${configDir}/**)`,
@@ -259,7 +260,11 @@ function provision(user, { freshToken, addProject }) {
       `Edit(/${join(root, 'current')}/**)`,
       `Write(/${join(root, 'releases')}/**)`,
       `Write(/${join(root, 'current')}/**)`,
-      ...extraDeny.map(folder => `Read(/${folder.replace(/\/+$/, '')}/**)`),
+      ...extraDeny.map(path => {
+        const clean = path.replace(/\/+$/, '');
+        const file = /[*?]/.test(clean) || (existsSync(clean) && !statSync(clean).isDirectory());
+        return file ? `Read(/${clean})` : `Read(/${clean}/**)`;
+      }),
       // The lab never deploys to the live server.
       ...(labUrl ? ['Bash(scripts/deploy.sh:*)', 'Bash(./scripts/deploy.sh:*)', `Bash(${join(source, 'scripts/deploy.sh')}:*)`] : []),
     ]),

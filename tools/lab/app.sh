@@ -67,10 +67,16 @@ stop() {
 # --refresh-all afterwards (brief, skills and subagents rewritten, token kept).
 # The same settings reach the app: it makes the T3 project of anyone else who opens the
 # Asistente tab (ITHOMIINI_T3_PROVISION=direct, server/t3projects.mjs).
+# What the lab's chats may not read, as on the server only its secrets: the lab's logins (the admin's
+# password, the app's Google login, T3's tokens, the browser profile, the mails with codes) and the
+# benchmarks' answers (the real rows, the cases, the scores). The app's data (app*/, photos/…) stays
+# readable, as the server's shared/ is.
+LAB_DENY="$(printf '%s:' "$LAB"/credentials* "$LAB/google.json" "$LAB/setup-token" "$LAB"/t3-admin-token* "$LAB/browser" "$LAB/mail" \
+  "$LAB"/snapshot*.json "$LAB/blanked.json" "$LAB/cases.json" "$LAB/seed.json" "$LAB/results" "$LAB/run-*.log" "$LAB/pl-bench-*.log" "$HOME/.cache/ithomiini-test")"
 env_provision=(
   T3CODE_HOME="$T3HOME" ITHOMIINI_SHARED="$APPDIR" DATABASE_PATH="$APPDIR/app.sqlite"
   ITHOMIINI_MCP_URL="$URL/api/ai/mcp" ITHOMIINI_T3_WORKSPACES="$T3HOME/workspaces"
-  ITHOMIINI_SRC="$HERE" ITHOMIINI_LAB_URL="$PUBLIC_URL" ITHOMIINI_DOCS="$HERE/docs" ITHOMIINI_DENY_READ="$LAB:$HOME/.cache/ithomiini-test"
+  ITHOMIINI_SRC="$HERE" ITHOMIINI_LAB_URL="$PUBLIC_URL" ITHOMIINI_DOCS="$HERE/docs" ITHOMIINI_DENY_READ="$LAB_DENY"
   ITHOMIINI_KNOWLEDGE="$APPDIR/knowledge"
   T3_BIN="${T3_BIN:-$HOME/.local/bin/t3}"
 )
