@@ -22,6 +22,7 @@ import {
 const APP = 'https://app.example.org';
 const ENV = '4e6c4765-8cfa-4adc-b761-3c3bae2ae7e0';
 const A = '5c8de89d-bbaf-4328-b354-74733e099781';
+const B = '9d0f2a51-7c3e-4b8a-a1d2-3e4f5a6b7c8d';
 const PAGE =
   '<!doctype html><html><head><meta charset="UTF-8" /><script>theme()</script><script type="module" src="/assets/index.js"></script></head><body></body></html>';
 
@@ -64,7 +65,7 @@ test('which requests and answers get it', () => {
 });
 
 /** Runs the bridge in a fake T3 page: its posts, and a way to navigate and to say hello. */
-function runBridge({ framed = true, path = '/', appOrigin = APP, search = '', hash = '', storage = null } = {}) {
+function runBridge({ framed = true, path = '/', appOrigin = APP, search = '', hash = '', storage = null, answers = {} } = {}) {
   const posts = [];
   const listeners = {};
   // Copied out of the script's context (its objects have another Object.prototype).
@@ -96,13 +97,29 @@ function runBridge({ framed = true, path = '/', appOrigin = APP, search = '', ha
       }
     },
     setInterval: () => 0,
+    setTimeout: fn => fn(),
     queueMicrotask: fn => fn(),
+    // T3's socket (the page's updates) and its HTTP answers (its chat list): `answers` by address.
+    WebSocket: class {
+      constructor() {
+        this.listeners = [];
+        sockets.push(this);
+      }
+      addEventListener(name, fn) {
+        if (name === 'message') this.listeners.push(fn);
+      }
+      receive(data) {
+        this.listeners.forEach(fn => fn({ data }));
+      }
+    },
+    fetch: async url => ({ clone: () => ({ text: async () => answers[url] ?? '' }) }),
   };
+  const sockets = [];
   window.window = window;
   window.parent = framed ? parent : window;
   vm.runInNewContext(bridgeScript, window);
   const say = (name, event) => (listeners[name] ?? []).forEach(fn => fn(event));
-  return { posts, window, parent, say, listeners };
+  return { posts, window, parent, say, listeners, sockets };
 }
 
 test('the script tells the app (only) which chat the frame shows', () => {
@@ -185,6 +202,42 @@ test('the app opens a chat in T3; links clicked in T3 are left to T3 (a new tab)
   assert.equal(window.location.pathname, `/${ENV}/${A}`);
   // No click handler: a link to the app's Asistente tab opens as T3 opens it.
   assert.equal(listeners['document:click'], undefined);
+});
+
+test('a chat the app has just made is opened once T3\'s page has it (T3 goes to its start page for one it lacks)', async () => {
+  const { window, parent, say } = runBridge({ path: `/${ENV}/${B}` });
+  const socket = new window.WebSocket('wss://t3.example.org/ws');
+  const chat = `/${ENV}/${A}`;
+  say('message', { origin: APP, source: parent, data: { type: 'ithomiini-t3-open', path: chat, made: true } });
+  assert.equal(window.location.pathname, chat);
+  // T3 does not have it yet: its start page (a replace), then a new chat there (a replace too).
+  window.history.replaceState({}, '', '/');
+  window.history.replaceState({}, '', '/draft/d1');
+  socket.receive('{"other":"news"}');
+  assert.equal(window.location.pathname, '/draft/d1');
+  // T3's page is told of the chat: opened.
+  socket.receive(`{"threadId":"${A}","title":"Photo_links: review"}`);
+  assert.equal(window.location.pathname, chat);
+  // The person goes to another chat: it is no longer wanted.
+  window.history.pushState({}, '', `/${ENV}/${B}`);
+  socket.receive(`{"threadId":"${A}"}`);
+  assert.equal(window.location.pathname, `/${ENV}/${B}`);
+  // A chat opened from a link (not just made) is not waited for.
+  say('message', { origin: APP, source: parent, data: { type: 'ithomiini-t3-open', path: chat } });
+  window.history.replaceState({}, '', '/');
+  socket.receive(`{"threadId":"${A}"}`);
+  assert.equal(window.location.pathname, '/');
+});
+
+test("a page loaded on a chat just made (?ithomiini-made): T3's list fetched with it opens it", async () => {
+  const chat = `/${ENV}/${A}`;
+  const { window } = runBridge({ path: chat, search: '?ithomiini-made=1', answers: { '/api/orchestration/shell': `{"threads":[{"id":"${A}"}]}` } });
+  assert.equal(window.location.pathname, chat, 'the mark leaves the address');
+  // T3 opens on the list it kept, without the chat: its start page; then the current list arrives.
+  window.history.replaceState({}, '', '/');
+  await window.fetch('/api/orchestration/shell');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(window.location.pathname, chat);
 });
 
 /** A tiny T3: a page, a compressed script, an API echo, a page with its own CSP, and a websocket that echoes. */

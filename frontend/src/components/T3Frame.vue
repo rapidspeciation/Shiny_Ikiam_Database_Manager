@@ -2,7 +2,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api } from '../lib/api'
 import { errorText } from '../lib/notice'
-import { BRIDGE_WAIT_MS, HELLO, bridgeMessage, chatPath, openChat, originOf, ownProject, type T3Seen, type T3View } from '../lib/t3Bridge'
+import { BRIDGE_WAIT_MS, HELLO, bridgeMessage, chatPath, justMade, openChat, originOf, ownProject, type T3Seen, type T3View } from '../lib/t3Bridge'
 import { useSession } from '../stores/session'
 
 /**
@@ -27,8 +27,8 @@ const props = defineProps<{
    * chat in whichever project anyone used last, and a new chat goes to the project of the one on screen.
    */
   start?: string | null
-  /** A chat to show (a new object each time a link asks for it). */
-  open?: { thread: string } | null
+  /** A chat to show (a new object each time a link asks for it); `made`: just made by the app. */
+  open?: { thread: string; made?: boolean } | null
 }>()
 const emit = defineEmits<{ seen: [value: T3Seen] }>()
 const session = useSession()
@@ -45,30 +45,33 @@ let pending: string | null = null
 let fallback: ReturnType<typeof setTimeout> | undefined
 let settle: ReturnType<typeof setTimeout> | undefined
 /**
- * The chat asked for, until the frame shows it: a chat just made may not be in T3's list yet when the
- * frame gets there, and T3 then goes to its start page (a new chat in the project used last, anyone's).
+ * Chats the app has just made, not opened yet: the bridge opens them once T3's page has received them
+ * (T3 takes a chat it does not have for one deleted, and goes to its start page).
  */
-let wanted: { thread: string; until: number } | null = null
-let again: ReturnType<typeof setTimeout> | undefined
-const WANTED_MS = 20_000
+const made = new Set<string>()
 
 /** A T3 address that also tells the bridge the person's own project (it takes it out before T3 reads it). */
 const withProject = (address: string) => (props.projectKey ? ownProject(address, props.projectKey) : address)
-const addressOf = (thread: string) => withProject(`${props.url.replace(/\/+$/, '')}${chatPath(props.environmentId, thread)}`)
+const addressOf = (thread: string) => {
+  const address = withProject(`${props.url.replace(/\/+$/, '')}${chatPath(props.environmentId, thread)}`)
+  return made.delete(thread) ? justMade(address) : address
+}
 
 /** Moves the frame to a chat: in T3's router via the bridge, by its address if that does not get there. */
 function go(thread: string) {
   clearTimeout(fallback)
   if (view?.threadId === thread) return
   if (!view) return void (src.value = addressOf(thread))
-  frame.value?.contentWindow?.postMessage(openChat(chatPath(props.environmentId, thread)!), t3Origin)
+  const isNew = made.has(thread)
+  const address = addressOf(thread)
+  frame.value?.contentWindow?.postMessage(openChat(chatPath(props.environmentId, thread)!, isNew), t3Origin)
   fallback = setTimeout(() => {
-    if (view?.threadId !== thread) src.value = addressOf(thread)
+    if (view?.threadId !== thread) src.value = address
   }, 3000)
 }
-function show(thread: string) {
+function show(thread: string, isNew = false) {
   if (!chatPath(props.environmentId, thread) || view?.threadId === thread) return
-  wanted = { thread, until: Date.now() + WANTED_MS }
+  if (isNew) made.add(thread)
   // Not loaded yet, or loading (signing in goes to T3's home first): moved once the bridge speaks.
   if (src.value && silentPage) src.value = addressOf(thread)
   else if (!src.value || !view) pending = thread
@@ -76,7 +79,7 @@ function show(thread: string) {
 }
 watch(
   () => props.open,
-  value => value && show(value.thread),
+  value => value && show(value.thread, value.made),
   { immediate: true },
 )
 
@@ -103,13 +106,6 @@ function hear(event: MessageEvent) {
     const thread = pending
     pending = null
     go(thread)
-  }
-  // On a chat: the one asked for, or another the person opened.
-  if (wanted && now.threadId) wanted = null
-  else if (wanted && Date.now() < wanted.until && now.path !== '/pair' && !pending) {
-    const thread = wanted.thread
-    clearTimeout(again)
-    again = setTimeout(() => wanted?.thread === thread && go(thread), 1500)
   }
   emit('seen', { bridge: 'on', view: now })
 }
@@ -138,7 +134,6 @@ onBeforeUnmount(() => {
   clearTimeout(silent)
   clearTimeout(fallback)
   clearTimeout(settle)
-  clearTimeout(again)
 })
 const key = `t3:paired:${session.user?.username}`
 const DAYS_29 = 29 * 24 * 60 * 60 * 1000

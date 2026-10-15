@@ -172,7 +172,7 @@ async function review(fresh = false) {
     const out = await api<{ chat: string | null; prompt: string; resumed?: boolean }>('rename/review', { method: 'POST', body: fresh ? { fresh: true } : {} })
     if (out.chat) earlier.value = { chat: out.chat, at: out.resumed ? (earlier.value?.at ?? '') : new Date().toISOString() }
     chat.value = true
-    if (out.chat) t3Host.open = { thread: out.chat }
+    if (out.chat) t3Host.open = { thread: out.chat, made: !out.resumed }
     else prompt.value = out.prompt
   } catch (e) {
     notify(errorText(e), 'error')

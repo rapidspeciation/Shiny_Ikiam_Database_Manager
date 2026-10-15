@@ -20,8 +20,8 @@ export const t3Host = reactive({
   start: null as string | null,
   /** The place the frame covers (null: the Asistente tab is not on screen). */
   slot: null as HTMLElement | null,
-  /** A chat to show (a new object each time a link asks for it). */
-  open: null as { thread: string } | null,
+  /** A chat to show (a new object each time a link asks for it); `made`: just made by the app. */
+  open: null as { thread: string; made?: boolean } | null,
   /** What the frame shows, as its bridge says it. */
   seen: null as T3Seen | null,
   /** The pointer goes through the frame (the divider beside it is being dragged). */

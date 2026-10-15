@@ -9,7 +9,7 @@ import { ensureT3, t3Host } from './t3Host'
 export async function askClaude(text: string, title = ''): Promise<{ chat: string | null; prompt: string }> {
   await ensureT3().catch(() => {})
   const out = await api<{ chat: string | null; prompt: string }>('t3/ask', { method: 'POST', body: { text, title } })
-  if (out.chat) t3Host.open = { thread: out.chat }
+  if (out.chat) t3Host.open = { thread: out.chat, made: true }
   window.dispatchEvent(new CustomEvent('claude:open', { detail: out }))
   return out
 }

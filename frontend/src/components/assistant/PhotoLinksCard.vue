@@ -221,7 +221,7 @@ async function ask(what: string, text: string) {
   asking.value = what
   try {
     const out = await askClaude(
-      `${text} Es la lectura de Photo_links de la tarjeta ${props.proposal.id} (Cambios propuestos): míralo con get_proposal de esa tarjeta o con sync_photo_links. Propón los cambios en tarjetas; no apliques nada sin que yo lo diga.`,
+      `${text} ${t('Es la lectura de Photo_links de la tarjeta {id} (Cambios propuestos): míralo con get_proposal de esa tarjeta o con sync_photo_links. Propón los cambios en tarjetas; no apliques nada sin que yo lo diga.', { id: props.proposal.id })}`,
       t('Photo_links: revisar'),
     )
     if (!out.chat) notify(t('T3 no está disponible: copia el pedido que aparece junto al chat'), 'error')

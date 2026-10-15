@@ -6,7 +6,11 @@
 // draftId, visible, focused }) to the app's origin only, on every navigation and
 // when the app says hello. A T3 page open in its own browser tab sends nothing.
 // The app can also ask it to open a chat ({ type: 'ithomiini-t3-open', path }, in
-// T3's own router, no reload): a link to #/asistente?chat=… shows that chat.
+// T3's own router, no reload): a link to #/asistente?chat=… shows that chat. A chat the
+// app has just made ({ …, made: true }, or ?ithomiini-made on the address loaded) is opened
+// once T3's page has received it: T3 takes a chat it does not have for one deleted and goes
+// to its start page (a new chat in the project used last), also when it opens on the list it
+// kept from its last visit, before asking for the current one.
 // Links to the app clicked inside T3 open in a new tab, as T3 opens any link.
 // - Production (Caddy): requests to T3's host reach this app only for page loads
 //   and /__ithomiini/bridge.js (deploy/Caddyfile.fragment); T3's API, assets and
@@ -30,8 +34,9 @@ function bridge() {
   const search = location.search || '';
   const asked = /[?&]ithomiini-project=([^&#]*)/.exec(search);
   const own = asked ? decodeURIComponent(asked[1]) : '';
-  if (asked) {
-    const rest = search.replace(/([?&])ithomiini-project=[^&#]*&?/, '$1').replace(/[?&]$/, '');
+  const madeHere = /[?&]ithomiini-made(?:=[^&#]*)?(?:&|$)/.test(search);
+  if (asked || madeHere) {
+    const rest = search.replace(/([?&])ithomiini-(?:project|made)(?:=[^&#]*)?&?/g, '$1').replace(/[?&]$/, '');
     history.replaceState(history.state, '', location.pathname + rest + (location.hash || ''));
   }
   if (own) {
@@ -80,10 +85,16 @@ function bridge() {
     }
   };
   // T3's router moves with history.pushState / replaceState (and back / forward).
+  // A chat just made, until the person goes elsewhere: { id, path }.
+  let wanted = null;
+  let moving = false;
   for (const name of ['pushState', 'replaceState']) {
     const original = history[name];
     history[name] = function (...args) {
       const out = original.apply(this, args);
+      // T3's own moves replace the page (its start page for a chat it does not have); a push not
+      // made here is the person's: the chat is no longer wanted.
+      if (name === 'pushState' && !moving) wanted = null;
       queueMicrotask(() => send());
       return out;
     };
@@ -96,14 +107,49 @@ function bridge() {
     if (!CHAT.test(path) || location.pathname === path) return;
     const index = (history.state && history.state.__TSR_index) || 0;
     const key = Math.random().toString(36).slice(2, 10);
-    history.pushState({ __TSR_index: index + 1, key, __TSR_key: key }, '', path);
+    moving = true;
+    try {
+      history.pushState({ __TSR_index: index + 1, key, __TSR_key: key }, '', path);
+    } finally {
+      moving = false;
+    }
     dispatchEvent(new PopStateEvent('popstate', { state: history.state }));
   };
+  // What T3's page receives (its chat lists over HTTP, its updates over its socket): once it names the
+  // chat wanted, T3 has it (after its own handlers, which run once this one has).
+  const heard = text => {
+    if (!wanted || typeof text !== 'string' || !text.includes(wanted.id) || location.pathname === wanted.path) return;
+    const path = wanted.path;
+    setTimeout(() => wanted && wanted.path === path && open(path), 0);
+  };
+  const NativeSocket = window.WebSocket;
+  if (NativeSocket)
+    window.WebSocket = class extends NativeSocket {
+      constructor(...args) {
+        super(...args);
+        this.addEventListener('message', e => heard(e.data));
+      }
+    };
+  const nativeFetch = window.fetch;
+  if (nativeFetch)
+    window.fetch = function (...args) {
+      const out = nativeFetch.apply(this, args);
+      if (wanted) out.then(r => r.clone().text().then(heard), () => {});
+      return out;
+    };
+  const want = path => {
+    const chat = CHAT.exec(path);
+    wanted = chat ? { id: chat[2].toLowerCase(), path } : null;
+  };
+  if (madeHere) want(location.pathname);
   addEventListener('message', e => {
     if (e.origin !== app || e.source !== window.parent || !e.data) return;
     // The app asks again when its panel starts listening (the frame loaded before it).
     if (e.data.type === 'ithomiini-t3-hello') send(true);
-    if (e.data.type === 'ithomiini-t3-open' && typeof e.data.path === 'string') open(e.data.path);
+    if (e.data.type === 'ithomiini-t3-open' && typeof e.data.path === 'string') {
+      if (e.data.made) want(e.data.path);
+      open(e.data.path);
+    }
   });
   // In case a later T3 moves some other way.
   setInterval(() => send(), 1000);

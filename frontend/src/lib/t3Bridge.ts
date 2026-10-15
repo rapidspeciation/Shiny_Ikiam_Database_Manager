@@ -21,7 +21,8 @@ export interface T3Seen {
 
 export const HELLO = { type: 'ithomiini-t3-hello' }
 /** Asks the bridge to open a chat (its path) in T3's own router. */
-export const openChat = (path: string) => ({ type: 'ithomiini-t3-open', path })
+/** `made`: a chat the app has just made, opened once T3's page has received it (server/t3bridge.mjs). */
+export const openChat = (path: string, made = false) => ({ type: 'ithomiini-t3-open', path, ...(made ? { made: true } : {}) })
 /** How long after the frame loaded the bridge has to answer before the app stops waiting for it. */
 export const BRIDGE_WAIT_MS = 4000
 
@@ -87,9 +88,14 @@ export function chatPath(environmentId: string | null | undefined, threadId: str
  * #, e.g. the sign-in link's #token): T3 opens listing only that project's chats.
  */
 export function ownProject(address: string, projectKey: string) {
+  return withParam(address, `ithomiini-project=${encodeURIComponent(projectKey)}`)
+}
+/** A chat's address that tells the bridge the app has just made it: opened once T3's page has it. */
+export const justMade = (address: string) => withParam(address, 'ithomiini-made=1')
+function withParam(address: string, param: string) {
   const hash = address.indexOf('#')
   const [base, rest] = hash < 0 ? [address, ''] : [address.slice(0, hash), address.slice(hash)]
-  return `${base}${base.includes('?') ? '&' : '?'}ithomiini-project=${encodeURIComponent(projectKey)}${rest}`
+  return `${base}${base.includes('?') ? '&' : '?'}${param}${rest}`
 }
 
 /** A link into the Asistente tab (#/asistente?propuesta=…&chat=…&fila=…): what it opens. */

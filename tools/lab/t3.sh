@@ -58,12 +58,13 @@ s.defaultModelSelection ??= { instanceId: 'claudeAgent', model: 'claude-opus-5-5
 fs.writeFileSync(file, JSON.stringify(s, null, 1), { mode: 0o600 });
 EOF
 
-# The admin token (for pairing links), issued once and kept.
+# The admin token (for pairing links), issued once per T3 home and kept (another home's is refused).
 token() {
-  if [ ! -s "$LAB/t3-admin-token" ]; then
+  if [ ! -s "$LAB/t3-admin-token" ] || [ "$(cat "$LAB/t3-admin-token.home" 2>/dev/null)" != "$T3CODE_HOME" ]; then
     "$T3" auth session issue --base-dir "$T3CODE_HOME" --label ithomiini-lab --ttl 365d --token-only > "$LAB/t3-admin-token.new"
     mv "$LAB/t3-admin-token.new" "$LAB/t3-admin-token"
     chmod 600 "$LAB/t3-admin-token"
+    printf '%s' "$T3CODE_HOME" > "$LAB/t3-admin-token.home"
   fi
 }
 

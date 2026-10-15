@@ -745,6 +745,7 @@ export default {
   'Abriendo…': 'Opening…',
   'Preparando…': 'Preparing…',
   'Resolver con Claude': 'Solve with Claude',
+  'Es la lectura de Photo_links de la tarjeta {id} (Cambios propuestos): míralo con get_proposal de esa tarjeta o con sync_photo_links. Propón los cambios en tarjetas; no apliques nada sin que yo lo diga.': 'It is the Photo_links reading of card {id} (Proposed changes): look at it with get_proposal for that card or with sync_photo_links. Propose the changes as cards; apply nothing until I say so.',
   'Abre un chat con Claude al lado que ve todos los problemas de esta lectura y las fotos que necesite, y propone cómo resolverlos': 'Opens a chat with Claude beside that sees every problem of this reading and the photos it needs, and proposes how to solve them',
   'Ayúdame con todo lo que encontró esta lectura: revisa cada problema, mira las fotos que hagan falta para decidir (el sobre, las alas) y propón cómo resolverlo, empezando por lo que afecta a más fotos.': 'Help me with everything this reading found: go through each problem, look at the photos needed to decide (the envelope, the wings) and propose how to solve it, starting with what affects the most photos.',
   'Carpetas con fotos de especímenes que no se listan:': 'Folders with specimen photos that are not listed:',
