@@ -14,7 +14,8 @@ project documentation's `monitoring.md` has the app's full rules.
 
 1. `queue_walk` → `get_walk` → one `propose_changes` with its `newRows` →
    the person confirms → `apply_proposal`.
-2. Check that SamplingDay_data has the walker's row for that day (below).
+2. In the same proposal, the walker's SamplingDay_data row for that day
+   (below), or the missing values of the row the walker already typed.
 
 The person can also import the walk in Monitoreo → Importar, which hands out
 the next CAM and tube for preserved points; a GPX file uploaded there also
@@ -42,10 +43,18 @@ given).
 - **Which butterflies**: all Ithomiini **and** their tiger-pattern mimics
   (Heliconius numata and others); the 30 rule applies to Ithomiini only.
 - **SamplingDay_data**, one row per walker and day, also on days without
-  captures: Date · Location `Ikiam` · Purpose `Monitoring` · Start_time ·
-  End_time (from a GPX; `NA` if unknown) · Collectors_initials (several
-  joined by `|`: `AA|FCH`) · Notes (rain, fallen trees, "No butterflies
-  collected").
+  captures: Date · Location `Ikiam` · Purpose `Monitoring` · Start_time: the
+  start of the recording (the GPX's first time, in Ecuador time, UTC−5) or as
+  the walker gives it · End_time: as the walker gives it, which can be after
+  the recording stops when butterflies are identified at the end (the note
+  then says so); without it, the GPX's last time, or ask · Collectors_initials
+  (several joined by `|`: `AA|FCH`) · Notes (rain, fallen trees, "No
+  butterflies collected"), from the walker and the trail's description in
+  Wikiloc.
+- A Wikiloc GPX download has the track and its times but not the points; the
+  captures come from the trail link or from screenshots of the points (each
+  shows the point's time and note; the route statistics screen gives «Tiempo
+  total» and the description).
 
 ## The fates (templates)
 
