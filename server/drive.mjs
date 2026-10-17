@@ -24,7 +24,7 @@ import { pipeline } from 'node:stream/promises';
 export const FOLDER = 'application/vnd.google-apps.folder';
 const SHORTCUT = 'application/vnd.google-apps.shortcut';
 const FIELDS =
-  'id,name,mimeType,webViewLink,createdTime,description,size,trashed,ownedByMe,owners(emailAddress),imageMediaMetadata(time),parents';
+  'id,name,mimeType,webViewLink,createdTime,description,size,trashed,ownedByMe,owners(emailAddress),imageMediaMetadata(time,rotation),parents';
 const API = 'https://www.googleapis.com/drive/v3/files';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
 /** A file larger than this is not downloaded (a photo is some MB, a RAW file some tens). */

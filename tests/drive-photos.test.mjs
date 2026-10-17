@@ -248,6 +248,21 @@ test('no whole photos kept when the cache allows none', async t => {
   assert.equal(readdirSync(join(dir, 'cache', started.batch)).length, 16);
 });
 
+test('a path picks the file in that folder only; another of the same name is named, not shown; a file asked twice comes once', async t => {
+  const fetchImpl = async url => new Response(`copy ${url}`, { status: 200, headers: { 'content-type': 'image/jpeg' } });
+  const listed = [
+    { row: 3, values: { 'Full Path': 'Upload/CAM000001d.JPG', Name: 'CAM000001d.JPG', Type: 'File', URL: `https://drive.google.com/file/d/${id(90)}/view`, 'Size KB': 120.5 } },
+    { row: 4, values: { 'Full Path': 'Other/CAM000001d.JPG', Name: 'CAM000001d.JPG', Type: 'File', URL: `https://drive.google.com/file/d/${id(91)}/view`, 'Size KB': 64.2 } },
+  ];
+  const { photos } = await fixture(t, { fetchImpl, listed });
+  const seen = await photos.run('photo_files_look', { files: ['Other/CAM000001d.JPG', 'Nowhere/CAM000001d.JPG', `https://drive.google.com/file/d/${id(91)}/view`] }, kim);
+  assert.equal(seen[IMAGES].length, 1);
+  assert.deepEqual(seen.pictures[0], { file: 'Other/CAM000001d.JPG', id: id(91), name: 'CAM000001d.JPG', path: 'Other/CAM000001d.JPG', sizeKb: 64.2, photoLinksRow: 4, link: `https://drive.google.com/file/d/${id(91)}/view` });
+  assert.match(seen.pictures[1].missing, /in that folder/);
+  assert.deepEqual(seen.pictures[1].otherFolders, ['Upload/CAM000001d.JPG', 'Other/CAM000001d.JPG']);
+  assert.deepEqual(seen.pictures[2], { file: `https://drive.google.com/file/d/${id(91)}/view`, sameAs: 'Other/CAM000001d.JPG' });
+});
+
 test('any photo on Drive: its resized copy by ID, link or name; a file not shared by link made from the whole file', async t => {
   const asked = [];
   const fetchImpl = async url => {

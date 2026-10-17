@@ -215,7 +215,15 @@ export function planPhotoLinks({
     const folder = kind === 'status' || STATUS_ROW.test(where ?? '') ? '' : dirOf(where);
     edits.push({ id: r.id, row: r.row, kind, folder, values: changed, expected: Object.fromEntries(Object.keys(changed).map(f => [f, r.values[f] ?? null])) });
     if (kind !== 'status')
-      edited.push({ change: kind, row: r.row, folder, name: values.Name ?? r.values.Name ?? '', ...shown });
+      edited.push({
+        change: kind,
+        row: r.row,
+        folder,
+        name: values.Name ?? r.values.Name ?? '',
+        // what a row that keeps its file changes: its owner or size, before → after
+        ...(kind === 'details' ? { detail: Object.keys(changed).map(f => `${f}: ${shownValue(r.values[f])} → ${shownValue(changed[f])}`).join('; ') } : {}),
+        ...shown,
+      });
     return true;
   };
   const summary = {
@@ -392,7 +400,9 @@ export function planPhotoLinks({
     if (emptied.has(r.id) || r.values.Type !== 'File') continue;
     const name = renamedTo.get(r.id) ?? r.values.Name;
     if (blank(name)) continue;
-    if (!names.has(lower(name))) names.set(lower(name), relinkedTo.get(r.id) ?? driveIdOf(r.values.URL));
+    // the listed file, and what the sheet says of it (a file outside the folders read is compared by those)
+    if (!names.has(lower(name)))
+      names.set(lower(name), { id: relinkedTo.get(r.id) ?? driveIdOf(r.values.URL), path: r.values['Full Path'], kb: r.values['Size KB'], capture: r.values['Capture Date'] });
     seeView(String(name));
     const again = relinks.get(r.id);
     seePhoto(String(name), dirOf(again?.values['Full Path'] ?? r.values['Full Path']), again?.values['Size KB'] ?? r.values['Size KB'], again?.values['Capture Date'] ?? r.values['Capture Date']);
@@ -405,6 +415,8 @@ export function planPhotoLinks({
   const newFolders = [];
   const sameName = { copies: 0, different: 0, examples: [] };
   let leftOut = 0;
+  // the …_todelete files by folder, and whether the file of the plain name is beside them (copied, to be deleted)
+  const toDelete = new Map();
   const added = [];
   const children = new Map();
   for (const item of items.values()) {
@@ -430,18 +442,29 @@ export function planPhotoLinks({
       if (listed.has(file.id) || taken.has(file.id)) continue;
       if (TO_DELETE.test(file.name)) {
         leftOut++;
+        const t = toDelete.get(place.path) ?? toDelete.set(place.path, { folder: place.path, files: 0, kb: 0, noCopy: [] }).get(place.path);
+        t.files++;
+        t.kb += sizeKb(file);
+        const plain = lower(file.name.replace(TO_DELETE, ''));
+        if (!files.some(f => lower(f.name) === plain) && t.noCopy.length < EXAMPLES) t.noCopy.push(file.name);
         continue;
       }
       seePhoto(file.name, place.path, sizeKb(file), captureSerial(file.imageMediaMetadata?.time, timeZone));
       const key = lower(file.name);
       if (names.has(key)) {
-        const first = items.get(names.get(key));
-        const copy = first && sameSize(first.size, file.size) && (first.imageMediaMetadata?.time ?? '') === (file.imageMediaMetadata?.time ?? '');
+        const known = names.get(key);
+        const first = items.get(known.id);
+        // read with the others, by its size and moment taken; outside the folders read, by what the sheet says
+        const copy = first
+          ? sameSize(first.size, file.size) && (first.imageMediaMetadata?.time ?? '') === (file.imageMediaMetadata?.time ?? '')
+          : known.kb !== undefined &&
+            Math.abs((Number(known.kb) || 0) - sizeKb(file)) < 0.05 &&
+            (blank(known.capture) || Math.abs(Number(known.capture) - (Number(captureSerial(file.imageMediaMetadata?.time, timeZone)) || 0)) < 1e-6);
         if (copy) sameName.copies++;
-        else if (++sameName.different <= EXAMPLES) sameName.examples.push({ name: file.name, in: place.path, listed: first ? pathOf(first) : null });
+        else if (++sameName.different <= EXAMPLES) sameName.examples.push({ name: file.name, in: place.path, listed: first ? pathOf(first) : (known.path ?? null) });
         continue;
       }
-      names.set(key, file.id);
+      names.set(key, { id: file.id });
       seeView(file.name);
       creates.push({ module: SHEET, values: cells(file, `${place.path}/${file.name}`), folder: place.path });
       display.push({ change: 'new', folder: place.path, name: file.name, taken: takenText(file), url: file.webViewLink, file: file.id });
@@ -508,6 +531,35 @@ export function planPhotoLinks({
     delete line.file;
   }
 
+  // Photos turned unlike the rest of their session: the renamed photos of a folder taken on one day share one turn
+  // (the Rename Photos app, or the older one, gave a batch one tag); one whose tag says otherwise shows turned.
+  const turned = [];
+  for (const item of items.values()) {
+    if (!isFolder(item) || !inScope(item)) continue;
+    const place = placeOf(item.id);
+    if (!place) continue;
+    const days = new Map();
+    for (const f of children.get(item.id) || []) {
+      if (isFolder(f) || !/\.jpe?g$/i.test(f.name) || TO_DELETE.test(f.name) || !specimenName(f.name)) continue;
+      const rotation = f.imageMediaMetadata?.rotation;
+      const day = String(f.imageMediaMetadata?.time ?? '').slice(0, 10);
+      if (!Number.isInteger(rotation) || !day) continue;
+      if (!days.has(day)) days.set(day, []);
+      days.get(day).push(f);
+    }
+    for (const photos of days.values()) {
+      if (photos.length < TURN_SESSION) continue;
+      const tally = new Map();
+      for (const f of photos) tally.set(f.imageMediaMetadata.rotation, (tally.get(f.imageMediaMetadata.rotation) ?? 0) + 1);
+      const [usual, n] = [...tally].sort((a, b) => b[1] - a[1])[0];
+      if (n / photos.length < TURN_AGREES) continue;
+      for (const f of photos) {
+        const r = f.imageMediaMetadata.rotation;
+        if (r !== usual) turned.push({ name: f.name, path: `${place.path}/${f.name}`, url: f.webViewLink, degrees: (((usual - r) % 4) + 4) % 4 * 90 });
+      }
+    }
+  }
+
   // Each folder's changes beside its new rows (and the folders with changes only): to apply some, leave others.
   const filesIn = new Map();
   for (const item of items.values()) {
@@ -544,6 +596,8 @@ export function planPhotoLinks({
       byFolder,
       sameName,
       leftOut,
+      turned,
+      toDelete: [...toDelete.values()].map(t => ({ ...t, kb: Math.round(t.kb) })).sort((a, b) => b.files - a.files),
       names: checked.summary,
       notListed,
       setAside,
@@ -552,6 +606,8 @@ export function planPhotoLinks({
 }
 
 const dirOf = path => String(path ?? '').split('/').slice(0, -1).join('/');
+/** A cell as the card says it: a size to a tenth, nothing as —. */
+const shownValue = v => (v === null || v === undefined || v === '' ? '—' : typeof v === 'number' ? Math.round(v * 10) / 10 : v);
 /** The camera's capture time as text ("2026-07-20 10:15"), or ''. */
 const takenText = file => {
   const m = /(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2})/.exec(String(file.imageMediaMetadata?.time ?? ''));
@@ -582,6 +638,9 @@ const writtenId = parsed =>
 /** Two folders as the sheet writes them are one when a path ends in the other (rows written from a folder further down). */
 const sameFolder = (a, b) => a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
 
+/** A day's renamed photos of a folder share one turn when at least this many, this share of them, agree. */
+const TURN_SESSION = 5;
+const TURN_AGREES = 0.8;
 /** A session covers nearby IDs: one further than this from every photo around it is out of place (as the Rename Photos app). */
 const SEQUENCE_GAP = 15;
 /** Photos looked at before and after one, in the order they were taken. */

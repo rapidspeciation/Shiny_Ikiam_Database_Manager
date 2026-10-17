@@ -55,14 +55,15 @@ const drive = () => [
   file(11, 'CAM000001v.JPG', 2),
   // Uploaded again: the sheet's row holds the deleted file 12.
   file(13, 'CAM000002d.JPG', 2),
-  file(20, 'CAM000003d.JPG', 4),
-  file(21, 'CAM000003_v.jpg', 4),
+  // Ecuador_2026's renamed photos taken that day are turned half (their tag); CAM000003d.JPG's is not.
+  file(20, 'CAM000003d.JPG', 4, { imageMediaMetadata: { time: '2026:07:20 10:15:30', rotation: 0 } }),
+  file(21, 'CAM000003_v.jpg', 4, { imageMediaMetadata: { time: '2026:07:20 10:15:30', rotation: 2 } }),
   file(22, 'IMG_0271.JPG', 4),
-  file(23, 'CAM999999d.JPG', 4),
+  file(23, 'CAM999999d.JPG', 4, { imageMediaMetadata: { time: '2026:07:20 10:15:30', rotation: 2 } }),
   file(24, 'CAM000003d.CR2', 4, { mimeType: 'image/x-canon-cr2', imageMediaMetadata: undefined }),
   // The same name as a listed photo: a copy, and another photo.
-  file(25, 'CAM000001d.JPG', 4),
-  file(26, 'CAM000001v.JPG', 4, { size: '9999' }),
+  file(25, 'CAM000001d.JPG', 4, { imageMediaMetadata: { time: '2026:07:20 10:15:30', rotation: 2 } }),
+  file(26, 'CAM000001v.JPG', 4, { size: '9999', imageMediaMetadata: { time: '2026:07:20 10:15:30', rotation: 2 } }),
   file(27, 'CAM000003v.JPG_todelete', 4),
   file(30, 'CAM000004d.JPG', 5),
   file(40, 'CAM000005d.JPG', 3),
@@ -150,6 +151,10 @@ test('the plan: new files of the listed folders, rows following their file, name
     { folder: '', new: 0, files: null, changed: 1, kinds: { status: 1 } },
   ]);
   assert.equal(s.leftOut, 1);
+  // the photo turned unlike the others of its folder that day, and the turn that matches them
+  assert.deepEqual(s.turned.map(t => [t.path, t.degrees]), [['Wild/Ecuador_2026/CAM000003d.JPG', 180]]);
+  // …_todelete files by folder; this one has no file of its plain name beside it
+  assert.deepEqual(s.toDelete, [{ folder: 'Wild/Ecuador_2026', files: 1, kb: 2, noCopy: ['CAM000003v.JPG_todelete'] }]);
   assert.deepEqual(s.setAside, [{ folder: 'Wild/bad_photos_temp', files: 1 }]);
   assert.deepEqual(s.sameName, {
     copies: 1,
@@ -439,6 +444,8 @@ test('only some folders: their files are read, and the rest of the sheet is left
     assert.equal(read.changes.removed, undefined);
     assert.equal(read.notListed, undefined);
     assert.equal(read.drive.files, 8);
+    // A file of a listed name whose listed file lies outside the folders read: a copy by what the sheet says of it.
+    assert.equal(read.sameName.copies, 1);
     const done = await tool.run({ confirmed: true, scan: read.scan, skip: [] }, kim);
     assert.equal(done.status, 'done');
     // The folder above, by its name: its own files and those inside it. A row whose file is gone follows the

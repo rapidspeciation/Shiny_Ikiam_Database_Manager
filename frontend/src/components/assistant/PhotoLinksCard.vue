@@ -136,7 +136,7 @@ function columns(): ColumnDefinition[] {
       // A new file's name opens it on Drive, in another tab.
       formatter: (c: CellComponent) => {
         const row = c.getData() as PhotoRow
-        const text = row.from ? `${row.from} → ${row.name}` : row.name
+        const text = row.from ? `${row.from} → ${row.name}` : row.detail ? `${row.name} (${row.detail})` : row.name
         if (!row.url) return text
         const link = document.createElement('a')
         Object.assign(link, { href: row.url, target: '_blank', rel: 'noopener', textContent: text, className: 'photo-link' })

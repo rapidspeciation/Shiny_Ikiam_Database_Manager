@@ -261,6 +261,7 @@ write, say what it found, what it most likely is and what you suggest:
 | Found | Most likely | What to do |
 |---|---|---|
 | `rename` | another way of writing the name (`CAM077986_d.jpg`) | rename to the name in `to`: `organize_photos` does a whole folder in one go (below) |
+| `turned` (beside the checks) | a photo whose orientation tag differs from the rest of its folder that day: turned by mistake, or re-saved already turned (then it shows right) | look at them together (`photo_files_look`, 800); `organize_photos` `rotate` with its `degrees` only those that show turned |
 | `unnamed` | the photo was not renamed (`IMG_5069.JPG`), or shows no envelope | look at it; rename it or move it to a `_temp` folder |
 | `unknownId` | the butterfly's row is not typed yet (IDs running on after the sheet's last ones), or the ID was misread (it is `outOfOrder` too; `maybe` is the workbook ID one character away that fits) | ask which; a misread one is renamed |
 | `outOfOrder` | a misread ID: `around` are the IDs photographed just before and after it | look at the photo's envelope |
@@ -295,6 +296,7 @@ and the tool takes a plan's changes back when asked (`undo`).
 | to give a folder's photos the names the sheets look up | `fix: [{check: "rename", in: "PANAMA_2025"}]` |
 | to delete from a folder the photos that are in another one too | `fix: [{check: "copies", in: <the wrong folder>, keptIn: <the right one>}]`: only the files that are the same file there (without `keptIn`: in any other listed folder; the answer counts them by the folder that keeps them) |
 | to rename, move or remove these files | `operations`, one per file, named by its path, its name or its link |
+| photos on Drive that show turned | `{action: "rotate", file, degrees}` (clockwise): the same file and link with its orientation tag changed, its RAW file too; Photo_links needs nothing |
 | a new folder, and files moved into it | `{action: "folder", name, in}`, then `move` operations naming it |
 | the photos of a list of butterflies gathered to share (a project's specimens) | `{action: "shortcut", ids: [CAM…], to: <folder>}`: shortcuts to their dorsal and ventral photos; the photos stay where they are |
 | something only another account can do (delete its own files, take a folder's photos over) | `{action: "transfer", step: "delete" or "copy", in: <folder>}`: the team's sheet is left ready, and that account presses its button (below) |

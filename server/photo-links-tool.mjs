@@ -39,7 +39,8 @@ export const PHOTO_TOOLS = [
         "  - `newPhotos`: of the new photos (RAW files apart), `linked` are named <ID>d.JPG or <ID>v.JPG with an ID of the workbook, which is what the sheets look up. The rest are things to look at, each with examples: `rename` (found under the name in `to`), `unknownId` (the workbook lacks the ID; `maybe`: likely the ID meant), `unnamed` (the camera's name), `outOfOrder` (the ID is far from those of the photos taken just before and after, `around`: how a misread ID looks), `otherFolder` (the same ID has photos in another folder, `other`: another photo, or the same one filed twice, `copy`), `unpaired` (the other view is missing), `beforeCollection` (taken before the butterfly was collected), `otherCountry` (a butterfly of another country than its folder's).",
         '  - `sameName`: files not listed because a listed file already has their name: `copies` of that photo, or `different` photos (one of the two is misnamed, or the ID was used twice).',
         "  - `listedTwice`: photos the sheet already lists twice (Photo_dorsal and Photo_ventral take the first row of a name; the Wings Gallery and the maps show every row). The rows of the same file, and of copies (the same size and moment), are emptied, the one in the folder of the butterfly's country kept; the copies' files can then go with organize_photos ({check: \"copies\"}). `differentPhotosOfOneName`: two different photos under one name, each with its row, folder and link, left as they are: give the person the links to compare the envelopes; the misnamed one is then renamed with organize_photos (or the ID was used twice: skill `data-rules`).",
-        '  - `notListed`: folders with specimen photos beside the listed ones. `leftOut`: files named …_todelete and folders named …_temp, which are never listed.',
+        '  - `notListed`: folders with specimen photos beside the listed ones. `leftOut`: files named …_todelete and folders named …_temp, which are never listed; `toDeleteByFolder`: the …_todelete files of each folder (count, kB) and `noCopy`, some with no file of the plain name beside them (not copied: check before deleting).',
+        '  - `turned`: renamed photos whose orientation tag differs from the rest of their folder taken that day (one batch, one turn): each with the `degrees` clockwise that would match the others. Candidates, not certainties: a photo re-saved already turned shows right with another tag, so look at them (photo_files_look, 800) and rotate with organize_photos only those that show turned.',
         '- `only`: just these folders (a `byFolder` name, or the folder above them), which is quicker: `["Guyana_2025"]`. `add`: folders to start listing, by their `notListed` name or a Drive link.',
         "- `confirmed: true` with that answer's `scan`, only after the person's latest message approves it: writes it, some hundred rows per save. Folders of `byFolder` to leave for later: `skip` (their new rows and their changed ones), `skipNew` (only their new rows), `skipChanges` (only their changed rows). A long one answers `writing`: call again with the same arguments to follow it.",
       ].join('\n'),
@@ -62,9 +63,9 @@ export const PHOTO_TOOLS = [
     function: {
       name: 'organize_photos',
       description: [
-        "Put the photo folders on Google Drive in order with the project's Google account: rename files, move them to another folder, remove them, make folders, gather shortcuts to a set of photos, and leave ready what only another account can do. Photo_links then follows the files changed (their rows renamed, linked to the file kept, or emptied).",
+        "Put the photo folders on Google Drive in order with the project's Google account: rename files, move them to another folder, turn them, remove them, make folders, gather shortcuts to a set of photos, and leave ready what only another account can do. Photo_links then follows the files changed (their rows renamed, linked to the file kept, or emptied).",
         '- It works the plan out and shows it as a card beside the chat (`link`), every change listed. The changes are made when the person presses «Apply» on that card. Tell the person what it would do and what was left out (`leftOut`).',
-        '- `operations`: {action: "rename", file, name} · {action: "move", file, to} (a file or a folder into the folder `to`) · {action: "remove", file} · {action: "folder", name, in} · {action: "shortcut", ids, to} (shortcuts to the dorsal and ventral photos of those specimens, e.g. to share a project\'s photos). `file` and the folders: a Drive link, a path ("PERU_2024/JPG/CAM077740d.JPG") or a name no other has; a folder this plan makes can be named in its later operations.',
+        '- `operations`: {action: "rename", file, name} · {action: "move", file, to} (a file or a folder into the folder `to`) · {action: "rotate", file, degrees} (90, 180 or 270 clockwise: its orientation tag, the same file and link, its RAW file turned too; Photo_links needs nothing) · {action: "remove", file} · {action: "folder", name, in} · {action: "shortcut", ids, to} (shortcuts to the dorsal and ventral photos of those specimens, e.g. to share a project\'s photos). `file` and the folders: a Drive link, a path ("PERU_2024/JPG/CAM077740d.JPG") or a name no other has; a folder this plan makes can be named in its later operations.',
         '- `fix`: what a check of sync_photo_links calls for, in the folder `in` and inside it: {check: "rename", in} every photo whose name the sheets do not find takes the name they look up · {check: "copies", in, keptIn} every file of `in` that is also, the same file, in another listed folder is removed (`keptIn`: only those whose other file is in that folder; `sameFileKeptIn` in the answer counts them by the folder that keeps them) · {check: "copied", in} every …_todelete file whose copy is beside it is binned.',
         "- A photo renamed or removed takes its RAW file with it (`withRaw: false`: not). Removing bins the files the project's account owns (30 days in Drive's bin); Drive lets nobody bin someone else's file, so those are renamed …_todelete (out of Photo_links, for their owner to delete).",
         '- What another account has to do is left ready in the team\'s sheet «Transfer Ownership & Free Up Space», where that account presses a button: {action: "transfer", step: "delete", in} for its «Delete copied files» (the account that owns …_todelete files in the folder `in` deletes them: to the bin, or for good with `permanent: true`), {action: "transfer", step: "copy", in} for its «Copy files» (the account that takes a folder\'s photos over copies them). `subfolders: false`: the folder without those inside it. A plan that leaves …_todelete files to other accounts gets the delete step by itself. The answer\'s `otherAccountStep` says which accounts (`by`) and what to tell them.',
@@ -79,7 +80,8 @@ export const PHOTO_TOOLS = [
             items: {
               type: 'object',
               properties: {
-                action: { type: 'string', enum: ['rename', 'move', 'remove', 'folder', 'shortcut', 'transfer'] },
+                action: { type: 'string', enum: ['rename', 'move', 'rotate', 'remove', 'folder', 'shortcut', 'transfer'] },
+                degrees: { type: 'integer', enum: [90, 180, 270] },
                 file: { type: 'string' },
                 name: { type: 'string' },
                 to: { type: 'string' },
@@ -170,7 +172,8 @@ export function cardOf(scan, { add = [], only = [] } = {}) {
         }
       : null,
     notListed: s.notListed.map(({ id: _id, ...rest }) => rest),
-    leftOut: { toDelete: s.leftOut, temp: s.setAside },
+    leftOut: { toDelete: s.leftOut, toDeleteByFolder: s.toDelete, temp: s.setAside },
+    turned: s.turned.slice(0, 500),
     untouched: { outside: s.outside + s.elsewhere, unchecked: s.unchecked, repeated: s.repeated, unread: s.unread },
     notFound: scan.notFound,
   };
@@ -210,7 +213,8 @@ function brief(id, card, shown = {}) {
         })
       : null,
     notListed: card.notListed,
-    leftOut: filled({ toDeleteFiles: card.leftOut.toDelete, tempFolders: card.leftOut.temp }),
+    leftOut: filled({ toDeleteFiles: card.leftOut.toDelete, toDeleteByFolder: card.leftOut.toDeleteByFolder, tempFolders: card.leftOut.temp }),
+    turned: card.turned?.length ? { count: card.turned.length, files: card.turned.slice(0, 40).map(({ url: _url, ...f }) => f) } : null,
     // Rows left as they are.
     untouched: filled({
       fileNowOutsideTheListedFolders: card.untouched.outside,
@@ -532,7 +536,9 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
           say();
         },
       });
-      known = null;
+      // What Drive holds now: read again (below, for Photo_links) only when names or places changed; a plan
+      // that only turned photos, made shortcuts or left a step to another account keeps the reading it had.
+      if (plan.ops.some(o => o.done && ['rename', 'move', 'remove', 'folder'].includes(o.action))) known = null;
       job.errors = plan.ops.filter(o => o.error).slice(0, EXAMPLES).map(o => `${o.name}: ${o.error}`);
       const transfer = plan.ops.find(o => o.action === 'transfer' && o.done);
       if (transfer) job.handover = transferOf(transfer);

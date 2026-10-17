@@ -64,7 +64,7 @@ export const DRIVE_PHOTO_TOOLS = [
     function: {
       name: 'photo_files_look',
       description:
-        "Pictures of any photo files on Google Drive, from Drive's resized copies (as the Wings Gallery loads them: quick, not the whole file): what a Photo_links reading or a person points to. `files` (up to 8): a Drive file ID, its link, or a file name or path (with or without its extension: the files of that name in Photo_links, those in the path's folder first, else on Drive). `size`: 800 (default: the wings, which side, the turn) or 1600 (an envelope's writing). `box` [x0, y0, x1, y1], fractions of the picture (0,0 its top left): that part, from the 1600 px copy.",
+        "Pictures of any photo files on Google Drive, from Drive's resized copies (as the Wings Gallery loads them: quick, not the whole file): what a Photo_links reading or a person points to. `files` (up to 8): a Drive file ID, its link, or a file name or path (with or without its extension: the files of that name in Photo_links, else on Drive, …_todelete ones too; with a path, only those in that folder, the others named in `otherFolders`). Each picture says its real `path`, `sizeKb` and when it was taken; a file asked twice comes once (`sameAs`). `size`: 800 (default: the wings, which side, the turn) or 1600 (an envelope's writing). `box` [x0, y0, x1, y1], fractions of the picture (0,0 its top left): that part, from the 1600 px copy.",
       parameters: {
         type: 'object',
         properties: {
@@ -668,24 +668,49 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
    * The files a name, path, link or ID stands for: [{ id, name }]. A name (or a path: its folders
    * put the files there first) is looked up in Photo_links, else on Drive.
    */
+  /**
+   * The files a name or path points to: { found: [{ id, name, row, path, sizeKb, taken }], elsewhere }.
+   * A path gives only the files in its folder (Photo_links, else Drive itself), never one of the same
+   * name elsewhere: those are told in `elsewhere`. A file renamed …_todelete is found by its name too.
+   */
   async function filesNamed(given) {
     const id = driveIdOf(given) ?? (/^[\w-]{25,}$/.test(given) ? given : null);
-    if (id) return [{ id, name: null }];
+    if (id) return { found: [{ id, name: null }] };
     const cut = given.lastIndexOf('/');
-    const folder = cut >= 0 ? given.slice(0, cut).toLowerCase() : '';
+    const folder = cut >= 0 ? given.slice(0, cut).toLowerCase().replace(/^\/+|\/+$/g, '') : '';
     const base = given.slice(cut + 1);
     const wanted = stem(base);
     const exact = /\.[a-z0-9]{2,4}$/i.test(base) ? base.toLowerCase() : null;
-    const inFolder = f => (folder && String(f.path ?? '').toLowerCase().includes(folder) ? 0 : 1);
+    const plain = name => String(name ?? '').toLowerCase().replace(/_todelete$/, '');
+    const matches = name => (exact ? plain(name) === exact : stem(plain(name)) === wanted);
+    const dirOf = path => String(path ?? '').split('/').slice(0, -1).join('/').toLowerCase();
+    const inFolder = path => !folder || dirOf(path) === folder || dirOf(path).endsWith(`/${folder}`);
     const listed = photoLinkRows(store)
-      .filter(r => (exact ? String(r.values.Name ?? '').toLowerCase() === exact : stem(r.values.Name ?? '') === wanted))
-      .map(r => ({ id: driveIdOf(r.values.URL), name: r.values.Name, row: r.row, path: r.values['Full Path'] }))
-      .filter(f => f.id)
-      .sort((a, b) => inFolder(a) - inFolder(b));
-    if (listed.length) return listed.slice(0, VIEW_PER_NAME).map(({ path: _path, ...f }) => f);
+      .filter(r => matches(r.values.Name))
+      .map(r => ({ id: driveIdOf(r.values.URL), name: r.values.Name, row: r.row, path: r.values['Full Path'], sizeKb: r.values['Size KB'], taken: r.values['Capture Date'] }))
+      .filter(f => f.id);
+    const here = listed.filter(f => inFolder(f.path));
+    if (here.length) return { found: here.slice(0, VIEW_PER_NAME) };
+    // Not listed there: Drive itself (the files of that name, …_todelete ones too), in that folder.
     const drive = driveFor(store, config);
-    const found = (await drive?.named?.(exact ? base : null, exact ? null : base)) ?? [];
-    return found.slice(0, VIEW_PER_NAME).map(f => ({ id: f.id, name: f.name }));
+    const onDrive = [];
+    if (drive?.named) {
+      if (exact) for (const n of [base, `${base}_todelete`]) onDrive.push(...((await drive.named(n)) ?? []));
+      else onDrive.push(...((await drive.named(null, base)) ?? []));
+    }
+    const kb = f => (f.size ? Math.round((Number(f.size) / 1024) * 10) / 10 : undefined);
+    if (!folder) {
+      const ids = new Set(listed.map(f => f.id));
+      return { found: [...listed, ...onDrive.filter(f => !ids.has(f.id)).map(f => ({ id: f.id, name: f.name, sizeKb: kb(f) }))].slice(0, VIEW_PER_NAME) };
+    }
+    const leaf = folder.split('/').pop();
+    const parents = new Map();
+    for (const f of onDrive)
+      for (const p of f.parents ?? []) if (!parents.has(p)) parents.set(p, String((await drive.get(p).catch(() => null))?.name ?? '').toLowerCase());
+    const there = onDrive.filter(f => (f.parents ?? []).some(p => parents.get(p) === leaf));
+    if (there.length) return { found: there.slice(0, VIEW_PER_NAME).map(f => ({ id: f.id, name: f.name, path: `${given.slice(0, cut)}/${f.name}`, sizeKb: kb(f) })) };
+    const elsewhere = [...new Set([...listed.map(f => f.path), ...onDrive.map(f => `${(f.parents ?? []).map(p => parents.get(p)).filter(Boolean).join(', ') || '?'}/${f.name}`)])];
+    return { found: [], elsewhere: elsewhere.slice(0, 8) };
   }
   /** A file's resized copy on this server: Drive's own, else (not shared by link) made from the whole file. */
   async function viewOf(id, size) {
@@ -723,13 +748,28 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
     const area = Array.isArray(box) && box.length === 4 ? box.map(Number) : null;
     const out = { pictures: [] };
     const images = [];
+    const seen = new Map();
     let cutter = null;
     try {
       for (const given of (Array.isArray(files) ? files : [files]).map(text).filter(Boolean).slice(0, VIEW_MAX)) {
-        const found = await filesNamed(given).catch(e => (out.pictures.push({ file: given, missing: String(e.message || e) }), null));
-        if (!found) continue;
-        if (!found.length) out.pictures.push({ file: given, missing: 'no file of that name in Photo_links or on Drive' });
+        const named = await filesNamed(given).catch(e => (out.pictures.push({ file: given, missing: String(e.message || e) }), null));
+        if (!named) continue;
+        const found = named.found;
+        if (!found.length)
+          out.pictures.push(
+            filled({
+              file: given,
+              missing: named.elsewhere?.length ? 'no file of that name in that folder (Photo_links and Drive)' : 'no file of that name in Photo_links or on Drive',
+              otherFolders: named.elsewhere,
+            }),
+          );
         for (const f of found) {
+          // the same file asked twice in a call (two names or paths for it): one picture
+          if (seen.has(f.id)) {
+            out.pictures.push({ file: given, sameAs: seen.get(f.id) });
+            continue;
+          }
+          seen.set(f.id, given);
           if (images.length >= VIEW_MAX) break;
           try {
             let path = await viewOf(f.id, area ? 1600 : side);
@@ -742,7 +782,9 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
               }
               path = part;
             }
-            out.pictures.push(filled({ file: given, id: f.id, name: f.name, photoLinksRow: f.row, link: `https://drive.google.com/file/d/${f.id}/view`, box: area }));
+            out.pictures.push(
+              filled({ file: given, id: f.id, name: f.name, path: f.path, sizeKb: f.sizeKb, taken: f.taken, photoLinksRow: f.row, link: `https://drive.google.com/file/d/${f.id}/view`, box: area }),
+            );
             images.push({ data: readFileSync(path).toString('base64'), mimeType: 'image/jpeg' });
           } catch (e) {
             out.pictures.push(filled({ file: given, id: f.id, name: f.name, missing: String(e.message || e).slice(0, 200) }));

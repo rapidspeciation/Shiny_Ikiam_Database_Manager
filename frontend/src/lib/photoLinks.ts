@@ -53,6 +53,8 @@ export interface PhotoRow {
   row?: number
   /** rename: the name the sheet has. */
   from?: string
+  /** details: what changes (owner, size), before → after */
+  detail?: string
   checks?: PhotoFlag[]
 }
 
