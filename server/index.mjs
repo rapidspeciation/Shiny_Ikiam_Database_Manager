@@ -257,6 +257,14 @@ export function configFromEnv(env = process.env) {
     photoReaderDir: env.PHOTO_READER_DIR ? resolve(env.PHOTO_READER_DIR) : resolve(here, '..', 'photo-reader'),
     // Where the batches' small pictures are kept (at most 1 GB): beside the database by default.
     drivePhotosCache: env.DRIVE_PHOTOS_CACHE ? resolve(env.DRIVE_PHOTOS_CACHE) : env.DATABASE_PATH ? join(dirname(resolve(env.DATABASE_PATH)), 'drive-photos') : undefined,
+    // The AI Identifier's files (identify_species, server/identifier.mjs; tools/identifier/setup.sh): beside the database by default.
+    identifierDir: env.IDENTIFIER_DIR ? resolve(env.IDENTIFIER_DIR) : env.DATABASE_PATH ? join(dirname(resolve(env.DATABASE_PATH)), 'identifier') : undefined,
+    identifierOptions: {
+      ...(env.IDENTIFIER_THREADS ? { threads: Number(env.IDENTIFIER_THREADS) } : {}),
+      ...(env.IDENTIFIER_IDLE_MINUTES ? { idleMinutes: Number(env.IDENTIFIER_IDLE_MINUTES) } : {}),
+      // Another image encoder under IDENTIFIER_DIR (e.g. onnx/bioclip25h_visual.onnx, fp32).
+      ...(env.IDENTIFIER_ENCODER ? { encoder: env.IDENTIFIER_ENCODER } : {}),
+    },
     // Whole photos kept for the assistant to look closer (GB; 0: none), the least used dropped first.
     drivePhotosOriginalsGb: env.DRIVE_PHOTOS_ORIGINALS_GB !== undefined ? Number(env.DRIVE_PHOTOS_ORIGINALS_GB) : undefined,
     // A folder of photos on this computer shown as a Drive folder (the lab: LocalDrive, server/drive.mjs).

@@ -42,6 +42,7 @@ import { SITE_TOOLS, SITE_TOOL_NAMES, createSiteUpdates } from './site-updates.m
 import { DRIVE_PHOTO_TOOLS, DRIVE_PHOTO_TOOL_NAMES, createDrivePhotos } from './drive-photos.mjs';
 import { GALLERY_TOOLS, GALLERY_TOOL_NAMES, createGallery } from './photo-gallery.mjs';
 import { PHOTO_FACTS_TOOLS, PHOTO_FACTS_TOOL_NAMES, runPhotoFacts } from './photo-facts.mjs';
+import { createIdentifier } from './identifier.mjs';
 import { createInvitations, mailerFromEnv } from './invitations.mjs';
 import { QUERY_HINT, QUERY_TOOL, createQueryRunner, formatRows, sqlProblem } from './query-tool.mjs';
 import { createSheetsCopy } from './replica.mjs';
@@ -865,6 +866,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   const renamePhotos = inWorker ? null : createRenamePhotos({ store, space: () => photoLinks.space(), ...(config.renamePhotos ?? {}) });
   // Photos uploaded to Drive without being renamed, read here (the app's thread: it reads Drive and runs the reader).
   const personContext = user => ({ threadId: namedThread(user, 'Photo_links'), user, person: true });
+  const identifier = inWorker ? null : (config.identifier ?? createIdentifier({ dir: config.identifierDir ?? null, ...(config.identifierOptions ?? {}) }));
   const drivePhotos = inWorker
     ? null
     : createDrivePhotos({
@@ -873,6 +875,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         readerDir: config.photoReaderDir ?? null,
         cacheDir: config.drivePhotosCache ?? null,
         reader: config.photoReader ?? null,
+        // The AI Identifier (identify_species): one process for the app, started with the first photo.
+        identifier,
         // «Aplicar» on a batch: its changes as a plan of organize_photos, started at once (the person pressed it).
         organize: async (operations, user) => {
           const out = await photoLinks.organize({ operations }, user, personContext(user));
@@ -5976,6 +5980,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     close() {
       stopWatching?.();
       renamePhotos?.close();
+      identifier?.close();
       sheetsCopy?.close();
       queries?.close();
     },

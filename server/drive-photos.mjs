@@ -23,6 +23,7 @@ import { createInterface } from 'node:readline';
 import { FOLDER, driveFor, driveTree, driveWriterFor } from './drive.mjs';
 import { driveIdOf, knownId, photoLinkRows, specimenName, specimens } from './photo-links.mjs';
 import { IMAGES, checkBatch } from './rename-photos.mjs';
+import { attachmentFile } from './proposal-photos.mjs';
 
 export const DRIVE_PHOTO_TOOLS = [
   {
@@ -70,6 +71,29 @@ export const DRIVE_PHOTO_TOOLS = [
         properties: {
           files: { type: 'array', items: { type: 'string' } },
           size: { type: 'number', enum: [800, 1600] },
+          box: { type: 'array', items: { type: 'number' } },
+        },
+        required: ['files'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'identify_species',
+      description: [
+        "The species a butterfly photo shows, by the team's AI Identifier (BioCLIP 2.5-H and the head trained on 15,347 names, release of 14 Oct 2026), run on this server: about 3 s a photo, 10 s for the first after a quiet while (it loads).",
+        "- `files` (up to 6): a Drive file ID, link, or name or path as photo_files_look takes them (read from Drive's 1600 px copy); a chat attachment's file name; with `batch`, rows of a drive_photos batch (the whole photo).",
+        '- `side`: "East" or "West", the side of the Andes in Ecuador where it was photographed (Ikiam: East): names not recorded there weigh 2 %.',
+        '- `box` [x0, y0, x1, y1], fractions of the photo as shown: that butterfly only, for a photo of several; otherwise the wings are found on their own (`crop` says when none were and the centre of the photo was used).',
+        "Each photo: `species` and `subspecies` (up to 5, with probabilities, those under 1 % left out), `genus`, and `confidence`. On 303 labelled photos (258 of the team's), the first species was right 89 % of the time (the team's Ithomiini 92 %), within the five 97 %, the first subspecies 94 %; \"high\" (first species at 60 % or more, three photos in four) was right 96 %, \"low\" about two times in three.",
+      ].join('\n'),
+      parameters: {
+        type: 'object',
+        properties: {
+          files: { type: 'array', items: { type: 'string' } },
+          batch: { type: 'string' },
+          side: { type: 'string', enum: ['East', 'West'] },
           box: { type: 'array', items: { type: 'number' } },
         },
         required: ['files'],
@@ -129,6 +153,16 @@ const VIEW_MAX = 8;
 const VIEW_PER_NAME = 4;
 const VIEWS_BYTES = 300 * 1024 ** 2;
 const VIEW_TIMEOUT_MS = 15_000;
+/** identify_species: photos a call (about 3 s each). */
+const IDENTIFY_MAX = 6;
+/** The first species' probability from which an identification is told as high: right 96 % of the time above, 67 % below (17 Oct 2026, 303 photos). */
+const HIGH = 0.6;
+/** What the identifier cropped, when it is not the wings it found. */
+const CROPS = {
+  centre_crop_fallback: 'no wings found: the centre of the photo',
+  reviewed_full_image_override: 'the whole photo',
+  manual_bbox_square_letterbox: 'the box given',
+};
 /** Drive's resized copies of a file shared by link (the Wings Gallery's); the first is usually the quicker. */
 const driveCopies = (id, size) => [`https://drive.google.com/thumbnail?id=${id}&sz=w${size}`, `https://lh3.googleusercontent.com/d/${id}=w${size}`];
 /** How long a call on a batch being read waits for it to end before answering how far it is. */
@@ -222,8 +256,9 @@ export const nameFor = (r, ext = '.JPG') => (r.camid && r.view ? `${r.camid}${r.
  * Drive photo batches for one app. `organize(operations, user)`: a plan of changes to the files made
  * and started (server/photo-links-tool.mjs), answering { plan, link } or { error }. `show(batch)`,
  * `tell(batch)`: its card made, and changed. `readerDir`, `cacheDir`, `reader` (a fake for tests).
+ * `identifier`: the AI Identifier's process (server/identifier.mjs), for identify_species.
  */
-export function createDrivePhotos({ store, config = {}, readerDir = null, cacheDir = null, organize = null, show = null, tell = null, reader = null, waitMs = WAIT_MS, freeBytes = FREE_BYTES, fetchImpl = fetch }) {
+export function createDrivePhotos({ store, config = {}, readerDir = null, cacheDir = null, organize = null, show = null, tell = null, reader = null, identifier = null, waitMs = WAIT_MS, freeBytes = FREE_BYTES, fetchImpl = fetch }) {
   const db = store.db;
   db.exec(`CREATE TABLE IF NOT EXISTS drive_photo_batches (id TEXT PRIMARY KEY, owner TEXT NOT NULL, folder_id TEXT NOT NULL, folder TEXT NOT NULL,
     status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, summary_json TEXT NOT NULL DEFAULT '{}', plan TEXT, error TEXT)`);
@@ -797,6 +832,89 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
     return Object.assign(out, { [IMAGES]: images });
   }
 
+  // ------------------------------------------------------------ the species in a photo
+  /**
+   * identify_species: each photo (a file on Drive, a chat's attachment, a batch's row) put on this
+   * server, then read by the identifier one after the other; its lists cut to what counts.
+   */
+  async function identify({ files, batch = null, side = null, box = null }) {
+    if (!identifier) return { error: 'The identifier is not set up on this server.' };
+    const rows = batch ? batchOf(batch) && new Map(rowsOf(batch).map(r => [r.file, r])) : null;
+    if (batch && !rows) return { error: 'No batch by that ID.' };
+    const where = /^east$/i.test(side ?? '') ? 'East' : /^west$/i.test(side ?? '') ? 'West' : null;
+    const area = Array.isArray(box) && box.length === 4 ? box.map(Number) : null;
+    if (box !== null && box !== undefined && !(area?.every(v => v >= 0 && v <= 1) && area[0] < area[2] && area[1] < area[3]))
+      return { error: '`box` is [x0, y0, x1, y1], fractions of the photo (0 to 1), x0 < x1 and y0 < y1.' };
+    const listed = list => {
+      const kept = list.filter(([, p], i) => i === 0 || p >= 0.01).map(([name, p]) => [name, Math.round(p * 100) / 100]);
+      return kept.length ? kept : undefined;
+    };
+    const out = { photos: [] };
+    const seen = new Map();
+    for (const given of (Array.isArray(files) ? files : [files]).map(text).filter(Boolean).slice(0, IDENTIFY_MAX)) {
+      // [{ about: what the answer says of the file, key, local(): its path on this server }]
+      let targets = [];
+      try {
+        if (rows) {
+          const r = rows.get(given) ?? [...rows.values()].find(x => x.name === given);
+          if (r) targets = [{ about: { file: r.file, name: r.name, id: r.camid, view: r.view }, key: r.file, local: () => original(r.file) }];
+          else out.photos.push({ file: given, missing: 'no such row' });
+        } else {
+          const attached = attachmentFile(config.t3?.home, given);
+          if (attached) targets = [{ about: { file: given }, key: attached.path, local: async () => attached.path }];
+          else {
+            const named = await filesNamed(given);
+            if (!named.found.length)
+              out.photos.push(
+                filled({
+                  file: given,
+                  missing: named.elsewhere?.length ? 'no file of that name in that folder (Photo_links and Drive)' : 'no file of that name in Photo_links or on Drive',
+                  otherFolders: named.elsewhere,
+                }),
+              );
+            targets = named.found.map(f => ({
+              about: { file: given, name: f.name, path: f.path, link: `https://drive.google.com/file/d/${f.id}/view` },
+              key: f.id,
+              local: () => viewOf(f.id, 1600),
+            }));
+          }
+        }
+      } catch (e) {
+        out.photos.push({ file: given, missing: String(e.message || e).slice(0, 200) });
+        continue;
+      }
+      for (const t of targets) {
+        if (seen.has(t.key)) {
+          out.photos.push({ file: given, sameAs: seen.get(t.key) });
+          continue;
+        }
+        seen.set(t.key, given);
+        try {
+          const r = await identifier.identify({ path: await t.local(), side: where, box: area });
+          if (r.error) {
+            out.photos.push(filled({ ...t.about, error: r.error }));
+            continue;
+          }
+          const first = r.species?.[0]?.[1] ?? 0;
+          out.photos.push(
+            filled({
+              ...t.about,
+              species: listed(r.species ?? []),
+              subspecies: listed(r.subspecies ?? []),
+              genus: listed(r.genus ?? []),
+              confidence: first >= HIGH ? 'high' : 'low',
+              crop: CROPS[r.crop] ?? (r.crop === 'success' ? null : r.crop),
+              side: r.prior,
+            }),
+          );
+        } catch (e) {
+          out.photos.push(filled({ ...t.about, error: String(e.message || e).slice(0, 200) }));
+        }
+      }
+    }
+    return out;
+  }
+
   /** Changes to rows (`by`: 'assistant' or 'person'); the batch put in order again. */
   function edit({ batch, changes = [], turnAll }, by) {
     const b = batchOf(batch);
@@ -900,6 +1018,8 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
 
   return {
     async run(name, args = {}, user, context) {
+      // It only reads: anyone in a chat.
+      if (name === 'identify_species') return await identify(args).catch(e => ({ error: String(e.message || e) }));
       if (!EDITORS.includes(user?.role)) return { error: 'Your role cannot change the photos.' };
       try {
         if (name === 'drive_photos' && args.folder && !args.batch) return await start({ folder: args.folder, all: args.all === true }, user, context);

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store } from '../server/store.mjs';
@@ -57,7 +57,7 @@ test('arrange: envelopes laid sideways decide no turn; the photos stay landscape
   assert.deepEqual(rows.filter(r => r.marked).map(r => r.file), ['a', 'c']);
 });
 
-async function fixture(t, { originalsGb, fetchImpl, listed = [] } = {}) {
+async function fixture(t, { originalsGb, fetchImpl, listed = [], identifier = null, t3Home = null } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'drive-photos-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   // A folder with eight camera-named photos and their RAW files, beside a listed folder.
@@ -118,8 +118,9 @@ async function fixture(t, { originalsGb, fetchImpl, listed = [] } = {}) {
   const cards = [];
   const photos = createDrivePhotos({
     store,
-    config: { drive, ...(originalsGb !== undefined ? { drivePhotosOriginalsGb: originalsGb } : {}) },
+    config: { drive, ...(originalsGb !== undefined ? { drivePhotosOriginalsGb: originalsGb } : {}), ...(t3Home ? { t3: { home: t3Home } } : {}) },
     cacheDir: join(dir, 'cache'),
+    identifier,
     // Whatever room this computer's temporary folder has.
     freeBytes: 0,
     reader,
@@ -290,4 +291,77 @@ test('any photo on Drive: its resized copy by ID, link or name; a file not share
   // A part, from the 1600 px copy.
   const part = await photos.run('photo_files_look', { files: [id(90)], box: [0.1, 0.2, 0.5, 0.6] }, kim);
   assert.match(Buffer.from(part[IMAGES][0].data, 'base64').toString(), /^cut of drive-id-0+90-1600\.jpg \[0\.1,0\.2,0\.5,0\.6\]$/);
+});
+
+test('identify_species: a photo on Drive (its 1600 px copy), a chat attachment, a batch row (the whole photo); lists cut to what counts', async t => {
+  const fetchImpl = async url => new Response(`copy ${url}`, { status: 200, headers: { 'content-type': 'image/jpeg' } });
+  const listed = [{ row: 3, values: { 'Full Path': 'Upload/CAM000001d.JPG', Name: 'CAM000001d.JPG', Type: 'File', URL: `https://drive.google.com/file/d/${id(90)}/view` } }];
+  const home = mkdtempSync(join(tmpdir(), 't3-home-'));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  mkdirSync(join(home, 'userdata', 'attachments'), { recursive: true });
+  writeFileSync(join(home, 'userdata', 'attachments', 'thread-1-photo.jpg'), 'attached');
+  // What the identifier is asked (the photo's bytes on this server) and answers.
+  const asked = [];
+  const identifier = {
+    identify: async job => {
+      const text = readFileSync(job.path, 'utf8');
+      asked.push({ text, side: job.side, box: job.box });
+      if (text === 'attached') return { error: 'UnidentifiedImageError: cannot identify image file' };
+      const sure = text.startsWith('copy');
+      return {
+        species: [['Mechanitis polymnia', sure ? 0.956 : 0.31], ['Mechanitis mazaeus', sure ? 0.0036 : 0.2], ['Melinaea mnasias', 0.002]],
+        subspecies: [['Mechanitis polymnia chimborazona', sure ? 0.9532 : 0.3]],
+        genus: [['Mechanitis', 0.97], ['Hypothyris', 0.0088]],
+        top: ['Mechanitis polymnia chimborazona', 0.9532],
+        crop: sure ? 'success' : 'centre_crop_fallback',
+        prior: job.side,
+        ms: 2800,
+      };
+    },
+  };
+  const { photos } = await fixture(t, { fetchImpl, listed, identifier, t3Home: home });
+  // A viewer may ask: it only reads.
+  const out = await photos.run('identify_species', { files: ['Upload/CAM000001d', 'thread-1-photo.jpg', id(90), 'NOPE123.JPG'], side: 'east' }, { role: 'viewer' });
+  assert.deepEqual(out.photos, [
+    {
+      file: 'Upload/CAM000001d',
+      name: 'CAM000001d.JPG',
+      path: 'Upload/CAM000001d.JPG',
+      link: `https://drive.google.com/file/d/${id(90)}/view`,
+      species: [['Mechanitis polymnia', 0.96]],
+      subspecies: [['Mechanitis polymnia chimborazona', 0.95]],
+      genus: [['Mechanitis', 0.97]],
+      confidence: 'high',
+      side: 'East',
+    },
+    { file: 'thread-1-photo.jpg', error: 'UnidentifiedImageError: cannot identify image file' },
+    { file: id(90), sameAs: 'Upload/CAM000001d' },
+    { file: 'NOPE123.JPG', missing: 'no file of that name in Photo_links or on Drive' },
+  ]);
+  assert.match(asked[0].text, /sz=w1600$/);
+  assert.equal(asked[0].side, 'East');
+
+  // A batch's row: its whole photo; one with little to go on says so.
+  const started = await photos.run('drive_photos', { folder: 'Upload' }, kim, {});
+  await photos.run('drive_photos', { batch: started.batch }, kim);
+  const row = await photos.run('identify_species', { batch: started.batch, files: [id(11)], box: [0.2, 0.2, 0.8, 0.9] }, kim);
+  assert.deepEqual(row.photos[0], {
+    file: id(11),
+    name: 'IMG_5001.JPG',
+    id: 'CAM000001',
+    view: 'd',
+    species: [['Mechanitis polymnia', 0.31], ['Mechanitis mazaeus', 0.2]],
+    subspecies: [['Mechanitis polymnia chimborazona', 0.3]],
+    genus: [['Mechanitis', 0.97]],
+    confidence: 'low',
+    crop: 'no wings found: the centre of the photo',
+  });
+  assert.deepEqual(asked.at(-1), { text: 'jpeg', side: null, box: [0.2, 0.2, 0.8, 0.9] });
+  assert.match((await photos.run('identify_species', { files: [id(90)], box: [0.5, 0, 0.4, 1] }, kim)).error, /box/);
+  assert.match((await photos.run('identify_species', { batch: 'nope', files: ['x'] }, kim)).error, /No batch/);
+});
+
+test('identify_species without an identifier on the server', async t => {
+  const { photos } = await fixture(t);
+  assert.match((await photos.run('identify_species', { files: [id(90)] }, kim)).error, /not set up/);
 });

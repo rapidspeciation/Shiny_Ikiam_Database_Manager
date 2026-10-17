@@ -58,7 +58,8 @@ rm -rf "$logs"
 release="$(date -u +%Y%m%dT%H%M%SZ)"
 on_server "mkdir -p /home/ubuntu/ithomiini/releases/$release /home/ubuntu/ithomiini/shared /home/ubuntu/.config/systemd/user"
 # frontend/src/lib goes too: the assistant's Wikiloc tools run the monitoring code of the app (server/walks.mjs).
-tar --exclude='tools/wikiloc/node_modules' --exclude='tools/wikiloc/venv' --exclude='tools/wikiloc/__pycache__' -czf - server web docs assistant package.json rename-app.commit deploy scripts licenses PRODUCT.md DESIGN.md frontend/src/lib tools/wikiloc | on_server "tar -xzf - -C /home/ubuntu/ithomiini/releases/$release"
+# tools/identifier: the AI Identifier's worker (identify_species); its models stay in shared/identifier (tools/identifier/setup.sh).
+tar --exclude='tools/wikiloc/node_modules' --exclude='tools/wikiloc/venv' --exclude='tools/*/__pycache__' -czf - server web docs assistant package.json rename-app.commit deploy scripts licenses PRODUCT.md DESIGN.md frontend/src/lib tools/wikiloc tools/identifier | on_server "tar -xzf - -C /home/ubuntu/ithomiini/releases/$release"
 # The Rename Photos app of the «Fotos» tab (scripts/build-rename-app.sh, from the commit in rename-app.commit), and its
 # reader for photos on Drive (photo-reader/, server/drive-photos.mjs): built in shared/ when that commit changed and
 # linked from the release.

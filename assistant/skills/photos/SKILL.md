@@ -1,6 +1,6 @@
 ---
 name: photos
-description: The photos of the butterflies' wings, from the camera to the workbook — naming the files after the CAM_ID (the Rename Photos app, the app's «Photos» tab) and double-checking a batch before it is renamed (rename_photos_read, rename_photos_look, rename_photos_edit), photos uploaded without being renamed (drive_photos), showing butterflies' photos (show_photos), the folders on Google Drive and putting them in order (organize_photos: rename, move, remove duplicates, make folders, shortcuts), the Photo_links sheet that Photo_dorsal and Photo_ventral read (sync_photo_links), and moving the photos to another account to free space, and bringing the Wings Gallery and the maps up to date (update_websites). Use it when the person uploaded, renamed, moved or deleted photos, asks to update Photo_links or the photo links, says a photo shows Not Found or the wrong butterfly, asks which photos are missing, how to rename photos, where to put them, to tidy or delete photos on Drive, about the Drive space running out, about the Wings Gallery or the maps not showing new data, or presses «Review with Claude» in the «Photos» tab.
+description: The photos of the butterflies' wings, from the camera to the workbook — naming the files after the CAM_ID (the Rename Photos app, the app's «Photos» tab) and double-checking a batch before it is renamed (rename_photos_read, rename_photos_look, rename_photos_edit), photos uploaded without being renamed (drive_photos), showing butterflies' photos (show_photos), the species a photo shows (identify_species), the folders on Google Drive and putting them in order (organize_photos: rename, move, remove duplicates, make folders, shortcuts), the Photo_links sheet that Photo_dorsal and Photo_ventral read (sync_photo_links), and moving the photos to another account to free space, and bringing the Wings Gallery and the maps up to date (update_websites). Use it when the person uploaded, renamed, moved or deleted photos, asks to update Photo_links or the photo links, says a photo shows Not Found or the wrong butterfly, asks which photos are missing, how to rename photos, where to put them, to tidy or delete photos on Drive, about the Drive space running out, about the Wings Gallery or the maps not showing new data, or presses «Review with Claude» in the «Photos» tab.
 ---
 
 # Wing photos and Photo_links
@@ -276,6 +276,11 @@ When a name is in doubt, look at the photo with `photo_files_look`: by its
 name, its `url` or its ID, Drive's resized copy in about a second (1600 px
 for an envelope's writing, `box` for a part). The photos around it (the IDs
 taken just before and after) often settle it.
+
+Which species a photo shows (a row's SPECIES that does not fit its photo, a
+photo someone sends): `identify_species`, the team's AI Identifier, about 3 s
+a photo; a "low" answer is a lead to compare with the photo and the
+species' other photos.
 
 Photos with something to look at can be listed as they are and corrected
 later: the row follows its file.

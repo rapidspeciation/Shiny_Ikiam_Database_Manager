@@ -43,6 +43,8 @@ export const MAIN_TOOLS = new Set([
   'drive_photos_look',
   'photo_files_look',
   'drive_photos_edit',
+  // One identifier process for the app (server/identifier.mjs: 2.3 GB while loaded); this thread only waits on its pipe.
+  'identify_species',
   // It shows a card of photos (server/photo-gallery.mjs).
   'show_photos',
 ]);
