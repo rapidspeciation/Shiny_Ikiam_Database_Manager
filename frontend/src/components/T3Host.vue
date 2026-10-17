@@ -37,6 +37,10 @@ onBeforeUnmount(() => {
   removeEventListener('resize', measure)
   t3Host.seen = null
 })
+/** A proposal's link clicked in the chat: in the panel of the tab on screen, or in a new tab. */
+function openLink(link: { proposal: string; href: string }) {
+  if (!t3Host.onLink?.(link.proposal)) window.open(link.href, '_blank', 'noopener')
+}
 watch(
   () => t3Host.reconnects,
   () => frame.value?.connect(true),
@@ -59,6 +63,7 @@ watch(
       :open="t3Host.open"
       class="min-h-0 flex-1"
       @seen="value => (t3Host.seen = value)"
+      @link="openLink"
     />
   </div>
 </template>

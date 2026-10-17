@@ -279,3 +279,23 @@ export const fileCounts = (counts: PhotoFiles['counts']): string =>
     .join(' · ')
 /** What a row shows after its arrow: the new name, the folder, or nothing. */
 export const fileTarget = (row: FileRow): string => (row.change === 'bin' || row.change === 'delete' || row.change === 'folder' ? '' : (row.to ?? ''))
+
+/**
+ * The rows whose photos show beside a card's table after a click on `row` (`order`: the rows as the
+ * table lists them now): a click, that row alone (again: none); Ctrl/⌘, that row added or taken out;
+ * Shift, the rows from the last one clicked (`anchor`) to it added.
+ */
+export function pickRows<T>(picked: readonly T[], row: T, how: { add?: boolean; range?: boolean }, order: readonly T[], anchor: T | null): T[] {
+  if (how.range && anchor !== null) {
+    const [a, b] = [order.indexOf(anchor), order.indexOf(row)]
+    if (a >= 0 && b >= 0) {
+      const span = order.slice(Math.min(a, b), Math.max(a, b) + 1)
+      return [...picked, ...span.filter(r => !picked.includes(r))]
+    }
+  }
+  if (how.add || how.range) return picked.includes(row) ? picked.filter(r => r !== row) : [...picked, row]
+  return picked.length === 1 && picked[0] === row ? [] : [row]
+}
+
+/** A Drive file's ID in its link (…/d/<id>/view). */
+export const driveFileOf = (url: string | undefined) => /\/d\/([\w-]{20,})/.exec(url ?? '')?.[1] ?? ''

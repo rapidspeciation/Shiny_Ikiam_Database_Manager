@@ -137,6 +137,15 @@ export function planFileChanges({ index, operations = [], fix = [], withRaw = tr
     const holder = inFolder(folderId).get(lower(name));
     return holder !== undefined && holder.id !== self;
   };
+  /** The names the plan frees (a file renamed, moved or removed), by folder and name: the file that frees it. */
+  const freed = new Map();
+  const free = item => {
+    if (inFolder(item.parent).get(lower(item.name)) !== item) return;
+    inFolder(item.parent).delete(lower(item.name));
+    freed.set(`${item.parent}|${lower(item.name)}`, item.id);
+  };
+  /** Renames into a name a file not changed yet holds: settled once the whole plan is known (that file may give it up). */
+  const waiting = [];
   const add = (op, item, key = item.id) => {
     if (touched.has(key)) return problems.push({ file: wholePath(item), error: `two changes of it (${touched.get(key)} and ${op.action})` }) && false;
     if (ops.length >= MAX_OPERATIONS) return false;
@@ -147,13 +156,27 @@ export function planFileChanges({ index, operations = [], fix = [], withRaw = tr
   const rename = (item, name, extra = {}) => {
     const to = extOf(name) ? name : `${name}${extOf(item.name)}`;
     if (to === item.name) return false;
-    if (taken(item.parent, to, item.id)) return problems.push({ file: wholePath(item), error: `${to} already exists in its folder` }) && false;
-    if (!add({ action: 'rename', to, ...extra }, item)) return false;
-    inFolder(item.parent).delete(lower(item.name));
+    const holder = inFolder(item.parent).get(lower(to));
+    if (holder && holder.id !== item.id) {
+      // Its file may give the name up further on (renamed, moved, removed: a swap of two names too).
+      if (touched.has(holder.id) && !waiting.some(w => w.item === holder)) return problems.push({ file: wholePath(item), error: taken2(to) }) && false;
+      if (touched.has(item.id)) return problems.push({ file: wholePath(item), error: `two changes of it (${touched.get(item.id)} and rename)` }) && false;
+      touched.set(item.id, 'rename');
+      waiting.push({ item, to, extra });
+      return true;
+    }
+    // A name given up by another change of the plan: made after it.
+    const after = freed.get(`${item.parent}|${lower(to)}`);
+    if (!add({ action: 'rename', to, ...extra, ...(after ? { after } : {}) }, item)) return false;
+    free(item);
     inFolder(item.parent).set(lower(to), item);
     return true;
   };
-  const remove = (item, extra = {}) => !TO_DELETE.test(item.name) && add({ action: 'remove', ...extra }, item);
+  const remove = (item, extra = {}) => {
+    if (TO_DELETE.test(item.name) || !add({ action: 'remove', ...extra }, item)) return false;
+    free(item);
+    return true;
+  };
   /** Where a `to` leads: { toId | toNew, to (its path) }, or { error }. */
   const target = text => {
     const to = findFolder(text);
@@ -278,6 +301,7 @@ export function planFileChanges({ index, operations = [], fix = [], withRaw = tr
         continue;
       }
       const moved = add({ action: 'move', to: where.to, from: item.parent, ...(where.toId ? { toId: where.toId } : { toNew: where.toNew }), ...(where.outside ? { outside: true } : {}) }, item);
+      if (moved) free(item);
       if (moved && where.item) inFolder(where.item.id).set(lower(item.name), item);
     }
   }
@@ -336,8 +360,78 @@ export function planFileChanges({ index, operations = [], fix = [], withRaw = tr
               : 'no …_todelete file there has its copy beside it',
       });
   }
+  settleWaiting();
   if (ops.length >= MAX_OPERATIONS) problems.push({ error: `more than ${MAX_OPERATIONS} changes: the first ${MAX_OPERATIONS} are planned; ask again for the rest` });
   return { ops, problems };
+
+  /**
+   * The renames waiting for a name go when, the plan done, no other file has it: its file renamed away
+   * in the plan too (a chain, or a swap of names). Each runs after the change that frees its name; in
+   * a swap, the first file takes a name of its own on the way (`via`), so a failed step leaves no two
+   * files with one name.
+   */
+  function settleWaiting() {
+    let open = waiting;
+    for (let dropped = true; dropped && open.length; ) {
+      dropped = false;
+      const leaving = new Set(open.map(w => w.item.id));
+      const aimed = new Map();
+      for (const w of open) aimed.set(`${w.item.parent}|${lower(w.to)}`, (aimed.get(`${w.item.parent}|${lower(w.to)}`) ?? 0) + 1);
+      open = open.filter(w => {
+        const holder = inFolder(w.item.parent).get(lower(w.to));
+        const twice = aimed.get(`${w.item.parent}|${lower(w.to)}`) > 1;
+        if ((!holder || holder.id === w.item.id || leaving.has(holder.id)) && !twice) return true;
+        problems.push({ file: wholePath(w.item), error: twice ? `two files would be named ${w.to}` : taken2(w.to) });
+        touched.delete(w.item.id);
+        dropped = true;
+        return false;
+      });
+    }
+    const holderOf = new Map(open.map(w => [w.item.id, inFolder(w.item.parent).get(lower(w.to))?.id ?? null]));
+    for (const w of open) free(w.item);
+    for (const w of open) inFolder(w.item.parent).set(lower(w.to), w.item);
+    // A file whose name another waiting rename takes goes first; a cycle (a swap) starts by its first file's step aside.
+    const byItem = new Map(open.map(w => [w.item.id, w]));
+    const placed = new Set();
+    for (const start of open) {
+      if (placed.has(start.item.id)) continue;
+      const chain = [];
+      let w = start;
+      while (w && !placed.has(w.item.id) && !chain.includes(w)) {
+        chain.push(w);
+        w = byItem.get(holderOf.get(w.item.id));
+      }
+      const cycle = w && chain.includes(w) ? chain.slice(chain.indexOf(w)) : null;
+      // From the end of the chain (the file whose name is free) back to the start.
+      for (const x of chain.reverse()) {
+        placed.add(x.item.id);
+        const after = holderOf.get(x.item.id) ?? freed.get(`${x.item.parent}|${lower(x.to)}`) ?? null;
+        const via = cycle && x === cycle[0] ? viaName(x.item) : null;
+        if (ops.length >= MAX_OPERATIONS) break;
+        ops.push({
+          action: 'rename',
+          to: x.to,
+          ...x.extra,
+          ...(after ? { after } : {}),
+          ...(via ? { via } : {}),
+          id: x.item.id,
+          name: x.item.name,
+          folder: pathOfFolder(x.item.parent),
+          ...(x.item.webViewLink ? { url: x.item.webViewLink } : {}),
+        });
+      }
+    }
+  }
+  /** A name of its own for a file stepping aside in a swap: its name, marked. */
+  function viaName(item) {
+    let n = 1;
+    const name = k => `${stemOf(item.name)}__swap${k > 1 ? k : ''}${extOf(item.name)}`;
+    while (inFolder(item.parent).has(lower(name(n)))) n++;
+    return name(n);
+  }
+  function taken2(to) {
+    return `another file of its folder keeps the name ${to} (the sheets take one file of a name): rename, move or remove that one in the same plan`;
+  }
 }
 
 /** The folder holding all of these files, within the folders read: { id, name, path }, or null. */
@@ -477,12 +571,56 @@ export async function runFileChanges(writer, ops, { onStep = null, parallel = 4,
       step(op, e);
     }
   }
-  const queue = ops.filter(o => o.action !== 'folder' && o.action !== 'transfer');
+  // A change into a name another change frees waits for it (`after`); the first file of a swap steps aside
+  // to a name of its own first (`via`) and takes its new name last. A change only waits for one taken from
+  // the queue before it, so the workers never all wait.
+  const changes = ops.filter(o => o.action !== 'folder' && o.action !== 'transfer');
+  const freeing = new Map();
+  for (const op of changes)
+    if (op.action === 'rename' || op.action === 'move' || op.action === 'remove') {
+      let settle;
+      const promise = new Promise(resolve => (settle = resolve));
+      freeing.set(op.id, { promise, settle });
+    }
+  const gaveUpName = (op, ok) => freeing.get(op.id)?.settle(ok);
+  const nameFreed = async op => {
+    const by = op.after && freeing.get(op.after);
+    if (by && !(await by.promise)) throw new Error('the file that had its name was not changed: left as it is');
+  };
+  const queue = [
+    ...changes.filter(o => o.via).map(op => ({ op, step: 'via' })),
+    ...changes.filter(o => !o.via).map(op => ({ op })),
+    ...changes.filter(o => o.via).map(op => ({ op, step: 'last' })),
+  ];
   await Promise.all(
     Array.from({ length: parallel }, async () => {
       while (queue.length) {
-        const op = queue.shift();
+        const { op, step: part } = queue.shift();
+        if (part === 'via') {
+          try {
+            await writer.rename(op.id, op.via);
+            gaveUpName(op, true);
+          } catch (e) {
+            step(op, e);
+            gaveUpName(op, false);
+          }
+          continue;
+        }
+        if (part === 'last') {
+          if (op.error) continue;
+          try {
+            await nameFreed(op);
+            await writer.rename(op.id, op.to);
+            step(op);
+          } catch (e) {
+            // Its own name taken meanwhile: it keeps the one it stepped aside to (undo gives it its name back).
+            op.leftAs = op.via;
+            step(op, new Error(`${e.message || e} (left named ${op.via})`));
+          }
+          continue;
+        }
         try {
+          await nameFreed(op);
           if (op.toNew !== undefined) {
             if (!ops[op.toNew]?.done) throw new Error('its folder could not be made');
             op.toId = ops[op.toNew].id;
@@ -501,8 +639,10 @@ export async function runFileChanges(writer, ops, { onStep = null, parallel = 4,
             else await writer.trash(op.id);
           } else await writer.rename(op.id, op.to);
           step(op);
+          gaveUpName(op, true);
         } catch (e) {
           step(op, e);
+          gaveUpName(op, false);
         }
       }
     }),
@@ -532,7 +672,7 @@ export async function undoFileChanges(writer, ops, { onStep = null } = {}) {
   let failed = 0;
   let gone = 0;
   for (const op of [...ops].reverse()) {
-    if (!op.done || op.action === 'folder' || op.action === 'transfer') continue;
+    if ((!op.done && !op.leftAs) || op.action === 'folder' || op.action === 'transfer') continue;
     // Deleted for good: nothing to bring back.
     if (op.how === 'delete') {
       gone++;

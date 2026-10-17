@@ -220,6 +220,8 @@ export function planPhotoLinks({
         row: r.row,
         folder,
         name: values.Name ?? r.values.Name ?? '',
+        // its file, to see it beside the card's table (not one deleted on Drive)
+        ...(kind !== 'remove' && (values.URL ?? r.values.URL) ? { url: values.URL ?? r.values.URL } : {}),
         // what a row that keeps its file changes: its owner or size, before → after
         ...(kind === 'details' ? { detail: Object.keys(changed).map(f => `${f}: ${shownValue(r.values[f])} → ${shownValue(changed[f])}`).join('; ') } : {}),
         ...shown,

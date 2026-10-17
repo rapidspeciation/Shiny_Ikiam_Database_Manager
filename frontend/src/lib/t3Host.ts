@@ -28,6 +28,11 @@ export const t3Host = reactive({
   passThrough: false,
   /** Raised to sign in to T3 again (Volver a conectar, after a T3 update). */
   reconnects: 0,
+  /**
+   * A link to a proposal clicked in T3's chat: the tab on screen shows it in its panel (true), or
+   * it opens in a new browser tab. Set by the tab that holds the frame.
+   */
+  onLink: null as ((proposal: string) => boolean) | null,
 })
 
 let asking: Promise<void> | null = null

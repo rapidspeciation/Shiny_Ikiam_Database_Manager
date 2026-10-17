@@ -78,13 +78,22 @@ function arrived() {
 /** Where T3's frame goes; the frame covers it while this tab is on screen. */
 const slot = ref<HTMLElement>()
 let onScreen = false
+/** A proposal's link clicked in the chat: beside it, in the panel (opened if it was closed). */
+function linked(proposal: string) {
+  focus.value = { id: proposal, row: null }
+  panel.value = true
+  full.value = false
+  return true
+}
 onActivated(() => {
   onScreen = true
   t3Host.slot = slot.value ?? null
+  t3Host.onLink = linked
 })
 onDeactivated(() => {
   onScreen = false
   t3Host.slot = null
+  if (t3Host.onLink === linked) t3Host.onLink = null
 })
 watch(slot, el => {
   if (onScreen) t3Host.slot = el ?? null

@@ -19,6 +19,8 @@ const ProposalsLive = defineAsyncComponent(() => import('./assistant/ProposalsLi
 const props = defineProps<{
   /** Folders to read at once (the ones «Ya las subí» names), with the time asked, to ask again. */
   preset?: { folders: string[]; at: number } | null
+  /** A proposal whose link was clicked in the chat beside (the time asked, to ask again): its card shown here. */
+  linked?: { id: string; at: number } | null
 }>()
 
 interface Folder {
@@ -193,6 +195,15 @@ function cardMade(event: Event) {
   const id = (event as CustomEvent<string>).detail
   if (id && id !== card.value) extra.value = [id, ...extra.value.filter(x => x !== id)].slice(0, 4)
 }
+watch(
+  () => props.linked,
+  link => {
+    if (!link) return
+    if (link.id !== card.value) extra.value = [link.id, ...extra.value.filter(x => x !== link.id)].slice(0, 4)
+    void nextTick(() => document.querySelector(`[data-photo-links-panel] [data-proposal="${link.id}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
+  },
+  { immediate: true },
+)
 onMounted(() => {
   void loadFolders()
   void loadSites()

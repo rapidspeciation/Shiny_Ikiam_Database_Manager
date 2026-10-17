@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fileCounts, filterRows, flagText, foundChecks, handoverAccounts, progressPercent, rowsToWrite, rowsWanted, type PhotoChecks, type PhotoRow, type PhotoSync } from '../photoLinks'
+import { driveFileOf, fileCounts, pickRows, filterRows, flagText, foundChecks, handoverAccounts, progressPercent, rowsToWrite, rowsWanted, type PhotoChecks, type PhotoRow, type PhotoSync } from '../photoLinks'
 
 const none = { count: 0, examples: [] }
 const checks: PhotoChecks = {
@@ -103,5 +103,31 @@ describe('a reading of the photo folders', () => {
       }),
     ).toBe('a@example.org (214) · cuenta desconocida (3)')
     expect(handoverAccounts(undefined)).toBe('')
+  })
+})
+
+describe('pickRows', () => {
+  const order = ['a', 'b', 'c', 'd']
+  it('a click shows that row alone, a second click none', () => {
+    expect(pickRows(['a', 'c'], 'b', {}, order, 'a')).toEqual(['b'])
+    expect(pickRows(['b'], 'b', {}, order, 'b')).toEqual([])
+  })
+  it('Ctrl adds or takes out one row', () => {
+    expect(pickRows(['a'], 'c', { add: true }, order, 'a')).toEqual(['a', 'c'])
+    expect(pickRows(['a', 'c'], 'a', { add: true }, order, 'c')).toEqual(['c'])
+  })
+  it('Shift adds the rows from the last one clicked, either way', () => {
+    expect(pickRows(['b'], 'd', { range: true }, order, 'b')).toEqual(['b', 'c', 'd'])
+    expect(pickRows(['d'], 'b', { range: true }, order, 'd')).toEqual(['d', 'b', 'c'])
+  })
+  it('Shift with nothing clicked before adds the row alone', () => {
+    expect(pickRows([], 'c', { range: true }, order, null)).toEqual(['c'])
+  })
+})
+
+describe('driveFileOf', () => {
+  it('takes the ID out of a Drive link', () => {
+    expect(driveFileOf('https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUvWxYz/view?usp=drivesdk')).toBe('1AbCdEfGhIjKlMnOpQrStUvWxYz')
+    expect(driveFileOf(undefined)).toBe('')
   })
 })

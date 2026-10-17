@@ -67,6 +67,7 @@ export const PHOTO_TOOLS = [
         '- It works the plan out and shows it as a card beside the chat (`link`), every change listed. The changes are made when the person presses «Apply» on that card. Tell the person what it would do and what was left out (`leftOut`).',
         '- `operations`: {action: "rename", file, name} · {action: "move", file, to} (a file or a folder into the folder `to`) · {action: "rotate", file, degrees} (90, 180 or 270 clockwise: its orientation tag, the same file and link, its RAW file turned too; Photo_links needs nothing) · {action: "remove", file} · {action: "folder", name, in} · {action: "shortcut", ids, to} (shortcuts to the dorsal and ventral photos of those specimens, e.g. to share a project\'s photos). `file` and the folders: a Drive link, a path ("PERU_2024/JPG/CAM077740d.JPG") or a name no other has; a folder this plan makes can be named in its later operations.',
         '- `fix`: what a check of sync_photo_links calls for, in the folder `in` and inside it: {check: "rename", in} every photo whose name the sheets do not find takes the name they look up · {check: "copies", in, keptIn} every file of `in` that is also, the same file, in another listed folder is removed (`keptIn`: only those whose other file is in that folder; `sameFileKeptIn` in the answer counts them by the folder that keeps them) · {check: "copied", in} every …_todelete file whose copy is beside it is binned.',
+        '- One plan can give a file the name another change of the plan frees: two names swapped (a d and a v the wrong way round), a photo removed and another renamed to its name. Each change waits for the one that frees its name, and a swap passes through a name of its own (…__swap), so a failed step never leaves two files with one name.',
         "- A photo renamed or removed takes its RAW file with it (`withRaw: false`: not). Removing bins the files the project's account owns (30 days in Drive's bin); Drive lets nobody bin someone else's file, so those are renamed …_todelete (out of Photo_links, for their owner to delete).",
         '- What another account has to do is left ready in the team\'s sheet «Transfer Ownership & Free Up Space», where that account presses a button: {action: "transfer", step: "delete", in} for its «Delete copied files» (the account that owns …_todelete files in the folder `in` deletes them: to the bin, or for good with `permanent: true`), {action: "transfer", step: "copy", in} for its «Copy files» (the account that takes a folder\'s photos over copies them). `subfolders: false`: the folder without those inside it. A plan that leaves …_todelete files to other accounts gets the delete step by itself. The answer\'s `otherAccountStep` says which accounts (`by`) and what to tell them.',
         "- `plan` with a plan's ID: how it is going, or how it ended, once the person has pressed «Apply». `undo` with a plan's ID takes its changes back.",
@@ -126,6 +127,9 @@ const FRESH_MS = 30 * 60_000;
 const WAIT_MS = 100_000;
 /** Readings kept (each holds its rows). */
 const KEPT = 6;
+/** Applied cards whose rows are kept to look at, and at most how many rows each. */
+const KEPT_CARDS = 200;
+const KEPT_ROWS = 5000;
 /** What a reading of every folder knows of the files is used again this long (organize_photos). */
 const INDEX_MS = 10 * 60_000;
 const FILES_TITLE = 'Google Drive: photo files';
@@ -244,6 +248,16 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
   /** The writings, by the same ID: { state, saves, saved, total, written, skipped, error, promise }. */
   const jobs = new Map();
   let reading = null;
+  // The rows a card wrote (or the files a plan changed), kept for its card once applied, as a sheet proposal keeps its table.
+  store.db.exec('CREATE TABLE IF NOT EXISTS photo_card_rows (id TEXT PRIMARY KEY, at TEXT NOT NULL, rows_json TEXT NOT NULL)');
+  function keepRows(id, rows) {
+    store.db.prepare('INSERT OR REPLACE INTO photo_card_rows (id, at, rows_json) VALUES (?, ?, ?)').run(id, new Date().toISOString(), JSON.stringify(rows.slice(0, KEPT_ROWS)));
+    store.db.prepare('DELETE FROM photo_card_rows WHERE id NOT IN (SELECT id FROM photo_card_rows ORDER BY at DESC LIMIT ?)').run(KEPT_CARDS);
+  }
+  const keptRows = id => {
+    const row = store.db.prepare('SELECT rows_json FROM photo_card_rows WHERE id = ?').get(id);
+    return row ? JSON.parse(row.rows_json) : null;
+  };
 
   async function timeZone() {
     if (config.photoLinksTimeZone) return config.photoLinksTimeZone;
@@ -353,7 +367,8 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
     })()
       .catch(e => {
         job.state = 'failed';
-        job.error = e?.message || String(e);
+        // Google's own words after the app's, when it refused the save.
+        job.error = [e?.message || String(e), e?.details?.cause].filter(Boolean).join(': ');
       })
       .finally(say);
     return job;
@@ -375,6 +390,7 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
       if (!files) return { error: 'Changes to the files on Drive are made with «Apply» on their card.', code: 'card' };
       if (!driveWriterFor(store, config)) return { error: 'This copy of the app has no account that changes files on Drive: the plan only shows what would change.', code: 'no_writer' };
       plans.delete(id);
+      keepRows(id, plan.display);
       const job = change(plan, user);
       jobs.set(id, job);
       return { job };
@@ -384,6 +400,7 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
     const total = plan.edits.filter(e => !skipChanges.has(e.folder)).length + plan.creates.filter(c => !skipNew.has(c.folder)).length;
     if (!total) return { error: `${SHEET} is already up to date.`, code: 'nothing' };
     plans.delete(id);
+    keepRows(id, plan.display.filter(r => (r.change === 'new' || r.change === 'folder' ? !skipNew.has(r.folder) : !skipChanges.has(r.folder))));
     const job = write(plan, user, { skipNew, skipChanges });
     jobs.set(id, job);
     return { job };
@@ -470,7 +487,7 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
   store.db.exec(
     "CREATE TABLE IF NOT EXISTS drive_changes (id TEXT PRIMARY KEY, actor TEXT NOT NULL, created_at TEXT NOT NULL, ops_json TEXT NOT NULL, actions_json TEXT NOT NULL DEFAULT '[]', undone_at TEXT)",
   );
-  const kept = op => ({ action: op.action, id: op.id, name: op.name, to: op.to, from: op.from, toId: op.toId, how: op.how, made: op.made, done: op.done, degrees: op.degrees, tagBefore: op.tagBefore });
+  const kept = op => ({ action: op.action, id: op.id, name: op.name, to: op.to, from: op.from, toId: op.toId, how: op.how, made: op.made, done: op.done, degrees: op.degrees, tagBefore: op.tagBefore, leftAs: op.leftAs });
 
   /** A plan's changes as its card keeps them. */
   function filesCard({ ops, problems }) {
@@ -546,7 +563,8 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
       store.db
         .prepare('INSERT OR REPLACE INTO drive_changes (id, actor, created_at, ops_json) VALUES (?,?,?,?)')
         .run(plan.id, String(user.id ?? user.username), new Date().toISOString(), JSON.stringify(done.map(kept)));
-      // Photo_links follows: the rows of the files renamed, moved or removed.
+      // Photo_links follows: the rows of the files renamed, moved or removed, and a row for each file that
+      // takes a name the sheet lists from now on (a photo renamed from …_todelete or to its ID).
       const touched = new Set(done.filter(o => ['rename', 'move', 'remove'].includes(o.action)).map(o => o.id));
       const drive = driveFor(store, config);
       if (touched.size && drive) {
@@ -556,15 +574,18 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
         const scan = await scanPhotoLinks({ store, drive, timeZone: await timeZone() });
         known = { at: Date.now(), index: scan.index };
         const edits = scan.edits.filter(e => touched.has(fileOf.get(e.id))).map(({ id, values, expected }) => ({ id, values, expected }));
+        const creates = scan.creates.filter(c => touched.has(driveIdOf(c.values?.URL))).map(({ folder: _folder, ...create }) => create);
+        const total = edits.length + creates.length;
         const actions = [];
-        for (let i = 0; i < edits.length; i += chunk) {
-          const body = { edits: edits.slice(i, i + chunk), reason: `Photo_links follows the files changed on Google Drive (${edits.length} rows)` };
+        for (let i = 0; i < total; i += chunk) {
+          const part = { edits: edits.slice(i, i + chunk), creates: creates.slice(Math.max(0, i - edits.length), Math.max(0, i + chunk - edits.length)) };
+          const body = { ...(part.edits.length ? { edits: part.edits } : {}), ...(part.creates.length ? { creates: part.creates } : {}), reason: `Photo_links follows the files changed on Google Drive (${total} rows)` };
           const { out, skipped } = await save(body, user);
           if (out.status !== 'verified') {
             job.sheetNote = 'Google Sheets did not confirm the save: sync_photo_links brings the rest of the rows up to date later.';
             break;
           }
-          job.sheetRows += body.edits.length - skipped;
+          job.sheetRows += part.edits.length + part.creates.length - skipped;
           if (out.action?.id) actions.push(out.action.id);
           await new Promise(resolve => setImmediate(resolve));
         }
@@ -574,7 +595,8 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
     })()
       .catch(e => {
         job.state = 'failed';
-        job.error = e?.message || String(e);
+        // Google's own words after the app's, when it refused the save.
+        job.error = [e?.message || String(e), e?.details?.cause].filter(Boolean).join(': ');
       })
       .finally(say);
     return job;
@@ -791,8 +813,8 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
       const plan = await read({ add: list(params?.add), only: list(params?.only) }, null, id);
       return plan.error ? { error: plan.error, code: 'no_drive' } : { status: 'pending' };
     },
-    /** The rows of a reading as the card's table lists them (null once written, or too old). */
-    rows: id => plans.get(id)?.display ?? null,
+    /** The rows of a reading as the card's table lists them, or those it wrote once applied (null: too old). */
+    rows: id => plans.get(id)?.display ?? keptRows(id),
     writing: () => [...jobs.values()].some(j => j.state === 'writing'),
   };
 }

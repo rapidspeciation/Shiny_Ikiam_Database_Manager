@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
@@ -9,6 +9,9 @@ import { errorText, notify } from '../../lib/notice'
 import { locale, t } from '../../lib/i18n'
 import type { Proposal } from '../../lib/proposals'
 import { fileChangeLabel, fileCounts, fileTarget, handoverAccounts, progressPercent, type FileRow, type PhotoFiles } from '../../lib/photoLinks'
+import { useRowPhotos } from '../../lib/useRowPhotos'
+
+const CardPhotos = defineAsyncComponent(() => import('./CardPhotos.vue'))
 
 /**
  * Changes to make to the photo files on Google Drive (the assistant's organize_photos), as a card
@@ -56,7 +59,11 @@ async function apply() {
 }
 
 // ------------------------------------------------------------ every change
-const showRows = ref(false)
+// open from the start, like a proposal's table; applied, the changes it made
+const showRows = ref(true)
+const applied = computed(() => status.value === 'applied')
+const tableOn = computed(() => pending.value || applied.value)
+const picking = useRowPhotos<FileRow>(r => [fileChangeLabel(r.change), fileTarget(r)].filter(Boolean).join(' → '))
 const rows = ref<FileRow[] | null>(null)
 const rowsGone = ref(false)
 const host = ref<HTMLDivElement>()
@@ -92,7 +99,7 @@ function columns(): ColumnDefinition[] {
   ] as ColumnDefinition[]
 }
 async function draw() {
-  if (!showRows.value) return
+  if (!showRows.value || !tableOn.value) return
   if (!rows.value && !rowsGone.value)
     try {
       rows.value = (await api<{ rows: FileRow[] }>(`${base.value}/rows`)).rows
@@ -109,7 +116,9 @@ async function draw() {
     maxHeight: '22rem',
     placeholder: t('Sin filas'),
     columnDefaults: { headerSort: true, resizable: 'header' },
+    rowFormatter: picking.rowFormatter,
   } as unknown as ConstructorParameters<typeof Tabulator>[1]))
+  picking.attach(made)
   made.on('tableBuilt', () => {
     if (grid === made) built = true
   })
@@ -118,14 +127,11 @@ function dropGrid() {
   built = false
   grid?.destroy()
   grid = null
+  picking.clear()
 }
-watch(showRows, on => (on ? void draw() : dropGrid()))
+watch([showRows, tableOn], () => (showRows.value && tableOn.value ? void draw() : dropGrid()))
+onMounted(() => void draw())
 watch(locale, () => built && grid?.setColumns(columns()))
-watch(pending, on => {
-  if (on) return
-  showRows.value = false
-  dropGrid()
-})
 onBeforeUnmount(dropGrid)
 </script>
 
@@ -268,16 +274,27 @@ onBeforeUnmount(dropGrid)
           <li v-for="p in plan.problems.examples" :key="p" class="break-all">{{ p }}</li>
         </ul>
       </div>
-      <div class="border-b border-stone-200 px-3 py-1.5 text-xs">
-        <button type="button" class="flex items-center gap-1 text-emerald-800 hover:underline" data-show-rows @click="showRows = !showRows">
-          <ChevronDown v-if="showRows" :size="12" /><ChevronRight v-else :size="12" />
-          {{ showRows ? $t('Ocultar los cambios') : $tn(plan.total, 'Ver el cambio', 'Ver los {n} cambios') }}
-        </button>
-        <p v-if="showRows && rowsGone" class="py-2 text-stone-500">{{ $t('Este plan es de hace más de media hora: pídeselo de nuevo al asistente') }}</p>
-        <div v-show="showRows && rows" class="sheet-grid rows-table photo-links-rows mt-1.5">
+    </template>
+
+    <!-- Every change, and beside it the photos of the rows clicked. -->
+    <div v-if="tableOn" class="border-b border-stone-200 px-3 py-1.5 text-xs [container-type:inline-size]" data-rows>
+      <button type="button" class="flex items-center gap-1 font-medium text-emerald-800 hover:underline" data-show-rows @click="showRows = !showRows">
+        <ChevronDown v-if="showRows" :size="12" /><ChevronRight v-else :size="12" />
+        <template v-if="applied">{{ $tn(rows?.length ?? 0, 'El cambio hecho', 'Los {n} cambios hechos') }}</template>
+        <template v-else>{{ $tn(plan.total, 'El cambio', 'Los {n} cambios') }}</template>
+      </button>
+      <p v-if="showRows && rowsGone" class="py-2 text-stone-500">
+        {{ applied ? $t('Los cambios de este plan ya no se guardan.') : $t('Este plan es de hace más de media hora: pídeselo de nuevo al asistente') }}
+      </p>
+      <div v-show="showRows && rows" class="card-rows mt-1.5 flex flex-col gap-2">
+        <div class="sheet-grid rows-table photo-links-rows min-w-0 flex-1">
           <div ref="host" />
         </div>
+        <CardPhotos :card="proposal.id" :photos="picking.photos.value" class="card-photos" />
       </div>
+    </div>
+
+    <template v-if="pending">
       <div class="flex flex-wrap items-center gap-2 px-3 py-2">
         <button
           class="btn-primary bg-emerald-700 hover:bg-emerald-800"

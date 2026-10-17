@@ -113,6 +113,7 @@ function runBridge({ framed = true, path = '/', appOrigin = APP, search = '', ha
       }
     },
     fetch: async url => ({ clone: () => ({ text: async () => answers[url] ?? '' }) }),
+    URL,
   };
   const sockets = [];
   window.window = window;
@@ -182,7 +183,7 @@ test("the frame opens on the person's own project: T3's list filtered to it, eac
   assert.equal(items.size, 0);
 });
 
-test('the app opens a chat in T3; links clicked in T3 are left to T3 (a new tab)', () => {
+test('the app opens a chat in T3; a link to a proposal goes to the panel beside the chat, other links are left to T3', () => {
   const { posts, window, parent, say, listeners } = runBridge({ path: '/' });
   const pops = [];
   window.addEventListener('popstate', e => pops.push(e));
@@ -200,8 +201,26 @@ test('the app opens a chat in T3; links clicked in T3 are left to T3 (a new tab)
     data: { type: 'ithomiini-t3-open', path: `/${ENV}/${ENV}` },
   });
   assert.equal(window.location.pathname, `/${ENV}/${A}`);
-  // No click handler: a link to the app's Asistente tab opens as T3 opens it.
-  assert.equal(listeners['document:click'], undefined);
+  // A click on a link to one of the app's proposals: to the app (its panel shows it), not to T3.
+  const click = (href, keys = {}) => {
+    const event = { button: 0, ...keys, target: { closest: () => ({ href }) }, stopped: false, prevented: false };
+    event.preventDefault = () => (event.prevented = true);
+    event.stopImmediatePropagation = () => (event.stopped = true);
+    for (const fn of listeners['document:click'] ?? []) fn(event);
+    return event;
+  };
+  const P = '0c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
+  const before = posts.length;
+  const taken = click(`${APP}/#/propuestas/${P}`);
+  assert.deepEqual([taken.prevented, taken.stopped], [true, true]);
+  assert.deepEqual(posts.at(-1), { data: { type: 'ithomiini-t3-link', v: 1, proposal: P, href: `${APP}/#/propuestas/${P}` }, origin: APP });
+  click(`${APP}/#/asistente?chat=${A}&propuesta=${P}`);
+  assert.equal(posts.at(-1).data.proposal, P);
+  assert.equal(posts.length, before + 2);
+  // Ctrl/⌘ + click, another page of the app, another site: left to T3 (a new tab).
+  for (const left of [click(`${APP}/#/propuestas/${P}`, { ctrlKey: true }), click(`${APP}/#/historial`), click(`https://evil.example/#/propuestas/${P}`)])
+    assert.equal(left.prevented, false);
+  assert.equal(posts.length, before + 2);
 });
 
 test('a chat the app has just made is opened once T3\'s page has it (T3 goes to its start page for one it lacks)', async () => {

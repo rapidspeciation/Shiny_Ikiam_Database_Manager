@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { TabulatorFull as Tabulator } from 'tabulator-tables'
 import type { CellComponent, ColumnDefinition } from 'tabulator-tables'
 import 'tabulator-tables/dist/css/tabulator_simple.min.css'
@@ -7,6 +7,7 @@ import { AlertTriangle, Check, ChevronDown, ChevronRight, FolderPlus, Images, Re
 import { askClaude, showCard } from '../../lib/askClaude'
 import { fixFor, type PhotoFix } from '../../lib/photoFixes'
 import { photoUrl } from '../../lib/review'
+import { useRowPhotos } from '../../lib/useRowPhotos'
 import { api } from '../../lib/api'
 import { errorText, notify } from '../../lib/notice'
 import { intlLocale, locale, t } from '../../lib/i18n'
@@ -25,6 +26,8 @@ import {
   type PhotoRow,
   type PhotoSync,
 } from '../../lib/photoLinks'
+
+const CardPhotos = defineAsyncComponent(() => import('./CardPhotos.vue'))
 
 /**
  * A reading of the photo folders on Drive for the Photo_links sheet (the assistant's
@@ -116,8 +119,11 @@ const openCheck = ref<CheckKind | null>(null)
 const hasDetail = (kind: CheckKind, e: PhotoExample) => kind !== 'unnamed' && !(kind === 'unknownId' && !e.maybe?.length)
 
 // ------------------------------------------------------------ the rows
-// open from the start, like a proposal's table: it follows the ticks above
+// open from the start, like a proposal's table: it follows the ticks above; applied, the rows it wrote
 const showRows = ref(true)
+const applied = computed(() => status.value === 'applied')
+const tableOn = computed(() => (pending.value && !sync.value.stale) || applied.value)
+const picking = useRowPhotos<PhotoRow>(r => [changeLabel(r.change), r.from ? `${r.from} → ${r.name}` : '', r.folder].filter(Boolean).join(' · '))
 const rows = ref<PhotoRow[] | null>(null)
 const rowsGone = ref(false)
 const show = ref<'all' | 'flagged' | CheckKind>('all')
@@ -138,6 +144,7 @@ function columns(): ColumnDefinition[] {
         const row = c.getData() as PhotoRow
         const text = row.from ? `${row.from} → ${row.name}` : row.detail ? `${row.name} (${row.detail})` : row.name
         if (!row.url) return text
+        // A click shows its photo beside the table; the middle button opens it on Drive.
         const link = document.createElement('a')
         Object.assign(link, { href: row.url, target: '_blank', rel: 'noopener', textContent: text, className: 'photo-link' })
         return link
@@ -167,7 +174,7 @@ async function loadRows() {
 }
 let built = false
 async function draw() {
-  if (!showRows.value) return
+  if (!showRows.value || !tableOn.value) return
   await loadRows()
   await nextTick()
   if (!host.value || !rows.value || !showRows.value) return
@@ -183,7 +190,9 @@ async function draw() {
     maxHeight: '22rem',
     placeholder: t('Sin filas'),
     columnDefaults: { headerSort: true, resizable: 'header' },
+    rowFormatter: picking.rowFormatter,
   } as unknown as ConstructorParameters<typeof Tabulator>[1]))
+  picking.attach(made)
   made.on('tableBuilt', () => {
     if (grid !== made) return
     built = true
@@ -194,8 +203,10 @@ function dropGrid() {
   built = false
   grid?.destroy()
   grid = null
+  picking.clear()
 }
-watch([showRows, shown], () => (showRows.value ? void draw() : dropGrid()))
+watch([showRows, shown, tableOn], () => (showRows.value && tableOn.value ? void draw() : dropGrid()))
+onMounted(() => void draw())
 watch(locale, () => built && grid?.setColumns(columns()))
 // Read again, or written: the rows it held are another reading's.
 watch(
@@ -205,11 +216,8 @@ watch(
     rowsGone.value = false
     skipNew.value = new Set()
     skipChanges.value = new Set()
-    if (showRows.value && pending.value && !sync.value.stale) void draw()
-    else {
-      showRows.value = false
-      dropGrid()
-    }
+    dropGrid()
+    void draw()
   },
 )
 onBeforeUnmount(dropGrid)
@@ -344,7 +352,7 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
         {{ $tn(progress?.written ?? 0, '{n} fila escrita en Photo_links.', '{n} filas escritas en Photo_links.') }}
         {{ $t('Cada guardado está en Historial y se puede deshacer. Photo_dorsal y Photo_ventral muestran las fotos cuando el libro recalcula.') }}
         <template v-if="progress?.leftFolders?.length">
-          {{ $t('Quedan para después: {folders}.', { folders: progress.leftFolders.join(', ') }) }}
+          {{ $t('Quedan para después: {folders}.', { folders: progress.leftFolders.map(f => folderName({ folder: f })).join(', ') }) }}
         </template>
       </span>
     </p>
@@ -406,15 +414,18 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
         </table>
       </div>
 
-      <!-- Every row. -->
-      <div class="border-b border-stone-200 px-3 py-1.5 text-xs">
+    </template>
+
+      <!-- Every row, and beside it the photos of the rows clicked. -->
+      <div v-if="tableOn" class="border-b border-stone-200 px-3 py-1.5 text-xs [container-type:inline-size]" data-rows>
         <div class="flex flex-wrap items-center gap-2">
           <button type="button" class="flex items-center gap-1 font-medium text-emerald-800 hover:underline" data-show-rows @click="showRows = !showRows">
             <ChevronDown v-if="showRows" :size="12" /><ChevronRight v-else :size="12" />
-            {{ $tn(writing, 'La fila que se escribiría', 'Las {n} filas que se escribirían') }}
+            <template v-if="applied">{{ $tn(rows?.length ?? 0, 'La fila que se escribió', 'Las {n} filas que se escribieron') }}</template>
+            <template v-else>{{ $tn(writing, 'La fila que se escribiría', 'Las {n} filas que se escribirían') }}</template>
           </button>
           <select
-            v-if="showRows && rows"
+            v-if="showRows && rows && !applied"
             v-model="show"
             class="rounded border border-stone-200 bg-white py-0.5 pr-6 pl-1.5 text-xs text-stone-800"
             :aria-label="$t('Qué filas mostrar')"
@@ -424,11 +435,18 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
             <option v-for="c in checks" :key="c.kind" :value="c.kind">{{ checkLabel(c.kind) }} ({{ c.count }})</option>
           </select>
         </div>
-        <p v-if="showRows && rowsGone" class="py-2 text-stone-500">{{ $t('Las carpetas se leyeron hace más de media hora: léelas de nuevo.') }}</p>
-        <div v-show="showRows && rows" class="sheet-grid rows-table photo-links-rows mt-1.5">
-          <div ref="host" />
+        <p v-if="showRows && rowsGone" class="py-2 text-stone-500">
+          {{ applied ? $t('Las filas de esta lectura ya no se guardan.') : $t('Las carpetas se leyeron hace más de media hora: léelas de nuevo.') }}
+        </p>
+        <div v-show="showRows && rows" class="card-rows mt-1.5 flex flex-col gap-2">
+          <div class="sheet-grid rows-table photo-links-rows min-w-0 flex-1">
+            <div ref="host" />
+          </div>
+          <CardPhotos :card="proposal.id" :photos="picking.photos.value" class="card-photos" />
         </div>
       </div>
+
+    <template v-if="pending && !sync.stale">
       <!-- Rows that follow their file. -->
       <p
         v-if="changes.renamed || changes.relinked || changes.removed || changes.moved || changes.details"
@@ -621,6 +639,25 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
 }
 .photo-links-rows .photo-link:hover {
   text-decoration: underline;
+}
+.photo-links-rows .tabulator-row.is-picked .tabulator-cell {
+  background: #d1fae5;
+}
+.photo-links-rows .tabulator-row {
+  cursor: pointer;
+}
+/* The photos beside the table when the card is wide, under it when narrow. */
+.card-rows .card-photos {
+  height: 22rem;
+}
+@container (min-width: 52rem) {
+  .card-rows {
+    flex-direction: row;
+  }
+  .card-rows .card-photos {
+    width: 40%;
+    flex-shrink: 0;
+  }
 }
 .photo-links-rows .tabulator-cell.is-flagged {
   background: #fffbeb;

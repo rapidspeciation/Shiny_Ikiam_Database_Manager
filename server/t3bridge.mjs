@@ -11,7 +11,10 @@
 // once T3's page has received it: T3 takes a chat it does not have for one deleted and goes
 // to its start page (a new chat in the project used last), also when it opens on the list it
 // kept from its last visit, before asking for the current one.
-// Links to the app clicked inside T3 open in a new tab, as T3 opens any link.
+// Links to the app clicked inside T3 open in a new tab, as T3 opens any link; but a link to one of its
+// proposals ({ type: 'ithomiini-t3-link', proposal, href }) opens it in the panel beside the chat when the
+// tab showing T3 has one (Asistente, Fotos), and in a new tab otherwise. Ctrl/⌘/Shift or the middle
+// button: a new tab, as before.
 // - Production (Caddy): requests to T3's host reach this app only for page loads
 //   and /__ithomiini/bridge.js (deploy/Caddyfile.fragment); T3's API, assets and
 //   websockets go from Caddy straight to T3, and so does everything if the app is down.
@@ -152,6 +155,28 @@ function bridge() {
     wanted = chat ? { id: chat[2].toLowerCase(), path, heard: false, tries: 0, until: Date.now() + 30_000 } : null;
   };
   if (madeHere) want(location.pathname);
+  // Before T3's own handlers (they open every link in a new tab).
+  const PROPOSAL = new RegExp(`^#/(?:propuestas/(${UUID})|asistente\\?(?:[^#]*&)?propuesta=(${UUID}))`, 'i');
+  document.addEventListener(
+    'click',
+    e => {
+      if (e.defaultPrevented || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+      const a = e.target && typeof e.target.closest === 'function' ? e.target.closest('a[href]') : null;
+      if (!a) return;
+      let url;
+      try {
+        url = new URL(a.href, location.href);
+      } catch {
+        return;
+      }
+      const found = url.origin === app && PROPOSAL.exec(url.hash);
+      if (!found) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      window.parent.postMessage({ type: 'ithomiini-t3-link', v: 1, proposal: (found[1] || found[2]).toLowerCase(), href: url.href }, app);
+    },
+    true,
+  );
   addEventListener('message', e => {
     if (e.origin !== app || e.source !== window.parent || !e.data) return;
     // The app asks again when its panel starts listening (the frame loaded before it).

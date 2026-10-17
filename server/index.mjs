@@ -1043,7 +1043,10 @@ export async function createApp(config = {}, options = {}) {
       if (method === 'POST' && path === '/api/species-photos')
         return json(res, 200, { species: speciesPhotos.photosOf(body.names) });
       if (method === 'GET' && /^\/api\/photo\/[\w-]+$/.test(path)) {
-        const photo = await photos.get(path.split('/')[3], Number(query.w || 400));
+        const id = path.split('/')[3];
+        // A photo card's file not listed yet (a new photo of a Photo_links reading): ?card=<its proposal>.
+        const listed = !(query.card && assistant?.cardHasFile?.(query.card, id, user));
+        const photo = await photos.get(id, Number(query.w || 400), { listed });
         if (req.headers['if-none-match'] === photo.etag) {
           res.writeHead(304, { etag: photo.etag, 'cache-control': 'private, max-age=2592000, immutable' });
           return res.end();

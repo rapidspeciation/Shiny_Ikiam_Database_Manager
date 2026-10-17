@@ -327,7 +327,8 @@ test('organize_photos: a card, the changes made on Drive, Photo_links following,
     const done = await call('organize_photos', { plan: plan.plan });
     assert.equal(done.status, 'done');
     assert.equal(done.filesChanged, 5);
-    assert.equal(done.photoLinksRowsUpdated, 3);
+    // Three rows follow their files; the RAW file renamed to its photo's name gets its own.
+    assert.equal(done.photoLinksRowsUpdated, 4);
     // The curator's file was left to its owner: the sheet is ready for the folder holding it.
     assert.deepEqual(sheet.written, [{ folder: id(4), subfolders: true, permanent: false }]);
     assert.equal(done.otherAccountStep.button, 'Delete copied files');
@@ -343,8 +344,10 @@ test('organize_photos: a card, the changes made on Drive, Photo_links following,
     assert.equal(cellsOf(sheets, 6).Name, 'CAM000004d.JPG');
     const applied = store.db.prepare('SELECT status, sync_json FROM ai_proposals WHERE id = ?').get(card.id);
     assert.equal(applied.status, 'applied');
+    // Its card still shows the changes it made.
+    assert.deepEqual((await http('GET', `/${card.id}/photo-links/rows`)).body.rows, rows);
     const progress = JSON.parse(applied.sync_json).progress;
-    assert.deepEqual({ ...progress, handover: progress.handover.step }, { state: 'done', written: 6, total: 6, phase: 'sheet', sheetRows: 3, handover: 'delete' });
+    assert.deepEqual({ ...progress, handover: progress.handover.step }, { state: 'done', written: 6, total: 6, phase: 'sheet', sheetRows: 4, handover: 'delete' });
 
     // Taken back: the files, and the sheet's rows.
     const undone = await call('organize_photos', { undo: plan.plan });
@@ -362,6 +365,13 @@ test('organize_photos: a card, the changes made on Drive, Photo_links following,
       await new Promise(r => setTimeout(r, 10));
     assert.deepEqual(await names(4), ['CAM000001_d.jpg', 'CAM000002d.JPG', 'CAM000004d.JPG']);
     assert.equal(cellsOf(sheets, 5).URL, fileUrl(70));
+    // A file renamed to a name the sheet lists from now on gets its row (a …_todelete one given its own name).
+    const named = await call('organize_photos', { operations: [{ action: 'rename', file: fileUrl(75), name: 'CAM000007v.JPG' }] });
+    assert.equal((await http('POST', `/${named.plan}/photo-links/apply`)).status, 202);
+    for (let i = 0; i < 200 && store.db.prepare('SELECT status FROM ai_proposals WHERE id = ?').get(named.plan).status !== 'applied'; i++)
+      await new Promise(r => setTimeout(r, 10));
+    const rowsNamed = name => sheets.rows.get('Photo_links').filter(r => cellsOf(sheets, r.row).Name === name).length;
+    assert.equal(rowsNamed('CAM000007v.JPG'), 1);
     assert.match((await call('organize_photos', { operations: [{ action: 'remove', file: 'nothing.JPG' }] })).error, /Nothing to change/);
   } finally {
     store.close();
@@ -534,4 +544,75 @@ test('Google Drive as the app calls it: pages, a file gone, a change, a busy ans
   assert.equal((await google.get('d')).name, 'x.JPG');
   answers.push({ status: 403, body: { error: { message: 'insufficientFilePermissions' } } });
   await assert.rejects(google.trash('d'), /Google Drive 403: .*insufficientFilePermissions/);
+});
+
+test('two names swapped in one plan: the first file steps aside, so a failed step leaves no two files of one name', async () => {
+  const files = () => [...drive(), file(90, 'CAM000010d.JPG', 4, mine), file(91, 'CAM000010v.JPG', 4, mine)];
+  const { local, index } = await reading(files());
+  const plan = await settleChanges(
+    local,
+    planFileChanges({
+      index,
+      withRaw: false,
+      operations: [
+        { action: 'rename', file: fileUrl(90), name: 'CAM000010v.JPG' },
+        { action: 'rename', file: fileUrl(91), name: 'CAM000010d.JPG' },
+      ],
+    }),
+  );
+  assert.deepEqual(plan.problems, []);
+  assert.deepEqual(told(plan.ops).sort(), [
+    ['rename', 'Wild/Peru/JPG/CAM000010d.JPG', 'CAM000010v.JPG'],
+    ['rename', 'Wild/Peru/JPG/CAM000010v.JPG', 'CAM000010d.JPG'],
+  ]);
+  assert.equal(plan.ops.filter(o => o.via).length, 1);
+  const name = n => local.items.get(id(n)).name;
+  await runFileChanges(local, structuredClone(plan.ops));
+  assert.deepEqual([name(90), name(91)], ['CAM000010v.JPG', 'CAM000010d.JPG']);
+
+  // The second file cannot be renamed: the first keeps the name it stepped aside to.
+  const { local: other, index: again } = await reading(files());
+  const ops = (await settleChanges(other, planFileChanges({ index: again, withRaw: false, operations: [
+    { action: 'rename', file: fileUrl(90), name: 'CAM000010v.JPG' },
+    { action: 'rename', file: fileUrl(91), name: 'CAM000010d.JPG' },
+  ] }))).ops;
+  const failing = Object.create(other);
+  failing.rename = async (fileId, to) => {
+    if (fileId === ops.find(o => !o.via).id) throw new Error('no permission');
+    return other.rename(fileId, to);
+  };
+  await runFileChanges(failing, ops);
+  const names = [other.items.get(id(90)).name, other.items.get(id(91)).name];
+  assert.equal(new Set(names).size, 2);
+  assert.ok(names.some(n => n.includes('__swap')));
+  const stepped = ops.find(o => o.via);
+  assert.match(stepped.error, /left named .*__swap/);
+  // Undo gives it its name back.
+  await undoFileChanges(other, ops);
+  assert.deepEqual([other.items.get(id(90)).name, other.items.get(id(91)).name], ['CAM000010d.JPG', 'CAM000010v.JPG']);
+});
+
+test('a file removed and another renamed to its name, in one plan: the rename waits for the removal', async () => {
+  const files = [...drive(), file(92, 'CAM000011d.JPG', 4), file(93, 'CAM000011d_upright.JPG', 4, mine)];
+  const { local, index } = await reading(files);
+  const plan = await settleChanges(
+    local,
+    planFileChanges({
+      index,
+      withRaw: false,
+      operations: [
+        { action: 'rename', file: fileUrl(93), name: 'CAM000011d.JPG' },
+        { action: 'remove', file: fileUrl(92) },
+      ],
+    }),
+  );
+  assert.deepEqual(plan.problems, []);
+  const renamed = plan.ops.find(o => o.id === id(93));
+  assert.equal(renamed.after, id(92));
+  await runFileChanges(local, plan.ops);
+  assert.deepEqual([local.items.get(id(92)).name, local.items.get(id(93)).name], ['CAM000011d.JPG_todelete', 'CAM000011d.JPG']);
+
+  // A name another file keeps is refused, in words that say what to do.
+  const refused = planFileChanges({ index, withRaw: false, operations: [{ action: 'rename', file: fileUrl(93), name: 'CAM000011d.JPG' }] });
+  assert.match(refused.problems[0].error, /another file of its folder keeps the name CAM000011d\.JPG .* in the same plan/);
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { afterMove, assistantLink, bridgeMessage, chatPath, originOf, ownProject, seenChat, type T3View } from '../t3Bridge'
+import { afterMove, assistantLink, bridgeMessage, chatPath, linkMessage, originOf, ownProject, seenChat, type T3View } from '../t3Bridge'
 
 const T3 = 'https://t3.example.org'
 const ENV = '4e6c4765-8cfa-4adc-b761-3c3bae2ae7e0'
@@ -88,5 +88,22 @@ describe('the T3 bridge', () => {
     expect(ownProject(`${T3}/pair#token=a+b`, key)).toBe(`${T3}/pair?${tagged}#token=a+b`)
     expect(ownProject(`${T3}/${ENV}/${A}`, key)).toBe(`${T3}/${ENV}/${A}?${tagged}`)
     expect(ownProject(`${T3}/?x=1`, key)).toBe(`${T3}/?x=1&${tagged}`)
+  })
+})
+
+describe('a proposal link clicked in the chat', () => {
+  const frame = {} as Window
+  const T3 = 'https://t3.example.org'
+  const APP = 'https://app.example.org'
+  const P = '0c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f'
+  const message = (data: unknown, source: unknown = frame, origin = T3) => linkMessage({ source, origin, data }, frame, T3, APP)
+  it('comes from the frame, names a proposal and leads into the app', () => {
+    expect(message({ type: 'ithomiini-t3-link', v: 1, proposal: P.toUpperCase(), href: `${APP}/#/propuestas/${P}` })).toEqual({ proposal: P, href: `${APP}/#/propuestas/${P}` })
+  })
+  it('anything else is not one', () => {
+    expect(message({ type: 'ithomiini-t3-link', v: 1, proposal: P, href: `https://evil.example/#/propuestas/${P}` })).toBeNull()
+    expect(message({ type: 'ithomiini-t3-link', v: 1, proposal: 'x', href: `${APP}/` })).toBeNull()
+    expect(message({ type: 'ithomiini-t3-link', v: 1, proposal: P, href: `${APP}/` }, {})).toBeNull()
+    expect(message({ type: 'ithomiini-t3-link', v: 1, proposal: P, href: `${APP}/` }, frame, 'https://evil.example')).toBeNull()
   })
 })

@@ -61,6 +61,23 @@ export function bridgeMessage(
   }
 }
 
+/** A link to one of the app's proposals clicked in the frame's chat (the bridge's message), or null. */
+export function linkMessage(
+  event: { source: unknown; origin: string; data: unknown },
+  frame: Window | null | undefined,
+  t3Origin: string,
+  appOrigin: string = location.origin,
+): { proposal: string; href: string } | null {
+  if (!frame || !t3Origin || event.source !== frame || event.origin !== t3Origin) return null
+  const d = event.data as Record<string, unknown> | null
+  if (!d || typeof d !== 'object' || d.type !== 'ithomiini-t3-link' || d.v !== 1) return null
+  const proposal = idOrNull(d.proposal)
+  if (!proposal || typeof d.href !== 'string') return null
+  // Only into this app: what opens if no panel takes it.
+  if (originOf(d.href) !== appOrigin) return null
+  return { proposal, href: d.href }
+}
+
 /**
  * The chat the list asks for as open in T3: its thread, 'draft' (a new chat)
  * or 'none' (no chat on screen: settings, T3's home); undefined while the

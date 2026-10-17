@@ -108,16 +108,25 @@ function place() {
   renameHost.slot = onScreen && section.value === 'rename' ? (slot.value ?? null) : null
   if (onScreen) t3Host.slot = chat.value ? (chatSlot.value ?? null) : null
 }
+/** A proposal's link clicked in the chat: its card in «Photo_links y sitios», beside the chat. */
+const linked = ref<{ id: string; at: number } | null>(null)
+function onLink(proposal: string) {
+  section.value = 'links'
+  linked.value = { id: proposal, at: Date.now() }
+  return true
+}
 onActivated(() => {
   onScreen = true
   renameHost.started = true
   place()
   void askSpace()
+  t3Host.onLink = onLink
 })
 onDeactivated(() => {
   onScreen = false
   renameHost.slot = null
   t3Host.slot = null
+  if (t3Host.onLink === onLink) t3Host.onLink = null
 })
 onBeforeUnmount(() => {
   // Signed out: the next session starts without the frame until it opens this tab.
@@ -359,7 +368,7 @@ function resize(event: PointerEvent) {
       }}</a>
     </p>
     <div v-else ref="split" class="flex min-h-0 flex-1" :class="{ 'select-none': dragging }" :style="{ '--share': `${share}%` }">
-      <PhotoLinksPanel v-if="section === 'links'" :preset="preset" class="min-h-0 min-w-0 flex-1" @used="preset = null" />
+      <PhotoLinksPanel v-if="section === 'links'" :preset="preset" :linked="linked" class="min-h-0 min-w-0 flex-1" @used="preset = null" />
       <!-- The Rename Photos app's place: its frame (RenameHost) sits over it. -->
       <div v-else ref="slot" class="min-h-0 min-w-0 flex-1" />
       <template v-if="chat">

@@ -120,11 +120,14 @@ export function createPhotoService(
     throw fail('PHOTO_UNAVAILABLE', `Drive did not give the photo (${last}); is it shared by link?`, 404);
   }
 
-  /** The photo as { mime, data, etag }, from the cache or Drive. */
-  async function get(id, width) {
+  /**
+   * The photo as { mime, data, etag }, from the cache or Drive. `listed: false`: a file not in Photo_links,
+   * whose caller has checked it may be shown (a photo card's row).
+   */
+  async function get(id, width, { listed = true } = {}) {
     if (!isFileId(id)) throw fail('PHOTO_NOT_FOUND', 'Photo not found', 404);
     if (!PHOTO_WIDTHS.includes(width)) throw fail('INVALID_WIDTH', `w must be ${PHOTO_WIDTHS.join(' or ')}`, 400);
-    if (!photoIndex(store).files.has(id)) throw fail('PHOTO_NOT_FOUND', 'Photo not in Photo_links', 404);
+    if (listed && !photoIndex(store).files.has(id)) throw fail('PHOTO_NOT_FOUND', 'Photo not in Photo_links', 404);
     const key = `${id}_w${width}`;
     const etag = `"${createHash('sha1').update(key).digest('base64url').slice(0, 16)}"`;
     const cached = read(key);

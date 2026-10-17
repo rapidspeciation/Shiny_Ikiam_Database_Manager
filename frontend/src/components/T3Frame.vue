@@ -2,7 +2,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api } from '../lib/api'
 import { errorText } from '../lib/notice'
-import { BRIDGE_WAIT_MS, HELLO, bridgeMessage, chatPath, justMade, openChat, originOf, ownProject, type T3Seen, type T3View } from '../lib/t3Bridge'
+import { BRIDGE_WAIT_MS, HELLO, bridgeMessage, linkMessage, chatPath, justMade, openChat, originOf, ownProject, type T3Seen, type T3View } from '../lib/t3Bridge'
 import { useSession } from '../stores/session'
 
 /**
@@ -30,7 +30,7 @@ const props = defineProps<{
   /** A chat to show (a new object each time a link asks for it); `made`: just made by the app. */
   open?: { thread: string; made?: boolean } | null
 }>()
-const emit = defineEmits<{ seen: [value: T3Seen] }>()
+const emit = defineEmits<{ seen: [value: T3Seen]; link: [value: { proposal: string; href: string }] }>()
 const session = useSession()
 const src = ref('')
 const problem = ref('')
@@ -96,6 +96,8 @@ function forgetSignIn(path: string) {
   }, 1500)
 }
 function hear(event: MessageEvent) {
+  const link = linkMessage(event, frame.value?.contentWindow, t3Origin)
+  if (link) return emit('link', link)
   const now = bridgeMessage(event, frame.value?.contentWindow, t3Origin)
   if (!now) return
   clearTimeout(silent)

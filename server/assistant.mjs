@@ -3090,6 +3090,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
    * for half an hour: an older card is read again (`stale`).
    */
   const isSync = proposal => !!proposal?.sync_json;
+  /** A Drive file's ID in its link (…/d/<id>/view). */
+  const fileOfUrl = url => /\/d\/([\w-]{20,})/.exec(String(url ?? ''))?.[1] ?? '';
   const SYNC_TITLE = 'Photo_links ← Google Drive';
   /**
    * Keeps a reading's card: the chat's card still to review is read again in place (`id`: that card, from its
@@ -5953,6 +5955,12 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     sheetsCopy,
     /** The batches open in people's «Fotos» tabs (null in a worker). */
     renamePhotos,
+    /** Whether a Drive file is one of the rows of a photo card (a Photo_links reading or a plan) the person can see: its photo is shown beside the card's table. */
+    cardHasFile(cardId, fileId, user) {
+      const proposal = user && owner(user) ? teamProposal(String(cardId), user) : null;
+      if (!proposal || !isSync(proposal) || !photoLinks) return false;
+      return (photoLinks.rows(proposal.id) ?? []).some(r => r.file === fileId || fileOfUrl(r.url) === fileId);
+    },
     checkNeedsReview,
     /** A worker's word that a person's proposals changed: their pages waiting for the list are woken. */
     notifyChanged: (ownerId, page = null) => changed(ownerId, page),

@@ -26,6 +26,8 @@ const props = defineProps<{
   alt?: (n: number) => string
   /** A few words on why each photo is there (the assistant's), in the photos' order. */
   notes?: string[]
+  /** Opens on the whole photo (a butterfly's), not zoomed to the pane's width (a notebook page's rows). */
+  whole?: boolean
 }>()
 const altOf = (n: number) => (props.alt ? props.alt(n) : t('Foto {n} del cuaderno', { n: n + 1 }))
 const noteOf = (n: number) => props.notes?.[n] ?? ''
@@ -78,6 +80,7 @@ function reset(animate = true) {
 function start() {
   if (!pz) return
   pz.reset({ animate: false })
+  if (props.whole) return
   const { w, h } = natural.value
   const { w: pw, h: ph } = size.value
   if (!w || !h || !pw || !ph) return
