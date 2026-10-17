@@ -13,7 +13,8 @@ const PhotoViewer = defineAsyncComponent(() => import('./PhotoViewer.vue'))
 const props = defineProps<{
   /** The card's proposal. */
   card: string
-  photos: { file: string; name: string; note?: string }[]
+  /** `link`: the file on Google Drive (the viewer's corner button opens it). */
+  photos: { file: string; name: string; note?: string; link?: string }[]
 }>()
 
 const photo = ref(0)
@@ -33,6 +34,7 @@ const url = (n: number, size: 'thumb' | 'view') =>
       :url="url"
       :count="photos.length"
       whole
+      :links="photos.map(p => p.link ?? '')"
       :alt="n => photos[n]?.name ?? ''"
       :notes="photos.map(p => [p.name, p.note].filter(Boolean).join(' · '))"
       class="min-h-0 flex-1"

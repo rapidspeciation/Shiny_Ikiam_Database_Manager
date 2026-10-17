@@ -541,6 +541,21 @@ test('a reading is a card of Cambios propuestos: its rows, «Aplicar» with a fo
     assert.match((await call('update_proposal', { proposalId: card.id, changes: [] })).error, /sync_photo_links/);
     assert.equal((await http('POST', `/${card.id}/edit`, { cells: [] })).status, 409);
 
+    // The same rows as the sheet has them: a changed row with its values now, a new row with all of its own.
+    const changes = (await http('GET', `/${card.id}/photo-links/rows`)).body.changes;
+    const renamed = changes.find(c => c.row === 4);
+    assert.equal(renamed.key, `r:${renamed.recordId}`);
+    assert.equal(renamed.values.Name, 'CAM000001v.JPG');
+    assert.equal(typeof renamed.rowValues['Full Path'], 'string');
+    const fresh = changes.find(c => c.create && c.values.Name === 'CAM000003_v.jpg');
+    assert.deepEqual(fresh.checks, [{ kind: 'rename', to: 'CAM000003v.JPG' }]);
+    // A cell corrected on the card before applying is what gets written.
+    const typed = await http('POST', `/${card.id}/photo-links/edit`, { cells: [{ key: fresh.key, field: 'Description', value: 'checked by hand' }, { key: fresh.key, field: 'Nope', value: 1 }] });
+    assert.deepEqual(typed.body, { edited: 1 });
+    const after = (await http('GET', `/${card.id}/photo-links/rows`)).body.changes.find(c => c.key === fresh.key);
+    assert.equal(after.values.Description, 'checked by hand');
+    assert.deepEqual(after.personEdits, { Description: { ai: null } });
+
     // «Aplicar» with the insectary folder left for later, and the changes of the rows in Wild.
     const started = await http('POST', `/${card.id}/photo-links/apply`, { skipNew: ['Insectary'], skipChanges: ['Insectary', 'Wild'] });
     assert.equal(started.status, 202);
@@ -557,6 +572,10 @@ test('a reading is a card of Cambios propuestos: its rows, «Aplicar» with a fo
     // the row of a file deleted from Wild stays as it was until Wild is applied
     assert.equal(cellsOf(sheets, 6)['Full Path'], 'Wild/CAM000008d.JPG');
     assert.equal((await http('POST', `/${card.id}/photo-links/apply`, {})).status, 409);
+    // Applied, the card shows the rows it wrote, the one corrected by hand as it was written.
+    const wrote = (await http('GET', `/${card.id}/photo-links/rows`)).body.changes;
+    assert.equal(wrote.length, 7);
+    assert.equal(wrote.find(c => c.key === fresh.key)?.values.Description ?? null, fresh.folder === 'Insectary' ? null : 'checked by hand');
 
     // What was left: a new card, applied from the chat as any proposal is.
     const rest = await call('sync_photo_links', { add: ['Insectary'] });

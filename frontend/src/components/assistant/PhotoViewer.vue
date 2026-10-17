@@ -28,6 +28,8 @@ const props = defineProps<{
   notes?: string[]
   /** Opens on the whole photo (a butterfly's), not zoomed to the pane's width (a notebook page's rows). */
   whole?: boolean
+  /** Each photo's own page (its file on Google Drive), in the photos' order: the corner button opens it instead of the copy shown. */
+  links?: string[]
 }>()
 const altOf = (n: number) => (props.alt ? props.alt(n) : t('Foto {n} del cuaderno', { n: n + 1 }))
 const noteOf = (n: number) => props.notes?.[n] ?? ''
@@ -189,13 +191,14 @@ onBeforeUnmount(() => {
         </button>
         <a
           class="viewer-btn"
-          :href="url(photo, 'view')"
+          :href="links?.[photo] || url(photo, 'view')"
           target="_blank"
           rel="noopener"
-          :title="$t('Abrir la foto en una pestaña nueva')"
-          :aria-label="$t('Abrir la foto en una pestaña nueva')"
+          :title="links?.[photo] ? $t('Abrir en Google Drive') : $t('Abrir la foto en una pestaña nueva')"
+          :aria-label="links?.[photo] ? $t('Abrir en Google Drive') : $t('Abrir la foto en una pestaña nueva')"
         >
           <ExternalLink :size="15" />
+          <span v-if="links?.[photo]" class="ml-1 text-xs">Drive</span>
         </a>
       </span>
     </div>

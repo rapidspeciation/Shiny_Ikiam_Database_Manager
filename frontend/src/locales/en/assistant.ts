@@ -564,6 +564,8 @@ export default {
   'Las {n} filas que se escribieron': 'The {n} rows written',
   'Las filas de esta lectura ya no se guardan.': 'The rows of this reading are no longer kept.',
   'Haz clic en una fila para ver su foto aquí; Ctrl o Mayús + clic para ver varias.': 'Click a row to see its photo here; Ctrl or Shift + click to see several.',
+  'Abrir en Google Drive': 'Open in Google Drive',
+  'Como quedarán en la hoja: en verde lo que cambia; puedes corregir una celda antes de aplicar, o copiar y pegar como en la hoja. Selecciona celdas para ver las fotos de sus filas.': 'As they will be in the sheet: what changes in green; you can correct a cell before applying, or copy and paste as in the sheet. Select cells to see their rows\' photos.',
   'Algo de {n} carpeta queda para después': 'Part of {n} folder is left for later',
   'Algo de {n} carpetas queda para después': 'Part of {n} folders is left for later',
   'Cambian': 'Changed',

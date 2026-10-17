@@ -15,7 +15,7 @@ export function useRowPhotos<T extends { name: string; url?: string; file?: stri
   const photos = computed(() =>
     picked.value.flatMap(r => {
       const file = fileOf(r)
-      return file ? [{ file, name: r.name, note: note(r) }] : []
+      return file ? [{ file, name: r.name, note: note(r), ...(r.url ? { link: r.url } : {}) }] : []
     }),
   )
   const isPicked = (row: RowComponent) => picked.value.includes(row.getData() as T)

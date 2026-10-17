@@ -9,6 +9,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { applyBatch } from './batch.mjs';
+import { comparable, moduleMap } from './schema.mjs';
 import { driveFor, driveWriterFor } from './drive.mjs';
 import { SHEET, driveIdOf, photoLinkRows, scanPhotoLinks } from './photo-links.mjs';
 import { describeChanges, kindOf, planFileChanges, runFileChanges, settleChanges, transferOf, undoFileChanges } from './photo-files.mjs';
@@ -260,13 +261,80 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
   // The rows a card wrote (or the files a plan changed), kept for its card once applied, as a sheet proposal keeps its table.
   store.db.exec('CREATE TABLE IF NOT EXISTS photo_card_rows (id TEXT PRIMARY KEY, at TEXT NOT NULL, rows_json TEXT NOT NULL)');
   function keepRows(id, rows) {
-    store.db.prepare('INSERT OR REPLACE INTO photo_card_rows (id, at, rows_json) VALUES (?, ?, ?)').run(id, new Date().toISOString(), JSON.stringify(rows.slice(0, KEPT_ROWS)));
+    store.db.prepare('INSERT OR REPLACE INTO photo_card_rows (id, at, rows_json) VALUES (?, ?, ?)').run(id, new Date().toISOString(), JSON.stringify(Array.isArray(rows) ? rows.slice(0, KEPT_ROWS) : { rows: rows.rows.slice(0, KEPT_ROWS), changes: rows.changes.slice(0, KEPT_ROWS) }));
     store.db.prepare('DELETE FROM photo_card_rows WHERE id NOT IN (SELECT id FROM photo_card_rows ORDER BY at DESC LIMIT ?)').run(KEPT_CARDS);
   }
-  const keptRows = id => {
+  /** What a card kept once applied: a plan's rows (an array), or a reading's { rows, changes }. */
+  const keptCard = id => {
     const row = store.db.prepare('SELECT rows_json FROM photo_card_rows WHERE id = ?').get(id);
     return row ? JSON.parse(row.rows_json) : null;
   };
+  const keptRows = id => {
+    const k = keptCard(id);
+    return Array.isArray(k) ? k : (k?.rows ?? null);
+  };
+
+  /**
+   * A reading's rows as a proposal's table shows them, in the sheet's columns: each changed row (by its
+   * record) with its values now and the reading's, each new row with all of its values; the person's
+   * edits made on the card in `personEdits`. Their `key` names them for edits: r:<record>, n:<index>.
+   */
+  function sheetChanges(plan) {
+    const now = new Map(photoLinkRows(store).map(r => [r.id, r.values]));
+    const person = plan.person ?? {};
+    // `ai`: what the reading had there (absent: the reading left that cell as the sheet has it).
+    const edits = (key, values) =>
+      person[key] ? { personEdits: Object.fromEntries(Object.entries(person[key]).filter(([f]) => f in values).map(([f, p]) => [f, 'ai' in p ? { ai: p.ai } : {}])) } : {};
+    return [
+      ...plan.edits.map(e => ({ key: `r:${e.id}`, recordId: e.id, row: e.row, kind: e.kind, folder: e.folder, values: e.values, rowValues: now.get(e.id) ?? {}, ...edits(`r:${e.id}`, e.values) })),
+      ...plan.creates.map((c, i) => ({
+        key: `n:${i}`,
+        create: true,
+        kind: plan.display[i]?.change ?? 'new',
+        folder: c.folder,
+        values: c.values,
+        ...(plan.display[i]?.checks ? { checks: plan.display[i].checks } : {}),
+        ...edits(`n:${i}`, c.values),
+      })),
+    ];
+  }
+  /** Cells the person typed in a reading's table, before applying: { edited } or { error, code }. */
+  function editCells(id, cells, user) {
+    if (!EDITORS.includes(user?.role)) return { error: 'Your role cannot change the sheet', code: 'forbidden' };
+    const plan = plans.get(id);
+    if (!plan || plan.type === 'files' || Date.now() - plan.at > FRESH_MS)
+      return { error: 'That reading is no longer kept: read the folders again.', code: 'stale' };
+    const writable = new Set(moduleMap.get(SHEET).fields.filter(f => !f.readonly).map(f => f.key));
+    const now = new Map(photoLinkRows(store).map(r => [r.id, r.values]));
+    let edited = 0;
+    for (const { key, field, value = null } of Array.isArray(cells) ? cells.slice(0, 5000) : []) {
+      if (!writable.has(field)) continue;
+      const k = String(key ?? '');
+      // What the reading had in that cell, kept the first time the person changes it.
+      const values = k.startsWith('r:') ? plan.edits.find(x => x.id === k.slice(2))?.values : plan.creates[Number(k.slice(2))]?.values;
+      const first = plan.person?.[k]?.[field] ?? (values && field in values ? { ai: values[field] } : {});
+      if (k.startsWith('r:')) {
+        const e = plan.edits.find(x => x.id === k.slice(2));
+        if (!e) continue;
+        const sheet = now.get(e.id)?.[field] ?? null;
+        // Back to what the sheet has: nothing to write there.
+        if (comparable(value) === comparable(sheet)) {
+          delete e.values[field];
+          delete e.expected[field];
+        } else {
+          e.values[field] = value;
+          if (!(field in e.expected)) e.expected[field] = sheet;
+        }
+      } else if (k.startsWith('n:')) {
+        const c = plan.creates[Number(k.slice(2))];
+        if (!c) continue;
+        c.values[field] = value;
+      } else continue;
+      plan.person = { ...plan.person, [k]: { ...plan.person?.[k], [field]: first } };
+      edited++;
+    }
+    return { edited };
+  }
 
   async function timeZone() {
     if (config.photoLinksTimeZone) return config.photoLinksTimeZone;
@@ -336,7 +404,7 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
     });
 
   function write(plan, user, { skipNew, skipChanges }) {
-    const edits = plan.edits.filter(e => !skipChanges.has(e.folder)).map(({ id, values, expected }) => ({ id, values, expected }));
+    const edits = plan.edits.filter(e => !skipChanges.has(e.folder) && Object.keys(e.values).length).map(({ id, values, expected }) => ({ id, values, expected }));
     const creates = plan.creates.filter(c => !skipNew.has(c.folder)).map(({ module, values }) => ({ module, values }));
     const reason = `Photo_links brought up to date with Google Drive (${creates.length} new rows, ${edits.length} rows changed)`;
     const saves = [];
@@ -406,10 +474,14 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
     }
     const skipNew = new Set([...list(leave.skip), ...list(leave.skipNew)]);
     const skipChanges = new Set([...list(leave.skip), ...list(leave.skipChanges)]);
-    const total = plan.edits.filter(e => !skipChanges.has(e.folder)).length + plan.creates.filter(c => !skipNew.has(c.folder)).length;
+    const total = plan.edits.filter(e => !skipChanges.has(e.folder) && Object.keys(e.values).length).length + plan.creates.filter(c => !skipNew.has(c.folder)).length;
     if (!total) return { error: `${SHEET} is already up to date.`, code: 'nothing' };
     plans.delete(id);
-    keepRows(id, plan.display.filter(r => (r.change === 'new' || r.change === 'folder' ? !skipNew.has(r.folder) : !skipChanges.has(r.folder))));
+    const wanted = r => (r.create ? !skipNew.has(r.folder) : !skipChanges.has(r.folder));
+    keepRows(id, {
+      rows: plan.display.filter(r => (r.change === 'new' || r.change === 'folder' ? !skipNew.has(r.folder) : !skipChanges.has(r.folder))),
+      changes: sheetChanges(plan).filter(wanted),
+    });
     const job = write(plan, user, { skipNew, skipChanges });
     jobs.set(id, job);
     return { job };
@@ -824,6 +896,15 @@ export function createPhotoLinksTool({ store, config = {}, waitMs = WAIT_MS, chu
     },
     /** The rows of a reading as the card's table lists them, or those it wrote once applied (null: too old). */
     rows: id => plans.get(id)?.display ?? keptRows(id),
+    /** A reading's rows in the sheet's columns (sheetChanges), or those it wrote once applied (null: too old, or a plan). */
+    changes: id => {
+      const plan = plans.get(id);
+      if (plan) return plan.type === 'files' ? null : sheetChanges(plan);
+      const k = keptCard(id);
+      return Array.isArray(k) ? null : (k?.changes ?? null);
+    },
+    /** The card's table edited before «Aplicar». */
+    edit: editCells,
     writing: () => [...jobs.values()].some(j => j.state === 'writing'),
   };
 }

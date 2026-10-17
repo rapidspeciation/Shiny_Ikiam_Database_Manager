@@ -1,26 +1,23 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { TabulatorFull as Tabulator } from 'tabulator-tables'
-import type { CellComponent, ColumnDefinition } from 'tabulator-tables'
-import 'tabulator-tables/dist/css/tabulator_simple.min.css'
+import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import { AlertTriangle, Check, ChevronDown, ChevronRight, FolderPlus, Images, RefreshCw, Sparkles, Wrench, X } from 'lucide-vue-next'
 import { askClaude, showCard } from '../../lib/askClaude'
+import type { CellEdit } from './ProposalSheet.vue'
 import { fixFor, type PhotoFix } from '../../lib/photoFixes'
 import { photoUrl } from '../../lib/review'
-import { useRowPhotos } from '../../lib/useRowPhotos'
+import { useSession } from '../../stores/session'
+import type { CellValue } from '../../lib/types'
 import { api } from '../../lib/api'
 import { errorText, notify } from '../../lib/notice'
-import { intlLocale, locale, t } from '../../lib/i18n'
-import type { Proposal } from '../../lib/proposals'
+import { intlLocale, t } from '../../lib/i18n'
+import type { PersonEdit, Proposal, ProposalChange } from '../../lib/proposals'
 import {
-  changeLabel,
   checkLabel,
-  filterRows,
+  driveFileOf,
   flagText,
   foundChecks,
   progressPercent,
   rowsToWrite,
-  rowsWanted,
   type CheckKind,
   type PhotoExample,
   type PhotoRow,
@@ -28,6 +25,8 @@ import {
 } from '../../lib/photoLinks'
 
 const CardPhotos = defineAsyncComponent(() => import('./CardPhotos.vue'))
+/** A proposal's table, as the sheet proposals have it (Tabulator loads apart). */
+const ProposalSheet = defineAsyncComponent(() => import('./ProposalSheet.vue'))
 
 /**
  * A reading of the photo folders on Drive for the Photo_links sheet (the assistant's
@@ -121,108 +120,130 @@ const openCheck = ref<CheckKind | null>(null)
 const hasDetail = (kind: CheckKind, e: PhotoExample) => kind !== 'unnamed' && !(kind === 'unknownId' && !e.maybe?.length)
 
 // ------------------------------------------------------------ the rows
-// open from the start, like a proposal's table: it follows the ticks above; applied, the rows it wrote
+// The rows it would write as the sheet has them, in a proposal's table (ProposalSheet): the sheet's
+// columns, the reading's values in green, the person's in blue (saved to the reading at once, written
+// by «Aplicar»), copied and pasted as in the sheet. Open from the start; they follow the ticks above.
+// Applied: the rows it wrote. The photos of the rows selected show beside the table.
 const showRows = ref(true)
 const applied = computed(() => status.value === 'applied')
 const tableOn = computed(() => (pending.value && !sync.value.stale) || applied.value)
-const picking = useRowPhotos<PhotoRow>(r => [changeLabel(r.change), r.from ? `${r.from} → ${r.name}` : '', r.folder].filter(Boolean).join(' · '))
+/** A reading's row in the sheet's columns, as the server sends it (sheetChanges in server/photo-links-tool.mjs). */
+interface SheetRow {
+  key: string
+  recordId?: string
+  row?: number
+  kind: string
+  folder: string
+  create?: boolean
+  values: Record<string, CellValue>
+  rowValues?: Record<string, CellValue>
+  checks?: PhotoRow['checks']
+  personEdits?: Record<string, PersonEdit>
+}
 const rows = ref<PhotoRow[] | null>(null)
+const sheetRows = ref<SheetRow[] | null>(null)
 const rowsGone = ref(false)
 const show = ref<'all' | 'flagged' | CheckKind>('all')
-const host = ref<HTMLDivElement>()
-let grid: Tabulator | null = null
-const shown = computed(() => filterRows(rowsWanted(rows.value ?? [], skipNew.value, skipChanges.value), show.value))
-
-function columns(): ColumnDefinition[] {
-  return [
-    { title: t('Cambio'), field: 'change', width: 110, formatter: (c: CellComponent) => changeLabel(c.getValue()) },
-    { title: t('Carpeta'), field: 'folder', minWidth: 160 },
-    {
-      title: t('Nombre'),
-      field: 'name',
-      width: 190,
-      // A new file's name opens it on Drive, in another tab.
-      formatter: (c: CellComponent) => {
-        const row = c.getData() as PhotoRow
-        const text = row.from ? `${row.from} → ${row.name}` : row.detail ? `${row.name} (${row.detail})` : row.name
-        if (!row.url) return text
-        // A click shows its photo beside the table; the middle button opens it on Drive.
-        const link = document.createElement('a')
-        Object.assign(link, { href: row.url, target: '_blank', rel: 'noopener', textContent: text, className: 'photo-link' })
-        return link
-      },
-    },
-    { title: t('Tomada'), field: 'taken', width: 125 },
-    {
-      title: t('Para revisar'),
-      field: 'checks',
-      headerSort: false,
-      formatter: (c: CellComponent) => {
-        const flags = (c.getData() as PhotoRow).checks ?? []
-        c.getElement().classList.toggle('is-flagged', flags.length > 0)
-        return flags.map(flagText).join(' · ')
-      },
-    },
-  ] as ColumnDefinition[]
-}
+const session = useSession()
+const fields = computed(() => session.module('Photo_links')?.fields ?? [])
+const types = computed(() => Object.fromEntries(fields.value.map(f => [f.key, f.type])))
+const formulas = computed(() => fields.value.filter(f => f.readonly).map(f => f.key))
+const NO_FLASH = new Set<string>()
+const KIND_NOTE: Record<string, string> = { ...KIND_LABEL, new: 'nueva', folder: 'carpeta nueva' }
+/** The rows shown: those the ticks keep, and the filter's. */
+const shownRows = computed(() =>
+  (sheetRows.value ?? []).filter(r => {
+    if (!applied.value && (r.create ? skipNew.value.has(r.folder) : skipChanges.value.has(r.folder))) return false
+    if (show.value === 'all') return true
+    if (show.value === 'flagged') return !!r.checks?.length
+    return !!r.checks?.some(c => c.kind === show.value)
+  }),
+)
+const changesShown = computed<ProposalChange[]>(() =>
+  shownRows.value.map((r, index) => ({
+    index,
+    key: r.key,
+    recordId: r.recordId ?? null,
+    sheet: 'Photo_links',
+    row: r.row ?? null,
+    label: String(r.values.Name ?? r.rowValues?.Name ?? ''),
+    ...(r.create ? { create: true } : {}),
+    values: r.values,
+    ...(r.rowValues ? { rowValues: r.rowValues } : {}),
+    ...(r.personEdits ? { personEdits: r.personEdits } : {}),
+    note: [t(KIND_NOTE[r.kind] ?? r.kind), ...(r.checks ?? []).map(flagText)].join(' · '),
+  })),
+)
+const appliedIndexes = computed(() => (applied.value ? changesShown.value.map(c => c.index) : null))
 async function loadRows() {
   if (rows.value || rowsGone.value) return
   try {
-    rows.value = (await api<{ rows: PhotoRow[] }>(`${base.value}/rows`)).rows
+    const out = await api<{ rows: PhotoRow[]; changes?: SheetRow[] }>(`${base.value}/rows`)
+    rows.value = out.rows
+    sheetRows.value = out.changes ?? []
   } catch (e) {
     if ((e as { code?: string }).code === 'stale') rowsGone.value = true
     else notify(errorText(e), 'error')
   }
 }
-let built = false
-async function draw() {
-  if (!showRows.value || !tableOn.value) return
-  await loadRows()
-  await nextTick()
-  if (!host.value || !rows.value || !showRows.value) return
-  if (grid) {
-    // Still being built: it takes the rows shown once it is.
-    if (built) void grid.replaceData(shown.value)
-    return
-  }
-  const made = (grid = new Tabulator(host.value, {
-    data: shown.value,
-    columns: columns(),
-    layout: 'fitDataStretch',
-    maxHeight: '22rem',
-    placeholder: t('Sin filas'),
-    columnDefaults: { headerSort: true, resizable: 'header' },
-    rowFormatter: picking.rowFormatter,
-  } as unknown as ConstructorParameters<typeof Tabulator>[1]))
-  picking.attach(made)
-  made.on('tableBuilt', () => {
-    if (grid !== made) return
-    built = true
-    void made.replaceData(shown.value)
-  })
-}
-function dropGrid() {
-  built = false
-  grid?.destroy()
-  grid = null
-  picking.clear()
-}
-watch([showRows, shown, tableOn], () => (showRows.value && tableOn.value ? void draw() : dropGrid()))
-onMounted(() => void draw())
-watch(locale, () => built && grid?.setColumns(columns()))
+watch([showRows, tableOn], () => showRows.value && tableOn.value && void loadRows())
+onMounted(() => tableOn.value && void loadRows())
 // Read again, or written: the rows it held are another reading's.
 watch(
   () => [props.proposal.revision, sync.value.read?.at],
   () => {
     rows.value = null
+    sheetRows.value = null
     rowsGone.value = false
     skipNew.value = new Set()
     skipChanges.value = new Set()
-    dropGrid()
-    void draw()
+    picked.value = []
+    if (tableOn.value) void loadRows()
   },
 )
-onBeforeUnmount(dropGrid)
+/** A cell typed in the table: shown at once (blue), saved to the reading (what «Aplicar» writes). */
+async function onEdit(cells: CellEdit[]) {
+  const byKey = new Map((sheetRows.value ?? []).map(r => [r.key, r]))
+  const sent = cells.flatMap(c => {
+    const r = byKey.get(c.key)
+    if (!r) return []
+    // «Valor de la hoja»: what the sheet has (a new row: empty); «Valor de la IA»: the reading's.
+    const value = c.use === 'sheet' ? (r.rowValues?.[c.field] ?? null) : c.value
+    const ai = r.personEdits?.[c.field] ? r.personEdits[c.field].ai : r.values[c.field]
+    if (c.use === 'sheet' && !r.create && !(c.field in (r.personEdits ?? {})) && !(c.field in r.values)) return []
+    r.values = { ...r.values, [c.field]: value }
+    r.personEdits = { ...r.personEdits, [c.field]: ai === undefined ? {} : { ai } }
+    if (c.use === 'ai' || (c.use === 'sheet' && !r.create)) {
+      const { [c.field]: _gone, ...rest } = r.personEdits
+      r.personEdits = rest
+      if (c.use === 'sheet') {
+        const { [c.field]: _was, ...left } = r.values
+        r.values = left
+      }
+    }
+    return [{ key: c.key, field: c.field, value }]
+  })
+  sheetRows.value = [...(sheetRows.value ?? [])]
+  if (!sent.length) return
+  try {
+    await api(`${base.value}/edit`, { method: 'POST', body: { cells: sent } })
+  } catch (e) {
+    notify(errorText(e), 'error')
+  }
+}
+// The photos of the rows selected in the table (a cell, or a range of them), up to a dozen.
+const picked = ref<string[]>([])
+const photos = computed(() => {
+  const byKey = new Map((sheetRows.value ?? []).map(r => [r.key, r]))
+  return picked.value.slice(0, 12).flatMap(key => {
+    const r = byKey.get(key)
+    const url = String(r?.values.URL ?? r?.rowValues?.URL ?? '')
+    const file = driveFileOf(url)
+    if (!r || !file) return []
+    const name = String(r.values.Name ?? r.rowValues?.Name ?? '')
+    return [{ file, name, link: url, note: [t(KIND_NOTE[r.kind] ?? r.kind), String(r.values['Full Path'] ?? r.rowValues?.['Full Path'] ?? '').split('/').slice(0, -1).join('/')].filter(Boolean).join(' · ') }]
+  })
+})
 
 // ------------------------------------------------------------ the fixes it offers, and Claude
 /** The rows are needed to work the fixes out: read once the card is pending with something to fix. */
@@ -423,7 +444,7 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
         <div class="flex flex-wrap items-center gap-2">
           <button type="button" class="flex items-center gap-1 font-medium text-emerald-800 hover:underline" data-show-rows @click="showRows = !showRows">
             <ChevronDown v-if="showRows" :size="12" /><ChevronRight v-else :size="12" />
-            <template v-if="applied">{{ $tn(rows?.length ?? 0, 'La fila que se escribió', 'Las {n} filas que se escribieron') }}</template>
+            <template v-if="applied">{{ $tn(sheetRows?.length ?? 0, 'La fila que se escribió', 'Las {n} filas que se escribieron') }}</template>
             <template v-else>{{ $tn(writing, 'La fila que se escribiría', 'Las {n} filas que se escribirían') }}</template>
           </button>
           <select
@@ -440,11 +461,27 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
         <p v-if="showRows && rowsGone" class="py-2 text-stone-500">
           {{ applied ? $t('Las filas de esta lectura ya no se guardan.') : $t('Las carpetas se leyeron hace más de media hora: léelas de nuevo.') }}
         </p>
-        <div v-show="showRows && rows" class="card-rows mt-1.5 flex flex-col gap-2">
-          <div class="sheet-grid rows-table photo-links-rows min-w-0 flex-1">
-            <div ref="host" />
+        <p v-if="showRows && sheetRows && !applied" class="mt-1 text-stone-500">
+          {{ $t('Como quedarán en la hoja: en verde lo que cambia; puedes corregir una celda antes de aplicar, o copiar y pegar como en la hoja. Selecciona celdas para ver las fotos de sus filas.') }}
+        </p>
+        <div v-if="showRows && sheetRows" class="card-rows mt-1.5 flex flex-col gap-2">
+          <div class="min-w-0 flex-1">
+            <ProposalSheet
+              sheet="Photo_links"
+              :changes="changesShown"
+              :fields="fields.map(f => f.key)"
+              :types="types"
+              :new-row-formulas="formulas"
+              :editable="pending && !sync.stale"
+              :applied="appliedIndexes"
+              :flash="NO_FLASH"
+              :history-key="`${proposal.id}:photo-links`"
+              @edit="onEdit"
+              @rows="keys => (picked = keys)"
+              @notice="m => notify(m)"
+            />
           </div>
-          <CardPhotos :card="proposal.id" :photos="picking.photos.value" class="card-photos" />
+          <CardPhotos :card="proposal.id" :photos="photos" class="card-photos" />
         </div>
       </div>
 

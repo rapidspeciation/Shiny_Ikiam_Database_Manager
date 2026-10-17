@@ -5720,7 +5720,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       return out.error ? bad(409, 'not_started', out.error) : { status: 200, body: out };
     }
     // A reading of the photo folders (sync_photo_links): its rows, «Aplicar» and «Leer de nuevo».
-    const syncMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/photo-links\/(rows|apply|refresh)$/.exec(path);
+    const syncMatch = /^\/api\/chat\/proposals\/([0-9a-f-]{36})\/photo-links\/(rows|apply|refresh|edit)$/.exec(path);
     if (syncMatch) {
       const proposal = teamProposal(syncMatch[1], user);
       if (!proposal || !isSync(proposal)) return bad(404, 'not_found', 'Proposal not found.');
@@ -5728,11 +5728,17 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       const [, id, what] = syncMatch;
       if (what === 'rows' && method === 'GET') {
         const rows = photoLinks.rows(id);
-        return rows ? { status: 200, body: { rows } } : bad(410, 'stale', 'Las carpetas se leyeron hace más de media hora: léelas de nuevo.');
+        const changes = photoLinks.changes(id);
+        return rows ? { status: 200, body: { rows, ...(changes ? { changes } : {}) } } : bad(410, 'stale', 'Las carpetas se leyeron hace más de media hora: léelas de nuevo.');
       }
       if (method !== 'POST') return bad(405, 'method', 'POST');
       if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot edit proposals.');
       if (proposal.status !== 'pending') return bad(409, 'proposal_used', 'La propuesta ya no está pendiente.');
+      if (what === 'edit') {
+        const out = photoLinks.edit(id, body.cells, user);
+        if (out.code === 'stale') return bad(410, 'stale', 'Las carpetas se leyeron hace más de media hora: léelas de nuevo.');
+        return out.error ? bad(403, out.code, out.error) : { status: 200, body: out };
+      }
       if (what === 'apply') {
         const out = photoLinks.apply(id, user, { skip: body.skip, skipNew: body.skipNew, skipChanges: body.skipChanges });
         if (out.code === 'stale') return bad(410, 'stale', 'Las carpetas se leyeron hace más de media hora: léelas de nuevo.');

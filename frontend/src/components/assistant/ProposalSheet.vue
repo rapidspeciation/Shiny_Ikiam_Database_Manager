@@ -178,6 +178,8 @@ const emit = defineEmits<{
   sheet: [cells: { key: string; field: string; use: 'sheet' | 'proposal' }[]]
   /** The row of the selected cell (its key), when it changes: «Revisar con la foto» shows its photo. */
   select: [key: string]
+  /** The rows the selected cells are on (their keys, in the table's order), when they change: a photo card shows their photos. */
+  rows: [keys: string[]]
 }>()
 
 type Row = Record<string, CellValue> & {
@@ -977,10 +979,14 @@ function selected() {
     }
   return out
 }
+let selectedRows = ''
 function updateActions() {
   const next = props.editable && table ? selectionActions(selected().map(s => s.cell)) : { sheet: 0, ai: 0, check: 0 }
   if (next.sheet !== actions.value.sheet || next.ai !== actions.value.ai || next.check !== actions.value.check) actions.value = next
   updateMoves()
+  const keys = [...new Set((table?.getRanges() ?? []).flatMap(r => r.getRows().map(row => String((row.getData() as Row).__key ?? ''))))].filter(Boolean)
+  if (keys.join('|') !== selectedRows) emit('rows', keys)
+  selectedRows = keys.join('|')
 }
 /**
  * "Valor de la hoja": the selected cells go back to what the sheet has (a new
