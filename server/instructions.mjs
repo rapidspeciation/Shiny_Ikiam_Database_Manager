@@ -34,6 +34,7 @@ export const TOOL_RANGES = [
   ['server/site-updates.mjs', '/^export const SITE_TOOLS/', '/^\\];/'],
   ['server/drive-photos.mjs', '/^export const DRIVE_PHOTO_TOOLS/', '/^\\];/'],
   ['server/photo-gallery.mjs', '/^export const GALLERY_TOOLS/', '/^\\];/'],
+  ['server/photo-facts.mjs', '/^export const PHOTO_FACTS_TOOLS/', '/^\\];/'],
 ];
 /** Characters of one commit's diff kept (a whole-file rewrite stays readable, not endless). */
 const DIFF_LIMIT = 150_000;

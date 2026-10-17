@@ -1,0 +1,3 @@
+cam,file,current_suffix,predicted_side,p_dorsal,kind
+CAM000105,CAM000105/CAM000105d__Genus_sp.jpg,d,ventral,0.0123,suffix swapped
+CAM000105,CAM000105/CAM000105v__Genus_sp.jpg,v,dorsal,0.9911,suffix swapped

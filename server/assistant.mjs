@@ -41,6 +41,7 @@ import { IMAGES, RENAME_TOOLS, RENAME_TOOL_NAMES, createRenamePhotos } from './r
 import { SITE_TOOLS, SITE_TOOL_NAMES, createSiteUpdates } from './site-updates.mjs';
 import { DRIVE_PHOTO_TOOLS, DRIVE_PHOTO_TOOL_NAMES, createDrivePhotos } from './drive-photos.mjs';
 import { GALLERY_TOOLS, GALLERY_TOOL_NAMES, createGallery } from './photo-gallery.mjs';
+import { PHOTO_FACTS_TOOLS, PHOTO_FACTS_TOOL_NAMES, runPhotoFacts } from './photo-facts.mjs';
 import { createInvitations, mailerFromEnv } from './invitations.mjs';
 import { QUERY_HINT, QUERY_TOOL, createQueryRunner, formatRows, sqlProblem } from './query-tool.mjs';
 import { createSheetsCopy } from './replica.mjs';
@@ -432,6 +433,8 @@ const TOOLS = [
   ...DRIVE_PHOTO_TOOLS,
   // Butterflies' photos shown beside the chat by their CAM IDs (server/photo-gallery.mjs).
   ...GALLERY_TOOLS,
+  // What the archive's photos (envelope, gallery, wings) say beside the workbook (server/photo-facts.mjs).
+  ...PHOTO_FACTS_TOOLS,
   // The public sites (the Wings Gallery, the maps) brought up to date with the workbook (server/site-updates.mjs).
   ...SITE_TOOLS,
   {
@@ -4982,6 +4985,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (SITE_TOOL_NAMES.has(name)) return siteUpdates ? siteUpdates.run(args, context.user) : { error: 'Call it again in a moment.' };
     if (DRIVE_PHOTO_TOOL_NAMES.has(name)) return drivePhotos ? drivePhotos.run(name, args, context.user, context) : { error: 'Call it again in a moment.' };
     if (GALLERY_TOOL_NAMES.has(name)) return gallery.run(args, context.user, context);
+    if (PHOTO_FACTS_TOOL_NAMES.has(name)) return fitResult(runPhotoFacts(store, args, context), { narrow: 'ask for fewer CAMs, or page with offset' });
     if (name === 'apply_proposal') {
       const proposal = db
         .prepare('SELECT * FROM ai_proposals WHERE id = ? AND thread_id = ?')

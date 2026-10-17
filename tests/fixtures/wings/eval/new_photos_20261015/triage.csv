@@ -1,0 +1,4 @@
+cam,photo,suffix,side,p_dorsal,p_dorsal_forewings,p_dorsal_hindwings,n_wings,orientation,p_orientation,max_shape_anomaly,photo_reasons,cam_reasons,format,review,drive_file_id,folder_path,absent_wings,wing_based_turn,turn_disagrees_with_stored,name_parse,cam_in_dataset_snapshot
+CAM000110,CAM000110d.JPG,d,dorsal,0.999,0.999,0.999,4,upside down,1.0,1.2,orientation:upside down(p=1.00),,detached wings,yes,drive-id-new-00000000110d,Wild/Ecuador_2026,,upside down,yes,exact,no
+CAM000110,CAM000110v.JPG,v,ventral,0.002,0.002,0.002,4,upright,1.0,1.0,,,detached wings,no,drive-id-new-00000000110v,Wild/Ecuador_2026,,upright,no,exact,no
+,10d.JPG,?,dorsal,0.998,0.998,0.998,4,upright,1.0,3.62,no-d/v-suffix,,detached wings,yes,drive-id-new-0000000010d0,Photos/JPG_photos,,upright,no,unknown,no

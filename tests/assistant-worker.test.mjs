@@ -262,6 +262,8 @@ test("every tool the worker answers runs there: nothing reaches for the app's me
     ['review_issues', { show: 'agreed' }],
     ['review_suggestions', {}],
     ['review_issues', { show: 'alerts' }],
+    ['photo_facts', {}],
+    ['photo_facts', { cams: ['CAM079891'] }],
     ['list_history', {}],
     ['row_history', { recordId: record(2).id }],
     ['list_proposals', { allChats: true }],

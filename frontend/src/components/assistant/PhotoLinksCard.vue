@@ -46,6 +46,8 @@ const status = computed(() => props.proposal.status)
 const pending = computed(() => status.value === 'pending')
 const progress = computed(() => sync.value.progress)
 const checks = computed(() => foundChecks(sync.value.checks ?? null))
+/** What the wing models read on the photos of the folders read: the other side than the name's d/v, or turned. */
+const wingChecks = computed(() => foundChecks(sync.value.wings))
 const flagged = computed(() => checks.value.reduce((n, c) => n + c.count, 0))
 const changes = computed(() => sync.value.changes ?? { renamed: 0, relinked: 0, removed: 0, moved: 0, details: 0, statusRows: 0 })
 const twice = computed(() => sync.value.listedTwice ?? null)
@@ -556,6 +558,37 @@ const readAt = computed(() => (sync.value.read?.at ? new Date(sync.value.read.at
                 <button type="button" class="text-emerald-800 hover:underline" @click="((show = c.kind), (showRows = true))">
                   {{ $t('Ver las {n} en la tabla', { n: c.count }) }}
                 </button>
+              </li>
+            </ul>
+          </li>
+        </ul>
+      </div>
+
+      <!-- What the wings show, by the wing models, on the photos of the folders read (listed before or new). -->
+      <div v-if="wingChecks.length" class="border-b border-stone-200 px-3 py-2 text-xs" data-wings>
+        <p class="text-stone-700">{{ $t('Lo que las alas muestran en las fotos de estas carpetas (ya listadas o nuevas):') }}</p>
+        <ul class="mt-1.5 space-y-0.5">
+          <li v-for="c in wingChecks" :key="c.kind" :data-check="c.kind">
+            <button
+              type="button"
+              class="flex w-full min-w-0 items-center gap-1.5 rounded px-1 py-0.5 text-left text-amber-900 hover:bg-amber-50"
+              :aria-expanded="openCheck === c.kind"
+              @click="openCheck = openCheck === c.kind ? null : c.kind"
+            >
+              <ChevronDown v-if="openCheck === c.kind" :size="12" class="shrink-0" /><ChevronRight v-else :size="12" class="shrink-0" />
+              <AlertTriangle :size="12" class="shrink-0 text-amber-600" />
+              <span class="font-medium tabular-nums">{{ c.count }}</span>
+              <span>{{ checkLabel(c.kind) }}</span>
+            </button>
+            <ul v-if="openCheck === c.kind" class="mt-0.5 mb-1 ml-7 space-y-0.5 text-stone-700">
+              <li v-for="e in c.examples" :key="e.name + (e.in ?? '')" class="break-all">
+                <a v-if="e.url" class="font-medium text-emerald-800 hover:underline" :href="e.url" target="_blank" rel="noopener">{{ e.name }}</a>
+                <span v-else class="font-medium">{{ e.name }}</span>
+                <span class="text-stone-500"> · {{ flagText({ ...e, kind: c.kind }) }}</span>
+                <span v-if="e.in" class="text-stone-400"> · {{ e.in }}</span>
+              </li>
+              <li v-if="c.count > c.examples.length" class="text-stone-500">
+                {{ $t('y {n} más: pídeselos al asistente', { n: c.count - c.examples.length }) }}
               </li>
             </ul>
           </li>

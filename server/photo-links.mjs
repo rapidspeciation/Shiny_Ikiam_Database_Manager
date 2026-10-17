@@ -16,6 +16,7 @@
 // Files named …_todelete are left out, as are the folders named …_temp.
 
 import { FOLDER, driveTree } from './drive.mjs';
+import { wingProblem, wingSides } from './photodata.mjs';
 
 export const SHEET = 'Photo_links';
 const FIELDS = ['Full Path', 'Name', 'Type', 'Capture Date', 'URL', 'Date', 'Description', 'Size KB', 'Owner Email'];
@@ -129,6 +130,8 @@ export function rightName(name, ids) {
  *  - lookups: Map Drive ID → drive.get's answer, for rows whose file `items` lacks (`unknown` in the answer).
  *  - ids: the specimens of the database, Map ID (in capitals) → { date, country } (specimens(); a Set of IDs
  *    will do): the new photos are checked against them (checkPhotos).
+ *  - wings: the wing models' reading of the photos (server/photodata.mjs wingSides): every photo of the folders
+ *    read whose wings show the other side than its name's d/v, or that is turned, is flagged (wingSide, wingTurned).
  * Answers { edits, creates, display, unknown, summary }: `edits` [{ id, values, expected }] and `creates`
  * [{ module, values, folder }] as server/batch.mjs takes them; `display`, one line per new row (as `creates`)
  * and then per edit, as the panel lists them.
@@ -142,6 +145,7 @@ export function planPhotoLinks({
   lookups = new Map(),
   ids = new Set(),
   timeZone = 'Europe/London',
+  wings = null,
 }) {
   const info = ids instanceof Map ? ids : new Map([...ids].map(id => [id, {}]));
   const status = [];
@@ -527,6 +531,26 @@ export function planPhotoLinks({
     photosIn: folderId => (children.get(folderId) || []).filter(f => !isFolder(f) && PHOTO.test(f.name) && !TO_DELETE.test(f.name)),
     folderOf: file => placeOf(file.parent)?.path ?? '',
   });
+  // What the wing models read on the photos of the folders read (listed before or new): the other side than the
+  // name's d/v (a d and a v swapped, or both photos of one side), or the photo turned.
+  const wingChecks = { wingSide: { count: 0, examples: [] }, wingTurned: { count: 0, examples: [] } };
+  if (wings)
+    for (const item of items.values()) {
+      if (isFolder(item) || !item.parent || !inScope(item) || !PHOTO.test(item.name) || TO_DELETE.test(item.name)) continue;
+      const place = placeOf(item.parent);
+      if (!place) continue;
+      const byName = (wings.byName.get(item.name.replace(/\.[a-z0-9]+$/i, '').toUpperCase()) ?? []).filter(w => !w.fileId);
+      const problem = wingProblem(wings.byFile.get(item.id) ?? (byName.length === 1 ? byName[0] : null), item.name);
+      if (!problem) continue;
+      const flagWith = (kind, detail) => {
+        if (!checked.flags.has(item.id)) checked.flags.set(item.id, []);
+        checked.flags.get(item.id).push({ kind, ...detail });
+        wingChecks[kind].count++;
+        if (wingChecks[kind].examples.length < EXAMPLES) wingChecks[kind].examples.push({ name: item.name, in: place.path, url: item.webViewLink, ...detail });
+      };
+      if (problem.side) flagWith('wingSide', { side: problem.side, ...(problem.pair ? { pair: problem.pair } : {}) });
+      if (problem.turn) flagWith('wingTurned', { turn: problem.turn, degrees: problem.degrees });
+    }
   for (const line of display) {
     const flags = line.file ? checked.flags.get(line.file) : null;
     if (flags?.length) line.checks = flags;
@@ -599,6 +623,7 @@ export function planPhotoLinks({
       sameName,
       leftOut,
       turned,
+      wings: wingChecks.wingSide.count || wingChecks.wingTurned.count ? wingChecks : null,
       toDelete: [...toDelete.values()].map(t => ({ ...t, kb: Math.round(t.kb) })).sort((a, b) => b.files - a.files),
       names: checked.summary,
       notListed,
@@ -916,7 +941,7 @@ export async function scanPhotoLinks({ store, drive, add = [], only = [], timeZo
     );
   }
 
-  const input = { rows, items, home, add: added.ids, scope, ids: specimens(store), timeZone };
+  const input = { rows, items, home, add: added.ids, scope, ids: specimens(store), timeZone, wings: wingSides(store) };
   let plan = planPhotoLinks(input);
   if (plan.unknown.length) {
     const lookups = new Map();

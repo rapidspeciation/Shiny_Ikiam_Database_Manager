@@ -5,7 +5,7 @@
 // scripts/import-envelope-curation.mjs; importing the same bundle twice
 // leaves the same rows.
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, realpathSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { bumpReviewRevision, initPhotoTables, photoName } from './photodata.mjs';
 
@@ -215,6 +215,8 @@ export async function readGallery(from = GALLERY_URL) {
       species: top(p.species, 5),
       genus: top(p.genus, 3),
       subspecies: top(p.subspecies, 3),
+      // The side of the Andes the model's geographic prior took (East / West).
+      ...(/^(east|west)$/i.test(String(p.side ?? '')) ? { andes: String(p.side) } : {}),
       ...(sex
         ? {
             sex: String(sex.sex).toLowerCase(),
@@ -227,6 +229,72 @@ export async function readGallery(from = GALLERY_URL) {
     });
   }
   return { wingBoxes, predictions, gallery: String(from) };
+}
+
+/** How far a photo is turned (the wing model's words) → the clockwise turn that puts it upright. */
+const UPRIGHT_BY = { 'upside down': 180, 'turned 90 deg counter-clockwise': 90, 'turned 90 deg clockwise': 270 };
+const num = v => (v === '' || v === undefined || v === null || !Number.isFinite(Number(v)) ? null : Number(v));
+/** "CAM036744/CAM036744v__Unknown_species.jpg", "CAM076802v.JPG" → "CAM036744v", "CAM076802v". */
+const stemOf = photo =>
+  basename(String(photo ?? ''))
+    .split('__')[0]
+    .replace(/\.(jpe?g|heic|png|jfif|tiff?)$/i, '');
+
+/**
+ * The wing models' results (ithomiini_maps models/dorsal_ventral/eval: triage.csv, one line per
+ * photo, and suspected_problems.csv, the side problems of each CAM's pair), from one or more of
+ * those folders (the archive's, a later run on newer Drive photos), as bundle rows. The archive's
+ * photos get their Drive file ID from the photo manifest (Name, google_id); a later run's carry it.
+ */
+export function readWingSides(dirs, manifestPath = null) {
+  const ids = new Map();
+  if (manifestPath)
+    for (const r of parseCsv(readFileSync(manifestPath, 'utf8')))
+      if (r.Name && r.google_id) ids.set(stemOf(r.Name).toUpperCase(), r.google_id);
+  const wings = [];
+  const sources = [];
+  for (const dir of dirs) {
+    const folder = basename(realpathSync(dir));
+    const source = folder === 'eval' ? 'archive' : folder;
+    sources.push(source);
+    const pairs = new Map();
+    const suspected = join(dir, 'suspected_problems.csv');
+    if (existsSync(suspected))
+      for (const p of parseCsv(readFileSync(suspected, 'utf8'))) pairs.set(stemOf(p.file).toUpperCase(), p.kind);
+    for (const r of parseCsv(readFileSync(join(dir, 'triage.csv'), 'utf8'))) {
+      const name = stemOf(r.photo);
+      if (!name) continue;
+      const lateral = /not checked/i.test(r.format ?? '');
+      // Turned: the archive's reason "orientation:…" (only photos with enough wings get one); a later run says whether the wings disagree with how the photo is stored.
+      const turn =
+        r.turn_disagrees_with_stored !== undefined
+          ? r.turn_disagrees_with_stored === 'yes'
+            ? r.wing_based_turn
+            : null
+          : (/orientation:\s*([^(;]+?)\s*\(/.exec(r.photo_reasons ?? '')?.[1] ?? null);
+      const reasons = String(r.photo_reasons ?? '').split(';').map(s => s.trim()).filter(Boolean).join('; ');
+      const camReasons = String(r.cam_reasons ?? '').split(';').map(s => s.trim()).filter(Boolean).join('; ');
+      wings.push({
+        name,
+        fileId: r.drive_file_id || ids.get(name.toUpperCase()) || null,
+        cam: /^(?:CAM\d{5,7}|M\d{4,5})$/i.test(r.cam ?? '') ? r.cam.toUpperCase() : null,
+        suffix: r.suffix || null,
+        side: lateral ? null : r.side || null,
+        pDorsal: num(r.p_dorsal),
+        pForewings: num(r.p_dorsal_forewings),
+        pHindwings: num(r.p_dorsal_hindwings),
+        wings: num(r.n_wings),
+        ...(turn && UPRIGHT_BY[turn] ? { turn, degrees: UPRIGHT_BY[turn] } : {}),
+        ...(pairs.has(name.toUpperCase()) ? { pair: pairs.get(name.toUpperCase()) } : {}),
+        ...(reasons ? { reasons } : {}),
+        ...(camReasons ? { camReasons } : {}),
+        review: r.review === 'yes',
+        ...(r.folder_path ? { folder: r.folder_path } : {}),
+        source,
+      });
+    }
+  }
+  return { wings, wingSources: sources };
 }
 
 /** Writes a bundle; rows of an earlier import of the same kind are replaced. */
@@ -295,7 +363,7 @@ export function importBundle(db, bundle) {
     if (bundle.predictions) {
       db.exec('DELETE FROM photo_predictions');
       const insert = db.prepare(
-        'INSERT OR REPLACE INTO photo_predictions(cam,species_json,genus_json,subspecies_json,sex,sex_conf,sex_supported,sex_species,source,imported_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
+        'INSERT OR REPLACE INTO photo_predictions(cam,species_json,genus_json,subspecies_json,sex,sex_conf,sex_supported,sex_species,source,imported_at,andes) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
       );
       for (const p of bundle.predictions)
         insert.run(
@@ -309,8 +377,37 @@ export function importBundle(db, bundle) {
           p.sexSpecies ?? null,
           bundle.gallery ?? null,
           at,
+          p.andes ?? null,
         );
       counts.predictions = bundle.predictions.length;
+    }
+    if (bundle.wings) {
+      db.exec('DELETE FROM photo_wing_sides');
+      const insert = db.prepare(
+        'INSERT INTO photo_wing_sides(name,file_id,cam,suffix,side,p_dorsal,p_forewings,p_hindwings,wings,turn,degrees,pair,reasons,cam_reasons,review,folder,source,imported_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      );
+      for (const w of bundle.wings)
+        insert.run(
+          w.name,
+          w.fileId ?? null,
+          w.cam ?? null,
+          w.suffix ?? null,
+          w.side ?? null,
+          w.pDorsal ?? null,
+          w.pForewings ?? null,
+          w.pHindwings ?? null,
+          w.wings ?? null,
+          w.turn ?? null,
+          w.degrees ?? null,
+          w.pair ?? null,
+          w.reasons ?? null,
+          w.camReasons ?? null,
+          w.review ? 1 : 0,
+          w.folder ?? null,
+          w.source ?? null,
+          at,
+        );
+      counts.wings = bundle.wings.length;
     }
     db.exec('COMMIT');
   } catch (e) {

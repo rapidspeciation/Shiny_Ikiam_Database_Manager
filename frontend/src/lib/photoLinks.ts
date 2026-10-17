@@ -5,7 +5,9 @@ import { t, tn } from './i18n'
 
 /** What a new photo is flagged for (server/photo-links.mjs checkPhotos). */
 export const CHECK_KINDS = ['rename', 'unknownId', 'unnamed', 'outOfOrder', 'otherFolder', 'unpaired', 'beforeCollection', 'otherCountry'] as const
-export type CheckKind = (typeof CHECK_KINDS)[number]
+/** What the wing models read on a photo of the folders read, listed before or new (server/photo-links.mjs). */
+export const WING_KINDS = ['wingSide', 'wingTurned'] as const
+export type CheckKind = (typeof CHECK_KINDS)[number] | (typeof WING_KINDS)[number]
 
 export interface PhotoFlag {
   kind: CheckKind
@@ -26,6 +28,12 @@ export interface PhotoFlag {
   /** otherCountry: the butterfly's country, and its folder's. */
   country?: string
   folder?: string
+  /** wingSide: the side its wings show; `pair`, the verdict on the CAM's two photos ("suffix swapped"…). */
+  side?: 'dorsal' | 'ventral'
+  pair?: string
+  /** wingTurned: how it is turned, and the clockwise turn that puts it upright. */
+  turn?: string
+  degrees?: number
 }
 export interface PhotoExample extends Omit<PhotoFlag, 'kind'> {
   name: string
@@ -37,7 +45,8 @@ export interface PhotoCheck {
   count: number
   examples: PhotoExample[]
 }
-export type PhotoChecks = { photos: number; linked: number; butterflies: number; otherViews: number } & Record<CheckKind, PhotoCheck>
+export type PhotoChecks = { photos: number; linked: number; butterflies: number; otherViews: number } & Record<(typeof CHECK_KINDS)[number], PhotoCheck>
+export type WingChecks = Record<(typeof WING_KINDS)[number], PhotoCheck>
 
 export type PhotoChange = 'new' | 'folder' | 'rename' | 'relink' | 'remove' | 'move' | 'details' | 'duplicate'
 /** A row the reading would write (GET chat/proposals/<id>/photo-links/rows). */
@@ -89,6 +98,8 @@ export interface PhotoSync {
     removed: { row: number; path: string }[]
   }
   checks: PhotoChecks | null
+  /** The wing models' findings on the photos of the folders read. */
+  wings?: WingChecks | null
   sameName: { copies: number; different: number; examples: { name: string; in: string; listed: string | null }[] }
   /** Photos the sheet listed twice: rows emptied (the same file, a copy), and names of two different photos. */
   listedTwice?: {
@@ -117,6 +128,8 @@ export const checkLabel = (kind: CheckKind): string =>
     unpaired: t('Falta la otra vista'),
     beforeCollection: t('Tomada antes de la fecha de la mariposa'),
     otherCountry: t('Mariposa de otro país que su carpeta'),
+    wingSide: t('Las alas muestran el otro lado que la d o la v del nombre'),
+    wingTurned: t('Las alas dicen que la foto está girada'),
   })[kind]
 
 /** What a flag says about its photo, in a few words. */
@@ -140,6 +153,12 @@ export function flagText(flag: PhotoFlag | (PhotoExample & { kind: CheckKind }))
       return tn(flag.days ?? 0, 'tomada {n} día antes de su fecha ({date})', 'tomada {n} días antes de su fecha ({date})', { date: flag.date ?? '' })
     case 'otherCountry':
       return t('es de {country}; su carpeta, de {folder}', { country: flag.country ?? '', folder: flag.folder ?? '' })
+    case 'wingSide': {
+      const side = flag.side === 'dorsal' ? t('muestra la dorsal') : t('muestra la ventral')
+      return flag.pair === 'suffix swapped' ? `${side} (${t('d y v al revés')})` : flag.pair === 'both photos same side' ? `${side} (${t('las dos fotos del mismo lado')})` : side
+    }
+    case 'wingTurned':
+      return t('girarla {degrees}° a la derecha', { degrees: flag.degrees ?? '' })
   }
 }
 
@@ -156,10 +175,11 @@ export const changeLabel = (change: PhotoChange): string =>
   })[change]
 
 /** The checks that found something, the most frequent first. */
-export function foundChecks(checks: PhotoChecks | null): { kind: CheckKind; count: number; examples: PhotoExample[] }[] {
+export function foundChecks(checks: PhotoChecks | WingChecks | null | undefined): { kind: CheckKind; count: number; examples: PhotoExample[] }[] {
   if (!checks) return []
-  return CHECK_KINDS.map(kind => ({ kind, count: checks[kind]?.count ?? 0, examples: checks[kind]?.examples ?? [] }))
-    .filter(c => c.count > 0)
+  const c = checks as Partial<Record<CheckKind, PhotoCheck>>
+  return [...CHECK_KINDS, ...WING_KINDS].map(kind => ({ kind, count: c[kind]?.count ?? 0, examples: c[kind]?.examples ?? [] }))
+    .filter(found => found.count > 0)
     .sort((a, b) => b.count - a.count)
 }
 

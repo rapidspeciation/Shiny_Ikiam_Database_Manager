@@ -1,0 +1,6 @@
+cam,photo,suffix,side,p_dorsal,p_dorsal_forewings,p_dorsal_hindwings,n_wings,orientation,p_orientation,max_shape_anomaly,photo_reasons,cam_reasons,format,review
+CAM000105,CAM000105/CAM000105d__Genus_sp.jpg,d,ventral,0.0123,0.01,0.02,4,upright,1.0,2.1,side-disagrees-with-suffix(p=0.01),suffix-swapped,detached wings,yes
+CAM000105,CAM000105/CAM000105v__Genus_sp.jpg,v,dorsal,0.9911,0.99,0.99,4,upright,1.0,1.5,side-disagrees-with-suffix(p=0.99),suffix-swapped,detached wings,yes
+CAM000107,CAM000107/CAM000107d__Genus_sp.jpg,d,dorsal,0.998,0.99,0.99,4,upside down,1.0,1.0,orientation:upside down(p=1.00); out-of-capture-sequence(neighbours~CAM000300),,detached wings,yes
+CAM000107,CAM000107/CAM000107v__Genus_sp.jpg,v,ventral,0.004,0.01,0.01,3,upright,1.0,3.0,wings=3(absent:hindwing_left),,detached wings,yes
+CAM000108,CAM000108/CAM000108v1__Genus_sp.jpg,v,dorsal,0.97,0.97,0.97,1,upside down,0.6,0.0,,,whole-specimen lateral (v1/v2): not checked,no

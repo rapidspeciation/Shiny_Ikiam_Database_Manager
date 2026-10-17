@@ -22,8 +22,22 @@ export function initPhotoTables(db) {
     CREATE TABLE IF NOT EXISTS photo_wing_boxes(name TEXT PRIMARY KEY, box_json TEXT NOT NULL, conf REAL);
     CREATE TABLE IF NOT EXISTS photo_predictions(
       cam TEXT PRIMARY KEY, species_json TEXT, genus_json TEXT, subspecies_json TEXT, sex TEXT, sex_conf REAL,
-      sex_supported INTEGER, sex_species TEXT, source TEXT, imported_at TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS review_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);`);
+      sex_supported INTEGER, sex_species TEXT, source TEXT, imported_at TEXT NOT NULL, andes TEXT);
+    CREATE TABLE IF NOT EXISTS review_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS photo_wing_sides(
+      id INTEGER PRIMARY KEY, name TEXT NOT NULL, file_id TEXT, cam TEXT, suffix TEXT, side TEXT, p_dorsal REAL,
+      p_forewings REAL, p_hindwings REAL, wings INTEGER, turn TEXT, degrees INTEGER, pair TEXT, reasons TEXT,
+      cam_reasons TEXT, review INTEGER, folder TEXT, source TEXT, imported_at TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS photo_wing_sides_cam ON photo_wing_sides(cam);
+    CREATE INDEX IF NOT EXISTS photo_wing_sides_file ON photo_wing_sides(file_id);`);
+  // The side of the Andes the gallery's prediction assumed, added after the first imports: by the app (or an
+  // import); a worker's connection may not alter tables, and reads the rows without it until then.
+  if (!db.prepare('PRAGMA table_info(photo_predictions)').all().some(c => c.name === 'andes'))
+    try {
+      db.exec('ALTER TABLE photo_predictions ADD COLUMN andes TEXT');
+    } catch {
+      // a reader: the column comes with the app's next start
+    }
   ready.add(db);
 }
 
@@ -39,12 +53,12 @@ export function bumpReviewRevision(db) {
   ).run(new Date().toISOString());
 }
 
-/** "CAM070046d.JPG", "CAM070046v (2).jpg", "CAM074081v2" → { cam, view, stem }; null for other photos. */
+/** "CAM070046d.JPG", "CAM070046v (2).jpg", "CAM074081v2", "M6681d2" (the M series of Collection_data) → { cam, view, stem }; null for other photos. */
 export function photoName(name) {
   const stem = String(name ?? '')
     .trim()
     .replace(/\.(jpe?g|heic|png|jfif|tiff?)$/i, '');
-  const m = /^(CAM\d{5,7})\s*[_-]?\s*([dv])?/i.exec(stem);
+  const m = /^(CAM\d{5,7}|M\d{4,5}(?=[\s_-]*[dv]?\d*(?:\s*\(\d+\))?$))\s*[_-]?\s*([dv])?/i.exec(stem);
   if (!m) return null;
   const view = m[2] ? (m[2].toLowerCase() === 'd' ? 'dorsal' : 'ventral') : 'other';
   return { cam: m[1].toUpperCase(), view, stem };
@@ -176,12 +190,83 @@ export function reviewData(store) {
           sex: p.sex
             ? { sex: p.sex, confidence: p.sex_conf, supported: !!p.sex_supported, species: p.sex_species }
             : null,
+          ...(p.andes ? { andes: p.andes } : {}),
         },
       ]),
   );
-  const out = { stamp, readings, readingsByCam, flags, boxes, predictions };
+  const out = { stamp, readings, readingsByCam, flags, boxes, predictions, wings: wingSides(store) };
   dataCache.set(store, out);
   return out;
+}
+
+const wingCache = new WeakMap();
+/** The wing models' reading of the photos alone (a Photo_links reading needs only these), kept until an import. */
+export function wingSides(store) {
+  const stamp = reviewRevision(store.db);
+  const hit = wingCache.get(store);
+  if (hit?.stamp === stamp) return hit.index;
+  const index = wingIndex(store.db);
+  wingCache.set(store, { stamp, index });
+  return index;
+}
+
+/**
+ * The wing models' reading of each photo (photo_wing_sides, scripts/import-wing-sides.mjs): which
+ * side its wings show, how sure, whether the photo is turned, and what the pair of a CAM's photos
+ * says. { byCam: Map CAM → rows, byFile: Map Drive ID → row, byName: Map NAME → rows }.
+ */
+function wingIndex(db) {
+  const byCam = new Map();
+  const byFile = new Map();
+  const byName = new Map();
+  for (const r of db.prepare('SELECT * FROM photo_wing_sides ORDER BY name').all()) {
+    const row = {
+      name: r.name,
+      fileId: r.file_id,
+      cam: r.cam,
+      suffix: r.suffix,
+      side: r.side,
+      pDorsal: r.p_dorsal,
+      pForewings: r.p_forewings,
+      pHindwings: r.p_hindwings,
+      wings: r.wings,
+      turn: r.turn,
+      degrees: r.degrees,
+      pair: r.pair,
+      reasons: r.reasons,
+      camReasons: r.cam_reasons,
+      review: !!r.review,
+      folder: r.folder,
+      source: r.source,
+    };
+    if (row.cam) (byCam.get(row.cam) ?? byCam.set(row.cam, []).get(row.cam)).push(row);
+    if (row.fileId) byFile.set(row.fileId, row);
+    const key = row.name.toUpperCase();
+    (byName.get(key) ?? byName.set(key, []).get(key)).push(row);
+  }
+  return { byCam, byFile, byName };
+}
+
+/** A photo's view by the end of its name: "CAM070046d2" → 'd', "CAM070046v" → 'v', else null. */
+export const nameView = name => /^[\w-]*?\d[_\s-]?([dv])\d*(?:\s*\(\d+\))?$/i.exec(String(name ?? '').replace(/\.[a-z0-9]+$/i, '').trim())?.[1]?.toLowerCase() ?? null;
+
+/**
+ * What the wings of a photo say against its name now (`name`, e.g. after a rename): `side` when its
+ * wings show the other side than its d/v (decided: P(dorsal) ≥ 0.95 or ≤ 0.05), `turn` when the photo
+ * is turned; null when neither. The pair's verdict (`pair`: "suffix swapped", "both photos same side")
+ * goes with it.
+ */
+export function wingProblem(row, name = row?.name) {
+  if (!row) return null;
+  const view = nameView(name);
+  const says = row.side === 'dorsal' || row.side === 'ventral' ? row.side[0] : null;
+  const side = view && says && view !== says;
+  if (!side && !row.turn) return null;
+  return {
+    ...(side ? { side: row.side, pDorsal: row.pDorsal } : {}),
+    ...(row.turn ? { turn: row.turn, degrees: row.degrees } : {}),
+    ...(row.pair ? { pair: row.pair } : {}),
+  };
 }
 
 /** The envelope of a CAM as a crop of one photo: the photo named first, else the clearest reading. */

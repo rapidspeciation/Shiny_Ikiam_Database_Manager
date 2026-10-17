@@ -397,3 +397,16 @@ later), and says when Photo_links has the photo but the row does not find it
   same way.
 - Photos taken again: the new files take the names, the old ones go to a
   `_temp` folder or the bin, then `sync_photo_links`.
+
+## Curating the archive
+
+`photo_facts` puts side by side what the archive's photos say about a
+butterfly (its envelope as read by OCR, the Wings Gallery's prediction, the
+side the wings show and whether the photo is turned) and what the workbook
+says, with the species, sex and CAM_ID changes its notes record. It helps
+when a CAM looks wrong (the envelope shows another ID), a species or sex
+looks off, or the person wants to go through the archive's open cases:
+without CAMs it lists the disagreements, the surest first. The envelope's
+fields are readings with their confidence: the photo itself settles a case
+(`show_photos`, or the link of the file). An envelope whose top strip only
+was photographed has its CAM but no species: nothing to compare there.

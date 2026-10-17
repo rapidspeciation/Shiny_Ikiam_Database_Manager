@@ -131,3 +131,17 @@ describe('driveFileOf', () => {
     expect(driveFileOf(undefined)).toBe('')
   })
 })
+
+describe('what the wings show on the photos read', () => {
+  it('lists the wing checks apart, each example in a few words', () => {
+    const wings = {
+      wingSide: { count: 2, examples: [{ name: 'CAM072274d.JPG', in: 'PERU_2024', side: 'ventral' as const, pair: 'suffix swapped' }] },
+      wingTurned: { count: 1, examples: [{ name: 'CAM076802v.JPG', in: 'PERU_2024', turn: 'upside down', degrees: 180 }] },
+    }
+    expect(foundChecks(wings).map(c => [c.kind, c.count])).toEqual([['wingSide', 2], ['wingTurned', 1]])
+    expect(foundChecks(null)).toEqual([])
+    expect(flagText({ ...wings.wingSide.examples[0], kind: 'wingSide' })).toBe('muestra la ventral (d y v al revés)')
+    expect(flagText({ kind: 'wingSide', side: 'dorsal', pair: 'both photos same side' })).toBe('muestra la dorsal (las dos fotos del mismo lado)')
+    expect(flagText({ ...wings.wingTurned.examples[0], kind: 'wingTurned' })).toBe('girarla 180° a la derecha')
+  })
+})

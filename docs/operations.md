@@ -75,6 +75,20 @@ ssh claudeclaw 'cd ~/ithomiini/current && export DATABASE_PATH=/home/ubuntu/itho
 ssh claudeclaw 'systemctl --user start ithomiini'
 ```
 
+## Photo archive curation (envelopes, gallery, wings)
+
+The envelope readings, the Wings Gallery's predictions and the wing models' sides and turns are read on the PC that has them, into two small bundles, and loaded into the app's database while it runs (each import replaces its earlier one). `photo_facts`, the Revisión tab and Photo_links readings use them.
+
+```sh
+# on the PC (C: the curation folder, e.g. ~/.local/share/sanger-envelope-sam3-20260924/ocr-next/curation-20261017-combined;
+# M: ithomiini_maps on branch dorsal-ventral-wings)
+node scripts/import-envelope-curation.mjs --bundle envelope-bundle.json.gz "$C" "$C/manifest-combined.csv"
+node scripts/import-wing-sides.mjs --bundle wing-sides.json.gz --manifest "$C/manifest-combined.csv" "$M/models/dorsal_ventral/eval" "$M/models/dorsal_ventral/eval/new_photos_20261015"
+scp envelope-bundle.json.gz wing-sides.json.gz claudeclaw:/home/ubuntu/ithomiini/shared/
+# on the server, after the release that has these scripts is deployed
+ssh claudeclaw 'cd ~/ithomiini/current && export DATABASE_PATH=/home/ubuntu/ithomiini/shared/database.sqlite && node=$(sed -n "s/^ExecStart=\([^ ]*\/node\) .*/\1/p" deploy/ithomiini.service) && "$node" scripts/import-envelope-curation.mjs /home/ubuntu/ithomiini/shared/envelope-bundle.json.gz && "$node" scripts/import-wing-sides.mjs /home/ubuntu/ithomiini/shared/wing-sides.json.gz'
+```
+
 ## Data and AI boundaries
 
 Google access uses the user's approved OAuth grant. The credential file contains `client_id`, `client_secret`, and `refresh_token`, with mode 600. If Google revokes the grant, renew consent; do not recover tokens from chat history.

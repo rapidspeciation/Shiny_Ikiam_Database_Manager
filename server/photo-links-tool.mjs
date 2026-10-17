@@ -40,6 +40,7 @@ export const PHOTO_TOOLS = [
         '  - `sameName`: files not listed because a listed file already has their name: `copies` of that photo, or `different` photos (one of the two is misnamed, or the ID was used twice).',
         "  - `listedTwice`: photos the sheet already lists twice (Photo_dorsal and Photo_ventral take the first row of a name; the Wings Gallery and the maps show every row). The rows of the same file, and of copies (the same size and moment), are emptied, the one in the folder of the butterfly's country kept; the copies' files can then go with organize_photos ({check: \"copies\"}). `differentPhotosOfOneName`: two different photos under one name, each with its row, folder and link, left as they are: give the person the links to compare the envelopes; the misnamed one is then renamed with organize_photos (or the ID was used twice: skill `data-rules`).",
         '  - `notListed`: folders with specimen photos beside the listed ones. `leftOut`: files named …_todelete and folders named …_temp, which are never listed; `toDeleteByFolder`: the …_todelete files of each folder (count, kB) and `noCopy`, some with no file of the plain name beside them (not copied: check before deleting).',
+        "  - `wings`: photos of the folders read (listed before or new) whose wings, as the wing models read them (the archive and the Drive photos of 15 Oct 2026), show the other side than the d or v of their name (`otherSide`: `side` is what they show; `pair` the verdict on the CAM's two photos, e.g. \"suffix swapped\" when the d and the v are the wrong way round, \"both photos same side\"), or that are `turned` (`degrees` clockwise puts the photo upright). photo_facts gives a CAM's whole reading.",
         '  - `turned`: renamed photos whose orientation tag differs from the rest of their folder taken that day (one batch, one turn): each with the `degrees` clockwise that would match the others. Candidates, not certainties: a photo re-saved already turned shows right with another tag, so look at them (photo_files_look, 800) and rotate with organize_photos only those that show turned.',
         '- `only`: just these folders (a `byFolder` name, or the folder above them), which is quicker: `["Guyana_2025"]`. `add`: folders to start listing, by their `notListed` name or a Drive link.',
         "- `confirmed: true` with that answer's `scan`, only after the person's latest message approves it: writes it, some hundred rows per save. Folders of `byFolder` to leave for later: `skip` (their new rows and their changed ones), `skipNew` (only their new rows), `skipChanges` (only their changed rows). A long one answers `writing`: call again with the same arguments to follow it.",
@@ -178,6 +179,8 @@ export function cardOf(scan, { add = [], only = [] } = {}) {
     notListed: s.notListed.map(({ id: _id, ...rest }) => rest),
     leftOut: { toDelete: s.leftOut, toDeleteByFolder: s.toDelete, temp: s.setAside },
     turned: s.turned.slice(0, 500),
+    // The wing models' findings on the photos of the folders read (server/photo-links.mjs): counts and examples.
+    wings: s.wings ?? null,
     untouched: { outside: s.outside + s.elsewhere, unchecked: s.unchecked, repeated: s.repeated, unread: s.unread },
     notFound: scan.notFound,
   };
@@ -219,6 +222,12 @@ function brief(id, card, shown = {}) {
     notListed: card.notListed,
     leftOut: filled({ toDeleteFiles: card.leftOut.toDelete, toDeleteByFolder: card.leftOut.toDeleteByFolder, tempFolders: card.leftOut.temp }),
     turned: card.turned?.length ? { count: card.turned.length, files: card.turned.slice(0, 40).map(({ url: _url, ...f }) => f) } : null,
+    wings: card.wings
+      ? filled({
+          otherSide: card.wings.wingSide.count ? { count: card.wings.wingSide.count, examples: card.wings.wingSide.examples.map(({ url: _url, ...e }) => e) } : null,
+          turned: card.wings.wingTurned.count ? { count: card.wings.wingTurned.count, examples: card.wings.wingTurned.examples.map(({ url: _url, ...e }) => e) } : null,
+        })
+      : null,
     // Rows left as they are.
     untouched: filled({
       fileNowOutsideTheListedFolders: card.untouched.outside,
