@@ -59,7 +59,12 @@ field envelopes): read the skill **data-rules** first.
 It finds each row (look-alike IDs 0/O, 1/I, 5/S, row order), completes list
 values, keeps the SPECIES formula unless what emerged differs or it gives
 nothing for the clutch (then the page's species is written), writes notes as
-`d/m/yy INI: text` after the existing note, turns owner codes, generations
+`d/m/yy INI: text` after the existing note (only the parts the row's note does
+not say yet, in any wording: a note it already says is left out and counted in
+`notesAlreadyThere`; one that says the note of the row above or below is left
+out with a warning, as probably read on the neighbouring line, for the person
+to check), keeps the clutch's subspecies as the stock where the page has a
+dash, turns owner codes, generations
 (`(F1)`), dashes and note words (`ethanol`, `wc`, a CAM…) into their columns,
 fills a death's template, and flags as doubtful the clutches, CAMs and tubes
 that break the run around them. Implied values never replace a value the row
@@ -84,10 +89,12 @@ has every line and cell.
   `ambiguous` and `duplicate` lines go in your summary, with `rowError`,
   `differs` and `warnings` (e.g. a clutch's adults unlike the butterflies
   typed in Insectary_data).
-- `overlaps` = the same rows in another pending proposal (`get_proposal`
-  reads it, a teammate's too). If it is your own copy of the same page, pass
-  its id as `replaceProposalId` next time, or discard the older copy
-  (`update_proposal` `discard`).
+- `overlaps` = the same rows in another pending proposal, each with how many
+  of its `cells` the sheet already has (`alreadyInSheet`). `superseded`: a
+  copy of the page applied later has all its rows; `closed` when it was
+  discarded for that, otherwise `why` not (tell the person). If it is your
+  own copy of the same page, pass its id as `replaceProposalId` next time, or
+  discard the older copy (`update_proposal` `discard`).
 - A correction that looks like a typing slip (a digit missing, two swapped,
   another prefix) was often repeated in the rows typed with it: look at the
   same column in the rows around the page. The tool adds those it finds

@@ -656,7 +656,8 @@ export function createNotebookMatcher({ store, db, newIds, draftChanges, initial
         const record = store.getRecord(line.recordId);
         if (!record || record.missing) continue;
         rowsShown.add(record.id);
-        const why = line.message || (line.changes ? 'nada seguro que escribir' : 'ya está en la hoja');
+        // A note left out as read on the neighbouring line says so here, for the person to check.
+        const why = [line.message || (line.changes ? 'nada seguro que escribir' : 'ya está en la hoja'), ...(line.shiftedNotes ?? [])].join(' · ');
         changes.push({
           context: true,
           recordId: record.id,
@@ -886,6 +887,9 @@ export function matchSummary({ review, changes, ignored, wildWithoutCollection =
       problems: c.errors,
       newRows: c.created,
       same: c.same,
+      // Page notes the row's note already says (in other words): left out, counted in `same` too.
+      ...(c.notesAlreadyThere ? { notesAlreadyThere: c.notesAlreadyThere } : {}),
+      ...(c.notesShifted ? { notesShifted: c.notesShifted } : {}),
       ...(asInSheet ? { linesAsInSheet: asInSheet } : {}),
       ...(onlyFilled ? { linesOnlyFilled: onlyFilled } : {}),
     },

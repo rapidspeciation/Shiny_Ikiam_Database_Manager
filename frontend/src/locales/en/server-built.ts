@@ -270,6 +270,8 @@ export default {
   'Larva o huevo encontrado muerto y preservado': 'Egg or larva found dead and preserved',
   'Huevo o larva preservado: lo que el equipo escribe': 'Preserved egg or larva: what the team writes',
   'El clutch {clutch} es {species}: el stock es su subespecie': 'Clutch {clutch} is {species}: the stock is its subspecies',
+  'Lo demás ya está en la nota de la fila: «{said}»': "The rest is already in the row's note: «{said}»",
+  'La nota de la fila ya dice casi lo mismo; no tiene {missing}': "The row's note already says almost the same, without {missing}",
   'El clutch {clutch} es {species}: sin stock (NA)': 'Clutch {clutch} is {species}: no stock (NA)',
   'Capturada en el campo: sin clutch (NA)': 'Wild-caught: no clutch (NA)',
   'Capturada en el campo: sin stock (NA)': 'Wild-caught: no stock (NA)',

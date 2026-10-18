@@ -559,6 +559,168 @@ export function sameValue(field, sheet, notebook) {
 }
 
 // ---------------------------------------------------------------------------
+// A note said again. The team photographs a Posturas or Emergidos page again as
+// it fills, and the reader writes its notes in English, in its own words
+// ("eggs looks dry / all of them are died (24-9)" comes back as "Eggs look dry;
+// all of them died (24/9)"): what the row's note already says is not added again.
+
+/** The date and initials the team puts before each note ("29/9/26 FCH: "). */
+const NOTE_PREFIX = /\b\d{1,2}\/\d{1,2}\/\d{2}\s+[a-z]{2,4}:\s*/g;
+const MONTH_NUMBER = { jan: 1, ene: 1, feb: 2, mar: 3, apr: 4, abr: 4, may: 5, jun: 6, jul: 7, aug: 8, ago: 8, sep: 9, oct: 10, nov: 11, dec: 12, dic: 12 };
+/** Words that say nothing a note's other words do not (the parents' ♀/♂ go with their IDs). */
+const NOTE_STOP = new Set(
+  'the an and or of in on at to is are was were be been it its this that these those with as for from by them they their we our us have has had do did so but then when while which who there here also de del la el los las en con se que por para al es son su sus lo le les parents parent padres female male hembra macho'.split(' '),
+);
+/** The same word in English and Spanish, as the stem it is compared by. */
+const NOTE_SAME = {
+  ...Object.fromEntries('died dies die dying death muerto muerta muertos muertas murio murieron'.split(' ').map(w => [w, 'dead'])),
+  ...Object.fromEntries('larvae larvas'.split(' ').map(w => [w, 'larva'])),
+  ...Object.fromEntries('pupae pupas'.split(' ').map(w => [w, 'pupa'])),
+  ...Object.fromEntries('huevo huevos'.split(' ').map(w => [w, 'egg'])),
+  ...Object.fromEntries('seco seca secos secas'.split(' ').map(w => [w, 'dry'])),
+  ...Object.fromEntries('fungi hongo hongos'.split(' ').map(w => [w, 'fungus'])),
+  ...Object.fromEntries('desaparecido desaparecida desaparecidos desaparecidas desaparecio'.split(' ').map(w => [w, 'disappear'])),
+  ...Object.fromEntries('preservado preservada preservados preservadas preservation'.split(' ').map(w => [w, 'preserv'])),
+  ...Object.fromEntries('planta plantas'.split(' ').map(w => [w, 'plant'])),
+  ...Object.fromEntries('encontrado encontrada encontrados encontradas'.split(' ').map(w => [w, 'found'])),
+};
+const NUMBER_WORD = { one: 1, two: 2, three: 3, four: 4, five: 5, uno: 1, una: 1, un: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5 };
+const stemOf = word => {
+  if (NOTE_SAME[word]) return NOTE_SAME[word];
+  let s = word;
+  if (s.length > 5 && s.endsWith('ing')) s = s.slice(0, -3);
+  else if (s.length > 4 && s.endsWith('ed')) s = s.slice(0, -2);
+  else if (s.length > 4 && /(?:ch|sh|x|ss)es$/.test(s)) s = s.slice(0, -2);
+  else if (s.length > 4 && s.endsWith('ies')) s = `${s.slice(0, -3)}y`;
+  else if (s.length > 3 && s.endsWith('s') && !/(?:ss|us)$/.test(s)) s = s.slice(0, -1);
+  return NOTE_SAME[s] ?? s;
+};
+// In this order at each place: a date with its month's name (10 Oct), a day/month (24/9, 24-9, 28/9/26),
+// an ordinal (1st, 3rd: a stage), an ID (V0A, 5VB, A8E.1, a CAM, a tube), a number, a word.
+const NOTE_TOKEN = new RegExp(
+  [
+    String.raw`\b(\d{1,2})\s*(?:de\s+)?(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|ene|abr|ago|dic)[a-z]*`,
+    String.raw`\b(\d{1,2})\s*[/.-]\s*(\d{1,2})(?:\s*[/.-]\s*\d{2,4})?(?!\d)`,
+    String.raw`\b(\d+)\s*(?:st|nd|rd|th|er|ro|do|to|°|º)(?![a-z])`,
+    String.raw`\b(cam\s*\d{5,7}|[a-z]{2}\d{7,9}|[a-z]\d[a-z](?:\.\d+)?|\d[a-z]{2}(?:\.\d+)?)(?![a-z\d])`,
+    String.raw`\b(\d+)`,
+    String.raw`([a-z]+)`,
+  ].join('|'),
+  'g',
+);
+/**
+ * The tokens of a note, without the team's date-and-initials prefixes: { kind, key, text } with
+ * kind d (a day/month), o (an ordinal), id, n (a number) or w (a word, by its stem). A parent's ID
+ * written with O for 0 ("HOB♀") is the ID.
+ */
+function noteTokens(note) {
+  const s = String(note ?? '')
+    .replace(/\b([A-Z])([OIL])([A-Z])(?=\s*[♀♂])/g, (_, a, b, c) => `${a}${{ O: '0', I: '1', L: '1' }[b]}${c}`)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(NOTE_PREFIX, ' ')
+    .replace(/n't\b/g, ' not')
+    .replace(/'s\b/g, '')
+    .replace(/[♀♂]/g, ' ');
+  const out = [];
+  for (const m of s.matchAll(NOTE_TOKEN)) {
+    const [text, nameDay, month, day, monthNumber, ordinal, id, number, word] = m;
+    if (nameDay) out.push({ kind: 'd', key: `${Number(nameDay)}/${MONTH_NUMBER[month]}`, text });
+    else if (day) {
+      const [d, mo] = [Number(day), Number(monthNumber)];
+      if (d >= 1 && d <= 31 && mo >= 1 && mo <= 12) out.push({ kind: 'd', key: `${d}/${mo}`, text });
+      else out.push({ kind: 'n', key: String(d), text: day }, { kind: 'n', key: String(mo), text: monthNumber });
+    } else if (ordinal) out.push({ kind: 'o', key: String(Number(ordinal)), text });
+    else if (id) out.push({ kind: 'id', key: id.replace(/\s+/g, ''), text: id.toUpperCase() });
+    else if (number) out.push({ kind: 'n', key: String(Number(number)), text });
+    else if (word && NUMBER_WORD[word]) out.push({ kind: 'n', key: String(NUMBER_WORD[word]), text });
+    else if (word && word.length > 1 && !NOTE_STOP.has(word)) out.push({ kind: 'w', key: stemOf(word), text });
+  }
+  return out;
+}
+/** What a note says, to look tokens up in: an "a"/"an" counts as the number 1 ("lost a larva" = "lost 1 larva"). */
+function noteIndex(note) {
+  const tokens = noteTokens(note);
+  const keys = new Set(tokens.map(t => `${t.kind}:${t.key}`));
+  if (/\b(?:a|an)\b/i.test(String(note ?? '').replace(NOTE_PREFIX, ' '))) keys.add('n:1');
+  return { keys, words: [...new Set(tokens.filter(t => t.kind === 'w').map(t => t.key))], ids: [...new Set(tokens.filter(t => t.kind === 'id').map(t => t.key))] };
+}
+/** IDs one look-alike character apart are the same ID misread (V6A for V0A, H7B for H1B). */
+const sameId = (a, b) => {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  const diff = [...a].map((ch, i) => [ch.toUpperCase(), b[i].toUpperCase()]).filter(([x, y]) => x !== y);
+  return diff.length === 1 && (LOOK_DIGITS.has(diff[0].join('')) || LOOK_DIGIT[diff[0][0]] === diff[0][1] || LOOK_DIGIT[diff[0][1]] === diff[0][0]);
+};
+/** Whether a note (its noteIndex) says a token: the same date, number or stage; an ID or a look-alike; a word or its abbreviation (disapp.). */
+function noteHas(index, token) {
+  if (index.keys.has(`${token.kind}:${token.key}`)) return true;
+  if (token.kind === 'id') return index.ids.some(id => sameId(id, token.key));
+  if (token.kind !== 'w') return false;
+  return index.words.some(w => {
+    const [short, long] = w.length < token.key.length ? [w, token.key] : [token.key, w];
+    return short.length >= 5 && long.startsWith(short);
+  });
+}
+/** A note's parts: its sentences, and what ";", "|", " / " or an arrow separate. */
+const noteClauses = note =>
+  String(note ?? '')
+    .split(/[;|\n]|\s\/\s|→|->|\.(?=\s|$)/)
+    .map(part => part.trim())
+    .filter(Boolean);
+/** Of a note's words, the share another note must say for the part to be said there already. */
+const WORDS_SAID = 0.75;
+
+/**
+ * What a page's note adds to the row's: each of its parts is already there when
+ * the row's note has every number, date, stage and ID of it (an ID misread by a
+ * look-alike character counts) and most of its words, in any wording or
+ * language; a part written twice on the page needs it twice in the row. Returns
+ * null when either note is empty, else { already (every part is there), fresh
+ * (the parts to add, as written), said (the parts left out), near (the numbers,
+ * dates or IDs that differ in parts whose words are all there: likely misread) }.
+ */
+export function noteNews(page, sheet) {
+  const index = noteIndex(sheet);
+  const parts = noteClauses(page)
+    .map(text => ({ text, tokens: noteTokens(text) }))
+    .filter(p => p.tokens.length);
+  if (!parts.length || !index.keys.size) return null;
+  const sheetParts = noteClauses(sheet).map(text => noteIndex(text));
+  const times = new Map();
+  const judged = parts.map(p => {
+    const keys = p.tokens.filter(t => t.kind !== 'w');
+    const words = [...new Map(p.tokens.filter(t => t.kind === 'w').map(t => [t.key, t])).values()];
+    const missing = keys.filter(t => !noteHas(index, t));
+    const wordsSaid = words.length ? words.filter(t => noteHas(index, t)).length / words.length : 1;
+    let there = !missing.length && wordsSaid >= WORDS_SAID;
+    // The same part twice on the page (two larvae dead on two days): the row's note says it as often.
+    const key = p.tokens.map(t => `${t.kind}:${t.key}`).join(' ');
+    times.set(key, (times.get(key) ?? 0) + 1);
+    if (there && times.get(key) > 1) there = sheetParts.filter(s => p.tokens.every(t => noteHas(s, t))).length >= times.get(key);
+    const near = !there && missing.length > 0 && missing.length <= 2 && words.length >= 2 && wordsSaid === 1;
+    return { text: p.text, there, near: near ? missing.map(t => t.text) : [] };
+  });
+  return {
+    already: judged.every(p => p.there),
+    fresh: judged.filter(p => !p.there).map(p => p.text),
+    said: judged.filter(p => p.there).map(p => p.text),
+    near: [...new Set(judged.flatMap(p => p.near))],
+  };
+}
+
+/** How much of a note another says (0–1): the share of its numbers, dates, IDs and words found there. */
+export function noteCoverage(page, sheet) {
+  const tokens = [...new Map(noteTokens(page).map(t => [`${t.kind}:${t.key}`, t])).values()];
+  if (!tokens.length || isNone(sheet)) return 0;
+  const index = noteIndex(sheet);
+  return tokens.filter(t => noteHas(index, t)).length / tokens.length;
+}
+/** The IDs a note names (parents, CAMs, tubes). */
+const noteIds = note => noteIndex(note).ids;
+
+// ---------------------------------------------------------------------------
 // The review: every notebook line against its sheet row.
 
 const DOUBT = 0.8;
@@ -1478,6 +1640,54 @@ function chooseRows(items) {
   for (const item of items) if (item.record && item.candidates.length === 1 && !item.candidates[0].exact) item.readAs = item.keyValues.join(' ');
 }
 
+/** A note this long (numbers, dates, IDs and words) tells its row apart; a shorter one ("1 larva dead") is said of many. */
+const NOTE_TELLS = 4;
+/**
+ * Page notes read on the neighbouring line: a line's note that says what the row
+ * of the line above or below has in its note, rather than its own row's (most of
+ * it there, or the parents' IDs it names there and not in its own row's note),
+ * while that line's own note on the page says something else (two batches of
+ * the same parents have the same note). `lines`: the review's lines with their
+ * rows. Returns { [line index]: { line, row, label, note } } of the neighbour.
+ */
+function noteShifts(kind, lines) {
+  const field = columnsOf(kind).find(f => NOTE_FIELD.test(f));
+  const out = {};
+  if (!field) return out;
+  const usable = lines.map((item, i) => (item.record && !item.line.crossed ? i : null)).filter(i => i !== null);
+  usable.forEach((i, k) => {
+    const item = lines[i];
+    const note = item.text[field];
+    if (field in item.edited || isNone(note)) return;
+    const own = item.record.values?.[field];
+    if (!isNone(own) && noteNews(note, own)?.already) return;
+    const ownCover = noteCoverage(note, own);
+    const ids = noteIds(note);
+    const long = new Set(noteTokens(note).map(t => `${t.kind}:${t.key}`)).size >= NOTE_TELLS;
+    let best = null;
+    for (const j of [usable[k - 1], usable[k + 1]]) {
+      const other = lines[j];
+      if (j === undefined || other.record.id === item.record.id) continue;
+      const theirs = other.record.values?.[field];
+      if (isNone(theirs)) continue;
+      const page = other.text[field];
+      const cover = noteCoverage(note, theirs);
+      const byCover = long && cover >= 0.6 && cover - ownCover >= 0.3 && noteCoverage(note, page) < 0.6;
+      const pageIds = isNone(page) ? [] : noteIds(page);
+      const ownIds = isNone(own) ? [] : noteIds(own);
+      const theirIds = noteIds(theirs);
+      const byIds =
+        ids.length > 0 &&
+        !isNone(own) &&
+        ids.every(id => theirIds.some(t => sameId(t, id)) && !ownIds.some(o => sameId(o, id)) && !pageIds.some(p => sameId(p, id)));
+      if ((byCover || byIds) && (!best || cover > best.cover)) best = { cover, j, theirs };
+    }
+    const neighbour = lines[best?.j];
+    if (best) out[i] = { line: neighbour.line.n, row: neighbour.record.row, label: neighbour.record.label ?? neighbour.keyValues.join(' '), note: best.theirs };
+  });
+  return out;
+}
+
 /**
  * Compares a transcribed page with the sheet.
  *
@@ -1648,6 +1858,8 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
       .sort((a, b) => (found ? Math.abs(a.row - found.at) - Math.abs(b.row - found.at) : a.row - b.row))
       .slice(0, 3);
   }
+
+  const shifted = noteShifts(kind, lines);
 
   // The same key on two lines of the page (as matched: 600 and 6OO are the same butterfly).
   const keyOf = item =>
@@ -1877,6 +2089,14 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
           confidence = Math.min(confidence, 0.5);
         }
       }
+      // A dash (or NA) where the stock goes, on a butterfly of a Mechanitis messenoides clutch: the page
+      // does not write the stock, which is the clutch's subspecies; a row that has one keeps it.
+      if (field === 'Stock_of_origin' && kind.sheet === 'Insectary_data' && !typed && inferred === null && value === 'NA' && isNone(text[field]) && !isNone(before)) {
+        const clutch = cells['CLUTCH NUMBER']?.value ?? record?.values?.['CLUTCH NUMBER'];
+        const species = isNone(clutch) ? null : lookup.speciesOfClutch?.(lookup.clutch?.(clutch) ?? clutch);
+        const sub = /^mechanitis messenoides ([a-z]+)$/.exec(textKey(species ?? ''))?.[1];
+        if (sub) value = textKey(before) === sub ? before : null;
+      }
       const alternatives = [
         ...(stock ? [stock.read] : []),
         ...extraAlternatives,
@@ -1951,6 +2171,23 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
       else if (/^Notes|^NOTES$/.test(field)) cell.status = 'fill';
       else cell.status = 'conflict';
       if (isKey && status === 'match') cell.status = 'same';
+      // A page note the row's note already says (in other words, in English) is not added again; its
+      // parts the row has are left out of what is added. One that says the note of the row above or
+      // below was probably read on the neighbouring line: it is not added, and the line says so.
+      if (NOTE_FIELD.test(field) && !typed && record && cell.status === 'fill' && typeof cell.value === 'string') {
+        const news = isNone(before) ? null : noteNews(cell.value, before);
+        if (news?.already) Object.assign(cell, { status: 'same', alreadyThere: true });
+        else if (shifted[i]) Object.assign(cell, { status: 'shifted', like: shifted[i] });
+        else if (news?.said.length) {
+          const left = msg('Lo demás ya está en la nota de la fila: «{said}»', { said: news.said.join('; ') });
+          Object.assign(cell, { value: news.fresh.join('; '), trimmed: true, message: left.text, hintMsg: left.msg });
+        }
+        // Its words all there, a number, date or ID not: most likely the same note misread.
+        if (news?.near.length && cell.status === 'fill' && !cell.doubt) {
+          const why = msg('La nota de la fila ya dice casi lo mismo; no tiene {missing}', { missing: news.near });
+          Object.assign(cell, { doubt: true, confidence: Math.min(cell.confidence, 0.5), reason: why.text, reasonMsg: why.msg });
+        }
+      }
       // A dash in a count where the sheet has 0 (or the new row's =0): the same nothing.
       const zero = !isNone(before) && Number(sumTotal(before) ?? before) === 0;
       if (['fill', 'conflict'].includes(cell.status) && cell.value === 'NA' && zero) cell.status = 'same';
@@ -2076,6 +2313,13 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
     // (the two notebooks are filled apart): a difference is said, never corrected.
     const warnings = [];
     if (unplaced[i]) warnings.push(`The reading says «${unplaced[i].join('», «')}» but no cell is marked doubtful: mark the cells it is about`);
+    const shiftedNotes = Object.entries(cells)
+      .filter(([, cell]) => cell.status === 'shifted')
+      .map(
+        ([field, cell]) =>
+          `${field} not added: it reads like the note of ${cell.like.label} (row ${cell.like.row}, line ${cell.like.line}: «${clip(cell.like.note, 90)}»), not this row's; probably read on the neighbouring line`,
+      );
+    warnings.push(...shiftedNotes);
     const adults = cells['NUMBER OF ADULTS']?.value ?? null;
     const counted = adults === null || adults === 'NA' ? null : (sumTotal(adults) ?? (Number.isFinite(Number(adults)) ? Number(adults) : null));
     const clutchHere = cells['CLUTCH NUMBER']?.value ?? record?.values?.['CLUTCH NUMBER'] ?? null;
@@ -2116,6 +2360,7 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
       picked: picked && changes > 0,
       ...(item.near?.length ? { near: item.near } : {}),
       ...(warnings.length ? { warnings } : {}),
+      ...(shiftedNotes.length ? { shiftedNotes } : {}),
     };
   });
 
@@ -2140,6 +2385,8 @@ export function buildReview({ transcription, edits = {}, picks = {}, year = null
       errors: count(c => c.status === 'error') + out.filter(l => ['missing', 'ambiguous', 'duplicate', 'nokey'].includes(l.status)).length,
       created: out.filter(l => l.status === 'new' && l.changes).length,
       same: count(c => c.status === 'same'),
+      notesAlreadyThere: count(c => c.alreadyThere),
+      notesShifted: count(c => c.status === 'shifted'),
     },
   };
 }

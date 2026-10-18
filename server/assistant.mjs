@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { createReports } from './reports.mjs';
-import { MAX_BATCH, TYPED_OVER_FORMULA, TYPED_WHERE_FORMULA_FAILS, renamesWithSuffix, sameAsFormula, uniqueIdIndex } from './batch.mjs';
+import { MAX_BATCH, TYPED_OVER_FORMULA, TYPED_WHERE_FORMULA_FAILS, cellHolds, renamesWithSuffix, sameAsFormula, uniqueIdIndex } from './batch.mjs';
 import { checkData, freshIssues } from './checks.mjs';
 import { agreedFixes, markApplied } from './review.mjs';
 import { CERTAINTIES, allSuggestions, suggestionPage } from './suggestions/index.mjs';
@@ -1587,6 +1587,77 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       }
       return { proposalId: id, by: people.get(p.owner_id), reason: p.reason, rows: [...labels].slice(0, 10), count: labels.size };
     });
+  }
+  /** The notebook a page's proposal was read from (match_notebook), or null for another proposal. */
+  function notebookOf(p) {
+    const page = parse(p.page_json ?? 'null');
+    if (KINDS[page?.kind]) return page.kind;
+    const label = /^Cuaderno (.+?) \(/.exec(p.reason ?? '')?.[1];
+    return Object.keys(KINDS).find(id => KINDS[id].label === label) ?? null;
+  }
+  /**
+   * A pending proposal that overlaps a notebook page just matched (match_notebook's `overlaps`):
+   * how many of the cells it would write the sheet already has (`alreadyInSheet` of `cells`), and
+   * whether it is `superseded`: a page of the same notebook applied after it was drafted has
+   * every row it would write among its lines (the page read again, maybe in another chat, and that
+   * copy reviewed and applied; `rowsWritten`: how many of them it wrote, the rest the person left
+   * as they were). Then it is discarded (`closed`) when it is the caller's, nobody worked on it in
+   * the table and none of its rows is written; otherwise said, with why not.
+   */
+  function overlapState(found, user) {
+    const p = db.prepare('SELECT * FROM ai_proposals WHERE id = ?').get(found.proposalId);
+    if (!p || p.status !== 'pending' || isTable(p) || isSync(p)) return found;
+    const changes = parse(p.changes_json) ?? [];
+    const writing = changes.filter(c => !c.context && !c.applied && Object.keys(c.values ?? {}).length);
+    let cells = 0;
+    let inSheet = 0;
+    for (const c of writing) {
+      const record = c.create ? null : currentRecord(store, c);
+      for (const [field, value] of Object.entries(c.values)) {
+        cells++;
+        const replacing = !!record?.formulas?.[field] && !!c.replaceFormula?.includes(field);
+        if (record && !record.missing && cellHolds(c.sheet, field, value, record, replacing)) inSheet++;
+      }
+    }
+    const out = { ...found, cells, alreadyInSheet: inSheet };
+    const kind = notebookOf(p);
+    if (!kind || !writing.length) return out;
+    // A row by its record, or by its sheet and label (a new row; a record a sync replaced).
+    const keysOf = c => [...(c.create ? [] : [`row\u0000${c.recordId}`]), `${c.sheet}\u0000${c.label ?? ''}`];
+    const later = db
+      .prepare(
+        "SELECT id, reason, page_json, changes_json, applied_json, applied_at FROM ai_proposals WHERE status = 'applied' AND applied_at > ? AND id != ? AND page_json IS NOT NULL ORDER BY applied_at DESC LIMIT 40",
+      )
+      .all(p.created_at, p.id);
+    // The applied page's lines: its rows written, those the person left with nothing to write, its context rows.
+    let rowsWritten = 0;
+    const by = later.find(b => {
+      if (notebookOf(b) !== kind) return false;
+      const theirs = parse(b.changes_json) ?? [];
+      const page = parse(b.page_json ?? 'null');
+      const lines = new Set([
+        ...theirs.flatMap(keysOf),
+        ...(page?.lines ?? []).flatMap(l => [...(l.recordId ? [`row\u0000${l.recordId}`] : []), `${page.sheet}\u0000${l.id ?? ''}`]),
+      ]);
+      if (!writing.every(c => keysOf(c).some(k => lines.has(k)))) return false;
+      const indexes = new Set([...(parse(b.applied_json ?? 'null') ?? []), ...theirs.flatMap((c, i) => (c.applied ? [i] : []))]);
+      const written = new Set([...indexes].flatMap(i => (theirs[i] && !theirs[i].context ? keysOf(theirs[i]) : [])));
+      rowsWritten = writing.filter(c => keysOf(c).some(k => written.has(k))).length;
+      return true;
+    });
+    if (!by) return out;
+    const superseded = { by: by.id, reason: by.reason, appliedAt: by.applied_at, rowsWritten };
+    const why = !EDITORS.includes(user.role)
+      ? 'this person cannot change proposals'
+      : p.owner_id !== owner(user)
+        ? `${personName(p.owner_id)}'s proposal: they discard it`
+        : p.last_by === 'person' || changes.some(c => Object.keys(c.personEdits ?? {}).length || Object.values(c.doubts ?? {}).some(d => d?.checked))
+          ? 'the person worked on it in the table'
+          : changes.some(c => c.applied)
+            ? 'some of its rows are written'
+            : null;
+    if (!why && discardProposal(p, 'ai')) return { ...out, superseded: { ...superseded, closed: true } };
+    return { ...out, superseded: { ...superseded, closed: false, ...(why ? { why } : {}) } };
   }
   /** The columns the app's account cannot write, as last noted (server/premade.mjs noteProtection): changes the tables. */
   const protectionStamp = () => {
@@ -5250,7 +5321,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     // The same rows in another pending proposal: the page matched again, maybe in another conversation.
     // Context rows (includeUnchanged) write nothing: they neither overlap nor make a proposal alone.
     const writes = matched.changes.some(c => !c.context);
-    const overlaps = writes ? overlapsWith(matched.changes, [replaced?.id]) : [];
+    // Each with how much of it the sheet has; one a later applied copy of the page wrote is closed.
+    const overlaps = writes ? overlapsWith(matched.changes, [replaced?.id]).map(o => overlapState(o, context.user)) : [];
     const reason = `Cuaderno ${KINDS[review.kind].label} (${review.sheet})${args.title ? `: ${clip(args.title, 120)}` : ''}`;
     const sheets = [...new Set([review.sheet, ...matched.changes.map(c => c.sheet)])];
     const view = readView(args.view, sheets, replaced ? parse(replaced.view_json ?? 'null') : null);
