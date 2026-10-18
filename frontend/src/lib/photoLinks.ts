@@ -226,9 +226,10 @@ export interface FileRow {
   url?: string
   /** A RAW file following its photo. */
   raw?: boolean
-  /** Removed because the same file is elsewhere: in the folder `keptIn`. */
+  /** Removed because the same file is elsewhere: in the folder `keptIn`, named `keptAs` when another name. */
   copy?: boolean
   keptIn?: string
+  keptAs?: string
 }
 export interface FilesProgress {
   state: 'writing' | 'done' | 'failed'

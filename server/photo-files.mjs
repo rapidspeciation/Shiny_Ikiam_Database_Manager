@@ -63,7 +63,8 @@ const idIn = text => driveIdOf(text) ?? (/^[\w-]{20,}$/.test(String(text ?? '').
  *  - fix: [{ check, in }] the changes a check of the photos calls for, in the folder `in` and inside it:
  *      rename  every photo whose name the sheets do not find takes the name they look up
  *      copies  every file of `in` that is also, the same file, in another listed folder is removed
- *              (`keptIn`: only those whose other file is in that folder)
+ *              (`keptIn`: only those whose other file is in that folder; `keptAs`: its name there when
+ *              another); not one named as the sheets look up whose other file is not (a problem says so)
  *      copied  every …_todelete file whose copy is beside it is binned (the account's own files);
  *              `permanent`: deleted for good instead, which frees its space at once and cannot be taken back
  *  - withRaw: a photo renamed or removed takes its RAW file with it (the file of its name in the
@@ -337,9 +338,27 @@ export function planFileChanges({ index, operations = [], fix = [], withRaw = tr
       const elsewhere = new Map();
       for (const item of all)
         if (listedFile(item) && !TO_DELETE.test(item.name) && !inside(item) && (!kept || under(item, kept.item.id)) && !elsewhere.has(key(item))) elsewhere.set(key(item), item);
-      for (const item of all)
-        if (listedFile(item) && !TO_DELETE.test(item.name) && inside(item) && item.size && elsewhere.has(key(item)) && !touched.has(item.id))
-          remove(item, { copy: true, keptIn: pathOfFolder(elsewhere.get(key(item)).parent) });
+      // A copy named as the sheets look it up stays when its other file is not: removing it would leave the
+      // photo under a name nothing finds (CAM079040d.jpg removed, CAM079040_d.jpg kept).
+      const looked = name => rightName(name, info) === name;
+      const named = [];
+      for (const item of all) {
+        if (!listedFile(item) || TO_DELETE.test(item.name) || !inside(item) || !item.size || !elsewhere.has(key(item)) || touched.has(item.id)) continue;
+        const other = elsewhere.get(key(item));
+        if (looked(item.name) && !looked(other.name)) {
+          named.push([item, other]);
+          continue;
+        }
+        remove(item, { copy: true, keptIn: pathOfFolder(other.parent), ...(other.name !== item.name ? { keptAs: other.name } : {}) });
+      }
+      if (named.length) {
+        const [[item, other]] = named;
+        const there = [...new Set(named.map(([, o]) => pathOfFolder(o.parent)))];
+        problems.push({
+          at,
+          error: `${named.length} files there have the names the sheets look up and their copies in ${there.slice(0, 3).join(', ')} do not (${item.name} there, ${other.name} in ${pathOfFolder(other.parent)}), so they stay: remove the copies the other way round ({check: "copies", in: "${there[0]}", keptIn: "${pathOfFolder(item.parent)}"})`,
+        });
+      }
     } else {
       // Left by «Copy files»: the original, renamed …_todelete, beside its copy (its name, its size).
       for (const item of all) {
@@ -349,7 +368,7 @@ export function planFileChanges({ index, operations = [], fix = [], withRaw = tr
           add({ action: 'remove', copied: true, copyId: copy.id, size: Number(item.size) || 0, ...(f.permanent === true ? { permanent: true } : {}) }, item);
       }
     }
-    if (ops.length === before)
+    if (ops.length === before && !(check === 'copies' && problems.some(p => p.at === at)))
       problems.push({
         at,
         error:

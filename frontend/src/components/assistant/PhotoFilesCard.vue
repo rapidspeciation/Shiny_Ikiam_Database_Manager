@@ -92,7 +92,13 @@ function columns(): ColumnDefinition[] {
       headerSort: false,
       formatter: (c: CellComponent) => {
         const row = c.getData() as FileRow
-        const copy = !row.copy ? '' : row.keptIn ? t('el mismo archivo está en {folder}', { folder: row.keptIn }) : t('el mismo archivo está en otra carpeta')
+        const copy = !row.copy
+          ? ''
+          : row.keptIn && row.keptAs
+            ? t('el mismo archivo está en {folder} como {name}', { folder: row.keptIn, name: row.keptAs })
+            : row.keptIn
+              ? t('el mismo archivo está en {folder}', { folder: row.keptIn })
+              : t('el mismo archivo está en otra carpeta')
         return [row.raw ? t('RAW de su foto') : '', copy].filter(Boolean).join(' · ')
       },
     },

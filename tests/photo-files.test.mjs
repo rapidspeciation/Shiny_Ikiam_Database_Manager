@@ -232,6 +232,20 @@ test('the fixes: names the sheets look up, files that are in another folder too,
   assert.match(copied.problems[0].error, /1 …_todelete files belong to another account/);
 });
 
+test('copies: the file named as the sheets look up stays, the other is removed', async () => {
+  // CAM000002 twice, the same file: Peru as the sheets look it up, Panama with an underscore.
+  const { index } = await reading([...drive(), file(44, 'CAM000002_d.jpg', 7)]);
+  const peru = planFileChanges({ index, fix: [{ check: 'copies', in: 'Wild/Peru', keptIn: 'Wild/Panama' }] });
+  assert.ok(!told(peru.ops).some(([, path]) => path.includes('CAM000002')), JSON.stringify(told(peru.ops)));
+  assert.match(peru.problems[0].error, /1 files there have the names the sheets look up .*CAM000002d\.JPG there, CAM000002_d\.jpg in Wild\/Panama\/JPG.*in: "Wild\/Panama\/JPG", keptIn: "Wild\/Peru\/JPG"/);
+  // The other way round: the underscore copy goes, and the card says under which name the file stays.
+  const panama = planFileChanges({ index, fix: [{ check: 'copies', in: 'Wild/Panama/JPG', keptIn: 'Wild/Peru/JPG' }] });
+  const op = panama.ops.find(o => o.name === 'CAM000002_d.jpg');
+  assert.equal(op.keptAs, 'CAM000002d.JPG');
+  assert.equal(op.keptIn, 'Wild/Peru/JPG');
+  assert.deepEqual(panama.problems, []);
+});
+
 test('shortcuts to the photos of a list of specimens, in a folder', async () => {
   const { local, index } = await reading([...drive(), folder(9, 'Shared', 1), file(44, 'CAM000002v.JPG', 4)]);
   const plan = await settleChanges(local, planFileChanges({ index, operations: [{ action: 'shortcut', ids: ['cam000002', 'CAM000099'], to: 'Shared' }] }));

@@ -649,6 +649,7 @@ export default {
   'RAW de su foto': 'its photo\'s RAW file',
   'el mismo archivo está en otra carpeta': 'the same file is in another folder',
   'el mismo archivo está en {folder}': 'the same file is in {folder}',
+  'el mismo archivo está en {folder} como {name}': 'the same file is in {folder} as {name}',
   'Cambios en los archivos de fotos de Google Drive': 'Changes to the photo files on Google Drive',
   'Archivos listos. Actualizando Photo_links…': 'Files done. Updating Photo_links…',
   'Cambiando archivos en Google Drive: {written} de {total}': 'Changing files on Google Drive: {written} of {total}',
