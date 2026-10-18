@@ -71,7 +71,8 @@ test('a process that dies answers its photo with an error; the next photo gets a
 });
 
 test('a photo that takes too long: the process is stopped and the call says to call again', async t => {
-  const { photo, identifier } = setup(t, { firstMs: 300, photoMs: 300 });
+  // The slow photo never answers: the limit only has to leave a busy machine time to start the next process.
+  const { photo, identifier } = setup(t, { firstMs: 2000, photoMs: 2000 });
   const out = await identifier.identify({ path: photo('slow.jpg', 'slow') });
   assert.match(out.error, /took more than/);
   assert.deepEqual((await identifier.identify({ path: photo('ok.jpg', 'Oleria cyrene 0.4') })).species[0], ['Oleria cyrene', 0.4]);
