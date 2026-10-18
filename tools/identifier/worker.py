@@ -1,10 +1,11 @@
 """The team's AI Identifier on the app server: which species a butterfly photo shows.
 
-The same pipeline as the identifier's Space (WingsClassificator/hf-space, release of 14 Oct 2026):
-the photo upright by its EXIF tag, the Wings v6 detector at 1280 px (as ONNX), the wings cropped
-(the central 90 % when nothing is found) and padded to a 224 px square, BioCLIP 2.5-H's image
-encoder (ONNX, dynamic int8), then the trained hierarchical head (15,347 names). Optionally the
-Space's geographic prior: names not recorded on that side of the Andes in Ecuador weigh 2 %.
+The same pipeline as the identifier's Space (WingsClassificator/hf-space, crop of 18 Oct 2026):
+the photo upright by its EXIF tag, the nano V5N wing detector at 640 px (as ONNX with its one-to-one
+head, the head the Space's PyTorch model runs), the wings cropped (the central 90 % when nothing is
+found) and padded to a 224 px square, BioCLIP 2.5-H's image encoder (ONNX, dynamic int8), then the
+trained hierarchical head (15,347 names). Optionally the Space's geographic prior: names not recorded
+on that side of the Andes in Ecuador weigh 2 %.
 
 Started by the app (server/identifier.mjs), one per app. JSON lines on stdin, one answer per
 line on stdout, one photo at a time:
@@ -15,8 +16,8 @@ The models load on the first photo (about 4 s, 2.3 GB) and the process ends afte
 without photos (the memory goes back to the server), or when stdin closes (the app stopped).
 
 Files under --dir (shared/identifier on the server, tools/identifier/setup.sh):
-  app/v6_feature.py, app/scripts/wings_v6/...    the Space's crop code
-  app/assets/wing_seg_v6.pt, wing_seg_v6.onnx, field_wingtip_override_v1.json, head_hier.pt
+  app/v6_feature.py, app/scripts/wings_v6/...    the Space's crop code (18 Oct 2026: knows V5N)
+  app/assets/wing_seg_v5n.pt, wing_seg_v5n.onnx, field_wingtip_override_v1.json, head_hier.pt
   app/assets/region_checklist.json               (optional: the geographic prior)
   onnx/bioclip25h_visual_int8.onnx
 """
@@ -31,6 +32,7 @@ import sys
 import time
 
 HEAD_SHA256 = "749fbffd5f73f12c0f8598b5b2e3f575c0510b93a61c3f3c0123ab2ee8990830"
+DETECTOR = "wing_seg_v5n"
 MEAN = (0.48145466, 0.4578275, 0.40821073)
 STD = (0.26862954, 0.26130258, 0.27577711)
 TOP = 5
@@ -116,8 +118,9 @@ class Identifier:
         from ultralytics import YOLO
 
         assets = os.path.join(root, "app", "assets")
-        self.v6 = V6FeatureExtractor(os.path.join(assets, "wing_seg_v6.pt"), os.path.join(assets, "field_wingtip_override_v1.json"))
-        self.v6.detector = YOLO(os.path.join(assets, "wing_seg_v6.onnx"), task="segment")
+        # The .pt names the detector and its input size (checked by SHA-256); the ONNX copy runs it.
+        self.v6 = V6FeatureExtractor(os.path.join(assets, DETECTOR + ".pt"), os.path.join(assets, "field_wingtip_override_v1.json"))
+        self.v6.detector = YOLO(os.path.join(assets, DETECTOR + ".onnx"), task="segment")
         gc.collect()
 
         head_path = os.path.join(assets, "head_hier.pt")
