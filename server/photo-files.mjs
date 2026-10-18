@@ -64,7 +64,7 @@ const idIn = text => driveIdOf(text) ?? (/^[\w-]{20,}$/.test(String(text ?? '').
  *      rename  every photo whose name the sheets do not find takes the name they look up
  *      copies  every file of `in` that is also, the same file, in another listed folder is removed
  *              (`keptIn`: only those whose other file is in that folder; `keptAs`: its name there when
- *              another); not one named as the sheets look up whose other file is not (a problem says so)
+ *              another; `lookedUp`: it is the one the sheets find and the file kept is not, a problem says so)
  *      copied  every …_todelete file whose copy is beside it is binned (the account's own files);
  *              `permanent`: deleted for good instead, which frees its space at once and cannot be taken back
  *  - withRaw: a photo renamed or removed takes its RAW file with it (the file of its name in the
@@ -338,25 +338,25 @@ export function planFileChanges({ index, operations = [], fix = [], withRaw = tr
       const elsewhere = new Map();
       for (const item of all)
         if (listedFile(item) && !TO_DELETE.test(item.name) && !inside(item) && (!kept || under(item, kept.item.id)) && !elsewhere.has(key(item))) elsewhere.set(key(item), item);
-      // A copy named as the sheets look it up stays when its other file is not: removing it would leave the
-      // photo under a name nothing finds (CAM079040d.jpg removed, CAM079040_d.jpg kept).
+      // Which of the two the sheets find is said, not decided here: a removal that takes away the file they look
+      // up (CAM079040d.jpg) and keeps one they do not (CAM079040_d.jpg) is marked `lookedUp` and counted in a
+      // problem, for the chat and the person to judge.
       const looked = name => rightName(name, info) === name;
       const named = [];
       for (const item of all) {
         if (!listedFile(item) || TO_DELETE.test(item.name) || !inside(item) || !item.size || !elsewhere.has(key(item)) || touched.has(item.id)) continue;
         const other = elsewhere.get(key(item));
-        if (looked(item.name) && !looked(other.name)) {
+        const lookedUp = looked(item.name) && !looked(other.name);
+        if (remove(item, { copy: true, keptIn: pathOfFolder(other.parent), ...(other.name !== item.name ? { keptAs: other.name } : {}), ...(lookedUp ? { lookedUp: true } : {}) }) && lookedUp)
           named.push([item, other]);
-          continue;
-        }
-        remove(item, { copy: true, keptIn: pathOfFolder(other.parent), ...(other.name !== item.name ? { keptAs: other.name } : {}) });
       }
       if (named.length) {
         const [[item, other]] = named;
         const there = [...new Set(named.map(([, o]) => pathOfFolder(o.parent)))];
         problems.push({
           at,
-          error: `${named.length} files there have the names the sheets look up and their copies in ${there.slice(0, 3).join(', ')} do not (${item.name} there, ${other.name} in ${pathOfFolder(other.parent)}), so they stay: remove the copies the other way round ({check: "copies", in: "${there[0]}", keptIn: "${pathOfFolder(item.parent)}"})`,
+          warning: true,
+          error: `${named.length} of these removals take away the file the sheets look up and keep one they do not find (${item.name} removed, ${other.name} kept in ${pathOfFolder(other.parent)}): Photo_dorsal and Photo_ventral lose those photos. The other way round keeps them: {check: "copies", in: "${there[0]}", keptIn: "${pathOfFolder(item.parent)}"}`,
         });
       }
     } else {
@@ -368,7 +368,7 @@ export function planFileChanges({ index, operations = [], fix = [], withRaw = tr
           add({ action: 'remove', copied: true, copyId: copy.id, size: Number(item.size) || 0, ...(f.permanent === true ? { permanent: true } : {}) }, item);
       }
     }
-    if (ops.length === before && !(check === 'copies' && problems.some(p => p.at === at)))
+    if (ops.length === before)
       problems.push({
         at,
         error:

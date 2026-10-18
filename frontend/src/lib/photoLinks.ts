@@ -230,6 +230,8 @@ export interface FileRow {
   copy?: boolean
   keptIn?: string
   keptAs?: string
+  /** The sheets find this file, not the one kept. */
+  lookedUp?: boolean
 }
 export interface FilesProgress {
   state: 'writing' | 'done' | 'failed'

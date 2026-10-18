@@ -99,7 +99,8 @@ function columns(): ColumnDefinition[] {
             : row.keptIn
               ? t('el mismo archivo está en {folder}', { folder: row.keptIn })
               : t('el mismo archivo está en otra carpeta')
-        return [row.raw ? t('RAW de su foto') : '', copy].filter(Boolean).join(' · ')
+        const lost = row.lookedUp ? t('⚠ las hojas encuentran este archivo, no el que se queda') : ''
+        return [row.raw ? t('RAW de su foto') : '', copy, lost].filter(Boolean).join(' · ')
       },
     },
   ] as ColumnDefinition[]
