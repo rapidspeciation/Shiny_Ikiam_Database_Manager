@@ -497,22 +497,52 @@ export function pickRows(db, { sheet, recordIds, filters }) {
 }
 
 /**
- * find_records: the rows within the size budget; only their ids (idsOnly), or
- * with `fields` as a table: `columns` (id, row, label, then the fields) and
- * `rows`, one list of values per row (null = empty cell), formula texts apart
- * by row id.
+ * The columns find_records shows when it is not given `fields`: those that tell
+ * the rows apart and place them (IDs, species, sex, dates, place, who). A
+ * Collection_data row has some 80 columns: all of them for 16 rows came to 31k
+ * characters, the key ones to 4k.
+ */
+const KEY_COLUMNS = {
+  Collection_data: ['Release_Collect', 'FieldMark_ID', 'Insectary_ID', 'CAM_ID', 'SPECIES', 'Subspecies_Form', 'Sex', 'Collection_location', 'Collection_date', 'Collection_time', 'Collector'],
+  Insectary_data: ['Insectary_ID', 'Wild_Reared', 'CLUTCH NUMBER', 'Stock_of_origin', 'SPECIES', 'Sex', 'Intro2Insectary_date', 'Death_date', 'Death_cause', 'LIFESTAGE', 'CAM_ID'],
+  Insectary_stocks: ['CLUTCH NUMBER', 'Generation', 'SPECIES', 'DATE LAID', 'NUMBER OF EGGS', 'HATCHING DATE', 'PUPA DATE', 'EMERGENCE DATE', 'NUMBER OF ADULTS'],
+};
+/** A sheet's key columns: as listed above, else its ID columns and its first columns other than notes. */
+export function keyColumns(mod) {
+  const keys = [...new Set(mod.fields.map(f => f.key))];
+  const listed = KEY_COLUMNS[mod.id];
+  if (listed) return listed.filter(k => keys.includes(k));
+  return [...new Set([...mod.identityFields, ...keys.filter(k => !/^notes|notes(?:_|$)/i.test(k)).slice(0, 8)])];
+}
+const EVERY_COLUMN = '*';
+
+/**
+ * find_records: the rows within the size budget, as a table: `columns` (id,
+ * row, label, then the fields: those given, else the sheet's key columns and
+ * those filtered on) and `rows`, one list of values per row (null = empty
+ * cell), formula texts apart by row id. Only their ids (idsOnly), or every
+ * non-empty cell of each row (fields ["*"]).
  */
 export function findRecords(db, args, { budget = FIND_BUDGET } = {}) {
   const selected = selectRecords(db, args);
   if (selected.error) return selected;
   const { mod, rows, missing } = selected;
   const idsOnly = args.idsOnly === true;
+  const every = Array.isArray(args.fields) && args.fields.length === 1 && args.fields[0] === EVERY_COLUMN;
   let columns = null;
-  if (args.fields !== undefined && !idsOnly) {
+  let keyed = false;
+  if (args.fields !== undefined && !idsOnly && !every) {
     if (!Array.isArray(args.fields) || !args.fields.length) return { error: 'fields must be a list of columns' };
     const named = columnKeys(mod, args.fields);
     if (named.error) return { error: `fields: ${named.error}` };
     columns = [...new Set(named.keys)];
+  } else if (!idsOnly && !every) {
+    const asked = [args.field, ...Object.keys(args.filters && typeof args.filters === 'object' ? args.filters : {})]
+      .filter(Boolean)
+      .map(name => columnOf(mod, name).key)
+      .filter(Boolean);
+    columns = [...new Set([...keyColumns(mod), ...asked])];
+    keyed = true;
   }
   const fields = columns && new Set(columns);
   const placed = !!selected.near;
@@ -557,6 +587,7 @@ export function findRecords(db, args, { budget = FIND_BUDGET } = {}) {
     ...(columns
       ? { columns: ['id', 'row', 'label', ...columns, ...(placed ? ['distanceKm'] : [])], rows: found, ...(Object.keys(formulas).length ? { formulas } : {}) }
       : { found }),
+    ...(keyed ? { otherColumns: `The sheet's key columns${columns.length > keyColumns(mod).length ? ' and those filtered on' : ''}. Others: name them in fields; every non-empty cell: fields ["*"].` } : {}),
     ...(missing ? { missing } : {}),
     ...(idsOnly ? {} : { formulaColumns: [...formulaColumns] }),
     ...(selected.near ? { near: selected.near } : {}),
@@ -628,8 +659,8 @@ export const RECORD_TOOLS = [
       description:
         [
           'Rows of one sheet by identifiers (`field` + `values`; those not found come back in `missing`), `filters` and/or `near`.',
-          '- Each row: id, row, values (non-empty cells; formulas computed; dates YYYY-MM-DD), `formulas`: the text of counts typed as sums (=16+2-1), of all with `formulas: true`.',
-          '- `fields`: a table instead: `columns` (id, row, label, the fields) and `rows` (lists of values, null = empty).',
+          "- A table: `columns` (id, row, label, then `fields`, by default the sheet's key columns and those filtered on) and `rows` (lists of values, null = empty; formulas computed; dates YYYY-MM-DD). `formulas`: the text of counts typed as sums (=16+2-1), of all with `formulas: true`.",
+          '- `fields: ["*"]`: every non-empty cell of each row instead (`found`: id, row, values).',
           '- `idsOnly`: id, row and label per row (300 by default). Counts: count_records.',
           '- A long answer ends with `truncated` and `next` (page with offset, or narrow it).',
         ].join('\n'),

@@ -8,7 +8,7 @@ import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { moduleMap, parseDateText } from '../server/schema.mjs';
 import { createAssistant } from '../server/assistant.mjs';
-import { findRecords } from '../server/records-tool.mjs';
+import { findRecords, keyColumns } from '../server/records-tool.mjs';
 import { noteText } from '../server/notebook.mjs';
 import { LINES_FILE_BYTES } from '../server/notebook-tool.mjs';
 
@@ -484,15 +484,23 @@ test('find_records: filters, distance to a place, computed values with their for
     const withText = await call('find_records', { module: 'Collection_data', filters: { CAM_ID: 'CAM000001' }, fields: ['DECIMAL_LATITUDE'], formulas: true });
     assert.equal(withText.formulas[withText.rows[0][0]].DECIMAL_LATITUDE, LOOKUP);
 
-    // By identifier, as before: a count typed as a sum shows its value and its terms.
+    // By identifier: a count typed as a sum shows its value and its terms.
     const byId = await call('find_records', { module: 'Insectary_stocks', field: 'CLUTCH NUMBER', values: ['900', '999'] });
-    assert.equal(byId.found[0].values['NUMBER OF EGGS'], 17);
-    assert.equal(byId.found[0].formulas['NUMBER OF EGGS'], '=16+2-1');
+    assert.equal(cell(byId, 0, 'NUMBER OF EGGS'), 17);
+    assert.equal(byId.formulas[byId.rows[0][0]]['NUMBER OF EGGS'], '=16+2-1');
     assert.deepEqual(byId.missing, ['999']);
-    // Without fields, long lookup formulas are named, not repeated in every row.
-    const all = await call('find_records', { module: 'Collection_data', filters: { CAM_ID: 'CAM000001' } });
+    // Without fields, the sheet's key columns and those filtered on, and how to ask for more.
+    const keyed = await call('find_records', { module: 'Collection_data', filters: { CAM_ID: 'CAM000001', Preservation_medium: 'Flash frozen' } });
+    assert.deepEqual(keyed.columns, ['id', 'row', 'label', ...keyColumns(moduleMap.get('Collection_data')), 'Preservation_medium']);
+    assert.ok(keyed.columns.includes('FieldMark_ID') && keyed.columns.includes('Collection_date') && !keyed.columns.includes('DECIMAL_LONGITUDE'));
+    assert.equal(cell(keyed, 0, 'CAM_ID'), 'CAM000001');
+    assert.match(keyed.otherColumns, /^The sheet's key columns and those filtered on\. Others: name them in fields; every non-empty cell: fields \["\*"\]\.$/);
+    assert.ok(!('otherColumns' in near), 'not when fields are given');
+    // fields ["*"]: every non-empty cell; long lookup formulas are named, not repeated in every row.
+    const all = await call('find_records', { module: 'Collection_data', filters: { CAM_ID: 'CAM000001' }, fields: ['*'] });
     assert.equal(all.found[0].values.DECIMAL_LONGITUDE, IKIAM.lon);
     assert.ok(!all.found[0].formulas);
+    assert.ok(!('otherColumns' in all) && !('columns' in all));
 
     // limit, offset and the "truncated" note.
     const page = await call('find_records', { module: 'Collection_data', filters: { SPECIES: 'Oleria onega' }, limit: 2 });
@@ -600,9 +608,9 @@ test('a T3 chat finds rows and drafts edits; only the rows the person chose are 
     ],
   );
   try {
-    const { found, missing } = await call('find_records', { module: 'Insectary_data', field: 'Insectary_ID', values: ['5VB', '8VD', '9ZZ'] });
+    const { columns, rows, missing } = await call('find_records', { module: 'Insectary_data', field: 'Insectary_ID', values: ['5VB', '8VD', '9ZZ'] });
     assert.deepEqual(missing, ['9ZZ']);
-    const byId = Object.fromEntries(found.map(r => [r.values.Insectary_ID, r]));
+    const byId = Object.fromEntries(rows.map(r => [r[columns.indexOf('Insectary_ID')], { id: r[0] }]));
     const out = await call('propose_changes', {
       reason: 'Cuaderno de insectario, agosto 2025',
       changes: [

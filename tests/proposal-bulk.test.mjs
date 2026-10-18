@@ -200,12 +200,16 @@ test('find_records stays small: rows cut at the size budget, idsOnly for long li
   const { store, call } = await setup(seed);
   try {
     assert.ok(FIND_BUDGET <= 40000);
-    const all = await call('find_records', { module: 'Insectary_data', filters: { SPECIES: 'Mechanitis lysimnia' }, limit: 500 });
+    const all = await call('find_records', { module: 'Insectary_data', filters: { SPECIES: 'Mechanitis lysimnia' }, limit: 500, fields: ['*'] });
     assert.equal(all.total, 130);
     assert.ok(all.returned < 130);
     assert.equal(all.truncated, true);
     assert.match(all.next, /size limit.*offset=.*idsOnly/);
     assert.ok(JSON.stringify(all).length < 40000, String(JSON.stringify(all).length));
+    // The key columns leave the long notes out: every row fits.
+    const keyed = await call('find_records', { module: 'Insectary_data', filters: { SPECIES: 'Mechanitis lysimnia' }, limit: 500 });
+    assert.equal(keyed.returned, 130);
+    assert.ok(!keyed.columns.includes('Notes_Insectary_data'));
 
     const ids = await call('find_records', { module: 'Insectary_data', filters: { SPECIES: 'Mechanitis lysimnia' }, idsOnly: true });
     assert.equal(ids.returned, 130);
