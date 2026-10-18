@@ -84,7 +84,8 @@ function createFormulas(rows) {
  */
 export function queueWalk(store, { url, refresh = false }, user) {
   const found = trailUrl(url);
-  if (!found) throw fail('INVALID_WALK', 'No Wikiloc trail link found; it looks like https://es.wikiloc.com/rutas-senderismo/…-12345678');
+  if (!found)
+    throw fail('INVALID_WALK', 'No Wikiloc trail link found; it looks like https://es.wikiloc.com/rutas-senderismo/…-12345678 or https://loc.wiki/t/12345678');
   const walk = store.db.prepare('SELECT id,status FROM wikiloc_walks WHERE wikiloc_id=?').get(found.wikilocId);
   if (walk && !refresh)
     return { status: 'ready', walkId: walk.id, url: found.url, next: 'Call get_walk with this walkId.' };

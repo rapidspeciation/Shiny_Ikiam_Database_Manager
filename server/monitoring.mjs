@@ -745,7 +745,8 @@ async function fetchPhoto(url) {
 export async function saveWalk(store, body, user, { fetchImage = fetchPhoto } = {}) {
   const url = text(body.url, 500);
   const wikilocId = /(\d{6,12})\/?(?:[?#].*)?$/.exec(url || '')?.[1];
-  if (!url || !/^https:\/\/([a-z]{2}\.)?wikiloc\.com\//.test(url) || !wikilocId)
+  // www.wikiloc.com too: a short link (loc.wiki/t/…) the browser followed there.
+  if (!url || !/^https:\/\/([a-z]{2}\.|www\.)?wikiloc\.com\//.test(url) || !wikilocId)
     throw fail('INVALID_WALK', 'A Wikiloc trail URL is required');
   const date = text(body.date, 10);
   if (date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date))))
@@ -882,11 +883,20 @@ const profileRow = r => ({
   collector: r.collector || null,
 });
 
-/** A Wikiloc trail link, cleaned: https, Wikiloc host, ending in the trail number. */
+/**
+ * A Wikiloc trail link, cleaned: https, Wikiloc host, ending in the trail number.
+ * Wikiloc's «Share» gives a short link, loc.wiki/t/<number>, which sends to
+ * Wikiloc's open-trail-link.do?id=<number> (then to the trail's page): that is
+ * the link kept, and the worker's browser follows it like a person's.
+ */
 export function trailUrl(value) {
   const text = String(value || '').trim();
   const match = /https:\/\/(?:[a-z]{2,3}\.)?wikiloc\.com\/[^\s?#]*?-(\d{6,12})(?=[/?#\s]|$)/i.exec(text);
-  return match ? { url: match[0], wikilocId: match[1] } : null;
+  if (match) return { url: match[0], wikilocId: match[1] };
+  const byId =
+    /(?:https?:\/\/)?(?:www\.)?loc\.wiki\/t\/(\d{6,12})(?=[/?#\s]|$)/i.exec(text) ??
+    /https:\/\/(?:[a-z]{2,3}\.)?wikiloc\.com\/wikiloc\/(?:view|open-trail-link)\.do\?(?:[^\s#]*&)?id=(\d{6,12})(?=[&#\s]|$)/i.exec(text);
+  return byId ? { url: `https://www.wikiloc.com/wikiloc/open-trail-link.do?id=${byId[1]}`, wikilocId: byId[1] } : null;
 }
 
 function addJob(store, kind, target, user) {

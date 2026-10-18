@@ -100,10 +100,14 @@ export async function readTrail(page, url) {
     const created = /"dateCreated"\s*:\s*"([^"]+)"/.exec(
       [...document.querySelectorAll('script[type="application/ld+json"]')].map(s => s.textContent).join('\n'),
     )?.[1];
-    return { name: md.mapData?.[0]?.nom || document.title, track, waypoints, done, author, created };
+    return { name: md.mapData?.[0]?.nom || document.title, track, waypoints, done, author, created, href: location.href };
   });
+  // A short link (loc.wiki/t/…, open-trail-link.do?id=…) ends on the trail's page: that address is kept.
+  const trailPage = /^https:\/\/(?:[a-z]{2,3}\.)?wikiloc\.com\/[^?#]*-(\d{6,12})(?=[/?#]|$)/;
+  const landed = trailPage.exec(trail.href || '');
+  const id = /(\d{6,12})(?:[/?#&].*)?$/.exec(url)?.[1];
   return {
-    url,
+    url: !trailPage.test(url) && landed && (!id || landed[1] === id) ? landed[0] : url,
     name: trail.name,
     date: walkDate(trail.name, trail.done, trail.created),
     recorded: trail.done || null,

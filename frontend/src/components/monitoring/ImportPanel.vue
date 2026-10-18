@@ -169,7 +169,7 @@ async function receiveShared() {
   if (!response) return
   const shared = (await response.json()) as { file: { name: string; text: string } | null; text: string; url: string }
   if (shared.file) loadGpx(shared.file.name || 'compartido.gpx', shared.file.text)
-  else if (/wikiloc\.com/.test(`${shared.url} ${shared.text}`)) await bar.value?.queue(`${shared.url} ${shared.text}`)
+  else if (/wikiloc\.com|loc\.wiki\//.test(`${shared.url} ${shared.text}`)) await bar.value?.queue(`${shared.url} ${shared.text}`)
   else notify(t('Lo compartido no es un GPX ni un enlace de Wikiloc'), 'error')
 }
 const onShared = () => receiveShared().catch(e => notify(errorText(e), 'error'))

@@ -227,3 +227,33 @@ test('a walk without day or collector says what to ask, and takes them as argume
   assert.match((await call('queue_walk', { url: 'https://example.com/123' })).error, /No Wikiloc trail link/);
   store.close();
 });
+
+test("Wikiloc's short link (loc.wiki/t/…) is queued as the trail it opens, and finds the walk once read", async () => {
+  const { store, call, user } = await fixture();
+  // As shared from Wikiloc's app on 16 Oct (chat 7157fa51).
+  const shared = '¡Mira esta ruta de @Wikiloc! https://loc.wiki/t/291256112?wa=share&og=ZQMNF_k5EP0 (Monitoreo 14 octubre, en el tramo 3 4 hay árboles caídos hacia el río. Parches)';
+  const queued = await call('queue_walk', { url: shared });
+  assert.equal(queued.status, 'queued');
+  assert.equal(queued.url, 'https://www.wikiloc.com/wikiloc/open-trail-link.do?id=291256112');
+  assert.equal((await call('get_walk', { url: 'https://loc.wiki/t/291256112' })).status, 'queued');
+  // The worker's browser lands on the trail's page and sends that address.
+  const { job } = claimJob(store);
+  assert.equal(job.target, queued.url);
+  await saveWalk(
+    store,
+    {
+      url: 'https://www.wikiloc.com/hiking-trails/monitoreo-14-octubre-en-el-tramo-3-4-hay-arboles-caidos-hacia-el-rio-parches-291256112',
+      jobId: job.id,
+      date: '2026-10-14',
+      name: 'Monitoreo 14 octubre',
+      track: [],
+      waypoints: [{ ...T4, text: 'M1 Oleria gunilla macho 9:40 1m NC' }],
+    },
+    user,
+  );
+  const draft = await call('get_walk', { url: shared, collector: FCH });
+  assert.equal(draft.status, 'ready');
+  assert.equal(draft.walk.wikilocId, '291256112');
+  assert.equal((await call('queue_walk', { url: 'loc.wiki/t/291256112' })).status, 'ready');
+  store.close();
+});

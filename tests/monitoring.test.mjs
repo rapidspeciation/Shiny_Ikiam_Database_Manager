@@ -151,6 +151,13 @@ test('shared or pasted text yields the Wikiloc trail link', () => {
     wikilocId: '288058472',
   });
   assert.equal(trailUrl('https://example.com/ruta-288058472'), null);
+  // Wikiloc's «Share»: a short link to open-trail-link.do, kept as that (the browser follows it to the trail).
+  const short = { url: 'https://www.wikiloc.com/wikiloc/open-trail-link.do?id=291256112', wikilocId: '291256112' };
+  assert.deepEqual(trailUrl('¡Mira esta ruta de @Wikiloc! https://loc.wiki/t/291256112?wa=share&og=ZQMNF_k5EP0 (Monitoreo 14 octubre)'), short);
+  assert.deepEqual(trailUrl('loc.wiki/t/291256112'), short);
+  assert.deepEqual(trailUrl('https://www.wikiloc.com/wikiloc/open-trail-link.do?id=291256112&wa=share'), short);
+  assert.deepEqual(trailUrl('https://es.wikiloc.com/wikiloc/view.do?id=291256112'), short);
+  assert.equal(trailUrl('https://loc.wiki/t/12'), null);
 });
 
 test('links and profile checks become jobs for the home computer, which claims and finishes them', async () => {
