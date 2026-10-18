@@ -195,8 +195,8 @@ own click («Rename», or «Rename & rotate») once the batch is right.
   `RAW` inside) and make it with `organize_photos` once they agree.
 - `projectDrive` is the space left in the account they upload with. When the
   folder does not fit (`fits`), or the Drive is `nearlyFull`, say so before
-  they start uploading and offer to free space (below, «Moving the photos to
-  another account»).
+  they start uploading and offer to free space
+  ([reference/drive-space.md](reference/drive-space.md)).
 - The rest of the way: once the upload is done, «Uploaded: update» in the
   tab reads those folders for Photo_links, and the same part of the tab
   updates the sites; or `sync_photo_links`, then `update_websites`, here.
@@ -260,7 +260,7 @@ write, say what it found, what it most likely is and what you suggest:
 
 | Found | Most likely | What to do |
 |---|---|---|
-| `rename` | another way of writing the name (`CAM077986_d.jpg`) | rename to the name in `to`: `organize_photos` does a whole folder in one go (below) |
+| `rename` | another way of writing the name (`CAM077986_d.jpg`) | rename to the name in `to`: `organize_photos` does a whole folder in one go ([reference/organize.md](reference/organize.md)) |
 | `turned` (beside the checks) | a photo whose orientation tag differs from the rest of its folder that day: turned by mistake, or re-saved already turned (then it shows right) | look at them together (`photo_files_look`, 800); `organize_photos` `rotate` with its `degrees` only those that show turned |
 | `unnamed` | the photo was not renamed (`IMG_5069.JPG`), or shows no envelope | look at it; rename it or move it to a `_temp` folder |
 | `unknownId` | the butterfly's row is not typed yet (IDs running on after the sheet's last ones), or the ID was misread (it is `outOfOrder` too; `maybe` is the workbook ID one character away that fits) | ask which; a misread one is renamed |
@@ -288,103 +288,12 @@ later: the row follows its file.
 The sheet's own menu «📷 Photo Database Tools» (Append New Files Only, Full
 Sync) writes the same rows from Google Sheets; either can be used.
 
-## Putting the folders in order
+## Putting the folders in order, and space on Drive
 
-`organize_photos` changes the files on Drive with the project's Google
-account: it shows the plan as a card beside the chat («Proposed changes»),
-every change listed, and the changes are made when the person presses
-«Apply» on that card. Photo_links then follows the files changed by itself,
-and the tool takes a plan's changes back when asked (`undo`).
-
-| The person asks | The plan |
+| Read | When |
 |---|---|
-| to give a folder's photos the names the sheets look up | `fix: [{check: "rename", in: "PANAMA_2025"}]` |
-| to delete from a folder the photos that are in another one too | `fix: [{check: "copies", in: <the wrong folder>, keptIn: <the right one>}]`: only the files that are the same file there (without `keptIn`: in any other listed folder; the answer counts them by the folder that keeps them) |
-| to rename, move or remove these files | `operations`, one per file, named by its path, its name or its link |
-| photos on Drive that show turned | `{action: "rotate", file, degrees}` (clockwise): the same file and link with its orientation tag changed, its RAW file too; Photo_links needs nothing |
-| a new folder, and files moved into it | `{action: "folder", name, in}`, then `move` operations naming it |
-| the photos of a list of butterflies gathered to share (a project's specimens) | `{action: "shortcut", ids: [CAM…], to: <folder>}`: shortcuts to their dorsal and ventral photos; the photos stay where they are |
-| something only another account can do (delete its own files, take a folder's photos over) | `{action: "transfer", step: "delete" or "copy", in: <folder>}`: the team's sheet is left ready, and that account presses its button (below) |
-
-- A photo renamed or removed takes its RAW file with it. A photo moved does
-  not: its RAW file is moved with a second operation, to the RAW folder
-  beside the new one.
-- Removing: the project's account bins the files it owns (they stay 30 days
-  in Drive's bin). Drive lets nobody bin another account's file, and most
-  photos belong to the account they were copied to (below): those are
-  renamed `…_todelete`, which takes them out of Photo_links, and their owner
-  deletes them: the plan leaves the sheet «Transfer Ownership & Free Up
-  Space» ready for their folder, and its answer (`otherAccountStep.by`) names
-  the accounts that then open the sheet and press «Delete copied files». Say
-  which of the two will happen (the plan counts them) and who is left to
-  press the button.
-- Two different photos named after one CAM are not copies: no fix removes
-  them. Look at both envelopes, then rename or remove the wrong one by name.
-- After changes that bring new files into the listed folders (a folder moved
-  in), `sync_photo_links` lists them.
-
-## Moving the photos to another account (space on Drive)
-
-The project account's Drive fills up with the photos, the RAW files above
-all. They are then handed to another account with more room (the curator's
-institutional one) with the sheet «Transfer Ownership & Free Up Space», in
-Drive › Photos. Drive cannot give a file to an account of another
-organisation, so the file is copied and the original deleted:
-
-1. The person whose account takes the photos over opens the sheet signed in
-   to that account, writes the folder's ID (the last part of its link) in
-   «Source Folder ID» and presses «Copy files». Every file of the folder that
-   belongs to someone else is copied (the copy is theirs, with the original's
-   name) and the original renamed `…_todelete`. «Process subfolders» set to 1
-   takes the folders inside it too.
-2. The first owner opens the sheet signed in to their account and presses
-   «Delete copied files»: the `…_todelete` files they own go to the bin
-   (mode 0; the space is freed when the bin is emptied) or are deleted for
-   good (mode 1).
-
-- The account that presses «Copy files» is the one that ends up owning the
-  photos: pressed from the project's account it copies them the other way.
-  «Delete copied files» only touches files named `…_todelete`.
-- The sheet's cells are written from here, so the other person only opens it
-  and presses the button: `organize_photos` with
-  `{action: "transfer", step: "copy", in: <folder>}` before step 1, or
-  `step: "delete"` before step 2 (`permanent: true` for mode 1, when the
-  space is needed right away). The sheet holds one folder at a time; while a
-  run of it is going on the plan says so and leaves the step out.
-- The copies are new files, so the old links end with the originals.
-  `sync_photo_links` moves each row to the copy of the same name; it can be
-  run right after step 1, and the links never break.
-- Step 2 for the project's own files can be done here:
-  `organize_photos` `fix: [{check: "copied", in: <folder>}]` bins each
-  `…_todelete` file whose copy is beside it (same name, same size), and leaves
-  the sheet ready for the accounts that own the others. The bin still counts
-  against the space until it is emptied in Drive; `permanent: true` deletes
-  them for good instead, which frees the space at once and cannot be taken
-  back.
-- Which account owns each file is Photo_links' «Owner Email» column
-  (`query`): the files still owned by the project's account are the ones
-  that take its space.
-
-When the space runs short (`drive_space`: `nearlyFull`, or a folder about to
-be uploaded does not fit), offer this, a step at a time:
-
-1. Say how much is left and which folders would free most (`ownByFolder`,
-   as Drive itself says: it counts folders Photo_links does not list too),
-   and who took the photos over the last time (`takenOverBefore`). Ask which
-   folder to hand over. Originals already copied (`originalsAlreadyCopied`)
-   are freed first: step 4 alone.
-2. `organize_photos` with `{action: "transfer", step: "copy", in: <folder>}`:
-   once they press «Apply», the sheet has the folder. Give them the sheet's
-   link to send to the person of that account, who opens it signed in to it
-   and presses «Copy files» (a few seconds a file: a folder of some hundred
-   photos takes half an hour or more).
-3. When they say the copy is done: `sync_photo_links`, so the rows point to
-   the copies. A folder Photo_links does not list yet is listed with it
-   (`add`): its photos then show in the sheets, and step 4 can find it.
-4. Then `organize_photos` with
-   `fix: [{check: "copied", in: <folder>, permanent: true}]`: the originals
-   the project's account owns, each with its copy beside it, are deleted for
-   good and the space is free. `drive_space` afterwards shows it.
+| [reference/organize.md](reference/organize.md) | `organize_photos`: renaming, moving, turning or removing photos on Drive, removing copies, a new folder, shortcuts to share, a step only another account can do, taking a plan back (`undo`) |
+| [reference/drive-space.md](reference/drive-space.md) | the project's Drive running out of space (`drive_space`: `nearlyFull`, or a folder that does not fit): handing the photos to another account with the sheet «Transfer Ownership & Free Up Space» |
 
 ## Which photos are missing
 

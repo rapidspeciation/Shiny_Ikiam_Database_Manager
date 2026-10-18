@@ -56,6 +56,8 @@ test('T3 workspaces get the brief and the skills; a refresh after a release keep
     assert.match(readFileSync(join(workspace, '.claude', 'skills', 'digitalizar-cuaderno', 'SKILL.md'), 'utf8'), /name: digitalizar-cuaderno/);
     // Every folder of assistant/skills is installed, with its reference files.
     assert.ok(existsSync(join(workspace, '.claude', 'skills', 'app-guide', 'reference', 'monitoreo.md')));
+    for (const file of ['organize.md', 'drive-space.md'])
+      assert.ok(existsSync(join(workspace, '.claude', 'skills', 'photos', 'reference', file)), file);
     // Claude Code subagents (assistant/agents): the notebook readers and reviewers, on their own model.
     assert.match(readFileSync(join(workspace, '.claude', 'agents', 'notebook-reader.md'), 'utf8'), /^name: notebook-reader$/m);
     assert.match(readFileSync(join(workspace, '.claude', 'agents', 'notebook-reviewer.md'), 'utf8'), /^model: \S+$/m);
