@@ -4,7 +4,8 @@
 // the time limit is stopped by killing that process (a running node:sqlite
 // statement cannot be interrupted from outside); the next query starts a new one.
 // The answer is compact text: a header line, a line per row with tab-separated
-// values, and the copy's age.
+// values, and the copy's age (or that it is current). A column or table not
+// found comes back with the names the query most likely meant (nearNames).
 
 import { fork } from 'node:child_process';
 import { statSync } from 'node:fs';
@@ -24,7 +25,7 @@ export const QUERY_TOOL = {
       "One read-only SQLite statement (SELECT or WITH) on a copy of the workbook and the app's save history, refreshed within a minute of a save; the rows come back as text, tab-separated under a header line. For counts, ranges, comparisons across sheets, cell histories and anything over many rows.",
       '- A table per sheet, named as the sheet (Insectary_data, Collection_data, Insectary_stocks, "F1/F2_MutationRate"…): its rows in use. <sheet>_all also holds the pre-made rows (made ahead with their ID, or holding only NA or a default; _premade = 1).',
       "- Their columns are the sheet's headers (describe_sheet lists them, or SELECT column FROM _columns WHERE sheet = '…'); a header with spaces or signs in double quotes (\"CLUTCH NUMBER\"). The notes column carries its sheet's name (Notes_Insectary_data, Notes_Collection_data; NOTES in Insectary_stocks). Also _row (the sheet's row) and _id (the recordId proposals take). Values as the sheet shows them (formulas computed); dates YYYY-MM-DD, times H:MM; ID columns compare without case; text values in single quotes.",
-      '- _tables (name, rows, premade); _columns (sheet, column, header: the sheet\'s, when two differ only in case the second column takes _2; type; list: a dropdown\'s values as JSON; strict).',
+      '- _tables (name, rows, premade); _columns (sheet, column or name, header: the sheet\'s, when two differ only in case the second column takes _2; type; list: a dropdown\'s values as JSON; strict).',
       '- history: every cell saved, by the app or typed in Google Sheets: at, sheet, row, id_label, record_id, field, before, after, who, source (the tab, Asistente, Google Sheets, Deshacer…), reason, action_id; formula cells as "(formula)".',
       '- staged: Emergidos and Clutches entries kept in the app, not in the sheet yet, a row per cell: at, who, tab, kind (new row or edit), sheet, row, id_label, record_id, field, value, before, status.',
       "- fold(text): lowercase without accents (fold(SPECIES) LIKE '%oleria%'); km(lat1, lon1, lat2, lon2): the distance in km.",
@@ -205,28 +206,198 @@ export function runQuery(db, sql, limit) {
     }
     return { columns, rows, total, ...(more ? { more } : {}) };
   } catch (e) {
-    return { error: e.message, ...nearNames(db, e.message) };
+    return { error: e.message, ...nearNames(db, e.message, sql) };
   }
 }
 
-/** For "no such column/table: x", the copy's names like it. */
-function nearNames(db, message) {
-  const m = /no such (column|table): (\S+)/.exec(message);
+/** A name compared loosely: no case, accents, spaces or signs ("Field ID" = field_id). */
+const loose = name => fold(String(name)).replace(/[^a-z0-9]/g, '');
+/** The words of a name: FieldMark_ID → field, mark, id. */
+const wordsOf = name =>
+  String(name)
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .split(/[^A-Za-z0-9]+/)
+    .map(loose)
+    .filter(Boolean);
+/** A name as SQL takes it: in double quotes unless it is a plain word. */
+const sqlName = name => (/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ? name : `"${String(name).replaceAll('"', '""')}"`);
+
+/** Edits (insert, delete, change a character) from one name to another. */
+function editDistance(a, b) {
+  let row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j++) next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    row = next;
+  }
+  return row[b.length];
+}
+
+/**
+ * How close a name is to the one asked for, 0 (not at all) to 1: the same
+ * loosely, one inside the other (Date: Collection_date), all the asked one's
+ * words in it (Field_ID: FieldMark_ID), or a few letters apart.
+ */
+function closeness(asked, name) {
+  const a = loose(asked);
+  const b = loose(name);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (b.includes(a) || (b.length >= 3 && a.includes(b))) return 0.8;
+  const words = wordsOf(asked);
+  if (words.length > 1 && words.every(w => b.includes(w))) return 0.7;
+  const d = editDistance(a, b) / Math.max(a.length, b.length);
+  return d <= 0.34 ? 0.6 - d : 0;
+}
+
+/**
+ * The copy's tables and views the statement names (after FROM and JOIN, or
+ * before a column): the words and quoted names of its code that are one.
+ */
+function tablesOf(db, sql) {
+  const known = new Map(
+    db
+      .prepare("SELECT name FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite%' AND name != '_meta'")
+      .all()
+      .map(r => [r.name.toLowerCase(), r.name]),
+  );
+  const found = [];
+  const token = /--[^\n]*|\/\*[\s\S]*?\*\/|'(?:[^']|'')*'|"((?:[^"]|"")*)"|`([^`]*)`|\[([^\]]*)\]|([A-Za-z_][A-Za-z0-9_$]*)/g;
+  for (const m of String(sql ?? '').matchAll(token)) {
+    const name = m[1]?.replaceAll('""', '"') ?? m[2] ?? m[3] ?? m[4];
+    const table = name && known.get(name.toLowerCase());
+    if (table && !found.includes(table)) found.push(table);
+  }
+  return found;
+}
+
+/** A table's columns (the generated _columns.name too), without the copy's _premade. */
+const columnsOf = (db, table) =>
+  db
+    .prepare('SELECT name FROM pragma_table_xinfo(?) WHERE hidden != 1')
+    .all(table)
+    .map(r => r.name)
+    .filter(name => name !== '_premade');
+
+const NO_VALUE = new Set(['', 'na', 'n/a', 'not_collected']);
+/** Up to `limit` distinct values of a column, as lowercase text, without blanks and NA. */
+function valuesOf(db, table, column, limit) {
+  const out = new Set();
+  const rows = db.prepare(`SELECT DISTINCT ${sqlName(column)} v FROM ${sqlName(table)} WHERE ${sqlName(column)} IS NOT NULL LIMIT ?`).all(limit);
+  for (const { v } of rows) {
+    const value = String(v).trim().toLowerCase();
+    if (!NO_VALUE.has(value)) out.add(value);
+  }
+  return out;
+}
+
+/** An identifier column by its name: CAM_ID, Tube_1_id, "CLUTCH NUMBER", Clutch_No., Father_CAMid. */
+const idLike = name => wordsOf(name).some(w => w === 'id' || w === 'number' || w === 'no') || /id$/i.test(name);
+/** Tables of the copy that are not a sheet: nothing to join a sheet with. */
+const ownTable = name => name.startsWith('_') || name === 'history' || name === 'staged';
+
+/**
+ * For an identifier column `asked` (CAM_ID): the columns of `tables` holding
+ * the values it holds in other sheets (the manifest's "STS Collector Sample
+ * ID"), most shared first.
+ */
+function sameValues(db, asked, tables) {
+  if (!idLike(asked)) return [];
+  const sources = db
+    .prepare('SELECT sheet, column FROM _columns')
+    .all()
+    .filter(r => loose(r.column) === loose(asked) && !tables.includes(r.sheet))
+    .slice(0, 3);
+  // Each value with the first sheet that has it.
+  const known = new Map();
+  for (const [i, s] of sources.entries()) for (const v of valuesOf(db, s.sheet, s.column, 30000)) if (!known.has(v)) known.set(v, i);
+  if (known.size < 5) return [];
+  const out = [];
+  for (const table of tables)
+    for (const column of columnsOf(db, table)) {
+      if (column.startsWith('_')) continue;
+      const sample = valuesOf(db, table, column, 300);
+      const by = sources.map(() => 0);
+      for (const v of sample) if (known.has(v)) by[known.get(v)]++;
+      const shared = by.reduce((a, b) => a + b, 0);
+      const from = sources[by.indexOf(Math.max(...by))];
+      if (shared >= 5 && shared >= sample.size * 0.2) out.push({ table, column, shared, of: sample.size, from });
+    }
+  return out.sort((a, b) => b.shared / b.of - a.shared / a.of).slice(0, 4);
+}
+
+/**
+ * For "no such column/table: x", the names the query most likely meant: the
+ * closest columns of the tables it names; else their columns holding the
+ * values x holds in other sheets; else the other sheets with a column like x,
+ * with the columns they share with the query's tables (to join them).
+ */
+export function nearNames(db, message, sql = '') {
+  const m = /no such (column|table): (.+?)(?: - should this be a string literal|$)/.exec(message);
   if (!m) return {};
-  const name = fold(m[2].split('.').at(-1).replace(/^["'`[]|["'`\]]$/g, '')).replace(/[\s_]/g, '');
-  if (name.length < 2) return {};
+  const parts = m[2].trim().match(/"(?:[^"]|"")*"|`[^`]*`|\[[^\]]*\]|[^.]+/g) ?? [];
+  const unquote = part => part.replace(/^["`[]|["`\]]$/g, '').replaceAll('""', '"');
+  const asked = unquote(parts.at(-1) ?? '');
+  if (loose(asked).length < 2) return {};
   try {
-    const near =
-      m[1] === 'table'
-        ? db
-            .prepare("SELECT name FROM _tables WHERE replace(replace(fold(name), '_', ''), ' ', '') LIKE ? LIMIT 8")
-            .all(`%${name}%`)
-            .map(r => r.name)
-        : db
-            .prepare("SELECT sheet, column FROM _columns WHERE replace(replace(fold(column), '_', ''), ' ', '') LIKE ? LIMIT 12")
-            .all(`%${name}%`)
-            .map(r => `${r.sheet}.${r.column}`);
-    return near.length ? { near } : {};
+    if (m[1] === 'table') {
+      const near = db
+        .prepare('SELECT name FROM _tables')
+        .all()
+        .map(r => ({ name: r.name, score: closeness(asked, r.name) }))
+        .filter(r => r.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 8)
+        .map(r => r.name);
+      return near.length ? { near } : {};
+    }
+    let tables = tablesOf(db, sql);
+    // A column named with its table (Collection_data.Field_ID): that table only.
+    const qualifier = parts.length > 1 ? unquote(parts.at(-2)).toLowerCase() : null;
+    if (qualifier && tables.some(t => t.toLowerCase() === qualifier)) tables = tables.filter(t => t.toLowerCase() === qualifier);
+
+    const near = [];
+    for (const table of tables) {
+      const words = new Set(wordsOf(table.replace(/_all$/, '')));
+      columnsOf(db, table).forEach((column, index) => {
+        const score = closeness(asked, column);
+        // Among equals, one sharing a word with its table first (Collection_date in Collection_data), then the sheet's order.
+        if (score > 0) near.push({ table, column, score: score + (wordsOf(column).some(w => words.has(w)) ? 0.05 : 0), index });
+      });
+    }
+    if (near.length) {
+      near.sort((a, b) => b.score - a.score || a.index - b.index);
+      return { near: near.slice(0, 8).map(n => `${sqlName(n.table)}.${sqlName(n.column)}`) };
+    }
+
+    const same = sameValues(db, asked, tables);
+    if (same.length)
+      return {
+        near: same.map(
+          s => `${sqlName(s.table)}.${sqlName(s.column)} (holds ${sqlName(s.from.sheet)}.${sqlName(s.from.column)} values: ${s.shared} of ${s.of} looked at)`,
+        ),
+      };
+
+    const elsewhere = db
+      .prepare('SELECT sheet, column FROM _columns')
+      .all()
+      .map(r => ({ ...r, score: closeness(asked, r.column) }))
+      .filter(r => r.score >= 0.7 && !tables.includes(r.sheet))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 8);
+    if (!elsewhere.length) return {};
+    const own = tables.filter(t => !ownTable(t)).map(table => ({ table, columns: new Set(columnsOf(db, table).map(loose)) }));
+    const shared = sheet => {
+      const theirs = db.prepare('SELECT column FROM _columns WHERE sheet = ?').all(sheet).map(r => r.column);
+      const out = [];
+      for (const { table, columns } of own) {
+        const both = theirs.filter(c => idLike(c) && columns.has(loose(c)));
+        if (both.length) out.push(`shares ${both.slice(0, 3).map(sqlName).join(', ')} with ${sqlName(table)}`);
+      }
+      return out.length ? `; ${out.join('; ')}` : '';
+    };
+    const where = tables.length ? `not in ${tables.map(sqlName).join(', ')}` : 'in another sheet';
+    return { near: elsewhere.map((r, i) => `${sqlName(r.sheet)}.${sqlName(r.column)}${i < 3 ? ` (${where}${shared(r.sheet)})` : ''}`) };
   } catch {
     return {};
   }
@@ -266,9 +437,13 @@ export function formatRows(result, { limit = QUERY_LIMIT, pending = false, now =
     notes.push(`(${shown} of ${total} rows shown: size limit. Ask for fewer columns or rows, or for counts.)`);
   else if (shown < result.total || result.more)
     notes.push(`(${shown} of ${total} rows shown${max < QUERY_MAX ? `; limit goes up to ${QUERY_MAX}` : ''}. Narrow the query or count.)`);
+  // A copy no save or sync has changed since it was built is the sheets as the app has them, however old.
+  const built = result.builtAt?.slice(0, 16).replace('T', ' ');
   if (result.builtAt)
     notes.push(
-      `(Copy of ${result.builtAt.slice(0, 16).replace('T', ' ')} UTC, ${age(result.builtAt, now)}${pending ? '; saves since then arrive within a minute' : ''}.)`,
+      pending
+        ? `(Copy of ${built} UTC, ${age(result.builtAt, now)}; saves since then arrive within a minute.)`
+        : `(Copy of ${built} UTC, current: nothing was saved or synced since.)`,
     );
   return [...lines, ...notes].join('\n');
 }

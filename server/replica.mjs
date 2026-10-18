@@ -15,7 +15,8 @@
 //   ID columns are text compared without case. Columns whose names differ only
 //   in case (COLLECTION_LOCATION, Collection_location) get _2.
 // - `_tables` (name, rows, premade), `_columns` (sheet, column, header, type,
-//   list, strict: the dropdown's values, JSON), `_meta` (built_at, state).
+//   list, strict: the dropdown's values, JSON; `name` repeats column, as in
+//   _tables), `_meta` (built_at, state).
 // - `history`: every cell saved (by the app or edited in Google Sheets and read by
 //   a sync), people by their display names, without the formulas syncs logged
 //   only because their row moved.
@@ -41,7 +42,7 @@ import { listOptions } from './verify.mjs';
 import { PURPOSES } from './history.mjs';
 
 /** Changes when the copy's layout does: a new version rebuilds it. */
-const LAYOUT = 2;
+const LAYOUT = 3;
 export const COPY_FILE = 'sheets.sqlite';
 /** The copy beside a database file (none for an in-memory database). */
 export const copyBeside = databasePath => (!databasePath || databasePath === ':memory:' ? null : join(dirname(databasePath), COPY_FILE));
@@ -194,7 +195,7 @@ export function buildCopy(source, out, { now = () => new Date() } = {}) {
       state = sourceState(source);
       copy.exec(`CREATE TABLE _meta(key TEXT PRIMARY KEY, value TEXT);
         CREATE TABLE _tables(name TEXT PRIMARY KEY, rows INTEGER, premade INTEGER);
-        CREATE TABLE _columns(sheet TEXT, column TEXT, header TEXT, type TEXT, list TEXT, strict INTEGER);`);
+        CREATE TABLE _columns(sheet TEXT, column TEXT, header TEXT, type TEXT, list TEXT, strict INTEGER, name TEXT GENERATED ALWAYS AS (column) VIRTUAL);`);
       const kinds = new Map();
       const lists = { db: source };
       const select = source.prepare(
@@ -441,6 +442,8 @@ export function createSheetsCopy({ store, path, delayMs = 30_000, startMs = 3_00
         log.log?.(`Sheets copy: ${out.rows} rows, ${out.changes} history cells, ${(out.bytes / 1e6).toFixed(1)} MB in ${(out.ms / 1000).toFixed(1)} s`);
       } catch (e) {
         lastError = e.message;
+        // The saves it was to hold are still not in the copy.
+        changed = true;
         if (!closed) log.error?.('Sheets copy failed:', e.message);
       } finally {
         building = null;

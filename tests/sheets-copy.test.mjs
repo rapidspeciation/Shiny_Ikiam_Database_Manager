@@ -10,7 +10,7 @@ import { LocalSheets } from '../server/sheets.mjs';
 import { moduleMap, parseDateText } from '../server/schema.mjs';
 import { createAssistant } from '../server/assistant.mjs';
 import { buildCopy, createSheetsCopy, isoOfText } from '../server/replica.mjs';
-import { sqlProblem } from '../server/query-tool.mjs';
+import { formatRows, openCopy, runQuery, sqlProblem } from '../server/query-tool.mjs';
 import { addToken, addUser, mcpClient } from './helpers/assistant.mjs';
 
 // The sheets' copy the assistant's `query` reads (server/replica.mjs) and the tool itself
@@ -166,7 +166,7 @@ test('query: one read-only statement, capped, stopped after the time limit, with
     const text = await call('SELECT Insectary_ID, Sex, "CLUTCH NUMBER" FROM Insectary_data ORDER BY _row');
     const lines = text.split('\n');
     assert.deepEqual(lines.slice(0, 3), ['Insectary_ID\tSex\tCLUTCH NUMBER', 'A1A\tmale\t997', 'A2A\tNA\tNA']);
-    assert.match(lines.at(-1), /^\(Copy of \d{4}-\d\d-\d\d \d\d:\d\d UTC, just now\.\)$/);
+    assert.match(lines.at(-1), /^\(Copy of \d{4}-\d\d-\d\d \d\d:\d\d UTC, (just now; saves since then arrive within a minute|current: nothing was saved or synced since)\.\)$/);
     assert.equal((await call("SELECT ';' AS x")).split('\n')[1], ';', 'a ; inside quotes is text');
 
     // Only reading.
@@ -202,6 +202,8 @@ test('query: one read-only statement, capped, stopped after the time limit, with
     await new Promise(resolve => setImmediate(resolve));
     assert.match(await call('SELECT 1'), /saves since then arrive within a minute/);
     await until(async () => (await call("SELECT Sex FROM Insectary_data WHERE Insectary_ID = 'A2A'")).split('\n')[1] === 'female');
+    // Once the copy holds them it is current, however long ago it was built.
+    await until(async () => (await call('SELECT 1')).endsWith('UTC, current: nothing was saved or synced since.)'));
   } finally {
     assistant.close();
     store.close();
@@ -234,6 +236,61 @@ test('the copy is rebuilt after a sync that changed rows, and only when somethin
     db.close();
   } finally {
     copy.close();
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the copy's age: current when nothing was saved or synced since it was built", () => {
+  const result = { columns: ['n'], rows: [[1]], total: 1, builtAt: '2026-10-15T20:17:03.000Z' };
+  const now = Date.parse('2026-10-16T15:20:00Z');
+  assert.equal(formatRows(result, { now }).split('\n').at(-1), '(Copy of 2026-10-15 20:17 UTC, current: nothing was saved or synced since.)');
+  assert.equal(formatRows(result, { now, pending: true }).split('\n').at(-1), '(Copy of 2026-10-15 20:17 UTC, 19 h ago; saves since then arrive within a minute.)');
+});
+
+test('a column the query does not find: the closest of its own tables, else where its values or name are', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sheets-near-'));
+  const cams = ['CAM070476', 'CAM070477', 'CAM070478', 'CAM070479', 'CAM070480', 'CAM070481'];
+  const sheets = new LocalSheets({
+    Collection_data: cams.map((CAM_ID, i) => ({
+      row: i + 2,
+      values: { CAM_ID, FieldMark_ID: `B${i}`, Collection_date: d('2026-10-14'), Death_date: d('2026-10-15'), DATE_OF_COLLECTION: d('2026-10-14') },
+    })),
+    MEIER_manifests_23Jun26: cams.map((cam, i) => ({ row: i + 2, values: { 'Sampleset ID': 'MEIER_000002', 'Tube/Well ID': `FD3088045${i}`, 'STS Collector Sample ID': cam } })),
+    Insectary_data: [{ row: 2, values: { Insectary_ID: 'A1A', 'CLUTCH NUMBER': 976, Stock_of_origin: 'deceptus' } }],
+    Insectary_stocks: [{ row: 2, values: { 'CLUTCH NUMBER': 976, SPECIES: 'Mechanitis messenoides deceptus' } }],
+  });
+  const store = new Store({ localMode: true, databasePath: join(dir, 'app.sqlite') }, { sheets });
+  await store.sync();
+  const path = join(dir, 'sheets.sqlite');
+  buildCopy(store.db, path);
+  const db = openCopy(path);
+  const near = sql => {
+    const out = runQuery(db, sql, 5);
+    assert.ok(out.error, sql);
+    return out.near;
+  };
+  try {
+    // The production chats' guesses (13-18 Oct): the column meant comes first, from the query's own table.
+    assert.deepEqual(near("SELECT CAM_ID, Field_ID FROM Collection_data WHERE Country = 'Colombia'"), ['Collection_data.FieldMark_ID']);
+    assert.deepEqual(near('SELECT c.Field_ID FROM Collection_data c JOIN Insectary_data i ON i.Insectary_ID = c.Insectary_ID'), ['Collection_data.FieldMark_ID']);
+    const date = near('SELECT Date, count(*) FROM Collection_data GROUP BY Date');
+    assert.equal(date[0], 'Collection_data.Collection_date');
+    assert.ok(date.every(n => n.startsWith('Collection_data.')), 'no other sheet');
+    // The manifest has no CAM_ID: its column holding the CAMs.
+    const cam = near("SELECT count(*) FROM MEIER_manifests_23Jun26 WHERE CAM_ID GLOB 'M6[23][0-9][0-9]'");
+    assert.match(cam[0], /^MEIER_manifests_23Jun26\."STS Collector Sample ID" \(holds Collection_data\.CAM_ID values: 6 of 6 looked at\)$/);
+    // Nothing like it in the clutches: the sheet that has it, and the column to join them by.
+    const stock = near('SELECT "CLUTCH NUMBER", "Stock_of_origin" FROM Insectary_stocks');
+    assert.equal(stock[0], 'Insectary_data.Stock_of_origin (not in Insectary_stocks; shares "CLUTCH NUMBER" with Insectary_stocks)');
+    // `name` is _columns' column too, as in _tables.
+    assert.deepEqual(
+      runQuery(db, "SELECT name FROM _columns WHERE sheet = 'Insectary_stocks' AND name LIKE 'CLUTCH%'", 5).rows,
+      [['CLUTCH NUMBER']],
+    );
+    assert.deepEqual(near('SELECT * FROM Colection_data').slice(0, 1), ['Collection_data']);
+  } finally {
+    db.close();
     store.close();
     rmSync(dir, { recursive: true, force: true });
   }
