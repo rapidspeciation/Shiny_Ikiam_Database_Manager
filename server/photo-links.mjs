@@ -861,6 +861,65 @@ export function specimens(store) {
 }
 const specimensKept = new WeakMap();
 
+/**
+ * The Photo_links folders holding photos named after `ids`, and what the other butterflies of those
+ * folders are: Map ID (in capitals) → [{ folder, taken (its photos' earliest Capture Date, a serial),
+ * country, year }]. `country` and `year`: what nearly all the folder's butterflies the workbook knows
+ * share (as checkPhotos tells a folder's country), { value, n, of }, else null. `except`: IDs left out
+ * of those counts (the rows being renamed). An ID without photos is not in the map.
+ */
+export function photoFoldersOf(store, ids, { except = [] } = {}) {
+  const wanted = new Set([...ids].map(id => String(id).trim().toUpperCase()));
+  const out = new Map();
+  if (!wanted.size) return out;
+  const info = specimens(store);
+  const left = new Set([...except].map(id => String(id).trim().toUpperCase()));
+  const rows = store.db
+    .prepare(
+      `SELECT json_extract(values_json, '$."Full Path"') path, json_extract(values_json, '$.Name') name, json_extract(values_json, '$."Capture Date"') taken
+       FROM records WHERE sheet = ? AND missing = 0 AND observed = 1 AND json_extract(values_json, '$.Type') = 'File'`,
+    )
+    .all(SHEET);
+  const folders = new Map();
+  const found = new Map();
+  for (const r of rows) {
+    if (!PHOTO.test(r.name ?? '') && !RAW.test(r.name ?? '')) continue;
+    const id = specimenName(r.name)?.id?.toUpperCase();
+    if (!id) continue;
+    const folder = String(r.path ?? '').split('/').slice(0, -1).join('/');
+    if (wanted.has(id)) {
+      const places = found.get(id) ?? found.set(id, new Map()).get(id);
+      const taken = typeof r.taken === 'number' ? r.taken : null;
+      const was = places.get(folder);
+      places.set(folder, was === undefined || was === null || (taken !== null && taken < was) ? taken : was);
+    }
+    const known = left.has(id) || wanted.has(id) ? null : info.get(id);
+    if (!known) continue;
+    const f = folders.get(folder) ?? folders.set(folder, { ids: new Set(), countries: new Map(), years: new Map() }).get(folder);
+    if (f.ids.has(id)) continue;
+    f.ids.add(id);
+    if (known.country) f.countries.set(known.country, (f.countries.get(known.country) ?? 0) + 1);
+    if (typeof known.date === 'number') {
+      const year = new Date(SHEETS_EPOCH + Math.floor(known.date) * 86_400_000).getUTCFullYear();
+      f.years.set(year, (f.years.get(year) ?? 0) + 1);
+    }
+  }
+  const most = counts => {
+    const of = [...counts.values()].reduce((a, b) => a + b, 0);
+    const [value, n] = [...counts].sort((a, b) => b[1] - a[1])[0] ?? [null, 0];
+    return of >= FOLDER_PHOTOS && n / of >= FOLDER_SHARE ? { value, n, of } : null;
+  };
+  for (const [id, places] of found)
+    out.set(
+      id,
+      [...places].map(([folder, taken]) => {
+        const f = folders.get(folder);
+        return { folder, taken, country: f ? most(f.countries) : null, year: f ? most(f.years) : null };
+      }),
+    );
+  return out;
+}
+
 /** The sheet's rows as planPhotoLinks takes them. */
 export function photoLinkRows(store) {
   return store.db

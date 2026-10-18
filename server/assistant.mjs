@@ -23,6 +23,7 @@ import { RESULT_BUDGET, fitList, fitResult } from './tool-budget.mjs';
 import { MATCH_NOTEBOOK_TOOL, createNotebookMatcher, matchSummary, proposalPage, withLinesFile, writeLinesFile } from './notebook-tool.mjs';
 import { duplicateIdRow, insectaryBaseRows, insectaryIdPlaces, insectaryIdRow, newRowFormulaFields, protectedFields, suffixedId } from './premade.mjs';
 import { formulaNotes, isPlaceholder, newRowFormulas, newRowPatternFields, sheetPatterns } from './formula-patterns.mjs';
+import { shiftFormula } from './sheets.mjs';
 import { parseFormula, relativeFormula } from './formula.mjs';
 import { formulaCostAnswer, proposalFormulaCost } from './formula-cost.mjs';
 import { claimHolder, claimsOf } from './claims.mjs';
@@ -36,7 +37,8 @@ import { tellChat } from './t3tell.mjs';
 import { KNOWLEDGE_TOOLS, createKnowledge, runKnowledgeTool } from './knowledge.mjs';
 import { HISTORY_TOOLS, HISTORY_TOOL_NAMES, runHistoryTool } from './history.mjs';
 import { INVITE_TOOLS, INVITE_TOOL_NAMES, runInviteTool } from './invite-tool.mjs';
-import { PHOTO_TOOLS, createPhotoLinksTool } from './photo-links-tool.mjs';
+import { PHOTO_TOOLS, brief as readingBrief, createPhotoLinksTool } from './photo-links-tool.mjs';
+import { photoFoldersOf } from './photo-links.mjs';
 import { IMAGES, RENAME_TOOLS, RENAME_TOOL_NAMES, createRenamePhotos } from './rename-photos.mjs';
 import { SITE_TOOLS, SITE_TOOL_NAMES, createSiteUpdates } from './site-updates.mjs';
 import { DRIVE_PHOTO_TOOLS, DRIVE_PHOTO_TOOL_NAMES, createDrivePhotos } from './drive-photos.mjs';
@@ -83,6 +85,11 @@ const EDITORS = ['editor', 'reviewer', 'admin'];
  * picks up to as many.
  */
 const PROPOSAL_ROWS = 500;
+/** propose_changes: identifiers changed on more rows than this come doubtful (guardIdChanges). */
+const ID_CHANGE_ROWS = 3;
+/** get_walk waits this long for a walk being read (as drive_photos does), looking every WALK_POLL_MS. */
+const WALK_WAIT_MS = 90_000;
+const WALK_POLL_MS = 3000;
 /** update_proposal: this many rows or more given the same cells are answered as one `sameChange` entry. */
 const SAME_CHANGE_ROWS = 3;
 const tooManyRows = n => `At most ${PROPOSAL_ROWS} rows per proposal (here ${n}): put the rest in another proposal.`;
@@ -96,6 +103,8 @@ const TURN_MS = 50;
 const narrower = () =>
   `One proposal takes at most ${PROPOSAL_ROWS} rows: narrow the filters (count_records says how many match, e.g. per month), or make another proposal for the rest.`;
 const isoDate = serial => new Date(Date.UTC(1899, 11, 30) + serial * 864e5).toISOString().slice(0, 10);
+/** A day as the team reads it (dd/mm/yyyy), in texts shown in the app. */
+const dayFirst = serial => isoDate(Math.floor(serial)).split('-').reverse().join('/');
 const TIME_FIELD = /(^|_)time$/i;
 /** "9:20" in a time column becomes the day fraction Sheets stores (the grids show it as 9:20). */
 const withSheetTimes = values =>
@@ -184,12 +193,13 @@ const TOOLS = [
     function: {
       name: 'get_record',
       description:
-        'One row: its sheet and row, every non-empty value (formula cells computed) and `formulas` (the text of each formula cell).',
+        'One row: its sheet and row, every non-empty value (formula cells computed), `formulaColumns` and the sums kept as formulas (=16+2-1); `formulas: true`: the text of every formula cell.',
       parameters: {
         type: 'object',
         properties: {
           id: { type: 'string', description: 'recordId, or the ID in the sheet (W2B, CAM079891, a clutch)' },
           sheet: { type: 'string' },
+          formulas: { type: 'boolean' },
         },
         required: ['id'],
       },
@@ -290,7 +300,7 @@ const TOOLS = [
       name: 'get_walk',
       description:
         [
-          'A Wikiloc walk read from its public page (no GPS times). While it is being read: its queue status; call again a minute later.',
+          'A Wikiloc walk read from its public page (no GPS times). While it is being read the answer waits for it, a minute and a half at most; then its queue status.',
           '- points: each with its parsed note (species, subspecies, sex, time, height, weather, mark; transect section from the GPS position), inSheet (already in Collection_data) and the Monitoreo checks (recapture, mark on another species, 30-preserved rule, missing parts).',
           "- newRows: the points not in the sheet as Collection_data rows in the app's import template, for ONE `propose_changes`. Preserved points come without CAM_ID and Tube_1_id: ask for them (envelope, tube label) or leave them out and say so.",
           '- problems: the day or collector is unknown: ask, then pass `date` / `collector`.',
@@ -544,7 +554,7 @@ const TOOLS = [
           '- Cells the person edited are theirs: kept, and returned as conflicts; `overridePersonEdits` only when they ask.',
           "- photo / rotate: as in match_notebook; a show_rows table's too.",
           '- `highlight` (rows, changes, newRows; propose_changes too): marks the row, as in show_rows; false unmarks.',
-          '- `discard: true` alone: takes it out of review (a table: closes it); nothing is written.',
+          '- `discard: true` alone: takes it out of review (a table: closes it); nothing more is written. One applied one sheet at a time keeps the rows written (`written`, `notWritten`).',
           'On a proposal no longer pending: what became of it (applied or discarded, when, by whom) and where further changes go.',
           'Returns `changed`: for each row, the cells this revision set (`set`; a new row, or one changed in another way, as get_proposal full shows it; rows given the same cells as one `sameChange`), their `lookAt`, `removed`, the row count; `full: true`: every row.',
         ].join('\n'),
@@ -590,8 +600,9 @@ const TOOLS = [
           "A proposal as the person sees it now: status (applied or closed: when, by whom), revision, its photos, each row's label by index (`labels`), `lookAt` and `attention`, the rows that need a look:",
           "- personEdits: cells the person corrected, or set back to the sheet's value (not written), with what you had proposed;",
           '- doubtful: doubtful cells not checked yet (value, alternatives, reason); unreadable: cells still empty (never written empty);',
-          "- sheetChanged: cells edited in the sheet after you read them (read, now, by, applying). Applying keeps the sheet's value unless the person chose yours; re-check them, then update_proposal: your value goes over the sheet's, null keeps it. rowTaken: a new row's pre-made row is in use now.",
-          "`orderDiffers`: a notebook page's lines in another order in the sheet. `full: true`: every row with its index, values (dates YYYY-MM-DD), note and these marks (`offset` continues a long one).",
+          "- sheetChanged: cells edited in the sheet after you read them: by, at, `asProposed` (how many hold your value now) and the other `cells` (read, now, proposed). Applying keeps the sheet's value unless the person chose yours (`applying`); re-check them, then update_proposal: your value goes over the sheet's, null keeps it. `inSheet`: the same for the whole proposal in one line. rowTaken: a new row's pre-made row is in use now.",
+          "`orderDiffers`: a notebook page's lines in another order in the sheet. `full: true`: every row with its index, values (dates YYYY-MM-DD), note and these marks, rows given the same as one `sameChange`, context rows counted (`offset` continues a long one).",
+          'A Photo_links reading (sync_photo_links): its counts and a few examples; `full: true`: every example.',
           'Read it when the person says they changed the table, before update_proposal on a proposal you did not just make, and before apply_proposal if they edited it.',
           "A teammate's proposal reads the same, with `by` and readOnly.",
         ].join('\n'),
@@ -1335,8 +1346,10 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   /**
    * The checked rows of a proposal (as the save will check them), or { error }.
    * `ids` is shared when a page is checked one row at a time (IDs repeated between rows).
+   * `guards`: an Insectary_data SPECIES typed by hand set to its clutch's species is the formula
+   * again, doubtful (speciesFromClutch); off for the fixes the app builds itself.
    */
-  function draftChanges(args, ids = idsFor(), maxRows = PROPOSAL_ROWS) {
+  function draftChanges(args, ids = idsFor(), maxRows = PROPOSAL_ROWS, { guards = true } = {}) {
     const idsUsed = () => ids.used();
     const edits = Array.isArray(args.changes) ? args.changes : [];
     const creates = Array.isArray(args.newRows) ? args.newRows : [];
@@ -1413,6 +1426,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         if (fallback.includes(key) || !(key in gives) || sameAsFormula(gives[key] ?? '', values[key])) delete values[key];
         else overFormula.add(key);
       }
+      const guarded = guards ? speciesFromClutch(old, values, formulas) : null;
       for (const key of Object.keys(values)) {
         if (overFormula.has(key)) {
           replaceFormula.push(key);
@@ -1463,6 +1477,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       }
       if (!Object.keys(values).length) continue;
       if (Object.keys(values).every(key => !formulaCells.includes(key) && comparable(before[key]) === comparable(values[key]))) continue;
+      const marks = formulaMarks({ left: weighed.left, over: weighed.over.filter(o => o.field in values) });
+      if (guarded && 'SPECIES' in values) marks.doubts = { ...marks.doubts, SPECIES: guarded };
       changes.push({
         recordId: old.id,
         sheet: old.sheet,
@@ -1475,12 +1491,201 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         ...(formulaCells.length ? { formulaCells } : {}),
         note: clip(candidate.note, 300),
         ...(candidate.highlight === true ? { highlight: true } : {}),
-        ...formulaMarks({ left: weighed.left, over: weighed.over.filter(o => o.field in values) }),
+        ...marks,
       });
     }
     if (!changes.length) return { error: 'Every proposed value is already in the sheet' };
     return { changes };
   }
+
+  /** What propose_changes says of the rows speciesFromClutch set back to the formula. */
+  function speciesAnswer(changes) {
+    const rows = changes.flatMap((c, index) => (c.doubts?.SPECIES?.guard && c.sheet === 'Insectary_data' ? [{ index, label: c.label, reason: c.doubts.SPECIES.reason }] : []));
+    if (!rows.length) return {};
+    return {
+      speciesFromClutch: rows.slice(0, 20),
+      speciesFromClutchNote:
+        "Set to its clutch's species, typed by hand before: what emerged often differs from the clutch on purpose (proceriformis → eurydice). Doubtful cells the person checks; drop them (null) to keep what is typed.",
+    };
+  }
+
+  /**
+   * Identifiers renamed on more than ID_CHANGE_ROWS rows (the columns that must not repeat,
+   * verifications.mjs isUnique: CAM_ID, Insectary_ID, tubes): each such cell doubtful, looked at
+   * against a photo or the envelope before applying. Where the photos named after a new CAM are
+   * in a folder whose other butterflies are from another country or year than the row, or were
+   * taken before it was collected, the cell says so. Marks `changes` in place; returns the
+   * answer's { idChanges } or {}.
+   */
+  function guardIdChanges(changes) {
+    const renamed = [];
+    changes.forEach((c, index) => {
+      if (c.create || c.context) return;
+      for (const [field, value] of Object.entries(c.values ?? {})) {
+        if (!isUnique(c.sheet, field) || c.formulaCells?.includes(field)) continue;
+        const was = c.before?.[field];
+        if (!isIdValue(was) || same(was, value?.clear ? null : value)) continue;
+        renamed.push({ index, change: c, field, was, value: value?.clear ? null : value });
+      }
+    });
+    const rows = new Set(renamed.map(r => r.index));
+    if (rows.size <= ID_CHANGE_ROWS) return {};
+    const cams = renamed.filter(r => /CAM/i.test(r.field) && isIdValue(r.value));
+    let folders = new Map();
+    try {
+      if (cams.length) folders = photoFoldersOf(store, cams.map(r => r.value), { except: cams.map(r => r.was) });
+    } catch (e) {
+      console.error('ID changes (photo folders):', e.message);
+    }
+    // The rows whose photos disagree the same way (the same folder, the same country or year) said once.
+    const conflicts = new Map();
+    for (const r of renamed) {
+      const record = store.getRecord(r.change.recordId);
+      const conflict = isIdValue(r.value) ? folderConflict(record, r.value, folders.get(String(r.value).trim().toUpperCase())) : null;
+      const m = conflict
+        ? msg('{conflict}: mira una foto o el sobre antes de aplicar', { conflict: conflict.m })
+        : msg('Cambia el identificador {was}: mira una foto o el sobre antes de aplicar', { was: String(r.was) });
+      r.change.doubts = { ...r.change.doubts, [r.field]: { alternatives: [r.was], reason: m.text, reasonMsg: m.msg, guard: true } };
+      if (!conflict) continue;
+      const group = conflicts.get(conflict.key) ?? conflicts.set(conflict.key, { rows: 0, labels: [], example: conflict.m.text }).get(conflict.key);
+      group.rows++;
+      if (group.labels.length < 20) group.labels.push(r.change.label);
+    }
+    return {
+      idChanges: {
+        rows: rows.size,
+        cells: renamed.length,
+        note: 'Identifiers changed on many rows: doubtful cells the person checks against a photo or the envelope before applying.',
+        ...(conflicts.size ? { conflicts: [...conflicts.values()].slice(0, 10) } : {}),
+      },
+    };
+  }
+
+  /**
+   * Where the photos named after `id` disagree with the row it goes in (`places`: photoFoldersOf's
+   * for that ID): their folder's butterflies from another country or collected another year, or
+   * taken before the row's butterfly was collected or came in: { m: a msg(), key: the kind of
+   * disagreement and its folder }, or null.
+   */
+  function folderConflict(record, id, places) {
+    if (!record || !places?.length) return null;
+    const v = record.values ?? {};
+    const date = record.sheet === 'Collection_data' ? v.Collection_date : [v.Preservation_date, v.Death_date, v.Intro2Insectary_date].find(d => typeof d === 'number');
+    const first = record.sheet === 'Collection_data' ? v.Collection_date : v.Intro2Insectary_date;
+    const year = typeof date === 'number' ? Number(isoDate(date).slice(0, 4)) : null;
+    const country = record.sheet === 'Collection_data' && !isNone(v.Country) ? String(v.Country).trim() : null;
+    for (const p of places) {
+      const folder = p.folder || '/';
+      if (country && p.country && p.country.value !== country)
+        return { key: `country\u0000${folder}\u0000${country}`, m: msg('Las fotos {id} están en {folder}, de mariposas de {other} ({n} de {of}); la fila es de {country}', {
+          id: String(id),
+          folder,
+          other: p.country.value,
+          n: p.country.n,
+          of: p.country.of,
+          country,
+        }) };
+      if (year && p.year && p.year.value !== year)
+        return { key: `year\u0000${folder}\u0000${year}`, m: msg('Las fotos {id} están en {folder}, de mariposas colectadas en {other} ({n} de {of}); la fila es de {year}', {
+          id: String(id),
+          folder,
+          other: String(p.year.value),
+          n: p.year.n,
+          of: p.year.of,
+          year: String(year),
+        }) };
+      if (typeof first === 'number' && typeof p.taken === 'number' && Math.floor(p.taken) < Math.floor(first))
+        return { key: `before\u0000${folder}`, m: msg('Las fotos {id} de {folder} se tomaron el {taken}, antes que la fila ({date})', {
+          id: String(id),
+          folder,
+          taken: dayFirst(p.taken),
+          date: dayFirst(first),
+        }) };
+    }
+    return null;
+  }
+
+  /**
+   * An Insectary_data row whose SPECIES was typed over its formula (no formula in the cell), set to
+   * its clutch's species: what emerged may differ from the clutch on purpose (proceriformis →
+   * eurydice), and the clutch's species is the formula's to give. The column's formula goes back
+   * in its place (`formulas`, `values` changed here) when the sheet has a usual one, and the cell
+   * is doubtful with the clutch's other butterflies counted by species. Returns that doubt, or null.
+   */
+  function speciesFromClutch(old, values, formulas) {
+    if (old.sheet !== 'Insectary_data' || typeof values.SPECIES !== 'string' || 'SPECIES' in formulas || old.formulas?.SPECIES) return null;
+    const typed = old.values?.SPECIES;
+    if (isNone(typed) || sameAsFormula(typed, values.SPECIES)) return null;
+    const clutch = values['CLUTCH NUMBER'] ?? old.values?.['CLUTCH NUMBER'];
+    if (isNone(clutch)) return null;
+    const species = notebooks.speciesOfClutch(clutch);
+    if (isNone(species) || !sameAsFormula(species, values.SPECIES)) return null;
+    const formula = speciesFormulaFor(old, values, species);
+    if (formula) {
+      formulas.SPECIES = formula;
+      values.SPECIES = { formula };
+    }
+    const siblings = siblingSpecies(old, clutch);
+    const vars = { species, clutch: String(clutch).trim(), typed, siblings: siblings || '0' };
+    const m = formulas.SPECIES
+      ? msg('«{species}» es la especie de su clutch {clutch}: vuelve la fórmula, sobre «{typed}» escrito a mano. Hermanos: {siblings}', vars)
+      : msg('«{species}» es la especie de su clutch {clutch}, sobre «{typed}» escrito a mano. Hermanos: {siblings}', vars);
+    return { alternatives: [typed], reason: m.text, reasonMsg: m.msg, guard: true };
+  }
+
+  /**
+   * Insectary_data's SPECIES formula for `old`'s row: the nearest row's that has one, moved to this
+   * row, when it gives `species` there (the column is typed over too often to have a usual pattern).
+   * Null when none does.
+   */
+  function speciesFormulaFor(old, values, species) {
+    // The rows around first (a few ms), the whole sheet only when none of them has it.
+    const nearest = (from, to) =>
+      db
+        .prepare(
+          `SELECT row_num, json_extract(formulas_json, '$.SPECIES') formula FROM records
+           WHERE sheet = 'Insectary_data' AND missing = 0 AND row_num BETWEEN ? AND ? AND json_extract(formulas_json, '$.SPECIES') IS NOT NULL
+           ORDER BY abs(row_num - ?) LIMIT 1`,
+        )
+        .get(from, to, old.row);
+    const near = nearest(old.row - 300, old.row + 300) ?? nearest(2, 1_999_999_999);
+    if (!near?.formula) return null;
+    const formula = shiftFormula(near.formula, old.row - near.row_num);
+    const { gives, fallback } = rowFormulaGives({ sheet: old.sheet, values: { ...values, SPECIES: formula }, formulaCells: ['SPECIES'] }, old);
+    return !fallback.includes('SPECIES') && 'SPECIES' in gives && sameAsFormula(gives.SPECIES ?? '', species) ? formula : null;
+  }
+
+  /** The other butterflies of a clutch in Insectary_data by species, most first ("27 proceriformis, 7 eurydice"). */
+  function siblingSpecies(record, clutch) {
+    const key = String(clutch).trim();
+    // A clutch's butterflies by species, read once while the copy is unchanged (a page holds many siblings).
+    const version = store.copyVersion?.() ?? null;
+    if (siblingCounts.version !== version || version === null) siblingCounts = { version, byClutch: new Map() };
+    let all = siblingCounts.byClutch.get(key);
+    if (!all) {
+      all = db
+        .prepare(
+          `SELECT json_extract(values_json, '$.SPECIES') species, count(*) n FROM records
+           WHERE sheet = 'Insectary_data' AND missing = 0 AND observed = 1
+             AND trim(CAST(json_extract(values_json, '$."CLUTCH NUMBER"') AS TEXT)) = ?
+           GROUP BY 1`,
+        )
+        .all(key);
+      siblingCounts.byClutch.set(key, all);
+    }
+    // Without the row itself.
+    const own = comparable(record.values?.SPECIES ?? null);
+    let skipped = false;
+    const rows = all
+      .map(r => (!skipped && comparable(r.species) === own && String(record.values?.['CLUTCH NUMBER'] ?? '').trim() === key ? ((skipped = true), { ...r, n: r.n - 1 }) : r))
+      .filter(r => r.n > 0 && !isNone(r.species))
+      .sort((a, b) => b.n - a.n || String(a.species).localeCompare(String(b.species)));
+    // The species' shared words said once: their subspecies tell them apart.
+    const words = rows.map(r => String(r.species).trim().split(/\s+/));
+    const shared = words.length > 1 && words.every(w => w.length > 2 && w[0] === words[0][0] && w[1] === words[0][1]) ? 2 : 0;
+    return rows.map((r, i) => `${r.n} ${words[i].slice(shared).join(' ')}`).join(', ');
+  }
+  let siblingCounts = { version: null, byClutch: new Map() };
 
   /**
    * What an answer says of the values a proposal typed into formula cells: those left to the
@@ -1559,10 +1764,35 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     return pendingIndex;
   }
   /**
-   * The team's other pending proposals that hold rows of `changes` (not those in `exclude`): who
-   * drafted each, and the rows of `changes` it holds too (their labels).
+   * How much of a proposal's rows still to write the sheet holds now: { cells, inSheet }, the
+   * cells and those holding the proposed value already. A new row whose pre-made row (its Insectary
+   * ID) was typed into meanwhile is compared with that row.
    */
-  function overlapsWith(changes, exclude = [], keys = null) {
+  function inSheetOf(changes) {
+    const writing = changes.filter(c => !c.context && !c.applied && !c.placeholder && Object.keys(c.values ?? {}).length);
+    const taken = takenRows(store, writing);
+    let cells = 0;
+    let inSheet = 0;
+    for (const c of writing) {
+      const held = c.create && c.values?.Insectary_ID ? taken.get(String(c.values.Insectary_ID)) : null;
+      const record = c.create ? (held ? store.getRecord(held.recordId) : null) : currentRecord(store, c);
+      for (const [field, value] of Object.entries(c.values)) {
+        cells++;
+        // A value typed over a formula, by the value the cell shows.
+        const replacing = !!record?.formulas?.[field] && !!c.replaceFormula?.includes(field);
+        if (record && !record.missing && cellHolds(c.sheet, field, value ?? null, record, replacing)) inSheet++;
+      }
+    }
+    return { cells, inSheet };
+  }
+
+  /**
+   * The team's other pending proposals that hold rows of `changes` (not those in `exclude`): who
+   * drafted each, the rows of `changes` it holds too (their labels) and, unless `inSheet` is false,
+   * how many of its cells the sheet holds already (`cells`, `alreadyInSheet`): a proposal drafted
+   * before the rows were typed by hand holds them all.
+   */
+  function overlapsWith(changes, exclude = [], keys = null, { inSheet = true } = {}) {
     const { byKey } = pendingKeys();
     const skip = new Set(exclude.filter(Boolean));
     const found = new Map();
@@ -1575,7 +1805,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (!found.size) return [];
     const people = new Map();
     return [...found].map(([id, labels]) => {
-      const p = db.prepare('SELECT owner_id, reason FROM ai_proposals WHERE id = ?').get(id);
+      const p = db.prepare(`SELECT owner_id, reason${inSheet ? ', changes_json' : ''} FROM ai_proposals WHERE id = ?`).get(id);
       if (!people.has(p.owner_id)) {
         let name = null;
         try {
@@ -1585,7 +1815,15 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         }
         people.set(p.owner_id, name || p.owner_id);
       }
-      return { proposalId: id, by: people.get(p.owner_id), reason: p.reason, rows: [...labels].slice(0, 10), count: labels.size };
+      const held = inSheet ? inSheetOf(parse(p.changes_json) ?? []) : null;
+      return {
+        proposalId: id,
+        by: people.get(p.owner_id),
+        reason: p.reason,
+        rows: [...labels].slice(0, 10),
+        count: labels.size,
+        ...(held ? { cells: held.cells, alreadyInSheet: held.inSheet } : {}),
+      };
     });
   }
   /** The notebook a page's proposal was read from (match_notebook), or null for another proposal. */
@@ -1609,17 +1847,9 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (!p || p.status !== 'pending' || isTable(p) || isSync(p)) return found;
     const changes = parse(p.changes_json) ?? [];
     const writing = changes.filter(c => !c.context && !c.applied && Object.keys(c.values ?? {}).length);
-    let cells = 0;
-    let inSheet = 0;
-    for (const c of writing) {
-      const record = c.create ? null : currentRecord(store, c);
-      for (const [field, value] of Object.entries(c.values)) {
-        cells++;
-        const replacing = !!record?.formulas?.[field] && !!c.replaceFormula?.includes(field);
-        if (record && !record.missing && cellHolds(c.sheet, field, value, record, replacing)) inSheet++;
-      }
-    }
-    const out = { ...found, cells, alreadyInSheet: inSheet };
+    // overlapsWith counts them already (inSheetOf).
+    const held = 'alreadyInSheet' in found ? null : inSheetOf(changes);
+    const out = held ? { ...found, cells: held.cells, alreadyInSheet: held.inSheet } : found;
     const kind = notebookOf(p);
     if (!kind || !writing.length) return out;
     // A row by its record, or by its sheet and label (a new row; a record a sync replaced).
@@ -1668,7 +1898,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     }
   };
   /** A stored pending proposal's overlaps (its keys read once per revision). */
-  const overlapsOfRow = r => overlapsWith([], [r.id], keysOf(r.id, `${r.revision}:${r.updated_at}`, r.changes_json));
+  const overlapsOfRow = r => overlapsWith([], [r.id], keysOf(r.id, `${r.revision}:${r.updated_at}`, r.changes_json), { inSheet: false });
 
   /** A drafted proposal saved for review: it shows at once in Cambios propuestos (and the chat). */
   function saveProposal(changes, reason, context, issueIds = [], view = null, photos = []) {
@@ -2054,9 +2284,11 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (ignored.length && !args.changes.length && !args.newRows.length)
       return { error: 'Every value was null, and null means no change. To empty a cell give {"clear": true}.' };
     // A bulk call's rows are counted once those already holding its values are left out.
-    const drafted = draftChanges(args, idsFor(), bulk ? Infinity : PROPOSAL_ROWS);
+    const drafted = draftChanges(args, idsFor(), bulk ? Infinity : PROPOSAL_ROWS, { guards: !literal });
     if (drafted.error) return drafted;
     const { changes } = drafted;
+    // Identifiers changed on many rows: doubtful, each against a photo or its envelope.
+    const idChanges = literal ? {} : guardIdChanges(changes);
     if (changes.length > rowCap(changes))
       return {
         error: `${changes.length} rows to change. ${rowCap(changes) > PROPOSAL_ROWS ? `A proposal that only writes formulas takes at most ${FORMULA_ROWS} rows: split the rows (bulk rows: { from, to }).` : narrower()}`,
@@ -2082,9 +2314,11 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       found,
     });
     // Formulas not the column's usual one, or looking up whole columns: said with how many rows.
-    const formulaNoted = formulaNotesSummary(changes);
+    // (A SPECIES set back to its column's formula, speciesFromClutch, is the sheet's own formula: not told.)
+    const written = changes.map(c => (c.doubts?.SPECIES?.guard ? { ...c, formulaCells: c.formulaCells?.filter(f => f !== 'SPECIES') } : c));
+    const formulaNoted = formulaNotesSummary(written);
     // What the formulas cost the workbook's recalculation (server/formula-cost.mjs).
-    const formulaCost = formulaCostAnswer(proposalFormulaCost(store, changes));
+    const formulaCost = formulaCostAnswer(proposalFormulaCost(store, written));
     // Row indexes for update_proposal (new rows first, then edits of existing rows). A long
     // proposal: a bulk call's preview, or where to read them.
     const listed = changes.length <= (bulk ? 30 : 100);
@@ -2104,6 +2338,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         : {}),
       ...(look ? { lookAt: look } : {}),
       ...(overlaps.length ? { overlaps } : {}),
+      ...idChanges,
+      ...speciesAnswer(changes),
       ...(formulaNoted.length ? { formulaNotes: formulaNoted } : {}),
       ...(formulaCost ? { formulaCost } : {}),
       ...formulaAnswer(changes, dropped),
@@ -2180,12 +2416,17 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
    * while its value is the same.
    */
   function remarked(change, next) {
-    const others = map => Object.entries(map ?? {}).filter(([, m]) => !m?.formula);
+    const others = map => Object.entries(map ?? {}).filter(([, m]) => !m?.formula && !m?.guard);
+    // A guard's doubt (speciesFromClutch, ID changes) stays while its cell keeps the value it was about.
+    const guarded = Object.entries(change.doubts ?? {}).filter(
+      ([f, m]) => m?.guard && !(f in (next.doubts ?? {})) && f in (next.values ?? {}) && same(change.values?.[f], next.values[f]),
+    );
     const doubts = Object.fromEntries([
       ...others(change.doubts),
+      ...guarded,
       ...Object.entries(next.doubts ?? {}).map(([f, d]) => {
         const was = change.doubts?.[f];
-        return [f, was?.formula && was.checked && same(change.values?.[f], next.values?.[f]) ? { ...d, checked: was.checked } : d];
+        return [f, (was?.formula || was?.guard) && was.checked && same(change.values?.[f], next.values?.[f]) ? { ...d, checked: was.checked } : d];
       }),
     ]);
     const hints = Object.fromEntries([...others(change.hints), ...Object.entries(next.hints ?? {})]);
@@ -2595,30 +2836,49 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       moduleMap.get(sheet)?.fields.find(f => f.key === field)?.type === 'date' && typeof value === 'number' ? isoDate(value) : value;
     const open = proposal?.status === 'pending';
     const inUse = open ? takenRows(store, changes) : new Map();
-    // Cells edited in the sheet since they were read, as the table shows them: what applying does with each.
+    // Cells edited in the sheet since they were read: who and when once for the row, the cells that
+    // now hold what the row proposes counted (`asProposed`), the others with what was read, what the
+    // sheet has and what is proposed. Applying keeps the sheet's value unless the person chose
+    // (`applying` on those cells).
     const sheetOf = c => {
       const state = open && !c.context ? sheetState(c, proposal.created_at, inUse) : {};
+      let sheetChanged = null;
+      if (state.sheetChanged) {
+        const edits = Object.entries(state.sheetChanged);
+        const by = [...new Set(edits.map(([, e]) => e.by ?? (e.source ? (e.source === 'app' ? 'app' : 'Google Sheets') : null)).filter(Boolean))];
+        const at = edits
+          .map(([, e]) => e.at)
+          .filter(Boolean)
+          .sort()
+          .at(-1);
+        let asProposed = 0;
+        const cells = {};
+        for (const [f, e] of edits) {
+          const applying = e.again
+            ? 'edited again after the person chose: not applied until they look'
+            : e.use === 'proposal'
+              ? 'yours, over the sheet (the person chose)'
+              : null;
+          if (!applying && same(e.now, c.values[f])) {
+            asProposed++;
+            continue;
+          }
+          cells[f] = {
+            read: readable(c.sheet, f, e.read),
+            now: readable(c.sheet, f, e.now),
+            proposed: readable(c.sheet, f, c.values[f] ?? null),
+            ...(applying ? { applying } : {}),
+          };
+        }
+        sheetChanged = {
+          ...(by.length ? { by: by.join(', ') } : {}),
+          ...(at ? { at } : {}),
+          ...(asProposed ? { asProposed } : {}),
+          ...(Object.keys(cells).length ? { cells } : {}),
+        };
+      }
       return {
-        ...(state.sheetChanged
-          ? {
-              sheetChanged: Object.fromEntries(
-                Object.entries(state.sheetChanged).map(([f, e]) => [
-                  f,
-                  {
-                    read: readable(c.sheet, f, e.read),
-                    now: readable(c.sheet, f, e.now),
-                    ...(e.by ? { by: e.by } : e.source ? { by: e.source === 'app' ? 'app' : 'Google Sheets' } : {}),
-                    ...(e.at ? { at: e.at } : {}),
-                    applying: e.again
-                      ? 'edited again after the person chose: not applied until they look'
-                      : e.use === 'proposal'
-                        ? 'yours, over the sheet (the person chose)'
-                        : "keeps the sheet's",
-                  },
-                ]),
-              ),
-            }
-          : {}),
+        ...(sheetChanged ? { sheetChanged } : {}),
         ...(state.rowTaken ? { rowTaken: `row ${state.rowTaken.row} is in use now (${state.rowTaken.label}): this new row is left out` } : {}),
       };
     };
@@ -2870,7 +3130,13 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (isTable(proposal)) return { error: NOT_A_PROPOSAL };
     if (isSync(proposal)) {
       const { add: _add, only: _only, ...card } = parse(proposal.sync_json) ?? {};
-      return { proposalId: proposal.id, kind: 'photo folders read for Photo_links (sync_photo_links)', status: proposal.status, ...card, ...proposalLink(proposal.id, proposal.t3_thread) };
+      const about = { proposalId: proposal.id, status: proposal.status, ...proposalLink(proposal.id, proposal.t3_thread) };
+      if (card.type) return { ...about, ...card, ...(args.full === true ? { full: 'This card is the same with or without full.' } : {}) };
+      const kind = { kind: 'photo folders read for Photo_links (sync_photo_links)' };
+      // A reading as sync_photo_links answered it (counts, a few examples); `full`: the whole card.
+      if (args.full === true) return { ...about, ...kind, ...card };
+      const { scan: _scan, next, ...shown } = readingBrief(proposal.id, card);
+      return { ...about, ...kind, ...shown, ...(proposal.status === 'pending' && next ? { next } : {}), more: 'full: true gives every example' };
     }
     // A notebook page's proposal as a reader's file in the person's workspace, to match the page again.
     if (args.saveLines) {
@@ -2896,6 +3162,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       ...(proposal.t3_title ? { chatTitle: proposal.t3_title } : {}),
       status: proposal.status,
       ...closedOf(proposal),
+      ...(proposal.status === 'applied' ? writtenParts(changes) : {}),
       revision: proposal.revision,
       reason: proposal.reason,
       createdAt: proposal.created_at,
@@ -2911,22 +3178,78 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       // needs_review: what the sheet holds of it, as compared after the last sync.
       ...(proposal.status === 'needs_review' && proposal.check_json ? { sheetCheck: sheetCheckOf(parse(proposal.check_json)) } : {}),
     };
+    const contextRows = changes.filter(c => c.context).length;
+    const verdict = proposal.status === 'pending' ? sheetVerdict(changes, table) : {};
     if (args.full === true) {
       const from = Math.min(Math.max(Number(args.offset) || 0, 0), table.length);
-      const rest = table.slice(from);
-      const more = shown => (shown < rest.length ? { truncated: true, next: `Rows ${from + shown}–${table.length - 1} not shown: get_proposal with full: true and offset: ${from + shown}` } : {});
-      return fitList({ ...head, total: table.length, ...slimRows(rest) }, 'rows', RESULT_BUDGET - 500, more).out;
+      // Rows only shown for context (already in the sheet, never written) are counted, not listed, unless marked.
+      const { rows: listed, sameChange } = sameRows(table.slice(from).filter(v => !v.context || v.highlight));
+      const more = shown =>
+        shown < listed.length
+          ? { truncated: true, next: `Rows ${listed[shown].index}–${table.length - 1} not shown: get_proposal with full: true and offset: ${listed[shown].index}` }
+          : {};
+      // One sheet said once, for the rows and the sameChange entries.
+      const one = table.length > 0 && table.every(v => v.sheet === table[0].sheet) ? table[0].sheet : null;
+      const same = one ? sameChange.map(({ sheet: _sheet, ...g }) => g) : sameChange;
+      const out = { ...head, ...verdict, total: table.length, ...(one ? { sheet: one } : {}), ...(contextRows ? { contextRows } : {}), ...(same.length ? { sameChange: same } : {}) };
+      return fitList({ ...out, ...slimRows(listed) }, 'rows', RESULT_BUDGET - 500, more).out;
     }
-    const contextRows = changes.filter(c => c.context).length;
     const attention = attentionRows(table);
     return {
       ...head,
+      ...verdict,
       rows: table.length,
       labels: table.map(v => v.label),
       ...(contextRows ? { contextRows } : {}),
       attention,
       ...(proposal.status === 'pending' ? lookAtRows(changes) : {}),
       ...orderDiffers(proposal),
+    };
+  }
+
+  /**
+   * get_proposal full's rows, those that say the same (the same cells set to the same values, the
+   * same note and marks) as one `sameChange` entry from SAME_CHANGE_ROWS rows on, as update_proposal
+   * answers them: { rows: the others, sameChange: [{ rows, sheet, values, …, indexes, labels }] }.
+   */
+  function sameRows(table) {
+    const groups = new Map();
+    for (const v of table) {
+      const { index: _index, label: _label, row: _row, recordId: _recordId, ...rest } = v;
+      const key = json(rest);
+      groups.set(key, [...(groups.get(key) ?? []), v]);
+    }
+    const same = [...groups.values()].filter(g => g.length >= SAME_CHANGE_ROWS);
+    const grouped = new Set(same.flat().map(v => v.index));
+    return {
+      rows: table.filter(v => !grouped.has(v.index)),
+      sameChange: same.map(g => {
+        const { index: _index, label: _label, row: _row, recordId: _recordId, ...shared } = g[0];
+        return { rows: g.length, ...shared, indexes: g.map(v => v.index), labels: g.map(v => v.label) };
+      }),
+    };
+  }
+
+  /**
+   * One line on what the sheet holds of a pending proposal whose rows were edited there since it
+   * was drafted (or whose new rows' pre-made rows are in use): { inSheet }, or nothing.
+   */
+  function sheetVerdict(changes, table) {
+    const edited = table.filter(v => v.sheetChanged);
+    const taken = table.filter(v => v.rowTaken).length;
+    if (!edited.length && !taken) return {};
+    const { cells, inSheet } = inSheetOf(changes);
+    const other = edited.reduce((n, v) => n + Object.keys(v.sheetChanged.cells ?? {}).length, 0);
+    const people = [...new Set(edited.flatMap(v => v.sheetChanged.by?.split(', ') ?? []))];
+    const by = people.length ? ` (by ${people.join(', ')})` : '';
+    const rows = table.filter(v => !v.context && !changes[v.index]?.applied).length;
+    if (cells && inSheet === cells)
+      return { inSheet: `All ${cells} cells it writes are in the sheet already${by}: applying it changes nothing.` };
+    const left = Math.max(cells - inSheet - other, 0);
+    return {
+      inSheet:
+        `${edited.length} of its ${rows} rows edited in the sheet since it was drafted${by}: ${inSheet} of its ${cells} cells hold what it proposes` +
+        `${other ? `, ${other} another value` : ''}${left ? `, ${left} still to write` : ''}${taken ? `; ${taken} new rows' pre-made rows are in use` : ''}.`,
     };
   }
 
@@ -3441,17 +3764,60 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
   }
 
   /**
+   * get_walk: the walk once read; while the home computer reads it, the answer waits for it (a
+   * minute and a half at most, as drive_photos), checking every few seconds. A reading Wikiloc's
+   * Cloudflare check stopped points to the walk's GPX, imported in Monitoreo → Importar.
+   */
+  async function getWalk(args) {
+    const given = {
+      walkId: args.walkId ? clip(args.walkId, 60) : undefined,
+      url: args.url ? clip(args.url, 500) : undefined,
+      date: args.date ? clip(args.date, 10) : undefined,
+      collector: args.collector ? clip(args.collector, 120) : undefined,
+    };
+    const end = Date.now() + (config.walkWaitMs ?? WALK_WAIT_MS);
+    let out = await walkDraft(store, given);
+    while (['queued', 'running'].includes(out?.status) && out.workerOnline && Date.now() < end) {
+      await new Promise(resolve => setTimeout(resolve, Math.min(config.walkPollMs ?? WALK_POLL_MS, Math.max(end - Date.now(), 0))));
+      out = await walkDraft(store, given);
+    }
+    if (out?.status === 'failed' && /cloudflare/i.test(String(out.message ?? '')))
+      return {
+        ...out,
+        next: "Wikiloc's Cloudflare check stopped the home computer. The person downloads the walk's GPX in Wikiloc and opens it in Monitoreo → Importar («Elegir GPX de Wikiloc»), which reads it with its GPS times.",
+      };
+    return out;
+  }
+
+  /**
+   * A proposal applied one sheet at a time and then taken out of review: the rows written and those
+   * left out, each { rows, sheets, labels } ({} when it was written whole, or not at all).
+   */
+  function writtenParts(changes) {
+    const rows = changes.filter(c => !c.context && !c.placeholder);
+    const written = rows.filter(c => c.applied);
+    const left = rows.filter(c => !c.applied && Object.keys(c.values ?? {}).length);
+    if (!written.length || !left.length) return {};
+    const part = list => ({ rows: list.length, sheets: [...new Set(list.map(c => c.sheet))], labels: list.slice(0, 30).map(c => c.label) });
+    return { written: part(written), notWritten: part(left) };
+  }
+
+  /**
    * update_proposal on a proposal that is no longer pending: what became of it (when, by whom)
    * and where its rows go from here.
    */
   function closedAnswer(proposal) {
     const about = { proposalId: proposal.id, status: proposal.status, ...closedOf(proposal) };
-    if (proposal.status === 'applied')
+    if (proposal.status === 'applied') {
+      const parts = writtenParts(parse(proposal.changes_json) ?? []);
       return {
-        error:
-          'Applied: its rows are in the sheet. More changes to them go in a new proposal (propose_changes, or match_notebook for a page); notes beside its photo without changes, in a table (show_rows).',
+        error: parts.written
+          ? `Applied in part: its ${parts.written.sheets.join(', ')} rows are in the sheet, its ${parts.notWritten.sheets.join(', ')} rows were left out. More changes go in a new proposal (propose_changes, or match_notebook for a page).`
+          : 'Applied: its rows are in the sheet. More changes to them go in a new proposal (propose_changes, or match_notebook for a page); notes beside its photo without changes, in a table (show_rows).',
         ...about,
+        ...parts,
       };
+    }
     if (proposal.status === 'discarded')
       return { error: 'Discarded: nothing of it was written. To write it after all, draft it again (propose_changes).', ...about };
     return { error: notPending(proposal), ...about };
@@ -3477,7 +3843,9 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       const open = isTable(proposal) ? proposal.status === 'shown' : proposal.status === 'pending';
       if (!open) return closedAnswer(proposal);
       const to = discardProposal(proposal, 'ai');
-      return to ? { proposalId: proposal.id, status: to } : closedAnswer(ownProposal(proposal.id, context.user));
+      // A proposal applied one sheet at a time keeps the rows written: which, and which were left out.
+      const parts = to === 'applied' ? writtenParts(parse(proposal.changes_json) ?? []) : {};
+      return to ? { proposalId: proposal.id, status: to, ...parts } : closedAnswer(ownProposal(proposal.id, context.user));
     }
     // A table shown with show_rows takes its photos here too, as show_rows with tableId does.
     if (isTable(proposal)) {
@@ -4958,7 +5326,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       if (!record) return { error: 'Record not found' };
       context.records.set(record.id, record);
       context.sources.set(record.id, recordSource(record));
-      return compact(record, { allFormulas: true });
+      return compact(record, { allFormulas: args.formulas === true });
     }
     if (['search_knowledge', 'read_document', 'list_documents', 'sync_documents'].includes(name))
       return runKnowledgeTool(knowledge, name, args, context);
@@ -5014,13 +5382,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot queue walks' };
       return queueWalk(store, { url: clip(args.url, 500), refresh: !!args.refresh }, context.user);
     }
-    if (name === 'get_walk')
-      return walkDraft(store, {
-        walkId: args.walkId ? clip(args.walkId, 60) : undefined,
-        url: args.url ? clip(args.url, 500) : undefined,
-        date: args.date ? clip(args.date, 10) : undefined,
-        collector: args.collector ? clip(args.collector, 120) : undefined,
-      });
+    if (name === 'get_walk') return await getWalk(args);
     if (name === 'propose_changes') {
       const missing = args.missingFormulas ? await missingFormulaChanges(args) : null;
       if (missing?.error) return missing;

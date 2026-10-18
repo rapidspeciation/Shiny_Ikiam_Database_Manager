@@ -411,4 +411,16 @@ export default {
   '«{value}» no se escribe: columna protegida en la hoja': '«{value}» is not written: the column is protected in the sheet',
   '«{value}» no se escribe: la columna es una fórmula': '«{value}» is not written: the column is a formula',
   'La fórmula daría «{value}»': 'The formula would give «{value}»',
+  // server/assistant.mjs: a species typed by hand set back to its clutch's, identifiers changed on many rows
+  '«{species}» es la especie de su clutch {clutch}: vuelve la fórmula, sobre «{typed}» escrito a mano. Hermanos: {siblings}':
+    '«{species}» is the species of its clutch {clutch}: the formula goes back, over «{typed}» typed by hand. Siblings: {siblings}',
+  '«{species}» es la especie de su clutch {clutch}, sobre «{typed}» escrito a mano. Hermanos: {siblings}':
+    '«{species}» is the species of its clutch {clutch}, over «{typed}» typed by hand. Siblings: {siblings}',
+  '{conflict}: mira una foto o el sobre antes de aplicar': '{conflict}: look at a photo or the envelope before applying',
+  'Cambia el identificador {was}: mira una foto o el sobre antes de aplicar': 'Changes the identifier {was}: look at a photo or the envelope before applying',
+  'Las fotos {id} están en {folder}, de mariposas de {other} ({n} de {of}); la fila es de {country}':
+    'The photos {id} are in {folder}, of butterflies from {other} ({n} of {of}); the row is from {country}',
+  'Las fotos {id} están en {folder}, de mariposas colectadas en {other} ({n} de {of}); la fila es de {year}':
+    'The photos {id} are in {folder}, of butterflies collected in {other} ({n} of {of}); the row is from {year}',
+  'Las fotos {id} de {folder} se tomaron el {taken}, antes que la fila ({date})': 'The photos {id} in {folder} were taken on {taken}, before the row ({date})',
 } as Record<string, string>

@@ -58,8 +58,10 @@ test('a cell edited in the sheet after the proposal is told apart, and its value
     // The assistant reads it too.
     const got = await f.call('get_proposal', { proposalId });
     assert.equal(got.attention[0].index, 0);
-    assert.equal(got.attention[0].sheetChanged.Sex.now, 'NA');
-    assert.match(got.attention[0].sheetChanged.Sex.applying, /keeps the sheet/);
+    assert.deepEqual(got.attention[0].sheetChanged.cells.Sex, { read: 'male', now: 'NA', proposed: 'female' });
+    assert.equal(got.attention[0].sheetChanged.by, 'Google Sheets');
+    // The other cell is still to write; applying keeps the sheet's NA (no `applying` on it: the default).
+    assert.match(got.inSheet, /^1 of its 1 rows edited in the sheet .*: 0 of its 2 cells hold what it proposes, 1 another value, 1 still to write\.$/);
 
     const out = await f.apply(proposalId);
     assert.equal(out.status, 200, JSON.stringify(out.body));

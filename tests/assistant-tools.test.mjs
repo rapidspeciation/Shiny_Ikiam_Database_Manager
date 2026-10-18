@@ -274,9 +274,12 @@ test('update_proposal highlights rows (a context row and a changed one), keeps t
   try {
     const out = await call('match_notebook', { ...PAGE, includeUnchanged: true });
     const full = await call('get_proposal', { proposalId: out.proposalId, full: true });
-    const context = full.rows.find(r => r.context);
+    // A context row (already in the sheet) is counted, not listed, until it is marked.
+    assert.equal(full.contextRows, 1);
+    assert.ok(full.rows.every(r => !r.context));
+    const context = { index: [...Array(full.total).keys()].find(i => !full.rows.some(r => r.index === i)) };
     const changed = full.rows.find(r => !r.context && !r.create);
-    assert.ok(context && changed, JSON.stringify(full.rows));
+    assert.ok(context.index !== undefined && changed, JSON.stringify(full.rows));
     assert.ok(full.rows.every(r => !('highlight' in r)));
 
     let revised = await call('update_proposal', {
@@ -293,15 +296,17 @@ test('update_proposal highlights rows (a context row and a changed one), keeps t
     revised = await call('update_proposal', { proposalId: out.proposalId, rows: [{ index: changed.index, values: { NOTES: 'larvas sanas' } }] });
     assert.ok(!revised.error, JSON.stringify(revised));
     let again = await call('get_proposal', { proposalId: out.proposalId, full: true });
-    assert.equal(again.rows[changed.index].highlight, true);
-    assert.equal(again.rows[context.index].highlight, true);
+    const at = (answer, index) => answer.rows.find(r => r.index === index);
+    assert.equal(at(again, changed.index).highlight, true);
+    assert.equal(at(again, context.index).highlight, true, 'a marked context row is listed');
+    assert.ok(at(again, context.index).context);
 
     // false takes it off; a row not named keeps its mark.
     revised = await call('update_proposal', { proposalId: out.proposalId, rows: [{ index: context.index, highlight: false }] });
     assert.deepEqual(revised.changed.map(r => [r.index, r.highlight]), [[context.index, false]]);
     again = await call('get_proposal', { proposalId: out.proposalId, full: true });
-    assert.ok(!('highlight' in again.rows[context.index]));
-    assert.equal(again.rows[changed.index].highlight, true);
+    assert.equal(at(again, context.index), undefined, 'unmarked, counted again');
+    assert.equal(at(again, changed.index).highlight, true);
     [shown] = await list();
     assert.ok(!shown.changes.find(c => c.context).highlight);
   } finally {

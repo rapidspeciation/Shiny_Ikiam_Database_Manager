@@ -187,8 +187,8 @@ export function cardOf(scan, { add = [], only = [] } = {}) {
   };
 }
 
-/** A card as the model gets it. */
-function brief(id, card, shown = {}) {
+/** A card as the model gets it (sync_photo_links, and get_proposal without `full`). */
+export function brief(id, card, shown = {}) {
   const c = card.changes;
   const count = (n, examples) => (n > examples.length ? { count: n, examples } : examples);
   return filled({
