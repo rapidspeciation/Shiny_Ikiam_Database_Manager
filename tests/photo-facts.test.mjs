@@ -7,7 +7,7 @@ import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { buildLexicon, envelopeOfReadings, isoDate, noteCorrections, parseEnvelope, similarity } from '../server/envelope-fields.mjs';
 import { importBundle, readCuration, readGallery, readWingSides } from '../server/envelope-import.mjs';
-import { nameView, photoName, wingProblem } from '../server/photodata.mjs';
+import { bumpReviewRevision, nameView, photoName, wingProblem } from '../server/photodata.mjs';
 import { PHOTO_FACTS_TOOLS, photoFactsData, runPhotoFacts } from '../server/photo-facts.mjs';
 import { planPhotoLinks } from '../server/photo-links.mjs';
 import { FOLDER } from '../server/drive.mjs';
@@ -232,7 +232,7 @@ test('photo_facts: per CAM, the envelope, the workbook with its notes, the galle
   assert.deepEqual(a.envelope.sex, ['male', 0.97]);
   assert.equal(a.envelope.lines.CAM000105d[1][0], 'Mechanitis');
   assert.equal(a.workbook[0].sex, 'female');
-  assert.deepEqual(a.gallery.species, ['Mechanitis polymnia', 0.9]);
+  assert.equal(a.gallery.species, 'Mechanitis polymnia 0.9, Other one 0.1');
   assert.equal(a.wings.pair, 'suffix swapped');
   assert.deepEqual(a.wings.otherSide, ['CAM000105d shows ventral', 'CAM000105v shows dorsal']);
   assert.deepEqual(a.files.map(f => f.name), ['CAM000105d.JPG', 'CAM000105v.JPG']);
@@ -251,6 +251,29 @@ test('photo_facts: per CAM, the envelope, the workbook with its notes, the galle
   assert.equal(after.envelopes, before.envelopes);
   assert.equal(after.byCam.get('CAM000105')[0].values.Sex, 'male');
   assert.equal(none.workbook, 'no row with this CAM_ID');
+});
+
+test('photo_facts with the photo readings: the top 5, why a sex is not supported, the photos alone that give another species, wings counted and missing', async () => {
+  const { store } = await fixture();
+  // The columns and table the photo readings add (/tmp/photo-readings-schema.md, 18 Oct 2026).
+  store.db.exec(`ALTER TABLE photo_predictions ADD COLUMN sex_status TEXT;
+    ALTER TABLE photo_wing_sides ADD COLUMN fore_side TEXT; ALTER TABLE photo_wing_sides ADD COLUMN hind_side TEXT;
+    ALTER TABLE photo_wing_sides ADD COLUMN missing_json TEXT; ALTER TABLE photo_wing_sides ADD COLUMN wings_json TEXT; ALTER TABLE photo_wing_sides ADD COLUMN error TEXT;
+    CREATE TABLE photo_file_predictions(file_id TEXT PRIMARY KEY, name TEXT, cam TEXT, view TEXT, species_json TEXT, genus_json TEXT, subspecies_json TEXT, andes TEXT,
+      crop_status TEXT, crop_box_json TEXT, model TEXT, source TEXT, imported_at TEXT);`);
+  const top5 = JSON.stringify([['Mechanitis polymnia', 0.8123], ['Mechanitis messenoides', 0.1], ['Melinaea menophilus', 0.05], ['Mechanitis lysimnia', 0.02], ['Hypothyris anastasia', 0.011], ['Oleria onega', 0.004]]);
+  store.db.prepare("UPDATE photo_predictions SET species_json=?, sex='female', sex_conf=0.71, sex_supported=0, sex_status='below_confidence' WHERE cam='CAM000105'").run(top5);
+  store.db.prepare("UPDATE photo_wing_sides SET wings=3, missing_json='[\"hindwing_left\"]', side='mixed', fore_side='ventral', hind_side='dorsal' WHERE name='CAM000105v'").run();
+  store.db.prepare("INSERT INTO photo_file_predictions(file_id,name,cam,view,species_json) VALUES('f-d','CAM000105d','CAM000105','d',?),('f-v','CAM000105v','CAM000105','v',?)").run(
+    JSON.stringify([['Mechanitis polymnia', 0.7]]),
+    JSON.stringify([['Mechanitis messenoides', 0.55]]),
+  );
+  bumpReviewRevision(store.db);
+  const [a] = runPhotoFacts(store, { cams: ['CAM000105'] }).cams;
+  assert.equal(a.gallery.species, 'Mechanitis polymnia 0.81, Mechanitis messenoides 0.1, Melinaea menophilus 0.05, Mechanitis lysimnia 0.02, Hypothyris anastasia 0.01');
+  assert.deepEqual(a.gallery.sex, ['female', 0.71, 'not supported: below_confidence']);
+  assert.deepEqual(a.gallery.photos, { CAM000105v: 'Mechanitis messenoides 0.55' });
+  assert.match(a.wings.photos.CAM000105v, /^mixed [\d.]+ \(forewings ventral, hindwings dorsal\), 3 wings \(no hindwing left\)$/);
 });
 
 test('photo_facts without CAMs: the disagreements of the archive, the surest first, without those settled', async () => {

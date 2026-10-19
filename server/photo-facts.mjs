@@ -20,8 +20,8 @@ export const PHOTO_FACTS_TOOLS = [
     function: {
       name: 'photo_facts',
       description: [
-        "What the archive's photos say about butterflies beside what the workbook says, read-only. The photo archive was read away from the app: the envelope in each photo (full-text OCR of the handwriting, right on about 9 lines in 10, so each field comes with its confidence 0–1), the Wings Gallery's species and sex prediction, and the wing models' reading of which side each photo's wings show and whether the photo is turned.",
-        '- `cams`: per CAM (up to 25): `envelope` (each field [value, confidence]: species as the workbook writes it, sex, locality (the workbook\'s name; what was read when different), code (the insectary\'s code written on reared butterflies\' envelopes, e.g. F77, 4MT), crispr, camid (the ID written on the envelope); `dates` [kind, date, confidence], kind date (no label: on field envelopes the collection day), death, preserved, wingClip, emerged; `photos` read; `differ`: fields its photos read differently), `workbook` (its Collection_data / Insectary_data rows: species, sex, locality, dates, insectaryId, and `notes`: the species, sex or CAM_ID changes their notes record, with the sentence), `gallery` (species and subspecies [name, confidence], sex [sex, confidence, supported], andes: the side of the Andes it assumed), `wings` (each photo: the side its wings show with P(dorsal), `turned`, the pair\'s verdict, the models\' review reasons), `files` (Photo_links: name, folder, link), `disagree` and `explained` (disagreements a note or a curation decision accounts for). `lines: true` adds the OCR lines of each photo.',
+        "What the archive's photos say about butterflies beside what the workbook says, read-only. The photo archive was read away from the app: the envelope in each photo (full-text OCR of the handwriting, right on about 9 lines in 10, so each field comes with its confidence 0–1), the AI's species and sex prediction, and the wing models' reading of each photo: which side its wings show, how many wings, and whether the photo is turned.",
+        '- `cams`: per CAM (up to 25): `envelope` (each field [value, confidence]: species as the workbook writes it, sex, locality (the workbook\'s name; what was read when different), code (the insectary\'s code written on reared butterflies\' envelopes, e.g. F77, 4MT), crispr, camid (the ID written on the envelope); `dates` [kind, date, confidence], kind date (no label: on field envelopes the collection day), death, preserved, wingClip, emerged; `photos` read; `differ`: fields its photos read differently), `workbook` (its Collection_data / Insectary_data rows: species, sex, locality, dates, insectaryId, and `notes`: the species, sex or CAM_ID changes their notes record, with the sentence), `gallery` (the AI\'s prediction for the butterfly\'s photos together: species and subspecies, up to 5 each as "name probability", those under 1 % left out; sex [sex, confidence, supported or why not]; andes: the side of the Andes it assumed; `photos`: the photos whose own prediction puts another species first), `wings` (each photo: the side its wings show with P(dorsal), the wings counted when not 4 and those missing, `turned`, the pair\'s verdict, the models\' review reasons), `files` (Photo_links: name, folder, link), `disagree` and `explained` (disagreements a note or a curation decision accounts for). `lines: true` adds the OCR lines of each photo.',
         '- Without `cams`: the disagreements across the archive, the surest first, paged (`offset`, `limit` up to 100): species (envelope ≠ workbook), sex (envelope ≠ workbook), gallery (the gallery ≥ 90 % sure of another species), camid (the envelope shows another CAM than the file name), wings (the wings show the other side than the d/v of the name, or the photo is turned). `counts` per kind; `settled`: left out because a note, a curation decision or a verdict in Revisión accounts for them. `kind` (comma-separated) and `q` (text in the CAM, names or locality) narrow it.',
       ].join('\n'),
       parameters: {
@@ -174,8 +174,13 @@ function wingsOf(data, index, cam) {
   const problems = [];
   for (const w of list) {
     const now = (w.fileId && index.files.get(w.fileId)?.name) || w.name;
-    const side = w.side ? `${w.side} ${r2(w.pDorsal)}` : 'not checked';
-    out.photos[now] = `${side}${w.wings !== null && w.wings !== 4 ? `, ${w.wings} wings` : ''}`;
+    if (w.error) {
+      out.photos[now] = `not read: ${String(w.error).slice(0, 80)}`;
+      continue;
+    }
+    const side = w.side ? `${w.side} ${r2(w.pDorsal)}${w.side === 'mixed' && w.foreSide ? ` (forewings ${w.foreSide}, hindwings ${w.hindSide})` : ''}` : 'not checked';
+    const missing = w.missing?.length ? ` (no ${w.missing.map(m => m.replace('_', ' ')).join(', ')})` : '';
+    out.photos[now] = `${side}${w.wings !== null && w.wings !== undefined && w.wings !== 4 ? `, ${w.wings} wings${missing}` : ''}`;
     const problem = wingProblem(w, now);
     if (problem?.side) problems.push(`${now} shows ${problem.side}`);
     if (problem?.turn) (out.turned ??= {})[now] = `${problem.turn} (turn ${problem.degrees}° clockwise to fix)`;
@@ -187,14 +192,31 @@ function wingsOf(data, index, cam) {
   return out;
 }
 
-function galleryFacts(prediction) {
+/** A ranked list as one short line: "Mechanitis polymnia 0.9, Melinaea menophilus 0.06" (up to 5, those under 1 % left out). */
+const ranked = list =>
+  (list ?? [])
+    .filter(([, p], i) => i === 0 || p >= 0.01)
+    .slice(0, 5)
+    .map(([name, p]) => `${name} ${r2(p)}`)
+    .join(', ') || undefined;
+
+/** The AI's prediction for a CAM, and the photos alone that give another species first. */
+function galleryFacts(prediction, photos = [], index = null) {
   if (!prediction) return null;
-  const top = list => (list?.[0] ? [list[0][0], r2(list[0][1])] : undefined);
+  const sex = prediction.sex;
+  const why = sex && !sex.supported ? (sex.status && sex.status !== 'species_supported' ? `not supported: ${sex.status}` : 'not supported') : 'supported';
+  const first = prediction.species?.[0]?.[0];
+  const others = {};
+  for (const p of photos) {
+    const top = p.species?.[0];
+    if (top && first && top[0] !== first) others[(p.fileId && index?.files.get(p.fileId)?.name) || p.name] = `${top[0]} ${r2(top[1])}`;
+  }
   return {
-    species: top(prediction.species),
-    ...(prediction.subspecies?.[0] ? { subspecies: top(prediction.subspecies) } : {}),
-    ...(prediction.sex ? { sex: [prediction.sex.sex, r2(prediction.sex.confidence), prediction.sex.supported ? 'supported' : 'not supported'] } : {}),
+    species: ranked(prediction.species),
+    ...(prediction.subspecies?.[0] ? { subspecies: ranked(prediction.subspecies) } : {}),
+    ...(sex ? { sex: [sex.sex, r2(sex.confidence), why] } : {}),
     ...(prediction.andes ? { andes: prediction.andes } : {}),
+    ...(Object.keys(others).length ? { photos: others } : {}),
   };
 }
 
@@ -352,7 +374,7 @@ export function camFacts(store, cams, { lines = false } = {}) {
       envelope: envelopeFacts(entry, lines) ?? 'not read (not in the archive scan)',
       workbook: rows.length ? rows.map(r => rowFacts(facts, r)) : 'no row with this CAM_ID',
     };
-    const gallery = galleryFacts(data.predictions.get(cam));
+    const gallery = galleryFacts(data.predictions.get(cam), data.filePredictions?.get(cam), index);
     if (gallery) out.gallery = gallery;
     const wings = wingsOf(data, index, cam);
     if (wings) out.wings = wings;

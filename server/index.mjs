@@ -259,6 +259,9 @@ export function configFromEnv(env = process.env) {
     drivePhotosCache: env.DRIVE_PHOTOS_CACHE ? resolve(env.DRIVE_PHOTOS_CACHE) : env.DATABASE_PATH ? join(dirname(resolve(env.DATABASE_PATH)), 'drive-photos') : undefined,
     // The AI Identifier's files (identify_species, server/identifier.mjs; tools/identifier/setup.sh): beside the database by default.
     identifierDir: env.IDENTIFIER_DIR ? resolve(env.IDENTIFIER_DIR) : env.DATABASE_PATH ? join(dirname(resolve(env.DATABASE_PATH)), 'identifier') : undefined,
+    // Field and specimen photos of species from Ecuador's butterfly sites (reference_photos, server/reference-photos.mjs;
+    // made and copied there by scripts/reference-photos.mjs): beside the database by default.
+    referencePhotosDir: env.REFERENCE_PHOTOS_DIR ? resolve(env.REFERENCE_PHOTOS_DIR) : env.DATABASE_PATH ? join(dirname(resolve(env.DATABASE_PATH)), 'reference-photos') : undefined,
     identifierOptions: {
       ...(env.IDENTIFIER_THREADS ? { threads: Number(env.IDENTIFIER_THREADS) } : {}),
       ...(env.IDENTIFIER_IDLE_MINUTES ? { idleMinutes: Number(env.IDENTIFIER_IDLE_MINUTES) } : {}),

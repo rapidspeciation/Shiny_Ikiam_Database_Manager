@@ -188,14 +188,36 @@ export function reviewData(store) {
           genus: parse(p.genus_json) ?? [],
           subspecies: parse(p.subspecies_json) ?? [],
           sex: p.sex
-            ? { sex: p.sex, confidence: p.sex_conf, supported: !!p.sex_supported, species: p.sex_species }
+            ? {
+                sex: p.sex,
+                confidence: p.sex_conf,
+                supported: !!p.sex_supported,
+                species: p.sex_species,
+                // The sex model's screen (photo readings): why a sex is not supported.
+                ...(p.sex_status ? { status: p.sex_status } : {}),
+              }
             : null,
           ...(p.andes ? { andes: p.andes } : {}),
         },
       ]),
   );
-  const out = { stamp, readings, readingsByCam, flags, boxes, predictions, wings: wingSides(store) };
+  const out = { stamp, readings, readingsByCam, flags, boxes, predictions, filePredictions: filePredictions(db), wings: wingSides(store) };
   dataCache.set(store, out);
+  return out;
+}
+
+/**
+ * The identifier on each photo alone (photo_file_predictions, from the photo readings; none before):
+ * CAM → [{ fileId, name, view, species: [[name, p], …], subspecies }].
+ */
+function filePredictions(db) {
+  const out = new Map();
+  if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='photo_file_predictions'").get()) return out;
+  for (const p of db.prepare('SELECT * FROM photo_file_predictions ORDER BY name').all()) {
+    if (!p.cam) continue;
+    const row = { fileId: p.file_id, name: p.name, view: p.view, species: parse(p.species_json) ?? [], subspecies: parse(p.subspecies_json) ?? [] };
+    (out.get(p.cam) ?? out.set(p.cam, []).get(p.cam)).push(row);
+  }
   return out;
 }
 
@@ -238,6 +260,13 @@ function wingIndex(db) {
       review: !!r.review,
       folder: r.folder,
       source: r.source,
+      // The photo readings' columns (none in earlier imports): each half's verdict, the wings missing,
+      // a box per wing (fractions of the photo as shown), and why a photo could not be read.
+      ...(r.fore_side ? { foreSide: r.fore_side, hindSide: r.hind_side } : {}),
+      ...(r.missing_json ? { missing: parse(r.missing_json) ?? [] } : {}),
+      // Read when a view of the photo needs them (server/photo-views.mjs).
+      ...(r.wings_json ? { wingsJson: r.wings_json } : {}),
+      ...(r.error ? { error: r.error } : {}),
     };
     if (row.cam) (byCam.get(row.cam) ?? byCam.set(row.cam, []).get(row.cam)).push(row);
     if (row.fileId) byFile.set(row.fileId, row);

@@ -2,23 +2,29 @@
 import { computed } from 'vue'
 import { AlertTriangle, ExternalLink, GalleryHorizontalEnd, X } from 'lucide-vue-next'
 import type { Proposal } from '../../lib/proposals'
-import { photoUrl } from '../../lib/review'
+import { photoUrl, type Box } from '../../lib/review'
+import CropImage from '../review/CropImage.vue'
 
 /**
  * Butterflies' photos the assistant shows beside the chat (show_photos), by CAM ID: the dorsal and
  * ventral photos side by side, its note, and the views Photo_links does not list. Only to look at
- * (a photo opens larger in another tab); «Cerrar» takes the card away.
+ * (a photo opens larger in another tab); «Cerrar» takes the card away. With a `view`, each photo cut
+ * to its wings, and/or the butterfly's envelope (boxes read from the photo archive).
  */
 interface GalleryItem {
   id: string
   note?: string
   inWorkbook: boolean
   missing: string[]
-  photos: { view: string; name: string; file: string; url: string; folder: string }[]
+  photos: { view: string; name: string; file: string; url: string; folder: string; wings?: Box }[]
+  envelope?: { fileId: string; name: string; bbox: Box; turned: number; aspect: number }
 }
 const props = defineProps<{ proposal: Proposal }>()
 const emit = defineEmits<{ discard: [] }>()
-const items = computed(() => ((props.proposal.sync as unknown as { items?: GalleryItem[] })?.items ?? []) as GalleryItem[])
+const card = computed(() => (props.proposal.sync ?? {}) as unknown as { items?: GalleryItem[]; view?: 'wings' | 'envelope' | 'both' })
+const items = computed(() => card.value.items ?? [])
+/** The envelope alone stands for the photos (`view: envelope`), when it is known. */
+const photosOf = (item: GalleryItem) => (card.value.view === 'envelope' && item.envelope ? [] : item.photos)
 const open = computed(() => props.proposal.status === 'pending')
 const viewName = (view: string) => (view.startsWith('d') ? 'dorsal' : view.startsWith('v') ? 'ventral' : view)
 </script>
@@ -40,7 +46,25 @@ const viewName = (view: string) => (view.startsWith('d') ? 'dorsal' : view.start
         </p>
         <div class="flex flex-wrap gap-2">
           <a
-            v-for="p in item.photos"
+            v-if="item.envelope"
+            :href="photoUrl(item.envelope.fileId, 1600)"
+            target="_blank"
+            rel="noopener"
+            class="relative block shrink-0 overflow-hidden rounded"
+            :title="$t('Sobre en {name}', { name: item.envelope.name })"
+          >
+            <CropImage
+              :src="photoUrl(item.envelope.fileId, 1600)"
+              :alt="$t('Sobre en {name}', { name: item.envelope.name })"
+              :box="item.envelope.bbox"
+              :aspect="item.envelope.aspect"
+              :turned="item.envelope.turned"
+              class="h-32 w-auto"
+            />
+            <span class="absolute top-1 left-1 rounded bg-black/60 px-1 text-[11px] text-white">{{ $t('Sobre') }}</span>
+          </a>
+          <a
+            v-for="p in photosOf(item)"
             :key="p.file"
             :href="photoUrl(p.file, 1600)"
             target="_blank"
@@ -48,10 +72,11 @@ const viewName = (view: string) => (view.startsWith('d') ? 'dorsal' : view.start
             class="group relative block w-[calc(50%-0.25rem)] min-w-[9rem] overflow-hidden rounded bg-stone-100"
             :title="`${p.folder}/${p.name}`"
           >
-            <img :src="photoUrl(p.file)" :alt="p.name" loading="lazy" class="h-32 w-full object-contain" />
+            <CropImage v-if="p.wings" :src="photoUrl(p.file)" :alt="p.name" :box="p.wings" class="mx-auto h-32 w-auto!" />
+            <img v-else :src="photoUrl(p.file)" :alt="p.name" loading="lazy" class="h-32 w-full object-contain" />
             <span class="absolute top-1 left-1 rounded bg-black/60 px-1 text-[11px] text-white">{{ viewName(p.view) }} · {{ p.name }}</span>
           </a>
-          <p v-for="v in item.missing" :key="v" class="flex h-32 w-[calc(50%-0.25rem)] min-w-[9rem] items-center justify-center gap-1 rounded border border-dashed border-amber-300 bg-amber-50 text-xs text-amber-900">
+          <p v-for="v in photosOf(item).length || !item.envelope ? item.missing : []" :key="v" class="flex h-32 w-[calc(50%-0.25rem)] min-w-[9rem] items-center justify-center gap-1 rounded border border-dashed border-amber-300 bg-amber-50 text-xs text-amber-900">
             <AlertTriangle :size="13" /> {{ $t('sin foto {view} en Photo_links', { view: viewName(v) }) }}
           </p>
         </div>

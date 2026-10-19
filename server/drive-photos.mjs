@@ -24,6 +24,8 @@ import { FOLDER, driveFor, driveTree, driveWriterFor } from './drive.mjs';
 import { driveIdOf, knownId, photoLinkRows, specimenName, specimens } from './photo-links.mjs';
 import { IMAGES, checkBatch } from './rename-photos.mjs';
 import { attachmentFile } from './proposal-photos.mjs';
+import { photoBoxes, startViewer, viewPlan } from './photo-views.mjs';
+import { PAGE as REFERENCE_PAGE, collectionLabel, collectionSpecimens, referenceFile, referenceLabel, referencePage, referenceSet, sexOf, speciesOf } from './reference-photos.mjs';
 
 export const DRIVE_PHOTO_TOOLS = [
   {
@@ -65,11 +67,12 @@ export const DRIVE_PHOTO_TOOLS = [
     function: {
       name: 'photo_files_look',
       description:
-        "Pictures of any photo files on Google Drive, from Drive's resized copies (as the Wings Gallery loads them: quick, not the whole file): what a Photo_links reading or a person points to. `files` (up to 8): a Drive file ID, its link, or a file name or path (with or without its extension: the files of that name in Photo_links, else on Drive, …_todelete ones too; with a path, only those in that folder, the others named in `otherFolders`). Each picture says its real `path`, `sizeKb` and when it was taken; a file asked twice comes once (`sameAs`). `size`: 800 (default: the wings, which side, the turn) or 1600 (an envelope's writing). `box` [x0, y0, x1, y1], fractions of the picture (0,0 its top left): that part, from the 1600 px copy.",
+        "Pictures of any photo files on Google Drive, from Drive's resized copies (as the Wings Gallery loads them: quick, not the whole file): what a Photo_links reading or a person points to. `files` (up to 8): a Drive file ID, its link, or a file name or path (with or without its extension: the files of that name in Photo_links, else on Drive, …_todelete ones too; with a path, only those in that folder, the others named in `otherFolders`). Each picture says its real `path`, `sizeKb` and when it was taken; a file asked twice comes once (`sameAs`). `view`, for a specimen's photo: `wings` (the wings only, 640 px), `envelope` (the envelope only, 560 px, turned upright), `both` (the two side by side, 360 px high: the species and sex against what the envelope says), `full` (default: the whole photo); cut with the boxes read from the photo archive, and the whole photo, with `note`, when its box is not known. `size` (the whole photo): 800 (default: the wings, which side, the turn) or 1600 (an envelope's writing). `box` [x0, y0, x1, y1], fractions of the picture (0,0 its top left): that part, from the 1600 px copy.",
       parameters: {
         type: 'object',
         properties: {
           files: { type: 'array', items: { type: 'string' } },
+          view: { type: 'string', enum: ['full', 'wings', 'envelope', 'both'] },
           size: { type: 'number', enum: [800, 1600] },
           box: { type: 'array', items: { type: 'number' } },
         },
@@ -97,6 +100,28 @@ export const DRIVE_PHOTO_TOOLS = [
           box: { type: 'array', items: { type: 'number' } },
         },
         required: ['files'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'reference_photos',
+      description: [
+        "Photos of a species to compare a butterfly with, each picture with a line saying what it is: the collection's own butterflies of that species (dorsal and ventral wings in one picture; those whose species the Wings Gallery's model also gives come first), then field and specimen photos from butterfly sites of Ecuador (sangay.eu, noreste.eu, cotacachi.eu, loja-zamora.eu, a few from amazonian-butterflies.net and neotropicalbutterflies.com).",
+        "It helps in the doubtful cases: the identifier unsure of a photo, or naming another species than the workbook; then the photos of both species beside the butterfly's own settle most of them. For the rest, identify_species and the photo itself are enough.",
+        '- `species`: a name as the workbook writes it (with its subspecies, those come first); `sex`: "female" or "male"; `cam`: the butterfly in question, left out; `page`: 1, 2… for more.',
+        "Species of other countries (Colombia, Brazil…) have no field or specimen photos yet: only the collection's, when it has them.",
+      ].join('\n'),
+      parameters: {
+        type: 'object',
+        properties: {
+          species: { type: 'string' },
+          sex: { type: 'string', enum: ['female', 'male'] },
+          cam: { type: 'string' },
+          page: { type: 'integer' },
+        },
+        required: ['species'],
       },
     },
   },
@@ -153,6 +178,8 @@ const VIEW_MAX = 8;
 const VIEW_PER_NAME = 4;
 const VIEWS_BYTES = 300 * 1024 ** 2;
 const VIEW_TIMEOUT_MS = 15_000;
+/** reference_photos: the height of a collection butterfly's picture (its dorsal and ventral wings side by side). */
+const COLLECTION_HEIGHT = 300;
 /** identify_species: photos a call (about 3 s each). */
 const IDENTIFY_MAX = 6;
 /** The first species' probability from which an identification is told as high: right 96 % of the time above, 67 % below (17 Oct 2026, 303 photos). */
@@ -256,9 +283,10 @@ export const nameFor = (r, ext = '.JPG') => (r.camid && r.view ? `${r.camid}${r.
  * Drive photo batches for one app. `organize(operations, user)`: a plan of changes to the files made
  * and started (server/photo-links-tool.mjs), answering { plan, link } or { error }. `show(batch)`,
  * `tell(batch)`: its card made, and changed. `readerDir`, `cacheDir`, `reader` (a fake for tests).
- * `identifier`: the AI Identifier's process (server/identifier.mjs), for identify_species.
+ * `identifier`: the AI Identifier's process (server/identifier.mjs), for identify_species. `viewer`: what
+ * makes the views of a photo (server/photo-views.mjs startViewer; a fake for tests).
  */
-export function createDrivePhotos({ store, config = {}, readerDir = null, cacheDir = null, organize = null, show = null, tell = null, reader = null, identifier = null, waitMs = WAIT_MS, freeBytes = FREE_BYTES, fetchImpl = fetch }) {
+export function createDrivePhotos({ store, config = {}, readerDir = null, cacheDir = null, organize = null, show = null, tell = null, reader = null, viewer = null, identifier = null, waitMs = WAIT_MS, freeBytes = FREE_BYTES, fetchImpl = fetch }) {
   const db = store.db;
   db.exec(`CREATE TABLE IF NOT EXISTS drive_photo_batches (id TEXT PRIMARY KEY, owner TEXT NOT NULL, folder_id TEXT NOT NULL, folder TEXT NOT NULL,
     status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, summary_json TEXT NOT NULL DEFAULT '{}', plan TEXT, error TEXT)`);
@@ -778,12 +806,39 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
     trimViews();
     return path;
   }
-  async function lookAtDrive({ files, size = 800, box = null }) {
+  /**
+   * A picture made by the views' process (server/photo-views.mjs), kept with the copies under a name of
+   * what it shows: { path } or { error, message }. `session.viewer`: the process, started with the first.
+   */
+  async function madePicture(session, key, job) {
+    mkdirSync(views, { recursive: true, mode: 0o700 });
+    const path = join(views, `${key.replace(/[^\w-]/g, '')}-${createHash('sha1').update(JSON.stringify(job)).digest('hex').slice(0, 10)}.jpg`);
+    if (existsSync(path)) {
+      const now = new Date();
+      utimesSync(path, now, now);
+      return { path };
+    }
+    try {
+      session.viewer ??= viewer ?? startViewer(readerDir ?? config.photoReaderDir);
+    } catch (e) {
+      return { error: 'no viewer', message: String(e.message || e) };
+    }
+    const made = await session.viewer.make({ ...job, out: path });
+    if (made.error) return { error: made.error, message: made.error };
+    trimViews();
+    return { path };
+  }
+  const closeViews = session => session.viewer && session.viewer !== viewer && session.viewer.close?.();
+
+  async function lookAtDrive({ files, size = 800, box = null, view = 'full' }) {
     const side = Number(size) >= 1200 ? 1600 : 800;
     const area = Array.isArray(box) && box.length === 4 ? box.map(Number) : null;
+    // A view of a specimen's photo (a `box` takes its place).
+    const wanted = !area && ['wings', 'envelope', 'both'].includes(view) ? view : null;
     const out = { pictures: [] };
     const images = [];
     const seen = new Map();
+    const session = {};
     let cutter = null;
     try {
       for (const given of (Array.isArray(files) ? files : [files]).map(text).filter(Boolean).slice(0, VIEW_MAX)) {
@@ -807,7 +862,21 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
           seen.set(f.id, given);
           if (images.length >= VIEW_MAX) break;
           try {
-            let path = await viewOf(f.id, area ? 1600 : side);
+            let path = null;
+            let shown = null;
+            let note = null;
+            if (wanted) {
+              const plan = viewPlan(wanted, photoBoxes(store, { id: f.id, name: f.name }));
+              if (plan.parts) {
+                const src = await viewOf(f.id, 1600);
+                const made = await madePicture(session, `${f.id}-${wanted}`, { parts: plan.parts.map(p => ({ ...p, src })), side: plan.side, height: plan.height, wide: plan.wide });
+                if (made.path) [path, shown] = [made.path, wanted];
+                else if (made.error === 'shape') note = 'the photo was turned after its boxes were read: the whole photo';
+                else if (made.error === 'no viewer') note = `${made.message} The whole photo.`;
+                else throw new Error(made.message);
+              } else note = `${plan.missing}: the whole photo`;
+            }
+            path ??= await viewOf(f.id, area ? 1600 : side);
             if (area) {
               const part = join(views, `${f.id.replace(/[^\w-]/g, '')}-z${createHash('sha1').update(JSON.stringify(area)).digest('hex').slice(0, 10)}.jpg`);
               if (!existsSync(part)) {
@@ -818,7 +887,7 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
               path = part;
             }
             out.pictures.push(
-              filled({ file: given, id: f.id, name: f.name, path: f.path, sizeKb: f.sizeKb, taken: f.taken, photoLinksRow: f.row, link: `https://drive.google.com/file/d/${f.id}/view`, box: area }),
+              filled({ file: given, id: f.id, name: f.name, path: f.path, sizeKb: f.sizeKb, taken: f.taken, photoLinksRow: f.row, link: `https://drive.google.com/file/d/${f.id}/view`, box: area, view: shown, note }),
             );
             images.push({ data: readFileSync(path).toString('base64'), mimeType: 'image/jpeg' });
           } catch (e) {
@@ -828,6 +897,65 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
       }
     } finally {
       if (cutter && cutter !== reader) cutter.close?.();
+      closeViews(session);
+    }
+    return Object.assign(out, { [IMAGES]: images });
+  }
+
+  // ------------------------------------------------------------ photos of a species to compare with
+  /**
+   * reference_photos: a page of the collection's butterflies of a species (dorsal and ventral wings in
+   * one picture, from Drive's 800 px copies) and of the reference set's field and specimen photos, each
+   * picture with one line saying what it is.
+   */
+  async function references({ species, sex = null, cam = null, page = 1 }) {
+    const asked = speciesOf(species);
+    if (!asked) return { error: '`species`: a genus and its species, e.g. "Mechanitis lysimnia" (its subspecies after them).' };
+    const wantedSex = sex ? sexOf(sex) : null;
+    const n = Math.max(1, Math.floor(Number(page) || 1)) - 1;
+    const out = { species: [asked.binomial, asked.subspecies].filter(Boolean).join(' '), ...(wantedSex ? { sex: wantedSex } : {}), pictures: [] };
+    const images = [];
+    const session = {};
+    const label = line => out.pictures.push(`${images.length}. ${line}`);
+    try {
+      // The collection's.
+      const specimens = collectionSpecimens(store, asked, { sex: wantedSex, not: cam });
+      for (const s of specimens.slice(n * REFERENCE_PAGE.collection, (n + 1) * REFERENCE_PAGE.collection)) {
+        try {
+          const parts = [];
+          for (const fileId of [s.dorsal, s.ventral]) {
+            const plan = viewPlan('wings', photoBoxes(store, { id: fileId }));
+            parts.push({ src: await viewOf(fileId, 800), box: plan.parts?.[0].box ?? [0, 0, 1, 1] });
+          }
+          const made = await madePicture(session, `${s.cam}-dv`, { parts, height: COLLECTION_HEIGHT });
+          if (!made.path) throw new Error(made.message);
+          images.push({ data: readFileSync(made.path).toString('base64'), mimeType: 'image/jpeg' });
+          label(collectionLabel(s));
+        } catch (e) {
+          out.pictures.push(`collection ${s.cam}: no picture (${String(e.message || e).slice(0, 120)})`);
+        }
+      }
+      // The field and specimen photos.
+      const set = referenceSet(config.referencePhotosDir);
+      const found = set ? referencePage(set, asked, { sex: wantedSex, page: n }) : null;
+      for (const entry of [...(found?.field ?? []), ...(found?.specimen ?? [])]) {
+        const path = referenceFile(set, entry);
+        if (!path) continue;
+        images.push({ data: readFileSync(path).toString('base64'), mimeType: 'image/jpeg' });
+        label(referenceLabel(entry));
+      }
+      out.counts = { collection: specimens.length, field: found?.total.field ?? 0, specimen: found?.total.specimen ?? 0 };
+      if (!set) out.reference = "The field and specimen photos are not installed on this server: only the collection's.";
+      else if (!found.name)
+        Object.assign(out, {
+          reference: `No field or specimen photos of ${asked.binomial}: the set holds the species of Ecuador's butterfly sites; species of other countries (Colombia, Brazil…) have none yet.`,
+          ...(found.sameGenus.length ? { sameGenus: found.sameGenus } : {}),
+        });
+      if (!specimens.length) out.collection = `No butterfly of ${asked.binomial}${wantedSex ? ` (${wantedSex})` : ''} in the workbook with both photos in Photo_links.`;
+      const more = (n + 1) * REFERENCE_PAGE.collection < specimens.length || (n + 1) * REFERENCE_PAGE.field < out.counts.field || (n + 1) * REFERENCE_PAGE.specimen < out.counts.specimen;
+      if (more) out.more = `page ${n + 2}`;
+    } finally {
+      closeViews(session);
     }
     return Object.assign(out, { [IMAGES]: images });
   }
@@ -1020,6 +1148,7 @@ export function createDrivePhotos({ store, config = {}, readerDir = null, cacheD
     async run(name, args = {}, user, context) {
       // It only reads: anyone in a chat.
       if (name === 'identify_species') return await identify(args).catch(e => ({ error: String(e.message || e) }));
+      if (name === 'reference_photos') return await references(args).catch(e => ({ error: String(e.message || e) }));
       if (!EDITORS.includes(user?.role)) return { error: 'Your role cannot change the photos.' };
       try {
         if (name === 'drive_photos' && args.folder && !args.batch) return await start({ folder: args.folder, all: args.all === true }, user, context);
