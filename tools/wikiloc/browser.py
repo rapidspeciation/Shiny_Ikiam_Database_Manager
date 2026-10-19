@@ -2,11 +2,21 @@
 
 Each worker job owns one Camoufox instance. Standard output is reserved for
 responses; browser diagnostics stay on standard error.
+
+Cloudflare's check ("Performing security verification", a "Verify you are human"
+checkbox in a closed shadow root) is passed by clicking the checkbox:
+- on the server, Camoufox runs on a private Xvfb display and the click is real X
+  input (xinput.py), the only kind that passed from the server's address in our tests;
+- elsewhere (a home computer without Xvfb), Camoufox runs headless and Playwright clicks.
+The browser presents itself as Firefox on Windows (os="windows", as cloudflare-solver,
+github.com/art3m4ik3/cloudflare-solver, MIT, does). Results: tools/wikiloc/README.md.
 """
 
 import asyncio
 import json
 import os
+import random
+import shutil
 import sys
 import time
 
@@ -15,6 +25,9 @@ HOME_PAGE = "https://es.wikiloc.com/"
 FAILURES = os.environ.get("ITHOMIINI_WIKILOC_FAILURES") or os.path.join(
     os.path.expanduser("~"), ".cache", "ithomiini-wikiloc", "failures"
 )
+# Clicks on one page's checkbox, and how long the check gets in all.
+MAX_CLICKS = 4
+CHECK_SECONDS = 100
 
 
 def log(text):
@@ -32,64 +45,56 @@ def is_challenge(title):
             "verify you are human",
             "verifica que eres humano",
             "performing security verification",
+            "verificación de seguridad",
         )
     )
 
 
-async def challenge_type(page):
-    from playwright_captcha.solvers.click.cloudflare.utils.detection import detect_cloudflare_challenge
-
-    try:
-        if await detect_cloudflare_challenge(page, "interstitial"):
-            return "interstitial"
-        if await detect_cloudflare_challenge(page, "turnstile"):
-            return "turnstile"
-    except Exception:
-        # The iframe may disappear while its JavaScript check resolves.
-        return None
-    return None
+# The checkbox widget: the box around Turnstile's response field (the iframe itself is in a
+# closed shadow root), and where the page's viewport is on the screen.
+WIDGET = """mw:(() => {
+  const input = document.querySelector('input[name="cf-turnstile-response"]');
+  if (!input) return null;
+  const r = input.parentElement.getBoundingClientRect();
+  return { x: r.x, y: r.y, w: r.width, h: r.height,
+           sx: window.mozInnerScreenX, sy: window.mozInnerScreenY, dpr: window.devicePixelRatio };
+})()"""
 
 
-async def clear_challenge(page):
-    from playwright_captcha import CaptchaType, ClickSolver, FrameworkType
+async def click_checkbox(page, display):
+    """One click on the checkbox (~28 px from the widget's left edge, mid-height); False when no widget."""
+    box = await page.evaluate(WIDGET)
+    if not box or box["w"] < 50 or box["h"] < 20:
+        return False
+    x = box["x"] + random.uniform(22, 32)
+    y = box["y"] + box["h"] / 2 + random.uniform(-4, 4)
+    if display:
+        await asyncio.to_thread(display.click, (box["sx"] + x) * box["dpr"], (box["sy"] + y) * box["dpr"])
+    else:
+        await page.mouse.move(x, y, steps=random.randint(15, 30))
+        await page.mouse.down()
+        await page.wait_for_timeout(random.randint(60, 120))
+        await page.mouse.up()
+    return True
 
-    # A JavaScript challenge often clears without a checkbox. Wait for that
-    # first; the click solver only works once Cloudflare's iframe is present.
-    for _ in range(10):
+
+async def clear_challenge(page, display):
+    """Waits for Cloudflare's check to clear, clicking its checkbox when it shows one."""
+    started = time.monotonic()
+    clicks = 0
+    next_click = 0.0
+    while time.monotonic() - started < CHECK_SECONDS:
         if not is_challenge(await page.title()):
-            return
-        if await challenge_type(page):
-            break
+            return clicks
+        now = time.monotonic()
+        # The widget needs a moment after it appears; then a click every ~10 s while it asks again.
+        if clicks < MAX_CLICKS and now >= next_click:
+            await page.wait_for_timeout(random.randint(1200, 2500))
+            if await click_checkbox(page, display):
+                clicks += 1
+                log(f"checkbox clicked ({'X input' if display else 'page'}), click {clicks}")
+                next_click = time.monotonic() + 10
         await page.wait_for_timeout(1000)
-
-    for _ in range(2):
-        if not is_challenge(await page.title()):
-            return
-        kind = await challenge_type(page)
-        if kind is None:
-            await page.wait_for_timeout(3000)
-            continue
-        try:
-            async with ClickSolver(framework=FrameworkType.CAMOUFOX, page=page) as solver:
-                await asyncio.wait_for(
-                    solver.solve_captcha(
-                        captcha_container=page,
-                        captcha_type=(
-                            CaptchaType.CLOUDFLARE_INTERSTITIAL
-                            if kind == "interstitial"
-                            else CaptchaType.CLOUDFLARE_TURNSTILE
-                        ),
-                    ),
-                    timeout=35,
-                )
-        except Exception:
-            # Cloudflare may have replaced the iframe during solver setup.
-            # One bounded re-detection below handles that race.
-            pass
-        for _ in range(10):
-            if not is_challenge(await page.title()):
-                return
-            await page.wait_for_timeout(1000)
     raise TimeoutError("Cloudflare challenge did not clear")
 
 
@@ -106,26 +111,25 @@ async def keep_failure(page, url):
         log(f"page not kept: {error}")
 
 
-async def open_page(page, url, warmed):
+async def open_page(page, url, warmed, display):
     """
     A Wikiloc page past Cloudflare's check. The first page of a browser is Wikiloc's home
     (its check, when there is one, then covers the walk's page too); a check that does not
     clear is tried once more on a fresh load of the page.
     """
     if not warmed and url.rstrip("/") != HOME_PAGE.rstrip("/"):
-        await open_page(page, HOME_PAGE, True)
+        await open_page(page, HOME_PAGE, True, display)
     for attempt in (1, 2):
         started = time.monotonic()
         await page.goto(url, wait_until="domcontentloaded", timeout=60_000)
         await page.wait_for_timeout(2000)
-        title = await page.title()
-        kind = await challenge_type(page) if is_challenge(title) else None
-        if is_challenge(title):
-            log(f"check on {url} ({kind or 'javascript'}), try {attempt}")
+        checked = is_challenge(await page.title())
+        if checked:
+            log(f"check on {url}, try {attempt}")
         try:
-            await clear_challenge(page)
-            if is_challenge(title):
-                log(f"check cleared in {time.monotonic() - started:.0f} s")
+            clicks = await clear_challenge(page, display)
+            if checked:
+                log(f"check cleared in {time.monotonic() - started:.0f} s ({clicks} clicks)")
             return
         except TimeoutError:
             log(f"check did not clear in {time.monotonic() - started:.0f} s (title: {await page.title()!r})")
@@ -135,10 +139,20 @@ async def open_page(page, url, warmed):
             await page.wait_for_timeout(5000)
 
 
+def private_display():
+    """The server's way: a private Xvfb display for real clicks (None without Xvfb or when turned off)."""
+    if os.environ.get("ITHOMIINI_WIKILOC_XVFB") == "0" or not shutil.which("Xvfb"):
+        return None
+    from xinput import XDisplay
+
+    return XDisplay()
+
+
 async def serve():
     browser_manager = None
     browser = None
     page = None
+    display = None
     warmed = False
     try:
         while line := await asyncio.to_thread(sys.stdin.readline):
@@ -152,15 +166,18 @@ async def serve():
                     if page is None:
                         from camoufox.async_api import AsyncCamoufox
 
+                        display = private_display()
+                        if display:
+                            os.environ["DISPLAY"] = display.name
                         browser_manager = AsyncCamoufox(
-                            headless="virtual",
-                            humanize=1.5,
-                            config={"forceScopeAccess": True},
+                            headless=display is None,
+                            os="windows",
+                            humanize=True,
                             main_world_eval=True,
                         )
                         browser = await browser_manager.__aenter__()
                         page = await browser.new_page()
-                    await open_page(page, request["url"], warmed)
+                    await open_page(page, request["url"], warmed, display)
                     warmed = True
                     result = None
                 elif operation == "title":
@@ -182,6 +199,8 @@ async def serve():
     finally:
         if browser_manager is not None:
             await browser_manager.__aexit__(None, None, None)
+        if display is not None:
+            display.close()
 
 
 if __name__ == "__main__":

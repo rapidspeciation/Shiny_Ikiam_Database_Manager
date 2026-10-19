@@ -120,3 +120,48 @@ test('timeout stops browser descendants', { skip: process.platform !== 'linux' }
   delete process.env.FAKE_READY_FILE;
   delete process.env.FAKE_MODE;
 });
+
+test("the checkbox click moves like a hand: a curved path in 0.4–1.2 s, overshoot and back, a dwell, a 60–120 ms press", { skip: !existsSync('/usr/bin/python3') }, async () => {
+  const { execFileSync } = await import('node:child_process');
+  const script = `
+import json, math, random, sys
+sys.path.insert(0, sys.argv[1])
+from xinput import click_plan, human_path
+out = []
+for seed in range(40):
+    rng = random.Random(seed)
+    plan = click_plan(900, 700, 220, 338, rng)
+    moves = [p for p in plan if p[0] == 'move']
+    path = human_path(900, 700, 220, 338, random.Random(seed))
+    straight = [abs((220 - 900) * (700 - y) - (900 - x) * (338 - 700)) / math.hypot(220 - 900, 338 - 700) for x, y in path]
+    out.append({
+        'moving': sum(p[3] for p in moves[:-1]),
+        'dwell': moves[-1][3],
+        'end': moves[-1][1:3],
+        'press': plan[-2][3],
+        'kinds': [p[0] for p in plan[-2:]],
+        'farthest': max(straight),
+        'past': max(x < 220 - 1 for x, _ in path[:-5]),
+        'points': len(moves),
+    })
+print(json.dumps(out))
+`;
+  const runs = JSON.parse(execFileSync('python3', ['-I', '-c', script, join(import.meta.dirname, '..', 'tools', 'wikiloc')], { encoding: 'utf8' }));
+  for (const r of runs) {
+    assert.ok(r.moving > 0.2 && r.moving < 2, `moving ${r.moving}`);
+    assert.ok(r.dwell >= 0.15 && r.dwell <= 0.4, `dwell ${r.dwell}`);
+    assert.deepEqual(r.end, [220, 338]);
+    assert.ok(r.press >= 0.06 && r.press <= 0.12);
+    assert.deepEqual(r.kinds, ['press', 'release']);
+    assert.ok(r.points >= 30);
+  }
+  // Curved (not a straight line), and past the box before settling on it, in most clicks.
+  assert.ok(runs.filter(r => r.farthest > 10).length > 30);
+  assert.ok(runs.filter(r => r.past).length > 30);
+});
+
+test('the browser process needs no captcha package', () => {
+  const source = readFileSync(join(import.meta.dirname, '..', 'tools', 'wikiloc', 'browser.py'), 'utf8');
+  assert.doesNotMatch(source, /playwright_captcha/);
+  assert.doesNotMatch(readFileSync(join(import.meta.dirname, '..', 'tools', 'wikiloc', 'requirements.txt'), 'utf8'), /captcha/);
+});
