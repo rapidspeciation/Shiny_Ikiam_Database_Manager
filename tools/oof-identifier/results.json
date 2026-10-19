@@ -1,0 +1,381 @@
+{
+ "trusted_cams": 5316,
+ "evaluated": 5316,
+ "training_cams_in_eval": 3017,
+ "a_single_oof": {
+  "n": 5316,
+  "right": 4389,
+  "top1": 82.56,
+  "ece": 10.96,
+  "mean_conf": 71.6
+ },
+ "b_paired_oof": {
+  "n": 5316,
+  "right": 4367,
+  "top1": 82.15,
+  "ece": 13.03,
+  "mean_conf": 69.12
+ },
+ "by_training": {
+  "training_cams": {
+   "a": {
+    "n": 3017,
+    "right": 2700,
+    "top1": 89.49,
+    "ece": 8.03,
+    "mean_conf": 81.48
+   },
+   "b": {
+    "n": 3017,
+    "right": 2687,
+    "top1": 89.06,
+    "ece": 10.0,
+    "mean_conf": 79.06
+   },
+   "release_in_sample": {
+    "n": 3017,
+    "right": 2902,
+    "top1": 96.19,
+    "ece": 8.38,
+    "mean_conf": 87.83
+   }
+  },
+  "never_in_training": {
+   "a": {
+    "n": 2299,
+    "right": 1689,
+    "top1": 73.47,
+    "ece": 15.58,
+    "mean_conf": 58.64
+   },
+   "b": {
+    "n": 2299,
+    "right": 1680,
+    "top1": 73.08,
+    "ece": 17.6,
+    "mean_conf": 56.07
+   },
+   "release": {
+    "n": 2299,
+    "right": 1677,
+    "top1": 72.94,
+    "ece": 14.77,
+    "mean_conf": 58.93
+   }
+  }
+ },
+ "decision": {
+  "winner": "a",
+  "why": "a higher Top-1 (-0.41 pp, -22), ECE 10.96 vs 13.03",
+  "rule_sha256": "97b1529631f35076bfc345b1215a5f3cdd706ea657f2310faf53dd06eb97c982"
+ },
+ "missing_oof_cams": 0,
+ "vs_workbook": {
+  "cams_with_binomial": 5379,
+  "new_oof_disagree": 1002,
+  "new_oof_disagree_ge_0_6": 232,
+  "new_oof_disagree_training_cams": 322,
+  "release_18oct_disagree": 800,
+  "release_18oct_disagree_ge_0_6": 178,
+  "on_gallery_oof_overlap": {
+   "cams": 3777,
+   "gallery_oof_disagree": 431,
+   "gallery_oof_disagree_ge_0_6": 95,
+   "new_disagree": 531,
+   "new_disagree_ge_0_6": 135,
+   "both_disagree": 353,
+   "both_disagree_same_species": 253,
+   "top1_new_vs_gallery_same": 3421
+  },
+  "sample_ge_0_6": [
+   [
+    "CAM042392",
+    "Napeogenes glycera",
+    "Hyalyris lactea",
+    0.8834,
+    true
+   ],
+   [
+    "CAM042405",
+    "Ithomia maria",
+    "Aeria eurimedia",
+    0.8678,
+    true
+   ],
+   [
+    "CAM042421",
+    "Mechanitis polymnia",
+    "Mechanitis mazaeus",
+    0.8196,
+    false
+   ],
+   [
+    "CAM042427",
+    "Haeterini (tribe)",
+    "Cithaerias aurorina",
+    0.8706,
+    false
+   ],
+   [
+    "CAM042446",
+    "Methona curvifascia",
+    "Methona grandior",
+    0.6165,
+    false
+   ],
+   [
+    "CAM042471",
+    "Athesis clearista",
+    "Chetone ithrana",
+    0.8154,
+    false
+   ],
+   [
+    "CAM042484",
+    "Hypothyris mamercus",
+    "Mechanitis polymnia",
+    0.7203,
+    false
+   ],
+   [
+    "CAM042487",
+    "Forbestra proceris",
+    "Pseudoscada timna",
+    0.9427,
+    true
+   ],
+   [
+    "CAM042488",
+    "Mechanitis mazaeus",
+    "Mechanitis polymnia",
+    0.6158,
+    false
+   ],
+   [
+    "CAM042489",
+    "Mechanitis mazaeus",
+    "Mechanitis polymnia",
+    0.6267,
+    false
+   ],
+   [
+    "CAM070284",
+    "Mechanitis lysimnia",
+    "Mechanitis messenoides",
+    0.9436,
+    true
+   ],
+   [
+    "CAM070286",
+    "Heliconus numata",
+    "Melinaea menophilus",
+    0.662,
+    true
+   ],
+   [
+    "CAM070345",
+    "Melinaea mothone",
+    "Melinaea isocomma",
+    0.6355,
+    true
+   ],
+   [
+    "CAM070471",
+    "Pseudohaetera hypaesia",
+    "Cithaerias aurorina",
+    0.9842,
+    true
+   ],
+   [
+    "CAM070486",
+    "Napeogenes inachia",
+    "Ithomia salapia",
+    0.7684,
+    true
+   ],
+   [
+    "CAM070510",
+    "Pteronymia primula",
+    "Pteronymia vestilla",
+    0.6683,
+    true
+   ],
+   [
+    "CAM070520",
+    "Brevioleria aelia",
+    "Hypoleria alema",
+    0.8152,
+    false
+   ],
+   [
+    "CAM070540",
+    "Forbestra proceris",
+    "Mechanitis polymnia",
+    0.9001,
+    false
+   ],
+   [
+    "CAM070554",
+    "Godyris zavaleta",
+    "Godyris dircenna",
+    0.8445,
+    false
+   ],
+   [
+    "CAM070588",
+    "Brevioleria aelia",
+    "Hypoleria alema",
+    0.8174,
+    true
+   ],
+   [
+    "CAM070589",
+    "Brevioleria aelia",
+    "Hypoleria alema",
+    0.7787,
+    true
+   ],
+   [
+    "CAM070622",
+    "Oleria sexmaculata",
+    "Hyposcada kena",
+    0.7102,
+    true
+   ],
+   [
+    "CAM070625",
+    "Oleria tigilla",
+    "Hyposcada kena",
+    0.6143,
+    false
+   ],
+   [
+    "CAM070629",
+    "Brevioleria arzalia",
+    "Brevioleria aelia",
+    0.6722,
+    false
+   ],
+   [
+    "CAM070658",
+    "Thyridia psidii",
+    "Methona grandior",
+    0.634,
+    false
+   ],
+   [
+    "CAM070659",
+    "Oleria assimilis",
+    "Oleria tigilla",
+    0.6622,
+    true
+   ],
+   [
+    "CAM070688",
+    "Ithomia diasia",
+    "Ithomia hyala",
+    0.6819,
+    true
+   ],
+   [
+    "CAM070770",
+    "Thyridia psidii",
+    "Methona grandior",
+    0.6357,
+    false
+   ],
+   [
+    "CAM070805",
+    "Methona curvifascia",
+    "Methona grandior",
+    0.7224,
+    false
+   ],
+   [
+    "CAM070919",
+    "Melinaea isocomma",
+    "Melinaea mothone",
+    0.7419,
+    true
+   ],
+   [
+    "CAM070921",
+    "Melinaea isocomma",
+    "Melinaea mothone",
+    0.6759,
+    false
+   ],
+   [
+    "CAM070937",
+    "Thyridia psidii",
+    "Methona grandior",
+    0.6013,
+    false
+   ],
+   [
+    "CAM070938",
+    "Thyridia psidii",
+    "Methona grandior",
+    0.8373,
+    false
+   ],
+   [
+    "CAM071012",
+    "Thyridia psidii",
+    "Methona grandior",
+    0.7973,
+    false
+   ],
+   [
+    "CAM071016",
+    "Mechanitis mazaeus",
+    "Mechanitis messenoides",
+    0.6401,
+    false
+   ],
+   [
+    "CAM071020",
+    "Scada zibia",
+    "Napeogenes inachia",
+    0.9523,
+    false
+   ],
+   [
+    "CAM071038",
+    "Scada zibia",
+    "Godyris dircenna",
+    0.8854,
+    true
+   ],
+   [
+    "CAM071059",
+    "Forbestra olivencia",
+    "Mechanitis polymnia",
+    0.7768,
+    false
+   ],
+   [
+    "CAM071082",
+    "Mechanitis mazaeus",
+    "Hypothyris ninonia",
+    0.9133,
+    false
+   ],
+   [
+    "CAM071103",
+    "Scada zibia",
+    "Scada reckia",
+    0.8516,
+    true
+   ]
+  ]
+ },
+ "sanity_single_vs_release_never_in_training": [
+  2615,
+  2771
+ ],
+ "training_cams_top1_changed_vs_release": [
+  210,
+  3022
+ ]
+}
