@@ -255,16 +255,11 @@ test('photo_facts: per CAM, the envelope, the workbook with its notes, the galle
 
 test('photo_facts with the photo readings: the top 5, why a sex is not supported, the photos alone that give another species, wings counted and missing', async () => {
   const { store } = await fixture();
-  // The columns and table the photo readings add (/tmp/photo-readings-schema.md, 18 Oct 2026).
-  store.db.exec(`ALTER TABLE photo_predictions ADD COLUMN sex_status TEXT;
-    ALTER TABLE photo_wing_sides ADD COLUMN fore_side TEXT; ALTER TABLE photo_wing_sides ADD COLUMN hind_side TEXT;
-    ALTER TABLE photo_wing_sides ADD COLUMN missing_json TEXT; ALTER TABLE photo_wing_sides ADD COLUMN wings_json TEXT; ALTER TABLE photo_wing_sides ADD COLUMN error TEXT;
-    CREATE TABLE photo_file_predictions(file_id TEXT PRIMARY KEY, name TEXT, cam TEXT, view TEXT, species_json TEXT, genus_json TEXT, subspecies_json TEXT, andes TEXT,
-      crop_status TEXT, crop_box_json TEXT, model TEXT, source TEXT, imported_at TEXT);`);
+  // The photo readings' columns and table come with the app's photo tables (server/photodata.mjs).
   const top5 = JSON.stringify([['Mechanitis polymnia', 0.8123], ['Mechanitis messenoides', 0.1], ['Melinaea menophilus', 0.05], ['Mechanitis lysimnia', 0.02], ['Hypothyris anastasia', 0.011], ['Oleria onega', 0.004]]);
   store.db.prepare("UPDATE photo_predictions SET species_json=?, sex='female', sex_conf=0.71, sex_supported=0, sex_status='below_confidence' WHERE cam='CAM000105'").run(top5);
   store.db.prepare("UPDATE photo_wing_sides SET wings=3, missing_json='[\"hindwing_left\"]', side='mixed', fore_side='ventral', hind_side='dorsal' WHERE name='CAM000105v'").run();
-  store.db.prepare("INSERT INTO photo_file_predictions(file_id,name,cam,view,species_json) VALUES('f-d','CAM000105d','CAM000105','d',?),('f-v','CAM000105v','CAM000105','v',?)").run(
+  store.db.prepare("INSERT INTO photo_file_predictions(file_id,name,cam,view,species_json,imported_at) VALUES('f-d','CAM000105d','CAM000105','d',?,'now'),('f-v','CAM000105v','CAM000105','v',?,'now')").run(
     JSON.stringify([['Mechanitis polymnia', 0.7]]),
     JSON.stringify([['Mechanitis messenoides', 0.55]]),
   );

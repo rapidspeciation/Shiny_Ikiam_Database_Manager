@@ -29,17 +29,49 @@ export function initPhotoTables(db) {
       p_forewings REAL, p_hindwings REAL, wings INTEGER, turn TEXT, degrees INTEGER, pair TEXT, reasons TEXT,
       cam_reasons TEXT, review INTEGER, folder TEXT, source TEXT, imported_at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS photo_wing_sides_cam ON photo_wing_sides(cam);
-    CREATE INDEX IF NOT EXISTS photo_wing_sides_file ON photo_wing_sides(file_id);`);
-  // The side of the Andes the gallery's prediction assumed, added after the first imports: by the app (or an
-  // import); a worker's connection may not alter tables, and reads the rows without it until then.
-  if (!db.prepare('PRAGMA table_info(photo_predictions)').all().some(c => c.name === 'andes'))
-    try {
-      db.exec('ALTER TABLE photo_predictions ADD COLUMN andes TEXT');
-    } catch {
-      // a reader: the column comes with the app's next start
-    }
+    CREATE INDEX IF NOT EXISTS photo_wing_sides_file ON photo_wing_sides(file_id);
+    CREATE TABLE IF NOT EXISTS photo_file_predictions(
+      file_id TEXT PRIMARY KEY, name TEXT, cam TEXT, view TEXT, species_json TEXT, genus_json TEXT,
+      subspecies_json TEXT, andes TEXT, crop_status TEXT, crop_box_json TEXT, model TEXT, source TEXT,
+      imported_at TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS photo_file_predictions_cam ON photo_file_predictions(cam);`);
+  // Columns added after the first imports (the side of the Andes the prediction assumed; the per-photo readings
+  // of the nano wing model and the sex model's screen): by the app (or an import); a worker's connection may not
+  // alter tables, and reads the rows without them until then.
+  for (const [table, columns] of Object.entries(LATER_COLUMNS)) {
+    const have = new Set(db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name));
+    for (const [name, type] of columns)
+      if (!have.has(name))
+        try {
+          db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+        } catch {
+          // a reader: the column comes with the app's next start
+        }
+  }
   ready.add(db);
 }
+
+const LATER_COLUMNS = {
+  photo_predictions: [
+    ['andes', 'TEXT'],
+    ['model', 'TEXT'],
+    ['photos_json', 'TEXT'],
+    ['sex_status', 'TEXT'],
+    ['sex_p_male', 'REAL'],
+    ['sex_model', 'TEXT'],
+  ],
+  photo_wing_sides: [
+    ['model', 'TEXT'],
+    ['fore_side', 'TEXT'],
+    ['hind_side', 'TEXT'],
+    ['turn_k', 'INTEGER'],
+    ['p_turn', 'REAL'],
+    ['missing_json', 'TEXT'],
+    ['wings_json', 'TEXT'],
+    ['size_json', 'TEXT'],
+    ['error', 'TEXT'],
+  ],
+};
 
 /** Changes whenever an import changes the tables above (the checks are cached on it). */
 export function reviewRevision(db) {
@@ -193,11 +225,16 @@ export function reviewData(store) {
                 confidence: p.sex_conf,
                 supported: !!p.sex_supported,
                 species: p.sex_species,
-                // The sex model's screen (photo readings): why a sex is not supported.
+                // The sex model's screen (photo readings): why a sex is not supported, and P(male).
                 ...(p.sex_status ? { status: p.sex_status } : {}),
+                ...(p.sex_p_male !== null && p.sex_p_male !== undefined ? { pMale: p.sex_p_male } : {}),
               }
             : null,
           ...(p.andes ? { andes: p.andes } : {}),
+          ...(p.model ? { model: p.model } : {}),
+          ...(p.photos_json ? { photos: parse(p.photos_json) ?? [] } : {}),
+          ...(p.sex_status && !p.sex ? { sexStatus: p.sex_status } : {}),
+          ...(p.sex_model ? { sexModel: p.sex_model } : {}),
         },
       ]),
   );
@@ -260,12 +297,16 @@ function wingIndex(db) {
       review: !!r.review,
       folder: r.folder,
       source: r.source,
-      // The photo readings' columns (none in earlier imports): each half's verdict, the wings missing,
-      // a box per wing (fractions of the photo as shown), and why a photo could not be read.
+      // The photo readings' columns (none in earlier imports): the model, each half's verdict, the raw turn
+      // (quarter turns counter-clockwise and how sure, whatever the wing count), the wings missing, a box per
+      // wing (fractions of the photo as shown), the size checked, and why a photo could not be read.
+      ...(r.model ? { model: r.model } : {}),
       ...(r.fore_side ? { foreSide: r.fore_side, hindSide: r.hind_side } : {}),
+      ...(r.turn_k !== null && r.turn_k !== undefined ? { turnK: r.turn_k, pTurn: r.p_turn } : {}),
       ...(r.missing_json ? { missing: parse(r.missing_json) ?? [] } : {}),
       // Read when a view of the photo needs them (server/photo-views.mjs).
       ...(r.wings_json ? { wingsJson: r.wings_json } : {}),
+      ...(r.size_json ? { size: parse(r.size_json) } : {}),
       ...(r.error ? { error: r.error } : {}),
     };
     if (row.cam) (byCam.get(row.cam) ?? byCam.set(row.cam, []).get(row.cam)).push(row);

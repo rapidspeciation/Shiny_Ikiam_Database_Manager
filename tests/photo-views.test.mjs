@@ -97,7 +97,6 @@ test('the boxes of a photo by its Drive ID or name; each view its parts, a margi
   assert.deepEqual(photoBoxes(store, { name: 'CAM999999d' }), { name: 'CAM999999d', wings: null, envelope: null, wide: null });
 
   // No wing box, but the wing models' box of each wing (the photo readings' column): those, an extra object left out.
-  store.db.exec('ALTER TABLE photo_wing_sides ADD COLUMN wings_json TEXT');
   importBundle(store.db, { wings: [{ name: 'CAM000001v', fileId: id(2), cam: 'CAM000001', suffix: 'v', side: 'ventral', pDorsal: 0.01, wings: 2, review: false, source: 'test' }] });
   store.db.prepare("UPDATE photo_wing_sides SET wings_json=? WHERE name='CAM000001v'").run(
     JSON.stringify([

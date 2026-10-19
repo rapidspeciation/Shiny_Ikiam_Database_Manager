@@ -10,6 +10,9 @@
 //   DATABASE_PATH=… node scripts/import-wing-sides.mjs wing-sides.json.gz
 // Or straight into a database (local tests): DATABASE_PATH=… node scripts/import-wing-sides.mjs --manifest … <eval-dir>…
 // Running it again replaces the earlier import.
+// A bundle made elsewhere (the nano wing model's run on every Photo_links photo, 18 Oct 2026:
+// {version, source, wings: [...], wingBoxes: [[name, box, conf], ...]}) is imported the same way; its wing
+// boxes then replace photo_wing_boxes too.
 
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, writeFileSync, statSync } from 'node:fs';
@@ -57,8 +60,10 @@ if (out) {
   const db = new DatabaseSync(dbPath);
   // The app may be running: wait for its writes instead of failing.
   db.exec('PRAGMA busy_timeout=10000; PRAGMA journal_mode=WAL');
-  // Only the wing results: the curation's other tables are left as they are.
-  const counts = importBundle(db, { wings: bundle.wings });
+  // Only the wing results (and their boxes, when the bundle has them): the curation's other tables are left as they are.
+  const counts = importBundle(db, { wings: bundle.wings, ...(Array.isArray(bundle.wingBoxes) ? { wingBoxes: bundle.wingBoxes } : {}) });
   db.close();
-  console.log(`Imported into ${dbPath}: ${counts.wings} photos (${counted()})`);
+  console.log(
+    `Imported into ${dbPath}: ${counts.wings} photos (${counted()})${counts.wingBoxes ? `, ${counts.wingBoxes} wing boxes` : ''}`,
+  );
 }

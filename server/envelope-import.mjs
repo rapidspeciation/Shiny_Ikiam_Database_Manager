@@ -297,7 +297,12 @@ export function readWingSides(dirs, manifestPath = null) {
   return { wings, wingSources: sources };
 }
 
-/** Writes a bundle; rows of an earlier import of the same kind are replaced. */
+/**
+ * Writes a bundle; rows of an earlier import of the same kind are replaced. Kinds: readings, flags, wingBoxes,
+ * predictions (one per CAM: species, sex), photoPredictions (the identifier on each photo alone, by Drive ID) and
+ * wings (one per photo: the wing models' reading; `wingList`, `missing`, `size`, `turnK`/`pTurn` and the fore/hind
+ * sides come with the nano model's bundles).
+ */
 export function importBundle(db, bundle) {
   initPhotoTables(db);
   const at = new Date().toISOString();
@@ -363,7 +368,7 @@ export function importBundle(db, bundle) {
     if (bundle.predictions) {
       db.exec('DELETE FROM photo_predictions');
       const insert = db.prepare(
-        'INSERT OR REPLACE INTO photo_predictions(cam,species_json,genus_json,subspecies_json,sex,sex_conf,sex_supported,sex_species,source,imported_at,andes) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+        'INSERT OR REPLACE INTO photo_predictions(cam,species_json,genus_json,subspecies_json,sex,sex_conf,sex_supported,sex_species,source,imported_at,andes,model,photos_json,sex_status,sex_p_male,sex_model) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
       );
       for (const p of bundle.predictions)
         insert.run(
@@ -375,16 +380,44 @@ export function importBundle(db, bundle) {
           p.sexConf ?? null,
           p.sexSupported ? 1 : 0,
           p.sexSpecies ?? null,
-          bundle.gallery ?? null,
+          p.source ?? bundle.gallery ?? null,
           at,
           p.andes ?? null,
+          p.model ?? null,
+          json(p.photos),
+          p.sexStatus ?? null,
+          p.sexPMale ?? null,
+          p.sexModel ?? null,
         );
       counts.predictions = bundle.predictions.length;
+    }
+    if (bundle.photoPredictions) {
+      db.exec('DELETE FROM photo_file_predictions');
+      const insert = db.prepare(
+        'INSERT OR REPLACE INTO photo_file_predictions(file_id,name,cam,view,species_json,genus_json,subspecies_json,andes,crop_status,crop_box_json,model,source,imported_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      );
+      for (const p of bundle.photoPredictions)
+        insert.run(
+          p.fileId,
+          p.name ?? null,
+          p.cam ?? null,
+          p.view ?? null,
+          json(p.species),
+          json(p.genus),
+          json(p.subspecies),
+          p.andes ?? null,
+          p.cropStatus ?? null,
+          json(p.cropBox),
+          p.model ?? null,
+          p.source ?? bundle.source ?? null,
+          at,
+        );
+      counts.photoPredictions = bundle.photoPredictions.length;
     }
     if (bundle.wings) {
       db.exec('DELETE FROM photo_wing_sides');
       const insert = db.prepare(
-        'INSERT INTO photo_wing_sides(name,file_id,cam,suffix,side,p_dorsal,p_forewings,p_hindwings,wings,turn,degrees,pair,reasons,cam_reasons,review,folder,source,imported_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO photo_wing_sides(name,file_id,cam,suffix,side,p_dorsal,p_forewings,p_hindwings,wings,turn,degrees,pair,reasons,cam_reasons,review,folder,source,imported_at,model,fore_side,hind_side,turn_k,p_turn,missing_json,wings_json,size_json,error) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
       );
       for (const w of bundle.wings)
         insert.run(
@@ -406,6 +439,15 @@ export function importBundle(db, bundle) {
           w.folder ?? null,
           w.source ?? null,
           at,
+          w.model ?? null,
+          w.foreSide ?? null,
+          w.hindSide ?? null,
+          w.turnK ?? null,
+          w.pTurn ?? null,
+          json(w.missing),
+          json(w.wingList),
+          json(w.size),
+          w.error ?? null,
         );
       counts.wings = bundle.wings.length;
     }
