@@ -300,7 +300,7 @@ export function readWingSides(dirs, manifestPath = null) {
 /**
  * Writes a bundle; rows of an earlier import of the same kind are replaced. Kinds: readings, flags, wingBoxes,
  * predictions (one per CAM: species, sex), photoPredictions (the identifier on each photo alone, by Drive ID) and
- * wings (one per photo: the wing models' reading; `wingList`, `missing`, `size`, `turnK`/`pTurn` and the fore/hind
+ * wings (one per photo: the wing models' reading; `wingList`, `outlines`, `missing`, `size`, `turnK`/`pTurn` and the fore/hind
  * sides come with the nano model's bundles).
  */
 export function importBundle(db, bundle) {
@@ -417,7 +417,7 @@ export function importBundle(db, bundle) {
     if (bundle.wings) {
       db.exec('DELETE FROM photo_wing_sides');
       const insert = db.prepare(
-        'INSERT INTO photo_wing_sides(name,file_id,cam,suffix,side,p_dorsal,p_forewings,p_hindwings,wings,turn,degrees,pair,reasons,cam_reasons,review,folder,source,imported_at,model,fore_side,hind_side,turn_k,p_turn,missing_json,wings_json,size_json,error) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO photo_wing_sides(name,file_id,cam,suffix,side,p_dorsal,p_forewings,p_hindwings,wings,turn,degrees,pair,reasons,cam_reasons,review,folder,source,imported_at,model,fore_side,hind_side,turn_k,p_turn,missing_json,wings_json,size_json,error,outlines_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
       );
       for (const w of bundle.wings)
         insert.run(
@@ -448,6 +448,7 @@ export function importBundle(db, bundle) {
           json(w.wingList),
           json(w.size),
           w.error ?? null,
+          json(w.outlines),
         );
       counts.wings = bundle.wings.length;
     }

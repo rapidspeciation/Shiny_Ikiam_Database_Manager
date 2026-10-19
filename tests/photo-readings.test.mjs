@@ -62,6 +62,13 @@ const wingsBundle = () => ({
       reasons: 'side-disagrees-with-suffix(p=1.00); wings=3(absent:hindwing_right); orientation:upside down(p=0.97)',
       camReasons: 'both-photos-dorsal',
       review: true,
+      // one outline per wing of wingList, same order (server/wing-outlines.mjs); the third wing has no mask
+      outlines: [
+        ['fw', 'l', [50, 100, 330, 100, 330, 400]],
+        ['fw', 'r', [360, 100, 660, 100, 660, 410]],
+        null,
+        ['x', 'u', [380, 430, 630, 430, 630, 660]],
+      ],
     }),
     { name: 'CAM000102d', fileId: 'FILE_d_0000000000000002', cam: 'CAM000102', suffix: 'd', source: 'v5n_20261018', model: MODEL, error: 'Error: SOI not found', review: false },
   ],
@@ -115,6 +122,9 @@ test('the nano wing readings go in with every wing, the missing positions and th
   assert.deepEqual(JSON.parse(row.missing_json), ['hindwing_right']);
   assert.equal(JSON.parse(row.wings_json).length, 4);
   assert.deepEqual(JSON.parse(row.size_json), [1600, 1067]);
+  assert.deepEqual(JSON.parse(row.outlines_json)[0], ['fw', 'l', [50, 100, 330, 100, 330, 400]]);
+  assert.equal(JSON.parse(row.outlines_json)[2], null);
+  assert.equal(db.prepare("SELECT outlines_json FROM photo_wing_sides WHERE name='CAM000101d'").get().outlines_json, null);
   assert.equal(db.prepare("SELECT error FROM photo_wing_sides WHERE name='CAM000102d'").get().error, 'Error: SOI not found');
   assert.equal(JSON.parse(db.prepare("SELECT box_json FROM photo_wing_boxes WHERE name='CAM000101d'").get().box_json)[2], 0.6684);
 
@@ -124,6 +134,8 @@ test('the nano wing readings go in with every wing, the missing positions and th
   assert.equal(v.foreSide, 'dorsal');
   assert.deepEqual(v.missing, ['hindwing_right']);
   assert.equal(JSON.parse(v.wingsJson)[0].kind, 'forewing');
+  assert.equal(JSON.parse(v.outlinesJson).length, 4);
+  assert.equal(index.byFile.get('FILE_d_0000000000000001').outlinesJson, undefined);
   assert.deepEqual(wingProblem(v), { side: 'dorsal', pDorsal: 0.9981, turn: 'upside down', degrees: 180, pair: 'both photos same side' });
   assert.equal(index.byFile.get('FILE_d_0000000000000002').error, 'Error: SOI not found');
 
@@ -183,7 +195,7 @@ test('a database made before these readings gets their columns and keeps its row
   initPhotoTables(db);
   const cols = t => db.prepare(`PRAGMA table_info(${t})`).all().map(c => c.name);
   for (const c of ['andes', 'model', 'photos_json', 'sex_status', 'sex_p_male', 'sex_model']) assert.ok(cols('photo_predictions').includes(c), c);
-  for (const c of ['model', 'fore_side', 'hind_side', 'turn_k', 'p_turn', 'missing_json', 'wings_json', 'size_json', 'error'])
+  for (const c of ['model', 'fore_side', 'hind_side', 'turn_k', 'p_turn', 'missing_json', 'wings_json', 'size_json', 'error', 'outlines_json'])
     assert.ok(cols('photo_wing_sides').includes(c), c);
   assert.ok(cols('photo_file_predictions').includes('crop_box_json'));
   const index = wingSides({ db });

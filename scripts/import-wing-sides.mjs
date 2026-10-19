@@ -12,7 +12,8 @@
 // Running it again replaces the earlier import.
 // A bundle made elsewhere (the nano wing model's run on every Photo_links photo, 18 Oct 2026:
 // {version, source, wings: [...], wingBoxes: [[name, box, conf], ...]}) is imported the same way; its wing
-// boxes then replace photo_wing_boxes too.
+// boxes then replace photo_wing_boxes too, and a row's `outlines` (one per wing of wingList: [kind, half, [x0,y0,…] 0..1000]
+// or null, server/wing-outlines.mjs) go to photo_wing_sides.outlines_json.
 
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, writeFileSync, statSync } from 'node:fs';
