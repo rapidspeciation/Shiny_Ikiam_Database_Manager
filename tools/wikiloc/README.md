@@ -48,7 +48,53 @@ The Importar screen shows the worker's latest heartbeat. Queued jobs remain in
 the app database if the service is unavailable; jobs left running after an
 interruption become eligible for another attempt after 15 minutes.
 
-The old PC service can be disabled once the server worker is verified:
+## When Cloudflare's check does not clear
+
+Cloudflare sometimes shows a check to the server's address (a data-centre IP) and sometimes
+not: on 16 Oct 2026 three tries of one walk in 14 minutes all stopped at it ("Cloudflare
+challenge did not clear"), while on 19 Oct the same walk loaded with no check at all, with
+nothing changed on the server (same Camoufox and packages since 30 Sep; no profile or cookies
+are kept between jobs). So:
+
+- The browser opens Wikiloc's home page first, and a check that does not clear is tried once
+  more on a fresh load of the page. What it saw goes to the worker's log (`browser: check on …
+  (turnstile), try 1`, `check cleared in 12 s` or `did not clear`), and a screenshot of a page
+  that did not clear is kept in `~/.cache/ithomiini-wikiloc/failures/` (the latest five).
+- A job Cloudflare stopped is not failed at once: it goes back to the queue and is tried again
+  after 5 and 20 minutes (`retry`, server/monitoring.mjs `RETRY_WAITS_MIN`), then it fails. The
+  Importar screen shows when.
+- A home computer can help as a fallback: the same worker with `"fallback": true` takes only the
+  jobs the server could not do, at once, with Playwright's Chromium from a home connection
+  (Cloudflare lets that through after the home page). Importar shows «respaldo del PC activo».
+
+### Fallback on the home computer (optional)
+
+On a computer with Node 24 and Playwright (its Chromium downloaded):
+
+```sh
+mkdir -p ~/.local/share/ithomiini-wikiloc-fallback ~/.config/ithomiini-wikiloc
+cp tools/wikiloc/{lib.mjs,worker.mjs,browser.mjs,chromium.mjs,browser.py,package.json} ~/.local/share/ithomiini-wikiloc-fallback/
+# The editor account the server's worker uses, plus "fallback": true (mode 600):
+#   {"app":"https://ithomiini-ikiam.com/","username":"wikiloc-worker","password":"…","fallback":true}
+$EDITOR ~/.config/ithomiini-wikiloc/fallback.json && chmod 600 ~/.config/ithomiini-wikiloc/fallback.json
+cat > ~/.config/systemd/user/ithomiini-wikiloc-fallback.service <<UNIT
+[Unit]
+Description=Ithomiini: Wikiloc walks the server could not read (fallback)
+After=network-online.target
+[Service]
+ExecStart=$(command -v node) %h/.local/share/ithomiini-wikiloc-fallback/worker.mjs
+Environment=ITHOMIINI_WORKER_CONFIG=%h/.config/ithomiini-wikiloc/fallback.json
+Environment=ITHOMIINI_WIKILOC_BROWSER=chromium
+Environment=ITHOMIINI_WIKILOC_PLAYWRIGHT=<path to playwright's index.mjs>
+Restart=always
+RestartSec=60
+[Install]
+WantedBy=default.target
+UNIT
+systemctl --user daemon-reload && systemctl --user enable --now ithomiini-wikiloc-fallback
+```
+
+The old PC service (`ithomiini-wikiloc`, the Chromium worker before Camoufox) stays disabled:
 
 ```sh
 systemctl --user disable --now ithomiini-wikiloc

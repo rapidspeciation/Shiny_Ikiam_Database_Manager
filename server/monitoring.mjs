@@ -27,8 +27,14 @@ export function initMonitoring(db) {
   if (!db.prepare('PRAGMA table_info(wikiloc_profiles)').all().some(c => c.name === 'collector'))
     db.exec('ALTER TABLE wikiloc_profiles ADD COLUMN collector TEXT');
   // Added later: the walk's proposal in the review table (Monitoreo → Importar), the latest one.
-  if (!db.prepare('PRAGMA table_info(wikiloc_walks)').all().some(c => c.name === 'proposal_id'))
-    db.exec('ALTER TABLE wikiloc_walks ADD COLUMN proposal_id TEXT');
+  const walkColumns = db.prepare('PRAGMA table_info(wikiloc_walks)').all().map(c => c.name);
+  if (!walkColumns.includes('proposal_id')) db.exec('ALTER TABLE wikiloc_walks ADD COLUMN proposal_id TEXT');
+  // The proposal's revision as the app last saved it: a later one is someone's work (the person's, the chat's).
+  if (!walkColumns.includes('proposal_revision')) db.exec('ALTER TABLE wikiloc_walks ADD COLUMN proposal_revision INTEGER');
+  // Added later: a job Cloudflare stopped is tried again later (attempts, not before), also by the fallback worker.
+  const jobColumns = db.prepare('PRAGMA table_info(wikiloc_jobs)').all().map(c => c.name);
+  if (!jobColumns.includes('attempts')) db.exec('ALTER TABLE wikiloc_jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0');
+  if (!jobColumns.includes('not_before')) db.exec('ALTER TABLE wikiloc_jobs ADD COLUMN not_before TEXT');
 }
 
 const text = (value, max = 300) => {
@@ -898,6 +904,8 @@ const jobRow = r => ({
   requestedBy: r.requested_by,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
+  attempts: r.attempts ?? 0,
+  notBefore: r.not_before ?? null,
 });
 const profileRow = r => ({
   id: r.id,
@@ -930,7 +938,11 @@ function addJob(store, kind, target, user) {
   const open = store.db
     .prepare("SELECT * FROM wikiloc_jobs WHERE kind=? AND target=? AND status IN ('queued','running')")
     .get(kind, target);
-  if (open) return jobRow(open);
+  if (open) {
+    // Asked again while it waits for its retry time: tried at once.
+    if (open.status === 'queued' && open.not_before) store.db.prepare('UPDATE wikiloc_jobs SET not_before=NULL WHERE id=?').run(open.id);
+    return jobRow({ ...open, not_before: null });
+  }
   const row = { id: randomUUID(), kind, target, status: 'queued', message: null, requested_by: user.username, created_at: now(), updated_at: now() };
   store.db
     .prepare('INSERT INTO wikiloc_jobs(id,kind,target,status,message,requested_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)')
@@ -965,16 +977,30 @@ export function queueSync(store, user) {
 
 export function listJobs(store) {
   const jobs = store.db.prepare('SELECT * FROM wikiloc_jobs ORDER BY created_at DESC LIMIT 30').all().map(jobRow);
-  return { jobs, workerSeen: store.getSetting('wikilocWorkerSeen') };
+  return { jobs, workerSeen: store.getSetting('wikilocWorkerSeen'), fallbackSeen: store.getSetting('wikilocFallbackSeen') };
 }
 
-/** The worker takes the oldest waiting job; jobs stuck "running" for 15 minutes are retried. */
-export function claimJob(store) {
-  store.setSetting('wikilocWorkerSeen', now());
+/**
+ * A job Cloudflare's check stopped is tried again: after these waits, then it fails. The
+ * fallback worker (a home computer, tools/wikiloc README) takes it at once meanwhile.
+ */
+export const RETRY_WAITS_MIN = [5, 20];
+
+/**
+ * The worker takes the oldest waiting job whose retry time has come; jobs stuck "running" for
+ * 15 minutes are retried. The fallback worker (`fallback`) only takes jobs that failed on the
+ * server's worker at least once, without waiting for their retry time.
+ */
+export function claimJob(store, { fallback = false } = {}) {
+  store.setSetting(fallback ? 'wikilocFallbackSeen' : 'wikilocWorkerSeen', now());
   store.db
     .prepare("UPDATE wikiloc_jobs SET status='queued', updated_at=? WHERE status='running' AND updated_at < ?")
     .run(now(), new Date(Date.now() - STALE_MS).toISOString());
-  const job = store.db.prepare("SELECT * FROM wikiloc_jobs WHERE status='queued' ORDER BY created_at LIMIT 1").get();
+  const job = fallback
+    ? store.db.prepare("SELECT * FROM wikiloc_jobs WHERE status='queued' AND attempts > 0 ORDER BY created_at LIMIT 1").get()
+    : store.db
+        .prepare("SELECT * FROM wikiloc_jobs WHERE status='queued' AND (not_before IS NULL OR not_before <= ?) ORDER BY created_at LIMIT 1")
+        .get(now());
   if (!job) return { job: null };
   store.db.prepare("UPDATE wikiloc_jobs SET status='running', updated_at=? WHERE id=?").run(now(), job.id);
   const out = jobRow({ ...job, status: 'running' });
@@ -998,10 +1024,26 @@ export function claimJob(store) {
 export function finishJob(store, id, body) {
   const job = store.db.prepare('SELECT * FROM wikiloc_jobs WHERE id=?').get(id);
   if (!job) throw fail('JOB_NOT_FOUND', 'Job not found', 404);
+  // Cloudflare's check did not clear (`retry`): queued again for later while tries are left.
+  const attempts = (job.attempts ?? 0) + (body.status === 'retry' ? 1 : 0);
+  if (body.status === 'retry' && attempts <= RETRY_WAITS_MIN.length) {
+    const at = new Date(Date.now() + RETRY_WAITS_MIN[attempts - 1] * 60_000);
+    const hour = at.toLocaleTimeString('es-EC', { timeZone: 'America/Guayaquil', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+    store.db
+      .prepare("UPDATE wikiloc_jobs SET status='queued', attempts=?, not_before=?, message=?, updated_at=? WHERE id=?")
+      .run(
+        attempts,
+        at.toISOString(),
+        `${text(body.message, 300) || 'Cloudflare'} — se intenta de nuevo hacia las ${hour} (intento ${attempts + 1} de ${RETRY_WAITS_MIN.length + 1})`,
+        now(),
+        id,
+      );
+    return { job: jobRow(store.db.prepare('SELECT * FROM wikiloc_jobs WHERE id=?').get(id)) };
+  }
   const status = body.status === 'done' ? 'done' : 'failed';
   store.db
-    .prepare('UPDATE wikiloc_jobs SET status=?, message=?, updated_at=? WHERE id=?')
-    .run(status, text(body.message, 1000), now(), id);
+    .prepare('UPDATE wikiloc_jobs SET status=?, message=?, attempts=?, updated_at=? WHERE id=?')
+    .run(status, text(body.message, 1000), attempts, now(), id);
   if (job.kind === 'profile' && status === 'done')
     store.db.prepare('UPDATE wikiloc_profiles SET last_checked=?, name=COALESCE(?, name) WHERE wikiloc_user=?').run(now(), text(body.profileName, 120), job.target);
   return { job: jobRow(store.db.prepare('SELECT * FROM wikiloc_jobs WHERE id=?').get(id)) };

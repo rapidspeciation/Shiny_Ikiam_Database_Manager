@@ -5,10 +5,17 @@ import { fileURLToPath } from 'node:url';
 
 const directory = dirname(fileURLToPath(import.meta.url));
 const python = () => process.env.ITHOMIINI_WIKILOC_PYTHON || join(directory, 'venv', 'bin', 'python');
-const REQUEST_TIMEOUT = 210_000;
+// A page's check can take two loads of about 100 s each, after the home page's.
+const REQUEST_TIMEOUT = 330_000;
 
-/** Start a browser process for one job; page has the operations used by the parsers. */
-export async function openBrowser({ timeoutMs = REQUEST_TIMEOUT } = {}) {
+/**
+ * Start a browser process for one job; page has the operations used by the parsers. `log`
+ * receives the browser's own lines (what Cloudflare showed, how the check went). With
+ * ITHOMIINI_WIKILOC_BROWSER=chromium it is Playwright's Chromium instead (the home computer's
+ * fallback, chromium.mjs).
+ */
+export async function openBrowser({ timeoutMs = REQUEST_TIMEOUT, log = () => {} } = {}) {
+  if (process.env.ITHOMIINI_WIKILOC_BROWSER === 'chromium') return (await import('./chromium.mjs')).openChromium({ log });
   if (!existsSync(python())) throw new Error(`Wikiloc Python is missing: ${python()}`);
   const child = spawn(python(), [join(directory, 'browser.py')], {
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -74,8 +81,17 @@ export async function openBrowser({ timeoutMs = REQUEST_TIMEOUT } = {}) {
     fail(new Error(`Wikiloc browser exited (${signal || code})`));
   });
   child.stdin.on('error', error => fail(new Error(`Wikiloc browser input failed: ${error.message}`)));
-  // Drain diagnostics so a full stderr pipe cannot stall the Python process.
-  child.stderr.resume();
+  // Diagnostics go to the worker's log (a full stderr pipe would stall the Python process).
+  child.stderr.setEncoding('utf8');
+  let errors = '';
+  child.stderr.on('data', chunk => {
+    errors = (errors + chunk).slice(-20_000);
+    for (let newline; (newline = errors.indexOf('\n')) >= 0; ) {
+      const line = errors.slice(0, newline).trim();
+      errors = errors.slice(newline + 1);
+      if (line.startsWith('wikiloc: ')) log(line.slice(9));
+    }
+  });
 
   function call(op, fields = {}, timeout = timeoutMs) {
     if (ended) return Promise.reject(exitReason);

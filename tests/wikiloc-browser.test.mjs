@@ -25,6 +25,7 @@ process.stdin.on('data', chunk => {
     }
     if (process.env.FAKE_MODE === 'hang') continue;
     if (process.env.FAKE_MODE === 'invalid') { process.stdout.write('bad json\\n'); continue; }
+    if (request.op === 'goto') process.stderr.write('wikiloc: check on ' + request.url + ' (turnstile), try 1\\nother library noise\\n');
     const data = request.op === 'title' ? 'Trail' : request.op === 'evaluate' ? request.code : null;
     process.stdout.write(JSON.stringify({ id: request.id, data }) + '\\n');
     if (request.op === 'close') {
@@ -50,6 +51,19 @@ test('browser adapter sends requests and closes', async () => {
     await browser.page.goto('https://es.wikiloc.com/');
     assert.equal(await browser.page.title(), 'Trail');
     assert.match(await browser.page.evaluate(() => window.mapData), /window.mapData/);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("the browser's own lines (what Cloudflare showed) reach the worker's log", async () => {
+  const lines = [];
+  const browser = await openBrowser({ timeoutMs: 1000, log: line => lines.push(line) });
+  try {
+    await browser.page.goto('https://es.wikiloc.com/x-1');
+    await browser.page.title();
+    for (let i = 0; i < 50 && !lines.length; i++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.deepEqual(lines, ['check on https://es.wikiloc.com/x-1 (turnstile), try 1']);
   } finally {
     await browser.close();
   }

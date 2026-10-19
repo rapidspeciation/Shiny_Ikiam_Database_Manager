@@ -424,7 +424,7 @@ export default {
     'The photos {id} are in {folder}, of butterflies collected in {other} ({n} of {of}); the row is from {year}',
   'Las fotos {id} de {folder} se tomaron el {taken}, antes que la fila ({date})': 'The photos {id} in {folder} were taken on {taken}, before the row ({date})',
   // Monitoreo → Importar: a Wikiloc walk in the review table (Oct 2026).
-  "La tabla de este recorrido ya tiene cambios tuyos: corrige ahí los CAM y tubos, o pide a Claude que los rellene": "This walk's table already has your edits: correct the CAMs and tubes there, or ask Claude to fill them",
+  "La tabla de este recorrido ya tiene cambios (tuyos o del chat): corrige ahí los CAM y tubos, o pide a Claude que los rellene": "This walk's table already has changes (yours or the chat's): correct the CAMs and tubes there, or ask Claude to fill them",
   "Recorrido de Wikiloc «{name}» ({date}, {collector})": "Wikiloc walk «{name}» ({date}, {collector})",
   "El identificador de fotos dice {species} ({pct} %): haz clic para usarla, o escribe otra": "The photo identifier says {species} ({pct} %): click to use it, or type another",
   "El identificador de fotos duda: {species} ({pct} %), luego {next}": "The photo identifier is unsure: {species} ({pct} %), then {next}",
@@ -462,4 +462,7 @@ export default {
   "Wikiloc no dice cuánto duró": "Wikiloc does not say how long it took",
   "No se leyó de Wikiloc (trae el recorrido de nuevo)": "Not read from Wikiloc (fetch the walk again)",
   "En Wikiloc: {remark}. El equipo escribe estas notas en inglés («{day} {initials}: …»)": "In Wikiloc: {remark}. The team writes these notes in English («{day} {initials}: …»)",
+  "Recolector nuevo en Lists: {abbr}": "New collector in Lists: {abbr}",
+  "{initials} ya es de {names}: ¿otras iniciales?": "{initials} already belongs to {names}: other initials?",
+  "El destino {fate} lo pide: escríbelo (del sobre, el tubo o la jaula)": "The fate {fate} needs it: type it (from the envelope, the tube or the cage)",
 } as Record<string, string>

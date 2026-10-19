@@ -167,7 +167,9 @@ async function readWalk(store, row, { date, collector } = {}) {
   let who = text(collector) || data.collector || null;
   const source = text(collector) ? 'given' : data.collector ? 'profile' : null;
   if (!who) who = m.collectorFromName(row.name, collectors);
-  if (who && !collectors.includes(who)) problems.push(`El colector «${who}» no aparece en Collection_data: revisa cómo se escribe`);
+  // A collector new to the sheet is fine once in the Collector list (Lists · Abbr_name).
+  const listed = listOptions(store, MODULE).Collector?.values;
+  if (who && !collectors.includes(who) && !listed?.has(who)) problems.push(`El colector «${who}» no aparece en Collection_data: revisa cómo se escribe`);
   let day = text(date) || row.date || null;
   if (!day) problems.push(`El título «${row.name}» no dice el día (${data.recorded || 'sin fecha'}): pregunta la fecha y llama get_walk con date`);
   if (!who) problems.push('No se sabe quién hizo el recorrido: pregunta el colector (p. ej. «FCH - Franz Chandi») y llama get_walk con collector');
@@ -308,31 +310,8 @@ export async function walkDraft(store, { walkId, url, date, collector } = {}) {
   };
 }
 
-/**
- * The same butterfly already in the sheet that day under another collector (a
- * teammate's walk of the same morning, e.g. a newcomer trained on it): the same
- * mark, or for an unmarked one the same species and sex within 3 minutes.
- */
-function teammateRow(w, c) {
-  const serial = parseDateText(w.day);
-  const mine = w.who.split(' - ')[0].trim().toUpperCase();
-  const others = w.monitoring.filter(
-    r => r.values.Collection_date === serial && text(r.values.Collector).split(' - ')[0].trim().toUpperCase() !== mine,
-  );
-  if (c.markId) return others.find(r => text(r.values.FieldMark_ID).toUpperCase() === c.markId.toUpperCase()) ?? null;
-  if (!c.species || c.minutes === null) return null;
-  return (
-    others.find(r => {
-      const t = r.values.Collection_time;
-      return (
-        text(r.values.SPECIES) === c.species &&
-        (!c.sex || !text(r.values.Sex) || text(r.values.Sex).startsWith(c.sex)) &&
-        typeof t === 'number' &&
-        Math.abs(t * 1440 - c.minutes) <= 3
-      );
-    }) ?? null
-  );
-}
+/** The same butterfly already in the sheet that day under a teammate (lib/monitoring.ts teammateRow). */
+const teammateRow = (w, c) => w.m.teammateRow(w.monitoring, w.day, w.who, c);
 /** A row of the sheet in a note: its mark, species, sex (and collector) and row number. */
 const rowText = (r, collector = false) =>
   `${[text(r.values.FieldMark_ID) !== 'NA' ? text(r.values.FieldMark_ID) : '', text(r.values.SPECIES) || '?', text(r.values.Sex)].filter(Boolean).join(' ')}${collector ? `, ${text(r.values.Collector).split(' - ')[0]}` : ''} (${r.row})`;
@@ -474,6 +453,7 @@ export async function walkRows(store, { walkId, url, date, collector, firstCam, 
       values,
       note: `Wikiloc: ${c.text}`.slice(0, 300),
       photos: c.photos,
+      ...(c.markId ? { mark: c.markId } : {}),
       ...(Object.keys(hints).length ? { hints } : {}),
       ...(Object.keys(doubts).length ? { doubts } : {}),
       ...(Object.keys(unreadable).length ? { unreadable } : {}),

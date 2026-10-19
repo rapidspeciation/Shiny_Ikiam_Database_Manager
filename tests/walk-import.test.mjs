@@ -162,6 +162,8 @@ test('a walk becomes one proposal: rows with their photos, notes on the cells, C
     ],
   );
   const methona = preserved[0];
+  // Its label reads as the team writes it: the species and the time.
+  assert.equal(methona.label, 'CAM079944');
   assert.equal(methona.values.ID_status, 'Complete_but_verify');
   assert.match(methona.doubts.SPECIES.reason, /duda de la especie/);
   // A butterfly the teammate already entered that morning.
@@ -266,6 +268,8 @@ test("the identifier reads each photo in the background; its species goes beside
   assert.equal(b76.values.SPECIES, 'Hypothyris euclea');
   assert.deepEqual(b76.doubts.SPECIES.alternatives, ['Mechanitis polymnia']);
   assert.match(b76.doubts.SPECIES.reason, /dice Mechanitis polymnia \(63 %\), no Hypothyris euclea/);
+  // A row without its CAM yet is named by its species and time.
+  assert.equal(at('10:15 Methona').label, 'Methona confusa 10:15');
   // Unsure: only a hint.
   assert.match(hintText(at('10:50 Oleria'), 'SPECIES'), /duda: Oleria gunilla \(30 %\), luego Oleria agarista 25 %/);
   // Asked again: only the failed photo is read again.
@@ -334,5 +338,81 @@ test('a name the sheet would refuse is left to fill, with what the note wrote of
   assert.equal(row.values.ID_status, 'To_identify');
   assert.deepEqual(row.unreadable.SPECIES.partial, ['Hipotiris unchela']);
   assert.match(row.unreadable.SPECIES.reason, /no está en la lista de la hoja/);
+  store.close();
+});
+
+test("a row's fate changed in the table: the cells that fate decides follow, what only people know is left to type", async () => {
+  const { store, assistant, user } = await fixture();
+  const w = await walk(store, user, [POINTS[2], POINTS[0]]);
+  const made = await assistant.handle({ method: 'POST', path: '/api/chat/proposals/from-walk', user, body: { walkId: w.id, firstCam: 'CAM079944', firstTube: 'FS90415351' } });
+  let p = await shown(assistant, user, made.body.proposalId);
+  const methona = p.changes.find(c => c.values.SPECIES === 'Methona confusa');
+  assert.equal(methona.values.Release_Collect, 'Collected_Preserved');
+  const edit = async (key, field, value) =>
+    assistant.handle({ method: 'POST', path: `/api/chat/proposals/${made.body.proposalId}/edit`, user, body: { cells: [{ key, field, value }] } });
+  // Sent to the insectary: no sample yet, its Insectary_ID to type.
+  assert.equal((await edit(methona.key, 'Release_Collect', 'Collected_Sent2Insectary')).status, 200);
+  p = await shown(assistant, user, made.body.proposalId);
+  let row = p.changes.find(c => c.key === methona.key);
+  assert.equal(row.values.Release_Collect, 'Collected_Sent2Insectary');
+  for (const f of ['CAM_ID', 'Tube_1_id', 'Death_date', 'Preservation_medium', 'Location_Head']) assert.equal(row.values[f] ?? null, null, f);
+  assert.ok(row.unreadable.Insectary_ID);
+  assert.equal(row.unreadable.CAM_ID, undefined);
+  // Back to preserved: the day's preservation again, CAM and tube to type.
+  await edit(methona.key, 'Release_Collect', 'Collected_Preserved');
+  row = (await shown(assistant, user, made.body.proposalId)).changes.find(c => c.key === methona.key);
+  assert.equal(row.values.Preservation_medium, 'Flash frozen');
+  assert.equal(row.values.Death_date, serial('2026-10-14'));
+  assert.ok(row.unreadable.CAM_ID && row.unreadable.Tube_1_id);
+  assert.equal(row.unreadable.Insectary_ID, undefined);
+  // A marked one released without its mark.
+  const b75 = p.changes.find(c => c.values.FieldMark_ID === 'B75');
+  await edit(b75.key, 'Release_Collect', 'Released_Unmarked');
+  row = (await shown(assistant, user, made.body.proposalId)).changes.find(c => c.key === b75.key);
+  assert.equal(row.values.FieldMark_ID, 'NA');
+  store.close();
+});
+
+test('a collector new to the workbook goes to the first free row of Lists, as a proposal', async () => {
+  const sheets = new LocalSheets({
+    Collection_data: [],
+    Lists: [
+      { row: 2, values: { Name: 'Franz Chandi', Abbreviation: 'FCH', Abbr_name: { formula: '=B2&" - "&A2' }, Wild_indv_CAMid: 'CAM000001' } },
+      { row: 3, values: { Wild_indv_CAMid: 'CAM000002' } },
+    ],
+  });
+  const store = new Store({ localMode: true }, { sheets });
+  await store.sync({ sheets: ['Collection_data', 'Lists'] });
+  const assistant = createAssistant({ store, config: {} });
+  signIn(store, assistant);
+  const user = { id: 'u1', username: 'franz', role: 'editor' };
+  const bad = await assistant.handle({ method: 'POST', path: '/api/chat/proposals/new-collector', user, body: { initials: 'x', name: 'Ab' } });
+  assert.equal(bad.status, 400);
+  const made = await assistant.handle({ method: 'POST', path: '/api/chat/proposals/new-collector', user, body: { initials: 'xy', name: '  New   Person ' } });
+  assert.equal(made.status, 201, JSON.stringify(made.body));
+  assert.equal(made.body.collector, 'XY - New Person');
+  const [change] = (await shown(assistant, user, made.body.proposalId)).changes;
+  assert.equal(change.row, 3);
+  assert.equal(change.values.Name, 'New Person');
+  assert.equal(change.values.Abbreviation, 'XY');
+  const applied = await assistant.handle({ method: 'POST', path: `/api/chat/proposals/${made.body.proposalId}/apply`, user, body: { requestId: randomUUID() } });
+  assert.equal(applied.body.status, 'applied', JSON.stringify(applied.body));
+  const lists = store.getRecordBySheetRow('Lists', 3);
+  assert.equal(lists.values.Name, 'New Person');
+  assert.equal(lists.values.Abbr_name, 'XY - New Person');
+  assert.equal(lists.values.Wild_indv_CAMid, 'CAM000002');
+  store.close();
+});
+
+test("the walk's table is not made again over the chat's changes", async () => {
+  const { store, assistant, user, call } = await fixture();
+  const w = await walk(store, user, POINTS.slice(0, 2));
+  const made = await assistant.handle({ method: 'POST', path: '/api/chat/proposals/from-walk', user, body: { walkId: w.id } });
+  // The chat removes a row (update_proposal): someone's work, kept.
+  const out = await call('update_proposal', { proposalId: made.body.proposalId, removeRows: [0] });
+  assert.ok(!out.error, JSON.stringify(out));
+  const again = await assistant.handle({ method: 'POST', path: '/api/chat/proposals/from-walk', user, body: { walkId: w.id, firstCam: 'CAM079950' } });
+  assert.equal(again.status, 409);
+  assert.equal(again.body.error.details.proposalId, made.body.proposalId);
   store.close();
 });

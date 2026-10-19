@@ -45,6 +45,7 @@ import {
   reviewCapture,
   samplingDayRow,
   timesFromTrack,
+  trainingWalk,
   trackLength,
   trackSpan,
   walkMarkRoles,
@@ -232,9 +233,33 @@ watch([people, profiles], () => {
 })
 /** Every walk read from Wikiloc, newest first, with how far it has gone. */
 const walkCount = ref(12)
+/**
+ * Training walks (a newcomer's walk of a morning whose butterflies a teammate's rows already
+ * hold): hidden from the list, which can show them.
+ */
+const training = computed(() => {
+  const out = new Map<string, NonNullable<ReturnType<typeof trainingWalk>>>()
+  if (!table.value) return out
+  for (const w of walks.value) {
+    if (w.status !== 'waiting' || w.proposalStatus === 'applied') continue
+    const captures = w.waypoints.map(p => locateCapture({ ...p, time: p.time ?? null }, taxa.value, localTaxa.value))
+    const found = trainingWalk(rows.value, w.date, collectorOf(w)?.[0] ?? null, captures)
+    if (found) out.set(w.id, found)
+  }
+  return out
+})
+const showHidden = ref(false)
+const listed = computed(() => walks.value.filter(w => showHidden.value || !training.value.has(w.id)))
+const followed = (w: WikilocWalk) => !!w.author && profiles.value.some(p => p.wikilocUser === w.author)
 const pairedOf = computed(() => new Map(registered.value.map(x => [x.w.id, x])))
 function walkState(w: WikilocWalk): { text: string; tone: 'done' | 'todo' | 'wait' } {
   if (w.status === 'imported') return { text: t('En el mapa'), tone: 'done' }
+  const trained = training.value.get(w.id)
+  if (trained)
+    return {
+      text: t('Entrenamiento: {n} de {total} ya en la hoja ({who})', { n: trained.twins, total: trained.of, who: trained.by.join(', ') }),
+      tone: 'done',
+    }
   if (w.proposalStatus === 'pending') return { text: t('Tabla por revisar'), tone: 'wait' }
   if (w.proposalStatus === 'applied') return { text: t('Aplicada en la hoja'), tone: 'done' }
   const paired = pairedOf.value.get(w.id)
@@ -931,7 +956,7 @@ const dayLabel = (iso: string) => formatSerial(isoToSerial(iso))
           </thead>
           <tbody>
             <tr
-              v-for="w in walks.slice(0, walkCount)"
+              v-for="w in listed.slice(0, walkCount)"
               :key="w.id"
               class="cursor-pointer border-t border-stone-100 hover:bg-brand-50"
               :title="$t('Abrir en la tabla de revisión')"
@@ -968,7 +993,17 @@ const dayLabel = (iso: string) => formatSerial(isoToSerial(iso))
             </tr>
           </tbody>
         </table>
-        <button v-if="walks.length > walkCount" class="px-2 py-1 text-xs underline" @click="walkCount += 20">{{ $t('Ver más') }}</button>
+        <div class="flex gap-3 px-2 py-1 text-xs">
+          <button v-if="listed.length > walkCount" class="underline" @click="walkCount += 20">{{ $t('Ver más') }}</button>
+          <button
+            v-if="training.size"
+            class="text-stone-600 underline"
+            :title="$t('Recorridos de entrenamiento: sus mariposas ya están en la hoja con el recorrido de un compañero de esa mañana')"
+            @click="showHidden = !showHidden"
+          >
+            {{ showHidden ? $t('Ocultar los de entrenamiento') : $t('Mostrar {n} de entrenamiento (ocultos)', { n: training.size }) }}
+          </button>
+        </div>
       </div>
       <!-- Walks on the map: review one again, or remove it (uploader, whoever brought it in, reviewers). -->
       <ul
@@ -1028,8 +1063,10 @@ const dayLabel = (iso: string) => formatSerial(isoToSerial(iso))
       :collector-choices="collectorChoices"
       :suggest-cam="suggested.cam"
       :suggest-tube="suggested.tube"
+      :followed="followed(walkOpen)"
       @close="walkOpen = null"
       @changed="loadWalks"
+      @followed="() => (loadProfiles(), bar?.loadProfiles())"
     />
 
     <section v-if="file && !walkOpen" class="max-h-[60%] shrink-0 overflow-auto border-b border-stone-200 bg-white">

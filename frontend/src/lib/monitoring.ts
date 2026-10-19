@@ -662,6 +662,77 @@ export function captureValues(c: Capture, ctx: CaptureContext): Record<string, C
 }
 
 /**
+ * The cells a capture's fate decides, as the team fills them, when the person
+ * changes the fate of a walk's row (Release_Collect): marked and released (or
+ * released without a mark) has no sample; preserved is frozen alive that day,
+ * whole, at Ikiam; sent to the insectary takes an Insectary_ID and leaves the
+ * sample columns empty until it dies there. null empties a cell; `toType`: the
+ * cells only the person can fill (the envelope, the tube, the insectary's ID).
+ */
+export function fateValues(
+  fate: string,
+  ctx: { date: string; markId?: string | null },
+): { values: Record<string, CellValue>; toType: string[] } {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(ctx.date) ? isoToSerial(ctx.date) : null
+  const at = (place: CellValue) =>
+    Object.fromEntries(['Location_Head', 'Location_Torax', 'Location_abdomen', 'Location_Legs', 'Location_wings'].map(k => [k, place]))
+  const sample = (v: CellValue) => ({
+    CAM_ID: v,
+    Tube_1_id: v,
+    Butterfly_weight: v,
+    Death_date: v,
+    Preservation_date: v,
+    ...at(v),
+  })
+  switch (fate) {
+    case 'Mark_Released':
+    case 'Released_Unmarked':
+      return {
+        values: {
+          FieldMark_ID: fate === 'Mark_Released' ? ctx.markId || null : 'NA',
+          Insectary_ID: 'NA',
+          ...sample('NA'),
+          Tube_1_tissue: 'NOT_COLLECTED',
+          Preservation_medium: 'NOT_COLLECTED',
+          Preserved_dead_alive: 'NOT_PRESERVED',
+        },
+        toType: fate === 'Mark_Released' && !ctx.markId ? ['FieldMark_ID'] : [],
+      }
+    case 'Collected_Preserved':
+      return {
+        values: {
+          FieldMark_ID: 'NA',
+          Insectary_ID: 'NA',
+          CAM_ID: null,
+          Tube_1_id: null,
+          Butterfly_weight: null,
+          Tube_1_tissue: 'WHOLE_ORGANISM',
+          Death_date: date,
+          Preservation_date: date,
+          Preservation_medium: 'Flash frozen',
+          Preserved_dead_alive: 'Alive',
+          ...at('Ikiam'),
+        },
+        toType: ['CAM_ID', 'Tube_1_id'],
+      }
+    case 'Collected_Sent2Insectary':
+      return {
+        values: {
+          FieldMark_ID: 'NA',
+          Insectary_ID: null,
+          ...sample(null),
+          Tube_1_tissue: null,
+          Preservation_medium: null,
+          Preserved_dead_alive: null,
+        },
+        toType: ['Insectary_ID'],
+      }
+    default:
+      return { values: {}, toType: [] }
+  }
+}
+
+/**
  * ID_status and Identifier follow the species while a new row is edited: a
  * species typed in makes it COMPLETE (identified by the collector unless
  * someone else is written); emptied, it is To_identify again. Returns only the
@@ -1110,6 +1181,56 @@ export function reviewCapture(
   if (c.section === null) out.push(check('warn', 'Lejos del sendero ({n} m)', { n: String(c.sectionDistance) }))
   if (c.rest) out.push(check('info', 'A notas: “{note}”', { note: c.rest }))
   return { existing, recapture, list: out }
+}
+
+// ------------------------------------------------------- a teammate's walk of the same morning
+
+const initialsIn = (collector: CellValue | undefined) => text(collector).split(' - ')[0].trim().toUpperCase()
+
+/**
+ * The same butterfly already in the sheet that day under another collector (a
+ * teammate's walk of the same morning, e.g. a newcomer trained on it): the same
+ * mark, or for an unmarked one the same species and sex within 3 minutes.
+ */
+export function teammateRow(rows: TableRow[], date: string, collector: string, c: Capture): TableRow | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null
+  const serial = isoToSerial(date)
+  const mine = initialsIn(collector)
+  const others = rows.filter(r => r.values.Collection_date === serial && initialsIn(r.values.Collector) !== mine)
+  if (c.markId) return others.find(r => text(r.values.FieldMark_ID).toUpperCase() === c.markId!.toUpperCase()) ?? null
+  if (!c.species || c.minutes === null) return null
+  return (
+    others.find(r => {
+      const t = r.values.Collection_time
+      return (
+        text(r.values.SPECIES) === c.species &&
+        (!c.sex || !text(r.values.Sex) || text(r.values.Sex).startsWith(c.sex)) &&
+        typeof t === 'number' &&
+        Math.abs(t * 1440 - c.minutes!) <= 3
+      )
+    }) ?? null
+  )
+}
+
+/**
+ * A training walk: a collector's walk of a morning whose butterflies a
+ * teammate's rows of that day already hold (at least half of its points),
+ * while the walk's own collector has no rows that day. Its rows would be the
+ * same butterflies twice, so Importar hides it (shown on demand).
+ */
+export function trainingWalk(
+  rows: TableRow[],
+  date: string | null,
+  collector: string | null,
+  captures: Capture[],
+): { twins: number; of: number; by: string[] } | null {
+  if (!date || !collector || !captures.length || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null
+  const serial = isoToSerial(date)
+  const mine = initialsIn(collector)
+  if (rows.some(r => r.values.Collection_date === serial && initialsIn(r.values.Collector) === mine)) return null
+  const twins = captures.map(c => teammateRow(rows, date, collector, c)).filter((r): r is TableRow => !!r)
+  if (!twins.length || twins.length * 2 < captures.length) return null
+  return { twins: twins.length, of: captures.length, by: [...new Set(twins.map(r => initialsIn(r.values.Collector)))] }
 }
 
 // ------------------------------------------------------- IDs given in order

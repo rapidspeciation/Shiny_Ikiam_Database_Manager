@@ -37,6 +37,8 @@ const emit = defineEmits<{ reopened: [walkId: string] }>()
 const link = ref('')
 const jobs = ref<Job[]>([])
 const workerSeen = ref<string | null>(null)
+/** The home computer's fallback worker (jobs Cloudflare stopped on the server). */
+const fallbackSeen = ref<string | null>(null)
 const profiles = ref<Profile[]>([])
 const showProfiles = ref(false)
 /** Phones show only the jobs still running; the rest on demand. */
@@ -51,13 +53,15 @@ const active = computed(() => jobs.value.filter(j => j.status === 'queued' || j.
 const recent = computed(() => jobs.value.slice(0, 4))
 /** The server worker asks for work every 30 s; detect a missing heartbeat. */
 const workerOnline = computed(() => !!workerSeen.value && Date.now() - Date.parse(workerSeen.value) < 2 * 60_000)
+const fallbackOnline = computed(() => !!fallbackSeen.value && Date.now() - Date.parse(fallbackSeen.value) < 2 * 60_000)
 
 async function refresh() {
   try {
     const before = new Set(active.value.map(j => j.id))
-    const data = await api<{ jobs: Job[]; workerSeen: string | null }>('monitoring/wikiloc/jobs')
+    const data = await api<{ jobs: Job[]; workerSeen: string | null; fallbackSeen?: string | null }>('monitoring/wikiloc/jobs')
     jobs.value = data.jobs
     workerSeen.value = data.workerSeen
+    fallbackSeen.value = data.fallbackSeen ?? null
     const finished = data.jobs.filter(j => before.has(j.id) && (j.status === 'done' || j.status === 'failed'))
     if (finished.length) {
       await loadWalks()
@@ -105,7 +109,7 @@ async function queue(text = link.value) {
     notify(errorText(e), 'error')
   }
 }
-defineExpose({ queue })
+defineExpose({ queue, loadProfiles })
 
 async function sync() {
   try {
@@ -201,6 +205,9 @@ watch(showProfiles, v => v && loadProfiles())
       >
         ● <span class="hidden sm:inline">{{ $t('Importador de Wikiloc') }}</span>
         {{ workerOnline ? $t('activo') : $t('sin señal ({ago})', { ago: ago(workerSeen) }) }}
+      </span>
+      <span v-if="fallbackOnline" class="text-xs text-brand-700" :title="$t('Toma los recorridos que la verificación de Cloudflare detuvo en el servidor')">
+        · {{ $t('respaldo del PC activo') }}
       </span>
       <button
         v-if="recent.length"

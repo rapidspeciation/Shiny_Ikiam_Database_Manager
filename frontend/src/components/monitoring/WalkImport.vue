@@ -2,7 +2,7 @@
 import ChoiceField from '../ChoiceField.vue'
 import DateField from '../DateField.vue'
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
-import { Bot, Check, Copy, ExternalLink, ListRestart, MessageSquarePlus, ScanSearch, X } from 'lucide-vue-next'
+import { Bot, Check, Copy, ExternalLink, ListRestart, MessageSquarePlus, ScanSearch, UserPlus, X } from 'lucide-vue-next'
 import ProposalsLive from '../assistant/ProposalsLive.vue'
 import type { WikilocWalk } from '../../composables/useMonitoring'
 import { api } from '../../lib/api'
@@ -33,8 +33,10 @@ const props = defineProps<{
   /** The next free CAM and tube (Colecta's suggestion), offered for the first ones. */
   suggestCam: string | null
   suggestTube: string | null
+  /** The walk's author is a followed Wikiloc profile. */
+  followed: boolean
 }>()
-const emit = defineEmits<{ close: []; changed: [] }>()
+const emit = defineEmits<{ close: []; changed: []; followed: [] }>()
 
 const date = ref(props.walk.date || '')
 const collector = ref(props.collector)
@@ -76,7 +78,9 @@ async function prepare() {
   } catch (e) {
     const err = e as { code?: string; details?: { proposalId?: string } }
     if (err.code === 'walk_proposal_edited' && err.details?.proposalId) proposalId.value = err.details.proposalId
-    notify(errorText(e), 'error', 6000)
+    // Nothing to write: not an error (the walk can go on the map from the list).
+    if (err.code === 'nothing_to_propose') notify(t('Todos los puntos ya están en la hoja: pásalo al mapa desde la lista'), 'info', 6000)
+    else notify(errorText(e), 'error', 6000)
   } finally {
     busy.value = false
   }
@@ -86,6 +90,51 @@ onMounted(() => {
   if (!proposalId.value && ready.value) prepare()
   else if (proposalId.value) follow()
 })
+
+// ------------------------------------------------------------ a collector new to the workbook, an unfollowed profile
+
+/** «Nuevo recolector»: their initials and name, proposed for Lists (applied there before their rows). */
+const newCollector = ref<{ open: boolean; initials: string; name: string; proposal: string | null; abbr: string }>({
+  open: false,
+  initials: '',
+  name: '',
+  proposal: null,
+  abbr: '',
+})
+async function proposeCollector() {
+  busy.value = true
+  try {
+    const out = await api<{ proposalId: string; collector: string }>('chat/proposals/new-collector', {
+      method: 'POST',
+      body: { initials: newCollector.value.initials, name: newCollector.value.name },
+    })
+    newCollector.value = { ...newCollector.value, open: false, proposal: out.proposalId, abbr: out.collector }
+  } catch (e) {
+    notify(errorText(e), 'error', 6000)
+  } finally {
+    busy.value = false
+  }
+}
+/** Once applied, the new collector is in the list: chosen for this walk. */
+watch(
+  () => props.collectorChoices.some(c => c.value.trim() === newCollector.value.abbr.trim()),
+  inList => {
+    if (inList && newCollector.value.abbr) {
+      collector.value = props.collectorChoices.find(c => c.value.trim() === newCollector.value.abbr.trim())!.value
+      newCollector.value = { open: false, initials: '', name: '', proposal: null, abbr: '' }
+    }
+  },
+)
+/** Follows the walk's Wikiloc profile with this collector: their next walks come with «Buscar nuevos». */
+async function followProfile() {
+  try {
+    await api('monitoring/wikiloc/profiles', { method: 'POST', body: { url: props.walk.author, collector: collector.value } })
+    notify(t('Perfil seguido: sus recorridos nuevos llegan con «Buscar nuevos»'), 'success', 3000)
+    emit('followed')
+  } catch (e) {
+    notify(errorText(e), 'error')
+  }
+}
 
 // ------------------------------------------------------------ the photos' species (AI Identifier)
 
@@ -213,6 +262,20 @@ const earlierDay = computed(() => (earlier.value ? formatSerial(isoToSerial(earl
           :options="collectorChoices"
         />
       </label>
+      <div class="flex flex-col items-start gap-0.5 pb-0.5 text-xs">
+        <button class="btn-ghost px-1 py-0 underline" @click="newCollector.open = !newCollector.open">
+          {{ $t('¿No está? Nuevo recolector') }}
+        </button>
+        <button
+          v-if="walk.author && !followed"
+          class="btn-ghost px-1 py-0 underline"
+          :disabled="!collector"
+          :title="$t('Sus recorridos nuevos llegan con «Buscar nuevos en Wikiloc»')"
+          @click="followProfile"
+        >
+          <UserPlus :size="12" /> {{ $t('Seguir este perfil de Wikiloc') }}
+        </button>
+      </div>
       <label class="w-36">
         <span class="field-label">{{ $t('Primer CAM_ID') }}</span>
         <input v-model="firstCam" class="field-input" :placeholder="suggestCam || 'CAM0…'" spellcheck="false" @keydown.enter="prepare" />
@@ -244,6 +307,31 @@ const earlierDay = computed(() => (earlier.value ? formatSerial(isoToSerial(earl
         </button>
         <button class="btn-ghost" :title="$t('Cerrar')" @click="emit('close')"><X :size="15" /></button>
       </div>
+    </div>
+    <form
+      v-if="newCollector.open"
+      class="flex flex-wrap items-end gap-2 border-b border-stone-200 bg-amber-50 px-3 py-2 text-xs"
+      data-new-collector
+      @submit.prevent="proposeCollector"
+    >
+      <label class="w-24">
+        <span class="field-label">{{ $t('Iniciales') }}</span>
+        <input v-model="newCollector.initials" class="field-input uppercase" maxlength="6" placeholder="AB" />
+      </label>
+      <label class="w-64">
+        <span class="field-label">{{ $t('Nombre completo') }}</span>
+        <input v-model="newCollector.name" class="field-input" maxlength="80" />
+      </label>
+      <button class="btn" :disabled="busy || !newCollector.initials.trim() || !newCollector.name.trim()">
+        <UserPlus :size="14" /> {{ $t('Proponer en Lists') }}
+      </button>
+      <span class="text-stone-600">{{ $t('Se añade a la hoja Lists (Abbr_name) al aplicarla; luego se elige aquí.') }}</span>
+    </form>
+    <div v-if="newCollector.proposal" class="flex h-96 shrink-0 flex-col border-b border-stone-200 px-2" data-collector-proposal>
+      <p class="px-1 pt-1 text-xs text-stone-600">
+        {{ $t('Aplica esta fila de Lists; después {abbr} aparece en «Recolector».', { abbr: newCollector.abbr }) }}
+      </p>
+      <ProposalsLive :key="newCollector.proposal" layout="page" :only="newCollector.proposal" class="min-h-0 flex-1" />
     </div>
     <div class="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-stone-200 bg-stone-50 px-3 py-1 text-xs text-stone-600" data-walk-status>
       <span v-if="reading && reading.total" class="inline-flex items-center gap-1" data-identifier>

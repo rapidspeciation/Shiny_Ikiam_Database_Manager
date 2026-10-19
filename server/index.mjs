@@ -1266,7 +1266,7 @@ export async function createApp(config = {}, options = {}) {
       }
       if (method === 'POST' && path === '/api/monitoring/wikiloc/jobs/claim') {
         requireEditor(user);
-        return json(res, 200, claimJob(store));
+        return json(res, 200, claimJob(store, { fallback: body?.fallback === true }));
       }
       if (method === 'POST' && /^\/api\/monitoring\/wikiloc\/jobs\/[^/]+$/.test(path)) {
         requireEditor(user);

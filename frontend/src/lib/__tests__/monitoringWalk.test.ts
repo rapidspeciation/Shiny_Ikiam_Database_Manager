@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { captureValues, fillInOrder, locateCapture, parseCapture, reviewCapture, sequenceFrom, taxaFrom, walkSpan } from '../monitoring'
+import { captureValues, fateValues, fillInOrder, locateCapture, parseCapture, reviewCapture, sequenceFrom, taxaFrom, trainingWalk, walkSpan } from '../monitoring'
+import { isoToSerial } from '../dates'
 import type { CellValue, TableRow } from '../types'
 
 /** The notes of the October 2026 walks by the two collectors who started then (Wikiloc, 19 Oct 2026 test). */
@@ -116,5 +117,40 @@ describe('the walk day from its public Wikiloc page', () => {
     // Recorded on another day than the walk's (a typo in the title): not used.
     expect(walkSpan({ started: '2026-10-15T14:00:00.000Z', minutes: 60 }, '2026-10-14')).toBeNull()
     expect(walkSpan({}, '2026-10-14')).toBeNull()
+  })
+})
+
+describe("a newcomer's training walk", () => {
+  const day = isoToSerial('2026-09-26')
+  const teammate = [
+    row({ Collector: 'FCH - Franz Chandi', Collection_date: day, FieldMark_ID: 'B69', SPECIES: 'Hyposcada illinissa', Sex: 'female', Collection_time: 560 / 1440 }),
+    row({ Collector: 'FCH - Franz Chandi', Collection_date: day, FieldMark_ID: 'B70', SPECIES: 'Oleria onega', Sex: 'male', Collection_time: 565 / 1440 }),
+    row({ Collector: 'FCH - Franz Chandi', Collection_date: day, FieldMark_ID: 'NA', SPECIES: 'Godyris dircenna', Sex: 'female', Collection_time: 658 / 1440 }),
+  ]
+  const walk = ['9:20 B69 hembra Hyposcada illinissa ida 0.5m', '9:25 B70 macho Oleria onega 1.25m', 'Godyris dircena 1.70 10:57 parches Hembra'].map(read)
+  it("is the same morning's butterflies, already in the sheet under a teammate", () => {
+    expect(trainingWalk([...sheet, ...teammate], '2026-09-26', 'AO - Collector Two', walk)).toEqual({ twins: 3, of: 3, by: ['FCH'] })
+    // The teammate's own walk is not.
+    expect(trainingWalk([...sheet, ...teammate], '2026-09-26', 'FCH - Franz Chandi', walk)).toBeNull()
+    // Another day, or butterflies nobody entered: a walk to import.
+    expect(trainingWalk([...sheet, ...teammate], '2026-09-27', 'AO - Collector Two', walk)).toBeNull()
+    expect(trainingWalk(sheet, '2026-09-26', 'AO - Collector Two', walk)).toBeNull()
+    // The newcomer already has rows that day: their own walk.
+    const own = row({ Collector: 'AO - Collector Two', Collection_date: day, FieldMark_ID: 'B80', SPECIES: 'Oleria onega' })
+    expect(trainingWalk([...sheet, ...teammate, own], '2026-09-26', 'AO - Collector Two', walk)).toBeNull()
+  })
+})
+
+describe("a row's fate", () => {
+  it('decides the sample cells as the team fills them', () => {
+    const sent = fateValues('Collected_Sent2Insectary', { date: '2026-10-14' })
+    expect(sent.values).toMatchObject({ CAM_ID: null, Tube_1_id: null, Death_date: null, Preservation_medium: null, Insectary_ID: null, FieldMark_ID: 'NA' })
+    expect(sent.toType).toEqual(['Insectary_ID'])
+    const kept = fateValues('Collected_Preserved', { date: '2026-10-14' })
+    expect(kept.values).toMatchObject({ Death_date: isoToSerial('2026-10-14'), Preservation_medium: 'Flash frozen', Preserved_dead_alive: 'Alive', Location_wings: 'Ikiam' })
+    expect(kept.toType).toEqual(['CAM_ID', 'Tube_1_id'])
+    expect(fateValues('Mark_Released', { date: '2026-10-14', markId: 'B76' }).values).toMatchObject({ FieldMark_ID: 'B76', CAM_ID: 'NA', Preservation_medium: 'NOT_COLLECTED' })
+    expect(fateValues('Mark_Released', { date: '2026-10-14' }).toType).toEqual(['FieldMark_ID'])
+    expect(fateValues('Released_Unmarked', { date: '2026-10-14', markId: 'B76' }).values.FieldMark_ID).toBe('NA')
   })
 })

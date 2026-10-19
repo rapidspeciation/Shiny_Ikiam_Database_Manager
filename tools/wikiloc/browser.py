@@ -6,7 +6,20 @@ responses; browser diagnostics stay on standard error.
 
 import asyncio
 import json
+import os
 import sys
+import time
+
+HOME_PAGE = "https://es.wikiloc.com/"
+# Screenshots of the pages whose check did not clear, the latest few (the worker's log says where).
+FAILURES = os.environ.get("ITHOMIINI_WIKILOC_FAILURES") or os.path.join(
+    os.path.expanduser("~"), ".cache", "ithomiini-wikiloc", "failures"
+)
+
+
+def log(text):
+    """A line for the worker's log (standard error; standard output is for answers)."""
+    print(f"wikiloc: {text}", file=sys.stderr, flush=True)
 
 
 def is_challenge(title):
@@ -80,10 +93,53 @@ async def clear_challenge(page):
     raise TimeoutError("Cloudflare challenge did not clear")
 
 
+async def keep_failure(page, url):
+    """The page as Cloudflare left it, to see what it asked (the latest five kept)."""
+    try:
+        os.makedirs(FAILURES, mode=0o700, exist_ok=True)
+        path = os.path.join(FAILURES, time.strftime("%Y%m%d-%H%M%S") + ".png")
+        await page.screenshot(path=path, full_page=False)
+        for old in sorted(os.listdir(FAILURES))[:-5]:
+            os.remove(os.path.join(FAILURES, old))
+        log(f"page kept: {path} ({url})")
+    except Exception as error:
+        log(f"page not kept: {error}")
+
+
+async def open_page(page, url, warmed):
+    """
+    A Wikiloc page past Cloudflare's check. The first page of a browser is Wikiloc's home
+    (its check, when there is one, then covers the walk's page too); a check that does not
+    clear is tried once more on a fresh load of the page.
+    """
+    if not warmed and url.rstrip("/") != HOME_PAGE.rstrip("/"):
+        await open_page(page, HOME_PAGE, True)
+    for attempt in (1, 2):
+        started = time.monotonic()
+        await page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+        await page.wait_for_timeout(2000)
+        title = await page.title()
+        kind = await challenge_type(page) if is_challenge(title) else None
+        if is_challenge(title):
+            log(f"check on {url} ({kind or 'javascript'}), try {attempt}")
+        try:
+            await clear_challenge(page)
+            if is_challenge(title):
+                log(f"check cleared in {time.monotonic() - started:.0f} s")
+            return
+        except TimeoutError:
+            log(f"check did not clear in {time.monotonic() - started:.0f} s (title: {await page.title()!r})")
+            if attempt == 2:
+                await keep_failure(page, url)
+                raise
+            await page.wait_for_timeout(5000)
+
+
 async def serve():
     browser_manager = None
     browser = None
     page = None
+    warmed = False
     try:
         while line := await asyncio.to_thread(sys.stdin.readline):
             request = {}
@@ -104,9 +160,8 @@ async def serve():
                         )
                         browser = await browser_manager.__aenter__()
                         page = await browser.new_page()
-                    await page.goto(request["url"], wait_until="domcontentloaded", timeout=60_000)
-                    await page.wait_for_timeout(2000)
-                    await clear_challenge(page)
+                    await open_page(page, request["url"], warmed)
+                    warmed = True
                     result = None
                 elif operation == "title":
                     result = await page.title()
