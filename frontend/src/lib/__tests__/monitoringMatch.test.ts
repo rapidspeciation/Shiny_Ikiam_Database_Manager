@@ -317,7 +317,8 @@ describe('matching old walks to the sheet', () => {
     expect(parseCapture('Mariposa 1 y 2', taxa)).toMatchObject({ count: 2, seq: 1 })
     expect(parseCapture('Marip 3', taxa)).toMatchObject({ count: 1, seq: 3 })
     expect(parseCapture('Mariposa 3 4 y 5', taxa).count).toBe(3)
-    expect(parseCapture('Dos, 1.20 seco oscuro, 10.19', taxa)).toMatchObject({ minutes: 619, height: null })
+    // The lone 1.20 is the height (row 6982 says 1.2 m).
+    expect(parseCapture('Dos, 1.20 seco oscuro, 10.19', taxa)).toMatchObject({ minutes: 619, height: 1.2 })
     expect(parseCapture('Mariposa 1 2.5m hembra 9:12 NC seco', taxa)).toMatchObject({ count: 1, height: 2.5, minutes: 552 })
   })
   const day = (values: Record<string, CellValue>) => row({ Collector: 'FCH - Franz Chandi', Collection_date: 44971, ...values })

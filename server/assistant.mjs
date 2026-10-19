@@ -13,7 +13,8 @@ import { msg, tpl, withoutMsgs } from './messages.mjs';
 import { columnKeys, columnOf, comparable, isSumField, labelFor, moduleMap, simpleSum, validateValues, withColumnNames } from './schema.mjs';
 import { TUBE_FIELD, isIdValue, isUnique } from './verifications.mjs';
 import { listOptions, listProblem } from './verify.mjs';
-import { queueWalk, walkDraft } from './walks.mjs';
+import { queueWalk, walkDraft, walkRows } from './walks.mjs';
+import { bestReading, createWalkIds } from './walk-ids.mjs';
 import { KINDS, isNone, noteText, reviewColumns, show as showValue } from './notebook.mjs';
 import { HIDDEN_COLUMNS, NOTEBOOK_COLUMNS, isNotWritten, notWrittenWhy } from './proposal-columns.mjs';
 import { createFormulaReader, isFormulaError, sameResult } from './formula-gives.mjs';
@@ -304,6 +305,7 @@ const TOOLS = [
           '- points: each with its parsed note (species, subspecies, sex, time, height, weather, mark; transect section from the GPS position), inSheet (already in Collection_data) and the Monitoreo checks (recapture, mark on another species, 30-preserved rule, missing parts).',
           "- newRows: the points not in the sheet as Collection_data rows in the app's import template, for ONE `propose_changes`. Preserved points come without CAM_ID and Tube_1_id: ask for them (envelope, tube label) or leave them out and say so.",
           '- problems: the day or collector is unknown: ask, then pass `date` / `collector`.',
+          "- walk.proposalId: the walk's table made in Monitoreo → Importar (with each point's photo and the photo identifier's species); when it is pending, change it with `update_proposal` instead of proposing the rows again.",
           'Once applied, the person puts the walk on the map in Monitoreo → Importar («Pasar al mapa … ya registrados en la hoja»).',
         ].join('\n'),
       parameters: {
@@ -898,6 +900,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         show: (batch, context) => showPhotos(batch, context),
         tell: batch => photosProgress(batch),
       });
+  // The species in each photo of a Wikiloc walk, read in the background for the walk's proposal (Monitoreo → Importar).
+  const walkIds = inWorker ? null : createWalkIds({ store, identifier, onRead: walkId => markWalkReadings(walkId) });
   // Butterflies' photos beside the chat (show_photos): a card that only shows.
   const gallery = createGallery({ store, show: (card, context) => showGallery(card, context) });
   // The public sites' updates on GitHub (update_websites).
@@ -2268,7 +2272,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
    * app (the Revisión tab), whose values are taken as they are; `found`: the
    * checks' scan the caller holds (freshIssues), for the rows' lookAt.
    */
-  function proposeChanges(input, context, { literal = false, found = null } = {}) {
+  function proposeChanges(input, context, { literal = false, found = null, decorate = null } = {}) {
     if (!EDITORS.includes(context.user.role)) return { error: 'Your role cannot propose edits' };
     if (!literal && Array.isArray(input.changes) && input.changes.length) {
       const named = withRecordIds(input.changes);
@@ -2287,6 +2291,8 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     const drafted = draftChanges(args, idsFor(), bulk ? Infinity : PROPOSAL_ROWS, { guards: !literal });
     if (drafted.error) return drafted;
     const { changes } = drafted;
+    // What the app read with the rows (a walk's notes and photos): hints, doubts, cells to type.
+    decorate?.(changes);
     // Identifiers changed on many rows: doubtful, each against a photo or its envelope.
     const idChanges = literal ? {} : guardIdChanges(changes);
     if (changes.length > rowCap(changes))
@@ -3761,6 +3767,152 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
     if (!done.changes) return null;
     changed(proposal.owner_id);
     return to;
+  }
+
+  // ------------------------------------------------------------ a Wikiloc walk as a proposal
+  /** A proposal nobody worked on yet in the table (no cell typed, no doubt checked, nothing applied). */
+  const untouched = p =>
+    p?.status === 'pending' &&
+    p.last_by !== 'person' &&
+    !(parse(p.changes_json) ?? []).some(c => c.applied || Object.keys(c.personEdits ?? {}).length || Object.values(c.doubts ?? {}).some(d => d?.checked));
+
+  /**
+   * Monitoreo → Importar: a walk's captures as one proposal, in the review table the assistant's
+   * proposals use, each row with its Wikiloc photos and notes on its cells (server/walks.mjs
+   * walkRows), and the day's SamplingDay_data row. Made again (with the first CAM and tube, say)
+   * while nobody has worked on the table; after that, the table or the chat changes it.
+   */
+  async function walkProposal(body, user) {
+    if (!EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot propose edits.');
+    const walk = db.prepare('SELECT * FROM wikiloc_walks WHERE id = ?').get(clip(body.walkId, 80));
+    if (!walk) return bad(404, 'not_found', 'Walk not found.');
+    const before = walk.proposal_id ? anyProposal(walk.proposal_id) : null;
+    if (before?.status === 'pending' && !untouched(before)) {
+      const m = msg('La tabla de este recorrido ya tiene cambios tuyos: corrige ahí los CAM y tubos, o pide a Claude que los rellene');
+      return { status: 409, body: { error: { code: 'walk_proposal_edited', message: m.text, messageMsg: m.msg, details: { proposalId: before.id } } } };
+    }
+    let built;
+    try {
+      built = await walkRows(store, {
+        walkId: walk.id,
+        date: body.date || undefined,
+        collector: body.collector || undefined,
+        firstCam: body.firstCam || undefined,
+        firstTube: body.firstTube || undefined,
+        skip: Array.isArray(body.skip) ? body.skip : [],
+      });
+    } catch (e) {
+      return bad(e.status || 400, String(e.code || 'invalid_walk').toLowerCase(), e.message);
+    }
+    if (built.status !== 'ready') return { status: 409, body: { error: { code: 'walk_needs', message: built.problems?.join(' · ') || 'Not ready', details: { problems: built.problems ?? [] } } } };
+    const extras = [...built.rows];
+    const newRows = built.rows.map(r => ({ sheet: r.sheet, values: r.values, note: r.note }));
+    const changes = [];
+    if (built.samplingDay?.recordId) changes.push({ recordId: built.samplingDay.recordId, values: built.samplingDay.values, note: built.samplingDay.note });
+    else if (built.samplingDay) {
+      newRows.push({ sheet: built.samplingDay.sheet, values: built.samplingDay.values, note: built.samplingDay.note });
+      extras.push(built.samplingDay);
+    }
+    if (!newRows.length && !changes.length) return bad(409, 'nothing_to_propose', 'Every point of this walk is already in the sheet.');
+    const threadId = namedThread(user, 'Monitoreo');
+    const context = { threadId, user, records: new Map(), sources: new Map(), results: [], proposals: [], applied: [] };
+    const reason = msg('Recorrido de Wikiloc «{name}» ({date}, {collector})', {
+      name: walk.name.slice(0, 80),
+      date: built.walk.date.split('-').reverse().join('/'),
+      collector: built.walk.collector.split(' - ')[0],
+    }).text;
+    // The columns a walk's capture is written with first (as Importar's grid), the sheet's rows between left out.
+    const view = !built.rows.length ? null : {
+      columns: ['Release_Collect', 'FieldMark_ID', 'SPECIES', 'Subspecies_Form', 'Sex', 'Collection_time', 'Transect_section', 'Flight_height', 'Cloud_cover', 'Rainfall', 'CAM_ID', 'Tube_1_id', 'ID_status', 'Notes_Collection_data'],
+      between: false,
+    };
+    const out = proposeChanges({ reason, newRows, changes, ...(view ? { view } : {}) }, context, {
+      literal: true,
+      decorate: list => {
+        // New rows first, in the order given; then the day's row when it existed.
+        list.forEach((c, i) => {
+          const extra = c.create ? extras[i] : built.samplingDay;
+          if (!extra) return;
+          if (extra.hints) c.hints = { ...c.hints, ...extra.hints };
+          if (extra.doubts) c.doubts = { ...c.doubts, ...extra.doubts };
+          if (extra.unreadable) c.unreadable = { ...c.unreadable, ...extra.unreadable };
+          if (extra.inferred?.length) c.inferred = extra.inferred.filter(f => f in c.values);
+          if (extra.photos?.length) c.rowPhotos = extra.photos.map(id => ({ id, url: `api/monitoring/photos/${encodeURIComponent(id)}` }));
+          if (extra.point !== undefined) c.walkPoint = extra.point;
+        });
+      },
+    });
+    if (out.error) return bad(409, 'invalid_walk_rows', out.error);
+    if (before?.status === 'pending') discardProposal(before, 'ai');
+    db.prepare('UPDATE wikiloc_walks SET proposal_id = ? WHERE id = ?').run(out.proposalId, walk.id);
+    insertMessage(threadId, 'assistant', `Recorrido de Wikiloc: ${walk.name}`, [], [], context.proposals);
+    // The photos' species, read in the background; the rows are marked as each one is read.
+    const ids = walkIds?.start(walk.id) ?? null;
+    markWalkReadings(walk.id);
+    return {
+      status: 201,
+      body: {
+        proposalId: out.proposalId,
+        rows: out.rows,
+        problems: built.problems,
+        inSheet: built.inSheet,
+        identification: ids && !ids.error ? { read: ids.read, total: ids.total, unavailable: ids.unavailable ?? null } : null,
+      },
+    };
+  }
+
+  /**
+   * The identifier's reading of each row's photo, on the walk's pending proposal: beside the
+   * species typed. The same species: a hint with how sure it is; another one, sure enough: the
+   * cell doubtful with the identifier's as the other reading (the person decides); no species
+   * typed: offered to fill the empty cell. Cells the person typed or checked are left alone.
+   */
+  function markWalkReadings(walkId) {
+    const walk = db.prepare('SELECT proposal_id FROM wikiloc_walks WHERE id = ?').get(String(walkId));
+    const proposal = walk?.proposal_id ? anyProposal(walk.proposal_id) : null;
+    if (proposal?.status !== 'pending' || !walkIds) return;
+    const status = walkIds.status(walkId);
+    if (status.error) return;
+    const changes = parse(proposal.changes_json) ?? [];
+    let touched = false;
+    for (const c of changes) {
+      if (!c.rowPhotos?.length || c.applied || c.personEdits?.SPECIES) continue;
+      const mine = status.photos.filter(p => c.rowPhotos.some(r => r.id === p.photo));
+      const best = bestReading(mine);
+      if (!best) continue;
+      const [top, p] = best.species[0];
+      const pct = Math.round(p * 100);
+      const runnerUp = best.species[1] ? `${best.species[1][0]} ${Math.round(best.species[1][1] * 100)} %` : '—';
+      const typed = String(c.values.SPECIES ?? '').trim();
+      const stamp = `${top}:${pct}`;
+      if (c.walkReading === stamp) continue;
+      c.walkReading = stamp;
+      touched = true;
+      const sure = p >= 0.6;
+      if (!typed) {
+        if (c.unreadable?.SPECIES) {
+          const m = sure
+            ? msg('El identificador de fotos dice {species} ({pct} %): haz clic para usarla, o escribe otra', { species: top, pct })
+            : msg('El identificador de fotos duda: {species} ({pct} %), luego {next}', { species: top, pct, next: runnerUp });
+          // What the note wrote stays offered beside the identifier's.
+          const written = (c.unreadable.SPECIES.partial ?? []).filter(v => v !== top && !c.unreadable.SPECIES.identifier?.includes?.(v));
+          c.unreadable.SPECIES = { ...c.unreadable.SPECIES, reason: m.text, reasonMsg: m.msg, partial: [top, ...written], identifier: [top] };
+        }
+        continue;
+      }
+      if (c.doubts?.SPECIES?.checked) continue;
+      if (sure && typed === top) {
+        const m = msg('El identificador de fotos coincide: {species} ({pct} %)', { species: top, pct });
+        c.hints = { ...c.hints, SPECIES: { text: m.text, msg: m.msg } };
+      } else if (sure) {
+        const m = msg('El identificador de fotos dice {species} ({pct} %), no {typed}: mira la foto y decide', { species: top, pct, typed });
+        c.doubts = { ...c.doubts, SPECIES: { ...(c.doubts?.SPECIES ?? {}), alternatives: [top], reason: m.text, reasonMsg: m.msg, identifier: true } };
+      } else {
+        const m = msg('El identificador de fotos duda: {species} ({pct} %), luego {next}', { species: top, pct, next: runnerUp });
+        c.hints = { ...c.hints, SPECIES: { text: m.text, msg: m.msg } };
+      }
+    }
+    if (touched) saveRevision(proposal, changes, 'ai');
   }
 
   /**
@@ -5995,6 +6147,17 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
       const proposal = teamProposal(rowsMatch[1], user);
       if (!proposal) return bad(404, 'not_found', 'Proposal not found.');
       return sheetRows(proposal, query);
+    }
+    // Monitoreo → Importar: a Wikiloc walk as a proposal (made again with the first CAM and tube while untouched).
+    if (path === '/api/chat/proposals/from-walk' && method === 'POST') return walkProposal(body, user);
+    // The species in the walk's photos, read in the background: start (POST) and progress (GET).
+    const walkIdsMatch = /^\/api\/chat\/walks\/([0-9a-f-]{36})\/identify$/.exec(path);
+    if (walkIdsMatch && (method === 'GET' || method === 'POST')) {
+      if (!walkIds) return bad(503, 'unavailable', 'Not available here.');
+      if (method === 'POST' && !EDITORS.includes(user.role)) return bad(403, 'forbidden', 'Your role cannot do this.');
+      const out = method === 'POST' ? walkIds.start(walkIdsMatch[1]) : walkIds.status(walkIdsMatch[1]);
+      if (out.error) return bad(out.status || 400, 'not_found', out.error);
+      return { status: 200, body: out };
     }
     // The obvious fixes of chosen issues as one proposal to confirm (the old Tablas → Revisión de datos list; kept for links and tools).
     if (path === '/api/chat/proposals/from-checks' && method === 'POST') {

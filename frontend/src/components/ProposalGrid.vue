@@ -20,6 +20,7 @@ import ProposalSheet, { type CellEdit } from './assistant/ProposalSheet.vue'
 import ColumnChooser from './assistant/ColumnChooser.vue'
 import FormulaCostNotice from './assistant/FormulaCostNotice.vue'
 import PhotoThumbs from './assistant/PhotoThumbs.vue'
+import RowPhotos from './assistant/RowPhotos.vue'
 import SheetApply from './assistant/SheetApply.vue'
 import { api } from '../lib/api'
 import { displayValue } from '../lib/cells'
@@ -659,7 +660,16 @@ const show = (field: string, value: CellValue | undefined) =>
 const created = computed(() => props.proposal.changes.filter(c => c.create).length)
 const personCells = computed(() => shown.value.changes.reduce((n, c) => n + Object.keys(c.personEdits ?? {}).length, 0))
 /** The row selected in a table: its photo and line, for the photo beside it. */
+/** The row selected in the table (its key): its own photos show beside the table (a walk's point). */
+const selectedKey = ref<string | null>(null)
+/** A table's rows with photos of their own: the selected one's, else the first's. */
+function rowPhotosOf(rows: ProposalChange[]) {
+  const withPhotos = rows.filter(c => c.rowPhotos?.length)
+  if (!withPhotos.length) return null
+  return withPhotos.find(c => rowKey(c) === selectedKey.value) ?? withPhotos[0]
+}
 function onSelect(key: string) {
+  selectedKey.value = key
   const c = shown.value.changes.find(x => rowKey(x) === key)
   emit('row', c?.page ? c.page.photo : null, c?.page ? c.page.line : null)
 }
@@ -822,8 +832,10 @@ const statusText = computed(
       <!-- A notebook page: per photo, its thumbnail (opens upright in a new tab), why it is there and how its lines compare with the sheet. -->
       <PhotoThumbs v-if="page && g.photos.length" :id="proposal.id" :page="page" :photos="g.photos" :reviewing="reviewing" @photo="n => emit('photo', n)" />
       <!-- The table and its bar, where ProposalSheet adds the buttons for the selected cells (Valor de la hoja / de la IA). -->
+      <div :class="{ 'flex min-w-0': rowPhotosOf(g.rows) }">
       <ProposalSheet
         :ref="sheetRef(g.id)"
+        :class="{ 'min-w-0 flex-1': rowPhotosOf(g.rows) }"
         :sheet="g.sheet"
         :changes="g.rows"
         :laid="g.laid"
@@ -1026,6 +1038,14 @@ const statusText = computed(
           </span>
         </template>
       </ProposalSheet>
+      <!-- A walk's rows: the selected row's Wikiloc photos and note beside the table. -->
+      <RowPhotos
+        v-if="rowPhotosOf(g.rows)"
+        :photos="rowPhotosOf(g.rows)!.rowPhotos!"
+        :label="rowPhotosOf(g.rows)!.label"
+        :note="rowPhotosOf(g.rows)!.note"
+      />
+      </div>
       <!-- Rows of several sheets: this sheet's own «Aplicar», or that its rows are written. -->
       <SheetApply
         v-if="pending && !g.near && perSheet.has(g.sheet)"

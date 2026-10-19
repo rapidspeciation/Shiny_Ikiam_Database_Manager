@@ -77,8 +77,15 @@ export interface WikilocWalk {
   author?: string | null
   /** Wikiloc's "Fecha de realización", e.g. "abril 2025". */
   recorded?: string | null
+  /** The walk's proposal in the review table (Monitoreo → Importar) and its state (pending, applied, discarded). */
+  proposalId?: string | null
+  proposalStatus?: string | null
+  /** When the recording started (ISO) and how long it took (minutes), from the public page. */
+  started?: string | null
+  minutes?: number | null
+  description?: string | null
   track: TrackPoint[]
-  waypoints: { lat: number; lon: number; ele: number | null; text: string; photos: string[] }[]
+  waypoints: { lat: number; lon: number; ele: number | null; text: string; photos: string[]; time?: string | null }[]
 }
 
 // Shared by the three monitoring panels, so switching between them does not reload.

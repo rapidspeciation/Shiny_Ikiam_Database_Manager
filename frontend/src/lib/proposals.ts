@@ -135,6 +135,10 @@ export interface ProposalChange {
   diesHere?: Death
   /** Doubtful cells (match_notebook), by column. */
   doubts?: Record<string, Doubt>
+  /** Photos the row's values come from (a Wikiloc walk's point): shown beside the table when the row is selected. */
+  rowPhotos?: { id: string; url: string; note?: string }[]
+  /** The walk point the row comes from (Monitoreo → Importar): its index in the walk. */
+  walkPoint?: number
   /** Cells nobody could read (match_notebook), by column: empty until someone fills them. */
   unreadable?: Record<string, Unreadable>
   /** Columns the notebook line does not write: the page's room, a template, the note's words. */

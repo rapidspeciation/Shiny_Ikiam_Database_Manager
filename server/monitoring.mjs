@@ -26,6 +26,9 @@ export function initMonitoring(db) {
   // Added later: the collector whose walks a followed profile holds (e.g. "AA - Alex Arias").
   if (!db.prepare('PRAGMA table_info(wikiloc_profiles)').all().some(c => c.name === 'collector'))
     db.exec('ALTER TABLE wikiloc_profiles ADD COLUMN collector TEXT');
+  // Added later: the walk's proposal in the review table (Monitoreo → Importar), the latest one.
+  if (!db.prepare('PRAGMA table_info(wikiloc_walks)').all().some(c => c.name === 'proposal_id'))
+    db.exec('ALTER TABLE wikiloc_walks ADD COLUMN proposal_id TEXT');
 }
 
 const text = (value, max = 300) => {
@@ -714,6 +717,7 @@ const walkRow = row => {
     date: row.date,
     status: row.status,
     trackId: row.track_id,
+    proposalId: row.proposal_id ?? null,
     createdBy: row.created_by,
     createdAt: row.created_at,
     ...data,
@@ -724,7 +728,15 @@ function markImported(store, walkId, trackId) {
 }
 
 export function listWalks(store) {
-  return store.db.prepare('SELECT * FROM wikiloc_walks ORDER BY date DESC, created_at DESC').all().map(walkRow);
+  // With the state of each walk's proposal (Monitoreo → Importar), where the assistant's proposals are kept.
+  const proposals = !!store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='ai_proposals'").get();
+  const sql = proposals
+    ? 'SELECT w.*, p.status AS proposal_status FROM wikiloc_walks w LEFT JOIN ai_proposals p ON p.id = w.proposal_id ORDER BY w.date DESC, w.created_at DESC'
+    : 'SELECT * FROM wikiloc_walks ORDER BY date DESC, created_at DESC';
+  return store.db
+    .prepare(sql)
+    .all()
+    .map(row => ({ ...walkRow(row), proposalStatus: row.proposal_status ?? null }));
 }
 
 async function fetchPhoto(url) {
@@ -777,7 +789,9 @@ export async function saveWalk(store, body, user, { fetchImage = fetchPhoto } = 
       }
       photos.push(id);
     }
-    waypoints.push({ lat, lon, ele: number(w.ele, -1000, 10000), text: text(w.text, 500) || '', photos });
+    // When the point was saved in Wikiloc (ISO): the time of a note that does not write one.
+    const saved = typeof w.time === 'string' && Number.isFinite(Date.parse(w.time)) ? new Date(w.time).toISOString() : null;
+    waypoints.push({ lat, lon, ele: number(w.ele, -1000, 10000), text: text(w.text, 500) || '', photos, ...(saved ? { time: saved } : {}) });
   }
   const name = text(body.name, 200) || `Wikiloc ${wikilocId}`;
   // The collector: given by the profile being checked, or known from the trail's author.
@@ -786,7 +800,20 @@ export async function saveWalk(store, body, user, { fetchImage = fetchPhoto } = 
     text(body.collector, 120) ||
     (author && store.db.prepare('SELECT collector FROM wikiloc_profiles WHERE wikiloc_user=?').get(author)?.collector) ||
     null;
-  const data = JSON.stringify({ track, waypoints, collector, recorded: text(body.recorded, 60), author });
+  // When the recording started and how long it took (Wikiloc's "Tiempo"), and the trail's description:
+  // the SamplingDay_data row (start, end, notes) of a walk read from its public page.
+  const started = typeof body.started === 'string' && Number.isFinite(Date.parse(body.started)) ? new Date(body.started).toISOString() : null;
+  const minutes = number(body.minutes, 0, 24 * 60);
+  const data = JSON.stringify({
+    track,
+    waypoints,
+    collector,
+    recorded: text(body.recorded, 60),
+    author,
+    ...(started ? { started } : {}),
+    ...(minutes !== null ? { minutes } : {}),
+    ...(text(body.description, 2000) ? { description: text(body.description, 2000) } : {}),
+  });
   const existing = store.db.prepare('SELECT * FROM wikiloc_walks WHERE wikiloc_id=?').get(wikilocId);
   if (existing) {
     store.db.prepare('UPDATE wikiloc_walks SET url=?, name=?, date=?, data_json=? WHERE id=?').run(url, name, date, data, existing.id);

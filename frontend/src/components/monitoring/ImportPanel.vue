@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ChoiceField from '../ChoiceField.vue'
 import DateField from '../DateField.vue'
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -18,6 +19,7 @@ import {
 } from 'lucide-vue-next'
 import SheetGrid from '../SheetGrid.vue'
 import WikilocBar from './WikilocBar.vue'
+import WalkImport from './WalkImport.vue'
 import { useMonitoring, type StoredTrack, type WikilocWalk } from '../../composables/useMonitoring'
 import { useFieldSampleIds } from '../../composables/useFieldSampleIds'
 import { api, requestId } from '../../lib/api'
@@ -59,9 +61,11 @@ import { useSession } from '../../stores/session'
 import { useTables } from '../../stores/tables'
 
 /**
- * "Importar recorrido": a Wikiloc GPX of one monitoring walk becomes new
- * Collection_data rows (one per waypoint), reviewed in the grid before saving.
- * The track and the capture points are kept in the app for the map.
+ * "Importar recorrido": the followed collectors' Wikiloc walks in a list; one
+ * opened becomes a proposal in the review table every proposal uses, with each
+ * point's photo (WalkImport). A GPX file of a walk becomes new Collection_data
+ * rows (one per waypoint), reviewed in the grid before saving. The track and
+ * the capture points are kept in the app for the map.
  */
 const MODULE = 'Collection_data'
 const DAY_SHEET = 'SamplingDay_data'
@@ -192,17 +196,54 @@ const showStored = ref(false)
 const storedCount = ref(20)
 const walkOf = (t: StoredTrack) => walks.value.find(w => w.trackId === t.id) || null
 
+/** The Wikiloc walk open in its review table (WalkImport), with who walked it and the next free IDs. */
+const walkOpen = shallowRef<WikilocWalk | null>(null)
+const walkCollector = ref<{ collector: string; from: string }>({ collector: '', from: '' })
+const suggested = ref<{ cam: string | null; tube: string | null }>({ cam: null, tube: null })
 function openWalk(w: WikilocWalk) {
-  file.value = {
-    name: w.name,
-    gpx: { name: w.name, track: w.track, waypoints: w.waypoints.map(p => ({ ...p, time: null })) },
-    walk: w,
-  }
-  date.value = w.date || ''
-  skip.value = new Set()
+  file.value = null
+  walkOpen.value = w
   showWaiting.value = false
-  detectCollector()
+  const found = collectorOf(w)
+  walkCollector.value = { collector: found?.[0] || '', from: found?.[1] || '' }
+  sampleIds
+    .next(1)
+    .then(([first]) => (suggested.value = { cam: first?.cam ?? null, tube: first?.tube ?? null }))
+    .catch(() => {})
 }
+/** A walk's collector: its followed profile, its author's profile, the initials or name in its title. */
+function collectorOf(w: WikilocWalk): [string, string] | null {
+  const profile = (id?: string | null) => (id && profiles.value.find(p => p.wikilocUser === id)?.collector) || null
+  return (
+    (
+      [
+        [w.collector, 'del perfil de Wikiloc'],
+        [profile(w.author), 'del perfil de Wikiloc'],
+        [collectorFromName(w.name, people.value), 'del título'],
+      ] as [string | null | undefined, string][]
+    ).find(([c]) => !!c) as [string, string] | undefined
+  ) ?? null
+}
+watch([people, profiles], () => {
+  if (walkOpen.value && !walkCollector.value.collector) {
+    const found = collectorOf(walkOpen.value)
+    if (found) walkCollector.value = { collector: found[0], from: found[1] }
+  }
+})
+/** Every walk read from Wikiloc, newest first, with how far it has gone. */
+const walkCount = ref(12)
+const pairedOf = computed(() => new Map(registered.value.map(x => [x.w.id, x])))
+function walkState(w: WikilocWalk): { text: string; tone: 'done' | 'todo' | 'wait' } {
+  if (w.status === 'imported') return { text: t('En el mapa'), tone: 'done' }
+  if (w.proposalStatus === 'pending') return { text: t('Tabla por revisar'), tone: 'wait' }
+  if (w.proposalStatus === 'applied') return { text: t('Aplicada en la hoja'), tone: 'done' }
+  const paired = pairedOf.value.get(w.id)
+  if (paired && w.waypoints.length)
+    return { text: t('{n} de {total} ya en la hoja', { n: paired.paired, total: w.waypoints.length }), tone: 'done' }
+  if (!w.waypoints.length) return { text: t('Sin puntos (solo el día)'), tone: 'todo' }
+  return { text: t('Por revisar'), tone: 'todo' }
+}
+const photosIn = (w: WikilocWalk) => w.waypoints.reduce((n, p) => n + p.photos.length, 0)
 async function removeWalk(w: WikilocWalk) {
   if (!confirm(t('¿Quitar "{name}" de la lista? Se puede volver a traer desde Wikiloc.', { name: w.name }))) return
   try {
@@ -801,7 +842,7 @@ const dayLabel = (iso: string) => formatSerial(isoToSerial(iso))
         <FileUp :size="15" /> {{ $t('Elegir GPX de Wikiloc') }}
         <input type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml" class="sr-only" @change="choose" />
       </label>
-      <!-- Date and collector matter only while a walk is being reviewed. -->
+      <!-- Date and collector matter only while a GPX is being reviewed. -->
       <template v-if="file">
         <label>
           <span class="field-label">{{ $t('Fecha') }}</span>
@@ -841,15 +882,15 @@ const dayLabel = (iso: string) => formatSerial(isoToSerial(iso))
 
     <WikilocBar ref="bar" @reopened="showWaiting = true" />
 
-    <div v-if="waiting.length || tracks.length" class="border-b border-stone-200 bg-brand-50 px-3 py-1.5 text-sm sm:px-4">
+    <div v-if="walks.length || tracks.length" class="border-b border-stone-200 bg-brand-50 px-3 py-1.5 text-sm sm:px-4">
       <div class="flex flex-wrap items-center gap-2">
         <button
-          v-if="waiting.length"
+          v-if="walks.length"
           class="inline-flex items-center gap-1 font-medium text-brand-700"
           :aria-expanded="showWaiting"
           @click="showWaiting = !showWaiting"
         >
-          {{ $t('Desde Wikiloc, por revisar ({n})', { n: waiting.length }) }}
+          {{ $t('Recorridos de Wikiloc ({n} por revisar)', { n: waiting.length }) }}
           <ChevronDown :size="14" class="sm:hidden" :class="{ 'rotate-180': showWaiting }" />
         </button>
         <button v-if="registered.length" class="btn-primary py-0.5" :disabled="busy" @click="registerAll">
@@ -869,28 +910,65 @@ const dayLabel = (iso: string) => formatSerial(isoToSerial(iso))
           {{ isReviewer ? $t('Emparejar de nuevo y dudas') : $t('Dudas de emparejamiento') }}
         </button>
       </div>
+      <!-- The walks read from Wikiloc: a click opens one in its review table. -->
       <div
-        v-if="waiting.length"
-        class="mt-1 max-h-32 flex-wrap gap-2 overflow-y-auto"
-        :class="showWaiting ? 'flex' : 'hidden sm:flex'"
+        v-if="walks.length && !walkOpen"
+        class="mt-1 max-h-72 overflow-y-auto rounded-md border border-stone-200 bg-white"
+        :class="showWaiting ? 'block' : 'hidden sm:block'"
+        data-walk-list
       >
-        <span
-          v-for="w in waiting"
-          :key="w.id"
-          class="inline-flex items-center gap-1 rounded-md border bg-white py-0.5 pr-0.5 pl-2"
-          :class="file?.walk?.id === w.id ? 'border-brand-600' : 'border-stone-300'"
-        >
-          <button class="hover:underline" @click="openWalk(w)">
-            {{ w.date ? dayLabel(w.date) : $t('{name} (sin día)', { name: w.recorded || w.name }) }}
-            <template v-if="w.collector"> · {{ shortName(w.collector) }}</template> ·
-            {{ $t('{n} puntos', { n: w.waypoints.length }) }}
-            <template v-if="w.trackId"> · {{ $t('ya importado') }}</template>
-          </button>
-          <a :href="w.url" target="_blank" rel="noopener" class="btn-ghost" :title="$t('Abrir en Wikiloc')"
-            ><ExternalLink :size="13"
-          /></a>
-          <button class="btn-ghost" :title="$t('Quitar de la lista')" @click="removeWalk(w)"><Trash2 :size="13" /></button>
-        </span>
+        <table class="w-full text-left text-xs">
+          <thead class="sticky top-0 bg-stone-100 text-stone-600">
+            <tr>
+              <th class="px-2 py-1">{{ $t('Fecha') }}</th>
+              <th class="px-2 py-1">{{ $t('Recolector') }}</th>
+              <th class="px-2 py-1">{{ $t('Recorrido') }}</th>
+              <th class="px-2 py-1 text-right">{{ $t('Puntos') }}</th>
+              <th class="px-2 py-1 text-right">{{ $t('Fotos') }}</th>
+              <th class="px-2 py-1">{{ $t('Estado') }}</th>
+              <th class="px-2 py-1"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="w in walks.slice(0, walkCount)"
+              :key="w.id"
+              class="cursor-pointer border-t border-stone-100 hover:bg-brand-50"
+              :title="$t('Abrir en la tabla de revisión')"
+              @click="openWalk(w)"
+            >
+              <td class="px-2 py-1 font-medium whitespace-nowrap">
+                {{ w.date ? dayLabel(w.date) : $t('{name} (sin día)', { name: w.recorded || '—' }) }}
+              </td>
+              <td class="px-2 py-1 whitespace-nowrap">
+                {{ collectorOf(w) ? shortName(collectorOf(w)![0]) : $t('sin recolector') }}
+              </td>
+              <td class="max-w-80 truncate px-2 py-1 text-stone-600" :title="w.name">{{ w.name }}</td>
+              <td class="px-2 py-1 text-right">{{ w.waypoints.length }}</td>
+              <td class="px-2 py-1 text-right">{{ photosIn(w) }}</td>
+              <td class="px-2 py-1 whitespace-nowrap">
+                <span
+                  class="rounded px-1.5 py-0.5"
+                  :class="{
+                    'bg-brand-50 text-brand-700': walkState(w).tone === 'done',
+                    'bg-amber-100 text-amber-900': walkState(w).tone === 'wait',
+                    'bg-stone-100 text-stone-700': walkState(w).tone === 'todo',
+                  }"
+                  >{{ walkState(w).text }}</span
+                >
+              </td>
+              <td class="px-1 py-0.5 text-right whitespace-nowrap" @click.stop>
+                <a :href="w.url" target="_blank" rel="noopener" class="btn-ghost inline-flex" :title="$t('Abrir en Wikiloc')"
+                  ><ExternalLink :size="13"
+                /></a>
+                <button v-if="w.status === 'waiting'" class="btn-ghost" :title="$t('Quitar de la lista')" @click="removeWalk(w)">
+                  <Trash2 :size="13" />
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <button v-if="walks.length > walkCount" class="px-2 py-1 text-xs underline" @click="walkCount += 20">{{ $t('Ver más') }}</button>
       </div>
       <!-- Walks on the map: review one again, or remove it (uploader, whoever brought it in, reviewers). -->
       <ul
@@ -941,7 +1019,20 @@ const dayLabel = (iso: string) => formatSerial(isoToSerial(iso))
       </ul>
     </div>
 
-    <section v-if="file" class="max-h-[60%] shrink-0 overflow-auto border-b border-stone-200 bg-white">
+    <WalkImport
+      v-if="walkOpen"
+      :key="walkOpen.id"
+      :walk="walkOpen"
+      :collector="walkCollector.collector"
+      :collector-from="walkCollector.from"
+      :collector-choices="collectorChoices"
+      :suggest-cam="suggested.cam"
+      :suggest-tube="suggested.tube"
+      @close="walkOpen = null"
+      @changed="loadWalks"
+    />
+
+    <section v-if="file && !walkOpen" class="max-h-[60%] shrink-0 overflow-auto border-b border-stone-200 bg-white">
       <p v-if="file.walk" class="bg-stone-50 px-3 py-1.5 text-xs text-stone-600">
         {{ $t('Leído de la página pública de Wikiloc: sin horas GPS del recorrido (SamplingDay_data no se completa).') }}
         <template v-if="!date">
@@ -1090,7 +1181,7 @@ const dayLabel = (iso: string) => formatSerial(isoToSerial(iso))
       </div>
     </section>
 
-    <div class="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1 text-xs text-stone-600 sm:px-4">
+    <div v-if="!walkOpen" class="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1 text-xs text-stone-600 sm:px-4">
       <template v-if="monitoringCreates.length">
         <span>{{ $t('{n} filas nuevas (verde), las sin especie primero', { n: monitoringCreates.length }) }}</span>
       </template>
@@ -1110,7 +1201,7 @@ const dayLabel = (iso: string) => formatSerial(isoToSerial(iso))
         <Copy :size="14" /> {{ $t('Duplicar fila') }}
       </button>
     </div>
-    <div class="flex min-h-0 flex-1 flex-col sm:flex-row">
+    <div v-if="!walkOpen" class="flex min-h-0 flex-1 flex-col sm:flex-row">
       <!-- The chosen row's Wikiloc photos and note: beside the grid on computers, a strip above it on phones. -->
       <aside
         v-if="shown"

@@ -50,7 +50,7 @@ test('Collection_data: every column up to Notes_Collection_data in the sheet\'s 
   for (const f of after) assert.ok(isHiddenColumn('Collection_data', f) && isNotWritten('Collection_data', f), f);
   for (const f of fields) assert.ok(!isHiddenColumn('Collection_data', f) && !isNotWritten('Collection_data', f), f);
   // What a wild-caught butterfly is written down with, every one a column the table shows.
-  assert.deepEqual(NOTEBOOK_COLUMNS.Collection_data.slice(0, 4), ['Insectary_ID', 'SPECIES', 'Subspecies_Form', 'Sex']);
+  assert.deepEqual(NOTEBOOK_COLUMNS.Collection_data.slice(0, 6), ['Insectary_ID', 'Release_Collect', 'FieldMark_ID', 'SPECIES', 'Subspecies_Form', 'Sex']);
   assert.equal(NOTEBOOK_COLUMNS.Collection_data.at(-1), 'Notes_Collection_data');
   for (const f of NOTEBOOK_COLUMNS.Collection_data) assert.ok(fields.includes(f), f);
   assert.ok(!NOTEBOOK_COLUMNS.Insectary_data && !NOTEBOOK_COLUMNS.Insectary_stocks);
