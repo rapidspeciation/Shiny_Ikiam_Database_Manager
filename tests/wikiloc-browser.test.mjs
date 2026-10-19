@@ -165,3 +165,33 @@ test('the browser process needs no captcha package', () => {
   assert.doesNotMatch(source, /playwright_captcha/);
   assert.doesNotMatch(readFileSync(join(import.meta.dirname, '..', 'tools', 'wikiloc', 'requirements.txt'), 'utf8'), /captcha/);
 });
+
+test("the home computer's tunnel is used only when it answers as a SOCKS proxy", { skip: !existsSync('/usr/bin/python3') }, async () => {
+  const { execFileSync } = await import('node:child_process');
+  const script = `
+import json, os, socket, sys, threading
+def serve(reply):
+    srv = socket.socket(); srv.bind(("127.0.0.1", 0)); srv.listen(1)
+    def run():
+        c, _ = srv.accept(); c.recv(3); c.sendall(reply); c.close()
+    threading.Thread(target=run, daemon=True).start()
+    return srv.getsockname()[1]
+socks = serve(b"\\x05\\x00")
+other = serve(b"HTTP/1.1 400 Bad\\r\\n")
+closed = socket.socket(); closed.bind(("127.0.0.1", 0)); free = closed.getsockname()[1]; closed.close()
+sys.path.insert(0, sys.argv[1])
+import browser
+out = {}
+for name, port in (("socks", socks), ("other", other), ("closed", free)):
+    browser.PROXY = f"socks5://127.0.0.1:{port}"
+    out[name] = browser.home_proxy()
+browser.PROXY = "off"
+out["off"] = browser.home_proxy()
+print(json.dumps(out))
+`;
+  const out = JSON.parse(execFileSync('python3', ['-I', '-c', script, join(import.meta.dirname, '..', 'tools', 'wikiloc')], { encoding: 'utf8' }));
+  assert.match(out.socks, /^socks5:\/\/127\.0\.0\.1:\d+$/);
+  assert.equal(out.other, null);
+  assert.equal(out.closed, null);
+  assert.equal(out.off, null);
+});

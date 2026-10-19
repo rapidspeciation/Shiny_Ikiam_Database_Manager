@@ -9,7 +9,9 @@ checkbox in a closed shadow root) is passed by clicking the checkbox:
   input (xinput.py), the only kind that passed from the server's address in our tests;
 - elsewhere (a home computer without Xvfb), Camoufox runs headless and Playwright clicks.
 The browser presents itself as Firefox on Windows (os="windows", as cloudflare-solver,
-github.com/art3m4ik3/cloudflare-solver, MIT, does). Results: tools/wikiloc/README.md.
+github.com/art3m4ik3/cloudflare-solver, MIT, does). When the home computer's tunnel answers
+(a SOCKS proxy on the server, README «Through the home computer»), the browser goes out
+through it, names resolved there too. Results: tools/wikiloc/README.md.
 """
 
 import asyncio
@@ -17,8 +19,10 @@ import json
 import os
 import random
 import shutil
+import socket
 import sys
 import time
+from urllib.parse import urlparse
 
 HOME_PAGE = "https://es.wikiloc.com/"
 # Screenshots of the pages whose check did not clear, the latest few (the worker's log says where).
@@ -121,7 +125,13 @@ async def open_page(page, url, warmed, display):
         await open_page(page, HOME_PAGE, True, display)
     for attempt in (1, 2):
         started = time.monotonic()
-        await page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+        try:
+            await page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+        except Exception as error:
+            # The check's own reload can interrupt the navigation: the page is loading anyway.
+            if "interrupted" not in str(error).lower():
+                raise
+            log(f"navigation interrupted on {url}; waiting for the page")
         await page.wait_for_timeout(2000)
         checked = is_challenge(await page.title())
         if checked:
@@ -137,6 +147,31 @@ async def open_page(page, url, warmed, display):
                 await keep_failure(page, url)
                 raise
             await page.wait_for_timeout(5000)
+
+
+# The home computer's address, through a SOCKS tunnel it opens to the server (README: «Through the
+# home computer»). Used when the port answers; else the server's own address.
+PROXY = os.environ.get("ITHOMIINI_WIKILOC_PROXY", "socks5://127.0.0.1:18080")
+# Where the home computer is: the browser's time zone and language through its address, as a
+# person there has them (the server's own are UTC and English). "" keeps the server's.
+HOME_ZONE = os.environ.get("ITHOMIINI_WIKILOC_HOME_ZONE", "America/Guayaquil")
+HOME_LOCALE = os.environ.get("ITHOMIINI_WIKILOC_HOME_LOCALE", "es-EC")
+# The same for the direct route: where the server's address is (the app server's is in Virginia).
+DIRECT_ZONE = os.environ.get("ITHOMIINI_WIKILOC_ZONE", "")
+DIRECT_LOCALE = os.environ.get("ITHOMIINI_WIKILOC_LOCALE", "")
+
+
+def home_proxy():
+    """The tunnel's SOCKS address when it answers (a SOCKS5 greeting), else None."""
+    if not PROXY or PROXY == "off":
+        return None
+    where = urlparse(PROXY)
+    try:
+        with socket.create_connection((where.hostname or "127.0.0.1", where.port or 1080), timeout=3) as s:
+            s.sendall(b"\x05\x01\x00")
+            return PROXY if s.recv(2) == b"\x05\x00" else None
+    except OSError:
+        return None
 
 
 def private_display():
@@ -169,11 +204,17 @@ async def serve():
                         display = private_display()
                         if display:
                             os.environ["DISPLAY"] = display.name
+                        proxy = home_proxy()
+                        log(f"route: {'home computer (SOCKS tunnel)' if proxy else 'this server, direct'}")
                         browser_manager = AsyncCamoufox(
                             headless=display is None,
                             os="windows",
                             humanize=True,
                             main_world_eval=True,
+                            # Names resolved at the far end too, so Cloudflare sees one address.
+                            **({"proxy": {"server": proxy}, "firefox_user_prefs": {"network.proxy.socks_remote_dns": True}} if proxy else {}),
+                            **({"config": {"timezone": zone}} if (zone := HOME_ZONE if proxy else DIRECT_ZONE) else {}),
+                            **({"locale": language} if (language := HOME_LOCALE if proxy else DIRECT_LOCALE) else {}),
                         )
                         browser = await browser_manager.__aenter__()
                         page = await browser.new_page()

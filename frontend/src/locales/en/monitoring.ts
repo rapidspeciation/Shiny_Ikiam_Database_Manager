@@ -667,7 +667,5 @@ export default {
   "Proponer en Lists": "Propose in Lists",
   "Se añade a la hoja Lists (Abbr_name) al aplicarla; luego se elige aquí.": "It is added to the Lists sheet (Abbr_name) when applied; then choose it here.",
   "Aplica esta fila de Lists; después {abbr} aparece en «Recolector».": "Apply this Lists row; then {abbr} appears in «Collector».",
-  "Toma los recorridos que la verificación de Cloudflare detuvo en el servidor": "Takes the walks Cloudflare's check stopped on the server",
-  "respaldo del PC activo": "PC fallback active",
   "Todos los puntos ya están en la hoja: pásalo al mapa desde la lista": "Every point is already in the sheet: put it on the map from the list",
 } as Record<string, string>

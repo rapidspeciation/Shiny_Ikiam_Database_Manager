@@ -187,24 +187,21 @@ test('links and profile checks become jobs for the home computer, which claims a
   assert.ok(workerSeen);
 });
 
-test("a job Cloudflare's check stopped waits and is tried again; the home computer's fallback takes it meanwhile", () => {
+test("a job Cloudflare's check stopped waits and is tried again, then fails saying why", () => {
   const s = store();
   const link = queueLink(s, { text: 'https://es.wikiloc.com/rutas-senderismo/monitoreo-14-octubre-291256112' }, editor).job;
-  // The fallback only takes what the server's worker could not do.
-  assert.equal(claimJob(s, { fallback: true }).job, null);
   assert.equal(claimJob(s).job.id, link.id);
   const retried = finishJob(s, link.id, { status: 'retry', message: 'Wikiloc browser: TimeoutError: Cloudflare challenge did not clear' }).job;
   assert.equal(retried.status, 'queued');
   assert.equal(retried.attempts, 1);
   assert.match(retried.message, /se intenta de nuevo hacia las \d\d:\d\d \(intento 2 de 3\)/);
   assert.ok(Date.parse(retried.notBefore) - Date.now() > 4 * 60_000);
-  // The server's worker waits for the retry time; the fallback takes it at once.
+  // Not taken before its retry time.
   assert.equal(claimJob(s).job, null);
-  const taken = claimJob(s, { fallback: true }).job;
-  assert.equal(taken.id, link.id);
-  assert.ok(listJobs(s).fallbackSeen);
-  finishJob(s, link.id, { status: 'retry', message: 'Cloudflare challenge did not clear' });
   // Pasted again while it waits: tried at once.
+  queueLink(s, { url: link.target }, editor);
+  assert.equal(claimJob(s).job.id, link.id);
+  finishJob(s, link.id, { status: 'retry', message: 'Cloudflare challenge did not clear' });
   queueLink(s, { url: link.target }, editor);
   assert.equal(claimJob(s).job.id, link.id);
   // The last try: then it fails, saying why.

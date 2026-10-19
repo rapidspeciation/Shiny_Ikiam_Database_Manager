@@ -14,12 +14,12 @@ command -v Xvfb >/dev/null || { echo 'Install Xvfb first (sudo apt install xvfb 
 mkdir -p "$dest" "$HOME/.config/systemd/user"
 # Every deploy runs this: when the helper, this script and node are the same as last time and the
 # worker is running, nothing is reinstalled or restarted (a Wikiloc job in progress goes on).
-stamp=$(cd "$here" && cat lib.mjs worker.mjs fetch.mjs browser.mjs chromium.mjs browser.py xinput.py requirements.txt package.json package-lock.json install-worker.sh | sha256sum | cut -d' ' -f1)-$node
+stamp=$(cd "$here" && cat lib.mjs worker.mjs fetch.mjs browser.mjs browser.py xinput.py requirements.txt package.json package-lock.json install-worker.sh | sha256sum | cut -d' ' -f1)-$node
 if [ "$(cat "$dest/.installed" 2>/dev/null)" = "$stamp" ] && systemctl --user is-active -q ithomiini-wikiloc.service; then
   echo "Wikiloc worker unchanged: not reinstalled."
   exit 0
 fi
-cp "$here/lib.mjs" "$here/worker.mjs" "$here/fetch.mjs" "$here/browser.mjs" "$here/chromium.mjs" "$here/browser.py" "$here/xinput.py" "$here/requirements.txt" "$here/package.json" "$here/package-lock.json" "$dest/"
+cp "$here/lib.mjs" "$here/worker.mjs" "$here/fetch.mjs" "$here/browser.mjs" "$here/browser.py" "$here/xinput.py" "$here/requirements.txt" "$here/package.json" "$here/package-lock.json" "$dest/"
 "$python" -m venv "$dest/venv"
 "$dest/venv/bin/python" -m pip install --disable-pip-version-check -q -r "$dest/requirements.txt"
 "$dest/venv/bin/python" -m camoufox fetch official/152.0.4-beta.31

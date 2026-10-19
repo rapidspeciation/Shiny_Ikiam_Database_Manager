@@ -31,7 +31,7 @@ export function initMonitoring(db) {
   if (!walkColumns.includes('proposal_id')) db.exec('ALTER TABLE wikiloc_walks ADD COLUMN proposal_id TEXT');
   // The proposal's revision as the app last saved it: a later one is someone's work (the person's, the chat's).
   if (!walkColumns.includes('proposal_revision')) db.exec('ALTER TABLE wikiloc_walks ADD COLUMN proposal_revision INTEGER');
-  // Added later: a job Cloudflare stopped is tried again later (attempts, not before), also by the fallback worker.
+  // Added later: a job Cloudflare stopped is tried again later (attempts, not before).
   const jobColumns = db.prepare('PRAGMA table_info(wikiloc_jobs)').all().map(c => c.name);
   if (!jobColumns.includes('attempts')) db.exec('ALTER TABLE wikiloc_jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0');
   if (!jobColumns.includes('not_before')) db.exec('ALTER TABLE wikiloc_jobs ADD COLUMN not_before TEXT');
@@ -977,30 +977,21 @@ export function queueSync(store, user) {
 
 export function listJobs(store) {
   const jobs = store.db.prepare('SELECT * FROM wikiloc_jobs ORDER BY created_at DESC LIMIT 30').all().map(jobRow);
-  return { jobs, workerSeen: store.getSetting('wikilocWorkerSeen'), fallbackSeen: store.getSetting('wikilocFallbackSeen') };
+  return { jobs, workerSeen: store.getSetting('wikilocWorkerSeen') };
 }
 
-/**
- * A job Cloudflare's check stopped is tried again: after these waits, then it fails. The
- * fallback worker (a home computer, tools/wikiloc README) takes it at once meanwhile.
- */
+/** A job Cloudflare's check stopped is tried again: after these waits, then it fails. */
 export const RETRY_WAITS_MIN = [5, 20];
 
-/**
- * The worker takes the oldest waiting job whose retry time has come; jobs stuck "running" for
- * 15 minutes are retried. The fallback worker (`fallback`) only takes jobs that failed on the
- * server's worker at least once, without waiting for their retry time.
- */
-export function claimJob(store, { fallback = false } = {}) {
-  store.setSetting(fallback ? 'wikilocFallbackSeen' : 'wikilocWorkerSeen', now());
+/** The worker takes the oldest waiting job whose retry time has come; jobs stuck "running" for 15 minutes are retried. */
+export function claimJob(store) {
+  store.setSetting('wikilocWorkerSeen', now());
   store.db
     .prepare("UPDATE wikiloc_jobs SET status='queued', updated_at=? WHERE status='running' AND updated_at < ?")
     .run(now(), new Date(Date.now() - STALE_MS).toISOString());
-  const job = fallback
-    ? store.db.prepare("SELECT * FROM wikiloc_jobs WHERE status='queued' AND attempts > 0 ORDER BY created_at LIMIT 1").get()
-    : store.db
-        .prepare("SELECT * FROM wikiloc_jobs WHERE status='queued' AND (not_before IS NULL OR not_before <= ?) ORDER BY created_at LIMIT 1")
-        .get(now());
+  const job = store.db
+    .prepare("SELECT * FROM wikiloc_jobs WHERE status='queued' AND (not_before IS NULL OR not_before <= ?) ORDER BY created_at LIMIT 1")
+    .get(now());
   if (!job) return { job: null };
   store.db.prepare("UPDATE wikiloc_jobs SET status='running', updated_at=? WHERE id=?").run(now(), job.id);
   const out = jobRow({ ...job, status: 'running' });

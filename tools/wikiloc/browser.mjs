@@ -10,12 +10,9 @@ const REQUEST_TIMEOUT = 330_000;
 
 /**
  * Start a browser process for one job; page has the operations used by the parsers. `log`
- * receives the browser's own lines (what Cloudflare showed, how the check went). With
- * ITHOMIINI_WIKILOC_BROWSER=chromium it is Playwright's Chromium instead (the home computer's
- * fallback, chromium.mjs).
+ * receives the browser's own lines (its route, what Cloudflare showed, how the check went).
  */
 export async function openBrowser({ timeoutMs = REQUEST_TIMEOUT, log = () => {} } = {}) {
-  if (process.env.ITHOMIINI_WIKILOC_BROWSER === 'chromium') return (await import('./chromium.mjs')).openChromium({ log });
   if (!existsSync(python())) throw new Error(`Wikiloc Python is missing: ${python()}`);
   const child = spawn(python(), [join(directory, 'browser.py')], {
     stdio: ['pipe', 'pipe', 'pipe'],

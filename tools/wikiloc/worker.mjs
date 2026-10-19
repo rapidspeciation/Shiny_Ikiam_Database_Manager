@@ -11,11 +11,11 @@
  *
  * A page Cloudflare's check stopped is not a failure at once: the job goes
  * back to the queue and is tried again later (server/monitoring.mjs finishJob).
- * With "fallback": true (or ITHOMIINI_WIKILOC_FALLBACK=1) this worker is the
- * home computer's: it only takes jobs the server's worker could not do.
+ * The browser goes out through the home computer's address when its tunnel is
+ * up (browser.py); the route each job took is in the log and the job's message.
  *
  * Credentials: ~/.config/ithomiini-wikiloc/worker.json (mode 600) with
- * {"app": "...", "username": "...", "password": "...", "fallback": false}; see
+ * {"app": "...", "username": "...", "password": "..."}; see
  * README.md for the systemd user service.
  */
 import { readFileSync } from 'node:fs';
@@ -30,7 +30,6 @@ const app = (config.app || DEFAULT_APP).replace(/\/?$/, '/');
 const client = appClient(app, () => signIn(app, config.username, config.password));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const log = (...a) => console.log(new Date().toISOString(), ...a);
-const fallback = config.fallback === true || process.env.ITHOMIINI_WIKILOC_FALLBACK === '1';
 /** Cloudflare's check (or its page) stopped the browser: worth another try later. */
 const blocked = error => /cloudflare|challenge|un momento|just a moment/i.test(String(error?.message || error));
 
@@ -42,9 +41,17 @@ async function sendWalk(page, url, jobId, collector) {
 }
 
 async function run(job) {
-  const browser = await openBrowser({ log: line => log(`browser: ${line}`) });
+  // The route the browser took (the home computer's tunnel, or this server's own address), for the job's message.
+  let route = null;
+  const browser = await openBrowser({
+    log: line => {
+      log(`browser: ${line}`);
+      if (line.startsWith('route: ')) route = line.slice(7);
+    },
+  });
+  const via = text => (route ? `${text} (${route.startsWith('home') ? 'vía el PC de casa' : 'directo desde el servidor'})` : text);
   try {
-    if (job.kind === 'trail') return await sendWalk(browser.page, job.target, job.id);
+    if (job.kind === 'trail') return via(await sendWalk(browser.page, job.target, job.id));
     const pattern = new RegExp(job.profile?.pattern || 'monitoreo', 'i');
     const { name, trails } = await readProfile(browser.page, job.target);
     const known = new Set(job.knownIds || []);
@@ -56,20 +63,23 @@ async function run(job) {
     }
     return {
       profileName: name,
-      message: fresh.length
-        ? `${fresh.length} rutas nuevas de ${trails.length}: ${done.join('; ')}`
-        : `Sin rutas nuevas (${trails.length} rutas revisadas)`,
+      message: via(
+        fresh.length ? `${fresh.length} rutas nuevas de ${trails.length}: ${done.join('; ')}` : `Sin rutas nuevas (${trails.length} rutas revisadas)`,
+      ),
     };
+  } catch (e) {
+    e.message = via(e.message);
+    throw e;
   } finally {
     await browser.close();
   }
 }
 
-log(`Wikiloc worker for ${app}${fallback ? ' (fallback: only jobs the server could not do)' : ''}`);
+log(`Wikiloc worker for ${app}`);
 for (;;) {
   let job = null;
   try {
-    ({ job } = await client.request('monitoring/wikiloc/jobs/claim', { method: 'POST', body: fallback ? { fallback: true } : {} }));
+    ({ job } = await client.request('monitoring/wikiloc/jobs/claim', { method: 'POST', body: {} }));
     if (!job) {
       await sleep(30_000);
       continue;
@@ -88,7 +98,7 @@ for (;;) {
       await client
         .request(`monitoring/wikiloc/jobs/${job.id}`, {
           method: 'POST',
-          // Tried again later (and by the fallback meanwhile), a few times at most.
+          // Tried again later, a few times at most.
           body: { status: blocked(e) ? 'retry' : 'failed', message: e.message.slice(0, 500) },
         })
         .catch(() => {});
