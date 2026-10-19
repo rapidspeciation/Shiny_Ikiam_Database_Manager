@@ -105,7 +105,7 @@ export function galleryData(db) {
     'predictions_app.json': predictions,
     'sex_predictions_app.json': sex,
     'wing_boxes_app.json': boxes,
-    'wing_outlines.json': { version: 1, source, model: WING_MODEL, photos: outlines },
+    'wing_outlines.json': { version: 2, source, model: WING_MODEL, photos: outlines },
   };
 }
 

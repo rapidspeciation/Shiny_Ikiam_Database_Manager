@@ -327,14 +327,14 @@ test("the gallery's files: the formats the gallery reads, nothing else", async t
   assert.deepEqual(boxes.CAM000201d, [{ box: [0.09, 0.085, 0.61, 0.515], conf: 0.92, model: 'v5n', union: true, file: id('CAM000201d.JPG') }]);
   const outlines = data['wing_outlines.json'];
   assert.deepEqual(Object.keys(outlines), ['version', 'source', 'model', 'photos']);
-  assert.equal(outlines.version, 1);
+  assert.equal(outlines.version, 2);
   assert.deepEqual(outlines.photos.CAM000201d, {
     file: id('CAM000201d.JPG'),
     w: [
-      ['fw', 'l', 'M100 100 300 100 300 300 100 300Z'],
-      ['fw', 'r', 'M400 100 600 100 600 300 400 300Z'],
-      ['hw', 'l', 'M120 350 280 350 280 500 120 500Z'],
-      ['hw', 'r', 'M420 350 580 350 580 500 420 500Z'],
+      ['fw', 'l', 'm100 100l200 0 0 200-200 0z'],
+      ['fw', 'r', 'm400 100l200 0 0 200-200 0z'],
+      ['hw', 'l', 'm120 350l160 0 0 150-160 0z'],
+      ['hw', 'r', 'm420 350l160 0 0 150-160 0z'],
     ],
   });
   assert.equal(photoKey('CAM036744d (2).JPG'), 'CAM036744d_2');
