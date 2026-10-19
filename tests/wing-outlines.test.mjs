@@ -24,17 +24,43 @@ const ellipse = (cx, cy, rx, ry, speck) => (xs, ys) => {
   return out;
 };
 
-test('an ellipse gives a closed outline of at most 32 points close to the ellipse', () => {
+test('an ellipse gives a smooth closed outline of at most 64 points on the ellipse', () => {
   const W = 1600,
     H = 1200;
   const pts = traceWing(ellipse(500, 400, 200, 120, [320, 300]), [280, 270, 720, 530], { width: W, height: H });
   assert.ok(pts.length >= 8 && pts.length <= MAX_POINTS, `points ${pts.length}`);
   for (const [x, y] of pts) {
     const e = Math.sqrt(((x - 500) / 200) ** 2 + ((y - 400) / 120) ** 2);
-    assert.ok(Math.abs(e - 1) < 0.08, `point ${x},${y} off the ellipse (${e})`);
+    assert.ok(Math.abs(e - 1) < 0.015, `point ${x},${y} off the ellipse (${e})`);
   }
   const xs = pts.map(p => p[0]);
   assert.ok(Math.min(...xs) > 290, 'the speck is not part of the outline');
+  // unsimplified: every point of the iso-line within a fraction of a sample of the ellipse (no staircase)
+  const raw = traceWing(ellipse(500, 400, 200, 120), [280, 270, 720, 530], { width: W, height: H, tolerance: 0 });
+  assert.ok(raw.length > 200);
+  for (const [x, y] of raw) {
+    // distance to the ellipse along the radius, in px
+    const e = Math.sqrt(((x - 500) / 200) ** 2 + ((y - 400) / 120) ** 2);
+    assert.ok(Math.abs(e - 1) * 120 < 0.6, `raw point ${x},${y} ${(Math.abs(e - 1) * 120).toFixed(2)} px off`);
+  }
+});
+
+test('the iso-line keeps a notch the grid samples see', () => {
+  // a rectangle with a 30 px deep notch from the top
+  const sample = (xs, ys) => {
+    const out = new Float32Array(xs.length * ys.length);
+    for (let j = 0; j < ys.length; j++)
+      for (let i = 0; i < xs.length; i++) {
+        const x = xs[i], y = ys[j];
+        const inRect = Math.min(x - 100, 400 - x, y - 100, 300 - y);
+        const notch = Math.min(x - 240, 260 - x, 130 - y);
+        out[j * xs.length + i] = Math.min(inRect, -notch) / 10;
+      }
+    return out;
+  };
+  const pts = traceWing(sample, [90, 90, 410, 310], { width: 1600, height: 1200 });
+  const inNotch = pts.filter(([x, y]) => x > 238 && x < 262 && y > 125 && y < 135);
+  assert.ok(inNotch.length >= 2, 'the notch bottom has points');
 });
 
 test('simplify keeps squares as 4 corners and caps the points', () => {
@@ -77,7 +103,10 @@ test('quantize, path and the zoom box', () => {
     1200,
   );
   assert.deepEqual(flat, [0, 0, 500, 0, 500, 500]);
-  assert.equal(outlinePath(flat), 'M0 0 500 0 500 500Z');
+  assert.equal(outlinePath(flat), 'm0 0l500 0 0 500z');
+  assert.equal(outlinePath([108, 177, 152, 170, 150, 190]), 'm108 177l44-7-2 20z');
+  assert.deepEqual(parsePath('m108 177l44-7-2 20z'), [108, 177, 152, 170, 150, 190]);
+  assert.deepEqual(parsePath(outlinePath(flat)), flat);
   assert.deepEqual(parsePath('M0 0 500 0 500 500Z'), flat);
   const box = zoomBox(
     [

@@ -6,58 +6,145 @@
 //
 // Agreed in /tmp/gallery-readings-spec.md:
 // - per wing, the largest 4-connected part of its mask (logit > 0, inside the
-//   wing's box), its outer outline, Douglas-Peucker with a tolerance of 0.4 % of
-//   the photo's longer side, at most 32 points (the tolerance grows until it fits);
+//   wing's box, sampled every 1/800 of the photo's longer side), its outer outline
+//   traced along the logit = 0 iso-line (marching squares, crossings interpolated
+//   between samples), Douglas-Peucker with a tolerance of 0.1 % of the photo's
+//   longer side, at most 64 points (the tolerance grows until it fits);
 // - points quantized to integers 0..1000 of the photo AS SHOWN (EXIF applied, not
-//   turned upright): x = 1000 * x / width, y = 1000 * y / height;
+//   turned upright): x = 1000 * x / width, y = 1000 * y / height; the public file
+//   writes them as relative SVG path data (outlinePath);
 // - kind "fw" | "hw" | "x" (extra, or not a wing for the classifier), half "l" | "r" | "u";
 // - the zoom box: union of the fw/hw outlines (photo px), then 1.5 % of the
 //   photo's shorter side on each side, clamped to the photo; fractions, 4 decimals.
 
-export const OUTLINE_VERSION = 1;
-export const SIMPLIFY_FRACTION = 0.004;
-export const MAX_POINTS = 32;
+export const OUTLINE_VERSION = 2;
+export const SIMPLIFY_FRACTION = 0.001;
+export const MAX_POINTS = 64;
 export const BOX_PADDING = 0.015;
-/** grid step of the mask sampling, as a fraction of the photo's longer side (4 px on 1600 px) */
-export const GRID_FRACTION = 1 / 400;
+/** grid step of the mask sampling, as a fraction of the photo's longer side (2 px on 1600 px) */
+export const GRID_FRACTION = 1 / 800;
 
 const r4 = n => Math.round(n * 1e4) / 1e4;
 
 /**
  * Samples one wing's mask on a regular grid over its box and returns the outer
- * outline of the largest connected part, in photo pixels of the frame the box is in.
+ * outline of the largest connected part, in photo pixels of the frame the box is in:
+ * the logit = threshold iso-line by marching squares, its crossings linearly
+ * interpolated between grid samples (sub-sample, no staircase), then Douglas-Peucker.
  * @param {(xs: number[], ys: number[]) => Float32Array} sample mask logits at photo points
  *   (row-major: ys rows of xs columns), -Infinity outside the wing's box; model.ts maskLogits
  * @param {[number, number, number, number]} box the wing's box in photo pixels
- * @param {{ width: number, height: number, threshold?: number, step?: number }} photo
+ * @param {{ width: number, height: number, threshold?: number, step?: number, tolerance?: number, maxPoints?: number }} photo
+ *   tolerance: Douglas-Peucker tolerance in px (default SIMPLIFY_FRACTION of the longer side); 0 = unsimplified
  * @returns {Array<[number, number]> | null}
  */
-export function traceWing(sample, box, { width, height, threshold = 0, step }) {
-  const s = step ?? Math.max(width, height) * GRID_FRACTION;
+export function traceWing(sample, box, { width, height, threshold = 0, step, tolerance, maxPoints = MAX_POINTS }) {
+  const long = Math.max(width, height);
+  const s = step ?? long * GRID_FRACTION;
   const [bx1, by1, bx2, by2] = box;
   if (!(bx2 > bx1 && by2 > by1)) return null;
-  // one empty cell of margin around the box so every outline closes
+  // samples at x0 + i * s; one sample of margin outside the box so every outline closes
   const x0 = bx1 - s,
     y0 = by1 - s;
-  const gw = Math.ceil((bx2 - bx1) / s) + 2,
-    gh = Math.ceil((by2 - by1) / s) + 2;
-  const xs = Array.from({ length: gw }, (_, i) => x0 + (i + 0.5) * s);
-  const ys = Array.from({ length: gh }, (_, j) => y0 + (j + 0.5) * s);
+  const gw = Math.ceil((bx2 - bx1) / s) + 3,
+    gh = Math.ceil((by2 - by1) / s) + 3;
+  const xs = Array.from({ length: gw }, (_, i) => x0 + i * s);
+  const ys = Array.from({ length: gh }, (_, j) => y0 + j * s);
   const logits = sample(xs, ys);
+  const f = new Float32Array(gw * gh);
   const mask = new Uint8Array(gw * gh);
   for (let j = 0; j < gh; j++)
     for (let i = 0; i < gw; i++) {
-      const x = xs[i],
-        y = ys[j];
-      if (x < 0 || y < 0 || x > width || y > height) continue;
-      if (logits[j * gw + i] > threshold) mask[j * gw + i] = 1;
+      const t = j * gw + i;
+      const inside = xs[i] >= 0 && ys[j] >= 0 && xs[i] <= width && ys[j] <= height && i > 0 && j > 0 && i < gw - 1 && j < gh - 1;
+      // -Infinity (outside the box) and samples outside the photo count as a clear "no"
+      const v = inside && Number.isFinite(logits[t]) ? logits[t] - threshold : -1;
+      f[t] = v;
+      if (v > 0) mask[t] = 1;
     }
   const blob = largestBlob(mask, gw, gh);
   if (!blob) return null;
-  const loop = outerLoop(blob, gw, gh);
+  // positive only on the largest part: other parts become a small "no"
+  for (let t = 0; t < f.length; t++) if (f[t] > 0 && !blob[t]) f[t] = -1e-3;
+  const loop = isoLoop(f, gw, gh);
   if (!loop || loop.length < 3) return null;
-  const pts = loop.map(([i, j]) => [Math.min(width, Math.max(0, x0 + i * s)), Math.min(height, Math.max(0, y0 + j * s))]);
-  return simplifyClosed(pts, SIMPLIFY_FRACTION * Math.max(width, height), MAX_POINTS);
+  const pts = loop.map(([u, v]) => [Math.min(width, Math.max(0, x0 + u * s)), Math.min(height, Math.max(0, y0 + v * s))]);
+  const tol = tolerance ?? SIMPLIFY_FRACTION * long;
+  return tol > 0 ? simplifyClosed(pts, tol, maxPoints) : pts;
+}
+
+/**
+ * The longest closed iso-line (value 0) of a grid of values (positive inside) by
+ * marching squares, as points [u, v] in grid units (sample (i, j) is at [i, j]),
+ * crossings interpolated linearly along the cell edges; saddles are resolved by the
+ * cell's mean. The outer loop is the one enclosing the largest area.
+ */
+export function isoLoop(f, gw, gh) {
+  // crossing points on cell edges, keyed: horizontal edge (i,j)-(i+1,j) -> 2*(j*gw+i), vertical (i,j)-(i,j+1) -> +1
+  const pt = new Map();
+  const cross = (key, i0, j0, i1, j1) => {
+    if (!pt.has(key)) {
+      const a = f[j0 * gw + i0],
+        b = f[j1 * gw + i1];
+      const t = a / (a - b);
+      pt.set(key, [i0 + (i1 - i0) * t, j0 + (j1 - j0) * t]);
+    }
+    return key;
+  };
+  const links = new Map(); // key -> [other keys]
+  const link = (p, q) => {
+    (links.get(p) || links.set(p, []).get(p)).push(q);
+    (links.get(q) || links.set(q, []).get(q)).push(p);
+  };
+  for (let j = 0; j < gh - 1; j++)
+    for (let i = 0; i < gw - 1; i++) {
+      const a = f[j * gw + i] > 0,
+        b = f[j * gw + i + 1] > 0,
+        c = f[(j + 1) * gw + i + 1] > 0,
+        d = f[(j + 1) * gw + i] > 0;
+      const code = (a ? 1 : 0) | (b ? 2 : 0) | (c ? 4 : 0) | (d ? 8 : 0);
+      if (code === 0 || code === 15) continue;
+      const top = () => cross(2 * (j * gw + i), i, j, i + 1, j);
+      const bottom = () => cross(2 * ((j + 1) * gw + i), i, j + 1, i + 1, j + 1);
+      const left = () => cross(2 * (j * gw + i) + 1, i, j, i, j + 1);
+      const right = () => cross(2 * (j * gw + i + 1) + 1, i + 1, j, i + 1, j + 1);
+      switch (code) {
+        case 1: case 14: link(left(), top()); break;
+        case 2: case 13: link(top(), right()); break;
+        case 3: case 12: link(left(), right()); break;
+        case 4: case 11: link(right(), bottom()); break;
+        case 6: case 9: link(top(), bottom()); break;
+        case 7: case 8: link(left(), bottom()); break;
+        case 5: case 10: {
+          const mid = (f[j * gw + i] + f[j * gw + i + 1] + f[(j + 1) * gw + i + 1] + f[(j + 1) * gw + i]) / 4 > 0;
+          // a, c positive (5) or b, d positive (10); joined through the centre when the mean is positive
+          if ((code === 5) === mid) (link(left(), bottom()), link(top(), right()));
+          else (link(left(), top()), link(right(), bottom()));
+          break;
+        }
+      }
+    }
+  const used = new Set();
+  let best = null,
+    bestArea = 0;
+  for (const start of links.keys()) {
+    if (used.has(start)) continue;
+    const loop = [];
+    let prev = null,
+      cur = start;
+    while (cur !== undefined && !used.has(cur)) {
+      used.add(cur);
+      loop.push(pt.get(cur));
+      const nb = links.get(cur);
+      const nxt = nb.find(k => k !== prev && !used.has(k));
+      prev = cur;
+      cur = nxt;
+    }
+    if (loop.length < 3) continue;
+    const area = Math.abs(polygonArea(loop));
+    if (area > bestArea) ((bestArea = area), (best = loop));
+  }
+  return best;
 }
 
 /** The largest 4-connected part of a grid (null when empty). */
@@ -90,81 +177,6 @@ export function largestBlob(mask, w, h) {
   const out = new Uint8Array(w * h);
   for (let s = 0; s < w * h; s++) out[s] = lab[s] === best ? 1 : 0;
   return out;
-}
-
-/**
- * The outer boundary of a blob as a closed loop of grid-corner points [i, j]
- * (corner (i, j) is the top-left corner of cell (i, j)). Boundary edges are
- * directed with the blob on their left; at a pinch corner the walk turns left,
- * so the loops are simple; the outer loop is the one with the largest area.
- */
-export function outerLoop(blob, w, h) {
-  const at = (i, j) => (i >= 0 && j >= 0 && i < w && j < h ? blob[j * w + i] : 0);
-  const W1 = w + 1;
-  // out-edges per corner: up to 2; direction 0 right, 1 down, 2 left, 3 up (y grows downwards)
-  const next = new Map();
-  const add = (i, j, d) => {
-    const k = j * W1 + i;
-    const l = next.get(k);
-    if (l) l.push(d);
-    else next.set(k, [d]);
-  };
-  for (let j = 0; j < h; j++)
-    for (let i = 0; i < w; i++) {
-      if (!blob[j * w + i]) continue;
-      // blob on the left of each directed edge (screen coordinates, y down): go around the cell counter-clockwise on screen
-      if (!at(i, j - 1)) add(i + 1, j, 2); // top edge, right -> left
-      if (!at(i - 1, j)) add(i, j, 1); // left edge, top -> bottom
-      if (!at(i, j + 1)) add(i, j + 1, 0); // bottom edge, left -> right
-      if (!at(i + 1, j)) add(i + 1, j + 1, 3); // right edge, bottom -> top
-    }
-  const D = [
-    [1, 0],
-    [0, 1],
-    [-1, 0],
-    [0, -1],
-  ];
-  let best = null,
-    bestArea = 0;
-  for (const [start, dirs] of next) {
-    while (dirs.length) {
-      let d = dirs.pop();
-      let k = start;
-      const loop = [];
-      for (let guard = 0; guard < 4 * W1 * (h + 1) + 8; guard++) {
-        const i = k % W1,
-          j = (k / W1) | 0;
-        loop.push([i, j]);
-        const ni = i + D[d][0],
-          nj = j + D[d][1];
-        k = nj * W1 + ni;
-        if (k === start) break;
-        const outs = next.get(k);
-        if (!outs || !outs.length) break;
-        // turn left first (the blob is on the left: keeps parts that touch at a corner apart), then straight, then right
-        let pick = -1;
-        for (const p of [(d + 3) % 4, d, (d + 1) % 4]) {
-          const idx = outs.indexOf(p);
-          if (idx >= 0) {
-            pick = p;
-            outs.splice(idx, 1);
-            break;
-          }
-        }
-        if (pick < 0) pick = outs.pop();
-        d = pick;
-      }
-      // drop collinear corners
-      const pts = loop.filter((p, n) => {
-        const a = loop[(n + loop.length - 1) % loop.length],
-          b = loop[(n + 1) % loop.length];
-        return (p[0] - a[0]) * (b[1] - p[1]) - (p[1] - a[1]) * (b[0] - p[0]) !== 0;
-      });
-      const area = Math.abs(polygonArea(pts));
-      if (area > bestArea) ((bestArea = area), (best = pts));
-    }
-  }
-  return best;
 }
 
 export function polygonArea(pts) {
@@ -269,20 +281,35 @@ export function quantize(points, width, height) {
   return out;
 }
 
-/** Flat 0..1000 points -> SVG path data "M x y x y … Z" (the gallery's wing_outlines.json). */
+/**
+ * Flat 0..1000 points -> SVG path data with relative commands, the gallery's
+ * wing_outlines.json (version 2): "m x0 y0" then "l" and the steps dx dy to each
+ * next point (a minus sign separates without a space), closed with "z";
+ * e.g. [108, 177, 152, 170, 150, 190] -> "m108 177l44-7-2 20z".
+ */
 export function outlinePath(flat) {
-  return flat.length ? `M${flat.join(' ')}Z` : '';
+  if (flat.length < 2) return '';
+  let d = `m${flat[0]} ${flat[1]}`;
+  if (flat.length > 2) {
+    const steps = [];
+    for (let n = 2; n < flat.length; n++) steps.push(flat[n] - flat[n - 2]);
+    d += 'l' + steps.join(' ').replace(/ -/g, '-');
+  }
+  return d + 'z';
 }
 
-/** SVG path data -> flat points. */
+/** SVG path data (absolute "M x y … Z" of version 1, or relative "m x y l dx dy … z") -> flat points. */
 export function parsePath(path) {
-  return (path || '')
-    .replace(/^M/, '')
-    .replace(/Z$/, '')
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .map(Number);
+  const p = (path || '').trim();
+  const nums = s => (s.match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+  if (p.startsWith('m')) {
+    const [head, tail = ''] = p.replace(/z$/i, '').slice(1).split('l');
+    const flat = nums(head);
+    const steps = nums(tail);
+    for (let n = 0; n < steps.length; n++) flat.push(flat[flat.length - 2] + steps[n]);
+    return flat;
+  }
+  return nums(p.replace(/^M/, '').replace(/Z$/, ''));
 }
 
 export const kindCode = kind => (kind === 'forewing' ? 'fw' : kind === 'hindwing' ? 'hw' : 'x');
