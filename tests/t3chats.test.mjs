@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { createAssistant } from '../server/assistant.mjs';
-import { addReports, chatsOnScreen, createT3Chats, openChat } from '../server/t3chats.mjs';
+import { addReports, chatsOnScreen, createT3Chats, olderRuntime, openChat } from '../server/t3chats.mjs';
 import { signIn, until } from './helpers/assistant.mjs';
 
 // Proposals by T3 Code chat: which chat drafted a proposal, and which chat the panel follows.
@@ -407,6 +407,32 @@ test('from T3 0.0.46 (statev2.sqlite, the new orchestrator): the same answers, i
   assert.deepEqual([...(await chats.findProposals([proposal], since))], [[proposal, B]]);
   v2.db.prepare("UPDATE orchestration_v2_projection_runs SET status = 'completed', completed_at = ? WHERE run_id = ?").run(iso(), running);
   assert.equal(chats.session(A).busy, false, 'A has answered');
+  chats.close();
+  v2.db.close();
+  remove();
+});
+
+test("T3 taken back to 0.0.45 after 0.1.0: its old database is read again, though V2's stays beside it", () => {
+  const { home, remove } = t3Home();
+  let clock = Date.now();
+  const v2 = newOrchestrator(home);
+  v2.thread(B, 'p-franz', 'Cuaderno de posturas');
+  const runtime = serverVersion =>
+    writeFileSync(join(home, 'userdata', 'server-runtime.json'), JSON.stringify({ version: 1, pid: 1, port: 3773, ...(serverVersion ? { serverVersion } : {}) }));
+  runtime('0.1.0');
+  const chats = createT3Chats({ home, now: () => clock });
+  assert.deepEqual(chats.chatsOf('franz').map(c => c.id), [B]);
+  assert.match(chats.file, /statev2\.sqlite$/);
+  // 0.0.45 writes no version of its own.
+  runtime(null);
+  assert.equal(olderRuntime(join(home, 'userdata')), true);
+  clock += 61_000;
+  assert.deepEqual(chats.chatsOf('franz').map(c => c.id), [A, B]);
+  assert.match(chats.file, /\/state\.sqlite$/);
+  runtime('0.1.1-nightly.20261018.3335');
+  assert.equal(olderRuntime(join(home, 'userdata')), false);
+  runtime('0.0.43-nightly.20260928.2402');
+  assert.equal(olderRuntime(join(home, 'userdata')), true);
   chats.close();
   v2.db.close();
   remove();

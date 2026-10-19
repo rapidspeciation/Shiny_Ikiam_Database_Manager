@@ -1,12 +1,14 @@
-# Updates T3 Code to the newest stable release; started on demand by the app
-# (Asistente → Actualizar T3, admins only). `t3 update` restarts T3's service.
+# Updates T3 Code to the newest stable release (scripts/t3-update.mjs: a copy of its database,
+# `t3 update`, which restarts T3's service, a wait until T3 answers on the new version, and the
+# app's T3 token issued again by it). The app starts ithomiini-t3-update@<version>.service instead
+# (Asistente → Actualizar T3, admins), with the version the admin saw; this one is for a shell.
 [Unit]
-Description=Update T3 Code (on demand from the Ithomiini app)
+Description=Update T3 Code to the newest stable release
 
 [Service]
 Type=oneshot
 Environment=T3CODE_HOME=/home/ubuntu/.t3
-ExecStart=/home/ubuntu/.local/bin/t3 update --channel stable --yes
+ExecStart=/home/ubuntu/.local/share/tiputini-runtime/node-v24.18.0-linux-arm64/bin/node /home/ubuntu/ithomiini/current/scripts/t3-update.mjs --home /home/ubuntu/.t3 --t3 /home/ubuntu/.local/bin/t3 --local http://127.0.0.1:3773 --token-file /home/ubuntu/.config/ithomiini/t3-admin-token --token-label ithomiini-broker
 StandardOutput=append:/home/ubuntu/.t3/userdata/logs/t3-update.log
 StandardError=append:/home/ubuntu/.t3/userdata/logs/t3-update.log
-TimeoutStartSec=600
+TimeoutStartSec=1800

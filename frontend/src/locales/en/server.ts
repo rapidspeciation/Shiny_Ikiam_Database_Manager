@@ -42,6 +42,9 @@ export default {
   // server/knowledge.mjs, server/t3admin.mjs
   'No se pudo iniciar la sincronización con Drive': 'The sync with Drive could not be started',
   'No se pudo iniciar la actualización de T3': 'The T3 update could not be started',
+  'Elige una versión de T3': 'Choose a T3 version',
+  'Ya se está actualizando T3': 'T3 is already being updated',
+  'Esa versión de T3 no está publicada ni guardada en este servidor': 'That T3 version is neither released nor kept on this server',
   // server/census.mjs
   'Ese censo no existe': 'That census does not exist',
   'Ese censo ya terminó': 'That census has already finished',

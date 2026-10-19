@@ -6,11 +6,12 @@ import { api } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
 import { useSession } from '../stores/session'
 import ProposalsLive from '../components/assistant/ProposalsLive.vue'
+import T3UpdateDialog, { type T3Status } from '../components/assistant/T3UpdateDialog.vue'
 import { persistentRef } from '../lib/persist'
 import { panelShare } from '../lib/proposals'
 import { assistantLink, seenChat } from '../lib/t3Bridge'
 import { t3Host } from '../lib/t3Host'
-import { t, tn } from '../lib/i18n'
+import { t } from '../lib/i18n'
 
 /**
  * The assistant: T3 Code (the team's chats with Claude or Codex, on its own
@@ -102,7 +103,7 @@ watch(dragging, now => (t3Host.passThrough = now !== null))
 const reconnectT3 = () => t3Host.reconnects++
 onBeforeUnmount(() => {
   // Signed out: the next session starts without T3 until it opens this tab.
-  Object.assign(t3Host, { url: null, environmentId: null, projectKey: null, start: null, slot: null, open: null, passThrough: false })
+  Object.assign(t3Host, { url: null, environmentId: null, projectKey: null, start: null, version: null, slot: null, open: null, passThrough: false })
 })
 
 // ------------------------------------------------------------ links (#/asistente?propuesta=…&chat=…&fila=…)
@@ -193,68 +194,26 @@ async function copyChatLink() {
 }
 
 // ------------------------------------------------------------ updating T3 (admins)
-interface T3Version {
-  current: string | null
-  latest: string | null
-  updateAvailable: boolean
-  sessions: number
-  updating: boolean
-  log: string
-}
+// The bar shows the version; the dialog (T3UpdateDialog) says what an update does, runs it, checks the app with T3 after.
 const session = useSession()
-const t3Version = ref<T3Version | null>(null)
-const t3Updating = ref(false)
+const t3Version = ref<T3Status | null>(null)
+const t3Dialog = ref(false)
 async function loadT3Version() {
   if (!session.isAdmin) return
   try {
-    t3Version.value = await api<T3Version>('admin/t3')
+    t3Version.value = await api<T3Status>('admin/t3')
   } catch {
     t3Version.value = null
   }
 }
 onMounted(loadT3Version)
-/** Starts `t3 update` on the server, then waits for T3 to come back on the new version and reconnects. */
-async function updateT3() {
-  const v = t3Version.value
-  if (!v?.updateAvailable) return
-  const cut = v.sessions
-    ? '\n\n' +
-      tn(
-        v.sessions,
-        'T3 tiene {n} chat abierto: se cortarán las respuestas en curso (los chats guardados no se pierden).',
-        'T3 tiene {n} chats abiertos: se cortarán las respuestas en curso (los chats guardados no se pierden).',
-      )
-    : ''
-  const question = t('¿Actualizar T3 Code de {from} a {to}? T3 se reinicia (tarda un minuto).', { from: v.current, to: v.latest })
-  if (!confirm(question + cut)) return
-  t3Updating.value = true
-  try {
-    await api('admin/t3', { method: 'POST', body: {} })
-    const from = v.current
-    for (let i = 0; i < 60; i++) {
-      await new Promise(r => setTimeout(r, 5000))
-      await loadT3Version()
-      const now = t3Version.value
-      if (now && !now.updating && now.current !== from) {
-        notify(t('T3 actualizado a {version}', { version: now.current }), 'success')
-        reconnectT3()
-        return
-      }
-      if (now && !now.updating && i > 2) break
-    }
-    notify(`${t('T3 no cambió de versión. Últimas líneas del registro:')}\n${t3Version.value?.log || '—'}`, 'error')
-  } catch (e) {
-    notify(errorText(e), 'error')
-  } finally {
-    t3Updating.value = false
-  }
-}
 
 onMounted(async () => {
   try {
-    const status = await api<{ url: string | null; environmentId?: string | null; projectKey?: string | null; chat?: string | null }>(
+    const status = await api<{ url: string | null; environmentId?: string | null; projectKey?: string | null; chat?: string | null; version?: string | null }>(
       't3/status',
     )
+    t3Host.version = status.version ?? null
     t3Host.environmentId = status.environmentId ?? null
     t3Host.projectKey = status.projectKey ?? null
     t3Host.start = status.chat ?? null
@@ -313,30 +272,31 @@ onMounted(async () => {
         <Link2 :size="14" /> <span class="hidden sm:inline">{{ $t('Enlace') }}</span>
       </button>
       <button
-        v-if="t3Url && (t3Version?.updateAvailable || t3Updating)"
-        class="flex items-center gap-1 rounded bg-amber-100 px-2 py-0.5 text-amber-900 hover:bg-amber-200 disabled:opacity-60"
-        :disabled="t3Updating"
+        v-if="t3Url && (t3Version?.updateAvailable || t3Version?.updating)"
+        class="flex items-center gap-1 rounded bg-amber-100 px-2 py-0.5 text-amber-900 hover:bg-amber-200"
         :title="
           $t('Hay una versión nueva de T3 Code ({latest}); tienes la {current}', {
             latest: t3Version?.latest,
             current: t3Version?.current,
           })
         "
-        @click="updateT3"
+        @click="t3Dialog = true"
       >
-        <ArrowUpCircle :size="14" :class="{ 'animate-spin': t3Updating }" />
+        <ArrowUpCircle :size="14" :class="{ 'animate-spin': t3Version?.updating }" />
         {{
-          t3Updating
+          t3Version?.updating
             ? $t('Actualizando T3…')
             : $t('Actualizar T3 ({from} → {to})', { from: t3Version?.current, to: t3Version?.latest })
         }}
       </button>
-      <span
+      <button
         v-else-if="t3Url && t3Version"
-        class="px-1 text-xs text-stone-500"
+        class="rounded px-1 text-xs text-stone-500 hover:bg-stone-200"
         :title="t3Version.latest ? $t('Es la última versión estable de T3 Code') : $t('No se pudo consultar la última versión')"
-        >T3 {{ t3Version.current }}<template v-if="t3Version.latest"> · {{ $t('al día') }}</template></span
+        @click="t3Dialog = true"
       >
+        T3 {{ t3Version.current }}<template v-if="t3Version.latest && !t3Version.updateAvailable"> · {{ $t('al día') }}</template>
+      </button>
       <template v-if="t3Url">
         <button class="btn-ghost" :title="$t('Volver a conectar T3')" @click="reconnectT3">
           <RefreshCw :size="13" />
@@ -398,5 +358,13 @@ onMounted(async () => {
     <p v-else-if="loaded" class="p-4 text-sm text-stone-600">
       {{ $t('T3 Code no está configurado en este servidor.') }}
     </p>
+    <!-- Admins: T3's version, its update and the checks after it. -->
+    <T3UpdateDialog
+      v-if="t3Dialog"
+      :status="t3Version"
+      @close="t3Dialog = false"
+      @changed="value => ((t3Version = value), value.answering && (t3Host.version = value.current))"
+      @reconnect="reconnectT3"
+    />
   </div>
 </template>

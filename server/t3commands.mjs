@@ -2,7 +2,7 @@
 // sent: server/t3projects.mjs, server/t3tell.mjs). T3 is a stock install and takes them
 // one of two ways, by version:
 // - up to 0.0.45: POST /api/orchestration/dispatch, one command per request;
-// - from 0.0.46 (its new orchestrator, protocol 2) that route is gone (404). Commands go
+// - from 0.1.0 (Orchestrator V2, protocol 2; its nightlies from 0.0.46) that route is gone (404). Commands go
 //   over T3's socket (/ws, Effect RPC as JSON text frames), opened with a one-time ticket
 //   the token gets (POST /api/auth/websocket-ticket); and two of them changed shape
 //   (orchestrator2 below).
@@ -122,6 +122,28 @@ async function overSocket({ local, token, fetchImpl, WebSocketImpl, timeout }, c
     signal.removeEventListener('abort', onAbort);
     socket.close();
   }
+}
+
+/**
+ * How the T3 at `local` takes the app's commands, tried without sending one (the update's check):
+ * 'http' (its dispatch route answers), 'socket' (a socket opened with the token's ticket). Throws
+ * when neither works.
+ */
+export async function t3CommandWay({ local, tokenFile, fetchImpl = fetch, WebSocketImpl = globalThis.WebSocket, timeout = TIMEOUT_MS } = {}) {
+  const t3 = { local, token: (await readFile(tokenFile, 'utf8')).trim(), fetchImpl, WebSocketImpl, timeout };
+  const response = await fetchImpl(`${local}/api/orchestration/dispatch`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${t3.token}`, 'content-type': 'application/json' },
+    body: '{}',
+    signal: AbortSignal.timeout(timeout),
+  });
+  if (response.status !== 404) {
+    // A command it could not read (400) still says the route is there; 401/403: the token.
+    if (response.status === 401 || response.status === 403) throw new Error(`T3 answered ${response.status}`);
+    return 'http';
+  }
+  await overSocket(t3, []);
+  return 'socket';
 }
 
 /**

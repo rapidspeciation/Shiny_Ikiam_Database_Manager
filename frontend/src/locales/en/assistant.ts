@@ -2,14 +2,8 @@
 export default {
   // AssistantView
   'T3 Code no está configurado en este servidor.': 'T3 Code is not configured on this server.',
-  'T3 tiene {n} chat abierto: se cortarán las respuestas en curso (los chats guardados no se pierden).':
-    'T3 has {n} open chat: replies in progress will be cut off (saved chats are not lost).',
-  'T3 tiene {n} chats abiertos: se cortarán las respuestas en curso (los chats guardados no se pierden).':
-    'T3 has {n} open chats: replies in progress will be cut off (saved chats are not lost).',
-  '¿Actualizar T3 Code de {from} a {to}? T3 se reinicia (tarda un minuto).':
-    'Update T3 Code from {from} to {to}? T3 restarts (it takes a minute).',
   'T3 actualizado a {version}': 'T3 updated to {version}',
-  'T3 no cambió de versión. Últimas líneas del registro:': 'T3 did not change version. Last lines of the log:',
+  'T3 volvió a {version}': 'T3 is back on {version}',
   '{n} fila aplicada en Google Sheets': '{n} row applied in Google Sheets',
   '{n} filas aplicadas en Google Sheets': '{n} rows applied in Google Sheets',
   'Ocultar los cambios propuestos': 'Hide the proposed changes',
@@ -34,6 +28,56 @@ export default {
   'Volver a conectar T3': 'Reconnect T3',
   'Abrir T3 en otra pestaña': 'Open T3 in another tab',
   'Tamaño de los cambios propuestos': 'Size of the proposed changes',
+  // T3UpdateDialog (admins)
+  'Actualizar T3 Code': 'Update T3 Code',
+  'T3 Code en este servidor: {current}': 'T3 Code on this server: {current}',
+  'no responde': 'not answering',
+  'Última actualización: {from} → {to}, el {date}': 'Last update: {from} → {to}, on {date}',
+  'Notas de la versión': 'Release notes',
+  'Versión mayor.': 'Major version.',
+  'Cambia cómo funciona T3: lee las notas antes de actualizar.': 'It changes how T3 works: read the notes before updating.',
+  'Al arrancar por primera vez, {to} copia los chats a una base de datos nueva (statev2.sqlite), en un solo sentido: los chats conservan sus mensajes, pero las llamadas a herramientas y razonamientos de los chats viejos quedan solo en el archivo anterior. Si luego se vuelve a {from}, se ven los chats como estaban antes de actualizar.':
+    'On its first start, {to} copies the chats into a new database (statev2.sqlite), one way: chats keep their messages, but the tool calls and reasoning of old chats stay only in the previous file. Going back to {from} later shows the chats as they were before the update.',
+  '«Antes de actualizar», de las notas (en inglés)': '“Before you update”, from the notes',
+  'T3 tiene {n} sesión de Claude abierta: se cortarán las respuestas en curso (los chats guardados no se pierden).':
+    'T3 has {n} Claude session open: replies in progress will be cut off (saved chats are not lost).',
+  'T3 tiene {n} sesiones de Claude abiertas: se cortarán las respuestas en curso (los chats guardados no se pierden).':
+    'T3 has {n} Claude sessions open: replies in progress will be cut off (saved chats are not lost).',
+  'Ninguna sesión de Claude abierta en T3: buen momento para actualizar.': 'No Claude session open in T3: a good moment to update.',
+  'También se cierra {n} terminal de T3.': "{n} of T3's terminals closes too.",
+  'También se cierran {n} terminales de T3.': "{n} of T3's terminals close too.",
+  'Antes de actualizar se guarda una copia de la base de datos de T3 (en ~/.t3/backups, quedan las 3 últimas). T3 se reinicia: tarda uno o dos minutos.':
+    "Before updating, a copy of T3's database is saved (in ~/.t3/backups; the last 3 are kept). T3 restarts: it takes a minute or two.",
+  'Actualizar a {version}': 'Update to {version}',
+  'volver a una versión anterior': 'going back to an earlier version',
+  'Iniciando…': 'Starting…',
+  'Comprobar las versiones': 'Check the versions',
+  'Copiar la base de datos de T3': "Copy T3's database",
+  'Descargar e instalar (t3 update)': 'Download and install (t3 update)',
+  'Reiniciar T3': 'Restart T3',
+  'Esperar a que T3 responda': 'Wait for T3 to answer',
+  'Renovar el acceso de la app a T3': "Renew the app's access to T3",
+  Listo: 'Done',
+  Falló: 'Failed',
+  'El primer arranque de una versión mayor puede tardar más: copia los chats a su base de datos nueva.':
+    'The first start of a major version can take longer: it copies the chats into its new database.',
+  'El acceso de la app no se renovó:': "The app's access was not renewed:",
+  'Copia de seguridad:': 'Backup:',
+  'Comprobaciones de la app con T3': 'Checks of the app with T3',
+  'Comprobando…': 'Checking…',
+  'T3 responde': 'T3 answers',
+  'Acceso de la app a T3': "The app's access to T3",
+  'Enlace de inicio de sesión': 'Sign-in link',
+  'Crear chats y enviar mensajes': 'Make chats and send messages',
+  'Leer los chats (propuestas, dueño del chat)': "Read the chats (proposals, the chat's owner)",
+  'Puente de la página de T3': "The bridge in T3's page",
+  'Comprobar la app con T3': 'Check the app with T3',
+  'Volver a una versión anterior': 'Go back to an earlier version',
+  'T3 guarda las versiones que tuvo. Volver a una es lo mismo que actualizar a ella (con su copia de seguridad antes).':
+    'T3 keeps the versions it had. Going back to one is the same as updating to it (with its backup first).',
+  'Volver a {version}': 'Go back to {version}',
+  '¿Volver a T3 {to}? T3 se reinicia en la versión {to}. Lo que se hizo en {from} (chats nuevos, ajustes) no se ve en {to}; sigue guardado para cuando se actualice otra vez.':
+    'Go back to T3 {to}? T3 restarts on version {to}. What was done in {from} (new chats, settings) does not show in {to}; it stays saved for when it is updated again.',
   'Arrastra para cambiar el tamaño': 'Drag to resize',
   // ProposalsView, ProposalsLive
   'Cambios propuestos': 'Proposed changes',

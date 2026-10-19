@@ -18,7 +18,11 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
 LAB="${ITHOMIINI_LAB_DIR:-$HOME/.cache/ithomiini-lab}"
+# Not another T3's settings (a shell opened by this PC's own T3 carries them): the lab's T3 and `t3 project add` use the lab's.
+unset $(compgen -e | grep -E '^(T3CODE_|T3_SERVICE_|T3_BOOT_)' || true)
 T3HOME="${LAB_T3_HOME:-$HOME/.t3-ithomiini-lab}"
+# The lab T3's launcher (tools/lab/t3.sh), as ~/.local/bin/t3 on the server: `t3 update` keeps it on the new version.
+[ -z "${T3_BIN:-}" ] && [ -e "$LAB/bin/t3" ] && T3_BIN="$LAB/bin/t3"
 PORT="${LAB_APP_PORT:-8795}"
 T3PORT="${LAB_T3_PORT:-3775}"
 T3PROXY="${LAB_T3_PROXY_PORT:-3776}"
@@ -145,6 +149,8 @@ env_app=(
   ITHOMIINI_T3_ADMIN_TOKEN_FILE="$LAB/t3-admin-token"
   ITHOMIINI_T3_HOME="$T3HOME"
   ITHOMIINI_T3_PROVISION=direct
+  # «Actualizar T3» updates the lab's T3 as the server's unit does, and starts it again (it is no service here).
+  ITHOMIINI_T3_UPDATE_COMMAND="$HERE/tools/lab/t3.sh --update"
   "${env_provision[@]}"
   # Emails (invitations, codes, password resets) are saved in $LAB/mail instead of sent.
   ITHOMIINI_GOG_BIN="$HERE/tools/lab/fake-gog.sh"

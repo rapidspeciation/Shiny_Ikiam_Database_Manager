@@ -60,6 +60,7 @@ watch(
       :environment-id="t3Host.environmentId"
       :project-key="t3Host.projectKey"
       :start="t3Host.start"
+      :version="t3Host.version"
       :open="t3Host.open"
       class="min-h-0 flex-1"
       @seen="value => (t3Host.seen = value)"

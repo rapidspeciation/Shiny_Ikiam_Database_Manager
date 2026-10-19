@@ -1,4 +1,4 @@
-import { t3Admin, t3Pairing } from './t3admin.mjs';
+import { t3Admin, t3Checks, t3Pairing } from './t3admin.mjs';
 import { createT3Bridge } from './t3bridge.mjs';
 import { chatStarter, createT3Projects, projectKey, provisioner } from './t3projects.mjs';
 import { REVIEW_PROMPT } from './rename-photos.mjs';
@@ -317,6 +317,9 @@ export function configFromEnv(env = process.env) {
           // How a person's own T3 project is made the first time they open the Asistente tab
           // (server/t3projects.mjs): 'systemd' on the live server, 'direct' in the lab, 'off'.
           provision: env.ITHOMIINI_T3_PROVISION || 'systemd',
+          // How «Actualizar T3» runs scripts/t3-update.mjs: the unit ithomiini-t3-update@<version> on the
+          // server; in the lab a command, given the version (tools/lab/t3.sh --update).
+          updateCommand: env.ITHOMIINI_T3_UPDATE_COMMAND || null,
         }
       : null,
     // The people's T3 workspaces (scripts/t3-provision.mjs), where match_notebook reads a reader's linesFile;
@@ -1358,6 +1361,8 @@ export async function createApp(config = {}, options = {}) {
           environmentId,
           projectKey: projectKey(environmentId, own?.project?.root),
           chat: own?.chat ?? null,
+          // The T3 version running: a browser signed in to another one signs in again (its permissions follow T3's).
+          version: config.t3 ? await t3Version(config.t3) : null,
         });
       }
       // The «Fotos» tab's review: a chat of the person's own T3 project that starts with the request to
@@ -1419,12 +1424,15 @@ export async function createApp(config = {}, options = {}) {
         if (!found) throw fail('NOT_FOUND', 'No such change', 404);
         return json(res, 200, found);
       }
-      // Admins update T3 Code from the Asistente tab (server/t3admin.mjs).
-      if (path === '/api/admin/t3' && (method === 'GET' || method === 'POST')) {
+      // Admins update T3 Code from the Asistente tab (server/t3admin.mjs): what an update would do and how
+      // the last one went (GET), the update to a version (POST { version }), and the checks of what the app needs.
+      if ((path === '/api/admin/t3' && (method === 'GET' || method === 'POST')) || (path === '/api/admin/t3/checks' && method === 'GET')) {
         requireAdmin(user);
         if (!config.t3) throw fail('T3_DISABLED', 'T3 Code is not configured', 404);
-        const admin = t3Admin({ home: config.t3.home });
-        return json(res, 200, method === 'GET' ? await admin.status() : await admin.update());
+        const admin = t3Admin({ home: config.t3.home, local: config.t3.local, command: config.t3.updateCommand });
+        if (path === '/api/admin/t3/checks')
+          return json(res, 200, { checks: await t3Checks({ t3: config.t3, admin, chats: assistant?.t3 ?? null, user }) });
+        return json(res, 200, method === 'GET' ? await admin.status() : await admin.update(body ?? {}));
       }
       if (method === 'POST' && path === '/api/t3/pair') {
         requireEditor(user);
@@ -1603,6 +1611,17 @@ export async function createApp(config = {}, options = {}) {
       store.close();
     },
   };
+}
+
+/** The version T3 runs (its own description), asked at most every 30 s; null when it does not answer. */
+const t3Versions = new Map();
+async function t3Version(t3) {
+  const known = t3Versions.get(t3.local);
+  if (known && Date.now() - known.at < 30_000) return known.version;
+  const running = await t3Admin({ home: t3.home, local: t3.local }).describe();
+  const version = running?.serverVersion ?? null;
+  t3Versions.set(t3.local, { at: Date.now(), version });
+  return version;
 }
 
 /** The id of T3's environment (its chats' addresses start with it), read once it exists. */

@@ -29,6 +29,8 @@ const props = defineProps<{
   start?: string | null
   /** A chat to show (a new object each time a link asks for it); `made`: just made by the app. */
   open?: { thread: string; made?: boolean } | null
+  /** The T3 version running: signed in on this device to another one (before an update), the frame signs in again. */
+  version?: string | null
 }>()
 const emit = defineEmits<{ seen: [value: T3Seen]; link: [value: { proposal: string; href: string }] }>()
 const session = useSession()
@@ -42,6 +44,8 @@ let view: T3View | null = null
 let silentPage = false
 /** A chat to move to once the frame can (signing in first, or loading). */
 let pending: string | null = null
+/** The last chat the frame showed: signing in again (after a T3 update) comes back to it. */
+let lastThread: string | null = null
 let fallback: ReturnType<typeof setTimeout> | undefined
 let settle: ReturnType<typeof setTimeout> | undefined
 /**
@@ -102,6 +106,7 @@ function hear(event: MessageEvent) {
   if (!now) return
   clearTimeout(silent)
   view = now
+  if (now.threadId) lastThread = now.threadId
   forgetSignIn(now.path)
   // Still on T3's sign-in page: moved once it has gone to T3 itself.
   if (pending && now.path !== '/pair') {
@@ -142,10 +147,15 @@ const DAYS_29 = 29 * 24 * 60 * 60 * 1000
 
 async function connect(force = false) {
   problem.value = ''
-  // The first time only: a sign-in again (after a T3 update) stays where the person was.
-  if (!src.value && !pending && props.start && chatPath(props.environmentId, props.start)) pending = props.start
-  const paired = Number(localStorage.getItem(key) || 0)
-  if (!force && Date.now() - paired < DAYS_29) {
+  // The first time: the person's latest chat. A sign-in again (after a T3 update) stays where the person was.
+  const back = src.value ? lastThread : props.start
+  if (!pending && back && chatPath(props.environmentId, back)) pending = back
+  // "<when>|<T3 version>": a sign-in made with another version (an update since) is made again, so the
+  // session gets the permissions the T3 running gives (0.1.0 has more and names them anew).
+  const [at, version] = (localStorage.getItem(key) || '0').split('|')
+  const paired = Number(at) || 0
+  const sameT3 = !props.version || version === props.version
+  if (!force && sameT3 && Date.now() - paired < DAYS_29) {
     // A chat asked for before the frame first loaded: straight to it.
     src.value = pending ? addressOf(pending) : withProject(props.url)
     pending = null
@@ -153,7 +163,7 @@ async function connect(force = false) {
   }
   try {
     const { url } = await api<{ url: string }>('t3/pair', { method: 'POST', body: {} })
-    localStorage.setItem(key, String(Date.now()))
+    localStorage.setItem(key, `${Date.now()}|${props.version ?? ''}`)
     src.value = withProject(url)
   } catch (e) {
     problem.value = errorText(e)

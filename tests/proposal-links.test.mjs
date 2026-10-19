@@ -216,6 +216,8 @@ test('the app: T3 status names its environment, a page address without its # is 
       // T3 has no state here (no projects): no own project to open on.
       projectKey: null,
       chat: null,
+      // Nor does it answer (port 9): its version is not known.
+      version: null,
     });
     // A page's address typed without its #: sent to the app's own (its files load relative to it).
     const site = `http://127.0.0.1:${address.port}`;

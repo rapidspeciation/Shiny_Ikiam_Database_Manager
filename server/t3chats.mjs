@@ -1,12 +1,14 @@
 // Which T3 Code chat a proposal comes from, and which chat the person has open,
 // read from the stock T3 install's own files (nothing patched, never written):
-// - its database, opened read-only (state.sqlite; from 0.0.46 statev2.sqlite, which
-//   its update copies from the old one): its threads, their titles and projects, and
-//   every tool call a chat made, with Claude's tool-use id and the tool's result.
-//   Up to 0.0.45 in projection_threads and projection_thread_activities (toolCallId);
-//   from 0.0.46 (its new orchestrator) in the orchestration_v2_projection_* tables (a
+// - its database, opened read-only (state.sqlite; from 0.1.0, Orchestrator V2, statev2.sqlite,
+//   which its first start copies from the old one, leaving that as it was): its threads, their
+//   titles and projects, and every tool call a chat made, with Claude's tool-use id and the
+//   tool's result. Up to 0.0.45 in projection_threads and projection_thread_activities
+//   (toolCallId); from 0.1.0 (0.0.46 nightlies) in the orchestration_v2_projection_* tables (a
 //   call is a turn item, its tool-use id nativeItemRef.nativeId; a chat answering has
-//   a run under way); projects stay in projection_projects;
+//   a run under way); projects stay in projection_projects. Which file is T3's own is
+//   told by the version T3 last started as (userdata/server-runtime.json): a T3 taken
+//   back to 0.0.45 after 0.1.0 uses state.sqlite again, though statev2.sqlite stays;
 // - its trace log (userdata/logs/server.trace.ndjson): T3's web page sends its
 //   traces every ~3 s while it is open, and T3 logs each request with its
 //   Referer, the page's address (/<environment>/<threadId>): the chat on screen.
@@ -14,7 +16,7 @@
 // makes it in <workspaces>/<username>). Without T3 (or its files) every
 // answer is empty and the app shows all proposals together.
 import { DatabaseSync } from 'node:sqlite';
-import { existsSync, openSync, readSync, closeSync, statSync } from 'node:fs';
+import { existsSync, openSync, readFileSync, readSync, closeSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
@@ -122,6 +124,23 @@ function tail(file, bytes) {
   }
 }
 
+/**
+ * Whether the T3 that last started in this home is older than V2: its server-runtime.json says
+ * no version (0.0.45 and before did not write one) or one before 0.0.46. False when not known.
+ */
+export function olderRuntime(folder) {
+  let runtime;
+  try {
+    runtime = JSON.parse(readFileSync(join(folder, 'server-runtime.json'), 'utf8'));
+  } catch {
+    return false;
+  }
+  const v = /^(\d+)\.(\d+)\.(\d+)/.exec(String(runtime?.serverVersion ?? ''));
+  if (!v) return true;
+  const [, a, b, c] = v.map(Number);
+  return a === 0 && b === 0 && c < 46;
+}
+
 export function createT3Chats({ home, now = Date.now } = {}) {
   const folder = home && join(home, 'userdata');
   const traceFile = home && join(folder, 'logs', 'server.trace.ndjson');
@@ -130,8 +149,8 @@ export function createT3Chats({ home, now = Date.now } = {}) {
   let failedAt = 0;
   let checkedAt = 0;
   let tables = { at: -Infinity, v2: false };
-  /** T3's database: statev2.sqlite from 0.0.46 (its update copies state.sqlite there once and leaves the old file as it was). */
-  const current = () => join(folder, existsSync(join(folder, 'statev2.sqlite')) ? 'statev2.sqlite' : 'state.sqlite');
+  /** T3's database: statev2.sqlite for a T3 of V2, state.sqlite for an older one (see the top). */
+  const current = () => join(folder, existsSync(join(folder, 'statev2.sqlite')) && !olderRuntime(folder) ? 'statev2.sqlite' : 'state.sqlite');
   function shut() {
     try {
       db?.close();
@@ -410,6 +429,16 @@ export function createT3Chats({ home, now = Date.now } = {}) {
   return {
     get available() {
       return !!state();
+    },
+    /** Opens T3's database again at the next read (T3 was just updated: it may use the other file). */
+    reopen() {
+      shut();
+      failedAt = 0;
+      projects = { at: 0, byUser: new Map() };
+    },
+    /** The database file read (null before the first read). */
+    get file() {
+      return file;
     },
     projectsOf,
     projectOf,

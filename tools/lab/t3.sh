@@ -5,13 +5,25 @@
 #   tools/lab/t3.sh          run in the foreground
 #   tools/lab/t3.sh --bg     run detached (log: $LAB/t3.log, pid: $LAB/t3.pid)
 #   tools/lab/t3.sh --stop   stop the detached one
+#   tools/lab/t3.sh --update [<version>]  update it as the server's «Actualizar T3» does (scripts/t3-update.mjs:
+#                            a copy of its database, `t3 update`, then this T3 started again on the new version)
+# The T3 it runs is the lab home's own, as on the server: $LAB/bin/t3, a link to runtime/versions/<version>/t3
+# (`t3 update` puts new versions there and moves the link). Set it up once from a release folder:
+#   tools/lab/t3.sh --install <folder with the release's t3>   (e.g. ~/.cache/ithomiini-lab/t3-0.0.45-linux-x64)
 # Also writes $LAB/t3-admin-token (600): the bearer token the lab app uses to mint
 # T3 sign-in links (Asistente tab) and the benchmark uses to sign in.
 set -euo pipefail
 LAB="${ITHOMIINI_LAB_DIR:-$HOME/.cache/ithomiini-lab}"
+# Started from a chat of another T3 (this PC's own), the shell carries that T3's settings: its home, port,
+# service unit and launcher context. This T3 would take itself for that one's service child (and refuse
+# to start: "The service launcher started a different t3 version"), and `t3 update` would look at that service.
+unset $(compgen -e | grep -E '^(T3CODE_|T3_SERVICE_|T3_BOOT_)' || true)
 export T3CODE_HOME="${LAB_T3_HOME:-$HOME/.t3-ithomiini-lab}"
 PORT="${LAB_T3_PORT:-3775}"
-T3="${T3_BIN:-$HOME/.local/bin/t3}"
+# The lab's launcher, as ~/.local/bin/t3 on the server: a link into this home's runtime/versions, which
+# `t3 update` run through it points at the new version. T3_BIN runs another binary.
+T3="${T3_BIN:-$LAB/bin/t3}"
+[ -e "$T3" ] || T3="$HOME/.local/bin/t3"
 CLAUDE_BIN="${LAB_CLAUDE_BIN:-$(command -v claude)}"
 CODEX_BIN="${LAB_CODEX_BIN:-$(command -v codex)}"
 umask 077
@@ -24,6 +36,23 @@ stop() {
   rm -f "$LAB/t3.pid"
 }
 [ "${1:-}" = "--stop" ] && { stop; exit 0; }
+if [ "${1:-}" = "--install" ]; then
+  src="$(cd "${2:?--install <folder of a t3 release>}" && pwd)"
+  v="$("$src/t3" --version | sed -n 's/^t3 v//p')"
+  [ -n "$v" ] || { echo "No t3 in $src" >&2; exit 1; }
+  mkdir -p "$T3CODE_HOME/runtime/versions" "$LAB/bin"
+  [ -d "$T3CODE_HOME/runtime/versions/$v" ] || cp -a --reflink=auto "$src" "$T3CODE_HOME/runtime/versions/$v"
+  echo "$v" > "$T3CODE_HOME/runtime/versions/$v/.install-complete"
+  ln -sfn "$T3CODE_HOME/runtime/versions/$v/t3" "$LAB/bin/t3"
+  echo "Lab T3 $v: $LAB/bin/t3"
+  exit 0
+fi
+# The update, as the server's unit runs it; the lab has no T3 service, so this script starts it again.
+if [ "${1:-}" = "--update" ]; then
+  HERE="$(cd "$(dirname "$0")/../.." && pwd)"
+  exec node "$HERE/scripts/t3-update.mjs" ${2:+"$2"} --home "$T3CODE_HOME" --t3 "$T3" --local "http://127.0.0.1:$PORT" \
+    --restart "$HERE/tools/lab/t3.sh --bg" --token-file "$LAB/t3-admin-token" --token-label ithomiini-lab
+fi
 
 # Provider settings: only Claude and Codex; the Claude models are chosen by the
 # benchmark (Opus 5.5 / Sonnet 5.5; Sonnet 5.5 is a custom slug in this T3 version).
@@ -73,10 +102,10 @@ if [ "${1:-}" = "--bg" ]; then
   stop
   nohup "$T3" serve --base-dir "$T3CODE_HOME" --host 127.0.0.1 --port "$PORT" --no-browser > "$LAB/t3.log" 2>&1 &
   echo $! > "$LAB/t3.pid"
-  for _ in $(seq 60); do curl -fsS -o /dev/null "http://127.0.0.1:$PORT/" 2>/dev/null && break; sleep 1; done
+  for _ in $(seq 60); do curl -fsS -m 3 -o /dev/null "http://127.0.0.1:$PORT/" 2>/dev/null && break; sleep 1; done
   token
   echo "Lab T3 on http://127.0.0.1:$PORT (home $T3CODE_HOME, log $LAB/t3.log)"
 else
-  ( for _ in $(seq 60); do curl -fsS -o /dev/null "http://127.0.0.1:$PORT/" 2>/dev/null && break; sleep 1; done; token ) &
+  ( for _ in $(seq 60); do curl -fsS -m 3 -o /dev/null "http://127.0.0.1:$PORT/" 2>/dev/null && break; sleep 1; done; token ) &
   exec "$T3" serve --base-dir "$T3CODE_HOME" --host 127.0.0.1 --port "$PORT" --no-browser
 fi

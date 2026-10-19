@@ -18,6 +18,8 @@ export const t3Host = reactive({
   projectKey: null as string | null,
   /** The chat the frame opens on: the person's latest in their own project (server/t3projects.mjs). */
   start: null as string | null,
+  /** The T3 version running: a browser signed in to another one signs in again (T3Frame). */
+  version: null as string | null,
   /** The place the frame covers (null: the Asistente tab is not on screen). */
   slot: null as HTMLElement | null,
   /** A chat to show (a new object each time a link asks for it); `made`: just made by the app. */
@@ -39,8 +41,9 @@ let asking: Promise<void> | null = null
 /** T3's address and the person's project, asked once (a tab other than Asistente that shows T3 beside its own work). */
 export function ensureT3(): Promise<void> {
   if (t3Host.url) return Promise.resolve()
-  asking ??= api<{ url: string | null; environmentId?: string | null; projectKey?: string | null; chat?: string | null }>('t3/status')
+  asking ??= api<{ url: string | null; environmentId?: string | null; projectKey?: string | null; chat?: string | null; version?: string | null }>('t3/status')
     .then(status => {
+      t3Host.version = status.version ?? null
       t3Host.environmentId = status.environmentId ?? null
       t3Host.projectKey = status.projectKey ?? null
       t3Host.start = status.chat ?? null
