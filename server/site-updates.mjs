@@ -185,5 +185,10 @@ export function createSiteUpdates({ passwordFile = null, fetchImpl = fetch, wait
       return { error: `GitHub could not be reached: ${e?.message || e}` };
     }
   }
-  return { run, ready: () => !!password() };
+  return {
+    run,
+    ready: () => !!password(),
+    /** Starts a site's update without a person (the photo readings, server/readings.mjs): answers once GitHub lists it. */
+    start: key => (password() ? update(key, { wait: false }) : Promise.resolve({ error: 'no password for the update server (SITE_UPDATE_PASSWORD_FILE)' })),
+  };
 }

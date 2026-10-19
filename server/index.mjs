@@ -93,6 +93,9 @@ import { listOptions } from './verify.mjs';
 import { moduleMap, validateValues } from './schema.mjs';
 import { REAL_ID, checkWorkbookId, workbookFromEnv, workbookUrl } from './workbook.mjs';
 import { watchEventLoop } from './event-loop.mjs';
+import { createReadings } from './readings.mjs';
+import { galleryFiles } from './gallery-public.mjs';
+import { createSiteUpdates } from './site-updates.mjs';
 import {
   setup,
   login,
@@ -163,6 +166,28 @@ function sendTagged(res, value) {
     return res.end();
   }
   return send(res, 200, text, headers);
+}
+/**
+ * A file of the Wings Gallery's photo readings (server/gallery-public.mjs): 404 until made; gzip when accepted;
+ * a 304 for an unchanged one (ETag, Last-Modified); kept by caches five minutes.
+ */
+function sendGalleryFile(req, res, files, name) {
+  const file = /^[\w.-]+\.json$/.test(name) ? files.get(name) : null;
+  const headers = { 'content-type': 'application/json; charset=utf-8', 'x-content-type-options': 'nosniff', 'access-control-allow-origin': '*', vary: 'accept-encoding' };
+  if (!file) {
+    res.writeHead(404, { ...headers, 'cache-control': 'no-store' });
+    return res.end(req.method === 'HEAD' ? undefined : JSON.stringify({ error: { code: 'NOT_FOUND', message: 'Not built yet' } }));
+  }
+  const tags = { etag: file.etag, 'last-modified': file.modified, 'cache-control': 'public, max-age=300' };
+  const match = req.headers['if-none-match'];
+  if (match ? match.split(/\s*,\s*/).includes(file.etag) : req.headers['if-modified-since'] && Date.parse(req.headers['if-modified-since']) >= Date.parse(file.modified)) {
+    res.writeHead(304, { ...tags, vary: 'accept-encoding' });
+    return res.end();
+  }
+  const zipped = file.gz && accepts(req, 'gzip');
+  const body = zipped ? file.gz : file.body;
+  res.writeHead(200, { ...headers, ...tags, ...(zipped ? { 'content-encoding': 'gzip' } : {}), 'content-length': body.length });
+  return res.end(req.method === 'HEAD' ? undefined : body);
 }
 function decodePart(part) {
   try {
@@ -262,6 +287,14 @@ export function configFromEnv(env = process.env) {
     // Field and specimen photos of species from Ecuador's butterfly sites (reference_photos, server/reference-photos.mjs;
     // made and copied there by scripts/reference-photos.mjs): beside the database by default.
     referencePhotosDir: env.REFERENCE_PHOTOS_DIR ? resolve(env.REFERENCE_PHOTOS_DIR) : env.DATABASE_PATH ? join(dirname(resolve(env.DATABASE_PATH)), 'reference-photos') : undefined,
+    // The background photo readings (server/readings.mjs): on where the photo reader and the identifier are
+    // installed, except in LOCAL_MODE (the lab: READINGS=1 turns them on); READINGS=0 turns them off. READINGS_THREADS (2).
+    readings: env.READINGS === '0' ? false : env.READINGS === '1' ? true : 'auto',
+    readingsThreads: env.READINGS_THREADS ? Number(env.READINGS_THREADS) : undefined,
+    // Another image encoder for the sex model's 12 crops (a path under IDENTIFIER_DIR, e.g. onnx/bioclip25h_visual.onnx); the int8 one by default.
+    readingsSexEncoder: env.READINGS_SEX_ENCODER || undefined,
+    // The Wings Gallery's files made from the photo readings (server/gallery-public.mjs): beside the database by default.
+    publicGalleryDir: env.PUBLIC_GALLERY_DIR ? resolve(env.PUBLIC_GALLERY_DIR) : env.DATABASE_PATH ? join(dirname(resolve(env.DATABASE_PATH)), 'gallery-public') : undefined,
     identifierOptions: {
       ...(env.IDENTIFIER_THREADS ? { threads: Number(env.IDENTIFIER_THREADS) } : {}),
       ...(env.IDENTIFIER_IDLE_MINUTES ? { idleMinutes: Number(env.IDENTIFIER_IDLE_MINUTES) } : {}),
@@ -496,6 +529,24 @@ export async function createApp(config = {}, options = {}) {
     startChat: chatStarter(config.t3 ?? {}),
   });
   const loginLimiter = new LoginLimiter();
+  // The photo readings of new Photo_links photos, in a child process at the lowest priority (server/readings.mjs),
+  // the Wings Gallery's files made from them, and the gallery's update when a batch has new ones.
+  const readings =
+    options.readings ??
+    createReadings({
+      store,
+      readerDir: config.photoReaderDir ?? null,
+      identifierDir: config.identifierDir ?? null,
+      publicDir: config.publicGalleryDir ?? null,
+      siteUpdates: options.siteUpdates ?? createSiteUpdates({ passwordFile: config.siteUpdatePasswordFile ?? null, ...(config.siteUpdates ?? {}) }),
+      enabled: config.readings === true || (config.readings !== false && !config.localMode),
+      ...(config.readingsThreads ? { threads: config.readingsThreads } : {}),
+      ...(config.readingsSexEncoder ? { sexEncoder: config.readingsSexEncoder } : {}),
+    });
+  const publicGallery = galleryFiles(config.publicGalleryDir ?? null);
+  // A first look a minute after the start (photos listed while the app was stopped), then after each sync.
+  const readingsStart = setTimeout(() => readings.afterSync?.(), 60_000);
+  readingsStart.unref?.();
   // How late the server answers (/health): one long piece of work holds up every request.
   const eventLoop = watchEventLoop();
   const tableCache = new Map();
@@ -547,7 +598,12 @@ export async function createApp(config = {}, options = {}) {
           eventLoop: eventLoop.stats(),
           ...(assistant?.status ? { assistant: assistant.status() } : {}),
           checks: checks.status(),
+          // The photo readings: idle, reading (its batch: photos, done) or off (why); the last batch; the gallery's update.
+          readings: readings.status(),
         });
+      // The Wings Gallery's files of the photo readings, for its update_data.yml: public (the collection's
+      // predictions, on the gallery already), gzip when accepted, an ETag and Last-Modified.
+      if ((method === 'GET' || method === 'HEAD') && path.startsWith('/api/public/gallery/')) return sendGalleryFile(req, res, publicGallery, path.slice('/api/public/gallery/'.length));
       // Shares are normally caught by the service worker; if it was not active yet,
       // open the import screen and let the person share again.
       if (method === 'POST' && path === '/share-target') {
@@ -1149,6 +1205,12 @@ export async function createApp(config = {}, options = {}) {
       if (method === 'GET' && path === '/api/suggestions') return json(res, 200, suggestionsFor(store, query.module));
       if (method === 'GET' && path === '/api/sync')
         return json(res, 200, { ...store.syncStatus, hook: sheetHook.status });
+      // The photo readings (server/readings.mjs): how they go and how many photos waited at the last batch; started on demand.
+      if (method === 'GET' && path === '/api/readings') return json(res, 200, readings.status());
+      if (method === 'POST' && path === '/api/readings/run') {
+        requireEditor(user);
+        return json(res, 200, readings.run('asked'));
+      }
       if (method === 'POST' && path === '/api/sync') {
         requireEditor(user);
         return json(res, 200, await store.sync({ force: true }));
@@ -1594,6 +1656,8 @@ export async function createApp(config = {}, options = {}) {
       t3Bridge?.close();
       assistant?.close?.();
       checks.close();
+      clearTimeout(readingsStart);
+      readings.close?.();
       // A page's wait for news (wait=1, up to 25 s) would hold the stop until the 5 s limit: what is
       // still open after a second is cut (the pages ask again, as after any restart).
       const closed = new Promise(resolve => server.close(resolve));
