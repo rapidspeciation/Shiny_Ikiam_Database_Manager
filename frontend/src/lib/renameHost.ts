@@ -176,6 +176,14 @@ export interface SitesAnswer {
   sites: SiteStatus[]
   ready: boolean
 }
+/** The background photo readings (GET readings, server/readings.mjs). */
+export interface ReadingsStatus {
+  state: 'idle' | 'reading' | 'building' | 'off'
+  why?: string
+  batch?: { photos: number; done: number; readings: number; errors: number; waiting: number }
+  last?: { endedAt: string; photos: number; readings: number; errors: number; state: string }
+  galleryUpdate?: { due?: string; last?: { at: string; state: string; why?: string } }
+}
 /** How a run went, in a word. */
 export function siteRunLabel(state: string): string {
   if (state === 'running') return t('en curso')

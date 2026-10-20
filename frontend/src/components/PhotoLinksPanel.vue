@@ -4,7 +4,7 @@ import { Check, ExternalLink, FolderSearch, Globe, Loader2, RefreshCw, ScanText 
 import { api } from '../lib/api'
 import { errorText, notify } from '../lib/notice'
 import { intlLocale, t } from '../lib/i18n'
-import { siteRunLabel, type SiteStatus, type SitesAnswer } from '../lib/renameHost'
+import { siteRunLabel, type ReadingsStatus, type SiteStatus, type SitesAnswer } from '../lib/renameHost'
 
 const ProposalsLive = defineAsyncComponent(() => import('./assistant/ProposalsLive.vue'))
 
@@ -157,17 +157,20 @@ const gbif = ref(false)
 let timer: ReturnType<typeof setTimeout> | null = null
 const running = (s: SiteStatus) =>
   [s.update?.state, s.lastUpdate && typeof s.lastUpdate === 'object' ? s.lastUpdate.state : null, s.publishing?.state].includes('running')
+/** The photo readings (species, sex, wings) of the photos Photo_links lists, read on the server after each sync. */
+const readings = ref<ReadingsStatus | null>(null)
 async function loadSites(fresh = false) {
   if (timer) clearTimeout(timer)
   try {
-    const out = await api<SitesAnswer>(`sites${fresh ? '?fresh=1' : ''}`)
+    const [out, read] = await Promise.all([api<SitesAnswer>(`sites${fresh ? '?fresh=1' : ''}`), api<ReadingsStatus>('readings').catch(() => null)])
     sites.value = out.sites
     sitesReady.value = out.ready
+    readings.value = read
   } catch {
     // The section shows what it had.
   }
   // While a run goes on, asked again now and then (GitHub answers 60 times an hour to the server).
-  if (sites.value.some(running)) timer = setTimeout(() => void loadSites(true), 45_000)
+  if (sites.value.some(running) || readings.value?.state === 'reading') timer = setTimeout(() => void loadSites(true), 45_000)
 }
 async function update(key: 'gallery' | 'maps') {
   starting.value = key
@@ -303,6 +306,13 @@ onBeforeUnmount(() => {
             {{ $t('Publicación:') }}
             <a v-if="s.publishing.link" :href="s.publishing.link" target="_blank" rel="noopener" class="hover:underline">{{ siteRunLabel(s.publishing.state) }} · {{ when(s.publishing.started) }}</a>
             <span v-else>{{ siteRunLabel(s.publishing.state) }}</span>
+          </p>
+          <p v-if="KEYS[i] === 'gallery' && readings && readings.state !== 'off'" class="text-stone-600" data-readings>
+            {{ $t('Lecturas de las fotos (especie, sexo, alas):') }}
+            <template v-if="readings.batch">{{ $t('leyendo, {done} de {n} fotos', { done: readings.batch.done, n: readings.batch.photos }) }}</template>
+            <template v-else-if="readings.last">{{ $t('{n} fotos leídas · {at}', { n: readings.last.readings, at: when(readings.last.endedAt) }) }}</template>
+            <template v-else>{{ $t('al día') }}</template>
+            <template v-if="readings.galleryUpdate?.due"> · {{ $t('el sitio se actualiza solo a las {at}', { at: when(readings.galleryUpdate.due) }) }}</template>
           </p>
           <label v-if="KEYS[i] === 'maps'" class="mt-1 flex items-center gap-1.5 text-stone-600">
             <input v-model="gbif" type="checkbox" class="rounded border-stone-300 text-emerald-700" />

@@ -70,6 +70,9 @@ const LATER_COLUMNS = {
     ['wings_json', 'TEXT'],
     ['size_json', 'TEXT'],
     ['error', 'TEXT'],
+    // one per wing of wings_json, same order: [kind fw|hw|x, half l|r|u, [x0,y0,x1,y1,…] 0..1000 of the photo
+    // as shown] or null (no mask); server/wing-outlines.mjs
+    ['outlines_json', 'TEXT'],
   ],
 };
 
@@ -307,6 +310,7 @@ function wingIndex(db) {
       // Read when a view of the photo needs them (server/photo-views.mjs).
       ...(r.wings_json ? { wingsJson: r.wings_json } : {}),
       ...(r.size_json ? { size: parse(r.size_json) } : {}),
+      ...(r.outlines_json ? { outlinesJson: r.outlines_json } : {}),
       ...(r.error ? { error: r.error } : {}),
     };
     if (row.cam) (byCam.get(row.cam) ?? byCam.set(row.cam, []).get(row.cam)).push(row);

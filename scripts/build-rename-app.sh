@@ -4,7 +4,9 @@
 # (server/index.mjs serveRenameApp).
 #   scripts/build-rename-app.sh [out dir] [reader dir]   (default: rename-app/ and photo-reader/ beside server/)
 # The second: its CAMID reader for the server (web-app/src/node/photoReader.ts, server/drive-photos.mjs),
-# bundled with its models and its two native packages (onnxruntime-node, sharp; this platform's files only).
+# bundled with its models and its two native packages (onnxruntime-node, sharp; this platform's files only),
+# and its wing chain as a module (wing-chain.mjs: analysePhoto of web-app/src/lib/wings/model.ts, rotate and
+# resize of lib/ocr/image.ts) for the background photo readings (server/readings-worker.mjs).
 # Its source: RENAME_APP_DIR (a checkout: the lab uses the one beside this repository), or else the
 # commit named in rename-app.commit, fetched into a cache (RENAME_APP_CACHE). APP_BASE_PATH: the
 # path this app is served under (/ by default). Built again only when the source or the path changed.
@@ -41,7 +43,7 @@ if [ -f "$out/index.html" ] && [ "$(cat "$out/.built-from" 2>/dev/null || true)"
   web_done=1
 fi
 reader_done=""
-if [ -f "$reader/photo-reader.mjs" ] && [ "$(cat "$reader/.built-from" 2>/dev/null || true)" = "$stamp" ]; then
+if [ -f "$reader/photo-reader.mjs" ] && [ -f "$reader/wing-chain.mjs" ] && [ "$(cat "$reader/.built-from" 2>/dev/null || true)" = "$stamp" ]; then
   echo "Photo reader: up to date ($reader)"
   reader_done=1
 fi
@@ -58,6 +60,9 @@ if [ -z "$reader_done" ] && [ -f src/node/photoReader.ts ]; then
   # The reader: one file, the models beside it, and the two packages it loads, at the versions the app has.
   npx esbuild src/node/photoReader.ts --bundle --platform=node --format=esm --target=node20 \
     --external:onnxruntime-node --external:sharp --alias:@=./src --log-level=warning --outfile="$reader/photo-reader.mjs.new"
+  echo "export { analysePhoto } from '@/lib/wings/model'; export { rotate, resize } from '@/lib/ocr/image';" |
+    npx esbuild --bundle --platform=node --format=esm --target=node20 --alias:@=./src --log-level=warning \
+      --sourcefile=wing-chain.ts --loader=ts --outfile="$reader/wing-chain.mjs"
   mkdir -p "$reader/models"
   cp -a public/models/. "$reader/models/"
   versions="$(node -e "const l=require('./package-lock.json').packages;console.log(['onnxruntime-node','sharp'].map(p=>p+'@'+l['node_modules/'+p].version).join(' '))")"
