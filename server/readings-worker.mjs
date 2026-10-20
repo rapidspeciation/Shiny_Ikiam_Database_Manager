@@ -4,7 +4,7 @@
 //
 //   node server/readings-worker.mjs --reader <photo-reader dir> --identifier <identifier dir> [--threads 2]
 //        [--python <exe> --script <worker.py> | --python-args <json array>] [--source <dir of <fileId>.jpg>]
-//        [--db <database> --batch <photos> --now <ms>] [--sex-encoder <path under the identifier dir>]
+//        [--db <database> --batch <photos> --now <ms>]
 //
 // With --db (the app): it plans the batch itself (server/readings.mjs nextBatch, on its own read-only connection:
 // the scan of Photo_links stays out of the app's thread), says it ({"plan": batch | null}), reads its butterflies
@@ -17,7 +17,7 @@
 // identifier's Python worker (tools/identifier/worker.py, op "specimen"), started here with 2 threads at nice 19.
 //
 // stdin, one JSON line per butterfly: { id, cam, side, ecuador, species, photos: [{ fileId, name, dup, wings }],
-// sex: { d, v } | null }. stdout, one line each, in order: { id, cam, wings: { fileId: reading | { error } },
+// sex: { d, v, wings?: { fileId: reading read before } } | null }. stdout, one line each, in order: { id, cam, wings: { fileId: reading | { error } },
 // ident: the Python worker's answer | { error }, downloads: { fileId: error }, ms }. {"ready": true, models} first.
 
 import { spawn } from 'node:child_process';
@@ -117,10 +117,9 @@ let python = null;
 function startPython() {
   const exe = arg('python') ?? (identifierDir ? join(identifierDir, 'venv', 'bin', 'python') : null);
   const given = arg('python-args');
-  const sexEncoder = arg('sex-encoder');
   const argv = given
     ? JSON.parse(given)
-    : ['-I', '-B', arg('script') ?? SCRIPT, '--dir', identifierDir, '--threads', String(threads), '--nice', '19', '--idle', '300', ...(sexEncoder ? ['--sex-encoder', sexEncoder] : [])];
+    : ['-I', '-B', arg('script') ?? SCRIPT, '--dir', identifierDir, '--threads', String(threads), '--nice', '19', '--idle', '300'];
   if (!exe || (!given && (!identifierDir || !existsSync(exe)))) throw new Error('the identifier is not installed (tools/identifier/setup.sh)');
   const scratch = join(work, 'py');
   const proc = spawn(exe, argv, { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, YOLO_CONFIG_DIR: scratch, MPLCONFIGDIR: scratch, YOLO_OFFLINE: '1' } });
@@ -221,7 +220,12 @@ async function butterfly(job) {
   const photos = job.photos.filter(p => paths.has(p.fileId)).map(p => ({ key: p.fileId, path: paths.get(p.fileId), dup: p.dup ?? p.fileId }));
   let ident;
   try {
-    const sex = job.sex && paths.has(job.sex.d) && paths.has(job.sex.v) ? { cam: job.cam, d: job.sex.d, v: job.sex.v, species: job.species ?? null } : null;
+    // The sex model's wing boxes: the nano chain's readings of its d and v photos, read now or before (the plan's).
+    const wingOf = key => (wings[key] && !wings[key].error ? wings[key] : (job.sex?.wings?.[key] ?? null));
+    const sex =
+      job.sex && paths.has(job.sex.d) && paths.has(job.sex.v)
+        ? { cam: job.cam, d: job.sex.d, v: job.sex.v, species: job.species ?? null, wings: { d: wingOf(job.sex.d), v: wingOf(job.sex.v) } }
+        : null;
     ident = photos.length ? await specimen({ photos, side: job.side ?? null, ecuador: job.ecuador ?? null, sex }) : { error: 'no photo downloaded' };
     if (job.sex && !sex && !ident.error) ident.sex = { status: 'not_scored:photo_not_downloaded' };
   } catch (e) {

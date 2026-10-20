@@ -124,8 +124,13 @@ test('the photos to read: each Drive file listed under a butterfly, not read wit
     all.cams.map(c => [c.cam, c.photos.map(p => `${p.name}${p.wings ? '+wings' : ''}`), c.sex]),
     [
       ['CAM000201', ['CAM000201d+wings', 'CAM000201v+wings'], { d: id('CAM000201d.JPG'), v: id('CAM000201v.JPG') }],
-      // All its photos (the species is their mean), the wings of the one not read.
-      ['CAM000202', ['CAM000202d+wings', 'CAM000202v'], { d: id('CAM000202d.JPG'), v: id('CAM000202v.JPG') }],
+      // All its photos (the species is their mean), the wings of the one not read; the sex model's wing boxes of
+      // the one read before go with it (the other is read now).
+      [
+        'CAM000202',
+        ['CAM000202d+wings', 'CAM000202v'],
+        { d: id('CAM000202d.JPG'), v: id('CAM000202v.JPG'), wings: { [id('CAM000202v.JPG')]: { wings: [], outlines: null, turnK: 0, size: [1600, 1067] } } },
+      ],
       ['CAM000203', ['CAM000203d+wings'], { missing: 'no_v_photo' }],
     ],
   );
@@ -318,7 +323,7 @@ test("the gallery's files: the formats the gallery reads, nothing else", async t
     supported: true,
     species: 'Mechanitis polymnia',
     screen_status: 'species_supported',
-    model_arm: 'collection sex release_20261014 (VF_DH_PARTS+ANDRO_TILES role heads, 12 BioCLIP crops, cand_cv fold models, int8 encoder)',
+    model_arm: 'collection sex release_20261019 cnn_strips4 (4 of 4 androconial strips of the nano wing boxes, MobileNetV3, cand_cv fold models)',
     source: 'app_readings',
   });
   const boxes = data['wing_boxes_app.json'];
@@ -387,7 +392,9 @@ test('the readings worker: photos from a folder, the species and sex from the Py
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   writeFileSync(join(dir, `${id('a')}.jpg`), 'Mechanitis polymnia 0.9');
   writeFileSync(join(dir, `${id('b')}.jpg`), 'Mechanitis lysimnia 0.6');
-  const job = { id: '7', cam: 'CAM000201', side: 'East', ecuador: true, species: 'Mechanitis polymnia', photos: [{ fileId: id('a'), name: 'CAM000201d', wings: true }, { fileId: id('b'), name: 'CAM000201v', wings: false }, { fileId: id('gone'), name: 'CAM000201d2', wings: true }], sex: { d: id('a'), v: id('b') } };
+  // The v photo's wings read before (the plan's), the d photo's to read now (here they cannot: no reader).
+  const stored = { wings: [{ box: [0.1, 0.1, 0.4, 0.4], kind: 'forewing', half: 'left', score: 0.9 }], outlines: [null], turnK: 0, size: [1600, 1067] };
+  const job = { id: '7', cam: 'CAM000201', side: 'East', ecuador: true, species: 'Mechanitis polymnia', photos: [{ fileId: id('a'), name: 'CAM000201d', wings: true }, { fileId: id('b'), name: 'CAM000201v', wings: false }, { fileId: id('gone'), name: 'CAM000201d2', wings: true }], sex: { d: id('a'), v: id('b'), wings: { [id('b')]: stored } } };
   const out = spawnSync(process.execPath, [WORKER, '--source', dir, '--python', process.execPath, '--python-args', JSON.stringify([FAKE_PY])], { input: `${JSON.stringify(job)}\n`, encoding: 'utf8', timeout: 20_000 });
   const [ready, answer] = out.stdout.trim().split('\n').map(l => JSON.parse(l));
   assert.equal(ready.ready, true);
@@ -398,5 +405,6 @@ test('the readings worker: photos from a folder, the species and sex from the Py
   assert.match(answer.downloads[id('gone')], /ENOENT/);
   assert.deepEqual(answer.ident.photos[id('a')].species, [['Mechanitis polymnia', 0.9]]);
   assert.deepEqual(answer.ident.combined.used, [id('a'), id('b')]);
-  assert.deepEqual(answer.ident.sex, { pMale: 0.2, status: 'below_confidence', supported: false, fold: 1, side: 'East' });
+  // The sex model gets the nano chain's wings of its pair: those read now, else those read before, else null.
+  assert.deepEqual(answer.ident.sex, { pMale: 0.2, status: 'below_confidence', supported: false, fold: 1, side: 'East', wings: { d: null, v: stored } });
 });

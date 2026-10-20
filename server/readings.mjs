@@ -26,7 +26,10 @@ const WORKER = new URL('./readings-worker.mjs', import.meta.url).pathname;
 const BUILDER = new URL('./gallery-public.mjs', import.meta.url).pathname;
 export const SOURCE = 'app_readings';
 const ID_MODEL = 'bioclip-2.5-h int8 + head_hier 749fbffd + wing_seg_v5n d74f9c13 (tools/identifier)';
-const SEX_MODEL = 'collection sex release_20261014 (VF_DH_PARTS+ANDRO_TILES role heads, 12 BioCLIP crops, cand_cv fold models, int8 encoder)';
+// The sex model's name: the arm the worker says it ran (the 19 Oct 2026 CNN on the androconial strips; its name
+// before the colon) and how many of the 4 strips the butterfly had.
+export const sexModelName = sex =>
+  `collection sex ${String(sex?.model ?? 'release_20261019 cnn_strips4').split(':')[0]} (${sex?.crops ?? 4} of 4 androconial strips of the nano wing boxes, MobileNetV3, cand_cv fold models)`;
 /** New photos a batch reads (with the other photos of their butterflies). */
 const BATCH_PHOTOS = 40;
 /** A photo that could not be read is tried again after this long, three times at most. */
@@ -157,6 +160,8 @@ export function nextBatch(db, { size = BATCH_PHOTOS, now = Date.now() } = {}) {
     chosen.push({ cam, photos, pending: photos.filter(p => todo.has(p.fileId)).map(p => p.fileId) });
   }
   const facts = specimenFacts(db, chosen.map(c => c.cam));
+  const wingRowOf = db.prepare('SELECT * FROM photo_wing_sides WHERE file_id = ? AND wings_json IS NOT NULL ORDER BY imported_at DESC LIMIT 1');
+  const wingRow = { get: fileId => wingRowOf.get(fileId) };
   for (const c of chosen) {
     const f = facts.get(c.cam) ?? {};
     c.side = f.side ?? null;
@@ -170,6 +175,17 @@ export function nextBatch(db, { size = BATCH_PHOTOS, now = Date.now() } = {}) {
     const d = pick('d');
     const v = pick('v');
     c.sex = d && v ? { d: d.fileId, v: v.fileId } : { missing: !d ? 'no_d_photo' : 'no_v_photo' };
+    // The sex model's wing boxes come from the nano chain's readings of that pair (19 Oct 2026 CNN model): those
+    // read before go with the butterfly; the worker reads the others now.
+    if (d && v) {
+      const stored = {};
+      for (const p of [d, v]) {
+        if (todo.has(p.fileId) || !read.has(p.fileId)) continue;
+        const r = readingOfRow(wingRow.get(p.fileId));
+        if (r) stored[p.fileId] = { wings: r.wings, outlines: r.outlines, turnK: r.turnK, size: r.size };
+      }
+      if (Object.keys(stored).length) c.sex.wings = stored;
+    }
   }
   return { cams: chosen, photos: count, pending: pending.length };
 }
@@ -225,7 +241,7 @@ export function rowsOfAnswer(db, cam, answer, { wingModel = null, now = new Date
       andes: cam.side,
       model: `${ID_MODEL} (feature mean of ${used.length} photo${used.length === 1 ? '' : 's'})`,
       photos: used.map(f => ({ fileId: f, name: byId.get(f)?.name ?? null, view: byId.get(f) ? viewOf(byId.get(f)) : null })),
-      sexModel: SEX_MODEL,
+      sexModel: sexModelName(ident.sex),
     };
     const sex = ident.sex ?? (cam.sex?.missing ? { status: `not_scored:${cam.sex.missing}` } : null);
     if (sex && Number.isFinite(sex.pMale)) {
@@ -251,8 +267,7 @@ export function rowsOfAnswer(db, cam, answer, { wingModel = null, now = new Date
 
 /**
  * The background readings for one app. `readerDir`, `identifierDir`: the photo reader (with wing-chain.mjs) and the
- * identifier (with its sex/ folder; `sexEncoder`: another image encoder for the sex model's crops, a path under
- * it); `publicDir`: where the gallery's files go; `siteUpdates`: the sites' updates
+ * identifier (with its sex/ folder); `publicDir`: where the gallery's files go; `siteUpdates`: the sites' updates
  * (server/site-updates.mjs: `start('gallery')`). For tests: `workerArgs` (the child's command after node),
  * `build` (the files made in the app's thread), `debounceMs`, `maxWaitMs`, `retryMs`, `batchPhotos`, `now`.
  */
@@ -263,7 +278,6 @@ export function createReadings({
   publicDir = null,
   siteUpdates = null,
   threads = 2,
-  sexEncoder = null,
   workerArgs = null,
   spawnImpl = spawn,
   build = null,
@@ -335,7 +349,7 @@ export function createReadings({
    */
   async function readBatch() {
     const path = db.location?.() ?? null;
-    const argv = [...(workerArgs ?? [WORKER, '--reader', readerDir, '--identifier', identifierDir, '--threads', String(threads), ...(sexEncoder ? ['--sex-encoder', sexEncoder] : [])]), '--db', path, '--batch', String(batchPhotos), '--now', String(now())];
+    const argv = [...(workerArgs ?? [WORKER, '--reader', readerDir, '--identifier', identifierDir, '--threads', String(threads)]), '--db', path, '--batch', String(batchPhotos), '--now', String(now())];
     const child = spawnImpl(process.execPath, argv, { stdio: ['ignore', 'pipe', 'pipe'] });
     try {
       // The lowest priority: the app, the chats and their identifier go first.

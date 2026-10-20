@@ -18,15 +18,18 @@ without photos (the memory goes back to the server), or when stdin closes (the a
 The background photo readings (server/readings-worker.mjs) start their own one (--nice 19, 2 threads) and ask
 for a butterfly at a time:
   {"id": "1", "op": "specimen", "photos": [{"key": fileId, "path": ..., "dup": "d|812"}], "side": "East"|null,
-   "ecuador": true|false, "sex": {"cam": "CAM036744", "d": key, "v": key, "species": "Genus species"|null}|null}
+   "ecuador": true|false, "sex": {"cam": "CAM036744", "d": key, "v": key, "species": "Genus species"|null,
+   "wings": {"d": reading, "v": reading}}|null}
   -> {"id": "1", "photos": {key: {species, subspecies, genus, crop, wingBox, ms} | {error}},
       "combined": {species, subspecies, genus, used: [keys]} (the mean of the photos' features, identical copies
       once, as the 18 Oct 2026 readings), "sex": {pMale, status, fold, ...} | {status: "not_scored:<why>"} | null}
-Sex: the collection sex model of 14 Oct 2026 (VF_DH_PARTS + ANDRO_TILES, role heads; the cand_cv models of the
-specimen's fold, mean of 3 seeds) on 12 crops of the d and v photos (4 wing crops + 8 androconial tiles, boxes from
-the 4-wing detector yolo_wings_best.pt), with the same image encoder as the species, and its supported screen
-(t 0.85, a 0.80, 3 of each sex) against the gallery's out-of-fold evidence. Files under --dir/sex (setup.sh):
-  yolo_wings_best.pt, cand_cv/seed*_fold*.pt, train_sex.py (its Net), sex_predictions.json (the gallery's).
+Sex: the collection sex model of 19 Oct 2026 (release_20261019_sexcnn cnn_strips4; --dir/sex: model.json,
+cand_cv/seed*_fold*.onnx and sex_predictions.json, from setup.sh): a small network (MobileNetV3-Large) on the 4
+androconial strips of the d and v photos (each dorsal hindwing's costal half, each ventral forewing's inner-margin half,
+one 112 x 336 crop each), the wing boxes from the nano wing chain the readings already ran on those photos (the job's
+sex.wings: {"d": reading, "v": reading}); no detector, no image encoder. It reads whatever strips a butterfly has (crop
+dropout in training): one wing found is enough. The cand_cv networks of the specimen's fold, mean of 3 seeds, then the
+supported screen (t 0.85, a 0.80, 3 of each sex) against that model's out-of-fold evidence (its sex_predictions.json).
 
 Files under --dir (shared/identifier on the server, tools/identifier/setup.sh):
   app/v6_feature.py, app/scripts/wings_v6/...    the Space's crop code (18 Oct 2026: knows V5N)
@@ -38,13 +41,15 @@ Files under --dir (shared/identifier on the server, tools/identifier/setup.sh):
 import argparse
 import gc
 import hashlib
-import io
 import json
 import math
 import os
 import select
 import sys
 import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I leaves the worker's own folder out
+import sex_crops  # noqa: E402
 
 HEAD_SHA256 = "749fbffd5f73f12c0f8598b5b2e3f575c0510b93a61c3f3c0123ab2ee8990830"
 DETECTOR = "wing_seg_v5n"
@@ -61,7 +66,6 @@ def parse_args():
     p.add_argument("--idle", type=float, default=600)
     p.add_argument("--no-pin", action="store_true", help="no affinity or lower priority (measuring)")
     p.add_argument("--nice", type=int, default=5, help="how much lower the priority (the background readings: 19)")
-    p.add_argument("--sex-encoder", default=None, help="another image encoder for the sex model's crops (a path under --dir; default: --encoder)")
     return p.parse_args()
 
 
@@ -300,47 +304,60 @@ class Identifier:
         sex = None
         if job.get("sex"):
             paths = {p["key"]: p["path"] for p in job.get("photos", [])}
-            sex = sex_model.predict(job["sex"], paths, self)
+            sex = sex_model.predict(job["sex"], paths, np)
         return {"photos": photos, "combined": combined, "sex": sex, "ms": round((time.perf_counter() - t0) * 1000), "rssMb": rss_mb()}
 
 
 class SexModel:
-    """The collection sex model of 14 Oct 2026 with its crops and screen (photo_readings_20261018 readings.py)."""
+    """The collection sex model (CNN on the androconial strips) and its supported screen (readings.py's screen)."""
 
-    CANVAS, SIZE, GREY, PAD = 512, 224, (128, 128, 128), 0.15
     THRESHOLD, A, MIN_EACH = 0.85, 0.80, 3
 
-    def __init__(self, root, threads, encoder=None):
+    def __init__(self, root, threads):
         import torch
         from PIL import Image, ImageOps
-        from ultralytics import YOLO
 
         here = os.path.join(root, "sex")
-        sys.path.insert(0, here)
-        import train_sex as T  # noqa: E402  (release_20261014/collection/scripts/train_sex.py 8624e713)
+        self.torch, self.Image, self.ImageOps = torch, Image, ImageOps
+        self.threads, self.here = threads, here
+        meta = os.path.join(here, "model.json")
+        if not os.path.exists(meta):
+            raise ValueError(f"{here}: no model.json (not the 19 Oct 2026 CNN sex model; tools/identifier/setup.sh with SEX_SRC)")
+        self.load_cnn(json.load(open(meta)))
+        self.load_evidence(here)
 
-        self.T, self.torch, self.Image, self.ImageOps = T, torch, Image, ImageOps
-        self.encoder = None
-        if encoder:
+    def load_cnn(self, meta):
+        """One ONNX network per fold and seed (cand_cv/seed<seed>_fold<fold>.onnx) on the strips of the nano chain's
+        wing boxes."""
+        import glob
+
+        if meta.get("schema") != "collection-sex-cnn-onnx/1":
+            raise ValueError("model.json: not a collection sex CNN")
+        self.meta, self.arm = meta, meta.get("arm")
+        self.crops = list(meta["roles"])
+        for c in self.crops:
+            if c not in sex_crops.KNOWN:
+                raise ValueError(f"unknown sex crop {c}")
+        self.sessions, self.files = {}, {}
+        for path in sorted(glob.glob(os.path.join(self.here, "cand_cv", "seed*_fold*.onnx"))):
+            name = os.path.basename(path)
+            seed, fold = name[4:-5].split("_fold")
+            self.files.setdefault(int(fold), []).append((path, seed))
+        if sorted(self.files) != [0, 1, 2, 3, 4] or any(len(v) != 3 for v in self.files.values()):
+            raise ValueError("the sex model needs 3 cand_cv networks for each of folds 0-4")
+
+    def session(self, fold):
+        """The fold's 3 networks, opened the first time a butterfly of that fold comes."""
+        if fold not in self.sessions:
             import onnxruntime as ort
 
             so = ort.SessionOptions()
-            so.intra_op_num_threads = threads
+            so.intra_op_num_threads = self.threads
             so.inter_op_num_threads = 1
-            self.encoder = ort.InferenceSession(os.path.join(root, encoder), so, providers=["CPUExecutionProvider"])
-        self.yolo = YOLO(os.path.join(here, "yolo_wings_best.pt"))
-        self.heads = {}
-        import glob
+            self.sessions[fold] = [(ort.InferenceSession(p, so, providers=["CPUExecutionProvider"]), seed) for p, seed in self.files[fold]]
+        return self.sessions[fold]
 
-        for path in sorted(glob.glob(os.path.join(here, "cand_cv", "seed*_fold*.pt"))):
-            ck = torch.load(path, map_location="cpu", weights_only=False)
-            if ck.get("schema") != "collection-sex-head/2":
-                raise ValueError(f"{os.path.basename(path)}: not a collection sex head")
-            net = T.Net(1024, 0, len(ck["role_types"]), ck["config"])
-            net.load_state_dict({k: v.float() for k, v in ck["head"].items()}, strict=True)
-            self.heads.setdefault(int(ck["fold"]), []).append((net.eval(), ck["role_types"], ck["seed"]))
-        if sorted(self.heads) != [0, 1, 2, 3, 4]:
-            raise ValueError("the sex model needs cand_cv heads for folds 0-4")
+    def load_evidence(self, here):
         pub = json.load(open(os.path.join(here, "sex_predictions.json")))
         self.folds, self.evidence = {}, {}
         for cam, e in pub.items():
@@ -362,68 +379,11 @@ class SexModel:
         group = "identity:" + hashlib.sha256(repr(("cam", cam)).encode()).hexdigest()[:24]
         return int(hashlib.sha256(group.encode()).hexdigest(), 16) % 5, "sha256(identity_group) mod 5"
 
-    # --- the crops, as readings.py copied them from the rendering modules
-    def bounds(self, box, size):
-        w, h = size
-        x1, y1, x2, y2 = box
-        dx, dy = (x2 - x1) * self.PAD, (y2 - y1) * self.PAD
-        return (max(0, math.floor((x1 - dx) * w)), max(0, math.floor((y1 - dy) * h)), min(w, math.ceil((x2 + dx) * w)), min(h, math.ceil((y2 + dy) * h)))
-
     def load(self, path):
         with self.Image.open(path) as im:
             if im.getexif().get(274, 1) != 1:
                 raise ValueError("unexpected_exif_orientation")
             return self.ImageOps.exif_transpose(im).convert("RGB")
-
-    def model_input(self, crop):
-        Image = self.Image
-        if crop.width < 1 or crop.height < 1:
-            raise ValueError("empty_crop")
-        scale = min(self.CANVAS / crop.width, self.CANVAS / crop.height)
-        width, height = max(1, round(crop.width * scale)), max(1, round(crop.height * scale))
-        canvas = Image.new("RGB", (self.CANVAS, self.CANVAS), self.GREY)
-        canvas.paste(crop.resize((width, height), Image.Resampling.BICUBIC), ((self.CANVAS - width) // 2, (self.CANVAS - height) // 2))
-        image = canvas.resize((self.SIZE, self.SIZE), Image.Resampling.BICUBIC)
-        b = io.BytesIO()  # the training crops went through PNG files
-        image.save(b, format="PNG", optimize=False, compress_level=6)
-        return Image.open(io.BytesIO(b.getvalue())).convert("RGB")
-
-    def tiles(self, image, box, role):
-        x1, y1, x2, y2 = self.bounds(box, image.size)
-        mid = (y1 + y2) // 2
-        top, bottom = (y1, mid) if role.startswith("dh") else (mid, y2)
-        xm = (x1 + x2) // 2
-        return [(f"{role}_t0", image.crop((x1, top, xm, bottom))), (f"{role}_t1", image.crop((xm, top, x2, bottom)))]
-
-    def boxes(self, path):
-        d = self.yolo.predict([path], conf=0.25, verbose=False)[0]
-        if d is None or d.boxes is None or len(d.boxes) == 0:
-            return []
-        boxes, confs = d.boxes.xyxyn.cpu().numpy(), d.boxes.conf.cpu().numpy()
-        idx = [i for i in range(len(boxes)) if confs[i] >= 0.5] or list(range(len(boxes)))
-        if len(idx) > 4:
-            area = [(boxes[i][2] - boxes[i][0]) * (boxes[i][3] - boxes[i][1]) for i in idx]
-            idx = [i for _, i in sorted(zip(area, idx), reverse=True)[:4]]
-        keep = set(idx)
-        return [{"box": [round(float(x), 4) for x in boxes[i]], "conf": round(float(confs[i]), 2)} for i in range(len(boxes)) if i in keep]
-
-    @staticmethod
-    def rows(boxes):
-        if len(boxes) != 4:
-            raise ValueError(f"requires_exactly_four_boxes:{len(boxes)}")
-        for box in boxes:
-            x1, y1, x2, y2 = box["box"]
-            if not (0 <= x1 < x2 <= 1 and 0 <= y1 < y2 <= 1):
-                raise ValueError("invalid_normalized_box")
-        rows = sorted(boxes, key=lambda b: (b["box"][1] + b["box"][3]) / 2)
-        if (rows[2]["box"][1] + rows[2]["box"][3]) / 2 - (rows[1]["box"][1] + rows[1]["box"][3]) / 2 < 0.02:
-            raise ValueError("ambiguous_vertical_rows")
-        top = sorted(rows[:2], key=lambda b: (b["box"][0] + b["box"][2]) / 2)
-        bottom = sorted(rows[2:], key=lambda b: (b["box"][0] + b["box"][2]) / 2)
-        for pair in (top, bottom):
-            if (pair[1]["box"][0] + pair[1]["box"][2]) / 2 - (pair[0]["box"][0] + pair[0]["box"][2]) / 2 < 0.03:
-                raise ValueError("ambiguous_horizontal_separation")
-        return top, bottom
 
     def screen(self, cam, species, pm):
         """analyze.py new_rule: (supported, status)."""
@@ -442,48 +402,47 @@ class SexModel:
         lb = max(0.0, (p + z * z / (2 * n)) / d - z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d)
         return (lb >= self.A), ("species_supported" if lb >= self.A else "species_accuracy_bound_below_threshold")
 
-    def predict(self, job, paths, ident):
-        np, torch = ident.np, self.torch
+    def predict(self, job, paths, np):
+        """The nano chain's wings of the d and v photos (job["wings"]), the strips of the wings that are there (a mask
+        says which; model.json use_available), the fold's 3 networks (mean of their P(male)); the preparation is the
+        training's (train_sex.cnn_batch without changes)."""
+        torch = self.torch
+        F = torch.nn.functional
         cam = job["cam"].upper()
+        t0 = time.perf_counter()
+        partial = bool(self.meta.get("use_available"))
         try:
-            selected, conf = {}, []
-            for v in ("d", "v"):
-                boxes = self.boxes(paths[job[v]])
-                try:
-                    selected[v] = self.rows(boxes)
-                except ValueError as e:
-                    raise ValueError(f"{v}:{e}") from e
-                conf += [b["conf"] for row in selected[v] for b in row]
-            images = {v: self.load(paths[job[v]]) for v in ("d", "v")}
-            if images["d"].size != images["v"].size:
-                raise ValueError("unequal_paired_source_dimensions")
-            d_top, d_bottom = selected["d"]
-            v_top, _ = selected["v"]
-            chosen = [("v", "vf_l", v_top[0]), ("v", "vf_r", v_top[1]), ("d", "dh_l", d_bottom[0]), ("d", "dh_r", d_bottom[1])]
-            crops = [(part, self.model_input(images[v].crop(self.bounds(box["box"], images[v].size)))) for v, part, box in chosen]
-            for v, part, box in chosen:
-                crops += [(role, self.model_input(c)) for role, c in self.tiles(images[v], box["box"], part)]
+            boxes = sex_crops.nano_boxes(job.get("wings"), partial=partial)
+            views = sorted({"v" if w.startswith("vf") else "d" for w in boxes})
+            images = {v: self.load(paths[job[v]]) for v in views}
+            cut = dict(sex_crops.cut_boxes(self.crops, images, boxes))
+            stored = self.meta.get("stored") or [112, 336]
+            blank = np.zeros((*stored, 3), np.uint8)
+            crops = [sex_crops.cnn_input(cut[r], stored) if r in cut else blank for r in self.crops]
         except (ValueError, OSError, KeyError) as e:
             return {"status": f"not_scored:{e}"[:200]}
-        x = np.stack([(np.asarray(im, np.float32).transpose(2, 0, 1) / 255.0 - ident.mean) / ident.std for _, im in crops]).astype(np.float32)
-        encoder = self.encoder or ident.encoder
-        try:
-            f = encoder.run(None, {"pixel_values": x})[0]
-        except Exception:  # an encoder exported for one picture at a time
-            f = np.concatenate([encoder.run(None, {"pixel_values": x[i:i + 1]})[0] for i in range(len(x))])
-        f = f / np.linalg.norm(f, axis=1, keepdims=True)
+        present = [r in cut for r in self.crops]
+        size = self.meta["size"]
+        hw = tuple(size) if isinstance(size, list) else (int(size), int(size))
+        x = torch.from_numpy(np.stack(crops)).permute(0, 3, 1, 2).float().div(255)
+        if tuple(x.shape[-2:]) != hw:
+            x = F.interpolate(x, size=hw, mode="bilinear", antialias=True, align_corners=False)
+        mean = torch.tensor(self.meta["mean"]).view(1, 3, 1, 1)
+        std = torch.tensor(self.meta["std"]).view(1, 3, 1, 1)
+        x = ((x - mean) / std).unsqueeze(0).numpy().astype(np.float32)
         fold, how = self.fold_of(cam)
-        roles = [r for r, _ in crops]
         seeds = {}
-        with torch.no_grad():
-            for net, types, seed in self.heads[fold]:
-                rt = torch.tensor([[types.index(self.T.role_type(r)) for r in roles]])
-                mask = torch.ones(1, len(roles), dtype=torch.bool)
-                seeds[str(seed)] = float(net(torch.from_numpy(f.astype(np.float32)).unsqueeze(0), mask, rt).softmax(1)[0, 1])
+        feed = {"crops": x}
+        if partial:
+            feed["mask"] = np.asarray([present], np.float32)
+        for s, seed in self.session(fold):
+            lg = s.run(None, feed)[0][0].astype(np.float64)
+            seeds[str(seed)] = float(1 / (1 + math.exp(lg[0] - lg[1])))
         pm = float(np.mean(list(seeds.values())))
         supported, status = self.screen(cam, job.get("species"), pm)
         return {"pMale": round(pm, 4), "status": status, "supported": bool(supported and max(pm, 1 - pm) >= 0.8), "fold": fold, "foldHow": how,
-                "seeds": {k: round(v, 4) for k, v in seeds.items()}, "minBoxConf": min(conf) if conf else None}
+                "seeds": {k: round(v, 4) for k, v in seeds.items()}, "model": self.arm, "kind": "cnn", "crops": sum(present), "boxes": "nano",
+                "ms": round((time.perf_counter() - t0) * 1000)}
 
 
 def main():
@@ -521,7 +480,7 @@ def main():
             if job.get("op") == "specimen":
                 if job.get("sex") and sex_model is None:
                     try:
-                        sex_model = SexModel(ARGS.dir, ARGS.threads, ARGS.sex_encoder)
+                        sex_model = SexModel(ARGS.dir, ARGS.threads)
                     except Exception as e:  # without the sex model's files the species are still read
                         sex_model = False
                         print(f"Sex model not loaded: {type(e).__name__}: {e}"[:300], file=sys.stderr)
