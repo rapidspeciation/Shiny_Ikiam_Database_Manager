@@ -213,6 +213,8 @@ export interface Capture {
   count: number
   /** The species is kept as written: it is not among the known names (not used to pair with rows). */
   unknownSpecies?: boolean
+  /** The note doubts the name ("Methona confusa?", "ida?"): the species, or only its subspecies. */
+  unsure?: 'species' | 'subspecies'
 }
 
 const WEATHER: [RegExp, string][] = [
@@ -261,10 +263,13 @@ export function parseCapture(input: string, taxa: Taxa, local?: Taxa): Capture {
     (numbers.length
       ? null
       : take(/^\s*(\d{1,2})\s?(?:ra|da|ro|do|ta|to|er|°|ª|º)\b/) || take(new RegExp(`^\\s*(${NUMBER_WORDS.join('|')})\\b`)))
+  // Labels some collectors write before each part ("Hora: 9:23 Altura de vuelo: 2.5 Especie: …"): not names.
+  while (take(/\b(?:altura\s+de\s+vuel[oa]|altura|hora|clima|especie|sexo|marca|tiempo)\b\s*:?/));
   // "id: B69", or a mark written on its own as some collectors do ("B51 9:51 female …").
   // An M mark later in the note also counts ("… t4 M61"); at the start, "M1" is the point number.
+  // ("ida 0.3m" is a subspecies and a height, not "id: A0".)
   const mark =
-    take(/\bid\s*[:#.]?\s*([a-z]{1,3})\s*-?\s*(\d{1,4})\b/) ||
+    take(/\bid(?![a-záéíóúñ])\s*[:#.]?\s*([a-z]{1,3})\s*-?\s*(\d{1,4})\b/) ||
     // ("2 m 10 03" is a height and a time: an m after a number is the unit.)
     take(/(?<=\S.*)\b([ab]|(?<!\s\d+(?:[.,]\d+)?\s?)m)\s?(\d{1,3})\b(?![.,:]\d)|\b([ab])\s?(\d{1,3})\b(?![.,:]\d)/)
   // An M number at the start is FCH's point number (M1–M15), but a mark in AA's 2024
@@ -278,7 +283,9 @@ export function parseCapture(input: string, taxa: Taxa, local?: Taxa): Capture {
     take(/\b(0?[6-9]|1[0-8])\.([0-5]\d)\b(?!\s*(?:m|cm)\b)/) ||
     take(/\b(0?[6-9]|1[0-8])(?:\s*,\s*(?:con\s+)?|\s+con\s+|\s)([0-5]\d)\b(?![.,]\d|\s*(?:m|cm)\b)/) ||
     take(new RegExp(`\\b(${Object.keys(HOUR_WORDS).join('|')})\\s*(?:,|con|y)?\\s*([0-5]\\d)\\b`))
-  const height = take(/\b(\d+(?:[.,]\d+)?)\s*(cm|m)\b/)
+  // A height with its unit; else a lone decimal under 6 ("Godyris dircena 1.70 10:58", "Altura: 2.5"),
+  // once the time is taken (a time written with a dot starts at 6).
+  const height = take(/\b(\d+(?:[.,]\d+)?)\s*(cm|m)\b/) || take(/(?<![\d.,:])\b([0-5][.,]\d{1,2})\b(?![.,:]?\d)/)
   const recapture = take(/\b(recap\w*|recatch\w*|reencontrad\w*)\b/)
   let sex: Capture['sex'] = null
   if (take(/\b(hembra|female|fem)\b/)) sex = 'female'
@@ -292,8 +299,25 @@ export function parseCapture(input: string, taxa: Taxa, local?: Taxa): Capture {
   else if (take(/\b(seco|dry|dy)\b/)) rain = RAIN.DY
 
   const words = text.split(/[\s,;:?¿!()]+/).filter(w => /^[a-záéíóúñ-]+\.?$/.test(w))
-  const taxon = findTaxon(words, taxa, local, input)
+  // A moth noted on the walk ("Polilla mimetica?") is no butterfly name.
+  const taxon = words.some(w => NOT_BUTTERFLY.has(bare(w)))
+    ? { species: null, subspecies: null, known: false, used: 0, start: 0, subspeciesGuess: null }
+    : findTaxon(words, taxa, local, input)
   const rest = [...words.slice(0, taxon.start), ...words.slice(taxon.start + taxon.used)].join(' ')
+  // "?" right after a word of the name: the collector was not sure of it (the species, or the subspecies word).
+  const asked = new Set(
+    [...` ${input.toLowerCase()} `.matchAll(/([a-záéíóúñ-]+)\s*\?/g)].map(m => m[1]),
+  )
+  const nameWords = words.slice(taxon.start, taxon.start + taxon.used).map(bare)
+  // (A subspecies taken as the only one at Ikiam is not among the words written.)
+  const subWords = taxon.subspecies && taxon.subspeciesGuess !== 'ikiam' && !taxon.unknownSpecies ? 1 : taxon.unknownSpecies && taxon.subspecies ? 1 : 0
+  const unsure: Capture['unsure'] = !taxon.species
+    ? undefined
+    : nameWords.slice(0, nameWords.length - subWords).some(w => asked.has(w))
+      ? 'species'
+      : subWords && asked.has(nameWords.at(-1)!)
+        ? 'subspecies'
+        : undefined
   const h = height ? Number(height[1].replace(',', '.')) / (height[2] === 'cm' ? 100 : 1) : null
   const hour = time ? (HOUR_WORDS[time[1]] ?? Number(time[1])) : null
   return {
@@ -319,8 +343,12 @@ export function parseCapture(input: string, taxa: Taxa, local?: Taxa): Capture {
     rest,
     count: Math.max(1, numbers.length),
     ...(taxon.unknownSpecies ? { unknownSpecies: true } : {}),
+    ...(unsure ? { unsure } : {}),
   }
 }
+
+/** Words of a note that say it is not a butterfly. */
+const NOT_BUTTERFLY = new Set(['polilla', 'polillas', 'moth', 'moths'])
 
 const capital = (w: string) => w.charAt(0).toUpperCase() + w.slice(1)
 /** Species split into lower-case genus and epithet, once per list of names. */
@@ -465,20 +493,24 @@ export function findTaxon(words: string[], taxa: Taxa, local?: Taxa, original?: 
     const epithetHit = alone.length ? unique(alone) : null
     if (epithetHit) {
       const sub = subspeciesAfter(epithetHit.species, words[k + 1], taxa, local, false)
+      // The genus written before it, misspelt beyond the typos allowed ("Godiriys Zavaleta"): part of the name.
+      const genus = epithetHit.species.split(' ')[0].toLowerCase()
+      const before = k > 0 ? bare(words[k - 1]) : ''
+      const misspelt = before.length >= 4 && before[0] === genus[0] && levenshtein(before, genus) <= 3
       offer({
         species: epithetHit.species,
         subspecies: sub.subspecies,
         known: sub.known,
         subspeciesGuess: sub.guess,
-        start: k,
-        used: 1 + sub.used,
+        start: misspelt ? k - 1 : k,
+        used: 1 + sub.used + (misspelt ? 1 : 0),
         cost: epithetHit.cost,
       })
     }
     if (g.length < 5) continue
     // A genus with one species at Ikiam ("ceratinia" → Ceratinia tutia).
     const ofGenus = namesOf(here)
-      .filter(([, genus]) => (g.length >= 7 ? levenshtein(g, genus) <= 1 : g === genus))
+      .filter(([, genus]) => (g.length >= 6 ? levenshtein(g, genus) <= 1 : g === genus))
       .map(([species]) => species)
     if (ofGenus.length === 1) {
       const sub = subspeciesAfter(ofGenus[0], words[k + 1], taxa, local, false)
@@ -575,7 +607,8 @@ export function captureValues(c: Capture, ctx: CaptureContext): Record<string, C
     SPECIES: c.species,
     Subspecies_Form: c.subspecies,
     Identifier: c.species ? ctx.collector || null : null,
-    ID_status: c.species ? 'COMPLETE' : 'To_identify',
+    // A name the note doubts ("ida?") is written as the team does: complete, to verify.
+    ID_status: c.species ? (c.unsure ? 'Complete_but_verify' : 'COMPLETE') : 'To_identify',
     Sex: c.sex,
     Collection_location: 'Ikiam',
     Transect_section: ctx.section,
@@ -629,6 +662,77 @@ export function captureValues(c: Capture, ctx: CaptureContext): Record<string, C
 }
 
 /**
+ * The cells a capture's fate decides, as the team fills them, when the person
+ * changes the fate of a walk's row (Release_Collect): marked and released (or
+ * released without a mark) has no sample; preserved is frozen alive that day,
+ * whole, at Ikiam; sent to the insectary takes an Insectary_ID and leaves the
+ * sample columns empty until it dies there. null empties a cell; `toType`: the
+ * cells only the person can fill (the envelope, the tube, the insectary's ID).
+ */
+export function fateValues(
+  fate: string,
+  ctx: { date: string; markId?: string | null },
+): { values: Record<string, CellValue>; toType: string[] } {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(ctx.date) ? isoToSerial(ctx.date) : null
+  const at = (place: CellValue) =>
+    Object.fromEntries(['Location_Head', 'Location_Torax', 'Location_abdomen', 'Location_Legs', 'Location_wings'].map(k => [k, place]))
+  const sample = (v: CellValue) => ({
+    CAM_ID: v,
+    Tube_1_id: v,
+    Butterfly_weight: v,
+    Death_date: v,
+    Preservation_date: v,
+    ...at(v),
+  })
+  switch (fate) {
+    case 'Mark_Released':
+    case 'Released_Unmarked':
+      return {
+        values: {
+          FieldMark_ID: fate === 'Mark_Released' ? ctx.markId || null : 'NA',
+          Insectary_ID: 'NA',
+          ...sample('NA'),
+          Tube_1_tissue: 'NOT_COLLECTED',
+          Preservation_medium: 'NOT_COLLECTED',
+          Preserved_dead_alive: 'NOT_PRESERVED',
+        },
+        toType: fate === 'Mark_Released' && !ctx.markId ? ['FieldMark_ID'] : [],
+      }
+    case 'Collected_Preserved':
+      return {
+        values: {
+          FieldMark_ID: 'NA',
+          Insectary_ID: 'NA',
+          CAM_ID: null,
+          Tube_1_id: null,
+          Butterfly_weight: null,
+          Tube_1_tissue: 'WHOLE_ORGANISM',
+          Death_date: date,
+          Preservation_date: date,
+          Preservation_medium: 'Flash frozen',
+          Preserved_dead_alive: 'Alive',
+          ...at('Ikiam'),
+        },
+        toType: ['CAM_ID', 'Tube_1_id'],
+      }
+    case 'Collected_Sent2Insectary':
+      return {
+        values: {
+          FieldMark_ID: 'NA',
+          Insectary_ID: null,
+          ...sample(null),
+          Tube_1_tissue: null,
+          Preservation_medium: null,
+          Preserved_dead_alive: null,
+        },
+        toType: ['Insectary_ID'],
+      }
+    default:
+      return { values: {}, toType: [] }
+  }
+}
+
+/**
  * ID_status and Identifier follow the species while a new row is edited: a
  * species typed in makes it COMPLETE (identified by the collector unless
  * someone else is written); emptied, it is To_identify again. Returns only the
@@ -654,14 +758,18 @@ export interface ImportedCapture extends Capture {
   photos: string[]
   /** The note had no time: it was read from where the GPS track passed the point. */
   timeFromTrack?: boolean
+  /** The note had no time: it is when the point was saved in Wikiloc. */
+  timeFromPoint?: boolean
 }
 
 export function locateCapture(w: GpxWaypoint, taxa: Taxa, local?: Taxa): ImportedCapture {
   const c = parseCapture(w.text, taxa, local)
   const near = estimatedSection(w.lat, w.lon)
-  if (c.minutes === null && w.time) c.minutes = localTime(w.time)?.minutes ?? null
+  const saved = c.minutes === null && w.time ? (localTime(w.time)?.minutes ?? null) : null
+  if (saved !== null) c.minutes = saved
   return {
     ...c,
+    ...(saved !== null ? { timeFromPoint: true } : {}),
     lat: w.lat,
     lon: w.lon,
     ele: w.ele,
@@ -1063,13 +1171,106 @@ export function reviewCapture(
   else if (!c.known) out.push(check('warn', 'Nombre no encontrado en la hoja: revisar'))
   if (c.subspeciesGuess === 'ikiam') out.push(check('info', 'Subespecie {name}: la única en Ikiam', { name: c.subspecies ?? '' }))
   if (!c.sex) out.push(check('warn', 'Sin sexo'))
+  if (c.unsure === 'species') out.push(check('warn', 'La nota duda de la especie («?»): Complete_but_verify'))
+  else if (c.unsure === 'subspecies') out.push(check('warn', 'La nota duda de la subespecie («?»): Complete_but_verify'))
   if (c.timeFromTrack) out.push(check('warn', 'Hora del GPS ({time}): la nota no la dice', { time: formatMinutes(c.minutes) }))
+  else if (c.timeFromPoint) out.push(check('info', 'Hora del punto en Wikiloc ({time}): la nota no la dice', { time: formatMinutes(c.minutes) }))
   else if (c.minutes === null) out.push(check('warn', 'Sin hora'))
   if (c.height === null) out.push(check('warn', 'Sin altura'))
   if (!c.cloud) out.push(check('warn', 'Sin clima'))
   if (c.section === null) out.push(check('warn', 'Lejos del sendero ({n} m)', { n: String(c.sectionDistance) }))
   if (c.rest) out.push(check('info', 'A notas: “{note}”', { note: c.rest }))
   return { existing, recapture, list: out }
+}
+
+// ------------------------------------------------------- a teammate's walk of the same morning
+
+const initialsIn = (collector: CellValue | undefined) => text(collector).split(' - ')[0].trim().toUpperCase()
+
+/**
+ * The same butterfly already in the sheet that day under another collector (a
+ * teammate's walk of the same morning, e.g. a newcomer trained on it): the same
+ * mark, or for an unmarked one the same species and sex within 3 minutes.
+ */
+export function teammateRow(rows: TableRow[], date: string, collector: string, c: Capture): TableRow | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null
+  const serial = isoToSerial(date)
+  const mine = initialsIn(collector)
+  const others = rows.filter(r => r.values.Collection_date === serial && initialsIn(r.values.Collector) !== mine)
+  if (c.markId) return others.find(r => text(r.values.FieldMark_ID).toUpperCase() === c.markId!.toUpperCase()) ?? null
+  if (!c.species || c.minutes === null) return null
+  return (
+    others.find(r => {
+      const t = r.values.Collection_time
+      return (
+        text(r.values.SPECIES) === c.species &&
+        (!c.sex || !text(r.values.Sex) || text(r.values.Sex).startsWith(c.sex)) &&
+        typeof t === 'number' &&
+        Math.abs(t * 1440 - c.minutes!) <= 3
+      )
+    }) ?? null
+  )
+}
+
+/**
+ * A training walk: a collector's walk of a morning whose butterflies a
+ * teammate's rows of that day already hold (at least half of its points),
+ * while the walk's own collector has no rows that day. Its rows would be the
+ * same butterflies twice, so Importar hides it (shown on demand).
+ */
+export function trainingWalk(
+  rows: TableRow[],
+  date: string | null,
+  collector: string | null,
+  captures: Capture[],
+): { twins: number; of: number; by: string[] } | null {
+  if (!date || !collector || !captures.length || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null
+  const serial = isoToSerial(date)
+  const mine = initialsIn(collector)
+  if (rows.some(r => r.values.Collection_date === serial && initialsIn(r.values.Collector) === mine)) return null
+  const twins = captures.map(c => teammateRow(rows, date, collector, c)).filter((r): r is TableRow => !!r)
+  if (!twins.length || twins.length * 2 < captures.length) return null
+  return { twins: twins.length, of: captures.length, by: [...new Set(twins.map(r => initialsIn(r.values.Collector)))] }
+}
+
+// ------------------------------------------------------- IDs given in order
+
+/**
+ * `count` IDs following `first` in its series: its prefix kept and its number
+ * counted up with the same width ("CAM078900" → CAM078900, CAM078901, …;
+ * "FS90415349" → FS90415349, FS90415350). null when `first` ends in no number.
+ */
+export function sequenceFrom(first: string, count: number): string[] | null {
+  const m = /^(.*?)(\d+)$/.exec(String(first ?? '').trim())
+  if (!m || count < 0) return null
+  const [, prefix, digits] = m
+  return Array.from({ length: count }, (_, i) => `${prefix}${String(BigInt(digits) + BigInt(i)).padStart(digits.length, '0')}`)
+}
+
+/**
+ * The given IDs handed out in order to the items `takes` picks (the preserved
+ * butterflies of a walk, in time order): items[i] → its ID or null. Skipped
+ * items (a butterfly that escaped) take none, so the run goes on to the next.
+ */
+export function fillInOrder<T>(items: T[], takes: (item: T, i: number) => boolean, first: string): (string | null)[] | null {
+  const ids = sequenceFrom(first, items.filter(takes).length)
+  if (!ids) return null
+  let k = 0
+  return items.map((item, i) => (takes(item, i) ? ids[k++] : null))
+}
+
+// ------------------------------------------------------- SamplingDay_data
+
+/**
+ * Start and end of a walk read from its public Wikiloc page (minutes after
+ * midnight, Ecuador): when the recording started and how long it took
+ * (Wikiloc's "Tiempo"). null without a start, or when it started on another day.
+ */
+export function walkSpan(walk: { started?: string | null; minutes?: number | null }, date: string): { start: number; end: number | null } | null {
+  const at = walk.started ? localTime(walk.started) : null
+  if (!at || (date && at.date !== date)) return null
+  const end = typeof walk.minutes === 'number' && walk.minutes > 0 ? Math.min(at.minutes + walk.minutes, 24 * 60 - 1) : null
+  return { start: at.minutes, end }
 }
 
 // ------------------------------------------------------- SamplingDay_data

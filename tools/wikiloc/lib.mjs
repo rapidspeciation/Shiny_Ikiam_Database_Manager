@@ -85,6 +85,8 @@ export async function readTrail(page, url) {
         lon: w.lon,
         ele: w.elevation ?? null,
         text: [w.name, ...extra].join(' ').replace(/\s+/g, ' ').trim(),
+        // When the point was saved (ms since 1970): the time of a note that does not write it.
+        time: Number.isFinite(Number(w.timestamp)) && Number(w.timestamp) > 0 ? new Date(Number(w.timestamp)).toISOString() : null,
         // The "Master" copy is the largest one Wikiloc serves.
         photos: (w.photos || []).map(p => p.url.replace(/(\d+)(?:Master)?\.jpe?g$/i, '$1Master.jpg')),
       };
@@ -94,13 +96,31 @@ export async function readTrail(page, url) {
       if (!layer.getLatLngs || track.length) return;
       for (const p of layer.getLatLngs().flat(3)) track.push([p.lat, p.lng, p.alt ?? null, null]);
     });
-    const done = /Fecha de realizaci[oó]n\s*\n?\s*([^\n]+)/i.exec(document.body.innerText)?.[1] || '';
+    const page = document.body.innerText;
+    const done = /Fecha de realizaci[oó]n\s*\n?\s*([^\n]+)/i.exec(page)?.[1] || '';
+    // When the recording started, and how long it lasted ("Tiempo\nuna hora 51 minutos"): the walk's start and end.
+    const start = Number(md.mapData?.[0]?.trackStartTimestamp);
+    const took = /\nTiempo\s*\n\s*([^\n]+)/.exec(page)?.[1] || '';
+    // The trail's own description (the page repeats the title there when it has none).
+    const said = document.querySelector('.view__description .description')?.innerText?.trim() || '';
+    const description = said && said !== (md.mapData?.[0]?.nom || '').trim() ? said : '';
     // The author's profile number (the first profile link on a trail page is its author).
     const author = /user\.do\?id=(\d+)/.exec([...document.querySelectorAll('a[href*="user.do?id="]')][0]?.href || '')?.[1] || null;
     const created = /"dateCreated"\s*:\s*"([^"]+)"/.exec(
       [...document.querySelectorAll('script[type="application/ld+json"]')].map(s => s.textContent).join('\n'),
     )?.[1];
-    return { name: md.mapData?.[0]?.nom || document.title, track, waypoints, done, author, created, href: location.href };
+    return {
+      name: md.mapData?.[0]?.nom || document.title,
+      track,
+      waypoints,
+      done,
+      author,
+      created,
+      href: location.href,
+      started: Number.isFinite(start) && start > 0 ? new Date(start).toISOString() : null,
+      took,
+      description: description.slice(0, 2000),
+    };
   });
   // A short link (loc.wiki/t/…, open-trail-link.do?id=…) ends on the trail's page: that address is kept.
   const trailPage = /^https:\/\/(?:[a-z]{2,3}\.)?wikiloc\.com\/[^?#]*-(\d{6,12})(?=[/?#]|$)/;
@@ -112,9 +132,24 @@ export async function readTrail(page, url) {
     date: walkDate(trail.name, trail.done, trail.created),
     recorded: trail.done || null,
     author: trail.author,
+    started: trail.started,
+    minutes: durationMinutes(trail.took),
+    description: trail.description || null,
     track: trail.track,
     waypoints: trail.waypoints,
   };
+}
+
+const NUMBER_WORDS = { un: 1, una: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6 };
+/** Wikiloc's "Tiempo" in minutes: "una hora 51 minutos", "31 minutos", "2 horas 5 minutos". */
+export function durationMinutes(text) {
+  const t = String(text || '').toLowerCase();
+  const amount = word => (/^\d+$/.test(word) ? Number(word) : (NUMBER_WORDS[word] ?? NaN));
+  const hours = /(\d+|[a-z]+)\s+horas?/.exec(t);
+  const minutes = /(\d+|[a-z]+)\s+minutos?/.exec(t);
+  if (!hours && !minutes) return null;
+  const total = (hours ? amount(hours[1]) : 0) * 60 + (minutes ? amount(minutes[1]) : 0);
+  return Number.isFinite(total) ? total : null;
 }
 
 /** All public trails of a profile (newest first): links, titles and trail numbers. */

@@ -105,7 +105,7 @@ async function queue(text = link.value) {
     notify(errorText(e), 'error')
   }
 }
-defineExpose({ queue })
+defineExpose({ queue, loadProfiles })
 
 async function sync() {
   try {

@@ -187,6 +187,33 @@ test('links and profile checks become jobs for the home computer, which claims a
   assert.ok(workerSeen);
 });
 
+test("a job Cloudflare's check stopped waits and is tried again, then fails saying why", () => {
+  const s = store();
+  const link = queueLink(s, { text: 'https://es.wikiloc.com/rutas-senderismo/monitoreo-14-octubre-291256112' }, editor).job;
+  assert.equal(claimJob(s).job.id, link.id);
+  const retried = finishJob(s, link.id, { status: 'retry', message: 'Wikiloc browser: TimeoutError: Cloudflare challenge did not clear' }).job;
+  assert.equal(retried.status, 'queued');
+  assert.equal(retried.attempts, 1);
+  assert.match(retried.message, /se intenta de nuevo hacia las \d\d:\d\d \(intento 2 de 3\)/);
+  assert.ok(Date.parse(retried.notBefore) - Date.now() > 4 * 60_000);
+  // Not taken before its retry time.
+  assert.equal(claimJob(s).job, null);
+  // Pasted again while it waits: tried at once.
+  queueLink(s, { url: link.target }, editor);
+  assert.equal(claimJob(s).job.id, link.id);
+  finishJob(s, link.id, { status: 'retry', message: 'Cloudflare challenge did not clear' });
+  queueLink(s, { url: link.target }, editor);
+  assert.equal(claimJob(s).job.id, link.id);
+  // The last try: then it fails, saying why.
+  const last = finishJob(s, link.id, { status: 'retry', message: 'Cloudflare challenge did not clear' }).job;
+  assert.equal(last.status, 'failed');
+  assert.equal(last.attempts, 3);
+  // Any other error fails at once.
+  const other = queueLink(s, { text: 'https://es.wikiloc.com/rutas-senderismo/otra-291000002' }, editor).job;
+  claimJob(s);
+  assert.equal(finishJob(s, other.id, { status: 'failed', message: 'App answered 502' }).job.status, 'failed');
+});
+
 test('a walk takes its collector from the followed profile of its author', async () => {
   const s = store();
   addProfile(s, { url: '11910166', collector: 'AA - Alex Arias' }, editor);

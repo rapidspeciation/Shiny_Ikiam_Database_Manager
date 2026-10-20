@@ -52,11 +52,16 @@ export const HIDDEN_COLUMNS = {
 export const NOTEBOOK_COLUMNS = {
   Collection_data: [
     'Insectary_ID',
+    // A monitoring capture's mark and fate (Monitoreo → Importar).
+    'Release_Collect',
+    'FieldMark_ID',
     'SPECIES',
     'Subspecies_Form',
     'Sex',
     'Collection_date',
     'Collection_time',
+    'Transect_section',
+    'Flight_height',
     'Collector',
     'Collection_location',
     'Cloud_cover',

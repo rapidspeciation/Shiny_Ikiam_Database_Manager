@@ -114,14 +114,17 @@ for (const kase of cases)
 // ------------------------------------------------------------------ start the threads
 const { chromium } = await import(PLAYWRIGHT);
 const token = readFileSync(labPath('t3-admin-token'), 'utf8').trim();
-const pairing = await fetch(`${T3}/api/auth/pairing-token`, {
-  method: 'POST',
-  headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-  body: JSON.stringify({
-    label: `bench ${runId}`,
-    scopes: ['orchestration:read', 'orchestration:operate', 'terminal:operate', 'review:write', 'relay:read'],
-  }),
-}).then(r => (r.ok ? r.json() : Promise.reject(new Error(`T3 pairing: ${r.status}`))));
+// T3's own set of scopes for a client, as the app asks (server/t3admin.mjs t3Pairing): 0.1.0 refuses
+// review:write by name (400). A T3 that wants them named gets those every version grants.
+const pairWith = scopes =>
+  fetch(`${T3}/api/auth/pairing-token`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ label: `bench ${runId}`, ...(scopes ? { scopes } : {}) }),
+  });
+let paired = await pairWith(null);
+if (!paired.ok) paired = await pairWith(['orchestration:read', 'orchestration:operate', 'terminal:operate', 'relay:read']);
+const pairing = await (paired.ok ? paired.json() : Promise.reject(new Error(`T3 pairing: ${paired.status}`)));
 mkdirSync(join(outDir, 'shots'), { recursive: true, mode: 0o700 });
 const browser = await chromium.launch({ executablePath: CHROMIUM, headless: true });
 const context = await browser.newContext({ viewport: { width: 1600, height: 950 } });
