@@ -21,6 +21,7 @@ import { upsertReadings } from './envelope-import.mjs';
 import { galleryData, writeGalleryFiles } from './gallery-public.mjs';
 import { bumpReviewRevision, driveId, initPhotoTables, reviewRevision } from './photodata.mjs';
 import { nameParts, readingOfRow, wingRows } from './wing-reasons.mjs';
+import { trainingCams } from './oof.mjs';
 
 const WORKER = new URL('./readings-worker.mjs', import.meta.url).pathname;
 const BUILDER = new URL('./gallery-public.mjs', import.meta.url).pathname;
@@ -29,7 +30,7 @@ const ID_MODEL = 'bioclip-2.5-h int8 + head_hier 749fbffd + wing_seg_v5n d74f9c1
 // The sex model's name: the arm the worker says it ran (the 19 Oct 2026 CNN on the androconial strips; its name
 // before the colon) and how many of the 4 strips the butterfly had.
 export const sexModelName = sex =>
-  `collection sex ${String(sex?.model ?? 'release_20261019 cnn_strips4').split(':')[0]} (${sex?.crops ?? 4} of 4 androconial strips of the nano wing boxes, MobileNetV3, cand_cv fold models)`;
+  `collection sex ${String(sex?.model ?? 'release_20261019 cnn_strips4').split(':')[0]} (${Number.isFinite(sex?.crops) ? `${sex.crops} of 4 ` : ''}androconial strips of the nano wing boxes, MobileNetV3, cand_cv fold models)`;
 /** New photos a batch reads (with the other photos of their butterflies). */
 const BATCH_PHOTOS = 40;
 /** A photo that could not be read is tried again after this long, three times at most. */
@@ -207,9 +208,12 @@ export function rowsOfAnswer(db, cam, answer, { wingModel = null, now = new Date
     if (!answer.wings?.[r.fileId] && s) Object.assign(r, { source: s.source, model: s.model ?? r.model });
   }
   const ident = answer.ident && !answer.ident.error ? answer.ident : null;
+  // A butterfly the identifier's head was trained on: its answer would be in-sample, so its species stay those it
+  // has (out-of-fold, from the import; server/oof.mjs) and only its wings and sex are new.
+  const inTraining = trainingCams().has(String(cam.cam).toUpperCase());
   const viewOf = p => (p.suffix[0] === 'd' || p.suffix[0] === 'v' ? p.suffix[0] : null);
   const photoPredictions = [];
-  if (ident)
+  if (ident && !inTraining)
     for (const p of cam.photos) {
       const r = ident.photos?.[p.fileId];
       if (!r || r.error) continue;
@@ -232,17 +236,37 @@ export function rowsOfAnswer(db, cam, answer, { wingModel = null, now = new Date
   if (ident?.combined) {
     const used = ident.combined.used ?? [];
     const byId = new Map(cam.photos.map(p => [p.fileId, p]));
-    prediction = {
-      cam: cam.cam,
-      source: SOURCE,
-      species: ident.combined.species,
-      genus: ident.combined.genus,
-      subspecies: ident.combined.subspecies,
-      andes: cam.side,
-      model: `${ID_MODEL} (feature mean of ${used.length} photo${used.length === 1 ? '' : 's'})`,
-      photos: used.map(f => ({ fileId: f, name: byId.get(f)?.name ?? null, view: byId.get(f) ? viewOf(byId.get(f)) : null })),
-      sexModel: sexModelName(ident.sex),
+    const kept = inTraining ? db.prepare('SELECT * FROM photo_predictions WHERE cam = ?').get(cam.cam) : null;
+    const json = text => {
+      try {
+        return text ? JSON.parse(text) : [];
+      } catch {
+        return [];
+      }
     };
+    prediction = inTraining
+      ? {
+          cam: cam.cam,
+          source: kept?.source ?? SOURCE,
+          species: json(kept?.species_json),
+          genus: json(kept?.genus_json),
+          subspecies: json(kept?.subspecies_json),
+          andes: kept ? kept.andes : cam.side,
+          model: kept?.model ?? 'none: the butterfly is in the training of head_hier 749fbffd (in-sample)',
+          photos: json(kept?.photos_json),
+          sexModel: sexModelName(ident.sex),
+        }
+      : {
+          cam: cam.cam,
+          source: SOURCE,
+          species: ident.combined.species,
+          genus: ident.combined.genus,
+          subspecies: ident.combined.subspecies,
+          andes: cam.side,
+          model: `${ID_MODEL} (feature mean of ${used.length} photo${used.length === 1 ? '' : 's'})`,
+          photos: used.map(f => ({ fileId: f, name: byId.get(f)?.name ?? null, view: byId.get(f) ? viewOf(byId.get(f)) : null })),
+          sexModel: sexModelName(ident.sex),
+        };
     const sex = ident.sex ?? (cam.sex?.missing ? { status: `not_scored:${cam.sex.missing}` } : null);
     if (sex && Number.isFinite(sex.pMale)) {
       const conf = Math.max(sex.pMale, 1 - sex.pMale);

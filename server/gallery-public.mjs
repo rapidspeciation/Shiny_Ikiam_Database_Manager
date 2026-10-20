@@ -13,6 +13,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSyn
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { gzipSync } from 'node:zlib';
+import { oofSource } from './oof.mjs';
 import { initPhotoTables, photoIndex } from './photodata.mjs';
 import { outlinePath, zoomBox } from './wing-outlines.mjs';
 
@@ -46,7 +47,9 @@ export function galleryData(db) {
   for (const p of db.prepare('SELECT * FROM photo_predictions WHERE model IS NOT NULL ORDER BY cam').all()) {
     const cam = String(p.cam).toUpperCase();
     const species = byP(pairs(parse(p.species_json)));
-    if (species.length) {
+    // Out-of-fold predictions only (server/oof.mjs): the identifier's head on a butterfly it was trained on is left out.
+    const oof = oofSource({ cam, source: p.source });
+    if (species.length && oof) {
       const photos = (parse(p.photos_json) ?? []).map(f => ({ name: f.name ?? null, file: f.fileId ?? null }));
       predictions[cam] = {
         species,
@@ -55,7 +58,7 @@ export function galleryData(db) {
         side: p.andes === 'East' || p.andes === 'West' ? p.andes : '',
         n_views: photos.length,
         mode: MODE,
-        model_meta: { source: p.source ?? null, model: p.model, photos },
+        model_meta: { source: p.source ?? null, model: p.model, oof: true, oof_source: oof, photos },
       };
     }
     if (p.sex_p_male !== null && p.sex_p_male !== undefined && p.sex && !String(p.sex_status ?? '').startsWith('not_scored')) {

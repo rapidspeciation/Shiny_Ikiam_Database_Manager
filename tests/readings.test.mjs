@@ -14,7 +14,7 @@ import { Store } from '../server/store.mjs';
 import { LocalSheets } from '../server/sheets.mjs';
 import { createApp } from '../server/index.mjs';
 import { importBundle } from '../server/envelope-import.mjs';
-import { createReadings, initReadingTables, listedPhotos, nextBatch, pendingPhotos } from '../server/readings.mjs';
+import { createReadings, initReadingTables, listedPhotos, nextBatch, pendingPhotos, rowsOfAnswer } from '../server/readings.mjs';
 import { FILES, galleryData, photoKey, writeGalleryFiles } from '../server/gallery-public.mjs';
 
 const FAKE = new URL('./fixtures/fake-readings-worker.mjs', import.meta.url).pathname;
@@ -307,6 +307,8 @@ test("the gallery's files: the formats the gallery reads, nothing else", async t
     model_meta: {
       source: 'app_readings',
       model: 'bioclip-2.5-h int8 + head_hier 749fbffd + wing_seg_v5n d74f9c13 (tools/identifier) (feature mean of 2 photos)',
+      oof: true,
+      oof_source: 'never_in_training',
       photos: [
         { name: 'CAM000201d', file: id('CAM000201d.JPG') },
         { name: 'CAM000201v', file: id('CAM000201v.JPG') },
@@ -323,7 +325,7 @@ test("the gallery's files: the formats the gallery reads, nothing else", async t
     supported: true,
     species: 'Mechanitis polymnia',
     screen_status: 'species_supported',
-    model_arm: 'collection sex release_20261019 cnn_strips4 (4 of 4 androconial strips of the nano wing boxes, MobileNetV3, cand_cv fold models)',
+    model_arm: 'collection sex release_20261019 cnn_strips4 (androconial strips of the nano wing boxes, MobileNetV3, cand_cv fold models)',
     source: 'app_readings',
   });
   const boxes = data['wing_boxes_app.json'];
@@ -407,4 +409,38 @@ test('the readings worker: photos from a folder, the species and sex from the Py
   assert.deepEqual(answer.ident.combined.used, [id('a'), id('b')]);
   // The sex model gets the nano chain's wings of its pair: those read now, else those read before, else null.
   assert.deepEqual(answer.ident.sex, { pMale: 0.2, status: 'below_confidence', supported: false, fold: 1, side: 'East', wings: { d: null, v: stored } });
+});
+
+test('out-of-fold species only: a butterfly the head was trained on keeps the species it has, and the public file leaves in-sample rows out', async t => {
+  const { store } = await storeOf(t);
+  const db = store.db;
+  // CAM042388 and CAM042391 are in head 749fbffd's training (tools/identifier/head_749fbffd_training_cams.json).
+  importBundle(db, {
+    source: 'test',
+    predictions: [
+      { cam: 'CAM042388', source: 'gallery_predictions_oof', species: [['Oleria onega', 0.7]], genus: [['Oleria', 0.9]], subspecies: [], andes: 'East', model: 'gallery predictions.json (out-of-fold)', photos: [] },
+      { cam: 'CAM042391', source: 'photo_readings_20261018', species: [['Oleria onega', 0.99]], genus: [], subspecies: [], model: 'release head (in-sample)', photos: [] },
+      { cam: 'CAM042392', source: 'gallery_readings_20261019_oof', species: [['Oleria gunilla', 0.6]], genus: [], subspecies: [], model: 'out-of-fold head', photos: [] },
+    ],
+  });
+  const pred = galleryData(db)['predictions_app.json'];
+  assert.deepEqual(Object.keys(pred).filter(c => c.startsWith('CAM0423')), ['CAM042388', 'CAM042392']);
+  assert.equal(pred.CAM042388.model_meta.oof_source, 'gallery_predictions_oof');
+  assert.equal(pred.CAM042392.model_meta.oof_source, 'held_out_fold');
+  // The worker reads CAM042388 again (a photo replaced): its species stay, its sex is the new model's, no photo alone.
+  const cam = { cam: 'CAM042388', side: 'West', species: 'Oleria onega', photos: [{ fileId: 'f1', name: 'CAM042388d', suffix: 'd' }], pending: [] };
+  const answer = {
+    ident: {
+      photos: { f1: { species: [['Oleria gunilla', 0.99]], genus: [], subspecies: [] } },
+      combined: { species: [['Oleria gunilla', 0.99]], genus: [], subspecies: [], used: ['f1'] },
+      sex: { pMale: 0.95, status: 'species_supported', supported: true, model: 'release_20261019 cnn_strips4: …', crops: 4 },
+    },
+  };
+  const rows = rowsOfAnswer(db, cam, answer);
+  assert.deepEqual(rows.photoPredictions, []);
+  assert.equal(rows.prediction.source, 'gallery_predictions_oof');
+  assert.deepEqual(rows.prediction.species, [['Oleria onega', 0.7]]);
+  assert.equal(rows.prediction.andes, 'East');
+  assert.equal(rows.prediction.sex, 'male');
+  assert.match(rows.prediction.sexModel, /^collection sex release_20261019 cnn_strips4 \(4 of 4/);
 });
