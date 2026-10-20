@@ -416,3 +416,12 @@ test("the walk's table is not made again over the chat's changes", async () => {
   assert.equal(again.body.error.details.proposalId, made.body.proposalId);
   store.close();
 });
+
+test("a new row's label shows a time cell as people read it, not the sheet's fraction of a day", async () => {
+  const { clockOf } = await import('../server/assistant.mjs');
+  assert.equal(clockOf(0.4270833333333333), '10:15');
+  assert.equal(clockOf('0.4270833333333333'), '10:15');
+  assert.equal(clockOf('10:15'), '10:15');
+  assert.equal(clockOf(undefined), undefined);
+  assert.equal(clockOf(0.99999), '00:00');
+});

@@ -107,6 +107,13 @@ const isoDate = serial => new Date(Date.UTC(1899, 11, 30) + serial * 864e5).toIS
 /** A day as the team reads it (dd/mm/yyyy), in texts shown in the app. */
 const dayFirst = serial => isoDate(Math.floor(serial)).split('-').reverse().join('/');
 const TIME_FIELD = /(^|_)time$/i;
+/** A time cell as people read it: the sheet's fraction of a day (0.4270833…) becomes 10:15; text stays. */
+export const clockOf = value => {
+  const n = typeof value === 'number' ? value : /^0?\.\d+$/.test(String(value ?? '').trim()) ? Number(value) : NaN;
+  if (!(n >= 0 && n < 1)) return value;
+  const minutes = Math.round(n * 1440) % 1440;
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+};
 /** "9:20" in a time column becomes the day fraction Sheets stores (the grids show it as 9:20). */
 const withSheetTimes = values =>
   !values || typeof values !== 'object' || Array.isArray(values)
@@ -1265,7 +1272,7 @@ export function createAssistant({ store, config = {}, role = 'main', onChanged =
         };
     }
     const identity = moduleMap.get(sheet).identityFields.map(key => values[key]).find(isIdValue);
-    const time = Object.entries(raw).find(([key]) => TIME_FIELD.test(key))?.[1];
+    const time = clockOf(Object.entries(raw).find(([key]) => TIME_FIELD.test(key))?.[1]);
     return {
       change: {
         create: true,
