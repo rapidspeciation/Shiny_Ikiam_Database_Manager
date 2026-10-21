@@ -326,7 +326,7 @@ export function createReadings({
   let building = null;
   let worker = null;
   let lastPlan = null;
-  const update = { pendingSince: null, timer: null, last: null, batches: 0, failures: 0 };
+  const update = { pendingSince: null, dueAt: null, timer: null, last: null, batches: 0, failures: 0 };
 
   const missing = () => {
     if (!enabled) return 'turned off (READINGS=0)';
@@ -477,11 +477,17 @@ export function createReadings({
     update.pendingSince ??= now();
     clearTimeout(update.timer);
     const wait = Math.max(0, Math.min(debounceMs, update.pendingSince + maxWaitMs - now()));
+    later(wait);
+  }
+  /** The update's timer, and when it fires (for the status). */
+  function later(wait) {
+    update.dueAt = now() + wait;
     update.timer = setTimeout(fireUpdate, wait);
     update.timer.unref?.();
   }
   async function fireUpdate() {
     update.timer = null;
+    update.dueAt = null;
     let out;
     try {
       out = await siteUpdates.start('gallery');
@@ -492,16 +498,14 @@ export function createReadings({
     if (out?.update?.note && /already running/.test(out.update.note)) {
       // It may have taken the files before this batch's: started again in a while.
       update.last = { at, state: 'waiting', why: 'an update was running' };
-      update.timer = setTimeout(fireUpdate, retryMs);
-      update.timer.unref?.();
+      later(retryMs);
       return;
     }
     update.last = out?.error ? { at, state: 'failed', why: out.error } : { at, state: out?.update?.state ?? 'started', batches: update.batches, link: out?.update?.link };
     log(`Readings: the gallery's update ${out?.error ? `failed: ${out.error}` : 'started'} (${update.batches} batch${update.batches === 1 ? '' : 'es'})`);
     // GitHub or the update server not answering: tried again twice, a while apart.
     if (out?.error && ++update.failures < 3) {
-      update.timer = setTimeout(fireUpdate, retryMs * update.failures);
-      update.timer.unref?.();
+      later(retryMs * update.failures);
       return;
     }
     update.failures = 0;
@@ -580,7 +584,7 @@ export function createReadings({
         ...(current ? { batch: { ...current } } : {}),
         ...(lastPlan ? { waiting: lastPlan.waiting, waitingAt: lastPlan.at } : {}),
         ...(last ? { last: { endedAt: last.ended_at, photos: last.photos, readings: last.readings, errors: last.errors, state: last.state } } : {}),
-        ...(update.pendingSince || update.last ? { galleryUpdate: { ...(update.pendingSince ? { due: new Date(update.pendingSince + Math.min(maxWaitMs, debounceMs)).toISOString() } : {}), ...(update.last ? { last: update.last } : {}) } } : {}),
+        ...(update.pendingSince || update.last ? { galleryUpdate: { ...(update.dueAt ? { due: new Date(update.dueAt).toISOString() } : {}), ...(update.last ? { last: update.last } : {}) } } : {}),
       };
     },
     /** The photos waiting when the last batch was planned. */

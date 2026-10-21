@@ -177,7 +177,8 @@ test('a batch: read by the worker, written to the tables butterfly by butterfly,
   assert.ok(existsSync(join(dir, 'public', 'index.json')));
   assert.deepEqual(calls, []);
   assert.equal(readings.status().state, 'idle');
-  assert.ok(readings.status().galleryUpdate.due);
+  // When the timer fires: still ahead.
+  assert.ok(Date.parse(readings.status().galleryUpdate.due) > Date.now());
   await sleep(1600);
   assert.deepEqual(calls, ['gallery']);
   assert.equal(readings.status().galleryUpdate.last.state, 'running');
