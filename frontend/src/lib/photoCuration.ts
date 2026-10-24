@@ -226,6 +226,21 @@ const fold = (v: unknown) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
+// Words a place name can leave out without naming another place.
+const PLACE_FILLERS = new Set(['de', 'del', 'la', 'las', 'los', 'el', 'y', 'rio', 'r'])
+/**
+ * The envelope's place is the database's when one name holds the other's words: envelopes write the
+ * short name ("Arajuno", "BoanaExplora") of the database's longer one ("San Pedro de Arajuno 2",
+ * "BoanaExplora, Pachijal"), a word cut short ("Sta." for "Santa"), or run together ("Tamiayura").
+ */
+export function samePlace(a: unknown, b: unknown) {
+  const [x, y] = [fold(a), fold(b)]
+  if (!x || !y) return false
+  if (x.replace(/ /g, '') === y.replace(/ /g, '')) return true
+  const [short, long] = x.length <= y.length ? [x.split(' '), y.split(' ')] : [y.split(' '), x.split(' ')]
+  const named = short.filter(w => !PLACE_FILLERS.has(w))
+  return named.length > 0 && named.every(w => long.some(t => t === w || (w.length >= 3 && t.startsWith(w))))
+}
 /** dd/mm/yyyy, as the team writes dates. */
 const dayFirst = (iso: unknown) => (/^\d{4}-\d{2}-\d{2}$/.test(String(iso)) ? String(iso).split('-').reverse().join('/') : String(iso ?? ''))
 /** Which database date an envelope's date is (a plain date on a field envelope: the collection day). */
@@ -250,7 +265,7 @@ export function recordLines(r: RecordFacts, sheet?: string): RecordLine[] {
   add('CAM', read(env.camid), r.cam, !env.camid || fold(env.camid[0]) === fold(r.cam))
   add(t('Especie'), read(env.species), row?.species ?? '', !env.species || binomial(env.species[0]) === binomial(row?.species))
   add(t('Sexo'), env.sex ? `${sexWord(env.sex[0])} · ${pct(env.sex[1])}` : '', sexWord(row?.sex ?? ''), !env.sex || String(row?.sex ?? '').toLowerCase().startsWith(env.sex[0]))
-  add(t('Localidad'), env.locality ? `${env.locality[2] ? `${env.locality[2]} → ` : ''}${read(env.locality)}` : '', row?.locality ?? '', !env.locality || fold(env.locality[0]) === fold(row?.locality))
+  add(t('Localidad'), env.locality ? `${env.locality[2] ? `${env.locality[2]} → ` : ''}${read(env.locality)}` : '', row?.locality ?? '', !env.locality || samePlace(env.locality[0], row?.locality))
   const dates = row?.dates ?? {}
   const used = new Set<string>()
   const reared = !!env.code || !!r.database?.some(d => d.sheet === 'Insectary_data')
