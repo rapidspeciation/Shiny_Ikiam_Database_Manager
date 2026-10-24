@@ -433,12 +433,10 @@ export function parseEnvelope(lines, lexicon, { camid = null } = {}) {
   const loose = [];
   const placeLines = [];
   for (const line of texts) {
-    const ws = words(fold(line.text));
+    const ws = words(fold(line.text)).flatMap(w => splitJoined(lexicon, w));
     const abbreviated = /^\s*[A-Z]\s?\.\s?(?:[a-z]\s?\.\s?[a-z]{3,}|[a-z]{3,})/.test(line.text);
     // How much of the line reads as names of the taxonomy (each word: a genus, a species or a subspecies).
-    const scores = ws
-      .filter(w => w.length >= 3 && w !== 'x')
-      .map(w => Math.max(genusMatch(lexicon, w)?.sim ?? 0, (anyEpithet(lexicon, w)?.sim ?? 0) - 0.02, anySub(lexicon, w)));
+    const scores = ws.filter(w => w.length >= 3 && w !== 'x').map(w => taxonWord(lexicon, w));
     const most = scores.length ? Math.max(...scores) : 0;
     const share = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
     const place = localityMatch(lexicon, line.text);
@@ -471,6 +469,25 @@ export function parseEnvelope(lines, lexicon, { camid = null } = {}) {
       lines: place.used.map(l => l.raw),
     };
   return out;
+}
+
+/** How well a word reads as a name of the taxonomy: a genus, a species or a subspecies. */
+function taxonWord(lexicon, w) {
+  return Math.max(genusMatch(lexicon, w)?.sim ?? 0, (anyEpithet(lexicon, w)?.sim ?? 0) - 0.02, anySub(lexicon, w));
+}
+/**
+ * Two names written without a space ("inachiapozziana", "Oleriaamalda", "eratofavorinus"): the word split
+ * where both halves read as names of the taxonomy, when the whole word does not read as one.
+ */
+function splitJoined(lexicon, w) {
+  if (w.length < 9 || !nameLike(w) || taxonWord(lexicon, w) >= 0.85) return [w];
+  let best = null;
+  for (let at = 4; at <= w.length - 4; at++) {
+    const parts = [w.slice(0, at), w.slice(at)];
+    const sims = parts.map(part => taxonWord(lexicon, part));
+    if (Math.min(...sims) >= 0.85 && (!best || sims[0] + sims[1] > best.score)) best = { parts, score: sims[0] + sims[1] };
+  }
+  return best ? best.parts : [w];
 }
 
 /** Genus, species and subspecies from the lines that name a taxon. */

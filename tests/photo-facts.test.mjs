@@ -136,6 +136,9 @@ test('species names written short, split or with another genus are read as the w
   assert.ok(slip.species.conf < 0.9);
   // Two genera on the envelope: the one that has the species written.
   assert.equal(read('(Temenis)', 'Callicorina', 'pulchra').species.value, 'Callicorina pulchra');
+  // Two names written without a space.
+  assert.equal(read('Mechanitispolymnia', 'proceriformis').species.value, 'Mechanitis polymnia proceriformis');
+  assert.equal(read('Ithomia', 'salapiasalapia ♂').species.value, 'Ithomia salapia salapia');
   // Localities: abbreviations, hyphens, a name over two lines.
   assert.equal(read('Q. de Goulaine').locality.value, 'Quinta de Goulaine');
   assert.equal(read('Pto. Libre-Linea 2').locality.value, 'Puerto Libre - Linea 2');
